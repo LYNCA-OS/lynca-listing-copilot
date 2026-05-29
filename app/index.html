@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Metaverse Listing Copilot</title>
+    <link rel="stylesheet" href="/app/listing-copilot.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="app-header">
+        <a class="brand" href="/" aria-label="Metaverse Listing Copilot">
+          <span class="brand-mark">LYN</span>
+          <span>Metaverse Listing Copilot</span>
+        </a>
+        <div class="header-actions">
+          <span class="domain-note">preview for listing.lyncafei.team</span>
+          <button class="ghost-button" type="button" id="resetButton">清空</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="hero-panel">
+          <div class="hero-head">
+            <div>
+              <p class="eyebrow">PRIVATE LISTING TOOL</p>
+              <h1>元宇宙卡牌标题生成助手</h1>
+              <p class="subtitle">批量上传卡图，按单图或前后图配对生成 eBay-ready 标题。当前作为独立内部 webtool，仅开放给元宇宙 listing 工作流使用。</p>
+            </div>
+            <span class="version-pill">MVP PREVIEW</span>
+          </div>
+
+          <div class="principle-grid">
+            <article>
+              <h2>适用素材</h2>
+              <p>单张卡正面、正反面组合、评级卡照片、球星卡、动漫卡、patch / auto / sketch 等常规 listing 图片。</p>
+            </article>
+            <article>
+              <h2>标题目标</h2>
+              <p>不是泛泛识别卡片，而是生成接近资深 Metaverse Cards 上架人员习惯的 eBay 标题。</p>
+            </article>
+            <article>
+              <h2>分流原则</h2>
+              <p>HIGH 可直接复制，UNSURE 需要人工复核，FAILED 用于图像模糊、多卡 lot 或无法安全识别。</p>
+            </article>
+            <article>
+              <h2>落地边界</h2>
+              <p>不自动上架、不接 eBay API、不生成 ZIP、不做云盘同步，只作为 copy-paste assistant。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="control-panel">
+          <div class="mode-control" role="radiogroup" aria-label="Upload mode">
+            <label>
+              <input type="radio" name="assetMode" value="single" checked>
+              <span>Single Image</span>
+            </label>
+            <label>
+              <input type="radio" name="assetMode" value="pair">
+              <span>Front / Back Pair</span>
+            </label>
+          </div>
+
+          <label class="drop-zone" for="imageInput" id="dropZone">
+            <input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+            <strong>选择卡片图片，系统会自动整理 JPG / PNG / WEBP</strong>
+            <span id="statusText" role="status" aria-live="polite">支持批量上传，前后图模式按上传顺序配对。</span>
+          </label>
+
+          <label class="secondary-button" for="imageInput">上传图片</label>
+          <button class="primary-button" type="button" id="processButton" disabled>开始生成</button>
+        </section>
+
+        <section class="stats-grid" aria-label="Processing metrics">
+          <article><span>图像队列</span><strong id="statImages">0</strong><small>Images uploaded</small></article>
+          <article><span>Card assets</span><strong id="statAssets">0</strong><small>Detected</small></article>
+          <article><span>已处理</span><strong id="statProcessed">0</strong><small>Processed assets</small></article>
+          <article><span>HIGH</span><strong id="statHigh">0</strong><small>Ready to copy</small></article>
+          <article><span>UNSURE</span><strong id="statUnsure">0</strong><small>Needs review</small></article>
+          <article><span>FAILED</span><strong id="statFailed">0</strong><small>Not safe</small></article>
+          <article><span>API 请求</span><strong id="statRequests">0</strong><small>Estimated</small></article>
+          <article><span>预估成本</span><strong id="statCost">$0.000</strong><small>Directional</small></article>
+        </section>
+
+        <section class="asset-workbench">
+          <article class="asset-board">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">ASSET WORKBENCH</p>
+                <h2>资产配对与标题输出</h2>
+              </div>
+              <p id="previewSummary">等待上传图片。</p>
+            </div>
+            <div class="asset-preview-list" id="assetPreviewList">
+              <div class="empty-state">上传 10 张图片后，Front / Back Pair 模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app/listing-copilot.js" type="module"></script>
+  </body>
+</html>

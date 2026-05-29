@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Metaverse Listing Copilot Login</title>
+    <link rel="stylesheet" href="/app/listing-copilot.css">
+  </head>
+  <body class="login-page">
+    <main class="login-stage">
+      <section class="login-card" aria-label="Metaverse Listing Copilot 登录">
+        <div class="login-identity">
+          <span class="brand-mark">LYN</span>
+          <span>
+            <strong>Metaverse Listing Copilot</strong>
+            <small>Private listing workflow</small>
+          </span>
+        </div>
+        <div class="login-copy">
+          <p class="eyebrow">PRIVATE LISTING TOOL</p>
+          <h1>元宇宙卡牌标题生成助手</h1>
+        </div>
+        <form class="listing-login-form" id="listingLoginForm" autocomplete="on">
+          <label>
+            <span>账号</span>
+            <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <p class="form-error" id="loginError" role="alert" aria-live="polite"></p>
+          <button class="primary-button" type="submit">登录</button>
+        </form>
+      </section>
+    </main>
+    <script src="/app/login.js" type="module"></script>
+  </body>
+</html>
