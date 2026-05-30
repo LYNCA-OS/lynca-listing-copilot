@@ -114,13 +114,27 @@ function normalizeTitle(title, maxLength) {
   return normalized.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
 }
 
+function cleanupTitleWording(title, maxLength) {
+  const cleaned = String(title || "")
+    .replace(/\bRookie\s+RC\s+Card\b/gi, "RC")
+    .replace(/\bRookie\s+RC\b/gi, "RC")
+    .replace(/\bAutograph\s+Auto\b/gi, "Auto")
+    .replace(/\bRefractor\s+Parallel\b/gi, "Refractor")
+    .replace(/\bCard\s+Card\b/gi, "Card")
+    .replace(/\bRC\s+RC\b/gi, "RC")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalizeTitle(cleaned, maxLength);
+}
+
 function moveLeadingGradeToEnd(title, maxLength) {
   const normalized = String(title || "").replace(/\s+/g, " ").trim();
   const leadingGrade = normalized.match(/^(PSA|BGS|CGC)\s+(?:GEM\s+MINT\s+|MINT\s+|PRISTINE\s+)?(\d+(?:\.\d+)?)\s+(.+)$/i);
-  if (!leadingGrade) return normalizeTitle(normalized, maxLength);
+  if (!leadingGrade) return cleanupTitleWording(normalized, maxLength);
 
   const [, company, grade, rest] = leadingGrade;
-  return normalizeTitle(`${rest} ${company.toUpperCase()} ${grade}`, maxLength);
+  return cleanupTitleWording(`${rest} ${company.toUpperCase()} ${grade}`, maxLength);
 }
 
 function stripBackgroundTerms(value) {
@@ -276,10 +290,25 @@ function searchable(value) {
 function titleIncludes(titleText, value) {
   const normalizedValue = searchable(value);
   if (!normalizedValue) return true;
-  return normalizedValue
+  const parts = normalizedValue
     .split(" ")
     .filter((part) => part && part !== "/")
-    .every((part) => titleText.includes(part));
+    .filter(Boolean);
+
+  return parts.every((part) => titleText.includes(part));
+}
+
+function subjectIncluded(titleText, value) {
+  if (!value) return true;
+  if (titleIncludes(titleText, value)) return true;
+
+  const parts = searchable(value)
+    .split(" ")
+    .filter((part) => part && part !== "/");
+  const meaningfulParts = parts.filter((part) => part.length > 2);
+  const lastPart = meaningfulParts.at(-1);
+
+  return Boolean(lastPart && titleText.includes(lastPart));
 }
 
 function titleIncludesAny(titleText, values) {
@@ -408,11 +437,11 @@ function auditMissingHighValueFields(title, fields) {
   const titleText = searchable(title);
   const missing = [];
 
-  if (fields.player && !titleIncludes(titleText, fields.player)) {
+  if (fields.player && !subjectIncluded(titleText, fields.player)) {
     missing.push("player");
   }
 
-  if (fields.character && !titleIncludes(titleText, fields.character)) {
+  if (fields.character && !subjectIncluded(titleText, fields.character)) {
     missing.push("character");
   }
 
@@ -577,10 +606,6 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
 
   if (repairedHighValueInsert) {
     reason = appendCalibrationReason(reason, "High-value insert term preserved from structured evidence.");
-    if (guardedConfidence === "HIGH") guardedConfidence = "MEDIUM";
-    if (!guardedUnresolved.includes("title repaired missing insert")) {
-      guardedUnresolved.push("title repaired missing insert");
-    }
   }
 
   const illustratorGuard = applyIllustratorMetadataGuard({

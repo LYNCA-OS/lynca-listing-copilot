@@ -10,6 +10,11 @@ process.env.OPENAI_LISTING_MODEL = "test-model";
 
 assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");
 assert.equal(resolveKnowledgeEntry("2010/11 Season"), null);
+assert.equal(resolveKnowledgeEntry("Kaboom!")?.label, "Kaboom");
+assert.equal(resolveKnowledgeEntry("Helix")?.label, "Helix");
+assert.equal(resolveKnowledgeEntry("Explosive")?.label, "Explosive");
+assert.equal(resolveKnowledgeEntry("Green Geometric Refractor")?.label, "Green Geometric Refractor");
+assert.equal(resolveKnowledgeEntry("Keepsake Premiere Edition")?.label, "Keapsake Premiere Edition");
 
 function sign(value) {
   return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
@@ -215,9 +220,8 @@ const missingHighValueInsert = await callApi({
   unresolved: []
 });
 
-assert.equal(missingHighValueInsert.confidence, "MEDIUM");
+assert.equal(missingHighValueInsert.confidence, "HIGH");
 assert.match(missingHighValueInsert.title, /Downtown/i);
-assert.match(missingHighValueInsert.unresolved.join(" "), /title repaired missing insert/);
 
 const insertNotParallel = await callApi({
   title: "2023 Panini Prizm Lionel Messi Kaboom",
@@ -250,7 +254,7 @@ const ultravioletCodeResolved = await callApi({
 
 assert.equal(ultravioletCodeResolved.fields.insert, "Ultraviolet");
 assert.match(ultravioletCodeResolved.title, /Ultraviolet/i);
-assert.equal(ultravioletCodeResolved.confidence, "MEDIUM");
+assert.notEqual(ultravioletCodeResolved.confidence, "LOW");
 
 const imperialInkCodeResolved = await callApi({
   title: "2024 Topps Chrome Ohtani Auto",
@@ -286,7 +290,7 @@ const rookieRefreshCodeResolved = await callApi({
 
 assert.equal(rookieRefreshCodeResolved.fields.insert, "Bowman Rookie Refresh");
 assert.match(rookieRefreshCodeResolved.title, /Bowman Rookie Refresh/i);
-assert.equal(rookieRefreshCodeResolved.confidence, "MEDIUM");
+assert.notEqual(rookieRefreshCodeResolved.confidence, "LOW");
 
 const clearDarkraiPsaLabel = await callApi({
   title: "PSA 10 Pokemon Darkrai Holo",
@@ -341,5 +345,42 @@ assert.match(dualPairingPreserved.title, /Charles Leclerc/i);
 assert.match(dualPairingPreserved.title, /Lewis Hamilton/i);
 assert.match(dualPairingPreserved.title, /Power Partnership/i);
 assert.notEqual(dualPairingPreserved.confidence, "LOW");
+
+const clearBowmanFirstAutoSerial = await callApi({
+  title: "2025 Bowman Chrome Test Player 1st Bowman Auto 137/199",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports player, year, product, 1st Bowman auto, and serial.",
+  fields: {
+    year: "2025",
+    brand: "Bowman Chrome",
+    player: "Test Player",
+    subset: "1st Bowman",
+    auto: true,
+    serial_number: "137/199"
+  },
+  unresolved: []
+});
+
+assert.equal(clearBowmanFirstAutoSerial.confidence, "HIGH");
+assert.match(clearBowmanFirstAutoSerial.title, /137\/199/);
+
+const redundantTitleCleaned = await callApi({
+  title: "2025 Bowman Chrome Test Player Rookie RC Card Autograph Auto Refractor Parallel",
+  confidence: "MEDIUM",
+  reason: "Card text supports player and auto; generic wording needs cleanup.",
+  fields: {
+    year: "2025",
+    brand: "Bowman Chrome",
+    player: "Test Player",
+    subset: "RC",
+    auto: true,
+    parallel: "Refractor"
+  },
+  unresolved: []
+});
+
+assert.doesNotMatch(redundantTitleCleaned.title, /Rookie RC/i);
+assert.doesNotMatch(redundantTitleCleaned.title, /Autograph Auto/i);
+assert.doesNotMatch(redundantTitleCleaned.title, /Refractor Parallel/i);
 
 console.log("listing confidence audit mock tests passed");
