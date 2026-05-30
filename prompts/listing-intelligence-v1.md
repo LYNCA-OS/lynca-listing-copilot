@@ -58,6 +58,8 @@ Required fields:
 
 Specific extraction rules:
 
+- Never use photography surface/background text as card identity. Ignore background or seller branding such as `Metaverse Cards`, `LYNCA`, `CardLadder`, `eBay UI`, table mat text, watermarks, and seller branding.
+- Background terms must never enter title, player, brand, set, insert, parallel, or reasoning fields.
 - PSA label: extract grade company and grade if visible.
 - BGS label: extract grade company, grade, and visible subgrades only if the output schema later supports them; otherwise mention subgrades in unresolved.
 - CGC label: extract grade company and grade if visible.
@@ -101,6 +103,8 @@ If unresolved, mark unresolved. Do not invent.
 ### Parallel and Insert Taxonomy Awareness
 
 Do not force the Vision Engine to solve all taxonomy problems during MVP. Vision should prioritize observable facts: OCR accuracy, serial accuracy, label accuracy, and card number accuracy.
+
+Do not force rainbow or parallel resolution from visual foil alone. If exact parallel taxonomy is not text-supported, use conservative generic wording or omit the parallel.
 
 The current system often recognizes color better than pattern. Do not reduce pattern-based parallels to color-only terms.
 
@@ -180,6 +184,7 @@ When uncertain, prefer:
 
 - `Orange Refractor 02/25` over `Orange Pattern Foil` with missing serial.
 - `Purple Parallel 137/199` over `Fuchsia Wave Refractor` without confidence.
+- `2025 Topps Chrome Quinshon Judkins RC Purple 130/175` over `2025 Topps Chrome Quinshon Judkins RC Purple Wave Refractor 130/175` unless Wave/Refractor is text-supported.
 
 Rules:
 
@@ -231,6 +236,7 @@ MEDIUM:
 - Use MEDIUM for visually inferred parallel, insert, or pattern classifications.
 - Use MEDIUM when the card is mostly right but not safe enough to publish without review.
 - Use MEDIUM when Tier 1 fields are correct but Tier 3 parallel classification is generic or best-effort.
+- Unknown parallel should usually be MEDIUM, not LOW, as long as player, year, product, and serial are usable.
 - Use MEDIUM for Power Chords or other insert identification unless all key fields are complete and evidence-backed.
 - Operator should review before posting.
 - Expected MEDIUM rate is roughly 60-70%.
@@ -241,6 +247,7 @@ LOW:
 - Core fields conflict.
 - Significant uncertainty exists.
 - Use LOW for wrong or unsupported year, incomplete or wrong serial, missing visible serial, missing auto, missing grade, missing card number/code, missing 1/1 indicator, missing patch/relic, or reasoning that contradicts the title.
+- Use LOW when a clearly visible high-value field such as serial, auto, relic, patch, grade, rookie, or 1st Bowman is missing from the title.
 - Use LOW when a generic family is substituted for a specific market term only if a Tier 1 field is also missing, wrong, or unresolved. Otherwise use MEDIUM.
 - LOW items must be manually corrected before posting.
 - Expected LOW rate is roughly 10-20%.
@@ -254,6 +261,7 @@ Downgrade triggers:
 - Do not allow HIGH when year is not supported by strong evidence.
 - Parallel uncertainty alone should usually cap confidence at MEDIUM, not LOW, when Tier 1 fields are complete.
 - Incomplete or generic parallel family must cap confidence at MEDIUM unless Tier 1 fields are missing or wrong.
+- If the title includes a visually guessed parallel, downgrade HIGH to MEDIUM.
 - Missing serial when a numbered card is visible.
 - Missing auto when an autograph is visible.
 - Missing or wrong year.
@@ -289,6 +297,13 @@ Preferred uncertainty language:
 Use this exact style when parallel is visually inferred, insert is visually inferred, serial is uncertain, variant terminology is incomplete, or the title omits a visible high-value field:
 
 `Core identity fields are visible; parallel/variant terminology requires operator review.`
+
+If downgraded, state the specific operational reason when true:
+
+- `exact parallel requires operator review`
+- `serial visible and preserved`
+- `insert inferred from card text`
+- `background branding ignored`
 
 ### Calibration Examples
 

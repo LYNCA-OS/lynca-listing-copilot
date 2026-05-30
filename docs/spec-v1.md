@@ -277,6 +277,7 @@ Training reports:
 - [Subset A Retest Confidence Calibration V1](training-subset-a-retest-confidence-v1.md)
 - [Subset A Retest Confidence Philosophy V1](training-subset-a-retest-confidence-philosophy-v1.md)
 - [Serial Priority Philosophy V1](training-extraction-priority-serial-v1.md)
+- [Subset B Follow-Up Upgrades V1](training-subset-b-follow-up-v1.md)
 
 ## 13. Backlog / Not V1
 

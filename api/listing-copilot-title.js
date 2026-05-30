@@ -39,6 +39,16 @@ const defaultFields = {
   redemption: false,
   one_of_one: false
 };
+const backgroundTerms = [
+  "Metaverse Cards",
+  "LYNCA",
+  "CardLadder",
+  "eBay UI",
+  "table mat",
+  "watermark",
+  "seller branding"
+];
+const backgroundTermPatterns = backgroundTerms.map((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"));
 
 function parseCookies(header) {
   return Object.fromEntries(
@@ -96,6 +106,20 @@ function normalizeTitle(title, maxLength) {
   return normalized.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
 }
 
+function stripBackgroundTerms(value) {
+  return backgroundTermPatterns.reduce(
+    (text, pattern) => text.replace(pattern, " "),
+    String(value || "")
+  ).replace(/\s+/g, " ").trim();
+}
+
+function containsBackgroundTerm(value) {
+  return backgroundTermPatterns.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(String(value || ""));
+  });
+}
+
 function compactFileName(name) {
   return String(name || "")
     .replace(/\.[^.]+$/, "")
@@ -138,7 +162,7 @@ function normalizeStringOrNull(value) {
 }
 
 function normalizeFields(fields = {}) {
-  return {
+  const normalized = {
     year: normalizeStringOrNull(fields.year),
     brand: normalizeStringOrNull(fields.brand),
     product: normalizeStringOrNull(fields.product),
@@ -161,6 +185,14 @@ function normalizeFields(fields = {}) {
     redemption: normalizeBoolean(fields.redemption),
     one_of_one: normalizeBoolean(fields.one_of_one)
   };
+
+  Object.keys(normalized).forEach((key) => {
+    if (typeof normalized[key] === "string" && containsBackgroundTerm(normalized[key])) {
+      normalized[key] = null;
+    }
+  });
+
+  return normalized;
 }
 
 function normalizeUnresolved(unresolved, fields = {}) {
@@ -242,6 +274,27 @@ function hasStrongEvidence(reasonText) {
     "states",
     "explicit"
   ]);
+}
+
+function hasVisuallyGuessedParallel(fields, reasonText, unresolved) {
+  const parallelText = searchable(fields.parallel);
+  if (!parallelText) return false;
+
+  const combined = `${parallelText} ${reasonText} ${searchable(unresolved.join(" "))}`;
+  return textMentionsAny(combined, [
+    "visual",
+    "visible",
+    "looks",
+    "appears",
+    "inferred",
+    "likely",
+    "guess",
+    "guessed",
+    "uncertain",
+    "not text supported",
+    "not text-supported",
+    "foil alone"
+  ]) && !hasStrongEvidence(reasonText);
 }
 
 function hasUncertainty(reasonText, unresolved) {
@@ -339,6 +392,10 @@ function auditMissingHighValueFields(title, fields) {
     missing.push("grade");
   }
 
+  if (fields.subset && /\b(rookie|rc|1st bowman|1st)\b/i.test(fields.subset) && !titleIncludes(titleText, fields.subset)) {
+    missing.push("rookie/1st");
+  }
+
   return missing;
 }
 
@@ -380,6 +437,8 @@ function calibrateConfidence({ title, confidence, reason, fields, unresolved }) 
       "missing grade",
       "missing card number",
       "missing 1/1",
+      "missing rookie",
+      "missing 1st bowman",
       "contradicts title"
     ]);
 
@@ -404,7 +463,8 @@ function calibrateConfidence({ title, confidence, reason, fields, unresolved }) 
   const highAllowed = hasStrongEvidence(reasonText)
     && calibratedUnresolved.length === 0
     && !hasUncertainty(reasonText, calibratedUnresolved)
-    && !hasVisualOnlyParallelRisk(fields, reasonText, calibratedUnresolved);
+    && !hasVisualOnlyParallelRisk(fields, reasonText, calibratedUnresolved)
+    && !hasVisuallyGuessedParallel(fields, reasonText, calibratedUnresolved);
 
   if (highAllowed) {
     return { confidence, reason, unresolved: calibratedUnresolved };
@@ -424,6 +484,25 @@ function appendCalibrationReason(reason, calibrationReason) {
   const base = String(reason || "").trim();
   const combined = base ? `${base} ${calibrationReason}` : calibrationReason;
   return combined.slice(0, 240);
+}
+
+function sanitizeResultText(result, maxTitleLength) {
+  const hadBackgroundContamination = [
+    result.title,
+    result.reason,
+    ...Object.values(result.fields || {})
+  ].some((value) => typeof value === "string" && containsBackgroundTerm(value));
+
+  const title = normalizeTitle(stripBackgroundTerms(result.title), maxTitleLength);
+  const reason = stripBackgroundTerms(result.reason);
+
+  return {
+    title,
+    reason: hadBackgroundContamination
+      ? appendCalibrationReason(reason, "Background branding ignored.")
+      : reason,
+    hadBackgroundContamination
+  };
 }
 
 function fallbackResult(payload) {
@@ -481,14 +560,17 @@ function normalizeAiResult(result, maxTitleLength) {
   };
   const confidence = confidenceMap[String(result.confidence || "").toUpperCase()] || "MEDIUM";
   const fields = normalizeFields(result.fields);
-  const title = normalizeTitle(result.title, maxTitleLength);
+  const sanitized = sanitizeResultText(result, maxTitleLength);
+  const title = sanitized.title;
   const unresolved = normalizeUnresolved(result.unresolved, result.fields);
   const calibrated = calibrateConfidence({
     title,
     confidence,
-    reason: String(result.reason || "").slice(0, 240),
+    reason: sanitized.reason.slice(0, 240),
     fields,
-    unresolved
+    unresolved: sanitized.hadBackgroundContamination
+      ? [...unresolved, "background branding ignored"]
+      : unresolved
   });
 
   return {
