@@ -272,6 +272,7 @@ The goal is not card identification. The goal is eBay-ready listing title genera
 
 Training reports:
 
+- [Subset A Administrative Summary V1](training-subset-a-administrative-summary-v1.md)
 - [Subset A V1](training-subset-a-v1.md)
 - [Subset A Retest Confidence Calibration V1](training-subset-a-retest-confidence-v1.md)
 - [Subset A Retest Confidence Philosophy V1](training-subset-a-retest-confidence-philosophy-v1.md)
