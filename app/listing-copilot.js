@@ -101,6 +101,10 @@ function setStatus(message) {
   elements.statusText.textContent = message;
 }
 
+function assetCountLabel(count) {
+  return `${count} 张图片`;
+}
+
 function buildAssets() {
   const assets = [];
 
@@ -151,7 +155,7 @@ function renderPreviews() {
   if (!state.assets.length) {
     closeImageModal();
     elements.previewSummary.textContent = "等待上传图片。";
-    elements.assetPreviewList.innerHTML = `<div class="empty-state">上传 10 张图片后，Front / Back Pair 模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>`;
+    elements.assetPreviewList.innerHTML = `<div class="empty-state">上传 10 张图片后，正反面配对模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>`;
     return;
   }
 
@@ -191,8 +195,8 @@ function sortedAssetsForDisplay() {
 }
 
 function imageSideLabel(imageIndex) {
-  if (state.mode !== "pair") return "Image";
-  return imageIndex === 0 ? "Front" : "Back";
+  if (state.mode !== "pair") return "图片 Image";
+  return imageIndex === 0 ? "正面 Front" : "背面 Back";
 }
 
 function renderAssetRows() {
@@ -206,17 +210,17 @@ function renderAssetRows() {
         <div class="asset-source">
           <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
             ${asset.images.map((image, imageIndex) => `
-              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="Open ${escapeHtml(imageSideLabel(imageIndex))} image preview">
+              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开${escapeHtml(imageSideLabel(imageIndex))}预览">
                 <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
               </button>
             `).join("")}
           </div>
           <div class="preview-meta">
-            <h3>Card Asset ${asset.index}</h3>
+            <h3>资产 ${asset.index}</h3>
             ${asset.images.map((image, imageIndex) => `
               <p class="file-name">${imageSideLabel(imageIndex)} · ${escapeHtml(image.name)}</p>
             `).join("")}
-            <span>${asset.images.length} image${asset.images.length > 1 ? "s" : ""}</span>
+            <span>${assetCountLabel(asset.images.length)}</span>
           </div>
         </div>
         ${result ? resultBox(result) : pendingBox(asset)}
@@ -229,10 +233,10 @@ function pendingBox(asset) {
   return `
     <div class="title-output title-output-pending">
       <div class="title-output-head">
-        <span class="confidence-badge confidence-pending">PENDING</span>
-        <span>Asset ${asset.index}</span>
+        <span class="confidence-badge confidence-pending">等待中</span>
+        <span>资产 ${asset.index}</span>
       </div>
-      <textarea readonly placeholder="点击开始生成后，这里会输出 eBay-ready title。"></textarea>
+      <textarea readonly placeholder="点击开始生成后，这里会输出英文 eBay listing title。"></textarea>
       <p class="follow-up-advice">等待 Vision Engine 提取字段，再由 Resolution Engine 补全映射，最后交给 Title Engine 生成 80 字符以内标题。</p>
     </div>
   `;
@@ -247,12 +251,12 @@ function resultBox(result) {
     <div class="title-output ${confidenceClass(confidence)}">
       <div class="title-output-head">
         <span class="confidence-badge ${confidenceClass(confidence)}">${confidence}</span>
-        <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(result.title || "")}" ${disabled ? "disabled" : ""}>Copy</button>
+        <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(result.title || "")}" ${disabled ? "disabled" : ""}>复制</button>
       </div>
-      <textarea readonly>${result.title || "Title unavailable"}</textarea>
+      <textarea readonly>${result.title || "标题暂不可用"}</textarea>
       <p class="follow-up-advice">${result.reason || ""}</p>
       <details>
-        <summary>Show Reasoning</summary>
+        <summary>查看判断依据</summary>
         <div class="field-list">
           ${reasoningFields(result.fields || {}, unresolved).map(([label, value]) => `
             <div>
@@ -284,8 +288,8 @@ function renderImageModal() {
 
   elements.imageModalImage.src = image.dataUrl;
   elements.imageModalImage.alt = image.name;
-  elements.imageModalSide.textContent = `${sideLabel.toUpperCase()} PREVIEW`;
-  elements.imageModalTitle.textContent = `Card Asset ${asset.index}`;
+  elements.imageModalSide.textContent = `${sideLabel}预览`;
+  elements.imageModalTitle.textContent = `资产 ${asset.index}`;
   elements.imageModalFileName.textContent = image.name;
   elements.imageModalSwitcher.innerHTML = asset.images.map((assetImage, index) => `
     <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}">
@@ -318,18 +322,18 @@ function switchModalImage(imageIndex) {
 
 function reasoningFields(fields, unresolved = []) {
   return [
-    ["player / character", fields.player || fields.character],
-    ["artist", fields.artist],
-    ["year", fields.year],
-    ["brand", fields.brand],
-    ["product / set", [fields.product, fields.set].filter(Boolean).join(" / ")],
-    ["subset / insert", [fields.subset, fields.insert].filter(Boolean).join(" / ")],
-    ["parallel", fields.parallel],
-    ["team", fields.team],
-    ["card number or code", fields.card_number],
-    ["serial number", fields.serial_number],
-    ["grade", [fields.grade_company, fields.grade].filter(Boolean).join(" ")],
-    ["auto / relic / patch / sketch", [
+    ["主体 Player / Character", fields.player || fields.character],
+    ["画师 Artist", fields.artist],
+    ["年份 Year", fields.year],
+    ["品牌 Brand", fields.brand],
+    ["产品 / 系列 Product / Set", [fields.product, fields.set].filter(Boolean).join(" / ")],
+    ["子系列 / Insert", [fields.subset, fields.insert].filter(Boolean).join(" / ")],
+    ["Parallel", fields.parallel],
+    ["队伍 Team", fields.team],
+    ["卡号 / 编码", fields.card_number],
+    ["Serial 编号", fields.serial_number],
+    ["评级 Grade", [fields.grade_company, fields.grade].filter(Boolean).join(" ")],
+    ["Auto / Relic / Patch / Sketch", [
       fields.auto ? "auto" : "",
       fields.relic ? "relic" : "",
       fields.patch ? "patch" : "",
@@ -337,7 +341,7 @@ function reasoningFields(fields, unresolved = []) {
       fields.redemption ? "redemption" : "",
       fields.one_of_one ? "1/1" : ""
     ].filter(Boolean).join(", ")],
-    ["unresolved", unresolved.join(", ")]
+    ["待复核", unresolved.join(", ")]
   ];
 }
 
@@ -345,12 +349,12 @@ async function handleFiles(fileList) {
   const imageFiles = [...fileList].filter((file) => file.type.startsWith("image/"));
   if (!imageFiles.length) return;
 
-  setStatus("Loading images...");
+  setStatus("正在读取图片...");
   closeImageModal();
   const images = await Promise.all(imageFiles.map(fileToAssetImage));
   state.files = images;
   state.results = [];
-  setStatus(`${images.length} images ready.`);
+  setStatus(`${images.length} 张图片已准备好。`);
   renderPreviews();
   renderResults();
 }
@@ -372,7 +376,7 @@ async function processAsset(asset) {
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    throw new Error(`请求失败：${response.status}`);
   }
 
   const payload = await response.json();
@@ -411,7 +415,7 @@ async function processTitles() {
     while (queue.length) {
       const asset = queue.shift();
       startedCount += 1;
-      setStatus(`Processing ${startedCount} / ${state.assets.length}...`);
+      setStatus(`正在处理 ${startedCount} / ${state.assets.length}...`);
 
       try {
         const result = await processAsset(asset);
@@ -429,7 +433,7 @@ async function processTitles() {
   renderResults();
 
   elements.processButton.disabled = false;
-  setStatus("Done. Results sorted by confidence.");
+  setStatus("已完成，结果已按 confidence 排序。");
 }
 
 async function copyTitle(button) {
@@ -438,7 +442,7 @@ async function copyTitle(button) {
 
   await navigator.clipboard.writeText(title);
   const original = button.textContent;
-  button.textContent = "Copied";
+  button.textContent = "已复制";
   setTimeout(() => {
     button.textContent = original;
   }, 1100);

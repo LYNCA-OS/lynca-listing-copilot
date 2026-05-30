@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Metaverse Listing Copilot</title>
+    <title>元宇宙 Listing Copilot</title>
     <link rel="stylesheet" href="/app/listing-copilot.css">
   </head>
   <body>
@@ -14,7 +14,7 @@
           <span>Metaverse Listing Copilot</span>
         </a>
         <div class="header-actions">
-          <span class="domain-note">preview for listing.lyncafei.team</span>
+          <span class="domain-note">listing.lyncafei.team 预览环境</span>
           <button class="ghost-button" type="button" id="resetButton">清空</button>
         </div>
       </header>
@@ -23,9 +23,9 @@
         <section class="hero-panel">
           <div class="hero-head">
             <div>
-              <p class="eyebrow">PRIVATE LISTING TOOL</p>
+              <p class="eyebrow">内部上架工具</p>
               <h1>元宇宙卡牌标题生成助手</h1>
-              <p class="subtitle">批量上传卡图，按单图或前后图配对生成 eBay-ready 标题。当前作为独立内部 webtool，仅开放给元宇宙 listing 工作流使用。</p>
+              <p class="subtitle">批量上传卡图，按单图或前后图配对生成英文 eBay listing title。当前作为独立内部工具，仅服务元宇宙上架工作流。</p>
             </div>
             <span class="version-pill">MVP PREVIEW</span>
           </div>
@@ -33,7 +33,7 @@
           <div class="principle-grid">
             <article>
               <h2>适用素材</h2>
-              <p>单张卡正面、正反面组合、评级卡照片、球星卡、动漫卡、patch / auto / sketch 等常规 listing 图片。</p>
+              <p>单张卡正面、正反面组合、评级卡照片、球星卡、动漫卡、Patch / Auto / Sketch 等常规上架图片。</p>
             </article>
             <article>
               <h2>标题目标</h2>
@@ -45,20 +45,20 @@
             </article>
             <article>
               <h2>落地边界</h2>
-              <p>不自动上架、不接 eBay API、不生成 ZIP、不做云盘同步，只作为 copy-paste assistant。</p>
+              <p>不自动上架、不接 eBay API、不生成 ZIP、不做云盘同步，只作为复制粘贴辅助工具。</p>
             </article>
           </div>
         </section>
 
         <section class="control-panel">
-          <div class="mode-control" role="radiogroup" aria-label="Upload mode">
+          <div class="mode-control" role="radiogroup" aria-label="上传模式">
             <label>
               <input type="radio" name="assetMode" value="single" checked>
-              <span>Single Image</span>
+              <span>单图模式</span>
             </label>
             <label>
               <input type="radio" name="assetMode" value="pair">
-              <span>Front / Back Pair</span>
+              <span>正反面配对</span>
             </label>
           </div>
 
@@ -72,29 +72,29 @@
           <button class="primary-button" type="button" id="processButton" disabled>开始生成</button>
         </section>
 
-        <section class="stats-grid" aria-label="Processing metrics">
-          <article><span>图像队列</span><strong id="statImages">0</strong><small>Images uploaded</small></article>
-          <article><span>Card assets</span><strong id="statAssets">0</strong><small>Detected</small></article>
-          <article><span>已处理</span><strong id="statProcessed">0</strong><small>Processed assets</small></article>
-          <article><span>HIGH</span><strong id="statHigh">0</strong><small>Publish-ready</small></article>
-          <article><span>MEDIUM</span><strong id="statMedium">0</strong><small>Review terms</small></article>
-          <article><span>LOW</span><strong id="statLow">0</strong><small>Manual fix</small></article>
-          <article><span>FAILED</span><strong id="statFailed">0</strong><small>Not safe</small></article>
-          <article><span>API 请求</span><strong id="statRequests">0</strong><small>Estimated</small></article>
-          <article><span>预估成本</span><strong id="statCost">$0.000</strong><small>Directional</small></article>
+        <section class="stats-grid" aria-label="处理统计">
+          <article><span>图像队列</span><strong id="statImages">0</strong><small>已上传图片</small></article>
+          <article><span>资产 Card Assets</span><strong id="statAssets">0</strong><small>已识别资产</small></article>
+          <article><span>已处理</span><strong id="statProcessed">0</strong><small>已生成结果</small></article>
+          <article><span>HIGH</span><strong id="statHigh">0</strong><small>可直接复制</small></article>
+          <article><span>MEDIUM</span><strong id="statMedium">0</strong><small>需要复核</small></article>
+          <article><span>LOW</span><strong id="statLow">0</strong><small>需要修正</small></article>
+          <article><span>FAILED</span><strong id="statFailed">0</strong><small>无法安全识别</small></article>
+          <article><span>API 请求</span><strong id="statRequests">0</strong><small>预估次数</small></article>
+          <article><span>预估成本</span><strong id="statCost">$0.000</strong><small>仅供参考</small></article>
         </section>
 
         <section class="asset-workbench">
           <article class="asset-board">
             <div class="section-head">
               <div>
-                <p class="eyebrow">ASSET WORKBENCH</p>
+                <p class="eyebrow">资产工作台 Asset Workbench</p>
                 <h2>资产配对与标题输出</h2>
               </div>
               <p id="previewSummary">等待上传图片。</p>
             </div>
             <div class="asset-preview-list" id="assetPreviewList">
-              <div class="empty-state">上传 10 张图片后，Front / Back Pair 模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>
+              <div class="empty-state">上传 10 张图片后，正反面配对模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>
             </div>
           </article>
         </section>
@@ -106,16 +106,16 @@
       <section class="image-modal-panel" role="dialog" aria-modal="true" aria-labelledby="imageModalTitle">
         <header class="image-modal-header">
           <div>
-            <p class="eyebrow" id="imageModalSide">IMAGE PREVIEW</p>
-            <h2 id="imageModalTitle">Card image</h2>
+            <p class="eyebrow" id="imageModalSide">图片预览</p>
+            <h2 id="imageModalTitle">卡片图片</h2>
           </div>
-          <button class="icon-button" type="button" id="imageModalClose" aria-label="Close image preview">×</button>
+          <button class="icon-button" type="button" id="imageModalClose" aria-label="关闭图片预览">×</button>
         </header>
         <div class="image-modal-stage">
           <img id="imageModalImage" alt="">
         </div>
         <footer class="image-modal-footer">
-          <div class="image-modal-switcher" id="imageModalSwitcher" aria-label="Image side selector"></div>
+          <div class="image-modal-switcher" id="imageModalSwitcher" aria-label="图片正反面切换"></div>
           <p id="imageModalFileName"></p>
         </footer>
       </section>

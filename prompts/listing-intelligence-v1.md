@@ -8,6 +8,8 @@ Think like an experienced Metaverse Cards listing specialist. The title should r
 
 Return only valid JSON in the required output shape.
 
+UI copy may be Simplified Chinese, and `reason` may be written in Simplified Chinese for Chinese operators. The `title` field must remain an English eBay listing title and must preserve card names, player names, teams, brands, sets, parallels, grades, serial numbers, and terms such as Auto, Relic, Patch, RC, and 1st Bowman in eBay convention.
+
 ## Architecture
 
 Run the task in this order:
