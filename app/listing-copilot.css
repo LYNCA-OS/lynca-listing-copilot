@@ -393,9 +393,9 @@ h3 {
 
 .asset-row-card {
   display: grid;
-  grid-template-columns: minmax(320px, 0.88fr) minmax(360px, 1.12fr);
-  gap: 16px;
-  padding: 14px;
+  grid-template-columns: minmax(420px, 0.96fr) minmax(420px, 1.04fr);
+  gap: 18px;
+  padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.045);
@@ -403,15 +403,14 @@ h3 {
 
 .asset-source {
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
+  gap: 12px;
+  align-content: start;
 }
 
 .preview-images {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 10px;
 }
 
 .preview-images.single {
@@ -419,12 +418,16 @@ h3 {
 }
 
 .thumb-button {
+  position: relative;
   display: block;
   min-width: 0;
-  border: 0;
-  padding: 0;
-  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.025));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   cursor: zoom-in;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
 }
 
 .thumb-button:focus-visible,
@@ -437,11 +440,31 @@ h3 {
 .thumb,
 .result-thumb {
   width: 100%;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 2.8 / 4;
   object-fit: cover;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.05);
+}
+
+.thumb-button span {
+  position: absolute;
+  left: 13px;
+  top: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(5, 7, 17, 0.76);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.thumb-button:hover {
+  border-color: rgba(235, 241, 255, 0.42);
+  background: linear-gradient(180deg, rgba(88, 199, 245, 0.12), rgba(255, 255, 255, 0.035));
+  transform: translateY(-1px);
 }
 
 .thumb-button:hover .thumb {
@@ -452,13 +475,16 @@ h3 {
 .preview-meta {
   min-width: 0;
   display: grid;
-  align-content: center;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px 12px;
 }
 
 .preview-meta span {
   color: var(--muted);
   font-size: 12px;
+  font-weight: 750;
+  justify-self: end;
 }
 
 .file-name {
@@ -468,6 +494,7 @@ h3 {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+  grid-column: 1 / -1;
 }
 
 .confidence-badge {

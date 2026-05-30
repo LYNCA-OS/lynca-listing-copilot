@@ -49,6 +49,29 @@ const backgroundTerms = [
   "seller branding"
 ];
 const backgroundTermPatterns = backgroundTerms.map((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"));
+const highValueInsertTerms = [
+  "Kaboom",
+  "Ultraviolet",
+  "Downtown",
+  "Color Blast",
+  "Stained Glass",
+  "Manga",
+  "Galactic",
+  "Blank Slate",
+  "Night Moves",
+  "Permit to Dominate",
+  "Net Marvels",
+  "Aurora",
+  "In Motion",
+  "Micro Mosaic",
+  "Zebra",
+  "Tiger",
+  "Elephant",
+  "Gold Vinyl",
+  "Black Pandora",
+  "Genesis"
+];
+const highValueInsertPatterns = highValueInsertTerms.map((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"));
 
 function parseCookies(header) {
   return Object.fromEntries(
@@ -149,6 +172,12 @@ function containsBackgroundTerm(value) {
   });
 }
 
+function extractHighValueInsert(value) {
+  const text = String(value || "");
+  const index = highValueInsertPatterns.findIndex((pattern) => pattern.test(text));
+  return index === -1 ? null : highValueInsertTerms[index];
+}
+
 function compactFileName(name) {
   return String(name || "")
     .replace(/\.[^.]+$/, "")
@@ -220,6 +249,12 @@ function normalizeFields(fields = {}) {
       normalized[key] = null;
     }
   });
+
+  const parallelInsert = extractHighValueInsert(normalized.parallel);
+  if (parallelInsert && !normalized.insert) {
+    normalized.insert = parallelInsert;
+    normalized.parallel = null;
+  }
 
   return normalized;
 }
@@ -522,16 +557,33 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
     ...Object.values(result.fields || {})
   ].some((value) => typeof value === "string" && containsBackgroundTerm(value));
 
-  const title = normalizeTitle(stripBackgroundTerms(result.title), maxTitleLength);
-  const reason = stripBackgroundTerms(result.reason);
+  const highValueInsert = extractHighValueInsert(fields.insert);
+  const strippedTitle = stripBackgroundTerms(result.title);
+  const repairedHighValueInsert = Boolean(highValueInsert && !rawIncludes(strippedTitle, highValueInsert));
+  const title = normalizeTitle(
+    repairedHighValueInsert ? ensureTitleTerm(strippedTitle, highValueInsert) : strippedTitle,
+    maxTitleLength
+  );
+  let reason = stripBackgroundTerms(result.reason);
+  let guardedConfidence = confidence;
+  const guardedUnresolved = [...unresolved];
+
+  if (repairedHighValueInsert) {
+    reason = appendCalibrationReason(reason, "High-value insert term preserved from structured evidence.");
+    if (guardedConfidence === "HIGH") guardedConfidence = "MEDIUM";
+    if (!guardedUnresolved.includes("title repaired missing insert")) {
+      guardedUnresolved.push("title repaired missing insert");
+    }
+  }
+
   const illustratorGuard = applyIllustratorMetadataGuard({
     title,
     reason: hadBackgroundContamination
       ? appendCalibrationReason(reason, "Background branding ignored.")
       : reason,
     fields,
-    confidence,
-    unresolved,
+    confidence: guardedConfidence,
+    unresolved: guardedUnresolved,
     maxTitleLength
   });
 

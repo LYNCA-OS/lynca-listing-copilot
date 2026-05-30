@@ -186,6 +186,7 @@ function renderAssetRows() {
             ${asset.images.map((image, imageIndex) => `
               <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开${escapeHtml(imageSideLabel(imageIndex))}预览">
                 <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
+                <span>${imageSideLabel(imageIndex)}</span>
               </button>
             `).join("")}
           </div>

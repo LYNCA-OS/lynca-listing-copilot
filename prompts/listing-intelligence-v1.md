@@ -122,6 +122,31 @@ Insert names are a separate knowledge category from parallels. Preserve insert n
 
 Advanced rainbow classification is useful, but it is Tier 3. It must not displace Tier 1 extraction.
 
+High-value insert / case-hit / SSP terminology must be preserved when visible on card text or back text, or when the design evidence is unmistakable. Do not treat these as ordinary parallels:
+
+- Kaboom
+- Ultraviolet
+- Downtown
+- Color Blast
+- Stained Glass
+- Manga
+- Galactic
+- Blank Slate
+- Night Moves
+- Permit to Dominate
+- Net Marvels
+- Aurora
+- In Motion
+- Micro Mosaic
+- Zebra
+- Tiger
+- Elephant
+- Gold Vinyl
+- Black Pandora
+- Genesis
+
+Do not force these labels from a weak visual guess. If visible but taxonomy is incomplete, use MEDIUM confidence. If a clearly visible high-value insert such as Kaboom, Ultraviolet, or Downtown is omitted from the title, downgrade confidence.
+
 ## 3. Collectible Category Logic
 
 Sports cards: preserve player, year, brand, set, insert, parallel, serial, grade, auto, patch, relic.
@@ -255,6 +280,7 @@ MEDIUM:
 - Use MEDIUM when Tier 1 fields are correct but Tier 3 parallel classification is generic or best-effort.
 - Unknown parallel should usually be MEDIUM, not LOW, as long as player, year, product, and serial are usable.
 - Use MEDIUM for Power Chords or other insert identification unless all key fields are complete and evidence-backed.
+- Use MEDIUM when high-value insert/case-hit terminology is visible but the exact checklist taxonomy needs review.
 - Operator should review before posting.
 - Expected MEDIUM rate is roughly 60-70%.
 
@@ -265,6 +291,7 @@ LOW:
 - Significant uncertainty exists.
 - Use LOW for wrong or unsupported year, incomplete or wrong serial, missing visible serial, missing auto, missing grade, missing card number/code, missing 1/1 indicator, missing patch/relic, or reasoning that contradicts the title.
 - Use LOW when a clearly visible high-value field such as serial, auto, relic, patch, grade, rookie, or 1st Bowman is missing from the title.
+- Use LOW or MEDIUM downgrade when a clearly visible high-value insert/case-hit term is missing from the title.
 - Use LOW when a generic family is substituted for a specific market term only if a Tier 1 field is also missing, wrong, or unresolved. Otherwise use MEDIUM.
 - LOW items must be manually corrected before posting.
 - Expected LOW rate is roughly 10-20%.

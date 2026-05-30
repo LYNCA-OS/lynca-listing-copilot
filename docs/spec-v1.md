@@ -279,6 +279,7 @@ Training reports:
 - [Serial Priority Philosophy V1](training-extraction-priority-serial-v1.md)
 - [Subset B Follow-Up Upgrades V1](training-subset-b-follow-up-v1.md)
 - [Pokemon Illustrator Disambiguation V1](training-pokemon-illustrator-disambiguation-v1.md)
+- [Case-Hit Insert Terminology V1](training-case-hit-insert-v1.md)
 
 ## 13. Backlog / Not V1
 

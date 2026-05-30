@@ -164,4 +164,71 @@ assert.match(localizedTrainerIllustrator.title, /SV9C/);
 assert.equal(localizedTrainerIllustrator.confidence, "MEDIUM");
 assert.match(localizedTrainerIllustrator.reason, /Illustrator is metadata only/i);
 
+const visibleKaboomPreserved = await callApi({
+  title: "2023 Panini Prizm Victor Wembanyama Kaboom RC",
+  confidence: "MEDIUM",
+  reason: "Card text explicitly shows Kaboom insert; title preserves the high-value insert name.",
+  fields: {
+    year: "2023",
+    brand: "Panini Prizm",
+    player: "Victor Wembanyama",
+    subset: "RC",
+    insert: "Kaboom"
+  },
+  unresolved: ["exact checklist taxonomy requires operator review"]
+});
+
+assert.match(visibleKaboomPreserved.title, /Kaboom/i);
+assert.equal(visibleKaboomPreserved.fields.insert, "Kaboom");
+
+const visibleUltravioletPreserved = await callApi({
+  title: "2024 Panini Select Caitlin Clark Ultraviolet RC",
+  confidence: "MEDIUM",
+  reason: "Back text explicitly supports Ultraviolet insert; title preserves the insert.",
+  fields: {
+    year: "2024",
+    brand: "Panini Select",
+    player: "Caitlin Clark",
+    subset: "RC",
+    insert: "Ultraviolet"
+  },
+  unresolved: []
+});
+
+assert.match(visibleUltravioletPreserved.title, /Ultraviolet/i);
+assert.equal(visibleUltravioletPreserved.fields.insert, "Ultraviolet");
+
+const missingHighValueInsert = await callApi({
+  title: "2024 Panini Donruss Anthony Edwards",
+  confidence: "HIGH",
+  reason: "Card text explicitly shows Downtown insert.",
+  fields: {
+    year: "2024",
+    brand: "Panini Donruss",
+    player: "Anthony Edwards",
+    insert: "Downtown"
+  },
+  unresolved: []
+});
+
+assert.equal(missingHighValueInsert.confidence, "MEDIUM");
+assert.match(missingHighValueInsert.title, /Downtown/i);
+assert.match(missingHighValueInsert.unresolved.join(" "), /title repaired missing insert/);
+
+const insertNotParallel = await callApi({
+  title: "2023 Panini Prizm Lionel Messi Kaboom",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports Kaboom insert.",
+  fields: {
+    year: "2023",
+    brand: "Panini Prizm",
+    player: "Lionel Messi",
+    parallel: "Kaboom"
+  },
+  unresolved: []
+});
+
+assert.equal(insertNotParallel.fields.insert, "Kaboom");
+assert.equal(insertNotParallel.fields.parallel, null);
+
 console.log("listing confidence audit mock tests passed");
