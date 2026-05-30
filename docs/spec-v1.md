@@ -154,11 +154,18 @@ HIGH：
 - 关键字段完整。
 - 没有明显市场术语风险。
 
-UNSURE：
+MEDIUM：
 
 - 主体大致正确。
 - parallel、insert、card code、serial、grade 或 market term 仍需人工复核。
-- V1 中 fallback result 默认 UNSURE。
+- visual-only pattern / insert / parallel 判断需要复核。
+- V1 中 fallback result 默认 MEDIUM。
+
+LOW：
+
+- high-value 信息可能缺失。
+- year、serial、parallel、insert、auto、SSP 等核心交易字段存在冲突或不完整。
+- 标题可作为线索，但不能直接上架。
 
 FAILED：
 
@@ -182,7 +189,8 @@ Output box 必须包含：
 颜色规则：
 
 - HIGH = green
-- UNSURE = yellow
+- MEDIUM = yellow
+- LOW = orange
 - FAILED = red
 
 Reasoning section 显示：
@@ -204,7 +212,8 @@ Reasoning section 显示：
 - Card assets detected
 - Processed assets
 - HIGH count
-- UNSURE count
+- MEDIUM count
+- LOW count
 - FAILED count
 - Estimated API requests
 - Estimated API cost
@@ -265,6 +274,7 @@ Training reports:
 
 - [Subset A V1](training-subset-a-v1.md)
 - [Subset A Retest Confidence Calibration V1](training-subset-a-retest-confidence-v1.md)
+- [Subset A Retest Confidence Philosophy V1](training-subset-a-retest-confidence-philosophy-v1.md)
 
 ## 13. Backlog / Not V1
 

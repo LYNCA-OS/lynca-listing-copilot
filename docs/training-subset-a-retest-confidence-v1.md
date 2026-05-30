@@ -54,9 +54,7 @@ HIGH can only be used when:
 
 HIGH means ready for commercial listing.
 
-### MEDIUM / UNSURE
-
-The current app uses `UNSURE`; semantically this is the MEDIUM bucket.
+### MEDIUM
 
 Use this when:
 
@@ -64,9 +62,7 @@ Use this when:
 - parallel, insert, pattern, SSP, or exact variant needs review; or
 - the classification is visual-only and not supported by label/card text.
 
-### LOW / UNSURE
-
-The current app does not yet have a LOW UI state, so LOW should be routed as `UNSURE` with explicit downgrade reasoning.
+### LOW
 
 Use this when:
 
@@ -127,8 +123,8 @@ Downgrade from HIGH when any of these occur:
 ## Expected Behavior
 
 - Clean PSA/BGS/CGC label cases can be HIGH.
-- Basic correct but missing parallel/insert should be UNSURE.
-- Wrong year or missing high-value variant should be UNSURE or FAILED, never HIGH.
+- Basic correct but missing parallel/insert should be MEDIUM.
+- Wrong year or missing high-value variant should be LOW or FAILED, never HIGH.
 
 ## Final Principle
 
@@ -136,4 +132,4 @@ Confidence does not represent model confidence.
 
 Confidence represents commercial listing readiness.
 
-The next system upgrade must add a self-audit layer before finalizing confidence.
+The system now needs a self-audit layer before finalizing confidence.

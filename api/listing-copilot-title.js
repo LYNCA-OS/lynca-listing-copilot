@@ -190,7 +190,7 @@ function fallbackResult(payload) {
 
   return {
     title,
-    confidence: title ? "UNSURE" : "FAILED",
+    confidence: title ? "MEDIUM" : "FAILED",
     reason: title
       ? "Fallback result from filename because OPENAI_API_KEY is not configured."
       : "No usable filename or AI configuration.",
@@ -222,9 +222,14 @@ function safeJsonParse(text) {
 }
 
 function normalizeAiResult(result, maxTitleLength) {
-  const confidence = ["HIGH", "UNSURE", "FAILED"].includes(result.confidence)
-    ? result.confidence
-    : "UNSURE";
+  const confidenceMap = {
+    HIGH: "HIGH",
+    MEDIUM: "MEDIUM",
+    UNSURE: "MEDIUM",
+    LOW: "LOW",
+    FAILED: "FAILED"
+  };
+  const confidence = confidenceMap[String(result.confidence || "").toUpperCase()] || "MEDIUM";
   const fields = normalizeFields(result.fields);
 
   return {
@@ -262,7 +267,7 @@ async function createOpenAiTitle(payload) {
     "Required JSON shape:",
     JSON.stringify({
       title: "",
-      confidence: "HIGH | UNSURE | FAILED",
+      confidence: "HIGH | MEDIUM | LOW | FAILED",
       reason: "",
       fields: defaultFields,
       unresolved: []

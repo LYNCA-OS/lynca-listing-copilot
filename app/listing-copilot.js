@@ -23,7 +23,8 @@ const elements = {
     assets: document.querySelector("#statAssets"),
     processed: document.querySelector("#statProcessed"),
     high: document.querySelector("#statHigh"),
-    unsure: document.querySelector("#statUnsure"),
+    medium: document.querySelector("#statMedium"),
+    low: document.querySelector("#statLow"),
     failed: document.querySelector("#statFailed"),
     requests: document.querySelector("#statRequests"),
     cost: document.querySelector("#statCost")
@@ -51,11 +52,23 @@ function formatCost(requests) {
 }
 
 function confidenceClass(confidence) {
+  const normalized = normalizeConfidence(confidence);
   return {
     HIGH: "confidence-high",
-    UNSURE: "confidence-unsure",
+    MEDIUM: "confidence-medium",
+    LOW: "confidence-low",
     FAILED: "confidence-failed"
-  }[confidence] || "confidence-unsure";
+  }[normalized] || "confidence-medium";
+}
+
+function normalizeConfidence(confidence) {
+  return {
+    HIGH: "HIGH",
+    MEDIUM: "MEDIUM",
+    UNSURE: "MEDIUM",
+    LOW: "LOW",
+    FAILED: "FAILED"
+  }[String(confidence || "").toUpperCase()] || "MEDIUM";
 }
 
 function setStatus(message) {
@@ -87,15 +100,17 @@ function buildAssets() {
 }
 
 function updateStats() {
-  const high = state.results.filter((result) => result.confidence === "HIGH").length;
-  const unsure = state.results.filter((result) => result.confidence === "UNSURE").length;
-  const failed = state.results.filter((result) => result.confidence === "FAILED").length;
+  const high = state.results.filter((result) => normalizeConfidence(result.confidence) === "HIGH").length;
+  const medium = state.results.filter((result) => normalizeConfidence(result.confidence) === "MEDIUM").length;
+  const low = state.results.filter((result) => normalizeConfidence(result.confidence) === "LOW").length;
+  const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
 
   elements.stats.images.textContent = state.files.length;
   elements.stats.assets.textContent = state.assets.length;
   elements.stats.processed.textContent = state.results.length;
   elements.stats.high.textContent = high;
-  elements.stats.unsure.textContent = unsure;
+  elements.stats.medium.textContent = medium;
+  elements.stats.low.textContent = low;
   elements.stats.failed.textContent = failed;
   elements.stats.requests.textContent = state.assets.length;
   elements.stats.cost.textContent = formatCost(state.assets.length);
@@ -170,13 +185,14 @@ function pendingBox(asset) {
 }
 
 function resultBox(result) {
-  const disabled = result.confidence === "FAILED" || !result.title;
+  const confidence = normalizeConfidence(result.confidence);
+  const disabled = confidence === "FAILED" || !result.title;
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
 
   return `
-    <div class="title-output ${confidenceClass(result.confidence)}">
+    <div class="title-output ${confidenceClass(confidence)}">
       <div class="title-output-head">
-        <span class="confidence-badge ${confidenceClass(result.confidence)}">${result.confidence}</span>
+        <span class="confidence-badge ${confidenceClass(confidence)}">${confidence}</span>
         <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(result.title || "")}" ${disabled ? "disabled" : ""}>Copy</button>
       </div>
       <textarea readonly>${result.title || "Title unavailable"}</textarea>

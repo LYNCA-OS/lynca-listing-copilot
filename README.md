@@ -13,7 +13,7 @@
 - 数据源：静态 `resolution.json`
 - 登录：固定账号密码，通过环境变量配置
 
-它不是 eBay 自动上架系统，也不接 eBay API。当前 MVP 是 copy-paste assistant：批量上传卡图，按 Single Image 或 Front / Back Pair 生成 eBay-ready 标题，并给出 HIGH / UNSURE / FAILED 分流。
+它不是 eBay 自动上架系统，也不接 eBay API。当前 MVP 是 copy-paste assistant：批量上传卡图，按 Single Image 或 Front / Back Pair 生成 eBay-ready 标题，并给出 HIGH / MEDIUM / LOW / FAILED 分流。
 
 ## 目录结构
 

@@ -166,7 +166,7 @@ Rules:
 - Avoid duplicate wording.
 - Avoid generic descriptions such as `Rare Sports Card`, `Amazing SSP`, or `Collector Item`.
 - Do not write uncertain information as fact.
-- If a key market term is unresolved, either omit it or mark confidence UNSURE.
+- If a key market term is unresolved, either omit it or mark confidence MEDIUM or LOW.
 - Preserve collector shorthand when appropriate: Auto, Relic, Patch, Sketch, PMG, SIR, SAR, RC, 1st, Refractor, Gold, Blue, Red.
 - Keep title human-listable and copy-paste ready.
 - Avoid product repetition when space is tight.
@@ -178,7 +178,9 @@ Route the output for commercial listing readiness.
 
 Confidence does not mean the model feels good about the answer. Confidence means whether this listing can safely be copied into eBay with minimal human review.
 
-Default posture: do not choose HIGH unless the evidence supports it. A useful UNSURE is better than a wrong HIGH.
+Default posture: do not choose HIGH unless the evidence supports it. Under-confidence is acceptable. Over-confidence is dangerous. Optimize for operator trust, not HIGH percentage.
+
+HIGH does not mean "the model generated a title." HIGH means a professional listing operator can likely publish this title without review. Expected HIGH rate is roughly 10-20%.
 
 HIGH requirements:
 
@@ -190,16 +192,32 @@ HIGH requirements:
 - No obvious high-value field is missing from the title.
 - Title is commercially ready for eBay.
 
-UNSURE:
+MEDIUM:
 
-- Core identification is likely correct, but a key market element may need review.
-- Use UNSURE for ambiguous parallel, insert, card code, serial number, grade, or resolution.
-- Use UNSURE when a title is useful but not safe enough to list without human review.
-- Use UNSURE when pattern or parallel classification is visual-only and not supported by label/card text.
-- Use UNSURE for LOW-like cases where the item is not failed but is not commercially ready.
+- Core identity is correct and the listing is usable.
+- Some collectible terminology may require review.
+- Use MEDIUM for visually inferred parallel, insert, or pattern classifications.
+- Use MEDIUM when the card is mostly right but not safe enough to publish without review.
+- Operator should review before posting.
+- Expected MEDIUM rate is roughly 60-70%.
+
+LOW:
+
+- High-value information is likely missing.
+- Core fields conflict.
+- Significant uncertainty exists.
+- Use LOW for wrong or unsupported year, incomplete or wrong serial, guessed parallel family, missing auto, missing insert, missing SSP, missing Wave/Shimmer/Pattern/Foil, missing key collectible terminology, or reasoning that contradicts the title.
+- LOW items must be manually corrected before posting.
+- Expected LOW rate is roughly 10-20%.
 
 Downgrade triggers:
 
+- Do not allow HIGH when Wave, Shimmer, Pattern, or Foil classification is visual-only.
+- Do not allow HIGH when insert identification is visual-only.
+- Do not allow HIGH when SSP is not confirmed.
+- Do not allow HIGH when serial appears incomplete.
+- Do not allow HIGH when year is not supported by strong evidence.
+- Do not allow HIGH when the parallel family is uncertain.
 - Missing serial when a numbered card is visible.
 - Missing auto when an autograph is visible.
 - Missing or wrong year.
@@ -216,7 +234,7 @@ FAILED:
 - Unreadable core fields.
 - Cannot safely identify the item.
 
-Be conservative. A wrong HIGH is worse than a useful UNSURE.
+Be conservative. A wrong HIGH is worse than a useful MEDIUM or LOW.
 
 ### Confidence and Reasoning Consistency
 
@@ -250,7 +268,7 @@ Return exactly this shape:
 ```json
 {
   "title": "",
-  "confidence": "HIGH | UNSURE | FAILED",
+  "confidence": "HIGH | MEDIUM | LOW | FAILED",
   "reason": "",
   "fields": {
     "year": null,

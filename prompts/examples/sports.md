@@ -38,7 +38,7 @@ If the card looks like `17/99` but the first digit is partially obscured:
 
 - Use `/99` in title only if the exact numerator is not required.
 - Put `serial numerator partially obscured` in unresolved.
-- Confidence should be UNSURE unless the visible title remains list-ready without the exact numerator.
+- Confidence should be LOW unless the visible title remains list-ready without the exact numerator.
 
 ## Ohtani 50/50 Style Cards
 
@@ -48,4 +48,4 @@ If `50/50` is part of the set or theme:
 
 - Preserve it as product/set terminology.
 - Do not set `serial_number` to `50/50`.
-- If unsure, mark confidence UNSURE.
+- If unsure, mark confidence MEDIUM or LOW depending on whether the title is still commercially usable.

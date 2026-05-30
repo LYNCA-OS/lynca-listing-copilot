@@ -20,4 +20,4 @@ Rules:
 
 - Set `sketch: true` only when the item is visibly or textually a sketch card.
 - Extract `artist` if the artist name is printed, signed, or visible on a label.
-- If artist is not visible, put `artist unknown` in unresolved and confidence should usually be UNSURE.
+- If artist is not visible, put `artist unknown` in unresolved and confidence should usually be MEDIUM or LOW.
