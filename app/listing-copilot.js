@@ -1,5 +1,6 @@
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
+const MAX_CONCURRENT_WORKERS = 6;
 
 const state = {
   files: [],
@@ -262,6 +263,18 @@ async function processAsset(asset) {
   };
 }
 
+function failedResult(asset, error) {
+  return {
+    index: asset.index,
+    thumbnail: asset.images[0].dataUrl,
+    title: "",
+    confidence: "FAILED",
+    reason: error.message,
+    fields: {},
+    unresolved: ["request"]
+  };
+}
+
 async function processTitles() {
   if (!state.assets.length) return;
 
@@ -269,26 +282,29 @@ async function processTitles() {
   renderResults();
   elements.processButton.disabled = true;
 
-  for (const asset of state.assets) {
-    setStatus(`Processing ${asset.index} / ${state.assets.length}...`);
+  const queue = [...state.assets];
+  const workerCount = Math.min(MAX_CONCURRENT_WORKERS, queue.length);
+  let startedCount = 0;
 
-    try {
-      const result = await processAsset(asset);
-      state.results.push(result);
-    } catch (error) {
-      state.results.push({
-        index: asset.index,
-        thumbnail: asset.images[0].dataUrl,
-        title: "",
-        confidence: "FAILED",
-        reason: error.message,
-        fields: {},
-        unresolved: ["request"]
-      });
+  async function worker() {
+    while (queue.length) {
+      const asset = queue.shift();
+      startedCount += 1;
+      setStatus(`Processing ${startedCount} / ${state.assets.length}...`);
+
+      try {
+        const result = await processAsset(asset);
+        state.results.push(result);
+      } catch (error) {
+        state.results.push(failedResult(asset, error));
+      }
+
+      state.results.sort((a, b) => a.index - b.index);
+      renderResults();
     }
-
-    renderResults();
   }
+
+  await Promise.all(Array.from({ length: workerCount }, worker));
 
   elements.processButton.disabled = false;
   setStatus("Done.");
