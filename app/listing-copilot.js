@@ -7,6 +7,7 @@ const state = {
   mode: "single",
   assets: [],
   results: [],
+  modal: null,
   resolutionMap: {}
 };
 
@@ -15,6 +16,13 @@ const elements = {
   dropZone: document.querySelector("#dropZone"),
   processButton: document.querySelector("#processButton"),
   resetButton: document.querySelector("#resetButton"),
+  imageModal: document.querySelector("#imageModal"),
+  imageModalClose: document.querySelector("#imageModalClose"),
+  imageModalImage: document.querySelector("#imageModalImage"),
+  imageModalSide: document.querySelector("#imageModalSide"),
+  imageModalTitle: document.querySelector("#imageModalTitle"),
+  imageModalFileName: document.querySelector("#imageModalFileName"),
+  imageModalSwitcher: document.querySelector("#imageModalSwitcher"),
   statusText: document.querySelector("#statusText"),
   previewSummary: document.querySelector("#previewSummary"),
   assetPreviewList: document.querySelector("#assetPreviewList"),
@@ -49,6 +57,15 @@ function fileToAssetImage(file) {
 
 function formatCost(requests) {
   return `$${(requests * apiCostPerRequest).toFixed(3)}`;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function confidenceClass(confidence) {
@@ -123,6 +140,7 @@ function renderPreviews() {
   elements.processButton.disabled = !state.assets.length;
 
   if (!state.assets.length) {
+    closeImageModal();
     elements.previewSummary.textContent = "等待上传图片。";
     elements.assetPreviewList.innerHTML = `<div class="empty-state">上传 10 张图片后，Front / Back Pair 模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>`;
     return;
@@ -145,6 +163,11 @@ function resultForAsset(asset) {
   return state.results.find((result) => result.index === asset.index);
 }
 
+function imageSideLabel(imageIndex) {
+  if (state.mode !== "pair") return "Image";
+  return imageIndex === 0 ? "Front" : "Back";
+}
+
 function renderAssetRows() {
   if (!state.assets.length) return;
 
@@ -155,12 +178,16 @@ function renderAssetRows() {
       <article class="asset-row-card">
         <div class="asset-source">
           <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
-            ${asset.images.map((image) => `<img class="thumb" src="${image.dataUrl}" alt="${image.name}">`).join("")}
+            ${asset.images.map((image, imageIndex) => `
+              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="Open ${escapeHtml(imageSideLabel(imageIndex))} image preview">
+                <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
+              </button>
+            `).join("")}
           </div>
           <div class="preview-meta">
             <h3>Card Asset ${asset.index}</h3>
             ${asset.images.map((image, imageIndex) => `
-              <p class="file-name">${state.mode === "pair" && imageIndex === 0 ? "Front" : state.mode === "pair" ? "Back" : "Image"} · ${image.name}</p>
+              <p class="file-name">${imageSideLabel(imageIndex)} · ${escapeHtml(image.name)}</p>
             `).join("")}
             <span>${asset.images.length} image${asset.images.length > 1 ? "s" : ""}</span>
           </div>
@@ -212,6 +239,56 @@ function resultBox(result) {
   `;
 }
 
+function currentModalAsset() {
+  if (!state.modal) return null;
+  return state.assets.find((asset) => asset.index === state.modal.assetIndex) || null;
+}
+
+function renderImageModal() {
+  const asset = currentModalAsset();
+  if (!asset) {
+    closeImageModal();
+    return;
+  }
+
+  const imageIndex = Math.min(state.modal.imageIndex, asset.images.length - 1);
+  const image = asset.images[imageIndex];
+  const sideLabel = imageSideLabel(imageIndex);
+
+  elements.imageModalImage.src = image.dataUrl;
+  elements.imageModalImage.alt = image.name;
+  elements.imageModalSide.textContent = `${sideLabel.toUpperCase()} PREVIEW`;
+  elements.imageModalTitle.textContent = `Card Asset ${asset.index}`;
+  elements.imageModalFileName.textContent = image.name;
+  elements.imageModalSwitcher.innerHTML = asset.images.map((assetImage, index) => `
+    <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}">
+      ${imageSideLabel(index)}
+    </button>
+  `).join("");
+}
+
+function openImageModal(assetIndex, imageIndex) {
+  state.modal = { assetIndex, imageIndex };
+  renderImageModal();
+  elements.imageModal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  elements.imageModalClose.focus();
+}
+
+function closeImageModal() {
+  if (!state.modal) return;
+  state.modal = null;
+  elements.imageModal.setAttribute("aria-hidden", "true");
+  elements.imageModalImage.removeAttribute("src");
+  document.body.classList.remove("modal-open");
+}
+
+function switchModalImage(imageIndex) {
+  if (!state.modal) return;
+  state.modal.imageIndex = imageIndex;
+  renderImageModal();
+}
+
 function reasoningFields(fields, unresolved = []) {
   return [
     ["player / character", fields.player || fields.character],
@@ -242,6 +319,7 @@ async function handleFiles(fileList) {
   if (!imageFiles.length) return;
 
   setStatus("Loading images...");
+  closeImageModal();
   const images = await Promise.all(imageFiles.map(fileToAssetImage));
   state.files = images;
   state.results = [];
@@ -342,6 +420,7 @@ function resetTool() {
   state.files = [];
   state.assets = [];
   state.results = [];
+  closeImageModal();
   elements.imageInput.value = "";
   setStatus("");
   renderPreviews();
@@ -357,6 +436,7 @@ function bindEvents() {
     input.addEventListener("change", () => {
       state.mode = input.value;
       state.results = [];
+      closeImageModal();
       renderPreviews();
       renderResults();
     });
@@ -384,8 +464,30 @@ function bindEvents() {
   elements.resetButton.addEventListener("click", resetTool);
 
   elements.assetPreviewList.addEventListener("click", (event) => {
+    const previewButton = event.target.closest("[data-preview-asset]");
+    if (previewButton) {
+      openImageModal(Number(previewButton.dataset.previewAsset), Number(previewButton.dataset.previewImage));
+      return;
+    }
+
     const button = event.target.closest("[data-copy-title]");
     if (button) copyTitle(button);
+  });
+
+  elements.imageModal.addEventListener("click", (event) => {
+    if (event.target.closest("[data-modal-close]")) {
+      closeImageModal();
+      return;
+    }
+
+    const sideButton = event.target.closest("[data-modal-image]");
+    if (sideButton) switchModalImage(Number(sideButton.dataset.modalImage));
+  });
+
+  elements.imageModalClose.addEventListener("click", closeImageModal);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeImageModal();
   });
 }
 
