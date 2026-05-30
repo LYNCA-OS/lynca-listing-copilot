@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-copilot-title.js";
+import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.OPENAI_API_KEY = "test-key";
 process.env.OPENAI_LISTING_MODEL = "test-model";
+
+assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");
+assert.equal(resolveKnowledgeEntry("2010/11 Season"), null);
 
 function sign(value) {
   return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
@@ -230,5 +234,112 @@ const insertNotParallel = await callApi({
 
 assert.equal(insertNotParallel.fields.insert, "Kaboom");
 assert.equal(insertNotParallel.fields.parallel, null);
+
+const ultravioletCodeResolved = await callApi({
+  title: "2024 Panini Select Anthony Edwards",
+  confidence: "HIGH",
+  reason: "Card number UV-16 is visible on the back.",
+  fields: {
+    year: "2024",
+    brand: "Panini Select",
+    player: "Anthony Edwards",
+    card_number: "UV-16"
+  },
+  unresolved: []
+});
+
+assert.equal(ultravioletCodeResolved.fields.insert, "Ultraviolet");
+assert.match(ultravioletCodeResolved.title, /Ultraviolet/i);
+assert.equal(ultravioletCodeResolved.confidence, "MEDIUM");
+
+const imperialInkCodeResolved = await callApi({
+  title: "2024 Topps Chrome Ohtani Auto",
+  confidence: "HIGH",
+  reason: "Back text and card code IMP-OTI are visible.",
+  fields: {
+    year: "2024",
+    brand: "Topps Chrome",
+    player: "Shohei Ohtani",
+    card_number: "IMP-OTI",
+    auto: true
+  },
+  unresolved: []
+});
+
+assert.equal(imperialInkCodeResolved.fields.insert, "Imperial Ink");
+assert.match(imperialInkCodeResolved.title, /Imperial Ink/i);
+assert.doesNotMatch(imperialInkCodeResolved.fields.parallel || "", /Imperial Ink/i);
+
+const rookieRefreshCodeResolved = await callApi({
+  title: "2025 Bowman Chrome Cooper Flagg RC",
+  confidence: "HIGH",
+  reason: "Card code BRR-1 is printed on the back.",
+  fields: {
+    year: "2025",
+    brand: "Bowman Chrome",
+    player: "Cooper Flagg",
+    subset: "RC",
+    card_number: "BRR-1"
+  },
+  unresolved: []
+});
+
+assert.equal(rookieRefreshCodeResolved.fields.insert, "Bowman Rookie Refresh");
+assert.match(rookieRefreshCodeResolved.title, /Bowman Rookie Refresh/i);
+assert.equal(rookieRefreshCodeResolved.confidence, "MEDIUM");
+
+const clearDarkraiPsaLabel = await callApi({
+  title: "PSA 10 Pokemon Darkrai Holo",
+  confidence: "HIGH",
+  reason: "PSA label explicitly supports Pokemon subject and grade.",
+  fields: {
+    brand: "Pokemon",
+    character: "Darkrai",
+    parallel: "Holo",
+    grade_company: "PSA",
+    grade: "Gem Mint 10"
+  },
+  unresolved: []
+});
+
+assert.equal(clearDarkraiPsaLabel.confidence, "HIGH");
+assert.equal(clearDarkraiPsaLabel.title, "Pokemon Darkrai Holo PSA 10");
+
+const oneOfOneWithUncertainParallel = await callApi({
+  title: "2024 Topps Chrome Michael Jackson Green Refractor 01/01",
+  confidence: "HIGH",
+  reason: "Card text supports subject and serial; exact geometric parallel requires review.",
+  fields: {
+    year: "2024",
+    brand: "Topps Chrome",
+    player: "Michael Jackson",
+    parallel: "Green Geometric",
+    serial_number: "01/01",
+    one_of_one: true
+  },
+  unresolved: ["exact parallel requires operator review"]
+});
+
+assert.equal(oneOfOneWithUncertainParallel.confidence, "MEDIUM");
+assert.notEqual(oneOfOneWithUncertainParallel.confidence, "LOW");
+assert.match(oneOfOneWithUncertainParallel.title, /01\/01/);
+
+const dualPairingPreserved = await callApi({
+  title: "2024 Topps Chrome Charles Leclerc Lewis Hamilton Power Partnership",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports both subjects and Power Partnership insert.",
+  fields: {
+    year: "2024",
+    brand: "Topps Chrome",
+    player: "Charles Leclerc / Lewis Hamilton",
+    insert: "Power Partnership"
+  },
+  unresolved: []
+});
+
+assert.match(dualPairingPreserved.title, /Charles Leclerc/i);
+assert.match(dualPairingPreserved.title, /Lewis Hamilton/i);
+assert.match(dualPairingPreserved.title, /Power Partnership/i);
+assert.notEqual(dualPairingPreserved.confidence, "LOW");
 
 console.log("listing confidence audit mock tests passed");

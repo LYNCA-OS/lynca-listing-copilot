@@ -15,10 +15,10 @@ UI copy may be Simplified Chinese, and `reason` may be written in Simplified Chi
 Run the task in this order:
 
 1. Vision Engine
-2. Resolution Engine
+2. Knowledge Registry / Resolution Engine
 3. Collectible Category Logic
 4. Title Engine
-5. Confidence Engine
+5. Confidence Audit
 
 Do not skip directly from image to title. Extract structured facts first, resolve terminology second, then write the title.
 
@@ -68,11 +68,12 @@ Specific extraction rules:
 - Serial number extraction has higher business value than advanced parallel classification. Serial accuracy is a Tier 1 objective.
 - Serial numbers such as `2/5`, `031/150`, `1/1`, `04/10`, `436/500`, and `17/99` must be extracted only when the denominator and numerator are clearly visible.
 - Card codes such as `SR-KD`, `FIN-10`, `TP-NYK`, `VPA-VIN`, `FGRA-RA`, `ADT-CG`, `CM-KDR`, and `LD-9` must be extracted if visible.
+- Insert/card codes such as `UV-16`, `SE-28`, `BRR-1`, and `IMP-OTI` are important registry keys. Extract them in `card_number` when visible even if they do not all belong in the final title.
 - If a serial number looks ambiguous, put the ambiguous item in `unresolved` and do not mark confidence HIGH.
 - If a tradeoff exists between reading a serial number and classifying a rainbow parallel, prioritize the serial number every time.
 - If there are multiple unrelated cards or a lot listing, mark confidence FAILED.
 
-## 2. Resolution Engine
+## 2. Knowledge Registry / Resolution Engine
 
 Purpose: convert raw extracted fields into collectible-market terminology.
 
@@ -81,6 +82,7 @@ Inputs:
 - Vision Engine output
 - `resolution.json` hints
 - explicit text on the front and back images
+- the lightweight Listing Knowledge Registry provided at runtime
 
 Resolution priority:
 
@@ -99,6 +101,10 @@ Examples:
 - `FIN-10` -> `NBA Finals Nameplates`
 - `TP-NYK` -> `Triple Patches`
 - `FGRA-RA` -> `All-Star Futures Game Auto Relic`
+- `UV-16` -> `Ultraviolet`
+- `SE-28` -> `Shadow Etch`
+- `BRR-1` -> `Bowman Rookie Refresh`
+- `IMP-OTI` -> `Imperial Ink`
 
 If unresolved, mark unresolved. Do not invent.
 
@@ -126,6 +132,18 @@ High-value insert / case-hit / SSP terminology must be preserved when visible on
 
 - Kaboom
 - Ultraviolet
+- Shadow Etch
+- Future Script
+- Imperial Ink
+- Regalia Relics
+- All-Star Game
+- Power Partnership
+- Bowman Rookie Refresh
+- Fantasma
+- Cactus Jack
+- Finest Autographs
+- Finest Performance
+- Chrome Autograph Variation
 - Downtown
 - Color Blast
 - Stained Glass
@@ -146,6 +164,10 @@ High-value insert / case-hit / SSP terminology must be preserved when visible on
 - Genesis
 
 Do not force these labels from a weak visual guess. If visible but taxonomy is incomplete, use MEDIUM confidence. If a clearly visible high-value insert such as Kaboom, Ultraviolet, or Downtown is omitted from the title, downgrade confidence.
+
+Allowed generic parallels when the exact taxonomy is not supported: Green Refractor, Blue Refractor, Orange Refractor, Black Refractor.
+
+Do not output complex parallel names such as Green Geometric, Blue Mosaic, Sapphire, Mojo, Wave, or Shimmer unless card text, back text, card code, label text, or the registry clearly supports that terminology.
 
 ## 3. Collectible Category Logic
 
@@ -223,6 +245,7 @@ When uncertain, prefer:
 - `Orange Refractor 02/25` over `Orange Pattern Foil` with missing serial.
 - `Purple Parallel 137/199` over `Fuchsia Wave Refractor` without confidence.
 - `2025 Topps Chrome Quinshon Judkins RC Purple 130/175` over `2025 Topps Chrome Quinshon Judkins RC Purple Wave Refractor 130/175` unless Wave/Refractor is text-supported.
+- `Green Refractor 01/01` over `Green Geometric` when the serial is clear but the pattern name is not text-supported.
 
 Rules:
 
@@ -237,6 +260,7 @@ Rules:
 - Do not write uncertain information as fact.
 - If a key market term is unresolved, either omit it or mark confidence MEDIUM or LOW.
 - Preserve collector shorthand when appropriate: Auto, Relic, Patch, Sketch, PMG, SIR, SAR, RC, 1st, Refractor, Gold, Blue, Red.
+- Preserve Duo, Dual, Pairing, or Partnership wording for multi-subject cards when text or registry evidence supports it. Do not compress a true multi-person card into a normal single-player listing.
 - Keep title human-listable and copy-paste ready.
 - Avoid product repetition when space is tight.
 - Include team only when it helps searchability and does not displace higher-priority information.
@@ -281,6 +305,7 @@ MEDIUM:
 - Unknown parallel should usually be MEDIUM, not LOW, as long as player, year, product, and serial are usable.
 - Use MEDIUM for Power Chords or other insert identification unless all key fields are complete and evidence-backed.
 - Use MEDIUM when high-value insert/case-hit terminology is visible but the exact checklist taxonomy needs review.
+- Use MEDIUM for 1/1, SSP, case-hit, or high-value insert cases when core identity and serial/card number are clear but variant taxonomy still needs review.
 - Operator should review before posting.
 - Expected MEDIUM rate is roughly 60-70%.
 
@@ -312,6 +337,7 @@ Downgrade triggers:
 - Missing Wave, Shimmer, Pattern, Foil, SSP, or Insert when visible or strongly indicated should usually downgrade HIGH to MEDIUM when Tier 1 fields are complete.
 - Color-only output when a pattern-specific parallel is visible should usually downgrade HIGH to MEDIUM when Tier 1 fields are complete.
 - Visual guess without text evidence.
+- Parallel uncertainty alone should not downgrade to LOW when the subject, year/product, serial/card number, auto, and grade fields are otherwise usable.
 - Title omits a visible high-value field.
 - Reasoning claims a field is resolved but the title omits it.
 

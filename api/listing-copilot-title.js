@@ -1,6 +1,13 @@
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  hasComplexVisualParallelRisk,
+  highValueInsertTerms,
+  registryPromptSummary,
+  resolveKnowledgeEntry,
+  resolveKnowledgeFromFields
+} from "../lib/listing-knowledge-registry.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const defaultModel = "gpt-4.1-mini";
@@ -49,28 +56,6 @@ const backgroundTerms = [
   "seller branding"
 ];
 const backgroundTermPatterns = backgroundTerms.map((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"));
-const highValueInsertTerms = [
-  "Kaboom",
-  "Ultraviolet",
-  "Downtown",
-  "Color Blast",
-  "Stained Glass",
-  "Manga",
-  "Galactic",
-  "Blank Slate",
-  "Night Moves",
-  "Permit to Dominate",
-  "Net Marvels",
-  "Aurora",
-  "In Motion",
-  "Micro Mosaic",
-  "Zebra",
-  "Tiger",
-  "Elephant",
-  "Gold Vinyl",
-  "Black Pandora",
-  "Genesis"
-];
 const highValueInsertPatterns = highValueInsertTerms.map((term) => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"));
 
 function parseCookies(header) {
@@ -250,9 +235,17 @@ function normalizeFields(fields = {}) {
     }
   });
 
-  const parallelInsert = extractHighValueInsert(normalized.parallel);
-  if (parallelInsert && !normalized.insert) {
-    normalized.insert = parallelInsert;
+  const registryInsert = resolveKnowledgeFromFields(normalized);
+  if (registryInsert && !normalized.insert) {
+    normalized.insert = registryInsert.label;
+  }
+
+  const parallelInsert = resolveKnowledgeEntry(normalized.parallel) || (
+    extractHighValueInsert(normalized.parallel)
+      ? { label: extractHighValueInsert(normalized.parallel) }
+      : null
+  );
+  if (parallelInsert && normalized.insert === parallelInsert.label) {
     normalized.parallel = null;
   }
 
@@ -285,7 +278,7 @@ function titleIncludes(titleText, value) {
   if (!normalizedValue) return true;
   return normalizedValue
     .split(" ")
-    .filter(Boolean)
+    .filter((part) => part && part !== "/")
     .every((part) => titleText.includes(part));
 }
 
@@ -404,6 +397,9 @@ function hasVisualOnlyParallelRisk(fields, reasonText, unresolved) {
   ];
 
   if (!textMentionsAny(combined, patternTerms)) return false;
+  if (!textMentionsAny(combined, ["visual", "visible", "looks", "appears", "inferred", "likely", "guess"]) && hasComplexVisualParallelRisk(fields.parallel)) {
+    return !hasStrongEvidence(reasonText);
+  }
   return textMentionsAny(combined, ["visual", "visible", "looks", "appears", "inferred", "likely", "guess"])
     && !hasStrongEvidence(reasonText);
 }
@@ -411,6 +407,14 @@ function hasVisualOnlyParallelRisk(fields, reasonText, unresolved) {
 function auditMissingHighValueFields(title, fields) {
   const titleText = searchable(title);
   const missing = [];
+
+  if (fields.player && !titleIncludes(titleText, fields.player)) {
+    missing.push("player");
+  }
+
+  if (fields.character && !titleIncludes(titleText, fields.character)) {
+    missing.push("character");
+  }
 
   if (fields.year && (!titleText.includes(fields.year) || yearConflict(titleText, fields.year))) {
     missing.push("year");
@@ -420,7 +424,8 @@ function auditMissingHighValueFields(title, fields) {
     missing.push("serial");
   }
 
-  if (fields.card_number && !titleIncludes(titleText, fields.card_number)) {
+  const cardNumberRegistryEntry = resolveKnowledgeEntry(fields.card_number);
+  if (fields.card_number && !titleIncludes(titleText, fields.card_number) && !(cardNumberRegistryEntry && titleIncludes(titleText, cardNumberRegistryEntry.label))) {
     missing.push("card number");
   }
 
@@ -444,7 +449,7 @@ function auditMissingHighValueFields(title, fields) {
     missing.push("redemption");
   }
 
-  if (fields.one_of_one && !titleIncludesAny(titleText, ["1/1", "one of one"])) {
+  if (fields.one_of_one && !titleIncludesAny(titleText, ["1/1", "01/01", "001/001", "one of one"])) {
     missing.push("1/1");
   }
 
@@ -499,6 +504,8 @@ function calibrateConfidence({ title, confidence, reason, fields, unresolved }) 
       "missing auto",
       "missing serial",
       "missing grade",
+      "missing player",
+      "missing character",
       "missing card number",
       "missing 1/1",
       "missing rookie",
@@ -557,7 +564,7 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
     ...Object.values(result.fields || {})
   ].some((value) => typeof value === "string" && containsBackgroundTerm(value));
 
-  const highValueInsert = extractHighValueInsert(fields.insert);
+  const highValueInsert = resolveKnowledgeEntry(fields.insert)?.label || extractHighValueInsert(fields.insert);
   const strippedTitle = stripBackgroundTerms(result.title);
   const repairedHighValueInsert = Boolean(highValueInsert && !rawIncludes(strippedTitle, highValueInsert));
   const title = normalizeTitle(
@@ -735,6 +742,7 @@ async function createOpenAiTitle(payload) {
     "Return only valid JSON. Do not wrap the response in Markdown.",
     "Resolution hints:",
     resolutionHints(payload.resolutionMap) || "None",
+    registryPromptSummary(),
     "Asset context:",
     JSON.stringify({
       assetId: payload.assetId || null,

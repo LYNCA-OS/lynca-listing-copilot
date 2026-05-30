@@ -280,6 +280,7 @@ Training reports:
 - [Subset B Follow-Up Upgrades V1](training-subset-b-follow-up-v1.md)
 - [Pokemon Illustrator Disambiguation V1](training-pokemon-illustrator-disambiguation-v1.md)
 - [Case-Hit Insert Terminology V1](training-case-hit-insert-v1.md)
+- [Subset C Case Summary V1](training-subset-c-case-summary-v1.md)
 
 ## 13. Backlog / Not V1
 
