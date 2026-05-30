@@ -1,6 +1,12 @@
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
 const MAX_CONCURRENT_WORKERS = 6;
+const IMAGE_MAX_EDGE = 1400;
+const IMAGE_MIN_EDGE = 900;
+const IMAGE_INITIAL_QUALITY = 0.84;
+const IMAGE_MIN_QUALITY = 0.58;
+const TARGET_IMAGE_DATA_URL_CHARS = 1_250_000;
+const MAX_ASSET_REQUEST_BYTES = 3_400_000;
 
 const state = {
   files: [],
@@ -39,20 +45,78 @@ const elements = {
   }
 };
 
-function fileToAssetImage(file) {
+function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      resolve({
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: reader.result
-      });
-    };
+    reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = dataUrl;
+  });
+}
+
+function canvasToDataUrl(canvas, quality) {
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+function stringByteLength(value) {
+  return new Blob([String(value || "")]).size;
+}
+
+async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
+  const image = await loadImage(originalDataUrl);
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { alpha: false });
+
+  canvas.width = width;
+  canvas.height = height;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+
+  return {
+    dataUrl: canvasToDataUrl(canvas, quality),
+    width,
+    height
+  };
+}
+
+async function fileToAssetImage(file) {
+  const originalDataUrl = await readFileAsDataUrl(file);
+  let maxEdge = IMAGE_MAX_EDGE;
+  let quality = IMAGE_INITIAL_QUALITY;
+  let compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality);
+
+  while (compressed.dataUrl.length > TARGET_IMAGE_DATA_URL_CHARS && (quality > IMAGE_MIN_QUALITY || maxEdge > IMAGE_MIN_EDGE)) {
+    if (quality > IMAGE_MIN_QUALITY) {
+      quality = Math.max(IMAGE_MIN_QUALITY, quality - 0.08);
+    } else {
+      maxEdge = Math.max(IMAGE_MIN_EDGE, Math.round(maxEdge * 0.86));
+    }
+
+    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality);
+  }
+
+  return {
+    name: file.name,
+    type: "image/jpeg",
+    size: stringByteLength(compressed.dataUrl),
+    originalSize: file.size,
+    width: compressed.width,
+    height: compressed.height,
+    dataUrl: compressed.dataUrl
+  };
 }
 
 function formatCost(requests) {
@@ -335,22 +399,33 @@ async function handleFiles(fileList) {
 }
 
 async function processAsset(asset) {
+  const requestBody = JSON.stringify({
+    assetId: asset.id,
+    mode: state.mode,
+    maxTitleLength,
+    images: asset.images,
+    resolutionMap: state.resolutionMap
+  });
+  const requestBytes = stringByteLength(requestBody);
+
+  if (requestBytes > MAX_ASSET_REQUEST_BYTES) {
+    throw new Error(`图片请求体过大，请先裁剪或压缩后重试（约 ${(requestBytes / 1_000_000).toFixed(1)}MB）`);
+  }
+
   const response = await fetch("/api/listing-copilot-title", {
     method: "POST",
     headers: {
       "content-type": "application/json"
     },
     credentials: "same-origin",
-    body: JSON.stringify({
-      assetId: asset.id,
-      mode: state.mode,
-      maxTitleLength,
-      images: asset.images,
-      resolutionMap: state.resolutionMap
-    })
+    body: requestBody
   });
 
   if (!response.ok) {
+    if (response.status === 413) {
+      throw new Error("请求失败：413，图片请求体过大，请压缩或裁剪图片后重试。");
+    }
+
     throw new Error(`请求失败：${response.status}`);
   }
 
