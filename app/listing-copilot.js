@@ -426,9 +426,10 @@ async function processTitles() {
   }
 
   await Promise.all(Array.from({ length: workerCount }, worker));
+  renderResults();
 
   elements.processButton.disabled = false;
-  setStatus("Done.");
+  setStatus("Done. Results sorted by confidence.");
 }
 
 async function copyTitle(button) {
