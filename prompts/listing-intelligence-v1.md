@@ -261,6 +261,8 @@ Rules:
 - If a key market term is unresolved, either omit it or mark confidence MEDIUM or LOW.
 - Preserve collector shorthand when appropriate: Auto, Relic, Patch, Sketch, PMG, SIR, SAR, RC, 1st, Refractor, Gold, Blue, Red.
 - Preserve Duo, Dual, Pairing, or Partnership wording for multi-subject cards when text or registry evidence supports it. Do not compress a true multi-person card into a normal single-player listing.
+- Normalize autograph wording in `title` to the eBay shorthand `Auto`. Do not output `Autograph`, `Certified Autograph`, `On-card Autograph`, or `Sticker Autograph` in the title. Use `Auto`, `Dual Auto`, `Triple Auto`, `1st Bowman Auto`, `RPA Auto`, or `Patch Auto`.
+- Internal metadata and reasoning may mention autograph details, but the listing title should use `Auto`.
 - Keep title human-listable and copy-paste ready.
 - Avoid product repetition when space is tight.
 - Include team only when it helps searchability and does not displace higher-priority information.

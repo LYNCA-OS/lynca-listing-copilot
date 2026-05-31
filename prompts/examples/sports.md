@@ -32,6 +32,26 @@ Fields:
 
 Confidence: HIGH only if all these details are visible or safely resolved.
 
+## Autograph Normalization
+
+Use `Auto` in eBay titles, not `Autograph`.
+
+Good:
+
+`2025 Bowman Chrome Test Player 1st Bowman Auto 137/199`
+
+Good:
+
+`2024 Topps Chrome Test Player Dual Auto 04/10`
+
+Avoid:
+
+`2025 Bowman Chrome Test Player Certified Autograph 137/199`
+
+Avoid:
+
+`2024 Topps Chrome Test Player On-card Autograph`
+
 ## Ambiguous Serial
 
 If the card looks like `17/99` but the first digit is partially obscured:

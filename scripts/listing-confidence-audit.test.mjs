@@ -383,4 +383,101 @@ assert.doesNotMatch(redundantTitleCleaned.title, /Rookie RC/i);
 assert.doesNotMatch(redundantTitleCleaned.title, /Autograph Auto/i);
 assert.doesNotMatch(redundantTitleCleaned.title, /Refractor Parallel/i);
 
+const autographNormalized = await callApi({
+  title: "2025 Topps Chrome Mike Trout Autograph",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports Mike Trout autograph.",
+  fields: {
+    year: "2025",
+    brand: "Topps Chrome",
+    player: "Mike Trout",
+    auto: true
+  },
+  unresolved: []
+});
+
+assert.match(autographNormalized.title, /Mike Trout Auto/);
+assert.doesNotMatch(autographNormalized.title, /Autograph/i);
+
+const dualAutographNormalized = await callApi({
+  title: "2025 Topps Chrome Mike Trout Shohei Ohtani Dual Autograph",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports dual autograph.",
+  fields: {
+    year: "2025",
+    brand: "Topps Chrome",
+    player: "Mike Trout / Shohei Ohtani",
+    auto: true
+  },
+  unresolved: []
+});
+
+assert.match(dualAutographNormalized.title, /Dual Auto/);
+assert.doesNotMatch(dualAutographNormalized.title, /Autograph/i);
+
+const tripleAutographNormalized = await callApi({
+  title: "2025 Topps Chrome Test Player Triple Autograph",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports triple autograph.",
+  fields: {
+    year: "2025",
+    brand: "Topps Chrome",
+    player: "Test Player",
+    auto: true
+  },
+  unresolved: []
+});
+
+assert.match(tripleAutographNormalized.title, /Triple Auto/);
+assert.doesNotMatch(tripleAutographNormalized.title, /Autograph/i);
+
+const certifiedAutographNormalized = await callApi({
+  title: "2025 Bowman Chrome Test Player 1st Bowman Certified Autograph",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports certified autograph.",
+  fields: {
+    year: "2025",
+    brand: "Bowman Chrome",
+    player: "Test Player",
+    subset: "1st Bowman",
+    auto: true
+  },
+  unresolved: []
+});
+
+assert.match(certifiedAutographNormalized.title, /1st Bowman Auto/);
+assert.doesNotMatch(certifiedAutographNormalized.title, /Certified Autograph|Autograph/i);
+
+const onCardAutographNormalized = await callApi({
+  title: "2025 Topps Chrome Test Player On-card Autograph",
+  confidence: "HIGH",
+  reason: "Reasoning may mention on-card autograph detail.",
+  fields: {
+    year: "2025",
+    brand: "Topps Chrome",
+    player: "Test Player",
+    auto: true
+  },
+  unresolved: []
+});
+
+assert.match(onCardAutographNormalized.title, /Test Player Auto/);
+assert.doesNotMatch(onCardAutographNormalized.title, /On-card Autograph|Autograph/i);
+
+const stickerAutographNormalized = await callApi({
+  title: "2025 Topps Chrome Test Player Sticker Autograph",
+  confidence: "HIGH",
+  reason: "Reasoning may mention sticker autograph detail.",
+  fields: {
+    year: "2025",
+    brand: "Topps Chrome",
+    player: "Test Player",
+    auto: true
+  },
+  unresolved: []
+});
+
+assert.match(stickerAutographNormalized.title, /Test Player Auto/);
+assert.doesNotMatch(stickerAutographNormalized.title, /Sticker Autograph|Autograph/i);
+
 console.log("listing confidence audit mock tests passed");

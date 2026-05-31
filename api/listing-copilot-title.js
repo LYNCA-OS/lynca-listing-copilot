@@ -116,6 +116,9 @@ function normalizeTitle(title, maxLength) {
 
 function cleanupTitleWording(title, maxLength) {
   const cleaned = String(title || "")
+    .replace(/\b(?:Certified\s+)?(?:On[- ]?card\s+|Sticker\s+)?Autograph\b/gi, "Auto")
+    .replace(/\bDual\s+Auto\b/gi, "Dual Auto")
+    .replace(/\bTriple\s+Auto\b/gi, "Triple Auto")
     .replace(/\bRookie\s+RC\s+Card\b/gi, "RC")
     .replace(/\bRookie\s+RC\b/gi, "RC")
     .replace(/\bAutograph\s+Auto\b/gi, "Auto")
