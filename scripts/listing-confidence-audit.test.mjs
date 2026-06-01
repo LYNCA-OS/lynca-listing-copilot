@@ -25,7 +25,7 @@ function sessionCookie() {
   return `lynca_metaverse_session=${payload}.${sign(payload)}`;
 }
 
-async function callApi(openAiResult) {
+async function callApi(openAiResult, options = {}) {
   globalThis.fetch = async () => ({
     ok: true,
     json: async () => ({ output_text: JSON.stringify(openAiResult) })
@@ -53,7 +53,7 @@ async function callApi(openAiResult) {
     mode: "single",
     images: [{ name: "card.webp", dataUrl: "data:image/webp;base64,AAAA" }],
     resolutionMap: {},
-    maxTitleLength: 80
+    maxTitleLength: options.maxTitleLength || 80
   }));
   req.emit("end");
   await promise;
@@ -479,5 +479,116 @@ const stickerAutographNormalized = await callApi({
 
 assert.match(stickerAutographNormalized.title, /Test Player Auto/);
 assert.doesNotMatch(stickerAutographNormalized.title, /Sticker Autograph|Autograph/i);
+
+const cooperFlaggChromeRookieAuto = await callApi({
+  title: "2025 Topps Chrome Cooper Flagg RC Auto PSA 9 Auto 10 #TCAR-CF",
+  confidence: "HIGH",
+  reason: "PSA label supports 2025 Topps Chrome Cooper Flagg Chrome Rookie Auto #TCAR-CF PSA 9 Auto 10.",
+  fields: {
+    year: "2025",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Cooper Flagg",
+    subset: "RC",
+    card_number: "TCAR-CF",
+    grade_company: "PSA",
+    grade: "9",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(cooperFlaggChromeRookieAuto.title, /Chrome Rookie Auto/i);
+assert.doesNotMatch(cooperFlaggChromeRookieAuto.title, /\bBase\b/i);
+assert.match(cooperFlaggChromeRookieAuto.title, /PSA 9 Auto 10/i);
+assert.match(cooperFlaggChromeRookieAuto.title, /#TCAR-CF/i);
+
+const curryRedPropulsion = await callApi({
+  title: "2026 Topps Chrome Stephen Curry Golden State Warriors Propulsion 2/5",
+  confidence: "HIGH",
+  reason: "Back text supports 2025-26 Topps Cosmic Chrome Red Propulsion SSP serial 2/5.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Cosmic Chrome",
+    player: "Stephen Curry",
+    insert: "Red Propulsion",
+    serial_number: "2/5"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(curryRedPropulsion.title, /Cosmic Chrome/i);
+assert.match(curryRedPropulsion.title, /Red Propulsion/i);
+assert.match(curryRedPropulsion.title, /2\/5/);
+assert.doesNotMatch(curryRedPropulsion.title, /^2026 Topps Chrome Stephen Curry/i);
+
+const immaculateDualSignatures = await callApi({
+  title: "2015-16 Panini Immaculate Collection Shaquille O'Neal Anfernee Hardaway Dual 01/25",
+  confidence: "HIGH",
+  reason: "Slab text supports Dual Signatures Jersey No. #35 S. O'Neal / A. Hardaway 01/25.",
+  fields: {
+    year: "2015-16",
+    brand: "Panini",
+    product: "Immaculate Collection",
+    player: "Shaquille O'Neal / Anfernee Hardaway",
+    insert: "Dual Signatures Jersey No.",
+    card_number: "35",
+    serial_number: "01/25"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(immaculateDualSignatures.title, /Dual Signatures/i);
+assert.match(immaculateDualSignatures.title, /Shaquille O'Neal/i);
+assert.match(immaculateDualSignatures.title, /Anfernee Hardaway/i);
+assert.match(immaculateDualSignatures.title, /01\/25/);
+assert.match(immaculateDualSignatures.title, /#35/);
+
+const duoLogomanAutographs = await callApi({
+  title: "2019-20 Panini Immaculate Collection PJ Washington Jr Tyler Herro Dual Auto One",
+  confidence: "HIGH",
+  reason: "Card text supports Duo Logoman Autographs with both players and One of One.",
+  fields: {
+    year: "2019-20",
+    brand: "Panini",
+    product: "Immaculate Collection",
+    player: "PJ Washington Jr / Tyler Herro",
+    insert: "Duo Logoman Autographs",
+    auto: true,
+    relic: true,
+    one_of_one: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(duoLogomanAutographs.title, /Duo Logoman Autographs/i);
+assert.match(duoLogomanAutographs.title, /PJ Washington Jr/i);
+assert.match(duoLogomanAutographs.title, /Tyler Herro/i);
+assert.match(duoLogomanAutographs.title, /1\/1/);
+assert.doesNotMatch(duoLogomanAutographs.title, /\bOne\b/i);
+
+const durantStarSwatch = await callApi({
+  title: "2015-16 Panini Flawless Kevin Durant Thunder Patch Auto 04/10",
+  confidence: "HIGH",
+  reason: "Registry supports SR-KD as Star Swatch Signatures and checklist supports Platinum parallel.",
+  fields: {
+    year: "2015-16",
+    brand: "Panini",
+    product: "Flawless",
+    player: "Kevin Durant",
+    card_number: "SR-KD",
+    parallel: "Platinum",
+    serial_number: "04/10",
+    auto: true,
+    patch: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(durantStarSwatch.title, /Star Swatch Signatures/i);
+assert.match(durantStarSwatch.title, /Platinum/i);
+assert.match(durantStarSwatch.title, /04\/10/);
+assert.doesNotMatch(durantStarSwatch.title, /Patch Auto/i);
 
 console.log("listing confidence audit mock tests passed");

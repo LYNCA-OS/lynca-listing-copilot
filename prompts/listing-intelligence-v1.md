@@ -108,6 +108,19 @@ Examples:
 
 If unresolved, mark unresolved. Do not invent.
 
+Official card type beats generic description. If an official card type or subset is resolved from slab label, card text, card number pattern, or registry, use it instead of generic fallback wording.
+
+Examples:
+
+- `Chrome Rookie Auto` > `RC Auto`
+- `Star Swatch Signatures` > `Patch Auto`
+- `Duo Logoman Autographs` > `Dual Auto`
+- `Dual Signatures` > `Dual`
+- `Kaboom` > generic `Insert`
+- `Color Blast` > generic `Insert`
+
+Do not hallucinate `Base`. Use `Base` only when slab/card text explicitly says Base, registry confirms the card number is the base version, or a trusted reference title says Base without conflicting with visible evidence.
+
 ### Parallel and Insert Taxonomy Awareness
 
 Do not force the Vision Engine to solve all taxonomy problems during MVP. Vision should prioritize observable facts: OCR accuracy, serial accuracy, label accuracy, and card number accuracy.
@@ -164,6 +177,16 @@ High-value insert / case-hit / SSP terminology must be preserved when visible on
 - Genesis
 
 Do not force these labels from a weak visual guess. If visible but taxonomy is incomplete, use MEDIUM confidence. If a clearly visible high-value insert such as Kaboom, Ultraviolet, or Downtown is omitted from the title, downgrade confidence.
+
+Product hierarchy must stay separate. Do not collapse these products into each other:
+
+- Topps Chrome
+- Topps Cosmic Chrome
+- Topps Chrome Sapphire
+- Topps Chrome Update
+- Bowman Chrome
+
+`Cosmic Chrome` must not be normalized to plain `Topps Chrome`.
 
 Allowed generic parallels when the exact taxonomy is not supported: Green Refractor, Blue Refractor, Orange Refractor, Black Refractor.
 
@@ -249,7 +272,7 @@ When uncertain, prefer:
 
 Rules:
 
-- Use stable title order by default: Year + Brand/Product + Set/Insert + Subject + Parallel + Serial + Auto/Relic/Patch + Grade.
+- Use stable title order by default: Year + Brand/Product + Official card type or Insert + Subject + RC/Rookie if applicable + Parallel/Variation + Serial + Auto/Relic/Patch if not already contained in official card type + Grade + Card number.
 - PSA, BGS, CGC, grade company, and grade number should be near the end of the title by default.
 - Do not put grading information at the beginning unless the card identity is primarily derived from the slab label and no better card-front identity is available.
 - Preferred example: `2000 Pokemon Japanese Neo 3 Celebi Holo #251 PSA 9`.

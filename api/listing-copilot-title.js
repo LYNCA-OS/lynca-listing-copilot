@@ -119,6 +119,8 @@ function cleanupTitleWording(title, maxLength) {
     .replace(/\b(?:Certified\s+)?(?:On[- ]?card\s+|Sticker\s+)?Autograph\b/gi, "Auto")
     .replace(/\bDual\s+Auto\b/gi, "Dual Auto")
     .replace(/\bTriple\s+Auto\b/gi, "Triple Auto")
+    .replace(/\bOne\s+of\s+One\b/gi, "1/1")
+    .replace(/\bOne\b(?=\s*$)/gi, "1/1")
     .replace(/\bRookie\s+RC\s+Card\b/gi, "RC")
     .replace(/\bRookie\s+RC\b/gi, "RC")
     .replace(/\bAutograph\s+Auto\b/gi, "Auto")
@@ -165,6 +167,26 @@ function rawIncludes(value, needle) {
 function ensureTitleTerm(title, term) {
   if (!term || rawIncludes(title, term)) return title;
   return `${title} ${term}`.replace(/\s+/g, " ").trim();
+}
+
+function ensureTitleTerms(title, terms) {
+  return terms.reduce((currentTitle, term) => ensureTitleTerm(currentTitle, term), title);
+}
+
+function compactLowPriorityTitleTerms(title, fields, maxLength) {
+  if (String(title || "").length <= maxLength) return title;
+
+  const lowPriorityTerms = [
+    fields.team,
+    "Golden State Warriors",
+    "Oklahoma City Thunder",
+    "Thunder"
+  ].filter(Boolean);
+
+  return lowPriorityTerms.reduce(
+    (currentTitle, term) => stripLiteralPhrase(currentTitle, term),
+    title
+  ).replace(/\s+/g, " ").trim();
 }
 
 function containsBackgroundTerm(value) {
@@ -255,6 +277,34 @@ function normalizeFields(fields = {}) {
   const registryInsert = resolveKnowledgeFromFields(normalized);
   if (registryInsert && !normalized.insert) {
     normalized.insert = registryInsert.label;
+  }
+
+  if (/^TCAR[- ]/i.test(normalized.card_number || "")) {
+    normalized.insert = "Chrome Rookie Auto";
+    normalized.auto = true;
+  }
+
+  if (/^SR[- ]/i.test(normalized.card_number || "")) {
+    normalized.insert = "Star Swatch Signatures";
+  }
+
+  if (/cosmic chrome/i.test(`${normalized.brand || ""} ${normalized.product || ""} ${normalized.set || ""}`)) {
+    normalized.product = "Topps Cosmic Chrome";
+    if (normalized.brand && /topps/i.test(normalized.brand)) normalized.brand = "Topps";
+  }
+
+  if (/red propulsion/i.test(`${normalized.insert || ""} ${normalized.parallel || ""} ${normalized.subset || ""}`)) {
+    normalized.insert = "Red Propulsion";
+    normalized.parallel = null;
+  }
+
+  if (/dual signatures/i.test(`${normalized.insert || ""} ${normalized.subset || ""}`)) {
+    normalized.insert = "Dual Signatures";
+  }
+
+  if (/duo logoman|dual rookie logoman/i.test(`${normalized.insert || ""} ${normalized.subset || ""}`)) {
+    normalized.insert = "Duo Logoman Autographs";
+    normalized.auto = true;
   }
 
   const parallelInsert = resolveKnowledgeEntry(normalized.parallel) || (
@@ -586,7 +636,7 @@ function calibrateConfidence({ title, confidence, reason, fields, unresolved }) 
 function appendCalibrationReason(reason, calibrationReason) {
   const base = String(reason || "").trim();
   const combined = base ? `${base} ${calibrationReason}` : calibrationReason;
-  return combined.slice(0, 240);
+  return combined.slice(0, 520);
 }
 
 function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLength) {
@@ -597,12 +647,57 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
   ].some((value) => typeof value === "string" && containsBackgroundTerm(value));
 
   const highValueInsert = resolveKnowledgeEntry(fields.insert)?.label || extractHighValueInsert(fields.insert);
-  const strippedTitle = stripBackgroundTerms(result.title);
+  const requiredTitleTerms = [
+    fields.product === "Topps Cosmic Chrome" ? "Cosmic Chrome" : null,
+    highValueInsert,
+    fields.parallel === "Platinum" ? "Platinum" : null,
+    fields.card_number ? `#${String(fields.card_number).replace(/^#/, "")}` : null,
+    fields.one_of_one ? "1/1" : null,
+    fields.grade_company && fields.grade ? `${fields.grade_company} ${String(fields.grade).match(/\d+(?:\.\d+)?/)?.[0] || fields.grade}` : null,
+    fields.grade_company && /auto/i.test(String(result.title || "")) && /auto\s*10/i.test(String(result.title || "")) ? "Auto 10" : null
+  ].filter(Boolean);
+  let strippedTitle = stripBackgroundTerms(result.title)
+    .replace(/\bBase\b/gi, fields.insert || fields.parallel ? " " : "Base")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (fields.product === "Topps Cosmic Chrome") {
+    strippedTitle = strippedTitle
+      .replace(/\bTopps\s+Chrome\s+Cosmic\b/gi, "Topps Cosmic Chrome")
+      .replace(/\bTopps\s+Chrome\b/gi, "Topps Cosmic Chrome");
+  }
+
+  if (fields.year && yearConflict(searchable(strippedTitle), fields.year)) {
+    strippedTitle = strippedTitle.replace(/\b20\d{2}(?:-\d{2})?\b/, fields.year);
+  }
+
+  if (fields.one_of_one) {
+    strippedTitle = strippedTitle
+      .replace(/\bOne\s+of\s+One\b/gi, "1/1")
+      .replace(/\bOne\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  if (highValueInsert === "Red Propulsion") {
+    strippedTitle = strippedTitle.replace(/\bPropulsion\b/gi, "Red Propulsion");
+  }
+
+  if (highValueInsert === "Dual Signatures") {
+    strippedTitle = strippedTitle.replace(/\bDual\b/gi, "Dual Signatures");
+  }
+
+  if (highValueInsert === "Duo Logoman Autographs") {
+    strippedTitle = strippedTitle.replace(/\bDual\s+Auto\b|\bDual\b/gi, "Duo Logoman Autographs");
+  }
+
+  if (highValueInsert === "Star Swatch Signatures") {
+    strippedTitle = strippedTitle.replace(/\bPatch\s+Auto\b/gi, "Star Swatch Signatures");
+  }
+
+  const repairedTitle = compactLowPriorityTitleTerms(ensureTitleTerms(strippedTitle, requiredTitleTerms), fields, maxTitleLength);
   const repairedHighValueInsert = Boolean(highValueInsert && !rawIncludes(strippedTitle, highValueInsert));
-  const title = normalizeTitle(
-    repairedHighValueInsert ? ensureTitleTerm(strippedTitle, highValueInsert) : strippedTitle,
-    maxTitleLength
-  );
+  const title = normalizeTitle(repairedTitle, maxTitleLength);
   let reason = stripBackgroundTerms(result.reason);
   let guardedConfidence = confidence;
   const guardedUnresolved = [...unresolved];
@@ -738,7 +833,7 @@ function normalizeAiResult(result, maxTitleLength) {
   const calibrated = calibrateConfidence({
     title,
     confidence: sanitized.confidence,
-    reason: sanitized.reason.slice(0, 240),
+    reason: sanitized.reason.slice(0, 520),
     fields,
     unresolved: sanitized.hadBackgroundContamination
       ? [...sanitized.unresolved, "background branding ignored"]
