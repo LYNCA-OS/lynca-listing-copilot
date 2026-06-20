@@ -96,6 +96,20 @@ Current V1.x implementation remains patch-based by approved decision.
 
 ## 4. Source-of-Truth Documents
 
+Recommended reading order:
+
+```text
+foundation-v1.md
+  ->
+sports-card-title-standard-v1.md
+  ->
+architecture-decisions-v1.md
+  ->
+listing-copilot-roadmap-v1.md
+  ->
+prompt-modernization-plan-v1.md
+```
+
 ### `spec-v1.md`
 
 Original MVP product specification.
@@ -170,7 +184,7 @@ Evidence
   |
 Resolver
   |
-Grammar
+Grammar Engine
   |
 Cleanup
   |
@@ -181,7 +195,7 @@ Meaning:
 
 - Evidence extracts facts.
 - Resolver decides which facts win.
-- Grammar renders the title from resolved facts.
+- Grammar Engine renders the title from resolved facts.
 - Cleanup formats the final string.
 - Final Title is copy-paste-ready for the operator.
 
@@ -221,6 +235,8 @@ The backend cleanup layer also performs pragmatic semantic repairs:
 
 This is acceptable for V1.x, but it is not the long-term architecture.
 
+Future Cleanup should handle only formatting and deduplication. Resolver should eventually own semantic decisions.
+
 ## 7. Future Migration Path
 
 ### Phase A: Current Production
@@ -238,6 +254,8 @@ Focus:
 ### Phase B: Evidence Engine
 
 Separate extracted facts from generated titles.
+
+Vision is the upstream model/input perception step. Evidence Engine begins after vision output is converted into structured facts.
 
 Future evidence concept:
 
@@ -313,6 +331,8 @@ Purpose:
 ### Phase E: Knowledge Database
 
 Build a future cloud knowledge system.
+
+The current Registry is the local lightweight knowledge layer. The future Knowledge Database is the cloud/database evolution of that registry.
 
 Possible knowledge domains:
 

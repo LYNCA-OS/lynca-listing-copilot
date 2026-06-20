@@ -31,6 +31,8 @@ Current fields remain:
 
 Future Evidence Engine may redesign schema.
 
+`Manufacturer` is the conceptual product-owner field in foundation documents. In current V1.x schema, it is represented by `brand`.
+
 ## ADR-002: Evidence Provenance
 
 Decision:
@@ -139,6 +141,8 @@ Not Attributes:
 
 These belong to Card Type.
 
+Auto, Patch, and Relic remain visible evidence fields and common Card Type components, but they are not Attributes.
+
 ## ADR-005: Grammar Engine
 
 Decision:
@@ -174,7 +178,7 @@ Future:
 
 Resolver owns semantics.
 
-Cleanup owns formatting.
+Cleanup owns formatting and deduplication.
 
 ## ADR-007: Grading Semantics
 

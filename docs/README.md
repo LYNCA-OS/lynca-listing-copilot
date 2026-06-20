@@ -4,6 +4,20 @@ This folder contains product specs, architecture decisions, roadmap notes, and t
 
 ## Source-of-Truth Documents
 
+Recommended reading order:
+
+1. `foundation-v1.md`
+2. `sports-card-title-standard-v1.md`
+3. `architecture-decisions-v1.md`
+4. `listing-copilot-roadmap-v1.md`
+5. `prompt-modernization-plan-v1.md`
+
+### `foundation-v1.md`
+
+Top-level map of the Listing Copilot foundation.
+
+Use this as the first stop for future engineers and future Codex sessions.
+
 ### `sports-card-title-standard-v1.md`
 
 Defines the Sports Card Title Standard v1.

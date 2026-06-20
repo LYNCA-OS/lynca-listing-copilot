@@ -48,6 +48,8 @@ Evidence fields:
 - Korea
 - Grade
 
+Auto, Patch, and Relic are visible evidence fields and common Card Type components. They are not Attributes.
+
 The goal of this layer is:
 
 Fact Extraction
@@ -209,6 +211,8 @@ Examples:
 - Leaf
 - Futera
 
+Manufacturer is the conceptual product-owner field. In the current V1.x schema, this is represented by `brand`.
+
 #### Product
 
 Examples:
@@ -287,6 +291,8 @@ Examples:
 
 Attributes can coexist.
 
+Auto, Patch, and Relic are not Attributes. They belong to Card Type or card-type components.
+
 #### Grade
 
 Always appears last.
@@ -302,9 +308,11 @@ Examples:
 
 ## Layer 4: Cleanup Layer
 
-Cleanup Layer does not understand cards.
+Future Cleanup Layer does not understand cards.
 
-Cleanup Layer only formats titles.
+Future Cleanup Layer only formats titles.
+
+Current V1.x Cleanup may perform pragmatic semantic repairs. Future Resolver should own semantic decisions, while Cleanup should own formatting and deduplication.
 
 ### Manufacturer Deduplication
 
@@ -434,5 +442,7 @@ Cleanup Layer
   |
 Final Title
 ```
+
+Vision is the upstream model/input perception step. Evidence Layer begins after vision output is converted into structured facts.
 
 The long-term objective is to transition away from patch-heavy title generation and toward a structured grammar-based title engine.

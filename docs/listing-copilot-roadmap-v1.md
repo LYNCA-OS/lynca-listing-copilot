@@ -59,6 +59,8 @@ Current extraction relies on the Vision / AI response to provide:
 - grade
 - auto / relic / patch / sketch / redemption flags
 
+Vision is the upstream model/input perception step. Evidence Engine begins after vision output is converted into structured facts.
+
 Strength:
 
 The system can already capture many commercially important sports-card facts.
@@ -109,6 +111,8 @@ Limitation:
 
 Cleanup currently performs semantic work. In the future, semantic decisions should move to the Resolver Engine and cleanup should focus on formatting.
 
+Current V1.x Cleanup may perform pragmatic semantic repairs. Future Cleanup should own formatting and deduplication only.
+
 ### Registry System
 
 Current registry behavior supports known inserts, card types, and high-value terms.
@@ -130,6 +134,8 @@ Registry knowledge helps protect official card types and avoid generic downgrade
 Limitation:
 
 The registry is lightweight. It is not yet a cloud knowledge system with checklist memory, historical product structure, or enterprise training data.
+
+The current Registry is the local lightweight knowledge layer. The future Knowledge Database is the cloud/database evolution of the registry.
 
 ### Grading Semantics
 
@@ -178,6 +184,8 @@ Example evidence fields:
 - serial
 - attributes
 - grade
+
+`manufacturer` is the conceptual product-owner field. In current V1.x schema, it is represented by `brand`.
 
 ### Why Provenance Matters
 

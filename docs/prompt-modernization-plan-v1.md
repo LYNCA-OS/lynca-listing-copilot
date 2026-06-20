@@ -147,6 +147,8 @@ Allowed in V1.x cleanup:
 
 Per `architecture-decisions-v1.md`, V1.x cleanup may keep semantic patches until Resolver and Grammar Engine exist.
 
+Future Cleanup should own formatting and deduplication only.
+
 Future cleanup should not decide:
 
 - which year wins
@@ -235,6 +237,8 @@ ADR-004 says:
 - RC, SSP, Case Hit, JPN, Korea are Attributes.
 - Auto, Patch, Relic belong to Card Type.
 
+Auto, Patch, and Relic remain visible evidence fields and common card-type components, but they are not Attributes.
+
 Modernization priority: Medium
 
 ### Grading Semantics
@@ -296,6 +300,7 @@ These should be addressed first when prompt modernization begins:
 These should follow after high-priority alignment:
 
 - Rename conceptual `brand` language to `manufacturer` in explanatory text while keeping V1.x schema unchanged.
+- Treat `manufacturer` as the conceptual product-owner field and `brand` as the current V1.x schema representation.
 - Clarify Card Type vs Parallel vs Variation using ADR-003.
 - Clarify Attributes using ADR-004.
 - Move product protection and registry mapping instructions into Resolver documentation once implemented.
