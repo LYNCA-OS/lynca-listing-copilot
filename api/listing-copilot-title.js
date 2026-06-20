@@ -145,7 +145,7 @@ function stripChecklistCardNumbers(title, fields = {}) {
 }
 
 function cleanupTitleWording(title, maxLength) {
-  const cleaned = suppressDuplicateAutoTerms(normalizePsaGradeDisplay(normalizeSerialText(title)
+  const cleaned = suppressDuplicateAutoTerms(normalizeGradeDisplay(normalizeSerialText(title)
     .replace(/\b(Topps|Panini|Upper Deck|Bowman|Fleer|Donruss)\s+\1\b/gi, "$1")
     .replace(/\bTopps\s+Chrome\s+Autograph\s+Card\b/gi, "Topps Chrome Auto")
     .replace(/\bChrome\s+Autograph\s+Card\b/gi, "Chrome Auto")
@@ -174,6 +174,10 @@ function cleanupTitleWording(title, maxLength) {
   return normalizeTitle(cleaned, maxLength);
 }
 
+function normalizeGradeDisplay(title) {
+  return normalizeBgsGradeDisplay(normalizePsaGradeDisplay(title));
+}
+
 function normalizePsaGradeDisplay(title) {
   return String(title || "")
     .replace(/\bPSA\s+(AUTH|AUTHENTIC)\s+Auto\s+(AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b/gi, (_, cardGrade, autoGrade) => {
@@ -190,9 +194,35 @@ function normalizePsaGradeDisplay(title) {
     .replace(/\bPSA\s+AUTO\s+(AUTH|AUTHENTIC)\b/gi, "PSA AUTO Auth");
 }
 
+function normalizeBgsGradeDisplay(title) {
+  return String(title || "")
+    .replace(/\b(?:Gem\s+Mint\s+|Mint\s+)?Beckett\s+(Altered|Authentic|Auth|\d+(?:\.\d+)?)\s+BGS\s+\1\s+Auto\s+(\d+(?:\.\d+)?)\b/gi, (_, cardGrade, autoGrade) => {
+      return `BGS ${normalizeBgsGradeToken(cardGrade)}/${normalizeBgsGradeToken(autoGrade)}`;
+    })
+    .replace(/\b(?:Gem\s+Mint\s+|Mint\s+)?Beckett\s+(Altered|Authentic|Auth|\d+(?:\.\d+)?)\s+BGS\s+\1\b/gi, (_, cardGrade) => {
+      return `BGS ${normalizeBgsGradeToken(cardGrade)}`;
+    })
+    .replace(/\bBGS\s+(Altered|Authentic|Auth|\d+(?:\.\d+)?)\s+Auto\s+(\d+(?:\.\d+)?)\b/gi, (_, cardGrade, autoGrade) => {
+      return `BGS ${normalizeBgsGradeToken(cardGrade)}/${normalizeBgsGradeToken(autoGrade)}`;
+    })
+    .replace(/\bBGS\s+Auto\s+(\d+(?:\.\d+)?)\b/gi, (_, autoGrade) => {
+      return `BGS AUTO ${normalizeBgsGradeToken(autoGrade)}`;
+    })
+    .replace(/\bBGS\s+(Authentic|Auth)\b/gi, "BGS Auth")
+    .replace(/\bBGS\s+Altered\b/gi, "BGS Altered");
+}
+
 function normalizePsaGradeToken(value) {
   const token = String(value || "").trim();
   return /^(?:AUTH|AUTHENTIC)$/i.test(token) ? "Auth" : token;
+}
+
+function normalizeBgsGradeToken(value) {
+  const token = String(value || "").trim();
+  if (/^Authentic$/i.test(token)) return "Auth";
+  if (/^Auth$/i.test(token)) return "Auth";
+  if (/^Altered$/i.test(token)) return "Altered";
+  return token;
 }
 
 function suppressDuplicateAutoTerms(title) {
@@ -246,7 +276,7 @@ function moveLeadingGradeToEnd(title, maxLength) {
     return cleanupTitleWording(`${rest} ${company.toUpperCase()} ${grade}`, maxLength);
   }
 
-  const gradePattern = /\b(?:PSA\s+(?:AUTO\s+)?(?:Auth(?:\/(?:Auth|\d+(?:\.\d+)?))?|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|BGS\s+(?:Auth|\d+(?:\.\d+)?)|CGC\s+(?:Auth|\d+(?:\.\d+)?))\b/gi;
+  const gradePattern = /\b(?:PSA\s+(?:AUTO\s+)?(?:Auth(?:\/(?:Auth|\d+(?:\.\d+)?))?|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|BGS\s+(?:AUTO\s+)?(?:Altered|Auth|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|CGC\s+(?:Auth|\d+(?:\.\d+)?))\b/gi;
   const gradeMatches = [...normalized.matchAll(gradePattern)];
   if (gradeMatches.length === 0) return normalized;
 
@@ -260,15 +290,29 @@ function moveLeadingGradeToEnd(title, maxLength) {
 function applySportsTitleGrammar(title, fields, maxLength) {
   if (!fields.player) return cleanupTitleWording(title, maxLength);
 
-  let cleaned = cleanupTitleWording(ensureSportsProductName(title, fields), maxLength * 2);
+  let cleaned = cleanupTitleWording(positionSportsProductName(ensureSportsProductName(title, fields), fields), maxLength * 2);
   const cardType = resolveProtectedCardType(cleaned, fields);
   if (!cardType || !rawIncludes(cleaned, fields.player)) {
-    return normalizeTitle(cleaned, maxLength);
+    return finalizeSportsTitle(cleaned, fields, maxLength);
   }
 
   const withoutCardType = stripLiteralPhrase(cleaned, cardType);
   const playerPattern = new RegExp(fields.player.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
   cleaned = withoutCardType.replace(playerPattern, (match) => `${match} ${cardType}`);
+
+  return finalizeSportsTitle(cleaned, fields, maxLength);
+}
+
+function finalizeSportsTitle(title, fields, maxLength) {
+  const requiredTerms = [
+    sportsTitleShouldRecoverSerial(fields, title) ? normalizeSerialText(fields.serial_number) : null,
+    sportsTitleNeedsRc(fields, title) ? "RC" : null
+  ].filter(Boolean);
+  let cleaned = ensureSportsRcMarker(cleanupTitleWording(title, maxLength * 2), fields);
+
+  if (requiredTerms.length > 0) {
+    cleaned = fitRequiredTitleTerms(cleaned, requiredTerms, fields, maxLength);
+  }
 
   return normalizeTitle(cleanupTitleWording(cleaned, maxLength * 2), maxLength);
 }
@@ -279,7 +323,7 @@ function ensureSportsProductName(title, fields) {
   const product = String(fields.product || "").trim();
   if (!product) return cleaned;
 
-  const productName = brand && !rawIncludes(product, brand) ? `${brand} ${product}` : product;
+  const productName = sportsProductDisplayName(brand, product);
   if (brand && productName) {
     cleaned = cleaned.replace(
       new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+${productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"),
@@ -291,7 +335,91 @@ function ensureSportsProductName(title, fields) {
     cleaned = cleaned.replace(new RegExp(`\\b${product.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"), productName);
   }
 
+  const productCore = (brand
+    ? product.replace(new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), " ")
+    : product)
+    .replace(/\bCollection\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (productName && productCore && !rawIncludes(cleaned, productName) && rawIncludes(cleaned, productCore)) {
+    cleaned = cleaned.replace(new RegExp(`\\b${productCore.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"), productName);
+  }
+
+  if (productName && productCore && productName !== productCore && rawIncludes(cleaned, productName)) {
+    cleaned = dedupeRecoveredProductCore(cleaned, productName, productCore);
+  }
+
   return cleaned.replace(/\s+/g, " ").trim();
+}
+
+function positionSportsProductName(title, fields) {
+  let cleaned = String(title || "").replace(/\s+/g, " ").trim();
+  const productName = sportsProductDisplayName(fields.brand, fields.product);
+  if (!productName || !rawIncludes(cleaned, productName)) return cleaned;
+
+  cleaned = stripLiteralPhrase(cleaned, productName);
+  const year = String(fields.year || "").trim();
+  if (year && rawIncludes(cleaned, year)) {
+    return cleaned.replace(new RegExp(`\\b${year.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"), `${year} ${productName}`)
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  return `${productName} ${cleaned}`.replace(/\s+/g, " ").trim();
+}
+
+function dedupeRecoveredProductCore(title, productName, productCore) {
+  const escapedCore = productCore.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escapedProduct = productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const productPattern = new RegExp(`\\b${escapedProduct}\\b`, "i");
+  const corePattern = new RegExp(`\\b${escapedCore}\\b`, "gi");
+  const productMatch = productPattern.exec(title);
+  if (!productMatch) return title;
+
+  return title.replace(corePattern, (match, offset) => {
+    const insideProduct = offset >= productMatch.index && offset < productMatch.index + productMatch[0].length;
+    return insideProduct ? match : " ";
+  }).replace(/\s+/g, " ").trim();
+}
+
+function sportsProductDisplayName(brand, product) {
+  const normalizedBrand = String(brand || "").trim();
+  const normalizedProduct = String(product || "").replace(/\s+/g, " ").trim();
+  if (!normalizedProduct) return normalizedProduct;
+
+  if (/^Panini\s+Immaculate\s+Collection$/i.test(`${normalizedBrand} ${normalizedProduct}`) || /^Immaculate\s+Collection$/i.test(normalizedProduct)) {
+    return "Panini Immaculate";
+  }
+
+  return normalizedBrand && !rawIncludes(normalizedProduct, normalizedBrand)
+    ? `${normalizedBrand} ${normalizedProduct}`
+    : normalizedProduct;
+}
+
+function ensureSportsRcMarker(title, fields) {
+  let cleaned = String(title || "").replace(/\s+/g, " ").trim();
+  const needsRc = sportsTitleNeedsRc(fields, cleaned);
+
+  if (!needsRc || /\bRC\b/i.test(cleaned)) return cleaned;
+
+  const gradePattern = /\b(?:PSA\s+(?:AUTO\s+)?(?:Auth(?:\/(?:Auth|\d+(?:\.\d+)?))?|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|BGS\s+(?:AUTO\s+)?(?:Altered|Auth|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|CGC\s+(?:Auth|\d+(?:\.\d+)?))\b$/i;
+  const grade = cleaned.match(gradePattern)?.[0];
+  if (!grade) return `${cleaned} RC`.replace(/\s+/g, " ").trim();
+
+  cleaned = cleaned.slice(0, -grade.length).trim();
+  return `${cleaned} RC ${grade}`.replace(/\s+/g, " ").trim();
+}
+
+function sportsTitleNeedsRc(fields, title) {
+  return /\bRC\b/i.test(String(fields.subset || ""))
+    || /Chrome Rookie Auto/i.test(`${fields.insert || ""} ${title || ""}`);
+}
+
+function sportsTitleShouldRecoverSerial(fields, title) {
+  if (!fields.serial_number) return false;
+  if (titleIncludesSerial(title, fields)) return true;
+  const combined = `${fields.insert || ""} ${fields.product || ""} ${title || ""}`;
+  return /Chrome Rookie Auto|Chrome Auto|Dual Signatures|Duo Logoman Autographs|Star Swatch Signatures|Immaculate|Flawless|Prizm/i.test(combined);
 }
 
 function resolveProtectedCardType(title, fields) {
@@ -917,7 +1045,7 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
   }
 
   if (highValueInsert === "Dual Signatures") {
-    strippedTitle = strippedTitle.replace(/\bDual\b/gi, "Dual Signatures");
+    strippedTitle = strippedTitle.replace(/\bDual\b(?!\s+Signatures\b)/gi, "Dual Signatures");
     strippedTitle = strippedTitle.replace(/\bDual\s+Signatures\b(?!\s+Auto\b)/gi, "Dual Signatures Auto");
   }
 

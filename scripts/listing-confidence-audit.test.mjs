@@ -414,8 +414,8 @@ const missingVisibleRc = await callApi({
   unresolved: []
 });
 
-assert.equal(missingVisibleRc.confidence, "LOW");
-assert.match(missingVisibleRc.unresolved.join(" "), /title missing rookie\/1st/);
+assert.equal(missingVisibleRc.confidence, "HIGH");
+assert.match(missingVisibleRc.title, /Test Player RC/);
 
 const autographNormalized = await callApi({
   title: "2025 Topps Chrome Mike Trout Autograph",
@@ -561,6 +561,26 @@ assert.match(cooperFlaggSeasonPsaStandard.title, /Chrome Rookie Auto/i);
 assert.match(cooperFlaggSeasonPsaStandard.title, /PSA 10\/9/i);
 assert.doesNotMatch(cooperFlaggSeasonPsaStandard.title, /\b2025 Topps/i);
 assert.doesNotMatch(cooperFlaggSeasonPsaStandard.title, /PSA 10 MINT 9|PSA 10 Auto 9/i);
+
+const cooperFlaggV124 = await callApi({
+  title: "2025 Topps Chrome Cooper Flagg Chrome Rookie Auto PSA 9 Auto 10",
+  confidence: "HIGH",
+  reason: "Back product text supports 2025-26 Topps Chrome Basketball; PSA label shows card grade 9 and autograph grade 10.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Cooper Flagg",
+    insert: "Chrome Rookie Auto",
+    card_number: "TCAR-CF",
+    grade_company: "PSA",
+    grade: "9",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(cooperFlaggV124.title, "2025-26 Topps Chrome Cooper Flagg Chrome Rookie Auto RC PSA 9/10");
 
 const aceBaileyChecklistSuppressed = await callApi({
   title: "2025-26 Ace Bailey RC Auto Orange Refractor 31/150 Chrome Rookie Auto #TCAR-AB",
@@ -812,6 +832,23 @@ assert.doesNotMatch(immaculateDualSignatures.title, /#35/);
 assert.doesNotMatch(immaculateDualSignatures.title, /Dual Auto/i);
 assert.equal((immaculateDualSignatures.title.match(/\bAuto\b/gi) || []).length, 1);
 
+const shaqPennyV124 = await callApi({
+  title: "2015-16 Immaculate Shaquille O'Neal Anfernee Hardaway Dual Signatures",
+  confidence: "HIGH",
+  reason: "Front card text supports Dual Signatures and visible serial 01/25.",
+  fields: {
+    year: "2015-16",
+    brand: "Panini",
+    product: "Immaculate Collection",
+    player: "Shaquille O'Neal / Anfernee Hardaway",
+    insert: "Dual Signatures",
+    serial_number: "01/25"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(shaqPennyV124.title, "2015-16 Panini Immaculate Shaquille O'Neal Anfernee Hardaway Dual Signatures Auto 01/25");
+
 const compressedSerialPreserved = await callApi({
   title: "2015-16 Panini Immaculate Collection Shaquille O'Neal Anfernee Hardaway Dual 01/25 #35",
   confidence: "HIGH",
@@ -848,6 +885,26 @@ const psaAuthAutoStandard = await callApi({
 
 assert.match(psaAuthAutoStandard.title, /PSA Auth\/10/);
 assert.doesNotMatch(psaAuthAutoStandard.title, /PSA AUTH Auto 10|PSA Auth Auto 10/i);
+
+const jaysonTatumBgsV124 = await callApi({
+  title: "2017-18 Prizm Jayson Tatum Rookie Auto /10 Gem Mint Beckett 9.5 BGS 9.5 Auto 10",
+  confidence: "HIGH",
+  reason: "Card text supports Panini Prizm Jayson Tatum Rookie Auto serial /10; BGS label shows card grade 9.5 and auto grade 10.",
+  fields: {
+    year: "2017-18",
+    brand: "Panini",
+    product: "Panini Prizm",
+    player: "Jayson Tatum",
+    subset: "Rookie Auto",
+    serial_number: "/10",
+    grade_company: "BGS",
+    grade: "9.5",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(jaysonTatumBgsV124.title, "2017-18 Panini Prizm Jayson Tatum Rookie Auto /10 BGS 9.5/10");
 
 const duoLogomanAutographs = await callApi({
   title: "2019-20 Panini Immaculate Collection PJ Washington Jr Tyler Herro Dual Auto One",
