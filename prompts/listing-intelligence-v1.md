@@ -66,12 +66,14 @@ Specific extraction rules:
 - BGS label: extract grade company, grade, and visible subgrades only if the output schema later supports them; otherwise mention subgrades in unresolved.
 - CGC label: extract grade company and grade if visible.
 - Serial number extraction has higher business value than advanced parallel classification. Serial accuracy is a Tier 1 objective.
+- Serial extraction evidence priority is: PSA/BGS/CGC label > card front text > card back text. Preserve the clearest complete serial. If sources conflict, mark the conflict in `unresolved` and do not use HIGH confidence.
 - Serial numbers such as `2/5`, `031/150`, `1/1`, `04/10`, `436/500`, and `17/99` must be extracted only when the denominator and numerator are clearly visible.
 - Card codes such as `SR-KD`, `FIN-10`, `TP-NYK`, `VPA-VIN`, `FGRA-RA`, `ADT-CG`, `CM-KDR`, and `LD-9` must be extracted if visible.
 - Insert/card codes such as `UV-16`, `SE-28`, `BRR-1`, and `IMP-OTI` are important registry keys. Extract them in `card_number` when visible even if they do not all belong in the final title.
 - If a serial number looks ambiguous, put the ambiguous item in `unresolved` and do not mark confidence HIGH.
 - If a tradeoff exists between reading a serial number and classifying a rainbow parallel, prioritize the serial number every time.
 - If there are multiple unrelated cards or a lot listing, mark confidence FAILED.
+- Do not begin lot-card title generation. Multiple unrelated cards remain FAILED for this MVP.
 
 ## 2. Knowledge Registry / Resolution Engine
 
@@ -92,6 +94,16 @@ Resolution priority:
 4. Back-side description
 5. Known mapping
 6. Conservative visual inference
+
+Year resolution priority:
+
+1. Card text
+2. Card back description
+3. Product copyright
+4. PSA/BGS/CGC label shorthand
+5. Visual guess
+
+The card-issued season overrides grading-label shorthand year. Example: if the card/back/product evidence says `2025-26`, do not simplify it to `2026` just because a grading label or copyright shorthand appears as `2026`.
 
 Never override label text or explicit card text with visual guesses. If a mapping conflicts with visible label/card text, use visible text and put the conflict in `unresolved`.
 
@@ -143,6 +155,10 @@ Advanced rainbow classification is useful, but it is Tier 3. It must not displac
 
 High-value insert / case-hit / SSP terminology must be preserved when visible on card text or back text, or when the design evidence is unmistakable. Do not treat these as ordinary parallels:
 
+- SSP
+- Super Short Print
+- Short Print
+- Case Hit
 - Kaboom
 - Ultraviolet
 - Shadow Etch
@@ -226,6 +242,7 @@ Field priority tiers:
 Tier 1 - Critical, must extract:
 
 - Player or character
+- RC / Rookie / Rookie Card / Rated Rookie when visible
 - Serial number
 - Grade
 - Auto or dual auto
@@ -283,6 +300,7 @@ Rules:
 - Do not write uncertain information as fact.
 - If a key market term is unresolved, either omit it or mark confidence MEDIUM or LOW.
 - Preserve collector shorthand when appropriate: Auto, Relic, Patch, Sketch, PMG, SIR, SAR, RC, 1st, Refractor, Gold, Blue, Red.
+- Normalize rookie title wording to `RC`. In titles, `RC`, `Rookie`, `Rookie Card`, and `Rated Rookie` should output as `RC`. Do not rewrite official insert or card type names such as `Bowman Rookie Refresh` or `Chrome Rookie Auto`.
 - Preserve Duo, Dual, Pairing, or Partnership wording for multi-subject cards when text or registry evidence supports it. Do not compress a true multi-person card into a normal single-player listing.
 - Normalize autograph wording in `title` to the eBay shorthand `Auto`. Do not output `Autograph`, `Certified Autograph`, `On-card Autograph`, or `Sticker Autograph` in the title. Use `Auto`, `Dual Auto`, `Triple Auto`, `1st Bowman Auto`, `RPA Auto`, or `Patch Auto`.
 - Internal metadata and reasoning may mention autograph details, but the listing title should use `Auto`.
@@ -307,6 +325,7 @@ HIGH requirements:
 - Year is confirmed with no conflict.
 - Brand/product is confirmed.
 - Tier 1 fields are correctly resolved: player/entity, serial number, grade, auto, patch, relic, card number, and 1/1 indicator when visible or applicable.
+- RC is correctly resolved and included when card text/label/back text indicates RC, Rookie, Rookie Card, or Rated Rookie.
 - No unresolved serial, auto, grade, card number, or 1/1 issue exists.
 - Evidence comes from a PSA/BGS/CGC label, clear card text, or clear back text.
 - No obvious high-value field is missing from the title.
@@ -340,7 +359,7 @@ LOW:
 - Core fields conflict.
 - Significant uncertainty exists.
 - Use LOW for wrong or unsupported year, incomplete or wrong serial, missing visible serial, missing auto, missing grade, missing card number/code, missing 1/1 indicator, missing patch/relic, or reasoning that contradicts the title.
-- Use LOW when a clearly visible high-value field such as serial, auto, relic, patch, grade, rookie, or 1st Bowman is missing from the title.
+- Use LOW when a clearly visible high-value field such as serial, auto, relic, patch, grade, RC/rookie, or 1st Bowman is missing from the title.
 - Use LOW or MEDIUM downgrade when a clearly visible high-value insert/case-hit term is missing from the title.
 - Use LOW when a generic family is substituted for a specific market term only if a Tier 1 field is also missing, wrong, or unresolved. Otherwise use MEDIUM.
 - LOW items must be manually corrected before posting.
@@ -351,6 +370,7 @@ Downgrade triggers:
 - Do not spend reasoning budget on Wave, Shimmer, Pattern, or Foil classification before extracting serial number, grade, auto, card number, and 1/1 indicator.
 - Do not allow HIGH when insert identification is visual-only.
 - Do not allow HIGH when SSP is not confirmed.
+- Do not allow HIGH when SSP/case-hit status is only visually guessed. If SSP/case-hit text is visible but exact checklist taxonomy still needs review, use MEDIUM.
 - Do not allow HIGH when serial appears incomplete.
 - Do not allow HIGH when year is not supported by strong evidence.
 - Parallel uncertainty alone should usually cap confidence at MEDIUM, not LOW, when Tier 1 fields are complete.

@@ -15,6 +15,7 @@ assert.equal(resolveKnowledgeEntry("Helix")?.label, "Helix");
 assert.equal(resolveKnowledgeEntry("Explosive")?.label, "Explosive");
 assert.equal(resolveKnowledgeEntry("Green Geometric Refractor")?.label, "Green Geometric Refractor");
 assert.equal(resolveKnowledgeEntry("Keepsake Premiere Edition")?.label, "Keapsake Premiere Edition");
+assert.equal(resolveKnowledgeEntry("Super Short Print")?.label, "SSP");
 
 function sign(value) {
   return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
@@ -383,6 +384,39 @@ assert.doesNotMatch(redundantTitleCleaned.title, /Rookie RC/i);
 assert.doesNotMatch(redundantTitleCleaned.title, /Autograph Auto/i);
 assert.doesNotMatch(redundantTitleCleaned.title, /Refractor Parallel/i);
 
+const ratedRookieNormalized = await callApi({
+  title: "2024 Donruss Football Test Player Rated Rookie Card",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports Rated Rookie player and product.",
+  fields: {
+    year: "2024",
+    brand: "Donruss Football",
+    player: "Test Player",
+    subset: "Rated Rookie"
+  },
+  unresolved: []
+});
+
+assert.match(ratedRookieNormalized.title, /Test Player RC/);
+assert.doesNotMatch(ratedRookieNormalized.title, /Rated Rookie|Rookie Card|Rookie\b/i);
+assert.equal(ratedRookieNormalized.fields.subset, "RC");
+
+const missingVisibleRc = await callApi({
+  title: "2024 Donruss Football Test Player",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports Rated Rookie player and product.",
+  fields: {
+    year: "2024",
+    brand: "Donruss Football",
+    player: "Test Player",
+    subset: "Rated Rookie"
+  },
+  unresolved: []
+});
+
+assert.equal(missingVisibleRc.confidence, "LOW");
+assert.match(missingVisibleRc.unresolved.join(" "), /title missing rookie\/1st/);
+
 const autographNormalized = await callApi({
   title: "2025 Topps Chrome Mike Trout Autograph",
   confidence: "HIGH",
@@ -523,6 +557,24 @@ assert.match(curryRedPropulsion.title, /Red Propulsion/i);
 assert.match(curryRedPropulsion.title, /2\/5/);
 assert.doesNotMatch(curryRedPropulsion.title, /^2026 Topps Chrome Stephen Curry/i);
 
+const seasonYearPreserved = await callApi({
+  title: "2026 Topps Chrome Stephen Curry Red Propulsion SSP 2/5",
+  confidence: "HIGH",
+  reason: "Back text supports card-issued season 2025-26; grading label shorthand shows 2026.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Cosmic Chrome",
+    player: "Stephen Curry",
+    insert: "Red Propulsion",
+    serial_number: "2/5"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(seasonYearPreserved.title, /^2025-26/i);
+assert.doesNotMatch(seasonYearPreserved.title, /^2026\b/i);
+
 const immaculateDualSignatures = await callApi({
   title: "2015-16 Panini Immaculate Collection Shaquille O'Neal Anfernee Hardaway Dual 01/25",
   confidence: "HIGH",
@@ -544,6 +596,25 @@ assert.match(immaculateDualSignatures.title, /Shaquille O'Neal/i);
 assert.match(immaculateDualSignatures.title, /Anfernee Hardaway/i);
 assert.match(immaculateDualSignatures.title, /01\/25/);
 assert.match(immaculateDualSignatures.title, /#35/);
+
+const compressedSerialPreserved = await callApi({
+  title: "2015-16 Panini Immaculate Collection Shaquille O'Neal Anfernee Hardaway Dual 01/25 #35",
+  confidence: "HIGH",
+  reason: "Slab text supports Dual Signatures Jersey No. #35 S. O'Neal / A. Hardaway 01/25.",
+  fields: {
+    year: "2015-16",
+    brand: "Panini",
+    product: "Immaculate Collection",
+    player: "Shaquille O'Neal / Anfernee Hardaway",
+    insert: "Dual Signatures Jersey No.",
+    card_number: "35",
+    serial_number: "01/25"
+  },
+  unresolved: []
+}, { maxTitleLength: 80 });
+
+assert.match(compressedSerialPreserved.title, /Dual Signatures/i);
+assert.match(compressedSerialPreserved.title, /01\/25/);
 
 const duoLogomanAutographs = await callApi({
   title: "2019-20 Panini Immaculate Collection PJ Washington Jr Tyler Herro Dual Auto One",
@@ -590,5 +661,21 @@ assert.match(durantStarSwatch.title, /Star Swatch Signatures/i);
 assert.match(durantStarSwatch.title, /Platinum/i);
 assert.match(durantStarSwatch.title, /04\/10/);
 assert.doesNotMatch(durantStarSwatch.title, /Patch Auto/i);
+
+const sspRegistryPreserved = await callApi({
+  title: "2024 Topps Chrome Test Player Super Short Print",
+  confidence: "HIGH",
+  reason: "Card back explicitly states Super Short Print.",
+  fields: {
+    year: "2024",
+    brand: "Topps Chrome",
+    player: "Test Player",
+    insert: "Super Short Print"
+  },
+  unresolved: []
+});
+
+assert.equal(sspRegistryPreserved.fields.insert, "SSP");
+assert.match(sspRegistryPreserved.title, /SSP/);
 
 console.log("listing confidence audit mock tests passed");

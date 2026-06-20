@@ -124,6 +124,7 @@ a {
 .hero-panel,
 .control-panel,
 .stats-grid article,
+.batch-titles-board,
 .asset-board {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -367,6 +368,57 @@ h3 {
 
 .asset-workbench {
   margin-top: 22px;
+}
+
+.batch-titles-panel {
+  margin-top: 22px;
+}
+
+.batch-titles-board {
+  padding: 18px;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.18);
+}
+
+.batch-title-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.batch-title-list li {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.batch-title-list span {
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.batch-title-list p {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.batch-title-list .batch-empty {
+  grid-template-columns: 1fr;
+  min-height: 58px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .asset-board {
@@ -816,6 +868,10 @@ summary {
 
   .asset-source,
   .field-list {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-title-list li {
     grid-template-columns: 1fr;
   }
 

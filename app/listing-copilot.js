@@ -26,6 +26,8 @@ const elements = {
   dropZone: document.querySelector("#dropZone"),
   processButton: document.querySelector("#processButton"),
   resetButton: document.querySelector("#resetButton"),
+  copyAllButton: document.querySelector("#copyAllButton"),
+  batchTitleList: document.querySelector("#batchTitleList"),
   imageModal: document.querySelector("#imageModal"),
   imageModalClose: document.querySelector("#imageModalClose"),
   imageModalImage: document.querySelector("#imageModalImage"),
@@ -308,11 +310,35 @@ function renderPreviews() {
 
 function renderResults() {
   updateStats();
+  renderBatchTitles();
   renderAssetRows();
 }
 
 function resultForAsset(asset) {
   return state.results.find((result) => result.index === asset.index);
+}
+
+function generatedTitleResults() {
+  return [...state.results]
+    .filter((result) => normalizeConfidence(result.confidence) !== "FAILED" && String(result.title || "").trim())
+    .sort((a, b) => a.index - b.index);
+}
+
+function renderBatchTitles() {
+  const titleResults = generatedTitleResults();
+  elements.copyAllButton.disabled = titleResults.length === 0;
+
+  if (!titleResults.length) {
+    elements.batchTitleList.innerHTML = `<li class="batch-empty">生成完成后，这里会按上传顺序汇总所有非空英文 eBay title。</li>`;
+    return;
+  }
+
+  elements.batchTitleList.innerHTML = titleResults.map((result) => `
+    <li>
+      <span>资产 ${result.index}</span>
+      <p>${escapeHtml(result.title)}</p>
+    </li>
+  `).join("");
 }
 
 function imageSideLabel(imageIndex) {
@@ -595,6 +621,18 @@ async function copyTitle(button) {
   }, 1100);
 }
 
+async function copyAllTitles() {
+  const titles = generatedTitleResults().map((result) => result.title.trim());
+  if (!titles.length) return;
+
+  await navigator.clipboard.writeText(titles.join("\n"));
+  const original = elements.copyAllButton.textContent;
+  elements.copyAllButton.textContent = "已复制全部";
+  setTimeout(() => {
+    elements.copyAllButton.textContent = original;
+  }, 1200);
+}
+
 function resetTool() {
   state.files = [];
   state.assets = [];
@@ -641,6 +679,7 @@ function bindEvents() {
 
   elements.processButton.addEventListener("click", processTitles);
   elements.resetButton.addEventListener("click", resetTool);
+  elements.copyAllButton.addEventListener("click", copyAllTitles);
 
   elements.assetPreviewList.addEventListener("click", (event) => {
     const previewButton = event.target.closest("[data-preview-asset]");

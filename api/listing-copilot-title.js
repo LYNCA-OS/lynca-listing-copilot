@@ -114,6 +114,11 @@ function normalizeTitle(title, maxLength) {
   return normalized.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
 }
 
+function normalizeRookieMarker(value) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  return /^(?:RC|Rookie|Rookie Card|Rated Rookie)$/i.test(normalized) ? "RC" : normalized;
+}
+
 function cleanupTitleWording(title, maxLength) {
   const cleaned = String(title || "")
     .replace(/\b(?:Certified\s+)?(?:On[- ]?card\s+|Sticker\s+)?Autograph\b/gi, "Auto")
@@ -121,8 +126,12 @@ function cleanupTitleWording(title, maxLength) {
     .replace(/\bTriple\s+Auto\b/gi, "Triple Auto")
     .replace(/\bOne\s+of\s+One\b/gi, "1/1")
     .replace(/\bOne\b(?=\s*$)/gi, "1/1")
+    .replace(/\bRated\s+Rookie\b/gi, "RC")
+    .replace(/\bRookie\s+Card\b/gi, "RC")
     .replace(/\bRookie\s+RC\s+Card\b/gi, "RC")
     .replace(/\bRookie\s+RC\b/gi, "RC")
+    .replace(/\bRC\s+Card\b/gi, "RC")
+    .replace(/\bRookie\b(?!\s+(?:Refresh|Auto))/gi, "RC")
     .replace(/\bAutograph\s+Auto\b/gi, "Auto")
     .replace(/\bRefractor\s+Parallel\b/gi, "Refractor")
     .replace(/\bCard\s+Card\b/gi, "Card")
@@ -164,6 +173,10 @@ function rawIncludes(value, needle) {
   return String(value || "").toLowerCase().includes(String(needle || "").toLowerCase());
 }
 
+function titleIncludesSerial(title, fields) {
+  return Boolean(fields.serial_number && rawIncludes(title, fields.serial_number));
+}
+
 function ensureTitleTerm(title, term) {
   if (!term || rawIncludes(title, term)) return title;
   return `${title} ${term}`.replace(/\s+/g, " ").trim();
@@ -178,15 +191,60 @@ function compactLowPriorityTitleTerms(title, fields, maxLength) {
 
   const lowPriorityTerms = [
     fields.team,
+    fields.position,
+    "NBA",
+    "NFL",
+    "MLB",
+    "NHL",
+    "UFC",
     "Golden State Warriors",
     "Oklahoma City Thunder",
-    "Thunder"
+    "Thunder",
+    "Jersey No.",
+    "Collection",
+    "RC Card",
+    "Card"
   ].filter(Boolean);
 
   return lowPriorityTerms.reduce(
     (currentTitle, term) => stripLiteralPhrase(currentTitle, term),
     title
   ).replace(/\s+/g, " ").trim();
+}
+
+function fitRequiredTitleTerms(title, requiredTerms, fields, maxLength) {
+  let currentTitle = ensureTitleTerms(title, requiredTerms);
+  let normalizedTitle = normalizeTitle(currentTitle, maxLength);
+
+  if (requiredTerms.every((term) => rawIncludes(normalizedTitle, term))) {
+    return currentTitle;
+  }
+
+  const removableTerms = [
+    fields.team,
+    fields.brand,
+    fields.product,
+    "Golden State Warriors",
+    "Oklahoma City Thunder",
+    "Thunder",
+    "Immaculate Collection",
+    "Collection",
+    "Jersey No.",
+    "RC Card",
+    "Card"
+  ].filter(Boolean);
+
+  for (const term of removableTerms) {
+    currentTitle = stripLiteralPhrase(currentTitle, term);
+    currentTitle = ensureTitleTerms(currentTitle, requiredTerms);
+    normalizedTitle = normalizeTitle(currentTitle, maxLength);
+
+    if (requiredTerms.every((requiredTerm) => rawIncludes(normalizedTitle, requiredTerm))) {
+      return currentTitle;
+    }
+  }
+
+  return currentTitle;
 }
 
 function containsBackgroundTerm(value) {
@@ -249,7 +307,7 @@ function normalizeFields(fields = {}) {
     brand: normalizeStringOrNull(fields.brand),
     product: normalizeStringOrNull(fields.product),
     set: normalizeStringOrNull(fields.set),
-    subset: normalizeStringOrNull(fields.subset),
+    subset: normalizeStringOrNull(normalizeRookieMarker(fields.subset)),
     insert: normalizeStringOrNull(fields.insert),
     parallel: normalizeStringOrNull(fields.parallel),
     player: normalizeStringOrNull(fields.player),
@@ -273,6 +331,11 @@ function normalizeFields(fields = {}) {
       normalized[key] = null;
     }
   });
+
+  const explicitInsertEntry = resolveKnowledgeEntry(normalized.insert);
+  if (explicitInsertEntry) {
+    normalized.insert = explicitInsertEntry.label;
+  }
 
   const registryInsert = resolveKnowledgeFromFields(normalized);
   if (registryInsert && !normalized.insert) {
@@ -647,19 +710,21 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
   ].some((value) => typeof value === "string" && containsBackgroundTerm(value));
 
   const highValueInsert = resolveKnowledgeEntry(fields.insert)?.label || extractHighValueInsert(fields.insert);
+  const rawTitle = stripBackgroundTerms(result.title)
+    .replace(/\bBase\b/gi, fields.insert || fields.parallel ? " " : "Base")
+    .replace(/\s+/g, " ")
+    .trim();
   const requiredTitleTerms = [
     fields.product === "Topps Cosmic Chrome" ? "Cosmic Chrome" : null,
     highValueInsert,
     fields.parallel === "Platinum" ? "Platinum" : null,
+    titleIncludesSerial(rawTitle, fields) ? fields.serial_number : null,
     fields.card_number ? `#${String(fields.card_number).replace(/^#/, "")}` : null,
     fields.one_of_one ? "1/1" : null,
     fields.grade_company && fields.grade ? `${fields.grade_company} ${String(fields.grade).match(/\d+(?:\.\d+)?/)?.[0] || fields.grade}` : null,
     fields.grade_company && /auto/i.test(String(result.title || "")) && /auto\s*10/i.test(String(result.title || "")) ? "Auto 10" : null
   ].filter(Boolean);
-  let strippedTitle = stripBackgroundTerms(result.title)
-    .replace(/\bBase\b/gi, fields.insert || fields.parallel ? " " : "Base")
-    .replace(/\s+/g, " ")
-    .trim();
+  let strippedTitle = rawTitle;
 
   if (fields.product === "Topps Cosmic Chrome") {
     strippedTitle = strippedTitle
@@ -695,7 +760,12 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
     strippedTitle = strippedTitle.replace(/\bPatch\s+Auto\b/gi, "Star Swatch Signatures");
   }
 
-  const repairedTitle = compactLowPriorityTitleTerms(ensureTitleTerms(strippedTitle, requiredTitleTerms), fields, maxTitleLength);
+  const repairedTitle = fitRequiredTitleTerms(
+    compactLowPriorityTitleTerms(strippedTitle, fields, maxTitleLength),
+    requiredTitleTerms,
+    fields,
+    maxTitleLength
+  );
   const repairedHighValueInsert = Boolean(highValueInsert && !rawIncludes(strippedTitle, highValueInsert));
   const title = normalizeTitle(repairedTitle, maxTitleLength);
   let reason = stripBackgroundTerms(result.reason);
