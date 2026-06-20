@@ -145,7 +145,10 @@ function stripChecklistCardNumbers(title, fields = {}) {
 }
 
 function cleanupTitleWording(title, maxLength) {
-  const cleaned = normalizeSerialText(title)
+  const cleaned = suppressDuplicateAutoTerms(normalizePsaGradeDisplay(normalizeSerialText(title)
+    .replace(/\bTopps\s+Chrome\s+Autograph\s+Card\b/gi, "Topps Chrome Auto")
+    .replace(/\bChrome\s+Autograph\s+Card\b/gi, "Chrome Auto")
+    .replace(/\bChrome\s+Autograph\b/gi, "Chrome Auto")
     .replace(/\b(?:Certified\s+)?(?:On[- ]?card\s+|Sticker\s+)?Autograph\b/gi, "Auto")
     .replace(/\bDual\s+Auto\b/gi, "Dual Auto")
     .replace(/\bTriple\s+Auto\b/gi, "Triple Auto")
@@ -161,10 +164,75 @@ function cleanupTitleWording(title, maxLength) {
     .replace(/\bRefractor\s+Parallel\b/gi, "Refractor")
     .replace(/\bCard\s+Card\b/gi, "Card")
     .replace(/\bRC\s+RC\b/gi, "RC")
+    .replace(/\bTopps\s+Chrome\s+Chrome\s+Auto\b/gi, "Topps Chrome Auto")
+    .replace(/\bChrome\s+Chrome\s+Auto\b/gi, "Chrome Auto")
+    .replace(/\s+/g, " ")
+    .trim()));
+
+  return normalizeTitle(cleaned, maxLength);
+}
+
+function normalizePsaGradeDisplay(title) {
+  return String(title || "")
+    .replace(/\bPSA\s+(AUTH|AUTHENTIC)\s+Auto\s+(AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b/gi, (_, cardGrade, autoGrade) => {
+      return `PSA Auth/${normalizePsaGradeToken(autoGrade)}`;
+    })
+    .replace(/\bPSA\s+(\d+(?:\.\d+)?)\s+(?:GEM\s+MINT|MINT|NM-MT|NM|EX-MT|EX)?\s*Auto\s+(AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b/gi, (_, cardGrade, autoGrade) => {
+      return `PSA ${normalizePsaGradeToken(cardGrade)}/${normalizePsaGradeToken(autoGrade)}`;
+    })
+    .replace(/\bPSA\s+(\d+(?:\.\d+)?)\s+(?:GEM\s+MINT|MINT|NM-MT|NM|EX-MT|EX)\s+(AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b/gi, (_, cardGrade, autoGrade) => {
+      return `PSA ${normalizePsaGradeToken(cardGrade)}/${normalizePsaGradeToken(autoGrade)}`;
+    })
+    .replace(/\bPSA\s+(AUTH|AUTHENTIC)\b/gi, "PSA Auth")
+    .replace(/\bPSA\s+Auto\s+(AUTH|AUTHENTIC)\b/gi, "PSA AUTO Auth")
+    .replace(/\bPSA\s+AUTO\s+(AUTH|AUTHENTIC)\b/gi, "PSA AUTO Auth");
+}
+
+function normalizePsaGradeToken(value) {
+  const token = String(value || "").trim();
+  return /^(?:AUTH|AUTHENTIC)$/i.test(token) ? "Auth" : token;
+}
+
+function suppressDuplicateAutoTerms(title) {
+  let cleaned = String(title || "").replace(/\s+/g, " ").trim();
+  const protectedAutoPhrases = [
+    "Chrome Rookie Auto",
+    "Chrome Auto",
+    "Dual Signatures Auto"
+  ];
+  const placeholder = "__AUTO__";
+
+  protectedAutoPhrases.forEach((phrase) => {
+    cleaned = cleaned.replace(new RegExp(`\\b${phrase.replace(/\s+/g, "\\s+")}\\b`, "gi"), phrase.replace(/\bAuto\b/i, placeholder));
+  });
+
+  const autoMatches = cleaned.match(/\bAuto\b/gi) || [];
+  const hasProtectedAuto = cleaned.includes(placeholder);
+  if (autoMatches.length <= 1 && !hasProtectedAuto) return cleaned;
+  if (autoMatches.length === 0) {
+    return cleaned.replace(new RegExp(placeholder, "g"), "Auto");
+  }
+
+  if (hasProtectedAuto) {
+    cleaned = cleaned
+      .replace(/\bRC\s+Auto\b/gi, "RC")
+      .replace(/\bRookie\s+Auto\b/gi, "Rookie")
+      .replace(/\bAuto\b/gi, " ");
+  } else {
+    let seenAuto = false;
+    cleaned = cleaned.replace(/\bAuto\b/gi, (match) => {
+      if (seenAuto) return " ";
+      seenAuto = true;
+      return match;
+    });
+  }
+
+  cleaned = cleaned
+    .replace(new RegExp(placeholder, "g"), "Auto")
     .replace(/\s+/g, " ")
     .trim();
 
-  return normalizeTitle(cleaned, maxLength);
+  return cleaned;
 }
 
 function moveLeadingGradeToEnd(title, maxLength) {
@@ -786,6 +854,7 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
 
   if (highValueInsert === "Dual Signatures") {
     strippedTitle = strippedTitle.replace(/\bDual\b/gi, "Dual Signatures");
+    strippedTitle = strippedTitle.replace(/\bDual\s+Signatures\b(?!\s+Auto\b)/gi, "Dual Signatures Auto");
   }
 
   if (highValueInsert === "Duo Logoman Autographs") {

@@ -534,8 +534,32 @@ const cooperFlaggChromeRookieAuto = await callApi({
 
 assert.match(cooperFlaggChromeRookieAuto.title, /Chrome Rookie Auto/i);
 assert.doesNotMatch(cooperFlaggChromeRookieAuto.title, /\bBase\b/i);
-assert.match(cooperFlaggChromeRookieAuto.title, /PSA 9 Auto 10/i);
+assert.match(cooperFlaggChromeRookieAuto.title, /PSA 9\/10/i);
 assert.doesNotMatch(cooperFlaggChromeRookieAuto.title, /#?TCAR-CF/i);
+
+const cooperFlaggSeasonPsaStandard = await callApi({
+  title: "2025 Topps Chrome Cooper Flagg Chrome Rookie Auto PSA 10 MINT 9",
+  confidence: "HIGH",
+  reason: "Season product text supports 2025-26 Topps Chrome Basketball; PSA label shows card grade 10 and auto grade 9.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Cooper Flagg",
+    insert: "Chrome Rookie Auto",
+    card_number: "TCAR-CF",
+    grade_company: "PSA",
+    grade: "10",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(cooperFlaggSeasonPsaStandard.title, /^2025-26\b/);
+assert.match(cooperFlaggSeasonPsaStandard.title, /Chrome Rookie Auto/i);
+assert.match(cooperFlaggSeasonPsaStandard.title, /PSA 10\/9/i);
+assert.doesNotMatch(cooperFlaggSeasonPsaStandard.title, /\b2025 Topps/i);
+assert.doesNotMatch(cooperFlaggSeasonPsaStandard.title, /PSA 10 MINT 9|PSA 10 Auto 9/i);
 
 const aceBaileyChecklistSuppressed = await callApi({
   title: "2025-26 Ace Bailey RC Auto Orange Refractor 31/150 Chrome Rookie Auto #TCAR-AB",
@@ -562,6 +586,52 @@ assert.match(aceBaileyChecklistSuppressed.title, /Chrome Rookie Auto/i);
 assert.match(aceBaileyChecklistSuppressed.title, /31\/150/);
 assert.doesNotMatch(aceBaileyChecklistSuppressed.title, /#?TCAR-AB/i);
 assert.doesNotMatch(aceBaileyChecklistSuppressed.title, /#31\/150|Serial 31\/150|Numbered 31\/150/i);
+assert.equal((aceBaileyChecklistSuppressed.title.match(/\bAuto\b/gi) || []).length, 1);
+
+const aceBaileyChromeAutoOnce = await callApi({
+  title: "2025-26 Chrome Ace Bailey RC Auto Gold Refractor 31/50 Chrome Auto",
+  confidence: "HIGH",
+  reason: "Card text supports 2025-26 Topps Chrome Basketball, Ace Bailey, Chrome Auto, Gold Refractor, and serial 31/50.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Ace Bailey",
+    subset: "RC",
+    insert: "Chrome Auto",
+    parallel: "Gold Refractor",
+    serial_number: "31/50",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(aceBaileyChromeAutoOnce.title, /^2025-26\b/);
+assert.match(aceBaileyChromeAutoOnce.title, /Topps Chrome/i);
+assert.match(aceBaileyChromeAutoOnce.title, /Chrome Auto/i);
+assert.match(aceBaileyChromeAutoOnce.title, /Gold Refractor/i);
+assert.match(aceBaileyChromeAutoOnce.title, /31\/50/);
+assert.match(aceBaileyChromeAutoOnce.title, /\bRC\b/);
+assert.equal((aceBaileyChromeAutoOnce.title.match(/\bAuto\b/gi) || []).length, 1);
+
+const chromeAutographCardNormalized = await callApi({
+  title: "2025 Topps Chrome Mike Trout Chrome Autograph Card",
+  confidence: "HIGH",
+  reason: "Card text explicitly supports Chrome Autograph Card.",
+  fields: {
+    year: "2025",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Mike Trout",
+    insert: "Chrome Auto",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(chromeAutographCardNormalized.title, /Chrome Auto/i);
+assert.doesNotMatch(chromeAutographCardNormalized.title, /Autograph Card|Autograph/i);
+assert.doesNotMatch(chromeAutographCardNormalized.title, /Topps Chrome Chrome Auto/i);
 
 const curryRedPropulsion = await callApi({
   title: "2026 Topps Chrome Stephen Curry Golden State Warriors Propulsion 2/5",
@@ -641,10 +711,13 @@ const immaculateDualSignatures = await callApi({
 }, { maxTitleLength: 120 });
 
 assert.match(immaculateDualSignatures.title, /Dual Signatures/i);
+assert.match(immaculateDualSignatures.title, /Dual Signatures Auto/i);
 assert.match(immaculateDualSignatures.title, /Shaquille O'Neal/i);
 assert.match(immaculateDualSignatures.title, /Anfernee Hardaway/i);
 assert.match(immaculateDualSignatures.title, /01\/25/);
 assert.doesNotMatch(immaculateDualSignatures.title, /#35/);
+assert.doesNotMatch(immaculateDualSignatures.title, /Dual Auto/i);
+assert.equal((immaculateDualSignatures.title.match(/\bAuto\b/gi) || []).length, 1);
 
 const compressedSerialPreserved = await callApi({
   title: "2015-16 Panini Immaculate Collection Shaquille O'Neal Anfernee Hardaway Dual 01/25 #35",
@@ -664,6 +737,24 @@ const compressedSerialPreserved = await callApi({
 
 assert.match(compressedSerialPreserved.title, /Dual Signatures/i);
 assert.match(compressedSerialPreserved.title, /01\/25/);
+
+const psaAuthAutoStandard = await callApi({
+  title: "2024 Topps Chrome Test Player Auto PSA AUTH Auto 10",
+  confidence: "HIGH",
+  reason: "PSA label supports authentic card with auto grade 10.",
+  fields: {
+    year: "2024",
+    brand: "Topps Chrome",
+    player: "Test Player",
+    grade_company: "PSA",
+    grade: "AUTH",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(psaAuthAutoStandard.title, /PSA Auth\/10/);
+assert.doesNotMatch(psaAuthAutoStandard.title, /PSA AUTH Auto 10|PSA Auth Auto 10/i);
 
 const duoLogomanAutographs = await callApi({
   title: "2019-20 Panini Immaculate Collection PJ Washington Jr Tyler Herro Dual Auto One",
