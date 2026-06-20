@@ -4,7 +4,7 @@ Listing Copilot Architecture Decision Record
 
 Status: Draft v1
 Owner: LYNCA Listing Intelligence
-Companion Spec: `docs/sports-card-title-standard-v1.md`
+Companion Spec: `../standards/sports-card-title-standard-v1.md`
 
 ## Purpose
 

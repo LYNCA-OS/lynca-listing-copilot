@@ -70,12 +70,13 @@ node scripts/upload-safety-layer.test.mjs
 Start with:
 
 - [docs/README.md](docs/README.md) — documentation index
-- [docs/sports-card-title-standard-v1.md](docs/sports-card-title-standard-v1.md) — sports card title source-of-truth
-- [docs/architecture-decisions-v1.md](docs/architecture-decisions-v1.md) — approved V1.x architecture decisions
-- [docs/listing-copilot-roadmap-v1.md](docs/listing-copilot-roadmap-v1.md) — phased implementation roadmap
-- [docs/spec-v1.md](docs/spec-v1.md) — original MVP product spec
+- [docs/foundation/foundation-v1.md](docs/foundation/foundation-v1.md) — foundation overview
+- [docs/standards/sports-card-title-standard-v1.md](docs/standards/sports-card-title-standard-v1.md) — sports card title source-of-truth
+- [docs/architecture/architecture-decisions-v1.md](docs/architecture/architecture-decisions-v1.md) — approved V1.x architecture decisions
+- [docs/roadmap/listing-copilot-roadmap-v1.md](docs/roadmap/listing-copilot-roadmap-v1.md) — phased implementation roadmap
+- [docs/foundation/spec-v1.md](docs/foundation/spec-v1.md) — original MVP product spec
 
-Training and calibration notes remain in `docs/training-*.md`.
+Training and calibration docs are organized under `docs/training/`; older notes live in `docs/archive/training-legacy/`.
 
 ## Prompt Files
 

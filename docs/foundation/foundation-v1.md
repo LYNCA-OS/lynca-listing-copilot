@@ -99,18 +99,18 @@ Current V1.x implementation remains patch-based by approved decision.
 Recommended reading order:
 
 ```text
-foundation-v1.md
+foundation/foundation-v1.md
   ->
-sports-card-title-standard-v1.md
+standards/sports-card-title-standard-v1.md
   ->
-architecture-decisions-v1.md
+architecture/architecture-decisions-v1.md
   ->
-listing-copilot-roadmap-v1.md
+roadmap/listing-copilot-roadmap-v1.md
   ->
-prompt-modernization-plan-v1.md
+architecture/prompt-modernization-plan-v1.md
 ```
 
-### `spec-v1.md`
+### `foundation/spec-v1.md`
 
 Original MVP product specification.
 
@@ -122,7 +122,7 @@ Use for:
 
 Do not treat it as the newest sports-card title authority when it conflicts with newer foundation docs.
 
-### `sports-card-title-standard-v1.md`
+### `standards/sports-card-title-standard-v1.md`
 
 Current source of truth for sports card title quality.
 
@@ -136,7 +136,7 @@ Use for:
 
 This is the highest-level standard for sports-card title generation.
 
-### `architecture-decisions-v1.md`
+### `architecture/architecture-decisions-v1.md`
 
 Approved architecture decisions for V1.x and future migration.
 
@@ -150,7 +150,7 @@ Use for:
 - cleanup responsibility boundaries
 - grading semantics direction
 
-### `listing-copilot-roadmap-v1.md`
+### `roadmap/listing-copilot-roadmap-v1.md`
 
 Implementation roadmap from current system to future architecture.
 
@@ -162,7 +162,7 @@ Use for:
 - Grammar Engine roadmap
 - future knowledge database direction
 
-### `prompt-modernization-plan-v1.md`
+### `architecture/prompt-modernization-plan-v1.md`
 
 Plan for reducing prompt complexity over time.
 

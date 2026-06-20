@@ -272,15 +272,15 @@ The goal is not card identification. The goal is eBay-ready listing title genera
 
 Training reports:
 
-- [Subset A Administrative Summary V1](training-subset-a-administrative-summary-v1.md)
-- [Subset A V1](training-subset-a-v1.md)
-- [Subset A Retest Confidence Calibration V1](training-subset-a-retest-confidence-v1.md)
-- [Subset A Retest Confidence Philosophy V1](training-subset-a-retest-confidence-philosophy-v1.md)
-- [Serial Priority Philosophy V1](training-extraction-priority-serial-v1.md)
-- [Subset B Follow-Up Upgrades V1](training-subset-b-follow-up-v1.md)
-- [Pokemon Illustrator Disambiguation V1](training-pokemon-illustrator-disambiguation-v1.md)
-- [Case-Hit Insert Terminology V1](training-case-hit-insert-v1.md)
-- [Subset C Case Summary V1](training-subset-c-case-summary-v1.md)
+- [Subset A Administrative Summary V1](../archive/training-legacy/training-subset-a-administrative-summary-v1.md)
+- [Subset A V1](../archive/training-legacy/training-subset-a-v1.md)
+- [Subset A Retest Confidence Calibration V1](../archive/training-legacy/training-subset-a-retest-confidence-v1.md)
+- [Subset A Retest Confidence Philosophy V1](../archive/training-legacy/training-subset-a-retest-confidence-philosophy-v1.md)
+- [Serial Priority Philosophy V1](../archive/training-legacy/training-extraction-priority-serial-v1.md)
+- [Subset B Follow-Up Upgrades V1](../archive/training-legacy/training-subset-b-follow-up-v1.md)
+- [Pokemon Illustrator Disambiguation V1](../archive/training-legacy/training-pokemon-illustrator-disambiguation-v1.md)
+- [Case-Hit Insert Terminology V1](../archive/training-legacy/training-case-hit-insert-v1.md)
+- [Subset C Case Summary V1](../archive/training-legacy/training-subset-c-case-summary-v1.md)
 
 ## 13. Backlog / Not V1
 

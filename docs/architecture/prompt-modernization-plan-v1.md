@@ -6,9 +6,9 @@ Status: Draft v1
 Owner: LYNCA Listing Intelligence
 Companion Documents:
 
-- `docs/sports-card-title-standard-v1.md`
-- `docs/architecture-decisions-v1.md`
-- `docs/listing-copilot-roadmap-v1.md`
+- `../standards/sports-card-title-standard-v1.md`
+- `architecture-decisions-v1.md`
+- `../roadmap/listing-copilot-roadmap-v1.md`
 
 ## Purpose
 

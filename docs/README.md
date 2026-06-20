@@ -1,28 +1,36 @@
 # Listing Copilot Documentation
 
-This folder contains product specs, architecture decisions, roadmap notes, and training/calibration records for Listing Copilot.
+This folder contains product specs, architecture decisions, roadmap notes, standards, and training records for Listing Copilot.
 
-## Source-of-Truth Documents
+The documentation is organized so permanent source-of-truth docs are separate from raw training evidence and historical notes.
 
-Recommended reading order:
+## Recommended Reading Order
 
-1. `foundation-v1.md`
-2. `sports-card-title-standard-v1.md`
-3. `architecture-decisions-v1.md`
-4. `listing-copilot-roadmap-v1.md`
-5. `prompt-modernization-plan-v1.md`
+1. `foundation/foundation-v1.md`
+2. `standards/sports-card-title-standard-v1.md`
+3. `architecture/architecture-decisions-v1.md`
+4. `roadmap/listing-copilot-roadmap-v1.md`
+5. `architecture/prompt-modernization-plan-v1.md`
 
-### `foundation-v1.md`
+## Foundation
 
-Top-level map of the Listing Copilot foundation.
+### `foundation/foundation-v1.md`
+
+Top-level map of Listing Copilot.
 
 Use this as the first stop for future engineers and future Codex sessions.
 
-### `sports-card-title-standard-v1.md`
+### `foundation/spec-v1.md`
 
-Defines the Sports Card Title Standard v1.
+Original MVP product and workflow specification.
 
-Use this as the source of truth for future sports card title generation rules, including:
+Use this for initial product context. Newer sports-card title behavior should defer to the standard, ADRs, and roadmap.
+
+## Standards
+
+### `standards/sports-card-title-standard-v1.md`
+
+Source of truth for future sports card title generation rules, including:
 
 - evidence layers
 - evidence hierarchy
@@ -30,58 +38,48 @@ Use this as the source of truth for future sports card title generation rules, i
 - cleanup standards
 - PSA/BGS grading semantics
 
-### `architecture-decisions-v1.md`
+## Architecture
 
-Captures approved V1.x architecture decisions that complement the sports card standard.
+### `architecture/architecture-decisions-v1.md`
 
-Use this to understand current constraints and future boundaries, including:
+Approved V1.x architecture decisions and future boundaries.
 
-- no V1.x schema migration
-- evidence provenance deferred
-- parallel vs card type vs variation definitions
-- attributes classification
-- grammar engine deferred
-- cleanup responsibilities
-- grading semantics direction
+### `architecture/prompt-modernization-plan-v1.md`
 
-### `listing-copilot-roadmap-v1.md`
+Plan for reducing prompt complexity over time while preserving output quality.
 
-Converts the sports card standard and architecture decisions into an implementation roadmap.
+## Roadmap
 
-Use this to understand:
+### `roadmap/listing-copilot-roadmap-v1.md`
 
-- where the current production system stands
-- why the future Evidence Engine matters
-- what the Resolver Engine should own
-- how a future Grammar Engine should render titles
-- where a future cloud knowledge/database layer may fit
+Phased implementation roadmap from current production behavior toward Evidence, Resolver, Grammar Engine, and Knowledge Database architecture.
 
-## Product Spec
+## Training
 
-### `spec-v1.md`
+### `training/README.md`
 
-Original MVP product and workflow specification.
+Training archive guide.
 
-This is still useful for product context, but newer sports-card title behavior should defer to:
+### `training/training-index-v1.md`
 
-1. `sports-card-title-standard-v1.md`
-2. `architecture-decisions-v1.md`
-3. `listing-copilot-roadmap-v1.md`
+Consolidated operating summary of recurring QA learnings.
 
-## Training and Calibration Notes
+### `training/registry-candidates-v1.md`
 
-The `training-*.md` files are historical learning records from card subsets, confidence calibration, and prompt refinements.
+Registry backlog for official card types, inserts, product-family terms, parallels, and commercially meaningful terms.
 
-They are useful for understanding why certain rules exist, but they are not the current source of truth when they conflict with the standard, ADRs, or roadmap.
+### `training/qa-findings-2026-06.md`
 
-Current training notes include:
+Monthly QA summary for the June 2026 Subset A-F training cycle.
 
-- `training-case-hit-insert-v1.md`
-- `training-extraction-priority-serial-v1.md`
-- `training-pokemon-illustrator-disambiguation-v1.md`
-- `training-subset-a-v1.md`
-- `training-subset-a-retest-confidence-v1.md`
-- `training-subset-a-retest-confidence-philosophy-v1.md`
-- `training-subset-a-administrative-summary-v1.md`
-- `training-subset-b-follow-up-v1.md`
-- `training-subset-c-case-summary-v1.md`
+### `training/subsets/`
+
+Raw subset reports. These are evidence records and should remain mostly immutable after creation.
+
+## Archive
+
+### `archive/training-legacy/`
+
+Older one-off training notes, confidence calibration notes, and category-specific historical records.
+
+These remain useful context, but they are not the current source of truth when they conflict with foundation, standards, architecture, roadmap, or the consolidated training index.
