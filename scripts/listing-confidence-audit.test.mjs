@@ -582,6 +582,27 @@ const cooperFlaggV124 = await callApi({
 
 assert.equal(cooperFlaggV124.title, "2025-26 Topps Chrome Cooper Flagg Chrome Rookie Auto RC PSA 9/10");
 
+const cooperFlaggPsaMintAutoGradeFolded = await callApi({
+  title: "2025 Topps Chrome Cooper Flagg Chrome Rookie Auto RC PSA 10 PSA MINT 9 PSA/DNA Cert Autograph 10",
+  confidence: "HIGH",
+  reason: "Back product text supports 2025-26 Topps Chrome Basketball; PSA label shows card grade MINT 9 and PSA/DNA autograph grade 10.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Cooper Flagg",
+    insert: "Chrome Rookie Auto",
+    card_number: "TCAR-CF",
+    grade_company: "PSA",
+    grade: "9",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 140 });
+
+assert.equal(cooperFlaggPsaMintAutoGradeFolded.title, "2025-26 Topps Chrome Cooper Flagg Chrome Rookie Auto RC PSA 9/10");
+assert.doesNotMatch(cooperFlaggPsaMintAutoGradeFolded.title, /PSA 10$|Autograph 10|Auto 10|PSA MINT 9/i);
+
 const aceBaileyChecklistSuppressed = await callApi({
   title: "2025-26 Ace Bailey RC Auto Orange Refractor 31/150 Chrome Rookie Auto #TCAR-AB",
   confidence: "HIGH",
@@ -905,6 +926,177 @@ const jaysonTatumBgsV124 = await callApi({
 }, { maxTitleLength: 120 });
 
 assert.equal(jaysonTatumBgsV124.title, "2017-18 Panini Prizm Jayson Tatum Rookie Auto /10 BGS 9.5/10");
+
+const jaysonTatumBgsLooseAutoGradeFolded = await callApi({
+  title: "2017-18 Prizm Jayson Tatum Fast Break Auto /10 Auto 10 BGS 9.5",
+  confidence: "HIGH",
+  reason: "Card text supports Panini Prizm Jayson Tatum Fast Break Auto serial /10; BGS label shows card condition grade 9.5 and autograph grade 10.",
+  fields: {
+    year: "2017-18",
+    brand: "Panini",
+    product: "Panini Prizm",
+    player: "Jayson Tatum",
+    insert: "Fast Break Auto",
+    serial_number: "/10",
+    grade_company: "BGS",
+    grade: "9.5",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 140 });
+
+assert.equal(jaysonTatumBgsLooseAutoGradeFolded.title, "2017-18 Panini Prizm Jayson Tatum Fast Break Auto /10 BGS 9.5/10");
+assert.match(jaysonTatumBgsLooseAutoGradeFolded.title, /Auto \/10 BGS 9\.5\/10$/);
+assert.doesNotMatch(jaysonTatumBgsLooseAutoGradeFolded.title, /\bAuto 10\b/i);
+
+const genericPsaCardAndAutoGrade = await callApi({
+  title: "2024 Topps Chrome Placeholder Player Blue Auto PSA MINT 8 Autograph 10",
+  confidence: "HIGH",
+  reason: "PSA label supports card condition grade 8 and autograph grade 10.",
+  fields: {
+    year: "2024",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Placeholder Player",
+    parallel: "Blue",
+    grade_company: "PSA",
+    grade: "8",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(genericPsaCardAndAutoGrade.title, "2024 Topps Chrome Placeholder Player Blue Auto PSA 8/10");
+assert.doesNotMatch(genericPsaCardAndAutoGrade.title, /\bAutograph 10\b|\bAuto 10\b/i);
+
+const genericPsaAuthAndAutoGrade = await callApi({
+  title: "2024 Bowman Chrome Sample Prospect Auto PSA Auth Auto 10",
+  confidence: "HIGH",
+  reason: "PSA label supports authentic card and autograph grade 10.",
+  fields: {
+    year: "2024",
+    brand: "Bowman Chrome",
+    player: "Sample Prospect",
+    grade_company: "PSA",
+    grade: "AUTH",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(genericPsaAuthAndAutoGrade.title, "2024 Bowman Chrome Sample Prospect Auto PSA Auth/10");
+
+const genericPsaAutoGradeOnly = await callApi({
+  title: "2024 Topps Chrome Placeholder Player Auto PSA Auto 9",
+  confidence: "HIGH",
+  reason: "PSA label supports autograph grade 9 only.",
+  fields: {
+    year: "2024",
+    brand: "Topps Chrome",
+    player: "Placeholder Player",
+    grade_company: "PSA",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(genericPsaAutoGradeOnly.title, "2024 Topps Chrome Placeholder Player Auto PSA AUTO 9");
+assert.doesNotMatch(genericPsaAutoGradeOnly.title, /PSA 9$/);
+
+const genericPsaCardGradeOnly = await callApi({
+  title: "2024 Topps Chrome Placeholder Player Refractor PSA 9",
+  confidence: "HIGH",
+  reason: "PSA label supports card condition grade 9 only.",
+  fields: {
+    year: "2024",
+    brand: "Topps Chrome",
+    player: "Placeholder Player",
+    parallel: "Refractor",
+    grade_company: "PSA",
+    grade: "9"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(genericPsaCardGradeOnly.title, "2024 Topps Chrome Placeholder Player Refractor PSA 9");
+assert.doesNotMatch(genericPsaCardGradeOnly.title, /PSA 9\//);
+
+const genericBgsCardAndAutoGrade = await callApi({
+  title: "2024 Panini Prizm Placeholder Guard Silver Auto /10 BGS 9 Auto 9",
+  confidence: "HIGH",
+  reason: "BGS label supports card condition grade 9 and autograph grade 9; serial /10 is visible.",
+  fields: {
+    year: "2024",
+    brand: "Panini",
+    product: "Panini Prizm",
+    player: "Placeholder Guard",
+    parallel: "Silver",
+    serial_number: "/10",
+    grade_company: "BGS",
+    grade: "9",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(genericBgsCardAndAutoGrade.title, "2024 Panini Prizm Placeholder Guard Silver Auto /10 BGS 9/9");
+assert.match(genericBgsCardAndAutoGrade.title, /Auto \/10 BGS 9\/9$/);
+assert.doesNotMatch(genericBgsCardAndAutoGrade.title, /\bAuto 9\b/i);
+
+const genericBgsAuthAndAutoGrade = await callApi({
+  title: "2024 Panini Prizm Placeholder Guard Auto BGS Auth Auto 10",
+  confidence: "HIGH",
+  reason: "BGS label supports authentic card and autograph grade 10.",
+  fields: {
+    year: "2024",
+    brand: "Panini",
+    product: "Panini Prizm",
+    player: "Placeholder Guard",
+    grade_company: "BGS",
+    grade: "AUTH",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(genericBgsAuthAndAutoGrade.title, "2024 Panini Prizm Placeholder Guard Auto BGS Auth/10");
+
+const genericBgsAutoGradeOnly = await callApi({
+  title: "2024 Panini Prizm Placeholder Guard Auto BGS Auto 10",
+  confidence: "HIGH",
+  reason: "BGS label supports autograph grade 10 only.",
+  fields: {
+    year: "2024",
+    brand: "Panini",
+    product: "Panini Prizm",
+    player: "Placeholder Guard",
+    grade_company: "BGS",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(genericBgsAutoGradeOnly.title, "2024 Panini Prizm Placeholder Guard Auto BGS AUTO 10");
+assert.doesNotMatch(genericBgsAutoGradeOnly.title, /BGS 10$/);
+
+const genericBgsCardGradeOnly = await callApi({
+  title: "2024 Panini Prizm Placeholder Guard Silver BGS 10",
+  confidence: "HIGH",
+  reason: "BGS label supports card condition grade 10 only.",
+  fields: {
+    year: "2024",
+    brand: "Panini",
+    product: "Panini Prizm",
+    player: "Placeholder Guard",
+    parallel: "Silver",
+    grade_company: "BGS",
+    grade: "10"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(genericBgsCardGradeOnly.title, "2024 Panini Prizm Placeholder Guard Silver BGS 10");
+assert.doesNotMatch(genericBgsCardGradeOnly.title, /BGS 10\//);
 
 const duoLogomanAutographs = await callApi({
   title: "2019-20 Panini Immaculate Collection PJ Washington Jr Tyler Herro Dual Auto One",

@@ -175,7 +175,7 @@ function cleanupTitleWording(title, maxLength) {
 }
 
 function normalizeGradeDisplay(title) {
-  return normalizeBgsGradeDisplay(normalizePsaGradeDisplay(title));
+  return foldLooseAutoGrade(normalizeBgsGradeDisplay(normalizePsaGradeDisplay(title)));
 }
 
 function normalizePsaGradeDisplay(title) {
@@ -189,8 +189,10 @@ function normalizePsaGradeDisplay(title) {
     .replace(/\bPSA\s+(\d+(?:\.\d+)?)\s+(?:GEM\s+MINT|MINT|NM-MT|NM|EX-MT|EX)\s+(AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b/gi, (_, cardGrade, autoGrade) => {
       return `PSA ${normalizePsaGradeToken(cardGrade)}/${normalizePsaGradeToken(autoGrade)}`;
     })
+    .replace(/\bPSA\s+Auto\s+(AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b/gi, (_, autoGrade) => {
+      return `PSA AUTO ${normalizePsaGradeToken(autoGrade)}`;
+    })
     .replace(/\bPSA\s+(AUTH|AUTHENTIC)\b/gi, "PSA Auth")
-    .replace(/\bPSA\s+Auto\s+(AUTH|AUTHENTIC)\b/gi, "PSA AUTO Auth")
     .replace(/\bPSA\s+AUTO\s+(AUTH|AUTHENTIC)\b/gi, "PSA AUTO Auth");
 }
 
@@ -212,6 +214,45 @@ function normalizeBgsGradeDisplay(title) {
     .replace(/\bBGS\s+Altered\b/gi, "BGS Altered");
 }
 
+function foldLooseAutoGrade(title) {
+  let cleaned = String(title || "").replace(/\s+/g, " ").trim();
+
+  const gradeValuePattern = "(?:10|9(?:\\.5)?|8(?:\\.5)?|7(?:\\.5)?|6(?:\\.5)?|5(?:\\.5)?|4(?:\\.5)?|3(?:\\.5)?|2(?:\\.5)?|1(?:\\.5)?)";
+  const psaLooseAutoGradePattern = new RegExp(`\\bPSA\\s+(?:\\d+(?:\\.\\d+)?\\s+)?(MINT|GEM\\s+MINT|NM-MT|NM|EX-MT|EX|AUTH|AUTHENTIC|ALTERED)?\\s*(${gradeValuePattern}|AUTH|AUTHENTIC|ALTERED)\\b(?=[\\s\\S]*\\b(?:PSA\\/DNA\\s+Cert\\s+)?(?:Autograph|Auto|AUTO)\\s+(AUTH|AUTHENTIC|${gradeValuePattern})\\b)`, "gi");
+  const psaDescriptorGradePattern = new RegExp(`\\bPSA\\s+(?:${gradeValuePattern}\\s+)?(?:MINT|GEM\\s+MINT|NM-MT|NM|EX-MT|EX)\\s+(${gradeValuePattern})\\b(?=[\\s\\S]*\\b(?:PSA\\/DNA\\s+Cert\\s+)?(?:Autograph|Auto|AUTO)\\s+(AUTH|AUTHENTIC|${gradeValuePattern})\\b)`, "gi");
+  const bgsLooseAutoGradePattern = new RegExp(`\\bBGS\\s+(?:\\d+(?:\\.\\d+)?\\s+)?(?:GEM\\s+MINT|MINT|NM-MT|NM|EX-MT|EX|AUTHENTIC|AUTH|ALTERED)?\\s*(${gradeValuePattern}|AUTHENTIC|AUTH|ALTERED)\\b(?=[\\s\\S]*\\b(?:Autograph|Auto|AUTO)\\s+(${gradeValuePattern})\\b)`, "gi");
+  const bgsLeadingAutoGradePattern = new RegExp(`\\b(?:Autograph|Auto|AUTO)\\s+(${gradeValuePattern})\\s+BGS\\s+(?:GEM\\s+MINT|MINT|NM-MT|NM|EX-MT|EX|AUTHENTIC|AUTH|ALTERED)?\\s*(${gradeValuePattern}|AUTHENTIC|AUTH|ALTERED)\\b`, "gi");
+
+  cleaned = cleaned.replace(
+    psaDescriptorGradePattern,
+    (_, cardGrade, autoGrade) => `PSA ${normalizePsaGradeToken(cardGrade)}/${normalizePsaGradeToken(autoGrade)}`
+  );
+
+  cleaned = cleaned.replace(
+    psaLooseAutoGradePattern,
+    (_, _descriptor, cardGrade, autoGrade) => `PSA ${normalizePsaGradeToken(cardGrade)}/${normalizePsaGradeToken(autoGrade)}`
+  );
+
+  cleaned = cleaned.replace(
+    bgsLooseAutoGradePattern,
+    (_, cardGrade, autoGrade) => `BGS ${normalizeBgsGradeToken(cardGrade)}/${normalizeBgsGradeToken(autoGrade)}`
+  );
+
+  cleaned = cleaned.replace(
+    bgsLeadingAutoGradePattern,
+    (_, autoGrade, cardGrade) => `BGS ${normalizeBgsGradeToken(cardGrade)}/${normalizeBgsGradeToken(autoGrade)}`
+  );
+
+  if (/\b(?:PSA|BGS)\s+(?:Auth|\d+(?:\.\d+)?)\/(?:Auth|\d+(?:\.\d+)?)\b/i.test(cleaned)) {
+    cleaned = cleaned.replace(new RegExp(`\\b(?:PSA\\/DNA\\s+Cert\\s+)?(?:Autograph|Auto|AUTO)\\s+(AUTH|AUTHENTIC|${gradeValuePattern})\\b`, "gi"), " ");
+  }
+
+  return cleaned
+    .replace(/\b(?:Gem\s+Mint|Mint|Authentic|Altered)\s+(?=BGS\s+(?:Altered|Auth|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?))/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizePsaGradeToken(value) {
   const token = String(value || "").trim();
   return /^(?:AUTH|AUTHENTIC)$/i.test(token) ? "Auth" : token;
@@ -231,7 +272,8 @@ function suppressDuplicateAutoTerms(title) {
     "Chrome Rookie Auto",
     "Chrome Auto",
     "Dual Signatures Auto",
-    "PSA AUTO"
+    "PSA AUTO",
+    "BGS AUTO"
   ];
   const placeholder = "__AUTO__";
 
@@ -242,6 +284,11 @@ function suppressDuplicateAutoTerms(title) {
   const autoMatches = cleaned.match(/\bAuto\b/gi) || [];
   const hasProtectedAuto = cleaned.includes(placeholder);
   if (autoMatches.length <= 1 && !hasProtectedAuto) return cleaned;
+  if (autoMatches.length <= 1 && !/\b(?:RC|Rookie)\s+Auto\b/i.test(cleaned)) {
+    return cleaned
+      .replace(new RegExp(placeholder, "g"), "Auto")
+      .replace(/\b(PSA|BGS)\s+Auto\b/g, (_, company) => `${company} AUTO`);
+  }
   if (autoMatches.length === 0) {
     return cleaned.replace(new RegExp(placeholder, "g"), "Auto");
   }
@@ -262,6 +309,7 @@ function suppressDuplicateAutoTerms(title) {
 
   cleaned = cleaned
     .replace(new RegExp(placeholder, "g"), "Auto")
+    .replace(/\b(PSA|BGS)\s+Auto\b/g, (_, company) => `${company} AUTO`)
     .replace(/\s+/g, " ")
     .trim();
 
@@ -276,7 +324,7 @@ function moveLeadingGradeToEnd(title, maxLength) {
     return cleanupTitleWording(`${rest} ${company.toUpperCase()} ${grade}`, maxLength);
   }
 
-  const gradePattern = /\b(?:PSA\s+(?:AUTO\s+)?(?:Auth(?:\/(?:Auth|\d+(?:\.\d+)?))?|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|BGS\s+(?:AUTO\s+)?(?:Altered|Auth|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|CGC\s+(?:Auth|\d+(?:\.\d+)?))\b/gi;
+  const gradePattern = /\b(?:PSA\s+(?:AUTO\s+)?(?:Auth\/(?:Auth|\d+(?:\.\d+)?)|\d+(?:\.\d+)?\/(?:Auth|\d+(?:\.\d+)?)|Auth|\d+(?:\.\d+)?)|BGS\s+(?:AUTO\s+)?(?:\d+(?:\.\d+)?\/(?:Auth|\d+(?:\.\d+)?)|Altered|Auth|\d+(?:\.\d+)?)|CGC\s+(?:Auth|\d+(?:\.\d+)?))\b/gi;
   const gradeMatches = [...normalized.matchAll(gradePattern)];
   if (gradeMatches.length === 0) return normalized;
 
@@ -402,7 +450,7 @@ function ensureSportsRcMarker(title, fields) {
 
   if (!needsRc || /\bRC\b/i.test(cleaned)) return cleaned;
 
-  const gradePattern = /\b(?:PSA\s+(?:AUTO\s+)?(?:Auth(?:\/(?:Auth|\d+(?:\.\d+)?))?|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|BGS\s+(?:AUTO\s+)?(?:Altered|Auth|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|CGC\s+(?:Auth|\d+(?:\.\d+)?))\b$/i;
+  const gradePattern = /\b(?:PSA\s+(?:AUTO\s+)?(?:Auth\/(?:Auth|\d+(?:\.\d+)?)|\d+(?:\.\d+)?\/(?:Auth|\d+(?:\.\d+)?)|Auth|\d+(?:\.\d+)?)|BGS\s+(?:AUTO\s+)?(?:\d+(?:\.\d+)?\/(?:Auth|\d+(?:\.\d+)?)|Altered|Auth|\d+(?:\.\d+)?)|CGC\s+(?:Auth|\d+(?:\.\d+)?))\b$/i;
   const grade = cleaned.match(gradePattern)?.[0];
   if (!grade) return `${cleaned} RC`.replace(/\s+/g, " ").trim();
 
@@ -420,6 +468,20 @@ function sportsTitleShouldRecoverSerial(fields, title) {
   if (titleIncludesSerial(title, fields)) return true;
   const combined = `${fields.insert || ""} ${fields.product || ""} ${title || ""}`;
   return /Chrome Rookie Auto|Chrome Auto|Dual Signatures|Duo Logoman Autographs|Star Swatch Signatures|Immaculate|Flawless|Prizm/i.test(combined);
+}
+
+function repairOrphanAutoGradeSuffix(title, fields, maxLength) {
+  const serial = normalizeSerialText(fields.serial_number || "");
+  if (/^\/\d+(?:\.\d+)?$/.test(serial)) return title;
+
+  const repaired = String(title || "")
+    .replace(/\s+\/(Auth|\d+(?:\.\d+)?)\s+(PSA|BGS)\s+(Auth|\d+(?:\.\d+)?)\b/gi, (_, autoGrade, company, cardGrade) => {
+      return ` ${company.toUpperCase()} ${normalizePsaGradeToken(cardGrade)}/${normalizePsaGradeToken(autoGrade)}`;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalizeTitle(repaired, maxLength);
 }
 
 function resolveProtectedCardType(title, fields) {
@@ -1196,7 +1258,7 @@ function normalizeAiResult(result, maxTitleLength) {
   const fields = normalizeFields(result.fields);
   const unresolved = normalizeUnresolved(result.unresolved, result.fields);
   const sanitized = sanitizeResultText(result, fields, confidence, unresolved, maxTitleLength);
-  const title = moveLeadingGradeToEnd(sanitized.title, maxTitleLength);
+  const title = repairOrphanAutoGradeSuffix(moveLeadingGradeToEnd(sanitized.title, maxTitleLength), fields, maxTitleLength);
   const calibrated = calibrateConfidence({
     title,
     confidence: sanitized.confidence,
