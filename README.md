@@ -1,57 +1,44 @@
-# Metaverse Listing Copilot
+# Listing Copilot
 
-元宇宙卡牌 listing workflow 的独立内部 webtool。
+Internal LYNCA webtool for turning collectible card images into copy-paste-ready English eBay listing titles.
 
-这个 repo 从 `lynca-metaverse-os` 拆出，避免 Listing Copilot 的独立 API key、部署节奏、测试周期影响 Metaverse OS。
+Listing Copilot is not an eBay auto-listing system and does not call the eBay API. It is an operator assistant: upload card images, generate title candidates, review confidence, and copy accepted titles into the listing workflow.
 
-## 当前定位
+## Product State
 
-- 域名目标：`listing.lyncafei.team`
-- 前端：原生 HTML / CSS / JavaScript
-- backend：Vercel API functions + middleware
-- AI pipeline：OpenAI vision/title generation
-- 数据源：静态 `resolution.json`
-- 登录：固定账号密码，通过环境变量配置
+- Frontend: native HTML / CSS / JavaScript in `app/`
+- Backend: Vercel API functions in `api/`
+- Auth: simple internal login via environment variables
+- AI pipeline: OpenAI vision/title generation using prompts in `prompts/`
+- Knowledge support: local registry in `lib/listing-knowledge-registry.mjs`
+- Tests: mock title audit and upload safety scripts in `scripts/`
 
-它不是 eBay 自动上架系统，也不接 eBay API。当前 MVP 是 copy-paste assistant：批量上传卡图，按 Single Image 或 Front / Back Pair 生成 eBay-ready 标题，并给出 HIGH / MEDIUM / LOW / FAILED 分流。
+Current workflow:
 
-## 目录结构
+1. Upload card images.
+2. Choose Single Image or Front / Back Pair mode.
+3. Generate English eBay-ready titles.
+4. Review confidence: `HIGH`, `MEDIUM`, `LOW`, or `FAILED`.
+5. Copy individual titles or the V1.2 Batch Generated Titles list.
 
-```text
-lynca-listing-copilot/
-├─ app/
-│  ├─ index.html
-│  ├─ login.html
-│  ├─ listing-copilot.css
-│  ├─ listing-copilot.js
-│  ├─ login.js
-│  └─ resolution.json
-├─ api/
-│  ├─ login.js
-│  ├─ logout.js
-│  ├─ session.js
-│  └─ listing-copilot-title.js
-├─ docs/
-│  └─ spec-v1.md
-├─ prompts/
-│  ├─ listing-intelligence-v1.md
-│  └─ examples/
-├─ scripts/
-│  └─ dev-server.mjs
-├─ middleware.js
-├─ vercel.json
-├─ package.json
-├─ .env.example
-└─ .gitignore
-```
-
-## 本地运行
+## Local Development
 
 ```bash
 cp .env.example .env.local
+npm run dev
 ```
 
-编辑 `.env.local`：
+Open:
+
+```text
+http://localhost:3000
+```
+
+If `OPENAI_API_KEY` is empty, the app uses filename fallback so upload, pairing, and copy flows can still be tested locally.
+
+## Environment Variables
+
+Required for local and Vercel environments:
 
 ```text
 METAVERSE_USERNAME=listing
@@ -61,61 +48,53 @@ OPENAI_API_KEY=
 OPENAI_LISTING_MODEL=gpt-4.1-mini
 ```
 
-启动：
+## Validation
 
-```bash
-npm run dev
-```
-
-访问：
-
-```text
-http://localhost:3000
-```
-
-未配置 `OPENAI_API_KEY` 时，系统会用 filename fallback 验证上传、配对和复制流程。
-
-## Listing Intelligence Prompt
-
-OpenAI title generation uses editable prompt files under `prompts/`.
-
-```text
-prompts/
-├─ listing-intelligence-v1.md
-└─ examples/
-   ├─ sports.md
-   ├─ pokemon.md
-   ├─ marvel.md
-   ├─ sketch.md
-   └─ redemption.md
-```
-
-The API route loads these files at runtime, so prompt architecture can evolve without changing application logic.
-
-## Vercel 部署
-
-这个 repo 应作为独立 Vercel Project 部署：
-
-```text
-GitHub repo: lynca-listing-copilot
-Root Directory: ./
-Production domain: listing.lyncafei.team
-```
-
-Vercel 环境变量：
-
-```text
-METAVERSE_USERNAME
-METAVERSE_PASSWORD
-METAVERSE_AUTH_SECRET
-OPENAI_API_KEY
-OPENAI_LISTING_MODEL
-```
-
-## 检查
+Run the full check suite:
 
 ```bash
 npm run check
 ```
 
-完整产品规则见 [docs/spec-v1.md](docs/spec-v1.md)。
+Useful direct commands:
+
+```bash
+node --check api/listing-copilot-title.js
+node --check scripts/listing-confidence-audit.test.mjs
+node scripts/listing-confidence-audit.test.mjs
+node scripts/upload-safety-layer.test.mjs
+```
+
+## Documentation
+
+Start with:
+
+- [docs/README.md](docs/README.md) — documentation index
+- [docs/sports-card-title-standard-v1.md](docs/sports-card-title-standard-v1.md) — sports card title source-of-truth
+- [docs/architecture-decisions-v1.md](docs/architecture-decisions-v1.md) — approved V1.x architecture decisions
+- [docs/listing-copilot-roadmap-v1.md](docs/listing-copilot-roadmap-v1.md) — phased implementation roadmap
+- [docs/spec-v1.md](docs/spec-v1.md) — original MVP product spec
+
+Training and calibration notes remain in `docs/training-*.md`.
+
+## Prompt Files
+
+OpenAI title generation loads prompt files at runtime:
+
+```text
+prompts/listing-intelligence-v1.md
+prompts/examples/
+```
+
+Prompt edits can change generation behavior without frontend changes, so validate with `node scripts/listing-confidence-audit.test.mjs` after any prompt or title-standard change.
+
+## Deployment
+
+This repo should remain an independent Vercel project.
+
+```text
+Production domain: listing.lyncafei.team
+Root Directory: ./
+```
+
+Configure the same environment variables listed above in Vercel.
