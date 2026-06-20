@@ -131,6 +131,14 @@ Examples:
 - `Kaboom` > generic `Insert`
 - `Color Blast` > generic `Insert`
 
+Official card type and insert names are protected market terms. Do not simplify them into generic descriptions:
+
+- `Chrome Rookie Auto` must not collapse to `Auto`
+- `Dual Signatures` must not collapse to `Dual Auto`
+- `Duo Logoman Autographs` must not collapse to `Dual Auto`
+- `Star Swatch Signatures` must not collapse to `Patch Auto`
+- `Propulsion` and `Red Propulsion` must not collapse to generic insert or parallel wording
+
 Do not hallucinate `Base`. Use `Base` only when slab/card text explicitly says Base, registry confirms the card number is the base version, or a trusted reference title says Base without conflicting with visible evidence.
 
 ### Parallel and Insert Taxonomy Awareness
@@ -290,6 +298,8 @@ When uncertain, prefer:
 Rules:
 
 - Use stable title order by default: Year + Brand/Product + Official card type or Insert + Subject + RC/Rookie if applicable + Parallel/Variation + Serial + Auto/Relic/Patch if not already contained in official card type + Grade + Card number.
+- Do not include checklist/card numbers by default. Codes such as `#TCAR-CF`, `#TCAR-AB`, `#PRP-3`, `#SR-KD`, and `#DRL-PT` are useful for resolution but usually too noisy for eBay title output.
+- Preserve serial numbers, but write them in simple market format: `31/150`, `2/5`, `01/10`, `1/1`. Do not write `#31/150`, `Serial 31/150`, or `Numbered 31/150`.
 - PSA, BGS, CGC, grade company, and grade number should be near the end of the title by default.
 - Do not put grading information at the beginning unless the card identity is primarily derived from the slab label and no better card-front identity is available.
 - Preferred example: `2000 Pokemon Japanese Neo 3 Celebi Holo #251 PSA 9`.

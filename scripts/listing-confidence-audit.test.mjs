@@ -535,7 +535,33 @@ const cooperFlaggChromeRookieAuto = await callApi({
 assert.match(cooperFlaggChromeRookieAuto.title, /Chrome Rookie Auto/i);
 assert.doesNotMatch(cooperFlaggChromeRookieAuto.title, /\bBase\b/i);
 assert.match(cooperFlaggChromeRookieAuto.title, /PSA 9 Auto 10/i);
-assert.match(cooperFlaggChromeRookieAuto.title, /#TCAR-CF/i);
+assert.doesNotMatch(cooperFlaggChromeRookieAuto.title, /#?TCAR-CF/i);
+
+const aceBaileyChecklistSuppressed = await callApi({
+  title: "2025-26 Ace Bailey RC Auto Orange Refractor 31/150 Chrome Rookie Auto #TCAR-AB",
+  confidence: "HIGH",
+  reason: "Card text supports Chrome Rookie Auto, RC, orange refractor, autograph, and serial 31/150.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Ace Bailey",
+    subset: "RC",
+    insert: "Chrome Rookie Auto",
+    parallel: "Orange Refractor",
+    card_number: "TCAR-AB",
+    serial_number: "31/150",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(aceBaileyChecklistSuppressed.title, /Topps Chrome/i);
+assert.match(aceBaileyChecklistSuppressed.title, /Ace Bailey/i);
+assert.match(aceBaileyChecklistSuppressed.title, /Chrome Rookie Auto/i);
+assert.match(aceBaileyChecklistSuppressed.title, /31\/150/);
+assert.doesNotMatch(aceBaileyChecklistSuppressed.title, /#?TCAR-AB/i);
+assert.doesNotMatch(aceBaileyChecklistSuppressed.title, /#31\/150|Serial 31\/150|Numbered 31\/150/i);
 
 const curryRedPropulsion = await callApi({
   title: "2026 Topps Chrome Stephen Curry Golden State Warriors Propulsion 2/5",
@@ -556,6 +582,29 @@ assert.match(curryRedPropulsion.title, /Cosmic Chrome/i);
 assert.match(curryRedPropulsion.title, /Red Propulsion/i);
 assert.match(curryRedPropulsion.title, /2\/5/);
 assert.doesNotMatch(curryRedPropulsion.title, /^2026 Topps Chrome Stephen Curry/i);
+
+const propulsionChecklistSuppressed = await callApi({
+  title: "2026 Topps Chrome Propulsion Stephen Curry Golden State Warriors #2/5 #PRP-3",
+  confidence: "HIGH",
+  reason: "Card text supports Propulsion insert, Stephen Curry, and serial 2/5.",
+  fields: {
+    year: "2026",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Stephen Curry",
+    team: "Golden State Warriors",
+    insert: "Propulsion",
+    card_number: "PRP-3",
+    serial_number: "2/5"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(propulsionChecklistSuppressed.title, /Propulsion/i);
+assert.match(propulsionChecklistSuppressed.title, /Stephen Curry/i);
+assert.match(propulsionChecklistSuppressed.title, /2\/5/);
+assert.doesNotMatch(propulsionChecklistSuppressed.title, /#2\/5|Serial 2\/5|Numbered 2\/5/i);
+assert.doesNotMatch(propulsionChecklistSuppressed.title, /#?PRP-3/i);
 
 const seasonYearPreserved = await callApi({
   title: "2026 Topps Chrome Stephen Curry Red Propulsion SSP 2/5",
@@ -595,7 +644,7 @@ assert.match(immaculateDualSignatures.title, /Dual Signatures/i);
 assert.match(immaculateDualSignatures.title, /Shaquille O'Neal/i);
 assert.match(immaculateDualSignatures.title, /Anfernee Hardaway/i);
 assert.match(immaculateDualSignatures.title, /01\/25/);
-assert.match(immaculateDualSignatures.title, /#35/);
+assert.doesNotMatch(immaculateDualSignatures.title, /#35/);
 
 const compressedSerialPreserved = await callApi({
   title: "2015-16 Panini Immaculate Collection Shaquille O'Neal Anfernee Hardaway Dual 01/25 #35",
@@ -661,6 +710,7 @@ assert.match(durantStarSwatch.title, /Star Swatch Signatures/i);
 assert.match(durantStarSwatch.title, /Platinum/i);
 assert.match(durantStarSwatch.title, /04\/10/);
 assert.doesNotMatch(durantStarSwatch.title, /Patch Auto/i);
+assert.doesNotMatch(durantStarSwatch.title, /#?SR-KD/i);
 
 const sspRegistryPreserved = await callApi({
   title: "2024 Topps Chrome Test Player Super Short Print",

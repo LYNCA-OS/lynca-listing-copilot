@@ -119,8 +119,33 @@ function normalizeRookieMarker(value) {
   return /^(?:RC|Rookie|Rookie Card|Rated Rookie)$/i.test(normalized) ? "RC" : normalized;
 }
 
+function normalizeSerialText(value) {
+  return String(value || "")
+    .replace(/\b(?:Serial|Numbered)\s*#?\s*(\d{1,4}\s*\/\s*\d{1,4})\b/gi, "$1")
+    .replace(/#(\d{1,4})\s*\/\s*(\d{1,4})\b/g, "$1/$2")
+    .replace(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/g, "$1/$2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripChecklistCardNumbers(title, fields = {}) {
+  let cleaned = String(title || "");
+  const serial = normalizeSerialText(fields.serial_number || "");
+
+  cleaned = cleaned.replace(/#(?!(?:\d{1,4}\s*\/\s*\d{1,4})\b)[A-Z]{1,8}[- ][A-Z0-9]{1,12}\b/gi, " ");
+  cleaned = cleaned.replace(/\b(?:TCAR|PRP|SR|DRL)[- ][A-Z0-9]{1,12}\b/gi, " ");
+
+  const cardNumber = String(fields.card_number || "").replace(/^#/, "").trim();
+  if (cardNumber && cardNumber !== serial && !/^\d{1,4}\s*\/\s*\d{1,4}$/.test(cardNumber)) {
+    cleaned = stripLiteralPhrase(cleaned, `#${cardNumber}`);
+    cleaned = stripLiteralPhrase(cleaned, cardNumber);
+  }
+
+  return normalizeSerialText(cleaned).replace(/\s+/g, " ").trim();
+}
+
 function cleanupTitleWording(title, maxLength) {
-  const cleaned = String(title || "")
+  const cleaned = normalizeSerialText(title)
     .replace(/\b(?:Certified\s+)?(?:On[- ]?card\s+|Sticker\s+)?Autograph\b/gi, "Auto")
     .replace(/\bDual\s+Auto\b/gi, "Dual Auto")
     .replace(/\bTriple\s+Auto\b/gi, "Triple Auto")
@@ -174,7 +199,7 @@ function rawIncludes(value, needle) {
 }
 
 function titleIncludesSerial(title, fields) {
-  return Boolean(fields.serial_number && rawIncludes(title, fields.serial_number));
+  return Boolean(fields.serial_number && rawIncludes(normalizeSerialText(title), normalizeSerialText(fields.serial_number)));
 }
 
 function ensureTitleTerm(title, term) {
@@ -431,6 +456,13 @@ function titleIncludesAny(titleText, values) {
   return values.some((value) => titleText.includes(value));
 }
 
+function commerciallyRequiresCardNumber(fields) {
+  if (!fields.card_number) return false;
+  if (resolveKnowledgeEntry(fields.card_number)) return false;
+  if (/^(?:TCAR|PRP|SR|DRL)[- ]/i.test(String(fields.card_number))) return false;
+  return false;
+}
+
 function gradeIncluded(titleText, grade) {
   if (!grade) return true;
   if (titleIncludes(titleText, grade)) return true;
@@ -570,7 +602,11 @@ function auditMissingHighValueFields(title, fields) {
   }
 
   const cardNumberRegistryEntry = resolveKnowledgeEntry(fields.card_number);
-  if (fields.card_number && !titleIncludes(titleText, fields.card_number) && !(cardNumberRegistryEntry && titleIncludes(titleText, cardNumberRegistryEntry.label))) {
+  if (
+    commerciallyRequiresCardNumber(fields)
+    && !titleIncludes(titleText, fields.card_number)
+    && !(cardNumberRegistryEntry && titleIncludes(titleText, cardNumberRegistryEntry.label))
+  ) {
     missing.push("card number");
   }
 
@@ -710,16 +746,16 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
   ].some((value) => typeof value === "string" && containsBackgroundTerm(value));
 
   const highValueInsert = resolveKnowledgeEntry(fields.insert)?.label || extractHighValueInsert(fields.insert);
-  const rawTitle = stripBackgroundTerms(result.title)
+  const rawTitle = stripChecklistCardNumbers(stripBackgroundTerms(result.title), fields)
     .replace(/\bBase\b/gi, fields.insert || fields.parallel ? " " : "Base")
     .replace(/\s+/g, " ")
     .trim();
   const requiredTitleTerms = [
+    fields.product && !rawIncludes(rawTitle, fields.product) ? fields.product : null,
     fields.product === "Topps Cosmic Chrome" ? "Cosmic Chrome" : null,
     highValueInsert,
     fields.parallel === "Platinum" ? "Platinum" : null,
-    titleIncludesSerial(rawTitle, fields) ? fields.serial_number : null,
-    fields.card_number ? `#${String(fields.card_number).replace(/^#/, "")}` : null,
+    titleIncludesSerial(rawTitle, fields) ? normalizeSerialText(fields.serial_number) : null,
     fields.one_of_one ? "1/1" : null,
     fields.grade_company && fields.grade ? `${fields.grade_company} ${String(fields.grade).match(/\d+(?:\.\d+)?/)?.[0] || fields.grade}` : null,
     fields.grade_company && /auto/i.test(String(result.title || "")) && /auto\s*10/i.test(String(result.title || "")) ? "Auto 10" : null
