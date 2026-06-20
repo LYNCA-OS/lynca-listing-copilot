@@ -146,6 +146,7 @@ function stripChecklistCardNumbers(title, fields = {}) {
 
 function cleanupTitleWording(title, maxLength) {
   const cleaned = suppressDuplicateAutoTerms(normalizePsaGradeDisplay(normalizeSerialText(title)
+    .replace(/\b(Topps|Panini|Upper Deck|Bowman|Fleer|Donruss)\s+\1\b/gi, "$1")
     .replace(/\bTopps\s+Chrome\s+Autograph\s+Card\b/gi, "Topps Chrome Auto")
     .replace(/\bChrome\s+Autograph\s+Card\b/gi, "Chrome Auto")
     .replace(/\bChrome\s+Autograph\b/gi, "Chrome Auto")
@@ -166,6 +167,7 @@ function cleanupTitleWording(title, maxLength) {
     .replace(/\bRC\s+RC\b/gi, "RC")
     .replace(/\bTopps\s+Chrome\s+Chrome\s+Auto\b/gi, "Topps Chrome Auto")
     .replace(/\bChrome\s+Chrome\s+Auto\b/gi, "Chrome Auto")
+    .replace(/\bAuto\s+Auto\b/gi, "Auto")
     .replace(/\s+/g, " ")
     .trim()));
 
@@ -198,7 +200,8 @@ function suppressDuplicateAutoTerms(title) {
   const protectedAutoPhrases = [
     "Chrome Rookie Auto",
     "Chrome Auto",
-    "Dual Signatures Auto"
+    "Dual Signatures Auto",
+    "PSA AUTO"
   ];
   const placeholder = "__AUTO__";
 
@@ -236,12 +239,73 @@ function suppressDuplicateAutoTerms(title) {
 }
 
 function moveLeadingGradeToEnd(title, maxLength) {
-  const normalized = String(title || "").replace(/\s+/g, " ").trim();
+  const normalized = cleanupTitleWording(title, maxLength);
   const leadingGrade = normalized.match(/^(PSA|BGS|CGC)\s+(?:GEM\s+MINT\s+|MINT\s+|PRISTINE\s+)?(\d+(?:\.\d+)?)\s+(.+)$/i);
-  if (!leadingGrade) return cleanupTitleWording(normalized, maxLength);
+  if (leadingGrade) {
+    const [, company, grade, rest] = leadingGrade;
+    return cleanupTitleWording(`${rest} ${company.toUpperCase()} ${grade}`, maxLength);
+  }
 
-  const [, company, grade, rest] = leadingGrade;
-  return cleanupTitleWording(`${rest} ${company.toUpperCase()} ${grade}`, maxLength);
+  const gradePattern = /\b(?:PSA\s+(?:AUTO\s+)?(?:Auth(?:\/(?:Auth|\d+(?:\.\d+)?))?|\d+(?:\.\d+)?(?:\/(?:Auth|\d+(?:\.\d+)?))?)|BGS\s+(?:Auth|\d+(?:\.\d+)?)|CGC\s+(?:Auth|\d+(?:\.\d+)?))\b/gi;
+  const gradeMatches = [...normalized.matchAll(gradePattern)];
+  if (gradeMatches.length === 0) return normalized;
+
+  const grade = gradeMatches.at(-1)[0].replace(/\bPSA\s+AUTO\b/i, "PSA AUTO");
+  const withoutGrade = normalized.replace(gradePattern, " ").replace(/\s+/g, " ").trim();
+  if (!withoutGrade) return cleanupTitleWording(grade, maxLength);
+
+  return cleanupTitleWording(`${withoutGrade} ${grade}`, maxLength);
+}
+
+function applySportsTitleGrammar(title, fields, maxLength) {
+  if (!fields.player) return cleanupTitleWording(title, maxLength);
+
+  let cleaned = cleanupTitleWording(ensureSportsProductName(title, fields), maxLength * 2);
+  const cardType = resolveProtectedCardType(cleaned, fields);
+  if (!cardType || !rawIncludes(cleaned, fields.player)) {
+    return normalizeTitle(cleaned, maxLength);
+  }
+
+  const withoutCardType = stripLiteralPhrase(cleaned, cardType);
+  const playerPattern = new RegExp(fields.player.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  cleaned = withoutCardType.replace(playerPattern, (match) => `${match} ${cardType}`);
+
+  return normalizeTitle(cleanupTitleWording(cleaned, maxLength * 2), maxLength);
+}
+
+function ensureSportsProductName(title, fields) {
+  let cleaned = String(title || "").replace(/\s+/g, " ").trim();
+  const brand = String(fields.brand || "").trim();
+  const product = String(fields.product || "").trim();
+  if (!product) return cleaned;
+
+  const productName = brand && !rawIncludes(product, brand) ? `${brand} ${product}` : product;
+  if (brand && productName) {
+    cleaned = cleaned.replace(
+      new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+${productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"),
+      productName
+    );
+  }
+
+  if (productName && !rawIncludes(cleaned, productName) && rawIncludes(cleaned, product)) {
+    cleaned = cleaned.replace(new RegExp(`\\b${product.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"), productName);
+  }
+
+  return cleaned.replace(/\s+/g, " ").trim();
+}
+
+function resolveProtectedCardType(title, fields) {
+  const protectedTypes = [
+    "Chrome Rookie Auto",
+    "Chrome Auto",
+    "Dual Signatures Auto",
+    "Dual Signatures",
+    "Duo Logoman Autographs",
+    "Star Swatch Signatures"
+  ];
+  const explicitInsert = protectedTypes.find((term) => rawIncludes(fields.insert, term));
+  if (explicitInsert) return explicitInsert;
+  return protectedTypes.find((term) => rawIncludes(title, term));
 }
 
 function stripBackgroundTerms(value) {
@@ -872,7 +936,7 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
     maxTitleLength
   );
   const repairedHighValueInsert = Boolean(highValueInsert && !rawIncludes(strippedTitle, highValueInsert));
-  const title = normalizeTitle(repairedTitle, maxTitleLength);
+  const title = applySportsTitleGrammar(repairedTitle, fields, maxTitleLength);
   let reason = stripBackgroundTerms(result.reason);
   let guardedConfidence = confidence;
   const guardedUnresolved = [...unresolved];

@@ -535,6 +535,7 @@ const cooperFlaggChromeRookieAuto = await callApi({
 assert.match(cooperFlaggChromeRookieAuto.title, /Chrome Rookie Auto/i);
 assert.doesNotMatch(cooperFlaggChromeRookieAuto.title, /\bBase\b/i);
 assert.match(cooperFlaggChromeRookieAuto.title, /PSA 9\/10/i);
+assert.match(cooperFlaggChromeRookieAuto.title, /PSA 9\/10$/i);
 assert.doesNotMatch(cooperFlaggChromeRookieAuto.title, /#?TCAR-CF/i);
 
 const cooperFlaggSeasonPsaStandard = await callApi({
@@ -632,6 +633,98 @@ const chromeAutographCardNormalized = await callApi({
 assert.match(chromeAutographCardNormalized.title, /Chrome Auto/i);
 assert.doesNotMatch(chromeAutographCardNormalized.title, /Autograph Card|Autograph/i);
 assert.doesNotMatch(chromeAutographCardNormalized.title, /Topps Chrome Chrome Auto/i);
+
+const manufacturerDedupeGradeEnd = await callApi({
+  title: "2024 Topps Topps Dynasty Shohei Ohtani Auto Patch 3/5 PSA 9 Auto 10",
+  confidence: "HIGH",
+  reason: "Card text supports Topps Dynasty Shohei Ohtani autograph patch serial 3/5; PSA label shows 9 with auto 10.",
+  fields: {
+    year: "2024",
+    brand: "Topps",
+    product: "Topps Dynasty",
+    player: "Shohei Ohtani",
+    serial_number: "3/5",
+    grade_company: "PSA",
+    grade: "9",
+    auto: true,
+    patch: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(manufacturerDedupeGradeEnd.title, /^2024 Topps Dynasty Shohei Ohtani/i);
+assert.doesNotMatch(manufacturerDedupeGradeEnd.title, /Topps Topps Dynasty/i);
+assert.match(manufacturerDedupeGradeEnd.title, /3\/5/);
+assert.match(manufacturerDedupeGradeEnd.title, /PSA 9\/10$/);
+
+const cosmicChromeProductProtected = await callApi({
+  title: "2026 Topps Chrome Stephen Curry Red Propulsion 2/5 PSA 10",
+  confidence: "HIGH",
+  reason: "Back text supports 2025-26 Topps Cosmic Chrome Red Propulsion serial 2/5; PSA label supports grade 10.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Cosmic Chrome",
+    player: "Stephen Curry",
+    insert: "Red Propulsion",
+    serial_number: "2/5",
+    grade_company: "PSA",
+    grade: "10"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(cosmicChromeProductProtected.title, /^2025-26 Topps Cosmic Chrome Stephen Curry/i);
+assert.match(cosmicChromeProductProtected.title, /2\/5/);
+assert.match(cosmicChromeProductProtected.title, /PSA 10$/);
+assert.doesNotMatch(cosmicChromeProductProtected.title, /^2026 Topps Chrome\b/i);
+
+const autoDedupeCanonicalOrder = await callApi({
+  title: "2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto RC Auto Gold Refractor 31/150",
+  confidence: "HIGH",
+  reason: "Card text supports 2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto Gold Refractor serial 31/150.",
+  fields: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    player: "Ace Bailey",
+    subset: "RC",
+    insert: "Chrome Rookie Auto",
+    parallel: "Gold Refractor",
+    serial_number: "31/150",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(autoDedupeCanonicalOrder.title, /^2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto RC Gold Refractor 31\/150$/i);
+assert.equal((autoDedupeCanonicalOrder.title.match(/\bAuto\b/gi) || []).length, 1);
+assert.doesNotMatch(autoDedupeCanonicalOrder.title, /RC Auto/i);
+
+const starSwatchCodeSuppressedSerialPreserved = await callApi({
+  title: "2015-16 Panini Panini Flawless Kevin Durant Star Swatch Signatures Platinum #04/10 #SR-KD PSA 10",
+  confidence: "HIGH",
+  reason: "Registry supports SR-KD as Star Swatch Signatures; serial 04/10 and PSA 10 are visible.",
+  fields: {
+    year: "2015-16",
+    brand: "Panini",
+    product: "Panini Flawless",
+    player: "Kevin Durant",
+    insert: "Star Swatch Signatures",
+    parallel: "Platinum",
+    card_number: "SR-KD",
+    serial_number: "04/10",
+    grade_company: "PSA",
+    grade: "10",
+    auto: true,
+    patch: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum 04\/10 PSA 10$/i);
+assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Panini Panini Flawless/i);
+assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /#04\/10|#?SR-KD|Serial 04\/10|Numbered 04\/10/i);
 
 const curryRedPropulsion = await callApi({
   title: "2026 Topps Chrome Stephen Curry Golden State Warriors Propulsion 2/5",
