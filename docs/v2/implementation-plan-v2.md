@@ -1,6 +1,6 @@
 # Listing Copilot V2.0 Memory Layer Implementation Plan
 
-Status: Analysis Draft v2.0
+Status: V2.0A Validated
 Owner: LYNCA Listing Intelligence
 Companion Documents:
 
@@ -14,7 +14,38 @@ Companion Documents:
 
 This document reviews the current Listing Copilot codebase and identifies the smallest implementation path for the V2.0 Memory Layer.
 
-It is analysis only. It does not include implementation code.
+It began as implementation analysis and now records the V2.0A validation result.
+
+## V2.0A Validation Result
+
+V2.0A manual validation succeeded.
+
+The deployed Listing Copilot successfully created the first real memory record in Supabase table `listing_title_feedback`.
+
+Validated flow:
+
+```text
+Generate title
+  |
+Edit title
+  |
+Save
+  |
+Insert feedback row into Supabase
+```
+
+Observed Supabase row:
+
+- `generated_title` populated
+- `corrected_title` populated
+- `operator_id` populated
+- `created_at` populated
+- `front_image_url` null
+- `back_image_url` null
+
+The null image URL values are expected for V2.0A.
+
+Image evidence storage is deferred to V2.0B. V2.0B is not implemented by this validation.
 
 ## Summary Finding
 
@@ -30,6 +61,8 @@ It does not currently have:
 - Supabase integration
 
 Therefore, the smallest V2.0 Memory Layer path is to add the first minimal edit-and-save loop around the existing generated title result, then write changed titles to Supabase.
+
+V2.0A has now validated that smallest path with a real deployed Supabase insert.
 
 ## 1. Current Title-Generation Flow
 
@@ -371,4 +404,3 @@ Primarily `app/listing-copilot.js` and `app/listing-copilot.css`, with possible 
 7. Recommended order:
 
 Start with session/operator extraction, then server feedback write, then editable title state, then Save UI, then admin read/review.
-
