@@ -320,7 +320,7 @@ function resultForAsset(asset) {
 
 function generatedTitleResults() {
   return [...state.results]
-    .filter((result) => normalizeConfidence(result.confidence) !== "FAILED" && String(result.title || "").trim())
+    .filter((result) => normalizeConfidence(result.confidence) !== "FAILED" && String((result.correctedTitle ?? result.title) || "").trim())
     .sort((a, b) => a.index - b.index);
 }
 
@@ -336,7 +336,7 @@ function renderBatchTitles() {
   elements.batchTitleList.innerHTML = titleResults.map((result) => `
     <li>
       <span>资产 ${result.index}</span>
-      <p>${escapeHtml(result.title)}</p>
+      <p>${escapeHtml(result.correctedTitle ?? result.title)}</p>
     </li>
   `).join("");
 }
@@ -395,15 +395,27 @@ function resultBox(result) {
   const confidence = normalizeConfidence(result.confidence);
   const disabled = confidence === "FAILED" || !result.title;
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
+  const generatedTitle = result.generatedTitle || result.title || "";
+  const correctedTitle = result.correctedTitle ?? generatedTitle;
+  const saveDisabled = disabled || result.feedbackStatus === "saving" || result.feedbackStatus === "saved";
+  const saveLabel = {
+    saved: "已保存",
+    skipped: "未修改",
+    saving: "保存中…"
+  }[result.feedbackStatus] || "保存";
 
   return `
     <div class="title-output ${confidenceClass(confidence)}">
       <div class="title-output-head">
         <span class="confidence-badge ${confidenceClass(confidence)}">${confidence}</span>
-        <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(result.title || "")}" ${disabled ? "disabled" : ""}>复制</button>
+        <div class="title-actions">
+          <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(correctedTitle || "")}" ${disabled ? "disabled" : ""}>复制</button>
+          <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
+        </div>
       </div>
-      <textarea readonly>${result.title || "标题暂不可用"}</textarea>
+      <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || "标题暂不可用")}</textarea>
       <p class="follow-up-advice">${result.reason || ""}</p>
+      ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
       <details>
         <summary>查看判断依据</summary>
         <div class="field-list">
@@ -556,6 +568,10 @@ async function processAsset(asset) {
   return {
     index: asset.index,
     thumbnail: asset.images[0].dataUrl,
+    generatedTitle: payload.title || "",
+    correctedTitle: payload.title || "",
+    feedbackStatus: "",
+    feedbackMessage: "",
     ...payload
   };
 }
@@ -621,8 +637,66 @@ async function copyTitle(button) {
   }, 1100);
 }
 
+function updateCorrectedTitle(input) {
+  const result = state.results.find((item) => item.index === Number(input.dataset.titleInput));
+  if (!result) return;
+
+  result.correctedTitle = input.value;
+  result.feedbackStatus = "";
+  result.feedbackMessage = "";
+  renderBatchTitles();
+}
+
+async function saveTitleFeedback(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
+  if (!result) return;
+
+  const generatedTitle = String(result.generatedTitle || result.title || "").trim();
+  const correctedTitle = String(result.correctedTitle ?? generatedTitle).trim();
+
+  if (!generatedTitle || !correctedTitle) return;
+
+  if (generatedTitle === correctedTitle) {
+    result.feedbackStatus = "skipped";
+    result.feedbackMessage = "标题未修改，未写入记忆。";
+    renderResults();
+    return;
+  }
+
+  result.feedbackStatus = "saving";
+  result.feedbackMessage = "正在保存记忆…";
+  renderResults();
+
+  try {
+    const response = await fetch("/api/listing-title-feedback", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        generated_title: generatedTitle,
+        corrected_title: correctedTitle
+      })
+    });
+
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || `保存失败：${response.status}`);
+    }
+
+    result.feedbackStatus = payload.skipped ? "skipped" : "saved";
+    result.feedbackMessage = payload.skipped ? "标题未修改，未写入记忆。" : "已保存到 V2.0 Memory Layer。";
+  } catch (error) {
+    result.feedbackStatus = "";
+    result.feedbackMessage = error.message || "记忆保存失败。";
+  }
+
+  renderResults();
+}
+
 async function copyAllTitles() {
-  const titles = generatedTitleResults().map((result) => result.title.trim());
+  const titles = generatedTitleResults().map((result) => String(result.correctedTitle ?? result.title).trim());
   if (!titles.length) return;
 
   await navigator.clipboard.writeText(titles.join("\n"));
@@ -689,7 +763,18 @@ function bindEvents() {
     }
 
     const button = event.target.closest("[data-copy-title]");
-    if (button) copyTitle(button);
+    if (button) {
+      copyTitle(button);
+      return;
+    }
+
+    const saveButton = event.target.closest("[data-save-title]");
+    if (saveButton) saveTitleFeedback(saveButton);
+  });
+
+  elements.assetPreviewList.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-title-input]");
+    if (input) updateCorrectedTitle(input);
   });
 
   elements.imageModal.addEventListener("click", (event) => {

@@ -122,6 +122,13 @@ async function handleApi(request, response, pathname) {
     return true;
   }
 
+  if (pathname === "/api/listing-title-feedback") {
+    const moduleUrl = pathToFileURL(join(root, "api/listing-title-feedback.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
   if (pathname === "/api/session") {
     const cookies = parseCookies(request.headers.cookie);
     sendJson(response, 200, { authenticated: isValidSession(cookies[cookieName]) });

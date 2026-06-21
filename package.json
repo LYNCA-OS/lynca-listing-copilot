@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
     "start": "node scripts/dev-server.mjs",
-    "check": "node --check app/listing-copilot.js && node --check app/login.js && node --check api/login.js && node --check api/logout.js && node --check api/session.js && node --check api/listing-copilot-title.js && node --check scripts/dev-server.mjs && node --check middleware.js && node --check scripts/listing-confidence-audit.test.mjs && node --check scripts/upload-safety-layer.test.mjs && node scripts/listing-confidence-audit.test.mjs && node scripts/upload-safety-layer.test.mjs",
+    "check": "node --check app/listing-copilot.js && node --check app/login.js && node --check api/login.js && node --check api/logout.js && node --check api/session.js && node --check api/listing-copilot-title.js && node --check api/listing-title-feedback.js && node --check lib/listing-session.mjs && node --check lib/supabase-feedback.mjs && node --check scripts/dev-server.mjs && node --check middleware.js && node --check scripts/listing-confidence-audit.test.mjs && node --check scripts/upload-safety-layer.test.mjs && node scripts/listing-confidence-audit.test.mjs && node scripts/upload-safety-layer.test.mjs",
     "test:mock": "node scripts/listing-confidence-audit.test.mjs"
   },
   "dependencies": {

@@ -334,6 +334,14 @@ h3 {
   opacity: 0.46;
 }
 
+.title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(9, minmax(0, 1fr));
@@ -643,6 +651,13 @@ h3 {
 .title-output textarea::placeholder {
   color: var(--subtle);
   font-weight: 700;
+}
+
+.feedback-save-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .follow-up-advice {
