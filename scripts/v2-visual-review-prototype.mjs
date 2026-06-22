@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import fs from "node:fs/promises";
+import net from "node:net";
 import path from "node:path";
 import process from "node:process";
+import tls from "node:tls";
 
 const preferredCandidateIds = [
   "learn-0016",
@@ -22,10 +24,12 @@ const repoRoot = process.cwd();
 const candidatesPath = path.join(repoRoot, "data/learning/review-candidates-2026-06-22.json");
 const outputDir = path.join(repoRoot, "data/learning/visual-review-001");
 const imageDir = path.join(outputDir, "images");
-const reportPath = path.join(repoRoot, "docs/v2/visual-review-report-001.md");
+const reportPath = path.join(repoRoot, "docs/v2/visual-review-report-001b.md");
 const resultsPath = path.join(outputDir, "visual-review-results-001.json");
+let proxyFetch = null;
 
 await loadDotEnv(path.join(repoRoot, ".env.local"));
+await configureProxyDispatcher();
 
 const openAiKey = process.env.OPENAI_API_KEY;
 if (!openAiKey) {
@@ -163,6 +167,18 @@ async function loadDotEnv(filePath) {
   }
 }
 
+async function configureProxyDispatcher() {
+  const proxyUrl = String(process.env.HTTPS_PROXY || process.env.HTTP_PROXY || "").trim();
+  if (!proxyUrl) return;
+
+  try {
+    const { ProxyAgent, setGlobalDispatcher } = await import("undici");
+    setGlobalDispatcher(new ProxyAgent(proxyUrl));
+  } catch (error) {
+    proxyFetch = (url, options) => fetchViaHttpProxy(url, options, proxyUrl);
+  }
+}
+
 async function writeIncrementalResults() {
   await fs.mkdir(outputDir, { recursive: true });
   await fs.writeFile(path.join(outputDir, "visual-review-results-001.partial.json"), `${JSON.stringify({
@@ -203,7 +219,7 @@ async function fetchWithRetry(url, options, attempts = 3) {
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await fetch(url, options);
+      return proxyFetch ? await proxyFetch(url, options) : await fetch(url, options);
     } catch (error) {
       lastError = error;
       if (attempt < attempts) {
@@ -213,6 +229,231 @@ async function fetchWithRetry(url, options, attempts = 3) {
   }
 
   throw lastError;
+}
+
+async function fetchViaHttpProxy(url, options = {}, proxyUrl) {
+  const target = new URL(url);
+  const proxy = new URL(proxyUrl);
+  if (target.protocol !== "https:" || proxy.protocol !== "http:") {
+    return fetch(url, options);
+  }
+
+  const body = options.body ? Buffer.from(String(options.body)) : Buffer.alloc(0);
+  const headers = new Map();
+  for (const [key, value] of Object.entries(options.headers || {})) {
+    headers.set(key.toLowerCase(), String(value));
+  }
+  headers.set("host", target.host);
+  headers.set("connection", "close");
+  if (body.length) {
+    headers.set("content-length", String(body.length));
+  }
+
+  const timeoutMs = abortSignalTimeoutMs(options.signal) || 60000;
+  const socket = await connectProxySocket({ proxy, target, timeoutMs, signal: options.signal });
+  const secureSocket = tls.connect({
+    socket,
+    servername: target.hostname
+  });
+
+  try {
+    await onceSecure(secureSocket, timeoutMs, options.signal);
+    const requestPath = `${target.pathname || "/"}${target.search || ""}`;
+    const headerText = Array.from(headers.entries())
+      .map(([key, value]) => `${key}: ${value}`)
+      .join("\r\n");
+    secureSocket.write(`${options.method || "GET"} ${requestPath} HTTP/1.1\r\n${headerText}\r\n\r\n`);
+    if (body.length) {
+      secureSocket.write(body);
+    }
+    return await readHttpResponse(secureSocket, timeoutMs, options.signal);
+  } finally {
+    secureSocket.destroy();
+  }
+}
+
+function abortSignalTimeoutMs(signal) {
+  return signal?.reason?.name === "TimeoutError" ? undefined : undefined;
+}
+
+function connectProxySocket({ proxy, target, timeoutMs, signal }) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({
+      host: proxy.hostname,
+      port: Number(proxy.port || 80)
+    });
+    let settled = false;
+    let buffered = Buffer.alloc(0);
+
+    const cleanup = () => {
+      socket.off("error", onError);
+      socket.off("timeout", onTimeout);
+      socket.off("data", onData);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      socket.destroy();
+      reject(error);
+    };
+    const onError = (error) => fail(error);
+    const onTimeout = () => fail(new Error("Proxy connection timed out"));
+    const onAbort = () => fail(new Error("Proxy request aborted"));
+    const onData = (chunk) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      const headerEnd = buffered.indexOf("\r\n\r\n");
+      if (headerEnd === -1) return;
+
+      const header = buffered.slice(0, headerEnd).toString("latin1");
+      if (!/^HTTP\/1\.[01] 2\d\d\b/.test(header)) {
+        fail(new Error(`Proxy CONNECT failed: ${header.split("\r\n")[0] || "unknown status"}`));
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      const leftover = buffered.slice(headerEnd + 4);
+      if (leftover.length) {
+        socket.unshift(leftover);
+      }
+      resolve(socket);
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.on("error", onError);
+    socket.on("timeout", onTimeout);
+    socket.on("data", onData);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    socket.on("connect", () => {
+      socket.write(`CONNECT ${target.hostname}:443 HTTP/1.1\r\nHost: ${target.hostname}:443\r\nConnection: close\r\n\r\n`);
+    });
+  });
+}
+
+function onceSecure(socket, timeoutMs, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("TLS connection timed out")), timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off("secureConnect", onSecure);
+      socket.off("error", onError);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onSecure = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(new Error("Proxy request aborted"));
+    };
+
+    socket.once("secureConnect", onSecure);
+    socket.once("error", onError);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function readHttpResponse(socket, timeoutMs, signal) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const timer = setTimeout(() => reject(new Error("Proxy response timed out")), timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off("data", onData);
+      socket.off("end", onEnd);
+      socket.off("error", onError);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onData = (chunk) => chunks.push(chunk);
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(new Error("Proxy request aborted"));
+    };
+    const onEnd = () => {
+      cleanup();
+      try {
+        resolve(parseHttpResponse(Buffer.concat(chunks)));
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    socket.on("data", onData);
+    socket.once("end", onEnd);
+    socket.once("error", onError);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function parseHttpResponse(buffer) {
+  const headerEnd = buffer.indexOf("\r\n\r\n");
+  if (headerEnd === -1) {
+    throw new Error("Invalid HTTP response from proxy request");
+  }
+
+  const headerText = buffer.slice(0, headerEnd).toString("latin1");
+  const [statusLine, ...headerLines] = headerText.split("\r\n");
+  const status = Number(statusLine.match(/^HTTP\/1\.[01]\s+(\d+)/)?.[1] || 0);
+  const headers = new Map();
+  for (const line of headerLines) {
+    const index = line.indexOf(":");
+    if (index === -1) continue;
+    headers.set(line.slice(0, index).trim().toLowerCase(), line.slice(index + 1).trim());
+  }
+
+  let body = buffer.slice(headerEnd + 4);
+  if (/chunked/i.test(headers.get("transfer-encoding") || "")) {
+    body = decodeChunkedBody(body);
+  }
+
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get(name) {
+        return headers.get(String(name || "").toLowerCase()) || null;
+      }
+    },
+    async text() {
+      return body.toString("utf8");
+    },
+    async arrayBuffer() {
+      return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
+    },
+    async json() {
+      return JSON.parse(body.toString("utf8"));
+    }
+  };
+}
+
+function decodeChunkedBody(buffer) {
+  const chunks = [];
+  let offset = 0;
+
+  while (offset < buffer.length) {
+    const lineEnd = buffer.indexOf("\r\n", offset);
+    if (lineEnd === -1) break;
+    const sizeText = buffer.slice(offset, lineEnd).toString("latin1").split(";")[0].trim();
+    const size = Number.parseInt(sizeText, 16);
+    if (!Number.isFinite(size)) break;
+    offset = lineEnd + 2;
+    if (size === 0) break;
+    chunks.push(buffer.slice(offset, offset + size));
+    offset += size + 2;
+  }
+
+  return Buffer.concat(chunks);
 }
 
 function delay(ms) {
