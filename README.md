@@ -52,7 +52,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 V2.0 Memory Layer uses server-side Supabase access only. `SUPABASE_SERVICE_ROLE_KEY` must stay server-side in Vercel/API environments and must not be exposed to browser code.
 
-V2.0A writes the first working memory record without Supabase Storage. `front_image_url` and `back_image_url` are written as `null`; image storage will be added in V2.0B.
+V2.0B uploads front/back image evidence to the private Supabase Storage bucket `listing-feedback-images` and stores stable Storage URLs in `front_image_url` and `back_image_url`.
 
 The feedback endpoint derives `operator_id` from the existing signed internal session. If no signed user is available, it uses the documented internal placeholder `internal-operator`.
 
@@ -62,13 +62,14 @@ To verify one Supabase memory row:
 
 1. Configure `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 2. Confirm Supabase has a `listing_title_feedback` table with `generated_title`, `corrected_title`, `front_image_url`, `back_image_url`, `operator_id`, and `created_at`.
-3. Start the app and log in with the internal Listing Copilot credentials.
-4. Upload one front image, or a front/back pair.
-5. Generate a title.
-6. Edit the title text.
-7. Click the per-result Save button.
-8. Confirm one new Supabase row exists with the generated title, corrected title, `front_image_url` as null, `back_image_url` as null, operator id, and timestamp.
-9. Repeat Save without changing the title and confirm no extra changed-title row is required.
+3. Confirm Supabase Storage has a private bucket named `listing-feedback-images`.
+4. Start the app and log in with the internal Listing Copilot credentials.
+5. Upload one front image, or a front/back pair.
+6. Generate a title.
+7. Edit the title text.
+8. Click the per-result Save button.
+9. Confirm one new Supabase row exists with the generated title, corrected title, image URL fields, operator id, and timestamp.
+10. Repeat Save without changing the title and confirm no extra changed-title row is required.
 
 ## Validation
 

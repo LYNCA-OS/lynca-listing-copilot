@@ -22,6 +22,16 @@ function normalizeTitle(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function normalizeImage(value) {
+  if (!value || typeof value !== "object") return null;
+
+  return {
+    name: String(value.name || "").trim(),
+    type: String(value.type || "").trim(),
+    dataUrl: String(value.dataUrl || "").trim()
+  };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
@@ -38,6 +48,8 @@ export default async function handler(req, res) {
 
   const generatedTitle = normalizeTitle(payload.generated_title);
   const correctedTitle = normalizeTitle(payload.corrected_title);
+  const frontImage = normalizeImage(payload.front_image);
+  const backImage = normalizeImage(payload.back_image);
 
   if (!generatedTitle || !correctedTitle) {
     sendJson(res, 400, { ok: false, message: "Generated title and corrected title are required." });
@@ -53,6 +65,8 @@ export default async function handler(req, res) {
     const record = await createTitleFeedbackRecord({
       generatedTitle,
       correctedTitle,
+      frontImage,
+      backImage,
       operatorId: operatorIdFromRequest(req)
     });
 

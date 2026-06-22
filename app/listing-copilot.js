@@ -318,6 +318,10 @@ function resultForAsset(asset) {
   return state.results.find((result) => result.index === asset.index);
 }
 
+function assetForResult(result) {
+  return state.assets.find((asset) => asset.index === result.index) || null;
+}
+
 function generatedTitleResults() {
   return [...state.results]
     .filter((result) => normalizeConfidence(result.confidence) !== "FAILED" && String((result.correctedTitle ?? result.title) || "").trim())
@@ -647,6 +651,16 @@ function updateCorrectedTitle(input) {
   renderBatchTitles();
 }
 
+function feedbackImagePayload(image) {
+  if (!image) return null;
+
+  return {
+    name: image.name,
+    type: image.type,
+    dataUrl: image.dataUrl
+  };
+}
+
 async function saveTitleFeedback(button) {
   const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
   if (!result) return;
@@ -663,6 +677,7 @@ async function saveTitleFeedback(button) {
     return;
   }
 
+  const asset = assetForResult(result);
   result.feedbackStatus = "saving";
   result.feedbackMessage = "正在保存记忆…";
   renderResults();
@@ -676,7 +691,9 @@ async function saveTitleFeedback(button) {
       credentials: "same-origin",
       body: JSON.stringify({
         generated_title: generatedTitle,
-        corrected_title: correctedTitle
+        corrected_title: correctedTitle,
+        front_image: feedbackImagePayload(asset?.images?.[0]),
+        back_image: feedbackImagePayload(asset?.images?.[1])
       })
     });
 
