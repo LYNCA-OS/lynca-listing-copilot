@@ -322,6 +322,20 @@ function assetForResult(result) {
   return state.assets.find((asset) => asset.index === result.index) || null;
 }
 
+function feedbackImagePayload(image) {
+  if (!image?.dataUrl) return null;
+
+  return {
+    name: image.name,
+    type: image.type,
+    dataUrl: image.dataUrl
+  };
+}
+
+function feedbackImagesForAsset(asset) {
+  return (asset?.images || []).map(feedbackImagePayload).filter(Boolean);
+}
+
 function generatedTitleResults() {
   return [...state.results]
     .filter((result) => normalizeConfidence(result.confidence) !== "FAILED" && String((result.correctedTitle ?? result.title) || "").trim())
@@ -572,6 +586,7 @@ async function processAsset(asset) {
   return {
     index: asset.index,
     thumbnail: asset.images[0].dataUrl,
+    feedbackImages: feedbackImagesForAsset(asset),
     generatedTitle: payload.title || "",
     correctedTitle: payload.title || "",
     feedbackStatus: "",
@@ -651,16 +666,6 @@ function updateCorrectedTitle(input) {
   renderBatchTitles();
 }
 
-function feedbackImagePayload(image) {
-  if (!image) return null;
-
-  return {
-    name: image.name,
-    type: image.type,
-    dataUrl: image.dataUrl
-  };
-}
-
 async function saveTitleFeedback(button) {
   const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
   if (!result) return;
@@ -678,6 +683,9 @@ async function saveTitleFeedback(button) {
   }
 
   const asset = assetForResult(result);
+  const feedbackImages = Array.isArray(result.feedbackImages) && result.feedbackImages.length
+    ? result.feedbackImages
+    : feedbackImagesForAsset(asset);
   result.feedbackStatus = "saving";
   result.feedbackMessage = "正在保存记忆…";
   renderResults();
@@ -692,8 +700,9 @@ async function saveTitleFeedback(button) {
       body: JSON.stringify({
         generated_title: generatedTitle,
         corrected_title: correctedTitle,
-        front_image: feedbackImagePayload(asset?.images?.[0]),
-        back_image: feedbackImagePayload(asset?.images?.[1])
+        front_image: feedbackImages[0] || null,
+        back_image: feedbackImages[1] || null,
+        image_count: feedbackImages.length
       })
     });
 
