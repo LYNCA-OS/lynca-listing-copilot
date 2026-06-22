@@ -8,4 +8,5 @@ data/learning/*.md
 data/learning/visual-review-*/
 data/learning/**/images/
 data/learning/**/*.partial.json
+data/evaluation/
 !data/learning/.gitkeep
