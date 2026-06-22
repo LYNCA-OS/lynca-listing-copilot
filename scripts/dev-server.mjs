@@ -136,6 +136,13 @@ async function handleApi(request, response, pathname) {
     return true;
   }
 
+  if (pathname === "/api/admin/visual-review/session" || pathname === "/api/admin-visual-review-session") {
+    const moduleUrl = pathToFileURL(join(root, "api/admin-visual-review-session.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
   if (pathname === "/api/session") {
     const cookies = parseCookies(request.headers.cookie);
     sendJson(response, 200, { authenticated: isValidSession(cookies[cookieName]) });
