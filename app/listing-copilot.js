@@ -322,18 +322,31 @@ function assetForResult(result) {
   return state.assets.find((asset) => asset.index === result.index) || null;
 }
 
+function isBase64ImageDataUrl(value) {
+  return /^data:image\/[^;,]+;base64,/i.test(String(value || ""));
+}
+
 function feedbackImagePayload(image) {
-  if (!image?.dataUrl) return null;
+  const dataUrl = String(image?.dataUrl || "");
+  if (!isBase64ImageDataUrl(dataUrl)) return null;
 
   return {
-    name: image.name,
-    type: image.type,
-    dataUrl: image.dataUrl
+    name: String(image.name || ""),
+    type: String(image.type || "image/jpeg"),
+    dataUrl
   };
 }
 
 function feedbackImagesForAsset(asset) {
-  return (asset?.images || []).map(feedbackImagePayload).filter(Boolean);
+  const images = asset?.images || [];
+  const front = feedbackImagePayload(images[0]);
+  const back = feedbackImagePayload(images[1]);
+
+  return {
+    front,
+    back,
+    count: [front, back].filter(Boolean).length
+  };
 }
 
 function generatedTitleResults() {
@@ -683,7 +696,7 @@ async function saveTitleFeedback(button) {
   }
 
   const asset = assetForResult(result);
-  const feedbackImages = Array.isArray(result.feedbackImages) && result.feedbackImages.length
+  const feedbackImages = result.feedbackImages?.front
     ? result.feedbackImages
     : feedbackImagesForAsset(asset);
   result.feedbackStatus = "saving";
@@ -700,9 +713,9 @@ async function saveTitleFeedback(button) {
       body: JSON.stringify({
         generated_title: generatedTitle,
         corrected_title: correctedTitle,
-        front_image: feedbackImages[0] || null,
-        back_image: feedbackImages[1] || null,
-        image_count: feedbackImages.length
+        front_image: feedbackImages.front || null,
+        back_image: feedbackImages.back || null,
+        image_count: feedbackImages.count || 0
       })
     });
 
