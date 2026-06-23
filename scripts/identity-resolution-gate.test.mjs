@@ -1,0 +1,142 @@
+import assert from "node:assert/strict";
+import {
+  createEvidenceField,
+  createVisionSource,
+  normalizeResolvedFields
+} from "../lib/listing/evidence/evidence-schema.mjs";
+import {
+  applyIdentityResolutionGate,
+  criticalFieldsForIdentityResolution,
+  evidenceDocumentToIdentityEvidenceItems
+} from "../lib/identity-resolution/listing-resolution-gate.mjs";
+
+function printedSource(sourceType, side, observedText) {
+  return {
+    source_type: sourceType,
+    side,
+    observed_text: observedText,
+    trust_tier: 1
+  };
+}
+
+function groundedEvidence(value) {
+  return createEvidenceField({
+    value,
+    status: "CONFIRMED",
+    confidence: 0.96,
+    sources: [
+      printedSource("CARD_FRONT", "front", Array.isArray(value) ? value.join(" / ") : value),
+      printedSource("CARD_BACK", "back", Array.isArray(value) ? value.join(" / ") : value)
+    ]
+  });
+}
+
+const agnesOnly = applyIdentityResolutionGate({
+  title: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
+  model_title_suggestion: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
+  confidence: "HIGH",
+  reason: "Provider inferred card identity from the image.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    parallel: "Gold Refractor",
+    serial_number: "31/50"
+  }),
+  evidence: {
+    year: createEvidenceField({
+      value: "2024",
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [createVisionSource({ observedText: "2024" })]
+    }),
+    product: createEvidenceField({
+      value: "Topps Chrome",
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [createVisionSource({ observedText: "Topps Chrome" })]
+    }),
+    players: createEvidenceField({
+      value: ["Shohei Ohtani"],
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [createVisionSource({ observedText: "Shohei Ohtani" })]
+    })
+  },
+  unresolved: []
+});
+assert.equal(agnesOnly.identity_resolution_status, "ABSTAIN");
+assert.equal(agnesOnly.final_title, "");
+assert.equal(agnesOnly.title_render_source, "identity_resolution_abstain");
+assert.ok(agnesOnly.unresolved.includes("identity resolution abstain"));
+assert.equal(agnesOnly.model_title_suggestion, "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50");
+
+const groundedMultiView = applyIdentityResolutionGate({
+  title: "provider title must not decide final facts",
+  confidence: "HIGH",
+  reason: "Provider result should be replaced by deterministic renderer.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    serial_number: "31/50"
+  }),
+  evidence: {
+    year: groundedEvidence("2024"),
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    serial_number: groundedEvidence("31/50")
+  },
+  unresolved: []
+});
+assert.equal(groundedMultiView.identity_resolution_status, "CONFIRMED");
+assert.match(groundedMultiView.final_title, /2024/);
+assert.match(groundedMultiView.final_title, /Topps Chrome/);
+assert.match(groundedMultiView.final_title, /Shohei Ohtani/);
+assert.match(groundedMultiView.final_title, /31\/50/);
+assert.equal(groundedMultiView.title_render_source, "identity_resolution_deterministic_renderer");
+assert.notEqual(groundedMultiView.final_title, "provider title must not decide final facts");
+
+const marketplaceOnly = applyIdentityResolutionGate({
+  title: "marketplace title must not become final truth",
+  confidence: "HIGH",
+  reason: "Marketplace candidate matched.",
+  provider: "agnes",
+  resolved: {},
+  evidence: {},
+  unresolved: []
+}, {
+  retrievalCandidates: [
+    {
+      source_type: "MARKETPLACE",
+      title: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
+      confidence: 0.99,
+      fields: {
+        year: "2024",
+        product: "Topps Chrome",
+        players: ["Shohei Ohtani"],
+        serial_number: "31/50"
+      }
+    }
+  ]
+});
+assert.equal(marketplaceOnly.identity_resolution_status, "ABSTAIN");
+assert.equal(marketplaceOnly.final_title, "");
+assert.ok(marketplaceOnly.conflict_graph.nodes.some((node) => node.type === "MARKETPLACE_RESULT"));
+
+const identityItems = evidenceDocumentToIdentityEvidenceItems({
+  evidence: groundedMultiView.evidence
+});
+assert.ok(identityItems.some((item) => item.source === "CARD_FRONT"));
+assert.ok(identityItems.some((item) => item.source === "CARD_BACK"));
+
+const pokemonCritical = criticalFieldsForIdentityResolution(normalizeResolvedFields({
+  product: "Pokemon Scarlet Violet",
+  character: "Pikachu"
+}), []);
+assert.ok(pokemonCritical.includes("character"));
+assert.ok(!pokemonCritical.includes("players"));
+
+console.log("identity resolution gate tests passed");

@@ -187,4 +187,17 @@ const officialCardTypeBeatsGenericInference = resolveIdentity({
 assert.equal(officialCardTypeBeatsGenericInference.identity.card_type, "Dual Signatures");
 assert.equal(fieldState(officialCardTypeBeatsGenericInference, "card_type").resolution_reason, "card_design_override_label_or_inference_conflict");
 
+const unicodeCharacterEvidence = resolveIdentity({
+  evidenceItems: [
+    { field: "product", value: "Pokemon Scarlet Violet", source: "CARD_FRONT", confidence: 0.9 },
+    { field: "character", value: "琉琪亚的展现", source: "CARD_FRONT", confidence: 0.9 },
+    { field: "collector_number", value: "257/208", source: "CARD_FRONT", confidence: 0.9 }
+  ],
+  options: {
+    criticalFields: ["product", "character", "collector_number"]
+  }
+});
+assert.equal(unicodeCharacterEvidence.identity.character, "琉琪亚的展现");
+assert.equal(fieldState(unicodeCharacterEvidence, "character").resolution_reason, "highest_scoring_candidate");
+
 console.log("identity resolution tests passed");

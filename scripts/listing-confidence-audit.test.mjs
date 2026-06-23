@@ -190,7 +190,7 @@ const localizedTrainerIllustrator = await callApi({
   fields: {
     brand: "Pokemon TCG",
     product: "Pokemon Scarlet Violet",
-    character: "琉琪亚的展现",
+    character: "Lisia's Appeal",
     set: "SV9C",
     subset: "SAR",
     card_number: "257/208",
@@ -200,7 +200,7 @@ const localizedTrainerIllustrator = await callApi({
 });
 
 assert.doesNotMatch(localizedTrainerIllustrator.title, /En Morikura/i);
-assert.match(localizedTrainerIllustrator.title, /琉琪亚的展现/);
+assert.match(localizedTrainerIllustrator.title, /Lisia's Appeal/);
 assert.match(localizedTrainerIllustrator.title, /257\/208/);
 assert.match(localizedTrainerIllustrator.title, /SAR/);
 assert.match(localizedTrainerIllustrator.title, /SV9C/);
@@ -520,7 +520,7 @@ assert.doesNotMatch(certifiedAutographNormalized.title, /Certified Autograph|Aut
 const onCardAutographNormalized = await callApi({
   title: "2025 Topps Chrome Test Player On-card Autograph",
   confidence: "HIGH",
-  reason: "Reasoning may mention on-card autograph detail.",
+  reason: "Card text supports player and autograph; reasoning may mention on-card autograph detail.",
   fields: {
     year: "2025",
     brand: "Topps Chrome",
@@ -536,7 +536,7 @@ assert.doesNotMatch(onCardAutographNormalized.title, /On-card Autograph|Autograp
 const stickerAutographNormalized = await callApi({
   title: "2025 Topps Chrome Test Player Sticker Autograph",
   confidence: "HIGH",
-  reason: "Reasoning may mention sticker autograph detail.",
+  reason: "Card text supports player and autograph; reasoning may mention sticker autograph detail.",
   fields: {
     year: "2025",
     brand: "Topps Chrome",

@@ -24,6 +24,7 @@ import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from 
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { completionActions } from "../lib/listing/orchestration/next-best-action.mjs";
+import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -1462,7 +1463,7 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
   const payloadForEvidence = {
     ...providerPayload,
     title: providerPayload.title || result.model_title_suggestion || result.title,
-    confidence: publicResult.confidence,
+    confidence: preTitleAudit?.confidence || providerPayload.confidence || publicResult.confidence,
     fields: publicResult.fields,
     unresolved: Array.isArray(providerPayload.unresolved) ? providerPayload.unresolved : publicResult.unresolved
   };
@@ -1608,6 +1609,14 @@ function withCompletedEvidencePresentation(result, completion, payload) {
   };
 }
 
+function retrievalCandidatesForIdentity(completion = {}) {
+  const retrieval = completion.retrieval || {};
+  return [
+    ...(Array.isArray(retrieval.sources) ? retrieval.sources : []),
+    ...(retrieval.selected_candidate ? [retrieval.selected_candidate] : [])
+  ];
+}
+
 function createAgnesFocusedRereadRunner({
   images = [],
   maxTitleLength = maxFallbackTitleLength
@@ -1673,8 +1682,7 @@ async function withEvidenceCompletion(result, payload, {
   ];
   const completedResult = withCompletedEvidencePresentation(result, completion, payload);
   const route = completion.route || completedResult.route || completedResult.resolved?.route;
-
-  return {
+  const output = {
     ...completedResult,
     route,
     route_reason: completion.route_reason,
@@ -1686,6 +1694,12 @@ async function withEvidenceCompletion(result, payload, {
       providerCalls: result.provider ? 1 : 0
     })
   };
+
+  return applyIdentityResolutionGate(output, {
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    providerId: output.provider || output.source,
+    retrievalCandidates: retrievalCandidatesForIdentity(completion)
+  });
 }
 
 async function imagesWithSignedReadUrls(images = []) {
