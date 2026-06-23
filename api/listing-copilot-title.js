@@ -20,11 +20,13 @@ import {
 } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { readListingImageVerificationRecord } from "../lib/listing/storage/storage-verification-store.mjs";
 import { defaultCaptureProfileId, summarizeAssetImageQuality } from "../lib/listing/image-quality/quality-gate.mjs";
+import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { completionActions } from "../lib/listing/orchestration/next-best-action.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import { identityStatuses } from "../lib/identity-resolution/types.mjs";
 import {
   isSupabaseFeedbackConfigured,
   listApprovedHistoryRecords,
@@ -35,6 +37,14 @@ import {
   approvedIdentityMemorySource,
   lookupApprovedIdentityMemory
 } from "../lib/listing/memory/approved-identity-memory.mjs";
+import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
+import { recognitionRequestedFields } from "../lib/listing/recognition/recognition-contract.mjs";
+import { safeRecognitionError } from "../lib/listing/recognition/recognition-errors.mjs";
+import { recognitionWorkerConfig } from "../lib/listing/recognition/recognition-feature-flags.mjs";
+import {
+  hasRecognitionEvidence,
+  recognitionResponseToEvidenceDocument
+} from "../lib/listing/recognition/recognition-evidence-normalizer.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -1590,6 +1600,145 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
   };
 }
 
+function hasEvidenceValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "boolean") return value === true;
+  return value !== null && value !== undefined && value !== "";
+}
+
+function evidenceFieldCandidatesWithSources(field = {}) {
+  const baseSources = Array.isArray(field.sources) ? field.sources : [];
+  const candidates = Array.isArray(field.candidates) && field.candidates.length
+    ? field.candidates
+    : hasEvidenceValue(field.value)
+      ? [{ value: field.value, confidence: field.confidence }]
+      : [];
+
+  return candidates
+    .filter((candidate) => hasEvidenceValue(candidate?.value))
+    .map((candidate) => ({
+      value: candidate.value,
+      confidence: Number.isFinite(Number(candidate.confidence)) ? Number(candidate.confidence) : Number(field.confidence || 0),
+      sources: Array.isArray(candidate.sources) && candidate.sources.length ? candidate.sources : baseSources
+    }));
+}
+
+function evidenceCandidateKey(value) {
+  const text = Array.isArray(value) ? value.join(" / ") : value;
+  return String(text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function mergeEvidenceField(fieldName, fields = []) {
+  const candidateMap = new Map();
+  const conflicts = [];
+
+  fields.forEach((field) => {
+    conflicts.push(...(Array.isArray(field?.conflicts) ? field.conflicts : []));
+    evidenceFieldCandidatesWithSources(field).forEach((candidate) => {
+      const key = evidenceCandidateKey(candidate.value);
+      const existing = candidateMap.get(key);
+      if (!existing) {
+        candidateMap.set(key, {
+          value: candidate.value,
+          confidence: candidate.confidence,
+          sources: [...candidate.sources]
+        });
+        return;
+      }
+
+      existing.confidence = Math.max(existing.confidence, candidate.confidence);
+      existing.sources.push(...candidate.sources);
+    });
+  });
+
+  const candidates = [...candidateMap.values()]
+    .map((candidate) => ({
+      ...candidate,
+      sources: candidate.sources.filter(Boolean)
+    }))
+    .sort((left, right) => right.confidence - left.confidence);
+  const top = candidates[0] || null;
+  const distinctValueCount = new Set(candidates.map((candidate) => evidenceCandidateKey(candidate.value))).size;
+  const mergedConflicts = [
+    ...conflicts,
+    ...(distinctValueCount > 1 ? [{
+      field: fieldName,
+      conflict_type: "MULTI_SOURCE_VALUE_CONFLICT",
+      conflicting_values: candidates.map((candidate) => candidate.value),
+      severity: "MEDIUM",
+      reason: "Recognition and provider evidence produced competing values for this field."
+    }] : [])
+  ];
+
+  return createEvidenceField({
+    value: top?.value ?? null,
+    normalizedValue: top?.value ?? null,
+    status: mergedConflicts.length ? "CONFLICT" : top?.confidence >= 0.86 ? "CONFIRMED" : "REVIEW",
+    confidence: top?.confidence ?? 0,
+    candidates,
+    sources: candidates.flatMap((candidate) => candidate.sources || []),
+    conflicts: mergedConflicts
+  });
+}
+
+function mergeEvidenceMaps(...maps) {
+  const fieldNames = new Set();
+  maps.forEach((map) => {
+    Object.keys(map || {}).forEach((field) => fieldNames.add(field));
+  });
+
+  const evidence = {};
+  fieldNames.forEach((field) => {
+    const fields = maps.map((map) => map?.[field]).filter(Boolean);
+    evidence[field] = fields.length === 1 ? fields[0] : mergeEvidenceField(field, fields);
+  });
+  return evidence;
+}
+
+function mergeResolvedFields(...resolvedDocuments) {
+  const merged = {};
+  resolvedDocuments.forEach((resolved) => {
+    Object.entries(resolved || {}).forEach(([field, value]) => {
+      if (!hasEvidenceValue(value)) return;
+      merged[field] = value;
+    });
+  });
+  return merged;
+}
+
+function withRecognitionEvidence(result, recognitionEvidenceDocument = null, payload = {}) {
+  if (!hasRecognitionEvidence(recognitionEvidenceDocument)) return result;
+
+  const evidence = mergeEvidenceMaps(recognitionEvidenceDocument.evidence, result.evidence);
+  const resolved = mergeResolvedFields(recognitionEvidenceDocument.resolved, result.resolved);
+  const presentation = renderListingPresentation({
+    resolved,
+    evidence,
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  });
+
+  return {
+    ...result,
+    evidence,
+    resolved,
+    rendered_title: presentation.rendered_title || result.rendered_title || "",
+    modules: presentation.modules,
+    module_order: presentation.module_order,
+    renderer: presentation.renderer,
+    renderer_version: presentation.renderer_version,
+    title_length_policy: presentation.title_length_policy,
+    recognition_preflight: recognitionEvidenceDocument.recognition || null,
+    unresolved: [
+      ...(Array.isArray(result.unresolved) ? result.unresolved : []),
+      ...(Array.isArray(recognitionEvidenceDocument.unresolved) ? recognitionEvidenceDocument.unresolved : [])
+    ].slice(0, 16),
+    resolution_trace: [
+      ...(Array.isArray(recognitionEvidenceDocument.resolution_trace) ? recognitionEvidenceDocument.resolution_trace : []),
+      ...(Array.isArray(result.resolution_trace) ? result.resolution_trace : [])
+    ]
+  };
+}
+
 function withProviderMetadata(result, providerResult, selection) {
   const providerId = providerResult.provider || selection?.provider_id || result.source;
 
@@ -1780,7 +1929,110 @@ async function imagesWithSignedReadUrls(images = []) {
   }));
 }
 
-async function createAgnesTitle(payload, selection) {
+async function createRecognitionIdentityPreflight(payload) {
+  const config = recognitionWorkerConfig();
+  if (!config.enabled || !config.configured) {
+    return {
+      result: null,
+      evidenceDocument: null,
+      response: null,
+      skipped: true,
+      reason: config.reason || "recognition_worker_not_configured"
+    };
+  }
+
+  const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
+  const verifiedStorageReady = primaryImages.length > 0 && primaryImages.every((image) => {
+    const metadata = storageMetadataForImage(image);
+    return Boolean(metadata.objectPath && (image.storageVerified === true || image.storage_verified === true));
+  });
+  if (!verifiedStorageReady) {
+    return {
+      result: null,
+      evidenceDocument: null,
+      response: null,
+      skipped: true,
+      reason: "recognition_preflight_requires_verified_storage_images"
+    };
+  }
+
+  try {
+    const signedImages = await imagesWithSignedReadUrls(payload.images || []);
+    const signedPrimaryImages = primaryImagesFromImages(signedImages);
+    const response = await analyzeCardImagesWithRecognitionWorker({
+      assetId: payload.assetId || payload.asset_id || `asset_${crypto.randomUUID()}`,
+      captureProfileId: payload.captureProfileId || payload.capture_profile_id || defaultCaptureProfileId,
+      images: signedPrimaryImages,
+      requestedFields: [...recognitionRequestedFields],
+      options: {
+        run_ocr: true,
+        run_visual_embeddings: false,
+        run_candidate_verification: false
+      }
+    });
+    const evidenceDocument = recognitionResponseToEvidenceDocument(response, {
+      images: signedImages
+    });
+
+    if (!hasRecognitionEvidence(evidenceDocument)) {
+      return {
+        result: null,
+        evidenceDocument,
+        response
+      };
+    }
+
+    const baseResult = withRequestMetadata({
+      title: "",
+      final_title: "",
+      rendered_title: "",
+      model_title_suggestion: "",
+      title_render_source: "recognition_worker_identity_preflight",
+      confidence: "LOW",
+      reason: "Recognition worker produced grounded OCR evidence before vision provider selection.",
+      fields: resolvedFieldsToLegacyFields(evidenceDocument.resolved),
+      resolved: evidenceDocument.resolved,
+      evidence: evidenceDocument.evidence,
+      unresolved: evidenceDocument.unresolved || [],
+      source: "recognition_worker",
+      provider: "recognition_worker",
+      route: "RECOGNITION_WORKER_PREFLIGHT",
+      route_reason: "Attempted local OCR/slab identity resolution before Agnes.",
+      recognition_preflight: evidenceDocument.recognition || null,
+      usage: {
+        provider_calls: 0,
+        retrieval_calls: 0,
+        recognition_worker_calls: response.unavailable ? 0 : 1,
+        latency_ms: Number(response.processing?.latency_ms || 0),
+        estimated_cost_usd: 0,
+        resolution_rounds: 0
+      },
+      resolution_trace: evidenceDocument.resolution_trace || [],
+      evidence_schema_version: evidenceDocument.schema_version
+    }, payload);
+    const gated = applyIdentityResolutionGate(baseResult, {
+      maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+      providerId: "recognition_worker"
+    });
+
+    return {
+      result: gated.identity_resolution_status === identityStatuses.ABSTAIN ? null : gated,
+      evidenceDocument,
+      response,
+      gated
+    };
+  } catch (error) {
+    return {
+      result: null,
+      evidenceDocument: null,
+      error: safeRecognitionError(error)
+    };
+  }
+}
+
+async function createAgnesTitle(payload, selection, {
+  recognitionEvidenceDocument = null
+} = {}) {
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
   const signedImages = await imagesWithSignedReadUrls(payload.images);
   const initialPayload = {
@@ -1793,7 +2045,7 @@ async function createAgnesTitle(payload, selection) {
     prompt
   });
 
-  return withEvidenceCompletion(withProviderMetadata(
+  const providerResultWithEvidence = withProviderMetadata(
     withEvidenceCompatibility(
       withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.AGNES), initialPayload),
       providerResult.parsed,
@@ -1801,7 +2053,10 @@ async function createAgnesTitle(payload, selection) {
     ),
     providerResult,
     selection
-  ), {
+  );
+  const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
+
+  return withEvidenceCompletion(mergedResult, {
     ...payload,
     images: signedImages
   }, {
@@ -1812,7 +2067,9 @@ async function createAgnesTitle(payload, selection) {
   });
 }
 
-async function createOpenAiTitle(payload, selection) {
+async function createOpenAiTitle(payload, selection, {
+  recognitionEvidenceDocument = null
+} = {}) {
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
   const initialPayload = primaryPayloadForProvider(payload);
   const prompt = await buildListingPrompt(initialPayload, maxTitleLength);
@@ -1821,7 +2078,7 @@ async function createOpenAiTitle(payload, selection) {
     prompt
   });
 
-  return withEvidenceCompletion(withProviderMetadata(
+  const providerResultWithEvidence = withProviderMetadata(
     withEvidenceCompatibility(
       withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY), initialPayload),
       providerResult.parsed,
@@ -1829,7 +2086,8 @@ async function createOpenAiTitle(payload, selection) {
     ),
     providerResult,
     selection
-  ), initialPayload);
+  );
+  return withEvidenceCompletion(withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload), initialPayload);
 }
 
 function requestedProviderFromPayload(payload = {}) {
@@ -1840,7 +2098,9 @@ function explicitEmergencyFromPayload(payload = {}) {
   return payload.explicitEmergency === true || payload.explicit_emergency === true;
 }
 
-async function createProviderTitle(payload) {
+async function createProviderTitle(payload, {
+  recognitionEvidenceDocument = null
+} = {}) {
   const requestedProvider = requestedProviderFromPayload(payload);
   const explicitEmergency = explicitEmergencyFromPayload(payload);
   const primaryImages = primaryImagesFromImages(payload.images || []);
@@ -1856,10 +2116,10 @@ async function createProviderTitle(payload) {
   });
 
   if (selection.provider_id === visionProviderIds.AGNES) {
-    return createAgnesTitle(payload, selection);
+    return createAgnesTitle(payload, selection, { recognitionEvidenceDocument });
   }
 
-  return createOpenAiTitle(payload, selection);
+  return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument });
 }
 
 export default async function handler(req, res) {
@@ -1905,7 +2165,15 @@ export default async function handler(req, res) {
       return;
     }
 
-    const result = await createProviderTitle(payload);
+    const recognitionPreflight = await createRecognitionIdentityPreflight(payload);
+    if (recognitionPreflight.result) {
+      sendJson(res, 200, recognitionPreflight.result);
+      return;
+    }
+
+    const result = await createProviderTitle(payload, {
+      recognitionEvidenceDocument: recognitionPreflight.evidenceDocument
+    });
 
     sendJson(res, 200, result);
   } catch (error) {
