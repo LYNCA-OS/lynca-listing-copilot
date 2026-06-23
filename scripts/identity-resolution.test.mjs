@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { resolveIdentity } from "../lib/identity-resolution/solver.mjs";
+import { validateIdentity } from "../lib/identity-resolution/constraint-engine.mjs";
 
 const baseAnchors = [
   { field: "year", value: "2024", source: "OCR_FRONT", confidence: 0.98 },
@@ -281,5 +282,14 @@ const unicodeCharacterEvidence = resolveIdentity({
 });
 assert.equal(unicodeCharacterEvidence.identity.character, "琉琪亚的展现");
 assert.equal(fieldState(unicodeCharacterEvidence, "character").resolution_reason, "highest_scoring_candidate");
+
+const identityConstraintScore = validateIdentity({
+  serial_number: "51/50"
+});
+assert.equal(identityConstraintScore[0].conflict_type, "SERIAL_CONSTRAINT_VIOLATION");
+assert.equal(identityConstraintScore[0].rule_weight, 1);
+assert.equal(identityConstraintScore[0].score_penalty, 1);
+assert.equal(identityConstraintScore[0].identity_constraint_score, 0);
+assert.ok(identityConstraintScore[0].evaluated_rules.some((rule) => rule.code === "serial_constraint_violation"));
 
 console.log("identity resolution tests passed");

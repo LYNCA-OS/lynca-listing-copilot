@@ -283,6 +283,103 @@ assert.ok(identityResolved.results[0].identity_resolution_summary.fields.some((f
 assert.ok(identityResolved.results[0].usage.provider_calls >= 2);
 assert.ok(identityResolved.results[0].completion_trace.some((entry) => entry.output?.convergence?.loop === "detect_conflict_retrieve_reevaluate_converge"));
 
+const originalFetch = globalThis.fetch;
+const memoryRows = [
+  {
+    id: "fb1",
+    generated_title: "2025 Topps Chrome Shohei Ohtani Red Refractor 5/5",
+    corrected_title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10",
+    created_at: "2026-06-22T00:00:00.000Z"
+  }
+];
+globalThis.fetch = async (url) => {
+  const requestUrl = new URL(String(url));
+  const table = requestUrl.pathname.split("/").at(-1);
+  if (table === "listing_reviews") {
+    return {
+      ok: false,
+      status: 404,
+      text: async () => JSON.stringify({ message: "relation listing_reviews does not exist" })
+    };
+  }
+  if (table === "listing_title_feedback") {
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify(memoryRows)
+    };
+  }
+  throw new Error(`unexpected memory fetch ${requestUrl.href}`);
+};
+
+try {
+  const memoryEvalAnalyze = async () => ({
+    model_id: "agnes-test",
+    parse_source: "content",
+    finish_reason: "stop",
+    parsed: {
+      title: "2025 Shohei Ohtani 5/5 PSA 10",
+      confidence: "HIGH",
+      reason: "visible player serial and slab grade",
+      fields: {
+        year: "2025",
+        players: ["Shohei Ohtani"],
+        serial_number: "5/5",
+        grade_company: "PSA",
+        card_grade: "10"
+      },
+      unresolved: ["product not readable"]
+    },
+    usage: { provider_calls: 1, image_count: 2 }
+  });
+  const leakFreeMemoryEval = await evaluateAgnesSupabaseFeedback({
+    dataset,
+    limit: 1,
+    identityResolution: true,
+    excludeSelfApprovedMemory: true,
+    env: {
+      AGNES_API_KEY: "test-agnes-key",
+      SUPABASE_URL: "https://supabase.test",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+      LISTING_APPROVED_MEMORY_ENABLED: "true",
+      INTERNAL_APPROVED_HISTORY_LIMIT: "20",
+      MAX_AGNES_CALLS_PER_ASSET: "0",
+      MAX_EXTERNAL_QUERIES: "0"
+    },
+    createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+    analyzeImpl: memoryEvalAnalyze,
+    now: () => new Date("2026-06-23T12:01:40.000Z")
+  });
+  assert.equal(leakFreeMemoryEval.internal_memory_self_exclusion_enabled, true);
+  assert.equal(leakFreeMemoryEval.results[0].internal_memory_self_excluded, true);
+  assert.notEqual(leakFreeMemoryEval.results[0].completion_trace[0].output.selected_candidate_id, "fb1");
+
+  const selfAllowedMemoryEval = await evaluateAgnesSupabaseFeedback({
+    dataset,
+    limit: 1,
+    identityResolution: true,
+    excludeSelfApprovedMemory: false,
+    env: {
+      AGNES_API_KEY: "test-agnes-key",
+      SUPABASE_URL: "https://supabase.test",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+      LISTING_APPROVED_MEMORY_ENABLED: "true",
+      INTERNAL_APPROVED_HISTORY_LIMIT: "20",
+      MAX_AGNES_CALLS_PER_ASSET: "0",
+      MAX_EXTERNAL_QUERIES: "0"
+    },
+    createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+    analyzeImpl: memoryEvalAnalyze,
+    now: () => new Date("2026-06-23T12:01:50.000Z")
+  });
+  assert.equal(selfAllowedMemoryEval.internal_memory_self_exclusion_enabled, false);
+  assert.equal(selfAllowedMemoryEval.results[0].internal_memory_self_excluded, false);
+  assert.equal(selfAllowedMemoryEval.results[0].completion_trace[0].output.selected_candidate_id, "fb1");
+  assert.match(selfAllowedMemoryEval.results[0].prediction.title, /Gold/i);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
 const skipped = await evaluateAgnesSupabaseFeedback({
   dataset,
   env: {},

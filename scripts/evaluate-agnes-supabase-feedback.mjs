@@ -8,6 +8,12 @@ import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase
 import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
+import {
+  isSupabaseFeedbackConfigured,
+  listApprovedHistoryRecords,
+  listingApprovedMemoryEnabled
+} from "../lib/supabase-feedback.mjs";
 
 const schemaVersion = "agnes-supabase-feedback-eval-v1";
 const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candidates.json";
@@ -69,6 +75,49 @@ function words(value) {
 
 function unique(values = []) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function normalizedId(value) {
+  return normalizeText(value).toLowerCase();
+}
+
+function sourceIdsForItem(item = {}) {
+  return unique([
+    item.source_feedback_id,
+    item.id,
+    item.feedback_id,
+    candidateId(item)
+  ].map(normalizedId));
+}
+
+function sourceIdsForApprovedRecord(record = {}) {
+  return unique([
+    record.id,
+    record.source_feedback_id,
+    record.sourceFeedbackId,
+    record.asset_id
+  ].map(normalizedId));
+}
+
+function createSelfExcludingApprovedMemoryRegistry({
+  env = process.env,
+  excludeIds = []
+} = {}) {
+  const excluded = new Set((excludeIds || []).map(normalizedId).filter(Boolean));
+  if (!excluded.size || !listingApprovedMemoryEnabled(env) || !isSupabaseFeedbackConfigured(env)) return null;
+
+  return createRetrievalProviderRegistry({
+    env,
+    approvedRecordsLoader: async () => {
+      const records = await listApprovedHistoryRecords({
+        env,
+        limit: env.INTERNAL_APPROVED_HISTORY_LIMIT
+      });
+      return records.filter((record) => {
+        return !sourceIdsForApprovedRecord(record).some((id) => excluded.has(id));
+      });
+    }
+  });
 }
 
 function candidateId(item = {}) {
@@ -468,16 +517,22 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
   signedImages = [],
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
-  maxTitleLength = 80
+  maxTitleLength = 80,
+  excludeApprovedMemoryIds = []
 } = {}) {
   const evidenceDocument = evidenceDocumentFromProviderResult(providerResult, {
     images: signedImages
+  });
+  const providerRegistry = createSelfExcludingApprovedMemoryRegistry({
+    env,
+    excludeIds: excludeApprovedMemoryIds
   });
   const completion = await completeEvidence({
     resolved: evidenceDocument.resolved,
     evidence: evidenceDocument.evidence,
     unresolved: evidenceDocument.unresolved || [],
     env,
+    providerRegistry,
     runFocusedVisionImpl: createFocusedEvaluationRunner({
       signedImages,
       analyzeImpl,
@@ -545,7 +600,8 @@ async function evaluateOneFeedbackItem(item, {
   analyzeImpl = analyzeCardEvidenceWithAgnes,
   createSignedReadUrlImpl = createListingImageSignedReadUrl,
   identityResolution = false,
-  maxTitleLength = 80
+  maxTitleLength = 80,
+  excludeSelfApprovedMemory = true
 } = {}) {
   const id = candidateId(item);
   const referenceTitle = correctedTitle(item);
@@ -559,6 +615,7 @@ async function evaluateOneFeedbackItem(item, {
     generated_title_reference: generatedTitle(item),
     corrected_title_reference_only: true,
     field_ground_truth_available: false,
+    internal_memory_self_excluded: identityResolution && excludeSelfApprovedMemory,
     image_inputs: imageInputs(item).map((image) => ({
       role: image.role,
       bucket: image.bucket,
@@ -590,7 +647,8 @@ async function evaluateOneFeedbackItem(item, {
         signedImages,
         env,
         analyzeImpl,
-        maxTitleLength
+        maxTitleLength,
+        excludeApprovedMemoryIds: excludeSelfApprovedMemory ? sourceIdsForItem(item) : []
       })
       : null;
     const prediction = resolved ? predictionFromResolvedResult(resolved.result) : predictionFromResult(result);
@@ -686,7 +744,8 @@ function buildReport({
   startedAt,
   now,
   fullSampleEvaluation,
-  identityResolution
+  identityResolution,
+  excludeSelfApprovedMemory
 }) {
   return {
     schema_version: schemaVersion,
@@ -695,6 +754,7 @@ function buildReport({
     started_at: startedAt.toISOString(),
     provider: "agnes",
     identity_resolution_enabled: identityResolution,
+    internal_memory_self_exclusion_enabled: identityResolution && excludeSelfApprovedMemory,
     source_dataset_schema_version: dataset.schema_version || null,
     source_manifest_hash: dataset.manifest_hash || null,
     source_provider: dataset.source?.provider || null,
@@ -720,6 +780,7 @@ export async function evaluateAgnesSupabaseFeedback({
   concurrency = 2,
   identityResolution = false,
   maxTitleLength = 80,
+  excludeSelfApprovedMemory = true,
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
   createSignedReadUrlImpl = createListingImageSignedReadUrl,
@@ -796,7 +857,8 @@ export async function evaluateAgnesSupabaseFeedback({
       startedAt,
       now,
       fullSampleEvaluation,
-      identityResolution
+      identityResolution,
+      excludeSelfApprovedMemory
     });
     return { ...report, status: results.length === selectedItems.length ? "completed" : status };
   };
@@ -813,7 +875,8 @@ export async function evaluateAgnesSupabaseFeedback({
         analyzeImpl,
         createSignedReadUrlImpl,
         identityResolution,
-        maxTitleLength
+        maxTitleLength,
+        excludeSelfApprovedMemory
       });
       resultsById.set(candidateId(item), result);
       if (onProgress) await onProgress(buildCurrentReport("partial"));
@@ -828,6 +891,7 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
   return [
     `Agnes Supabase feedback eval ${report.status || "unknown"}`,
     `identity_resolution_enabled: ${report.identity_resolution_enabled === true}`,
+    `internal_memory_self_exclusion_enabled: ${report.internal_memory_self_exclusion_enabled === true}`,
     `target_count: ${report.target_count ?? "n/a"}`,
     `attempted_count: ${report.attempted_count ?? "n/a"}`,
     `evaluated_count: ${report.evaluated_count ?? "n/a"}`,
@@ -858,6 +922,8 @@ export async function main(argv = process.argv, env = process.env) {
   const concurrency = numberArg(argv, "--concurrency", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 2));
   const identityResolution = hasFlag(argv, "--identity-resolution") || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_IDENTITY_RESOLUTION", false);
   const maxTitleLength = numberArg(argv, "--max-title-length", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_MAX_TITLE_LENGTH || 80));
+  const excludeSelfApprovedMemory = !hasFlag(argv, "--allow-self-approved-memory")
+    && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_EXCLUDE_SELF_MEMORY", true);
   const flushEvery = Math.max(1, numberArg(argv, "--flush-every", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_FLUSH_EVERY || 5)));
   const resume = !hasFlag(argv, "--no-resume") && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_RESUME", true);
   const dataset = await readJson(datasetPath);
@@ -879,6 +945,7 @@ export async function main(argv = process.argv, env = process.env) {
     concurrency,
     identityResolution,
     maxTitleLength,
+    excludeSelfApprovedMemory,
     env: {
       ...env,
       AGNES_MAX_RETRIES: env.AGNES_MAX_RETRIES || "1"

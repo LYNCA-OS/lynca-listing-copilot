@@ -192,6 +192,26 @@ assert.equal(beckettGradeDocument.resolved.grade_company, "BGS");
 assert.equal(beckettGradeDocument.evidence.grade_company.value, "BGS");
 assert.doesNotThrow(() => assertValidEvidenceDocument(beckettGradeDocument));
 
+const slabParallelDocument = providerPayloadToEvidenceDocument({
+  title: "2025 Shohei Ohtani 05/50 PSA 9",
+  confidence: "HIGH",
+  reason: "Slab label clearly states card as 2025 Topps Sapphire Shohei Ohtani Variation-Gold #1.",
+  fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    set: "Sapphire",
+    players: ["Shohei Ohtani"],
+    serial_number: "05/50",
+    grade_company: "PSA",
+    card_grade: "9"
+  },
+  unresolved: []
+});
+assert.equal(slabParallelDocument.resolved.parallel, "Variation-Gold");
+assert.equal(slabParallelDocument.evidence.parallel.value, "Variation-Gold");
+assert.equal(slabParallelDocument.evidence.parallel.sources[0].source_type, "SLAB_LABEL");
+assert.doesNotThrow(() => assertValidEvidenceDocument(slabParallelDocument));
+
 const multiCardDocument = providerPayloadToEvidenceDocument({
   title: "Card lot requires review",
   confidence: "HIGH",

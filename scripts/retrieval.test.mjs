@@ -95,6 +95,25 @@ assert.equal(rankedMemory.candidates[0].candidate_id, "legacy-ohtani-gold");
 assert.equal(rankedMemory.selected_candidate.candidate_id, "legacy-ohtani-gold");
 assert.ok(rankedMemory.candidates[0].match_score > rankedMemory.candidates[1].match_score);
 
+const wrongYearOhtani = scoreRetrievalCandidate(memoryResult.candidates[0], {
+  year: "2018",
+  product: "Topps Chrome",
+  players: ["Shohei Ohtani"],
+  grade_company: "PSA",
+  card_grade: "10"
+});
+assert.ok(wrongYearOhtani.conflicting_fields.includes("year"));
+assert.ok(wrongYearOhtani.conflicting_fields.includes("card_grade"));
+const wrongYearRanked = rankRetrievalCandidates([memoryResult.candidates[0]], {
+  year: "2018",
+  product: "Topps Chrome",
+  players: ["Shohei Ohtani"],
+  grade_company: "PSA",
+  card_grade: "10"
+});
+assert.equal(wrongYearRanked.selected_candidate, null);
+assert.equal(wrongYearRanked.candidates[0].rejection_reason, "candidate_has_conflicting_fields");
+
 const allowlistedRegistry = createRetrievalProviderRegistry({
   overrides: {
     not_real_search: {
@@ -389,12 +408,11 @@ const lowMarginRanked = rankRetrievalCandidates([
   players: ["Cooper Flagg"],
   product: "Topps Chrome"
 });
-assert.equal(lowMarginRanked.selected_candidate, null);
-assert.equal(lowMarginRanked.candidates[0].selected, false);
-assert.equal(lowMarginRanked.candidates[0].rejection_reason, "candidate_margin_below_selection_threshold");
-assert.equal(lowMarginRanked.low_margin_conflict.reason, "candidate_margin_below_selection_threshold");
-assert.deepEqual(lowMarginRanked.low_margin_conflict.conflicting_fields, ["product"]);
-assert.ok(lowMarginRanked.candidate_margin > 0 && lowMarginRanked.candidate_margin < lowMarginRanked.candidate_selection_threshold);
+assert.equal(lowMarginRanked.selected_candidate.candidate_id, "topps_candidate");
+assert.equal(lowMarginRanked.candidates[0].selected, true);
+assert.equal(lowMarginRanked.low_margin_conflict, null);
+assert.ok(lowMarginRanked.candidates.find((candidate) => candidate.candidate_id === "bowman_candidate").conflicting_fields.includes("product"));
+assert.ok(lowMarginRanked.candidate_margin > lowMarginRanked.candidate_selection_threshold);
 
 let braveCalls = 0;
 let officialFollowupCalls = 0;
@@ -559,10 +577,10 @@ const lowMarginRun = await runRetrieval({
   providerRegistry: lowMarginRegistry,
   cache: createRetrievalCache()
 });
-assert.equal(lowMarginRun.selected_candidate, null);
-assert.equal(lowMarginRun.low_margin_conflict.reason, "candidate_margin_below_selection_threshold");
-assert.ok(lowMarginRun.conflicts.some((conflict) => conflict.type === "LOW_MARGIN_CANDIDATE_CONFLICT"));
-assert.equal(lowMarginRun.sources[0].rejection_reason, "candidate_margin_below_selection_threshold");
+assert.equal(lowMarginRun.selected_candidate.candidate_id, "topps_candidate");
+assert.equal(lowMarginRun.low_margin_conflict, null);
+assert.ok(lowMarginRun.conflicts.some((conflict) => conflict.candidate_id === "bowman_candidate" && conflict.fields.includes("product")));
+assert.equal(lowMarginRun.sources[0].selected, true);
 
 function jsonResponse(payload, init = {}) {
   return new Response(JSON.stringify(payload), {

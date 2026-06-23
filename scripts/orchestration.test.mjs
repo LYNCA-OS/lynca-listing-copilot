@@ -766,6 +766,125 @@ assert.equal(conflictingVerification.resolved.product, "Topps Chrome");
 assert.equal(conflictingVerification.evidence.product.status, "CONFLICT");
 assert.ok(conflictingVerification.summary.conflicting_fields.includes("product"));
 
+const conflictThenRetrievalConverges = await completeEvidence({
+  resolved: {
+    year: "2025",
+    brand: "Topps",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025", status: "CONFIRMED", confidence: 0.9 }),
+    manufacturer: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({
+      value: "Topps Chrome",
+      status: "CONFLICT",
+      confidence: 0.5,
+      conflicts: [
+        {
+          field: "product",
+          existing_value: "Topps Chrome",
+          candidate_value: "Bowman Chrome",
+          reason: "initial_ocr_registry_conflict"
+        }
+      ]
+    }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], status: "CONFIRMED", confidence: 0.9 })
+  },
+  budgetOverrides: {
+    maxRounds: 2
+  },
+  runRetrievalImpl: async () => ({
+    mode: "AUTO",
+    providers_used: [retrievalProviderIds.INTERNAL_MEMORY],
+    queries: [{ query_id: "approved_history_conflict_resolution", provider_id: retrievalProviderIds.INTERNAL_MEMORY }],
+    sources: [internalHistoryCandidate],
+    selected_candidate: internalHistoryCandidate,
+    candidate_margin: 0.8,
+    conflicts: [],
+    unavailable: [],
+    trace: []
+  })
+});
+assert.equal(conflictThenRetrievalConverges.resolved.product, "Topps Chrome");
+assert.equal(conflictThenRetrievalConverges.evidence.product.status, "CONFIRMED");
+assert.equal(conflictThenRetrievalConverges.route, "AI_COMPLETE_REVIEW");
+assert.ok(conflictThenRetrievalConverges.resolution_trace[0].output.convergence.before.conflicting_fields.includes("product"));
+assert.ok(conflictThenRetrievalConverges.resolution_trace[0].output.convergence.resolved_conflicts.includes("product"));
+assert.equal(conflictThenRetrievalConverges.resolution_trace[0].output.convergence.converged, true);
+
+let conflictRetrievalCalls = 0;
+const conflictingCandidate = {
+  ...officialCandidate,
+  candidate_id: "official_bowman_conflict",
+  domain: "beckett.com",
+  source_type: "STRUCTURED_DATABASE",
+  trust_tier: 4,
+  match_score: 0.9,
+  fields: {
+    year: "2025",
+    player: "Cooper Flagg",
+    product: "Bowman Chrome"
+  }
+};
+const verifyCandidateLoop = await completeEvidence({
+  resolved: {
+    year: "2025",
+    brand: "Topps",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025", status: "CONFIRMED", confidence: 0.9 }),
+    manufacturer: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({
+      value: "Topps Chrome",
+      status: "CONFLICT",
+      confidence: 0.5,
+      conflicts: [
+        {
+          field: "product",
+          existing_value: "Topps Chrome",
+          candidate_value: "Bowman Chrome",
+          reason: "candidate_conflicts_with_current_identity"
+        }
+      ]
+    }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], status: "CONFIRMED", confidence: 0.9 })
+  },
+  budgetOverrides: {
+    maxRounds: 1
+  },
+  runRetrievalImpl: async () => {
+    conflictRetrievalCalls += 1;
+    return {
+      mode: "AUTO",
+      providers_used: [retrievalProviderIds.BRAVE_SEARCH],
+      queries: [{ query_id: "conflicting_candidate_query", provider_id: retrievalProviderIds.BRAVE_SEARCH }],
+      sources: [conflictingCandidate],
+      selected_candidate: conflictingCandidate,
+      candidate_margin: 0.9,
+      conflicts: [],
+      unavailable: [],
+      trace: []
+    };
+  }
+});
+assert.equal(conflictRetrievalCalls, 1);
+assert.deepEqual(verifyCandidateLoop.resolution_trace.map((entry) => entry.action), [
+  completionActions.SEARCH_INTERNAL_APPROVED_HISTORY,
+  completionActions.VERIFY_CANDIDATE
+]);
+const verifyCandidateTrace = verifyCandidateLoop.resolution_trace.find((entry) => entry.action === completionActions.VERIFY_CANDIDATE);
+assert.equal(verifyCandidateTrace.status, "executed");
+assert.ok(verifyCandidateTrace.input.conflicting_fields.includes("product"));
+assert.equal(verifyCandidateTrace.output.candidate_count, 1);
+assert.equal(verifyCandidateTrace.output.convergence.loop, "detect_conflict_retrieve_reevaluate_converge");
+assert.equal(verifyCandidateLoop.retrieval.selected_candidate, null);
+assert.equal(verifyCandidateLoop.retrieval.sources[0].rejection_reason, "candidate_has_conflicting_fields");
+
 const lowMarginConflict = {
   type: "LOW_MARGIN_CANDIDATE_CONFLICT",
   reason: "candidate_margin_below_selection_threshold",
