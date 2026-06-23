@@ -145,6 +145,13 @@ await writeFile(commercialReviewPacketPath, `${JSON.stringify({
     task_count: 248,
     corrected_title_hint_count: 248,
     corrected_title_used_as_ground_truth: false,
+    suggested_field_task_count: 248,
+    suggested_field_counts: {
+      year: 248,
+      product: 237,
+      serial_number: 131
+    },
+    suggested_fields_are_ground_truth: false,
     required_critical_fields: ["year", "product", "players"]
   },
   tasks: [
@@ -214,6 +221,9 @@ assert.equal(byId.commercial_review_packet.status, "passed");
 assert.equal(byId.commercial_review_packet.details.task_count, 248);
 assert.equal(byId.commercial_review_packet.details.corrected_title_hint_count, 248);
 assert.equal(byId.commercial_review_packet.details.corrected_title_used_as_ground_truth, false);
+assert.equal(byId.commercial_review_packet.details.suggested_fields_are_ground_truth, false);
+assert.equal(byId.commercial_review_packet.details.suggested_field_task_count, 248);
+assert.equal(byId.commercial_review_packet.details.suggested_field_counts.year, 248);
 
 const text = formatCommercialReadinessReport(report);
 assert.match(text, /Commercial readiness audit blocked/);
@@ -225,7 +235,7 @@ assert.match(text, /ebay_image_candidates: skipped 0\/300/);
 assert.match(text, /public_card_reference_eval: completed exact 296\/300 \(0.986667\), trusted 300\/300 \(1\)/);
 assert.match(text, /supabase_commercial_sample: passed rows 351, image-backed 248, no-image 103/);
 assert.match(text, /supabase_commercial_ground_truth: blocked required fields year=0, product=0, players=0/);
-assert.match(text, /commercial_review_packet: passed tasks 248, corrected-title-as-truth no/);
+assert.match(text, /commercial_review_packet: passed tasks 248, corrected-title-as-truth no, suggested-field-hints 248/);
 assert.match(text, /gpt_implicit_default: blocked_by_policy/);
 assert.match(text, /publishing_destination: blocked/);
 

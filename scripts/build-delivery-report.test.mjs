@@ -182,6 +182,13 @@ await writeFile(commercialReviewPacketPath, `${JSON.stringify({
     task_count: 248,
     corrected_title_hint_count: 248,
     corrected_title_used_as_ground_truth: false,
+    suggested_field_task_count: 248,
+    suggested_field_counts: {
+      year: 248,
+      product: 237,
+      serial_number: 131
+    },
+    suggested_fields_are_ground_truth: false,
     required_critical_fields: ["year", "product", "players"]
   },
   tasks: [
@@ -227,7 +234,7 @@ assert.match(report, /Public card-name reference eval: completed exact 296\/300 
 assert.match(report, /Marketplace real-photo pilot: completed evaluated 7\/10, title accepted 3\/7 \(0.428571\), provider errors 3, inputs controlled=0 external=10/);
 assert.match(report, /Supabase commercial inventory: passed rows 351, image-backed 248, no-image 103/);
 assert.match(report, /Supabase field-level ground truth: blocked required fields year=0, product=0, players=0/);
-assert.match(report, /Commercial review packet: passed tasks 248, corrected-title-as-truth=no/);
+assert.match(report, /Commercial review packet: passed tasks 248, corrected-title-as-truth=no, suggested-field-hints=248/);
 assert.match(report, /Public eval commercial claim allowed: no/);
 assert.match(report, /Feedback retention enabled: no/);
 assert.match(report, /Approved-memory reuse enabled: no/);

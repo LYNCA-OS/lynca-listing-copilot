@@ -124,7 +124,7 @@ function supabaseCommercialTruthSummary(readiness) {
 function commercialReviewPacketSummary(readiness) {
   const check = readiness.checks.find((item) => item.id === "commercial_review_packet");
   if (!check) return "missing";
-  return `${check.status} tasks ${check.details?.task_count ?? 0}, corrected-title-as-truth=${yesNo(check.details?.corrected_title_used_as_ground_truth === true)}`;
+  return `${check.status} tasks ${check.details?.task_count ?? 0}, corrected-title-as-truth=${yesNo(check.details?.corrected_title_used_as_ground_truth === true)}, suggested-field-hints=${check.details?.suggested_field_task_count ?? 0}`;
 }
 
 function blockerLines(readiness) {

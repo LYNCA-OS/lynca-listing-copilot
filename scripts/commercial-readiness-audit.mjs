@@ -607,11 +607,14 @@ async function auditCommercialReviewPacket(env = process.env) {
       task_count: Number(packet.summary?.task_count ?? tasks.length),
       corrected_title_hint_count: Number(packet.summary?.corrected_title_hint_count || 0),
       corrected_title_used_as_ground_truth: correctedTitleUsedAsGroundTruth,
+      suggested_field_task_count: Number(packet.summary?.suggested_field_task_count || 0),
+      suggested_field_counts: packet.summary?.suggested_field_counts || {},
+      suggested_fields_are_ground_truth: packet.summary?.suggested_fields_are_ground_truth === true,
       required_critical_fields: packet.summary?.required_critical_fields || []
     };
 
-    if (correctedTitleUsedAsGroundTruth) {
-      return blocked("commercial_review_packet", "Commercial review packet incorrectly marks corrected titles as ground truth.", details);
+    if (correctedTitleUsedAsGroundTruth || details.suggested_fields_are_ground_truth) {
+      return blocked("commercial_review_packet", "Commercial review packet incorrectly marks title hints as ground truth.", details);
     }
     if (details.task_count > 0) {
       return passed("commercial_review_packet", "Commercial field-level review packet is ready for operator labeling.", details);
@@ -716,7 +719,7 @@ export function formatCommercialReadinessReport(report) {
     : "n/a";
   const reviewPacket = report.checks.find((check) => check.id === "commercial_review_packet");
   const reviewPacketSummary = reviewPacket
-    ? `${reviewPacket.status} tasks ${reviewPacket.details.task_count ?? 0}, corrected-title-as-truth ${reviewPacket.details.corrected_title_used_as_ground_truth === true ? "yes" : "no"}`
+    ? `${reviewPacket.status} tasks ${reviewPacket.details.task_count ?? 0}, corrected-title-as-truth ${reviewPacket.details.corrected_title_used_as_ground_truth === true ? "yes" : "no"}, suggested-field-hints ${reviewPacket.details.suggested_field_task_count ?? 0}`
     : "n/a";
   const lines = [
     `Commercial readiness audit ${report.status}`,

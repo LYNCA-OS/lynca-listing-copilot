@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createCommercialReviewPacket,
-  reviewPacketToRecognitionDataset
+  reviewPacketToRecognitionDataset,
+  suggestRecognitionFieldsFromEnglishTitle
 } from "../lib/listing/recognition/commercial-review-packet.mjs";
 import { runBuildCommercialReviewPacket } from "./build-commercial-review-packet.mjs";
 import { runImportCommercialReviewLabels } from "./import-commercial-review-labels.mjs";
@@ -79,6 +80,22 @@ const candidateManifest = {
 
 await writeFile(candidateManifestPath, `${JSON.stringify(candidateManifest, null, 2)}\n`);
 
+const parsedEnglishTitle = suggestRecognitionFieldsFromEnglishTitle(
+  "2025 Topps Chrome Cooper Flagg Gold Refractor RC Auto 031/050 PSA 9 Auto 10"
+);
+assert.equal(parsedEnglishTitle.year, "2025");
+assert.equal(parsedEnglishTitle.manufacturer, "Topps");
+assert.equal(parsedEnglishTitle.product, "Topps Chrome");
+assert.deepEqual(parsedEnglishTitle.players, []);
+assert.equal(parsedEnglishTitle.parallel, "Gold Refractor");
+assert.equal(parsedEnglishTitle.serial_number, "31/50");
+assert.equal(parsedEnglishTitle.rc, true);
+assert.equal(parsedEnglishTitle.auto, true);
+assert.equal(parsedEnglishTitle.grade_company, "PSA");
+assert.equal(parsedEnglishTitle.card_grade, "9");
+assert.equal(parsedEnglishTitle.auto_grade, "10");
+assert.equal(parsedEnglishTitle.grade_type, "CARD_AND_AUTO");
+
 const packet = createCommercialReviewPacket(candidateManifest, {
   now: () => new Date("2026-06-23T10:00:00.000Z")
 });
@@ -86,7 +103,19 @@ assert.equal(packet.schema_version, "commercial-review-packet-v1");
 assert.equal(packet.summary.task_count, 2);
 assert.equal(packet.summary.corrected_title_hint_count, 2);
 assert.equal(packet.summary.corrected_title_used_as_ground_truth, false);
+assert.equal(packet.summary.suggested_field_task_count, 1);
+assert.equal(packet.summary.suggested_fields_are_ground_truth, false);
+assert.equal(packet.summary.suggested_field_counts.year, 1);
+assert.equal(packet.summary.suggested_field_counts.product, 1);
+assert.equal(packet.summary.suggested_field_counts.serial_number, 1);
 assert.equal(packet.tasks[0].corrected_title_hint, "2025 Topps Chrome Cooper Flagg Gold Refractor Auto 31/50");
+assert.equal(packet.tasks[0].suggested_fields.year, "2025");
+assert.equal(packet.tasks[0].suggested_fields.product, "Topps Chrome");
+assert.equal(packet.tasks[0].suggested_fields.parallel, "Gold Refractor");
+assert.equal(packet.tasks[0].suggested_fields.serial_number, "31/50");
+assert.equal(packet.tasks[0].suggested_fields.auto, true);
+assert.equal(packet.tasks[0].suggestion_policy.can_be_used_as_ground_truth, false);
+assert.ok(packet.tasks[0].suggestion_sources.every((source) => source.evidence_weight === 0));
 assert.equal(packet.tasks[0].reviewed_ground_truth.year, null);
 assert.deepEqual(packet.tasks[0].reviewed_ground_truth.players, []);
 assert.deepEqual(packet.tasks[0].ground_truth_sources, []);
@@ -98,6 +127,30 @@ await runBuildCommercialReviewPacket({
 const writtenPacket = JSON.parse(await readFile(packetPath, "utf8"));
 assert.equal(writtenPacket.summary.task_count, 1);
 assert.equal(writtenPacket.tasks[0].corrected_title_used_as_ground_truth, false);
+assert.equal(writtenPacket.tasks[0].suggested_fields.year, "2025");
+
+const suggestionsOnly = reviewPacketToRecognitionDataset(packet);
+assert.equal(suggestionsOnly.items.length, 0);
+assert.equal(suggestionsOnly.rejected_tasks.length, 2);
+
+const copiedSuggestionsWithoutEvidence = reviewPacketToRecognitionDataset({
+  ...packet,
+  tasks: [
+    {
+      ...packet.tasks[0],
+      review_status: "SINGLE_REVIEWED",
+      reviewed_by: ["operator_a"],
+      reviewed_ground_truth: {
+        ...packet.tasks[0].suggested_fields,
+        players: ["Cooper Flagg"]
+      },
+      critical_fields: ["year", "product", "players"],
+      ground_truth_sources: []
+    }
+  ]
+});
+assert.equal(copiedSuggestionsWithoutEvidence.items.length, 0);
+assert.match(copiedSuggestionsWithoutEvidence.rejected_tasks[0].reasons.join("; "), /critical field year lacks ground_truth_sources evidence/);
 
 const reviewedPacket = {
   ...packet,
@@ -173,6 +226,7 @@ assert.equal(imported.items[0].split, "held_out_commercial");
 assert.equal(imported.items[0].source_titles.corrected_title, "2025 Topps Chrome Cooper Flagg Gold Refractor Auto 31/50");
 assert.equal(imported.items[0].ground_truth.year, "2025");
 assert.deepEqual(imported.items[0].reviewed_by, ["operator_a"]);
+assert.equal(imported.items[0].suggested_fields, undefined);
 
 const unsafePacket = {
   ...reviewedPacket,
