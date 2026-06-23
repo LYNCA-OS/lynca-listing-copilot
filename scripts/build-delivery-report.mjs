@@ -121,6 +121,12 @@ function supabaseCommercialTruthSummary(readiness) {
   return `${check.status}${coverage ? ` required fields ${coverage}` : ""}`;
 }
 
+function commercialReviewPacketSummary(readiness) {
+  const check = readiness.checks.find((item) => item.id === "commercial_review_packet");
+  if (!check) return "missing";
+  return `${check.status} tasks ${check.details?.task_count ?? 0}, corrected-title-as-truth=${yesNo(check.details?.corrected_title_used_as_ground_truth === true)}`;
+}
+
 function blockerLines(readiness) {
   return readiness.blockers.length
     ? readiness.blockers.map((blocker) => `${blocker.id}: ${blocker.summary}`)
@@ -169,6 +175,7 @@ export async function createDeliveryReport({
       `Marketplace real-photo pilot: ${realPhotoPilotSummary(realPhotoPilot)}`,
       `Supabase commercial inventory: ${supabaseCommercialInventorySummary(readiness)}`,
       `Supabase field-level ground truth: ${supabaseCommercialTruthSummary(readiness)}`,
+      `Commercial review packet: ${commercialReviewPacketSummary(readiness)}`,
       "This report is generated from current repository files and sanitized smoke/eval artifacts; it does not replace a fresh command transcript."
     ])),
     section(2, "Implementation Summary", bullet([
@@ -291,6 +298,7 @@ export async function createDeliveryReport({
       `Public card-name reference eval: ${publicCardEvalSummary(publicCardEval)}`,
       `Marketplace real-photo pilot: ${realPhotoPilotSummary(realPhotoPilot)}`,
       `Supabase field-level ground truth: ${supabaseCommercialTruthSummary(readiness)}`,
+      `Commercial review packet: ${commercialReviewPacketSummary(readiness)}`,
       `Public eval commercial claim allowed: ${yesNo(publicCardEval?.commercial_accuracy_claim_allowed === true)}`
     ])),
     section(23, "Cost And Latency", bullet([
@@ -328,6 +336,7 @@ export async function createDeliveryReport({
     ])),
     section(28, "Next Stage Recommendations", bullet([
       "Import a real approved-review export into a held-out commercial dataset.",
+      "Generate a commercial field-level review packet and import only reviewed field labels with evidence sources.",
       "Use the public 300-card reference misses to tune OCR/name spelling, but keep commercial gate tied to approved held-out reviews.",
       "Use the marketplace real-photo pilot failures to tune image ingestion, timeouts, and missing-critical-field routing; production tests should use self-hosted uploaded images rather than unstable marketplace image URLs.",
       "Keep feedback retention and approved-memory reuse disabled until real commercial review policy, dataset governance, and rollout approvals are in place.",

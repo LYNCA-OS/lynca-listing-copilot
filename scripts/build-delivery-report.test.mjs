@@ -15,6 +15,7 @@ const publicCardEvalPath = join(tmp, "public-card-eval.json");
 const realPhotoPilotPath = join(tmp, "real-photo-pilot.json");
 const supabaseSnapshotPath = join(tmp, "supabase-live-snapshot.json");
 const supabaseCandidateReportPath = join(tmp, "supabase-candidates-report.json");
+const commercialReviewPacketPath = join(tmp, "commercial-review-packet.json");
 
 await writeFile(datasetPath, `${JSON.stringify({
   schema_version: "golden-dataset-v1",
@@ -174,6 +175,23 @@ await writeFile(supabaseCandidateReportPath, `${JSON.stringify({
   }
 }, null, 2)}\n`);
 
+await writeFile(commercialReviewPacketPath, `${JSON.stringify({
+  schema_version: "commercial-review-packet-v1",
+  generated_at: "2026-06-23T10:00:00.000Z",
+  summary: {
+    task_count: 248,
+    corrected_title_hint_count: 248,
+    corrected_title_used_as_ground_truth: false,
+    required_critical_fields: ["year", "product", "players"]
+  },
+  tasks: [
+    {
+      asset_id: "supabase_feedback_1",
+      corrected_title_used_as_ground_truth: false
+    }
+  ]
+}, null, 2)}\n`);
+
 const report = await createDeliveryReport({
   datasetPath,
   agnesSmokePath,
@@ -186,7 +204,8 @@ const report = await createDeliveryReport({
     AGNES_PUBLIC_CARD_EVAL_OUT: publicCardEvalPath,
     AGNES_REAL_PHOTO_PILOT_OUT: realPhotoPilotPath,
     SUPABASE_LIVE_SNAPSHOT_PATH: supabaseSnapshotPath,
-    SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath
+    SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath,
+    COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath
   }
 });
 
@@ -208,6 +227,7 @@ assert.match(report, /Public card-name reference eval: completed exact 296\/300 
 assert.match(report, /Marketplace real-photo pilot: completed evaluated 7\/10, title accepted 3\/7 \(0.428571\), provider errors 3, inputs controlled=0 external=10/);
 assert.match(report, /Supabase commercial inventory: passed rows 351, image-backed 248, no-image 103/);
 assert.match(report, /Supabase field-level ground truth: blocked required fields year=0, product=0, players=0/);
+assert.match(report, /Commercial review packet: passed tasks 248, corrected-title-as-truth=no/);
 assert.match(report, /Public eval commercial claim allowed: no/);
 assert.match(report, /Feedback retention enabled: no/);
 assert.match(report, /Approved-memory reuse enabled: no/);

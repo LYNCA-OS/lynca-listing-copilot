@@ -10,6 +10,7 @@ const defaultEbayCandidatesPath = "data/ebay-candidates/ebay-image-candidates-la
 const defaultPublicCardEvalPath = "data/eval/agnes-public-card-image-eval-latest.json";
 const defaultSupabaseLiveSnapshotPath = "data/recognition/reports/supabase-live-snapshot-2026-06-23.json";
 const defaultSupabaseCandidateReportPath = "data/recognition/reports/supabase-feedback-candidates-report.json";
+const defaultCommercialReviewPacketPath = "data/recognition/review/supabase-commercial-review-packet.json";
 const minimumCommercialInventoryRows = 300;
 const minimumCommercialGroundTruthAssets = 100;
 const requiredCommercialTruthFields = Object.freeze(["year", "product", "players"]);
@@ -583,6 +584,48 @@ async function auditSupabaseCommercialSample(env = process.env) {
   }
 }
 
+async function auditCommercialReviewPacket(env = process.env) {
+  const packetPath = env.COMMERCIAL_REVIEW_PACKET_PATH || defaultCommercialReviewPacketPath;
+
+  if (!existsSync(resolve(packetPath))) {
+    return warning("commercial_review_packet", "Commercial field-level review packet is missing; Supabase rows are not yet ready for operator labeling.", {
+      packet: resolve(packetPath),
+      task_count: 0,
+      corrected_title_used_as_ground_truth: false
+    });
+  }
+
+  try {
+    const loaded = await readJsonFile(packetPath);
+    const packet = loaded.value || {};
+    const tasks = Array.isArray(packet.tasks) ? packet.tasks : [];
+    const correctedTitleUsedAsGroundTruth = packet.summary?.corrected_title_used_as_ground_truth === true
+      || tasks.some((task) => task.corrected_title_used_as_ground_truth === true);
+    const details = {
+      packet: loaded.path,
+      schema_version: packet.schema_version || "unknown",
+      task_count: Number(packet.summary?.task_count ?? tasks.length),
+      corrected_title_hint_count: Number(packet.summary?.corrected_title_hint_count || 0),
+      corrected_title_used_as_ground_truth: correctedTitleUsedAsGroundTruth,
+      required_critical_fields: packet.summary?.required_critical_fields || []
+    };
+
+    if (correctedTitleUsedAsGroundTruth) {
+      return blocked("commercial_review_packet", "Commercial review packet incorrectly marks corrected titles as ground truth.", details);
+    }
+    if (details.task_count > 0) {
+      return passed("commercial_review_packet", "Commercial field-level review packet is ready for operator labeling.", details);
+    }
+    return warning("commercial_review_packet", "Commercial field-level review packet has no tasks.", details);
+  } catch (error) {
+    return warning("commercial_review_packet", "Commercial review packet could not be parsed.", {
+      packet: resolve(packetPath),
+      error: error.message,
+      corrected_title_used_as_ground_truth: false
+    });
+  }
+}
+
 export async function createCommercialReadinessReport({
   datasetPath = defaultDatasetPath,
   agnesSmokePath = defaultAgnesSmokePath,
@@ -601,6 +644,7 @@ export async function createCommercialReadinessReport({
   checks.push(await auditPublicCardReferenceEval(env));
   const supabaseCommercial = await auditSupabaseCommercialSample(env);
   checks.push(...supabaseCommercial.checks);
+  checks.push(await auditCommercialReviewPacket(env));
 
   const blockers = checks.filter((check) => check.status === "blocked");
   const warnings = checks.filter((check) => check.status === "warning");
@@ -637,7 +681,8 @@ export async function createCommercialReadinessReport({
         }
         : null,
       public_card_reference_eval: checks.find((check) => check.id === "public_card_reference_eval")?.details || null,
-      supabase_commercial_sample: supabaseCommercial.evidence
+      supabase_commercial_sample: supabaseCommercial.evidence,
+      commercial_review_packet: checks.find((check) => check.id === "commercial_review_packet")?.details || null
     }
   };
 }
@@ -669,6 +714,10 @@ export function formatCommercialReadinessReport(report) {
   const supabaseTruthSummary = supabaseTruth
     ? `${supabaseTruth.status} required fields ${Object.entries(supabaseTruth.details.required_truth_field_coverage || {}).map(([field, count]) => `${field}=${count}`).join(", ")}`
     : "n/a";
+  const reviewPacket = report.checks.find((check) => check.id === "commercial_review_packet");
+  const reviewPacketSummary = reviewPacket
+    ? `${reviewPacket.status} tasks ${reviewPacket.details.task_count ?? 0}, corrected-title-as-truth ${reviewPacket.details.corrected_title_used_as_ground_truth === true ? "yes" : "no"}`
+    : "n/a";
   const lines = [
     `Commercial readiness audit ${report.status}`,
     `held_out_commercial_assets: ${heldOutCount}`,
@@ -680,6 +729,7 @@ export function formatCommercialReadinessReport(report) {
     `public_card_reference_eval: ${publicCardSummary}`,
     `supabase_commercial_sample: ${supabaseSampleSummary}`,
     `supabase_commercial_ground_truth: ${supabaseTruthSummary}`,
+    `commercial_review_packet: ${reviewPacketSummary}`,
     `gpt_implicit_default: ${providerPolicy?.details?.gpt_implicit_default || "unknown"}`,
     "",
     "checks:"
