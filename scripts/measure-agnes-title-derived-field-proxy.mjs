@@ -137,7 +137,7 @@ function fieldCheck(field, expected, predicted, matched, evidence) {
   };
 }
 
-function titleDerivedChecks(result = {}) {
+export function titleDerivedChecks(result = {}) {
   const referenceTitle = result.corrected_title_reference || "";
   const prediction = result.prediction || {};
   const fields = prediction.fields || {};
