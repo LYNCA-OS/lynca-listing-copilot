@@ -220,4 +220,26 @@ assert.equal(missingSerial.accepted, false);
 assert.equal(missingSerial.required_fields_present, false);
 assert.ok(missingSerial.missing_required_fields.some((item) => item.field === "serial_number"));
 
+const leadingZeroSerial = evaluateTitleAcceptance({
+  title: "2025 Topps Chrome Cooper Flagg Gold Refractor 031/050",
+  groundTruthFields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"],
+    parallel: "Gold Refractor",
+    serial_number: "31/50"
+  },
+  predictedFields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"],
+    parallel: "Gold Refractor",
+    serial_number: "031/050"
+  },
+  criticalFields: ["year", "product", "players", "parallel", "serial_number"]
+});
+assert.equal(leadingZeroSerial.accepted, true);
+assert.equal(leadingZeroSerial.required_fields_present, true);
+assert.equal(leadingZeroSerial.unsubstantiated_critical_errors, false);
+
 console.log("title acceptance policy tests passed");

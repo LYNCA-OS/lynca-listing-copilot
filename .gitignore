@@ -23,9 +23,12 @@ data/recognition/reports/supabase-feedback-rows-all-mcp.json
 data/recognition/reports/supabase-feedback-mcp-session-export-report.json
 data/recognition/reports/supabase-feedback-all-mcp-session-export-report.json
 data/recognition/manifests/supabase-feedback-candidates.json
+data/recognition/manifests/supabase-feedback-reviewed.json
 data/recognition/reports/supabase-feedback-candidates-report.json
+data/recognition/reports/supabase-feedback-reviewed-report.json
 data/eval/agnes-supabase-feedback-latest.json
 data/eval/agnes-title-derived-field-proxy-latest.json
 data/eval/agnes-commercial-acceptance-proxy-latest.json
+data/eval/agnes-reviewed-commercial-accuracy-latest.json
 data/eval/supabase-feedback-title-baseline-latest.json
 data/eval/agnes-supabase-feedback-shards/
