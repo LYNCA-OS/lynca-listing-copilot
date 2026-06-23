@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import {
   hasComplexVisualParallelRisk,
   highValueInsertTerms,
@@ -8,10 +9,25 @@ import {
   resolveKnowledgeEntry,
   resolveKnowledgeFromFields
 } from "../lib/listing-knowledge-registry.mjs";
+import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
+import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
+import { defaultProviderModels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
+import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
+import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
+import {
+  createListingImageSignedReadUrl,
+  verifyListingImageVerificationToken
+} from "../lib/listing/storage/supabase-image-storage.mjs";
+import { readListingImageVerificationRecord } from "../lib/listing/storage/storage-verification-store.mjs";
+import { defaultCaptureProfileId, summarizeAssetImageQuality } from "../lib/listing/image-quality/quality-gate.mjs";
+import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
+import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
+import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
+import { completionActions } from "../lib/listing/orchestration/next-best-action.mjs";
 
 const cookieName = "lynca_metaverse_session";
-const defaultModel = "gpt-4.1-mini";
 const maxFallbackTitleLength = 80;
+const maxPayloadImages = 10;
 const promptRoot = join(process.cwd(), "prompts");
 const promptFiles = [
   "listing-intelligence-v1.md",
@@ -1201,7 +1217,7 @@ function applyIllustratorMetadataGuard({ title, reason, fields, confidence, unre
   };
 }
 
-function fallbackResult(payload) {
+function fallbackBaseResult(payload) {
   const firstImage = payload.images?.[0] || {};
   const sourceName = compactFileName(firstImage.name);
   const [code, resolvedLabel] = findResolutionLabel(firstImage.name, payload.resolutionMap);
@@ -1213,11 +1229,11 @@ function fallbackResult(payload) {
 
   const title = normalizeTitle(titleParts.filter(Boolean).join(" "), payload.maxTitleLength || maxFallbackTitleLength);
 
-  return {
+  const result = {
     title,
     confidence: title ? "MEDIUM" : "FAILED",
     reason: title
-      ? "Fallback result from filename because OPENAI_API_KEY is not configured."
+      ? "Fallback result from filename because no vision provider is configured."
       : "No usable filename or AI configuration.",
     fields: {
       ...defaultFields,
@@ -1225,70 +1241,156 @@ function fallbackResult(payload) {
       card_number: code || null
     },
     unresolved: ["image identification", "market wording"],
+    capture_profile_id: payload.captureProfileId || defaultCaptureProfileId,
+    capture_quality: captureQualityForPayload(payload),
     source: "fallback"
   };
+
+  return withEvidenceCompatibility(result, result, payload);
 }
 
-function parseOpenAiText(data) {
-  if (typeof data.output_text === "string") return data.output_text;
-
-  return (data.output || [])
-    .flatMap((item) => item.content || [])
-    .map((content) => content.text || "")
-    .filter(Boolean)
-    .join("\n");
+async function fallbackResult(payload) {
+  const primaryPayload = primaryPayloadForProvider(payload);
+  return withEvidenceCompletion(fallbackBaseResult(primaryPayload), primaryPayload);
 }
 
-function safeJsonParse(text) {
-  const trimmed = String(text || "").trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  const candidate = fenced ? fenced[1] : trimmed;
-  return JSON.parse(candidate);
+function captureQualityForPayload(payload = {}) {
+  return payload.captureQuality || payload.capture_quality || summarizeAssetImageQuality(payload.images || []);
 }
 
-function normalizeAiResult(result, maxTitleLength) {
-  const confidenceMap = {
-    HIGH: "HIGH",
-    MEDIUM: "MEDIUM",
-    UNSURE: "MEDIUM",
-    LOW: "LOW",
-    FAILED: "FAILED"
+function imageIsDerived(image = {}) {
+  return Boolean(image.derived || image.sourceRegion || image.source_region || image.storageRole || image.storage_role);
+}
+
+function primaryImagesFromImages(images = []) {
+  const primary = images.filter((image) => !imageIsDerived(image));
+  return primary.length ? primary : images.slice(0, 2);
+}
+
+function explicitPrimaryImagesFromImages(images = []) {
+  return images.filter((image) => !imageIsDerived(image));
+}
+
+function derivedImagesFromImages(images = []) {
+  return images.filter(imageIsDerived);
+}
+
+function primaryPayloadForProvider(payload = {}) {
+  return {
+    ...payload,
+    images: primaryImagesFromImages(payload.images || [])
   };
-  const confidence = confidenceMap[String(result.confidence || "").toUpperCase()] || "MEDIUM";
-  const fields = normalizeFields(result.fields);
-  const unresolved = normalizeUnresolved(result.unresolved, result.fields);
-  const sanitized = sanitizeResultText(result, fields, confidence, unresolved, maxTitleLength);
-  const title = repairOrphanAutoGradeSuffix(moveLeadingGradeToEnd(sanitized.title, maxTitleLength), fields, maxTitleLength);
-  const calibrated = calibrateConfidence({
-    title,
-    confidence: sanitized.confidence,
-    reason: sanitized.reason.slice(0, 520),
-    fields,
-    unresolved: sanitized.hadBackgroundContamination
-      ? [...sanitized.unresolved, "background branding ignored"]
-      : sanitized.unresolved
+}
+
+const focusedRegionsByAction = Object.freeze({
+  [completionActions.CROP_AND_READ_SUBJECT]: ["subject_name"],
+  [completionActions.CROP_AND_READ_SERIAL]: ["serial_number"],
+  [completionActions.CROP_AND_READ_CARD_CODE]: ["collector_number", "checklist_code"],
+  [completionActions.CROP_AND_READ_GRADE_LABEL]: ["grade_label"],
+  [completionActions.CROP_AND_READ_YEAR_PRODUCT]: ["year_product"]
+});
+
+function focusedImagesForAction(images = [], action, focusFields = []) {
+  const targetRegions = new Set([
+    ...(focusedRegionsByAction[action] || []),
+    ...focusFields
+  ]);
+  const derivedMatches = derivedImagesFromImages(images).filter((image) => {
+    const sourceRegion = image.sourceRegion || image.source_region || "";
+    const storageRole = image.storageRole || image.storage_role || "";
+    return targetRegions.has(sourceRegion)
+      || targetRegions.has(storageRole)
+      || [...targetRegions].some((field) => storageRole.includes(field.replace(/_number$|_code$/, "")));
   });
 
+  if (derivedMatches.length) return derivedMatches.slice(0, 2);
+  return primaryImagesFromImages(images).slice(0, 2);
+}
+
+function storageMetadataForImage(image = {}) {
   return {
-    title,
-    confidence: calibrated.confidence,
-    reason: calibrated.reason,
-    fields,
-    unresolved: calibrated.unresolved,
-    source: "openai"
+    objectPath: image.objectPath || image.object_path || image.storagePath || image.storage_path,
+    bucket: image.bucket || image.storage_bucket,
+    contentType: image.originalType || image.original_type || image.contentType || image.content_type || image.type,
+    size: image.originalSize || image.original_size || image.size,
+    width: image.originalWidth || image.original_width || image.width,
+    height: image.originalHeight || image.original_height || image.height,
+    token: image.storageVerificationToken
+      || image.storage_verification_token
+      || image.verificationToken
+      || image.verification_token
   };
 }
 
-async function createOpenAiTitle(payload) {
-  const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const intelligencePrompt = await loadPrompt();
-  const imageInputs = payload.images.map((image, index) => ({
-    type: "input_image",
-    image_url: image.dataUrl,
-    detail: index === 0 ? "high" : "low"
-  }));
+async function assertVerifiedStorageImage(image = {}) {
+  const metadata = storageMetadataForImage(image);
+  if (!metadata.objectPath) return null;
 
-  const prompt = [
+  if (!(image.storageVerified === true || image.storage_verified === true)) {
+    throw new Error("Listing image storage reference has not been verified.");
+  }
+
+  if (metadata.token) {
+    try {
+      verifyListingImageVerificationToken({
+        token: metadata.token,
+        objectPath: metadata.objectPath,
+        bucket: metadata.bucket,
+        contentType: metadata.contentType,
+        size: metadata.size,
+        width: metadata.width,
+        height: metadata.height
+      });
+      return metadata.objectPath;
+    } catch (error) {
+      if (!/expired/i.test(String(error.message || ""))) {
+        throw error;
+      }
+    }
+  }
+
+  const durableRecord = await readListingImageVerificationRecord({
+    objectPath: metadata.objectPath,
+    bucket: metadata.bucket,
+    contentType: metadata.contentType,
+    size: metadata.size,
+    width: metadata.width,
+    height: metadata.height
+  });
+  if (!durableRecord.verified) {
+    throw new Error("Listing image storage reference has no current server verification record.");
+  }
+
+  return metadata.objectPath;
+}
+
+function focusedRereadPrompt({
+  action,
+  focusFields = [],
+  resolved = {}
+} = {}) {
+  return [
+    "You are performing a focused reread for LYNCA Listing Copilot.",
+    "Use only the supplied card image or crop. Do not infer facts from style, marketplace wording, or memory.",
+    `Action: ${action || "focused_reread"}.`,
+    `Focus fields: ${focusFields.join(", ") || "unresolved critical fields"}.`,
+    "Return only valid JSON with this shape:",
+    JSON.stringify({
+      title: "",
+      confidence: "HIGH | MEDIUM | LOW | FAILED",
+      fields: Object.fromEntries(focusFields.map((field) => [field, ""])),
+      unresolved: []
+    }),
+    "If a focus field is unreadable, leave it empty and explain that field in unresolved.",
+    "Current resolved context for disambiguation only:",
+    JSON.stringify(resolved)
+  ].join("\n");
+}
+
+async function buildListingPrompt(payload, maxTitleLength) {
+  const intelligencePrompt = await loadPrompt();
+
+  return [
     intelligencePrompt,
     `Runtime title limit: ${maxTitleLength} characters.`,
     "Return only valid JSON. Do not wrap the response in Markdown.",
@@ -1302,6 +1404,8 @@ async function createOpenAiTitle(payload) {
       imageCount: payload.images.length,
       fileNames: payload.images.map((image) => image.name)
     }),
+    "Capture quality:",
+    JSON.stringify(captureQualityForPayload(payload)),
     "Required JSON shape:",
     JSON.stringify({
       title: "",
@@ -1311,39 +1415,372 @@ async function createOpenAiTitle(payload) {
       unresolved: []
     })
   ].join("\n");
+}
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_LISTING_MODEL || defaultModel,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: prompt
-            },
-            ...imageInputs
-          ]
-        }
-      ],
-      max_output_tokens: 900
-    })
+function normalizeAiResult(result, maxTitleLength, source = "openai") {
+  const confidenceMap = {
+    HIGH: "HIGH",
+    MEDIUM: "MEDIUM",
+    UNSURE: "MEDIUM",
+    LOW: "LOW",
+    FAILED: "FAILED"
+  };
+  const confidence = confidenceMap[String(result.confidence || "").toUpperCase()] || "MEDIUM";
+  const fields = normalizeFields(result.fields);
+  const unresolved = normalizeUnresolved(result.unresolved, result.fields);
+  const sanitized = sanitizeResultText(result, fields, confidence, unresolved, maxTitleLength);
+  const title = repairOrphanAutoGradeSuffix(moveLeadingGradeToEnd(sanitized.title, maxTitleLength), fields, maxTitleLength);
+  const preTitleAudit = {
+    confidence: sanitized.confidence,
+    reason: sanitized.reason.slice(0, 520),
+    unresolved: sanitized.hadBackgroundContamination
+      ? [...sanitized.unresolved, "background branding ignored"]
+      : sanitized.unresolved
+  };
+  const calibrated = calibrateConfidence({
+    title,
+    confidence: preTitleAudit.confidence,
+    reason: preTitleAudit.reason,
+    fields,
+    unresolved: preTitleAudit.unresolved
   });
 
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(`OpenAI request failed: ${response.status} ${message.slice(0, 180)}`);
+  return {
+    title,
+    model_title_suggestion: title,
+    confidence: calibrated.confidence,
+    reason: calibrated.reason,
+    fields,
+    unresolved: calibrated.unresolved,
+    source,
+    _pre_title_audit: preTitleAudit
+  };
+}
+
+function withEvidenceCompatibility(result, providerPayload, payload) {
+  const { _pre_title_audit: preTitleAudit, ...publicResult } = result;
+  const payloadForEvidence = {
+    ...providerPayload,
+    title: providerPayload.title || result.model_title_suggestion || result.title,
+    confidence: publicResult.confidence,
+    fields: publicResult.fields,
+    unresolved: Array.isArray(providerPayload.unresolved) ? providerPayload.unresolved : publicResult.unresolved
+  };
+  const evidenceDocument = providerPayloadToEvidenceDocument(payloadForEvidence, {
+    images: payload.images || []
+  });
+  const normalizedLegacyFields = resolvedFieldsToLegacyFields(evidenceDocument.resolved);
+  const fields = {
+    ...publicResult.fields,
+    ...Object.fromEntries(Object.entries(normalizedLegacyFields).filter(([, value]) => value !== null && value !== undefined))
+  };
+  const presentation = renderListingPresentation({
+    resolved: evidenceDocument.resolved,
+    evidence: evidenceDocument.evidence,
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  });
+  const renderedTitle = presentation.rendered_title || "";
+  const finalTitle = renderedTitle || publicResult.title || "";
+  const calibrationBase = preTitleAudit || {
+    confidence: publicResult.confidence,
+    reason: publicResult.reason,
+    unresolved: publicResult.unresolved || []
+  };
+  const finalCalibration = renderedTitle
+    ? calibrateConfidence({
+      title: finalTitle,
+      confidence: calibrationBase.confidence,
+      reason: calibrationBase.reason,
+      fields,
+      unresolved: calibrationBase.unresolved.filter((item) => !/^title missing /i.test(String(item || "")))
+    })
+    : {
+      confidence: publicResult.confidence,
+      reason: publicResult.reason,
+      unresolved: publicResult.unresolved || []
+    };
+
+  return {
+    ...publicResult,
+    title: finalTitle,
+    final_title: finalTitle,
+    rendered_title: renderedTitle,
+    title_override: null,
+    title_render_source: renderedTitle ? "deterministic_renderer" : "legacy_fallback",
+    fields,
+    confidence: finalCalibration.confidence,
+    reason: finalCalibration.reason,
+    unresolved: finalCalibration.unresolved,
+    evidence: evidenceDocument.evidence,
+    resolved: evidenceDocument.resolved,
+    modules: presentation.modules,
+    module_order: presentation.module_order,
+    renderer: presentation.renderer,
+    renderer_version: presentation.renderer_version,
+    title_length_policy: presentation.title_length_policy,
+    resolution_trace: evidenceDocument.resolution_trace || [],
+    model_title_suggestion: evidenceDocument.model_title_suggestion,
+    evidence_schema_version: evidenceDocument.schema_version
+  };
+}
+
+function withProviderMetadata(result, providerResult, selection) {
+  const providerId = providerResult.provider || selection?.provider_id || result.source;
+
+  return {
+    ...result,
+    ...providerMetadata({
+      provider: providerId,
+      modelId: providerResult.model_id || selection?.model_id
+    }),
+    source: providerId,
+    provider_response_id: providerResult.response_id || null,
+    provider_finish_reason: providerResult.finish_reason || null,
+    provider_parse_source: providerResult.parse_source || null,
+    provider_latency_ms: providerResult.latency_ms ?? null,
+    usage: providerResult.usage || null,
+    explicit_emergency: Boolean(selection?.explicit_emergency)
+  };
+}
+
+function withRequestMetadata(result, payload) {
+  return {
+    ...result,
+    asset_id: payload.assetId || payload.asset_id || `asset_${crypto.randomUUID()}`,
+    analysis_run_id: payload.analysisRunId || payload.analysis_run_id || `analysis_${crypto.randomUUID()}`,
+    capture_profile_id: payload.captureProfileId || payload.capture_profile_id || defaultCaptureProfileId,
+    capture_quality: captureQualityForPayload(payload)
+  };
+}
+
+function mergeUsage(providerUsage, completionUsage, {
+  providerCalls = 0
+} = {}) {
+  const base = providerUsage && typeof providerUsage === "object" && !Array.isArray(providerUsage)
+    ? providerUsage
+    : {};
+  const baseProviderCalls = Number.isFinite(Number(base.provider_calls))
+    ? Number(base.provider_calls)
+    : providerCalls;
+
+  return {
+    ...base,
+    provider_calls: baseProviderCalls + Number(completionUsage?.provider_calls || 0),
+    retrieval_calls: Number(base.retrieval_calls || 0) + Number(completionUsage?.retrieval_calls || 0),
+    latency_ms: Number(base.latency_ms || 0) + Number(completionUsage?.latency_ms || 0),
+    estimated_cost_usd: Number(base.estimated_cost_usd || 0) + Number(completionUsage?.estimated_cost_usd || 0),
+    resolution_rounds: Number(base.resolution_rounds || 0) + Number(completionUsage?.resolution_rounds || 0)
+  };
+}
+
+function withCompletedEvidencePresentation(result, completion, payload) {
+  const resolved = completion.resolved || result.resolved;
+  const evidence = completion.evidence || result.evidence;
+  if (!resolved || !evidence) return result;
+
+  const presentation = renderListingPresentation({
+    resolved,
+    evidence,
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  });
+  const normalizedLegacyFields = resolvedFieldsToLegacyFields(resolved);
+  const fields = {
+    ...result.fields,
+    ...Object.fromEntries(Object.entries(normalizedLegacyFields).filter(([, value]) => value !== null && value !== undefined))
+  };
+  const renderedTitle = presentation.rendered_title || "";
+  const finalTitle = result.title_override || renderedTitle || result.final_title || result.title || "";
+
+  return {
+    ...result,
+    title: finalTitle,
+    final_title: finalTitle,
+    rendered_title: renderedTitle,
+    title_render_source: renderedTitle ? "deterministic_renderer" : result.title_render_source,
+    fields,
+    evidence,
+    resolved,
+    modules: presentation.modules,
+    module_order: presentation.module_order,
+    renderer: presentation.renderer,
+    renderer_version: presentation.renderer_version,
+    title_length_policy: presentation.title_length_policy
+  };
+}
+
+function createAgnesFocusedRereadRunner({
+  images = [],
+  maxTitleLength = maxFallbackTitleLength
+} = {}) {
+  return async ({ action, focusFields = [], resolved = {} } = {}) => {
+    const rereadImages = focusedImagesForAction(images, action, focusFields);
+    if (!rereadImages.length) {
+      return {
+        provider_id: visionProviderIds.AGNES,
+        model_id: defaultProviderModels[visionProviderIds.AGNES],
+        resolved: {},
+        evidence: {},
+        unresolved: ["focused reread image unavailable"]
+      };
+    }
+
+    const providerResult = await analyzeCardEvidenceWithAgnes({
+      images: rereadImages,
+      prompt: focusedRereadPrompt({ action, focusFields, resolved })
+    });
+    const normalized = normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.AGNES);
+    const evidenceDocument = providerPayloadToEvidenceDocument({
+      ...providerResult.parsed,
+      title: providerResult.parsed.title || normalized.model_title_suggestion || "",
+      confidence: normalized.confidence,
+      fields: normalized.fields,
+      unresolved: Array.isArray(providerResult.parsed.unresolved)
+        ? providerResult.parsed.unresolved
+        : normalized.unresolved
+    }, {
+      images: rereadImages
+    });
+
+    return {
+      provider_id: providerResult.provider || visionProviderIds.AGNES,
+      model_id: providerResult.model_id || defaultProviderModels[visionProviderIds.AGNES],
+      response_id: providerResult.response_id || null,
+      finish_reason: providerResult.finish_reason || null,
+      parse_source: providerResult.parse_source || null,
+      usage: providerResult.usage || null,
+      evidence_document: evidenceDocument,
+      resolved: evidenceDocument.resolved,
+      evidence: evidenceDocument.evidence,
+      unresolved: evidenceDocument.unresolved || []
+    };
+  };
+}
+
+async function withEvidenceCompletion(result, payload, {
+  runFocusedVisionImpl = null
+} = {}) {
+  const completion = await completeEvidence({
+    resolved: result.resolved,
+    evidence: result.evidence,
+    captureQuality: result.capture_quality || captureQualityForPayload(payload),
+    unresolved: result.unresolved,
+    retrievalMode: payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE,
+    runFocusedVisionImpl
+  });
+  const resolutionTrace = [
+    ...(Array.isArray(result.resolution_trace) ? result.resolution_trace : []),
+    ...completion.resolution_trace
+  ];
+  const completedResult = withCompletedEvidencePresentation(result, completion, payload);
+  const route = completion.route || completedResult.route || completedResult.resolved?.route;
+
+  return {
+    ...completedResult,
+    route,
+    route_reason: completion.route_reason,
+    retrieval: completion.retrieval,
+    completion_state: completion.state,
+    completion_trace: completion.resolution_trace,
+    resolution_trace: resolutionTrace,
+    usage: mergeUsage(result.usage, completion.usage, {
+      providerCalls: result.provider ? 1 : 0
+    })
+  };
+}
+
+async function imagesWithSignedReadUrls(images = []) {
+  return Promise.all(images.map(async (image) => {
+    const objectPath = await assertVerifiedStorageImage(image);
+    if (!objectPath) return image;
+
+    return {
+      ...image,
+      signedUrl: await createListingImageSignedReadUrl({ objectPath }),
+      signed_url: undefined
+    };
+  }));
+}
+
+async function createAgnesTitle(payload, selection) {
+  const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
+  const signedImages = await imagesWithSignedReadUrls(payload.images);
+  const initialPayload = {
+    ...payload,
+    images: primaryImagesFromImages(signedImages)
+  };
+  const prompt = await buildListingPrompt(initialPayload, maxTitleLength);
+  const providerResult = await analyzeCardEvidenceWithAgnes({
+    images: initialPayload.images,
+    prompt
+  });
+
+  return withEvidenceCompletion(withProviderMetadata(
+    withEvidenceCompatibility(
+      withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.AGNES), initialPayload),
+      providerResult.parsed,
+      initialPayload
+    ),
+    providerResult,
+    selection
+  ), {
+    ...payload,
+    images: signedImages
+  }, {
+    runFocusedVisionImpl: createAgnesFocusedRereadRunner({
+      images: signedImages,
+      maxTitleLength
+    })
+  });
+}
+
+async function createOpenAiTitle(payload, selection) {
+  const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
+  const initialPayload = primaryPayloadForProvider(payload);
+  const prompt = await buildListingPrompt(initialPayload, maxTitleLength);
+  const providerResult = await analyzeCardEvidenceWithOpenAiEmergency({
+    images: initialPayload.images,
+    prompt
+  });
+
+  return withEvidenceCompletion(withProviderMetadata(
+    withEvidenceCompatibility(
+      withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY), initialPayload),
+      providerResult.parsed,
+      initialPayload
+    ),
+    providerResult,
+    selection
+  ), initialPayload);
+}
+
+function requestedProviderFromPayload(payload = {}) {
+  return payload.provider || payload.provider_id || payload.visionProvider || payload.vision_provider || "";
+}
+
+function explicitEmergencyFromPayload(payload = {}) {
+  return payload.explicitEmergency === true || payload.explicit_emergency === true;
+}
+
+async function createProviderTitle(payload) {
+  const requestedProvider = requestedProviderFromPayload(payload);
+  const explicitEmergency = explicitEmergencyFromPayload(payload);
+  const primaryImages = primaryImagesFromImages(payload.images || []);
+
+  if (!requestedProvider && !process.env.AGNES_API_KEY && !process.env.OPENAI_API_KEY) {
+    return fallbackResult(payload);
   }
 
-  const data = await response.json();
-  const parsed = safeJsonParse(parseOpenAiText(data));
-  return normalizeAiResult(parsed, maxTitleLength);
+  const selection = selectVisionProvider({
+    requestedProvider,
+    explicitEmergency,
+    images: primaryImages
+  });
+
+  if (selection.provider_id === visionProviderIds.AGNES) {
+    return createAgnesTitle(payload, selection);
+  }
+
+  return createOpenAiTitle(payload, selection);
 }
 
 export default async function handler(req, res) {
@@ -1360,6 +1797,13 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (!enforceApiRateLimit(req, res, {
+    scope: "listing_title",
+    limit: 30,
+    windowMs: 60_000,
+    message: "Too many title generation requests. Please try again shortly."
+  })) return;
+
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
@@ -1368,25 +1812,31 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (!Array.isArray(payload.images) || payload.images.length < 1 || payload.images.length > 2) {
-    sendJson(res, 400, { ok: false, message: "Expected one or two card images." });
+  const payloadImages = Array.isArray(payload.images) ? payload.images : [];
+  const primaryImages = explicitPrimaryImagesFromImages(payloadImages);
+  if (payloadImages.length < 1 || payloadImages.length > maxPayloadImages || primaryImages.length < 1 || primaryImages.length > 2) {
+    sendJson(res, 400, { ok: false, message: "Expected one or two primary card images, with optional bounded derived crop images." });
     return;
   }
 
   try {
-    const result = process.env.OPENAI_API_KEY
-      ? await createOpenAiTitle(payload)
-      : fallbackResult(payload);
+    const result = await createProviderTitle(payload);
 
     sendJson(res, 200, result);
   } catch (error) {
+    const message = safeProviderErrorMessage(error);
+
     sendJson(res, 200, {
       title: "",
       confidence: "FAILED",
-      reason: error.message,
+      reason: message,
       fields: defaultFields,
       unresolved: ["api"],
-      source: "error"
+      capture_profile_id: payload.captureProfileId || payload.capture_profile_id || defaultCaptureProfileId,
+      capture_quality: captureQualityForPayload(payload),
+      source: "error",
+      provider: error.provider || requestedProviderFromPayload(payload) || null,
+      provider_error_code: error.code || "api_error"
     });
   }
 }

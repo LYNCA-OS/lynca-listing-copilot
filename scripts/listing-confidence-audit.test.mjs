@@ -5,8 +5,13 @@ import handler from "../api/listing-copilot-title.js";
 import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
-process.env.OPENAI_API_KEY = "test-key";
-process.env.OPENAI_LISTING_MODEL = "test-model";
+process.env.DEFAULT_VISION_PROVIDER = "agnes";
+process.env.ENABLE_AGNES_PROVIDER = "true";
+process.env.AGNES_API_KEY = "test-agnes-key";
+process.env.AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
+process.env.AGNES_MODEL = "agnes-2.0-flash";
+delete process.env.OPENAI_API_KEY;
+delete process.env.OPENAI_LISTING_MODEL;
 
 assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");
 assert.equal(resolveKnowledgeEntry("2010/11 Season"), null);
@@ -26,10 +31,29 @@ function sessionCookie() {
   return `lynca_metaverse_session=${payload}.${sign(payload)}`;
 }
 
-async function callApi(openAiResult, options = {}) {
+async function callApi(agnesResult, options = {}) {
   globalThis.fetch = async () => ({
     ok: true,
-    json: async () => ({ output_text: JSON.stringify(openAiResult) })
+    status: 200,
+    text: async () => JSON.stringify({
+      id: "chatcmpl_listing_confidence_test",
+      model: "agnes-2.0-flash",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: JSON.stringify(agnesResult)
+          },
+          finish_reason: "stop"
+        }
+      ],
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 8,
+        total_tokens: 18
+      }
+    })
   });
 
   const req = new EventEmitter();
@@ -52,7 +76,7 @@ async function callApi(openAiResult, options = {}) {
   req.emit("data", JSON.stringify({
     assetId: "asset-test",
     mode: "single",
-    images: [{ name: "card.webp", dataUrl: "data:image/webp;base64,AAAA" }],
+    images: [{ name: "card.webp", url: "https://example.test/card.webp" }],
     resolutionMap: {},
     maxTitleLength: options.maxTitleLength || 80
   }));
@@ -114,6 +138,14 @@ const clearPsaLabel = await callApi({
 
 assert.equal(clearPsaLabel.confidence, "HIGH");
 assert.equal(clearPsaLabel.title, "2024 Topps Chrome Shohei Ohtani PSA 10");
+assert.equal(clearPsaLabel.resolved.year, "2024");
+assert.deepEqual(clearPsaLabel.resolved.players, ["Shohei Ohtani"]);
+assert.equal(clearPsaLabel.evidence.year.status, "CONFIRMED");
+assert.equal(clearPsaLabel.evidence_schema_version, "evidence-fields-v1");
+assert.ok(clearPsaLabel.route);
+assert.ok(clearPsaLabel.retrieval);
+assert.ok(Array.isArray(clearPsaLabel.completion_trace));
+assert.ok(Array.isArray(clearPsaLabel.resolution_trace));
 
 const visuallyGuessedParallel = await callApi({
   title: "2025 Bowman Chrome Test Player Fuchsia Wave Auto 137/199",
@@ -147,8 +179,9 @@ const missingVisibleSerial = await callApi({
   unresolved: []
 });
 
-assert.equal(missingVisibleSerial.confidence, "LOW");
-assert.match(missingVisibleSerial.unresolved.join(" "), /title missing serial/);
+assert.equal(missingVisibleSerial.confidence, "HIGH");
+assert.match(missingVisibleSerial.title, /137\/199/);
+assert.doesNotMatch(missingVisibleSerial.unresolved.join(" "), /title missing serial/);
 
 const localizedTrainerIllustrator = await callApi({
   title: "2026 Pokemon Scarlet Violet 257/208 SAR En Morikura Trainer Card",
@@ -446,7 +479,8 @@ const dualAutographNormalized = await callApi({
   unresolved: []
 });
 
-assert.match(dualAutographNormalized.title, /Dual Auto/);
+assert.match(dualAutographNormalized.title, /Mike Trout \/ Shohei Ohtani Auto/);
+assert.equal((dualAutographNormalized.title.match(/\bAuto\b/gi) || []).length, 1);
 assert.doesNotMatch(dualAutographNormalized.title, /Autograph/i);
 
 const tripleAutographNormalized = await callApi({
@@ -462,7 +496,8 @@ const tripleAutographNormalized = await callApi({
   unresolved: []
 });
 
-assert.match(tripleAutographNormalized.title, /Triple Auto/);
+assert.match(tripleAutographNormalized.title, /Test Player Auto/);
+assert.equal((tripleAutographNormalized.title.match(/\bAuto\b/gi) || []).length, 1);
 assert.doesNotMatch(tripleAutographNormalized.title, /Autograph/i);
 
 const certifiedAutographNormalized = await callApi({
@@ -738,7 +773,7 @@ const autoDedupeCanonicalOrder = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(autoDedupeCanonicalOrder.title, /^2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto RC Gold Refractor 31\/150$/i);
+assert.match(autoDedupeCanonicalOrder.title, /^2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto Gold Refractor 31\/150 RC$/i);
 assert.equal((autoDedupeCanonicalOrder.title.match(/\bAuto\b/gi) || []).length, 1);
 assert.doesNotMatch(autoDedupeCanonicalOrder.title, /RC Auto/i);
 
@@ -868,7 +903,7 @@ const shaqPennyV124 = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(shaqPennyV124.title, "2015-16 Panini Immaculate Shaquille O'Neal Anfernee Hardaway Dual Signatures Auto 01/25");
+assert.equal(shaqPennyV124.title, "2015-16 Panini Immaculate Shaquille O'Neal / Anfernee Hardaway Dual Signatures Auto 01/25");
 
 const compressedSerialPreserved = await callApi({
   title: "2015-16 Panini Immaculate Collection Shaquille O'Neal Anfernee Hardaway Dual 01/25 #35",
@@ -1039,8 +1074,8 @@ const genericBgsCardAndAutoGrade = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(genericBgsCardAndAutoGrade.title, "2024 Panini Prizm Placeholder Guard Silver Auto /10 BGS 9/9");
-assert.match(genericBgsCardAndAutoGrade.title, /Auto \/10 BGS 9\/9$/);
+assert.equal(genericBgsCardAndAutoGrade.title, "2024 Panini Prizm Placeholder Guard Silver /10 Auto BGS 9/9");
+assert.match(genericBgsCardAndAutoGrade.title, /\/10 Auto BGS 9\/9$/);
 assert.doesNotMatch(genericBgsCardAndAutoGrade.title, /\bAuto 9\b/i);
 
 const genericBgsAuthAndAutoGrade = await callApi({

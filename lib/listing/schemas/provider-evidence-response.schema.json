@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynca.local/schemas/listing/provider-evidence-response.schema.json",
+  "title": "Listing ProviderEvidenceResponse",
+  "type": "object",
+  "additionalProperties": true,
+  "anyOf": [
+    { "required": ["evidence"] },
+    { "required": ["fields"] },
+    { "required": ["title"] },
+    { "required": ["model_title_suggestion"] },
+    { "required": ["unresolved"] }
+  ],
+  "properties": {
+    "title": { "type": "string" },
+    "model_title_suggestion": { "type": "string" },
+    "confidence": {
+      "enum": ["HIGH", "MEDIUM", "UNSURE", "LOW", "FAILED", "high", "medium", "unsure", "low", "failed"]
+    },
+    "reason": { "type": "string" },
+    "fields": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": ["string", "number", "boolean", "null"] },
+          {
+            "type": "array",
+            "items": { "type": ["string", "number", "boolean", "null"] }
+          }
+        ]
+      }
+    },
+    "resolved": {
+      "$ref": "resolved-fields.schema.json"
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "image_quality": {
+      "type": "object"
+    },
+    "unresolved": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

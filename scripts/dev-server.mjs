@@ -24,6 +24,7 @@ const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -124,6 +125,48 @@ async function handleApi(request, response, pathname) {
 
   if (pathname === "/api/listing-title-feedback") {
     const moduleUrl = pathToFileURL(join(root, "api/listing-title-feedback.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
+  if (pathname === "/api/listing-provider-status") {
+    const moduleUrl = pathToFileURL(join(root, "api/listing-provider-status.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
+  if (pathname === "/api/listing-image-upload-url") {
+    const moduleUrl = pathToFileURL(join(root, "api/listing-image-upload-url.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
+  if (pathname === "/api/listing-image-verify-upload") {
+    const moduleUrl = pathToFileURL(join(root, "api/listing-image-verify-upload.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
+  if (pathname === "/api/listing-render-title") {
+    const moduleUrl = pathToFileURL(join(root, "api/listing-render-title.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
+  if (pathname === "/api/listing-publish-draft") {
+    const moduleUrl = pathToFileURL(join(root, "api/listing-publish-draft.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
+  if (pathname === "/api/listing-storage-retention-cleanup") {
+    const moduleUrl = pathToFileURL(join(root, "api/listing-storage-retention-cleanup.js")).href;
     const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
     await handler(request, response);
     return true;

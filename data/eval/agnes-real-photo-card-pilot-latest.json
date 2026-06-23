@@ -1,0 +1,1067 @@
+{
+  "schema_version": "agnes-real-photo-card-pilot-eval-v1",
+  "status": "completed",
+  "generated_at": "2026-06-23T03:43:48.844Z",
+  "started_at": "2026-06-23T03:40:41.025Z",
+  "provider": "agnes",
+  "source_dataset_schema_version": "marketplace-real-photo-card-pilot-v1",
+  "source_policy": "real_marketplace_photos_reference_only",
+  "commercial_accuracy_claim_allowed": false,
+  "commercial_accuracy_eval_eligible": false,
+  "marketplace_reference_only": true,
+  "controlled_storage_required_for_commercial": true,
+  "target_count": 10,
+  "attempted_count": 10,
+  "evaluated_count": 6,
+  "invalid_candidate_count": 0,
+  "provider_error_count": 4,
+  "title_accepted_count": 0,
+  "title_required_fields_present_count": 0,
+  "title_critical_error_free_count": 5,
+  "critical_field_match_count": 33,
+  "critical_field_check_count": 42,
+  "controlled_storage_input_count": 0,
+  "external_url_input_count": 10,
+  "commercial_input_stability_ready": false,
+  "title_acceptance_rate": 0,
+  "title_acceptance_evaluated_rate": 0,
+  "parsed_success_rate": 0.6,
+  "critical_field_match_rate": 0.785714,
+  "results": [
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-01",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/cjoAAOSwkNxnpi38/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": [
+          "Victor Wembanyama"
+        ],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "evaluated",
+      "prediction": {
+        "title": "Victor Wembanyama 2023 Panini Prizm Silver SPURS Rookie RC Card",
+        "fields": {
+          "year": "2023",
+          "brand": "Panini",
+          "manufacturer": "Panini",
+          "product": "Prizm",
+          "set": "Prizm",
+          "subset": "",
+          "players": [
+            "Victor Wembanyama"
+          ],
+          "player": "Victor Wembanyama",
+          "character": "",
+          "parallel": "Silver",
+          "variation": "",
+          "collector_number": "",
+          "serial_number": "",
+          "grade_company": "",
+          "card_grade": "",
+          "auto_grade": "",
+          "grade_type": "",
+          "rc": true,
+          "auto": false,
+          "patch": false
+        },
+        "confidence": "HIGH",
+        "reason": "Card clearly displays 'Panini Prizm' branding, 'Victor Wembanyama' name, 'SPURS' team, and 'Rookie RC Card' logo.",
+        "parse_source": "content",
+        "model_id": "agnes-2.0-flash",
+        "finish_reason": "stop"
+      },
+      "image_input": {
+        "mode": "external_url_pilot",
+        "storage_object_path": "",
+        "external_image_url": "https://i.ebayimg.com/images/g/cjoAAOSwkNxnpi38/s-l1600.jpg",
+        "persisted_url_safe": true
+      },
+      "title_acceptance": {
+        "title": "Victor Wembanyama 2023 Panini Prizm Silver SPURS Rookie RC Card",
+        "accepted": false,
+        "required_fields_present": false,
+        "unsubstantiated_critical_errors": false,
+        "missing_required_fields": [
+          {
+            "field": "collector_number",
+            "expected": "136"
+          }
+        ],
+        "critical_errors": [],
+        "policy": "critical-facts-title-acceptance-v1"
+      },
+      "critical_field_matches": [
+        {
+          "field": "year",
+          "expected": "2023-24",
+          "actual": "2023",
+          "matched": true
+        },
+        {
+          "field": "brand",
+          "expected": "Panini",
+          "actual": "Panini",
+          "matched": true
+        },
+        {
+          "field": "product",
+          "expected": "Prizm",
+          "actual": "Prizm",
+          "matched": true
+        },
+        {
+          "field": "players",
+          "expected": [
+            "Victor Wembanyama"
+          ],
+          "actual": [
+            "Victor Wembanyama"
+          ],
+          "matched": true
+        },
+        {
+          "field": "parallel",
+          "expected": "Silver Prizm",
+          "actual": "Silver",
+          "matched": true
+        },
+        {
+          "field": "collector_number",
+          "expected": "136",
+          "actual": "",
+          "matched": false
+        },
+        {
+          "field": "rc",
+          "expected": true,
+          "actual": true,
+          "matched": true
+        }
+      ],
+      "usage": {
+        "provider_calls": 1,
+        "retrieval_calls": 0,
+        "latency_ms": 6941,
+        "estimated_cost_usd": 0,
+        "cost_configured": false,
+        "model_id": "agnes-2.0-flash",
+        "input_tokens": 874,
+        "output_tokens": 191,
+        "prompt_tokens": 874,
+        "completion_tokens": 191,
+        "total_tokens": 1065,
+        "image_count": 1
+      }
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-02",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/OBoAAeSwgIhqIT~c/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": [
+          "Victor Wembanyama"
+        ],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "provider_error",
+      "error_code": "timeout",
+      "error": "Agnes request timed out."
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-03",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/aJsAAeSws9VqIT~d/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": [
+          "Victor Wembanyama"
+        ],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "provider_error",
+      "error_code": "timeout",
+      "error": "Agnes request timed out."
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-04",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/aDgAAeSwYQpqIT~c/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": [
+          "Victor Wembanyama"
+        ],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "evaluated",
+      "prediction": {
+        "title": "2023 Panini Prizm Victor Wembanyama #136 Rookie PSA 9 MINT",
+        "fields": {
+          "year": "2023",
+          "brand": "Panini",
+          "manufacturer": "Panini",
+          "product": "Prizm",
+          "set": "Prizm",
+          "subset": "",
+          "players": [
+            "Victor Wembanyama"
+          ],
+          "player": "Victor Wembanyama",
+          "character": "",
+          "parallel": "",
+          "variation": "",
+          "collector_number": "136",
+          "serial_number": "",
+          "grade_company": "PSA",
+          "card_grade": "9",
+          "auto_grade": "",
+          "grade_type": "",
+          "rc": true,
+          "auto": false,
+          "patch": false
+        },
+        "confidence": "HIGH",
+        "reason": "All key details including year, brand, player, card number, rookie designation, and PSA grade are clearly legible on the slab label and card face.",
+        "parse_source": "content",
+        "model_id": "agnes-2.0-flash",
+        "finish_reason": "stop"
+      },
+      "image_input": {
+        "mode": "external_url_pilot",
+        "storage_object_path": "",
+        "external_image_url": "https://i.ebayimg.com/images/g/aDgAAeSwYQpqIT~c/s-l1600.jpg",
+        "persisted_url_safe": true
+      },
+      "title_acceptance": {
+        "title": "2023 Panini Prizm Victor Wembanyama #136 Rookie PSA 9 MINT",
+        "accepted": false,
+        "required_fields_present": false,
+        "unsubstantiated_critical_errors": false,
+        "missing_required_fields": [
+          {
+            "field": "parallel",
+            "expected": "Silver Prizm"
+          }
+        ],
+        "critical_errors": [],
+        "policy": "critical-facts-title-acceptance-v1"
+      },
+      "critical_field_matches": [
+        {
+          "field": "year",
+          "expected": "2023-24",
+          "actual": "2023",
+          "matched": true
+        },
+        {
+          "field": "brand",
+          "expected": "Panini",
+          "actual": "Panini",
+          "matched": true
+        },
+        {
+          "field": "product",
+          "expected": "Prizm",
+          "actual": "Prizm",
+          "matched": true
+        },
+        {
+          "field": "players",
+          "expected": [
+            "Victor Wembanyama"
+          ],
+          "actual": [
+            "Victor Wembanyama"
+          ],
+          "matched": true
+        },
+        {
+          "field": "parallel",
+          "expected": "Silver Prizm",
+          "actual": "",
+          "matched": false
+        },
+        {
+          "field": "collector_number",
+          "expected": "136",
+          "actual": "136",
+          "matched": true
+        },
+        {
+          "field": "rc",
+          "expected": true,
+          "actual": true,
+          "matched": true
+        }
+      ],
+      "usage": {
+        "provider_calls": 1,
+        "retrieval_calls": 0,
+        "latency_ms": 10541,
+        "estimated_cost_usd": 0,
+        "cost_configured": false,
+        "model_id": "agnes-2.0-flash",
+        "input_tokens": 2422,
+        "output_tokens": 195,
+        "prompt_tokens": 2422,
+        "completion_tokens": 195,
+        "total_tokens": 2617,
+        "image_count": 1
+      }
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-05",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/XWcAAeSwUGBqIT~c/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": [
+          "Victor Wembanyama"
+        ],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "evaluated",
+      "prediction": {
+        "title": "2023-24 Panini Prizm Victor Wembanyama Silver PSA 10",
+        "fields": {
+          "year": "2023-24",
+          "brand": "Panini",
+          "manufacturer": "Panini",
+          "product": "Prizm Basketball",
+          "set": "Prizm",
+          "subset": "",
+          "players": [
+            "Victor Wembanyama"
+          ],
+          "player": "Victor Wembanyama",
+          "character": "",
+          "parallel": "Silver",
+          "variation": "",
+          "collector_number": "136",
+          "serial_number": "",
+          "grade_company": "PSA",
+          "card_grade": "10",
+          "auto_grade": "",
+          "grade_type": "",
+          "rc": false,
+          "auto": false,
+          "patch": false
+        },
+        "confidence": "HIGH",
+        "reason": "Card clearly shows '2023-24 PANINI - PRIZM BASKETBALL', player name 'VICTOR WEMBANYAMA', silver foil parallel design, and is encased in a PSA slab with visible certification number.",
+        "parse_source": "content",
+        "model_id": "agnes-2.0-flash",
+        "finish_reason": "stop"
+      },
+      "image_input": {
+        "mode": "external_url_pilot",
+        "storage_object_path": "",
+        "external_image_url": "https://i.ebayimg.com/images/g/XWcAAeSwUGBqIT~c/s-l1600.jpg",
+        "persisted_url_safe": true
+      },
+      "title_acceptance": {
+        "title": "2023-24 Panini Prizm Victor Wembanyama Silver PSA 10",
+        "accepted": false,
+        "required_fields_present": false,
+        "unsubstantiated_critical_errors": false,
+        "missing_required_fields": [
+          {
+            "field": "collector_number",
+            "expected": "136"
+          },
+          {
+            "field": "rc",
+            "expected": "RC"
+          }
+        ],
+        "critical_errors": [],
+        "policy": "critical-facts-title-acceptance-v1"
+      },
+      "critical_field_matches": [
+        {
+          "field": "year",
+          "expected": "2023-24",
+          "actual": "2023-24",
+          "matched": true
+        },
+        {
+          "field": "brand",
+          "expected": "Panini",
+          "actual": "Panini",
+          "matched": true
+        },
+        {
+          "field": "product",
+          "expected": "Prizm",
+          "actual": "Prizm Basketball",
+          "matched": true
+        },
+        {
+          "field": "players",
+          "expected": [
+            "Victor Wembanyama"
+          ],
+          "actual": [
+            "Victor Wembanyama"
+          ],
+          "matched": true
+        },
+        {
+          "field": "parallel",
+          "expected": "Silver Prizm",
+          "actual": "Silver",
+          "matched": true
+        },
+        {
+          "field": "collector_number",
+          "expected": "136",
+          "actual": "136",
+          "matched": true
+        },
+        {
+          "field": "rc",
+          "expected": true,
+          "actual": false,
+          "matched": false
+        }
+      ],
+      "usage": {
+        "provider_calls": 1,
+        "retrieval_calls": 0,
+        "latency_ms": 41605,
+        "estimated_cost_usd": 0,
+        "cost_configured": false,
+        "model_id": "agnes-2.0-flash",
+        "input_tokens": 2422,
+        "output_tokens": 218,
+        "prompt_tokens": 2422,
+        "completion_tokens": 218,
+        "total_tokens": 2640,
+        "image_count": 1
+      }
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-06",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/XAkAAeSw8XNqIT~e/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": [
+          "Victor Wembanyama"
+        ],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "evaluated",
+      "prediction": {
+        "title": "2023-24 Panini Prizm Victor Wembanyama #136 PSA Graded",
+        "fields": {
+          "year": "2023-24",
+          "brand": "Panini",
+          "manufacturer": "Panini",
+          "product": "Prizm",
+          "set": "Basketball",
+          "subset": "",
+          "players": [
+            "Victor Wembanyama"
+          ],
+          "player": "Victor Wembanyama",
+          "character": "",
+          "parallel": "",
+          "variation": "",
+          "collector_number": "136",
+          "serial_number": "",
+          "grade_company": "PSA",
+          "card_grade": "",
+          "auto_grade": "",
+          "grade_type": "",
+          "rc": false,
+          "auto": false,
+          "patch": false
+        },
+        "confidence": "HIGH",
+        "reason": "All key details including player name, card number, set, brand, and PSA grading are clearly visible on the card and slab.",
+        "parse_source": "content",
+        "model_id": "agnes-2.0-flash",
+        "finish_reason": "stop"
+      },
+      "image_input": {
+        "mode": "external_url_pilot",
+        "storage_object_path": "",
+        "external_image_url": "https://i.ebayimg.com/images/g/XAkAAeSw8XNqIT~e/s-l1600.jpg",
+        "persisted_url_safe": true
+      },
+      "title_acceptance": {
+        "title": "2023-24 Panini Prizm Victor Wembanyama #136 PSA Graded",
+        "accepted": false,
+        "required_fields_present": false,
+        "unsubstantiated_critical_errors": false,
+        "missing_required_fields": [
+          {
+            "field": "parallel",
+            "expected": "Silver Prizm"
+          },
+          {
+            "field": "rc",
+            "expected": "RC"
+          }
+        ],
+        "critical_errors": [],
+        "policy": "critical-facts-title-acceptance-v1"
+      },
+      "critical_field_matches": [
+        {
+          "field": "year",
+          "expected": "2023-24",
+          "actual": "2023-24",
+          "matched": true
+        },
+        {
+          "field": "brand",
+          "expected": "Panini",
+          "actual": "Panini",
+          "matched": true
+        },
+        {
+          "field": "product",
+          "expected": "Prizm",
+          "actual": "Prizm",
+          "matched": true
+        },
+        {
+          "field": "players",
+          "expected": [
+            "Victor Wembanyama"
+          ],
+          "actual": [
+            "Victor Wembanyama"
+          ],
+          "matched": true
+        },
+        {
+          "field": "parallel",
+          "expected": "Silver Prizm",
+          "actual": "",
+          "matched": false
+        },
+        {
+          "field": "collector_number",
+          "expected": "136",
+          "actual": "136",
+          "matched": true
+        },
+        {
+          "field": "rc",
+          "expected": true,
+          "actual": false,
+          "matched": false
+        }
+      ],
+      "usage": {
+        "provider_calls": 1,
+        "retrieval_calls": 0,
+        "latency_ms": 47602,
+        "estimated_cost_usd": 0,
+        "cost_configured": false,
+        "model_id": "agnes-2.0-flash",
+        "input_tokens": 2422,
+        "output_tokens": 189,
+        "prompt_tokens": 2422,
+        "completion_tokens": 189,
+        "total_tokens": 2611,
+        "image_count": 1
+      }
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-07",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/PAkAAeSwJdhqIT~e/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": [
+          "Victor Wembanyama"
+        ],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "evaluated",
+      "prediction": {
+        "title": "2023-24 Panini Prizm Victor Wembanyama Silver PSA 10 No. 136",
+        "fields": {
+          "year": "2023-24",
+          "brand": "Panini",
+          "manufacturer": "Panini",
+          "product": "Prizm",
+          "set": "Basketball",
+          "subset": "",
+          "players": [
+            "Victor Wembanyama"
+          ],
+          "player": "Victor Wembanyama",
+          "character": "",
+          "parallel": "Silver",
+          "variation": "",
+          "collector_number": "136",
+          "serial_number": "",
+          "grade_company": "PSA",
+          "card_grade": "10",
+          "auto_grade": "",
+          "grade_type": "",
+          "rc": false,
+          "auto": false,
+          "patch": false
+        },
+        "confidence": "HIGH",
+        "reason": "Card clearly shows 'Panini Prizm', 'Victor Wembanyama', 'No. 136', and silver foil finish. Slab label indicates PSA authentication.",
+        "parse_source": "content",
+        "model_id": "agnes-2.0-flash",
+        "finish_reason": "stop"
+      },
+      "image_input": {
+        "mode": "external_url_pilot",
+        "storage_object_path": "",
+        "external_image_url": "https://i.ebayimg.com/images/g/PAkAAeSwJdhqIT~e/s-l1600.jpg",
+        "persisted_url_safe": true
+      },
+      "title_acceptance": {
+        "title": "2023-24 Panini Prizm Victor Wembanyama Silver PSA 10 No. 136",
+        "accepted": false,
+        "required_fields_present": false,
+        "unsubstantiated_critical_errors": false,
+        "missing_required_fields": [
+          {
+            "field": "rc",
+            "expected": "RC"
+          }
+        ],
+        "critical_errors": [],
+        "policy": "critical-facts-title-acceptance-v1"
+      },
+      "critical_field_matches": [
+        {
+          "field": "year",
+          "expected": "2023-24",
+          "actual": "2023-24",
+          "matched": true
+        },
+        {
+          "field": "brand",
+          "expected": "Panini",
+          "actual": "Panini",
+          "matched": true
+        },
+        {
+          "field": "product",
+          "expected": "Prizm",
+          "actual": "Prizm",
+          "matched": true
+        },
+        {
+          "field": "players",
+          "expected": [
+            "Victor Wembanyama"
+          ],
+          "actual": [
+            "Victor Wembanyama"
+          ],
+          "matched": true
+        },
+        {
+          "field": "parallel",
+          "expected": "Silver Prizm",
+          "actual": "Silver",
+          "matched": true
+        },
+        {
+          "field": "collector_number",
+          "expected": "136",
+          "actual": "136",
+          "matched": true
+        },
+        {
+          "field": "rc",
+          "expected": true,
+          "actual": false,
+          "matched": false
+        }
+      ],
+      "usage": {
+        "provider_calls": 1,
+        "retrieval_calls": 0,
+        "latency_ms": 9284,
+        "estimated_cost_usd": 0,
+        "cost_configured": false,
+        "model_id": "agnes-2.0-flash",
+        "input_tokens": 2422,
+        "output_tokens": 214,
+        "prompt_tokens": 2422,
+        "completion_tokens": 214,
+        "total_tokens": 2636,
+        "image_count": 1
+      }
+    },
+    {
+      "candidate_id": "ebay-product-20084919418-ohtani-01",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/20084919418",
+      "card_image_url": "https://i.ebayimg.com/images/g/kM0AAeSwfgZqMlSV/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2025 Topps Chrome - Shohei Ohtani #1 Refractor",
+      "reference_fields": {
+        "year": "2025",
+        "brand": "Topps",
+        "product": "Topps Chrome",
+        "players": [
+          "Shohei Ohtani"
+        ],
+        "parallel": "Refractor",
+        "collector_number": "1",
+        "rc": false
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "evaluated",
+      "prediction": {
+        "title": "2015 Topps Chrome Shohei Ohtani Los Angeles Dodgers",
+        "fields": {
+          "year": "2015",
+          "brand": "Topps",
+          "manufacturer": "Topps",
+          "product": "Chrome",
+          "set": "Base",
+          "subset": "",
+          "players": [
+            "Shohei Ohtani"
+          ],
+          "player": "Shohei Ohtani",
+          "character": "",
+          "parallel": "",
+          "variation": "",
+          "collector_number": "",
+          "serial_number": "",
+          "grade_company": "",
+          "card_grade": "",
+          "auto_grade": "",
+          "grade_type": "",
+          "rc": false,
+          "auto": false,
+          "patch": false
+        },
+        "confidence": "HIGH",
+        "reason": "Visible 'Topps Chrome' logo, player name 'Shohei Ohtani', team 'Dodgers', and year '2015' on card border.",
+        "parse_source": "content",
+        "model_id": "agnes-2.0-flash",
+        "finish_reason": "stop"
+      },
+      "image_input": {
+        "mode": "external_url_pilot",
+        "storage_object_path": "",
+        "external_image_url": "https://i.ebayimg.com/images/g/kM0AAeSwfgZqMlSV/s-l1600.jpg",
+        "persisted_url_safe": true
+      },
+      "title_acceptance": {
+        "title": "2015 Topps Chrome Shohei Ohtani Los Angeles Dodgers",
+        "accepted": false,
+        "required_fields_present": false,
+        "unsubstantiated_critical_errors": true,
+        "missing_required_fields": [
+          {
+            "field": "year",
+            "expected": "2025"
+          },
+          {
+            "field": "parallel",
+            "expected": "Refractor"
+          },
+          {
+            "field": "collector_number",
+            "expected": "1"
+          }
+        ],
+        "critical_errors": [
+          {
+            "field": "year",
+            "type": "predicted_field_conflicts_with_ground_truth",
+            "expected": "2025",
+            "actual": "2015"
+          }
+        ],
+        "policy": "critical-facts-title-acceptance-v1"
+      },
+      "critical_field_matches": [
+        {
+          "field": "year",
+          "expected": "2025",
+          "actual": "2015",
+          "matched": false
+        },
+        {
+          "field": "brand",
+          "expected": "Topps",
+          "actual": "Topps",
+          "matched": true
+        },
+        {
+          "field": "product",
+          "expected": "Topps Chrome",
+          "actual": "Chrome",
+          "matched": true
+        },
+        {
+          "field": "players",
+          "expected": [
+            "Shohei Ohtani"
+          ],
+          "actual": [
+            "Shohei Ohtani"
+          ],
+          "matched": true
+        },
+        {
+          "field": "parallel",
+          "expected": "Refractor",
+          "actual": "",
+          "matched": false
+        },
+        {
+          "field": "collector_number",
+          "expected": "1",
+          "actual": "",
+          "matched": false
+        },
+        {
+          "field": "rc",
+          "expected": false,
+          "actual": false,
+          "matched": true
+        }
+      ],
+      "usage": {
+        "provider_calls": 1,
+        "retrieval_calls": 0,
+        "latency_ms": 9350,
+        "estimated_cost_usd": 0,
+        "cost_configured": false,
+        "model_id": "agnes-2.0-flash",
+        "input_tokens": 873,
+        "output_tokens": 187,
+        "prompt_tokens": 873,
+        "completion_tokens": 187,
+        "total_tokens": 1060,
+        "image_count": 1
+      }
+    },
+    {
+      "candidate_id": "ebay-product-20084919418-ohtani-02",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/20084919418",
+      "card_image_url": "https://i.ebayimg.com/images/g/59UAAeSwGTpqBSov/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2025 Topps Chrome - Shohei Ohtani #1 Refractor",
+      "reference_fields": {
+        "year": "2025",
+        "brand": "Topps",
+        "product": "Topps Chrome",
+        "players": [
+          "Shohei Ohtani"
+        ],
+        "parallel": "Refractor",
+        "collector_number": "1",
+        "rc": false
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "provider_error",
+      "error_code": "timeout",
+      "error": "Agnes request timed out."
+    },
+    {
+      "candidate_id": "ebay-product-20084919418-ohtani-03",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/20084919418",
+      "card_image_url": "https://i.ebayimg.com/images/g/tuMAAeSw8P5qBSov/s-l1600.jpg",
+      "storage_object_path": "",
+      "image_input_mode": "external_url_pilot",
+      "reference_title": "2025 Topps Chrome - Shohei Ohtani #1 Refractor",
+      "reference_fields": {
+        "year": "2025",
+        "brand": "Topps",
+        "product": "Topps Chrome",
+        "players": [
+          "Shohei Ohtani"
+        ],
+        "parallel": "Refractor",
+        "collector_number": "1",
+        "rc": false
+      },
+      "critical_fields": [
+        "year",
+        "brand",
+        "product",
+        "players",
+        "parallel",
+        "collector_number",
+        "rc"
+      ],
+      "status": "provider_error",
+      "error_code": "timeout",
+      "error": "Agnes request timed out."
+    }
+  ]
+}

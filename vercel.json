@@ -18,5 +18,11 @@
       "source": "/login.html",
       "destination": "/app/login"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/listing-storage-retention-cleanup",
+      "schedule": "0 9 * * *"
+    }
   ]
 }

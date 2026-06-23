@@ -1,0 +1,539 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
+import uploadUrlHandler from "../api/listing-image-upload-url.js";
+import verifyUploadHandler from "../api/listing-image-verify-upload.js";
+import {
+  buildListingImageObjectPath,
+  createListingImageVerificationToken,
+  createListingImageSignedReadUrl,
+  createListingImageSignedUpload,
+  deleteListingImageObject,
+  validateListingImageUpload,
+  verifyListingImageVerificationToken,
+  verifyListingImageUploadedObject
+} from "../lib/listing/storage/supabase-image-storage.mjs";
+
+const env = {
+  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+  LISTING_IMAGE_BUCKET: "listing-card-images",
+  LISTING_IMAGE_SIGNED_URL_TTL_SECONDS: "600",
+  METAVERSE_AUTH_SECRET: "test-secret"
+};
+
+const jpegSignatureHex = "ffd8ffe000104a464946000101000001";
+const pngSignatureHex = "89504e470d0a1a0a0000000d49484452";
+const webpSignatureHex = "52494646100000005745425056503820";
+const heicSignatureHex = "00000018667479706865696300000000686569636d696631";
+const pngVerificationBytes = Buffer.concat([
+  Buffer.from("89504e470d0a1a0a0000000d49484452000004b0000003840802000000", "hex"),
+  Buffer.alloc(96)
+]);
+const jpegUploadSha256 = "a".repeat(64);
+const pngVerificationSha256 = crypto.createHash("sha256").update(pngVerificationBytes).digest("hex");
+
+function objectResponse(bytes, headers = {}) {
+  return {
+    ok: true,
+    status: 206,
+    headers: {
+      get(name) {
+        return headers[name.toLowerCase()] || "";
+      }
+    },
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+  };
+}
+
+assert.deepEqual(validateListingImageUpload({
+  contentType: "image/jpeg",
+  size: 123,
+  width: 1200,
+  height: 900,
+  signatureHex: jpegSignatureHex
+}), {
+  content_type: "image/jpeg",
+  size: 123,
+  width: 1200,
+  height: 900,
+  signature_validated: true
+});
+assert.throws(
+  () => validateListingImageUpload({ contentType: "text/html", size: 123 }),
+  /Unsupported image MIME type/
+);
+assert.throws(
+  () => validateListingImageUpload({ contentType: "image/jpeg", size: 123, height: 900, signatureHex: jpegSignatureHex }),
+  /Image width is required/
+);
+assert.throws(
+  () => validateListingImageUpload({ contentType: "image/jpeg", size: 123, width: 1200, signatureHex: jpegSignatureHex }),
+  /Image height is required/
+);
+assert.throws(
+  () => validateListingImageUpload({ contentType: "image/jpeg", size: 123, width: 1200, height: 900 }),
+  /Image file signature is required/
+);
+assert.throws(
+  () => validateListingImageUpload({
+    contentType: "image/png",
+    size: 123,
+    width: 1200,
+    height: 900,
+    signatureHex: jpegSignatureHex
+  }),
+  /Image file signature does not match MIME type/
+);
+assert.equal(
+  validateListingImageUpload({
+    contentType: "image/webp",
+    size: 123,
+    width: 1200,
+    height: 900,
+    signatureHex: webpSignatureHex
+  }).signature_validated,
+  true
+);
+assert.equal(
+  validateListingImageUpload({
+    contentType: "image/heic",
+    size: 123,
+    width: 1200,
+    height: 900,
+    signatureHex: heicSignatureHex
+  }).signature_validated,
+  true
+);
+assert.equal(
+  validateListingImageUpload({
+    contentType: "image/png",
+    size: 123,
+    width: 1200,
+    height: 900,
+    signatureBytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+  }).signature_validated,
+  true
+);
+
+const objectPath = buildListingImageObjectPath({
+  assetId: "../Asset 1",
+  imageId: "Front Image",
+  role: "front_original",
+  fileName: "Card.JPG",
+  contentType: "image/jpeg",
+  now: new Date("2026-06-22T08:00:00Z")
+});
+assert.equal(objectPath, "listing-assets/2026-06-22/asset-1/front_original-front-image.jpg");
+
+let uploadRequest;
+const upload = await createListingImageSignedUpload({
+  assetId: "asset-1",
+  imageId: "front-1",
+  role: "front_original",
+  fileName: "front.jpg",
+  contentType: "image/jpeg",
+  size: 1000,
+  width: 1200,
+  height: 900,
+  signatureHex: jpegSignatureHex,
+  contentSha256: jpegUploadSha256,
+  env,
+  now: new Date("2026-06-22T08:00:00Z"),
+  fetchImpl: async (url, init) => {
+    uploadRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        url: "/object/upload/sign/listing-card-images/listing-assets/2026-06-22/asset-1/front_original-front-1.jpg?token=signed"
+      })
+    };
+  }
+});
+
+assert.match(uploadRequest.url, /\/storage\/v1\/object\/upload\/sign\/listing-card-images\//);
+assert.equal(uploadRequest.init.method, "POST");
+assert.equal(uploadRequest.init.headers.authorization, "Bearer test-service-role");
+assert.equal(upload.object_path, "listing-assets/2026-06-22/asset-1/front_original-front-1.jpg");
+assert.equal(upload.width, 1200);
+assert.equal(upload.height, 900);
+assert.equal(upload.content_sha256, jpegUploadSha256);
+assert.equal(upload.signature_validated, true);
+assert.equal(
+  upload.signed_upload_url,
+  "https://example.supabase.co/storage/v1/object/upload/sign/listing-card-images/listing-assets/2026-06-22/asset-1/front_original-front-1.jpg?token=signed"
+);
+await assert.rejects(
+  () => createListingImageSignedUpload({
+    assetId: "asset-1",
+    imageId: "too-wide",
+    role: "front_original",
+    fileName: "front.jpg",
+    contentType: "image/jpeg",
+    size: 1000,
+    width: 12001,
+    height: 900,
+    signatureHex: jpegSignatureHex,
+    env,
+    fetchImpl: async () => ({})
+  }),
+  /Image exceeds max dimension/
+);
+await assert.rejects(
+  () => createListingImageSignedUpload({
+    assetId: "asset-1",
+    imageId: "too-many-pixels",
+    role: "front_original",
+    fileName: "front.jpg",
+    contentType: "image/jpeg",
+    size: 1000,
+    width: 10000,
+    height: 6000,
+    signatureHex: jpegSignatureHex,
+    env,
+    fetchImpl: async () => ({})
+  }),
+  /Image exceeds max pixel area/
+);
+
+let readRequest;
+const readUrl = await createListingImageSignedReadUrl({
+  objectPath: upload.object_path,
+  env,
+  fetchImpl: async (url, init) => {
+    readRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        signedURL: "/object/sign/listing-card-images/listing-assets/2026-06-22/asset-1/front_original-front-1.jpg?token=read"
+      })
+    };
+  }
+});
+
+assert.match(readRequest.url, /\/storage\/v1\/object\/sign\/listing-card-images\//);
+assert.equal(JSON.parse(readRequest.init.body).expiresIn, 600);
+assert.equal(
+  readUrl,
+  "https://example.supabase.co/storage/v1/object/sign/listing-card-images/listing-assets/2026-06-22/asset-1/front_original-front-1.jpg?token=read"
+);
+assert.rejects(
+  () => createListingImageSignedReadUrl({ objectPath: "../secret.jpg", env, fetchImpl: async () => ({}) }),
+  /Invalid listing image object path/
+);
+
+let verifyRequest;
+const verification = await verifyListingImageUploadedObject({
+  objectPath: "listing-assets/2026-06-22/asset-1/front_original-front-1.png",
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  contentSha256: pngVerificationSha256,
+  env,
+  fetchImpl: async (url, init) => {
+    verifyRequest = { url, init };
+    return objectResponse(pngVerificationBytes, {
+      "content-type": "image/png",
+      "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+    });
+  }
+});
+assert.match(verifyRequest.url, /\/storage\/v1\/object\/listing-card-images\//);
+assert.equal(verifyRequest.init.method, "GET");
+assert.equal(verifyRequest.init.headers.authorization, "Bearer test-service-role");
+assert.equal(verifyRequest.init.headers.range, "bytes=0-65535");
+assert.equal(verification.object_verified, true);
+assert.equal(verification.dimension_source, "object_bytes");
+assert.equal(verification.width, 1200);
+assert.equal(verification.height, 900);
+assert.equal(verification.content_sha256, pngVerificationSha256);
+assert.equal(verification.content_hash_verified, true);
+assert.equal(typeof verification.verification_token, "string");
+assert.ok(verification.verification_token.length > 40);
+const verifiedTokenPayload = verifyListingImageVerificationToken({
+  token: verification.verification_token,
+  objectPath: verification.object_path,
+  bucket: verification.bucket,
+  contentType: verification.content_type,
+  size: verification.size,
+  width: verification.width,
+  height: verification.height,
+  env
+});
+assert.deepEqual(
+  verifiedTokenPayload,
+  {
+    object_path: verification.object_path,
+    bucket: verification.bucket,
+    content_type: verification.content_type,
+    size: verification.size,
+    width: verification.width,
+    height: verification.height,
+    verified_at: verifiedTokenPayload.verified_at
+  }
+);
+assert.throws(
+  () => verifyListingImageVerificationToken({
+    token: verification.verification_token,
+    objectPath: verification.object_path,
+    bucket: verification.bucket,
+    contentType: verification.content_type,
+    size: verification.size + 1,
+    width: verification.width,
+    height: verification.height,
+    env
+  }),
+  /does not match image metadata/
+);
+const expiredToken = createListingImageVerificationToken({
+  objectPath: verification.object_path,
+  bucket: verification.bucket,
+  contentType: verification.content_type,
+  size: verification.size,
+  width: verification.width,
+  height: verification.height,
+  env,
+  now: new Date("2026-06-22T08:00:00Z")
+});
+assert.throws(
+  () => verifyListingImageVerificationToken({
+    token: expiredToken,
+    objectPath: verification.object_path,
+    bucket: verification.bucket,
+    contentType: verification.content_type,
+    size: verification.size,
+    width: verification.width,
+    height: verification.height,
+    env,
+    now: new Date("2026-06-22T11:00:01Z")
+  }),
+  /expired/
+);
+await assert.rejects(
+  () => verifyListingImageUploadedObject({
+    objectPath: "listing-assets/2026-06-22/asset-1/front_original-front-1.png",
+    contentType: "image/png",
+    size: pngVerificationBytes.length + 1,
+    width: 1200,
+    height: 900,
+    signatureHex: pngSignatureHex,
+    env,
+    fetchImpl: async () => objectResponse(pngVerificationBytes, {
+      "content-type": "image/png",
+      "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+    })
+  }),
+  /Uploaded image size does not match expected size/
+);
+await assert.rejects(
+  () => verifyListingImageUploadedObject({
+    objectPath: "listing-assets/2026-06-22/asset-1/front_original-front-1.png",
+    contentType: "image/png",
+    size: pngVerificationBytes.length,
+    width: 1201,
+    height: 900,
+    signatureHex: pngSignatureHex,
+    env,
+    fetchImpl: async () => objectResponse(pngVerificationBytes, {
+      "content-type": "image/png",
+      "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+    })
+  }),
+  /Uploaded image dimensions do not match expected dimensions/
+);
+
+let deleteRequest;
+const deleteResult = await deleteListingImageObject({
+  objectPath: "listing-assets/2026-06-22/asset-1/front_original-front-1.png",
+  env,
+  fetchImpl: async (url, init) => {
+    deleteRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      text: async () => ""
+    };
+  }
+});
+assert.match(deleteRequest.url, /\/storage\/v1\/object\/listing-card-images\//);
+assert.equal(deleteRequest.init.method, "DELETE");
+assert.equal(deleteRequest.init.headers.authorization, "Bearer test-service-role");
+assert.equal(deleteResult.deleted, true);
+await assert.rejects(
+  () => deleteListingImageObject({
+    objectPath: "../secret.png",
+    env,
+    fetchImpl: async () => ({})
+  }),
+  /Invalid listing image object path/
+);
+
+const originalEnv = { ...process.env };
+const originalFetch = globalThis.fetch;
+Object.assign(process.env, env);
+globalThis.fetch = async () => ({
+  ok: true,
+  status: 200,
+  text: async () => JSON.stringify({
+    url: "/object/upload/sign/listing-card-images/listing-assets/2026-06-22/asset-api/front_original-front-api.jpg?token=signed"
+  })
+});
+
+function sign(value) {
+  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
+}
+
+function sessionCookie() {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+}
+
+async function callUploadApi(body) {
+  const req = new EventEmitter();
+  req.method = "POST";
+  req.headers = { cookie: sessionCookie() };
+  const res = {
+    statusCode: 0,
+    headers: {},
+    body: "",
+    setHeader(key, value) {
+      this.headers[key] = value;
+    },
+    end(value) {
+      this.body = value;
+    }
+  };
+
+  const promise = uploadUrlHandler(req, res);
+  req.emit("data", JSON.stringify(body));
+  req.emit("end");
+  await promise;
+  return {
+    statusCode: res.statusCode,
+    body: JSON.parse(res.body)
+  };
+}
+
+async function callVerifyApi(body) {
+  const req = new EventEmitter();
+  req.method = "POST";
+  req.headers = { cookie: sessionCookie() };
+  const res = {
+    statusCode: 0,
+    headers: {},
+    body: "",
+    setHeader(key, value) {
+      this.headers[key] = value;
+    },
+    end(value) {
+      this.body = value;
+    }
+  };
+
+  const promise = verifyUploadHandler(req, res);
+  req.emit("data", JSON.stringify(body));
+  req.emit("end");
+  await promise;
+  return {
+    statusCode: res.statusCode,
+    body: JSON.parse(res.body)
+  };
+}
+
+const apiResponse = await callUploadApi({
+  assetId: "asset-api",
+  imageId: "front-api",
+  role: "front_original",
+  fileName: "front.jpg",
+  contentType: "image/jpeg",
+  size: 2000,
+  width: 1200,
+  height: 900,
+  signatureHex: jpegSignatureHex,
+  contentSha256: jpegUploadSha256
+});
+assert.equal(apiResponse.statusCode, 200);
+assert.equal(apiResponse.body.ok, true);
+assert.match(apiResponse.body.upload.object_path, /^listing-assets\/\d{4}-\d{2}-\d{2}\/asset-api\//);
+assert.equal(apiResponse.body.upload.content_sha256, jpegUploadSha256);
+assert.doesNotMatch(JSON.stringify(apiResponse.body), /test-service-role/);
+assert.doesNotMatch(JSON.stringify(apiResponse.body), new RegExp(jpegSignatureHex));
+
+const rejectedApiResponse = await callUploadApi({
+  assetId: "asset-api",
+  imageId: "front-api",
+  role: "front_original",
+  fileName: "front.jpg",
+  contentType: "image/jpeg",
+  size: 2000,
+  width: 1200,
+  height: 900
+});
+assert.equal(rejectedApiResponse.statusCode, 400);
+assert.match(rejectedApiResponse.body.message, /Image file signature is required/);
+
+globalThis.fetch = async () => objectResponse(pngVerificationBytes, {
+  "content-type": "image/png",
+  "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+});
+const verifyApiResponse = await callVerifyApi({
+  objectPath: "listing-assets/2026-06-22/asset-api/front_original-front-api.png",
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  contentSha256: pngVerificationSha256
+});
+assert.equal(verifyApiResponse.statusCode, 200);
+assert.equal(verifyApiResponse.body.ok, true);
+assert.equal(verifyApiResponse.body.verification.object_verified, true);
+assert.equal(verifyApiResponse.body.verification.dimension_source, "object_bytes");
+assert.equal(verifyApiResponse.body.verification.content_sha256, pngVerificationSha256);
+assert.equal(verifyApiResponse.body.verification.content_hash_verified, true);
+assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), /test-service-role/);
+assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), new RegExp(pngSignatureHex));
+
+const cleanupCalls = [];
+globalThis.fetch = async (url, init) => {
+  cleanupCalls.push({ url, init });
+  if (init.method === "DELETE") {
+    return {
+      ok: true,
+      status: 200,
+      text: async () => ""
+    };
+  }
+
+  return objectResponse(pngVerificationBytes, {
+    "content-type": "image/png",
+    "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+  });
+};
+const rejectedVerifyApiResponse = await callVerifyApi({
+  objectPath: "listing-assets/2026-06-22/asset-api/front_original-front-api.png",
+  contentType: "image/png",
+  size: pngVerificationBytes.length + 1,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex
+});
+assert.equal(rejectedVerifyApiResponse.statusCode, 400);
+assert.match(rejectedVerifyApiResponse.body.message, /Uploaded image size does not match expected size/);
+assert.equal(rejectedVerifyApiResponse.body.cleanup.attempted, true);
+assert.equal(rejectedVerifyApiResponse.body.cleanup.deleted, true);
+assert.equal(cleanupCalls.some((call) => call.init.method === "DELETE"), true);
+assert.doesNotMatch(JSON.stringify(rejectedVerifyApiResponse.body), /test-service-role/);
+assert.doesNotMatch(JSON.stringify(rejectedVerifyApiResponse.body), new RegExp(pngSignatureHex));
+
+Object.keys(process.env).forEach((key) => {
+  if (!(key in originalEnv)) delete process.env[key];
+});
+Object.assign(process.env, originalEnv);
+globalThis.fetch = originalFetch;
+
+console.log("storage signed URL tests passed");

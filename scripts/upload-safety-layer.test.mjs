@@ -38,6 +38,13 @@ assert.match(js, /heicUnsupportedMessage\s*=/, "HEIC unsupported fallback messag
 assert.match(js, /当前浏览器暂不支持 HEIC\/HEIF 预览/, "HEIC fallback should be clear Chinese copy");
 assert.match(js, /MAX_ASSET_REQUEST_BYTES/, "asset request body safety threshold should exist");
 assert.match(js, /ensureSafeAssetPayload/, "oversized assets should be recompressed before API request");
+assert.match(js, /originalWidth/, "original source width should be preserved for storage dimension validation");
+assert.match(js, /originalHeight/, "original source height should be preserved for storage dimension validation");
+assert.match(js, /storageDimensionsForImage/, "storage uploads should include validated image dimensions");
+assert.match(js, /fileSignatureHex/, "storage uploads should read first-byte file signatures");
+assert.match(js, /signatureHex/, "signed upload requests should include file signature metadata");
+assert.match(js, /listing-image-verify-upload/, "storage uploads should be server-verified after the direct PUT");
+assert.match(js, /Storage upload verification failed/, "storage verification failures should block provider requests");
 assert.match(js, /图片过大，已自动压缩用于识别/, "oversized image compression status should be visible");
 assert.match(js, /正在优化图片…/, "upload optimization status should be visible");
 assert.match(js, /图片已优化，开始识别…/, "recognition start status should be visible");

@@ -1,0 +1,154 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import {
+  assertValidEvidenceDocument,
+  createEvidenceField,
+  createVisionSource,
+  normalizeResolvedFields,
+  validateEvidenceField,
+  validateResolvedFields
+} from "../lib/listing/evidence/evidence-schema.mjs";
+import {
+  legacyFieldsToResolvedFields,
+  providerPayloadToEvidenceDocument,
+  resolvedFieldsToLegacyFields,
+  splitLegacyCardNumber
+} from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
+
+const evidenceSchema = JSON.parse(await readFile("lib/listing/schemas/evidence-field.schema.json", "utf8"));
+const resolvedSchema = JSON.parse(await readFile("lib/listing/schemas/resolved-fields.schema.json", "utf8"));
+assert.equal(evidenceSchema.title, "Listing EvidenceField");
+assert.equal(resolvedSchema.title, "Listing ResolvedFields");
+assert.ok(evidenceSchema.properties.status.enum.includes("CONFIRMED"));
+assert.ok(evidenceSchema.properties.sources.items.properties.source_type.enum.includes("MARKETPLACE"));
+assert.ok(resolvedSchema.properties.grade_type.enum.includes("CARD_AND_AUTO"));
+
+const evidenceField = createEvidenceField({
+  value: "31/50",
+  confidence: 0.82,
+  sources: [
+    createVisionSource({
+      imageId: "image-front",
+      side: "front",
+      region: "serial_number",
+      observedText: "31/50",
+      glareOcclusion: 0.06,
+      blurScore: 0.04,
+      trustTier: 1
+    })
+  ]
+});
+assert.equal(validateEvidenceField(evidenceField).length, 0);
+
+const invalidEvidence = {
+  ...evidenceField,
+  status: "SURE",
+  confidence: 1.2,
+  sources: [{ source_type: "SELLER_TITLE", trust_tier: 11 }]
+};
+const invalidErrors = validateEvidenceField(invalidEvidence);
+assert.ok(invalidErrors.some((error) => error.path.endsWith(".status")));
+assert.ok(invalidErrors.some((error) => error.path.endsWith(".confidence")));
+assert.ok(invalidErrors.some((error) => error.path.endsWith(".source_type")));
+
+assert.deepEqual(splitLegacyCardNumber("31/50"), {
+  serial_number: "31/50",
+  collector_number: null,
+  checklist_code: null
+});
+assert.deepEqual(splitLegacyCardNumber("257/208"), {
+  serial_number: null,
+  collector_number: "257/208",
+  checklist_code: null
+});
+assert.deepEqual(splitLegacyCardNumber("UV-16"), {
+  serial_number: null,
+  collector_number: null,
+  checklist_code: "UV-16"
+});
+assert.deepEqual(splitLegacyCardNumber("#136"), {
+  serial_number: null,
+  collector_number: "136",
+  checklist_code: null
+});
+
+const resolved = legacyFieldsToResolvedFields({
+  year: "2024",
+  brand: "Topps Chrome",
+  player: "Shohei Ohtani",
+  card_number: "UV-16",
+  serial_number: "31/50",
+  grade_company: "PSA",
+  grade: "10",
+  auto: true
+});
+assert.equal(resolved.year, "2024");
+assert.deepEqual(resolved.players, ["Shohei Ohtani"]);
+assert.equal(resolved.checklist_code, "UV-16");
+assert.equal(resolved.serial_number, "31/50");
+assert.equal(resolved.card_grade, "10");
+assert.equal(resolved.auto, true);
+assert.equal(validateResolvedFields(resolved).length, 0);
+
+const normalized = normalizeResolvedFields({
+  players: "A / B",
+  grade_type: "CARD_AND_AUTO",
+  one_of_one: true
+});
+assert.deepEqual(normalized.players, ["A / B"]);
+assert.equal(normalized.grade_type, "CARD_AND_AUTO");
+assert.equal(normalized.one_of_one, true);
+
+const legacy = resolvedFieldsToLegacyFields(resolved);
+assert.equal(legacy.player, "Shohei Ohtani");
+assert.equal(legacy.card_number, "UV-16");
+assert.equal(legacy.serial_number, "31/50");
+
+const evidenceDocument = providerPayloadToEvidenceDocument({
+  title: "2024 Topps Chrome Shohei Ohtani UV-16 31/50 PSA 10 Auto",
+  confidence: "HIGH",
+  fields: {
+    year: "2024",
+    brand: "Topps Chrome",
+    player: "Shohei Ohtani",
+    card_number: "UV-16",
+    serial_number: "31/50",
+    grade_company: "PSA",
+    grade: "10",
+    auto: true
+  },
+  unresolved: []
+}, {
+  images: [
+    {
+      id: "image-front",
+      imageQuality: {
+        glare_score: 0.05,
+        blur_score: 0.04
+      }
+    }
+  ]
+});
+assert.equal(evidenceDocument.schema_version, "evidence-fields-v1");
+assert.equal(evidenceDocument.resolved.checklist_code, "UV-16");
+assert.equal(evidenceDocument.evidence.serial_number.status, "CONFIRMED");
+assert.equal(evidenceDocument.evidence.serial_number.sources[0].source_type, "VISION_MODEL");
+assert.doesNotThrow(() => assertValidEvidenceDocument(evidenceDocument));
+
+assert.throws(
+  () => assertValidEvidenceDocument({
+    evidence: {
+      year: {
+        ...evidenceField,
+        confidence: 2
+      }
+    },
+    resolved: {
+      ...resolved,
+      grade_type: "MINT"
+    }
+  }),
+  /Evidence document validation failed/
+);
+
+console.log("evidence schema tests passed");

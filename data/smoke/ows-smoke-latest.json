@@ -1,0 +1,15 @@
+{
+  "provider": "openai_web_search",
+  "status": "skipped",
+  "generated_at": "2026-06-22T12:24:22.604Z",
+  "capabilities": [
+    {
+      "name": "credentials",
+      "status": "skipped",
+      "required": true,
+      "details": {
+        "reason": "OPENAI_API_KEY is not configured."
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "schema_version": "supabase-recognition-live-snapshot-v1",
+  "generated_at": "2026-06-23T00:00:00.000Z",
+  "source": {
+    "provider": "supabase_mcp",
+    "project_id": "osrrujmpxxiefppjfgpd",
+    "project_name": "Listing Copilot",
+    "region": "ap-southeast-2"
+  },
+  "tables": {
+    "public.listing_title_feedback": {
+      "rows": 351,
+      "rows_with_front_image_url": 248,
+      "rows_with_back_image_url": 247,
+      "image_backed_rows": 248,
+      "rows_with_corrected_title": 351,
+      "month_breakdown": [
+        {
+          "month": "2026-06-01",
+          "rows": 351,
+          "front_images": 248,
+          "back_images": 247
+        }
+      ]
+    },
+    "storage.objects": {
+      "rows": 495,
+      "bucket_breakdown": [
+        {
+          "bucket_id": "listing-feedback-images",
+          "object_count": 495
+        }
+      ]
+    }
+  },
+  "candidate_export_status": {
+    "local_rest_export_ready": true,
+    "local_rest_export_completed": false,
+    "blocked_reason": "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not configured in local .env.local",
+    "ground_truth_status": "NEEDS_REVIEW",
+    "corrected_title_used_as_ground_truth": false
+  }
+}

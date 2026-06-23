@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "asset_id": "sample_1",
+      "ground_truth": {
+        "serial_number": "01/10",
+        "collector_number": "136",
+        "checklist_code": "TCAR-CF",
+        "grade_company": "PSA",
+        "card_grade": "9",
+        "auto_grade": "10",
+        "grade_type": "CARD_AND_AUTO"
+      },
+      "prediction": {
+        "resolved_fields": {
+          "serial_number": "1/10",
+          "collector_number": "136",
+          "checklist_code": "TCAR-CF",
+          "grade_company": "PSA",
+          "card_grade": "9",
+          "auto_grade": "10",
+          "grade_type": "CARD_AND_AUTO"
+        }
+      }
+    }
+  ]
+}

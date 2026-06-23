@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynca.local/schemas/listing/resolved-fields.schema.json",
+  "title": "Listing ResolvedFields",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "category": { "type": ["string", "null"] },
+    "standardness": { "type": ["string", "null"] },
+    "route": { "type": ["string", "null"] },
+    "year": { "type": ["string", "null"] },
+    "manufacturer": { "type": ["string", "null"] },
+    "brand": { "type": ["string", "null"] },
+    "product": { "type": ["string", "null"] },
+    "set": { "type": ["string", "null"] },
+    "subset": { "type": ["string", "null"] },
+    "players": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "character": { "type": ["string", "null"] },
+    "team": { "type": ["string", "null"] },
+    "artist": { "type": ["string", "null"] },
+    "card_type": { "type": ["string", "null"] },
+    "insert": { "type": ["string", "null"] },
+    "parallel": { "type": ["string", "null"] },
+    "variation": { "type": ["string", "null"] },
+    "serial_number": { "type": ["string", "null"] },
+    "collector_number": { "type": ["string", "null"] },
+    "checklist_code": { "type": ["string", "null"] },
+    "attributes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "rc": { "type": "boolean" },
+    "first_bowman": { "type": "boolean" },
+    "ssp": { "type": "boolean" },
+    "case_hit": { "type": "boolean" },
+    "auto": { "type": "boolean" },
+    "patch": { "type": "boolean" },
+    "relic": { "type": "boolean" },
+    "sketch": { "type": "boolean" },
+    "redemption": { "type": "boolean" },
+    "one_of_one": { "type": "boolean" },
+    "grade_company": { "type": ["string", "null"] },
+    "card_grade": { "type": ["string", "null"] },
+    "auto_grade": { "type": ["string", "null"] },
+    "grade_type": {
+      "enum": ["CARD_ONLY", "AUTO_ONLY", "CARD_AND_AUTO", "AUTHENTIC", "ALTERED", "UNKNOWN"]
+    }
+  }
+}

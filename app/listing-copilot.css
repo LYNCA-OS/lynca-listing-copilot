@@ -122,6 +122,7 @@ a {
 }
 
 .hero-panel,
+.provider-panel,
 .control-panel,
 .stats-grid article,
 .batch-titles-board,
@@ -217,6 +218,7 @@ h3 {
 
 .principle-grid p,
 .section-head p,
+.provider-head p,
 .empty-state,
 .result-meta,
 .field-list,
@@ -234,6 +236,76 @@ h3 {
   align-items: center;
   margin-top: 22px;
   padding: 20px;
+}
+
+.provider-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr);
+  gap: 16px;
+  align-items: center;
+  margin-top: 22px;
+  padding: 18px;
+}
+
+.provider-head {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.provider-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.provider-option {
+  min-height: 58px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  text-align: left;
+}
+
+.provider-option strong,
+.provider-option small:not(.provider-smoke) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-option strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.provider-option small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.provider-smoke {
+  color: var(--cyan);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.provider-option.active {
+  border-color: rgba(88, 199, 245, 0.76);
+  background: rgba(88, 199, 245, 0.13);
+}
+
+.provider-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .mode-control {
@@ -653,6 +725,87 @@ h3 {
   font-weight: 700;
 }
 
+.title-override-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  border: 1px solid rgba(240, 200, 117, 0.32);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: rgba(240, 200, 117, 0.08);
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.writer-modules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.writer-module {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: start;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.writer-module.needs-review {
+  border-color: rgba(240, 200, 117, 0.38);
+}
+
+.writer-module span {
+  min-width: 0;
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.writer-module textarea {
+  min-width: 0;
+  grid-column: 1 / -1;
+  min-height: 44px;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: rgba(0, 0, 0, 0.16);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 780;
+  line-height: 1.35;
+  outline: none;
+}
+
+.writer-module textarea:focus {
+  border-color: rgba(88, 199, 245, 0.62);
+}
+
+.writer-module textarea:disabled {
+  color: var(--subtle);
+  cursor: wait;
+}
+
+.writer-module small {
+  justify-self: end;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+}
+
 .feedback-save-status {
   margin: 0;
   color: var(--muted);
@@ -671,6 +824,19 @@ h3 {
 .copy-button {
   min-height: 34px;
   padding: 0 12px;
+}
+
+.publish-button:not(:disabled) {
+  border-color: rgba(112, 214, 159, 0.48);
+  background: rgba(112, 214, 159, 0.12);
+  color: var(--green);
+}
+
+.publish-status {
+  margin: 8px 0 0;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 details {
@@ -840,6 +1006,7 @@ summary {
 
 @media (max-width: 1180px) {
   .control-panel,
+  .provider-panel,
   .asset-row-card {
     grid-template-columns: 1fr;
   }
@@ -877,12 +1044,14 @@ summary {
 
   .stats-grid,
   .principle-grid,
-  .mode-control {
+  .mode-control,
+  .provider-control {
     grid-template-columns: 1fr;
   }
 
   .asset-source,
-  .field-list {
+  .field-list,
+  .writer-modules {
     grid-template-columns: 1fr;
   }
 

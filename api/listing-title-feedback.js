@@ -1,5 +1,10 @@
-import { operatorIdFromRequest } from "../lib/listing-session.mjs";
-import { createTitleFeedbackRecord } from "../lib/supabase-feedback.mjs";
+import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
+import { getSessionFromRequest, operatorIdFromRequest } from "../lib/listing-session.mjs";
+import { normalizeTitle } from "../lib/listing/feedback/review-records.mjs";
+import {
+  createListingReviewRecord,
+  listingFeedbackRetentionEnabled
+} from "../lib/supabase-feedback.mjs";
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -18,13 +23,21 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function normalizeTitle(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
+    return;
+  }
+
+  if (!enforceApiRateLimit(req, res, {
+    scope: "listing_feedback",
+    limit: 120,
+    windowMs: 60_000,
+    message: "Too many feedback requests. Please try again shortly."
+  })) return;
+
+  if (!getSessionFromRequest(req)) {
+    sendJson(res, 401, { ok: false, message: "Unauthorized" });
     return;
   }
 
@@ -44,19 +57,25 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (generatedTitle === correctedTitle) {
-    sendJson(res, 200, { ok: true, skipped: true, reason: "unchanged_title" });
-    return;
-  }
-
   try {
-    const record = await createTitleFeedbackRecord({
-      generatedTitle,
-      correctedTitle,
+    const record = await createListingReviewRecord({
+      payload: {
+        ...payload,
+        generated_title: generatedTitle,
+        corrected_title: correctedTitle
+      },
       operatorId: operatorIdFromRequest(req)
     });
 
-    sendJson(res, 200, { ok: true, record });
+    sendJson(res, 200, {
+      ok: true,
+      record,
+      review_outcome: record.review?.review_outcome,
+      retention_enabled: listingFeedbackRetentionEnabled(),
+      retention_skipped: record.retained === false,
+      retention_reason: record.reason || null,
+      legacy_feedback_saved: Boolean(record.legacy_feedback && record.retained !== false)
+    });
   } catch (error) {
     sendJson(res, 500, { ok: false, message: error.message || "Feedback save failed." });
   }
