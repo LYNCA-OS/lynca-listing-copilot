@@ -6,6 +6,10 @@ import {
   approvedHistoryRecordToEvidenceDocument,
   payloadAssetFingerprint
 } from "../lib/listing/memory/approved-identity-memory.mjs";
+import {
+  parseReviewedTitleFields,
+  reviewedTitleRecordToMemoryRecord
+} from "../lib/listing/memory/title-field-parser.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.SUPABASE_URL = "https://supabase.test";
@@ -214,5 +218,29 @@ assert.deepEqual(fetchCalls.map((call) => call.table), [
   "listing_image_verifications",
   "listing_reviews"
 ]);
+
+const parsedTitle = parseReviewedTitleFields("2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9");
+assert.equal(parsedTitle.year, "2025");
+assert.equal(parsedTitle.product, "Topps Chrome Sapphire");
+assert.equal(parsedTitle.parallel, "Gold");
+assert.equal(parsedTitle.serial_number, "5/50");
+assert.equal(parsedTitle.grade_company, "PSA");
+assert.equal(parsedTitle.card_grade, "9");
+
+const parsedBeckett = parseReviewedTitleFields("2021-22 Panini Impeccable Cristiano Ronaldo Canvas Creations Auto 91/99 Beckett 8.5");
+assert.equal(parsedBeckett.grade_company, "BGS");
+assert.equal(parsedBeckett.card_grade, "8.5");
+assert.equal(parsedBeckett.auto, true);
+assert.equal(parsedBeckett.relic, false);
+
+const memoryRecord = reviewedTitleRecordToMemoryRecord({
+  id: "feedback-title-row",
+  corrected_title: "2016 Bowman Chrome Juan Soto 1st Bowman Prospect Auto PSA 10"
+});
+assert.equal(memoryRecord.id, "feedback-title-row");
+assert.equal(memoryRecord.reusable_approved_title, false);
+assert.equal(memoryRecord.fields.first_bowman, true);
+assert.equal(memoryRecord.fields.auto, true);
+assert.equal(memoryRecord.fields.grade_company, "PSA");
 
 console.log("approved identity memory tests passed");

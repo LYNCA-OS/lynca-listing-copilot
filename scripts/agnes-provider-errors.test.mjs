@@ -7,7 +7,10 @@ const env = {
   AGNES_MODEL: "agnes-2.0-flash",
   AGNES_TEMPERATURE: "0",
   AGNES_MAX_RETRIES: "0",
-  AGNES_TIMEOUT_MS: "50"
+  AGNES_TIMEOUT_MS: "50",
+  AGNES_RETRY_BASE_MS: "1",
+  AGNES_RATE_LIMIT_RETRY_MS: "1",
+  AGNES_MAX_RETRY_DELAY_MS: "5"
 };
 
 const oneImage = [{ url: "https://example.com/front.jpg" }];
@@ -45,10 +48,15 @@ function okChatCompletion({
   };
 }
 
-function errorResponse(status, text = "{\"error\":\"mock\"}") {
+function errorResponse(status, text = "{\"error\":\"mock\"}", headers = {}) {
   return {
     ok: false,
     status,
+    headers: {
+      get(name) {
+        return headers[String(name || "").toLowerCase()] || null;
+      }
+    },
     text: async () => text
   };
 }
@@ -197,6 +205,23 @@ const retriedResult = await analyzeCardEvidenceWithAgnes({
 });
 assert.equal(retryCalls, 2);
 assert.equal(retriedResult.usage.provider_calls, 2);
+
+let retryAfterCalls = 0;
+const retryAfterResult = await analyzeCardEvidenceWithAgnes({
+  images: oneImage,
+  prompt: "Return JSON.",
+  env: {
+    ...env,
+    AGNES_MAX_RETRIES: "1"
+  },
+  fetchImpl: async () => {
+    retryAfterCalls += 1;
+    if (retryAfterCalls === 1) return errorResponse(429, "rate limited", { "retry-after": "0" });
+    return okChatCompletion();
+  }
+});
+assert.equal(retryAfterCalls, 2);
+assert.equal(retryAfterResult.usage.provider_calls, 2);
 
 await assert.rejects(
   analyzeCardEvidenceWithAgnes({

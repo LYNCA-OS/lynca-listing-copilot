@@ -275,6 +275,39 @@ function predictionFromResolvedResult(result = {}) {
   };
 }
 
+function identityResolutionSummary(result = {}) {
+  const identityResolution = result.identity_resolution || {};
+  return {
+    status: result.identity_resolution_status || identityResolution.status || "",
+    ambiguity_status: result.ambiguity_status || identityResolution.ambiguity_status || "",
+    confidence_report: result.confidence_report || identityResolution.confidence_report || null,
+    fields: (result.field_states || identityResolution.field_states || []).map((fieldState) => ({
+      field: fieldState.field,
+      resolved_value: fieldState.resolved_value,
+      resolution_reason: fieldState.resolution_reason,
+      decision_route: fieldState.decision_route,
+      resolution_confidence: fieldState.resolution_confidence,
+      ambiguity: fieldState.ambiguity,
+      conflicts: fieldState.conflicts,
+      conflict_items: (fieldState.conflict_items || []).map((conflict) => ({
+        field: conflict.field,
+        conflict_type: conflict.conflict_type,
+        severity: conflict.severity,
+        resolved: conflict.resolved === true,
+        resolution: conflict.resolution || null
+      })),
+      source_summary: fieldState.source_summary || []
+    })),
+    conflict_map: (result.conflict_map || identityResolution.conflict_map || []).map((conflict) => ({
+      field: conflict.field,
+      conflict_type: conflict.conflict_type,
+      severity: conflict.severity,
+      resolved: conflict.resolved === true,
+      resolution: conflict.resolution || null
+    }))
+  };
+}
+
 function evaluationPrompt(item = {}) {
   return [
     "You are evaluating real private feedback images for LYNCA Listing Copilot.",
@@ -573,6 +606,7 @@ async function evaluateOneFeedbackItem(item, {
       corrected_title_comparison: comparison,
       identity_resolution_enabled: identityResolution,
       identity_resolution_status: resolved?.result?.identity_resolution_status || null,
+      identity_resolution_summary: resolved ? identityResolutionSummary(resolved.result) : null,
       route: resolved?.result?.route || null,
       completion_trace: resolved?.completion?.resolution_trace || [],
       usage: resolved?.usage || result.usage || null

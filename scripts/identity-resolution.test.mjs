@@ -175,10 +175,15 @@ const visualOnlyParallelRejected = resolveIdentity({
   ]
 });
 assert.equal(visualOnlyParallelRejected.identity.parallel, null);
-assert.equal(visualOnlyParallelRejected.status, "ABSTAIN");
-assert.equal(fieldState(visualOnlyParallelRejected, "parallel").resolution_reason, "all_candidates_failed_constraints");
+assert.equal(visualOnlyParallelRejected.status, "RESOLVED");
+assert.equal(fieldState(visualOnlyParallelRejected, "parallel").resolution_reason, "rejected_unsupported_optional_candidate");
+assert.equal(fieldState(visualOnlyParallelRejected, "parallel").decision_route, "DROP");
 assert.equal(fieldState(visualOnlyParallelRejected, "parallel").candidates[0].constraint_result.constraint_score, 0);
-assert.ok(visualOnlyParallelRejected.conflict_map.some((conflict) => conflict.field === "parallel" && conflict.conflict_type === "PARALLEL_WITHOUT_GROUNDED_SOURCE"));
+assert.ok(visualOnlyParallelRejected.conflict_map.some((conflict) => {
+  return conflict.field === "parallel"
+    && conflict.conflict_type === "PARALLEL_WITHOUT_GROUNDED_SOURCE"
+    && conflict.resolved === true;
+}));
 
 const printedRookieMarkersAccepted = resolveIdentity({
   evidenceItems: [
@@ -190,6 +195,20 @@ const printedRookieMarkersAccepted = resolveIdentity({
 assert.equal(printedRookieMarkersAccepted.identity.rc, true);
 assert.equal(printedRookieMarkersAccepted.identity.first_bowman, true);
 assert.equal(fieldState(printedRookieMarkersAccepted, "rc").resolution_reason, "highest_scoring_candidate");
+
+const seasonRangeWinsCompatibleYear = resolveIdentity({
+  evidenceItems: [
+    { field: "year", value: "2020", source: "AGNES", confidence: 0.9 },
+    { field: "year", value: "2020-21", source: "CARD_BACK", confidence: 0.9 },
+    { field: "product", value: "Contenders", source: "CARD_BACK", confidence: 0.94 },
+    { field: "players", value: "Anthony Edwards", source: "CARD_FRONT", confidence: 0.94 }
+  ]
+});
+assert.equal(seasonRangeWinsCompatibleYear.identity.year, "2020-21");
+assert.ok([
+  "card_design_override_label_or_inference_conflict",
+  "more_specific_compatible_descriptor"
+].includes(fieldState(seasonRangeWinsCompatibleYear, "year").resolution_reason));
 
 const moreSpecificInsertWins = resolveIdentity({
   evidenceItems: [
@@ -214,6 +233,20 @@ assert.equal(insertCannotDuplicateProductIdentity.identity.insert, "Red Propulsi
 assert.ok(fieldState(insertCannotDuplicateProductIdentity, "insert").conflict_items.some((conflict) => {
   return conflict.conflict_type === "INSERT_COLLIDES_WITH_PRODUCT_IDENTITY" && conflict.resolved === true;
 }));
+
+const duplicateOnlyInsertDropped = resolveIdentity({
+  evidenceItems: [
+    { field: "year", value: "2025-26", source: "CARD_BACK", confidence: 0.94 },
+    { field: "product", value: "Prizm FIFA Soccer", source: "CARD_BACK", confidence: 0.94 },
+    { field: "set", value: "Club Legends", source: "CARD_BACK", confidence: 0.94 },
+    { field: "players", value: "Lionel Messi", source: "CARD_FRONT", confidence: 0.94 },
+    { field: "insert", value: "Club Legends", source: "CARD_BACK", confidence: 0.94 }
+  ]
+});
+assert.equal(duplicateOnlyInsertDropped.identity.insert, null);
+assert.equal(duplicateOnlyInsertDropped.identity.set, "Club Legends");
+assert.equal(duplicateOnlyInsertDropped.status, "RESOLVED");
+assert.equal(fieldState(duplicateOnlyInsertDropped, "insert").decision_route, "DROP");
 
 const cardDesignSeasonOverridesSlabYear = resolveIdentity({
   evidenceItems: [

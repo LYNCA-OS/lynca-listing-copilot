@@ -278,6 +278,8 @@ assert.ok(identityAnalyzeCalls.length > 1);
 assert.match(identityResolved.results[0].prediction.title, /Topps Chrome/);
 assert.match(identityResolved.results[0].prediction.title, /Shohei Ohtani/);
 assert.equal(identityResolved.results[0].prediction.identity_resolution_status, "CONFIRMED");
+assert.equal(identityResolved.results[0].identity_resolution_summary.status, "CONFIRMED");
+assert.ok(identityResolved.results[0].identity_resolution_summary.fields.some((field) => field.field === "product"));
 assert.ok(identityResolved.results[0].usage.provider_calls >= 2);
 assert.ok(identityResolved.results[0].completion_trace.some((entry) => entry.output?.convergence?.loop === "detect_conflict_retrieve_reevaluate_converge"));
 

@@ -101,8 +101,9 @@ const serialVisibleUncertainParallel = await callApi({
   unresolved: ["exact parallel requires operator review"]
 });
 
-assert.equal(serialVisibleUncertainParallel.confidence, "LOW");
-assert.equal(serialVisibleUncertainParallel.title, "");
+assert.equal(serialVisibleUncertainParallel.confidence, "MEDIUM");
+assert.match(serialVisibleUncertainParallel.title, /130\/175/);
+assert.doesNotMatch(serialVisibleUncertainParallel.title, /Purple|Wave/i);
 
 const backgroundIgnored = await callApi({
   title: "Metaverse Cards 2024 Topps Chrome Shohei Ohtani",
@@ -162,8 +163,9 @@ const visuallyGuessedParallel = await callApi({
   unresolved: []
 });
 
-assert.equal(visuallyGuessedParallel.confidence, "LOW");
-assert.equal(visuallyGuessedParallel.title, "");
+assert.equal(visuallyGuessedParallel.confidence, "MEDIUM");
+assert.match(visuallyGuessedParallel.title, /137\/199/);
+assert.doesNotMatch(visuallyGuessedParallel.title, /Fuchsia|Wave/i);
 
 const missingVisibleSerial = await callApi({
   title: "2025 Bowman Chrome Test Player Fuchsia Wave Auto",
@@ -359,8 +361,9 @@ const oneOfOneWithUncertainParallel = await callApi({
   unresolved: ["exact parallel requires operator review"]
 });
 
-assert.equal(oneOfOneWithUncertainParallel.confidence, "LOW");
-assert.equal(oneOfOneWithUncertainParallel.title, "");
+assert.equal(oneOfOneWithUncertainParallel.confidence, "MEDIUM");
+assert.match(oneOfOneWithUncertainParallel.title, /01\/01/);
+assert.doesNotMatch(oneOfOneWithUncertainParallel.title, /Green|Geometric/i);
 
 const dualPairingPreserved = await callApi({
   title: "2024 Topps Chrome Charles Leclerc Lewis Hamilton Power Partnership",

@@ -175,6 +175,23 @@ assert.equal(groundedIdentityMarkersDocument.evidence.rc.sources[0].source_type,
 assert.equal(groundedIdentityMarkersDocument.evidence.first_bowman.sources[0].source_type, "CARD_FRONT");
 assert.doesNotThrow(() => assertValidEvidenceDocument(groundedIdentityMarkersDocument));
 
+const beckettGradeDocument = providerPayloadToEvidenceDocument({
+  title: "2021 Panini Test Player Beckett 8.5",
+  confidence: "HIGH",
+  reason: "slab label states Beckett 8.5",
+  fields: {
+    year: "2021",
+    product: "Panini",
+    players: ["Test Player"],
+    grade_company: "Beckett",
+    card_grade: "8.5"
+  },
+  unresolved: []
+});
+assert.equal(beckettGradeDocument.resolved.grade_company, "BGS");
+assert.equal(beckettGradeDocument.evidence.grade_company.value, "BGS");
+assert.doesNotThrow(() => assertValidEvidenceDocument(beckettGradeDocument));
+
 const multiCardDocument = providerPayloadToEvidenceDocument({
   title: "Card lot requires review",
   confidence: "HIGH",
