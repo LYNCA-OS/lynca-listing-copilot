@@ -2095,10 +2095,7 @@ function withCompletedEvidencePresentation(result, completion, payload) {
 
 function retrievalCandidatesForIdentity(completion = {}) {
   const retrieval = completion.retrieval || {};
-  return [
-    ...(Array.isArray(retrieval.sources) ? retrieval.sources : []),
-    ...(retrieval.selected_candidate ? [retrieval.selected_candidate] : [])
-  ];
+  return retrieval.selected_candidate ? [retrieval.selected_candidate] : [];
 }
 
 function createAgnesFocusedRereadRunner({

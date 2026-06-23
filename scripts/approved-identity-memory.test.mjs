@@ -7,6 +7,10 @@ import {
   payloadAssetFingerprint
 } from "../lib/listing/memory/approved-identity-memory.mjs";
 import {
+  listApprovedHistoryRecords,
+  listLegacyApprovedTitleFeedbackRecords
+} from "../lib/supabase-feedback.mjs";
+import {
   parseReviewedTitleFields,
   reviewedTitleRecordToMemoryRecord
 } from "../lib/listing/memory/title-field-parser.mjs";
@@ -242,5 +246,62 @@ assert.equal(memoryRecord.reusable_approved_title, false);
 assert.equal(memoryRecord.fields.first_bowman, true);
 assert.equal(memoryRecord.fields.auto, true);
 assert.equal(memoryRecord.fields.grade_company, "PSA");
+
+const fallbackFetchCalls = [];
+const fallbackFetch = async (url) => {
+  const requestUrl = new URL(String(url));
+  const table = requestUrl.pathname.split("/").at(-1);
+  fallbackFetchCalls.push({
+    table,
+    limit: requestUrl.searchParams.get("limit"),
+    order: requestUrl.searchParams.get("order")
+  });
+
+  if (table === "listing_reviews") {
+    return jsonResponse({ message: "relation listing_reviews does not exist" }, 404);
+  }
+
+  if (table === "listing_title_feedback") {
+    assert.equal(requestUrl.searchParams.get("corrected_title"), "not.is.null");
+    return jsonResponse([
+      {
+        id: "legacy-feedback-ohtani",
+        generated_title: "2025 Topps Chrome Sapphire Shohei Ohtani PSA 9",
+        corrected_title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
+        front_image_url: "https://supabase.test/storage/v1/object/sign/listing-feedback-images/front.jpg",
+        back_image_url: "https://supabase.test/storage/v1/object/sign/listing-feedback-images/back.jpg",
+        created_at: "2026-06-22T00:00:00.000Z"
+      }
+    ]);
+  }
+
+  throw new Error(`Unexpected fallback remote call: ${requestUrl.href}`);
+};
+
+const fallbackRecords = await listApprovedHistoryRecords({
+  env: process.env,
+  fetchImpl: fallbackFetch,
+  limit: 20
+});
+assert.deepEqual(fallbackFetchCalls.map((call) => call.table), [
+  "listing_reviews",
+  "listing_title_feedback"
+]);
+assert.equal(fallbackRecords.length, 1);
+assert.equal(fallbackRecords[0].legacy_feedback, true);
+assert.equal(fallbackRecords[0].reusable_approved_title, false);
+assert.equal(fallbackRecords[0].fields.product, "Topps Chrome Sapphire");
+assert.equal(fallbackRecords[0].fields.parallel, "Gold");
+assert.equal(fallbackRecords[0].fields.serial_number, "5/50");
+assert.equal(fallbackRecords[0].fields.grade_company, "PSA");
+assert.equal(fallbackRecords[0].fields.card_grade, "9");
+
+const legacyOnlyRecords = await listLegacyApprovedTitleFeedbackRecords({
+  env: process.env,
+  fetchImpl: fallbackFetch,
+  limit: 2
+});
+assert.equal(legacyOnlyRecords.length, 1);
+assert.equal(legacyOnlyRecords[0].training_status, "legacy_feedback_title_parsed_local");
 
 console.log("approved identity memory tests passed");

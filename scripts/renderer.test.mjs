@@ -26,6 +26,28 @@ assert.equal((wemby.final_title.match(/\bRC\b/g) || []).length, 1);
 assert.equal(wemby.modules.numbering.text, "31/50");
 assert.equal(wemby.modules.grading.text, "PSA 10");
 
+const ohtaniChrome = renderListingPresentation({
+  resolved: {
+    year: "2018",
+    manufacturer: "Topps",
+    brand: "Topps",
+    product: "Topps Chrome",
+    set: "2018 Topps Chrome",
+    players: ["Shohei Ohtani"],
+    collector_number: "83T-6",
+    rc: true,
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.match(ohtaniChrome.final_title, /^2018\b/);
+assert.match(ohtaniChrome.final_title, /Topps Chrome/);
+assert.match(ohtaniChrome.final_title, /Shohei Ohtani/);
+assert.match(ohtaniChrome.final_title, /RC/);
+assert.match(ohtaniChrome.final_title, /PSA 10$/);
+
 const dualAuto = renderResolvedTitle({
   year: "2025-26",
   brand: "Topps",

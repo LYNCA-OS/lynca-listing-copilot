@@ -10,6 +10,7 @@ import { braveSearchProvider } from "../lib/listing/retrieval/brave-search-provi
 import { ebayBrowseProvider } from "../lib/listing/retrieval/ebay-browse-provider.mjs";
 import { officialSourceProvider } from "../lib/listing/retrieval/official-source-provider.mjs";
 import { openAiWebSearchProvider } from "../lib/listing/retrieval/openai-web-search-provider.mjs";
+import { internalMemoryProvider } from "../lib/listing/retrieval/internal-memory-provider.mjs";
 import { runRetrieval } from "../lib/listing/retrieval/retrieval-engine.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
 import {
@@ -49,6 +50,50 @@ assert.equal(isKnownRetrievalProviderId(retrievalProviderIds.BRAVE_SEARCH), true
 assert.equal(isKnownRetrievalProviderId("not_real_search"), false);
 assert.equal(openAiWebSearchModelConfig("gpt-4.1-mini").allowed, true);
 assert.equal(openAiWebSearchModelConfig("gpt-5").allowed, false);
+
+const memoryProvider = internalMemoryProvider({
+  approvedRecords: [
+    {
+      id: "legacy-ohtani-gold",
+      title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
+      final_title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
+      review_outcome: "TITLE_ONLY_OVERRIDE",
+      training_status: "legacy_feedback_title_parsed_local",
+      legacy_feedback: true
+    },
+    {
+      id: "legacy-ohtani-red",
+      title: "2025 Topps Chrome Sapphire Shohei Ohtani Red 17/50 PSA 9",
+      final_title: "2025 Topps Chrome Sapphire Shohei Ohtani Red 17/50 PSA 9",
+      review_outcome: "TITLE_ONLY_OVERRIDE",
+      training_status: "legacy_feedback_title_parsed_local",
+      legacy_feedback: true
+    }
+  ]
+});
+const memoryResult = await memoryProvider.search({
+  query: {
+    query: '"Shohei Ohtani" "2025 Topps Chrome Sapphire" "05/50" "PSA"'
+  }
+});
+assert.equal(memoryResult.unavailable, false);
+assert.equal(memoryResult.candidates[0].source_type, "INTERNAL_APPROVED_HISTORY");
+assert.equal(memoryResult.candidates[0].fields.product, "Topps Chrome Sapphire");
+assert.equal(memoryResult.candidates[0].fields.parallel, "Gold");
+assert.equal(memoryResult.candidates[0].fields.serial_number, "5/50");
+assert.match(memoryResult.candidates[0].evidence_excerpt, /legacy corrected feedback title parsed into fields/);
+
+const rankedMemory = rankRetrievalCandidates(memoryResult.candidates, {
+  year: "2025",
+  product: "Topps Chrome Sapphire",
+  players: ["Shohei Ohtani"],
+  serial_number: "05/50",
+  grade_company: "PSA",
+  card_grade: "9"
+});
+assert.equal(rankedMemory.candidates[0].candidate_id, "legacy-ohtani-gold");
+assert.equal(rankedMemory.selected_candidate.candidate_id, "legacy-ohtani-gold");
+assert.ok(rankedMemory.candidates[0].match_score > rankedMemory.candidates[1].match_score);
 
 const allowlistedRegistry = createRetrievalProviderRegistry({
   overrides: {

@@ -505,10 +505,7 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
   }, {
     maxLength: maxTitleLength,
     providerId: "agnes",
-    retrievalCandidates: [
-      ...(Array.isArray(completion.retrieval?.sources) ? completion.retrieval.sources : []),
-      ...(completion.retrieval?.selected_candidate ? [completion.retrieval.selected_candidate] : [])
-    ]
+    retrievalCandidates: completion.retrieval?.selected_candidate ? [completion.retrieval.selected_candidate] : []
   });
 
   return {

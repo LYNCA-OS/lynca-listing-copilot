@@ -442,8 +442,9 @@ assert.equal(focusedRereadCompletion.evidence.serial_number.status, "CONFIRMED")
 assert.equal(focusedRereadCompletion.usage.provider_calls, 1);
 assert.equal(focusedRereadCompletion.budget.used.agnes_calls, 1);
 assert.equal(focusedRereadCompletion.route, "AI_COMPLETE_REVIEW");
-assert.equal(focusedRereadCompletion.resolution_trace[0].status, "executed");
-assert.ok(focusedRereadCompletion.resolution_trace[0].output.focused_vision.updated_fields.includes("serial_number"));
+const focusedRereadTrace = focusedRereadCompletion.resolution_trace.find((entry) => entry.output?.focused_vision?.updated_fields?.includes("serial_number"));
+assert.equal(focusedRereadTrace.status, "executed");
+assert.equal(focusedRereadCompletion.resolution_trace[0].action, completionActions.SEARCH_INTERNAL_APPROVED_HISTORY);
 assert.ok(focusedRereadCompletion.resolution_trace.every((entry) => !/GPT|openai_legacy/i.test(JSON.stringify(entry))));
 
 let parallelInFlight = 0;
@@ -526,7 +527,13 @@ const parallelFocusedCompletion = await completeEvidence({
   }
 });
 assert.ok(parallelMaxInFlight > 1);
-assert.deepEqual(parallelFocusedCompletion.resolution_trace.slice(0, 3).map((entry) => entry.action), [
+assert.deepEqual(parallelFocusedCompletion.resolution_trace
+  .map((entry) => entry.action)
+  .filter((action) => [
+    completionActions.CROP_AND_READ_YEAR_PRODUCT,
+    completionActions.CROP_AND_READ_SUBJECT,
+    completionActions.CROP_AND_READ_PARALLEL
+  ].includes(action)), [
   completionActions.CROP_AND_READ_YEAR_PRODUCT,
   completionActions.CROP_AND_READ_SUBJECT,
   completionActions.CROP_AND_READ_PARALLEL
@@ -591,9 +598,8 @@ const noInfoOcclusionCompletion = await completeEvidence({
 });
 const noInfoOcclusionActions = noInfoOcclusionCompletion.resolution_trace.map((entry) => entry.action);
 assert.deepEqual(noInfoOcclusionActions, [
-  completionActions.CROP_AND_READ_SERIAL,
-  completionActions.CROP_AND_READ_YEAR_PRODUCT,
   completionActions.SEARCH_INTERNAL_APPROVED_HISTORY,
+  completionActions.CROP_AND_READ_SERIAL,
   completionActions.SEARCH_INTERNAL_REGISTRY,
   completionActions.SEARCH_BRAVE,
   completionActions.SEARCH_EBAY,
