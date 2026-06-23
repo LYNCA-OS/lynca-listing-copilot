@@ -133,6 +133,12 @@ function commercialReviewWorklistSummary(readiness) {
   return `${check.status} tasks ${check.details?.task_count ?? 0}, P0=${check.details?.priority_band_counts?.P0 ?? 0}, P1=${check.details?.priority_band_counts?.P1 ?? 0}, uses-ground-truth=${yesNo(check.details?.worklist_uses_ground_truth === true)}`;
 }
 
+function identityCacheSummary(readiness) {
+  const check = readiness.checks.find((item) => item.id === "identity_result_cache");
+  if (!check) return "missing";
+  return `${check.status} read=${yesNo(check.details?.read_enabled === true)}, write=${yesNo(check.details?.write_enabled === true)}, write-resolved=${yesNo(check.details?.write_resolved_enabled === true)}, training=${yesNo(check.details?.training_table === true)}`;
+}
+
 function blockerLines(readiness) {
   return readiness.blockers.length
     ? readiness.blockers.map((blocker) => `${blocker.id}: ${blocker.summary}`)
@@ -183,6 +189,7 @@ export async function createDeliveryReport({
       `Supabase field-level ground truth: ${supabaseCommercialTruthSummary(readiness)}`,
       `Commercial review packet: ${commercialReviewPacketSummary(readiness)}`,
       `Commercial review worklist: ${commercialReviewWorklistSummary(readiness)}`,
+      `Identity result cache: ${identityCacheSummary(readiness)}`,
       "This report is generated from current repository files and sanitized smoke/eval artifacts; it does not replace a fresh command transcript."
     ])),
     section(2, "Implementation Summary", bullet([
@@ -231,6 +238,7 @@ export async function createDeliveryReport({
       "Primary variables are documented in .env.example and README.md.",
       "Provider/model ids are allowlisted server-side.",
       "Smoke report override variables: AGNES_SMOKE_REPORT_PATH, BRAVE_SMOKE_REPORT_PATH, EBAY_SMOKE_REPORT_PATH, OWS_SMOKE_REPORT_PATH.",
+      "Identity result cache variables: LISTING_IDENTITY_CACHE_ENABLED, LISTING_IDENTITY_CACHE_READ_ENABLED, LISTING_IDENTITY_CACHE_WRITE_ENABLED, LISTING_IDENTITY_CACHE_WRITE_RESOLVED, LISTING_IDENTITY_CACHE_TTL_DAYS.",
       `Package scripts present: ${inlineList(scripts.filter((name) => ["check", "test", "test:mock", "eval:golden", "commercial:heldout", "readiness:audit", "public:cards", "eval:agnes-public-cards", "eval:agnes-real-photos", "smoke:agnes", "smoke:brave", "smoke:ebay", "smoke:ows"].includes(name)))}`
     ])),
     section(11, "Storage Structure", bullet([
@@ -239,6 +247,7 @@ export async function createDeliveryReport({
       "Image upload/verification APIs require server-side validation, content hash handling, and short-lived read URLs.",
       "Production recognition should pass Agnes only controlled storage signed read URLs, not marketplace or other external image URLs.",
       "Signed URLs are not persisted; object paths, content SHA-256 values, and verification records are the durable references.",
+      "Identity result cache keys are derived only from verified primary-image content SHA-256 fingerprints.",
       "Retention cleanup exists as a server-side script and cron-protected API."
     ])),
     section(12, "Database Migration", bullet([
@@ -285,7 +294,9 @@ export async function createDeliveryReport({
     section(20, "Feedback Data Structure", bullet([
       `Feedback retention enabled: ${yesNo(env.LISTING_FEEDBACK_RETENTION_ENABLED === "true" || env.ENABLE_LISTING_FEEDBACK_RETENTION === "true")}`,
       `Approved-memory reuse enabled: ${yesNo(env.LISTING_APPROVED_MEMORY_ENABLED === "true" || env.ENABLE_LISTING_APPROVED_MEMORY === "true")}`,
+      `Identity result cache: ${identityCacheSummary(readiness)}`,
       "Versioned feedback can write listing_assets, listing_analysis_runs, and listing_reviews only when feedback retention is explicitly enabled.",
+      "Identity result cache is a short-lived duplicate-image fast path and is not approved memory or a training table.",
       "With retention disabled, the feedback endpoint returns computed outcomes but does not write manual/agent test data into training or approved memory.",
       "When retention is enabled for commercial operation, ACCEPTED_UNCHANGED is saved as a positive review outcome.",
       "Server-side diffs compare generated and corrected resolved-field snapshots."
@@ -307,6 +318,7 @@ export async function createDeliveryReport({
       `Supabase field-level ground truth: ${supabaseCommercialTruthSummary(readiness)}`,
       `Commercial review packet: ${commercialReviewPacketSummary(readiness)}`,
       `Commercial review worklist: ${commercialReviewWorklistSummary(readiness)}`,
+      `Identity result cache: ${identityCacheSummary(readiness)}`,
       `Public eval commercial claim allowed: ${yesNo(publicCardEval?.commercial_accuracy_claim_allowed === true)}`
     ])),
     section(23, "Cost And Latency", bullet([
@@ -314,6 +326,7 @@ export async function createDeliveryReport({
       `Average retrieval rounds: ${rate(operational.average_retrieval_rounds)}`,
       `Average latency ms: ${rate(operational.average_latency_ms)}`,
       `Cost per asset: ${rate(operational.cost_per_asset)}`,
+      "Exact verified-image cache hits skip recognition, retrieval, and vision provider calls.",
       "Cost estimates require provider pricing env vars before they become financially meaningful."
     ])),
     section(24, "Known Limitations", bullet([
@@ -352,6 +365,7 @@ export async function createDeliveryReport({
       "Run `npm run ebay:candidates -- --target 300` with official eBay Browse credentials, then label those candidates before accuracy evaluation.",
       "Run credentialed Brave, eBay Browse, and OWS smoke tests and keep their sanitized reports.",
       "Apply and verify Supabase migrations in the target environment.",
+      "Verify the identity cache table is exposed to the Supabase Data API for service_role only; Supabase changed new-table exposure behavior in 2026.",
       "Obtain real B-end API documentation and implement a non-mock publisher adapter.",
       "Use failure root causes and field error distribution to improve Evidence, Retrieval, Registry, Resolver, and image-quality handling."
     ]))

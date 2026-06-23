@@ -207,7 +207,11 @@ const report = await createCommercialReadinessReport({
     SUPABASE_LIVE_SNAPSHOT_PATH: supabaseSnapshotPath,
     SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath,
     COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath,
-    COMMERCIAL_REVIEW_WORKLIST_PATH: commercialReviewWorklistPath
+    COMMERCIAL_REVIEW_WORKLIST_PATH: commercialReviewWorklistPath,
+    LISTING_IDENTITY_CACHE_READ_ENABLED: "true",
+    LISTING_IDENTITY_CACHE_WRITE_ENABLED: "false",
+    LISTING_IDENTITY_CACHE_WRITE_RESOLVED: "false",
+    LISTING_IDENTITY_CACHE_TTL_DAYS: "30"
   }
 });
 
@@ -264,6 +268,13 @@ assert.equal(byId.commercial_review_worklist.details.priority_band_counts.P0, 23
 assert.equal(byId.commercial_review_worklist.details.priority_band_counts.P1, 97);
 assert.equal(byId.commercial_review_worklist.details.worklist_uses_ground_truth, false);
 assert.equal(byId.commercial_review_worklist.details.bad_policy_task_count, 0);
+assert.equal(byId.identity_result_cache.status, "passed");
+assert.equal(byId.identity_result_cache.details.table, "listing_identity_resolution_cache");
+assert.equal(byId.identity_result_cache.details.read_enabled, true);
+assert.equal(byId.identity_result_cache.details.write_enabled, false);
+assert.equal(byId.identity_result_cache.details.training_table, false);
+assert.equal(byId.identity_result_cache.details.stores_signed_urls, false);
+assert.deepEqual(byId.identity_result_cache.details.failures, []);
 
 const text = formatCommercialReadinessReport(report);
 assert.match(text, /Commercial readiness audit blocked/);
@@ -277,6 +288,7 @@ assert.match(text, /supabase_commercial_sample: passed rows 351, image-backed 24
 assert.match(text, /supabase_commercial_ground_truth: blocked required fields year=0, product=0, players=0/);
 assert.match(text, /commercial_review_packet: passed tasks 248, corrected-title-as-truth no, suggested-field-hints 248/);
 assert.match(text, /commercial_review_worklist: passed tasks 248, P0 23, P1 97, uses-ground-truth no/);
+assert.match(text, /identity_result_cache: passed read yes, write no, training no/);
 assert.match(text, /gpt_implicit_default: blocked_by_policy/);
 assert.match(text, /publishing_destination: blocked/);
 

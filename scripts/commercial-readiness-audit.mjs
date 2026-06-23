@@ -3,6 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluateGoldenDataset } from "../lib/listing/evaluation/golden-dataset.mjs";
+import {
+  identityResultCacheReadEnabled,
+  identityResultCacheWriteEnabled,
+  identityResultCacheWriteResolvedEnabled,
+  identityResultCacheTable
+} from "../lib/listing/cache/identity-result-cache.mjs";
 
 const defaultDatasetPath = "data/golden-dataset.json";
 const defaultAgnesSmokePath = "data/smoke/agnes-smoke-latest.json";
@@ -675,6 +681,71 @@ async function auditCommercialReviewWorklist(env = process.env) {
   }
 }
 
+async function auditIdentityResultCache(env = process.env) {
+  const details = {
+    table: identityResultCacheTable,
+    read_enabled: identityResultCacheReadEnabled(env),
+    write_enabled: identityResultCacheWriteEnabled(env),
+    write_resolved_enabled: identityResultCacheWriteResolvedEnabled(env),
+    cache_ttl_days: Number(env.LISTING_IDENTITY_CACHE_TTL_DAYS || 30),
+    data_api_service_role_required: true,
+    training_table: false,
+    stores_signed_urls: false,
+    failures: []
+  };
+
+  try {
+    const cacheModule = await readTextFile("lib/listing/cache/identity-result-cache.mjs");
+    const titleApi = await readTextFile("api/listing-copilot-title.js");
+    const migration = await readTextFile("supabase/migrations/20260623_listing_identity_result_cache.sql");
+    const envExample = await readTextFile(".env.example");
+    details.checked_files = [cacheModule.path, titleApi.path, migration.path, envExample.path];
+
+    if (!/buildIdentityResultCacheKey/.test(cacheModule.text) || !/content_sha256/.test(cacheModule.text)) {
+      details.failures.push("cache key does not require content SHA-256 fingerprints");
+    }
+    if (!/storage_verified/.test(cacheModule.text) || !/identity_resolution_abstain/.test(cacheModule.text)) {
+      details.failures.push("cacheability guard does not require verified storage and abstain rejection");
+    }
+    if (!/resolution_trace/.test(cacheModule.text)) {
+      details.failures.push("cache module does not preserve resolution_trace");
+    }
+    if (!/createIdentityCacheTitle/.test(titleApi.text) || !/withIdentityCacheWrite/.test(titleApi.text)) {
+      details.failures.push("title API is not wired for identity cache read/write");
+    }
+    if (!/readListingImageVerificationRecord/.test(titleApi.text) || !/content_hash_verification_mismatch/.test(titleApi.text)) {
+      details.failures.push("title API does not re-check durable image verification before cache use");
+    }
+    if (!/alter table public\.listing_identity_resolution_cache enable row level security/i.test(migration.text)) {
+      details.failures.push("identity cache table does not enable RLS");
+    }
+    if (!/grant select, insert, update, delete on table public\.listing_identity_resolution_cache to service_role/i.test(migration.text)) {
+      details.failures.push("identity cache table does not explicitly grant Data API access to service_role");
+    }
+    if (!/revoke all on table public\.listing_identity_resolution_cache from anon, authenticated/i.test(migration.text)) {
+      details.failures.push("identity cache table does not explicitly keep anon/authenticated out");
+    }
+    if (/grant\s+[^;]*\s+to\s+(anon|authenticated)/i.test(migration.text)) {
+      details.failures.push("identity cache migration grants browser roles access");
+    }
+    if (!/Not a training table/i.test(migration.text)) {
+      details.failures.push("identity cache migration does not state the cache is not training data");
+    }
+    if (!/LISTING_IDENTITY_CACHE_READ_ENABLED/.test(envExample.text) || !/LISTING_IDENTITY_CACHE_WRITE_ENABLED/.test(envExample.text)) {
+      details.failures.push("identity cache env toggles are missing from .env.example");
+    }
+
+    return details.failures.length
+      ? blocked("identity_result_cache", "Identity result cache exists but violates the safety or audit contract.", details)
+      : passed("identity_result_cache", "Identity result cache is wired as a verified-hash, server-only, non-training fast path.", details);
+  } catch (error) {
+    return warning("identity_result_cache", "Identity result cache is not fully present; duplicate-image cost reduction is not active.", {
+      ...details,
+      error: error.message
+    });
+  }
+}
+
 export async function createCommercialReadinessReport({
   datasetPath = defaultDatasetPath,
   agnesSmokePath = defaultAgnesSmokePath,
@@ -695,6 +766,7 @@ export async function createCommercialReadinessReport({
   checks.push(...supabaseCommercial.checks);
   checks.push(await auditCommercialReviewPacket(env));
   checks.push(await auditCommercialReviewWorklist(env));
+  checks.push(await auditIdentityResultCache(env));
 
   const blockers = checks.filter((check) => check.status === "blocked");
   const warnings = checks.filter((check) => check.status === "warning");
@@ -733,7 +805,8 @@ export async function createCommercialReadinessReport({
       public_card_reference_eval: checks.find((check) => check.id === "public_card_reference_eval")?.details || null,
       supabase_commercial_sample: supabaseCommercial.evidence,
       commercial_review_packet: checks.find((check) => check.id === "commercial_review_packet")?.details || null,
-      commercial_review_worklist: checks.find((check) => check.id === "commercial_review_worklist")?.details || null
+      commercial_review_worklist: checks.find((check) => check.id === "commercial_review_worklist")?.details || null,
+      identity_result_cache: checks.find((check) => check.id === "identity_result_cache")?.details || null
     }
   };
 }
@@ -773,6 +846,10 @@ export function formatCommercialReadinessReport(report) {
   const reviewWorklistSummary = reviewWorklist
     ? `${reviewWorklist.status} tasks ${reviewWorklist.details.task_count ?? 0}, P0 ${reviewWorklist.details.priority_band_counts?.P0 ?? 0}, P1 ${reviewWorklist.details.priority_band_counts?.P1 ?? 0}, uses-ground-truth ${reviewWorklist.details.worklist_uses_ground_truth === true ? "yes" : "no"}`
     : "n/a";
+  const identityCache = report.checks.find((check) => check.id === "identity_result_cache");
+  const identityCacheSummary = identityCache
+    ? `${identityCache.status} read ${identityCache.details.read_enabled ? "yes" : "no"}, write ${identityCache.details.write_enabled ? "yes" : "no"}, training ${identityCache.details.training_table === true ? "yes" : "no"}`
+    : "n/a";
   const lines = [
     `Commercial readiness audit ${report.status}`,
     `held_out_commercial_assets: ${heldOutCount}`,
@@ -786,6 +863,7 @@ export function formatCommercialReadinessReport(report) {
     `supabase_commercial_ground_truth: ${supabaseTruthSummary}`,
     `commercial_review_packet: ${reviewPacketSummary}`,
     `commercial_review_worklist: ${reviewWorklistSummary}`,
+    `identity_result_cache: ${identityCacheSummary}`,
     `gpt_implicit_default: ${providerPolicy?.details?.gpt_implicit_default || "unknown"}`,
     "",
     "checks:"

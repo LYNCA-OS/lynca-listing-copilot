@@ -246,7 +246,11 @@ const report = await createDeliveryReport({
     SUPABASE_LIVE_SNAPSHOT_PATH: supabaseSnapshotPath,
     SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath,
     COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath,
-    COMMERCIAL_REVIEW_WORKLIST_PATH: commercialReviewWorklistPath
+    COMMERCIAL_REVIEW_WORKLIST_PATH: commercialReviewWorklistPath,
+    LISTING_IDENTITY_CACHE_READ_ENABLED: "true",
+    LISTING_IDENTITY_CACHE_WRITE_ENABLED: "false",
+    LISTING_IDENTITY_CACHE_WRITE_RESOLVED: "false",
+    LISTING_IDENTITY_CACHE_TTL_DAYS: "30"
   }
 });
 
@@ -270,9 +274,13 @@ assert.match(report, /Supabase commercial inventory: passed rows 351, image-back
 assert.match(report, /Supabase field-level ground truth: blocked required fields year=0, product=0, players=0/);
 assert.match(report, /Commercial review packet: passed tasks 248, corrected-title-as-truth=no, suggested-field-hints=248/);
 assert.match(report, /Commercial review worklist: passed tasks 248, P0=23, P1=97, uses-ground-truth=no/);
+assert.match(report, /Identity result cache: passed read=yes, write=no, write-resolved=no, training=no/);
 assert.match(report, /Public eval commercial claim allowed: no/);
 assert.match(report, /Feedback retention enabled: no/);
 assert.match(report, /Approved-memory reuse enabled: no/);
+assert.match(report, /short-lived duplicate-image fast path and is not approved memory or a training table/);
+assert.match(report, /cache hits skip recognition, retrieval, and vision provider calls/);
+assert.match(report, /Data API for service_role only/);
 assert.match(report, /OWS Fallback Status/);
 assert.match(report, /Only mock_b_end is configured/);
 assert.match(report, /Skipped smoke reports are explicit missing-validation evidence/);

@@ -45,6 +45,14 @@ import {
   hasRecognitionEvidence,
   recognitionResponseToEvidenceDocument
 } from "../lib/listing/recognition/recognition-evidence-normalizer.mjs";
+import {
+  buildIdentityResultCacheKey,
+  identityResultCacheReadEnabled,
+  identityResultCacheRecordToListingResult,
+  identityResultCacheWriteEnabled,
+  readIdentityResultCacheRecord,
+  saveIdentityResultCacheRecord
+} from "../lib/listing/cache/identity-result-cache.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -1347,6 +1355,108 @@ async function createApprovedMemoryTitle(payload) {
   });
 }
 
+async function createIdentityCacheTitle(payload) {
+  if (!identityResultCacheReadEnabled() || !isSupabaseFeedbackConfigured()) return null;
+
+  const startedAt = Date.now();
+  const key = buildIdentityResultCacheKey(payload);
+  if (!key.ok) return null;
+
+  try {
+    const verified = await verifyIdentityCacheImages(payload);
+    if (!verified.ok) return null;
+
+    const lookup = await readIdentityResultCacheRecord({
+      cacheKey: key.cache_key
+    });
+    if (!lookup.hit) return null;
+
+    return identityResultCacheRecordToListingResult({
+      record: lookup.record,
+      payload,
+      latencyMs: Date.now() - startedAt
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function withIdentityCacheWrite(result, payload) {
+  if (!identityResultCacheWriteEnabled() || !isSupabaseFeedbackConfigured()) {
+    return {
+      ...result,
+      identity_cache: {
+        ...(result.identity_cache || {}),
+        cache_hit: result.identity_cache?.cache_hit === true,
+        write_attempted: false,
+        write_saved: false,
+        write_reason: "identity_cache_write_disabled"
+      }
+    };
+  }
+
+  const key = buildIdentityResultCacheKey(payload);
+  if (!key.ok) {
+    return {
+      ...result,
+      identity_cache: {
+        ...(result.identity_cache || {}),
+        cache_hit: result.identity_cache?.cache_hit === true,
+        write_attempted: false,
+        write_saved: false,
+        write_reason: key.reason
+      }
+    };
+  }
+
+  try {
+    const verified = await verifyIdentityCacheImages(payload);
+    if (!verified.ok) {
+      return {
+        ...result,
+        identity_cache: {
+          ...(result.identity_cache || {}),
+          cache_hit: result.identity_cache?.cache_hit === true,
+          cache_key: key.cache_key,
+          write_attempted: false,
+          write_saved: false,
+          write_reason: verified.reason
+        }
+      };
+    }
+
+    const saved = await saveIdentityResultCacheRecord({
+      result,
+      payload,
+      cacheKey: key.cache_key,
+      imageFingerprints: key.image_fingerprints
+    });
+    return {
+      ...result,
+      identity_cache: {
+        ...(result.identity_cache || {}),
+        cache_hit: result.identity_cache?.cache_hit === true,
+        cache_key: key.cache_key,
+        write_attempted: true,
+        write_saved: saved.saved === true,
+        write_reason: saved.reason || null
+      }
+    };
+  } catch {
+    return {
+      ...result,
+      identity_cache: {
+        ...(result.identity_cache || {}),
+        cache_hit: result.identity_cache?.cache_hit === true,
+        cache_key: key.cache_key,
+        write_attempted: true,
+        write_saved: false,
+        write_reason: "identity_cache_write_failed"
+      }
+    };
+  }
+}
+
 function derivedImagesFromImages(images = []) {
   return images.filter(imageIsDerived);
 }
@@ -1438,6 +1548,36 @@ async function assertVerifiedStorageImage(image = {}) {
   }
 
   return metadata.objectPath;
+}
+
+async function verifyIdentityCacheImages(payload = {}) {
+  const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
+  if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
+
+  for (const image of primaryImages) {
+    const metadata = storageMetadataForImage(image);
+    const contentSha256 = String(image.contentSha256 || image.content_sha256 || "").trim().toLowerCase();
+    if (!metadata.objectPath || !contentSha256) return { ok: false, reason: "verified_content_hash_required" };
+    if (!(image.storageVerified === true || image.storage_verified === true)) {
+      return { ok: false, reason: "verified_storage_required" };
+    }
+
+    const durableRecord = await readListingImageVerificationRecord({
+      objectPath: metadata.objectPath,
+      bucket: metadata.bucket,
+      contentType: metadata.contentType,
+      size: metadata.size,
+      width: metadata.width,
+      height: metadata.height
+    });
+    if (!durableRecord.verified) return { ok: false, reason: durableRecord.reason || "verification_record_missing" };
+    const storedHash = String(durableRecord.record?.content_sha256 || "").trim().toLowerCase();
+    if (!storedHash || storedHash !== contentSha256 || durableRecord.record?.content_hash_verified !== true) {
+      return { ok: false, reason: "content_hash_verification_mismatch" };
+    }
+  }
+
+  return { ok: true };
 }
 
 function focusedRereadPrompt({
@@ -2165,9 +2305,15 @@ export default async function handler(req, res) {
       return;
     }
 
+    const identityCacheResult = await createIdentityCacheTitle(payload);
+    if (identityCacheResult) {
+      sendJson(res, 200, identityCacheResult);
+      return;
+    }
+
     const recognitionPreflight = await createRecognitionIdentityPreflight(payload);
     if (recognitionPreflight.result) {
-      sendJson(res, 200, recognitionPreflight.result);
+      sendJson(res, 200, await withIdentityCacheWrite(recognitionPreflight.result, payload));
       return;
     }
 
@@ -2175,7 +2321,7 @@ export default async function handler(req, res) {
       recognitionEvidenceDocument: recognitionPreflight.evidenceDocument
     });
 
-    sendJson(res, 200, result);
+    sendJson(res, 200, await withIdentityCacheWrite(result, payload));
   } catch (error) {
     const message = safeProviderErrorMessage(error);
 
