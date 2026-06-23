@@ -23,6 +23,8 @@ const agnesReport = {
         title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 029/199 PSA 10 Auto RC",
         fields: {
           year: "2025",
+          product: "Topps Chrome",
+          players: ["Shohei Ohtani"],
           parallel: "Gold Refractor",
           serial_number: "029/199",
           grade_company: "PSA",
@@ -48,6 +50,8 @@ const agnesReport = {
         title: "2023 Bowman Chrome Red 31/50 PSA 9",
         fields: {
           year: "2023",
+          product: "Panini Prizm",
+          players: ["LeBron James"],
           parallel: "Red",
           serial_number: "31/50",
           grade_company: "PSA",
@@ -110,44 +114,56 @@ assert.equal(report.scope.field_ground_truth_available, false);
 assert.equal(report.scope.commercial_accuracy_claim_allowed, false);
 assert.equal(report.scope.commercial_acceptance_proxy_available, true);
 assert.equal(report.scope.raw_titles_in_report, false);
-assert.equal(report.policy.minimum_token_recall, 0.7);
-assert.equal(report.policy.minimum_token_precision, 0.7);
+assert.equal(report.policy.name, "principle-safe-title-content-v1");
+assert.equal(report.policy.minimum_token_recall_diagnostic, 0.7);
+assert.equal(report.policy.minimum_token_precision_diagnostic, 0.7);
+assert.equal(report.policy.token_gate_enforced, false);
+assert.equal(report.policy.token_recall_is_diagnostic_only, true);
+assert.equal(report.policy.token_precision_is_diagnostic_only, true);
 assert.equal(report.policy.require_all_title_derived_fields, true);
-assert.equal(report.metrics.accepted_count, 1);
-assert.equal(report.metrics.manual_review_or_reject_count, 3);
+assert.equal(report.metrics.accepted_count, 2);
+assert.equal(report.metrics.manual_review_or_reject_count, 2);
 assert.equal(report.metrics.evaluated_rows, 3);
 assert.equal(report.metrics.target_rows, 4);
-assert.equal(report.metrics.accepted_rate_over_target, 0.25);
-assert.equal(report.metrics.accepted_rate_over_evaluated, 0.333333);
-assert.equal(report.metrics.manual_review_or_reject_rate, 0.75);
+assert.equal(report.metrics.accepted_rate_over_target, 0.5);
+assert.equal(report.metrics.accepted_rate_over_evaluated, 0.666667);
+assert.equal(report.metrics.manual_review_or_reject_rate, 0.5);
 assert.equal(report.metrics.confidence_intervals.accepted_rate_over_target.method, "wilson_score");
 
 assert.equal(report.failure_summary.primary_failure_reasons.principle_error, 1);
-assert.equal(report.failure_summary.primary_failure_reasons.low_token_recall, 1);
 assert.equal(report.failure_summary.primary_failure_reasons.provider_error, 1);
+assert.equal(report.failure_summary.primary_failure_reasons.low_token_recall, undefined);
 assert.equal(report.failure_summary.all_failure_reasons.principle_error, 1);
 assert.equal(report.failure_summary.all_failure_reasons.title_derived_field_mismatch, 1);
-assert.equal(report.failure_summary.all_failure_reasons.low_token_recall, 1);
+assert.equal(report.failure_summary.all_failure_reasons.low_token_recall, undefined);
 assert.equal(report.failure_summary.all_failure_reasons.provider_error, 1);
+assert.equal(report.failure_summary.token_diagnostics.low_token_recall, 1);
 assert.equal(report.failure_summary.principle_failures.wrong_year, 1);
 assert.equal(report.failure_summary.principle_failures.wrong_serial, 1);
 assert.equal(report.failure_summary.principle_failures.wrong_grade, 1);
 assert.equal(report.failure_summary.principle_failures.unexpected_color, 1);
+assert.equal(report.failure_summary.principle_failures.wrong_player, 1);
+assert.equal(report.failure_summary.principle_failures.wrong_product, 1);
 assert.equal(report.failure_summary.title_derived_field_mismatches.year, 1);
 assert.equal(report.failure_summary.title_derived_field_mismatches.serial_number, 1);
 assert.equal(report.failure_summary.title_derived_field_mismatches.grade, 1);
 assert.equal(report.failure_summary.title_derived_field_mismatches.color, 1);
+assert.equal(report.failure_summary.title_derived_field_mismatches.players, 1);
+assert.equal(report.failure_summary.title_derived_field_mismatches.product, 1);
 assert.ok(report.sensitivity.some((item) => item.min_token_recall === 0.8 && item.accepted_count === 1));
 
 const strict = measureAgnesCommercialAcceptanceProxy({
   report: agnesReport,
   minTokenRecall: 0.96,
   minTokenPrecision: 0.96,
+  enforceTokenGate: true,
   now: () => new Date("2026-06-23T12:01:00.000Z")
 });
 assert.equal(strict.metrics.accepted_count, 0);
 assert.equal(strict.failure_summary.all_failure_reasons.low_token_recall, 3);
 assert.equal(strict.failure_summary.all_failure_reasons.low_token_precision, 3);
+assert.equal(strict.policy.name, "title-derived-critical-facts-plus-token-gate-v1");
+assert.equal(strict.policy.token_gate_enforced, true);
 
 const serialized = JSON.stringify(report);
 assert.doesNotMatch(serialized, /Shohei Ohtani/);
@@ -157,8 +173,10 @@ assert.doesNotMatch(serialized, /"corrected_title_reference"\s*:/);
 assert.doesNotMatch(serialized, /"prediction"\s*:/);
 
 const summary = formatAgnesCommercialAcceptanceProxySummary(report);
-assert.match(summary, /accepted: 1\/4 \(0.25\)/);
-assert.match(summary, /manual_review_or_reject: 3\/4 \(0.75\)/);
+assert.match(summary, /accepted: 2\/4 \(0.5\)/);
+assert.match(summary, /manual_review_or_reject: 2\/4 \(0.5\)/);
+assert.match(summary, /policy: principle-safe-title-content-v1/);
+assert.match(summary, /token_gate_enforced: false/);
 assert.match(summary, /commercial_accuracy_claim_allowed: false/);
 assert.match(summary, /raw_titles_in_report: false/);
 assert.doesNotMatch(summary, /Shohei Ohtani/);
@@ -178,11 +196,11 @@ const cli = spawnSync(process.execPath, [
 });
 assert.equal(cli.status, 0, cli.stderr);
 assert.match(cli.stdout, /Agnes commercial acceptance proxy/);
-assert.match(cli.stdout, /accepted: 1\/4 \(0.25\)/);
+assert.match(cli.stdout, /accepted: 2\/4 \(0.5\)/);
 assert.doesNotMatch(cli.stdout, /Caitlin Clark/);
 
 const written = JSON.parse(await readFile(outPath, "utf8"));
-assert.equal(written.metrics.accepted_count, 1);
+assert.equal(written.metrics.accepted_count, 2);
 assert.equal(written.failure_summary.primary_failure_reasons.provider_error, 1);
 assert.doesNotMatch(JSON.stringify(written), /Mike Trout/);
 

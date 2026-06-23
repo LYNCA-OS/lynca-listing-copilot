@@ -9,6 +9,7 @@ const defaultInputPath = "data/eval/agnes-supabase-feedback-latest.json";
 const defaultOutPath = "data/eval/agnes-commercial-acceptance-proxy-latest.json";
 const defaultMinTokenRecall = 0.7;
 const defaultMinTokenPrecision = 0.7;
+const defaultEnforceTokenGate = false;
 const sensitivityThresholds = [0.65, 0.7, 0.72, 0.75, 0.8];
 
 function argValue(argv, name, fallback = "") {
@@ -78,13 +79,99 @@ function sortedCounts(map) {
   }));
 }
 
-function principleFailures(comparison = {}) {
+function canonicalText(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const entityStopwords = new Set([
+  "a",
+  "an",
+  "and",
+  "base",
+  "card",
+  "edition",
+  "of",
+  "the",
+  "trading",
+  "with"
+]);
+
+function entityTokens(value) {
+  return canonicalText(value)
+    .split(" ")
+    .filter((token) => token.length > 1 && !entityStopwords.has(token));
+}
+
+function tokenOverlapRatio(tokens = [], text = "") {
+  const uniqueTokens = [...new Set(tokens.filter(Boolean))];
+  if (!uniqueTokens.length) return null;
+  const textTokens = new Set(canonicalText(text).split(" ").filter(Boolean));
+  const matched = uniqueTokens.filter((token) => textTokens.has(token)).length;
+  return matched / uniqueTokens.length;
+}
+
+function predictedFields(result = {}) {
+  return result.prediction?.fields || {};
+}
+
+function predictedTitle(result = {}) {
+  return result.prediction?.title || "";
+}
+
+function correctedReferenceTitle(result = {}) {
+  return result.corrected_title_reference || "";
+}
+
+function predictedEntityPrincipleFailures(result = {}) {
+  const failures = [];
+  const fields = predictedFields(result);
+  const referenceTitle = correctedReferenceTitle(result);
+  const players = Array.isArray(fields.players) ? fields.players : [];
+  const wrongPlayer = players.some((player) => {
+    const tokens = entityTokens(player);
+    return tokens.length >= 2 && tokenOverlapRatio(tokens, referenceTitle) < 0.75;
+  });
+  if (wrongPlayer) failures.push("wrong_player");
+
+  const productTokens = entityTokens(fields.product);
+  if (productTokens.length >= 2 && tokenOverlapRatio(productTokens, referenceTitle) < 0.5) {
+    failures.push("wrong_product");
+  }
+  return failures;
+}
+
+function predictedEntityContentMismatches(result = {}) {
+  const mismatches = [];
+  const fields = predictedFields(result);
+  const title = predictedTitle(result);
+  const players = Array.isArray(fields.players) ? fields.players : [];
+  const playerMissingFromTitle = players.some((player) => {
+    const tokens = entityTokens(player);
+    return tokens.length >= 2 && tokenOverlapRatio(tokens, title) < 0.75;
+  });
+  if (playerMissingFromTitle) mismatches.push("players");
+
+  const productTokens = entityTokens(fields.product);
+  if (productTokens.length >= 2 && tokenOverlapRatio(productTokens, title) < 0.5) {
+    mismatches.push("product");
+  }
+  return mismatches;
+}
+
+function principleFailures(comparison = {}, result = {}) {
   const failures = [];
   if (comparison.wrong_year) failures.push("wrong_year");
   if (comparison.wrong_serial) failures.push("wrong_serial");
   if (comparison.wrong_grade) failures.push("wrong_grade");
   if (comparison.unexpected_color) failures.push("unexpected_color");
-  return failures;
+  return [...failures, ...predictedEntityPrincipleFailures(result)];
 }
 
 function statusFailure(result = {}) {
@@ -94,9 +181,10 @@ function statusFailure(result = {}) {
   return "not_evaluated";
 }
 
-function evaluateCommercialAcceptanceRow(result = {}, {
+export function evaluateCommercialAcceptanceRow(result = {}, {
   minTokenRecall = defaultMinTokenRecall,
-  minTokenPrecision = defaultMinTokenPrecision
+  minTokenPrecision = defaultMinTokenPrecision,
+  enforceTokenGate = defaultEnforceTokenGate
 } = {}) {
   const statusReason = statusFailure(result);
   if (statusReason) {
@@ -107,6 +195,7 @@ function evaluateCommercialAcceptanceRow(result = {}, {
       derivable_field_count: 0,
       title_derived_field_mismatches: [],
       principle_failures: [],
+      diagnostic_reasons: [],
       token_recall: null,
       token_precision: null
     };
@@ -114,27 +203,32 @@ function evaluateCommercialAcceptanceRow(result = {}, {
 
   const checks = titleDerivedChecks(result);
   const comparison = result.corrected_title_comparison || {};
-  const principle = principleFailures(comparison);
+  const principle = principleFailures(comparison, result);
   const mismatches = checks
     .filter((check) => !check.matched)
     .map((check) => check.field);
+  const entityMismatches = predictedEntityContentMismatches(result);
   const tokenRecall = Number(comparison.token_recall);
   const tokenPrecision = Number(comparison.token_precision);
   const failureReasons = [];
+  const diagnosticReasons = [];
 
   if (!checks.length) failureReasons.push("no_title_derived_reference_fields");
   if (principle.length) failureReasons.push("principle_error");
-  if (mismatches.length) failureReasons.push("title_derived_field_mismatch");
-  if (!Number.isFinite(tokenRecall) || tokenRecall < minTokenRecall) failureReasons.push("low_token_recall");
-  if (!Number.isFinite(tokenPrecision) || tokenPrecision < minTokenPrecision) failureReasons.push("low_token_precision");
+  const allMismatches = [...new Set([...mismatches, ...entityMismatches])];
+  if (allMismatches.length) failureReasons.push("title_derived_field_mismatch");
+  if (!Number.isFinite(tokenRecall) || tokenRecall < minTokenRecall) diagnosticReasons.push("low_token_recall");
+  if (!Number.isFinite(tokenPrecision) || tokenPrecision < minTokenPrecision) diagnosticReasons.push("low_token_precision");
+  if (enforceTokenGate) failureReasons.push(...diagnosticReasons);
 
   return {
     accepted: failureReasons.length === 0,
     primary_failure_reason: failureReasons[0] || "",
     failure_reasons: failureReasons,
     derivable_field_count: checks.length,
-    title_derived_field_mismatches: mismatches,
+    title_derived_field_mismatches: allMismatches,
     principle_failures: principle,
+    diagnostic_reasons: diagnosticReasons,
     token_recall: Number.isFinite(tokenRecall) ? tokenRecall : null,
     token_precision: Number.isFinite(tokenPrecision) ? tokenPrecision : null
   };
@@ -148,12 +242,14 @@ function sensitivity(results = []) {
   return sensitivityThresholds.map((threshold) => {
     const rows = summarizeRows(results, {
       minTokenRecall: threshold,
-      minTokenPrecision: threshold
+      minTokenPrecision: threshold,
+      enforceTokenGate: true
     });
     const accepted = rows.filter((row) => row.accepted).length;
     return {
       min_token_recall: threshold,
       min_token_precision: threshold,
+      diagnostic_if_token_gate_enforced: true,
       accepted_count: accepted,
       accepted_rate_over_target: rate(accepted, results.length)
     };
@@ -164,13 +260,15 @@ export function measureAgnesCommercialAcceptanceProxy({
   report,
   minTokenRecall = defaultMinTokenRecall,
   minTokenPrecision = defaultMinTokenPrecision,
+  enforceTokenGate = defaultEnforceTokenGate,
   now = () => new Date()
 } = {}) {
   const results = Array.isArray(report?.results) ? report.results : [];
   const targetCount = report?.target_count ?? results.length;
   const rows = summarizeRows(results, {
     minTokenRecall,
-    minTokenPrecision
+    minTokenPrecision,
+    enforceTokenGate
   });
   const evaluatedRows = results.filter((result) => result.status === "evaluated").length;
   const acceptedRows = rows.filter((row) => row.accepted).length;
@@ -179,12 +277,14 @@ export function measureAgnesCommercialAcceptanceProxy({
   const primaryFailureReasonCounts = new Map();
   const fieldMismatchCounts = new Map();
   const principleFailureCounts = new Map();
+  const diagnosticReasonCounts = new Map();
 
   for (const row of rows) {
     if (!row.accepted) increment(primaryFailureReasonCounts, row.primary_failure_reason || "unknown");
     for (const reason of row.failure_reasons) increment(failureReasonCounts, reason);
     for (const field of row.title_derived_field_mismatches) increment(fieldMismatchCounts, field);
     for (const reason of row.principle_failures) increment(principleFailureCounts, reason);
+    for (const reason of row.diagnostic_reasons) increment(diagnosticReasonCounts, reason);
   }
 
   return {
@@ -209,15 +309,22 @@ export function measureAgnesCommercialAcceptanceProxy({
       no_feedback_retention_side_effects: true
     },
     policy: {
-      name: "title-derived-critical-facts-plus-token-gate-v1",
-      minimum_token_recall: minTokenRecall,
-      minimum_token_precision: minTokenPrecision,
+      name: enforceTokenGate
+        ? "title-derived-critical-facts-plus-token-gate-v1"
+        : "principle-safe-title-content-v1",
+      minimum_token_recall_diagnostic: minTokenRecall,
+      minimum_token_precision_diagnostic: minTokenPrecision,
+      token_gate_enforced: enforceTokenGate,
+      token_recall_is_diagnostic_only: !enforceTokenGate,
+      token_precision_is_diagnostic_only: !enforceTokenGate,
       provider_error_counts_as_failure: true,
       require_all_title_derived_fields: true,
       fail_on_wrong_year: true,
       fail_on_wrong_serial: true,
       fail_on_wrong_grade: true,
-      fail_on_unexpected_color: true
+      fail_on_unexpected_color: true,
+      fail_on_low_token_recall: enforceTokenGate,
+      fail_on_low_token_precision: enforceTokenGate
     },
     metrics: {
       accepted_count: acceptedRows,
@@ -237,6 +344,7 @@ export function measureAgnesCommercialAcceptanceProxy({
     failure_summary: {
       primary_failure_reasons: sortedCounts(primaryFailureReasonCounts),
       all_failure_reasons: sortedCounts(failureReasonCounts),
+      token_diagnostics: sortedCounts(diagnosticReasonCounts),
       principle_failures: sortedCounts(principleFailureCounts),
       title_derived_field_mismatches: sortedCounts(fieldMismatchCounts)
     },
@@ -253,8 +361,10 @@ export function formatAgnesCommercialAcceptanceProxySummary(report = {}) {
     `accepted: ${metrics.accepted_count ?? "n/a"}/${metrics.target_rows ?? "n/a"} (${metrics.accepted_rate_over_target ?? "n/a"})`,
     `accepted_over_evaluated: ${metrics.accepted_count ?? "n/a"}/${metrics.evaluated_rows ?? "n/a"} (${metrics.accepted_rate_over_evaluated ?? "n/a"})`,
     `manual_review_or_reject: ${metrics.manual_review_or_reject_count ?? "n/a"}/${metrics.target_rows ?? "n/a"} (${metrics.manual_review_or_reject_rate ?? "n/a"})`,
-    `minimum_token_recall: ${report.policy?.minimum_token_recall ?? "n/a"}`,
-    `minimum_token_precision: ${report.policy?.minimum_token_precision ?? "n/a"}`,
+    `policy: ${report.policy?.name || "n/a"}`,
+    `token_gate_enforced: ${report.policy?.token_gate_enforced === true}`,
+    `minimum_token_recall_diagnostic: ${report.policy?.minimum_token_recall_diagnostic ?? "n/a"}`,
+    `minimum_token_precision_diagnostic: ${report.policy?.minimum_token_precision_diagnostic ?? "n/a"}`,
     `commercial_accuracy_claim_allowed: ${report.scope?.commercial_accuracy_claim_allowed === true}`,
     `raw_titles_in_report: ${report.scope?.raw_titles_in_report === true}`
   ];
@@ -281,12 +391,14 @@ export async function main(argv = process.argv, env = process.env) {
   const outPath = argValue(argv, "--out", env.AGNES_COMMERCIAL_ACCEPTANCE_PROXY_OUT || defaultOutPath);
   const minTokenRecall = numberArg(argv, "--min-token-recall", Number(env.AGNES_COMMERCIAL_MIN_TOKEN_RECALL || defaultMinTokenRecall));
   const minTokenPrecision = numberArg(argv, "--min-token-precision", Number(env.AGNES_COMMERCIAL_MIN_TOKEN_PRECISION || defaultMinTokenPrecision));
+  const enforceTokenGate = hasFlag(argv, "--enforce-token-gate") || env.AGNES_COMMERCIAL_ENFORCE_TOKEN_GATE === "1";
   const noWrite = hasFlag(argv, "--no-write");
   const input = await readJson(inputPath);
   const proxy = measureAgnesCommercialAcceptanceProxy({
     report: input,
     minTokenRecall,
-    minTokenPrecision
+    minTokenPrecision,
+    enforceTokenGate
   });
   if (outPath && !noWrite) await writeJson(outPath, proxy);
   process.stdout.write(`${formatAgnesCommercialAcceptanceProxySummary(proxy)}\n`);
