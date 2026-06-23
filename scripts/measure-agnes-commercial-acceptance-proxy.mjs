@@ -122,18 +122,26 @@ function yearsFromText(text) {
     .map((value) => value.replace(/\s/g, "-")));
 }
 
-function yearStart(value) {
+function yearParts(value) {
   const match = String(value || "").match(/\b(\d{4})(?:-\d{2})?\b/);
-  return match ? match[1] : "";
+  if (!match) return [];
+  const start = Number(match[1]);
+  const suffixMatch = String(value || "").match(/\b\d{4}-(\d{2})\b/);
+  if (!suffixMatch) return [String(start)];
+  const suffix = Number(suffixMatch[1]);
+  const century = Math.floor(start / 100) * 100;
+  let end = century + suffix;
+  if (end < start) end += 100;
+  return [String(start), String(end)];
 }
 
 function yearsIntersect(left = [], right = []) {
   return left.some((leftValue) => {
-    const leftStart = yearStart(leftValue);
+    const leftParts = yearParts(leftValue);
     return right.some((rightValue) => {
       if (leftValue === rightValue) return true;
-      const rightStart = yearStart(rightValue);
-      return Boolean(leftStart && rightStart && leftStart === rightStart);
+      const rightParts = yearParts(rightValue);
+      return leftParts.some((part) => rightParts.includes(part));
     });
   });
 }
@@ -144,8 +152,16 @@ function normalizeSerial(value) {
   return `${Number(match[1])}/${Number(match[2])}`;
 }
 
+function serialMatchIsGradePair(source, index) {
+  const before = String(source || "").slice(Math.max(0, index - 18), index).toUpperCase();
+  return /\b(?:PSA|BGS|SGC|CGC)\b[^/]{0,12}$/.test(before);
+}
+
 function serialsFromText(text) {
-  return unique((String(text || "").match(/\b\d+\s*\/\s*\d+\b/g) || []).map(normalizeSerial));
+  const source = String(text || "");
+  return unique([...source.matchAll(/\b\d+\s*\/\s*\d+\b/g)]
+    .filter((match) => !serialMatchIsGradePair(source, match.index || 0))
+    .map((match) => normalizeSerial(match[0])));
 }
 
 function gradeTokensFromText(text) {

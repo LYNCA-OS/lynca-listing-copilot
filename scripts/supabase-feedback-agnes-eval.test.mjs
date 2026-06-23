@@ -193,11 +193,25 @@ const seasonRangeComparison = titleComparison(
 assert.equal(seasonRangeComparison.wrong_year, false);
 assert.deepEqual(seasonRangeComparison.year_overlap, ["2003-04"]);
 
+const seasonEndYearComparison = titleComparison(
+  "2025-26 Topps Finest Josh Hart Common Geometric Refractor",
+  "2026 Topps Finest Josh Hart Common Geometric Refractor"
+);
+assert.equal(seasonEndYearComparison.wrong_year, false);
+assert.deepEqual(seasonEndYearComparison.year_overlap, ["2025-26"]);
+
 const wrongSeasonComparison = titleComparison(
   "2025 Bowman Chrome Cooper Flagg",
   "2023 Bowman Chrome Cooper Flagg"
 );
 assert.equal(wrongSeasonComparison.wrong_year, true);
+
+const bgsGradePairIsNotSerial = titleComparison(
+  "2020 Triple Threads Hank Aaron Ken Griffey Jr. Mike Trout Jersey Auto 6/9 BGS 9",
+  "2020 Triple Threads Hank Aaron Ken Griffey Jr. Mike Trout Auto Relic BGS 9/10"
+);
+assert.equal(bgsGradePairIsNotSerial.predicted_serials.length, 0);
+assert.equal(bgsGradePairIsNotSerial.wrong_serial, false);
 
 const limited = await evaluateAgnesSupabaseFeedback({
   dataset,
@@ -219,6 +233,74 @@ const limited = await evaluateAgnesSupabaseFeedback({
 });
 assert.equal(limited.target_count, 1);
 assert.equal(limited.full_sample_evaluation, false);
+
+let rateLimitCalls = 0;
+const rateLimitRecovered = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  rateLimitRetries: 1,
+  rateLimitPauseMs: 0,
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeImpl: async () => {
+    rateLimitCalls += 1;
+    if (rateLimitCalls === 1) {
+      const error = new Error("agnes request failed: 429 rate limit for free users");
+      error.code = "rate_limited";
+      throw error;
+    }
+    return {
+      parsed: {
+        title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10",
+        fields: {}
+      },
+      usage: { provider_calls: 1 }
+    };
+  },
+  now: () => new Date("2026-06-23T12:01:30.000Z")
+});
+assert.equal(rateLimitRecovered.status, "completed");
+assert.equal(rateLimitRecovered.rate_limit_retry_enabled, true);
+assert.equal(rateLimitRecovered.provider_error_count, 0);
+assert.equal(rateLimitRecovered.results[0].rate_limit_retry_attempts, 1);
+assert.equal(rateLimitCalls, 2);
+
+let resumeAnalyzeCalls = 0;
+const providerErrorNotReused = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  previousResults: [
+    {
+      candidate_id: "fb1",
+      status: "provider_error",
+      error_code: "rate_limited",
+      error: "429 rate limit"
+    }
+  ],
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeImpl: async () => {
+    resumeAnalyzeCalls += 1;
+    return {
+      parsed: {
+        title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10",
+        fields: {}
+      },
+      usage: { provider_calls: 1 }
+    };
+  },
+  now: () => new Date("2026-06-23T12:01:45.000Z")
+});
+assert.equal(providerErrorNotReused.provider_error_count, 0);
+assert.equal(resumeAnalyzeCalls, 1);
 
 const identityAnalyzeCalls = [];
 const identityResolved = await evaluateAgnesSupabaseFeedback({

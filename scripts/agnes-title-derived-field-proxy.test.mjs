@@ -118,6 +118,17 @@ const rangeYearChecks = titleDerivedChecks({
 });
 assert.equal(rangeYearChecks.find((check) => check.field === "year").matched, true);
 
+const rangeEndYearChecks = titleDerivedChecks({
+  corrected_title_reference: "2025-26 Topps Finest Josh Hart Common Geometric Refractor",
+  prediction: {
+    title: "2026 Topps Finest Josh Hart Common Geometric Refractor",
+    fields: {
+      year: "2026"
+    }
+  }
+});
+assert.equal(rangeEndYearChecks.find((check) => check.field === "year").matched, true);
+
 const wrongYearChecks = titleDerivedChecks({
   corrected_title_reference: "2025 Bowman Chrome Cooper Flagg",
   prediction: {

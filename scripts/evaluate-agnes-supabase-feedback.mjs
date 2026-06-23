@@ -54,6 +54,10 @@ function booleanFromEnv(env, key, fallback = false) {
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
 function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -160,18 +164,25 @@ function yearsFromTitle(title) {
   return unique((canonicalText(title).match(/\b\d{4}(?:\s\d{2})?\b/g) || []).map((value) => value.replace(/\s/g, "-")));
 }
 
-function yearStart(value) {
-  const match = String(value || "").match(/\b(\d{4})(?:-\d{2})?\b/);
-  return match ? match[1] : "";
+function yearParts(value) {
+  const match = String(value || "").match(/\b(\d{4})(?:-(\d{2}))?\b/);
+  if (!match) return [];
+  const start = Number(match[1]);
+  if (!match[2]) return [String(start)];
+  const suffix = Number(match[2]);
+  const century = Math.floor(start / 100) * 100;
+  let end = century + suffix;
+  if (end < start) end += 100;
+  return [String(start), String(end)];
 }
 
 function yearOverlap(leftValues = [], rightValues = []) {
   return leftValues.filter((leftValue) => {
-    const leftStart = yearStart(leftValue);
+    const leftParts = yearParts(leftValue);
     return rightValues.some((rightValue) => {
       if (leftValue === rightValue) return true;
-      const rightStart = yearStart(rightValue);
-      return Boolean(leftStart && rightStart && leftStart === rightStart);
+      const rightParts = yearParts(rightValue);
+      return leftParts.some((part) => rightParts.includes(part));
     });
   });
 }
@@ -182,8 +193,16 @@ function normalizeSerial(value) {
   return `${Number(match[1])}/${Number(match[2])}`;
 }
 
+function serialMatchIsGradePair(source, index) {
+  const before = String(source || "").slice(Math.max(0, index - 18), index).toUpperCase();
+  return /\b(?:PSA|BGS|SGC|CGC)\b[^/]{0,12}$/.test(before);
+}
+
 function serialsFromTitle(title) {
-  return unique((String(title || "").match(/\b\d+\s*\/\s*\d+\b/g) || []).map(normalizeSerial));
+  const source = String(title || "");
+  return unique([...source.matchAll(/\b\d+\s*\/\s*\d+\b/g)]
+    .filter((match) => !serialMatchIsGradePair(source, match.index || 0))
+    .map((match) => normalizeSerial(match[0])));
 }
 
 function gradesFromTitle(title) {
@@ -704,6 +723,43 @@ async function evaluateOneFeedbackItem(item, {
   }
 }
 
+function isRateLimitProviderResult(result = {}) {
+  return result?.status === "provider_error"
+    && (
+      result.error_code === "rate_limited"
+      || /\b429\b|rate limit|free users|token plan/i.test(String(result.error || ""))
+    );
+}
+
+async function evaluateOneFeedbackItemWithRateLimitRetry(item, {
+  rateLimitRetries = 0,
+  rateLimitPauseMs = 60000,
+  onRateLimit = null,
+  ...options
+} = {}) {
+  let attempt = 0;
+  let result = await evaluateOneFeedbackItem(item, options);
+
+  while (isRateLimitProviderResult(result) && attempt < rateLimitRetries) {
+    attempt += 1;
+    if (typeof onRateLimit === "function") {
+      await onRateLimit({ item, attempt, result, pauseMs: rateLimitPauseMs });
+    }
+    await wait(rateLimitPauseMs);
+    result = await evaluateOneFeedbackItem(item, options);
+  }
+
+  if (attempt > 0) {
+    return {
+      ...result,
+      rate_limit_retry_attempts: attempt,
+      rate_limit_retry_exhausted: isRateLimitProviderResult(result)
+    };
+  }
+
+  return result;
+}
+
 function average(values = []) {
   const numeric = values.filter((value) => Number.isFinite(value));
   if (!numeric.length) return null;
@@ -774,7 +830,10 @@ function buildReport({
   fullSampleEvaluation,
   identityResolution,
   excludeSelfApprovedMemory,
-  proactiveFocusedRereads = false
+  proactiveFocusedRereads = false,
+  proactiveSerialOnly = false,
+  rateLimitRetries = 0,
+  rateLimitPauseMs = 60000
 }) {
   return {
     schema_version: schemaVersion,
@@ -785,6 +844,10 @@ function buildReport({
     identity_resolution_enabled: identityResolution,
     internal_memory_self_exclusion_enabled: identityResolution && excludeSelfApprovedMemory,
     proactive_focused_rereads_enabled: identityResolution && proactiveFocusedRereads,
+    proactive_serial_only_enabled: identityResolution && proactiveFocusedRereads && proactiveSerialOnly,
+    rate_limit_retry_enabled: rateLimitRetries > 0,
+    rate_limit_retry_limit: rateLimitRetries,
+    rate_limit_retry_pause_ms: rateLimitPauseMs,
     source_dataset_schema_version: dataset.schema_version || null,
     source_manifest_hash: dataset.manifest_hash || null,
     source_provider: dataset.source?.provider || null,
@@ -812,11 +875,14 @@ export async function evaluateAgnesSupabaseFeedback({
   maxTitleLength = 80,
   excludeSelfApprovedMemory = true,
   proactiveFocusedRereads = false,
+  proactiveSerialOnly = false,
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
   createSignedReadUrlImpl = createListingImageSignedReadUrl,
   previousResults = [],
   onProgress = null,
+  rateLimitRetries = 0,
+  rateLimitPauseMs = 60000,
   now = () => new Date()
 } = {}) {
   const startedAt = now();
@@ -893,7 +959,10 @@ export async function evaluateAgnesSupabaseFeedback({
       fullSampleEvaluation,
       identityResolution,
       excludeSelfApprovedMemory,
-      proactiveFocusedRereads
+      proactiveFocusedRereads,
+      proactiveSerialOnly,
+      rateLimitRetries,
+      rateLimitPauseMs
     });
     return { ...report, status: results.length === selectedItems.length ? "completed" : status };
   };
@@ -905,13 +974,15 @@ export async function evaluateAgnesSupabaseFeedback({
     while (cursor < pending.length) {
       const item = pending[cursor];
       cursor += 1;
-      const result = await evaluateOneFeedbackItem(item, {
+      const result = await evaluateOneFeedbackItemWithRateLimitRetry(item, {
         env: completionEnv,
         analyzeImpl,
         createSignedReadUrlImpl,
         identityResolution,
         maxTitleLength,
-        excludeSelfApprovedMemory
+        excludeSelfApprovedMemory,
+        rateLimitRetries,
+        rateLimitPauseMs
       });
       resultsById.set(candidateId(item), result);
       if (onProgress) await onProgress(buildCurrentReport("partial"));
@@ -928,6 +999,7 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `identity_resolution_enabled: ${report.identity_resolution_enabled === true}`,
     `internal_memory_self_exclusion_enabled: ${report.internal_memory_self_exclusion_enabled === true}`,
     `proactive_focused_rereads_enabled: ${report.proactive_focused_rereads_enabled === true}`,
+    `proactive_serial_only_enabled: ${report.proactive_serial_only_enabled === true}`,
     `target_count: ${report.target_count ?? "n/a"}`,
     `attempted_count: ${report.attempted_count ?? "n/a"}`,
     `evaluated_count: ${report.evaluated_count ?? "n/a"}`,
@@ -962,7 +1034,11 @@ export async function main(argv = process.argv, env = process.env) {
     && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_EXCLUDE_SELF_MEMORY", true);
   const proactiveFocusedRereads = hasFlag(argv, "--proactive-focused-rereads")
     || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_PROACTIVE_FOCUSED_REREADS", false);
+  const proactiveSerialOnly = hasFlag(argv, "--proactive-serial-only")
+    || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_PROACTIVE_SERIAL_ONLY", false);
   const flushEvery = Math.max(1, numberArg(argv, "--flush-every", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_FLUSH_EVERY || 5)));
+  const rateLimitRetries = Math.max(0, numberArg(argv, "--rate-limit-retries", Number(env.AGNES_SUPABASE_FEEDBACK_RATE_LIMIT_RETRIES || 0)));
+  const rateLimitPauseMs = Math.max(0, numberArg(argv, "--rate-limit-pause-ms", Number(env.AGNES_SUPABASE_FEEDBACK_RATE_LIMIT_PAUSE_MS || 60000)));
   const resume = !hasFlag(argv, "--no-resume") && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_RESUME", true);
   const dataset = await readJson(datasetPath);
   let previousResults = [];
@@ -985,12 +1061,16 @@ export async function main(argv = process.argv, env = process.env) {
     maxTitleLength,
     excludeSelfApprovedMemory,
     proactiveFocusedRereads,
+    proactiveSerialOnly,
     env: {
       ...env,
       ...(proactiveFocusedRereads ? { ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1" } : {}),
+      ...(proactiveFocusedRereads && proactiveSerialOnly ? { ENABLE_PROACTIVE_AGNES_SERIAL_ONLY: "1" } : {}),
       AGNES_MAX_RETRIES: env.AGNES_MAX_RETRIES || "1"
     },
     previousResults,
+    rateLimitRetries,
+    rateLimitPauseMs,
     onProgress: outPath
       ? async (partialReport) => {
         completedSinceFlush += 1;

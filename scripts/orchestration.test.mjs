@@ -599,6 +599,47 @@ assert.deepEqual(proactiveFocusedActions.slice(0, 3), [
   completionActions.CROP_AND_READ_SUBJECT
 ]);
 
+const proactiveSerialOnlyActions = [];
+const proactiveSerialOnlyCompletion = await completeEvidence({
+  resolved: {
+    year: "2022",
+    manufacturer: "Panini",
+    brand: "Panini",
+    product: "Gold Standard",
+    players: ["Hunter Renfrow"],
+    serial_number: "196/299"
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2022", status: "CONFIRMED", confidence: 0.9 }),
+    manufacturer: createEvidenceField({ value: "Panini", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Panini", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Gold Standard", status: "CONFIRMED", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Hunter Renfrow"], status: "CONFIRMED", confidence: 0.9 }),
+    serial_number: createEvidenceField({ value: "196/299", status: "CONFIRMED", confidence: 0.9 })
+  },
+  env: {
+    ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1",
+    ENABLE_PROACTIVE_AGNES_SERIAL_ONLY: "1",
+    MAX_PARALLEL_FOCUSED_REREADS: "3"
+  },
+  budgetOverrides: {
+    maxRounds: 3,
+    maxAgnesCalls: 3,
+    maxExternalQueries: 0
+  },
+  runFocusedVisionImpl: async ({ action }) => {
+    proactiveSerialOnlyActions.push(action);
+    return {
+      provider_id: "agnes",
+      model_id: "agnes-2.0-flash",
+      resolved: {},
+      evidence: {}
+    };
+  }
+});
+assert.deepEqual(proactiveSerialOnlyActions, [completionActions.CROP_AND_READ_SERIAL]);
+assert.equal(proactiveSerialOnlyCompletion.resolution_trace[0].action, completionActions.CROP_AND_READ_SERIAL);
+
 const noInfoOcclusionCompletion = await completeEvidence({
   resolved: {
     year: "2025",

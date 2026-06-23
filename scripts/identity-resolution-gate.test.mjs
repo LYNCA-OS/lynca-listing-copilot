@@ -232,6 +232,43 @@ assert.equal(serialSingleFrontSource.identity_resolution_status, "ABSTAIN");
 assert.equal(serialSingleFrontSource.final_title, "");
 assert.ok(serialSingleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
+const serialDoubleFrontSource = applyIdentityResolutionGate({
+  title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
+  confidence: "HIGH",
+  reason: "Initial read and focused serial crop agree on the same serial.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2022",
+    product: "Gold Standard",
+    players: ["Hunter Renfrow"],
+    serial_number: "196/299"
+  }),
+  evidence: {
+    year: groundedEvidence("2022"),
+    product: groundedEvidence("Gold Standard"),
+    players: groundedEvidence(["Hunter Renfrow"]),
+    serial_number: createEvidenceField({
+      value: "196/299",
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [
+        printedSource("CARD_FRONT", "front", "196/299"),
+        { ...printedSource("CARD_FRONT", "front", "196/299"), capture_role: "focused_reread", region: "CROP_AND_READ_SERIAL" }
+      ]
+    })
+  },
+  unresolved: [],
+  resolution_trace: [
+    {
+      action: "CROP_AND_READ_SERIAL",
+      status: "executed"
+    }
+  ]
+});
+assert.equal(serialDoubleFrontSource.identity_resolution_status, "ABSTAIN");
+assert.equal(serialDoubleFrontSource.final_title, "");
+assert.ok(serialDoubleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
+
 const localizedOnlyGrounded = applyIdentityResolutionGate({
   title: "provider localized title must not become final title",
   confidence: "HIGH",
@@ -304,5 +341,59 @@ assert.equal(multiCardLot.final_title, "");
 assert.ok(multiCardLot.unresolved.includes("multi-card lot requires single-card split or manual lot workflow"));
 assert.ok(multiCardLot.conflict_map.some((conflict) => conflict.conflict_type === "MULTI_CARD_LOT_REQUIRES_SINGLE_CARD_SPLIT"));
 assert.ok(multiCardLot.resolution_trace.some((entry) => entry.step === "lot_guard"));
+
+const lowConfidenceYear = applyIdentityResolutionGate({
+  title: "2017 Star Wars Chrome Black Paul Kasey Auto",
+  confidence: "MEDIUM",
+  reason: "Year was weakly inferred from front text.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2017",
+    product: "Star Wars Chrome Black",
+    players: ["Paul Kasey"],
+    auto: true
+  }),
+  evidence: {
+    year: createEvidenceField({
+      value: "2017",
+      status: "REVIEW",
+      confidence: 0.6,
+      sources: [printedSource("CARD_FRONT", "front", "2017")]
+    }),
+    product: groundedEvidence("Star Wars Chrome Black"),
+    players: groundedEvidence(["Paul Kasey"]),
+    auto: groundedEvidence(true)
+  },
+  unresolved: []
+});
+assert.equal(lowConfidenceYear.identity_resolution_status, "ABSTAIN");
+assert.equal(lowConfidenceYear.final_title, "");
+assert.ok(lowConfidenceYear.conflict_map.some((conflict) => conflict.conflict_type === "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE"));
+
+const frontOnlyColorDescriptorDropped = applyIdentityResolutionGate({
+  title: "2024 Topps Heritage Jackson Chourio White Border RC",
+  confidence: "HIGH",
+  reason: "Front image suggested white border, but no independent source confirmed it.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2024",
+    product: "Heritage",
+    players: ["Jackson Chourio"],
+    set: "White Border",
+    rc: true
+  }),
+  evidence: {
+    year: groundedEvidence("2024"),
+    product: groundedEvidence("Heritage"),
+    players: groundedEvidence(["Jackson Chourio"]),
+    set: frontOnlyEvidence("White Border"),
+    rc: groundedEvidence(true)
+  },
+  unresolved: []
+});
+assert.equal(frontOnlyColorDescriptorDropped.identity_resolution_status, "RESOLVED");
+assert.equal(frontOnlyColorDescriptorDropped.resolved.set, null);
+assert.doesNotMatch(frontOnlyColorDescriptorDropped.final_title, /White Border/i);
+assert.ok(frontOnlyColorDescriptorDropped.conflict_map.some((conflict) => conflict.conflict_type === "OPTIONAL_COLOR_DESCRIPTOR_REQUIRES_STRONG_CONFIRMATION"));
 
 console.log("identity resolution gate tests passed");
