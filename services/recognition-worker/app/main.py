@@ -88,6 +88,7 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
             language=config.tesseract_language,
             psm=config.tesseract_psm,
             timeout_seconds=config.tesseract_timeout_seconds,
+            focused_fields=requested_fields,
         )
     else:
         ocr_evidence = ocr_unavailable(

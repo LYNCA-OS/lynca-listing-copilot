@@ -12,6 +12,34 @@ import numpy as np
 from PIL import Image
 
 
+FOCUSED_CROP_TEMPLATES = {
+    "serial_number": [
+        {
+            "role": "serial_crop",
+            "template": (0.52, 0.60, 0.99, 0.98),
+        },
+    ],
+    "collector_number": [
+        {
+            "role": "collector_number_crop",
+            "template": (0.00, 0.66, 0.50, 0.99),
+        },
+    ],
+    "checklist_code": [
+        {
+            "role": "checklist_code_crop",
+            "template": (0.00, 0.66, 0.62, 0.99),
+        },
+    ],
+    "grade_label": [
+        {
+            "role": "grade_label_crop",
+            "template": (0.03, 0.00, 0.97, 0.24),
+        },
+    ],
+}
+
+
 def normalize_ocr_item(item: dict, index: int = 0) -> dict:
     text = str(item.get("text") or item.get("observed_text") or item.get("raw_text") or "").strip()
     return {
@@ -74,7 +102,16 @@ def _line_key(row: dict[str, str]) -> tuple[str, str, str, str]:
     )
 
 
-def _parse_tesseract_tsv(tsv: str, *, image_id: str, role: str) -> list[dict[str, Any]]:
+def _parse_tesseract_tsv(
+    tsv: str,
+    *,
+    image_id: str,
+    role: str,
+    source_type: str = "OCR",
+    item_prefix: str = "tesseract",
+    bbox_offset: tuple[int, int] = (0, 0),
+    coordinate_scale: float = 1.0,
+) -> list[dict[str, Any]]:
     reader = csv.DictReader(StringIO(tsv), delimiter="\t")
     lines: dict[tuple[str, str, str, str], dict[str, Any]] = {}
 
@@ -87,10 +124,10 @@ def _parse_tesseract_tsv(tsv: str, *, image_id: str, role: str) -> list[dict[str
             continue
 
         key = _line_key(row)
-        left = int(float(row.get("left") or 0))
-        top = int(float(row.get("top") or 0))
-        width = int(float(row.get("width") or 0))
-        height = int(float(row.get("height") or 0))
+        left = int((float(row.get("left") or 0) / coordinate_scale) + bbox_offset[0])
+        top = int((float(row.get("top") or 0) / coordinate_scale) + bbox_offset[1])
+        width = int(float(row.get("width") or 0) / coordinate_scale)
+        height = int(float(row.get("height") or 0) / coordinate_scale)
         right = left + width
         bottom = top + height
         line = lines.setdefault(key, {
@@ -115,7 +152,7 @@ def _parse_tesseract_tsv(tsv: str, *, image_id: str, role: str) -> list[dict[str
             continue
         confidence = sum(line["confidences"]) / max(1, len(line["confidences"]))
         items.append({
-            "item_id": f"tesseract_{image_id}_{index + 1}",
+            "item_id": f"{item_prefix}_{image_id}_{index + 1}",
             "image_id": image_id,
             "role": role,
             "text": text,
@@ -127,17 +164,19 @@ def _parse_tesseract_tsv(tsv: str, *, image_id: str, role: str) -> list[dict[str
                 int(line["right"] - line["left"]),
                 int(line["bottom"] - line["top"]),
             ],
-            "source_type": "OCR",
+            "source_type": source_type,
         })
 
     return items
 
 
-def _array_to_temp_png(array: np.ndarray) -> Path:
+def _array_to_temp_png(array: np.ndarray, *, upscale: int = 1) -> Path:
     temp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     temp_path = Path(temp.name)
     temp.close()
     image = Image.fromarray(array.astype("uint8"), mode="RGB")
+    if upscale > 1:
+        image = image.resize((image.width * upscale, image.height * upscale), Image.Resampling.LANCZOS)
     image.save(temp_path, format="PNG")
     return temp_path
 
@@ -165,12 +204,90 @@ def _run_tesseract(image_path: Path, *, language: str, psm: int, timeout_seconds
     return completed.stdout
 
 
+def _source_type_for_loaded_role(role: str) -> str:
+    normalized = str(role or "").lower()
+    if "back" in normalized:
+        return "CARD_BACK"
+    if "front" in normalized:
+        return "CARD_FRONT"
+    return "OCR"
+
+
+def _crop_array(array: np.ndarray, template: tuple[float, float, float, float]) -> tuple[np.ndarray, tuple[int, int]] | None:
+    height, width = array.shape[:2]
+    x1f, y1f, x2f, y2f = template
+    x1 = max(0, min(width - 1, int(round(width * x1f))))
+    y1 = max(0, min(height - 1, int(round(height * y1f))))
+    x2 = max(x1 + 1, min(width, int(round(width * x2f))))
+    y2 = max(y1 + 1, min(height, int(round(height * y2f))))
+    if x2 - x1 < 16 or y2 - y1 < 16:
+        return None
+    return array[y1:y2, x1:x2], (x1, y1)
+
+
+def _focused_crop_specs(focused_fields: list[str] | None = None) -> list[dict[str, Any]]:
+    requested = set(focused_fields or [])
+    if not requested:
+        return []
+
+    specs: list[dict[str, Any]] = []
+    seen: set[tuple[str, tuple[float, float, float, float]]] = set()
+    for field in ("serial_number", "collector_number", "checklist_code", "grade_label"):
+        if field not in requested:
+            continue
+        for spec in FOCUSED_CROP_TEMPLATES[field]:
+            key = (spec["role"], spec["template"])
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(spec)
+    return specs
+
+
+def _ocr_array_with_tesseract(
+    array: np.ndarray,
+    *,
+    image_id: str,
+    role: str,
+    source_type: str,
+    language: str,
+    psm: int,
+    timeout_seconds: int,
+    item_prefix: str,
+    bbox_offset: tuple[int, int] = (0, 0),
+    coordinate_scale: float = 1.0,
+    upscale: int = 1,
+) -> list[dict[str, Any]]:
+    temp_path: Path | None = None
+    try:
+        temp_path = _array_to_temp_png(array, upscale=upscale)
+        tsv = _run_tesseract(
+            temp_path,
+            language=language,
+            psm=psm,
+            timeout_seconds=timeout_seconds,
+        )
+        return _parse_tesseract_tsv(
+            tsv,
+            image_id=image_id,
+            role=role,
+            source_type=source_type,
+            item_prefix=item_prefix,
+            bbox_offset=bbox_offset,
+            coordinate_scale=coordinate_scale,
+        )
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
 def ocr_evidence_from_loaded_images(
     loaded_images: list[Any],
     *,
     language: str = "eng",
     psm: int = 11,
     timeout_seconds: int = 20,
+    focused_fields: list[str] | None = None,
 ) -> dict:
     if not loaded_images:
         return _ocr_unavailable("no_loaded_images", "tesseract_not_run")
@@ -179,28 +296,46 @@ def ocr_evidence_from_loaded_images(
 
     items: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    focused_specs = _focused_crop_specs(focused_fields)
     for loaded in loaded_images:
-        temp_path: Path | None = None
         image_id = str(getattr(loaded, "image_id", "") or "image")
         role = str(getattr(loaded, "role", "") or "")
+        array = getattr(loaded, "array")
         try:
-            temp_path = _array_to_temp_png(getattr(loaded, "array"))
-            tsv = _run_tesseract(
-                temp_path,
+            items.extend(_ocr_array_with_tesseract(
+                array,
+                image_id=image_id,
+                role=role,
+                source_type="OCR",
                 language=language,
                 psm=psm,
                 timeout_seconds=timeout_seconds,
-            )
-            items.extend(_parse_tesseract_tsv(tsv, image_id=image_id, role=role))
+                item_prefix="tesseract_full",
+            ))
+            for spec in focused_specs:
+                cropped = _crop_array(array, spec["template"])
+                if cropped is None:
+                    continue
+                crop_array, offset = cropped
+                items.extend(_ocr_array_with_tesseract(
+                    crop_array,
+                    image_id=image_id,
+                    role=spec["role"],
+                    source_type=_source_type_for_loaded_role(role),
+                    language=language,
+                    psm=6,
+                    timeout_seconds=timeout_seconds,
+                    item_prefix=f"tesseract_{spec['role']}",
+                    bbox_offset=offset,
+                    coordinate_scale=2.0,
+                    upscale=2,
+                ))
         except Exception as error:  # noqa: BLE001 - errors are reported as unavailable OCR evidence.
             errors.append({
                 "image_id": image_id,
                 "role": role,
                 "reason": str(error)[:240],
             })
-        finally:
-            if temp_path is not None:
-                temp_path.unlink(missing_ok=True)
 
     if items:
         return {

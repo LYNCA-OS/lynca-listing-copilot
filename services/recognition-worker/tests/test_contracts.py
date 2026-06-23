@@ -16,7 +16,7 @@ from app.pipelines.glare_detection import detect_glare_from_array
 from app.pipelines.image_loader import ImageLoadError, LoadedImage, load_signed_image
 from app.pipelines.image_quality import measure_image_quality_from_array
 from app.pipelines.multi_card_detection import detect_multi_card_from_array
-from app.pipelines.ocr_pipeline import ocr_evidence_from_items
+from app.pipelines.ocr_pipeline import ocr_evidence_from_items, ocr_evidence_from_loaded_images
 from app.pipelines.region_proposal import propose_regions_for_rectified_card
 from app.security import SecurityError, UrlPolicy, redact_url, validate_image_url, verify_bearer_token
 
@@ -267,11 +267,45 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(load_mock.call_count, 2)
         ocr_mock.assert_called_once()
         self.assertEqual(len(ocr_mock.call_args.args[0]), 2)
+        self.assertEqual(ocr_mock.call_args.kwargs["focused_fields"], ["serial_number", "grade_label"])
         self.assertEqual(result["processing"]["model_versions"]["tesseract"], "enabled")
         self.assertEqual(result["ocr_evidence"]["status"], "OK")
         self.assertEqual(result["evidence_fusion"]["resolved_fields"]["serial_number"], "5/50")
         self.assertEqual(result["evidence_fusion"]["resolved_fields"]["grade_company"], "PSA")
         self.assertEqual(result["evidence_fusion"]["resolved_fields"]["card_grade"], "9")
+
+    def test_tesseract_adapter_runs_focused_serial_crop(self):
+        loaded = LoadedImage(
+            image_id="front",
+            role="front_original",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+        tsv = "\n".join([
+            "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+            "5\t1\t1\t1\t1\t1\t10\t10\t20\t10\t90\t31",
+            "5\t1\t1\t1\t1\t2\t34\t10\t10\t10\t90\t/",
+            "5\t1\t1\t1\t1\t3\t48\t10\t20\t10\t90\t50",
+        ])
+
+        with patch("app.pipelines.ocr_pipeline.shutil.which", return_value="/usr/bin/tesseract"):
+            with patch("app.pipelines.ocr_pipeline._run_tesseract", return_value=tsv) as run_mock:
+                evidence = ocr_evidence_from_loaded_images(
+                    [loaded],
+                    focused_fields=["serial_number"],
+                    timeout_seconds=3,
+                )
+
+        self.assertEqual(evidence["status"], "OK")
+        self.assertGreaterEqual(run_mock.call_count, 2)
+        serial_crop_items = [item for item in evidence["items"] if item["role"] == "serial_crop"]
+        self.assertTrue(serial_crop_items)
+        self.assertEqual(serial_crop_items[0]["source_type"], "CARD_FRONT")
+        self.assertEqual(serial_crop_items[0]["observed_text"], "31 / 50")
 
     def test_ocr_text_fusion_parses_fields_and_conflicts(self):
         ocr_evidence = ocr_evidence_from_items([
