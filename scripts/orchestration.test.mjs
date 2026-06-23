@@ -446,6 +446,97 @@ assert.equal(focusedRereadCompletion.resolution_trace[0].status, "executed");
 assert.ok(focusedRereadCompletion.resolution_trace[0].output.focused_vision.updated_fields.includes("serial_number"));
 assert.ok(focusedRereadCompletion.resolution_trace.every((entry) => !/GPT|openai_legacy/i.test(JSON.stringify(entry))));
 
+let parallelInFlight = 0;
+let parallelMaxInFlight = 0;
+const parallelFocusedCompletion = await completeEvidence({
+  resolved: {
+    year: "2025",
+    players: ["Cooper Flagg"],
+    parallel: "Gold"
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025", confidence: 0.62, status: "REVIEW" }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], confidence: 0.61, status: "REVIEW" }),
+    parallel: createEvidenceField({ value: "Gold", confidence: 0.58, status: "REVIEW" })
+  },
+  unresolved: ["product identity missing", "parallel requires review"],
+  budgetOverrides: {
+    maxRounds: 3,
+    maxAgnesCalls: 3,
+    maxExternalQueries: 0
+  },
+  runFocusedVisionImpl: async ({ action }) => {
+    parallelInFlight += 1;
+    parallelMaxInFlight = Math.max(parallelMaxInFlight, parallelInFlight);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    parallelInFlight -= 1;
+
+    if (action === completionActions.CROP_AND_READ_YEAR_PRODUCT) {
+      return {
+        provider_id: "agnes",
+        model_id: "agnes-2.0-flash",
+        resolved: {
+          year: "2025",
+          brand: "Topps",
+          product: "Topps Chrome"
+        },
+        evidence: {
+          year: createEvidenceField({ value: "2025", status: "CONFIRMED", confidence: 0.92 }),
+          brand: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.92 }),
+          product: createEvidenceField({ value: "Topps Chrome", status: "CONFIRMED", confidence: 0.92 })
+        },
+        usage: { estimated_cost_usd: 0.003 }
+      };
+    }
+
+    if (action === completionActions.CROP_AND_READ_SUBJECT) {
+      return {
+        provider_id: "agnes",
+        model_id: "agnes-2.0-flash",
+        resolved: {
+          players: ["Cooper Flagg"]
+        },
+        evidence: {
+          players: createEvidenceField({ value: ["Cooper Flagg"], status: "CONFIRMED", confidence: 0.92 })
+        },
+        usage: { estimated_cost_usd: 0.003 }
+      };
+    }
+
+    if (action === completionActions.CROP_AND_READ_PARALLEL) {
+      return {
+        provider_id: "agnes",
+        model_id: "agnes-2.0-flash",
+        resolved: {
+          parallel: "Gold Wave"
+        },
+        evidence: {
+          parallel: createEvidenceField({ value: "Gold Wave", status: "CONFIRMED", confidence: 0.9 })
+        },
+        usage: { estimated_cost_usd: 0.003 }
+      };
+    }
+
+    return {
+      provider_id: "agnes",
+      model_id: "agnes-2.0-flash",
+      resolved: {},
+      evidence: {}
+    };
+  }
+});
+assert.ok(parallelMaxInFlight > 1);
+assert.deepEqual(parallelFocusedCompletion.resolution_trace.slice(0, 3).map((entry) => entry.action), [
+  completionActions.CROP_AND_READ_YEAR_PRODUCT,
+  completionActions.CROP_AND_READ_SUBJECT,
+  completionActions.CROP_AND_READ_PARALLEL
+]);
+assert.equal(parallelFocusedCompletion.resolved.product, "Topps Chrome");
+assert.deepEqual(parallelFocusedCompletion.resolved.players, ["Cooper Flagg"]);
+assert.equal(parallelFocusedCompletion.resolved.parallel, "Gold Wave");
+assert.equal(parallelFocusedCompletion.budget.used.agnes_calls, 3);
+assert.equal(parallelFocusedCompletion.usage.provider_calls, 3);
+
 const noInfoOcclusionCompletion = await completeEvidence({
   resolved: {
     year: "2025",
@@ -774,6 +865,9 @@ assert.equal(completionWithTrustedRetrieval.resolved.product, "Topps Chrome");
 assert.equal(completionWithTrustedRetrieval.evidence.product.status, "CONFIRMED");
 assert.equal(completionWithTrustedRetrieval.route, "AI_COMPLETE_REVIEW");
 assert.ok(completionWithTrustedRetrieval.resolution_trace[0].output.candidate_verification.verified_fields.includes("product"));
+assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.loop, "detect_conflict_retrieve_reevaluate_converge");
+assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.after.resolution_state, "EVIDENCE_CLOSED");
+assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.converged, true);
 
 const completion = await completeEvidence({
   resolved: {

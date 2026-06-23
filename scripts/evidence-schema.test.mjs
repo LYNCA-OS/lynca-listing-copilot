@@ -22,6 +22,8 @@ assert.equal(resolvedSchema.title, "Listing ResolvedFields");
 assert.ok(evidenceSchema.properties.status.enum.includes("CONFIRMED"));
 assert.ok(evidenceSchema.properties.sources.items.properties.source_type.enum.includes("MARKETPLACE"));
 assert.ok(resolvedSchema.properties.grade_type.enum.includes("CARD_AND_AUTO"));
+assert.equal(resolvedSchema.properties.multi_card.type, "boolean");
+assert.equal(resolvedSchema.properties.card_count.minimum, 1);
 
 const evidenceField = createEvidenceField({
   value: "31/50",
@@ -93,11 +95,23 @@ assert.equal(validateResolvedFields(resolved).length, 0);
 const normalized = normalizeResolvedFields({
   players: "A / B",
   grade_type: "CARD_AND_AUTO",
-  one_of_one: true
+  one_of_one: true,
+  card_count: "3"
 });
 assert.deepEqual(normalized.players, ["A / B"]);
 assert.equal(normalized.grade_type, "CARD_AND_AUTO");
 assert.equal(normalized.one_of_one, true);
+assert.equal(normalized.multi_card, true);
+assert.equal(normalized.card_count, 3);
+
+const multiCardResolved = legacyFieldsToResolvedFields({
+  multi_card: true,
+  card_count: 3,
+  lot_type: "mixed player lot"
+});
+assert.equal(multiCardResolved.multi_card, true);
+assert.equal(multiCardResolved.card_count, 3);
+assert.equal(multiCardResolved.lot_type, "mixed player lot");
 
 const legacy = resolvedFieldsToLegacyFields(resolved);
 assert.equal(legacy.player, "Shohei Ohtani");
@@ -134,6 +148,22 @@ assert.equal(evidenceDocument.resolved.checklist_code, "UV-16");
 assert.equal(evidenceDocument.evidence.serial_number.status, "CONFIRMED");
 assert.equal(evidenceDocument.evidence.serial_number.sources[0].source_type, "VISION_MODEL");
 assert.doesNotThrow(() => assertValidEvidenceDocument(evidenceDocument));
+
+const multiCardDocument = providerPayloadToEvidenceDocument({
+  title: "Card lot requires review",
+  confidence: "HIGH",
+  fields: {
+    multi_card: true,
+    card_count: 3,
+    lot_type: "mixed player lot"
+  },
+  unresolved: ["multiple cards visible"]
+});
+assert.equal(multiCardDocument.resolved.multi_card, true);
+assert.equal(multiCardDocument.resolved.card_count, 3);
+assert.equal(multiCardDocument.evidence.multi_card.status, "CONFIRMED");
+assert.equal(multiCardDocument.evidence.card_count.value, "3");
+assert.doesNotThrow(() => assertValidEvidenceDocument(multiCardDocument));
 
 assert.throws(
   () => assertValidEvidenceDocument({

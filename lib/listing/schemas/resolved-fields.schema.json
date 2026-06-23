@@ -8,6 +8,12 @@
     "category": { "type": ["string", "null"] },
     "standardness": { "type": ["string", "null"] },
     "route": { "type": ["string", "null"] },
+    "multi_card": { "type": "boolean" },
+    "card_count": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "lot_type": { "type": ["string", "null"] },
     "year": { "type": ["string", "null"] },
     "manufacturer": { "type": ["string", "null"] },
     "brand": { "type": ["string", "null"] },

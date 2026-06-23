@@ -77,6 +77,9 @@ const defaultFields = {
   year: null,
   brand: null,
   product: null,
+  multi_card: false,
+  card_count: null,
+  lot_type: null,
   set: null,
   subset: null,
   insert: null,
@@ -690,7 +693,9 @@ async function loadPrompt() {
 }
 
 function normalizeBoolean(value) {
-  return value === true;
+  if (value === true) return true;
+  if (value === false || value === null || value === undefined || value === "") return false;
+  return /^(true|yes|y|1)$/i.test(normalizeStringOrNull(value) || "");
 }
 
 function normalizeStringOrNull(value) {
@@ -698,11 +703,21 @@ function normalizeStringOrNull(value) {
   return normalized || null;
 }
 
+function normalizePositiveIntegerOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+}
+
 function normalizeFields(fields = {}) {
+  const cardCount = normalizePositiveIntegerOrNull(fields.card_count ?? fields.cardCount);
   const normalized = {
     year: normalizeStringOrNull(fields.year),
     brand: normalizeStringOrNull(fields.brand),
     product: normalizeStringOrNull(fields.product),
+    multi_card: normalizeBoolean(fields.multi_card ?? fields.multiCard) || Number(cardCount || 0) > 1,
+    card_count: cardCount,
+    lot_type: normalizeStringOrNull(fields.lot_type ?? fields.lotType),
     set: normalizeStringOrNull(fields.set),
     subset: normalizeStringOrNull(normalizeRookieMarker(fields.subset)),
     insert: normalizeStringOrNull(fields.insert),
@@ -1551,7 +1566,8 @@ const focusedRegionsByAction = Object.freeze({
   [completionActions.CROP_AND_READ_SERIAL]: ["serial_number"],
   [completionActions.CROP_AND_READ_CARD_CODE]: ["collector_number", "checklist_code"],
   [completionActions.CROP_AND_READ_GRADE_LABEL]: ["grade_label"],
-  [completionActions.CROP_AND_READ_YEAR_PRODUCT]: ["year_product"]
+  [completionActions.CROP_AND_READ_YEAR_PRODUCT]: ["year_product"],
+  [completionActions.CROP_AND_READ_PARALLEL]: ["parallel", "variation", "color"]
 });
 
 function focusedImagesForAction(images = [], action, focusFields = []) {
@@ -1666,13 +1682,19 @@ function focusedRereadPrompt({
   return [
     "You are performing a focused reread for LYNCA Listing Copilot.",
     "Use only the supplied card image or crop. Do not infer facts from style, marketplace wording, or memory.",
+    "If the image contains multiple cards or a card lot, set multi_card true, include card_count when visible, and do not merge fields from different cards.",
     `Action: ${action || "focused_reread"}.`,
     `Focus fields: ${focusFields.join(", ") || "unresolved critical fields"}.`,
     "Return only valid JSON with this shape:",
     JSON.stringify({
       title: "",
       confidence: "HIGH | MEDIUM | LOW | FAILED",
-      fields: Object.fromEntries(focusFields.map((field) => [field, ""])),
+      fields: {
+        multi_card: false,
+        card_count: null,
+        lot_type: null,
+        ...Object.fromEntries(focusFields.map((field) => [field, ""]))
+      },
       unresolved: []
     }),
     "If a focus field is unreadable, leave it empty and explain that field in unresolved.",
@@ -1688,6 +1710,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     intelligencePrompt,
     `Runtime title limit: ${maxTitleLength} characters.`,
     "Return only valid JSON. Do not wrap the response in Markdown.",
+    "If the image contains multiple cards or a card lot, set fields.multi_card true, include fields.card_count when visible, describe fields.lot_type, and do not merge identities across cards.",
     "Resolution hints:",
     resolutionHints(payload.resolutionMap) || "None",
     registryPromptSummary(),

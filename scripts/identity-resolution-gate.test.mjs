@@ -166,4 +166,48 @@ assert.equal(localizedOnlyGrounded.title_render_source, "identity_resolution_abs
 assert.ok(localizedOnlyGrounded.unresolved.includes("title blocked: required identity text is not English"));
 assert.ok(localizedOnlyGrounded.title_length_policy.blocked_required_terms.some((term) => term.key === "subject"));
 
+const multiCardLot = applyIdentityResolutionGate({
+  title: "2024 Topps Chrome Shohei Ohtani and Aaron Judge Lot",
+  confidence: "HIGH",
+  reason: "Multiple cards visible in the image.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    multi_card: true,
+    card_count: 2,
+    lot_type: "two card lot",
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"]
+  }),
+  fields: {
+    multi_card: true,
+    card_count: 2,
+    lot_type: "two card lot"
+  },
+  evidence: {
+    multi_card: createEvidenceField({
+      value: true,
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [createVisionSource({ observedText: "two cards visible" })]
+    }),
+    card_count: createEvidenceField({
+      value: 2,
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [createVisionSource({ observedText: "2 cards visible" })]
+    }),
+    year: groundedEvidence("2024"),
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"])
+  },
+  unresolved: []
+});
+assert.equal(multiCardLot.identity_resolution_status, "ABSTAIN");
+assert.equal(multiCardLot.route, "NON_STANDARD_MANUAL");
+assert.equal(multiCardLot.final_title, "");
+assert.ok(multiCardLot.unresolved.includes("multi-card lot requires single-card split or manual lot workflow"));
+assert.ok(multiCardLot.conflict_map.some((conflict) => conflict.conflict_type === "MULTI_CARD_LOT_REQUIRES_SINGLE_CARD_SPLIT"));
+assert.ok(multiCardLot.resolution_trace.some((entry) => entry.step === "lot_guard"));
+
 console.log("identity resolution gate tests passed");

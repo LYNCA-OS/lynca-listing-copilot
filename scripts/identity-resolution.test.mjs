@@ -131,6 +131,8 @@ assert.equal(invalidSerial.identity.serial_number, null);
 assert.ok(invalidSerial.conflict_map.some((conflict) => conflict.field === "serial_number" && conflict.conflict_type === "INVALID_SERIAL_NUMBER"));
 assert.equal(invalidSerial.ambiguity_status, "AMBIGUOUS");
 assert.equal(invalidSerial.status, "ABSTAIN");
+assert.equal(fieldState(invalidSerial, "serial_number").candidates[0].constraint_result.constraint_score, 0);
+assert.equal(fieldState(invalidSerial, "serial_number").candidates[0].constraint_result.violations[0].weight, 1);
 
 const oneOfOne = resolveIdentity({
   evidenceItems: [

@@ -58,12 +58,16 @@ const partialResolved = validateProviderEvidencePayload("agnes", {
   resolved: {
     year: "2024",
     players: ["Tester"],
+    multi_card: false,
+    card_count: 1,
+    lot_type: null,
     auto: true,
     grade_type: "UNKNOWN"
   },
   unresolved: []
 });
 assert.equal(partialResolved.resolved.players[0], "Tester");
+assert.equal(partialResolved.resolved.card_count, 1);
 
 const parsedTool = parseProviderMessagePayload({
   tool_calls: [
@@ -132,6 +136,16 @@ const schemaFailures = [
       unresolved: []
     },
     expectedPath: "resolved.fake_field"
+  },
+  {
+    name: "bad resolved card count",
+    payload: {
+      resolved: {
+        card_count: 0
+      },
+      unresolved: []
+    },
+    expectedPath: "resolved.card_count"
   },
   {
     name: "bad image quality",
