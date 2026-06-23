@@ -129,7 +129,7 @@ function colorsFromTitle(title) {
   return [...colorTokens].filter((token) => tokenSet.has(token));
 }
 
-function titleComparison(referenceTitle, predictedTitle) {
+export function titleComparison(referenceTitle, predictedTitle) {
   const referenceCanonical = canonicalText(referenceTitle);
   const predictedCanonical = canonicalText(predictedTitle);
   const referenceTokens = titleTokens(referenceTitle);

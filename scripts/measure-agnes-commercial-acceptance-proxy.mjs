@@ -11,6 +11,20 @@ const defaultMinTokenRecall = 0.7;
 const defaultMinTokenPrecision = 0.7;
 const defaultEnforceTokenGate = false;
 const sensitivityThresholds = [0.65, 0.7, 0.72, 0.75, 0.8];
+const commercialTitleColorTokens = new Set([
+  "black",
+  "blue",
+  "bronze",
+  "gold",
+  "green",
+  "orange",
+  "pink",
+  "purple",
+  "red",
+  "silver",
+  "white",
+  "yellow"
+]);
 
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
@@ -88,6 +102,103 @@ function canonicalText(value) {
     .replace(/[^a-z0-9/]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function unique(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function words(value) {
+  return canonicalText(value).split(" ").filter(Boolean);
+}
+
+function intersects(left = [], right = []) {
+  const rightSet = new Set(right);
+  return left.some((value) => rightSet.has(value));
+}
+
+function yearsFromText(text) {
+  return unique((canonicalText(text).match(/\b\d{4}(?:\s\d{2})?\b/g) || [])
+    .map((value) => value.replace(/\s/g, "-")));
+}
+
+function normalizeSerial(value) {
+  const match = String(value || "").match(/\b0*(\d+)\s*\/\s*0*(\d+)\b/);
+  if (!match) return "";
+  return `${Number(match[1])}/${Number(match[2])}`;
+}
+
+function serialsFromText(text) {
+  return unique((String(text || "").match(/\b\d+\s*\/\s*\d+\b/g) || []).map(normalizeSerial));
+}
+
+function gradeTokensFromText(text) {
+  const source = canonicalText(text).toUpperCase();
+  return unique((source.match(/\b(?:PSA|BGS|SGC|CGC)\s+(?:AUTO\s+)?\d+(?:\.\d+)?\b/g) || [])
+    .map((value) => value.replace(/\s+/g, " ").trim()));
+}
+
+function colorsFromText(text) {
+  const tokenSet = new Set(words(text));
+  return [...commercialTitleColorTokens].filter((token) => tokenSet.has(token));
+}
+
+function hasAuto(text) {
+  return /\b(auto|autograph|signed|signature)\b/i.test(String(text || ""));
+}
+
+function hasRookie(text) {
+  return /\b(rc|rookie)\b/i.test(String(text || ""));
+}
+
+function titleContentCheck(field, expected, predicted, matched, evidence) {
+  return {
+    field,
+    expected_count: Array.isArray(expected) ? expected.length : expected ? 1 : 0,
+    predicted_count: Array.isArray(predicted) ? predicted.length : predicted ? 1 : 0,
+    matched: Boolean(matched),
+    evidence
+  };
+}
+
+function titleContentChecks(result = {}) {
+  const referenceTitle = correctedReferenceTitle(result);
+  const title = predictedTitle(result);
+  const checks = [];
+
+  const referenceYears = yearsFromText(referenceTitle);
+  if (referenceYears.length) {
+    const titleYears = yearsFromText(title);
+    checks.push(titleContentCheck("year", referenceYears, titleYears, intersects(referenceYears, titleYears), "final_title_year"));
+  }
+
+  const referenceSerials = serialsFromText(referenceTitle);
+  if (referenceSerials.length) {
+    const titleSerials = serialsFromText(title);
+    checks.push(titleContentCheck("serial_number", referenceSerials, titleSerials, intersects(referenceSerials, titleSerials), "final_title_serial"));
+  }
+
+  const referenceGrades = gradeTokensFromText(referenceTitle);
+  if (referenceGrades.length) {
+    const titleGrades = gradeTokensFromText(title);
+    checks.push(titleContentCheck("grade", referenceGrades, titleGrades, intersects(referenceGrades, titleGrades), "final_title_grade"));
+  }
+
+  const referenceColors = colorsFromText(referenceTitle);
+  if (referenceColors.length) {
+    const titleColors = colorsFromText(title);
+    checks.push(titleContentCheck("color", referenceColors, titleColors, intersects(referenceColors, titleColors), "final_title_color"));
+  }
+
+  if (hasAuto(referenceTitle)) {
+    checks.push(titleContentCheck("auto", true, hasAuto(title), hasAuto(title), "final_title_auto"));
+  }
+
+  if (hasRookie(referenceTitle)) {
+    checks.push(titleContentCheck("rc", true, hasRookie(title), hasRookie(title), "final_title_rc"));
+  }
+
+  return checks;
 }
 
 const entityStopwords = new Set([
@@ -194,6 +305,7 @@ export function evaluateCommercialAcceptanceRow(result = {}, {
       failure_reasons: [statusReason],
       derivable_field_count: 0,
       title_derived_field_mismatches: [],
+      title_content_mismatches: [],
       principle_failures: [],
       diagnostic_reasons: [],
       token_recall: null,
@@ -202,9 +314,13 @@ export function evaluateCommercialAcceptanceRow(result = {}, {
   }
 
   const checks = titleDerivedChecks(result);
+  const titleChecks = titleContentChecks(result);
   const comparison = result.corrected_title_comparison || {};
   const principle = principleFailures(comparison, result);
-  const mismatches = checks
+  const fieldMismatches = checks
+    .filter((check) => !check.matched)
+    .map((check) => check.field);
+  const titleMismatches = titleChecks
     .filter((check) => !check.matched)
     .map((check) => check.field);
   const entityMismatches = predictedEntityContentMismatches(result);
@@ -215,7 +331,7 @@ export function evaluateCommercialAcceptanceRow(result = {}, {
 
   if (!checks.length) failureReasons.push("no_title_derived_reference_fields");
   if (principle.length) failureReasons.push("principle_error");
-  const allMismatches = [...new Set([...mismatches, ...entityMismatches])];
+  const allMismatches = [...new Set([...fieldMismatches, ...titleMismatches, ...entityMismatches])];
   if (allMismatches.length) failureReasons.push("title_derived_field_mismatch");
   if (!Number.isFinite(tokenRecall) || tokenRecall < minTokenRecall) diagnosticReasons.push("low_token_recall");
   if (!Number.isFinite(tokenPrecision) || tokenPrecision < minTokenPrecision) diagnosticReasons.push("low_token_precision");
@@ -225,8 +341,9 @@ export function evaluateCommercialAcceptanceRow(result = {}, {
     accepted: failureReasons.length === 0,
     primary_failure_reason: failureReasons[0] || "",
     failure_reasons: failureReasons,
-    derivable_field_count: checks.length,
+    derivable_field_count: titleChecks.length,
     title_derived_field_mismatches: allMismatches,
+    title_content_mismatches: [...new Set(titleMismatches)],
     principle_failures: principle,
     diagnostic_reasons: diagnosticReasons,
     token_recall: Number.isFinite(tokenRecall) ? tokenRecall : null,
@@ -278,11 +395,13 @@ export function measureAgnesCommercialAcceptanceProxy({
   const fieldMismatchCounts = new Map();
   const principleFailureCounts = new Map();
   const diagnosticReasonCounts = new Map();
+  const titleContentMismatchCounts = new Map();
 
   for (const row of rows) {
     if (!row.accepted) increment(primaryFailureReasonCounts, row.primary_failure_reason || "unknown");
     for (const reason of row.failure_reasons) increment(failureReasonCounts, reason);
     for (const field of row.title_derived_field_mismatches) increment(fieldMismatchCounts, field);
+    for (const field of row.title_content_mismatches || []) increment(titleContentMismatchCounts, field);
     for (const reason of row.principle_failures) increment(principleFailureCounts, reason);
     for (const reason of row.diagnostic_reasons) increment(diagnosticReasonCounts, reason);
   }
@@ -346,7 +465,8 @@ export function measureAgnesCommercialAcceptanceProxy({
       all_failure_reasons: sortedCounts(failureReasonCounts),
       token_diagnostics: sortedCounts(diagnosticReasonCounts),
       principle_failures: sortedCounts(principleFailureCounts),
-      title_derived_field_mismatches: sortedCounts(fieldMismatchCounts)
+      title_derived_field_mismatches: sortedCounts(fieldMismatchCounts),
+      title_content_mismatches: sortedCounts(titleContentMismatchCounts)
     },
     sensitivity: sensitivity(results)
   };

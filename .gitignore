@@ -29,6 +29,7 @@ data/recognition/reports/supabase-feedback-reviewed-report.json
 data/eval/agnes-supabase-feedback-latest.json
 data/eval/agnes-title-derived-field-proxy-latest.json
 data/eval/agnes-commercial-acceptance-proxy-latest.json
+data/eval/agnes-rendered-commercial-acceptance-latest.json
 data/eval/agnes-auto-95-gap-plan-latest.json
 data/eval/agnes-reviewed-commercial-accuracy-latest.json
 data/eval/supabase-feedback-title-baseline-latest.json
