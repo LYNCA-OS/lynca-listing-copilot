@@ -145,7 +145,7 @@ Recognition Worker R2 geometry, glare, quality, region proposal, and worker-leve
 
 ### `recognition/supabase-feedback-data-connection.md`
 
-Live Supabase feedback table counts, storage bucket mapping, and the local export command for Recognition Dataset candidates.
+Live Supabase feedback table counts, storage bucket mapping, and REST plus MCP/SQL export commands for Recognition Dataset candidates.
 
 ### `recognition/data-needed-from-owner.md`
 

@@ -1,6 +1,6 @@
 {
   "schema_version": "supabase-recognition-live-snapshot-v1",
-  "generated_at": "2026-06-23T00:00:00.000Z",
+  "generated_at": "2026-06-23T06:25:00.000Z",
   "source": {
     "provider": "supabase_mcp",
     "project_id": "osrrujmpxxiefppjfgpd",
@@ -14,6 +14,8 @@
       "rows_with_back_image_url": 247,
       "image_backed_rows": 248,
       "rows_with_corrected_title": 351,
+      "first_created_at": "2026-06-21 09:30:11.126+00",
+      "last_created_at": "2026-06-22 11:25:29.12+00",
       "month_breakdown": [
         {
           "month": "2026-06-01",
@@ -34,9 +36,14 @@
     }
   },
   "candidate_export_status": {
-    "local_rest_export_ready": true,
+    "local_rest_export_ready": false,
     "local_rest_export_completed": false,
-    "blocked_reason": "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not configured in local .env.local",
+    "blocked_reason": "Vercel production env has SUPABASE_URL, but SUPABASE_SERVICE_ROLE_KEY is empty; anon REST is RLS-filtered and returns 0 rows.",
+    "mcp_sql_export_ready": true,
+    "mcp_sql_export_file": "supabase/queries/export_recognition_feedback_rows_for_mcp.sql",
+    "mcp_sql_image_backed_rows": 248,
+    "mcp_sql_json_text_bytes": 162842,
+    "mcp_rows_import_command": "npm run recognition:supabase:rows -- --input data/recognition/reports/supabase-feedback-rows-mcp.json --output data/recognition/manifests/supabase-feedback-candidates.json --report-output data/recognition/reports/supabase-feedback-candidates-report.json",
     "ground_truth_status": "NEEDS_REVIEW",
     "corrected_title_used_as_ground_truth": false
   }

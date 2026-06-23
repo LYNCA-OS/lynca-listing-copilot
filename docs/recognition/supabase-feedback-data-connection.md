@@ -1,6 +1,9 @@
 # Supabase Feedback Data Connection
 
-Status: live Supabase project discovered and read-only counts verified through MCP. Local REST export path is implemented, but full candidate file generation requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in local `.env.local`.
+Status: live Supabase project discovered and read-only counts verified through MCP. Two local export paths are now available:
+
+1. REST export when a server-only `SUPABASE_SERVICE_ROLE_KEY` is present.
+2. SQL/MCP rows import when service-role REST access is unavailable.
 
 ## Live Project
 
@@ -30,12 +33,13 @@ Read-only MCP queries on 2026-06-23 showed:
 - rows with `corrected_title`: 351
 - `storage.objects`: 495 objects
 - storage bucket: `listing-feedback-images`
+- created_at window: `2026-06-21 09:30:11.126+00` through `2026-06-22 11:25:29.12+00`
 
 Snapshot file:
 
 - `data/recognition/reports/supabase-live-snapshot-2026-06-23.json`
 
-## Export Command
+## REST Export Command
 
 After configuring local server-only Supabase env:
 
@@ -55,6 +59,34 @@ Required local env:
 - `SUPABASE_SERVICE_ROLE_KEY`
 
 The script reads `listing_title_feedback` through Supabase REST and writes local Recognition Dataset candidates.
+
+Current Vercel production env check on 2026-06-23 showed `SUPABASE_URL` is present but `SUPABASE_SERVICE_ROLE_KEY` is empty. Using the anon key for REST returned 0 rows, which means RLS is correctly preventing public reads of internal feedback data. Do not weaken RLS or expose `listing_title_feedback` to anon just to export candidates.
+
+## MCP / SQL Rows Export
+
+When service-role REST access is unavailable, use the read-only SQL file:
+
+```sql
+supabase/queries/export_recognition_feedback_rows_for_mcp.sql
+```
+
+Save the SQL/MCP JSON result to a local file, then convert it into the same candidate manifest shape:
+
+```bash
+npm run recognition:supabase:rows -- \
+  --input data/recognition/reports/supabase-feedback-rows-mcp.json \
+  --output data/recognition/manifests/supabase-feedback-candidates.json \
+  --report-output data/recognition/reports/supabase-feedback-candidates-report.json
+```
+
+The rows importer accepts:
+
+- a raw JSON array of rows
+- `{ "rows": [...] }`
+- `{ "data": [...] }`
+- Supabase MCP `{ "result": "Below is ... <untrusted-data-...>[...]</untrusted-data-...>" }` payloads
+
+This keeps internal feedback rows private while still making Codex/MCP exports usable as local, repeatable test data.
 
 ## Data Boundary
 
@@ -86,8 +118,8 @@ are normalized to:
 
 This keeps candidate data usable by future storage signed-URL generation without storing service-role keys in the dataset.
 
-## Current Blocker
+## Current Limitation
 
-Local `.env.local` in this repo does not currently contain `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY`, and Supabase CLI is not installed. Therefore, the full 248 image-backed candidate manifest was not generated locally in this run.
+Local `.env.local` can be populated from Vercel, but the current Vercel production environment does not include a non-empty `SUPABASE_SERVICE_ROLE_KEY`. Supabase CLI is not installed locally.
 
-The code path is ready and covered by tests. Once the env variables are added, rerun the export command above.
+The REST code path and SQL/MCP rows importer are ready and covered by tests. Once either a service role key is added locally or a MCP SQL rows JSON export is saved, rerun the relevant export command above.
