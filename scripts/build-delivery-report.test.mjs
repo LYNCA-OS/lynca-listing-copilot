@@ -16,6 +16,7 @@ const realPhotoPilotPath = join(tmp, "real-photo-pilot.json");
 const supabaseSnapshotPath = join(tmp, "supabase-live-snapshot.json");
 const supabaseCandidateReportPath = join(tmp, "supabase-candidates-report.json");
 const commercialReviewPacketPath = join(tmp, "commercial-review-packet.json");
+const commercialReviewWorklistPath = join(tmp, "commercial-review-worklist.json");
 
 await writeFile(datasetPath, `${JSON.stringify({
   schema_version: "golden-dataset-v1",
@@ -199,6 +200,38 @@ await writeFile(commercialReviewPacketPath, `${JSON.stringify({
   ]
 }, null, 2)}\n`);
 
+await writeFile(commercialReviewWorklistPath, `${JSON.stringify({
+  schema_version: "commercial-review-worklist-v1",
+  generated_at: "2026-06-23T10:30:00.000Z",
+  summary: {
+    task_count: 248,
+    source_task_count: 248,
+    priority_band_counts: {
+      P0: 23,
+      P1: 97,
+      P2: 108,
+      P3: 20
+    },
+    review_effort_counts: {
+      MEDIUM: 216,
+      HIGH: 12,
+      LOW: 20
+    },
+    corrected_title_used_as_ground_truth_count: 0,
+    suggestions_are_ground_truth_count: 0,
+    bad_policy_task_count: 0,
+    worklist_uses_ground_truth: false
+  },
+  items: [
+    {
+      asset_id: "supabase_feedback_1",
+      priority_band: "P0",
+      priority_score: 0.83,
+      suggestions_are_ground_truth: false
+    }
+  ]
+}, null, 2)}\n`);
+
 const report = await createDeliveryReport({
   datasetPath,
   agnesSmokePath,
@@ -212,7 +245,8 @@ const report = await createDeliveryReport({
     AGNES_REAL_PHOTO_PILOT_OUT: realPhotoPilotPath,
     SUPABASE_LIVE_SNAPSHOT_PATH: supabaseSnapshotPath,
     SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath,
-    COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath
+    COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath,
+    COMMERCIAL_REVIEW_WORKLIST_PATH: commercialReviewWorklistPath
   }
 });
 
@@ -235,6 +269,7 @@ assert.match(report, /Marketplace real-photo pilot: completed evaluated 7\/10, t
 assert.match(report, /Supabase commercial inventory: passed rows 351, image-backed 248, no-image 103/);
 assert.match(report, /Supabase field-level ground truth: blocked required fields year=0, product=0, players=0/);
 assert.match(report, /Commercial review packet: passed tasks 248, corrected-title-as-truth=no, suggested-field-hints=248/);
+assert.match(report, /Commercial review worklist: passed tasks 248, P0=23, P1=97, uses-ground-truth=no/);
 assert.match(report, /Public eval commercial claim allowed: no/);
 assert.match(report, /Feedback retention enabled: no/);
 assert.match(report, /Approved-memory reuse enabled: no/);

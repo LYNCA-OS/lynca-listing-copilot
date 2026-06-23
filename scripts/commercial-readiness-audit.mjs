@@ -11,6 +11,7 @@ const defaultPublicCardEvalPath = "data/eval/agnes-public-card-image-eval-latest
 const defaultSupabaseLiveSnapshotPath = "data/recognition/reports/supabase-live-snapshot-2026-06-23.json";
 const defaultSupabaseCandidateReportPath = "data/recognition/reports/supabase-feedback-candidates-report.json";
 const defaultCommercialReviewPacketPath = "data/recognition/review/supabase-commercial-review-packet.json";
+const defaultCommercialReviewWorklistPath = "data/recognition/review/supabase-commercial-review-worklist.json";
 const minimumCommercialInventoryRows = 300;
 const minimumCommercialGroundTruthAssets = 100;
 const requiredCommercialTruthFields = Object.freeze(["year", "product", "players"]);
@@ -629,6 +630,51 @@ async function auditCommercialReviewPacket(env = process.env) {
   }
 }
 
+async function auditCommercialReviewWorklist(env = process.env) {
+  const worklistPath = env.COMMERCIAL_REVIEW_WORKLIST_PATH || defaultCommercialReviewWorklistPath;
+
+  if (!existsSync(resolve(worklistPath))) {
+    return warning("commercial_review_worklist", "Commercial review worklist is missing; operator labeling has no prioritized queue.", {
+      worklist: resolve(worklistPath),
+      task_count: 0,
+      worklist_uses_ground_truth: false
+    });
+  }
+
+  try {
+    const loaded = await readJsonFile(worklistPath);
+    const worklist = loaded.value || {};
+    const items = Array.isArray(worklist.items) ? worklist.items : [];
+    const badPolicyCount = Number(worklist.summary?.bad_policy_task_count || 0)
+      + Number(worklist.summary?.corrected_title_used_as_ground_truth_count || 0)
+      + Number(worklist.summary?.suggestions_are_ground_truth_count || 0);
+    const details = {
+      worklist: loaded.path,
+      schema_version: worklist.schema_version || "unknown",
+      task_count: Number(worklist.summary?.task_count ?? items.length),
+      source_task_count: Number(worklist.summary?.source_task_count || 0),
+      priority_band_counts: worklist.summary?.priority_band_counts || {},
+      review_effort_counts: worklist.summary?.review_effort_counts || {},
+      bad_policy_task_count: badPolicyCount,
+      worklist_uses_ground_truth: worklist.summary?.worklist_uses_ground_truth === true
+    };
+
+    if (badPolicyCount > 0 || details.worklist_uses_ground_truth) {
+      return blocked("commercial_review_worklist", "Commercial review worklist incorrectly uses title hints as ground truth.", details);
+    }
+    if (details.task_count > 0) {
+      return passed("commercial_review_worklist", "Commercial review worklist is ready for prioritized operator labeling.", details);
+    }
+    return warning("commercial_review_worklist", "Commercial review worklist has no tasks.", details);
+  } catch (error) {
+    return warning("commercial_review_worklist", "Commercial review worklist could not be parsed.", {
+      worklist: resolve(worklistPath),
+      error: error.message,
+      worklist_uses_ground_truth: false
+    });
+  }
+}
+
 export async function createCommercialReadinessReport({
   datasetPath = defaultDatasetPath,
   agnesSmokePath = defaultAgnesSmokePath,
@@ -648,6 +694,7 @@ export async function createCommercialReadinessReport({
   const supabaseCommercial = await auditSupabaseCommercialSample(env);
   checks.push(...supabaseCommercial.checks);
   checks.push(await auditCommercialReviewPacket(env));
+  checks.push(await auditCommercialReviewWorklist(env));
 
   const blockers = checks.filter((check) => check.status === "blocked");
   const warnings = checks.filter((check) => check.status === "warning");
@@ -685,7 +732,8 @@ export async function createCommercialReadinessReport({
         : null,
       public_card_reference_eval: checks.find((check) => check.id === "public_card_reference_eval")?.details || null,
       supabase_commercial_sample: supabaseCommercial.evidence,
-      commercial_review_packet: checks.find((check) => check.id === "commercial_review_packet")?.details || null
+      commercial_review_packet: checks.find((check) => check.id === "commercial_review_packet")?.details || null,
+      commercial_review_worklist: checks.find((check) => check.id === "commercial_review_worklist")?.details || null
     }
   };
 }
@@ -721,6 +769,10 @@ export function formatCommercialReadinessReport(report) {
   const reviewPacketSummary = reviewPacket
     ? `${reviewPacket.status} tasks ${reviewPacket.details.task_count ?? 0}, corrected-title-as-truth ${reviewPacket.details.corrected_title_used_as_ground_truth === true ? "yes" : "no"}, suggested-field-hints ${reviewPacket.details.suggested_field_task_count ?? 0}`
     : "n/a";
+  const reviewWorklist = report.checks.find((check) => check.id === "commercial_review_worklist");
+  const reviewWorklistSummary = reviewWorklist
+    ? `${reviewWorklist.status} tasks ${reviewWorklist.details.task_count ?? 0}, P0 ${reviewWorklist.details.priority_band_counts?.P0 ?? 0}, P1 ${reviewWorklist.details.priority_band_counts?.P1 ?? 0}, uses-ground-truth ${reviewWorklist.details.worklist_uses_ground_truth === true ? "yes" : "no"}`
+    : "n/a";
   const lines = [
     `Commercial readiness audit ${report.status}`,
     `held_out_commercial_assets: ${heldOutCount}`,
@@ -733,6 +785,7 @@ export function formatCommercialReadinessReport(report) {
     `supabase_commercial_sample: ${supabaseSampleSummary}`,
     `supabase_commercial_ground_truth: ${supabaseTruthSummary}`,
     `commercial_review_packet: ${reviewPacketSummary}`,
+    `commercial_review_worklist: ${reviewWorklistSummary}`,
     `gpt_implicit_default: ${providerPolicy?.details?.gpt_implicit_default || "unknown"}`,
     "",
     "checks:"

@@ -15,6 +15,7 @@ const publicCardEvalPath = join(tmp, "public-card-eval.json");
 const supabaseSnapshotPath = join(tmp, "supabase-live-snapshot.json");
 const supabaseCandidateReportPath = join(tmp, "supabase-candidates-report.json");
 const commercialReviewPacketPath = join(tmp, "commercial-review-packet.json");
+const commercialReviewWorklistPath = join(tmp, "commercial-review-worklist.json");
 
 await writeFile(datasetPath, `${JSON.stringify({
   schema_version: "golden-dataset-v1",
@@ -162,6 +163,38 @@ await writeFile(commercialReviewPacketPath, `${JSON.stringify({
   ]
 }, null, 2)}\n`);
 
+await writeFile(commercialReviewWorklistPath, `${JSON.stringify({
+  schema_version: "commercial-review-worklist-v1",
+  generated_at: "2026-06-23T10:30:00.000Z",
+  summary: {
+    task_count: 248,
+    source_task_count: 248,
+    priority_band_counts: {
+      P0: 23,
+      P1: 97,
+      P2: 108,
+      P3: 20
+    },
+    review_effort_counts: {
+      MEDIUM: 216,
+      HIGH: 12,
+      LOW: 20
+    },
+    corrected_title_used_as_ground_truth_count: 0,
+    suggestions_are_ground_truth_count: 0,
+    bad_policy_task_count: 0,
+    worklist_uses_ground_truth: false
+  },
+  items: [
+    {
+      asset_id: "supabase_feedback_1",
+      priority_band: "P0",
+      priority_score: 0.83,
+      suggestions_are_ground_truth: false
+    }
+  ]
+}, null, 2)}\n`);
+
 const report = await createCommercialReadinessReport({
   datasetPath,
   agnesSmokePath: smokePath,
@@ -173,7 +206,8 @@ const report = await createCommercialReadinessReport({
     AGNES_PUBLIC_CARD_EVAL_OUT: publicCardEvalPath,
     SUPABASE_LIVE_SNAPSHOT_PATH: supabaseSnapshotPath,
     SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath,
-    COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath
+    COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath,
+    COMMERCIAL_REVIEW_WORKLIST_PATH: commercialReviewWorklistPath
   }
 });
 
@@ -224,6 +258,12 @@ assert.equal(byId.commercial_review_packet.details.corrected_title_used_as_groun
 assert.equal(byId.commercial_review_packet.details.suggested_fields_are_ground_truth, false);
 assert.equal(byId.commercial_review_packet.details.suggested_field_task_count, 248);
 assert.equal(byId.commercial_review_packet.details.suggested_field_counts.year, 248);
+assert.equal(byId.commercial_review_worklist.status, "passed");
+assert.equal(byId.commercial_review_worklist.details.task_count, 248);
+assert.equal(byId.commercial_review_worklist.details.priority_band_counts.P0, 23);
+assert.equal(byId.commercial_review_worklist.details.priority_band_counts.P1, 97);
+assert.equal(byId.commercial_review_worklist.details.worklist_uses_ground_truth, false);
+assert.equal(byId.commercial_review_worklist.details.bad_policy_task_count, 0);
 
 const text = formatCommercialReadinessReport(report);
 assert.match(text, /Commercial readiness audit blocked/);
@@ -236,6 +276,7 @@ assert.match(text, /public_card_reference_eval: completed exact 296\/300 \(0.986
 assert.match(text, /supabase_commercial_sample: passed rows 351, image-backed 248, no-image 103/);
 assert.match(text, /supabase_commercial_ground_truth: blocked required fields year=0, product=0, players=0/);
 assert.match(text, /commercial_review_packet: passed tasks 248, corrected-title-as-truth no, suggested-field-hints 248/);
+assert.match(text, /commercial_review_worklist: passed tasks 248, P0 23, P1 97, uses-ground-truth no/);
 assert.match(text, /gpt_implicit_default: blocked_by_policy/);
 assert.match(text, /publishing_destination: blocked/);
 
