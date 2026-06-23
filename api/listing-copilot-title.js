@@ -25,6 +25,16 @@ import { renderListingPresentation } from "../lib/listing/renderer/listing-rende
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { completionActions } from "../lib/listing/orchestration/next-best-action.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import {
+  isSupabaseFeedbackConfigured,
+  listApprovedHistoryRecords,
+  listingApprovedMemoryEnabled
+} from "../lib/supabase-feedback.mjs";
+import {
+  approvedHistoryRecordToListingResult,
+  approvedIdentityMemorySource,
+  lookupApprovedIdentityMemory
+} from "../lib/listing/memory/approved-identity-memory.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -1259,8 +1269,15 @@ function captureQualityForPayload(payload = {}) {
   return payload.captureQuality || payload.capture_quality || summarizeAssetImageQuality(payload.images || []);
 }
 
+function storageRoleIsDerived(role = "") {
+  const normalized = String(role || "").trim().toLowerCase();
+  if (!normalized) return false;
+  return !["front_original", "back_original", "front", "back", "primary"].includes(normalized);
+}
+
 function imageIsDerived(image = {}) {
-  return Boolean(image.derived || image.sourceRegion || image.source_region || image.storageRole || image.storage_role);
+  const role = image.storageRole || image.storage_role || "";
+  return Boolean(image.derived || image.sourceRegion || image.source_region || storageRoleIsDerived(role));
 }
 
 function primaryImagesFromImages(images = []) {
@@ -1270,6 +1287,54 @@ function primaryImagesFromImages(images = []) {
 
 function explicitPrimaryImagesFromImages(images = []) {
   return images.filter((image) => !imageIsDerived(image));
+}
+
+async function verifyApprovedMemoryImages({ payload = {} } = {}) {
+  const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
+  if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
+
+  for (const image of primaryImages) {
+    const metadata = storageMetadataForImage(image);
+    if (!metadata.objectPath) return { ok: false, reason: "verified_storage_path_required" };
+    await assertVerifiedStorageImage(image);
+  }
+
+  return { ok: true };
+}
+
+async function createApprovedMemoryTitle(payload) {
+  if (!listingApprovedMemoryEnabled() || !isSupabaseFeedbackConfigured()) return null;
+
+  const startedAt = Date.now();
+  let lookup;
+  try {
+    lookup = await lookupApprovedIdentityMemory({
+      payload,
+      enabled: true,
+      loadApprovedRecords: ({ assetFingerprint, limit }) => listApprovedHistoryRecords({
+        assetFingerprint,
+        limit
+      }),
+      verifyImages: verifyApprovedMemoryImages
+    });
+  } catch {
+    return null;
+  }
+
+  if (!lookup.hit) return null;
+
+  const baseResult = approvedHistoryRecordToListingResult({
+    record: lookup.record,
+    payload,
+    assetFingerprint: lookup.asset_fingerprint,
+    imagePaths: lookup.image_paths,
+    latencyMs: Date.now() - startedAt
+  });
+
+  return applyIdentityResolutionGate(baseResult, {
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    providerId: approvedIdentityMemorySource
+  });
 }
 
 function derivedImagesFromImages(images = []) {
@@ -1834,6 +1899,12 @@ export default async function handler(req, res) {
   }
 
   try {
+    const approvedMemoryResult = await createApprovedMemoryTitle(payload);
+    if (approvedMemoryResult) {
+      sendJson(res, 200, approvedMemoryResult);
+      return;
+    }
+
     const result = await createProviderTitle(payload);
 
     sendJson(res, 200, result);
