@@ -9,7 +9,8 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 - URL security only allows configured image hosts and HTTPS.
 - R2 offline image geometry, glare, quality, and region-proposal functions are implemented as CPU-safe NumPy baselines.
 - The HTTP endpoint does not yet download signed image bytes; geometry and quality return explicit `UNAVAILABLE` until the safe image loader is implemented.
-- The current OCR, embedding, and candidate-verification paths return explicit `UNAVAILABLE` or `DISABLED` placeholders rather than fabricated facts.
+- OCR model execution still returns explicit `UNAVAILABLE` until a backend is enabled, but OCR text fusion now parses real OCR line items into field candidates, resolved fields, conflicts, and trace metadata.
+- Embedding and candidate-verification paths return explicit `UNAVAILABLE` or `DISABLED` placeholders rather than fabricated facts.
 - PaddleOCR is listed as an optional adapter dependency but is not enabled by default.
 - Unlimited-OCR is documented as an experimental future adapter and is not included in this image.
 

@@ -111,17 +111,33 @@ const recognitionPayload = {
   ocr_evidence: {
     status: "OK",
     items: [
-      { field: "year", value: "2024", confidence: 0.97, image_id: "front", role: "front_original", observed_text: "2024" },
-      { field: "product", value: "Topps Chrome", confidence: 0.96, image_id: "front", role: "front_original", observed_text: "Topps Chrome" },
-      { field: "subject", value: "Shohei Ohtani", confidence: 0.96, image_id: "front", role: "front_original", observed_text: "Shohei Ohtani" },
-      { field: "parallel", value: "Gold Refractor", confidence: 0.92, image_id: "front", role: "front_original", observed_text: "Gold Refractor" },
-      { field: "serial_number", value: "31 / 50", confidence: 0.95, image_id: "front", role: "front_original", observed_text: "31 / 50" },
-      { field: "serial_number", value: "31/50", confidence: 0.94, image_id: "back", role: "back_original", observed_text: "31/50" },
+      { text: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31 / 50", confidence: 0.97, image_id: "front", role: "front_original", observed_text: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31 / 50" },
+      { text: "31/50", confidence: 0.94, image_id: "back", role: "back_original", observed_text: "31/50" },
       {
-        field: "grade_label",
+        text: "PSA 10",
         confidence: 0.93,
         image_id: "front",
         role: "grade_label_crop",
+        observed_text: "PSA 10"
+      }
+    ]
+  },
+  evidence_fusion: {
+    status: "OK",
+    items: [
+      { field: "year", value: "2024", confidence: 0.8148, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31 / 50" },
+      { field: "product", value: "Topps Chrome", confidence: 0.96, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Topps Chrome" },
+      { field: "subject", value: "Shohei Ohtani", confidence: 0.96, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Shohei Ohtani" },
+      { field: "parallel", value: "Gold Refractor", confidence: 0.92, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Gold Refractor" },
+      { field: "serial_number", value: "31/50", confidence: 0.95, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "31 / 50" },
+      { field: "serial_number", value: "31/50", confidence: 0.94, image_id: "back", role: "back_original", source_type: "CARD_BACK", observed_text: "31/50" },
+      {
+        field: "grade_label",
+        value: "PSA 10",
+        confidence: 0.93,
+        image_id: "front",
+        role: "grade_label_crop",
+        source_type: "SLAB_LABEL",
         observed_text: "PSA 10",
         parsed_fields: {
           grade_company: "PSA",
@@ -129,7 +145,19 @@ const recognitionPayload = {
           grade_type: "CARD_ONLY"
         }
       }
-    ]
+    ],
+    resolved_fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Shohei Ohtani"],
+      parallel: "Gold Refractor",
+      serial_number: "31/50",
+      grade_company: "PSA",
+      card_grade: "10",
+      grade_type: "CARD_ONLY"
+    },
+    field_candidates: {},
+    conflicts: []
   },
   visual_features: {},
   processing: {

@@ -14,7 +14,7 @@ from .config import load_config
 from .contracts import response_for_unavailable, validate_request
 from .pipelines.card_rectification import rectification_unavailable
 from .pipelines.candidate_verification import candidate_verification_unavailable
-from .pipelines.evidence_fusion import fuse_evidence_placeholder
+from .pipelines.evidence_fusion import fuse_ocr_evidence
 from .pipelines.glare_detection import glare_unavailable
 from .pipelines.image_quality import quality_unavailable
 from .pipelines.ocr_pipeline import ocr_unavailable
@@ -40,14 +40,17 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
     rectification = rectification_unavailable(first_image_id)
     glare = glare_unavailable(first_image_id)
 
+    ocr_evidence = ocr_unavailable()
+    evidence_fusion = fuse_ocr_evidence(ocr_evidence, requested_fields)
+
     return {
         "asset_id": asset_id,
         "rectification": rectification,
         "image_quality": quality_unavailable(first_image_id),
         "glare_detection": glare,
         "regions": propose_regions_for_rectified_card(requested_fields, rectification.get("rectified_size", [0, 0]), first_image_id),
-        "ocr_evidence": ocr_unavailable(),
-        "evidence_fusion": fuse_evidence_placeholder(),
+        "ocr_evidence": ocr_evidence,
+        "evidence_fusion": evidence_fusion,
         "visual_features": embeddings_unavailable(),
         "candidate_verification": candidate_verification_unavailable(),
         "processing": {
