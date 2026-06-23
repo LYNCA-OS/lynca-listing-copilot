@@ -1,6 +1,6 @@
 {
   "schema_version": "supabase-recognition-live-snapshot-v1",
-  "generated_at": "2026-06-23T06:25:00.000Z",
+  "generated_at": "2026-06-23T07:20:00.000Z",
   "source": {
     "provider": "supabase_mcp",
     "project_id": "osrrujmpxxiefppjfgpd",
@@ -40,10 +40,19 @@
     "local_rest_export_completed": false,
     "blocked_reason": "Vercel production env has SUPABASE_URL, but SUPABASE_SERVICE_ROLE_KEY is empty; anon REST is RLS-filtered and returns 0 rows.",
     "mcp_sql_export_ready": true,
+    "mcp_session_export_completed": true,
     "mcp_sql_export_file": "supabase/queries/export_recognition_feedback_rows_for_mcp.sql",
+    "mcp_session_export_source_mode": "rows_json_payload",
+    "mcp_session_export_report_file": "data/recognition/reports/supabase-feedback-mcp-session-export-report.json",
     "mcp_sql_image_backed_rows": 248,
     "mcp_sql_json_text_bytes": 162842,
+    "mcp_rows_local_file": "data/recognition/reports/supabase-feedback-rows-mcp.json",
     "mcp_rows_import_command": "npm run recognition:supabase:rows -- --input data/recognition/reports/supabase-feedback-rows-mcp.json --output data/recognition/manifests/supabase-feedback-candidates.json --report-output data/recognition/reports/supabase-feedback-candidates-report.json",
+    "local_candidate_manifest_completed": true,
+    "local_candidate_manifest_file": "data/recognition/manifests/supabase-feedback-candidates.json",
+    "local_candidate_report_file": "data/recognition/reports/supabase-feedback-candidates-report.json",
+    "local_candidate_count": 248,
+    "table_records_without_images": 103,
     "ground_truth_status": "NEEDS_REVIEW",
     "corrected_title_used_as_ground_truth": false
   }

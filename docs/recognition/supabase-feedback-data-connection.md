@@ -35,6 +35,13 @@ Read-only MCP queries on 2026-06-23 showed:
 - storage bucket: `listing-feedback-images`
 - created_at window: `2026-06-21 09:30:11.126+00` through `2026-06-22 11:25:29.12+00`
 
+Recognition candidate status:
+
+- 351 total feedback table records are confirmed.
+- 248 records have at least one image URL and are usable as image-backed Recognition candidates.
+- 103 records are title-feedback-only rows at this stage and are intentionally not emitted into the image Recognition candidate manifest.
+- The current local ignored export generated `data/recognition/manifests/supabase-feedback-candidates.json` with 248 `NEEDS_REVIEW` items and validation `ok: true`.
+
 Snapshot file:
 
 - `data/recognition/reports/supabase-live-snapshot-2026-06-23.json`
@@ -70,7 +77,7 @@ When service-role REST access is unavailable, use the read-only SQL file:
 supabase/queries/export_recognition_feedback_rows_for_mcp.sql
 ```
 
-Save the SQL/MCP JSON result to a local file, then convert it into the same candidate manifest shape:
+For a small result, save the SQL/MCP JSON result to a local file, then convert it into the same candidate manifest shape:
 
 ```bash
 npm run recognition:supabase:rows -- \
@@ -87,6 +94,28 @@ The rows importer accepts:
 - Supabase MCP `{ "result": "Below is ... <untrusted-data-...>[...]</untrusted-data-...>" }` payloads
 
 This keeps internal feedback rows private while still making Codex/MCP exports usable as local, repeatable test data.
+
+For the live 2026-06-23 dataset, prefer chunked MCP export so large result payloads are not manually copied:
+
+1. Run the chunked query template in `supabase/queries/export_recognition_feedback_rows_for_mcp.sql` through Supabase MCP with offsets `0, 50, 100, 150, 200`.
+2. Use a stable prefix such as `LYNCA_SUPABASE_FEEDBACK_EXPORT_20260623_` and unique chunk ids ending in `0000`, `0050`, etc.
+3. Extract the MCP results from the local Codex session JSONL:
+
+```bash
+npm run recognition:supabase:mcp-session -- \
+  --session /Users/paidaxin/.codex/sessions/2026/06/22/rollout-2026-06-22T09-25-08-019eecee-67fb-72d2-af34-c9f16bf1d104.jsonl \
+  --chunk-prefix LYNCA_SUPABASE_FEEDBACK_EXPORT_20260623_ \
+  --expected-rows 248 \
+  --expected-chunks 5 \
+  --output data/recognition/reports/supabase-feedback-rows-mcp.json \
+  --report-output data/recognition/reports/supabase-feedback-mcp-session-export-report.json
+```
+
+Then run the normal rows conversion command shown above.
+
+The chunked query can return `front_bucket/front_object_path` and `back_bucket/back_object_path` instead of full authenticated storage URLs. The candidate converter supports these fields, which keeps the local dataset usable for later signed-URL generation without carrying full authenticated object URLs in the exported rows.
+
+If an earlier MCP run already produced a single `rows_json` aggregate payload, the same extractor can recover that payload from the Codex session JSONL without chunk ids. The 2026-06-23 local export used this fallback mode to extract 248 image-backed rows from a previous complete MCP result.
 
 ## Data Boundary
 
@@ -122,4 +151,4 @@ This keeps candidate data usable by future storage signed-URL generation without
 
 Local `.env.local` can be populated from Vercel, but the current Vercel production environment does not include a non-empty `SUPABASE_SERVICE_ROLE_KEY`. Supabase CLI is not installed locally.
 
-The REST code path and SQL/MCP rows importer are ready and covered by tests. Once either a service role key is added locally or a MCP SQL rows JSON export is saved, rerun the relevant export command above.
+The REST code path, SQL/MCP rows importer, and chunked MCP session extractor are ready and covered by tests. Once either a service role key is added locally or chunked MCP SQL rows are present in the session JSONL, rerun the relevant export command above.

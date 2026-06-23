@@ -6,6 +6,12 @@ import {
   feedbackRowsFromSqlExportPayload,
   runExportSupabaseRecognitionCandidatesFromRows
 } from "./export-supabase-recognition-candidates-from-rows.mjs";
+import {
+  extractSupabaseMcpExportChunksFromSessionText,
+  extractSupabaseMcpRowsJsonArraysFromSessionText,
+  mergeRowsFromSupabaseMcpChunks,
+  runExtractSupabaseMcpRowsFromSession
+} from "./extract-supabase-mcp-rows-from-session.mjs";
 
 const url = "https://example.supabase.co/storage/v1/object/authenticated/listing-feedback-images/feedback/2026-06/card/front.jpg";
 const parsed = parseSupabaseStorageUrl(url);
@@ -111,5 +117,166 @@ assert.equal(rowsPayload.source.filtered_out_no_image_count, 1);
 assert.equal(rowsPayload.summary.corrected_title_used_as_ground_truth, false);
 assert.equal(writtenFiles.get("manifest.json").items[0].source_feedback_id, "fb3");
 assert.equal(writtenFiles.get("report.json").validation.ok, true);
+
+const chunkPrefix = "LYNCA_SUPABASE_FEEDBACK_EXPORT_TEST_";
+const chunkRowsA = [
+  {
+    id: "fb5",
+    generated_title: "generated mcp a",
+    corrected_title: "corrected mcp a",
+    front_bucket: "listing-feedback-images",
+    front_object_path: "feedback/2026-06/a/front.jpg",
+    back_bucket: "listing-feedback-images",
+    back_object_path: "feedback/2026-06/a/back.jpg",
+    created_at: "2026-06-22T00:00:00Z"
+  }
+];
+const chunkRowsB = [
+  {
+    id: "fb6",
+    generated_title: "generated mcp b",
+    corrected_title: "corrected mcp b",
+    front_bucket: "listing-feedback-images",
+    front_object_path: "feedback/2026-06/b/front.jpg",
+    created_at: "2026-06-22T00:00:01Z"
+  }
+];
+const chunkA = {
+  chunk_id: `${chunkPrefix}0000`,
+  row_count: 1,
+  rows_b64: Buffer.from(JSON.stringify(chunkRowsA), "utf8").toString("base64")
+};
+const chunkB = {
+  chunk_id: `${chunkPrefix}0001`,
+  row_count: 1,
+  rows_b64: Buffer.from(JSON.stringify(chunkRowsB), "utf8").toString("base64")
+};
+const mcpSessionLines = [
+  JSON.stringify({
+    type: "event_msg",
+    payload: {
+      result: {
+        Ok: {
+          structuredContent: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  result: `Below is the result.
+<untrusted-data-example>
+${JSON.stringify([chunkA])}
+</untrusted-data-example>`
+                })
+              }
+            ]
+          }
+        }
+      }
+    }
+  }),
+  JSON.stringify({
+    type: "response_item",
+    payload: {
+      output: `Wall time: 1s
+Output:
+${JSON.stringify({
+  content: [
+    {
+      type: "text",
+      text: JSON.stringify({
+        result: `Below is the result.
+<untrusted-data-example>
+${JSON.stringify([chunkB])}
+</untrusted-data-example>`
+      })
+    }
+  ]
+})}`
+    }
+  }),
+  JSON.stringify({
+    type: "response_item",
+    payload: {
+      output: `duplicate ${chunkPrefix}0000 ${JSON.stringify([chunkA])}`
+    }
+  })
+].join("\n");
+const chunks = extractSupabaseMcpExportChunksFromSessionText(mcpSessionLines, { chunkPrefix });
+assert.equal(chunks.length, 2);
+const merged = mergeRowsFromSupabaseMcpChunks(chunks);
+assert.equal(merged.rows.length, 2);
+assert.equal(merged.rows[0].id, "fb6");
+assert.equal(merged.chunk_summaries[0].decoded_row_count, 1);
+
+const extractedFiles = new Map();
+const extractSummary = await runExtractSupabaseMcpRowsFromSession({
+  argv: [
+    "--session",
+    "session.jsonl",
+    "--output",
+    "rows.json",
+    "--report-output",
+    "extract-report.json",
+    "--chunk-prefix",
+    chunkPrefix,
+    "--expected-rows",
+    "2",
+    "--expected-chunks",
+    "2"
+  ],
+  readFileImpl: async () => mcpSessionLines,
+  writeFileImpl: async (filePath, text) => {
+    extractedFiles.set(filePath, JSON.parse(text));
+  }
+});
+assert.equal(extractSummary.row_count, 2);
+assert.equal(extractedFiles.get("rows.json").length, 2);
+assert.equal(extractedFiles.get("extract-report.json").chunk_count, 2);
+
+const rowsJsonSession = JSON.stringify({
+  type: "event_msg",
+  payload: {
+    result: {
+      Ok: {
+        structuredContent: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                result: `Below is the result. Note the boundary below.
+<untrusted-data-example>
+${JSON.stringify([{ rows_json: JSON.stringify(chunkRowsA) }])}
+</untrusted-data-example>`
+              })
+            }
+          ]
+        }
+      }
+    }
+  }
+});
+const rowsJsonArrays = extractSupabaseMcpRowsJsonArraysFromSessionText(rowsJsonSession);
+assert.equal(rowsJsonArrays.length, 1);
+assert.equal(rowsJsonArrays[0][0].id, "fb5");
+
+const rowsJsonFiles = new Map();
+const rowsJsonSummary = await runExtractSupabaseMcpRowsFromSession({
+  argv: [
+    "--session",
+    "session.jsonl",
+    "--output",
+    "rows-json.json",
+    "--report-output",
+    "rows-json-report.json",
+    "--expected-rows",
+    "1"
+  ],
+  readFileImpl: async () => rowsJsonSession,
+  writeFileImpl: async (filePath, text) => {
+    rowsJsonFiles.set(filePath, JSON.parse(text));
+  }
+});
+assert.equal(rowsJsonSummary.source_mode, "rows_json_payload");
+assert.equal(rowsJsonFiles.get("rows-json.json").length, 1);
 
 console.log("supabase recognition candidate tests passed");
