@@ -5,10 +5,18 @@ import { fileURLToPath } from "node:url";
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
+import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
+import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
+import { recognitionRequestedFields } from "../lib/listing/recognition/recognition-contract.mjs";
+import { safeRecognitionError } from "../lib/listing/recognition/recognition-errors.mjs";
+import {
+  hasRecognitionEvidence,
+  recognitionResponseToEvidenceDocument
+} from "../lib/listing/recognition/recognition-evidence-normalizer.mjs";
 import {
   isSupabaseFeedbackConfigured,
   listApprovedHistoryRecords,
@@ -140,6 +148,7 @@ function imageInputs(item = {}) {
   return (Array.isArray(item.images) ? item.images : [])
     .filter((image) => image?.object_path && image?.bucket)
     .map((image) => ({
+      image_id: image.image_id || image.id || null,
       role: image.role || image.capture_angle || "card_image",
       bucket: image.bucket,
       object_path: image.object_path
@@ -510,6 +519,218 @@ function evidenceDocumentFromProviderResult(providerResult = {}, {
   });
 }
 
+function hasEvidenceValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "boolean") return value === true;
+  return value !== null && value !== undefined && value !== "";
+}
+
+function evidenceCandidateKey(value) {
+  if (Array.isArray(value)) return value.map((item) => normalizeText(item).toLowerCase()).filter(Boolean).sort().join("|");
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return normalizeText(value).toLowerCase();
+}
+
+function evidenceFieldCandidatesWithSources(field = {}) {
+  const fieldSources = Array.isArray(field.sources) ? field.sources : [];
+  if (Array.isArray(field.candidates) && field.candidates.length) {
+    return field.candidates
+      .filter((candidate) => hasEvidenceValue(candidate?.value))
+      .map((candidate) => ({
+        value: candidate.value,
+        confidence: Number(candidate.confidence ?? field.confidence ?? 0.5),
+        sources: Array.isArray(candidate.sources) && candidate.sources.length ? candidate.sources : fieldSources
+      }));
+  }
+
+  return hasEvidenceValue(field.value)
+    ? [{
+        value: field.value,
+        confidence: Number(field.confidence || 0.5),
+        sources: fieldSources
+      }]
+    : [];
+}
+
+function mergeEvidenceField(fieldName, fields = []) {
+  const candidateMap = new Map();
+  const conflicts = [];
+
+  fields.forEach((field) => {
+    conflicts.push(...(Array.isArray(field?.conflicts) ? field.conflicts : []));
+    evidenceFieldCandidatesWithSources(field).forEach((candidate) => {
+      const key = evidenceCandidateKey(candidate.value);
+      const existing = candidateMap.get(key);
+      if (!existing) {
+        candidateMap.set(key, {
+          value: candidate.value,
+          confidence: candidate.confidence,
+          sources: [...candidate.sources]
+        });
+        return;
+      }
+
+      existing.confidence = Math.max(Number(existing.confidence || 0), Number(candidate.confidence || 0));
+      existing.sources.push(...candidate.sources);
+    });
+  });
+
+  const candidates = [...candidateMap.values()]
+    .map((candidate) => ({
+      ...candidate,
+      sources: candidate.sources.filter(Boolean)
+    }))
+    .sort((left, right) => Number(right.confidence || 0) - Number(left.confidence || 0));
+  const top = candidates[0] || null;
+  const distinctValueCount = new Set(candidates.map((candidate) => evidenceCandidateKey(candidate.value))).size;
+  const mergedConflicts = [
+    ...conflicts,
+    ...(distinctValueCount > 1 ? [{
+      field: fieldName,
+      conflict_type: "MULTI_SOURCE_VALUE_CONFLICT",
+      conflicting_values: candidates.map((candidate) => candidate.value),
+      severity: "MEDIUM",
+      reason: "Recognition worker and Agnes evidence produced competing values for this field."
+    }] : [])
+  ];
+
+  return createEvidenceField({
+    value: top?.value ?? null,
+    normalizedValue: top?.value ?? null,
+    status: mergedConflicts.length ? "CONFLICT" : Number(top?.confidence || 0) >= 0.86 ? "CONFIRMED" : "REVIEW",
+    confidence: Number(top?.confidence || 0),
+    candidates,
+    sources: candidates.flatMap((candidate) => candidate.sources || []),
+    conflicts: mergedConflicts
+  });
+}
+
+function mergeEvidenceMaps(...maps) {
+  const fieldNames = new Set();
+  maps.forEach((map) => {
+    Object.keys(map || {}).forEach((field) => fieldNames.add(field));
+  });
+
+  const evidence = {};
+  fieldNames.forEach((field) => {
+    const fields = maps.map((map) => map?.[field]).filter(Boolean);
+    evidence[field] = fields.length === 1 ? fields[0] : mergeEvidenceField(field, fields);
+  });
+  return evidence;
+}
+
+function mergeResolvedFields(...resolvedDocuments) {
+  const merged = {};
+  resolvedDocuments.forEach((resolved) => {
+    Object.entries(resolved || {}).forEach(([field, value]) => {
+      if (!hasEvidenceValue(value)) return;
+      merged[field] = value;
+    });
+  });
+  return merged;
+}
+
+function mergeEvidenceDocuments(...documents) {
+  const usableDocuments = documents.filter((document) => document && typeof document === "object");
+  if (!usableDocuments.length) {
+    return { evidence: {}, resolved: {}, unresolved: [], resolution_trace: [] };
+  }
+
+  return {
+    evidence: mergeEvidenceMaps(...usableDocuments.map((document) => document.evidence || {})),
+    resolved: mergeResolvedFields(...usableDocuments.map((document) => document.resolved || {})),
+    unresolved: usableDocuments.flatMap((document) => Array.isArray(document.unresolved) ? document.unresolved : []).slice(0, 16),
+    resolution_trace: usableDocuments.flatMap((document) => Array.isArray(document.resolution_trace) ? document.resolution_trace : []),
+    schema_version: usableDocuments.map((document) => document.schema_version).filter(Boolean).join("+") || "merged-evidence-document"
+  };
+}
+
+async function recognitionPreflightForItem(item, {
+  signedImages = [],
+  env = process.env,
+  analyzeRecognitionImpl = analyzeCardImagesWithRecognitionWorker,
+  maxTitleLength = 80
+} = {}) {
+  try {
+    const response = await analyzeRecognitionImpl({
+      assetId: item.asset_id || candidateId(item) || "supabase_feedback_item",
+      captureProfileId: item.capture_profile_id || "supabase_feedback_eval",
+      images: signedImages,
+      requestedFields: [...recognitionRequestedFields],
+      options: {
+        run_ocr: true,
+        run_visual_embeddings: false,
+        run_candidate_verification: false
+      },
+      env
+    });
+    const evidenceDocument = recognitionResponseToEvidenceDocument(response, {
+      images: signedImages
+    });
+
+    if (!hasRecognitionEvidence(evidenceDocument)) {
+      return {
+        status: response?.unavailable ? "unavailable" : "no_evidence",
+        evidenceDocument,
+        response,
+        result: null,
+        usage: {
+          recognition_worker_calls: response?.unavailable ? 0 : 1,
+          latency_ms: Number(response?.processing?.latency_ms || 0)
+        }
+      };
+    }
+
+    const gated = applyIdentityResolutionGate({
+      title: "",
+      final_title: "",
+      rendered_title: "",
+      model_title_suggestion: "",
+      title_render_source: "recognition_worker_identity_preflight",
+      confidence: "LOW",
+      reason: "Recognition worker produced grounded OCR evidence before Agnes.",
+      provider: "recognition_worker",
+      source: "recognition_worker",
+      resolved: evidenceDocument.resolved,
+      evidence: evidenceDocument.evidence,
+      unresolved: evidenceDocument.unresolved || [],
+      resolution_trace: evidenceDocument.resolution_trace || [],
+      usage: {
+        provider_calls: 0,
+        retrieval_calls: 0,
+        recognition_worker_calls: response?.unavailable ? 0 : 1,
+        latency_ms: Number(response?.processing?.latency_ms || 0),
+        estimated_cost_usd: 0,
+        resolution_rounds: 0
+      }
+    }, {
+      maxLength: maxTitleLength,
+      providerId: "recognition_worker"
+    });
+
+    return {
+      status: gated.identity_resolution_status === "ABSTAIN" ? "abstain" : "resolved",
+      evidenceDocument,
+      response,
+      result: gated.identity_resolution_status === "ABSTAIN" ? null : gated,
+      gated,
+      usage: gated.usage
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      evidenceDocument: null,
+      response: null,
+      result: null,
+      error: safeRecognitionError(error),
+      usage: {
+        recognition_worker_calls: 1,
+        latency_ms: 0
+      }
+    };
+  }
+}
+
 function createFocusedEvaluationRunner({
   signedImages = [],
   analyzeImpl,
@@ -549,6 +770,7 @@ function mergeEvalUsage(...usages) {
     acc.latency_ms += Number(raw.latency_ms || 0);
     acc.retrieval_calls += Number(raw.retrieval_calls || 0);
     acc.resolution_rounds += Number(raw.resolution_rounds || 0);
+    acc.recognition_worker_calls += Number(raw.recognition_worker_calls || 0);
     return acc;
   }, {
     provider_calls: 0,
@@ -556,7 +778,8 @@ function mergeEvalUsage(...usages) {
     image_count: 0,
     latency_ms: 0,
     retrieval_calls: 0,
-    resolution_rounds: 0
+    resolution_rounds: 0,
+    recognition_worker_calls: 0
   });
 }
 
@@ -565,11 +788,15 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
   maxTitleLength = 80,
-  excludeApprovedMemoryIds = []
+  excludeApprovedMemoryIds = [],
+  recognitionEvidenceDocument = null
 } = {}) {
-  const evidenceDocument = evidenceDocumentFromProviderResult(providerResult, {
+  const providerEvidenceDocument = evidenceDocumentFromProviderResult(providerResult, {
     images: signedImages
   });
+  const evidenceDocument = hasRecognitionEvidence(recognitionEvidenceDocument)
+    ? mergeEvidenceDocuments(recognitionEvidenceDocument, providerEvidenceDocument)
+    : providerEvidenceDocument;
   const providerRegistry = createSelfExcludingApprovedMemoryRegistry({
     env,
     excludeIds: excludeApprovedMemoryIds
@@ -631,6 +858,8 @@ async function signedAgnesImagesForItem(item, {
       env
     });
     signed.push({
+      image_id: image.image_id || null,
+      id: image.image_id || null,
       name: `${image.role || "card_image"}:${candidateId(item) || image.object_path}`,
       url,
       role: image.role,
@@ -645,10 +874,12 @@ async function signedAgnesImagesForItem(item, {
 async function evaluateOneFeedbackItem(item, {
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
+  analyzeRecognitionImpl = analyzeCardImagesWithRecognitionWorker,
   createSignedReadUrlImpl = createListingImageSignedReadUrl,
   identityResolution = false,
   maxTitleLength = 80,
-  excludeSelfApprovedMemory = true
+  excludeSelfApprovedMemory = true,
+  recognitionPreflight = false
 } = {}) {
   const id = candidateId(item);
   const referenceTitle = correctedTitle(item);
@@ -684,6 +915,37 @@ async function evaluateOneFeedbackItem(item, {
       env,
       createSignedReadUrlImpl
     });
+    const recognition = identityResolution && recognitionPreflight
+      ? await recognitionPreflightForItem(item, {
+        signedImages,
+        env,
+        analyzeRecognitionImpl,
+        maxTitleLength
+      })
+      : null;
+
+    if (recognition?.result) {
+      const prediction = predictionFromResolvedResult(recognition.result);
+      const comparison = titleComparison(referenceTitle, prediction.title);
+
+      return {
+        ...base,
+        status: "evaluated",
+        prediction,
+        corrected_title_comparison: comparison,
+        identity_resolution_enabled: identityResolution,
+        identity_resolution_status: recognition.result.identity_resolution_status || null,
+        identity_resolution_summary: identityResolutionSummary(recognition.result),
+        route: recognition.result.route || null,
+        completion_trace: recognition.result.completion_trace || recognition.result.resolution_trace || [],
+        recognition_preflight_enabled: true,
+        recognition_preflight_status: recognition.status,
+        recognition_preflight_identity_status: recognition.gated?.identity_resolution_status || recognition.result.identity_resolution_status || null,
+        recognition_preflight_error: null,
+        usage: mergeEvalUsage(recognition.usage)
+      };
+    }
+
     const result = await analyzeImpl({
       images: signedImagesForProvider(signedImages),
       prompt: evaluationPrompt(item),
@@ -695,7 +957,8 @@ async function evaluateOneFeedbackItem(item, {
         env,
         analyzeImpl,
         maxTitleLength,
-        excludeApprovedMemoryIds: excludeSelfApprovedMemory ? sourceIdsForItem(item) : []
+        excludeApprovedMemoryIds: excludeSelfApprovedMemory ? sourceIdsForItem(item) : [],
+        recognitionEvidenceDocument: recognition?.evidenceDocument || null
       })
       : null;
     const prediction = resolved ? predictionFromResolvedResult(resolved.result) : predictionFromResult(result);
@@ -711,7 +974,11 @@ async function evaluateOneFeedbackItem(item, {
       identity_resolution_summary: resolved ? identityResolutionSummary(resolved.result) : null,
       route: resolved?.result?.route || null,
       completion_trace: resolved?.completion?.resolution_trace || [],
-      usage: resolved?.usage || result.usage || null
+      recognition_preflight_enabled: identityResolution && recognitionPreflight,
+      recognition_preflight_status: recognition?.status || null,
+      recognition_preflight_identity_status: recognition?.gated?.identity_resolution_status || null,
+      recognition_preflight_error: recognition?.error || null,
+      usage: mergeEvalUsage(resolved?.usage || result.usage, recognition?.usage)
     };
   } catch (error) {
     return {
@@ -778,12 +1045,14 @@ function sumUsage(results = []) {
     usage.estimated_cost_usd += Number(raw.estimated_cost_usd || 0);
     usage.image_count += Number(raw.image_count || 0);
     usage.latency_ms += Number(raw.latency_ms || 0);
+    usage.recognition_worker_calls += Number(raw.recognition_worker_calls || 0);
     return usage;
   }, {
     provider_calls: 0,
     estimated_cost_usd: 0,
     image_count: 0,
-    latency_ms: 0
+    latency_ms: 0,
+    recognition_worker_calls: 0
   });
 }
 
@@ -830,6 +1099,7 @@ function buildReport({
   fullSampleEvaluation,
   identityResolution,
   excludeSelfApprovedMemory,
+  recognitionPreflight = false,
   proactiveFocusedRereads = false,
   proactiveSerialOnly = false,
   rateLimitRetries = 0,
@@ -843,6 +1113,7 @@ function buildReport({
     provider: "agnes",
     identity_resolution_enabled: identityResolution,
     internal_memory_self_exclusion_enabled: identityResolution && excludeSelfApprovedMemory,
+    recognition_preflight_enabled: identityResolution && recognitionPreflight,
     proactive_focused_rereads_enabled: identityResolution && proactiveFocusedRereads,
     proactive_serial_only_enabled: identityResolution && proactiveFocusedRereads && proactiveSerialOnly,
     rate_limit_retry_enabled: rateLimitRetries > 0,
@@ -874,10 +1145,12 @@ export async function evaluateAgnesSupabaseFeedback({
   identityResolution = false,
   maxTitleLength = 80,
   excludeSelfApprovedMemory = true,
+  recognitionPreflight = false,
   proactiveFocusedRereads = false,
   proactiveSerialOnly = false,
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
+  analyzeRecognitionImpl = analyzeCardImagesWithRecognitionWorker,
   createSignedReadUrlImpl = createListingImageSignedReadUrl,
   previousResults = [],
   onProgress = null,
@@ -930,9 +1203,15 @@ export async function evaluateAgnesSupabaseFeedback({
   const completionEnv = proactiveFocusedRereads
     ? { ...env, ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1" }
     : env;
+  const reusableResultMatchesMode = (item = {}) => {
+    return item?.status === "evaluated"
+      && Boolean(item.identity_resolution_enabled) === Boolean(identityResolution)
+      && Boolean(item.recognition_preflight_enabled) === Boolean(identityResolution && recognitionPreflight)
+      && Boolean(item.internal_memory_self_excluded) === Boolean(identityResolution && excludeSelfApprovedMemory);
+  };
   const reusableById = new Map(
     previousResults
-      .filter((item) => item?.status === "evaluated")
+      .filter(reusableResultMatchesMode)
       .map((item) => [item.candidate_id, item])
   );
   const resultsById = new Map();
@@ -959,6 +1238,7 @@ export async function evaluateAgnesSupabaseFeedback({
       fullSampleEvaluation,
       identityResolution,
       excludeSelfApprovedMemory,
+      recognitionPreflight,
       proactiveFocusedRereads,
       proactiveSerialOnly,
       rateLimitRetries,
@@ -977,10 +1257,12 @@ export async function evaluateAgnesSupabaseFeedback({
       const result = await evaluateOneFeedbackItemWithRateLimitRetry(item, {
         env: completionEnv,
         analyzeImpl,
+        analyzeRecognitionImpl,
         createSignedReadUrlImpl,
         identityResolution,
         maxTitleLength,
         excludeSelfApprovedMemory,
+        recognitionPreflight,
         rateLimitRetries,
         rateLimitPauseMs
       });
@@ -998,6 +1280,7 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `Agnes Supabase feedback eval ${report.status || "unknown"}`,
     `identity_resolution_enabled: ${report.identity_resolution_enabled === true}`,
     `internal_memory_self_exclusion_enabled: ${report.internal_memory_self_exclusion_enabled === true}`,
+    `recognition_preflight_enabled: ${report.recognition_preflight_enabled === true}`,
     `proactive_focused_rereads_enabled: ${report.proactive_focused_rereads_enabled === true}`,
     `proactive_serial_only_enabled: ${report.proactive_serial_only_enabled === true}`,
     `target_count: ${report.target_count ?? "n/a"}`,
@@ -1007,6 +1290,7 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `corrected_title_exact: ${report.corrected_title_exact_count ?? "n/a"}/${report.attempted_count ?? "n/a"} (${report.corrected_title_exact_rate ?? "n/a"})`,
     `corrected_title_token_recall_avg: ${report.corrected_title_token_recall_avg ?? "n/a"}`,
     `critical_title_errors: ${report.critical_title_error_count ?? "n/a"}/${report.attempted_count ?? "n/a"} (${report.critical_title_error_rate ?? "n/a"})`,
+    `recognition_worker_calls: ${report.usage?.recognition_worker_calls ?? "n/a"}`,
     `full_sample_evaluation: ${report.full_sample_evaluation === true}`,
     `commercial_accuracy_claim_allowed: false`,
     `scope: private Supabase feedback corrected-title reference only`
@@ -1032,6 +1316,8 @@ export async function main(argv = process.argv, env = process.env) {
   const maxTitleLength = numberArg(argv, "--max-title-length", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_MAX_TITLE_LENGTH || 80));
   const excludeSelfApprovedMemory = !hasFlag(argv, "--allow-self-approved-memory")
     && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_EXCLUDE_SELF_MEMORY", true);
+  const recognitionPreflight = hasFlag(argv, "--recognition-preflight")
+    || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_RECOGNITION_PREFLIGHT", false);
   const proactiveFocusedRereads = hasFlag(argv, "--proactive-focused-rereads")
     || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_PROACTIVE_FOCUSED_REREADS", false);
   const proactiveSerialOnly = hasFlag(argv, "--proactive-serial-only")
@@ -1060,6 +1346,7 @@ export async function main(argv = process.argv, env = process.env) {
     identityResolution,
     maxTitleLength,
     excludeSelfApprovedMemory,
+    recognitionPreflight,
     proactiveFocusedRereads,
     proactiveSerialOnly,
     env: {

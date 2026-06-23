@@ -21,8 +21,8 @@ function traceSteps(result, field) {
 const ocrConflict = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
-    { field: "serial_number", value: "31/50", source: "OCR_FRONT", confidence: 0.9 },
-    { field: "serial_number", value: "37/50", source: "OCR_BACK", confidence: 0.88 }
+    { field: "serial_number", value: "31/50", source: "OCR_ONLY", confidence: 0.9 },
+    { field: "serial_number", value: "37/50", source: "OCR", confidence: 0.88 }
   ]
 });
 assert.ok(ocrConflict.conflict_map.some((conflict) => conflict.field === "serial_number" && conflict.conflict_type === "OCR_CONFLICT"));
@@ -32,7 +32,7 @@ assert.equal(ocrConflict.status, "ABSTAIN");
 assert.equal(ocrConflict.identity_state.status, "ABSTAIN");
 assert.equal(ocrConflict.canonical_evidence.schema_version, "identity_evidence_v1");
 assert.ok(ocrConflict.canonical_evidence.source_counts.CARD_FRONT_PRINTED_TEXT > 0);
-assert.ok(ocrConflict.canonical_evidence.source_counts.CARD_BACK_PRINTED_TEXT > 0);
+assert.ok(ocrConflict.canonical_evidence.source_counts.OCR_ONLY > 0);
 assert.ok(ocrConflict.canonical_evidence.field_names.includes("serial_number"));
 assert.ok(ocrConflict.identity_state.field_states.serial_number);
 assert.ok(ocrConflict.field_uncertainty.serial_number.entropy > 0);
@@ -55,6 +55,18 @@ assert.ok(slabOverride.conflict_map.some((conflict) => conflict.field === "card_
 assert.equal(slabOverride.ambiguity_status, "RESOLVED");
 assert.equal(slabOverride.status, "RESOLVED");
 assert.ok(slabOverride.conflict_graph.edges.some((edge) => edge.edge_type === "override" && edge.field === "card_grade"));
+
+const backPrintedSerialOverride = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "serial_number", value: "37/50", source: "OCR_FRONT", confidence: 0.95 },
+    { field: "serial_number", value: "31/50", source: "OCR_BACK", confidence: 0.91 }
+  ]
+});
+assert.equal(backPrintedSerialOverride.identity.serial_number, "31/50");
+assert.equal(fieldState(backPrintedSerialOverride, "serial_number").resolution_reason, "card_back_printed_text_override_front_ocr_conflict");
+assert.equal(backPrintedSerialOverride.status, "RESOLVED");
+assert.ok(backPrintedSerialOverride.conflict_map.some((conflict) => conflict.field === "serial_number" && conflict.resolved === true));
 
 const registryOverride = resolveIdentity({
   evidenceItems: [

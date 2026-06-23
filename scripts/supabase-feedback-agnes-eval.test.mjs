@@ -380,6 +380,149 @@ assert.ok(identityResolved.results[0].identity_resolution_summary.fields.some((f
 assert.ok(identityResolved.results[0].usage.provider_calls >= 2);
 assert.ok(identityResolved.results[0].completion_trace.some((entry) => entry.output?.convergence?.loop === "detect_conflict_retrieve_reevaluate_converge"));
 
+function recognitionPayload({
+  assetId = "supabase_feedback_fb1",
+  includeCore = true,
+  serial = "5/5",
+  serialSourceType = "CARD_BACK",
+  serialRole = "back_original"
+} = {}) {
+  const coreItems = includeCore
+    ? [
+        { field: "year", value: "2025", confidence: 0.92, image_id: "fb1_front", role: "front_original", source_type: "CARD_FRONT", observed_text: "2025 Topps Chrome" },
+        { field: "manufacturer", value: "Topps", confidence: 0.9, image_id: "fb1_front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Topps" },
+        { field: "product", value: "Topps Chrome", confidence: 0.94, image_id: "fb1_front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Topps Chrome" },
+        { field: "subject", value: "Shohei Ohtani", confidence: 0.94, image_id: "fb1_front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Shohei Ohtani" },
+        { field: "parallel", value: "Gold Refractor", confidence: 0.9, image_id: "fb1_front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Gold Refractor" },
+        {
+          field: "grade_label",
+          value: "PSA 10",
+          confidence: 0.93,
+          image_id: "fb1_front",
+          role: "grade_label_crop",
+          source_type: "SLAB_LABEL",
+          observed_text: "PSA 10",
+          parsed_fields: {
+            grade_company: "PSA",
+            card_grade: "10",
+            grade_type: "CARD_ONLY"
+          }
+        }
+      ]
+    : [];
+
+  return {
+    asset_id: assetId,
+    rectification: {},
+    image_quality: {},
+    regions: [],
+    ocr_evidence: { status: "OK", items: [] },
+    evidence_fusion: {
+      status: "OK",
+      items: [
+        ...coreItems,
+        { field: "serial_number", value: serial, confidence: 0.91, image_id: "fb1_back", role: serialRole, source_type: serialSourceType, observed_text: serial }
+      ],
+      resolved_fields: {},
+      field_candidates: {},
+      conflicts: []
+    },
+    visual_features: {},
+    processing: {
+      pipeline_version: "recognition-worker-contract-v1",
+      model_versions: { ocr: "mock" },
+      latency_ms: 17
+    }
+  };
+}
+
+let directRecognitionCalls = 0;
+let directAgnesCalls = 0;
+const recognitionDirect = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  identityResolution: true,
+  recognitionPreflight: true,
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeRecognitionImpl: async ({ requestedFields, images }) => {
+    directRecognitionCalls += 1;
+    assert.ok(requestedFields.includes("serial_number"));
+    assert.equal(images.length, 2);
+    return recognitionPayload({ includeCore: true });
+  },
+  analyzeImpl: async () => {
+    directAgnesCalls += 1;
+    throw new Error("Agnes should be skipped when recognition preflight resolves identity.");
+  },
+  now: () => new Date("2026-06-23T12:01:32.000Z")
+});
+assert.equal(recognitionDirect.recognition_preflight_enabled, true);
+assert.equal(recognitionDirect.results[0].recognition_preflight_status, "resolved");
+assert.equal(recognitionDirect.results[0].identity_resolution_status, "CONFIRMED");
+assert.equal(recognitionDirect.results[0].usage.provider_calls, 0);
+assert.equal(recognitionDirect.results[0].usage.recognition_worker_calls, 1);
+assert.equal(recognitionDirect.usage.recognition_worker_calls, 1);
+assert.equal(directRecognitionCalls, 1);
+assert.equal(directAgnesCalls, 0);
+assert.match(recognitionDirect.results[0].prediction.title, /5\/5/);
+
+let serialMergeAgnesCalls = 0;
+const recognitionSerialMerge = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  identityResolution: true,
+  recognitionPreflight: true,
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    MAX_AGNES_CALLS_PER_ASSET: "0",
+    MAX_EXTERNAL_QUERIES: "0"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeRecognitionImpl: async () => recognitionPayload({ includeCore: false, serial: "5/5" }),
+  analyzeImpl: async () => {
+    serialMergeAgnesCalls += 1;
+    return {
+      model_id: "agnes-test",
+      parse_source: "content",
+      finish_reason: "stop",
+      parsed: {
+        title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 3/5 PSA 10",
+        confidence: "HIGH",
+        reason: "Agnes misread serial, but core fields are visible.",
+        fields: {
+          year: "2025",
+          manufacturer: "Topps",
+          product: "Topps Chrome",
+          players: ["Shohei Ohtani"],
+          parallel: "Gold Refractor",
+          serial_number: "3/5",
+          grade_company: "PSA",
+          card_grade: "10",
+          grade_type: "CARD_ONLY"
+        },
+        unresolved: []
+      },
+      usage: { provider_calls: 1, image_count: 2 }
+    };
+  },
+  now: () => new Date("2026-06-23T12:01:34.000Z")
+});
+assert.equal(recognitionSerialMerge.results[0].recognition_preflight_status, "abstain");
+assert.equal(serialMergeAgnesCalls, 1);
+assert.equal(recognitionSerialMerge.results[0].usage.provider_calls, 1);
+assert.equal(recognitionSerialMerge.results[0].usage.recognition_worker_calls, 1);
+assert.match(recognitionSerialMerge.results[0].prediction.title, /5\/5/);
+assert.doesNotMatch(recognitionSerialMerge.results[0].prediction.title, /3\/5/);
+assert.equal(recognitionSerialMerge.results[0].corrected_title_comparison.wrong_serial, false);
+assert.ok(recognitionSerialMerge.results[0].identity_resolution_summary.conflict_map.some((conflict) => conflict.field === "serial_number"));
+
 const originalFetch = globalThis.fetch;
 const memoryRows = [
   {
