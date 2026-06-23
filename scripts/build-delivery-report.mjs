@@ -239,6 +239,7 @@ export async function createDeliveryReport({
       "Provider/model ids are allowlisted server-side.",
       "Smoke report override variables: AGNES_SMOKE_REPORT_PATH, BRAVE_SMOKE_REPORT_PATH, EBAY_SMOKE_REPORT_PATH, OWS_SMOKE_REPORT_PATH.",
       "Identity result cache variables: LISTING_IDENTITY_CACHE_ENABLED, LISTING_IDENTITY_CACHE_READ_ENABLED, LISTING_IDENTITY_CACHE_WRITE_ENABLED, LISTING_IDENTITY_CACHE_WRITE_RESOLVED, LISTING_IDENTITY_CACHE_TTL_DAYS.",
+      "Pre-provider rescan gate variable: LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED.",
       `Package scripts present: ${inlineList(scripts.filter((name) => ["check", "test", "test:mock", "eval:golden", "commercial:heldout", "readiness:audit", "public:cards", "eval:agnes-public-cards", "eval:agnes-real-photos", "smoke:agnes", "smoke:brave", "smoke:ebay", "smoke:ows"].includes(name)))}`
     ])),
     section(11, "Storage Structure", bullet([
@@ -278,6 +279,7 @@ export async function createDeliveryReport({
     section(17, "Glare Handling Strategy", bullet([
       "Image-quality gate computes blur, glare, crop, readability, resolution, and critical-region occlusion signals.",
       "Derived crops support focused reread, but generated image cleanup is not used as fact evidence.",
+      "A pre-provider rescan gate returns TARGETED_RESCAN_REQUIRED before recognition or Agnes when identity-critical regions are already occluded.",
       "Current implementation is a conservative heuristic gate, not industrial-grade glare segmentation."
     ])),
     section(18, "Writer UI Behavior", bullet([
@@ -327,6 +329,7 @@ export async function createDeliveryReport({
       `Average latency ms: ${rate(operational.average_latency_ms)}`,
       `Cost per asset: ${rate(operational.cost_per_asset)}`,
       "Exact verified-image cache hits skip recognition, retrieval, and vision provider calls.",
+      "Pre-provider targeted-rescan hits also skip recognition, retrieval, and vision provider calls.",
       "Cost estimates require provider pricing env vars before they become financially meaningful."
     ])),
     section(24, "Known Limitations", bullet([

@@ -20,6 +20,7 @@ import {
 } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { readListingImageVerificationRecord } from "../lib/listing/storage/storage-verification-store.mjs";
 import { defaultCaptureProfileId, summarizeAssetImageQuality } from "../lib/listing/image-quality/quality-gate.mjs";
+import { evaluatePreProviderRescanGate } from "../lib/listing/image-quality/pre-provider-rescan-gate.mjs";
 import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
@@ -1287,6 +1288,64 @@ function captureQualityForPayload(payload = {}) {
   return payload.captureQuality || payload.capture_quality || summarizeAssetImageQuality(payload.images || []);
 }
 
+function createPreProviderRescanResult(payload = {}) {
+  const captureQuality = captureQualityForPayload(payload);
+  const decision = evaluatePreProviderRescanGate({ captureQuality });
+  if (!decision.blocked) return null;
+
+  const blockingRegions = Array.isArray(decision.blocking_regions) ? decision.blocking_regions : [];
+  const result = withRequestMetadata({
+    title: "",
+    final_title: "",
+    rendered_title: "",
+    model_title_suggestion: "",
+    title_render_source: "pre_provider_rescan_gate",
+    confidence: "LOW",
+    reason: "Image quality gate requires a targeted rescan before recognition or provider inference.",
+    fields: defaultFields,
+    resolved: {},
+    evidence: {},
+    unresolved: [
+      `targeted rescan required: ${blockingRegions.join(", ") || "identity critical region"} occluded`
+    ],
+    source: "image_quality_gate",
+    provider: "image_quality_gate",
+    route: "TARGETED_RESCAN_REQUIRED",
+    route_reason: "Identity-critical image region is occluded before any paid provider call.",
+    capture_quality: captureQuality,
+    pre_provider_rescan_gate: decision,
+    usage: {
+      provider_calls: 0,
+      retrieval_calls: 0,
+      recognition_worker_calls: 0,
+      latency_ms: 0,
+      estimated_cost_usd: 0,
+      resolution_rounds: 0
+    },
+    resolution_trace: [
+      {
+        phase: "pre_provider_rescan_gate",
+        step: "evaluate_capture_quality",
+        input: {
+          route: captureQuality.route || captureQuality.glare_route || null,
+          occluded_regions: decision.occluded_regions || []
+        },
+        output: {
+          blocked: true,
+          blocking_regions: blockingRegions
+        },
+        decision: "request_targeted_rescan_before_provider",
+        created_at: new Date().toISOString()
+      }
+    ]
+  }, payload);
+
+  return applyIdentityResolutionGate(result, {
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    providerId: "image_quality_gate"
+  });
+}
+
 function storageRoleIsDerived(role = "") {
   const normalized = String(role || "").trim().toLowerCase();
   if (!normalized) return false;
@@ -2308,6 +2367,12 @@ export default async function handler(req, res) {
     const identityCacheResult = await createIdentityCacheTitle(payload);
     if (identityCacheResult) {
       sendJson(res, 200, identityCacheResult);
+      return;
+    }
+
+    const preProviderRescanResult = createPreProviderRescanResult(payload);
+    if (preProviderRescanResult) {
+      sendJson(res, 200, preProviderRescanResult);
       return;
     }
 
