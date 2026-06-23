@@ -18,6 +18,7 @@ from .pipelines.evidence_fusion import fuse_ocr_evidence
 from .pipelines.glare_detection import detect_glare_from_array, glare_unavailable
 from .pipelines.image_loader import ImageLoadError, load_signed_image
 from .pipelines.image_quality import measure_image_quality_from_array, quality_unavailable
+from .pipelines.multi_card_detection import detect_multi_card_from_loaded_images, multi_card_detection_unavailable
 from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_unavailable
 from .pipelines.region_proposal import propose_regions_for_rectified_card
 from .pipelines.visual_embeddings import embeddings_unavailable
@@ -93,6 +94,15 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
             "tesseract_not_run",
             "tesseract_disabled" if not config.enable_tesseract_ocr else "image_bytes_not_loaded",
         )
+    multi_card_detection = (
+        detect_multi_card_from_loaded_images(image_loads)
+        if image_loads
+        else multi_card_detection_unavailable(
+            image_load_errors[0]["reason"]
+            if image_load_errors
+            else ("image_download_disabled" if not config.enable_image_download else "image_bytes_not_loaded")
+        )
+    )
     evidence_fusion = fuse_ocr_evidence(ocr_evidence, requested_fields)
 
     return {
@@ -100,6 +110,7 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
         "rectification": rectification,
         "image_quality": quality,
         "glare_detection": glare,
+        "multi_card_detection": multi_card_detection,
         "regions": propose_regions_for_rectified_card(requested_fields, rectification.get("rectified_size", [0, 0]), first_image_id),
         "ocr_evidence": ocr_evidence,
         "evidence_fusion": evidence_fusion,
@@ -113,6 +124,7 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
                 "unlimited_ocr": "not_enabled_experimental",
                 "opencv": "enabled" if config.enable_opencv_rectification else "disabled",
                 "r2_numpy_geometry": "available_for_offline_eval",
+                "multi_card_detector": "numpy_component_card_count_r1",
             },
             "image_download": {
                 "status": "OK" if image_loads else "UNAVAILABLE",

@@ -29,6 +29,8 @@ REQUESTED_FIELDS = {
     "back_text",
     "parallel",
     "card_type",
+    "multi_card",
+    "card_count",
 }
 
 
@@ -97,6 +99,7 @@ def response_for_unavailable(asset_id: str, reason: str, pipeline_version: str) 
         "reason": reason,
         "rectification": {},
         "image_quality": {},
+        "multi_card_detection": {},
         "regions": [],
         "ocr_evidence": {},
         "visual_features": {},

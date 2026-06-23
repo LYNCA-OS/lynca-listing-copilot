@@ -15,6 +15,7 @@ from app.pipelines.field_parsers import parse_checklist_code, parse_collector_nu
 from app.pipelines.glare_detection import detect_glare_from_array
 from app.pipelines.image_loader import ImageLoadError, LoadedImage, load_signed_image
 from app.pipelines.image_quality import measure_image_quality_from_array
+from app.pipelines.multi_card_detection import detect_multi_card_from_array
 from app.pipelines.ocr_pipeline import ocr_evidence_from_items
 from app.pipelines.region_proposal import propose_regions_for_rectified_card
 from app.security import SecurityError, UrlPolicy, redact_url, validate_image_url, verify_bearer_token
@@ -187,8 +188,23 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["rectification"]["status"], "OK")
         self.assertEqual(result["image_quality"]["status"], "OK")
         self.assertEqual(result["glare_detection"]["status"], "OK")
+        self.assertEqual(result["multi_card_detection"]["status"], "OK")
+        self.assertFalse(result["multi_card_detection"]["multi_card"])
         self.assertEqual(result["processing"]["image_download"]["images"][0]["width"], 800)
         self.assertTrue(result["regions"])
+
+    def test_multi_card_detection_flags_two_card_photo(self):
+        image = np.zeros((1000, 1300, 3), dtype=np.uint8)
+        image[120:540, 120:420] = 210
+        image[160:580, 680:980] = 215
+
+        detection = detect_multi_card_from_array(image, image_id="front", role="front_original")
+
+        self.assertEqual(detection["status"], "OK")
+        self.assertTrue(detection["multi_card"])
+        self.assertEqual(detection["card_count_estimate"], 2)
+        self.assertGreaterEqual(detection["confidence"], 0.72)
+        self.assertEqual(len(detection["candidates"]), 2)
 
     def test_analyze_payload_can_run_tesseract_adapter_on_loaded_images(self):
         front = LoadedImage(

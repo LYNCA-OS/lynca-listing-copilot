@@ -5,6 +5,7 @@ import handler from "../api/listing-copilot-title.js";
 import {
   recognitionResponseToEvidenceDocument
 } from "../lib/listing/recognition/recognition-evidence-normalizer.mjs";
+import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.SUPABASE_URL = "https://supabase.test";
@@ -171,6 +172,48 @@ const recognitionPayload = {
 const evidenceDocument = recognitionResponseToEvidenceDocument(recognitionPayload, { images });
 assert.equal(evidenceDocument.evidence.serial_number.candidates[0].sources[0].source_type, "CARD_FRONT");
 assert.equal(evidenceDocument.evidence.grade_company.candidates[0].sources[0].source_type, "SLAB_LABEL");
+
+const multiCardRecognitionPayload = {
+  ...recognitionPayload,
+  multi_card_detection: {
+    status: "OK",
+    multi_card: true,
+    card_count_estimate: 2,
+    confidence: 0.88,
+    image_id: "front",
+    role: "front_original",
+    images: [
+      {
+        image_id: "front",
+        role: "front_original",
+        candidates: [
+          { bbox: [20, 20, 300, 410], confidence: 0.89 },
+          { bbox: [360, 24, 640, 414], confidence: 0.87 }
+        ]
+      }
+    ]
+  }
+};
+const multiCardEvidenceDocument = recognitionResponseToEvidenceDocument(multiCardRecognitionPayload, { images });
+assert.equal(multiCardEvidenceDocument.resolved.multi_card, true);
+assert.equal(multiCardEvidenceDocument.resolved.card_count, 2);
+assert.equal(multiCardEvidenceDocument.evidence.multi_card.candidates[0].sources[0].source_type, "VISUAL_GUESS");
+const multiCardGated = applyIdentityResolutionGate({
+  title: "",
+  final_title: "",
+  fields: {},
+  resolved: multiCardEvidenceDocument.resolved,
+  evidence: multiCardEvidenceDocument.evidence,
+  unresolved: multiCardEvidenceDocument.unresolved,
+  provider: "recognition_worker",
+  source: "recognition_worker",
+  reason: "Recognition worker detected multiple cards in the same image.",
+  route: "RECOGNITION_WORKER_PREFLIGHT"
+}, { providerId: "recognition_worker" });
+assert.equal(multiCardGated.identity_resolution_status, "ABSTAIN");
+assert.equal(multiCardGated.route, "NON_STANDARD_MANUAL");
+assert.equal(multiCardGated.final_title, "");
+assert.ok(multiCardGated.unresolved.includes("multi-card lot requires single-card split or manual lot workflow"));
 
 const fetchCalls = [];
 globalThis.fetch = async (url, options = {}) => {

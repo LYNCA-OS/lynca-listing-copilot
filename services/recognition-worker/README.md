@@ -7,9 +7,10 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 - FastAPI contract skeleton is implemented.
 - Internal bearer-token auth is required.
 - URL security only allows configured image hosts and HTTPS.
-- R2 offline image geometry, glare, quality, and region-proposal functions are implemented as CPU-safe NumPy baselines.
+- R2 offline image geometry, glare, quality, multi-card risk detection, and region-proposal functions are implemented as CPU-safe NumPy baselines.
 - The HTTP endpoint can download signed image bytes when `ENABLE_IMAGE_DOWNLOAD=true`; otherwise geometry and quality return explicit `UNAVAILABLE`.
 - OCR model execution still returns explicit `UNAVAILABLE` until a backend is enabled. A local Tesseract CLI adapter can be enabled with `ENABLE_TESSERACT_OCR=true`; OCR text fusion parses real OCR line items into field candidates, resolved fields, conflicts, and trace metadata.
+- Multi-card detection emits `multi_card_detection` as a routing risk signal. It is used to abstain or split lot workflows, not to auto-generate a single-card identity from a lot photo.
 - Embedding and candidate-verification paths return explicit `UNAVAILABLE` or `DISABLED` placeholders rather than fabricated facts.
 - PaddleOCR is listed as an optional adapter dependency but is not enabled by default.
 - Unlimited-OCR is documented as an experimental future adapter and is not included in this image.
