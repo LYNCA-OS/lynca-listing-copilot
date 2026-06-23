@@ -74,7 +74,7 @@ const pokemon = renderListingPresentation({
     brand: "Pokemon TCG",
     product: "Pokemon Scarlet Violet",
     set: "SV9C",
-    character: "琉琪亚的展现",
+    character: "Lisia's Appeal",
     subset: "SAR",
     collector_number: "257/208",
     artist: "En Morikura"
@@ -82,10 +82,27 @@ const pokemon = renderListingPresentation({
   maxLength: 80
 });
 assert.equal(pokemon.renderer, "pokemon");
-assert.match(pokemon.final_title, /琉琪亚的展现/);
+assert.match(pokemon.final_title, /Lisia's Appeal/);
 assert.match(pokemon.final_title, /#257\/208/);
 assert.match(pokemon.final_title, /SAR/);
 assert.doesNotMatch(pokemon.final_title, /En Morikura/i);
+assert.doesNotMatch(pokemon.final_title, /[\u4e00-\u9fff]/);
+
+const localizedOnlyPokemon = renderListingPresentation({
+  resolved: {
+    brand: "Pokémon TCG",
+    product: "Pokemon Scarlet Violet",
+    set: "SV9C",
+    character: "琉琪亚的展现",
+    subset: "SAR",
+    collector_number: "257/208"
+  },
+  maxLength: 80
+});
+assert.equal(localizedOnlyPokemon.renderer, "pokemon");
+assert.doesNotMatch(localizedOnlyPokemon.final_title, /[\u4e00-\u9fff]/);
+assert.equal(localizedOnlyPokemon.title_length_policy.blocked_required_terms.length, 1);
+assert.equal(localizedOnlyPokemon.title_length_policy.blocked_required_terms[0].key, "subject");
 
 const reviewedModules = renderListingPresentation({
   resolved: {

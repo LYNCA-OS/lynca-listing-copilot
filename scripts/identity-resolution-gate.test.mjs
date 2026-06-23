@@ -139,4 +139,31 @@ const pokemonCritical = criticalFieldsForIdentityResolution(normalizeResolvedFie
 assert.ok(pokemonCritical.includes("character"));
 assert.ok(!pokemonCritical.includes("players"));
 
+const localizedOnlyGrounded = applyIdentityResolutionGate({
+  title: "provider localized title must not become final title",
+  confidence: "HIGH",
+  reason: "Card text is localized and needs English title evidence before publishing.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    brand: "Pokemon TCG",
+    product: "Pokemon Scarlet Violet",
+    set: "SV9C",
+    character: "琉琪亚的展现",
+    subset: "SAR",
+    collector_number: "257/208"
+  }),
+  evidence: {
+    product: groundedEvidence("Pokemon Scarlet Violet"),
+    character: groundedEvidence("琉琪亚的展现"),
+    collector_number: groundedEvidence("257/208")
+  },
+  unresolved: []
+});
+assert.equal(localizedOnlyGrounded.identity_resolution_status, "CONFIRMED");
+assert.equal(localizedOnlyGrounded.final_title, "");
+assert.equal(localizedOnlyGrounded.confidence, "LOW");
+assert.equal(localizedOnlyGrounded.title_render_source, "identity_resolution_abstain");
+assert.ok(localizedOnlyGrounded.unresolved.includes("title blocked: required identity text is not English"));
+assert.ok(localizedOnlyGrounded.title_length_policy.blocked_required_terms.some((term) => term.key === "subject"));
+
 console.log("identity resolution gate tests passed");
