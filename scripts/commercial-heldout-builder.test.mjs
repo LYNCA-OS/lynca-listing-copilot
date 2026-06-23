@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { evaluateGoldenDataset } from "../lib/listing/evaluation/golden-dataset.mjs";
 import {
   buildHeldOutCommercialItems,
+  buildHeldOutCommercialItemsFromReviewedEvaluation,
   mergeHeldOutCommercialItems
 } from "../lib/listing/evaluation/commercial-heldout-builder.mjs";
 
@@ -216,5 +217,177 @@ const strictCli = spawnSync(process.execPath, [
 
 assert.equal(strictCli.status, 1);
 assert.match(strictCli.stderr, /Rejected rows\/items found/);
+
+const reviewedManifest = {
+  schema_version: "commercial-reviewed-manifest-v1",
+  items: [
+    {
+      source_feedback_id: "fb-001",
+      asset_id: "reviewed-commercial-001",
+      review_id: "reviewed-001",
+      category: "sports_card",
+      images: [
+        { role: "front", object_path: "reviewed/001/front.jpg" },
+        { role: "back", object_path: "reviewed/001/back.jpg" }
+      ],
+      ground_truth: resolvedFields({ serial_number: "29/199" }),
+      critical_fields: ["year", "product", "players", "serial_number"],
+      difficulty_tags: ["serial"]
+    },
+    {
+      source_feedback_id: "fb-002",
+      asset_id: "reviewed-commercial-002",
+      review_id: "reviewed-002",
+      category: "sports_card",
+      images: [
+        { role: "front", object_path: "reviewed/002/front.jpg" },
+        { role: "back", object_path: "reviewed/002/back.jpg" }
+      ],
+      ground_truth: resolvedFields({
+        parallel: "Blue Refractor",
+        serial_number: "31/50",
+        grade_company: "PSA",
+        card_grade: "10"
+      }),
+      critical_fields: ["year", "product", "players", "parallel", "serial_number", "grade_company", "card_grade"],
+      difficulty_tags: ["serial", "slab"]
+    },
+    {
+      source_feedback_id: "fb-003",
+      asset_id: "reviewed-commercial-003",
+      review_id: "reviewed-003",
+      category: "sports_card",
+      images: [
+        { role: "front", object_path: "reviewed/003/front.jpg" }
+      ],
+      ground_truth: resolvedFields({
+        serial_number: "1/1"
+      }),
+      critical_fields: ["year", "product", "players", "serial_number"],
+      difficulty_tags: ["serial", "front_only"]
+    }
+  ]
+};
+
+const agnesReport = {
+  schema_version: "agnes-reviewed-commercial-accuracy-v1",
+  results: [
+    {
+      source_feedback_id: "fb-001",
+      asset_id: "reviewed-commercial-001",
+      status: "evaluated",
+      prediction: {
+        model_id: "agnes-commercial-test",
+        route: "AI_COMPLETE_REVIEW",
+        title: "2025 Topps Chrome Cooper Flagg 029/199",
+        fields: resolvedFields({ serial_number: "029/199" })
+      },
+      usage: {
+        provider_calls: 1,
+        latency_ms: 1200
+      }
+    },
+    {
+      source_feedback_id: "fb-002",
+      asset_id: "reviewed-commercial-002",
+      status: "evaluated",
+      prediction: {
+        model_id: "agnes-commercial-test",
+        route: "AI_COMPLETE_REVIEW",
+        title: "2025 Topps Chrome Cooper Flagg Red Refractor 37/50 PSA 9",
+        fields: resolvedFields({
+          parallel: "Red Refractor",
+          serial_number: "37/50",
+          grade_company: "PSA",
+          card_grade: "9"
+        })
+      }
+    }
+  ]
+};
+
+const reviewedBuildResult = buildHeldOutCommercialItemsFromReviewedEvaluation({
+  reviewedManifest,
+  agnesReport
+});
+assert.equal(reviewedBuildResult.items.length, 3);
+assert.equal(reviewedBuildResult.rejected_rows.length, 0);
+assert.equal(reviewedBuildResult.warnings.length, 1);
+assert.match(reviewedBuildResult.warnings[0], /no matching Agnes evaluation result/);
+
+const reviewedExact = reviewedBuildResult.items.find((item) => item.asset_id === "reviewed-commercial-001");
+const reviewedCorrected = reviewedBuildResult.items.find((item) => item.asset_id === "reviewed-commercial-002");
+const reviewedMissing = reviewedBuildResult.items.find((item) => item.asset_id === "reviewed-commercial-003");
+
+assert.equal(reviewedExact.prediction.review_outcome, "ACCEPTED_UNCHANGED");
+assert.equal(reviewedExact.prediction.resolved_fields.serial_number, "29/199");
+assert.equal(reviewedExact.ground_truth_fields.serial_number, "29/199");
+assert.equal(reviewedExact.ground_truth_route, "AI_COMPLETE_REVIEW");
+assert.equal(reviewedCorrected.prediction.review_outcome, "CORRECTED_FIELDS");
+assert.equal(reviewedCorrected.ground_truth_route, "WRITER_REVIEW_REQUIRED");
+assert.equal(reviewedCorrected.prediction.human_authored_critical_resolution, true);
+assert.deepEqual(reviewedCorrected.prediction.field_changes.map((change) => change.field), [
+  "parallel",
+  "serial_number",
+  "card_grade"
+]);
+assert.equal(reviewedMissing.prediction.review_outcome, "TECHNICAL_FAILURE");
+assert.equal(reviewedMissing.prediction.route, "NOT_EVALUATED");
+assert.equal(reviewedMissing.prediction.technical_failure, true);
+assert.equal(reviewedMissing.ground_truth_route, "FAILED_TECHNICAL");
+
+const reviewedBaseDataset = {
+  ...baseDataset,
+  commercial_acceptance: {
+    minimum_held_out_assets: 3,
+    required_strata: ["serial", "front_back"],
+    thresholds: baseDataset.commercial_acceptance.thresholds
+  },
+  splits: {
+    development: [],
+    calibration: [],
+    held_out_commercial: []
+  }
+};
+
+const reviewedMergeResult = mergeHeldOutCommercialItems(reviewedBaseDataset, reviewedBuildResult.items, { replace: true });
+assert.equal(reviewedMergeResult.validation.ok, true);
+assert.equal(reviewedMergeResult.dataset.splits.held_out_commercial.length, 3);
+assert.equal(reviewedMergeResult.evaluation.commercial_acceptance_gate.passed, false);
+assert.equal(reviewedMergeResult.evaluation.held_out_commercial_evidence.commercial_metrics.ai_overall_exact_resolution_rate, 1 / 3);
+assert.equal(reviewedMergeResult.evaluation.held_out_commercial_evidence.commercial_metrics.ai_complete_result_precision, 0.5);
+
+const reviewedPath = join(tempDir, "reviewed.json");
+const agnesPath = join(tempDir, "agnes.json");
+const reviewedOutPath = join(tempDir, "reviewed-out.json");
+await writeFile(reviewedPath, `${JSON.stringify(reviewedManifest, null, 2)}\n`);
+await writeFile(agnesPath, `${JSON.stringify(agnesReport, null, 2)}\n`);
+
+const reviewedCli = spawnSync(process.execPath, [
+  "scripts/build-held-out-commercial.mjs",
+  "--reviewed",
+  reviewedPath,
+  "--agnes",
+  agnesPath,
+  "--dataset",
+  datasetPath,
+  "--out",
+  reviewedOutPath,
+  "--replace",
+  "--allow-rejections"
+], {
+  encoding: "utf8"
+});
+
+assert.equal(reviewedCli.status, 0, reviewedCli.stderr || reviewedCli.stdout);
+assert.match(reviewedCli.stdout, /mode: reviewed_manifest_agnes_eval/);
+assert.match(reviewedCli.stdout, /source_rows: 3/);
+assert.match(reviewedCli.stdout, /imported_items: 3/);
+assert.match(reviewedCli.stdout, /warnings: 1/);
+assert.match(reviewedCli.stdout, /held_out_commercial_assets: 3/);
+
+const reviewedOutputDataset = JSON.parse(await readFile(reviewedOutPath, "utf8"));
+assert.equal(reviewedOutputDataset.splits.held_out_commercial.length, 3);
+assert.equal(reviewedOutputDataset.splits.held_out_commercial[0].prediction.resolved_fields.serial_number, "29/199");
 
 console.log("commercial held-out builder tests passed");

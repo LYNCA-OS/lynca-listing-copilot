@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   buildHeldOutCommercialItems,
+  buildHeldOutCommercialItemsFromReviewedEvaluation,
   mergeHeldOutCommercialItems,
   normalizeCommercialHeldoutRows
 } from "../lib/listing/evaluation/commercial-heldout-builder.mjs";
@@ -21,9 +22,12 @@ function printUsage() {
   console.error([
     "Usage:",
     "  npm run commercial:heldout -- --source <reviews-export.json> --out <dataset-out.json> [--dataset data/golden-dataset.json] [--replace]",
+    "  npm run commercial:heldout -- --reviewed <reviewed-manifest.json> --agnes <agnes-eval.json> --out <dataset-out.json> [--dataset data/golden-dataset.json] [--replace]",
     "",
     "Options:",
     "  --source                         JSON export containing approved review rows.",
+    "  --reviewed                       Reviewed commercial manifest with operator-approved ground_truth.",
+    "  --agnes                          Agnes evaluation report for the reviewed manifest.",
     "  --dataset                        Base golden dataset path. Defaults to data/golden-dataset.json.",
     "  --out                            Output dataset path. Required; use an explicit path to avoid accidental overwrite.",
     "  --replace                        Replace the existing held_out_commercial split instead of appending.",
@@ -70,29 +74,65 @@ function gateSummary(gate = {}) {
 }
 
 const sourceArg = argValue("--source", process.env.COMMERCIAL_HELDOUT_SOURCE || "");
+const reviewedArg = argValue("--reviewed", process.env.COMMERCIAL_REVIEWED_MANIFEST || "");
+const agnesArg = argValue("--agnes", process.env.COMMERCIAL_AGNES_EVAL || "");
 const datasetArg = argValue("--dataset", process.env.GOLDEN_DATASET_PATH || "data/golden-dataset.json");
 const outArg = argValue("--out", process.env.COMMERCIAL_HELDOUT_OUT || "");
 const allowRejections = hasFlag("--allow-rejections");
 const requireGatePass = hasFlag("--require-gate-pass");
 
-if (!sourceArg || !outArg || hasFlag("--help") || hasFlag("-h")) {
+if (hasFlag("--help") || hasFlag("-h")) {
   printUsage();
-  process.exit(sourceArg && outArg ? 0 : 1);
+  process.exit(0);
 }
 
-const sourcePath = resolve(sourceArg);
+if (!outArg) {
+  printUsage();
+  process.exit(1);
+}
+
+if (sourceArg && (reviewedArg || agnesArg)) {
+  console.error("Use either --source or --reviewed/--agnes, not both.");
+  process.exit(1);
+}
+
+if (!sourceArg && (!reviewedArg || !agnesArg)) {
+  printUsage();
+  process.exit(1);
+}
+
+const sourcePath = sourceArg ? resolve(sourceArg) : "";
+const reviewedPath = reviewedArg ? resolve(reviewedArg) : "";
+const agnesPath = agnesArg ? resolve(agnesArg) : "";
 const datasetPath = resolve(datasetArg);
 const outPath = resolve(outArg);
 
 try {
-  const [source, dataset] = await Promise.all([
-    readJsonFile(sourcePath, "Commercial held-out source"),
-    readJsonFile(datasetPath, "Golden dataset")
-  ]);
-  const sourceRows = normalizeCommercialHeldoutRows(source);
-  const buildResult = buildHeldOutCommercialItems(sourceRows, {
-    allowDerivedTitleFlags: hasFlag("--allow-derived-title-flags")
-  });
+  const dataset = await readJsonFile(datasetPath, "Golden dataset");
+  let buildResult;
+  let sourceRows = [];
+  let sourceLabel = sourcePath;
+  let mode = "approved_review_rows";
+
+  if (sourcePath) {
+    const source = await readJsonFile(sourcePath, "Commercial held-out source");
+    sourceRows = normalizeCommercialHeldoutRows(source);
+    buildResult = buildHeldOutCommercialItems(sourceRows, {
+      allowDerivedTitleFlags: hasFlag("--allow-derived-title-flags")
+    });
+  } else {
+    const [reviewedManifest, agnesReport] = await Promise.all([
+      readJsonFile(reviewedPath, "Reviewed commercial manifest"),
+      readJsonFile(agnesPath, "Agnes evaluation report")
+    ]);
+    sourceRows = Array.isArray(reviewedManifest.items) ? reviewedManifest.items : [];
+    sourceLabel = `${reviewedPath} + ${agnesPath}`;
+    mode = "reviewed_manifest_agnes_eval";
+    buildResult = buildHeldOutCommercialItemsFromReviewedEvaluation({
+      reviewedManifest,
+      agnesReport
+    });
+  }
 
   const mergeResult = mergeHeldOutCommercialItems(dataset, buildResult.items, {
     replace: hasFlag("--replace")
@@ -101,7 +141,8 @@ try {
   const rejectedItems = mergeResult.rejected_items;
 
   console.log("Commercial held-out build complete");
-  console.log(`source: ${sourcePath}`);
+  console.log(`mode: ${mode}`);
+  console.log(`source: ${sourceLabel}`);
   console.log(`dataset: ${datasetPath}`);
   console.log(`out: ${outPath}`);
   console.log(`source_rows: ${sourceRows.length}`);

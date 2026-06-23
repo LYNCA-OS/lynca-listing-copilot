@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { resolveIdentity } from "../lib/identity-resolution/solver.mjs";
+import { resolveIdentity, resolveIdentityWithConvergence } from "../lib/identity-resolution/solver.mjs";
 import { validateIdentity } from "../lib/identity-resolution/constraint-engine.mjs";
 
 const baseAnchors = [
@@ -349,5 +349,39 @@ assert.equal(identityConstraintScore[0].rule_weight, 1);
 assert.equal(identityConstraintScore[0].score_penalty, 1);
 assert.equal(identityConstraintScore[0].identity_constraint_score, 0);
 assert.ok(identityConstraintScore[0].evaluated_rules.some((rule) => rule.code === "serial_constraint_violation"));
+
+let convergenceRetrievalCalls = 0;
+const convergedSerial = await resolveIdentityWithConvergence({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "serial_number", value: "31/50", source: "OCR_ONLY", confidence: 0.91 },
+    { field: "serial_number", value: "37/50", source: "OCR", confidence: 0.9 }
+  ],
+  options: {
+    convergence: {
+      maxIterations: 2
+    }
+  },
+  retrieveEvidence: async (request) => {
+    convergenceRetrievalCalls += 1;
+    assert.equal(request.status, "ABSTAIN");
+    assert.ok(request.unresolved_fields.includes("serial_number"));
+    return {
+      evidenceItems: [
+        { field: "serial_number", value: "31/50", source: "SLAB", confidence: 0.98 }
+      ]
+    };
+  }
+});
+assert.equal(convergenceRetrievalCalls, 1);
+assert.equal(convergedSerial.identity.serial_number, "31/50");
+assert.equal(convergedSerial.status, "RESOLVED");
+assert.equal(convergedSerial.convergence.enabled, true);
+assert.equal(convergedSerial.convergence.converged, true);
+assert.ok(convergedSerial.convergence_trace.some((entry) => entry.step === "detect_conflict"));
+assert.ok(convergedSerial.convergence_trace.some((entry) => entry.step === "retrieve"));
+assert.ok(convergedSerial.convergence_trace.some((entry) => entry.step === "re_evaluate"));
+assert.ok(convergedSerial.convergence_trace.some((entry) => entry.step === "converged"));
+assert.equal(fieldState(convergedSerial, "serial_number").resolution_reason, "slab_override_ocr_conflict");
 
 console.log("identity resolution tests passed");
