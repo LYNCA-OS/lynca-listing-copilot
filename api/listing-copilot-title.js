@@ -25,8 +25,12 @@ import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs
 import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
+import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
 import { completionActions } from "../lib/listing/orchestration/next-best-action.mjs";
-import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import {
+  applyIdentityResolutionGate,
+  applyIdentityResolutionGateWithConvergence
+} from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { identityStatuses } from "../lib/identity-resolution/types.mjs";
 import {
   isSupabaseFeedbackConfigured,
@@ -2150,12 +2154,13 @@ function createAgnesFocusedRereadRunner({
 async function withEvidenceCompletion(result, payload, {
   runFocusedVisionImpl = null
 } = {}) {
+  const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
   const completion = await completeEvidence({
     resolved: result.resolved,
     evidence: result.evidence,
     captureQuality: result.capture_quality || captureQualityForPayload(payload),
     unresolved: result.unresolved,
-    retrievalMode: payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE,
+    retrievalMode,
     runFocusedVisionImpl
   });
   const resolutionTrace = [
@@ -2177,10 +2182,16 @@ async function withEvidenceCompletion(result, payload, {
     })
   };
 
-  return applyIdentityResolutionGate(output, {
+  return applyIdentityResolutionGateWithConvergence(output, {
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
     providerId: output.provider || output.source,
-    retrievalCandidates: retrievalCandidatesForIdentity(completion)
+    retrievalCandidates: retrievalCandidatesForIdentity(completion),
+    retrieveEvidence: createIdentityConvergenceRetriever({
+      retrievalMode
+    }),
+    convergenceOptions: {
+      maxIterations: 1
+    }
   });
 }
 

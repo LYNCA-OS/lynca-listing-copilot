@@ -8,7 +8,11 @@ import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase
 import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
-import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
+import {
+  applyIdentityResolutionGate,
+  applyIdentityResolutionGateWithConvergence
+} from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
 import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
 import { recognitionRequestedFields } from "../lib/listing/recognition/recognition-contract.mjs";
@@ -804,19 +808,21 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
     env,
     excludeIds: excludeApprovedMemoryIds
   });
+  const retrievalMode = env.RETRIEVAL_MODE;
   const completion = await completeEvidence({
     resolved: evidenceDocument.resolved,
     evidence: evidenceDocument.evidence,
     unresolved: evidenceDocument.unresolved || [],
     env,
     providerRegistry,
+    retrievalMode,
     runFocusedVisionImpl: createFocusedEvaluationRunner({
       signedImages,
       analyzeImpl,
       env
     })
   });
-  const gated = applyIdentityResolutionGate({
+  const gated = await applyIdentityResolutionGateWithConvergence({
     title: providerResult.parsed?.title || "",
     model_title_suggestion: providerResult.parsed?.title || "",
     confidence: providerResult.parsed?.confidence || "",
@@ -838,7 +844,15 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
   }, {
     maxLength: maxTitleLength,
     providerId: "agnes",
-    retrievalCandidates: completion.retrieval?.selected_candidate ? [completion.retrieval.selected_candidate] : []
+    retrievalCandidates: completion.retrieval?.selected_candidate ? [completion.retrieval.selected_candidate] : [],
+    retrieveEvidence: createIdentityConvergenceRetriever({
+      env,
+      retrievalMode,
+      providerRegistry
+    }),
+    convergenceOptions: {
+      maxIterations: 1
+    }
   });
 
   return {

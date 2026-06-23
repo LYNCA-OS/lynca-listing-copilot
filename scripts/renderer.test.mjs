@@ -153,6 +153,20 @@ const baseCard = renderResolvedTitle({
 });
 assert.equal(baseCard.rendered_title, "2023 Panini Prizm Football Rashee Rice RC");
 
+const insertCardType = renderResolvedTitle({
+  year: "2025",
+  brand: "Topps",
+  product: "Finest",
+  set: "Finest",
+  players: ["Shohei Ohtani"],
+  card_type: "insert",
+  insert: "Gusto",
+  serial_number: "5/5"
+}, {
+  maxLength: 80
+});
+assert.equal(insertCardType.rendered_title, "2025 Topps Finest Shohei Ohtani Gusto 5/5");
+
 const longTitle = renderResolvedTitle({
   year: "2015-16",
   brand: "Panini",

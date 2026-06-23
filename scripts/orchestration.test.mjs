@@ -458,6 +458,56 @@ assert.deepEqual(focusedRereadTrace.output.convergence.phases[1].focused_fields,
 assert.equal(focusedRereadCompletion.resolution_trace[0].action, completionActions.SEARCH_INTERNAL_APPROVED_HISTORY);
 assert.ok(focusedRereadCompletion.resolution_trace.every((entry) => !/GPT|openai_legacy/i.test(JSON.stringify(entry))));
 
+const invalidFocusedSerialCompletion = await completeEvidence({
+  resolved: {
+    year: "2025",
+    brand: "Topps",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Topps", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Topps Chrome", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], confidence: 0.9 })
+  },
+  unresolved: ["serial number unreadable"],
+  captureQuality: {
+    critical_region_occlusion: {
+      serial_number: {
+        status: "OCCLUDED",
+        glare_score: 0.82,
+        readability_score: 0.04
+      }
+    }
+  },
+  budgetOverrides: {
+    maxRounds: 1,
+    maxAgnesCalls: 1
+  },
+  runFocusedVisionImpl: async () => ({
+    provider_id: "agnes",
+    model_id: "agnes-2.0-flash",
+    resolved: {
+      serial_number: "not visible"
+    },
+    evidence: {
+      serial_number: createEvidenceField({
+        value: "not visible",
+        status: "REVIEW",
+        confidence: 0.8
+      })
+    }
+  })
+});
+const invalidFocusedSerialTrace = invalidFocusedSerialCompletion.resolution_trace
+  .find((entry) => entry.action === completionActions.CROP_AND_READ_SERIAL);
+assert.equal(invalidFocusedSerialTrace.status, "no_information");
+assert.equal(invalidFocusedSerialCompletion.resolved.serial_number, null);
+assert.equal(invalidFocusedSerialCompletion.evidence.serial_number, undefined);
+assert.deepEqual(invalidFocusedSerialTrace.output.focused_vision.updated_fields, []);
+assert.equal(invalidFocusedSerialTrace.output.focused_vision.rejected_fields[0].field, "serial_number");
+
 let parallelInFlight = 0;
 let parallelMaxInFlight = 0;
 const parallelFocusedCompletion = await completeEvidence({

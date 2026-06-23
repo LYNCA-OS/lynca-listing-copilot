@@ -6,6 +6,7 @@ import {
 } from "../lib/listing/evidence/evidence-schema.mjs";
 import {
   applyIdentityResolutionGate,
+  applyIdentityResolutionGateWithConvergence,
   criticalFieldsForIdentityResolution,
   evidenceDocumentToIdentityEvidenceItems
 } from "../lib/identity-resolution/listing-resolution-gate.mjs";
@@ -472,5 +473,77 @@ assert.equal(weakOcrOnlyChecklistDropped.identity_resolution_status, "RESOLVED")
 assert.equal(weakOcrOnlyChecklistDropped.resolved.checklist_code, null);
 assert.ok(weakOcrOnlyChecklistDropped.final_title);
 assert.ok(weakOcrOnlyChecklistDropped.conflict_map.some((conflict) => conflict.conflict_type === "WEAK_OCR_ONLY_OPTIONAL_CODE_DROPPED"));
+
+let convergenceGateRetrievalCalls = 0;
+const convergedGate = await applyIdentityResolutionGateWithConvergence({
+  title: "provider title must not decide serial conflict",
+  confidence: "HIGH",
+  reason: "Provider had conflicting serial evidence.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    serial_number: "31/50"
+  }),
+  evidence: {
+    year: groundedEvidence("2024"),
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    serial_number: createEvidenceField({
+      value: "31/50",
+      status: "CONFLICT",
+      confidence: 0.9,
+      candidates: [
+        {
+          value: "31/50",
+          confidence: 0.9,
+          sources: [printedSource("OCR", "front", "31/50")]
+        },
+        {
+          value: "37/50",
+          confidence: 0.88,
+          sources: [printedSource("OCR", "front_crop", "37/50")]
+        }
+      ],
+      sources: [
+        printedSource("OCR", "front", "31/50"),
+        printedSource("OCR", "front_crop", "37/50")
+      ],
+      conflicts: [
+        {
+          source_type: "OCR",
+          current_value: "31/50",
+          focused_value: "37/50",
+          reason: "serial_ocr_conflict"
+        }
+      ]
+    })
+  },
+  unresolved: []
+}, {
+  maxLength: 80,
+  providerId: "agnes",
+  retrieveEvidence: async (request) => {
+    convergenceGateRetrievalCalls += 1;
+    assert.equal(request.status, "ABSTAIN");
+    assert.ok(request.unresolved_fields.includes("serial_number"));
+    return {
+      evidenceItems: [
+        { field: "serial_number", value: "31/50", source: "SLAB", confidence: 0.99 }
+      ]
+    };
+  },
+  convergenceOptions: {
+    maxIterations: 1
+  }
+});
+assert.equal(convergenceGateRetrievalCalls, 1);
+assert.equal(convergedGate.identity_resolution_status, "RESOLVED");
+assert.equal(convergedGate.resolved.serial_number, "31/50");
+assert.equal(convergedGate.convergence_report.loop, "detect_conflict_retrieve_reevaluate_converge");
+assert.deepEqual(convergedGate.convergence_report.phase_sequence, ["detect_conflict", "retrieve", "re_evaluate", "converge"]);
+assert.equal(convergedGate.canonical_evidence.schema_version, "identity_evidence_v1");
+assert.equal(convergedGate.constraint_score_report.scoring_model, "weighted_constraint_rules");
 
 console.log("identity resolution gate tests passed");
