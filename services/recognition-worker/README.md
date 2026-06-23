@@ -8,7 +8,7 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 - Internal bearer-token auth is required.
 - URL security only allows configured image hosts and HTTPS.
 - R2 offline image geometry, glare, quality, and region-proposal functions are implemented as CPU-safe NumPy baselines.
-- The HTTP endpoint does not yet download signed image bytes; geometry and quality return explicit `UNAVAILABLE` until the safe image loader is implemented.
+- The HTTP endpoint can download signed image bytes when `ENABLE_IMAGE_DOWNLOAD=true`; otherwise geometry and quality return explicit `UNAVAILABLE`.
 - OCR model execution still returns explicit `UNAVAILABLE` until a backend is enabled, but OCR text fusion now parses real OCR line items into field candidates, resolved fields, conflicts, and trace metadata.
 - Embedding and candidate-verification paths return explicit `UNAVAILABLE` or `DISABLED` placeholders rather than fabricated facts.
 - PaddleOCR is listed as an optional adapter dependency but is not enabled by default.
@@ -28,6 +28,7 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 Optional:
 
 - `ENABLE_PADDLEOCR=false`
+- `ENABLE_IMAGE_DOWNLOAD=false`
 - `ENABLE_OPENCV_RECTIFICATION=false`
 - `ENABLE_VISUAL_EMBEDDINGS=false`
 - `ENABLE_CANDIDATE_VERIFICATION=false`
@@ -52,5 +53,6 @@ docker build -t lynca-recognition-worker .
 docker run --rm -p 8080:8080 \
   -e RECOGNITION_WORKER_TOKEN=dev-token \
   -e RECOGNITION_ALLOWED_IMAGE_HOSTS=example.supabase.co \
+  -e ENABLE_IMAGE_DOWNLOAD=true \
   lynca-recognition-worker
 ```

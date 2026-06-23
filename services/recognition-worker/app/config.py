@@ -27,6 +27,7 @@ class WorkerConfig:
     max_image_bytes: int
     max_total_pixels: int
     request_timeout_seconds: int
+    enable_image_download: bool
     enable_paddleocr: bool
     enable_opencv_rectification: bool
     enable_visual_embeddings: bool
@@ -41,6 +42,7 @@ def load_config() -> WorkerConfig:
         max_image_bytes=_int_env("RECOGNITION_MAX_IMAGE_BYTES", 25 * 1024 * 1024),
         max_total_pixels=_int_env("RECOGNITION_MAX_TOTAL_PIXELS", 50_000_000),
         request_timeout_seconds=_int_env("RECOGNITION_REQUEST_TIMEOUT_SECONDS", 30),
+        enable_image_download=os.getenv("ENABLE_IMAGE_DOWNLOAD", "false").lower() == "true",
         enable_paddleocr=os.getenv("ENABLE_PADDLEOCR", "false").lower() == "true",
         enable_opencv_rectification=os.getenv("ENABLE_OPENCV_RECTIFICATION", "false").lower() == "true",
         enable_visual_embeddings=os.getenv("ENABLE_VISUAL_EMBEDDINGS", "false").lower() == "true",

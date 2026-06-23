@@ -1,7 +1,10 @@
 import os
 import unittest
+from io import BytesIO
+from unittest.mock import patch
 
 import numpy as np
+from PIL import Image
 
 from app.contracts import validate_request
 from app.eval import evaluate_worker_items
@@ -10,6 +13,7 @@ from app.pipelines.card_rectification import rectify_card_from_array
 from app.pipelines.evidence_fusion import fuse_ocr_evidence
 from app.pipelines.field_parsers import parse_checklist_code, parse_collector_number, parse_grade, parse_serial
 from app.pipelines.glare_detection import detect_glare_from_array
+from app.pipelines.image_loader import ImageLoadError, LoadedImage, load_signed_image
 from app.pipelines.image_quality import measure_image_quality_from_array
 from app.pipelines.ocr_pipeline import ocr_evidence_from_items
 from app.pipelines.region_proposal import propose_regions_for_rectified_card
@@ -20,6 +24,7 @@ class RecognitionWorkerTests(unittest.TestCase):
     def setUp(self):
         os.environ["RECOGNITION_WORKER_TOKEN"] = "test-token"
         os.environ["RECOGNITION_ALLOWED_IMAGE_HOSTS"] = "example.supabase.co"
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "false"
 
     def test_contract_validation(self):
         payload = {
@@ -84,6 +89,104 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["evidence_fusion"]["status"], "NO_EVIDENCE")
         self.assertFalse(result["glare_detection"]["generative_reconstruction_used"])
         self.assertEqual(result["rectification"]["status"], "UNAVAILABLE")
+
+    def test_safe_image_loader_reads_bounded_signed_image(self):
+        image = Image.new("RGB", (32, 48), color=(210, 210, 210))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        data = buffer.getvalue()
+
+        class FakeResponse:
+            status = 200
+            headers = {
+                "content-type": "image/png",
+                "content-length": str(len(data)),
+            }
+
+            def __init__(self, payload: bytes):
+                self.payload = BytesIO(payload)
+
+            def read(self, size: int = -1) -> bytes:
+                return self.payload.read(size)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+        def fake_urlopen(request, timeout):
+            self.assertEqual(timeout, 3)
+            self.assertIn("front.png", request.full_url)
+            return FakeResponse(data)
+
+        loaded = load_signed_image(
+            {
+                "image_id": "front",
+                "role": "front_original",
+                "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/front.png?token=secret",
+            },
+            allowed_hosts=["example.supabase.co"],
+            max_bytes=1024 * 1024,
+            max_total_pixels=10000,
+            timeout_seconds=3,
+            urlopen_impl=fake_urlopen,
+        )
+
+        self.assertEqual(loaded.image_id, "front")
+        self.assertEqual(loaded.width, 32)
+        self.assertEqual(loaded.height, 48)
+        self.assertEqual(loaded.array.shape, (48, 32, 3))
+
+        with self.assertRaises(ImageLoadError):
+            load_signed_image(
+                {
+                    "image_id": "front",
+                    "role": "front_original",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/front.png?token=secret",
+                },
+                allowed_hosts=["example.supabase.co"],
+                max_bytes=8,
+                max_total_pixels=10000,
+                timeout_seconds=3,
+                urlopen_impl=fake_urlopen,
+            )
+
+    def test_analyze_payload_uses_loaded_image_for_quality_geometry(self):
+        image = np.zeros((1000, 800, 3), dtype=np.uint8)
+        image[120:920, 115:685] = 210
+        loaded = LoadedImage(
+            image_id="front",
+            role="front_original",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=image,
+        )
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
+        payload = {
+            "asset_id": "asset_1",
+            "images": [
+                {
+                    "image_id": "front",
+                    "role": "front_original",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+                }
+            ],
+            "requested_fields": ["serial_number", "grade_label"],
+            "options": {"run_ocr": True},
+        }
+
+        with patch("app.main.load_signed_image", return_value=loaded):
+            result = analyze_payload(payload, authorization="Bearer test-token")
+
+        self.assertEqual(result["rectification"]["status"], "OK")
+        self.assertEqual(result["image_quality"]["status"], "OK")
+        self.assertEqual(result["glare_detection"]["status"], "OK")
+        self.assertEqual(result["processing"]["image_download"]["width"], 800)
+        self.assertTrue(result["regions"])
 
     def test_ocr_text_fusion_parses_fields_and_conflicts(self):
         ocr_evidence = ocr_evidence_from_items([
