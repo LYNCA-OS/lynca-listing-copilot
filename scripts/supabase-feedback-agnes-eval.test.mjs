@@ -170,6 +170,7 @@ assert.equal(report.corrected_title_reference_only, true);
 assert.equal(report.field_ground_truth_available, false);
 assert.equal(report.commercial_accuracy_claim_allowed, false);
 assert.equal(report.commercial_accuracy_eval_eligible, false);
+assert.equal(report.identity_resolution_enabled, false);
 assert.equal(report.no_feedback_retention_side_effects, true);
 assert.equal(report.full_sample_evaluation, true);
 assert.equal(report.corrected_title_exact_count, 1);
@@ -203,6 +204,82 @@ const limited = await evaluateAgnesSupabaseFeedback({
 });
 assert.equal(limited.target_count, 1);
 assert.equal(limited.full_sample_evaluation, false);
+
+const identityAnalyzeCalls = [];
+const identityResolved = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  identityResolution: true,
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    MAX_AGNES_CALLS_PER_ASSET: "2",
+    MAX_PARALLEL_FOCUSED_REREADS: "2"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeImpl: async ({ prompt }) => {
+    identityAnalyzeCalls.push(prompt);
+    if (/focused reread/i.test(prompt)) {
+      return {
+        model_id: "agnes-test",
+        parse_source: "content",
+        finish_reason: "stop",
+        parsed: {
+          title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10",
+          confidence: "HIGH",
+          reason: "visible printed year and product text",
+          fields: {
+            year: "2025",
+            manufacturer: "Topps",
+            product: "Topps Chrome"
+          },
+          unresolved: []
+        },
+        usage: {
+          provider_calls: 1,
+          image_count: 2,
+          estimated_cost_usd: 0.01,
+          latency_ms: 100
+        }
+      };
+    }
+
+    return {
+      model_id: "agnes-test",
+      parse_source: "content",
+      finish_reason: "stop",
+      parsed: {
+          title: "2025 Shohei Ohtani 5/5 PSA 10",
+          confidence: "HIGH",
+          reason: "visible printed player and serial; slab label states grade",
+          fields: {
+            year: "2025",
+            players: ["Shohei Ohtani"],
+            serial_number: "5/5",
+            grade_company: "PSA",
+          card_grade: "10"
+        },
+        unresolved: ["product not readable"]
+      },
+      usage: {
+        provider_calls: 1,
+        image_count: 2,
+        estimated_cost_usd: 0.01,
+        latency_ms: 100
+      }
+    };
+  },
+  now: () => new Date("2026-06-23T12:01:30.000Z")
+});
+assert.equal(identityResolved.identity_resolution_enabled, true);
+assert.equal(identityResolved.results[0].identity_resolution_enabled, true);
+assert.ok(identityAnalyzeCalls.length > 1);
+assert.match(identityResolved.results[0].prediction.title, /Topps Chrome/);
+assert.match(identityResolved.results[0].prediction.title, /Shohei Ohtani/);
+assert.equal(identityResolved.results[0].prediction.identity_resolution_status, "CONFIRMED");
+assert.ok(identityResolved.results[0].usage.provider_calls >= 2);
+assert.ok(identityResolved.results[0].completion_trace.some((entry) => entry.output?.convergence?.loop === "detect_conflict_retrieve_reevaluate_converge"));
 
 const skipped = await evaluateAgnesSupabaseFeedback({
   dataset,

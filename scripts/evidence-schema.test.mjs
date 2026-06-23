@@ -149,6 +149,32 @@ assert.equal(evidenceDocument.evidence.serial_number.status, "CONFIRMED");
 assert.equal(evidenceDocument.evidence.serial_number.sources[0].source_type, "VISION_MODEL");
 assert.doesNotThrow(() => assertValidEvidenceDocument(evidenceDocument));
 
+const groundedIdentityMarkersDocument = providerPayloadToEvidenceDocument({
+  title: "2024 Bowman Chrome Shohei Ohtani 1st Bowman RC",
+  confidence: "HIGH",
+  reason: "front card text explicitly states player; printed RC logo and printed 1st Bowman marker are visible",
+  fields: {
+    year: "2024",
+    product: "Bowman Chrome",
+    players: ["Shohei Ohtani"],
+    rc: true,
+    first_bowman: "1st Bowman"
+  },
+  unresolved: []
+}, {
+  images: [
+    {
+      id: "image-front"
+    }
+  ]
+});
+assert.deepEqual(groundedIdentityMarkersDocument.resolved.players, ["Shohei Ohtani"]);
+assert.equal(groundedIdentityMarkersDocument.resolved.rc, true);
+assert.equal(groundedIdentityMarkersDocument.resolved.first_bowman, true);
+assert.equal(groundedIdentityMarkersDocument.evidence.rc.sources[0].source_type, "CARD_FRONT");
+assert.equal(groundedIdentityMarkersDocument.evidence.first_bowman.sources[0].source_type, "CARD_FRONT");
+assert.doesNotThrow(() => assertValidEvidenceDocument(groundedIdentityMarkersDocument));
+
 const multiCardDocument = providerPayloadToEvidenceDocument({
   title: "Card lot requires review",
   confidence: "HIGH",

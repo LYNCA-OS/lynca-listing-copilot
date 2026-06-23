@@ -84,14 +84,25 @@ const defaultFields = {
   subset: null,
   insert: null,
   parallel: null,
+  variation: null,
   player: null,
+  players: [],
   character: null,
   artist: null,
   team: null,
   card_number: null,
+  collector_number: null,
+  checklist_code: null,
   serial_number: null,
   grade_company: null,
   grade: null,
+  card_grade: null,
+  auto_grade: null,
+  grade_type: "UNKNOWN",
+  rc: false,
+  first_bowman: false,
+  ssp: false,
+  case_hit: false,
   auto: false,
   relic: false,
   patch: false,
@@ -695,7 +706,7 @@ async function loadPrompt() {
 function normalizeBoolean(value) {
   if (value === true) return true;
   if (value === false || value === null || value === undefined || value === "") return false;
-  return /^(true|yes|y|1)$/i.test(normalizeStringOrNull(value) || "");
+  return /^(true|yes|y|1|rc|rc logo|rookie|rookie card|rookie logo|rookie ticket|rated rookie|1st bowman|first bowman|auto|autograph|ssp|case hit|patch|relic|sketch|redemption|1\/1)$/i.test(normalizeStringOrNull(value) || "");
 }
 
 function normalizeStringOrNull(value) {
@@ -711,6 +722,9 @@ function normalizePositiveIntegerOrNull(value) {
 
 function normalizeFields(fields = {}) {
   const cardCount = normalizePositiveIntegerOrNull(fields.card_count ?? fields.cardCount);
+  const players = Array.isArray(fields.players)
+    ? fields.players.map(normalizeStringOrNull).filter(Boolean)
+    : [];
   const normalized = {
     year: normalizeStringOrNull(fields.year),
     brand: normalizeStringOrNull(fields.brand),
@@ -722,14 +736,25 @@ function normalizeFields(fields = {}) {
     subset: normalizeStringOrNull(normalizeRookieMarker(fields.subset)),
     insert: normalizeStringOrNull(fields.insert),
     parallel: normalizeStringOrNull(fields.parallel),
-    player: normalizeStringOrNull(fields.player),
+    variation: normalizeStringOrNull(fields.variation),
+    player: normalizeStringOrNull(fields.player) || players.join(" / ") || null,
+    players,
     character: normalizeStringOrNull(fields.character),
     artist: normalizeStringOrNull(fields.artist),
     team: normalizeStringOrNull(fields.team),
     card_number: normalizeStringOrNull(fields.card_number),
+    collector_number: normalizeStringOrNull(fields.collector_number),
+    checklist_code: normalizeStringOrNull(fields.checklist_code),
     serial_number: normalizeStringOrNull(fields.serial_number),
     grade_company: normalizeStringOrNull(fields.grade_company),
-    grade: normalizeStringOrNull(fields.grade),
+    grade: normalizeStringOrNull(fields.grade || fields.card_grade),
+    card_grade: normalizeStringOrNull(fields.card_grade || fields.grade),
+    auto_grade: normalizeStringOrNull(fields.auto_grade),
+    grade_type: normalizeStringOrNull(fields.grade_type) || "UNKNOWN",
+    rc: normalizeBoolean(fields.rc),
+    first_bowman: normalizeBoolean(fields.first_bowman),
+    ssp: normalizeBoolean(fields.ssp),
+    case_hit: normalizeBoolean(fields.case_hit),
     auto: normalizeBoolean(fields.auto),
     relic: normalizeBoolean(fields.relic),
     patch: normalizeBoolean(fields.patch),
@@ -1683,6 +1708,9 @@ function focusedRereadPrompt({
     "You are performing a focused reread for LYNCA Listing Copilot.",
     "Use only the supplied card image or crop. Do not infer facts from style, marketplace wording, or memory.",
     "If the image contains multiple cards or a card lot, set multi_card true, include card_count when visible, and do not merge fields from different cards.",
+    "For RC, return true when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible.",
+    "For parallel, variation, 1st Bowman, SSP, and case-hit fields, return a value only when the printed card text, slab label, card code, or an unmistakable logo/marker is readable.",
+    "If color or foil is only a visual impression, leave parallel/variation empty and add an unresolved note such as visual-only parallel requires operator review.",
     `Action: ${action || "focused_reread"}.`,
     `Focus fields: ${focusFields.join(", ") || "unresolved critical fields"}.`,
     "Return only valid JSON with this shape:",
@@ -1711,6 +1739,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     `Runtime title limit: ${maxTitleLength} characters.`,
     "Return only valid JSON. Do not wrap the response in Markdown.",
     "If the image contains multiple cards or a card lot, set fields.multi_card true, include fields.card_count when visible, describe fields.lot_type, and do not merge identities across cards.",
+    "Do not infer RC, 1st Bowman, SSP, case hit, parallel, or variation from seller style or generic foil color. Use RC only for readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker. Otherwise leave these fields empty/false and put the uncertainty in unresolved.",
     "Resolution hints:",
     resolutionHints(payload.resolutionMap) || "None",
     registryPromptSummary(),

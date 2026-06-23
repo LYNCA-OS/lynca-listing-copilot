@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
+import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
+import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
+import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 
 const schemaVersion = "agnes-supabase-feedback-eval-v1";
 const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candidates.json";
@@ -202,10 +205,43 @@ function fieldsFromParsed(parsed = {}) {
     card_grade: normalizeText(fields.card_grade || fields.grade),
     auto_grade: normalizeText(fields.auto_grade),
     grade_type: normalizeText(fields.grade_type),
-    rc: fields.rc === true || /\b(rc|rookie)\b/i.test(normalizeText(fields.rc)),
+    rc: fields.rc === true || /\b(rc|rc logo|rookie|rookie card|rookie logo|rookie ticket|rated rookie)\b/i.test(normalizeText(fields.rc)),
+    first_bowman: fields.first_bowman === true || /\b(?:1st|first)\s+bowman\b/i.test(normalizeText(fields.first_bowman)),
+    ssp: fields.ssp === true || /\bssp|super short print\b/i.test(normalizeText(fields.ssp)),
+    case_hit: fields.case_hit === true || /\bcase hit\b/i.test(normalizeText(fields.case_hit)),
     auto: fields.auto === true || /\b(auto|autograph|signed)\b/i.test(normalizeText(fields.auto)),
     patch: fields.patch === true || /\bpatch\b/i.test(normalizeText(fields.patch)),
     relic: fields.relic === true || /\b(relic|memorabilia|swatch)\b/i.test(normalizeText(fields.relic))
+  };
+}
+
+function fieldsFromResolved(resolved = {}) {
+  return {
+    year: normalizeText(resolved.year),
+    manufacturer: normalizeText(resolved.manufacturer || resolved.brand),
+    product: normalizeText(resolved.product),
+    set: normalizeText(resolved.set),
+    players: Array.isArray(resolved.players) ? resolved.players.map(normalizeText).filter(Boolean) : [],
+    card_type: normalizeText(resolved.card_type),
+    insert: normalizeText(resolved.insert),
+    parallel: normalizeText(resolved.parallel || resolved.variation),
+    serial_number: normalizeText(resolved.serial_number),
+    collector_number: normalizeText(resolved.collector_number),
+    checklist_code: normalizeText(resolved.checklist_code),
+    grade_company: normalizeText(resolved.grade_company),
+    card_grade: normalizeText(resolved.card_grade),
+    auto_grade: normalizeText(resolved.auto_grade),
+    grade_type: normalizeText(resolved.grade_type),
+    multi_card: resolved.multi_card === true,
+    card_count: resolved.card_count ?? null,
+    lot_type: normalizeText(resolved.lot_type),
+    rc: resolved.rc === true,
+    first_bowman: resolved.first_bowman === true,
+    ssp: resolved.ssp === true,
+    case_hit: resolved.case_hit === true,
+    auto: resolved.auto === true,
+    patch: resolved.patch === true,
+    relic: resolved.relic === true
   };
 }
 
@@ -223,6 +259,22 @@ function predictionFromResult(result = {}) {
   };
 }
 
+function predictionFromResolvedResult(result = {}) {
+  return {
+    title: normalizeText(result.final_title || result.title || result.rendered_title || result.model_title_suggestion),
+    fields: fieldsFromResolved(result.resolved || {}),
+    confidence: normalizeText(result.confidence),
+    reason: normalizeText(result.reason),
+    unresolved: Array.isArray(result.unresolved) ? result.unresolved.map(normalizeText).filter(Boolean) : [],
+    parse_source: normalizeText(result.provider_parse_source),
+    model_id: normalizeText(result.model_id),
+    finish_reason: normalizeText(result.provider_finish_reason),
+    title_render_source: normalizeText(result.title_render_source),
+    identity_resolution_status: normalizeText(result.identity_resolution_status),
+    route: normalizeText(result.route)
+  };
+}
+
 function evaluationPrompt(item = {}) {
   return [
     "You are evaluating real private feedback images for LYNCA Listing Copilot.",
@@ -233,6 +285,9 @@ function evaluationPrompt(item = {}) {
       confidence: "LOW",
       reason: "short visible evidence note",
       fields: {
+        multi_card: false,
+        card_count: null,
+        lot_type: "empty unless multiple cards or a lot are visible",
         year: "visible year or season",
         manufacturer: "visible manufacturer or brand",
         product: "visible product or set family",
@@ -240,7 +295,7 @@ function evaluationPrompt(item = {}) {
         players: ["visible player or subject names"],
         card_type: "base/insert/auto/relic/etc if visible",
         insert: "visible insert name",
-        parallel: "visible color/parallel/variation",
+        parallel: "printed or otherwise grounded color/parallel/variation; empty for visual-only foil",
         serial_number: "visible serial such as 31/50",
         collector_number: "visible card number",
         checklist_code: "visible checklist code",
@@ -249,6 +304,9 @@ function evaluationPrompt(item = {}) {
         auto_grade: "visible autograph grade",
         grade_type: "CARD_ONLY/AUTO_ONLY/CARD_AND_AUTO/UNKNOWN",
         rc: false,
+        first_bowman: false,
+        ssp: false,
+        case_hit: false,
         auto: false,
         patch: false,
         relic: false
@@ -257,11 +315,174 @@ function evaluationPrompt(item = {}) {
     }),
     "Rules:",
     "- If a field is not visible, use an empty string, false, or an empty array rather than guessing.",
+    "- If the image contains multiple cards or a lot, set multi_card true, include card_count when visible, and do not merge fields across cards.",
+    "- Set rc true when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible.",
+    "- Set first_bowman, ssp, and case_hit true only when a printed marker/text, slab label, card code, or unmistakable card-specific logo is readable.",
+    "- Do not infer color/parallel/variation from foil or color impression alone; leave it empty and put 'visual-only parallel requires operator review' in unresolved.",
     "- Never invent grade, serial, autograph, patch, color, parallel, player, year, or product.",
     "- The corrected title is not shown to you and must not be inferred.",
     "- Do not include Markdown fences or prose outside the JSON.",
     `Audit feedback id: ${candidateId(item) || "unknown"}.`
   ].join("\n");
+}
+
+function focusedEvaluationPrompt({
+  action,
+  focusFields = [],
+  resolved = {}
+} = {}) {
+  return [
+    "You are performing a focused reread for LYNCA Listing Copilot commercial evaluation.",
+    "Use only the supplied card image. Do not use outside knowledge, marketplace wording, memory, or the corrected title.",
+    "If the image contains multiple cards or a card lot, set multi_card true, include card_count when visible, and do not merge fields from different cards.",
+    "For RC, return true when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible.",
+    "For parallel, variation, 1st Bowman, SSP, and case-hit fields, return a value only when printed card text, slab label, card code, or an unmistakable logo/marker is readable.",
+    "If color or foil is only a visual impression, leave parallel/variation empty and add 'visual-only parallel requires operator review' to unresolved.",
+    `Action: ${action || "focused_reread"}.`,
+    `Focus fields: ${focusFields.join(", ") || "unresolved critical fields"}.`,
+    "Return only valid JSON in this exact shape:",
+    JSON.stringify({
+      title: "",
+      confidence: "LOW",
+      reason: "short visible printed evidence note",
+      fields: {
+        multi_card: false,
+        card_count: null,
+        lot_type: null,
+        ...Object.fromEntries(focusFields.map((field) => [field, ""]))
+      },
+      unresolved: []
+    }),
+    "If a focus field is unreadable, leave it empty and explain that field in unresolved.",
+    "Current resolved context for disambiguation only:",
+    JSON.stringify(resolved || {})
+  ].join("\n");
+}
+
+function signedImagesForProvider(signedImages = []) {
+  return signedImages.map((image) => ({
+    name: image.name,
+    url: image.url
+  }));
+}
+
+function evidenceDocumentFromProviderResult(providerResult = {}, {
+  images = []
+} = {}) {
+  const parsed = providerResult.parsed || {};
+  return providerPayloadToEvidenceDocument({
+    ...parsed,
+    title: parsed.title || parsed.model_title_suggestion || "",
+    confidence: parsed.confidence || "MEDIUM",
+    fields: parsed.fields || {},
+    unresolved: Array.isArray(parsed.unresolved) ? parsed.unresolved : []
+  }, {
+    images
+  });
+}
+
+function createFocusedEvaluationRunner({
+  signedImages = [],
+  analyzeImpl,
+  env
+} = {}) {
+  return async ({ action, focusFields = [], resolved = {} } = {}) => {
+    const providerResult = await analyzeImpl({
+      images: signedImagesForProvider(signedImages),
+      prompt: focusedEvaluationPrompt({ action, focusFields, resolved }),
+      env
+    });
+    const evidenceDocument = evidenceDocumentFromProviderResult(providerResult, {
+      images: signedImages
+    });
+
+    return {
+      provider_id: "agnes",
+      model_id: providerResult.model_id || "",
+      response_id: providerResult.response_id || null,
+      finish_reason: providerResult.finish_reason || null,
+      parse_source: providerResult.parse_source || null,
+      usage: providerResult.usage || null,
+      evidence_document: evidenceDocument,
+      resolved: evidenceDocument.resolved,
+      evidence: evidenceDocument.evidence,
+      unresolved: evidenceDocument.unresolved || []
+    };
+  };
+}
+
+function mergeEvalUsage(...usages) {
+  return usages.reduce((acc, usage) => {
+    const raw = usage && typeof usage === "object" ? usage : {};
+    acc.provider_calls += Number(raw.provider_calls || 0);
+    acc.estimated_cost_usd += Number(raw.estimated_cost_usd || 0);
+    acc.image_count += Number(raw.image_count || 0);
+    acc.latency_ms += Number(raw.latency_ms || 0);
+    acc.retrieval_calls += Number(raw.retrieval_calls || 0);
+    acc.resolution_rounds += Number(raw.resolution_rounds || 0);
+    return acc;
+  }, {
+    provider_calls: 0,
+    estimated_cost_usd: 0,
+    image_count: 0,
+    latency_ms: 0,
+    retrieval_calls: 0,
+    resolution_rounds: 0
+  });
+}
+
+async function resolvedPredictionFromProviderResult(providerResult = {}, {
+  signedImages = [],
+  env = process.env,
+  analyzeImpl = analyzeCardEvidenceWithAgnes,
+  maxTitleLength = 80
+} = {}) {
+  const evidenceDocument = evidenceDocumentFromProviderResult(providerResult, {
+    images: signedImages
+  });
+  const completion = await completeEvidence({
+    resolved: evidenceDocument.resolved,
+    evidence: evidenceDocument.evidence,
+    unresolved: evidenceDocument.unresolved || [],
+    env,
+    runFocusedVisionImpl: createFocusedEvaluationRunner({
+      signedImages,
+      analyzeImpl,
+      env
+    })
+  });
+  const gated = applyIdentityResolutionGate({
+    title: providerResult.parsed?.title || "",
+    model_title_suggestion: providerResult.parsed?.title || "",
+    confidence: providerResult.parsed?.confidence || "",
+    reason: providerResult.parsed?.reason || "",
+    provider: "agnes",
+    source: "agnes",
+    resolved: completion.resolved,
+    evidence: completion.evidence,
+    unresolved: [
+      ...(Array.isArray(providerResult.parsed?.unresolved) ? providerResult.parsed.unresolved : []),
+      ...(Array.isArray(evidenceDocument.unresolved) ? evidenceDocument.unresolved : [])
+    ],
+    resolution_trace: [
+      ...(Array.isArray(evidenceDocument.resolution_trace) ? evidenceDocument.resolution_trace : []),
+      ...(Array.isArray(completion.resolution_trace) ? completion.resolution_trace : [])
+    ],
+    usage: mergeEvalUsage(providerResult.usage, completion.usage)
+  }, {
+    maxLength: maxTitleLength,
+    providerId: "agnes",
+    retrievalCandidates: [
+      ...(Array.isArray(completion.retrieval?.sources) ? completion.retrieval.sources : []),
+      ...(completion.retrieval?.selected_candidate ? [completion.retrieval.selected_candidate] : [])
+    ]
+  });
+
+  return {
+    result: gated,
+    completion,
+    usage: mergeEvalUsage(providerResult.usage, completion.usage)
+  };
 }
 
 async function signedAgnesImagesForItem(item, {
@@ -292,7 +513,9 @@ async function signedAgnesImagesForItem(item, {
 async function evaluateOneFeedbackItem(item, {
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
-  createSignedReadUrlImpl = createListingImageSignedReadUrl
+  createSignedReadUrlImpl = createListingImageSignedReadUrl,
+  identityResolution = false,
+  maxTitleLength = 80
 } = {}) {
   const id = candidateId(item);
   const referenceTitle = correctedTitle(item);
@@ -328,14 +551,19 @@ async function evaluateOneFeedbackItem(item, {
       createSignedReadUrlImpl
     });
     const result = await analyzeImpl({
-      images: signedImages.map((image) => ({
-        name: image.name,
-        url: image.url
-      })),
+      images: signedImagesForProvider(signedImages),
       prompt: evaluationPrompt(item),
       env
     });
-    const prediction = predictionFromResult(result);
+    const resolved = identityResolution
+      ? await resolvedPredictionFromProviderResult(result, {
+        signedImages,
+        env,
+        analyzeImpl,
+        maxTitleLength
+      })
+      : null;
+    const prediction = resolved ? predictionFromResolvedResult(resolved.result) : predictionFromResult(result);
     const comparison = titleComparison(referenceTitle, prediction.title);
 
     return {
@@ -343,7 +571,11 @@ async function evaluateOneFeedbackItem(item, {
       status: "evaluated",
       prediction,
       corrected_title_comparison: comparison,
-      usage: result.usage || null
+      identity_resolution_enabled: identityResolution,
+      identity_resolution_status: resolved?.result?.identity_resolution_status || null,
+      route: resolved?.result?.route || null,
+      completion_trace: resolved?.completion?.resolution_trace || [],
+      usage: resolved?.usage || result.usage || null
     };
   } catch (error) {
     return {
@@ -422,7 +654,8 @@ function buildReport({
   results,
   startedAt,
   now,
-  fullSampleEvaluation
+  fullSampleEvaluation,
+  identityResolution
 }) {
   return {
     schema_version: schemaVersion,
@@ -430,6 +663,7 @@ function buildReport({
     generated_at: now().toISOString(),
     started_at: startedAt.toISOString(),
     provider: "agnes",
+    identity_resolution_enabled: identityResolution,
     source_dataset_schema_version: dataset.schema_version || null,
     source_manifest_hash: dataset.manifest_hash || null,
     source_provider: dataset.source?.provider || null,
@@ -453,6 +687,8 @@ export async function evaluateAgnesSupabaseFeedback({
   dataset,
   limit = 0,
   concurrency = 2,
+  identityResolution = false,
+  maxTitleLength = 80,
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
   createSignedReadUrlImpl = createListingImageSignedReadUrl,
@@ -528,7 +764,8 @@ export async function evaluateAgnesSupabaseFeedback({
       results,
       startedAt,
       now,
-      fullSampleEvaluation
+      fullSampleEvaluation,
+      identityResolution
     });
     return { ...report, status: results.length === selectedItems.length ? "completed" : status };
   };
@@ -543,7 +780,9 @@ export async function evaluateAgnesSupabaseFeedback({
       const result = await evaluateOneFeedbackItem(item, {
         env,
         analyzeImpl,
-        createSignedReadUrlImpl
+        createSignedReadUrlImpl,
+        identityResolution,
+        maxTitleLength
       });
       resultsById.set(candidateId(item), result);
       if (onProgress) await onProgress(buildCurrentReport("partial"));
@@ -557,6 +796,7 @@ export async function evaluateAgnesSupabaseFeedback({
 export function formatAgnesSupabaseFeedbackSummary(report = {}) {
   return [
     `Agnes Supabase feedback eval ${report.status || "unknown"}`,
+    `identity_resolution_enabled: ${report.identity_resolution_enabled === true}`,
     `target_count: ${report.target_count ?? "n/a"}`,
     `attempted_count: ${report.attempted_count ?? "n/a"}`,
     `evaluated_count: ${report.evaluated_count ?? "n/a"}`,
@@ -585,6 +825,8 @@ export async function main(argv = process.argv, env = process.env) {
   const outPath = argValue(argv, "--out", env.AGNES_SUPABASE_FEEDBACK_EVAL_OUT || defaultOutPath);
   const limit = numberArg(argv, "--limit", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_LIMIT || 0));
   const concurrency = numberArg(argv, "--concurrency", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 2));
+  const identityResolution = hasFlag(argv, "--identity-resolution") || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_IDENTITY_RESOLUTION", false);
+  const maxTitleLength = numberArg(argv, "--max-title-length", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_MAX_TITLE_LENGTH || 80));
   const flushEvery = Math.max(1, numberArg(argv, "--flush-every", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_FLUSH_EVERY || 5)));
   const resume = !hasFlag(argv, "--no-resume") && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_RESUME", true);
   const dataset = await readJson(datasetPath);
@@ -604,6 +846,8 @@ export async function main(argv = process.argv, env = process.env) {
     dataset,
     limit,
     concurrency,
+    identityResolution,
+    maxTitleLength,
     env: {
       ...env,
       AGNES_MAX_RETRIES: env.AGNES_MAX_RETRIES || "1"

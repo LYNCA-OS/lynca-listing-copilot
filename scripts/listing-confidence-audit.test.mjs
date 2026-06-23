@@ -101,8 +101,8 @@ const serialVisibleUncertainParallel = await callApi({
   unresolved: ["exact parallel requires operator review"]
 });
 
-assert.equal(serialVisibleUncertainParallel.confidence, "MEDIUM");
-assert.match(serialVisibleUncertainParallel.title, /130\/175/);
+assert.equal(serialVisibleUncertainParallel.confidence, "LOW");
+assert.equal(serialVisibleUncertainParallel.title, "");
 
 const backgroundIgnored = await callApi({
   title: "Metaverse Cards 2024 Topps Chrome Shohei Ohtani",
@@ -162,7 +162,8 @@ const visuallyGuessedParallel = await callApi({
   unresolved: []
 });
 
-assert.equal(visuallyGuessedParallel.confidence, "MEDIUM");
+assert.equal(visuallyGuessedParallel.confidence, "LOW");
+assert.equal(visuallyGuessedParallel.title, "");
 
 const missingVisibleSerial = await callApi({
   title: "2025 Bowman Chrome Test Player Fuchsia Wave Auto",
@@ -179,7 +180,7 @@ const missingVisibleSerial = await callApi({
   unresolved: []
 });
 
-assert.equal(missingVisibleSerial.confidence, "HIGH");
+assert.equal(missingVisibleSerial.confidence, "MEDIUM");
 assert.match(missingVisibleSerial.title, /137\/199/);
 assert.doesNotMatch(missingVisibleSerial.unresolved.join(" "), /title missing serial/);
 
@@ -358,9 +359,8 @@ const oneOfOneWithUncertainParallel = await callApi({
   unresolved: ["exact parallel requires operator review"]
 });
 
-assert.equal(oneOfOneWithUncertainParallel.confidence, "MEDIUM");
-assert.notEqual(oneOfOneWithUncertainParallel.confidence, "LOW");
-assert.match(oneOfOneWithUncertainParallel.title, /01\/01/);
+assert.equal(oneOfOneWithUncertainParallel.confidence, "LOW");
+assert.equal(oneOfOneWithUncertainParallel.title, "");
 
 const dualPairingPreserved = await callApi({
   title: "2024 Topps Chrome Charles Leclerc Lewis Hamilton Power Partnership",
@@ -780,7 +780,7 @@ assert.doesNotMatch(autoDedupeCanonicalOrder.title, /RC Auto/i);
 const starSwatchCodeSuppressedSerialPreserved = await callApi({
   title: "2015-16 Panini Panini Flawless Kevin Durant Star Swatch Signatures Platinum #04/10 #SR-KD PSA 10",
   confidence: "HIGH",
-  reason: "Registry supports SR-KD as Star Swatch Signatures; serial 04/10 and PSA 10 are visible.",
+  reason: "Registry supports SR-KD as Star Swatch Signatures and Platinum parallel; serial 04/10 and PSA 10 are visible.",
   fields: {
     year: "2015-16",
     brand: "Panini",

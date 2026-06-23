@@ -592,6 +592,7 @@ const noInfoOcclusionCompletion = await completeEvidence({
 const noInfoOcclusionActions = noInfoOcclusionCompletion.resolution_trace.map((entry) => entry.action);
 assert.deepEqual(noInfoOcclusionActions, [
   completionActions.CROP_AND_READ_SERIAL,
+  completionActions.CROP_AND_READ_YEAR_PRODUCT,
   completionActions.SEARCH_INTERNAL_APPROVED_HISTORY,
   completionActions.SEARCH_INTERNAL_REGISTRY,
   completionActions.SEARCH_BRAVE,

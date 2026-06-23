@@ -41,14 +41,25 @@ Required fields:
   "subset": null,
   "insert": null,
   "parallel": null,
+  "variation": null,
   "player": null,
+  "players": [],
   "character": null,
   "artist": null,
   "team": null,
   "card_number": null,
+  "collector_number": null,
+  "checklist_code": null,
   "serial_number": null,
   "grade_company": null,
   "grade": null,
+  "card_grade": null,
+  "auto_grade": null,
+  "grade_type": "UNKNOWN",
+  "rc": false,
+  "first_bowman": false,
+  "ssp": false,
+  "case_hit": false,
   "auto": false,
   "relic": false,
   "patch": false,
@@ -67,6 +78,7 @@ Specific extraction rules:
 - CGC label: extract grade company and grade if visible.
 - Serial number extraction has higher business value than advanced parallel classification. Serial accuracy is a Tier 1 objective.
 - Serial extraction evidence priority is: PSA/BGS/CGC label > card front text > card back text. Preserve the clearest complete serial. If sources conflict, mark the conflict in `unresolved` and do not use HIGH confidence.
+- RC booleans must be true only when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible. 1st Bowman, SSP, and case-hit booleans must be true only when a printed marker/text, slab label, card code, or unmistakable card-specific logo is visible. Do not infer them from player age, year, or market memory.
 - Serial numbers such as `2/5`, `031/150`, `1/1`, `04/10`, `436/500`, and `17/99` must be extracted only when the denominator and numerator are clearly visible.
 - Card codes such as `SR-KD`, `FIN-10`, `TP-NYK`, `VPA-VIN`, `FGRA-RA`, `ADT-CG`, `CM-KDR`, and `LD-9` must be extracted if visible.
 - Insert/card codes such as `UV-16`, `SE-28`, `BRR-1`, and `IMP-OTI` are important registry keys. Extract them in `card_number` when visible even if they do not all belong in the final title.
@@ -146,6 +158,7 @@ Do not hallucinate `Base`. Use `Base` only when slab/card text explicitly says B
 Do not force the Vision Engine to solve all taxonomy problems during MVP. Vision should prioritize observable facts: OCR accuracy, serial accuracy, label accuracy, and card number accuracy.
 
 Do not force rainbow or parallel resolution from visual foil alone. If exact parallel taxonomy is not text-supported, use conservative generic wording or omit the parallel.
+If color/foil is only a visual impression, leave `parallel`/`variation` empty and add an unresolved note that the visual-only parallel requires operator review.
 
 The current system often recognizes color better than pattern. Do not reduce pattern-based parallels to color-only terms.
 

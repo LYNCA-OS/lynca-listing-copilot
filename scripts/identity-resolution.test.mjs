@@ -168,6 +168,53 @@ const marketplaceCannotOverride = resolveIdentity({
 assert.equal(marketplaceCannotOverride.identity.serial_number, "31/50");
 assert.notEqual(fieldState(marketplaceCannotOverride, "serial_number").source_summary[0].source, "MARKETPLACE");
 
+const visualOnlyParallelRejected = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "parallel", value: "Blue Prizm", source: "AGNES", confidence: 0.96 }
+  ]
+});
+assert.equal(visualOnlyParallelRejected.identity.parallel, null);
+assert.equal(visualOnlyParallelRejected.status, "ABSTAIN");
+assert.equal(fieldState(visualOnlyParallelRejected, "parallel").resolution_reason, "all_candidates_failed_constraints");
+assert.equal(fieldState(visualOnlyParallelRejected, "parallel").candidates[0].constraint_result.constraint_score, 0);
+assert.ok(visualOnlyParallelRejected.conflict_map.some((conflict) => conflict.field === "parallel" && conflict.conflict_type === "PARALLEL_WITHOUT_GROUNDED_SOURCE"));
+
+const printedRookieMarkersAccepted = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "rc", value: true, source: "CARD_FRONT", confidence: 0.94 },
+    { field: "first_bowman", value: "1st Bowman", source: "CARD_FRONT", confidence: 0.94 }
+  ]
+});
+assert.equal(printedRookieMarkersAccepted.identity.rc, true);
+assert.equal(printedRookieMarkersAccepted.identity.first_bowman, true);
+assert.equal(fieldState(printedRookieMarkersAccepted, "rc").resolution_reason, "highest_scoring_candidate");
+
+const moreSpecificInsertWins = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "insert", value: "Propulsion", source: "CARD_BACK", confidence: 0.94 },
+    { field: "insert", value: "Red Propulsion", source: "CARD_BACK", confidence: 0.94 }
+  ]
+});
+assert.equal(moreSpecificInsertWins.identity.insert, "Red Propulsion");
+assert.equal(fieldState(moreSpecificInsertWins, "insert").resolution_reason, "more_specific_compatible_descriptor");
+
+const insertCannotDuplicateProductIdentity = resolveIdentity({
+  evidenceItems: [
+    { field: "year", value: "2025-26", source: "CARD_BACK", confidence: 0.94 },
+    { field: "product", value: "Topps Cosmic Chrome", source: "CARD_BACK", confidence: 0.94 },
+    { field: "players", value: "Stephen Curry", source: "CARD_BACK", confidence: 0.94 },
+    { field: "insert", value: "Red Propulsion", source: "CARD_BACK", confidence: 0.94 },
+    { field: "insert", value: "Topps Cosmic Chrome", source: "STRUCTURED_DATABASE", confidence: 0.94 }
+  ]
+});
+assert.equal(insertCannotDuplicateProductIdentity.identity.insert, "Red Propulsion");
+assert.ok(fieldState(insertCannotDuplicateProductIdentity, "insert").conflict_items.some((conflict) => {
+  return conflict.conflict_type === "INSERT_COLLIDES_WITH_PRODUCT_IDENTITY" && conflict.resolved === true;
+}));
+
 const cardDesignSeasonOverridesSlabYear = resolveIdentity({
   evidenceItems: [
     { field: "year", value: "2025-26", source: "CARD_BACK", confidence: 0.96 },
