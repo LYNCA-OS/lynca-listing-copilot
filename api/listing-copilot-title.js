@@ -54,6 +54,10 @@ import {
   readIdentityResultCacheRecord,
   saveIdentityResultCacheRecord
 } from "../lib/listing/cache/identity-result-cache.mjs";
+import {
+  identityInFlightCoalescingEnabled,
+  runWithInFlightIdentityRequest
+} from "../lib/listing/cache/inflight-identity-request.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -1516,6 +1520,21 @@ async function withIdentityCacheWrite(result, payload) {
   }
 }
 
+async function createIdentityInFlightKey(payload) {
+  if (!identityInFlightCoalescingEnabled()) return null;
+  if (!isSupabaseFeedbackConfigured()) return null;
+
+  const key = buildIdentityResultCacheKey(payload);
+  if (!key.ok) return null;
+
+  try {
+    const verified = await verifyIdentityCacheImages(payload);
+    return verified.ok ? key.cache_key : null;
+  } catch {
+    return null;
+  }
+}
+
 function derivedImagesFromImages(images = []) {
   return images.filter(imageIsDerived);
 }
@@ -2376,17 +2395,24 @@ export default async function handler(req, res) {
       return;
     }
 
-    const recognitionPreflight = await createRecognitionIdentityPreflight(payload);
-    if (recognitionPreflight.result) {
-      sendJson(res, 200, await withIdentityCacheWrite(recognitionPreflight.result, payload));
-      return;
-    }
+    const inFlightCacheKey = await createIdentityInFlightKey(payload);
+    const result = await runWithInFlightIdentityRequest({
+      cacheKey: inFlightCacheKey,
+      run: async () => {
+        const recognitionPreflight = await createRecognitionIdentityPreflight(payload);
+        if (recognitionPreflight.result) {
+          return withIdentityCacheWrite(recognitionPreflight.result, payload);
+        }
 
-    const result = await createProviderTitle(payload, {
-      recognitionEvidenceDocument: recognitionPreflight.evidenceDocument
+        const providerResult = await createProviderTitle(payload, {
+          recognitionEvidenceDocument: recognitionPreflight.evidenceDocument
+        });
+
+        return withIdentityCacheWrite(providerResult, payload);
+      }
     });
 
-    sendJson(res, 200, await withIdentityCacheWrite(result, payload));
+    sendJson(res, 200, result);
   } catch (error) {
     const message = safeProviderErrorMessage(error);
 
