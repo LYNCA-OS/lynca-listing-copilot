@@ -545,9 +545,9 @@ assert.deepEqual(parallelFocusedCompletion.resolution_trace
     completionActions.CROP_AND_READ_SUBJECT,
     completionActions.CROP_AND_READ_PARALLEL
   ].includes(action)), [
+  completionActions.CROP_AND_READ_PARALLEL,
   completionActions.CROP_AND_READ_YEAR_PRODUCT,
-  completionActions.CROP_AND_READ_SUBJECT,
-  completionActions.CROP_AND_READ_PARALLEL
+  completionActions.CROP_AND_READ_SUBJECT
 ]);
 assert.equal(parallelFocusedCompletion.resolved.product, "Topps Chrome");
 assert.deepEqual(parallelFocusedCompletion.resolved.players, ["Cooper Flagg"]);
@@ -595,8 +595,8 @@ const proactiveFocusedCompletion = await completeEvidence({
 assert.equal(proactiveFocusedCompletion.resolution_trace[0].action, completionActions.CROP_AND_READ_SERIAL);
 assert.deepEqual(proactiveFocusedActions.slice(0, 3), [
   completionActions.CROP_AND_READ_SERIAL,
-  completionActions.CROP_AND_READ_YEAR_PRODUCT,
-  completionActions.CROP_AND_READ_SUBJECT
+  completionActions.CROP_AND_READ_PARALLEL,
+  completionActions.CROP_AND_READ_YEAR_PRODUCT
 ]);
 
 const proactiveSerialOnlyActions = [];

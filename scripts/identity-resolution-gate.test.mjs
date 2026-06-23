@@ -269,6 +269,42 @@ assert.equal(serialDoubleFrontSource.identity_resolution_status, "ABSTAIN");
 assert.equal(serialDoubleFrontSource.final_title, "");
 assert.ok(serialDoubleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
+const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
+  title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
+  confidence: "HIGH",
+  reason: "Focused serial crop confirmed the same serial.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2022",
+    product: "Gold Standard",
+    players: ["Hunter Renfrow"],
+    serial_number: "196/299"
+  }),
+  evidence: {
+    year: groundedEvidence("2022"),
+    product: groundedEvidence("Gold Standard"),
+    players: groundedEvidence(["Hunter Renfrow"]),
+    serial_number: frontOnlyEvidence("196/299")
+  },
+  unresolved: [],
+  resolution_trace: [
+    {
+      action: "CROP_AND_READ_SERIAL",
+      status: "executed",
+      output: {
+        focused_vision: {
+          focus_fields: ["serial_number"],
+          updated_fields: ["serial_number"],
+          conflicting_fields: []
+        }
+      }
+    }
+  ]
+});
+assert.notEqual(serialFocusedVisionConfirmed.identity_resolution_status, "ABSTAIN");
+assert.match(serialFocusedVisionConfirmed.final_title, /196\/299/);
+assert.ok(!serialFocusedVisionConfirmed.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
+
 const localizedOnlyGrounded = applyIdentityResolutionGate({
   title: "provider localized title must not become final title",
   confidence: "HIGH",
@@ -395,5 +431,46 @@ assert.equal(frontOnlyColorDescriptorDropped.identity_resolution_status, "RESOLV
 assert.equal(frontOnlyColorDescriptorDropped.resolved.set, null);
 assert.doesNotMatch(frontOnlyColorDescriptorDropped.final_title, /White Border/i);
 assert.ok(frontOnlyColorDescriptorDropped.conflict_map.some((conflict) => conflict.conflict_type === "OPTIONAL_COLOR_DESCRIPTOR_REQUIRES_STRONG_CONFIRMATION"));
+
+const weakOcrOnlyChecklistDropped = applyIdentityResolutionGate({
+  title: "2010 Panini Absolute Kobe Bryant Auto 08/25 PSA 10",
+  confidence: "HIGH",
+  reason: "Checklist-like OCR text is weak and not required for the listing title.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2010-11",
+    product: "Absolute Memorabilia",
+    players: ["Kobe Bryant"],
+    serial_number: "08/25",
+    checklist_code: "20EB-04-30",
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY",
+    auto: true
+  }),
+  evidence: {
+    year: groundedEvidence("2010-11"),
+    product: groundedEvidence("Absolute Memorabilia"),
+    players: groundedEvidence(["Kobe Bryant"]),
+    serial_number: groundedEvidence("08/25"),
+    checklist_code: createEvidenceField({
+      value: "20EB-04-30",
+      status: "REVIEW",
+      confidence: 0.7,
+      sources: [
+        printedSource("OCR", "back", "20EB-04-30")
+      ]
+    }),
+    grade_company: groundedEvidence("PSA"),
+    card_grade: groundedEvidence("10"),
+    grade_type: groundedEvidence("CARD_ONLY"),
+    auto: groundedEvidence(true)
+  },
+  unresolved: []
+});
+assert.equal(weakOcrOnlyChecklistDropped.identity_resolution_status, "RESOLVED");
+assert.equal(weakOcrOnlyChecklistDropped.resolved.checklist_code, null);
+assert.ok(weakOcrOnlyChecklistDropped.final_title);
+assert.ok(weakOcrOnlyChecklistDropped.conflict_map.some((conflict) => conflict.conflict_type === "WEAK_OCR_ONLY_OPTIONAL_CODE_DROPPED"));
 
 console.log("identity resolution gate tests passed");

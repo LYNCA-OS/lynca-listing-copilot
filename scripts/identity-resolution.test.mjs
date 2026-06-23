@@ -56,6 +56,29 @@ assert.equal(slabOverride.ambiguity_status, "RESOLVED");
 assert.equal(slabOverride.status, "RESOLVED");
 assert.ok(slabOverride.conflict_graph.edges.some((edge) => edge.edge_type === "override" && edge.field === "card_grade"));
 
+const slabAutoTextIsNotAutoGrade = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "grade_company", value: "PSA/DNA", source: "SLAB", confidence: 0.96 },
+    { field: "card_grade", value: "10", source: "SLAB", confidence: 0.96 },
+    { field: "auto_grade", value: "SIGAUTO", source: "SLAB", confidence: 0.96 },
+    { field: "grade_type", value: "CARD_AND_AUTO", source: "SLAB", confidence: 0.96 }
+  ]
+});
+assert.equal(slabAutoTextIsNotAutoGrade.identity.grade_company, "PSA/DNA");
+assert.equal(slabAutoTextIsNotAutoGrade.identity.card_grade, "10");
+assert.equal(slabAutoTextIsNotAutoGrade.identity.auto_grade, null);
+
+const slabGradePhraseIsNotCompany = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "grade_company", value: "GEM MT 10", source: "SLAB", confidence: 0.96 },
+    { field: "card_grade", value: "10", source: "SLAB", confidence: 0.96 }
+  ]
+});
+assert.equal(slabGradePhraseIsNotCompany.identity.grade_company, null);
+assert.equal(slabGradePhraseIsNotCompany.identity.card_grade, "10");
+
 const backPrintedSerialOverride = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
@@ -138,6 +161,14 @@ const validSerial = resolveIdentity({
 });
 assert.equal(validSerial.identity.serial_number, "31/50");
 
+const denominatorOnlySerial = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "serial_number", value: "/10", source: "OCR_FRONT", confidence: 0.94 }
+  ]
+});
+assert.equal(denominatorOnlySerial.identity.serial_number, "/10");
+
 const invalidSerial = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
@@ -152,6 +183,15 @@ assert.equal(fieldState(invalidSerial, "serial_number").candidates[0].constraint
 assert.equal(fieldState(invalidSerial, "serial_number").candidates[0].constraint_result.violations[0].weight, 1);
 assert.equal(invalidSerial.constraint_score_report.per_field_constraint_score.serial_number, 0);
 assert.equal(invalidSerial.constraint_score_report.scoring_model, "weighted_constraint_rules");
+
+const certificateNumberIsNotSerial = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "serial_number", value: "0015583391", source: "OCR_FRONT", confidence: 0.94 }
+  ]
+});
+assert.equal(certificateNumberIsNotSerial.identity.serial_number, null);
+assert.equal(fieldState(certificateNumberIsNotSerial, "serial_number"), undefined);
 
 const oneOfOne = resolveIdentity({
   evidenceItems: [

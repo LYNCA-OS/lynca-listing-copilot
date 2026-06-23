@@ -103,9 +103,40 @@ def _extract_collector_texts(text: str) -> list[str]:
     values = []
     for match in re.finditer(r"(?:#|NO\.?\s*)\s*([A-Z]?\d{1,4}[A-Z]?)\b", text, flags=re.I):
         values.append(match.group(1))
-    if re.fullmatch(r"\d{1,4}[A-Z]?", text, flags=re.I):
-        values.append(text)
     return values
+
+
+def _extract_collector_crop_texts(text: str) -> list[str]:
+    if re.fullmatch(r"\d{1,4}[A-Z]?", text, flags=re.I):
+        return [text]
+    return []
+
+
+def _role_is_number_crop(role: str) -> bool:
+    return any(marker in role for marker in ("collector_number_crop", "checklist_code_crop", "card_code_crop"))
+
+
+def _high_confidence(item: dict[str, Any], threshold: float) -> bool:
+    return _confidence(item) >= threshold
+
+
+def _checklist_candidate_has_context(raw: str, text: str) -> bool:
+    normalized = raw.replace(" ", "-").upper()
+    compact_text = _text(text)
+    if len(compact_text) > 96:
+        return False
+    if re.fullmatch(r"(?:19|20)\d{2}-\d{2}", normalized):
+        return False
+    if not re.search(r"[A-Z]", normalized):
+        return False
+    if re.search(r"(?:#|\bNO\.?|\bCARD\s*(?:NO|#)?|\bCODE)\s*[A-Z0-9-]*" + re.escape(raw), compact_text, flags=re.I):
+        return True
+    if re.fullmatch(r"(?:CL|TCAR|PRP|SR|DRL|UV)-[A-Z0-9]{1,12}", normalized):
+        return True
+    if "-" not in normalized or len(normalized) > 16:
+        return False
+    first_segment = normalized.split("-", 1)[0]
+    return len(first_segment) >= 2 and bool(re.search(r"[A-Z]", first_segment)) and bool(re.search(r"\d", first_segment))
 
 
 def _add_candidate(field_candidates: dict[str, list[dict[str, Any]]], item: dict[str, Any], field: str, value: str, *, reason: str = "", confidence_multiplier: float = 1.0) -> None:
@@ -150,7 +181,10 @@ def _parse_item(item: dict[str, Any], requested_fields: list[str] | None = None)
                 _add_candidate(field_candidates, item, "serial_number", parsed.normalized, reason=parsed.reason)
 
     if _requested(requested_fields, "collector_number"):
-        for raw in _extract_collector_texts(text):
+        collector_texts = _extract_collector_texts(text)
+        if _role_is_number_crop(role) and _high_confidence(item, 0.72):
+            collector_texts.extend(_extract_collector_crop_texts(text))
+        for raw in collector_texts:
             parsed = parse_collector_number(raw)
             if parsed.valid and parsed.normalized:
                 candidates.append(_candidate(item, "collector_number", parsed.normalized, confidence_multiplier=0.88, reason=parsed.reason))
@@ -158,6 +192,8 @@ def _parse_item(item: dict[str, Any], requested_fields: list[str] | None = None)
 
     if _requested(requested_fields, "checklist_code"):
         for raw in _extract_checklist_texts(text):
+            if not _checklist_candidate_has_context(raw, text):
+                continue
             parsed = parse_checklist_code(raw)
             if parsed.valid and parsed.normalized and not re.fullmatch(r"\d{1,4}", parsed.normalized):
                 candidates.append(_candidate(item, "checklist_code", parsed.normalized, confidence_multiplier=0.86, reason=parsed.reason))

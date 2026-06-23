@@ -204,6 +204,23 @@ assert.equal(beckettGradeDocument.resolved.grade_company, "BGS");
 assert.equal(beckettGradeDocument.evidence.grade_company.value, "BGS");
 assert.doesNotThrow(() => assertValidEvidenceDocument(beckettGradeDocument));
 
+const gradePhraseCompanyDocument = providerPayloadToEvidenceDocument({
+  title: "2010 Panini Test Player GEM MT 10",
+  confidence: "HIGH",
+  reason: "slab label states GEM MT 10",
+  fields: {
+    year: "2010",
+    product: "Panini",
+    players: ["Test Player"],
+    grade_company: "GEM MT 10",
+    card_grade: "10"
+  },
+  unresolved: []
+});
+assert.equal(gradePhraseCompanyDocument.resolved.grade_company, null);
+assert.equal(gradePhraseCompanyDocument.resolved.card_grade, "10");
+assert.doesNotThrow(() => assertValidEvidenceDocument(gradePhraseCompanyDocument));
+
 const slabParallelDocument = providerPayloadToEvidenceDocument({
   title: "2025 Shohei Ohtani 05/50 PSA 9",
   confidence: "HIGH",
@@ -223,6 +240,26 @@ assert.equal(slabParallelDocument.resolved.parallel, "Variation-Gold");
 assert.equal(slabParallelDocument.evidence.parallel.value, "Variation-Gold");
 assert.equal(slabParallelDocument.evidence.parallel.sources[0].source_type, "SLAB_LABEL");
 assert.doesNotThrow(() => assertValidEvidenceDocument(slabParallelDocument));
+
+const slabLabelTextDocument = providerPayloadToEvidenceDocument({
+  title: "2025 Shohei Ohtani 05/50 PSA 9",
+  confidence: "HIGH",
+  reason: "Visible PSA label text '2025 TOPPS SAPPHIRE', 'VARIATION-GOLD', and card face serial '05/50'.",
+  fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    set: "Sapphire",
+    players: ["Shohei Ohtani"],
+    parallel: "Variation-Gold",
+    serial_number: "05/50",
+    grade_company: "PSA",
+    card_grade: "9"
+  },
+  unresolved: []
+});
+assert.equal(slabLabelTextDocument.evidence.players.sources[0].source_type, "SLAB_LABEL");
+assert.equal(slabLabelTextDocument.evidence.parallel.sources[0].source_type, "SLAB_LABEL");
+assert.doesNotThrow(() => assertValidEvidenceDocument(slabLabelTextDocument));
 
 const agnesDescriptorDocument = providerPayloadToEvidenceDocument({
   title: "2025 Topps Finest Shohei Ohtani Gusto Red Refractor",
@@ -245,6 +282,38 @@ assert.equal(agnesDescriptorDocument.resolved.variation, "Red Refractor");
 assert.equal(agnesDescriptorDocument.evidence.variation.value, "Red Refractor");
 assert.equal(agnesDescriptorDocument.evidence.variation.sources[0].source_type, "CARD_FRONT");
 assert.doesNotThrow(() => assertValidEvidenceDocument(agnesDescriptorDocument));
+
+const visualColorDescriptorDocument = providerPayloadToEvidenceDocument({
+  title: "2025 Panini Prizm Lionel Messi Blue Refractor 029/199",
+  confidence: "HIGH",
+  reason: "Visible text confirms 2025-26 Panini Prizm FIFA Club Legends set and Lionel Messi. Front image shows blue refractor parallel.",
+  fields: {
+    year: "2025-26",
+    product: "Prizm FIFA Soccer",
+    players: ["Lionel Messi"],
+    parallel: "Blue Refractor",
+    serial_number: "029/199"
+  },
+  unresolved: []
+});
+assert.equal(visualColorDescriptorDocument.evidence.parallel.sources[0].source_type, "VISION_MODEL");
+assert.doesNotThrow(() => assertValidEvidenceDocument(visualColorDescriptorDocument));
+
+const frontBackConfirmSubjectDocument = providerPayloadToEvidenceDocument({
+  title: "2025 Topps Chrome Victor Wembanyama 17/50",
+  confidence: "HIGH",
+  reason: "Front and back images confirm player name, team, and product details.",
+  fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    serial_number: "17/50"
+  },
+  unresolved: []
+});
+assert.equal(frontBackConfirmSubjectDocument.evidence.players.sources[0].source_type, "CARD_FRONT");
+assert.equal(frontBackConfirmSubjectDocument.evidence.product.sources[0].source_type, "CARD_FRONT");
+assert.doesNotThrow(() => assertValidEvidenceDocument(frontBackConfirmSubjectDocument));
 
 const multiCardDocument = providerPayloadToEvidenceDocument({
   title: "Card lot requires review",

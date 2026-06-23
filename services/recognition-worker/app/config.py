@@ -29,9 +29,13 @@ class WorkerConfig:
     request_timeout_seconds: int
     enable_image_download: bool
     enable_paddleocr: bool
+    enable_tesseract_ocr: bool
     enable_opencv_rectification: bool
     enable_visual_embeddings: bool
     enable_candidate_verification: bool
+    tesseract_language: str
+    tesseract_psm: int
+    tesseract_timeout_seconds: int
     pipeline_version: str = "recognition-worker-contract-v1"
 
 
@@ -44,7 +48,11 @@ def load_config() -> WorkerConfig:
         request_timeout_seconds=_int_env("RECOGNITION_REQUEST_TIMEOUT_SECONDS", 30),
         enable_image_download=os.getenv("ENABLE_IMAGE_DOWNLOAD", "false").lower() == "true",
         enable_paddleocr=os.getenv("ENABLE_PADDLEOCR", "false").lower() == "true",
+        enable_tesseract_ocr=os.getenv("ENABLE_TESSERACT_OCR", "false").lower() == "true",
         enable_opencv_rectification=os.getenv("ENABLE_OPENCV_RECTIFICATION", "false").lower() == "true",
         enable_visual_embeddings=os.getenv("ENABLE_VISUAL_EMBEDDINGS", "false").lower() == "true",
         enable_candidate_verification=os.getenv("ENABLE_CANDIDATE_VERIFICATION", "false").lower() == "true",
+        tesseract_language=os.getenv("TESSERACT_LANGUAGE", "eng") or "eng",
+        tesseract_psm=_int_env("TESSERACT_PSM", 11),
+        tesseract_timeout_seconds=_int_env("TESSERACT_TIMEOUT_SECONDS", 20),
     )

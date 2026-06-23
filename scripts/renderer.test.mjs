@@ -73,6 +73,46 @@ assert.match(multiplayer.rendered_title, /Charles Leclerc/i);
 assert.match(multiplayer.rendered_title, /Lewis Hamilton/i);
 assert.match(multiplayer.rendered_title, /Power Partnership/i);
 
+const ronaldoCompact = renderResolvedTitle({
+  year: "2021-22",
+  brand: "Panini",
+  product: "Impeccable",
+  set: "Canvas Creations",
+  players: ["Cristiano Ronaldo"],
+  card_type: "auto",
+  serial_number: "91/99",
+  grade_company: "BGS",
+  card_grade: "8.5",
+  auto_grade: "8",
+  grade_type: "CARD_AND_AUTO"
+}, {
+  maxLength: 80
+});
+assert.ok(ronaldoCompact.rendered_title.length <= 80);
+assert.match(ronaldoCompact.rendered_title, /Cristiano Ronaldo/i);
+assert.match(ronaldoCompact.rendered_title, /91\/99/);
+assert.match(ronaldoCompact.rendered_title, /BGS 8\.5\/8$/);
+
+const duplicateAutoGrade = renderResolvedTitle({
+  year: "2010-11",
+  brand: "Panini",
+  product: "Absolute Memorabilia",
+  set: "Hoopla",
+  players: ["Kobe Bryant"],
+  card_type: "relic/auto",
+  serial_number: "08/25",
+  grade_company: "PSA/DNA",
+  card_grade: "10",
+  auto_grade: "10",
+  grade_type: "CARD_AND_AUTO"
+}, {
+  maxLength: 80
+});
+assert.match(duplicateAutoGrade.rendered_title, /PSA\/DNA 10$/);
+assert.doesNotMatch(duplicateAutoGrade.rendered_title, /10\/10$/);
+assert.match(duplicateAutoGrade.rendered_title, /Absolute/i);
+assert.doesNotMatch(duplicateAutoGrade.rendered_title, /relic\/auto/i);
+
 const longTitle = renderResolvedTitle({
   year: "2015-16",
   brand: "Panini",

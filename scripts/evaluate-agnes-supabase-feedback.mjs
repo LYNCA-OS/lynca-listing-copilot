@@ -380,6 +380,7 @@ function identityResolutionSummary(result = {}) {
     status: result.identity_resolution_status || identityResolution.status || "",
     ambiguity_status: result.ambiguity_status || identityResolution.ambiguity_status || "",
     confidence_report: result.confidence_report || identityResolution.confidence_report || null,
+    convergence_report: result.convergence_report || identityResolution.convergence_report || null,
     fields: (result.field_states || identityResolution.field_states || []).map((fieldState) => ({
       field: fieldState.field,
       resolved_value: fieldState.resolved_value,
@@ -826,6 +827,7 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
       ...(Array.isArray(providerResult.parsed?.unresolved) ? providerResult.parsed.unresolved : []),
       ...(Array.isArray(evidenceDocument.unresolved) ? evidenceDocument.unresolved : [])
     ],
+    convergence_report: completion.convergence_report,
     resolution_trace: [
       ...(Array.isArray(evidenceDocument.resolution_trace) ? evidenceDocument.resolution_trace : []),
       ...(Array.isArray(completion.resolution_trace) ? completion.resolution_trace : [])

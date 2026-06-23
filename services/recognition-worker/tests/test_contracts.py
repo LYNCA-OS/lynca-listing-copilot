@@ -25,6 +25,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         os.environ["RECOGNITION_WORKER_TOKEN"] = "test-token"
         os.environ["RECOGNITION_ALLOWED_IMAGE_HOSTS"] = "example.supabase.co"
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "false"
+        os.environ["ENABLE_TESSERACT_OCR"] = "false"
 
     def test_contract_validation(self):
         payload = {
@@ -62,6 +63,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(parse_serial("257/208").valid, False)
         self.assertEqual(parse_collector_number("#136").normalized, "136")
         self.assertEqual(parse_checklist_code("uv 16").normalized, "UV-16")
+        self.assertFalse(parse_checklist_code("2025-26").valid)
         grade = parse_grade("PSA 9/10")
         self.assertEqual(grade["card_grade"], "9")
         self.assertEqual(grade["auto_grade"], "10")
@@ -185,8 +187,75 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["rectification"]["status"], "OK")
         self.assertEqual(result["image_quality"]["status"], "OK")
         self.assertEqual(result["glare_detection"]["status"], "OK")
-        self.assertEqual(result["processing"]["image_download"]["width"], 800)
+        self.assertEqual(result["processing"]["image_download"]["images"][0]["width"], 800)
         self.assertTrue(result["regions"])
+
+    def test_analyze_payload_can_run_tesseract_adapter_on_loaded_images(self):
+        front = LoadedImage(
+            image_id="front",
+            role="front_original",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+        back = LoadedImage(
+            image_id="back",
+            role="back_original",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/back.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12000,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
+        os.environ["ENABLE_TESSERACT_OCR"] = "true"
+        payload = {
+            "asset_id": "asset_1",
+            "images": [
+                {
+                    "image_id": "front",
+                    "role": "front_original",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+                },
+                {
+                    "image_id": "back",
+                    "role": "back_original",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/back.jpg?token=secret",
+                },
+            ],
+            "requested_fields": ["serial_number", "grade_label"],
+            "options": {"run_ocr": True},
+        }
+
+        with patch("app.main.load_signed_image", side_effect=[front, back]) as load_mock:
+            with patch("app.main.ocr_evidence_from_loaded_images", return_value=ocr_evidence_from_items([
+                {
+                    "image_id": "back",
+                    "role": "back_original",
+                    "text": "05/50",
+                    "confidence": 0.91,
+                },
+                {
+                    "image_id": "front",
+                    "role": "grade_label_crop",
+                    "text": "PSA 9",
+                    "confidence": 0.93,
+                },
+            ])) as ocr_mock:
+                result = analyze_payload(payload, authorization="Bearer test-token")
+
+        self.assertEqual(load_mock.call_count, 2)
+        ocr_mock.assert_called_once()
+        self.assertEqual(len(ocr_mock.call_args.args[0]), 2)
+        self.assertEqual(result["processing"]["model_versions"]["tesseract"], "enabled")
+        self.assertEqual(result["ocr_evidence"]["status"], "OK")
+        self.assertEqual(result["evidence_fusion"]["resolved_fields"]["serial_number"], "5/50")
+        self.assertEqual(result["evidence_fusion"]["resolved_fields"]["grade_company"], "PSA")
+        self.assertEqual(result["evidence_fusion"]["resolved_fields"]["card_grade"], "9")
 
     def test_ocr_text_fusion_parses_fields_and_conflicts(self):
         ocr_evidence = ocr_evidence_from_items([
@@ -231,6 +300,51 @@ class RecognitionWorkerTests(unittest.TestCase):
         serial_conflict = next(conflict for conflict in fusion["conflicts"] if conflict["field"] == "serial_number")
         self.assertEqual(serial_conflict["conflict_type"], "OCR_VALUE_CONFLICT")
         self.assertEqual(serial_conflict["severity"], "HIGH")
+
+    def test_ocr_text_fusion_ignores_season_range_and_standalone_noise_numbers(self):
+        ocr_evidence = ocr_evidence_from_items([
+            {
+                "image_id": "back",
+                "role": "back_original",
+                "text": "2025-26 PANINI PRIZM FIFA SOCCER",
+                "confidence": 0.94,
+            },
+            {
+                "image_id": "back",
+                "role": "back_original",
+                "text": "33",
+                "confidence": 0.82,
+            },
+            {
+                "image_id": "back",
+                "role": "back_original",
+                "text": "No. CL-LM",
+                "confidence": 0.88,
+            },
+            {
+                "image_id": "back",
+                "role": "back_original",
+                "text": "SIGNED: ANGELS-2017 AS FREE AGENT",
+                "confidence": 0.88,
+            },
+            {
+                "image_id": "back",
+                "role": "back_original",
+                "text": "2014 THREW FASTEST PITCH EVER IN AN NPB ALL-STAR GAME FIRED 1-HIT SHO VS ORIX",
+                "confidence": 0.88,
+            },
+        ])
+        fusion = fuse_ocr_evidence(
+            ocr_evidence,
+            ["collector_number", "checklist_code", "year_product"],
+        )
+
+        self.assertEqual(fusion["resolved_fields"].get("year"), "2025")
+        self.assertEqual(fusion["resolved_fields"].get("checklist_code"), "CL-LM")
+        self.assertNotIn("collector_number", fusion["resolved_fields"])
+        self.assertFalse(any(item["field"] == "checklist_code" and item["value"] == "2025-26" for item in fusion["items"]))
+        self.assertFalse(any(item["field"] == "checklist_code" and item["value"] == "ANGELS-2017" for item in fusion["items"]))
+        self.assertFalse(any(item["field"] == "checklist_code" and item["value"] == "1-HIT" for item in fusion["items"]))
 
     def test_r2_rectification_quality_glare_and_regions(self):
         image = np.zeros((1000, 800, 3), dtype=np.uint8)

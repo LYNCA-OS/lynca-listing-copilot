@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import ssl
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 import numpy as np
 from PIL import Image, UnidentifiedImageError
@@ -45,7 +46,14 @@ class LoadedImage:
 
 
 def _default_urlopen(request: Request, timeout: int):
-    opener = build_opener(_NoRedirectHandler)
+    handlers = [_NoRedirectHandler]
+    try:
+        import certifi
+
+        handlers.append(HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where())))
+    except Exception:
+        handlers.append(HTTPSHandler(context=ssl.create_default_context()))
+    opener = build_opener(*handlers)
     return opener.open(request, timeout=timeout)
 
 
@@ -130,7 +138,8 @@ def load_signed_image(
     except HTTPError as error:
         raise ImageLoadError(f"image download failed with HTTP {error.code}") from error
     except URLError as error:
-        raise ImageLoadError("image download failed") from error
+        reason = getattr(error, "reason", error)
+        raise ImageLoadError(f"image download failed: {reason}") from error
 
     array, width, height, image_format = _decode_image(data, max_total_pixels)
     return LoadedImage(

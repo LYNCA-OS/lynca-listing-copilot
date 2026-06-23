@@ -46,7 +46,9 @@ def parse_collector_number(value: str, category: str = "sports_card") -> FieldCa
 def parse_checklist_code(value: str) -> FieldCandidate:
     raw = normalize_text(value)
     normalized = raw.replace(" ", "-").upper()
-    if re.fullmatch(r"[A-Z0-9]{1,12}(?:-[A-Z0-9]{1,16}){0,3}", normalized):
+    if re.fullmatch(r"(?:19|20)\d{2}-\d{2}", normalized):
+        return FieldCandidate(raw, None, None, False, "season_range_not_checklist_code")
+    if re.fullmatch(r"[A-Z0-9]{1,12}(?:-[A-Z0-9]{1,16}){0,3}", normalized) and re.search(r"[A-Z]", normalized):
         return FieldCandidate(raw, normalized, normalized, True, "valid_checklist_code")
     return FieldCandidate(raw, None, None, False, "invalid_checklist_code")
 

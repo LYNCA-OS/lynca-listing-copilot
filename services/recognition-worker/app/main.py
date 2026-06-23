@@ -18,7 +18,7 @@ from .pipelines.evidence_fusion import fuse_ocr_evidence
 from .pipelines.glare_detection import detect_glare_from_array, glare_unavailable
 from .pipelines.image_loader import ImageLoadError, load_signed_image
 from .pipelines.image_quality import measure_image_quality_from_array, quality_unavailable
-from .pipelines.ocr_pipeline import ocr_unavailable
+from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_unavailable
 from .pipelines.region_proposal import propose_regions_for_rectified_card
 from .pipelines.visual_embeddings import embeddings_unavailable
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
@@ -38,20 +38,26 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
     asset_id = payload["asset_id"]
     requested_fields = payload.get("requested_fields") or []
     first_image_id = payload["images"][0]["image_id"]
-    image_load = None
-    image_load_error = None
+    image_loads = []
+    image_load_errors = []
     if config.enable_image_download:
-        try:
-            image_load = load_signed_image(
-                payload["images"][0],
-                allowed_hosts=config.allowed_image_hosts,
-                max_bytes=config.max_image_bytes,
-                max_total_pixels=config.max_total_pixels,
-                timeout_seconds=config.request_timeout_seconds,
-            )
-        except (ImageLoadError, SecurityError) as error:
-            image_load_error = str(error)
+        for image in payload["images"]:
+            try:
+                image_loads.append(load_signed_image(
+                    image,
+                    allowed_hosts=config.allowed_image_hosts,
+                    max_bytes=config.max_image_bytes,
+                    max_total_pixels=config.max_total_pixels,
+                    timeout_seconds=config.request_timeout_seconds,
+                ))
+            except (ImageLoadError, SecurityError) as error:
+                image_load_errors.append({
+                    "image_id": image.get("image_id"),
+                    "role": image.get("role"),
+                    "reason": str(error),
+                })
 
+    image_load = image_loads[0] if image_loads else None
     if image_load:
         rectification = rectify_card_from_array(
             image_load.array,
@@ -66,12 +72,27 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
             glare=glare,
         )
     else:
-        reason = image_load_error or ("image_download_disabled" if not config.enable_image_download else "image_bytes_not_loaded")
+        reason = (
+            image_load_errors[0]["reason"]
+            if image_load_errors
+            else ("image_download_disabled" if not config.enable_image_download else "image_bytes_not_loaded")
+        )
         rectification = rectification_unavailable(first_image_id, reason)
         glare = glare_unavailable(first_image_id, reason)
         quality = quality_unavailable(first_image_id, reason)
 
-    ocr_evidence = ocr_unavailable()
+    if config.enable_tesseract_ocr and image_loads:
+        ocr_evidence = ocr_evidence_from_loaded_images(
+            image_loads,
+            language=config.tesseract_language,
+            psm=config.tesseract_psm,
+            timeout_seconds=config.tesseract_timeout_seconds,
+        )
+    else:
+        ocr_evidence = ocr_unavailable(
+            "tesseract_not_run",
+            "tesseract_disabled" if not config.enable_tesseract_ocr else "image_bytes_not_loaded",
+        )
     evidence_fusion = fuse_ocr_evidence(ocr_evidence, requested_fields)
 
     return {
@@ -88,13 +109,22 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
             "pipeline_version": config.pipeline_version,
             "model_versions": {
                 "paddleocr": "not_enabled",
+                "tesseract": "enabled" if config.enable_tesseract_ocr else "disabled",
                 "unlimited_ocr": "not_enabled_experimental",
                 "opencv": "enabled" if config.enable_opencv_rectification else "disabled",
                 "r2_numpy_geometry": "available_for_offline_eval",
             },
-            "image_download": image_load.metadata() if image_load else {
-                "status": "UNAVAILABLE",
-                "reason": image_load_error or ("image_download_disabled" if not config.enable_image_download else "image_bytes_not_loaded"),
+            "image_download": {
+                "status": "OK" if image_loads else "UNAVAILABLE",
+                "images": [loaded.metadata() for loaded in image_loads],
+                **({"errors": image_load_errors} if image_load_errors else {}),
+                **({} if image_loads else {
+                    "reason": (
+                        image_load_errors[0]["reason"]
+                        if image_load_errors
+                        else ("image_download_disabled" if not config.enable_image_download else "image_bytes_not_loaded")
+                    ),
+                }),
             },
             "latency_ms": int((time.time() - started) * 1000),
         },
@@ -115,6 +145,7 @@ if FastAPI is not None:
             "status": "ready" if config.token else "not_ready",
             "pipeline_version": config.pipeline_version,
             "paddleocr_enabled": config.enable_paddleocr,
+            "tesseract_ocr_enabled": config.enable_tesseract_ocr,
             "opencv_rectification_enabled": config.enable_opencv_rectification,
             "visual_embeddings_enabled": config.enable_visual_embeddings,
             "candidate_verification_enabled": config.enable_candidate_verification,
