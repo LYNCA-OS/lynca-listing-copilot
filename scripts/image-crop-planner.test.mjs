@@ -57,4 +57,25 @@ const gradePlans = planTargetedCrops({
 });
 assert.equal(gradePlans[0].role, "grade_label_crop");
 
+const parallelPlans = planTargetedCrops({
+  imageId: "image-front",
+  imageQuality: {
+    critical_region_occlusion: {
+      parallel: {
+        status: criticalRegionStatus.REVIEW,
+        glare_score: 0.18,
+        readability_score: 0.2
+      },
+      serial_number: {
+        status: criticalRegionStatus.OCCLUDED,
+        glare_score: 0.62,
+        readability_score: 0.05
+      }
+    }
+  },
+  profile: defaultCaptureProfile
+});
+assert.deepEqual(parallelPlans.map((plan) => plan.source_region), ["serial_number", "parallel"]);
+assert.equal(parallelPlans[1].role, "parallel_crop");
+
 console.log("image crop planner tests passed");

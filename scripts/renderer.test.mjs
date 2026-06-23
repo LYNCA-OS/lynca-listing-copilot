@@ -44,6 +44,8 @@ const ohtaniChrome = renderListingPresentation({
 });
 assert.match(ohtaniChrome.final_title, /^2018\b/);
 assert.match(ohtaniChrome.final_title, /Topps Chrome/);
+assert.doesNotMatch(ohtaniChrome.final_title, /2018\s+2018/i);
+assert.doesNotMatch(ohtaniChrome.final_title, /Chrome\s+Chrome/i);
 assert.match(ohtaniChrome.final_title, /Shohei Ohtani/);
 assert.match(ohtaniChrome.final_title, /RC/);
 assert.match(ohtaniChrome.final_title, /PSA 10$/);
@@ -112,6 +114,44 @@ assert.match(duplicateAutoGrade.rendered_title, /PSA\/DNA 10$/);
 assert.doesNotMatch(duplicateAutoGrade.rendered_title, /10\/10$/);
 assert.match(duplicateAutoGrade.rendered_title, /Absolute/i);
 assert.doesNotMatch(duplicateAutoGrade.rendered_title, /relic\/auto/i);
+assert.match(duplicateAutoGrade.rendered_title, /Auto Relic/i);
+
+const psaDnaCardOnlyAutoRelic = renderResolvedTitle({
+  year: "2010-11",
+  brand: "Panini",
+  product: "Absolute Memorabilia",
+  set: "Hoopla",
+  players: ["Kobe Bryant"],
+  card_type: "relic/auto",
+  serial_number: "08/25",
+  grade_company: "PSA/DNA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY",
+  auto: true,
+  relic: true
+}, {
+  maxLength: 80
+});
+assert.ok(psaDnaCardOnlyAutoRelic.rendered_title.length <= 80);
+assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /Kobe Bryant/i);
+assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /\bAuto\b/i);
+assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /\bRelic\b/i);
+assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /08\/25/);
+assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /PSA 10$/);
+assert.doesNotMatch(psaDnaCardOnlyAutoRelic.rendered_title, /PSA\/DNA 10$/);
+
+const baseCard = renderResolvedTitle({
+  year: "2023",
+  brand: "Panini",
+  product: "Prizm",
+  set: "2023 Panini Prizm Football",
+  players: ["Rashee Rice"],
+  card_type: "base",
+  rc: true
+}, {
+  maxLength: 80
+});
+assert.equal(baseCard.rendered_title, "2023 Panini Prizm Football Rashee Rice RC");
 
 const longTitle = renderResolvedTitle({
   year: "2015-16",
