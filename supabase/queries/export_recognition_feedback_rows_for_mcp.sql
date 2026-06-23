@@ -9,30 +9,31 @@
 -- For large results, use the chunked query below, changing chunk_id and offset
 -- for each page. Then extract all chunks from the Codex session JSONL with:
 -- npm run recognition:supabase:mcp-session -- --session <session.jsonl> \
---   --chunk-prefix LYNCA_SUPABASE_FEEDBACK_EXPORT_20260623_ \
---   --expected-rows 248 \
+--   --chunk-prefix LYNCA_SUPABASE_FEEDBACK_ALL_EXPORT_20260623_ \
+--   --expected-rows 351 \
+--   --expected-chunks 5 \
 --   --output data/recognition/reports/supabase-feedback-rows-mcp.json
 
 select
   id::text as id,
   generated_title,
   corrected_title,
-  front_image_url,
-  back_image_url,
+  case when nullif(front_image_url, '') is not null then 'listing-feedback-images' end as front_bucket,
+  nullif(split_part(front_image_url, '/listing-feedback-images/', 2), '') as front_object_path,
+  case when nullif(back_image_url, '') is not null then 'listing-feedback-images' end as back_bucket,
+  nullif(split_part(back_image_url, '/listing-feedback-images/', 2), '') as back_object_path,
   operator_id,
   created_at
 from public.listing_title_feedback
-where nullif(front_image_url, '') is not null
-   or nullif(back_image_url, '') is not null
 order by created_at desc, id asc;
 
--- Chunked query template. Repeat with offsets 0, 50, 100, ...
+-- Chunked query template. Repeat with offsets 0, 75, 150, 225, 300, ...
 -- Keep chunk_id unique per page.
 /*
 with export_args as (
   select
-    'LYNCA_SUPABASE_FEEDBACK_EXPORT_20260623_0000'::text as chunk_id,
-    50::int as limit_rows,
+    'LYNCA_SUPABASE_FEEDBACK_ALL_EXPORT_20260623_0000'::text as chunk_id,
+    75::int as limit_rows,
     0::int as offset_rows
 ),
 page as (
@@ -47,8 +48,6 @@ page as (
     operator_id,
     created_at
   from public.listing_title_feedback
-  where nullif(front_image_url, '') is not null
-     or nullif(back_image_url, '') is not null
   order by created_at desc, id asc
   limit (select limit_rows from export_args)
   offset (select offset_rows from export_args)
