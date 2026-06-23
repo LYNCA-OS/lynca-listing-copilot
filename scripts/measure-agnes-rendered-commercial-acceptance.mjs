@@ -59,6 +59,24 @@ export function renderedResult(result = {}, {
   maxTitleLength = defaultMaxTitleLength
 } = {}) {
   if (result.status !== "evaluated") return result;
+  if (result.identity_resolution_status === "ABSTAIN"
+    || result.prediction?.identity_resolution_status === "ABSTAIN"
+    || result.prediction?.title_render_source === "identity_resolution_abstain") {
+    return {
+      ...result,
+      prediction: {
+        ...(result.prediction || {}),
+        model_title_suggestion_available: Boolean(result.prediction?.title),
+        title: "",
+        final_title: "",
+        rendered_title: "",
+        title_render_source: "identity_resolution_abstain"
+      },
+      corrected_title_comparison: titleComparison(result.corrected_title_reference || "", ""),
+      rendered_title_policy: result.rendered_title_policy || null,
+      rendered_title_renderer: result.rendered_title_renderer || null
+    };
+  }
   const fields = result.prediction?.fields || {};
   const rendered = renderResolvedTitle(fields, { maxLength: maxTitleLength });
   const renderedTitle = rendered.rendered_title || "";

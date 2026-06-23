@@ -444,6 +444,17 @@ assert.equal(focusedRereadCompletion.budget.used.agnes_calls, 1);
 assert.equal(focusedRereadCompletion.route, "AI_COMPLETE_REVIEW");
 const focusedRereadTrace = focusedRereadCompletion.resolution_trace.find((entry) => entry.output?.focused_vision?.updated_fields?.includes("serial_number"));
 assert.equal(focusedRereadTrace.status, "executed");
+assert.equal(focusedRereadCompletion.convergence_report.loop, "detect_conflict_retrieve_reevaluate_converge");
+assert.ok(focusedRereadCompletion.convergence_report.iterations >= 1);
+assert.equal(focusedRereadCompletion.convergence_report.converged, true);
+assert.deepEqual(focusedRereadTrace.output.convergence.phases.map((phase) => phase.phase), [
+  "detect_conflict",
+  "retrieve_or_reread",
+  "re_evaluate",
+  "converge"
+]);
+assert.equal(focusedRereadTrace.output.convergence.action_kind, "reread");
+assert.deepEqual(focusedRereadTrace.output.convergence.phases[1].focused_fields, ["serial_number"]);
 assert.equal(focusedRereadCompletion.resolution_trace[0].action, completionActions.SEARCH_INTERNAL_APPROVED_HISTORY);
 assert.ok(focusedRereadCompletion.resolution_trace.every((entry) => !/GPT|openai_legacy/i.test(JSON.stringify(entry))));
 
@@ -544,6 +555,50 @@ assert.equal(parallelFocusedCompletion.resolved.parallel, "Gold Wave");
 assert.equal(parallelFocusedCompletion.budget.used.agnes_calls, 3);
 assert.equal(parallelFocusedCompletion.usage.provider_calls, 3);
 
+const proactiveFocusedActions = [];
+const proactiveFocusedCompletion = await completeEvidence({
+  resolved: {
+    year: "2022",
+    manufacturer: "Panini",
+    brand: "Panini",
+    product: "Gold Standard",
+    players: ["Hunter Renfrow"],
+    serial_number: "196/299"
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2022", status: "CONFIRMED", confidence: 0.9 }),
+    manufacturer: createEvidenceField({ value: "Panini", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Panini", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Gold Standard", status: "CONFIRMED", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Hunter Renfrow"], status: "CONFIRMED", confidence: 0.9 }),
+    serial_number: createEvidenceField({ value: "196/299", status: "CONFIRMED", confidence: 0.9 })
+  },
+  env: {
+    ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1",
+    MAX_PARALLEL_FOCUSED_REREADS: "3"
+  },
+  budgetOverrides: {
+    maxRounds: 3,
+    maxAgnesCalls: 3,
+    maxExternalQueries: 0
+  },
+  runFocusedVisionImpl: async ({ action }) => {
+    proactiveFocusedActions.push(action);
+    return {
+      provider_id: "agnes",
+      model_id: "agnes-2.0-flash",
+      resolved: {},
+      evidence: {}
+    };
+  }
+});
+assert.equal(proactiveFocusedCompletion.resolution_trace[0].action, completionActions.CROP_AND_READ_SERIAL);
+assert.deepEqual(proactiveFocusedActions.slice(0, 3), [
+  completionActions.CROP_AND_READ_SERIAL,
+  completionActions.CROP_AND_READ_YEAR_PRODUCT,
+  completionActions.CROP_AND_READ_SUBJECT
+]);
+
 const noInfoOcclusionCompletion = await completeEvidence({
   resolved: {
     year: "2025",
@@ -609,6 +664,8 @@ assert.deepEqual(noInfoOcclusionActions, [
 ]);
 assert.equal(noInfoOcclusionCompletion.route, "TARGETED_RESCAN_REQUIRED");
 assert.equal(noInfoOcclusionCompletion.state.resolution_state, "TARGETED_RESCAN_REQUIRED");
+assert.equal(noInfoOcclusionCompletion.convergence_report.terminal_state, "TARGETED_RESCAN_REQUIRED");
+assert.ok(noInfoOcclusionCompletion.convergence_report.final_open_fields.includes("serial_number"));
 
 const officialCandidate = {
   candidate_id: "official_tcar_cf",

@@ -160,6 +160,22 @@ function yearsFromTitle(title) {
   return unique((canonicalText(title).match(/\b\d{4}(?:\s\d{2})?\b/g) || []).map((value) => value.replace(/\s/g, "-")));
 }
 
+function yearStart(value) {
+  const match = String(value || "").match(/\b(\d{4})(?:-\d{2})?\b/);
+  return match ? match[1] : "";
+}
+
+function yearOverlap(leftValues = [], rightValues = []) {
+  return leftValues.filter((leftValue) => {
+    const leftStart = yearStart(leftValue);
+    return rightValues.some((rightValue) => {
+      if (leftValue === rightValue) return true;
+      const rightStart = yearStart(rightValue);
+      return Boolean(leftStart && rightStart && leftStart === rightStart);
+    });
+  });
+}
+
 function normalizeSerial(value) {
   const match = String(value || "").match(/\b0*(\d+)\s*\/\s*0*(\d+)\b/);
   if (!match) return "";
@@ -197,11 +213,11 @@ export function titleComparison(referenceTitle, predictedTitle) {
   const referenceColors = colorsFromTitle(referenceTitle);
   const predictedColors = colorsFromTitle(predictedTitle);
   const unexpectedColors = predictedColors.filter((token) => !referenceColors.includes(token));
-  const yearOverlap = overlap(referenceYears, predictedYears);
+  const matchedYears = yearOverlap(referenceYears, predictedYears);
   const serialOverlap = overlap(referenceSerials, predictedSerials);
   const gradeOverlap = overlap(referenceGrades, predictedGrades);
 
-  const wrongYear = referenceYears.length > 0 && predictedYears.length > 0 && yearOverlap.length === 0;
+  const wrongYear = referenceYears.length > 0 && predictedYears.length > 0 && matchedYears.length === 0;
   const wrongSerial = referenceSerials.length > 0 && predictedSerials.length > 0 && serialOverlap.length === 0;
   const wrongGrade = referenceGrades.length > 0 && predictedGrades.length > 0 && gradeOverlap.length === 0;
   const unexpectedColor = unexpectedColors.length > 0;
@@ -214,7 +230,7 @@ export function titleComparison(referenceTitle, predictedTitle) {
     predicted_token_count: predictedTokens.length,
     reference_years: referenceYears,
     predicted_years: predictedYears,
-    year_overlap: yearOverlap,
+    year_overlap: matchedYears,
     reference_serials: referenceSerials,
     predicted_serials: predictedSerials,
     serial_overlap: serialOverlap,
@@ -241,12 +257,15 @@ function fieldsFromParsed(parsed = {}) {
   return {
     year: normalizeText(fields.year || fields.season),
     manufacturer: normalizeText(fields.manufacturer || fields.brand),
+    brand: normalizeText(fields.brand || fields.manufacturer),
     product: normalizeText(fields.product || fields.set),
     set: normalizeText(fields.set || fields.product),
+    subset: normalizeText(fields.subset),
     players,
     card_type: normalizeText(fields.card_type),
     insert: normalizeText(fields.insert),
     parallel: normalizeText(fields.parallel),
+    variation: normalizeText(fields.variation),
     serial_number: normalizeText(fields.serial_number),
     collector_number: normalizeText(fields.collector_number || fields.card_number || fields.number),
     checklist_code: normalizeText(fields.checklist_code),
@@ -268,12 +287,15 @@ function fieldsFromResolved(resolved = {}) {
   return {
     year: normalizeText(resolved.year),
     manufacturer: normalizeText(resolved.manufacturer || resolved.brand),
+    brand: normalizeText(resolved.brand || resolved.manufacturer),
     product: normalizeText(resolved.product),
     set: normalizeText(resolved.set),
+    subset: normalizeText(resolved.subset),
     players: Array.isArray(resolved.players) ? resolved.players.map(normalizeText).filter(Boolean) : [],
     card_type: normalizeText(resolved.card_type),
     insert: normalizeText(resolved.insert),
     parallel: normalizeText(resolved.parallel || resolved.variation),
+    variation: normalizeText(resolved.variation),
     serial_number: normalizeText(resolved.serial_number),
     collector_number: normalizeText(resolved.collector_number),
     checklist_code: normalizeText(resolved.checklist_code),
@@ -398,10 +420,13 @@ function evaluationPrompt(item = {}) {
     "Rules:",
     "- If a field is not visible, use an empty string, false, or an empty array rather than guessing.",
     "- If the image contains multiple cards or a lot, set multi_card true, include card_count when visible, and do not merge fields across cards.",
+    "- For serial_number, every digit must be readable; if any digit is uncertain, leave serial_number empty and mention the uncertainty in unresolved.",
+    "- For year, prefer the printed card year or season range such as 2003-04; use copyright year only when no card year or season is visible.",
     "- Set rc true when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible.",
     "- Set first_bowman, ssp, and case_hit true only when a printed marker/text, slab label, card code, or unmistakable card-specific logo is readable.",
     "- Do not infer color/parallel/variation from foil or color impression alone; leave it empty and put 'visual-only parallel requires operator review' in unresolved.",
     "- Never invent grade, serial, autograph, patch, color, parallel, player, year, or product.",
+    "- In reason, cite the visible source for each non-empty high-risk field: serial_number, grade, year, product, player, rc, first_bowman, parallel, variation.",
     "- The corrected title is not shown to you and must not be inferred.",
     "- Do not include Markdown fences or prose outside the JSON.",
     `Audit feedback id: ${candidateId(item) || "unknown"}.`
@@ -417,9 +442,12 @@ function focusedEvaluationPrompt({
     "You are performing a focused reread for LYNCA Listing Copilot commercial evaluation.",
     "Use only the supplied card image. Do not use outside knowledge, marketplace wording, memory, or the corrected title.",
     "If the image contains multiple cards or a card lot, set multi_card true, include card_count when visible, and do not merge fields from different cards.",
+    "For serial_number, every digit must be readable; if any digit is uncertain, leave serial_number empty and explain that digit uncertainty in unresolved.",
+    "For year, prefer the printed card year or season range such as 2003-04; use copyright year only when no card year or season is visible.",
     "For RC, return true when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible.",
     "For parallel, variation, 1st Bowman, SSP, and case-hit fields, return a value only when printed card text, slab label, card code, or an unmistakable logo/marker is readable.",
     "If color or foil is only a visual impression, leave parallel/variation empty and add 'visual-only parallel requires operator review' to unresolved.",
+    "In reason, cite the visible source for every returned focus field, for example front printed serial, back printed card code, slab label grade, or printed parallel.",
     `Action: ${action || "focused_reread"}.`,
     `Focus fields: ${focusFields.join(", ") || "unresolved critical fields"}.`,
     "Return only valid JSON in this exact shape:",
@@ -745,7 +773,8 @@ function buildReport({
   now,
   fullSampleEvaluation,
   identityResolution,
-  excludeSelfApprovedMemory
+  excludeSelfApprovedMemory,
+  proactiveFocusedRereads = false
 }) {
   return {
     schema_version: schemaVersion,
@@ -755,6 +784,7 @@ function buildReport({
     provider: "agnes",
     identity_resolution_enabled: identityResolution,
     internal_memory_self_exclusion_enabled: identityResolution && excludeSelfApprovedMemory,
+    proactive_focused_rereads_enabled: identityResolution && proactiveFocusedRereads,
     source_dataset_schema_version: dataset.schema_version || null,
     source_manifest_hash: dataset.manifest_hash || null,
     source_provider: dataset.source?.provider || null,
@@ -781,6 +811,7 @@ export async function evaluateAgnesSupabaseFeedback({
   identityResolution = false,
   maxTitleLength = 80,
   excludeSelfApprovedMemory = true,
+  proactiveFocusedRereads = false,
   env = process.env,
   analyzeImpl = analyzeCardEvidenceWithAgnes,
   createSignedReadUrlImpl = createListingImageSignedReadUrl,
@@ -830,6 +861,9 @@ export async function evaluateAgnesSupabaseFeedback({
     .filter((item) => imageInputs(item).length > 0);
   const selectedItems = limit > 0 ? allImageItems.slice(0, limit) : allImageItems;
   const fullSampleEvaluation = selectedItems.length === allImageItems.length && limit <= 0;
+  const completionEnv = proactiveFocusedRereads
+    ? { ...env, ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1" }
+    : env;
   const reusableById = new Map(
     previousResults
       .filter((item) => item?.status === "evaluated")
@@ -858,7 +892,8 @@ export async function evaluateAgnesSupabaseFeedback({
       now,
       fullSampleEvaluation,
       identityResolution,
-      excludeSelfApprovedMemory
+      excludeSelfApprovedMemory,
+      proactiveFocusedRereads
     });
     return { ...report, status: results.length === selectedItems.length ? "completed" : status };
   };
@@ -871,7 +906,7 @@ export async function evaluateAgnesSupabaseFeedback({
       const item = pending[cursor];
       cursor += 1;
       const result = await evaluateOneFeedbackItem(item, {
-        env,
+        env: completionEnv,
         analyzeImpl,
         createSignedReadUrlImpl,
         identityResolution,
@@ -892,6 +927,7 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `Agnes Supabase feedback eval ${report.status || "unknown"}`,
     `identity_resolution_enabled: ${report.identity_resolution_enabled === true}`,
     `internal_memory_self_exclusion_enabled: ${report.internal_memory_self_exclusion_enabled === true}`,
+    `proactive_focused_rereads_enabled: ${report.proactive_focused_rereads_enabled === true}`,
     `target_count: ${report.target_count ?? "n/a"}`,
     `attempted_count: ${report.attempted_count ?? "n/a"}`,
     `evaluated_count: ${report.evaluated_count ?? "n/a"}`,
@@ -924,6 +960,8 @@ export async function main(argv = process.argv, env = process.env) {
   const maxTitleLength = numberArg(argv, "--max-title-length", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_MAX_TITLE_LENGTH || 80));
   const excludeSelfApprovedMemory = !hasFlag(argv, "--allow-self-approved-memory")
     && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_EXCLUDE_SELF_MEMORY", true);
+  const proactiveFocusedRereads = hasFlag(argv, "--proactive-focused-rereads")
+    || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_PROACTIVE_FOCUSED_REREADS", false);
   const flushEvery = Math.max(1, numberArg(argv, "--flush-every", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_FLUSH_EVERY || 5)));
   const resume = !hasFlag(argv, "--no-resume") && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_RESUME", true);
   const dataset = await readJson(datasetPath);
@@ -946,8 +984,10 @@ export async function main(argv = process.argv, env = process.env) {
     identityResolution,
     maxTitleLength,
     excludeSelfApprovedMemory,
+    proactiveFocusedRereads,
     env: {
       ...env,
+      ...(proactiveFocusedRereads ? { ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1" } : {}),
       AGNES_MAX_RETRIES: env.AGNES_MAX_RETRIES || "1"
     },
     previousResults,

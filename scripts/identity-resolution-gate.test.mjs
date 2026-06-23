@@ -31,6 +31,17 @@ function groundedEvidence(value) {
   });
 }
 
+function frontOnlyEvidence(value) {
+  return createEvidenceField({
+    value,
+    status: "CONFIRMED",
+    confidence: 0.96,
+    sources: [
+      printedSource("CARD_FRONT", "front", Array.isArray(value) ? value.join(" / ") : value)
+    ]
+  });
+}
+
 const agnesOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
   model_title_suggestion: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
@@ -136,8 +147,90 @@ const pokemonCritical = criticalFieldsForIdentityResolution(normalizeResolvedFie
   product: "Pokemon Scarlet Violet",
   character: "Pikachu"
 }), []);
+assert.ok(pokemonCritical.includes("year"));
+assert.ok(pokemonCritical.includes("product"));
 assert.ok(pokemonCritical.includes("character"));
 assert.ok(!pokemonCritical.includes("players"));
+
+const missingYear = applyIdentityResolutionGate({
+  title: "Topps Chrome Shohei Ohtani 31/50",
+  confidence: "HIGH",
+  reason: "Year is not visible.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    serial_number: "31/50"
+  }),
+  evidence: {
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    serial_number: groundedEvidence("31/50")
+  },
+  unresolved: []
+});
+assert.equal(missingYear.identity_resolution_status, "ABSTAIN");
+assert.equal(missingYear.final_title, "");
+assert.ok(missingYear.unresolved.some((item) => /identity year/i.test(item)));
+
+const serialFocusedFailure = applyIdentityResolutionGate({
+  title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
+  confidence: "HIGH",
+  reason: "Initial serial read exists, but focused reread could not verify serial.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2022",
+    product: "Gold Standard",
+    players: ["Hunter Renfrow"],
+    serial_number: "196/299"
+  }),
+  evidence: {
+    year: groundedEvidence("2022"),
+    product: groundedEvidence("Gold Standard"),
+    players: groundedEvidence(["Hunter Renfrow"]),
+    serial_number: groundedEvidence("196/299")
+  },
+  unresolved: [],
+  resolution_trace: [
+    {
+      action: "CROP_AND_READ_SERIAL",
+      status: "no_information"
+    }
+  ]
+});
+assert.equal(serialFocusedFailure.identity_resolution_status, "ABSTAIN");
+assert.equal(serialFocusedFailure.final_title, "");
+assert.ok(serialFocusedFailure.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_FOCUSED_VERIFICATION_FAILED"));
+assert.ok(serialFocusedFailure.resolution_trace.some((entry) => entry.step === "high_risk_verification_guard"));
+
+const serialSingleFrontSource = applyIdentityResolutionGate({
+  title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
+  confidence: "HIGH",
+  reason: "Focused serial reread repeated one front-image serial value.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2022",
+    product: "Gold Standard",
+    players: ["Hunter Renfrow"],
+    serial_number: "196/299"
+  }),
+  evidence: {
+    year: groundedEvidence("2022"),
+    product: groundedEvidence("Gold Standard"),
+    players: groundedEvidence(["Hunter Renfrow"]),
+    serial_number: frontOnlyEvidence("196/299")
+  },
+  unresolved: [],
+  resolution_trace: [
+    {
+      action: "CROP_AND_READ_SERIAL",
+      status: "executed"
+    }
+  ]
+});
+assert.equal(serialSingleFrontSource.identity_resolution_status, "ABSTAIN");
+assert.equal(serialSingleFrontSource.final_title, "");
+assert.ok(serialSingleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const localizedOnlyGrounded = applyIdentityResolutionGate({
   title: "provider localized title must not become final title",
@@ -145,6 +238,7 @@ const localizedOnlyGrounded = applyIdentityResolutionGate({
   reason: "Card text is localized and needs English title evidence before publishing.",
   provider: "agnes",
   resolved: normalizeResolvedFields({
+    year: "2024",
     brand: "Pokemon TCG",
     product: "Pokemon Scarlet Violet",
     set: "SV9C",
@@ -153,6 +247,7 @@ const localizedOnlyGrounded = applyIdentityResolutionGate({
     collector_number: "257/208"
   }),
   evidence: {
+    year: groundedEvidence("2024"),
     product: groundedEvidence("Pokemon Scarlet Violet"),
     character: groundedEvidence("琉琪亚的展现"),
     collector_number: groundedEvidence("257/208")

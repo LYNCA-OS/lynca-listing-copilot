@@ -122,6 +122,22 @@ function yearsFromText(text) {
     .map((value) => value.replace(/\s/g, "-")));
 }
 
+function yearStart(value) {
+  const match = String(value || "").match(/\b(\d{4})(?:-\d{2})?\b/);
+  return match ? match[1] : "";
+}
+
+function yearsIntersect(left = [], right = []) {
+  return left.some((leftValue) => {
+    const leftStart = yearStart(leftValue);
+    return right.some((rightValue) => {
+      if (leftValue === rightValue) return true;
+      const rightStart = yearStart(rightValue);
+      return Boolean(leftStart && rightStart && leftStart === rightStart);
+    });
+  });
+}
+
 function normalizeSerial(value) {
   const match = String(value || "").match(/\b0*(\d+)\s*\/\s*0*(\d+)\b/);
   if (!match) return "";
@@ -169,7 +185,7 @@ function titleContentChecks(result = {}) {
   const referenceYears = yearsFromText(referenceTitle);
   if (referenceYears.length) {
     const titleYears = yearsFromText(title);
-    checks.push(titleContentCheck("year", referenceYears, titleYears, intersects(referenceYears, titleYears), "final_title_year"));
+    checks.push(titleContentCheck("year", referenceYears, titleYears, yearsIntersect(referenceYears, titleYears), "final_title_year"));
   }
 
   const referenceSerials = serialsFromText(referenceTitle);
@@ -292,6 +308,13 @@ function statusFailure(result = {}) {
   return "not_evaluated";
 }
 
+function identityAbstained(result = {}) {
+  const prediction = result.prediction || {};
+  return result.identity_resolution_status === "ABSTAIN"
+    || prediction.identity_resolution_status === "ABSTAIN"
+    || prediction.title_render_source === "identity_resolution_abstain";
+}
+
 export function evaluateCommercialAcceptanceRow(result = {}, {
   minTokenRecall = defaultMinTokenRecall,
   minTokenPrecision = defaultMinTokenPrecision,
@@ -303,6 +326,21 @@ export function evaluateCommercialAcceptanceRow(result = {}, {
       accepted: false,
       primary_failure_reason: statusReason,
       failure_reasons: [statusReason],
+      derivable_field_count: 0,
+      title_derived_field_mismatches: [],
+      title_content_mismatches: [],
+      principle_failures: [],
+      diagnostic_reasons: [],
+      token_recall: null,
+      token_precision: null
+    };
+  }
+
+  if (identityAbstained(result)) {
+    return {
+      accepted: false,
+      primary_failure_reason: "identity_abstain",
+      failure_reasons: ["identity_abstain"],
       derivable_field_count: 0,
       title_derived_field_mismatches: [],
       title_content_mismatches: [],

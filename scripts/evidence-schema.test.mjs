@@ -92,6 +92,18 @@ assert.equal(resolved.card_grade, "10");
 assert.equal(resolved.auto, true);
 assert.equal(validateResolvedFields(resolved).length, 0);
 
+const descriptorResolved = legacyFieldsToResolvedFields({
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Finest",
+  card_type: "Insert",
+  variation: "Red Refractor"
+});
+assert.equal(descriptorResolved.manufacturer, "Topps");
+assert.equal(descriptorResolved.brand, "Topps");
+assert.equal(descriptorResolved.card_type, "Insert");
+assert.equal(descriptorResolved.variation, "Red Refractor");
+
 const normalized = normalizeResolvedFields({
   players: "A / B",
   grade_type: "CARD_AND_AUTO",
@@ -211,6 +223,28 @@ assert.equal(slabParallelDocument.resolved.parallel, "Variation-Gold");
 assert.equal(slabParallelDocument.evidence.parallel.value, "Variation-Gold");
 assert.equal(slabParallelDocument.evidence.parallel.sources[0].source_type, "SLAB_LABEL");
 assert.doesNotThrow(() => assertValidEvidenceDocument(slabParallelDocument));
+
+const agnesDescriptorDocument = providerPayloadToEvidenceDocument({
+  title: "2025 Topps Finest Shohei Ohtani Gusto Red Refractor",
+  confidence: "HIGH",
+  reason: "front card text explicitly states Topps Finest and printed parallel Red Refractor",
+  fields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Finest",
+    players: ["Shohei Ohtani"],
+    card_type: "Insert",
+    variation: "Red Refractor"
+  },
+  unresolved: []
+});
+assert.equal(agnesDescriptorDocument.resolved.manufacturer, "Topps");
+assert.equal(agnesDescriptorDocument.resolved.brand, "Topps");
+assert.equal(agnesDescriptorDocument.resolved.card_type, "Insert");
+assert.equal(agnesDescriptorDocument.resolved.variation, "Red Refractor");
+assert.equal(agnesDescriptorDocument.evidence.variation.value, "Red Refractor");
+assert.equal(agnesDescriptorDocument.evidence.variation.sources[0].source_type, "CARD_FRONT");
+assert.doesNotThrow(() => assertValidEvidenceDocument(agnesDescriptorDocument));
 
 const multiCardDocument = providerPayloadToEvidenceDocument({
   title: "Card lot requires review",

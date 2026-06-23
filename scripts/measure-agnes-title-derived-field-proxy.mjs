@@ -60,6 +60,22 @@ function yearsFromText(text) {
     .map((value) => value.replace(/\s/g, "-")));
 }
 
+function yearStart(value) {
+  const match = String(value || "").match(/\b(\d{4})(?:-\d{2})?\b/);
+  return match ? match[1] : "";
+}
+
+function yearsIntersect(left = [], right = []) {
+  return left.some((leftValue) => {
+    const leftStart = yearStart(leftValue);
+    return right.some((rightValue) => {
+      if (leftValue === rightValue) return true;
+      const rightStart = yearStart(rightValue);
+      return Boolean(leftStart && rightStart && leftStart === rightStart);
+    });
+  });
+}
+
 function normalizeYear(value) {
   const text = canonicalText(value).replace(/\s+/g, "-");
   const range = text.match(/\b(\d{4})-(\d{2})\b/);
@@ -100,8 +116,12 @@ function colorsFromFields(fields = {}, title = "") {
   return unique([
     ...colorsFromText(fields.parallel),
     ...colorsFromText(fields.variation),
+    ...colorsFromText(fields.subset),
+    ...colorsFromText(fields.card_type),
+    ...colorsFromText(fields.insert),
     ...colorsFromText(fields.set),
     ...colorsFromText(fields.product),
+    ...(Array.isArray(fields.attributes) ? fields.attributes.flatMap(colorsFromText) : []),
     ...colorsFromText(title)
   ]);
 }
@@ -151,7 +171,7 @@ export function titleDerivedChecks(result = {}) {
       normalizeYear(fields.season),
       ...yearsFromText(predictedTitle)
     ]);
-    checks.push(fieldCheck("year", referenceYears, predictedYears, intersects(referenceYears, predictedYears), "corrected_title_year"));
+    checks.push(fieldCheck("year", referenceYears, predictedYears, yearsIntersect(referenceYears, predictedYears), "corrected_title_year"));
   }
 
   const referenceSerials = serialsFromText(referenceTitle);

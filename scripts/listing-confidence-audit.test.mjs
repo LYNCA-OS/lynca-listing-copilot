@@ -90,10 +90,11 @@ const serialVisibleUncertainParallel = await callApi({
   title: "2025 Topps Chrome Quinshon Judkins RC Purple 130/175",
   confidence: "HIGH",
   reason: "Serial visible and preserved; exact parallel requires operator review from visual foil.",
-  fields: {
-    year: "2025",
-    brand: "Topps Chrome",
-    player: "Quinshon Judkins",
+    fields: {
+      year: "2025",
+      brand: "Topps",
+      product: "Topps Chrome",
+      player: "Quinshon Judkins",
     subset: "RC",
     parallel: "Purple Wave Refractor",
     serial_number: "130/175"
@@ -129,7 +130,8 @@ const clearPsaLabel = await callApi({
   reason: "PSA label explicitly supports player, year, product, and grade.",
   fields: {
     year: "2024",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Shohei Ohtani",
     grade_company: "PSA",
     grade: "Gem Mint 10"
@@ -152,10 +154,11 @@ const visuallyGuessedParallel = await callApi({
   title: "2025 Bowman Chrome Test Player Fuchsia Wave Auto 137/199",
   confidence: "HIGH",
   reason: "Player and serial are visible; Fuchsia Wave is visually guessed from foil alone.",
-  fields: {
-    year: "2025",
-    brand: "Bowman Chrome",
-    player: "Test Player",
+    fields: {
+      year: "2025",
+      brand: "Bowman",
+      product: "Bowman Chrome",
+      player: "Test Player",
     parallel: "Fuchsia Wave",
     auto: true,
     serial_number: "137/199"
@@ -171,10 +174,11 @@ const missingVisibleSerial = await callApi({
   title: "2025 Bowman Chrome Test Player Fuchsia Wave Auto",
   confidence: "HIGH",
   reason: "Card text explicitly supports player and auto; serial is visible.",
-  fields: {
-    year: "2025",
-    brand: "Bowman Chrome",
-    player: "Test Player",
+    fields: {
+      year: "2025",
+      brand: "Bowman",
+      product: "Bowman Chrome",
+      player: "Test Player",
     parallel: "Fuchsia Wave",
     auto: true,
     serial_number: "137/199"
@@ -182,7 +186,7 @@ const missingVisibleSerial = await callApi({
   unresolved: []
 });
 
-assert.equal(missingVisibleSerial.confidence, "MEDIUM");
+assert.equal(missingVisibleSerial.confidence, "HIGH");
 assert.match(missingVisibleSerial.title, /137\/199/);
 assert.doesNotMatch(missingVisibleSerial.unresolved.join(" "), /title missing serial/);
 
@@ -191,6 +195,7 @@ const localizedTrainerIllustrator = await callApi({
   confidence: "HIGH",
   reason: "Chinese Pokemon Trainer card; Illus. En Morikura is visible.",
   fields: {
+    year: "2026",
     brand: "Pokemon TCG",
     product: "Pokemon Scarlet Violet",
     character: "Lisia's Appeal",
@@ -216,7 +221,8 @@ const visibleKaboomPreserved = await callApi({
   reason: "Card text explicitly shows Kaboom insert; title preserves the high-value insert name.",
   fields: {
     year: "2023",
-    brand: "Panini Prizm",
+    brand: "Panini",
+    product: "Prizm",
     player: "Victor Wembanyama",
     subset: "RC",
     insert: "Kaboom"
@@ -233,7 +239,8 @@ const visibleUltravioletPreserved = await callApi({
   reason: "Back text explicitly supports Ultraviolet insert; title preserves the insert.",
   fields: {
     year: "2024",
-    brand: "Panini Select",
+    brand: "Panini",
+    product: "Select",
     player: "Caitlin Clark",
     subset: "RC",
     insert: "Ultraviolet"
@@ -250,7 +257,8 @@ const missingHighValueInsert = await callApi({
   reason: "Card text explicitly shows Downtown insert.",
   fields: {
     year: "2024",
-    brand: "Panini Donruss",
+    brand: "Panini",
+    product: "Donruss",
     player: "Anthony Edwards",
     insert: "Downtown"
   },
@@ -266,7 +274,8 @@ const insertNotParallel = await callApi({
   reason: "Card text explicitly supports Kaboom insert.",
   fields: {
     year: "2023",
-    brand: "Panini Prizm",
+    brand: "Panini",
+    product: "Prizm",
     player: "Lionel Messi",
     parallel: "Kaboom"
   },
@@ -282,7 +291,8 @@ const ultravioletCodeResolved = await callApi({
   reason: "Card number UV-16 is visible on the back.",
   fields: {
     year: "2024",
-    brand: "Panini Select",
+    brand: "Panini",
+    product: "Select",
     player: "Anthony Edwards",
     card_number: "UV-16"
   },
@@ -299,7 +309,8 @@ const imperialInkCodeResolved = await callApi({
   reason: "Back text and card code IMP-OTI are visible.",
   fields: {
     year: "2024",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Shohei Ohtani",
     card_number: "IMP-OTI",
     auto: true
@@ -317,7 +328,8 @@ const rookieRefreshCodeResolved = await callApi({
   reason: "Card code BRR-1 is printed on the back.",
   fields: {
     year: "2025",
-    brand: "Bowman Chrome",
+    brand: "Bowman",
+    product: "Bowman Chrome",
     player: "Cooper Flagg",
     subset: "RC",
     card_number: "BRR-1"
@@ -334,7 +346,9 @@ const clearDarkraiPsaLabel = await callApi({
   confidence: "HIGH",
   reason: "PSA label explicitly supports Pokemon subject and grade.",
   fields: {
+    year: "2024",
     brand: "Pokemon",
+    product: "Pokemon",
     character: "Darkrai",
     parallel: "Holo",
     grade_company: "PSA",
@@ -344,7 +358,7 @@ const clearDarkraiPsaLabel = await callApi({
 });
 
 assert.equal(clearDarkraiPsaLabel.confidence, "HIGH");
-assert.equal(clearDarkraiPsaLabel.title, "Pokemon Darkrai Holo PSA 10");
+assert.equal(clearDarkraiPsaLabel.title, "2024 Pokemon Darkrai Holo PSA 10");
 
 const oneOfOneWithUncertainParallel = await callApi({
   title: "2024 Topps Chrome Michael Jackson Green Refractor 01/01",
@@ -352,7 +366,8 @@ const oneOfOneWithUncertainParallel = await callApi({
   reason: "Card text supports subject and serial; exact geometric parallel requires review.",
   fields: {
     year: "2024",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Michael Jackson",
     parallel: "Green Geometric",
     serial_number: "01/01",
@@ -371,7 +386,8 @@ const dualPairingPreserved = await callApi({
   reason: "Card text explicitly supports both subjects and Power Partnership insert.",
   fields: {
     year: "2024",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Charles Leclerc / Lewis Hamilton",
     insert: "Power Partnership"
   },
@@ -389,7 +405,8 @@ const clearBowmanFirstAutoSerial = await callApi({
   reason: "Card text explicitly supports player, year, product, 1st Bowman auto, and serial.",
   fields: {
     year: "2025",
-    brand: "Bowman Chrome",
+    brand: "Bowman",
+    product: "Bowman Chrome",
     player: "Test Player",
     subset: "1st Bowman",
     auto: true,
@@ -407,7 +424,8 @@ const redundantTitleCleaned = await callApi({
   reason: "Card text supports player and auto; generic wording needs cleanup.",
   fields: {
     year: "2025",
-    brand: "Bowman Chrome",
+    brand: "Bowman",
+    product: "Bowman Chrome",
     player: "Test Player",
     subset: "RC",
     auto: true,
@@ -426,7 +444,8 @@ const ratedRookieNormalized = await callApi({
   reason: "Card text explicitly supports Rated Rookie player and product.",
   fields: {
     year: "2024",
-    brand: "Donruss Football",
+    brand: "Donruss",
+    product: "Donruss Football",
     player: "Test Player",
     subset: "Rated Rookie"
   },
@@ -443,7 +462,8 @@ const missingVisibleRc = await callApi({
   reason: "Card text explicitly supports Rated Rookie player and product.",
   fields: {
     year: "2024",
-    brand: "Donruss Football",
+    brand: "Donruss",
+    product: "Donruss Football",
     player: "Test Player",
     subset: "Rated Rookie"
   },
@@ -459,7 +479,8 @@ const autographNormalized = await callApi({
   reason: "Card text explicitly supports Mike Trout autograph.",
   fields: {
     year: "2025",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Mike Trout",
     auto: true
   },
@@ -475,7 +496,8 @@ const dualAutographNormalized = await callApi({
   reason: "Card text explicitly supports dual autograph.",
   fields: {
     year: "2025",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Mike Trout / Shohei Ohtani",
     auto: true
   },
@@ -492,7 +514,8 @@ const tripleAutographNormalized = await callApi({
   reason: "Card text explicitly supports triple autograph.",
   fields: {
     year: "2025",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Test Player",
     auto: true
   },
@@ -509,7 +532,8 @@ const certifiedAutographNormalized = await callApi({
   reason: "Card text explicitly supports certified autograph.",
   fields: {
     year: "2025",
-    brand: "Bowman Chrome",
+    brand: "Bowman",
+    product: "Bowman Chrome",
     player: "Test Player",
     subset: "1st Bowman",
     auto: true
@@ -526,7 +550,8 @@ const onCardAutographNormalized = await callApi({
   reason: "Card text supports player and autograph; reasoning may mention on-card autograph detail.",
   fields: {
     year: "2025",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Test Player",
     auto: true
   },
@@ -542,7 +567,8 @@ const stickerAutographNormalized = await callApi({
   reason: "Card text supports player and autograph; reasoning may mention sticker autograph detail.",
   fields: {
     year: "2025",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Test Player",
     auto: true
   },
@@ -933,7 +959,8 @@ const psaAuthAutoStandard = await callApi({
   reason: "PSA label supports authentic card with auto grade 10.",
   fields: {
     year: "2024",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Test Player",
     grade_company: "PSA",
     grade: "AUTH",
@@ -1013,7 +1040,8 @@ const genericPsaAuthAndAutoGrade = await callApi({
   reason: "PSA label supports authentic card and autograph grade 10.",
   fields: {
     year: "2024",
-    brand: "Bowman Chrome",
+    brand: "Bowman",
+    product: "Bowman Chrome",
     player: "Sample Prospect",
     grade_company: "PSA",
     grade: "AUTH",
@@ -1030,7 +1058,8 @@ const genericPsaAutoGradeOnly = await callApi({
   reason: "PSA label supports autograph grade 9 only.",
   fields: {
     year: "2024",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Placeholder Player",
     grade_company: "PSA",
     auto: true
@@ -1047,7 +1076,8 @@ const genericPsaCardGradeOnly = await callApi({
   reason: "PSA label supports card condition grade 9 only.",
   fields: {
     year: "2024",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Placeholder Player",
     parallel: "Refractor",
     grade_company: "PSA",
@@ -1189,7 +1219,8 @@ const sspRegistryPreserved = await callApi({
   reason: "Card back explicitly states Super Short Print.",
   fields: {
     year: "2024",
-    brand: "Topps Chrome",
+    brand: "Topps",
+    product: "Topps Chrome",
     player: "Test Player",
     insert: "Super Short Print"
   },

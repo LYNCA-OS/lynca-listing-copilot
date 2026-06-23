@@ -7,6 +7,7 @@ import {
   formatAgnesRenderedCommercialAcceptanceSummary,
   measureAgnesRenderedCommercialAcceptance
 } from "./measure-agnes-rendered-commercial-acceptance.mjs";
+import { evaluateCommercialAcceptanceRow } from "./measure-agnes-commercial-acceptance-proxy.mjs";
 
 const agnesReport = {
   schema_version: "agnes-supabase-feedback-eval-v1",
@@ -56,7 +57,7 @@ const agnesReport = {
           manufacturer: "Panini",
           product: "Prizm",
           players: ["Caitlin Clark"],
-          parallel: "Silver Prizm",
+          subset: "Silver Prizm",
           serial_number: "5/10",
           grade_company: "PSA",
           card_grade: "10"
@@ -140,6 +141,58 @@ assert.equal(recovered.rendered_accepted, true);
 const stillWrong = report.items.find((item) => item.source_feedback_id === "still-wrong");
 assert.equal(stillWrong.rendered_accepted, false);
 assert.ok(stillWrong.rendered_principle_failures.includes("wrong_player"));
+
+const rangeYearAccepted = evaluateCommercialAcceptanceRow({
+  status: "evaluated",
+  corrected_title_reference: "1998-99 Upper Deck MJx Michael Jordan Timepieces Bronze 102/230",
+  prediction: {
+    title: "1998 Upper Deck MJx Michael Jordan Timepieces Bronze 102/230",
+    fields: {
+      year: "1998",
+      product: "MJx",
+      players: ["Michael Jordan"],
+      parallel: "Bronze",
+      serial_number: "102/230"
+    }
+  },
+  corrected_title_comparison: {
+    token_recall: 1,
+    token_precision: 1,
+    wrong_year: false,
+    wrong_serial: false,
+    wrong_grade: false,
+    unexpected_color: false
+  }
+});
+assert.equal(rangeYearAccepted.accepted, true);
+
+const identityAbstainRow = evaluateCommercialAcceptanceRow({
+  status: "evaluated",
+  corrected_title_reference: "2022 Panini Gold Standard Hunter Renfrow Rush 19/299",
+  identity_resolution_status: "ABSTAIN",
+  prediction: {
+    title: "Renfrow 196/299",
+    identity_resolution_status: "ABSTAIN",
+    title_render_source: "identity_resolution_abstain",
+    fields: {
+      year: "2022",
+      product: "Gold Standard",
+      players: ["Hunter Renfrow"],
+      serial_number: "196/299"
+    }
+  },
+  corrected_title_comparison: {
+    token_recall: 0.2,
+    token_precision: 0.5,
+    wrong_year: false,
+    wrong_serial: true,
+    wrong_grade: false,
+    unexpected_color: false
+  }
+});
+assert.equal(identityAbstainRow.accepted, false);
+assert.equal(identityAbstainRow.primary_failure_reason, "identity_abstain");
+assert.deepEqual(identityAbstainRow.principle_failures, []);
 
 const serialized = JSON.stringify(report);
 assert.doesNotMatch(serialized, /Shohei Ohtani/);

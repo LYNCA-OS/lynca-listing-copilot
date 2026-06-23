@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   formatAgnesTitleDerivedFieldProxySummary,
-  measureAgnesTitleDerivedFieldProxy
+  measureAgnesTitleDerivedFieldProxy,
+  titleDerivedChecks
 } from "./measure-agnes-title-derived-field-proxy.mjs";
 
 const agnesReport = {
@@ -20,10 +21,10 @@ const agnesReport = {
       status: "evaluated",
       corrected_title_reference: "2025 Topps Chrome Shohei Ohtani Gold Refractor 29/199 PSA 10 Auto RC",
       prediction: {
-        title: "2025 Topps Chrome Gold Refractor 029/199 PSA 10 Auto RC",
+        title: "2025 Topps Chrome 029/199 PSA 10 Auto RC",
         fields: {
           year: "2025",
-          parallel: "Gold Refractor",
+          subset: "Gold Refractor",
           serial_number: "029/199",
           grade_company: "PSA",
           card_grade: "10",
@@ -102,6 +103,29 @@ assert.equal(report.field_breakdown.auto.denominator, 1);
 assert.equal(report.field_breakdown.auto.correct, 1);
 assert.equal(report.field_breakdown.rc.denominator, 1);
 assert.equal(report.field_breakdown.rc.correct, 1);
+
+const rangeYearChecks = titleDerivedChecks({
+  corrected_title_reference: "2003-04 Topps LeBron James Rookie RC PSA 10",
+  prediction: {
+    title: "2003 Topps LeBron James RC PSA 10",
+    fields: {
+      year: "2003",
+      rc: true,
+      grade_company: "PSA",
+      card_grade: "10"
+    }
+  }
+});
+assert.equal(rangeYearChecks.find((check) => check.field === "year").matched, true);
+
+const wrongYearChecks = titleDerivedChecks({
+  corrected_title_reference: "2025 Bowman Chrome Cooper Flagg",
+  prediction: {
+    title: "2023 Bowman Chrome Cooper Flagg",
+    fields: { year: "2023" }
+  }
+});
+assert.equal(wrongYearChecks.find((check) => check.field === "year").matched, false);
 
 const serialized = JSON.stringify(report);
 assert.doesNotMatch(serialized, /Shohei Ohtani/);

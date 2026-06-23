@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {
   evaluateAgnesSupabaseFeedback,
-  formatAgnesSupabaseFeedbackSummary
+  formatAgnesSupabaseFeedbackSummary,
+  titleComparison
 } from "./evaluate-agnes-supabase-feedback.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 
@@ -172,6 +173,7 @@ assert.equal(report.commercial_accuracy_claim_allowed, false);
 assert.equal(report.commercial_accuracy_eval_eligible, false);
 assert.equal(report.identity_resolution_enabled, false);
 assert.equal(report.no_feedback_retention_side_effects, true);
+assert.equal(report.proactive_focused_rereads_enabled, false);
 assert.equal(report.full_sample_evaluation, true);
 assert.equal(report.corrected_title_exact_count, 1);
 assert.equal(report.critical_title_error_count, 1);
@@ -183,6 +185,19 @@ assert.deepEqual(new Set(signedRequests.map((request) => request.bucket)), new S
 assert.equal(analyzed.length, 2);
 assert.equal(analyzed[0].length, 2);
 assert.doesNotMatch(JSON.stringify(report), /token=secret/);
+
+const seasonRangeComparison = titleComparison(
+  "2003-04 Topps LeBron James Rookie RC PSA 10",
+  "2003 Topps LeBron James RC PSA 10"
+);
+assert.equal(seasonRangeComparison.wrong_year, false);
+assert.deepEqual(seasonRangeComparison.year_overlap, ["2003-04"]);
+
+const wrongSeasonComparison = titleComparison(
+  "2025 Bowman Chrome Cooper Flagg",
+  "2023 Bowman Chrome Cooper Flagg"
+);
+assert.equal(wrongSeasonComparison.wrong_year, true);
 
 const limited = await evaluateAgnesSupabaseFeedback({
   dataset,

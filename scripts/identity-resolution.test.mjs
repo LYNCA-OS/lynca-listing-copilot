@@ -30,6 +30,10 @@ assert.equal(fieldState(ocrConflict, "serial_number").conflicts, true);
 assert.equal(ocrConflict.ambiguity_status, "AMBIGUOUS");
 assert.equal(ocrConflict.status, "ABSTAIN");
 assert.equal(ocrConflict.identity_state.status, "ABSTAIN");
+assert.equal(ocrConflict.canonical_evidence.schema_version, "identity_evidence_v1");
+assert.ok(ocrConflict.canonical_evidence.source_counts.CARD_FRONT_PRINTED_TEXT > 0);
+assert.ok(ocrConflict.canonical_evidence.source_counts.CARD_BACK_PRINTED_TEXT > 0);
+assert.ok(ocrConflict.canonical_evidence.field_names.includes("serial_number"));
 assert.ok(ocrConflict.identity_state.field_states.serial_number);
 assert.ok(ocrConflict.field_uncertainty.serial_number.entropy > 0);
 assert.ok(ocrConflict.field_uncertainty.serial_number.conflict_intensity > 0);
@@ -134,6 +138,8 @@ assert.equal(invalidSerial.ambiguity_status, "AMBIGUOUS");
 assert.equal(invalidSerial.status, "ABSTAIN");
 assert.equal(fieldState(invalidSerial, "serial_number").candidates[0].constraint_result.constraint_score, 0);
 assert.equal(fieldState(invalidSerial, "serial_number").candidates[0].constraint_result.violations[0].weight, 1);
+assert.equal(invalidSerial.constraint_score_report.per_field_constraint_score.serial_number, 0);
+assert.equal(invalidSerial.constraint_score_report.scoring_model, "weighted_constraint_rules");
 
 const oneOfOne = resolveIdentity({
   evidenceItems: [
