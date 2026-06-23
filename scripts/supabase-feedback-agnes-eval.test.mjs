@@ -372,6 +372,9 @@ const identityResolved = await evaluateAgnesSupabaseFeedback({
 assert.equal(identityResolved.identity_resolution_enabled, true);
 assert.equal(identityResolved.results[0].identity_resolution_enabled, true);
 assert.ok(identityAnalyzeCalls.length > 1);
+const focusedIdentityPrompt = identityAnalyzeCalls.find((prompt) => /focused reread/i.test(prompt));
+assert.match(focusedIdentityPrompt, /high-confidence intentional card-design color\/pattern/i);
+assert.match(focusedIdentityPrompt, /Gold Refractor/i);
 assert.match(identityResolved.results[0].prediction.title, /Topps Chrome/);
 assert.match(identityResolved.results[0].prediction.title, /Shohei Ohtani/);
 assert.equal(identityResolved.results[0].prediction.identity_resolution_status, "CONFIRMED");

@@ -34,6 +34,9 @@ assert.equal(ocrConflict.canonical_evidence.schema_version, "identity_evidence_v
 assert.ok(ocrConflict.canonical_evidence.source_counts.CARD_FRONT_PRINTED_TEXT > 0);
 assert.ok(ocrConflict.canonical_evidence.source_counts.OCR_ONLY > 0);
 assert.ok(ocrConflict.canonical_evidence.field_names.includes("serial_number"));
+assert.ok(ocrConflict.canonical_evidence.canonical_items.every((item) => item.canonical_key && Number.isFinite(item.source_rank)));
+assert.equal(ocrConflict.canonical_evidence.source_aliases.OCR_FRONT, "CARD_FRONT_PRINTED_TEXT");
+assert.ok(ocrConflict.canonical_evidence.field_source_matrix.serial_number.OCR_ONLY > 0);
 assert.ok(ocrConflict.identity_state.field_states.serial_number);
 assert.ok(ocrConflict.field_uncertainty.serial_number.entropy > 0);
 assert.ok(ocrConflict.field_uncertainty.serial_number.conflict_intensity > 0);
@@ -244,6 +247,46 @@ assert.ok(visualOnlyParallelRejected.conflict_map.some((conflict) => {
     && conflict.resolved === true;
 }));
 
+const focusedVisualParallelAccepted = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    {
+      field: "parallel",
+      value: "Purple Refractor",
+      source: "AGNES",
+      confidence: 0.92,
+      region: "CROP_AND_READ_PARALLEL",
+      metadata: {
+        capture_role: "focused_reread"
+      }
+    }
+  ]
+});
+assert.equal(focusedVisualParallelAccepted.identity.parallel, "Purple Refractor");
+assert.equal(fieldState(focusedVisualParallelAccepted, "parallel").resolution_reason, "highest_scoring_candidate");
+assert.equal(fieldState(focusedVisualParallelAccepted, "parallel").decision_route, "USE");
+assert.ok(fieldState(focusedVisualParallelAccepted, "parallel").candidates[0].constraint_result.evaluated_rules.every((rule) => rule.passed));
+
+const focusedVisualParallelReviewRejected = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    {
+      field: "parallel",
+      value: "Purple Refractor",
+      source: "AGNES",
+      confidence: 0.92,
+      region: "CROP_AND_READ_PARALLEL",
+      metadata: {
+        capture_role: "focused_reread",
+        field_status: "REVIEW",
+        field_unresolved_reason: "operator_review_requested"
+      }
+    }
+  ]
+});
+assert.equal(focusedVisualParallelReviewRejected.identity.parallel, null);
+assert.equal(fieldState(focusedVisualParallelReviewRejected, "parallel").resolution_reason, "rejected_unsupported_optional_candidate");
+
 const printedRookieMarkersAccepted = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
@@ -378,6 +421,9 @@ assert.equal(convergedSerial.identity.serial_number, "31/50");
 assert.equal(convergedSerial.status, "RESOLVED");
 assert.equal(convergedSerial.convergence.enabled, true);
 assert.equal(convergedSerial.convergence.converged, true);
+assert.equal(convergedSerial.convergence_report.loop, "detect_conflict_retrieve_reevaluate_converge");
+assert.deepEqual(convergedSerial.convergence_report.phase_sequence, ["detect_conflict", "retrieve", "re_evaluate", "converge"]);
+assert.equal(convergedSerial.convergence_report.retrieval_attempts, 1);
 assert.ok(convergedSerial.convergence_trace.some((entry) => entry.step === "detect_conflict"));
 assert.ok(convergedSerial.convergence_trace.some((entry) => entry.step === "retrieve"));
 assert.ok(convergedSerial.convergence_trace.some((entry) => entry.step === "re_evaluate"));

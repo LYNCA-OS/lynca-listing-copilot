@@ -552,6 +552,10 @@ assert.deepEqual(parallelFocusedCompletion.resolution_trace
 assert.equal(parallelFocusedCompletion.resolved.product, "Topps Chrome");
 assert.deepEqual(parallelFocusedCompletion.resolved.players, ["Cooper Flagg"]);
 assert.equal(parallelFocusedCompletion.resolved.parallel, "Gold Wave");
+assert.ok(parallelFocusedCompletion.evidence.parallel.sources.some((source) => {
+  return source.capture_role === "focused_reread"
+    && source.region === completionActions.CROP_AND_READ_PARALLEL;
+}));
 assert.equal(parallelFocusedCompletion.budget.used.agnes_calls, 3);
 assert.equal(parallelFocusedCompletion.usage.provider_calls, 3);
 
