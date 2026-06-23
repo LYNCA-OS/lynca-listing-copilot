@@ -106,6 +106,21 @@ function realPhotoPilotSummary(report = null) {
   return `${report.status || "unknown"} evaluated ${report.evaluated_count ?? 0}/${report.attempted_count ?? report.target_count ?? 0}, title accepted ${report.title_accepted_count ?? 0}/${report.evaluated_count ?? 0} (${report.title_acceptance_evaluated_rate ?? "n/a"}), provider errors ${report.provider_error_count ?? 0}, inputs controlled=${report.controlled_storage_input_count ?? "n/a"} external=${report.external_url_input_count ?? "n/a"}`;
 }
 
+function supabaseCommercialInventorySummary(readiness) {
+  const check = readiness.checks.find((item) => item.id === "supabase_commercial_inventory");
+  if (!check) return "missing";
+  return `${check.status} rows ${check.details?.table_rows ?? 0}, image-backed ${check.details?.image_backed_rows ?? 0}, no-image ${check.details?.rows_without_images ?? 0}`;
+}
+
+function supabaseCommercialTruthSummary(readiness) {
+  const check = readiness.checks.find((item) => item.id === "supabase_commercial_ground_truth");
+  if (!check) return "missing";
+  const coverage = Object.entries(check.details?.required_truth_field_coverage || {})
+    .map(([field, count]) => `${field}=${count}`)
+    .join(", ");
+  return `${check.status}${coverage ? ` required fields ${coverage}` : ""}`;
+}
+
 function blockerLines(readiness) {
   return readiness.blockers.length
     ? readiness.blockers.map((blocker) => `${blocker.id}: ${blocker.summary}`)
@@ -152,6 +167,8 @@ export async function createDeliveryReport({
       `eBay 300-image candidate queue: ${ebayCandidateSummary(readiness)}`,
       `Public card-name reference eval: ${publicCardEvalSummary(publicCardEval)}`,
       `Marketplace real-photo pilot: ${realPhotoPilotSummary(realPhotoPilot)}`,
+      `Supabase commercial inventory: ${supabaseCommercialInventorySummary(readiness)}`,
+      `Supabase field-level ground truth: ${supabaseCommercialTruthSummary(readiness)}`,
       "This report is generated from current repository files and sanitized smoke/eval artifacts; it does not replace a fresh command transcript."
     ])),
     section(2, "Implementation Summary", bullet([
@@ -204,6 +221,7 @@ export async function createDeliveryReport({
     ])),
     section(11, "Storage Structure", bullet([
       "Supabase Storage bucket default: listing-card-images.",
+      `Supabase feedback snapshot: ${supabaseCommercialInventorySummary(readiness)}.`,
       "Image upload/verification APIs require server-side validation, content hash handling, and short-lived read URLs.",
       "Production recognition should pass Agnes only controlled storage signed read URLs, not marketplace or other external image URLs.",
       "Signed URLs are not persisted; object paths, content SHA-256 values, and verification records are the durable references.",
@@ -272,6 +290,7 @@ export async function createDeliveryReport({
       `Held-out accepted critical error rate: ${rate(metrics.accepted_critical_error_rate)}`,
       `Public card-name reference eval: ${publicCardEvalSummary(publicCardEval)}`,
       `Marketplace real-photo pilot: ${realPhotoPilotSummary(realPhotoPilot)}`,
+      `Supabase field-level ground truth: ${supabaseCommercialTruthSummary(readiness)}`,
       `Public eval commercial claim allowed: ${yesNo(publicCardEval?.commercial_accuracy_claim_allowed === true)}`
     ])),
     section(23, "Cost And Latency", bullet([

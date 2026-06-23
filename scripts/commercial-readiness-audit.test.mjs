@@ -12,6 +12,8 @@ const datasetPath = join(tmp, "golden-dataset.json");
 const smokePath = join(tmp, "agnes-smoke.json");
 const ebayCandidatesPath = join(tmp, "ebay-image-candidates.json");
 const publicCardEvalPath = join(tmp, "public-card-eval.json");
+const supabaseSnapshotPath = join(tmp, "supabase-live-snapshot.json");
+const supabaseCandidateReportPath = join(tmp, "supabase-candidates-report.json");
 
 await writeFile(datasetPath, `${JSON.stringify({
   schema_version: "golden-dataset-v1",
@@ -83,6 +85,58 @@ await writeFile(publicCardEvalPath, `${JSON.stringify({
   results: []
 }, null, 2)}\n`);
 
+await writeFile(supabaseSnapshotPath, `${JSON.stringify({
+  schema_version: "supabase-recognition-live-snapshot-v1",
+  generated_at: "2026-06-23T07:27:43.000Z",
+  source: {
+    provider: "supabase_mcp",
+    project_id: "osrrujmpxxiefppjfgpd",
+    project_name: "Listing Copilot"
+  },
+  tables: {
+    "public.listing_title_feedback": {
+      rows: 351,
+      rows_with_front_image_url: 248,
+      rows_with_back_image_url: 247,
+      image_backed_rows: 248,
+      rows_with_corrected_title: 351
+    },
+    "storage.objects": {
+      rows: 495
+    }
+  },
+  candidate_export_status: {
+    local_candidate_count: 248,
+    filtered_out_no_image_count: 103,
+    table_records_without_images: 103,
+    corrected_title_used_as_ground_truth: false,
+    ground_truth_status: "NEEDS_REVIEW"
+  }
+}, null, 2)}\n`);
+
+await writeFile(supabaseCandidateReportPath, `${JSON.stringify({
+  schema_version: "supabase-recognition-candidate-report-v1",
+  generated_at: "2026-06-23T07:26:59.990Z",
+  summary: {
+    item_count: 248,
+    front_image_items: 248,
+    back_image_items: 247,
+    review_status: "NEEDS_REVIEW",
+    corrected_title_used_as_ground_truth: false,
+    validation_error_count: 0
+  },
+  dataset_stats: {
+    total_items: 248,
+    ground_truth_field_counts: {
+      grade_type: 248
+    }
+  },
+  validation: {
+    ok: true,
+    errors: []
+  }
+}, null, 2)}\n`);
+
 const report = await createCommercialReadinessReport({
   datasetPath,
   agnesSmokePath: smokePath,
@@ -91,7 +145,9 @@ const report = await createCommercialReadinessReport({
     EBAY_SMOKE_REPORT_PATH: join(tmp, "ebay-smoke.json"),
     OWS_SMOKE_REPORT_PATH: join(tmp, "ows-smoke.json"),
     EBAY_IMAGE_CANDIDATES_OUT: ebayCandidatesPath,
-    AGNES_PUBLIC_CARD_EVAL_OUT: publicCardEvalPath
+    AGNES_PUBLIC_CARD_EVAL_OUT: publicCardEvalPath,
+    SUPABASE_LIVE_SNAPSHOT_PATH: supabaseSnapshotPath,
+    SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath
   }
 });
 
@@ -122,6 +178,19 @@ assert.equal(byId.public_card_reference_eval.details.card_name_exact_rate, 0.986
 assert.equal(byId.public_card_reference_eval.details.structured_reference_name_exact_or_corrected_count, 300);
 assert.equal(byId.public_card_reference_eval.details.structured_reference_name_exact_or_corrected_rate, 1);
 assert.equal(byId.public_card_reference_eval.details.commercial_accuracy_claim_allowed, false);
+assert.equal(byId.supabase_commercial_inventory.status, "passed");
+assert.equal(byId.supabase_commercial_inventory.details.table_rows, 351);
+assert.equal(byId.supabase_commercial_inventory.details.image_backed_rows, 248);
+assert.equal(byId.supabase_commercial_inventory.details.rows_without_images, 103);
+assert.equal(byId.supabase_commercial_inventory.details.no_image_rows_counted_separately, true);
+assert.equal(byId.supabase_commercial_ground_truth.status, "blocked");
+assert.deepEqual(byId.supabase_commercial_ground_truth.details.required_truth_field_coverage, {
+  year: 0,
+  product: 0,
+  players: 0
+});
+assert.deepEqual(byId.supabase_commercial_ground_truth.details.missing_required_truth_fields, ["year", "product", "players"]);
+assert.equal(byId.supabase_commercial_ground_truth.details.corrected_title_used_as_ground_truth, false);
 
 const text = formatCommercialReadinessReport(report);
 assert.match(text, /Commercial readiness audit blocked/);
@@ -131,6 +200,8 @@ assert.match(text, /agnes_smoke_status: passed_with_limitations/);
 assert.match(text, /external_retrieval_smoke_statuses: brave=missing, ebay_browse=missing, openai_web_search=missing/);
 assert.match(text, /ebay_image_candidates: skipped 0\/300/);
 assert.match(text, /public_card_reference_eval: completed exact 296\/300 \(0.986667\), trusted 300\/300 \(1\)/);
+assert.match(text, /supabase_commercial_sample: passed rows 351, image-backed 248, no-image 103/);
+assert.match(text, /supabase_commercial_ground_truth: blocked required fields year=0, product=0, players=0/);
 assert.match(text, /gpt_implicit_default: blocked_by_policy/);
 assert.match(text, /publishing_destination: blocked/);
 

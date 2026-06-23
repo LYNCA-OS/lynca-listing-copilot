@@ -8,6 +8,11 @@ const defaultDatasetPath = "data/golden-dataset.json";
 const defaultAgnesSmokePath = "data/smoke/agnes-smoke-latest.json";
 const defaultEbayCandidatesPath = "data/ebay-candidates/ebay-image-candidates-latest.json";
 const defaultPublicCardEvalPath = "data/eval/agnes-public-card-image-eval-latest.json";
+const defaultSupabaseLiveSnapshotPath = "data/recognition/reports/supabase-live-snapshot-2026-06-23.json";
+const defaultSupabaseCandidateReportPath = "data/recognition/reports/supabase-feedback-candidates-report.json";
+const minimumCommercialInventoryRows = 300;
+const minimumCommercialGroundTruthAssets = 100;
+const requiredCommercialTruthFields = Object.freeze(["year", "product", "players"]);
 const retrievalSmokeDefaults = Object.freeze({
   brave: "data/smoke/brave-smoke-latest.json",
   ebay_browse: "data/smoke/ebay-smoke-latest.json",
@@ -461,6 +466,123 @@ async function auditPublicCardReferenceEval(env = process.env) {
   }
 }
 
+async function auditSupabaseCommercialSample(env = process.env) {
+  const snapshotPath = env.SUPABASE_LIVE_SNAPSHOT_PATH || defaultSupabaseLiveSnapshotPath;
+  const candidateReportPath = env.SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH || defaultSupabaseCandidateReportPath;
+  const checks = [];
+
+  if (!existsSync(resolve(snapshotPath))) {
+    const details = {
+      snapshot: resolve(snapshotPath),
+      minimum_rows: minimumCommercialInventoryRows,
+      rows: 0,
+      image_backed_rows: 0,
+      rows_without_images: 0
+    };
+    return {
+      evidence: null,
+      checks: [
+        blocked("supabase_commercial_inventory", "Supabase commercial snapshot is missing; the 351-row commercial sample is not auditable.", details),
+        blocked("supabase_commercial_ground_truth", "Supabase commercial field-level ground truth is missing.", details)
+      ]
+    };
+  }
+
+  try {
+    const snapshot = await readJsonFile(snapshotPath);
+    const feedbackTable = snapshot.value?.tables?.["public.listing_title_feedback"] || {};
+    const storageObjects = snapshot.value?.tables?.["storage.objects"] || {};
+    const candidateStatus = snapshot.value?.candidate_export_status || {};
+    const rows = Number(feedbackTable.rows || candidateStatus.mcp_rows_full_table_count || 0);
+    const imageBackedRows = Number(feedbackTable.image_backed_rows || candidateStatus.local_candidate_count || 0);
+    const rowsWithoutImages = Math.max(0, rows - imageBackedRows);
+    const correctedTitleRows = Number(feedbackTable.rows_with_corrected_title || 0);
+    let candidateReport = null;
+
+    if (existsSync(resolve(candidateReportPath))) {
+      candidateReport = await readJsonFile(candidateReportPath);
+    }
+
+    const candidateSummary = candidateReport?.value?.summary || {};
+    const datasetStats = candidateReport?.value?.dataset_stats || {};
+    const groundTruthFieldCounts = datasetStats.ground_truth_field_counts || {};
+    const candidateValidation = candidateReport?.value?.validation || null;
+    const candidateCount = Number(candidateSummary.item_count || candidateStatus.local_candidate_count || 0);
+    const requiredCoverage = Object.fromEntries(
+      requiredCommercialTruthFields.map((field) => [field, Number(groundTruthFieldCounts[field] || 0)])
+    );
+    const fullyCoveredRequiredFields = requiredCommercialTruthFields.filter((field) => {
+      return Number(groundTruthFieldCounts[field] || 0) >= minimumCommercialGroundTruthAssets;
+    });
+    const correctedTitleUsedAsGroundTruth = candidateSummary.corrected_title_used_as_ground_truth === true
+      || candidateStatus.corrected_title_used_as_ground_truth === true;
+    const details = {
+      snapshot: snapshot.path,
+      candidate_report: candidateReport?.path || resolve(candidateReportPath),
+      generated_at: snapshot.value?.generated_at || null,
+      source_project_id: snapshot.value?.source?.project_id || null,
+      source_project_name: snapshot.value?.source?.project_name || null,
+      table_rows: rows,
+      corrected_title_rows: correctedTitleRows,
+      image_backed_rows: imageBackedRows,
+      rows_without_images: rowsWithoutImages,
+      storage_object_rows: Number(storageObjects.rows || 0),
+      candidate_count: candidateCount,
+      candidate_validation_ok: candidateValidation?.ok === true,
+      candidate_validation_error_count: Number(candidateValidation?.errors?.length || candidateSummary.validation_error_count || 0),
+      review_status: candidateSummary.review_status || candidateStatus.ground_truth_status || "unknown",
+      corrected_title_used_as_ground_truth: correctedTitleUsedAsGroundTruth,
+      ground_truth_field_counts: groundTruthFieldCounts,
+      required_truth_field_coverage: requiredCoverage,
+      minimum_commercial_inventory_rows: minimumCommercialInventoryRows,
+      minimum_commercial_ground_truth_assets: minimumCommercialGroundTruthAssets,
+      no_image_rows_counted_separately: rowsWithoutImages === Number(candidateStatus.filtered_out_no_image_count || candidateStatus.table_records_without_images || rowsWithoutImages)
+    };
+
+    if (rows >= minimumCommercialInventoryRows && imageBackedRows > 0 && rowsWithoutImages >= 0) {
+      checks.push(passed("supabase_commercial_inventory", "Supabase commercial sample inventory is present and no-image rows are counted separately.", details));
+    } else {
+      checks.push(blocked("supabase_commercial_inventory", "Supabase commercial sample inventory is incomplete or not image-backed.", details));
+    }
+
+    if (correctedTitleUsedAsGroundTruth) {
+      checks.push(blocked("supabase_commercial_ground_truth", "Corrected titles are being treated as ground truth; field-level commercial accuracy would be invalid.", details));
+    } else if (
+      candidateCount >= minimumCommercialGroundTruthAssets
+      && fullyCoveredRequiredFields.length === requiredCommercialTruthFields.length
+      && candidateSummary.review_status !== "NEEDS_REVIEW"
+      && candidateValidation?.ok === true
+    ) {
+      checks.push(passed("supabase_commercial_ground_truth", "Supabase commercial sample has enough reviewed field-level ground truth for held-out evaluation.", details));
+    } else {
+      checks.push(blocked("supabase_commercial_ground_truth", "Supabase commercial rows exist, but field-level reviewed ground truth is not sufficient for a 95% exact-resolution claim.", {
+        ...details,
+        missing_required_truth_fields: requiredCommercialTruthFields.filter((field) => {
+          return Number(groundTruthFieldCounts[field] || 0) < minimumCommercialGroundTruthAssets;
+        })
+      }));
+    }
+
+    return {
+      evidence: details,
+      checks
+    };
+  } catch (error) {
+    const details = {
+      snapshot: resolve(snapshotPath),
+      candidate_report: resolve(candidateReportPath),
+      error: error.message
+    };
+    return {
+      evidence: null,
+      checks: [
+        blocked("supabase_commercial_inventory", "Supabase commercial snapshot could not be parsed.", details),
+        blocked("supabase_commercial_ground_truth", "Supabase commercial ground truth could not be audited.", details)
+      ]
+    };
+  }
+}
+
 export async function createCommercialReadinessReport({
   datasetPath = defaultDatasetPath,
   agnesSmokePath = defaultAgnesSmokePath,
@@ -477,6 +599,8 @@ export async function createCommercialReadinessReport({
   checks.push(await auditRetrievalSmoke(env));
   checks.push(await auditEbayImageCandidates(env));
   checks.push(await auditPublicCardReferenceEval(env));
+  const supabaseCommercial = await auditSupabaseCommercialSample(env);
+  checks.push(...supabaseCommercial.checks);
 
   const blockers = checks.filter((check) => check.status === "blocked");
   const warnings = checks.filter((check) => check.status === "warning");
@@ -512,7 +636,8 @@ export async function createCommercialReadinessReport({
           generated_at: agnes.smoke.generated_at || null
         }
         : null,
-      public_card_reference_eval: checks.find((check) => check.id === "public_card_reference_eval")?.details || null
+      public_card_reference_eval: checks.find((check) => check.id === "public_card_reference_eval")?.details || null,
+      supabase_commercial_sample: supabaseCommercial.evidence
     }
   };
 }
@@ -536,6 +661,14 @@ export function formatCommercialReadinessReport(report) {
   const publicCardSummary = publicCardEval
     ? `${publicCardEval.details.status || "missing"} exact ${publicCardEval.details.card_name_exact_count ?? 0}/${publicCardEval.details.attempted_count ?? 0} (${publicCardEval.details.card_name_exact_rate ?? "n/a"}), trusted ${publicCardEval.details.structured_reference_name_exact_or_corrected_count ?? publicCardEval.details.card_name_exact_count ?? 0}/${publicCardEval.details.attempted_count ?? 0} (${publicCardEval.details.structured_reference_name_exact_or_corrected_rate ?? publicCardEval.details.card_name_exact_rate ?? "n/a"})`
     : "n/a";
+  const supabaseSample = report.checks.find((check) => check.id === "supabase_commercial_inventory");
+  const supabaseTruth = report.checks.find((check) => check.id === "supabase_commercial_ground_truth");
+  const supabaseSampleSummary = supabaseSample
+    ? `${supabaseSample.status} rows ${supabaseSample.details.table_rows ?? 0}, image-backed ${supabaseSample.details.image_backed_rows ?? 0}, no-image ${supabaseSample.details.rows_without_images ?? 0}`
+    : "n/a";
+  const supabaseTruthSummary = supabaseTruth
+    ? `${supabaseTruth.status} required fields ${Object.entries(supabaseTruth.details.required_truth_field_coverage || {}).map(([field, count]) => `${field}=${count}`).join(", ")}`
+    : "n/a";
   const lines = [
     `Commercial readiness audit ${report.status}`,
     `held_out_commercial_assets: ${heldOutCount}`,
@@ -545,6 +678,8 @@ export function formatCommercialReadinessReport(report) {
     `external_retrieval_smoke_statuses: ${retrievalSmokeSummary}`,
     `ebay_image_candidates: ${ebayCandidateSummary}`,
     `public_card_reference_eval: ${publicCardSummary}`,
+    `supabase_commercial_sample: ${supabaseSampleSummary}`,
+    `supabase_commercial_ground_truth: ${supabaseTruthSummary}`,
     `gpt_implicit_default: ${providerPolicy?.details?.gpt_implicit_default || "unknown"}`,
     "",
     "checks:"
