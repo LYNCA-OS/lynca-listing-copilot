@@ -15,3 +15,9 @@ services/recognition-worker/models/*
 !services/recognition-worker/models/*.json
 !services/recognition-worker/models/*.txt
 !services/recognition-worker/models/*.md
+
+# Local live Supabase exports. These can contain internal feedback titles and
+# authenticated storage URLs, so keep them out of the public repository.
+data/recognition/reports/supabase-feedback-rows-mcp.json
+data/recognition/manifests/supabase-feedback-candidates.json
+data/recognition/reports/supabase-feedback-candidates-report.json
