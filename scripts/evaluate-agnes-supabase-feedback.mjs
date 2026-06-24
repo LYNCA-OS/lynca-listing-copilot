@@ -88,6 +88,35 @@ function focusedProviderIdForProvider(providerId) {
   return providerId === evalProviders.CASCADE_FAST ? evalProviders.AGNES : providerId;
 }
 
+function openAiFastVisionEvalEnabled(env = process.env) {
+  return booleanFromEnv(env, "OPENAI_EVAL_PRIMARY_FAST_VISION", false)
+    || booleanFromEnv(env, "GPT_EVAL_PRIMARY_FAST_VISION", false);
+}
+
+function fastVisionPolicyForProvider(providerId, env = process.env) {
+  if (providerId === evalProviders.CASCADE_FAST) {
+    return {
+      role: "PRIMARY_FAST_VISION",
+      allow_single_source_publish: true,
+      primary_provider_id: evalProviders.OPENAI,
+      secondary_provider_id: evalProviders.AGNES,
+      secondary_verification_enabled: true
+    };
+  }
+
+  if (providerId === evalProviders.OPENAI && openAiFastVisionEvalEnabled(env)) {
+    return {
+      role: "PRIMARY_FAST_VISION",
+      allow_single_source_publish: true,
+      primary_provider_id: evalProviders.OPENAI,
+      secondary_provider_id: null,
+      secondary_verification_enabled: false
+    };
+  }
+
+  return null;
+}
+
 function providerDefaultConcurrency(providerId, env = process.env) {
   if (providerId === evalProviders.CASCADE_FAST) {
     return Number(env.CASCADE_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || env.OPENAI_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 4);
@@ -1056,7 +1085,7 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
   const evidenceDocument = hasRecognitionEvidence(recognitionEvidenceDocument)
     ? mergeEvidenceDocuments(recognitionEvidenceDocument, providerEvidenceDocument)
     : providerEvidenceDocument;
-  const secondaryFields = fastVisionPolicy?.role === "PRIMARY_FAST_VISION"
+  const secondaryFields = fastVisionPolicy?.role === "PRIMARY_FAST_VISION" && fastVisionPolicy.secondary_verification_enabled === true
     ? cascadeSecondaryVerificationFields(evidenceDocument.resolved, [
         ...(Array.isArray(providerResult.parsed?.unresolved) ? providerResult.parsed.unresolved : []),
         ...(Array.isArray(evidenceDocument.unresolved) ? evidenceDocument.unresolved : [])
@@ -1348,14 +1377,7 @@ async function evaluateOneFeedbackItem(item, {
             ? focusedAnalyzeImplForProvider(providerId)
             : analyzeImpl),
         focusedProviderId: focusedProviderIdForProvider(providerId),
-        fastVisionPolicy: providerId === evalProviders.CASCADE_FAST
-          ? {
-              role: "PRIMARY_FAST_VISION",
-              allow_single_source_publish: true,
-              primary_provider_id: evalProviders.OPENAI,
-              secondary_provider_id: evalProviders.AGNES
-            }
-          : null,
+        fastVisionPolicy: fastVisionPolicyForProvider(providerId, env),
         signal,
         maxTitleLength,
         excludeApprovedMemoryIds: excludeSelfApprovedMemory ? sourceIdsForItem(item) : [],
