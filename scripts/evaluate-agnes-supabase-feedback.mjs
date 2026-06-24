@@ -615,7 +615,9 @@ function predictionFromResolvedResult(result = {}) {
     finish_reason: normalizeText(result.provider_finish_reason),
     title_render_source: normalizeText(result.title_render_source),
     identity_resolution_status: normalizeText(result.identity_resolution_status),
-    route: normalizeText(result.route)
+    route: normalizeText(result.route),
+    publication_gate: result.publication_gate || null,
+    writer_required_fields: Array.isArray(result.writer_required_fields) ? result.writer_required_fields : []
   };
 }
 
@@ -1367,6 +1369,7 @@ async function evaluateOneFeedbackItem(item, {
         corrected_title_comparison: comparison,
         identity_resolution_enabled: identityResolution,
         identity_resolution_status: recognition.result.identity_resolution_status || null,
+        publication_gate: recognition.result.publication_gate || null,
         identity_resolution_summary: identityResolutionSummary(recognition.result),
         route: recognition.result.route || null,
         completion_trace: recognition.result.completion_trace || recognition.result.resolution_trace || [],
@@ -1422,6 +1425,7 @@ async function evaluateOneFeedbackItem(item, {
       corrected_title_comparison: comparison,
       identity_resolution_enabled: identityResolution,
       identity_resolution_status: resolved?.result?.identity_resolution_status || null,
+      publication_gate: resolved?.result?.publication_gate || null,
       identity_resolution_summary: resolved ? identityResolutionSummary(resolved.result) : null,
       route: resolved?.result?.route || null,
       completion_trace: resolved?.completion?.resolution_trace || [],
@@ -1747,6 +1751,10 @@ function traceHasSecondaryVerifierError(trace = []) {
   });
 }
 
+function publicationGate(item = {}) {
+  return item.publication_gate || item.output?.publication_gate || item.prediction?.publication_gate || {};
+}
+
 function summarize(results = [], {
   elapsedMs = 0
 } = {}) {
@@ -1756,6 +1764,9 @@ function summarize(results = [], {
   const providerErrors = results.filter((item) => item.status === "provider_error").length;
   const itemTimeouts = results.filter((item) => item.status === "provider_error" && item.error_code === "item_timeout").length;
   const identityAbstains = results.filter(isIdentityAbstain).length;
+  const writerReviewReady = results.filter((item) => publicationGate(item).writer_review_ready === true).length;
+  const partialWriterDrafts = results.filter((item) => publicationGate(item).partial_writer_draft === true).length;
+  const autoPublishReady = results.filter((item) => publicationGate(item).auto_publish_allowed === true).length;
   const allInCommercialSuccesses = results.filter(isAllInCommercialSuccess).length;
   const allInCommercialFailures = attempted - allInCommercialSuccesses;
   const comparisons = results.map((item) => item.corrected_title_comparison).filter(Boolean);
@@ -1792,6 +1803,12 @@ function summarize(results = [], {
     item_timeout_count: itemTimeouts,
     identity_abstain_count: identityAbstains,
     identity_abstain_rate: rate(identityAbstains, attempted),
+    writer_review_ready_count: writerReviewReady,
+    writer_review_ready_rate: rate(writerReviewReady, attempted),
+    partial_writer_draft_count: partialWriterDrafts,
+    partial_writer_draft_rate: rate(partialWriterDrafts, attempted),
+    auto_publish_ready_count: autoPublishReady,
+    auto_publish_ready_rate: rate(autoPublishReady, attempted),
     all_in_commercial_success_count: allInCommercialSuccesses,
     all_in_commercial_failure_count: allInCommercialFailures,
     all_in_commercial_accuracy: rate(allInCommercialSuccesses, attempted),
@@ -2091,6 +2108,9 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `provider_error_count: ${report.provider_error_count ?? "n/a"}`,
     `item_timeout_count: ${report.item_timeout_count ?? "n/a"}`,
     `identity_abstain_count: ${report.identity_abstain_count ?? "n/a"}`,
+    `writer_review_ready_count: ${report.writer_review_ready_count ?? "n/a"} (${report.writer_review_ready_rate ?? "n/a"})`,
+    `partial_writer_draft_count: ${report.partial_writer_draft_count ?? "n/a"} (${report.partial_writer_draft_rate ?? "n/a"})`,
+    `auto_publish_ready_count: ${report.auto_publish_ready_count ?? "n/a"} (${report.auto_publish_ready_rate ?? "n/a"})`,
     `all_in_commercial_accuracy: ${report.all_in_commercial_accuracy ?? "n/a"} target:${report.all_in_commercial_accuracy_target ?? "n/a"} passed:${report.all_in_commercial_accuracy_passed === true}`,
     `correct_cards_per_minute: ${report.correct_cards_per_minute ?? "n/a"}`,
     `attempted_cards_per_minute: ${report.attempted_cards_per_minute ?? "n/a"}`,

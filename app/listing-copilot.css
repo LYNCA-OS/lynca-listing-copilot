@@ -806,6 +806,40 @@ h3 {
   font-weight: 900;
 }
 
+.publication-gate {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  border: 1px solid rgba(240, 200, 117, 0.36);
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: rgba(240, 200, 117, 0.08);
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.publication-gate.manual-required {
+  border-color: rgba(255, 143, 143, 0.38);
+  background: rgba(255, 143, 143, 0.08);
+  color: var(--red);
+}
+
+.publication-gate strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.publication-gate small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .feedback-save-status {
   margin: 0;
   color: var(--muted);
@@ -1051,7 +1085,8 @@ summary {
 
   .asset-source,
   .field-list,
-  .writer-modules {
+  .writer-modules,
+  .publication-gate {
     grid-template-columns: 1fr;
   }
 

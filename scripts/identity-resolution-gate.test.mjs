@@ -90,9 +90,12 @@ const agnesOnly = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(agnesOnly.identity_resolution_status, "ABSTAIN");
-assert.equal(agnesOnly.final_title, "");
-assert.equal(agnesOnly.title_render_source, "identity_resolution_abstain");
-assert.ok(agnesOnly.unresolved.includes("identity resolution abstain"));
+assert.equal(agnesOnly.final_title, "Topps Chrome Shohei Ohtani");
+assert.equal(agnesOnly.title_render_source, "identity_resolution_partial_writer_draft");
+assert.equal(agnesOnly.publication_gate.auto_publish_allowed, false);
+assert.equal(agnesOnly.publication_gate.writer_review_ready, true);
+assert.deepEqual(agnesOnly.publication_gate.writer_required_fields.sort(), ["parallel", "serial_number", "year"]);
+assert.ok(agnesOnly.unresolved.includes("identity resolution requires writer review before upload"));
 assert.equal(agnesOnly.model_title_suggestion, "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50");
 
 function primaryFastVisionResult({
@@ -157,7 +160,10 @@ const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   verificationFields: ["serial_number"]
 });
 assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
-assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "Topps Chrome Shohei Ohtani");
+assert.equal(fastVisionSerialWithoutFocusedVerification.title_render_source, "identity_resolution_partial_writer_draft");
+assert.deepEqual(fastVisionSerialWithoutFocusedVerification.writer_required_fields, ["year", "serial_number"]);
+assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
 
 const fastVisionSerialWithFocusedVerification = primaryFastVisionResult({
   resolved: {
@@ -407,7 +413,9 @@ const missingYear = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(missingYear.identity_resolution_status, "ABSTAIN");
-assert.equal(missingYear.final_title, "");
+assert.equal(missingYear.final_title, "Topps Chrome Shohei Ohtani 31/50");
+assert.equal(missingYear.title_render_source, "identity_resolution_partial_writer_draft");
+assert.deepEqual(missingYear.writer_required_fields, ["year"]);
 assert.ok(missingYear.unresolved.some((item) => /identity year/i.test(item)));
 
 const serialFocusedFailure = applyIdentityResolutionGate({
@@ -436,7 +444,10 @@ const serialFocusedFailure = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialFocusedFailure.identity_resolution_status, "ABSTAIN");
-assert.equal(serialFocusedFailure.final_title, "");
+assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialFocusedFailure.title_render_source, "identity_resolution_partial_writer_draft");
+assert.deepEqual(serialFocusedFailure.writer_required_fields, ["serial_number"]);
+assert.doesNotMatch(serialFocusedFailure.final_title, /196\/299/);
 assert.ok(serialFocusedFailure.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_FOCUSED_VERIFICATION_FAILED"));
 assert.ok(serialFocusedFailure.resolution_trace.some((entry) => entry.step === "high_risk_verification_guard"));
 
@@ -466,7 +477,10 @@ const serialSingleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialSingleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialSingleFrontSource.final_title, "");
+assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialSingleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
+assert.deepEqual(serialSingleFrontSource.writer_required_fields, ["serial_number"]);
+assert.doesNotMatch(serialSingleFrontSource.final_title, /196\/299/);
 assert.ok(serialSingleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const serialDoubleFrontSource = applyIdentityResolutionGate({
@@ -503,7 +517,10 @@ const serialDoubleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialDoubleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialDoubleFrontSource.final_title, "");
+assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialDoubleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
+assert.deepEqual(serialDoubleFrontSource.writer_required_fields, ["serial_number"]);
+assert.doesNotMatch(serialDoubleFrontSource.final_title, /196\/299/);
 assert.ok(serialDoubleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
@@ -640,7 +657,10 @@ const lowConfidenceYear = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(lowConfidenceYear.identity_resolution_status, "ABSTAIN");
-assert.equal(lowConfidenceYear.final_title, "");
+assert.equal(lowConfidenceYear.final_title, "Star Wars Chrome Black Paul Kasey Auto");
+assert.equal(lowConfidenceYear.title_render_source, "identity_resolution_partial_writer_draft");
+assert.deepEqual(lowConfidenceYear.writer_required_fields, ["year"]);
+assert.doesNotMatch(lowConfidenceYear.final_title, /2017/);
 assert.ok(lowConfidenceYear.conflict_map.some((conflict) => conflict.conflict_type === "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE"));
 
 const frontOnlyColorDescriptorDropped = applyIdentityResolutionGate({

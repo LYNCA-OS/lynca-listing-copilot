@@ -916,6 +916,7 @@ function resultBox(result) {
       <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || "标题暂不可用")}</textarea>
       ${titleOverrideNotice(result)}
       ${moduleSummary(result)}
+      ${publicationGateNotice(result)}
       <p class="follow-up-advice">${result.reason || ""}</p>
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
       ${result.publishMessage ? `<p class="publish-status">${escapeHtml(result.publishMessage)}</p>` : ""}
@@ -933,6 +934,54 @@ function resultBox(result) {
           `).join("")}
         </div>
       </details>
+    </div>
+  `;
+}
+
+const reviewFieldLabels = {
+  year: "Year",
+  brand: "Brand",
+  manufacturer: "Manufacturer",
+  product: "Product",
+  set: "Set",
+  subset: "Subset",
+  players: "Player",
+  character: "Character",
+  card_type: "Card Type",
+  insert: "Insert",
+  surface_color: "Color",
+  parallel_family: "Parallel Family",
+  parallel_exact: "Exact Parallel",
+  parallel: "Parallel",
+  variation: "Variation",
+  serial_number: "Serial",
+  collector_number: "Collector Number",
+  checklist_code: "Checklist Code",
+  grade_company: "Grade Company",
+  card_grade: "Card Grade",
+  auto_grade: "Auto Grade",
+  grade_type: "Grade Type"
+};
+
+function publicationGateNotice(result) {
+  const gate = result.publication_gate || {};
+  if (!gate.status || gate.auto_publish_allowed === true) return "";
+
+  const fields = Array.isArray(gate.writer_required_fields)
+    ? gate.writer_required_fields
+    : [];
+  const fieldText = fields.length
+    ? fields.map((field) => reviewFieldLabels[field] || field).join(", ")
+    : "Identity";
+  const readyText = gate.writer_review_ready
+    ? "已生成可编辑草稿"
+    : "需要人工处理";
+
+  return `
+    <div class="publication-gate ${gate.writer_review_ready ? "writer-ready" : "manual-required"}">
+      <span>${escapeHtml(readyText)}</span>
+      <strong>写手待补：${escapeHtml(fieldText)}</strong>
+      <small>上传前必须保存审核记录。</small>
     </div>
   `;
 }

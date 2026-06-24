@@ -46,6 +46,8 @@ assert.match(api, /optional bounded derived crop images/, "title API should acce
 assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facing modules from the title API");
 assert.match(js, /result\.modules/, "frontend should read module output from deterministic renderer responses");
 assert.match(js, /data-module-input/, "writer modules should expose editable module text controls");
+assert.match(js, /publicationGateNotice\(result\)/, "frontend should show the partial publication gate contract");
+assert.match(js, /writer_required_fields/, "frontend should surface unresolved writer-required fields");
 assert.match(js, /fetch\("\/api\/listing-render-title"/, "module edits should rerender through the server renderer endpoint");
 assert.match(js, /module_edit/, "module edit requests should preserve the explicit edit boundary");
 assert.match(js, /title_override/, "manual title overrides should be tracked separately from resolved fields");
@@ -78,6 +80,7 @@ assert.match(css, /\.provider-option:disabled/, "disabled providers should rende
 assert.match(css, /\.provider-smoke/, "smoke status should have a stable compact style");
 assert.match(css, /\.writer-modules/, "writer-facing modules should have a compact layout");
 assert.match(css, /\.writer-module\.needs-review/, "module review state should be visible");
+assert.match(css, /\.publication-gate/, "partial writer draft gate should be visible");
 assert.match(css, /\.title-override-note/, "title override state should be visible");
 assert.match(css, /\.publish-button/, "mock publish button should have a distinct approved-action style");
 assert.match(css, /\.publish-status/, "mock publish status should be visible after publishing");
