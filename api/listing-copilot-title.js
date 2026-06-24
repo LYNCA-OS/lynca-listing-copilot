@@ -2637,7 +2637,6 @@ async function withEvidenceCompletion(result, payload, {
     runFocusedVisionImpl
   }));
   addTiming(timingContext, "retrieval_ms", Number(completion.retrieval?.latency_ms || completion.retrieval?.retrieval_time_ms || 0));
-  addTiming(timingContext, "focused_reread_ms", Number(completion.usage?.provider_calls || 0) > 0 ? Number(completion.usage?.latency_ms || 0) : 0);
   const resolutionTrace = [
     ...(Array.isArray(result.resolution_trace) ? result.resolution_trace : []),
     ...completion.resolution_trace
@@ -2692,6 +2691,7 @@ async function createRecognitionIdentityPreflight(payload, {
       result: null,
       evidenceDocument: null,
       response: null,
+      signedImages: null,
       skipped: true,
       reason: config.reason || "recognition_worker_not_configured"
     };
@@ -2707,6 +2707,7 @@ async function createRecognitionIdentityPreflight(payload, {
       result: null,
       evidenceDocument: null,
       response: null,
+      signedImages: null,
       skipped: true,
       reason: "recognition_preflight_requires_verified_storage_images"
     };
@@ -2734,7 +2735,8 @@ async function createRecognitionIdentityPreflight(payload, {
       return {
         result: null,
         evidenceDocument,
-        response
+        response,
+        signedImages
       };
     }
 
@@ -2775,12 +2777,14 @@ async function createRecognitionIdentityPreflight(payload, {
       result: gated.identity_resolution_status === identityStatuses.ABSTAIN ? null : gated,
       evidenceDocument,
       response,
-      gated
+      gated,
+      signedImages
     };
   } catch (error) {
     return {
       result: null,
       evidenceDocument: null,
+      signedImages: null,
       error: safeRecognitionError(error)
     };
   }
@@ -2788,10 +2792,13 @@ async function createRecognitionIdentityPreflight(payload, {
 
 async function createAgnesTitle(payload, selection, {
   recognitionEvidenceDocument = null,
+  signedImages: reusableSignedImages = null,
   timingContext = null
 } = {}) {
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const signedImages = await imagesWithSignedReadUrls(payload.images, timingContext);
+  const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
+    ? reusableSignedImages
+    : await imagesWithSignedReadUrls(payload.images, timingContext);
   const initialPayload = {
     ...payload,
     images: primaryImagesFromImages(signedImages)
@@ -2830,10 +2837,13 @@ async function createAgnesTitle(payload, selection, {
 
 async function createOpenAiTitle(payload, selection, {
   recognitionEvidenceDocument = null,
+  signedImages: reusableSignedImages = null,
   timingContext = null
 } = {}) {
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const signedImages = await imagesWithSignedReadUrls(payload.images || [], timingContext);
+  const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
+    ? reusableSignedImages
+    : await imagesWithSignedReadUrls(payload.images || [], timingContext);
   const initialPayload = primaryPayloadForProvider({
     ...payload,
     images: signedImages
@@ -2862,10 +2872,13 @@ async function createOpenAiTitle(payload, selection, {
 
 async function createCascadeFastTitle(payload, selection, {
   recognitionEvidenceDocument = null,
+  signedImages: reusableSignedImages = null,
   timingContext = null
 } = {}) {
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const signedImages = await imagesWithSignedReadUrls(payload.images || [], timingContext);
+  const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
+    ? reusableSignedImages
+    : await imagesWithSignedReadUrls(payload.images || [], timingContext);
   const initialPayload = primaryPayloadForProvider({
     ...payload,
     images: signedImages
@@ -2896,6 +2909,13 @@ async function createCascadeFastTitle(payload, selection, {
     secondaryAvailable,
     secondaryDisabledReason: selection.provider?.secondary_disabled_reason || null
   });
+  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(
+    cascadeResult,
+    initialPayload,
+    cascadeResult.identity_provider_id || visionProviderIds.CASCADE_FAST
+  ));
+  if (fastPathResult) return fastPathResult;
+
   const secondaryEnv = cascadeSecondaryVerifierEnv(process.env, verificationFields);
 
   return withEvidenceCompletion(cascadeResult, {
@@ -2925,6 +2945,7 @@ function explicitEmergencyFromPayload(payload = {}) {
 
 async function createProviderTitle(payload, {
   recognitionEvidenceDocument = null,
+  signedImages = null,
   timingContext = null
 } = {}) {
   const requestedProvider = requestedProviderFromPayload(payload);
@@ -2942,14 +2963,14 @@ async function createProviderTitle(payload, {
   });
 
   if (selection.provider_id === visionProviderIds.CASCADE_FAST) {
-    return createCascadeFastTitle(payload, selection, { recognitionEvidenceDocument, timingContext });
+    return createCascadeFastTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
   }
 
   if (selection.provider_id === visionProviderIds.AGNES) {
-    return createAgnesTitle(payload, selection, { recognitionEvidenceDocument, timingContext });
+    return createAgnesTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
   }
 
-  return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument, timingContext });
+  return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
 }
 
 export default async function handler(req, res) {
@@ -3023,6 +3044,7 @@ export default async function handler(req, res) {
 
         const providerResult = await createProviderTitle(payload, {
           recognitionEvidenceDocument: recognitionPreflight.evidenceDocument,
+          signedImages: recognitionPreflight.signedImages,
           timingContext
         });
 

@@ -49,9 +49,12 @@ assert.match(js, /图片过大，已自动压缩用于识别/, "oversized image 
 assert.match(js, /正在优化图片…/, "upload optimization status should be visible");
 assert.match(js, /图片已优化，开始识别…/, "recognition start status should be visible");
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
+assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");
 assert.match(js, /results\[index\]\s*=\s*await worker\(source\[index\], index\)/, "concurrent preprocessing should preserve input order in results");
 assert.match(js, /mapWithConcurrency\(imageFiles,\s*IMAGE_PREPROCESS_CONCURRENCY/, "file preprocessing should use bounded concurrency");
+assert.match(js, /mapWithConcurrency\(images,\s*STORAGE_UPLOAD_CONCURRENCY/, "storage uploads should not run serially for every original and crop image");
+assert.match(js, /uploadAssetImage\(asset, image, imageIndex\)/, "bounded storage upload workers should preserve image role assignment");
 assert.match(js, /state\.files = images/, "optimized images should preserve upload order in state");
 assert.match(js, /state\.files\.slice\(index, index \+ 2\)/, "front/back pairing should remain upload-order based");
 

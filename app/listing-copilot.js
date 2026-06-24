@@ -9,6 +9,7 @@ const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
 const MAX_CONCURRENT_WORKERS = 6;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
+const STORAGE_UPLOAD_CONCURRENCY = 3;
 const IMAGE_MAX_EDGE = 1400;
 const IMAGE_MIN_EDGE = 900;
 const IMAGE_INITIAL_QUALITY = 0.82;
@@ -481,90 +482,93 @@ async function contentSha256Hex(source) {
     .join("");
 }
 
+async function uploadAssetImage(asset, image, imageIndex) {
+  const source = storageSourceForImage(image);
+  if (image.objectPath || !source) return false;
+  const signatureHex = await fileSignatureHex(source);
+  const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
+  const dimensions = storageDimensionsForImage(image);
+  image.contentSha256 = contentSha256;
+
+  const uploadResponse = await fetch("/api/listing-image-upload-url", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      assetId: asset.id,
+      imageId: image.id,
+      role: storageRoleForImage(image, imageIndex),
+      fileName: image.name,
+      contentType: image.originalType || source.type || "image/jpeg",
+      size: source.size,
+      width: dimensions.width,
+      height: dimensions.height,
+      signatureHex,
+      contentSha256
+    })
+  });
+
+  const uploadPayload = await uploadResponse.json();
+  if (!uploadResponse.ok || !uploadPayload.ok) {
+    throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
+  }
+
+  const storageResponse = await fetch(uploadPayload.upload.signed_upload_url, {
+    method: "PUT",
+    headers: {
+      "content-type": uploadPayload.upload.content_type || image.originalType || "application/octet-stream"
+    },
+    body: source
+  });
+
+  if (!storageResponse.ok) {
+    throw new Error(`Storage upload failed: ${storageResponse.status}`);
+  }
+
+  const verifyResponse = await fetch("/api/listing-image-verify-upload", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      assetId: asset.id,
+      imageId: image.id,
+      role: storageRoleForImage(image, imageIndex),
+      objectPath: uploadPayload.upload.object_path,
+      contentType: uploadPayload.upload.content_type,
+      size: source.size,
+      width: dimensions.width,
+      height: dimensions.height,
+      signatureHex,
+      contentSha256
+    })
+  });
+  const verifyPayload = await verifyResponse.json();
+  if (!verifyResponse.ok || !verifyPayload.ok) {
+    throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
+  }
+
+  image.objectPath = verifyPayload.verification.object_path;
+  image.bucket = verifyPayload.verification.bucket;
+  image.storageVerificationToken = verifyPayload.verification.verification_token || "";
+  image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
+  image.storageVerified = true;
+  image.storageUploaded = true;
+  return true;
+}
+
 async function ensureAssetImagesUploaded(asset) {
   if (!storageReady()) return false;
 
-  let uploadedAny = false;
   const images = asset.providerImages || asset.images;
-  for (const [imageIndex, image] of images.entries()) {
-    const source = storageSourceForImage(image);
-    if (image.objectPath || !source) continue;
-    const signatureHex = await fileSignatureHex(source);
-    const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
-    const dimensions = storageDimensionsForImage(image);
-    image.contentSha256 = contentSha256;
+  const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
+    return uploadAssetImage(asset, image, imageIndex);
+  });
 
-    const uploadResponse = await fetch("/api/listing-image-upload-url", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        assetId: asset.id,
-        imageId: image.id,
-        role: storageRoleForImage(image, imageIndex),
-        fileName: image.name,
-        contentType: image.originalType || source.type || "image/jpeg",
-        size: source.size,
-        width: dimensions.width,
-        height: dimensions.height,
-        signatureHex,
-        contentSha256
-      })
-    });
-
-    const uploadPayload = await uploadResponse.json();
-    if (!uploadResponse.ok || !uploadPayload.ok) {
-      throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
-    }
-
-    const storageResponse = await fetch(uploadPayload.upload.signed_upload_url, {
-      method: "PUT",
-      headers: {
-        "content-type": uploadPayload.upload.content_type || image.originalType || "application/octet-stream"
-      },
-      body: source
-    });
-
-    if (!storageResponse.ok) {
-      throw new Error(`Storage upload failed: ${storageResponse.status}`);
-    }
-
-    const verifyResponse = await fetch("/api/listing-image-verify-upload", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        assetId: asset.id,
-        imageId: image.id,
-        role: storageRoleForImage(image, imageIndex),
-        objectPath: uploadPayload.upload.object_path,
-        contentType: uploadPayload.upload.content_type,
-        size: source.size,
-        width: dimensions.width,
-        height: dimensions.height,
-        signatureHex,
-        contentSha256
-      })
-    });
-    const verifyPayload = await verifyResponse.json();
-    if (!verifyResponse.ok || !verifyPayload.ok) {
-      throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
-    }
-
-    image.objectPath = verifyPayload.verification.object_path;
-    image.bucket = verifyPayload.verification.bucket;
-    image.storageVerificationToken = verifyPayload.verification.verification_token || "";
-    image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
-    image.storageVerified = true;
-    image.storageUploaded = true;
-    uploadedAny = true;
-  }
-
-  return uploadedAny;
+  return uploadResults.some(Boolean);
 }
 
 function formatCost(requests) {

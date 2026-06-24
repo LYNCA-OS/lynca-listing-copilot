@@ -41,6 +41,9 @@ assert.match(api, /readListingImageVerificationRecord/, "title API should allow 
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
 assert.match(api, /createAgnesFocusedRereadRunner/, "title API should wire focused Agnes rereads through Evidence Completion");
 assert.match(api, /const signedImages = await imagesWithSignedReadUrls\(payload\.images \|\| \[\], timingContext\)/, "OpenAI fallback should use signed storage read URLs instead of requiring Base64 JSON");
+assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider calls should reuse signed URLs created during recognition preflight");
+assert.match(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade provider should try fast path before evidence completion");
+assert.match(api, /if \(fastPathResult\) return fastPathResult;/, "cascade fast path should skip slow completion when identity is already resolved");
 assert.match(api, /runFocusedVisionImpl/, "Evidence Completion should receive the focused vision runner explicitly");
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facing modules from the title API");
