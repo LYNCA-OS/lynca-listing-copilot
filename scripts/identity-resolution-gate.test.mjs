@@ -138,11 +138,33 @@ const fastVisionNoRisk = primaryFastVisionResult({
   }
 });
 assert.equal(fastVisionNoRisk.identity_resolution_status, "RESOLVED");
-assert.match(fastVisionNoRisk.final_title, /2024/);
+assert.equal(fastVisionNoRisk.publication_gate.auto_publish_allowed, false);
+assert.equal(fastVisionNoRisk.publication_gate.writer_review_ready, true);
+assert.deepEqual(fastVisionNoRisk.writer_required_fields, ["year"]);
+assert.doesNotMatch(fastVisionNoRisk.final_title, /2024/);
 assert.match(fastVisionNoRisk.final_title, /Topps Chrome/);
+assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.mode, "PARTIAL_WRITER_DRAFT");
+assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.value, "Topps Chrome");
+assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.review_required_fields[0].field, "year");
 assert.ok(fastVisionNoRisk.conflict_map.every((conflict) => {
   return conflict.conflict_type !== "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE" || conflict.resolved === true;
 }));
+
+const fastVisionYearWithAuthoritativeBack = primaryFastVisionResult({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"]
+  },
+  evidence: {
+    year: groundedEvidence("2024"),
+    product: visionOnlyEvidence("Topps Chrome"),
+    players: visionOnlyEvidence(["Shohei Ohtani"])
+  }
+});
+assert.equal(fastVisionYearWithAuthoritativeBack.identity_resolution_status, "RESOLVED");
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.auto_publish_allowed, true);
+assert.match(fastVisionYearWithAuthoritativeBack.final_title, /2024/);
 
 const fastVisionSurfaceColorWithoutCatalog = primaryFastVisionResult({
   resolved: {
@@ -159,9 +181,11 @@ const fastVisionSurfaceColorWithoutCatalog = primaryFastVisionResult({
   }
 });
 assert.equal(fastVisionSurfaceColorWithoutCatalog.identity_resolution_status, "RESOLVED");
-assert.equal(fastVisionSurfaceColorWithoutCatalog.publication_gate.auto_publish_allowed, true);
+assert.equal(fastVisionSurfaceColorWithoutCatalog.publication_gate.auto_publish_allowed, false);
+assert.equal(fastVisionSurfaceColorWithoutCatalog.publication_gate.writer_review_ready, true);
 assert.equal(fastVisionSurfaceColorWithoutCatalog.publication_gate.field_publication_states.surface_color, "PUBLISHABLE_NARROW");
 assert.ok(!fastVisionSurfaceColorWithoutCatalog.writer_required_fields.includes("surface_color"));
+assert.ok(fastVisionSurfaceColorWithoutCatalog.writer_required_fields.includes("year"));
 
 const fastVisionExactParallelWithoutCatalog = primaryFastVisionResult({
   resolved: {
@@ -181,7 +205,7 @@ assert.equal(fastVisionExactParallelWithoutCatalog.identity_resolution_status, "
 assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.auto_publish_allowed, false);
 assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_ready, true);
 assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.partial_writer_draft, true);
-assert.deepEqual(fastVisionExactParallelWithoutCatalog.writer_required_fields, ["parallel"]);
+assert.deepEqual(fastVisionExactParallelWithoutCatalog.writer_required_fields, ["parallel", "year"]);
 assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.field_publication_states.parallel, "OBSERVED");
 assert.doesNotMatch(fastVisionExactParallelWithoutCatalog.final_title, /Purple|Wave|Refractor/i);
 assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_items[0].current_value, "Purple Wave Refractor");

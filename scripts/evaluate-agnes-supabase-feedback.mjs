@@ -1733,6 +1733,45 @@ function secondaryVerificationEvents({
     }));
 }
 
+function hasEventCandidate(candidate = {}) {
+  return Object.keys(candidate || {}).length > 0;
+}
+
+function secondaryVerifierCaseReview(events = []) {
+  const executed = events.filter((event) => event.status === "executed");
+  const noInformation = events.filter((event) => {
+    return event.status === "no_information" || !hasEventCandidate(event.agnes_candidate);
+  });
+  const sameAsGpt = events.filter((event) => {
+    return hasEventCandidate(event.gpt_initial_candidate)
+      && hasEventCandidate(event.agnes_candidate)
+      && !candidateChanged(event.gpt_initial_candidate, event.agnes_candidate);
+  });
+  const changedCandidate = events.filter((event) => {
+    return hasEventCandidate(event.gpt_initial_candidate)
+      && hasEventCandidate(event.agnes_candidate)
+      && candidateChanged(event.gpt_initial_candidate, event.agnes_candidate);
+  });
+  const resolverMissed = events.filter((event) => {
+    return event.agnes_reference_match === true && event.final_reference_match !== true;
+  });
+  const sameWrong = events.filter((event) => {
+    return event.gpt_initial_reference_match === false && event.agnes_reference_match === false;
+  });
+
+  return {
+    executed_count: executed.length,
+    no_information_count: noInformation.length,
+    same_as_gpt_count: sameAsGpt.length,
+    changed_candidate_count: changedCandidate.length,
+    same_wrong_count: sameWrong.length,
+    possible_resolver_missed_count: resolverMissed.length,
+    agnes_reference_match_true_count: events.filter((event) => event.agnes_reference_match === true).length,
+    agnes_reference_match_false_count: events.filter((event) => event.agnes_reference_match === false).length,
+    agnes_reference_match_unknown_count: events.filter((event) => event.agnes_reference_match === null).length
+  };
+}
+
 function traceUsesAgnesFocusedVerifier(trace = []) {
   return trace.some((entry) => {
     const providerIds = entry?.output?.provider_ids || [];
@@ -1755,6 +1794,10 @@ function publicationGate(item = {}) {
   return item.publication_gate || item.output?.publication_gate || item.prediction?.publication_gate || {};
 }
 
+function fieldLevelPublication(item = {}) {
+  return publicationGate(item).field_level_publication || item.field_level_publication || {};
+}
+
 function summarize(results = [], {
   elapsedMs = 0
 } = {}) {
@@ -1767,6 +1810,8 @@ function summarize(results = [], {
   const writerReviewReady = results.filter((item) => publicationGate(item).writer_review_ready === true).length;
   const partialWriterDrafts = results.filter((item) => publicationGate(item).partial_writer_draft === true).length;
   const autoPublishReady = results.filter((item) => publicationGate(item).auto_publish_allowed === true).length;
+  const fieldLevelPublications = results.map(fieldLevelPublication).filter((item) => item && typeof item === "object");
+  const fieldLevelPartialOutputs = fieldLevelPublications.filter((item) => item.has_partial_output === true).length;
   const allInCommercialSuccesses = results.filter(isAllInCommercialSuccess).length;
   const allInCommercialFailures = attempted - allInCommercialSuccesses;
   const comparisons = results.map((item) => item.corrected_title_comparison).filter(Boolean);
@@ -1807,6 +1852,10 @@ function summarize(results = [], {
     writer_review_ready_rate: rate(writerReviewReady, attempted),
     partial_writer_draft_count: partialWriterDrafts,
     partial_writer_draft_rate: rate(partialWriterDrafts, attempted),
+    field_level_partial_output_count: fieldLevelPartialOutputs,
+    field_level_partial_output_rate: rate(fieldLevelPartialOutputs, attempted),
+    field_level_usable_field_count_avg: average(fieldLevelPublications.map((item) => Number(item.usable_field_count || 0))),
+    field_level_review_field_count_avg: average(fieldLevelPublications.map((item) => Number(item.review_field_count || 0))),
     auto_publish_ready_count: autoPublishReady,
     auto_publish_ready_rate: rate(autoPublishReady, attempted),
     all_in_commercial_success_count: allInCommercialSuccesses,
@@ -1838,7 +1887,8 @@ function summarize(results = [], {
       field_regressed_count: secondaryFieldRegressed,
       field_regression_rate: rate(secondaryFieldRegressed, secondaryEvents.length),
       net_benefit: secondaryFieldRecovered - secondaryFieldRegressed,
-      event_count: secondaryEvents.length
+      event_count: secondaryEvents.length,
+      case_review: secondaryVerifierCaseReview(secondaryEvents)
     },
     parsed_success_rate: rate(evaluated, attempted),
     elapsed_ms: Math.max(0, Math.round(effectiveElapsedMs || 0)),
@@ -2110,6 +2160,9 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `identity_abstain_count: ${report.identity_abstain_count ?? "n/a"}`,
     `writer_review_ready_count: ${report.writer_review_ready_count ?? "n/a"} (${report.writer_review_ready_rate ?? "n/a"})`,
     `partial_writer_draft_count: ${report.partial_writer_draft_count ?? "n/a"} (${report.partial_writer_draft_rate ?? "n/a"})`,
+    `field_level_partial_output_count: ${report.field_level_partial_output_count ?? "n/a"} (${report.field_level_partial_output_rate ?? "n/a"})`,
+    `field_level_usable_field_count_avg: ${report.field_level_usable_field_count_avg ?? "n/a"}`,
+    `field_level_review_field_count_avg: ${report.field_level_review_field_count_avg ?? "n/a"}`,
     `auto_publish_ready_count: ${report.auto_publish_ready_count ?? "n/a"} (${report.auto_publish_ready_rate ?? "n/a"})`,
     `all_in_commercial_accuracy: ${report.all_in_commercial_accuracy ?? "n/a"} target:${report.all_in_commercial_accuracy_target ?? "n/a"} passed:${report.all_in_commercial_accuracy_passed === true}`,
     `correct_cards_per_minute: ${report.correct_cards_per_minute ?? "n/a"}`,
@@ -2122,12 +2175,14 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `secondary_verifier_field_recovered: ${report.secondary_verifier?.field_recovered_count ?? "n/a"}`,
     `secondary_verifier_field_regressed: ${report.secondary_verifier?.field_regressed_count ?? "n/a"} (${report.secondary_verifier?.field_regression_rate ?? "n/a"})`,
     `secondary_verifier_net_benefit: ${report.secondary_verifier?.net_benefit ?? "n/a"}`,
+    `secondary_verifier_case_review: ${Object.entries(report.secondary_verifier?.case_review || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `corrected_title_exact: ${report.corrected_title_exact_count ?? "n/a"}/${report.attempted_count ?? "n/a"} (${report.corrected_title_exact_rate ?? "n/a"})`,
     `corrected_title_token_recall_avg: ${report.corrected_title_token_recall_avg ?? "n/a"}`,
     `critical_title_errors: ${report.critical_title_error_count ?? "n/a"}/${report.attempted_count ?? "n/a"} (${report.critical_title_error_rate ?? "n/a"})`,
     `dangerous_error_rate: ${report.dangerous_error_rate ?? "n/a"}`,
     `accepted_coverage_rate: ${report.accepted_coverage_rate ?? "n/a"}`,
     `primary_root_causes: ${Object.entries(report.root_cause_summary?.primary_counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
+    `gate_false_reject_subtypes: ${Object.entries(report.root_cause_summary?.gate_false_reject_subtypes || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `root_causes: ${Object.entries(report.root_cause_summary?.counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `root_cause_cross_tabs: ${Object.entries(report.root_cause_summary?.cross_tabs || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `recognition_worker_calls: ${report.usage?.recognition_worker_calls ?? "n/a"}`,
