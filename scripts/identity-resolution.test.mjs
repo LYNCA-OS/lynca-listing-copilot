@@ -267,6 +267,25 @@ assert.equal(fieldState(focusedVisualParallelAccepted, "parallel").resolution_re
 assert.equal(fieldState(focusedVisualParallelAccepted, "parallel").decision_route, "USE");
 assert.ok(fieldState(focusedVisualParallelAccepted, "parallel").candidates[0].constraint_result.evaluated_rules.every((rule) => rule.passed));
 
+const focusedVisualParallelReviewWithoutBlockerAccepted = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    {
+      field: "parallel",
+      value: "Purple Refractor",
+      source: "AGNES",
+      confidence: 0.8,
+      region: "CROP_AND_READ_PARALLEL",
+      metadata: {
+        capture_role: "focused_reread",
+        field_status: "REVIEW"
+      }
+    }
+  ]
+});
+assert.equal(focusedVisualParallelReviewWithoutBlockerAccepted.identity.parallel, "Purple Refractor");
+assert.equal(fieldState(focusedVisualParallelReviewWithoutBlockerAccepted, "parallel").decision_route, "USE");
+
 const focusedVisualParallelReviewRejected = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,

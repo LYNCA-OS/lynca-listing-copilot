@@ -269,6 +269,39 @@ assert.equal(rateLimitRecovered.provider_error_count, 0);
 assert.equal(rateLimitRecovered.results[0].rate_limit_retry_attempts, 1);
 assert.equal(rateLimitCalls, 2);
 
+let timeoutCalls = 0;
+const timeoutRecovered = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  rateLimitRetries: 1,
+  rateLimitPauseMs: 0,
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeImpl: async () => {
+    timeoutCalls += 1;
+    if (timeoutCalls === 1) {
+      const error = new Error("Agnes request timed out.");
+      error.code = "timeout";
+      throw error;
+    }
+    return {
+      parsed: {
+        title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10",
+        fields: {}
+      },
+      usage: { provider_calls: 1 }
+    };
+  },
+  now: () => new Date("2026-06-23T12:01:35.000Z")
+});
+assert.equal(timeoutRecovered.provider_error_count, 0);
+assert.equal(timeoutRecovered.results[0].transient_provider_retry_attempts, 1);
+assert.equal(timeoutCalls, 2);
+
 let resumeAnalyzeCalls = 0;
 const providerErrorNotReused = await evaluateAgnesSupabaseFeedback({
   dataset,

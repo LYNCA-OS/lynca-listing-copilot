@@ -609,6 +609,170 @@ assert.ok(parallelFocusedCompletion.evidence.parallel.sources.some((source) => {
 assert.equal(parallelFocusedCompletion.budget.used.agnes_calls, 3);
 assert.equal(parallelFocusedCompletion.usage.provider_calls, 3);
 
+let lowConfidenceFocusedParallelAction = null;
+const lowConfidenceFocusedParallelCompletion = await completeEvidence({
+  resolved: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025-26", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "CONFIRMED", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], status: "CONFIRMED", confidence: 0.9 })
+  },
+  unresolved: ["parallel requires review"],
+  env: {
+    MAX_PARALLEL_FOCUSED_REREADS: "1"
+  },
+  budgetOverrides: {
+    maxRounds: 2,
+    maxAgnesCalls: 1,
+    maxExternalQueries: 0
+  },
+  runRetrievalImpl: async () => ({
+    mode: "AUTO",
+    providers_used: [],
+    queries: [],
+    sources: [],
+    unavailable: [],
+    trace: []
+  }),
+  runFocusedVisionImpl: async ({ action }) => {
+    lowConfidenceFocusedParallelAction = action;
+    return {
+      provider_id: "agnes",
+      model_id: "agnes-2.0-flash",
+      resolved: {
+        parallel: "Purple"
+      },
+      evidence: {
+        parallel: createEvidenceField({ value: "Purple", status: "REVIEW", confidence: 0.35 })
+      },
+      unresolved: []
+    };
+  }
+});
+assert.equal(lowConfidenceFocusedParallelAction, completionActions.CROP_AND_READ_PARALLEL);
+assert.equal(lowConfidenceFocusedParallelCompletion.resolved.parallel, "Purple");
+assert.equal(lowConfidenceFocusedParallelCompletion.evidence.parallel.status, "CONFIRMED");
+assert.equal(lowConfidenceFocusedParallelCompletion.evidence.parallel.confidence, 0.86);
+assert.equal(lowConfidenceFocusedParallelCompletion.evidence.parallel.candidates[0].confidence, 0.86);
+
+const blockedFocusedParallelCompletion = await completeEvidence({
+  resolved: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025-26", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "CONFIRMED", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], status: "CONFIRMED", confidence: 0.9 })
+  },
+  unresolved: ["parallel requires review"],
+  env: {
+    MAX_PARALLEL_FOCUSED_REREADS: "1"
+  },
+  budgetOverrides: {
+    maxRounds: 2,
+    maxAgnesCalls: 1,
+    maxExternalQueries: 0
+  },
+  runRetrievalImpl: async () => ({
+    mode: "AUTO",
+    providers_used: [],
+    queries: [],
+    sources: [],
+    unavailable: [],
+    trace: []
+  }),
+  runFocusedVisionImpl: async () => ({
+    provider_id: "agnes",
+    model_id: "agnes-2.0-flash",
+    resolved: {
+      parallel: "Purple"
+    },
+    evidence: {
+      parallel: createEvidenceField({
+        value: "Purple",
+        status: "REVIEW",
+        confidence: 0.35,
+        unresolvedReason: "operator_review_requested"
+      })
+    },
+    unresolved: ["visual-only parallel requires operator review"]
+  })
+});
+assert.equal(blockedFocusedParallelCompletion.resolved.parallel, "Purple");
+assert.equal(blockedFocusedParallelCompletion.evidence.parallel.status, "REVIEW");
+assert.equal(blockedFocusedParallelCompletion.evidence.parallel.confidence, 0.35);
+
+let retryFocusedParallelAttempts = 0;
+const retryFocusedParallelCompletion = await completeEvidence({
+  resolved: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025-26", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "CONFIRMED", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Victor Wembanyama"], status: "CONFIRMED", confidence: 0.9 })
+  },
+  unresolved: ["parallel requires review"],
+  env: {
+    MAX_PARALLEL_FOCUSED_REREADS: "1",
+    AGNES_FOCUSED_VISION_RETRIES: "1"
+  },
+  budgetOverrides: {
+    maxRounds: 2,
+    maxAgnesCalls: 2,
+    maxExternalQueries: 0
+  },
+  runRetrievalImpl: async () => ({
+    mode: "AUTO",
+    providers_used: [],
+    queries: [],
+    sources: [],
+    unavailable: [],
+    trace: []
+  }),
+  runFocusedVisionImpl: async () => {
+    retryFocusedParallelAttempts += 1;
+    if (retryFocusedParallelAttempts === 1) {
+      const error = new Error("timeout");
+      error.code = "timeout";
+      throw error;
+    }
+    return {
+      provider_id: "agnes",
+      model_id: "agnes-2.0-flash",
+      resolved: {
+        parallel: "Gold"
+      },
+      evidence: {
+        parallel: createEvidenceField({ value: "Gold", status: "REVIEW", confidence: 0.35 })
+      },
+      unresolved: []
+    };
+  }
+});
+const retryFocusedTrace = retryFocusedParallelCompletion.resolution_trace.find((entry) => {
+  return entry.action === completionActions.CROP_AND_READ_PARALLEL
+    && entry.output?.focused_vision?.updated_fields?.includes("parallel");
+});
+assert.equal(retryFocusedParallelAttempts, 2);
+assert.equal(retryFocusedParallelCompletion.resolved.parallel, "Gold");
+assert.equal(retryFocusedParallelCompletion.budget.used.agnes_calls, 2);
+assert.equal(retryFocusedTrace.output.transient_retry_attempts, 1);
+
 const proactiveFocusedActions = [];
 const proactiveFocusedCompletion = await completeEvidence({
   resolved: {

@@ -153,6 +153,136 @@ assert.ok(pokemonCritical.includes("product"));
 assert.ok(pokemonCritical.includes("character"));
 assert.ok(!pokemonCritical.includes("players"));
 
+const parallelCritical = criticalFieldsForIdentityResolution(normalizeResolvedFields({
+  year: "2025-26",
+  product: "Topps Chrome",
+  players: ["Cooper Flagg"],
+  parallel: "Purple"
+}), []);
+assert.ok(parallelCritical.includes("parallel"));
+
+const duplicateVariationLowConfidence = applyIdentityResolutionGate({
+  title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
+  confidence: "HIGH",
+  reason: "Parallel is slab-supported; variation is a duplicate weak focused read.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    parallel: "Variation-Gold",
+    variation: "Variation-Gold",
+    serial_number: "05/50",
+    grade_company: "PSA",
+    card_grade: "9",
+    grade_type: "CARD_ONLY"
+  }),
+  evidence: {
+    year: groundedEvidence("2025"),
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    parallel: createEvidenceField({
+      value: "Variation-Gold",
+      status: "CONFIRMED",
+      confidence: 0.94,
+      sources: [{ source_type: "SLAB_LABEL", observed_text: "Variation-Gold" }]
+    }),
+    variation: createEvidenceField({
+      value: "Variation-Gold",
+      status: "REVIEW",
+      confidence: 0.35
+    }),
+    serial_number: groundedEvidence("05/50"),
+    grade_company: groundedEvidence("PSA"),
+    card_grade: groundedEvidence("9"),
+    grade_type: groundedEvidence("CARD_ONLY")
+  },
+  unresolved: []
+});
+assert.notEqual(duplicateVariationLowConfidence.identity_resolution_status, "ABSTAIN");
+assert.match(duplicateVariationLowConfidence.final_title, /Variation-Gold/);
+
+const weakVisualParallelDropsWithoutBlocking = applyIdentityResolutionGate({
+  title: "2025-26 Panini Prizm FIFA Club Legends Lionel Messi Auto 029/199",
+  confidence: "HIGH",
+  reason: "Parallel is weak visual inference, but auto and serial are printed.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2025-26",
+    product: "Prizm FIFA Soccer",
+    set: "Club Legends",
+    players: ["Lionel Messi"],
+    card_type: "auto",
+    parallel: "Blue Prizm",
+    serial_number: "029/199",
+    auto: true
+  }),
+  evidence: {
+    year: groundedEvidence("2025-26"),
+    product: groundedEvidence("Prizm FIFA Soccer"),
+    set: groundedEvidence("Club Legends"),
+    players: groundedEvidence(["Lionel Messi"]),
+    card_type: groundedEvidence("auto"),
+    parallel: createEvidenceField({
+      value: "Blue Prizm",
+      status: "REVIEW",
+      confidence: 0.35
+    }),
+    serial_number: groundedEvidence("029/199"),
+    auto: groundedEvidence(true)
+  },
+  unresolved: []
+});
+assert.notEqual(weakVisualParallelDropsWithoutBlocking.identity_resolution_status, "ABSTAIN");
+assert.doesNotMatch(weakVisualParallelDropsWithoutBlocking.final_title, /Blue/i);
+assert.match(weakVisualParallelDropsWithoutBlocking.final_title, /Auto/i);
+
+const setFallbackSatisfiesProductIdentity = applyIdentityResolutionGate({
+  title: "2025 Topps Sapphire Shohei Ohtani Gold 05/50 PSA 9",
+  confidence: "HIGH",
+  reason: "Product family is ambiguous, but set text is stable.",
+  provider: "agnes",
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    product: "Topps Chrome",
+    set: "Topps Sapphire",
+    players: ["Shohei Ohtani"],
+    parallel: "Gold",
+    serial_number: "05/50",
+    grade_company: "PSA",
+    card_grade: "9",
+    grade_type: "CARD_ONLY"
+  }),
+  evidence: {
+    year: groundedEvidence("2025"),
+    product: createEvidenceField({
+      value: "Topps Chrome",
+      status: "CONFLICT",
+      confidence: 0.75,
+      candidates: [
+        { value: "Topps Chrome", confidence: 0.75 },
+        { value: "Topps Sapphire", confidence: 0.74 }
+      ],
+      conflicts: [{
+        field: "product",
+        conflict_type: "OCR_CONFLICT",
+        severity: "HIGH",
+        resolved: false
+      }]
+    }),
+    set: groundedEvidence("Topps Sapphire"),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    parallel: groundedEvidence("Gold"),
+    serial_number: groundedEvidence("05/50"),
+    grade_company: groundedEvidence("PSA"),
+    card_grade: groundedEvidence("9"),
+    grade_type: groundedEvidence("CARD_ONLY")
+  },
+  unresolved: []
+});
+assert.notEqual(setFallbackSatisfiesProductIdentity.identity_resolution_status, "ABSTAIN");
+assert.match(setFallbackSatisfiesProductIdentity.final_title, /Topps Sapphire/);
+
 const missingYear = applyIdentityResolutionGate({
   title: "Topps Chrome Shohei Ohtani 31/50",
   confidence: "HIGH",

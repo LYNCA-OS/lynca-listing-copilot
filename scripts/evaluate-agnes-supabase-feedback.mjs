@@ -482,13 +482,14 @@ function focusedEvaluationPrompt({
     "For parallel and variation, return a value when printed card text, slab label, card code/checklist clue, or a high-confidence intentional card-design color/pattern is visible.",
     "When returning a visual card-design color/parallel, use concise marketplace-safe wording such as Gold Refractor, Purple, Blue Prizm, Green Wave, Silver Prizm, or Red Ice. Do not use background, sleeve, glare, lighting, or generic foil shine.",
     "If color or foil is only a weak visual impression, leave parallel/variation empty and add 'visual-only parallel requires operator review' to unresolved.",
+    "Set confidence HIGH when every returned focus field is clear and readable; set LOW only when all requested focus fields are empty or uncertain.",
     "In reason, cite the visible source for every returned focus field, for example front printed serial, back printed card code, slab label grade, or printed parallel.",
     `Action: ${action || "focused_reread"}.`,
     `Focus fields: ${focusFields.join(", ") || "unresolved critical fields"}.`,
     "Return only valid JSON in this exact shape:",
     JSON.stringify({
       title: "",
-      confidence: "LOW",
+      confidence: "HIGH",
       reason: "short visible printed evidence note",
       fields: {
         multi_card: false,
@@ -1016,6 +1017,13 @@ function isRateLimitProviderResult(result = {}) {
     );
 }
 
+function isTransientProviderResult(result = {}) {
+  if (isRateLimitProviderResult(result)) return true;
+  if (result?.status !== "provider_error") return false;
+  const text = `${result.error_code || ""} ${result.error || ""}`.toLowerCase();
+  return /\btimeout|timed out|network|econnreset|socket|5\d\d|temporarily unavailable|overloaded\b/.test(text);
+}
+
 async function evaluateOneFeedbackItemWithRateLimitRetry(item, {
   rateLimitRetries = 0,
   rateLimitPauseMs = 60000,
@@ -1025,7 +1033,7 @@ async function evaluateOneFeedbackItemWithRateLimitRetry(item, {
   let attempt = 0;
   let result = await evaluateOneFeedbackItem(item, options);
 
-  while (isRateLimitProviderResult(result) && attempt < rateLimitRetries) {
+  while (isTransientProviderResult(result) && attempt < rateLimitRetries) {
     attempt += 1;
     if (typeof onRateLimit === "function") {
       await onRateLimit({ item, attempt, result, pauseMs: rateLimitPauseMs });
@@ -1039,6 +1047,10 @@ async function evaluateOneFeedbackItemWithRateLimitRetry(item, {
       ...result,
       rate_limit_retry_attempts: attempt,
       rate_limit_retry_exhausted: isRateLimitProviderResult(result)
+        && attempt >= rateLimitRetries,
+      transient_provider_retry_attempts: attempt,
+      transient_provider_retry_exhausted: isTransientProviderResult(result)
+        && attempt >= rateLimitRetries
     };
   }
 
@@ -1371,7 +1383,8 @@ export async function main(argv = process.argv, env = process.env) {
       ...env,
       ...(proactiveFocusedRereads ? { ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1" } : {}),
       ...(proactiveFocusedRereads && proactiveSerialOnly ? { ENABLE_PROACTIVE_AGNES_SERIAL_ONLY: "1" } : {}),
-      AGNES_MAX_RETRIES: env.AGNES_MAX_RETRIES || "1"
+      AGNES_MAX_RETRIES: env.AGNES_MAX_RETRIES || "1",
+      AGNES_FOCUSED_VISION_RETRIES: env.AGNES_FOCUSED_VISION_RETRIES || String(rateLimitRetries)
     },
     previousResults,
     rateLimitRetries,

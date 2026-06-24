@@ -167,6 +167,50 @@ const insertCardType = renderResolvedTitle({
 });
 assert.equal(insertCardType.rendered_title, "2025 Topps Finest Shohei Ohtani Gusto 5/5");
 
+const tripleThreadsMultiPlayer = renderResolvedTitle({
+  year: "2020",
+  brand: "Topps",
+  product: "Triple Threads",
+  set: "Historic Ties",
+  players: ["Hank Aaron", "Ken Griffey Jr.", "Mike Trout"],
+  card_type: "Auto Relic",
+  serial_number: "6/9",
+  grade_company: "BGS",
+  card_grade: "9",
+  auto_grade: "10",
+  grade_type: "CARD_AND_AUTO",
+  auto: true,
+  relic: true
+}, {
+  maxLength: 80
+});
+assert.ok(tripleThreadsMultiPlayer.rendered_title.length <= 80);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /^2020\b/);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /Triple Threads/i);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /Aaron/i);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /Griffey/i);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /Trout/i);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /6\/9/);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /BGS 9\/10$/);
+
+const flangLongParallel = renderResolvedTitle({
+  year: "2025-26",
+  brand: "Topps",
+  product: "Topps Chrome",
+  players: ["Cooper Flagg"],
+  card_type: "auto",
+  insert: "Next Stop Signatures",
+  parallel: "Purple Refractor",
+  serial_number: "72/75",
+  rc: true,
+  auto: true
+}, {
+  maxLength: 80
+});
+assert.ok(flangLongParallel.rendered_title.length <= 80);
+assert.match(flangLongParallel.rendered_title, /Purple/i);
+assert.doesNotMatch(flangLongParallel.title_length_policy.removed_terms.join(" "), /Purple/i);
+
 const longTitle = renderResolvedTitle({
   year: "2015-16",
   brand: "Panini",
