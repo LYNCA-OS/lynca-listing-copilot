@@ -227,6 +227,8 @@ assert.equal(byId.agnes_live_smoke.status, "warning");
 assert.equal(byId.agnes_live_smoke.details.json_baseline_verified, true);
 assert.deepEqual(byId.agnes_live_smoke.details.optional_failures, ["tool_call"]);
 assert.equal(byId.provider_default_policy.status, "passed");
+assert.equal(byId.provider_default_policy.details.cascade_implicit_default, true);
+assert.equal(byId.provider_default_policy.details.agnes_conditional_verifier, true);
 assert.equal(byId.provider_default_policy.details.gpt_implicit_default, "blocked_by_policy");
 assert.equal(byId.provider_default_policy.details.gpt_visible_button, true);
 assert.equal(byId.publishing_approval_gate.status, "passed");

@@ -233,8 +233,12 @@ async function auditProviderPolicy() {
   if (/allowLegacyDefault/.test(registry.text)) {
     failures.push("provider registry still contains allowLegacyDefault");
   }
-  if (!/const defaultId = envDefault \|\| visionProviderIds\.AGNES/.test(registry.text)) {
-    failures.push("Agnes is not the implicit default provider in selectVisionProvider");
+  if (!/const defaultId = envDefault \|\| visionProviderIds\.CASCADE_FAST/.test(registry.text)) {
+    failures.push("Fast Cascade is not the implicit default provider in selectVisionProvider");
+  }
+  if (!/primary_provider_id:\s*visionProviderIds\.OPENAI_LEGACY/.test(registry.text)
+    || !/secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text)) {
+    failures.push("Fast Cascade does not declare GPT-4.1 mini primary plus Agnes secondary verifier");
   }
   if (!/GPT-4\.1 legacy may only be used through an explicit emergency retry/.test(registry.text)) {
     failures.push("GPT-4.1 explicit emergency guard is missing");
@@ -242,8 +246,8 @@ async function auditProviderPolicy() {
   if (!/provider\.id === visionProviderIds\.OPENAI_LEGACY/.test(registry.text)) {
     failures.push("OpenAI legacy provider branch is missing from explicit retry guard");
   }
-  if (!/agnes\?\.selectable/.test(statusApi.text)) {
-    failures.push("provider status API does not default to selectable Agnes");
+  if (!/cascade\?\.selectable/.test(statusApi.text)) {
+    failures.push("provider status API does not default to selectable Fast Cascade");
   }
   if (!/state\.selectedProvider = payload\.default_provider \|\| ""/.test(appJs.text)) {
     failures.push("frontend does not use the server default provider");
@@ -256,7 +260,8 @@ async function auditProviderPolicy() {
   }
 
   const details = {
-    agnes_implicit_default: failures.length === 0,
+    cascade_implicit_default: failures.length === 0,
+    agnes_conditional_verifier: /secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text),
     gpt_implicit_default: failures.length === 0 ? "blocked_by_policy" : "unknown",
     gpt_visible_button: /provider === "openai_legacy"/.test(appJs.text),
     gpt_emergency_retry_action: /data-emergency-retry/.test(appJs.text),
@@ -266,7 +271,7 @@ async function auditProviderPolicy() {
 
   return failures.length
     ? blocked("provider_default_policy", "Provider default policy is not safe enough for commercial readiness.", details)
-    : passed("provider_default_policy", "Agnes is the implicit default; GPT-4.1 is visible only as explicit emergency retry.", details);
+    : passed("provider_default_policy", "Fast Cascade is the implicit default; GPT-4.1 single-provider mode is explicit only; Agnes is the conditional verifier.", details);
 }
 
 function destinationIdsFromPublisherContract(source) {

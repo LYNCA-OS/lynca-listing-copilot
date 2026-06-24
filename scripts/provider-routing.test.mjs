@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
+import {
+  clearProviderConcurrencyForTests,
+  providerServerConcurrencyLimit,
+  runWithProviderConcurrency
+} from "../lib/listing/providers/provider-concurrency.mjs";
 import { parseProviderMessagePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 
@@ -17,7 +22,7 @@ const dataUrlImages = [{ dataUrl: "data:image/jpeg;base64,AAAA" }];
 const storedImages = [{ objectPath: "listing-assets/2026-06-22/asset/front_original-image.jpg" }];
 
 const env = {
-  DEFAULT_VISION_PROVIDER: "agnes",
+  DEFAULT_VISION_PROVIDER: "",
   EMERGENCY_VISION_PROVIDER: "openai_legacy",
   ENABLE_AGNES_PROVIDER: "true",
   ENABLE_GPT41_EMERGENCY_PROVIDER: "true",
@@ -30,11 +35,18 @@ const env = {
 };
 
 const defaultSelection = selectVisionProvider({ images: remoteImages, env });
-assert.equal(defaultSelection.provider_id, "agnes");
-assert.equal(defaultSelection.model_id, "agnes-2.0-flash");
+assert.equal(defaultSelection.provider_id, "cascade_fast");
+assert.equal(defaultSelection.model_id, "gpt-4.1-mini + agnes-2.0-flash");
 
 const storedSelection = selectVisionProvider({ images: storedImages, env });
-assert.equal(storedSelection.provider_id, "agnes");
+assert.equal(storedSelection.provider_id, "cascade_fast");
+
+const agnesSelection = selectVisionProvider({
+  requestedProvider: "agnes",
+  images: storedImages,
+  env
+});
+assert.equal(agnesSelection.provider_id, "agnes");
 
 assert.throws(
   () => selectVisionProvider({
@@ -57,9 +69,9 @@ assert.equal(emergencySelection.provider_id, "openai_legacy");
 assert.equal(emergencySelection.model_id, "gpt-4.1-mini");
 
 assert.throws(
-  () => selectVisionProvider({ images: dataUrlImages, env }),
+  () => selectVisionProvider({ requestedProvider: "agnes", images: dataUrlImages, env }),
   /Base64 data URLs are not used for Agnes/i,
-  "Agnes should not silently accept data URLs or fall back to GPT"
+  "Explicit Agnes should not silently accept data URLs or fall back to GPT"
 );
 
 assert.throws(
@@ -72,8 +84,8 @@ assert.throws(
       OPENAI_API_KEY: "test-openai-key"
     }
   }),
-  (error) => error.provider === "agnes" && error.code === "provider_unavailable",
-  "OpenAI legacy must not become the implicit default when Agnes is unavailable"
+  (error) => error.provider === "cascade_fast" && error.code === "provider_unavailable",
+  "OpenAI legacy must not become the implicit default when the cascade verifier is unavailable"
 );
 
 assert.throws(
@@ -124,13 +136,13 @@ const disabledProviders = listAvailableVisionProviders({
   ...env,
   ENABLE_GPT41_EMERGENCY_PROVIDER: "false"
 });
-assert.deepEqual(disabledProviders.map((provider) => provider.id), ["agnes"]);
+assert.deepEqual(disabledProviders.map((provider) => provider.id), ["cascade_fast", "agnes"]);
 
 const retryDisabledProviders = listAvailableVisionProviders({
   ...env,
   ALLOW_EXPLICIT_GPT41_RETRY: "false"
 });
-assert.deepEqual(retryDisabledProviders.map((provider) => provider.id), ["agnes"]);
+assert.deepEqual(retryDisabledProviders.map((provider) => provider.id), ["cascade_fast", "agnes"]);
 
 assert.throws(
   () => selectVisionProvider({
@@ -394,5 +406,26 @@ await assert.rejects(
   (error) => error.provider === "openai_legacy" && error.code === "provider_unavailable"
 );
 assert.equal(invalidOpenAiModelFetchCalled, false, "invalid OpenAI emergency model env should fail before fetch");
+
+assert.equal(providerServerConcurrencyLimit("agnes", {}), 2);
+assert.equal(providerServerConcurrencyLimit("openai_legacy", {}), 6);
+assert.equal(providerServerConcurrencyLimit("agnes", { AGNES_PROVIDER_SERVER_CONCURRENCY: "4" }), 4);
+
+clearProviderConcurrencyForTests();
+let activeProviderWork = 0;
+let maxActiveProviderWork = 0;
+await Promise.all(Array.from({ length: 4 }, (_, index) => runWithProviderConcurrency({
+  providerId: "agnes",
+  env: { AGNES_PROVIDER_SERVER_CONCURRENCY: "2" },
+  work: async () => {
+    activeProviderWork += 1;
+    maxActiveProviderWork = Math.max(maxActiveProviderWork, activeProviderWork);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    activeProviderWork -= 1;
+    return index;
+  }
+})));
+assert.equal(maxActiveProviderWork, 2);
+clearProviderConcurrencyForTests();
 
 console.log("provider routing tests passed");

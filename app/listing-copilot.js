@@ -8,6 +8,7 @@ import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
 const MAX_CONCURRENT_WORKERS = 6;
+const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const IMAGE_MAX_EDGE = 1400;
 const IMAGE_MIN_EDGE = 900;
 const IMAGE_INITIAL_QUALITY = 0.82;
@@ -70,6 +71,24 @@ function readFileAsDataUrl(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const source = Array.from(items || []);
+  const results = new Array(source.length);
+  const workerCount = Math.max(1, Math.min(Number(limit) || 1, source.length || 1));
+  let cursor = 0;
+
+  async function runWorker() {
+    while (cursor < source.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(source[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
+  return results;
 }
 
 function fileExtension(name) {
@@ -292,7 +311,12 @@ async function recompressAssetImage(image, maxEdge, quality) {
   };
 }
 
+function imageHasVerifiedStorageReference(image = {}) {
+  return Boolean(image.objectPath && image.storageVerified);
+}
+
 function serializableAssetImage(image) {
+  const useStorageReference = imageHasVerifiedStorageReference(image);
   return {
     id: image.id,
     name: image.name,
@@ -304,7 +328,7 @@ function serializableAssetImage(image) {
     originalHeight: image.originalHeight,
     width: image.width,
     height: image.height,
-    dataUrl: image.dataUrl,
+    dataUrl: useStorageReference ? "" : image.dataUrl,
     captureProfileId: image.captureProfileId || defaultCaptureProfileId,
     imageQuality: image.imageQuality || null,
     sourceImageId: image.sourceImageId || "",
@@ -354,7 +378,8 @@ function buildAssetRequestBody(asset, options = {}) {
     images: (asset.providerImages || asset.images).map(serializableAssetImage),
     captureProfileId: defaultCaptureProfileId,
     captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
-    resolutionMap: state.resolutionMap
+    resolutionMap: state.resolutionMap,
+    clientTiming: asset.clientTiming || {}
   };
 
   if (provider) {
@@ -380,15 +405,17 @@ async function ensureSafeAssetPayload(asset, options = {}) {
   ];
 
   for (const step of compressionSteps) {
-    asset.images = await Promise.all(asset.images.map(async (image) => {
+    asset.images = await mapWithConcurrency(asset.images, IMAGE_PREPROCESS_CONCURRENCY, async (image) => {
       const recompressed = await recompressAssetImage(image, step.maxEdge, step.quality);
       if (Array.isArray(recompressed.targetedCrops)) {
-        recompressed.targetedCrops = await Promise.all(
-          recompressed.targetedCrops.map((crop) => recompressAssetImage(crop, step.maxEdge, step.quality))
+        recompressed.targetedCrops = await mapWithConcurrency(
+          recompressed.targetedCrops,
+          IMAGE_PREPROCESS_CONCURRENCY,
+          (crop) => recompressAssetImage(crop, step.maxEdge, step.quality)
         );
       }
       return recompressed;
-    }));
+    });
     asset.providerImages = imagesForProvider(asset.images);
     requestBody = buildAssetRequestBody(asset, options);
     requestBytes = stringByteLength(requestBody);
@@ -649,6 +676,18 @@ function selectProvider(providerId) {
 
 function canGenerateTitles() {
   return Boolean(state.assets.length && (state.selectedProvider || state.providerStatus?.fallback_available));
+}
+
+function selectedProviderConfig() {
+  return (state.providerStatus?.providers || []).find((provider) => provider.id === state.selectedProvider) || null;
+}
+
+function processingConcurrencyLimit() {
+  const configured = Number(selectedProviderConfig()?.recommended_concurrency);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(1, Math.min(configured, MAX_CONCURRENT_WORKERS));
+  }
+  return Math.min(3, MAX_CONCURRENT_WORKERS);
 }
 
 function confidenceClass(confidence) {
@@ -1021,16 +1060,21 @@ async function handleFiles(fileList) {
 
   setStatus("正在优化图片…");
   closeImageModal();
-  const settledImages = [];
   const failures = [];
-
-  for (const file of imageFiles) {
+  const prepareStartedAt = performance.now();
+  const prepared = await mapWithConcurrency(imageFiles, IMAGE_PREPROCESS_CONCURRENCY, async (file) => {
     try {
-      settledImages.push(await fileToAssetImage(file));
+      return { image: await fileToAssetImage(file) };
     } catch (error) {
-      failures.push(`${file.name}: ${error.message}`);
+      return { failure: `${file.name}: ${error.message}` };
     }
-  }
+  });
+  const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
+  const settledImages = [];
+  prepared.forEach((item) => {
+    if (item.image) settledImages.push(item.image);
+    if (item.failure) failures.push(item.failure);
+  });
 
   const ignoredFiles = candidates
     .filter((file) => !isSupportedImageFile(file))
@@ -1038,6 +1082,7 @@ async function handleFiles(fileList) {
   const images = settledImages;
   state.files = images;
   state.results = [];
+  state.clientImagePrepareMs = prepareElapsedMs;
 
   if (failures.length || ignoredFiles.length) {
     setStatus(`${images.length} 张图片已优化，${failures.length + ignoredFiles.length} 张未读取：${[...failures, ...ignoredFiles].join("；")}`);
@@ -1051,12 +1096,23 @@ async function handleFiles(fileList) {
 }
 
 async function processAsset(asset, options = {}) {
+  const processStartedAt = performance.now();
+  const uploadStartedAt = performance.now();
   const uploaded = await ensureAssetImagesUploaded(asset);
+  const uploadMs = Math.round(performance.now() - uploadStartedAt);
   if (uploaded) setStatus("原图已上传到对象存储，正在生成短期读取 URL。");
 
+  asset.clientTiming = {
+    client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
+    client_upload_ms: uploadMs
+  };
+  const requestPrepareStartedAt = performance.now();
   const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, options);
+  const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
+  asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
   if (compressedAgain) setStatus("图片过大，已自动压缩用于识别。");
 
+  const apiStartedAt = performance.now();
   const response = await fetch("/api/listing-copilot-title", {
     method: "POST",
     headers: {
@@ -1065,6 +1121,7 @@ async function processAsset(asset, options = {}) {
     credentials: "same-origin",
     body: requestBody
   });
+  const apiRoundtripMs = Math.round(performance.now() - apiStartedAt);
 
   if (!response.ok) {
     if (response.status === 413) {
@@ -1076,6 +1133,15 @@ async function processAsset(asset, options = {}) {
 
   const payload = await response.json();
   const finalTitle = payload.final_title || payload.title || "";
+  const clientTotalMs = Math.round(performance.now() - processStartedAt);
+  const timing = {
+    ...(payload.timing || {}),
+    client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
+    client_upload_ms: uploadMs,
+    client_request_prepare_ms: requestPrepareMs,
+    client_api_roundtrip_ms: apiRoundtripMs,
+    client_total_ms: clientTotalMs
+  };
 
   return {
     index: asset.index,
@@ -1088,7 +1154,8 @@ async function processAsset(asset, options = {}) {
     reviewStartedAt: Date.now(),
     feedbackStatus: "",
     feedbackMessage: "",
-    ...payload
+    ...payload,
+    timing
   };
 }
 
@@ -1114,7 +1181,7 @@ async function processTitles() {
   setStatus("图片已优化，开始识别…");
 
   const queue = [...state.assets];
-  const workerCount = Math.min(MAX_CONCURRENT_WORKERS, queue.length);
+  const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
   let startedCount = 0;
 
   async function worker() {

@@ -11,6 +11,7 @@ import {
 } from "../lib/listing-knowledge-registry.mjs";
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
+import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import { defaultProviderModels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
@@ -66,6 +67,7 @@ import {
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
 const maxPayloadImages = 10;
+const signedUrlConcurrency = 4;
 const promptRoot = join(process.cwd(), "prompts");
 const promptFiles = [
   "listing-intelligence-v1.md",
@@ -76,6 +78,135 @@ const promptFiles = [
   "examples/redemption.md"
 ];
 let promptCache;
+
+function envFlag(env, key, fallback = true) {
+  const raw = env[key];
+  if (raw === undefined || raw === null || raw === "") return fallback;
+  return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
+}
+
+function nowMs() {
+  return Date.now();
+}
+
+function emptyTiming() {
+  return {
+    client_image_prepare_ms: null,
+    client_upload_ms: null,
+    client_request_prepare_ms: null,
+    client_api_roundtrip_ms: null,
+    server_queue_ms: 0,
+    provider_connect_ms: null,
+    provider_first_token_ms: null,
+    provider_total_ms: 0,
+    approved_memory_lookup_ms: 0,
+    identity_cache_lookup_ms: 0,
+    memory_lookup_ms: 0,
+    signed_url_ms: 0,
+    image_quality_check_ms: 0,
+    recognition_preflight_ms: 0,
+    evidence_completion_ms: 0,
+    retrieval_ms: 0,
+    focused_reread_ms: 0,
+    resolver_ms: 0,
+    renderer_ms: 0,
+    identity_cache_write_ms: 0,
+    total_ms: 0
+  };
+}
+
+function createTimingContext(payload = {}) {
+  const timing = emptyTiming();
+  const clientTiming = payload.clientTiming || payload.client_timing || {};
+  [
+    "client_image_prepare_ms",
+    "client_upload_ms",
+    "client_request_prepare_ms",
+    "client_api_roundtrip_ms"
+  ].forEach((key) => {
+    const value = Number(clientTiming[key]);
+    timing[key] = Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+  });
+  return {
+    started_at_ms: nowMs(),
+    timing
+  };
+}
+
+function addTiming(timingContext, key, elapsedMs) {
+  if (!timingContext?.timing || !key) return;
+  const value = Number(elapsedMs);
+  if (!Number.isFinite(value) || value < 0) return;
+  timingContext.timing[key] = Math.round(Number(timingContext.timing[key] || 0) + value);
+  if (key === "approved_memory_lookup_ms" || key === "identity_cache_lookup_ms") {
+    timingContext.timing.memory_lookup_ms = Math.round(
+      Number(timingContext.timing.approved_memory_lookup_ms || 0)
+      + Number(timingContext.timing.identity_cache_lookup_ms || 0)
+    );
+  }
+}
+
+async function timeAsync(timingContext, key, work) {
+  const startedAt = nowMs();
+  try {
+    return await work();
+  } finally {
+    addTiming(timingContext, key, nowMs() - startedAt);
+  }
+}
+
+function timeSync(timingContext, key, work) {
+  const startedAt = nowMs();
+  try {
+    return work();
+  } finally {
+    addTiming(timingContext, key, nowMs() - startedAt);
+  }
+}
+
+function finalizeTiming(timingContext, result = {}) {
+  const timing = {
+    ...emptyTiming(),
+    ...(timingContext?.timing || {})
+  };
+  timing.total_ms = Math.max(0, Math.round(nowMs() - Number(timingContext?.started_at_ms || nowMs())));
+  timing.server_queue_ms = Math.max(0, Math.round(
+    Number(timing.server_queue_ms || 0)
+    + Number(result.identity_inflight?.coalesced ? result.identity_inflight.wait_ms : 0)
+  ));
+
+  const usageLatency = Number(result.usage?.latency_ms);
+  if (!timing.provider_total_ms && Number.isFinite(usageLatency) && usageLatency > 0) {
+    timing.provider_total_ms = Math.round(usageLatency);
+  }
+
+  return timing;
+}
+
+function withTiming(result = {}, timingContext) {
+  return {
+    ...result,
+    timing: finalizeTiming(timingContext, result)
+  };
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const source = Array.from(items || []);
+  const results = new Array(source.length);
+  const workerCount = Math.max(1, Math.min(Number(limit) || 1, source.length || 1));
+  let cursor = 0;
+
+  async function runWorker() {
+    while (cursor < source.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(source[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
+  return results;
+}
 
 const defaultFields = {
   year: null,
@@ -926,8 +1057,18 @@ function hasStrongEvidence(reasonText) {
   ]);
 }
 
+function auditParallelText(fields = {}) {
+  return searchable([
+    fields.parallel_exact,
+    fields.parallel,
+    fields.variation,
+    fields.surface_color,
+    fields.parallel_family
+  ].filter(Boolean).join(" "));
+}
+
 function hasVisuallyGuessedParallel(fields, reasonText, unresolved) {
-  const parallelText = searchable(fields.parallel);
+  const parallelText = auditParallelText(fields);
   if (!parallelText) return false;
 
   const combined = `${parallelText} ${reasonText} ${searchable(unresolved.join(" "))}`;
@@ -975,7 +1116,7 @@ function hasUncertainty(reasonText, unresolved) {
 }
 
 function hasVisualOnlyParallelRisk(fields, reasonText, unresolved) {
-  const parallelText = searchable(fields.parallel);
+  const parallelText = auditParallelText(fields);
   const combined = `${parallelText} ${reasonText} ${searchable(unresolved.join(" "))}`;
   const patternTerms = [
     "wave",
@@ -995,6 +1136,73 @@ function hasVisualOnlyParallelRisk(fields, reasonText, unresolved) {
   }
   return textMentionsAny(combined, ["visual", "visible", "looks", "appears", "inferred", "likely", "guess"])
     && !hasStrongEvidence(reasonText);
+}
+
+function hasParallelReviewRequest(fields, reasonText, unresolved) {
+  const parallelText = auditParallelText(fields);
+  if (!parallelText) return false;
+
+  const reviewText = searchable(unresolved.join(" "));
+  const combined = `${parallelText} ${reasonText} ${reviewText}`;
+  if (textMentionsAny(combined, [
+    "exact parallel requires operator review",
+    "exact parallel requires review",
+    "visual-only parallel requires operator review",
+    "visual only parallel requires operator review",
+    "parallel requires operator review",
+    "parallel requires review",
+    "parallel require review",
+    "parallel uncertain",
+    "uncertain parallel",
+    "exact geometric parallel requires review"
+  ])) {
+    return true;
+  }
+
+  const isParallelLike = textMentionsAny(combined, [
+    "parallel",
+    "variation",
+    "color",
+    "foil",
+    "pattern",
+    "geometric",
+    "wave",
+    "shimmer",
+    "refractor",
+    "prizm"
+  ]);
+  const asksReview = textMentionsAny(combined, [
+    "operator review",
+    "requires review",
+    "manual review",
+    "needs review",
+    "unconfirmed",
+    "not confirmed",
+    "uncertain"
+  ]);
+
+  return isParallelLike && asksReview;
+}
+
+function suppressReviewOnlyParallelFields(fields, reason, unresolved = []) {
+  const reasonText = searchable(reason);
+  if (!hasParallelReviewRequest(fields, reasonText, unresolved)
+    && !hasVisualOnlyParallelRisk(fields, reasonText, unresolved)
+    && !hasVisuallyGuessedParallel(fields, reasonText, unresolved)) {
+    return fields;
+  }
+
+  const suppressed = { ...fields };
+  [
+    "surface_color",
+    "parallel_family",
+    "parallel_exact",
+    "parallel",
+    "variation"
+  ].forEach((field) => {
+    if (suppressed[field] !== undefined) suppressed[field] = null;
+  });
+  return suppressed;
 }
 
 function auditMissingHighValueFields(title, fields) {
@@ -1736,6 +1944,61 @@ function focusedRereadPrompt({
   ].join("\n");
 }
 
+function fastInitialRecognitionPrompt(payload, maxTitleLength) {
+  return [
+    "You are the first-pass card evidence reader for LYNCA Listing Copilot.",
+    "Use only the supplied card/slab images. Do not use marketplace wording, memory, or outside knowledge.",
+    "Return compact valid JSON only. Do not write Markdown.",
+    "Goal: extract grounded identity evidence; deterministic code will render the English title.",
+    "Leave any unreadable or uncertain high-risk field empty.",
+    "Serial rule: every digit must be readable; otherwise serial_number must be empty.",
+    "Parallel/color rule: use printed/slab/checklist evidence or unmistakable intentional card-design color only; weak visual color stays empty.",
+    "Multi-card rule: if more than one card or a lot is visible, set multi_card true and do not merge identities.",
+    `Runtime title limit downstream: ${maxTitleLength} characters.`,
+    "Return this shape:",
+    JSON.stringify({
+      title: "",
+      confidence: "HIGH | MEDIUM | LOW | FAILED",
+      route: "FAST_PATH_CANDIDATE | NEEDS_REVIEW | MULTI_CARD",
+      fields: {
+        multi_card: false,
+        card_count: null,
+        lot_type: null,
+        year: "",
+        manufacturer: "",
+        product: "",
+        set: "",
+        players: [],
+        card_type: "",
+        insert: "",
+        parallel: "",
+        serial_number: "",
+        collector_number: "",
+        checklist_code: "",
+        grade_company: "",
+        card_grade: "",
+        auto_grade: "",
+        grade_type: "",
+        rc: false,
+        first_bowman: false,
+        ssp: false,
+        case_hit: false,
+        auto: false,
+        patch: false,
+        relic: false
+      },
+      unresolved: []
+    }),
+    "Asset context:",
+    JSON.stringify({
+      assetId: payload.assetId || null,
+      mode: payload.mode || null,
+      imageCount: payload.images.length,
+      fileNames: payload.images.map((image) => image.name).filter(Boolean).slice(0, 2)
+    })
+  ].join("\n");
+}
+
 async function buildListingPrompt(payload, maxTitleLength) {
   const intelligencePrompt = await loadPrompt();
 
@@ -1768,6 +2031,14 @@ async function buildListingPrompt(payload, maxTitleLength) {
   ].join("\n");
 }
 
+async function buildInitialProviderPrompt(payload, maxTitleLength) {
+  if (envFlag(process.env, "ENABLE_FAST_INITIAL_PROVIDER_PROMPT", true)) {
+    return fastInitialRecognitionPrompt(payload, maxTitleLength);
+  }
+
+  return buildListingPrompt(payload, maxTitleLength);
+}
+
 function normalizeAiResult(result, maxTitleLength, source = "openai") {
   const confidenceMap = {
     HIGH: "HIGH",
@@ -1795,13 +2066,14 @@ function normalizeAiResult(result, maxTitleLength, source = "openai") {
     fields,
     unresolved: preTitleAudit.unresolved
   });
+  const presentationFields = suppressReviewOnlyParallelFields(fields, calibrated.reason, calibrated.unresolved);
 
   return {
     title,
     model_title_suggestion: title,
     confidence: calibrated.confidence,
     reason: calibrated.reason,
-    fields,
+    fields: presentationFields,
     unresolved: calibrated.unresolved,
     source,
     _pre_title_audit: preTitleAudit
@@ -2063,6 +2335,15 @@ function mergeUsage(providerUsage, completionUsage, {
   };
 }
 
+async function runTimedProviderCall(providerId, timingContext, work) {
+  const queued = await runWithProviderConcurrency({
+    providerId,
+    work: () => timeAsync(timingContext, "provider_total_ms", work)
+  });
+  addTiming(timingContext, "server_queue_ms", queued.queue_ms);
+  return queued.result;
+}
+
 function withCompletedEvidencePresentation(result, completion, payload) {
   const resolved = completion.resolved || result.resolved;
   const evidence = completion.evidence || result.evidence;
@@ -2103,9 +2384,80 @@ function retrievalCandidatesForIdentity(completion = {}) {
   return retrieval.selected_candidate ? [retrieval.selected_candidate] : [];
 }
 
+function conflictSeverity(conflict = {}) {
+  return String(conflict.severity || "").trim().toUpperCase();
+}
+
+function hasBlockingIdentityConflict(result = {}) {
+  const conflicts = [
+    ...(Array.isArray(result.conflict_map) ? result.conflict_map : []),
+    ...(Array.isArray(result.identity_resolution?.conflict_map) ? result.identity_resolution.conflict_map : [])
+  ];
+  return conflicts.some((conflict) => {
+    if (conflict.resolved === true) return false;
+    return ["MEDIUM", "HIGH", "CRITICAL"].includes(conflictSeverity(conflict));
+  });
+}
+
+function fastPathEligible(result = {}) {
+  const fastVisionResolved = result.fast_vision_policy?.role === "PRIMARY_FAST_VISION"
+    && result.fast_vision_policy?.allow_single_source_publish === true
+    && result.identity_resolution_status === identityStatuses.RESOLVED;
+  return (result.identity_resolution_status === identityStatuses.CONFIRMED || fastVisionResolved)
+    && Boolean(result.final_title || result.title)
+    && !hasBlockingIdentityConflict(result);
+}
+
+function providerSignalFastPathEligible(result = {}) {
+  const confidence = String(result.confidence || "").trim().toUpperCase();
+  const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
+  const reasonText = searchable(result.reason || result.route_reason || "");
+  if (confidence !== "HIGH") return false;
+  if (hasUncertainty(reasonText, unresolved)) return false;
+  return true;
+}
+
+function tryProviderFastPath(result, payload, providerId) {
+  if (!envFlag(process.env, "ENABLE_LISTING_FAST_PATH", true)) return null;
+  if (!providerSignalFastPathEligible(result)) return null;
+
+  const gated = applyIdentityResolutionGate(result, {
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    providerId
+  });
+  if (!fastPathEligible(gated)) return null;
+
+  return {
+    ...gated,
+    route: "FAST_PATH_PROVIDER_CONFIRMED",
+    route_reason: "Initial provider evidence resolved the required card identity fields without blocking conflicts.",
+    retrieval: result.retrieval || {
+      skipped: true,
+      reason: "fast_path_provider_confirmed"
+    },
+    completion_trace: Array.isArray(result.completion_trace)
+      ? result.completion_trace
+      : Array.isArray(result.resolution_trace)
+        ? result.resolution_trace
+        : [],
+    fast_path: {
+      enabled: true,
+      used: true,
+      skipped_evidence_completion: true,
+      skipped_focused_reread: true,
+      skipped_retrieval: true
+    },
+    usage: mergeUsage(result.usage, null, {
+      providerCalls: result.provider ? 1 : 0
+    })
+  };
+}
+
 function createAgnesFocusedRereadRunner({
   images = [],
-  maxTitleLength = maxFallbackTitleLength
+  maxTitleLength = maxFallbackTitleLength,
+  env = process.env,
+  timingContext = null
 } = {}) {
   return async ({ action, focusFields = [], resolved = {} } = {}) => {
     const rereadImages = focusedImagesForAction(images, action, focusFields);
@@ -2119,10 +2471,15 @@ function createAgnesFocusedRereadRunner({
       };
     }
 
-    const providerResult = await analyzeCardEvidenceWithAgnes({
-      images: rereadImages,
-      prompt: focusedRereadPrompt({ action, focusFields, resolved })
-    });
+    const providerResult = await timeAsync(timingContext, "focused_reread_ms", () => runTimedProviderCall(
+      visionProviderIds.AGNES,
+      timingContext,
+      () => analyzeCardEvidenceWithAgnes({
+        images: rereadImages,
+        prompt: focusedRereadPrompt({ action, focusFields, resolved }),
+        env
+      })
+    ));
     const normalized = normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.AGNES);
     const evidenceDocument = providerPayloadToEvidenceDocument({
       ...providerResult.parsed,
@@ -2151,18 +2508,128 @@ function createAgnesFocusedRereadRunner({
   };
 }
 
+function textIncludesAny(value, terms = []) {
+  const text = searchable(value);
+  return terms.some((term) => text.includes(searchable(term)));
+}
+
+function uniqueValues(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function cascadeSecondaryVerifierEnv(env = process.env, verificationFields = []) {
+  return {
+    ...env,
+    AGNES_TIMEOUT_MS: env.AGNES_SECONDARY_TIMEOUT_MS || env.AGNES_FOCUSED_TIMEOUT_MS || "12000",
+    AGNES_MAX_RETRIES: env.AGNES_SECONDARY_MAX_RETRIES || "0",
+    ENABLE_PARALLEL_FOCUSED_REREADS: "1",
+    ENABLE_PARALLEL_AGNES_FOCUSED_REREADS: "1",
+    CASCADE_SECONDARY_VERIFICATION_FIELDS: verificationFields.join(","),
+    MAX_PARALLEL_FOCUSED_REREADS: env.CASCADE_MAX_PARALLEL_FOCUSED_REREADS || "2",
+    MAX_AGNES_CALLS_PER_ASSET: env.CASCADE_MAX_AGNES_CALLS_PER_ASSET || "2",
+    MAX_RESOLUTION_TIME_MS: env.CASCADE_MAX_RESOLUTION_TIME_MS || "16000"
+  };
+}
+
+function cascadeSecondaryVerificationFields(result = {}) {
+  const resolved = result.resolved || {};
+  const unresolvedText = [
+    result.reason,
+    result.route_reason,
+    ...(Array.isArray(result.unresolved) ? result.unresolved : [])
+  ].filter(Boolean).join(" ");
+  const fields = new Set();
+
+  if (resolved.multi_card || Number(resolved.card_count || 0) > 1) return [];
+
+  if (hasEvidenceValue(resolved.serial_number)
+    || textIncludesAny(unresolvedText, ["serial", "serial number", "numbered", "denominator"])) {
+    fields.add("serial_number");
+  }
+
+  if (hasEvidenceValue(resolved.parallel)
+    || hasEvidenceValue(resolved.parallel_exact)
+    || hasEvidenceValue(resolved.parallel_family)
+    || hasEvidenceValue(resolved.surface_color)
+    || hasEvidenceValue(resolved.variation)
+    || textIncludesAny(unresolvedText, ["parallel", "color", "wave", "shimmer", "mojo", "sapphire", "geometric", "refractor"])) {
+    fields.add("parallel");
+  }
+
+  if (!hasEvidenceValue(resolved.year)
+    || !hasEvidenceValue(resolved.product)
+    || textIncludesAny(unresolvedText, ["year", "season", "copyright", "product"])) {
+    fields.add("year_product");
+  }
+
+  if (textIncludesAny(unresolvedText, ["grade", "slab", "label"])) {
+    fields.add("grade_label");
+  }
+
+  if (textIncludesAny(unresolvedText, ["collector number", "checklist", "card number", "code"])) {
+    fields.add("card_code");
+  }
+
+  return [...fields];
+}
+
+function cascadeVerificationUnresolvedNotes(fields = []) {
+  const notesByField = {
+    serial_number: "serial number requires secondary verifier focused reread",
+    parallel: "parallel color requires secondary verifier focused reread",
+    year_product: "year product requires secondary verifier focused reread",
+    grade_label: "grade label requires secondary verifier focused reread",
+    card_code: "card number checklist code requires secondary verifier focused reread"
+  };
+
+  return fields.map((field) => notesByField[field]).filter(Boolean);
+}
+
+function withCascadePolicy(result = {}, verificationFields = []) {
+  return {
+    ...result,
+    provider: visionProviderIds.CASCADE_FAST,
+    source: visionProviderIds.OPENAI_LEGACY,
+    identity_provider_id: "primary_fast_vision",
+    provider_label: "Fast Cascade · 默认",
+    model_id: `${result.model_id || defaultProviderModels[visionProviderIds.OPENAI_LEGACY]} + ${defaultProviderModels[visionProviderIds.AGNES]}`,
+    cascade: {
+      enabled: true,
+      role: "PRIMARY_FAST_VISION",
+      primary_provider_id: visionProviderIds.OPENAI_LEGACY,
+      secondary_provider_id: visionProviderIds.AGNES,
+      secondary_verification_required_fields: verificationFields,
+      secondary_verification_required: verificationFields.length > 0
+    },
+    fast_vision_policy: {
+      role: "PRIMARY_FAST_VISION",
+      allow_single_source_publish: true,
+      secondary_verification_required_fields: verificationFields
+    },
+    unresolved: uniqueValues([
+      ...(Array.isArray(result.unresolved) ? result.unresolved : []),
+      ...cascadeVerificationUnresolvedNotes(verificationFields)
+    ])
+  };
+}
+
 async function withEvidenceCompletion(result, payload, {
-  runFocusedVisionImpl = null
+  runFocusedVisionImpl = null,
+  env = process.env,
+  timingContext = null
 } = {}) {
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
-  const completion = await completeEvidence({
+  const completion = await timeAsync(timingContext, "evidence_completion_ms", () => completeEvidence({
     resolved: result.resolved,
     evidence: result.evidence,
     captureQuality: result.capture_quality || captureQualityForPayload(payload),
     unresolved: result.unresolved,
     retrievalMode,
+    env,
     runFocusedVisionImpl
-  });
+  }));
+  addTiming(timingContext, "retrieval_ms", Number(completion.retrieval?.latency_ms || completion.retrieval?.retrieval_time_ms || 0));
+  addTiming(timingContext, "focused_reread_ms", Number(completion.usage?.provider_calls || 0) > 0 ? Number(completion.usage?.latency_ms || 0) : 0);
   const resolutionTrace = [
     ...(Array.isArray(result.resolution_trace) ? result.resolution_trace : []),
     ...completion.resolution_trace
@@ -2182,9 +2649,9 @@ async function withEvidenceCompletion(result, payload, {
     })
   };
 
-  return applyIdentityResolutionGateWithConvergence(output, {
+  return timeAsync(timingContext, "resolver_ms", () => applyIdentityResolutionGateWithConvergence(output, {
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
-    providerId: output.provider || output.source,
+    providerId: output.identity_provider_id || output.provider || output.source,
     retrievalCandidates: retrievalCandidatesForIdentity(completion),
     retrieveEvidence: createIdentityConvergenceRetriever({
       retrievalMode
@@ -2192,11 +2659,11 @@ async function withEvidenceCompletion(result, payload, {
     convergenceOptions: {
       maxIterations: 1
     }
-  });
+  }));
 }
 
-async function imagesWithSignedReadUrls(images = []) {
-  return Promise.all(images.map(async (image) => {
+async function imagesWithSignedReadUrls(images = [], timingContext = null) {
+  return timeAsync(timingContext, "signed_url_ms", () => mapWithConcurrency(images, signedUrlConcurrency, async (image) => {
     const objectPath = await assertVerifiedStorageImage(image);
     if (!objectPath) return image;
 
@@ -2208,7 +2675,9 @@ async function imagesWithSignedReadUrls(images = []) {
   }));
 }
 
-async function createRecognitionIdentityPreflight(payload) {
+async function createRecognitionIdentityPreflight(payload, {
+  timingContext = null
+} = {}) {
   const config = recognitionWorkerConfig();
   if (!config.enabled || !config.configured) {
     return {
@@ -2236,9 +2705,9 @@ async function createRecognitionIdentityPreflight(payload) {
   }
 
   try {
-    const signedImages = await imagesWithSignedReadUrls(payload.images || []);
+    const signedImages = await imagesWithSignedReadUrls(payload.images || [], timingContext);
     const signedPrimaryImages = primaryImagesFromImages(signedImages);
-    const response = await analyzeCardImagesWithRecognitionWorker({
+    const response = await timeAsync(timingContext, "recognition_preflight_ms", () => analyzeCardImagesWithRecognitionWorker({
       assetId: payload.assetId || payload.asset_id || `asset_${crypto.randomUUID()}`,
       captureProfileId: payload.captureProfileId || payload.capture_profile_id || defaultCaptureProfileId,
       images: signedPrimaryImages,
@@ -2248,7 +2717,7 @@ async function createRecognitionIdentityPreflight(payload) {
         run_visual_embeddings: false,
         run_candidate_verification: false
       }
-    });
+    }));
     const evidenceDocument = recognitionResponseToEvidenceDocument(response, {
       images: signedImages
     });
@@ -2310,30 +2779,33 @@ async function createRecognitionIdentityPreflight(payload) {
 }
 
 async function createAgnesTitle(payload, selection, {
-  recognitionEvidenceDocument = null
+  recognitionEvidenceDocument = null,
+  timingContext = null
 } = {}) {
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const signedImages = await imagesWithSignedReadUrls(payload.images);
+  const signedImages = await imagesWithSignedReadUrls(payload.images, timingContext);
   const initialPayload = {
     ...payload,
     images: primaryImagesFromImages(signedImages)
   };
-  const prompt = await buildListingPrompt(initialPayload, maxTitleLength);
-  const providerResult = await analyzeCardEvidenceWithAgnes({
+  const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
+  const providerResult = await runTimedProviderCall(visionProviderIds.AGNES, timingContext, () => analyzeCardEvidenceWithAgnes({
     images: initialPayload.images,
     prompt
-  });
+  }));
 
-  const providerResultWithEvidence = withProviderMetadata(
-    withEvidenceCompatibility(
-      withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.AGNES), initialPayload),
-      providerResult.parsed,
-      initialPayload
-    ),
-    providerResult,
-    selection
-  );
+  const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
+      withEvidenceCompatibility(
+        withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.AGNES), initialPayload),
+        providerResult.parsed,
+        initialPayload
+      ),
+      providerResult,
+      selection
+    ));
   const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
+  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.AGNES));
+  if (fastPathResult) return fastPathResult;
 
   return withEvidenceCompletion(mergedResult, {
     ...payload,
@@ -2341,32 +2813,94 @@ async function createAgnesTitle(payload, selection, {
   }, {
     runFocusedVisionImpl: createAgnesFocusedRereadRunner({
       images: signedImages,
-      maxTitleLength
-    })
+      maxTitleLength,
+      timingContext
+    }),
+    timingContext
   });
 }
 
 async function createOpenAiTitle(payload, selection, {
-  recognitionEvidenceDocument = null
+  recognitionEvidenceDocument = null,
+  timingContext = null
 } = {}) {
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const initialPayload = primaryPayloadForProvider(payload);
-  const prompt = await buildListingPrompt(initialPayload, maxTitleLength);
-  const providerResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  const signedImages = await imagesWithSignedReadUrls(payload.images || [], timingContext);
+  const initialPayload = primaryPayloadForProvider({
+    ...payload,
+    images: signedImages
+  });
+  const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
+  const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
     prompt
-  });
+  }));
 
-  const providerResultWithEvidence = withProviderMetadata(
-    withEvidenceCompatibility(
-      withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY), initialPayload),
-      providerResult.parsed,
-      initialPayload
-    ),
-    providerResult,
-    selection
-  );
-  return withEvidenceCompletion(withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload), initialPayload);
+  const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
+      withEvidenceCompatibility(
+        withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY), initialPayload),
+        providerResult.parsed,
+        initialPayload
+      ),
+      providerResult,
+      selection
+    ));
+  const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
+  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
+  if (fastPathResult) return fastPathResult;
+
+  return withEvidenceCompletion(mergedResult, initialPayload, { timingContext });
+}
+
+async function createCascadeFastTitle(payload, selection, {
+  recognitionEvidenceDocument = null,
+  timingContext = null
+} = {}) {
+  const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
+  const signedImages = await imagesWithSignedReadUrls(payload.images || [], timingContext);
+  const initialPayload = primaryPayloadForProvider({
+    ...payload,
+    images: signedImages
+  });
+  const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
+  const primaryResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
+    images: initialPayload.images,
+    prompt
+  }));
+
+  const primaryWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
+      withEvidenceCompatibility(
+        withRequestMetadata(normalizeAiResult(primaryResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY), initialPayload),
+        primaryResult.parsed,
+        initialPayload
+      ),
+      primaryResult,
+      {
+        ...selection,
+        provider_id: visionProviderIds.OPENAI_LEGACY,
+        explicit_emergency: false
+      }
+    ));
+  const mergedResult = withRecognitionEvidence(primaryWithEvidence, recognitionEvidenceDocument, initialPayload);
+  const verificationFields = cascadeSecondaryVerificationFields(mergedResult);
+  const cascadeResult = withCascadePolicy(mergedResult, verificationFields);
+  const secondaryEnv = cascadeSecondaryVerifierEnv(process.env, verificationFields);
+
+  return withEvidenceCompletion(cascadeResult, {
+    ...payload,
+    images: signedImages
+  }, {
+    runFocusedVisionImpl: verificationFields.length
+      ? createAgnesFocusedRereadRunner({
+          images: signedImages,
+          maxTitleLength,
+          env: secondaryEnv,
+          timingContext
+        })
+      : null,
+    env: secondaryEnv,
+    timingContext
+  });
 }
 
 function requestedProviderFromPayload(payload = {}) {
@@ -2378,7 +2912,8 @@ function explicitEmergencyFromPayload(payload = {}) {
 }
 
 async function createProviderTitle(payload, {
-  recognitionEvidenceDocument = null
+  recognitionEvidenceDocument = null,
+  timingContext = null
 } = {}) {
   const requestedProvider = requestedProviderFromPayload(payload);
   const explicitEmergency = explicitEmergencyFromPayload(payload);
@@ -2394,11 +2929,15 @@ async function createProviderTitle(payload, {
     images: primaryImages
   });
 
-  if (selection.provider_id === visionProviderIds.AGNES) {
-    return createAgnesTitle(payload, selection, { recognitionEvidenceDocument });
+  if (selection.provider_id === visionProviderIds.CASCADE_FAST) {
+    return createCascadeFastTitle(payload, selection, { recognitionEvidenceDocument, timingContext });
   }
 
-  return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument });
+  if (selection.provider_id === visionProviderIds.AGNES) {
+    return createAgnesTitle(payload, selection, { recognitionEvidenceDocument, timingContext });
+  }
+
+  return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument, timingContext });
 }
 
 export default async function handler(req, res) {
@@ -2437,22 +2976,27 @@ export default async function handler(req, res) {
     return;
   }
 
+  const timingContext = createTimingContext(payload);
+
   try {
-    const approvedMemoryResult = await createApprovedMemoryTitle(payload);
+    const preProviderRescanResult = timeSync(timingContext, "image_quality_check_ms", () => createPreProviderRescanResult(payload));
+    const [approvedMemoryResult, identityCacheResult] = await Promise.all([
+      timeAsync(timingContext, "approved_memory_lookup_ms", () => createApprovedMemoryTitle(payload)),
+      timeAsync(timingContext, "identity_cache_lookup_ms", () => createIdentityCacheTitle(payload))
+    ]);
+
     if (approvedMemoryResult) {
-      sendJson(res, 200, approvedMemoryResult);
+      sendJson(res, 200, withTiming(approvedMemoryResult, timingContext));
       return;
     }
 
-    const identityCacheResult = await createIdentityCacheTitle(payload);
     if (identityCacheResult) {
-      sendJson(res, 200, identityCacheResult);
+      sendJson(res, 200, withTiming(identityCacheResult, timingContext));
       return;
     }
 
-    const preProviderRescanResult = createPreProviderRescanResult(payload);
     if (preProviderRescanResult) {
-      sendJson(res, 200, preProviderRescanResult);
+      sendJson(res, 200, withTiming(preProviderRescanResult, timingContext));
       return;
     }
 
@@ -2460,24 +3004,25 @@ export default async function handler(req, res) {
     const result = await runWithInFlightIdentityRequest({
       cacheKey: inFlightCacheKey,
       run: async () => {
-        const recognitionPreflight = await createRecognitionIdentityPreflight(payload);
+        const recognitionPreflight = await createRecognitionIdentityPreflight(payload, { timingContext });
         if (recognitionPreflight.result) {
-          return withIdentityCacheWrite(recognitionPreflight.result, payload);
+          return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(recognitionPreflight.result, payload));
         }
 
         const providerResult = await createProviderTitle(payload, {
-          recognitionEvidenceDocument: recognitionPreflight.evidenceDocument
+          recognitionEvidenceDocument: recognitionPreflight.evidenceDocument,
+          timingContext
         });
 
-        return withIdentityCacheWrite(providerResult, payload);
+        return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(providerResult, payload));
       }
     });
 
-    sendJson(res, 200, result);
+    sendJson(res, 200, withTiming(result, timingContext));
   } catch (error) {
     const message = safeProviderErrorMessage(error);
 
-    sendJson(res, 200, {
+    sendJson(res, 200, withTiming({
       title: "",
       confidence: "FAILED",
       reason: message,
@@ -2488,6 +3033,6 @@ export default async function handler(req, res) {
       source: "error",
       provider: error.provider || requestedProviderFromPayload(payload) || null,
       provider_error_code: error.code || "api_error"
-    });
+    }, timingContext));
   }
 }

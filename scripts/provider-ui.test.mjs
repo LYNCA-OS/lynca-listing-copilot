@@ -25,6 +25,8 @@ assert.match(js, /storageVerified/, "frontend should preserve server-side storag
 assert.match(js, /storageVerificationToken/, "frontend should pass server-issued storage verification tokens to title requests");
 assert.match(js, /objectPath/, "frontend should preserve storage object paths for provider calls");
 assert.match(js, /serializableAssetImage/, "frontend should strip browser-only File objects from title payloads");
+assert.match(js, /imageHasVerifiedStorageReference/, "frontend should detect storage-backed images");
+assert.match(js, /dataUrl: useStorageReference \? "" : image\.dataUrl/, "storage-backed title requests should not send large Base64 image JSON");
 assert.match(js, /captureQuality: summarizeAssetImageQuality/, "title requests should include capture quality summaries");
 assert.match(js, /imageQuality/, "image records should carry first-pass quality metrics");
 assert.match(js, /planTargetedCrops/, "frontend should plan targeted crops from quality results");
@@ -36,6 +38,7 @@ assert.match(api, /verifyListingImageVerificationToken/, "title API should requi
 assert.match(api, /readListingImageVerificationRecord/, "title API should allow durable server verification records for later reprocessing");
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
 assert.match(api, /createAgnesFocusedRereadRunner/, "title API should wire focused Agnes rereads through Evidence Completion");
+assert.match(api, /const signedImages = await imagesWithSignedReadUrls\(payload\.images \|\| \[\], timingContext\)/, "OpenAI fallback should use signed storage read URLs instead of requiring Base64 JSON");
 assert.match(api, /runFocusedVisionImpl/, "Evidence Completion should receive the focused vision runner explicitly");
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facing modules from the title API");

@@ -145,7 +145,7 @@ function providerDisabledReason(provider, storage) {
   if (!provider.enabled) return "disabled_by_env";
   if (provider.disabled_reason === "emergency_retry_disabled") return "emergency_retry_disabled";
   if (!provider.configured) return provider.disabled_reason || "provider_not_configured";
-  if (provider.id === visionProviderIds.AGNES && !storage.configured) return "storage_not_configured";
+  if ((provider.id === visionProviderIds.AGNES || provider.id === visionProviderIds.CASCADE_FAST) && !storage.configured) return "storage_not_configured";
   return null;
 }
 
@@ -158,18 +158,24 @@ function providerStatus(provider, storage, smoke = null) {
     label: provider.label,
     display_name: provider.display_name,
     model_id: provider.model_id,
+    primary_provider_id: provider.primary_provider_id || null,
+    secondary_provider_id: provider.secondary_provider_id || null,
+    recommended_concurrency: provider.recommended_concurrency || null,
     enabled: provider.enabled,
     configured: provider.configured,
     selectable: !disabledReason,
     disabled_reason: disabledReason,
     requires_explicit_retry: Boolean(provider.requires_explicit_retry),
     requires_remote_image_url: Boolean(provider.requires_remote_image_url),
-    requires_storage: provider.id === visionProviderIds.AGNES,
+    requires_storage: provider.id === visionProviderIds.AGNES || provider.id === visionProviderIds.CASCADE_FAST,
     ...(provider.id === visionProviderIds.AGNES ? { smoke } : {})
   };
 }
 
 function defaultProviderId(providers) {
+  const cascade = providers.find((provider) => provider.id === visionProviderIds.CASCADE_FAST);
+  if (cascade?.selectable) return cascade.id;
+
   const agnes = providers.find((provider) => provider.id === visionProviderIds.AGNES);
   if (agnes?.selectable) return agnes.id;
 
@@ -201,6 +207,7 @@ export default async function handler(req, res) {
   const agnesSmoke = await readAgnesSmokeStatus();
   const catalog = providerCatalog();
   const providers = [
+    catalog[visionProviderIds.CASCADE_FAST],
     catalog[visionProviderIds.AGNES],
     catalog[visionProviderIds.OPENAI_LEGACY]
   ]

@@ -177,9 +177,23 @@ assert.equal(report.proactive_focused_rereads_enabled, false);
 assert.equal(report.full_sample_evaluation, true);
 assert.equal(report.corrected_title_exact_count, 1);
 assert.equal(report.critical_title_error_count, 1);
+assert.equal(report.identity_abstain_count, 0);
+assert.equal(report.all_in_commercial_success_count, 1);
+assert.equal(report.all_in_commercial_failure_count, 2);
+assert.equal(report.all_in_commercial_accuracy, 0.333333);
+assert.equal(report.all_in_commercial_accuracy_target, 0.95);
+assert.equal(report.all_in_commercial_accuracy_passed, false);
+assert.equal(report.throughput_objective.metric, "correct_cards_per_minute");
+assert.ok(Number.isFinite(report.correct_cards_per_minute));
+assert.ok(report.correct_cards_per_minute > 0);
+assert.ok(Number.isFinite(report.attempted_cards_per_minute));
+assert.ok(report.elapsed_ms >= 0);
 assert.equal(report.unexpected_color_count, 1);
 assert.equal(report.usage.provider_calls, 2);
 assert.equal(report.usage.image_count, 4);
+assert.ok(report.results[0].timing);
+assert.ok("provider_total_ms" in report.results[0].timing);
+assert.ok("signed_url_ms" in report.results[0].timing);
 assert.equal(signedRequests.length, 4);
 assert.deepEqual(new Set(signedRequests.map((request) => request.bucket)), new Set(["listing-feedback-images"]));
 assert.equal(analyzed.length, 2);
@@ -233,6 +247,140 @@ const limited = await evaluateAgnesSupabaseFeedback({
 });
 assert.equal(limited.target_count, 1);
 assert.equal(limited.full_sample_evaluation, false);
+
+const manyItemDataset = {
+  ...dataset,
+  source: {
+    ...dataset.source,
+    source_row_count: 8,
+    image_backed_row_count: 8
+  },
+  summary: {
+    ...dataset.summary,
+    item_count: 8
+  },
+  items: Array.from({ length: 8 }, (_, index) => ({
+    ...dataset.items[0],
+    asset_id: `supabase_feedback_parallel_${index}`,
+    source_feedback_id: `parallel_${index}`,
+    images: [
+      {
+        role: "front_original",
+        bucket: "listing-feedback-images",
+        object_path: `feedback/2026-06/parallel-${index}/front.jpg`
+      }
+    ],
+    source_titles: {
+      generated_title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10",
+      corrected_title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10"
+    }
+  }))
+};
+let activeParallelCalls = 0;
+let maxParallelCalls = 0;
+const highConcurrency = await evaluateAgnesSupabaseFeedback({
+  dataset: manyItemDataset,
+  concurrency: 8,
+  maxConcurrency: 8,
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeImpl: async () => {
+    activeParallelCalls += 1;
+    maxParallelCalls = Math.max(maxParallelCalls, activeParallelCalls);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    activeParallelCalls -= 1;
+    return {
+      parsed: {
+        title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10",
+        fields: {}
+      },
+      usage: { provider_calls: 1 }
+    };
+  },
+  now: () => new Date("2026-06-23T12:01:10.000Z")
+});
+assert.equal(highConcurrency.worker_count, 8);
+assert.equal(highConcurrency.max_concurrency, 8);
+assert.equal(highConcurrency.configured_concurrency, 8);
+assert.equal(maxParallelCalls, 8);
+
+let timeoutSignalSeen = false;
+let timeoutAbortSeen = false;
+const itemTimedOut = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  itemTimeoutMs: 5,
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeImpl: async ({ signal }) => {
+    timeoutSignalSeen = Boolean(signal);
+    return new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => {
+        timeoutAbortSeen = true;
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        reject(error);
+      }, { once: true });
+    });
+  },
+  now: () => new Date("2026-06-23T12:01:20.000Z")
+});
+assert.equal(timeoutSignalSeen, true);
+assert.equal(timeoutAbortSeen, true);
+assert.equal(itemTimedOut.provider_error_count, 1);
+assert.equal(itemTimedOut.item_timeout_count, 1);
+assert.equal(itemTimedOut.all_in_commercial_success_count, 0);
+assert.equal(itemTimedOut.all_in_commercial_failure_count, 1);
+assert.equal(itemTimedOut.all_in_commercial_accuracy, 0);
+assert.equal(itemTimedOut.results[0].error_code, "item_timeout");
+assert.match(itemTimedOut.results[0].error, /timed out after 5ms/);
+
+const abstainCountsAsFailure = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  previousResults: [
+    {
+      candidate_id: "fb1",
+      status: "evaluated",
+      identity_resolution_enabled: false,
+      recognition_preflight_enabled: false,
+      internal_memory_self_excluded: false,
+      identity_resolution_status: "ABSTAIN",
+      prediction: {
+        title: "2025 Topps Chrome Shohei Ohtani Gold Refractor 5/5 PSA 10"
+      },
+      corrected_title_comparison: {
+        corrected_title_exact: true,
+        token_recall: 1,
+        token_precision: 1,
+        critical_title_error: false
+      },
+      usage: { provider_calls: 0 }
+    }
+  ],
+  env: {
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeImpl: async () => {
+    throw new Error("ABSTAIN previous result should be reused for this metric test.");
+  },
+  now: () => new Date("2026-06-23T12:01:25.000Z")
+});
+assert.equal(abstainCountsAsFailure.identity_abstain_count, 1);
+assert.equal(abstainCountsAsFailure.all_in_commercial_success_count, 0);
+assert.equal(abstainCountsAsFailure.all_in_commercial_failure_count, 1);
+assert.equal(abstainCountsAsFailure.all_in_commercial_accuracy, 0);
 
 let rateLimitCalls = 0;
 const rateLimitRecovered = await evaluateAgnesSupabaseFeedback({
@@ -415,6 +563,99 @@ assert.equal(identityResolved.results[0].identity_resolution_summary.status, "CO
 assert.ok(identityResolved.results[0].identity_resolution_summary.fields.some((field) => field.field === "product"));
 assert.ok(identityResolved.results[0].usage.provider_calls >= 2);
 assert.ok(identityResolved.results[0].completion_trace.some((entry) => entry.output?.convergence?.loop === "detect_conflict_retrieve_reevaluate_converge"));
+
+const cascadeCalls = [];
+const cascadeFocusedCalls = [];
+const cascadeResolved = await evaluateAgnesSupabaseFeedback({
+  dataset,
+  limit: 1,
+  providerId: "cascade_fast",
+  identityResolution: true,
+  env: {
+    OPENAI_API_KEY: "test-openai-key",
+    AGNES_API_KEY: "test-agnes-key",
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    CASCADE_MAX_AGNES_CALLS_PER_ASSET: "2",
+    CASCADE_MAX_PARALLEL_FOCUSED_REREADS: "2"
+  },
+  createSignedReadUrlImpl: async ({ objectPath, bucket }) => `https://signed.test/${bucket}/${objectPath}`,
+  analyzeImpl: async ({ prompt }) => {
+    cascadeCalls.push(prompt);
+    return {
+      model_id: "gpt-4.1-mini-test",
+      parse_source: "content",
+      finish_reason: "stop",
+      parsed: {
+        title: "",
+        confidence: "HIGH",
+        reason: "compact first pass",
+        fields: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Shohei Ohtani"],
+          serial_number: "5/5",
+          grade_company: "PSA",
+          card_grade: "10"
+        },
+        unresolved: []
+      },
+      usage: {
+        provider_calls: 1,
+        image_count: 2,
+        estimated_cost_usd: 0.005,
+        latency_ms: 40
+      }
+    };
+  },
+  analyzeFocusedImpl: async ({ prompt }) => {
+    cascadeFocusedCalls.push(prompt);
+    assert.match(prompt, /focused reread/i);
+    assert.match(prompt, /serial_number/i);
+    return {
+      model_id: "agnes-focused-test",
+      parse_source: "content",
+      finish_reason: "stop",
+      parsed: {
+        title: "",
+        confidence: "HIGH",
+        reason: "focused serial crop reads 5/5",
+        fields: {
+          serial_number: "5/5"
+        },
+        unresolved: []
+      },
+      usage: {
+        provider_calls: 1,
+        image_count: 1,
+        estimated_cost_usd: 0.004,
+        latency_ms: 30
+      }
+    };
+  },
+  now: () => new Date("2026-06-23T12:01:40.000Z")
+});
+assert.equal(cascadeResolved.provider, "cascade_fast");
+assert.equal(cascadeResolved.provider_display_name, "GPT-4.1-mini → Agnes verifier");
+assert.equal(cascadeCalls.length, 1);
+assert.equal(cascadeFocusedCalls.length, 1);
+assert.equal(cascadeResolved.results[0].identity_resolution_status, "RESOLVED");
+assert.match(cascadeResolved.results[0].prediction.title, /Topps Chrome/);
+assert.match(cascadeResolved.results[0].prediction.title, /5\/5/);
+assert.equal(cascadeResolved.secondary_verifier.triggered_count, 1);
+assert.equal(cascadeResolved.secondary_verifier.error_count, 0);
+assert.equal(cascadeResolved.secondary_verifier.event_count, 1);
+assert.equal(cascadeResolved.secondary_verifier.field_recovered_count, 0);
+assert.equal(cascadeResolved.secondary_verifier.field_regressed_count, 0);
+assert.equal(cascadeResolved.secondary_verifier.net_benefit, 0);
+assert.equal(cascadeResolved.results[0].secondary_verification_events.length, 1);
+assert.equal(cascadeResolved.results[0].secondary_verification_events[0].focused_field_group, "serial_number");
+assert.deepEqual(cascadeResolved.results[0].secondary_verification_events[0].gpt_initial_candidate, { serial_number: "5/5" });
+assert.deepEqual(cascadeResolved.results[0].secondary_verification_events[0].agnes_candidate, { serial_number: "5/5" });
+assert.deepEqual(cascadeResolved.results[0].secondary_verification_events[0].final_resolved_value, { serial_number: "5/5" });
+assert.equal(cascadeResolved.results[0].secondary_verification_events[0].agnes_latency_ms >= 0, true);
+assert.equal(cascadeResolved.results[0].secondary_verification_events[0].whether_recovered, false);
+assert.equal(cascadeResolved.results[0].secondary_verification_events[0].whether_agnes_changed_a_correct_gpt_result, false);
 
 function recognitionPayload({
   assetId = "supabase_feedback_fb1",
@@ -718,6 +959,10 @@ await assert.rejects(
 
 const summary = formatAgnesSupabaseFeedbackSummary(report);
 assert.match(summary, /corrected_title_exact: 1\/3/);
+assert.match(summary, /all_in_commercial_accuracy: 0.333333 target:0.95 passed:false/);
+assert.match(summary, /correct_cards_per_minute:/);
+assert.match(summary, /attempted_cards_per_minute:/);
+assert.match(summary, /secondary_verifier_net_benefit:/);
 assert.match(summary, /commercial_accuracy_claim_allowed: false/);
 assert.match(summary, /corrected-title reference only/);
 

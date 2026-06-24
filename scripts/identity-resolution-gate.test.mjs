@@ -43,6 +43,17 @@ function frontOnlyEvidence(value) {
   });
 }
 
+function visionOnlyEvidence(value) {
+  return createEvidenceField({
+    value,
+    status: "CONFIRMED",
+    confidence: 0.96,
+    sources: [
+      createVisionSource({ observedText: Array.isArray(value) ? value.join(" / ") : value })
+    ]
+  });
+}
+
 const agnesOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
   model_title_suggestion: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
@@ -83,6 +94,101 @@ assert.equal(agnesOnly.final_title, "");
 assert.equal(agnesOnly.title_render_source, "identity_resolution_abstain");
 assert.ok(agnesOnly.unresolved.includes("identity resolution abstain"));
 assert.equal(agnesOnly.model_title_suggestion, "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50");
+
+function primaryFastVisionResult({
+  resolved,
+  evidence,
+  verificationFields = [],
+  trace = []
+}) {
+  return applyIdentityResolutionGate({
+    title: "",
+    model_title_suggestion: "",
+    confidence: "HIGH",
+    reason: "GPT primary fast vision extracted compact evidence.",
+    provider: "cascade_fast",
+    source: "openai_legacy",
+    resolved: normalizeResolvedFields(resolved),
+    evidence,
+    unresolved: [],
+    fast_vision_policy: {
+      role: "PRIMARY_FAST_VISION",
+      allow_single_source_publish: true,
+      secondary_verification_required_fields: verificationFields
+    },
+    resolution_trace: trace
+  }, {
+    providerId: "primary_fast_vision"
+  });
+}
+
+const fastVisionNoRisk = primaryFastVisionResult({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"]
+  },
+  evidence: {
+    year: visionOnlyEvidence("2024"),
+    product: visionOnlyEvidence("Topps Chrome"),
+    players: visionOnlyEvidence(["Shohei Ohtani"])
+  }
+});
+assert.equal(fastVisionNoRisk.identity_resolution_status, "RESOLVED");
+assert.match(fastVisionNoRisk.final_title, /2024/);
+assert.match(fastVisionNoRisk.final_title, /Topps Chrome/);
+assert.ok(fastVisionNoRisk.conflict_map.every((conflict) => {
+  return conflict.conflict_type !== "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE" || conflict.resolved === true;
+}));
+
+const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    serial_number: "31/50"
+  },
+  evidence: {
+    year: visionOnlyEvidence("2024"),
+    product: visionOnlyEvidence("Topps Chrome"),
+    players: visionOnlyEvidence(["Shohei Ohtani"]),
+    serial_number: visionOnlyEvidence("31/50")
+  },
+  verificationFields: ["serial_number"]
+});
+assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "");
+
+const fastVisionSerialWithFocusedVerification = primaryFastVisionResult({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    serial_number: "31/50"
+  },
+  evidence: {
+    year: visionOnlyEvidence("2024"),
+    product: visionOnlyEvidence("Topps Chrome"),
+    players: visionOnlyEvidence(["Shohei Ohtani"]),
+    serial_number: visionOnlyEvidence("31/50")
+  },
+  verificationFields: ["serial_number"],
+  trace: [
+    {
+      action: "CROP_AND_READ_SERIAL",
+      status: "executed",
+      output: {
+        focused_vision: {
+          focus_fields: ["serial_number"],
+          updated_fields: ["serial_number"],
+          conflicting_fields: []
+        }
+      }
+    }
+  ]
+});
+assert.equal(fastVisionSerialWithFocusedVerification.identity_resolution_status, "RESOLVED");
+assert.match(fastVisionSerialWithFocusedVerification.final_title, /31\/50/);
 
 const groundedMultiView = applyIdentityResolutionGate({
   title: "provider title must not decide final facts",

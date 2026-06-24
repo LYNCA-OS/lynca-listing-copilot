@@ -601,8 +601,10 @@ assert.deepEqual(parallelFocusedCompletion.resolution_trace
 ]);
 assert.equal(parallelFocusedCompletion.resolved.product, "Topps Chrome");
 assert.deepEqual(parallelFocusedCompletion.resolved.players, ["Cooper Flagg"]);
-assert.equal(parallelFocusedCompletion.resolved.parallel, "Gold Wave");
-assert.ok(parallelFocusedCompletion.evidence.parallel.sources.some((source) => {
+assert.equal(parallelFocusedCompletion.resolved.parallel, "Gold");
+assert.equal(parallelFocusedCompletion.resolved.surface_color, "Gold");
+assert.equal(parallelFocusedCompletion.resolved.parallel_family, "Wave");
+assert.ok(parallelFocusedCompletion.evidence.surface_color.sources.some((source) => {
   return source.capture_role === "focused_reread"
     && source.region === completionActions.CROP_AND_READ_PARALLEL;
 }));
@@ -656,10 +658,10 @@ const lowConfidenceFocusedParallelCompletion = await completeEvidence({
   }
 });
 assert.equal(lowConfidenceFocusedParallelAction, completionActions.CROP_AND_READ_PARALLEL);
-assert.equal(lowConfidenceFocusedParallelCompletion.resolved.parallel, "Purple");
-assert.equal(lowConfidenceFocusedParallelCompletion.evidence.parallel.status, "CONFIRMED");
-assert.equal(lowConfidenceFocusedParallelCompletion.evidence.parallel.confidence, 0.86);
-assert.equal(lowConfidenceFocusedParallelCompletion.evidence.parallel.candidates[0].confidence, 0.86);
+assert.equal(lowConfidenceFocusedParallelCompletion.resolved.surface_color, "Purple");
+assert.equal(lowConfidenceFocusedParallelCompletion.resolved.parallel, null);
+assert.equal(lowConfidenceFocusedParallelCompletion.evidence.surface_color.status, "REVIEW");
+assert.equal(lowConfidenceFocusedParallelCompletion.evidence.surface_color.confidence, 0.35);
 
 const blockedFocusedParallelCompletion = await completeEvidence({
   resolved: {
@@ -708,9 +710,10 @@ const blockedFocusedParallelCompletion = await completeEvidence({
     unresolved: ["visual-only parallel requires operator review"]
   })
 });
-assert.equal(blockedFocusedParallelCompletion.resolved.parallel, "Purple");
-assert.equal(blockedFocusedParallelCompletion.evidence.parallel.status, "REVIEW");
-assert.equal(blockedFocusedParallelCompletion.evidence.parallel.confidence, 0.35);
+assert.equal(blockedFocusedParallelCompletion.resolved.surface_color, "Purple");
+assert.equal(blockedFocusedParallelCompletion.resolved.parallel, null);
+assert.equal(blockedFocusedParallelCompletion.evidence.surface_color.status, "REVIEW");
+assert.equal(blockedFocusedParallelCompletion.evidence.surface_color.confidence, 0.35);
 
 let retryFocusedParallelAttempts = 0;
 const retryFocusedParallelCompletion = await completeEvidence({
@@ -766,12 +769,69 @@ const retryFocusedParallelCompletion = await completeEvidence({
 });
 const retryFocusedTrace = retryFocusedParallelCompletion.resolution_trace.find((entry) => {
   return entry.action === completionActions.CROP_AND_READ_PARALLEL
-    && entry.output?.focused_vision?.updated_fields?.includes("parallel");
+    && entry.output?.focused_vision?.updated_fields?.includes("surface_color");
 });
 assert.equal(retryFocusedParallelAttempts, 2);
-assert.equal(retryFocusedParallelCompletion.resolved.parallel, "Gold");
+assert.equal(retryFocusedParallelCompletion.resolved.surface_color, "Gold");
+assert.equal(retryFocusedParallelCompletion.resolved.parallel, null);
 assert.equal(retryFocusedParallelCompletion.budget.used.agnes_calls, 2);
 assert.equal(retryFocusedTrace.output.transient_retry_attempts, 1);
+
+const compatibleFocusedParallelCompletion = await completeEvidence({
+  resolved: {
+    year: "2025-26",
+    brand: "Topps",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"],
+    parallel: "Refractor"
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025-26", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "CONFIRMED", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], status: "CONFIRMED", confidence: 0.9 }),
+    parallel: createEvidenceField({ value: "Refractor", status: "CONFIRMED", confidence: 0.9 })
+  },
+  env: {
+    ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1",
+    MAX_PARALLEL_FOCUSED_REREADS: "2"
+  },
+  budgetOverrides: {
+    maxRounds: 2,
+    maxAgnesCalls: 2,
+    maxExternalQueries: 0
+  },
+  runFocusedVisionImpl: async ({ action }) => {
+    if (action !== completionActions.CROP_AND_READ_PARALLEL) {
+      return {
+        provider_id: "agnes",
+        model_id: "agnes-2.0-flash",
+        resolved: {},
+        evidence: {}
+      };
+    }
+    return {
+      provider_id: "agnes",
+      model_id: "agnes-2.0-flash",
+      resolved: {
+        parallel: "Purple Refractor"
+      },
+      evidence: {
+        parallel: createEvidenceField({ value: "Purple Refractor", status: "REVIEW", confidence: 0.35 })
+      },
+      unresolved: []
+    };
+  }
+});
+assert.equal(compatibleFocusedParallelCompletion.resolved.parallel, "Refractor");
+assert.equal(compatibleFocusedParallelCompletion.resolved.surface_color, "Purple");
+assert.equal(compatibleFocusedParallelCompletion.resolved.parallel_family, "Refractor");
+assert.equal(compatibleFocusedParallelCompletion.evidence.surface_color.status, "REVIEW");
+assert.ok(compatibleFocusedParallelCompletion.resolution_trace.some((entry) => {
+  return entry.action === completionActions.CROP_AND_READ_PARALLEL
+    && entry.output?.focused_vision?.updated_fields?.includes("surface_color")
+    && entry.output.focused_vision.field_values?.surface_color === "Purple";
+}));
 
 const proactiveFocusedActions = [];
 const proactiveFocusedCompletion = await completeEvidence({

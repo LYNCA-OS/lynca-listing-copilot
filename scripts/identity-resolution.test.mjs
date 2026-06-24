@@ -247,12 +247,12 @@ assert.ok(visualOnlyParallelRejected.conflict_map.some((conflict) => {
     && conflict.resolved === true;
 }));
 
-const focusedVisualParallelAccepted = resolveIdentity({
+const focusedVisualColorAccepted = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
     {
-      field: "parallel",
-      value: "Purple Refractor",
+      field: "surface_color",
+      value: "Purple",
       source: "AGNES",
       confidence: 0.92,
       region: "CROP_AND_READ_PARALLEL",
@@ -262,17 +262,19 @@ const focusedVisualParallelAccepted = resolveIdentity({
     }
   ]
 });
-assert.equal(focusedVisualParallelAccepted.identity.parallel, "Purple Refractor");
-assert.equal(fieldState(focusedVisualParallelAccepted, "parallel").resolution_reason, "highest_scoring_candidate");
-assert.equal(fieldState(focusedVisualParallelAccepted, "parallel").decision_route, "USE");
-assert.ok(fieldState(focusedVisualParallelAccepted, "parallel").candidates[0].constraint_result.evaluated_rules.every((rule) => rule.passed));
+assert.equal(focusedVisualColorAccepted.identity.surface_color, "Purple");
+assert.equal(focusedVisualColorAccepted.identity.parallel_exact, null);
+assert.equal(focusedVisualColorAccepted.identity.parallel, null);
+assert.equal(fieldState(focusedVisualColorAccepted, "surface_color").resolution_reason, "highest_scoring_candidate");
+assert.equal(fieldState(focusedVisualColorAccepted, "surface_color").decision_route, "USE");
+assert.ok(fieldState(focusedVisualColorAccepted, "surface_color").candidates[0].constraint_result.evaluated_rules.every((rule) => rule.passed));
 
-const focusedVisualParallelReviewWithoutBlockerAccepted = resolveIdentity({
+const focusedVisualColorReviewWithoutBlockerAccepted = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
     {
-      field: "parallel",
-      value: "Purple Refractor",
+      field: "surface_color",
+      value: "Purple",
       source: "AGNES",
       confidence: 0.8,
       region: "CROP_AND_READ_PARALLEL",
@@ -283,15 +285,15 @@ const focusedVisualParallelReviewWithoutBlockerAccepted = resolveIdentity({
     }
   ]
 });
-assert.equal(focusedVisualParallelReviewWithoutBlockerAccepted.identity.parallel, "Purple Refractor");
-assert.equal(fieldState(focusedVisualParallelReviewWithoutBlockerAccepted, "parallel").decision_route, "USE");
+assert.equal(focusedVisualColorReviewWithoutBlockerAccepted.identity.surface_color, "Purple");
+assert.equal(fieldState(focusedVisualColorReviewWithoutBlockerAccepted, "surface_color").decision_route, "USE");
 
-const focusedVisualParallelReviewRejected = resolveIdentity({
+const focusedVisualColorReviewRejected = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
     {
-      field: "parallel",
-      value: "Purple Refractor",
+      field: "surface_color",
+      value: "Purple",
       source: "AGNES",
       confidence: 0.92,
       region: "CROP_AND_READ_PARALLEL",
@@ -303,8 +305,199 @@ const focusedVisualParallelReviewRejected = resolveIdentity({
     }
   ]
 });
-assert.equal(focusedVisualParallelReviewRejected.identity.parallel, null);
-assert.equal(fieldState(focusedVisualParallelReviewRejected, "parallel").resolution_reason, "rejected_unsupported_optional_candidate");
+assert.equal(focusedVisualColorReviewRejected.identity.surface_color, null);
+assert.equal(fieldState(focusedVisualColorReviewRejected, "surface_color").resolution_reason, "rejected_unsupported_optional_candidate");
+
+const focusedVisualUncorrectedColorRejected = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    {
+      field: "surface_color",
+      value: "Purple",
+      source: "AGNES",
+      confidence: 0.94,
+      region: "CROP_AND_READ_PARALLEL",
+      metadata: {
+        capture_role: "focused_reread",
+        field_status: "CONFIRMED",
+        color_corrected: false
+      }
+    }
+  ]
+});
+assert.equal(focusedVisualUncorrectedColorRejected.identity.surface_color, null);
+assert.equal(fieldState(focusedVisualUncorrectedColorRejected, "surface_color").resolution_reason, "rejected_unsupported_optional_candidate");
+
+const taxonomyUniqueParallelExactPromoted = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "serial_number", value: "72/75", source: "OCR_FRONT", confidence: 0.94 },
+    {
+      field: "surface_color",
+      value: "Purple",
+      source: "AGNES",
+      confidence: 0.86,
+      region: "CROP_AND_READ_PARALLEL",
+      metadata: {
+        capture_role: "focused_reread",
+        field_status: "CONFIRMED"
+      }
+    }
+  ],
+  productSchemas: [
+    {
+      product: "Topps Chrome",
+      parallels: [
+        {
+          parallel_exact: "Purple Refractor",
+          surface_color: "Purple",
+          parallel_family: "Refractor",
+          allowed_denominators: [75]
+        },
+        {
+          parallel_exact: "Gold Refractor",
+          surface_color: "Gold",
+          parallel_family: "Refractor",
+          allowed_denominators: [50]
+        }
+      ]
+    }
+  ]
+});
+assert.equal(taxonomyUniqueParallelExactPromoted.identity.surface_color, "Purple");
+assert.equal(taxonomyUniqueParallelExactPromoted.identity.parallel_exact, "Purple Refractor");
+assert.ok(fieldState(taxonomyUniqueParallelExactPromoted, "parallel_exact").resolution_confidence >= 0.74);
+assert.equal(fieldState(taxonomyUniqueParallelExactPromoted, "parallel_exact").candidates[0].score_components.taxonomy_serial_support, 0.45);
+assert.ok(taxonomyUniqueParallelExactPromoted.resolution_trace.some((entry) => {
+  return entry.field === "_identity"
+    && entry.output?.taxonomy_parallel_evidence_count === 1;
+}));
+
+const denominatorCompatibilityDoesNotProveExact = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "serial_number", value: "17/50", source: "OCR_FRONT", confidence: 0.94 }
+  ],
+  productSchemas: [
+    {
+      product: "Topps Chrome",
+      parallels: [
+        {
+          parallel_exact: "Gold Refractor",
+          surface_color: "Gold",
+          parallel_family: "Refractor",
+          allowed_denominators: [50]
+        }
+      ]
+    }
+  ]
+});
+assert.equal(denominatorCompatibilityDoesNotProveExact.identity.parallel_exact, null);
+
+const focusedVisualParallelSerialMismatch = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "serial_number", value: "17/50", source: "OCR_FRONT", confidence: 0.94 },
+    {
+      field: "parallel_exact",
+      value: "Rainbow Refractor",
+      source: "AGNES",
+      confidence: 0.86,
+      region: "CROP_AND_READ_PARALLEL",
+      metadata: {
+        capture_role: "focused_reread",
+        field_status: "CONFIRMED"
+      }
+    }
+  ],
+  productSchemas: [
+    {
+      product: "Topps Chrome",
+      parallels: [
+        {
+          parallel_exact: "Rainbow Refractor",
+          surface_color: "Rainbow",
+          parallel_family: "Refractor",
+          allowed_denominators: [10]
+        }
+      ]
+    }
+  ]
+});
+assert.equal(focusedVisualParallelSerialMismatch.identity.parallel_exact, null);
+assert.equal(fieldState(focusedVisualParallelSerialMismatch, "parallel_exact").resolution_reason, "rejected_unsupported_optional_candidate");
+assert.ok(focusedVisualParallelSerialMismatch.conflict_map.some((conflict) => {
+  return conflict.field === "parallel_exact"
+    && conflict.conflict_type === "PARALLEL_EXACT_SERIAL_DENOMINATOR_MISMATCH"
+    && conflict.resolved === true;
+}));
+
+const wholeCardCandidateRanking = resolveIdentity({
+  evidenceItems: [
+    { field: "year", value: "2025-26", source: "CARD_BACK", confidence: 0.94 },
+    { field: "product", value: "Topps Chrome", source: "CARD_FRONT", confidence: 0.94 },
+    { field: "players", value: "Victor Wembanyama", source: "CARD_FRONT", confidence: 0.94 },
+    { field: "collector_number", value: "221", source: "CARD_BACK", confidence: 0.94 },
+    { field: "serial_number", value: "17/50", source: "CARD_FRONT", confidence: 0.94 },
+    {
+      field: "surface_color",
+      value: "Gold",
+      source: "AGNES",
+      confidence: 0.9,
+      region: "CROP_AND_READ_PARALLEL",
+      metadata: {
+        capture_role: "focused_reread",
+        field_status: "CONFIRMED"
+      }
+    }
+  ],
+  retrievalCandidates: [
+    {
+      candidate_id: "market_wrong_year",
+      source_type: "MARKETPLACE",
+      title: "2024-25 Topps Chrome Victor Wembanyama Gold Refractor 17/50",
+      trust_tier: 8,
+      fields: {
+        year: "2024-25",
+        product: "Topps Chrome",
+        players: ["Victor Wembanyama"],
+        collector_number: "221",
+        parallel_exact: "Gold Refractor",
+        serial_number: "17/50"
+      }
+    },
+    {
+      candidate_id: "official_correct",
+      source_type: "OFFICIAL_CHECKLIST",
+      trust_tier: 2,
+      fields: {
+        year: "2025-26",
+        product: "Topps Chrome",
+        players: ["Victor Wembanyama"],
+        collector_number: "221",
+        parallel_exact: "Gold Refractor",
+        serial_number: "17/50"
+      }
+    }
+  ],
+  productSchemas: [
+    {
+      product: "Topps Chrome",
+      parallels: [
+        {
+          parallel_exact: "Gold Refractor",
+          surface_color: "Gold",
+          parallel_family: "Refractor",
+          allowed_denominators: [50]
+        }
+      ]
+    }
+  ]
+});
+assert.equal(wholeCardCandidateRanking.candidate_identity_report.selected_candidate_id, "official_correct");
+assert.equal(wholeCardCandidateRanking.candidate_identity_report.candidates[0].candidate_id, "official_correct");
+assert.equal(wholeCardCandidateRanking.identity.parallel_exact, "Gold Refractor");
+assert.equal(wholeCardCandidateRanking.candidate_identity_report.metrics.candidate_recall_at_k, null);
 
 const printedRookieMarkersAccepted = resolveIdentity({
   evidenceItems: [

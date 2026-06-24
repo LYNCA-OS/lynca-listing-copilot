@@ -103,14 +103,19 @@ async function callStatus() {
 
 let response = await callStatus();
 assert.equal(response.statusCode, 200);
-assert.equal(response.body.default_provider, "agnes");
+assert.equal(response.body.default_provider, "cascade_fast");
 assert.equal(response.body.storage.configured, true);
 assert.equal(response.body.storage.max_image_dimension_pixels, 12000);
 assert.equal(response.body.storage.max_image_total_pixels, 50000000);
 assert.doesNotMatch(JSON.stringify(response.body.storage), /test-service-role/);
 
+let cascade = response.body.providers.find((provider) => provider.id === "cascade_fast");
 let agnes = response.body.providers.find((provider) => provider.id === "agnes");
 let openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
+assert.equal(cascade.selectable, true);
+assert.equal(cascade.requires_storage, true);
+assert.equal(cascade.primary_provider_id, "openai_legacy");
+assert.equal(cascade.secondary_provider_id, "agnes");
 assert.equal(agnes.selectable, true);
 assert.equal(agnes.requires_storage, true);
 assert.equal(agnes.smoke.status, "passed_with_limitations");
@@ -128,8 +133,11 @@ assert.equal(openai.requires_explicit_retry, true);
 
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 response = await callStatus();
+cascade = response.body.providers.find((provider) => provider.id === "cascade_fast");
 agnes = response.body.providers.find((provider) => provider.id === "agnes");
 assert.equal(response.body.default_provider, "");
+assert.equal(cascade.selectable, false);
+assert.equal(cascade.disabled_reason, "storage_not_configured");
 assert.equal(agnes.selectable, false);
 assert.equal(agnes.disabled_reason, "storage_not_configured");
 assert.equal(response.body.storage.configured, false);
@@ -137,6 +145,7 @@ assert.equal(response.body.storage.configured, false);
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "false";
 response = await callStatus();
+assert.equal(response.body.providers.find((provider) => provider.id === "cascade_fast").selectable, true);
 openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
 assert.equal(openai, undefined);
 
@@ -150,8 +159,11 @@ assert.equal(openai.disabled_reason, "emergency_retry_disabled");
 process.env.ALLOW_EXPLICIT_GPT41_RETRY = "true";
 process.env.ENABLE_AGNES_PROVIDER = "false";
 response = await callStatus();
+cascade = response.body.providers.find((provider) => provider.id === "cascade_fast");
 agnes = response.body.providers.find((provider) => provider.id === "agnes");
 openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
+assert.equal(cascade.selectable, false);
+assert.equal(cascade.disabled_reason, "agnes_disabled_by_env");
 assert.equal(agnes, undefined);
 assert.equal(openai.selectable, true);
 assert.equal(response.body.default_provider, "");
