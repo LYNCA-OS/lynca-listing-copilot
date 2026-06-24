@@ -16,6 +16,11 @@ import {
 } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { openWorldEvaluationMetrics } from "../lib/identity-resolution/identity-layers.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
+import {
+  annotateEvaluationRootCauses,
+  componentQualityReport,
+  rootCauseSummary
+} from "../lib/listing/evaluation/component-quality.mjs";
 import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
 import { recognitionRequestedFields } from "../lib/listing/recognition/recognition-contract.mjs";
 import { safeRecognitionError } from "../lib/listing/recognition/recognition-errors.mjs";
@@ -616,9 +621,24 @@ function predictionFromResolvedResult(result = {}) {
 
 function identityResolutionSummary(result = {}) {
   const identityResolution = result.identity_resolution || {};
+  const candidateIdentityReport = result.candidate_identity_report
+    || identityResolution.candidate_identity_report
+    || result.card_identity_candidates
+    || identityResolution.card_identity_candidates
+    || null;
   return {
     status: result.identity_resolution_status || identityResolution.status || "",
     ambiguity_status: result.ambiguity_status || identityResolution.ambiguity_status || "",
+    abstain_reason_codes: result.abstain_reason_codes || identityResolution.abstain_reason_codes || [],
+    catalog_card_identity: result.catalog_card_identity || identityResolution.catalog_card_identity || {},
+    physical_asset_identity: result.physical_asset_identity || identityResolution.physical_asset_identity || {},
+    candidate_identity_report: candidateIdentityReport
+      ? {
+          selected_candidate_id: candidateIdentityReport.selected_candidate_id || null,
+          metrics: candidateIdentityReport.metrics || {},
+          candidate_count: Array.isArray(candidateIdentityReport.candidates) ? candidateIdentityReport.candidates.length : null
+        }
+      : null,
     confidence_report: result.confidence_report || identityResolution.confidence_report || null,
     convergence_report: result.convergence_report || identityResolution.convergence_report || null,
     fields: (result.field_states || identityResolution.field_states || []).map((fieldState) => ({
@@ -1759,6 +1779,10 @@ function summarize(results = [], {
   const attemptedCardsPerMinute = perMinute(attempted, effectiveElapsedMs);
   const evaluatedCardsPerMinute = perMinute(evaluated, effectiveElapsedMs);
   const correctCardsPerMinute = perMinute(allInCommercialSuccesses, effectiveElapsedMs);
+  const rootCauses = rootCauseSummary(results);
+  const componentQuality = componentQualityReport(results, {
+    fieldGroundTruthAvailable: false
+  });
 
   return {
     attempted_count: attempted,
@@ -1814,6 +1838,10 @@ function summarize(results = [], {
         all_in_commercial_accuracy: rate(allInCommercialSuccesses, attempted)
       }
     },
+    root_cause_summary: rootCauses,
+    component_quality: componentQuality,
+    dangerous_error_rate: componentQuality.factors.decision_quality.dangerous_error_rate,
+    accepted_coverage_rate: componentQuality.factors.decision_quality.coverage_rate,
     open_world_metric_contract: openWorldEvaluationMetrics,
     usage
   };
@@ -1842,6 +1870,7 @@ function buildReport({
   itemTimeoutMs = 0,
   elapsedMs = 0
 }) {
+  const annotatedResults = annotateEvaluationRootCauses(results);
   return {
     schema_version: schemaVersion,
     status: results.length === selectedItems.length ? "completed" : "partial",
@@ -1877,8 +1906,8 @@ function buildReport({
     no_feedback_retention_side_effects: true,
     full_sample_evaluation: fullSampleEvaluation,
     target_count: selectedItems.length,
-    ...summarize(results, { elapsedMs }),
-    results
+    ...summarize(annotatedResults, { elapsedMs }),
+    results: annotatedResults
   };
 }
 
@@ -2076,6 +2105,9 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `corrected_title_exact: ${report.corrected_title_exact_count ?? "n/a"}/${report.attempted_count ?? "n/a"} (${report.corrected_title_exact_rate ?? "n/a"})`,
     `corrected_title_token_recall_avg: ${report.corrected_title_token_recall_avg ?? "n/a"}`,
     `critical_title_errors: ${report.critical_title_error_count ?? "n/a"}/${report.attempted_count ?? "n/a"} (${report.critical_title_error_rate ?? "n/a"})`,
+    `dangerous_error_rate: ${report.dangerous_error_rate ?? "n/a"}`,
+    `accepted_coverage_rate: ${report.accepted_coverage_rate ?? "n/a"}`,
+    `root_causes: ${Object.entries(report.root_cause_summary?.counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `recognition_worker_calls: ${report.usage?.recognition_worker_calls ?? "n/a"}`,
     `full_sample_evaluation: ${report.full_sample_evaluation === true}`,
     `commercial_accuracy_claim_allowed: false`,
