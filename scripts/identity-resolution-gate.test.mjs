@@ -163,7 +163,11 @@ const fastVisionYearWithAuthoritativeBack = primaryFastVisionResult({
   }
 });
 assert.equal(fastVisionYearWithAuthoritativeBack.identity_resolution_status, "RESOLVED");
-assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.auto_publish_allowed, true);
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.auto_publish_allowed, false);
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.model_auto_publish_recommended, true);
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.writer_quick_approval_ready, true);
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.human_approval_required, true);
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.upload_blocked_until_writer_approval, true);
 assert.match(fastVisionYearWithAuthoritativeBack.final_title, /2024/);
 
 const fastVisionSurfaceColorWithoutCatalog = primaryFastVisionResult({

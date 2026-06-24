@@ -1810,6 +1810,7 @@ function summarize(results = [], {
   const writerReviewReady = results.filter((item) => publicationGate(item).writer_review_ready === true).length;
   const partialWriterDrafts = results.filter((item) => publicationGate(item).partial_writer_draft === true).length;
   const autoPublishReady = results.filter((item) => publicationGate(item).auto_publish_allowed === true).length;
+  const modelAutoPublishRecommended = results.filter((item) => publicationGate(item).model_auto_publish_recommended === true).length;
   const fieldLevelPublications = results.map(fieldLevelPublication).filter((item) => item && typeof item === "object");
   const fieldLevelPartialOutputs = fieldLevelPublications.filter((item) => item.has_partial_output === true).length;
   const allInCommercialSuccesses = results.filter(isAllInCommercialSuccess).length;
@@ -1858,6 +1859,8 @@ function summarize(results = [], {
     field_level_review_field_count_avg: average(fieldLevelPublications.map((item) => Number(item.review_field_count || 0))),
     auto_publish_ready_count: autoPublishReady,
     auto_publish_ready_rate: rate(autoPublishReady, attempted),
+    model_auto_publish_recommended_count: modelAutoPublishRecommended,
+    model_auto_publish_recommended_rate: rate(modelAutoPublishRecommended, attempted),
     all_in_commercial_success_count: allInCommercialSuccesses,
     all_in_commercial_failure_count: allInCommercialFailures,
     all_in_commercial_accuracy: rate(allInCommercialSuccesses, attempted),
@@ -2164,6 +2167,7 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `field_level_usable_field_count_avg: ${report.field_level_usable_field_count_avg ?? "n/a"}`,
     `field_level_review_field_count_avg: ${report.field_level_review_field_count_avg ?? "n/a"}`,
     `auto_publish_ready_count: ${report.auto_publish_ready_count ?? "n/a"} (${report.auto_publish_ready_rate ?? "n/a"})`,
+    `model_auto_publish_recommended_count: ${report.model_auto_publish_recommended_count ?? "n/a"} (${report.model_auto_publish_recommended_rate ?? "n/a"})`,
     `all_in_commercial_accuracy: ${report.all_in_commercial_accuracy ?? "n/a"} target:${report.all_in_commercial_accuracy_target ?? "n/a"} passed:${report.all_in_commercial_accuracy_passed === true}`,
     `correct_cards_per_minute: ${report.correct_cards_per_minute ?? "n/a"}`,
     `attempted_cards_per_minute: ${report.attempted_cards_per_minute ?? "n/a"}`,

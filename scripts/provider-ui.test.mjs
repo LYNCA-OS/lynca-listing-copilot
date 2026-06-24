@@ -51,6 +51,11 @@ assert.match(js, /result\.modules/, "frontend should read module output from det
 assert.match(js, /data-module-input/, "writer modules should expose editable module text controls");
 assert.match(js, /publicationGateNotice\(result\)/, "frontend should show the partial publication gate contract");
 assert.match(js, /writer_required_fields/, "frontend should surface unresolved writer-required fields");
+assert.match(js, /modelQuickApprovalCandidate/, "frontend should group model quick-approval candidates for writer review");
+assert.match(js, /model_auto_publish_recommended/, "frontend should treat model auto-publish as a recommendation, not direct publishing");
+assert.match(js, /建议快速批准/, "frontend should label model-recommended cards as writer quick approval");
+assert.match(js, /data-quick-approve-publish/, "writer quick approval should expose a one-click approve-and-publish action");
+assert.match(js, /quickApproveAndPublish/, "quick approval should save the writer review before publishing");
 assert.match(js, /fetch\("\/api\/listing-render-title"/, "module edits should rerender through the server renderer endpoint");
 assert.match(js, /module_edit/, "module edit requests should preserve the explicit edit boundary");
 assert.match(js, /title_override/, "manual title overrides should be tracked separately from resolved fields");

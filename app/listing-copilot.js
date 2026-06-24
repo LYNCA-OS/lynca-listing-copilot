@@ -820,6 +820,13 @@ function generatedTitleResults() {
     .sort((a, b) => a.index - b.index);
 }
 
+function modelQuickApprovalCandidate(result) {
+  const gate = result?.publication_gate || {};
+  return gate.model_auto_publish_recommended === true
+    || gate.writer_quick_approval_ready === true
+    || gate.status === "WRITER_QUICK_APPROVAL_READY";
+}
+
 function renderBatchTitles() {
   const titleResults = generatedTitleResults();
   elements.copyAllButton.disabled = titleResults.length === 0;
@@ -845,8 +852,53 @@ function imageSideLabel(imageIndex) {
 function renderAssetRows() {
   if (!state.assets.length) return;
 
-  // Preserve upload/pairing order so writers can match titles against eBay assets.
-  elements.assetPreviewList.innerHTML = state.assets.map((asset) => {
+  const hasAnyResult = state.results.length > 0;
+  if (!hasAnyResult) {
+    elements.assetPreviewList.innerHTML = state.assets.map(assetRowHtml).join("");
+    return;
+  }
+
+  const groups = [
+    {
+      key: "quick",
+      label: "模型建议快速批准",
+      assets: state.assets.filter((asset) => modelQuickApprovalCandidate(resultForAsset(asset)))
+    },
+    {
+      key: "review",
+      label: "写手逐卡编辑",
+      assets: state.assets.filter((asset) => {
+        const result = resultForAsset(asset);
+        if (!result || modelQuickApprovalCandidate(result)) return false;
+        const gate = result.publication_gate || {};
+        return gate.writer_review_ready === true;
+      })
+    },
+    {
+      key: "manual",
+      label: "等待或人工处理",
+      assets: state.assets.filter((asset) => {
+        const result = resultForAsset(asset);
+        if (!result) return true;
+        if (modelQuickApprovalCandidate(result)) return false;
+        const gate = result.publication_gate || {};
+        return gate.writer_review_ready !== true;
+      })
+    }
+  ].filter((group) => group.assets.length);
+
+  elements.assetPreviewList.innerHTML = groups.map((group) => `
+    <section class="asset-review-group ${group.key}">
+      <div class="asset-review-group-head">
+        <span>${escapeHtml(group.label)}</span>
+        <strong>${group.assets.length}</strong>
+      </div>
+      ${group.assets.map(assetRowHtml).join("")}
+    </section>
+  `).join("");
+}
+
+function assetRowHtml(asset) {
     const result = resultForAsset(asset);
 
     return `
@@ -871,7 +923,6 @@ function renderAssetRows() {
         ${result ? resultBox(result) : pendingBox(asset)}
       </article>
     `;
-  }).join("");
 }
 
 function pendingBox(asset) {
@@ -896,6 +947,8 @@ function resultBox(result) {
   const saveDisabled = disabled || result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
   const showPublish = shouldShowPublishButton(result);
   const publishDisabled = !canPublishResult(result);
+  const showQuickApprove = shouldShowQuickApproveButton(result);
+  const quickApproveDisabled = !canQuickApproveAndPublish(result);
   const retryProvider = emergencyProvider();
   const canEmergencyRetry = confidence === "FAILED" && retryProvider && result.provider !== "openai_legacy";
   const saveLabel = {
@@ -914,6 +967,7 @@ function resultBox(result) {
           ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 单模型重试</button>` : ""}
           <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(correctedTitle || "")}" ${disabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
+          ${showQuickApprove ? `<button class="copy-button publish-button quick-approve-button" type="button" data-quick-approve-publish="${result.index}" ${quickApproveDisabled ? "disabled" : ""}>快速批准并发布</button>` : ""}
           ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
         </div>
       </div>
@@ -969,23 +1023,34 @@ const reviewFieldLabels = {
 
 function publicationGateNotice(result) {
   const gate = result.publication_gate || {};
-  if (!gate.status || gate.auto_publish_allowed === true) return "";
+  if (!gate.status) return "";
 
   const fields = Array.isArray(gate.writer_required_fields)
     ? gate.writer_required_fields
     : [];
   const fieldText = fields.length
     ? fields.map((field) => reviewFieldLabels[field] || field).join(", ")
-    : "Identity";
-  const readyText = gate.writer_review_ready
+    : "无需补字段";
+  const quickApproval = modelQuickApprovalCandidate(result);
+  const readyText = quickApproval
+    ? "建议快速批准"
+    : gate.writer_review_ready
     ? "已生成可编辑草稿"
     : "需要人工处理";
+  const gateClass = quickApproval
+    ? "quick-approval"
+    : gate.writer_review_ready
+      ? "writer-ready"
+      : "manual-required";
+  const helpText = quickApproval
+    ? "写手同意后保存审核记录，再一键发布。"
+    : "上传前必须保存审核记录。";
 
   return `
-    <div class="publication-gate ${gate.writer_review_ready ? "writer-ready" : "manual-required"}">
+    <div class="publication-gate ${gateClass}">
       <span>${escapeHtml(readyText)}</span>
       <strong>写手待补：${escapeHtml(fieldText)}</strong>
-      <small>上传前必须保存审核记录。</small>
+      <small>${escapeHtml(helpText)}</small>
     </div>
   `;
 }
@@ -1460,6 +1525,20 @@ function shouldShowPublishButton(result) {
     && Boolean(result.approved_by);
 }
 
+function shouldShowQuickApproveButton(result) {
+  if (!modelQuickApprovalCandidate(result)) return false;
+  if (["publishing", "PUBLISHED", "SKIPPED_DUPLICATE"].includes(result.publishStatus)) return false;
+  return result.feedbackStatus !== "saved" && result.feedbackStatus !== "skipped";
+}
+
+function canQuickApproveAndPublish(result) {
+  return shouldShowQuickApproveButton(result)
+    && result.feedbackStatus !== "saving"
+    && result.publishStatus !== "FAILED"
+    && finalTitleForResult(result)
+    && resultHasResolvedFields(result);
+}
+
 function publishButtonLabel(result) {
   if (result.publishStatus === "publishing") return "发布中…";
   if (result.publishStatus === "PUBLISHED") return "已发布";
@@ -1492,15 +1571,13 @@ function buildListingDraft(result, asset) {
   };
 }
 
-async function saveTitleFeedback(button) {
-  const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
-  const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
+async function saveFeedbackForResult(result, asset) {
   if (!result) return;
 
   const generatedTitle = String(result.generatedTitle || result.title || "").trim();
   const correctedTitle = String(result.correctedTitle ?? generatedTitle).trim();
 
-  if (!generatedTitle || !correctedTitle) return;
+  if (!generatedTitle || !correctedTitle) return false;
 
   result.feedbackStatus = "saving";
   result.feedbackMessage = "正在保存审核记录…";
@@ -1564,17 +1641,23 @@ async function saveTitleFeedback(button) {
       : payload.review_outcome
       ? `已保存审核记录：${payload.review_outcome}。`
       : "已保存审核记录。";
+    return result.feedbackStatus === "saved";
   } catch (error) {
     result.feedbackStatus = "";
     result.feedbackMessage = error.message || "记忆保存失败。";
+    return false;
+  } finally {
+    renderResults();
   }
-
-  renderResults();
 }
 
-async function publishDraft(button) {
-  const result = state.results.find((item) => item.index === Number(button.dataset.publishDraft));
-  const asset = state.assets.find((item) => item.index === Number(button.dataset.publishDraft));
+async function saveTitleFeedback(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
+  const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
+  await saveFeedbackForResult(result, asset);
+}
+
+async function publishDraftForResult(result, asset) {
   if (!result || !canPublishResult(result)) return;
 
   result.publishStatus = "publishing";
@@ -1614,6 +1697,28 @@ async function publishDraft(button) {
   }
 
   renderResults();
+}
+
+async function publishDraft(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.publishDraft));
+  const asset = state.assets.find((item) => item.index === Number(button.dataset.publishDraft));
+  await publishDraftForResult(result, asset);
+}
+
+async function quickApproveAndPublish(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.quickApprovePublish));
+  const asset = state.assets.find((item) => item.index === Number(button.dataset.quickApprovePublish));
+  if (!result || !canQuickApproveAndPublish(result)) return;
+
+  result.feedbackMessage = "正在快速批准…";
+  renderResults();
+  const saved = await saveFeedbackForResult(result, asset);
+  if (!saved) {
+    result.publishMessage = "未生成可发布的审核记录，无法一键发布。";
+    renderResults();
+    return;
+  }
+  await publishDraftForResult(result, asset);
 }
 
 async function copyAllTitles() {
@@ -1696,6 +1801,12 @@ function bindEvents() {
     const saveButton = event.target.closest("[data-save-title]");
     if (saveButton) {
       saveTitleFeedback(saveButton);
+      return;
+    }
+
+    const quickApproveButton = event.target.closest("[data-quick-approve-publish]");
+    if (quickApproveButton) {
+      quickApproveAndPublish(quickApproveButton);
       return;
     }
 

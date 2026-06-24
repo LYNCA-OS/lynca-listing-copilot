@@ -827,6 +827,43 @@ h3 {
   color: var(--red);
 }
 
+.publication-gate.quick-approval {
+  border-color: rgba(112, 214, 159, 0.42);
+  background: rgba(112, 214, 159, 0.08);
+  color: var(--green);
+}
+
+.asset-review-group {
+  display: grid;
+  gap: 14px;
+}
+
+.asset-review-group + .asset-review-group {
+  margin-top: 18px;
+}
+
+.asset-review-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 2px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.asset-review-group.quick .asset-review-group-head {
+  color: var(--green);
+}
+
+.asset-review-group-head strong {
+  min-width: 26px;
+  text-align: right;
+  color: var(--ink);
+}
+
 .publication-gate strong {
   min-width: 0;
   overflow-wrap: anywhere;
