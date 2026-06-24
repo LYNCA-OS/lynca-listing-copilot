@@ -593,9 +593,9 @@ function providerDisabledText(provider) {
   if (reason === "storage_not_configured") return "Storage 未配置";
   if (reason.includes("api_key")) return "未配置";
   if (reason === "disabled_by_env") return "已禁用";
-  if (reason === "emergency_retry_disabled") return "应急关闭";
+  if (reason === "emergency_retry_disabled") return "手动关闭";
   if (reason) return "不可用";
-  return provider.requires_explicit_retry ? "显式应急" : "可用";
+  return provider.requires_explicit_retry ? "手动直跑" : "可用";
 }
 
 function providerSmokeText(provider) {
@@ -621,9 +621,18 @@ function providerSmokeText(provider) {
   return verified.length ? `${prefix}: ${verified.join(" / ")}` : prefix;
 }
 
+function providerCascadeText(provider) {
+  if (provider.id !== "cascade_fast") return "";
+  const secondary = provider.secondary_configured === true
+    ? "Agnes 辅助可用"
+    : `Agnes 辅助不可用: ${provider.secondary_disabled_reason || "未配置"}`;
+  return `主路径 GPT-4.1 · ${secondary}`;
+}
+
 function providerStatusText(provider) {
   return [
     `${provider.label} · ${providerDisabledText(provider)}`,
+    providerCascadeText(provider),
     providerSmokeText(provider)
   ].filter(Boolean).join(" · ");
 }
@@ -648,6 +657,7 @@ function renderProviderControl() {
     >
       <strong>${escapeHtml(provider.label)}</strong>
       <small>${escapeHtml(provider.model_id)} · ${escapeHtml(providerDisabledText(provider))}</small>
+      ${providerCascadeText(provider) ? `<small>${escapeHtml(providerCascadeText(provider))}</small>` : ""}
       ${providerSmokeText(provider) ? `<small class="provider-smoke">${escapeHtml(providerSmokeText(provider))}</small>` : ""}
     </button>
   `).join("");
@@ -897,7 +907,7 @@ function resultBox(result) {
         <span class="confidence-badge ${confidenceClass(confidence)}">${confidence}</span>
         <div class="title-actions">
           <span>${escapeHtml(providerLabel)}</span>
-          ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 应急重试</button>` : ""}
+          ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 单模型重试</button>` : ""}
           <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(correctedTitle || "")}" ${disabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
@@ -1216,8 +1226,8 @@ async function retryAssetWithEmergency(button) {
   if (!asset || !retryProvider) return;
 
   button.disabled = true;
-  button.textContent = "应急重试中";
-  setStatus(`资产 ${asset.index} 正在使用 GPT‑4.1 应急重试...`);
+  button.textContent = "GPT 重试中";
+  setStatus(`资产 ${asset.index} 正在使用 GPT‑4.1 单模型重试...`);
 
   try {
     const result = await processAsset(asset, {
@@ -1227,7 +1237,7 @@ async function retryAssetWithEmergency(button) {
     state.results = state.results.filter((item) => item.index !== asset.index);
     state.results.push(result);
     state.results.sort((a, b) => a.index - b.index);
-    setStatus(`资产 ${asset.index} 应急重试完成。`);
+    setStatus(`资产 ${asset.index} GPT‑4.1 单模型重试完成。`);
   } catch (error) {
     state.results = state.results.filter((item) => item.index !== asset.index);
     state.results.push({
@@ -1237,7 +1247,7 @@ async function retryAssetWithEmergency(button) {
       explicit_emergency: true
     });
     state.results.sort((a, b) => a.index - b.index);
-    setStatus(`资产 ${asset.index} 应急重试失败。`);
+    setStatus(`资产 ${asset.index} GPT‑4.1 单模型重试失败。`);
   }
 
   renderResults();

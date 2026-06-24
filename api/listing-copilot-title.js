@@ -12,7 +12,7 @@ import {
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
-import { defaultProviderModels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
+import { defaultProviderModels, providerLabels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 import {
@@ -2585,19 +2585,24 @@ function cascadeVerificationUnresolvedNotes(fields = []) {
   return fields.map((field) => notesByField[field]).filter(Boolean);
 }
 
-function withCascadePolicy(result = {}, verificationFields = []) {
+function withCascadePolicy(result = {}, verificationFields = [], {
+  secondaryAvailable = true,
+  secondaryDisabledReason = null
+} = {}) {
   return {
     ...result,
     provider: visionProviderIds.CASCADE_FAST,
     source: visionProviderIds.OPENAI_LEGACY,
     identity_provider_id: "primary_fast_vision",
-    provider_label: "Fast Cascade · 默认",
+    provider_label: providerLabels[visionProviderIds.CASCADE_FAST],
     model_id: `${result.model_id || defaultProviderModels[visionProviderIds.OPENAI_LEGACY]} + ${defaultProviderModels[visionProviderIds.AGNES]}`,
     cascade: {
       enabled: true,
       role: "PRIMARY_FAST_VISION",
       primary_provider_id: visionProviderIds.OPENAI_LEGACY,
       secondary_provider_id: visionProviderIds.AGNES,
+      secondary_verification_available: secondaryAvailable,
+      secondary_disabled_reason: secondaryDisabledReason,
       secondary_verification_required_fields: verificationFields,
       secondary_verification_required: verificationFields.length > 0
     },
@@ -2608,7 +2613,10 @@ function withCascadePolicy(result = {}, verificationFields = []) {
     },
     unresolved: uniqueValues([
       ...(Array.isArray(result.unresolved) ? result.unresolved : []),
-      ...cascadeVerificationUnresolvedNotes(verificationFields)
+      ...cascadeVerificationUnresolvedNotes(verificationFields),
+      ...(verificationFields.length && !secondaryAvailable
+        ? [`secondary verifier unavailable: ${secondaryDisabledReason || "agnes_not_configured"}`]
+        : [])
     ])
   };
 }
@@ -2745,7 +2753,7 @@ async function createRecognitionIdentityPreflight(payload, {
       source: "recognition_worker",
       provider: "recognition_worker",
       route: "RECOGNITION_WORKER_PREFLIGHT",
-      route_reason: "Attempted local OCR/slab identity resolution before Agnes.",
+      route_reason: "Attempted local OCR/slab identity resolution before the vision cascade.",
       recognition_preflight: evidenceDocument.recognition || null,
       usage: {
         provider_calls: 0,
@@ -2883,14 +2891,18 @@ async function createCascadeFastTitle(payload, selection, {
     ));
   const mergedResult = withRecognitionEvidence(primaryWithEvidence, recognitionEvidenceDocument, initialPayload);
   const verificationFields = cascadeSecondaryVerificationFields(mergedResult);
-  const cascadeResult = withCascadePolicy(mergedResult, verificationFields);
+  const secondaryAvailable = selection.provider?.secondary_configured === true;
+  const cascadeResult = withCascadePolicy(mergedResult, verificationFields, {
+    secondaryAvailable,
+    secondaryDisabledReason: selection.provider?.secondary_disabled_reason || null
+  });
   const secondaryEnv = cascadeSecondaryVerifierEnv(process.env, verificationFields);
 
   return withEvidenceCompletion(cascadeResult, {
     ...payload,
     images: signedImages
   }, {
-    runFocusedVisionImpl: verificationFields.length
+    runFocusedVisionImpl: verificationFields.length && secondaryAvailable
       ? createAgnesFocusedRereadRunner({
           images: signedImages,
           maxTitleLength,

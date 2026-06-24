@@ -30,6 +30,9 @@ assert.equal(fieldState(ocrConflict, "serial_number").conflicts, true);
 assert.equal(ocrConflict.ambiguity_status, "AMBIGUOUS");
 assert.equal(ocrConflict.status, "ABSTAIN");
 assert.equal(ocrConflict.identity_state.status, "ABSTAIN");
+assert.ok(ocrConflict.abstain_reason_codes.includes("SERIAL_PRINT_RUN_CONFLICT"));
+assert.ok(Array.isArray(ocrConflict.open_world_identity.evaluation_metrics_contract));
+assert.equal(ocrConflict.identity_state.open_world_identity.catalog_match_status, "NEEDS_REVIEW");
 assert.equal(ocrConflict.canonical_evidence.schema_version, "identity_evidence_v1");
 assert.ok(ocrConflict.canonical_evidence.source_counts.CARD_FRONT_PRINTED_TEXT > 0);
 assert.ok(ocrConflict.canonical_evidence.source_counts.OCR_ONLY > 0);
@@ -122,6 +125,12 @@ const multiViewOcr = resolveIdentity({
   ]
 });
 assert.equal(multiViewOcr.identity.serial_number, "31/50");
+assert.equal(multiViewOcr.catalog_card_identity.season, "2024");
+assert.equal(multiViewOcr.catalog_card_identity.product, "Topps Chrome");
+assert.deepEqual(multiViewOcr.catalog_card_identity.subjects, ["Shohei Ohtani"]);
+assert.equal(multiViewOcr.catalog_card_identity.print_run, "50");
+assert.equal(multiViewOcr.physical_asset_identity.serial_number, "31/50");
+assert.equal(multiViewOcr.physical_asset_identity.grader, undefined);
 assert.equal(fieldState(multiViewOcr, "serial_number").conflicts, false);
 assert.ok(fieldState(multiViewOcr, "serial_number").resolution_confidence >= 0.86);
 
@@ -182,6 +191,7 @@ assert.equal(invalidSerial.identity.serial_number, null);
 assert.ok(invalidSerial.conflict_map.some((conflict) => conflict.field === "serial_number" && conflict.conflict_type === "INVALID_SERIAL_NUMBER"));
 assert.equal(invalidSerial.ambiguity_status, "AMBIGUOUS");
 assert.equal(invalidSerial.status, "ABSTAIN");
+assert.ok(invalidSerial.abstain_reason_codes.includes("SERIAL_PRINT_RUN_CONFLICT"));
 assert.equal(fieldState(invalidSerial, "serial_number").candidates[0].constraint_result.constraint_score, 0);
 assert.equal(fieldState(invalidSerial, "serial_number").candidates[0].constraint_result.violations[0].weight, 1);
 assert.equal(invalidSerial.constraint_score_report.per_field_constraint_score.serial_number, 0);

@@ -55,8 +55,8 @@ assert.throws(
     images: dataUrlImages,
     env
   }),
-  /explicit emergency/i,
-  "GPT-4.1 legacy should require explicit emergency retry"
+  /explicit manual/i,
+  "GPT-4.1 single-provider mode should require explicit manual retry"
 );
 
 const emergencySelection = selectVisionProvider({
@@ -74,19 +74,20 @@ assert.throws(
   "Explicit Agnes should not silently accept data URLs or fall back to GPT"
 );
 
-assert.throws(
-  () => selectVisionProvider({
-    images: remoteImages,
-    env: {
-      ...env,
-      DEFAULT_VISION_PROVIDER: "",
-      AGNES_API_KEY: "",
-      OPENAI_API_KEY: "test-openai-key"
-    }
-  }),
-  (error) => error.provider === "cascade_fast" && error.code === "provider_unavailable",
-  "OpenAI legacy must not become the implicit default when the cascade verifier is unavailable"
-);
+const cascadeWithoutAgnes = selectVisionProvider({
+  images: remoteImages,
+  env: {
+    ...env,
+    DEFAULT_VISION_PROVIDER: "",
+    AGNES_API_KEY: "",
+    OPENAI_API_KEY: "test-openai-key"
+  }
+});
+assert.equal(cascadeWithoutAgnes.provider_id, "cascade_fast");
+assert.equal(cascadeWithoutAgnes.provider.primary_provider_id, "openai_legacy");
+assert.equal(cascadeWithoutAgnes.provider.secondary_provider_id, "agnes");
+assert.equal(cascadeWithoutAgnes.provider.secondary_configured, false);
+assert.equal(cascadeWithoutAgnes.provider.secondary_disabled_reason, "missing_agnes_api_key");
 
 assert.throws(
   () => selectVisionProvider({
@@ -96,8 +97,8 @@ assert.throws(
       DEFAULT_VISION_PROVIDER: "openai_legacy"
     }
   }),
-  /explicit emergency/i,
-  "OpenAI legacy must not be usable as an env-selected default without an explicit emergency request"
+  /explicit manual/i,
+  "OpenAI single-provider mode must not be usable as an env-selected default without an explicit manual request"
 );
 
 assert.throws(
@@ -106,8 +107,20 @@ assert.throws(
   "illegal provider ids should be rejected"
 );
 
+const cascadeWithInvalidAgnesModel = selectVisionProvider({
+  images: remoteImages,
+  env: {
+    ...env,
+    AGNES_MODEL: "agnes-experimental"
+  }
+});
+assert.equal(cascadeWithInvalidAgnesModel.provider_id, "cascade_fast");
+assert.equal(cascadeWithInvalidAgnesModel.provider.secondary_configured, false);
+assert.equal(cascadeWithInvalidAgnesModel.provider.secondary_disabled_reason, "agnes_model_not_allowed");
+
 assert.throws(
   () => selectVisionProvider({
+    requestedProvider: "agnes",
     images: remoteImages,
     env: {
       ...env,
@@ -115,7 +128,7 @@ assert.throws(
     }
   }),
   /model_not_allowed/i,
-  "Agnes model ids should be restricted to the provider whitelist"
+  "Explicit Agnes model ids should be restricted to the provider whitelist"
 );
 
 assert.throws(
@@ -129,7 +142,7 @@ assert.throws(
     }
   }),
   /model_not_allowed/i,
-  "GPT-4.1 emergency model ids should be restricted to the provider whitelist"
+  "GPT-4.1 single-provider model ids should be restricted to the provider whitelist"
 );
 
 const disabledProviders = listAvailableVisionProviders({
@@ -154,8 +167,8 @@ assert.throws(
       ALLOW_EXPLICIT_GPT41_RETRY: "false"
     }
   }),
-  /emergency retry is disabled/i,
-  "GPT-4.1 emergency should be unavailable when the explicit retry flag is disabled"
+  /manual single-provider retry is disabled/i,
+  "GPT-4.1 standalone retry should be unavailable when the explicit retry flag is disabled"
 );
 
 const parsedContent = parseProviderMessagePayload({

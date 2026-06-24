@@ -14,6 +14,7 @@ import {
   applyIdentityResolutionGate,
   applyIdentityResolutionGateWithConvergence
 } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import { openWorldEvaluationMetrics } from "../lib/identity-resolution/identity-layers.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
 import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
 import { recognitionRequestedFields } from "../lib/listing/recognition/recognition-contract.mjs";
@@ -1813,6 +1814,7 @@ function summarize(results = [], {
         all_in_commercial_accuracy: rate(allInCommercialSuccesses, attempted)
       }
     },
+    open_world_metric_contract: openWorldEvaluationMetrics,
     usage
   };
 }

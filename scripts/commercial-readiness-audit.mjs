@@ -234,35 +234,38 @@ async function auditProviderPolicy() {
     failures.push("provider registry still contains allowLegacyDefault");
   }
   if (!/const defaultId = envDefault \|\| visionProviderIds\.CASCADE_FAST/.test(registry.text)) {
-    failures.push("Fast Cascade is not the implicit default provider in selectVisionProvider");
+    failures.push("GPT primary cascade is not the implicit default provider in selectVisionProvider");
   }
   if (!/primary_provider_id:\s*visionProviderIds\.OPENAI_LEGACY/.test(registry.text)
     || !/secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text)) {
-    failures.push("Fast Cascade does not declare GPT-4.1 mini primary plus Agnes secondary verifier");
+    failures.push("Default cascade does not declare GPT-4.1 mini primary plus Agnes secondary verifier");
   }
-  if (!/GPT-4\.1 legacy may only be used through an explicit emergency retry/.test(registry.text)) {
-    failures.push("GPT-4.1 explicit emergency guard is missing");
+  if (!/GPT-4\.1 single-provider mode may only be used through an explicit manual retry/.test(registry.text)) {
+    failures.push("GPT-4.1 explicit manual single-provider guard is missing");
   }
   if (!/provider\.id === visionProviderIds\.OPENAI_LEGACY/.test(registry.text)) {
-    failures.push("OpenAI legacy provider branch is missing from explicit retry guard");
+    failures.push("OpenAI single-provider branch is missing from explicit retry guard");
   }
   if (!/cascade\?\.selectable/.test(statusApi.text)) {
-    failures.push("provider status API does not default to selectable Fast Cascade");
+    failures.push("provider status API does not default to selectable GPT primary cascade");
   }
   if (!/state\.selectedProvider = payload\.default_provider \|\| ""/.test(appJs.text)) {
     failures.push("frontend does not use the server default provider");
   }
   if (/state\.selectedProvider\s*=\s*["']openai_legacy["']/.test(appJs.text)) {
-    failures.push("frontend default-selects GPT-4.1 legacy");
+    failures.push("frontend default-selects GPT-4.1 single-provider mode instead of cascade");
   }
   if (!/provider === "openai_legacy"/.test(appJs.text) || !/data-emergency-retry/.test(appJs.text)) {
-    failures.push("frontend does not expose GPT-4.1 as a separate emergency action");
+    failures.push("frontend does not expose GPT-4.1 as a separate manual action");
   }
 
   const details = {
     cascade_implicit_default: failures.length === 0,
+    gpt_primary_fast_vision: /primary_provider_id:\s*visionProviderIds\.OPENAI_LEGACY/.test(registry.text),
+    agnes_auxiliary_verifier: /secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text),
     agnes_conditional_verifier: /secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text),
-    gpt_implicit_default: failures.length === 0 ? "blocked_by_policy" : "unknown",
+    gpt_implicit_default: failures.length === 0 ? "primary_inside_cascade" : "unknown",
+    standalone_gpt_default: failures.length === 0 ? "blocked_by_policy" : "unknown",
     gpt_visible_button: /provider === "openai_legacy"/.test(appJs.text),
     gpt_emergency_retry_action: /data-emergency-retry/.test(appJs.text),
     checked_files: [registry.path, statusApi.path, appJs.path],
@@ -271,7 +274,7 @@ async function auditProviderPolicy() {
 
   return failures.length
     ? blocked("provider_default_policy", "Provider default policy is not safe enough for commercial readiness.", details)
-    : passed("provider_default_policy", "Fast Cascade is the implicit default; GPT-4.1 single-provider mode is explicit only; Agnes is the conditional verifier.", details);
+    : passed("provider_default_policy", "GPT-4.1 primary cascade is the implicit default; GPT-4.1 single-provider mode is explicit only; Agnes is the auxiliary verifier.", details);
 }
 
 function destinationIdsFromPublisherContract(source) {
@@ -870,6 +873,7 @@ export function formatCommercialReadinessReport(report) {
     `commercial_review_worklist: ${reviewWorklistSummary}`,
     `identity_result_cache: ${identityCacheSummary}`,
     `gpt_implicit_default: ${providerPolicy?.details?.gpt_implicit_default || "unknown"}`,
+    `standalone_gpt_default: ${providerPolicy?.details?.standalone_gpt_default || "unknown"}`,
     "",
     "checks:"
   ];

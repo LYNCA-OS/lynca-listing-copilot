@@ -194,7 +194,7 @@ export async function createDeliveryReport({
     ])),
     section(2, "Implementation Summary", bullet([
       "Evidence First compatibility layer, provider routing, storage verification, image-quality gates, retrieval, completion orchestration, renderer, feedback-retention gate, publishing boundary, semantic title acceptance, eval, smoke, readiness audit, and delivery-report scaffolds are present.",
-      "Agnes is the primary vision provider; GPT-4.1 legacy remains an explicit emergency path.",
+      "GPT-4.1 mini is the default primary fast-vision path inside the cascade; Agnes is a conditional auxiliary field verifier.",
       "Commercial acceptance remains blocked until real held-out evidence, live external retrieval validation, and a real B-end adapter exist."
     ])),
     section(3, "Architecture Changes", bullet([
@@ -213,10 +213,10 @@ export async function createDeliveryReport({
       "Agnes uses Chat Completions image_url through short-lived signed read URLs when storage is configured.",
       "JSON text parsing remains a required fallback even when the tool-call smoke path passes."
     ])),
-    section(6, "GPT-4.1 Emergency Status", bullet([
+    section(6, "GPT-4.1 Primary Status", bullet([
       `Implicit default status: ${readiness.checks.find((check) => check.id === "provider_default_policy")?.details?.gpt_implicit_default || "unknown"}`,
-      "GPT-4.1 is visible only as an explicit emergency retry when enabled and configured.",
-      "Normal Evidence Completion does not automatically invoke GPT-4.1."
+      "GPT-4.1 is the first-pass recognizer in the default cascade when enabled and configured.",
+      "The standalone GPT-4.1 button remains an explicit manual action so operators cannot bypass the cascade accidentally."
     ])),
     section(7, "Brave Search Status", bullet([
       `Smoke status: ${smokeStatusFromReadiness(readiness, "brave")}`,
@@ -231,7 +231,7 @@ export async function createDeliveryReport({
     ])),
     section(9, "OWS Fallback Status", bullet([
       `Smoke status: ${smokeStatusFromReadiness(readiness, "openai_web_search")}`,
-      "OWS is a replaceable fallback retrieval provider and is separate from GPT-4.1 emergency vision.",
+      "OWS is a replaceable fallback retrieval provider and is separate from GPT-4.1 primary vision.",
       "OWS is not required for normal Agnes vision flow."
     ])),
     section(10, "Environment Variables", bullet([
@@ -285,7 +285,7 @@ export async function createDeliveryReport({
     section(18, "Writer UI Behavior", bullet([
       "Writer modules render compact editable sections rather than raw JSON.",
       "Module edits update corrected resolved fields and rerender deterministic titles.",
-      "Provider controls expose Agnes default and GPT emergency action without arbitrary endpoint/model inputs."
+      "Provider controls expose the GPT-4.1 primary cascade plus Agnes auxiliary status without arbitrary endpoint/model inputs."
     ])),
     section(19, "Title Renderer Behavior", bullet([
       "Final title is rendered deterministically from resolved fields.",
@@ -352,11 +352,11 @@ export async function createDeliveryReport({
       "No real B-end endpoint, auth scheme, payload contract, or destination URL is invented.",
       "Real adapter work requires B-end API documentation and credentials."
     ])),
-    section(27, "GPT-4.1 Retirement Conditions", bullet([
-      "Phase A: Agnes default with explicit GPT emergency.",
-      "Phase B: GPT emergency restricted to admins or specified assets.",
-      "Phase C: GPT UI hidden by environment while adapter remains.",
-      "Phase D: remove adapter after production evidence shows no dependency."
+    section(27, "Agnes Auxiliary Conditions", bullet([
+      "Phase A: GPT-4.1 primary cascade with Agnes focused secondary verification.",
+      "Phase B: Agnes auto-trigger restricted to high-risk fields, with manual review on timeout.",
+      "Phase C: focused verifier policy tuned by recovery/regression rate and dangerous error rate.",
+      "Phase D: add or remove secondary verifiers based on held-out risk-coverage evidence."
     ])),
     section(28, "Next Stage Recommendations", bullet([
       "Import a real approved-review export into a held-out commercial dataset.",

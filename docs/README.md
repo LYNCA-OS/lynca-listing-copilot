@@ -75,7 +75,7 @@ Baseline audit and evaluation scaffold added before the commercial-evidence migr
 
 ### `architecture/phase-1-provider-routing-2026-06-22.md`
 
-Backend provider routing note for Agnes primary and GPT-4.1 emergency behavior, including the current signed-URL blocker.
+Backend provider routing history; current mainline uses the GPT-4.1-primary cascade with Agnes as auxiliary focused verifier.
 
 ### `architecture/phase-2-storage-image-quality-2026-06-22.md`
 

@@ -13,8 +13,10 @@ assert.match(js, /state\.selectedProvider/, "frontend should keep selected provi
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must not default-select GPT-4.1 legacy");
 assert.match(js, /body\.provider = provider/, "title requests should include the selected provider");
-assert.match(js, /body\.explicitEmergency = Boolean/, "GPT emergency requests should be explicit");
-assert.match(js, /provider === "openai_legacy"/, "OpenAI legacy should be treated as emergency");
+assert.match(js, /body\.explicitEmergency = Boolean/, "GPT single-provider requests should be explicit");
+assert.match(js, /provider === "openai_legacy"/, "OpenAI single-provider path should be explicit");
+assert.match(js, /providerCascadeText/, "frontend should show GPT primary and Agnes auxiliary status for cascade");
+assert.match(js, /主路径 GPT-4\.1/, "cascade control should identify GPT-4.1 as the primary path");
 assert.match(js, /fetch\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs");
 assert.match(js, /signed_upload_url/, "frontend should upload through signed URLs");
 assert.match(js, /signatureHex/, "frontend should send first-byte signatures before receiving signed upload URLs");
@@ -64,8 +66,8 @@ assert.match(js, /fetch\("\/api\/listing-publish-draft"/, "frontend should publi
 assert.match(js, /data-publish-draft/, "approved reviews should expose a publish action");
 assert.match(js, /destination: "mock_b_end"/, "frontend should only target the mock B-end adapter");
 assert.match(js, /dry_run: true/, "mock publish requests should remain dry-run from the UI");
-assert.match(js, /data-emergency-retry/, "failed assets should expose explicit emergency retry control");
-assert.match(js, /retryAssetWithEmergency/, "emergency retry should be a separate action");
+assert.match(js, /data-emergency-retry/, "failed assets should expose explicit GPT single-provider retry control");
+assert.match(js, /retryAssetWithEmergency/, "GPT single-provider retry should be a separate action");
 assert.match(js, /renderProviderControl/, "provider controls should be rendered from server status");
 assert.match(js, /providerSmokeText/, "frontend should summarize provider smoke capability status");
 assert.match(js, /json_baseline_verified/, "frontend should surface Agnes JSON smoke verification status");
