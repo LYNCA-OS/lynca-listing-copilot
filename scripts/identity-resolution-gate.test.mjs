@@ -144,6 +144,52 @@ assert.ok(fastVisionNoRisk.conflict_map.every((conflict) => {
   return conflict.conflict_type !== "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE" || conflict.resolved === true;
 }));
 
+const fastVisionSurfaceColorWithoutCatalog = primaryFastVisionResult({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    surface_color: "Purple"
+  },
+  evidence: {
+    year: visionOnlyEvidence("2024"),
+    product: visionOnlyEvidence("Topps Chrome"),
+    players: visionOnlyEvidence(["Shohei Ohtani"]),
+    surface_color: visionOnlyEvidence("Purple")
+  }
+});
+assert.equal(fastVisionSurfaceColorWithoutCatalog.identity_resolution_status, "RESOLVED");
+assert.equal(fastVisionSurfaceColorWithoutCatalog.publication_gate.auto_publish_allowed, true);
+assert.equal(fastVisionSurfaceColorWithoutCatalog.publication_gate.field_publication_states.surface_color, "PUBLISHABLE_NARROW");
+assert.ok(!fastVisionSurfaceColorWithoutCatalog.writer_required_fields.includes("surface_color"));
+
+const fastVisionExactParallelWithoutCatalog = primaryFastVisionResult({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    parallel: "Purple Wave Refractor"
+  },
+  evidence: {
+    year: visionOnlyEvidence("2024"),
+    product: visionOnlyEvidence("Topps Chrome"),
+    players: visionOnlyEvidence(["Shohei Ohtani"]),
+    parallel: visionOnlyEvidence("Purple Wave Refractor")
+  }
+});
+assert.equal(fastVisionExactParallelWithoutCatalog.identity_resolution_status, "RESOLVED");
+assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.auto_publish_allowed, false);
+assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_ready, true);
+assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.partial_writer_draft, true);
+assert.deepEqual(fastVisionExactParallelWithoutCatalog.writer_required_fields, ["parallel"]);
+assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.field_publication_states.parallel, "OBSERVED");
+assert.doesNotMatch(fastVisionExactParallelWithoutCatalog.final_title, /Purple|Wave|Refractor/i);
+assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_items[0].current_value, "Purple Wave Refractor");
+assert.equal(
+  fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_items[0].resolution_reason,
+  "catalog_required_for_exact_taxonomy"
+);
+
 const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   resolved: {
     year: "2024",
