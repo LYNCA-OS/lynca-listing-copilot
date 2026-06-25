@@ -1276,7 +1276,9 @@ const visualExactMatchSingleCandidate = verifyRetrievalCandidates({
           manufacturer: "Topps",
           product: "Topps Chrome",
           parallel: "Gold Refractor",
-          serial_number: "17/50"
+          serial_number: "17/50",
+          grade_company: "PSA",
+          card_grade: "10"
         }
       }
     ]
@@ -1284,14 +1286,107 @@ const visualExactMatchSingleCandidate = verifyRetrievalCandidates({
 });
 assert.equal(visualExactMatchSingleCandidate.resolved.year, "2025-26");
 assert.equal(visualExactMatchSingleCandidate.resolved.parallel, "Gold Refractor");
-assert.equal(visualExactMatchSingleCandidate.resolved.serial_number, null);
+assert.equal(visualExactMatchSingleCandidate.resolved.serial_number, "17/50");
+assert.equal(visualExactMatchSingleCandidate.resolved.grade_company, "PSA");
+assert.equal(visualExactMatchSingleCandidate.resolved.card_grade, "10");
+assert.equal(visualExactMatchSingleCandidate.evidence.serial_number.status, "REVIEW");
+assert.equal(visualExactMatchSingleCandidate.evidence.grade_company.status, "REVIEW");
 assert.ok(visualExactMatchSingleCandidate.evidence.parallel.sources.some((source) => {
+  return source.source_type === "STRUCTURED_DATABASE"
+    && source.original_source_type === "VISUAL_VECTOR"
+    && source.evidence_kind === "visual_vector_exact_identity_memory";
+}));
+assert.ok(visualExactMatchSingleCandidate.evidence.serial_number.sources.some((source) => {
   return source.source_type === "STRUCTURED_DATABASE"
     && source.original_source_type === "VISUAL_VECTOR"
     && source.evidence_kind === "visual_vector_exact_identity_memory";
 }));
 assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("year"));
 assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("parallel"));
+assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("serial_number"));
+
+const visualExactSerialConflictRequiresReview = verifyRetrievalCandidates({
+  resolved: {
+    year: "2025-26",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    serial_number: "19/50"
+  },
+  evidence: {
+    serial_number: createEvidenceField({
+      value: "19/50",
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [{ source_type: "CARD_FRONT", observed_text: "19/50" }]
+    })
+  },
+  retrieval: {
+    selected_candidate: null,
+    sources: [
+      {
+        candidate_id: "visual_wemby_exact_serial_conflict",
+        source_url: "supabase://card-identities/wemby-exact",
+        domain: "supabase-vector",
+        source_type: "VISUAL_VECTOR",
+        trust_tier: 6,
+        title: "2025-26 Topps Chrome Victor Wembanyama Gold Refractor 17/50 Spurs",
+        match_score: 1,
+        visual_similarity: 1,
+        visual_margin_to_next: 0.26,
+        matched_fields: ["visual_vector"],
+        fields: {
+          year: "2025-26",
+          product: "Topps Chrome",
+          players: ["Victor Wembanyama"],
+          serial_number: "17/50"
+        }
+      }
+    ]
+  }
+});
+assert.equal(visualExactSerialConflictRequiresReview.resolved.serial_number, "19/50");
+assert.equal(visualExactSerialConflictRequiresReview.evidence.serial_number.status, "CONFLICT");
+assert.ok(visualExactSerialConflictRequiresReview.summary.visual_vector.conflict_fields.includes("serial_number"));
+
+const visualExactSerialPreservesDirectDisplay = verifyRetrievalCandidates({
+  resolved: {
+    year: "2025",
+    product: "Topps Chrome Sapphire",
+    players: ["Shohei Ohtani"],
+    serial_number: "05/50"
+  },
+  evidence: {
+    serial_number: createEvidenceField({
+      value: "05/50",
+      status: "REVIEW",
+      confidence: 0.95,
+      sources: [{ source_type: "VISION_MODEL", observed_text: "05/50" }]
+    })
+  },
+  retrieval: {
+    selected_candidate: null,
+    sources: [
+      {
+        candidate_id: "visual_ohtani_exact",
+        source_type: "VISUAL_VECTOR",
+        trust_tier: 6,
+        title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
+        match_score: 1,
+        visual_similarity: 1,
+        visual_margin_to_next: 0.24,
+        matched_fields: ["visual_vector"],
+        fields: {
+          year: "2025",
+          product: "Topps Chrome Sapphire",
+          players: ["Shohei Ohtani"],
+          serial_number: "5/50"
+        }
+      }
+    ]
+  }
+});
+assert.equal(visualExactSerialPreservesDirectDisplay.resolved.serial_number, "05/50");
+assert.equal(visualExactSerialPreservesDirectDisplay.evidence.serial_number.value, "05/50");
 
 const visualExactProductConflictDoesNotDowngrade = verifyRetrievalCandidates({
   resolved: {

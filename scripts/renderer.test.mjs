@@ -346,6 +346,34 @@ assert.ok(flangLongParallel.rendered_title.length <= 80);
 assert.match(flangLongParallel.rendered_title, /Purple/i);
 assert.doesNotMatch(flangLongParallel.title_length_policy.removed_terms.join(" "), /Purple/i);
 
+const complexSurfaceColorDoesNotPolluteKnownParallel = renderResolvedTitle({
+  year: "2025",
+  brand: "Topps",
+  product: "Topps Finest",
+  set: "Gusto",
+  players: ["Shohei Ohtani"],
+  surface_color: "Red/Orange/Blue",
+  parallel: "Red Refractor",
+  serial_number: "5/5"
+}, {
+  maxLength: 80
+});
+assert.match(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /Red Refractor/);
+assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, new RegExp("Red/Orange/Blue"));
+
+const simpleSurfaceColorCanCompleteParallelFamily = renderResolvedTitle({
+  year: "2025",
+  brand: "Topps",
+  product: "Topps Chrome",
+  players: ["Cooper Flagg"],
+  surface_color: "Purple",
+  parallel: "Wave",
+  serial_number: "72/75"
+}, {
+  maxLength: 80
+});
+assert.match(simpleSurfaceColorCanCompleteParallelFamily.rendered_title, /Purple Wave/);
+
 const productSportSuffixKeepsBrandIdentity = renderResolvedTitle({
   year: "2025-26",
   manufacturer: "Topps",

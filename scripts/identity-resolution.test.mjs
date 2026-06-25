@@ -173,6 +173,14 @@ const validSerial = resolveIdentity({
 });
 assert.equal(validSerial.identity.serial_number, "31/50");
 
+const leadingZeroSerial = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "serial_number", value: "05/50", source: "OCR_FRONT", confidence: 0.94 }
+  ]
+});
+assert.equal(leadingZeroSerial.identity.serial_number, "05/50");
+
 const denominatorOnlySerial = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
