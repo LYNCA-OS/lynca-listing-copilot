@@ -1288,6 +1288,48 @@ assert.equal(visualExactMatchSingleCandidate.resolved.serial_number, null);
 assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("year"));
 assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("parallel"));
 
+const visualExactProductConflictDoesNotDowngrade = verifyRetrievalCandidates({
+  resolved: {
+    year: "2025-26",
+    product: "Prizm FIFA Soccer",
+    set: "Club Legends",
+    players: ["Lionel Messi"]
+  },
+  evidence: {
+    product: createEvidenceField({
+      value: "Prizm FIFA Soccer",
+      status: "CONFIRMED",
+      confidence: 0.95,
+      sources: [{ source_type: "CARD_BACK", observed_text: "2025-26 PANINI - PRIZM FIFA SOCCER" }]
+    }),
+    set: createEvidenceField({ value: "Club Legends", status: "CONFIRMED", confidence: 0.95 })
+  },
+  retrieval: {
+    selected_candidate: null,
+    sources: [
+      {
+        candidate_id: "visual_messi_exact",
+        source_type: "VISUAL_VECTOR",
+        trust_tier: 6,
+        title: "2025-26 Panini Prizm FIFA Soccer Club Legends Lionel Messi Auto 29/199",
+        match_score: 1,
+        visual_similarity: 1,
+        visual_margin_to_next: 0.24,
+        matched_fields: ["visual_vector"],
+        fields: {
+          year: "2025-26",
+          product: "Club Legends",
+          players: ["Lionel Messi"],
+          auto: true
+        }
+      }
+    ]
+  }
+});
+assert.equal(visualExactProductConflictDoesNotDowngrade.resolved.product, "Prizm FIFA Soccer");
+assert.equal(visualExactProductConflictDoesNotDowngrade.evidence.product.status, "CONFLICT");
+assert.ok(visualExactProductConflictDoesNotDowngrade.summary.visual_vector.conflict_fields.includes("product"));
+
 const visualMultiSubject = verifyRetrievalCandidates({
   resolved: {
     year: "2020",

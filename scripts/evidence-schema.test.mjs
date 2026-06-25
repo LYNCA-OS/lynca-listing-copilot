@@ -320,6 +320,36 @@ assert.equal(contextualBackYearDocument.evidence.year.sources[0].source_type, "V
 assert.equal(contextualBackYearDocument.evidence.year.sources[0].evidence_kind, "YEAR_CONTEXT_TEXT");
 assert.equal(contextualBackYearDocument.evidence.year.unresolved_reason, "year_text_is_context_or_stat_not_product_year");
 
+const insertNameYearDocument = providerPayloadToEvidenceDocument({
+  title: "",
+  confidence: "HIGH",
+  fields: {
+    year: "2018",
+    product: "Topps Chrome",
+    set: "1983 Topps",
+    players: ["Shohei Ohtani"]
+  },
+  field_evidence: {
+    year: {
+      value: "2018",
+      support_type: "SLAB_LABEL",
+      visible_text: "1983 TOPPS",
+      confidence: 0.99,
+      review_required: false
+    }
+  },
+  unresolved: []
+}, {
+  images: [
+    { id: "image-front", side: "front" }
+  ]
+});
+assert.equal(insertNameYearDocument.evidence.year.value, "2018");
+assert.equal(insertNameYearDocument.evidence.year.status, "REVIEW");
+assert.equal(insertNameYearDocument.evidence.year.confidence, 0.42);
+assert.equal(insertNameYearDocument.evidence.year.sources[0].source_type, "VISUAL_GUESS");
+assert.equal(insertNameYearDocument.evidence.year.sources[0].evidence_kind, "YEAR_CONTEXT_TEXT");
+
 const groundedIdentityMarkersDocument = providerPayloadToEvidenceDocument({
   title: "2024 Bowman Chrome Shohei Ohtani 1st Bowman RC",
   confidence: "HIGH",
