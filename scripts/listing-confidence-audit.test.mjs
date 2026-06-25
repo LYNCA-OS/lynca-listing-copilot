@@ -640,7 +640,7 @@ const cooperFlaggV124 = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(cooperFlaggV124.title, "Topps Chrome Cooper Flagg Chrome Rookie Auto RC PSA 9/10");
+assert.equal(cooperFlaggV124.title, "2025-26 Topps Chrome Cooper Flagg Chrome Rookie Auto RC PSA 9/10");
 assert.ok(cooperFlaggV124.writer_required_fields.includes("year"));
 
 const cooperFlaggPsaMintAutoGradeFolded = await callApi({
@@ -661,7 +661,7 @@ const cooperFlaggPsaMintAutoGradeFolded = await callApi({
   unresolved: []
 }, { maxTitleLength: 140 });
 
-assert.equal(cooperFlaggPsaMintAutoGradeFolded.title, "Topps Chrome Cooper Flagg Chrome Rookie Auto RC PSA 9/10");
+assert.equal(cooperFlaggPsaMintAutoGradeFolded.title, "2025-26 Topps Chrome Cooper Flagg Chrome Rookie Auto RC PSA 9/10");
 assert.ok(cooperFlaggPsaMintAutoGradeFolded.writer_required_fields.includes("year"));
 assert.doesNotMatch(cooperFlaggPsaMintAutoGradeFolded.title, /PSA 10$|Autograph 10|Auto 10|PSA MINT 9/i);
 
@@ -710,7 +710,7 @@ const aceBaileyChromeAutoOnce = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.doesNotMatch(aceBaileyChromeAutoOnce.title, /^2025\b/);
+assert.match(aceBaileyChromeAutoOnce.title, /^2025-26\b/);
 assert.ok(aceBaileyChromeAutoOnce.writer_required_fields.includes("year"));
 assert.match(aceBaileyChromeAutoOnce.title, /Topps Chrome/i);
 assert.match(aceBaileyChromeAutoOnce.title, /Chrome Auto/i);
@@ -756,7 +756,7 @@ const manufacturerDedupeGradeEnd = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(manufacturerDedupeGradeEnd.title, /^Topps Dynasty Shohei Ohtani/i);
+assert.match(manufacturerDedupeGradeEnd.title, /^2024 Topps Dynasty Shohei Ohtani/i);
 assert.ok(manufacturerDedupeGradeEnd.writer_required_fields.includes("year"));
 assert.doesNotMatch(manufacturerDedupeGradeEnd.title, /Topps Topps Dynasty/i);
 assert.match(manufacturerDedupeGradeEnd.title, /3\/5/);
@@ -802,7 +802,7 @@ const autoDedupeCanonicalOrder = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(autoDedupeCanonicalOrder.title, /^Topps Chrome Ace Bailey Chrome Rookie Auto Gold Refractor 31\/150 RC$/i);
+assert.match(autoDedupeCanonicalOrder.title, /^2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto Gold Refractor 31\/150 RC$/i);
 assert.ok(autoDedupeCanonicalOrder.writer_required_fields.includes("year"));
 assert.equal((autoDedupeCanonicalOrder.title.match(/\bAuto\b/gi) || []).length, 1);
 assert.doesNotMatch(autoDedupeCanonicalOrder.title, /RC Auto/i);
@@ -828,7 +828,7 @@ const starSwatchCodeSuppressedSerialPreserved = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^Panini Flawless Kevin Durant Star Swatch Signatures Platinum 04\/10 PSA 10$/i);
+assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum 04\/10 PSA 10$/i);
 assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("year"));
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Panini Panini Flawless/i);
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /#04\/10|#?SR-KD|Serial 04\/10|Numbered 04\/10/i);
@@ -934,7 +934,7 @@ const shaqPennyV124 = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(shaqPennyV124.title, "Panini Immaculate Shaquille O'Neal / Anfernee Hardaway Dual Signatures Auto 01/25");
+assert.equal(shaqPennyV124.title, "2015-16 Panini Immaculate Shaquille O'Neal / Anfernee Hardaway Dual Signatures Auto 01/25");
 assert.ok(shaqPennyV124.writer_required_fields.includes("year"));
 
 const compressedSerialPreserved = await callApi({
@@ -993,7 +993,7 @@ const jaysonTatumBgsV124 = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(jaysonTatumBgsV124.title, "Panini Prizm Jayson Tatum Rookie Auto /10 BGS 9.5/10");
+assert.equal(jaysonTatumBgsV124.title, "2017-18 Panini Prizm Jayson Tatum Rookie Auto /10 BGS 9.5/10");
 assert.ok(jaysonTatumBgsV124.writer_required_fields.includes("year"));
 
 const jaysonTatumBgsLooseAutoGradeFolded = await callApi({
@@ -1014,7 +1014,7 @@ const jaysonTatumBgsLooseAutoGradeFolded = await callApi({
   unresolved: []
 }, { maxTitleLength: 140 });
 
-assert.equal(jaysonTatumBgsLooseAutoGradeFolded.title, "Panini Prizm Jayson Tatum Fast Break Auto /10 BGS 9.5/10");
+assert.equal(jaysonTatumBgsLooseAutoGradeFolded.title, "2017-18 Panini Prizm Jayson Tatum Fast Break Auto /10 BGS 9.5/10");
 assert.ok(jaysonTatumBgsLooseAutoGradeFolded.writer_required_fields.includes("year"));
 assert.match(jaysonTatumBgsLooseAutoGradeFolded.title, /Auto \/10 BGS 9\.5\/10$/);
 assert.doesNotMatch(jaysonTatumBgsLooseAutoGradeFolded.title, /\bAuto 10\b/i);

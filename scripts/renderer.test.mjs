@@ -346,6 +346,44 @@ assert.ok(flangLongParallel.rendered_title.length <= 80);
 assert.match(flangLongParallel.rendered_title, /Purple/i);
 assert.doesNotMatch(flangLongParallel.title_length_policy.removed_terms.join(" "), /Purple/i);
 
+const productSportSuffixKeepsBrandIdentity = renderResolvedTitle({
+  year: "2025-26",
+  manufacturer: "Topps",
+  brand: "Topps Chrome",
+  product: "Topps Chrome Basketball",
+  players: ["Cooper Flagg"],
+  insert: "Next Stop Signatures",
+  parallel: "Purple",
+  serial_number: "72/75",
+  rc: true,
+  auto: true
+}, {
+  maxLength: 80
+});
+assert.match(productSportSuffixKeepsBrandIdentity.rendered_title, /Topps Chrome Cooper Flagg/i);
+assert.doesNotMatch(productSportSuffixKeepsBrandIdentity.rendered_title, /^2025-26 Chrome\b/i);
+
+const rookieTicketPriority = renderResolvedTitle({
+  year: "2020-21",
+  brand: "Panini",
+  product: "Contenders",
+  players: ["Anthony Edwards"],
+  card_type: "Rookie Ticket",
+  insert: "Variation-Autograph",
+  collector_number: "105",
+  rc: true,
+  auto: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 80
+});
+assert.ok(rookieTicketPriority.rendered_title.length <= 80);
+assert.match(rookieTicketPriority.rendered_title, /Rookie Ticket/i);
+assert.match(rookieTicketPriority.rendered_title, /Anthony Edwards/i);
+assert.match(rookieTicketPriority.rendered_title, /PSA 10$/);
+
 const longTitle = renderResolvedTitle({
   year: "2015-16",
   brand: "Panini",

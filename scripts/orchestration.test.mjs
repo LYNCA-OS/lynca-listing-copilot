@@ -1285,6 +1285,11 @@ const visualExactMatchSingleCandidate = verifyRetrievalCandidates({
 assert.equal(visualExactMatchSingleCandidate.resolved.year, "2025-26");
 assert.equal(visualExactMatchSingleCandidate.resolved.parallel, "Gold Refractor");
 assert.equal(visualExactMatchSingleCandidate.resolved.serial_number, null);
+assert.ok(visualExactMatchSingleCandidate.evidence.parallel.sources.some((source) => {
+  return source.source_type === "STRUCTURED_DATABASE"
+    && source.original_source_type === "VISUAL_VECTOR"
+    && source.evidence_kind === "visual_vector_exact_identity_memory";
+}));
 assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("year"));
 assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("parallel"));
 

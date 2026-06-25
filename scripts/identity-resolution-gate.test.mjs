@@ -55,6 +55,21 @@ function visionOnlyEvidence(value) {
   });
 }
 
+function agnesInferenceEvidence(value) {
+  return createEvidenceField({
+    value,
+    status: "CONFIRMED",
+    confidence: 0.96,
+    sources: [
+      {
+        source_type: "AGNES_INFERENCE",
+        observed_text: Array.isArray(value) ? value.join(" / ") : value,
+        trust_tier: 7
+      }
+    ]
+  });
+}
+
 const agnesOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
   model_title_suggestion: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
@@ -73,20 +88,10 @@ const agnesOnly = applyIdentityResolutionGate({
       value: "2024",
       status: "CONFIRMED",
       confidence: 0.96,
-      sources: [createVisionSource({ observedText: "2024" })]
+      sources: [{ source_type: "AGNES_INFERENCE", observed_text: "2024", trust_tier: 7 }]
     }),
-    product: createEvidenceField({
-      value: "Topps Chrome",
-      status: "CONFIRMED",
-      confidence: 0.96,
-      sources: [createVisionSource({ observedText: "Topps Chrome" })]
-    }),
-    players: createEvidenceField({
-      value: ["Shohei Ohtani"],
-      status: "CONFIRMED",
-      confidence: 0.96,
-      sources: [createVisionSource({ observedText: "Shohei Ohtani" })]
-    })
+    product: agnesInferenceEvidence("Topps Chrome"),
+    players: agnesInferenceEvidence(["Shohei Ohtani"])
   },
   unresolved: []
 });
@@ -129,6 +134,120 @@ function primaryFastVisionResult({
   });
 }
 
+const gptVisionItems = evidenceDocumentToIdentityEvidenceItems({
+  evidence: {
+    year: visionOnlyEvidence("2025")
+  }
+}, {
+  providerId: "openai_vector"
+});
+assert.equal(gptVisionItems[0].source, "PRIMARY_FAST_VISION");
+
+const geminiVisionItems = evidenceDocumentToIdentityEvidenceItems({
+  evidence: {
+    year: visionOnlyEvidence("2025")
+  }
+}, {
+  providerId: "gemini"
+});
+assert.equal(geminiVisionItems[0].source, "PRIMARY_FAST_VISION");
+
+const agnesVisionItems = evidenceDocumentToIdentityEvidenceItems({
+  evidence: {
+    year: agnesInferenceEvidence("2025")
+  }
+}, {
+  providerId: "agnes"
+});
+assert.equal(agnesVisionItems[0].source, "AGNES_INFERENCE");
+
+const exactVisualVectorItems = evidenceDocumentToIdentityEvidenceItems({
+  evidence: {
+    year: createEvidenceField({
+      value: "2025-26",
+      confidence: 0.85,
+      sources: [
+        {
+          source_type: "VISUAL_VECTOR",
+          visual_similarity: 1,
+          visual_margin_to_next: 0.26,
+          title: "2025-26 Topps Chrome Victor Wembanyama Gold Refractor 17/50"
+        }
+      ]
+    })
+  }
+});
+assert.equal(exactVisualVectorItems[0].source, "STRUCTURED_DATABASE");
+assert.equal(exactVisualVectorItems[0].metadata.original_source, "VISUAL_VECTOR");
+
+const nearVisualVectorItems = evidenceDocumentToIdentityEvidenceItems({
+  evidence: {
+    year: createEvidenceField({
+      value: "2025-26",
+      confidence: 0.85,
+      sources: [
+        {
+          source_type: "VISUAL_VECTOR",
+          visual_similarity: 0.9,
+          visual_margin_to_next: 0.04
+        }
+      ]
+    })
+  }
+});
+assert.equal(nearVisualVectorItems[0].source, "VISUAL_GUESS");
+
+const multiCandidateSourceBindingItems = evidenceDocumentToIdentityEvidenceItems({
+  evidence: {
+    year: createEvidenceField({
+      value: "2025-26",
+      confidence: 0.85,
+      candidates: [
+        { value: "2024", confidence: 0.42 },
+        { value: "2025-26", confidence: 0.85 }
+      ],
+      sources: [
+        {
+          source_type: "VISUAL_VECTOR",
+          visual_similarity: 1,
+          visual_margin_to_next: 0.26
+        }
+      ]
+    })
+  }
+});
+const sourceByValue = Object.fromEntries(multiCandidateSourceBindingItems.map((item) => [item.value, item.source]));
+assert.equal(sourceByValue["2024"], "VISUAL_GUESS");
+assert.equal(sourceByValue["2025-26"], "STRUCTURED_DATABASE");
+
+const sourceTextCandidateBindingItems = evidenceDocumentToIdentityEvidenceItems({
+  evidence: {
+    product: createEvidenceField({
+      value: "Topps Sapphire",
+      confidence: 0.58,
+      candidates: [
+        { value: "Topps Sapphire", confidence: 0.99 },
+        { value: "Topps Chrome Sapphire", confidence: 0.86 }
+      ],
+      sources: [
+        {
+          source_type: "SLAB_LABEL",
+          observed_text: "2025 TOPPS SAPPHIRE"
+        },
+        {
+          source_type: "VISUAL_VECTOR",
+          visual_similarity: 1,
+          visual_margin_to_next: 0.23,
+          title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9"
+        }
+      ]
+    })
+  }
+});
+const productSourcesByValue = Object.fromEntries(sourceTextCandidateBindingItems.map((item) => [item.value, item.source]));
+assert.equal(productSourcesByValue["Topps Sapphire"], "SLAB_LABEL");
+assert.equal(productSourcesByValue["Topps Chrome Sapphire"], "STRUCTURED_DATABASE");
+
 const fastVisionNoRisk = primaryFastVisionResult({
   resolved: {
     year: "2024",
@@ -145,7 +264,6 @@ assert.equal(fastVisionNoRisk.identity_resolution_status, "RESOLVED");
 assert.equal(fastVisionNoRisk.publication_gate.auto_publish_allowed, false);
 assert.equal(fastVisionNoRisk.publication_gate.writer_review_ready, true);
 assert.deepEqual(fastVisionNoRisk.writer_required_fields, ["year"]);
-assert.doesNotMatch(fastVisionNoRisk.final_title, /2024/);
 assert.match(fastVisionNoRisk.final_title, /Topps Chrome/);
 assert.equal(fastVisionNoRisk.publication_gate.identity_gate_status, "CORE_RESOLVED");
 assert.equal(fastVisionNoRisk.publication_gate.workflow_route, "STANDARD_REVIEW");
@@ -154,7 +272,8 @@ assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.mode, "PA
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.value, "Topps Chrome");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.publishability, "PUBLISHABLE_NARROW");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.review_required_fields[0].field, "year");
-assert.equal(fastVisionNoRisk.draft_gate.by_field.year.display_policy, "SUGGEST_ONLY");
+assert.equal(fastVisionNoRisk.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.match(fastVisionNoRisk.final_title, /2024/);
 assert.ok(fastVisionNoRisk.conflict_map.every((conflict) => {
   return conflict.conflict_type !== "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE" || conflict.resolved === true;
 }));
@@ -249,7 +368,7 @@ const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   verificationFields: ["serial_number"]
 });
 assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
-assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "Topps Chrome Shohei Ohtani 31/50");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani 31/50");
 assert.equal(fastVisionSerialWithoutFocusedVerification.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(fastVisionSerialWithoutFocusedVerification.writer_required_fields, ["year", "serial_number"]);
 assert.match(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
@@ -604,11 +723,10 @@ const compatibleProductConflictDraft = applyIdentityResolutionGate({
   providerId: "primary_fast_vision"
 });
 assert.equal(compatibleProductConflictDraft.publication_gate.writer_review_ready, true);
-assert.ok(compatibleProductConflictDraft.writer_required_fields.includes("product"));
-assert.ok(compatibleProductConflictDraft.writer_required_fields.includes("serial_number"));
-assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field.product.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field.product.selected_value, "Topps Sapphire");
+assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field.product.display_policy, "INCLUDE_NORMAL");
 assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field.serial_number.selected_value, "05/50");
-assert.match(compatibleProductConflictDraft.final_title, /Topps Chrome Sapphire|Topps Sapphire/i);
+assert.match(compatibleProductConflictDraft.final_title, /Topps Sapphire/i);
 assert.match(compatibleProductConflictDraft.final_title, /05\/50/);
 
 const directProductEvidenceBeatsSetFallback = applyIdentityResolutionGate({
@@ -679,9 +797,9 @@ assert.ok(directProductEvidenceBeatsSetFallback.writer_required_fields.includes(
 assert.notEqual(directProductEvidenceBeatsSetFallback.publication_gate.draft_gate.by_field.product.selected_value, "Club Legends");
 assert.match(directProductEvidenceBeatsSetFallback.final_title, /Prizm FIFA Soccer/i);
 assert.match(directProductEvidenceBeatsSetFallback.final_title, /Club Legends/i);
-assert.ok(directProductEvidenceBeatsSetFallback.conflict_map.some((conflict) => {
-  return conflict.conflict_type === "DIRECT_PRODUCT_EVIDENCE_SELECTED_FOR_WRITER_DRAFT";
-}));
+const directProductState = directProductEvidenceBeatsSetFallback.identity_resolution.field_states.find((state) => state.field === "product");
+assert.equal(directProductState.resolved_value, "Prizm FIFA Soccer");
+assert.notEqual(directProductEvidenceBeatsSetFallback.publication_gate.draft_gate.by_field.product.selected_value, "Club Legends");
 
 const pokemonCritical = criticalFieldsForIdentityResolution(normalizeResolvedFields({
   product: "Pokemon Scarlet Violet",
