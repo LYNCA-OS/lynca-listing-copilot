@@ -2095,7 +2095,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- rc: fields.rc may be true only with a visible RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, or slab/card text. Also include field_evidence.rc with value true, support_type, evidence_kind, visible_text, visible_marker, confidence.",
     "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
     "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
-    "If readable slab/card text exists but you leave year, product, or players empty, add unresolved entries prefixed visible_text: with the exact readable lines.",
+    "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
     "Serial rule: every digit must be readable; otherwise serial_number must be empty.",
     "Parallel/color rule: use printed/slab/checklist evidence or unmistakable intentional card-design color only; weak visual color stays empty.",
     "Multi-card rule: if more than one card or a lot is visible, set multi_card true and do not merge identities.",
@@ -2825,7 +2825,7 @@ function geminiCoreFieldRetryPrompt(missingFields = []) {
     "- grade line, e.g. GEM MT 10",
     "Return compact valid JSON only. Keep title empty.",
     "Do not return only a year if product or player text is readable.",
-    "If you still cannot map a readable line, add unresolved entries prefixed visible_text: with the exact readable lines."
+    "If you still cannot map a readable line, add a short unresolved note naming the missing field and label/card region. Do not copy long label text verbatim."
   ].join("\n");
 }
 

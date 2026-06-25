@@ -28,6 +28,10 @@ function numberArg(argv, name, fallback) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+function delay(ms = 0) {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, Math.max(0, Number(ms) || 0)));
+}
+
 function unquoteEnvValue(value = "") {
   const trimmed = String(value || "").trim();
   if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
@@ -68,6 +72,25 @@ async function runtimeEnvFromFiles(argv = process.argv, env = process.env) {
 
 function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function providerFailureCode(data = {}, httpStatus = 200) {
+  if (data?.provider_error_code) return String(data.provider_error_code);
+  if (data?.provider_error_type) return String(data.provider_error_type);
+  if (data?.error_type) return String(data.error_type);
+  if (httpStatus >= 400) return `http_${httpStatus}`;
+  if (data?.confidence === "FAILED") return "provider_failed";
+  return "";
+}
+
+function providerFailureReason(data = {}, fallback = "") {
+  return normalizeText(
+    data?.reason
+    || data?.message
+    || data?.error
+    || data?.provider_error_details?.message
+    || fallback
+  ).slice(0, 240);
 }
 
 function candidateId(item = {}) {
@@ -587,12 +610,145 @@ async function callListingApi({
   };
 }
 
+function isProviderFailureResponse(response = {}, data = {}) {
+  return response.http_status >= 400
+    || data.confidence === "FAILED"
+    || Boolean(data.provider_error_code)
+    || Boolean(data.provider_error_type);
+}
+
+function providerFailureAttempt({
+  response = {},
+  data = {},
+  error = null,
+  attempt = 1,
+  elapsedMs = 0
+} = {}) {
+  const httpStatus = response.http_status || error?.http_status || null;
+  return {
+    attempt,
+    http_status: httpStatus,
+    code: error?.code || providerFailureCode(data, httpStatus || 200) || "cloud_eval_error",
+    reason: providerFailureReason(data, error?.message || ""),
+    elapsed_ms: Math.max(0, Math.round(Number(elapsedMs) || 0)),
+    retryable: error?.retryable === true || Number(httpStatus || 0) >= 400
+  };
+}
+
+function evaluatedResultFromData({
+  item,
+  providerMode,
+  response,
+  referenceTitle,
+  started,
+  providerErrorAttempts = []
+} = {}) {
+  const data = response?.data || {};
+  const providerFailure = isProviderFailureResponse(response || {}, data);
+  const breakpoints = resultBreakpoints(data, item);
+  return {
+    candidate_id: candidateId(item),
+    provider: providerMode,
+    requested_cloud_provider: cloudProviderForMode(providerMode),
+    status: "evaluated",
+    technical_failure: providerFailure,
+    technical_failure_code: providerFailure ? providerFailureCode(data, response?.http_status || 200) || "provider_failed" : null,
+    provider_error_recovered: providerErrorAttempts.length > 0 && !providerFailure,
+    provider_error_attempts: providerErrorAttempts,
+    provider_error_retry_count: providerErrorAttempts.length,
+    http_status: response?.http_status || null,
+    title: normalizeText(data.final_title || data.title || data.rendered_title),
+    confidence: data.confidence || (providerFailure ? "FAILED" : ""),
+    provider_id: data.provider || data.source || null,
+    model_id: data.model_id || data.provider_model_id || null,
+    fallback_provider_id: data.fallback_provider_id || null,
+    fallback_reason: data.fallback_reason || null,
+    format_error_type: data.format_error_type || null,
+    provider_error_code: providerFailure ? data.provider_error_code || data.provider_error_type || providerFailureCode(data, response?.http_status || 200) || null : null,
+    provider_error_details: providerFailure ? data.provider_error_details || null : null,
+    reason: providerFailure ? providerFailureReason(data) : "",
+    publication_gate: data.publication_gate || null,
+    raw_provider_fields: breakpoints.raw_provider_fields,
+    normalized_evidence: breakpoints.normalized_evidence,
+    resolved_fields: breakpoints.resolved_fields,
+    rendered_fields: breakpoints.rendered_fields,
+    reviewed_ground_truth: breakpoints.reviewed_ground_truth,
+    breakpoints,
+    fields: data.fields || null,
+    resolved: data.resolved || null,
+    identity_resolution_status: data.identity_resolution_status || null,
+    provider_recognition_status: data.provider_recognition_status || null,
+    provider_parse_source: data.provider_parse_source || null,
+    provider_token_diagnostics: data.provider_token_diagnostics || null,
+    provider_initial_token_diagnostics: data.provider_initial_token_diagnostics || null,
+    provider_truncation_retry_attempted: data.provider_truncation_retry_attempted === true,
+    provider_truncation_retry_attempts: Number(data.provider_truncation_retry_attempts || 0),
+    retrieval: data.retrieval || null,
+    visual_vector_used: visualVectorUsed(data),
+    visual_vector_candidate_count: visualVectorCandidateCount(data),
+    visual_feature_count: visualFeatureCount(data),
+    visual_feature_summary: data.visual_feature_summary || null,
+    recognition_preflight: data.recognition_preflight || null,
+    usage: data.usage || null,
+    native_schema_valid: data.native_schema_valid === true,
+    format_repair_attempted: data.format_repair_attempted === true,
+    local_json_repair_success: data.local_json_repair_success === true,
+    text_repair_success: data.text_repair_success === true,
+    gemini_core_field_retry: data.gemini_core_field_retry || null,
+    writer_review_ready: data.writer_review_ready === true || data.publication_gate?.writer_review_ready === true,
+    corrected_title_reference: referenceTitle,
+    corrected_title_comparison: providerFailure ? null : titleComparison(referenceTitle, data.final_title || data.title || data.rendered_title),
+    timing: data.timing || null,
+    elapsed_ms: Date.now() - started
+  };
+}
+
+function technicalFailureResult({
+  item,
+  providerMode,
+  referenceTitle,
+  started,
+  error,
+  providerErrorAttempts = []
+} = {}) {
+  const code = error?.code || "cloud_eval_error";
+  return {
+    candidate_id: candidateId(item),
+    provider: providerMode,
+    requested_cloud_provider: cloudProviderForMode(providerMode),
+    status: "evaluated",
+    technical_failure: true,
+    technical_failure_code: code,
+    provider_error_recovered: false,
+    provider_error_attempts: providerErrorAttempts.length
+      ? providerErrorAttempts
+      : [providerFailureAttempt({ error, attempt: 1, elapsedMs: Date.now() - started })],
+    provider_error_retry_count: providerErrorAttempts.length,
+    confidence: "FAILED",
+    provider_error_code: code,
+    reason: normalizeText(error?.message || "").slice(0, 240),
+    title: "",
+    corrected_title_reference: referenceTitle,
+    corrected_title_comparison: null,
+    elapsed_ms: Date.now() - started
+  };
+}
+
 function summarize(results = [], elapsedMs = 0) {
   const attempted = results.length;
   const providerErrors = results.filter((item) => item.status === "provider_error").length;
   const evaluated = results.filter((item) => item.status === "evaluated").length;
+  const technicalFailures = results.filter((item) => item.technical_failure === true).length;
+  const recoveredProviderErrors = results.filter((item) => item.provider_error_recovered === true).length;
+  const providerErrorRetryCount = results.reduce((sum, item) => sum + Number(item.provider_error_retry_count || 0), 0);
+  const providerSuccessCount = results.filter((item) => {
+    return item.status === "evaluated"
+      && item.technical_failure !== true
+      && item.confidence !== "FAILED"
+      && !item.provider_error_code;
+  }).length;
   const fallbackCount = results.filter((item) => item.fallback_provider_id).length;
-  const criticalFailed = results.filter((item) => item.provider_error_code || item.confidence === "FAILED").length;
+  const criticalFailed = results.filter((item) => item.technical_failure === true || item.provider_error_code || item.confidence === "FAILED").length;
   const visualVectorUsedCount = results.filter((item) => item.visual_vector_used === true).length;
   const visualVectorCandidateCount = results.reduce((sum, item) => sum + Number(item.visual_vector_candidate_count || 0), 0);
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
@@ -642,7 +798,11 @@ function summarize(results = [], elapsedMs = 0) {
     attempted_count: attempted,
     evaluated_count: evaluated,
     provider_error_count: providerErrors,
-    provider_success_rate: attempted ? Number((evaluated / attempted).toFixed(6)) : null,
+    technical_failure_count: technicalFailures,
+    provider_error_recovered_count: recoveredProviderErrors,
+    provider_error_retry_count: providerErrorRetryCount,
+    provider_success_count: providerSuccessCount,
+    provider_success_rate: attempted ? Number((providerSuccessCount / attempted).toFixed(6)) : null,
     fallback_count: fallbackCount,
     failed_count: criticalFailed,
     visual_vector_used_count: visualVectorUsedCount,
@@ -682,6 +842,8 @@ export async function evaluateCloudListingApi({
   bypassSecret = "",
   requestTimeoutMs = 120_000,
   maxTitleLength = 80,
+  providerErrorRetries = 1,
+  providerErrorRetryDelayMs = 1500,
   skipPreflight = false,
   fetchImpl = globalThis.fetch
 } = {}) {
@@ -711,84 +873,75 @@ export async function evaluateCloudListingApi({
       const item = selected[index];
       const referenceTitle = correctedTitle(item);
       const started = Date.now();
+      const providerErrorAttempts = [];
+      const maxProviderAttempts = Math.max(1, Math.trunc(Number(providerErrorRetries) || 0) + 1);
       try {
-        const response = await callListingApi({
-          baseUrl,
-          cookie,
+        let finalResponse = null;
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxProviderAttempts; attempt += 1) {
+          const attemptStarted = Date.now();
+          try {
+            finalResponse = await callListingApi({
+              baseUrl,
+              cookie,
+              item,
+              providerMode,
+              bypassSecret,
+              requestTimeoutMs,
+              verificationCache,
+              maxTitleLength,
+              fetchImpl
+            });
+            const data = finalResponse.data || {};
+            if (!isProviderFailureResponse(finalResponse, data)) {
+              lastError = null;
+              break;
+            }
+            providerErrorAttempts.push(providerFailureAttempt({
+              response: finalResponse,
+              data,
+              attempt,
+              elapsedMs: Date.now() - attemptStarted
+            }));
+          } catch (error) {
+            lastError = error;
+            providerErrorAttempts.push(providerFailureAttempt({
+              error,
+              attempt,
+              elapsedMs: Date.now() - attemptStarted
+            }));
+          }
+          if (attempt < maxProviderAttempts) {
+            await delay(Math.min(10_000, Math.max(0, Number(providerErrorRetryDelayMs) || 0) * attempt));
+          }
+        }
+        if (lastError && (!finalResponse || isProviderFailureResponse(finalResponse, finalResponse.data || {}))) {
+          throw lastError;
+        }
+        results[index] = evaluatedResultFromData({
           item,
           providerMode,
-          bypassSecret,
-          requestTimeoutMs,
-          verificationCache,
-          maxTitleLength,
-          fetchImpl
+          response: finalResponse,
+          referenceTitle,
+          started,
+          providerErrorAttempts
         });
-        const data = response.data || {};
-        const providerError = response.http_status >= 400
-          || data.confidence === "FAILED"
-          || data.provider_error_code
-          || data.provider_error_type;
-        const breakpoints = resultBreakpoints(data, item);
-        results[index] = {
-          candidate_id: candidateId(item),
-          provider: providerMode,
-          requested_cloud_provider: cloudProviderForMode(providerMode),
-          status: providerError ? "provider_error" : "evaluated",
-          http_status: response.http_status,
-          title: normalizeText(data.final_title || data.title || data.rendered_title),
-          confidence: data.confidence || "",
-          provider_id: data.provider || data.source || null,
-          model_id: data.model_id || data.provider_model_id || null,
-          fallback_provider_id: data.fallback_provider_id || null,
-          fallback_reason: data.fallback_reason || null,
-          format_error_type: data.format_error_type || null,
-          provider_error_code: data.provider_error_code || data.provider_error_type || null,
-          provider_error_details: data.provider_error_details || null,
-          reason: providerError ? normalizeText(data.reason).slice(0, 240) : "",
-          publication_gate: data.publication_gate || null,
-          raw_provider_fields: breakpoints.raw_provider_fields,
-          normalized_evidence: breakpoints.normalized_evidence,
-          resolved_fields: breakpoints.resolved_fields,
-          rendered_fields: breakpoints.rendered_fields,
-          reviewed_ground_truth: breakpoints.reviewed_ground_truth,
-          breakpoints,
-          fields: data.fields || null,
-          resolved: data.resolved || null,
-          identity_resolution_status: data.identity_resolution_status || null,
-          provider_recognition_status: data.provider_recognition_status || null,
-          provider_parse_source: data.provider_parse_source || null,
-          provider_token_diagnostics: data.provider_token_diagnostics || null,
-          provider_initial_token_diagnostics: data.provider_initial_token_diagnostics || null,
-          provider_truncation_retry_attempted: data.provider_truncation_retry_attempted === true,
-          provider_truncation_retry_attempts: Number(data.provider_truncation_retry_attempts || 0),
-          retrieval: data.retrieval || null,
-          visual_vector_used: visualVectorUsed(data),
-          visual_vector_candidate_count: visualVectorCandidateCount(data),
-          visual_feature_count: visualFeatureCount(data),
-          visual_feature_summary: data.visual_feature_summary || null,
-          recognition_preflight: data.recognition_preflight || null,
-          usage: data.usage || null,
-          native_schema_valid: data.native_schema_valid === true,
-          format_repair_attempted: data.format_repair_attempted === true,
-          local_json_repair_success: data.local_json_repair_success === true,
-          text_repair_success: data.text_repair_success === true,
-          gemini_core_field_retry: data.gemini_core_field_retry || null,
-          writer_review_ready: data.writer_review_ready === true || data.publication_gate?.writer_review_ready === true,
-          corrected_title_reference: referenceTitle,
-          corrected_title_comparison: titleComparison(referenceTitle, data.final_title || data.title || data.rendered_title),
-          timing: data.timing || null,
-          elapsed_ms: Date.now() - started
-        };
       } catch (error) {
-        results[index] = {
-          candidate_id: candidateId(item),
-          provider: providerMode,
-          requested_cloud_provider: cloudProviderForMode(providerMode),
-          status: "provider_error",
-          provider_error_code: error.code || "cloud_eval_error",
-          error: normalizeText(error.message).slice(0, 240),
-          elapsed_ms: Date.now() - started
-        };
+        if (!providerErrorAttempts.length) {
+          providerErrorAttempts.push(providerFailureAttempt({
+            error,
+            attempt: 1,
+            elapsedMs: Date.now() - started
+          }));
+        }
+        results[index] = technicalFailureResult({
+          item,
+          providerMode,
+          referenceTitle,
+          started,
+          error,
+          providerErrorAttempts
+        });
       }
     }
   }
@@ -804,6 +957,7 @@ export async function evaluateCloudListingApi({
     requested_cloud_provider: cloudProviderForMode(providerMode),
     target_count: selected.length,
     configured_concurrency: workerCount,
+    configured_provider_error_retries: Math.max(0, Math.trunc(Number(providerErrorRetries) || 0)),
     cloud_preflight: cloudPreflight,
     ...summarize(results, elapsedMs),
     results
@@ -821,6 +975,8 @@ export async function main(argv = process.argv, env = process.env) {
   const failOnProviderError = hasFlag(argv, "--fail-on-provider-error");
   const skipPreflight = hasFlag(argv, "--skip-cloud-preflight");
   const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", Number(runtimeEnv.CLOUD_LISTING_API_REQUEST_TIMEOUT_MS || 120_000));
+  const providerErrorRetries = numberArg(argv, "--provider-error-retries", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRIES || 1));
+  const providerErrorRetryDelayMs = numberArg(argv, "--provider-error-retry-delay-ms", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRY_DELAY_MS || 1500));
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
   validateProtectionBypassSecret({ bypassSecret, env: runtimeEnv });
   const report = await evaluateCloudListingApi({
@@ -833,6 +989,8 @@ export async function main(argv = process.argv, env = process.env) {
     password: runtimeEnv.METAVERSE_PASSWORD,
     bypassSecret,
     requestTimeoutMs,
+    providerErrorRetries,
+    providerErrorRetryDelayMs,
     skipPreflight
   });
   if (outPath) await writeJson(outPath, report);
@@ -843,6 +1001,10 @@ export async function main(argv = process.argv, env = process.env) {
     `attempted_count: ${report.attempted_count}`,
     `evaluated_count: ${report.evaluated_count}`,
     `provider_error_count: ${report.provider_error_count}`,
+    `technical_failure_count: ${report.technical_failure_count}`,
+    `provider_error_recovered_count: ${report.provider_error_recovered_count}`,
+    `provider_error_retry_count: ${report.provider_error_retry_count}`,
+    `provider_success_count: ${report.provider_success_count}`,
     `provider_success_rate: ${report.provider_success_rate}`,
     `fallback_count: ${report.fallback_count}`,
     `visual_vector_used_count: ${report.visual_vector_used_count ?? "n/a"}`,

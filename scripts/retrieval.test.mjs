@@ -191,6 +191,21 @@ assert.equal(normalizedVisualCandidate.candidate_identity_id, "11111111-1111-111
 const visualScore = scoreRetrievalCandidate(normalizedVisualCandidate, resolved);
 assert.ok(visualScore.matched_fields.includes("visual_vector"));
 assert.ok(visualScore.match_score > 0.4);
+const rankedStructuredVisual = rankRetrievalCandidates([activeVisualResult.candidates[0]], resolved);
+assert.equal(rankedStructuredVisual.selected_candidate.candidate_id, activeVisualResult.candidates[0].candidate_id);
+
+const titleOnlyVisualCandidate = {
+  candidate_id: "visual-title-only",
+  source_type: "VISUAL_VECTOR",
+  trust_tier: 6,
+  title: "2025 Topps Chrome Cooper Flagg Chrome Rookie Auto #136 31/50",
+  visual_similarity: 0.99,
+  visual_margin_to_next: 0.35,
+  fields: {}
+};
+const rankedTitleOnlyVisual = rankRetrievalCandidates([titleOnlyVisualCandidate], resolved);
+assert.equal(rankedTitleOnlyVisual.selected_candidate, null);
+assert.equal(rankedTitleOnlyVisual.candidates[0].rejection_reason, "visual_vector_missing_structured_field_anchors");
 
 const wrongVisualYear = scoreRetrievalCandidate(activeVisualResult.candidates[1], resolved);
 assert.ok(wrongVisualYear.conflicting_fields.includes("year"));
