@@ -611,6 +611,78 @@ assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field
 assert.match(compatibleProductConflictDraft.final_title, /Topps Chrome Sapphire|Topps Sapphire/i);
 assert.match(compatibleProductConflictDraft.final_title, /05\/50/);
 
+const directProductEvidenceBeatsSetFallback = applyIdentityResolutionGate({
+  title: "",
+  confidence: "HIGH",
+  reason: "Direct back text includes product; visual candidate creates product ambiguity.",
+  provider: "openai_legacy",
+  resolved: normalizeResolvedFields({
+    year: "2025-26",
+    manufacturer: "Panini",
+    brand: "Prizm",
+    product: "Prizm FIFA Soccer",
+    set: "Club Legends",
+    players: ["Lionel Messi"],
+    serial_number: "029/199",
+    collector_number: "CL-LM",
+    auto: true
+  }),
+  evidence: {
+    year: groundedEvidence("2025-26"),
+    manufacturer: groundedEvidence("Panini"),
+    brand: createEvidenceField({
+      value: "Prizm",
+      status: "CONFLICT",
+      confidence: 0.58,
+      candidates: [
+        { value: "Prizm", confidence: 0.99 },
+        { value: "Panini", confidence: 0.83 }
+      ],
+      sources: [printedSource("CARD_FRONT_PRINTED_TEXT", "front", "PRIZM")],
+      conflicts: [{
+        field: "brand",
+        conflict_type: "PRODUCT_MISMATCH",
+        conflicting_values: ["Prizm", "Panini"],
+        severity: "MEDIUM"
+      }]
+    }),
+    product: createEvidenceField({
+      value: "Prizm FIFA Soccer",
+      status: "CONFLICT",
+      confidence: 0.58,
+      candidates: [
+        { value: "Prizm FIFA Soccer", confidence: 0.99 },
+        { value: "Panini Prizm", confidence: 0.83 }
+      ],
+      sources: [printedSource("CARD_BACK_PRINTED_TEXT", "back", "2025-26 PANINI - PRIZM FIFA SOCCER")],
+      conflicts: [{
+        field: "product",
+        conflict_type: "PRODUCT_MISMATCH",
+        conflicting_values: ["Prizm FIFA Soccer", "Panini Prizm"],
+        severity: "MEDIUM"
+      }]
+    }),
+    set: frontOnlyEvidence("Club Legends"),
+    players: groundedEvidence(["Lionel Messi"]),
+    serial_number: groundedEvidence("029/199"),
+    collector_number: groundedEvidence("CL-LM"),
+    auto: groundedEvidence(true)
+  },
+  unresolved: []
+}, {
+  maxLength: 120,
+  providerId: "primary_fast_vision"
+});
+assert.equal(directProductEvidenceBeatsSetFallback.publication_gate.draft_gate.by_field.product.selected_value, "Prizm FIFA Soccer");
+assert.equal(directProductEvidenceBeatsSetFallback.publication_gate.draft_gate.by_field.product.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.ok(directProductEvidenceBeatsSetFallback.writer_required_fields.includes("product"));
+assert.notEqual(directProductEvidenceBeatsSetFallback.publication_gate.draft_gate.by_field.product.selected_value, "Club Legends");
+assert.match(directProductEvidenceBeatsSetFallback.final_title, /Prizm FIFA Soccer/i);
+assert.match(directProductEvidenceBeatsSetFallback.final_title, /Club Legends/i);
+assert.ok(directProductEvidenceBeatsSetFallback.conflict_map.some((conflict) => {
+  return conflict.conflict_type === "DIRECT_PRODUCT_EVIDENCE_SELECTED_FOR_WRITER_DRAFT";
+}));
+
 const pokemonCritical = criticalFieldsForIdentityResolution(normalizeResolvedFields({
   product: "Pokemon Scarlet Violet",
   character: "Pikachu"

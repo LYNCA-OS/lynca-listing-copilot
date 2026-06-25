@@ -187,6 +187,29 @@ const prizmFifaNoDuplicateBrand = renderResolvedTitle({
 assert.equal(prizmFifaNoDuplicateBrand.rendered_title, "2025-26 Panini Prizm FIFA Soccer Lionel Messi Club Legends 029/199 Auto #CL-LM");
 assert.doesNotMatch(prizmFifaNoDuplicateBrand.rendered_title, /Prizm\s+Prizm/i);
 
+const tripleThreadsLongMultiplayer = renderResolvedTitle({
+  year: "2020",
+  manufacturer: "Topps",
+  brand: "Topps Triple Threads",
+  product: "Topps Triple Threads Baseball",
+  players: ["Mike Trout", "Hank Aaron", "Ken Griffey Jr."],
+  insert: "Historic Ties",
+  card_type: "Autograph Relic Card",
+  auto: true,
+  relic: true,
+  grade_company: "BGS",
+  card_grade: "9",
+  auto_grade: "10",
+  grade_type: "CARD_AND_AUTO"
+}, {
+  maxLength: 80
+});
+assert.ok(tripleThreadsLongMultiplayer.rendered_title.length <= 80);
+assert.match(tripleThreadsLongMultiplayer.rendered_title, /Triple Threads/i);
+assert.match(tripleThreadsLongMultiplayer.rendered_title, /Historic Ties/i);
+assert.doesNotMatch(tripleThreadsLongMultiplayer.rendered_title, /Triple Threads\s+Triple Threads/i);
+assert.match(tripleThreadsLongMultiplayer.rendered_title, /BGS 9\/10$/);
+
 const insertCardType = renderResolvedTitle({
   year: "2025",
   brand: "Topps",

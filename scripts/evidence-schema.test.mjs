@@ -350,6 +350,38 @@ assert.equal(insertNameYearDocument.evidence.year.confidence, 0.42);
 assert.equal(insertNameYearDocument.evidence.year.sources[0].source_type, "VISUAL_GUESS");
 assert.equal(insertNameYearDocument.evidence.year.sources[0].evidence_kind, "YEAR_CONTEXT_TEXT");
 
+const leagueContextSetDocument = providerPayloadToEvidenceDocument({
+  title: "",
+  confidence: "HIGH",
+  fields: {
+    year: "2021-22",
+    manufacturer: "Panini",
+    product: "Impeccable",
+    set: "Premier League Soccer",
+    players: ["Cristiano Ronaldo"]
+  },
+  field_evidence: {
+    set: {
+      value: "Premier League Soccer",
+      support_type: "CARD_BACK_PRINTED_TEXT",
+      visible_text: "2021-22 PANINI - IMPECCABLE PREMIER LEAGUE SOCCER",
+      confidence: 0.95,
+      review_required: false
+    }
+  },
+  unresolved: []
+}, {
+  images: [
+    { id: "image-back", side: "back" }
+  ]
+});
+assert.equal(leagueContextSetDocument.evidence.set.value, "Premier League Soccer");
+assert.equal(leagueContextSetDocument.evidence.set.status, "REVIEW");
+assert.equal(leagueContextSetDocument.evidence.set.confidence, 0.42);
+assert.equal(leagueContextSetDocument.evidence.set.sources[0].source_type, "VISUAL_GUESS");
+assert.equal(leagueContextSetDocument.evidence.set.sources[0].evidence_kind, "PRODUCT_CONTEXT_TEXT");
+assert.equal(leagueContextSetDocument.evidence.set.unresolved_reason, "set_text_is_product_or_sport_context_not_exact_set");
+
 const groundedIdentityMarkersDocument = providerPayloadToEvidenceDocument({
   title: "2024 Bowman Chrome Shohei Ohtani 1st Bowman RC",
   confidence: "HIGH",
