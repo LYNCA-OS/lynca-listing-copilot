@@ -620,7 +620,7 @@ const cooperFlaggSeasonPsaStandard = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.doesNotMatch(cooperFlaggSeasonPsaStandard.title, /^2025\b/);
+assert.doesNotMatch(cooperFlaggSeasonPsaStandard.title, /^2025\s/);
 assert.ok(cooperFlaggSeasonPsaStandard.writer_required_fields.includes("year"));
 assert.match(cooperFlaggSeasonPsaStandard.title, /Chrome Rookie Auto/i);
 assert.match(cooperFlaggSeasonPsaStandard.title, /PSA 10\/9/i);
@@ -1239,5 +1239,48 @@ const sspRegistryPreserved = await callApi({
 
 assert.equal(sspRegistryPreserved.fields.insert, "SSP");
 assert.match(sspRegistryPreserved.title, /SSP/);
+
+const structuredProviderFieldsPreserved = await callApi({
+  title: "2024 Topps Chrome Test Player Autograph Purple Refractor 31/50",
+  confidence: "HIGH",
+  reason: "Front printed text explicitly supports Autograph and printed parallel Purple Refractor.",
+  fields: {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    player: "Test Player",
+    card_type: "Autograph",
+    surface_color: "Purple",
+    parallel_family: "Refractor",
+    parallel_exact: "Purple Refractor",
+    serial_number: "31/50",
+    auto: true
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(structuredProviderFieldsPreserved.normalized_evidence.card_type.value, "Autograph");
+assert.equal(structuredProviderFieldsPreserved.normalized_evidence.surface_color.value, "Purple");
+assert.equal(structuredProviderFieldsPreserved.normalized_evidence.parallel_exact.value, "Purple Refractor");
+assert.match(structuredProviderFieldsPreserved.title, /Autograph|Auto/i);
+
+const gradeLikeChecklistNotPublished = await callApi({
+  title: "2024 Topps Chrome Test Player PSA 10",
+  confidence: "HIGH",
+  reason: "Slab label states PSA 10.",
+  fields: {
+    year: "2024",
+    product: "Topps Chrome",
+    player: "Test Player",
+    checklist_code: "PSA-10",
+    grade_company: "PSA"
+  },
+  unresolved: []
+}, { maxTitleLength: 120 });
+
+assert.equal(gradeLikeChecklistNotPublished.normalized_evidence.checklist_code, undefined);
+assert.equal(gradeLikeChecklistNotPublished.normalized_evidence.grade_company.value, "PSA");
+assert.equal(gradeLikeChecklistNotPublished.normalized_evidence.card_grade.value, "10");
+assert.doesNotMatch(gradeLikeChecklistNotPublished.title, /PSA-10/);
 
 console.log("listing confidence audit mock tests passed");

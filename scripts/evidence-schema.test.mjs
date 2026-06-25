@@ -111,6 +111,16 @@ assert.equal(descriptorResolved.brand, "Topps");
 assert.equal(descriptorResolved.card_type, "Insert");
 assert.equal(descriptorResolved.variation, "Red Refractor");
 
+const gradeLikeCardNumberResolved = legacyFieldsToResolvedFields({
+  year: "2024",
+  product: "Topps Chrome",
+  players: ["Test Player"],
+  card_number: "PSA-10"
+});
+assert.equal(gradeLikeCardNumberResolved.checklist_code, null);
+assert.equal(gradeLikeCardNumberResolved.grade_company, "PSA");
+assert.equal(gradeLikeCardNumberResolved.card_grade, "10");
+
 const normalized = normalizeResolvedFields({
   players: "A / B",
   grade_type: "CARD_AND_AUTO",
@@ -401,6 +411,55 @@ assert.equal(agnesDescriptorDocument.resolved.variation, "Red Refractor");
 assert.equal(agnesDescriptorDocument.evidence.variation.value, "Red Refractor");
 assert.equal(agnesDescriptorDocument.evidence.variation.sources[0].source_type, "CARD_FRONT");
 assert.doesNotThrow(() => assertValidEvidenceDocument(agnesDescriptorDocument));
+
+const structuredProviderFieldsDocument = providerPayloadToEvidenceDocument({
+  title: "2024 Topps Chrome Test Player Auto Purple Refractor 31/50 PSA 10",
+  confidence: "HIGH",
+  reason: "front printed text supports Autograph and printed parallel Purple Refractor; slab label states PSA 10",
+  fields: {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    card_type: "Autograph",
+    surface_color: "Purple",
+    parallel_family: "Refractor",
+    parallel_exact: "Purple Refractor",
+    serial_number: "31/50",
+    grade_company: "PSA",
+    card_grade: "10",
+    auto: true
+  },
+  unresolved: []
+});
+assert.equal(structuredProviderFieldsDocument.resolved.manufacturer, "Topps");
+assert.equal(structuredProviderFieldsDocument.resolved.card_type, "Autograph");
+assert.equal(structuredProviderFieldsDocument.resolved.surface_color, "Purple");
+assert.equal(structuredProviderFieldsDocument.resolved.parallel_family, "Refractor");
+assert.equal(structuredProviderFieldsDocument.resolved.parallel_exact, "Purple Refractor");
+assert.equal(structuredProviderFieldsDocument.evidence.card_type.value, "Autograph");
+assert.equal(structuredProviderFieldsDocument.evidence.parallel_exact.value, "Purple Refractor");
+assert.doesNotThrow(() => assertValidEvidenceDocument(structuredProviderFieldsDocument));
+
+const gradeMisroutedAsChecklistDocument = providerPayloadToEvidenceDocument({
+  title: "2024 Topps Chrome Test Player PSA 10",
+  confidence: "HIGH",
+  reason: "slab label states PSA 10",
+  fields: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    checklist_code: "PSA-10",
+    grade_company: "PSA"
+  },
+  unresolved: []
+});
+assert.equal(gradeMisroutedAsChecklistDocument.resolved.checklist_code, null);
+assert.equal(gradeMisroutedAsChecklistDocument.resolved.grade_company, "PSA");
+assert.equal(gradeMisroutedAsChecklistDocument.resolved.card_grade, "10");
+assert.equal(gradeMisroutedAsChecklistDocument.evidence.checklist_code, undefined);
+assert.equal(gradeMisroutedAsChecklistDocument.evidence.card_grade.value, "10");
+assert.doesNotThrow(() => assertValidEvidenceDocument(gradeMisroutedAsChecklistDocument));
 
 const visualColorDescriptorDocument = providerPayloadToEvidenceDocument({
   title: "2025 Panini Prizm Lionel Messi Blue Refractor 029/199",

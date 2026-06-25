@@ -293,6 +293,7 @@ async function mapWithConcurrency(items, limit, worker) {
 
 const defaultFields = {
   year: null,
+  manufacturer: null,
   brand: null,
   product: null,
   multi_card: false,
@@ -300,7 +301,11 @@ const defaultFields = {
   lot_type: null,
   set: null,
   subset: null,
+  card_type: null,
   insert: null,
+  surface_color: null,
+  parallel_family: null,
+  parallel_exact: null,
   parallel: null,
   variation: null,
   player: null,
@@ -947,7 +952,7 @@ function cleanPlayerNameForFields(value) {
   if (!text) return null;
   if (/[|]/.test(text)) return null;
   if (/\/.+/.test(text)) return null;
-  if (/\b(?:visible|copyright|year|season|release|card|label|front|back|text|product|unknown|unreadable|unclear|player|athlete|subject)\b/i.test(text)) return null;
+  if (/\b(?:visible|copyright|year|season|release|card|label|front|back|text|product|unknown|unreadable|unclear|athlete|subject)\b/i.test(text)) return null;
   if (/^(?:Autos?|Autographs?|Certified|Topps\s+Certified|Club\s+Legends|Historic\s+Ties(?:\s+Triple)?|Rookie\s+Ticket|Next\s+Stop\s+Signatures|Canvas\s+Creations(?:\s+Autos?)?|Hoopla|Material\s+Signatures|Variation[-\s]*Autograph|1983\s+Topps|Gem\s*Mt|Mint)$/i.test(text)) return null;
   if (/\b(?:Topps|Panini|Bowman|Donruss|Prizm|Finest|Chrome|Sapphire|Impeccable|Contenders|Absolute|Memorabilia|Triple\s+Threads|Certified)\b/i.test(text)) return null;
   if (/^(?:FC|AFC|CF|SC)\b/i.test(text) || /\b(?:FC|AFC|CF|SC|Barcelona|Angels|Yankees|Dodgers|Lakers|Celtics|Warriors|Bulls|Chiefs|Patriots|Cowboys)\b/i.test(text)) return null;
@@ -1002,16 +1007,22 @@ function normalizePositiveIntegerOrNull(value) {
 function normalizeFields(fields = {}) {
   const cardCount = normalizePositiveIntegerOrNull(fields.card_count ?? fields.cardCount);
   const players = normalizePlayerListForFields(fields);
+  const rawInsertText = normalizeStringOrNull(fields.insert);
   const normalized = {
     year: normalizeStringOrNull(fields.year),
-    brand: normalizeStringOrNull(fields.brand),
-    product: cleanProductNameForFields(fields.product),
+    manufacturer: normalizeStringOrNull(fields.manufacturer || fields.maker),
+    brand: normalizeStringOrNull(fields.brand || fields.manufacturer || fields.maker),
+    product: cleanProductNameForFields(fields.product || fields.product_or_set || fields.productOrSet),
     multi_card: normalizeBoolean(fields.multi_card ?? fields.multiCard) || Number(cardCount || 0) > 1,
     card_count: cardCount,
     lot_type: normalizeStringOrNull(fields.lot_type ?? fields.lotType),
     set: normalizeStringOrNull(fields.set),
     subset: normalizeStringOrNull(normalizeRookieMarker(fields.subset)),
-    insert: normalizeStringOrNull(fields.insert),
+    card_type: normalizeStringOrNull(fields.card_type || fields.cardType || fields.type),
+    insert: rawInsertText,
+    surface_color: normalizeStringOrNull(fields.surface_color || fields.surfaceColor || fields.color),
+    parallel_family: normalizeStringOrNull(fields.parallel_family || fields.parallelFamily),
+    parallel_exact: normalizeStringOrNull(fields.parallel_exact || fields.parallelExact || fields.exact_parallel || fields.exactParallel || fields.variant_or_parallel || fields.variantOrParallel),
     parallel: normalizeStringOrNull(fields.parallel),
     variation: normalizeStringOrNull(fields.variation),
     player: players.join(" / ") || cleanPlayerNameForFields(fields.player) || null,
@@ -1077,11 +1088,34 @@ function normalizeFields(fields = {}) {
 
   if (/dual signatures/i.test(`${normalized.insert || ""} ${normalized.subset || ""}`)) {
     normalized.insert = "Dual Signatures";
+    normalized.auto = true;
+  }
+
+  if (/jersey\s+no\.?/i.test(rawInsertText || "")) {
+    normalized.card_number = null;
+    normalized.collector_number = null;
   }
 
   if (/duo logoman|dual rookie logoman/i.test(`${normalized.insert || ""} ${normalized.subset || ""}`)) {
     normalized.insert = "Duo Logoman Autographs";
     normalized.auto = true;
+  }
+
+  if (!normalized.card_type && !normalized.insert) {
+    const hasPatchRelic = normalized.patch || normalized.relic;
+    if (hasPatchRelic && normalized.auto) {
+      normalized.card_type = normalized.patch ? "Patch Auto" : "Relic Auto";
+    } else if (normalized.auto) {
+      normalized.card_type = "Auto";
+    } else if (normalized.patch) {
+      normalized.card_type = "Patch";
+    } else if (normalized.relic) {
+      normalized.card_type = "Relic";
+    } else if (normalized.sketch) {
+      normalized.card_type = "Sketch";
+    } else if (normalized.redemption) {
+      normalized.card_type = "Redemption";
+    }
   }
 
   const parallelInsert = resolveKnowledgeEntry(normalized.parallel) || (
@@ -1216,7 +1250,6 @@ function hasVisuallyGuessedParallel(fields, reasonText, unresolved) {
   const combined = `${parallelText} ${reasonText} ${searchable(unresolved.join(" "))}`;
   return textMentionsAny(combined, [
     "visual",
-    "visible",
     "looks",
     "appears",
     "inferred",
@@ -1273,10 +1306,10 @@ function hasVisualOnlyParallelRisk(fields, reasonText, unresolved) {
   ];
 
   if (!textMentionsAny(combined, patternTerms)) return false;
-  if (!textMentionsAny(combined, ["visual", "visible", "looks", "appears", "inferred", "likely", "guess"]) && hasComplexVisualParallelRisk(fields.parallel)) {
+  if (!textMentionsAny(combined, ["visual", "looks", "appears", "inferred", "likely", "guess"]) && hasComplexVisualParallelRisk(fields.parallel)) {
     return !hasStrongEvidence(reasonText);
   }
-  return textMentionsAny(combined, ["visual", "visible", "looks", "appears", "inferred", "likely", "guess"])
+  return textMentionsAny(combined, ["visual", "looks", "appears", "inferred", "likely", "guess"])
     && !hasStrongEvidence(reasonText);
 }
 
@@ -1415,11 +1448,37 @@ function auditMissingHighValueFields(title, fields) {
   return missing;
 }
 
-function auditMissingReviewFields(title, fields) {
+function parallelRequiresTitlePresence(fields = {}, reasonText = "", unresolved = []) {
+  const parallelText = auditParallelText(fields);
+  if (!parallelText) return false;
+  if (hasParallelReviewRequest(fields, reasonText, unresolved)
+    || hasVisualOnlyParallelRisk(fields, reasonText, unresolved)
+    || hasVisuallyGuessedParallel(fields, reasonText, unresolved)) {
+    return false;
+  }
+  if (fields.parallel_exact || fields.parallel_family) return true;
+  return textMentionsAny(reasonText, [
+    "printed parallel",
+    "parallel printed",
+    "card text supports parallel",
+    "front card text supports parallel",
+    "back text supports parallel",
+    "slab label supports parallel",
+    "label supports parallel",
+    "registry supports parallel",
+    "checklist supports parallel",
+    "official checklist supports parallel"
+  ]);
+}
+
+function auditMissingReviewFields(title, fields, reasonText = "", unresolved = []) {
   const titleText = searchable(title);
   const missing = [];
 
-  if (fields.parallel && !titleIncludes(titleText, fields.parallel)) {
+  if (parallelRequiresTitlePresence(fields, reasonText, unresolved)
+    && ![fields.parallel_exact, fields.parallel_family, fields.parallel, fields.variation, fields.surface_color]
+      .filter(Boolean)
+      .some((value) => titleIncludes(titleText, value))) {
     missing.push("parallel");
   }
 
@@ -1472,7 +1531,7 @@ function calibrateConfidence({ title, confidence, reason, fields, unresolved }) 
     return { confidence, reason, unresolved: calibratedUnresolved };
   }
 
-  const missingReviewFields = auditMissingReviewFields(title, fields);
+  const missingReviewFields = auditMissingReviewFields(title, fields, reasonText, calibratedUnresolved);
   missingReviewFields.forEach((field) => {
     const label = `title missing ${field}`;
     if (!calibratedUnresolved.includes(label)) calibratedUnresolved.push(label);
@@ -2364,17 +2423,38 @@ function normalizeAiResult(result, maxTitleLength, source = "openai") {
     fields: presentationFields,
     unresolved: calibrated.unresolved,
     source,
+    _normalized_evidence_fields: fields,
     _pre_title_audit: preTitleAudit
   };
 }
 
 function withEvidenceCompatibility(result, providerPayload, payload) {
-  const { _pre_title_audit: preTitleAudit, ...publicResult } = result;
+  const {
+    _pre_title_audit: preTitleAudit,
+    _normalized_evidence_fields: normalizedEvidenceFields,
+    ...publicResult
+  } = result;
+  const evidenceFields = {
+    ...(normalizedEvidenceFields || providerPayload.fields || publicResult.fields || {})
+  };
+  if (normalizedEvidenceFields && publicResult.fields) {
+    [
+      "surface_color",
+      "parallel_family",
+      "parallel_exact",
+      "parallel",
+      "variation"
+    ].forEach((field) => {
+      if (publicResult.fields[field] === null && evidenceFields[field] !== null && evidenceFields[field] !== undefined) {
+        evidenceFields[field] = null;
+      }
+    });
+  }
   const payloadForEvidence = {
     ...providerPayload,
     title: providerPayload.title || result.model_title_suggestion || result.title,
     confidence: preTitleAudit?.confidence || providerPayload.confidence || publicResult.confidence,
-    fields: publicResult.fields,
+    fields: evidenceFields,
     unresolved: Array.isArray(providerPayload.unresolved) ? providerPayload.unresolved : publicResult.unresolved
   };
   const evidenceDocument = providerPayloadToEvidenceDocument(payloadForEvidence, {
@@ -2441,6 +2521,8 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
     title_length_policy: presentation.title_length_policy,
     resolution_trace: evidenceDocument.resolution_trace || [],
     model_title_suggestion: evidenceDocument.model_title_suggestion,
+    evidence_fields: evidenceFields,
+    raw_observed_fields: normalizedEvidenceFields || providerPayload.fields || null,
     evidence_schema_version: evidenceDocument.schema_version
   };
 }
