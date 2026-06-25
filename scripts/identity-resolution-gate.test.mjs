@@ -534,6 +534,83 @@ assert.match(observedMultiSubjectWriterDraft.final_title, /Hank Aaron/);
 assert.match(observedMultiSubjectWriterDraft.final_title, /Ken Griffey Jr/);
 assert.match(observedMultiSubjectWriterDraft.final_title, /Mike Trout/);
 
+const compatibleProductConflictDraft = applyIdentityResolutionGate({
+  title: "",
+  model_title_suggestion: "",
+  confidence: "HIGH",
+  reason: "Product conflict is a same-family granularity issue and serial is a single direct low-confidence read.",
+  provider: "cascade_fast",
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    manufacturer: "Topps",
+    brand: "Topps Sapphire",
+    product: "Topps Chrome Sapphire",
+    players: ["Shohei Ohtani"],
+    insert: "Variation-Gold",
+    parallel: "Gold",
+    serial_number: "05/50",
+    collector_number: "1",
+    grade_company: "PSA",
+    card_grade: "9",
+    grade_type: "CARD_ONLY"
+  }),
+  evidence: {
+    year: groundedEvidence("2025"),
+    manufacturer: groundedEvidence("Topps"),
+    brand: createEvidenceField({
+      value: "Topps Sapphire",
+      status: "CONFLICT",
+      confidence: 0.78,
+      candidates: [
+        { value: "Topps Sapphire", confidence: 0.78 },
+        { value: "Topps", confidence: 0.77 }
+      ],
+      sources: [{ source_type: "SLAB_LABEL", observed_text: "2025 TOPPS SAPPHIRE" }],
+      conflicts: [{
+        field: "brand",
+        conflict_type: "PRODUCT_MISMATCH",
+        conflicting_values: ["Topps", "Topps Sapphire"],
+        severity: "HIGH"
+      }]
+    }),
+    product: createEvidenceField({
+      value: "Topps Chrome Sapphire",
+      status: "CONFLICT",
+      confidence: 0.78,
+      candidates: [
+        { value: "Topps Chrome Sapphire", confidence: 0.78 },
+        { value: "Topps Sapphire", confidence: 0.99 }
+      ],
+      sources: [{ source_type: "SLAB_LABEL", observed_text: "2025 TOPPS SAPPHIRE" }],
+      conflicts: [{
+        field: "product",
+        conflict_type: "PRODUCT_MISMATCH",
+        conflicting_values: ["Topps Sapphire", "Topps Chrome Sapphire"],
+        severity: "HIGH"
+      }]
+    }),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    insert: groundedEvidence("Variation-Gold"),
+    parallel: visionOnlyEvidence("Gold"),
+    serial_number: visionOnlyEvidence("05/50"),
+    collector_number: groundedEvidence("1"),
+    grade_company: groundedEvidence("PSA"),
+    card_grade: groundedEvidence("9"),
+    grade_type: groundedEvidence("CARD_ONLY")
+  },
+  unresolved: []
+}, {
+  maxLength: 120,
+  providerId: "primary_fast_vision"
+});
+assert.equal(compatibleProductConflictDraft.publication_gate.writer_review_ready, true);
+assert.ok(compatibleProductConflictDraft.writer_required_fields.includes("product"));
+assert.ok(compatibleProductConflictDraft.writer_required_fields.includes("serial_number"));
+assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field.product.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field.serial_number.selected_value, "05/50");
+assert.match(compatibleProductConflictDraft.final_title, /Topps Chrome Sapphire|Topps Sapphire/i);
+assert.match(compatibleProductConflictDraft.final_title, /05\/50/);
+
 const pokemonCritical = criticalFieldsForIdentityResolution(normalizeResolvedFields({
   product: "Pokemon Scarlet Violet",
   character: "Pikachu"
