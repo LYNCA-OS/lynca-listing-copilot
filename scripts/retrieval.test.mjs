@@ -11,6 +11,7 @@ import { ebayBrowseProvider } from "../lib/listing/retrieval/ebay-browse-provide
 import { officialSourceProvider } from "../lib/listing/retrieval/official-source-provider.mjs";
 import { openAiWebSearchProvider } from "../lib/listing/retrieval/openai-web-search-provider.mjs";
 import { internalMemoryProvider } from "../lib/listing/retrieval/internal-memory-provider.mjs";
+import { visualVectorProvider } from "../lib/listing/retrieval/visual-vector-provider.mjs";
 import { runRetrieval } from "../lib/listing/retrieval/retrieval-engine.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
 import {
@@ -50,6 +51,160 @@ assert.equal(isKnownRetrievalProviderId(retrievalProviderIds.BRAVE_SEARCH), true
 assert.equal(isKnownRetrievalProviderId("not_real_search"), false);
 assert.equal(openAiWebSearchModelConfig("gpt-4.1-mini").allowed, true);
 assert.equal(openAiWebSearchModelConfig("gpt-5").allowed, false);
+
+const testEmbedding = Array.from({ length: 768 }, (_, index) => Number((index / 1000).toFixed(3)));
+const visualPlanned = planRetrievalQueries({
+  resolved,
+  visualEmbeddings: [
+    {
+      image_id: "front-image",
+      role: "front_original",
+      embedding_role: "front_global",
+      model_id: "google/siglip2-base-patch16-384",
+      model_revision: "main",
+      preprocessing_version: "card-rectification-v1",
+      dimensions: 768,
+      embedding: testEmbedding
+    }
+  ],
+  includeExternal: false
+});
+const visualQuery = visualPlanned.find((query) => query.family === retrievalQueryFamilies.VISUAL_VECTOR);
+assert.ok(visualQuery, "visual embedding should plan a visual vector retrieval query");
+assert.equal(visualQuery.provider_id, retrievalProviderIds.VISUAL_VECTOR);
+assert.equal(visualQuery.cacheable, false);
+assert.equal(visualQuery.embedding.length, 768);
+assert.equal(visualQuery.embedding_role, "front_global");
+assert.equal(visualPlanned.some((query) => query.provider_id === retrievalProviderIds.BRAVE_SEARCH), false);
+
+const disabledVisualProvider = await visualVectorProvider({
+  env: {},
+  fetchImpl: async () => {
+    throw new Error("disabled provider must not call fetch");
+  }
+}).search({ query: visualQuery });
+assert.equal(disabledVisualProvider.unavailable, true);
+assert.equal(disabledVisualProvider.reason, "visual_vector_retrieval_disabled");
+
+let visualRpcCalls = 0;
+const activeVisualProvider = visualVectorProvider({
+  env: {
+    ENABLE_VISUAL_VECTOR_RETRIEVAL: "true",
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    VISUAL_VECTOR_MATCH_COUNT: "2"
+  },
+  fetchImpl: async (url, options) => {
+    visualRpcCalls += 1;
+    assert.equal(String(url), "https://supabase.test/rest/v1/rpc/match_card_image_embeddings");
+    const body = JSON.parse(options.body);
+    assert.equal(body.query_embedding.length, 768);
+    assert.equal(body.match_model_id, "google/siglip2-base-patch16-384");
+    assert.equal(body.match_embedding_role, "front_global");
+    assert.equal(body.match_category, "basketball");
+    assert.equal(body.match_count, 2);
+    assert.equal(body.query_embedding.includes("test-service-role"), false);
+    return new Response(JSON.stringify([
+      {
+        identity_id: "11111111-1111-1111-1111-111111111111",
+        reference_image_id: "22222222-2222-2222-2222-222222222222",
+        embedding_id: "33333333-3333-3333-3333-333333333333",
+        image_role: "front_original",
+        embedding_role: "front_global",
+        model_id: "google/siglip2-base-patch16-384",
+        model_revision: "main",
+        preprocessing_version: "card-rectification-v1",
+        similarity: 0.92,
+        distance: 0.08,
+        canonical_title: "2025 Topps Chrome Cooper Flagg #136",
+        category: "basketball",
+        fields: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Cooper Flagg"],
+          collector_number: "136"
+        },
+        reference_metadata: { approved_by: "test" },
+        embedding_metadata: { crop: "front_global" }
+      },
+      {
+        identity_id: "44444444-4444-4444-4444-444444444444",
+        reference_image_id: "55555555-5555-5555-5555-555555555555",
+        embedding_id: "66666666-6666-6666-6666-666666666666",
+        image_role: "front_original",
+        embedding_role: "front_global",
+        model_id: "google/siglip2-base-patch16-384",
+        model_revision: "main",
+        preprocessing_version: "card-rectification-v1",
+        similarity: 0.71,
+        distance: 0.29,
+        canonical_title: "2024 Topps Chrome Cooper Flagg #136",
+        category: "basketball",
+        fields: {
+          year: "2024",
+          product: "Topps Chrome",
+          players: ["Cooper Flagg"],
+          collector_number: "136"
+        }
+      }
+    ]), { status: 200 });
+  }
+});
+const activeVisualResult = await activeVisualProvider.search({
+  query: visualQuery,
+  resolved: { category: "basketball" }
+});
+assert.equal(visualRpcCalls, 1);
+assert.equal(activeVisualResult.candidates.length, 2);
+assert.equal(activeVisualResult.candidates[0].source_type, "VISUAL_VECTOR");
+assert.equal(activeVisualResult.candidates[0].trust_tier, 6);
+assert.equal(activeVisualResult.candidates[0].visual_similarity, 0.92);
+assert.equal(activeVisualResult.candidates[0].visual_margin_to_next, 0.21);
+
+const normalizedVisualCandidate = normalizeRetrievalCandidate(activeVisualResult.candidates[0], {
+  query: visualQuery,
+  policy: defaultSourcePolicy()
+});
+assert.equal(normalizedVisualCandidate.visual_similarity, 0.92);
+assert.equal(normalizedVisualCandidate.candidate_identity_id, "11111111-1111-1111-1111-111111111111");
+const visualScore = scoreRetrievalCandidate(normalizedVisualCandidate, resolved);
+assert.ok(visualScore.matched_fields.includes("visual_vector"));
+assert.ok(visualScore.match_score > 0.4);
+
+const wrongVisualYear = scoreRetrievalCandidate(activeVisualResult.candidates[1], resolved);
+assert.ok(wrongVisualYear.conflicting_fields.includes("year"));
+const rankedVisualConflict = rankRetrievalCandidates([activeVisualResult.candidates[1]], resolved);
+assert.equal(rankedVisualConflict.selected_candidate, null);
+
+let runRetrievalVisualCalls = 0;
+const visualRunRegistry = {
+  get(providerId) {
+    if (providerId !== retrievalProviderIds.VISUAL_VECTOR) return null;
+    return {
+      id: retrievalProviderIds.VISUAL_VECTOR,
+      async search() {
+        runRetrievalVisualCalls += 1;
+        return { candidates: activeVisualResult.candidates.slice(0, 1) };
+      }
+    };
+  }
+};
+const visualCache = createRetrievalCache();
+await runRetrieval({
+  resolved,
+  visualEmbeddings: [visualQuery],
+  allowedFamilies: [retrievalQueryFamilies.VISUAL_VECTOR],
+  providerRegistry: visualRunRegistry,
+  cache: visualCache
+});
+await runRetrieval({
+  resolved,
+  visualEmbeddings: [visualQuery],
+  allowedFamilies: [retrievalQueryFamilies.VISUAL_VECTOR],
+  providerRegistry: visualRunRegistry,
+  cache: visualCache
+});
+assert.equal(runRetrievalVisualCalls, 2, "visual vector retrieval must not cache query embeddings by textual cache key");
 
 const memoryProvider = internalMemoryProvider({
   approvedRecords: [

@@ -5,7 +5,7 @@ import { completeEvidence } from "../lib/listing/orchestration/evidence-completi
 import { completionActions, chooseNextBestAction } from "../lib/listing/orchestration/next-best-action.mjs";
 import { createResolutionBudget } from "../lib/listing/orchestration/resolution-budget.mjs";
 import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
-import { retrievalProviderIds } from "../lib/listing/retrieval/retrieval-contract.mjs";
+import { retrievalProviderIds, retrievalQueryFamilies } from "../lib/listing/retrieval/retrieval-contract.mjs";
 
 const baseResolved = {
   year: "2025",
@@ -247,6 +247,75 @@ const internalRunsWithoutExternalBudget = await completeEvidence({
 });
 assert.equal(internalRunsWithoutExternalBudget.state.attempted_actions[0].action, completionActions.SEARCH_INTERNAL_APPROVED_HISTORY);
 assert.equal(internalRunsWithoutExternalBudget.budget.used.external_queries, 0);
+
+const visualEmbedding = Array.from({ length: 768 }, (_, index) => index / 1000);
+let visualCompletionRetrievalArgs = null;
+const visualCompletion = await completeEvidence({
+  resolved: {
+    year: "2025",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025", status: "CONFIRMED", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], status: "REVIEW", confidence: 0.7 })
+  },
+  unresolved: ["product identity missing"],
+  visualEmbeddings: {
+    status: "OK",
+    features: [
+      {
+        image_id: "front",
+        role: "front_original",
+        embedding_role: "front_global",
+        model_id: "google/siglip2-base-patch16-384",
+        model_revision: "main",
+        preprocessing_version: "card-rectification-v1",
+        dimensions: 768,
+        embedding: visualEmbedding
+      }
+    ]
+  },
+  runRetrievalImpl: async (args) => {
+    visualCompletionRetrievalArgs ||= args;
+    const candidate = {
+      candidate_id: "approved_flagg_candidate",
+      source_type: "INTERNAL_APPROVED_HISTORY",
+      trust_tier: 3,
+      title: "2025 Topps Chrome Cooper Flagg #136",
+      evidence_excerpt: "Approved internal candidate.",
+      match_score: 0.86,
+      matched_fields: ["players", "year"],
+      fields: {
+        year: "2025",
+        product: "Topps Chrome",
+        players: ["Cooper Flagg"],
+        collector_number: "136"
+      }
+    };
+    return {
+      mode: args.mode,
+      providers_used: [retrievalProviderIds.INTERNAL_MEMORY],
+      queries: (args.allowedFamilies || []).map((family) => ({ family })),
+      sources: [candidate],
+      selected_candidate: candidate,
+      candidate_margin: 0.2,
+      candidate_selection_threshold: 0.12,
+      low_margin_conflict: null,
+      conflicts: [],
+      unavailable: [],
+      trace: []
+    };
+  },
+  budgetOverrides: {
+    maxRounds: 1,
+    maxExternalQueries: 0
+  }
+});
+assert.ok(visualCompletionRetrievalArgs.allowedFamilies.includes(retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY));
+assert.ok(visualCompletionRetrievalArgs.allowedFamilies.includes(retrievalQueryFamilies.VISUAL_VECTOR));
+assert.equal(visualCompletionRetrievalArgs.maxQueries, 2);
+assert.equal(visualCompletionRetrievalArgs.visualEmbeddings.features[0].embedding.length, 768);
+assert.equal(visualCompletion.budget.used.external_queries, 0);
 
 const unavailableRegistry = {
   get(providerId) {

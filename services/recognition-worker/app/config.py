@@ -32,6 +32,10 @@ class WorkerConfig:
     enable_tesseract_ocr: bool
     enable_opencv_rectification: bool
     enable_visual_embeddings: bool
+    visual_embedding_model_id: str
+    visual_embedding_model_revision: str
+    visual_embedding_preprocessing_version: str
+    visual_embedding_dimensions: int
     enable_candidate_verification: bool
     tesseract_language: str
     tesseract_psm: int
@@ -51,6 +55,10 @@ def load_config() -> WorkerConfig:
         enable_tesseract_ocr=os.getenv("ENABLE_TESSERACT_OCR", "false").lower() == "true",
         enable_opencv_rectification=os.getenv("ENABLE_OPENCV_RECTIFICATION", "false").lower() == "true",
         enable_visual_embeddings=os.getenv("ENABLE_VISUAL_EMBEDDINGS", "false").lower() == "true",
+        visual_embedding_model_id=os.getenv("VISUAL_EMBEDDING_MODEL_ID", "google/siglip2-base-patch16-384") or "google/siglip2-base-patch16-384",
+        visual_embedding_model_revision=os.getenv("VISUAL_EMBEDDING_MODEL_REVISION", "main") or "main",
+        visual_embedding_preprocessing_version=os.getenv("VISUAL_EMBEDDING_PREPROCESSING_VERSION", "card-rectification-v1") or "card-rectification-v1",
+        visual_embedding_dimensions=_int_env("VISUAL_EMBEDDING_DIMENSIONS", 768),
         enable_candidate_verification=os.getenv("ENABLE_CANDIDATE_VERIFICATION", "false").lower() == "true",
         tesseract_language=os.getenv("TESSERACT_LANGUAGE", "eng") or "eng",
         tesseract_psm=_int_env("TESSERACT_PSM", 11),

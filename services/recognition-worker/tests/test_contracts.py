@@ -18,6 +18,7 @@ from app.pipelines.image_quality import measure_image_quality_from_array
 from app.pipelines.multi_card_detection import detect_multi_card_from_array
 from app.pipelines.ocr_pipeline import ocr_evidence_from_items, ocr_evidence_from_loaded_images
 from app.pipelines.region_proposal import propose_regions_for_rectified_card
+from app.pipelines.visual_embeddings import embedding_role_for_image_role, extract_visual_embeddings
 from app.security import SecurityError, UrlPolicy, redact_url, validate_image_url, verify_bearer_token
 
 
@@ -90,8 +91,54 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["asset_id"], "asset_1")
         self.assertEqual(result["ocr_evidence"]["status"], "UNAVAILABLE")
         self.assertEqual(result["evidence_fusion"]["status"], "NO_EVIDENCE")
+        self.assertEqual(result["visual_features"]["status"], "DISABLED")
+        self.assertEqual(result["visual_features"]["models"]["primary"]["model_id"], "google/siglip2-base-patch16-384")
         self.assertFalse(result["glare_detection"]["generative_reconstruction_used"])
         self.assertEqual(result["rectification"]["status"], "UNAVAILABLE")
+
+    def test_visual_embedding_contract_is_versioned_and_explicit_when_unavailable(self):
+        from app.config import WorkerConfig
+
+        config = WorkerConfig(
+            token="test-token",
+            allowed_image_hosts=["example.supabase.co"],
+            max_image_bytes=1024,
+            max_total_pixels=10000,
+            request_timeout_seconds=3,
+            enable_image_download=True,
+            enable_paddleocr=False,
+            enable_tesseract_ocr=False,
+            enable_opencv_rectification=False,
+            enable_visual_embeddings=True,
+            visual_embedding_model_id="google/siglip2-base-patch16-384",
+            visual_embedding_model_revision="main",
+            visual_embedding_preprocessing_version="card-rectification-v1",
+            visual_embedding_dimensions=768,
+            enable_candidate_verification=False,
+            tesseract_language="eng",
+            tesseract_psm=11,
+            tesseract_timeout_seconds=20,
+        )
+        loaded = LoadedImage(
+            image_id="front",
+            role="front_original",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+
+        self.assertEqual(embedding_role_for_image_role("back_original"), "back_global")
+        self.assertEqual(embedding_role_for_image_role("front_original"), "front_global")
+        features = extract_visual_embeddings([loaded], config)
+
+        self.assertEqual(features["status"], "UNAVAILABLE")
+        self.assertEqual(features["reason"], "embedding_backend_not_installed")
+        self.assertEqual(features["models"]["primary"]["dimensions"], 768)
+        self.assertEqual(features["features"][0]["embedding_role"], "front_global")
+        self.assertEqual(features["features"][0]["status"], "UNAVAILABLE")
 
     def test_safe_image_loader_reads_bounded_signed_image(self):
         image = Image.new("RGB", (32, 48), color=(210, 210, 210))

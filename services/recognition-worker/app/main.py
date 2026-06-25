@@ -21,7 +21,7 @@ from .pipelines.image_quality import measure_image_quality_from_array, quality_u
 from .pipelines.multi_card_detection import detect_multi_card_from_loaded_images, multi_card_detection_unavailable
 from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_unavailable
 from .pipelines.region_proposal import propose_regions_for_rectified_card
-from .pipelines.visual_embeddings import embeddings_unavailable
+from .pipelines.visual_embeddings import extract_visual_embeddings
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
 
 
@@ -115,7 +115,7 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
         "regions": propose_regions_for_rectified_card(requested_fields, rectification.get("rectified_size", [0, 0]), first_image_id),
         "ocr_evidence": ocr_evidence,
         "evidence_fusion": evidence_fusion,
-        "visual_features": embeddings_unavailable(),
+        "visual_features": extract_visual_embeddings(image_loads, config),
         "candidate_verification": candidate_verification_unavailable(),
         "processing": {
             "pipeline_version": config.pipeline_version,
@@ -126,6 +126,11 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
                 "opencv": "enabled" if config.enable_opencv_rectification else "disabled",
                 "r2_numpy_geometry": "available_for_offline_eval",
                 "multi_card_detector": "numpy_component_card_count_r1",
+                "visual_embeddings": (
+                    config.visual_embedding_model_id
+                    if config.enable_visual_embeddings
+                    else "disabled"
+                ),
             },
             "image_download": {
                 "status": "OK" if image_loads else "UNAVAILABLE",

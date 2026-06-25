@@ -3385,6 +3385,17 @@ function withPrimaryFastVisionPolicy(result = {}, verificationFields = [], {
   };
 }
 
+function visualFeaturesForRetrieval(result = {}) {
+  if (result.visual_features && typeof result.visual_features === "object") return result.visual_features;
+  if (result.recognition_preflight?.visual_features && typeof result.recognition_preflight.visual_features === "object") {
+    return result.recognition_preflight.visual_features;
+  }
+  if (result.recognition?.visual_features && typeof result.recognition.visual_features === "object") {
+    return result.recognition.visual_features;
+  }
+  return [];
+}
+
 async function withEvidenceCompletion(result, payload, {
   runFocusedVisionImpl = null,
   env = process.env,
@@ -3396,6 +3407,7 @@ async function withEvidenceCompletion(result, payload, {
     evidence: result.evidence,
     captureQuality: result.capture_quality || captureQualityForPayload(payload),
     unresolved: result.unresolved,
+    visualEmbeddings: visualFeaturesForRetrieval(result),
     retrievalMode,
     env,
     runFocusedVisionImpl
@@ -3553,9 +3565,7 @@ async function createRecognitionIdentityPreflight(payload, {
       images: signedPrimaryImages,
       requestedFields: [...recognitionRequestedFields],
       options: {
-        run_ocr: true,
-        run_visual_embeddings: false,
-        run_candidate_verification: false
+        run_ocr: true
       }
     }));
     const evidenceDocument = recognitionResponseToEvidenceDocument(response, {
@@ -3588,6 +3598,7 @@ async function createRecognitionIdentityPreflight(payload, {
       route: "RECOGNITION_WORKER_PREFLIGHT",
       route_reason: "Attempted local OCR/slab identity resolution before the vision cascade.",
       recognition_preflight: evidenceDocument.recognition || null,
+      visual_features: response.visual_features || {},
       usage: {
         provider_calls: 0,
         retrieval_calls: 0,
