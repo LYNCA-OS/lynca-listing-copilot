@@ -7,11 +7,8 @@ const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candida
 const defaultOutPath = "data/eval/provider-regression-30/cloud-listing-api-latest.json";
 const defaultEnvFilePath = ".env.local";
 const providerModes = Object.freeze({
-  AGNES: "agnes",
   OPENAI: "openai_legacy",
-  GEMINI_ONLY: "gemini",
-  GEMINI_GPT_FAILURE_FALLBACK: "gemini_gpt_failure_fallback",
-  GEMINI_GPT_CRITICAL_VERIFIER: "gemini_gpt_critical_verifier"
+  GEMINI_ONLY: "gemini"
 });
 
 function argValue(argv, name, fallback = "") {
@@ -86,24 +83,17 @@ function correctedTitle(item = {}) {
 
 function normalizeProviderMode(value = "") {
   const raw = String(value || "").trim().toLowerCase();
-  if (["agnes", "agnes-only", "agnes_only"].includes(raw)) return providerModes.AGNES;
   if (["openai", "gpt", "gpt-4.1-mini", "openai_legacy"].includes(raw)) return providerModes.OPENAI;
-  if (["gemini_gpt_failure_fallback", "gemini-fallback", "gemini_fallback", "gemini_gpt_fallback"].includes(raw)) {
-    return providerModes.GEMINI_GPT_FAILURE_FALLBACK;
-  }
-  if (["gemini_gpt_critical_verifier", "gemini-critical", "gemini_critical", "gemini_gpt_verifier"].includes(raw)) {
-    return providerModes.GEMINI_GPT_CRITICAL_VERIFIER;
-  }
-  return providerModes.GEMINI_ONLY;
+  if (["", "gemini", "gemini-only", "gemini_only"].includes(raw)) return providerModes.GEMINI_ONLY;
+  throw new Error(`Unsupported cloud eval provider: ${value}. Use gemini or openai_legacy.`);
 }
 
 function cloudProviderForMode(providerMode) {
-  if (providerMode === providerModes.AGNES) return providerModes.AGNES;
   return providerMode === providerModes.OPENAI ? providerModes.OPENAI : providerModes.GEMINI_ONLY;
 }
 
 function providerOptionsForMode(providerMode) {
-  if (providerMode === providerModes.OPENAI || providerMode === providerModes.AGNES) {
+  if (providerMode === providerModes.OPENAI) {
     return {
       single_model_fast: true,
       enable_evidence_completion: false,
@@ -114,42 +104,13 @@ function providerOptionsForMode(providerMode) {
     };
   }
 
-  if (providerMode === providerModes.GEMINI_ONLY) {
-    return {
-      single_model_fast: true,
-      enable_evidence_completion: false,
-      enable_gpt_failure_fallback: false,
-      enable_gpt_provider_failure_fallback: false,
-      enable_gpt_critical_verifier: false,
-      enable_gemini_core_field_retry: true
-    };
-  }
-
-  if (providerMode === providerModes.GEMINI_GPT_FAILURE_FALLBACK) {
-    return {
-      single_model_fast: false,
-      enable_evidence_completion: true,
-      enable_gpt_failure_fallback: true,
-      enable_gpt_provider_failure_fallback: true,
-      enable_gpt_critical_verifier: false,
-      enable_gemini_core_field_retry: true
-    };
-  }
-
-  if (providerMode === providerModes.GEMINI_GPT_CRITICAL_VERIFIER) {
-    return {
-      single_model_fast: false,
-      enable_evidence_completion: true,
-      enable_gpt_failure_fallback: true,
-      enable_gpt_provider_failure_fallback: true,
-      enable_gpt_critical_verifier: true,
-      enable_gemini_core_field_retry: true
-    };
-  }
-
   return {
     single_model_fast: true,
-    enable_evidence_completion: false
+    enable_evidence_completion: false,
+    enable_gpt_failure_fallback: false,
+    enable_gpt_provider_failure_fallback: false,
+    enable_gpt_critical_verifier: false,
+    enable_gemini_core_field_retry: true
   };
 }
 
@@ -634,7 +595,6 @@ export async function evaluateCloudListingApi({
   bypassSecret = "",
   requestTimeoutMs = 120_000,
   maxTitleLength = 80,
-  allowAgnes = false,
   skipPreflight = false,
   fetchImpl = globalThis.fetch
 } = {}) {
@@ -642,9 +602,6 @@ export async function evaluateCloudListingApi({
   if (!username || !password) throw new Error("METAVERSE_USERNAME and METAVERSE_PASSWORD are required.");
   if (typeof fetchImpl !== "function") throw new Error("fetch is required.");
   const providerMode = normalizeProviderMode(provider);
-  if (providerMode === providerModes.AGNES && allowAgnes !== true) {
-    throw new Error("Agnes cloud evaluation is disabled by default. Use --allow-agnes only for an explicitly approved offline/manual run.");
-  }
 
   const limitCount = Math.max(0, Math.trunc(Number(limit) || 0));
   const selected = (Array.isArray(dataset?.items) ? dataset.items : [])
@@ -764,7 +721,6 @@ export async function main(argv = process.argv, env = process.env) {
   const limit = numberArg(argv, "--limit", Number(runtimeEnv.CLOUD_LISTING_API_EVAL_LIMIT || 1));
   const concurrency = numberArg(argv, "--concurrency", Number(runtimeEnv.CLOUD_LISTING_API_EVAL_CONCURRENCY || 1));
   const failOnProviderError = hasFlag(argv, "--fail-on-provider-error");
-  const allowAgnes = hasFlag(argv, "--allow-agnes") || runtimeEnv.CLOUD_LISTING_API_ALLOW_AGNES === "true";
   const skipPreflight = hasFlag(argv, "--skip-cloud-preflight");
   const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", Number(runtimeEnv.CLOUD_LISTING_API_REQUEST_TIMEOUT_MS || 120_000));
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
@@ -779,7 +735,6 @@ export async function main(argv = process.argv, env = process.env) {
     password: runtimeEnv.METAVERSE_PASSWORD,
     bypassSecret,
     requestTimeoutMs,
-    allowAgnes,
     skipPreflight
   });
   if (outPath) await writeJson(outPath, report);

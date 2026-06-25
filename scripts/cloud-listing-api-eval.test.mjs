@@ -88,9 +88,7 @@ async function runProvider(provider) {
         provider: body.provider,
         model_id: body.provider === "openai_legacy"
           ? "gpt-4.1-mini-2025-04-14"
-          : body.provider === "agnes"
-            ? "agnes-vision-v1"
-            : "gemini-3.1-flash-lite",
+          : "gemini-3.1-flash-lite",
         fields: {
           year: "2025",
           product: "Topps Chrome",
@@ -187,7 +185,12 @@ assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, f
 
 await assert.rejects(
   () => runProvider("agnes"),
-  /Agnes cloud evaluation is disabled by default/i
+  /Unsupported cloud eval provider/i
+);
+
+await assert.rejects(
+  () => runProvider("gemini_gpt_failure_fallback"),
+  /Unsupported cloud eval provider/i
 );
 
 assert.doesNotThrow(() => validateProtectionBypassSecret({
@@ -214,14 +217,5 @@ assert.throws(
   }),
   /matches a Supabase service\/secret key/i
 );
-
-const mixed = await runProvider("gemini_gpt_failure_fallback");
-assert.equal(mixed.report.provider, "gemini_gpt_failure_fallback");
-assert.equal(mixed.titlePayload.provider, "gemini");
-assert.equal(mixed.titlePayload.provider_options.single_model_fast, false);
-assert.equal(mixed.titlePayload.provider_options.enable_evidence_completion, true);
-assert.equal(mixed.titlePayload.provider_options.enable_gpt_failure_fallback, true);
-assert.equal(mixed.titlePayload.provider_options.enable_gpt_provider_failure_fallback, true);
-assert.equal(mixed.titlePayload.provider_options.enable_gpt_critical_verifier, false);
 
 console.log("cloud listing API eval tests passed");
