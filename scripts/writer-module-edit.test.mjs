@@ -94,6 +94,54 @@ assert.equal(gradingEdit.corrected_resolved.auto_grade, "10");
 assert.equal(gradingEdit.corrected_resolved.grade_type, "CARD_AND_AUTO");
 assert.match(gradingEdit.final_title, /PSA 9\/10$/);
 
+const newModuleIdentityEdit = applyWriterModuleEdit({
+  resolved: {
+    year: "2023",
+    brand: "Panini",
+    product: "Prizm",
+    players: ["Victor Wembanyama"]
+  },
+  moduleKey: "product_set",
+  moduleText: "Prizm Basketball"
+});
+assert.equal(newModuleIdentityEdit.corrected_resolved.product, "Prizm Basketball");
+assert.equal(newModuleIdentityEdit.corrected_resolved.set, null);
+assert.match(newModuleIdentityEdit.final_title, /2023 Panini Prizm Basketball Victor Wembanyama/);
+
+const newModuleVariantEdit = applyWriterModuleEdit({
+  resolved: {
+    year: "2025",
+    brand: "Topps Chrome",
+    players: ["Cooper Flagg"],
+    auto: true
+  },
+  moduleKey: "variant_parallel_rarity",
+  moduleText: "Gold Refractor RC 1/1"
+});
+assert.equal(newModuleVariantEdit.corrected_resolved.parallel, "Gold Refractor");
+assert.equal(newModuleVariantEdit.corrected_resolved.rc, true);
+assert.equal(newModuleVariantEdit.corrected_resolved.one_of_one, true);
+assert.equal(newModuleVariantEdit.corrected_resolved.auto, true);
+assert.match(newModuleVariantEdit.final_title, /Auto Gold Refractor RC 1\/1/);
+
+const newModuleNumberGradeEdit = applyWriterModuleEdit({
+  resolved: {
+    year: "2024",
+    brand: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    serial_number: "37/50"
+  },
+  moduleKey: "number_serial_grade",
+  moduleText: "31/50 · #136 · UV-16 · PSA 9/10"
+});
+assert.equal(newModuleNumberGradeEdit.corrected_resolved.serial_number, "31/50");
+assert.equal(newModuleNumberGradeEdit.corrected_resolved.collector_number, "136");
+assert.equal(newModuleNumberGradeEdit.corrected_resolved.checklist_code, "UV-16");
+assert.equal(newModuleNumberGradeEdit.corrected_resolved.grade_company, "PSA");
+assert.equal(newModuleNumberGradeEdit.corrected_resolved.card_grade, "9");
+assert.equal(newModuleNumberGradeEdit.corrected_resolved.auto_grade, "10");
+assert.equal(newModuleNumberGradeEdit.corrected_resolved.grade_type, "CARD_AND_AUTO");
+
 const apiEdit = await callRenderApi({
   resolved: {
     year: "2024",

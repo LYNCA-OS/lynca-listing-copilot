@@ -10,10 +10,14 @@ import {
   resolveKnowledgeFromFields
 } from "../lib/listing-knowledge-registry.mjs";
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
+import {
+  analyzeCardEvidenceWithGemini,
+  transcribeVisibleCardTextWithGemini
+} from "../lib/listing/providers/gemini-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import { defaultProviderModels, providerLabels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
-import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
+import { isProviderResponseFormatError, safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 import {
   createListingImageSignedReadUrl,
@@ -83,6 +87,85 @@ function envFlag(env, key, fallback = true) {
   const raw = env[key];
   if (raw === undefined || raw === null || raw === "") return fallback;
   return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
+}
+
+function providerOptionsFromPayload(payload = {}) {
+  const options = payload.provider_options || payload.providerOptions || {};
+  return options && typeof options === "object" && !Array.isArray(options) ? options : {};
+}
+
+function optionFlag(options, key, fallback) {
+  if (!Object.prototype.hasOwnProperty.call(options, key)) return fallback;
+  const raw = options[key];
+  if (raw === undefined || raw === null || raw === "") return fallback;
+  return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
+}
+
+function gptFailureFallbackEnabled(env = process.env, options = {}) {
+  if (singleModelFastPathEnabled(env, options)) return false;
+  return optionFlag(options, "enable_gpt_failure_fallback", envFlag(env, "ENABLE_GPT_FAILURE_FALLBACK", false));
+}
+
+function gptCriticalVerifierEnabled(env = process.env, options = {}) {
+  if (singleModelFastPathEnabled(env, options)) return false;
+  return optionFlag(options, "enable_gpt_critical_verifier", envFlag(env, "ENABLE_GPT_CRITICAL_VERIFIER", false));
+}
+
+function gptProviderFailureFallbackEnabled(env = process.env, options = {}) {
+  if (singleModelFastPathEnabled(env, options)) return false;
+  return optionFlag(options, "enable_gpt_provider_failure_fallback", envFlag(env, "ENABLE_GPT_PROVIDER_FAILURE_FALLBACK", false));
+}
+
+function singleModelFastPathEnabled(env = process.env, options = {}) {
+  return optionFlag(options, "single_model_fast", envFlag(env, "ENABLE_SINGLE_MODEL_FAST_PATH", true));
+}
+
+function evidenceCompletionEnabled(env = process.env, options = {}) {
+  if (singleModelFastPathEnabled(env, options)) return false;
+  return optionFlag(options, "enable_evidence_completion", envFlag(env, "ENABLE_EVIDENCE_COMPLETION", true));
+}
+
+function geminiCoreFieldRetryEnabled(env = process.env, options = {}) {
+  if (singleModelFastPathEnabled(env, options)) {
+    return optionFlag(options, "enable_gemini_core_field_retry", envFlag(env, "ENABLE_GEMINI_CORE_FIELD_RETRY", true));
+  }
+  return optionFlag(options, "enable_gemini_core_field_retry", envFlag(env, "ENABLE_GEMINI_CORE_FIELD_RETRY", true));
+}
+
+function geminiCoreFieldRetryEnv(env = process.env) {
+  const retryTimeoutMs = Number(env.GEMINI_CORE_FIELD_RETRY_TIMEOUT_MS);
+  const retryMaxOutputTokens = Number(env.GEMINI_CORE_FIELD_RETRY_MAX_OUTPUT_TOKENS);
+  return {
+    ...env,
+    GEMINI_TIMEOUT_MS: Number.isFinite(retryTimeoutMs) && retryTimeoutMs > 0
+      ? String(Math.trunc(retryTimeoutMs))
+      : "15000",
+    GEMINI_MAX_RETRIES: "0",
+    GEMINI_MAX_OUTPUT_TOKENS: Number.isFinite(retryMaxOutputTokens) && retryMaxOutputTokens > 0
+      ? String(Math.trunc(retryMaxOutputTokens))
+      : "350"
+  };
+}
+
+function formatFailureType(error) {
+  return error?.details?.format_error_type || error?.format_error_type || "PROVIDER_ERROR";
+}
+
+function geminiProviderFailureFallbackReason(error) {
+  if (isProviderResponseFormatError(error)) return `gemini_format_failure:${formatFailureType(error)}`;
+  const code = error?.code || "provider_error";
+  return `gemini_provider_failure:${code}`;
+}
+
+function isGeminiProviderFailureFallbackError(error) {
+  if (error?.provider !== visionProviderIds.GEMINI) return false;
+  return [
+    "location_unavailable",
+    "timeout",
+    "rate_limited",
+    "upstream_error",
+    "network_error"
+  ].includes(error?.code);
 }
 
 function nowMs() {
@@ -849,6 +932,67 @@ function normalizeStringOrNull(value) {
   return normalized || null;
 }
 
+function cleanPlayerNameForFields(value) {
+  let text = normalizeStringOrNull(value);
+  if (!text) return null;
+  text = text
+    .replace(/^visible[_\s-]*text\s*:?\s*/i, "")
+    .replace(/\bvisible[_\s-]*text\b.*$/i, "")
+    .replace(/\b\d{1,4}\s*\/\s*\d{1,4}\b.*$/i, "")
+    .replace(/\b(?:PSA|BGS|SGC|CGC|GEM\s*MT|MINT|AUTHENTIC)\b.*$/i, "")
+    .replace(/\s+\b(?:Gold|Red|Blue|Green|Purple|Orange|Black|Silver|White|Yellow|Sapphire|Refractor|Prizm|Wave|Shimmer|Mojo|Cracked\s+Ice|Geometric|Variation|Auto|Autograph|Signatures?|Rookie|RC)\b.*$/i, "")
+    .replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  if (/[|]/.test(text)) return null;
+  if (/\/.+/.test(text)) return null;
+  if (/\b(?:visible|copyright|year|season|release|card|label|front|back|text|product|unknown|unreadable|unclear|player|athlete|subject)\b/i.test(text)) return null;
+  if (/^(?:Autos?|Autographs?|Certified|Topps\s+Certified|Club\s+Legends|Historic\s+Ties(?:\s+Triple)?|Rookie\s+Ticket|Next\s+Stop\s+Signatures|Canvas\s+Creations(?:\s+Autos?)?|Hoopla|Material\s+Signatures|Variation[-\s]*Autograph|1983\s+Topps|Gem\s*Mt|Mint)$/i.test(text)) return null;
+  if (/\b(?:Topps|Panini|Bowman|Donruss|Prizm|Finest|Chrome|Sapphire|Impeccable|Contenders|Absolute|Memorabilia|Triple\s+Threads|Certified)\b/i.test(text)) return null;
+  if (/^(?:FC|AFC|CF|SC)\b/i.test(text) || /\b(?:FC|AFC|CF|SC|Barcelona|Angels|Yankees|Dodgers|Lakers|Celtics|Warriors|Bulls|Chiefs|Patriots|Cowboys)\b/i.test(text)) return null;
+  if (/\d/.test(text)) return null;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 4) return null;
+  return text;
+}
+
+function cleanProductNameForFields(value) {
+  const text = normalizeStringOrNull(value);
+  if (!text) return null;
+  const normalized = text
+    .replace(/\b(Panini|Topps|Bowman|Donruss)\s*[-–]\s*/gi, "$1 ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const lower = normalized.toLowerCase();
+  const exact = new Map([
+    ["topps chrome", "Topps Chrome"],
+    ["topps finest", "Topps Finest"],
+    ["topps sapphire", "Topps Sapphire"],
+    ["panini prizm", "Panini Prizm"],
+    ["panini prizm fifa soccer", "Panini Prizm FIFA Soccer"],
+    ["panini impeccable", "Panini Impeccable"],
+    ["panini contenders", "Panini Contenders"],
+    ["panini absolute memorabilia", "Panini Absolute Memorabilia"],
+    ["topps triple threads", "Topps Triple Threads"]
+  ]);
+  return exact.get(lower) || normalized;
+}
+
+function normalizePlayerListForFields(fields = {}) {
+  const rawPlayers = Array.isArray(fields.players) ? fields.players : [];
+  const fallbackPlayers = rawPlayers.length
+    ? []
+    : String(fields.player || "")
+      .split(/\s*\/\s*/)
+      .filter(Boolean);
+  const players = [...rawPlayers, ...fallbackPlayers]
+    .map(cleanPlayerNameForFields)
+    .filter(Boolean)
+    .filter((player, index, list) => list.findIndex((item) => item.toLowerCase() === player.toLowerCase()) === index);
+  return players;
+}
+
 function normalizePositiveIntegerOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -857,13 +1001,11 @@ function normalizePositiveIntegerOrNull(value) {
 
 function normalizeFields(fields = {}) {
   const cardCount = normalizePositiveIntegerOrNull(fields.card_count ?? fields.cardCount);
-  const players = Array.isArray(fields.players)
-    ? fields.players.map(normalizeStringOrNull).filter(Boolean)
-    : [];
+  const players = normalizePlayerListForFields(fields);
   const normalized = {
     year: normalizeStringOrNull(fields.year),
     brand: normalizeStringOrNull(fields.brand),
-    product: normalizeStringOrNull(fields.product),
+    product: cleanProductNameForFields(fields.product),
     multi_card: normalizeBoolean(fields.multi_card ?? fields.multiCard) || Number(cardCount || 0) > 1,
     card_count: cardCount,
     lot_type: normalizeStringOrNull(fields.lot_type ?? fields.lotType),
@@ -872,7 +1014,7 @@ function normalizeFields(fields = {}) {
     insert: normalizeStringOrNull(fields.insert),
     parallel: normalizeStringOrNull(fields.parallel),
     variation: normalizeStringOrNull(fields.variation),
-    player: normalizeStringOrNull(fields.player) || players.join(" / ") || null,
+    player: players.join(" / ") || cleanPlayerNameForFields(fields.player) || null,
     players,
     character: normalizeStringOrNull(fields.character),
     artist: normalizeStringOrNull(fields.artist),
@@ -1618,6 +1760,17 @@ function primaryImagesFromImages(images = []) {
   return primary.length ? primary : images.slice(0, 2);
 }
 
+function providerImagesFromImages(images = [], {
+  maxDerived = 6
+} = {}) {
+  const primaryImages = primaryImagesFromImages(images).slice(0, 2);
+  const primarySet = new Set(primaryImages);
+  const derivedImages = derivedImagesFromImages(images)
+    .filter((image) => !primarySet.has(image))
+    .slice(0, Math.max(0, Number(maxDerived) || 0));
+  return [...primaryImages, ...derivedImages];
+}
+
 function explicitPrimaryImagesFromImages(images = []) {
   return images.filter((image) => !imageIsDerived(image));
 }
@@ -1794,7 +1947,9 @@ function derivedImagesFromImages(images = []) {
 function primaryPayloadForProvider(payload = {}) {
   return {
     ...payload,
-    images: primaryImagesFromImages(payload.images || [])
+    images: providerImagesFromImages(payload.images || [], {
+      maxDerived: Number(process.env.PROVIDER_MAX_FIELD_CROPS || process.env.FIELD_MAX_CROPS_PER_ASSET || 6)
+    })
   };
 }
 
@@ -1858,7 +2013,7 @@ async function assertVerifiedStorageImage(image = {}) {
         width: metadata.width,
         height: metadata.height
       });
-      return metadata.objectPath;
+      return metadata;
     } catch (error) {
       if (!/expired/i.test(String(error.message || ""))) {
         throw error;
@@ -1878,7 +2033,7 @@ async function assertVerifiedStorageImage(image = {}) {
     throw new Error("Listing image storage reference has no current server verification record.");
   }
 
-  return metadata.objectPath;
+  return metadata;
 }
 
 async function verifyIdentityCacheImages(payload = {}) {
@@ -1921,6 +2076,7 @@ function focusedRereadPrompt({
     "Use only the supplied card image or crop. Do not infer facts from style, marketplace wording, or memory.",
     "If the image contains multiple cards or a card lot, set multi_card true, include card_count when visible, and do not merge fields from different cards.",
     "For RC, return true when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible.",
+    "For every non-empty high-risk field, also return field_evidence using the same field/source_type/source_region/raw_text/direct_observation contract as first-pass recognition.",
     "For parallel and variation, return a value when printed card text, slab label, card code/checklist clue, or a high-confidence intentional card-design color/pattern is visible.",
     "When returning a visual card-design color/parallel, use concise marketplace-safe wording such as Gold Refractor, Purple, Blue Prizm, Green Wave, Silver Prizm, or Red Ice. Do not use background, sleeve, glare, lighting, or generic foil shine.",
     "If color or foil is only a weak visual impression, leave parallel/variation empty and add an unresolved note such as visual-only parallel requires operator review.",
@@ -1936,6 +2092,13 @@ function focusedRereadPrompt({
         lot_type: null,
         ...Object.fromEntries(focusFields.map((field) => [field, ""]))
       },
+      field_evidence: {
+        year: { value: "", support_type: "", source_type: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
+        serial_number: { value: "", support_type: "", source_type: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
+        grade: { grade_company: "", card_grade: "", auto_grade: "", grade_type: "", support_type: "", evidence_kind: "", visible_text: "", confidence: 0, review_required: true },
+        rc: { value: false, support_type: "", evidence_kind: "", visible_text: "", visible_marker: false, confidence: 0, review_required: true },
+        auto: { value: false, support_type: "", evidence_kind: "", visible_text: "", text_visible: false, signature_visible: false, confidence: 0, review_required: true }
+      },
       unresolved: []
     }),
     "If a focus field is unreadable, leave it empty and explain that field in unresolved.",
@@ -1950,15 +2113,33 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "Use only the supplied card/slab images. Do not use marketplace wording, memory, or outside knowledge.",
     "Return compact valid JSON only. Do not write Markdown.",
     "Goal: extract grounded identity evidence; deterministic code will render the English title.",
-    "Leave any unreadable or uncertain high-risk field empty.",
+    "Fill every directly visible core field. Missing serial, grade, or exact parallel must not erase visible year, product, set, or players.",
+    "Leave only unreadable or uncertain high-risk fields empty.",
+    "If a card has front and back images, combine them into one identity when they are the same card.",
+    "Slab label rule: if a PSA/BGS/SGC/CGC label is visible, read it first and map label lines directly into year, product, players, collector_number/checklist_code, grade_company, card_grade, grade_type, insert, variation, and auto.",
+    "Never return only a year when the slab label also contains readable product, player, grade, or card number.",
+    "Example slab mapping: 2018 TOPPS CHROME / SHOHEI OHTANI / 1983 TOPPS / #83T-6 / GEM MT 10 => year 2018, product Topps Chrome, players [Shohei Ohtani], insert 1983 Topps, collector_number 83T-6, grade_company PSA, card_grade 10.",
+    "Example slab mapping: 2020 CONTENDERS / ANTHONY EDWARDS / VARIATION-AUTOGRAPH / #105 / GEM MT 10 => year 2020, product Contenders, players [Anthony Edwards], variation Variation Autograph, auto true, collector_number 105, grade_company PSA, card_grade 10.",
+    "Structured high-risk field evidence contract:",
+    "- field_evidence is provider-agnostic and must be used by both Gemini and GPT outputs.",
+    "- For each non-empty core or high-risk field, include evidence with value, support_type/source_type, source_image_id when known, source_region when known, raw_text or visible_text, confidence, review_required, and direct_observation/directly_observed.",
+    "- Core/high-risk evidence fields include year, product, set, players, card_type, insert, surface_color, parallel_exact, serial_number, collector_number, checklist_code, grade, rc, auto, patch, and relic.",
+    "- year: include field_evidence.year with value, support_type, visible_text, confidence, and review_required. Use support_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
+    "- grade: include field_evidence.grade only when a slab label directly shows grade. Fill grade_company, card_grade, auto_grade, grade_type, support_type SLAB_LABEL, visible_text, confidence, review_required false. If grade is only guessed, leave grade fields empty.",
+    "- rc: fields.rc may be true only with a visible RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, or slab/card text. Also include field_evidence.rc with value true, support_type, evidence_kind, visible_text, visible_marker, confidence.",
+    "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
+    "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
+    "If readable slab/card text exists but you leave year, product, or players empty, add unresolved entries prefixed visible_text: with the exact readable lines.",
     "Serial rule: every digit must be readable; otherwise serial_number must be empty.",
     "Parallel/color rule: use printed/slab/checklist evidence or unmistakable intentional card-design color only; weak visual color stays empty.",
     "Multi-card rule: if more than one card or a lot is visible, set multi_card true and do not merge identities.",
+    "recognition_status rule: use CONFIRMED when core identity is visible with no critical conflict; RESOLVED when core identity is visible but some non-core field needs review; ABSTAIN only when product/subject is unreadable, multiple cards are mixed, image quality blocks core identity, or critical fields conflict.",
     `Runtime title limit downstream: ${maxTitleLength} characters.`,
     "Return this shape:",
     JSON.stringify({
       title: "",
       confidence: "HIGH | MEDIUM | LOW | FAILED",
+      recognition_status: "CONFIRMED | RESOLVED | ABSTAIN",
       route: "FAST_PATH_CANDIDATE | NEEDS_REVIEW | MULTI_CARD",
       fields: {
         multi_card: false,
@@ -1966,16 +2147,27 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
         lot_type: null,
         year: "",
         manufacturer: "",
+        brand: "",
         product: "",
         set: "",
+        subset: "",
         players: [],
+        player: "",
+        team: "",
         card_type: "",
         insert: "",
+        surface_color: "",
+        parallel_family: "",
+        parallel_exact: "",
         parallel: "",
+        variation: "",
         serial_number: "",
         collector_number: "",
+        card_number: "",
         checklist_code: "",
+        attributes: [],
         grade_company: "",
+        grade: "",
         card_grade: "",
         auto_grade: "",
         grade_type: "",
@@ -1986,6 +2178,92 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
         auto: false,
         patch: false,
         relic: false
+      },
+      field_evidence: {
+        year: {
+          value: "",
+          source_type: "",
+          source_image_id: "",
+          source_region: "",
+          support_type: "SLAB_LABEL | CARD_BACK_PRINTED_TEXT | CARD_FRONT_PRINTED_TEXT | VISION_ONLY | NONE",
+          evidence_kind: "YEAR_TEXT | COPYRIGHT_YEAR | SEASON_YEAR | NONE",
+          raw_text: "",
+          visible_text: "",
+          direct_observation: true,
+          confidence: 0,
+          review_required: true
+        },
+        product: {
+          value: "",
+          source_type: "",
+          source_image_id: "",
+          source_region: "",
+          evidence_kind: "PRODUCT_TEXT | NONE",
+          raw_text: "",
+          visible_text: "",
+          direct_observation: true,
+          confidence: 0,
+          review_required: true
+        },
+        players: {
+          value: "",
+          source_type: "",
+          source_image_id: "",
+          source_region: "",
+          evidence_kind: "SUBJECT_TEXT | NONE",
+          raw_text: "",
+          visible_text: "",
+          direct_observation: true,
+          confidence: 0,
+          review_required: true
+        },
+        serial_number: {
+          value: "",
+          source_type: "",
+          source_image_id: "",
+          source_region: "serial_number",
+          evidence_kind: "SERIAL_STAMP | NONE",
+          raw_text: "",
+          visible_text: "",
+          direct_observation: true,
+          confidence: 0,
+          review_required: true
+        },
+        grade: {
+          grade_company: "",
+          card_grade: "",
+          auto_grade: "",
+          grade_type: "",
+          support_type: "SLAB_LABEL | NONE",
+          evidence_kind: "GRADE_LABEL | NONE",
+          source_type: "",
+          source_image_id: "",
+          source_region: "grade_label",
+          raw_text: "",
+          visible_text: "",
+          direct_observation: true,
+          confidence: 0,
+          review_required: false
+        },
+        rc: {
+          value: false,
+          support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISION_ONLY | NONE",
+          evidence_kind: "RC_LOGO | ROOKIE_TEXT | ROOKIE_TICKET | RATED_ROOKIE | NONE",
+          visible_text: "",
+          visible_marker: false,
+          confidence: 0,
+          review_required: true
+        },
+        auto: {
+          value: false,
+          support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISIBLE_SIGNATURE | VISION_ONLY | NONE",
+          evidence_kind: "AUTO_TEXT | SIGNATURE | NONE",
+          visible_text: "",
+          text_visible: false,
+          signature_visible: false,
+          confidence: 0,
+          review_required: true
+        }
       },
       unresolved: []
     }),
@@ -2008,6 +2286,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     "Return only valid JSON. Do not wrap the response in Markdown.",
     "If the image contains multiple cards or a card lot, set fields.multi_card true, include fields.card_count when visible, describe fields.lot_type, and do not merge identities across cards.",
     "Do not infer RC, 1st Bowman, SSP, case hit, parallel, or variation from seller style or generic foil color. Use RC only for readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker. For parallel/variation, use printed text, slab/checklist support, or clearly intentional high-confidence card-design color/pattern only; weak visual color impressions must stay empty with uncertainty in unresolved.",
+    "For every non-empty core or high-risk field, return provider-agnostic field_evidence with value, support_type/source_type, source_image_id, source_region, raw_text/visible_text, confidence, review_required, and direct_observation. Do not use provider confidence prose as fact evidence.",
     "Resolution hints:",
     resolutionHints(payload.resolutionMap) || "None",
     registryPromptSummary(),
@@ -2026,6 +2305,15 @@ async function buildListingPrompt(payload, maxTitleLength) {
       confidence: "HIGH | MEDIUM | LOW | FAILED",
       reason: "",
       fields: defaultFields,
+      field_evidence: {
+        year: { value: "", support_type: "", source_type: "", source_image_id: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
+        product: { value: "", support_type: "", source_type: "", source_image_id: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
+        players: { value: "", support_type: "", source_type: "", source_image_id: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
+        serial_number: { value: "", support_type: "", source_type: "", source_image_id: "", source_region: "serial_number", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
+        grade: { grade_company: "", card_grade: "", auto_grade: "", grade_type: "", support_type: "", evidence_kind: "", visible_text: "", confidence: 0, review_required: true },
+        rc: { value: false, support_type: "", evidence_kind: "", visible_text: "", visible_marker: false, confidence: 0, review_required: true },
+        auto: { value: false, support_type: "", evidence_kind: "", visible_text: "", text_visible: false, signature_visible: false, confidence: 0, review_required: true }
+      },
       unresolved: []
     })
   ].join("\n");
@@ -2135,7 +2423,17 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
     reason: finalCalibration.reason,
     unresolved: finalCalibration.unresolved,
     evidence: evidenceDocument.evidence,
+    raw_provider_fields: providerPayload.fields || publicResult.fields || null,
+    normalized_evidence: evidenceDocument.evidence,
     resolved: evidenceDocument.resolved,
+    resolved_fields: evidenceDocument.resolved,
+    rendered_fields: {
+      title: finalTitle,
+      rendered_title: renderedTitle,
+      modules: presentation.modules,
+      module_order: presentation.module_order,
+      title_render_source: renderedTitle ? "deterministic_renderer" : "legacy_fallback"
+    },
     modules: presentation.modules,
     module_order: presentation.module_order,
     renderer: presentation.renderer,
@@ -2300,6 +2598,16 @@ function withProviderMetadata(result, providerResult, selection) {
     provider_finish_reason: providerResult.finish_reason || null,
     provider_parse_source: providerResult.parse_source || null,
     provider_latency_ms: providerResult.latency_ms ?? null,
+    provider_recognition_status: providerResult.recognition_status || providerResult.parsed?.recognition_status || null,
+    provider_error_type: providerResult.error_type || providerResult.parsed?.error_type || null,
+    format_error_type: providerResult.format_error_type || null,
+    format_repair_attempted: providerResult.format_repair_attempted === true,
+    local_json_repair_success: providerResult.local_json_repair_success === true,
+    text_repair_success: providerResult.text_repair_success === true,
+    native_schema_valid: providerResult.native_schema_valid === true,
+    fallback_provider_id: providerResult.fallback_provider_id || null,
+    fallback_reason: providerResult.fallback_reason || null,
+    gemini_core_field_retry: providerResult.gemini_core_field_retry || null,
     usage: providerResult.usage || null,
     explicit_emergency: Boolean(selection?.explicit_emergency)
   };
@@ -2370,7 +2678,16 @@ function withCompletedEvidencePresentation(result, completion, payload) {
     title_render_source: renderedTitle ? "deterministic_renderer" : result.title_render_source,
     fields,
     evidence,
+    normalized_evidence: evidence,
     resolved,
+    resolved_fields: resolved,
+    rendered_fields: {
+      title: finalTitle,
+      rendered_title: renderedTitle,
+      modules: presentation.modules,
+      module_order: presentation.module_order,
+      title_render_source: renderedTitle ? "deterministic_renderer" : result.title_render_source
+    },
     modules: presentation.modules,
     module_order: presentation.module_order,
     renderer: presentation.renderer,
@@ -2453,6 +2770,46 @@ function tryProviderFastPath(result, payload, providerId) {
   };
 }
 
+function singleModelDraftPath(result, payload, providerId, {
+  reason = "single_model_fast_path"
+} = {}) {
+  const providerOptions = providerOptionsFromPayload(payload);
+  if (evidenceCompletionEnabled(process.env, providerOptions)) return null;
+
+  const gated = applyIdentityResolutionGate(result, {
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    providerId
+  });
+
+  return {
+    ...gated,
+    route: gated.route || result.route || "SINGLE_MODEL_WRITER_DRAFT",
+    route_reason: gated.route_reason || "Single-model fast path produced a writer-review draft without retrieval or focused rereads.",
+    retrieval: result.retrieval || {
+      skipped: true,
+      reason
+    },
+    completion_trace: Array.isArray(result.completion_trace)
+      ? result.completion_trace
+      : Array.isArray(result.resolution_trace)
+        ? result.resolution_trace
+        : [],
+    fast_path: {
+      ...(result.fast_path || {}),
+      enabled: true,
+      used: result.fast_path?.used === true,
+      single_model_fast: true,
+      skipped_evidence_completion: true,
+      skipped_focused_reread: true,
+      skipped_retrieval: true,
+      reason
+    },
+    usage: mergeUsage(result.usage, null, {
+      providerCalls: result.provider ? 1 : 0
+    })
+  };
+}
+
 function createAgnesFocusedRereadRunner({
   images = [],
   maxTitleLength = maxFallbackTitleLength,
@@ -2505,6 +2862,236 @@ function createAgnesFocusedRereadRunner({
       evidence: evidenceDocument.evidence,
       unresolved: evidenceDocument.unresolved || []
     };
+  };
+}
+
+const gptCriticalVerifierActions = new Set([
+  completionActions.CROP_AND_READ_SERIAL,
+  completionActions.CROP_AND_READ_CARD_CODE,
+  completionActions.CROP_AND_READ_GRADE_LABEL,
+  completionActions.CROP_AND_READ_YEAR_PRODUCT,
+  completionActions.CROP_AND_READ_PARALLEL
+]);
+
+function createGptCriticalVerifierRunner({
+  images = [],
+  maxTitleLength = maxFallbackTitleLength,
+  env = process.env,
+  timingContext = null
+} = {}) {
+  return async ({ action, focusFields = [], resolved = {} } = {}) => {
+    if (!gptCriticalVerifierActions.has(action)) {
+      return {
+        provider_id: visionProviderIds.OPENAI_LEGACY,
+        model_id: defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
+        resolved: {},
+        evidence: {},
+        unresolved: [`gpt critical verifier skipped unsupported action: ${action || "unknown"}`]
+      };
+    }
+
+    const rereadImages = focusedImagesForAction(images, action, focusFields);
+    if (!rereadImages.length) {
+      return {
+        provider_id: visionProviderIds.OPENAI_LEGACY,
+        model_id: defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
+        resolved: {},
+        evidence: {},
+        unresolved: ["gpt critical verifier image unavailable"]
+      };
+    }
+
+    const providerResult = await timeAsync(timingContext, "focused_reread_ms", () => runTimedProviderCall(
+      visionProviderIds.OPENAI_LEGACY,
+      timingContext,
+      () => analyzeCardEvidenceWithOpenAiEmergency({
+        images: rereadImages,
+        prompt: focusedRereadPrompt({ action, focusFields, resolved }),
+        env
+      })
+    ));
+    const normalized = normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY);
+    const evidenceDocument = providerPayloadToEvidenceDocument({
+      ...providerResult.parsed,
+      title: providerResult.parsed.title || normalized.model_title_suggestion || "",
+      confidence: normalized.confidence,
+      fields: normalized.fields,
+      unresolved: Array.isArray(providerResult.parsed.unresolved)
+        ? providerResult.parsed.unresolved
+        : normalized.unresolved
+    }, {
+      images: rereadImages
+    });
+
+    return {
+      provider_id: providerResult.provider || visionProviderIds.OPENAI_LEGACY,
+      model_id: providerResult.model_id || defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
+      response_id: providerResult.response_id || null,
+      finish_reason: providerResult.finish_reason || null,
+      parse_source: providerResult.parse_source || null,
+      usage: providerResult.usage || null,
+      evidence_document: evidenceDocument,
+      resolved: evidenceDocument.resolved,
+      evidence: evidenceDocument.evidence,
+      unresolved: evidenceDocument.unresolved || []
+    };
+  };
+}
+
+function providerParsedFields(providerResult = {}) {
+  return providerResult.parsed?.fields && typeof providerResult.parsed.fields === "object" && !Array.isArray(providerResult.parsed.fields)
+    ? providerResult.parsed.fields
+    : {};
+}
+
+function geminiRetryHasValue(fields = {}, fieldName) {
+  const value = fields[fieldName];
+  if (fieldName === "grade_type") return hasEvidenceValue(value) && String(value).toUpperCase() !== "UNKNOWN";
+  return hasEvidenceValue(value);
+}
+
+function missingGeminiRetryFocusFields(providerResult = {}) {
+  const fields = providerParsedFields(providerResult);
+  const missing = [];
+  if (!geminiRetryHasValue(fields, "year")) missing.push("year");
+  if (!geminiRetryHasValue(fields, "product")) missing.push("product");
+  if (!geminiRetryHasValue(fields, "players") && !geminiRetryHasValue(fields, "player")) missing.push("players");
+  return missing;
+}
+
+function geminiCoreFieldRetryPrompt(missingFields = []) {
+  return [
+    "Gemini focused reread for missing core card identity fields.",
+    "Use only the supplied image pixels. Do not use marketplace wording, memory, or outside knowledge.",
+    "This retry exists because the first pass left core fields empty. A single front/slab image may be supplied to reduce distraction. Read the slab label first when present, then card front text.",
+    `Missing fields to focus: ${missingFields.join(", ") || "year, product, players"}.`,
+    "If a PSA/BGS/SGC/CGC label is visible, transcribe these label lines into fields:",
+    "- year/product line, e.g. 2018 TOPPS CHROME or 2020 CONTENDERS",
+    "- player/person line, e.g. SHOHEI OHTANI or ANTHONY EDWARDS",
+    "- insert/variation line, e.g. 1983 TOPPS or VARIATION-AUTOGRAPH",
+    "- card number line, e.g. #83T-6 or #105",
+    "- grade line, e.g. GEM MT 10",
+    "Return compact valid JSON only. Keep title empty.",
+    "Do not return only a year if product or player text is readable.",
+    "If you still cannot map a readable line, add unresolved entries prefixed visible_text: with the exact readable lines."
+  ].join("\n");
+}
+
+function geminiVisibleTextRetryPrompt(missingFields = []) {
+  return [
+    "Focused visible-text transcription for missing card identity fields.",
+    `Missing fields: ${missingFields.join(", ") || "product, players"}.`,
+    "Transcribe all readable PSA/BGS/SGC/CGC slab label lines first.",
+    "Then transcribe prominent player, product, card number, grade, RC, autograph, serial, and insert text visible on the card.",
+    "Do not infer or normalize; exact visible text lines only."
+  ].join("\n");
+}
+
+function mergeableGeminiRetryValue(fieldName, value) {
+  if (fieldName === "grade_type") return hasEvidenceValue(value) && String(value).toUpperCase() !== "UNKNOWN";
+  return hasEvidenceValue(value);
+}
+
+function mergeGeminiRetryParsed(primaryParsed = {}, retryParsed = {}) {
+  const mergedFields = {
+    ...(primaryParsed.fields || {})
+  };
+  const retryFields = retryParsed.fields && typeof retryParsed.fields === "object" && !Array.isArray(retryParsed.fields)
+    ? retryParsed.fields
+    : {};
+  const updatedFields = [];
+
+  Object.entries(retryFields).forEach(([fieldName, value]) => {
+    if (!mergeableGeminiRetryValue(fieldName, value)) return;
+    if (mergeableGeminiRetryValue(fieldName, mergedFields[fieldName])) return;
+    mergedFields[fieldName] = value;
+    updatedFields.push(fieldName);
+  });
+
+  return {
+    ...primaryParsed,
+    confidence: primaryParsed.confidence === "FAILED" ? retryParsed.confidence || primaryParsed.confidence : primaryParsed.confidence,
+    recognition_status: primaryParsed.recognition_status === "ABSTAIN" && retryParsed.recognition_status
+      ? retryParsed.recognition_status
+      : primaryParsed.recognition_status,
+    fields: mergedFields,
+    unresolved: [
+      ...(Array.isArray(primaryParsed.unresolved) ? primaryParsed.unresolved : []),
+      ...(Array.isArray(retryParsed.unresolved) ? retryParsed.unresolved : [])
+    ].filter(Boolean).slice(0, 16),
+    _gemini_core_retry_updated_fields: updatedFields
+  };
+}
+
+function geminiCoreFieldRetryImages(images = []) {
+  const primary = primaryImagesFromImages(images || []);
+  const front = primary.find((image) => {
+    const text = searchable([
+      image.side,
+      image.role,
+      image.captureRole,
+      image.capture_role,
+      image.storageRole,
+      image.storage_role,
+      image.name
+    ].filter(Boolean).join(" "));
+    return text.includes("front") || text.includes("primary");
+  });
+  const selected = front || primary[0] || images[0];
+  return selected ? [selected] : [];
+}
+
+async function maybeRetryGeminiCoreFields(providerResult, {
+  images = [],
+  providerOptions = {},
+  timingContext = null
+} = {}) {
+  if (!geminiCoreFieldRetryEnabled(process.env, providerOptions)) return providerResult;
+  const missingFields = missingGeminiRetryFocusFields(providerResult);
+  if (!missingFields.length) return providerResult;
+
+  let retryResult;
+  try {
+    retryResult = await runTimedProviderCall(visionProviderIds.GEMINI, timingContext, () => transcribeVisibleCardTextWithGemini({
+      images: geminiCoreFieldRetryImages(images),
+      prompt: geminiVisibleTextRetryPrompt(missingFields),
+      env: geminiCoreFieldRetryEnv(process.env)
+    }));
+  } catch (error) {
+    return {
+      ...providerResult,
+      gemini_core_field_retry: {
+        attempted: true,
+        missing_fields: missingFields,
+        updated_fields: [],
+        error_code: error?.code || "gemini_core_retry_failed",
+        error_message: safeProviderErrorMessage(error)
+      }
+    };
+  }
+  const mergedParsed = mergeGeminiRetryParsed(providerResult.parsed, retryResult.parsed);
+  const updatedFields = mergedParsed._gemini_core_retry_updated_fields || [];
+  delete mergedParsed._gemini_core_retry_updated_fields;
+
+  return {
+    ...providerResult,
+    parsed: mergedParsed,
+    usage: mergeUsage(providerResult.usage, retryResult.usage, {
+      providerCalls: 0
+    }),
+    latency_ms: Number(providerResult.latency_ms || 0) + Number(retryResult.latency_ms || 0),
+    gemini_core_field_retry: {
+      attempted: true,
+      missing_fields: missingFields,
+      updated_fields: updatedFields,
+      provider_id: retryResult.provider || visionProviderIds.GEMINI,
+      model_id: retryResult.model_id || null,
+      parse_source: retryResult.parse_source || null,
+      native_schema_valid: retryResult.native_schema_valid === true,
+      format_repair_attempted: retryResult.format_repair_attempted === true,
+      local_json_repair_success: retryResult.local_json_repair_success === true,
+      text_repair_success: retryResult.text_repair_success === true
+    }
   };
 }
 
@@ -2621,6 +3208,35 @@ function withCascadePolicy(result = {}, verificationFields = [], {
   };
 }
 
+function withPrimaryFastVisionPolicy(result = {}, verificationFields = [], {
+  primaryProviderId,
+  verifierProviderId = visionProviderIds.OPENAI_LEGACY,
+  verifierAvailable = true,
+  verifierDisabledReason = null
+} = {}) {
+  return {
+    ...result,
+    identity_provider_id: "primary_fast_vision",
+    fast_vision_policy: {
+      role: "PRIMARY_FAST_VISION",
+      primary_provider_id: primaryProviderId || result.provider || result.source || null,
+      verifier_provider_id: verifierProviderId,
+      verifier_role: "CONDITIONAL_CRITICAL_VERIFIER",
+      allow_single_source_publish: true,
+      secondary_verification_required_fields: verificationFields,
+      secondary_verification_available: verifierAvailable,
+      secondary_disabled_reason: verifierDisabledReason
+    },
+    unresolved: uniqueValues([
+      ...(Array.isArray(result.unresolved) ? result.unresolved : []),
+      ...cascadeVerificationUnresolvedNotes(verificationFields).map((note) => note.replace("secondary verifier", "GPT critical verifier")),
+      ...(verificationFields.length && !verifierAvailable
+        ? [`GPT critical verifier unavailable: ${verifierDisabledReason || "openai_not_configured"}`]
+        : [])
+    ])
+  };
+}
+
 async function withEvidenceCompletion(result, payload, {
   runFocusedVisionImpl = null,
   env = process.env,
@@ -2671,15 +3287,82 @@ async function withEvidenceCompletion(result, payload, {
 
 async function imagesWithSignedReadUrls(images = [], timingContext = null) {
   return timeAsync(timingContext, "signed_url_ms", () => mapWithConcurrency(images, signedUrlConcurrency, async (image) => {
-    const objectPath = await assertVerifiedStorageImage(image);
-    if (!objectPath) return image;
+    const metadata = await assertVerifiedStorageImage(image);
+    if (!metadata?.objectPath) return image;
 
     return {
       ...image,
-      signedUrl: await createListingImageSignedReadUrl({ objectPath }),
+      signedUrl: await createListingImageSignedReadUrl({
+        objectPath: metadata.objectPath,
+        bucket: metadata.bucket
+      }),
       signed_url: undefined
     };
   }));
+}
+
+function geminiInlineImageDataEnabled(env = process.env) {
+  return envFlag(env, "GEMINI_INLINE_IMAGE_DATA", true);
+}
+
+function geminiInlineImageMaxBytes(env = process.env) {
+  const value = Number(env.GEMINI_INLINE_IMAGE_MAX_BYTES);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 4_000_000;
+}
+
+function geminiInlineImageFetchTimeoutMs(env = process.env) {
+  const value = Number(env.GEMINI_INLINE_IMAGE_FETCH_TIMEOUT_MS);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 8000;
+}
+
+async function imageWithInlineDataUrlForGemini(image = {}, env = process.env) {
+  if (image.dataUrl || image.data_url) return image;
+  const url = image.signedUrl || image.signed_url || image.url || image.imageUrl || image.image_url?.url || "";
+  if (!url) return image;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), geminiInlineImageFetchTimeoutMs(env));
+  let response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch {
+    clearTimeout(timeout);
+    return image;
+  }
+  if (!response.ok) {
+    clearTimeout(timeout);
+    return image;
+  }
+  let arrayBuffer;
+  try {
+    arrayBuffer = await response.arrayBuffer();
+  } catch {
+    clearTimeout(timeout);
+    return image;
+  } finally {
+    clearTimeout(timeout);
+  }
+  const bytes = Buffer.from(arrayBuffer);
+  if (bytes.length > geminiInlineImageMaxBytes(env)) return image;
+  const contentType = response.headers.get("content-type")
+    || image.contentType
+    || image.content_type
+    || image.originalType
+    || image.original_type
+    || "image/jpeg";
+  const dataUrl = `data:${contentType};base64,${bytes.toString("base64")}`;
+  return {
+    ...image,
+    dataUrl,
+    data_url: dataUrl,
+    signedUrl: undefined,
+    signed_url: undefined
+  };
+}
+
+async function imagesForGeminiProvider(images = [], timingContext = null, env = process.env) {
+  if (!geminiInlineImageDataEnabled(env)) return images;
+  return timeAsync(timingContext, "signed_url_ms", () => mapWithConcurrency(images, 2, (image) => imageWithInlineDataUrlForGemini(image, env)));
 }
 
 async function createRecognitionIdentityPreflight(payload, {
@@ -2821,6 +3504,12 @@ async function createAgnesTitle(payload, selection, {
   const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.AGNES));
   if (fastPathResult) return fastPathResult;
+  const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
+    mergedResult,
+    initialPayload,
+    visionProviderIds.AGNES
+  ));
+  if (singleModelResult) return singleModelResult;
 
   return withEvidenceCompletion(mergedResult, {
     ...payload,
@@ -2866,8 +3555,132 @@ async function createOpenAiTitle(payload, selection, {
   const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return fastPathResult;
+  const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
+    mergedResult,
+    initialPayload,
+    visionProviderIds.OPENAI_LEGACY
+  ));
+  if (singleModelResult) return singleModelResult;
 
   return withEvidenceCompletion(mergedResult, initialPayload, { timingContext });
+}
+
+async function createGeminiTitle(payload, selection, {
+  recognitionEvidenceDocument = null,
+  signedImages: reusableSignedImages = null,
+  timingContext = null
+} = {}) {
+  const providerOptions = providerOptionsFromPayload(payload);
+  const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
+  const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
+    ? reusableSignedImages
+    : await imagesWithSignedReadUrls(payload.images || [], timingContext);
+  const geminiImages = await imagesForGeminiProvider(signedImages, timingContext);
+  const initialPayload = primaryPayloadForProvider({
+    ...payload,
+    images: geminiImages
+  });
+  const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
+  let providerResult;
+  try {
+    providerResult = await runTimedProviderCall(visionProviderIds.GEMINI, timingContext, () => analyzeCardEvidenceWithGemini({
+      images: initialPayload.images,
+      prompt
+    }));
+    providerResult = await maybeRetryGeminiCoreFields(providerResult, {
+      images: initialPayload.images,
+      providerOptions,
+      timingContext
+    });
+  } catch (error) {
+    const formatFailure = isProviderResponseFormatError(error);
+    const providerFailure = isGeminiProviderFailureFallbackError(error);
+    if ((!formatFailure && !providerFailure)
+      || !gptFailureFallbackEnabled(process.env, providerOptions)
+      || (providerFailure && !gptProviderFailureFallbackEnabled(process.env, providerOptions))
+      || !process.env.OPENAI_API_KEY) {
+      throw error;
+    }
+
+    const fallbackSelection = {
+      provider_id: visionProviderIds.OPENAI_LEGACY,
+      model_id: defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
+      explicit_emergency: false,
+      provider: {
+        id: visionProviderIds.OPENAI_LEGACY,
+        model_id: defaultProviderModels[visionProviderIds.OPENAI_LEGACY]
+      }
+    };
+    const fallback = await createOpenAiTitle(payload, fallbackSelection, {
+      recognitionEvidenceDocument,
+      signedImages,
+      timingContext
+    });
+    return {
+      ...fallback,
+      primary_provider_id: visionProviderIds.GEMINI,
+      fallback_provider_id: visionProviderIds.OPENAI_LEGACY,
+      fallback_reason: geminiProviderFailureFallbackReason(error),
+      format_error_type: formatFailureType(error),
+      format_repair_attempted: error.details?.format_repair_attempted === true,
+      local_json_repair_success: error.details?.local_json_repair_success === true,
+      text_repair_success: error.details?.text_repair_success === true,
+      provider_route: "gemini_to_gpt_failure_fallback",
+      provider_failure: {
+        provider: visionProviderIds.GEMINI,
+        code: error.code,
+        format_error_type: formatFailureType(error),
+        message: safeProviderErrorMessage(error)
+      }
+    };
+  }
+
+  const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
+      withEvidenceCompatibility(
+        withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.GEMINI), initialPayload),
+        providerResult.parsed,
+        initialPayload
+      ),
+      providerResult,
+      selection
+    ));
+  const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
+  const criticalVerifierEnabled = gptCriticalVerifierEnabled(process.env, providerOptions);
+  const verificationFields = criticalVerifierEnabled
+    ? cascadeSecondaryVerificationFields(mergedResult)
+    : [];
+  const gptVerifierAvailable = Boolean(process.env.OPENAI_API_KEY && criticalVerifierEnabled);
+  const primaryFastResult = withPrimaryFastVisionPolicy(mergedResult, verificationFields, {
+    primaryProviderId: visionProviderIds.GEMINI,
+    verifierAvailable: gptVerifierAvailable,
+    verifierDisabledReason: criticalVerifierEnabled ? "missing_openai_api_key" : "gpt_critical_verifier_disabled"
+  });
+  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(primaryFastResult, initialPayload, "primary_fast_vision"));
+  if (fastPathResult) return fastPathResult;
+  const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
+    primaryFastResult,
+    initialPayload,
+    "primary_fast_vision"
+  ));
+  if (singleModelResult) return singleModelResult;
+
+  const completionEnv = {
+    ...process.env,
+    REQUIRED_FOCUSED_FIELDS: verificationFields.join(",")
+  };
+
+  return withEvidenceCompletion(primaryFastResult, initialPayload, {
+    runFocusedVisionImpl: verificationFields.length && gptVerifierAvailable
+      ? createGptCriticalVerifierRunner({
+          images: signedImages,
+          maxTitleLength,
+          env: completionEnv,
+          timingContext
+        })
+      : null,
+    env: completionEnv,
+    timingContext
+  });
 }
 
 async function createCascadeFastTitle(payload, selection, {
@@ -2952,7 +3765,7 @@ async function createProviderTitle(payload, {
   const explicitEmergency = explicitEmergencyFromPayload(payload);
   const primaryImages = primaryImagesFromImages(payload.images || []);
 
-  if (!requestedProvider && !process.env.AGNES_API_KEY && !process.env.OPENAI_API_KEY) {
+  if (!requestedProvider && !process.env.GEMINI_API_KEY && !process.env.AGNES_API_KEY && !process.env.OPENAI_API_KEY) {
     return fallbackResult(payload);
   }
 
@@ -2964,6 +3777,10 @@ async function createProviderTitle(payload, {
 
   if (selection.provider_id === visionProviderIds.CASCADE_FAST) {
     return createCascadeFastTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
+  }
+
+  if (selection.provider_id === visionProviderIds.GEMINI) {
+    return createGeminiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
   }
 
   if (selection.provider_id === visionProviderIds.AGNES) {
@@ -3066,7 +3883,11 @@ export default async function handler(req, res) {
       capture_quality: captureQualityForPayload(payload),
       source: "error",
       provider: error.provider || requestedProviderFromPayload(payload) || null,
-      provider_error_code: error.code || "api_error"
+      provider_error_code: error.code || "api_error",
+      provider_error_type: error.code || "api_error",
+      provider_error_details: error.details?.request_summary
+        ? { request_summary: error.details.request_summary }
+        : undefined
     }, timingContext));
   }
 }

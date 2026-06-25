@@ -8,6 +8,7 @@ import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mj
 
 const cookieName = "lynca_metaverse_session";
 const defaultAgnesSmokeReportPath = "data/smoke/agnes-smoke-latest.json";
+const defaultGeminiSmokeReportPath = "data/smoke/gemini-smoke-latest.json";
 const smokeCapabilityNames = new Set([
   "single_image_json",
   "front_back_multi_image_json",
@@ -66,6 +67,7 @@ function safeSmokeDetailValue(value) {
   if (value === undefined || value === null || value === "") return null;
   const stringValue = String(value);
   if (/sk-[A-Za-z0-9_-]+/.test(stringValue)) return null;
+  if (/AIza[0-9A-Za-z_-]+/.test(stringValue)) return null;
   if (/Bearer\s+/i.test(stringValue)) return null;
   if (/https?:\/\//i.test(stringValue)) return null;
   if (stringValue.length > 160) return stringValue.slice(0, 160);
@@ -109,8 +111,12 @@ function emptySmokeStatus(status, reason) {
   };
 }
 
-async function readAgnesSmokeStatus(env = process.env) {
-  const reportPath = env.SMOKE_PROVIDER_REPORT_PATH || defaultAgnesSmokeReportPath;
+async function readProviderSmokeStatus(providerId, env = process.env) {
+  const reportPath = providerId === visionProviderIds.GEMINI
+    ? env.GEMINI_SMOKE_REPORT_PATH || defaultGeminiSmokeReportPath
+    : providerId === visionProviderIds.AGNES
+      ? env.SMOKE_PROVIDER_REPORT_PATH || env.AGNES_SMOKE_REPORT_PATH || defaultAgnesSmokeReportPath
+      : "";
   if (!reportPath) return emptySmokeStatus("not_run", "smoke_report_not_configured");
 
   let parsed;
@@ -121,7 +127,7 @@ async function readAgnesSmokeStatus(env = process.env) {
   }
 
   const status = String(parsed.status || "unreadable");
-  if (parsed.provider !== "agnes" || !smokeStatuses.has(status) || !Array.isArray(parsed.capabilities)) {
+  if (parsed.provider !== providerId || !smokeStatuses.has(status) || !Array.isArray(parsed.capabilities)) {
     return emptySmokeStatus("unreadable", "smoke_report_invalid");
   }
 
@@ -155,6 +161,7 @@ function providerStatus(provider, storage, smoke = null) {
   return {
     id: provider.id,
     role: provider.role,
+    roles: Array.isArray(provider.roles) ? provider.roles : [provider.role].filter(Boolean),
     label: provider.label,
     display_name: provider.display_name,
     model_id: provider.model_id,
@@ -171,11 +178,14 @@ function providerStatus(provider, storage, smoke = null) {
     requires_explicit_retry: Boolean(provider.requires_explicit_retry),
     requires_remote_image_url: Boolean(provider.requires_remote_image_url),
     requires_storage: provider.id === visionProviderIds.AGNES || provider.id === visionProviderIds.CASCADE_FAST,
-    ...(provider.id === visionProviderIds.AGNES ? { smoke } : {})
+    ...(provider.id === visionProviderIds.GEMINI || provider.id === visionProviderIds.AGNES ? { smoke } : {})
   };
 }
 
 function defaultProviderId(providers) {
+  const gemini = providers.find((provider) => provider.id === visionProviderIds.GEMINI);
+  if (gemini?.selectable) return gemini.id;
+
   const cascade = providers.find((provider) => provider.id === visionProviderIds.CASCADE_FAST);
   if (cascade?.selectable) return cascade.id;
 
@@ -207,9 +217,11 @@ export default async function handler(req, res) {
   })) return;
 
   const storage = publicStorageReadiness();
-  const agnesSmoke = await readAgnesSmokeStatus();
+  const geminiSmoke = await readProviderSmokeStatus(visionProviderIds.GEMINI);
+  const agnesSmoke = await readProviderSmokeStatus(visionProviderIds.AGNES);
   const catalog = providerCatalog();
   const providers = [
+    catalog[visionProviderIds.GEMINI],
     catalog[visionProviderIds.CASCADE_FAST],
     catalog[visionProviderIds.AGNES],
     catalog[visionProviderIds.OPENAI_LEGACY]
@@ -219,13 +231,17 @@ export default async function handler(req, res) {
     .map((provider) => providerStatus(
       provider,
       storage,
-      provider.id === visionProviderIds.AGNES ? agnesSmoke : null
+      provider.id === visionProviderIds.GEMINI
+        ? geminiSmoke
+        : provider.id === visionProviderIds.AGNES
+          ? agnesSmoke
+          : null
     ));
 
   sendJson(res, 200, {
     ok: true,
     default_provider: defaultProviderId(providers),
-    fallback_available: !process.env.AGNES_API_KEY && !process.env.OPENAI_API_KEY,
+    fallback_available: !process.env.GEMINI_API_KEY && !process.env.AGNES_API_KEY && !process.env.OPENAI_API_KEY,
     storage,
     providers
   });

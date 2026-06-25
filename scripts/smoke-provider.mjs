@@ -1,4 +1,5 @@
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
+import { analyzeCardEvidenceWithGemini } from "../lib/listing/providers/gemini-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { braveSearchProvider } from "../lib/listing/retrieval/brave-search-provider.mjs";
@@ -129,6 +130,7 @@ function argValue(name, fallback = "") {
 
 function defaultSmokeReportPath(providerId, env = process.env) {
   if (env.SMOKE_PROVIDER_REPORT_PATH) return env.SMOKE_PROVIDER_REPORT_PATH;
+  if (providerId === "gemini") return env.GEMINI_SMOKE_REPORT_PATH || "data/smoke/gemini-smoke-latest.json";
   if (providerId === "agnes") return env.AGNES_SMOKE_REPORT_PATH || "data/smoke/agnes-smoke-latest.json";
   if (providerId === "brave") return env.BRAVE_SMOKE_REPORT_PATH || "data/smoke/brave-smoke-latest.json";
   if (providerId === "ebay") return env.EBAY_SMOKE_REPORT_PATH || "data/smoke/ebay-smoke-latest.json";
@@ -336,6 +338,62 @@ export async function runAgnesSmoke({
   return report;
 }
 
+export async function runGeminiSmoke({
+  env = process.env,
+  analyzeImpl = analyzeCardEvidenceWithGemini
+} = {}) {
+  const report = createSmokeReport("gemini");
+  const requireMultiImage = booleanFromEnv(env, "GEMINI_SMOKE_REQUIRE_MULTI_IMAGE", false);
+
+  if (!env.GEMINI_API_KEY) {
+    addCapability(report, "credentials", "skipped", { reason: "GEMINI_API_KEY is not configured." });
+    return report;
+  }
+  if (!env.GEMINI_SMOKE_IMAGE_URL) {
+    addCapability(report, "single_image_json", "skipped", { reason: "GEMINI_SMOKE_IMAGE_URL is not configured." });
+    return report;
+  }
+
+  const frontImage = {
+    name: "gemini-smoke-front",
+    url: env.GEMINI_SMOKE_IMAGE_URL,
+    side: "front"
+  };
+
+  await runCapability(report, "single_image_json", async () => {
+    const result = await analyzeImpl({
+      images: [frontImage],
+      prompt: smokePrompt,
+      env
+    });
+    return resultDetails(result);
+  });
+
+  if (env.GEMINI_SMOKE_BACK_IMAGE_URL) {
+    await runCapability(report, "front_back_multi_image_json", async () => {
+      const result = await analyzeImpl({
+        images: [
+          frontImage,
+          {
+            name: "gemini-smoke-back",
+            url: env.GEMINI_SMOKE_BACK_IMAGE_URL,
+            side: "back"
+          }
+        ],
+        prompt: smokePrompt,
+        env
+      });
+      return resultDetails(result);
+    }, { required: requireMultiImage });
+  } else {
+    addCapability(report, "front_back_multi_image_json", "skipped", {
+      reason: "GEMINI_SMOKE_BACK_IMAGE_URL is not configured."
+    }, { required: requireMultiImage });
+  }
+
+  return report;
+}
+
 async function runOpenAiSmoke() {
   if (!process.env.OPENAI_API_KEY) skip("OPENAI_API_KEY is not configured.");
   if (!process.env.OPENAI_SMOKE_IMAGE_URL && !process.env.OPENAI_SMOKE_IMAGE_DATA_URL) {
@@ -463,6 +521,8 @@ async function main() {
 
   if (provider === "agnes") {
     report = await runAgnesSmoke();
+  } else if (provider === "gemini") {
+    report = await runGeminiSmoke();
   } else if (provider === "openai") {
     await runOpenAiSmoke();
     return;
@@ -473,7 +533,7 @@ async function main() {
   } else if (provider === "ows") {
     report = await runOwsSmoke();
   } else {
-    console.error("Usage: node scripts/smoke-provider.mjs <agnes|openai|brave|ebay|ows>");
+    console.error("Usage: node scripts/smoke-provider.mjs <gemini|agnes|openai|brave|ebay|ows>");
     process.exit(1);
   }
 

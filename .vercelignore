@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+
+data/eval/
+data/recognition/reports/
+data/recognition/manifests/
+data/recognition/review/
+data/smoke/
+
+node_modules/
+.git/
+.DS_Store
+__pycache__/
+.pytest_cache/
+.venv/

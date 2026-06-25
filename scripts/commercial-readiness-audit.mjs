@@ -233,12 +233,15 @@ async function auditProviderPolicy() {
   if (/allowLegacyDefault/.test(registry.text)) {
     failures.push("provider registry still contains allowLegacyDefault");
   }
-  if (!/const defaultId = envDefault \|\| visionProviderIds\.CASCADE_FAST/.test(registry.text)) {
-    failures.push("GPT primary cascade is not the implicit default provider in selectVisionProvider");
+  if (!/const defaultId = envDefault \|\| visionProviderIds\.GEMINI/.test(registry.text)) {
+    failures.push("Gemini is not the implicit default provider in selectVisionProvider");
+  }
+  if (!/\[visionProviderIds\.GEMINI\]/.test(registry.text)) {
+    failures.push("Gemini provider is missing from provider registry");
   }
   if (!/primary_provider_id:\s*visionProviderIds\.OPENAI_LEGACY/.test(registry.text)
     || !/secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text)) {
-    failures.push("Default cascade does not declare GPT-4.1 mini primary plus Agnes secondary verifier");
+    failures.push("Cascade A/B path does not declare GPT-4.1 mini primary plus Agnes secondary verifier");
   }
   if (!/GPT-4\.1 single-provider mode may only be used through an explicit manual retry/.test(registry.text)) {
     failures.push("GPT-4.1 explicit manual single-provider guard is missing");
@@ -246,8 +249,8 @@ async function auditProviderPolicy() {
   if (!/provider\.id === visionProviderIds\.OPENAI_LEGACY/.test(registry.text)) {
     failures.push("OpenAI single-provider branch is missing from explicit retry guard");
   }
-  if (!/cascade\?\.selectable/.test(statusApi.text)) {
-    failures.push("provider status API does not default to selectable GPT primary cascade");
+  if (!/gemini\?\.selectable/.test(statusApi.text)) {
+    failures.push("provider status API does not default to selectable Gemini");
   }
   if (!/state\.selectedProvider = payload\.default_provider \|\| ""/.test(appJs.text)) {
     failures.push("frontend does not use the server default provider");
@@ -260,11 +263,11 @@ async function auditProviderPolicy() {
   }
 
   const details = {
-    cascade_implicit_default: failures.length === 0,
+    gemini_implicit_default: failures.length === 0,
     gpt_primary_fast_vision: /primary_provider_id:\s*visionProviderIds\.OPENAI_LEGACY/.test(registry.text),
     agnes_auxiliary_verifier: /secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text),
     agnes_conditional_verifier: /secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text),
-    gpt_implicit_default: failures.length === 0 ? "primary_inside_cascade" : "unknown",
+    gpt_implicit_default: failures.length === 0 ? "fallback_and_ab_test_only" : "unknown",
     standalone_gpt_default: failures.length === 0 ? "blocked_by_policy" : "unknown",
     gpt_visible_button: /provider === "openai_legacy"/.test(appJs.text),
     gpt_emergency_retry_action: /data-emergency-retry/.test(appJs.text),
@@ -274,7 +277,7 @@ async function auditProviderPolicy() {
 
   return failures.length
     ? blocked("provider_default_policy", "Provider default policy is not safe enough for commercial readiness.", details)
-    : passed("provider_default_policy", "GPT-4.1 primary cascade is the implicit default; GPT-4.1 single-provider mode is explicit only; Agnes is the auxiliary verifier.", details);
+    : passed("provider_default_policy", "Gemini is the implicit default; GPT-4.1 remains explicit fallback/A/B; Agnes remains the auxiliary verifier in cascade mode.", details);
 }
 
 function destinationIdsFromPublisherContract(source) {

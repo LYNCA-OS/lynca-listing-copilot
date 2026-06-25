@@ -3,8 +3,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
+import { analyzeCardEvidenceWithGemini } from "../lib/listing/providers/gemini-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
-import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
+import { isProviderResponseFormatError, safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
@@ -39,6 +40,9 @@ const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candida
 const defaultOutPath = "data/eval/agnes-supabase-feedback-latest.json";
 const evalProviders = Object.freeze({
   AGNES: "agnes",
+  GEMINI: "gemini",
+  GEMINI_GPT_FAILURE_FALLBACK: "gemini_gpt_failure_fallback",
+  GEMINI_GPT_CRITICAL_VERIFIER: "gemini_gpt_critical_verifier",
   OPENAI: "openai_legacy",
   CASCADE_FAST: "cascade_fast"
 });
@@ -61,42 +65,70 @@ function normalizeEvalProvider(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (["cascade", "cascade_fast", "fast_cascade", "gpt-agnes", "gpt_agnes"].includes(raw)) return evalProviders.CASCADE_FAST;
   if (["openai", "gpt", "gpt-4.1-mini", "openai_legacy"].includes(raw)) return evalProviders.OPENAI;
+  if (["gemini_gpt_failure_fallback", "gemini-fallback", "gemini_fallback", "gemini_gpt_fallback"].includes(raw)) {
+    return evalProviders.GEMINI_GPT_FAILURE_FALLBACK;
+  }
+  if (["gemini_gpt_critical_verifier", "gemini-critical", "gemini_critical", "gemini_gpt_verifier"].includes(raw)) {
+    return evalProviders.GEMINI_GPT_CRITICAL_VERIFIER;
+  }
+  if (["gemini", "gemini-3.1-flash-lite", "gemini_flash_lite", "gemini-flash-lite"].includes(raw)) return evalProviders.GEMINI;
   return evalProviders.AGNES;
 }
 
 function providerDisplayName(providerId) {
   if (providerId === evalProviders.CASCADE_FAST) return "GPT-4.1-mini → Agnes verifier";
+  if (providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK) return "Gemini → GPT failure fallback";
+  if (providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) return "Gemini → GPT critical verifier";
+  if (providerId === evalProviders.GEMINI) return "Gemini 3.1 Flash Lite";
   return providerId === evalProviders.OPENAI ? "GPT-4.1-mini" : "Agnes";
 }
 
-function providerEnvKey(providerId) {
-  if (providerId === evalProviders.CASCADE_FAST) return "OPENAI_API_KEY";
-  return providerId === evalProviders.OPENAI ? "OPENAI_API_KEY" : "AGNES_API_KEY";
+function providerEnvKeys(providerId) {
+  if (providerId === evalProviders.CASCADE_FAST) return ["OPENAI_API_KEY", "AGNES_API_KEY"];
+  if (providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK
+    || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
+    return ["GEMINI_API_KEY", "OPENAI_API_KEY"];
+  }
+  if (providerId === evalProviders.GEMINI) return ["GEMINI_API_KEY"];
+  return providerId === evalProviders.OPENAI ? ["OPENAI_API_KEY"] : ["AGNES_API_KEY"];
 }
 
 function analyzeImplForProvider(providerId) {
+  if (providerId === evalProviders.GEMINI
+    || providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK
+    || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
+    return analyzeCardEvidenceWithGemini;
+  }
   return providerId === evalProviders.OPENAI || providerId === evalProviders.CASCADE_FAST
     ? analyzeCardEvidenceWithOpenAiEmergency
     : analyzeCardEvidenceWithAgnes;
 }
 
 function focusedAnalyzeImplForProvider(providerId) {
+  if (providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) return analyzeCardEvidenceWithOpenAiEmergency;
   return providerId === evalProviders.CASCADE_FAST
     ? analyzeCardEvidenceWithAgnes
     : analyzeImplForProvider(providerId);
 }
 
 function identityProviderIdForProvider(providerId) {
-  return providerId === evalProviders.CASCADE_FAST ? "primary_fast_vision" : providerId;
+  return providerId === evalProviders.CASCADE_FAST || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
+    ? "primary_fast_vision"
+    : providerId;
 }
 
 function focusedProviderIdForProvider(providerId) {
+  if (providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) return evalProviders.OPENAI;
   return providerId === evalProviders.CASCADE_FAST ? evalProviders.AGNES : providerId;
 }
 
 function openAiFastVisionEvalEnabled(env = process.env) {
   return booleanFromEnv(env, "OPENAI_EVAL_PRIMARY_FAST_VISION", false)
     || booleanFromEnv(env, "GPT_EVAL_PRIMARY_FAST_VISION", false);
+}
+
+function geminiFastVisionEvalEnabled(env = process.env) {
+  return booleanFromEnv(env, "GEMINI_EVAL_PRIMARY_FAST_VISION", false);
 }
 
 function fastVisionPolicyForProvider(providerId, env = process.env) {
@@ -120,6 +152,17 @@ function fastVisionPolicyForProvider(providerId, env = process.env) {
     };
   }
 
+  if (providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
+    || (providerId === evalProviders.GEMINI && geminiFastVisionEvalEnabled(env))) {
+    return {
+      role: "PRIMARY_FAST_VISION",
+      allow_single_source_publish: true,
+      primary_provider_id: evalProviders.GEMINI,
+      secondary_provider_id: providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER ? evalProviders.OPENAI : null,
+      secondary_verification_enabled: providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
+    };
+  }
+
   return null;
 }
 
@@ -130,6 +173,13 @@ function providerDefaultConcurrency(providerId, env = process.env) {
   if (providerId === evalProviders.OPENAI) {
     return Number(env.OPENAI_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || env.GPT_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 3);
   }
+  if (providerId === evalProviders.GEMINI) {
+    return Number(env.GEMINI_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 3);
+  }
+  if (providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK
+    || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
+    return Number(env.GEMINI_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 3);
+  }
   return Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 2);
 }
 
@@ -139,6 +189,13 @@ function providerDefaultMaxConcurrency(providerId, env = process.env) {
   }
   if (providerId === evalProviders.OPENAI) {
     return Number(env.OPENAI_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || env.GPT_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || 4);
+  }
+  if (providerId === evalProviders.GEMINI) {
+    return Number(env.GEMINI_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || 4);
+  }
+  if (providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK
+    || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
+    return Number(env.GEMINI_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || 4);
   }
   return Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || 5);
 }
@@ -603,6 +660,58 @@ function predictionFromResult(result = {}) {
   };
 }
 
+function providerFormatMetadata(result = {}, {
+  fallbackProviderId = null,
+  fallbackReason = null,
+  formatErrorType = null
+} = {}) {
+  return {
+    provider_result: {
+      provider: result.provider || null,
+      model_id: result.model_id || null,
+      response_id: result.response_id || null,
+      finish_reason: result.finish_reason || null,
+      parse_source: result.parse_source || null,
+      recognition_status: result.recognition_status || result.parsed?.recognition_status || null,
+      format_error_type: formatErrorType || result.format_error_type || null,
+      format_repair_attempted: result.format_repair_attempted === true,
+      native_schema_valid: result.native_schema_valid === true,
+      local_json_repair_success: result.local_json_repair_success === true,
+      text_repair_success: result.text_repair_success === true,
+      fallback_provider_id: fallbackProviderId || result.fallback_provider_id || null,
+      fallback_reason: fallbackReason || result.fallback_reason || null
+    }
+  };
+}
+
+function formatFailureType(error) {
+  return error?.details?.format_error_type || error?.format_error_type || "PROVIDER_ERROR";
+}
+
+function geminiFullFallbackReason(error) {
+  if (isProviderResponseFormatError(error)) return `gemini_format_failure:${formatFailureType(error)}`;
+  return `gemini_provider_failure:${error?.code || "provider_error"}`;
+}
+
+function isGeminiProviderFailureFallbackError(error) {
+  if (error?.provider !== evalProviders.GEMINI) return false;
+  return [
+    "location_unavailable",
+    "timeout",
+    "rate_limited",
+    "upstream_error",
+    "network_error"
+  ].includes(error?.code);
+}
+
+function shouldUseGptFullFallback(providerId, error) {
+  if (providerId !== evalProviders.GEMINI_GPT_FAILURE_FALLBACK
+    && providerId !== evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
+    return false;
+  }
+  return isProviderResponseFormatError(error) || isGeminiProviderFailureFallbackError(error);
+}
+
 function predictionFromResolvedResult(result = {}) {
   return {
     title: normalizeText(result.final_title || result.title || result.rendered_title || result.model_title_suggestion),
@@ -756,6 +865,58 @@ function signedImagesForProvider(signedImages = []) {
     name: image.name,
     url: image.url
   }));
+}
+
+function mimeTypeForSignedImage(image = {}, fallback = "image/jpeg") {
+  const name = `${image.name || ""} ${image.object_path || ""} ${image.url || ""}`.toLowerCase();
+  if (/\.(?:png)(?:$|[?#])/.test(name)) return "image/png";
+  if (/\.(?:webp)(?:$|[?#])/.test(name)) return "image/webp";
+  if (/\.(?:gif)(?:$|[?#])/.test(name)) return "image/gif";
+  return fallback;
+}
+
+async function dataUrlFromSignedImage(image = {}, {
+  fetchImpl = globalThis.fetch,
+  maxBytes = 6 * 1024 * 1024
+} = {}) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("fetch is required to inline signed image URLs for Gemini evaluation.");
+  }
+
+  const response = await fetchImpl(image.url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch signed image for Gemini evaluation: HTTP ${response.status}.`);
+  }
+
+  const contentType = String(response.headers.get("content-type") || "").split(";")[0].trim();
+  const arrayBuffer = await response.arrayBuffer();
+  if (arrayBuffer.byteLength > maxBytes) {
+    throw new Error(`Signed image is too large to inline for Gemini evaluation: ${arrayBuffer.byteLength} bytes.`);
+  }
+
+  const mimeType = contentType.startsWith("image/")
+    ? contentType
+    : mimeTypeForSignedImage(image);
+  return `data:${mimeType};base64,${Buffer.from(arrayBuffer).toString("base64")}`;
+}
+
+async function providerImagesForEval(signedImages = [], {
+  providerId = evalProviders.AGNES,
+  env = process.env
+} = {}) {
+  if (providerId !== evalProviders.GEMINI
+    && providerId !== evalProviders.GEMINI_GPT_FAILURE_FALLBACK
+    && providerId !== evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
+    || !booleanFromEnv(env, "GEMINI_EVAL_INLINE_SIGNED_IMAGES", true)) {
+    return signedImagesForProvider(signedImages);
+  }
+
+  const maxBytes = Math.max(1, Number(env.GEMINI_EVAL_INLINE_MAX_IMAGE_BYTES || 6 * 1024 * 1024));
+  return Promise.all(signedImages.map(async (image) => ({
+    name: image.name,
+    side: image.role,
+    dataUrl: await dataUrlFromSignedImage(image, { maxBytes })
+  })));
 }
 
 function evidenceDocumentFromProviderResult(providerResult = {}, {
@@ -994,8 +1155,12 @@ function createFocusedEvaluationRunner({
   timing = null
 } = {}) {
   return async ({ action, focusFields = [], resolved = {} } = {}) => {
+    const providerImages = await providerImagesForEval(signedImages, {
+      providerId,
+      env
+    });
     const providerResult = await timeStage(timing, "focused_reread_ms", () => analyzeImpl({
-      images: signedImagesForProvider(signedImages),
+      images: providerImages,
       prompt: focusedEvaluationPrompt({ action, focusFields, resolved }),
       env,
       signal
@@ -1100,6 +1265,7 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
   maxTitleLength = 80,
   excludeApprovedMemoryIds = [],
   recognitionEvidenceDocument = null,
+  singleModelFastPath = false,
   timing = null
 } = {}) {
   const providerEvidenceDocument = evidenceDocumentFromProviderResult(providerResult, {
@@ -1159,6 +1325,47 @@ async function resolvedPredictionFromProviderResult(providerResult = {}, {
         fast_path: {
           enabled: true,
           used: true,
+          skipped_evidence_completion: true,
+          skipped_focused_reread: true,
+          skipped_retrieval: true
+        }
+      },
+      completion: {
+        resolved: evidenceDocument.resolved,
+        evidence: evidenceDocument.evidence,
+        unresolved: evidenceDocument.unresolved || [],
+        resolution_trace: evidenceDocument.resolution_trace || [],
+        usage: {
+          provider_calls: 0,
+          retrieval_calls: 0,
+          recognition_worker_calls: 0,
+          latency_ms: 0,
+          estimated_cost_usd: 0,
+          resolution_rounds: 0
+        }
+      },
+      usage: providerResult.usage
+    };
+  }
+  if (singleModelFastPath) {
+    return {
+      result: {
+        ...fastPathCandidate,
+        route: "SINGLE_MODEL_GATE",
+        route_reason: "Single-model evaluation path skipped evidence completion, retrieval, and focused reread.",
+        retrieval: {
+          skipped: true,
+          reason: "single_model_fast_path"
+        },
+        completion_trace: Array.isArray(fastPathCandidate.completion_trace)
+          ? fastPathCandidate.completion_trace
+          : Array.isArray(fastPathCandidate.resolution_trace)
+            ? fastPathCandidate.resolution_trace
+            : [],
+        fast_path: {
+          enabled: true,
+          used: true,
+          single_model_only: true,
           skipped_evidence_completion: true,
           skipped_focused_reread: true,
           skipped_retrieval: true
@@ -1303,11 +1510,28 @@ function isItemTimeoutSignal(signal) {
 function providerErrorResultForItem(item, options = {}, error = {}) {
   const base = baseFeedbackResult(item, options);
   const timedOut = isItemTimeoutSignal(options.signal);
+  const formatErrorType = error?.details?.format_error_type || error?.format_error_type || null;
   return {
     ...base,
     status: "provider_error",
     error_code: timedOut ? "item_timeout" : error.code || "error",
     error: timedOut ? options.signal.reason.message : safeProviderErrorMessage(error),
+    format_error_type: formatErrorType,
+    provider_result: {
+      provider: error?.provider || error?.details?.provider || options.providerId || null,
+      model_id: error?.details?.model_id || null,
+      response_id: null,
+      finish_reason: null,
+      parse_source: null,
+      recognition_status: null,
+      format_error_type: formatErrorType,
+      format_repair_attempted: error?.details?.format_repair_attempted === true,
+      native_schema_valid: false,
+      local_json_repair_success: error?.details?.local_json_repair_success === true,
+      text_repair_success: error?.details?.text_repair_success === true,
+      fallback_provider_id: null,
+      fallback_reason: null
+    },
     timing: options.timing || null
   };
 }
@@ -1323,6 +1547,7 @@ async function evaluateOneFeedbackItem(item, {
   maxTitleLength = 80,
   excludeSelfApprovedMemory = true,
   recognitionPreflight = false,
+  singleModelFastPath = false,
   signal = null
 } = {}) {
   const itemStartedAtMs = nowMs();
@@ -1382,12 +1607,39 @@ async function evaluateOneFeedbackItem(item, {
       };
     }
 
-    const result = await timeStage(timing, "provider_total_ms", () => analyzeImpl({
-      images: signedImagesForProvider(signedImages),
-      prompt: evaluationPrompt(item),
-      env,
-      signal
-    }));
+    const providerImages = await providerImagesForEval(signedImages, {
+      providerId,
+      env
+    });
+    const prompt = evaluationPrompt(item);
+    let providerMetaOptions = {};
+    let result;
+    try {
+      result = await timeStage(timing, "provider_total_ms", () => analyzeImpl({
+        images: providerImages,
+        prompt,
+        env,
+        signal
+      }));
+    } catch (error) {
+      if (!shouldUseGptFullFallback(providerId, error)) {
+        throw error;
+      }
+
+      const formatErrorType = formatFailureType(error);
+      const fallbackReason = geminiFullFallbackReason(error);
+      result = await timeStage(timing, "provider_total_ms", () => analyzeCardEvidenceWithOpenAiEmergency({
+        images: providerImages,
+        prompt,
+        env,
+        signal
+      }));
+      providerMetaOptions = {
+        fallbackProviderId: evalProviders.OPENAI,
+        fallbackReason,
+        formatErrorType
+      };
+    }
     const initialFields = fieldsFromParsed(result.parsed || {});
     const resolved = identityResolution
       ? await resolvedPredictionFromProviderResult(result, {
@@ -1397,7 +1649,7 @@ async function evaluateOneFeedbackItem(item, {
         providerId,
         identityProviderId: identityProviderIdForProvider(providerId),
         focusedAnalyzeImpl: analyzeFocusedImpl
-          || (providerId === evalProviders.CASCADE_FAST
+          || (providerId === evalProviders.CASCADE_FAST || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
             ? focusedAnalyzeImplForProvider(providerId)
             : analyzeImpl),
         focusedProviderId: focusedProviderIdForProvider(providerId),
@@ -1406,6 +1658,7 @@ async function evaluateOneFeedbackItem(item, {
         maxTitleLength,
         excludeApprovedMemoryIds: excludeSelfApprovedMemory ? sourceIdsForItem(item) : [],
         recognitionEvidenceDocument: recognition?.evidenceDocument || null,
+        singleModelFastPath,
         timing
       })
       : null;
@@ -1434,6 +1687,7 @@ async function evaluateOneFeedbackItem(item, {
       recognition_preflight_identity_status: recognition?.gated?.identity_resolution_status || null,
       recognition_preflight_error: recognition?.error || null,
       secondary_verification_events: secondaryEvents,
+      ...providerFormatMetadata(result, providerMetaOptions),
       usage: mergeEvalUsage(resolved?.usage || result.usage, recognition?.usage),
       timing: finalizeTiming(timing, itemStartedAtMs)
     };
@@ -1540,14 +1794,42 @@ function perMinute(count, elapsedMs) {
   return Number((value / (elapsed / 60000)).toFixed(6));
 }
 
+function countBy(values = []) {
+  return values.reduce((counts, value) => {
+    if (!value) return counts;
+    counts[value] = (counts[value] || 0) + 1;
+    return counts;
+  }, {});
+}
+
 function isIdentityAbstain(item = {}) {
   return item.identity_resolution_status === "ABSTAIN"
     || item.prediction?.identity_resolution_status === "ABSTAIN";
 }
 
+function gateHasWorkflowSignal(gate = {}) {
+  return Boolean(gate.status || gate.workflow_route || typeof gate.writer_review_ready === "boolean");
+}
+
+function gateAcceptsForWriter(item = {}) {
+  if (item.status !== "evaluated") return false;
+  const gate = publicationGate(item);
+  if (!gateHasWorkflowSignal(gate)) return !isIdentityAbstain(item);
+  const route = gate.workflow_route || gate.status;
+  return gate.writer_review_ready === true
+    || gate.writer_quick_approval_ready === true
+    || [
+      "LOW_TOUCH_REVIEW",
+      "STANDARD_REVIEW",
+      "DEEP_REVIEW",
+      "WRITER_QUICK_APPROVAL_READY",
+      "WRITER_REVIEW_READY"
+    ].includes(route);
+}
+
 function isAllInCommercialSuccess(item = {}) {
   return item.status === "evaluated"
-    && !isIdentityAbstain(item)
+    && gateAcceptsForWriter(item)
     && item.corrected_title_comparison?.critical_title_error !== true;
 }
 
@@ -1798,8 +2080,59 @@ function fieldLevelPublication(item = {}) {
   return publicationGate(item).field_level_publication || item.field_level_publication || {};
 }
 
+function nonEmptyPredictionFieldCount(fields = {}) {
+  return Object.values(fields || {}).filter((value) => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === "boolean") return value === true;
+    return value !== null && value !== undefined && normalizeText(value) !== "";
+  }).length;
+}
+
+function providerQualitySummary(results = []) {
+  const attempted = results.length;
+  const providerItems = results.filter((item) => item.provider_result);
+  const providerSuccessItems = providerItems.filter((item) => item.status === "evaluated");
+  const repairAttempted = providerItems.filter((item) => item.provider_result?.format_repair_attempted === true).length;
+  const localRepairSuccess = providerItems.filter((item) => item.provider_result?.local_json_repair_success === true).length;
+  const textRepairSuccess = providerItems.filter((item) => item.provider_result?.text_repair_success === true).length;
+  const fallbackItems = providerItems.filter((item) => item.provider_result?.fallback_provider_id).length;
+  const providerTimings = results
+    .map((item) => Number(item.timing?.provider_total_ms || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const writerReadyTimings = results
+    .filter(gateAcceptsForWriter)
+    .map((item) => Number(item.timing?.total_ms || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const criticalBeforeGate = results.filter((item) => item.corrected_title_comparison?.critical_title_error === true).length;
+
+  return {
+    provider_success_count: providerSuccessItems.length,
+    provider_success_rate: rate(providerSuccessItems.length, attempted),
+    native_schema_valid_count: providerItems.filter((item) => item.provider_result?.native_schema_valid === true).length,
+    native_schema_valid_rate: rate(providerItems.filter((item) => item.provider_result?.native_schema_valid === true).length, attempted),
+    format_repair_attempted_count: repairAttempted,
+    format_repair_attempted_rate: rate(repairAttempted, attempted),
+    local_json_repair_success_count: localRepairSuccess,
+    local_json_repair_success_rate: rate(localRepairSuccess, attempted),
+    local_json_repair_success_of_repair_attempted_rate: rate(localRepairSuccess, repairAttempted),
+    text_repair_success_count: textRepairSuccess,
+    text_repair_success_rate: rate(textRepairSuccess, attempted),
+    text_repair_success_of_repair_attempted_rate: rate(textRepairSuccess, repairAttempted),
+    format_error_type_counts: countBy(providerItems.map((item) => item.provider_result?.format_error_type)),
+    gpt_fallback_count: fallbackItems,
+    gpt_fallback_rate: rate(fallbackItems, attempted),
+    fallback_reason_counts: countBy(providerItems.map((item) => item.provider_result?.fallback_reason)),
+    raw_field_completeness_avg: average(results.map((item) => nonEmptyPredictionFieldCount(item.prediction?.fields || {}))),
+    raw_critical_error_before_gate_count: criticalBeforeGate,
+    raw_critical_error_before_gate_rate: rate(criticalBeforeGate, attempted),
+    time_to_first_draft_ms_avg: average(providerTimings),
+    time_to_writer_ready_ms_avg: average(writerReadyTimings)
+  };
+}
+
 function summarize(results = [], {
-  elapsedMs = 0
+  elapsedMs = 0,
+  providerId = evalProviders.AGNES
 } = {}) {
   const attempted = results.length;
   const evaluated = results.filter((item) => item.status === "evaluated").length;
@@ -1810,9 +2143,23 @@ function summarize(results = [], {
   const writerReviewReady = results.filter((item) => publicationGate(item).writer_review_ready === true).length;
   const partialWriterDrafts = results.filter((item) => publicationGate(item).partial_writer_draft === true).length;
   const autoPublishReady = results.filter((item) => publicationGate(item).auto_publish_allowed === true).length;
-  const modelAutoPublishRecommended = results.filter((item) => publicationGate(item).model_auto_publish_recommended === true).length;
+  const modelAutoPublishRecommended = results.filter((item) => {
+    const gate = publicationGate(item);
+    return gate.model_quick_review_recommended === true || gate.model_auto_publish_recommended === true;
+  }).length;
   const fieldLevelPublications = results.map(fieldLevelPublication).filter((item) => item && typeof item === "object");
   const fieldLevelPartialOutputs = fieldLevelPublications.filter((item) => item.has_partial_output === true).length;
+  const identityGateStatusCounts = countBy(results.map((item) => publicationGate(item).identity_gate_status));
+  const workflowRouteCounts = countBy(results.map((item) => publicationGate(item).workflow_route || publicationGate(item).status));
+  const fieldPublishabilityCounts = results.reduce((counts, item) => {
+    const gate = publicationGate(item);
+    const fieldMap = gate.field_publishability || gate.field_publication_states || fieldLevelPublication(item).field_publishability || {};
+    Object.values(fieldMap).forEach((status) => {
+      if (!status) return;
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return counts;
+  }, {});
   const allInCommercialSuccesses = results.filter(isAllInCommercialSuccess).length;
   const allInCommercialFailures = attempted - allInCommercialSuccesses;
   const comparisons = results.map((item) => item.corrected_title_comparison).filter(Boolean);
@@ -1840,6 +2187,10 @@ function summarize(results = [], {
   const componentQuality = componentQualityReport(results, {
     fieldGroundTruthAvailable: false
   });
+  const providerQuality = providerQualitySummary(results);
+  const secondaryProvider = providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
+    ? evalProviders.OPENAI
+    : evalProviders.AGNES;
 
   return {
     attempted_count: attempted,
@@ -1861,6 +2212,9 @@ function summarize(results = [], {
     auto_publish_ready_rate: rate(autoPublishReady, attempted),
     model_auto_publish_recommended_count: modelAutoPublishRecommended,
     model_auto_publish_recommended_rate: rate(modelAutoPublishRecommended, attempted),
+    identity_gate_status_counts: identityGateStatusCounts,
+    workflow_route_counts: workflowRouteCounts,
+    field_publishability_counts: fieldPublishabilityCounts,
     all_in_commercial_success_count: allInCommercialSuccesses,
     all_in_commercial_failure_count: allInCommercialFailures,
     all_in_commercial_accuracy: rate(allInCommercialSuccesses, attempted),
@@ -1879,7 +2233,7 @@ function summarize(results = [], {
     wrong_grade_count: wrongGrade,
     unexpected_color_count: unexpectedColor,
     secondary_verifier: {
-      provider: evalProviders.AGNES,
+      provider: secondaryProvider,
       triggered_count: secondaryTriggered,
       trigger_rate: rate(secondaryTriggered, attempted),
       error_count: secondaryErrors,
@@ -1894,6 +2248,24 @@ function summarize(results = [], {
       case_review: secondaryVerifierCaseReview(secondaryEvents)
     },
     parsed_success_rate: rate(evaluated, attempted),
+    provider_success_count: providerQuality.provider_success_count,
+    provider_success_rate: providerQuality.provider_success_rate,
+    native_schema_valid_count: providerQuality.native_schema_valid_count,
+    native_schema_valid_rate: providerQuality.native_schema_valid_rate,
+    format_repair_attempted_count: providerQuality.format_repair_attempted_count,
+    format_repair_attempted_rate: providerQuality.format_repair_attempted_rate,
+    local_json_repair_success_count: providerQuality.local_json_repair_success_count,
+    local_json_repair_success_rate: providerQuality.local_json_repair_success_rate,
+    text_repair_success_count: providerQuality.text_repair_success_count,
+    text_repair_success_rate: providerQuality.text_repair_success_rate,
+    gpt_fallback_count: providerQuality.gpt_fallback_count,
+    gpt_fallback_rate: providerQuality.gpt_fallback_rate,
+    raw_field_completeness_avg: providerQuality.raw_field_completeness_avg,
+    raw_critical_error_before_gate_count: providerQuality.raw_critical_error_before_gate_count,
+    raw_critical_error_before_gate_rate: providerQuality.raw_critical_error_before_gate_rate,
+    time_to_first_draft_ms_avg: providerQuality.time_to_first_draft_ms_avg,
+    time_to_writer_ready_ms_avg: providerQuality.time_to_writer_ready_ms_avg,
+    provider_quality: providerQuality,
     elapsed_ms: Math.max(0, Math.round(effectiveElapsedMs || 0)),
     attempted_cards_per_minute: attemptedCardsPerMinute,
     evaluated_cards_per_minute: evaluatedCardsPerMinute,
@@ -1908,6 +2280,7 @@ function summarize(results = [], {
         all_in_commercial_accuracy: rate(allInCommercialSuccesses, attempted)
       }
     },
+    gate_confusion_matrix: rootCauses.gate_confusion_matrix,
     root_cause_summary: rootCauses,
     component_quality: componentQuality,
     dangerous_error_rate: componentQuality.factors.decision_quality.dangerous_error_rate,
@@ -1928,6 +2301,7 @@ function buildReport({
   identityResolution,
   excludeSelfApprovedMemory,
   recognitionPreflight = false,
+  singleModelFastPath = false,
   proactiveFocusedRereads = false,
   proactiveSerialOnly = false,
   rateLimitRetries = 0,
@@ -1951,6 +2325,7 @@ function buildReport({
     identity_resolution_enabled: identityResolution,
     internal_memory_self_exclusion_enabled: identityResolution && excludeSelfApprovedMemory,
     recognition_preflight_enabled: identityResolution && recognitionPreflight,
+    single_model_fast_path_enabled: identityResolution && singleModelFastPath,
     proactive_focused_rereads_enabled: identityResolution && proactiveFocusedRereads,
     proactive_serial_only_enabled: identityResolution && proactiveFocusedRereads && proactiveSerialOnly,
     rate_limit_retry_enabled: rateLimitRetries > 0,
@@ -1976,7 +2351,7 @@ function buildReport({
     no_feedback_retention_side_effects: true,
     full_sample_evaluation: fullSampleEvaluation,
     target_count: selectedItems.length,
-    ...summarize(annotatedResults, { elapsedMs }),
+    ...summarize(annotatedResults, { elapsedMs, providerId }),
     results: annotatedResults
   };
 }
@@ -1991,6 +2366,7 @@ export async function evaluateAgnesSupabaseFeedback({
   maxTitleLength = 80,
   excludeSelfApprovedMemory = true,
   recognitionPreflight = false,
+  singleModelFastPath = false,
   proactiveFocusedRereads = false,
   proactiveSerialOnly = false,
   env = process.env,
@@ -2007,11 +2383,8 @@ export async function evaluateAgnesSupabaseFeedback({
 } = {}) {
   const startedAt = now();
   const wallStartedAtMs = nowMs();
-  const requiredProviderEnvKey = providerEnvKey(providerId);
-  const missingProviderEnvKeys = [
-    requiredProviderEnvKey,
-    ...(providerId === evalProviders.CASCADE_FAST ? ["AGNES_API_KEY"] : [])
-  ].filter((key, index, all) => key && all.indexOf(key) === index && !env[key]);
+  const missingProviderEnvKeys = providerEnvKeys(providerId)
+    .filter((key, index, all) => key && all.indexOf(key) === index && !env[key]);
   if (missingProviderEnvKeys.length) {
     return {
       schema_version: schemaVersion,
@@ -2062,6 +2435,7 @@ export async function evaluateAgnesSupabaseFeedback({
     return item?.status === "evaluated"
       && Boolean(item.identity_resolution_enabled) === Boolean(identityResolution)
       && Boolean(item.recognition_preflight_enabled) === Boolean(identityResolution && recognitionPreflight)
+      && Boolean(item.single_model_fast_path_enabled) === Boolean(identityResolution && singleModelFastPath)
       && Boolean(item.internal_memory_self_excluded) === Boolean(identityResolution && excludeSelfApprovedMemory)
       && (!item.provider || item.provider === providerId);
   };
@@ -2101,6 +2475,7 @@ export async function evaluateAgnesSupabaseFeedback({
       identityResolution,
       excludeSelfApprovedMemory,
       recognitionPreflight,
+      singleModelFastPath,
       proactiveFocusedRereads,
       proactiveSerialOnly,
       rateLimitRetries,
@@ -2133,6 +2508,7 @@ export async function evaluateAgnesSupabaseFeedback({
         maxTitleLength,
         excludeSelfApprovedMemory,
         recognitionPreflight,
+        singleModelFastPath,
         rateLimitRetries,
         rateLimitPauseMs,
         itemTimeoutMs
@@ -2153,12 +2529,25 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `identity_resolution_enabled: ${report.identity_resolution_enabled === true}`,
     `internal_memory_self_exclusion_enabled: ${report.internal_memory_self_exclusion_enabled === true}`,
     `recognition_preflight_enabled: ${report.recognition_preflight_enabled === true}`,
+    `single_model_fast_path_enabled: ${report.single_model_fast_path_enabled === true}`,
     `proactive_focused_rereads_enabled: ${report.proactive_focused_rereads_enabled === true}`,
     `proactive_serial_only_enabled: ${report.proactive_serial_only_enabled === true}`,
     `target_count: ${report.target_count ?? "n/a"}`,
     `attempted_count: ${report.attempted_count ?? "n/a"}`,
     `evaluated_count: ${report.evaluated_count ?? "n/a"}`,
     `provider_error_count: ${report.provider_error_count ?? "n/a"}`,
+    `provider_success_count: ${report.provider_success_count ?? "n/a"} (${report.provider_success_rate ?? "n/a"})`,
+    `native_schema_valid_count: ${report.native_schema_valid_count ?? "n/a"} (${report.native_schema_valid_rate ?? "n/a"})`,
+    `format_repair_attempted_count: ${report.format_repair_attempted_count ?? "n/a"} (${report.format_repair_attempted_rate ?? "n/a"})`,
+    `local_json_repair_success_count: ${report.local_json_repair_success_count ?? "n/a"} (${report.local_json_repair_success_rate ?? "n/a"})`,
+    `text_repair_success_count: ${report.text_repair_success_count ?? "n/a"} (${report.text_repair_success_rate ?? "n/a"})`,
+    `gpt_fallback_count: ${report.gpt_fallback_count ?? "n/a"} (${report.gpt_fallback_rate ?? "n/a"})`,
+    `format_error_type_counts: ${Object.entries(report.provider_quality?.format_error_type_counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
+    `fallback_reason_counts: ${Object.entries(report.provider_quality?.fallback_reason_counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
+    `raw_field_completeness_avg: ${report.raw_field_completeness_avg ?? "n/a"}`,
+    `raw_critical_error_before_gate: ${report.raw_critical_error_before_gate_count ?? "n/a"}/${report.attempted_count ?? "n/a"} (${report.raw_critical_error_before_gate_rate ?? "n/a"})`,
+    `time_to_first_draft_ms_avg: ${report.time_to_first_draft_ms_avg ?? "n/a"}`,
+    `time_to_writer_ready_ms_avg: ${report.time_to_writer_ready_ms_avg ?? "n/a"}`,
     `item_timeout_count: ${report.item_timeout_count ?? "n/a"}`,
     `identity_abstain_count: ${report.identity_abstain_count ?? "n/a"}`,
     `writer_review_ready_count: ${report.writer_review_ready_count ?? "n/a"} (${report.writer_review_ready_rate ?? "n/a"})`,
@@ -2168,6 +2557,9 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `field_level_review_field_count_avg: ${report.field_level_review_field_count_avg ?? "n/a"}`,
     `auto_publish_ready_count: ${report.auto_publish_ready_count ?? "n/a"} (${report.auto_publish_ready_rate ?? "n/a"})`,
     `model_auto_publish_recommended_count: ${report.model_auto_publish_recommended_count ?? "n/a"} (${report.model_auto_publish_recommended_rate ?? "n/a"})`,
+    `identity_gate_status_counts: ${Object.entries(report.identity_gate_status_counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
+    `workflow_route_counts: ${Object.entries(report.workflow_route_counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
+    `field_publishability_counts: ${Object.entries(report.field_publishability_counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `all_in_commercial_accuracy: ${report.all_in_commercial_accuracy ?? "n/a"} target:${report.all_in_commercial_accuracy_target ?? "n/a"} passed:${report.all_in_commercial_accuracy_passed === true}`,
     `correct_cards_per_minute: ${report.correct_cards_per_minute ?? "n/a"}`,
     `attempted_cards_per_minute: ${report.attempted_cards_per_minute ?? "n/a"}`,
@@ -2185,6 +2577,7 @@ export function formatAgnesSupabaseFeedbackSummary(report = {}) {
     `critical_title_errors: ${report.critical_title_error_count ?? "n/a"}/${report.attempted_count ?? "n/a"} (${report.critical_title_error_rate ?? "n/a"})`,
     `dangerous_error_rate: ${report.dangerous_error_rate ?? "n/a"}`,
     `accepted_coverage_rate: ${report.accepted_coverage_rate ?? "n/a"}`,
+    `gate_confusion_matrix: ${Object.entries(report.gate_confusion_matrix || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `primary_root_causes: ${Object.entries(report.root_cause_summary?.primary_counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `gate_false_reject_subtypes: ${Object.entries(report.root_cause_summary?.gate_false_reject_subtypes || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
     `root_causes: ${Object.entries(report.root_cause_summary?.counts || {}).map(([code, count]) => `${code}=${count}`).join(", ") || "n/a"}`,
@@ -2210,6 +2603,15 @@ export async function main(argv = process.argv, env = process.env) {
   const datasetPath = argValue(argv, "--dataset", env.SUPABASE_FEEDBACK_CANDIDATES_PATH || defaultDatasetPath);
   const providerId = normalizeEvalProvider(argValue(argv, "--provider", env.LISTING_EVAL_PROVIDER || evalProviders.AGNES));
   const outPath = argValue(argv, "--out", env.AGNES_SUPABASE_FEEDBACK_EVAL_OUT || defaultOutPath);
+  const allowLocalProviderCalls = hasFlag(argv, "--allow-local-provider-calls")
+    || booleanFromEnv(env, "ALLOW_LOCAL_PROVIDER_EVAL", false);
+  if (!allowLocalProviderCalls) {
+    throw new Error([
+      "Local direct provider evaluation is disabled.",
+      "Use scripts/evaluate-cloud-listing-api.mjs so real model calls run in the cloud.",
+      "For explicit sandbox-only exceptions, pass --allow-local-provider-calls or set ALLOW_LOCAL_PROVIDER_EVAL=1."
+    ].join(" "));
+  }
   const limit = numberArg(argv, "--limit", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_LIMIT || 0));
   const concurrency = numberArg(argv, "--concurrency", providerDefaultConcurrency(providerId, env));
   const maxConcurrency = Math.max(1, numberArg(argv, "--max-concurrency", providerDefaultMaxConcurrency(providerId, env)));
@@ -2219,6 +2621,8 @@ export async function main(argv = process.argv, env = process.env) {
     && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_EXCLUDE_SELF_MEMORY", true);
   const recognitionPreflight = hasFlag(argv, "--recognition-preflight")
     || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_RECOGNITION_PREFLIGHT", false);
+  const singleModelFastPath = hasFlag(argv, "--single-model-fast-path")
+    || booleanFromEnv(env, "LISTING_EVAL_SINGLE_MODEL_FAST_PATH", false);
   const proactiveFocusedRereads = hasFlag(argv, "--proactive-focused-rereads")
     || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_PROACTIVE_FOCUSED_REREADS", false);
   const proactiveSerialOnly = hasFlag(argv, "--proactive-serial-only")
@@ -2227,6 +2631,8 @@ export async function main(argv = process.argv, env = process.env) {
   const rateLimitRetries = Math.max(0, numberArg(argv, "--rate-limit-retries", Number(env.AGNES_SUPABASE_FEEDBACK_RATE_LIMIT_RETRIES || 0)));
   const rateLimitPauseMs = Math.max(0, numberArg(argv, "--rate-limit-pause-ms", Number(env.AGNES_SUPABASE_FEEDBACK_RATE_LIMIT_PAUSE_MS || 60000)));
   const itemTimeoutMs = Math.max(0, numberArg(argv, "--item-timeout-ms", Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_ITEM_TIMEOUT_MS || 0)));
+  const failOnProviderError = hasFlag(argv, "--fail-on-provider-error")
+    || booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_FAIL_ON_PROVIDER_ERROR", false);
   const resume = !hasFlag(argv, "--no-resume") && booleanFromEnv(env, "AGNES_SUPABASE_FEEDBACK_EVAL_RESUME", true);
   const dataset = await readJson(datasetPath);
   let previousResults = [];
@@ -2251,6 +2657,7 @@ export async function main(argv = process.argv, env = process.env) {
     maxTitleLength,
     excludeSelfApprovedMemory,
     recognitionPreflight,
+    singleModelFastPath,
     proactiveFocusedRereads,
     proactiveSerialOnly,
     analyzeImpl: analyzeImplForProvider(providerId),
@@ -2278,6 +2685,7 @@ export async function main(argv = process.argv, env = process.env) {
 
   if (outPath) await writeJson(outPath, report);
   process.stdout.write(`${formatAgnesSupabaseFeedbackSummary(report)}\n`);
+  if (failOnProviderError && Number(report.provider_error_count || 0) > 0) return 1;
   return report.status === "skipped" ? 1 : 0;
 }
 

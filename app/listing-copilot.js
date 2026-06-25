@@ -18,6 +18,7 @@ const IMAGE_EMERGENCY_MIN_QUALITY = 0.58;
 const TARGET_IMAGE_DATA_URL_CHARS = 1_250_000;
 const MAX_ASSET_REQUEST_BYTES = 3_400_000;
 const TARGETED_CROP_QUALITY = 0.88;
+const FIELD_MAX_CROPS_PER_ASSET = 6;
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 const supportedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const heicUnsupportedMessage = "当前浏览器暂不支持 HEIC/HEIF 预览，请先在手机相册中导出为 JPG，或使用微信/系统截图后上传。";
@@ -179,10 +180,30 @@ function cropCanvasDataUrl(sourceCanvas, cropRegion, quality = TARGETED_CROP_QUA
   };
 }
 
+function inferredSourceSide(image = {}) {
+  const text = [
+    image.side,
+    image.role,
+    image.captureRole,
+    image.capture_profile,
+    image.storageRole,
+    image.name
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  if (text.includes("back") || text.includes("reverse")) return "back";
+  if (text.includes("front") || text.includes("obverse")) return "front";
+  return "";
+}
+
 function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
   const cropPlans = planTargetedCrops({
     imageId: sourceImage.id,
-    imageQuality
+    sourceObjectPath: sourceImage.objectPath || "",
+    sourceSide: inferredSourceSide(sourceImage),
+    sourceWidth: sourceCanvas.width,
+    sourceHeight: sourceCanvas.height,
+    imageQuality,
+    maxCrops: FIELD_MAX_CROPS_PER_ASSET
   });
 
   return cropPlans.map((plan, index) => {
@@ -203,14 +224,21 @@ function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
       captureProfileId: defaultCaptureProfileId,
       imageQuality: null,
       sourceBlob: blob,
-    sourceImageId: sourceImage.id,
-    sourceRegion: plan.source_region,
-    storageRole: plan.role,
-    cropPlan: plan,
-    derived: true,
-    contentSha256: "",
-    objectPath: ""
-  };
+      sourceImageId: sourceImage.id,
+      sourceRegion: plan.source_region,
+      storageRole: plan.role,
+      cropPlan: plan,
+      cropMetadata: {
+        ...(plan.crop_metadata || {}),
+        crop_id: cropId,
+        source_image_id: sourceImage.id,
+        source_region: plan.source_region,
+        crop_role: plan.role
+      },
+      derived: true,
+      contentSha256: "",
+      objectPath: ""
+    };
   });
 }
 
@@ -316,8 +344,17 @@ function imageHasVerifiedStorageReference(image = {}) {
   return Boolean(image.objectPath && image.storageVerified);
 }
 
-function serializableAssetImage(image) {
+function serializableAssetImage(image, assetId = "") {
   const useStorageReference = imageHasVerifiedStorageReference(image);
+  const cropMetadata = image.cropMetadata || image.crop_metadata || null;
+  const serializedCropMetadata = cropMetadata
+    ? {
+      ...cropMetadata,
+      asset_id: cropMetadata.asset_id || assetId || "",
+      source_object_path: cropMetadata.source_object_path || "",
+      derived_object_path: cropMetadata.derived_object_path || image.objectPath || ""
+    }
+    : null;
   return {
     id: image.id,
     name: image.name,
@@ -336,6 +373,8 @@ function serializableAssetImage(image) {
     sourceRegion: image.sourceRegion || "",
     storageRole: image.storageRole || "",
     cropPlan: image.cropPlan || null,
+    cropMetadata: serializedCropMetadata,
+    crop_metadata: serializedCropMetadata,
     derived: Boolean(image.derived),
     contentSha256: image.contentSha256 || "",
     objectPath: image.objectPath || "",
@@ -347,6 +386,7 @@ function serializableAssetImage(image) {
 }
 
 function reviewImageReference(image) {
+  const cropMetadata = image.cropMetadata || image.crop_metadata || null;
   return {
     id: image.id,
     name: image.name,
@@ -361,6 +401,8 @@ function reviewImageReference(image) {
     sourceImageId: image.sourceImageId || "",
     sourceRegion: image.sourceRegion || "",
     storageRole: image.storageRole || "",
+    cropMetadata: cropMetadata || null,
+    crop_metadata: cropMetadata || null,
     derived: Boolean(image.derived),
     contentSha256: image.contentSha256 || "",
     objectPath: image.objectPath || "",
@@ -376,7 +418,7 @@ function buildAssetRequestBody(asset, options = {}) {
     assetId: asset.id,
     mode: state.mode,
     maxTitleLength,
-    images: (asset.providerImages || asset.images).map(serializableAssetImage),
+    images: (asset.providerImages || asset.images).map((image) => serializableAssetImage(image, asset.id)),
     captureProfileId: defaultCaptureProfileId,
     captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
     resolutionMap: state.resolutionMap,
@@ -557,6 +599,22 @@ async function uploadAssetImage(asset, image, imageIndex) {
   image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
   image.storageVerified = true;
   image.storageUploaded = true;
+  if (image.cropMetadata || image.crop_metadata) {
+    const metadata = {
+      ...(image.cropMetadata || image.crop_metadata || {}),
+      derived_object_path: image.objectPath,
+      source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
+      asset_id: (image.cropMetadata || image.crop_metadata || {}).asset_id || asset.id || ""
+    };
+    image.cropMetadata = metadata;
+    image.crop_metadata = metadata;
+    if (image.cropPlan) {
+      image.cropPlan = {
+        ...image.cropPlan,
+        crop_metadata: metadata
+      };
+    }
+  }
   return true;
 }
 
@@ -566,6 +624,28 @@ async function ensureAssetImagesUploaded(asset) {
   const images = asset.providerImages || asset.images;
   const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
     return uploadAssetImage(asset, image, imageIndex);
+  });
+  const imagesById = new Map(images.map((image) => [image.id, image]));
+  images.forEach((image) => {
+    const metadata = image.cropMetadata || image.crop_metadata;
+    if (!metadata?.source_image_id) return;
+    const sourceImage = imagesById.get(metadata.source_image_id);
+    const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
+    if (!sourceObjectPath) return;
+    const updatedMetadata = {
+      ...metadata,
+      source_object_path: sourceObjectPath,
+      derived_object_path: metadata.derived_object_path || image.objectPath || "",
+      asset_id: metadata.asset_id || asset.id || ""
+    };
+    image.cropMetadata = updatedMetadata;
+    image.crop_metadata = updatedMetadata;
+    if (image.cropPlan) {
+      image.cropPlan = {
+        ...image.cropPlan,
+        crop_metadata: updatedMetadata
+      };
+    }
   });
 
   return uploadResults.some(Boolean);
@@ -626,11 +706,18 @@ function providerSmokeText(provider) {
 }
 
 function providerCascadeText(provider) {
+  const roles = new Set(provider.roles || [provider.role].filter(Boolean));
+  if (provider.id === "openai_legacy" || roles.has("failure_fallback") || roles.has("critical_verifier")) {
+    return "Gemini 格式失败兜底 · 关键字段 focused verifier";
+  }
+  if (provider.id === "agnes" || roles.has("manual_or_experimental")) {
+    return "手动复核 / 离线评测，不进入默认自动级联";
+  }
   if (provider.id !== "cascade_fast") return "";
   const secondary = provider.secondary_configured === true
     ? "Agnes 辅助可用"
     : `Agnes 辅助不可用: ${provider.secondary_disabled_reason || "未配置"}`;
-  return `主路径 GPT-4.1 · ${secondary}`;
+  return `实验级 cascade · GPT-4.1 + ${secondary}`;
 }
 
 function providerStatusText(provider) {
@@ -822,9 +909,11 @@ function generatedTitleResults() {
 
 function modelQuickApprovalCandidate(result) {
   const gate = result?.publication_gate || {};
-  return gate.model_auto_publish_recommended === true
+  return gate.model_quick_review_recommended === true
     || gate.writer_quick_approval_ready === true
-    || gate.status === "WRITER_QUICK_APPROVAL_READY";
+    || gate.workflow_route === "LOW_TOUCH_REVIEW"
+    || gate.status === "LOW_TOUCH_REVIEW"
+    || gate.legacy_status === "WRITER_QUICK_APPROVAL_READY";
 }
 
 function renderBatchTitles() {
@@ -849,6 +938,44 @@ function imageSideLabel(imageIndex) {
   return imageIndex === 0 ? "正面 Front" : "背面 Back";
 }
 
+function cropRegionLabel(region = "") {
+  return reviewFieldLabels[region] || String(region || "").replace(/_/g, " ") || "Field Crop";
+}
+
+function modalImagesForAsset(asset = {}) {
+  const providerImages = Array.isArray(asset.providerImages) && asset.providerImages.length
+    ? asset.providerImages
+    : asset.images || [];
+  return providerImages;
+}
+
+function imagePreviewLabel(image, imageIndex) {
+  if (image?.derived || image?.sourceRegion || image?.source_region) {
+    return cropRegionLabel(image.sourceRegion || image.source_region || image.cropMetadata?.source_region || image.crop_metadata?.source_region);
+  }
+  return imageSideLabel(imageIndex);
+}
+
+function fieldCropStrip(asset) {
+  const modalImages = modalImagesForAsset(asset);
+  const crops = modalImages
+    .map((image, modalIndex) => ({ image, modalIndex }))
+    .filter(({ image }) => image?.derived || image?.sourceRegion || image?.source_region)
+    .slice(0, FIELD_MAX_CROPS_PER_ASSET);
+  if (!crops.length) return "";
+
+  return `
+    <div class="field-crop-strip" aria-label="字段局部证据">
+      ${crops.map(({ image, modalIndex }) => `
+        <button class="field-crop-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${modalIndex}" title="${escapeHtml(imagePreviewLabel(image, modalIndex))}">
+          <img src="${image.dataUrl}" alt="${escapeHtml(imagePreviewLabel(image, modalIndex))}">
+          <span>${escapeHtml(imagePreviewLabel(image, modalIndex))}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderAssetRows() {
   if (!state.assets.length) return;
 
@@ -861,12 +988,12 @@ function renderAssetRows() {
   const groups = [
     {
       key: "quick",
-      label: "模型建议快速批准",
+      label: "低触审核",
       assets: state.assets.filter((asset) => modelQuickApprovalCandidate(resultForAsset(asset)))
     },
     {
       key: "review",
-      label: "写手逐卡编辑",
+      label: "标准审核",
       assets: state.assets.filter((asset) => {
         const result = resultForAsset(asset);
         if (!result || modelQuickApprovalCandidate(result)) return false;
@@ -876,7 +1003,7 @@ function renderAssetRows() {
     },
     {
       key: "manual",
-      label: "等待或人工处理",
+      label: "深度审核 / 补拍",
       assets: state.assets.filter((asset) => {
         const result = resultForAsset(asset);
         if (!result) return true;
@@ -918,6 +1045,7 @@ function assetRowHtml(asset) {
               <p class="file-name">${imageSideLabel(imageIndex)} · ${escapeHtml(image.name)}</p>
             `).join("")}
             <span>${assetCountLabel(asset.images.length)}</span>
+            ${fieldCropStrip(asset)}
           </div>
         </div>
         ${result ? resultBox(result) : pendingBox(asset)}
@@ -1018,7 +1146,24 @@ const reviewFieldLabels = {
   grade_company: "Grade Company",
   card_grade: "Card Grade",
   auto_grade: "Auto Grade",
-  grade_type: "Grade Type"
+  grade_type: "Grade Type",
+  rc: "RC",
+  first_bowman: "1st Bowman",
+  ssp: "SSP",
+  case_hit: "Case Hit",
+  auto: "Auto",
+  patch: "Patch",
+  relic: "Relic",
+  sketch: "Sketch",
+  redemption: "Redemption",
+  one_of_one: "1/1"
+};
+
+const workflowLabels = {
+  LOW_TOUCH_REVIEW: "低触审核",
+  STANDARD_REVIEW: "标准审核",
+  DEEP_REVIEW: "深度审核",
+  RESCAN_REQUIRED: "需要补拍"
 };
 
 function publicationGateNotice(result) {
@@ -1032,19 +1177,18 @@ function publicationGateNotice(result) {
     ? fields.map((field) => reviewFieldLabels[field] || field).join(", ")
     : "无需补字段";
   const quickApproval = modelQuickApprovalCandidate(result);
-  const readyText = quickApproval
-    ? "建议快速批准"
-    : gate.writer_review_ready
-    ? "已生成可编辑草稿"
-    : "需要人工处理";
+  const route = gate.workflow_route || gate.status;
+  const readyText = workflowLabels[route] || (gate.writer_review_ready ? "已生成可编辑草稿" : "需要人工处理");
   const gateClass = quickApproval
     ? "quick-approval"
     : gate.writer_review_ready
       ? "writer-ready"
       : "manual-required";
   const helpText = quickApproval
-    ? "写手同意后保存审核记录，再一键发布。"
-    : "上传前必须保存审核记录。";
+    ? "写手看过并同意后保存审核记录，再一键发布。"
+    : gate.writer_review_ready
+      ? "黄色字段需要写手确认或编辑；上传前必须保存审核记录。"
+      : "请补拍、拆分多卡，或人工完成关键字段。";
 
   return `
     <div class="publication-gate ${gateClass}">
@@ -1069,6 +1213,16 @@ function titleOverrideNotice(result) {
   `;
 }
 
+function modulePolicySummary(module) {
+  const policies = Array.isArray(module.field_policies) ? module.field_policies : [];
+  const pending = policies.filter((policy) => policy.requires_writer_confirmation === true);
+  if (!pending.length) return module.status || "REVIEW";
+  return pending
+    .slice(0, 3)
+    .map((policy) => reviewFieldLabels[policy.field] || policy.field)
+    .join(", ");
+}
+
 function moduleSummary(result) {
   const modules = result.modules || {};
   const order = Array.isArray(result.module_order) && result.module_order.length
@@ -1083,10 +1237,10 @@ function moduleSummary(result) {
   return `
     <div class="writer-modules">
       ${visibleModules.map((module) => `
-        <div class="writer-module ${module.requires_review ? "needs-review" : ""}">
+        <div class="writer-module ${module.requires_review ? "needs-review" : ""} ${module.display_policy ? `display-${String(module.display_policy).toLowerCase().replace(/_/g, "-")}` : ""} ${module.review_priority ? `priority-${String(module.review_priority).toLowerCase()}` : ""}">
           <span>${escapeHtml(module.label || module.key)}</span>
           <textarea data-module-input="${result.index}" data-module-key="${escapeHtml(module.key)}">${escapeHtml(module.text || "")}</textarea>
-          <small>${escapeHtml(module.status || "REVIEW")}</small>
+          <small>${escapeHtml(modulePolicySummary(module))}</small>
         </div>
       `).join("")}
     </div>
@@ -1105,18 +1259,19 @@ function renderImageModal() {
     return;
   }
 
-  const imageIndex = Math.min(state.modal.imageIndex, asset.images.length - 1);
-  const image = asset.images[imageIndex];
-  const sideLabel = imageSideLabel(imageIndex);
+  const modalImages = modalImagesForAsset(asset);
+  const imageIndex = Math.min(state.modal.imageIndex, modalImages.length - 1);
+  const image = modalImages[imageIndex];
+  const sideLabel = imagePreviewLabel(image, imageIndex);
 
   elements.imageModalImage.src = image.dataUrl;
   elements.imageModalImage.alt = image.name;
   elements.imageModalSide.textContent = `${sideLabel}预览`;
   elements.imageModalTitle.textContent = `资产 ${asset.index}`;
   elements.imageModalFileName.textContent = image.name;
-  elements.imageModalSwitcher.innerHTML = asset.images.map((assetImage, index) => `
+  elements.imageModalSwitcher.innerHTML = modalImages.map((assetImage, index) => `
     <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}">
-      ${imageSideLabel(index)}
+      ${escapeHtml(imagePreviewLabel(assetImage, index))}
     </button>
   `).join("");
 }

@@ -4,11 +4,57 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   runAgnesSmoke,
+  runGeminiSmoke,
   runBraveSmoke,
   runEbaySmoke,
   runOwsSmoke,
   writeSmokeReport
 } from "./smoke-provider.mjs";
+
+const skippedGemini = await runGeminiSmoke({
+  env: {},
+  analyzeImpl: async () => {
+    throw new Error("should not call Gemini without credentials");
+  }
+});
+assert.equal(skippedGemini.status, "skipped");
+assert.deepEqual(skippedGemini.capabilities.map((capability) => capability.name), ["credentials"]);
+
+const geminiCalls = [];
+const geminiEnv = {
+  GEMINI_API_KEY: "AIza-test-gemini-key",
+  GEMINI_SMOKE_IMAGE_URL: "https://example.com/gemini-front.jpg",
+  GEMINI_SMOKE_BACK_IMAGE_URL: "https://example.com/gemini-back.jpg"
+};
+const geminiReport = await runGeminiSmoke({
+  env: geminiEnv,
+  analyzeImpl: async ({ images, prompt }) => {
+    geminiCalls.push({ images, prompt });
+    return {
+      provider: "gemini",
+      model_id: "gemini-3.1-flash-lite",
+      parse_source: "content",
+      finish_reason: "completed",
+      recognition_status: "CONFIRMED",
+      usage: {
+        image_count: images.length,
+        provider_calls: 1
+      }
+    };
+  }
+});
+assert.equal(geminiReport.status, "passed");
+assert.equal(geminiReport.provider, "gemini");
+assert.deepEqual(geminiReport.capabilities.map((capability) => capability.name), [
+  "single_image_json",
+  "front_back_multi_image_json"
+]);
+assert.equal(geminiCalls[0].images.length, 1);
+assert.equal(geminiCalls[1].images.length, 2);
+assert.match(geminiCalls[0].prompt, /provider smoke test/i);
+assert.equal(geminiReport.capabilities[1].details.image_count, "2");
+assert.equal(JSON.stringify(geminiReport).includes(geminiEnv.GEMINI_API_KEY), false);
+assert.equal(JSON.stringify(geminiReport).includes(geminiEnv.GEMINI_SMOKE_IMAGE_URL), false);
 
 const skipped = await runAgnesSmoke({
   env: {},

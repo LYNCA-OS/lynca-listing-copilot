@@ -19,6 +19,7 @@ const reviewFields = Object.freeze([
   "surface_color",
   "parallel_family",
   "parallel_exact",
+  "parallel",
   "serial_number",
   "collector_number",
   "checklist_code",
@@ -75,17 +76,23 @@ function blankReviewField(result = {}, field) {
   const writerRequired = new Set(Array.isArray(publicationGate.writer_required_fields)
     ? publicationGate.writer_required_fields
     : []);
+  const publishability = publicationGate.field_publishability?.[field]
+    || publicationGate.field_publication_states?.[field]
+    || "";
 
   return {
     field,
     predicted_value: pickValue(predictedFields, field),
     resolved_value: pickValue(resolvedFields, field),
     requires_review: writerRequired.has(field),
+    publishability,
     reviewed_value: field === "players" ? [] : "",
     reviewed_status: "UNREVIEWED",
+    allowed_reviewed_statuses: ["UNREVIEWED", "CONFIRMED", "UNKNOWN", "NOT_APPLICABLE"],
     review_label_type: "",
     allowed_review_label_types: ["FACT_CORRECTION", "TITLE_STYLE_CHANGE", "CONFIRMED_FACT", "NOT_APPLICABLE"],
     evidence_sources: [],
+    allowed_evidence_sources: ["CARD_FRONT", "CARD_BACK", "SLAB", "OFFICIAL_CHECKLIST", "OPERATOR_KNOWLEDGE", "APPROVED_MEMORY", "REGISTRY"],
     reviewer_notes: ""
   };
 }
@@ -162,7 +169,20 @@ export function buildSupabaseFeedbackFieldReviewPacket(report = {}, {
       purpose: "Create field-level reviewed labels for the fixed Supabase feedback development set.",
       corrected_title_rule: "corrected_title_hint is a review hint only and must not be copied as ground truth without visual or trusted-source evidence.",
       required_distinction: "Use FACT_CORRECTION when a card fact changes; use TITLE_STYLE_CHANGE when only wording/order/style changes.",
-      minimum_fields: ["year", "product", "players", "card_type", "parallel", "serial_number", "collector_number", "checklist_code", "grade_company", "card_grade", "auto_grade", "grade_type"]
+      minimum_fields: ["year", "product", "players", "card_type", "parallel", "surface_color", "parallel_family", "parallel_exact", "serial_number", "collector_number", "checklist_code", "grade_company", "card_grade", "auto_grade", "grade_type"],
+      reviewed_statuses: {
+        CONFIRMED: "Reviewer verified the field from image or trusted source.",
+        UNKNOWN: "Reviewer cannot verify the field.",
+        NOT_APPLICABLE: "Field does not apply to this card."
+      },
+      import_contract: {
+        task_key: "task_id",
+        field_path: "tasks[].fields.<field>",
+        reviewed_value: "Use scalar strings, booleans, or players[] arrays matching the field type.",
+        reviewed_status: "CONFIRMED, UNKNOWN, or NOT_APPLICABLE required before import.",
+        evidence_sources: "At least one trusted source is required for CONFIRMED factual labels.",
+        corrected_title_hint: "Reference only; never imported as ground truth."
+      }
     },
     summary: {
       task_count: tasks.length,

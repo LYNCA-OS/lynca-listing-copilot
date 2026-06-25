@@ -18,13 +18,13 @@ const wemby = renderListingPresentation({
   maxLength: 80
 });
 
-assert.equal(wemby.final_title, "2023-24 Panini Prizm Victor Wembanyama Gold Prizm 31/50 RC PSA 10");
+assert.equal(wemby.final_title, "2023-24 Panini Prizm Victor Wembanyama Gold Prizm RC 31/50 PSA 10");
 assert.ok(wemby.final_title.length <= 80);
 assert.match(wemby.final_title, /31\/50/);
 assert.match(wemby.final_title, /PSA 10$/);
 assert.equal((wemby.final_title.match(/\bRC\b/g) || []).length, 1);
-assert.equal(wemby.modules.numbering.text, "31/50");
-assert.equal(wemby.modules.grading.text, "PSA 10");
+assert.equal(wemby.modules.variant_parallel_rarity.text, "Gold Prizm RC");
+assert.equal(wemby.modules.number_serial_grade.text, "31/50 · PSA 10");
 
 const ohtaniChrome = renderListingPresentation({
   resolved: {
@@ -279,15 +279,16 @@ const reviewedModules = renderListingPresentation({
     })
   }
 });
-assert.equal(reviewedModules.modules.numbering.status, "REVIEW");
-assert.equal(reviewedModules.modules.numbering.requires_review, true);
+assert.equal(reviewedModules.modules.number_serial_grade.status, "REVIEW");
+assert.equal(reviewedModules.modules.number_serial_grade.requires_review, true);
 assert.deepEqual(reviewedModules.module_order, [
-  "product_identity",
+  "year",
+  "franchise_brand",
+  "product_set",
   "subject",
-  "card_variant",
-  "numbering",
-  "attributes",
-  "grading"
+  "card_type",
+  "variant_parallel_rarity",
+  "number_serial_grade"
 ]);
 
 console.log("renderer tests passed");

@@ -4,6 +4,7 @@ import {
   createVisionSource,
   normalizeResolvedFields
 } from "../lib/listing/evidence/evidence-schema.mjs";
+import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import {
   applyIdentityResolutionGate,
   applyIdentityResolutionGateWithConvergence,
@@ -90,11 +91,14 @@ const agnesOnly = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(agnesOnly.identity_resolution_status, "ABSTAIN");
-assert.equal(agnesOnly.final_title, "Topps Chrome Shohei Ohtani");
+assert.equal(agnesOnly.final_title, "2024 Topps Chrome Shohei Ohtani");
 assert.equal(agnesOnly.title_render_source, "identity_resolution_partial_writer_draft");
 assert.equal(agnesOnly.publication_gate.auto_publish_allowed, false);
 assert.equal(agnesOnly.publication_gate.writer_review_ready, true);
+assert.equal(agnesOnly.publication_gate.workflow_route, "DEEP_REVIEW");
 assert.deepEqual(agnesOnly.publication_gate.writer_required_fields.sort(), ["parallel", "serial_number", "year"]);
+assert.equal(agnesOnly.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(agnesOnly.draft_gate.by_field.year.requires_writer_confirmation, true);
 assert.ok(agnesOnly.unresolved.includes("identity resolution requires writer review before upload"));
 assert.equal(agnesOnly.model_title_suggestion, "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50");
 
@@ -141,11 +145,16 @@ assert.equal(fastVisionNoRisk.identity_resolution_status, "RESOLVED");
 assert.equal(fastVisionNoRisk.publication_gate.auto_publish_allowed, false);
 assert.equal(fastVisionNoRisk.publication_gate.writer_review_ready, true);
 assert.deepEqual(fastVisionNoRisk.writer_required_fields, ["year"]);
-assert.doesNotMatch(fastVisionNoRisk.final_title, /2024/);
+assert.match(fastVisionNoRisk.final_title, /2024/);
 assert.match(fastVisionNoRisk.final_title, /Topps Chrome/);
+assert.equal(fastVisionNoRisk.publication_gate.identity_gate_status, "CORE_RESOLVED");
+assert.equal(fastVisionNoRisk.publication_gate.workflow_route, "STANDARD_REVIEW");
+assert.equal(fastVisionNoRisk.publication_gate.field_publication_states.year, "REVIEW_REQUIRED");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.mode, "PARTIAL_WRITER_DRAFT");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.value, "Topps Chrome");
+assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.publishability, "PUBLISHABLE_NARROW");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.review_required_fields[0].field, "year");
+assert.equal(fastVisionNoRisk.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
 assert.ok(fastVisionNoRisk.conflict_map.every((conflict) => {
   return conflict.conflict_type !== "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE" || conflict.resolved === true;
 }));
@@ -164,8 +173,10 @@ const fastVisionYearWithAuthoritativeBack = primaryFastVisionResult({
 });
 assert.equal(fastVisionYearWithAuthoritativeBack.identity_resolution_status, "RESOLVED");
 assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.auto_publish_allowed, false);
-assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.model_auto_publish_recommended, true);
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.model_auto_publish_recommended, false);
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.model_quick_review_recommended, true);
 assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.writer_quick_approval_ready, true);
+assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.workflow_route, "LOW_TOUCH_REVIEW");
 assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.human_approval_required, true);
 assert.equal(fastVisionYearWithAuthoritativeBack.publication_gate.upload_blocked_until_writer_approval, true);
 assert.match(fastVisionYearWithAuthoritativeBack.final_title, /2024/);
@@ -209,14 +220,18 @@ assert.equal(fastVisionExactParallelWithoutCatalog.identity_resolution_status, "
 assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.auto_publish_allowed, false);
 assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_ready, true);
 assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.partial_writer_draft, true);
-assert.deepEqual(fastVisionExactParallelWithoutCatalog.writer_required_fields, ["parallel", "year"]);
-assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.field_publication_states.parallel, "OBSERVED");
-assert.doesNotMatch(fastVisionExactParallelWithoutCatalog.final_title, /Purple|Wave|Refractor/i);
-assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_items[0].current_value, "Purple Wave Refractor");
-assert.equal(
-  fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_items[0].resolution_reason,
-  "catalog_required_for_exact_taxonomy"
-);
+assert.deepEqual([...fastVisionExactParallelWithoutCatalog.writer_required_fields].sort(), ["parallel", "year"]);
+assert.equal(fastVisionExactParallelWithoutCatalog.publication_gate.field_publication_states.parallel, "REVIEW_REQUIRED");
+assert.match(fastVisionExactParallelWithoutCatalog.final_title, /\bPurple\b/i);
+assert.doesNotMatch(fastVisionExactParallelWithoutCatalog.final_title, /Wave|Refractor/i);
+assert.equal(fastVisionExactParallelWithoutCatalog.draft_gate.by_field.parallel.selected_value, "Purple");
+assert.equal(fastVisionExactParallelWithoutCatalog.draft_gate.by_field.parallel.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.ok(fastVisionExactParallelWithoutCatalog.publication_gate.writer_review_items.some((item) => {
+  return item.field === "parallel"
+    && item.current_value === "Purple Wave Refractor"
+    && item.publishability === "REVIEW_REQUIRED"
+    && item.resolution_reason === "catalog_required_for_exact_taxonomy";
+}));
 
 const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   resolved: {
@@ -234,10 +249,11 @@ const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   verificationFields: ["serial_number"]
 });
 assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
-assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "Topps Chrome Shohei Ohtani");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani 31/50");
 assert.equal(fastVisionSerialWithoutFocusedVerification.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(fastVisionSerialWithoutFocusedVerification.writer_required_fields, ["year", "serial_number"]);
-assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
+assert.match(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
+assert.equal(fastVisionSerialWithoutFocusedVerification.draft_gate.by_field.serial_number.display_policy, "INCLUDE_HIGHLIGHTED");
 
 const fastVisionSerialWithFocusedVerification = primaryFastVisionResult({
   resolved: {
@@ -269,6 +285,31 @@ const fastVisionSerialWithFocusedVerification = primaryFastVisionResult({
 });
 assert.equal(fastVisionSerialWithFocusedVerification.identity_resolution_status, "RESOLVED");
 assert.match(fastVisionSerialWithFocusedVerification.final_title, /31\/50/);
+
+const visualOnlyGradeRequiresReview = primaryFastVisionResult({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  evidence: {
+    year: groundedEvidence("2024"),
+    product: visionOnlyEvidence("Topps Chrome"),
+    players: visionOnlyEvidence(["Shohei Ohtani"]),
+    grade_company: visionOnlyEvidence("PSA"),
+    card_grade: visionOnlyEvidence("10"),
+    grade_type: visionOnlyEvidence("CARD_ONLY")
+  }
+});
+assert.equal(visualOnlyGradeRequiresReview.publication_gate.field_publication_states.grade_company, "REVIEW_REQUIRED");
+assert.equal(visualOnlyGradeRequiresReview.publication_gate.field_publication_states.card_grade, "REVIEW_REQUIRED");
+assert.ok(visualOnlyGradeRequiresReview.writer_required_fields.includes("grade_company"));
+assert.match(visualOnlyGradeRequiresReview.final_title, /\bPSA 10\b/);
+assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.grade_company.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.card_grade.display_policy, "INCLUDE_HIGHLIGHTED");
 
 const groundedMultiView = applyIdentityResolutionGate({
   title: "provider title must not decide final facts",
@@ -329,6 +370,126 @@ const identityItems = evidenceDocumentToIdentityEvidenceItems({
 });
 assert.ok(identityItems.some((item) => item.source === "CARD_FRONT"));
 assert.ok(identityItems.some((item) => item.source === "CARD_BACK"));
+
+const providerInvariantInput = {
+  title: "2024 Topps Chrome Shohei Ohtani",
+  confidence: "HIGH",
+  reason: "Same evidence should gate the same way regardless of raw model provider.",
+  resolved: normalizeResolvedFields({
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"]
+  }),
+  evidence: {
+    year: visionOnlyEvidence("2024"),
+    product: visionOnlyEvidence("Topps Chrome"),
+    players: visionOnlyEvidence(["Shohei Ohtani"])
+  },
+  unresolved: []
+};
+const providerInvariantGemini = applyIdentityResolutionGate({
+  ...providerInvariantInput,
+  provider: "gemini"
+}, {
+  providerId: "gemini"
+});
+const providerInvariantGpt = applyIdentityResolutionGate({
+  ...providerInvariantInput,
+  provider: "openai_legacy"
+}, {
+  providerId: "openai_legacy"
+});
+const providerInvariantAgnes = applyIdentityResolutionGate({
+  ...providerInvariantInput,
+  provider: "agnes"
+}, {
+  providerId: "agnes"
+});
+assert.equal(providerInvariantGemini.identity_resolution_status, providerInvariantGpt.identity_resolution_status);
+assert.equal(providerInvariantGemini.identity_resolution_status, providerInvariantAgnes.identity_resolution_status);
+assert.deepEqual(providerInvariantGemini.writer_required_fields.sort(), providerInvariantGpt.writer_required_fields.sort());
+assert.deepEqual(providerInvariantGemini.writer_required_fields.sort(), providerInvariantAgnes.writer_required_fields.sort());
+assert.equal(providerInvariantGemini.final_title, providerInvariantGpt.final_title);
+assert.equal(providerInvariantGemini.final_title, providerInvariantAgnes.final_title);
+
+function structuredHighRiskProviderResult(provider) {
+  const evidenceDocument = providerPayloadToEvidenceDocument({
+    title: "",
+    confidence: "HIGH",
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      grade_company: "PSA",
+      card_grade: "10",
+      grade_type: "CARD_ONLY",
+      rc: true,
+      auto: true
+    },
+    field_evidence: {
+      year: {
+        value: "2024",
+        support_type: "VISION_ONLY",
+        visible_text: "2024",
+        confidence: 0.82,
+        review_required: true
+      },
+      grade: {
+        grade_company: "PSA",
+        card_grade: "10",
+        grade_type: "CARD_ONLY",
+        support_type: "SLAB_LABEL",
+        evidence_kind: "GRADE_LABEL",
+        visible_text: "PSA GEM MT 10",
+        confidence: 0.96,
+        review_required: false
+      },
+      rc: {
+        value: true,
+        support_type: "CARD_FRONT_PRINTED_TEXT",
+        evidence_kind: "RC_LOGO",
+        visible_text: "RC",
+        visible_marker: true,
+        confidence: 0.9,
+        review_required: false
+      },
+      auto: {
+        value: true,
+        support_type: "VISIBLE_SIGNATURE",
+        evidence_kind: "SIGNATURE",
+        signature_visible: true,
+        confidence: 0.86,
+        review_required: false
+      }
+    },
+    unresolved: []
+  }, {
+    images: [{ id: "image-front", side: "front" }]
+  });
+  return applyIdentityResolutionGate({
+    title: "",
+    model_title_suggestion: "",
+    confidence: "HIGH",
+    reason: "Structured field evidence should control year, grade, RC, and auto decisions.",
+    provider,
+    resolved: evidenceDocument.resolved,
+    evidence: evidenceDocument.evidence,
+    unresolved: evidenceDocument.unresolved
+  }, {
+    providerId: provider
+  });
+}
+
+const structuredGeminiGate = structuredHighRiskProviderResult("gemini");
+const structuredGptGate = structuredHighRiskProviderResult("openai_legacy");
+assert.equal(structuredGeminiGate.publication_gate.field_publication_states.year, "REVIEW_REQUIRED");
+assert.equal(structuredGeminiGate.publication_gate.field_publication_states.grade_company, "PUBLISHABLE_EXACT");
+assert.equal(structuredGeminiGate.publication_gate.field_publication_states.card_grade, "PUBLISHABLE_EXACT");
+assert.equal(structuredGeminiGate.publication_gate.field_publication_states.rc, "PUBLISHABLE_EXACT");
+assert.equal(structuredGeminiGate.publication_gate.field_publication_states.auto, "PUBLISHABLE_NARROW");
+assert.deepEqual(structuredGeminiGate.writer_required_fields, ["year"]);
+assert.deepEqual(structuredGeminiGate.writer_required_fields, structuredGptGate.writer_required_fields);
+assert.equal(structuredGeminiGate.final_title, structuredGptGate.final_title);
 
 const pokemonCritical = criticalFieldsForIdentityResolution(normalizeResolvedFields({
   product: "Pokemon Scarlet Violet",
@@ -420,7 +581,9 @@ const weakVisualParallelDropsWithoutBlocking = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.notEqual(weakVisualParallelDropsWithoutBlocking.identity_resolution_status, "ABSTAIN");
-assert.doesNotMatch(weakVisualParallelDropsWithoutBlocking.final_title, /Blue/i);
+assert.match(weakVisualParallelDropsWithoutBlocking.final_title, /\bBlue\b/i);
+assert.doesNotMatch(weakVisualParallelDropsWithoutBlocking.final_title, /Blue Prizm/i);
+assert.equal(weakVisualParallelDropsWithoutBlocking.draft_gate.by_field.parallel.selected_value, "Blue");
 assert.match(weakVisualParallelDropsWithoutBlocking.final_title, /Auto/i);
 
 const setFallbackSatisfiesProductIdentity = applyIdentityResolutionGate({
@@ -518,10 +681,12 @@ const serialFocusedFailure = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialFocusedFailure.identity_resolution_status, "ABSTAIN");
-assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialFocusedFailure.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialFocusedFailure.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialFocusedFailure.final_title, /196\/299/);
+assert.match(serialFocusedFailure.final_title, /#\/299/);
+assert.equal(serialFocusedFailure.draft_gate.by_field.serial_number.selected_value, "#/299");
 assert.ok(serialFocusedFailure.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_FOCUSED_VERIFICATION_FAILED"));
 assert.ok(serialFocusedFailure.resolution_trace.some((entry) => entry.step === "high_risk_verification_guard"));
 
@@ -551,10 +716,11 @@ const serialSingleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialSingleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialSingleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialSingleFrontSource.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialSingleFrontSource.final_title, /196\/299/);
+assert.match(serialSingleFrontSource.final_title, /#\/299/);
 assert.ok(serialSingleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const serialDoubleFrontSource = applyIdentityResolutionGate({
@@ -591,10 +757,11 @@ const serialDoubleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialDoubleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialDoubleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialDoubleFrontSource.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialDoubleFrontSource.final_title, /196\/299/);
+assert.match(serialDoubleFrontSource.final_title, /#\/299/);
 assert.ok(serialDoubleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
@@ -731,10 +898,11 @@ const lowConfidenceYear = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(lowConfidenceYear.identity_resolution_status, "ABSTAIN");
-assert.equal(lowConfidenceYear.final_title, "Star Wars Chrome Black Paul Kasey Auto");
+assert.equal(lowConfidenceYear.final_title, "2017 Star Wars Chrome Black Paul Kasey Auto");
 assert.equal(lowConfidenceYear.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(lowConfidenceYear.writer_required_fields, ["year"]);
-assert.doesNotMatch(lowConfidenceYear.final_title, /2017/);
+assert.match(lowConfidenceYear.final_title, /2017/);
+assert.equal(lowConfidenceYear.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
 assert.ok(lowConfidenceYear.conflict_map.some((conflict) => conflict.conflict_type === "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE"));
 
 const frontOnlyColorDescriptorDropped = applyIdentityResolutionGate({

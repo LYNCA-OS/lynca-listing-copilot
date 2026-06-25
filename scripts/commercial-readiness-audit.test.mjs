@@ -227,11 +227,11 @@ assert.equal(byId.agnes_live_smoke.status, "warning");
 assert.equal(byId.agnes_live_smoke.details.json_baseline_verified, true);
 assert.deepEqual(byId.agnes_live_smoke.details.optional_failures, ["tool_call"]);
 assert.equal(byId.provider_default_policy.status, "passed");
-assert.equal(byId.provider_default_policy.details.cascade_implicit_default, true);
+assert.equal(byId.provider_default_policy.details.gemini_implicit_default, true);
 assert.equal(byId.provider_default_policy.details.gpt_primary_fast_vision, true);
 assert.equal(byId.provider_default_policy.details.agnes_auxiliary_verifier, true);
 assert.equal(byId.provider_default_policy.details.agnes_conditional_verifier, true);
-assert.equal(byId.provider_default_policy.details.gpt_implicit_default, "primary_inside_cascade");
+assert.equal(byId.provider_default_policy.details.gpt_implicit_default, "fallback_and_ab_test_only");
 assert.equal(byId.provider_default_policy.details.standalone_gpt_default, "blocked_by_policy");
 assert.equal(byId.provider_default_policy.details.gpt_visible_button, true);
 assert.equal(byId.publishing_approval_gate.status, "passed");
@@ -294,7 +294,7 @@ assert.match(text, /supabase_commercial_ground_truth: blocked required fields ye
 assert.match(text, /commercial_review_packet: passed tasks 248, corrected-title-as-truth no, suggested-field-hints 248/);
 assert.match(text, /commercial_review_worklist: passed tasks 248, P0 23, P1 97, uses-ground-truth no/);
 assert.match(text, /identity_result_cache: passed read yes, write no, training no/);
-assert.match(text, /gpt_implicit_default: primary_inside_cascade/);
+assert.match(text, /gpt_implicit_default: fallback_and_ab_test_only/);
 assert.match(text, /standalone_gpt_default: blocked_by_policy/);
 assert.match(text, /publishing_destination: blocked/);
 

@@ -69,6 +69,67 @@ const partialResolved = validateProviderEvidencePayload("agnes", {
 assert.equal(partialResolved.resolved.players[0], "Tester");
 assert.equal(partialResolved.resolved.card_count, 1);
 
+const structuredFieldEvidence = validateProviderEvidencePayload("gemini", {
+  field_evidence: {
+    year: {
+      value: "2024",
+      support_type: "VISION_ONLY",
+      visible_text: "2024",
+      confidence: 0.82,
+      review_required: true
+    },
+    grade: {
+      grade_company: "PSA",
+      card_grade: "10",
+      grade_type: "CARD_ONLY",
+      support_type: "SLAB_LABEL",
+      evidence_kind: "GRADE_LABEL",
+      visible_text: "PSA GEM MT 10",
+      confidence: 0.96,
+      review_required: false
+    },
+    rc: {
+      value: true,
+      support_type: "CARD_FRONT_PRINTED_TEXT",
+      evidence_kind: "RC_LOGO",
+      visible_text: "RC",
+      visible_marker: true,
+      confidence: 0.9,
+      review_required: false
+    },
+    auto: {
+      value: true,
+      support_type: "VISIBLE_SIGNATURE",
+      evidence_kind: "SIGNATURE",
+      signature_visible: true,
+      confidence: 0.86,
+      review_required: false
+    }
+  },
+  unresolved: []
+});
+assert.equal(structuredFieldEvidence.field_evidence.grade.grade_company, "PSA");
+
+const arrayFieldEvidence = validateProviderEvidencePayload("openai_legacy", {
+  field_evidence: [
+    {
+      field: "serial_number",
+      value: "31/50",
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      source_image_id: "front",
+      source_region: "serial_number",
+      raw_text: "31/50",
+      visible_text: "31/50",
+      direct_observation: true,
+      directly_observed: true,
+      confidence: 0.91,
+      review_required: false
+    }
+  ],
+  unresolved: []
+});
+assert.equal(arrayFieldEvidence.field_evidence.serial_number.raw_text, "31/50");
+
 const parsedTool = parseProviderMessagePayload({
   tool_calls: [
     {
@@ -146,6 +207,11 @@ const schemaFailures = [
       unresolved: []
     },
     expectedPath: "resolved.card_count"
+  },
+  {
+    name: "bad field evidence key",
+    payload: { field_evidence: { fake_field: { value: "Tester" } }, unresolved: [] },
+    expectedPath: "field_evidence.fake_field"
   },
   {
     name: "bad image quality",

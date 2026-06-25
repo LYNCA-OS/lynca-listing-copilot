@@ -26,7 +26,12 @@ const packet = buildSupabaseFeedbackFieldReviewPacket({
         abstain_reason_codes: ["MISSING_CRITICAL_FIELD"]
       },
       publication_gate: {
-        writer_required_fields: ["year", "serial_number"]
+        writer_required_fields: ["year", "serial_number"],
+        field_publishability: {
+          year: "REVIEW_REQUIRED",
+          product: "PUBLISHABLE_NARROW",
+          serial_number: "BLOCKING"
+        }
       },
       image_inputs: [
         { role: "front_original", bucket: "listing-feedback-images", object_path: "feedback/front.jpg" }
@@ -43,10 +48,16 @@ assert.equal(packet.summary.corrected_title_used_as_ground_truth, false);
 assert.equal(packet.tasks[0].corrected_title_hint_policy.can_be_used_as_ground_truth, false);
 assert.equal(packet.tasks[0].fields.year.requires_review, true);
 assert.equal(packet.tasks[0].fields.serial_number.requires_review, true);
+assert.equal(packet.tasks[0].fields.year.publishability, "REVIEW_REQUIRED");
+assert.equal(packet.tasks[0].fields.serial_number.publishability, "BLOCKING");
 assert.equal(packet.tasks[0].fields.product.predicted_value, "Topps Chrome");
 assert.equal(packet.tasks[0].fields.product.reviewed_value, "");
+assert.ok(packet.tasks[0].fields.product.allowed_reviewed_statuses.includes("CONFIRMED"));
+assert.ok(packet.tasks[0].fields.product.allowed_evidence_sources.includes("OFFICIAL_CHECKLIST"));
 assert.deepEqual(packet.tasks[0].fields.players.reviewed_value, []);
 assert.ok(packet.tasks[0].fields.year.allowed_review_label_types.includes("FACT_CORRECTION"));
 assert.ok(packet.tasks[0].fields.year.allowed_review_label_types.includes("TITLE_STYLE_CHANGE"));
+assert.ok(packet.instructions.import_contract);
+assert.ok(packet.summary.review_fields.includes("parallel"));
 
 console.log("Supabase feedback field review packet tests passed");

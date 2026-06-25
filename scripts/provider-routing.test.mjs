@@ -24,22 +24,52 @@ const storedImages = [{ objectPath: "listing-assets/2026-06-22/asset/front_origi
 const env = {
   DEFAULT_VISION_PROVIDER: "",
   EMERGENCY_VISION_PROVIDER: "openai_legacy",
+  ENABLE_GEMINI_PROVIDER: "true",
   ENABLE_AGNES_PROVIDER: "true",
   ENABLE_GPT41_EMERGENCY_PROVIDER: "true",
+  ENABLE_AGNES_AUTO_VERIFIER: "false",
+  ENABLE_FAST_CASCADE_PROVIDER: "false",
   ALLOW_EXPLICIT_GPT41_RETRY: "true",
+  GEMINI_API_KEY: "test-gemini-key",
+  GEMINI_MODEL: "gemini-3.1-flash-lite",
   AGNES_API_KEY: "test-agnes-key",
   AGNES_BASE_URL: "https://apihub.agnes-ai.com/v1",
   AGNES_MODEL: "agnes-2.0-flash",
   OPENAI_API_KEY: "test-openai-key",
-  OPENAI_LISTING_MODEL: "gpt-4.1-mini"
+  OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
 };
 
 const defaultSelection = selectVisionProvider({ images: remoteImages, env });
-assert.equal(defaultSelection.provider_id, "cascade_fast");
-assert.equal(defaultSelection.model_id, "gpt-4.1-mini + agnes-2.0-flash");
+assert.equal(defaultSelection.provider_id, "gemini");
+assert.equal(defaultSelection.model_id, "gemini-3.1-flash-lite");
 
 const storedSelection = selectVisionProvider({ images: storedImages, env });
-assert.equal(storedSelection.provider_id, "cascade_fast");
+assert.equal(storedSelection.provider_id, "gemini");
+
+const geminiDataUrlSelection = selectVisionProvider({ images: dataUrlImages, env });
+assert.equal(geminiDataUrlSelection.provider_id, "gemini");
+
+assert.throws(
+  () => selectVisionProvider({
+    requestedProvider: "cascade_fast",
+    images: storedImages,
+    env
+  }),
+  /agnes_auto_verifier_disabled|disabled_by_env/i,
+  "automatic GPT+Agnes cascade must be disabled by default"
+);
+
+const cascadeSelection = selectVisionProvider({
+  requestedProvider: "cascade_fast",
+  images: storedImages,
+  env: {
+    ...env,
+    ENABLE_AGNES_AUTO_VERIFIER: "true",
+    ENABLE_FAST_CASCADE_PROVIDER: "true"
+  }
+});
+assert.equal(cascadeSelection.provider_id, "cascade_fast");
+assert.equal(cascadeSelection.model_id, "gpt-4.1-mini-2025-04-14 + agnes-2.0-flash");
 
 const agnesSelection = selectVisionProvider({
   requestedProvider: "agnes",
@@ -66,7 +96,7 @@ const emergencySelection = selectVisionProvider({
   env
 });
 assert.equal(emergencySelection.provider_id, "openai_legacy");
-assert.equal(emergencySelection.model_id, "gpt-4.1-mini");
+assert.equal(emergencySelection.model_id, "gpt-4.1-mini-2025-04-14");
 
 assert.throws(
   () => selectVisionProvider({ requestedProvider: "agnes", images: dataUrlImages, env }),
@@ -75,9 +105,12 @@ assert.throws(
 );
 
 const cascadeWithoutAgnes = selectVisionProvider({
+  requestedProvider: "cascade_fast",
   images: remoteImages,
   env: {
     ...env,
+    ENABLE_AGNES_AUTO_VERIFIER: "true",
+    ENABLE_FAST_CASCADE_PROVIDER: "true",
     DEFAULT_VISION_PROVIDER: "",
     AGNES_API_KEY: "",
     OPENAI_API_KEY: "test-openai-key"
@@ -108,15 +141,31 @@ assert.throws(
 );
 
 const cascadeWithInvalidAgnesModel = selectVisionProvider({
+  requestedProvider: "cascade_fast",
   images: remoteImages,
   env: {
     ...env,
+    ENABLE_AGNES_AUTO_VERIFIER: "true",
+    ENABLE_FAST_CASCADE_PROVIDER: "true",
     AGNES_MODEL: "agnes-experimental"
   }
 });
 assert.equal(cascadeWithInvalidAgnesModel.provider_id, "cascade_fast");
 assert.equal(cascadeWithInvalidAgnesModel.provider.secondary_configured, false);
 assert.equal(cascadeWithInvalidAgnesModel.provider.secondary_disabled_reason, "agnes_model_not_allowed");
+
+assert.throws(
+  () => selectVisionProvider({
+    requestedProvider: "gemini",
+    images: remoteImages,
+    env: {
+      ...env,
+      GEMINI_MODEL: "not-gemini"
+    }
+  }),
+  /model_not_allowed/i,
+  "Gemini model ids must remain within the Gemini model namespace"
+);
 
 assert.throws(
   () => selectVisionProvider({
@@ -149,13 +198,13 @@ const disabledProviders = listAvailableVisionProviders({
   ...env,
   ENABLE_GPT41_EMERGENCY_PROVIDER: "false"
 });
-assert.deepEqual(disabledProviders.map((provider) => provider.id), ["cascade_fast", "agnes"]);
+assert.deepEqual(disabledProviders.map((provider) => provider.id), ["gemini", "agnes"]);
 
 const retryDisabledProviders = listAvailableVisionProviders({
   ...env,
   ALLOW_EXPLICIT_GPT41_RETRY: "false"
 });
-assert.deepEqual(retryDisabledProviders.map((provider) => provider.id), ["cascade_fast", "agnes"]);
+assert.deepEqual(retryDisabledProviders.map((provider) => provider.id), ["gemini", "agnes"]);
 
 assert.throws(
   () => selectVisionProvider({
@@ -394,7 +443,11 @@ const openAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
 assert.equal(openAiRequest.url, "https://api.openai.com/v1/responses");
 assert.equal(openAiRequest.init.headers.authorization, "Bearer test-openai-key");
 const openAiBody = JSON.parse(openAiRequest.init.body);
-assert.equal(openAiBody.model, "gpt-4.1-mini");
+assert.equal(openAiBody.model, "gpt-4.1-mini-2025-04-14");
+assert.equal(openAiBody.input[0].content[1].detail, "high");
+assert.equal(openAiBody.text.format.type, "json_schema");
+assert.equal(openAiBody.text.format.strict, true);
+assert.equal(openAiBody.text.format.schema.additionalProperties, false);
 assert.equal(openAiBody.input[0].content[1].type, "input_image");
 assert.equal(openAiResult.parsed.fields.player, "Emergency");
 assert.equal(openAiResult.usage.provider_calls, 1);
@@ -422,6 +475,8 @@ assert.equal(invalidOpenAiModelFetchCalled, false, "invalid OpenAI emergency mod
 
 assert.equal(providerServerConcurrencyLimit("agnes", {}), 2);
 assert.equal(providerServerConcurrencyLimit("openai_legacy", {}), 6);
+assert.equal(providerServerConcurrencyLimit("gemini", {}), 4);
+assert.equal(providerServerConcurrencyLimit("gemini", { GEMINI_PROVIDER_SERVER_CONCURRENCY: "8" }), 8);
 assert.equal(providerServerConcurrencyLimit("agnes", { AGNES_PROVIDER_SERVER_CONCURRENCY: "4" }), 4);
 
 clearProviderConcurrencyForTests();

@@ -31,9 +31,14 @@ const evidenceField = createEvidenceField({
   sources: [
     createVisionSource({
       imageId: "image-front",
+      sourceCropId: "asset-1__image-front__serial_number__field-crop-v1",
       side: "front",
       region: "serial_number",
       observedText: "31/50",
+      rawText: "31/50",
+      sourceInferenceMethod: "field_crop_vision",
+      sourceObjectPath: "listing-assets/source.jpg",
+      derivedObjectPath: "listing-assets/serial-crop.jpg",
       glareOcclusion: 0.06,
       blurScore: 0.04,
       trustTier: 1
@@ -41,6 +46,8 @@ const evidenceField = createEvidenceField({
   ]
 });
 assert.equal(validateEvidenceField(evidenceField).length, 0);
+assert.equal(evidenceField.sources[0].source_crop_id, "asset-1__image-front__serial_number__field-crop-v1");
+assert.equal(evidenceField.sources[0].source_inference_method, "field_crop_vision");
 
 const invalidEvidence = {
   ...evidenceField,
@@ -160,6 +167,118 @@ assert.equal(evidenceDocument.resolved.checklist_code, "UV-16");
 assert.equal(evidenceDocument.evidence.serial_number.status, "CONFIRMED");
 assert.equal(evidenceDocument.evidence.serial_number.sources[0].source_type, "VISION_MODEL");
 assert.doesNotThrow(() => assertValidEvidenceDocument(evidenceDocument));
+
+const cropBoundEvidenceDocument = providerPayloadToEvidenceDocument({
+  title: "2024 Topps Chrome Test Player 31/50",
+  confidence: "HIGH",
+  fields: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    serial_number: "31/50"
+  },
+  field_evidence: {
+    serial_number: {
+      value: "31/50",
+      support_type: "CARD_FRONT_PRINTED_TEXT",
+      region: "serial_number",
+      visible_text: "31/50",
+      confidence: 0.94
+    }
+  },
+  unresolved: []
+}, {
+  images: [
+    { id: "front-original", side: "front" },
+    {
+      id: "serial-crop",
+      derived: true,
+      sourceRegion: "serial_number",
+      storageRole: "serial_crop",
+      objectPath: "listing-assets/serial-crop.jpg",
+      cropMetadata: {
+        crop_id: "asset-1__front-original__serial_number__field-crop-v1",
+        source_image_id: "front-original",
+        source_object_path: "listing-assets/front.jpg",
+        source_side: "front",
+        source_region: "serial_number",
+        crop_role: "serial_crop",
+        derived_object_path: "listing-assets/serial-crop.jpg"
+      }
+    }
+  ]
+});
+assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].image_id, "serial-crop");
+assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].source_crop_id, "asset-1__front-original__serial_number__field-crop-v1");
+assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].source_inference_method, "field_crop_vision");
+assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].source_object_path, "listing-assets/front.jpg");
+assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].derived_object_path, "listing-assets/serial-crop.jpg");
+assert.doesNotThrow(() => assertValidEvidenceDocument(cropBoundEvidenceDocument));
+
+const structuredHighRiskFieldDocument = providerPayloadToEvidenceDocument({
+  title: "",
+  confidence: "HIGH",
+  fields: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY",
+    rc: true,
+    auto: true
+  },
+  field_evidence: {
+    year: {
+      value: "2024",
+      support_type: "VISION_ONLY",
+      visible_text: "2024",
+      confidence: 0.82,
+      review_required: true
+    },
+    grade: {
+      grade_company: "PSA",
+      card_grade: "10",
+      grade_type: "CARD_ONLY",
+      support_type: "SLAB_LABEL",
+      evidence_kind: "GRADE_LABEL",
+      visible_text: "PSA GEM MT 10",
+      confidence: 0.96,
+      review_required: false
+    },
+    rc: {
+      value: true,
+      support_type: "CARD_FRONT_PRINTED_TEXT",
+      evidence_kind: "RC_LOGO",
+      visible_text: "RC",
+      visible_marker: true,
+      confidence: 0.9,
+      review_required: false
+    },
+    auto: {
+      value: true,
+      support_type: "VISIBLE_SIGNATURE",
+      evidence_kind: "SIGNATURE",
+      signature_visible: true,
+      confidence: 0.86,
+      review_required: false
+    }
+  },
+  unresolved: []
+}, {
+  images: [
+    { id: "image-front", side: "front" }
+  ]
+});
+assert.equal(structuredHighRiskFieldDocument.evidence.year.status, "REVIEW");
+assert.equal(structuredHighRiskFieldDocument.evidence.year.sources[0].source_type, "VISION_MODEL");
+assert.equal(structuredHighRiskFieldDocument.evidence.grade_company.sources[0].source_type, "SLAB_LABEL");
+assert.equal(structuredHighRiskFieldDocument.evidence.card_grade.sources[0].source_type, "SLAB_LABEL");
+assert.equal(structuredHighRiskFieldDocument.evidence.rc.sources[0].source_type, "CARD_FRONT");
+assert.equal(structuredHighRiskFieldDocument.evidence.rc.sources[0].evidence_kind, "RC_LOGO");
+assert.equal(structuredHighRiskFieldDocument.evidence.auto.sources[0].source_type, "VISION_MODEL");
+assert.equal(structuredHighRiskFieldDocument.evidence.auto.sources[0].signature_visible, true);
+assert.doesNotThrow(() => assertValidEvidenceDocument(structuredHighRiskFieldDocument));
 
 const groundedIdentityMarkersDocument = providerPayloadToEvidenceDocument({
   title: "2024 Bowman Chrome Shohei Ohtani 1st Bowman RC",

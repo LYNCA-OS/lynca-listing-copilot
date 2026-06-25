@@ -151,6 +151,13 @@ async function handleApi(request, response, pathname) {
     return true;
   }
 
+  if (pathname === "/api/listing-image-verify-existing") {
+    const moduleUrl = pathToFileURL(join(root, "api/listing-image-verify-existing.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
   if (pathname === "/api/listing-render-title") {
     const moduleUrl = pathToFileURL(join(root, "api/listing-render-title.js")).href;
     const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);

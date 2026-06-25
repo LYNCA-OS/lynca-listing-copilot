@@ -6,6 +6,7 @@
   "additionalProperties": true,
   "anyOf": [
     { "required": ["evidence"] },
+    { "required": ["field_evidence"] },
     { "required": ["fields"] },
     { "required": ["title"] },
     { "required": ["model_title_suggestion"] },
@@ -38,6 +39,74 @@
       "additionalProperties": {
         "type": "object"
       }
+    },
+    "field_evidence": {
+      "description": "Provider-agnostic structured support for core and high-risk fields. Gemini may return an object keyed by field; strict OpenAI may return an array with a field property.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "value": {},
+              "grade_company": { "type": ["string", "null"] },
+              "card_grade": { "type": ["string", "null"] },
+              "auto_grade": { "type": ["string", "null"] },
+              "grade_type": { "type": ["string", "null"] },
+              "support_type": { "type": ["string", "null"] },
+              "evidence_type": { "type": ["string", "null"] },
+              "evidence_kind": { "type": ["string", "null"] },
+              "visible_text": { "type": ["string", "null"] },
+              "raw_text": { "type": ["string", "null"] },
+              "source_type": { "type": ["string", "null"] },
+              "source_image_id": { "type": ["string", "null"] },
+              "source_region": { "type": ["string", "null"] },
+              "status": { "type": ["string", "null"] },
+              "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+              "review_required": { "type": ["boolean", "null"] },
+              "visible_marker": { "type": ["boolean", "null"] },
+              "signature_visible": { "type": ["boolean", "null"] },
+              "text_visible": { "type": ["boolean", "null"] },
+              "direct_observation": { "type": ["boolean", "null"] },
+              "directly_observed": { "type": ["boolean", "null"] },
+              "unresolved_reason": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": { "type": "string" },
+          "value": {},
+          "grade_company": { "type": ["string", "null"] },
+          "card_grade": { "type": ["string", "null"] },
+          "auto_grade": { "type": ["string", "null"] },
+          "grade_type": { "type": ["string", "null"] },
+          "support_type": { "type": ["string", "null"] },
+          "evidence_type": { "type": ["string", "null"] },
+          "evidence_kind": { "type": ["string", "null"] },
+          "visible_text": { "type": ["string", "null"] },
+              "raw_text": { "type": ["string", "null"] },
+          "source_type": { "type": ["string", "null"] },
+              "source_image_id": { "type": ["string", "null"] },
+              "source_region": { "type": ["string", "null"] },
+          "status": { "type": ["string", "null"] },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "review_required": { "type": ["boolean", "null"] },
+          "visible_marker": { "type": ["boolean", "null"] },
+          "signature_visible": { "type": ["boolean", "null"] },
+          "text_visible": { "type": ["boolean", "null"] },
+          "direct_observation": { "type": ["boolean", "null"] },
+              "directly_observed": { "type": ["boolean", "null"] },
+          "unresolved_reason": { "type": ["string", "null"] }
+            },
+            "additionalProperties": true
+          }
+        }
+      ]
     },
     "image_quality": {
       "type": "object"

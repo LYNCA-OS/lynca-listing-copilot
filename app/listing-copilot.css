@@ -619,6 +619,49 @@ h3 {
   justify-self: end;
 }
 
+.field-crop-strip {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.field-crop-button {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  cursor: zoom-in;
+}
+
+.field-crop-button img {
+  width: 100%;
+  aspect-ratio: 1.28 / 1;
+  display: block;
+  object-fit: cover;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.field-crop-button span {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 850;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-crop-button:hover {
+  border-color: rgba(88, 199, 245, 0.54);
+  color: var(--ink);
+}
+
 .file-name {
   overflow: hidden;
   color: var(--ink);
@@ -763,6 +806,21 @@ h3 {
   border-color: rgba(240, 200, 117, 0.38);
 }
 
+.writer-module.display-include-highlighted {
+  border-color: rgba(240, 200, 117, 0.52);
+  background: rgba(240, 200, 117, 0.075);
+}
+
+.writer-module.display-suggest-only,
+.writer-module.priority-critical {
+  border-color: rgba(255, 143, 143, 0.46);
+  background: rgba(255, 143, 143, 0.07);
+}
+
+.writer-module.display-include-normal {
+  border-color: rgba(112, 214, 159, 0.28);
+}
+
 .writer-module span {
   min-width: 0;
   color: var(--subtle);
@@ -804,6 +862,17 @@ h3 {
   color: var(--muted);
   font-size: 10px;
   font-weight: 900;
+}
+
+.writer-module.display-include-highlighted small {
+  border-color: rgba(240, 200, 117, 0.34);
+  color: var(--yellow);
+}
+
+.writer-module.display-suggest-only small,
+.writer-module.priority-critical small {
+  border-color: rgba(255, 143, 143, 0.34);
+  color: var(--red);
 }
 
 .publication-gate {

@@ -10,10 +10,16 @@ IMAGE_ROLES = {
     "front_alternate",
     "back_alternate",
     "serial_crop",
+    "subject_crop",
     "checklist_code_crop",
     "collector_number_crop",
+    "card_code_crop",
     "grade_label_crop",
     "year_product_crop",
+    "card_type_crop",
+    "autograph_crop",
+    "patch_relic_crop",
+    "parallel_crop",
     "surface_view",
     "additional",
 }
@@ -21,6 +27,10 @@ IMAGE_ROLES = {
 
 REQUESTED_FIELDS = {
     "subject",
+    "subject_name",
+    "subject_slot_1",
+    "subject_slot_2",
+    "subject_slot_3",
     "year_product",
     "serial_number",
     "collector_number",
@@ -28,7 +38,10 @@ REQUESTED_FIELDS = {
     "grade_label",
     "back_text",
     "parallel",
+    "parallel_surface",
     "card_type",
+    "autograph",
+    "patch_relic",
     "multi_card",
     "card_count",
 }
