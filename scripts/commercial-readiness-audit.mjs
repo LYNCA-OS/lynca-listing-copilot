@@ -232,38 +232,36 @@ async function auditProviderPolicy() {
   if (/allowLegacyDefault/.test(registry.text)) {
     failures.push("provider registry still contains allowLegacyDefault");
   }
-  if (!/const defaultId = envDefault \|\| visionProviderIds\.GEMINI/.test(registry.text)) {
-    failures.push("Gemini is not the implicit default provider in selectVisionProvider");
+  if (!/const defaultId = envDefault \|\| visionProviderIds\.OPENAI_LEGACY/.test(registry.text)) {
+    failures.push("GPT-4.1 mini is not the implicit production default provider in selectVisionProvider");
   }
   if (!/\[visionProviderIds\.GEMINI\]/.test(registry.text)) {
-    failures.push("Gemini provider is missing from provider registry");
+    failures.push("Gemini diagnostic provider is missing from provider registry");
   }
-  if (!/GPT-4\.1 single-provider mode may only be used through an explicit manual retry/.test(registry.text)) {
-    failures.push("GPT-4.1 explicit manual single-provider guard is missing");
+  if (!/role:\s*providerRoles\.PRIMARY/.test(registry.text)) {
+    failures.push("OpenAI provider is not marked as the production primary role");
   }
-  if (!/provider\.id === visionProviderIds\.OPENAI_LEGACY/.test(registry.text)) {
-    failures.push("OpenAI single-provider branch is missing from explicit retry guard");
-  }
-  if (!/gemini\?\.selectable/.test(statusApi.text)) {
-    failures.push("provider status API does not default to selectable Gemini");
+  if (!/openai\?\.selectable/.test(statusApi.text)) {
+    failures.push("provider status API does not default to selectable OpenAI");
   }
   if (!/state\.selectedProvider = payload\.default_provider \|\| ""/.test(appJs.text)) {
     failures.push("frontend does not use the server default provider");
   }
   if (/state\.selectedProvider\s*=\s*["']openai_legacy["']/.test(appJs.text)) {
-    failures.push("frontend default-selects GPT-4.1 single-provider mode instead of Gemini");
+    failures.push("frontend hard-codes GPT instead of using the server default provider");
   }
   if (!/provider === "openai_legacy"/.test(appJs.text) || !/data-emergency-retry/.test(appJs.text)) {
-    failures.push("frontend does not expose GPT-4.1 as a separate manual action");
+    failures.push("frontend does not preserve GPT-4.1 retry compatibility controls");
   }
 
   const details = {
-    gemini_implicit_default: failures.length === 0,
-    gpt_primary_fast_vision: false,
-    gpt_emergency_provider: /\[visionProviderIds\.OPENAI_LEGACY\]/.test(registry.text),
+    gpt_production_default: failures.length === 0,
+    gemini_diagnostic_only: /diagnostics_only:\s*true/.test(registry.text),
+    gpt_primary_fast_vision: true,
+    gpt_provider_present: /\[visionProviderIds\.OPENAI_LEGACY\]/.test(registry.text),
     mixed_model_cascade: /cascade_fast|secondary_provider_id|AGNES/i.test(registry.text) ? "present" : "removed",
-    gpt_implicit_default: failures.length === 0 ? "explicit_review_only" : "unknown",
-    standalone_gpt_default: failures.length === 0 ? "blocked_by_policy" : "unknown",
+    gpt_implicit_default: failures.length === 0 ? "production_primary" : "unknown",
+    standalone_gpt_default: failures.length === 0 ? "server_default" : "unknown",
     gpt_visible_button: /provider === "openai_legacy"/.test(appJs.text),
     gpt_emergency_retry_action: /data-emergency-retry/.test(appJs.text),
     checked_files: [registry.path, statusApi.path, appJs.path],
@@ -272,7 +270,7 @@ async function auditProviderPolicy() {
 
   return failures.length
     ? blocked("provider_default_policy", "Provider default policy is not safe enough for commercial readiness.", details)
-    : passed("provider_default_policy", "Gemini is the implicit default; GPT-4.1 remains explicit single-model review; automatic cascade is removed.", details);
+    : passed("provider_default_policy", "GPT-4.1 mini is the production default; Gemini is diagnostic-only; automatic cascade is removed.", details);
 }
 
 function destinationIdsFromPublisherContract(source) {

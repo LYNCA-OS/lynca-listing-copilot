@@ -22,8 +22,10 @@ const FIELD_MAX_CROPS_PER_ASSET = 6;
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
-  enable_stored_visual_features: true,
-  enable_query_visual_embeddings: true,
+  enable_stored_visual_features: false,
+  enable_query_visual_embeddings: false,
+  enable_vector_retrieval: false,
+  vector_retrieval_mode: "off",
   enable_gpt_failure_fallback: false,
   enable_gpt_provider_failure_fallback: false,
   enable_gpt_critical_verifier: false
@@ -720,8 +722,11 @@ function providerSmokeText(provider) {
 
 function providerCascadeText(provider) {
   const roles = new Set(provider.roles || [provider.role].filter(Boolean));
-  if (provider.id === "openai_legacy" || roles.has("emergency")) {
-    return "显式 GPT 单模型复核，不参与自动混合";
+  if (provider.id === "openai_legacy" || roles.has("primary")) {
+    return "GPT-4.1 mini 生产主路径，不参与自动混合";
+  }
+  if (roles.has("diagnostic")) {
+    return "离线/管理员诊断";
   }
   return "";
 }
@@ -1108,6 +1113,7 @@ function resultBox(result) {
       <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || "标题暂不可用")}</textarea>
       ${titleOverrideNotice(result)}
       ${moduleSummary(result)}
+      ${vectorCandidateNotice(result)}
       ${publicationGateNotice(result)}
       <p class="follow-up-advice">${result.reason || ""}</p>
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
@@ -1126,6 +1132,29 @@ function resultBox(result) {
           `).join("")}
         </div>
       </details>
+    </div>
+  `;
+}
+
+function vectorCandidateNotice(result) {
+  const retrieval = result.vector_candidate_packet?.vector_retrieval || result.vector_retrieval?.vector_retrieval || null;
+  if (!retrieval) return "";
+  const candidates = Array.isArray(retrieval.candidates) ? retrieval.candidates : [];
+  const top = candidates[0] || null;
+  const fields = top?.fields && typeof top.fields === "object"
+    ? Object.keys(top.fields).slice(0, 6).map((field) => reviewFieldLabels[field] || field).join(", ")
+    : "";
+  const status = retrieval.status_code || retrieval.status || "VECTOR_RETRIEVAL_UNAVAILABLE";
+  const assist = result.vector_prompt_assist_used === true ? "已进入 GPT" : "未进入 GPT";
+  const summary = top
+    ? `Top ${top.rank || 1} · sim ${top.similarity ?? "-"} · margin ${top.top1_top2_margin ?? "-"}`
+    : (retrieval.unavailable?.[0]?.reason || "无候选");
+
+  return `
+    <div class="publication-gate ${top ? "writer-ready" : "manual-required"}">
+      <span>向量候选支持 · ${escapeHtml(assist)}</span>
+      <strong>${escapeHtml(status)} · ${escapeHtml(summary)}</strong>
+      ${fields ? `<small>候选字段：${escapeHtml(fields)}</small>` : ""}
     </div>
   `;
 }

@@ -56,10 +56,10 @@ async function runProvider(provider, options = {}) {
     if (path === "/api/listing-provider-status") {
       return jsonResponse(200, {
         providers: [
-          { id: "gemini", role: "primary" },
-          { id: "openai_legacy", role: "failure_fallback" }
+          { id: "openai_legacy", role: "primary" },
+          { id: "gemini", role: "diagnostic" }
         ],
-        default_provider: "gemini"
+        default_provider: "openai_legacy"
       });
     }
 
@@ -84,7 +84,9 @@ async function runProvider(provider, options = {}) {
       const body = JSON.parse(init.body);
       titlePayloads.push(body);
       const vectorEnabled = body.provider_options?.enable_evidence_completion === true
-        && body.provider_options?.enable_stored_visual_features === true;
+        && body.provider_options?.enable_stored_visual_features === true
+        && body.provider_options?.enable_vector_retrieval === true
+        && body.provider_options?.vector_retrieval_mode === "assist";
       if (typeof titleResponder === "function") {
         const response = titleResponder({
           body,
@@ -159,7 +161,7 @@ assert.equal(gemini.report.provider, "gemini");
 assert.equal(gemini.report.provider_success_rate, 1);
 assert.equal(gemini.report.per_card_latency_ms.p50, 1234);
 assert.equal(gemini.report.cloud_preflight.ok, true);
-assert.equal(gemini.report.cloud_preflight.default_provider, "gemini");
+assert.equal(gemini.report.cloud_preflight.default_provider, "openai_legacy");
 assert.equal(gemini.report.breakpoint_completeness_avg.raw_provider_fields, 0.375);
 assert.equal(gemini.report.results[0].breakpoints.raw_provider_fields.year, "2025");
 assert.equal(gemini.report.results[0].breakpoints.normalized_evidence.product.value, "Topps Chrome");
@@ -186,6 +188,8 @@ assert.equal(geminiVector.titlePayload.provider, "gemini");
 assert.equal(geminiVector.titlePayload.provider_options.single_model_fast, false);
 assert.equal(geminiVector.titlePayload.provider_options.enable_evidence_completion, true);
 assert.equal(geminiVector.titlePayload.provider_options.enable_stored_visual_features, true);
+assert.equal(geminiVector.titlePayload.provider_options.enable_vector_retrieval, true);
+assert.equal(geminiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
 assert.equal(geminiVector.report.visual_vector_used_count, 1);
 assert.equal(geminiVector.report.visual_vector_candidate_count, 1);
 
@@ -196,6 +200,8 @@ assert.equal(openaiVector.titlePayload.explicitEmergency, true);
 assert.equal(openaiVector.titlePayload.provider_options.single_model_fast, false);
 assert.equal(openaiVector.titlePayload.provider_options.enable_evidence_completion, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_stored_visual_features, true);
+assert.equal(openaiVector.titlePayload.provider_options.enable_vector_retrieval, true);
+assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
 
 {
   const recovered = await runProvider("b", {
@@ -293,7 +299,7 @@ assert.equal(openaiVector.titlePayload.provider_options.enable_stored_visual_fea
         });
       }
       if (path === "/api/listing-provider-status") {
-        return jsonResponse(200, { providers: [], default_provider: "gemini" });
+        return jsonResponse(200, { providers: [], default_provider: "openai_legacy" });
       }
       if (path === "/api/listing-copilot-title") titleCalled = true;
       throw new Error(`unexpected fetch path for limit=0: ${path}`);

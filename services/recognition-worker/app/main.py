@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from typing import Any
 
@@ -11,7 +12,7 @@ except ImportError:  # pragma: no cover - local unit tests do not require FastAP
     HTTPException = Exception
 
 from .config import load_config
-from .contracts import response_for_unavailable, validate_request
+from .contracts import response_for_unavailable, validate_embed_request, validate_request
 from .pipelines.card_rectification import rectification_unavailable, rectify_card_from_array
 from .pipelines.candidate_verification import candidate_verification_unavailable
 from .pipelines.evidence_fusion import fuse_ocr_evidence
@@ -23,6 +24,161 @@ from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_unavail
 from .pipelines.region_proposal import propose_regions_for_rectified_card
 from .pipelines.visual_embeddings import extract_visual_embeddings
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
+
+_EMBEDDING_CACHE: dict[str, list[float]] = {}
+
+
+def _image_cache_hash(image: dict[str, Any], loaded: Any) -> str:
+    explicit = str(image.get("content_sha256") or image.get("content_hash") or "").strip().lower()
+    if explicit:
+        return explicit
+    array = getattr(loaded, "array", None)
+    if array is None:
+        return hashlib.sha256(str(getattr(loaded, "image_id", "")).encode("utf-8")).hexdigest()
+    return hashlib.sha256(array.tobytes()).hexdigest()
+
+
+def _embedding_cache_key(hash_value: str, role: str, config: Any) -> str:
+    return "|".join([
+        hash_value,
+        str(getattr(config, "visual_embedding_model_id", "")),
+        str(getattr(config, "visual_embedding_model_revision", "")),
+        str(getattr(config, "visual_embedding_preprocessing_version", "")),
+        str(role or ""),
+    ])
+
+
+def _embedding_response_unavailable(payload: dict[str, Any], config: Any, reason: str, started: float, errors: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    return {
+        "request_id": str(payload.get("request_id") or ""),
+        "status": "unavailable",
+        "reason": reason,
+        "embeddings": [],
+        "model_id": config.visual_embedding_model_id,
+        "model_revision": config.visual_embedding_model_revision,
+        "preprocessing_version": config.visual_embedding_preprocessing_version,
+        "embedding_dimensions": config.visual_embedding_dimensions,
+        "latency_ms": int((time.time() - started) * 1000),
+        **({"errors": errors} if errors else {}),
+    }
+
+
+def embed_images_payload(payload: dict[str, Any], authorization: str | None = None) -> dict[str, Any]:
+    started = time.time()
+    config = load_config()
+    verify_bearer_token(authorization, config.token)
+    errors = validate_embed_request(payload, config)
+    if errors:
+        raise ValueError({"errors": errors})
+
+    for image in payload.get("images", []):
+        validate_image_url(image.get("signed_url", ""), UrlPolicy(config.allowed_image_hosts))
+
+    if not config.enable_image_download:
+        return _embedding_response_unavailable(payload, config, "image_download_disabled", started)
+    if not config.enable_visual_embeddings:
+        return _embedding_response_unavailable(payload, config, "visual_embeddings_disabled", started)
+
+    image_loads = []
+    image_load_errors = []
+    for image in payload["images"]:
+        try:
+            image_loads.append(load_signed_image(
+                image,
+                allowed_hosts=config.allowed_image_hosts,
+                max_bytes=config.max_image_bytes,
+                max_total_pixels=config.max_total_pixels,
+                timeout_seconds=config.request_timeout_seconds,
+            ))
+        except (ImageLoadError, SecurityError) as error:
+            image_load_errors.append({
+                "image_id": image.get("image_id"),
+                "role": image.get("role"),
+                "reason": str(error),
+            })
+
+    if image_load_errors or len(image_loads) != len(payload["images"]):
+        return _embedding_response_unavailable(payload, config, "image_bytes_not_loaded", started, image_load_errors)
+
+    cached_features: dict[str, dict[str, Any]] = {}
+    missing_images: list[dict[str, Any]] = []
+    missing_loads = []
+    cache_metadata: dict[str, dict[str, Any]] = {}
+    for image, loaded in zip(payload["images"], image_loads, strict=False):
+        hash_value = _image_cache_hash(image, loaded)
+        key = _embedding_cache_key(hash_value, image.get("role"), config)
+        cache_metadata[getattr(loaded, "image_id", "")] = {
+            "key": key,
+            "content_sha256": hash_value,
+        }
+        cached = _EMBEDDING_CACHE.get(key)
+        if cached:
+            cached_features[getattr(loaded, "image_id", "")] = {
+                "image_id": getattr(loaded, "image_id", ""),
+                "role": image.get("role"),
+                "embedding": cached,
+                "dimensions": len(cached),
+                "normalized": True,
+                "cache_hit": True,
+                "content_sha256": hash_value,
+            }
+        else:
+            missing_images.append(image)
+            missing_loads.append(loaded)
+
+    generated_features: dict[str, dict[str, Any]] = {}
+    if missing_loads:
+        extracted = extract_visual_embeddings(missing_loads, config)
+        if extracted.get("status") != "OK":
+            return _embedding_response_unavailable(
+                payload,
+                config,
+                extracted.get("reason") or "embedding_generation_unavailable",
+                started,
+            )
+        for image, feature in zip(missing_images, extracted.get("features", []), strict=False):
+            if feature.get("status") != "OK":
+                return _embedding_response_unavailable(
+                    payload,
+                    config,
+                    feature.get("reason") or "embedding_generation_unavailable",
+                    started,
+                )
+            embedding = feature.get("embedding") or []
+            loaded_id = feature.get("image_id") or image.get("image_id")
+            metadata = cache_metadata.get(loaded_id, {})
+            if metadata.get("key"):
+                _EMBEDDING_CACHE[metadata["key"]] = embedding
+            generated_features[loaded_id] = {
+                "image_id": loaded_id,
+                "role": image.get("role") or feature.get("embedding_role") or feature.get("role"),
+                "embedding": embedding,
+                "dimensions": int(feature.get("dimensions") or len(embedding)),
+                "normalized": True,
+                "cache_hit": False,
+                "content_sha256": metadata.get("content_sha256"),
+            }
+
+    ordered = []
+    for image in payload["images"]:
+        image_id = str(image.get("image_id") or "")
+        feature = cached_features.get(image_id) or generated_features.get(image_id)
+        if feature:
+            ordered.append(feature)
+
+    if len(ordered) != len(payload["images"]):
+        return _embedding_response_unavailable(payload, config, "embedding_count_mismatch", started)
+
+    return {
+        "request_id": str(payload.get("request_id") or ""),
+        "status": "completed",
+        "embeddings": ordered,
+        "model_id": config.visual_embedding_model_id,
+        "model_revision": config.visual_embedding_model_revision,
+        "preprocessing_version": config.visual_embedding_preprocessing_version,
+        "embedding_dimensions": config.visual_embedding_dimensions,
+        "latency_ms": int((time.time() - started) * 1000),
+    }
 
 
 def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -> dict[str, Any]:
@@ -168,12 +324,25 @@ if FastAPI is not None:
             "visual_embeddings_enabled": config.enable_visual_embeddings,
             "candidate_verification_enabled": config.enable_candidate_verification,
             "image_download_enabled": config.enable_image_download,
+            "visual_embedding_model_id": config.visual_embedding_model_id,
+            "visual_embedding_model_revision": config.visual_embedding_model_revision,
+            "visual_embedding_preprocessing_version": config.visual_embedding_preprocessing_version,
+            "visual_embedding_dimensions": config.visual_embedding_dimensions,
         }
 
     @app.post("/v1/analyze-card-images")
     def analyze_card_images(payload: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
         try:
             return analyze_payload(payload, authorization=authorization)
+        except SecurityError as error:
+            raise HTTPException(status_code=403, detail=str(error))
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=error.args[0])
+
+    @app.post("/v1/embed-images")
+    def embed_images(payload: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        try:
+            return embed_images_payload(payload, authorization=authorization)
         except SecurityError as error:
             raise HTTPException(status_code=403, detail=str(error))
         except ValueError as error:

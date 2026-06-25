@@ -7,6 +7,8 @@ from typing import Any
 IMAGE_ROLES = {
     "front_original",
     "back_original",
+    "front_global",
+    "back_global",
     "front_alternate",
     "back_alternate",
     "serial_crop",
@@ -22,6 +24,11 @@ IMAGE_ROLES = {
     "parallel_crop",
     "surface_view",
     "additional",
+}
+
+EMBED_IMAGE_ROLES = {
+    "front_global",
+    "back_global",
 }
 
 
@@ -63,6 +70,15 @@ class AnalyzeCardImagesRequest:
     options: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class EmbedImagesRequest:
+    request_id: str
+    images: list[ImageInput] = field(default_factory=list)
+    model_id: str = ""
+    model_revision: str = ""
+    preprocessing_version: str = ""
+
+
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -101,6 +117,53 @@ def validate_request(payload: dict[str, Any]) -> list[dict[str, str]]:
     options = payload.get("options", {})
     if options is not None and not isinstance(options, dict):
         errors.append({"path": "options", "message": "options must be an object"})
+
+    return errors
+
+
+def validate_embed_request(payload: dict[str, Any], config: Any | None = None) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    if not isinstance(payload, dict):
+        return [{"path": "payload", "message": "payload must be an object"}]
+
+    if not _text(payload.get("request_id")):
+        errors.append({"path": "request_id", "message": "request_id is required"})
+
+    images = payload.get("images")
+    if not isinstance(images, list) or not images:
+        errors.append({"path": "images", "message": "at least one image is required"})
+    elif len(images) > 2:
+        errors.append({"path": "images", "message": "at most front/back global images are accepted"})
+    else:
+        seen_roles: set[str] = set()
+        for index, image in enumerate(images):
+            if not isinstance(image, dict):
+                errors.append({"path": f"images[{index}]", "message": "image must be an object"})
+                continue
+            role = image.get("role")
+            if not _text(image.get("image_id")):
+                errors.append({"path": f"images[{index}].image_id", "message": "image_id is required"})
+            if role not in EMBED_IMAGE_ROLES:
+                errors.append({"path": f"images[{index}].role", "message": "invalid embed image role"})
+            elif role in seen_roles:
+                errors.append({"path": f"images[{index}].role", "message": "duplicate embed image role"})
+            else:
+                seen_roles.add(role)
+            if not _text(image.get("signed_url")):
+                errors.append({"path": f"images[{index}].signed_url", "message": "signed_url is required"})
+
+    if config is not None:
+        expected = {
+            "model_id": getattr(config, "visual_embedding_model_id", ""),
+            "model_revision": getattr(config, "visual_embedding_model_revision", ""),
+            "preprocessing_version": getattr(config, "visual_embedding_preprocessing_version", ""),
+        }
+        for key, expected_value in expected.items():
+            requested = _text(payload.get(key))
+            if not requested:
+                errors.append({"path": key, "message": f"{key} is required"})
+            elif requested != _text(expected_value):
+                errors.append({"path": key, "message": f"{key} does not match configured embedding pipeline"})
 
     return errors
 

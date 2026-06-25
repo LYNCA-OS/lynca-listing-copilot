@@ -179,6 +179,9 @@ function providerStatus(provider, storage, smoke = null) {
 }
 
 function defaultProviderId(providers) {
+  const openai = providers.find((provider) => provider.id === visionProviderIds.OPENAI_LEGACY);
+  if (openai?.selectable) return openai.id;
+
   const gemini = providers.find((provider) => provider.id === visionProviderIds.GEMINI);
   if (gemini?.selectable) return gemini.id;
 

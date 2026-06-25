@@ -97,7 +97,7 @@ async function callStatus() {
 
 let response = await callStatus();
 assert.equal(response.statusCode, 200);
-assert.equal(response.body.default_provider, "gemini");
+assert.equal(response.body.default_provider, "openai_legacy");
 assert.equal(response.body.storage.configured, true);
 assert.equal(response.body.storage.max_image_dimension_pixels, 12000);
 assert.equal(response.body.storage.max_image_total_pixels, 50000000);
@@ -105,11 +105,22 @@ assert.doesNotMatch(JSON.stringify(response.body.storage), /test-service-role/);
 
 let gemini = response.body.providers.find((provider) => provider.id === "gemini");
 let openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
+assert.deepEqual(response.body.providers.map((provider) => provider.id), ["openai_legacy"]);
+assert.equal(gemini, undefined);
+assert.equal(openai.selectable, true);
+assert.equal(openai.role, "primary");
+assert.deepEqual(openai.roles, ["primary"]);
+assert.equal(openai.requires_explicit_retry, false);
+
+process.env.ENABLE_EXPERIMENTAL_PROVIDER_UI = "true";
+response = await callStatus();
+gemini = response.body.providers.find((provider) => provider.id === "gemini");
+openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
 assert.deepEqual(response.body.providers.map((provider) => provider.id), ["gemini", "openai_legacy"]);
 assert.equal(gemini.selectable, true);
 assert.equal(gemini.requires_storage, false);
-assert.equal(gemini.role, "primary");
-assert.deepEqual(gemini.roles, ["primary"]);
+assert.equal(gemini.role, "diagnostic");
+assert.deepEqual(gemini.roles, ["diagnostic"]);
 assert.equal(gemini.model_id, "gemini-3.1-flash-lite");
 assert.equal(gemini.smoke.status, "passed_with_limitations");
 assert.equal(gemini.smoke.generated_at, "2026-06-22T11:11:26.235Z");
@@ -121,31 +132,33 @@ assert.equal(gemini.smoke.capabilities.find((capability) => capability.name === 
 assert.equal(gemini.smoke.capabilities.find((capability) => capability.name === "tool_call").details.message, undefined);
 assert.doesNotMatch(JSON.stringify(gemini.smoke), /sk-secret|https:\/\/example\.com/);
 assert.equal(openai.selectable, true);
-assert.equal(openai.role, "emergency");
-assert.deepEqual(openai.roles, ["emergency"]);
-assert.equal(openai.requires_explicit_retry, true);
+assert.equal(openai.role, "primary");
+assert.deepEqual(openai.roles, ["primary"]);
+assert.equal(openai.requires_explicit_retry, false);
+delete process.env.ENABLE_EXPERIMENTAL_PROVIDER_UI;
 
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 response = await callStatus();
 gemini = response.body.providers.find((provider) => provider.id === "gemini");
 openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
-assert.equal(response.body.default_provider, "gemini");
+assert.equal(response.body.default_provider, "openai_legacy");
 assert.equal(response.body.storage.configured, false);
-assert.equal(gemini.selectable, true);
+assert.equal(gemini, undefined);
 assert.equal(openai.selectable, true);
 
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "false";
 response = await callStatus();
-assert.deepEqual(response.body.providers.map((provider) => provider.id), ["gemini"]);
+assert.deepEqual(response.body.providers.map((provider) => provider.id), []);
+assert.equal(response.body.default_provider, "");
 
 process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "true";
 process.env.ALLOW_EXPLICIT_GPT41_RETRY = "false";
 response = await callStatus();
-assert.equal(response.body.default_provider, "gemini");
+assert.equal(response.body.default_provider, "openai_legacy");
 openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
-assert.equal(openai.selectable, false);
-assert.equal(openai.disabled_reason, "emergency_retry_disabled");
+assert.equal(openai.selectable, true);
+assert.equal(openai.disabled_reason, null);
 
 Object.keys(process.env).forEach((key) => {
   if (!(key in originalEnv)) delete process.env[key];

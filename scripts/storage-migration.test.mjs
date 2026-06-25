@@ -7,6 +7,8 @@ const verificationMigration = await readFile("supabase/migrations/20260622_listi
 const verificationRollback = await readFile("supabase/migrations/20260622_listing_image_verifications_rollback.sql", "utf8");
 const visualVectorMigration = await readFile("supabase/migrations/20260625035856_card_visual_vector_retrieval.sql", "utf8");
 const visualVectorRollback = await readFile("supabase/migrations/20260625035856_card_visual_vector_retrieval_rollback.sql", "utf8");
+const vectorQueryLifecycleMigration = await readFile("supabase/migrations/20260625151516_vector_query_lifecycle.sql", "utf8");
+const vectorQueryLifecycleRollback = await readFile("supabase/migrations/20260625151516_vector_query_lifecycle_rollback.sql", "utf8");
 const phase2 = await readFile("docs/architecture/phase-2-storage-image-quality-2026-06-22.md", "utf8");
 
 assert.match(migration, /insert into storage\.buckets/i, "storage migration should create the Supabase bucket");
@@ -58,6 +60,19 @@ assert.match(visualVectorMigration, /revoke all on table public\.card_image_embe
 assert.match(visualVectorMigration, /grant execute on function public\.match_card_image_embeddings/i, "visual vector RPC should be callable by service role");
 assert.match(visualVectorRollback, /drop function if exists public\.match_card_image_embeddings/i, "visual vector rollback should drop the RPC");
 assert.match(visualVectorRollback, /drop table if exists public\.card_image_embeddings/i, "visual vector rollback should drop embedding records");
+
+assert.match(vectorQueryLifecycleMigration, /create table if not exists public\.vector_index_snapshots/i, "vector lifecycle migration should create index snapshots");
+assert.match(vectorQueryLifecycleMigration, /create table if not exists public\.vector_query_logs/i, "vector lifecycle migration should create query logs");
+assert.match(vectorQueryLifecycleMigration, /searchable boolean not null default false check \(searchable is false\)/i, "query embeddings must remain non-searchable");
+assert.match(vectorQueryLifecycleMigration, /status in \('QUERY_ONLY', 'WRITER_APPROVED', 'REFERENCE_PENDING', 'REFERENCE_APPROVED', 'INDEXED', 'REJECTED'\)/i, "query lifecycle states should be explicit");
+assert.match(vectorQueryLifecycleMigration, /model_revision text not null/i, "vector lifecycle tables should preserve model revision");
+assert.match(vectorQueryLifecycleMigration, /preprocessing_version text not null/i, "vector lifecycle tables should preserve preprocessing version");
+assert.match(vectorQueryLifecycleMigration, /VECTOR_RETRIEVAL_UNAVAILABLE/i, "retrieval telemetry should distinguish unavailable from no-match");
+assert.match(vectorQueryLifecycleMigration, /alter table public\.vector_query_logs enable row level security/i, "query logs should have RLS enabled");
+assert.match(vectorQueryLifecycleMigration, /revoke all on table public\.vector_query_logs from anon, authenticated/i, "query logs must stay server-only");
+assert.match(vectorQueryLifecycleMigration, /grant select, insert, update, delete on table public\.vector_retrieval_candidates to service_role/i, "retrieval candidate telemetry should be service-role only");
+assert.match(vectorQueryLifecycleRollback, /drop table if exists public\.vector_query_logs/i, "vector lifecycle rollback should drop query logs");
+assert.match(vectorQueryLifecycleRollback, /drop table if exists public\.vector_index_snapshots/i, "vector lifecycle rollback should drop snapshots");
 
 assert.match(phase2, /20260622_listing_image_storage\.sql/, "Phase 2 doc should mention the storage migration");
 assert.match(phase2, /20260622_listing_image_verifications\.sql/, "Phase 2 doc should mention the verification migration");

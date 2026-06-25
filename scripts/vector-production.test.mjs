@@ -1,0 +1,334 @@
+import assert from "node:assert/strict";
+import { buildVectorCandidatePacket } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
+import { vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
+import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
+import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
+import { visualVectorProvider } from "../lib/listing/retrieval/visual-vector-provider.mjs";
+import { openAiProviderResponseSchema } from "../lib/listing/providers/openai-emergency-provider.mjs";
+import { validateProviderEvidencePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
+import { evidenceSourceTypes } from "../lib/listing/evidence/evidence-schema.mjs";
+
+const baseVectorEnv = {
+  ENABLE_VECTOR_RETRIEVAL: "true",
+  VECTOR_RETRIEVAL_MODE: "assist",
+  SUPABASE_URL: "https://supabase.test",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role",
+  VECTOR_EMBEDDING_MODEL: "google/siglip2-base-patch16-384",
+  VECTOR_EMBEDDING_MODEL_REVISION: "main",
+  VECTOR_PREPROCESSING_VERSION: "card-rectification-v1",
+  VECTOR_QUERY_TIMEOUT_MS: "1000"
+};
+
+assert.equal(vectorRetrievalConfig({}, {}).enabled, false);
+assert.equal(vectorRetrievalConfig({}, {}).mode, vectorRetrievalModes.OFF);
+assert.equal(vectorRetrievalConfig(baseVectorEnv, {}).mode, vectorRetrievalModes.ASSIST);
+assert.equal(vectorRetrievalConfig(baseVectorEnv, { vector_retrieval_mode: "shadow" }).mode, vectorRetrievalModes.SHADOW);
+
+assert.ok(evidenceSourceTypes.includes("VECTOR_APPROVED_REFERENCE"));
+
+const packet = buildVectorCandidatePacket({
+  sources: [
+    {
+      candidate_id: "front-candidate",
+      candidate_identity_id: "identity-1",
+      source_type: "VISUAL_VECTOR",
+      title: "2024 Topps Chrome Tester Gold Refractor 31/50 PSA 10",
+      visual_similarity: 0.93,
+      match_score: 0.93,
+      embedding_role: "front_global",
+      reference_image_id: "ref-front",
+      embedding_id: "emb-front",
+      fields: {
+        year: "2024",
+        product: "Topps Chrome",
+        players: ["Test Player"],
+        parallel_exact: "Gold Refractor",
+        serial_number: "31/50",
+        grade_company: "PSA",
+        card_grade: "10",
+        cert_number: "12345678",
+        collector_number: "136",
+        checklist_code: "TC-136"
+      }
+    },
+    {
+      candidate_id: "back-candidate",
+      candidate_identity_id: "identity-1",
+      source_type: "VISUAL_VECTOR",
+      visual_similarity: 0.89,
+      match_score: 0.89,
+      embedding_role: "back_global",
+      reference_image_id: "ref-back",
+      embedding_id: "emb-back",
+      fields: {
+        year: "2024",
+        product: "Topps Chrome",
+        players: ["Test Player"],
+        serial_number: "12/50",
+        collector_number: "136"
+      }
+    }
+  ],
+  unavailable: []
+}, { limit: 5 });
+
+assert.equal(packet.vector_retrieval.status, "COMPLETED");
+assert.equal(packet.vector_retrieval.candidates.length, 1);
+assert.equal(packet.vector_retrieval.candidates[0].reference_count, 2);
+assert.equal(packet.vector_retrieval.candidates[0].fields.expected_serial_denominator, "50");
+assert.equal(packet.vector_retrieval.candidates[0].fields.serial_number, undefined, "reference serial numerator must not enter GPT packet");
+assert.equal(packet.vector_retrieval.candidates[0].fields.grade_company, undefined, "reference grade must not enter GPT packet");
+assert.doesNotMatch(JSON.stringify(packet), /PSA 10|31\/50|12345678|seller|corrected_title/i);
+
+const schema = openAiProviderResponseSchema();
+assert.ok(schema.required.includes("vector_candidate_decision"));
+assert.equal(schema.properties.vector_candidate_decision.properties.decision.enum.includes("NOT_AVAILABLE"), true);
+
+const validatedDecision = validateProviderEvidencePayload("openai_legacy", {
+  fields: { year: "2024" },
+  unresolved: [],
+  vector_candidate_decision: {
+    selected_candidate_id: null,
+    decision: "NOT_AVAILABLE",
+    supported_fields: [],
+    rejected_fields: [],
+    conflicts: []
+  }
+});
+assert.equal(validatedDecision.vector_candidate_decision.decision, "NOT_AVAILABLE");
+assert.throws(() => validateProviderEvidencePayload("openai_legacy", {
+  fields: { year: "2024" },
+  unresolved: [],
+  vector_candidate_decision: {
+    selected_candidate_id: null,
+    decision: "MAYBE",
+    supported_fields: [],
+    rejected_fields: [],
+    conflicts: []
+  }
+}), /schema validation failed/i);
+
+const workerMissing = await embedImagesWithVectorWorker({
+  images: [],
+  env: {},
+  fetchImpl: async () => {
+    throw new Error("should not call network");
+  }
+});
+assert.equal(workerMissing.status, "VECTOR_RETRIEVAL_UNAVAILABLE");
+assert.equal(workerMissing.reason, "vector_worker_not_configured");
+
+const workerCalls = [];
+const worker = await embedImagesWithVectorWorker({
+  images: [{
+    image_id: "front",
+    role: "front_original",
+    signedUrl: "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+    contentSha256: "a".repeat(64)
+  }],
+  env: {
+    ...baseVectorEnv,
+    VECTOR_WORKER_URL: "https://worker.test",
+    VECTOR_WORKER_TOKEN: "worker-token"
+  },
+  fetchImpl: async (url, options) => {
+    workerCalls.push({ url: String(url), body: JSON.parse(options.body), headers: options.headers });
+    return new Response(JSON.stringify({
+      request_id: "req",
+      status: "completed",
+      model_id: "google/siglip2-base-patch16-384",
+      model_revision: "main",
+      preprocessing_version: "card-rectification-v1",
+      latency_ms: 12,
+      embeddings: [{
+        image_id: "front",
+        role: "front_global",
+        embedding: [1, ...Array.from({ length: 767 }, () => 0)],
+        dimensions: 768,
+        normalized: true,
+        content_sha256: "a".repeat(64)
+      }]
+    }), { status: 200 });
+  }
+});
+assert.equal(worker.status, "OK");
+assert.equal(worker.features[0].embedding_role, "front_global");
+assert.equal(worker.features[0].content_sha256, "a".repeat(64));
+assert.equal(workerCalls[0].body.images[0].role, "front_global");
+assert.doesNotMatch(JSON.stringify(worker), /token=secret|worker-token/);
+
+const provider = visualVectorProvider({
+  env: baseVectorEnv,
+  fetchImpl: async (url, options) => {
+    assert.match(String(url), /rpc\/match_card_image_embeddings/);
+    assert.equal(JSON.parse(options.body).match_count, 30);
+    return new Response(JSON.stringify([
+      {
+        identity_id: "self",
+        reference_image_id: "ref-self",
+        embedding_id: "emb-self",
+        image_role: "front_original",
+        embedding_role: "front_global",
+        model_id: "google/siglip2-base-patch16-384",
+        model_revision: "main",
+        preprocessing_version: "card-rectification-v1",
+        similarity: 0.99,
+        fields: { year: "2024", product: "Self" },
+        reference_metadata: { content_sha256: "same-hash" },
+        embedding_metadata: {}
+      },
+      {
+        identity_id: "other",
+        reference_image_id: "ref-other",
+        embedding_id: "emb-other",
+        image_role: "front_original",
+        embedding_role: "front_global",
+        model_id: "google/siglip2-base-patch16-384",
+        model_revision: "main",
+        preprocessing_version: "card-rectification-v1",
+        similarity: 0.88,
+        fields: { year: "2024", product: "Other", players: ["Player"] },
+        reference_metadata: { content_sha256: "other-hash" },
+        embedding_metadata: {}
+      }
+    ]), { status: 200 });
+  }
+});
+const retrieval = await provider.search({
+  query: {
+    embedding: [1, ...Array.from({ length: 767 }, () => 0)],
+    embedding_role: "front_global",
+    model_id: "google/siglip2-base-patch16-384",
+    model_revision: "main",
+    preprocessing_version: "card-rectification-v1",
+    content_sha256: "same-hash"
+  },
+  resolved: {}
+});
+assert.equal(retrieval.candidates.length, 1);
+assert.equal(retrieval.candidates[0].candidate_identity_id, "other");
+
+const telemetryMissingConfig = await recordVectorRetrievalTelemetry({
+  env: {},
+  fetchImpl: async () => {
+    throw new Error("should not call network");
+  }
+});
+assert.equal(telemetryMissingConfig.saved, false);
+assert.equal(telemetryMissingConfig.reason, "supabase_not_configured");
+
+const telemetryCalls = [];
+const telemetry = await recordVectorRetrievalTelemetry({
+  visualFeatures: {
+    status: "OK",
+    source: "vector_worker",
+    latency_ms: 15,
+    features: [{
+      image_id: "front",
+      embedding_role: "front_global",
+      model_id: "google/siglip2-base-patch16-384",
+      model_revision: "main",
+      preprocessing_version: "card-rectification-v1",
+      dimensions: 768,
+      embedding: [1, ...Array.from({ length: 767 }, () => 0)],
+      content_sha256: "b".repeat(64),
+      cache_hit: true
+    }]
+  },
+  packet: {
+    vector_retrieval: {
+      status: "COMPLETED",
+      status_code: "VECTOR_RETRIEVAL_COMPLETED",
+      candidates: [{
+        rank: 1,
+        candidate_id: "not-a-uuid",
+        candidate_identity_id: "11111111-1111-4111-8111-111111111111",
+        similarity: 0.91,
+        combined_score: 0.9,
+        top1_top2_margin: 0.07,
+        reference_count: 2,
+        fields: {
+          year: "2024",
+          product: "Topps Chrome",
+          players: ["Test Player"],
+          serial_number: "31/50",
+          grade_company: "PSA",
+          card_grade: "10",
+          title: "seller title should not persist",
+          corrected_title: "review helper should not persist"
+        }
+      }],
+      unavailable: []
+    }
+  },
+  mode: "assist",
+  retrievalConfig: {
+    modelId: "google/siglip2-base-patch16-384",
+    modelRevision: "main",
+    preprocessingVersion: "card-rectification-v1",
+    topK: 10,
+    internalTopN: 30
+  },
+  context: {
+    analysisRunId: "analysis-1",
+    assetId: "asset-1"
+  },
+  retrievalLatencyMs: 22,
+  env: baseVectorEnv,
+  fetchImpl: async (url, options) => {
+    const table = String(url).split("/rest/v1/")[1];
+    const body = JSON.parse(options.body);
+    telemetryCalls.push({ table, body, headers: options.headers });
+    if (table === "vector_query_logs") {
+      assert.equal(body[0].searchable, false);
+      assert.equal(body[0].status, "QUERY_ONLY");
+      assert.equal(body[0].image_role, "front_global");
+      assert.equal(body[0].metadata.signed_url_persisted, false);
+      assert.doesNotMatch(JSON.stringify(body), /token=|https?:\/\/|seller title|corrected_title/i);
+      return new Response(JSON.stringify([{ query_log_id: "22222222-2222-4222-8222-222222222222" }]), { status: 201 });
+    }
+    if (table === "vector_retrieval_runs") {
+      assert.equal(body[0].query_log_id, "22222222-2222-4222-8222-222222222222");
+      assert.equal(body[0].status, "VECTOR_RETRIEVAL_COMPLETED");
+      assert.equal(body[0].mode, "assist");
+      return new Response(JSON.stringify([{ retrieval_run_id: "33333333-3333-4333-8333-333333333333" }]), { status: 201 });
+    }
+    if (table === "vector_retrieval_candidates") {
+      assert.equal(body[0].retrieval_run_id, "33333333-3333-4333-8333-333333333333");
+      assert.equal(body[0].candidate_identity_id, "11111111-1111-4111-8111-111111111111");
+      assert.equal(body[0].candidate_fields.year, "2024");
+      assert.equal(body[0].candidate_fields.serial_number, undefined);
+      assert.equal(body[0].candidate_fields.grade_company, undefined);
+      assert.doesNotMatch(JSON.stringify(body), /31\/50|PSA|seller title|corrected_title/i);
+      return new Response(JSON.stringify([{ retrieval_candidate_id: "44444444-4444-4444-8444-444444444444" }]), { status: 201 });
+    }
+    throw new Error(`unexpected table ${table}`);
+  }
+});
+assert.equal(telemetry.saved, true);
+assert.equal(telemetry.query_log_count, 1);
+assert.equal(telemetry.candidate_count, 1);
+assert.deepEqual(telemetryCalls.map((call) => call.table), [
+  "vector_query_logs",
+  "vector_retrieval_runs",
+  "vector_retrieval_candidates"
+]);
+
+const telemetryFailure = await recordVectorRetrievalTelemetry({
+  visualFeatures: {
+    features: [{
+      image_id: "front",
+      embedding_role: "front_global",
+      embedding: [1, ...Array.from({ length: 767 }, () => 0)]
+    }]
+  },
+  packet,
+  mode: "shadow",
+  retrievalConfig: {},
+  env: baseVectorEnv,
+  fetchImpl: async () => new Response(JSON.stringify({ message: "missing table" }), { status: 404 })
+});
+assert.equal(telemetryFailure.saved, false);
+assert.equal(telemetryFailure.reason, "vector_telemetry_write_failed");
+
+console.log("vector production tests passed");

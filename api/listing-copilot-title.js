@@ -69,6 +69,15 @@ import {
   hasUsableVisualFeatures,
   lookupStoredVisualFeaturesForImages
 } from "../lib/listing/retrieval/stored-visual-features.mjs";
+import { runRetrieval } from "../lib/listing/retrieval/retrieval-engine.mjs";
+import { retrievalModes, retrievalQueryFamilies } from "../lib/listing/retrieval/retrieval-contract.mjs";
+import {
+  buildVectorCandidatePacket,
+  vectorCandidatePacketHasCandidates
+} from "../lib/listing/retrieval/vector-candidate-packet.mjs";
+import { vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
+import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
+import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -113,11 +122,19 @@ function evidenceCompletionEnabled(env = process.env, options = {}) {
 }
 
 function storedVisualFeatureLookupEnabled(env = process.env, options = {}) {
-  return optionFlag(options, "enable_stored_visual_features", envFlag(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", true));
+  if (vectorRetrievalActive(env, options)) return true;
+  if (Object.prototype.hasOwnProperty.call(options, "enable_stored_visual_features")) {
+    return optionFlag(options, "enable_stored_visual_features", false);
+  }
+  return envFlag(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false);
 }
 
 function queryVisualVectorPreflightEnabled(env = process.env, options = {}) {
-  return optionFlag(options, "enable_query_visual_embeddings", envFlag(env, "ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT", true));
+  if (vectorRetrievalActive(env, options)) return true;
+  if (Object.prototype.hasOwnProperty.call(options, "enable_query_visual_embeddings")) {
+    return optionFlag(options, "enable_query_visual_embeddings", false);
+  }
+  return envFlag(env, "ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT", false);
 }
 
 function geminiCoreFieldRetryEnabled(env = process.env, options = {}) {
@@ -162,6 +179,9 @@ function emptyTiming() {
     signed_url_ms: 0,
     image_quality_check_ms: 0,
     recognition_preflight_ms: 0,
+    stored_visual_feature_lookup_ms: 0,
+    vector_embedding_ms: 0,
+    vector_retrieval_ms: 0,
     evidence_completion_ms: 0,
     retrieval_ms: 0,
     focused_reread_ms: 0,
@@ -2074,6 +2094,7 @@ async function verifyIdentityCacheImages(payload = {}) {
 }
 
 function fastInitialRecognitionPrompt(payload, maxTitleLength) {
+  const vectorPacket = payload.vectorCandidatePacket || payload.vector_candidate_packet || null;
   return [
     "You are the first-pass card evidence reader for LYNCA Listing Copilot.",
     "Use only the supplied card/slab images. Do not use marketplace wording, memory, or outside knowledge.",
@@ -2106,7 +2127,8 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "recognition_status rule: use CONFIRMED when core identity is visible with no critical conflict; RESOLVED when core identity is visible but some non-core field needs review; ABSTAIN only when product/subject is unreadable, multiple cards are mixed, image quality blocks core identity, or critical fields conflict.",
     `Runtime title limit downstream: ${maxTitleLength} characters.`,
     "Return this shape:",
-    JSON.stringify(providerMinimalOutputShape()),
+    JSON.stringify(providerMinimalOutputShape({ includeVectorDecision: Boolean(vectorPacket) })),
+    vectorCandidatePromptSection(vectorPacket),
     "Asset context:",
     JSON.stringify({
       assetId: payload.assetId || null,
@@ -2117,8 +2139,10 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
   ].join("\n");
 }
 
-function providerMinimalOutputShape() {
-  return {
+function providerMinimalOutputShape({
+  includeVectorDecision = false
+} = {}) {
+  const shape = {
     recognition_status: "CONFIRMED | RESOLVED | ABSTAIN",
     fields: {
       year: "",
@@ -2180,10 +2204,39 @@ function providerMinimalOutputShape() {
     },
     unresolved: []
   };
+  if (includeVectorDecision) {
+    shape.vector_candidate_decision = {
+      selected_candidate_id: null,
+      decision: "SELECTED | PARTIAL_SUPPORT | REJECTED_ALL | NOT_AVAILABLE",
+      supported_fields: [],
+      rejected_fields: [],
+      conflicts: []
+    };
+  }
+  return shape;
+}
+
+function vectorCandidatePromptSection(packet = null) {
+  if (!packet?.vector_retrieval) return "";
+  const compactPacket = JSON.stringify(packet);
+  return [
+    "Vector Candidate Packet:",
+    compactPacket,
+    "Vector candidate policy:",
+    "- Treat vector candidates as hypotheses only, never as ground truth.",
+    "- First read the current uploaded front/back images and crops.",
+    "- You may select one candidate, partially use field support, reject all candidates, or return NOT_AVAILABLE.",
+    "- Reject any candidate field that conflicts with current card/slab printed text, current serial, current collector/checklist code, current grade label, or current subject count.",
+    "- Serial numerator and grade must come only from the current card/slab image, never from a reference candidate.",
+    "- Exact parallel requires current image evidence, printed/slab text, product taxonomy, or clear denominator compatibility; visual color alone is surface_color.",
+    "- Do not auto-fill unseen fields from a candidate. Leave uncertain fields empty and put the field name in unresolved.",
+    "- Populate vector_candidate_decision with supported_fields, rejected_fields, and conflicts. Use NOT_AVAILABLE when the packet has no candidates."
+  ].join("\n");
 }
 
 async function buildListingPrompt(payload, maxTitleLength) {
   const intelligencePrompt = await loadPrompt();
+  const vectorPacket = payload.vectorCandidatePacket || payload.vector_candidate_packet || null;
 
   return [
     intelligencePrompt,
@@ -2205,7 +2258,8 @@ async function buildListingPrompt(payload, maxTitleLength) {
     "Capture quality:",
     JSON.stringify(captureQualityForPayload(payload)),
     "Required JSON shape:",
-    JSON.stringify(providerMinimalOutputShape()),
+    JSON.stringify(providerMinimalOutputShape({ includeVectorDecision: Boolean(vectorPacket) })),
+    vectorCandidatePromptSection(vectorPacket),
   ].join("\n");
 }
 
@@ -2253,6 +2307,7 @@ function normalizeAiResult(result, maxTitleLength, source = "openai") {
     reason: calibrated.reason,
     fields: presentationFields,
     unresolved: calibrated.unresolved,
+    vector_candidate_decision: result.vector_candidate_decision || null,
     source,
     _normalized_evidence_fields: fields,
     _pre_title_audit: preTitleAudit
@@ -3059,6 +3114,168 @@ function visualFeaturesForRetrieval(result = {}, fallbackVisualFeatures = {}) {
   return [];
 }
 
+function emptyVectorCandidatePacket(reason = "vector_retrieval_disabled") {
+  return {
+    vector_retrieval: {
+      status: "UNAVAILABLE",
+      status_code: "VECTOR_RETRIEVAL_UNAVAILABLE",
+      instruction: "These are hypotheses, not ground truth. Verify every field against the current card images.",
+      candidates: [],
+      unavailable: [{ provider_id: "visual_vector", reason }]
+    }
+  };
+}
+
+function vectorRetrievalEnv(env = process.env, config = vectorRetrievalConfig(env)) {
+  return {
+    ...env,
+    ENABLE_VISUAL_VECTOR_RETRIEVAL: "true",
+    VECTOR_RETRIEVAL_MODE: config.mode,
+    ENABLE_VECTOR_RETRIEVAL: "true",
+    VISUAL_VECTOR_MODEL_ID: config.modelId,
+    VISUAL_VECTOR_MODEL_REVISION: config.modelRevision,
+    VISUAL_VECTOR_PREPROCESSING_VERSION: config.preprocessingVersion,
+    VISUAL_VECTOR_MATCH_COUNT: String(config.internalTopN),
+    VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS: String(config.queryTimeoutMs),
+    VECTOR_RETRIEVAL_INTERNAL_TOP_N: String(config.internalTopN),
+    VECTOR_QUERY_TIMEOUT_MS: String(config.queryTimeoutMs)
+  };
+}
+
+function vectorRetrievalUnavailablePacket(status, reason) {
+  const statusCode = status === "VECTOR_RETRIEVAL_TIMEOUT"
+    ? "VECTOR_RETRIEVAL_TIMEOUT"
+    : status === "VECTOR_RETRIEVAL_ERROR"
+      ? "VECTOR_RETRIEVAL_ERROR"
+      : "VECTOR_RETRIEVAL_UNAVAILABLE";
+  return {
+    vector_retrieval: {
+      status: statusCode.replace(/^VECTOR_RETRIEVAL_/, "") || "UNAVAILABLE",
+      status_code: statusCode,
+      instruction: "These are hypotheses, not ground truth. Verify every field against the current card images.",
+      candidates: [],
+      unavailable: [{ provider_id: "visual_vector", reason }]
+    }
+  };
+}
+
+function vectorTelemetryContext(payload = {}) {
+  return {
+    analysisRunId: payload.analysisRunId || payload.analysis_run_id || null,
+    assetId: payload.assetId || payload.asset_id || null,
+    sourceFeedbackId: payload.sourceFeedbackId || payload.source_feedback_id || null,
+    physicalCardId: payload.physicalCardId || payload.physical_card_id || null,
+    physicalInstanceGroupId: payload.physicalInstanceGroupId || payload.physical_instance_group_id || null
+  };
+}
+
+async function prepareVectorCandidateContext({
+  initialPayload,
+  signedImages,
+  visualFeatures = {},
+  providerOptions = {},
+  timingContext = null,
+  env = process.env
+} = {}) {
+  const config = vectorRetrievalConfig(env, providerOptions);
+  if (!config.enabled) {
+    return {
+      mode: vectorRetrievalModes.OFF,
+      visualFeatures,
+      packet: emptyVectorCandidatePacket("vector_retrieval_disabled"),
+      retrieval: null,
+      promptPacket: false
+    };
+  }
+
+  let activeVisualFeatures = visualFeatures;
+  let workerResult = null;
+  if (!hasUsableVisualFeatures(activeVisualFeatures)) {
+    workerResult = await timeAsync(timingContext, "vector_embedding_ms", () => embedImagesWithVectorWorker({
+      images: signedImages || initialPayload.images || [],
+      requestId: `${initialPayload.assetId || initialPayload.asset_id || "asset"}_vector_query`,
+      env,
+      options: providerOptions
+    }));
+    if (hasUsableVisualFeatures(workerResult)) {
+      activeVisualFeatures = workerResult;
+    }
+  }
+
+  if (!hasUsableVisualFeatures(activeVisualFeatures)) {
+    const status = workerResult?.status || "VECTOR_RETRIEVAL_UNAVAILABLE";
+    const packet = vectorRetrievalUnavailablePacket(status, workerResult?.reason || "visual_embedding_missing");
+    const telemetry = await recordVectorRetrievalTelemetry({
+      visualFeatures: activeVisualFeatures || {},
+      packet,
+      mode: config.mode,
+      retrievalConfig: config,
+      context: vectorTelemetryContext(initialPayload),
+      env
+    });
+    return {
+      mode: config.mode,
+      visualFeatures: activeVisualFeatures,
+      packet,
+      retrieval: null,
+      worker: workerResult,
+      telemetry,
+      promptPacket: false
+    };
+  }
+
+  const retrievalStartedAt = Date.now();
+  const retrieval = await timeAsync(timingContext, "vector_retrieval_ms", () => runRetrieval({
+    resolved: {},
+    visualEmbeddings: activeVisualFeatures,
+    mode: retrievalModes.INTERNAL_ONLY,
+    allowedFamilies: [retrievalQueryFamilies.VISUAL_VECTOR],
+    maxQueries: 2,
+    env: vectorRetrievalEnv(env, config)
+  }));
+  const packet = buildVectorCandidatePacket(retrieval, {
+    limit: config.gptCandidateLimit
+  });
+  const telemetry = await recordVectorRetrievalTelemetry({
+    visualFeatures: activeVisualFeatures,
+    packet,
+    mode: config.mode,
+    retrievalConfig: config,
+    context: vectorTelemetryContext(initialPayload),
+    retrievalLatencyMs: Date.now() - retrievalStartedAt,
+    env
+  });
+  return {
+    mode: config.mode,
+    visualFeatures: activeVisualFeatures,
+    packet,
+    retrieval,
+    worker: workerResult,
+    telemetry,
+    promptPacket: config.mode === vectorRetrievalModes.ASSIST && vectorCandidatePacketHasCandidates(packet)
+  };
+}
+
+function withVectorCandidateContext(result = {}, context = {}) {
+  if (!context || !context.packet) return result;
+  return {
+    ...result,
+    vector_retrieval_mode: context.mode || null,
+    vector_retrieval: context.retrieval || null,
+    vector_candidate_packet: context.packet,
+    vector_prompt_assist_used: context.promptPacket === true,
+    vector_telemetry: context.telemetry || null,
+    vector_worker: context.worker
+      ? {
+        status: context.worker.status || null,
+        reason: context.worker.reason || "",
+        latency_ms: context.worker.latency_ms ?? null,
+        feature_count: Array.isArray(context.worker.features) ? context.worker.features.length : 0
+      }
+      : null
+  };
+}
+
 async function withEvidenceCompletion(result, payload, {
   runFocusedVisionImpl = null,
   env = process.env,
@@ -3304,14 +3521,30 @@ async function createOpenAiTitle(payload, selection, {
   timingContext = null,
   visualFeatures = {}
 } = {}) {
+  const providerOptions = providerOptionsFromPayload(payload);
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
   const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
     ? reusableSignedImages
     : await imagesWithSignedReadUrls(payload.images || [], timingContext);
-  const initialPayload = primaryPayloadForProvider({
+  const baseInitialPayload = primaryPayloadForProvider({
     ...payload,
     images: signedImages
   });
+  const vectorContext = await prepareVectorCandidateContext({
+    initialPayload: baseInitialPayload,
+    signedImages,
+    visualFeatures,
+    providerOptions,
+    timingContext
+  });
+  const initialPayload = {
+    ...baseInitialPayload,
+    vectorCandidatePacket: vectorContext.promptPacket
+      ? vectorContext.packet
+      : emptyVectorCandidatePacket(vectorContext.mode === vectorRetrievalModes.SHADOW
+        ? "vector_shadow_mode_not_supplied_to_gpt"
+        : "vector_candidates_not_available_to_gpt")
+  };
   const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
@@ -3328,8 +3561,11 @@ async function createOpenAiTitle(payload, selection, {
       selection
     ));
   const mergedResult = withVisualFeatures(
-    withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
-    visualFeatures
+    withVectorCandidateContext(
+      withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
+      vectorContext
+    ),
+    vectorContext.visualFeatures
   );
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return fastPathResult;
@@ -3340,7 +3576,7 @@ async function createOpenAiTitle(payload, selection, {
   ));
   if (singleModelResult) return singleModelResult;
 
-  return withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures });
+  return withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures });
 }
 
 async function createGeminiTitle(payload, selection, {

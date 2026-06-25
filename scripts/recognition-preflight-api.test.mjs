@@ -127,6 +127,7 @@ const recognitionPayload = {
     status: "OK",
     items: [
       { field: "year", value: "2024", confidence: 0.8148, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31 / 50" },
+      { field: "year", value: "2024", confidence: 0.91, image_id: "back", role: "back_original", source_type: "CARD_BACK", observed_text: "2024 Topps Chrome" },
       { field: "product", value: "Topps Chrome", confidence: 0.96, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Topps Chrome" },
       { field: "subject", value: "Shohei Ohtani", confidence: 0.96, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Shohei Ohtani" },
       { field: "parallel", value: "Gold Refractor", confidence: 0.92, image_id: "front", role: "front_original", source_type: "CARD_FRONT", observed_text: "Gold Refractor" },
@@ -259,7 +260,7 @@ globalThis.fetch = async (url, options = {}) => {
     assert.equal(body.images.length, 2);
     assert.ok(body.images.every((image) => image.signed_url.includes("token=read")));
     assert.equal(body.options.run_ocr, true);
-    assert.equal(body.options.run_visual_embeddings, true);
+    assert.equal(body.options.run_visual_embeddings, false);
     return jsonResponse(recognitionPayload);
   }
 

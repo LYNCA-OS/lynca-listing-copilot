@@ -32,9 +32,9 @@ const env = {
   OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
 };
 
-assert.equal(selectVisionProvider({ images: remoteImages, env }).provider_id, "gemini");
-assert.equal(selectVisionProvider({ images: storedImages, env }).provider_id, "gemini");
-assert.equal(selectVisionProvider({ images: dataUrlImages, env }).provider_id, "gemini");
+assert.equal(selectVisionProvider({ images: remoteImages, env }).provider_id, "openai_legacy");
+assert.equal(selectVisionProvider({ images: storedImages, env }).provider_id, "openai_legacy");
+assert.equal(selectVisionProvider({ images: dataUrlImages, env }).provider_id, "openai_legacy");
 
 assert.throws(
   () => selectVisionProvider({ requestedProvider: "cascade_fast", images: remoteImages, env }),
@@ -45,16 +45,12 @@ assert.throws(
   /Unknown vision provider/i
 );
 
-assert.throws(
-  () => selectVisionProvider({
-    requestedProvider: "openai_legacy",
-    explicitEmergency: false,
-    images: dataUrlImages,
-    env
-  }),
-  /explicit manual/i,
-  "GPT single-model mode should require explicit operator action"
-);
+assert.equal(selectVisionProvider({
+  requestedProvider: "openai_legacy",
+  explicitEmergency: false,
+  images: dataUrlImages,
+  env
+}).provider_id, "openai_legacy", "GPT is now the production primary provider and should not require emergency mode");
 
 const emergencySelection = selectVisionProvider({
   requestedProvider: "openai_legacy",
@@ -64,19 +60,15 @@ const emergencySelection = selectVisionProvider({
 });
 assert.equal(emergencySelection.provider_id, "openai_legacy");
 assert.equal(emergencySelection.model_id, "gpt-4.1-mini-2025-04-14");
-assert.equal(emergencySelection.provider.role, "emergency");
+assert.equal(emergencySelection.provider.role, "primary");
 
-assert.throws(
-  () => selectVisionProvider({
-    images: dataUrlImages,
-    env: {
-      ...env,
-      DEFAULT_VISION_PROVIDER: "openai_legacy"
-    }
-  }),
-  /explicit manual/i,
-  "OpenAI must not be usable as an env-selected default without an explicit request"
-);
+assert.equal(selectVisionProvider({
+  images: dataUrlImages,
+  env: {
+    ...env,
+    DEFAULT_VISION_PROVIDER: "openai_legacy"
+  }
+}).provider_id, "openai_legacy", "OpenAI should be usable as the production env default");
 
 assert.throws(
   () => selectVisionProvider({
@@ -102,28 +94,19 @@ assert.throws(
   /model_not_allowed/i
 );
 
-assert.deepEqual(listAvailableVisionProviders(env).map((provider) => provider.id), ["gemini", "openai_legacy"]);
+assert.deepEqual(listAvailableVisionProviders(env).map((provider) => provider.id), ["openai_legacy"]);
+assert.deepEqual(listAvailableVisionProviders({
+  ...env,
+  ENABLE_EXPERIMENTAL_PROVIDER_UI: "true"
+}).map((provider) => provider.id), ["gemini", "openai_legacy"]);
 assert.deepEqual(listAvailableVisionProviders({
   ...env,
   ENABLE_GPT41_EMERGENCY_PROVIDER: "false"
-}).map((provider) => provider.id), ["gemini"]);
+}).map((provider) => provider.id), []);
 assert.deepEqual(listAvailableVisionProviders({
   ...env,
   ALLOW_EXPLICIT_GPT41_RETRY: "false"
-}).map((provider) => provider.id), ["gemini"]);
-
-assert.throws(
-  () => selectVisionProvider({
-    requestedProvider: "openai_legacy",
-    explicitEmergency: true,
-    images: dataUrlImages,
-    env: {
-      ...env,
-      ALLOW_EXPLICIT_GPT41_RETRY: "false"
-    }
-  }),
-  /manual single-provider retry is disabled/i
-);
+}).map((provider) => provider.id), ["openai_legacy"]);
 
 const parsedContent = parseProviderMessagePayload({
   content: "```json\n{\"title\":\"Test\",\"fields\":{\"player\":\"A\"},\"unresolved\":[]}\n```"

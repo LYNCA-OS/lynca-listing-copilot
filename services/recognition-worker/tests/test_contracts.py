@@ -6,9 +6,9 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from app.contracts import validate_request
+from app.contracts import validate_embed_request, validate_request
 from app.eval import evaluate_worker_items
-from app.main import analyze_payload
+from app.main import embed_images_payload, analyze_payload
 from app.pipelines.card_rectification import rectify_card_from_array
 from app.pipelines.evidence_fusion import fuse_ocr_evidence
 from app.pipelines.field_parsers import parse_checklist_code, parse_collector_number, parse_grade, parse_serial
@@ -48,6 +48,31 @@ class RecognitionWorkerTests(unittest.TestCase):
         }
         self.assertEqual(validate_request(payload), [])
         self.assertTrue(validate_request({**payload, "images": []}))
+
+    def test_embed_contract_validation(self):
+        payload = {
+            "request_id": "req_1",
+            "model_id": "google/siglip2-base-patch16-384",
+            "model_revision": "main",
+            "preprocessing_version": "card-rectification-v1",
+            "images": [
+                {
+                    "image_id": "front",
+                    "role": "front_global",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+                },
+                {
+                    "image_id": "back",
+                    "role": "back_global",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/back.jpg?token=secret",
+                },
+            ],
+        }
+        self.assertEqual(validate_embed_request(payload), [])
+        duplicate = {**payload, "images": [payload["images"][0], payload["images"][0]]}
+        self.assertTrue(any(error["path"].endswith(".role") for error in validate_embed_request(duplicate)))
+        bad_role = {**payload, "images": [{**payload["images"][0], "role": "front_original"}]}
+        self.assertTrue(validate_embed_request(bad_role))
 
     def test_security(self):
         verify_bearer_token("Bearer test-token", "test-token")
@@ -99,6 +124,107 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["visual_features"]["models"]["primary"]["model_id"], "google/siglip2-base-patch16-384")
         self.assertFalse(result["glare_detection"]["generative_reconstruction_used"])
         self.assertEqual(result["rectification"]["status"], "UNAVAILABLE")
+
+    def test_embed_images_endpoint_returns_batch_embeddings_without_signed_urls(self):
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
+        os.environ["ENABLE_VISUAL_EMBEDDINGS"] = "true"
+        front = LoadedImage(
+            image_id="front",
+            role="front_global",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+        back = LoadedImage(
+            image_id="back",
+            role="back_global",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/back.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12000,
+            width=800,
+            height=1000,
+            array=np.ones((1000, 800, 3), dtype=np.uint8),
+        )
+        payload = {
+            "request_id": "req_1",
+            "model_id": "google/siglip2-base-patch16-384",
+            "model_revision": "main",
+            "preprocessing_version": "card-rectification-v1",
+            "images": [
+                {
+                    "image_id": "front",
+                    "role": "front_global",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+                    "content_sha256": "a" * 64,
+                },
+                {
+                    "image_id": "back",
+                    "role": "back_global",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/back.jpg?token=secret",
+                    "content_sha256": "b" * 64,
+                },
+            ],
+        }
+
+        def fake_extract(image_loads, config):
+            self.assertEqual([image.role for image in image_loads], ["front_global", "back_global"])
+            return {
+                "status": "OK",
+                "features": [
+                    {
+                        "image_id": "front",
+                        "embedding_role": "front_global",
+                        "dimensions": 768,
+                        "status": "OK",
+                        "embedding": [1.0] + [0.0] * 767,
+                    },
+                    {
+                        "image_id": "back",
+                        "embedding_role": "back_global",
+                        "dimensions": 768,
+                        "status": "OK",
+                        "embedding": [0.0, 1.0] + [0.0] * 766,
+                    },
+                ],
+            }
+
+        with patch("app.main.load_signed_image", side_effect=[front, back]) as load_mock:
+            with patch("app.main.extract_visual_embeddings", side_effect=fake_extract) as extract_mock:
+                result = embed_images_payload(payload, authorization="Bearer test-token")
+
+        self.assertEqual(load_mock.call_count, 2)
+        extract_mock.assert_called_once()
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["model_id"], "google/siglip2-base-patch16-384")
+        self.assertEqual([item["role"] for item in result["embeddings"]], ["front_global", "back_global"])
+        self.assertTrue(all(item["normalized"] for item in result["embeddings"]))
+        self.assertNotIn("token=secret", str(result))
+
+    def test_embed_images_endpoint_differentiates_unavailable_from_no_match(self):
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "false"
+        os.environ["ENABLE_VISUAL_EMBEDDINGS"] = "true"
+        payload = {
+            "request_id": "req_unavailable",
+            "model_id": "google/siglip2-base-patch16-384",
+            "model_revision": "main",
+            "preprocessing_version": "card-rectification-v1",
+            "images": [
+                {
+                    "image_id": "front",
+                    "role": "front_global",
+                    "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+                }
+            ],
+        }
+
+        result = embed_images_payload(payload, authorization="Bearer test-token")
+
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["reason"], "image_download_disabled")
+        self.assertNotEqual(result["reason"], "NO_VECTOR_MATCH")
 
     def test_visual_embedding_contract_is_versioned_and_explicit_when_backend_unavailable(self):
         from app.config import WorkerConfig

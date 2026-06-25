@@ -111,6 +111,28 @@
     "image_quality": {
       "type": "object"
     },
+    "vector_candidate_decision": {
+      "type": "object",
+      "properties": {
+        "selected_candidate_id": { "type": ["string", "null"] },
+        "decision": {
+          "enum": ["SELECTED", "PARTIAL_SUPPORT", "REJECTED_ALL", "NOT_AVAILABLE"]
+        },
+        "supported_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "rejected_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
     "unresolved": {
       "type": "array",
       "items": { "type": "string" }
