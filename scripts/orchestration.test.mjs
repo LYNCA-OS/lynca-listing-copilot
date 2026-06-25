@@ -316,6 +316,59 @@ assert.equal(visualCompletionRetrievalArgs.maxQueries, 2);
 assert.equal(visualCompletionRetrievalArgs.visualEmbeddings.features[0].embedding.length, 768);
 assert.equal(visualCompletion.budget.used.external_queries, 0);
 
+let closedVisualCompletionRetrievalArgs = null;
+const closedVisualCompletion = await completeEvidence({
+  resolved: {
+    year: "2025",
+    brand: "Topps",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025", status: "CONFIRMED", confidence: 0.9 }),
+    brand: createEvidenceField({ value: "Topps", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "CONFIRMED", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], status: "CONFIRMED", confidence: 0.9 })
+  },
+  visualEmbeddings: {
+    status: "OK",
+    features: [
+      {
+        image_id: "front",
+        role: "front_original",
+        embedding_role: "front_global",
+        model_id: "google/siglip2-base-patch16-384",
+        model_revision: "main",
+        preprocessing_version: "card-rectification-v1",
+        dimensions: 768,
+        embedding: visualEmbedding
+      }
+    ]
+  },
+  runRetrievalImpl: async (args) => {
+    closedVisualCompletionRetrievalArgs ||= args;
+    return {
+      mode: args.mode,
+      providers_used: [retrievalProviderIds.VISUAL_VECTOR],
+      queries: (args.allowedFamilies || []).map((family) => ({ family })),
+      sources: [],
+      selected_candidate: null,
+      candidate_margin: 0,
+      candidate_selection_threshold: null,
+      low_margin_conflict: null,
+      conflicts: [],
+      unavailable: [],
+      trace: []
+    };
+  },
+  budgetOverrides: {
+    maxRounds: 1,
+    maxExternalQueries: 0
+  }
+});
+assert.ok(closedVisualCompletionRetrievalArgs.allowedFamilies.includes(retrievalQueryFamilies.VISUAL_VECTOR));
+assert.equal(closedVisualCompletion.budget.used.external_queries, 0);
+
 const unavailableRegistry = {
   get(providerId) {
     if (providerId !== retrievalProviderIds.BRAVE_SEARCH) return null;
