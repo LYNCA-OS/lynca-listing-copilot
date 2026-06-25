@@ -8,7 +8,9 @@ const defaultOutPath = "data/eval/provider-regression-30/cloud-listing-api-lates
 const defaultEnvFilePath = ".env.local";
 const providerModes = Object.freeze({
   OPENAI: "openai_legacy",
-  GEMINI_ONLY: "gemini"
+  GEMINI_ONLY: "gemini",
+  OPENAI_VECTOR: "openai_vector",
+  GEMINI_VECTOR: "gemini_vector"
 });
 
 function argValue(argv, name, fallback = "") {
@@ -84,19 +86,25 @@ function correctedTitle(item = {}) {
 function normalizeProviderMode(value = "") {
   const raw = String(value || "").trim().toLowerCase();
   if (["openai", "gpt", "gpt-4.1-mini", "openai_legacy"].includes(raw)) return providerModes.OPENAI;
+  if (["openai-vector", "openai_vector", "gpt-vector", "gpt_vector", "d"].includes(raw)) return providerModes.OPENAI_VECTOR;
+  if (["gemini-vector", "gemini_vector", "b"].includes(raw)) return providerModes.GEMINI_VECTOR;
   if (["", "gemini", "gemini-only", "gemini_only"].includes(raw)) return providerModes.GEMINI_ONLY;
-  throw new Error(`Unsupported cloud eval provider: ${value}. Use gemini or openai_legacy.`);
+  throw new Error(`Unsupported cloud eval provider: ${value}. Use gemini, openai_legacy, gemini_vector, or openai_vector.`);
 }
 
 function cloudProviderForMode(providerMode) {
-  return providerMode === providerModes.OPENAI ? providerModes.OPENAI : providerModes.GEMINI_ONLY;
+  return providerMode === providerModes.OPENAI || providerMode === providerModes.OPENAI_VECTOR
+    ? providerModes.OPENAI
+    : providerModes.GEMINI_ONLY;
 }
 
 function providerOptionsForMode(providerMode) {
-  if (providerMode === providerModes.OPENAI) {
+  const vectorRetrieval = providerMode === providerModes.OPENAI_VECTOR || providerMode === providerModes.GEMINI_VECTOR;
+  if (providerMode === providerModes.OPENAI || providerMode === providerModes.OPENAI_VECTOR) {
     return {
-      single_model_fast: true,
-      enable_evidence_completion: false,
+      single_model_fast: !vectorRetrieval,
+      enable_evidence_completion: vectorRetrieval,
+      enable_stored_visual_features: vectorRetrieval,
       enable_gpt_failure_fallback: false,
       enable_gpt_provider_failure_fallback: false,
       enable_gpt_critical_verifier: false,
@@ -105,8 +113,9 @@ function providerOptionsForMode(providerMode) {
   }
 
   return {
-    single_model_fast: true,
-    enable_evidence_completion: false,
+    single_model_fast: !vectorRetrieval,
+    enable_evidence_completion: vectorRetrieval,
+    enable_stored_visual_features: vectorRetrieval,
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
     enable_gpt_critical_verifier: false,
@@ -250,6 +259,37 @@ function resultBreakpoints(data = {}, item = {}) {
       reviewed_ground_truth: layerCompleteness(reviewed)
     }
   };
+}
+
+function retrievalSources(data = {}) {
+  return Array.isArray(data.retrieval?.sources) ? data.retrieval.sources : [];
+}
+
+function visualVectorCandidateCount(data = {}) {
+  return retrievalSources(data).filter((candidate) => {
+    const sourceType = String(candidate.source_type || "").toUpperCase();
+    const matchedFields = Array.isArray(candidate.matched_fields) ? candidate.matched_fields : [];
+    return sourceType === "VISUAL_VECTOR" || matchedFields.includes("visual_vector");
+  }).length;
+}
+
+function visualVectorUsed(data = {}) {
+  const providersUsed = Array.isArray(data.retrieval?.providers_used) ? data.retrieval.providers_used : [];
+  const queries = Array.isArray(data.retrieval?.queries) ? data.retrieval.queries : [];
+  const trace = Array.isArray(data.retrieval?.trace) ? data.retrieval.trace : [];
+  return providersUsed.includes("visual_vector")
+    || queries.some((query) => query.family === "visual_vector" || query.provider_id === "visual_vector")
+    || trace.some((entry) => entry.provider_id === "visual_vector" || entry.query?.family === "visual_vector")
+    || visualVectorCandidateCount(data) > 0;
+}
+
+function visualFeatureCount(data = {}) {
+  const features = Array.isArray(data.visual_features?.features)
+    ? data.visual_features.features
+    : Array.isArray(data.recognition_preflight?.visual_features?.features)
+      ? data.recognition_preflight.visual_features.features
+      : [];
+  return features.length;
 }
 
 async function readJson(path) {
@@ -553,6 +593,10 @@ function summarize(results = [], elapsedMs = 0) {
   const evaluated = results.filter((item) => item.status === "evaluated").length;
   const fallbackCount = results.filter((item) => item.fallback_provider_id).length;
   const criticalFailed = results.filter((item) => item.provider_error_code || item.confidence === "FAILED").length;
+  const visualVectorUsedCount = results.filter((item) => item.visual_vector_used === true).length;
+  const visualVectorCandidateCount = results.reduce((sum, item) => sum + Number(item.visual_vector_candidate_count || 0), 0);
+  const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
+  const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
   const averageRecallValues = results
     .map((item) => item.corrected_title_comparison?.token_recall)
     .filter((value) => Number.isFinite(value));
@@ -601,6 +645,10 @@ function summarize(results = [], elapsedMs = 0) {
     provider_success_rate: attempted ? Number((evaluated / attempted).toFixed(6)) : null,
     fallback_count: fallbackCount,
     failed_count: criticalFailed,
+    visual_vector_used_count: visualVectorUsedCount,
+    visual_vector_candidate_count: visualVectorCandidateCount,
+    visual_feature_count: storedVisualFeatureCount,
+    provider_truncation_retry_count: truncationRetryCount,
     corrected_title_token_recall_avg: averageRecallValues.length
       ? Number((averageRecallValues.reduce((sum, value) => sum + value, 0) / averageRecallValues.length).toFixed(6))
       : null,
@@ -709,6 +757,16 @@ export async function evaluateCloudListingApi({
           identity_resolution_status: data.identity_resolution_status || null,
           provider_recognition_status: data.provider_recognition_status || null,
           provider_parse_source: data.provider_parse_source || null,
+          provider_token_diagnostics: data.provider_token_diagnostics || null,
+          provider_initial_token_diagnostics: data.provider_initial_token_diagnostics || null,
+          provider_truncation_retry_attempted: data.provider_truncation_retry_attempted === true,
+          provider_truncation_retry_attempts: Number(data.provider_truncation_retry_attempts || 0),
+          retrieval: data.retrieval || null,
+          visual_vector_used: visualVectorUsed(data),
+          visual_vector_candidate_count: visualVectorCandidateCount(data),
+          visual_feature_count: visualFeatureCount(data),
+          visual_feature_summary: data.visual_feature_summary || null,
+          recognition_preflight: data.recognition_preflight || null,
           usage: data.usage || null,
           native_schema_valid: data.native_schema_valid === true,
           format_repair_attempted: data.format_repair_attempted === true,
@@ -787,6 +845,10 @@ export async function main(argv = process.argv, env = process.env) {
     `provider_error_count: ${report.provider_error_count}`,
     `provider_success_rate: ${report.provider_success_rate}`,
     `fallback_count: ${report.fallback_count}`,
+    `visual_vector_used_count: ${report.visual_vector_used_count ?? "n/a"}`,
+    `visual_vector_candidate_count: ${report.visual_vector_candidate_count ?? "n/a"}`,
+    `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
+    `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,
     `corrected_title_token_recall_avg: ${report.corrected_title_token_recall_avg}`,
     `attempted_cards_per_minute: ${report.attempted_cards_per_minute}`,
     `evaluated_cards_per_minute: ${report.evaluated_cards_per_minute}`,

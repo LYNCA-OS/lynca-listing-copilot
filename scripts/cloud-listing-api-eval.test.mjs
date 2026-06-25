@@ -82,6 +82,8 @@ async function runProvider(provider) {
     if (path === "/api/listing-copilot-title") {
       const body = JSON.parse(init.body);
       titlePayloads.push(body);
+      const vectorEnabled = body.provider_options?.enable_evidence_completion === true
+        && body.provider_options?.enable_stored_visual_features === true;
       return jsonResponse(200, {
         final_title: "2025 Topps Chrome Test Player",
         confidence: "HIGH",
@@ -104,6 +106,20 @@ async function runProvider(provider) {
           product: "Topps Chrome",
           players: ["Test Player"]
         },
+        retrieval: vectorEnabled
+          ? {
+            providers_used: ["visual_vector"],
+            queries: [{ family: "visual_vector", provider_id: "visual_vector" }],
+            sources: [{
+              source_type: "VISUAL_VECTOR",
+              matched_fields: ["visual_vector"],
+              title: "2025 Topps Chrome Test Player"
+            }]
+          }
+          : null,
+        visual_features: vectorEnabled
+          ? { features: [{ embedding: [0.1, 0.2], embedding_role: "front_global" }] }
+          : null,
         timing: {
           total_ms: 1234
         }
@@ -153,6 +169,23 @@ assert.equal(openai.titlePayload.explicitEmergency, true);
 assert.equal(openai.titlePayload.provider_options.single_model_fast, true);
 assert.equal(openai.titlePayload.provider_options.enable_evidence_completion, false);
 assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, false);
+
+const geminiVector = await runProvider("b");
+assert.equal(geminiVector.report.provider, "gemini_vector");
+assert.equal(geminiVector.titlePayload.provider, "gemini");
+assert.equal(geminiVector.titlePayload.provider_options.single_model_fast, false);
+assert.equal(geminiVector.titlePayload.provider_options.enable_evidence_completion, true);
+assert.equal(geminiVector.titlePayload.provider_options.enable_stored_visual_features, true);
+assert.equal(geminiVector.report.visual_vector_used_count, 1);
+assert.equal(geminiVector.report.visual_vector_candidate_count, 1);
+
+const openaiVector = await runProvider("d");
+assert.equal(openaiVector.report.provider, "openai_vector");
+assert.equal(openaiVector.titlePayload.provider, "openai_legacy");
+assert.equal(openaiVector.titlePayload.explicitEmergency, true);
+assert.equal(openaiVector.titlePayload.provider_options.single_model_fast, false);
+assert.equal(openaiVector.titlePayload.provider_options.enable_evidence_completion, true);
+assert.equal(openaiVector.titlePayload.provider_options.enable_stored_visual_features, true);
 
 {
   let titleCalled = false;

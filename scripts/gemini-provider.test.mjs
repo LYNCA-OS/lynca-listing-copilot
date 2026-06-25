@@ -33,8 +33,8 @@ const defaultTokenConfig = geminiConfigFromEnv({
   GEMINI_API_KEY: "AIza-test-gemini-key",
   GEMINI_MODEL: "gemini-3.1-flash-lite"
 });
-assert.equal(defaultTokenConfig.maxOutputTokens, 700);
-assert.equal(defaultTokenConfig.formatRepairMaxOutputTokens, 700);
+assert.equal(defaultTokenConfig.maxOutputTokens, 4096);
+assert.equal(defaultTokenConfig.formatRepairMaxOutputTokens, 4096);
 
 const override = providerModelConfig(visionProviderIds.GEMINI, "gemini-3.1-pro");
 assert.equal(override.allowed, true);
@@ -51,10 +51,21 @@ assert.deepEqual(schema.properties.recognition_status.enum, ["CONFIRMED", "RESOL
 assert.equal(schema.properties.fields.additionalProperties, false);
 assert.equal(Boolean(schema.properties.fields.properties.serial_number), true);
 assert.equal(Boolean(schema.properties.fields.properties.players), true);
+assert.equal(Boolean(schema.properties.fields.properties.player), false);
+assert.equal(Boolean(schema.properties.fields.properties.card_number), false);
+assert.equal(Boolean(schema.properties.fields.properties.grade), false);
+assert.equal(schema.properties.fields.properties.players.maxItems, 6);
+assert.equal(schema.properties.fields.properties.product.maxLength, 160);
+assert.equal(Boolean(schema.properties.title), false);
+assert.equal(Boolean(schema.properties.model_title_suggestion), false);
+assert.equal(Boolean(schema.properties.reason), false);
 assert.equal(Boolean(schema.properties.field_evidence), true);
 assert.equal(Boolean(schema.properties.field_evidence.additionalProperties), true);
+assert.equal(schema.properties.field_evidence.maxProperties, 12);
 assert.equal(Boolean(schema.properties.field_evidence.additionalProperties.properties.value), true);
+assert.equal(schema.properties.field_evidence.additionalProperties.properties.visible_text.maxLength, 160);
 assert.equal(Boolean(schema.properties.field_evidence.additionalProperties.properties.support_type), true);
+assert.equal(schema.properties.unresolved.maxItems, 8);
 
 const dataUrl = "data:image/png;base64,QUJD";
 const request = buildGeminiInteractionRequest({
@@ -86,7 +97,9 @@ assert.equal(request.response_format.schema.type, "object");
 assert.equal(request.generation_config.max_output_tokens, 300);
 assert.equal(request.input.filter((part) => part.type === "image").length, 3);
 assert.equal(request.input.find((part) => part.type === "image").mime_type, "image/png");
+assert.equal(request.input.find((part) => part.type === "image").resolution, "high");
 assert.equal(request.input.find((part) => part.uri === "https://example.com/back.jpg").mime_type, "image/jpeg");
+assert.equal(request.input.find((part) => part.uri === "https://example.com/back.jpg").resolution, "high");
 assert.equal(request.input.find((part) => part.uri === "https://example.com/serial.jpg").resolution, "high");
 assert.match(request.input[0].text, /recognition_status meaning/i);
 assert.match(request.input[0].text, /Do not use ABSTAIN as a reason to omit other fields/i);
@@ -422,7 +435,7 @@ const pollutedFieldsResult = await analyzeCardEvidenceWithGemini({
           fields: {
             year: "2025-26, 2025 Panini Prizm FIFA Soccer (back copyright 2025, season 2025-26 stated on back). Note: The card back states 2025-26 Panini - Prizm FIFA Soccer and 2025 Panini America, Inc. copyright. The card is a 2025-26 release based on the back text provided on the card itself. The card is a 2025-26 release based on the back text provided on the card itself.",
             product: "",
-            players: ["Lionel Messi"],
+            players: ["Lionel Messi", "and all brand elements", "designs and trad"],
             serial_number: "029 / 199",
             checklist_code: "CL-LM",
             rc: true
@@ -728,6 +741,57 @@ assert.equal(repairedLocally.text_repair_success, false);
 assert.equal(repairedLocally.parse_source, "jsonrepair");
 assert.equal(repairedLocally.parsed.fields.year, "2024");
 
+let truncationRetryCallCount = 0;
+const retriedBeforeRepair = await analyzeCardEvidenceWithGemini({
+  images: [{ dataUrl, side: "front" }],
+  prompt: "Return JSON.",
+  env,
+  clientFactory: () => ({
+    interactions: {
+      create: async () => {
+        truncationRetryCallCount += 1;
+        if (truncationRetryCallCount === 1) {
+          return {
+            id: "interaction_incomplete_first",
+            status: "incomplete",
+            output_text: "{\"recognition_status\":\"CONFIRMED\",\"fields\":{\"year\":\"2024\"",
+            usage: {
+              total_input_tokens: 20,
+              total_output_tokens: 350,
+              total_tokens: 370
+            }
+          };
+        }
+        return {
+          id: "interaction_incomplete_retry",
+          status: "completed",
+          output_text: JSON.stringify({
+            recognition_status: "CONFIRMED",
+            fields: {
+              year: "2024",
+              product: "Topps Chrome",
+              players: ["Shohei Ohtani"]
+            },
+            unresolved: []
+          }),
+          usage: {
+            total_input_tokens: 20,
+            total_output_tokens: 12,
+            total_tokens: 32
+          }
+        };
+      }
+    }
+  })
+});
+assert.equal(truncationRetryCallCount, 2);
+assert.equal(retriedBeforeRepair.truncation_retry_attempted, true);
+assert.equal(retriedBeforeRepair.truncation_retry_attempts, 1);
+assert.equal(retriedBeforeRepair.initial_token_diagnostics.output_cap, 350);
+assert.equal(retriedBeforeRepair.token_diagnostics.output_cap, 8192);
+assert.equal(retriedBeforeRepair.format_repair_attempted, false);
+assert.equal(retriedBeforeRepair.parsed.fields.year, "2024");
+
 const schemaScaffolded = await analyzeCardEvidenceWithGemini({
   images: [{ dataUrl, side: "front" }],
   prompt: "Return JSON.",
@@ -887,7 +951,9 @@ await assert.rejects(
     assert.equal(error.code, "response_format_invalid");
     assert.equal(error.details.format_error_type, geminiFormatErrorTypes.EMPTY_OR_BLOCKED);
     assert.equal(error.details.format_repair_attempted, false);
-    assert.equal(emptyCallCount, 1);
+    assert.equal(error.details.empty_retry_attempted, true);
+    assert.equal(error.details.empty_retry_attempts, 1);
+    assert.equal(emptyCallCount, 2);
     return true;
   }
 );

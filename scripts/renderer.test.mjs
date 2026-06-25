@@ -153,6 +153,22 @@ const baseCard = renderResolvedTitle({
 });
 assert.equal(baseCard.rendered_title, "2023 Panini Prizm Football Rashee Rice RC");
 
+const prizmFifaNoDuplicateBrand = renderResolvedTitle({
+  year: "2025-26",
+  manufacturer: "Panini",
+  brand: "Prizm",
+  product: "Prizm FIFA Soccer",
+  insert: "Club Legends",
+  players: ["Lionel Messi"],
+  serial_number: "029/199",
+  collector_number: "CL-LM",
+  auto: true
+}, {
+  maxLength: 80
+});
+assert.equal(prizmFifaNoDuplicateBrand.rendered_title, "2025-26 Panini Prizm FIFA Soccer Lionel Messi Club Legends 029/199 Auto #CL-LM");
+assert.doesNotMatch(prizmFifaNoDuplicateBrand.rendered_title, /Prizm\s+Prizm/i);
+
 const insertCardType = renderResolvedTitle({
   year: "2025",
   brand: "Topps",

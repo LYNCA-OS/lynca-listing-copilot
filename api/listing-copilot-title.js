@@ -65,6 +65,10 @@ import {
   identityInFlightCoalescingEnabled,
   runWithInFlightIdentityRequest
 } from "../lib/listing/cache/inflight-identity-request.mjs";
+import {
+  hasUsableVisualFeatures,
+  lookupStoredVisualFeaturesForImages
+} from "../lib/listing/retrieval/stored-visual-features.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -108,6 +112,10 @@ function evidenceCompletionEnabled(env = process.env, options = {}) {
   return optionFlag(options, "enable_evidence_completion", envFlag(env, "ENABLE_EVIDENCE_COMPLETION", true));
 }
 
+function storedVisualFeatureLookupEnabled(env = process.env, options = {}) {
+  return optionFlag(options, "enable_stored_visual_features", envFlag(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false));
+}
+
 function geminiCoreFieldRetryEnabled(env = process.env, options = {}) {
   if (singleModelFastPathEnabled(env, options)) {
     return optionFlag(options, "enable_gemini_core_field_retry", envFlag(env, "ENABLE_GEMINI_CORE_FIELD_RETRY", true));
@@ -126,7 +134,7 @@ function geminiCoreFieldRetryEnv(env = process.env) {
     GEMINI_MAX_RETRIES: "0",
     GEMINI_MAX_OUTPUT_TOKENS: Number.isFinite(retryMaxOutputTokens) && retryMaxOutputTokens > 0
       ? String(Math.trunc(retryMaxOutputTokens))
-      : "350"
+      : "4096"
   };
 }
 
@@ -914,7 +922,7 @@ function cleanPlayerNameForFields(value) {
   if (!text) return null;
   if (/[|]/.test(text)) return null;
   if (/\/.+/.test(text)) return null;
-  if (/\b(?:visible|copyright|year|season|release|card|label|front|back|text|product|unknown|unreadable|unclear|athlete|subject)\b/i.test(text)) return null;
+  if (/\b(?:visible|copyright|trademark|legal|rights?|brand\s+elements?|designs?|trad(?:e)?|manufacturer|boilerplate|year|season|release|card|label|front|back|text|product|unknown|unreadable|unclear|athlete|subject)\b/i.test(text)) return null;
   if (/^(?:Autos?|Autographs?|Certified|Topps\s+Certified|Club\s+Legends|Historic\s+Ties(?:\s+Triple)?|Rookie\s+Ticket|Next\s+Stop\s+Signatures|Canvas\s+Creations(?:\s+Autos?)?|Hoopla|Material\s+Signatures|Variation[-\s]*Autograph|1983\s+Topps|Gem\s*Mt|Mint)$/i.test(text)) return null;
   if (/\b(?:Topps|Panini|Bowman|Donruss|Prizm|Finest|Chrome|Sapphire|Impeccable|Contenders|Absolute|Memorabilia|Triple\s+Threads|Certified)\b/i.test(text)) return null;
   if (/^(?:FC|AFC|CF|SC)\b/i.test(text) || /\b(?:FC|AFC|CF|SC|Barcelona|Angels|Yankees|Dodgers|Lakers|Celtics|Warriors|Bulls|Chiefs|Patriots|Cowboys)\b/i.test(text)) return null;
@@ -2078,7 +2086,9 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "Example slab mapping: 2020 CONTENDERS / ANTHONY EDWARDS / VARIATION-AUTOGRAPH / #105 / GEM MT 10 => year 2020, product Contenders, players [Anthony Edwards], variation Variation Autograph, auto true, collector_number 105, grade_company PSA, card_grade 10.",
     "Structured high-risk field evidence contract:",
     "- field_evidence is provider-agnostic and must be used by both Gemini and GPT outputs.",
-    "- For each non-empty core or high-risk field, include evidence with value, support_type/source_type, source_image_id when known, source_region when known, raw_text or visible_text, confidence, review_required, and direct_observation/directly_observed.",
+    "- Keep field_evidence compact. Only include short evidence for non-empty high-risk fields or fields that may need writer review.",
+    "- Do not dump OCR lines, legal text, copyright text, or repeated boilerplate into field_evidence.",
+    "- Each evidence entry should include value, support_type/source_type, short visible_text/raw_text when useful, confidence, review_required, and direct_observation/directly_observed.",
     "- Core/high-risk evidence fields include year, product, set, players, card_type, insert, surface_color, parallel_exact, serial_number, collector_number, checklist_code, grade, rc, auto, patch, and relic.",
     "- year: include field_evidence.year with value, support_type, visible_text, confidence, and review_required. Use support_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
     "- grade: include field_evidence.grade only when a slab label directly shows grade. Fill grade_company, card_grade, auto_grade, grade_type, support_type SLAB_LABEL, visible_text, confidence, review_required false. If grade is only guessed, leave grade fields empty.",
@@ -2092,137 +2102,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "recognition_status rule: use CONFIRMED when core identity is visible with no critical conflict; RESOLVED when core identity is visible but some non-core field needs review; ABSTAIN only when product/subject is unreadable, multiple cards are mixed, image quality blocks core identity, or critical fields conflict.",
     `Runtime title limit downstream: ${maxTitleLength} characters.`,
     "Return this shape:",
-    JSON.stringify({
-      title: "",
-      confidence: "HIGH | MEDIUM | LOW | FAILED",
-      recognition_status: "CONFIRMED | RESOLVED | ABSTAIN",
-      route: "FAST_PATH_CANDIDATE | NEEDS_REVIEW | MULTI_CARD",
-      fields: {
-        multi_card: false,
-        card_count: null,
-        lot_type: null,
-        year: "",
-        manufacturer: "",
-        brand: "",
-        product: "",
-        set: "",
-        subset: "",
-        players: [],
-        player: "",
-        team: "",
-        card_type: "",
-        insert: "",
-        surface_color: "",
-        parallel_family: "",
-        parallel_exact: "",
-        parallel: "",
-        variation: "",
-        serial_number: "",
-        collector_number: "",
-        card_number: "",
-        checklist_code: "",
-        attributes: [],
-        grade_company: "",
-        grade: "",
-        card_grade: "",
-        auto_grade: "",
-        grade_type: "",
-        rc: false,
-        first_bowman: false,
-        ssp: false,
-        case_hit: false,
-        auto: false,
-        patch: false,
-        relic: false
-      },
-      field_evidence: {
-        year: {
-          value: "",
-          source_type: "",
-          source_image_id: "",
-          source_region: "",
-          support_type: "SLAB_LABEL | CARD_BACK_PRINTED_TEXT | CARD_FRONT_PRINTED_TEXT | VISION_ONLY | NONE",
-          evidence_kind: "YEAR_TEXT | COPYRIGHT_YEAR | SEASON_YEAR | NONE",
-          raw_text: "",
-          visible_text: "",
-          direct_observation: true,
-          confidence: 0,
-          review_required: true
-        },
-        product: {
-          value: "",
-          source_type: "",
-          source_image_id: "",
-          source_region: "",
-          evidence_kind: "PRODUCT_TEXT | NONE",
-          raw_text: "",
-          visible_text: "",
-          direct_observation: true,
-          confidence: 0,
-          review_required: true
-        },
-        players: {
-          value: "",
-          source_type: "",
-          source_image_id: "",
-          source_region: "",
-          evidence_kind: "SUBJECT_TEXT | NONE",
-          raw_text: "",
-          visible_text: "",
-          direct_observation: true,
-          confidence: 0,
-          review_required: true
-        },
-        serial_number: {
-          value: "",
-          source_type: "",
-          source_image_id: "",
-          source_region: "serial_number",
-          evidence_kind: "SERIAL_STAMP | NONE",
-          raw_text: "",
-          visible_text: "",
-          direct_observation: true,
-          confidence: 0,
-          review_required: true
-        },
-        grade: {
-          grade_company: "",
-          card_grade: "",
-          auto_grade: "",
-          grade_type: "",
-          support_type: "SLAB_LABEL | NONE",
-          evidence_kind: "GRADE_LABEL | NONE",
-          source_type: "",
-          source_image_id: "",
-          source_region: "grade_label",
-          raw_text: "",
-          visible_text: "",
-          direct_observation: true,
-          confidence: 0,
-          review_required: false
-        },
-        rc: {
-          value: false,
-          support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISION_ONLY | NONE",
-          evidence_kind: "RC_LOGO | ROOKIE_TEXT | ROOKIE_TICKET | RATED_ROOKIE | NONE",
-          visible_text: "",
-          visible_marker: false,
-          confidence: 0,
-          review_required: true
-        },
-        auto: {
-          value: false,
-          support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISIBLE_SIGNATURE | VISION_ONLY | NONE",
-          evidence_kind: "AUTO_TEXT | SIGNATURE | NONE",
-          visible_text: "",
-          text_visible: false,
-          signature_visible: false,
-          confidence: 0,
-          review_required: true
-        }
-      },
-      unresolved: []
-    }),
+    JSON.stringify(providerMinimalOutputShape()),
     "Asset context:",
     JSON.stringify({
       assetId: payload.assetId || null,
@@ -2231,6 +2111,71 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
       fileNames: payload.images.map((image) => image.name).filter(Boolean).slice(0, 2)
     })
   ].join("\n");
+}
+
+function providerMinimalOutputShape() {
+  return {
+    recognition_status: "CONFIRMED | RESOLVED | ABSTAIN",
+    fields: {
+      year: "",
+      manufacturer: "",
+      brand: "",
+      product: "",
+      set: "",
+      players: [],
+      card_type: "",
+      insert: "",
+      surface_color: "",
+      parallel_exact: "",
+      serial_number: "",
+      collector_number: "",
+      checklist_code: "",
+      grade_company: "",
+      card_grade: "",
+      auto_grade: "",
+      grade_type: "",
+      rc: false,
+      auto: false,
+      multi_card: false
+    },
+    field_evidence: {
+      year: {
+        value: "",
+        support_type: "SLAB_LABEL | CARD_BACK_PRINTED_TEXT | CARD_FRONT_PRINTED_TEXT | VISION_ONLY | NONE",
+        visible_text: "",
+        review_required: true
+      },
+      serial_number: {
+        value: "",
+        source_region: "serial_number",
+        visible_text: "",
+        review_required: true
+      },
+      grade: {
+        grade_company: "",
+        card_grade: "",
+        auto_grade: "",
+        grade_type: "",
+        support_type: "SLAB_LABEL | NONE",
+        source_region: "grade_label",
+        visible_text: "",
+        review_required: false
+      },
+      rc: {
+        value: false,
+        support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISION_ONLY | NONE",
+        visible_text: "",
+        review_required: true
+      },
+      auto: {
+        value: false,
+        support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISIBLE_SIGNATURE | VISION_ONLY | NONE",
+        visible_text: "",
+        review_required: true
+      }
+    },
+    unresolved: []
+  };
 }
 
 async function buildListingPrompt(payload, maxTitleLength) {
@@ -2242,7 +2187,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     "Return only valid JSON. Do not wrap the response in Markdown.",
     "If the image contains multiple cards or a card lot, set fields.multi_card true, include fields.card_count when visible, describe fields.lot_type, and do not merge identities across cards.",
     "Do not infer RC, 1st Bowman, SSP, case hit, parallel, or variation from seller style or generic foil color. Use RC only for readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker. For parallel/variation, use printed text, slab/checklist support, or clearly intentional high-confidence card-design color/pattern only; weak visual color impressions must stay empty with uncertainty in unresolved.",
-    "For every non-empty core or high-risk field, return provider-agnostic field_evidence with value, support_type/source_type, source_image_id, source_region, raw_text/visible_text, confidence, review_required, and direct_observation. Do not use provider confidence prose as fact evidence.",
+    "Return compact provider-agnostic field_evidence only for high-risk or review-sensitive fields. Do not use provider confidence prose as fact evidence.",
     "Resolution hints:",
     resolutionHints(payload.resolutionMap) || "None",
     registryPromptSummary(),
@@ -2256,22 +2201,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     "Capture quality:",
     JSON.stringify(captureQualityForPayload(payload)),
     "Required JSON shape:",
-    JSON.stringify({
-      title: "",
-      confidence: "HIGH | MEDIUM | LOW | FAILED",
-      reason: "",
-      fields: defaultFields,
-      field_evidence: {
-        year: { value: "", support_type: "", source_type: "", source_image_id: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
-        product: { value: "", support_type: "", source_type: "", source_image_id: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
-        players: { value: "", support_type: "", source_type: "", source_image_id: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
-        serial_number: { value: "", support_type: "", source_type: "", source_image_id: "", source_region: "serial_number", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
-        grade: { grade_company: "", card_grade: "", auto_grade: "", grade_type: "", support_type: "", evidence_kind: "", visible_text: "", confidence: 0, review_required: true },
-        rc: { value: false, support_type: "", evidence_kind: "", visible_text: "", visible_marker: false, confidence: 0, review_required: true },
-        auto: { value: false, support_type: "", evidence_kind: "", visible_text: "", text_visible: false, signature_visible: false, confidence: 0, review_required: true }
-      },
-      unresolved: []
-    })
+    JSON.stringify(providerMinimalOutputShape()),
   ].join("\n");
 }
 
@@ -2579,6 +2509,10 @@ function withProviderMetadata(result, providerResult, selection) {
     provider_latency_ms: providerResult.latency_ms ?? null,
     provider_recognition_status: providerResult.recognition_status || providerResult.parsed?.recognition_status || null,
     provider_error_type: providerResult.error_type || providerResult.parsed?.error_type || null,
+    provider_token_diagnostics: providerResult.token_diagnostics || null,
+    provider_initial_token_diagnostics: providerResult.initial_token_diagnostics || null,
+    provider_truncation_retry_attempted: providerResult.truncation_retry_attempted === true,
+    provider_truncation_retry_attempts: Number(providerResult.truncation_retry_attempts || 0),
     format_error_type: providerResult.format_error_type || null,
     format_repair_attempted: providerResult.format_repair_attempted === true,
     local_json_repair_success: providerResult.local_json_repair_success === true,
@@ -2590,6 +2524,32 @@ function withProviderMetadata(result, providerResult, selection) {
     usage: providerResult.usage || null,
     explicit_emergency: Boolean(selection?.explicit_emergency)
   };
+}
+
+function safeProviderDiagnostics(details = {}) {
+  if (!details || typeof details !== "object") return undefined;
+  const allowedKeys = [
+    "format_error_type",
+    "format_repair_attempted",
+    "local_json_repair_success",
+    "text_repair_success",
+    "native_schema_valid",
+    "token_diagnostics",
+    "initial_token_diagnostics",
+    "truncation_retry_attempted",
+    "truncation_retry_attempts",
+    "empty_retry_attempted",
+    "empty_retry_attempts",
+    "request_summary",
+    "schema_errors",
+    "local_repair_error",
+    "text_repair_error"
+  ];
+  const output = {};
+  allowedKeys.forEach((key) => {
+    if (details[key] !== undefined) output[key] = details[key];
+  });
+  return Object.keys(output).length ? output : undefined;
 }
 
 function withRequestMetadata(result, payload) {
@@ -3031,7 +2991,35 @@ function withPrimaryFastVisionPolicy(result = {}, {
   };
 }
 
-function visualFeaturesForRetrieval(result = {}) {
+function mergeVisualFeaturePayloads(...payloads) {
+  const features = payloads.flatMap((payload) => {
+    if (Array.isArray(payload)) return payload;
+    if (payload && Array.isArray(payload.features)) return payload.features;
+    return [];
+  }).filter((feature) => Array.isArray(feature?.embedding) && feature.embedding.length > 0);
+  if (!features.length) return {};
+  return {
+    status: "OK",
+    features
+  };
+}
+
+function withVisualFeatures(result = {}, visualFeatures = {}) {
+  const merged = mergeVisualFeaturePayloads(result.visual_features, result.recognition_preflight?.visual_features, visualFeatures);
+  if (!hasUsableVisualFeatures(merged)) return result;
+  return {
+    ...result,
+    visual_features: merged,
+    visual_feature_summary: {
+      source: visualFeatures?.source || result.visual_feature_summary?.source || "provider_or_recognition",
+      feature_count: merged.features.length,
+      embedding_roles: [...new Set(merged.features.map((feature) => feature.embedding_role).filter(Boolean))]
+    }
+  };
+}
+
+function visualFeaturesForRetrieval(result = {}, fallbackVisualFeatures = {}) {
+  if (hasUsableVisualFeatures(fallbackVisualFeatures)) return fallbackVisualFeatures;
   if (result.visual_features && typeof result.visual_features === "object") return result.visual_features;
   if (result.recognition_preflight?.visual_features && typeof result.recognition_preflight.visual_features === "object") {
     return result.recognition_preflight.visual_features;
@@ -3045,7 +3033,8 @@ function visualFeaturesForRetrieval(result = {}) {
 async function withEvidenceCompletion(result, payload, {
   runFocusedVisionImpl = null,
   env = process.env,
-  timingContext = null
+  timingContext = null,
+  visualFeatures = {}
 } = {}) {
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
   const completion = await timeAsync(timingContext, "evidence_completion_ms", () => completeEvidence({
@@ -3053,7 +3042,7 @@ async function withEvidenceCompletion(result, payload, {
     evidence: result.evidence,
     captureQuality: result.capture_quality || captureQualityForPayload(payload),
     unresolved: result.unresolved,
-    visualEmbeddings: visualFeaturesForRetrieval(result),
+    visualEmbeddings: visualFeaturesForRetrieval(result, visualFeatures),
     retrievalMode,
     env,
     runFocusedVisionImpl
@@ -3281,7 +3270,8 @@ async function createRecognitionIdentityPreflight(payload, {
 async function createOpenAiTitle(payload, selection, {
   recognitionEvidenceDocument = null,
   signedImages: reusableSignedImages = null,
-  timingContext = null
+  timingContext = null,
+  visualFeatures = {}
 } = {}) {
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
   const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
@@ -3306,7 +3296,10 @@ async function createOpenAiTitle(payload, selection, {
       providerResult,
       selection
     ));
-  const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
+  const mergedResult = withVisualFeatures(
+    withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
+    visualFeatures
+  );
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return fastPathResult;
   const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
@@ -3316,13 +3309,14 @@ async function createOpenAiTitle(payload, selection, {
   ));
   if (singleModelResult) return singleModelResult;
 
-  return withEvidenceCompletion(mergedResult, initialPayload, { timingContext });
+  return withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures });
 }
 
 async function createGeminiTitle(payload, selection, {
   recognitionEvidenceDocument = null,
   signedImages: reusableSignedImages = null,
-  timingContext = null
+  timingContext = null,
+  visualFeatures = {}
 } = {}) {
   const providerOptions = providerOptionsFromPayload(payload);
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
@@ -3354,7 +3348,10 @@ async function createGeminiTitle(payload, selection, {
       providerResult,
       selection
     ));
-  const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
+  const mergedResult = withVisualFeatures(
+    withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
+    visualFeatures
+  );
   const primaryFastResult = withPrimaryFastVisionPolicy(mergedResult, {
     primaryProviderId: visionProviderIds.GEMINI
   });
@@ -3367,7 +3364,7 @@ async function createGeminiTitle(payload, selection, {
   ));
   if (singleModelResult) return singleModelResult;
 
-  return withEvidenceCompletion(primaryFastResult, initialPayload, { timingContext });
+  return withEvidenceCompletion(primaryFastResult, initialPayload, { timingContext, visualFeatures });
 }
 
 function requestedProviderFromPayload(payload = {}) {
@@ -3381,7 +3378,8 @@ function explicitEmergencyFromPayload(payload = {}) {
 async function createProviderTitle(payload, {
   recognitionEvidenceDocument = null,
   signedImages = null,
-  timingContext = null
+  timingContext = null,
+  visualFeatures = {}
 } = {}) {
   const requestedProvider = requestedProviderFromPayload(payload);
   const explicitEmergency = explicitEmergencyFromPayload(payload);
@@ -3398,10 +3396,10 @@ async function createProviderTitle(payload, {
   });
 
   if (selection.provider_id === visionProviderIds.GEMINI) {
-    return createGeminiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
+    return createGeminiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext, visualFeatures });
   }
 
-  return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
+  return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext, visualFeatures });
 }
 
 export default async function handler(req, res) {
@@ -3472,11 +3470,27 @@ export default async function handler(req, res) {
         if (recognitionPreflight.result) {
           return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(recognitionPreflight.result, payload));
         }
+        const providerOptions = providerOptionsFromPayload(payload);
+        const recognitionVisualFeatures = recognitionPreflight.response?.visual_features
+          || recognitionPreflight.evidenceDocument?.recognition?.visual_features
+          || {};
+        const storedVisualFeatures = evidenceCompletionEnabled(process.env, providerOptions)
+          && storedVisualFeatureLookupEnabled(process.env, providerOptions)
+          && !hasUsableVisualFeatures(recognitionVisualFeatures)
+          ? await timeAsync(timingContext, "stored_visual_feature_lookup_ms", () => lookupStoredVisualFeaturesForImages({
+            images: payload.images || [],
+            env: process.env
+          }))
+          : {};
+        const visualFeatures = hasUsableVisualFeatures(recognitionVisualFeatures)
+          ? recognitionVisualFeatures
+          : storedVisualFeatures;
 
         const providerResult = await createProviderTitle(payload, {
           recognitionEvidenceDocument: recognitionPreflight.evidenceDocument,
           signedImages: recognitionPreflight.signedImages,
-          timingContext
+          timingContext,
+          visualFeatures
         });
 
         return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(providerResult, payload));
@@ -3499,9 +3513,11 @@ export default async function handler(req, res) {
       provider: error.provider || requestedProviderFromPayload(payload) || null,
       provider_error_code: error.code || "api_error",
       provider_error_type: error.code || "api_error",
-      provider_error_details: error.details?.request_summary
-        ? { request_summary: error.details.request_summary }
-        : undefined
+      provider_error_details: safeProviderDiagnostics(error.details),
+      provider_token_diagnostics: error.details?.token_diagnostics || null,
+      provider_initial_token_diagnostics: error.details?.initial_token_diagnostics || null,
+      provider_truncation_retry_attempted: error.details?.truncation_retry_attempted === true,
+      provider_truncation_retry_attempts: Number(error.details?.truncation_retry_attempts || 0)
     }, timingContext));
   }
 }

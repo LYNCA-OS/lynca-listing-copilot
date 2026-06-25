@@ -83,8 +83,8 @@
     "test:inflight-identity": "node scripts/inflight-identity-request.test.mjs",
     "check:visual-vector-index": "node --check scripts/index-visual-vector-embeddings.mjs && node --check scripts/visual-vector-index.test.mjs",
     "test:visual-vector-index": "node scripts/visual-vector-index.test.mjs",
-    "check:visual-vector-recall": "node --check scripts/evaluate-visual-vector-recall.mjs && node --check scripts/visual-vector-recall.test.mjs",
-    "test:visual-vector-recall": "node scripts/visual-vector-recall.test.mjs"
+    "check:visual-vector-recall": "node --check scripts/evaluate-visual-vector-recall.mjs && node --check scripts/visual-vector-recall.test.mjs && node --check scripts/stored-visual-features.test.mjs",
+    "test:visual-vector-recall": "node scripts/visual-vector-recall.test.mjs && node scripts/stored-visual-features.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
