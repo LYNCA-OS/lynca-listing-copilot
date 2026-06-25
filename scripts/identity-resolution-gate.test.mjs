@@ -104,8 +104,65 @@ assert.equal(agnesOnly.publication_gate.workflow_route, "DEEP_REVIEW");
 assert.deepEqual(agnesOnly.publication_gate.writer_required_fields.sort(), ["parallel", "serial_number", "year"]);
 assert.equal(agnesOnly.draft_gate.by_field.year.display_policy, "SUGGEST_ONLY");
 assert.equal(agnesOnly.draft_gate.by_field.year.requires_writer_confirmation, true);
+assert.equal(agnesOnly.accuracy_governor.enabled, true);
+assert.ok(agnesOnly.accuracy_governor.risk_flags.some((flag) => {
+  return flag.field === "year" && flag.critical === true;
+}));
 assert.ok(agnesOnly.unresolved.includes("identity resolution requires writer review before upload"));
 assert.equal(agnesOnly.model_title_suggestion, "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50");
+
+const nonSlabGradeIsCandidateOnly = applyIdentityResolutionGate({
+  title: "2024 Topps Chrome Shohei Ohtani PSA 10",
+  confidence: "HIGH",
+  reason: "Model inferred a grade from the image, but no slab label evidence exists.",
+  provider: "gemini",
+  resolved: normalizeResolvedFields({
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  }),
+  evidence: {
+    year: groundedEvidence("2024"),
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    grade_company: visionOnlyEvidence("PSA"),
+    card_grade: visionOnlyEvidence("10"),
+    grade_type: visionOnlyEvidence("CARD_ONLY")
+  },
+  unresolved: []
+});
+assert.doesNotMatch(nonSlabGradeIsCandidateOnly.final_title, /PSA|10/);
+assert.equal(nonSlabGradeIsCandidateOnly.draft_gate.by_field.grade_company.display_policy, "SUGGEST_ONLY");
+assert.equal(nonSlabGradeIsCandidateOnly.draft_gate.by_field.card_grade.display_policy, "SUGGEST_ONLY");
+assert.ok(nonSlabGradeIsCandidateOnly.accuracy_governor.high_risk_fields_omitted_from_title.includes("grade_company"));
+assert.ok(nonSlabGradeIsCandidateOnly.publication_gate.writer_required_fields.includes("grade_company"));
+
+const visualExactParallelKeepsNarrowColorOnly = applyIdentityResolutionGate({
+  title: "2024 Topps Chrome Shohei Ohtani Purple Wave Refractor",
+  confidence: "HIGH",
+  reason: "Model saw a purple surface but exact taxonomy is not printed or catalog-backed.",
+  provider: "gemini",
+  resolved: normalizeResolvedFields({
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    parallel: "Purple Wave Refractor"
+  }),
+  evidence: {
+    year: groundedEvidence("2024"),
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    parallel: visionOnlyEvidence("Purple Wave Refractor")
+  },
+  unresolved: []
+});
+assert.match(visualExactParallelKeepsNarrowColorOnly.final_title, /\bPurple\b/);
+assert.doesNotMatch(visualExactParallelKeepsNarrowColorOnly.final_title, /Purple Wave Refractor/i);
+assert.equal(visualExactParallelKeepsNarrowColorOnly.draft_gate.by_field.parallel.selected_value, "Purple");
+assert.equal(visualExactParallelKeepsNarrowColorOnly.draft_gate.by_field.parallel.accuracy_governor_action, "KEEP_NARROW_SAFE_VALUE");
 
 function primaryFastVisionResult({
   resolved,
@@ -272,8 +329,11 @@ assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.mode, "PA
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.value, "Topps Chrome");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.publishability, "PUBLISHABLE_NARROW");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.review_required_fields[0].field, "year");
-assert.equal(fastVisionNoRisk.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
-assert.match(fastVisionNoRisk.final_title, /2024/);
+assert.equal(fastVisionNoRisk.draft_gate.by_field.year.display_policy, "SUGGEST_ONLY");
+assert.doesNotMatch(fastVisionNoRisk.final_title, /2024/);
+assert.ok(fastVisionNoRisk.accuracy_governor.risk_flags.some((flag) => {
+  return flag.field === "year" && flag.critical === true;
+}));
 assert.ok(fastVisionNoRisk.conflict_map.every((conflict) => {
   return conflict.conflict_type !== "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE" || conflict.resolved === true;
 }));
@@ -368,11 +428,13 @@ const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   verificationFields: ["serial_number"]
 });
 assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
-assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani 31/50");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "Topps Chrome Shohei Ohtani #/50");
 assert.equal(fastVisionSerialWithoutFocusedVerification.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(fastVisionSerialWithoutFocusedVerification.writer_required_fields, ["year", "serial_number"]);
-assert.match(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
+assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
+assert.match(fastVisionSerialWithoutFocusedVerification.final_title, /#\/50/);
 assert.equal(fastVisionSerialWithoutFocusedVerification.draft_gate.by_field.serial_number.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(fastVisionSerialWithoutFocusedVerification.draft_gate.by_field.serial_number.selected_value, "#/50");
 
 const fastVisionSerialWithFocusedVerification = primaryFastVisionResult({
   resolved: {
@@ -426,9 +488,10 @@ const visualOnlyGradeRequiresReview = primaryFastVisionResult({
 assert.equal(visualOnlyGradeRequiresReview.publication_gate.field_publication_states.grade_company, "REVIEW_REQUIRED");
 assert.equal(visualOnlyGradeRequiresReview.publication_gate.field_publication_states.card_grade, "REVIEW_REQUIRED");
 assert.ok(visualOnlyGradeRequiresReview.writer_required_fields.includes("grade_company"));
-assert.match(visualOnlyGradeRequiresReview.final_title, /\bPSA 10\b/);
-assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.grade_company.display_policy, "INCLUDE_HIGHLIGHTED");
-assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.card_grade.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.doesNotMatch(visualOnlyGradeRequiresReview.final_title, /\bPSA 10\b/);
+assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.grade_company.display_policy, "SUGGEST_ONLY");
+assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.card_grade.display_policy, "SUGGEST_ONLY");
+assert.ok(visualOnlyGradeRequiresReview.accuracy_governor.high_risk_fields_omitted_from_title.includes("grade_company"));
 
 const groundedMultiView = applyIdentityResolutionGate({
   title: "provider title must not decide final facts",
