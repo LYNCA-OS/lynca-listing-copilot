@@ -231,6 +231,27 @@ assert.match(tripleThreadsLongMultiplayer.rendered_title, /Historic Ties/i);
 assert.doesNotMatch(tripleThreadsLongMultiplayer.rendered_title, /Triple Threads\s+Triple Threads/i);
 assert.match(tripleThreadsLongMultiplayer.rendered_title, /BGS 9\/10$/);
 
+const tripleThreadsNamedCardType = renderResolvedTitle({
+  year: "2020",
+  manufacturer: "Topps",
+  brand: "Topps Triple Threads",
+  product: "Topps Triple Threads Baseball",
+  players: ["Mike Trout", "Hank Aaron", "Ken Griffey Jr."],
+  card_type: "Historic Ties Triple Autograph Relic Card",
+  auto: true,
+  relic: true,
+  grade_company: "BGS",
+  card_grade: "9",
+  auto_grade: "10",
+  grade_type: "CARD_AND_AUTO"
+}, {
+  maxLength: 80
+});
+assert.ok(tripleThreadsNamedCardType.rendered_title.length <= 80);
+assert.match(tripleThreadsNamedCardType.rendered_title, /Triple Threads/i);
+assert.match(tripleThreadsNamedCardType.rendered_title, /Historic Ties/i);
+assert.doesNotMatch(tripleThreadsNamedCardType.rendered_title, /Autograph Relic Card/i);
+
 const insertCardType = renderResolvedTitle({
   year: "2025",
   brand: "Topps",
