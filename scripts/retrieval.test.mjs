@@ -78,7 +78,9 @@ assert.equal(visualQuery.embedding_role, "front_global");
 assert.equal(visualPlanned.some((query) => query.provider_id === retrievalProviderIds.BRAVE_SEARCH), false);
 
 const disabledVisualProvider = await visualVectorProvider({
-  env: {},
+  env: {
+    ENABLE_VISUAL_VECTOR_RETRIEVAL: "false"
+  },
   fetchImpl: async () => {
     throw new Error("disabled provider must not call fetch");
   }

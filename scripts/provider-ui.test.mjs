@@ -14,6 +14,12 @@ assert.match(js, /state\.selectedProvider/, "frontend should keep selected provi
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must not default-select GPT-4.1 legacy");
 assert.match(js, /body\.provider = provider/, "title requests should include the selected provider");
+assert.match(js, /defaultProviderOptions/, "frontend should centralize default provider options");
+assert.match(js, /single_model_fast:\s*false/, "frontend default path should not skip evidence completion");
+assert.match(js, /enable_evidence_completion:\s*true/, "frontend default path should use evidence completion");
+assert.match(js, /enable_stored_visual_features:\s*true/, "frontend default path should use visual vector candidates");
+assert.match(js, /enable_query_visual_embeddings:\s*true/, "frontend default path should request query embeddings for newly received cards");
+assert.match(js, /provider_options:\s*{/, "title requests should include provider options");
 assert.match(js, /body\.explicitEmergency = Boolean/, "GPT single-provider requests should be explicit");
 assert.match(js, /provider === "openai_legacy"/, "OpenAI single-provider path should be explicit");
 assert.match(js, /providerCascadeText/, "frontend should render concise provider role text");
@@ -51,9 +57,11 @@ assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider 
 assert.doesNotMatch(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade fast path should not exist");
 assert.match(api, /if \(fastPathResult\) return fastPathResult;/, "cascade fast path should skip slow completion when identity is already resolved");
 assert.match(api, /singleModelFastPathEnabled/, "title API should expose a single-model fast path switch");
+assert.match(api, /envFlag\(env, "ENABLE_SINGLE_MODEL_FAST_PATH", false\)/, "title API should default to model plus evidence completion");
 assert.match(api, /singleModelDraftPath/, "single-model provider requests should be able to skip Evidence Completion");
 assert.match(api, /skipped_evidence_completion: true/, "single-model fast drafts should record skipped Evidence Completion");
 assert.match(api, /ENABLE_EVIDENCE_COMPLETION/, "slow Evidence Completion should be controlled by an explicit env flag");
+assert.match(api, /envFlag\(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", true\)/, "title API should default to visual vector lookup when evidence completion runs");
 assert.doesNotMatch(api, /runFocusedVisionImpl:\s*createGptCriticalVerifierRunner|runFocusedVisionImpl:\s*createAgnes/, "automatic second-model focused vision should not be wired from the title API");
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facing modules from the title API");

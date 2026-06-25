@@ -19,6 +19,15 @@ const TARGET_IMAGE_DATA_URL_CHARS = 1_250_000;
 const MAX_ASSET_REQUEST_BYTES = 3_400_000;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_ASSET = 6;
+const defaultProviderOptions = Object.freeze({
+  single_model_fast: false,
+  enable_evidence_completion: true,
+  enable_stored_visual_features: true,
+  enable_query_visual_embeddings: true,
+  enable_gpt_failure_fallback: false,
+  enable_gpt_provider_failure_fallback: false,
+  enable_gpt_critical_verifier: false
+});
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 const supportedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const heicUnsupportedMessage = "当前浏览器暂不支持 HEIC/HEIF 预览，请先在手机相册中导出为 JPG，或使用微信/系统截图后上传。";
@@ -422,7 +431,11 @@ function buildAssetRequestBody(asset, options = {}) {
     captureProfileId: defaultCaptureProfileId,
     captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
     resolutionMap: state.resolutionMap,
-    clientTiming: asset.clientTiming || {}
+    clientTiming: asset.clientTiming || {},
+    provider_options: {
+      ...defaultProviderOptions,
+      ...(options.provider_options || options.providerOptions || {})
+    }
   };
 
   if (provider) {

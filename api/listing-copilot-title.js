@@ -104,7 +104,7 @@ function optionFlag(options, key, fallback) {
 }
 
 function singleModelFastPathEnabled(env = process.env, options = {}) {
-  return optionFlag(options, "single_model_fast", envFlag(env, "ENABLE_SINGLE_MODEL_FAST_PATH", true));
+  return optionFlag(options, "single_model_fast", envFlag(env, "ENABLE_SINGLE_MODEL_FAST_PATH", false));
 }
 
 function evidenceCompletionEnabled(env = process.env, options = {}) {
@@ -113,7 +113,7 @@ function evidenceCompletionEnabled(env = process.env, options = {}) {
 }
 
 function storedVisualFeatureLookupEnabled(env = process.env, options = {}) {
-  return optionFlag(options, "enable_stored_visual_features", envFlag(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false));
+  return optionFlag(options, "enable_stored_visual_features", envFlag(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", true));
 }
 
 function queryVisualVectorPreflightEnabled(env = process.env, options = {}) {
