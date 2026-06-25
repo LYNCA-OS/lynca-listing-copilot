@@ -24,6 +24,9 @@ card images
 - `match_card_image_embeddings` returns top-K candidates by cosine similarity.
 
 Only `retrieval_enabled` identities and `approved_for_retrieval` images are searchable.
+`candidate` identities are excluded by default. Development and preview
+experiments may opt in with `VISUAL_VECTOR_INCLUDE_CANDIDATES=true`; production
+must keep that flag false unless the candidate pool has been reviewed.
 
 ## Model Defaults
 
@@ -32,7 +35,11 @@ Only `retrieval_enabled` identities and `approved_for_retrieval` images are sear
 - `VISUAL_EMBEDDING_PREPROCESSING_VERSION=card-rectification-v1`
 - `VISUAL_EMBEDDING_DIMENSIONS=768`
 
-The recognition worker keeps the output contract stable but returns `embedding_backend_not_installed` until a production embedding backend is installed.
+The recognition worker now has a real SigLIP2 backend behind
+`ENABLE_VISUAL_EMBEDDINGS=true`. It emits L2-normalized 768-dimensional vectors
+or an explicit `UNAVAILABLE` status if the backend cannot load. This model must
+run in the dedicated Recognition Worker container, not in Vercel serverless
+functions.
 
 ## Retrieval Policy
 
@@ -46,6 +53,7 @@ The recognition worker keeps the output contract stable but returns `embedding_b
 
 ```text
 ENABLE_VISUAL_VECTOR_RETRIEVAL=false
+VISUAL_VECTOR_INCLUDE_CANDIDATES=false
 VISUAL_VECTOR_MODEL_ID=google/siglip2-base-patch16-384
 VISUAL_VECTOR_MODEL_REVISION=main
 VISUAL_VECTOR_PREPROCESSING_VERSION=card-rectification-v1
@@ -54,3 +62,33 @@ VISUAL_VECTOR_MATCH_COUNT=10
 VISUAL_VECTOR_MATCH_THRESHOLD=0
 VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS=3000
 ```
+
+## Indexing
+
+Use the cloud-only indexing script to populate Supabase pgvector rows:
+
+```bash
+node scripts/index-visual-vector-embeddings.mjs --schema-check-only
+node scripts/index-visual-vector-embeddings.mjs \
+  --limit 30 \
+  --concurrency 2 \
+  --retrieval-status candidate \
+  --enable-candidate-retrieval
+```
+
+The script signs Supabase Storage URLs, calls the configured cloud Recognition
+Worker for embeddings, and upserts identities, reference images, and embeddings.
+It does not call Gemini, GPT, or Agnes. It fails if the worker returns
+`UNAVAILABLE` instead of real embeddings.
+
+## Cloud Boundary
+
+- Vercel listing API: orchestration, provider routing, resolver, renderer.
+- Supabase: private image storage plus pgvector candidate recall.
+- Recognition Worker: Docker/FastAPI service for image bytes, OCR, and visual
+  embeddings.
+
+Do not load PyTorch, Transformers, or SigLIP weights inside the Vercel listing
+API. The worker URL and token must be provided through
+`RECOGNITION_WORKER_URL` and `RECOGNITION_WORKER_TOKEN` before cloud evaluations
+can include visual vectors.

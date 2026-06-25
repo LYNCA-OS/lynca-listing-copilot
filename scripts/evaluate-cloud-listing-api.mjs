@@ -307,6 +307,24 @@ function protectionHeaders(bypassSecret = "") {
     : {};
 }
 
+export function validateProtectionBypassSecret({ bypassSecret = "", env = {} } = {}) {
+  const secret = String(bypassSecret || "").trim();
+  if (!secret) return;
+
+  if (secret.startsWith("sb_secret_")) {
+    throw new Error("Cloud eval misconfigured: VERCEL_AUTOMATION_BYPASS_SECRET looks like a Supabase secret key.");
+  }
+
+  const supabaseSecrets = [
+    env.SUPABASE_SERVICE_ROLE_KEY,
+    env.SUPABASE_SECRET_KEY
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+
+  if (supabaseSecrets.includes(secret)) {
+    throw new Error("Cloud eval misconfigured: VERCEL_AUTOMATION_BYPASS_SECRET matches a Supabase service/secret key.");
+  }
+}
+
 async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 120_000, label = "Cloud request") {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs) || 120_000));
@@ -749,6 +767,8 @@ export async function main(argv = process.argv, env = process.env) {
   const allowAgnes = hasFlag(argv, "--allow-agnes") || runtimeEnv.CLOUD_LISTING_API_ALLOW_AGNES === "true";
   const skipPreflight = hasFlag(argv, "--skip-cloud-preflight");
   const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", Number(runtimeEnv.CLOUD_LISTING_API_REQUEST_TIMEOUT_MS || 120_000));
+  const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
+  validateProtectionBypassSecret({ bypassSecret, env: runtimeEnv });
   const report = await evaluateCloudListingApi({
     dataset: await readJson(datasetPath),
     baseUrl: baseUrl.replace(/\/+$/, ""),
@@ -757,7 +777,7 @@ export async function main(argv = process.argv, env = process.env) {
     concurrency,
     username: runtimeEnv.METAVERSE_USERNAME,
     password: runtimeEnv.METAVERSE_PASSWORD,
-    bypassSecret: argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || ""),
+    bypassSecret,
     requestTimeoutMs,
     allowAgnes,
     skipPreflight

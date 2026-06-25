@@ -17,6 +17,7 @@ create table if not exists public.card_identities (
 create table if not exists public.card_reference_images (
   reference_image_id uuid primary key default gen_random_uuid(),
   identity_id uuid not null references public.card_identities(identity_id) on delete cascade,
+  reference_key text not null default gen_random_uuid()::text,
   image_role text not null
     check (image_role in ('front_original', 'back_original', 'front_alternate', 'back_alternate', 'surface_view', 'additional')),
   object_path text,
@@ -28,6 +29,20 @@ create table if not exists public.card_reference_images (
   created_at timestamptz not null default now(),
   constraint card_reference_images_reference_identity_unique unique (reference_image_id, identity_id)
 );
+
+alter table public.card_reference_images
+  add column if not exists reference_key text;
+
+update public.card_reference_images
+set reference_key = coalesce(
+  nullif(reference_key, ''),
+  md5(concat_ws(':', coalesce(object_path, ''), coalesce(image_url, ''), image_role))
+)
+where reference_key is null or reference_key = '';
+
+alter table public.card_reference_images
+  alter column reference_key set not null,
+  alter column reference_key set default gen_random_uuid()::text;
 
 create table if not exists public.card_image_embeddings (
   embedding_id uuid primary key default gen_random_uuid(),
@@ -51,6 +66,9 @@ create table if not exists public.card_image_embeddings (
 create unique index if not exists card_reference_images_identity_role_hash_uidx
   on public.card_reference_images(identity_id, image_role, content_sha256)
   where content_sha256 is not null;
+
+create unique index if not exists card_reference_images_identity_role_key_uidx
+  on public.card_reference_images(identity_id, image_role, reference_key);
 
 create unique index if not exists card_image_embeddings_reference_model_uidx
   on public.card_image_embeddings(
@@ -84,7 +102,8 @@ create or replace function public.match_card_image_embeddings(
   match_embedding_role text default null,
   match_category text default null,
   match_count integer default 10,
-  match_threshold double precision default 0
+  match_threshold double precision default 0,
+  include_candidate_identities boolean default false
 )
 returns table (
   identity_id uuid,
@@ -131,7 +150,10 @@ as $$
   join public.card_identities ci
     on ci.identity_id = cie.identity_id
   where ci.retrieval_enabled is true
-    and ci.retrieval_status in ('approved', 'reviewed', 'registry')
+    and (
+      ci.retrieval_status in ('approved', 'reviewed', 'registry')
+      or (include_candidate_identities is true and ci.retrieval_status = 'candidate')
+    )
     and cri.approved_for_retrieval is true
     and cie.model_id = match_model_id
     and (match_model_revision is null or cie.model_revision = match_model_revision)
@@ -160,7 +182,8 @@ revoke all on function public.match_card_image_embeddings(
   text,
   text,
   integer,
-  double precision
+  double precision,
+  boolean
 ) from public, anon, authenticated;
 grant execute on function public.match_card_image_embeddings(
   extensions.vector(768),
@@ -169,7 +192,8 @@ grant execute on function public.match_card_image_embeddings(
   text,
   text,
   integer,
-  double precision
+  double precision,
+  boolean
 ) to service_role;
 
 comment on table public.card_identities is
@@ -188,6 +212,7 @@ comment on function public.match_card_image_embeddings(
   text,
   text,
   integer,
-  double precision
+  double precision,
+  boolean
 ) is
-  'Returns top-K visually similar card identity candidates by cosine distance. Results must be checked by the Identity Resolver before any field is trusted.';
+  'Returns top-K visually similar card identity candidates by cosine distance. Candidate identities are excluded unless include_candidate_identities is explicitly true. Results must be checked by the Identity Resolver before any field is trusted.';

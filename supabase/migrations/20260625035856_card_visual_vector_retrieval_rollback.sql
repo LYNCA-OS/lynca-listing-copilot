@@ -5,7 +5,8 @@ drop function if exists public.match_card_image_embeddings(
   text,
   text,
   integer,
-  double precision
+  double precision,
+  boolean
 );
 
 drop table if exists public.card_image_embeddings;

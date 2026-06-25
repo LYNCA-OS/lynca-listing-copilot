@@ -18,7 +18,11 @@ from app.pipelines.image_quality import measure_image_quality_from_array
 from app.pipelines.multi_card_detection import detect_multi_card_from_array
 from app.pipelines.ocr_pipeline import ocr_evidence_from_items, ocr_evidence_from_loaded_images
 from app.pipelines.region_proposal import propose_regions_for_rectified_card
-from app.pipelines.visual_embeddings import embedding_role_for_image_role, extract_visual_embeddings
+from app.pipelines.visual_embeddings import (
+    VisualEmbeddingBackendUnavailable,
+    embedding_role_for_image_role,
+    extract_visual_embeddings,
+)
 from app.security import SecurityError, UrlPolicy, redact_url, validate_image_url, verify_bearer_token
 
 
@@ -96,7 +100,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertFalse(result["glare_detection"]["generative_reconstruction_used"])
         self.assertEqual(result["rectification"]["status"], "UNAVAILABLE")
 
-    def test_visual_embedding_contract_is_versioned_and_explicit_when_unavailable(self):
+    def test_visual_embedding_contract_is_versioned_and_explicit_when_backend_unavailable(self):
         from app.config import WorkerConfig
 
         config = WorkerConfig(
@@ -132,13 +136,62 @@ class RecognitionWorkerTests(unittest.TestCase):
 
         self.assertEqual(embedding_role_for_image_role("back_original"), "back_global")
         self.assertEqual(embedding_role_for_image_role("front_original"), "front_global")
-        features = extract_visual_embeddings([loaded], config)
+        def unavailable_embedder(image_loads, config):
+            raise VisualEmbeddingBackendUnavailable("embedding_backend_not_installed")
+
+        features = extract_visual_embeddings([loaded], config, embedder=unavailable_embedder)
 
         self.assertEqual(features["status"], "UNAVAILABLE")
         self.assertEqual(features["reason"], "embedding_backend_not_installed")
         self.assertEqual(features["models"]["primary"]["dimensions"], 768)
         self.assertEqual(features["features"][0]["embedding_role"], "front_global")
         self.assertEqual(features["features"][0]["status"], "UNAVAILABLE")
+
+    def test_visual_embedding_contract_emits_real_backend_vectors(self):
+        from app.config import WorkerConfig
+
+        config = WorkerConfig(
+            token="test-token",
+            allowed_image_hosts=["example.supabase.co"],
+            max_image_bytes=1024,
+            max_total_pixels=10000,
+            request_timeout_seconds=3,
+            enable_image_download=True,
+            enable_paddleocr=False,
+            enable_tesseract_ocr=False,
+            enable_opencv_rectification=False,
+            enable_visual_embeddings=True,
+            visual_embedding_model_id="google/siglip2-base-patch16-384",
+            visual_embedding_model_revision="main",
+            visual_embedding_preprocessing_version="card-rectification-v1",
+            visual_embedding_dimensions=768,
+            enable_candidate_verification=False,
+            tesseract_language="eng",
+            tesseract_psm=11,
+            tesseract_timeout_seconds=20,
+        )
+        loaded = LoadedImage(
+            image_id="front",
+            role="front_original",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+
+        def fake_embedder(image_loads, config):
+            self.assertEqual(len(image_loads), 1)
+            return [[1.0] + [0.0] * 767]
+
+        features = extract_visual_embeddings([loaded], config, embedder=fake_embedder)
+
+        self.assertEqual(features["status"], "OK")
+        self.assertEqual(features["features"][0]["status"], "OK")
+        self.assertEqual(features["features"][0]["dimensions"], 768)
+        self.assertEqual(len(features["features"][0]["embedding"]), 768)
+        self.assertEqual(features["features"][0]["embedding_role"], "front_global")
 
     def test_safe_image_loader_reads_bounded_signed_image(self):
         image = Image.new("RGB", (32, 48), color=(210, 210, 210))

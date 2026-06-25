@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { evaluateCloudListingApi } from "./evaluate-cloud-listing-api.mjs";
+import { evaluateCloudListingApi, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
 
 function jsonResponse(status, body, headers = {}) {
   return {
@@ -188,6 +188,31 @@ assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, f
 await assert.rejects(
   () => runProvider("agnes"),
   /Agnes cloud evaluation is disabled by default/i
+);
+
+assert.doesNotThrow(() => validateProtectionBypassSecret({
+  bypassSecret: "valid-vercel-bypass-token",
+  env: {
+    SUPABASE_SERVICE_ROLE_KEY: "sb_secret_test"
+  }
+}));
+
+assert.throws(
+  () => validateProtectionBypassSecret({
+    bypassSecret: "sb_secret_test",
+    env: {}
+  }),
+  /looks like a Supabase secret key/i
+);
+
+assert.throws(
+  () => validateProtectionBypassSecret({
+    bypassSecret: "same-secret",
+    env: {
+      SUPABASE_SERVICE_ROLE_KEY: "same-secret"
+    }
+  }),
+  /matches a Supabase service\/secret key/i
 );
 
 const mixed = await runProvider("gemini_gpt_failure_fallback");

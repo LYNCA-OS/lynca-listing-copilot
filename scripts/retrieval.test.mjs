@@ -103,6 +103,7 @@ const activeVisualProvider = visualVectorProvider({
     assert.equal(body.match_embedding_role, "front_global");
     assert.equal(body.match_category, "basketball");
     assert.equal(body.match_count, 2);
+    assert.equal(body.include_candidate_identities, false);
     assert.equal(body.query_embedding.includes("test-service-role"), false);
     return new Response(JSON.stringify([
       {
@@ -160,6 +161,26 @@ assert.equal(activeVisualResult.candidates[0].source_type, "VISUAL_VECTOR");
 assert.equal(activeVisualResult.candidates[0].trust_tier, 6);
 assert.equal(activeVisualResult.candidates[0].visual_similarity, 0.92);
 assert.equal(activeVisualResult.candidates[0].visual_margin_to_next, 0.21);
+
+let candidatePoolRpcBody = null;
+const candidatePoolVisualProvider = visualVectorProvider({
+  env: {
+    ENABLE_VISUAL_VECTOR_RETRIEVAL: "true",
+    VISUAL_VECTOR_INCLUDE_CANDIDATES: "true",
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  fetchImpl: async (url, options) => {
+    assert.equal(String(url), "https://supabase.test/rest/v1/rpc/match_card_image_embeddings");
+    candidatePoolRpcBody = JSON.parse(options.body);
+    return new Response(JSON.stringify([]), { status: 200 });
+  }
+});
+await candidatePoolVisualProvider.search({
+  query: visualQuery,
+  resolved: { category: "basketball" }
+});
+assert.equal(candidatePoolRpcBody.include_candidate_identities, true);
 
 const normalizedVisualCandidate = normalizeRetrievalCandidate(activeVisualResult.candidates[0], {
   query: visualQuery,

@@ -122,7 +122,8 @@ assert.equal(newModuleVariantEdit.corrected_resolved.parallel, "Gold Refractor")
 assert.equal(newModuleVariantEdit.corrected_resolved.rc, true);
 assert.equal(newModuleVariantEdit.corrected_resolved.one_of_one, true);
 assert.equal(newModuleVariantEdit.corrected_resolved.auto, true);
-assert.match(newModuleVariantEdit.final_title, /Auto Gold Refractor RC 1\/1/);
+assert.match(newModuleVariantEdit.final_title, /Gold Refractor RC 1\/1/);
+assert.match(newModuleVariantEdit.final_title, /\bAuto\b/);
 
 const newModuleNumberGradeEdit = applyWriterModuleEdit({
   resolved: {

@@ -42,6 +42,8 @@ assert.match(visualVectorMigration, /create extension if not exists vector with 
 assert.match(visualVectorMigration, /create table if not exists public\.card_identities/i, "visual vector migration should create card identities");
 assert.match(visualVectorMigration, /create table if not exists public\.card_reference_images/i, "visual vector migration should create reference image records");
 assert.match(visualVectorMigration, /create table if not exists public\.card_image_embeddings/i, "visual vector migration should create embedding records");
+assert.match(visualVectorMigration, /reference_key text not null/i, "reference images should have a stable upsert key");
+assert.match(visualVectorMigration, /card_reference_images_identity_role_key_uidx/i, "reference images should be idempotently upsertable without true content hashes");
 assert.match(visualVectorMigration, /model_id text not null/i, "embedding records should preserve model id");
 assert.match(visualVectorMigration, /model_revision text not null/i, "embedding records should preserve model revision");
 assert.match(visualVectorMigration, /preprocessing_version text not null/i, "embedding records should preserve preprocessing version");
@@ -49,6 +51,8 @@ assert.match(visualVectorMigration, /embedding extensions\.vector\(768\) not nul
 assert.match(visualVectorMigration, /using hnsw\s*\(embedding extensions\.vector_cosine_ops\)/i, "visual vector migration should create HNSW cosine index");
 assert.match(visualVectorMigration, /create or replace function public\.match_card_image_embeddings/i, "visual vector migration should expose a top-K RPC");
 assert.match(visualVectorMigration, /retrieval_enabled is true/i, "visual vector RPC should only search enabled identities");
+assert.match(visualVectorMigration, /include_candidate_identities boolean default false/i, "candidate identities should be opt-in for visual vector retrieval");
+assert.match(visualVectorMigration, /include_candidate_identities is true and ci\.retrieval_status = 'candidate'/i, "candidate identities should only search when explicitly requested");
 assert.match(visualVectorMigration, /approved_for_retrieval is true/i, "visual vector RPC should only search approved reference images");
 assert.match(visualVectorMigration, /revoke all on table public\.card_image_embeddings from anon, authenticated/i, "embedding table should remain server-only");
 assert.match(visualVectorMigration, /grant execute on function public\.match_card_image_embeddings/i, "visual vector RPC should be callable by service role");

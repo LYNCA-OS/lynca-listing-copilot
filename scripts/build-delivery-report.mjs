@@ -164,7 +164,7 @@ export async function createDeliveryReport({
   const migrations = await listFiles("supabase/migrations", { suffix: ".sql" });
   const architectureDocs = await listFiles("docs/architecture", { suffix: ".md", prefix: "docs/architecture/" });
   const smokeReports = {
-    agnes: await readJson(env.AGNES_SMOKE_REPORT_PATH || defaultSmokeReports.agnes, null),
+    agnes: await readJson(env.AGNES_SMOKE_REPORT_PATH || agnesSmokePath || defaultSmokeReports.agnes, null),
     brave: await readJson(env.BRAVE_SMOKE_REPORT_PATH || defaultSmokeReports.brave, null),
     ebay_browse: await readJson(env.EBAY_SMOKE_REPORT_PATH || defaultSmokeReports.ebay_browse, null),
     openai_web_search: await readJson(env.OWS_SMOKE_REPORT_PATH || defaultSmokeReports.openai_web_search, null)
