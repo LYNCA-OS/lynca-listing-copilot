@@ -116,6 +116,10 @@ function storedVisualFeatureLookupEnabled(env = process.env, options = {}) {
   return optionFlag(options, "enable_stored_visual_features", envFlag(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false));
 }
 
+function queryVisualVectorPreflightEnabled(env = process.env, options = {}) {
+  return optionFlag(options, "enable_query_visual_embeddings", envFlag(env, "ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT", true));
+}
+
 function geminiCoreFieldRetryEnabled(env = process.env, options = {}) {
   if (singleModelFastPathEnabled(env, options)) {
     return optionFlag(options, "enable_gemini_core_field_retry", envFlag(env, "ENABLE_GEMINI_CORE_FIELD_RETRY", true));
@@ -3186,7 +3190,8 @@ async function imagesForGeminiProvider(images = [], timingContext = null, env = 
 }
 
 async function createRecognitionIdentityPreflight(payload, {
-  timingContext = null
+  timingContext = null,
+  providerOptions = {}
 } = {}) {
   const config = recognitionWorkerConfig();
   if (!config.enabled || !config.configured) {
@@ -3225,7 +3230,8 @@ async function createRecognitionIdentityPreflight(payload, {
       images: signedPrimaryImages,
       requestedFields: [...recognitionRequestedFields],
       options: {
-        run_ocr: true
+        run_ocr: true,
+        run_visual_embeddings: queryVisualVectorPreflightEnabled(process.env, providerOptions)
       }
     }));
     const evidenceDocument = recognitionResponseToEvidenceDocument(response, {
@@ -3491,11 +3497,14 @@ export default async function handler(req, res) {
     const result = await runWithInFlightIdentityRequest({
       cacheKey: inFlightCacheKey,
       run: async () => {
-        const recognitionPreflight = await createRecognitionIdentityPreflight(payload, { timingContext });
+        const providerOptions = providerOptionsFromPayload(payload);
+        const recognitionPreflight = await createRecognitionIdentityPreflight(payload, {
+          timingContext,
+          providerOptions
+        });
         if (recognitionPreflight.result) {
           return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(recognitionPreflight.result, payload));
         }
-        const providerOptions = providerOptionsFromPayload(payload);
         const recognitionVisualFeatures = recognitionPreflight.response?.visual_features
           || recognitionPreflight.evidenceDocument?.recognition?.visual_features
           || {};

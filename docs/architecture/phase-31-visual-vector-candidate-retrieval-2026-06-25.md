@@ -8,7 +8,7 @@ Add visual embeddings as a candidate card identity recall layer. This layer does
 
 ```text
 card images
-  -> recognition worker visual_features
+  -> recognition worker query visual_features at first receipt
   -> Supabase pgvector match_card_image_embeddings RPC
   -> VISUAL_VECTOR retrieval candidates
   -> existing candidate ranker
@@ -41,6 +41,12 @@ or an explicit `UNAVAILABLE` status if the backend cannot load. This model must
 run in the dedicated Recognition Worker container, not in Vercel serverless
 functions.
 
+The listing API explicitly requests `run_visual_embeddings=true` during
+recognition preflight when `ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT=true` (default).
+This covers newly received cards before they have approved reference embeddings.
+Those query embeddings are used only for retrieval in the current request; they
+are not written to the trusted retrieval index until writer approval.
+
 ## Retrieval Policy
 
 - `VISUAL_VECTOR` uses trust tier `6`.
@@ -54,6 +60,7 @@ functions.
 ```text
 ENABLE_VISUAL_VECTOR_RETRIEVAL=false
 VISUAL_VECTOR_INCLUDE_CANDIDATES=false
+ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT=true
 VISUAL_VECTOR_MODEL_ID=google/siglip2-base-patch16-384
 VISUAL_VECTOR_MODEL_REVISION=main
 VISUAL_VECTOR_PREPROCESSING_VERSION=card-rectification-v1
