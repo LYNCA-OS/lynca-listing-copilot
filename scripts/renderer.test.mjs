@@ -134,6 +134,27 @@ assert.match(duplicateAutoGrade.rendered_title, /Absolute/i);
 assert.doesNotMatch(duplicateAutoGrade.rendered_title, /relic\/auto/i);
 assert.match(duplicateAutoGrade.rendered_title, /Auto Relic/i);
 
+const absoluteProductBrandOverlap = renderResolvedTitle({
+  year: "2010-11",
+  manufacturer: "Panini",
+  brand: "Absolute Memorabilia",
+  product: "Absolute Hoopla",
+  insert: "Hoopla",
+  players: ["Kobe Bryant"],
+  card_type: "Memorabilia",
+  serial_number: "08/25",
+  auto: true,
+  patch: true,
+  collector_number: "13",
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 90
+});
+assert.doesNotMatch(absoluteProductBrandOverlap.rendered_title, /Absolute\s+Absolute/i);
+assert.match(absoluteProductBrandOverlap.rendered_title, /Hoopla Kobe Bryant/i);
+
 const psaDnaCardOnlyAutoRelic = renderResolvedTitle({
   year: "2010-11",
   brand: "Panini",
