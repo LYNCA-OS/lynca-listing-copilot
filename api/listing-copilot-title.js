@@ -2637,7 +2637,32 @@ function withCompletedEvidencePresentation(result, completion, payload) {
 
 function retrievalCandidatesForIdentity(completion = {}) {
   const retrieval = completion.retrieval || {};
-  return retrieval.selected_candidate ? [retrieval.selected_candidate] : [];
+  const sources = Array.isArray(retrieval.sources) ? retrieval.sources : [];
+  const selectedId = retrieval.selected_candidate?.candidate_id || "";
+  const selected = retrieval.selected_candidate
+    ? [{ ...retrieval.selected_candidate, selected: true, identity_evidence_eligible: true }]
+    : [];
+  const topCandidates = sources
+    .filter((candidate) => candidate && candidate.candidate_id !== selectedId)
+    .filter((candidate) => {
+      const sourceType = String(candidate.source_type || "").toUpperCase();
+      const score = Number(candidate.match_score || 0);
+      if (sourceType === "VISUAL_VECTOR") return score >= 0.38 || Number(candidate.visual_similarity || 0) >= 0.72;
+      return score >= 0.28 || Number(candidate.trust_tier || 9) <= 5;
+    })
+    .slice(0, 8)
+    .map((candidate) => ({
+      ...candidate,
+      selected: candidate.selected === true,
+      identity_evidence_eligible: candidate.identity_evidence_eligible === true
+    }));
+  const seen = new Set();
+  return [...selected, ...topCandidates].filter((candidate) => {
+    const key = candidate.candidate_id || candidate.source_url || JSON.stringify(candidate.fields || {});
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function conflictSeverity(conflict = {}) {

@@ -296,6 +296,43 @@ function visualVectorCandidateCount(data = {}) {
   }).length;
 }
 
+function isVisualVectorCandidate(candidate = {}) {
+  const sourceType = String(candidate.source_type || "").toUpperCase();
+  const matchedFields = Array.isArray(candidate.matched_fields) ? candidate.matched_fields : [];
+  return sourceType === "VISUAL_VECTOR" || matchedFields.includes("visual_vector");
+}
+
+function visualVectorSelectedCount(data = {}) {
+  return retrievalSources(data).filter((candidate) => candidate.selected === true && isVisualVectorCandidate(candidate)).length;
+}
+
+function candidateVerificationSummaries(data = {}) {
+  const traces = [
+    ...(Array.isArray(data.completion_trace) ? data.completion_trace : []),
+    ...(Array.isArray(data.resolution_trace) ? data.resolution_trace : [])
+  ];
+  return traces
+    .map((entry) => entry?.output?.candidate_verification)
+    .filter((summary) => summary && typeof summary === "object" && !Array.isArray(summary));
+}
+
+function uniqueFieldCount(values = []) {
+  return new Set(values.filter(Boolean)).size;
+}
+
+function visualVectorConsensusFieldCount(data = {}) {
+  return uniqueFieldCount(candidateVerificationSummaries(data).flatMap((summary) => summary.visual_vector?.consensus_fields || []));
+}
+
+function visualVectorConflictFieldCount(data = {}) {
+  return uniqueFieldCount(candidateVerificationSummaries(data).flatMap((summary) => summary.visual_vector?.conflict_fields || []));
+}
+
+function candidateIdentityCandidateCount(data = {}) {
+  const candidates = data.identity_resolution?.candidate_identity_report?.candidates;
+  return Array.isArray(candidates) ? candidates.length : 0;
+}
+
 function visualVectorUsed(data = {}) {
   const providersUsed = Array.isArray(data.retrieval?.providers_used) ? data.retrieval.providers_used : [];
   const queries = Array.isArray(data.retrieval?.queries) ? data.retrieval.queries : [];
@@ -686,6 +723,10 @@ function evaluatedResultFromData({
     retrieval: data.retrieval || null,
     visual_vector_used: visualVectorUsed(data),
     visual_vector_candidate_count: visualVectorCandidateCount(data),
+    visual_vector_selected_count: visualVectorSelectedCount(data),
+    visual_vector_consensus_field_count: visualVectorConsensusFieldCount(data),
+    visual_vector_conflict_field_count: visualVectorConflictFieldCount(data),
+    candidate_identity_candidate_count: candidateIdentityCandidateCount(data),
     visual_feature_count: visualFeatureCount(data),
     visual_feature_summary: data.visual_feature_summary || null,
     recognition_preflight: data.recognition_preflight || null,
@@ -751,6 +792,10 @@ function summarize(results = [], elapsedMs = 0) {
   const criticalFailed = results.filter((item) => item.technical_failure === true || item.provider_error_code || item.confidence === "FAILED").length;
   const visualVectorUsedCount = results.filter((item) => item.visual_vector_used === true).length;
   const visualVectorCandidateCount = results.reduce((sum, item) => sum + Number(item.visual_vector_candidate_count || 0), 0);
+  const visualVectorSelectedCount = results.reduce((sum, item) => sum + Number(item.visual_vector_selected_count || 0), 0);
+  const visualVectorConsensusFieldCount = results.reduce((sum, item) => sum + Number(item.visual_vector_consensus_field_count || 0), 0);
+  const visualVectorConflictFieldCount = results.reduce((sum, item) => sum + Number(item.visual_vector_conflict_field_count || 0), 0);
+  const candidateIdentityCandidateCount = results.reduce((sum, item) => sum + Number(item.candidate_identity_candidate_count || 0), 0);
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
   const averageRecallValues = results
@@ -807,6 +852,10 @@ function summarize(results = [], elapsedMs = 0) {
     failed_count: criticalFailed,
     visual_vector_used_count: visualVectorUsedCount,
     visual_vector_candidate_count: visualVectorCandidateCount,
+    visual_vector_selected_count: visualVectorSelectedCount,
+    visual_vector_consensus_field_count: visualVectorConsensusFieldCount,
+    visual_vector_conflict_field_count: visualVectorConflictFieldCount,
+    candidate_identity_candidate_count: candidateIdentityCandidateCount,
     visual_feature_count: storedVisualFeatureCount,
     provider_truncation_retry_count: truncationRetryCount,
     corrected_title_token_recall_avg: averageRecallValues.length
@@ -1009,6 +1058,10 @@ export async function main(argv = process.argv, env = process.env) {
     `fallback_count: ${report.fallback_count}`,
     `visual_vector_used_count: ${report.visual_vector_used_count ?? "n/a"}`,
     `visual_vector_candidate_count: ${report.visual_vector_candidate_count ?? "n/a"}`,
+    `visual_vector_selected_count: ${report.visual_vector_selected_count ?? "n/a"}`,
+    `visual_vector_consensus_field_count: ${report.visual_vector_consensus_field_count ?? "n/a"}`,
+    `visual_vector_conflict_field_count: ${report.visual_vector_conflict_field_count ?? "n/a"}`,
+    `candidate_identity_candidate_count: ${report.candidate_identity_candidate_count ?? "n/a"}`,
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,
     `corrected_title_token_recall_avg: ${report.corrected_title_token_recall_avg}`,

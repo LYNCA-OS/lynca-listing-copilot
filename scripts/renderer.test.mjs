@@ -50,6 +50,24 @@ assert.match(ohtaniChrome.final_title, /Shohei Ohtani/);
 assert.match(ohtaniChrome.final_title, /RC/);
 assert.match(ohtaniChrome.final_title, /PSA 10$/);
 
+const ohtani1983ToppsInsert = renderResolvedTitle({
+  year: "2018",
+  manufacturer: "Topps",
+  brand: "Topps",
+  product: "Topps Chrome",
+  set: "1983 Topps",
+  players: ["Shohei Ohtani"],
+  collector_number: "83T-6",
+  rc: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 80
+});
+assert.match(ohtani1983ToppsInsert.rendered_title, /^2018 Topps Chrome 1983 Topps Shohei Ohtani/i);
+assert.doesNotMatch(ohtani1983ToppsInsert.rendered_title, /Topps\s+Topps/i);
+
 const dualAuto = renderResolvedTitle({
   year: "2025-26",
   brand: "Topps",
@@ -182,6 +200,42 @@ const insertCardType = renderResolvedTitle({
   maxLength: 80
 });
 assert.equal(insertCardType.rendered_title, "2025 Topps Finest Shohei Ohtani Gusto 5/5");
+
+const setAlreadyCarriesInsert = renderResolvedTitle({
+  year: "2025",
+  brand: "Topps",
+  product: "Topps Finest",
+  set: "Finest Gusto",
+  players: ["Shohei Ohtani"],
+  card_type: "Base",
+  insert: "Gusto",
+  serial_number: "5/5",
+  collector_number: "G-11"
+}, {
+  maxLength: 80
+});
+assert.doesNotMatch(setAlreadyCarriesInsert.rendered_title, /Gusto.*Gusto/i);
+assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani 5/5 #G-11");
+
+const productAlreadyCarriesInsert = renderResolvedTitle({
+  year: "2010-11",
+  brand: "Panini",
+  product: "Panini Absolute",
+  set: "Absolute Hoopla",
+  players: ["Kobe Bryant"],
+  card_type: "Auto Patch",
+  insert: "Hoopla",
+  serial_number: "08/25",
+  auto: true,
+  patch: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 80
+});
+assert.doesNotMatch(productAlreadyCarriesInsert.rendered_title, /Hoopla.*Hoopla/i);
+assert.equal(productAlreadyCarriesInsert.rendered_title, "2010-11 Panini Absolute Hoopla Kobe Bryant Auto Patch 08/25 PSA 10");
 
 const tripleThreadsMultiPlayer = renderResolvedTitle({
   year: "2020",

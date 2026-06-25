@@ -1176,6 +1176,122 @@ assert.equal(marketplaceVerification.evidence.parallel, undefined);
 assert.equal(marketplaceVerification.summary.market_reference_fields.parallel[0].value, "Gold Wave");
 assert.equal(marketplaceVerification.summary.ignored_candidates[0].reason, "candidate_source_is_reference_only");
 
+const visualWembyCandidates = [
+  {
+    candidate_id: "visual_wemby_1",
+    source_url: "supabase://card-identities/wemby-1",
+    domain: "supabase-vector",
+    source_type: "VISUAL_VECTOR",
+    trust_tier: 6,
+    title: "2025-26 Topps Chrome Victor Wembanyama Gold Refractor 17/50 #221",
+    match_score: 0.82,
+    visual_similarity: 0.92,
+    visual_margin_to_next: 0.11,
+    matched_fields: ["visual_vector"],
+    fields: {
+      year: "2025-26",
+      product: "Topps Chrome",
+      players: ["Victor Wembanyama"],
+      collector_number: "221",
+      serial_number: "17/50",
+      grade_company: "PSA",
+      card_grade: "10",
+      parallel: "Gold Refractor"
+    }
+  },
+  {
+    candidate_id: "visual_wemby_2",
+    source_url: "supabase://card-identities/wemby-2",
+    domain: "supabase-vector",
+    source_type: "VISUAL_VECTOR",
+    trust_tier: 6,
+    title: "2025-26 Topps Chrome Victor Wembanyama Gold Refractor #221",
+    match_score: 0.79,
+    visual_similarity: 0.88,
+    visual_margin_to_next: 0.07,
+    matched_fields: ["visual_vector"],
+    fields: {
+      year: "2025-26",
+      product: "Topps Chrome",
+      players: ["Victor Wembanyama"],
+      collector_number: "221",
+      parallel: "Gold Refractor"
+    }
+  }
+];
+const visualYearConsensus = verifyRetrievalCandidates({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    collector_number: "221"
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2024", status: "REVIEW", confidence: 0.62 }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "REVIEW", confidence: 0.68 }),
+    players: createEvidenceField({ value: ["Victor Wembanyama"], status: "REVIEW", confidence: 0.68 }),
+    collector_number: createEvidenceField({ value: "221", status: "REVIEW", confidence: 0.68 })
+  },
+  retrieval: {
+    selected_candidate: null,
+    sources: visualWembyCandidates
+  }
+});
+assert.equal(visualYearConsensus.resolved.year, "2025-26");
+assert.equal(visualYearConsensus.resolved.serial_number, null);
+assert.equal(visualYearConsensus.resolved.grade_company, null);
+assert.equal(visualYearConsensus.evidence.year.status, "REVIEW");
+assert.ok(visualYearConsensus.evidence.year.conflicts.some((conflict) => conflict.reason === "visual_vector_candidate_consensus_corrected_single_source_field"));
+assert.ok(visualYearConsensus.summary.visual_vector.consensus_fields.includes("year"));
+
+const visualMultiSubject = verifyRetrievalCandidates({
+  resolved: {
+    year: "2020",
+    product: "Triple Threads",
+    players: ["Mike Trout"]
+  },
+  evidence: {
+    players: createEvidenceField({ value: ["Mike Trout"], status: "REVIEW", confidence: 0.7 })
+  },
+  retrieval: {
+    selected_candidate: null,
+    sources: [
+      {
+        candidate_id: "visual_triple_threads_1",
+        source_type: "VISUAL_VECTOR",
+        trust_tier: 6,
+        title: "2020 Triple Threads Hank Aaron Ken Griffey Jr. Mike Trout Jersey Auto 6/9 BGS 9",
+        match_score: 0.86,
+        visual_similarity: 0.91,
+        visual_margin_to_next: 0.1,
+        matched_fields: ["visual_vector"],
+        fields: {
+          year: "2020",
+          product: "Triple Threads",
+          players: ["Hank Aaron", "Ken Griffey Jr.", "Mike Trout"]
+        }
+      },
+      {
+        candidate_id: "visual_triple_threads_2",
+        source_type: "VISUAL_VECTOR",
+        trust_tier: 6,
+        title: "2020 Topps Triple Threads Hank Aaron Ken Griffey Jr Mike Trout Auto Relic",
+        match_score: 0.8,
+        visual_similarity: 0.86,
+        visual_margin_to_next: 0.04,
+        matched_fields: ["visual_vector"],
+        fields: {
+          year: "2020",
+          product: "Triple Threads",
+          players: ["Hank Aaron", "Ken Griffey Jr.", "Mike Trout"]
+        }
+      }
+    ]
+  }
+});
+assert.deepEqual(visualMultiSubject.resolved.players, ["Mike Trout", "Hank Aaron", "Ken Griffey Jr."]);
+assert.ok(visualMultiSubject.summary.visual_vector.consensus_fields.includes("players"));
+
 const conflictingVerification = verifyRetrievalCandidates({
   resolved: {
     ...baseResolved,
