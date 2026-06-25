@@ -2174,6 +2174,8 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "Goal: extract grounded identity evidence; deterministic code will render the English title.",
     "Fill every directly visible core field. Missing serial, grade, or exact parallel must not erase visible year, product, set, or players.",
     "Leave only unreadable or uncertain high-risk fields empty.",
+    "Use this shared field module order: Year -> Franchise/Brand -> Product/Set -> Subject -> Card Type -> Variant/Parallel/Rarity -> Number/Serial/Grade.",
+    "Do not cross module boundaries: serial numbers are not grades, grade-label words are not checklist codes, product names are not player names, and visual color alone is surface_color rather than exact parallel.",
     "If a card has front and back images, combine them into one identity when they are the same card.",
     "Slab label rule: if a PSA/BGS/SGC/CGC label is visible, read it first and map label lines directly into year, product, players, collector_number/checklist_code, grade_company, card_grade, grade_type, insert, variation, and auto.",
     "Never return only a year when the slab label also contains readable product, player, grade, or card number.",
@@ -3034,11 +3036,52 @@ function geminiRetryHasValue(fields = {}, fieldName) {
 
 function missingGeminiRetryFocusFields(providerResult = {}) {
   const fields = providerParsedFields(providerResult);
+  const parsed = providerResult.parsed || {};
+  const fieldEvidence = parsed.field_evidence && typeof parsed.field_evidence === "object" && !Array.isArray(parsed.field_evidence)
+    ? parsed.field_evidence
+    : {};
+  const evidenceText = [
+    parsed.title,
+    parsed.model_title_suggestion,
+    parsed.reason,
+    ...(Array.isArray(parsed.unresolved) ? parsed.unresolved : []),
+    ...Object.values(fields).flatMap((value) => Array.isArray(value) ? value : [value]),
+    ...Object.values(fieldEvidence).flatMap((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      return [entry.value, entry.visible_text, entry.raw_text, entry.support_type, entry.evidence_kind];
+    })
+  ].map((value) => String(value || "").trim()).filter(Boolean).join(" | ");
+  const hasText = (pattern) => pattern.test(evidenceText);
   const missing = [];
   if (!geminiRetryHasValue(fields, "year")) missing.push("year");
-  if (!geminiRetryHasValue(fields, "product")) missing.push("product");
+  if (!geminiRetryHasValue(fields, "product")
+    || /^(?:Prizm|Chrome|Finest|Contenders|Sapphire|Black|Hoops|Heritage|Optic|Greats)$/i.test(String(fields.product || "").trim())) {
+    missing.push("product");
+  }
   if (!geminiRetryHasValue(fields, "players") && !geminiRetryHasValue(fields, "player")) missing.push("players");
-  return missing;
+  if (!geminiRetryHasValue(fields, "serial_number") && (hasText(/\b\d{1,4}\s*\/\s*\d{1,4}\b/) || hasText(/\bserial\b/i))) {
+    missing.push("serial_number");
+  }
+  if ((!geminiRetryHasValue(fields, "collector_number") && !geminiRetryHasValue(fields, "checklist_code"))
+    && hasText(/(?:^|\s)#\s*[A-Z0-9-]{1,16}\b|\bchecklist|card\s+number\b/i)) {
+    missing.push("card_code");
+  }
+  const hasValidCardGrade = /^(?:10|9\.5|9|8\.5|8|7\.5|7|6\.5|6|5\.5|5|AUTHENTIC)$/i.test(String(fields.card_grade || fields.grade || "").trim());
+  const hasValidAutoGrade = /^(?:10|9\.5|9|8\.5|8|7\.5|7|6\.5|6|5\.5|5|AUTHENTIC)$/i.test(String(fields.auto_grade || "").trim());
+  if (((hasText(/\b(?:PSA|BGS|SGC|CGC|GEM\s*MT|MINT|NM-MT|AUTHENTIC)\b/i) && (!geminiRetryHasValue(fields, "grade_company") || !hasValidCardGrade))
+    || (geminiRetryHasValue(fields, "auto_grade") && !hasValidAutoGrade))) {
+    missing.push("grade_label");
+  }
+  if ((!fields.rc && hasText(/\b(?:RC|Rookie\s+Ticket|Rated\s+Rookie|Rookie\s+Card)\b/i))
+    || (!fields.auto && hasText(/\b(?:Auto|Autograph|Autographed|Signature|Signed)\b/i))) {
+    missing.push("rc_auto");
+  }
+  if (!geminiRetryHasValue(fields, "parallel_exact")
+    && !geminiRetryHasValue(fields, "parallel")
+    && hasText(/\b(?:Refractor|Prizm|Wave|Shimmer|Mojo|Sparkle|Speckle|Holo|Hyper|First\s+Day|Bordered)\b/i)) {
+    missing.push("parallel");
+  }
+  return [...new Set(missing)];
 }
 
 function geminiCoreFieldRetryPrompt(missingFields = []) {
@@ -3064,7 +3107,9 @@ function geminiVisibleTextRetryPrompt(missingFields = []) {
     "Focused visible-text transcription for missing card identity fields.",
     `Missing fields: ${missingFields.join(", ") || "product, players"}.`,
     "Transcribe all readable PSA/BGS/SGC/CGC slab label lines first.",
-    "Then transcribe prominent player, product, card number, grade, RC, autograph, serial, and insert text visible on the card.",
+    "Then transcribe prominent player, product, card number, grade, RC, autograph, serial, insert, card type, parallel, and color text visible on the card.",
+    "For multi-subject cards, put each readable subject name on a separate visible_text_lines entry when possible.",
+    "Keep grade labels as lines such as PSA, BGS, GEM MT 10, MINT 9, AUTO 10. Keep serials as stamped strings such as 29/199.",
     "Do not infer or normalize; exact visible text lines only."
   ].join("\n");
 }
@@ -3072,6 +3117,17 @@ function geminiVisibleTextRetryPrompt(missingFields = []) {
 function mergeableGeminiRetryValue(fieldName, value) {
   if (fieldName === "grade_type") return hasEvidenceValue(value) && String(value).toUpperCase() !== "UNKNOWN";
   return hasEvidenceValue(value);
+}
+
+function shouldReplaceGeminiRetryValue(fieldName, currentValue, retryValue) {
+  if (!mergeableGeminiRetryValue(fieldName, retryValue)) return false;
+  if (!mergeableGeminiRetryValue(fieldName, currentValue)) return true;
+  if (fieldName !== "product") return false;
+  const current = String(currentValue || "").trim().toLowerCase();
+  const retry = String(retryValue || "").trim().toLowerCase();
+  if (!current || !retry || current === retry) return false;
+  return /^(?:prizm|chrome|finest|contenders|sapphire|black|hoops|heritage|optic|greats)$/i.test(current)
+    && retry.includes(current);
 }
 
 function mergeGeminiRetryParsed(primaryParsed = {}, retryParsed = {}) {
@@ -3085,7 +3141,8 @@ function mergeGeminiRetryParsed(primaryParsed = {}, retryParsed = {}) {
 
   Object.entries(retryFields).forEach(([fieldName, value]) => {
     if (!mergeableGeminiRetryValue(fieldName, value)) return;
-    if (mergeableGeminiRetryValue(fieldName, mergedFields[fieldName])) return;
+    if (mergeableGeminiRetryValue(fieldName, mergedFields[fieldName])
+      && !shouldReplaceGeminiRetryValue(fieldName, mergedFields[fieldName], value)) return;
     mergedFields[fieldName] = value;
     updatedFields.push(fieldName);
   });
@@ -3105,22 +3162,31 @@ function mergeGeminiRetryParsed(primaryParsed = {}, retryParsed = {}) {
   };
 }
 
-function geminiCoreFieldRetryImages(images = []) {
-  const primary = primaryImagesFromImages(images || []);
-  const front = primary.find((image) => {
+function geminiCoreFieldRetryImages(images = [], missingFields = []) {
+  const primary = primaryImagesFromImages(images || []).slice(0, 2);
+  const targetRegions = new Set([
+    ...missingFields,
+    ...(missingFields.includes("serial_number") ? ["serial"] : []),
+    ...(missingFields.includes("card_code") ? ["collector_number", "checklist_code", "card_number"] : []),
+    ...(missingFields.includes("grade_label") ? ["grade"] : []),
+    ...(missingFields.includes("rc_auto") ? ["autograph", "signature"] : []),
+    ...(missingFields.includes("parallel") ? ["parallel_surface", "color", "variation"] : [])
+  ]);
+  const derived = derivedImagesFromImages(images || []).filter((image) => {
     const text = searchable([
-      image.side,
+      image.sourceRegion,
+      image.source_region,
+      image.storageRole,
+      image.storage_role,
       image.role,
       image.captureRole,
       image.capture_role,
-      image.storageRole,
-      image.storage_role,
       image.name
     ].filter(Boolean).join(" "));
-    return text.includes("front") || text.includes("primary");
-  });
-  const selected = front || primary[0] || images[0];
-  return selected ? [selected] : [];
+    return [...targetRegions].some((region) => text.includes(searchable(region)));
+  }).slice(0, 2);
+  const selected = [...primary, ...derived].filter(Boolean);
+  return selected.length ? selected.slice(0, 4) : images.slice(0, 2);
 }
 
 async function maybeRetryGeminiCoreFields(providerResult, {
@@ -3135,7 +3201,7 @@ async function maybeRetryGeminiCoreFields(providerResult, {
   let retryResult;
   try {
     retryResult = await runTimedProviderCall(visionProviderIds.GEMINI, timingContext, () => transcribeVisibleCardTextWithGemini({
-      images: geminiCoreFieldRetryImages(images),
+      images: geminiCoreFieldRetryImages(images, missingFields),
       prompt: geminiVisibleTextRetryPrompt(missingFields),
       env: geminiCoreFieldRetryEnv(process.env)
     }));

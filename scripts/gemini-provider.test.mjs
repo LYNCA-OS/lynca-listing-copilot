@@ -171,6 +171,41 @@ assert.equal(visibleTextMaterialWords.collector_number, "7");
 assert.notEqual(visibleTextMaterialWords.checklist_code, "NM-MT");
 assert.notEqual(visibleTextMaterialWords.checklist_code, "GAME-USED");
 
+const multiSubjectVisibleTextFields = geminiFieldsFromVisibleText([
+  "2020 TOPPS TRIPLE THREADS",
+  "HANK AARON",
+  "KEN GRIFFEY JR.",
+  "MIKE TROUT",
+  "HISTORIC TIES TRIPLE",
+  "#HTAR-AGT",
+  "6/9",
+  "JERSEY AUTO",
+  "BGS",
+  "MINT 9"
+]);
+assert.equal(multiSubjectVisibleTextFields.product, "Topps Triple Threads");
+assert.deepEqual(multiSubjectVisibleTextFields.players, ["Hank Aaron", "Ken Griffey Jr", "Mike Trout"]);
+assert.equal(multiSubjectVisibleTextFields.insert, "Historic Ties Triple");
+assert.equal(multiSubjectVisibleTextFields.card_type, "Auto Relic");
+assert.equal(multiSubjectVisibleTextFields.collector_number, "HTAR-AGT");
+assert.equal(multiSubjectVisibleTextFields.serial_number, "6/9");
+assert.equal(multiSubjectVisibleTextFields.grade_company, "BGS");
+assert.equal(multiSubjectVisibleTextFields.card_grade, "9");
+assert.equal(multiSubjectVisibleTextFields.auto, true);
+
+const visibleTextParallelFields = geminiFieldsFromVisibleText([
+  "2023 PANINI DONRUSS OPTIC FOOTBALL",
+  "DONTAYVION WICKS",
+  "RATED ROOKIE",
+  "BLUE HYPER PRIZM"
+]);
+assert.equal(visibleTextParallelFields.product, "Panini Donruss Optic Football");
+assert.deepEqual(visibleTextParallelFields.players, ["Dontayvion Wicks"]);
+assert.equal(visibleTextParallelFields.insert, "Rated Rookie");
+assert.equal(visibleTextParallelFields.rc, true);
+assert.equal(visibleTextParallelFields.parallel_exact, "Blue Hyper Prizm");
+assert.equal(visibleTextParallelFields.surface_color, "Blue");
+
 await assert.rejects(
   analyzeCardEvidenceWithGemini({
     images: [{ url: "https://example.com/front.jpg" }],
@@ -408,6 +443,105 @@ assert.equal(pollutedFieldsResult.parsed.fields.serial_number, "029/199");
 assert.equal(pollutedFieldsResult.parsed.fields.checklist_code, "CL-LM");
 assert.equal(pollutedFieldsResult.parsed.fields.rc, false);
 assert.doesNotMatch(JSON.stringify(pollutedFieldsResult.parsed.fields), /Note:|release based|copyright/i);
+
+const gradeAndProductSanitizeResult = await analyzeCardEvidenceWithGemini({
+  images: [{ dataUrl, side: "front" }],
+  prompt: "Return JSON.",
+  env,
+  clientFactory: () => ({
+    interactions: {
+      create: async () => ({
+        id: "interaction_grade_product_sanitize",
+        status: "completed",
+        output_text: JSON.stringify({
+          title: "2025-26 Panini Prizm FIFA Soccer Club Legends Lionel Messi Auto 029/199",
+          confidence: "HIGH",
+          recognition_status: "CONFIRMED",
+          fields: {
+            product: "Prizm",
+            set: "Club Legends",
+            players: ["Lionel Messi"],
+            serial_number: "029/199",
+            checklist_code: "NM-MT",
+            auto_grade: "029",
+            grade_type: "AUTO_ONLY",
+            auto: true
+          },
+          field_evidence: {
+            product: {
+              value: "Panini Prizm FIFA Soccer",
+              visible_text: "2025-26 Panini Prizm FIFA Soccer",
+              support_type: "CARD_BACK_PRINTED_TEXT",
+              confidence: 0.9,
+              review_required: false
+            },
+            auto: {
+              value: true,
+              visible_text: "Auto",
+              support_type: "CARD_FRONT_PRINTED_TEXT",
+              evidence_kind: "AUTO_TEXT",
+              confidence: 0.9,
+              review_required: false
+            }
+          },
+          unresolved: []
+        }),
+        usage: {}
+      })
+    }
+  })
+});
+assert.equal(gradeAndProductSanitizeResult.parsed.fields.product, "Panini Prizm FIFA Soccer");
+assert.equal(gradeAndProductSanitizeResult.parsed.fields.checklist_code, undefined);
+assert.equal(gradeAndProductSanitizeResult.parsed.fields.auto_grade, undefined);
+assert.equal(gradeAndProductSanitizeResult.parsed.fields.grade_type, "UNKNOWN");
+assert.equal(gradeAndProductSanitizeResult.parsed.fields.auto, true);
+
+const chromeBlackProductResult = await analyzeCardEvidenceWithGemini({
+  images: [{ dataUrl, side: "front" }],
+  prompt: "Return JSON.",
+  env,
+  clientFactory: () => ({
+    interactions: {
+      create: async () => ({
+        id: "interaction_chrome_black_product",
+        status: "completed",
+        output_text: JSON.stringify({
+          title: "",
+          confidence: "HIGH",
+          recognition_status: "CONFIRMED",
+          fields: {
+            product: "Topps Chrome Black",
+            players: ["Paul Kasey"],
+            auto: true
+          },
+          field_evidence: {
+            product: {
+              value: "Topps Chrome Black",
+              visible_text: "Topps Chrome Black",
+              support_type: "CARD_FRONT_PRINTED_TEXT",
+              confidence: 0.9,
+              review_required: false
+            },
+            auto: {
+              value: true,
+              visible_text: "Chrome Autograph",
+              support_type: "CARD_FRONT_PRINTED_TEXT",
+              evidence_kind: "AUTO_TEXT",
+              confidence: 0.9,
+              review_required: false
+            }
+          },
+          unresolved: []
+        }),
+        usage: {}
+      })
+    }
+  })
+});
+assert.equal(chromeBlackProductResult.parsed.fields.product, "Topps Chrome Black");
+assert.equal(chromeBlackProductResult.parsed.fields.parallel_exact, undefined);
+assert.equal(chromeBlackProductResult.parsed.fields.surface_color, "Black");
 
 const slabVisibleTextResult = await analyzeCardEvidenceWithGemini({
   images: [{ dataUrl, side: "front" }],
