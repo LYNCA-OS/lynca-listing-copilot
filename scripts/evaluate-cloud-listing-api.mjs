@@ -287,23 +287,40 @@ export function validateProtectionBypassSecret({ bypassSecret = "", env = {} } =
 }
 
 async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 120_000, label = "Cloud request") {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs) || 120_000));
-  try {
-    return await fetchImpl(url, {
-      ...init,
-      signal: init.signal || controller.signal
-    });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      const timeoutError = new Error(`${label} timed out after ${Math.max(1, Number(timeoutMs) || 120_000)}ms.`);
-      timeoutError.code = "cloud_request_timeout";
-      throw timeoutError;
+  const maxAttempts = Math.max(1, Number(process.env.CLOUD_LISTING_API_FETCH_ATTEMPTS || 3));
+  const retryableCodes = new Set([
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_SOCKET",
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "ETIMEDOUT",
+    "EAI_AGAIN"
+  ]);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs) || 120_000));
+    try {
+      return await fetchImpl(url, {
+        ...init,
+        signal: init.signal || controller.signal
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        const timeoutError = new Error(`${label} timed out after ${Math.max(1, Number(timeoutMs) || 120_000)}ms.`);
+        timeoutError.code = "cloud_request_timeout";
+        throw timeoutError;
+      }
+      const code = error?.cause?.code || error?.code || "";
+      const retryable = retryableCodes.has(code) || /fetch failed|network|socket|timeout/i.test(error?.message || "");
+      if (!retryable || attempt >= maxAttempts) throw error;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, Math.min(8000, 1000 * (2 ** (attempt - 1)))));
+    } finally {
+      clearTimeout(timeout);
     }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw new Error(`${label} failed without a response.`);
 }
 
 async function login({ baseUrl, username, password, bypassSecret = "", requestTimeoutMs = 120_000, fetchImpl = globalThis.fetch }) {
