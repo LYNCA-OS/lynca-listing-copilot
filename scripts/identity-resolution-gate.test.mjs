@@ -491,6 +491,49 @@ assert.deepEqual(structuredGeminiGate.writer_required_fields, ["year"]);
 assert.deepEqual(structuredGeminiGate.writer_required_fields, structuredGptGate.writer_required_fields);
 assert.equal(structuredGeminiGate.final_title, structuredGptGate.final_title);
 
+const observedMultiSubjectWriterDraft = applyIdentityResolutionGate({
+  title: "",
+  model_title_suggestion: "",
+  confidence: "HIGH",
+  reason: "Provider saw a triple-subject card, but the resolved hint only retained one subject.",
+  provider: "cascade_fast",
+  raw_provider_fields: {
+    players: ["Hank Aaron", "Ken Griffey Jr.", "Mike Trout"]
+  },
+  resolved: normalizeResolvedFields({
+    year: "2020",
+    product: "Topps Triple Threads",
+    set: "Historic Ties",
+    players: ["Mike Trout"],
+    card_type: "Autograph Relic",
+    insert: "Triple Autograph Relic",
+    auto: true
+  }),
+  evidence: {
+    year: visionOnlyEvidence("2020"),
+    product: groundedEvidence("Topps Triple Threads"),
+    set: groundedEvidence("Historic Ties"),
+    players: visionOnlyEvidence(["Mike Trout"]),
+    card_type: groundedEvidence("Autograph Relic"),
+    insert: groundedEvidence("Triple Autograph Relic"),
+    auto: groundedEvidence(true)
+  },
+  unresolved: []
+}, {
+  maxLength: 140,
+  providerId: "primary_fast_vision"
+});
+assert.equal(observedMultiSubjectWriterDraft.publication_gate.writer_review_ready, true);
+assert.deepEqual(observedMultiSubjectWriterDraft.resolved.players, ["Mike Trout", "Hank Aaron", "Ken Griffey Jr."]);
+assert.deepEqual(observedMultiSubjectWriterDraft.identity_resolution.identity.players, ["Mike Trout", "Hank Aaron", "Ken Griffey Jr."]);
+assert.deepEqual(
+  observedMultiSubjectWriterDraft.field_states.find((fieldState) => fieldState.field === "players")?.resolved_value,
+  ["Mike Trout", "Hank Aaron", "Ken Griffey Jr."]
+);
+assert.match(observedMultiSubjectWriterDraft.final_title, /Hank Aaron/);
+assert.match(observedMultiSubjectWriterDraft.final_title, /Ken Griffey Jr/);
+assert.match(observedMultiSubjectWriterDraft.final_title, /Mike Trout/);
+
 const pokemonCritical = criticalFieldsForIdentityResolution(normalizeResolvedFields({
   product: "Pokemon Scarlet Violet",
   character: "Pikachu"
