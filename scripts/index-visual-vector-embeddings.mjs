@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
+import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
 
 const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candidates.json";
 const defaultOutPath = "data/eval/provider-regression-30/visual-vector-index-latest.json";
@@ -94,12 +95,22 @@ function canonicalTitleForItem(item = {}) {
 }
 
 function fieldsForItem(item = {}) {
+  const canonicalTitle = canonicalTitleForItem(item);
+  const titleDerivedFields = parseReviewedTitleFields(canonicalTitle);
   return {
+    ...titleDerivedFields,
     ...(item.ground_truth && typeof item.ground_truth === "object" ? item.ground_truth : {}),
     annotation_hint: {
       corrected_title: item.source_titles?.corrected_title || item.corrected_title || "",
       generated_title: item.source_titles?.generated_title || "",
-      corrected_title_is_ground_truth: false
+      corrected_title_is_ground_truth: false,
+      title_derived_fields_are_ground_truth: false,
+      title_derived_field_names: Object.keys(titleDerivedFields).filter((fieldName) => {
+        const value = titleDerivedFields[fieldName];
+        if (Array.isArray(value)) return value.length > 0;
+        if (typeof value === "boolean") return value === true;
+        return value !== null && value !== undefined && String(value).trim() !== "" && value !== "UNKNOWN";
+      })
     }
   };
 }

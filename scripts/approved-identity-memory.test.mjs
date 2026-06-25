@@ -230,6 +230,13 @@ assert.equal(parsedTitle.serial_number, "5/50");
 assert.equal(parsedTitle.grade_company, "PSA");
 assert.equal(parsedTitle.card_grade, "9");
 
+const parsedCollectorNumber = parseReviewedTitleFields("2025 Topps Chrome Cooper Flagg Next Stop Signatures RC 72/75 Auto #NS-CF");
+assert.equal(parsedCollectorNumber.year, "2025");
+assert.equal(parsedCollectorNumber.product, "Topps Chrome");
+assert.equal(parsedCollectorNumber.collector_number, "NS-CF");
+assert.equal(parsedCollectorNumber.serial_number, "72/75");
+assert.equal(parsedCollectorNumber.auto, true);
+
 const parsedBeckett = parseReviewedTitleFields("2021-22 Panini Impeccable Cristiano Ronaldo Canvas Creations Auto 91/99 Beckett 8.5");
 assert.equal(parsedBeckett.grade_company, "BGS");
 assert.equal(parsedBeckett.card_grade, "8.5");

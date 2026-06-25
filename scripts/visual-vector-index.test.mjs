@@ -76,6 +76,10 @@ try {
       assert.equal(request.body[0].retrieval_status, "candidate");
       assert.equal(request.body[0].retrieval_enabled, true);
       assert.equal(request.body[0].source_record.corrected_title_is_ground_truth, false);
+      assert.equal(request.body[0].fields.product, "Topps Chrome");
+      assert.equal(request.body[0].fields.collector_number, "1");
+      assert.equal(request.body[0].fields.annotation_hint.title_derived_fields_are_ground_truth, false);
+      assert.ok(request.body[0].fields.annotation_hint.title_derived_field_names.includes("collector_number"));
       return jsonResponse([{ identity_id: "identity-1" }], 201);
     }
     if (request.method === "POST" && request.url.includes("/rest/v1/card_reference_images?on_conflict=")) {

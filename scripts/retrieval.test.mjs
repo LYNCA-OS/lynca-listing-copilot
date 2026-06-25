@@ -162,6 +162,45 @@ assert.equal(activeVisualResult.candidates[0].trust_tier, 6);
 assert.equal(activeVisualResult.candidates[0].visual_similarity, 0.92);
 assert.equal(activeVisualResult.candidates[0].visual_margin_to_next, 0.21);
 
+const titleDerivedVisualProvider = visualVectorProvider({
+  env: {
+    ENABLE_VISUAL_VECTOR_RETRIEVAL: "true",
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([
+    {
+      identity_id: "77777777-7777-7777-7777-777777777777",
+      reference_image_id: "88888888-8888-8888-8888-888888888888",
+      embedding_id: "99999999-9999-9999-9999-999999999999",
+      embedding_role: "front_global",
+      model_id: "google/siglip2-base-patch16-384",
+      model_revision: "main",
+      preprocessing_version: "card-rectification-v1",
+      similarity: 0.95,
+      distance: 0.05,
+      canonical_title: "2025 Topps Chrome Cooper Flagg #136 31/50 PSA 10",
+      fields: {
+        annotation_hint: {
+          corrected_title_is_ground_truth: false
+        }
+      }
+    }
+  ]), { status: 200 })
+});
+const titleDerivedVisualResult = await titleDerivedVisualProvider.search({
+  query: visualQuery,
+  resolved: { category: "basketball" }
+});
+assert.equal(titleDerivedVisualResult.candidates[0].fields.year, "2025");
+assert.equal(titleDerivedVisualResult.candidates[0].fields.product, "Topps Chrome");
+assert.equal(titleDerivedVisualResult.candidates[0].fields.collector_number, "136");
+assert.equal(titleDerivedVisualResult.candidates[0].fields.serial_number, "31/50");
+assert.equal(titleDerivedVisualResult.candidates[0].fields.grade_company, "PSA");
+assert.equal(titleDerivedVisualResult.candidates[0].fields.card_grade, "10");
+assert.equal(titleDerivedVisualResult.candidates[0].field_derivation.title_derived_fields_are_ground_truth, false);
+assert.ok(titleDerivedVisualResult.candidates[0].field_derivation.title_derived_field_names.includes("collector_number"));
+
 let candidatePoolRpcBody = null;
 const candidatePoolVisualProvider = visualVectorProvider({
   env: {
@@ -193,6 +232,8 @@ assert.ok(visualScore.matched_fields.includes("visual_vector"));
 assert.ok(visualScore.match_score > 0.4);
 const rankedStructuredVisual = rankRetrievalCandidates([activeVisualResult.candidates[0]], resolved);
 assert.equal(rankedStructuredVisual.selected_candidate.candidate_id, activeVisualResult.candidates[0].candidate_id);
+const rankedTitleDerivedVisual = rankRetrievalCandidates([titleDerivedVisualResult.candidates[0]], resolved);
+assert.equal(rankedTitleDerivedVisual.selected_candidate.candidate_id, titleDerivedVisualResult.candidates[0].candidate_id);
 
 const titleOnlyVisualCandidate = {
   candidate_id: "visual-title-only",
