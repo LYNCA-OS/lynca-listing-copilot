@@ -3138,7 +3138,13 @@ function vectorRetrievalEnv(env = process.env, config = vectorRetrievalConfig(en
     VISUAL_VECTOR_MATCH_COUNT: String(config.internalTopN),
     VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS: String(config.queryTimeoutMs),
     VECTOR_RETRIEVAL_INTERNAL_TOP_N: String(config.internalTopN),
-    VECTOR_QUERY_TIMEOUT_MS: String(config.queryTimeoutMs)
+    VECTOR_QUERY_TIMEOUT_MS: String(config.queryTimeoutMs),
+    ENABLE_ADVANCED_RETRIEVAL: config.advancedRetrievalEnabled ? "true" : "false",
+    ENABLE_HYBRID_RETRIEVAL: config.hybridRetrievalEnabled ? "true" : "false",
+    ADVANCED_RETRIEVAL_STAGE1_TOP_N: String(config.advancedStage1TopN),
+    ADVANCED_RETRIEVAL_RRF_K: String(config.rrfK),
+    ADVANCED_RETRIEVAL_LOW_MARGIN: String(config.lowMarginThreshold),
+    POSTGRES_HYBRID_RETRIEVAL_TOP_N: String(config.advancedStage1TopN)
   };
 }
 
@@ -3173,6 +3179,7 @@ async function prepareVectorCandidateContext({
   initialPayload,
   signedImages,
   visualFeatures = {},
+  resolvedForRetrieval = {},
   providerOptions = {},
   timingContext = null,
   env = process.env
@@ -3225,12 +3232,20 @@ async function prepareVectorCandidateContext({
   }
 
   const retrievalStartedAt = Date.now();
+  const allowedFamilies = config.hybridRetrievalEnabled
+    ? [
+      retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+      retrievalQueryFamilies.INTERNAL_REGISTRY,
+      retrievalQueryFamilies.VISUAL_VECTOR,
+      retrievalQueryFamilies.POSTGRES_HYBRID
+    ]
+    : [retrievalQueryFamilies.VISUAL_VECTOR];
   const retrieval = await timeAsync(timingContext, "vector_retrieval_ms", () => runRetrieval({
-    resolved: {},
+    resolved: resolvedForRetrieval || {},
     visualEmbeddings: activeVisualFeatures,
     mode: retrievalModes.INTERNAL_ONLY,
-    allowedFamilies: [retrievalQueryFamilies.VISUAL_VECTOR],
-    maxQueries: 2,
+    allowedFamilies,
+    maxQueries: config.hybridRetrievalEnabled ? Math.max(4, allowedFamilies.length + 2) : 2,
     env: vectorRetrievalEnv(env, config)
   }));
   const packet = buildVectorCandidatePacket(retrieval, {
@@ -3534,6 +3549,7 @@ async function createOpenAiTitle(payload, selection, {
     initialPayload: baseInitialPayload,
     signedImages,
     visualFeatures,
+    resolvedForRetrieval: recognitionEvidenceDocument?.resolved || payload.resolved || payload.resolvedHint || payload.resolved_hint || {},
     providerOptions,
     timingContext
   });

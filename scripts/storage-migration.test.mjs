@@ -9,6 +9,8 @@ const visualVectorMigration = await readFile("supabase/migrations/20260625035856
 const visualVectorRollback = await readFile("supabase/migrations/20260625035856_card_visual_vector_retrieval_rollback.sql", "utf8");
 const vectorQueryLifecycleMigration = await readFile("supabase/migrations/20260625151516_vector_query_lifecycle.sql", "utf8");
 const vectorQueryLifecycleRollback = await readFile("supabase/migrations/20260625151516_vector_query_lifecycle_rollback.sql", "utf8");
+const advancedRetrievalMigration = await readFile("supabase/migrations/20260625153857_advanced_retrieval_accuracy_pack.sql", "utf8");
+const advancedRetrievalRollback = await readFile("supabase/migrations/20260625153857_advanced_retrieval_accuracy_pack_rollback.sql", "utf8");
 const phase2 = await readFile("docs/architecture/phase-2-storage-image-quality-2026-06-22.md", "utf8");
 
 assert.match(migration, /insert into storage\.buckets/i, "storage migration should create the Supabase bucket");
@@ -73,6 +75,36 @@ assert.match(vectorQueryLifecycleMigration, /revoke all on table public\.vector_
 assert.match(vectorQueryLifecycleMigration, /grant select, insert, update, delete on table public\.vector_retrieval_candidates to service_role/i, "retrieval candidate telemetry should be service-role only");
 assert.match(vectorQueryLifecycleRollback, /drop table if exists public\.vector_query_logs/i, "vector lifecycle rollback should drop query logs");
 assert.match(vectorQueryLifecycleRollback, /drop table if exists public\.vector_index_snapshots/i, "vector lifecycle rollback should drop snapshots");
+
+assert.match(advancedRetrievalMigration, /create extension if not exists pg_trgm with schema extensions/i, "advanced retrieval migration should enable trigram search");
+assert.match(advancedRetrievalMigration, /card_design/i, "advanced retrieval migration should allow card design embedding roles");
+assert.match(advancedRetrievalMigration, /identity_text/i, "advanced retrieval migration should allow identity text embedding roles");
+assert.match(advancedRetrievalMigration, /create table if not exists public\.vector_hard_negatives/i, "advanced retrieval migration should create hard negative store");
+assert.match(advancedRetrievalMigration, /same_subject_different_card/i, "hard negative taxonomy should include same-subject different-card errors");
+assert.match(advancedRetrievalMigration, /same_denominator_different_parallel/i, "hard negative taxonomy should include denominator/parallel errors");
+assert.match(advancedRetrievalMigration, /create table if not exists public\.card_identity_prototypes/i, "advanced retrieval migration should create identity prototypes");
+assert.match(advancedRetrievalMigration, /identity_medoid_embedding extensions\.vector\(768\)/i, "identity prototypes should store medoid embeddings");
+assert.match(advancedRetrievalMigration, /quality_weighted_centroid extensions\.vector\(768\)/i, "identity prototypes should store quality-weighted centroids");
+assert.match(advancedRetrievalMigration, /create table if not exists public\.vector_fingerprints/i, "advanced retrieval migration should create visual fingerprints");
+assert.match(advancedRetrievalMigration, /content_sha256/i, "visual fingerprints should preserve content hashes");
+assert.match(advancedRetrievalMigration, /perceptual_hash/i, "visual fingerprints should preserve pHash");
+assert.match(advancedRetrievalMigration, /color_moment_hash/i, "visual fingerprints should preserve color moment hash");
+assert.match(advancedRetrievalMigration, /homography_valid/i, "visual fingerprints should store geometric verification support");
+assert.match(advancedRetrievalMigration, /create table if not exists public\.vector_ann_recall_audits/i, "advanced retrieval migration should create ANN recall audit records");
+assert.match(advancedRetrievalMigration, /ann_recall_at_1/i, "ANN audit should preserve recall@1");
+assert.match(advancedRetrievalMigration, /create table if not exists public\.vector_retrieval_ablation_runs/i, "advanced retrieval migration should create ablation run records");
+assert.match(advancedRetrievalMigration, /check \(step in \('A', 'B', 'C', 'D', 'E', 'F', 'G'\)\)/i, "ablation steps should be explicit");
+assert.match(advancedRetrievalMigration, /create or replace function public\.search_card_identities_hybrid/i, "advanced retrieval migration should expose hybrid Postgres RPC");
+assert.match(advancedRetrievalMigration, /websearch_to_tsquery/i, "hybrid RPC should use Postgres full-text search");
+assert.match(advancedRetrievalMigration, /extensions\.similarity/i, "hybrid RPC should use trigram similarity");
+assert.match(advancedRetrievalMigration, /alter table public\.vector_hard_negatives enable row level security/i, "hard negatives should have RLS enabled");
+assert.match(advancedRetrievalMigration, /revoke all on table public\.vector_hard_negatives from anon, authenticated/i, "hard negatives must stay server-only");
+assert.match(advancedRetrievalMigration, /grant select, insert, update, delete on table public\.vector_hard_negatives to service_role/i, "hard negatives should be service-role accessible");
+assert.match(advancedRetrievalMigration, /grant execute on function public\.search_card_identities_hybrid/i, "hybrid RPC should be callable only by service role");
+assert.match(advancedRetrievalMigration, /corrected titles and hidden ground truth are prohibited/i, "hybrid RPC comment should preserve no-label-leakage contract");
+assert.match(advancedRetrievalRollback, /drop function if exists public\.search_card_identities_hybrid/i, "advanced retrieval rollback should drop the hybrid RPC");
+assert.match(advancedRetrievalRollback, /drop table if exists public\.vector_hard_negatives/i, "advanced retrieval rollback should drop hard negatives");
+assert.match(advancedRetrievalRollback, /drop table if exists public\.card_identity_prototypes/i, "advanced retrieval rollback should drop identity prototypes");
 
 assert.match(phase2, /20260622_listing_image_storage\.sql/, "Phase 2 doc should mention the storage migration");
 assert.match(phase2, /20260622_listing_image_verifications\.sql/, "Phase 2 doc should mention the verification migration");
