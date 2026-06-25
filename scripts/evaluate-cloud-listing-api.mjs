@@ -568,6 +568,27 @@ function summarize(results = [], elapsedMs = 0) {
       ? Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(6))
       : null;
   };
+  const usageTotals = results.reduce((totals, item) => {
+    const usage = item.usage && typeof item.usage === "object" && !Array.isArray(item.usage)
+      ? item.usage
+      : {};
+    for (const key of [
+      "provider_calls",
+      "retrieval_calls",
+      "latency_ms",
+      "estimated_cost_usd",
+      "input_tokens",
+      "output_tokens",
+      "prompt_tokens",
+      "completion_tokens",
+      "total_tokens",
+      "image_count"
+    ]) {
+      const value = Number(usage[key]);
+      if (Number.isFinite(value)) totals[key] = Number(((totals[key] || 0) + value).toFixed(6));
+    }
+    return totals;
+  }, {});
   const percentile = (p) => {
     if (!elapsedValues.length) return null;
     const index = Math.min(elapsedValues.length - 1, Math.max(0, Math.ceil(elapsedValues.length * p) - 1));
@@ -597,7 +618,8 @@ function summarize(results = [], elapsedMs = 0) {
       resolved_fields: completenessAverage("resolved_fields"),
       rendered_fields: completenessAverage("rendered_fields"),
       reviewed_ground_truth: completenessAverage("reviewed_ground_truth")
-    }
+    },
+    usage_totals: usageTotals
   };
 }
 
@@ -687,6 +709,7 @@ export async function evaluateCloudListingApi({
           identity_resolution_status: data.identity_resolution_status || null,
           provider_recognition_status: data.provider_recognition_status || null,
           provider_parse_source: data.provider_parse_source || null,
+          usage: data.usage || null,
           native_schema_valid: data.native_schema_valid === true,
           format_repair_attempted: data.format_repair_attempted === true,
           local_json_repair_success: data.local_json_repair_success === true,
@@ -769,6 +792,9 @@ export async function main(argv = process.argv, env = process.env) {
     `evaluated_cards_per_minute: ${report.evaluated_cards_per_minute}`,
     `per_card_latency_ms_p50: ${report.per_card_latency_ms?.p50 ?? "n/a"}`,
     `per_card_latency_ms_p95: ${report.per_card_latency_ms?.p95 ?? "n/a"}`,
+    `input_tokens: ${report.usage_totals?.input_tokens ?? "n/a"}`,
+    `output_tokens: ${report.usage_totals?.output_tokens ?? "n/a"}`,
+    `total_tokens: ${report.usage_totals?.total_tokens ?? "n/a"}`,
     `raw_field_completeness_avg: ${report.breakpoint_completeness_avg?.raw_provider_fields ?? "n/a"}`,
     `normalized_evidence_completeness_avg: ${report.breakpoint_completeness_avg?.normalized_evidence ?? "n/a"}`,
     `resolved_field_completeness_avg: ${report.breakpoint_completeness_avg?.resolved_fields ?? "n/a"}`
