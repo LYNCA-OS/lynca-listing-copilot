@@ -290,6 +290,36 @@ assert.equal(structuredHighRiskFieldDocument.evidence.auto.sources[0].source_typ
 assert.equal(structuredHighRiskFieldDocument.evidence.auto.sources[0].signature_visible, true);
 assert.doesNotThrow(() => assertValidEvidenceDocument(structuredHighRiskFieldDocument));
 
+const contextualBackYearDocument = providerPayloadToEvidenceDocument({
+  title: "",
+  confidence: "HIGH",
+  fields: {
+    year: "2024",
+    product: "Topps Finest",
+    players: ["Shohei Ohtani"]
+  },
+  field_evidence: {
+    year: {
+      value: "2024",
+      support_type: "CARD_BACK_PRINTED_TEXT",
+      visible_text: "Of Ohtani's 57 home runs, including the Postseason, in 2024",
+      confidence: 0.95,
+      review_required: false
+    }
+  },
+  unresolved: []
+}, {
+  images: [
+    { id: "image-back", side: "back" }
+  ]
+});
+assert.equal(contextualBackYearDocument.evidence.year.value, "2024");
+assert.equal(contextualBackYearDocument.evidence.year.status, "REVIEW");
+assert.equal(contextualBackYearDocument.evidence.year.confidence, 0.42);
+assert.equal(contextualBackYearDocument.evidence.year.sources[0].source_type, "VISUAL_GUESS");
+assert.equal(contextualBackYearDocument.evidence.year.sources[0].evidence_kind, "YEAR_CONTEXT_TEXT");
+assert.equal(contextualBackYearDocument.evidence.year.unresolved_reason, "year_text_is_context_or_stat_not_product_year");
+
 const groundedIdentityMarkersDocument = providerPayloadToEvidenceDocument({
   title: "2024 Bowman Chrome Shohei Ohtani 1st Bowman RC",
   confidence: "HIGH",

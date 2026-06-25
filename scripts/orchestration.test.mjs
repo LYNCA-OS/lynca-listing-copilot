@@ -1244,6 +1244,50 @@ assert.equal(visualYearConsensus.evidence.year.status, "REVIEW");
 assert.ok(visualYearConsensus.evidence.year.conflicts.some((conflict) => conflict.reason === "visual_vector_candidate_consensus_corrected_single_source_field"));
 assert.ok(visualYearConsensus.summary.visual_vector.consensus_fields.includes("year"));
 
+const visualExactMatchSingleCandidate = verifyRetrievalCandidates({
+  resolved: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    collector_number: "221"
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2024", status: "REVIEW", confidence: 0.62 }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "REVIEW", confidence: 0.68 }),
+    players: createEvidenceField({ value: ["Victor Wembanyama"], status: "CONFIRMED", confidence: 0.9 }),
+    collector_number: createEvidenceField({ value: "221", status: "REVIEW", confidence: 0.68 })
+  },
+  retrieval: {
+    selected_candidate: null,
+    sources: [
+      {
+        candidate_id: "visual_wemby_exact",
+        source_url: "supabase://card-identities/wemby-exact",
+        domain: "supabase-vector",
+        source_type: "VISUAL_VECTOR",
+        trust_tier: 6,
+        title: "2025-26 Topps Chrome Victor Wembanyama Gold Refractor 17/50 Spurs",
+        match_score: 1,
+        visual_similarity: 1,
+        visual_margin_to_next: 0.26,
+        matched_fields: ["visual_vector"],
+        fields: {
+          year: "2025-26",
+          manufacturer: "Topps",
+          product: "Topps Chrome",
+          parallel: "Gold Refractor",
+          serial_number: "17/50"
+        }
+      }
+    ]
+  }
+});
+assert.equal(visualExactMatchSingleCandidate.resolved.year, "2025-26");
+assert.equal(visualExactMatchSingleCandidate.resolved.parallel, "Gold Refractor");
+assert.equal(visualExactMatchSingleCandidate.resolved.serial_number, null);
+assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("year"));
+assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("parallel"));
+
 const visualMultiSubject = verifyRetrievalCandidates({
   resolved: {
     year: "2020",
