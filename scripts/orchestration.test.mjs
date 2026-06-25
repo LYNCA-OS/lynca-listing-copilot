@@ -201,8 +201,7 @@ const exhaustedOcclusionState = createCompletionState({
     { action: completionActions.SEARCH_OFFICIAL_SOURCES, status: "no_information" },
     { action: completionActions.SEARCH_BRAVE, status: "no_information" },
     { action: completionActions.SEARCH_EBAY, status: "no_information" },
-    { action: completionActions.SEARCH_OWS_FALLBACK, status: "no_information" },
-    { action: completionActions.AGNES_FOCUSED_RECHECK, status: "no_information" }
+    { action: completionActions.SEARCH_OWS_FALLBACK, status: "no_information" }
   ]
 });
 const exhaustedOcclusionDecision = chooseNextBestAction({
@@ -466,7 +465,6 @@ const focusedRereadCompletion = await completeEvidence({
   },
   budgetOverrides: {
     maxRounds: 1,
-    maxAgnesCalls: 1
   },
   runFocusedVisionImpl: async ({ action, focusFields }) => {
     focusedRereadCalls += 1;
@@ -474,8 +472,8 @@ const focusedRereadCompletion = await completeEvidence({
     assert.deepEqual(focusFields, ["serial_number"]);
 
     return {
-      provider_id: "agnes",
-      model_id: "agnes-2.0-flash",
+      provider_id: "focused_vision",
+      model_id: "mock-focused-vision",
       resolved: {
         serial_number: "31/50"
       },
@@ -508,8 +506,8 @@ const focusedRereadCompletion = await completeEvidence({
 assert.equal(focusedRereadCalls, 1);
 assert.equal(focusedRereadCompletion.resolved.serial_number, "31/50");
 assert.equal(focusedRereadCompletion.evidence.serial_number.status, "CONFIRMED");
-assert.equal(focusedRereadCompletion.usage.provider_calls, 1);
-assert.equal(focusedRereadCompletion.budget.used.agnes_calls, 1);
+assert.equal(focusedRereadCompletion.usage.provider_calls, 0);
+assert.equal("agnes_calls" in focusedRereadCompletion.budget.used, false);
 assert.equal(focusedRereadCompletion.route, "AI_COMPLETE_REVIEW");
 const focusedRereadTrace = focusedRereadCompletion.resolution_trace.find((entry) => entry.output?.focused_vision?.updated_fields?.includes("serial_number"));
 assert.equal(focusedRereadTrace.status, "executed");
@@ -552,11 +550,10 @@ const invalidFocusedSerialCompletion = await completeEvidence({
   },
   budgetOverrides: {
     maxRounds: 1,
-    maxAgnesCalls: 1
   },
   runFocusedVisionImpl: async () => ({
-    provider_id: "agnes",
-    model_id: "agnes-2.0-flash",
+    provider_id: "focused_vision",
+    model_id: "mock-focused-vision",
     resolved: {
       serial_number: "not visible"
     },
@@ -593,7 +590,6 @@ const parallelFocusedCompletion = await completeEvidence({
   unresolved: ["product identity missing", "parallel requires review"],
   budgetOverrides: {
     maxRounds: 3,
-    maxAgnesCalls: 3,
     maxExternalQueries: 0
   },
   runFocusedVisionImpl: async ({ action }) => {
@@ -604,8 +600,8 @@ const parallelFocusedCompletion = await completeEvidence({
 
     if (action === completionActions.CROP_AND_READ_YEAR_PRODUCT) {
       return {
-        provider_id: "agnes",
-        model_id: "agnes-2.0-flash",
+        provider_id: "focused_vision",
+        model_id: "mock-focused-vision",
         resolved: {
           year: "2025",
           brand: "Topps",
@@ -622,8 +618,8 @@ const parallelFocusedCompletion = await completeEvidence({
 
     if (action === completionActions.CROP_AND_READ_SUBJECT) {
       return {
-        provider_id: "agnes",
-        model_id: "agnes-2.0-flash",
+        provider_id: "focused_vision",
+        model_id: "mock-focused-vision",
         resolved: {
           players: ["Cooper Flagg"]
         },
@@ -636,8 +632,8 @@ const parallelFocusedCompletion = await completeEvidence({
 
     if (action === completionActions.CROP_AND_READ_PARALLEL) {
       return {
-        provider_id: "agnes",
-        model_id: "agnes-2.0-flash",
+        provider_id: "focused_vision",
+        model_id: "mock-focused-vision",
         resolved: {
           parallel: "Gold Wave"
         },
@@ -649,8 +645,8 @@ const parallelFocusedCompletion = await completeEvidence({
     }
 
     return {
-      provider_id: "agnes",
-      model_id: "agnes-2.0-flash",
+      provider_id: "focused_vision",
+      model_id: "mock-focused-vision",
       resolved: {},
       evidence: {}
     };
@@ -677,8 +673,8 @@ assert.ok(parallelFocusedCompletion.evidence.surface_color.sources.some((source)
   return source.capture_role === "focused_reread"
     && source.region === completionActions.CROP_AND_READ_PARALLEL;
 }));
-assert.equal(parallelFocusedCompletion.budget.used.agnes_calls, 3);
-assert.equal(parallelFocusedCompletion.usage.provider_calls, 3);
+assert.equal("agnes_calls" in parallelFocusedCompletion.budget.used, false);
+assert.equal(parallelFocusedCompletion.usage.provider_calls, 0);
 
 let lowConfidenceFocusedParallelAction = null;
 const lowConfidenceFocusedParallelCompletion = await completeEvidence({
@@ -700,7 +696,6 @@ const lowConfidenceFocusedParallelCompletion = await completeEvidence({
   },
   budgetOverrides: {
     maxRounds: 2,
-    maxAgnesCalls: 1,
     maxExternalQueries: 0
   },
   runRetrievalImpl: async () => ({
@@ -714,8 +709,8 @@ const lowConfidenceFocusedParallelCompletion = await completeEvidence({
   runFocusedVisionImpl: async ({ action }) => {
     lowConfidenceFocusedParallelAction = action;
     return {
-      provider_id: "agnes",
-      model_id: "agnes-2.0-flash",
+      provider_id: "focused_vision",
+      model_id: "mock-focused-vision",
       resolved: {
         parallel: "Purple"
       },
@@ -751,7 +746,6 @@ const blockedFocusedParallelCompletion = await completeEvidence({
   },
   budgetOverrides: {
     maxRounds: 2,
-    maxAgnesCalls: 1,
     maxExternalQueries: 0
   },
   runRetrievalImpl: async () => ({
@@ -763,8 +757,8 @@ const blockedFocusedParallelCompletion = await completeEvidence({
     trace: []
   }),
   runFocusedVisionImpl: async () => ({
-    provider_id: "agnes",
-    model_id: "agnes-2.0-flash",
+    provider_id: "focused_vision",
+    model_id: "mock-focused-vision",
     resolved: {
       parallel: "Purple"
     },
@@ -801,11 +795,10 @@ const retryFocusedParallelCompletion = await completeEvidence({
   unresolved: ["parallel requires review"],
   env: {
     MAX_PARALLEL_FOCUSED_REREADS: "1",
-    AGNES_FOCUSED_VISION_RETRIES: "1"
+    FOCUSED_VISION_TRANSIENT_RETRIES: "1"
   },
   budgetOverrides: {
     maxRounds: 2,
-    maxAgnesCalls: 2,
     maxExternalQueries: 0
   },
   runRetrievalImpl: async () => ({
@@ -824,8 +817,8 @@ const retryFocusedParallelCompletion = await completeEvidence({
       throw error;
     }
     return {
-      provider_id: "agnes",
-      model_id: "agnes-2.0-flash",
+      provider_id: "focused_vision",
+      model_id: "mock-focused-vision",
       resolved: {
         parallel: "Gold"
       },
@@ -843,7 +836,7 @@ const retryFocusedTrace = retryFocusedParallelCompletion.resolution_trace.find((
 assert.equal(retryFocusedParallelAttempts, 2);
 assert.equal(retryFocusedParallelCompletion.resolved.surface_color, "Gold");
 assert.equal(retryFocusedParallelCompletion.resolved.parallel, null);
-assert.equal(retryFocusedParallelCompletion.budget.used.agnes_calls, 2);
+assert.equal("agnes_calls" in retryFocusedParallelCompletion.budget.used, false);
 assert.equal(retryFocusedTrace.output.transient_retry_attempts, 1);
 
 const compatibleFocusedParallelCompletion = await completeEvidence({
@@ -862,26 +855,25 @@ const compatibleFocusedParallelCompletion = await completeEvidence({
     parallel: createEvidenceField({ value: "Refractor", status: "CONFIRMED", confidence: 0.9 })
   },
   env: {
-    ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1",
+    ENABLE_PROACTIVE_FOCUSED_REREADS: "1",
     MAX_PARALLEL_FOCUSED_REREADS: "2"
   },
   budgetOverrides: {
     maxRounds: 2,
-    maxAgnesCalls: 2,
     maxExternalQueries: 0
   },
   runFocusedVisionImpl: async ({ action }) => {
     if (action !== completionActions.CROP_AND_READ_PARALLEL) {
       return {
-        provider_id: "agnes",
-        model_id: "agnes-2.0-flash",
+        provider_id: "focused_vision",
+        model_id: "mock-focused-vision",
         resolved: {},
         evidence: {}
       };
     }
     return {
-      provider_id: "agnes",
-      model_id: "agnes-2.0-flash",
+      provider_id: "focused_vision",
+      model_id: "mock-focused-vision",
       resolved: {
         parallel: "Purple Refractor"
       },
@@ -921,19 +913,18 @@ const proactiveFocusedCompletion = await completeEvidence({
     serial_number: createEvidenceField({ value: "196/299", status: "CONFIRMED", confidence: 0.9 })
   },
   env: {
-    ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1",
+    ENABLE_PROACTIVE_FOCUSED_REREADS: "1",
     MAX_PARALLEL_FOCUSED_REREADS: "3"
   },
   budgetOverrides: {
     maxRounds: 3,
-    maxAgnesCalls: 3,
     maxExternalQueries: 0
   },
   runFocusedVisionImpl: async ({ action }) => {
     proactiveFocusedActions.push(action);
     return {
-      provider_id: "agnes",
-      model_id: "agnes-2.0-flash",
+      provider_id: "focused_vision",
+      model_id: "mock-focused-vision",
       resolved: {},
       evidence: {}
     };
@@ -965,20 +956,19 @@ const proactiveSerialOnlyCompletion = await completeEvidence({
     serial_number: createEvidenceField({ value: "196/299", status: "CONFIRMED", confidence: 0.9 })
   },
   env: {
-    ENABLE_PROACTIVE_AGNES_FOCUSED_REREADS: "1",
-    ENABLE_PROACTIVE_AGNES_SERIAL_ONLY: "1",
+    ENABLE_PROACTIVE_FOCUSED_REREADS: "1",
+    ENABLE_PROACTIVE_SERIAL_ONLY: "1",
     MAX_PARALLEL_FOCUSED_REREADS: "3"
   },
   budgetOverrides: {
     maxRounds: 3,
-    maxAgnesCalls: 3,
     maxExternalQueries: 0
   },
   runFocusedVisionImpl: async ({ action }) => {
     proactiveSerialOnlyActions.push(action);
     return {
-      provider_id: "agnes",
-      model_id: "agnes-2.0-flash",
+      provider_id: "focused_vision",
+      model_id: "mock-focused-vision",
       resolved: {},
       evidence: {}
     };
@@ -1013,11 +1003,10 @@ const noInfoOcclusionCompletion = await completeEvidence({
   budgetOverrides: {
     maxRounds: 9,
     maxExternalQueries: 6,
-    maxAgnesCalls: 2
   },
   runFocusedVisionImpl: async () => ({
-    provider_id: "agnes",
-    model_id: "agnes-2.0-flash",
+    provider_id: "focused_vision",
+    model_id: "mock-focused-vision",
     resolved: {},
     evidence: {},
     usage: {
@@ -1047,7 +1036,6 @@ assert.deepEqual(noInfoOcclusionActions, [
   completionActions.SEARCH_BRAVE,
   completionActions.SEARCH_EBAY,
   completionActions.SEARCH_OWS_FALLBACK,
-  completionActions.AGNES_FOCUSED_RECHECK,
   completionActions.REQUEST_TARGETED_RESCAN
 ]);
 assert.equal(noInfoOcclusionCompletion.route, "TARGETED_RESCAN_REQUIRED");

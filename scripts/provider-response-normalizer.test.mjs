@@ -10,7 +10,7 @@ assert.equal(schema.title, "Listing ProviderEvidenceResponse");
 assert.ok(schema.anyOf.some((entry) => entry.required?.includes("evidence")));
 assert.ok(schema.properties.unresolved.items.type === "string");
 
-const legacyPayload = validateProviderEvidencePayload("agnes", {
+const legacyPayload = validateProviderEvidencePayload("gemini", {
   title: "2024 Topps Chrome Tester",
   confidence: "HIGH",
   reason: "visible text",
@@ -24,7 +24,7 @@ const legacyPayload = validateProviderEvidencePayload("agnes", {
 });
 assert.equal(legacyPayload.fields.player, "Tester");
 
-const shorthandEvidence = validateProviderEvidencePayload("agnes", {
+const shorthandEvidence = validateProviderEvidencePayload("gemini", {
   evidence: {
     player: {
       value: "Tester",
@@ -36,7 +36,7 @@ const shorthandEvidence = validateProviderEvidencePayload("agnes", {
 });
 assert.equal(shorthandEvidence.evidence.player.value, "Tester");
 
-const fullEvidence = validateProviderEvidencePayload("agnes", {
+const fullEvidence = validateProviderEvidencePayload("gemini", {
   evidence: {
     serial_number: {
       value: "31/50",
@@ -53,7 +53,7 @@ const fullEvidence = validateProviderEvidencePayload("agnes", {
 });
 assert.equal(fullEvidence.evidence.serial_number.status, "REVIEW");
 
-const partialResolved = validateProviderEvidencePayload("agnes", {
+const partialResolved = validateProviderEvidencePayload("gemini", {
   model_title_suggestion: "2024 Topps Chrome Tester",
   resolved: {
     year: "2024",
@@ -142,7 +142,7 @@ const parsedTool = parseProviderMessagePayload({
   ]
 });
 assert.equal(parsedTool.parse_source, "tool_call");
-assert.equal(validateProviderEvidencePayload("agnes", parsedTool.parsed).evidence.player.value, "Tester");
+assert.equal(validateProviderEvidencePayload("gemini", parsedTool.parsed).evidence.player.value, "Tester");
 
 const schemaFailures = [
   {
@@ -226,7 +226,7 @@ const schemaFailures = [
 
 for (const failure of schemaFailures) {
   assert.throws(
-    () => validateProviderEvidencePayload("agnes", failure.payload),
+    () => validateProviderEvidencePayload("gemini", failure.payload),
     (error) => {
       assert.equal(error.code, "schema_validation_failed", failure.name);
       if (failure.expectedPath) {

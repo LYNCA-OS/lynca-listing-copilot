@@ -707,17 +707,10 @@ function providerSmokeText(provider) {
 
 function providerCascadeText(provider) {
   const roles = new Set(provider.roles || [provider.role].filter(Boolean));
-  if (provider.id === "openai_legacy" || roles.has("failure_fallback") || roles.has("critical_verifier")) {
-    return "Gemini 格式失败兜底 · 关键字段 focused verifier";
+  if (provider.id === "openai_legacy" || roles.has("emergency")) {
+    return "显式 GPT 单模型复核，不参与自动混合";
   }
-  if (provider.id === "agnes" || roles.has("manual_or_experimental")) {
-    return "手动复核 / 离线评测，不进入默认自动级联";
-  }
-  if (provider.id !== "cascade_fast") return "";
-  const secondary = provider.secondary_configured === true
-    ? "Agnes 辅助可用"
-    : `Agnes 辅助不可用: ${provider.secondary_disabled_reason || "未配置"}`;
-  return `实验级 cascade · GPT-4.1 + ${secondary}`;
+  return "";
 }
 
 function providerStatusText(provider) {

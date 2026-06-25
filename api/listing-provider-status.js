@@ -7,7 +7,6 @@ import { providerCatalog } from "../lib/listing/providers/provider-registry.mjs"
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 
 const cookieName = "lynca_metaverse_session";
-const defaultAgnesSmokeReportPath = "data/smoke/agnes-smoke-latest.json";
 const defaultGeminiSmokeReportPath = "data/smoke/gemini-smoke-latest.json";
 const smokeCapabilityNames = new Set([
   "single_image_json",
@@ -114,9 +113,7 @@ function emptySmokeStatus(status, reason) {
 async function readProviderSmokeStatus(providerId, env = process.env) {
   const reportPath = providerId === visionProviderIds.GEMINI
     ? env.GEMINI_SMOKE_REPORT_PATH || defaultGeminiSmokeReportPath
-    : providerId === visionProviderIds.AGNES
-      ? env.SMOKE_PROVIDER_REPORT_PATH || env.AGNES_SMOKE_REPORT_PATH || defaultAgnesSmokeReportPath
-      : "";
+    : "";
   if (!reportPath) return emptySmokeStatus("not_run", "smoke_report_not_configured");
 
   let parsed;
@@ -151,7 +148,6 @@ function providerDisabledReason(provider, storage) {
   if (!provider.enabled) return "disabled_by_env";
   if (provider.disabled_reason === "emergency_retry_disabled") return "emergency_retry_disabled";
   if (!provider.configured) return provider.disabled_reason || "provider_not_configured";
-  if ((provider.id === visionProviderIds.AGNES || provider.id === visionProviderIds.CASCADE_FAST) && !storage.configured) return "storage_not_configured";
   return null;
 }
 
@@ -177,20 +173,14 @@ function providerStatus(provider, storage, smoke = null) {
     disabled_reason: disabledReason,
     requires_explicit_retry: Boolean(provider.requires_explicit_retry),
     requires_remote_image_url: Boolean(provider.requires_remote_image_url),
-    requires_storage: provider.id === visionProviderIds.AGNES || provider.id === visionProviderIds.CASCADE_FAST,
-    ...(provider.id === visionProviderIds.GEMINI || provider.id === visionProviderIds.AGNES ? { smoke } : {})
+    requires_storage: false,
+    ...(provider.id === visionProviderIds.GEMINI ? { smoke } : {})
   };
 }
 
 function defaultProviderId(providers) {
   const gemini = providers.find((provider) => provider.id === visionProviderIds.GEMINI);
   if (gemini?.selectable) return gemini.id;
-
-  const cascade = providers.find((provider) => provider.id === visionProviderIds.CASCADE_FAST);
-  if (cascade?.selectable) return cascade.id;
-
-  const agnes = providers.find((provider) => provider.id === visionProviderIds.AGNES);
-  if (agnes?.selectable) return agnes.id;
 
   return "";
 }
@@ -218,12 +208,9 @@ export default async function handler(req, res) {
 
   const storage = publicStorageReadiness();
   const geminiSmoke = await readProviderSmokeStatus(visionProviderIds.GEMINI);
-  const agnesSmoke = await readProviderSmokeStatus(visionProviderIds.AGNES);
   const catalog = providerCatalog();
   const providers = [
     catalog[visionProviderIds.GEMINI],
-    catalog[visionProviderIds.CASCADE_FAST],
-    catalog[visionProviderIds.AGNES],
     catalog[visionProviderIds.OPENAI_LEGACY]
   ]
     .filter(Boolean)
@@ -231,17 +218,13 @@ export default async function handler(req, res) {
     .map((provider) => providerStatus(
       provider,
       storage,
-      provider.id === visionProviderIds.GEMINI
-        ? geminiSmoke
-        : provider.id === visionProviderIds.AGNES
-          ? agnesSmoke
-          : null
+      provider.id === visionProviderIds.GEMINI ? geminiSmoke : null
     ));
 
   sendJson(res, 200, {
     ok: true,
     default_provider: defaultProviderId(providers),
-    fallback_available: !process.env.GEMINI_API_KEY && !process.env.AGNES_API_KEY && !process.env.OPENAI_API_KEY,
+    fallback_available: !process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY,
     storage,
     providers
   });

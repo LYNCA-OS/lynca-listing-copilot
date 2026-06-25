@@ -11,9 +11,8 @@ import {
 } from "../lib/listing/cache/identity-result-cache.mjs";
 
 const defaultDatasetPath = "data/golden-dataset.json";
-const defaultAgnesSmokePath = "data/smoke/agnes-smoke-latest.json";
+const defaultGeminiSmokePath = "data/smoke/gemini-smoke-latest.json";
 const defaultEbayCandidatesPath = "data/ebay-candidates/ebay-image-candidates-latest.json";
-const defaultPublicCardEvalPath = "data/eval/agnes-public-card-image-eval-latest.json";
 const defaultSupabaseLiveSnapshotPath = "data/recognition/reports/supabase-live-snapshot-2026-06-23.json";
 const defaultSupabaseCandidateReportPath = "data/recognition/reports/supabase-feedback-candidates-report.json";
 const defaultCommercialReviewPacketPath = "data/recognition/review/supabase-commercial-review-packet.json";
@@ -159,11 +158,11 @@ async function auditGoldenDataset(datasetPath) {
   }
 }
 
-async function auditAgnesSmoke(smokePath) {
+async function auditGeminiSmoke(smokePath) {
   if (!existsSync(resolve(smokePath))) {
     return {
       smoke: null,
-      check: blocked("agnes_live_smoke", "Agnes live smoke report is missing.", {
+      check: blocked("gemini_live_smoke", "Gemini live smoke report is missing.", {
         report: resolve(smokePath),
         required_capability: "single_image_json"
       })
@@ -180,7 +179,7 @@ async function auditAgnesSmoke(smokePath) {
     const optionalFailures = capabilities.filter((capability) => {
       return capability.status === "failed" && capability.required !== true;
     });
-    const jsonBaselinePassed = smoke.provider === "agnes"
+    const jsonBaselinePassed = smoke.provider === "gemini"
       && ["passed", "passed_with_limitations"].includes(String(smoke.status || ""))
       && singleImage?.status === "passed";
     const details = {
@@ -195,14 +194,14 @@ async function auditAgnesSmoke(smokePath) {
     if (!jsonBaselinePassed) {
       return {
         smoke,
-        check: blocked("agnes_live_smoke", "Agnes JSON baseline smoke is not verified.", details)
+        check: blocked("gemini_live_smoke", "Gemini JSON baseline smoke is not verified.", details)
       };
     }
 
     if (optionalFailures.length) {
       return {
         smoke,
-        check: warning("agnes_live_smoke", "Agnes JSON baseline is verified, but optional smoke capabilities still have limitations.", {
+        check: warning("gemini_live_smoke", "Gemini JSON baseline is verified, but optional smoke capabilities still have limitations.", {
           ...details,
           optional_failures: optionalFailures.map((capability) => capability.name)
         })
@@ -211,12 +210,12 @@ async function auditAgnesSmoke(smokePath) {
 
     return {
       smoke,
-      check: passed("agnes_live_smoke", "Agnes live smoke baseline is verified.", details)
+      check: passed("gemini_live_smoke", "Gemini live smoke baseline is verified.", details)
     };
   } catch (error) {
     return {
       smoke: null,
-      check: blocked("agnes_live_smoke", "Agnes smoke report could not be parsed.", {
+      check: blocked("gemini_live_smoke", "Gemini smoke report could not be parsed.", {
         report: resolve(smokePath),
         error: error.message
       })
@@ -239,10 +238,6 @@ async function auditProviderPolicy() {
   if (!/\[visionProviderIds\.GEMINI\]/.test(registry.text)) {
     failures.push("Gemini provider is missing from provider registry");
   }
-  if (!/primary_provider_id:\s*visionProviderIds\.OPENAI_LEGACY/.test(registry.text)
-    || !/secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text)) {
-    failures.push("Cascade A/B path does not declare GPT-4.1 mini primary plus Agnes secondary verifier");
-  }
   if (!/GPT-4\.1 single-provider mode may only be used through an explicit manual retry/.test(registry.text)) {
     failures.push("GPT-4.1 explicit manual single-provider guard is missing");
   }
@@ -256,7 +251,7 @@ async function auditProviderPolicy() {
     failures.push("frontend does not use the server default provider");
   }
   if (/state\.selectedProvider\s*=\s*["']openai_legacy["']/.test(appJs.text)) {
-    failures.push("frontend default-selects GPT-4.1 single-provider mode instead of cascade");
+    failures.push("frontend default-selects GPT-4.1 single-provider mode instead of Gemini");
   }
   if (!/provider === "openai_legacy"/.test(appJs.text) || !/data-emergency-retry/.test(appJs.text)) {
     failures.push("frontend does not expose GPT-4.1 as a separate manual action");
@@ -264,10 +259,10 @@ async function auditProviderPolicy() {
 
   const details = {
     gemini_implicit_default: failures.length === 0,
-    gpt_primary_fast_vision: /primary_provider_id:\s*visionProviderIds\.OPENAI_LEGACY/.test(registry.text),
-    agnes_auxiliary_verifier: /secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text),
-    agnes_conditional_verifier: /secondary_provider_id:\s*visionProviderIds\.AGNES/.test(registry.text),
-    gpt_implicit_default: failures.length === 0 ? "fallback_and_ab_test_only" : "unknown",
+    gpt_primary_fast_vision: false,
+    gpt_emergency_provider: /\[visionProviderIds\.OPENAI_LEGACY\]/.test(registry.text),
+    mixed_model_cascade: /cascade_fast|secondary_provider_id|AGNES/i.test(registry.text) ? "present" : "removed",
+    gpt_implicit_default: failures.length === 0 ? "explicit_review_only" : "unknown",
     standalone_gpt_default: failures.length === 0 ? "blocked_by_policy" : "unknown",
     gpt_visible_button: /provider === "openai_legacy"/.test(appJs.text),
     gpt_emergency_retry_action: /data-emergency-retry/.test(appJs.text),
@@ -277,7 +272,7 @@ async function auditProviderPolicy() {
 
   return failures.length
     ? blocked("provider_default_policy", "Provider default policy is not safe enough for commercial readiness.", details)
-    : passed("provider_default_policy", "Gemini is the implicit default; GPT-4.1 remains explicit fallback/A/B; Agnes remains the auxiliary verifier in cascade mode.", details);
+    : passed("provider_default_policy", "Gemini is the implicit default; GPT-4.1 remains explicit single-model review; automatic cascade is removed.", details);
 }
 
 function destinationIdsFromPublisherContract(source) {
@@ -420,67 +415,6 @@ async function auditEbayImageCandidates(env = process.env) {
       report: resolve(reportPath),
       error: error.message,
       accuracy_eval_eligible: false
-    });
-  }
-}
-
-async function auditPublicCardReferenceEval(env = process.env) {
-  const reportPath = env.AGNES_PUBLIC_CARD_EVAL_OUT || defaultPublicCardEvalPath;
-  const threshold = Number(env.AGNES_PUBLIC_CARD_NAME_THRESHOLD || 0.95);
-
-  if (!existsSync(resolve(reportPath))) {
-    return warning("public_card_reference_eval", "Public 300-card reference eval is missing; this does not affect the commercial held-out gate.", {
-      report: resolve(reportPath),
-      target_count: 300,
-      attempted_count: 0,
-      commercial_accuracy_claim_allowed: false,
-      name_threshold: Number.isFinite(threshold) ? threshold : 0.95
-    });
-  }
-
-  try {
-    const loaded = await readJsonFile(reportPath);
-    const report = loaded.value || {};
-    const attemptedCount = Number(report.attempted_count || 0);
-    const evaluatedCount = Number(report.evaluated_count || 0);
-    const exactCount = Number(report.card_name_exact_count || 0);
-    const exactRate = Number(report.card_name_exact_rate);
-    const correctedCount = report.structured_reference_name_exact_or_corrected_count === undefined
-      ? exactCount
-      : Number(report.structured_reference_name_exact_or_corrected_count || 0);
-    const correctedRate = Number(report.structured_reference_name_exact_or_corrected_rate);
-    const thresholdRate = Number.isFinite(correctedRate) ? correctedRate : exactRate;
-    const thresholdValue = Number.isFinite(threshold) ? threshold : Number(report.name_threshold || 0.95);
-    const details = {
-      report: loaded.path,
-      status: report.status || "unknown",
-      provider: report.provider || "agnes",
-      target_count: Number(report.target_count || 300),
-      attempted_count: attemptedCount,
-      evaluated_count: evaluatedCount,
-      provider_error_count: Number(report.provider_error_count || 0),
-      card_name_exact_count: exactCount,
-      card_name_exact_rate: Number.isFinite(exactRate) ? exactRate : null,
-      structured_reference_name_exact_or_corrected_count: correctedCount,
-      structured_reference_name_exact_or_corrected_rate: Number.isFinite(correctedRate) ? correctedRate : null,
-      structured_reference_name_corrected_count: Number(report.structured_reference_name_corrected_count || 0),
-      structured_reference_name_review_suggested_count: Number(report.structured_reference_name_review_suggested_count || 0),
-      name_threshold: thresholdValue,
-      commercial_accuracy_claim_allowed: report.commercial_accuracy_claim_allowed === true,
-      commercial_accuracy_eval_eligible: report.commercial_accuracy_eval_eligible === true,
-      reference_scope: report.reference_scope || "public_structured_card_name_reference"
-    };
-
-    if (report.status === "completed" && attemptedCount >= 300 && thresholdRate >= thresholdValue) {
-      return passed("public_card_reference_eval", "Public 300-card reference eval passed its non-commercial card-name threshold.", details);
-    }
-
-    return warning("public_card_reference_eval", "Public card reference eval is incomplete or below threshold; commercial held-out gate remains unchanged.", details);
-  } catch (error) {
-    return warning("public_card_reference_eval", "Public card reference eval report could not be parsed; commercial held-out gate remains unchanged.", {
-      report: resolve(reportPath),
-      error: error.message,
-      commercial_accuracy_claim_allowed: false
     });
   }
 }
@@ -759,20 +693,19 @@ async function auditIdentityResultCache(env = process.env) {
 
 export async function createCommercialReadinessReport({
   datasetPath = defaultDatasetPath,
-  agnesSmokePath = defaultAgnesSmokePath,
+  geminiSmokePath = defaultGeminiSmokePath,
   env = process.env
 } = {}) {
   const checks = [];
   const golden = await auditGoldenDataset(datasetPath);
   checks.push(...golden.checks);
 
-  const agnes = await auditAgnesSmoke(agnesSmokePath);
-  checks.push(agnes.check);
+  const gemini = await auditGeminiSmoke(geminiSmokePath);
+  checks.push(gemini.check);
   checks.push(await auditProviderPolicy());
   checks.push(...await auditPublishingBoundary());
   checks.push(await auditRetrievalSmoke(env));
   checks.push(await auditEbayImageCandidates(env));
-  checks.push(await auditPublicCardReferenceEval(env));
   const supabaseCommercial = await auditSupabaseCommercialSample(env);
   checks.push(...supabaseCommercial.checks);
   checks.push(await auditCommercialReviewPacket(env));
@@ -805,15 +738,14 @@ export async function createCommercialReadinessReport({
           commercial_acceptance_gate: golden.evaluation.commercial_acceptance_gate
         }
         : null,
-      agnes_smoke: agnes.smoke
+      gemini_smoke: gemini.smoke
         ? {
-          report_path: resolve(agnesSmokePath),
-          provider: agnes.smoke.provider || null,
-          status: agnes.smoke.status || null,
-          generated_at: agnes.smoke.generated_at || null
+          report_path: resolve(geminiSmokePath),
+          provider: gemini.smoke.provider || null,
+          status: gemini.smoke.status || null,
+          generated_at: gemini.smoke.generated_at || null
         }
         : null,
-      public_card_reference_eval: checks.find((check) => check.id === "public_card_reference_eval")?.details || null,
       supabase_commercial_sample: supabaseCommercial.evidence,
       commercial_review_packet: checks.find((check) => check.id === "commercial_review_packet")?.details || null,
       commercial_review_worklist: checks.find((check) => check.id === "commercial_review_worklist")?.details || null,
@@ -825,7 +757,7 @@ export async function createCommercialReadinessReport({
 export function formatCommercialReadinessReport(report) {
   const commercialGate = report.evidence.golden_dataset?.commercial_acceptance_gate || {};
   const heldOutCount = report.evidence.golden_dataset?.held_out_commercial_assets ?? "n/a";
-  const agnesStatus = report.evidence.agnes_smoke?.status || "missing";
+  const geminiStatus = report.evidence.gemini_smoke?.status || "missing";
   const providerPolicy = report.checks.find((check) => check.id === "provider_default_policy");
   const retrievalSmoke = report.checks
     .find((check) => check.id === "external_retrieval_live_smoke")
@@ -836,10 +768,6 @@ export function formatCommercialReadinessReport(report) {
   const ebayCandidates = report.checks.find((check) => check.id === "ebay_300_image_candidates");
   const ebayCandidateSummary = ebayCandidates
     ? `${ebayCandidates.details.status || "missing"} ${ebayCandidates.details.collected_count ?? 0}/${ebayCandidates.details.target_count ?? 300}`
-    : "n/a";
-  const publicCardEval = report.checks.find((check) => check.id === "public_card_reference_eval");
-  const publicCardSummary = publicCardEval
-    ? `${publicCardEval.details.status || "missing"} exact ${publicCardEval.details.card_name_exact_count ?? 0}/${publicCardEval.details.attempted_count ?? 0} (${publicCardEval.details.card_name_exact_rate ?? "n/a"}), trusted ${publicCardEval.details.structured_reference_name_exact_or_corrected_count ?? publicCardEval.details.card_name_exact_count ?? 0}/${publicCardEval.details.attempted_count ?? 0} (${publicCardEval.details.structured_reference_name_exact_or_corrected_rate ?? publicCardEval.details.card_name_exact_rate ?? "n/a"})`
     : "n/a";
   const supabaseSample = report.checks.find((check) => check.id === "supabase_commercial_inventory");
   const supabaseTruth = report.checks.find((check) => check.id === "supabase_commercial_ground_truth");
@@ -866,10 +794,9 @@ export function formatCommercialReadinessReport(report) {
     `held_out_commercial_assets: ${heldOutCount}`,
     `commercial_acceptance_gate: ${commercialGate.passed === true ? "passed" : "blocked"}`,
     `commercial_acceptance_reasons: ${formatReasons(commercialGate.reasons || [])}`,
-    `agnes_smoke_status: ${agnesStatus}`,
+    `gemini_smoke_status: ${geminiStatus}`,
     `external_retrieval_smoke_statuses: ${retrievalSmokeSummary}`,
     `ebay_image_candidates: ${ebayCandidateSummary}`,
-    `public_card_reference_eval: ${publicCardSummary}`,
     `supabase_commercial_sample: ${supabaseSampleSummary}`,
     `supabase_commercial_ground_truth: ${supabaseTruthSummary}`,
     `commercial_review_packet: ${reviewPacketSummary}`,
@@ -904,12 +831,12 @@ export function formatCommercialReadinessReport(report) {
 
 export async function main(argv = process.argv, env = process.env) {
   const datasetPath = argValue(argv, "--dataset", env.GOLDEN_DATASET_PATH || defaultDatasetPath);
-  const agnesSmokePath = argValue(argv, "--agnes-smoke-report", env.SMOKE_PROVIDER_REPORT_PATH || defaultAgnesSmokePath);
+  const geminiSmokePath = argValue(argv, "--gemini-smoke-report", env.GEMINI_SMOKE_REPORT_PATH || env.SMOKE_PROVIDER_REPORT_PATH || defaultGeminiSmokePath);
   const reportPath = argValue(argv, "--report", env.COMMERCIAL_READINESS_REPORT_PATH || "");
   const asJson = hasFlag(argv, "--json");
   const report = await createCommercialReadinessReport({
     datasetPath,
-    agnesSmokePath,
+    geminiSmokePath,
     env
   });
 

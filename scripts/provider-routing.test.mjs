@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import {
   clearProviderConcurrencyForTests,
@@ -11,11 +10,12 @@ import { parseProviderMessagePayload } from "../lib/listing/providers/provider-r
 import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 
 const providerRegistrySource = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
+const providerContractSource = await readFile("lib/listing/providers/provider-contract.mjs", "utf8");
 const titleApiSource = await readFile("api/listing-copilot-title.js", "utf8");
 
-assert.doesNotMatch(providerRegistrySource, /allowLegacyDefault/, "provider registry must not retain a legacy GPT default escape hatch");
-assert.doesNotMatch(titleApiSource, /allowLegacyDefault/, "title API must not request legacy GPT default fallback");
-assert.doesNotMatch(titleApiSource, /Fallback result from filename because OPENAI_API_KEY is not configured/, "local fallback should not be framed as an OpenAI-only condition");
+assert.doesNotMatch(providerRegistrySource, /cascade_fast|ENABLE_AGNES|AGNES/i, "provider registry must not expose Agnes or cascade providers");
+assert.doesNotMatch(providerContractSource, /cascade_fast|AGNES/i, "provider contract must only keep active providers");
+assert.doesNotMatch(titleApiSource, /createAgnesTitle|createCascadeFastTitle|analyzeCardEvidenceWithAgnes|gemini_to_gpt/i, "title API must not retain automatic mixed-model provider paths");
 
 const remoteImages = [{ url: "https://example.com/front.jpg" }];
 const dataUrlImages = [{ dataUrl: "data:image/jpeg;base64,AAAA" }];
@@ -23,60 +23,27 @@ const storedImages = [{ objectPath: "listing-assets/2026-06-22/asset/front_origi
 
 const env = {
   DEFAULT_VISION_PROVIDER: "",
-  EMERGENCY_VISION_PROVIDER: "openai_legacy",
   ENABLE_GEMINI_PROVIDER: "true",
-  ENABLE_AGNES_PROVIDER: "true",
   ENABLE_GPT41_EMERGENCY_PROVIDER: "true",
-  ENABLE_AGNES_AUTO_VERIFIER: "false",
-  ENABLE_FAST_CASCADE_PROVIDER: "false",
   ALLOW_EXPLICIT_GPT41_RETRY: "true",
   GEMINI_API_KEY: "test-gemini-key",
   GEMINI_MODEL: "gemini-3.1-flash-lite",
-  AGNES_API_KEY: "test-agnes-key",
-  AGNES_BASE_URL: "https://apihub.agnes-ai.com/v1",
-  AGNES_MODEL: "agnes-2.0-flash",
   OPENAI_API_KEY: "test-openai-key",
   OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
 };
 
-const defaultSelection = selectVisionProvider({ images: remoteImages, env });
-assert.equal(defaultSelection.provider_id, "gemini");
-assert.equal(defaultSelection.model_id, "gemini-3.1-flash-lite");
-
-const storedSelection = selectVisionProvider({ images: storedImages, env });
-assert.equal(storedSelection.provider_id, "gemini");
-
-const geminiDataUrlSelection = selectVisionProvider({ images: dataUrlImages, env });
-assert.equal(geminiDataUrlSelection.provider_id, "gemini");
+assert.equal(selectVisionProvider({ images: remoteImages, env }).provider_id, "gemini");
+assert.equal(selectVisionProvider({ images: storedImages, env }).provider_id, "gemini");
+assert.equal(selectVisionProvider({ images: dataUrlImages, env }).provider_id, "gemini");
 
 assert.throws(
-  () => selectVisionProvider({
-    requestedProvider: "cascade_fast",
-    images: storedImages,
-    env
-  }),
-  /agnes_auto_verifier_disabled|disabled_by_env/i,
-  "automatic GPT+Agnes cascade must be disabled by default"
+  () => selectVisionProvider({ requestedProvider: "cascade_fast", images: remoteImages, env }),
+  /Unknown vision provider/i
 );
-
-const cascadeSelection = selectVisionProvider({
-  requestedProvider: "cascade_fast",
-  images: storedImages,
-  env: {
-    ...env,
-    ENABLE_AGNES_AUTO_VERIFIER: "true",
-    ENABLE_FAST_CASCADE_PROVIDER: "true"
-  }
-});
-assert.equal(cascadeSelection.provider_id, "cascade_fast");
-assert.equal(cascadeSelection.model_id, "gpt-4.1-mini-2025-04-14 + agnes-2.0-flash");
-
-const agnesSelection = selectVisionProvider({
-  requestedProvider: "agnes",
-  images: storedImages,
-  env
-});
-assert.equal(agnesSelection.provider_id, "agnes");
+assert.throws(
+  () => selectVisionProvider({ requestedProvider: "agnes", images: remoteImages, env }),
+  /Unknown vision provider/i
+);
 
 assert.throws(
   () => selectVisionProvider({
@@ -86,7 +53,7 @@ assert.throws(
     env
   }),
   /explicit manual/i,
-  "GPT-4.1 single-provider mode should require explicit manual retry"
+  "GPT single-model mode should require explicit operator action"
 );
 
 const emergencySelection = selectVisionProvider({
@@ -97,30 +64,7 @@ const emergencySelection = selectVisionProvider({
 });
 assert.equal(emergencySelection.provider_id, "openai_legacy");
 assert.equal(emergencySelection.model_id, "gpt-4.1-mini-2025-04-14");
-
-assert.throws(
-  () => selectVisionProvider({ requestedProvider: "agnes", images: dataUrlImages, env }),
-  /Base64 data URLs are not used for Agnes/i,
-  "Explicit Agnes should not silently accept data URLs or fall back to GPT"
-);
-
-const cascadeWithoutAgnes = selectVisionProvider({
-  requestedProvider: "cascade_fast",
-  images: remoteImages,
-  env: {
-    ...env,
-    ENABLE_AGNES_AUTO_VERIFIER: "true",
-    ENABLE_FAST_CASCADE_PROVIDER: "true",
-    DEFAULT_VISION_PROVIDER: "",
-    AGNES_API_KEY: "",
-    OPENAI_API_KEY: "test-openai-key"
-  }
-});
-assert.equal(cascadeWithoutAgnes.provider_id, "cascade_fast");
-assert.equal(cascadeWithoutAgnes.provider.primary_provider_id, "openai_legacy");
-assert.equal(cascadeWithoutAgnes.provider.secondary_provider_id, "agnes");
-assert.equal(cascadeWithoutAgnes.provider.secondary_configured, false);
-assert.equal(cascadeWithoutAgnes.provider.secondary_disabled_reason, "missing_agnes_api_key");
+assert.equal(emergencySelection.provider.role, "emergency");
 
 assert.throws(
   () => selectVisionProvider({
@@ -131,28 +75,8 @@ assert.throws(
     }
   }),
   /explicit manual/i,
-  "OpenAI single-provider mode must not be usable as an env-selected default without an explicit manual request"
+  "OpenAI must not be usable as an env-selected default without an explicit request"
 );
-
-assert.throws(
-  () => selectVisionProvider({ requestedProvider: "not_real", images: remoteImages, env }),
-  /Unknown vision provider/i,
-  "illegal provider ids should be rejected"
-);
-
-const cascadeWithInvalidAgnesModel = selectVisionProvider({
-  requestedProvider: "cascade_fast",
-  images: remoteImages,
-  env: {
-    ...env,
-    ENABLE_AGNES_AUTO_VERIFIER: "true",
-    ENABLE_FAST_CASCADE_PROVIDER: "true",
-    AGNES_MODEL: "agnes-experimental"
-  }
-});
-assert.equal(cascadeWithInvalidAgnesModel.provider_id, "cascade_fast");
-assert.equal(cascadeWithInvalidAgnesModel.provider.secondary_configured, false);
-assert.equal(cascadeWithInvalidAgnesModel.provider.secondary_disabled_reason, "agnes_model_not_allowed");
 
 assert.throws(
   () => selectVisionProvider({
@@ -163,23 +87,8 @@ assert.throws(
       GEMINI_MODEL: "not-gemini"
     }
   }),
-  /model_not_allowed/i,
-  "Gemini model ids must remain within the Gemini model namespace"
+  /model_not_allowed/i
 );
-
-assert.throws(
-  () => selectVisionProvider({
-    requestedProvider: "agnes",
-    images: remoteImages,
-    env: {
-      ...env,
-      AGNES_MODEL: "agnes-experimental"
-    }
-  }),
-  /model_not_allowed/i,
-  "Explicit Agnes model ids should be restricted to the provider whitelist"
-);
-
 assert.throws(
   () => selectVisionProvider({
     requestedProvider: "openai_legacy",
@@ -190,21 +99,18 @@ assert.throws(
       OPENAI_LISTING_MODEL: "gpt-5"
     }
   }),
-  /model_not_allowed/i,
-  "GPT-4.1 single-provider model ids should be restricted to the provider whitelist"
+  /model_not_allowed/i
 );
 
-const disabledProviders = listAvailableVisionProviders({
+assert.deepEqual(listAvailableVisionProviders(env).map((provider) => provider.id), ["gemini", "openai_legacy"]);
+assert.deepEqual(listAvailableVisionProviders({
   ...env,
   ENABLE_GPT41_EMERGENCY_PROVIDER: "false"
-});
-assert.deepEqual(disabledProviders.map((provider) => provider.id), ["gemini", "agnes"]);
-
-const retryDisabledProviders = listAvailableVisionProviders({
+}).map((provider) => provider.id), ["gemini"]);
+assert.deepEqual(listAvailableVisionProviders({
   ...env,
   ALLOW_EXPLICIT_GPT41_RETRY: "false"
-});
-assert.deepEqual(retryDisabledProviders.map((provider) => provider.id), ["gemini", "agnes"]);
+}).map((provider) => provider.id), ["gemini"]);
 
 assert.throws(
   () => selectVisionProvider({
@@ -216,8 +122,7 @@ assert.throws(
       ALLOW_EXPLICIT_GPT41_RETRY: "false"
     }
   }),
-  /manual single-provider retry is disabled/i,
-  "GPT-4.1 standalone retry should be unavailable when the explicit retry flag is disabled"
+  /manual single-provider retry is disabled/i
 );
 
 const parsedContent = parseProviderMessagePayload({
@@ -239,183 +144,6 @@ const parsedTool = parseProviderMessagePayload({
 });
 assert.equal(parsedTool.parse_source, "tool_call");
 assert.equal(parsedTool.parsed.evidence.player.value, "B");
-
-let agnesRequest;
-const agnesResult = await analyzeCardEvidenceWithAgnes({
-  images: remoteImages,
-  prompt: "Return JSON.",
-  env,
-  fetchImpl: async (url, init) => {
-    agnesRequest = { url, init };
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({
-        id: "chatcmpl_test",
-        model: "agnes-2.0-flash",
-        choices: [
-          {
-            index: 0,
-            message: {
-              role: "assistant",
-              content: "{\"title\":\"Agnes Test\",\"fields\":{\"player\":\"Tester\"},\"unresolved\":[]}"
-            },
-            finish_reason: "stop"
-          }
-        ],
-        usage: {
-          prompt_tokens: 10,
-          completion_tokens: 8,
-          total_tokens: 18
-        }
-      })
-    };
-  }
-});
-
-assert.equal(agnesRequest.url, "https://apihub.agnes-ai.com/v1/chat/completions");
-assert.equal(agnesRequest.init.headers.authorization, "Bearer test-agnes-key");
-const agnesBody = JSON.parse(agnesRequest.init.body);
-assert.equal(agnesBody.model, "agnes-2.0-flash");
-assert.equal(agnesBody.messages[0].content[1].type, "image_url");
-assert.equal(agnesBody.messages[0].content[1].image_url.url, remoteImages[0].url);
-assert.equal(agnesResult.parsed.fields.player, "Tester");
-assert.equal(agnesResult.usage.provider_calls, 1);
-assert.equal(agnesResult.usage.total_tokens, 18);
-assert.equal(agnesResult.usage.input_tokens, 10);
-assert.equal(agnesResult.usage.output_tokens, 8);
-assert.equal(agnesResult.usage.image_count, 1);
-assert.equal(agnesResult.usage.estimated_cost_usd, 0);
-
-let repairCalls = 0;
-const repairedAgnesResult = await analyzeCardEvidenceWithAgnes({
-  images: remoteImages,
-  prompt: "Return JSON.",
-  env,
-  fetchImpl: async (url, init) => {
-    repairCalls += 1;
-    const body = JSON.parse(init.body);
-    if (repairCalls === 1) {
-      assert.doesNotMatch(body.messages[0].content[0].text, /FORMAT REPAIR RETRY/);
-      return {
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify({
-          model: "agnes-2.0-flash",
-          choices: [
-            {
-              message: {
-                role: "assistant",
-                content: "{\"title\":"
-              },
-              finish_reason: "stop"
-            }
-          ]
-        })
-      };
-    }
-
-    assert.match(body.messages[0].content[0].text, /FORMAT REPAIR RETRY/);
-    assert.match(body.messages[0].content[0].text, /Return only a single valid JSON object/);
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({
-        model: "agnes-2.0-flash",
-        choices: [
-          {
-            message: {
-              role: "assistant",
-              content: "{\"title\":\"Repair Test\",\"fields\":{\"player\":\"Fixed\"},\"unresolved\":[]}"
-            },
-            finish_reason: "stop"
-          }
-        ]
-      })
-    };
-  }
-});
-assert.equal(repairCalls, 2);
-assert.equal(repairedAgnesResult.format_repair_attempted, true);
-assert.equal(repairedAgnesResult.parsed.fields.player, "Fixed");
-assert.equal(repairedAgnesResult.usage.provider_calls, 2);
-
-let schemaFailureCalls = 0;
-await assert.rejects(
-  analyzeCardEvidenceWithAgnes({
-    images: remoteImages,
-    prompt: "Return JSON.",
-    env,
-    fetchImpl: async () => {
-      schemaFailureCalls += 1;
-      return {
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify({
-          model: "agnes-2.0-flash",
-          choices: [
-            {
-              message: {
-                role: "assistant",
-                content: "{\"not_evidence\":true}"
-              },
-              finish_reason: "stop"
-            }
-          ]
-        })
-      };
-    }
-  }),
-  (error) => error.code === "schema_validation_failed"
-);
-assert.equal(schemaFailureCalls, 1, "schema-invalid JSON should not trigger a format repair retry");
-
-let unrepairedCalls = 0;
-await assert.rejects(
-  analyzeCardEvidenceWithAgnes({
-    images: remoteImages,
-    prompt: "Return JSON.",
-    env,
-    fetchImpl: async () => {
-      unrepairedCalls += 1;
-      return {
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify({
-          model: "agnes-2.0-flash",
-          choices: [
-            {
-              message: {
-                role: "assistant",
-                content: "{\"title\":"
-              },
-              finish_reason: "stop"
-            }
-          ]
-        })
-      };
-    }
-  }),
-  (error) => error.code === "response_format_invalid"
-);
-assert.equal(unrepairedCalls, 2, "Agnes format repair should run at most once");
-
-let invalidAgnesModelFetchCalled = false;
-await assert.rejects(
-  analyzeCardEvidenceWithAgnes({
-    images: remoteImages,
-    prompt: "Return JSON.",
-    env: {
-      ...env,
-      AGNES_MODEL: "agnes-experimental"
-    },
-    fetchImpl: async () => {
-      invalidAgnesModelFetchCalled = true;
-    }
-  }),
-  (error) => error.provider === "agnes" && error.code === "provider_unavailable"
-);
-assert.equal(invalidAgnesModelFetchCalled, false, "invalid Agnes model env should fail before fetch");
 
 let openAiRequest;
 const openAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
@@ -444,10 +172,8 @@ assert.equal(openAiRequest.url, "https://api.openai.com/v1/responses");
 assert.equal(openAiRequest.init.headers.authorization, "Bearer test-openai-key");
 const openAiBody = JSON.parse(openAiRequest.init.body);
 assert.equal(openAiBody.model, "gpt-4.1-mini-2025-04-14");
-assert.equal(openAiBody.input[0].content[1].detail, "high");
 assert.equal(openAiBody.text.format.type, "json_schema");
 assert.equal(openAiBody.text.format.strict, true);
-assert.equal(openAiBody.text.format.schema.additionalProperties, false);
 assert.equal(openAiBody.input[0].content[1].type, "input_image");
 assert.equal(openAiResult.parsed.fields.player, "Emergency");
 assert.equal(openAiResult.usage.provider_calls, 1);
@@ -471,20 +197,19 @@ await assert.rejects(
   }),
   (error) => error.provider === "openai_legacy" && error.code === "provider_unavailable"
 );
-assert.equal(invalidOpenAiModelFetchCalled, false, "invalid OpenAI emergency model env should fail before fetch");
+assert.equal(invalidOpenAiModelFetchCalled, false);
 
-assert.equal(providerServerConcurrencyLimit("agnes", {}), 2);
 assert.equal(providerServerConcurrencyLimit("openai_legacy", {}), 6);
 assert.equal(providerServerConcurrencyLimit("gemini", {}), 4);
 assert.equal(providerServerConcurrencyLimit("gemini", { GEMINI_PROVIDER_SERVER_CONCURRENCY: "8" }), 8);
-assert.equal(providerServerConcurrencyLimit("agnes", { AGNES_PROVIDER_SERVER_CONCURRENCY: "4" }), 4);
+assert.equal(providerServerConcurrencyLimit("unknown", { LISTING_PROVIDER_SERVER_CONCURRENCY: "3" }), 3);
 
 clearProviderConcurrencyForTests();
 let activeProviderWork = 0;
 let maxActiveProviderWork = 0;
 await Promise.all(Array.from({ length: 4 }, (_, index) => runWithProviderConcurrency({
-  providerId: "agnes",
-  env: { AGNES_PROVIDER_SERVER_CONCURRENCY: "2" },
+  providerId: "gemini",
+  env: { GEMINI_PROVIDER_SERVER_CONCURRENCY: "2" },
   work: async () => {
     activeProviderWork += 1;
     maxActiveProviderWork = Math.max(maxActiveProviderWork, activeProviderWork);

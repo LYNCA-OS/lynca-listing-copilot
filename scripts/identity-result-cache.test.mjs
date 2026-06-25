@@ -18,11 +18,10 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 process.env.LISTING_APPROVED_MEMORY_ENABLED = "false";
 process.env.LISTING_IDENTITY_CACHE_READ_ENABLED = "true";
 process.env.LISTING_IDENTITY_CACHE_WRITE_ENABLED = "false";
-process.env.DEFAULT_VISION_PROVIDER = "agnes";
-process.env.ENABLE_AGNES_PROVIDER = "true";
-process.env.AGNES_API_KEY = "test-agnes-key";
-delete process.env.OPENAI_API_KEY;
-delete process.env.OPENAI_LISTING_MODEL;
+process.env.DEFAULT_VISION_PROVIDER = "gemini";
+process.env.ENABLE_GEMINI_PROVIDER = "true";
+process.env.GEMINI_API_KEY = "test-gemini-key";
+process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 function sign(value) {
   return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
@@ -122,7 +121,7 @@ assert.equal(noHashKey.reason, "content_hash_required");
 
 const confirmedResult = {
   final_title: "2025 Topps Chrome Cooper Flagg Gold Refractor 31/50 RC PSA 10",
-  provider: "agnes",
+  provider: "gemini",
   identity_resolution_status: "CONFIRMED",
   ambiguity_status: "CONFIRMED",
   resolved: {

@@ -17,11 +17,10 @@ process.env.LISTING_IDENTITY_INFLIGHT_DEDUP_ENABLED = "true";
 process.env.ENABLE_RECOGNITION_WORKER = "true";
 process.env.RECOGNITION_WORKER_URL = "https://recognition.internal";
 process.env.RECOGNITION_WORKER_TOKEN = "worker-token";
-process.env.DEFAULT_VISION_PROVIDER = "agnes";
-process.env.ENABLE_AGNES_PROVIDER = "true";
-process.env.AGNES_API_KEY = "test-agnes-key";
-delete process.env.OPENAI_API_KEY;
-delete process.env.OPENAI_LISTING_MODEL;
+process.env.DEFAULT_VISION_PROVIDER = "gemini";
+process.env.ENABLE_GEMINI_PROVIDER = "true";
+process.env.GEMINI_API_KEY = "test-gemini-key";
+process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
 
 clearInFlightIdentityRequestsForTests();
 

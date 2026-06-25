@@ -9,7 +9,6 @@ import {
   resolveKnowledgeEntry,
   resolveKnowledgeFromFields
 } from "../lib/listing-knowledge-registry.mjs";
-import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
 import {
   analyzeCardEvidenceWithGemini,
   transcribeVisibleCardTextWithGemini
@@ -17,7 +16,7 @@ import {
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import { defaultProviderModels, providerLabels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
-import { isProviderResponseFormatError, safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
+import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 import {
   createListingImageSignedReadUrl,
@@ -31,7 +30,6 @@ import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from 
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
-import { completionActions } from "../lib/listing/orchestration/next-best-action.mjs";
 import {
   applyIdentityResolutionGate,
   applyIdentityResolutionGateWithConvergence
@@ -101,21 +99,6 @@ function optionFlag(options, key, fallback) {
   return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
 }
 
-function gptFailureFallbackEnabled(env = process.env, options = {}) {
-  if (singleModelFastPathEnabled(env, options)) return false;
-  return optionFlag(options, "enable_gpt_failure_fallback", envFlag(env, "ENABLE_GPT_FAILURE_FALLBACK", false));
-}
-
-function gptCriticalVerifierEnabled(env = process.env, options = {}) {
-  if (singleModelFastPathEnabled(env, options)) return false;
-  return optionFlag(options, "enable_gpt_critical_verifier", envFlag(env, "ENABLE_GPT_CRITICAL_VERIFIER", false));
-}
-
-function gptProviderFailureFallbackEnabled(env = process.env, options = {}) {
-  if (singleModelFastPathEnabled(env, options)) return false;
-  return optionFlag(options, "enable_gpt_provider_failure_fallback", envFlag(env, "ENABLE_GPT_PROVIDER_FAILURE_FALLBACK", false));
-}
-
 function singleModelFastPathEnabled(env = process.env, options = {}) {
   return optionFlag(options, "single_model_fast", envFlag(env, "ENABLE_SINGLE_MODEL_FAST_PATH", true));
 }
@@ -145,27 +128,6 @@ function geminiCoreFieldRetryEnv(env = process.env) {
       ? String(Math.trunc(retryMaxOutputTokens))
       : "350"
   };
-}
-
-function formatFailureType(error) {
-  return error?.details?.format_error_type || error?.format_error_type || "PROVIDER_ERROR";
-}
-
-function geminiProviderFailureFallbackReason(error) {
-  if (isProviderResponseFormatError(error)) return `gemini_format_failure:${formatFailureType(error)}`;
-  const code = error?.code || "provider_error";
-  return `gemini_provider_failure:${code}`;
-}
-
-function isGeminiProviderFailureFallbackError(error) {
-  if (error?.provider !== visionProviderIds.GEMINI) return false;
-  return [
-    "location_unavailable",
-    "timeout",
-    "rate_limited",
-    "upstream_error",
-    "network_error"
-  ].includes(error?.code);
 }
 
 function nowMs() {
@@ -2012,32 +1974,6 @@ function primaryPayloadForProvider(payload = {}) {
   };
 }
 
-const focusedRegionsByAction = Object.freeze({
-  [completionActions.CROP_AND_READ_SUBJECT]: ["subject_name"],
-  [completionActions.CROP_AND_READ_SERIAL]: ["serial_number"],
-  [completionActions.CROP_AND_READ_CARD_CODE]: ["collector_number", "checklist_code"],
-  [completionActions.CROP_AND_READ_GRADE_LABEL]: ["grade_label"],
-  [completionActions.CROP_AND_READ_YEAR_PRODUCT]: ["year_product"],
-  [completionActions.CROP_AND_READ_PARALLEL]: ["parallel", "variation", "color"]
-});
-
-function focusedImagesForAction(images = [], action, focusFields = []) {
-  const targetRegions = new Set([
-    ...(focusedRegionsByAction[action] || []),
-    ...focusFields
-  ]);
-  const derivedMatches = derivedImagesFromImages(images).filter((image) => {
-    const sourceRegion = image.sourceRegion || image.source_region || "";
-    const storageRole = image.storageRole || image.storage_role || "";
-    return targetRegions.has(sourceRegion)
-      || targetRegions.has(storageRole)
-      || [...targetRegions].some((field) => storageRole.includes(field.replace(/_number$|_code$/, "")));
-  });
-
-  if (derivedMatches.length) return derivedMatches.slice(0, 2);
-  return primaryImagesFromImages(images).slice(0, 2);
-}
-
 function storageMetadataForImage(image = {}) {
   return {
     objectPath: image.objectPath || image.object_path || image.storagePath || image.storage_path,
@@ -2123,47 +2059,6 @@ async function verifyIdentityCacheImages(payload = {}) {
   }
 
   return { ok: true };
-}
-
-function focusedRereadPrompt({
-  action,
-  focusFields = [],
-  resolved = {}
-} = {}) {
-  return [
-    "You are performing a focused reread for LYNCA Listing Copilot.",
-    "Use only the supplied card image or crop. Do not infer facts from style, marketplace wording, or memory.",
-    "If the image contains multiple cards or a card lot, set multi_card true, include card_count when visible, and do not merge fields from different cards.",
-    "For RC, return true when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible.",
-    "For every non-empty high-risk field, also return field_evidence using the same field/source_type/source_region/raw_text/direct_observation contract as first-pass recognition.",
-    "For parallel and variation, return a value when printed card text, slab label, card code/checklist clue, or a high-confidence intentional card-design color/pattern is visible.",
-    "When returning a visual card-design color/parallel, use concise marketplace-safe wording such as Gold Refractor, Purple, Blue Prizm, Green Wave, Silver Prizm, or Red Ice. Do not use background, sleeve, glare, lighting, or generic foil shine.",
-    "If color or foil is only a weak visual impression, leave parallel/variation empty and add an unresolved note such as visual-only parallel requires operator review.",
-    `Action: ${action || "focused_reread"}.`,
-    `Focus fields: ${focusFields.join(", ") || "unresolved critical fields"}.`,
-    "Return only valid JSON with this shape:",
-    JSON.stringify({
-      title: "",
-      confidence: "HIGH | MEDIUM | LOW | FAILED",
-      fields: {
-        multi_card: false,
-        card_count: null,
-        lot_type: null,
-        ...Object.fromEntries(focusFields.map((field) => [field, ""]))
-      },
-      field_evidence: {
-        year: { value: "", support_type: "", source_type: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
-        serial_number: { value: "", support_type: "", source_type: "", source_region: "", evidence_kind: "", raw_text: "", visible_text: "", direct_observation: true, confidence: 0, review_required: true },
-        grade: { grade_company: "", card_grade: "", auto_grade: "", grade_type: "", support_type: "", evidence_kind: "", visible_text: "", confidence: 0, review_required: true },
-        rc: { value: false, support_type: "", evidence_kind: "", visible_text: "", visible_marker: false, confidence: 0, review_required: true },
-        auto: { value: false, support_type: "", evidence_kind: "", visible_text: "", text_visible: false, signature_visible: false, confidence: 0, review_required: true }
-      },
-      unresolved: []
-    }),
-    "If a focus field is unreadable, leave it empty and explain that field in unresolved.",
-    "Current resolved context for disambiguation only:",
-    JSON.stringify(resolved)
-  ].join("\n");
 }
 
 function fastInitialRecognitionPrompt(payload, maxTitleLength) {
@@ -2894,134 +2789,6 @@ function singleModelDraftPath(result, payload, providerId, {
   };
 }
 
-function createAgnesFocusedRereadRunner({
-  images = [],
-  maxTitleLength = maxFallbackTitleLength,
-  env = process.env,
-  timingContext = null
-} = {}) {
-  return async ({ action, focusFields = [], resolved = {} } = {}) => {
-    const rereadImages = focusedImagesForAction(images, action, focusFields);
-    if (!rereadImages.length) {
-      return {
-        provider_id: visionProviderIds.AGNES,
-        model_id: defaultProviderModels[visionProviderIds.AGNES],
-        resolved: {},
-        evidence: {},
-        unresolved: ["focused reread image unavailable"]
-      };
-    }
-
-    const providerResult = await timeAsync(timingContext, "focused_reread_ms", () => runTimedProviderCall(
-      visionProviderIds.AGNES,
-      timingContext,
-      () => analyzeCardEvidenceWithAgnes({
-        images: rereadImages,
-        prompt: focusedRereadPrompt({ action, focusFields, resolved }),
-        env
-      })
-    ));
-    const normalized = normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.AGNES);
-    const evidenceDocument = providerPayloadToEvidenceDocument({
-      ...providerResult.parsed,
-      title: providerResult.parsed.title || normalized.model_title_suggestion || "",
-      confidence: normalized.confidence,
-      fields: normalized.fields,
-      unresolved: Array.isArray(providerResult.parsed.unresolved)
-        ? providerResult.parsed.unresolved
-        : normalized.unresolved
-    }, {
-      images: rereadImages
-    });
-
-    return {
-      provider_id: providerResult.provider || visionProviderIds.AGNES,
-      model_id: providerResult.model_id || defaultProviderModels[visionProviderIds.AGNES],
-      response_id: providerResult.response_id || null,
-      finish_reason: providerResult.finish_reason || null,
-      parse_source: providerResult.parse_source || null,
-      usage: providerResult.usage || null,
-      evidence_document: evidenceDocument,
-      resolved: evidenceDocument.resolved,
-      evidence: evidenceDocument.evidence,
-      unresolved: evidenceDocument.unresolved || []
-    };
-  };
-}
-
-const gptCriticalVerifierActions = new Set([
-  completionActions.CROP_AND_READ_SERIAL,
-  completionActions.CROP_AND_READ_CARD_CODE,
-  completionActions.CROP_AND_READ_GRADE_LABEL,
-  completionActions.CROP_AND_READ_YEAR_PRODUCT,
-  completionActions.CROP_AND_READ_PARALLEL
-]);
-
-function createGptCriticalVerifierRunner({
-  images = [],
-  maxTitleLength = maxFallbackTitleLength,
-  env = process.env,
-  timingContext = null
-} = {}) {
-  return async ({ action, focusFields = [], resolved = {} } = {}) => {
-    if (!gptCriticalVerifierActions.has(action)) {
-      return {
-        provider_id: visionProviderIds.OPENAI_LEGACY,
-        model_id: defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
-        resolved: {},
-        evidence: {},
-        unresolved: [`gpt critical verifier skipped unsupported action: ${action || "unknown"}`]
-      };
-    }
-
-    const rereadImages = focusedImagesForAction(images, action, focusFields);
-    if (!rereadImages.length) {
-      return {
-        provider_id: visionProviderIds.OPENAI_LEGACY,
-        model_id: defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
-        resolved: {},
-        evidence: {},
-        unresolved: ["gpt critical verifier image unavailable"]
-      };
-    }
-
-    const providerResult = await timeAsync(timingContext, "focused_reread_ms", () => runTimedProviderCall(
-      visionProviderIds.OPENAI_LEGACY,
-      timingContext,
-      () => analyzeCardEvidenceWithOpenAiEmergency({
-        images: rereadImages,
-        prompt: focusedRereadPrompt({ action, focusFields, resolved }),
-        env
-      })
-    ));
-    const normalized = normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY);
-    const evidenceDocument = providerPayloadToEvidenceDocument({
-      ...providerResult.parsed,
-      title: providerResult.parsed.title || normalized.model_title_suggestion || "",
-      confidence: normalized.confidence,
-      fields: normalized.fields,
-      unresolved: Array.isArray(providerResult.parsed.unresolved)
-        ? providerResult.parsed.unresolved
-        : normalized.unresolved
-    }, {
-      images: rereadImages
-    });
-
-    return {
-      provider_id: providerResult.provider || visionProviderIds.OPENAI_LEGACY,
-      model_id: providerResult.model_id || defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
-      response_id: providerResult.response_id || null,
-      finish_reason: providerResult.finish_reason || null,
-      parse_source: providerResult.parse_source || null,
-      usage: providerResult.usage || null,
-      evidence_document: evidenceDocument,
-      resolved: evidenceDocument.resolved,
-      evidence: evidenceDocument.evidence,
-      unresolved: evidenceDocument.unresolved || []
-    };
-  };
-}
-
 function providerParsedFields(providerResult = {}) {
   return providerResult.parsed?.fields && typeof providerResult.parsed.fields === "object" && !Array.isArray(providerResult.parsed.fields)
     ? providerResult.parsed.fields
@@ -3243,124 +3010,12 @@ async function maybeRetryGeminiCoreFields(providerResult, {
   };
 }
 
-function textIncludesAny(value, terms = []) {
-  const text = searchable(value);
-  return terms.some((term) => text.includes(searchable(term)));
-}
-
 function uniqueValues(values = []) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function cascadeSecondaryVerifierEnv(env = process.env, verificationFields = []) {
-  return {
-    ...env,
-    AGNES_TIMEOUT_MS: env.AGNES_SECONDARY_TIMEOUT_MS || env.AGNES_FOCUSED_TIMEOUT_MS || "12000",
-    AGNES_MAX_RETRIES: env.AGNES_SECONDARY_MAX_RETRIES || "0",
-    ENABLE_PARALLEL_FOCUSED_REREADS: "1",
-    ENABLE_PARALLEL_AGNES_FOCUSED_REREADS: "1",
-    CASCADE_SECONDARY_VERIFICATION_FIELDS: verificationFields.join(","),
-    MAX_PARALLEL_FOCUSED_REREADS: env.CASCADE_MAX_PARALLEL_FOCUSED_REREADS || "2",
-    MAX_AGNES_CALLS_PER_ASSET: env.CASCADE_MAX_AGNES_CALLS_PER_ASSET || "2",
-    MAX_RESOLUTION_TIME_MS: env.CASCADE_MAX_RESOLUTION_TIME_MS || "16000"
-  };
-}
-
-function cascadeSecondaryVerificationFields(result = {}) {
-  const resolved = result.resolved || {};
-  const unresolvedText = [
-    result.reason,
-    result.route_reason,
-    ...(Array.isArray(result.unresolved) ? result.unresolved : [])
-  ].filter(Boolean).join(" ");
-  const fields = new Set();
-
-  if (resolved.multi_card || Number(resolved.card_count || 0) > 1) return [];
-
-  if (hasEvidenceValue(resolved.serial_number)
-    || textIncludesAny(unresolvedText, ["serial", "serial number", "numbered", "denominator"])) {
-    fields.add("serial_number");
-  }
-
-  if (hasEvidenceValue(resolved.parallel)
-    || hasEvidenceValue(resolved.parallel_exact)
-    || hasEvidenceValue(resolved.parallel_family)
-    || hasEvidenceValue(resolved.surface_color)
-    || hasEvidenceValue(resolved.variation)
-    || textIncludesAny(unresolvedText, ["parallel", "color", "wave", "shimmer", "mojo", "sapphire", "geometric", "refractor"])) {
-    fields.add("parallel");
-  }
-
-  if (!hasEvidenceValue(resolved.year)
-    || !hasEvidenceValue(resolved.product)
-    || textIncludesAny(unresolvedText, ["year", "season", "copyright", "product"])) {
-    fields.add("year_product");
-  }
-
-  if (textIncludesAny(unresolvedText, ["grade", "slab", "label"])) {
-    fields.add("grade_label");
-  }
-
-  if (textIncludesAny(unresolvedText, ["collector number", "checklist", "card number", "code"])) {
-    fields.add("card_code");
-  }
-
-  return [...fields];
-}
-
-function cascadeVerificationUnresolvedNotes(fields = []) {
-  const notesByField = {
-    serial_number: "serial number requires secondary verifier focused reread",
-    parallel: "parallel color requires secondary verifier focused reread",
-    year_product: "year product requires secondary verifier focused reread",
-    grade_label: "grade label requires secondary verifier focused reread",
-    card_code: "card number checklist code requires secondary verifier focused reread"
-  };
-
-  return fields.map((field) => notesByField[field]).filter(Boolean);
-}
-
-function withCascadePolicy(result = {}, verificationFields = [], {
-  secondaryAvailable = true,
-  secondaryDisabledReason = null
-} = {}) {
-  return {
-    ...result,
-    provider: visionProviderIds.CASCADE_FAST,
-    source: visionProviderIds.OPENAI_LEGACY,
-    identity_provider_id: "primary_fast_vision",
-    provider_label: providerLabels[visionProviderIds.CASCADE_FAST],
-    model_id: `${result.model_id || defaultProviderModels[visionProviderIds.OPENAI_LEGACY]} + ${defaultProviderModels[visionProviderIds.AGNES]}`,
-    cascade: {
-      enabled: true,
-      role: "PRIMARY_FAST_VISION",
-      primary_provider_id: visionProviderIds.OPENAI_LEGACY,
-      secondary_provider_id: visionProviderIds.AGNES,
-      secondary_verification_available: secondaryAvailable,
-      secondary_disabled_reason: secondaryDisabledReason,
-      secondary_verification_required_fields: verificationFields,
-      secondary_verification_required: verificationFields.length > 0
-    },
-    fast_vision_policy: {
-      role: "PRIMARY_FAST_VISION",
-      allow_single_source_publish: true,
-      secondary_verification_required_fields: verificationFields
-    },
-    unresolved: uniqueValues([
-      ...(Array.isArray(result.unresolved) ? result.unresolved : []),
-      ...cascadeVerificationUnresolvedNotes(verificationFields),
-      ...(verificationFields.length && !secondaryAvailable
-        ? [`secondary verifier unavailable: ${secondaryDisabledReason || "agnes_not_configured"}`]
-        : [])
-    ])
-  };
-}
-
-function withPrimaryFastVisionPolicy(result = {}, verificationFields = [], {
-  primaryProviderId,
-  verifierProviderId = visionProviderIds.OPENAI_LEGACY,
-  verifierAvailable = true,
-  verifierDisabledReason = null
+function withPrimaryFastVisionPolicy(result = {}, {
+  primaryProviderId
 } = {}) {
   return {
     ...result,
@@ -3368,19 +3023,10 @@ function withPrimaryFastVisionPolicy(result = {}, verificationFields = [], {
     fast_vision_policy: {
       role: "PRIMARY_FAST_VISION",
       primary_provider_id: primaryProviderId || result.provider || result.source || null,
-      verifier_provider_id: verifierProviderId,
-      verifier_role: "CONDITIONAL_CRITICAL_VERIFIER",
-      allow_single_source_publish: true,
-      secondary_verification_required_fields: verificationFields,
-      secondary_verification_available: verifierAvailable,
-      secondary_disabled_reason: verifierDisabledReason
+      allow_single_source_publish: true
     },
     unresolved: uniqueValues([
-      ...(Array.isArray(result.unresolved) ? result.unresolved : []),
-      ...cascadeVerificationUnresolvedNotes(verificationFields).map((note) => note.replace("secondary verifier", "GPT critical verifier")),
-      ...(verificationFields.length && !verifierAvailable
-        ? [`GPT critical verifier unavailable: ${verifierDisabledReason || "openai_not_configured"}`]
-        : [])
+      ...(Array.isArray(result.unresolved) ? result.unresolved : [])
     ])
   };
 }
@@ -3596,7 +3242,7 @@ async function createRecognitionIdentityPreflight(payload, {
       source: "recognition_worker",
       provider: "recognition_worker",
       route: "RECOGNITION_WORKER_PREFLIGHT",
-      route_reason: "Attempted local OCR/slab identity resolution before the vision cascade.",
+      route_reason: "Attempted local OCR/slab identity resolution before the selected vision provider.",
       recognition_preflight: evidenceDocument.recognition || null,
       visual_features: response.visual_features || {},
       usage: {
@@ -3630,57 +3276,6 @@ async function createRecognitionIdentityPreflight(payload, {
       error: safeRecognitionError(error)
     };
   }
-}
-
-async function createAgnesTitle(payload, selection, {
-  recognitionEvidenceDocument = null,
-  signedImages: reusableSignedImages = null,
-  timingContext = null
-} = {}) {
-  const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
-    ? reusableSignedImages
-    : await imagesWithSignedReadUrls(payload.images, timingContext);
-  const initialPayload = {
-    ...payload,
-    images: primaryImagesFromImages(signedImages)
-  };
-  const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
-  const providerResult = await runTimedProviderCall(visionProviderIds.AGNES, timingContext, () => analyzeCardEvidenceWithAgnes({
-    images: initialPayload.images,
-    prompt
-  }));
-
-  const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
-      withEvidenceCompatibility(
-        withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.AGNES), initialPayload),
-        providerResult.parsed,
-        initialPayload
-      ),
-      providerResult,
-      selection
-    ));
-  const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
-  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.AGNES));
-  if (fastPathResult) return fastPathResult;
-  const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
-    mergedResult,
-    initialPayload,
-    visionProviderIds.AGNES
-  ));
-  if (singleModelResult) return singleModelResult;
-
-  return withEvidenceCompletion(mergedResult, {
-    ...payload,
-    images: signedImages
-  }, {
-    runFocusedVisionImpl: createAgnesFocusedRereadRunner({
-      images: signedImages,
-      maxTitleLength,
-      timingContext
-    }),
-    timingContext
-  });
 }
 
 async function createOpenAiTitle(payload, selection, {
@@ -3740,59 +3335,15 @@ async function createGeminiTitle(payload, selection, {
     images: geminiImages
   });
   const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
-  let providerResult;
-  try {
-    providerResult = await runTimedProviderCall(visionProviderIds.GEMINI, timingContext, () => analyzeCardEvidenceWithGemini({
-      images: initialPayload.images,
-      prompt
-    }));
-    providerResult = await maybeRetryGeminiCoreFields(providerResult, {
-      images: initialPayload.images,
-      providerOptions,
-      timingContext
-    });
-  } catch (error) {
-    const formatFailure = isProviderResponseFormatError(error);
-    const providerFailure = isGeminiProviderFailureFallbackError(error);
-    if ((!formatFailure && !providerFailure)
-      || !gptFailureFallbackEnabled(process.env, providerOptions)
-      || (providerFailure && !gptProviderFailureFallbackEnabled(process.env, providerOptions))
-      || !process.env.OPENAI_API_KEY) {
-      throw error;
-    }
-
-    const fallbackSelection = {
-      provider_id: visionProviderIds.OPENAI_LEGACY,
-      model_id: defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
-      explicit_emergency: false,
-      provider: {
-        id: visionProviderIds.OPENAI_LEGACY,
-        model_id: defaultProviderModels[visionProviderIds.OPENAI_LEGACY]
-      }
-    };
-    const fallback = await createOpenAiTitle(payload, fallbackSelection, {
-      recognitionEvidenceDocument,
-      signedImages,
-      timingContext
-    });
-    return {
-      ...fallback,
-      primary_provider_id: visionProviderIds.GEMINI,
-      fallback_provider_id: visionProviderIds.OPENAI_LEGACY,
-      fallback_reason: geminiProviderFailureFallbackReason(error),
-      format_error_type: formatFailureType(error),
-      format_repair_attempted: error.details?.format_repair_attempted === true,
-      local_json_repair_success: error.details?.local_json_repair_success === true,
-      text_repair_success: error.details?.text_repair_success === true,
-      provider_route: "gemini_to_gpt_failure_fallback",
-      provider_failure: {
-        provider: visionProviderIds.GEMINI,
-        code: error.code,
-        format_error_type: formatFailureType(error),
-        message: safeProviderErrorMessage(error)
-      }
-    };
-  }
+  let providerResult = await runTimedProviderCall(visionProviderIds.GEMINI, timingContext, () => analyzeCardEvidenceWithGemini({
+    images: initialPayload.images,
+    prompt
+  }));
+  providerResult = await maybeRetryGeminiCoreFields(providerResult, {
+    images: initialPayload.images,
+    providerOptions,
+    timingContext
+  });
 
   const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
       withEvidenceCompatibility(
@@ -3804,15 +3355,8 @@ async function createGeminiTitle(payload, selection, {
       selection
     ));
   const mergedResult = withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload);
-  const criticalVerifierEnabled = gptCriticalVerifierEnabled(process.env, providerOptions);
-  const verificationFields = criticalVerifierEnabled
-    ? cascadeSecondaryVerificationFields(mergedResult)
-    : [];
-  const gptVerifierAvailable = Boolean(process.env.OPENAI_API_KEY && criticalVerifierEnabled);
-  const primaryFastResult = withPrimaryFastVisionPolicy(mergedResult, verificationFields, {
-    primaryProviderId: visionProviderIds.GEMINI,
-    verifierAvailable: gptVerifierAvailable,
-    verifierDisabledReason: criticalVerifierEnabled ? "missing_openai_api_key" : "gpt_critical_verifier_disabled"
+  const primaryFastResult = withPrimaryFastVisionPolicy(mergedResult, {
+    primaryProviderId: visionProviderIds.GEMINI
   });
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(primaryFastResult, initialPayload, "primary_fast_vision"));
   if (fastPathResult) return fastPathResult;
@@ -3823,88 +3367,7 @@ async function createGeminiTitle(payload, selection, {
   ));
   if (singleModelResult) return singleModelResult;
 
-  const completionEnv = {
-    ...process.env,
-    REQUIRED_FOCUSED_FIELDS: verificationFields.join(",")
-  };
-
-  return withEvidenceCompletion(primaryFastResult, initialPayload, {
-    runFocusedVisionImpl: verificationFields.length && gptVerifierAvailable
-      ? createGptCriticalVerifierRunner({
-          images: signedImages,
-          maxTitleLength,
-          env: completionEnv,
-          timingContext
-        })
-      : null,
-    env: completionEnv,
-    timingContext
-  });
-}
-
-async function createCascadeFastTitle(payload, selection, {
-  recognitionEvidenceDocument = null,
-  signedImages: reusableSignedImages = null,
-  timingContext = null
-} = {}) {
-  const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
-    ? reusableSignedImages
-    : await imagesWithSignedReadUrls(payload.images || [], timingContext);
-  const initialPayload = primaryPayloadForProvider({
-    ...payload,
-    images: signedImages
-  });
-  const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
-  const primaryResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
-    images: initialPayload.images,
-    prompt
-  }));
-
-  const primaryWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
-      withEvidenceCompatibility(
-        withRequestMetadata(normalizeAiResult(primaryResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY), initialPayload),
-        primaryResult.parsed,
-        initialPayload
-      ),
-      primaryResult,
-      {
-        ...selection,
-        provider_id: visionProviderIds.OPENAI_LEGACY,
-        explicit_emergency: false
-      }
-    ));
-  const mergedResult = withRecognitionEvidence(primaryWithEvidence, recognitionEvidenceDocument, initialPayload);
-  const verificationFields = cascadeSecondaryVerificationFields(mergedResult);
-  const secondaryAvailable = selection.provider?.secondary_configured === true;
-  const cascadeResult = withCascadePolicy(mergedResult, verificationFields, {
-    secondaryAvailable,
-    secondaryDisabledReason: selection.provider?.secondary_disabled_reason || null
-  });
-  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(
-    cascadeResult,
-    initialPayload,
-    cascadeResult.identity_provider_id || visionProviderIds.CASCADE_FAST
-  ));
-  if (fastPathResult) return fastPathResult;
-
-  const secondaryEnv = cascadeSecondaryVerifierEnv(process.env, verificationFields);
-
-  return withEvidenceCompletion(cascadeResult, {
-    ...payload,
-    images: signedImages
-  }, {
-    runFocusedVisionImpl: verificationFields.length && secondaryAvailable
-      ? createAgnesFocusedRereadRunner({
-          images: signedImages,
-          maxTitleLength,
-          env: secondaryEnv,
-          timingContext
-        })
-      : null,
-    env: secondaryEnv,
-    timingContext
-  });
+  return withEvidenceCompletion(primaryFastResult, initialPayload, { timingContext });
 }
 
 function requestedProviderFromPayload(payload = {}) {
@@ -3924,7 +3387,7 @@ async function createProviderTitle(payload, {
   const explicitEmergency = explicitEmergencyFromPayload(payload);
   const primaryImages = primaryImagesFromImages(payload.images || []);
 
-  if (!requestedProvider && !process.env.GEMINI_API_KEY && !process.env.AGNES_API_KEY && !process.env.OPENAI_API_KEY) {
+  if (!requestedProvider && !process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
     return fallbackResult(payload);
   }
 
@@ -3934,16 +3397,8 @@ async function createProviderTitle(payload, {
     images: primaryImages
   });
 
-  if (selection.provider_id === visionProviderIds.CASCADE_FAST) {
-    return createCascadeFastTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
-  }
-
   if (selection.provider_id === visionProviderIds.GEMINI) {
     return createGeminiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
-  }
-
-  if (selection.provider_id === visionProviderIds.AGNES) {
-    return createAgnesTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });
   }
 
   return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext });

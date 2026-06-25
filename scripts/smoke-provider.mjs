@@ -1,4 +1,3 @@
-import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
 import { analyzeCardEvidenceWithGemini } from "../lib/listing/providers/gemini-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
@@ -23,105 +22,6 @@ const smokePrompt = [
   })
 ].join("\n");
 
-const toolSmokePrompt = [
-  "This is a Listing Copilot Agnes tool-call smoke test.",
-  "Call submit_card_evidence exactly once.",
-  "The tool arguments must match the Listing ProviderEvidenceResponse runtime shape.",
-  "Use evidence keyed by field name. Every evidence field must be an object, never a raw string.",
-  "Example evidence field: {\"value\":\"Smoke Test Card\",\"confidence\":0.5,\"status\":\"REVIEW\",\"candidates\":[{\"value\":\"Smoke Test Card\",\"confidence\":0.5}],\"sources\":[],\"conflicts\":[]}.",
-  "If you cannot identify the card, still submit one low-confidence field named model_title_suggestion and put unknown facts in unresolved."
-].join("\n");
-
-const evidenceFieldParameterSchema = {
-  type: "object",
-  properties: {
-    value: {
-      anyOf: [
-        { type: "string" },
-        { type: "number" },
-        { type: "boolean" },
-        { type: "array", items: { type: "string" } },
-        { type: "null" }
-      ]
-    },
-    normalized_value: {
-      anyOf: [
-        { type: "string" },
-        { type: "number" },
-        { type: "boolean" },
-        { type: "array", items: { type: "string" } },
-        { type: "null" }
-      ]
-    },
-    status: {
-      type: "string",
-      enum: ["CONFIRMED", "REVIEW", "MISSING", "CONFLICT", "MANUAL_CONFIRMED", "NOT_APPLICABLE"]
-    },
-    confidence: {
-      type: "number",
-      minimum: 0,
-      maximum: 1
-    },
-    candidates: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          value: {
-            anyOf: [
-              { type: "string" },
-              { type: "number" },
-              { type: "boolean" },
-              { type: "array", items: { type: "string" } },
-              { type: "null" }
-            ]
-          },
-          confidence: {
-            type: "number",
-            minimum: 0,
-            maximum: 1
-          }
-        }
-      }
-    },
-    sources: {
-      type: "array",
-      items: { type: "object" }
-    },
-    conflicts: {
-      type: "array",
-      items: { type: "object" }
-    },
-    unresolved_reason: { type: "string" }
-  },
-  required: ["value", "confidence"]
-};
-
-const agnesSmokeTool = {
-  type: "function",
-  function: {
-    name: "submit_card_evidence",
-    description: "Submit structured card evidence observed during the Listing Copilot smoke test.",
-    parameters: {
-      type: "object",
-      properties: {
-        model_title_suggestion: { type: "string" },
-        reason: { type: "string" },
-        evidence: {
-          type: "object",
-          additionalProperties: evidenceFieldParameterSchema
-        },
-        image_quality: { type: "object" },
-        unresolved: {
-          type: "array",
-          items: { type: "string" }
-        }
-      },
-      required: ["evidence", "unresolved"]
-    }
-  }
-};
-
 function argValue(name, fallback = "") {
   const index = process.argv.indexOf(name);
   if (index === -1) return fallback;
@@ -131,7 +31,6 @@ function argValue(name, fallback = "") {
 function defaultSmokeReportPath(providerId, env = process.env) {
   if (env.SMOKE_PROVIDER_REPORT_PATH) return env.SMOKE_PROVIDER_REPORT_PATH;
   if (providerId === "gemini") return env.GEMINI_SMOKE_REPORT_PATH || "data/smoke/gemini-smoke-latest.json";
-  if (providerId === "agnes") return env.AGNES_SMOKE_REPORT_PATH || "data/smoke/agnes-smoke-latest.json";
   if (providerId === "brave") return env.BRAVE_SMOKE_REPORT_PATH || "data/smoke/brave-smoke-latest.json";
   if (providerId === "ebay") return env.EBAY_SMOKE_REPORT_PATH || "data/smoke/ebay-smoke-latest.json";
   if (providerId === "ows") return env.OWS_SMOKE_REPORT_PATH || "data/smoke/ows-smoke-latest.json";
@@ -237,105 +136,6 @@ async function runCapability(report, name, fn, {
       message: safeProviderErrorMessage(error)
     }, { required });
   }
-}
-
-export async function runAgnesSmoke({
-  env = process.env,
-  analyzeImpl = analyzeCardEvidenceWithAgnes
-} = {}) {
-  const report = createSmokeReport("agnes");
-  const requireMultiImage = booleanFromEnv(env, "AGNES_SMOKE_REQUIRE_MULTI_IMAGE", false);
-  const requireToolCall = booleanFromEnv(env, "AGNES_SMOKE_REQUIRE_TOOL_CALL", false);
-  const requireErrorResponse = booleanFromEnv(env, "AGNES_SMOKE_REQUIRE_ERROR_RESPONSE", false);
-
-  if (!env.AGNES_API_KEY) {
-    addCapability(report, "credentials", "skipped", { reason: "AGNES_API_KEY is not configured." });
-    return report;
-  }
-  if (!env.AGNES_SMOKE_IMAGE_URL) {
-    addCapability(report, "single_image_json", "skipped", { reason: "AGNES_SMOKE_IMAGE_URL is not configured." });
-    return report;
-  }
-
-  const frontImage = {
-    name: "agnes-smoke-front",
-    url: env.AGNES_SMOKE_IMAGE_URL
-  };
-
-  await runCapability(report, "single_image_json", async () => {
-    const result = await analyzeImpl({
-      images: [frontImage],
-      prompt: smokePrompt,
-      env
-    });
-    return resultDetails(result);
-  });
-
-  if (env.AGNES_SMOKE_BACK_IMAGE_URL) {
-    await runCapability(report, "front_back_multi_image_json", async () => {
-      const result = await analyzeImpl({
-        images: [
-          frontImage,
-          {
-            name: "agnes-smoke-back",
-            url: env.AGNES_SMOKE_BACK_IMAGE_URL
-          }
-        ],
-        prompt: smokePrompt,
-        env
-      });
-      return resultDetails(result);
-    }, { required: requireMultiImage });
-  } else {
-    addCapability(report, "front_back_multi_image_json", "skipped", {
-      reason: "AGNES_SMOKE_BACK_IMAGE_URL is not configured."
-    }, { required: requireMultiImage });
-  }
-
-  await runCapability(report, "tool_call", async () => {
-    const result = await analyzeImpl({
-      images: [frontImage],
-      prompt: toolSmokePrompt,
-      tools: [agnesSmokeTool],
-      toolChoice: {
-        type: "function",
-        function: {
-          name: "submit_card_evidence"
-        }
-      },
-      env
-    });
-    return resultDetails(result);
-  }, { required: requireToolCall });
-
-  if (env.AGNES_SMOKE_ERROR_IMAGE_URL) {
-    await runCapability(report, "error_response", async () => {
-      try {
-        await analyzeImpl({
-          images: [
-            {
-              name: "agnes-smoke-error-image",
-              url: env.AGNES_SMOKE_ERROR_IMAGE_URL
-            }
-          ],
-          prompt: smokePrompt,
-          env
-        });
-      } catch (error) {
-        return {
-          error_code: error.code || "provider_error",
-          status: error.status || "unknown"
-        };
-      }
-      throw new Error("Expected Agnes smoke error image to produce a provider error.");
-    }, { required: requireErrorResponse });
-  } else {
-    addCapability(report, "error_response", "skipped", {
-      reason: "AGNES_SMOKE_ERROR_IMAGE_URL is not configured."
-    }, { required: requireErrorResponse });
-  }
-
-  return report;
 }
 
 export async function runGeminiSmoke({
@@ -519,9 +319,7 @@ export async function writeSmokeReport(report, outputPath) {
 async function main() {
   let report = null;
 
-  if (provider === "agnes") {
-    report = await runAgnesSmoke();
-  } else if (provider === "gemini") {
+  if (provider === "gemini") {
     report = await runGeminiSmoke();
   } else if (provider === "openai") {
     await runOpenAiSmoke();
@@ -533,7 +331,7 @@ async function main() {
   } else if (provider === "ows") {
     report = await runOwsSmoke();
   } else {
-    console.error("Usage: node scripts/smoke-provider.mjs <gemini|agnes|openai|brave|ebay|ows>");
+    console.error("Usage: node scripts/smoke-provider.mjs <gemini|openai|brave|ebay|ows>");
     process.exit(1);
   }
 

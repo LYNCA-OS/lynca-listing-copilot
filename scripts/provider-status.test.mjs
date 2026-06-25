@@ -7,24 +7,22 @@ import handler from "../api/listing-provider-status.js";
 
 const originalEnv = { ...process.env };
 const tempDir = await mkdtemp(join(tmpdir(), "lynca-provider-status-"));
-const smokeReportPath = join(tempDir, "agnes-smoke.json");
+const smokeReportPath = join(tempDir, "gemini-smoke.json");
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.ENABLE_GEMINI_PROVIDER = "true";
-process.env.ENABLE_AGNES_PROVIDER = "true";
 process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "true";
-process.env.ENABLE_AGNES_AUTO_VERIFIER = "false";
-process.env.ENABLE_FAST_CASCADE_PROVIDER = "false";
+process.env.ALLOW_EXPLICIT_GPT41_RETRY = "true";
 process.env.GEMINI_API_KEY = "test-gemini-key";
 process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
-process.env.AGNES_API_KEY = "test-agnes-key";
 process.env.OPENAI_API_KEY = "test-openai-key";
+process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 process.env.LISTING_IMAGE_BUCKET = "listing-card-images";
-process.env.SMOKE_PROVIDER_REPORT_PATH = smokeReportPath;
+process.env.GEMINI_SMOKE_REPORT_PATH = smokeReportPath;
 
 await writeFile(smokeReportPath, `${JSON.stringify({
-  provider: "agnes",
+  provider: "gemini",
   status: "passed_with_limitations",
   generated_at: "2026-06-22T11:11:26.235Z",
   capabilities: [
@@ -33,7 +31,7 @@ await writeFile(smokeReportPath, `${JSON.stringify({
       status: "passed",
       required: true,
       details: {
-        model_id: "agnes-2.0-flash",
+        model_id: "gemini-3.1-flash-lite",
         parse_source: "content",
         finish_reason: "stop",
         image_count: "1",
@@ -45,7 +43,7 @@ await writeFile(smokeReportPath, `${JSON.stringify({
       status: "passed",
       required: false,
       details: {
-        model_id: "agnes-2.0-flash",
+        model_id: "gemini-3.1-flash-lite",
         parse_source: "content",
         finish_reason: "stop",
         image_count: "2",
@@ -57,17 +55,8 @@ await writeFile(smokeReportPath, `${JSON.stringify({
       status: "failed",
       required: false,
       details: {
-        error_code: "upstream_error",
+        error_code: "not_supported",
         message: "should not be surfaced https://example.com/image.jpg sk-secret"
-      }
-    },
-    {
-      name: "error_response",
-      status: "passed",
-      required: false,
-      details: {
-        error_code: "upstream_error",
-        status: "500"
       }
     }
   ]
@@ -115,54 +104,40 @@ assert.equal(response.body.storage.max_image_total_pixels, 50000000);
 assert.doesNotMatch(JSON.stringify(response.body.storage), /test-service-role/);
 
 let gemini = response.body.providers.find((provider) => provider.id === "gemini");
-let cascade = response.body.providers.find((provider) => provider.id === "cascade_fast");
-let agnes = response.body.providers.find((provider) => provider.id === "agnes");
 let openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
+assert.deepEqual(response.body.providers.map((provider) => provider.id), ["gemini", "openai_legacy"]);
 assert.equal(gemini.selectable, true);
 assert.equal(gemini.requires_storage, false);
 assert.equal(gemini.role, "primary");
 assert.deepEqual(gemini.roles, ["primary"]);
 assert.equal(gemini.model_id, "gemini-3.1-flash-lite");
-assert.ok(["not_run", "skipped"].includes(gemini.smoke.status));
-assert.equal(cascade, undefined);
-assert.equal(agnes.selectable, true);
-assert.equal(agnes.role, "manual_or_experimental");
-assert.deepEqual(agnes.roles, ["manual_or_experimental"]);
-assert.equal(agnes.requires_storage, true);
-assert.equal(agnes.smoke.status, "passed_with_limitations");
-assert.equal(agnes.smoke.generated_at, "2026-06-22T11:11:26.235Z");
-assert.equal(agnes.smoke.json_baseline_verified, true);
-assert.equal(agnes.smoke.multi_image_verified, true);
-assert.equal(agnes.smoke.tool_call_verified, false);
-assert.equal(agnes.smoke.error_response_verified, true);
-assert.equal(agnes.smoke.capabilities.length, 4);
-assert.equal(agnes.smoke.capabilities.find((capability) => capability.name === "tool_call").details.error_code, "upstream_error");
-assert.equal(agnes.smoke.capabilities.find((capability) => capability.name === "tool_call").details.message, undefined);
-assert.doesNotMatch(JSON.stringify(agnes.smoke), /sk-secret|https:\/\/example\.com/);
+assert.equal(gemini.smoke.status, "passed_with_limitations");
+assert.equal(gemini.smoke.generated_at, "2026-06-22T11:11:26.235Z");
+assert.equal(gemini.smoke.json_baseline_verified, true);
+assert.equal(gemini.smoke.multi_image_verified, true);
+assert.equal(gemini.smoke.tool_call_verified, false);
+assert.equal(gemini.smoke.capabilities.length, 3);
+assert.equal(gemini.smoke.capabilities.find((capability) => capability.name === "tool_call").details.error_code, "not_supported");
+assert.equal(gemini.smoke.capabilities.find((capability) => capability.name === "tool_call").details.message, undefined);
+assert.doesNotMatch(JSON.stringify(gemini.smoke), /sk-secret|https:\/\/example\.com/);
 assert.equal(openai.selectable, true);
-assert.equal(openai.role, "failure_fallback");
-assert.deepEqual(openai.roles, ["failure_fallback", "critical_verifier"]);
+assert.equal(openai.role, "emergency");
+assert.deepEqual(openai.roles, ["emergency"]);
 assert.equal(openai.requires_explicit_retry, true);
 
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 response = await callStatus();
 gemini = response.body.providers.find((provider) => provider.id === "gemini");
-cascade = response.body.providers.find((provider) => provider.id === "cascade_fast");
-agnes = response.body.providers.find((provider) => provider.id === "agnes");
+openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
 assert.equal(response.body.default_provider, "gemini");
-assert.equal(gemini.selectable, true);
-assert.equal(cascade, undefined);
-assert.equal(agnes.selectable, false);
-assert.equal(agnes.disabled_reason, "storage_not_configured");
 assert.equal(response.body.storage.configured, false);
+assert.equal(gemini.selectable, true);
+assert.equal(openai.selectable, true);
 
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "false";
 response = await callStatus();
-assert.equal(response.body.default_provider, "gemini");
-assert.equal(response.body.providers.find((provider) => provider.id === "cascade_fast"), undefined);
-openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
-assert.equal(openai, undefined);
+assert.deepEqual(response.body.providers.map((provider) => provider.id), ["gemini"]);
 
 process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "true";
 process.env.ALLOW_EXPLICIT_GPT41_RETRY = "false";
@@ -171,19 +146,6 @@ assert.equal(response.body.default_provider, "gemini");
 openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
 assert.equal(openai.selectable, false);
 assert.equal(openai.disabled_reason, "emergency_retry_disabled");
-
-process.env.ALLOW_EXPLICIT_GPT41_RETRY = "true";
-process.env.ENABLE_AGNES_PROVIDER = "false";
-response = await callStatus();
-gemini = response.body.providers.find((provider) => provider.id === "gemini");
-cascade = response.body.providers.find((provider) => provider.id === "cascade_fast");
-agnes = response.body.providers.find((provider) => provider.id === "agnes");
-openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
-assert.equal(gemini.selectable, true);
-assert.equal(cascade, undefined);
-assert.equal(agnes, undefined);
-assert.equal(openai.selectable, true);
-assert.equal(response.body.default_provider, "gemini");
 
 Object.keys(process.env).forEach((key) => {
   if (!(key in originalEnv)) delete process.env[key];

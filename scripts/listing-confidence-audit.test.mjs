@@ -5,13 +5,14 @@ import handler from "../api/listing-copilot-title.js";
 import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
-process.env.DEFAULT_VISION_PROVIDER = "agnes";
-process.env.ENABLE_AGNES_PROVIDER = "true";
-process.env.AGNES_API_KEY = "test-agnes-key";
-process.env.AGNES_BASE_URL = "https://apihub.agnes-ai.com/v1";
-process.env.AGNES_MODEL = "agnes-2.0-flash";
-delete process.env.OPENAI_API_KEY;
-delete process.env.OPENAI_LISTING_MODEL;
+process.env.DEFAULT_VISION_PROVIDER = "gemini";
+process.env.ENABLE_GEMINI_PROVIDER = "true";
+process.env.GEMINI_API_KEY = "test-gemini-key";
+process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
+process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "true";
+process.env.ALLOW_EXPLICIT_GPT41_RETRY = "true";
+process.env.OPENAI_API_KEY = "test-openai-key";
+process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 
 assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");
 assert.equal(resolveKnowledgeEntry("2010/11 Season"), null);
@@ -31,29 +32,21 @@ function sessionCookie() {
   return `lynca_metaverse_session=${payload}.${sign(payload)}`;
 }
 
-async function callApi(agnesResult, options = {}) {
+async function callApi(providerResult, options = {}) {
   globalThis.fetch = async () => ({
     ok: true,
     status: 200,
-    text: async () => JSON.stringify({
-      id: "chatcmpl_listing_confidence_test",
-      model: "agnes-2.0-flash",
-      choices: [
-        {
-          index: 0,
-          message: {
-            role: "assistant",
-            content: JSON.stringify(agnesResult)
-          },
-          finish_reason: "stop"
-        }
-      ],
+    json: async () => ({
+      id: "resp_listing_confidence_test",
+      model: "gpt-4.1-mini-2025-04-14",
+      output_text: JSON.stringify(providerResult),
       usage: {
-        prompt_tokens: 10,
-        completion_tokens: 8,
+        input_tokens: 10,
+        output_tokens: 8,
         total_tokens: 18
       }
-    })
+    }),
+    text: async () => ""
   });
 
   const req = new EventEmitter();
@@ -76,6 +69,8 @@ async function callApi(agnesResult, options = {}) {
   req.emit("data", JSON.stringify({
     assetId: "asset-test",
     mode: "single",
+    provider: "openai_legacy",
+    explicitEmergency: true,
     images: [{ name: "card.webp", url: "https://example.test/card.webp" }],
     resolutionMap: {},
     maxTitleLength: options.maxTitleLength || 80

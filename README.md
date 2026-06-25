@@ -52,9 +52,9 @@ http://localhost:3000
 
 If no vision provider is configured and no default provider is forced, the app uses filename fallback so upload, pairing, and copy flows can still be tested locally.
 
-Provider routing is wired around a default `cascade_fast` path: GPT-4.1 mini performs the primary fast-vision read, the Identity Gate evaluates the evidence, and Agnes is invoked only as a focused auxiliary verifier for risky fields such as serial, year/product, grade label, card code, and parallel. The browser renders server-whitelisted provider buttons and sends explicit provider metadata with each request. The default selected provider is the GPT-4.1-primary cascade. Standalone GPT-4.1 remains an explicit manual action so operators cannot bypass the cascade accidentally. Agnes can still be selected for single-provider diagnostics, but it is no longer the default primary path. Model IDs are allowlisted server-side: Agnes accepts `agnes-2.0-flash`; the OpenAI path accepts `gpt-4.1-mini` or `gpt-4.1`.
+Provider routing is intentionally single-model by default. Gemini is the primary vision provider, and GPT-4.1 mini remains an explicit single-model review action for operators and A/B checks. The browser renders only server-whitelisted provider buttons and sends explicit provider metadata with each request. There is no automatic mixed-model cascade in the production path. Model IDs are allowlisted server-side: Gemini accepts `gemini-3.1-flash-lite`; the OpenAI path accepts `gpt-4.1-mini-2025-04-14`, `gpt-4.1-mini`, or `gpt-4.1`.
 
-Agnes follows the Chat Completions image URL contract. When Supabase Storage is configured, the browser asks the server for signed upload URLs, sends MIME, byte size, dimensions, first-byte file signature metadata, and a client-side SHA-256 for validation, uploads original images to the private bucket, then asks the server to verify the stored object prefix before the object path is used in the title request. Successful verification returns a server-signed storage verification token scoped to that object path and metadata; the title API requires the token before creating short-lived signed read URLs for the Agnes provider call. The provider status endpoint marks Agnes unavailable to the browser when storage readiness is missing. If Agnes returns malformed JSON, the adapter performs one JSON-only format repair retry; schema-invalid JSON still fails instead of entering Resolver.
+When Supabase Storage is configured, the browser asks the server for signed upload URLs, sends MIME, byte size, dimensions, first-byte file signature metadata, and a client-side SHA-256 for validation, uploads original images to the private bucket, then asks the server to verify the stored object prefix before the object path is used in the title request. Successful verification returns a server-signed storage verification token scoped to that object path and metadata. The title API can create short-lived signed read URLs for provider calls, but it does not persist those signed URLs.
 
 When Supabase REST storage is configured and migrated, successful image verification also upserts `listing_image_verifications` with object metadata and hash verification status. The title API still prefers the short-lived verification token, but it can use a matching durable verification record after token expiry for later reprocessing. It does not persist signed read URLs.
 
@@ -74,9 +74,9 @@ Commercial title acceptance is semantic rather than exact-string based. Non-stan
 
 The first Retrieval Engine layer now exists under `lib/listing/retrieval/`. It plans query families, reads Supabase-backed approved review history first when configured, routes internal registry second, uses Brave as the default external discovery provider, treats eBay Browse as a read-only marketplace reference provider, keeps OWS as a replaceable fallback provider, classifies source trust, follows Brave/OWS-discovered official or trusted structured URLs through a bounded HTTP/HTTPS-only safety layer, conservatively extracts explicit fields from fetched official/trusted text, normalizes candidates, scores candidate matches, records unavailable providers, and caches query results. Retrieval provider IDs are allowlisted server-side to internal memory, internal registry, official source, Brave, eBay Browse, and OpenAI web search; OWS model IDs are allowlisted to `gpt-4.1-mini` and `gpt-4.1`. The default cache is in-memory; an optional JSON file cache can persist bounded query results across process restarts when `RETRIEVAL_CACHE_BACKEND=file` is configured. Low-margin top-two retrieval ties are recorded as ranking conflicts instead of selecting a ground-truth candidate. Marketplace and open-web URLs are not fetched by the official-source follow-up path.
 
-The first Evidence Completion Orchestrator now exists under `lib/listing/orchestration/` and is wired into the listing title API. It tracks missing, weak, and conflicting fields; chooses a next best action; runs selected retrieval query families through the retrieval engine; executes focused Agnes crop rereads when the Agnes path has signed primary or derived crop images, verifies selected or independently corroborated trusted retrieval candidates into field-level evidence, rerenders modules and deterministic titles when trusted evidence closes gaps, records unavailable providers, avoids duplicate no-information actions, appends completion trace entries, separates technical failures from non-standard manual routing, and keeps GPT-4.1 out of the normal completion loop. Marketplace and open-web candidates remain reference-only and do not overwrite resolved fields.
+The first Evidence Completion Orchestrator now exists under `lib/listing/orchestration/` and is wired into the listing title API behind an explicit flag. It tracks missing, weak, and conflicting fields; chooses a next best action; runs selected retrieval query families through the retrieval engine; verifies selected or independently corroborated trusted retrieval candidates into field-level evidence; rerenders modules and deterministic titles when trusted evidence closes gaps; records unavailable providers; avoids duplicate no-information actions; and appends completion trace entries. Marketplace and open-web candidates remain reference-only and do not overwrite resolved fields.
 
-Focused crop/reread execution remains conservative: it only merges requested focus fields, records provider-call budget usage, and still emits planned or unavailable traces when no focused runner or image budget is available. If a critical region is still occluded after the crop reread, the orchestrator now tries available retrieval constraints and Agnes focused recheck before requesting a targeted rescan; targeted rescan remains a recovery route, not a final manual failure. eBay Browse now has an OAuth-backed live adapter path, but it remains market reference only and still needs real credential smoke validation. OWS now has a Responses API hosted web-search fallback path, but it still needs real credential smoke validation in this environment. Advanced image-quality recovery, review analytics dashboards, and real B-end publishing adapters are still pending. Their environment variables are listed so future phases have stable names.
+Focused crop/reread execution remains conservative and is not part of the default single-model production path. The orchestrator can still emit planned focused-recovery traces and request targeted rescans when image evidence is blocked, but it does not automatically call a second vision model. eBay Browse now has an OAuth-backed live adapter path, but it remains market reference only and still needs real credential smoke validation. OWS now has a Responses API hosted web-search fallback path, but it still needs real credential smoke validation in this environment. Advanced image-quality recovery, review analytics dashboards, and real B-end publishing adapters are still pending. Their environment variables are listed so future phases have stable names.
 
 The versioned feedback endpoint is present, but durable feedback retention is disabled by default. With `LISTING_FEEDBACK_RETENTION_ENABLED=false`, the endpoint validates the review payload and returns the computed outcome without writing `listing_assets`, `listing_analysis_runs`, `listing_reviews`, or legacy `listing_title_feedback` rows; this prevents agent tests and manual tests from becoming training data. When retention is explicitly enabled for commercial operation, it saves `ACCEPTED_UNCHANGED`, server-computed field diffs, title-only overrides, object paths and content hashes, provider/version metadata, traces, and review duration. A pending `TARGETED_RESCAN_REQUIRED` route is not treated as recovered; only a post-rescan resolved result with recovery evidence can save `TARGETED_RESCAN_RECOVERED`. Approved-memory retrieval is also disabled by default and requires `LISTING_APPROVED_MEMORY_ENABLED=true`.
 
@@ -103,25 +103,27 @@ LISTING_RENDER_TITLE_RATE_LIMIT=120
 LISTING_FEEDBACK_RATE_LIMIT=120
 LISTING_FEEDBACK_RETENTION_ENABLED=false
 LISTING_APPROVED_MEMORY_ENABLED=false
+LISTING_IDENTITY_CACHE_ENABLED=false
+LISTING_IDENTITY_CACHE_READ_ENABLED=false
+LISTING_IDENTITY_CACHE_WRITE_ENABLED=false
+LISTING_IDENTITY_INFLIGHT_DEDUP_ENABLED=true
+LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED=true
 LISTING_PUBLISH_RATE_LIMIT=60
-DEFAULT_VISION_PROVIDER=agnes
+DEFAULT_VISION_PROVIDER=gemini
 EMERGENCY_VISION_PROVIDER=openai_legacy
-AGNES_API_KEY=
-AGNES_BASE_URL=https://apihub.agnes-ai.com/v1
-AGNES_MODEL=agnes-2.0-flash
-AGNES_SMOKE_IMAGE_URL=
-AGNES_SMOKE_BACK_IMAGE_URL=
-AGNES_SMOKE_ERROR_IMAGE_URL=
-AGNES_SMOKE_REQUIRE_MULTI_IMAGE=false
-AGNES_SMOKE_REQUIRE_TOOL_CALL=false
-AGNES_SMOKE_REQUIRE_ERROR_RESPONSE=false
 SMOKE_PROVIDER_REPORT_PATH=
-AGNES_SMOKE_REPORT_PATH=
-AGNES_INPUT_TOKEN_COST_PER_1M=
-AGNES_OUTPUT_TOKEN_COST_PER_1M=
-AGNES_IMAGE_COST_USD=
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_MAX_OUTPUT_TOKENS=700
+GEMINI_SMOKE_IMAGE_URL=
+GEMINI_SMOKE_BACK_IMAGE_URL=
+GEMINI_SMOKE_REQUIRE_MULTI_IMAGE=false
+GEMINI_SMOKE_REPORT_PATH=
+GEMINI_INPUT_TOKEN_COST_PER_1M=
+GEMINI_OUTPUT_TOKEN_COST_PER_1M=
+GEMINI_IMAGE_COST_USD=
 OPENAI_API_KEY=
-OPENAI_LISTING_MODEL=gpt-4.1-mini
+OPENAI_LISTING_MODEL=gpt-4.1-mini-2025-04-14
 OPENAI_SMOKE_IMAGE_URL=
 OPENAI_SMOKE_IMAGE_DATA_URL=
 OPENAI_LISTING_INPUT_TOKEN_COST_PER_1M=
@@ -198,16 +200,7 @@ PUBLIC_CARD_IMAGE_CANDIDATE_ORDER_BY=-set.releaseDate,number
 POKEMON_TCG_API_BASE_URL=https://api.pokemontcg.io/v2
 POKEMON_TCG_API_KEY=
 PUBLIC_CARD_IMAGE_CANDIDATES_PATH=
-AGNES_PUBLIC_CARD_EVAL_OUT=
-AGNES_PUBLIC_CARD_EVAL_LIMIT=300
-AGNES_PUBLIC_CARD_EVAL_CONCURRENCY=3
-AGNES_PUBLIC_CARD_EVAL_RESUME=true
-AGNES_PUBLIC_CARD_EVAL_FLUSH_EVERY=10
-AGNES_PUBLIC_CARD_NAME_THRESHOLD=0.95
 REAL_PHOTO_CARD_PILOT_DATASET=
-AGNES_REAL_PHOTO_PILOT_OUT=
-AGNES_REAL_PHOTO_PILOT_LIMIT=20
-AGNES_REAL_PHOTO_PILOT_CONCURRENCY=2
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 LISTING_IMAGE_BUCKET=listing-card-images
@@ -222,7 +215,6 @@ LISTING_IMAGE_RETENTION_LIST_PAGE_SIZE=
 LISTING_IMAGE_RETENTION_DELETE_BATCH_SIZE=
 MAX_RESOLUTION_ROUNDS=
 MAX_EXTERNAL_QUERIES=
-MAX_AGNES_CALLS_PER_ASSET=
 MAX_RETRIEVAL_TIME_MS=
 MAX_RESOLUTION_TIME_MS=
 MAX_RESOLUTION_COST_USD=
@@ -290,7 +282,7 @@ npm run commercial:heldout -- --source exports/commercial-reviews.json --out dat
 npm run eval:golden -- --dataset data/golden-dataset.commercial.json
 ```
 
-`supabase/queries/export_commercial_heldout_reviews.sql` is a read-only template for producing the source JSON from approved `listing_reviews` rows. The source export may be an array, or an object with `rows`, `reviews`, `items`, or `data`. Each row should include asset, analysis, and review sections with safe Supabase object paths, generated resolved fields, corrected resolved fields, and explicit final-title quality booleans. The builder stores generated fields under `prediction.resolved_fields` and corrected reviewer fields under `ground_truth_fields`, so an Agnes mistake remains a model failure instead of being hidden by the final approved title. By default, rejected rows or duplicate assets make the command fail before writing the output; use `--allow-rejections` only after reviewing the printed rejection reasons.
+`supabase/queries/export_commercial_heldout_reviews.sql` is a read-only template for producing the source JSON from approved `listing_reviews` rows. The source export may be an array, or an object with `rows`, `reviews`, `items`, or `data`. Each row should include asset, analysis, and review sections with safe Supabase object paths, generated resolved fields, corrected resolved fields, and explicit final-title quality booleans. The builder stores generated fields under `prediction.resolved_fields` and corrected reviewer fields under `ground_truth_fields`, so model mistakes remain visible instead of being hidden by the final approved title. By default, rejected rows or duplicate assets make the command fail before writing the output; use `--allow-rejections` only after reviewing the printed rejection reasons.
 
 Collect 300 eBay Browse image candidates for a future held-out review queue:
 
@@ -300,22 +292,13 @@ npm run ebay:candidates -- --target 300 --out data/ebay-candidates/ebay-image-ca
 
 This uses the official eBay Browse API and requires `EBAY_CLIENT_ID` plus `EBAY_CLIENT_SECRET`. It does not scrape eBay pages. The output is an unlabeled candidate queue with `ground_truth_status: "unlabeled"` and `accuracy_eval_eligible: false`; seller titles are market-reference text only and must not be used as ground truth. Accuracy can be computed only after operator or official-source labeling converts those candidates into approved held-out rows.
 
-Collect 300 public card images from the Pokémon TCG API and evaluate Agnes card-name recognition:
+Collect 300 public card image candidates from the Pokémon TCG API:
 
 ```bash
 npm run public:cards -- --target 300 --out data/public-card-candidates/public-card-image-candidates-latest.json
-/bin/zsh -lc "set -a; source .env.local; npm run eval:agnes-public-cards -- --limit 300 --concurrency 3 --out data/eval/agnes-public-card-image-eval-latest.json"
 ```
 
-This path collects only card records with `category = "pokemon_card"` and HTTPS card image URLs. It is a public structured card-name reference test, not commercial acceptance evidence. The current local run completed 300/300 Agnes evaluations with `296/300` strict card-name exact matches (`0.986667`) and `300/300` trusted structured-name exact-or-corrected matches (`1`) after retrying transient provider errors.
-
-Run the real-photo marketplace pilot:
-
-```bash
-/bin/zsh -lc "set -a; source .env.local; AGNES_TIMEOUT_MS=60000 npm run eval:agnes-real-photos -- --limit 10 --concurrency 2 --out data/eval/agnes-real-photo-card-pilot-latest.json"
-```
-
-The bundled pilot uses marketplace-reference real card photos to stress title generation and critical-field acceptance. It is not commercial acceptance evidence. The latest local run attempted 10 marketplace real-photo URLs, evaluated 6, hit 4 provider errors/timeouts, and accepted 0/6 evaluated titles under the stricter critical-field policy; recurring misses were collector number, Silver Prizm/Refractor, RC, and one wrong Ohtani year. Production recognition should use uploaded private Storage object paths and short-lived signed read URLs; external marketplace URLs are expected to be less stable and are marked as requiring controlled storage before any commercial claim.
+This path collects only card records with `category = "pokemon_card"` and HTTPS card image URLs. It creates an unlabeled candidate queue; it is not commercial acceptance evidence and does not run a provider evaluation by default.
 
 Run the commercial readiness audit:
 
@@ -323,9 +306,7 @@ Run the commercial readiness audit:
 npm run readiness:audit
 ```
 
-The default result is expected to exit non-zero until real commercial evidence exists. The audit reports `held_out_commercial_assets`, `commercial_acceptance_gate`, the latest sanitized Agnes smoke status, the provider default policy, mock-only publishing status, and external retrieval live-smoke evidence. It treats GPT-4.1 as the primary fast-vision leg inside `cascade_fast`; standalone GPT-4.1 still requires an explicit manual action.
-
-When `data/eval/agnes-public-card-image-eval-latest.json` exists, the audit also prints `public_card_reference_eval`. This is a non-blocking public card-name reference signal; it does not change the commercial held-out gate.
+The default result is expected to exit non-zero until real commercial evidence exists. The audit reports `held_out_commercial_assets`, `commercial_acceptance_gate`, provider default policy, mock-only publishing status, and external retrieval live-smoke evidence. Gemini is the default vision provider; GPT-4.1 mini remains an explicit single-model review path.
 
 The commercial evaluator uses `lib/listing/evaluation/title-acceptance-policy.mjs` for `final_title_required_fields` and `final_title_unsubstantiated_fields`. This lets held-out commercial rows accept non-standard but factually correct titles while still failing wrong names, wrong color/parallel, missing serials, wrong grades, and conflicting critical fields.
 
@@ -350,18 +331,14 @@ The eval output also includes Wilson 95% confidence intervals for representative
 
 When metrics miss target thresholds, the eval output includes `failure_root_causes` and `field_error_distribution` so failed assets and recurring field errors remain visible instead of being hidden behind aggregate accuracy.
 
-The eval output also includes `final_approved_publish_accuracy`, `glare_impact`, `retrieval_provider_gains`, `vision_provider_comparison`, and `agnes_vs_openai_legacy`. These are diagnostics for final approved rows, glare samples, Brave recovery, eBay market-reference help, OWS fallback contribution, and provider-path differences; they do not replace the overall commercial denominator.
+The eval output also includes `final_approved_publish_accuracy`, `glare_impact`, `retrieval_provider_gains`, and `vision_provider_comparison`. These are diagnostics for final approved rows, glare samples, Brave recovery, eBay market-reference help, OWS fallback contribution, and provider-path differences; they do not replace the overall commercial denominator.
 
-Provider smoke commands exist but do not claim real validation when credentials, model config, or smoke inputs are missing. Agnes smoke requires `AGNES_API_KEY` and `AGNES_SMOKE_IMAGE_URL`; optional `AGNES_SMOKE_BACK_IMAGE_URL` and `AGNES_SMOKE_ERROR_IMAGE_URL` enable front/back multi-image and provider-error capability checks. Tool-call, multi-image, and error-response checks are recorded as capabilities and only fail the smoke command when their matching `AGNES_SMOKE_REQUIRE_*` flag is true. Smoke commands write sanitized capability reports by default under `data/smoke/`; pass `--report <path>` or set `SMOKE_PROVIDER_REPORT_PATH` to override the path. Reports do not include API keys, Authorization headers, image URLs, or Base64 payloads. OpenAI emergency smoke requires `OPENAI_API_KEY` plus `OPENAI_SMOKE_IMAGE_URL` or `OPENAI_SMOKE_IMAGE_DATA_URL`; Brave smoke requires `BRAVE_SEARCH_API_KEY`; eBay Browse requires `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`; OWS requires `OPENAI_API_KEY` and `OPENAI_WEB_SEARCH_MODEL`. Missing retrieval credentials produce a `skipped` report, not a pass.
+Provider smoke commands exist but do not claim real validation when credentials, model config, or smoke inputs are missing. Gemini smoke requires `GEMINI_API_KEY` and `GEMINI_SMOKE_IMAGE_URL`; optional `GEMINI_SMOKE_BACK_IMAGE_URL` enables front/back multi-image capability checks. Smoke commands write sanitized capability reports by default under `data/smoke/`; pass `--report <path>` or set `SMOKE_PROVIDER_REPORT_PATH` to override the path. Reports do not include API keys, Authorization headers, image URLs, or Base64 payloads. OpenAI emergency smoke requires `OPENAI_API_KEY` plus `OPENAI_SMOKE_IMAGE_URL` or `OPENAI_SMOKE_IMAGE_DATA_URL`; Brave smoke requires `BRAVE_SEARCH_API_KEY`; eBay Browse requires `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`; OWS requires `OPENAI_API_KEY` and `OPENAI_WEB_SEARCH_MODEL`. Missing retrieval credentials produce a `skipped` report, not a pass.
 
-The latest live Agnes smoke in this workspace is `passed`: single-image JSON, front/back multi-image JSON, controlled tool-call output, and provider-error behavior passed with `agnes-2.0-flash`. JSON text remains a required fallback path even while tool-call smoke is currently passing.
-
-`/api/listing-provider-status` reads the Agnes smoke report when present and returns only sanitized capability fields under the Agnes provider status. It reports whether JSON baseline, multi-image, tool-call, and error-response checks have passed without returning the report path, API keys, Authorization headers, image URLs, or arbitrary provider error text.
-
-The provider control renders that sanitized Agnes smoke summary next to the configured model state, so operators can distinguish configured storage/API credentials from live-verified JSON, multi-image, tool-call, and error-response capabilities.
+`/api/listing-provider-status` reads the Gemini smoke report when present and returns only sanitized capability fields under the Gemini provider status. It reports whether JSON baseline and multi-image checks have passed without returning the report path, API keys, Authorization headers, image URLs, or arbitrary provider error text.
 
 ```bash
-npm run smoke:agnes
+npm run smoke:gemini
 npm run smoke:openai
 npm run smoke:brave
 npm run smoke:ebay
@@ -370,7 +347,7 @@ npm run smoke:ows
 
 Default smoke report paths:
 
-- `data/smoke/agnes-smoke-latest.json`
+- `data/smoke/gemini-smoke-latest.json`
 - `data/smoke/brave-smoke-latest.json`
 - `data/smoke/ebay-smoke-latest.json`
 - `data/smoke/ows-smoke-latest.json`
@@ -396,7 +373,6 @@ node scripts/orchestration.test.mjs
 node scripts/feedback-review.test.mjs
 node scripts/publishing.test.mjs
 node scripts/provider-routing.test.mjs
-node scripts/agnes-provider-errors.test.mjs
 node scripts/provider-response-normalizer.test.mjs
 node scripts/provider-usage.test.mjs
 node scripts/provider-status.test.mjs
@@ -419,13 +395,13 @@ Start with:
 - [docs/foundation/foundation-v1.md](docs/foundation/foundation-v1.md) — foundation overview
 - [docs/standards/sports-card-title-standard-v1.md](docs/standards/sports-card-title-standard-v1.md) — sports card title source-of-truth
 - [docs/architecture/architecture-decisions-v1.md](docs/architecture/architecture-decisions-v1.md) — approved V1.x architecture decisions
-- [docs/architecture/phase-1-provider-routing-2026-06-22.md](docs/architecture/phase-1-provider-routing-2026-06-22.md) — historical Agnes-primary routing boundary before the GPT-4.1-primary cascade update
+- [docs/architecture/phase-1-provider-routing-2026-06-22.md](docs/architecture/phase-1-provider-routing-2026-06-22.md) — historical provider-routing boundary, not the current single-model production path
 - [docs/architecture/phase-2-storage-image-quality-2026-06-22.md](docs/architecture/phase-2-storage-image-quality-2026-06-22.md) — Supabase Storage signed URL path and image-quality gaps
 - [docs/architecture/phase-3-evidence-architecture-2026-06-22.md](docs/architecture/phase-3-evidence-architecture-2026-06-22.md) — EvidenceField and ResolvedFields compatibility bridge
 - [docs/architecture/phase-4-renderer-writer-modules-2026-06-22.md](docs/architecture/phase-4-renderer-writer-modules-2026-06-22.md) — deterministic renderer, editable writer modules, and title override boundary
 - [docs/architecture/phase-5-retrieval-engine-2026-06-22.md](docs/architecture/phase-5-retrieval-engine-2026-06-22.md) — Retrieval Engine contracts, query planning, provider routing, source policy, cache, and candidate matching
 - [docs/architecture/phase-11-ebay-image-candidate-collection-2026-06-22.md](docs/architecture/phase-11-ebay-image-candidate-collection-2026-06-22.md) — official eBay Browse image candidate queue and ground-truth boundary
-- [docs/architecture/phase-12-public-card-image-reference-eval-2026-06-22.md](docs/architecture/phase-12-public-card-image-reference-eval-2026-06-22.md) — public 300-card image Agnes name-recognition reference eval
+- [docs/architecture/phase-12-public-card-image-reference-eval-2026-06-22.md](docs/architecture/phase-12-public-card-image-reference-eval-2026-06-22.md) — historical public 300-card image reference eval
 - [docs/architecture/phase-13-commercial-title-acceptance-policy-2026-06-23.md](docs/architecture/phase-13-commercial-title-acceptance-policy-2026-06-23.md) — semantic commercial title acceptance policy
 - [docs/roadmap/listing-copilot-roadmap-v1.md](docs/roadmap/listing-copilot-roadmap-v1.md) — phased implementation roadmap
 - [docs/foundation/spec-v1.md](docs/foundation/spec-v1.md) — original MVP product spec

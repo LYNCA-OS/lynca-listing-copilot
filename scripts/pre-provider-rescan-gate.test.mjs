@@ -12,12 +12,11 @@ process.env.LISTING_IDENTITY_CACHE_WRITE_ENABLED = "false";
 process.env.ENABLE_RECOGNITION_WORKER = "true";
 process.env.RECOGNITION_WORKER_URL = "https://recognition.internal";
 process.env.RECOGNITION_WORKER_TOKEN = "worker-token";
-process.env.DEFAULT_VISION_PROVIDER = "agnes";
-process.env.ENABLE_AGNES_PROVIDER = "true";
-process.env.AGNES_API_KEY = "test-agnes-key";
+process.env.DEFAULT_VISION_PROVIDER = "gemini";
+process.env.ENABLE_GEMINI_PROVIDER = "true";
+process.env.GEMINI_API_KEY = "test-gemini-key";
+process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
 process.env.LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED = "true";
-delete process.env.OPENAI_API_KEY;
-delete process.env.OPENAI_LISTING_MODEL;
 
 function sign(value) {
   return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
@@ -137,4 +136,3 @@ assert.ok(response.body.resolution_trace.some((entry) => entry.phase === "pre_pr
 assert.deepEqual(fetchCalls, []);
 
 console.log("pre-provider rescan gate tests passed");
-

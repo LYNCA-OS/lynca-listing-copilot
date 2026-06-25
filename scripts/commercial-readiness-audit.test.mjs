@@ -9,9 +9,8 @@ import {
 
 const tmp = await mkdtemp(join(tmpdir(), "listing-readiness-"));
 const datasetPath = join(tmp, "golden-dataset.json");
-const smokePath = join(tmp, "agnes-smoke.json");
+const smokePath = join(tmp, "gemini-smoke.json");
 const ebayCandidatesPath = join(tmp, "ebay-image-candidates.json");
-const publicCardEvalPath = join(tmp, "public-card-eval.json");
 const supabaseSnapshotPath = join(tmp, "supabase-live-snapshot.json");
 const supabaseCandidateReportPath = join(tmp, "supabase-candidates-report.json");
 const commercialReviewPacketPath = join(tmp, "commercial-review-packet.json");
@@ -27,7 +26,7 @@ await writeFile(datasetPath, `${JSON.stringify({
 }, null, 2)}\n`);
 
 await writeFile(smokePath, `${JSON.stringify({
-  provider: "agnes",
+  provider: "gemini",
   status: "passed_with_limitations",
   generated_at: "2026-06-22T12:01:52.878Z",
   capabilities: [
@@ -36,7 +35,7 @@ await writeFile(smokePath, `${JSON.stringify({
       status: "passed",
       required: true,
       details: {
-        model_id: "agnes-2.0-flash",
+        model_id: "gemini-3.1-flash-lite",
         parse_source: "content",
         finish_reason: "stop",
         image_count: "1",
@@ -65,26 +64,6 @@ await writeFile(ebayCandidatesPath, `${JSON.stringify({
   blocked_reason: "EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are not configured.",
   queries: [],
   items: []
-}, null, 2)}\n`);
-
-await writeFile(publicCardEvalPath, `${JSON.stringify({
-  schema_version: "agnes-public-card-image-eval-v1",
-  status: "completed",
-  generated_at: "2026-06-22T13:35:00.000Z",
-  provider: "agnes",
-  target_count: 300,
-  attempted_count: 300,
-  evaluated_count: 300,
-  provider_error_count: 0,
-  card_name_exact_count: 296,
-  card_name_exact_rate: 0.986667,
-  structured_reference_name_exact_or_corrected_count: 300,
-  structured_reference_name_exact_or_corrected_rate: 1,
-  name_threshold: 0.95,
-  commercial_accuracy_claim_allowed: false,
-  commercial_accuracy_eval_eligible: false,
-  reference_scope: "public_structured_card_name_reference",
-  results: []
 }, null, 2)}\n`);
 
 await writeFile(supabaseSnapshotPath, `${JSON.stringify({
@@ -197,13 +176,12 @@ await writeFile(commercialReviewWorklistPath, `${JSON.stringify({
 
 const report = await createCommercialReadinessReport({
   datasetPath,
-  agnesSmokePath: smokePath,
+  geminiSmokePath: smokePath,
   env: {
     BRAVE_SMOKE_REPORT_PATH: join(tmp, "brave-smoke.json"),
     EBAY_SMOKE_REPORT_PATH: join(tmp, "ebay-smoke.json"),
     OWS_SMOKE_REPORT_PATH: join(tmp, "ows-smoke.json"),
     EBAY_IMAGE_CANDIDATES_OUT: ebayCandidatesPath,
-    AGNES_PUBLIC_CARD_EVAL_OUT: publicCardEvalPath,
     SUPABASE_LIVE_SNAPSHOT_PATH: supabaseSnapshotPath,
     SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath,
     COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath,
@@ -223,15 +201,15 @@ assert.equal(byId.golden_dataset.status, "passed");
 assert.equal(byId.commercial_acceptance_gate.status, "blocked");
 assert.equal(byId.commercial_acceptance_gate.details.held_out_commercial_assets, 0);
 assert.match(byId.commercial_acceptance_gate.details.reasons.join("; "), /held_out_commercial split is empty/);
-assert.equal(byId.agnes_live_smoke.status, "warning");
-assert.equal(byId.agnes_live_smoke.details.json_baseline_verified, true);
-assert.deepEqual(byId.agnes_live_smoke.details.optional_failures, ["tool_call"]);
+assert.equal(byId.gemini_live_smoke.status, "warning");
+assert.equal(byId.gemini_live_smoke.details.json_baseline_verified, true);
+assert.deepEqual(byId.gemini_live_smoke.details.optional_failures, ["tool_call"]);
 assert.equal(byId.provider_default_policy.status, "passed");
 assert.equal(byId.provider_default_policy.details.gemini_implicit_default, true);
-assert.equal(byId.provider_default_policy.details.gpt_primary_fast_vision, true);
-assert.equal(byId.provider_default_policy.details.agnes_auxiliary_verifier, true);
-assert.equal(byId.provider_default_policy.details.agnes_conditional_verifier, true);
-assert.equal(byId.provider_default_policy.details.gpt_implicit_default, "fallback_and_ab_test_only");
+assert.equal(byId.provider_default_policy.details.gpt_primary_fast_vision, false);
+assert.equal(byId.provider_default_policy.details.gpt_emergency_provider, true);
+assert.equal(byId.provider_default_policy.details.mixed_model_cascade, "removed");
+assert.equal(byId.provider_default_policy.details.gpt_implicit_default, "explicit_review_only");
 assert.equal(byId.provider_default_policy.details.standalone_gpt_default, "blocked_by_policy");
 assert.equal(byId.provider_default_policy.details.gpt_visible_button, true);
 assert.equal(byId.publishing_approval_gate.status, "passed");
@@ -240,13 +218,6 @@ assert.equal(byId.external_retrieval_live_smoke.status, "blocked");
 assert.equal(byId.ebay_300_image_candidates.status, "blocked");
 assert.equal(byId.ebay_300_image_candidates.details.collected_count, 0);
 assert.equal(byId.ebay_300_image_candidates.details.target_count, 300);
-assert.equal(byId.public_card_reference_eval.status, "passed");
-assert.equal(byId.public_card_reference_eval.details.attempted_count, 300);
-assert.equal(byId.public_card_reference_eval.details.card_name_exact_count, 296);
-assert.equal(byId.public_card_reference_eval.details.card_name_exact_rate, 0.986667);
-assert.equal(byId.public_card_reference_eval.details.structured_reference_name_exact_or_corrected_count, 300);
-assert.equal(byId.public_card_reference_eval.details.structured_reference_name_exact_or_corrected_rate, 1);
-assert.equal(byId.public_card_reference_eval.details.commercial_accuracy_claim_allowed, false);
 assert.equal(byId.supabase_commercial_inventory.status, "passed");
 assert.equal(byId.supabase_commercial_inventory.details.table_rows, 351);
 assert.equal(byId.supabase_commercial_inventory.details.image_backed_rows, 248);
@@ -285,16 +256,15 @@ const text = formatCommercialReadinessReport(report);
 assert.match(text, /Commercial readiness audit blocked/);
 assert.match(text, /held_out_commercial_assets: 0/);
 assert.match(text, /commercial_acceptance_gate: blocked/);
-assert.match(text, /agnes_smoke_status: passed_with_limitations/);
+assert.match(text, /gemini_smoke_status: passed_with_limitations/);
 assert.match(text, /external_retrieval_smoke_statuses: brave=missing, ebay_browse=missing, openai_web_search=missing/);
 assert.match(text, /ebay_image_candidates: skipped 0\/300/);
-assert.match(text, /public_card_reference_eval: completed exact 296\/300 \(0.986667\), trusted 300\/300 \(1\)/);
 assert.match(text, /supabase_commercial_sample: passed rows 351, image-backed 248, no-image 103/);
 assert.match(text, /supabase_commercial_ground_truth: blocked required fields year=0, product=0, players=0/);
 assert.match(text, /commercial_review_packet: passed tasks 248, corrected-title-as-truth no, suggested-field-hints 248/);
 assert.match(text, /commercial_review_worklist: passed tasks 248, P0 23, P1 97, uses-ground-truth no/);
 assert.match(text, /identity_result_cache: passed read yes, write no, training no/);
-assert.match(text, /gpt_implicit_default: fallback_and_ab_test_only/);
+assert.match(text, /gpt_implicit_default: explicit_review_only/);
 assert.match(text, /standalone_gpt_default: blocked_by_policy/);
 assert.match(text, /publishing_destination: blocked/);
 
