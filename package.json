@@ -41,7 +41,7 @@
     "test:identity-resolution": "node scripts/identity-resolution.test.mjs && node scripts/identity-resolution-gate.test.mjs",
     "check:approved-memory": "for f in lib/listing/memory/*.mjs; do node --check \"$f\"; done && node --check scripts/approved-identity-memory.test.mjs",
     "test:approved-memory": "node scripts/approved-identity-memory.test.mjs",
-    "check:catalog": "for f in lib/listing/catalog/*.mjs; do node --check \"$f\"; done && node --check lib/listing/retrieval/catalog-provider.mjs && node --check scripts/catalog-v0.test.mjs",
+    "check:catalog": "for f in lib/listing/catalog/*.mjs; do node --check \"$f\"; done && node --check lib/listing/retrieval/catalog-provider.mjs && node --check scripts/import-corrected-title-catalog-v0.mjs && node --check scripts/catalog-v0.test.mjs",
     "test:catalog": "node scripts/catalog-v0.test.mjs",
     "check:identity-cache": "node --check lib/listing/cache/identity-result-cache.mjs && node --check scripts/identity-result-cache.test.mjs",
     "test:identity-cache": "node scripts/identity-result-cache.test.mjs",
