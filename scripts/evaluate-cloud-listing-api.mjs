@@ -287,6 +287,8 @@ function providerOptionsForMode(providerMode) {
     enable_vector_retrieval: vectorAssist,
     vector_retrieval_mode: vectorAssist ? "assist" : "off",
     vector_corrected_title_as_temporary_gt: vectorAssist,
+    vector_query_timeout_ms: vectorAssist ? 8000 : undefined,
+    vector_retrieval_internal_top_n: vectorAssist ? 10 : undefined,
     enable_advanced_retrieval: vectorAssist,
     enable_hybrid_retrieval: vectorAssist,
     eval_flags: {
@@ -701,6 +703,7 @@ function correctCatalogCandidateRank(data = {}, referenceTitle = "") {
 }
 
 function correctCandidateRecallAt(rank, k) {
+  if (rank === null || rank === undefined || rank === "") return false;
   if (!Number.isFinite(Number(rank))) return false;
   return Number(rank) <= Number(k);
 }
@@ -1232,7 +1235,7 @@ function evaluatedResultFromData({
     catalog_candidates: compactCandidates(catalogCandidateList),
     catalog_selected_candidate_id: selectedCandidateIdFromCandidates(catalogCandidateList),
     correct_catalog_candidate_rank: correctCatalogRank,
-    correct_catalog_identity_available: Number.isFinite(Number(correctCatalogRank)),
+    correct_catalog_identity_available: correctCatalogRank !== null && correctCatalogRank !== undefined && Number.isFinite(Number(correctCatalogRank)),
     correct_candidate_recall_at_1: correctCandidateRecallAt(correctCatalogRank, 1),
     correct_candidate_recall_at_3: correctCandidateRecallAt(correctCatalogRank, 3),
     correct_candidate_recall_at_5: correctCandidateRecallAt(correctCatalogRank, 5),
@@ -1484,6 +1487,8 @@ export async function evaluateCloudListingApi({
   providerErrorRetries = 1,
   providerErrorRetryDelayMs = 1500,
   skipPreflight = false,
+  progress = false,
+  checkpointPath = "",
   fetchImpl = globalThis.fetch
 } = {}) {
   if (!baseUrl) throw new Error("Cloud base URL is required.");
@@ -1504,6 +1509,39 @@ export async function evaluateCloudListingApi({
   const results = [];
   let cursor = 0;
   const workerCount = Math.max(1, Math.min(Math.trunc(Number(concurrency) || 1), selected.length || 1));
+  let checkpointWrite = Promise.resolve();
+
+  function activeResults() {
+    return results.filter(Boolean);
+  }
+
+  function buildReport(status = "completed") {
+    return {
+      schema_version: "cloud-listing-api-eval-v1",
+      status,
+      generated_at: new Date().toISOString(),
+      base_url: baseUrl,
+      provider: providerMode,
+      requested_cloud_provider: cloudProviderForMode(providerMode),
+      target_count: selected.length,
+      configured_concurrency: workerCount,
+      configured_provider_error_retries: Math.max(0, Math.trunc(Number(providerErrorRetries) || 0)),
+      cloud_preflight: cloudPreflight,
+      ...summarize(activeResults(), Date.now() - startedAt),
+      results: activeResults()
+    };
+  }
+
+  async function writeCheckpoint() {
+    if (!checkpointPath) return;
+    checkpointWrite = checkpointWrite.then(() => writeJson(checkpointPath, buildReport("running"))).catch(() => {});
+    await checkpointWrite;
+  }
+
+  function logProgress(message) {
+    if (!progress) return;
+    process.stderr.write(`${message}\n`);
+  }
 
   async function worker() {
     while (cursor < selected.length) {
@@ -1514,6 +1552,7 @@ export async function evaluateCloudListingApi({
       const started = Date.now();
       const providerErrorAttempts = [];
       const maxProviderAttempts = Math.max(1, Math.trunc(Number(providerErrorRetries) || 0) + 1);
+      logProgress(`[${index + 1}/${selected.length}] start ${candidateId(item) || "unknown"}`);
       try {
         let finalResponse = null;
         let lastError = null;
@@ -1565,6 +1604,7 @@ export async function evaluateCloudListingApi({
           started,
           providerErrorAttempts
         });
+        logProgress(`[${index + 1}/${selected.length}] done ${candidateId(item) || "unknown"} status=${results[index].technical_failure ? "technical_failure" : "ok"} recall=${results[index].corrected_title_comparison?.token_recall ?? "n/a"} elapsed_ms=${results[index].elapsed_ms}`);
       } catch (error) {
         if (!providerErrorAttempts.length) {
           providerErrorAttempts.push(providerFailureAttempt({
@@ -1581,26 +1621,15 @@ export async function evaluateCloudListingApi({
           error,
           providerErrorAttempts
         });
+        logProgress(`[${index + 1}/${selected.length}] done ${candidateId(item) || "unknown"} status=technical_failure code=${results[index].technical_failure_code || "unknown"} elapsed_ms=${results[index].elapsed_ms}`);
       }
+      await writeCheckpoint();
     }
   }
 
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  const elapsedMs = Date.now() - startedAt;
-  return {
-    schema_version: "cloud-listing-api-eval-v1",
-    status: "completed",
-    generated_at: new Date().toISOString(),
-    base_url: baseUrl,
-    provider: providerMode,
-    requested_cloud_provider: cloudProviderForMode(providerMode),
-    target_count: selected.length,
-    configured_concurrency: workerCount,
-    configured_provider_error_retries: Math.max(0, Math.trunc(Number(providerErrorRetries) || 0)),
-    cloud_preflight: cloudPreflight,
-    ...summarize(results, elapsedMs),
-    results
-  };
+  await checkpointWrite;
+  return buildReport("completed");
 }
 
 export async function main(argv = process.argv, env = process.env) {
@@ -1616,6 +1645,8 @@ export async function main(argv = process.argv, env = process.env) {
   const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", Number(runtimeEnv.CLOUD_LISTING_API_REQUEST_TIMEOUT_MS || 120_000));
   const providerErrorRetries = numberArg(argv, "--provider-error-retries", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRIES || 1));
   const providerErrorRetryDelayMs = numberArg(argv, "--provider-error-retry-delay-ms", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRY_DELAY_MS || 1500));
+  const progress = hasFlag(argv, "--progress");
+  const checkpointPath = argValue(argv, "--checkpoint-path", hasFlag(argv, "--checkpoint") ? outPath : "");
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
   const fetchImpl = curlFetchForConnectToIp(runtimeEnv.CLOUD_LISTING_API_CONNECT_TO_IP || "");
   validateProtectionBypassSecret({ bypassSecret, env: runtimeEnv });
@@ -1632,6 +1663,8 @@ export async function main(argv = process.argv, env = process.env) {
     providerErrorRetries,
     providerErrorRetryDelayMs,
     skipPreflight,
+    progress,
+    checkpointPath,
     fetchImpl: fetchImpl || globalThis.fetch
   });
   if (outPath) await writeJson(outPath, report);

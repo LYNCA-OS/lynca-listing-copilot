@@ -268,6 +268,8 @@ assert.equal(openaiVector.titlePayload.provider_options.enable_vector_retrieval,
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
 assert.equal(openaiVector.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
 assert.equal(openaiVector.titlePayload.provider_options.vector_corrected_title_as_temporary_gt, true);
+assert.equal(openaiVector.titlePayload.provider_options.vector_query_timeout_ms, 8000);
+assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_internal_top_n, 10);
 assert.equal(openaiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
 assert.equal(openaiVector.report.visual_vector_used_count, 1);
