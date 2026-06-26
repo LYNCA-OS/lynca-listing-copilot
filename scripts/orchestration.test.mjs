@@ -316,6 +316,68 @@ assert.equal(visualCompletionRetrievalArgs.maxQueries, 2);
 assert.equal(visualCompletionRetrievalArgs.visualEmbeddings.features[0].embedding.length, 768);
 assert.equal(visualCompletion.budget.used.external_queries, 0);
 
+let hybridVisualRetrievalArgs = null;
+await completeEvidence({
+  resolved: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025", status: "CONFIRMED", confidence: 0.9 }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "REVIEW", confidence: 0.7 }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], status: "REVIEW", confidence: 0.7 })
+  },
+  unresolved: ["product identity missing"],
+  visualEmbeddings: {
+    status: "OK",
+    features: [
+      {
+        image_id: "front",
+        role: "front_original",
+        embedding_role: "front_global",
+        dimensions: 768,
+        embedding: visualEmbedding
+      },
+      {
+        image_id: "back",
+        role: "back_original",
+        embedding_role: "back_global",
+        dimensions: 768,
+        embedding: visualEmbedding
+      }
+    ]
+  },
+  env: {
+    ENABLE_ADVANCED_RETRIEVAL: "true",
+    ENABLE_HYBRID_RETRIEVAL: "true"
+  },
+  runRetrievalImpl: async (args) => {
+    hybridVisualRetrievalArgs ||= args;
+    return {
+      mode: args.mode,
+      providers_used: [],
+      queries: (args.allowedFamilies || []).map((family) => ({ family })),
+      sources: [],
+      selected_candidate: null,
+      candidate_margin: 0,
+      candidate_selection_threshold: null,
+      low_margin_conflict: null,
+      conflicts: [],
+      unavailable: [],
+      trace: []
+    };
+  },
+  budgetOverrides: {
+    maxRounds: 1,
+    maxExternalQueries: 0
+  }
+});
+assert.ok(hybridVisualRetrievalArgs.allowedFamilies.includes(retrievalQueryFamilies.INTERNAL_REGISTRY));
+assert.ok(hybridVisualRetrievalArgs.allowedFamilies.includes(retrievalQueryFamilies.VISUAL_VECTOR));
+assert.ok(hybridVisualRetrievalArgs.allowedFamilies.includes(retrievalQueryFamilies.POSTGRES_HYBRID));
+assert.equal(hybridVisualRetrievalArgs.maxQueries, 5);
+
 let closedVisualCompletionRetrievalArgs = null;
 const closedVisualCompletion = await completeEvidence({
   resolved: {
