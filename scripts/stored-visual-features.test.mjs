@@ -3,6 +3,7 @@ import {
   hasUsableVisualFeatures,
   lookupStoredVisualFeaturesForImages
 } from "../lib/listing/retrieval/stored-visual-features.mjs";
+import { defaultVisualEmbeddingModelRevision } from "../lib/listing/retrieval/vector-model-defaults.mjs";
 
 function jsonResponse(status, body) {
   return {
@@ -37,7 +38,7 @@ const fetchImpl = async (url) => {
       identity_id: "identity-1",
       embedding_role: "front_global",
       model_id: "google/siglip2-base-patch16-384",
-      model_revision: "main",
+      model_revision: defaultVisualEmbeddingModelRevision,
       preprocessing_version: "card-rectification-v1",
       dimensions: 768,
       embedding: JSON.stringify(embedding),
@@ -57,7 +58,7 @@ const features = await lookupStoredVisualFeaturesForImages({
     SUPABASE_URL: "https://supabase.example",
     SUPABASE_SERVICE_ROLE_KEY: "sb_secret_test",
     VISUAL_VECTOR_MODEL_ID: "google/siglip2-base-patch16-384",
-    VISUAL_VECTOR_MODEL_REVISION: "main",
+    VISUAL_VECTOR_MODEL_REVISION: defaultVisualEmbeddingModelRevision,
     VISUAL_VECTOR_PREPROCESSING_VERSION: "card-rectification-v1",
     VISUAL_VECTOR_DIMENSIONS: "768"
   },

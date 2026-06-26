@@ -6,6 +6,7 @@ import {
   assertVisualVectorSchema,
   indexVisualVectorDataset
 } from "./index-visual-vector-embeddings.mjs";
+import { defaultVisualEmbeddingModelRevision } from "../lib/listing/retrieval/vector-model-defaults.mjs";
 
 const env = {
   SUPABASE_URL: "https://supabase.test",
@@ -124,7 +125,7 @@ try {
             role: "front_original",
             embedding_role: "front_global",
             model_id: "google/siglip2-base-patch16-384",
-            model_revision: "main",
+            model_revision: defaultVisualEmbeddingModelRevision,
             preprocessing_version: "card-rectification-v1",
             dimensions: 768,
             status: "OK",

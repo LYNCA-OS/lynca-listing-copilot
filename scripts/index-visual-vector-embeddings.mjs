@@ -6,14 +6,16 @@ import { fileURLToPath } from "node:url";
 import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
+import {
+  defaultVisualEmbeddingDimensions,
+  defaultVisualEmbeddingModelId,
+  defaultVisualEmbeddingModelRevision,
+  defaultVisualEmbeddingPreprocessingVersion
+} from "../lib/listing/retrieval/vector-model-defaults.mjs";
 
 const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candidates.json";
 const defaultOutPath = "data/eval/provider-regression-30/visual-vector-index-latest.json";
 const defaultEnvFilePath = ".env.local";
-const defaultModelId = "google/siglip2-base-patch16-384";
-const defaultModelRevision = "main";
-const defaultPreprocessingVersion = "card-rectification-v1";
-const defaultDimensions = 768;
 
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
@@ -147,10 +149,10 @@ function supabaseConfig(env = {}) {
   return {
     url,
     serviceRoleKey,
-    modelId: normalizeText(env.VISUAL_VECTOR_MODEL_ID || env.VISUAL_EMBEDDING_MODEL_ID) || defaultModelId,
-    modelRevision: normalizeText(env.VISUAL_VECTOR_MODEL_REVISION || env.VISUAL_EMBEDDING_MODEL_REVISION) || defaultModelRevision,
-    preprocessingVersion: normalizeText(env.VISUAL_VECTOR_PREPROCESSING_VERSION || env.VISUAL_EMBEDDING_PREPROCESSING_VERSION) || defaultPreprocessingVersion,
-    dimensions: Number(env.VISUAL_VECTOR_DIMENSIONS || env.VISUAL_EMBEDDING_DIMENSIONS) || defaultDimensions
+    modelId: normalizeText(env.VISUAL_VECTOR_MODEL_ID || env.VISUAL_EMBEDDING_MODEL_ID) || defaultVisualEmbeddingModelId,
+    modelRevision: normalizeText(env.VISUAL_VECTOR_MODEL_REVISION || env.VISUAL_EMBEDDING_MODEL_REVISION) || defaultVisualEmbeddingModelRevision,
+    preprocessingVersion: normalizeText(env.VISUAL_VECTOR_PREPROCESSING_VERSION || env.VISUAL_EMBEDDING_PREPROCESSING_VERSION) || defaultVisualEmbeddingPreprocessingVersion,
+    dimensions: Number(env.VISUAL_VECTOR_DIMENSIONS || env.VISUAL_EMBEDDING_DIMENSIONS) || defaultVisualEmbeddingDimensions
   };
 }
 

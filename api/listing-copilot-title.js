@@ -72,6 +72,7 @@ import {
 import { runRetrieval } from "../lib/listing/retrieval/retrieval-engine.mjs";
 import { retrievalModes, retrievalQueryFamilies } from "../lib/listing/retrieval/retrieval-contract.mjs";
 import {
+  buildVectorCandidateAssistPacket,
   buildVectorCandidatePacket,
   vectorCandidatePacketAssistEligibility
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
@@ -3211,6 +3212,7 @@ async function prepareVectorCandidateContext({
       mode: vectorRetrievalModes.OFF,
       visualFeatures,
       packet: emptyVectorCandidatePacket("vector_retrieval_disabled"),
+      assistPacket: emptyVectorCandidatePacket("vector_retrieval_disabled"),
       retrieval: null,
       promptPacket: false
     };
@@ -3245,6 +3247,7 @@ async function prepareVectorCandidateContext({
       mode: config.mode,
       visualFeatures: activeVisualFeatures,
       packet,
+      assistPacket: emptyVectorCandidatePacket(workerResult?.reason || "visual_embedding_missing"),
       retrieval: null,
       worker: workerResult,
       telemetry,
@@ -3273,6 +3276,7 @@ async function prepareVectorCandidateContext({
     limit: config.gptCandidateLimit
   });
   const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
+  const assistPacket = buildVectorCandidateAssistPacket(packet);
   const telemetry = await recordVectorRetrievalTelemetry({
     visualFeatures: activeVisualFeatures,
     packet,
@@ -3286,11 +3290,12 @@ async function prepareVectorCandidateContext({
     mode: config.mode,
     visualFeatures: activeVisualFeatures,
     packet,
+    assistPacket,
     retrieval,
     worker: workerResult,
     telemetry,
     vector_assist_eligibility: assistEligibility,
-    promptPacket: config.mode === vectorRetrievalModes.ASSIST && assistEligibility.eligible
+    promptPacket: config.mode === vectorRetrievalModes.ASSIST && assistEligibility.prompt_candidate_count > 0
   };
 }
 
@@ -3301,6 +3306,7 @@ function withVectorCandidateContext(result = {}, context = {}) {
     vector_retrieval_mode: context.mode || null,
     vector_retrieval: context.retrieval || null,
     vector_candidate_packet: context.packet,
+    vector_assist_packet: context.assistPacket || null,
     vector_prompt_assist_used: context.promptPacket === true,
     vector_assist_eligibility: context.vector_assist_eligibility || null,
     vector_telemetry: context.telemetry || null,
@@ -3586,7 +3592,7 @@ async function createOpenAiTitle(payload, selection, {
   const initialPayload = {
     ...baseInitialPayload,
     vectorCandidatePacket: vectorContext.promptPacket
-      ? vectorContext.packet
+      ? vectorContext.assistPacket
       : emptyVectorCandidatePacket(vectorContext.mode === vectorRetrievalModes.SHADOW
         ? "vector_shadow_mode_not_supplied_to_gpt"
         : vectorContext.vector_assist_eligibility?.reason

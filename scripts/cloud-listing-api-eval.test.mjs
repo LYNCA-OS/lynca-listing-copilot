@@ -162,6 +162,17 @@ async function runProvider(provider, options = {}) {
             }
           }
           : null,
+        vector_assist_eligibility: vectorEnabled
+          ? {
+            eligible: true,
+            reason: "approved_identity_candidate_available",
+            raw_candidate_count: 2,
+            approved_candidate_count: 1,
+            conflict_blocked_count: 1,
+            prompt_candidate_count: 1,
+            prompt_candidate_ids: ["identity-1"]
+          }
+          : null,
         vector_prompt_assist_used: vectorEnabled,
         visual_features: vectorEnabled
           ? { features: [{ embedding: [0.1, 0.2], embedding_role: "front_global" }] }
@@ -234,7 +245,14 @@ assert.equal(geminiVector.report.visual_vector_used_count, 1);
 assert.equal(geminiVector.report.visual_vector_candidate_count, 1);
 assert.equal(geminiVector.report.postgres_hybrid_used_count, 1);
 assert.equal(geminiVector.report.postgres_hybrid_candidate_count, 1);
+assert.equal(geminiVector.report.vector_raw_candidate_count, 2);
+assert.equal(geminiVector.report.vector_approved_candidate_count, 1);
+assert.equal(geminiVector.report.vector_conflict_blocked_count, 1);
+assert.equal(geminiVector.report.vector_prompt_candidate_count, 1);
+assert.deepEqual(geminiVector.report.vector_prompt_candidate_ids, ["identity-1"]);
 assert.equal(geminiVector.report.results[0].vector_prompt_assist_used, true);
+assert.equal(geminiVector.report.results[0].vector_raw_candidate_count, 2);
+assert.deepEqual(geminiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
 assert.deepEqual(geminiVector.report.results[0].retrieval_providers_used, ["visual_vector", "postgres_hybrid"]);
 
 const openaiVector = await runProvider("d");

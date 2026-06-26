@@ -2,12 +2,14 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  defaultVisualEmbeddingModelId,
+  defaultVisualEmbeddingModelRevision
+} from "../lib/listing/retrieval/vector-model-defaults.mjs";
 
 const defaultIndexReportPath = "data/eval/provider-regression-30/visual-vector-index-local-10-rerun.json";
 const defaultOutPath = "data/eval/provider-regression-30/visual-vector-recall-latest.json";
 const defaultEnvFilePath = ".env.local";
-const defaultModelId = "google/siglip2-base-patch16-384";
-const defaultModelRevision = "main";
 
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
@@ -65,8 +67,8 @@ function supabaseConfig(env = {}) {
   return {
     url,
     serviceRoleKey,
-    modelId: cleanText(env.VISUAL_VECTOR_MODEL_ID || env.VISUAL_EMBEDDING_MODEL_ID) || defaultModelId,
-    modelRevision: cleanText(env.VISUAL_VECTOR_MODEL_REVISION || env.VISUAL_EMBEDDING_MODEL_REVISION) || defaultModelRevision
+    modelId: cleanText(env.VISUAL_VECTOR_MODEL_ID || env.VISUAL_EMBEDDING_MODEL_ID) || defaultVisualEmbeddingModelId,
+    modelRevision: cleanText(env.VISUAL_VECTOR_MODEL_REVISION || env.VISUAL_EMBEDDING_MODEL_REVISION) || defaultVisualEmbeddingModelRevision
   };
 }
 

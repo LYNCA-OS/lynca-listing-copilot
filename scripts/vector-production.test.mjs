@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import {
+  buildVectorCandidateAssistPacket,
   buildVectorCandidatePacket,
+  candidateConflictFields,
   vectorCandidatePacketAssistEligibility,
   vectorCandidatePacketHasAssistEligibleCandidates
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
+import { defaultVisualEmbeddingModelRevision } from "../lib/listing/retrieval/vector-model-defaults.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
 import { visualVectorProvider } from "../lib/listing/retrieval/visual-vector-provider.mjs";
@@ -18,7 +21,7 @@ const baseVectorEnv = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role",
   VECTOR_EMBEDDING_MODEL: "google/siglip2-base-patch16-384",
-  VECTOR_EMBEDDING_MODEL_REVISION: "main",
+  VECTOR_EMBEDDING_MODEL_REVISION: defaultVisualEmbeddingModelRevision,
   VECTOR_PREPROCESSING_VERSION: "card-rectification-v1",
   VECTOR_QUERY_TIMEOUT_MS: "1000"
 };
@@ -87,7 +90,11 @@ assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(packet), false);
 assert.deepEqual(vectorCandidatePacketAssistEligibility(packet), {
   eligible: false,
   reason: "no_approved_identity_candidate",
+  raw_candidate_count: 1,
   approved_candidate_count: 0,
+  conflict_blocked_count: 0,
+  prompt_candidate_count: 0,
+  prompt_candidate_ids: [],
   eligible_candidate_count: 0,
   blocked_candidate_count: 0
 });
@@ -116,6 +123,7 @@ const approvedPacket = buildVectorCandidatePacket({
 assert.equal(approvedPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(approvedPacket), true);
 assert.equal(vectorCandidatePacketAssistEligibility(approvedPacket).reason, "approved_identity_candidate_available");
+assert.deepEqual(buildVectorCandidateAssistPacket(approvedPacket).vector_retrieval.candidates.map((candidate) => candidate.candidate_identity_id), ["identity-approved"]);
 
 const conflictingApprovedPacket = buildVectorCandidatePacket({
   sources: [{
@@ -140,10 +148,140 @@ assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(conflictingApprove
 assert.deepEqual(vectorCandidatePacketAssistEligibility(conflictingApprovedPacket), {
   eligible: false,
   reason: "approved_identity_candidate_direct_conflict",
+  raw_candidate_count: 1,
   approved_candidate_count: 1,
+  conflict_blocked_count: 1,
+  prompt_candidate_count: 0,
+  prompt_candidate_ids: [],
   eligible_candidate_count: 0,
   blocked_candidate_count: 1
 });
+assert.equal(buildVectorCandidateAssistPacket(conflictingApprovedPacket).vector_retrieval.candidates.length, 0);
+
+const mixedAssistPacket = buildVectorCandidatePacket({
+  sources: [
+    {
+      candidate_id: "approved-clean",
+      candidate_identity_id: "identity-approved-clean",
+      source_type: "VISUAL_VECTOR",
+      visual_similarity: 0.95,
+      match_score: 0.95,
+      embedding_role: "front_global",
+      reference_metadata: { reference_status: "APPROVED", retrieval_status: "approved" },
+      fields: { year: "2025", product: "Topps Chrome", players: ["Clean Player"] }
+    },
+    {
+      candidate_id: "candidate-only",
+      candidate_identity_id: "identity-candidate-only",
+      source_type: "VISUAL_VECTOR",
+      visual_similarity: 0.94,
+      match_score: 0.94,
+      embedding_role: "front_global",
+      reference_metadata: { retrieval_status: "candidate" },
+      fields: { year: "2025", product: "Topps Chrome", players: ["Candidate Player"] }
+    },
+    {
+      candidate_id: "approved-conflict-rich",
+      candidate_identity_id: "identity-approved-conflict-rich",
+      source_type: "VISUAL_VECTOR",
+      visual_similarity: 0.93,
+      match_score: 0.93,
+      embedding_role: "front_global",
+      reference_metadata: { reference_status: "APPROVED", retrieval_status: "approved" },
+      direct_evidence_conflicts: [{ field: "year" }],
+      conflicts: [{ name: "product" }],
+      fields: { year: "2024", product: "Topps Finest", players: ["Conflict Player"] }
+    }
+  ]
+}, { limit: 5 });
+const mixedEligibility = vectorCandidatePacketAssistEligibility(mixedAssistPacket);
+assert.equal(mixedAssistPacket.vector_retrieval.candidates.length, 3, "raw packet should preserve every candidate for telemetry");
+assert.deepEqual(mixedEligibility, {
+  eligible: true,
+  reason: "approved_identity_candidate_available",
+  raw_candidate_count: 3,
+  approved_candidate_count: 2,
+  conflict_blocked_count: 1,
+  prompt_candidate_count: 1,
+  prompt_candidate_ids: ["identity-approved-clean"],
+  eligible_candidate_count: 1,
+  blocked_candidate_count: 1
+});
+const promptMixedPacket = buildVectorCandidateAssistPacket(mixedAssistPacket);
+assert.equal(promptMixedPacket.vector_retrieval.candidates.length, 1);
+assert.equal(promptMixedPacket.vector_retrieval.candidates[0].candidate_identity_id, "identity-approved-clean");
+assert.doesNotMatch(JSON.stringify(promptMixedPacket), /identity-candidate-only|identity-approved-conflict-rich/);
+
+const candidateOnlyPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "candidate-only-2",
+    candidate_identity_id: "identity-candidate-only-2",
+    source_type: "VISUAL_VECTOR",
+    visual_similarity: 0.91,
+    match_score: 0.91,
+    embedding_role: "front_global",
+    reference_metadata: { retrieval_status: "candidate" },
+    fields: { year: "2025", product: "Panini Prizm", players: ["Candidate Only"] }
+  }]
+}, { limit: 5 });
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(candidateOnlyPacket), false);
+assert.deepEqual(vectorCandidatePacketAssistEligibility(candidateOnlyPacket), {
+  eligible: false,
+  reason: "no_approved_identity_candidate",
+  raw_candidate_count: 1,
+  approved_candidate_count: 0,
+  conflict_blocked_count: 0,
+  prompt_candidate_count: 0,
+  prompt_candidate_ids: [],
+  eligible_candidate_count: 0,
+  blocked_candidate_count: 0
+});
+assert.equal(buildVectorCandidateAssistPacket(candidateOnlyPacket).vector_retrieval.candidates.length, 0);
+
+const approvedConflictOnlyPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "approved-conflict-only",
+    candidate_identity_id: "identity-approved-conflict-only",
+    source_type: "VISUAL_VECTOR",
+    visual_similarity: 0.91,
+    match_score: 0.91,
+    embedding_role: "front_global",
+    reference_metadata: { retrieval_status: "approved" },
+    direct_evidence_conflicts: ["serial_number"],
+    fields: { year: "2025", product: "Panini Prizm", players: ["Conflict Only"] }
+  }]
+}, { limit: 5 });
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(approvedConflictOnlyPacket), false);
+assert.deepEqual(vectorCandidatePacketAssistEligibility(approvedConflictOnlyPacket), {
+  eligible: false,
+  reason: "approved_identity_candidate_direct_conflict",
+  raw_candidate_count: 1,
+  approved_candidate_count: 1,
+  conflict_blocked_count: 1,
+  prompt_candidate_count: 0,
+  prompt_candidate_ids: [],
+  eligible_candidate_count: 0,
+  blocked_candidate_count: 1
+});
+assert.equal(buildVectorCandidateAssistPacket(approvedConflictOnlyPacket).vector_retrieval.candidates.length, 0);
+
+const hybridPacket = buildVectorCandidatePacket({
+  hybrid_ranker: { enabled: true },
+  candidate_margin: 0.2,
+  sources: [{
+    candidate_id: "hybrid-1",
+    candidate_identity_id: "identity-hybrid",
+    source_trust: "APPROVED_REFERENCE",
+    rerank_score: 0.92,
+    rank_fusion_score: 0.88,
+    fields: { year: "2025", product: "Topps Chrome", players: ["Hybrid Player"] },
+    conflicting_fields: ["year"],
+    direct_evidence_conflicts: [{ field: "serial_number" }],
+    conflicts: [{ conflicting_field: "parallel_exact" }]
+  }]
+}, { limit: 5 });
+assert.deepEqual(hybridPacket.vector_retrieval.candidates[0].conflicting_fields.sort(), ["parallel_exact", "serial_number", "year"]);
+assert.deepEqual(candidateConflictFields(hybridPacket.vector_retrieval.candidates[0]).sort(), ["parallel_exact", "serial_number", "year"]);
 
 const schema = openAiProviderResponseSchema();
 assert.ok(schema.required.includes("vector_candidate_decision"));
@@ -202,7 +340,7 @@ const worker = await embedImagesWithVectorWorker({
       request_id: "req",
       status: "completed",
       model_id: "google/siglip2-base-patch16-384",
-      model_revision: "main",
+      model_revision: defaultVisualEmbeddingModelRevision,
       preprocessing_version: "card-rectification-v1",
       latency_ms: 12,
       embeddings: [{
@@ -235,7 +373,7 @@ const provider = visualVectorProvider({
         image_role: "front_original",
         embedding_role: "front_global",
         model_id: "google/siglip2-base-patch16-384",
-        model_revision: "main",
+        model_revision: defaultVisualEmbeddingModelRevision,
         preprocessing_version: "card-rectification-v1",
         similarity: 0.99,
         fields: { year: "2024", product: "Self" },
@@ -249,9 +387,11 @@ const provider = visualVectorProvider({
         image_role: "front_original",
         embedding_role: "front_global",
         model_id: "google/siglip2-base-patch16-384",
-        model_revision: "main",
+        model_revision: defaultVisualEmbeddingModelRevision,
         preprocessing_version: "card-rectification-v1",
         similarity: 0.88,
+        retrieval_status: "approved",
+        reference_status: "approved",
         fields: { year: "2024", product: "Other", players: ["Player"] },
         reference_metadata: { content_sha256: "other-hash" },
         embedding_metadata: {}
@@ -264,7 +404,7 @@ const retrieval = await provider.search({
     embedding: [1, ...Array.from({ length: 767 }, () => 0)],
     embedding_role: "front_global",
     model_id: "google/siglip2-base-patch16-384",
-    model_revision: "main",
+    model_revision: defaultVisualEmbeddingModelRevision,
     preprocessing_version: "card-rectification-v1",
     content_sha256: "same-hash"
   },
@@ -273,6 +413,38 @@ const retrieval = await provider.search({
 assert.equal(retrieval.candidates.length, 1);
 assert.equal(retrieval.candidates[0].candidate_identity_id, "other");
 assert.equal(retrieval.candidates[0].reference_metadata.retrieval_status, "approved");
+
+const failClosedProvider = visualVectorProvider({
+  env: baseVectorEnv,
+  fetchImpl: async () => new Response(JSON.stringify([{
+    identity_id: "missing-status",
+    reference_image_id: "ref-missing-status",
+    embedding_id: "emb-missing-status",
+    image_role: "front_original",
+    embedding_role: "front_global",
+    model_id: "google/siglip2-base-patch16-384",
+    model_revision: defaultVisualEmbeddingModelRevision,
+    preprocessing_version: "card-rectification-v1",
+    similarity: 0.9,
+    fields: { year: "2024", product: "Missing Status", players: ["Player"] },
+    reference_metadata: {},
+    embedding_metadata: {}
+  }]), { status: 200 })
+});
+const failClosedRetrieval = await failClosedProvider.search({
+  query: {
+    embedding: [1, ...Array.from({ length: 767 }, () => 0)],
+    embedding_role: "front_global",
+    model_id: "google/siglip2-base-patch16-384",
+    model_revision: defaultVisualEmbeddingModelRevision,
+    preprocessing_version: "card-rectification-v1"
+  },
+  resolved: {}
+});
+assert.equal(failClosedRetrieval.candidates[0].reference_metadata.retrieval_status, "");
+const failClosedPacket = buildVectorCandidatePacket({ sources: failClosedRetrieval.candidates }, { limit: 5 });
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(failClosedPacket), false);
+assert.equal(vectorCandidatePacketAssistEligibility(failClosedPacket).reason, "no_approved_identity_candidate");
 
 const telemetryMissingConfig = await recordVectorRetrievalTelemetry({
   env: {},
@@ -293,7 +465,7 @@ const telemetry = await recordVectorRetrievalTelemetry({
       image_id: "front",
       embedding_role: "front_global",
       model_id: "google/siglip2-base-patch16-384",
-      model_revision: "main",
+      model_revision: defaultVisualEmbeddingModelRevision,
       preprocessing_version: "card-rectification-v1",
       dimensions: 768,
       embedding: [1, ...Array.from({ length: 767 }, () => 0)],
@@ -330,7 +502,7 @@ const telemetry = await recordVectorRetrievalTelemetry({
   mode: "assist",
   retrievalConfig: {
     modelId: "google/siglip2-base-patch16-384",
-    modelRevision: "main",
+    modelRevision: defaultVisualEmbeddingModelRevision,
     preprocessingVersion: "card-rectification-v1",
     topK: 10,
     internalTopN: 30

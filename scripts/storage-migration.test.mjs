@@ -11,6 +11,8 @@ const vectorQueryLifecycleMigration = await readFile("supabase/migrations/202606
 const vectorQueryLifecycleRollback = await readFile("supabase/migrations/20260625151516_vector_query_lifecycle_rollback.sql", "utf8");
 const advancedRetrievalMigration = await readFile("supabase/migrations/20260625153857_advanced_retrieval_accuracy_pack.sql", "utf8");
 const advancedRetrievalRollback = await readFile("supabase/migrations/20260625153857_advanced_retrieval_accuracy_pack_rollback.sql", "utf8");
+const referencePromotionMigration = await readFile("supabase/migrations/20260626051832_promote_card_reference_to_approved.sql", "utf8");
+const referencePromotionRollback = await readFile("supabase/migrations/20260626051832_promote_card_reference_to_approved_rollback.sql", "utf8");
 const phase2 = await readFile("docs/architecture/phase-2-storage-image-quality-2026-06-22.md", "utf8");
 
 assert.match(migration, /insert into storage\.buckets/i, "storage migration should create the Supabase bucket");
@@ -105,6 +107,20 @@ assert.match(advancedRetrievalMigration, /corrected titles and hidden ground tru
 assert.match(advancedRetrievalRollback, /drop function if exists public\.search_card_identities_hybrid/i, "advanced retrieval rollback should drop the hybrid RPC");
 assert.match(advancedRetrievalRollback, /drop table if exists public\.vector_hard_negatives/i, "advanced retrieval rollback should drop hard negatives");
 assert.match(advancedRetrievalRollback, /drop table if exists public\.card_identity_prototypes/i, "advanced retrieval rollback should drop identity prototypes");
+
+assert.match(referencePromotionMigration, /create or replace function public\.promote_card_reference_to_approved/i, "promotion migration should create an atomic promotion RPC");
+assert.match(referencePromotionMigration, /model_revision set default 'f775b65a79762255128c981547af89addcfe0f88'/i, "promotion migration should pin SigLIP2 revision defaults");
+assert.match(referencePromotionMigration, /language plpgsql/i, "promotion RPC should run as a single database transaction");
+assert.doesNotMatch(referencePromotionMigration, /security definer/i, "promotion RPC must not bypass RLS with SECURITY DEFINER");
+assert.match(referencePromotionMigration, /for update/i, "promotion RPC should lock identity and reference rows");
+assert.match(referencePromotionMigration, /update public\.card_identities[\s\S]*retrieval_enabled = true/i, "promotion RPC should enable identity retrieval");
+assert.match(referencePromotionMigration, /update public\.card_reference_images[\s\S]*approved_for_retrieval = true/i, "promotion RPC should approve reference image retrieval");
+assert.match(referencePromotionMigration, /update public\.card_image_embeddings[\s\S]*'index_status', 'active'/i, "promotion RPC should mark embedding/index state active");
+assert.match(referencePromotionMigration, /insert into public\.card_reference_promotion_events/i, "promotion RPC should record promotion events");
+assert.match(referencePromotionMigration, /update public\.catalog_gap_queue/i, "promotion RPC should close catalog gaps when supplied");
+assert.match(referencePromotionMigration, /revoke all on function public\.promote_card_reference_to_approved/i, "promotion RPC should revoke public execution");
+assert.match(referencePromotionMigration, /grant execute on function public\.promote_card_reference_to_approved[\s\S]*to service_role/i, "promotion RPC should be service-role only");
+assert.match(referencePromotionRollback, /drop function if exists public\.promote_card_reference_to_approved/i, "promotion rollback should drop the promotion RPC");
 
 assert.match(phase2, /20260622_listing_image_storage\.sql/, "Phase 2 doc should mention the storage migration");
 assert.match(phase2, /20260622_listing_image_verifications\.sql/, "Phase 2 doc should mention the verification migration");

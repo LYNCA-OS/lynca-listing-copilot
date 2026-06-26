@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { evaluateVisualVectorRecall } from "./evaluate-visual-vector-recall.mjs";
+import { defaultVisualEmbeddingModelRevision } from "../lib/listing/retrieval/vector-model-defaults.mjs";
 
 const tmpDir = await mkdtemp(path.join(os.tmpdir(), "visual-vector-recall-"));
 try {
@@ -38,7 +39,7 @@ try {
           reference_image_id: "reference-a",
           embedding_role: "front_global",
           model_id: "google/siglip2-base-patch16-384",
-          model_revision: "main",
+          model_revision: defaultVisualEmbeddingModelRevision,
           preprocessing_version: "card-rectification-v1",
           embedding: `[${[1, ...Array.from({ length: 767 }, () => 0)].join(",")}]`
         },
@@ -48,7 +49,7 @@ try {
           reference_image_id: "reference-b",
           embedding_role: "front_global",
           model_id: "google/siglip2-base-patch16-384",
-          model_revision: "main",
+          model_revision: defaultVisualEmbeddingModelRevision,
           preprocessing_version: "card-rectification-v1",
           embedding: [0, 1, ...Array.from({ length: 766 }, () => 0)]
         }

@@ -456,6 +456,26 @@ function vectorPacketCandidates(data = {}) {
   return Array.isArray(candidates) ? candidates : [];
 }
 
+function vectorAssistEligibility(data = {}) {
+  const eligibility = data.vector_assist_eligibility
+    || data.vector_assist_packet?.vector_retrieval?.assist_filter
+    || data.vector_candidate_packet?.vector_retrieval?.assist_filter
+    || {};
+  return eligibility && typeof eligibility === "object" && !Array.isArray(eligibility)
+    ? eligibility
+    : {};
+}
+
+function vectorAssistCount(data = {}, key, fallback = 0) {
+  const value = Number(vectorAssistEligibility(data)[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function vectorAssistPromptCandidateIds(data = {}) {
+  const ids = vectorAssistEligibility(data).prompt_candidate_ids;
+  return Array.isArray(ids) ? ids.map(normalizeText).filter(Boolean) : [];
+}
+
 function visualVectorCandidateCount(data = {}) {
   const sourceCount = retrievalSources(data).filter((candidate) => {
     const sourceType = String(candidate.source_type || "").toUpperCase();
@@ -919,6 +939,11 @@ function evaluatedResultFromData({
     vector_candidate_packet: data.vector_candidate_packet || null,
     vector_prompt_assist_used: data.vector_prompt_assist_used === true,
     vector_assist_eligibility: data.vector_assist_eligibility || null,
+    vector_raw_candidate_count: vectorAssistCount(data, "raw_candidate_count", visualVectorCandidateCount(data)),
+    vector_approved_candidate_count: vectorAssistCount(data, "approved_candidate_count", 0),
+    vector_conflict_blocked_count: vectorAssistCount(data, "conflict_blocked_count", 0),
+    vector_prompt_candidate_count: vectorAssistCount(data, "prompt_candidate_count", data.vector_prompt_assist_used === true ? vectorPacketCandidates(data).length : 0),
+    vector_prompt_candidate_ids: vectorAssistPromptCandidateIds(data),
     visual_vector_used: visualVectorUsed(data),
     visual_vector_candidate_count: visualVectorCandidateCount(data),
     visual_vector_selected_count: visualVectorSelectedCount(data),
@@ -1001,6 +1026,11 @@ function summarize(results = [], elapsedMs = 0) {
   const candidateIdentityCandidateCount = results.reduce((sum, item) => sum + Number(item.candidate_identity_candidate_count || 0), 0);
   const vectorAssistEligibleCount = results.filter((item) => item.vector_assist_eligibility?.eligible === true).length;
   const vectorPromptAssistUsedCount = results.filter((item) => item.vector_prompt_assist_used === true).length;
+  const vectorRawCandidateCount = results.reduce((sum, item) => sum + Number(item.vector_raw_candidate_count || 0), 0);
+  const vectorApprovedCandidateCount = results.reduce((sum, item) => sum + Number(item.vector_approved_candidate_count || 0), 0);
+  const vectorConflictBlockedCount = results.reduce((sum, item) => sum + Number(item.vector_conflict_blocked_count || 0), 0);
+  const vectorPromptCandidateCount = results.reduce((sum, item) => sum + Number(item.vector_prompt_candidate_count || 0), 0);
+  const vectorPromptCandidateIds = [...new Set(results.flatMap((item) => Array.isArray(item.vector_prompt_candidate_ids) ? item.vector_prompt_candidate_ids : []))];
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
   const averageRecallValues = results
@@ -1070,6 +1100,11 @@ function summarize(results = [], elapsedMs = 0) {
     candidate_identity_candidate_count: candidateIdentityCandidateCount,
     vector_assist_eligible_count: vectorAssistEligibleCount,
     vector_prompt_assist_used_count: vectorPromptAssistUsedCount,
+    vector_raw_candidate_count: vectorRawCandidateCount,
+    vector_approved_candidate_count: vectorApprovedCandidateCount,
+    vector_conflict_blocked_count: vectorConflictBlockedCount,
+    vector_prompt_candidate_count: vectorPromptCandidateCount,
+    vector_prompt_candidate_ids: vectorPromptCandidateIds,
     visual_feature_count: storedVisualFeatureCount,
     provider_truncation_retry_count: truncationRetryCount,
     corrected_title_token_recall_avg: averageRecallValues.length
@@ -1282,6 +1317,11 @@ export async function main(argv = process.argv, env = process.env) {
     `candidate_identity_candidate_count: ${report.candidate_identity_candidate_count ?? "n/a"}`,
     `vector_assist_eligible_count: ${report.vector_assist_eligible_count ?? "n/a"}`,
     `vector_prompt_assist_used_count: ${report.vector_prompt_assist_used_count ?? "n/a"}`,
+    `vector_raw_candidate_count: ${report.vector_raw_candidate_count ?? "n/a"}`,
+    `vector_approved_candidate_count: ${report.vector_approved_candidate_count ?? "n/a"}`,
+    `vector_conflict_blocked_count: ${report.vector_conflict_blocked_count ?? "n/a"}`,
+    `vector_prompt_candidate_count: ${report.vector_prompt_candidate_count ?? "n/a"}`,
+    `vector_prompt_candidate_ids: ${(report.vector_prompt_candidate_ids || []).join(",") || "n/a"}`,
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,
     `corrected_title_token_recall_avg_proxy_not_identity_accuracy: ${report.corrected_title_token_recall_avg}`,
