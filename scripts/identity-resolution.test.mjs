@@ -346,7 +346,7 @@ const focusedVisualUncorrectedColorRejected = resolveIdentity({
 assert.equal(focusedVisualUncorrectedColorRejected.identity.surface_color, null);
 assert.equal(fieldState(focusedVisualUncorrectedColorRejected, "surface_color").resolution_reason, "rejected_unsupported_optional_candidate");
 
-const taxonomyUniqueParallelExactPromoted = resolveIdentity({
+const taxonomyUniqueWithoutCollectorKeepsColorOnly = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
     { field: "serial_number", value: "72/75", source: "OCR_FRONT", confidence: 0.94 },
@@ -382,11 +382,51 @@ const taxonomyUniqueParallelExactPromoted = resolveIdentity({
     }
   ]
 });
-assert.equal(taxonomyUniqueParallelExactPromoted.identity.surface_color, "Purple");
-assert.equal(taxonomyUniqueParallelExactPromoted.identity.parallel_exact, "Purple Refractor");
-assert.ok(fieldState(taxonomyUniqueParallelExactPromoted, "parallel_exact").resolution_confidence >= 0.74);
-assert.equal(fieldState(taxonomyUniqueParallelExactPromoted, "parallel_exact").candidates[0].score_components.taxonomy_serial_support, 0.45);
-assert.ok(taxonomyUniqueParallelExactPromoted.resolution_trace.some((entry) => {
+assert.equal(taxonomyUniqueWithoutCollectorKeepsColorOnly.identity.surface_color, "Purple");
+assert.equal(taxonomyUniqueWithoutCollectorKeepsColorOnly.identity.parallel_exact, null);
+
+const taxonomyUniqueParallelExactPromotedWithCollector = resolveIdentity({
+  evidenceItems: [
+    ...baseAnchors,
+    { field: "collector_number", value: "221", source: "OCR_BACK", confidence: 0.94 },
+    { field: "serial_number", value: "72/75", source: "OCR_FRONT", confidence: 0.94 },
+    {
+      field: "surface_color",
+      value: "Purple",
+      source: "AGNES",
+      confidence: 0.86,
+      region: "CROP_AND_READ_PARALLEL",
+      metadata: {
+        capture_role: "focused_reread",
+        field_status: "CONFIRMED"
+      }
+    }
+  ],
+  productSchemas: [
+    {
+      product: "Topps Chrome",
+      parallels: [
+        {
+          parallel_exact: "Purple Refractor",
+          surface_color: "Purple",
+          parallel_family: "Refractor",
+          allowed_denominators: [75]
+        },
+        {
+          parallel_exact: "Gold Refractor",
+          surface_color: "Gold",
+          parallel_family: "Refractor",
+          allowed_denominators: [50]
+        }
+      ]
+    }
+  ]
+});
+assert.equal(taxonomyUniqueParallelExactPromotedWithCollector.identity.surface_color, "Purple");
+assert.equal(taxonomyUniqueParallelExactPromotedWithCollector.identity.parallel_exact, "Purple Refractor");
+assert.ok(fieldState(taxonomyUniqueParallelExactPromotedWithCollector, "parallel_exact").resolution_confidence >= 0.74);
+assert.equal(fieldState(taxonomyUniqueParallelExactPromotedWithCollector, "parallel_exact").candidates[0].score_components.taxonomy_serial_support, 0.45);
+assert.ok(taxonomyUniqueParallelExactPromotedWithCollector.resolution_trace.some((entry) => {
   return entry.field === "_identity"
     && entry.output?.taxonomy_parallel_evidence_count === 1;
 }));

@@ -18,12 +18,12 @@ const wemby = renderListingPresentation({
   maxLength: 80
 });
 
-assert.equal(wemby.final_title, "2023-24 Panini Prizm Victor Wembanyama Gold Prizm RC 31/50 PSA 10");
+assert.equal(wemby.final_title, "2023-24 Panini Prizm Victor Wembanyama Gold RC 31/50 PSA 10");
 assert.ok(wemby.final_title.length <= 80);
 assert.match(wemby.final_title, /31\/50/);
 assert.match(wemby.final_title, /PSA 10$/);
 assert.equal((wemby.final_title.match(/\bRC\b/g) || []).length, 1);
-assert.equal(wemby.modules.variant_parallel_rarity.text, "Gold Prizm RC");
+assert.equal(wemby.modules.variant_parallel_rarity.text, "Gold RC");
 assert.equal(wemby.modules.number_serial_grade.text, "31/50 · PSA 10");
 
 const ohtaniChrome = renderListingPresentation({
@@ -344,6 +344,7 @@ const flangLongParallel = renderResolvedTitle({
 });
 assert.ok(flangLongParallel.rendered_title.length <= 80);
 assert.match(flangLongParallel.rendered_title, /Purple/i);
+assert.doesNotMatch(flangLongParallel.rendered_title, /Purple Refractor/i);
 assert.doesNotMatch(flangLongParallel.title_length_policy.removed_terms.join(" "), /Purple/i);
 
 const complexSurfaceColorDoesNotPolluteKnownParallel = renderResolvedTitle({
@@ -358,10 +359,11 @@ const complexSurfaceColorDoesNotPolluteKnownParallel = renderResolvedTitle({
 }, {
   maxLength: 80
 });
-assert.match(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /Red Refractor/);
+assert.match(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /\bRed\b/);
+assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /Red Refractor/);
 assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, new RegExp("Red/Orange/Blue"));
 
-const simpleSurfaceColorCanCompleteParallelFamily = renderResolvedTitle({
+const simpleSurfaceColorDoesNotAutoCompleteParallelFamily = renderResolvedTitle({
   year: "2025",
   brand: "Topps",
   product: "Topps Chrome",
@@ -372,7 +374,22 @@ const simpleSurfaceColorCanCompleteParallelFamily = renderResolvedTitle({
 }, {
   maxLength: 80
 });
-assert.match(simpleSurfaceColorCanCompleteParallelFamily.rendered_title, /Purple Wave/);
+assert.match(simpleSurfaceColorDoesNotAutoCompleteParallelFamily.rendered_title, /\bPurple\b/);
+assert.doesNotMatch(simpleSurfaceColorDoesNotAutoCompleteParallelFamily.rendered_title, /Purple Wave/);
+
+const confirmedParallelExactIsPreserved = renderResolvedTitle({
+  year: "2025",
+  brand: "Topps",
+  product: "Topps Chrome",
+  players: ["Cooper Flagg"],
+  surface_color: "Purple",
+  parallel_family: "Wave Refractor",
+  parallel_exact: "Purple Wave Refractor",
+  serial_number: "72/75"
+}, {
+  maxLength: 80
+});
+assert.match(confirmedParallelExactIsPreserved.rendered_title, /Purple Wave Refractor/);
 
 const productSportSuffixKeepsBrandIdentity = renderResolvedTitle({
   year: "2025-26",

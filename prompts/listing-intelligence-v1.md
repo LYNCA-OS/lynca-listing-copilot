@@ -40,6 +40,9 @@ Required fields:
   "set": null,
   "subset": null,
   "insert": null,
+  "surface_color": null,
+  "parallel_family": null,
+  "parallel_exact": null,
   "parallel": null,
   "variation": null,
   "player": null,
@@ -157,16 +160,19 @@ Do not hallucinate `Base`. Use `Base` only when slab/card text explicitly says B
 
 Do not force the Vision Engine to solve all taxonomy problems during MVP. Vision should prioritize observable facts: OCR accuracy, serial accuracy, label accuracy, and card number accuracy.
 
-Do not force rainbow or parallel resolution from visual foil alone. If exact parallel taxonomy is not text-supported, use conservative generic wording or omit the parallel.
-If color/foil is only a visual impression, leave `parallel`/`variation` empty and add an unresolved note that the visual-only parallel requires operator review.
+Do not force rainbow or exact parallel resolution from visual foil alone. First-version parallel output is color-first:
 
-The current system often recognizes color better than pattern. Do not reduce pattern-based parallels to color-only terms.
+- Put visually observed card-design color in `surface_color`: `Gold`, `Purple`, `Red`, `Blue`, `Green`, `Silver`, `Black`, `Orange`, `Yellow`, `Pink`, `Bronze`, or `White`.
+- Leave `parallel_family` null unless the exact family text is printed on the card, slab label, card back, or supplied by a trusted catalog/registry input.
+- Leave `parallel_exact` null unless exact wording is printed on the card/slab/back or explicitly supplied by trusted catalog/registry evidence.
+- Do not write visual guesses such as `Gold Refractor`, `Gold Wave`, `Gold Shimmer`, `Gold Mojo`, `Gold Prizm`, `Purple Wave Refractor`, or similar exact optical names from appearance alone.
+- If only the color is visible, return the color only in `surface_color`; add unresolved note `exact parallel requires catalog or writer confirmation`.
 
 Examples:
 
-- If the card is `Yellow Wave`, do not output only `Yellow`.
-- If the card is `Gold Wave`, preserve `Gold Wave`.
-- If the card is `Aqua Shimmer`, preserve `Aqua Shimmer`.
+- Visual gold card surface without printed/catalog exact support: `surface_color = "Gold"`, `parallel_family = null`, `parallel_exact = null`.
+- Visual purple card surface without printed/catalog exact support: `surface_color = "Purple"`, `parallel_family = null`, `parallel_exact = null`.
+- Printed/slab text explicitly says `Gold Wave Refractor`: `surface_color = "Gold"`, `parallel_family = "Wave Refractor"`, `parallel_exact = "Gold Wave Refractor"`.
 
 Important parallel families include wave, shimmer, lava, speckle, mojo, mini diamond, pattern foil, logo parallels, and foil color variants.
 
@@ -225,9 +231,9 @@ Product hierarchy must stay separate. Do not collapse these products into each o
 
 `Cosmic Chrome` must not be normalized to plain `Topps Chrome`.
 
-Allowed generic parallels when the exact taxonomy is not supported: Green Refractor, Blue Refractor, Orange Refractor, Black Refractor.
+Allowed generic color layer when the exact taxonomy is not supported: Green, Blue, Orange, Black, Gold, Purple, Red, Silver.
 
-Do not output complex parallel names such as Green Geometric, Blue Mosaic, Sapphire, Mojo, Wave, or Shimmer unless card text, back text, card code, label text, or the registry clearly supports that terminology.
+Do not output complex parallel names such as Green Geometric, Blue Mosaic, Sapphire, Mojo, Wave, Refractor, Prizm, or Shimmer unless card text, back text, card code, label text, or the registry clearly supports that terminology.
 
 ## 3. Collectible Category Logic
 
@@ -303,10 +309,10 @@ Use the tiers to decide what to keep when the title must fit within 80 character
 
 When uncertain, prefer:
 
-- `Orange Refractor 02/25` over `Orange Pattern Foil` with missing serial.
-- `Purple Parallel 137/199` over `Fuchsia Wave Refractor` without confidence.
+- `Orange 02/25` over `Orange Pattern Foil` with missing serial.
+- `Purple 137/199` over `Fuchsia Wave Refractor` without catalog/printed support.
 - `2025 Topps Chrome Quinshon Judkins RC Purple 130/175` over `2025 Topps Chrome Quinshon Judkins RC Purple Wave Refractor 130/175` unless Wave/Refractor is text-supported.
-- `Green Refractor 01/01` over `Green Geometric` when the serial is clear but the pattern name is not text-supported.
+- `Green 01/01` over `Green Geometric` when the serial is clear but the pattern name is not text-supported.
 
 Rules:
 
@@ -397,13 +403,13 @@ Downgrade triggers:
 - Do not allow HIGH when serial appears incomplete.
 - Do not allow HIGH when year is not supported by strong evidence.
 - Parallel uncertainty alone should usually cap confidence at MEDIUM, not LOW, when Tier 1 fields are complete.
-- Incomplete or generic parallel family must cap confidence at MEDIUM unless Tier 1 fields are missing or wrong.
-- If the title includes a visually guessed parallel, downgrade HIGH to MEDIUM.
+- Incomplete exact parallel taxonomy should cap confidence at MEDIUM only when the title or fields claim an exact optical name that lacks text/catalog support.
+- If the title includes a visually guessed exact parallel, downgrade HIGH to MEDIUM.
 - Missing serial when a numbered card is visible.
 - Missing auto when an autograph is visible.
 - Missing or wrong year.
-- Missing Wave, Shimmer, Pattern, Foil, SSP, or Insert when visible or strongly indicated should usually downgrade HIGH to MEDIUM when Tier 1 fields are complete.
-- Color-only output when a pattern-specific parallel is visible should usually downgrade HIGH to MEDIUM when Tier 1 fields are complete.
+- Missing Wave, Shimmer, Pattern, Foil, SSP, or Insert should downgrade only when printed/slab/catalog evidence supports that exact term.
+- Color-only output is the preferred MVP behavior when exact optical taxonomy is not text/catalog supported.
 - Visual guess without text evidence.
 - Parallel uncertainty alone should not downgrade to LOW when the subject, year/product, serial/card number, auto, and grade fields are otherwise usable.
 - Title omits a visible high-value field.
@@ -447,10 +453,10 @@ If downgraded, state the specific operational reason when true:
 
 - Dasan Hill: Blue Wave vs Wave Refractor uncertainty means MEDIUM, not HIGH.
 - Wei-En Lin: wrong year, wrong parallel, or wrong/incomplete serial means LOW.
-- Ethan Dorchies: missed Aqua Shimmer or incorrect serial means LOW.
-- Luke Keaschall: Gold Foil misclassified as Yellow Parallel means LOW.
-- Michael Harris II: Orange Pattern Foil simplified to Orange Parallel means LOW or MEDIUM, not HIGH.
-- Dauri Fernandez: Yellow Wave likely correct but visual-only means MEDIUM.
+- Ethan Dorchies: missed visible/catalog-supported Aqua Shimmer or incorrect serial means LOW.
+- Luke Keaschall: Gold color misread as Yellow means LOW.
+- Michael Harris II: Orange color with unsupported Pattern Foil exact taxonomy should output Orange and keep exact taxonomy for review.
+- Dauri Fernandez: Yellow color is acceptable when Wave is visual-only; exact Wave needs printed/catalog support.
 - Power Chords: insert identified but not label-backed means MEDIUM unless all key fields are complete.
 - PSA/BGS/CGC slab with explicit label support can be HIGH if grade, player, product, parallel, auto, or serial are fully supported.
 
@@ -483,6 +489,9 @@ Return exactly this shape:
     "set": null,
     "subset": null,
     "insert": null,
+    "surface_color": null,
+    "parallel_family": null,
+    "parallel_exact": null,
     "parallel": null,
     "player": null,
     "character": null,
