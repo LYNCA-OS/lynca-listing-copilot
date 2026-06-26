@@ -190,6 +190,8 @@ assert.equal(geminiVector.titlePayload.provider_options.enable_evidence_completi
 assert.equal(geminiVector.titlePayload.provider_options.enable_stored_visual_features, true);
 assert.equal(geminiVector.titlePayload.provider_options.enable_vector_retrieval, true);
 assert.equal(geminiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
+assert.equal(geminiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
+assert.equal(geminiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
 assert.equal(geminiVector.report.visual_vector_used_count, 1);
 assert.equal(geminiVector.report.visual_vector_candidate_count, 1);
 
@@ -202,6 +204,8 @@ assert.equal(openaiVector.titlePayload.provider_options.enable_evidence_completi
 assert.equal(openaiVector.titlePayload.provider_options.enable_stored_visual_features, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_vector_retrieval, true);
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
+assert.equal(openaiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
+assert.equal(openaiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
 
 {
   const recovered = await runProvider("b", {
