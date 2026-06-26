@@ -102,6 +102,35 @@ function providerOptionsFromPayload(payload = {}) {
   return options && typeof options === "object" && !Array.isArray(options) ? options : {};
 }
 
+function valuePresent(value) {
+  if (Array.isArray(value)) return value.some(valuePresent);
+  if (typeof value === "boolean") return value === true;
+  return value !== null && value !== undefined && String(value).replace(/\s+/g, " ").trim() !== "" && value !== "UNKNOWN";
+}
+
+function meaningfulObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) && Object.values(value).some(valuePresent);
+}
+
+function evalCatalogObservationHint(payload = {}, providerOptions = {}) {
+  const evalMode = String(payload.provider_eval_mode || payload.providerEvalMode || "").trim();
+  if (!evalMode) return {};
+  if (optionFlag(providerOptions, "corrected_title_as_temporary_gt", false) !== true) return {};
+  const hint = payload.catalog_observation_hint || payload.catalogObservationHint;
+  return meaningfulObject(hint) ? hint : {};
+}
+
+function resolvedForRetrievalFromPayload(payload = {}, providerOptions = {}, recognitionEvidenceDocument = null) {
+  const candidates = [
+    recognitionEvidenceDocument?.resolved,
+    evalCatalogObservationHint(payload, providerOptions),
+    payload.resolved,
+    payload.resolvedHint,
+    payload.resolved_hint
+  ];
+  return candidates.find(meaningfulObject) || {};
+}
+
 function optionFlag(options, key, fallback) {
   if (!Object.prototype.hasOwnProperty.call(options, key)) return fallback;
   const raw = options[key];
@@ -3302,7 +3331,7 @@ async function createOpenAiTitle(payload, selection, {
     initialPayload: baseInitialPayload,
     signedImages,
     visualFeatures,
-    resolvedForRetrieval: recognitionEvidenceDocument?.resolved || payload.resolved || payload.resolvedHint || payload.resolved_hint || {},
+    resolvedForRetrieval: resolvedForRetrievalFromPayload(payload, providerOptions, recognitionEvidenceDocument),
     providerOptions,
     timingContext
   });

@@ -3,6 +3,8 @@ import { componentBooleansFromObservableComponents } from "../lib/listing/card-t
 import {
   correctedTitleRecordToCatalogStaging
 } from "../lib/listing/catalog/internal-corrected-title-catalog.mjs";
+import { normalizeResolvedFields } from "../lib/listing/evidence/evidence-schema.mjs";
+import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
 import {
   buildToppsBasketballChecklistImport,
   extractToppsBasketballChecklistLinks,
@@ -43,6 +45,37 @@ assert.equal(parsedCatalog.staging.physical_instance_fields.grade_company, "PSA"
 assert.equal(parsedCatalog.staging.identity_fields.grade_company, undefined);
 assert.ok(parsedCatalog.staging.identity_fields.observable_components.includes("auto"));
 assert.ok(parsedCatalog.staging.identity_fields.observable_components.includes("rc"));
+
+const messiCatalog = correctedTitleRecordToCatalogStaging({
+  id: "feedback-soccer-1",
+  corrected_title: "2025-26 Panini Prizm FIFA Soccer Club Legends Lionel Messi 029/199 Auto #CL-LM"
+});
+assert.equal(messiCatalog.staging.identity_fields.sport, "soccer");
+assert.equal(messiCatalog.staging.identity_fields.product, "Panini Prizm FIFA Soccer");
+assert.equal(messiCatalog.staging.identity_fields.set_or_insert, "Club Legends");
+assert.deepEqual(messiCatalog.staging.identity_fields.players, ["Lionel Messi"]);
+assert.equal(messiCatalog.staging.identity_fields.card_number, "CL-LM");
+assert.equal(messiCatalog.staging.identity_fields.serial_denominator, "199");
+assert.equal(messiCatalog.staging.physical_instance_fields.serial_numerator, "29");
+
+const blackProduct = parseReviewedTitleFields("2024 Panini Black Ricky Pearsall Metallic Marks Auto 10/25 #MM-RP");
+assert.equal(blackProduct.product, "Panini Black");
+assert.equal(blackProduct.surface_color, null);
+assert.deepEqual(blackProduct.players, ["Ricky Pearsall"]);
+assert.equal(blackProduct.official_card_type, "Metallic Marks");
+
+const starWarsGold = parseReviewedTitleFields("2025 Topps Star Wars Chrome Black Smugglers Outpost Han Solo Gold 5/50 #SO-HS");
+assert.equal(starWarsGold.product, "Topps Star Wars Chrome Black");
+assert.equal(starWarsGold.surface_color, "Gold");
+assert.deepEqual(starWarsGold.players, ["Han Solo"]);
+
+const normalizedBase = normalizeResolvedFields({
+  card_type: "Base",
+  official_card_type: null,
+  observable_components: ["auto"]
+});
+assert.equal(normalizedBase.card_type, null);
+assert.equal(normalizedBase.auto, true);
 
 const lowEvidenceBase = renderResolvedTitle({
   year: "2025",
@@ -159,7 +192,7 @@ assert.equal(catalogRpcBody.exact_card_number, "136");
 assert.equal(catalogRpcBody.exact_serial_denominator, "50");
 assert.equal(providerResult.candidates.length, 1);
 assert.equal(providerResult.candidates[0].provider_id, retrievalProviderIds.CATALOG);
-assert.equal(providerResult.candidates[0].fields.serial_number, null);
+assert.equal(providerResult.candidates[0].fields.serial_number, "/50");
 assert.equal(providerResult.candidates[0].reference_metadata.expected_serial_denominator, "50");
 
 const planned = planRetrievalQueries({

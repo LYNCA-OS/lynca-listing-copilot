@@ -127,6 +127,12 @@ async function runProvider(provider, options = {}) {
               { family: "SEARCH_POSTGRES_HYBRID", provider_id: "postgres_hybrid" }
             ],
             sources: [{
+              source_type: "STRUCTURED_DATABASE",
+              provider_id: "catalog",
+              source_url: "supabase://catalog-cards/identity-1",
+              matched_fields: ["catalog", "collector_number", "players"],
+              title: "2025 Topps Chrome Test Player"
+            }, {
               source_type: "VISUAL_VECTOR",
               matched_fields: ["visual_vector"],
               title: "2025 Topps Chrome Test Player"
@@ -221,6 +227,9 @@ assert.equal(openai.titlePayload.provider_options.single_model_fast, true);
 assert.equal(openai.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
 assert.equal(openai.titlePayload.provider_options.enable_evidence_completion, false);
 assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, false);
+assert.equal(openai.titlePayload.catalog_observation_hint.year, "2025");
+assert.equal(openai.titlePayload.catalog_observation_hint.product, "Topps Chrome");
+assert.deepEqual(openai.titlePayload.catalog_observation_hint.players, ["Test Player"]);
 
 const openaiVector = await runProvider("d");
 assert.equal(openaiVector.report.provider, "openai_vector");
@@ -239,6 +248,14 @@ assert.equal(openaiVector.report.visual_vector_used_count, 1);
 assert.equal(openaiVector.report.visual_vector_candidate_count, 1);
 assert.equal(openaiVector.report.postgres_hybrid_used_count, 1);
 assert.equal(openaiVector.report.postgres_hybrid_candidate_count, 1);
+assert.equal(openaiVector.report.catalog_candidate_count, 1);
+assert.equal(openaiVector.report.catalog_candidate_selected_count, 0);
+assert.equal(openaiVector.report.correct_catalog_identity_available_count, 1);
+assert.equal(openaiVector.report.correct_candidate_recall_at_1, 1);
+assert.equal(openaiVector.report.correct_candidate_recall_at_3, 1);
+assert.equal(openaiVector.report.correct_candidate_recall_at_5, 1);
+assert.equal(openaiVector.report.gpt_selected_correct_candidate_count, 0);
+assert.equal(openaiVector.report.gpt_rejected_correct_candidate_count, 0);
 assert.equal(openaiVector.report.vector_raw_candidate_count, 2);
 assert.equal(openaiVector.report.vector_approved_candidate_count, 1);
 assert.equal(openaiVector.report.vector_conflict_blocked_count, 1);

@@ -13,6 +13,7 @@ const advancedRetrievalMigration = await readFile("supabase/migrations/202606251
 const advancedRetrievalRollback = await readFile("supabase/migrations/20260625153857_advanced_retrieval_accuracy_pack_rollback.sql", "utf8");
 const referencePromotionMigration = await readFile("supabase/migrations/20260626051832_promote_card_reference_to_approved.sql", "utf8");
 const referencePromotionRollback = await readFile("supabase/migrations/20260626051832_promote_card_reference_to_approved_rollback.sql", "utf8");
+const catalogFirstMigration = await readFile("supabase/migrations/20260626115429_catalog_first_corrected_title_v0.sql", "utf8");
 const phase2 = await readFile("docs/architecture/phase-2-storage-image-quality-2026-06-22.md", "utf8");
 
 assert.match(migration, /insert into storage\.buckets/i, "storage migration should create the Supabase bucket");
@@ -121,6 +122,14 @@ assert.match(referencePromotionMigration, /update public\.catalog_gap_queue/i, "
 assert.match(referencePromotionMigration, /revoke all on function public\.promote_card_reference_to_approved/i, "promotion RPC should revoke public execution");
 assert.match(referencePromotionMigration, /grant execute on function public\.promote_card_reference_to_approved[\s\S]*to service_role/i, "promotion RPC should be service-role only");
 assert.match(referencePromotionRollback, /drop function if exists public\.promote_card_reference_to_approved/i, "promotion rollback should drop the promotion RPC");
+
+assert.match(catalogFirstMigration, /create or replace function public\.search_catalog_candidates/i, "catalog-first migration should replace the catalog RPC");
+assert.doesNotMatch(catalogFirstMigration, /where\s+c\.sport\s*=\s*'basketball'/i, "catalog RPC must not hard-filter to basketball");
+assert.match(catalogFirstMigration, /'serial_denominator',\s*scored\.serial_denominator/i, "catalog RPC should return serial denominator as candidate metadata");
+assert.match(catalogFirstMigration, /'insert',\s*scored\.set_or_insert/i, "catalog RPC should expose set or insert as a structured candidate field");
+assert.match(catalogFirstMigration, /corrected-title catalog rows may recall candidates for evaluation/i, "catalog RPC comment should preserve corrected-title catalog scope");
+assert.match(catalogFirstMigration, /revoke all on function public\.search_catalog_candidates/i, "catalog RPC should revoke public execution");
+assert.match(catalogFirstMigration, /grant execute on function public\.search_catalog_candidates[\s\S]*to service_role/i, "catalog RPC should be service-role only");
 
 assert.match(phase2, /20260622_listing_image_storage\.sql/, "Phase 2 doc should mention the storage migration");
 assert.match(phase2, /20260622_listing_image_verifications\.sql/, "Phase 2 doc should mention the verification migration");

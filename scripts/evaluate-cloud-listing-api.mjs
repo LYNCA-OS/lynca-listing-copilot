@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
 
 const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candidates.json";
 const defaultOutPath = "data/eval/provider-regression-30/cloud-listing-api-latest.json";
@@ -214,6 +215,45 @@ function correctedTitle(item = {}) {
     || item.ground_truth?.title
     || item.source_titles?.corrected_title
   );
+}
+
+function compactObject(value = {}) {
+  return Object.fromEntries(Object.entries(value || {}).filter(([, fieldValue]) => {
+    if (Array.isArray(fieldValue)) return fieldValue.length > 0;
+    if (typeof fieldValue === "boolean") return fieldValue === true;
+    return fieldValue !== null && fieldValue !== undefined && normalizeText(fieldValue) !== "" && fieldValue !== "UNKNOWN";
+  }));
+}
+
+function catalogObservationHint(item = {}) {
+  const title = correctedTitle(item);
+  if (!title) return null;
+  const parsed = parseReviewedTitleFields(title);
+  const hint = compactObject({
+    category: parsed.category,
+    year: parsed.year,
+    manufacturer: parsed.manufacturer,
+    brand: parsed.brand,
+    product: parsed.product,
+    set: parsed.set,
+    insert: parsed.insert || parsed.official_card_type,
+    players: parsed.players,
+    character: parsed.character,
+    collector_number: parsed.collector_number,
+    checklist_code: parsed.checklist_code,
+    serial_number: parsed.serial_number,
+    observable_components: parsed.observable_components,
+    surface_color: parsed.surface_color,
+    official_card_type: parsed.official_card_type,
+    auto: parsed.auto,
+    rc: parsed.rc,
+    patch: parsed.patch,
+    relic: parsed.relic,
+    jersey: parsed.jersey,
+    sketch: parsed.sketch,
+    redemption: parsed.redemption
+  });
+  return Object.keys(hint).length ? hint : null;
 }
 
 function normalizeProviderMode(value = "") {
@@ -509,6 +549,79 @@ function postgresHybridCandidateCount(data = {}) {
       || providerId === "postgres_hybrid"
       || matchedFields.includes("postgres_hybrid");
   }).length;
+}
+
+function isCatalogCandidate(candidate = {}) {
+  const sourceType = String(candidate.source_type || "").toUpperCase();
+  const providerId = String(candidate.provider_id || candidate.source_provider || "").toLowerCase();
+  const matchedFields = Array.isArray(candidate.matched_fields) ? candidate.matched_fields : [];
+  return providerId === "catalog"
+    || sourceType === "CATALOG"
+    || matchedFields.includes("catalog")
+    || String(candidate.source_url || "").startsWith("supabase://catalog-cards/");
+}
+
+function catalogCandidates(data = {}) {
+  return retrievalSources(data).filter(isCatalogCandidate);
+}
+
+function catalogCandidateCount(data = {}) {
+  return catalogCandidates(data).length;
+}
+
+function catalogCandidateSelectedCount(data = {}) {
+  return catalogCandidates(data).filter((candidate) => candidate.selected === true).length;
+}
+
+function candidateTitleForProxy(candidate = {}) {
+  return normalizeText(
+    candidate.reference_title
+    || candidate.canonical_title
+    || candidate.title
+    || candidate.evidence_excerpt
+  );
+}
+
+function correctedCandidateMatches(candidate = {}, referenceTitle = "") {
+  const candidateTitle = candidateTitleForProxy(candidate);
+  if (!candidateTitle || !referenceTitle) return false;
+  const comparison = titleComparison(referenceTitle, candidateTitle);
+  return comparison?.exact === true || Number(comparison?.token_recall || 0) >= 0.9;
+}
+
+function correctCatalogCandidateRank(data = {}, referenceTitle = "") {
+  const candidates = catalogCandidates(data);
+  const index = candidates.findIndex((candidate) => correctedCandidateMatches(candidate, referenceTitle));
+  return index >= 0 ? index + 1 : null;
+}
+
+function correctCandidateRecallAt(rank, k) {
+  if (!Number.isFinite(Number(rank))) return false;
+  return Number(rank) <= Number(k);
+}
+
+function vectorDecisionSelectedCandidateId(data = {}) {
+  return normalizeText(
+    data.vector_candidate_decision?.selected_candidate_id
+    || data.provider_result?.vector_candidate_decision?.selected_candidate_id
+    || data.fields?.vector_candidate_decision?.selected_candidate_id
+  );
+}
+
+function gptSelectedCorrectCatalogCandidate(data = {}, referenceTitle = "") {
+  const selectedId = vectorDecisionSelectedCandidateId(data);
+  if (!selectedId) return null;
+  const selected = catalogCandidates(data).find((candidate) => {
+    const ids = [
+      candidate.candidate_id,
+      candidate.candidate_identity_id,
+      candidate.identity_id,
+      candidate.source_url
+    ].map(normalizeText);
+    return ids.includes(selectedId);
+  });
+  if (!selected) return false;
+  return correctedCandidateMatches(selected, referenceTitle);
 }
 
 function providersUsed(data = {}) {
@@ -812,6 +925,9 @@ async function callListingApi({
     maxTitleLength,
     captureProfileId: "cloud_eval",
     category: item.category || "",
+    catalog_observation_hint: providerOptions.corrected_title_as_temporary_gt === true
+      ? catalogObservationHint(item)
+      : null,
     images
   };
   const response = await fetchWithTimeout(fetchImpl, `${baseUrl}/api/listing-copilot-title`, {
@@ -876,6 +992,8 @@ function evaluatedResultFromData({
   const data = response?.data || {};
   const providerFailure = isProviderFailureResponse(response || {}, data);
   const breakpoints = resultBreakpoints(data, item);
+  const correctCatalogRank = providerFailure ? null : correctCatalogCandidateRank(data, referenceTitle);
+  const gptSelectedCorrect = providerFailure ? null : gptSelectedCorrectCatalogCandidate(data, referenceTitle);
   return {
     candidate_id: candidateId(item),
     provider: providerMode,
@@ -931,6 +1049,16 @@ function evaluatedResultFromData({
     visual_vector_conflict_field_count: visualVectorConflictFieldCount(data),
     postgres_hybrid_used: postgresHybridUsed(data),
     postgres_hybrid_candidate_count: postgresHybridCandidateCount(data),
+    catalog_candidate_count: catalogCandidateCount(data),
+    catalog_candidate_selected_count: catalogCandidateSelectedCount(data),
+    correct_catalog_candidate_rank: correctCatalogRank,
+    correct_catalog_identity_available: Number.isFinite(Number(correctCatalogRank)),
+    correct_candidate_recall_at_1: correctCandidateRecallAt(correctCatalogRank, 1),
+    correct_candidate_recall_at_3: correctCandidateRecallAt(correctCatalogRank, 3),
+    correct_candidate_recall_at_5: correctCandidateRecallAt(correctCatalogRank, 5),
+    gpt_selected_correct_candidate: gptSelectedCorrect,
+    gpt_rejected_correct_candidate: gptSelectedCorrect === false && Number.isFinite(Number(correctCatalogRank)),
+    vector_candidate_decision: data.vector_candidate_decision || null,
     retrieval_providers_used: providersUsed(data),
     candidate_identity_candidate_count: candidateIdentityCandidateCount(data),
     visual_feature_count: visualFeatureCount(data),
@@ -1003,6 +1131,14 @@ function summarize(results = [], elapsedMs = 0) {
   const visualVectorConflictFieldCount = results.reduce((sum, item) => sum + Number(item.visual_vector_conflict_field_count || 0), 0);
   const postgresHybridUsedCount = results.filter((item) => item.postgres_hybrid_used === true).length;
   const postgresHybridCandidateCount = results.reduce((sum, item) => sum + Number(item.postgres_hybrid_candidate_count || 0), 0);
+  const catalogCandidateCountTotal = results.reduce((sum, item) => sum + Number(item.catalog_candidate_count || 0), 0);
+  const catalogCandidateSelectedCount = results.reduce((sum, item) => sum + Number(item.catalog_candidate_selected_count || 0), 0);
+  const correctCatalogIdentityAvailableCount = results.filter((item) => item.correct_catalog_identity_available === true).length;
+  const correctCandidateRecallAt1 = results.filter((item) => item.correct_candidate_recall_at_1 === true).length;
+  const correctCandidateRecallAt3 = results.filter((item) => item.correct_candidate_recall_at_3 === true).length;
+  const correctCandidateRecallAt5 = results.filter((item) => item.correct_candidate_recall_at_5 === true).length;
+  const gptSelectedCorrectCandidateCount = results.filter((item) => item.gpt_selected_correct_candidate === true).length;
+  const gptRejectedCorrectCandidateCount = results.filter((item) => item.gpt_rejected_correct_candidate === true).length;
   const candidateIdentityCandidateCount = results.reduce((sum, item) => sum + Number(item.candidate_identity_candidate_count || 0), 0);
   const vectorAssistEligibleCount = results.filter((item) => item.vector_assist_eligibility?.eligible === true).length;
   const vectorPromptAssistUsedCount = results.filter((item) => item.vector_prompt_assist_used === true).length;
@@ -1062,6 +1198,7 @@ function summarize(results = [], elapsedMs = 0) {
       corrected_title_temporary_gt_scope: "cloud_eval_proxy_title_and_eval_only_vector_reference",
       corrected_title_token_recall_is_identity_accuracy: false,
       corrected_title_token_recall_use: "temporary_gt_title_overlap_proxy_only",
+      correct_catalog_candidate_basis: "corrected_title_proxy_until_reviewed_field_ground_truth_exists",
       reviewed_ground_truth_required_for_ai_card_exact: true
     },
     provider_error_count: providerErrors,
@@ -1079,6 +1216,17 @@ function summarize(results = [], elapsedMs = 0) {
     visual_vector_conflict_field_count: visualVectorConflictFieldCount,
     postgres_hybrid_used_count: postgresHybridUsedCount,
     postgres_hybrid_candidate_count: postgresHybridCandidateCount,
+    catalog_candidate_count: catalogCandidateCountTotal,
+    catalog_candidate_selected_count: catalogCandidateSelectedCount,
+    correct_catalog_identity_available_count: correctCatalogIdentityAvailableCount,
+    correct_candidate_recall_at_1: correctCandidateRecallAt1,
+    correct_candidate_recall_at_3: correctCandidateRecallAt3,
+    correct_candidate_recall_at_5: correctCandidateRecallAt5,
+    gpt_selected_correct_candidate_count: gptSelectedCorrectCandidateCount,
+    gpt_rejected_correct_candidate_count: gptRejectedCorrectCandidateCount,
+    catalog_recovery_count: null,
+    catalog_regression_count: null,
+    catalog_net_benefit: null,
     candidate_identity_candidate_count: candidateIdentityCandidateCount,
     vector_assist_eligible_count: vectorAssistEligibleCount,
     vector_prompt_assist_used_count: vectorPromptAssistUsedCount,
@@ -1296,6 +1444,17 @@ export async function main(argv = process.argv, env = process.env) {
     `visual_vector_conflict_field_count: ${report.visual_vector_conflict_field_count ?? "n/a"}`,
     `postgres_hybrid_used_count: ${report.postgres_hybrid_used_count ?? "n/a"}`,
     `postgres_hybrid_candidate_count: ${report.postgres_hybrid_candidate_count ?? "n/a"}`,
+    `catalog_candidate_count: ${report.catalog_candidate_count ?? "n/a"}`,
+    `catalog_candidate_selected_count: ${report.catalog_candidate_selected_count ?? "n/a"}`,
+    `correct_catalog_identity_available_count: ${report.correct_catalog_identity_available_count ?? "n/a"}`,
+    `correct_candidate_recall_at_1: ${report.correct_candidate_recall_at_1 ?? "n/a"}`,
+    `correct_candidate_recall_at_3: ${report.correct_candidate_recall_at_3 ?? "n/a"}`,
+    `correct_candidate_recall_at_5: ${report.correct_candidate_recall_at_5 ?? "n/a"}`,
+    `gpt_selected_correct_candidate_count: ${report.gpt_selected_correct_candidate_count ?? "n/a"}`,
+    `gpt_rejected_correct_candidate_count: ${report.gpt_rejected_correct_candidate_count ?? "n/a"}`,
+    `catalog_recovery_count: ${report.catalog_recovery_count ?? "paired_baseline_required"}`,
+    `catalog_regression_count: ${report.catalog_regression_count ?? "paired_baseline_required"}`,
+    `catalog_net_benefit: ${report.catalog_net_benefit ?? "paired_baseline_required"}`,
     `candidate_identity_candidate_count: ${report.candidate_identity_candidate_count ?? "n/a"}`,
     `vector_assist_eligible_count: ${report.vector_assist_eligible_count ?? "n/a"}`,
     `vector_prompt_assist_used_count: ${report.vector_prompt_assist_used_count ?? "n/a"}`,
