@@ -33,6 +33,11 @@ function numberArg(argv, name, fallback) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+function boolValue(value, fallback = false) {
+  if (value === undefined || value === null || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
 function delay(ms = 0) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, Math.max(0, Number(ms) || 0)));
 }
@@ -273,12 +278,19 @@ function cloudProviderForMode(providerMode) {
   return "openai_legacy";
 }
 
-function providerOptionsForMode(providerMode) {
+function providerOptionsForMode(providerMode, {
+  correctedTitleAsTemporaryGt = true,
+  sendCorrectedTitleHintToCloud = false
+} = {}) {
   const catalogAssist = providerMode === providerModes.OPENAI_CATALOG || providerMode === providerModes.OPENAI_VECTOR;
   const vectorAssist = providerMode === providerModes.OPENAI_VECTOR;
+  const temporaryGt = catalogAssist && correctedTitleAsTemporaryGt === true;
+  const sendHintToCloud = temporaryGt && sendCorrectedTitleHintToCloud === true;
   return {
     single_model_fast: !catalogAssist && !vectorAssist,
-    corrected_title_as_temporary_gt: catalogAssist,
+    corrected_title_as_temporary_gt: temporaryGt,
+    send_corrected_title_hint_to_cloud: sendHintToCloud,
+    cloud_eval_blind_to_corrected_title_hint: !sendHintToCloud,
     enable_evidence_completion: catalogAssist || vectorAssist,
     enable_catalog_assist: catalogAssist,
     enable_vector_assist: vectorAssist,
@@ -286,7 +298,7 @@ function providerOptionsForMode(providerMode) {
     enable_query_visual_embeddings: vectorAssist,
     enable_vector_retrieval: vectorAssist,
     vector_retrieval_mode: vectorAssist ? "assist" : "off",
-    vector_corrected_title_as_temporary_gt: vectorAssist,
+    vector_corrected_title_as_temporary_gt: vectorAssist && temporaryGt,
     vector_query_timeout_ms: vectorAssist ? 8000 : undefined,
     vector_retrieval_internal_top_n: vectorAssist ? 10 : undefined,
     enable_advanced_retrieval: vectorAssist,
@@ -294,7 +306,9 @@ function providerOptionsForMode(providerMode) {
     eval_flags: {
       ENABLE_CATALOG_ASSIST: catalogAssist,
       ENABLE_VECTOR_ASSIST: vectorAssist,
-      CORRECTED_TITLE_AS_TEMPORARY_GT: catalogAssist
+      CORRECTED_TITLE_AS_TEMPORARY_GT: temporaryGt,
+      SEND_CORRECTED_TITLE_HINT_TO_CLOUD: sendHintToCloud,
+      BLIND_TO_CORRECTED_TITLE_HINT: !sendHintToCloud
     },
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
@@ -1242,6 +1256,7 @@ async function callListingApi({
   cookie,
   item,
   providerMode,
+  evalOptions = {},
   bypassSecret = "",
   requestTimeoutMs = 120_000,
   verificationCache,
@@ -1249,7 +1264,7 @@ async function callListingApi({
   fetchImpl = globalThis.fetch
 }) {
   const provider = cloudProviderForMode(providerMode);
-  const providerOptions = providerOptionsForMode(providerMode);
+  const providerOptions = providerOptionsForMode(providerMode, evalOptions);
   const images = await verifiedImageInputs({
     baseUrl,
     cookie,
@@ -1269,7 +1284,7 @@ async function callListingApi({
     maxTitleLength,
     captureProfileId: "cloud_eval",
     category: item.category || "",
-    catalog_observation_hint: providerOptions.corrected_title_as_temporary_gt === true
+    catalog_observation_hint: providerOptions.send_corrected_title_hint_to_cloud === true
       ? catalogObservationHint(item)
       : null,
     images
@@ -1331,9 +1346,11 @@ function evaluatedResultFromData({
   response,
   referenceTitle,
   started,
-  providerErrorAttempts = []
+  providerErrorAttempts = [],
+  evalOptions = {}
 } = {}) {
   const data = response?.data || {};
+  const providerOptions = providerOptionsForMode(providerMode, evalOptions);
   const providerFailure = isProviderFailureResponse(response || {}, data);
   const breakpoints = resultBreakpoints(data, item);
   const finalTitle = normalizeText(data.final_title || data.title || data.rendered_title);
@@ -1360,7 +1377,8 @@ function evaluatedResultFromData({
     status: "evaluated",
     technical_failure: providerFailure,
     technical_failure_code: providerFailure ? providerFailureCode(data, response?.http_status || 200) || "provider_failed" : null,
-    corrected_title_as_temporary_gt: providerOptionsForMode(providerMode).corrected_title_as_temporary_gt === true,
+    corrected_title_as_temporary_gt: providerOptions.corrected_title_as_temporary_gt === true,
+    corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
     provider_error_recovered: providerErrorAttempts.length > 0 && !providerFailure,
     provider_error_attempts: providerErrorAttempts,
     provider_error_retry_count: providerErrorAttempts.length,
@@ -1455,9 +1473,11 @@ function technicalFailureResult({
   referenceTitle,
   started,
   error,
-  providerErrorAttempts = []
+  providerErrorAttempts = [],
+  evalOptions = {}
 } = {}) {
   const code = error?.code || "cloud_eval_error";
+  const providerOptions = providerOptionsForMode(providerMode, evalOptions);
   return {
     candidate_id: candidateId(item),
     provider: providerMode,
@@ -1466,7 +1486,8 @@ function technicalFailureResult({
     technical_failure: true,
     technical_failure_code: code,
     provider_error_recovered: false,
-    corrected_title_as_temporary_gt: providerOptionsForMode(providerMode).corrected_title_as_temporary_gt === true,
+    corrected_title_as_temporary_gt: providerOptions.corrected_title_as_temporary_gt === true,
+    corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
     provider_error_attempts: providerErrorAttempts.length
       ? providerErrorAttempts
       : [providerFailureAttempt({ error, attempt: 1, elapsedMs: Date.now() - started })],
@@ -1484,6 +1505,7 @@ function technicalFailureResult({
 function summarize(results = [], elapsedMs = 0) {
   const attempted = results.length;
   const temporaryGtUsed = results.some((item) => item.corrected_title_as_temporary_gt === true);
+  const correctedTitleHintSentCount = results.filter((item) => item.corrected_title_hint_sent_to_cloud === true).length;
   const providerErrors = results.filter((item) => item.status === "provider_error").length;
   const evaluated = results.filter((item) => item.status === "evaluated").length;
   const technicalFailures = results.filter((item) => item.technical_failure === true).length;
@@ -1595,10 +1617,15 @@ function summarize(results = [], elapsedMs = 0) {
     evaluated_count: evaluated,
     accuracy_policy: {
       corrected_title_as_temporary_gt: temporaryGtUsed,
-      corrected_title_temporary_gt_scope: "cloud_eval_proxy_title_and_eval_only_vector_reference",
+      corrected_title_hint_sent_to_cloud: correctedTitleHintSentCount > 0,
+      corrected_title_hint_sent_to_cloud_count: correctedTitleHintSentCount,
+      corrected_title_temporary_gt_scope: "cloud_eval_proxy_title_candidate_scoring_and_optional_cloud_hint",
       corrected_title_token_recall_is_identity_accuracy: false,
       corrected_title_token_recall_use: "temporary_gt_title_overlap_proxy_only",
       correct_catalog_candidate_basis: "corrected_title_proxy_until_reviewed_field_ground_truth_exists",
+      default_cloud_eval_mode: correctedTitleHintSentCount > 0
+        ? "answer_hint_enabled_not_blind"
+        : "blind_to_corrected_title_hint",
       reviewed_ground_truth_required_for_ai_card_exact: true
     },
     provider_error_count: providerErrors,
@@ -1687,6 +1714,8 @@ export async function evaluateCloudListingApi({
   bypassSecret = "",
   requestTimeoutMs = 120_000,
   maxTitleLength = 80,
+  correctedTitleAsTemporaryGt = true,
+  sendCorrectedTitleHintToCloud = false,
   providerErrorRetries = 1,
   providerErrorRetryDelayMs = 1500,
   skipPreflight = false,
@@ -1698,6 +1727,10 @@ export async function evaluateCloudListingApi({
   if (!username || !password) throw new Error("METAVERSE_USERNAME and METAVERSE_PASSWORD are required.");
   if (typeof fetchImpl !== "function") throw new Error("fetch is required.");
   const providerMode = normalizeProviderMode(provider);
+  const evalOptions = {
+    correctedTitleAsTemporaryGt,
+    sendCorrectedTitleHintToCloud
+  };
 
   const limitCount = Math.max(0, Math.trunc(Number(limit) || 0));
   const selected = (Array.isArray(dataset?.items) ? dataset.items : [])
@@ -1767,6 +1800,7 @@ export async function evaluateCloudListingApi({
               cookie,
               item,
               providerMode,
+              evalOptions,
               bypassSecret,
               requestTimeoutMs,
               verificationCache,
@@ -1805,7 +1839,8 @@ export async function evaluateCloudListingApi({
           response: finalResponse,
           referenceTitle,
           started,
-          providerErrorAttempts
+          providerErrorAttempts,
+          evalOptions
         });
         logProgress(`[${index + 1}/${selected.length}] done ${candidateId(item) || "unknown"} status=${results[index].technical_failure ? "technical_failure" : "ok"} recall=${results[index].corrected_title_comparison?.token_recall ?? "n/a"} elapsed_ms=${results[index].elapsed_ms}`);
       } catch (error) {
@@ -1822,7 +1857,8 @@ export async function evaluateCloudListingApi({
           referenceTitle,
           started,
           error,
-          providerErrorAttempts
+          providerErrorAttempts,
+          evalOptions
         });
         logProgress(`[${index + 1}/${selected.length}] done ${candidateId(item) || "unknown"} status=technical_failure code=${results[index].technical_failure_code || "unknown"} elapsed_ms=${results[index].elapsed_ms}`);
       }
@@ -1848,6 +1884,11 @@ export async function main(argv = process.argv, env = process.env) {
   const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", Number(runtimeEnv.CLOUD_LISTING_API_REQUEST_TIMEOUT_MS || 120_000));
   const providerErrorRetries = numberArg(argv, "--provider-error-retries", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRIES || 1));
   const providerErrorRetryDelayMs = numberArg(argv, "--provider-error-retry-delay-ms", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRY_DELAY_MS || 1500));
+  const correctedTitleAsTemporaryGt = !hasFlag(argv, "--no-corrected-title-as-temporary-gt")
+    && boolValue(runtimeEnv.CORRECTED_TITLE_AS_TEMPORARY_GT ?? runtimeEnv.CLOUD_EVAL_CORRECTED_TITLE_AS_TEMPORARY_GT, true);
+  const sendCorrectedTitleHintToCloud = hasFlag(argv, "--send-corrected-title-hint-to-cloud")
+    || hasFlag(argv, "--legacy-corrected-title-hint")
+    || boolValue(runtimeEnv.SEND_CORRECTED_TITLE_HINT_TO_CLOUD ?? runtimeEnv.CLOUD_EVAL_SEND_CORRECTED_TITLE_HINT_TO_CLOUD, false);
   const progress = hasFlag(argv, "--progress");
   const checkpointPath = argValue(argv, "--checkpoint-path", hasFlag(argv, "--checkpoint") ? outPath : "");
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
@@ -1863,6 +1904,8 @@ export async function main(argv = process.argv, env = process.env) {
     password: runtimeEnv.METAVERSE_PASSWORD,
     bypassSecret,
     requestTimeoutMs,
+    correctedTitleAsTemporaryGt,
+    sendCorrectedTitleHintToCloud,
     providerErrorRetries,
     providerErrorRetryDelayMs,
     skipPreflight,
@@ -1884,6 +1927,9 @@ export async function main(argv = process.argv, env = process.env) {
     `provider_success_count: ${report.provider_success_count}`,
     `provider_success_rate: ${report.provider_success_rate}`,
     `fallback_count: ${report.fallback_count}`,
+    `corrected_title_as_temporary_gt: ${report.accuracy_policy?.corrected_title_as_temporary_gt ?? "n/a"}`,
+    `corrected_title_hint_sent_to_cloud: ${report.accuracy_policy?.corrected_title_hint_sent_to_cloud ?? "n/a"}`,
+    `corrected_title_hint_sent_to_cloud_count: ${report.accuracy_policy?.corrected_title_hint_sent_to_cloud_count ?? "n/a"}`,
     `visual_vector_used_count: ${report.visual_vector_used_count ?? "n/a"}`,
     `visual_vector_candidate_count: ${report.visual_vector_candidate_count ?? "n/a"}`,
     `visual_vector_selected_count: ${report.visual_vector_selected_count ?? "n/a"}`,

@@ -217,9 +217,11 @@ assert.equal(openai.report.per_card_latency_ms.p50, 1234);
 assert.equal(openai.report.cloud_preflight.ok, true);
 assert.equal(openai.report.cloud_preflight.default_provider, "openai_legacy");
 assert.equal(openai.report.accuracy_policy.corrected_title_as_temporary_gt, false);
-assert.equal(openai.report.accuracy_policy.corrected_title_temporary_gt_scope, "cloud_eval_proxy_title_and_eval_only_vector_reference");
+assert.equal(openai.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
+assert.equal(openai.report.accuracy_policy.corrected_title_temporary_gt_scope, "cloud_eval_proxy_title_candidate_scoring_and_optional_cloud_hint");
 assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);
 assert.equal(openai.report.results[0].corrected_title_as_temporary_gt, false);
+assert.equal(openai.report.results[0].corrected_title_hint_sent_to_cloud, false);
 assert.equal(openai.report.pass_at_0_72_count, 1);
 assert.equal(openai.report.pass_at_0_80_count, 1);
 assert.equal(openai.report.decision_trace[0].gpt_only_title, "2025 Topps Chrome Test Player");
@@ -233,6 +235,7 @@ assert.equal(openai.titlePayload.provider, "openai_legacy");
 assert.equal(openai.titlePayload.explicitEmergency, true);
 assert.equal(openai.titlePayload.provider_options.single_model_fast, true);
 assert.equal(openai.titlePayload.provider_options.corrected_title_as_temporary_gt, false);
+assert.equal(openai.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
 assert.equal(openai.titlePayload.provider_options.enable_catalog_assist, false);
 assert.equal(openai.titlePayload.provider_options.enable_vector_assist, false);
 assert.equal(openai.titlePayload.provider_options.enable_evidence_completion, false);
@@ -244,16 +247,32 @@ assert.equal(openaiCatalog.report.provider, "openai_catalog");
 assert.equal(openaiCatalog.titlePayload.provider, "openai_legacy");
 assert.equal(openaiCatalog.titlePayload.provider_options.single_model_fast, false);
 assert.equal(openaiCatalog.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
+assert.equal(openaiCatalog.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
+assert.equal(openaiCatalog.titlePayload.provider_options.cloud_eval_blind_to_corrected_title_hint, true);
 assert.equal(openaiCatalog.titlePayload.provider_options.enable_catalog_assist, true);
 assert.equal(openaiCatalog.titlePayload.provider_options.enable_vector_assist, false);
 assert.equal(openaiCatalog.titlePayload.provider_options.enable_evidence_completion, true);
 assert.equal(openaiCatalog.titlePayload.provider_options.enable_stored_visual_features, false);
 assert.equal(openaiCatalog.titlePayload.provider_options.enable_vector_retrieval, false);
 assert.equal(openaiCatalog.titlePayload.provider_options.vector_retrieval_mode, "off");
-assert.equal(openaiCatalog.titlePayload.catalog_observation_hint.year, "2025");
-assert.equal(openaiCatalog.titlePayload.catalog_observation_hint.product, "Topps Chrome");
-assert.deepEqual(openaiCatalog.titlePayload.catalog_observation_hint.players, ["Test Player"]);
+assert.equal(openaiCatalog.titlePayload.catalog_observation_hint, null);
+assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_as_temporary_gt, true);
+assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
+assert.equal(openaiCatalog.report.results[0].corrected_title_hint_sent_to_cloud, false);
 assert.equal(openaiCatalog.report.decision_trace[0].catalog_only_title, "2025 Topps Chrome Test Player");
+
+const openaiCatalogWithHint = await runProvider("catalog-only", {
+  evaluateOptions: {
+    sendCorrectedTitleHintToCloud: true
+  }
+});
+assert.equal(openaiCatalogWithHint.titlePayload.provider_options.send_corrected_title_hint_to_cloud, true);
+assert.equal(openaiCatalogWithHint.titlePayload.provider_options.cloud_eval_blind_to_corrected_title_hint, false);
+assert.equal(openaiCatalogWithHint.titlePayload.catalog_observation_hint.year, "2025");
+assert.equal(openaiCatalogWithHint.titlePayload.catalog_observation_hint.product, "Topps Chrome");
+assert.deepEqual(openaiCatalogWithHint.titlePayload.catalog_observation_hint.players, ["Test Player"]);
+assert.equal(openaiCatalogWithHint.report.accuracy_policy.corrected_title_hint_sent_to_cloud, true);
+assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_to_cloud, true);
 
 {
   const conflictedCatalogOnly = await runProvider("catalog-only", {
@@ -343,6 +362,8 @@ assert.equal(openaiVector.titlePayload.provider_options.enable_vector_retrieval,
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
 assert.equal(openaiVector.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
 assert.equal(openaiVector.titlePayload.provider_options.vector_corrected_title_as_temporary_gt, true);
+assert.equal(openaiVector.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
+assert.equal(openaiVector.titlePayload.catalog_observation_hint, null);
 assert.equal(openaiVector.titlePayload.provider_options.vector_query_timeout_ms, 8000);
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_internal_top_n, 10);
 assert.equal(openaiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
