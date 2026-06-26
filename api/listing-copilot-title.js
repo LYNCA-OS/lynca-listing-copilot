@@ -3148,6 +3148,23 @@ function vectorRetrievalEnv(env = process.env, config = vectorRetrievalConfig(en
   };
 }
 
+function retrievalEnvForProviderOptions(env = process.env, providerOptions = {}) {
+  const config = vectorRetrievalConfig(env, providerOptions);
+  return config.enabled ? vectorRetrievalEnv(env, config) : env;
+}
+
+function hybridRetrievalFamiliesForProviderOptions(env = process.env, providerOptions = {}) {
+  const config = vectorRetrievalConfig(env, providerOptions);
+  if (!config.enabled) return null;
+  if (!config.hybridRetrievalEnabled) return null;
+  return [
+    retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+    retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.VISUAL_VECTOR,
+    retrievalQueryFamilies.POSTGRES_HYBRID
+  ];
+}
+
 function vectorRetrievalUnavailablePacket(status, reason) {
   const statusCode = status === "VECTOR_RETRIEVAL_TIMEOUT"
     ? "VECTOR_RETRIEVAL_TIMEOUT"
@@ -3295,9 +3312,12 @@ async function withEvidenceCompletion(result, payload, {
   runFocusedVisionImpl = null,
   env = process.env,
   timingContext = null,
-  visualFeatures = {}
+  visualFeatures = {},
+  providerOptions = {}
 } = {}) {
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
+  const retrievalEnv = retrievalEnvForProviderOptions(env, providerOptions);
+  const hybridAllowedFamilies = hybridRetrievalFamiliesForProviderOptions(env, providerOptions);
   const completion = await timeAsync(timingContext, "evidence_completion_ms", () => completeEvidence({
     resolved: result.resolved,
     evidence: result.evidence,
@@ -3305,7 +3325,7 @@ async function withEvidenceCompletion(result, payload, {
     unresolved: result.unresolved,
     visualEmbeddings: visualFeaturesForRetrieval(result, visualFeatures),
     retrievalMode,
-    env,
+    env: retrievalEnv,
     runFocusedVisionImpl
   }));
   addTiming(timingContext, "retrieval_ms", Number(completion.retrieval?.latency_ms || completion.retrieval?.retrieval_time_ms || 0));
@@ -3333,7 +3353,10 @@ async function withEvidenceCompletion(result, payload, {
     providerId: output.identity_provider_id || output.provider || output.source,
     retrievalCandidates: retrievalCandidatesForIdentity(completion),
     retrieveEvidence: createIdentityConvergenceRetriever({
-      retrievalMode
+      retrievalMode,
+      env: retrievalEnv,
+      allowedFamilies: hybridAllowedFamilies || undefined,
+      maxQueries: hybridAllowedFamilies ? Math.max(4, hybridAllowedFamilies.length) : undefined
     }),
     convergenceOptions: {
       maxIterations: 1
@@ -3592,7 +3615,7 @@ async function createOpenAiTitle(payload, selection, {
   ));
   if (singleModelResult) return singleModelResult;
 
-  return withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures });
+  return withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures, providerOptions });
 }
 
 async function createGeminiTitle(payload, selection, {
@@ -3647,7 +3670,7 @@ async function createGeminiTitle(payload, selection, {
   ));
   if (singleModelResult) return singleModelResult;
 
-  return withEvidenceCompletion(primaryFastResult, initialPayload, { timingContext, visualFeatures });
+  return withEvidenceCompletion(primaryFastResult, initialPayload, { timingContext, visualFeatures, providerOptions });
 }
 
 function requestedProviderFromPayload(payload = {}) {

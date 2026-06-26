@@ -406,16 +406,45 @@ function resultBreakpoints(data = {}, item = {}) {
   };
 }
 
+function retrievalSummaries(data = {}) {
+  return [
+    data.retrieval,
+    data.vector_retrieval,
+    data.vector_candidate_packet?.vector_retrieval
+  ].filter((summary) => summary && typeof summary === "object" && !Array.isArray(summary));
+}
+
 function retrievalSources(data = {}) {
-  return Array.isArray(data.retrieval?.sources) ? data.retrieval.sources : [];
+  const seen = new Set();
+  const sources = [];
+  for (const source of retrievalSummaries(data).flatMap((summary) => Array.isArray(summary.sources) ? summary.sources : [])) {
+    const key = [
+      source?.candidate_id,
+      source?.provider_id || source?.source_provider || source?.source_type,
+      source?.title,
+      JSON.stringify(source?.fields || {})
+    ].filter(Boolean).join("|");
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    sources.push(source);
+  }
+  return sources;
+}
+
+function vectorPacketCandidates(data = {}) {
+  const candidates = data.vector_candidate_packet?.vector_retrieval?.candidates
+    || data.vector_retrieval?.vector_retrieval?.candidates
+    || [];
+  return Array.isArray(candidates) ? candidates : [];
 }
 
 function visualVectorCandidateCount(data = {}) {
-  return retrievalSources(data).filter((candidate) => {
+  const sourceCount = retrievalSources(data).filter((candidate) => {
     const sourceType = String(candidate.source_type || "").toUpperCase();
     const matchedFields = Array.isArray(candidate.matched_fields) ? candidate.matched_fields : [];
     return sourceType === "VISUAL_VECTOR" || matchedFields.includes("visual_vector");
   }).length;
+  return Math.max(sourceCount, vectorPacketCandidates(data).length);
 }
 
 function isVisualVectorCandidate(candidate = {}) {
@@ -455,14 +484,39 @@ function candidateIdentityCandidateCount(data = {}) {
   return Array.isArray(candidates) ? candidates.length : 0;
 }
 
+function postgresHybridCandidateCount(data = {}) {
+  return retrievalSources(data).filter((candidate) => {
+    const sourceType = String(candidate.source_type || "").toUpperCase();
+    const providerId = String(candidate.provider_id || candidate.source_provider || "").toLowerCase();
+    const matchedFields = Array.isArray(candidate.matched_fields) ? candidate.matched_fields : [];
+    return sourceType === "POSTGRES_HYBRID"
+      || providerId === "postgres_hybrid"
+      || matchedFields.includes("postgres_hybrid");
+  }).length;
+}
+
+function providersUsed(data = {}) {
+  return [...new Set(retrievalSummaries(data).flatMap((summary) => Array.isArray(summary.providers_used) ? summary.providers_used : []))];
+}
+
 function visualVectorUsed(data = {}) {
-  const providersUsed = Array.isArray(data.retrieval?.providers_used) ? data.retrieval.providers_used : [];
-  const queries = Array.isArray(data.retrieval?.queries) ? data.retrieval.queries : [];
-  const trace = Array.isArray(data.retrieval?.trace) ? data.retrieval.trace : [];
-  return providersUsed.includes("visual_vector")
-    || queries.some((query) => query.family === "visual_vector" || query.provider_id === "visual_vector")
-    || trace.some((entry) => entry.provider_id === "visual_vector" || entry.query?.family === "visual_vector")
+  const queries = retrievalSummaries(data).flatMap((summary) => Array.isArray(summary.queries) ? summary.queries : []);
+  const trace = retrievalSummaries(data).flatMap((summary) => Array.isArray(summary.trace) ? summary.trace : []);
+  return providersUsed(data).includes("visual_vector")
+    || data.vector_prompt_assist_used === true
+    || vectorPacketCandidates(data).length > 0
+    || queries.some((query) => query.family === "visual_vector" || query.provider_id === "visual_vector" || query.family === "SEARCH_VISUAL_VECTOR")
+    || trace.some((entry) => entry.provider_id === "visual_vector" || entry.query?.family === "visual_vector" || entry.query?.family === "SEARCH_VISUAL_VECTOR")
     || visualVectorCandidateCount(data) > 0;
+}
+
+function postgresHybridUsed(data = {}) {
+  const queries = retrievalSummaries(data).flatMap((summary) => Array.isArray(summary.queries) ? summary.queries : []);
+  const trace = retrievalSummaries(data).flatMap((summary) => Array.isArray(summary.trace) ? summary.trace : []);
+  return providersUsed(data).includes("postgres_hybrid")
+    || queries.some((query) => query.family === "postgres_hybrid" || query.provider_id === "postgres_hybrid" || query.family === "SEARCH_POSTGRES_HYBRID")
+    || trace.some((entry) => entry.provider_id === "postgres_hybrid" || entry.query?.family === "postgres_hybrid" || entry.query?.family === "SEARCH_POSTGRES_HYBRID")
+    || postgresHybridCandidateCount(data) > 0;
 }
 
 function visualFeatureCount(data = {}) {
@@ -843,11 +897,17 @@ function evaluatedResultFromData({
     provider_truncation_retry_attempted: data.provider_truncation_retry_attempted === true,
     provider_truncation_retry_attempts: Number(data.provider_truncation_retry_attempts || 0),
     retrieval: data.retrieval || null,
+    vector_retrieval: data.vector_retrieval || null,
+    vector_candidate_packet: data.vector_candidate_packet || null,
+    vector_prompt_assist_used: data.vector_prompt_assist_used === true,
     visual_vector_used: visualVectorUsed(data),
     visual_vector_candidate_count: visualVectorCandidateCount(data),
     visual_vector_selected_count: visualVectorSelectedCount(data),
     visual_vector_consensus_field_count: visualVectorConsensusFieldCount(data),
     visual_vector_conflict_field_count: visualVectorConflictFieldCount(data),
+    postgres_hybrid_used: postgresHybridUsed(data),
+    postgres_hybrid_candidate_count: postgresHybridCandidateCount(data),
+    retrieval_providers_used: providersUsed(data),
     candidate_identity_candidate_count: candidateIdentityCandidateCount(data),
     visual_feature_count: visualFeatureCount(data),
     visual_feature_summary: data.visual_feature_summary || null,
@@ -917,6 +977,8 @@ function summarize(results = [], elapsedMs = 0) {
   const visualVectorSelectedCount = results.reduce((sum, item) => sum + Number(item.visual_vector_selected_count || 0), 0);
   const visualVectorConsensusFieldCount = results.reduce((sum, item) => sum + Number(item.visual_vector_consensus_field_count || 0), 0);
   const visualVectorConflictFieldCount = results.reduce((sum, item) => sum + Number(item.visual_vector_conflict_field_count || 0), 0);
+  const postgresHybridUsedCount = results.filter((item) => item.postgres_hybrid_used === true).length;
+  const postgresHybridCandidateCount = results.reduce((sum, item) => sum + Number(item.postgres_hybrid_candidate_count || 0), 0);
   const candidateIdentityCandidateCount = results.reduce((sum, item) => sum + Number(item.candidate_identity_candidate_count || 0), 0);
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
@@ -977,6 +1039,8 @@ function summarize(results = [], elapsedMs = 0) {
     visual_vector_selected_count: visualVectorSelectedCount,
     visual_vector_consensus_field_count: visualVectorConsensusFieldCount,
     visual_vector_conflict_field_count: visualVectorConflictFieldCount,
+    postgres_hybrid_used_count: postgresHybridUsedCount,
+    postgres_hybrid_candidate_count: postgresHybridCandidateCount,
     candidate_identity_candidate_count: candidateIdentityCandidateCount,
     visual_feature_count: storedVisualFeatureCount,
     provider_truncation_retry_count: truncationRetryCount,
@@ -1185,6 +1249,8 @@ export async function main(argv = process.argv, env = process.env) {
     `visual_vector_selected_count: ${report.visual_vector_selected_count ?? "n/a"}`,
     `visual_vector_consensus_field_count: ${report.visual_vector_consensus_field_count ?? "n/a"}`,
     `visual_vector_conflict_field_count: ${report.visual_vector_conflict_field_count ?? "n/a"}`,
+    `postgres_hybrid_used_count: ${report.postgres_hybrid_used_count ?? "n/a"}`,
+    `postgres_hybrid_candidate_count: ${report.postgres_hybrid_candidate_count ?? "n/a"}`,
     `candidate_identity_candidate_count: ${report.candidate_identity_candidate_count ?? "n/a"}`,
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,

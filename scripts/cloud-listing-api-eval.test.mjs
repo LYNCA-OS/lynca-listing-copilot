@@ -119,8 +119,27 @@ async function runProvider(provider, options = {}) {
         },
         retrieval: vectorEnabled
           ? {
+            providers_used: ["visual_vector", "postgres_hybrid"],
+            queries: [
+              { family: "visual_vector", provider_id: "visual_vector" },
+              { family: "SEARCH_POSTGRES_HYBRID", provider_id: "postgres_hybrid" }
+            ],
+            sources: [{
+              source_type: "VISUAL_VECTOR",
+              matched_fields: ["visual_vector"],
+              title: "2025 Topps Chrome Test Player"
+            }, {
+              source_type: "POSTGRES_HYBRID",
+              provider_id: "postgres_hybrid",
+              matched_fields: ["postgres_hybrid", "collector_number"],
+              title: "2025 Topps Chrome Test Player"
+            }]
+          }
+          : null,
+        vector_retrieval: vectorEnabled
+          ? {
             providers_used: ["visual_vector"],
-            queries: [{ family: "visual_vector", provider_id: "visual_vector" }],
+            queries: [{ family: "SEARCH_VISUAL_VECTOR", provider_id: "visual_vector" }],
             sources: [{
               source_type: "VISUAL_VECTOR",
               matched_fields: ["visual_vector"],
@@ -128,6 +147,17 @@ async function runProvider(provider, options = {}) {
             }]
           }
           : null,
+        vector_candidate_packet: vectorEnabled
+          ? {
+            vector_retrieval: {
+              candidates: [{
+                candidate_identity_id: "identity-1",
+                title: "2025 Topps Chrome Test Player"
+              }]
+            }
+          }
+          : null,
+        vector_prompt_assist_used: vectorEnabled,
         visual_features: vectorEnabled
           ? { features: [{ embedding: [0.1, 0.2], embedding_role: "front_global" }] }
           : null,
@@ -194,6 +224,10 @@ assert.equal(geminiVector.titlePayload.provider_options.enable_advanced_retrieva
 assert.equal(geminiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
 assert.equal(geminiVector.report.visual_vector_used_count, 1);
 assert.equal(geminiVector.report.visual_vector_candidate_count, 1);
+assert.equal(geminiVector.report.postgres_hybrid_used_count, 1);
+assert.equal(geminiVector.report.postgres_hybrid_candidate_count, 1);
+assert.equal(geminiVector.report.results[0].vector_prompt_assist_used, true);
+assert.deepEqual(geminiVector.report.results[0].retrieval_providers_used, ["visual_vector", "postgres_hybrid"]);
 
 const openaiVector = await runProvider("d");
 assert.equal(openaiVector.report.provider, "openai_vector");
