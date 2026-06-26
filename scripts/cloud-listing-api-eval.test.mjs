@@ -117,6 +117,11 @@ async function runProvider(provider, options = {}) {
           product: "Topps Chrome",
           players: ["Test Player"]
         },
+        rendered_fields: {
+          title: "2025 Topps Chrome Test Player",
+          rendered_title: "2025 Topps Chrome Test Player",
+          modules: [{ type: "year", value: "2025" }]
+        },
         retrieval: vectorEnabled
           ? {
             providers_used: ["visual_vector", "postgres_hybrid"],
@@ -192,8 +197,11 @@ assert.equal(gemini.report.provider_success_rate, 1);
 assert.equal(gemini.report.per_card_latency_ms.p50, 1234);
 assert.equal(gemini.report.cloud_preflight.ok, true);
 assert.equal(gemini.report.cloud_preflight.default_provider, "openai_legacy");
+assert.equal(gemini.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);
 assert.equal(gemini.report.breakpoint_completeness_avg.raw_provider_fields, 0.375);
+assert.equal(gemini.report.breakpoint_completeness_avg.rendered_fields, 0.375);
 assert.equal(gemini.report.results[0].breakpoints.raw_provider_fields.year, "2025");
+assert.equal(gemini.report.results[0].breakpoints.rendered_fields.year, "2025");
 assert.equal(gemini.report.results[0].breakpoints.normalized_evidence.product.value, "Topps Chrome");
 assert.equal(gemini.report.results[0].breakpoints.resolved_fields.players[0], "Test Player");
 assert.equal(gemini.titlePayload.provider, "gemini");

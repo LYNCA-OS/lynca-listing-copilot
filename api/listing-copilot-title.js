@@ -73,7 +73,7 @@ import { runRetrieval } from "../lib/listing/retrieval/retrieval-engine.mjs";
 import { retrievalModes, retrievalQueryFamilies } from "../lib/listing/retrieval/retrieval-contract.mjs";
 import {
   buildVectorCandidatePacket,
-  vectorCandidatePacketHasCandidates
+  vectorCandidatePacketAssistEligibility
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
@@ -2394,11 +2394,13 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
     resolved: evidenceDocument.resolved,
     resolved_fields: evidenceDocument.resolved,
     rendered_fields: {
+      ...fields,
       title: finalTitle,
       rendered_title: renderedTitle,
       modules: presentation.modules,
       module_order: presentation.module_order,
-      title_render_source: renderedTitle ? "deterministic_renderer" : "legacy_fallback"
+      title_render_source: renderedTitle ? "deterministic_renderer" : "legacy_fallback",
+      fields
     },
     modules: presentation.modules,
     module_order: presentation.module_order,
@@ -2680,11 +2682,13 @@ function withCompletedEvidencePresentation(result, completion, payload) {
     resolved,
     resolved_fields: resolved,
     rendered_fields: {
+      ...fields,
       title: finalTitle,
       rendered_title: renderedTitle,
       modules: presentation.modules,
       module_order: presentation.module_order,
-      title_render_source: renderedTitle ? "deterministic_renderer" : result.title_render_source
+      title_render_source: renderedTitle ? "deterministic_renderer" : result.title_render_source,
+      fields
     },
     modules: presentation.modules,
     module_order: presentation.module_order,
@@ -3268,6 +3272,7 @@ async function prepareVectorCandidateContext({
   const packet = buildVectorCandidatePacket(retrieval, {
     limit: config.gptCandidateLimit
   });
+  const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
   const telemetry = await recordVectorRetrievalTelemetry({
     visualFeatures: activeVisualFeatures,
     packet,
@@ -3284,7 +3289,8 @@ async function prepareVectorCandidateContext({
     retrieval,
     worker: workerResult,
     telemetry,
-    promptPacket: config.mode === vectorRetrievalModes.ASSIST && vectorCandidatePacketHasCandidates(packet)
+    vector_assist_eligibility: assistEligibility,
+    promptPacket: config.mode === vectorRetrievalModes.ASSIST && assistEligibility.eligible
   };
 }
 
@@ -3296,6 +3302,7 @@ function withVectorCandidateContext(result = {}, context = {}) {
     vector_retrieval: context.retrieval || null,
     vector_candidate_packet: context.packet,
     vector_prompt_assist_used: context.promptPacket === true,
+    vector_assist_eligibility: context.vector_assist_eligibility || null,
     vector_telemetry: context.telemetry || null,
     vector_worker: context.worker
       ? {
@@ -3582,7 +3589,9 @@ async function createOpenAiTitle(payload, selection, {
       ? vectorContext.packet
       : emptyVectorCandidatePacket(vectorContext.mode === vectorRetrievalModes.SHADOW
         ? "vector_shadow_mode_not_supplied_to_gpt"
-        : "vector_candidates_not_available_to_gpt")
+        : vectorContext.vector_assist_eligibility?.reason
+          ? `vector_assist_blocked_${vectorContext.vector_assist_eligibility.reason}`
+          : "vector_candidates_not_available_to_gpt")
   };
   const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({

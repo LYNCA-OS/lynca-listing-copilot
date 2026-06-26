@@ -375,12 +375,30 @@ function layerCompleteness(layer = {}) {
 }
 
 function renderedFieldLayer(data = {}) {
-  return data.rendered_fields || {
+  const rendered = data.rendered_fields && typeof data.rendered_fields === "object" && !Array.isArray(data.rendered_fields)
+    ? data.rendered_fields
+    : {};
+  const nestedFields = rendered.fields && typeof rendered.fields === "object" && !Array.isArray(rendered.fields)
+    ? rendered.fields
+    : {};
+  const sourceFields = data.fields && typeof data.fields === "object" && !Array.isArray(data.fields)
+    ? data.fields
+    : {};
+  const resolvedFields = data.resolved_fields && typeof data.resolved_fields === "object" && !Array.isArray(data.resolved_fields)
+    ? data.resolved_fields
+    : data.resolved && typeof data.resolved === "object" && !Array.isArray(data.resolved)
+      ? data.resolved
+      : {};
+  return {
+    ...resolvedFields,
+    ...sourceFields,
+    ...nestedFields,
+    ...rendered,
     title: normalizeText(data.final_title || data.title || data.rendered_title),
     rendered_title: normalizeText(data.rendered_title || data.final_title || data.title),
-    modules: data.modules || null,
-    module_order: data.module_order || null,
-    title_render_source: data.title_render_source || null
+    modules: rendered.modules || data.modules || null,
+    module_order: rendered.module_order || data.module_order || null,
+    title_render_source: rendered.title_render_source || data.title_render_source || null
   };
 }
 
@@ -900,6 +918,7 @@ function evaluatedResultFromData({
     vector_retrieval: data.vector_retrieval || null,
     vector_candidate_packet: data.vector_candidate_packet || null,
     vector_prompt_assist_used: data.vector_prompt_assist_used === true,
+    vector_assist_eligibility: data.vector_assist_eligibility || null,
     visual_vector_used: visualVectorUsed(data),
     visual_vector_candidate_count: visualVectorCandidateCount(data),
     visual_vector_selected_count: visualVectorSelectedCount(data),
@@ -980,6 +999,8 @@ function summarize(results = [], elapsedMs = 0) {
   const postgresHybridUsedCount = results.filter((item) => item.postgres_hybrid_used === true).length;
   const postgresHybridCandidateCount = results.reduce((sum, item) => sum + Number(item.postgres_hybrid_candidate_count || 0), 0);
   const candidateIdentityCandidateCount = results.reduce((sum, item) => sum + Number(item.candidate_identity_candidate_count || 0), 0);
+  const vectorAssistEligibleCount = results.filter((item) => item.vector_assist_eligibility?.eligible === true).length;
+  const vectorPromptAssistUsedCount = results.filter((item) => item.vector_prompt_assist_used === true).length;
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
   const averageRecallValues = results
@@ -1026,6 +1047,11 @@ function summarize(results = [], elapsedMs = 0) {
   return {
     attempted_count: attempted,
     evaluated_count: evaluated,
+    accuracy_policy: {
+      corrected_title_token_recall_is_identity_accuracy: false,
+      corrected_title_token_recall_use: "legacy_proxy_title_overlap_only",
+      reviewed_ground_truth_required_for_ai_card_exact: true
+    },
     provider_error_count: providerErrors,
     technical_failure_count: technicalFailures,
     provider_error_recovered_count: recoveredProviderErrors,
@@ -1042,6 +1068,8 @@ function summarize(results = [], elapsedMs = 0) {
     postgres_hybrid_used_count: postgresHybridUsedCount,
     postgres_hybrid_candidate_count: postgresHybridCandidateCount,
     candidate_identity_candidate_count: candidateIdentityCandidateCount,
+    vector_assist_eligible_count: vectorAssistEligibleCount,
+    vector_prompt_assist_used_count: vectorPromptAssistUsedCount,
     visual_feature_count: storedVisualFeatureCount,
     provider_truncation_retry_count: truncationRetryCount,
     corrected_title_token_recall_avg: averageRecallValues.length
@@ -1252,9 +1280,11 @@ export async function main(argv = process.argv, env = process.env) {
     `postgres_hybrid_used_count: ${report.postgres_hybrid_used_count ?? "n/a"}`,
     `postgres_hybrid_candidate_count: ${report.postgres_hybrid_candidate_count ?? "n/a"}`,
     `candidate_identity_candidate_count: ${report.candidate_identity_candidate_count ?? "n/a"}`,
+    `vector_assist_eligible_count: ${report.vector_assist_eligible_count ?? "n/a"}`,
+    `vector_prompt_assist_used_count: ${report.vector_prompt_assist_used_count ?? "n/a"}`,
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,
-    `corrected_title_token_recall_avg: ${report.corrected_title_token_recall_avg}`,
+    `corrected_title_token_recall_avg_proxy_not_identity_accuracy: ${report.corrected_title_token_recall_avg}`,
     `attempted_cards_per_minute: ${report.attempted_cards_per_minute}`,
     `evaluated_cards_per_minute: ${report.evaluated_cards_per_minute}`,
     `per_card_latency_ms_p50: ${report.per_card_latency_ms?.p50 ?? "n/a"}`,

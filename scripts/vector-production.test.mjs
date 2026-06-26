@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { buildVectorCandidatePacket } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
+import {
+  buildVectorCandidatePacket,
+  vectorCandidatePacketAssistEligibility,
+  vectorCandidatePacketHasAssistEligibleCandidates
+} from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
@@ -78,7 +82,68 @@ assert.equal(packet.vector_retrieval.candidates[0].reference_count, 2);
 assert.equal(packet.vector_retrieval.candidates[0].fields.expected_serial_denominator, "50");
 assert.equal(packet.vector_retrieval.candidates[0].fields.serial_number, undefined, "reference serial numerator must not enter GPT packet");
 assert.equal(packet.vector_retrieval.candidates[0].fields.grade_company, undefined, "reference grade must not enter GPT packet");
+assert.equal(packet.vector_retrieval.candidates[0].source_trust, "REFERENCE_CANDIDATE", "visual neighbors are not approved identity candidates by default");
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(packet), false);
+assert.deepEqual(vectorCandidatePacketAssistEligibility(packet), {
+  eligible: false,
+  reason: "no_approved_identity_candidate",
+  approved_candidate_count: 0,
+  eligible_candidate_count: 0,
+  blocked_candidate_count: 0
+});
 assert.doesNotMatch(JSON.stringify(packet), /PSA 10|31\/50|12345678|seller|corrected_title/i);
+
+const approvedPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "approved-front",
+    candidate_identity_id: "identity-approved",
+    source_type: "VISUAL_VECTOR",
+    visual_similarity: 0.91,
+    match_score: 0.91,
+    embedding_role: "front_global",
+    reference_image_id: "ref-approved-front",
+    embedding_id: "emb-approved-front",
+    reference_metadata: { reference_status: "APPROVED" },
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      parallel_exact: "Gold Refractor",
+      serial_number: "31/50"
+    }
+  }]
+}, { limit: 5 });
+assert.equal(approvedPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(approvedPacket), true);
+assert.equal(vectorCandidatePacketAssistEligibility(approvedPacket).reason, "approved_identity_candidate_available");
+
+const conflictingApprovedPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "approved-conflict",
+    candidate_identity_id: "identity-conflict",
+    source_type: "VISUAL_VECTOR",
+    visual_similarity: 0.91,
+    match_score: 0.91,
+    embedding_role: "front_global",
+    reference_image_id: "ref-conflict-front",
+    embedding_id: "emb-conflict-front",
+    reference_metadata: { reference_status: "APPROVED" },
+    conflicting_fields: ["year"],
+    fields: {
+      year: "2023",
+      product: "Topps Chrome",
+      players: ["Test Player"]
+    }
+  }]
+}, { limit: 5 });
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(conflictingApprovedPacket), false);
+assert.deepEqual(vectorCandidatePacketAssistEligibility(conflictingApprovedPacket), {
+  eligible: false,
+  reason: "approved_identity_candidate_direct_conflict",
+  approved_candidate_count: 1,
+  eligible_candidate_count: 0,
+  blocked_candidate_count: 1
+});
 
 const schema = openAiProviderResponseSchema();
 assert.ok(schema.required.includes("vector_candidate_decision"));
@@ -207,6 +272,7 @@ const retrieval = await provider.search({
 });
 assert.equal(retrieval.candidates.length, 1);
 assert.equal(retrieval.candidates[0].candidate_identity_id, "other");
+assert.equal(retrieval.candidates[0].reference_metadata.retrieval_status, "approved");
 
 const telemetryMissingConfig = await recordVectorRetrievalTelemetry({
   env: {},
