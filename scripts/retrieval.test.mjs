@@ -313,7 +313,8 @@ const memoryResult = await memoryProvider.search({
 assert.equal(memoryResult.unavailable, false);
 assert.equal(memoryResult.candidates[0].source_type, "INTERNAL_APPROVED_HISTORY");
 assert.equal(memoryResult.candidates[0].fields.product, "Topps Chrome Sapphire");
-assert.equal(memoryResult.candidates[0].fields.parallel, "Gold");
+assert.equal(memoryResult.candidates[0].fields.surface_color, "Gold");
+assert.equal(memoryResult.candidates[0].fields.parallel, undefined);
 assert.equal(memoryResult.candidates[0].fields.serial_number, "5/50");
 assert.match(memoryResult.candidates[0].evidence_excerpt, /legacy corrected feedback title parsed into fields/);
 
@@ -1530,7 +1531,8 @@ const internalOnly = await runRetrieval({
 assert.equal(internalOnly.mode, retrievalModes.INTERNAL_ONLY);
 assert.ok(internalOnly.providers_used.every((provider) => [
   retrievalProviderIds.INTERNAL_MEMORY,
-  retrievalProviderIds.INTERNAL_REGISTRY
+  retrievalProviderIds.INTERNAL_REGISTRY,
+  retrievalProviderIds.CATALOG
 ].includes(provider)));
 assert.ok(internalOnly.queries.every((query) => query.provider_id !== retrievalProviderIds.EBAY_BROWSE || !internalOnly.providers_used.includes(retrievalProviderIds.EBAY_BROWSE)));
 

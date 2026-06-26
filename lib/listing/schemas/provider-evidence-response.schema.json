@@ -41,7 +41,7 @@
       }
     },
     "field_evidence": {
-      "description": "Provider-agnostic structured support for core and high-risk fields. Gemini may return an object keyed by field; strict OpenAI may return an array with a field property.",
+      "description": "Provider-agnostic structured support for core and high-risk fields. Strict OpenAI responses may return an array with a field property or an object keyed by field after normalization.",
       "oneOf": [
         {
           "type": "object",

@@ -11,7 +11,6 @@ import {
 } from "../lib/listing/cache/identity-result-cache.mjs";
 
 const defaultDatasetPath = "data/golden-dataset.json";
-const defaultGeminiSmokePath = "data/smoke/gemini-smoke-latest.json";
 const defaultEbayCandidatesPath = "data/ebay-candidates/ebay-image-candidates-latest.json";
 const defaultSupabaseLiveSnapshotPath = "data/recognition/reports/supabase-live-snapshot-2026-06-23.json";
 const defaultSupabaseCandidateReportPath = "data/recognition/reports/supabase-feedback-candidates-report.json";
@@ -50,30 +49,6 @@ async function readTextFile(path) {
   return {
     path: resolvedPath,
     text: await readFile(resolvedPath, "utf8")
-  };
-}
-
-function safeSmokeCapability(capability = {}) {
-  const detailAllowlist = new Set([
-    "model_id",
-    "parse_source",
-    "finish_reason",
-    "image_count",
-    "provider_calls",
-    "error_code",
-    "status"
-  ]);
-  const details = Object.fromEntries(
-    Object.entries(capability.details || {})
-      .filter(([key]) => detailAllowlist.has(key))
-      .map(([key, value]) => [key, String(value).slice(0, 160)])
-  );
-
-  return {
-    name: String(capability.name || ""),
-    status: String(capability.status || ""),
-    required: capability.required === true,
-    ...(Object.keys(details).length ? { details } : {})
   };
 }
 
@@ -158,71 +133,6 @@ async function auditGoldenDataset(datasetPath) {
   }
 }
 
-async function auditGeminiSmoke(smokePath) {
-  if (!existsSync(resolve(smokePath))) {
-    return {
-      smoke: null,
-      check: blocked("gemini_live_smoke", "Gemini live smoke report is missing.", {
-        report: resolve(smokePath),
-        required_capability: "single_image_json"
-      })
-    };
-  }
-
-  try {
-    const loaded = await readJsonFile(smokePath);
-    const smoke = loaded.value;
-    const capabilities = Array.isArray(smoke.capabilities)
-      ? smoke.capabilities.map(safeSmokeCapability)
-      : [];
-    const singleImage = capabilities.find((capability) => capability.name === "single_image_json");
-    const optionalFailures = capabilities.filter((capability) => {
-      return capability.status === "failed" && capability.required !== true;
-    });
-    const jsonBaselinePassed = smoke.provider === "gemini"
-      && ["passed", "passed_with_limitations"].includes(String(smoke.status || ""))
-      && singleImage?.status === "passed";
-    const details = {
-      report: loaded.path,
-      provider: smoke.provider || null,
-      status: smoke.status || null,
-      generated_at: smoke.generated_at || null,
-      json_baseline_verified: jsonBaselinePassed,
-      capabilities
-    };
-
-    if (!jsonBaselinePassed) {
-      return {
-        smoke,
-        check: blocked("gemini_live_smoke", "Gemini JSON baseline smoke is not verified.", details)
-      };
-    }
-
-    if (optionalFailures.length) {
-      return {
-        smoke,
-        check: warning("gemini_live_smoke", "Gemini JSON baseline is verified, but optional smoke capabilities still have limitations.", {
-          ...details,
-          optional_failures: optionalFailures.map((capability) => capability.name)
-        })
-      };
-    }
-
-    return {
-      smoke,
-      check: passed("gemini_live_smoke", "Gemini live smoke baseline is verified.", details)
-    };
-  } catch (error) {
-    return {
-      smoke: null,
-      check: blocked("gemini_live_smoke", "Gemini smoke report could not be parsed.", {
-        report: resolve(smokePath),
-        error: error.message
-      })
-    };
-  }
-}
-
 async function auditProviderPolicy() {
   const registry = await readTextFile("lib/listing/providers/provider-registry.mjs");
   const statusApi = await readTextFile("api/listing-provider-status.js");
@@ -235,8 +145,8 @@ async function auditProviderPolicy() {
   if (!/const defaultId = envDefault \|\| visionProviderIds\.OPENAI_LEGACY/.test(registry.text)) {
     failures.push("GPT-4.1 mini is not the implicit production default provider in selectVisionProvider");
   }
-  if (!/\[visionProviderIds\.GEMINI\]/.test(registry.text)) {
-    failures.push("Gemini diagnostic provider is missing from provider registry");
+  if (!/\[visionProviderIds\.OPENAI_LEGACY\]/.test(registry.text)) {
+    failures.push("provider registry does not expose the GPT provider");
   }
   if (!/role:\s*providerRoles\.PRIMARY/.test(registry.text)) {
     failures.push("OpenAI provider is not marked as the production primary role");
@@ -256,7 +166,7 @@ async function auditProviderPolicy() {
 
   const details = {
     gpt_production_default: failures.length === 0,
-    gemini_diagnostic_only: /diagnostics_only:\s*true/.test(registry.text),
+    single_gpt_provider_only: failures.length === 0,
     gpt_primary_fast_vision: true,
     gpt_provider_present: /\[visionProviderIds\.OPENAI_LEGACY\]/.test(registry.text),
     mixed_model_cascade: /cascade_fast|secondary_provider_id|AGNES/i.test(registry.text) ? "present" : "removed",
@@ -270,7 +180,7 @@ async function auditProviderPolicy() {
 
   return failures.length
     ? blocked("provider_default_policy", "Provider default policy is not safe enough for commercial readiness.", details)
-    : passed("provider_default_policy", "GPT-4.1 mini is the production default; Gemini is diagnostic-only; automatic cascade is removed.", details);
+    : passed("provider_default_policy", "GPT-4.1 mini is the only production vision provider; automatic mixed-model cascade is removed.", details);
 }
 
 function destinationIdsFromPublisherContract(source) {
@@ -691,15 +601,12 @@ async function auditIdentityResultCache(env = process.env) {
 
 export async function createCommercialReadinessReport({
   datasetPath = defaultDatasetPath,
-  geminiSmokePath = defaultGeminiSmokePath,
   env = process.env
 } = {}) {
   const checks = [];
   const golden = await auditGoldenDataset(datasetPath);
   checks.push(...golden.checks);
 
-  const gemini = await auditGeminiSmoke(geminiSmokePath);
-  checks.push(gemini.check);
   checks.push(await auditProviderPolicy());
   checks.push(...await auditPublishingBoundary());
   checks.push(await auditRetrievalSmoke(env));
@@ -736,14 +643,6 @@ export async function createCommercialReadinessReport({
           commercial_acceptance_gate: golden.evaluation.commercial_acceptance_gate
         }
         : null,
-      gemini_smoke: gemini.smoke
-        ? {
-          report_path: resolve(geminiSmokePath),
-          provider: gemini.smoke.provider || null,
-          status: gemini.smoke.status || null,
-          generated_at: gemini.smoke.generated_at || null
-        }
-        : null,
       supabase_commercial_sample: supabaseCommercial.evidence,
       commercial_review_packet: checks.find((check) => check.id === "commercial_review_packet")?.details || null,
       commercial_review_worklist: checks.find((check) => check.id === "commercial_review_worklist")?.details || null,
@@ -755,7 +654,6 @@ export async function createCommercialReadinessReport({
 export function formatCommercialReadinessReport(report) {
   const commercialGate = report.evidence.golden_dataset?.commercial_acceptance_gate || {};
   const heldOutCount = report.evidence.golden_dataset?.held_out_commercial_assets ?? "n/a";
-  const geminiStatus = report.evidence.gemini_smoke?.status || "missing";
   const providerPolicy = report.checks.find((check) => check.id === "provider_default_policy");
   const retrievalSmoke = report.checks
     .find((check) => check.id === "external_retrieval_live_smoke")
@@ -792,7 +690,6 @@ export function formatCommercialReadinessReport(report) {
     `held_out_commercial_assets: ${heldOutCount}`,
     `commercial_acceptance_gate: ${commercialGate.passed === true ? "passed" : "blocked"}`,
     `commercial_acceptance_reasons: ${formatReasons(commercialGate.reasons || [])}`,
-    `gemini_smoke_status: ${geminiStatus}`,
     `external_retrieval_smoke_statuses: ${retrievalSmokeSummary}`,
     `ebay_image_candidates: ${ebayCandidateSummary}`,
     `supabase_commercial_sample: ${supabaseSampleSummary}`,
@@ -829,12 +726,10 @@ export function formatCommercialReadinessReport(report) {
 
 export async function main(argv = process.argv, env = process.env) {
   const datasetPath = argValue(argv, "--dataset", env.GOLDEN_DATASET_PATH || defaultDatasetPath);
-  const geminiSmokePath = argValue(argv, "--gemini-smoke-report", env.GEMINI_SMOKE_REPORT_PATH || env.SMOKE_PROVIDER_REPORT_PATH || defaultGeminiSmokePath);
   const reportPath = argValue(argv, "--report", env.COMMERCIAL_READINESS_REPORT_PATH || "");
   const asJson = hasFlag(argv, "--json");
   const report = await createCommercialReadinessReport({
     datasetPath,
-    geminiSmokePath,
     env
   });
 

@@ -10,7 +10,7 @@ assert.equal(schema.title, "Listing ProviderEvidenceResponse");
 assert.ok(schema.anyOf.some((entry) => entry.required?.includes("evidence")));
 assert.ok(schema.properties.unresolved.items.type === "string");
 
-const legacyPayload = validateProviderEvidencePayload("gemini", {
+const legacyPayload = validateProviderEvidencePayload("openai_legacy", {
   title: "2024 Topps Chrome Tester",
   confidence: "HIGH",
   reason: "visible text",
@@ -24,7 +24,7 @@ const legacyPayload = validateProviderEvidencePayload("gemini", {
 });
 assert.equal(legacyPayload.fields.player, "Tester");
 
-const shorthandEvidence = validateProviderEvidencePayload("gemini", {
+const shorthandEvidence = validateProviderEvidencePayload("openai_legacy", {
   evidence: {
     player: {
       value: "Tester",
@@ -36,7 +36,7 @@ const shorthandEvidence = validateProviderEvidencePayload("gemini", {
 });
 assert.equal(shorthandEvidence.evidence.player.value, "Tester");
 
-const fullEvidence = validateProviderEvidencePayload("gemini", {
+const fullEvidence = validateProviderEvidencePayload("openai_legacy", {
   evidence: {
     serial_number: {
       value: "31/50",
@@ -53,7 +53,7 @@ const fullEvidence = validateProviderEvidencePayload("gemini", {
 });
 assert.equal(fullEvidence.evidence.serial_number.status, "REVIEW");
 
-const partialResolved = validateProviderEvidencePayload("gemini", {
+const partialResolved = validateProviderEvidencePayload("openai_legacy", {
   model_title_suggestion: "2024 Topps Chrome Tester",
   resolved: {
     year: "2024",
@@ -69,7 +69,7 @@ const partialResolved = validateProviderEvidencePayload("gemini", {
 assert.equal(partialResolved.resolved.players[0], "Tester");
 assert.equal(partialResolved.resolved.card_count, 1);
 
-const structuredFieldEvidence = validateProviderEvidencePayload("gemini", {
+const structuredFieldEvidence = validateProviderEvidencePayload("openai_legacy", {
   field_evidence: {
     year: {
       value: "2024",
@@ -142,7 +142,7 @@ const parsedTool = parseProviderMessagePayload({
   ]
 });
 assert.equal(parsedTool.parse_source, "tool_call");
-assert.equal(validateProviderEvidencePayload("gemini", parsedTool.parsed).evidence.player.value, "Tester");
+assert.equal(validateProviderEvidencePayload("openai_legacy", parsedTool.parsed).evidence.player.value, "Tester");
 
 const schemaFailures = [
   {
@@ -226,7 +226,7 @@ const schemaFailures = [
 
 for (const failure of schemaFailures) {
   assert.throws(
-    () => validateProviderEvidencePayload("gemini", failure.payload),
+    () => validateProviderEvidencePayload("openai_legacy", failure.payload),
     (error) => {
       assert.equal(error.code, "schema_validation_failed", failure.name);
       if (failure.expectedPath) {

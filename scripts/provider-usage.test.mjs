@@ -26,9 +26,9 @@ assert.equal(openAiUsage.completion_tokens, null);
 assert.equal(openAiUsage.total_tokens, 2_100_000);
 assert.equal(openAiUsage.estimated_cost_usd, 0.98);
 
-const geminiUsage = normalizeProviderUsage({
-  provider: visionProviderIds.GEMINI,
-  modelId: "gemini-3.1-flash-lite",
+const openAiAlternateUsage = normalizeProviderUsage({
+  provider: visionProviderIds.OPENAI_LEGACY,
+  modelId: "gpt-4.1-mini-2025-04-14",
   rawUsage: {
     total_input_tokens: 1_500_000,
     total_output_tokens: 250_000,
@@ -38,21 +38,21 @@ const geminiUsage = normalizeProviderUsage({
   imageCount: 2,
   providerCalls: 1,
   env: {
-    GEMINI_INPUT_TOKEN_COST_PER_1M: "0.1",
-    GEMINI_OUTPUT_TOKEN_COST_PER_1M: "0.4",
-    GEMINI_IMAGE_COST_USD: "0.002"
+    OPENAI_INPUT_TOKEN_COST_PER_1M: "0.1",
+    OPENAI_OUTPUT_TOKEN_COST_PER_1M: "0.4",
+    OPENAI_IMAGE_COST_USD: "0.002"
   }
 });
-assert.equal(geminiUsage.provider_calls, 1);
-assert.equal(geminiUsage.latency_ms, 2500);
-assert.equal(geminiUsage.input_tokens, 1_500_000);
-assert.equal(geminiUsage.output_tokens, 250_000);
-assert.equal(geminiUsage.prompt_tokens, 1_500_000);
-assert.equal(geminiUsage.completion_tokens, 250_000);
-assert.equal(geminiUsage.total_tokens, 1_750_000);
-assert.equal(geminiUsage.image_count, 2);
-assert.equal(geminiUsage.cost_configured, true);
-assert.equal(geminiUsage.estimated_cost_usd, 0.254);
+assert.equal(openAiAlternateUsage.provider_calls, 1);
+assert.equal(openAiAlternateUsage.latency_ms, 2500);
+assert.equal(openAiAlternateUsage.input_tokens, 1_500_000);
+assert.equal(openAiAlternateUsage.output_tokens, 250_000);
+assert.equal(openAiAlternateUsage.prompt_tokens, 1_500_000);
+assert.equal(openAiAlternateUsage.completion_tokens, 250_000);
+assert.equal(openAiAlternateUsage.total_tokens, 1_750_000);
+assert.equal(openAiAlternateUsage.image_count, 2);
+assert.equal(openAiAlternateUsage.cost_configured, true);
+assert.equal(openAiAlternateUsage.estimated_cost_usd, 0.254);
 
 const unpricedUsage = normalizeProviderUsage({
   provider: "unknown_provider",
@@ -71,6 +71,6 @@ assert.equal(unpricedUsage.cost_configured, false);
 assert.equal(unpricedUsage.estimated_cost_usd, 0);
 
 assert.equal(JSON.stringify(openAiUsage).includes("sk-"), false);
-assert.equal(JSON.stringify(geminiUsage).includes("AIza"), false);
+assert.equal(JSON.stringify(openAiAlternateUsage).includes("sk-"), false);
 
 console.log("provider usage tests passed");

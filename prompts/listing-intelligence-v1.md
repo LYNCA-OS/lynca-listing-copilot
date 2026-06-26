@@ -79,6 +79,7 @@ Specific extraction rules:
 - PSA label: extract grade company and grade if visible.
 - BGS label: extract grade company, grade, and visible subgrades only if the output schema later supports them; otherwise mention subgrades in unresolved.
 - CGC label: extract grade company and grade if visible.
+- Fill `auto_grade` only when a separate autograph grade is visibly printed on the slab/label. Never copy `card_grade` into `auto_grade` as a schema scaffold.
 - Serial number extraction has higher business value than advanced parallel classification. Serial accuracy is a Tier 1 objective.
 - Serial extraction evidence priority is: PSA/BGS/CGC label > card front text > card back text. Preserve the clearest complete serial. If sources conflict, mark the conflict in `unresolved` and do not use HIGH confidence.
 - RC booleans must be true only when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible. 1st Bowman, SSP, and case-hit booleans must be true only when a printed marker/text, slab label, card code, or unmistakable card-specific logo is visible. Do not infer them from player age, year, or market memory.
@@ -120,6 +121,8 @@ Year resolution priority:
 
 The card-issued season overrides grading-label shorthand year. Example: if the card/back/product evidence says `2025-26`, do not simplify it to `2026` just because a grading label or copyright shorthand appears as `2026`.
 
+Do not use stats/context sentences as the issued product year. A sentence such as `in 2024/25, the player was selected...` is player context, not card identity. If the issued product/season year is not printed on the card/slab/product line, leave `year` null and explain the unresolved year instead of guessing.
+
 Never override label text or explicit card text with visual guesses. If a mapping conflicts with visible label/card text, use visible text and put the conflict in `unresolved`.
 
 Examples:
@@ -134,6 +137,13 @@ Examples:
 - `IMP-OTI` -> `Imperial Ink`
 
 If unresolved, mark unresolved. Do not invent.
+
+Official card type is separate from visible components.
+
+- `official_card_type` is allowed only when official wording is printed on the card/slab/back or supplied by trusted catalog/reviewed input.
+- `observable_components` is the model-readable component list: `auto`, `patch`, `relic`, `jersey`, `rc`, `sketch`, `redemption`.
+- Do not use `card_type` as a free-generation field. Keep it null unless a legacy caller explicitly requires it.
+- Renderer will use `official_card_type` first; if missing, it will render only observable components.
 
 Official card type beats generic description. If an official card type or subset is resolved from slab label, card text, card number pattern, or registry, use it instead of generic fallback wording.
 
@@ -154,7 +164,7 @@ Official card type and insert names are protected market terms. Do not simplify 
 - `Star Swatch Signatures` must not collapse to `Patch Auto`
 - `Propulsion` and `Red Propulsion` must not collapse to generic insert or parallel wording
 
-Do not hallucinate `Base`. Use `Base` only when slab/card text explicitly says Base, registry confirms the card number is the base version, or a trusted reference title says Base without conflicting with visible evidence.
+Do not hallucinate `Base`. Use `Base` only in `official_card_type` when slab/card text explicitly says Base, registry confirms the card number is the base version, or a trusted reference title says Base without conflicting with visible evidence. Never fill `card_type = "Base"` from visual context.
 
 ### Parallel and Insert Taxonomy Awareness
 
@@ -177,6 +187,8 @@ Examples:
 Important parallel families include wave, shimmer, lava, speckle, mojo, mini diamond, pattern foil, logo parallels, and foil color variants.
 
 Insert names are a separate knowledge category from parallels. Preserve insert names such as `Spotlight`, `Power Chords`, and `Draft Pick Pairings` when visible or safely resolved.
+
+Named identity text such as `Gusto`, `All Kings`, `Club Legends`, `Canvas Creations`, `Rookie Ticket`, `First Day Issue`, `Metallic Marks`, `Historic Ties`, and `Next Stop Signatures` must be captured in `set` or `insert` when printed on the card/slab/back. If `product` repeats `brand`, still return the visible set/insert; do not drop it just because product and brand overlap.
 
 Advanced rainbow classification is useful, but it is Tier 3. It must not displace Tier 1 extraction.
 
@@ -488,6 +500,9 @@ Return exactly this shape:
     "product": null,
     "set": null,
     "subset": null,
+    "official_card_type": null,
+    "observable_components": [],
+    "card_type": null,
     "insert": null,
     "surface_color": null,
     "parallel_family": null,
@@ -504,6 +519,8 @@ Return exactly this shape:
     "auto": false,
     "relic": false,
     "patch": false,
+    "jersey": false,
+    "rc": false,
     "sketch": false,
     "redemption": false,
     "one_of_one": false

@@ -9,10 +9,6 @@ import {
   resolveKnowledgeEntry,
   resolveKnowledgeFromFields
 } from "../lib/listing-knowledge-registry.mjs";
-import {
-  analyzeCardEvidenceWithGemini,
-  transcribeVisibleCardTextWithGemini
-} from "../lib/listing/providers/gemini-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import { defaultProviderModels, providerLabels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
@@ -136,28 +132,6 @@ function queryVisualVectorPreflightEnabled(env = process.env, options = {}) {
     return optionFlag(options, "enable_query_visual_embeddings", false);
   }
   return envFlag(env, "ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT", false);
-}
-
-function geminiCoreFieldRetryEnabled(env = process.env, options = {}) {
-  if (singleModelFastPathEnabled(env, options)) {
-    return optionFlag(options, "enable_gemini_core_field_retry", envFlag(env, "ENABLE_GEMINI_CORE_FIELD_RETRY", true));
-  }
-  return optionFlag(options, "enable_gemini_core_field_retry", envFlag(env, "ENABLE_GEMINI_CORE_FIELD_RETRY", true));
-}
-
-function geminiCoreFieldRetryEnv(env = process.env) {
-  const retryTimeoutMs = Number(env.GEMINI_CORE_FIELD_RETRY_TIMEOUT_MS);
-  const retryMaxOutputTokens = Number(env.GEMINI_CORE_FIELD_RETRY_MAX_OUTPUT_TOKENS);
-  return {
-    ...env,
-    GEMINI_TIMEOUT_MS: Number.isFinite(retryTimeoutMs) && retryTimeoutMs > 0
-      ? String(Math.trunc(retryTimeoutMs))
-      : "15000",
-    GEMINI_MAX_RETRIES: "0",
-    GEMINI_MAX_OUTPUT_TOKENS: Number.isFinite(retryMaxOutputTokens) && retryMaxOutputTokens > 0
-      ? String(Math.trunc(retryMaxOutputTokens))
-      : "4096"
-  };
 }
 
 function nowMs() {
@@ -297,6 +271,8 @@ const defaultFields = {
   set: null,
   subset: null,
   card_type: null,
+  official_card_type: null,
+  observable_components: [],
   insert: null,
   surface_color: null,
   parallel_family: null,
@@ -324,6 +300,7 @@ const defaultFields = {
   auto: false,
   relic: false,
   patch: false,
+  jersey: false,
   sketch: false,
   redemption: false,
   one_of_one: false
@@ -924,7 +901,34 @@ async function loadPrompt() {
 function normalizeBoolean(value) {
   if (value === true) return true;
   if (value === false || value === null || value === undefined || value === "") return false;
-  return /^(true|yes|y|1|rc|rc logo|rookie|rookie card|rookie logo|rookie ticket|rated rookie|1st bowman|first bowman|auto|autograph|ssp|case hit|patch|relic|sketch|redemption|1\/1)$/i.test(normalizeStringOrNull(value) || "");
+  return /^(true|yes|y|1|rc|rc logo|rookie|rookie card|rookie logo|rookie ticket|rated rookie|1st bowman|first bowman|auto|autograph|ssp|case hit|patch|relic|jersey|sketch|redemption|1\/1)$/i.test(normalizeStringOrNull(value) || "");
+}
+
+function normalizeObservableComponents(value) {
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.entries(value).filter(([, enabled]) => enabled === true).map(([component]) => component)
+      : String(value || "").split(/[,\s/]+/);
+  const aliases = {
+    autograph: "auto",
+    autographs: "auto",
+    signature: "auto",
+    signatures: "auto",
+    signed: "auto",
+    memorabilia: "relic",
+    swatch: "relic",
+    logoman: "relic",
+    rookie: "rc",
+    rookie_card: "rc",
+    rookie_ticket: "rc",
+    rated_rookie: "rc"
+  };
+  const allowed = new Set(["auto", "patch", "relic", "jersey", "rc", "sketch", "redemption"]);
+  return [...new Set(raw
+    .map((item) => String(item || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""))
+    .map((item) => aliases[item] || item)
+    .filter((item) => allowed.has(item)))];
 }
 
 function normalizeStringOrNull(value) {
@@ -1003,6 +1007,7 @@ function normalizeFields(fields = {}) {
   const cardCount = normalizePositiveIntegerOrNull(fields.card_count ?? fields.cardCount);
   const players = normalizePlayerListForFields(fields);
   const rawInsertText = normalizeStringOrNull(fields.insert);
+  const observableComponents = normalizeObservableComponents(fields.observable_components || fields.observableComponents);
   const normalized = {
     year: normalizeStringOrNull(fields.year),
     manufacturer: normalizeStringOrNull(fields.manufacturer || fields.maker),
@@ -1014,6 +1019,8 @@ function normalizeFields(fields = {}) {
     set: normalizeStringOrNull(fields.set),
     subset: normalizeStringOrNull(normalizeRookieMarker(fields.subset)),
     card_type: normalizeStringOrNull(fields.card_type || fields.cardType || fields.type),
+    official_card_type: normalizeStringOrNull(fields.official_card_type || fields.officialCardType),
+    observable_components: observableComponents,
     insert: rawInsertText,
     surface_color: normalizeStringOrNull(fields.surface_color || fields.surfaceColor || fields.color),
     parallel_family: normalizeStringOrNull(fields.parallel_family || fields.parallelFamily),
@@ -1034,15 +1041,16 @@ function normalizeFields(fields = {}) {
     card_grade: normalizeStringOrNull(fields.card_grade || fields.grade),
     auto_grade: normalizeStringOrNull(fields.auto_grade),
     grade_type: normalizeStringOrNull(fields.grade_type) || "UNKNOWN",
-    rc: normalizeBoolean(fields.rc),
+    rc: normalizeBoolean(fields.rc) || observableComponents.includes("rc"),
     first_bowman: normalizeBoolean(fields.first_bowman),
     ssp: normalizeBoolean(fields.ssp),
     case_hit: normalizeBoolean(fields.case_hit),
-    auto: normalizeBoolean(fields.auto),
-    relic: normalizeBoolean(fields.relic),
-    patch: normalizeBoolean(fields.patch),
-    sketch: normalizeBoolean(fields.sketch),
-    redemption: normalizeBoolean(fields.redemption),
+    auto: normalizeBoolean(fields.auto) || observableComponents.includes("auto"),
+    relic: normalizeBoolean(fields.relic) || observableComponents.includes("relic"),
+    patch: normalizeBoolean(fields.patch) || observableComponents.includes("patch"),
+    jersey: normalizeBoolean(fields.jersey) || observableComponents.includes("jersey"),
+    sketch: normalizeBoolean(fields.sketch) || observableComponents.includes("sketch"),
+    redemption: normalizeBoolean(fields.redemption) || observableComponents.includes("redemption"),
     one_of_one: normalizeBoolean(fields.one_of_one)
   };
 
@@ -1096,21 +1104,10 @@ function normalizeFields(fields = {}) {
     normalized.auto = true;
   }
 
-  if (!normalized.card_type && !normalized.insert) {
-    const hasPatchRelic = normalized.patch || normalized.relic;
-    if (hasPatchRelic && normalized.auto) {
-      normalized.card_type = normalized.patch ? "Patch Auto" : "Relic Auto";
-    } else if (normalized.auto) {
-      normalized.card_type = "Auto";
-    } else if (normalized.patch) {
-      normalized.card_type = "Patch";
-    } else if (normalized.relic) {
-      normalized.card_type = "Relic";
-    } else if (normalized.sketch) {
-      normalized.card_type = "Sketch";
-    } else if (normalized.redemption) {
-      normalized.card_type = "Redemption";
-    }
+  if (!normalized.observable_components.length) {
+    ["auto", "patch", "relic", "jersey", "rc", "sketch", "redemption"].forEach((component) => {
+      if (normalized[component]) normalized.observable_components.push(component);
+    });
   }
 
   const parallelInsert = resolveKnowledgeEntry(normalized.parallel) || (
@@ -2111,11 +2108,13 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "Example slab mapping: 2018 TOPPS CHROME / SHOHEI OHTANI / 1983 TOPPS / #83T-6 / GEM MT 10 => year 2018, product Topps Chrome, players [Shohei Ohtani], insert 1983 Topps, collector_number 83T-6, grade_company PSA, card_grade 10.",
     "Example slab mapping: 2020 CONTENDERS / ANTHONY EDWARDS / VARIATION-AUTOGRAPH / #105 / GEM MT 10 => year 2020, product Contenders, players [Anthony Edwards], variation Variation Autograph, auto true, collector_number 105, grade_company PSA, card_grade 10.",
     "Structured high-risk field evidence contract:",
-    "- field_evidence is provider-agnostic and must be used by both Gemini and GPT outputs.",
+    "- field_evidence is provider-agnostic and must be used by GPT outputs.",
     "- Keep field_evidence compact. Only include short evidence for non-empty high-risk fields or fields that may need writer review.",
     "- Do not dump OCR lines, legal text, copyright text, or repeated boilerplate into field_evidence.",
     "- Each evidence entry should include value, support_type/source_type, short visible_text/raw_text when useful, confidence, review_required, and direct_observation/directly_observed.",
-    "- Core/high-risk evidence fields include year, product, set, players, card_type, insert, surface_color, parallel_exact, serial_number, collector_number, checklist_code, grade, rc, auto, patch, and relic.",
+    "- Core/high-risk evidence fields include year, product, set, players, official_card_type, observable_components, insert, surface_color, parallel_exact, serial_number, collector_number, checklist_code, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
+    "- official_card_type must stay empty unless official wording is printed on the card/slab or supplied by trusted catalog/reviewed input. Never infer Base from visual context.",
+    "- observable_components may include only directly visible components: auto, patch, relic, jersey, rc, sketch, redemption.",
     "- year: include field_evidence.year with value, support_type, visible_text, confidence, and review_required. Use support_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
     "- grade: include field_evidence.grade only when a slab label directly shows grade. Fill grade_company, card_grade, auto_grade, grade_type, support_type SLAB_LABEL, visible_text, confidence, review_required false. If grade is only guessed, leave grade fields empty.",
     "- rc: fields.rc may be true only with a visible RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, or slab/card text. Also include field_evidence.rc with value true, support_type, evidence_kind, visible_text, visible_marker, confidence.",
@@ -2123,7 +2122,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
     "Serial rule: every digit must be readable; otherwise serial_number must be empty.",
-    "Parallel/color rule: use printed/slab/checklist evidence or unmistakable intentional card-design color only; weak visual color stays empty.",
+    "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
     "Multi-card rule: if more than one card or a lot is visible, set multi_card true and do not merge identities.",
     "recognition_status rule: use CONFIRMED when core identity is visible with no critical conflict; RESOLVED when core identity is visible but some non-core field needs review; ABSTAIN only when product/subject is unreadable, multiple cards are mixed, image quality blocks core identity, or critical fields conflict.",
     `Runtime title limit downstream: ${maxTitleLength} characters.`,
@@ -2153,6 +2152,8 @@ function providerMinimalOutputShape({
       set: "",
       players: [],
       card_type: "",
+      official_card_type: "",
+      observable_components: [],
       insert: "",
       surface_color: "",
       parallel_exact: "",
@@ -2582,7 +2583,6 @@ function withProviderMetadata(result, providerResult, selection) {
     native_schema_valid: providerResult.native_schema_valid === true,
     fallback_provider_id: providerResult.fallback_provider_id || null,
     fallback_reason: providerResult.fallback_reason || null,
-    gemini_core_field_retry: providerResult.gemini_core_field_retry || null,
     usage: providerResult.usage || null,
     explicit_emergency: Boolean(selection?.explicit_emergency)
   };
@@ -2835,227 +2835,6 @@ function singleModelDraftPath(result, payload, providerId, {
     usage: mergeUsage(result.usage, null, {
       providerCalls: result.provider ? 1 : 0
     })
-  };
-}
-
-function providerParsedFields(providerResult = {}) {
-  return providerResult.parsed?.fields && typeof providerResult.parsed.fields === "object" && !Array.isArray(providerResult.parsed.fields)
-    ? providerResult.parsed.fields
-    : {};
-}
-
-function geminiRetryHasValue(fields = {}, fieldName) {
-  const value = fields[fieldName];
-  if (fieldName === "grade_type") return hasEvidenceValue(value) && String(value).toUpperCase() !== "UNKNOWN";
-  return hasEvidenceValue(value);
-}
-
-function missingGeminiRetryFocusFields(providerResult = {}) {
-  const fields = providerParsedFields(providerResult);
-  const parsed = providerResult.parsed || {};
-  const fieldEvidence = parsed.field_evidence && typeof parsed.field_evidence === "object" && !Array.isArray(parsed.field_evidence)
-    ? parsed.field_evidence
-    : {};
-  const evidenceText = [
-    parsed.title,
-    parsed.model_title_suggestion,
-    parsed.reason,
-    ...(Array.isArray(parsed.unresolved) ? parsed.unresolved : []),
-    ...Object.values(fields).flatMap((value) => Array.isArray(value) ? value : [value]),
-    ...Object.values(fieldEvidence).flatMap((entry) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-      return [entry.value, entry.visible_text, entry.raw_text, entry.support_type, entry.evidence_kind];
-    })
-  ].map((value) => String(value || "").trim()).filter(Boolean).join(" | ");
-  const hasText = (pattern) => pattern.test(evidenceText);
-  const missing = [];
-  if (!geminiRetryHasValue(fields, "year")) missing.push("year");
-  if (!geminiRetryHasValue(fields, "product")
-    || /^(?:Prizm|Chrome|Finest|Contenders|Sapphire|Black|Hoops|Heritage|Optic|Greats)$/i.test(String(fields.product || "").trim())) {
-    missing.push("product");
-  }
-  if (!geminiRetryHasValue(fields, "players") && !geminiRetryHasValue(fields, "player")) missing.push("players");
-  if (!geminiRetryHasValue(fields, "serial_number") && (hasText(/\b\d{1,4}\s*\/\s*\d{1,4}\b/) || hasText(/\bserial\b/i))) {
-    missing.push("serial_number");
-  }
-  if ((!geminiRetryHasValue(fields, "collector_number") && !geminiRetryHasValue(fields, "checklist_code"))
-    && hasText(/(?:^|\s)#\s*[A-Z0-9-]{1,16}\b|\bchecklist|card\s+number\b/i)) {
-    missing.push("card_code");
-  }
-  const hasValidCardGrade = /^(?:10|9\.5|9|8\.5|8|7\.5|7|6\.5|6|5\.5|5|AUTHENTIC)$/i.test(String(fields.card_grade || fields.grade || "").trim());
-  const hasValidAutoGrade = /^(?:10|9\.5|9|8\.5|8|7\.5|7|6\.5|6|5\.5|5|AUTHENTIC)$/i.test(String(fields.auto_grade || "").trim());
-  if (((hasText(/\b(?:PSA|BGS|SGC|CGC|GEM\s*MT|MINT|NM-MT|AUTHENTIC)\b/i) && (!geminiRetryHasValue(fields, "grade_company") || !hasValidCardGrade))
-    || (geminiRetryHasValue(fields, "auto_grade") && !hasValidAutoGrade))) {
-    missing.push("grade_label");
-  }
-  if ((!fields.rc && hasText(/\b(?:RC|Rookie\s+Ticket|Rated\s+Rookie|Rookie\s+Card)\b/i))
-    || (!fields.auto && hasText(/\b(?:Auto|Autograph|Autographed|Signature|Signed)\b/i))) {
-    missing.push("rc_auto");
-  }
-  if (!geminiRetryHasValue(fields, "parallel_exact")
-    && !geminiRetryHasValue(fields, "parallel")
-    && hasText(/\b(?:Refractor|Prizm|Wave|Shimmer|Mojo|Sparkle|Speckle|Holo|Hyper|First\s+Day|Bordered)\b/i)) {
-    missing.push("parallel");
-  }
-  return [...new Set(missing)];
-}
-
-function geminiCoreFieldRetryPrompt(missingFields = []) {
-  return [
-    "Gemini focused reread for missing core card identity fields.",
-    "Use only the supplied image pixels. Do not use marketplace wording, memory, or outside knowledge.",
-    "This retry exists because the first pass left core fields empty. A single front/slab image may be supplied to reduce distraction. Read the slab label first when present, then card front text.",
-    `Missing fields to focus: ${missingFields.join(", ") || "year, product, players"}.`,
-    "If a PSA/BGS/SGC/CGC label is visible, transcribe these label lines into fields:",
-    "- year/product line, e.g. 2018 TOPPS CHROME or 2020 CONTENDERS",
-    "- player/person line, e.g. SHOHEI OHTANI or ANTHONY EDWARDS",
-    "- insert/variation line, e.g. 1983 TOPPS or VARIATION-AUTOGRAPH",
-    "- card number line, e.g. #83T-6 or #105",
-    "- grade line, e.g. GEM MT 10",
-    "Return compact valid JSON only. Keep title empty.",
-    "Do not return only a year if product or player text is readable.",
-    "If you still cannot map a readable line, add a short unresolved note naming the missing field and label/card region. Do not copy long label text verbatim."
-  ].join("\n");
-}
-
-function geminiVisibleTextRetryPrompt(missingFields = []) {
-  return [
-    "Focused visible-text transcription for missing card identity fields.",
-    `Missing fields: ${missingFields.join(", ") || "product, players"}.`,
-    "Transcribe all readable PSA/BGS/SGC/CGC slab label lines first.",
-    "Then transcribe prominent player, product, card number, grade, RC, autograph, serial, insert, card type, parallel, and color text visible on the card.",
-    "For multi-subject cards, put each readable subject name on a separate visible_text_lines entry when possible.",
-    "Keep grade labels as lines such as PSA, BGS, GEM MT 10, MINT 9, AUTO 10. Keep serials as stamped strings such as 29/199.",
-    "Do not infer or normalize; exact visible text lines only."
-  ].join("\n");
-}
-
-function mergeableGeminiRetryValue(fieldName, value) {
-  if (fieldName === "grade_type") return hasEvidenceValue(value) && String(value).toUpperCase() !== "UNKNOWN";
-  return hasEvidenceValue(value);
-}
-
-function shouldReplaceGeminiRetryValue(fieldName, currentValue, retryValue) {
-  if (!mergeableGeminiRetryValue(fieldName, retryValue)) return false;
-  if (!mergeableGeminiRetryValue(fieldName, currentValue)) return true;
-  if (fieldName !== "product") return false;
-  const current = String(currentValue || "").trim().toLowerCase();
-  const retry = String(retryValue || "").trim().toLowerCase();
-  if (!current || !retry || current === retry) return false;
-  return /^(?:prizm|chrome|finest|contenders|sapphire|black|hoops|heritage|optic|greats)$/i.test(current)
-    && retry.includes(current);
-}
-
-function mergeGeminiRetryParsed(primaryParsed = {}, retryParsed = {}) {
-  const mergedFields = {
-    ...(primaryParsed.fields || {})
-  };
-  const retryFields = retryParsed.fields && typeof retryParsed.fields === "object" && !Array.isArray(retryParsed.fields)
-    ? retryParsed.fields
-    : {};
-  const updatedFields = [];
-
-  Object.entries(retryFields).forEach(([fieldName, value]) => {
-    if (!mergeableGeminiRetryValue(fieldName, value)) return;
-    if (mergeableGeminiRetryValue(fieldName, mergedFields[fieldName])
-      && !shouldReplaceGeminiRetryValue(fieldName, mergedFields[fieldName], value)) return;
-    mergedFields[fieldName] = value;
-    updatedFields.push(fieldName);
-  });
-
-  return {
-    ...primaryParsed,
-    confidence: primaryParsed.confidence === "FAILED" ? retryParsed.confidence || primaryParsed.confidence : primaryParsed.confidence,
-    recognition_status: primaryParsed.recognition_status === "ABSTAIN" && retryParsed.recognition_status
-      ? retryParsed.recognition_status
-      : primaryParsed.recognition_status,
-    fields: mergedFields,
-    unresolved: [
-      ...(Array.isArray(primaryParsed.unresolved) ? primaryParsed.unresolved : []),
-      ...(Array.isArray(retryParsed.unresolved) ? retryParsed.unresolved : [])
-    ].filter(Boolean).slice(0, 16),
-    _gemini_core_retry_updated_fields: updatedFields
-  };
-}
-
-function geminiCoreFieldRetryImages(images = [], missingFields = []) {
-  const primary = primaryImagesFromImages(images || []).slice(0, 2);
-  const targetRegions = new Set([
-    ...missingFields,
-    ...(missingFields.includes("serial_number") ? ["serial"] : []),
-    ...(missingFields.includes("card_code") ? ["collector_number", "checklist_code", "card_number"] : []),
-    ...(missingFields.includes("grade_label") ? ["grade"] : []),
-    ...(missingFields.includes("rc_auto") ? ["autograph", "signature"] : []),
-    ...(missingFields.includes("parallel") ? ["parallel_surface", "color", "variation"] : [])
-  ]);
-  const derived = derivedImagesFromImages(images || []).filter((image) => {
-    const text = searchable([
-      image.sourceRegion,
-      image.source_region,
-      image.storageRole,
-      image.storage_role,
-      image.role,
-      image.captureRole,
-      image.capture_role,
-      image.name
-    ].filter(Boolean).join(" "));
-    return [...targetRegions].some((region) => text.includes(searchable(region)));
-  }).slice(0, 2);
-  const selected = [...primary, ...derived].filter(Boolean);
-  return selected.length ? selected.slice(0, 4) : images.slice(0, 2);
-}
-
-async function maybeRetryGeminiCoreFields(providerResult, {
-  images = [],
-  providerOptions = {},
-  timingContext = null
-} = {}) {
-  if (!geminiCoreFieldRetryEnabled(process.env, providerOptions)) return providerResult;
-  const missingFields = missingGeminiRetryFocusFields(providerResult);
-  if (!missingFields.length) return providerResult;
-
-  let retryResult;
-  try {
-    retryResult = await runTimedProviderCall(visionProviderIds.GEMINI, timingContext, () => transcribeVisibleCardTextWithGemini({
-      images: geminiCoreFieldRetryImages(images, missingFields),
-      prompt: geminiVisibleTextRetryPrompt(missingFields),
-      env: geminiCoreFieldRetryEnv(process.env)
-    }));
-  } catch (error) {
-    return {
-      ...providerResult,
-      gemini_core_field_retry: {
-        attempted: true,
-        missing_fields: missingFields,
-        updated_fields: [],
-        error_code: error?.code || "gemini_core_retry_failed",
-        error_message: safeProviderErrorMessage(error)
-      }
-    };
-  }
-  const mergedParsed = mergeGeminiRetryParsed(providerResult.parsed, retryResult.parsed);
-  const updatedFields = mergedParsed._gemini_core_retry_updated_fields || [];
-  delete mergedParsed._gemini_core_retry_updated_fields;
-
-  return {
-    ...providerResult,
-    parsed: mergedParsed,
-    usage: mergeUsage(providerResult.usage, retryResult.usage, {
-      providerCalls: 0
-    }),
-    latency_ms: Number(providerResult.latency_ms || 0) + Number(retryResult.latency_ms || 0),
-    gemini_core_field_retry: {
-      attempted: true,
-      missing_fields: missingFields,
-      updated_fields: updatedFields,
-      provider_id: retryResult.provider || visionProviderIds.GEMINI,
-      model_id: retryResult.model_id || null,
-      parse_source: retryResult.parse_source || null,
-      native_schema_valid: retryResult.native_schema_valid === true,
-      format_repair_attempted: retryResult.format_repair_attempted === true,
-      local_json_repair_success: retryResult.local_json_repair_success === true,
-      text_repair_success: retryResult.text_repair_success === true
-    }
   };
 }
 
@@ -3393,70 +3172,6 @@ async function imagesWithSignedReadUrls(images = [], timingContext = null) {
   }));
 }
 
-function geminiInlineImageDataEnabled(env = process.env) {
-  return envFlag(env, "GEMINI_INLINE_IMAGE_DATA", true);
-}
-
-function geminiInlineImageMaxBytes(env = process.env) {
-  const value = Number(env.GEMINI_INLINE_IMAGE_MAX_BYTES);
-  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 4_000_000;
-}
-
-function geminiInlineImageFetchTimeoutMs(env = process.env) {
-  const value = Number(env.GEMINI_INLINE_IMAGE_FETCH_TIMEOUT_MS);
-  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 8000;
-}
-
-async function imageWithInlineDataUrlForGemini(image = {}, env = process.env) {
-  if (image.dataUrl || image.data_url) return image;
-  const url = image.signedUrl || image.signed_url || image.url || image.imageUrl || image.image_url?.url || "";
-  if (!url) return image;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), geminiInlineImageFetchTimeoutMs(env));
-  let response;
-  try {
-    response = await fetch(url, { signal: controller.signal });
-  } catch {
-    clearTimeout(timeout);
-    return image;
-  }
-  if (!response.ok) {
-    clearTimeout(timeout);
-    return image;
-  }
-  let arrayBuffer;
-  try {
-    arrayBuffer = await response.arrayBuffer();
-  } catch {
-    clearTimeout(timeout);
-    return image;
-  } finally {
-    clearTimeout(timeout);
-  }
-  const bytes = Buffer.from(arrayBuffer);
-  if (bytes.length > geminiInlineImageMaxBytes(env)) return image;
-  const contentType = response.headers.get("content-type")
-    || image.contentType
-    || image.content_type
-    || image.originalType
-    || image.original_type
-    || "image/jpeg";
-  const dataUrl = `data:${contentType};base64,${bytes.toString("base64")}`;
-  return {
-    ...image,
-    dataUrl,
-    data_url: dataUrl,
-    signedUrl: undefined,
-    signed_url: undefined
-  };
-}
-
-async function imagesForGeminiProvider(images = [], timingContext = null, env = process.env) {
-  if (!geminiInlineImageDataEnabled(env)) return images;
-  return timeAsync(timingContext, "signed_url_ms", () => mapWithConcurrency(images, 2, (image) => imageWithInlineDataUrlForGemini(image, env)));
-}
-
 async function createRecognitionIdentityPreflight(payload, {
   timingContext = null,
   providerOptions = {}
@@ -3633,61 +3348,6 @@ async function createOpenAiTitle(payload, selection, {
   return withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures, providerOptions });
 }
 
-async function createGeminiTitle(payload, selection, {
-  recognitionEvidenceDocument = null,
-  signedImages: reusableSignedImages = null,
-  timingContext = null,
-  visualFeatures = {}
-} = {}) {
-  const providerOptions = providerOptionsFromPayload(payload);
-  const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
-    ? reusableSignedImages
-    : await imagesWithSignedReadUrls(payload.images || [], timingContext);
-  const geminiImages = await imagesForGeminiProvider(signedImages, timingContext);
-  const initialPayload = primaryPayloadForProvider({
-    ...payload,
-    images: geminiImages
-  });
-  const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
-  let providerResult = await runTimedProviderCall(visionProviderIds.GEMINI, timingContext, () => analyzeCardEvidenceWithGemini({
-    images: initialPayload.images,
-    prompt
-  }));
-  providerResult = await maybeRetryGeminiCoreFields(providerResult, {
-    images: initialPayload.images,
-    providerOptions,
-    timingContext
-  });
-
-  const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
-      withEvidenceCompatibility(
-        withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.GEMINI), initialPayload),
-        providerResult.parsed,
-        initialPayload
-      ),
-      providerResult,
-      selection
-    ));
-  const mergedResult = withVisualFeatures(
-    withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
-    visualFeatures
-  );
-  const primaryFastResult = withPrimaryFastVisionPolicy(mergedResult, {
-    primaryProviderId: visionProviderIds.GEMINI
-  });
-  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(primaryFastResult, initialPayload, "primary_fast_vision"));
-  if (fastPathResult) return fastPathResult;
-  const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
-    primaryFastResult,
-    initialPayload,
-    "primary_fast_vision"
-  ));
-  if (singleModelResult) return singleModelResult;
-
-  return withEvidenceCompletion(primaryFastResult, initialPayload, { timingContext, visualFeatures, providerOptions });
-}
-
 function requestedProviderFromPayload(payload = {}) {
   return payload.provider || payload.provider_id || payload.visionProvider || payload.vision_provider || "";
 }
@@ -3706,7 +3366,7 @@ async function createProviderTitle(payload, {
   const explicitEmergency = explicitEmergencyFromPayload(payload);
   const primaryImages = primaryImagesFromImages(payload.images || []);
 
-  if (!requestedProvider && !process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
+  if (!requestedProvider && !process.env.OPENAI_API_KEY) {
     return fallbackResult(payload);
   }
 
@@ -3715,10 +3375,6 @@ async function createProviderTitle(payload, {
     explicitEmergency,
     images: primaryImages
   });
-
-  if (selection.provider_id === visionProviderIds.GEMINI) {
-    return createGeminiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext, visualFeatures });
-  }
 
   return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext, visualFeatures });
 }

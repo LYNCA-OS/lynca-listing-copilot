@@ -28,6 +28,13 @@
     "team": { "type": ["string", "null"] },
     "artist": { "type": ["string", "null"] },
     "card_type": { "type": ["string", "null"] },
+    "official_card_type": { "type": ["string", "null"] },
+    "observable_components": {
+      "type": "array",
+      "items": {
+        "enum": ["auto", "patch", "relic", "jersey", "rc", "sketch", "redemption"]
+      }
+    },
     "insert": { "type": ["string", "null"] },
     "parallel": { "type": ["string", "null"] },
     "variation": { "type": ["string", "null"] },
@@ -45,6 +52,7 @@
     "auto": { "type": "boolean" },
     "patch": { "type": "boolean" },
     "relic": { "type": "boolean" },
+    "jersey": { "type": "boolean" },
     "sketch": { "type": "boolean" },
     "redemption": { "type": "boolean" },
     "one_of_one": { "type": "boolean" },

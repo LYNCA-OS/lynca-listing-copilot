@@ -12,10 +12,9 @@ process.env.LISTING_IDENTITY_CACHE_WRITE_ENABLED = "false";
 process.env.ENABLE_RECOGNITION_WORKER = "true";
 process.env.RECOGNITION_WORKER_URL = "https://recognition.internal";
 process.env.RECOGNITION_WORKER_TOKEN = "worker-token";
-process.env.DEFAULT_VISION_PROVIDER = "gemini";
-process.env.ENABLE_GEMINI_PROVIDER = "true";
-process.env.GEMINI_API_KEY = "test-gemini-key";
-process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
+process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
+process.env.OPENAI_API_KEY = "test-openai-key";
+process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED = "true";
 
 function sign(value) {

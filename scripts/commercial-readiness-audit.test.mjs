@@ -9,7 +9,6 @@ import {
 
 const tmp = await mkdtemp(join(tmpdir(), "listing-readiness-"));
 const datasetPath = join(tmp, "golden-dataset.json");
-const smokePath = join(tmp, "gemini-smoke.json");
 const ebayCandidatesPath = join(tmp, "ebay-image-candidates.json");
 const supabaseSnapshotPath = join(tmp, "supabase-live-snapshot.json");
 const supabaseCandidateReportPath = join(tmp, "supabase-candidates-report.json");
@@ -23,35 +22,6 @@ await writeFile(datasetPath, `${JSON.stringify({
     calibration: [],
     held_out_commercial: []
   }
-}, null, 2)}\n`);
-
-await writeFile(smokePath, `${JSON.stringify({
-  provider: "gemini",
-  status: "passed_with_limitations",
-  generated_at: "2026-06-22T12:01:52.878Z",
-  capabilities: [
-    {
-      name: "single_image_json",
-      status: "passed",
-      required: true,
-      details: {
-        model_id: "gemini-3.1-flash-lite",
-        parse_source: "content",
-        finish_reason: "stop",
-        image_count: "1",
-        provider_calls: "1"
-      }
-    },
-    {
-      name: "tool_call",
-      status: "failed",
-      required: false,
-      details: {
-        error_code: "response_format_invalid",
-        message: "Provider content was not valid JSON."
-      }
-    }
-  ]
 }, null, 2)}\n`);
 
 await writeFile(ebayCandidatesPath, `${JSON.stringify({
@@ -176,7 +146,6 @@ await writeFile(commercialReviewWorklistPath, `${JSON.stringify({
 
 const report = await createCommercialReadinessReport({
   datasetPath,
-  geminiSmokePath: smokePath,
   env: {
     BRAVE_SMOKE_REPORT_PATH: join(tmp, "brave-smoke.json"),
     EBAY_SMOKE_REPORT_PATH: join(tmp, "ebay-smoke.json"),
@@ -201,12 +170,9 @@ assert.equal(byId.golden_dataset.status, "passed");
 assert.equal(byId.commercial_acceptance_gate.status, "blocked");
 assert.equal(byId.commercial_acceptance_gate.details.held_out_commercial_assets, 0);
 assert.match(byId.commercial_acceptance_gate.details.reasons.join("; "), /held_out_commercial split is empty/);
-assert.equal(byId.gemini_live_smoke.status, "warning");
-assert.equal(byId.gemini_live_smoke.details.json_baseline_verified, true);
-assert.deepEqual(byId.gemini_live_smoke.details.optional_failures, ["tool_call"]);
 assert.equal(byId.provider_default_policy.status, "passed");
 assert.equal(byId.provider_default_policy.details.gpt_production_default, true);
-assert.equal(byId.provider_default_policy.details.gemini_diagnostic_only, true);
+assert.equal(byId.provider_default_policy.details.single_gpt_provider_only, true);
 assert.equal(byId.provider_default_policy.details.gpt_primary_fast_vision, true);
 assert.equal(byId.provider_default_policy.details.gpt_provider_present, true);
 assert.equal(byId.provider_default_policy.details.mixed_model_cascade, "removed");
@@ -257,7 +223,6 @@ const text = formatCommercialReadinessReport(report);
 assert.match(text, /Commercial readiness audit blocked/);
 assert.match(text, /held_out_commercial_assets: 0/);
 assert.match(text, /commercial_acceptance_gate: blocked/);
-assert.match(text, /gemini_smoke_status: passed_with_limitations/);
 assert.match(text, /external_retrieval_smoke_statuses: brave=missing, ebay_browse=missing, openai_web_search=missing/);
 assert.match(text, /ebay_image_candidates: skipped 0\/300/);
 assert.match(text, /supabase_commercial_sample: passed rows 351, image-backed 248, no-image 103/);

@@ -15,10 +15,9 @@ process.env.LISTING_IDENTITY_INFLIGHT_DEDUP_ENABLED = "false";
 process.env.ENABLE_RECOGNITION_WORKER = "true";
 process.env.RECOGNITION_WORKER_URL = "https://recognition.internal";
 process.env.RECOGNITION_WORKER_TOKEN = "worker-token";
-process.env.DEFAULT_VISION_PROVIDER = "gemini";
-process.env.ENABLE_GEMINI_PROVIDER = "true";
-process.env.GEMINI_API_KEY = "test-gemini-key";
-process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
+process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
+process.env.OPENAI_API_KEY = "test-openai-key";
+process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 
 function sign(value) {
   return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
@@ -285,7 +284,8 @@ assert.equal(response.body.usage.estimated_cost_usd, 0);
 assert.doesNotMatch(response.body.final_title, /[\u4e00-\u9fff]/);
 assert.match(response.body.final_title, /2024 Topps Chrome/);
 assert.match(response.body.final_title, /Shohei Ohtani/);
-assert.match(response.body.final_title, /Gold Refractor/);
+assert.match(response.body.final_title, /\bGold\b/);
+assert.doesNotMatch(response.body.final_title, /Gold\s+Refractor/);
 assert.match(response.body.final_title, /31\/50/);
 assert.match(response.body.final_title, /PSA 10/);
 assert.ok(response.body.field_states.find((field) => field.field === "serial_number").supporting_sources.some((source) => source.source === "CARD_FRONT_PRINTED_TEXT"));

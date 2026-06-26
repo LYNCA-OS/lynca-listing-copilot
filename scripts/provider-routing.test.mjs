@@ -15,7 +15,7 @@ const titleApiSource = await readFile("api/listing-copilot-title.js", "utf8");
 
 assert.doesNotMatch(providerRegistrySource, /cascade_fast|ENABLE_AGNES|AGNES/i, "provider registry must not expose Agnes or cascade providers");
 assert.doesNotMatch(providerContractSource, /cascade_fast|AGNES/i, "provider contract must only keep active providers");
-assert.doesNotMatch(titleApiSource, /createAgnesTitle|createCascadeFastTitle|analyzeCardEvidenceWithAgnes|gemini_to_gpt/i, "title API must not retain automatic mixed-model provider paths");
+assert.doesNotMatch(titleApiSource, /createAgnesTitle|createCascadeFastTitle|analyzeCardEvidenceWithAgnes|model_to_model/i, "title API must not retain automatic mixed-model provider paths");
 
 const remoteImages = [{ url: "https://example.com/front.jpg" }];
 const dataUrlImages = [{ dataUrl: "data:image/jpeg;base64,AAAA" }];
@@ -23,11 +23,8 @@ const storedImages = [{ objectPath: "listing-assets/2026-06-22/asset/front_origi
 
 const env = {
   DEFAULT_VISION_PROVIDER: "",
-  ENABLE_GEMINI_PROVIDER: "true",
   ENABLE_GPT41_EMERGENCY_PROVIDER: "true",
   ALLOW_EXPLICIT_GPT41_RETRY: "true",
-  GEMINI_API_KEY: "test-gemini-key",
-  GEMINI_MODEL: "gemini-3.1-flash-lite",
   OPENAI_API_KEY: "test-openai-key",
   OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
 };
@@ -72,14 +69,11 @@ assert.equal(selectVisionProvider({
 
 assert.throws(
   () => selectVisionProvider({
-    requestedProvider: "gemini",
+    requestedProvider: "removed_provider",
     images: remoteImages,
-    env: {
-      ...env,
-      GEMINI_MODEL: "not-gemini"
-    }
+    env
   }),
-  /model_not_allowed/i
+  /Unknown vision provider/i
 );
 assert.throws(
   () => selectVisionProvider({
@@ -98,7 +92,7 @@ assert.deepEqual(listAvailableVisionProviders(env).map((provider) => provider.id
 assert.deepEqual(listAvailableVisionProviders({
   ...env,
   ENABLE_EXPERIMENTAL_PROVIDER_UI: "true"
-}).map((provider) => provider.id), ["gemini", "openai_legacy"]);
+}).map((provider) => provider.id), ["openai_legacy"]);
 assert.deepEqual(listAvailableVisionProviders({
   ...env,
   ENABLE_GPT41_EMERGENCY_PROVIDER: "false"
@@ -183,16 +177,14 @@ await assert.rejects(
 assert.equal(invalidOpenAiModelFetchCalled, false);
 
 assert.equal(providerServerConcurrencyLimit("openai_legacy", {}), 6);
-assert.equal(providerServerConcurrencyLimit("gemini", {}), 4);
-assert.equal(providerServerConcurrencyLimit("gemini", { GEMINI_PROVIDER_SERVER_CONCURRENCY: "8" }), 8);
 assert.equal(providerServerConcurrencyLimit("unknown", { LISTING_PROVIDER_SERVER_CONCURRENCY: "3" }), 3);
 
 clearProviderConcurrencyForTests();
 let activeProviderWork = 0;
 let maxActiveProviderWork = 0;
 await Promise.all(Array.from({ length: 4 }, (_, index) => runWithProviderConcurrency({
-  providerId: "gemini",
-  env: { GEMINI_PROVIDER_SERVER_CONCURRENCY: "2" },
+  providerId: "openai_legacy",
+  env: { OPENAI_PROVIDER_SERVER_CONCURRENCY: "2" },
   work: async () => {
     activeProviderWork += 1;
     maxActiveProviderWork = Math.max(maxActiveProviderWork, activeProviderWork);

@@ -63,8 +63,8 @@ const labels = {
 
 const predictions = {
   schema_version: "provider-report-v1",
-  provider: "gemini",
-  provider_display_name: "Gemini 3.1 Flash Lite",
+  provider: "openai_legacy",
+  provider_display_name: "GPT-4.1 mini",
   corrected_title_reference_only: true,
   results: [
     {

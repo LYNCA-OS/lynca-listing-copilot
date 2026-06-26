@@ -1,30 +1,10 @@
 import crypto from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
 import { providerCatalog } from "../lib/listing/providers/provider-registry.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 
 const cookieName = "lynca_metaverse_session";
-const defaultGeminiSmokeReportPath = "data/smoke/gemini-smoke-latest.json";
-const smokeCapabilityNames = new Set([
-  "single_image_json",
-  "front_back_multi_image_json",
-  "tool_call",
-  "error_response"
-]);
-const smokeStatuses = new Set(["passed", "passed_with_limitations", "failed", "skipped", "not_run", "unreadable"]);
-const smokeCapabilityStatuses = new Set(["passed", "failed", "skipped"]);
-const smokeDetailFields = new Set([
-  "model_id",
-  "parse_source",
-  "finish_reason",
-  "image_count",
-  "provider_calls",
-  "error_code",
-  "status"
-]);
 
 function parseCookies(header) {
   return Object.fromEntries(
@@ -62,88 +42,6 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function safeSmokeDetailValue(value) {
-  if (value === undefined || value === null || value === "") return null;
-  const stringValue = String(value);
-  if (/sk-[A-Za-z0-9_-]+/.test(stringValue)) return null;
-  if (/AIza[0-9A-Za-z_-]+/.test(stringValue)) return null;
-  if (/Bearer\s+/i.test(stringValue)) return null;
-  if (/https?:\/\//i.test(stringValue)) return null;
-  if (stringValue.length > 160) return stringValue.slice(0, 160);
-  return stringValue;
-}
-
-function sanitizeSmokeCapability(capability = {}) {
-  const name = String(capability.name || "");
-  if (!smokeCapabilityNames.has(name)) return null;
-  const status = String(capability.status || "");
-  if (!smokeCapabilityStatuses.has(status)) return null;
-  const details = Object.fromEntries(
-    Object.entries(capability.details || {})
-      .filter(([key]) => smokeDetailFields.has(key))
-      .map(([key, value]) => [key, safeSmokeDetailValue(value)])
-      .filter(([, value]) => value !== null)
-  );
-
-  return {
-    name,
-    status,
-    required: capability.required === true,
-    ...(Object.keys(details).length ? { details } : {})
-  };
-}
-
-function smokeCapabilityPassed(report, name) {
-  return report.capabilities.some((capability) => capability.name === name && capability.status === "passed");
-}
-
-function emptySmokeStatus(status, reason) {
-  return {
-    status,
-    generated_at: null,
-    json_baseline_verified: false,
-    multi_image_verified: false,
-    tool_call_verified: false,
-    error_response_verified: false,
-    capabilities: [],
-    reason
-  };
-}
-
-async function readProviderSmokeStatus(providerId, env = process.env) {
-  const reportPath = providerId === visionProviderIds.GEMINI
-    ? env.GEMINI_SMOKE_REPORT_PATH || defaultGeminiSmokeReportPath
-    : "";
-  if (!reportPath) return emptySmokeStatus("not_run", "smoke_report_not_configured");
-
-  let parsed;
-  try {
-    parsed = JSON.parse(await readFile(resolve(reportPath), "utf8"));
-  } catch {
-    return emptySmokeStatus("not_run", "smoke_report_missing_or_unreadable");
-  }
-
-  const status = String(parsed.status || "unreadable");
-  if (parsed.provider !== providerId || !smokeStatuses.has(status) || !Array.isArray(parsed.capabilities)) {
-    return emptySmokeStatus("unreadable", "smoke_report_invalid");
-  }
-
-  const capabilities = parsed.capabilities
-    .map(sanitizeSmokeCapability)
-    .filter(Boolean);
-  const report = { ...parsed, capabilities };
-
-  return {
-    status,
-    generated_at: typeof parsed.generated_at === "string" ? parsed.generated_at : null,
-    json_baseline_verified: smokeCapabilityPassed(report, "single_image_json"),
-    multi_image_verified: smokeCapabilityPassed(report, "front_back_multi_image_json"),
-    tool_call_verified: smokeCapabilityPassed(report, "tool_call"),
-    error_response_verified: smokeCapabilityPassed(report, "error_response"),
-    capabilities
-  };
-}
-
 function providerDisabledReason(provider, storage) {
   if (!provider.enabled) return "disabled_by_env";
   if (provider.disabled_reason === "emergency_retry_disabled") return "emergency_retry_disabled";
@@ -151,7 +49,7 @@ function providerDisabledReason(provider, storage) {
   return null;
 }
 
-function providerStatus(provider, storage, smoke = null) {
+function providerStatus(provider, storage) {
   const disabledReason = providerDisabledReason(provider, storage);
 
   return {
@@ -173,17 +71,13 @@ function providerStatus(provider, storage, smoke = null) {
     disabled_reason: disabledReason,
     requires_explicit_retry: Boolean(provider.requires_explicit_retry),
     requires_remote_image_url: Boolean(provider.requires_remote_image_url),
-    requires_storage: false,
-    ...(provider.id === visionProviderIds.GEMINI ? { smoke } : {})
+    requires_storage: false
   };
 }
 
 function defaultProviderId(providers) {
   const openai = providers.find((provider) => provider.id === visionProviderIds.OPENAI_LEGACY);
   if (openai?.selectable) return openai.id;
-
-  const gemini = providers.find((provider) => provider.id === visionProviderIds.GEMINI);
-  if (gemini?.selectable) return gemini.id;
 
   return "";
 }
@@ -210,24 +104,18 @@ export default async function handler(req, res) {
   })) return;
 
   const storage = publicStorageReadiness();
-  const geminiSmoke = await readProviderSmokeStatus(visionProviderIds.GEMINI);
   const catalog = providerCatalog();
   const providers = [
-    catalog[visionProviderIds.GEMINI],
     catalog[visionProviderIds.OPENAI_LEGACY]
   ]
     .filter(Boolean)
     .filter((provider) => provider.visible !== false)
-    .map((provider) => providerStatus(
-      provider,
-      storage,
-      provider.id === visionProviderIds.GEMINI ? geminiSmoke : null
-    ));
+    .map((provider) => providerStatus(provider, storage));
 
   sendJson(res, 200, {
     ok: true,
     default_provider: defaultProviderId(providers),
-    fallback_available: !process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY,
+    fallback_available: !process.env.OPENAI_API_KEY,
     storage,
     providers
   });

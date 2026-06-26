@@ -282,6 +282,21 @@ const setAlreadyCarriesInsert = renderResolvedTitle({
 assert.doesNotMatch(setAlreadyCarriesInsert.rendered_title, /Gusto.*Gusto/i);
 assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani 5/5 #G-11");
 
+const brandProductOverlapKeepsSet = renderResolvedTitle({
+  year: "2025",
+  brand: "Topps Finest",
+  product: "Topps Finest",
+  set: "Gusto",
+  players: ["Shohei Ohtani"],
+  serial_number: "5/5",
+  team: "Los Angeles Dodgers"
+}, {
+  maxLength: 80
+});
+assert.match(brandProductOverlapKeepsSet.rendered_title, /\bGusto\b/);
+assert.match(brandProductOverlapKeepsSet.rendered_title, /\bDodgers\b/);
+assert.doesNotMatch(brandProductOverlapKeepsSet.rendered_title, /Topps Finest Topps Finest/i);
+
 const productAlreadyCarriesInsert = renderResolvedTitle({
   year: "2010-11",
   brand: "Panini",
@@ -301,6 +316,22 @@ const productAlreadyCarriesInsert = renderResolvedTitle({
 });
 assert.doesNotMatch(productAlreadyCarriesInsert.rendered_title, /Hoopla.*Hoopla/i);
 assert.equal(productAlreadyCarriesInsert.rendered_title, "2010-11 Panini Absolute Hoopla Kobe Bryant Auto Patch 08/25 PSA 10");
+
+const duplicatePsaCardAndAutoGrade = renderResolvedTitle({
+  year: "2020",
+  brand: "Panini",
+  product: "Contenders",
+  players: ["Anthony Edwards"],
+  auto: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  auto_grade: "10",
+  grade_type: "CARD_AND_AUTO"
+}, {
+  maxLength: 80
+});
+assert.match(duplicatePsaCardAndAutoGrade.rendered_title, /PSA 10$/);
+assert.doesNotMatch(duplicatePsaCardAndAutoGrade.rendered_title, /10\/10$/);
 
 const tripleThreadsMultiPlayer = renderResolvedTitle({
   year: "2020",
@@ -344,6 +375,7 @@ const flangLongParallel = renderResolvedTitle({
 });
 assert.ok(flangLongParallel.rendered_title.length <= 80);
 assert.match(flangLongParallel.rendered_title, /Purple/i);
+assert.match(flangLongParallel.rendered_title, /\bAuto\b/i);
 assert.doesNotMatch(flangLongParallel.rendered_title, /Purple Refractor/i);
 assert.doesNotMatch(flangLongParallel.title_length_policy.removed_terms.join(" "), /Purple/i);
 

@@ -13,9 +13,7 @@ const defaultEnvFilePath = ".env.local";
 const execFileAsync = promisify(execFile);
 const providerModes = Object.freeze({
   OPENAI: "openai_legacy",
-  GEMINI_ONLY: "gemini",
-  OPENAI_VECTOR: "openai_vector",
-  GEMINI_VECTOR: "gemini_vector"
+  OPENAI_VECTOR: "openai_vector"
 });
 
 function argValue(argv, name, fallback = "") {
@@ -221,37 +219,16 @@ function correctedTitle(item = {}) {
 function normalizeProviderMode(value = "") {
   const raw = String(value || "").trim().toLowerCase();
   if (["", "openai", "gpt", "gpt-4.1-mini", "openai_legacy"].includes(raw)) return providerModes.OPENAI;
-  if (["openai-vector", "openai_vector", "gpt-vector", "gpt_vector", "d"].includes(raw)) return providerModes.OPENAI_VECTOR;
-  if (["gemini-vector", "gemini_vector", "b"].includes(raw)) return providerModes.GEMINI_VECTOR;
-  if (["gemini", "gemini-only", "gemini_only"].includes(raw)) return providerModes.GEMINI_ONLY;
-  throw new Error(`Unsupported cloud eval provider: ${value}. Use gemini, openai_legacy, gemini_vector, or openai_vector.`);
+  if (["openai-vector", "openai_vector", "gpt-vector", "gpt_vector", "d", "b"].includes(raw)) return providerModes.OPENAI_VECTOR;
+  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_legacy or openai_vector.`);
 }
 
 function cloudProviderForMode(providerMode) {
-  return providerMode === providerModes.OPENAI || providerMode === providerModes.OPENAI_VECTOR
-    ? providerModes.OPENAI
-    : providerModes.GEMINI_ONLY;
+  return providerModes.OPENAI;
 }
 
 function providerOptionsForMode(providerMode) {
-  const vectorRetrieval = providerMode === providerModes.OPENAI_VECTOR || providerMode === providerModes.GEMINI_VECTOR;
-  if (providerMode === providerModes.OPENAI || providerMode === providerModes.OPENAI_VECTOR) {
-    return {
-      single_model_fast: !vectorRetrieval,
-      enable_evidence_completion: vectorRetrieval,
-      enable_stored_visual_features: vectorRetrieval,
-      enable_query_visual_embeddings: vectorRetrieval,
-      enable_vector_retrieval: vectorRetrieval,
-      vector_retrieval_mode: vectorRetrieval ? "assist" : "off",
-      enable_advanced_retrieval: vectorRetrieval,
-      enable_hybrid_retrieval: vectorRetrieval,
-      enable_gpt_failure_fallback: false,
-      enable_gpt_provider_failure_fallback: false,
-      enable_gpt_critical_verifier: false,
-      enable_gemini_core_field_retry: false
-    };
-  }
-
+  const vectorRetrieval = providerMode === providerModes.OPENAI_VECTOR;
   return {
     single_model_fast: !vectorRetrieval,
     enable_evidence_completion: vectorRetrieval,
@@ -263,8 +240,7 @@ function providerOptionsForMode(providerMode) {
     enable_hybrid_retrieval: vectorRetrieval,
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
-    enable_gpt_critical_verifier: false,
-    enable_gemini_core_field_retry: true
+    enable_gpt_critical_verifier: false
   };
 }
 
@@ -961,7 +937,6 @@ function evaluatedResultFromData({
     format_repair_attempted: data.format_repair_attempted === true,
     local_json_repair_success: data.local_json_repair_success === true,
     text_repair_success: data.text_repair_success === true,
-    gemini_core_field_retry: data.gemini_core_field_retry || null,
     writer_review_ready: data.writer_review_ready === true || data.publication_gate?.writer_review_ready === true,
     corrected_title_reference: referenceTitle,
     corrected_title_comparison: providerFailure ? null : titleComparison(referenceTitle, data.final_title || data.title || data.rendered_title),
@@ -1267,7 +1242,7 @@ export async function main(argv = process.argv, env = process.env) {
   const datasetPath = argValue(argv, "--dataset", runtimeEnv.SUPABASE_FEEDBACK_CANDIDATES_PATH || defaultDatasetPath);
   const outPath = argValue(argv, "--out", runtimeEnv.CLOUD_LISTING_API_EVAL_OUT || defaultOutPath);
   const baseUrl = argValue(argv, "--base-url", runtimeEnv.CLOUD_LISTING_API_BASE_URL || "");
-  const provider = argValue(argv, "--provider", runtimeEnv.CLOUD_LISTING_API_PROVIDER || "gemini");
+  const provider = argValue(argv, "--provider", runtimeEnv.CLOUD_LISTING_API_PROVIDER || "openai_legacy");
   const limit = numberArg(argv, "--limit", Number(runtimeEnv.CLOUD_LISTING_API_EVAL_LIMIT || 1));
   const concurrency = numberArg(argv, "--concurrency", Number(runtimeEnv.CLOUD_LISTING_API_EVAL_CONCURRENCY || 1));
   const failOnProviderError = hasFlag(argv, "--fail-on-provider-error");

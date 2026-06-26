@@ -12,7 +12,7 @@ assert.match(html, /id="providerStatusText"/, "provider status text should exist
 assert.match(js, /fetch\("\/api\/listing-provider-status"/, "frontend should load provider status from the server");
 assert.match(js, /state\.selectedProvider/, "frontend should keep selected provider in state");
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
-assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']gemini["']/, "frontend must not hard-code Gemini as the production default");
+assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
 assert.match(js, /body\.provider = provider/, "title requests should include the selected provider");
 assert.match(js, /defaultProviderOptions/, "frontend should centralize default provider options");
 assert.match(js, /single_model_fast:\s*false/, "frontend default path should not skip evidence completion");
@@ -28,7 +28,7 @@ assert.match(js, /body\.explicitEmergency = Boolean/, "legacy explicit flag shou
 assert.match(js, /provider === "openai_legacy"/, "OpenAI provider path should remain explicit in request payloads");
 assert.match(js, /providerCascadeText/, "frontend should render concise provider role text");
 assert.match(js, /GPT-4\.1 mini/, "provider control should identify GPT provider labels");
-assert.doesNotMatch(js, /Agnes|cascade_fast|Gemini 格式失败兜底/, "frontend must not expose Agnes or mixed-model cascade controls");
+assert.doesNotMatch(js, /Agnes|cascade_fast|格式失败兜底/, "frontend must not expose Agnes or mixed-model cascade controls");
 assert.match(js, /fetch\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs");
 assert.match(js, /signed_upload_url/, "frontend should upload through signed URLs");
 assert.match(js, /signatureHex/, "frontend should send first-byte signatures before receiving signed upload URLs");
@@ -55,7 +55,7 @@ assert.match(api, /verifyListingImageVerificationToken/, "title API should requi
 assert.match(api, /readListingImageVerificationRecord/, "title API should allow durable server verification records for later reprocessing");
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
 assert.doesNotMatch(api, /createGptCriticalVerifierRunner|createAgnesTitle|createCascadeFastTitle|analyzeCardEvidenceWithAgnes/, "title API should not wire automatic mixed-model or Agnes paths");
-assert.doesNotMatch(providerRegistry, /ENABLE_AGNES_AUTO_VERIFIER|ENABLE_FAST_CASCADE_PROVIDER|cascade_fast|AGNES/i, "provider registry should only expose active Gemini and GPT providers");
+assert.doesNotMatch(providerRegistry, /ENABLE_AGNES_AUTO_VERIFIER|ENABLE_FAST_CASCADE_PROVIDER|cascade_fast|AGNES/i, "provider registry should only expose the active GPT provider");
 assert.match(api, /const signedImages = await imagesWithSignedReadUrls\(payload\.images \|\| \[\], timingContext\)/, "OpenAI fallback should use signed storage read URLs instead of requiring Base64 JSON");
 assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider calls should reuse signed URLs created during recognition preflight");
 assert.doesNotMatch(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade fast path should not exist");
@@ -102,13 +102,8 @@ assert.match(js, /dry_run: true/, "mock publish requests should remain dry-run f
 assert.match(js, /data-emergency-retry/, "failed assets should expose explicit GPT single-provider retry control");
 assert.match(js, /retryAssetWithEmergency/, "GPT single-provider retry should be a separate action");
 assert.match(js, /renderProviderControl/, "provider controls should be rendered from server status");
-assert.match(js, /providerSmokeText/, "frontend should summarize provider smoke capability status");
-assert.match(js, /json_baseline_verified/, "frontend should surface Gemini JSON smoke verification status");
-assert.match(js, /tool_call_verified/, "frontend should surface optional smoke capability status");
-assert.match(js, /provider-smoke/, "provider cards should render sanitized smoke status text");
 assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
-assert.match(css, /\.provider-smoke/, "smoke status should have a stable compact style");
 assert.match(css, /\.writer-modules/, "writer-facing modules should have a compact layout");
 assert.match(css, /\.writer-module\.needs-review/, "module review state should be visible");
 assert.match(css, /\.field-crop-strip/, "field crop evidence strip should have a stable layout");

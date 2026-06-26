@@ -5,14 +5,12 @@ import handler from "../api/listing-copilot-title.js";
 import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
-process.env.DEFAULT_VISION_PROVIDER = "gemini";
-process.env.ENABLE_GEMINI_PROVIDER = "true";
-process.env.GEMINI_API_KEY = "test-gemini-key";
-process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
+process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "true";
 process.env.ALLOW_EXPLICIT_GPT41_RETRY = "true";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
+process.env.ENABLE_OPENAI_WEB_SEARCH_FALLBACK = "false";
 
 assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");
 assert.equal(resolveKnowledgeEntry("2010/11 Season"), null);
@@ -181,7 +179,7 @@ const missingVisibleSerial = await callApi({
   unresolved: []
 });
 
-assert.equal(missingVisibleSerial.confidence, "HIGH");
+assert.equal(missingVisibleSerial.confidence, "MEDIUM");
 assert.match(missingVisibleSerial.title, /137\/199/);
 assert.doesNotMatch(missingVisibleSerial.unresolved.join(" "), /title missing serial/);
 
@@ -714,7 +712,8 @@ assert.match(aceBaileyChromeAutoOnce.title, /^2025-26\b/);
 assert.ok(aceBaileyChromeAutoOnce.writer_required_fields.includes("year"));
 assert.match(aceBaileyChromeAutoOnce.title, /Topps Chrome/i);
 assert.match(aceBaileyChromeAutoOnce.title, /Chrome Auto/i);
-assert.match(aceBaileyChromeAutoOnce.title, /Gold Refractor/i);
+assert.match(aceBaileyChromeAutoOnce.title, /\bGold\b/i);
+assert.doesNotMatch(aceBaileyChromeAutoOnce.title, /Gold\s+Refractor/i);
 assert.match(aceBaileyChromeAutoOnce.title, /31\/50/);
 assert.match(aceBaileyChromeAutoOnce.title, /\bRC\b/);
 assert.equal((aceBaileyChromeAutoOnce.title.match(/\bAuto\b/gi) || []).length, 1);
@@ -802,7 +801,7 @@ const autoDedupeCanonicalOrder = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(autoDedupeCanonicalOrder.title, /^2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto Gold Refractor 31\/150 RC$/i);
+assert.match(autoDedupeCanonicalOrder.title, /^2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto Gold 31\/150 RC$/i);
 assert.ok(autoDedupeCanonicalOrder.writer_required_fields.includes("year"));
 assert.equal((autoDedupeCanonicalOrder.title.match(/\bAuto\b/gi) || []).length, 1);
 assert.doesNotMatch(autoDedupeCanonicalOrder.title, /RC Auto/i);
@@ -1091,7 +1090,7 @@ const genericPsaCardGradeOnly = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(genericPsaCardGradeOnly.title, "2024 Topps Chrome Placeholder Player Refractor PSA 9");
+assert.equal(genericPsaCardGradeOnly.title, "2024 Topps Chrome Placeholder Player PSA 9");
 assert.doesNotMatch(genericPsaCardGradeOnly.title, /PSA 9\//);
 
 const genericBgsCardAndAutoGrade = await callApi({

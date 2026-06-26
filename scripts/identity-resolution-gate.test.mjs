@@ -115,7 +115,7 @@ const nonSlabGradeIsCandidateOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani PSA 10",
   confidence: "HIGH",
   reason: "Model inferred a grade from the image, but no slab label evidence exists.",
-  provider: "gemini",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2024",
     product: "Topps Chrome",
@@ -144,7 +144,7 @@ const visualExactParallelKeepsNarrowColorOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani Purple Wave Refractor",
   confidence: "HIGH",
   reason: "Model saw a purple surface but exact taxonomy is not printed or catalog-backed.",
-  provider: "gemini",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2024",
     product: "Topps Chrome",
@@ -200,14 +200,14 @@ const gptVisionItems = evidenceDocumentToIdentityEvidenceItems({
 });
 assert.equal(gptVisionItems[0].source, "PRIMARY_FAST_VISION");
 
-const geminiVisionItems = evidenceDocumentToIdentityEvidenceItems({
+const primaryFastVisionItems = evidenceDocumentToIdentityEvidenceItems({
   evidence: {
     year: visionOnlyEvidence("2025")
   }
 }, {
-  providerId: "gemini"
+  providerId: "primary_fast_vision"
 });
-assert.equal(geminiVisionItems[0].source, "PRIMARY_FAST_VISION");
+assert.equal(primaryFastVisionItems[0].source, "PRIMARY_FAST_VISION");
 
 const agnesVisionItems = evidenceDocumentToIdentityEvidenceItems({
   evidence: {
@@ -569,11 +569,11 @@ const providerInvariantInput = {
   },
   unresolved: []
 };
-const providerInvariantGemini = applyIdentityResolutionGate({
+const providerInvariantPrimaryFast = applyIdentityResolutionGate({
   ...providerInvariantInput,
-  provider: "gemini"
+  provider: "primary_fast_vision"
 }, {
-  providerId: "gemini"
+  providerId: "primary_fast_vision"
 });
 const providerInvariantGpt = applyIdentityResolutionGate({
   ...providerInvariantInput,
@@ -587,12 +587,12 @@ const providerInvariantAgnes = applyIdentityResolutionGate({
 }, {
   providerId: "agnes"
 });
-assert.equal(providerInvariantGemini.identity_resolution_status, providerInvariantGpt.identity_resolution_status);
-assert.equal(providerInvariantGemini.identity_resolution_status, providerInvariantAgnes.identity_resolution_status);
-assert.deepEqual(providerInvariantGemini.writer_required_fields.sort(), providerInvariantGpt.writer_required_fields.sort());
-assert.deepEqual(providerInvariantGemini.writer_required_fields.sort(), providerInvariantAgnes.writer_required_fields.sort());
-assert.equal(providerInvariantGemini.final_title, providerInvariantGpt.final_title);
-assert.equal(providerInvariantGemini.final_title, providerInvariantAgnes.final_title);
+assert.equal(providerInvariantPrimaryFast.identity_resolution_status, providerInvariantGpt.identity_resolution_status);
+assert.equal(providerInvariantPrimaryFast.identity_resolution_status, providerInvariantAgnes.identity_resolution_status);
+assert.deepEqual(providerInvariantPrimaryFast.writer_required_fields.sort(), providerInvariantGpt.writer_required_fields.sort());
+assert.deepEqual(providerInvariantPrimaryFast.writer_required_fields.sort(), providerInvariantAgnes.writer_required_fields.sort());
+assert.equal(providerInvariantPrimaryFast.final_title, providerInvariantGpt.final_title);
+assert.equal(providerInvariantPrimaryFast.final_title, providerInvariantAgnes.final_title);
 
 function structuredHighRiskProviderResult(provider) {
   const evidenceDocument = providerPayloadToEvidenceDocument({
@@ -662,16 +662,16 @@ function structuredHighRiskProviderResult(provider) {
   });
 }
 
-const structuredGeminiGate = structuredHighRiskProviderResult("gemini");
+const structuredPrimaryFastGate = structuredHighRiskProviderResult("primary_fast_vision");
 const structuredGptGate = structuredHighRiskProviderResult("openai_legacy");
-assert.equal(structuredGeminiGate.publication_gate.field_publication_states.year, "REVIEW_REQUIRED");
-assert.equal(structuredGeminiGate.publication_gate.field_publication_states.grade_company, "PUBLISHABLE_EXACT");
-assert.equal(structuredGeminiGate.publication_gate.field_publication_states.card_grade, "PUBLISHABLE_EXACT");
-assert.equal(structuredGeminiGate.publication_gate.field_publication_states.rc, "PUBLISHABLE_EXACT");
-assert.equal(structuredGeminiGate.publication_gate.field_publication_states.auto, "PUBLISHABLE_NARROW");
-assert.deepEqual(structuredGeminiGate.writer_required_fields, ["year"]);
-assert.deepEqual(structuredGeminiGate.writer_required_fields, structuredGptGate.writer_required_fields);
-assert.equal(structuredGeminiGate.final_title, structuredGptGate.final_title);
+assert.equal(structuredPrimaryFastGate.publication_gate.field_publication_states.year, "REVIEW_REQUIRED");
+assert.equal(structuredPrimaryFastGate.publication_gate.field_publication_states.grade_company, "PUBLISHABLE_EXACT");
+assert.equal(structuredPrimaryFastGate.publication_gate.field_publication_states.card_grade, "PUBLISHABLE_EXACT");
+assert.equal(structuredPrimaryFastGate.publication_gate.field_publication_states.rc, "PUBLISHABLE_EXACT");
+assert.equal(structuredPrimaryFastGate.publication_gate.field_publication_states.auto, "PUBLISHABLE_NARROW");
+assert.deepEqual(structuredPrimaryFastGate.writer_required_fields, ["year"]);
+assert.deepEqual(structuredPrimaryFastGate.writer_required_fields, structuredGptGate.writer_required_fields);
+assert.equal(structuredPrimaryFastGate.final_title, structuredGptGate.final_title);
 
 const observedMultiSubjectWriterDraft = applyIdentityResolutionGate({
   title: "",

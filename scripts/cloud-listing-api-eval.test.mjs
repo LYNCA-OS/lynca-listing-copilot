@@ -56,8 +56,7 @@ async function runProvider(provider, options = {}) {
     if (path === "/api/listing-provider-status") {
       return jsonResponse(200, {
         providers: [
-          { id: "openai_legacy", role: "primary" },
-          { id: "gemini", role: "diagnostic" }
+          { id: "openai_legacy", role: "primary" }
         ],
         default_provider: "openai_legacy"
       });
@@ -99,9 +98,7 @@ async function runProvider(provider, options = {}) {
         final_title: "2025 Topps Chrome Test Player",
         confidence: "HIGH",
         provider: body.provider,
-        model_id: body.provider === "openai_legacy"
-          ? "gpt-4.1-mini-2025-04-14"
-          : "gemini-3.1-flash-lite",
+        model_id: "gpt-4.1-mini-2025-04-14",
         fields: {
           year: "2025",
           product: "Topps Chrome",
@@ -201,59 +198,25 @@ async function runProvider(provider, options = {}) {
   return { report, titlePayload: titlePayloads[0], titlePayloads };
 }
 
-const gemini = await runProvider("gemini");
-assert.equal(gemini.report.status, "completed");
-assert.equal(gemini.report.provider, "gemini");
-assert.equal(gemini.report.provider_success_rate, 1);
-assert.equal(gemini.report.per_card_latency_ms.p50, 1234);
-assert.equal(gemini.report.cloud_preflight.ok, true);
-assert.equal(gemini.report.cloud_preflight.default_provider, "openai_legacy");
-assert.equal(gemini.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);
-assert.equal(gemini.report.breakpoint_completeness_avg.raw_provider_fields, 0.375);
-assert.equal(gemini.report.breakpoint_completeness_avg.rendered_fields, 0.375);
-assert.equal(gemini.report.results[0].breakpoints.raw_provider_fields.year, "2025");
-assert.equal(gemini.report.results[0].breakpoints.rendered_fields.year, "2025");
-assert.equal(gemini.report.results[0].breakpoints.normalized_evidence.product.value, "Topps Chrome");
-assert.equal(gemini.report.results[0].breakpoints.resolved_fields.players[0], "Test Player");
-assert.equal(gemini.titlePayload.provider, "gemini");
-assert.equal(gemini.titlePayload.explicitEmergency, false);
-assert.equal(gemini.titlePayload.provider_options.single_model_fast, true);
-assert.equal(gemini.titlePayload.provider_options.enable_evidence_completion, false);
-assert.equal(gemini.titlePayload.provider_options.enable_gemini_core_field_retry, true);
-assert.equal(gemini.titlePayload.provider_options.enable_gpt_failure_fallback, false);
-assert.equal(gemini.titlePayload.provider_options.enable_gpt_critical_verifier, false);
-
 const openai = await runProvider("openai");
+assert.equal(openai.report.status, "completed");
 assert.equal(openai.report.provider, "openai_legacy");
+assert.equal(openai.report.provider_success_rate, 1);
+assert.equal(openai.report.per_card_latency_ms.p50, 1234);
+assert.equal(openai.report.cloud_preflight.ok, true);
+assert.equal(openai.report.cloud_preflight.default_provider, "openai_legacy");
+assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);
+assert.equal(openai.report.breakpoint_completeness_avg.raw_provider_fields, 0.375);
+assert.equal(openai.report.breakpoint_completeness_avg.rendered_fields, 0.375);
+assert.equal(openai.report.results[0].breakpoints.raw_provider_fields.year, "2025");
+assert.equal(openai.report.results[0].breakpoints.rendered_fields.year, "2025");
+assert.equal(openai.report.results[0].breakpoints.normalized_evidence.product.value, "Topps Chrome");
+assert.equal(openai.report.results[0].breakpoints.resolved_fields.players[0], "Test Player");
 assert.equal(openai.titlePayload.provider, "openai_legacy");
 assert.equal(openai.titlePayload.explicitEmergency, true);
 assert.equal(openai.titlePayload.provider_options.single_model_fast, true);
 assert.equal(openai.titlePayload.provider_options.enable_evidence_completion, false);
 assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, false);
-
-const geminiVector = await runProvider("b");
-assert.equal(geminiVector.report.provider, "gemini_vector");
-assert.equal(geminiVector.titlePayload.provider, "gemini");
-assert.equal(geminiVector.titlePayload.provider_options.single_model_fast, false);
-assert.equal(geminiVector.titlePayload.provider_options.enable_evidence_completion, true);
-assert.equal(geminiVector.titlePayload.provider_options.enable_stored_visual_features, true);
-assert.equal(geminiVector.titlePayload.provider_options.enable_vector_retrieval, true);
-assert.equal(geminiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
-assert.equal(geminiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
-assert.equal(geminiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
-assert.equal(geminiVector.report.visual_vector_used_count, 1);
-assert.equal(geminiVector.report.visual_vector_candidate_count, 1);
-assert.equal(geminiVector.report.postgres_hybrid_used_count, 1);
-assert.equal(geminiVector.report.postgres_hybrid_candidate_count, 1);
-assert.equal(geminiVector.report.vector_raw_candidate_count, 2);
-assert.equal(geminiVector.report.vector_approved_candidate_count, 1);
-assert.equal(geminiVector.report.vector_conflict_blocked_count, 1);
-assert.equal(geminiVector.report.vector_prompt_candidate_count, 1);
-assert.deepEqual(geminiVector.report.vector_prompt_candidate_ids, ["identity-1"]);
-assert.equal(geminiVector.report.results[0].vector_prompt_assist_used, true);
-assert.equal(geminiVector.report.results[0].vector_raw_candidate_count, 2);
-assert.deepEqual(geminiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
-assert.deepEqual(geminiVector.report.results[0].retrieval_providers_used, ["visual_vector", "postgres_hybrid"]);
 
 const openaiVector = await runProvider("d");
 assert.equal(openaiVector.report.provider, "openai_vector");
@@ -266,9 +229,22 @@ assert.equal(openaiVector.titlePayload.provider_options.enable_vector_retrieval,
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
 assert.equal(openaiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
+assert.equal(openaiVector.report.visual_vector_used_count, 1);
+assert.equal(openaiVector.report.visual_vector_candidate_count, 1);
+assert.equal(openaiVector.report.postgres_hybrid_used_count, 1);
+assert.equal(openaiVector.report.postgres_hybrid_candidate_count, 1);
+assert.equal(openaiVector.report.vector_raw_candidate_count, 2);
+assert.equal(openaiVector.report.vector_approved_candidate_count, 1);
+assert.equal(openaiVector.report.vector_conflict_blocked_count, 1);
+assert.equal(openaiVector.report.vector_prompt_candidate_count, 1);
+assert.deepEqual(openaiVector.report.vector_prompt_candidate_ids, ["identity-1"]);
+assert.equal(openaiVector.report.results[0].vector_prompt_assist_used, true);
+assert.equal(openaiVector.report.results[0].vector_raw_candidate_count, 2);
+assert.deepEqual(openaiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
+assert.deepEqual(openaiVector.report.results[0].retrieval_providers_used, ["visual_vector", "postgres_hybrid"]);
 
 {
-  const recovered = await runProvider("b", {
+  const recovered = await runProvider("d", {
     evaluateOptions: {
       providerErrorRetries: 1,
       providerErrorRetryDelayMs: 0
@@ -350,7 +326,7 @@ assert.equal(openaiVector.titlePayload.provider_options.enable_hybrid_retrieval,
   const report = await evaluateCloudListingApi({
     dataset,
     baseUrl: "https://lynca.example",
-    provider: "gemini",
+    provider: "openai_legacy",
     limit: 0,
     concurrency: 1,
     username: "listing",
@@ -380,7 +356,7 @@ await assert.rejects(
 );
 
 await assert.rejects(
-  () => runProvider("gemini_gpt_failure_fallback"),
+  () => runProvider("removed_provider"),
   /Unsupported cloud eval provider/i
 );
 

@@ -3,9 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyzeCardEvidenceWithAgnes } from "../lib/listing/providers/agnes-provider.mjs";
-import { analyzeCardEvidenceWithGemini } from "../lib/listing/providers/gemini-provider.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
-import { isProviderResponseFormatError, safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
+import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
@@ -40,9 +39,6 @@ const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candida
 const defaultOutPath = "data/eval/agnes-supabase-feedback-latest.json";
 const evalProviders = Object.freeze({
   AGNES: "agnes",
-  GEMINI: "gemini",
-  GEMINI_GPT_FAILURE_FALLBACK: "gemini_gpt_failure_fallback",
-  GEMINI_GPT_CRITICAL_VERIFIER: "gemini_gpt_critical_verifier",
   OPENAI: "openai_legacy",
   CASCADE_FAST: "cascade_fast"
 });
@@ -65,70 +61,44 @@ function normalizeEvalProvider(value) {
   const raw = String(value || "").trim().toLowerCase();
   if (["cascade", "cascade_fast", "fast_cascade", "gpt-agnes", "gpt_agnes"].includes(raw)) return evalProviders.CASCADE_FAST;
   if (["openai", "gpt", "gpt-4.1-mini", "openai_legacy"].includes(raw)) return evalProviders.OPENAI;
-  if (["gemini_gpt_failure_fallback", "gemini-fallback", "gemini_fallback", "gemini_gpt_fallback"].includes(raw)) {
-    return evalProviders.GEMINI_GPT_FAILURE_FALLBACK;
-  }
-  if (["gemini_gpt_critical_verifier", "gemini-critical", "gemini_critical", "gemini_gpt_verifier"].includes(raw)) {
-    return evalProviders.GEMINI_GPT_CRITICAL_VERIFIER;
-  }
-  if (["gemini", "gemini-3.1-flash-lite", "gemini_flash_lite", "gemini-flash-lite"].includes(raw)) return evalProviders.GEMINI;
   return evalProviders.AGNES;
 }
 
 function providerDisplayName(providerId) {
   if (providerId === evalProviders.CASCADE_FAST) return "GPT-4.1-mini → Agnes verifier";
-  if (providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK) return "Gemini → GPT failure fallback";
-  if (providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) return "Gemini → GPT critical verifier";
-  if (providerId === evalProviders.GEMINI) return "Gemini 3.1 Flash Lite";
   return providerId === evalProviders.OPENAI ? "GPT-4.1-mini" : "Agnes";
 }
 
 function providerEnvKeys(providerId) {
   if (providerId === evalProviders.CASCADE_FAST) return ["OPENAI_API_KEY", "AGNES_API_KEY"];
-  if (providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK
-    || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
-    return ["GEMINI_API_KEY", "OPENAI_API_KEY"];
-  }
-  if (providerId === evalProviders.GEMINI) return ["GEMINI_API_KEY"];
   return providerId === evalProviders.OPENAI ? ["OPENAI_API_KEY"] : ["AGNES_API_KEY"];
 }
 
 function analyzeImplForProvider(providerId) {
-  if (providerId === evalProviders.GEMINI
-    || providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK
-    || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
-    return analyzeCardEvidenceWithGemini;
-  }
   return providerId === evalProviders.OPENAI || providerId === evalProviders.CASCADE_FAST
     ? analyzeCardEvidenceWithOpenAiEmergency
     : analyzeCardEvidenceWithAgnes;
 }
 
 function focusedAnalyzeImplForProvider(providerId) {
-  if (providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) return analyzeCardEvidenceWithOpenAiEmergency;
   return providerId === evalProviders.CASCADE_FAST
     ? analyzeCardEvidenceWithAgnes
     : analyzeImplForProvider(providerId);
 }
 
 function identityProviderIdForProvider(providerId) {
-  return providerId === evalProviders.CASCADE_FAST || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
+  return providerId === evalProviders.CASCADE_FAST
     ? "primary_fast_vision"
     : providerId;
 }
 
 function focusedProviderIdForProvider(providerId) {
-  if (providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) return evalProviders.OPENAI;
   return providerId === evalProviders.CASCADE_FAST ? evalProviders.AGNES : providerId;
 }
 
 function openAiFastVisionEvalEnabled(env = process.env) {
   return booleanFromEnv(env, "OPENAI_EVAL_PRIMARY_FAST_VISION", false)
     || booleanFromEnv(env, "GPT_EVAL_PRIMARY_FAST_VISION", false);
-}
-
-function geminiFastVisionEvalEnabled(env = process.env) {
-  return booleanFromEnv(env, "GEMINI_EVAL_PRIMARY_FAST_VISION", false);
 }
 
 function fastVisionPolicyForProvider(providerId, env = process.env) {
@@ -152,17 +122,6 @@ function fastVisionPolicyForProvider(providerId, env = process.env) {
     };
   }
 
-  if (providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
-    || (providerId === evalProviders.GEMINI && geminiFastVisionEvalEnabled(env))) {
-    return {
-      role: "PRIMARY_FAST_VISION",
-      allow_single_source_publish: true,
-      primary_provider_id: evalProviders.GEMINI,
-      secondary_provider_id: providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER ? evalProviders.OPENAI : null,
-      secondary_verification_enabled: providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
-    };
-  }
-
   return null;
 }
 
@@ -173,13 +132,6 @@ function providerDefaultConcurrency(providerId, env = process.env) {
   if (providerId === evalProviders.OPENAI) {
     return Number(env.OPENAI_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || env.GPT_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 3);
   }
-  if (providerId === evalProviders.GEMINI) {
-    return Number(env.GEMINI_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 3);
-  }
-  if (providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK
-    || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
-    return Number(env.GEMINI_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 3);
-  }
   return Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_CONCURRENCY || 2);
 }
 
@@ -189,13 +141,6 @@ function providerDefaultMaxConcurrency(providerId, env = process.env) {
   }
   if (providerId === evalProviders.OPENAI) {
     return Number(env.OPENAI_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || env.GPT_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || 4);
-  }
-  if (providerId === evalProviders.GEMINI) {
-    return Number(env.GEMINI_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || 4);
-  }
-  if (providerId === evalProviders.GEMINI_GPT_FAILURE_FALLBACK
-    || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
-    return Number(env.GEMINI_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || 4);
   }
   return Number(env.AGNES_SUPABASE_FEEDBACK_EVAL_MAX_CONCURRENCY || 5);
 }
@@ -684,34 +629,6 @@ function providerFormatMetadata(result = {}, {
   };
 }
 
-function formatFailureType(error) {
-  return error?.details?.format_error_type || error?.format_error_type || "PROVIDER_ERROR";
-}
-
-function geminiFullFallbackReason(error) {
-  if (isProviderResponseFormatError(error)) return `gemini_format_failure:${formatFailureType(error)}`;
-  return `gemini_provider_failure:${error?.code || "provider_error"}`;
-}
-
-function isGeminiProviderFailureFallbackError(error) {
-  if (error?.provider !== evalProviders.GEMINI) return false;
-  return [
-    "location_unavailable",
-    "timeout",
-    "rate_limited",
-    "upstream_error",
-    "network_error"
-  ].includes(error?.code);
-}
-
-function shouldUseGptFullFallback(providerId, error) {
-  if (providerId !== evalProviders.GEMINI_GPT_FAILURE_FALLBACK
-    && providerId !== evalProviders.GEMINI_GPT_CRITICAL_VERIFIER) {
-    return false;
-  }
-  return isProviderResponseFormatError(error) || isGeminiProviderFailureFallbackError(error);
-}
-
 function predictionFromResolvedResult(result = {}) {
   return {
     title: normalizeText(result.final_title || result.title || result.rendered_title || result.model_title_suggestion),
@@ -867,56 +784,10 @@ function signedImagesForProvider(signedImages = []) {
   }));
 }
 
-function mimeTypeForSignedImage(image = {}, fallback = "image/jpeg") {
-  const name = `${image.name || ""} ${image.object_path || ""} ${image.url || ""}`.toLowerCase();
-  if (/\.(?:png)(?:$|[?#])/.test(name)) return "image/png";
-  if (/\.(?:webp)(?:$|[?#])/.test(name)) return "image/webp";
-  if (/\.(?:gif)(?:$|[?#])/.test(name)) return "image/gif";
-  return fallback;
-}
-
-async function dataUrlFromSignedImage(image = {}, {
-  fetchImpl = globalThis.fetch,
-  maxBytes = 6 * 1024 * 1024
-} = {}) {
-  if (typeof fetchImpl !== "function") {
-    throw new Error("fetch is required to inline signed image URLs for Gemini evaluation.");
-  }
-
-  const response = await fetchImpl(image.url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch signed image for Gemini evaluation: HTTP ${response.status}.`);
-  }
-
-  const contentType = String(response.headers.get("content-type") || "").split(";")[0].trim();
-  const arrayBuffer = await response.arrayBuffer();
-  if (arrayBuffer.byteLength > maxBytes) {
-    throw new Error(`Signed image is too large to inline for Gemini evaluation: ${arrayBuffer.byteLength} bytes.`);
-  }
-
-  const mimeType = contentType.startsWith("image/")
-    ? contentType
-    : mimeTypeForSignedImage(image);
-  return `data:${mimeType};base64,${Buffer.from(arrayBuffer).toString("base64")}`;
-}
-
 async function providerImagesForEval(signedImages = [], {
-  providerId = evalProviders.AGNES,
-  env = process.env
+  providerId = evalProviders.AGNES
 } = {}) {
-  if (providerId !== evalProviders.GEMINI
-    && providerId !== evalProviders.GEMINI_GPT_FAILURE_FALLBACK
-    && providerId !== evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
-    || !booleanFromEnv(env, "GEMINI_EVAL_INLINE_SIGNED_IMAGES", true)) {
-    return signedImagesForProvider(signedImages);
-  }
-
-  const maxBytes = Math.max(1, Number(env.GEMINI_EVAL_INLINE_MAX_IMAGE_BYTES || 6 * 1024 * 1024));
-  return Promise.all(signedImages.map(async (image) => ({
-    name: image.name,
-    side: image.role,
-    dataUrl: await dataUrlFromSignedImage(image, { maxBytes })
-  })));
+  return signedImagesForProvider(signedImages);
 }
 
 function evidenceDocumentFromProviderResult(providerResult = {}, {
@@ -1614,32 +1485,12 @@ async function evaluateOneFeedbackItem(item, {
     const prompt = evaluationPrompt(item);
     let providerMetaOptions = {};
     let result;
-    try {
-      result = await timeStage(timing, "provider_total_ms", () => analyzeImpl({
-        images: providerImages,
-        prompt,
-        env,
-        signal
-      }));
-    } catch (error) {
-      if (!shouldUseGptFullFallback(providerId, error)) {
-        throw error;
-      }
-
-      const formatErrorType = formatFailureType(error);
-      const fallbackReason = geminiFullFallbackReason(error);
-      result = await timeStage(timing, "provider_total_ms", () => analyzeCardEvidenceWithOpenAiEmergency({
-        images: providerImages,
-        prompt,
-        env,
-        signal
-      }));
-      providerMetaOptions = {
-        fallbackProviderId: evalProviders.OPENAI,
-        fallbackReason,
-        formatErrorType
-      };
-    }
+    result = await timeStage(timing, "provider_total_ms", () => analyzeImpl({
+      images: providerImages,
+      prompt,
+      env,
+      signal
+    }));
     const initialFields = fieldsFromParsed(result.parsed || {});
     const resolved = identityResolution
       ? await resolvedPredictionFromProviderResult(result, {
@@ -1649,7 +1500,7 @@ async function evaluateOneFeedbackItem(item, {
         providerId,
         identityProviderId: identityProviderIdForProvider(providerId),
         focusedAnalyzeImpl: analyzeFocusedImpl
-          || (providerId === evalProviders.CASCADE_FAST || providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
+          || (providerId === evalProviders.CASCADE_FAST
             ? focusedAnalyzeImplForProvider(providerId)
             : analyzeImpl),
         focusedProviderId: focusedProviderIdForProvider(providerId),
@@ -2188,9 +2039,7 @@ function summarize(results = [], {
     fieldGroundTruthAvailable: false
   });
   const providerQuality = providerQualitySummary(results);
-  const secondaryProvider = providerId === evalProviders.GEMINI_GPT_CRITICAL_VERIFIER
-    ? evalProviders.OPENAI
-    : evalProviders.AGNES;
+  const secondaryProvider = evalProviders.AGNES;
 
   return {
     attempted_count: attempted,

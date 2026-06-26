@@ -19,10 +19,9 @@ process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 process.env.LISTING_APPROVED_MEMORY_ENABLED = "true";
-process.env.DEFAULT_VISION_PROVIDER = "gemini";
-process.env.ENABLE_GEMINI_PROVIDER = "true";
-process.env.GEMINI_API_KEY = "test-gemini-key";
-process.env.GEMINI_MODEL = "gemini-3.1-flash-lite";
+process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
+process.env.OPENAI_API_KEY = "test-openai-key";
+process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 
 function sign(value) {
   return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
@@ -225,7 +224,8 @@ assert.deepEqual(fetchCalls.map((call) => call.table), [
 const parsedTitle = parseReviewedTitleFields("2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9");
 assert.equal(parsedTitle.year, "2025");
 assert.equal(parsedTitle.product, "Topps Chrome Sapphire");
-assert.equal(parsedTitle.parallel, "Gold");
+assert.equal(parsedTitle.surface_color, "Gold");
+assert.equal(parsedTitle.parallel, null);
 assert.equal(parsedTitle.serial_number, "5/50");
 assert.equal(parsedTitle.grade_company, "PSA");
 assert.equal(parsedTitle.card_grade, "9");
@@ -297,7 +297,8 @@ assert.equal(fallbackRecords.length, 1);
 assert.equal(fallbackRecords[0].legacy_feedback, true);
 assert.equal(fallbackRecords[0].reusable_approved_title, false);
 assert.equal(fallbackRecords[0].fields.product, "Topps Chrome Sapphire");
-assert.equal(fallbackRecords[0].fields.parallel, "Gold");
+assert.equal(fallbackRecords[0].fields.surface_color, "Gold");
+assert.equal(fallbackRecords[0].fields.parallel, undefined);
 assert.equal(fallbackRecords[0].fields.serial_number, "5/50");
 assert.equal(fallbackRecords[0].fields.grade_company, "PSA");
 assert.equal(fallbackRecords[0].fields.card_grade, "9");

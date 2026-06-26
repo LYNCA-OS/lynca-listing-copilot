@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const schemaVersion = "reviewed-field-accuracy-report-v1";
 const defaultLabels = "data/eval/reviewed-ground-truth/development-reviewed-30.json";
-const defaultPredictions = "data/eval/provider-regression-30/gemini31flashlite-only-current-30.json";
-const defaultOut = "data/eval/reviewed-ground-truth/baseline-gemini31flashlite-current-30.json";
+const defaultPredictions = "data/eval/provider-regression-30/openai-vector-current-30.json";
+const defaultOut = "data/eval/reviewed-ground-truth/baseline-openai-vector-current-30.json";
 
 export const reviewedFieldKeys = Object.freeze([
   "subject",
@@ -25,7 +25,7 @@ const fieldSourceMap = Object.freeze({
   subject: ["subject", "subjects", "players", "player", "character"],
   year: ["year"],
   product_or_set: ["product_or_set", "product", "set", "subset", "brand", "manufacturer"],
-  card_type: ["card_type", "insert", "rc", "auto", "patch", "relic"],
+  card_type: ["official_card_type", "observable_components", "card_type", "insert", "rc", "auto", "patch", "relic", "jersey", "sketch", "redemption"],
   variant_or_parallel: ["variant_or_parallel", "parallel_exact", "parallel", "parallel_family", "surface_color", "variation"],
   collector_number: ["collector_number", "card_number", "checklist_code"],
   serial_number: ["serial_number"],
@@ -249,18 +249,61 @@ function normalizeProductOrSet(value) {
 }
 
 function normalizeCardType(value) {
+  const components = normalizeObservableComponents(value);
+  if (components.length) return components.join("|");
   if (Array.isArray(value)) return [...new Set(value.map(comparableText).filter(Boolean))].sort().join("|");
   return comparableText(value);
+}
+
+function normalizeObservableComponents(value) {
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.entries(value).filter(([, enabled]) => enabled === true).map(([component]) => component)
+      : normalizeText(value).split(/[,\s/]+/);
+  const aliases = {
+    autograph: "auto",
+    autographs: "auto",
+    signature: "auto",
+    signatures: "auto",
+    signed: "auto",
+    memorabilia: "relic",
+    swatch: "relic",
+    logoman: "relic",
+    rookie: "rc",
+    rookie_card: "rc",
+    rookie_ticket: "rc",
+    rated_rookie: "rc"
+  };
+  const allowed = new Set(["auto", "patch", "relic", "jersey", "rc", "sketch", "redemption"]);
+  return [...new Set(raw
+    .map((item) => comparableText(item).replace(/\s+/g, "_"))
+    .map((item) => aliases[item] || item)
+    .filter((item) => allowed.has(item)))]
+    .sort();
+}
+
+function observableComponentsFromFields(fields = {}) {
+  const components = normalizeObservableComponents(fields.observable_components || fields.observableComponents);
+  ["auto", "patch", "relic", "jersey", "rc", "sketch", "redemption"].forEach((component) => {
+    if (fields[component] === true && !components.includes(component)) components.push(component);
+  });
+  return components.sort();
 }
 
 function predictionCardType(fields = {}) {
   const components = [];
   if (valuePresent(fields.card_type)) components.push(fields.card_type);
+  if (valuePresent(fields.official_card_type)) components.push(fields.official_card_type);
+  observableComponentsFromFields(fields).forEach((component) => components.push(component));
   if (valuePresent(fields.insert)) components.push(fields.insert);
   if (fields.rc === true) components.push("RC");
   if (fields.auto === true) components.push("Auto");
   if (fields.patch === true) components.push("Patch");
   if (fields.relic === true) components.push("Relic");
+  if (fields.jersey === true) components.push("Jersey");
+  if (fields.sketch === true) components.push("Sketch");
+  if (fields.redemption === true) components.push("Redemption");
   return [...new Set(components.map(normalizeText).filter(Boolean))].join(" ");
 }
 
@@ -553,6 +596,47 @@ function evaluateField(item, result, field) {
   };
 }
 
+function firstReviewedValue(item = {}, keys = []) {
+  for (const key of keys) {
+    const fieldRecord = item.fields?.[key];
+    if (!fieldRecord) continue;
+    const status = normalizeText(fieldRecord.status || fieldRecord.reviewed_status || "UNREVIEWED").toUpperCase();
+    if (denominatorExcludedStatuses.has(status)) continue;
+    if (!valuePresent(fieldRecord.value ?? fieldRecord.reviewed_value)) continue;
+    return fieldRecord.value ?? fieldRecord.reviewed_value;
+  }
+  const groundTruth = item.ground_truth || {};
+  for (const key of keys) {
+    if (valuePresent(groundTruth[key])) return groundTruth[key];
+  }
+  return null;
+}
+
+function observableComponentMetric(item = {}, result = null) {
+  const expected = normalizeObservableComponents(firstReviewedValue(item, ["observable_components", "observable_card_type", "card_type"]));
+  if (!expected.length) return null;
+  const predicted = observableComponentsFromFields(result ? resultFields(result) : {});
+  const match = expected.join("|") === predicted.join("|");
+  const covered = expected.every((component) => predicted.includes(component));
+  return {
+    expected,
+    predicted,
+    exact: match,
+    covered
+  };
+}
+
+function officialCardTypeMetric(item = {}, result = null) {
+  const expected = firstReviewedValue(item, ["official_card_type"]);
+  if (!valuePresent(expected)) return null;
+  const predicted = result ? resultFields(result).official_card_type : "";
+  return {
+    expected: normalizeText(expected),
+    predicted: normalizeText(predicted),
+    exact: comparableText(expected) === comparableText(predicted)
+  };
+}
+
 function predictionMap(predictionReport = {}) {
   const results = Array.isArray(predictionReport.results)
     ? predictionReport.results
@@ -619,6 +703,13 @@ export function evaluateReviewedFieldAccuracy({
   let serialExactCorrect = 0;
   let serialDenominatorTotal = 0;
   let serialDenominatorMatch = 0;
+  let observableCardTypeTotal = 0;
+  let observableCardTypeCorrect = 0;
+  let observableComponentCoverageTotal = 0;
+  let observableComponentCovered = 0;
+  let officialCardTypeTotal = 0;
+  let officialCardTypeCorrect = 0;
+  let cardTypeDefaultBaseCount = 0;
 
   for (const [index, item] of labelItems.entries()) {
     const result = matchPrediction(item, predictionsById);
@@ -628,6 +719,22 @@ export function evaluateReviewedFieldAccuracy({
       field,
       evaluateField(item, result, field)
     ]));
+    const observableMetric = observableComponentMetric(item, result);
+    if (observableMetric) {
+      observableCardTypeTotal += 1;
+      observableComponentCoverageTotal += 1;
+      if (observableMetric.exact) observableCardTypeCorrect += 1;
+      if (observableMetric.covered) observableComponentCovered += 1;
+    }
+    const officialMetric = officialCardTypeMetric(item, result);
+    if (officialMetric) {
+      officialCardTypeTotal += 1;
+      if (officialMetric.exact) officialCardTypeCorrect += 1;
+    }
+    const predictedFields = result ? resultFields(result) : {};
+    if (/^base$/i.test(normalizeText(predictedFields.card_type)) && !/^base$/i.test(normalizeText(predictedFields.official_card_type))) {
+      cardTypeDefaultBaseCount += 1;
+    }
     const evaluatedFields = Object.values(fieldResults).filter((fieldResult) => !fieldResult.excluded_from_denominator);
     const cardExact = evaluatedFields.length ? evaluatedFields.every((fieldResult) => fieldResult.is_correct === true) : null;
 
@@ -764,7 +871,11 @@ export function evaluateReviewedFieldAccuracy({
         parallel_narrow_match: auxiliaryBucket(parallelNarrowMatch, parallelNarrowTotal),
         parallel_color_match: auxiliaryBucket(parallelColorMatch, parallelColorTotal),
         serial_exact_match: auxiliaryBucket(serialExactCorrect, serialExactTotal),
-        serial_denominator_match: auxiliaryBucket(serialDenominatorMatch, serialDenominatorTotal)
+        serial_denominator_match: auxiliaryBucket(serialDenominatorMatch, serialDenominatorTotal),
+        observable_card_type_exact: auxiliaryBucket(observableCardTypeCorrect, observableCardTypeTotal),
+        official_card_type_exact: auxiliaryBucket(officialCardTypeCorrect, officialCardTypeTotal),
+        observable_component_coverage: auxiliaryBucket(observableComponentCovered, observableComponentCoverageTotal),
+        card_type_default_base_count: cardTypeDefaultBaseCount
       }
     },
     label_issues: labelIssues,
