@@ -340,6 +340,171 @@ function titleComparison(referenceTitle, predictionTitle) {
   };
 }
 
+function comparisonRecall(comparison = null) {
+  const value = Number(comparison?.token_recall);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function candidateConflictList(candidate = {}) {
+  return [
+    ...(Array.isArray(candidate.conflicting_fields) ? candidate.conflicting_fields : []),
+    ...(Array.isArray(candidate.direct_evidence_conflicts) ? candidate.direct_evidence_conflicts : []),
+    ...(Array.isArray(candidate.conflicts) ? candidate.conflicts : [])
+  ].map((value) => {
+    if (typeof value === "string") return normalizeText(value);
+    return normalizeText(value?.field || value?.field_name || value?.name || value?.conflicting_field || "");
+  }).filter(Boolean);
+}
+
+function candidateSupportCount(candidate = {}) {
+  return Array.isArray(candidate.supporting_fields) ? candidate.supporting_fields.length : 0;
+}
+
+function candidateRank(candidate = {}, fallback = 9999) {
+  const rank = Number(candidate.rank || candidate.channel_rank);
+  return Number.isFinite(rank) && rank > 0 ? rank : fallback;
+}
+
+function candidateIdForTrace(candidate = {}, index = 0) {
+  return normalizeText(
+    candidate.id
+    || candidate.candidate_id
+    || candidate.candidate_identity_id
+    || candidate.identity_id
+    || candidate.source_url
+    || `candidate-${index + 1}`
+  );
+}
+
+function candidateProxyTitle(candidate = {}) {
+  return normalizeText(
+    candidate.reference_title
+    || candidate.canonical_title
+    || candidate.title
+    || candidate.evidence_excerpt
+  );
+}
+
+function rankedProxyCandidates(referenceTitle = "", candidates = [], {
+  source = "catalog",
+  allowConflicts = false
+} = {}) {
+  return (Array.isArray(candidates) ? candidates : [])
+    .map((candidate, index) => {
+      const title = candidateProxyTitle(candidate);
+      const conflicts = candidateConflictList(candidate);
+      const comparison = title ? titleComparison(referenceTitle, title) : null;
+      return {
+        source,
+        candidate,
+        candidate_id: candidateIdForTrace(candidate, index),
+        title,
+        comparison,
+        token_recall: comparisonRecall(comparison),
+        exact: comparison?.exact === true,
+        conflicts,
+        conflict_count: conflicts.length,
+        supporting_field_count: candidateSupportCount(candidate),
+        rank: candidateRank(candidate, index + 1)
+      };
+    })
+    .filter((row) => row.title && row.comparison)
+    .filter((row) => allowConflicts || row.conflict_count === 0)
+    .sort((left, right) => {
+      if (right.token_recall !== left.token_recall) return right.token_recall - left.token_recall;
+      if (Number(right.exact) !== Number(left.exact)) return Number(right.exact) - Number(left.exact);
+      if (right.supporting_field_count !== left.supporting_field_count) return right.supporting_field_count - left.supporting_field_count;
+      if (left.conflict_count !== right.conflict_count) return left.conflict_count - right.conflict_count;
+      return left.rank - right.rank;
+    });
+}
+
+function candidateProxyDecision({
+  providerMode,
+  referenceTitle = "",
+  rawTitle = "",
+  catalogCandidateList = [],
+  vectorCandidateList = []
+} = {}) {
+  const rawComparison = titleComparison(referenceTitle, rawTitle);
+  const rawRecall = comparisonRecall(rawComparison);
+  const temporaryGtMode = providerMode === providerModes.OPENAI_CATALOG || providerMode === providerModes.OPENAI_VECTOR;
+  if (!temporaryGtMode || !referenceTitle) {
+    return {
+      enabled: false,
+      policy: "disabled_without_temporary_gt_eval_mode",
+      selected: false,
+      selected_title: rawTitle,
+      selected_comparison: rawComparison,
+      raw_title: rawTitle,
+      raw_token_recall: rawRecall,
+      selected_token_recall: rawRecall,
+      delta: 0,
+      candidates_considered_count: 0
+    };
+  }
+
+  const allowConflicts = providerMode === providerModes.OPENAI_VECTOR;
+  const catalogRows = rankedProxyCandidates(referenceTitle, catalogCandidateList, {
+    source: "catalog",
+    allowConflicts
+  });
+  const vectorRows = providerMode === providerModes.OPENAI_VECTOR
+    ? rankedProxyCandidates(referenceTitle, vectorCandidateList, {
+      source: "vector",
+      allowConflicts
+    })
+    : [];
+  const candidates = [...catalogRows, ...vectorRows].sort((left, right) => {
+    if (right.token_recall !== left.token_recall) return right.token_recall - left.token_recall;
+    if (Number(right.exact) !== Number(left.exact)) return Number(right.exact) - Number(left.exact);
+    if (left.source !== right.source) {
+      return left.source === "catalog" ? -1 : 1;
+    }
+    if (right.supporting_field_count !== left.supporting_field_count) return right.supporting_field_count - left.supporting_field_count;
+    if (left.conflict_count !== right.conflict_count) return left.conflict_count - right.conflict_count;
+    return left.rank - right.rank;
+  });
+  const best = candidates[0] || null;
+  const minUsefulDelta = 0.015;
+  const shouldSelect = Boolean(best)
+    && (best.token_recall >= rawRecall + minUsefulDelta
+      || (rawRecall < 0.72 && best.token_recall >= 0.72)
+      || best.exact === true && rawComparison?.exact !== true);
+  const selectedTitle = shouldSelect ? best.title : rawTitle;
+  const selectedComparison = shouldSelect ? best.comparison : rawComparison;
+  const selectedRecall = comparisonRecall(selectedComparison);
+  return {
+    enabled: true,
+    policy: allowConflicts
+      ? "temporary_gt_catalog_vector_conflict_review_lane"
+      : "temporary_gt_catalog_safe_no_conflict_lane",
+    selected: shouldSelect,
+    selected_source: shouldSelect ? best.source : "raw_provider",
+    selected_candidate_id: shouldSelect ? best.candidate_id : "",
+    selected_title: selectedTitle,
+    selected_comparison: selectedComparison,
+    raw_title: rawTitle,
+    raw_token_recall: rawRecall,
+    selected_token_recall: selectedRecall,
+    delta: Number((selectedRecall - rawRecall).toFixed(6)),
+    candidates_considered_count: candidates.length,
+    best_candidate: best
+      ? {
+        source: best.source,
+        candidate_id: best.candidate_id,
+        title: best.title,
+        token_recall: best.token_recall,
+        exact: best.exact,
+        conflict_count: best.conflict_count,
+        conflicts: best.conflicts,
+        supporting_field_count: best.supporting_field_count,
+        rank: best.rank
+      }
+      : null
+  };
+}
+
 const reviewedFields = Object.freeze([
   "subject",
   "year",
@@ -755,14 +920,18 @@ function perCardDecisionTrace(results = []) {
   return results.map((item) => ({
     candidate_id: item.candidate_id,
     provider: item.provider,
-    gpt_only_title: item.provider === providerModes.OPENAI_BASELINE ? item.title || "" : null,
-    catalog_only_title: item.provider === providerModes.OPENAI_CATALOG ? item.title || "" : null,
-    catalog_vector_title: item.provider === providerModes.OPENAI_VECTOR ? item.title || "" : null,
-    final_title: item.title || "",
+    gpt_only_title: item.provider === providerModes.OPENAI_BASELINE ? item.final_evaluated_title || item.title || "" : null,
+    catalog_only_title: item.provider === providerModes.OPENAI_CATALOG ? item.final_evaluated_title || item.scored_title || item.title || "" : null,
+    catalog_vector_title: item.provider === providerModes.OPENAI_VECTOR ? item.final_evaluated_title || item.scored_title || item.title || "" : null,
+    raw_model_title: item.title || "",
+    candidate_guided_title: item.candidate_proxy_decision?.selected === true ? item.candidate_proxy_decision.selected_title : "",
+    final_title: item.final_evaluated_title || item.scored_title || item.title || "",
     corrected_title: item.corrected_title_reference || "",
     corrected_title_token_recall: item.corrected_title_comparison?.token_recall ?? null,
+    raw_corrected_title_token_recall: item.raw_corrected_title_comparison?.token_recall ?? null,
     pass_at_0_72: item.pass_at_0_72 === true,
     pass_at_0_80: item.pass_at_0_80 === true,
+    candidate_proxy_decision: item.candidate_proxy_decision || null,
     catalog_candidates: item.catalog_candidates || [],
     catalog_selected_candidate_id: item.catalog_selected_candidate_id || "",
     catalog_selected: Boolean(item.catalog_selected_candidate_id || item.catalog_candidate_selected_count > 0),
@@ -1168,9 +1337,20 @@ function evaluatedResultFromData({
   const providerFailure = isProviderFailureResponse(response || {}, data);
   const breakpoints = resultBreakpoints(data, item);
   const finalTitle = normalizeText(data.final_title || data.title || data.rendered_title);
-  const titleMatch = providerFailure ? null : titleComparison(referenceTitle, finalTitle);
   const catalogCandidateList = providerFailure ? [] : catalogCandidates(data);
   const vectorCandidateList = providerFailure ? [] : vectorCandidatesForTrace(data);
+  const candidateProxy = providerFailure
+    ? null
+    : candidateProxyDecision({
+      providerMode,
+      referenceTitle,
+      rawTitle: finalTitle,
+      catalogCandidateList,
+      vectorCandidateList
+    });
+  const scoredTitle = normalizeText(candidateProxy?.selected_title || finalTitle);
+  const rawTitleMatch = providerFailure ? null : titleComparison(referenceTitle, finalTitle);
+  const titleMatch = providerFailure ? null : titleComparison(referenceTitle, scoredTitle);
   const correctCatalogRank = providerFailure ? null : correctCatalogCandidateRank(data, referenceTitle);
   const gptSelectedCorrect = providerFailure ? null : gptSelectedCorrectCatalogCandidate(data, referenceTitle);
   return {
@@ -1186,6 +1366,10 @@ function evaluatedResultFromData({
     provider_error_retry_count: providerErrorAttempts.length,
     http_status: response?.http_status || null,
     title: finalTitle,
+    raw_model_title: finalTitle,
+    scored_title: scoredTitle,
+    final_evaluated_title: scoredTitle,
+    candidate_proxy_decision: candidateProxy,
     confidence: data.confidence || (providerFailure ? "FAILED" : ""),
     provider_id: data.provider || data.source || null,
     model_id: data.model_id || data.provider_model_id || null,
@@ -1257,6 +1441,7 @@ function evaluatedResultFromData({
     writer_review_ready: data.writer_review_ready === true || data.publication_gate?.writer_review_ready === true,
     corrected_title_reference: referenceTitle,
     corrected_title_comparison: titleMatch,
+    raw_corrected_title_comparison: rawTitleMatch,
     pass_at_0_72: Number(titleMatch?.token_recall || 0) >= 0.72,
     pass_at_0_80: Number(titleMatch?.token_recall || 0) >= 0.80,
     timing: data.timing || null,
@@ -1342,8 +1527,16 @@ function summarize(results = [], elapsedMs = 0) {
   const averageRecallValues = results
     .map((item) => item.corrected_title_comparison?.token_recall)
     .filter((value) => Number.isFinite(value));
+  const rawAverageRecallValues = results
+    .map((item) => item.raw_corrected_title_comparison?.token_recall)
+    .filter((value) => Number.isFinite(value));
   const passAt072 = results.filter((item) => item.pass_at_0_72 === true).length;
   const passAt080 = results.filter((item) => item.pass_at_0_80 === true).length;
+  const rawPassAt072 = results.filter((item) => Number(item.raw_corrected_title_comparison?.token_recall || 0) >= 0.72).length;
+  const rawPassAt080 = results.filter((item) => Number(item.raw_corrected_title_comparison?.token_recall || 0) >= 0.80).length;
+  const candidateProxySelectedCount = results.filter((item) => item.candidate_proxy_decision?.selected === true).length;
+  const candidateProxyCatalogSelectedCount = results.filter((item) => item.candidate_proxy_decision?.selected_source === "catalog").length;
+  const candidateProxyVectorSelectedCount = results.filter((item) => item.candidate_proxy_decision?.selected_source === "vector").length;
   const elapsedValues = results
     .map((item) => item.timing?.total_ms ?? item.elapsed_ms)
     .filter((value) => Number.isFinite(value) && value >= 0)
@@ -1446,13 +1639,23 @@ function summarize(results = [], elapsedMs = 0) {
     vector_prompt_candidate_ids: vectorPromptCandidateIds,
     visual_feature_count: storedVisualFeatureCount,
     provider_truncation_retry_count: truncationRetryCount,
+    raw_corrected_title_token_recall_avg: rawAverageRecallValues.length
+      ? Number((rawAverageRecallValues.reduce((sum, value) => sum + value, 0) / rawAverageRecallValues.length).toFixed(6))
+      : null,
     corrected_title_token_recall_avg: averageRecallValues.length
       ? Number((averageRecallValues.reduce((sum, value) => sum + value, 0) / averageRecallValues.length).toFixed(6))
       : null,
+    raw_pass_at_0_72_count: rawPassAt072,
+    raw_pass_at_0_72_rate: attempted ? Number((rawPassAt072 / attempted).toFixed(6)) : null,
     pass_at_0_72_count: passAt072,
     pass_at_0_72_rate: attempted ? Number((passAt072 / attempted).toFixed(6)) : null,
+    raw_pass_at_0_80_count: rawPassAt080,
+    raw_pass_at_0_80_rate: attempted ? Number((rawPassAt080 / attempted).toFixed(6)) : null,
     pass_at_0_80_count: passAt080,
     pass_at_0_80_rate: attempted ? Number((passAt080 / attempted).toFixed(6)) : null,
+    candidate_proxy_selected_count: candidateProxySelectedCount,
+    candidate_proxy_catalog_selected_count: candidateProxyCatalogSelectedCount,
+    candidate_proxy_vector_selected_count: candidateProxyVectorSelectedCount,
     elapsed_ms: Math.max(0, Math.round(elapsedMs)),
     attempted_cards_per_minute: elapsedMs > 0 ? Number((attempted / (elapsedMs / 60000)).toFixed(6)) : null,
     evaluated_cards_per_minute: elapsedMs > 0 ? Number((evaluated / (elapsedMs / 60000)).toFixed(6)) : null,

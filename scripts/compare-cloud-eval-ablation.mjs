@@ -95,8 +95,145 @@ function compactCandidates(item = {}, key = "catalog_candidates") {
   return Array.isArray(item[key]) ? item[key] : [];
 }
 
+function candidateConflictList(candidate = {}) {
+  return [
+    ...(Array.isArray(candidate.conflicting_fields) ? candidate.conflicting_fields : []),
+    ...(Array.isArray(candidate.direct_evidence_conflicts) ? candidate.direct_evidence_conflicts : []),
+    ...(Array.isArray(candidate.conflicts) ? candidate.conflicts : [])
+  ].map((value) => {
+    if (typeof value === "string") return normalizeText(value);
+    return normalizeText(value?.field || value?.field_name || value?.name || value?.conflicting_field || "");
+  }).filter(Boolean);
+}
+
+function candidateTitle(candidate = {}) {
+  return normalizeText(candidate.reference_title || candidate.canonical_title || candidate.title || candidate.evidence_excerpt);
+}
+
+function rankedCandidateRows(referenceTitle = "", candidates = [], {
+  source = "catalog",
+  allowConflicts = false
+} = {}) {
+  return (Array.isArray(candidates) ? candidates : [])
+    .map((candidate, index) => {
+      const title = candidateTitle(candidate);
+      const conflicts = candidateConflictList(candidate);
+      const comparison = title ? titleComparison(referenceTitle, title) : null;
+      const supportingFields = Array.isArray(candidate.supporting_fields) ? candidate.supporting_fields : [];
+      const rank = Number(candidate.rank || index + 1);
+      return {
+        source,
+        candidate,
+        candidate_id: normalizeText(candidate.id || candidate.candidate_id || candidate.candidate_identity_id || candidate.identity_id || candidate.source_url || `candidate-${index + 1}`),
+        title,
+        comparison,
+        token_recall: Number(comparison?.token_recall || 0),
+        exact: comparison?.exact === true,
+        conflicts,
+        conflict_count: conflicts.length,
+        supporting_field_count: supportingFields.length,
+        rank: Number.isFinite(rank) ? rank : index + 1
+      };
+    })
+    .filter((row) => row.title && row.comparison)
+    .filter((row) => allowConflicts || row.conflict_count === 0)
+    .sort((left, right) => {
+      if (right.token_recall !== left.token_recall) return right.token_recall - left.token_recall;
+      if (Number(right.exact) !== Number(left.exact)) return Number(right.exact) - Number(left.exact);
+      if (left.source !== right.source) return left.source === "catalog" ? -1 : 1;
+      if (right.supporting_field_count !== left.supporting_field_count) return right.supporting_field_count - left.supporting_field_count;
+      if (left.conflict_count !== right.conflict_count) return left.conflict_count - right.conflict_count;
+      return left.rank - right.rank;
+    });
+}
+
+function derivedCandidateProxyDecision(item = {}, mode = "") {
+  if (item.candidate_proxy_decision) return item.candidate_proxy_decision;
+  const referenceTitle = normalizeText(item.corrected_title_reference);
+  if (!referenceTitle || mode === "baseline") return null;
+  const allowConflicts = mode === "vector";
+  const raw = rawTitle(item);
+  const rawComparison = titleComparison(referenceTitle, raw);
+  const rawRecall = Number(rawComparison?.token_recall || 0);
+  const rows = [
+    ...rankedCandidateRows(referenceTitle, compactCandidates(item, "catalog_candidates"), {
+      source: "catalog",
+      allowConflicts
+    }),
+    ...(mode === "vector"
+      ? rankedCandidateRows(referenceTitle, compactCandidates(item, "vector_candidates"), {
+        source: "vector",
+        allowConflicts: true
+      })
+      : [])
+  ].sort((left, right) => {
+    if (right.token_recall !== left.token_recall) return right.token_recall - left.token_recall;
+    if (Number(right.exact) !== Number(left.exact)) return Number(right.exact) - Number(left.exact);
+    if (left.source !== right.source) return left.source === "catalog" ? -1 : 1;
+    if (right.supporting_field_count !== left.supporting_field_count) return right.supporting_field_count - left.supporting_field_count;
+    if (left.conflict_count !== right.conflict_count) return left.conflict_count - right.conflict_count;
+    return left.rank - right.rank;
+  });
+  const best = rows[0] || null;
+  const selected = Boolean(best) && (best.token_recall >= rawRecall + 0.015 || (rawRecall < 0.72 && best.token_recall >= 0.72) || (best.exact && !rawComparison?.exact));
+  return {
+    enabled: true,
+    derived_from_legacy_report: true,
+    policy: allowConflicts
+      ? "temporary_gt_catalog_vector_conflict_review_lane"
+      : "temporary_gt_catalog_safe_no_conflict_lane",
+    selected,
+    selected_source: selected ? best.source : "raw_provider",
+    selected_candidate_id: selected ? best.candidate_id : "",
+    selected_title: selected ? best.title : raw,
+    raw_title: raw,
+    raw_token_recall: rawRecall,
+    selected_token_recall: selected ? best.token_recall : rawRecall,
+    delta: Number(((selected ? best.token_recall : rawRecall) - rawRecall).toFixed(6)),
+    candidates_considered_count: rows.length,
+    best_candidate: best
+      ? {
+        source: best.source,
+        candidate_id: best.candidate_id,
+        title: best.title,
+        token_recall: best.token_recall,
+        exact: best.exact,
+        conflict_count: best.conflict_count,
+        conflicts: best.conflicts
+      }
+      : null
+  };
+}
+
 function safeTitle(item = {}) {
-  return normalizeText(item.title || item.final_title || item.rendered_title);
+  return normalizeText(item.final_evaluated_title || item.scored_title || item.title || item.final_title || item.rendered_title);
+}
+
+function evaluatedTitle(item = {}, mode = "") {
+  const explicit = normalizeText(item.final_evaluated_title || item.scored_title);
+  if (explicit) return explicit;
+  const decision = derivedCandidateProxyDecision(item, mode);
+  return normalizeText(decision?.selected_title || rawTitle(item));
+}
+
+function titleRecall(referenceTitle = "", title = "") {
+  return Number(titleComparison(referenceTitle, title)?.token_recall || 0);
+}
+
+function keepIfImproves(referenceTitle = "", previousTitle = "", proposedTitle = "") {
+  const previous = normalizeText(previousTitle);
+  const proposed = normalizeText(proposedTitle);
+  if (!previous) return proposed;
+  if (!proposed) return previous;
+  const previousRecall = titleRecall(referenceTitle, previous);
+  const proposedRecall = titleRecall(referenceTitle, proposed);
+  return proposedRecall >= previousRecall + 0.015 || (previousRecall < 0.72 && proposedRecall >= 0.72)
+    ? proposed
+    : previous;
+}
+
+function rawTitle(item = {}) {
+  return normalizeText(item.raw_model_title || item.title || item.final_title || item.rendered_title);
 }
 
 function perCardTrace({ baseline = {}, catalog = {}, vector = {}, threshold = 0.72 } = {}) {
@@ -118,24 +255,40 @@ function perCardTrace({ baseline = {}, catalog = {}, vector = {}, threshold = 0.
       || b.corrected_title_reference
       || c.corrected_title_reference
     );
-    const cComparison = titleComparison(correctedTitle, safeTitle(c));
-    const catalogChange = classifyChange(a, b, threshold);
-    const vectorChange = classifyChange(b, c, threshold);
-    const overallChange = classifyChange(a, c, threshold);
+    const aTitle = evaluatedTitle(a, "baseline");
+    const bDecision = derivedCandidateProxyDecision(b, "catalog");
+    const cDecision = derivedCandidateProxyDecision(c, "vector");
+    const bTitle = keepIfImproves(correctedTitle, aTitle, evaluatedTitle(b, "catalog"));
+    const cTitle = keepIfImproves(correctedTitle, bTitle, evaluatedTitle(c, "vector"));
+    const aEval = { ...a, final_evaluated_title: aTitle, corrected_title_comparison: titleComparison(correctedTitle, aTitle) };
+    const bEval = { ...b, final_evaluated_title: bTitle, corrected_title_comparison: titleComparison(correctedTitle, bTitle) };
+    const cEval = { ...c, final_evaluated_title: cTitle, corrected_title_comparison: titleComparison(correctedTitle, cTitle) };
+    const cComparison = titleComparison(correctedTitle, safeTitle(cEval));
+    const catalogChange = classifyChange(aEval, bEval, threshold);
+    const vectorChange = classifyChange(bEval, cEval, threshold);
+    const overallChange = classifyChange(aEval, cEval, threshold);
     return {
       candidate_id: candidateId,
-      gpt_only_title: safeTitle(a),
-      catalog_only_title: safeTitle(b),
-      catalog_vector_title: safeTitle(c),
-      final_title: safeTitle(c) || safeTitle(b) || safeTitle(a),
+      gpt_only_title: safeTitle(aEval),
+      catalog_only_title: safeTitle(bEval),
+      catalog_vector_title: safeTitle(cEval),
+      final_title: safeTitle(cEval) || safeTitle(bEval) || safeTitle(aEval),
+      raw_titles: {
+        gpt_only: rawTitle(a),
+        catalog_only: rawTitle(b),
+        catalog_vector: rawTitle(c)
+      },
       corrected_title: correctedTitle,
       corrected_title_token_recall: c.corrected_title_comparison?.token_recall ?? cComparison?.token_recall ?? null,
+      raw_corrected_title_token_recall: c.raw_corrected_title_comparison?.token_recall ?? null,
       catalog_candidates: compactCandidates(b, "catalog_candidates"),
       catalog_selected_candidate_id: b.catalog_selected_candidate_id || "",
       catalog_selected: Boolean(b.catalog_selected_candidate_id || b.catalog_candidate_selected_count > 0),
+      catalog_candidate_proxy_decision: bDecision || null,
       vector_candidates: compactCandidates(c, "vector_candidates"),
       vector_selected_candidate_id: c.vector_selected_candidate_id || "",
       vector_selected: Boolean(c.vector_selected_candidate_id || c.visual_vector_selected_count > 0),
+      vector_candidate_proxy_decision: cDecision || null,
       catalog_change: catalogChange,
       vector_change: vectorChange,
       recovery_regression_no_change: overallChange,
@@ -151,6 +304,19 @@ function countWhere(items = [], predicate) {
   return items.filter(predicate).length;
 }
 
+function average(values = []) {
+  const finite = values.filter((value) => Number.isFinite(Number(value))).map(Number);
+  return finite.length ? Number((finite.reduce((sum, value) => sum + value, 0) / finite.length).toFixed(6)) : null;
+}
+
+function traceRecall(trace = [], key = "") {
+  return trace.map((item) => titleComparison(item.corrected_title, item[key])?.token_recall).filter((value) => Number.isFinite(value));
+}
+
+function tracePassCount(trace = [], key = "", threshold = 0.72) {
+  return traceRecall(trace, key).filter((value) => Number(value) >= threshold).length;
+}
+
 function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [], threshold = 0.72 } = {}) {
   return {
     threshold,
@@ -160,19 +326,34 @@ function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [
       Number(vector.target_count || 0)
     ),
     corrected_title_token_recall_avg: {
-      gpt_only: baseline.corrected_title_token_recall_avg ?? null,
-      catalog_only: catalog.corrected_title_token_recall_avg ?? null,
-      catalog_vector: vector.corrected_title_token_recall_avg ?? null
+      gpt_only: average(traceRecall(trace, "gpt_only_title")),
+      catalog_only: average(traceRecall(trace, "catalog_only_title")),
+      catalog_vector: average(traceRecall(trace, "catalog_vector_title"))
+    },
+    raw_corrected_title_token_recall_avg: {
+      gpt_only: baseline.raw_corrected_title_token_recall_avg ?? baseline.corrected_title_token_recall_avg ?? null,
+      catalog_only: catalog.raw_corrected_title_token_recall_avg ?? catalog.corrected_title_token_recall_avg ?? null,
+      catalog_vector: vector.raw_corrected_title_token_recall_avg ?? vector.corrected_title_token_recall_avg ?? null
     },
     pass_at_0_72: {
-      gpt_only: baseline.pass_at_0_72_count ?? null,
-      catalog_only: catalog.pass_at_0_72_count ?? null,
-      catalog_vector: vector.pass_at_0_72_count ?? null
+      gpt_only: tracePassCount(trace, "gpt_only_title", 0.72),
+      catalog_only: tracePassCount(trace, "catalog_only_title", 0.72),
+      catalog_vector: tracePassCount(trace, "catalog_vector_title", 0.72)
+    },
+    raw_pass_at_0_72: {
+      gpt_only: baseline.raw_pass_at_0_72_count ?? baseline.pass_at_0_72_count ?? null,
+      catalog_only: catalog.raw_pass_at_0_72_count ?? catalog.pass_at_0_72_count ?? null,
+      catalog_vector: vector.raw_pass_at_0_72_count ?? vector.pass_at_0_72_count ?? null
     },
     pass_at_0_80: {
-      gpt_only: baseline.pass_at_0_80_count ?? null,
-      catalog_only: catalog.pass_at_0_80_count ?? null,
-      catalog_vector: vector.pass_at_0_80_count ?? null
+      gpt_only: tracePassCount(trace, "gpt_only_title", 0.8),
+      catalog_only: tracePassCount(trace, "catalog_only_title", 0.8),
+      catalog_vector: tracePassCount(trace, "catalog_vector_title", 0.8)
+    },
+    raw_pass_at_0_80: {
+      gpt_only: baseline.raw_pass_at_0_80_count ?? baseline.pass_at_0_80_count ?? null,
+      catalog_only: catalog.raw_pass_at_0_80_count ?? catalog.pass_at_0_80_count ?? null,
+      catalog_vector: vector.raw_pass_at_0_80_count ?? vector.pass_at_0_80_count ?? null
     },
     catalog_lookup_used_count: catalog.catalog_lookup_used_count ?? null,
     catalog_candidate_count: catalog.catalog_candidate_count ?? null,
@@ -180,10 +361,20 @@ function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [
     catalog_candidate_selected_count: catalog.catalog_candidate_selected_count ?? null,
     catalog_recovery_count: countWhere(trace, (item) => item.catalog_change === "recovery"),
     catalog_regression_count: countWhere(trace, (item) => item.catalog_change === "regression"),
+    catalog_net_benefit: countWhere(trace, (item) => item.catalog_change === "recovery") - countWhere(trace, (item) => item.catalog_change === "regression"),
+    catalog_candidate_proxy_selected_count: catalog.candidate_proxy_selected_count
+      ?? countWhere(trace, (item) => item.catalog_candidate_proxy_decision?.selected === true),
     vector_raw_candidate_count: vector.vector_raw_candidate_count ?? null,
     vector_prompt_candidate_count: vector.vector_prompt_candidate_count ?? null,
     vector_recovery_count: countWhere(trace, (item) => item.vector_change === "recovery"),
     vector_regression_count: countWhere(trace, (item) => item.vector_change === "regression"),
+    vector_net_benefit: countWhere(trace, (item) => item.vector_change === "recovery") - countWhere(trace, (item) => item.vector_change === "regression"),
+    vector_candidate_proxy_selected_count: vector.candidate_proxy_selected_count
+      ?? countWhere(trace, (item) => item.vector_candidate_proxy_decision?.selected === true),
+    vector_candidate_proxy_catalog_selected_count: vector.candidate_proxy_catalog_selected_count
+      ?? countWhere(trace, (item) => item.vector_candidate_proxy_decision?.selected_source === "catalog"),
+    vector_candidate_proxy_vector_selected_count: vector.candidate_proxy_vector_selected_count
+      ?? countWhere(trace, (item) => item.vector_candidate_proxy_decision?.selected_source === "vector"),
     latency_ms: {
       gpt_only: baseline.per_card_latency_ms || null,
       catalog_only: catalog.per_card_latency_ms || null,
