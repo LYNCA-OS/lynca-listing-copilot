@@ -446,6 +446,80 @@ const failClosedPacket = buildVectorCandidatePacket({ sources: failClosedRetriev
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(failClosedPacket), false);
 assert.equal(vectorCandidatePacketAssistEligibility(failClosedPacket).reason, "no_approved_identity_candidate");
 
+const correctedTitleGtProvider = visualVectorProvider({
+  env: {
+    ...baseVectorEnv,
+    VECTOR_CORRECTED_TITLE_AS_TEMPORARY_GT: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([{
+    identity_id: "corrected-title-identity",
+    reference_image_id: "ref-corrected-title",
+    embedding_id: "emb-corrected-title",
+    image_role: "front_original",
+    embedding_role: "front_global",
+    model_id: "google/siglip2-base-patch16-384",
+    model_revision: defaultVisualEmbeddingModelRevision,
+    preprocessing_version: "card-rectification-v1",
+    similarity: 0.93,
+    canonical_title: "2025 Topps Chrome Corrected Player Gold #136",
+    fields: {},
+    reference_metadata: {},
+    embedding_metadata: {}
+  }]), { status: 200 })
+});
+const correctedTitleGtRetrieval = await correctedTitleGtProvider.search({
+  query: {
+    embedding: [1, ...Array.from({ length: 767 }, () => 0)],
+    embedding_role: "front_global",
+    model_id: "google/siglip2-base-patch16-384",
+    model_revision: defaultVisualEmbeddingModelRevision,
+    preprocessing_version: "card-rectification-v1"
+  },
+  resolved: {}
+});
+assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.retrieval_status, "approved");
+assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.reference_status, "APPROVED");
+assert.equal(correctedTitleGtRetrieval.candidates[0].field_derivation.title_derived_fields_are_ground_truth, true);
+const correctedTitleGtPacket = buildVectorCandidatePacket({ sources: correctedTitleGtRetrieval.candidates }, { limit: 5 });
+assert.equal(correctedTitleGtPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(correctedTitleGtPacket), true);
+assert.equal(vectorCandidatePacketAssistEligibility(correctedTitleGtPacket).prompt_candidate_count, 1);
+
+const rejectedCorrectedTitleProvider = visualVectorProvider({
+  env: {
+    ...baseVectorEnv,
+    VECTOR_CORRECTED_TITLE_AS_TEMPORARY_GT: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([{
+    identity_id: "rejected-corrected-title",
+    reference_image_id: "ref-rejected-corrected-title",
+    embedding_id: "emb-rejected-corrected-title",
+    image_role: "front_original",
+    embedding_role: "front_global",
+    model_id: "google/siglip2-base-patch16-384",
+    model_revision: defaultVisualEmbeddingModelRevision,
+    preprocessing_version: "card-rectification-v1",
+    similarity: 0.93,
+    canonical_title: "2025 Topps Chrome Rejected Player Gold #136",
+    retrieval_status: "rejected",
+    fields: {},
+    reference_metadata: {},
+    embedding_metadata: {}
+  }]), { status: 200 })
+});
+const rejectedCorrectedTitleRetrieval = await rejectedCorrectedTitleProvider.search({
+  query: {
+    embedding: [1, ...Array.from({ length: 767 }, () => 0)],
+    embedding_role: "front_global",
+    model_id: "google/siglip2-base-patch16-384",
+    model_revision: defaultVisualEmbeddingModelRevision,
+    preprocessing_version: "card-rectification-v1"
+  },
+  resolved: {}
+});
+assert.equal(rejectedCorrectedTitleRetrieval.candidates[0].reference_metadata.retrieval_status, "rejected");
+assert.equal(rejectedCorrectedTitleRetrieval.candidates[0].field_derivation.title_derived_fields_are_ground_truth, false);
+
 const telemetryMissingConfig = await recordVectorRetrievalTelemetry({
   env: {},
   fetchImpl: async () => {

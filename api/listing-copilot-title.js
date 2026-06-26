@@ -2925,6 +2925,8 @@ function vectorRetrievalEnv(env = process.env, config = vectorRetrievalConfig(en
     VECTOR_QUERY_TIMEOUT_MS: String(config.queryTimeoutMs),
     ENABLE_ADVANCED_RETRIEVAL: config.advancedRetrievalEnabled ? "true" : "false",
     ENABLE_HYBRID_RETRIEVAL: config.hybridRetrievalEnabled ? "true" : "false",
+    VECTOR_CORRECTED_TITLE_AS_TEMPORARY_GT: config.correctedTitleAsTemporaryGt ? "true" : "false",
+    VECTOR_EVAL_CORRECTED_TITLE_AS_GT: config.correctedTitleAsTemporaryGt ? "true" : "false",
     ADVANCED_RETRIEVAL_STAGE1_TOP_N: String(config.advancedStage1TopN),
     ADVANCED_RETRIEVAL_RRF_K: String(config.rrfK),
     ADVANCED_RETRIEVAL_LOW_MARGIN: String(config.lowMarginThreshold),

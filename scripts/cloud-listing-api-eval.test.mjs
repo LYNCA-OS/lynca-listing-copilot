@@ -205,7 +205,10 @@ assert.equal(openai.report.provider_success_rate, 1);
 assert.equal(openai.report.per_card_latency_ms.p50, 1234);
 assert.equal(openai.report.cloud_preflight.ok, true);
 assert.equal(openai.report.cloud_preflight.default_provider, "openai_legacy");
+assert.equal(openai.report.accuracy_policy.corrected_title_as_temporary_gt, true);
+assert.equal(openai.report.accuracy_policy.corrected_title_temporary_gt_scope, "cloud_eval_proxy_title_and_eval_only_vector_reference");
 assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);
+assert.equal(openai.report.results[0].corrected_title_as_temporary_gt, true);
 assert.equal(openai.report.breakpoint_completeness_avg.raw_provider_fields, 0.375);
 assert.equal(openai.report.breakpoint_completeness_avg.rendered_fields, 0.375);
 assert.equal(openai.report.results[0].breakpoints.raw_provider_fields.year, "2025");
@@ -215,6 +218,7 @@ assert.equal(openai.report.results[0].breakpoints.resolved_fields.players[0], "T
 assert.equal(openai.titlePayload.provider, "openai_legacy");
 assert.equal(openai.titlePayload.explicitEmergency, true);
 assert.equal(openai.titlePayload.provider_options.single_model_fast, true);
+assert.equal(openai.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
 assert.equal(openai.titlePayload.provider_options.enable_evidence_completion, false);
 assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, false);
 
@@ -227,6 +231,8 @@ assert.equal(openaiVector.titlePayload.provider_options.enable_evidence_completi
 assert.equal(openaiVector.titlePayload.provider_options.enable_stored_visual_features, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_vector_retrieval, true);
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
+assert.equal(openaiVector.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
+assert.equal(openaiVector.titlePayload.provider_options.vector_corrected_title_as_temporary_gt, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
 assert.equal(openaiVector.report.visual_vector_used_count, 1);

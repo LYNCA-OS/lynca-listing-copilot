@@ -231,11 +231,13 @@ function providerOptionsForMode(providerMode) {
   const vectorRetrieval = providerMode === providerModes.OPENAI_VECTOR;
   return {
     single_model_fast: !vectorRetrieval,
+    corrected_title_as_temporary_gt: true,
     enable_evidence_completion: vectorRetrieval,
     enable_stored_visual_features: vectorRetrieval,
     enable_query_visual_embeddings: vectorRetrieval,
     enable_vector_retrieval: vectorRetrieval,
     vector_retrieval_mode: vectorRetrieval ? "assist" : "off",
+    vector_corrected_title_as_temporary_gt: vectorRetrieval,
     enable_advanced_retrieval: vectorRetrieval,
     enable_hybrid_retrieval: vectorRetrieval,
     enable_gpt_failure_fallback: false,
@@ -790,6 +792,7 @@ async function callListingApi({
   fetchImpl = globalThis.fetch
 }) {
   const provider = cloudProviderForMode(providerMode);
+  const providerOptions = providerOptionsForMode(providerMode);
   const images = await verifiedImageInputs({
     baseUrl,
     cookie,
@@ -803,7 +806,7 @@ async function callListingApi({
     provider,
     provider_id: provider,
     provider_eval_mode: providerMode,
-    provider_options: providerOptionsForMode(providerMode),
+    provider_options: providerOptions,
     explicitEmergency: provider === providerModes.OPENAI,
     explicit_emergency: provider === providerModes.OPENAI,
     maxTitleLength,
@@ -880,6 +883,7 @@ function evaluatedResultFromData({
     status: "evaluated",
     technical_failure: providerFailure,
     technical_failure_code: providerFailure ? providerFailureCode(data, response?.http_status || 200) || "provider_failed" : null,
+    corrected_title_as_temporary_gt: providerOptionsForMode(providerMode).corrected_title_as_temporary_gt === true,
     provider_error_recovered: providerErrorAttempts.length > 0 && !providerFailure,
     provider_error_attempts: providerErrorAttempts,
     provider_error_retry_count: providerErrorAttempts.length,
@@ -962,6 +966,7 @@ function technicalFailureResult({
     technical_failure: true,
     technical_failure_code: code,
     provider_error_recovered: false,
+    corrected_title_as_temporary_gt: providerOptionsForMode(providerMode).corrected_title_as_temporary_gt === true,
     provider_error_attempts: providerErrorAttempts.length
       ? providerErrorAttempts
       : [providerFailureAttempt({ error, attempt: 1, elapsedMs: Date.now() - started })],
@@ -1053,8 +1058,10 @@ function summarize(results = [], elapsedMs = 0) {
     attempted_count: attempted,
     evaluated_count: evaluated,
     accuracy_policy: {
+      corrected_title_as_temporary_gt: true,
+      corrected_title_temporary_gt_scope: "cloud_eval_proxy_title_and_eval_only_vector_reference",
       corrected_title_token_recall_is_identity_accuracy: false,
-      corrected_title_token_recall_use: "legacy_proxy_title_overlap_only",
+      corrected_title_token_recall_use: "temporary_gt_title_overlap_proxy_only",
       reviewed_ground_truth_required_for_ai_card_exact: true
     },
     provider_error_count: providerErrors,
