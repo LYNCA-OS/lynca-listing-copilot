@@ -177,7 +177,6 @@ as $$
     select
       c.*,
       s.source_type,
-      s.source_status,
       (
         case when p.checklist is not null and upper(coalesce(c.checklist_code, '')) = p.checklist then 0.42 else 0 end +
         case when p.card_no is not null and upper(coalesce(c.card_number, '')) = p.card_no then 0.32 else 0 end +
