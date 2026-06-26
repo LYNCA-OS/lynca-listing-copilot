@@ -2728,15 +2728,39 @@ function withCompletedEvidencePresentation(result, completion, payload) {
   };
 }
 
-function retrievalCandidatesForIdentity(completion = {}) {
+function candidateConflictFields(candidate = {}) {
+  return [
+    ...(Array.isArray(candidate.conflicting_fields) ? candidate.conflicting_fields : []),
+    ...(Array.isArray(candidate.direct_evidence_conflicts) ? candidate.direct_evidence_conflicts : []),
+    ...(Array.isArray(candidate.conflicts) ? candidate.conflicts : [])
+  ].map((conflict) => typeof conflict === "string" ? conflict : conflict?.field || conflict?.field_name || "").filter(Boolean);
+}
+
+function retrievalCandidateApprovedForIdentity(candidate = {}, providerOptions = {}) {
+  if (!candidate || candidateConflictFields(candidate).length) return false;
+  const status = String(
+    candidate.reference_metadata?.retrieval_status
+    || candidate.retrieval_status
+    || candidate.reference_status
+    || ""
+  ).trim().toLowerCase();
+  if (status === "approved") return true;
+  const evalCorrectedTitleGt = optionFlag(providerOptions, "corrected_title_as_temporary_gt", false) === true;
+  return evalCorrectedTitleGt
+    && candidate.field_derivation?.corrected_title_used === true
+    && String(candidate.reference_metadata?.source_status || "").toUpperCase() === "AUTO_PARSED_FROM_VERIFIED_TITLE";
+}
+
+function retrievalCandidatesForIdentity(completion = {}, providerOptions = {}) {
   const retrieval = completion.retrieval || {};
   const sources = Array.isArray(retrieval.sources) ? retrieval.sources : [];
   const selectedId = retrieval.selected_candidate?.candidate_id || "";
-  const selected = retrieval.selected_candidate
+  const selected = retrieval.selected_candidate && retrievalCandidateApprovedForIdentity(retrieval.selected_candidate, providerOptions)
     ? [{ ...retrieval.selected_candidate, selected: true, identity_evidence_eligible: true }]
     : [];
   const topCandidates = sources
     .filter((candidate) => candidate && candidate.candidate_id !== selectedId)
+    .filter((candidate) => retrievalCandidateApprovedForIdentity(candidate, providerOptions))
     .filter((candidate) => {
       const sourceType = String(candidate.source_type || "").toUpperCase();
       const score = Number(candidate.match_score || 0);
@@ -3252,7 +3276,7 @@ async function withEvidenceCompletion(result, payload, {
   return timeAsync(timingContext, "resolver_ms", () => applyIdentityResolutionGateWithConvergence(output, {
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
     providerId: output.identity_provider_id || output.provider || output.source,
-    retrievalCandidates: retrievalCandidatesForIdentity(completion),
+    retrievalCandidates: retrievalCandidatesForIdentity(completion, providerOptions),
     retrieveEvidence: createIdentityConvergenceRetriever({
       retrievalMode,
       env: retrievalEnv,
