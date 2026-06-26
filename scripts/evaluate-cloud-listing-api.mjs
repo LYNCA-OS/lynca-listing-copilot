@@ -1,11 +1,16 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candidates.json";
 const defaultOutPath = "data/eval/provider-regression-30/cloud-listing-api-latest.json";
 const defaultEnvFilePath = ".env.local";
+const execFileAsync = promisify(execFile);
 const providerModes = Object.freeze({
   OPENAI: "openai_legacy",
   GEMINI_ONLY: "gemini",
@@ -30,6 +35,113 @@ function numberArg(argv, name, fallback) {
 
 function delay(ms = 0) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, Math.max(0, Number(ms) || 0)));
+}
+
+function headerEntries(headers = {}) {
+  if (!headers || typeof headers !== "object") return [];
+  if (typeof headers.forEach === "function") {
+    const entries = [];
+    headers.forEach((value, key) => entries.push([key, value]));
+    return entries;
+  }
+  if (Array.isArray(headers)) return headers;
+  return Object.entries(headers);
+}
+
+function parseHeaderBlock(headerText = "") {
+  const blocks = String(headerText || "")
+    .split(/\r?\n\r?\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  const finalBlock = [...blocks].reverse().find((block) => /^HTTP\/\d(?:\.\d)?\s+\d+|^HTTP\/2\s+\d+/i.test(block)) || "";
+  const lines = finalBlock.split(/\r?\n/);
+  const statusLine = lines.shift() || "";
+  const statusMatch = statusLine.match(/^HTTP\/(?:\d(?:\.\d)?|2)\s+(\d+)/i);
+  const headers = {};
+  for (const line of lines) {
+    const separator = line.indexOf(":");
+    if (separator <= 0) continue;
+    const key = line.slice(0, separator).trim().toLowerCase();
+    const value = line.slice(separator + 1).trim();
+    if (!key) continue;
+    headers[key] = headers[key] ? `${headers[key]}, ${value}` : value;
+  }
+  return {
+    status: statusMatch ? Number(statusMatch[1]) : 0,
+    headers
+  };
+}
+
+function curlFetchForConnectToIp(connectToIp = "") {
+  const ip = normalizeText(connectToIp);
+  if (!ip) return null;
+  return async function curlFetch(url, init = {}) {
+    const parsedUrl = new URL(url);
+    const tempDir = await mkdtemp(join(tmpdir(), "lynca-cloud-eval-"));
+    const headerPath = join(tempDir, "headers.txt");
+    const bodyPath = join(tempDir, "body.txt");
+    const method = normalizeText(init.method || "GET").toUpperCase();
+    const args = [
+      "--silent",
+      "--show-error",
+      "--dump-header",
+      headerPath,
+      "--output",
+      bodyPath,
+      "--max-time",
+      String(Math.max(1, Math.ceil(Number(process.env.CLOUD_LISTING_API_CURL_TIMEOUT_MS || 240000) / 1000))),
+      "--connect-timeout",
+      String(Math.max(1, Math.ceil(Number(process.env.CLOUD_LISTING_API_CURL_CONNECT_TIMEOUT_MS || 30000) / 1000))),
+      "--retry",
+      String(Math.max(0, Math.trunc(Number(process.env.CLOUD_LISTING_API_CURL_RETRIES || 3)))),
+      "--retry-all-errors",
+      "--retry-delay",
+      String(Math.max(0, Math.trunc(Number(process.env.CLOUD_LISTING_API_CURL_RETRY_DELAY_SECONDS || 1)))),
+      "--connect-to",
+      `${parsedUrl.hostname}:${parsedUrl.port || "443"}:${ip}:${parsedUrl.port || "443"}`,
+      "--request",
+      method
+    ];
+    for (const [key, value] of headerEntries(init.headers)) {
+      if (value === undefined || value === null) continue;
+      args.push("--header", `${key}: ${value}`);
+    }
+    if (init.body !== undefined && init.body !== null) {
+      args.push("--data-binary", String(init.body));
+    }
+    args.push(url);
+
+    try {
+      await execFileAsync("curl", args, {
+        maxBuffer: 1024 * 1024,
+        env: process.env
+      });
+      const [headerText, bodyText] = await Promise.all([
+        readFile(headerPath, "utf8").catch(() => ""),
+        readFile(bodyPath, "utf8").catch(() => "")
+      ]);
+      const parsedHeaders = parseHeaderBlock(headerText);
+      return {
+        ok: parsedHeaders.status >= 200 && parsedHeaders.status < 300,
+        status: parsedHeaders.status,
+        headers: {
+          get(name) {
+            return parsedHeaders.headers[String(name || "").toLowerCase()] || "";
+          }
+        },
+        text: async () => bodyText,
+        json: async () => JSON.parse(bodyText)
+      };
+    } catch (error) {
+      const detail = normalizeText(error?.stderr || `curl exited with code ${error?.code || "unknown"}`).slice(0, 180);
+      const sanitized = new Error(`Cloud curl request failed for ${method} ${parsedUrl.pathname}: ${detail}`);
+      sanitized.code = error?.code === 35 ? "ECONNRESET" : error?.code || "cloud_curl_request_failed";
+      sanitized.retryable = true;
+      throw sanitized;
+    } finally {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  };
 }
 
 function unquoteEnvValue(value = "") {
@@ -1033,6 +1145,7 @@ export async function main(argv = process.argv, env = process.env) {
   const providerErrorRetries = numberArg(argv, "--provider-error-retries", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRIES || 1));
   const providerErrorRetryDelayMs = numberArg(argv, "--provider-error-retry-delay-ms", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRY_DELAY_MS || 1500));
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
+  const fetchImpl = curlFetchForConnectToIp(runtimeEnv.CLOUD_LISTING_API_CONNECT_TO_IP || "");
   validateProtectionBypassSecret({ bypassSecret, env: runtimeEnv });
   const report = await evaluateCloudListingApi({
     dataset: await readJson(datasetPath),
@@ -1046,7 +1159,8 @@ export async function main(argv = process.argv, env = process.env) {
     requestTimeoutMs,
     providerErrorRetries,
     providerErrorRetryDelayMs,
-    skipPreflight
+    skipPreflight,
+    fetchImpl: fetchImpl || globalThis.fetch
   });
   if (outPath) await writeJson(outPath, report);
   process.stdout.write([

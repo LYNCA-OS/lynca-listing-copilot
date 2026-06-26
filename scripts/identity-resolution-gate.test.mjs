@@ -96,13 +96,13 @@ const agnesOnly = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(agnesOnly.identity_resolution_status, "ABSTAIN");
-assert.equal(agnesOnly.final_title, "Topps Chrome Shohei Ohtani");
+assert.equal(agnesOnly.final_title, "2024 Topps Chrome Shohei Ohtani");
 assert.equal(agnesOnly.title_render_source, "identity_resolution_partial_writer_draft");
 assert.equal(agnesOnly.publication_gate.auto_publish_allowed, false);
 assert.equal(agnesOnly.publication_gate.writer_review_ready, true);
 assert.equal(agnesOnly.publication_gate.workflow_route, "DEEP_REVIEW");
 assert.deepEqual(agnesOnly.publication_gate.writer_required_fields.sort(), ["parallel", "serial_number", "year"]);
-assert.equal(agnesOnly.draft_gate.by_field.year.display_policy, "SUGGEST_ONLY");
+assert.equal(agnesOnly.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
 assert.equal(agnesOnly.draft_gate.by_field.year.requires_writer_confirmation, true);
 assert.equal(agnesOnly.accuracy_governor.enabled, true);
 assert.ok(agnesOnly.accuracy_governor.risk_flags.some((flag) => {
@@ -329,8 +329,8 @@ assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.mode, "PA
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.value, "Topps Chrome");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.publishable_fields.product.publishability, "PUBLISHABLE_NARROW");
 assert.equal(fastVisionNoRisk.publication_gate.field_level_publication.review_required_fields[0].field, "year");
-assert.equal(fastVisionNoRisk.draft_gate.by_field.year.display_policy, "SUGGEST_ONLY");
-assert.doesNotMatch(fastVisionNoRisk.final_title, /2024/);
+assert.equal(fastVisionNoRisk.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.match(fastVisionNoRisk.final_title, /2024/);
 assert.ok(fastVisionNoRisk.accuracy_governor.risk_flags.some((flag) => {
   return flag.field === "year" && flag.critical === true;
 }));
@@ -428,7 +428,7 @@ const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   verificationFields: ["serial_number"]
 });
 assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
-assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "Topps Chrome Shohei Ohtani #/50");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani #/50");
 assert.equal(fastVisionSerialWithoutFocusedVerification.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(fastVisionSerialWithoutFocusedVerification.writer_required_fields, ["year", "serial_number"]);
 assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
@@ -1271,11 +1271,11 @@ const lowConfidenceYear = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(lowConfidenceYear.identity_resolution_status, "ABSTAIN");
-assert.equal(lowConfidenceYear.final_title, "Star Wars Chrome Black Paul Kasey Auto");
+assert.equal(lowConfidenceYear.final_title, "2017 Star Wars Chrome Black Paul Kasey Auto");
 assert.equal(lowConfidenceYear.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(lowConfidenceYear.writer_required_fields, ["year"]);
-assert.doesNotMatch(lowConfidenceYear.final_title, /2017/);
-assert.equal(lowConfidenceYear.draft_gate.by_field.year.display_policy, "SUGGEST_ONLY");
+assert.match(lowConfidenceYear.final_title, /2017/);
+assert.equal(lowConfidenceYear.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
 assert.ok(lowConfidenceYear.conflict_map.some((conflict) => conflict.conflict_type === "CRITICAL_FIELD_BELOW_PUBLISH_CONFIDENCE"));
 
 const frontOnlyColorDescriptorDropped = applyIdentityResolutionGate({
