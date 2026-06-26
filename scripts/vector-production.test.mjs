@@ -83,6 +83,7 @@ assert.equal(packet.vector_retrieval.status, "COMPLETED");
 assert.equal(packet.vector_retrieval.candidates.length, 1);
 assert.equal(packet.vector_retrieval.candidates[0].reference_count, 2);
 assert.equal(packet.vector_retrieval.candidates[0].fields.expected_serial_denominator, "50");
+assert.equal(packet.vector_retrieval.candidates[0].reference_title, "2024 Topps Chrome Tester Gold Refractor");
 assert.equal(packet.vector_retrieval.candidates[0].fields.serial_number, undefined, "reference serial numerator must not enter GPT packet");
 assert.equal(packet.vector_retrieval.candidates[0].fields.grade_company, undefined, "reference grade must not enter GPT packet");
 assert.equal(packet.vector_retrieval.candidates[0].source_trust, "REFERENCE_CANDIDATE", "visual neighbors are not approved identity candidates by default");
@@ -482,6 +483,7 @@ assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.referenc
 assert.equal(correctedTitleGtRetrieval.candidates[0].field_derivation.title_derived_fields_are_ground_truth, true);
 const correctedTitleGtPacket = buildVectorCandidatePacket({ sources: correctedTitleGtRetrieval.candidates }, { limit: 5 });
 assert.equal(correctedTitleGtPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
+assert.equal(correctedTitleGtPacket.vector_retrieval.candidates[0].reference_title, "2025 Topps Chrome Corrected Player Gold #136");
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(correctedTitleGtPacket), true);
 assert.equal(vectorCandidatePacketAssistEligibility(correctedTitleGtPacket).prompt_candidate_count, 1);
 
