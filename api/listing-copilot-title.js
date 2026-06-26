@@ -2968,15 +2968,36 @@ function retrievalEnvForProviderOptions(env = process.env, providerOptions = {})
   return config.enabled ? vectorRetrievalEnv(env, config) : env;
 }
 
-function hybridRetrievalFamiliesForProviderOptions(env = process.env, providerOptions = {}) {
+function retrievalFamiliesForProviderOptions(env = process.env, providerOptions = {}) {
+  const catalogAssist = optionFlag(providerOptions, "enable_catalog_assist", false);
+  const vectorAssist = optionFlag(providerOptions, "enable_vector_assist", false);
   const config = vectorRetrievalConfig(env, providerOptions);
-  if (!config.enabled) return null;
-  if (!config.hybridRetrievalEnabled) return null;
+  const families = [];
+  if (catalogAssist) {
+    families.push(
+      retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+      retrievalQueryFamilies.INTERNAL_REGISTRY,
+      retrievalQueryFamilies.CATALOG_EXACT_CODE,
+      retrievalQueryFamilies.CATALOG_YEAR_PRODUCT_SUBJECT,
+      retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR,
+      retrievalQueryFamilies.CATALOG_SET_SUBJECT
+    );
+  }
+  if (config.enabled && vectorAssist) {
+    families.push(retrievalQueryFamilies.VISUAL_VECTOR);
+    if (config.hybridRetrievalEnabled) families.push(retrievalQueryFamilies.POSTGRES_HYBRID);
+  }
+  return families.length ? [...new Set(families)] : null;
+}
+
+function catalogRetrievalFamilies() {
   return [
     retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
     retrievalQueryFamilies.INTERNAL_REGISTRY,
-    retrievalQueryFamilies.VISUAL_VECTOR,
-    retrievalQueryFamilies.POSTGRES_HYBRID
+    retrievalQueryFamilies.CATALOG_EXACT_CODE,
+    retrievalQueryFamilies.CATALOG_YEAR_PRODUCT_SUBJECT,
+    retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR,
+    retrievalQueryFamilies.CATALOG_SET_SUBJECT
   ];
 }
 
@@ -2994,6 +3015,46 @@ function vectorRetrievalUnavailablePacket(status, reason) {
       candidates: [],
       unavailable: [{ provider_id: "visual_vector", reason }]
     }
+  };
+}
+
+async function prepareCatalogCandidateContext({
+  resolvedForRetrieval = {},
+  providerOptions = {},
+  timingContext = null,
+  env = process.env
+} = {}) {
+  if (optionFlag(providerOptions, "enable_catalog_assist", false) !== true) {
+    const packet = emptyVectorCandidatePacket("catalog_assist_disabled");
+    return {
+      retrieval: null,
+      packet,
+      assistPacket: packet,
+      catalog_assist_eligibility: vectorCandidatePacketAssistEligibility(packet),
+      promptPacket: false
+    };
+  }
+
+  const allowedFamilies = catalogRetrievalFamilies();
+  const retrieval = await timeAsync(timingContext, "catalog_retrieval_ms", () => runRetrieval({
+    resolved: resolvedForRetrieval || {},
+    visualEmbeddings: [],
+    mode: retrievalModes.INTERNAL_ONLY,
+    allowedFamilies,
+    maxQueries: allowedFamilies.length,
+    env
+  }));
+  const packet = buildVectorCandidatePacket(retrieval, {
+    limit: 5
+  });
+  const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
+  const assistPacket = buildVectorCandidateAssistPacket(packet);
+  return {
+    retrieval,
+    packet,
+    assistPacket,
+    catalog_assist_eligibility: assistEligibility,
+    promptPacket: assistEligibility.prompt_candidate_count > 0
   };
 }
 
@@ -3066,14 +3127,15 @@ async function prepareVectorCandidateContext({
   }
 
   const retrievalStartedAt = Date.now();
-  const allowedFamilies = config.hybridRetrievalEnabled
-    ? [
-      retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
-      retrievalQueryFamilies.INTERNAL_REGISTRY,
-      retrievalQueryFamilies.VISUAL_VECTOR,
-      retrievalQueryFamilies.POSTGRES_HYBRID
-    ]
-    : [retrievalQueryFamilies.VISUAL_VECTOR];
+  const allowedFamilies = retrievalFamiliesForProviderOptions(env, providerOptions)
+    || (config.hybridRetrievalEnabled
+      ? [
+        retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+        retrievalQueryFamilies.INTERNAL_REGISTRY,
+        retrievalQueryFamilies.VISUAL_VECTOR,
+        retrievalQueryFamilies.POSTGRES_HYBRID
+      ]
+      : [retrievalQueryFamilies.VISUAL_VECTOR]);
   const retrieval = await timeAsync(timingContext, "vector_retrieval_ms", () => runRetrieval({
     resolved: resolvedForRetrieval || {},
     visualEmbeddings: activeVisualFeatures,
@@ -3131,6 +3193,18 @@ function withVectorCandidateContext(result = {}, context = {}) {
   };
 }
 
+function withCatalogCandidateContext(result = {}, context = {}) {
+  if (!context || !context.packet) return result;
+  return {
+    ...result,
+    catalog_retrieval: context.retrieval || null,
+    catalog_candidate_packet: context.packet,
+    catalog_assist_packet: context.assistPacket || null,
+    catalog_prompt_assist_used: context.promptPacket === true,
+    catalog_assist_eligibility: context.catalog_assist_eligibility || null
+  };
+}
+
 async function withEvidenceCompletion(result, payload, {
   runFocusedVisionImpl = null,
   env = process.env,
@@ -3140,14 +3214,18 @@ async function withEvidenceCompletion(result, payload, {
 } = {}) {
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
   const retrievalEnv = retrievalEnvForProviderOptions(env, providerOptions);
-  const hybridAllowedFamilies = hybridRetrievalFamiliesForProviderOptions(env, providerOptions);
+  const allowedFamilies = retrievalFamiliesForProviderOptions(env, providerOptions);
   const completion = await timeAsync(timingContext, "evidence_completion_ms", () => completeEvidence({
     resolved: result.resolved,
     evidence: result.evidence,
     captureQuality: result.capture_quality || captureQualityForPayload(payload),
     unresolved: result.unresolved,
-    visualEmbeddings: visualFeaturesForRetrieval(result, visualFeatures),
+    visualEmbeddings: optionFlag(providerOptions, "enable_vector_assist", false)
+      ? visualFeaturesForRetrieval(result, visualFeatures)
+      : [],
     retrievalMode,
+    allowedFamilies: allowedFamilies || undefined,
+    maxQueries: allowedFamilies ? Math.max(4, allowedFamilies.length) : undefined,
     env: retrievalEnv,
     runFocusedVisionImpl
   }));
@@ -3178,8 +3256,8 @@ async function withEvidenceCompletion(result, payload, {
     retrieveEvidence: createIdentityConvergenceRetriever({
       retrievalMode,
       env: retrievalEnv,
-      allowedFamilies: hybridAllowedFamilies || undefined,
-      maxQueries: hybridAllowedFamilies ? Math.max(4, hybridAllowedFamilies.length) : undefined
+      allowedFamilies: allowedFamilies || undefined,
+      maxQueries: allowedFamilies ? Math.max(4, allowedFamilies.length) : undefined
     }),
     convergenceOptions: {
       maxIterations: 1
@@ -3327,22 +3405,36 @@ async function createOpenAiTitle(payload, selection, {
     ...payload,
     images: signedImages
   });
+  const resolvedForRetrieval = resolvedForRetrievalFromPayload(payload, providerOptions, recognitionEvidenceDocument);
+  const catalogContext = await prepareCatalogCandidateContext({
+    resolvedForRetrieval,
+    providerOptions,
+    timingContext
+  });
   const vectorContext = await prepareVectorCandidateContext({
     initialPayload: baseInitialPayload,
     signedImages,
     visualFeatures,
-    resolvedForRetrieval: resolvedForRetrievalFromPayload(payload, providerOptions, recognitionEvidenceDocument),
+    resolvedForRetrieval,
     providerOptions,
     timingContext
   });
+  const promptCandidatePacket = vectorContext.promptPacket
+    ? vectorContext.assistPacket
+    : catalogContext.promptPacket
+      ? catalogContext.assistPacket
+      : null;
+  const blockedReason = vectorContext.vector_assist_eligibility?.reason
+    || catalogContext.catalog_assist_eligibility?.reason
+    || "";
   const initialPayload = {
     ...baseInitialPayload,
-    vectorCandidatePacket: vectorContext.promptPacket
-      ? vectorContext.assistPacket
+    vectorCandidatePacket: promptCandidatePacket
+      ? promptCandidatePacket
       : emptyVectorCandidatePacket(vectorContext.mode === vectorRetrievalModes.SHADOW
         ? "vector_shadow_mode_not_supplied_to_gpt"
-        : vectorContext.vector_assist_eligibility?.reason
-          ? `vector_assist_blocked_${vectorContext.vector_assist_eligibility.reason}`
+        : blockedReason
+          ? `candidate_assist_blocked_${blockedReason}`
           : "vector_candidates_not_available_to_gpt")
   };
   const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
@@ -3362,7 +3454,10 @@ async function createOpenAiTitle(payload, selection, {
     ));
   const mergedResult = withVisualFeatures(
     withVectorCandidateContext(
-      withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
+      withCatalogCandidateContext(
+        withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
+        catalogContext
+      ),
       vectorContext
     ),
     vectorContext.visualFeatures

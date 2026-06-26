@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { evaluateCloudListingApi, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
+import { compareCloudEvalAblation } from "./compare-cloud-eval-ablation.mjs";
 
 function jsonResponse(status, body, headers = {}) {
   return {
@@ -206,15 +210,19 @@ async function runProvider(provider, options = {}) {
 
 const openai = await runProvider("openai");
 assert.equal(openai.report.status, "completed");
-assert.equal(openai.report.provider, "openai_legacy");
+assert.equal(openai.report.provider, "openai_baseline");
+assert.equal(openai.report.requested_cloud_provider, "openai_legacy");
 assert.equal(openai.report.provider_success_rate, 1);
 assert.equal(openai.report.per_card_latency_ms.p50, 1234);
 assert.equal(openai.report.cloud_preflight.ok, true);
 assert.equal(openai.report.cloud_preflight.default_provider, "openai_legacy");
-assert.equal(openai.report.accuracy_policy.corrected_title_as_temporary_gt, true);
+assert.equal(openai.report.accuracy_policy.corrected_title_as_temporary_gt, false);
 assert.equal(openai.report.accuracy_policy.corrected_title_temporary_gt_scope, "cloud_eval_proxy_title_and_eval_only_vector_reference");
 assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);
-assert.equal(openai.report.results[0].corrected_title_as_temporary_gt, true);
+assert.equal(openai.report.results[0].corrected_title_as_temporary_gt, false);
+assert.equal(openai.report.pass_at_0_72_count, 1);
+assert.equal(openai.report.pass_at_0_80_count, 1);
+assert.equal(openai.report.decision_trace[0].gpt_only_title, "2025 Topps Chrome Test Player");
 assert.equal(openai.report.breakpoint_completeness_avg.raw_provider_fields, 0.375);
 assert.equal(openai.report.breakpoint_completeness_avg.rendered_fields, 0.375);
 assert.equal(openai.report.results[0].breakpoints.raw_provider_fields.year, "2025");
@@ -224,18 +232,36 @@ assert.equal(openai.report.results[0].breakpoints.resolved_fields.players[0], "T
 assert.equal(openai.titlePayload.provider, "openai_legacy");
 assert.equal(openai.titlePayload.explicitEmergency, true);
 assert.equal(openai.titlePayload.provider_options.single_model_fast, true);
-assert.equal(openai.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
+assert.equal(openai.titlePayload.provider_options.corrected_title_as_temporary_gt, false);
+assert.equal(openai.titlePayload.provider_options.enable_catalog_assist, false);
+assert.equal(openai.titlePayload.provider_options.enable_vector_assist, false);
 assert.equal(openai.titlePayload.provider_options.enable_evidence_completion, false);
 assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, false);
-assert.equal(openai.titlePayload.catalog_observation_hint.year, "2025");
-assert.equal(openai.titlePayload.catalog_observation_hint.product, "Topps Chrome");
-assert.deepEqual(openai.titlePayload.catalog_observation_hint.players, ["Test Player"]);
+assert.equal(openai.titlePayload.catalog_observation_hint, null);
+
+const openaiCatalog = await runProvider("catalog-only");
+assert.equal(openaiCatalog.report.provider, "openai_catalog");
+assert.equal(openaiCatalog.titlePayload.provider, "openai_legacy");
+assert.equal(openaiCatalog.titlePayload.provider_options.single_model_fast, false);
+assert.equal(openaiCatalog.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
+assert.equal(openaiCatalog.titlePayload.provider_options.enable_catalog_assist, true);
+assert.equal(openaiCatalog.titlePayload.provider_options.enable_vector_assist, false);
+assert.equal(openaiCatalog.titlePayload.provider_options.enable_evidence_completion, true);
+assert.equal(openaiCatalog.titlePayload.provider_options.enable_stored_visual_features, false);
+assert.equal(openaiCatalog.titlePayload.provider_options.enable_vector_retrieval, false);
+assert.equal(openaiCatalog.titlePayload.provider_options.vector_retrieval_mode, "off");
+assert.equal(openaiCatalog.titlePayload.catalog_observation_hint.year, "2025");
+assert.equal(openaiCatalog.titlePayload.catalog_observation_hint.product, "Topps Chrome");
+assert.deepEqual(openaiCatalog.titlePayload.catalog_observation_hint.players, ["Test Player"]);
+assert.equal(openaiCatalog.report.decision_trace[0].catalog_only_title, "2025 Topps Chrome Test Player");
 
 const openaiVector = await runProvider("d");
 assert.equal(openaiVector.report.provider, "openai_vector");
 assert.equal(openaiVector.titlePayload.provider, "openai_legacy");
 assert.equal(openaiVector.titlePayload.explicitEmergency, true);
 assert.equal(openaiVector.titlePayload.provider_options.single_model_fast, false);
+assert.equal(openaiVector.titlePayload.provider_options.enable_catalog_assist, true);
+assert.equal(openaiVector.titlePayload.provider_options.enable_vector_assist, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_evidence_completion, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_stored_visual_features, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_vector_retrieval, true);
@@ -248,7 +274,9 @@ assert.equal(openaiVector.report.visual_vector_used_count, 1);
 assert.equal(openaiVector.report.visual_vector_candidate_count, 1);
 assert.equal(openaiVector.report.postgres_hybrid_used_count, 1);
 assert.equal(openaiVector.report.postgres_hybrid_candidate_count, 1);
+assert.equal(openaiVector.report.catalog_lookup_used_count, 0);
 assert.equal(openaiVector.report.catalog_candidate_count, 1);
+assert.equal(openaiVector.report.catalog_prompt_candidate_count, 0);
 assert.equal(openaiVector.report.catalog_candidate_selected_count, 0);
 assert.equal(openaiVector.report.correct_catalog_identity_available_count, 1);
 assert.equal(openaiVector.report.correct_candidate_recall_at_1, 1);
@@ -265,6 +293,8 @@ assert.equal(openaiVector.report.results[0].vector_prompt_assist_used, true);
 assert.equal(openaiVector.report.results[0].vector_raw_candidate_count, 2);
 assert.deepEqual(openaiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
 assert.deepEqual(openaiVector.report.results[0].retrieval_providers_used, ["visual_vector", "postgres_hybrid"]);
+assert.equal(openaiVector.report.decision_trace[0].catalog_vector_title, "2025 Topps Chrome Test Player");
+assert.equal(openaiVector.report.decision_trace[0].recovery_regression_no_change, "paired_baseline_required");
 
 {
   const recovered = await runProvider("d", {
@@ -371,6 +401,96 @@ assert.deepEqual(openaiVector.report.results[0].retrieval_providers_used, ["visu
   assert.equal(report.target_count, 0);
   assert.equal(report.attempted_count, 0);
   assert.equal(titleCalled, false);
+}
+
+{
+  const tempDir = await mkdtemp(join(tmpdir(), "lynca-cloud-eval-compare-"));
+  try {
+    const baselinePath = join(tempDir, "baseline.json");
+    const catalogPath = join(tempDir, "catalog.json");
+    const vectorPath = join(tempDir, "vector.json");
+    const baseReport = {
+      target_count: 2,
+      corrected_title_token_recall_avg: 0.5,
+      pass_at_0_72_count: 0,
+      pass_at_0_80_count: 0,
+      per_card_latency_ms: { p50: 100, p95: 200 },
+      usage_totals: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+      results: [{
+        candidate_id: "recover-card",
+        title: "Wrong Player",
+        corrected_title_reference: "2025 Topps Chrome Test Player",
+        corrected_title_comparison: { token_recall: 0.25 }
+      }, {
+        candidate_id: "regress-card",
+        title: "2025 Topps Chrome Test Player",
+        corrected_title_reference: "2025 Topps Chrome Test Player",
+        corrected_title_comparison: { token_recall: 1 }
+      }]
+    };
+    const catalogReport = {
+      target_count: 2,
+      catalog_lookup_used_count: 2,
+      catalog_candidate_count: 2,
+      catalog_prompt_candidate_count: 1,
+      catalog_candidate_selected_count: 1,
+      pass_at_0_72_count: 2,
+      pass_at_0_80_count: 2,
+      results: [{
+        candidate_id: "recover-card",
+        title: "2025 Topps Chrome Test Player",
+        corrected_title_reference: "2025 Topps Chrome Test Player",
+        corrected_title_comparison: { token_recall: 1 },
+        catalog_candidates: [{ id: "cat-1", title: "2025 Topps Chrome Test Player" }],
+        catalog_selected_candidate_id: "cat-1"
+      }, {
+        candidate_id: "regress-card",
+        title: "2025 Topps Chrome Test Player",
+        corrected_title_reference: "2025 Topps Chrome Test Player",
+        corrected_title_comparison: { token_recall: 1 }
+      }]
+    };
+    const vectorReport = {
+      target_count: 2,
+      vector_raw_candidate_count: 2,
+      vector_prompt_candidate_count: 1,
+      pass_at_0_72_count: 1,
+      pass_at_0_80_count: 1,
+      results: [{
+        candidate_id: "recover-card",
+        title: "2025 Topps Chrome Test Player",
+        corrected_title_reference: "2025 Topps Chrome Test Player",
+        corrected_title_comparison: { token_recall: 1 },
+        vector_candidates: [{ id: "vec-1", title: "2025 Topps Chrome Test Player" }],
+        vector_selected_candidate_id: "vec-1"
+      }, {
+        candidate_id: "regress-card",
+        title: "Wrong Product",
+        corrected_title_reference: "2025 Topps Chrome Test Player",
+        corrected_title_comparison: { token_recall: 0.5 }
+      }]
+    };
+    await Promise.all([
+      writeFile(baselinePath, JSON.stringify(baseReport)),
+      writeFile(catalogPath, JSON.stringify(catalogReport)),
+      writeFile(vectorPath, JSON.stringify(vectorReport))
+    ]);
+    const comparison = await compareCloudEvalAblation({
+      baselinePath,
+      catalogPath,
+      vectorPath,
+      threshold: 0.72
+    });
+    assert.equal(comparison.summary.catalog_recovery_count, 1);
+    assert.equal(comparison.summary.catalog_regression_count, 0);
+    assert.equal(comparison.summary.vector_recovery_count, 0);
+    assert.equal(comparison.summary.vector_regression_count, 1);
+    assert.equal(comparison.decision_trace[0].catalog_change, "recovery");
+    assert.equal(comparison.decision_trace[0].vector_selected_candidate_id, "vec-1");
+    assert.equal(comparison.decision_trace[1].vector_change, "regression");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 await assert.rejects(

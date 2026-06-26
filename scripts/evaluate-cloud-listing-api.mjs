@@ -13,7 +13,8 @@ const defaultOutPath = "data/eval/provider-regression-30/cloud-listing-api-lates
 const defaultEnvFilePath = ".env.local";
 const execFileAsync = promisify(execFile);
 const providerModes = Object.freeze({
-  OPENAI: "openai_legacy",
+  OPENAI_BASELINE: "openai_baseline",
+  OPENAI_CATALOG: "openai_catalog",
   OPENAI_VECTOR: "openai_vector"
 });
 
@@ -258,28 +259,41 @@ function catalogObservationHint(item = {}) {
 
 function normalizeProviderMode(value = "") {
   const raw = String(value || "").trim().toLowerCase();
-  if (["", "openai", "gpt", "gpt-4.1-mini", "openai_legacy"].includes(raw)) return providerModes.OPENAI;
-  if (["openai-vector", "openai_vector", "gpt-vector", "gpt_vector", "d", "b"].includes(raw)) return providerModes.OPENAI_VECTOR;
-  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_legacy or openai_vector.`);
+  if (["", "a", "baseline", "gpt-only", "gpt_only", "openai", "gpt", "gpt-4.1-mini", "openai_legacy", "openai-baseline", "openai_baseline"].includes(raw)) {
+    return providerModes.OPENAI_BASELINE;
+  }
+  if (["b", "catalog", "catalog-only", "catalog_only", "gpt-catalog", "gpt_catalog", "openai-catalog", "openai_catalog"].includes(raw)) {
+    return providerModes.OPENAI_CATALOG;
+  }
+  if (["c", "d", "openai-vector", "openai_vector", "gpt-vector", "gpt_vector"].includes(raw)) return providerModes.OPENAI_VECTOR;
+  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_baseline, openai_catalog, or openai_vector.`);
 }
 
 function cloudProviderForMode(providerMode) {
-  return providerModes.OPENAI;
+  return "openai_legacy";
 }
 
 function providerOptionsForMode(providerMode) {
-  const vectorRetrieval = providerMode === providerModes.OPENAI_VECTOR;
+  const catalogAssist = providerMode === providerModes.OPENAI_CATALOG || providerMode === providerModes.OPENAI_VECTOR;
+  const vectorAssist = providerMode === providerModes.OPENAI_VECTOR;
   return {
-    single_model_fast: !vectorRetrieval,
-    corrected_title_as_temporary_gt: true,
-    enable_evidence_completion: vectorRetrieval,
-    enable_stored_visual_features: vectorRetrieval,
-    enable_query_visual_embeddings: vectorRetrieval,
-    enable_vector_retrieval: vectorRetrieval,
-    vector_retrieval_mode: vectorRetrieval ? "assist" : "off",
-    vector_corrected_title_as_temporary_gt: vectorRetrieval,
-    enable_advanced_retrieval: vectorRetrieval,
-    enable_hybrid_retrieval: vectorRetrieval,
+    single_model_fast: !catalogAssist && !vectorAssist,
+    corrected_title_as_temporary_gt: catalogAssist,
+    enable_evidence_completion: catalogAssist || vectorAssist,
+    enable_catalog_assist: catalogAssist,
+    enable_vector_assist: vectorAssist,
+    enable_stored_visual_features: vectorAssist,
+    enable_query_visual_embeddings: vectorAssist,
+    enable_vector_retrieval: vectorAssist,
+    vector_retrieval_mode: vectorAssist ? "assist" : "off",
+    vector_corrected_title_as_temporary_gt: vectorAssist,
+    enable_advanced_retrieval: vectorAssist,
+    enable_hybrid_retrieval: vectorAssist,
+    eval_flags: {
+      ENABLE_CATALOG_ASSIST: catalogAssist,
+      ENABLE_VECTOR_ASSIST: vectorAssist,
+      CORRECTED_TITLE_AS_TEMPORARY_GT: catalogAssist
+    },
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
     enable_gpt_critical_verifier: false
@@ -444,8 +458,10 @@ function resultBreakpoints(data = {}, item = {}) {
 
 function retrievalSummaries(data = {}) {
   return [
+    data.catalog_retrieval,
     data.retrieval,
     data.vector_retrieval,
+    data.catalog_candidate_packet?.vector_retrieval,
     data.vector_candidate_packet?.vector_retrieval
   ].filter((summary) => summary && typeof summary === "object" && !Array.isArray(summary));
 }
@@ -474,6 +490,13 @@ function vectorPacketCandidates(data = {}) {
   return Array.isArray(candidates) ? candidates : [];
 }
 
+function catalogPacketCandidates(data = {}) {
+  const candidates = data.catalog_candidate_packet?.vector_retrieval?.candidates
+    || data.catalog_assist_packet?.vector_retrieval?.candidates
+    || [];
+  return Array.isArray(candidates) ? candidates : [];
+}
+
 function vectorAssistEligibility(data = {}) {
   const eligibility = data.vector_assist_eligibility
     || data.vector_assist_packet?.vector_retrieval?.assist_filter
@@ -484,9 +507,31 @@ function vectorAssistEligibility(data = {}) {
     : {};
 }
 
+function catalogAssistEligibility(data = {}) {
+  const eligibility = data.catalog_assist_eligibility
+    || data.catalog_assist_packet?.vector_retrieval?.assist_filter
+    || data.catalog_candidate_packet?.vector_retrieval?.assist_filter
+    || {};
+  return eligibility && typeof eligibility === "object" && !Array.isArray(eligibility)
+    ? eligibility
+    : {};
+}
+
 function vectorAssistCount(data = {}, key, fallback = 0) {
   const value = Number(vectorAssistEligibility(data)[key]);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function vectorAssistPacketCandidates(data = {}) {
+  const candidates = data.vector_assist_packet?.vector_retrieval?.candidates
+    || [];
+  return Array.isArray(candidates) ? candidates : [];
+}
+
+function catalogAssistPacketCandidates(data = {}) {
+  const candidates = data.catalog_assist_packet?.vector_retrieval?.candidates
+    || [];
+  return Array.isArray(candidates) ? candidates : [];
 }
 
 function vectorAssistPromptCandidateIds(data = {}) {
@@ -511,6 +556,18 @@ function isVisualVectorCandidate(candidate = {}) {
 
 function visualVectorSelectedCount(data = {}) {
   return retrievalSources(data).filter((candidate) => candidate.selected === true && isVisualVectorCandidate(candidate)).length;
+}
+
+function vectorCandidatesForTrace(data = {}) {
+  const sources = retrievalSources(data).filter(isVisualVectorCandidate);
+  const packetCandidates = vectorPacketCandidates(data);
+  const seen = new Set();
+  return [...sources, ...packetCandidates].filter((candidate, index) => {
+    const key = normalizeText(candidate.candidate_id || candidate.candidate_identity_id || candidate.identity_id || candidate.source_url || candidate.title || `vector-${index}`);
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
+    return true;
+  });
 }
 
 function candidateVerificationSummaries(data = {}) {
@@ -562,15 +619,63 @@ function isCatalogCandidate(candidate = {}) {
 }
 
 function catalogCandidates(data = {}) {
-  return retrievalSources(data).filter(isCatalogCandidate);
+  const sources = retrievalSources(data).filter(isCatalogCandidate);
+  const packetCandidates = catalogPacketCandidates(data).filter(isCatalogCandidate);
+  const seen = new Set();
+  return [...sources, ...packetCandidates].filter((candidate, index) => {
+    const key = normalizeText(candidate.candidate_id || candidate.candidate_identity_id || candidate.identity_id || candidate.source_url || candidate.title || `catalog-${index}`);
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
+    return true;
+  });
+}
+
+function metricFromRetrievalSummaries(data = {}, key = "") {
+  const values = retrievalSummaries(data).flatMap((summary) => [
+    summary?.catalog_retrieval_metrics?.[key],
+    summary?.retrieval_metrics?.[key]
+  ]);
+  return values.reduce((sum, value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? sum + number : sum;
+  }, 0);
 }
 
 function catalogCandidateCount(data = {}) {
-  return catalogCandidates(data).length;
+  return Math.max(catalogCandidates(data).length, metricFromRetrievalSummaries(data, "catalog_candidate_count"));
 }
 
 function catalogCandidateSelectedCount(data = {}) {
-  return catalogCandidates(data).filter((candidate) => candidate.selected === true).length;
+  return Math.max(
+    catalogCandidates(data).filter((candidate) => candidate.selected === true).length,
+    metricFromRetrievalSummaries(data, "catalog_candidate_selected_count")
+  );
+}
+
+function catalogLookupUsedCount(data = {}) {
+  return metricFromRetrievalSummaries(data, "catalog_lookup_used_count");
+}
+
+function catalogPromptCandidateCount(data = {}) {
+  const eligibility = catalogAssistEligibility(data);
+  const direct = Number(eligibility.prompt_candidate_count);
+  const typedPromptCount = [
+    ...catalogAssistPacketCandidates(data),
+    ...vectorAssistPacketCandidates(data)
+  ].filter(isCatalogCandidate).length;
+  if (typedPromptCount > 0) return typedPromptCount;
+  if (Number.isFinite(direct)) return direct;
+  return metricFromRetrievalSummaries(data, "catalog_prompt_candidate_count");
+}
+
+function vectorPromptCandidateCount(data = {}) {
+  const typedPromptCount = vectorAssistPacketCandidates(data).filter(isVisualVectorCandidate).length;
+  if (typedPromptCount > 0) return typedPromptCount;
+  return vectorAssistCount(
+    data,
+    "prompt_candidate_count",
+    data.vector_prompt_assist_used === true ? vectorPacketCandidates(data).length : 0
+  );
 }
 
 function candidateTitleForProxy(candidate = {}) {
@@ -606,6 +711,73 @@ function vectorDecisionSelectedCandidateId(data = {}) {
     || data.provider_result?.vector_candidate_decision?.selected_candidate_id
     || data.fields?.vector_candidate_decision?.selected_candidate_id
   );
+}
+
+function selectedCandidateIdFromCandidates(candidates = []) {
+  const selected = candidates.find((candidate) => candidate.selected === true);
+  if (!selected) return "";
+  return normalizeText(selected.candidate_id || selected.candidate_identity_id || selected.identity_id || selected.source_url);
+}
+
+function compactCandidate(candidate = {}, index = 0) {
+  return {
+    id: normalizeText(candidate.candidate_id || candidate.candidate_identity_id || candidate.identity_id || candidate.source_url || `candidate-${index + 1}`),
+    rank: Number(candidate.rank || candidate.channel_rank || index + 1),
+    title: candidateTitleForProxy(candidate),
+    provider: normalizeText(candidate.provider_id || candidate.source_provider || candidate.source_type),
+    selected: candidate.selected === true,
+    raw_score: Number.isFinite(Number(candidate.raw_score)) ? Number(candidate.raw_score) : null,
+    normalized_score: Number.isFinite(Number(candidate.normalized_score)) ? Number(candidate.normalized_score) : null,
+    supporting_fields: Array.isArray(candidate.supporting_fields) ? candidate.supporting_fields : [],
+    conflicting_fields: [
+      ...(Array.isArray(candidate.conflicting_fields) ? candidate.conflicting_fields : []),
+      ...(Array.isArray(candidate.direct_evidence_conflicts) ? candidate.direct_evidence_conflicts : []),
+      ...(Array.isArray(candidate.conflicts) ? candidate.conflicts : [])
+    ].map((value) => typeof value === "string" ? value : value?.field || value?.field_name || "").filter(Boolean)
+  };
+}
+
+function compactCandidates(candidates = [], limit = 5) {
+  return candidates.slice(0, limit).map(compactCandidate);
+}
+
+function decisionOutcomeForSingleRun(item = {}) {
+  if (item.technical_failure) return "technical_failure";
+  if (item.catalog_candidate_selected_count > 0 || item.vector_selected_candidate_id) return "candidate_selected_single_run";
+  if (item.catalog_candidate_count > 0 || item.vector_raw_candidate_count > 0) return "candidate_available_not_selected";
+  return "no_candidate_assist";
+}
+
+function perCardDecisionTrace(results = []) {
+  return results.map((item) => ({
+    candidate_id: item.candidate_id,
+    provider: item.provider,
+    gpt_only_title: item.provider === providerModes.OPENAI_BASELINE ? item.title || "" : null,
+    catalog_only_title: item.provider === providerModes.OPENAI_CATALOG ? item.title || "" : null,
+    catalog_vector_title: item.provider === providerModes.OPENAI_VECTOR ? item.title || "" : null,
+    final_title: item.title || "",
+    corrected_title: item.corrected_title_reference || "",
+    corrected_title_token_recall: item.corrected_title_comparison?.token_recall ?? null,
+    pass_at_0_72: item.pass_at_0_72 === true,
+    pass_at_0_80: item.pass_at_0_80 === true,
+    catalog_candidates: item.catalog_candidates || [],
+    catalog_selected_candidate_id: item.catalog_selected_candidate_id || "",
+    catalog_selected: Boolean(item.catalog_selected_candidate_id || item.catalog_candidate_selected_count > 0),
+    vector_candidates: item.vector_candidates || [],
+    vector_selected_candidate_id: item.vector_selected_candidate_id || "",
+    vector_selected: Boolean(item.vector_selected_candidate_id || item.visual_vector_selected_count > 0),
+    outcome: decisionOutcomeForSingleRun(item),
+    recovery_regression_no_change: "paired_baseline_required",
+    main_changed_fields: []
+  }));
+}
+
+function usageNumber(source = {}, keys = []) {
+  for (const key of keys) {
+    const value = Number(source?.[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
 }
 
 function gptSelectedCorrectCatalogCandidate(data = {}, referenceTitle = "") {
@@ -920,8 +1092,8 @@ async function callListingApi({
     provider_id: provider,
     provider_eval_mode: providerMode,
     provider_options: providerOptions,
-    explicitEmergency: provider === providerModes.OPENAI,
-    explicit_emergency: provider === providerModes.OPENAI,
+    explicitEmergency: provider === "openai_legacy",
+    explicit_emergency: provider === "openai_legacy",
     maxTitleLength,
     captureProfileId: "cloud_eval",
     category: item.category || "",
@@ -992,6 +1164,10 @@ function evaluatedResultFromData({
   const data = response?.data || {};
   const providerFailure = isProviderFailureResponse(response || {}, data);
   const breakpoints = resultBreakpoints(data, item);
+  const finalTitle = normalizeText(data.final_title || data.title || data.rendered_title);
+  const titleMatch = providerFailure ? null : titleComparison(referenceTitle, finalTitle);
+  const catalogCandidateList = providerFailure ? [] : catalogCandidates(data);
+  const vectorCandidateList = providerFailure ? [] : vectorCandidatesForTrace(data);
   const correctCatalogRank = providerFailure ? null : correctCatalogCandidateRank(data, referenceTitle);
   const gptSelectedCorrect = providerFailure ? null : gptSelectedCorrectCatalogCandidate(data, referenceTitle);
   return {
@@ -1006,7 +1182,7 @@ function evaluatedResultFromData({
     provider_error_attempts: providerErrorAttempts,
     provider_error_retry_count: providerErrorAttempts.length,
     http_status: response?.http_status || null,
-    title: normalizeText(data.final_title || data.title || data.rendered_title),
+    title: finalTitle,
     confidence: data.confidence || (providerFailure ? "FAILED" : ""),
     provider_id: data.provider || data.source || null,
     model_id: data.model_id || data.provider_model_id || null,
@@ -1040,7 +1216,7 @@ function evaluatedResultFromData({
     vector_raw_candidate_count: vectorAssistCount(data, "raw_candidate_count", visualVectorCandidateCount(data)),
     vector_approved_candidate_count: vectorAssistCount(data, "approved_candidate_count", 0),
     vector_conflict_blocked_count: vectorAssistCount(data, "conflict_blocked_count", 0),
-    vector_prompt_candidate_count: vectorAssistCount(data, "prompt_candidate_count", data.vector_prompt_assist_used === true ? vectorPacketCandidates(data).length : 0),
+    vector_prompt_candidate_count: vectorPromptCandidateCount(data),
     vector_prompt_candidate_ids: vectorAssistPromptCandidateIds(data),
     visual_vector_used: visualVectorUsed(data),
     visual_vector_candidate_count: visualVectorCandidateCount(data),
@@ -1049,8 +1225,12 @@ function evaluatedResultFromData({
     visual_vector_conflict_field_count: visualVectorConflictFieldCount(data),
     postgres_hybrid_used: postgresHybridUsed(data),
     postgres_hybrid_candidate_count: postgresHybridCandidateCount(data),
+    catalog_lookup_used_count: catalogLookupUsedCount(data),
     catalog_candidate_count: catalogCandidateCount(data),
+    catalog_prompt_candidate_count: catalogPromptCandidateCount(data),
     catalog_candidate_selected_count: catalogCandidateSelectedCount(data),
+    catalog_candidates: compactCandidates(catalogCandidateList),
+    catalog_selected_candidate_id: selectedCandidateIdFromCandidates(catalogCandidateList),
     correct_catalog_candidate_rank: correctCatalogRank,
     correct_catalog_identity_available: Number.isFinite(Number(correctCatalogRank)),
     correct_candidate_recall_at_1: correctCandidateRecallAt(correctCatalogRank, 1),
@@ -1059,6 +1239,8 @@ function evaluatedResultFromData({
     gpt_selected_correct_candidate: gptSelectedCorrect,
     gpt_rejected_correct_candidate: gptSelectedCorrect === false && Number.isFinite(Number(correctCatalogRank)),
     vector_candidate_decision: data.vector_candidate_decision || null,
+    vector_candidates: compactCandidates(vectorCandidateList),
+    vector_selected_candidate_id: selectedCandidateIdFromCandidates(vectorCandidateList) || vectorDecisionSelectedCandidateId(data),
     retrieval_providers_used: providersUsed(data),
     candidate_identity_candidate_count: candidateIdentityCandidateCount(data),
     visual_feature_count: visualFeatureCount(data),
@@ -1071,7 +1253,9 @@ function evaluatedResultFromData({
     text_repair_success: data.text_repair_success === true,
     writer_review_ready: data.writer_review_ready === true || data.publication_gate?.writer_review_ready === true,
     corrected_title_reference: referenceTitle,
-    corrected_title_comparison: providerFailure ? null : titleComparison(referenceTitle, data.final_title || data.title || data.rendered_title),
+    corrected_title_comparison: titleMatch,
+    pass_at_0_72: Number(titleMatch?.token_recall || 0) >= 0.72,
+    pass_at_0_80: Number(titleMatch?.token_recall || 0) >= 0.80,
     timing: data.timing || null,
     elapsed_ms: Date.now() - started
   };
@@ -1111,6 +1295,7 @@ function technicalFailureResult({
 
 function summarize(results = [], elapsedMs = 0) {
   const attempted = results.length;
+  const temporaryGtUsed = results.some((item) => item.corrected_title_as_temporary_gt === true);
   const providerErrors = results.filter((item) => item.status === "provider_error").length;
   const evaluated = results.filter((item) => item.status === "evaluated").length;
   const technicalFailures = results.filter((item) => item.technical_failure === true).length;
@@ -1131,7 +1316,9 @@ function summarize(results = [], elapsedMs = 0) {
   const visualVectorConflictFieldCount = results.reduce((sum, item) => sum + Number(item.visual_vector_conflict_field_count || 0), 0);
   const postgresHybridUsedCount = results.filter((item) => item.postgres_hybrid_used === true).length;
   const postgresHybridCandidateCount = results.reduce((sum, item) => sum + Number(item.postgres_hybrid_candidate_count || 0), 0);
+  const catalogLookupUsedCount = results.reduce((sum, item) => sum + Number(item.catalog_lookup_used_count || 0), 0);
   const catalogCandidateCountTotal = results.reduce((sum, item) => sum + Number(item.catalog_candidate_count || 0), 0);
+  const catalogPromptCandidateCount = results.reduce((sum, item) => sum + Number(item.catalog_prompt_candidate_count || 0), 0);
   const catalogCandidateSelectedCount = results.reduce((sum, item) => sum + Number(item.catalog_candidate_selected_count || 0), 0);
   const correctCatalogIdentityAvailableCount = results.filter((item) => item.correct_catalog_identity_available === true).length;
   const correctCandidateRecallAt1 = results.filter((item) => item.correct_candidate_recall_at_1 === true).length;
@@ -1152,6 +1339,8 @@ function summarize(results = [], elapsedMs = 0) {
   const averageRecallValues = results
     .map((item) => item.corrected_title_comparison?.token_recall)
     .filter((value) => Number.isFinite(value));
+  const passAt072 = results.filter((item) => item.pass_at_0_72 === true).length;
+  const passAt080 = results.filter((item) => item.pass_at_0_80 === true).length;
   const elapsedValues = results
     .map((item) => item.timing?.total_ms ?? item.elapsed_ms)
     .filter((value) => Number.isFinite(value) && value >= 0)
@@ -1168,6 +1357,12 @@ function summarize(results = [], elapsedMs = 0) {
     const usage = item.usage && typeof item.usage === "object" && !Array.isArray(item.usage)
       ? item.usage
       : {};
+    const diagnostics = item.provider_token_diagnostics && typeof item.provider_token_diagnostics === "object" && !Array.isArray(item.provider_token_diagnostics)
+      ? item.provider_token_diagnostics
+      : {};
+    const initialDiagnostics = item.provider_initial_token_diagnostics && typeof item.provider_initial_token_diagnostics === "object" && !Array.isArray(item.provider_initial_token_diagnostics)
+      ? item.provider_initial_token_diagnostics
+      : {};
     for (const key of [
       "provider_calls",
       "retrieval_calls",
@@ -1183,6 +1378,15 @@ function summarize(results = [], elapsedMs = 0) {
       const value = Number(usage[key]);
       if (Number.isFinite(value)) totals[key] = Number(((totals[key] || 0) + value).toFixed(6));
     }
+    if (!Number.isFinite(Number(usage.input_tokens)) && !Number.isFinite(Number(usage.prompt_tokens))) {
+      totals.input_tokens = Number(((totals.input_tokens || 0) + usageNumber(diagnostics, ["input_tokens", "prompt_token_count", "prompt_tokens"]) + usageNumber(initialDiagnostics, ["input_tokens", "prompt_token_count", "prompt_tokens"])).toFixed(6));
+    }
+    if (!Number.isFinite(Number(usage.output_tokens)) && !Number.isFinite(Number(usage.completion_tokens))) {
+      totals.output_tokens = Number(((totals.output_tokens || 0) + usageNumber(diagnostics, ["output_tokens", "candidates_token_count", "completion_tokens"]) + usageNumber(initialDiagnostics, ["output_tokens", "candidates_token_count", "completion_tokens"])).toFixed(6));
+    }
+    if (!Number.isFinite(Number(usage.total_tokens))) {
+      totals.total_tokens = Number(((totals.total_tokens || 0) + usageNumber(diagnostics, ["total_tokens", "total_token_count"]) + usageNumber(initialDiagnostics, ["total_tokens", "total_token_count"])).toFixed(6));
+    }
     return totals;
   }, {});
   const percentile = (p) => {
@@ -1194,7 +1398,7 @@ function summarize(results = [], elapsedMs = 0) {
     attempted_count: attempted,
     evaluated_count: evaluated,
     accuracy_policy: {
-      corrected_title_as_temporary_gt: true,
+      corrected_title_as_temporary_gt: temporaryGtUsed,
       corrected_title_temporary_gt_scope: "cloud_eval_proxy_title_and_eval_only_vector_reference",
       corrected_title_token_recall_is_identity_accuracy: false,
       corrected_title_token_recall_use: "temporary_gt_title_overlap_proxy_only",
@@ -1216,7 +1420,9 @@ function summarize(results = [], elapsedMs = 0) {
     visual_vector_conflict_field_count: visualVectorConflictFieldCount,
     postgres_hybrid_used_count: postgresHybridUsedCount,
     postgres_hybrid_candidate_count: postgresHybridCandidateCount,
+    catalog_lookup_used_count: catalogLookupUsedCount,
     catalog_candidate_count: catalogCandidateCountTotal,
+    catalog_prompt_candidate_count: catalogPromptCandidateCount,
     catalog_candidate_selected_count: catalogCandidateSelectedCount,
     correct_catalog_identity_available_count: correctCatalogIdentityAvailableCount,
     correct_candidate_recall_at_1: correctCandidateRecallAt1,
@@ -1240,6 +1446,10 @@ function summarize(results = [], elapsedMs = 0) {
     corrected_title_token_recall_avg: averageRecallValues.length
       ? Number((averageRecallValues.reduce((sum, value) => sum + value, 0) / averageRecallValues.length).toFixed(6))
       : null,
+    pass_at_0_72_count: passAt072,
+    pass_at_0_72_rate: attempted ? Number((passAt072 / attempted).toFixed(6)) : null,
+    pass_at_0_80_count: passAt080,
+    pass_at_0_80_rate: attempted ? Number((passAt080 / attempted).toFixed(6)) : null,
     elapsed_ms: Math.max(0, Math.round(elapsedMs)),
     attempted_cards_per_minute: elapsedMs > 0 ? Number((attempted / (elapsedMs / 60000)).toFixed(6)) : null,
     evaluated_cards_per_minute: elapsedMs > 0 ? Number((evaluated / (elapsedMs / 60000)).toFixed(6)) : null,
@@ -1255,7 +1465,8 @@ function summarize(results = [], elapsedMs = 0) {
       rendered_fields: completenessAverage("rendered_fields"),
       reviewed_ground_truth: completenessAverage("reviewed_ground_truth")
     },
-    usage_totals: usageTotals
+    usage_totals: usageTotals,
+    decision_trace: perCardDecisionTrace(results)
   };
 }
 
@@ -1444,7 +1655,9 @@ export async function main(argv = process.argv, env = process.env) {
     `visual_vector_conflict_field_count: ${report.visual_vector_conflict_field_count ?? "n/a"}`,
     `postgres_hybrid_used_count: ${report.postgres_hybrid_used_count ?? "n/a"}`,
     `postgres_hybrid_candidate_count: ${report.postgres_hybrid_candidate_count ?? "n/a"}`,
+    `catalog_lookup_used_count: ${report.catalog_lookup_used_count ?? "n/a"}`,
     `catalog_candidate_count: ${report.catalog_candidate_count ?? "n/a"}`,
+    `catalog_prompt_candidate_count: ${report.catalog_prompt_candidate_count ?? "n/a"}`,
     `catalog_candidate_selected_count: ${report.catalog_candidate_selected_count ?? "n/a"}`,
     `correct_catalog_identity_available_count: ${report.correct_catalog_identity_available_count ?? "n/a"}`,
     `correct_candidate_recall_at_1: ${report.correct_candidate_recall_at_1 ?? "n/a"}`,
@@ -1466,6 +1679,10 @@ export async function main(argv = process.argv, env = process.env) {
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,
     `corrected_title_token_recall_avg_proxy_not_identity_accuracy: ${report.corrected_title_token_recall_avg}`,
+    `pass_at_0_72_count: ${report.pass_at_0_72_count ?? "n/a"}`,
+    `pass_at_0_72_rate: ${report.pass_at_0_72_rate ?? "n/a"}`,
+    `pass_at_0_80_count: ${report.pass_at_0_80_count ?? "n/a"}`,
+    `pass_at_0_80_rate: ${report.pass_at_0_80_rate ?? "n/a"}`,
     `attempted_cards_per_minute: ${report.attempted_cards_per_minute}`,
     `evaluated_cards_per_minute: ${report.evaluated_cards_per_minute}`,
     `per_card_latency_ms_p50: ${report.per_card_latency_ms?.p50 ?? "n/a"}`,
