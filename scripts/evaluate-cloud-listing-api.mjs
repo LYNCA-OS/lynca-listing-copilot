@@ -33,6 +33,11 @@ function numberArg(argv, name, fallback) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.trunc(number) : fallback;
+}
+
 function boolValue(value, fallback = false) {
   if (value === undefined || value === null || value === "") return fallback;
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
@@ -286,6 +291,10 @@ function providerOptionsForMode(providerMode, {
   const vectorAssist = providerMode === providerModes.OPENAI_VECTOR;
   const temporaryGt = catalogAssist && correctedTitleAsTemporaryGt === true;
   const sendHintToCloud = temporaryGt && sendCorrectedTitleHintToCloud === true;
+  const vectorQueryTimeoutMs = positiveInteger(
+    process.env.CLOUD_LISTING_API_VECTOR_QUERY_TIMEOUT_MS || process.env.VECTOR_QUERY_TIMEOUT_MS,
+    120000
+  );
   return {
     single_model_fast: !catalogAssist && !vectorAssist,
     corrected_title_as_temporary_gt: temporaryGt,
@@ -299,7 +308,7 @@ function providerOptionsForMode(providerMode, {
     enable_vector_retrieval: vectorAssist,
     vector_retrieval_mode: vectorAssist ? "assist" : "off",
     vector_corrected_title_as_temporary_gt: vectorAssist && temporaryGt,
-    vector_query_timeout_ms: vectorAssist ? 8000 : undefined,
+    vector_query_timeout_ms: vectorAssist ? vectorQueryTimeoutMs : undefined,
     vector_retrieval_internal_top_n: vectorAssist ? 10 : undefined,
     enable_advanced_retrieval: vectorAssist,
     enable_hybrid_retrieval: vectorAssist,
