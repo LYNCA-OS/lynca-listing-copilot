@@ -906,6 +906,94 @@ function vectorPromptCandidateCount(data = {}) {
   );
 }
 
+function openSetPacketSignal(packet = {}) {
+  const retrieval = packet?.vector_retrieval || {};
+  return {
+    status: retrieval.status || null,
+    status_code: retrieval.status_code || null,
+    decision: retrieval.open_set_decision || null,
+    reason: retrieval.open_set_reason || null
+  };
+}
+
+function openSetReadinessForData(data = {}) {
+  const explicit = data.open_set_readiness;
+  if (explicit && typeof explicit === "object" && !Array.isArray(explicit)) return explicit;
+
+  const catalogEligibility = catalogAssistEligibility(data);
+  const vectorEligibility = vectorAssistEligibility(data);
+  const catalogPromptCount = Number(catalogEligibility.prompt_candidate_count || 0);
+  const vectorPromptCount = Number(vectorEligibility.prompt_candidate_count || 0);
+  const promptCandidateCount = (Number.isFinite(catalogPromptCount) ? catalogPromptCount : 0)
+    + (Number.isFinite(vectorPromptCount) ? vectorPromptCount : 0);
+  const rawCandidateCount = Number(catalogEligibility.raw_candidate_count || 0)
+    + Number(vectorEligibility.raw_candidate_count || 0);
+  const approvedCandidateCount = Number(catalogEligibility.approved_candidate_count || 0)
+    + Number(vectorEligibility.approved_candidate_count || 0);
+  const conflictBlockedCount = Number(catalogEligibility.conflict_blocked_count || 0)
+    + Number(vectorEligibility.conflict_blocked_count || 0);
+  const catalogSignal = openSetPacketSignal(data.catalog_candidate_packet);
+  const vectorSignal = openSetPacketSignal(data.vector_candidate_packet);
+  const reasons = [catalogEligibility.reason, vectorEligibility.reason, catalogSignal.reason, vectorSignal.reason]
+    .map(normalizeText)
+    .filter(Boolean);
+  const assistEnabled = data.catalog_prompt_assist_used === true
+    || data.vector_prompt_assist_used === true
+    || Boolean(catalogEligibility.reason)
+    || Boolean(vectorEligibility.reason)
+    || rawCandidateCount > 0;
+  const openSetDecision = vectorSignal.decision || catalogSignal.decision || null;
+  const text = `${openSetDecision || ""} ${reasons.join(" ")}`;
+  const unavailable = [catalogSignal, vectorSignal].some((signal) => /UNAVAILABLE|TIMEOUT|ERROR/i.test(`${signal.status || ""} ${signal.status_code || ""}`));
+
+  let status = "ASSIST_DISABLED";
+  if (assistEnabled && promptCandidateCount > 0) status = "KNOWN_CATALOG_ASSISTED";
+  else if (assistEnabled && conflictBlockedCount > 0 && approvedCandidateCount > 0) status = "APPROVED_CANDIDATE_CONFLICT_REVIEW";
+  else if (assistEnabled && /LOW_MARGIN/i.test(text)) status = "LOW_MARGIN_SIMILAR_ONLY";
+  else if (assistEnabled && /NONE_OF_THE_ABOVE|NO_EXACT_MATCH|FAMILY_ONLY_MATCH/i.test(text)) status = "OPEN_SET_NO_EXACT_MATCH";
+  else if (assistEnabled && unavailable && rawCandidateCount === 0) status = "RETRIEVAL_UNAVAILABLE";
+  else if (assistEnabled && rawCandidateCount > 0 && approvedCandidateCount === 0) status = "REFERENCE_CANDIDATES_ONLY";
+  else if (assistEnabled) status = "EVIDENCE_BACKED_NO_CATALOG";
+
+  return {
+    status,
+    release_policy: promptCandidateCount > 0
+      ? "writer_quick_review_with_catalog_assist"
+      : "evidence_backed_writer_review_catalog_gap",
+    assist_enabled: assistEnabled,
+    known_catalog_candidate_available: promptCandidateCount > 0,
+    prompt_safe_candidate_count: promptCandidateCount,
+    prompt_candidate_ids: [...new Set([...catalogAssistPromptCandidateIds(data), ...vectorAssistPromptCandidateIds(data)])],
+    raw_candidate_count: rawCandidateCount,
+    approved_candidate_count: approvedCandidateCount,
+    conflict_blocked_count: conflictBlockedCount,
+    catalog_gap_queue_candidate: assistEnabled && promptCandidateCount === 0,
+    fail_closed_candidate: assistEnabled && promptCandidateCount === 0 && (rawCandidateCount > 0 || approvedCandidateCount > 0 || conflictBlockedCount > 0),
+    unknown_card_ready: assistEnabled && promptCandidateCount === 0,
+    open_set_decision: openSetDecision,
+    open_set_reason: vectorSignal.reason || catalogSignal.reason || null,
+    reasons
+  };
+}
+
+function technicalOpenSetReadiness(code = "technical_failure") {
+  return {
+    status: "TECHNICAL_FAILURE",
+    release_policy: "retry_or_manual_review",
+    assist_enabled: false,
+    known_catalog_candidate_available: false,
+    prompt_safe_candidate_count: 0,
+    prompt_candidate_ids: [],
+    raw_candidate_count: 0,
+    approved_candidate_count: 0,
+    conflict_blocked_count: 0,
+    catalog_gap_queue_candidate: false,
+    fail_closed_candidate: false,
+    unknown_card_ready: false,
+    reasons: [normalizeText(code || "technical_failure")]
+  };
+}
+
 function candidateTitleForProxy(candidate = {}) {
   return normalizeText(
     candidate.reference_title
@@ -1130,6 +1218,11 @@ function perCardDecisionTrace(results = []) {
     vector_assist_eligibility: item.vector_assist_eligibility || null,
     vector_selected_candidate_id: item.vector_selected_candidate_id || "",
     vector_selected: Boolean(item.vector_selected_candidate_id || item.visual_vector_selected_count > 0),
+    open_set_readiness: item.open_set_readiness || null,
+    open_set_status: item.open_set_status || "",
+    catalog_gap_queue_candidate: item.catalog_gap_queue_candidate === true,
+    fail_closed_candidate: item.fail_closed_candidate === true,
+    unknown_card_ready: item.unknown_card_ready === true,
     retrieval_title_assist: item.retrieval_title_assist || null,
     retrieval_title_assist_used: item.retrieval_title_assist_used === true,
     fast_path_used: item.fast_path_used === true,
@@ -1234,7 +1327,7 @@ export function validateProtectionBypassSecret({ bypassSecret = "", env = {} } =
   }
 }
 
-async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 120_000, label = "Cloud request") {
+async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 240_000, label = "Cloud request") {
   const maxAttempts = Math.max(1, Number(process.env.CLOUD_LISTING_API_FETCH_ATTEMPTS || 3));
   const retryableCodes = new Set([
     "UND_ERR_CONNECT_TIMEOUT",
@@ -1247,7 +1340,7 @@ async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 120_000, 
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs) || 120_000));
+    const timeout = setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs) || 240_000));
     try {
       return await fetchImpl(url, {
         ...init,
@@ -1255,9 +1348,12 @@ async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 120_000, 
       });
     } catch (error) {
       if (error?.name === "AbortError") {
-        const timeoutError = new Error(`${label} timed out after ${Math.max(1, Number(timeoutMs) || 120_000)}ms.`);
+        const timeoutError = new Error(`${label} timed out after ${Math.max(1, Number(timeoutMs) || 240_000)}ms.`);
         timeoutError.code = "cloud_request_timeout";
-        throw timeoutError;
+        timeoutError.retryable = true;
+        if (attempt >= maxAttempts) throw timeoutError;
+        await delay(Math.min(8000, 1000 * (2 ** (attempt - 1))));
+        continue;
       }
       const code = error?.cause?.code || error?.code || "";
       const retryable = retryableCodes.has(code) || /fetch failed|network|socket|timeout/i.test(error?.message || "");
@@ -1271,7 +1367,7 @@ async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = 120_000, 
   throw new Error(`${label} failed without a response.`);
 }
 
-async function login({ baseUrl, username, password, bypassSecret = "", requestTimeoutMs = 120_000, fetchImpl = globalThis.fetch }) {
+async function login({ baseUrl, username, password, bypassSecret = "", requestTimeoutMs = 240_000, fetchImpl = globalThis.fetch }) {
   const response = await fetchWithTimeout(fetchImpl, `${baseUrl}/api/login`, {
     method: "POST",
     headers: { "content-type": "application/json", ...protectionHeaders(bypassSecret) },
@@ -1289,7 +1385,7 @@ async function preflightCloudApi({
   baseUrl,
   cookie,
   bypassSecret = "",
-  requestTimeoutMs = 120_000,
+  requestTimeoutMs = 240_000,
   fetchImpl = globalThis.fetch
 }) {
   const response = await fetchWithTimeout(fetchImpl, `${baseUrl}/api/listing-provider-status`, {
@@ -1339,7 +1435,7 @@ async function verifyExistingImage({
   cookie,
   image,
   bypassSecret = "",
-  requestTimeoutMs = 120_000,
+  requestTimeoutMs = 240_000,
   verificationCache,
   fetchImpl = globalThis.fetch
 }) {
@@ -1420,7 +1516,7 @@ async function verifiedImageInputs({
   cookie,
   item,
   bypassSecret = "",
-  requestTimeoutMs = 120_000,
+  requestTimeoutMs = 240_000,
   verificationCache,
   fetchImpl = globalThis.fetch
 }) {
@@ -1443,7 +1539,7 @@ async function callListingApi({
   providerMode,
   evalOptions = {},
   bypassSecret = "",
-  requestTimeoutMs = 120_000,
+  requestTimeoutMs = 240_000,
   verificationCache,
   maxTitleLength = 80,
   fetchImpl = globalThis.fetch
@@ -1558,13 +1654,15 @@ function evaluatedResultFromData({
   const correctCatalogRank = providerFailure ? null : correctCatalogCandidateRank(data, referenceTitle);
   const gptSelectedCorrect = providerFailure ? null : gptSelectedCorrectCatalogCandidate(data, referenceTitle);
   const copiedReferenceFields = providerFailure ? [] : copiedReferenceInstanceFields(data);
+  const failureCode = providerFailure ? providerFailureCode(data, response?.http_status || 200) || "provider_failed" : null;
+  const openSetReadiness = providerFailure ? technicalOpenSetReadiness(failureCode) : openSetReadinessForData(data);
   return {
     candidate_id: candidateId(item),
     provider: providerMode,
     requested_cloud_provider: cloudProviderForMode(providerMode),
     status: "evaluated",
     technical_failure: providerFailure,
-    technical_failure_code: providerFailure ? providerFailureCode(data, response?.http_status || 200) || "provider_failed" : null,
+    technical_failure_code: failureCode,
     corrected_title_as_temporary_gt: providerOptions.corrected_title_as_temporary_gt === true,
     corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
     provider_error_recovered: providerErrorAttempts.length > 0 && !providerFailure,
@@ -1582,7 +1680,7 @@ function evaluatedResultFromData({
     fallback_provider_id: data.fallback_provider_id || null,
     fallback_reason: data.fallback_reason || null,
     format_error_type: data.format_error_type || null,
-    provider_error_code: providerFailure ? data.provider_error_code || data.provider_error_type || providerFailureCode(data, response?.http_status || 200) || null : null,
+    provider_error_code: providerFailure ? data.provider_error_code || data.provider_error_type || failureCode || null : null,
     provider_error_details: providerFailure ? data.provider_error_details || null : null,
     reason: providerFailure ? providerFailureReason(data) : "",
     publication_gate: data.publication_gate || null,
@@ -1618,6 +1716,12 @@ function evaluatedResultFromData({
     vector_conflict_blocked_count: vectorAssistCount(data, "conflict_blocked_count", 0),
     vector_prompt_candidate_count: vectorPromptCandidateCount(data),
     vector_prompt_candidate_ids: vectorAssistPromptCandidateIds(data),
+    open_set_readiness: openSetReadiness,
+    open_set_status: openSetReadiness?.status || null,
+    known_catalog_candidate_available: openSetReadiness?.known_catalog_candidate_available === true,
+    catalog_gap_queue_candidate: openSetReadiness?.catalog_gap_queue_candidate === true,
+    fail_closed_candidate: openSetReadiness?.fail_closed_candidate === true,
+    unknown_card_ready: openSetReadiness?.unknown_card_ready === true,
     visual_vector_used: visualVectorUsed(data),
     visual_vector_candidate_count: visualVectorCandidateCount(data),
     visual_vector_selected_count: visualVectorSelectedCount(data),
@@ -1696,6 +1800,12 @@ function technicalFailureResult({
     provider_error_code: code,
     reason: normalizeText(error?.message || "").slice(0, 240),
     title: "",
+    open_set_readiness: technicalOpenSetReadiness(code),
+    open_set_status: "TECHNICAL_FAILURE",
+    known_catalog_candidate_available: false,
+    catalog_gap_queue_candidate: false,
+    fail_closed_candidate: false,
+    unknown_card_ready: false,
     corrected_title_reference: referenceTitle,
     corrected_title_comparison: null,
     elapsed_ms: Date.now() - started
@@ -1765,6 +1875,15 @@ function summarize(results = [], elapsedMs = 0) {
   const candidateProxySelectedCount = results.filter((item) => item.candidate_proxy_decision?.selected === true).length;
   const candidateProxyCatalogSelectedCount = results.filter((item) => item.candidate_proxy_decision?.selected_source === "catalog").length;
   const candidateProxyVectorSelectedCount = results.filter((item) => item.candidate_proxy_decision?.selected_source === "vector").length;
+  const openSetStatusCounts = results.reduce((counts, item) => {
+    const status = normalizeText(item.open_set_status || item.open_set_readiness?.status || "UNKNOWN");
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+  const knownCatalogCandidateAvailableCount = results.filter((item) => item.known_catalog_candidate_available === true).length;
+  const catalogGapQueueCandidateCount = results.filter((item) => item.catalog_gap_queue_candidate === true).length;
+  const failClosedCandidateCount = results.filter((item) => item.fail_closed_candidate === true).length;
+  const unknownCardReadyCount = results.filter((item) => item.unknown_card_ready === true).length;
   const elapsedValues = results
     .map((item) => item.timing?.total_ms ?? item.elapsed_ms)
     .filter((value) => Number.isFinite(value) && value >= 0)
@@ -1900,6 +2019,11 @@ function summarize(results = [], elapsedMs = 0) {
     vector_conflict_blocked_count: vectorConflictBlockedCount,
     vector_prompt_candidate_count: vectorPromptCandidateCount,
     vector_prompt_candidate_ids: vectorPromptCandidateIds,
+    open_set_status_counts: openSetStatusCounts,
+    known_catalog_candidate_available_count: knownCatalogCandidateAvailableCount,
+    catalog_gap_queue_candidate_count: catalogGapQueueCandidateCount,
+    fail_closed_candidate_count: failClosedCandidateCount,
+    unknown_card_ready_count: unknownCardReadyCount,
     retrieval_title_assist_used_count: retrievalTitleAssistUsedCount,
     fast_path_used_count: fastPathUsedCount,
     card_type_default_base_count: cardTypeDefaultBaseCount,
@@ -1966,7 +2090,7 @@ export async function evaluateCloudListingApi({
   username,
   password,
   bypassSecret = "",
-  requestTimeoutMs = 120_000,
+  requestTimeoutMs = 240_000,
   maxTitleLength = 80,
   correctedTitleAsTemporaryGt = true,
   sendCorrectedTitleHintToCloud = false,
@@ -2135,7 +2259,7 @@ export async function main(argv = process.argv, env = process.env) {
   const concurrency = numberArg(argv, "--concurrency", Number(runtimeEnv.CLOUD_LISTING_API_EVAL_CONCURRENCY || 1));
   const failOnProviderError = hasFlag(argv, "--fail-on-provider-error");
   const skipPreflight = hasFlag(argv, "--skip-cloud-preflight");
-  const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", Number(runtimeEnv.CLOUD_LISTING_API_REQUEST_TIMEOUT_MS || 120_000));
+  const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", Number(runtimeEnv.CLOUD_LISTING_API_REQUEST_TIMEOUT_MS || 240_000));
   const providerErrorRetries = numberArg(argv, "--provider-error-retries", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRIES || 1));
   const providerErrorRetryDelayMs = numberArg(argv, "--provider-error-retry-delay-ms", Number(runtimeEnv.CLOUD_LISTING_API_PROVIDER_ERROR_RETRY_DELAY_MS || 1500));
   const correctedTitleAsTemporaryGt = !hasFlag(argv, "--no-corrected-title-as-temporary-gt")
@@ -2216,6 +2340,11 @@ export async function main(argv = process.argv, env = process.env) {
     `vector_conflict_blocked_count: ${report.vector_conflict_blocked_count ?? "n/a"}`,
     `vector_prompt_candidate_count: ${report.vector_prompt_candidate_count ?? "n/a"}`,
     `vector_prompt_candidate_ids: ${(report.vector_prompt_candidate_ids || []).join(",") || "n/a"}`,
+    `open_set_status_counts: ${JSON.stringify(report.open_set_status_counts || {})}`,
+    `known_catalog_candidate_available_count: ${report.known_catalog_candidate_available_count ?? "n/a"}`,
+    `catalog_gap_queue_candidate_count: ${report.catalog_gap_queue_candidate_count ?? "n/a"}`,
+    `fail_closed_candidate_count: ${report.fail_closed_candidate_count ?? "n/a"}`,
+    `unknown_card_ready_count: ${report.unknown_card_ready_count ?? "n/a"}`,
     `retrieval_title_assist_used_count: ${report.retrieval_title_assist_used_count ?? "n/a"}`,
     `fast_path_used_count: ${report.fast_path_used_count ?? "n/a"}`,
     `card_type_default_base_count: ${report.card_type_default_base_count ?? "n/a"}`,

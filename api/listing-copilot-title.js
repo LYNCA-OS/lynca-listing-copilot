@@ -3242,6 +3242,129 @@ function withCatalogCandidateContext(result = {}, context = {}) {
   };
 }
 
+function numericEligibilityValue(eligibility = {}, key = "") {
+  const value = Number(eligibility?.[key]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function promptCandidateIdsFromEligibility(...eligibilities) {
+  return [...new Set(eligibilities.flatMap((eligibility) => (
+    Array.isArray(eligibility?.prompt_candidate_ids)
+      ? eligibility.prompt_candidate_ids
+      : []
+  )).map((id) => String(id || "").trim()).filter(Boolean))];
+}
+
+function packetOpenSetSignal(packet = {}) {
+  const retrieval = packet?.vector_retrieval || {};
+  return {
+    status: retrieval.status || null,
+    status_code: retrieval.status_code || null,
+    decision: retrieval.open_set_decision || null,
+    reason: retrieval.open_set_reason || null
+  };
+}
+
+function buildOpenSetReadiness(result = {}, {
+  catalogContext = {},
+  vectorContext = {},
+  providerOptions = {}
+} = {}) {
+  const catalogEligibility = result.catalog_assist_eligibility
+    || catalogContext.catalog_assist_eligibility
+    || catalogContext.assistPacket?.vector_retrieval?.assist_filter
+    || {};
+  const vectorEligibility = result.vector_assist_eligibility
+    || vectorContext.vector_assist_eligibility
+    || vectorContext.assistPacket?.vector_retrieval?.assist_filter
+    || {};
+  const catalogSignal = packetOpenSetSignal(result.catalog_candidate_packet || catalogContext.packet);
+  const vectorSignal = packetOpenSetSignal(result.vector_candidate_packet || vectorContext.packet);
+  const catalogPromptCount = numericEligibilityValue(catalogEligibility, "prompt_candidate_count");
+  const vectorPromptCount = numericEligibilityValue(vectorEligibility, "prompt_candidate_count");
+  const promptCandidateCount = catalogPromptCount + vectorPromptCount;
+  const rawCandidateCount = numericEligibilityValue(catalogEligibility, "raw_candidate_count")
+    + numericEligibilityValue(vectorEligibility, "raw_candidate_count");
+  const approvedCandidateCount = numericEligibilityValue(catalogEligibility, "approved_candidate_count")
+    + numericEligibilityValue(vectorEligibility, "approved_candidate_count");
+  const conflictBlockedCount = numericEligibilityValue(catalogEligibility, "conflict_blocked_count")
+    + numericEligibilityValue(vectorEligibility, "conflict_blocked_count");
+  const assistEnabled = optionFlag(providerOptions, "enable_catalog_assist", false) === true
+    || optionFlag(providerOptions, "enable_vector_assist", false) === true;
+  const reasons = [...new Set([
+    catalogEligibility.reason,
+    vectorEligibility.reason,
+    catalogSignal.reason,
+    vectorSignal.reason
+  ].map((reason) => String(reason || "").trim()).filter(Boolean))];
+  const unavailable = [catalogSignal, vectorSignal].some((signal) => /UNAVAILABLE|TIMEOUT|ERROR/i.test(`${signal.status || ""} ${signal.status_code || ""}`));
+  const openSetDecision = vectorSignal.decision || catalogSignal.decision || null;
+  const openSetReason = vectorSignal.reason || catalogSignal.reason || null;
+
+  let status = "ASSIST_DISABLED";
+  let releasePolicy = "single_model_writer_review";
+  if (assistEnabled && promptCandidateCount > 0) {
+    status = "KNOWN_CATALOG_ASSISTED";
+    releasePolicy = "writer_quick_review_with_catalog_assist";
+  } else if (assistEnabled && conflictBlockedCount > 0 && approvedCandidateCount > 0) {
+    status = "APPROVED_CANDIDATE_CONFLICT_REVIEW";
+    releasePolicy = "writer_review_catalog_conflict";
+  } else if (assistEnabled && /LOW_MARGIN/i.test(`${openSetDecision} ${reasons.join(" ")}`)) {
+    status = "LOW_MARGIN_SIMILAR_ONLY";
+    releasePolicy = "evidence_backed_writer_review_catalog_gap";
+  } else if (assistEnabled && /NONE_OF_THE_ABOVE|NO_EXACT_MATCH|FAMILY_ONLY_MATCH/i.test(`${openSetDecision} ${reasons.join(" ")}`)) {
+    status = "OPEN_SET_NO_EXACT_MATCH";
+    releasePolicy = "evidence_backed_writer_review_catalog_gap";
+  } else if (assistEnabled && unavailable && rawCandidateCount === 0) {
+    status = "RETRIEVAL_UNAVAILABLE";
+    releasePolicy = "provider_draft_without_catalog";
+  } else if (assistEnabled && rawCandidateCount > 0 && approvedCandidateCount === 0) {
+    status = "REFERENCE_CANDIDATES_ONLY";
+    releasePolicy = "evidence_backed_writer_review_catalog_gap";
+  } else if (assistEnabled) {
+    status = "EVIDENCE_BACKED_NO_CATALOG";
+    releasePolicy = "evidence_backed_writer_review_catalog_gap";
+  }
+
+  return {
+    status,
+    release_policy: releasePolicy,
+    assist_enabled: assistEnabled,
+    known_catalog_candidate_available: promptCandidateCount > 0,
+    prompt_safe_candidate_count: promptCandidateCount,
+    prompt_candidate_ids: promptCandidateIdsFromEligibility(catalogEligibility, vectorEligibility),
+    raw_candidate_count: rawCandidateCount,
+    approved_candidate_count: approvedCandidateCount,
+    conflict_blocked_count: conflictBlockedCount,
+    catalog: {
+      ...catalogSignal,
+      eligibility: catalogEligibility
+    },
+    vector: {
+      ...vectorSignal,
+      eligibility: vectorEligibility
+    },
+    open_set_decision: openSetDecision,
+    open_set_reason: openSetReason,
+    catalog_gap_queue_candidate: assistEnabled && promptCandidateCount === 0,
+    fail_closed_candidate: assistEnabled && promptCandidateCount === 0 && (rawCandidateCount > 0 || approvedCandidateCount > 0 || conflictBlockedCount > 0),
+    unknown_card_ready: assistEnabled
+      && promptCandidateCount === 0
+      && result.confidence !== "FAILED"
+      && !result.provider_error_code
+      && !result.provider_error_type,
+    reasons
+  };
+}
+
+function withOpenSetReadiness(result = {}, context = {}) {
+  if (!result || typeof result !== "object") return result;
+  return {
+    ...result,
+    open_set_readiness: buildOpenSetReadiness(result, context)
+  };
+}
+
 async function withEvidenceCompletion(result, payload, {
   runFocusedVisionImpl = null,
   env = process.env,
@@ -4130,14 +4253,15 @@ async function createOpenAiTitle(payload, selection, {
     vectorContext.visualFeatures
   );
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
-  if (fastPathResult) return fastPathResult;
+  if (fastPathResult) return withOpenSetReadiness(fastPathResult, { catalogContext, vectorContext, providerOptions });
   if (assistShadowOnly) {
-    return withEvidenceCompletionShadow(mergedResult, initialPayload, {
+    const shadowResult = await withEvidenceCompletionShadow(mergedResult, initialPayload, {
       timingContext,
       visualFeatures: vectorContext.visualFeatures,
       providerOptions,
       providerId: visionProviderIds.OPENAI_LEGACY
     });
+    return withOpenSetReadiness(shadowResult, { catalogContext, vectorContext, providerOptions });
   }
   const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
     mergedResult,
@@ -4151,9 +4275,10 @@ async function createOpenAiTitle(payload, selection, {
       assistShadowOnly
     }
   ));
-  if (singleModelResult) return singleModelResult;
+  if (singleModelResult) return withOpenSetReadiness(singleModelResult, { catalogContext, vectorContext, providerOptions });
 
-  return withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures, providerOptions });
+  const completedResult = await withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures, providerOptions });
+  return withOpenSetReadiness(completedResult, { catalogContext, vectorContext, providerOptions });
 }
 
 function requestedProviderFromPayload(payload = {}) {

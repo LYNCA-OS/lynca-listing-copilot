@@ -59,7 +59,8 @@ assert.doesNotMatch(providerRegistry, /ENABLE_AGNES_AUTO_VERIFIER|ENABLE_FAST_CA
 assert.match(api, /const signedImages = await imagesWithSignedReadUrls\(payload\.images \|\| \[\], timingContext\)/, "OpenAI fallback should use signed storage read URLs instead of requiring Base64 JSON");
 assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider calls should reuse signed URLs created during recognition preflight");
 assert.doesNotMatch(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade fast path should not exist");
-assert.match(api, /if \(fastPathResult\) return fastPathResult;/, "cascade fast path should skip slow completion when identity is already resolved");
+assert.match(api, /if \(fastPathResult\) return withOpenSetReadiness\(fastPathResult,/, "cascade fast path should skip slow completion when identity is already resolved while preserving open-set diagnostics");
+assert.match(api, /open_set_readiness/, "title API should expose known-catalog versus catalog-gap diagnostics");
 assert.match(api, /singleModelFastPathEnabled/, "title API should expose a single-model fast path switch");
 assert.match(api, /envFlag\(env, "ENABLE_SINGLE_MODEL_FAST_PATH", false\)/, "title API should default to model plus evidence completion");
 assert.match(api, /singleModelDraftPath/, "single-model provider requests should be able to skip Evidence Completion");

@@ -300,6 +300,11 @@ assert.equal(openai.report.oracle_candidate_upper_bound.pass_at_0_80_count, 1);
 assert.equal(openai.report.fast_path_used_count, 0);
 assert.equal(openai.report.catalog_prompt_assist_used_count, 0);
 assert.equal(openai.report.retrieval_title_assist_used_count, 0);
+assert.deepEqual(openai.report.open_set_status_counts, { ASSIST_DISABLED: 1 });
+assert.equal(openai.report.known_catalog_candidate_available_count, 0);
+assert.equal(openai.report.catalog_gap_queue_candidate_count, 0);
+assert.equal(openai.report.fail_closed_candidate_count, 0);
+assert.equal(openai.report.unknown_card_ready_count, 0);
 assert.deepEqual(openai.report.catalog_prompt_candidate_ids, []);
 assert.equal(openai.report.card_type_default_base_count, 0);
 assert.equal(openai.report.copied_serial_grade_cert_from_reference_count, 0);
@@ -589,6 +594,12 @@ assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_t
   assert.equal(assistShadow.report.results[0].fast_path.assist_shadow_only, true);
   assert.equal(assistShadow.report.decision_trace[0].fast_path_used, false);
   assert.equal(assistShadow.report.vector_prompt_candidate_count, 0);
+  assert.deepEqual(assistShadow.report.open_set_status_counts, { LOW_MARGIN_SIMILAR_ONLY: 1 });
+  assert.equal(assistShadow.report.catalog_gap_queue_candidate_count, 1);
+  assert.equal(assistShadow.report.fail_closed_candidate_count, 1);
+  assert.equal(assistShadow.report.unknown_card_ready_count, 1);
+  assert.equal(assistShadow.report.results[0].open_set_status, "LOW_MARGIN_SIMILAR_ONLY");
+  assert.equal(assistShadow.report.decision_trace[0].open_set_status, "LOW_MARGIN_SIMILAR_ONLY");
 }
 
 const openaiVector = await runProvider("d");
@@ -636,6 +647,11 @@ assert.equal(openaiVector.report.vector_approved_candidate_count, 1);
 assert.equal(openaiVector.report.vector_conflict_blocked_count, 1);
 assert.equal(openaiVector.report.vector_prompt_candidate_count, 1);
 assert.deepEqual(openaiVector.report.vector_prompt_candidate_ids, ["identity-1"]);
+assert.deepEqual(openaiVector.report.open_set_status_counts, { KNOWN_CATALOG_ASSISTED: 1 });
+assert.equal(openaiVector.report.known_catalog_candidate_available_count, 1);
+assert.equal(openaiVector.report.catalog_gap_queue_candidate_count, 0);
+assert.equal(openaiVector.report.fail_closed_candidate_count, 0);
+assert.equal(openaiVector.report.unknown_card_ready_count, 0);
 assert.equal(openaiVector.report.retrieval_title_assist_used_count, 1);
 assert.equal(openaiVector.report.fast_path_used_count, 0);
 assert.equal(openaiVector.report.results[0].catalog_prompt_assist_used, true);
@@ -643,12 +659,14 @@ assert.equal(openaiVector.report.results[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.results[0].vector_prompt_assist_used, true);
 assert.equal(openaiVector.report.results[0].vector_raw_candidate_count, 2);
 assert.deepEqual(openaiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
+assert.equal(openaiVector.report.results[0].open_set_status, "KNOWN_CATALOG_ASSISTED");
 assert.equal(openaiVector.report.results[0].retrieval_title_assist_used, true);
 assert.equal(openaiVector.report.results[0].retrieval_title_assist.provider_id, "postgres_hybrid");
 assert.deepEqual(openaiVector.report.results[0].retrieval_providers_used, ["catalog", "visual_vector", "postgres_hybrid"]);
 assert.equal(openaiVector.report.decision_trace[0].catalog_vector_title, "2025 Topps Chrome Test Player");
 assert.equal(openaiVector.report.decision_trace[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.decision_trace[0].vector_prompt_candidate_count, 1);
+assert.equal(openaiVector.report.decision_trace[0].open_set_status, "KNOWN_CATALOG_ASSISTED");
 assert.equal(openaiVector.report.decision_trace[0].retrieval_title_assist_used, true);
 assert.equal(openaiVector.report.decision_trace[0].retrieval_title_assist.candidate_identity_id, "identity-1");
 assert.equal(openaiVector.report.decision_trace[0].fast_path_used, false);
@@ -705,6 +723,70 @@ assert.equal(openaiVector.report.decision_trace[0].recovery_regression_no_change
 }
 
 {
+  let titleCalls = 0;
+  const timeoutRecovered = await evaluateCloudListingApi({
+    dataset,
+    baseUrl: "https://lynca.example",
+    provider: "openai_legacy",
+    limit: 1,
+    concurrency: 1,
+    username: "listing",
+    password: "password",
+    requestTimeoutMs: 1,
+    providerErrorRetries: 0,
+    fetchImpl: async (url, init = {}) => {
+      const path = new URL(url).pathname;
+      if (path === "/api/login") {
+        return jsonResponse(200, { ok: true }, {
+          "set-cookie": "lynca_metaverse_session=test-cookie; Path=/"
+        });
+      }
+      if (path === "/api/listing-provider-status") {
+        return jsonResponse(200, { providers: [], default_provider: "openai_legacy" });
+      }
+      if (path === "/api/listing-image-verify-existing") {
+        const body = JSON.parse(init.body);
+        return jsonResponse(200, {
+          ok: true,
+          verification: {
+            bucket: body.bucket,
+            object_path: body.object_path,
+            verification_token: `verified-${body.image_id}`,
+            content_type: "image/jpeg",
+            size: 1000,
+            width: 100,
+            height: 100,
+            content_sha256: "sha"
+          }
+        });
+      }
+      if (path === "/api/listing-copilot-title") {
+        titleCalls += 1;
+        if (titleCalls === 1) {
+          return new Promise((resolve, reject) => {
+            init.signal?.addEventListener("abort", () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            }, { once: true });
+          });
+        }
+        return jsonResponse(200, {
+          final_title: "2025 Topps Chrome Test Player",
+          confidence: "HIGH",
+          provider: "openai_legacy",
+          timing: { total_ms: 111 }
+        });
+      }
+      throw new Error(`unexpected fetch path for timeout retry: ${path}`);
+    }
+  });
+  assert.equal(timeoutRecovered.technical_failure_count, 0);
+  assert.equal(timeoutRecovered.provider_success_count, 1);
+  assert.equal(titleCalls, 2);
+}
+
+{
   const unrecovered = await runProvider("d", {
     evaluateOptions: {
       providerErrorRetries: 1,
@@ -727,8 +809,10 @@ assert.equal(openaiVector.report.decision_trace[0].recovery_regression_no_change
   assert.equal(unrecovered.report.provider_error_retry_count, 2);
   assert.equal(unrecovered.report.provider_success_count, 0);
   assert.equal(unrecovered.report.provider_success_rate, 0);
+  assert.deepEqual(unrecovered.report.open_set_status_counts, { TECHNICAL_FAILURE: 1 });
   assert.equal(unrecovered.report.results[0].status, "evaluated");
   assert.equal(unrecovered.report.results[0].technical_failure, true);
+  assert.equal(unrecovered.report.results[0].open_set_status, "TECHNICAL_FAILURE");
   assert.equal(unrecovered.titlePayloads.length, 2);
 }
 
