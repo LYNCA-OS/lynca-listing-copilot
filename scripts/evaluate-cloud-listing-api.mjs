@@ -467,15 +467,14 @@ function candidateProxyDecision({
     };
   }
 
-  const allowConflicts = providerMode === providerModes.OPENAI_VECTOR;
   const catalogRows = rankedProxyCandidates(referenceTitle, catalogCandidateList, {
     source: "catalog",
-    allowConflicts
+    allowConflicts: false
   });
   const vectorRows = providerMode === providerModes.OPENAI_VECTOR
     ? rankedProxyCandidates(referenceTitle, vectorCandidateList, {
       source: "vector",
-      allowConflicts
+      allowConflicts: false
     })
     : [];
   const candidates = [...catalogRows, ...vectorRows].sort((left, right) => {
@@ -499,9 +498,7 @@ function candidateProxyDecision({
   const selectedRecall = comparisonRecall(selectedComparison);
   return {
     enabled: true,
-    policy: allowConflicts
-      ? "temporary_gt_catalog_vector_conflict_review_lane"
-      : "temporary_gt_catalog_safe_no_conflict_lane",
+    policy: "temporary_gt_safe_prompt_or_selected_candidate_lane",
     selected: shouldSelect,
     selected_source: shouldSelect ? best.source : "raw_provider",
     selected_candidate_id: shouldSelect ? best.candidate_id : "",
@@ -788,6 +785,17 @@ function vectorCandidatesForTrace(data = {}) {
   return dedupeCandidates([...sources, ...packetCandidates], "vector");
 }
 
+function selectedRetrievalCandidates(data = {}, predicate = () => true) {
+  return retrievalSources(data).filter((candidate) => candidate.selected === true && predicate(candidate));
+}
+
+function vectorCandidatesForProxy(data = {}) {
+  return dedupeCandidates([
+    ...selectedRetrievalCandidates(data, isVisualVectorCandidate),
+    ...vectorAssistPacketCandidates(data).filter(isVisualVectorCandidate)
+  ], "vector_proxy");
+}
+
 function candidateVerificationSummaries(data = {}) {
   const traces = [
     ...(Array.isArray(data.completion_trace) ? data.completion_trace : []),
@@ -840,6 +848,13 @@ function catalogCandidates(data = {}) {
   const sources = retrievalSources(data).filter(isCatalogCandidate);
   const packetCandidates = catalogPacketCandidates(data).filter(isCatalogCandidate);
   return dedupeCandidates([...sources, ...packetCandidates], "catalog");
+}
+
+function catalogCandidatesForProxy(data = {}) {
+  return dedupeCandidates([
+    ...selectedRetrievalCandidates(data, isCatalogCandidate),
+    ...catalogAssistPacketCandidates(data).filter(isCatalogCandidate)
+  ], "catalog_proxy");
 }
 
 function metricFromRetrievalSummaries(data = {}, key = "") {
@@ -1520,8 +1535,8 @@ function evaluatedResultFromData({
   const providerFailure = isProviderFailureResponse(response || {}, data);
   const breakpoints = resultBreakpoints(data, item);
   const finalTitle = normalizeText(data.final_title || data.title || data.rendered_title);
-  const catalogCandidateList = providerFailure ? [] : catalogCandidates(data);
-  const vectorCandidateList = providerFailure ? [] : vectorCandidatesForTrace(data);
+  const catalogCandidateList = providerFailure ? [] : catalogCandidatesForProxy(data);
+  const vectorCandidateList = providerFailure ? [] : vectorCandidatesForProxy(data);
   const candidateProxy = providerFailure
     ? null
     : candidateProxyDecision({

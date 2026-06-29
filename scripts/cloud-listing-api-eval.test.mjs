@@ -479,7 +479,7 @@ assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_t
   assert.equal(conflictedCatalogOnly.report.pass_at_0_72_count, 0);
   assert.equal(conflictedCatalogOnly.report.raw_pass_at_0_72_count, 0);
   assert.equal(conflictedCatalogOnly.report.candidate_proxy_selected_count, 0);
-  assert.equal(conflictedCatalogOnly.report.results[0].candidate_proxy_decision.policy, "temporary_gt_catalog_safe_no_conflict_lane");
+  assert.equal(conflictedCatalogOnly.report.results[0].candidate_proxy_decision.policy, "temporary_gt_safe_prompt_or_selected_candidate_lane");
 }
 
 {
@@ -520,12 +520,12 @@ assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_t
     }
   });
   assert.equal(conflictedVectorReview.report.raw_pass_at_0_72_count, 0);
-  assert.equal(conflictedVectorReview.report.pass_at_0_72_count, 1);
-  assert.equal(conflictedVectorReview.report.candidate_proxy_selected_count, 1);
-  assert.equal(conflictedVectorReview.report.candidate_proxy_catalog_selected_count, 1);
-  assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.policy, "temporary_gt_catalog_vector_conflict_review_lane");
-  assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.selected_candidate_id, "cat-conflict");
-  assert.equal(conflictedVectorReview.report.decision_trace[0].candidate_guided_title, "2025 Topps Chrome Test Player");
+  assert.equal(conflictedVectorReview.report.pass_at_0_72_count, 0);
+  assert.equal(conflictedVectorReview.report.candidate_proxy_selected_count, 0);
+  assert.equal(conflictedVectorReview.report.candidate_proxy_catalog_selected_count, 0);
+  assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.policy, "temporary_gt_safe_prompt_or_selected_candidate_lane");
+  assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.selected_candidate_id, "");
+  assert.equal(conflictedVectorReview.report.decision_trace[0].candidate_guided_title, "");
 }
 
 const openaiVector = await runProvider("d");
