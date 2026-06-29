@@ -3448,6 +3448,12 @@ function titleAssistProductTextCompatible(left, right) {
   const rightValue = searchable(right);
   if (!leftValue || !rightValue) return true;
   if (titleAssistIdentityTextCompatible(leftValue, rightValue)) return true;
+  const compactLeft = leftValue.replace(/\s+/g, "");
+  const compactRight = rightValue.replace(/\s+/g, "");
+  if (compactLeft.length >= 8 && compactRight.length >= 8
+    && (compactLeft.includes(compactRight) || compactRight.includes(compactLeft))) {
+    return true;
+  }
   if ((leftValue.includes("pokemon") || leftValue.includes("pokémon") || rightValue.includes("pokemon") || rightValue.includes("pokémon"))
     && tokenCompatibleTextField(leftValue, rightValue, { includeManufacturer: true })) {
     return true;
@@ -3527,6 +3533,26 @@ function serialDenominatorCompatibleForTitleAssist(source = {}, currentFields = 
   return Boolean(currentDenominator && sourceDenominator && currentDenominator === sourceDenominator);
 }
 
+function currentYearLooksLikeWeakSeasonContext(value = "") {
+  const text = String(value || "").trim();
+  if (/^\d{2}\s*[-/]\s*\d{2}$/.test(text)) return true;
+  if (/^\d{4}\s*\/\s*\d{2}$/.test(text)) return true;
+  return false;
+}
+
+function sourceCanSoftenYearConflict(source = {}, currentFields = {}, currentTitle = "") {
+  const sourceFields = normalizeFields(source.fields || {});
+  const normalizedCurrent = normalizeFields(currentFields || {});
+  if (!currentYearLooksLikeWeakSeasonContext(normalizedCurrent.year)) return false;
+  const subjectCompatible = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle)
+    || looseSubjectTokenOverlapWithCurrent(source, currentFields, currentTitle);
+  if (!subjectCompatible) return false;
+  const sourceProduct = sourceFields.product || source.title || source.reference_title;
+  const currentProduct = normalizedCurrent.product || currentTitle;
+  return titleAssistProductTextCompatible(sourceProduct, currentProduct)
+    || titleAssistProductTextCompatible(sourceProduct, currentTitle);
+}
+
 function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}, currentTitle = "") {
   const conflicts = retrievalSourceConflictFields(source);
   const sourceFields = normalizeFields(source.fields || {});
@@ -3534,7 +3560,8 @@ function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}
   if (!conflicts.length) return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
   const blocking = conflicts.filter((field) => {
     if (field === "year") {
-      return !yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year);
+      if (yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year)) return false;
+      return !sourceCanSoftenYearConflict(source, currentFields, currentTitle);
     }
     if (field === "brand" || field === "manufacturer") {
       const sourceValue = sourceFields[field] || sourceFields.brand || sourceFields.manufacturer || source.title || source.reference_title;
@@ -3619,6 +3646,14 @@ function retrievalSourceHasExactIdentityAnchor(source = {}) {
   return exactEvidence && identityEvidence;
 }
 
+function retrievalSourceHasHardIdentityAnchor(source = {}) {
+  const matched = new Set(retrievalSourceMatchedFields(source));
+  const exactEvidence = ["checklist_code", "serial_number", "serial_denominator"].some((field) => matched.has(field));
+  const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
+    .some((field) => matched.has(field));
+  return exactEvidence && identityEvidence;
+}
+
 function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {}, currentTitle = "") {
   const selectedLane = source.selected === true || source.__title_assist_selected_candidate === true;
   const sourceIndex = Number(source.__title_assist_source_index);
@@ -3641,7 +3676,14 @@ function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {},
     && subjectSupport
     && (exactAnchor || identitySupportCount >= 3)
     && score >= 0.38;
-  if (!selectedLane && !topRankedLane && !lowerRankedCatalogLane) return false;
+  const lowerRankedExactCatalogLane = sourceIndex > 0
+    && sourceIndex <= 12
+    && /catalog|structured_database|official|approved/i.test(`${source.provider_id || ""} ${source.source_type || ""} ${source.source_url || ""}`)
+    && subjectSupport
+    && retrievalSourceHasHardIdentityAnchor(source)
+    && identitySupportCount >= 3
+    && score >= 0.34;
+  if (!selectedLane && !topRankedLane && !lowerRankedCatalogLane && !lowerRankedExactCatalogLane) return false;
   if (!subjectSupport && (sourceSubjects.length || currentSubjects.length)) return false;
   if (!subjectSupport && !exactAnchor) return false;
   if (!selectedLane && score < 0.25) return false;
@@ -3673,7 +3715,8 @@ function retrievalSourceCompatibleWithCurrent(source = {}, currentFields = {}, c
   const sourceFields = normalizeFields(source.fields || {});
   const normalizedCurrent = normalizeFields(currentFields || {});
   const subjectOverlap = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle);
-  if (sourceFields.year && normalizedCurrent.year && !yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year)) return false;
+  if (sourceFields.year && normalizedCurrent.year && !yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year)
+    && !sourceCanSoftenYearConflict(source, currentFields, currentTitle)) return false;
   if (sourceFields.brand && normalizedCurrent.brand && !titleAssistIdentityTextCompatible(sourceFields.brand, normalizedCurrent.brand) && !titleAssistProductTextCompatible(sourceFields.brand, currentTitle)) return false;
   if (sourceFields.manufacturer && normalizedCurrent.manufacturer && !titleAssistIdentityTextCompatible(sourceFields.manufacturer, normalizedCurrent.manufacturer) && !titleAssistProductTextCompatible(sourceFields.manufacturer, currentTitle)) return false;
   if (sourceFields.product && normalizedCurrent.product && !titleAssistProductTextCompatible(sourceFields.product, normalizedCurrent.product) && !titleAssistProductTextCompatible(sourceFields.product, currentTitle)) return false;
