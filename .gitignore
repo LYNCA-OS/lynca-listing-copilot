@@ -13,6 +13,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.venv-worker/
 services/recognition-worker/models/*
 !services/recognition-worker/models/README.md
 !services/recognition-worker/models/*.json
