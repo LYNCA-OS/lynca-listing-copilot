@@ -289,6 +289,30 @@ function perCardTrace({ baseline = {}, catalog = {}, vector = {}, threshold = 0.
       vector_selected_candidate_id: c.vector_selected_candidate_id || "",
       vector_selected: Boolean(c.vector_selected_candidate_id || c.visual_vector_selected_count > 0),
       vector_candidate_proxy_decision: cDecision || null,
+      catalog_prompt_candidate_count: Number(b.catalog_prompt_candidate_count || 0),
+      catalog_prompt_candidate_ids: Array.isArray(b.catalog_prompt_candidate_ids) ? b.catalog_prompt_candidate_ids : [],
+      vector_prompt_candidate_count: Number(c.vector_prompt_candidate_count || 0),
+      vector_prompt_candidate_ids: Array.isArray(c.vector_prompt_candidate_ids) ? c.vector_prompt_candidate_ids : [],
+      fast_path_used: {
+        gpt_only: a.fast_path_used === true,
+        catalog_only: b.fast_path_used === true,
+        catalog_vector: c.fast_path_used === true
+      },
+      card_type_default_base: {
+        gpt_only: a.card_type_default_base === true,
+        catalog_only: b.card_type_default_base === true,
+        catalog_vector: c.card_type_default_base === true
+      },
+      copied_serial_grade_cert_from_reference: {
+        gpt_only: a.copied_serial_grade_cert_from_reference === true,
+        catalog_only: b.copied_serial_grade_cert_from_reference === true,
+        catalog_vector: c.copied_serial_grade_cert_from_reference === true
+      },
+      copied_serial_grade_cert_from_reference_fields: {
+        gpt_only: Array.isArray(a.copied_serial_grade_cert_from_reference_fields) ? a.copied_serial_grade_cert_from_reference_fields : [],
+        catalog_only: Array.isArray(b.copied_serial_grade_cert_from_reference_fields) ? b.copied_serial_grade_cert_from_reference_fields : [],
+        catalog_vector: Array.isArray(c.copied_serial_grade_cert_from_reference_fields) ? c.copied_serial_grade_cert_from_reference_fields : []
+      },
       catalog_change: catalogChange,
       vector_change: vectorChange,
       recovery_regression_no_change: overallChange,
@@ -364,6 +388,8 @@ function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [
     catalog_candidate_count: catalog.catalog_candidate_count ?? null,
     catalog_candidate_available_rate: catalog.catalog_candidate_available_rate ?? null,
     catalog_prompt_candidate_count: catalog.catalog_prompt_candidate_count ?? null,
+    catalog_prompt_assist_used_count: catalog.catalog_prompt_assist_used_count ?? null,
+    catalog_prompt_candidate_ids: catalog.catalog_prompt_candidate_ids || [],
     catalog_candidate_selected_count: catalog.catalog_candidate_selected_count ?? null,
     candidate_recall_at_1: catalog.candidate_recall_at_1 || vector.candidate_recall_at_1 || null,
     candidate_recall_at_3: catalog.candidate_recall_at_3 || vector.candidate_recall_at_3 || null,
@@ -381,6 +407,8 @@ function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [
       ?? countWhere(trace, (item) => item.catalog_candidate_proxy_decision?.selected === true),
     vector_raw_candidate_count: vector.vector_raw_candidate_count ?? null,
     vector_prompt_candidate_count: vector.vector_prompt_candidate_count ?? null,
+    vector_prompt_assist_used_count: vector.vector_prompt_assist_used_count ?? null,
+    vector_prompt_candidate_ids: vector.vector_prompt_candidate_ids || [],
     vector_recovery_count: countWhere(trace, (item) => item.vector_change === "recovery"),
     vector_regression_count: countWhere(trace, (item) => item.vector_change === "regression"),
     vector_net_benefit: countWhere(trace, (item) => item.vector_change === "recovery") - countWhere(trace, (item) => item.vector_change === "regression"),
@@ -394,6 +422,21 @@ function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [
       gpt_only: baseline.per_card_latency_ms || null,
       catalog_only: catalog.per_card_latency_ms || null,
       catalog_vector: vector.per_card_latency_ms || null
+    },
+    fast_path_used_count: {
+      gpt_only: baseline.fast_path_used_count ?? null,
+      catalog_only: catalog.fast_path_used_count ?? null,
+      catalog_vector: vector.fast_path_used_count ?? null
+    },
+    card_type_default_base_count: {
+      gpt_only: baseline.card_type_default_base_count ?? null,
+      catalog_only: catalog.card_type_default_base_count ?? null,
+      catalog_vector: vector.card_type_default_base_count ?? null
+    },
+    copied_serial_grade_cert_from_reference_count: {
+      gpt_only: baseline.copied_serial_grade_cert_from_reference_count ?? null,
+      catalog_only: catalog.copied_serial_grade_cert_from_reference_count ?? null,
+      catalog_vector: vector.copied_serial_grade_cert_from_reference_count ?? null
     },
     usage_totals: {
       gpt_only: baseline.usage_totals || null,
@@ -455,6 +498,8 @@ export async function main(argv = process.argv) {
     `catalog_regression_count: ${report.summary.catalog_regression_count}`,
     `vector_recovery_count: ${report.summary.vector_recovery_count}`,
     `vector_regression_count: ${report.summary.vector_regression_count}`,
+    `card_type_default_base_count: ${JSON.stringify(report.summary.card_type_default_base_count)}`,
+    `copied_serial_grade_cert_from_reference_count: ${JSON.stringify(report.summary.copied_serial_grade_cert_from_reference_count)}`,
     `decision_trace_count: ${report.decision_trace.length}`
   ].join("\n") + "\n");
   return 0;

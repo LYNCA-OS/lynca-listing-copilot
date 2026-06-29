@@ -720,6 +720,15 @@ function vectorAssistPromptCandidateIds(data = {}) {
   return Array.isArray(ids) ? ids.map(normalizeText).filter(Boolean) : [];
 }
 
+function catalogAssistPromptCandidateIds(data = {}) {
+  const ids = catalogAssistEligibility(data).prompt_candidate_ids;
+  return Array.isArray(ids) ? ids.map(normalizeText).filter(Boolean) : [];
+}
+
+function fastPathUsed(data = {}) {
+  return data.fast_path?.used === true || data.fast_path?.skipped_evidence_completion === true;
+}
+
 function visualVectorCandidateCount(data = {}) {
   const sourceCount = retrievalSources(data).filter((candidate) => {
     const sourceType = String(candidate.source_type || "").toUpperCase();
@@ -735,6 +744,31 @@ function isVisualVectorCandidate(candidate = {}) {
   return sourceType === "VISUAL_VECTOR" || matchedFields.includes("visual_vector");
 }
 
+function candidateDedupeKeys(candidate = {}, fallback = "") {
+  const sourceUrl = normalizeText(candidate.source_url);
+  const sourceUrlTail = sourceUrl.split("/").filter(Boolean).pop() || "";
+  return [
+    candidate.candidate_identity_id,
+    candidate.identity_id,
+    candidate.candidate_id,
+    sourceUrl,
+    sourceUrlTail,
+    candidate.title,
+    candidate.reference_title,
+    fallback
+  ].map(normalizeText).filter(Boolean);
+}
+
+function dedupeCandidates(candidates = [], fallbackPrefix = "candidate") {
+  const seen = new Set();
+  return candidates.filter((candidate, index) => {
+    const keys = candidateDedupeKeys(candidate, `${fallbackPrefix}-${index + 1}`);
+    if (keys.some((key) => seen.has(key))) return false;
+    keys.forEach((key) => seen.add(key));
+    return true;
+  });
+}
+
 function visualVectorSelectedCount(data = {}) {
   return retrievalSources(data).filter((candidate) => candidate.selected === true && isVisualVectorCandidate(candidate)).length;
 }
@@ -742,13 +776,7 @@ function visualVectorSelectedCount(data = {}) {
 function vectorCandidatesForTrace(data = {}) {
   const sources = retrievalSources(data).filter(isVisualVectorCandidate);
   const packetCandidates = vectorPacketCandidates(data);
-  const seen = new Set();
-  return [...sources, ...packetCandidates].filter((candidate, index) => {
-    const key = normalizeText(candidate.candidate_id || candidate.candidate_identity_id || candidate.identity_id || candidate.source_url || candidate.title || `vector-${index}`);
-    if (key && seen.has(key)) return false;
-    if (key) seen.add(key);
-    return true;
-  });
+  return dedupeCandidates([...sources, ...packetCandidates], "vector");
 }
 
 function candidateVerificationSummaries(data = {}) {
@@ -802,13 +830,7 @@ function isCatalogCandidate(candidate = {}) {
 function catalogCandidates(data = {}) {
   const sources = retrievalSources(data).filter(isCatalogCandidate);
   const packetCandidates = catalogPacketCandidates(data).filter(isCatalogCandidate);
-  const seen = new Set();
-  return [...sources, ...packetCandidates].filter((candidate, index) => {
-    const key = normalizeText(candidate.candidate_id || candidate.candidate_identity_id || candidate.identity_id || candidate.source_url || candidate.title || `catalog-${index}`);
-    if (key && seen.has(key)) return false;
-    if (key) seen.add(key);
-    return true;
-  });
+  return dedupeCandidates([...sources, ...packetCandidates], "catalog");
 }
 
 function metricFromRetrievalSummaries(data = {}, key = "") {
@@ -923,6 +945,121 @@ function compactCandidates(candidates = [], limit = 5) {
   return candidates.slice(0, limit).map(compactCandidate);
 }
 
+function compactComparableValue(value) {
+  if (Array.isArray(value)) return value.map(compactComparableValue).filter(Boolean).sort().join("|");
+  return normalizeText(value).toLowerCase().replace(/^0+(?=\d)/g, "");
+}
+
+function fieldValue(layer = {}, fieldName = "") {
+  if (!layer || typeof layer !== "object" || Array.isArray(layer)) return null;
+  const value = layer[fieldName];
+  if (fieldName === "cert_number") {
+    return value ?? layer.cert ?? layer.certificate_number ?? null;
+  }
+  if (fieldName === "card_grade") return value ?? layer.grade ?? null;
+  return value ?? null;
+}
+
+function evidenceFieldFor(data = {}, fieldName = "") {
+  const evidence = data.normalized_evidence || data.evidence || {};
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return null;
+  return evidence[fieldName] || null;
+}
+
+function evidenceSourcesFor(data = {}, fieldName = "") {
+  const field = evidenceFieldFor(data, fieldName);
+  return Array.isArray(field?.sources) ? field.sources : [];
+}
+
+function sourceType(source = {}) {
+  return String(source.source_type || source.source || source.provider_id || "").trim().toUpperCase();
+}
+
+function sourceLooksDirectCurrentImage(source = {}) {
+  const type = sourceType(source);
+  if (source.direct_observation === true) return true;
+  return [
+    "CARD_FRONT",
+    "CARD_BACK",
+    "CARD_FRONT_PRINTED_TEXT",
+    "CARD_BACK_PRINTED_TEXT",
+    "SLAB_LABEL",
+    "OCR",
+    "VISION_MODEL"
+  ].includes(type);
+}
+
+function sourceLooksReferenceOnly(source = {}) {
+  const type = sourceType(source);
+  const original = String(source.original_source_type || "").trim().toUpperCase();
+  const url = String(source.source_url || "");
+  const kind = String(source.evidence_kind || "");
+  return original === "VISUAL_VECTOR"
+    || ["VISUAL_VECTOR", "VISUAL_GUESS", "MARKETPLACE", "OPEN_WEB"].includes(type)
+    || url.startsWith("supabase://catalog-cards/")
+    || url.startsWith("supabase://card-identities/")
+    || /visual_vector|reference|catalog/i.test(kind);
+}
+
+function catalogBaseSupport(data = {}) {
+  const evidenceSources = evidenceSourcesFor(data, "official_card_type");
+  if (evidenceSources.some((source) => {
+    const type = sourceType(source);
+    return ["INTERNAL_APPROVED_HISTORY", "OFFICIAL_CHECKLIST", "OFFICIAL_PRODUCT_PAGE", "STRUCTURED_DATABASE"].includes(type)
+      || String(source.source_url || "").startsWith("supabase://catalog-cards/");
+  })) return true;
+  return catalogCandidates(data).some((candidate) => {
+    const fields = candidate.fields && typeof candidate.fields === "object" ? candidate.fields : {};
+    return /^base$/i.test(normalizeText(fields.official_card_type || fields.card_type || fields.insert));
+  });
+}
+
+function cardTypeDefaultBaseDetected(data = {}) {
+  const resolved = data.resolved_fields || data.resolved || {};
+  const rendered = data.rendered_fields?.fields || data.rendered_fields || {};
+  const raw = data.fields || {};
+  const cardTypeBase = [resolved, rendered, raw].some((layer) => /^base$/i.test(normalizeText(fieldValue(layer, "card_type"))));
+  const officialBase = [resolved, rendered, raw].some((layer) => /^base$/i.test(normalizeText(fieldValue(layer, "official_card_type"))));
+  if (!cardTypeBase && !officialBase) return false;
+  return !catalogBaseSupport(data);
+}
+
+function candidateReferenceValueMatches(data = {}, fieldName = "", value = null) {
+  const target = compactComparableValue(value);
+  if (!target) return false;
+  const candidates = [
+    ...retrievalSources(data),
+    ...catalogPacketCandidates(data),
+    ...vectorPacketCandidates(data),
+    ...catalogAssistPacketCandidates(data),
+    ...vectorAssistPacketCandidates(data)
+  ];
+  return candidates.some((candidate) => {
+    const fields = candidate.fields && typeof candidate.fields === "object" ? candidate.fields : {};
+    const values = [
+      fieldValue(fields, fieldName),
+      fieldName === "card_grade" ? fields.grade : null,
+      fieldName === "cert_number" ? fields.cert || fields.certificate_number : null
+    ].filter((item) => item !== null && item !== undefined);
+    return values.some((item) => compactComparableValue(item) === target);
+  });
+}
+
+function copiedReferenceInstanceFields(data = {}) {
+  const resolved = data.resolved_fields || data.resolved || {};
+  const fields = data.fields || {};
+  const riskFields = [];
+  for (const fieldName of ["serial_number", "grade_company", "card_grade", "auto_grade", "cert_number"]) {
+    const value = fieldValue(resolved, fieldName) ?? fieldValue(fields, fieldName);
+    if (!value || compactComparableValue(value) === "unknown") continue;
+    const sources = evidenceSourcesFor(data, fieldName);
+    const hasDirectSource = sources.some(sourceLooksDirectCurrentImage);
+    const hasReferenceSource = sources.some(sourceLooksReferenceOnly) || candidateReferenceValueMatches(data, fieldName, value);
+    if (hasReferenceSource && !hasDirectSource) riskFields.push(fieldName);
+  }
+  return [...new Set(riskFields)];
+}
+
 function decisionOutcomeForSingleRun(item = {}) {
   if (item.technical_failure) return "technical_failure";
   if (item.catalog_candidate_selected_count > 0 || item.vector_selected_candidate_id) return "candidate_selected_single_run";
@@ -947,11 +1084,24 @@ function perCardDecisionTrace(results = []) {
     pass_at_0_80: item.pass_at_0_80 === true,
     candidate_proxy_decision: item.candidate_proxy_decision || null,
     catalog_candidates: item.catalog_candidates || [],
+    catalog_prompt_candidate_count: item.catalog_prompt_candidate_count || 0,
+    catalog_prompt_candidate_ids: item.catalog_prompt_candidate_ids || [],
+    catalog_prompt_assist_used: item.catalog_prompt_assist_used === true,
+    catalog_assist_eligibility: item.catalog_assist_eligibility || null,
     catalog_selected_candidate_id: item.catalog_selected_candidate_id || "",
     catalog_selected: Boolean(item.catalog_selected_candidate_id || item.catalog_candidate_selected_count > 0),
     vector_candidates: item.vector_candidates || [],
+    vector_prompt_candidate_count: item.vector_prompt_candidate_count || 0,
+    vector_prompt_candidate_ids: item.vector_prompt_candidate_ids || [],
+    vector_prompt_assist_used: item.vector_prompt_assist_used === true,
+    vector_assist_eligibility: item.vector_assist_eligibility || null,
     vector_selected_candidate_id: item.vector_selected_candidate_id || "",
     vector_selected: Boolean(item.vector_selected_candidate_id || item.visual_vector_selected_count > 0),
+    fast_path_used: item.fast_path_used === true,
+    fast_path: item.fast_path || null,
+    card_type_default_base: item.card_type_default_base === true,
+    copied_serial_grade_cert_from_reference: item.copied_serial_grade_cert_from_reference === true,
+    copied_serial_grade_cert_from_reference_fields: item.copied_serial_grade_cert_from_reference_fields || [],
     outcome: decisionOutcomeForSingleRun(item),
     recovery_regression_no_change: "paired_baseline_required",
     main_changed_fields: []
@@ -1370,6 +1520,7 @@ function evaluatedResultFromData({
   const titleMatch = providerFailure ? null : titleComparison(referenceTitle, scoredTitle);
   const correctCatalogRank = providerFailure ? null : correctCatalogCandidateRank(data, referenceTitle);
   const gptSelectedCorrect = providerFailure ? null : gptSelectedCorrectCatalogCandidate(data, referenceTitle);
+  const copiedReferenceFields = providerFailure ? [] : copiedReferenceInstanceFields(data);
   return {
     candidate_id: candidateId(item),
     provider: providerMode,
@@ -1414,6 +1565,11 @@ function evaluatedResultFromData({
     provider_truncation_retry_attempted: data.provider_truncation_retry_attempted === true,
     provider_truncation_retry_attempts: Number(data.provider_truncation_retry_attempts || 0),
     retrieval: data.retrieval || null,
+    catalog_retrieval: data.catalog_retrieval || null,
+    catalog_candidate_packet: data.catalog_candidate_packet || null,
+    catalog_prompt_assist_used: data.catalog_prompt_assist_used === true,
+    catalog_assist_eligibility: data.catalog_assist_eligibility || null,
+    catalog_prompt_candidate_ids: catalogAssistPromptCandidateIds(data),
     vector_retrieval: data.vector_retrieval || null,
     vector_candidate_packet: data.vector_candidate_packet || null,
     vector_prompt_assist_used: data.vector_prompt_assist_used === true,
@@ -1446,6 +1602,11 @@ function evaluatedResultFromData({
     vector_candidate_decision: data.vector_candidate_decision || null,
     vector_candidates: compactCandidates(vectorCandidateList),
     vector_selected_candidate_id: selectedCandidateIdFromCandidates(vectorCandidateList) || vectorDecisionSelectedCandidateId(data),
+    fast_path: data.fast_path || null,
+    fast_path_used: fastPathUsed(data),
+    card_type_default_base: providerFailure ? false : cardTypeDefaultBaseDetected(data),
+    copied_serial_grade_cert_from_reference: copiedReferenceFields.length > 0,
+    copied_serial_grade_cert_from_reference_fields: copiedReferenceFields,
     retrieval_providers_used: providersUsed(data),
     candidate_identity_candidate_count: candidateIdentityCandidateCount(data),
     visual_feature_count: visualFeatureCount(data),
@@ -1530,6 +1691,8 @@ function summarize(results = [], elapsedMs = 0) {
   const catalogCandidateCountTotal = results.reduce((sum, item) => sum + Number(item.catalog_candidate_count || 0), 0);
   const catalogPromptCandidateCount = results.reduce((sum, item) => sum + Number(item.catalog_prompt_candidate_count || 0), 0);
   const catalogCandidateSelectedCount = results.reduce((sum, item) => sum + Number(item.catalog_candidate_selected_count || 0), 0);
+  const catalogPromptAssistUsedCount = results.filter((item) => item.catalog_prompt_assist_used === true).length;
+  const catalogPromptCandidateIds = [...new Set(results.flatMap((item) => Array.isArray(item.catalog_prompt_candidate_ids) ? item.catalog_prompt_candidate_ids : []))];
   const correctCatalogIdentityAvailableCount = results.filter((item) => item.correct_catalog_identity_available === true).length;
   const correctCandidateRecallAt1 = results.filter((item) => item.correct_candidate_recall_at_1 === true).length;
   const correctCandidateRecallAt3 = results.filter((item) => item.correct_candidate_recall_at_3 === true).length;
@@ -1546,6 +1709,9 @@ function summarize(results = [], elapsedMs = 0) {
   const vectorPromptCandidateIds = [...new Set(results.flatMap((item) => Array.isArray(item.vector_prompt_candidate_ids) ? item.vector_prompt_candidate_ids : []))];
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
+  const fastPathUsedCount = results.filter((item) => item.fast_path_used === true).length;
+  const cardTypeDefaultBaseCount = results.filter((item) => item.card_type_default_base === true).length;
+  const copiedSerialGradeCertFromReferenceCount = results.filter((item) => item.copied_serial_grade_cert_from_reference === true).length;
   const averageRecallValues = results
     .map((item) => item.corrected_title_comparison?.token_recall)
     .filter((value) => Number.isFinite(value));
@@ -1653,6 +1819,8 @@ function summarize(results = [], elapsedMs = 0) {
     catalog_lookup_used_count: catalogLookupUsedCount,
     catalog_candidate_count: catalogCandidateCountTotal,
     catalog_prompt_candidate_count: catalogPromptCandidateCount,
+    catalog_prompt_assist_used_count: catalogPromptAssistUsedCount,
+    catalog_prompt_candidate_ids: catalogPromptCandidateIds,
     catalog_candidate_selected_count: catalogCandidateSelectedCount,
     catalog_candidate_available_rate: rate(correctCatalogIdentityAvailableCount),
     correct_catalog_identity_available_count: correctCatalogIdentityAvailableCount,
@@ -1692,6 +1860,9 @@ function summarize(results = [], elapsedMs = 0) {
     vector_conflict_blocked_count: vectorConflictBlockedCount,
     vector_prompt_candidate_count: vectorPromptCandidateCount,
     vector_prompt_candidate_ids: vectorPromptCandidateIds,
+    fast_path_used_count: fastPathUsedCount,
+    card_type_default_base_count: cardTypeDefaultBaseCount,
+    copied_serial_grade_cert_from_reference_count: copiedSerialGradeCertFromReferenceCount,
     visual_feature_count: storedVisualFeatureCount,
     provider_truncation_retry_count: truncationRetryCount,
     raw_blind_output_accuracy: {
@@ -1983,6 +2154,8 @@ export async function main(argv = process.argv, env = process.env) {
     `catalog_candidate_count: ${report.catalog_candidate_count ?? "n/a"}`,
     `catalog_candidate_available_rate: ${report.catalog_candidate_available_rate ?? "n/a"}`,
     `catalog_prompt_candidate_count: ${report.catalog_prompt_candidate_count ?? "n/a"}`,
+    `catalog_prompt_assist_used_count: ${report.catalog_prompt_assist_used_count ?? "n/a"}`,
+    `catalog_prompt_candidate_ids: ${(report.catalog_prompt_candidate_ids || []).join(",") || "n/a"}`,
     `catalog_candidate_selected_count: ${report.catalog_candidate_selected_count ?? "n/a"}`,
     `correct_catalog_identity_available_count: ${report.correct_catalog_identity_available_count ?? "n/a"}`,
     `correct_candidate_recall_at_1: ${report.correct_candidate_recall_at_1 ?? "n/a"}`,
@@ -2002,6 +2175,9 @@ export async function main(argv = process.argv, env = process.env) {
     `vector_conflict_blocked_count: ${report.vector_conflict_blocked_count ?? "n/a"}`,
     `vector_prompt_candidate_count: ${report.vector_prompt_candidate_count ?? "n/a"}`,
     `vector_prompt_candidate_ids: ${(report.vector_prompt_candidate_ids || []).join(",") || "n/a"}`,
+    `fast_path_used_count: ${report.fast_path_used_count ?? "n/a"}`,
+    `card_type_default_base_count: ${report.card_type_default_base_count ?? "n/a"}`,
+    `copied_serial_grade_cert_from_reference_count: ${report.copied_serial_grade_cert_from_reference_count ?? "n/a"}`,
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,
     `raw_blind_token_recall_avg_proxy_not_identity_accuracy: ${report.raw_blind_output_accuracy?.corrected_title_token_recall_avg ?? "n/a"}`,

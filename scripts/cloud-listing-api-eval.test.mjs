@@ -86,6 +86,8 @@ async function runProvider(provider, options = {}) {
     if (path === "/api/listing-copilot-title") {
       const body = JSON.parse(init.body);
       titlePayloads.push(body);
+      const catalogEnabled = body.provider_options?.enable_evidence_completion === true
+        && body.provider_options?.enable_catalog_assist === true;
       const vectorEnabled = body.provider_options?.enable_evidence_completion === true
         && body.provider_options?.enable_stored_visual_features === true
         && body.provider_options?.enable_vector_retrieval === true
@@ -148,6 +150,65 @@ async function runProvider(provider, options = {}) {
             }]
           }
           : null,
+        catalog_retrieval: catalogEnabled
+          ? {
+            providers_used: ["catalog"],
+            catalog_retrieval_metrics: {
+              catalog_lookup_used_count: 1,
+              catalog_candidate_count: 1,
+              catalog_prompt_candidate_count: 1,
+              catalog_candidate_selected_count: 0
+            },
+            sources: [{
+              source_type: "CATALOG",
+              provider_id: "catalog",
+              source_url: "supabase://catalog-cards/identity-1",
+              matched_fields: ["catalog", "collector_number", "players"],
+              title: "2025 Topps Chrome Test Player",
+              source_trust: "APPROVED_REFERENCE"
+            }]
+          }
+          : null,
+        catalog_candidate_packet: catalogEnabled
+          ? {
+            vector_retrieval: {
+              candidates: [{
+                candidate_identity_id: "identity-1",
+                provider_id: "catalog",
+                source_type: "CATALOG",
+                source_url: "supabase://catalog-cards/identity-1",
+                source_trust: "APPROVED_REFERENCE",
+                title: "2025 Topps Chrome Test Player"
+              }]
+            }
+          }
+          : null,
+        catalog_assist_packet: catalogEnabled
+          ? {
+            vector_retrieval: {
+              candidates: [{
+                candidate_identity_id: "identity-1",
+                provider_id: "catalog",
+                source_type: "CATALOG",
+                source_url: "supabase://catalog-cards/identity-1",
+                source_trust: "APPROVED_REFERENCE",
+                title: "2025 Topps Chrome Test Player"
+              }]
+            }
+          }
+          : null,
+        catalog_assist_eligibility: catalogEnabled
+          ? {
+            eligible: true,
+            reason: "approved_identity_candidate_available",
+            raw_candidate_count: 1,
+            approved_candidate_count: 1,
+            conflict_blocked_count: 0,
+            prompt_candidate_count: 1,
+            prompt_candidate_ids: ["identity-1"]
+          }
+          : null,
+        catalog_prompt_assist_used: catalogEnabled,
         vector_retrieval: vectorEnabled
           ? {
             providers_used: ["visual_vector"],
@@ -226,6 +287,11 @@ assert.equal(openai.report.pass_at_0_72_count, 1);
 assert.equal(openai.report.pass_at_0_80_count, 1);
 assert.equal(openai.report.raw_blind_output_accuracy.pass_at_0_72_count, 1);
 assert.equal(openai.report.oracle_candidate_upper_bound.pass_at_0_80_count, 1);
+assert.equal(openai.report.fast_path_used_count, 0);
+assert.equal(openai.report.catalog_prompt_assist_used_count, 0);
+assert.deepEqual(openai.report.catalog_prompt_candidate_ids, []);
+assert.equal(openai.report.card_type_default_base_count, 0);
+assert.equal(openai.report.copied_serial_grade_cert_from_reference_count, 0);
 assert.equal(openai.report.decision_trace[0].gpt_only_title, "2025 Topps Chrome Test Player");
 assert.equal(openai.report.breakpoint_completeness_avg.raw_provider_fields, 0.375);
 assert.equal(openai.report.breakpoint_completeness_avg.rendered_fields, 0.375);
@@ -244,6 +310,68 @@ assert.equal(openai.titlePayload.provider_options.enable_evidence_completion, fa
 assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, false);
 assert.equal(openai.titlePayload.catalog_observation_hint, null);
 
+{
+  const referenceCopyRisk = await runProvider("d", {
+    titleResponder({ body }) {
+      return {
+        final_title: "2025 Topps Chrome Test Player Base 17/50 PSA 10",
+        confidence: "HIGH",
+        provider: body.provider,
+        fields: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Test Player"],
+          card_type: "Base",
+          serial_number: "17/50",
+          grade_company: "PSA",
+          card_grade: "10"
+        },
+        resolved: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Test Player"],
+          card_type: "Base",
+          serial_number: "17/50",
+          grade_company: "PSA",
+          card_grade: "10"
+        },
+        evidence: {
+          serial_number: {
+            value: "17/50",
+            sources: [{ source_type: "VISUAL_GUESS", original_source_type: "VISUAL_VECTOR" }]
+          },
+          grade_company: {
+            value: "PSA",
+            sources: [{ source_type: "STRUCTURED_DATABASE", source_url: "supabase://card-identities/ref" }]
+          },
+          card_grade: {
+            value: "10",
+            sources: [{ source_type: "STRUCTURED_DATABASE", source_url: "supabase://card-identities/ref" }]
+          }
+        },
+        vector_candidate_packet: {
+          vector_retrieval: {
+            candidates: [{
+              candidate_identity_id: "identity-reference-copy",
+              source_type: "VISUAL_VECTOR",
+              title: "2025 Topps Chrome Test Player 17/50 PSA 10",
+              fields: {
+                serial_number: "17/50",
+                grade_company: "PSA",
+                card_grade: "10"
+              }
+            }]
+          }
+        },
+        timing: { total_ms: 200 }
+      };
+    }
+  });
+  assert.equal(referenceCopyRisk.report.card_type_default_base_count, 1);
+  assert.equal(referenceCopyRisk.report.copied_serial_grade_cert_from_reference_count, 1);
+  assert.deepEqual(referenceCopyRisk.report.decision_trace[0].copied_serial_grade_cert_from_reference_fields.sort(), ["card_grade", "grade_company", "serial_number"]);
+}
+
 const openaiCatalog = await runProvider("catalog-only");
 assert.equal(openaiCatalog.report.provider, "openai_catalog");
 assert.equal(openaiCatalog.titlePayload.provider, "openai_legacy");
@@ -261,7 +389,17 @@ assert.equal(openaiCatalog.titlePayload.catalog_observation_hint, null);
 assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_as_temporary_gt, true);
 assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
 assert.equal(openaiCatalog.report.results[0].corrected_title_hint_sent_to_cloud, false);
+assert.equal(openaiCatalog.report.fast_path_used_count, 0);
+assert.equal(openaiCatalog.report.catalog_lookup_used_count, 1);
+assert.equal(openaiCatalog.report.catalog_candidate_count, 1);
+assert.equal(openaiCatalog.report.catalog_prompt_candidate_count, 1);
+assert.equal(openaiCatalog.report.catalog_prompt_assist_used_count, 1);
+assert.deepEqual(openaiCatalog.report.catalog_prompt_candidate_ids, ["identity-1"]);
+assert.equal(openaiCatalog.report.results[0].catalog_prompt_assist_used, true);
+assert.equal(openaiCatalog.report.results[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiCatalog.report.decision_trace[0].catalog_only_title, "2025 Topps Chrome Test Player");
+assert.equal(openaiCatalog.report.decision_trace[0].catalog_prompt_assist_used, true);
+assert.equal(openaiCatalog.report.decision_trace[0].fast_path_used, false);
 
 const openaiCatalogWithHint = await runProvider("catalog-only", {
   evaluateOptions: {
@@ -374,9 +512,11 @@ assert.equal(openaiVector.report.visual_vector_used_count, 1);
 assert.equal(openaiVector.report.visual_vector_candidate_count, 1);
 assert.equal(openaiVector.report.postgres_hybrid_used_count, 1);
 assert.equal(openaiVector.report.postgres_hybrid_candidate_count, 1);
-assert.equal(openaiVector.report.catalog_lookup_used_count, 0);
+assert.equal(openaiVector.report.catalog_lookup_used_count, 1);
 assert.equal(openaiVector.report.catalog_candidate_count, 1);
-assert.equal(openaiVector.report.catalog_prompt_candidate_count, 0);
+assert.equal(openaiVector.report.catalog_prompt_candidate_count, 1);
+assert.equal(openaiVector.report.catalog_prompt_assist_used_count, 1);
+assert.deepEqual(openaiVector.report.catalog_prompt_candidate_ids, ["identity-1"]);
 assert.equal(openaiVector.report.catalog_candidate_selected_count, 0);
 assert.equal(openaiVector.report.correct_catalog_identity_available_count, 1);
 assert.equal(openaiVector.report.correct_candidate_recall_at_1, 1);
@@ -394,11 +534,17 @@ assert.equal(openaiVector.report.vector_approved_candidate_count, 1);
 assert.equal(openaiVector.report.vector_conflict_blocked_count, 1);
 assert.equal(openaiVector.report.vector_prompt_candidate_count, 1);
 assert.deepEqual(openaiVector.report.vector_prompt_candidate_ids, ["identity-1"]);
+assert.equal(openaiVector.report.fast_path_used_count, 0);
+assert.equal(openaiVector.report.results[0].catalog_prompt_assist_used, true);
+assert.equal(openaiVector.report.results[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.results[0].vector_prompt_assist_used, true);
 assert.equal(openaiVector.report.results[0].vector_raw_candidate_count, 2);
 assert.deepEqual(openaiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
-assert.deepEqual(openaiVector.report.results[0].retrieval_providers_used, ["visual_vector", "postgres_hybrid"]);
+assert.deepEqual(openaiVector.report.results[0].retrieval_providers_used, ["catalog", "visual_vector", "postgres_hybrid"]);
 assert.equal(openaiVector.report.decision_trace[0].catalog_vector_title, "2025 Topps Chrome Test Player");
+assert.equal(openaiVector.report.decision_trace[0].catalog_prompt_candidate_count, 1);
+assert.equal(openaiVector.report.decision_trace[0].vector_prompt_candidate_count, 1);
+assert.equal(openaiVector.report.decision_trace[0].fast_path_used, false);
 assert.equal(openaiVector.report.decision_trace[0].recovery_regression_no_change, "paired_baseline_required");
 
 {
