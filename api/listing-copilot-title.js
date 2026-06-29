@@ -3300,6 +3300,90 @@ async function withEvidenceCompletion(result, payload, {
   }));
 }
 
+async function withEvidenceCompletionShadow(result, payload, {
+  env = process.env,
+  timingContext = null,
+  visualFeatures = {},
+  providerOptions = {},
+  providerId = result.identity_provider_id || result.provider || result.source
+} = {}) {
+  const draft = singleModelDraftPath(result, payload, providerId, {
+    reason: "assist_shadow_no_prompt_safe_candidates",
+    allowWhenEvidenceCompletion: true,
+    assistShadowOnly: true
+  });
+  if (!draft) return null;
+
+  const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
+  const retrievalEnv = retrievalEnvForProviderOptions(env, providerOptions);
+  const allowedFamilies = retrievalFamiliesForProviderOptions(env, providerOptions);
+  let completion;
+  try {
+    completion = await timeAsync(timingContext, "evidence_completion_ms", () => completeEvidence({
+      resolved: result.resolved,
+      evidence: result.evidence,
+      captureQuality: result.capture_quality || captureQualityForPayload(payload),
+      unresolved: result.unresolved,
+      visualEmbeddings: optionFlag(providerOptions, "enable_vector_assist", false)
+        ? visualFeaturesForRetrieval(result, visualFeatures)
+        : [],
+      retrievalMode,
+      allowedFamilies: allowedFamilies || undefined,
+      maxQueries: allowedFamilies ? Math.max(4, allowedFamilies.length) : undefined,
+      env: retrievalEnv
+    }));
+  } catch (error) {
+    return {
+      ...draft,
+      route_reason: "No prompt-safe catalog or vector candidates were available; retrieval telemetry failed and did not alter the GPT draft.",
+      retrieval: {
+        skipped: true,
+        reason: "assist_shadow_retrieval_failed",
+        error: safeRecognitionError(error)
+      },
+      completion_state: {
+        shadow_only: true,
+        error_type: "RETRIEVAL_TELEMETRY_ERROR"
+      },
+      fast_path: {
+        ...(draft.fast_path || {}),
+        assist_shadow_only: true,
+        assist_shadow_retrieval_only: true,
+        reason: "assist_shadow_no_prompt_safe_candidates"
+      }
+    };
+  }
+  addTiming(timingContext, "retrieval_ms", Number(completion.retrieval?.latency_ms || completion.retrieval?.retrieval_time_ms || 0));
+
+  return {
+    ...draft,
+    route: draft.route || "ASSIST_SHADOW_WRITER_DRAFT",
+    route_reason: "No prompt-safe catalog or vector candidates were available; retrieval ran only for telemetry and did not alter the GPT draft.",
+    retrieval: completion.retrieval || draft.retrieval,
+    completion_state: {
+      ...(completion.state || {}),
+      shadow_only: true
+    },
+    completion_trace: [
+      ...(Array.isArray(draft.completion_trace) ? draft.completion_trace : []),
+      ...(Array.isArray(completion.resolution_trace) ? completion.resolution_trace : [])
+    ],
+    resolution_trace: [
+      ...(Array.isArray(draft.resolution_trace) ? draft.resolution_trace : []),
+      ...(Array.isArray(completion.resolution_trace) ? completion.resolution_trace : [])
+    ],
+    usage: mergeUsage(draft.usage, completion.usage, {
+      providerCalls: result.provider ? 1 : 0
+    }),
+    fast_path: {
+      ...(draft.fast_path || {}),
+      assist_shadow_only: true,
+      assist_shadow_retrieval_only: true,
+      reason: "assist_shadow_no_prompt_safe_candidates"
+    }
+  };
+}
+
 async function imagesWithSignedReadUrls(images = [], timingContext = null) {
   return timeAsync(timingContext, "signed_url_ms", () => mapWithConcurrency(images, signedUrlConcurrency, async (image) => {
     const metadata = await assertVerifiedStorageImage(image);
@@ -3493,6 +3577,14 @@ async function createOpenAiTitle(payload, selection, {
   );
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return fastPathResult;
+  if (assistShadowOnly) {
+    return withEvidenceCompletionShadow(mergedResult, initialPayload, {
+      timingContext,
+      visualFeatures: vectorContext.visualFeatures,
+      providerOptions,
+      providerId: visionProviderIds.OPENAI_LEGACY
+    });
+  }
   const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
     mergedResult,
     initialPayload,

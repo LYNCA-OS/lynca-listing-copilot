@@ -67,6 +67,7 @@ assert.match(api, /skipped_evidence_completion: true/, "single-model fast drafts
 assert.match(api, /assist_shadow_no_prompt_safe_candidates/, "assist-enabled requests with no prompt-safe candidates should stay in shadow-only mode");
 assert.match(api, /assist_shadow_only: assistShadowOnly/, "assist shadow-only drafts should be distinguishable from provider fast path");
 assert.match(api, /allowWhenEvidenceCompletion: assistShadowOnly/, "assist shadow-only drafts should skip Evidence Completion without enabling unsafe candidate assist");
+assert.match(api, /assist_shadow_retrieval_failed/, "assist shadow telemetry failures should not fail the GPT draft");
 assert.match(api, /ENABLE_EVIDENCE_COMPLETION/, "slow Evidence Completion should be controlled by an explicit env flag");
 assert.match(api, /vectorRetrievalActive\(env, options\)/, "title API should only run visual vector lookup when vector retrieval is active");
 assert.match(api, /envFlag\(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false\)/, "legacy stored visual lookup should default off");
