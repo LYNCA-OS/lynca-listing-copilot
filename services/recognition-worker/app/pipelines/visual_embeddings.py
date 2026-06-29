@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from typing import Any
 
 import numpy as np
@@ -159,8 +160,9 @@ def extract_visual_embeddings(image_loads: list[Any], config: Any, embedder: Any
         embeddings = embedding_fn(image_loads, config)
     except VisualEmbeddingBackendUnavailable as error:
         return _features_unavailable_for_images(image_loads, config, str(error) or "embedding_backend_unavailable")
-    except Exception:
-        return _features_unavailable_for_images(image_loads, config, "embedding_generation_error")
+    except Exception as error:
+        logging.exception("visual embedding generation failed: %s", type(error).__name__)
+        return _features_unavailable_for_images(image_loads, config, f"embedding_generation_error:{type(error).__name__}")
 
     features = []
     expected_dimensions = int(getattr(config, "visual_embedding_dimensions", 768))

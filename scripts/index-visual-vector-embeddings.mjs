@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
+import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import {
   defaultVisualEmbeddingDimensions,
   defaultVisualEmbeddingModelId,
@@ -141,6 +141,13 @@ function imageInputs(item = {}) {
 
 function referenceKeyForImage(image = {}) {
   return stableHash(`${image.bucket || ""}:${image.object_path || ""}:${image.role || ""}`);
+}
+
+function referenceStatusForRetrievalStatus(retrievalStatus = "candidate", retrievalEnabled = false) {
+  if (!retrievalEnabled) return "candidate";
+  if (retrievalStatus === "registry") return "approved";
+  if (["approved", "reviewed", "candidate", "disabled"].includes(retrievalStatus)) return retrievalStatus;
+  return "approved";
 }
 
 function supabaseConfig(env = {}) {
@@ -307,7 +314,8 @@ async function analyzeEmbeddingsForItem({
   item,
   env,
   createSignedReadUrlImpl,
-  analyzeImpl,
+  analyzeImpl = null,
+  embedImpl = embedImagesWithVectorWorker,
   fetchImpl
 }) {
   const signedImages = await signedImagesForItem({
@@ -316,6 +324,24 @@ async function analyzeEmbeddingsForItem({
     createSignedReadUrlImpl,
     fetchImpl
   });
+  if (typeof analyzeImpl !== "function") {
+    const visualFeatures = await embedImpl({
+      images: signedImages,
+      requestId: `${item.asset_id || candidateId(item)}_reference_index`,
+      env,
+      options: {
+        vector_query_timeout_ms: Number(env.VISUAL_VECTOR_INDEX_WORKER_TIMEOUT_MS || env.VECTOR_QUERY_TIMEOUT_MS || 120000)
+      },
+      fetchImpl
+    });
+    return {
+      signedImages,
+      response: {
+        asset_id: item.asset_id || candidateId(item),
+        visual_features: visualFeatures
+      }
+    };
+  }
   const response = await analyzeImpl({
     assetId: item.asset_id || candidateId(item),
     captureProfileId: "visual_vector_index",
@@ -344,6 +370,7 @@ async function indexItem({
   fetchImpl
 }) {
   const identityKey = identityKeyForItem(item);
+  const referenceStatus = referenceStatusForRetrievalStatus(retrievalStatus, retrievalEnabled);
   const { signedImages, response } = await analyzeEmbeddingsForItem({
     item,
     env,
@@ -377,6 +404,7 @@ async function indexItem({
       category: item.category || "",
       retrieval_status: retrievalStatus,
       retrieval_enabled: retrievalEnabled,
+      reference_status: retrievalStatus,
       canonical_title: canonicalTitleForItem(item),
       fields: fieldsForItem(item),
       source_record: {
@@ -408,11 +436,14 @@ async function indexItem({
         content_sha256: image.content_sha256 || null,
         capture_source: "supabase_feedback_candidate",
         approved_for_retrieval: retrievalEnabled,
+        reference_status: referenceStatus,
         metadata: {
           bucket: image.bucket,
           image_id: image.image_id,
           capture_angle: image.capture_angle || "",
           has_glare: Boolean(image.has_glare),
+          retrieval_status: retrievalEnabled ? retrievalStatus : "candidate",
+          reference_status: referenceStatus,
           source_url_present: Boolean(image.source_url),
           signed_url_persisted: false
         }
@@ -478,7 +509,7 @@ export async function indexVisualVectorDataset({
   retrievalStatus = "candidate",
   retrievalEnabled = false,
   createSignedReadUrlImpl = createListingImageSignedReadUrl,
-  analyzeImpl = analyzeCardImagesWithRecognitionWorker,
+  analyzeImpl = null,
   fetchImpl = globalThis.fetch,
   now = new Date()
 } = {}) {
