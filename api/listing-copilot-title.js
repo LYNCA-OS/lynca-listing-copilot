@@ -3539,18 +3539,25 @@ function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}
     if (field === "brand" || field === "manufacturer") {
       const sourceValue = sourceFields[field] || sourceFields.brand || sourceFields.manufacturer || source.title || source.reference_title;
       const currentValue = normalizedCurrent[field] || normalizedCurrent.brand || normalizedCurrent.manufacturer || currentTitle;
-      return !titleAssistIdentityTextCompatible(sourceValue, currentValue);
+      return !titleAssistIdentityTextCompatible(sourceValue, currentValue)
+        && !titleAssistProductTextCompatible(sourceValue, currentTitle);
     }
     if (field === "product" || field === "set" || field === "insert") {
       const sourceValue = sourceFields[field] || source.title || source.reference_title;
       const currentValue = normalizedCurrent[field] || normalizedCurrent.product || currentTitle;
-      if (field === "product") return !titleAssistProductTextCompatible(sourceValue, currentValue);
+      if (field === "product") {
+        return !titleAssistProductTextCompatible(sourceValue, currentValue)
+          && !titleAssistProductTextCompatible(sourceValue, currentTitle);
+      }
       if (titleAssistIdentityTextCompatible(sourceValue, currentValue)) return false;
       const sourceProduct = sourceFields.product || source.title || source.reference_title;
       const currentProduct = normalizedCurrent.product || currentTitle;
       const subjectCompatible = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle)
         || looseSubjectTokenOverlapWithCurrent(source, currentFields, currentTitle);
-      return !(subjectCompatible && titleAssistProductTextCompatible(sourceProduct, currentProduct));
+      return !(subjectCompatible && (
+        titleAssistProductTextCompatible(sourceProduct, currentProduct)
+        || titleAssistProductTextCompatible(sourceProduct, currentTitle)
+      ));
     }
     if (field === "collector_number" || field === "checklist_code") {
       const sourceValue = sourceFields[field] || source.title || source.reference_title;
@@ -3614,8 +3621,8 @@ function retrievalSourceHasExactIdentityAnchor(source = {}) {
 
 function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {}, currentTitle = "") {
   const selectedLane = source.selected === true || source.__title_assist_selected_candidate === true;
-  const topRankedLane = Number(source.__title_assist_source_index) === 0;
-  if (!selectedLane && !topRankedLane) return false;
+  const sourceIndex = Number(source.__title_assist_source_index);
+  const topRankedLane = sourceIndex === 0;
   if (!retrievalSourceIsTrustedTitleAssist(source)) return false;
   if (retrievalSourceHasBlockingTitleConflict(source, currentFields, currentTitle)) return false;
   if (!retrievalSourceCompatibleWithCurrent(source, currentFields, currentTitle)) return false;
@@ -3628,6 +3635,13 @@ function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {},
   const identitySupportCount = ["product", "set", "year", "brand", "manufacturer", "surface_color", "trigram", "collector_number", "checklist_code", "serial_denominator"]
     .filter((field) => matched.has(field)).length;
   const score = Number(source.match_score || source.normalized_score || source.raw_score || 0);
+  const lowerRankedCatalogLane = sourceIndex > 0
+    && sourceIndex <= 4
+    && /catalog|structured_database|official|approved/i.test(`${source.provider_id || ""} ${source.source_type || ""} ${source.source_url || ""}`)
+    && subjectSupport
+    && (exactAnchor || identitySupportCount >= 3)
+    && score >= 0.38;
+  if (!selectedLane && !topRankedLane && !lowerRankedCatalogLane) return false;
   if (!subjectSupport && (sourceSubjects.length || currentSubjects.length)) return false;
   if (!subjectSupport && !exactAnchor) return false;
   if (!selectedLane && score < 0.25) return false;
@@ -3660,9 +3674,9 @@ function retrievalSourceCompatibleWithCurrent(source = {}, currentFields = {}, c
   const normalizedCurrent = normalizeFields(currentFields || {});
   const subjectOverlap = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle);
   if (sourceFields.year && normalizedCurrent.year && !yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year)) return false;
-  if (sourceFields.brand && normalizedCurrent.brand && !titleAssistIdentityTextCompatible(sourceFields.brand, normalizedCurrent.brand)) return false;
-  if (sourceFields.manufacturer && normalizedCurrent.manufacturer && !titleAssistIdentityTextCompatible(sourceFields.manufacturer, normalizedCurrent.manufacturer)) return false;
-  if (sourceFields.product && normalizedCurrent.product && !titleAssistProductTextCompatible(sourceFields.product, normalizedCurrent.product)) return false;
+  if (sourceFields.brand && normalizedCurrent.brand && !titleAssistIdentityTextCompatible(sourceFields.brand, normalizedCurrent.brand) && !titleAssistProductTextCompatible(sourceFields.brand, currentTitle)) return false;
+  if (sourceFields.manufacturer && normalizedCurrent.manufacturer && !titleAssistIdentityTextCompatible(sourceFields.manufacturer, normalizedCurrent.manufacturer) && !titleAssistProductTextCompatible(sourceFields.manufacturer, currentTitle)) return false;
+  if (sourceFields.product && normalizedCurrent.product && !titleAssistProductTextCompatible(sourceFields.product, normalizedCurrent.product) && !titleAssistProductTextCompatible(sourceFields.product, currentTitle)) return false;
 
   const sourceSubjects = currentSubjectTokens(sourceFields);
   const currentSubjects = currentSubjectTokens(normalizedCurrent);
@@ -3672,6 +3686,7 @@ function retrievalSourceCompatibleWithCurrent(source = {}, currentFields = {}, c
 
   const currentDenominator = serialDenominatorForTitleAssist(normalizedCurrent.serial_number || currentTitle);
   const sourceDenominator = serialDenominatorForTitleAssist(sourceFields.serial_number || source.title);
+  if (!currentDenominator && sourceDenominator) return false;
   if (currentDenominator && sourceDenominator && currentDenominator !== sourceDenominator) return false;
   return true;
 }

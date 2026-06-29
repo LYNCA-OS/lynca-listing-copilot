@@ -297,6 +297,23 @@ assert.match(brandProductOverlapKeepsSet.rendered_title, /\bGusto\b/);
 assert.match(brandProductOverlapKeepsSet.rendered_title, /\bDodgers\b/);
 assert.doesNotMatch(brandProductOverlapKeepsSet.rendered_title, /Topps Finest Topps Finest/i);
 
+const sportSuffixProductKeepsSet = renderResolvedTitle({
+  year: "2025",
+  manufacturer: "Panini",
+  brand: "Donruss",
+  product: "Donruss Football",
+  set: "Throwback",
+  players: ["Travis Hunter"],
+  team: "Jacksonville Jaguars",
+  rc: true,
+  collector_number: "3"
+}, {
+  maxLength: 80
+});
+assert.match(sportSuffixProductKeepsSet.rendered_title, /\bDonruss Throwback\b/);
+assert.doesNotMatch(sportSuffixProductKeepsSet.rendered_title, /Football/i);
+assert.doesNotMatch(sportSuffixProductKeepsSet.rendered_title, /Donruss Donruss/i);
+
 const productAlreadyCarriesInsert = renderResolvedTitle({
   year: "2010-11",
   brand: "Panini",

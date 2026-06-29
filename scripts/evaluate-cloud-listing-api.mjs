@@ -1539,6 +1539,8 @@ function evaluatedResultFromData({
   const providerFailure = isProviderFailureResponse(response || {}, data);
   const breakpoints = resultBreakpoints(data, item);
   const finalTitle = normalizeText(data.final_title || data.title || data.rendered_title);
+  const catalogTraceList = providerFailure ? [] : catalogCandidates(data);
+  const vectorTraceList = providerFailure ? [] : vectorCandidatesForTrace(data);
   const catalogCandidateList = providerFailure ? [] : catalogCandidatesForProxy(data);
   const vectorCandidateList = providerFailure ? [] : vectorCandidatesForProxy(data);
   const candidateProxy = providerFailure
@@ -1627,8 +1629,8 @@ function evaluatedResultFromData({
     catalog_candidate_count: catalogCandidateCount(data),
     catalog_prompt_candidate_count: catalogPromptCandidateCount(data),
     catalog_candidate_selected_count: catalogCandidateSelectedCount(data),
-    catalog_candidates: compactCandidates(catalogCandidateList),
-    catalog_selected_candidate_id: selectedCandidateIdFromCandidates(catalogCandidateList),
+    catalog_candidates: compactCandidates(catalogTraceList),
+    catalog_selected_candidate_id: selectedCandidateIdFromCandidates(catalogTraceList),
     correct_catalog_candidate_rank: correctCatalogRank,
     correct_catalog_identity_available: correctCatalogRank !== null && correctCatalogRank !== undefined && Number.isFinite(Number(correctCatalogRank)),
     correct_candidate_recall_at_1: correctCandidateRecallAt(correctCatalogRank, 1),
@@ -1637,8 +1639,8 @@ function evaluatedResultFromData({
     gpt_selected_correct_candidate: gptSelectedCorrect,
     gpt_rejected_correct_candidate: gptSelectedCorrect === false && Number.isFinite(Number(correctCatalogRank)),
     vector_candidate_decision: data.vector_candidate_decision || null,
-    vector_candidates: compactCandidates(vectorCandidateList),
-    vector_selected_candidate_id: selectedCandidateIdFromCandidates(vectorCandidateList) || vectorDecisionSelectedCandidateId(data),
+    vector_candidates: compactCandidates(vectorTraceList),
+    vector_selected_candidate_id: selectedCandidateIdFromCandidates(vectorTraceList) || vectorDecisionSelectedCandidateId(data),
     fast_path: data.fast_path || null,
     fast_path_used: fastPathUsed(data),
     card_type_default_base: providerFailure ? false : cardTypeDefaultBaseDetected(data),
