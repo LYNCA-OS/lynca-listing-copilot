@@ -528,6 +528,58 @@ assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_t
   assert.equal(conflictedVectorReview.report.decision_trace[0].candidate_guided_title, "");
 }
 
+{
+  const assistShadow = await runProvider("d", {
+    titleResponder({ body }) {
+      return {
+        final_title: "2025 Topps Chrome Test Player",
+        confidence: "HIGH",
+        provider: body.provider,
+        model_id: "gpt-4.1-mini-2025-04-14",
+        fields: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Test Player"]
+        },
+        resolved: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Test Player"]
+        },
+        rendered_fields: {
+          title: "2025 Topps Chrome Test Player",
+          rendered_title: "2025 Topps Chrome Test Player"
+        },
+        vector_assist_eligibility: {
+          eligible: false,
+          reason: "open_set_low_margin_match_not_prompt_safe",
+          raw_candidate_count: 1,
+          approved_candidate_count: 1,
+          conflict_blocked_count: 0,
+          prompt_candidate_count: 0,
+          prompt_candidate_ids: []
+        },
+        vector_prompt_assist_used: false,
+        fast_path: {
+          enabled: true,
+          used: false,
+          single_model_fast: true,
+          assist_shadow_only: true,
+          skipped_evidence_completion: true,
+          skipped_focused_reread: true,
+          skipped_retrieval: true,
+          reason: "assist_shadow_no_prompt_safe_candidates"
+        },
+        timing: { total_ms: 321 }
+      };
+    }
+  });
+  assert.equal(assistShadow.report.fast_path_used_count, 0);
+  assert.equal(assistShadow.report.results[0].fast_path.assist_shadow_only, true);
+  assert.equal(assistShadow.report.decision_trace[0].fast_path_used, false);
+  assert.equal(assistShadow.report.vector_prompt_candidate_count, 0);
+}
+
 const openaiVector = await runProvider("d");
 assert.equal(openaiVector.report.provider, "openai_vector");
 assert.equal(openaiVector.titlePayload.provider, "openai_legacy");

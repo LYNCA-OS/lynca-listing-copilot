@@ -732,6 +732,7 @@ function catalogAssistPromptCandidateIds(data = {}) {
 }
 
 function fastPathUsed(data = {}) {
+  if (data.fast_path?.assist_shadow_only === true) return false;
   return data.fast_path?.used === true || data.fast_path?.skipped_evidence_completion === true;
 }
 

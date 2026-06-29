@@ -2858,10 +2858,12 @@ function tryProviderFastPath(result, payload, providerId) {
 }
 
 function singleModelDraftPath(result, payload, providerId, {
-  reason = "single_model_fast_path"
+  reason = "single_model_fast_path",
+  allowWhenEvidenceCompletion = false,
+  assistShadowOnly = false
 } = {}) {
   const providerOptions = providerOptionsFromPayload(payload);
-  if (evidenceCompletionEnabled(process.env, providerOptions)) return null;
+  if (evidenceCompletionEnabled(process.env, providerOptions) && !allowWhenEvidenceCompletion) return null;
 
   const gated = applyIdentityResolutionGate(result, {
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
@@ -2886,6 +2888,7 @@ function singleModelDraftPath(result, payload, providerId, {
       enabled: true,
       used: result.fast_path?.used === true,
       single_model_fast: true,
+      assist_shadow_only: assistShadowOnly,
       skipped_evidence_completion: true,
       skipped_focused_reread: true,
       skipped_retrieval: true,
@@ -3456,6 +3459,9 @@ async function createOpenAiTitle(payload, selection, {
     : catalogContext.promptPacket
       ? catalogContext.assistPacket
       : null;
+  const assistEnabled = optionFlag(providerOptions, "enable_catalog_assist", false) === true
+    || optionFlag(providerOptions, "enable_vector_assist", false) === true;
+  const assistShadowOnly = assistEnabled && !promptCandidatePacket;
   const initialPayload = {
     ...baseInitialPayload
   };
@@ -3490,7 +3496,14 @@ async function createOpenAiTitle(payload, selection, {
   const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
     mergedResult,
     initialPayload,
-    visionProviderIds.OPENAI_LEGACY
+    visionProviderIds.OPENAI_LEGACY,
+    {
+      reason: assistShadowOnly
+        ? "assist_shadow_no_prompt_safe_candidates"
+        : "single_model_fast_path",
+      allowWhenEvidenceCompletion: assistShadowOnly,
+      assistShadowOnly
+    }
   ));
   if (singleModelResult) return singleModelResult;
 
