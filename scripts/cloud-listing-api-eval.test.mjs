@@ -242,6 +242,16 @@ async function runProvider(provider, options = {}) {
           }
           : null,
         vector_prompt_assist_used: vectorEnabled,
+        retrieval_title_assist: vectorEnabled
+          ? {
+            used: true,
+            mode: "selected_approved_candidate_title_scaffold",
+            provider_id: "postgres_hybrid",
+            candidate_identity_id: "identity-1",
+            matched_fields: ["collector_number", "players", "product"],
+            stripped_reference_instance_terms: true
+          }
+          : null,
         visual_features: vectorEnabled
           ? { features: [{ embedding: [0.1, 0.2], embedding_role: "front_global" }] }
           : null,
@@ -289,6 +299,7 @@ assert.equal(openai.report.raw_blind_output_accuracy.pass_at_0_72_count, 1);
 assert.equal(openai.report.oracle_candidate_upper_bound.pass_at_0_80_count, 1);
 assert.equal(openai.report.fast_path_used_count, 0);
 assert.equal(openai.report.catalog_prompt_assist_used_count, 0);
+assert.equal(openai.report.retrieval_title_assist_used_count, 0);
 assert.deepEqual(openai.report.catalog_prompt_candidate_ids, []);
 assert.equal(openai.report.card_type_default_base_count, 0);
 assert.equal(openai.report.copied_serial_grade_cert_from_reference_count, 0);
@@ -625,16 +636,21 @@ assert.equal(openaiVector.report.vector_approved_candidate_count, 1);
 assert.equal(openaiVector.report.vector_conflict_blocked_count, 1);
 assert.equal(openaiVector.report.vector_prompt_candidate_count, 1);
 assert.deepEqual(openaiVector.report.vector_prompt_candidate_ids, ["identity-1"]);
+assert.equal(openaiVector.report.retrieval_title_assist_used_count, 1);
 assert.equal(openaiVector.report.fast_path_used_count, 0);
 assert.equal(openaiVector.report.results[0].catalog_prompt_assist_used, true);
 assert.equal(openaiVector.report.results[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.results[0].vector_prompt_assist_used, true);
 assert.equal(openaiVector.report.results[0].vector_raw_candidate_count, 2);
 assert.deepEqual(openaiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
+assert.equal(openaiVector.report.results[0].retrieval_title_assist_used, true);
+assert.equal(openaiVector.report.results[0].retrieval_title_assist.provider_id, "postgres_hybrid");
 assert.deepEqual(openaiVector.report.results[0].retrieval_providers_used, ["catalog", "visual_vector", "postgres_hybrid"]);
 assert.equal(openaiVector.report.decision_trace[0].catalog_vector_title, "2025 Topps Chrome Test Player");
 assert.equal(openaiVector.report.decision_trace[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.decision_trace[0].vector_prompt_candidate_count, 1);
+assert.equal(openaiVector.report.decision_trace[0].retrieval_title_assist_used, true);
+assert.equal(openaiVector.report.decision_trace[0].retrieval_title_assist.candidate_identity_id, "identity-1");
 assert.equal(openaiVector.report.decision_trace[0].fast_path_used, false);
 assert.equal(openaiVector.report.decision_trace[0].recovery_regression_no_change, "paired_baseline_required");
 

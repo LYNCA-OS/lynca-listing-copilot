@@ -3300,6 +3300,230 @@ async function withEvidenceCompletion(result, payload, {
   }));
 }
 
+function retrievalSourcesFromCompletion(completion = {}) {
+  const summaries = [
+    completion.retrieval,
+    completion.catalog_retrieval,
+    completion.vector_retrieval
+  ].filter((summary) => summary && typeof summary === "object" && !Array.isArray(summary));
+  return summaries.flatMap((summary) => Array.isArray(summary.sources) ? summary.sources : []);
+}
+
+function retrievalSourceConflictFields(source = {}) {
+  const explicit = [
+    source.conflicting_fields,
+    source.direct_evidence_conflicts,
+    source.conflicts
+  ].flatMap((value) => Array.isArray(value) ? value : []);
+  return [...new Set(explicit.map((field) => normalizeStringOrNull(
+    typeof field === "string" ? field : field?.field || field?.field_name || field?.name || field?.conflicting_field
+  )).filter(Boolean))];
+}
+
+function retrievalSourceHasDirectConflict(source = {}) {
+  if (retrievalSourceConflictFields(source).length) return true;
+  return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
+}
+
+function approvedRetrievalStatus(source = {}) {
+  return /approved|reviewed|verified/i.test(`${source.reference_metadata?.retrieval_status || ""} ${source.reference_metadata?.reference_status || ""} ${source.retrieval_status || ""} ${source.source_trust || ""}`);
+}
+
+function retrievalSourceIsTrustedTitleAssist(source = {}) {
+  const providerId = String(source.provider_id || source.source_provider || "").toLowerCase();
+  const sourceType = String(source.source_type || "").toUpperCase();
+  if (sourceType === "VISUAL_VECTOR" || providerId === "visual_vector") return false;
+  if (sourceType === "MARKETPLACE") return false;
+  if (providerId === "catalog" || providerId === "postgres_hybrid") return approvedRetrievalStatus(source)
+    || /INTERNAL_APPROVED_HISTORY|STRUCTURED_DATABASE|OFFICIAL_CHECKLIST|OFFICIAL_REGISTRY/.test(sourceType);
+  return /INTERNAL_APPROVED_HISTORY|APPROVED_MEMORY|OFFICIAL_CHECKLIST|OFFICIAL_REGISTRY/.test(sourceType);
+}
+
+function retrievalSourceMatchedFields(source = {}) {
+  return [...new Set([
+    ...(Array.isArray(source.matched_fields) ? source.matched_fields : []),
+    ...(Array.isArray(source.supporting_fields) ? source.supporting_fields : [])
+  ].map((field) => String(field || "").toLowerCase()).filter(Boolean))];
+}
+
+function retrievalSourceHasStrongTitleSupport(source = {}) {
+  const matched = new Set(retrievalSourceMatchedFields(source));
+  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number"].some((field) => matched.has(field));
+  if (exactEvidence) {
+    return ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
+      .some((field) => matched.has(field));
+  }
+  const identityEvidenceCount = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
+    .filter((field) => matched.has(field)).length;
+  return identityEvidenceCount >= 3 && Number(source.match_score || source.normalized_score || 0) >= 0.35;
+}
+
+function retrievalSourceHasExactIdentityAnchor(source = {}) {
+  const matched = new Set(retrievalSourceMatchedFields(source));
+  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number"].some((field) => matched.has(field));
+  const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
+    .some((field) => matched.has(field));
+  return exactEvidence && identityEvidence;
+}
+
+function overlapTokenCount(left, right) {
+  const leftTokens = new Set(searchable(left).split(" ").filter((token) => token.length > 1));
+  const rightTokens = new Set(searchable(right).split(" ").filter((token) => token.length > 1));
+  return [...leftTokens].filter((token) => rightTokens.has(token)).length;
+}
+
+function compatibleTextField(left, right) {
+  const leftValue = searchable(left);
+  const rightValue = searchable(right);
+  return !leftValue || !rightValue || leftValue === rightValue || leftValue.includes(rightValue) || rightValue.includes(leftValue);
+}
+
+function currentSubjectTokens(fields = {}) {
+  const normalized = normalizeFields(fields || {});
+  return Array.isArray(normalized.players) && normalized.players.length
+    ? normalized.players
+    : normalized.player
+      ? [normalized.player]
+      : [];
+}
+
+function retrievalSourceCompatibleWithCurrent(source = {}, currentFields = {}, currentTitle = "") {
+  const sourceFields = normalizeFields(source.fields || {});
+  const normalizedCurrent = normalizeFields(currentFields || {});
+  const exactAnchor = retrievalSourceHasExactIdentityAnchor(source);
+  if (sourceFields.year && normalizedCurrent.year && !yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year)) return false;
+  if (!exactAnchor && sourceFields.brand && normalizedCurrent.brand && !compatibleTextField(sourceFields.brand, normalizedCurrent.brand)) return false;
+  if (!exactAnchor && sourceFields.product && normalizedCurrent.product && !compatibleTextField(sourceFields.product, normalizedCurrent.product)) return false;
+
+  const sourceSubjects = currentSubjectTokens(sourceFields);
+  const currentSubjects = currentSubjectTokens(normalizedCurrent);
+  if (sourceSubjects.length && currentSubjects.length && !sourceSubjects.some((left) => currentSubjects.some((right) => compatibleTextField(left, right)))) {
+    return false;
+  }
+
+  const currentDenominator = serialDenominatorForTitleAssist(normalizedCurrent.serial_number || currentTitle);
+  const sourceDenominator = serialDenominatorForTitleAssist(sourceFields.serial_number || source.title);
+  if (currentDenominator && sourceDenominator && currentDenominator !== sourceDenominator) return false;
+  return true;
+}
+
+function yearsCompatibleForTitleAssist(left, right) {
+  const leftText = String(left || "");
+  const rightText = String(right || "");
+  const leftYears = [...leftText.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
+  const rightYears = [...rightText.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
+  if (!leftYears.length || !rightYears.length) return compatibleTextField(left, right);
+  return leftYears.some((year) => rightYears.includes(year) || rightYears.includes(year + 1) || rightYears.includes(year - 1));
+}
+
+function serialDenominatorForTitleAssist(value) {
+  return normalizeSerialText(value).match(/\/\s*0*(\d{1,4})\b/)?.[1] || null;
+}
+
+function stripReferenceInstanceOnlyTerms(title) {
+  return String(title || "")
+    .replace(/\b\d{1,4}\s*\/\s*\d{1,4}\b/g, " ")
+    .replace(/\b(?:PSA|BGS|SGC|CGC|Beckett)\s+(?:GEM\s*(?:MT|MINT)\s+|MINT\s+|AUTO\s+)?(?:AUTH(?:ENTIC)?|\d+(?:\.\d+)?)(?:\s*\/\s*(?:AUTH(?:ENTIC)?|\d+(?:\.\d+)?))?\b/gi, " ")
+    .replace(/\bCert(?:ificate)?\s*#?\s*[A-Z0-9-]+\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function gradeTokenFromCurrentTitle(title) {
+  return String(title || "").match(/\b(?:PSA|BGS|SGC|CGC)\s+(?:AUTO\s+)?(?:AUTH(?:ENTIC)?|\d+(?:\.\d+)?)(?:\s*\/\s*(?:AUTH(?:ENTIC)?|\d+(?:\.\d+)?))?\b/i)?.[0] || "";
+}
+
+function appendCurrentInstanceTerms(title, currentFields = {}, currentTitle = "") {
+  let output = String(title || "").replace(/\s+/g, " ").trim();
+  const serial = normalizeSerialText(currentFields.serial_number || "");
+  if (/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(serial) && !titleIncludesSerial(output, { serial_number: serial })) {
+    output = `${output} ${serial}`.trim();
+  }
+  const grade = gradeTokenFromCurrentTitle(currentTitle);
+  if (grade && !rawIncludes(output, grade)) output = `${output} ${grade}`.trim();
+  const collector = normalizeStringOrNull(currentFields.collector_number || currentFields.card_number);
+  if (collector && !rawIncludes(output, collector)) output = `${output} #${collector}`.trim();
+  return output.replace(/\s+/g, " ").trim();
+}
+
+function escapeTitleAssistRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeTitlePreservingSuffix(title, suffix, maxLength) {
+  const suffixValue = String(suffix || "").replace(/\s+/g, " ").trim();
+  const normalized = String(title || "").replace(/\s+/g, " ").trim();
+  if (!suffixValue || normalized.length <= maxLength) return normalizeTitle(normalized, maxLength);
+  const plain = normalizeTitle(normalized, maxLength);
+  if (rawIncludes(plain, suffixValue)) return plain;
+  const withoutSuffix = normalized
+    .replace(new RegExp(`\\b${escapeTitleAssistRegExp(suffixValue)}\\b`, "gi"), " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const prefixMaxLength = Math.max(0, maxLength - suffixValue.length - 1);
+  const prefix = normalizeTitle(withoutSuffix, prefixMaxLength);
+  return `${prefix} ${suffixValue}`.replace(/\s+/g, " ").trim();
+}
+
+function bestRetrievalTitleAssistSource(completion = {}, result = {}) {
+  const currentFields = result.resolved || result.resolved_fields || result.fields || {};
+  const currentTitle = result.final_title || result.title || result.rendered_title || "";
+  return retrievalSourcesFromCompletion(completion)
+    .filter((source) => source.selected === true)
+    .filter((source) => source.title || source.reference_title)
+    .filter(retrievalSourceIsTrustedTitleAssist)
+    .filter((source) => !retrievalSourceHasDirectConflict(source))
+    .filter(retrievalSourceHasStrongTitleSupport)
+    .filter((source) => retrievalSourceCompatibleWithCurrent(source, currentFields, currentTitle))
+    .sort((left, right) => {
+      const leftExact = retrievalSourceMatchedFields(left).some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
+      const rightExact = retrievalSourceMatchedFields(right).some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
+      if (leftExact !== rightExact) return rightExact - leftExact;
+      const leftOverlap = overlapTokenCount(left.title || left.reference_title, currentTitle);
+      const rightOverlap = overlapTokenCount(right.title || right.reference_title, currentTitle);
+      if (leftOverlap !== rightOverlap) return rightOverlap - leftOverlap;
+      return Number(right.match_score || right.normalized_score || 0) - Number(left.match_score || left.normalized_score || 0);
+    })[0] || null;
+}
+
+function applySafeRetrievalTitleAssist(draft = {}, result = {}, completion = {}, payload = {}) {
+  const source = bestRetrievalTitleAssistSource(completion, result);
+  if (!source) return draft;
+  const currentFields = draft.resolved || draft.resolved_fields || draft.fields || result.resolved || result.fields || {};
+  const currentTitle = draft.final_title || draft.title || result.final_title || result.title || "";
+  const candidateTitle = stripReferenceInstanceOnlyTerms(source.title || source.reference_title || "");
+  if (!candidateTitle) return draft;
+  const titleWithCurrentInstanceTerms = appendCurrentInstanceTerms(candidateTitle, currentFields, currentTitle);
+  const currentSerial = normalizeSerialText(currentFields.serial_number || "");
+  const assistedTitle = /\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(currentSerial)
+    ? normalizeTitlePreservingSuffix(titleWithCurrentInstanceTerms, currentSerial, payload.maxTitleLength || maxFallbackTitleLength)
+    : normalizeTitle(titleWithCurrentInstanceTerms, payload.maxTitleLength || maxFallbackTitleLength);
+  if (!assistedTitle || assistedTitle === currentTitle) return draft;
+
+  return {
+    ...draft,
+    title: assistedTitle,
+    final_title: assistedTitle,
+    rendered_title: assistedTitle,
+    title_render_source: "safe_retrieval_title_assist",
+    retrieval_title_assist: {
+      used: true,
+      mode: "selected_approved_candidate_title_scaffold",
+      source_url: source.source_url || "",
+      provider_id: source.provider_id || source.source_provider || "",
+      candidate_identity_id: source.candidate_identity_id || "",
+      matched_fields: retrievalSourceMatchedFields(source),
+      stripped_reference_instance_terms: true
+    },
+    rendered_fields: {
+      ...(draft.rendered_fields || {}),
+      title: assistedTitle,
+      rendered_title: assistedTitle,
+      title_render_source: "safe_retrieval_title_assist"
+    }
+  };
+}
+
 async function withEvidenceCompletionShadow(result, payload, {
   env = process.env,
   timingContext = null,
@@ -3354,29 +3578,32 @@ async function withEvidenceCompletionShadow(result, payload, {
     };
   }
   addTiming(timingContext, "retrieval_ms", Number(completion.retrieval?.latency_ms || completion.retrieval?.retrieval_time_ms || 0));
+  const assistedDraft = applySafeRetrievalTitleAssist(draft, result, completion, payload);
 
   return {
-    ...draft,
-    route: draft.route || "ASSIST_SHADOW_WRITER_DRAFT",
-    route_reason: "No prompt-safe catalog or vector candidates were available; retrieval ran only for telemetry and did not alter the GPT draft.",
-    retrieval: completion.retrieval || draft.retrieval,
+    ...assistedDraft,
+    route: assistedDraft.route || "ASSIST_SHADOW_WRITER_DRAFT",
+    route_reason: assistedDraft.retrieval_title_assist?.used
+      ? "No prompt-safe catalog or vector candidates were available; selected approved retrieval evidence was used only as a stripped title scaffold without copying reference serial, grade, or cert values."
+      : "No prompt-safe catalog or vector candidates were available; retrieval ran only for telemetry and did not alter the GPT draft.",
+    retrieval: completion.retrieval || assistedDraft.retrieval,
     completion_state: {
       ...(completion.state || {}),
       shadow_only: true
     },
     completion_trace: [
-      ...(Array.isArray(draft.completion_trace) ? draft.completion_trace : []),
+      ...(Array.isArray(assistedDraft.completion_trace) ? assistedDraft.completion_trace : []),
       ...(Array.isArray(completion.resolution_trace) ? completion.resolution_trace : [])
     ],
     resolution_trace: [
-      ...(Array.isArray(draft.resolution_trace) ? draft.resolution_trace : []),
+      ...(Array.isArray(assistedDraft.resolution_trace) ? assistedDraft.resolution_trace : []),
       ...(Array.isArray(completion.resolution_trace) ? completion.resolution_trace : [])
     ],
-    usage: mergeUsage(draft.usage, completion.usage, {
+    usage: mergeUsage(assistedDraft.usage, completion.usage, {
       providerCalls: result.provider ? 1 : 0
     }),
     fast_path: {
-      ...(draft.fast_path || {}),
+      ...(assistedDraft.fast_path || {}),
       assist_shadow_only: true,
       assist_shadow_retrieval_only: true,
       reason: "assist_shadow_no_prompt_safe_candidates"

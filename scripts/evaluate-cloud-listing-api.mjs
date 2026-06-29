@@ -1094,6 +1094,7 @@ function copiedReferenceInstanceFields(data = {}) {
 
 function decisionOutcomeForSingleRun(item = {}) {
   if (item.technical_failure) return "technical_failure";
+  if (item.retrieval_title_assist_used === true) return "safe_retrieval_title_assist";
   if (item.catalog_candidate_selected_count > 0 || item.vector_selected_candidate_id) return "candidate_selected_single_run";
   if (item.catalog_candidate_count > 0 || item.vector_raw_candidate_count > 0) return "candidate_available_not_selected";
   return "no_candidate_assist";
@@ -1129,6 +1130,8 @@ function perCardDecisionTrace(results = []) {
     vector_assist_eligibility: item.vector_assist_eligibility || null,
     vector_selected_candidate_id: item.vector_selected_candidate_id || "",
     vector_selected: Boolean(item.vector_selected_candidate_id || item.visual_vector_selected_count > 0),
+    retrieval_title_assist: item.retrieval_title_assist || null,
+    retrieval_title_assist_used: item.retrieval_title_assist_used === true,
     fast_path_used: item.fast_path_used === true,
     fast_path: item.fast_path || null,
     card_type_default_base: item.card_type_default_base === true,
@@ -1602,6 +1605,8 @@ function evaluatedResultFromData({
     catalog_prompt_assist_used: data.catalog_prompt_assist_used === true,
     catalog_assist_eligibility: data.catalog_assist_eligibility || null,
     catalog_prompt_candidate_ids: catalogAssistPromptCandidateIds(data),
+    retrieval_title_assist: data.retrieval_title_assist || null,
+    retrieval_title_assist_used: data.retrieval_title_assist?.used === true,
     vector_retrieval: data.vector_retrieval || null,
     vector_candidate_packet: data.vector_candidate_packet || null,
     vector_prompt_assist_used: data.vector_prompt_assist_used === true,
@@ -1739,6 +1744,7 @@ function summarize(results = [], elapsedMs = 0) {
   const vectorConflictBlockedCount = results.reduce((sum, item) => sum + Number(item.vector_conflict_blocked_count || 0), 0);
   const vectorPromptCandidateCount = results.reduce((sum, item) => sum + Number(item.vector_prompt_candidate_count || 0), 0);
   const vectorPromptCandidateIds = [...new Set(results.flatMap((item) => Array.isArray(item.vector_prompt_candidate_ids) ? item.vector_prompt_candidate_ids : []))];
+  const retrievalTitleAssistUsedCount = results.filter((item) => item.retrieval_title_assist_used === true).length;
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
   const fastPathUsedCount = results.filter((item) => item.fast_path_used === true).length;
@@ -1892,6 +1898,7 @@ function summarize(results = [], elapsedMs = 0) {
     vector_conflict_blocked_count: vectorConflictBlockedCount,
     vector_prompt_candidate_count: vectorPromptCandidateCount,
     vector_prompt_candidate_ids: vectorPromptCandidateIds,
+    retrieval_title_assist_used_count: retrievalTitleAssistUsedCount,
     fast_path_used_count: fastPathUsedCount,
     card_type_default_base_count: cardTypeDefaultBaseCount,
     copied_serial_grade_cert_from_reference_count: copiedSerialGradeCertFromReferenceCount,
@@ -2207,6 +2214,7 @@ export async function main(argv = process.argv, env = process.env) {
     `vector_conflict_blocked_count: ${report.vector_conflict_blocked_count ?? "n/a"}`,
     `vector_prompt_candidate_count: ${report.vector_prompt_candidate_count ?? "n/a"}`,
     `vector_prompt_candidate_ids: ${(report.vector_prompt_candidate_ids || []).join(",") || "n/a"}`,
+    `retrieval_title_assist_used_count: ${report.retrieval_title_assist_used_count ?? "n/a"}`,
     `fast_path_used_count: ${report.fast_path_used_count ?? "n/a"}`,
     `card_type_default_base_count: ${report.card_type_default_base_count ?? "n/a"}`,
     `copied_serial_grade_cert_from_reference_count: ${report.copied_serial_grade_cert_from_reference_count ?? "n/a"}`,
