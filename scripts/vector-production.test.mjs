@@ -126,6 +126,77 @@ assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(approvedPacket), t
 assert.equal(vectorCandidatePacketAssistEligibility(approvedPacket).reason, "approved_identity_candidate_available");
 assert.deepEqual(buildVectorCandidateAssistPacket(approvedPacket).vector_retrieval.candidates.map((candidate) => candidate.candidate_identity_id), ["identity-approved"]);
 
+const queryConflictPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "approved-wrong-neighbor",
+    candidate_identity_id: "identity-approved-wrong-neighbor",
+    source_type: "VISUAL_VECTOR",
+    visual_similarity: 0.93,
+    match_score: 0.93,
+    embedding_role: "front_global",
+    reference_metadata: { reference_status: "APPROVED", retrieval_status: "approved" },
+    fields: {
+      year: "2025",
+      product: "Topps Chrome Platinum",
+      players: ["Spencer Schwellenbach"],
+      surface_color: "Blue",
+      serial_number: "55/99"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2026",
+    product: "Topps Chrome",
+    players: ["Lionel Messi"],
+    surface_color: "Blue",
+    serial_number: "/10"
+  }
+});
+const queryConflictFields = queryConflictPacket.vector_retrieval.candidates[0].conflicting_fields.sort();
+assert.deepEqual(queryConflictFields, ["players", "product", "serial_number", "year"]);
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(queryConflictPacket), false);
+assert.deepEqual(vectorCandidatePacketAssistEligibility(queryConflictPacket), {
+  eligible: false,
+  reason: "approved_identity_candidate_direct_conflict",
+  raw_candidate_count: 1,
+  approved_candidate_count: 1,
+  conflict_blocked_count: 1,
+  prompt_candidate_count: 0,
+  prompt_candidate_ids: [],
+  eligible_candidate_count: 0,
+  blocked_candidate_count: 1
+});
+assert.equal(buildVectorCandidateAssistPacket(queryConflictPacket).vector_retrieval.candidates.length, 0);
+
+const compatibleSeasonPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "approved-compatible-season",
+    candidate_identity_id: "identity-approved-compatible-season",
+    source_type: "VISUAL_VECTOR",
+    visual_similarity: 0.93,
+    match_score: 0.93,
+    embedding_role: "front_global",
+    reference_metadata: { reference_status: "APPROVED", retrieval_status: "approved" },
+    fields: {
+      year: "2025-26",
+      product: "Panini Noir Road to FIFA World Cup",
+      players: ["Bukayo Saka"],
+      serial_number: "08/25"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2026",
+    product: "Panini Noir Road to FIFA World Cup 26",
+    players: ["Bukayo Saka"],
+    serial_number: "08/25"
+  }
+});
+assert.deepEqual(compatibleSeasonPacket.vector_retrieval.candidates[0].conflicting_fields, []);
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(compatibleSeasonPacket), true);
+
 const conflictingApprovedPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "approved-conflict",

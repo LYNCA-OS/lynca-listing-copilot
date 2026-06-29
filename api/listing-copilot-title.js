@@ -3075,7 +3075,8 @@ async function prepareCatalogCandidateContext({
     env
   }));
   const packet = buildVectorCandidatePacket(retrieval, {
-    limit: 5
+    limit: 5,
+    queryFields: resolvedForRetrieval || {}
   });
   const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
   const assistPacket = buildVectorCandidateAssistPacket(packet);
@@ -3175,7 +3176,8 @@ async function prepareVectorCandidateContext({
     env: vectorRetrievalEnv(env, config)
   }));
   const packet = buildVectorCandidatePacket(retrieval, {
-    limit: config.gptCandidateLimit
+    limit: config.gptCandidateLimit,
+    queryFields: resolvedForRetrieval || {}
   });
   const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
   const assistPacket = buildVectorCandidateAssistPacket(packet);
