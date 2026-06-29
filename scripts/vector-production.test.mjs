@@ -197,6 +197,38 @@ const compatibleSeasonPacket = buildVectorCandidatePacket({
 assert.deepEqual(compatibleSeasonPacket.vector_retrieval.candidates[0].conflicting_fields, []);
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(compatibleSeasonPacket), true);
 
+const lowMarginOpenSetPacket = buildVectorCandidatePacket({
+  open_set_decision: "LOW_MARGIN_MATCH",
+  open_set_reason: "top_candidate_margin_below_threshold",
+  sources: [{
+    candidate_id: "approved-low-margin",
+    candidate_identity_id: "identity-approved-low-margin",
+    source_type: "VISUAL_VECTOR",
+    visual_similarity: 0.93,
+    match_score: 0.93,
+    embedding_role: "front_global",
+    reference_metadata: { reference_status: "APPROVED", retrieval_status: "approved" },
+    fields: {
+      year: "2025",
+      product: "Topps Chrome",
+      players: ["Low Margin Player"]
+    }
+  }]
+}, { limit: 5 });
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(lowMarginOpenSetPacket), false);
+assert.deepEqual(vectorCandidatePacketAssistEligibility(lowMarginOpenSetPacket), {
+  eligible: false,
+  reason: "open_set_low_margin_match_not_prompt_safe",
+  raw_candidate_count: 1,
+  approved_candidate_count: 1,
+  conflict_blocked_count: 0,
+  prompt_candidate_count: 0,
+  prompt_candidate_ids: [],
+  eligible_candidate_count: 0,
+  blocked_candidate_count: 1
+});
+assert.equal(buildVectorCandidateAssistPacket(lowMarginOpenSetPacket).vector_retrieval.candidates.length, 0);
+
 const conflictingApprovedPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "approved-conflict",
