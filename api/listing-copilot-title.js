@@ -3456,19 +3456,10 @@ async function createOpenAiTitle(payload, selection, {
     : catalogContext.promptPacket
       ? catalogContext.assistPacket
       : null;
-  const blockedReason = vectorContext.vector_assist_eligibility?.reason
-    || catalogContext.catalog_assist_eligibility?.reason
-    || "";
   const initialPayload = {
-    ...baseInitialPayload,
-    vectorCandidatePacket: promptCandidatePacket
-      ? promptCandidatePacket
-      : emptyVectorCandidatePacket(vectorContext.mode === vectorRetrievalModes.SHADOW
-        ? "vector_shadow_mode_not_supplied_to_gpt"
-        : blockedReason
-          ? `candidate_assist_blocked_${blockedReason}`
-          : "vector_candidates_not_available_to_gpt")
+    ...baseInitialPayload
   };
+  if (promptCandidatePacket) initialPayload.vectorCandidatePacket = promptCandidatePacket;
   const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
