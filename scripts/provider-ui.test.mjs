@@ -69,6 +69,8 @@ assert.match(api, /assist_shadow_only: assistShadowOnly/, "assist shadow-only dr
 assert.match(api, /allowWhenEvidenceCompletion: assistShadowOnly/, "assist shadow-only drafts should skip Evidence Completion without enabling unsafe candidate assist");
 assert.match(api, /assist_shadow_retrieval_failed/, "assist shadow telemetry failures should not fail the GPT draft");
 assert.match(api, /safe_retrieval_title_assist/, "trusted selected retrieval evidence should have a bounded title scaffold path");
+assert.doesNotMatch(api, /if\s*\(\s*source\.selected\s*===\s*true\s*\|\|\s*source\.__title_assist_selected_candidate\s*===\s*true\s*\)\s*return\s+true/, "selected retrieval candidates must still pass title-assist safety checks");
+assert.match(api, /const selectedLane = source\.selected === true \|\| source\.__title_assist_selected_candidate === true/, "selected retrieval candidates should use the same guarded title-assist lane");
 assert.match(api, /stripReferenceInstanceOnlyTerms/, "retrieval title scaffolds must strip reference serial, grade, and cert terms before use");
 assert.match(api, /retrievalSourceHasDirectConflict/, "retrieval title scaffolds must fail closed on direct conflicts");
 assert.match(api, /retrievalSourceHasExactIdentityAnchor/, "trusted exact-code retrieval anchors should be able to correct provider brand/product drift");

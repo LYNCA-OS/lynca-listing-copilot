@@ -3308,9 +3308,21 @@ function retrievalSourcesFromCompletion(completion = {}) {
     completion.catalog_retrieval,
     completion.vector_retrieval
   ].filter((summary) => summary && typeof summary === "object" && !Array.isArray(summary));
-  return summaries.flatMap((summary) => [
-    summary.selected_candidate,
-    ...(Array.isArray(summary.sources) ? summary.sources : [])
+  return summaries.flatMap((summary, summaryIndex) => [
+    summary.selected_candidate
+      ? {
+        ...summary.selected_candidate,
+        __title_assist_selected_candidate: true,
+        __title_assist_source_index: -1,
+        __title_assist_summary_index: summaryIndex
+      }
+      : null,
+    ...(Array.isArray(summary.sources) ? summary.sources.map((source, sourceIndex) => ({
+      ...source,
+      __title_assist_selected_candidate: false,
+      __title_assist_source_index: sourceIndex,
+      __title_assist_summary_index: summaryIndex
+    })) : [])
   ].filter((source) => source && typeof source === "object"));
 }
 
@@ -3330,16 +3342,182 @@ function retrievalSourceHasDirectConflict(source = {}) {
   return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
 }
 
+const titleAssistGenericTokens = new Set([
+  "the",
+  "and",
+  "with",
+  "card",
+  "cards",
+  "base",
+  "rookie",
+  "rc",
+  "auto",
+  "autograph",
+  "refractor",
+  "parallel",
+  "black",
+  "white",
+  "gold",
+  "silver",
+  "blue",
+  "red",
+  "green",
+  "orange",
+  "purple",
+  "bronze",
+  "pink",
+  "mini",
+  "common"
+]);
+
+const titleAssistManufacturerTokens = new Set([
+  "topps",
+  "panini",
+  "upper",
+  "deck",
+  "bowman",
+  "wizards",
+  "konami"
+]);
+
+const titleAssistSubjectStopTokens = new Set([
+  "de",
+  "da",
+  "del",
+  "la",
+  "le",
+  "van",
+  "von",
+  "jr",
+  "sr",
+  "ii",
+  "iii",
+  "iv"
+]);
+
+function meaningfulTitleAssistTokens(value, {
+  includeManufacturer = true
+} = {}) {
+  return searchable(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1)
+    .filter((token) => !titleAssistGenericTokens.has(token))
+    .filter((token) => includeManufacturer || !titleAssistManufacturerTokens.has(token));
+}
+
+function meaningfulSubjectTitleAssistTokens(value) {
+  return meaningfulTitleAssistTokens(value, { includeManufacturer: false })
+    .filter((token) => token.length >= 3)
+    .filter((token) => !titleAssistSubjectStopTokens.has(token));
+}
+
+function nonEmptyCompatibleTextField(left, right) {
+  const leftValue = searchable(left);
+  const rightValue = searchable(right);
+  return Boolean(leftValue && rightValue && (
+    leftValue === rightValue
+    || leftValue.includes(rightValue)
+    || rightValue.includes(leftValue)
+  ));
+}
+
+function tokenCompatibleTextField(left, right, {
+  includeManufacturer = true
+} = {}) {
+  if (nonEmptyCompatibleTextField(left, right)) return true;
+  const leftTokens = meaningfulTitleAssistTokens(left, { includeManufacturer });
+  const rightTokens = meaningfulTitleAssistTokens(right, { includeManufacturer });
+  if (!leftTokens.length || !rightTokens.length) return false;
+  return leftTokens.some((leftToken) => rightTokens.some((rightToken) => (
+    leftToken === rightToken
+    || (leftToken.length >= 4 && rightToken.includes(leftToken))
+    || (rightToken.length >= 4 && leftToken.includes(rightToken))
+  )));
+}
+
+function titleAssistIdentityTextCompatible(left, right) {
+  const leftValue = searchable(left);
+  const rightValue = searchable(right);
+  if (!leftValue || !rightValue) return true;
+  return tokenCompatibleTextField(leftValue, rightValue, { includeManufacturer: false });
+}
+
+function titleAssistProductTextCompatible(left, right) {
+  const leftValue = searchable(left);
+  const rightValue = searchable(right);
+  if (!leftValue || !rightValue) return true;
+  if (titleAssistIdentityTextCompatible(leftValue, rightValue)) return true;
+  if ((leftValue.includes("pokemon") || leftValue.includes("pokémon") || rightValue.includes("pokemon") || rightValue.includes("pokémon"))
+    && tokenCompatibleTextField(leftValue, rightValue, { includeManufacturer: true })) {
+    return true;
+  }
+  return false;
+}
+
+function subjectTextsForTitleAssist(fields = {}) {
+  const normalized = normalizeFields(fields || {});
+  return [
+    ...currentSubjectTokens(normalized),
+    normalized.character,
+    normalized.artist
+  ].filter(Boolean);
+}
+
+function subjectTextCompatibleForTitleAssist(left, right) {
+  if (nonEmptyCompatibleTextField(left, right)) return true;
+  const leftTokens = meaningfulSubjectTitleAssistTokens(left);
+  const rightTokens = meaningfulSubjectTitleAssistTokens(right);
+  if (!leftTokens.length || !rightTokens.length) return false;
+  const overlap = leftTokens.filter((token) => rightTokens.includes(token)).length;
+  return overlap >= Math.min(2, leftTokens.length, rightTokens.length);
+}
+
+function looseSubjectTokenOverlapWithCurrent(source = {}, currentFields = {}, currentTitle = "") {
+  const sourceFields = normalizeFields(source.fields || {});
+  const normalizedCurrent = normalizeFields(currentFields || {});
+  const sourceSubjects = subjectTextsForTitleAssist(sourceFields);
+  const currentSubjects = subjectTextsForTitleAssist(normalizedCurrent);
+  if (!sourceSubjects.length || !currentSubjects.length) return false;
+  const sourceTokens = new Set(sourceSubjects.flatMap((subject) => meaningfulSubjectTitleAssistTokens(subject)));
+  const currentTokens = new Set(currentSubjects.flatMap((subject) => meaningfulSubjectTitleAssistTokens(subject)));
+  return [...currentTokens].some((token) => token.length >= 5 && sourceTokens.has(token));
+}
+
 function titleSubjectOverlapWithCurrent(source = {}, currentFields = {}, currentTitle = "") {
-  const sourceText = searchable([
+  const sourceFields = normalizeFields(source.fields || {});
+  const normalizedCurrent = normalizeFields(currentFields || {});
+  const sourceSubjects = subjectTextsForTitleAssist(sourceFields);
+  const currentSubjects = subjectTextsForTitleAssist(normalizedCurrent);
+  const sourceText = [
     source.title,
     source.reference_title,
-    currentTitle
-  ].filter(Boolean).join(" "));
-  const currentSubjects = currentSubjectTokens(currentFields).flatMap((subject) => searchable(subject).split(" ").filter((token) => token.length > 1));
-  if (!sourceText || !currentSubjects.length) return false;
-  const uniqueTokens = [...new Set(currentSubjects)];
-  return uniqueTokens.some((token) => sourceText.includes(token));
+    ...sourceSubjects
+  ].filter(Boolean).join(" ");
+  const currentText = [
+    currentTitle,
+    ...currentSubjects
+  ].filter(Boolean).join(" ");
+
+  if (sourceSubjects.length && currentSubjects.length) {
+    return sourceSubjects.some((sourceSubject) => currentSubjects.some((currentSubject) => (
+      subjectTextCompatibleForTitleAssist(sourceSubject, currentSubject)
+    )));
+  }
+
+  if (currentSubjects.length && sourceText) {
+    const sourceTokens = new Set(meaningfulSubjectTitleAssistTokens(sourceText));
+    return currentSubjects.some((currentSubject) => meaningfulSubjectTitleAssistTokens(currentSubject)
+      .some((token) => sourceTokens.has(token)));
+  }
+
+  if (sourceSubjects.length && currentText) {
+    const currentTokens = new Set(meaningfulSubjectTitleAssistTokens(currentText));
+    return sourceSubjects.some((sourceSubject) => meaningfulSubjectTitleAssistTokens(sourceSubject)
+      .some((token) => currentTokens.has(token)));
+  }
+
+  return false;
 }
 
 function serialDenominatorCompatibleForTitleAssist(source = {}, currentFields = {}, currentTitle = "") {
@@ -3351,8 +3529,34 @@ function serialDenominatorCompatibleForTitleAssist(source = {}, currentFields = 
 
 function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}, currentTitle = "") {
   const conflicts = retrievalSourceConflictFields(source);
+  const sourceFields = normalizeFields(source.fields || {});
+  const normalizedCurrent = normalizeFields(currentFields || {});
   if (!conflicts.length) return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
   const blocking = conflicts.filter((field) => {
+    if (field === "year") {
+      return !yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year);
+    }
+    if (field === "brand" || field === "manufacturer") {
+      const sourceValue = sourceFields[field] || sourceFields.brand || sourceFields.manufacturer || source.title || source.reference_title;
+      const currentValue = normalizedCurrent[field] || normalizedCurrent.brand || normalizedCurrent.manufacturer || currentTitle;
+      return !titleAssistIdentityTextCompatible(sourceValue, currentValue);
+    }
+    if (field === "product" || field === "set" || field === "insert") {
+      const sourceValue = sourceFields[field] || source.title || source.reference_title;
+      const currentValue = normalizedCurrent[field] || normalizedCurrent.product || currentTitle;
+      if (field === "product") return !titleAssistProductTextCompatible(sourceValue, currentValue);
+      if (titleAssistIdentityTextCompatible(sourceValue, currentValue)) return false;
+      const sourceProduct = sourceFields.product || source.title || source.reference_title;
+      const currentProduct = normalizedCurrent.product || currentTitle;
+      const subjectCompatible = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle)
+        || looseSubjectTokenOverlapWithCurrent(source, currentFields, currentTitle);
+      return !(subjectCompatible && titleAssistProductTextCompatible(sourceProduct, currentProduct));
+    }
+    if (field === "collector_number" || field === "checklist_code") {
+      const sourceValue = sourceFields[field] || source.title || source.reference_title;
+      const currentValue = normalizedCurrent[field] || currentTitle;
+      return !compatibleTextField(sourceValue, currentValue);
+    }
     if (/^(players|subjects|subject|character)$/.test(field)) {
       return !titleSubjectOverlapWithCurrent(source, currentFields, currentTitle);
     }
@@ -3394,6 +3598,9 @@ function retrievalSourceHasStrongTitleSupport(source = {}) {
   }
   const identityEvidenceCount = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .filter((field) => matched.has(field)).length;
+  if (Number(source.__title_assist_source_index) === 0 && identityEvidenceCount >= 3 && Number(source.match_score || source.normalized_score || 0) >= 0.25) {
+    return true;
+  }
   return identityEvidenceCount >= 3 && Number(source.match_score || source.normalized_score || 0) >= 0.35;
 }
 
@@ -3403,6 +3610,28 @@ function retrievalSourceHasExactIdentityAnchor(source = {}) {
   const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .some((field) => matched.has(field));
   return exactEvidence && identityEvidence;
+}
+
+function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {}, currentTitle = "") {
+  const selectedLane = source.selected === true || source.__title_assist_selected_candidate === true;
+  const topRankedLane = Number(source.__title_assist_source_index) === 0;
+  if (!selectedLane && !topRankedLane) return false;
+  if (!retrievalSourceIsTrustedTitleAssist(source)) return false;
+  if (retrievalSourceHasBlockingTitleConflict(source, currentFields, currentTitle)) return false;
+  if (!retrievalSourceCompatibleWithCurrent(source, currentFields, currentTitle)) return false;
+  const matched = new Set(retrievalSourceMatchedFields(source));
+  const sourceSubjects = subjectTextsForTitleAssist(source.fields || {});
+  const currentSubjects = subjectTextsForTitleAssist(currentFields || {});
+  const exactAnchor = retrievalSourceHasExactIdentityAnchor(source);
+  const subjectSupport = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle)
+    || (exactAnchor && looseSubjectTokenOverlapWithCurrent(source, currentFields, currentTitle));
+  const identitySupportCount = ["product", "set", "year", "brand", "manufacturer", "surface_color", "trigram", "collector_number", "checklist_code", "serial_denominator"]
+    .filter((field) => matched.has(field)).length;
+  const score = Number(source.match_score || source.normalized_score || source.raw_score || 0);
+  if (!subjectSupport && (sourceSubjects.length || currentSubjects.length)) return false;
+  if (!subjectSupport && !exactAnchor) return false;
+  if (!selectedLane && score < 0.25) return false;
+  return (exactAnchor || identitySupportCount >= 2) && (selectedLane || score >= 0.25);
 }
 
 function overlapTokenCount(left, right) {
@@ -3429,14 +3658,15 @@ function currentSubjectTokens(fields = {}) {
 function retrievalSourceCompatibleWithCurrent(source = {}, currentFields = {}, currentTitle = "") {
   const sourceFields = normalizeFields(source.fields || {});
   const normalizedCurrent = normalizeFields(currentFields || {});
-  const exactAnchor = retrievalSourceHasExactIdentityAnchor(source);
+  const subjectOverlap = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle);
   if (sourceFields.year && normalizedCurrent.year && !yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year)) return false;
-  if (!exactAnchor && sourceFields.brand && normalizedCurrent.brand && !compatibleTextField(sourceFields.brand, normalizedCurrent.brand)) return false;
-  if (!exactAnchor && sourceFields.product && normalizedCurrent.product && !compatibleTextField(sourceFields.product, normalizedCurrent.product)) return false;
+  if (sourceFields.brand && normalizedCurrent.brand && !titleAssistIdentityTextCompatible(sourceFields.brand, normalizedCurrent.brand)) return false;
+  if (sourceFields.manufacturer && normalizedCurrent.manufacturer && !titleAssistIdentityTextCompatible(sourceFields.manufacturer, normalizedCurrent.manufacturer)) return false;
+  if (sourceFields.product && normalizedCurrent.product && !titleAssistProductTextCompatible(sourceFields.product, normalizedCurrent.product)) return false;
 
   const sourceSubjects = currentSubjectTokens(sourceFields);
   const currentSubjects = currentSubjectTokens(normalizedCurrent);
-  if (sourceSubjects.length && currentSubjects.length && !sourceSubjects.some((left) => currentSubjects.some((right) => compatibleTextField(left, right)))) {
+  if (sourceSubjects.length && currentSubjects.length && !subjectOverlap && !looseSubjectTokenOverlapWithCurrent(source, currentFields, currentTitle)) {
     return false;
   }
 
@@ -3508,7 +3738,7 @@ function bestRetrievalTitleAssistSource(completion = {}, result = {}) {
   const currentFields = result.resolved || result.resolved_fields || result.fields || {};
   const currentTitle = result.final_title || result.title || result.rendered_title || "";
   return retrievalSourcesFromCompletion(completion)
-    .filter((source) => source.selected === true)
+    .filter((source) => retrievalSourceCanEnterTitleAssistLane(source, currentFields, currentTitle))
     .filter((source) => source.title || source.reference_title)
     .filter(retrievalSourceIsTrustedTitleAssist)
     .filter((source) => !retrievalSourceHasBlockingTitleConflict(source, currentFields, currentTitle))
