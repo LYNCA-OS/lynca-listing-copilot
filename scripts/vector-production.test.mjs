@@ -229,6 +229,41 @@ assert.deepEqual(vectorCandidatePacketAssistEligibility(lowMarginOpenSetPacket),
 });
 assert.equal(buildVectorCandidateAssistPacket(lowMarginOpenSetPacket).vector_retrieval.candidates.length, 0);
 
+const lowMarginHardConstraintPacket = buildVectorCandidatePacket({
+  open_set_decision: "LOW_MARGIN_MATCH",
+  open_set_reason: "top_candidate_margin_below_threshold",
+  sources: [{
+    candidate_id: "approved-low-margin-hard-lock",
+    candidate_identity_id: "identity-approved-low-margin-hard-lock",
+    source_type: "VISUAL_VECTOR",
+    source_trust: "APPROVED_REFERENCE",
+    hard_constraint_eligible: true,
+    visual_similarity: 0.93,
+    match_score: 0.93,
+    embedding_role: "front_global",
+    reference_metadata: { reference_status: "APPROVED", retrieval_status: "approved" },
+    fields: {
+      year: "2025",
+      product: "Topps Chrome",
+      players: ["Hard Lock Player"],
+      collector_number: "136"
+    }
+  }]
+}, { limit: 5 });
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(lowMarginHardConstraintPacket), true);
+assert.deepEqual(vectorCandidatePacketAssistEligibility(lowMarginHardConstraintPacket), {
+  eligible: true,
+  reason: "approved_identity_candidate_available",
+  raw_candidate_count: 1,
+  approved_candidate_count: 1,
+  conflict_blocked_count: 0,
+  prompt_candidate_count: 1,
+  prompt_candidate_ids: ["identity-approved-low-margin-hard-lock"],
+  eligible_candidate_count: 1,
+  blocked_candidate_count: 0
+});
+assert.equal(buildVectorCandidateAssistPacket(lowMarginHardConstraintPacket).vector_retrieval.candidates.length, 1);
+
 const conflictingApprovedPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "approved-conflict",

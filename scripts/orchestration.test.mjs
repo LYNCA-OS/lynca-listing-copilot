@@ -1249,6 +1249,61 @@ assert.equal(catalogIdentityVerification.resolved.card_grade, null);
 assert.equal(catalogIdentityVerification.evidence.serial_number.value, "31/50");
 assert.equal(catalogIdentityVerification.evidence.serial_number.sources.some((source) => source.evidence_kind === "catalog_expected_serial_denominator_support"), true);
 assert.ok(catalogIdentityVerification.summary.verified_fields.includes("serial_number"));
+assert.ok(catalogIdentityVerification.summary.field_locks.some((lock) => {
+  return lock.field === "product"
+    && lock.lock_type === "catalog_hard_constraint"
+    && lock.decision_pipeline === "identity_catalog";
+}));
+assert.ok(catalogIdentityVerification.summary.field_locks.some((lock) => {
+  return lock.field === "surface_color"
+    && lock.lock_type === "catalog_hard_constraint"
+    && lock.decision_pipeline === "parallel_catalog_taxonomy";
+}));
+assert.ok(catalogIdentityVerification.summary.field_locks.some((lock) => {
+  return lock.field === "serial_number"
+    && lock.lock_type === "catalog_expected_denominator_support_only"
+    && lock.decision_pipeline === "factual_current_image_only";
+}));
+assert.ok(catalogIdentityVerification.summary.decision_pipelines.identity_catalog.includes("product"));
+assert.ok(catalogIdentityVerification.summary.decision_pipelines.parallel_catalog_taxonomy.includes("surface_color"));
+assert.ok(catalogIdentityVerification.summary.decision_pipelines.factual_current_image_only.includes("serial_number"));
+
+const catalogYearDirectEvidenceGuard = verifyRetrievalCandidates({
+  resolved: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Cooper Flagg"],
+    collector_number: "136"
+  },
+  evidence: {
+    year: createEvidenceField({
+      value: "2025",
+      status: "CONFIRMED",
+      confidence: 0.95,
+      sources: [{ source_type: "CARD_BACK", observed_text: "2025" }]
+    })
+  },
+  retrieval: {
+    selected_candidate: {
+      ...catalogIdentityCandidate,
+      candidate_id: "catalog_wrong_year",
+      match_score: 0.92,
+      matched_fields: ["collector_number", "players", "product"],
+      fields: {
+        year: "2024",
+        product: "Topps Chrome",
+        players: ["Cooper Flagg"],
+        collector_number: "136"
+      }
+    },
+    sources: []
+  }
+});
+assert.equal(catalogYearDirectEvidenceGuard.resolved.year, "2025");
+assert.equal(catalogYearDirectEvidenceGuard.evidence.year.status, "CONFLICT");
+assert.ok(catalogYearDirectEvidenceGuard.summary.conflicting_fields.includes("year"));
+assert.equal(catalogYearDirectEvidenceGuard.summary.field_locks.some((lock) => lock.field === "year"), false);
+assert.ok(catalogYearDirectEvidenceGuard.summary.decision_pipelines.year_catalog_with_direct_evidence_guard.includes("year"));
 
 const catalogDenominatorConflict = verifyRetrievalCandidates({
   resolved: {

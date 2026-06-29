@@ -2152,7 +2152,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
     "Serial rule: every digit must be readable; otherwise serial_number must be empty.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
-    "Multi-card rule: if more than one card or a lot is visible, set multi_card true and do not merge identities.",
+    "Multi-card rule: multi_card/card_count refer to separate physical cards in the photo, not the number of players or names printed on one card. A single card with two or more subjects must keep multi_card false and put every subject in players[]. Only set multi_card true when multiple separate card rectangles, slabs, or lot items are visible; then do not merge identities.",
     "recognition_status rule: use CONFIRMED when core identity is visible with no critical conflict; RESOLVED when core identity is visible but some non-core field needs review; ABSTAIN only when product/subject is unreadable, multiple cards are mixed, image quality blocks core identity, or critical fields conflict.",
     `Runtime title limit downstream: ${maxTitleLength} characters.`,
     "Return this shape:",
@@ -2195,7 +2195,9 @@ function providerMinimalOutputShape({
       grade_type: "",
       rc: false,
       auto: false,
-      multi_card: false
+      multi_card: false,
+      card_count: null,
+      lot_type: ""
     },
     field_evidence: {
       year: {
@@ -2273,7 +2275,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     intelligencePrompt,
     `Runtime title limit: ${maxTitleLength} characters.`,
     "Return only valid JSON. Do not wrap the response in Markdown.",
-    "If the image contains multiple cards or a card lot, set fields.multi_card true, include fields.card_count when visible, describe fields.lot_type, and do not merge identities across cards.",
+    "Multi-card rule: fields.card_count is the count of separate physical cards, not the count of players. A single multi-subject card must have fields.multi_card false and all visible subjects in fields.players. Only set fields.multi_card true when multiple separate card rectangles, slabs, or lot items are visible; then include fields.card_count when visible, describe fields.lot_type, and do not merge identities across cards.",
     "Do not infer RC, 1st Bowman, SSP, case hit, parallel, or variation from seller style or generic foil color. Use RC only for readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker. For parallel/variation, use printed text, slab/checklist support, or clearly intentional high-confidence card-design color/pattern only; weak visual color impressions must stay empty with uncertainty in unresolved.",
     "Return compact provider-agnostic field_evidence only for high-risk or review-sensitive fields. Do not use provider confidence prose as fact evidence.",
     "Resolution hints:",
@@ -3306,7 +3308,10 @@ function retrievalSourcesFromCompletion(completion = {}) {
     completion.catalog_retrieval,
     completion.vector_retrieval
   ].filter((summary) => summary && typeof summary === "object" && !Array.isArray(summary));
-  return summaries.flatMap((summary) => Array.isArray(summary.sources) ? summary.sources : []);
+  return summaries.flatMap((summary) => [
+    summary.selected_candidate,
+    ...(Array.isArray(summary.sources) ? summary.sources : [])
+  ].filter((source) => source && typeof source === "object"));
 }
 
 function retrievalSourceConflictFields(source = {}) {
@@ -3323,6 +3328,40 @@ function retrievalSourceConflictFields(source = {}) {
 function retrievalSourceHasDirectConflict(source = {}) {
   if (retrievalSourceConflictFields(source).length) return true;
   return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
+}
+
+function titleSubjectOverlapWithCurrent(source = {}, currentFields = {}, currentTitle = "") {
+  const sourceText = searchable([
+    source.title,
+    source.reference_title,
+    currentTitle
+  ].filter(Boolean).join(" "));
+  const currentSubjects = currentSubjectTokens(currentFields).flatMap((subject) => searchable(subject).split(" ").filter((token) => token.length > 1));
+  if (!sourceText || !currentSubjects.length) return false;
+  const uniqueTokens = [...new Set(currentSubjects)];
+  return uniqueTokens.some((token) => sourceText.includes(token));
+}
+
+function serialDenominatorCompatibleForTitleAssist(source = {}, currentFields = {}, currentTitle = "") {
+  const currentDenominator = serialDenominatorForTitleAssist(currentFields.serial_number || currentTitle);
+  const sourceFields = normalizeFields(source.fields || {});
+  const sourceDenominator = serialDenominatorForTitleAssist(sourceFields.serial_number || source.title || source.reference_title);
+  return Boolean(currentDenominator && sourceDenominator && currentDenominator === sourceDenominator);
+}
+
+function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}, currentTitle = "") {
+  const conflicts = retrievalSourceConflictFields(source);
+  if (!conflicts.length) return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
+  const blocking = conflicts.filter((field) => {
+    if (/^(players|subjects|subject|character)$/.test(field)) {
+      return !titleSubjectOverlapWithCurrent(source, currentFields, currentTitle);
+    }
+    if (field === "serial_number") {
+      return !serialDenominatorCompatibleForTitleAssist(source, currentFields, currentTitle);
+    }
+    return true;
+  });
+  return blocking.length > 0;
 }
 
 function approvedRetrievalStatus(source = {}) {
@@ -3348,7 +3387,7 @@ function retrievalSourceMatchedFields(source = {}) {
 
 function retrievalSourceHasStrongTitleSupport(source = {}) {
   const matched = new Set(retrievalSourceMatchedFields(source));
-  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number"].some((field) => matched.has(field));
+  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   if (exactEvidence) {
     return ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
       .some((field) => matched.has(field));
@@ -3360,7 +3399,7 @@ function retrievalSourceHasStrongTitleSupport(source = {}) {
 
 function retrievalSourceHasExactIdentityAnchor(source = {}) {
   const matched = new Set(retrievalSourceMatchedFields(source));
-  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number"].some((field) => matched.has(field));
+  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .some((field) => matched.has(field));
   return exactEvidence && identityEvidence;
@@ -3472,7 +3511,7 @@ function bestRetrievalTitleAssistSource(completion = {}, result = {}) {
     .filter((source) => source.selected === true)
     .filter((source) => source.title || source.reference_title)
     .filter(retrievalSourceIsTrustedTitleAssist)
-    .filter((source) => !retrievalSourceHasDirectConflict(source))
+    .filter((source) => !retrievalSourceHasBlockingTitleConflict(source, currentFields, currentTitle))
     .filter(retrievalSourceHasStrongTitleSupport)
     .filter((source) => retrievalSourceCompatibleWithCurrent(source, currentFields, currentTitle))
     .sort((left, right) => {

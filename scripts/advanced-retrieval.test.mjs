@@ -147,6 +147,55 @@ const familyOnly = rankHybridRetrievalCandidates([
 });
 assert.equal(familyOnly.open_set_decision, openSetDecisions.FAMILY_ONLY_MATCH);
 
+const lowMarginCatalogConstraint = rankHybridRetrievalCandidates([
+  {
+    candidate_id: "catalog-correct",
+    candidate_identity_id: "identity-correct",
+    provider_id: "postgres_hybrid",
+    query_family: "SEARCH_POSTGRES_HYBRID",
+    source_type: "STRUCTURED_DATABASE",
+    channel_id: "postgres_full_text",
+    normalized_score: 0.82,
+    trust_tier: 4,
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      collector_number: "136"
+    }
+  },
+  {
+    candidate_id: "catalog-near",
+    candidate_identity_id: "identity-near",
+    provider_id: "postgres_hybrid",
+    query_family: "SEARCH_POSTGRES_HYBRID",
+    source_type: "STRUCTURED_DATABASE",
+    channel_id: "structured_metadata",
+    normalized_score: 0.81,
+    trust_tier: 4,
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      collector_number: "137"
+    }
+  }
+], {
+  year: "2024",
+  product: "Topps Chrome",
+  players: ["Test Player"],
+  collector_number: "136"
+}, {
+  lowMarginThreshold: 0.9
+});
+assert.equal(lowMarginCatalogConstraint.open_set_decision, openSetDecisions.EXACT_CANDIDATE);
+assert.equal(lowMarginCatalogConstraint.open_set_reason, "catalog_hard_constraint_exact_anchor_overrode_low_margin");
+assert.equal(lowMarginCatalogConstraint.selected_candidate.candidate_identity_id, "identity-correct");
+assert.equal(lowMarginCatalogConstraint.selected_candidate.hard_constraint_eligible, true);
+assert.ok(lowMarginCatalogConstraint.selected_candidate.field_match_score > 0);
+assert.ok(lowMarginCatalogConstraint.selected_candidate.evidence_strength_score > 0);
+assert.equal(lowMarginCatalogConstraint.selected_candidate.conflict_penalty_score, 0);
+
 const hardNegativeRanked = rankHybridRetrievalCandidates([
   {
     candidate_id: "hard-negative",
