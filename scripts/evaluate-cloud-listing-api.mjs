@@ -1612,6 +1612,13 @@ function summarize(results = [], elapsedMs = 0) {
     const index = Math.min(elapsedValues.length - 1, Math.max(0, Math.ceil(elapsedValues.length * p) - 1));
     return Math.round(elapsedValues[index]);
   };
+  const rate = (count, denominator = attempted) => denominator ? Number((count / denominator).toFixed(6)) : null;
+  const rawTokenRecallAvg = rawAverageRecallValues.length
+    ? Number((rawAverageRecallValues.reduce((sum, value) => sum + value, 0) / rawAverageRecallValues.length).toFixed(6))
+    : null;
+  const finalTokenRecallAvg = averageRecallValues.length
+    ? Number((averageRecallValues.reduce((sum, value) => sum + value, 0) / averageRecallValues.length).toFixed(6))
+    : null;
   return {
     attempted_count: attempted,
     evaluated_count: evaluated,
@@ -1647,12 +1654,33 @@ function summarize(results = [], elapsedMs = 0) {
     catalog_candidate_count: catalogCandidateCountTotal,
     catalog_prompt_candidate_count: catalogPromptCandidateCount,
     catalog_candidate_selected_count: catalogCandidateSelectedCount,
+    catalog_candidate_available_rate: rate(correctCatalogIdentityAvailableCount),
     correct_catalog_identity_available_count: correctCatalogIdentityAvailableCount,
     correct_candidate_recall_at_1: correctCandidateRecallAt1,
     correct_candidate_recall_at_3: correctCandidateRecallAt3,
     correct_candidate_recall_at_5: correctCandidateRecallAt5,
+    candidate_recall_at_1: {
+      count: correctCandidateRecallAt1,
+      denominator: attempted,
+      rate: rate(correctCandidateRecallAt1)
+    },
+    candidate_recall_at_3: {
+      count: correctCandidateRecallAt3,
+      denominator: attempted,
+      rate: rate(correctCandidateRecallAt3)
+    },
+    candidate_recall_at_5: {
+      count: correctCandidateRecallAt5,
+      denominator: attempted,
+      rate: rate(correctCandidateRecallAt5)
+    },
     gpt_selected_correct_candidate_count: gptSelectedCorrectCandidateCount,
     gpt_rejected_correct_candidate_count: gptRejectedCorrectCandidateCount,
+    candidate_selection_accuracy: {
+      selected_correct_count: gptSelectedCorrectCandidateCount,
+      available_correct_candidate_count: correctCatalogIdentityAvailableCount,
+      rate: rate(gptSelectedCorrectCandidateCount, correctCatalogIdentityAvailableCount)
+    },
     catalog_recovery_count: null,
     catalog_regression_count: null,
     catalog_net_benefit: null,
@@ -1666,12 +1694,15 @@ function summarize(results = [], elapsedMs = 0) {
     vector_prompt_candidate_ids: vectorPromptCandidateIds,
     visual_feature_count: storedVisualFeatureCount,
     provider_truncation_retry_count: truncationRetryCount,
-    raw_corrected_title_token_recall_avg: rawAverageRecallValues.length
-      ? Number((rawAverageRecallValues.reduce((sum, value) => sum + value, 0) / rawAverageRecallValues.length).toFixed(6))
-      : null,
-    corrected_title_token_recall_avg: averageRecallValues.length
-      ? Number((averageRecallValues.reduce((sum, value) => sum + value, 0) / averageRecallValues.length).toFixed(6))
-      : null,
+    raw_blind_output_accuracy: {
+      corrected_title_token_recall_avg: rawTokenRecallAvg,
+      pass_at_0_72_count: rawPassAt072,
+      pass_at_0_72_rate: rate(rawPassAt072),
+      pass_at_0_80_count: rawPassAt080,
+      pass_at_0_80_rate: rate(rawPassAt080)
+    },
+    raw_corrected_title_token_recall_avg: rawTokenRecallAvg,
+    corrected_title_token_recall_avg: finalTokenRecallAvg,
     raw_pass_at_0_72_count: rawPassAt072,
     raw_pass_at_0_72_rate: attempted ? Number((rawPassAt072 / attempted).toFixed(6)) : null,
     pass_at_0_72_count: passAt072,
@@ -1683,6 +1714,17 @@ function summarize(results = [], elapsedMs = 0) {
     candidate_proxy_selected_count: candidateProxySelectedCount,
     candidate_proxy_catalog_selected_count: candidateProxyCatalogSelectedCount,
     candidate_proxy_vector_selected_count: candidateProxyVectorSelectedCount,
+    oracle_candidate_upper_bound: {
+      proxy_selected_count: candidateProxySelectedCount,
+      catalog_proxy_selected_count: candidateProxyCatalogSelectedCount,
+      vector_proxy_selected_count: candidateProxyVectorSelectedCount,
+      corrected_title_token_recall_avg: finalTokenRecallAvg,
+      pass_at_0_72_count: passAt072,
+      pass_at_0_72_rate: rate(passAt072),
+      pass_at_0_80_count: passAt080,
+      pass_at_0_80_rate: rate(passAt080),
+      note: "temporary corrected_title proxy; not reviewed identity accuracy"
+    },
     elapsed_ms: Math.max(0, Math.round(elapsedMs)),
     attempted_cards_per_minute: elapsedMs > 0 ? Number((attempted / (elapsedMs / 60000)).toFixed(6)) : null,
     evaluated_cards_per_minute: elapsedMs > 0 ? Number((evaluated / (elapsedMs / 60000)).toFixed(6)) : null,
@@ -1939,6 +1981,7 @@ export async function main(argv = process.argv, env = process.env) {
     `postgres_hybrid_candidate_count: ${report.postgres_hybrid_candidate_count ?? "n/a"}`,
     `catalog_lookup_used_count: ${report.catalog_lookup_used_count ?? "n/a"}`,
     `catalog_candidate_count: ${report.catalog_candidate_count ?? "n/a"}`,
+    `catalog_candidate_available_rate: ${report.catalog_candidate_available_rate ?? "n/a"}`,
     `catalog_prompt_candidate_count: ${report.catalog_prompt_candidate_count ?? "n/a"}`,
     `catalog_candidate_selected_count: ${report.catalog_candidate_selected_count ?? "n/a"}`,
     `correct_catalog_identity_available_count: ${report.correct_catalog_identity_available_count ?? "n/a"}`,
@@ -1947,6 +1990,7 @@ export async function main(argv = process.argv, env = process.env) {
     `correct_candidate_recall_at_5: ${report.correct_candidate_recall_at_5 ?? "n/a"}`,
     `gpt_selected_correct_candidate_count: ${report.gpt_selected_correct_candidate_count ?? "n/a"}`,
     `gpt_rejected_correct_candidate_count: ${report.gpt_rejected_correct_candidate_count ?? "n/a"}`,
+    `candidate_selection_accuracy_rate: ${report.candidate_selection_accuracy?.rate ?? "n/a"}`,
     `catalog_recovery_count: ${report.catalog_recovery_count ?? "paired_baseline_required"}`,
     `catalog_regression_count: ${report.catalog_regression_count ?? "paired_baseline_required"}`,
     `catalog_net_benefit: ${report.catalog_net_benefit ?? "paired_baseline_required"}`,
@@ -1960,7 +2004,12 @@ export async function main(argv = process.argv, env = process.env) {
     `vector_prompt_candidate_ids: ${(report.vector_prompt_candidate_ids || []).join(",") || "n/a"}`,
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,
+    `raw_blind_token_recall_avg_proxy_not_identity_accuracy: ${report.raw_blind_output_accuracy?.corrected_title_token_recall_avg ?? "n/a"}`,
+    `raw_blind_pass_at_0_72_count: ${report.raw_blind_output_accuracy?.pass_at_0_72_count ?? "n/a"}`,
+    `raw_blind_pass_at_0_80_count: ${report.raw_blind_output_accuracy?.pass_at_0_80_count ?? "n/a"}`,
     `corrected_title_token_recall_avg_proxy_not_identity_accuracy: ${report.corrected_title_token_recall_avg}`,
+    `oracle_candidate_upper_bound_pass_at_0_72_count: ${report.oracle_candidate_upper_bound?.pass_at_0_72_count ?? "n/a"}`,
+    `oracle_candidate_upper_bound_pass_at_0_80_count: ${report.oracle_candidate_upper_bound?.pass_at_0_80_count ?? "n/a"}`,
     `pass_at_0_72_count: ${report.pass_at_0_72_count ?? "n/a"}`,
     `pass_at_0_72_rate: ${report.pass_at_0_72_rate ?? "n/a"}`,
     `pass_at_0_80_count: ${report.pass_at_0_80_count ?? "n/a"}`,

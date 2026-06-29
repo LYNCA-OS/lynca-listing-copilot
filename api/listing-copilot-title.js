@@ -2817,6 +2817,12 @@ function providerSignalFastPathEligible(result = {}) {
 
 function tryProviderFastPath(result, payload, providerId) {
   if (!envFlag(process.env, "ENABLE_LISTING_FAST_PATH", true)) return null;
+  const providerOptions = providerOptionsFromPayload(payload);
+  if (evidenceCompletionEnabled(process.env, providerOptions)
+    && (optionFlag(providerOptions, "enable_catalog_assist", false) === true
+      || optionFlag(providerOptions, "enable_vector_assist", false) === true)) {
+    return null;
+  }
   if (!providerSignalFastPathEligible(result)) return null;
 
   const gated = applyIdentityResolutionGate(result, {

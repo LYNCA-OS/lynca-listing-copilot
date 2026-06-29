@@ -478,8 +478,9 @@ const correctedTitleGtRetrieval = await correctedTitleGtProvider.search({
   },
   resolved: {}
 });
-assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.retrieval_status, "approved");
-assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.reference_status, "APPROVED");
+assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.retrieval_status, "");
+assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.reference_status, "");
+assert.equal(correctedTitleGtRetrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
 assert.equal(correctedTitleGtRetrieval.candidates[0].field_derivation.title_derived_fields_are_ground_truth, true);
 const correctedTitleGtPacket = buildVectorCandidatePacket({ sources: correctedTitleGtRetrieval.candidates }, { limit: 5 });
 assert.equal(correctedTitleGtPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");

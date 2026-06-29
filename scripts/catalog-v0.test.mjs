@@ -58,11 +58,23 @@ assert.equal(messiCatalog.staging.identity_fields.card_number, "CL-LM");
 assert.equal(messiCatalog.staging.identity_fields.serial_denominator, "199");
 assert.equal(messiCatalog.staging.physical_instance_fields.serial_numerator, "29");
 
+const uccTeamCatalog = correctedTitleRecordToCatalogStaging({
+  id: "feedback-soccer-2",
+  corrected_title: "2024-25 Topps Chrome UCC FC Barcelona Lamine Yamal Rookie Refractor Gold 07/50 #150"
+});
+assert.equal(uccTeamCatalog.staging.identity_fields.product, "Topps Chrome UEFA Club Competitions");
+assert.equal(uccTeamCatalog.staging.identity_fields.team, "FC Barcelona");
+assert.deepEqual(uccTeamCatalog.staging.identity_fields.players, ["Lamine Yamal"]);
+assert.equal(uccTeamCatalog.staging.identity_fields.official_card_type, "Rookie Refractor");
+assert.equal(uccTeamCatalog.staging.identity_fields.surface_color, "Gold");
+assert.equal(uccTeamCatalog.staging.identity_fields.serial_denominator, "50");
+
 const blackProduct = parseReviewedTitleFields("2024 Panini Black Ricky Pearsall Metallic Marks Auto 10/25 #MM-RP");
 assert.equal(blackProduct.product, "Panini Black");
 assert.equal(blackProduct.surface_color, null);
 assert.deepEqual(blackProduct.players, ["Ricky Pearsall"]);
 assert.equal(blackProduct.official_card_type, "Metallic Marks");
+assert.equal(blackProduct.serial_denominator, "25");
 
 const starWarsGold = parseReviewedTitleFields("2025 Topps Star Wars Chrome Black Smugglers Outpost Han Solo Gold 5/50 #SO-HS");
 assert.equal(starWarsGold.product, "Topps Star Wars Chrome Black");

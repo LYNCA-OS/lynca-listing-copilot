@@ -335,6 +335,11 @@ function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [
       catalog_only: catalog.raw_corrected_title_token_recall_avg ?? catalog.corrected_title_token_recall_avg ?? null,
       catalog_vector: vector.raw_corrected_title_token_recall_avg ?? vector.corrected_title_token_recall_avg ?? null
     },
+    raw_blind_output_accuracy: {
+      gpt_only: baseline.raw_blind_output_accuracy || null,
+      catalog_only: catalog.raw_blind_output_accuracy || null,
+      catalog_vector: vector.raw_blind_output_accuracy || null
+    },
     pass_at_0_72: {
       gpt_only: tracePassCount(trace, "gpt_only_title", 0.72),
       catalog_only: tracePassCount(trace, "catalog_only_title", 0.72),
@@ -357,8 +362,18 @@ function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [
     },
     catalog_lookup_used_count: catalog.catalog_lookup_used_count ?? null,
     catalog_candidate_count: catalog.catalog_candidate_count ?? null,
+    catalog_candidate_available_rate: catalog.catalog_candidate_available_rate ?? null,
     catalog_prompt_candidate_count: catalog.catalog_prompt_candidate_count ?? null,
     catalog_candidate_selected_count: catalog.catalog_candidate_selected_count ?? null,
+    candidate_recall_at_1: catalog.candidate_recall_at_1 || vector.candidate_recall_at_1 || null,
+    candidate_recall_at_3: catalog.candidate_recall_at_3 || vector.candidate_recall_at_3 || null,
+    candidate_recall_at_5: catalog.candidate_recall_at_5 || vector.candidate_recall_at_5 || null,
+    candidate_selection_accuracy: catalog.candidate_selection_accuracy || vector.candidate_selection_accuracy || null,
+    oracle_candidate_upper_bound: {
+      gpt_only: baseline.oracle_candidate_upper_bound || null,
+      catalog_only: catalog.oracle_candidate_upper_bound || null,
+      catalog_vector: vector.oracle_candidate_upper_bound || null
+    },
     catalog_recovery_count: countWhere(trace, (item) => item.catalog_change === "recovery"),
     catalog_regression_count: countWhere(trace, (item) => item.catalog_change === "regression"),
     catalog_net_benefit: countWhere(trace, (item) => item.catalog_change === "recovery") - countWhere(trace, (item) => item.catalog_change === "regression"),

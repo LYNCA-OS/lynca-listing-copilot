@@ -1193,6 +1193,86 @@ assert.equal(officialVerification.evidence.product.status, "CONFIRMED");
 assert.equal(officialVerification.evidence.grade_type, undefined);
 assert.ok(officialVerification.summary.verified_fields.includes("product"));
 
+const catalogIdentityCandidate = {
+  candidate_id: "catalog_cooper_gold",
+  source_url: "supabase://catalog-cards/catalog-cooper-gold",
+  domain: "supabase-catalog",
+  source_type: "STRUCTURED_DATABASE",
+  provider_id: "catalog",
+  trust_tier: 4,
+  title: "2025 Topps Chrome Cooper Flagg Gold #136 /50",
+  evidence_excerpt: "Catalog identity candidate confirms product and expected denominator.",
+  match_score: 0.82,
+  reference_metadata: {
+    expected_serial_denominator: "50",
+    source_status: "AUTO_PARSED_FROM_VERIFIED_TITLE"
+  },
+  field_derivation: {
+    source: "basketball_catalog_v0"
+  },
+  fields: {
+    product: "Topps Chrome Basketball",
+    set_or_insert: "Base",
+    official_card_type: "Base",
+    surface_color: "Gold",
+    serial_number: "17/50",
+    grade_company: "PSA",
+    card_grade: "10"
+  }
+};
+const catalogIdentityVerification = verifyRetrievalCandidates({
+  resolved: {
+    year: "2025",
+    players: ["Cooper Flagg"],
+    serial_number: "31/50"
+  },
+  evidence: {
+    serial_number: createEvidenceField({
+      value: "31/50",
+      status: "REVIEW",
+      confidence: 0.84,
+      sources: [{ source_type: "VISION_MODEL", observed_text: "31/50" }]
+    })
+  },
+  retrieval: {
+    selected_candidate: catalogIdentityCandidate,
+    sources: [catalogIdentityCandidate]
+  }
+});
+assert.equal(catalogIdentityVerification.resolved.product, "Topps Chrome Basketball");
+assert.equal(catalogIdentityVerification.resolved.insert, "Base");
+assert.equal(catalogIdentityVerification.resolved.official_card_type, "Base");
+assert.equal(catalogIdentityVerification.resolved.surface_color, "Gold");
+assert.equal(catalogIdentityVerification.resolved.serial_number, "31/50");
+assert.equal(catalogIdentityVerification.resolved.grade_company, null);
+assert.equal(catalogIdentityVerification.resolved.card_grade, null);
+assert.equal(catalogIdentityVerification.evidence.serial_number.value, "31/50");
+assert.equal(catalogIdentityVerification.evidence.serial_number.sources.some((source) => source.evidence_kind === "catalog_expected_serial_denominator_support"), true);
+assert.ok(catalogIdentityVerification.summary.verified_fields.includes("serial_number"));
+
+const catalogDenominatorConflict = verifyRetrievalCandidates({
+  resolved: {
+    year: "2025",
+    players: ["Cooper Flagg"],
+    serial_number: "31/99"
+  },
+  evidence: {
+    serial_number: createEvidenceField({
+      value: "31/99",
+      status: "CONFIRMED",
+      confidence: 0.92,
+      sources: [{ source_type: "CARD_FRONT", observed_text: "31/99" }]
+    })
+  },
+  retrieval: {
+    selected_candidate: catalogIdentityCandidate,
+    sources: [catalogIdentityCandidate]
+  }
+});
+assert.equal(catalogDenominatorConflict.resolved.serial_number, "31/99");
+assert.equal(catalogDenominatorConflict.evidence.serial_number.status, "CONFLICT");
+assert.ok(catalogDenominatorConflict.summary.conflicting_fields.includes("serial_number"));
+
 const internalHistoryCandidate = {
   candidate_id: "internal_history_tcar_cf",
   source_url: "internal://approved-history/card-1",
@@ -1401,24 +1481,19 @@ const visualExactMatchSingleCandidate = verifyRetrievalCandidates({
 });
 assert.equal(visualExactMatchSingleCandidate.resolved.year, "2025-26");
 assert.equal(visualExactMatchSingleCandidate.resolved.parallel, "Gold Refractor");
-assert.equal(visualExactMatchSingleCandidate.resolved.serial_number, "17/50");
-assert.equal(visualExactMatchSingleCandidate.resolved.grade_company, "PSA");
-assert.equal(visualExactMatchSingleCandidate.resolved.card_grade, "10");
-assert.equal(visualExactMatchSingleCandidate.evidence.serial_number.status, "REVIEW");
-assert.equal(visualExactMatchSingleCandidate.evidence.grade_company.status, "REVIEW");
+assert.equal(visualExactMatchSingleCandidate.resolved.serial_number, null);
+assert.equal(visualExactMatchSingleCandidate.resolved.grade_company, null);
+assert.equal(visualExactMatchSingleCandidate.resolved.card_grade, null);
+assert.equal(visualExactMatchSingleCandidate.evidence.serial_number, undefined);
+assert.equal(visualExactMatchSingleCandidate.evidence.grade_company, undefined);
 assert.ok(visualExactMatchSingleCandidate.evidence.parallel.sources.some((source) => {
-  return source.source_type === "STRUCTURED_DATABASE"
-    && source.original_source_type === "VISUAL_VECTOR"
-    && source.evidence_kind === "visual_vector_exact_identity_memory";
-}));
-assert.ok(visualExactMatchSingleCandidate.evidence.serial_number.sources.some((source) => {
   return source.source_type === "STRUCTURED_DATABASE"
     && source.original_source_type === "VISUAL_VECTOR"
     && source.evidence_kind === "visual_vector_exact_identity_memory";
 }));
 assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("year"));
 assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("parallel"));
-assert.ok(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("serial_number"));
+assert.equal(visualExactMatchSingleCandidate.summary.visual_vector.consensus_fields.includes("serial_number"), false);
 
 const visualExactSerialConflictRequiresReview = verifyRetrievalCandidates({
   resolved: {
@@ -1460,8 +1535,8 @@ const visualExactSerialConflictRequiresReview = verifyRetrievalCandidates({
   }
 });
 assert.equal(visualExactSerialConflictRequiresReview.resolved.serial_number, "19/50");
-assert.equal(visualExactSerialConflictRequiresReview.evidence.serial_number.status, "CONFLICT");
-assert.ok(visualExactSerialConflictRequiresReview.summary.visual_vector.conflict_fields.includes("serial_number"));
+assert.equal(visualExactSerialConflictRequiresReview.evidence.serial_number.status, "CONFIRMED");
+assert.equal(visualExactSerialConflictRequiresReview.summary.visual_vector.conflict_fields.includes("serial_number"), false);
 
 const visualExactSerialPreservesDirectDisplay = verifyRetrievalCandidates({
   resolved: {
