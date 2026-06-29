@@ -372,6 +372,45 @@ assert.equal(openai.titlePayload.catalog_observation_hint, null);
   assert.deepEqual(referenceCopyRisk.report.decision_trace[0].copied_serial_grade_cert_from_reference_fields.sort(), ["card_grade", "grade_company", "serial_number"]);
 }
 
+{
+  const denominatorOnly = await runProvider("catalog-only", {
+    titleResponder({ body }) {
+      return {
+        final_title: "2025 Topps Chrome Test Player /50",
+        confidence: "HIGH",
+        provider: body.provider,
+        resolved: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Test Player"],
+          serial_number: "/50"
+        },
+        evidence: {
+          serial_number: {
+            value: "/50",
+            sources: [{ source_type: "STRUCTURED_DATABASE", source_url: "supabase://catalog-cards/identity-denominator" }]
+          }
+        },
+        catalog_candidate_packet: {
+          vector_retrieval: {
+            candidates: [{
+              candidate_identity_id: "identity-denominator",
+              provider_id: "catalog",
+              source_url: "supabase://catalog-cards/identity-denominator",
+              fields: {
+                expected_serial_denominator: "50"
+              }
+            }]
+          }
+        },
+        timing: { total_ms: 210 }
+      };
+    }
+  });
+  assert.equal(denominatorOnly.report.copied_serial_grade_cert_from_reference_count, 0);
+  assert.deepEqual(denominatorOnly.report.decision_trace[0].copied_serial_grade_cert_from_reference_fields, []);
+}
+
 const openaiCatalog = await runProvider("catalog-only");
 assert.equal(openaiCatalog.report.provider, "openai_catalog");
 assert.equal(openaiCatalog.titlePayload.provider, "openai_legacy");

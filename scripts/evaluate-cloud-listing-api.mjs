@@ -1045,6 +1045,12 @@ function candidateReferenceValueMatches(data = {}, fieldName = "", value = null)
   });
 }
 
+function serialValueHasInstanceNumerator(value = "") {
+  const text = normalizeText(value);
+  return /^\d{1,4}\s*\/\s*\d{1,4}$/i.test(text)
+    || /^\d{1,4}\s+of\s+\d{1,4}$/i.test(text);
+}
+
 function copiedReferenceInstanceFields(data = {}) {
   const resolved = data.resolved_fields || data.resolved || {};
   const fields = data.fields || {};
@@ -1052,6 +1058,7 @@ function copiedReferenceInstanceFields(data = {}) {
   for (const fieldName of ["serial_number", "grade_company", "card_grade", "auto_grade", "cert_number"]) {
     const value = fieldValue(resolved, fieldName) ?? fieldValue(fields, fieldName);
     if (!value || compactComparableValue(value) === "unknown") continue;
+    if (fieldName === "serial_number" && !serialValueHasInstanceNumerator(value)) continue;
     const sources = evidenceSourcesFor(data, fieldName);
     const hasDirectSource = sources.some(sourceLooksDirectCurrentImage);
     const hasReferenceSource = sources.some(sourceLooksReferenceOnly) || candidateReferenceValueMatches(data, fieldName, value);
