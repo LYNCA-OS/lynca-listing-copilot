@@ -7,10 +7,13 @@ import {
 import { normalizeResolvedFields } from "../lib/listing/evidence/evidence-schema.mjs";
 import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
 import {
+  buildOfficialChecklistImport,
   buildToppsBasketballChecklistImport,
+  extractOfficialChecklistLinks,
   extractToppsBasketballChecklistLinks,
   extractXlsxText,
   isAllowedToppsBasketballChecklistLink,
+  parseOfficialChecklistText,
   parseToppsBasketballChecklistText
 } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
 import { renderResolvedTitle } from "../lib/listing/renderer/listing-renderer.mjs";
@@ -130,6 +133,14 @@ assert.ok(links.every((link) => /Basketball/i.test(link.text)));
 assert.equal(isAllowedToppsBasketballChecklistLink({ text: "2025 Topps Chrome Baseball Checklist" }), false);
 assert.equal(isAllowedToppsBasketballChecklistLink({ text: "2025 Topps Chrome Basketball Checklist" }), true);
 
+const allOfficialLinks = extractOfficialChecklistLinks(indexHtml, {
+  baseUrl: "https://www.topps.com/pages/checklists",
+  provider: "topps"
+});
+assert.equal(allOfficialLinks.length, 4);
+assert.ok(allOfficialLinks.some((link) => link.category === "baseball"));
+assert.ok(allOfficialLinks.some((link) => link.category === "entertainment"));
+
 function zipEntry(name, content, offset) {
   const source = Buffer.from(content);
   const compressed = deflateRawSync(source);
@@ -206,6 +217,34 @@ assert.equal(curryOfficialAuto.identity_fields.official_card_type, "Autograph");
 assert.equal(curryOfficialAuto.identity_fields.observable_components.includes("auto"), true);
 assert.equal(rows.some((row) => row.identity_fields.card_number === "BAD"), false);
 
+const baseballOfficialRows = parseOfficialChecklistText("Base Set Checklist\n17 Shohei Ohtani, Los Angeles Dodgers", {
+  sourceName: "2025 Topps Chrome Baseball Checklist",
+  provider: "topps"
+});
+assert.equal(baseballOfficialRows.length, 1);
+assert.equal(baseballOfficialRows[0].identity_fields.sport, "baseball");
+assert.equal(baseballOfficialRows[0].identity_fields.manufacturer, "Topps");
+assert.deepEqual(baseballOfficialRows[0].identity_fields.players, ["Shohei Ohtani"]);
+assert.equal(baseballOfficialRows[0].physical_instance_fields.serial_number, undefined);
+assert.equal(baseballOfficialRows[0].physical_instance_fields.card_grade, undefined);
+
+const paniniOfficialRows = parseOfficialChecklistText("Downtown\nDT-CC Caitlin Clark, Indiana Fever", {
+  sourceName: "2024 Panini Prizm Basketball Checklist",
+  provider: "panini"
+});
+assert.equal(paniniOfficialRows[0].identity_fields.sport, "basketball");
+assert.equal(paniniOfficialRows[0].identity_fields.manufacturer, "Panini");
+assert.equal(paniniOfficialRows[0].identity_fields.checklist_code, "DT-CC");
+assert.deepEqual(paniniOfficialRows[0].identity_fields.players, ["Caitlin Clark"]);
+
+const upperDeckOfficialRows = parseOfficialChecklistText("Base Set Checklist\n1\tConnor Bedard\tChicago Blackhawks", {
+  sourceName: "2024-25 Upper Deck Hockey Series One Checklist",
+  provider: "upper_deck"
+});
+assert.equal(upperDeckOfficialRows[0].identity_fields.sport, "hockey");
+assert.equal(upperDeckOfficialRows[0].identity_fields.manufacturer, "Upper Deck");
+assert.deepEqual(upperDeckOfficialRows[0].identity_fields.players, ["Connor Bedard"]);
+
 const importReport = await buildToppsBasketballChecklistImport({
   indexUrl: "https://www.topps.com/pages/checklists",
   fetchImpl: async (url) => {
@@ -221,6 +260,29 @@ const importReport = await buildToppsBasketballChecklistImport({
 assert.equal(importReport.metrics.topps_basketball_link_count, 2);
 assert.equal(importReport.metrics.topps_file_download_count, 2);
 assert.equal(importReport.metrics.catalog_card_count, 4);
+
+const officialImportReport = await buildOfficialChecklistImport({
+  indexUrl: "https://www.paniniamerica.net/checklists.html",
+  provider: "panini",
+  category: "basketball",
+  sourceUrls: [
+    {
+      href: "https://www.paniniamerica.net/checklists/2024-prizm-basketball.txt",
+      text: "2024 Panini Prizm Basketball Checklist"
+    }
+  ],
+  fetchImpl: async () => new Response("Downtown\nDT-CC Caitlin Clark, Indiana Fever", {
+    status: 200,
+    headers: {
+      "content-type": "text/plain"
+    }
+  })
+});
+assert.equal(officialImportReport.metrics.official_source_type, "PANINI_OFFICIAL_CHECKLIST");
+assert.equal(officialImportReport.sources[0].source_type, "PANINI_OFFICIAL_CHECKLIST");
+assert.equal(officialImportReport.sources[0].source_status, "OFFICIAL_CHECKLIST_RAW");
+assert.equal(officialImportReport.staging.length, 1);
+assert.equal(officialImportReport.staging[0].staging.identity_fields.manufacturer, "Panini");
 
 const officialImportDryRun = await importToppsBasketballChecklists({
   argv: [
@@ -302,6 +364,48 @@ assert.equal(providerResult.candidates.length, 1);
 assert.equal(providerResult.candidates[0].provider_id, retrievalProviderIds.CATALOG);
 assert.equal(providerResult.candidates[0].fields.serial_number, "/50");
 assert.equal(providerResult.candidates[0].reference_metadata.expected_serial_denominator, "50");
+
+const officialProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([
+    {
+      identity_id: "22222222-2222-2222-2222-222222222222",
+      canonical_title: "2024 Panini Prizm Basketball Caitlin Clark Downtown #DT-CC",
+      identity_key: "basketball:2024:Panini Prizm Basketball:Downtown:Caitlin Clark:DT-CC",
+      fields: {
+        category: "basketball",
+        year: "2024",
+        manufacturer: "Panini",
+        product: "Panini Prizm Basketball",
+        set: "Downtown",
+        players: ["Caitlin Clark"],
+        checklist_code: "DT-CC"
+      },
+      retrieval_status: "registry",
+      category: "basketball",
+      source_type: "PANINI_OFFICIAL_CHECKLIST",
+      source_status: "OFFICIAL_CHECKLIST_RAW",
+      supporting_fields: ["checklist_code", "players", "product"],
+      raw_score: 0.88,
+      normalized_score: 0.88,
+      expected_serial_denominator: null
+    }
+  ]), { status: 200 })
+});
+const officialProviderResult = await officialProvider.search({
+  query: {
+    exact_checklist_code: "DT-CC",
+    exact_subject: "Caitlin Clark",
+    exact_product: "Panini Prizm Basketball"
+  }
+});
+assert.equal(officialProviderResult.candidates[0].source_type, "OFFICIAL_CHECKLIST");
+assert.equal(officialProviderResult.candidates[0].trust_tier, 2);
+assert.equal(officialProviderResult.candidates[0].reference_metadata.source_type, "PANINI_OFFICIAL_CHECKLIST");
 
 const planned = planRetrievalQueries({
   resolved: {
