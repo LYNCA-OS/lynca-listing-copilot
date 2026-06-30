@@ -6,7 +6,7 @@ import {
 import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
 
 const apiCostPerRequest = 0.003;
-const maxTitleLength = 80;
+const maxTitleLength = 85;
 const MAX_CONCURRENT_WORKERS = 6;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;

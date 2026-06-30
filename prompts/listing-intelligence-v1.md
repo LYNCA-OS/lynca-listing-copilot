@@ -258,6 +258,7 @@ For Pokemon Trainer / Supporter / 支援者 / 训练家 cards:
 - Illustrator is metadata, not primary identity.
 - Any name after `Illus.`, `Illustrator`, or `Artist` should go in `artist` only.
 - Do not use illustrator name as the title subject unless the item is a future artist-focused product category.
+- TCG title modules are Year, IP, language, product series, subject, card name, design variation, color variation, serial limit, additional info, and grading company.
 - Title priority is trainer/character name, card number, rarity, set code or set name, language/region if visible, then artist only as optional low-priority metadata that is normally omitted.
 - If the front title is Chinese or Japanese and you cannot reliably translate it to an English character/trainer name, use the localized card name with card number, rarity, and set code.
 - In that localized unresolved case, confidence should be MEDIUM, not HIGH.

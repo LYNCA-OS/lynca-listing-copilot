@@ -18,13 +18,14 @@ const wemby = renderListingPresentation({
   maxLength: 80
 });
 
-assert.equal(wemby.final_title, "2023-24 Panini Prizm Victor Wembanyama Gold RC 31/50 PSA 10");
+assert.equal(wemby.final_title, "2023-24 Panini Prizm Victor Wembanyama Gold /50 RC PSA 10");
 assert.ok(wemby.final_title.length <= 80);
-assert.match(wemby.final_title, /31\/50/);
+assert.match(wemby.final_title, /\/50/);
+assert.doesNotMatch(wemby.final_title, /31\/50/);
 assert.match(wemby.final_title, /PSA 10$/);
 assert.equal((wemby.final_title.match(/\bRC\b/g) || []).length, 1);
 assert.equal(wemby.modules.variant_parallel_rarity.text, "Gold RC");
-assert.equal(wemby.modules.number_serial_grade.text, "31/50 · PSA 10");
+assert.equal(wemby.modules.number_serial_grade.text, "/50 · PSA 10");
 
 const ohtaniChrome = renderListingPresentation({
   resolved: {
@@ -110,7 +111,8 @@ const ronaldoCompact = renderResolvedTitle({
 });
 assert.ok(ronaldoCompact.rendered_title.length <= 80);
 assert.match(ronaldoCompact.rendered_title, /Cristiano Ronaldo/i);
-assert.match(ronaldoCompact.rendered_title, /91\/99/);
+assert.match(ronaldoCompact.rendered_title, /\/99/);
+assert.doesNotMatch(ronaldoCompact.rendered_title, /91\/99/);
 assert.match(ronaldoCompact.rendered_title, /BGS 8\.5\/8$/);
 
 const duplicateAutoGrade = renderResolvedTitle({
@@ -175,7 +177,8 @@ assert.ok(psaDnaCardOnlyAutoRelic.rendered_title.length <= 80);
 assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /Kobe Bryant/i);
 assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /\bAuto\b/i);
 assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /\bRelic\b/i);
-assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /08\/25/);
+assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /\/25/);
+assert.doesNotMatch(psaDnaCardOnlyAutoRelic.rendered_title, /08\/25/);
 assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /PSA 10$/);
 assert.doesNotMatch(psaDnaCardOnlyAutoRelic.rendered_title, /PSA\/DNA 10$/);
 
@@ -205,7 +208,7 @@ const prizmFifaNoDuplicateBrand = renderResolvedTitle({
 }, {
   maxLength: 80
 });
-assert.equal(prizmFifaNoDuplicateBrand.rendered_title, "2025-26 Panini Prizm FIFA Soccer Lionel Messi Club Legends 029/199 Auto #CL-LM");
+assert.equal(prizmFifaNoDuplicateBrand.rendered_title, "2025-26 Panini Prizm FIFA Soccer Lionel Messi Club Legends /199 Auto");
 assert.doesNotMatch(prizmFifaNoDuplicateBrand.rendered_title, /Prizm\s+Prizm/i);
 
 const tripleThreadsLongMultiplayer = renderResolvedTitle({
@@ -264,7 +267,7 @@ const insertCardType = renderResolvedTitle({
 }, {
   maxLength: 80
 });
-assert.equal(insertCardType.rendered_title, "2025 Topps Finest Shohei Ohtani Gusto 5/5");
+assert.equal(insertCardType.rendered_title, "2025 Topps Finest Shohei Ohtani Gusto /5");
 
 const setAlreadyCarriesInsert = renderResolvedTitle({
   year: "2025",
@@ -280,7 +283,7 @@ const setAlreadyCarriesInsert = renderResolvedTitle({
   maxLength: 80
 });
 assert.doesNotMatch(setAlreadyCarriesInsert.rendered_title, /Gusto.*Gusto/i);
-assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani 5/5 #G-11");
+assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani /5");
 
 const brandProductOverlapKeepsSet = renderResolvedTitle({
   year: "2025",
@@ -314,6 +317,40 @@ assert.match(sportSuffixProductKeepsSet.rendered_title, /\bDonruss Throwback\b/)
 assert.doesNotMatch(sportSuffixProductKeepsSet.rendered_title, /Football/i);
 assert.doesNotMatch(sportSuffixProductKeepsSet.rendered_title, /Donruss Donruss/i);
 
+const teamIncludedOnlyWhenRoom = renderResolvedTitle({
+  year: "2025",
+  brand: "Topps",
+  product: "Finest",
+  set: "Gusto",
+  players: ["Shohei Ohtani"],
+  serial_number: "5/5",
+  team: "Los Angeles Dodgers"
+}, {
+  maxLength: 85
+});
+assert.match(teamIncludedOnlyWhenRoom.rendered_title, /\bDodgers\b/);
+assert.ok(teamIncludedOnlyWhenRoom.rendered_title.length <= 85);
+
+const teamOmittedWhenTitleWouldOverflow = renderResolvedTitle({
+  year: "2025-26",
+  brand: "Topps",
+  product: "Topps Chrome Basketball",
+  players: ["Victor Wembanyama"],
+  insert: "Next Stop Signatures",
+  parallel_exact: "Purple Wave Refractor",
+  serial_number: "12/50",
+  rc: true,
+  auto: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY",
+  team: "San Antonio Spurs"
+}, {
+  maxLength: 85
+});
+assert.ok(teamOmittedWhenTitleWouldOverflow.rendered_title.length <= 85);
+assert.doesNotMatch(teamOmittedWhenTitleWouldOverflow.rendered_title, /San Antonio|Spurs/i);
+
 const productAlreadyCarriesInsert = renderResolvedTitle({
   year: "2010-11",
   brand: "Panini",
@@ -332,7 +369,7 @@ const productAlreadyCarriesInsert = renderResolvedTitle({
   maxLength: 80
 });
 assert.doesNotMatch(productAlreadyCarriesInsert.rendered_title, /Hoopla.*Hoopla/i);
-assert.equal(productAlreadyCarriesInsert.rendered_title, "2010-11 Panini Absolute Hoopla Kobe Bryant Auto Patch 08/25 PSA 10");
+assert.equal(productAlreadyCarriesInsert.rendered_title, "2010-11 Panini Absolute Hoopla Kobe Bryant Auto Patch /25 PSA 10");
 
 const duplicatePsaCardAndAutoGrade = renderResolvedTitle({
   year: "2020",
@@ -373,7 +410,8 @@ assert.match(tripleThreadsMultiPlayer.rendered_title, /Triple Threads/i);
 assert.match(tripleThreadsMultiPlayer.rendered_title, /Aaron/i);
 assert.match(tripleThreadsMultiPlayer.rendered_title, /Griffey/i);
 assert.match(tripleThreadsMultiPlayer.rendered_title, /Trout/i);
-assert.match(tripleThreadsMultiPlayer.rendered_title, /6\/9/);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /\/9/);
+assert.doesNotMatch(tripleThreadsMultiPlayer.rendered_title, /6\/9/);
 assert.match(tripleThreadsMultiPlayer.rendered_title, /BGS 9\/10$/);
 
 const flangLongParallel = renderResolvedTitle({
@@ -411,6 +449,19 @@ const complexSurfaceColorDoesNotPolluteKnownParallel = renderResolvedTitle({
 assert.match(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /\bRed\b/);
 assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /Red Refractor/);
 assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, new RegExp("Red/Orange/Blue"));
+
+const oneOfOneSerialLimitPreserved = renderResolvedTitle({
+  year: "2024",
+  brand: "Topps",
+  product: "Chrome",
+  players: ["Michael Jackson"],
+  serial_number: "01/01",
+  one_of_one: true
+}, {
+  maxLength: 85
+});
+assert.match(oneOfOneSerialLimitPreserved.rendered_title, /1\/1/);
+assert.doesNotMatch(oneOfOneSerialLimitPreserved.rendered_title, /01\/01/);
 
 const simpleSurfaceColorDoesNotAutoCompleteParallelFamily = renderResolvedTitle({
   year: "2025",
@@ -493,7 +544,8 @@ const longTitle = renderResolvedTitle({
   maxLength: 80
 });
 assert.ok(longTitle.rendered_title.length <= 80);
-assert.match(longTitle.rendered_title, /01\/25/);
+assert.match(longTitle.rendered_title, /\/25/);
+assert.doesNotMatch(longTitle.rendered_title, /01\/25/);
 assert.match(longTitle.rendered_title, /PSA 10$/);
 
 const pokemon = renderListingPresentation({
@@ -514,6 +566,32 @@ assert.match(pokemon.final_title, /#257\/208/);
 assert.match(pokemon.final_title, /SAR/);
 assert.doesNotMatch(pokemon.final_title, /En Morikura/i);
 assert.doesNotMatch(pokemon.final_title, /[\u4e00-\u9fff]/);
+
+const onePieceTcg = renderListingPresentation({
+  resolved: {
+    category: "TCG",
+    brand: "Bandai",
+    product: "One Piece Card Game",
+    set: "OP-09",
+    language: "jp",
+    character: "Monkey D. Luffy",
+    card_name: "Gear 5",
+    surface_color: "Gold",
+    serial_number: "12/100",
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 85
+});
+assert.equal(onePieceTcg.renderer, "pokemon");
+assert.match(onePieceTcg.final_title, /One Piece/i);
+assert.match(onePieceTcg.final_title, /\bJP\b/);
+assert.match(onePieceTcg.final_title, /Monkey D\. Luffy/i);
+assert.match(onePieceTcg.final_title, /Gear 5/i);
+assert.match(onePieceTcg.final_title, /\/100/);
+assert.doesNotMatch(onePieceTcg.final_title, /12\/100/);
+assert.match(onePieceTcg.final_title, /PSA 10$/);
 
 const localizedOnlyPokemon = renderListingPresentation({
   resolved: {

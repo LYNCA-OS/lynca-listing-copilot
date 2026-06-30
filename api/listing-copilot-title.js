@@ -24,6 +24,7 @@ import { evaluatePreProviderRescanGate } from "../lib/listing/image-quality/pre-
 import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
+import { serialLimitText } from "../lib/listing/renderer/title-cleanup.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
 import {
@@ -78,7 +79,7 @@ import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
 
 const cookieName = "lynca_metaverse_session";
-const maxFallbackTitleLength = 80;
+const maxFallbackTitleLength = 85;
 // Accept optional bounded derived crop images while keeping provider input capped.
 const defaultMaxPayloadImages = 14;
 const signedUrlConcurrency = 4;
@@ -329,6 +330,7 @@ const defaultFields = {
   lot_type: null,
   set: null,
   subset: null,
+  language: null,
   card_type: null,
   official_card_type: null,
   observable_components: [],
@@ -341,6 +343,7 @@ const defaultFields = {
   player: null,
   players: [],
   character: null,
+  card_name: null,
   artist: null,
   team: null,
   card_number: null,
@@ -444,6 +447,10 @@ function normalizeSerialText(value) {
     .replace(/\b(\d{1,4})\s*\/\s*(\d{1,4})\b/g, "$1/$2")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function serialLimitForTitle(value, fields = {}) {
+  return serialLimitText(value, { oneOfOne: fields.one_of_one });
 }
 
 function stripChecklistCardNumbers(title, fields = {}) {
@@ -671,7 +678,7 @@ function applySportsTitleGrammar(title, fields, maxLength) {
 
 function finalizeSportsTitle(title, fields, maxLength) {
   const requiredTerms = [
-    sportsTitleShouldRecoverSerial(fields, title) ? normalizeSerialText(fields.serial_number) : null,
+    sportsTitleShouldRecoverSerial(fields, title) ? serialLimitForTitle(fields.serial_number, fields) : null,
     sportsTitleNeedsRc(fields, title) ? "RC" : null
   ].filter(Boolean);
   let cleaned = ensureSportsRcMarker(cleanupTitleWording(title, maxLength * 2), fields);
@@ -789,7 +796,7 @@ function sportsTitleShouldRecoverSerial(fields, title) {
 }
 
 function repairOrphanAutoGradeSuffix(title, fields, maxLength) {
-  const serial = normalizeSerialText(fields.serial_number || "");
+  const serial = serialLimitForTitle(fields.serial_number || "", fields);
   if (/^\/\d+(?:\.\d+)?$/.test(serial)) return title;
 
   const repaired = String(title || "")
@@ -839,7 +846,11 @@ function rawIncludes(value, needle) {
 }
 
 function titleIncludesSerial(title, fields) {
-  return Boolean(fields.serial_number && rawIncludes(normalizeSerialText(title), normalizeSerialText(fields.serial_number)));
+  const serial = normalizeSerialText(fields.serial_number);
+  const limit = serialLimitForTitle(fields.serial_number, fields);
+  const normalizedTitle = normalizeSerialText(title);
+  return Boolean(serial && rawIncludes(normalizedTitle, serial))
+    || Boolean(limit && rawIncludes(normalizedTitle, limit));
 }
 
 function ensureTitleTerm(title, term) {
@@ -1077,6 +1088,7 @@ function normalizeFields(fields = {}) {
     lot_type: normalizeStringOrNull(fields.lot_type ?? fields.lotType),
     set: normalizeStringOrNull(fields.set),
     subset: normalizeStringOrNull(normalizeRookieMarker(fields.subset)),
+    language: normalizeStringOrNull(fields.language),
     card_type: normalizeStringOrNull(fields.card_type || fields.cardType || fields.type),
     official_card_type: normalizeStringOrNull(fields.official_card_type || fields.officialCardType),
     observable_components: observableComponents,
@@ -1089,6 +1101,7 @@ function normalizeFields(fields = {}) {
     player: players.join(" / ") || cleanPlayerNameForFields(fields.player) || null,
     players,
     character: normalizeStringOrNull(fields.character),
+    card_name: normalizeStringOrNull(fields.card_name || fields.cardName || fields.name),
     artist: normalizeStringOrNull(fields.artist),
     team: normalizeStringOrNull(fields.team),
     card_number: normalizeStringOrNull(fields.card_number),
@@ -1765,7 +1778,7 @@ function auditMissingHighValueFields(title, fields) {
     missing.push("year");
   }
 
-  if (fields.serial_number && !titleText.includes(searchable(fields.serial_number))) {
+  if (fields.serial_number && !titleIncludesSerial(title, fields)) {
     missing.push("serial");
   }
 
@@ -1949,7 +1962,7 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
     fields.product === "Topps Cosmic Chrome" ? "Cosmic Chrome" : null,
     highValueInsert,
     fields.parallel === "Platinum" ? "Platinum" : null,
-    titleIncludesSerial(rawTitle, fields) ? normalizeSerialText(fields.serial_number) : null,
+    titleIncludesSerial(rawTitle, fields) ? serialLimitForTitle(fields.serial_number, fields) : null,
     fields.one_of_one ? "1/1" : null,
     fields.grade_company && fields.grade ? `${fields.grade_company} ${String(fields.grade).match(/\d+(?:\.\d+)?/)?.[0] || fields.grade}` : null,
     fields.grade_company && /auto/i.test(String(result.title || "")) && /auto\s*10/i.test(String(result.title || "")) ? "Auto 10" : null
@@ -2521,7 +2534,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "Goal: extract grounded identity evidence; deterministic code will render the English title.",
     "Fill every directly visible core field. Missing serial, grade, or exact parallel must not erase visible year, product, set, or players.",
     "Leave only unreadable or uncertain high-risk fields empty.",
-    "Use this shared field module order: Year -> Franchise/Brand -> Product/Set -> Subject -> Card Type -> Variant/Parallel/Rarity -> Number/Serial/Grade.",
+    "Use these title modules downstream: SPORTSCARD = Year -> Manufacturer/Product -> Subject -> Card Name -> Design Variation -> Color Variation -> Serial Limit -> RC -> Auto -> Grading Company -> Team; TCG = Year -> IP -> language -> Product Series -> Subject -> Card Name -> Design Variation -> Color Variation -> Serial Limit -> Additional Info -> Grading Company.",
     "Do not cross module boundaries: serial numbers are not grades, grade-label words are not checklist codes, product names are not player names, and visual color alone is surface_color rather than exact parallel.",
     "If a card has front and back images, combine them into one identity when they are the same card.",
     "Slab label rule: if a PSA/BGS/SGC/CGC label is visible, read it first and map label lines directly into year, product, players, collector_number/checklist_code, grade_company, card_grade, grade_type, insert, variation, and auto.",
@@ -2533,7 +2546,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- Keep field_evidence compact. Only include short evidence for non-empty high-risk fields or fields that may need writer review.",
     "- Do not dump OCR lines, legal text, copyright text, or repeated boilerplate into field_evidence.",
     "- Each evidence entry should include value, support_type/source_type, short visible_text/raw_text when useful, confidence, review_required, and direct_observation/directly_observed.",
-    "- Core/high-risk evidence fields include year, product, set, players, official_card_type, observable_components, insert, surface_color, parallel_exact, serial_number, collector_number, checklist_code, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
+    "- Core/high-risk evidence fields include year, product, set, language, players, character, card_name, official_card_type, observable_components, insert, surface_color, parallel_exact, serial_number, collector_number, checklist_code, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
     "- official_card_type must stay empty unless official wording is printed on the card/slab or supplied by trusted catalog/reviewed input. Never infer Base from visual context.",
     "- observable_components may include only directly visible components: auto, patch, relic, jersey, rc, sketch, redemption.",
     "- year: include field_evidence.year with value, support_type, visible_text, confidence, and review_required. Use support_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
@@ -2542,7 +2555,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
     "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
-    "Serial rule: every digit must be readable; otherwise serial_number must be empty.",
+    "Serial rule: every digit must be readable; otherwise serial_number must be empty. Deterministic title rendering will remove the instance numerator and publish only the serial limit such as /50; do not move serial_number into collector_number or checklist_code.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
     "Sapphire discipline: Topps Chrome Sapphire or Bowman Chrome Sapphire is a product/set phrase when visibly attached to the Chrome product line; keep the full phrase in product or set. Non-product Sapphire such as Heir Apparent Sapphire is exact parallel/taxonomy wording and must stay out of final fields unless catalog/printed label evidence directly supports it.",
     "Open-set taxonomy rule: without prompt-safe catalog/vector candidates, do not put Tiger, Zebra, Sapphire, Refractor, Wave, Shimmer, Mojo, Prizm, Sparkle, Holo, or similar optical pattern words in insert/card_type/parallel fields; leave them unresolved for writer/catalog confirmation.",
@@ -2573,7 +2586,9 @@ function providerMinimalOutputShape({
       brand: "",
       product: "",
       set: "",
+      language: "",
       players: [],
+      card_name: "",
       card_type: "",
       official_card_type: "",
       observable_components: [],
@@ -4384,8 +4399,11 @@ function gradeTokenFromCurrentFields(fields = {}) {
 function appendCurrentInstanceTerms(title, currentFields = {}, currentTitle = "") {
   let output = String(title || "").replace(/\s+/g, " ").trim();
   const serial = normalizeSerialText(currentFields.serial_number || "");
-  if (/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(serial) && !titleIncludesSerial(output, { serial_number: serial })) {
-    output = `${output} ${serial}`.trim();
+  const serialLimit = serialLimitForTitle(serial, currentFields);
+  if ((/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(serial) || /^\/\d{1,4}\b/.test(serialLimit))
+    && serialLimit
+    && !titleIncludesSerial(output, { ...currentFields, serial_number: serial })) {
+    output = `${output} ${serialLimit}`.trim();
   }
   const grade = gradeTokenFromCurrentFields(currentFields) || gradeTokenFromCurrentTitle(currentTitle);
   if (grade && !rawIncludes(output, grade)) output = `${output} ${grade}`.trim();
