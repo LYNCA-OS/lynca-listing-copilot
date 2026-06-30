@@ -16,6 +16,10 @@ assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, 
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
 assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to front/back paired recognition");
 assert.match(html, /name="assetMode" value="pair" checked/, "front/back paired recognition should be the checked default control");
+assert.match(js, /sideDecisionForAsset/, "frontend should compute a visible front/back decision after recognition");
+assert.match(js, /sideDecisionNotice\(asset, result\)/, "result cards should show the final front/back decision");
+assert.match(js, /source_image_id/, "front/back decision should use provider evidence image ids when available");
+assert.match(js, /EVIDENCE_SWAPPED/, "front/back decision should detect when upload order appears swapped");
 assert.match(js, /body\.provider = provider/, "title requests should include the selected provider");
 assert.match(js, /defaultProviderOptions/, "frontend should centralize default provider options");
 assert.match(js, /single_model_fast:\s*false/, "frontend default path should not skip evidence completion");
@@ -152,6 +156,9 @@ assert.match(css, /\.provider-option:disabled/, "disabled providers should rende
 assert.match(css, /\.writer-modules/, "writer-facing modules should have a compact layout");
 assert.match(css, /\.writer-module\.needs-review/, "module review state should be visible");
 assert.match(css, /\.writer-module\.needs-review textarea/, "low-confidence module blocks should highlight the entire editable block");
+assert.match(css, /\.side-decision-panel/, "front/back decision should have a visible result panel");
+assert.match(css, /\.side-decision-panel\.side-confirmed/, "confirmed front/back decisions should be visually distinct");
+assert.match(css, /\.side-decision-panel\.side-swapped/, "swapped front/back decisions should be visually distinct");
 assert.match(css, /\.module-token-row/, "module token confidence row should have stable layout");
 assert.match(css, /\.module-token\.needs-review/, "low-confidence module tokens should be yellow-highlighted");
 assert.match(css, /transition: width 900ms/, "progress bar width should animate slowly instead of jumping");

@@ -1132,6 +1132,97 @@ h3 {
   font-weight: 700;
 }
 
+.side-decision-panel {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  gap: 8px 12px;
+  align-items: center;
+  margin: 8px 0;
+  border: 1px solid rgba(240, 200, 117, 0.54);
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: rgba(240, 200, 117, 0.1);
+}
+
+.side-decision-panel > div {
+  min-width: 0;
+}
+
+.side-decision-panel span {
+  display: block;
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.side-decision-panel strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.side-decision-panel ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.side-decision-panel li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.side-decision-panel b {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.side-decision-panel em {
+  color: var(--ink);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.side-decision-panel small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.side-decision-panel.side-confirmed {
+  border-color: rgba(112, 214, 159, 0.54);
+  background: rgba(112, 214, 159, 0.09);
+}
+
+.side-decision-panel.side-confirmed strong {
+  color: var(--green);
+}
+
+.side-decision-panel.side-swapped {
+  border-color: rgba(255, 176, 114, 0.72);
+  background: rgba(255, 176, 114, 0.12);
+}
+
+.side-decision-panel.side-swapped strong {
+  color: var(--orange);
+}
+
 .title-override-note {
   display: flex;
   align-items: center;

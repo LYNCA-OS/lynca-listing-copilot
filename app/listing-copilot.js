@@ -1148,11 +1148,6 @@ function renderBatchTitles() {
   `).join("");
 }
 
-function imageSideLabel(imageIndex) {
-  if (state.mode !== "pair") return "图片 Image";
-  return `图片 ${imageIndex + 1} · 系统判正背`;
-}
-
 function cropRegionLabel(region = "") {
   return reviewFieldLabels[region] || String(region || "").replace(/_/g, " ") || "Field Crop";
 }
@@ -1161,12 +1156,216 @@ function modalImagesForAsset(asset = {}) {
   return asset.images || [];
 }
 
-function imagePreviewLabel(image, imageIndex) {
-  return imageSideLabel(imageIndex);
+function evidenceEntriesFromContainer(container) {
+  if (!container) return [];
+  if (Array.isArray(container)) return container.flatMap(evidenceEntriesFromContainer);
+  if (typeof container !== "object") return [];
+  const directEntryKeys = [
+    "field",
+    "source_image_id",
+    "sourceImageId",
+    "source_type",
+    "sourceType",
+    "source_region",
+    "sourceRegion",
+    "image_role",
+    "imageRole",
+    "raw_text",
+    "visible_text",
+    "value"
+  ];
+  const isDirectEntry = directEntryKeys.some((key) => Object.prototype.hasOwnProperty.call(container, key));
+  if (isDirectEntry) return [container];
+  return Object.entries(container).flatMap(([field, value]) => {
+    return evidenceEntriesFromContainer(value).map((entry) => ({
+      field: entry.field || field,
+      ...entry
+    }));
+  });
+}
+
+function evidenceEntriesForSideDecision(result = {}) {
+  return [
+    result.field_evidence,
+    result.evidence?.field_evidence,
+    result.generated_evidence?.field_evidence,
+    result.evidence,
+    result.generated_evidence
+  ].flatMap(evidenceEntriesFromContainer);
+}
+
+function sourceImageIdForEvidence(entry = {}) {
+  return String(
+    entry.source_image_id
+      || entry.sourceImageId
+      || entry.image_id
+      || entry.imageId
+      || entry.crop_metadata?.source_image_id
+      || entry.cropMetadata?.sourceImageId
+      || ""
+  ).trim();
+}
+
+function imageIndexByEvidenceId(asset = {}) {
+  const indexById = new Map();
+  (asset.images || []).forEach((image, index) => {
+    if (image.id) indexById.set(String(image.id), index);
+  });
+  (asset.providerImages || []).forEach((image) => {
+    const sourceImageId = image.sourceImageId
+      || image.source_image_id
+      || image.cropMetadata?.source_image_id
+      || image.crop_metadata?.source_image_id
+      || "";
+    if (image.id && indexById.has(String(sourceImageId))) {
+      indexById.set(String(image.id), indexById.get(String(sourceImageId)));
+    }
+  });
+  return indexById;
+}
+
+function sideCueScore(entry = {}) {
+  const field = String(entry.field || "").toLowerCase();
+  const source = [
+    entry.source_type,
+    entry.sourceType,
+    entry.source_region,
+    entry.sourceRegion,
+    entry.image_role,
+    entry.imageRole,
+    entry.region,
+    entry.raw_text,
+    entry.visible_text,
+    entry.evidence_kind
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  const score = { front: 0, back: 0 };
+  if (/\bfront\b|card_front|front_printed|obverse/.test(source)) score.front += 5;
+  if (/\bback\b|card_back|back_printed|reverse|checklist|copyright/.test(source)) score.back += 5;
+
+  if (["players", "player", "subject", "subjects", "character", "card_name", "surface_color", "parallel_exact", "parallel", "variant_or_parallel", "auto", "rc"].includes(field)) {
+    score.front += 2;
+  }
+  if (["year", "season_year", "product_year", "product", "product_or_set", "set", "collector_number", "checklist_code"].includes(field)) {
+    score.back += 2;
+  }
+  if (["serial_number", "grade_company", "card_grade", "grade", "auto_grade"].includes(field)) {
+    score.front += 1;
+    score.back += 1;
+  }
+  return score;
+}
+
+function sideDecisionForAsset(asset = null, result = null) {
+  if (!asset || state.mode !== "pair") return [];
+  const images = asset.images || [];
+  if (!images.length) return [];
+
+  const scores = images.map((image, imageIndex) => ({
+    imageIndex,
+    side: imageIndex === 0 ? "front" : "back",
+    front: 0,
+    back: 0,
+    source: "POSITIONAL",
+    confidence: "LOW",
+    reason: "按上传顺序判断，写手确认即可"
+  }));
+
+  const indexById = imageIndexByEvidenceId(asset);
+  evidenceEntriesForSideDecision(result || {}).forEach((entry) => {
+    const evidenceImageId = sourceImageIdForEvidence(entry);
+    if (!evidenceImageId || !indexById.has(evidenceImageId)) return;
+    const index = indexById.get(evidenceImageId);
+    const cue = sideCueScore(entry);
+    scores[index].front += cue.front;
+    scores[index].back += cue.back;
+  });
+
+  if (scores.length === 1) {
+    return [{
+      ...scores[0],
+      side: scores[0].front >= scores[0].back ? "front" : "back",
+      confidence: scores[0].front || scores[0].back ? "MEDIUM" : "LOW"
+    }];
+  }
+
+  const two = scores.slice(0, 2);
+  const naturalScore = two[0].front + two[1].back;
+  const swappedScore = two[0].back + two[1].front;
+  const hasEvidence = two.some((item) => item.front + item.back > 0);
+  const useSwapped = hasEvidence && swappedScore >= naturalScore + 4;
+  const strongNatural = hasEvidence && naturalScore >= swappedScore + 4;
+  const sideByIndex = useSwapped ? ["back", "front"] : ["front", "back"];
+  const confidence = useSwapped || strongNatural ? "HIGH" : hasEvidence ? "MEDIUM" : "LOW";
+  const source = useSwapped ? "EVIDENCE_SWAPPED" : strongNatural ? "EVIDENCE_CONFIRMED" : hasEvidence ? "EVIDENCE_WEAK" : "POSITIONAL";
+  const reason = {
+    EVIDENCE_SWAPPED: "证据显示上传顺序可能反了，系统已校正",
+    EVIDENCE_CONFIRMED: "正背面证据与上传顺序一致",
+    EVIDENCE_WEAK: "有部分正背面证据，但仍建议写手确认",
+    POSITIONAL: "未取得足够正背面证据，暂按上传顺序判断"
+  }[source];
+
+  return scores.map((item, index) => ({
+    ...item,
+    side: sideByIndex[index] || item.side,
+    confidence,
+    source,
+    reason
+  }));
+}
+
+function sideDisplayName(side = "") {
+  if (side === "front") return "正面 Front";
+  if (side === "back") return "背面 Back";
+  return "未判断";
+}
+
+function imageSideLabel(imageIndex, asset = null, result = null) {
+  if (state.mode !== "pair") return "图片 Image";
+  if (!result) return `图片 ${imageIndex + 1} · 生成后判断正背`;
+  const decision = sideDecisionForAsset(asset, result).find((item) => item.imageIndex === imageIndex);
+  if (decision) return `图片 ${imageIndex + 1} · ${sideDisplayName(decision.side)}`;
+  return `图片 ${imageIndex + 1} · 生成后判断正背`;
+}
+
+function imagePreviewLabel(image, imageIndex, asset = null, result = null) {
+  return imageSideLabel(imageIndex, asset, result);
 }
 
 function fieldCropStrip(asset) {
   return "";
+}
+
+function sideDecisionNotice(asset = null, result = null) {
+  const decisions = sideDecisionForAsset(asset, result);
+  if (state.mode !== "pair" || !decisions.length) return "";
+  const source = decisions[0]?.source || "POSITIONAL";
+  const confidence = decisions[0]?.confidence || "LOW";
+  const reason = decisions[0]?.reason || "";
+  const confidenceLabel = {
+    HIGH: "证据充分",
+    MEDIUM: "部分证据",
+    LOW: "需确认"
+  }[confidence] || "需确认";
+  const sourceClass = source === "EVIDENCE_SWAPPED" ? "side-swapped" : confidence === "HIGH" ? "side-confirmed" : "side-review";
+
+  return `
+    <div class="side-decision-panel ${sourceClass}">
+      <div>
+        <span>系统正背面判断</span>
+        <strong>${escapeHtml(confidenceLabel)}</strong>
+      </div>
+      <ul>
+        ${decisions.map((decision) => `
+          <li>
+            <b>图片 ${decision.imageIndex + 1}</b>
+            <em>${escapeHtml(sideDisplayName(decision.side))}</em>
+          </li>
+        `).join("")}
+      </ul>
+      <small>${escapeHtml(reason)}</small>
+    </div>
+  `;
 }
 
 function renderAssetRows() {
@@ -1226,16 +1425,16 @@ function assetRowHtml(asset) {
         <div class="asset-source">
           <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
             ${asset.images.map((image, imageIndex) => `
-              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开${escapeHtml(imageSideLabel(imageIndex))}预览">
+              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开${escapeHtml(imageSideLabel(imageIndex, asset, result))}预览">
                 <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
-                <span>${imageSideLabel(imageIndex)}</span>
+                <span>${imageSideLabel(imageIndex, asset, result)}</span>
               </button>
             `).join("")}
           </div>
           <div class="preview-meta">
             <h3>资产 ${asset.index}</h3>
             ${asset.images.map((image, imageIndex) => `
-              <p class="file-name">${imageSideLabel(imageIndex)} · ${escapeHtml(image.name)}</p>
+              <p class="file-name">${imageSideLabel(imageIndex, asset, result)} · ${escapeHtml(image.name)}</p>
             `).join("")}
             <span>${assetCountLabel(asset.images.length)}</span>
             ${fieldCropStrip(asset)}
@@ -1548,6 +1747,7 @@ function resultBox(result, asset = null) {
           ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
         </div>
       </div>
+      ${sideDecisionNotice(asset, result)}
       <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || unavailableTitle)}</textarea>
       ${titleOverrideNotice(result)}
       ${moduleSummary(result)}
@@ -1850,10 +2050,11 @@ function renderImageModal() {
     return;
   }
 
+  const result = resultForAsset(asset);
   const modalImages = modalImagesForAsset(asset);
   const imageIndex = Math.min(state.modal.imageIndex, modalImages.length - 1);
   const image = modalImages[imageIndex];
-  const sideLabel = imagePreviewLabel(image, imageIndex);
+  const sideLabel = imagePreviewLabel(image, imageIndex, asset, result);
 
   elements.imageModalImage.src = image.dataUrl;
   elements.imageModalImage.alt = image.name;
@@ -1862,7 +2063,7 @@ function renderImageModal() {
   elements.imageModalFileName.textContent = image.name;
   elements.imageModalSwitcher.innerHTML = modalImages.map((assetImage, index) => `
     <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}">
-      ${escapeHtml(imagePreviewLabel(assetImage, index))}
+      ${escapeHtml(imagePreviewLabel(assetImage, index, asset, result))}
     </button>
   `).join("");
 }
