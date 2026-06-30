@@ -51,6 +51,7 @@ const state = {
   processing: false,
   activeAssetIndexes: new Set(),
   assetProgress: new Map(),
+  progressTimer: null,
   completedAssetCount: 0,
   processingTotal: 0
 };
@@ -112,6 +113,10 @@ async function mapWithConcurrency(items, limit, worker) {
 
   await Promise.all(Array.from({ length: workerCount }, runWorker));
   return results;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fileExtension(name) {
@@ -901,7 +906,7 @@ function currentProcessingPercent() {
   if (!state.processing || !total) return 0;
   const completed = clampNumber(state.completedAssetCount || 0, 0, total);
   const activeFraction = [...state.assetProgress.values()].reduce((sum, progress) => {
-    return sum + clampNumber(progress.fraction, 0, 0.98);
+    return sum + clampNumber(progress.displayFraction ?? progress.targetFraction ?? progress.fraction, 0, 0.98);
   }, 0);
   return Math.max(1, Math.min(99, Math.round(((completed + activeFraction) / total) * 100)));
 }
@@ -913,10 +918,19 @@ function statusWithProgress(message) {
 
 function setAssetProgress(assetIndex, label, fraction) {
   if (!state.processing) return;
+  const current = state.assetProgress.get(assetIndex) || {};
+  const targetFraction = clampNumber(fraction, 0.01, 0.98);
   state.assetProgress.set(assetIndex, {
     label,
-    fraction: clampNumber(fraction, 0.01, 0.98)
+    targetFraction,
+    displayFraction: clampNumber(
+      current.displayFraction ?? current.targetFraction ?? 0.005,
+      0.005,
+      Math.max(0.005, targetFraction)
+    ),
+    updatedAt: performance.now()
   });
+  startProgressTicker();
   renderResults();
   setStatus(statusWithProgress(`资产 ${assetIndex}：${label}`), { busy: true });
 }
@@ -925,12 +939,54 @@ function clearAssetProgress(assetIndex) {
   state.assetProgress.delete(assetIndex);
 }
 
+function progressStepForTarget(targetFraction) {
+  if (targetFraction <= 0.08) return 0.0028;
+  if (targetFraction <= 0.36) return 0.0045;
+  if (targetFraction <= 0.72) return 0.0032;
+  return 0.0024;
+}
+
+function stopProgressTicker() {
+  if (!state.progressTimer) return;
+  clearInterval(state.progressTimer);
+  state.progressTimer = null;
+}
+
+function startProgressTicker() {
+  if (state.progressTimer || !state.processing) return;
+  state.progressTimer = setInterval(() => {
+    if (!state.processing || !state.assetProgress.size) {
+      stopProgressTicker();
+      return;
+    }
+
+    let changed = false;
+    for (const [assetIndex, progress] of state.assetProgress.entries()) {
+      const target = clampNumber(progress.targetFraction ?? progress.fraction, 0.01, 0.98);
+      const display = clampNumber(progress.displayFraction ?? 0.005, 0.005, 0.98);
+      if (display >= target - 0.001) continue;
+      const nextDisplay = Math.min(target, display + progressStepForTarget(target));
+      state.assetProgress.set(assetIndex, {
+        ...progress,
+        displayFraction: nextDisplay
+      });
+      changed = true;
+    }
+
+    if (changed) {
+      renderResults();
+      setStatus(statusWithProgress("识别中，系统正在逐步读取模块…"), { busy: true });
+    }
+  }, 520);
+}
+
 function assetProgressSnapshot(asset) {
   const progress = state.assetProgress.get(asset.index);
   if (progress) {
     return {
       label: progress.label || "识别中",
-      percent: Math.max(1, Math.min(99, Math.round(clampNumber(progress.fraction, 0, 0.98) * 100)))
+      percent: Math.max(1, Math.min(99, Math.round(clampNumber(progress.displayFraction ?? progress.targetFraction ?? progress.fraction, 0, 0.98) * 100))),
+      targetPercent: Math.max(1, Math.min(99, Math.round(clampNumber(progress.targetFraction ?? progress.fraction, 0, 0.98) * 100)))
     };
   }
 
@@ -1190,16 +1246,30 @@ function assetRowHtml(asset) {
     `;
 }
 
-function pendingModuleSkeleton() {
-  const modules = ["Year", "Product", "Subject", "Card Name", "Color", "Serial", "Grade"];
+function pendingModuleSkeleton(progress = {}) {
+  const percent = Number(progress.percent || 0);
+  const modules = [
+    { label: "Year", threshold: 8 },
+    { label: "Product", threshold: 16 },
+    { label: "Subject", threshold: 24 },
+    { label: "Card Name", threshold: 34 },
+    { label: "Color", threshold: 46 },
+    { label: "Serial", threshold: 58 },
+    { label: "Grade", threshold: 70 }
+  ];
   return `
     <div class="pending-module-grid" aria-label="识别模块占位">
-      ${modules.map((label) => `
-        <span>
-          <b>${escapeHtml(label)}</b>
+      ${modules.map((module, index) => {
+        const active = percent >= module.threshold && percent < module.threshold + 12;
+        const done = percent >= module.threshold + 12;
+        const stateLabel = done ? "已读取" : active ? "读取中" : "等待";
+        return `
+        <span class="${done ? "module-done" : active ? "module-active" : "module-waiting"}" style="--module-delay:${index * 80}ms">
+          <b>${escapeHtml(module.label)}</b>
+          <em>${escapeHtml(stateLabel)}</em>
           <i aria-hidden="true"></i>
-        </span>
-      `).join("")}
+        </span>`;
+      }).join("")}
     </div>
   `;
 }
@@ -1227,7 +1297,7 @@ function pendingBox(asset) {
         <p>${escapeHtml(message)}</p>
         ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
         ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
-        ${isActive ? pendingModuleSkeleton() : ""}
+        ${isActive ? pendingModuleSkeleton(progress) : ""}
         ${isWorking ? `<span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` : ""}
       </div>
       <textarea readonly placeholder="等待生成可编辑英文标题。"></textarea>
@@ -1724,9 +1794,13 @@ function moduleSummary(result) {
   const order = Array.isArray(result.module_order) && result.module_order.length
     ? result.module_order
     : Object.keys(modules);
-  const visibleModules = order
+  let visibleModules = order
     .map((key) => modules[key])
     .filter(Boolean);
+  const revealCount = Number(result.moduleRevealCount);
+  if (Number.isFinite(revealCount) && revealCount >= 0) {
+    visibleModules = visibleModules.slice(0, Math.max(0, Math.min(visibleModules.length, revealCount)));
+  }
 
   if (!visibleModules.length) return "";
 
@@ -1742,6 +1816,26 @@ function moduleSummary(result) {
       `).join("")}
     </div>
   `;
+}
+
+function resultModuleCount(result) {
+  const modules = result?.modules || {};
+  const order = Array.isArray(result?.module_order) && result.module_order.length
+    ? result.module_order
+    : Object.keys(modules);
+  return order.map((key) => modules[key]).filter(Boolean).length;
+}
+
+async function revealResultModules(result) {
+  const count = resultModuleCount(result);
+  if (!count) return;
+  result.moduleRevealCount = 0;
+  renderResults();
+  for (let index = 1; index <= count; index += 1) {
+    await wait(index === 1 ? 120 : 180);
+    result.moduleRevealCount = index;
+    renderResults();
+  }
 }
 
 function currentModalAsset() {
@@ -1863,6 +1957,7 @@ async function handleFiles(fileList) {
   state.files = images;
   state.results = [];
   state.assetProgress = new Map();
+  stopProgressTicker();
   state.activeAssetIndexes = new Set();
   state.completedAssetCount = 0;
   state.processingTotal = 0;
@@ -2004,7 +2099,7 @@ async function processTitles() {
   renderResults();
   elements.processButton.disabled = true;
   setProcessButtonBusy(true);
-  setStatus("1% · 图片已准备，开始识别…", { busy: true });
+  setStatus("0% · 图片已准备，开始识别…", { busy: true });
 
   const queue = [...state.assets];
   const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
@@ -2020,6 +2115,8 @@ async function processTitles() {
       try {
         const result = await processAsset(asset);
         state.results.push(result);
+        state.results.sort((a, b) => a.index - b.index);
+        await revealResultModules(result);
       } catch (error) {
         state.results.push(failedResult(asset, error));
       }
@@ -2038,6 +2135,7 @@ async function processTitles() {
   state.processing = false;
   state.activeAssetIndexes = new Set();
   state.assetProgress = new Map();
+  stopProgressTicker();
   state.completedAssetCount = 0;
   state.processingTotal = 0;
   renderResults();
@@ -2450,6 +2548,7 @@ function resetTool() {
   state.processing = false;
   state.activeAssetIndexes = new Set();
   state.assetProgress = new Map();
+  stopProgressTicker();
   state.completedAssetCount = 0;
   state.processingTotal = 0;
   closeImageModal();

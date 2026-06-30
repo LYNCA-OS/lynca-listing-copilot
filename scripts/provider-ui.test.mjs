@@ -14,6 +14,8 @@ assert.match(js, /fetch\("\/api\/listing-provider-status"/, "frontend should loa
 assert.match(js, /state\.selectedProvider/, "frontend should keep selected provider in state");
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
+assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to front/back paired recognition");
+assert.match(html, /name="assetMode" value="pair" checked/, "front/back paired recognition should be the checked default control");
 assert.match(js, /body\.provider = provider/, "title requests should include the selected provider");
 assert.match(js, /defaultProviderOptions/, "frontend should centralize default provider options");
 assert.match(js, /single_model_fast:\s*false/, "frontend default path should not skip evidence completion");
@@ -132,6 +134,12 @@ assert.match(js, /function renderProviderControl\(\)[\s\S]*elements\.processButt
 assert.match(js, /processingCompletionStatus/, "batch completion should summarize success and failure counts");
 assert.match(js, /已完成：\$\{succeeded\} 个成功，\$\{failed\} 个失败/, "partial failures should produce an actionable completion status");
 assert.match(js, /activeAssetIndexes/, "frontend should track active assets for visible processing state");
+assert.match(js, /targetFraction/, "asset progress should separate real stage targets from displayed progress");
+assert.match(js, /displayFraction/, "asset progress should smooth displayed percentages instead of jumping stages");
+assert.match(js, /startProgressTicker/, "progress should advance gradually while provider work is pending");
+assert.match(js, /progressStepForTarget/, "progress should move slowly and wait near later stages");
+assert.match(js, /moduleRevealCount/, "writer modules should be revealed incrementally after provider response");
+assert.match(js, /revealResultModules/, "result modules should not all appear at once");
 assert.match(js, /loading-spinner/, "pending cards should render an obvious waiting spinner");
 assert.match(js, /setStatus\(message,\s*options\s*=\s*\{\}\)/, "status updates should support explicit busy rendering");
 assert.match(js, /status-spinner/, "global status should render a spinner while busy");
@@ -143,8 +151,12 @@ assert.match(css, /\.provider-option\.active/, "selected provider should have a 
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.writer-modules/, "writer-facing modules should have a compact layout");
 assert.match(css, /\.writer-module\.needs-review/, "module review state should be visible");
+assert.match(css, /\.writer-module\.needs-review textarea/, "low-confidence module blocks should highlight the entire editable block");
 assert.match(css, /\.module-token-row/, "module token confidence row should have stable layout");
 assert.match(css, /\.module-token\.needs-review/, "low-confidence module tokens should be yellow-highlighted");
+assert.match(css, /transition: width 900ms/, "progress bar width should animate slowly instead of jumping");
+assert.match(css, /\.pending-module-grid span\.module-active/, "pending recognition modules should show staged active states");
+assert.match(css, /\.pending-module-grid span\.module-done/, "pending recognition modules should show staged completed states");
 assert.match(css, /\.pending-state/, "pending cards should have a stable waiting layout");
 assert.match(css, /\.loading-spinner/, "pending cards should show a loading spinner");
 assert.match(css, /\.status-spinner/, "global upload/recognition status should show a spinner");
