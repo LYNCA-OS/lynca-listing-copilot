@@ -94,6 +94,9 @@ assert.match(api, /optional bounded derived crop images/, "title API should acce
 assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facing modules from the title API");
 assert.match(js, /result\.modules/, "frontend should read module output from deterministic renderer responses");
 assert.match(js, /data-module-input/, "writer modules should expose editable module text controls");
+assert.match(js, /moduleTokenSummary/, "writer modules should render token-level confidence chips");
+assert.match(js, /draftGatePoliciesByField/, "token highlighting should use draft gate field policies");
+assert.match(js, /INCLUDE_HIGHLIGHTED/, "low-confidence title terms should be visibly highlightable");
 assert.match(js, /publicationGateNotice\(result\)/, "frontend should show the partial publication gate contract");
 assert.match(js, /writer_required_fields/, "frontend should surface unresolved writer-required fields");
 assert.match(js, /modelQuickApprovalCandidate/, "frontend should group model quick-approval candidates for writer review");
@@ -131,6 +134,8 @@ assert.match(css, /\.provider-option\.active/, "selected provider should have a 
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.writer-modules/, "writer-facing modules should have a compact layout");
 assert.match(css, /\.writer-module\.needs-review/, "module review state should be visible");
+assert.match(css, /\.module-token-row/, "module token confidence row should have stable layout");
+assert.match(css, /\.module-token\.needs-review/, "low-confidence module tokens should be yellow-highlighted");
 assert.match(css, /\.field-crop-strip/, "field crop evidence strip should have a stable layout");
 assert.match(css, /\.publication-gate/, "partial writer draft gate should be visible");
 assert.match(css, /\.title-override-note/, "title override state should be visible");
@@ -243,6 +248,23 @@ assert.deepEqual(
   providerImages.slice(2).map((image) => image.id),
   ["front-crop-0", "front-crop-1", "front-crop-2", "front-crop-3", "front-crop-4", "front-crop-5"],
   "highest-priority crops should be retained deterministically"
+);
+
+const boundedRequestImages = __listingCopilotAppTestHooks.boundedProviderImagesForRequest([
+  { id: "front" },
+  { id: "back" },
+  ...Array.from({ length: 20 }, (_, index) => ({ id: `crop-${index}`, derived: true }))
+], 14);
+assert.equal(boundedRequestImages.length, 14, "oversized provider image batches should be bounded before request serialization");
+assert.deepEqual(
+  boundedRequestImages.slice(0, 2).map((image) => image.id),
+  ["front", "back"],
+  "bounded request batches must preserve primary front/back images"
+);
+assert.deepEqual(
+  boundedRequestImages.slice(2).map((image) => image.id),
+  Array.from({ length: 12 }, (_, index) => `crop-${index}`),
+  "bounded request batches should defer lower-priority overflow images"
 );
 
 console.log("provider UI tests passed");

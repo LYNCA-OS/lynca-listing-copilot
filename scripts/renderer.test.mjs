@@ -558,4 +558,39 @@ assert.deepEqual(reviewedModules.module_order, [
   "number_serial_grade"
 ]);
 
+const colorWithReviewDescriptor = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    brand: "Topps",
+    product: "Chrome",
+    players: ["Victor Wembanyama"],
+    surface_color: "Gold",
+    parallel_family: "Sparkle",
+    serial_number: "17/50"
+  },
+  evidence: {
+    surface_color: createEvidenceField({
+      value: "Gold",
+      status: "CONFIRMED",
+      confidence: 0.9
+    }),
+    parallel_family: createEvidenceField({
+      value: "Sparkle",
+      status: "REVIEW",
+      confidence: 0.8
+    }),
+    serial_number: createEvidenceField({
+      value: "17/50",
+      status: "CONFIRMED",
+      confidence: 0.92
+    })
+  }
+});
+const variantTokens = colorWithReviewDescriptor.modules.variant_parallel_rarity.tokens;
+assert.equal(colorWithReviewDescriptor.modules.variant_parallel_rarity.text, "Gold Sparkle");
+assert.match(colorWithReviewDescriptor.final_title, /Gold Sparkle/);
+assert.deepEqual(variantTokens.map((token) => token.text), ["Gold", "Sparkle"]);
+assert.equal(variantTokens.find((token) => token.text === "Gold").requires_review, false);
+assert.equal(variantTokens.find((token) => token.text === "Sparkle").requires_review, true);
+
 console.log("renderer tests passed");

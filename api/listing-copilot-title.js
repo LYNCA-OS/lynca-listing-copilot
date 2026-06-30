@@ -100,7 +100,7 @@ function envFlag(env, key, fallback = true) {
 }
 
 function configuredMaxPayloadImages(env = process.env) {
-  return normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages;
+  return Math.max(2, normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages);
 }
 
 function defaultProviderOptionsFromEnv(env = process.env) {
@@ -1450,6 +1450,61 @@ function narrowSurfaceColorFromOpenSetParallel(fields = {}) {
   return "";
 }
 
+const directParallelEvidenceSources = new Set([
+  "SLAB_LABEL",
+  "CARD_BACK_PRINTED_TEXT",
+  "CARD_FRONT_PRINTED_TEXT",
+  "CARD_BACK",
+  "CARD_FRONT",
+  "OFFICIAL_CHECKLIST",
+  "OFFICIAL_REGISTRY",
+  "STRUCTURED_DATABASE",
+  "INTERNAL_APPROVED_HISTORY"
+]);
+
+function sourceName(value = {}) {
+  return String(value.source || value.source_type || value.original_source || "").toUpperCase();
+}
+
+function sourceHasExplicitDirectEvidence(value = {}) {
+  const metadata = value.metadata || {};
+  return value.direct_observation === true
+    || value.directly_observed === true
+    || value.text_visible === true
+    || value.visible_marker === true
+    || metadata.direct_observation === true
+    || metadata.directly_observed === true
+    || metadata.text_visible === true
+    || metadata.visible_marker === true;
+}
+
+function evidenceNodeHasDirectParallelSupport(node = {}) {
+  const sources = [
+    ...(Array.isArray(node.sources) ? node.sources : []),
+    ...(Array.isArray(node.supporting_sources) ? node.supporting_sources : [])
+  ];
+  if (sources.some((source) => directParallelEvidenceSources.has(sourceName(source)) && sourceHasExplicitDirectEvidence(source))) return true;
+
+  const candidates = Array.isArray(node.candidates) ? node.candidates : [];
+  return candidates.some((candidate) => {
+    return [
+      ...(Array.isArray(candidate.sources) ? candidate.sources : []),
+      ...(Array.isArray(candidate.supporting_sources) ? candidate.supporting_sources : [])
+    ].some((source) => directParallelEvidenceSources.has(sourceName(source)) && sourceHasExplicitDirectEvidence(source));
+  });
+}
+
+function resultHasDirectParallelSupport(result = {}) {
+  const parallelFields = ["surface_color", "parallel_family", "parallel_exact", "parallel", "variation"];
+  const evidence = result.evidence || result.normalized_evidence || {};
+  if (parallelFields.some((field) => evidenceNodeHasDirectParallelSupport(evidence[field]))) return true;
+
+  const fieldStates = Array.isArray(result.field_states) ? result.field_states : [];
+  return fieldStates.some((fieldState) => {
+    return parallelFields.includes(fieldState.field) && evidenceNodeHasDirectParallelSupport(fieldState);
+  });
+}
+
 function openSetSurfaceColorPatternContaminated(fields = {}) {
   const combined = searchable([
     fields.insert,
@@ -1479,7 +1534,6 @@ function stripOpenSetUnsupportedParallelTerms(value) {
     "cracked ice",
     "disco",
     "geometric",
-    "holo",
     "hyper",
     "lava",
     "mojo",
@@ -1500,7 +1554,7 @@ function stripOpenSetUnsupportedParallelTerms(value) {
   if (!hasUnsupportedParallelTerm) return original;
 
   const stripped = original
-    .replace(/\b(?:Cracked\s+Ice|Tiger\s+Stripes?|Tiger|X[-\s]?Fractor|Refractor|Sapphire|Shimmer|Sparkles?|Speckle|Geometric|Velocity|Prizms?|Prism|Mojo|Disco|Pulsar|Hyper|Holo|Lava|Vinyl|Wave)\b/gi, " ")
+    .replace(/\b(?:Cracked\s+Ice|Tiger\s+Stripes?|Tiger|X[-\s]?Fractor|Refractor|Sapphire|Shimmer|Sparkles?|Speckle|Geometric|Velocity|Prizms?|Prism|Mojo|Disco|Pulsar|Hyper|Lava|Vinyl|Wave)\b/gi, " ")
     .replace(/\b(?:Black|Blue|Bronze|Gold|Green|Orange|Pink|Purple|Red|Silver|White|Yellow)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -1511,14 +1565,14 @@ function stripOpenSetUnsupportedTitleTerms(value) {
   const original = normalizeStringOrNull(value);
   if (!original) return "";
   const protectedPhrases = [];
-  let text = original.replace(/\b(?:Topps|Bowman)\s+Chrome\s+Sapphire(?:\s+Edition)?\b/gi, (match) => {
+  let text = original.replace(/\b(?:Topps|Bowman)\s+Chrome\s+Sapphire(?:\s+Edition)?\b|\bPanini\s+Prizm(?:\s+FIFA(?:\s+Soccer)?)?\b/gi, (match) => {
     const token = `__LYNCA_PRODUCT_${protectedPhrases.length}__`;
     protectedPhrases.push({ token, value: match });
     return token;
   });
   const animalPattern = /\b(?:Tiger|Zebra|Snakeskin|Snake\s+Skin|Elephant|Leopard|Animal\s+Print)\b/i.test(text);
   text = text
-    .replace(/\b(?:Cracked\s+Ice|Tiger\s+Stripes?|Tiger|X[-\s]?Fractor|Refractor|Sapphire|Shimmer|Sparkles?|Speckle|Geometric|Velocity|Prizms?|Prism|Mojo|Disco|Pulsar|Hyper|Holo|Lava|Vinyl|Wave)\b/gi, " ");
+    .replace(/\b(?:Cracked\s+Ice|Tiger\s+Stripes?|Tiger|X[-\s]?Fractor|Refractor|Sapphire|Shimmer|Sparkles?|Speckle|Geometric|Velocity|Prizms?|Prism|Mojo|Disco|Pulsar|Hyper|Lava|Vinyl|Wave)\b/gi, " ");
   if (animalPattern) {
     text = text.replace(/\b(?:Black|Blue|Bronze|Gold|Green|Orange|Pink|Purple|Red|Silver|White|Yellow)\b/gi, " ");
   }
@@ -1539,7 +1593,9 @@ function exactParallelFieldsPresent(fields = {}) {
     fields.parallel_family,
     fields.parallel,
     fields.variation
-  ].some((value) => valuePresent(value));
+  ].some((value) => {
+    return valuePresent(value) && stripOpenSetUnsupportedParallelTerms(value) !== normalizeStringOrNull(value);
+  });
 }
 
 function openSetUnsupportedParallelPresentationPresent(fields = {}) {
@@ -1582,6 +1638,16 @@ function applyOpenSetAssistShadowPresentationGuard(result = {}, payload = {}) {
   const hadExactParallel = exactParallelFieldsPresent(mergedFields);
   const hadUnsupportedPresentationParallel = openSetUnsupportedParallelPresentationPresent(mergedFields);
   const preservedSurfaceColor = narrowSurfaceColorFromOpenSetParallel(mergedFields);
+  if (resultHasDirectParallelSupport(result)) {
+    return {
+      ...result,
+      open_set_presentation_guard: {
+        used: false,
+        reason: guardReason,
+        action: "direct_parallel_evidence_preserved"
+      }
+    };
+  }
   const currentTitle = result.rendered_title || result.final_title || result.title || "";
   const titleAfterOpenSetStrip = stripOpenSetUnsupportedTitleTerms(currentTitle);
   const hadUnsupportedTitleParallel = Boolean(titleAfterOpenSetStrip && titleAfterOpenSetStrip !== normalizeStringOrNull(currentTitle));
@@ -2137,6 +2203,50 @@ function explicitPrimaryImagesFromImages(images = []) {
   return images.filter((image) => !imageIsDerived(image));
 }
 
+function boundedPayloadImagesFromImages(images = [], {
+  maxImages = defaultMaxPayloadImages
+} = {}) {
+  const payloadImages = Array.isArray(images) ? images : [];
+  if (!payloadImages.length) {
+    return {
+      ok: false,
+      reason: "empty"
+    };
+  }
+
+  const primaryImages = explicitPrimaryImagesFromImages(payloadImages);
+  if (!primaryImages.length) {
+    return {
+      ok: false,
+      reason: "primary_images_missing"
+    };
+  }
+  if (primaryImages.length > 2) {
+    return {
+      ok: false,
+      reason: "too_many_primary_images",
+      primary_image_count: primaryImages.length
+    };
+  }
+
+  const primarySet = new Set(primaryImages);
+  const derivedImages = derivedImagesFromImages(payloadImages)
+    .filter((image) => !primarySet.has(image));
+  const maxDerived = Math.max(0, Math.max(2, Number(maxImages) || defaultMaxPayloadImages) - primaryImages.length);
+  const currentBatchImages = [
+    ...primaryImages,
+    ...derivedImages.slice(0, maxDerived)
+  ];
+
+  return {
+    ok: true,
+    images: currentBatchImages,
+    primary_image_count: primaryImages.length,
+    derived_image_count: derivedImages.length,
+    deferred_image_count: Math.max(0, payloadImages.length - currentBatchImages.length)
+  };
+}
+
 async function verifyApprovedMemoryImages({ payload = {} } = {}) {
   const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
   if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
@@ -2675,8 +2785,39 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
   });
   const renderedTitle = presentation.rendered_title || "";
   const finalTitle = renderedTitle || publicResult.title || "";
-  const calibrationBase = preTitleAudit || {
-    confidence: publicResult.confidence,
+  const titleMissingRiskFields = new Set([
+    "serial",
+    "serial_number",
+    "card_number",
+    "collector_number",
+    "checklist_code",
+    "grade",
+    "grade_company",
+    "card_grade",
+    "auto_grade",
+    "player",
+    "players",
+    "character",
+    "auto",
+    "rc",
+    "one_of_one"
+  ]);
+  const initialTitleMissingFields = Array.isArray(publicResult.unresolved)
+    ? publicResult.unresolved
+      .map((item) => String(item || "").match(/^title missing\s+(.+)$/i)?.[1])
+      .filter(Boolean)
+    : [];
+  const initialTitleMissingRisk = publicResult.confidence === "LOW"
+    && initialTitleMissingFields.some((field) => titleMissingRiskFields.has(field));
+  const rendererCanSafelyRecalibrate = publicResult.confidence === "LOW"
+    && initialTitleMissingFields.length > 0
+    && !initialTitleMissingRisk;
+  const calibrationBase = {
+    confidence: initialTitleMissingRisk
+      ? "MEDIUM"
+      : rendererCanSafelyRecalibrate
+        ? preTitleAudit?.confidence || publicResult.confidence
+        : publicResult.confidence,
     reason: publicResult.reason,
     unresolved: publicResult.unresolved || []
   };
@@ -4672,6 +4813,7 @@ function explicitEmergencyFromPayload(payload = {}) {
 
 export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
+  boundedPayloadImagesFromImages,
   configuredMaxPayloadImages,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason
@@ -4730,15 +4872,25 @@ export default async function handler(req, res) {
   }
 
   const payloadImages = Array.isArray(payload.images) ? payload.images : [];
-  const primaryImages = explicitPrimaryImagesFromImages(payloadImages);
   const maxPayloadImages = configuredMaxPayloadImages(process.env);
-  if (payloadImages.length < 1 || payloadImages.length > maxPayloadImages || primaryImages.length < 1 || primaryImages.length > 2) {
+  const imageBatch = boundedPayloadImagesFromImages(payloadImages, { maxImages: maxPayloadImages });
+  if (!imageBatch.ok) {
     sendJson(res, 400, {
       ok: false,
       code: "invalid_image_payload",
-      message: `Expected one or two primary card images plus bounded derived crops; received ${payloadImages.length} total images and ${primaryImages.length} primary images. Limit: ${maxPayloadImages}.`
+      message: imageBatch.reason === "too_many_primary_images"
+        ? "系统无法判断这组图片属于同一张卡还是多张卡，请使用单图或正反面配对模式重新上传。"
+        : "系统没有读到可用于识别的卡片原图，请重新上传正面或正反面图片。"
     });
     return;
+  }
+  payload.images = imageBatch.images;
+  if (imageBatch.deferred_image_count > 0) {
+    payload.deferred_image_count = imageBatch.deferred_image_count;
+    payload.image_batching = {
+      mode: "bounded_current_batch",
+      deferred_image_count: imageBatch.deferred_image_count
+    };
   }
 
   const timingContext = createTimingContext(payload);

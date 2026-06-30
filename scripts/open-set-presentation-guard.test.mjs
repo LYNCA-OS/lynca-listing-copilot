@@ -3,6 +3,7 @@ import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js"
 
 const {
   applyOpenSetAssistShadowPresentationGuard,
+  boundedPayloadImagesFromImages,
   configuredMaxPayloadImages,
   narrowSurfaceColorFromOpenSetParallel
 } = __listingCopilotTitleTestHooks;
@@ -11,10 +12,32 @@ assert.equal(configuredMaxPayloadImages({}), 14);
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "18" }), 18);
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "0" }), 14);
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "not-a-number" }), 14);
+assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "1" }), 2);
+
+const oversizedPayloadBatch = boundedPayloadImagesFromImages([
+  { id: "front" },
+  { id: "back" },
+  ...Array.from({ length: 20 }, (_, index) => ({ id: `crop-${index}`, derived: true }))
+], { maxImages: 14 });
+assert.equal(oversizedPayloadBatch.ok, true);
+assert.equal(oversizedPayloadBatch.images.length, 14);
+assert.equal(oversizedPayloadBatch.primary_image_count, 2);
+assert.equal(oversizedPayloadBatch.deferred_image_count, 8);
+assert.deepEqual(oversizedPayloadBatch.images.slice(0, 2).map((image) => image.id), ["front", "back"]);
+
+const tooManyPrimaryPayloadBatch = boundedPayloadImagesFromImages([
+  { id: "front" },
+  { id: "back" },
+  { id: "third-primary" }
+], { maxImages: 14 });
+assert.equal(tooManyPrimaryPayloadBatch.ok, false);
+assert.equal(tooManyPrimaryPayloadBatch.reason, "too_many_primary_images");
 
 function shadowResult({
   title,
-  fields
+  fields,
+  evidence = {},
+  fieldStates = []
 }) {
   return {
     title,
@@ -44,7 +67,8 @@ function shadowResult({
       rc: fields.rc === true,
       auto: fields.auto === true
     },
-    evidence: {},
+    evidence,
+    field_states: fieldStates,
     unresolved: [],
     fast_path: {
       assist_shadow_only: true,
@@ -85,6 +109,32 @@ assert.equal(goldGuarded.fields.surface_color, "Gold");
 assert.match(goldGuarded.final_title, /\bGold\b/);
 assert.doesNotMatch(goldGuarded.final_title, /\bRefractor\b/i);
 assert.ok(goldGuarded.unresolved.includes("open-set exact parallel requires catalog or writer review"));
+
+const directSupportedParallel = applyOpenSetAssistShadowPresentationGuard(shadowResult({
+  title: "2024 Pokemon Darkrai Holo PSA 10",
+  fields: {
+    year: "2024",
+    brand: "Pokemon",
+    product: "Pokemon",
+    character: "Darkrai",
+    parallel: "Holo",
+    grade_company: "PSA",
+    card_grade: "10"
+  },
+  fieldStates: [
+    {
+      field: "parallel",
+      resolved_value: "Holo",
+      supporting_sources: [
+        { source: "SLAB_LABEL", value: "Holo", direct_observation: true }
+      ]
+    }
+  ]
+}), { maxTitleLength: 80 });
+assert.equal(directSupportedParallel.open_set_presentation_guard.used, false);
+assert.equal(directSupportedParallel.open_set_presentation_guard.action, "direct_parallel_evidence_preserved");
+assert.equal(directSupportedParallel.fields.parallel, "Holo");
+assert.match(directSupportedParallel.final_title, /\bHolo\b/i);
 
 const tigerGuarded = applyOpenSetAssistShadowPresentationGuard(shadowResult({
   title: "2018-19 Panini Prizm Jalen Brunson Tiger Orange RC #250 PSA 9",

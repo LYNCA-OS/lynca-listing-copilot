@@ -259,7 +259,7 @@ globalThis.fetch = async (url, options = {}) => {
     assert.equal(body.images.length, 2);
     assert.ok(body.images.every((image) => image.signed_url.includes("token=read")));
     assert.equal(body.options.run_ocr, true);
-    assert.equal(body.options.run_visual_embeddings, false);
+    assert.equal(body.options.run_visual_embeddings, true);
     return jsonResponse(recognitionPayload);
   }
 

@@ -17,6 +17,7 @@ const IMAGE_MIN_QUALITY = 0.72;
 const IMAGE_EMERGENCY_MIN_QUALITY = 0.58;
 const TARGET_IMAGE_DATA_URL_CHARS = 1_250_000;
 const MAX_ASSET_REQUEST_BYTES = 3_400_000;
+const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_ASSET = 6;
 const defaultProviderOptions = Object.freeze({
@@ -427,15 +428,35 @@ function reviewImageReference(image) {
   };
 }
 
+function imageIsDerivedForRequest(image = {}) {
+  return Boolean(image.derived || image.sourceRegion || image.source_region);
+}
+
+function boundedProviderImagesForRequest(images = [], maxImages = REQUEST_IMAGE_BATCH_LIMIT) {
+  const allImages = Array.isArray(images) ? images : [];
+  const primaryImages = allImages.filter((image) => !imageIsDerivedForRequest(image));
+  const derivedImages = allImages.filter(imageIsDerivedForRequest);
+  const maxDerived = Math.max(0, Math.max(2, Number(maxImages) || REQUEST_IMAGE_BATCH_LIMIT) - primaryImages.length);
+  return [
+    ...primaryImages,
+    ...derivedImages.slice(0, maxDerived)
+  ];
+}
+
 function buildAssetRequestBody(asset, options = {}) {
   const provider = options.provider || state.selectedProvider;
+  const allProviderImages = asset.providerImages || asset.images || [];
+  const providerImages = boundedProviderImagesForRequest(allProviderImages);
+  const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
   const body = {
     assetId: asset.id,
     mode: state.mode,
     maxTitleLength,
-    images: (asset.providerImages || asset.images).map((image) => serializableAssetImage(image, asset.id)),
+    images: providerImages.map((image) => serializableAssetImage(image, asset.id)),
+    deferredImageCount,
+    deferred_image_count: deferredImageCount,
     captureProfileId: defaultCaptureProfileId,
-    captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
+    captureQuality: summarizeAssetImageQuality(providerImages),
     resolutionMap: state.resolutionMap,
     clientTiming: asset.clientTiming || {},
     provider_options: {
@@ -487,7 +508,16 @@ async function ensureSafeAssetPayload(asset, options = {}) {
     }
   }
 
-  throw new Error(`图片请求体过大，请先裁剪或压缩后重试（约 ${(requestBytes / 1_000_000).toFixed(1)}MB）`);
+  while ((asset.providerImages || []).some(imageIsDerivedForRequest)) {
+    asset.providerImages = (asset.providerImages || []).slice(0, -1);
+    requestBody = buildAssetRequestBody(asset, options);
+    requestBytes = stringByteLength(requestBody);
+    if (requestBytes <= MAX_ASSET_REQUEST_BYTES) {
+      return { requestBody, compressedAgain: true };
+    }
+  }
+
+  throw new Error("这组原图仍然过大，系统已保留给下一批处理；请稍后重试或减少单张卡的原图数量。");
 }
 
 function storageReady() {
@@ -640,7 +670,8 @@ async function uploadAssetImage(asset, image, imageIndex) {
 async function ensureAssetImagesUploaded(asset) {
   if (!storageReady()) return false;
 
-  const images = asset.providerImages || asset.images;
+  const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
+  asset.providerImages = images;
   const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
     return uploadAssetImage(asset, image, imageIndex);
   });
@@ -860,6 +891,7 @@ function imagesForProvider(assetImages) {
 }
 
 export const __listingCopilotAppTestHooks = {
+  boundedProviderImagesForRequest,
   imagesForProvider
 };
 
@@ -1284,6 +1316,68 @@ function modulePolicySummary(module) {
     .join(", ");
 }
 
+function draftGatePoliciesByField(result) {
+  return result?.publication_gate?.draft_gate?.by_field || result?.draft_gate?.by_field || {};
+}
+
+function policyForFields(fields = [], result, module = {}) {
+  const byField = draftGatePoliciesByField(result);
+  const policies = fields
+    .map((field) => byField[field])
+    .filter(Boolean);
+  if (policies.length) return policies;
+
+  const modulePolicies = Array.isArray(module.field_policies) ? module.field_policies : [];
+  return fields
+    .map((field) => modulePolicies.find((policy) => policy.field === field))
+    .filter(Boolean);
+}
+
+function strongestTokenPolicy(policies = []) {
+  if (policies.some((policy) => policy.display_policy === "SUGGEST_ONLY")) return "SUGGEST_ONLY";
+  if (policies.some((policy) => policy.display_policy === "OMIT")) return "OMIT";
+  if (policies.some((policy) => policy.display_policy === "INCLUDE_HIGHLIGHTED")) return "INCLUDE_HIGHLIGHTED";
+  if (policies.some((policy) => policy.display_policy === "INCLUDE_NORMAL")) return "INCLUDE_NORMAL";
+  return "";
+}
+
+function moduleTokenReviewReason(token = {}, policies = []) {
+  const highlighted = policies.find((policy) => policy.display_policy && policy.display_policy !== "INCLUDE_NORMAL");
+  if (highlighted?.resolution_reason) return highlighted.resolution_reason;
+  if (highlighted?.evidence_level) return `${highlighted.display_policy} · ${highlighted.evidence_level}`;
+  if (token.status && token.status !== "CONFIRMED") return token.status;
+  return "";
+}
+
+function moduleTokenClass(token = {}, result, module = {}) {
+  const policies = policyForFields(token.fields || [], result, module);
+  const policy = strongestTokenPolicy(policies);
+  const status = token.status || "";
+  const classes = ["module-token"];
+  if (policy) classes.push(`policy-${policy.toLowerCase().replace(/_/g, "-")}`);
+  if (policy === "INCLUDE_HIGHLIGHTED" || token.requires_review || ["REVIEW", "MISSING"].includes(status)) {
+    classes.push("needs-review");
+  }
+  if (policy === "SUGGEST_ONLY" || policy === "OMIT" || status === "CONFLICT") {
+    classes.push("suggest-only");
+  }
+  return classes.join(" ");
+}
+
+function moduleTokenSummary(module, result) {
+  const tokens = Array.isArray(module.tokens) ? module.tokens : [];
+  if (!tokens.length) return "";
+  return `
+    <div class="module-token-row" aria-label="模块词条置信状态">
+      ${tokens.map((token) => {
+        const policies = policyForFields(token.fields || [], result, module);
+        const reason = moduleTokenReviewReason(token, policies);
+        return `<mark class="${moduleTokenClass(token, result, module)}" title="${escapeHtml(reason)}">${escapeHtml(token.text || "")}</mark>`;
+      }).join("")}
+    </div>
+  `;
+}
+
 function moduleSummary(result) {
   const modules = result.modules || {};
   const order = Array.isArray(result.module_order) && result.module_order.length
@@ -1300,6 +1394,7 @@ function moduleSummary(result) {
       ${visibleModules.map((module) => `
         <div class="writer-module ${module.requires_review ? "needs-review" : ""} ${module.display_policy ? `display-${String(module.display_policy).toLowerCase().replace(/_/g, "-")}` : ""} ${module.review_priority ? `priority-${String(module.review_priority).toLowerCase()}` : ""}">
           <span>${escapeHtml(module.label || module.key)}</span>
+          ${moduleTokenSummary(module, result)}
           <textarea data-module-input="${result.index}" data-module-key="${escapeHtml(module.key)}">${escapeHtml(module.text || "")}</textarea>
           <small>${escapeHtml(modulePolicySummary(module))}</small>
         </div>
