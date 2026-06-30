@@ -265,6 +265,41 @@ assert.equal(response.body.listings[0].seller, "dcsports87");
 assert.equal(response.body.listings[0].seller_verification, "EBAY_SELLER_FILTER");
 assert.equal(response.body.listings[0].marketplace_seller_alias, "masked_seller_token");
 
+const sellerFilterMissingSellerHandler = createEbayDcsports87ListingsHandler({
+  env: {
+    METAVERSE_AUTH_SECRET: secret,
+    EBAY_SELLER_USERNAME: "dcsports87",
+    EBAY_BROWSE_FILTER: "sellers:{dcsports87}",
+    EBAY_MARKETPLACE_ID: "EBAY_US"
+  },
+  providerFactory: () => ({
+    search: async () => ({
+      provider_id: "ebay_browse",
+      marketplace_id: "EBAY_US",
+      total: 1,
+      candidates: [{
+        source_url: "https://www.ebay.com/itm/filter-only",
+        title: "Seller Filter Only Card",
+        fields: {
+          marketplace_item_id: "v1|filter-only|0",
+          marketplace_id: "EBAY_US",
+          marketplace_image_urls: ["https://i.ebayimg.com/images/filter-only.jpg"]
+        }
+      }]
+    })
+  })
+});
+response = await call(sellerFilterMissingSellerHandler, {
+  method: "GET",
+  headers: { cookie: sessionCookie(secret), host: "example.test" },
+  url: "/api/ebay-dcsports87-listings?limit=1"
+});
+assert.equal(response.statusCode, 200);
+assert.equal(response.body.returned_count, 1);
+assert.equal(response.body.listings[0].seller, "dcsports87");
+assert.equal(response.body.listings[0].seller_verification, "EBAY_SELLER_FILTER");
+assert.equal(response.body.listings[0].marketplace_seller_alias, "");
+
 assert.equal(normalizeBaseUrl("https://example.com/"), "https://example.com");
 assert.throws(() => normalizeBaseUrl(""), /API_BASE_URL/);
 assert.deepEqual(optionalProtectionHeaders({

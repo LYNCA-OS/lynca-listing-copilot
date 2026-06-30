@@ -120,10 +120,10 @@ function normalizedListing(candidate = {}) {
   };
 }
 
-function listingComplete(listing = {}) {
+function listingComplete(listing = {}, expectedSeller = defaultSeller, filterMatchesExpected = false) {
   return Boolean(
     listing.item_id &&
-    listing.seller &&
+    sellerVerified(listing, expectedSeller, filterMatchesExpected) &&
     listing.title &&
     listing.item_web_url &&
     Array.isArray(listing.image_urls) &&
@@ -133,7 +133,7 @@ function listingComplete(listing = {}) {
 
 function sellerVerified(listing = {}, expectedSeller = defaultSeller, filterMatchesExpected = false) {
   if (normalizeSeller(listing.seller) === expectedSeller) return true;
-  return Boolean(filterMatchesExpected && listing.seller);
+  return Boolean(filterMatchesExpected);
 }
 
 function publicListing(listing = {}, expectedSeller = defaultSeller, filterMatchesExpected = false) {
@@ -143,12 +143,12 @@ function publicListing(listing = {}, expectedSeller = defaultSeller, filterMatch
       seller_verification: "EXACT_RESPONSE"
     };
   }
-  if (filterMatchesExpected && listing.seller) {
+  if (filterMatchesExpected) {
     return {
       ...listing,
       seller: expectedSeller,
       seller_verification: "EBAY_SELLER_FILTER",
-      marketplace_seller_alias: listing.seller
+      marketplace_seller_alias: listing.seller || ""
     };
   }
   return listing;
@@ -285,7 +285,7 @@ export function createEbayDcsports87ListingsHandler({
       const enrichedListings = detailResult.listings;
       const sellerListings = enrichedListings
         .filter((listing) => sellerVerified(listing, expectedSeller, filterMatchesExpected))
-        .filter(listingComplete);
+        .filter((listing) => listingComplete(listing, expectedSeller, filterMatchesExpected));
       const sportsFilter = sportsOnly
         ? filterSportsCardListings(sellerListings)
         : {
