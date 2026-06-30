@@ -285,6 +285,45 @@ await runRetrieval({
 });
 assert.equal(runRetrievalVisualCalls, 2, "visual vector retrieval must not cache query embeddings by textual cache key");
 
+let concurrentRetrievalActive = 0;
+let concurrentRetrievalMaxActive = 0;
+let concurrentRetrievalCalls = 0;
+const concurrentInternalRegistry = {
+  get(providerId) {
+    return {
+      id: providerId,
+      async search() {
+        concurrentRetrievalCalls += 1;
+        concurrentRetrievalActive += 1;
+        concurrentRetrievalMaxActive = Math.max(concurrentRetrievalMaxActive, concurrentRetrievalActive);
+        await new Promise((resolve) => setTimeout(resolve, 12));
+        concurrentRetrievalActive -= 1;
+        return { candidates: [] };
+      }
+    };
+  }
+};
+const concurrentRetrieval = await runRetrieval({
+  resolved,
+  mode: retrievalModes.INTERNAL_ONLY,
+  allowedFamilies: [
+    retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+    retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.CATALOG_EXACT_CODE,
+    retrievalQueryFamilies.CATALOG_YEAR_PRODUCT_SUBJECT
+  ],
+  providerRegistry: concurrentInternalRegistry,
+  cache: createRetrievalCache(),
+  env: {
+    ENABLE_INTERNAL_RETRIEVAL_QUERY_CONCURRENCY: "true",
+    RETRIEVAL_INTERNAL_QUERY_CONCURRENCY: "3"
+  }
+});
+assert.equal(concurrentRetrieval.query_execution.mode, "parallel_internal");
+assert.equal(concurrentRetrieval.query_execution.concurrency, 3);
+assert.ok(concurrentRetrievalCalls >= 3);
+assert.ok(concurrentRetrievalMaxActive > 1, "internal retrieval queries should run concurrently");
+
 const memoryProvider = internalMemoryProvider({
   approvedRecords: [
     {

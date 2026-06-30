@@ -4735,27 +4735,39 @@ async function createOpenAiTitle(payload, selection, {
 } = {}) {
   const providerOptions = providerOptionsFromPayload(payload);
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
-  const signedImages = Array.isArray(reusableSignedImages) && reusableSignedImages.length
+  const resolvedForRetrieval = resolvedForRetrievalFromPayload(payload, providerOptions, recognitionEvidenceDocument);
+  const signedImagesPromise = Array.isArray(reusableSignedImages) && reusableSignedImages.length
     ? reusableSignedImages
-    : await imagesWithSignedReadUrls(payload.images || [], timingContext);
+    : imagesWithSignedReadUrls(payload.images || [], timingContext);
+  const catalogContextPromise = prepareCatalogCandidateContext({
+    resolvedForRetrieval,
+    providerOptions,
+    timingContext
+  });
+
+  let signedImages;
+  try {
+    signedImages = await signedImagesPromise;
+  } catch (error) {
+    await catalogContextPromise.catch(() => null);
+    throw error;
+  }
+
   const baseInitialPayload = primaryPayloadForProvider({
     ...payload,
     images: signedImages
   });
-  const resolvedForRetrieval = resolvedForRetrievalFromPayload(payload, providerOptions, recognitionEvidenceDocument);
-  const catalogContext = await prepareCatalogCandidateContext({
-    resolvedForRetrieval,
-    providerOptions,
-    timingContext
-  });
-  const vectorContext = await prepareVectorCandidateContext({
-    initialPayload: baseInitialPayload,
-    signedImages,
-    visualFeatures,
-    resolvedForRetrieval,
-    providerOptions,
-    timingContext
-  });
+  const [catalogContext, vectorContext] = await Promise.all([
+    catalogContextPromise,
+    prepareVectorCandidateContext({
+      initialPayload: baseInitialPayload,
+      signedImages,
+      visualFeatures,
+      resolvedForRetrieval,
+      providerOptions,
+      timingContext
+    })
+  ]);
   const promptCandidatePacket = vectorContext.promptPacket
     ? vectorContext.assistPacket
     : catalogContext.promptPacket
