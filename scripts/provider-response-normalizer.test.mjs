@@ -104,11 +104,20 @@ const structuredFieldEvidence = validateProviderEvidencePayload("openai_legacy",
       signature_visible: true,
       confidence: 0.86,
       review_required: false
+    },
+    card_name: {
+      value: "Best Performance",
+      support_type: "CARD_BACK_PRINTED_TEXT",
+      evidence_kind: "PRINTED_CARD_NAME",
+      visible_text: "BEST PERFORMANCE",
+      confidence: 0.9,
+      review_required: false
     }
   },
   unresolved: []
 });
 assert.equal(structuredFieldEvidence.field_evidence.grade.grade_company, "PSA");
+assert.equal(structuredFieldEvidence.field_evidence.card_name.value, "Best Performance");
 
 const arrayFieldEvidence = validateProviderEvidencePayload("openai_legacy", {
   field_evidence: [

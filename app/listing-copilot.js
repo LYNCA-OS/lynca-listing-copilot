@@ -10,12 +10,12 @@ const maxTitleLength = 85;
 const MAX_CONCURRENT_WORKERS = 6;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
-const IMAGE_MAX_EDGE = 1400;
-const IMAGE_MIN_EDGE = 900;
-const IMAGE_INITIAL_QUALITY = 0.82;
-const IMAGE_MIN_QUALITY = 0.72;
-const IMAGE_EMERGENCY_MIN_QUALITY = 0.58;
-const TARGET_IMAGE_DATA_URL_CHARS = 1_250_000;
+const IMAGE_MAX_EDGE = 2200;
+const IMAGE_MIN_EDGE = 1400;
+const IMAGE_INITIAL_QUALITY = 0.9;
+const IMAGE_MIN_QUALITY = 0.78;
+const IMAGE_EMERGENCY_MIN_QUALITY = 0.64;
+const TARGET_IMAGE_DATA_URL_CHARS = 2_400_000;
 const MAX_ASSET_REQUEST_BYTES = 3_400_000;
 const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
@@ -47,7 +47,9 @@ const state = {
   modal: null,
   resolutionMap: {},
   providerStatus: null,
-  selectedProvider: ""
+  selectedProvider: "",
+  processing: false,
+  activeAssetIndexes: new Set()
 };
 
 const elements = {
@@ -1012,37 +1014,15 @@ function cropRegionLabel(region = "") {
 }
 
 function modalImagesForAsset(asset = {}) {
-  const providerImages = Array.isArray(asset.providerImages) && asset.providerImages.length
-    ? asset.providerImages
-    : asset.images || [];
-  return providerImages;
+  return asset.images || [];
 }
 
 function imagePreviewLabel(image, imageIndex) {
-  if (image?.derived || image?.sourceRegion || image?.source_region) {
-    return cropRegionLabel(image.sourceRegion || image.source_region || image.cropMetadata?.source_region || image.crop_metadata?.source_region);
-  }
   return imageSideLabel(imageIndex);
 }
 
 function fieldCropStrip(asset) {
-  const modalImages = modalImagesForAsset(asset);
-  const crops = modalImages
-    .map((image, modalIndex) => ({ image, modalIndex }))
-    .filter(({ image }) => image?.derived || image?.sourceRegion || image?.source_region)
-    .slice(0, FIELD_MAX_CROPS_PER_ASSET);
-  if (!crops.length) return "";
-
-  return `
-    <div class="field-crop-strip" aria-label="字段局部证据">
-      ${crops.map(({ image, modalIndex }) => `
-        <button class="field-crop-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${modalIndex}" title="${escapeHtml(imagePreviewLabel(image, modalIndex))}">
-          <img src="${image.dataUrl}" alt="${escapeHtml(imagePreviewLabel(image, modalIndex))}">
-          <span>${escapeHtml(imagePreviewLabel(image, modalIndex))}</span>
-        </button>
-      `).join("")}
-    </div>
-  `;
+  return "";
 }
 
 function renderAssetRows() {
@@ -1123,16 +1103,46 @@ function assetRowHtml(asset) {
 }
 
 function pendingBox(asset) {
+  const isActive = state.activeAssetIndexes.has(asset.index);
+  const isQueued = state.processing && !isActive;
+  const label = isActive ? "识别中" : isQueued ? "排队中" : "等待中";
+  const message = isActive
+    ? "正在读取原图与关键局部区域，完成后会自动生成可编辑标题。"
+    : isQueued
+      ? "后台队列会自动按批处理，不需要重复点击。"
+      : "点击开始生成后，这里会输出英文 eBay listing title。";
   return `
     <div class="title-output title-output-pending">
       <div class="title-output-head">
-        <span class="confidence-badge confidence-pending">等待中</span>
+        <span class="confidence-badge confidence-pending">${escapeHtml(label)}</span>
         <span>资产 ${asset.index}</span>
       </div>
-      <textarea readonly placeholder="点击开始生成后，这里会输出英文 eBay listing title。"></textarea>
-      <p class="follow-up-advice">等待 Vision Engine 提取字段，再由 Resolution Engine 补全映射，最后交给 Title Engine 生成 80 字符以内标题。</p>
+      <div class="pending-state" role="status" aria-live="polite">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <strong>${escapeHtml(label)}</strong>
+        <p>${escapeHtml(message)}</p>
+      </div>
+      <textarea readonly placeholder="等待生成可编辑英文标题。"></textarea>
+      <p class="follow-up-advice">模型先提取字段，再由 Resolver 与 Title Engine 生成 85 字符以内标题。</p>
     </div>
   `;
+}
+
+function friendlyErrorSummary(reason = "") {
+  const text = String(reason || "").trim();
+  if (/field_evidence\.[\w-]+\s+Unknown structured field evidence key/i.test(text)) {
+    return "识别结果字段结构需要更新，请刷新页面后重试。";
+  }
+  if (/schema validation|schema_validation|response schema/i.test(text)) {
+    return "识别结果结构校验失败，请重试。";
+  }
+  if (/413|request body|too large|过大/i.test(text)) {
+    return "图片请求过大，系统已尝试缩减辅助图；请稍后重试。";
+  }
+  if (/timeout|timed out|超时/i.test(text)) {
+    return "模型响应超时，请重试。";
+  }
+  return text || "识别未返回可用标题。";
 }
 
 function resultBox(result) {
@@ -1154,6 +1164,9 @@ function resultBox(result) {
     saving: "保存中…"
   }[result.feedbackStatus] || "保存";
   const providerLabel = result.provider_label || providerById(result.provider)?.label || result.provider || "-";
+  const unavailableTitle = confidence === "FAILED"
+    ? `标题暂不可用：${friendlyErrorSummary(result.reason)}`
+    : "标题暂不可用";
 
   return `
     <div class="title-output ${confidenceClass(confidence)}">
@@ -1168,12 +1181,12 @@ function resultBox(result) {
           ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
         </div>
       </div>
-      <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || "标题暂不可用")}</textarea>
+      <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || unavailableTitle)}</textarea>
       ${titleOverrideNotice(result)}
       ${moduleSummary(result)}
       ${vectorCandidateNotice(result)}
       ${publicationGateNotice(result)}
-      <p class="follow-up-advice">${result.reason || ""}</p>
+      <p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
       ${result.publishMessage ? `<p class="publish-status">${escapeHtml(result.publishMessage)}</p>` : ""}
       <details>
@@ -1497,7 +1510,7 @@ async function handleFiles(fileList) {
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
-  setStatus("正在优化图片…");
+  setStatus("正在准备高质量预览与云端原图上传…");
   closeImageModal();
   const failures = [];
   const prepareStartedAt = performance.now();
@@ -1524,10 +1537,12 @@ async function handleFiles(fileList) {
   state.clientImagePrepareMs = prepareElapsedMs;
 
   if (failures.length || ignoredFiles.length) {
-    setStatus(`${images.length} 张图片已优化，${failures.length + ignoredFiles.length} 张未读取：${[...failures, ...ignoredFiles].join("；")}`);
+    setStatus(`${images.length} 张图片已准备，${failures.length + ignoredFiles.length} 张未读取：${[...failures, ...ignoredFiles].join("；")}`);
   } else {
-    const compressedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
-    setStatus(compressedCount ? `${images.length} 张图片已优化，图片过大，已自动压缩用于识别。` : `${images.length} 张图片已优化。`);
+    const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
+    setStatus(previewOptimizedCount
+      ? `${images.length} 张图片已准备。原图会优先上传云端识别，本地预览已高质量优化。`
+      : `${images.length} 张图片已准备。`);
   }
 
   renderPreviews();
@@ -1549,7 +1564,7 @@ async function processAsset(asset, options = {}) {
   const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, options);
   const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
   asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
-  if (compressedAgain) setStatus("图片过大，已自动压缩用于识别。");
+  if (compressedAgain) setStatus("图片请求过大，已自动缩减辅助局部图并保留主图识别。");
 
   const apiStartedAt = performance.now();
   const response = await fetch("/api/listing-copilot-title", {
@@ -1640,9 +1655,11 @@ async function processTitles() {
   if (!canGenerateTitles()) return;
 
   state.results = [];
+  state.processing = true;
+  state.activeAssetIndexes = new Set();
   renderResults();
   elements.processButton.disabled = true;
-  setStatus("图片已优化，开始识别…");
+  setStatus("图片已准备，开始识别…");
 
   const queue = [...state.assets];
   const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
@@ -1651,6 +1668,8 @@ async function processTitles() {
   async function worker() {
     while (queue.length) {
       const asset = queue.shift();
+      state.activeAssetIndexes.add(asset.index);
+      renderResults();
 
       try {
         const result = await processAsset(asset);
@@ -1659,6 +1678,7 @@ async function processTitles() {
         state.results.push(failedResult(asset, error));
       }
 
+      state.activeAssetIndexes.delete(asset.index);
       completedCount += 1;
       state.results.sort((a, b) => a.index - b.index);
       renderResults();
@@ -1667,6 +1687,8 @@ async function processTitles() {
   }
 
   await Promise.all(Array.from({ length: workerCount }, worker));
+  state.processing = false;
+  state.activeAssetIndexes = new Set();
   renderResults();
 
   elements.processButton.disabled = !canGenerateTitles();

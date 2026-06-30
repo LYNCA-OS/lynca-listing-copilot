@@ -31,9 +31,9 @@ const js = await readFile("app/listing-copilot.js", "utf8");
 });
 
 assert.match(js, /canvas\.toDataURL\("image\/jpeg"/, "images should be normalized to JPEG");
-assert.match(js, /IMAGE_MAX_EDGE\s*=\s*1400/, "long edge should be capped at 1400px");
-assert.match(js, /IMAGE_INITIAL_QUALITY\s*=\s*0\.82/, "initial adaptive quality should stay in the requested range");
-assert.match(js, /IMAGE_MIN_QUALITY\s*=\s*0\.72/, "normal adaptive quality should stay in the requested range");
+assert.match(js, /IMAGE_MAX_EDGE\s*=\s*2200/, "preview/crop long edge should preserve high-resolution card text");
+assert.match(js, /IMAGE_INITIAL_QUALITY\s*=\s*0\.9/, "initial adaptive quality should preserve small card text");
+assert.match(js, /IMAGE_MIN_QUALITY\s*=\s*0\.78/, "normal adaptive quality should avoid low-quality recompression");
 assert.match(js, /heicUnsupportedMessage\s*=/, "HEIC unsupported fallback message should be defined");
 assert.match(js, /当前浏览器暂不支持 HEIC\/HEIF 预览/, "HEIC fallback should be clear Chinese copy");
 assert.match(js, /MAX_ASSET_REQUEST_BYTES/, "asset request body safety threshold should exist");
@@ -45,9 +45,10 @@ assert.match(js, /fileSignatureHex/, "storage uploads should read first-byte fil
 assert.match(js, /signatureHex/, "signed upload requests should include file signature metadata");
 assert.match(js, /listing-image-verify-upload/, "storage uploads should be server-verified after the direct PUT");
 assert.match(js, /Storage upload verification failed/, "storage verification failures should block provider requests");
-assert.match(js, /图片过大，已自动压缩用于识别/, "oversized image compression status should be visible");
-assert.match(js, /正在优化图片…/, "upload optimization status should be visible");
-assert.match(js, /图片已优化，开始识别…/, "recognition start status should be visible");
+assert.match(js, /原图会优先上传云端识别/, "status copy should explain original-file cloud recognition priority");
+assert.match(js, /已自动缩减辅助局部图并保留主图识别/, "oversized request fallback status should be visible without implying low-quality main-image recognition");
+assert.match(js, /正在准备高质量预览与云端原图上传…/, "upload preparation status should be visible");
+assert.match(js, /图片已准备，开始识别…/, "recognition start status should be visible");
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");

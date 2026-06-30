@@ -20,11 +20,13 @@
     "product": { "type": ["string", "null"] },
     "set": { "type": ["string", "null"] },
     "subset": { "type": ["string", "null"] },
+    "language": { "type": ["string", "null"] },
     "players": {
       "type": "array",
       "items": { "type": "string" }
     },
     "character": { "type": ["string", "null"] },
+    "card_name": { "type": ["string", "null"] },
     "team": { "type": ["string", "null"] },
     "artist": { "type": ["string", "null"] },
     "card_type": { "type": ["string", "null"] },
@@ -36,6 +38,9 @@
       }
     },
     "insert": { "type": ["string", "null"] },
+    "surface_color": { "type": ["string", "null"] },
+    "parallel_family": { "type": ["string", "null"] },
+    "parallel_exact": { "type": ["string", "null"] },
     "parallel": { "type": ["string", "null"] },
     "variation": { "type": ["string", "null"] },
     "serial_number": { "type": ["string", "null"] },
