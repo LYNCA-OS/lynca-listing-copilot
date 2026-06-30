@@ -802,6 +802,12 @@ h3 {
   background: rgba(0, 0, 0, 0.18);
 }
 
+.pending-state.pending-idle {
+  min-height: 58px;
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.025);
+}
+
 .pending-state strong {
   color: var(--ink);
   font-size: 14px;
@@ -814,6 +820,84 @@ h3 {
   font-size: 12px;
   font-weight: 750;
   line-height: 1.45;
+}
+
+.idle-dot {
+  width: 18px;
+  height: 18px;
+  grid-row: 1 / span 2;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.progress-meter {
+  position: relative;
+  grid-column: 1 / -1;
+  min-height: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(88, 199, 245, 0.24);
+  border-radius: 999px;
+  background: rgba(6, 13, 24, 0.78);
+}
+
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(88, 199, 245, 0.42), rgba(88, 199, 245, 0.92), rgba(112, 214, 159, 0.68));
+  transition: width 220ms ease;
+}
+
+.progress-value {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 2px 9px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 950;
+  text-align: right;
+}
+
+.progress-label {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.pending-module-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pending-module-grid span {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.pending-module-grid b {
+  display: block;
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.pending-module-grid i {
+  display: block;
+  width: 70%;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.1));
+  filter: blur(0.2px);
 }
 
 .pending-wave {
@@ -942,6 +1026,10 @@ h3 {
   animation: pendingSweep 1.6s ease-in-out infinite;
 }
 
+.title-output-pending.is-idle::before {
+  content: none;
+}
+
 .title-output.confidence-high {
   border-color: rgba(112, 214, 159, 0.62);
   background: rgba(112, 214, 159, 0.08);
@@ -1016,20 +1104,20 @@ h3 {
 
 .writer-modules {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .writer-module {
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 8px;
+  gap: 3px 6px;
   align-items: start;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 7px;
-  padding: 9px 10px;
+  padding: 7px 8px;
   background: rgba(0, 0, 0, 0.16);
 }
 
@@ -1055,7 +1143,7 @@ h3 {
 .writer-module span {
   min-width: 0;
   color: var(--subtle);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
 }
 
@@ -1063,9 +1151,9 @@ h3 {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
-  margin: 0 0 2px;
+  margin: 0;
 }
 
 .module-token {
@@ -1073,10 +1161,10 @@ h3 {
   overflow-wrap: anywhere;
   border: 1px solid rgba(112, 214, 159, 0.24);
   border-radius: 5px;
-  padding: 2px 6px;
+  padding: 1px 5px;
   background: rgba(112, 214, 159, 0.08);
   color: var(--ink);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 850;
   line-height: 1.35;
 }
@@ -1099,15 +1187,15 @@ h3 {
 .writer-module textarea {
   min-width: 0;
   grid-column: 1 / -1;
-  min-height: 44px;
+  min-height: 34px;
   resize: vertical;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
-  padding: 7px 8px;
+  padding: 6px 7px;
   background: rgba(0, 0, 0, 0.16);
   color: var(--ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 780;
   line-height: 1.35;
   outline: none;
@@ -1126,9 +1214,9 @@ h3 {
   justify-self: end;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  padding: 2px 6px;
+  padding: 1px 5px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
 }
 
@@ -1286,6 +1374,66 @@ summary {
   color: var(--ink);
   font-size: 12px;
   font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.writer-evidence-details {
+  margin-top: 10px;
+}
+
+.writer-evidence-help {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+}
+
+.evidence-crop-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.evidence-crop-strip figure {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.evidence-crop-strip img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.35;
+  object-fit: cover;
+}
+
+.evidence-crop-strip figcaption {
+  padding: 4px 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.writer-evidence-list div.needs-review {
+  border-color: rgba(240, 200, 117, 0.42);
+  background: rgba(240, 200, 117, 0.07);
+}
+
+.writer-evidence-list small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 

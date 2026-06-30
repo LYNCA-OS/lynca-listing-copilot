@@ -49,7 +49,10 @@ const state = {
   providerStatus: null,
   selectedProvider: "",
   processing: false,
-  activeAssetIndexes: new Set()
+  activeAssetIndexes: new Set(),
+  assetProgress: new Map(),
+  completedAssetCount: 0,
+  processingTotal: 0
 };
 
 const elements = {
@@ -887,6 +890,70 @@ function setProcessButtonBusy(isBusy) {
   elements.processButton.textContent = isBusy ? "识别中" : "开始生成";
 }
 
+function clampNumber(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.max(min, Math.min(max, number));
+}
+
+function currentProcessingPercent() {
+  const total = state.processingTotal || state.assets.length || 0;
+  if (!state.processing || !total) return 0;
+  const completed = clampNumber(state.completedAssetCount || 0, 0, total);
+  const activeFraction = [...state.assetProgress.values()].reduce((sum, progress) => {
+    return sum + clampNumber(progress.fraction, 0, 0.98);
+  }, 0);
+  return Math.max(1, Math.min(99, Math.round(((completed + activeFraction) / total) * 100)));
+}
+
+function statusWithProgress(message) {
+  const percent = currentProcessingPercent();
+  return percent ? `${percent}% · ${message}` : message;
+}
+
+function setAssetProgress(assetIndex, label, fraction) {
+  if (!state.processing) return;
+  state.assetProgress.set(assetIndex, {
+    label,
+    fraction: clampNumber(fraction, 0.01, 0.98)
+  });
+  renderResults();
+  setStatus(statusWithProgress(`资产 ${assetIndex}：${label}`), { busy: true });
+}
+
+function clearAssetProgress(assetIndex) {
+  state.assetProgress.delete(assetIndex);
+}
+
+function assetProgressSnapshot(asset) {
+  const progress = state.assetProgress.get(asset.index);
+  if (progress) {
+    return {
+      label: progress.label || "识别中",
+      percent: Math.max(1, Math.min(99, Math.round(clampNumber(progress.fraction, 0, 0.98) * 100)))
+    };
+  }
+
+  if (state.processing && !resultForAsset(asset)) {
+    return {
+      label: "等待后台队列",
+      percent: currentProcessingPercent()
+    };
+  }
+
+  return { label: "", percent: 0 };
+}
+
+function progressMeter(percent, label = "") {
+  const safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  return `
+    <div class="progress-meter" aria-label="${escapeHtml(label || "识别进度")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${safePercent}" role="progressbar">
+      <span class="progress-fill" style="width: ${safePercent}%"></span>
+      <strong class="progress-value">${safePercent}%</strong>
+    </div>
+  `;
+}
+
 function assetCountLabel(count) {
   return `${count} 张图片`;
 }
@@ -1027,7 +1094,7 @@ function renderBatchTitles() {
 
 function imageSideLabel(imageIndex) {
   if (state.mode !== "pair") return "图片 Image";
-  return imageIndex === 0 ? "正面 Front" : "背面 Back";
+  return `图片 ${imageIndex + 1} · 系统判正背`;
 }
 
 function cropRegionLabel(region = "") {
@@ -1118,34 +1185,53 @@ function assetRowHtml(asset) {
             ${fieldCropStrip(asset)}
           </div>
         </div>
-        ${result ? resultBox(result) : pendingBox(asset)}
+        ${result ? resultBox(result, asset) : pendingBox(asset)}
       </article>
     `;
+}
+
+function pendingModuleSkeleton() {
+  const modules = ["Year", "Product", "Subject", "Card Name", "Color", "Serial", "Grade"];
+  return `
+    <div class="pending-module-grid" aria-label="识别模块占位">
+      ${modules.map((label) => `
+        <span>
+          <b>${escapeHtml(label)}</b>
+          <i aria-hidden="true"></i>
+        </span>
+      `).join("")}
+    </div>
+  `;
 }
 
 function pendingBox(asset) {
   const isActive = state.activeAssetIndexes.has(asset.index);
   const isQueued = state.processing && !isActive;
+  const isWorking = isActive || isQueued;
   const label = isActive ? "识别中" : isQueued ? "排队中" : "等待中";
+  const progress = assetProgressSnapshot(asset);
   const message = isActive
-    ? "正在读取原图与关键局部区域，完成后会自动生成可编辑标题。"
+    ? "正在读取原图与关键局部区域；识别完成后会按模块生成可编辑标题。"
     : isQueued
       ? "后台队列会自动按批处理，不需要重复点击。"
-      : "点击开始生成后，这里会输出英文 eBay listing title。";
+      : "点击开始生成后才会开始识别；当前只是图片已准备好。";
   return `
-    <div class="title-output title-output-pending">
+    <div class="title-output title-output-pending ${isWorking ? "is-working" : "is-idle"}">
       <div class="title-output-head">
         <span class="confidence-badge confidence-pending">${escapeHtml(label)}</span>
         <span>资产 ${asset.index}</span>
       </div>
-      <div class="pending-state" role="status" aria-live="polite">
-        <span class="loading-spinner" aria-hidden="true"></span>
+      <div class="pending-state ${isWorking ? "pending-active" : "pending-idle"}" role="status" aria-live="polite">
+        ${isWorking ? `<span class="loading-spinner" aria-hidden="true"></span>` : `<span class="idle-dot" aria-hidden="true"></span>`}
         <strong>${escapeHtml(label)}</strong>
         <p>${escapeHtml(message)}</p>
-        <span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
+        ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
+        ${isActive ? pendingModuleSkeleton() : ""}
+        ${isWorking ? `<span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` : ""}
       </div>
       <textarea readonly placeholder="等待生成可编辑英文标题。"></textarea>
-      <p class="follow-up-advice">模型先提取字段，再由 Resolver 与 Title Engine 生成 85 字符以内标题。</p>
+      <p class="follow-up-advice">系统会先识别字段，再生成 85 字符以内英文标题；黄色模块需要写手确认。</p>
     </div>
   `;
 }
@@ -1167,7 +1253,196 @@ function friendlyErrorSummary(reason = "") {
   return text || "识别未返回可用标题。";
 }
 
-function resultBox(result) {
+function compactDisplayValue(value) {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.map(compactDisplayValue).filter(Boolean).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "";
+  if (typeof value === "object") {
+    const direct = value.resolved_value
+      ?? value.value
+      ?? value.text
+      ?? value.raw_text
+      ?? value.visible_text
+      ?? value.direct_observation
+      ?? value.best_reading;
+    if (direct !== undefined && direct !== value) return compactDisplayValue(direct);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "";
+    }
+  }
+  return String(value).trim();
+}
+
+function fieldValue(result, fields = []) {
+  const resolved = currentResolvedForResult(result) || {};
+  const rawFields = result.fields || {};
+  const generated = result.generated_resolved_fields || {};
+  const stores = [resolved, rawFields, generated];
+
+  for (const field of fields) {
+    for (const store of stores) {
+      const value = compactDisplayValue(store?.[field]);
+      if (value) return value;
+    }
+  }
+
+  return "";
+}
+
+function evidenceSourceLabel(item = {}) {
+  const source = String(
+    item.source_type
+      || item.sourceType
+      || item.source
+      || item.image_role
+      || item.imageRole
+      || item.region
+      || item.sourceRegion
+      || item.source_region
+      || ""
+  ).toUpperCase();
+
+  if (/SLAB|GRADE_LABEL|LABEL/.test(source)) return "评级标签";
+  if (/BACK/.test(source)) return "卡背文字";
+  if (/FRONT/.test(source)) return "卡面文字";
+  if (/SERIAL/.test(source)) return "Serial 局部";
+  if (/YEAR|PRODUCT|CHECKLIST|COLLECTOR/.test(source)) return "文字局部";
+  if (/OCR/.test(source)) return "OCR 文字";
+  if (/VISUAL|IMAGE|MODEL|GPT|OPENAI/.test(source)) return "图片观察";
+  if (/REGISTRY|CATALOG|CHECKLIST/.test(source)) return "目录核对";
+  return "图片识别";
+}
+
+function evidenceTextFromNode(node) {
+  if (!node) return "";
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) {
+    return node
+      .slice(0, 2)
+      .map(evidenceTextFromNode)
+      .filter(Boolean)
+      .join("；");
+  }
+  if (typeof node !== "object") return compactDisplayValue(node);
+
+  const value = compactDisplayValue(
+    node.raw_text
+      ?? node.visible_text
+      ?? node.direct_observation
+      ?? node.evidence_text
+      ?? node.text
+      ?? node.value
+      ?? node.best_reading
+      ?? node.resolved_value
+  );
+  const source = evidenceSourceLabel(node);
+  if (value) return `${source}：${value}`;
+
+  const supporting = node.supporting_sources || node.sources || node.evidence || node.items;
+  if (supporting) return evidenceTextFromNode(supporting);
+
+  return source;
+}
+
+function evidenceForField(result, fields = []) {
+  const containers = [
+    result.field_evidence,
+    result.evidence?.field_evidence,
+    result.generated_evidence?.field_evidence,
+    result.evidence,
+    result.generated_evidence,
+    result.field_states
+  ].filter((container) => container && typeof container === "object");
+
+  for (const field of fields) {
+    for (const container of containers) {
+      const direct = container[field];
+      const text = evidenceTextFromNode(direct);
+      if (text) return text;
+    }
+  }
+
+  const value = fieldValue(result, fields);
+  return value ? "图片识别结果，写手确认即可" : "未识别到";
+}
+
+function evidenceRows(result, unresolved = []) {
+  return [
+    { label: "Year", fields: ["year", "season_year", "product_year"] },
+    { label: "Product / Set", fields: ["product_or_set", "product", "set", "manufacturer", "brand"] },
+    { label: "Subject", fields: ["subject", "subjects", "players", "player", "character"] },
+    { label: "Card Name", fields: ["card_name", "insert", "subset", "card_type"] },
+    { label: "Color", fields: ["surface_color", "color", "parallel_family"] },
+    { label: "Exact Parallel", fields: ["parallel_exact", "parallel", "variant_or_parallel"] },
+    { label: "Collector #", fields: ["collector_number", "card_number", "checklist_code"] },
+    { label: "Serial", fields: ["serial_number"] },
+    { label: "Grade", fields: ["grade_company", "card_grade", "grade", "auto_grade"] }
+  ].map((row) => {
+    const value = fieldValue(result, row.fields);
+    const pending = row.fields.some((field) => unresolved.includes(field));
+    return {
+      ...row,
+      value,
+      evidence: evidenceForField(result, row.fields),
+      pending
+    };
+  }).filter((row) => row.value || row.pending || row.evidence !== "未识别到");
+}
+
+function evidenceCropStrip(asset = null) {
+  const images = (asset?.providerImages || [])
+    .filter((image) => imageIsDerivedForRequest(image))
+    .slice(0, 6);
+  if (!images.length) return "";
+
+  return `
+    <div class="evidence-crop-strip" aria-label="关键局部图">
+      ${images.map((image) => {
+        const label = cropRegionLabel(image.sourceRegion || image.source_region || image.cropPlan?.role || image.storageRole || "");
+        return `
+          <figure>
+            <img src="${image.dataUrl}" alt="${escapeHtml(label)}">
+            <figcaption>${escapeHtml(label)}</figcaption>
+          </figure>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function writerEvidenceDetails(result, asset = null, unresolved = []) {
+  const rows = evidenceRows(result, unresolved);
+  const quality = qualityFields(result);
+  if (!rows.length && !quality.length) return "";
+
+  return `
+    <details class="writer-evidence-details">
+      <summary>查看字段依据（写手版）</summary>
+      <p class="writer-evidence-help">这里只显示写手可用的信息：字段值、来自卡面/卡背/标签/局部图的位置，以及是否需要确认。</p>
+      ${evidenceCropStrip(asset)}
+      <div class="field-list writer-evidence-list">
+        ${rows.map((row) => `
+          <div class="${row.pending ? "needs-review" : ""}">
+            <span>${escapeHtml(row.label)}</span>
+            <strong>${escapeHtml(row.value || "待确认")}</strong>
+            <small>${escapeHtml(row.evidence || "未识别到")}</small>
+          </div>
+        `).join("")}
+        ${quality.map(([label, value]) => `
+          <div>
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || "-")}</strong>
+            <small>图片质量信息</small>
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function resultBox(result, asset = null) {
   const confidence = normalizeConfidence(result.confidence);
   const disabled = confidence === "FAILED" || !result.title;
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
@@ -1206,25 +1481,11 @@ function resultBox(result) {
       <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || unavailableTitle)}</textarea>
       ${titleOverrideNotice(result)}
       ${moduleSummary(result)}
-      ${vectorCandidateNotice(result)}
       ${publicationGateNotice(result)}
       <p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
       ${result.publishMessage ? `<p class="publish-status">${escapeHtml(result.publishMessage)}</p>` : ""}
-      <details>
-        <summary>查看判断依据</summary>
-        <div class="field-list">
-          ${[
-            ...reasoningFields(result.fields || {}, unresolved, result.resolved || {}),
-            ...qualityFields(result)
-          ].map(([label, value]) => `
-            <div>
-              <span>${label}</span>
-              <strong>${value || "-"}</strong>
-            </div>
-          `).join("")}
-        </div>
-      </details>
+      ${writerEvidenceDetails(result, asset, unresolved)}
     </div>
   `;
 }
@@ -1532,7 +1793,7 @@ async function handleFiles(fileList) {
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
-  setStatus("正在准备高质量预览与云端原图上传…", { busy: true });
+  setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
   closeImageModal();
   const failures = [];
   const prepareStartedAt = performance.now();
@@ -1556,6 +1817,10 @@ async function handleFiles(fileList) {
   const images = settledImages;
   state.files = images;
   state.results = [];
+  state.assetProgress = new Map();
+  state.activeAssetIndexes = new Set();
+  state.completedAssetCount = 0;
+  state.processingTotal = 0;
   state.clientImagePrepareMs = prepareElapsedMs;
 
   if (failures.length || ignoredFiles.length) {
@@ -1563,8 +1828,8 @@ async function handleFiles(fileList) {
   } else {
     const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
     setStatus(previewOptimizedCount
-      ? `${images.length} 张图片已准备。原图会优先上传云端识别，本地预览已高质量优化。`
-      : `${images.length} 张图片已准备。`);
+      ? `${images.length} 张图片已准备。点击开始生成后才会上传云端识别；本地预览已高质量优化。`
+      : `${images.length} 张图片已准备。点击开始生成后才会上传云端识别。`);
   }
 
   renderPreviews();
@@ -1573,22 +1838,29 @@ async function handleFiles(fileList) {
 
 async function processAsset(asset, options = {}) {
   const processStartedAt = performance.now();
+  setAssetProgress(asset.index, "上传原图", 0.08);
   const uploadStartedAt = performance.now();
   const uploaded = await ensureAssetImagesUploaded(asset);
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
-  if (uploaded) setStatus("原图已上传到对象存储，正在生成短期读取 URL。", { busy: true });
+  setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
 
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
     client_upload_ms: uploadMs
   };
   const requestPrepareStartedAt = performance.now();
+  setAssetProgress(asset.index, "准备识别请求", 0.3);
   const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, options);
   const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
   asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
-  if (compressedAgain) setStatus("图片请求过大，已自动缩减辅助局部图并保留主图识别。", { busy: true });
+  setAssetProgress(
+    asset.index,
+    compressedAgain ? "保留主图，缩减辅助局部图" : "请求已准备",
+    0.4
+  );
 
   const apiStartedAt = performance.now();
+  setAssetProgress(asset.index, "云端识别中", 0.52);
   const response = await fetch("/api/listing-copilot-title", {
     method: "POST",
     headers: {
@@ -1614,7 +1886,9 @@ async function processAsset(asset, options = {}) {
     throw new Error(detail ? `请求失败：${response.status}，${detail}` : `请求失败：${response.status}`);
   }
 
+  setAssetProgress(asset.index, "接收识别结果", 0.82);
   const payload = await response.json();
+  setAssetProgress(asset.index, "生成可编辑模块", 0.94);
   const finalTitle = payload.final_title || payload.title || "";
   const clientTotalMs = Math.round(performance.now() - processStartedAt);
   const timing = {
@@ -1661,16 +1935,16 @@ function processingCompletionStatus() {
   const succeeded = Math.max(0, state.results.length - failed);
 
   if (!total) return "";
-  if (failed && succeeded) return `已完成：${succeeded} 个成功，${failed} 个失败。失败项可查看错误后重试。`;
-  if (failed) return `已完成：${failed} 个失败。请查看每张卡错误信息后重试。`;
-  return "已完成，结果保持上传顺序。";
+  if (failed && succeeded) return `100% · 已完成：${succeeded} 个成功，${failed} 个失败。失败项可查看错误后重试。`;
+  if (failed) return `100% · 已完成：${failed} 个失败。请查看每张卡错误信息后重试。`;
+  return "100% · 已完成，结果保持上传顺序。";
 }
 
 function processingProgressStatus(completedCount) {
   const total = state.assets.length;
   const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
   const suffix = failed ? `，失败 ${failed}` : "";
-  return `正在处理：已完成 ${completedCount} / ${total}${suffix}...`;
+  return `识别中 ${currentProcessingPercent()}%：已完成 ${completedCount} / ${total}${suffix}...`;
 }
 
 async function processTitles() {
@@ -1679,10 +1953,13 @@ async function processTitles() {
   state.results = [];
   state.processing = true;
   state.activeAssetIndexes = new Set();
+  state.assetProgress = new Map();
+  state.completedAssetCount = 0;
+  state.processingTotal = state.assets.length;
   renderResults();
   elements.processButton.disabled = true;
   setProcessButtonBusy(true);
-  setStatus("图片已准备，开始识别…", { busy: true });
+  setStatus("1% · 图片已准备，开始识别…", { busy: true });
 
   const queue = [...state.assets];
   const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
@@ -1692,6 +1969,7 @@ async function processTitles() {
     while (queue.length) {
       const asset = queue.shift();
       state.activeAssetIndexes.add(asset.index);
+      setAssetProgress(asset.index, "进入识别队列", 0.03);
       renderResults();
 
       try {
@@ -1701,8 +1979,10 @@ async function processTitles() {
         state.results.push(failedResult(asset, error));
       }
 
+      clearAssetProgress(asset.index);
       state.activeAssetIndexes.delete(asset.index);
       completedCount += 1;
+      state.completedAssetCount = completedCount;
       state.results.sort((a, b) => a.index - b.index);
       renderResults();
       setStatus(processingProgressStatus(completedCount), { busy: completedCount < state.assets.length });
@@ -1712,6 +1992,9 @@ async function processTitles() {
   await Promise.all(Array.from({ length: workerCount }, worker));
   state.processing = false;
   state.activeAssetIndexes = new Set();
+  state.assetProgress = new Map();
+  state.completedAssetCount = 0;
+  state.processingTotal = 0;
   renderResults();
 
   elements.processButton.disabled = !canGenerateTitles();
@@ -2119,11 +2402,42 @@ function resetTool() {
   state.files = [];
   state.assets = [];
   state.results = [];
+  state.processing = false;
+  state.activeAssetIndexes = new Set();
+  state.assetProgress = new Map();
+  state.completedAssetCount = 0;
+  state.processingTotal = 0;
   closeImageModal();
   elements.imageInput.value = "";
   setStatus("");
   renderPreviews();
   renderResults();
+}
+
+function nextModuleTarget(input) {
+  const resultIndex = input.dataset.moduleInput;
+  const inputs = [...elements.assetPreviewList.querySelectorAll("[data-module-input]")]
+    .filter((candidate) => candidate.dataset.moduleInput === resultIndex);
+  const currentIndex = inputs.indexOf(input);
+  const next = inputs[(currentIndex + 1) % Math.max(1, inputs.length)];
+  return next
+    ? {
+      resultIndex,
+      moduleKey: next.dataset.moduleKey
+    }
+    : null;
+}
+
+function focusModuleInput(target) {
+  if (!target) return;
+  requestAnimationFrame(() => {
+    const input = [...elements.assetPreviewList.querySelectorAll("[data-module-input]")]
+      .find((candidate) => candidate.dataset.moduleInput === target.resultIndex
+        && candidate.dataset.moduleKey === target.moduleKey);
+    if (!input) return;
+    input.focus();
+    input.select();
+  });
 }
 
 function bindEvents() {
@@ -2211,6 +2525,15 @@ function bindEvents() {
   elements.assetPreviewList.addEventListener("input", (event) => {
     const input = event.target.closest("[data-title-input]");
     if (input) updateCorrectedTitle(input);
+  });
+
+  elements.assetPreviewList.addEventListener("keydown", (event) => {
+    const moduleInput = event.target.closest("[data-module-input]");
+    if (!moduleInput || event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
+
+    event.preventDefault();
+    const target = nextModuleTarget(moduleInput);
+    applyModuleEdit(moduleInput).finally(() => focusModuleInput(target));
   });
 
   elements.assetPreviewList.addEventListener("change", (event) => {
