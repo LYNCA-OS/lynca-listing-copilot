@@ -133,6 +133,11 @@ assert.match(js, /processingCompletionStatus/, "batch completion should summariz
 assert.match(js, /已完成：\$\{succeeded\} 个成功，\$\{failed\} 个失败/, "partial failures should produce an actionable completion status");
 assert.match(js, /activeAssetIndexes/, "frontend should track active assets for visible processing state");
 assert.match(js, /loading-spinner/, "pending cards should render an obvious waiting spinner");
+assert.match(js, /setStatus\(message,\s*options\s*=\s*\{\}\)/, "status updates should support explicit busy rendering");
+assert.match(js, /status-spinner/, "global status should render a spinner while busy");
+assert.match(js, /status-dots/, "global status should render animated waiting dots while busy");
+assert.match(js, /pending-wave/, "pending cards should render a wave animation while waiting");
+assert.match(js, /setProcessButtonBusy/, "generate button should show a busy state during recognition");
 assert.match(js, /friendlyErrorSummary/, "failed cards should explain why title output is unavailable");
 assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
@@ -142,6 +147,14 @@ assert.match(css, /\.module-token-row/, "module token confidence row should have
 assert.match(css, /\.module-token\.needs-review/, "low-confidence module tokens should be yellow-highlighted");
 assert.match(css, /\.pending-state/, "pending cards should have a stable waiting layout");
 assert.match(css, /\.loading-spinner/, "pending cards should show a loading spinner");
+assert.match(css, /\.status-spinner/, "global upload/recognition status should show a spinner");
+assert.match(css, /\.status-dots i/, "global upload/recognition status should show waiting dots");
+assert.match(css, /\.pending-wave/, "pending cards should include a wave loading animation");
+assert.match(css, /\.drop-zone\.status-busy::after/, "busy upload zone should show an animated progress sweep");
+assert.match(css, /\.primary-button\.is-loading::before/, "generate button should show a loading spinner");
+assert.match(css, /\.title-output-pending::before/, "pending result cards should show a subtle progress sweep");
+assert.match(css, /\.primary-button\.is-loading:disabled/, "busy generate button should remain visually legible while disabled");
+assert.match(css, /prefers-reduced-motion/, "loading animations should respect reduced motion preferences");
 assert.match(css, /\.publication-gate/, "partial writer draft gate should be visible");
 assert.match(css, /\.title-override-note/, "title override state should be visible");
 assert.match(css, /\.publish-button/, "mock publish button should have a distinct approved-action style");

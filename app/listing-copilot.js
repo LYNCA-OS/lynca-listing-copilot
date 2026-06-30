@@ -862,8 +862,29 @@ function normalizeConfidence(confidence) {
   }[String(confidence || "").toUpperCase()] || "MEDIUM";
 }
 
-function setStatus(message) {
-  elements.statusText.textContent = message;
+function setStatus(message, options = {}) {
+  const text = String(message || "");
+  const busy = Boolean(options.busy && text);
+  elements.statusText.classList.toggle("status-busy", busy);
+  elements.statusText.setAttribute("aria-busy", busy ? "true" : "false");
+  elements.dropZone.classList.toggle("status-busy", busy);
+
+  if (busy) {
+    elements.statusText.innerHTML = `
+      <span class="status-spinner" aria-hidden="true"></span>
+      <span class="status-message">${escapeHtml(text)}</span>
+      <span class="status-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    `;
+    return;
+  }
+
+  elements.statusText.textContent = text;
+}
+
+function setProcessButtonBusy(isBusy) {
+  elements.processButton.classList.toggle("is-loading", Boolean(isBusy));
+  elements.processButton.setAttribute("aria-busy", isBusy ? "true" : "false");
+  elements.processButton.textContent = isBusy ? "识别中" : "开始生成";
 }
 
 function assetCountLabel(count) {
@@ -1121,6 +1142,7 @@ function pendingBox(asset) {
         <span class="loading-spinner" aria-hidden="true"></span>
         <strong>${escapeHtml(label)}</strong>
         <p>${escapeHtml(message)}</p>
+        <span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
       </div>
       <textarea readonly placeholder="等待生成可编辑英文标题。"></textarea>
       <p class="follow-up-advice">模型先提取字段，再由 Resolver 与 Title Engine 生成 85 字符以内标题。</p>
@@ -1510,7 +1532,7 @@ async function handleFiles(fileList) {
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
-  setStatus("正在准备高质量预览与云端原图上传…");
+  setStatus("正在准备高质量预览与云端原图上传…", { busy: true });
   closeImageModal();
   const failures = [];
   const prepareStartedAt = performance.now();
@@ -1554,7 +1576,7 @@ async function processAsset(asset, options = {}) {
   const uploadStartedAt = performance.now();
   const uploaded = await ensureAssetImagesUploaded(asset);
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
-  if (uploaded) setStatus("原图已上传到对象存储，正在生成短期读取 URL。");
+  if (uploaded) setStatus("原图已上传到对象存储，正在生成短期读取 URL。", { busy: true });
 
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
@@ -1564,7 +1586,7 @@ async function processAsset(asset, options = {}) {
   const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, options);
   const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
   asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
-  if (compressedAgain) setStatus("图片请求过大，已自动缩减辅助局部图并保留主图识别。");
+  if (compressedAgain) setStatus("图片请求过大，已自动缩减辅助局部图并保留主图识别。", { busy: true });
 
   const apiStartedAt = performance.now();
   const response = await fetch("/api/listing-copilot-title", {
@@ -1659,7 +1681,8 @@ async function processTitles() {
   state.activeAssetIndexes = new Set();
   renderResults();
   elements.processButton.disabled = true;
-  setStatus("图片已准备，开始识别…");
+  setProcessButtonBusy(true);
+  setStatus("图片已准备，开始识别…", { busy: true });
 
   const queue = [...state.assets];
   const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
@@ -1682,7 +1705,7 @@ async function processTitles() {
       completedCount += 1;
       state.results.sort((a, b) => a.index - b.index);
       renderResults();
-      setStatus(processingProgressStatus(completedCount));
+      setStatus(processingProgressStatus(completedCount), { busy: completedCount < state.assets.length });
     }
   }
 
@@ -1692,6 +1715,7 @@ async function processTitles() {
   renderResults();
 
   elements.processButton.disabled = !canGenerateTitles();
+  setProcessButtonBusy(false);
   setStatus(processingCompletionStatus());
 }
 
@@ -1703,7 +1727,7 @@ async function retryAssetWithEmergency(button) {
 
   button.disabled = true;
   button.textContent = "GPT 重试中";
-  setStatus(`资产 ${asset.index} 正在使用 GPT‑4.1 单模型重试...`);
+  setStatus(`资产 ${asset.index} 正在使用 GPT‑4.1 单模型重试...`, { busy: true });
 
   try {
     const result = await processAsset(asset, {

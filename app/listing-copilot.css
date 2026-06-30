@@ -333,6 +333,7 @@ h3 {
 }
 
 .drop-zone {
+  position: relative;
   min-height: 52px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -342,11 +343,29 @@ h3 {
   border: 1px dashed rgba(255, 255, 255, 0.28);
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.045);
+  overflow: hidden;
 }
 
 .drop-zone.is-dragging {
   border-color: var(--cyan);
   background: rgba(88, 199, 245, 0.12);
+}
+
+.drop-zone.status-busy {
+  border-color: rgba(88, 199, 245, 0.58);
+  background: rgba(88, 199, 245, 0.08);
+}
+
+.drop-zone.status-busy::after {
+  content: "";
+  position: absolute;
+  left: -40%;
+  bottom: 0;
+  width: 42%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  animation: statusSweep 1.25s ease-in-out infinite;
 }
 
 .drop-zone input {
@@ -373,6 +392,50 @@ h3 {
 
 #statusText {
   align-self: start;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.status-spinner {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--cyan);
+  border-radius: 999px;
+  animation: spin 760ms linear infinite;
+}
+
+.status-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-dots {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.status-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--cyan);
+  opacity: 0.38;
+  animation: dotWave 900ms ease-in-out infinite;
+}
+
+.status-dots i:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.status-dots i:nth-child(3) {
+  animation-delay: 240ms;
 }
 
 .ghost-button,
@@ -398,6 +461,26 @@ h3 {
 
 .primary-button {
   background: linear-gradient(100deg, var(--purple), var(--cyan));
+}
+
+.primary-button.is-loading {
+  grid-auto-flow: column;
+  gap: 8px;
+  cursor: wait;
+}
+
+.primary-button.is-loading:disabled {
+  opacity: 0.88;
+}
+
+.primary-button.is-loading::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.24);
+  border-top-color: #ffffff;
+  border-radius: 999px;
+  animation: spin 760ms linear infinite;
 }
 
 .primary-button:disabled,
@@ -733,6 +816,35 @@ h3 {
   line-height: 1.45;
 }
 
+.pending-wave {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  align-items: end;
+  height: 12px;
+  margin-top: 2px;
+}
+
+.pending-wave i {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(88, 199, 245, 0.22), rgba(88, 199, 245, 0.9), rgba(158, 121, 255, 0.32));
+  animation: waveBars 920ms ease-in-out infinite;
+}
+
+.pending-wave i:nth-child(2) {
+  animation-delay: 100ms;
+}
+
+.pending-wave i:nth-child(3) {
+  animation-delay: 200ms;
+}
+
+.pending-wave i:nth-child(4) {
+  animation-delay: 300ms;
+}
+
 .loading-spinner {
   width: 18px;
   height: 18px;
@@ -749,12 +861,85 @@ h3 {
   }
 }
 
+@keyframes dotWave {
+  0%,
+  100% {
+    opacity: 0.34;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes waveBars {
+  0%,
+  100% {
+    opacity: 0.36;
+    transform: scaleY(0.62);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleY(1.4);
+  }
+}
+
+@keyframes statusSweep {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+@keyframes pendingSweep {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner,
+  .status-spinner,
+  .status-dots i,
+  .pending-wave i,
+  .drop-zone.status-busy::after,
+  .primary-button.is-loading::before,
+  .title-output-pending::before {
+    animation: none;
+  }
+}
+
 .title-output {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
   background: rgba(255, 255, 255, 0.035);
+}
+
+.title-output-pending {
+  position: relative;
+  overflow: hidden;
+}
+
+.title-output-pending::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -55%;
+  width: 45%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(88, 199, 245, 0.08), transparent);
+  animation: pendingSweep 1.6s ease-in-out infinite;
 }
 
 .title-output.confidence-high {

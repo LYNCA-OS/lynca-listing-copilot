@@ -49,6 +49,8 @@ assert.match(js, /原图会优先上传云端识别/, "status copy should explai
 assert.match(js, /已自动缩减辅助局部图并保留主图识别/, "oversized request fallback status should be visible without implying low-quality main-image recognition");
 assert.match(js, /正在准备高质量预览与云端原图上传…/, "upload preparation status should be visible");
 assert.match(js, /图片已准备，开始识别…/, "recognition start status should be visible");
+assert.match(js, /setStatus\("正在准备高质量预览与云端原图上传…",\s*\{\s*busy:\s*true\s*\}\)/, "upload preparation should render as an active waiting state");
+assert.match(js, /setStatus\("图片已准备，开始识别…",\s*\{\s*busy:\s*true\s*\}\)/, "recognition start should render as an active waiting state");
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");
