@@ -4,8 +4,11 @@ import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js"
 const {
   applyOpenSetAssistShadowPresentationGuard,
   boundedPayloadImagesFromImages,
+  catalogCandidateHasStrongAnchor,
+  catalogStrongCandidateForVectorLazy,
   configuredMaxPayloadImages,
-  narrowSurfaceColorFromOpenSetParallel
+  narrowSurfaceColorFromOpenSetParallel,
+  shouldSkipVectorForCatalogContext
 } = __listingCopilotTitleTestHooks;
 
 assert.equal(configuredMaxPayloadImages({}), 14);
@@ -13,6 +16,61 @@ assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "18" }), 1
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "0" }), 14);
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "not-a-number" }), 14);
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "1" }), 2);
+
+const strongCatalogCandidate = {
+  candidate_id: "catalog-96",
+  candidate_identity_id: "identity-96",
+  source_trust: "APPROVED_REFERENCE",
+  supporting_fields: ["collector_number", "subject", "product"],
+  fields: {
+    year: "1997-98",
+    product: "Bowman's Best",
+    subjects: ["Michael Jordan"],
+    collector_number: "96"
+  },
+  conflicting_fields: []
+};
+const strongCatalogContext = {
+  promptPacket: true,
+  catalog_assist_eligibility: {
+    prompt_candidate_count: 1
+  },
+  assistPacket: {
+    vector_retrieval: {
+      candidates: [strongCatalogCandidate]
+    }
+  }
+};
+assert.equal(catalogCandidateHasStrongAnchor(strongCatalogCandidate, {}), true);
+assert.equal(catalogStrongCandidateForVectorLazy(strongCatalogContext, {})?.candidate_id, "catalog-96");
+assert.equal(shouldSkipVectorForCatalogContext({
+  catalogContext: strongCatalogContext,
+  resolvedForRetrieval: { player: "Michael Jordan", product: "Bowman's Best" },
+  providerOptions: { enable_vector_assist: true },
+  env: {}
+}).skip, true);
+assert.equal(shouldSkipVectorForCatalogContext({
+  catalogContext: {
+    ...strongCatalogContext,
+    catalog_assist_eligibility: { prompt_candidate_count: 2 },
+    assistPacket: {
+      vector_retrieval: {
+        candidates: [strongCatalogCandidate, { ...strongCatalogCandidate, candidate_id: "catalog-97" }]
+      }
+    }
+  },
+  providerOptions: { enable_vector_assist: true },
+  env: {}
+}).skip, false, "multi-candidate catalog matches should still allow vector assist");
+assert.equal(catalogCandidateHasStrongAnchor({
+  ...strongCatalogCandidate,
+  conflicting_fields: ["year"]
+}, {}), false, "direct catalog conflicts must fail closed");
+assert.equal(catalogCandidateHasStrongAnchor({
+  ...strongCatalogCandidate,
+  supporting_fields: ["subject"],
+  fields: { subjects: ["Michael Jordan"] }
+}, {}), false, "weak subject-only catalog candidates should not skip vector");
 
 const oversizedPayloadBatch = boundedPayloadImagesFromImages([
   { id: "front" },

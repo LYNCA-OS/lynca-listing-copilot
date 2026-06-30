@@ -93,11 +93,20 @@ const promptFiles = [
   "examples/redemption.md"
 ];
 let promptCache;
+const catalogCandidateContextCache = new Map();
+const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
+const defaultCatalogCacheMaxEntries = 500;
+const defaultCatalogFastLaneBudgetMs = 120;
 
 function envFlag(env, key, fallback = true) {
   const raw = env[key];
   if (raw === undefined || raw === null || raw === "") return fallback;
   return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
+}
+
+function positiveIntegerFromEnv(env, key, fallback) {
+  const value = normalizePositiveIntegerOrNull(env?.[key]);
+  return value === null ? fallback : value;
 }
 
 function configuredMaxPayloadImages(env = process.env) {
@@ -215,6 +224,8 @@ function emptyTiming() {
     image_quality_check_ms: 0,
     recognition_preflight_ms: 0,
     stored_visual_feature_lookup_ms: 0,
+    catalog_retrieval_ms: 0,
+    catalog_cache_ms: 0,
     vector_embedding_ms: 0,
     vector_retrieval_ms: 0,
     evidence_completion_ms: 0,
@@ -3499,6 +3510,184 @@ function vectorRetrievalUnavailablePacket(status, reason) {
   };
 }
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function catalogCacheEnabled(env = process.env, providerOptions = {}) {
+  return optionFlag(providerOptions, "enable_catalog_cache", envFlag(env, "ENABLE_CATALOG_LOOKUP_CACHE", true));
+}
+
+function catalogCacheTtlMs(env = process.env) {
+  return Math.max(1_000, positiveIntegerFromEnv(env, "CATALOG_LOOKUP_CACHE_TTL_MS", defaultCatalogCacheTtlMs));
+}
+
+function catalogCacheMaxEntries(env = process.env) {
+  return Math.max(10, positiveIntegerFromEnv(env, "CATALOG_LOOKUP_CACHE_MAX_ENTRIES", defaultCatalogCacheMaxEntries));
+}
+
+function catalogFastLaneBudgetMs(env = process.env, providerOptions = {}) {
+  const optionValue = normalizePositiveIntegerOrNull(providerOptions.catalog_fast_lane_budget_ms ?? providerOptions.catalogFastLaneBudgetMs);
+  return Math.max(0, optionValue ?? positiveIntegerFromEnv(env, "CATALOG_FAST_LANE_BUDGET_MS", defaultCatalogFastLaneBudgetMs));
+}
+
+function catalogCandidateContextCacheKey({ resolvedForRetrieval = {}, providerOptions = {}, env = process.env } = {}) {
+  const keyPayload = {
+    revision: env.CATALOG_LOOKUP_CACHE_REVISION || "v1",
+    resolved: resolvedForRetrieval || {},
+    options: {
+      corrected_title_as_temporary_gt: optionFlag(providerOptions, "corrected_title_as_temporary_gt", false),
+      enable_catalog_assist: optionFlag(providerOptions, "enable_catalog_assist", false)
+    }
+  };
+  return crypto.createHash("sha256").update(stableJson(keyPayload)).digest("hex");
+}
+
+function pruneCatalogCandidateContextCache(maxEntries, now = Date.now()) {
+  for (const [key, entry] of catalogCandidateContextCache.entries()) {
+    if (!entry || entry.expires_at_ms <= now) catalogCandidateContextCache.delete(key);
+  }
+  while (catalogCandidateContextCache.size > maxEntries) {
+    const oldestKey = catalogCandidateContextCache.keys().next().value;
+    if (!oldestKey) break;
+    catalogCandidateContextCache.delete(oldestKey);
+  }
+}
+
+function promptCandidatesFromContext(context = {}) {
+  return Array.isArray(context.assistPacket?.vector_retrieval?.candidates)
+    ? context.assistPacket.vector_retrieval.candidates
+    : [];
+}
+
+function supportFieldSet(candidate = {}) {
+  return new Set([
+    ...(Array.isArray(candidate.supporting_fields) ? candidate.supporting_fields : []),
+    ...(Array.isArray(candidate.matched_fields) ? candidate.matched_fields : [])
+  ].map((field) => String(field || "").trim().toLowerCase()).filter(Boolean));
+}
+
+function fieldHasValue(fields = {}, ...keys) {
+  return keys.some((key) => valuePresent(fields?.[key]));
+}
+
+function catalogCandidateHasStrongAnchor(candidate = {}, queryFields = {}) {
+  const fields = candidate.fields && typeof candidate.fields === "object" ? candidate.fields : {};
+  const support = supportFieldSet(candidate);
+  const conflicts = Array.isArray(candidate.conflicting_fields) ? candidate.conflicting_fields : [];
+  if (String(candidate.source_trust || "").toUpperCase() !== "APPROVED_REFERENCE") return false;
+  if (conflicts.length) return false;
+
+  const hasExactCode = support.has("collector_number")
+    || support.has("card_number")
+    || support.has("checklist_code")
+    || fieldHasValue(fields, "collector_number", "checklist_code");
+  const hasSerialDenominator = support.has("serial_denominator")
+    || support.has("serial_number")
+    || fieldHasValue(fields, "expected_serial_denominator");
+  const hasSubject = support.has("subjects")
+    || support.has("players")
+    || support.has("subject")
+    || fieldHasValue(fields, "subjects", "players", "player", "subject");
+  const hasProductOrYear = support.has("product")
+    || support.has("product_partial")
+    || support.has("set")
+    || support.has("year")
+    || fieldHasValue(fields, "product", "set", "year")
+    || fieldHasValue(queryFields, "product", "set", "year");
+
+  return (hasExactCode && (hasSubject || hasProductOrYear))
+    || (hasSerialDenominator && hasSubject && hasProductOrYear);
+}
+
+function catalogStrongCandidateForVectorLazy(context = {}, queryFields = {}) {
+  if (context.promptPacket !== true) return null;
+  const eligibility = context.catalog_assist_eligibility || {};
+  if (Number(eligibility.prompt_candidate_count || 0) !== 1) return null;
+  const candidates = promptCandidatesFromContext(context);
+  const candidate = candidates[0] || null;
+  return candidate && catalogCandidateHasStrongAnchor(candidate, queryFields) ? candidate : null;
+}
+
+function shouldSkipVectorForCatalogContext({
+  catalogContext = {},
+  resolvedForRetrieval = {},
+  providerOptions = {},
+  env = process.env
+} = {}) {
+  if (optionFlag(providerOptions, "enable_vector_lazy_mode", envFlag(env, "ENABLE_VECTOR_LAZY_MODE", true)) !== true) {
+    return { skip: false, reason: "vector_lazy_disabled" };
+  }
+  if (optionFlag(providerOptions, "enable_vector_assist", false) !== true) {
+    return { skip: false, reason: "vector_assist_disabled" };
+  }
+  if (optionFlag(providerOptions, "force_vector_assist", false) === true) {
+    return { skip: false, reason: "force_vector_assist" };
+  }
+  const candidate = catalogStrongCandidateForVectorLazy(catalogContext, resolvedForRetrieval);
+  if (!candidate) return { skip: false, reason: "no_strong_catalog_anchor" };
+  return {
+    skip: true,
+    reason: "strong_catalog_anchor",
+    candidate_id: candidate.candidate_id || candidate.candidate_identity_id || "",
+    candidate_identity_id: candidate.candidate_identity_id || ""
+  };
+}
+
+function skippedVectorCandidateContext({
+  reason = "vector_lazy_catalog_anchor",
+  visualFeatures = {},
+  env = process.env,
+  providerOptions = {},
+  skip = {}
+} = {}) {
+  const config = vectorRetrievalConfig(env, providerOptions);
+  const packet = emptyVectorCandidatePacket(reason);
+  return {
+    mode: config.mode,
+    visualFeatures,
+    packet,
+    assistPacket: packet,
+    retrieval: null,
+    worker: null,
+    telemetry: null,
+    vector_assist_eligibility: vectorCandidatePacketAssistEligibility(packet),
+    promptPacket: false,
+    skipped: true,
+    skip_reason: reason,
+    vector_lazy_skip: {
+      skipped: true,
+      reason,
+      catalog_candidate_id: skip.candidate_id || "",
+      catalog_candidate_identity_id: skip.candidate_identity_id || ""
+    }
+  };
+}
+
+function waitForPromiseWithin(promise, timeoutMs) {
+  if (timeoutMs <= 0) {
+    return Promise.resolve({ settled: false, value: null });
+  }
+  let timeout;
+  return Promise.race([
+    promise.then(
+      (value) => ({ settled: true, value }),
+      (error) => {
+        throw error;
+      }
+    ),
+    new Promise((resolve) => {
+      timeout = setTimeout(() => resolve({ settled: false, value: null }), timeoutMs);
+    })
+  ]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
 async function prepareCatalogCandidateContext({
   resolvedForRetrieval = {},
   providerOptions = {},
@@ -3516,6 +3705,22 @@ async function prepareCatalogCandidateContext({
     };
   }
 
+  const cacheEnabled = catalogCacheEnabled(env, providerOptions);
+  const cacheKey = cacheEnabled
+    ? catalogCandidateContextCacheKey({ resolvedForRetrieval, providerOptions, env })
+    : "";
+  const cacheStartedAt = Date.now();
+  if (cacheEnabled && cacheKey) {
+    const cached = catalogCandidateContextCache.get(cacheKey);
+    if (cached && cached.expires_at_ms > cacheStartedAt) {
+      addTiming(timingContext, "catalog_cache_ms", Date.now() - cacheStartedAt);
+      return {
+        ...cached.context,
+        catalog_cache_hit: true
+      };
+    }
+  }
+
   const allowedFamilies = catalogRetrievalFamilies();
   const retrieval = await timeAsync(timingContext, "catalog_retrieval_ms", () => runRetrieval({
     resolved: resolvedForRetrieval || {},
@@ -3531,13 +3736,22 @@ async function prepareCatalogCandidateContext({
   });
   const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
   const assistPacket = buildVectorCandidateAssistPacket(packet);
-  return {
+  const context = {
     retrieval,
     packet,
     assistPacket,
     catalog_assist_eligibility: assistEligibility,
-    promptPacket: assistEligibility.prompt_candidate_count > 0
+    promptPacket: assistEligibility.prompt_candidate_count > 0,
+    catalog_cache_hit: false
   };
+  if (cacheEnabled && cacheKey) {
+    catalogCandidateContextCache.set(cacheKey, {
+      expires_at_ms: Date.now() + catalogCacheTtlMs(env),
+      context
+    });
+    pruneCatalogCandidateContextCache(catalogCacheMaxEntries(env));
+  }
+  return context;
 }
 
 function vectorTelemetryContext(payload = {}) {
@@ -3664,6 +3878,7 @@ function withVectorCandidateContext(result = {}, context = {}) {
     vector_assist_packet: context.assistPacket || null,
     vector_prompt_assist_used: context.promptPacket === true,
     vector_assist_eligibility: context.vector_assist_eligibility || null,
+    vector_lazy_skip: context.vector_lazy_skip || null,
     vector_telemetry: context.telemetry || null,
     vector_worker: context.worker
       ? {
@@ -3684,7 +3899,8 @@ function withCatalogCandidateContext(result = {}, context = {}) {
     catalog_candidate_packet: context.packet,
     catalog_assist_packet: context.assistPacket || null,
     catalog_prompt_assist_used: context.promptPacket === true,
-    catalog_assist_eligibility: context.catalog_assist_eligibility || null
+    catalog_assist_eligibility: context.catalog_assist_eligibility || null,
+    catalog_cache_hit: context.catalog_cache_hit === true
   };
 }
 
@@ -4757,22 +4973,48 @@ async function createOpenAiTitle(payload, selection, {
     ...payload,
     images: signedImages
   });
-  const [catalogContext, vectorContext] = await Promise.all([
+  const earlyCatalog = await waitForPromiseWithin(
     catalogContextPromise,
-    prepareVectorCandidateContext({
+    catalogFastLaneBudgetMs(process.env, providerOptions)
+  );
+  let catalogContext = earlyCatalog.settled ? earlyCatalog.value : null;
+  const lazyDecision = catalogContext
+    ? shouldSkipVectorForCatalogContext({
+      catalogContext,
+      resolvedForRetrieval,
+      providerOptions,
+      env: process.env
+    })
+    : { skip: false, reason: "catalog_fast_lane_budget_elapsed" };
+  const vectorContextPromise = lazyDecision.skip
+    ? Promise.resolve(skippedVectorCandidateContext({
+      reason: "vector_lazy_strong_catalog_anchor",
+      visualFeatures,
+      env: process.env,
+      providerOptions,
+      skip: lazyDecision
+    }))
+    : prepareVectorCandidateContext({
       initialPayload: baseInitialPayload,
       signedImages,
       visualFeatures,
       resolvedForRetrieval,
       providerOptions,
       timingContext
-    })
+    });
+  const [finalCatalogContext, vectorContext] = await Promise.all([
+    catalogContext ? Promise.resolve(catalogContext) : catalogContextPromise,
+    vectorContextPromise
   ]);
-  const promptCandidatePacket = vectorContext.promptPacket
-    ? vectorContext.assistPacket
-    : catalogContext.promptPacket
-      ? catalogContext.assistPacket
-      : null;
+  catalogContext = finalCatalogContext;
+  const strongCatalogCandidate = catalogStrongCandidateForVectorLazy(catalogContext, resolvedForRetrieval);
+  const promptCandidatePacket = strongCatalogCandidate && catalogContext.promptPacket
+    ? catalogContext.assistPacket
+    : vectorContext.promptPacket
+      ? vectorContext.assistPacket
+      : catalogContext.promptPacket
+        ? catalogContext.assistPacket
+        : null;
   const assistEnabled = optionFlag(providerOptions, "enable_catalog_assist", false) === true
     || optionFlag(providerOptions, "enable_vector_assist", false) === true;
   const assistShadowOnly = assistEnabled && !promptCandidatePacket;
@@ -4845,9 +5087,12 @@ function explicitEmergencyFromPayload(payload = {}) {
 export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
   boundedPayloadImagesFromImages,
+  catalogCandidateHasStrongAnchor,
+  catalogStrongCandidateForVectorLazy,
   configuredMaxPayloadImages,
   narrowSurfaceColorFromOpenSetParallel,
-  openSetAssistShadowGuardReason
+  openSetAssistShadowGuardReason,
+  shouldSkipVectorForCatalogContext
 };
 
 async function createProviderTitle(payload, {
