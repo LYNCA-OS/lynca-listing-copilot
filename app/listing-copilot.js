@@ -1660,6 +1660,51 @@ function moduleTokenClass(token = {}, result, module = {}) {
   return classes.join(" ");
 }
 
+function moduleFieldKeys(module = {}) {
+  const fields = new Set();
+  if (Array.isArray(module.fields)) {
+    module.fields.forEach((field) => fields.add(field));
+  }
+  if (Array.isArray(module.field_keys)) {
+    module.field_keys.forEach((field) => fields.add(field));
+  }
+  if (Array.isArray(module.tokens)) {
+    module.tokens.forEach((token) => {
+      (token.fields || []).forEach((field) => fields.add(field));
+    });
+  }
+  if (!fields.size && module.key) fields.add(module.key);
+  return [...fields].filter(Boolean);
+}
+
+function moduleHasSpecificReview(module = {}, result) {
+  const tokens = Array.isArray(module.tokens) ? module.tokens : [];
+  if (tokens.some((token) => {
+    const status = token.status || "";
+    const policy = strongestTokenPolicy(policyForFields(token.fields || [], result, module));
+    return token.requires_review
+      || ["REVIEW", "MISSING", "CONFLICT"].includes(status)
+      || ["INCLUDE_HIGHLIGHTED", "SUGGEST_ONLY", "OMIT"].includes(policy);
+  })) return true;
+
+  const policies = policyForFields(moduleFieldKeys(module), result, module);
+  return policies.some((policy) => policy.requires_writer_confirmation === true
+    || ["INCLUDE_HIGHLIGHTED", "SUGGEST_ONLY", "OMIT"].includes(policy.display_policy));
+}
+
+function moduleClassName(module = {}, result) {
+  const classes = ["writer-module"];
+  const specificReview = moduleHasSpecificReview(module, result);
+  if (specificReview) classes.push("needs-review");
+  if (specificReview && module.display_policy) {
+    classes.push(`display-${String(module.display_policy).toLowerCase().replace(/_/g, "-")}`);
+  }
+  if (specificReview && module.review_priority) {
+    classes.push(`priority-${String(module.review_priority).toLowerCase()}`);
+  }
+  return classes.join(" ");
+}
+
 function moduleTokenSummary(module, result) {
   const tokens = Array.isArray(module.tokens) ? module.tokens : [];
   if (!tokens.length) return "";
@@ -1688,7 +1733,7 @@ function moduleSummary(result) {
   return `
     <div class="writer-modules">
       ${visibleModules.map((module) => `
-        <div class="writer-module ${module.requires_review ? "needs-review" : ""} ${module.display_policy ? `display-${String(module.display_policy).toLowerCase().replace(/_/g, "-")}` : ""} ${module.review_priority ? `priority-${String(module.review_priority).toLowerCase()}` : ""}">
+        <div class="${moduleClassName(module, result)}">
           <span>${escapeHtml(module.label || module.key)}</span>
           ${moduleTokenSummary(module, result)}
           <textarea data-module-input="${result.index}" data-module-key="${escapeHtml(module.key)}">${escapeHtml(module.text || "")}</textarea>
