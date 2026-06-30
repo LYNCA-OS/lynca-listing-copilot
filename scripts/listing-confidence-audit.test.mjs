@@ -836,7 +836,7 @@ const starSwatchCodeSuppressedSerialPreserved = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum \/10 PSA 10$/i);
+assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum \/10 Auto Patch PSA 10$/i);
 assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("year"));
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Panini Panini Flawless/i);
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /#04\/10|#?SR-KD|Serial 04\/10|Numbered 04\/10/i);

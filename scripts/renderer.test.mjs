@@ -24,8 +24,10 @@ assert.match(wemby.final_title, /\/50/);
 assert.doesNotMatch(wemby.final_title, /31\/50/);
 assert.match(wemby.final_title, /PSA 10$/);
 assert.equal((wemby.final_title.match(/\bRC\b/g) || []).length, 1);
-assert.equal(wemby.modules.variant_parallel_rarity.text, "Gold RC");
-assert.equal(wemby.modules.number_serial_grade.text, "/50 · PSA 10");
+assert.equal(wemby.modules.release_variant.text, "Gold");
+assert.equal(wemby.modules.numerical_rarity.text, "/50");
+assert.equal(wemby.modules.search_optimization.text, "RC");
+assert.equal(wemby.modules.grading.text, "PSA 10");
 
 const ohtaniChrome = renderListingPresentation({
   resolved: {
@@ -208,7 +210,7 @@ const prizmFifaNoDuplicateBrand = renderResolvedTitle({
 }, {
   maxLength: 80
 });
-assert.equal(prizmFifaNoDuplicateBrand.rendered_title, "2025-26 Panini Prizm FIFA Soccer Lionel Messi Club Legends /199 Auto");
+assert.equal(prizmFifaNoDuplicateBrand.rendered_title, "2025-26 Panini Prizm FIFA Soccer Lionel Messi Club Legends /199 #CL-LM Auto");
 assert.doesNotMatch(prizmFifaNoDuplicateBrand.rendered_title, /Prizm\s+Prizm/i);
 
 const tripleThreadsLongMultiplayer = renderResolvedTitle({
@@ -283,7 +285,7 @@ const setAlreadyCarriesInsert = renderResolvedTitle({
   maxLength: 80
 });
 assert.doesNotMatch(setAlreadyCarriesInsert.rendered_title, /Gusto.*Gusto/i);
-assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani /5");
+assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani /5 #G-11");
 
 const bowmansBestJordan = renderListingPresentation({
   resolved: {
@@ -297,7 +299,54 @@ const bowmansBestJordan = renderListingPresentation({
 });
 assert.equal(bowmansBestJordan.final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
 assert.equal(bowmansBestJordan.modules.card_name.text, "Best Performance");
-assert.equal(bowmansBestJordan.modules.team.text, "Chicago Bulls");
+assert.equal(bowmansBestJordan.modules.search_optimization.text, "Chicago Bulls");
+
+const toppsCosmicHierarchy = renderResolvedTitle({
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Chrome",
+  set: "Topps Cosmic Chrome",
+  players: ["Test Player"],
+  collector_number: "22"
+}, {
+  maxLength: 85
+});
+assert.equal(toppsCosmicHierarchy.rendered_title, "2025 Topps Cosmic Chrome Test Player #22");
+assert.doesNotMatch(toppsCosmicHierarchy.rendered_title, /Topps\s+Topps/i);
+
+const paniniPrizmBlackHierarchy = renderResolvedTitle({
+  year: "2025",
+  manufacturer: "Panini",
+  product: "Prizm",
+  set: "Prizm Black",
+  players: ["Test Player"],
+  collector_number: "22"
+}, {
+  maxLength: 85
+});
+assert.equal(paniniPrizmBlackHierarchy.rendered_title, "2025 Panini Prizm Black Test Player #22");
+
+const cardNumberRemovedBeforeSecondaryFields = renderResolvedTitle({
+  year: "2025-26",
+  brand: "Topps",
+  product: "Topps Chrome Basketball",
+  players: ["Victor Wembanyama"],
+  card_name: "Showcase Performance",
+  surface_color: "Gold",
+  parallel_family: "Sparkle",
+  serial_number: "17/50",
+  collector_number: "TCAR-AB",
+  ssp: true,
+  auto: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 85
+});
+assert.ok(cardNumberRemovedBeforeSecondaryFields.rendered_title.length <= 85);
+assert.doesNotMatch(cardNumberRemovedBeforeSecondaryFields.rendered_title, /#TCAR-AB/);
+assert.match(cardNumberRemovedBeforeSecondaryFields.title_length_policy.removed_terms.join(" "), /#TCAR-AB/);
 
 const bowmansBestJordanInsertFallback = renderResolvedTitle({
   year: "1997-98",
@@ -649,18 +698,20 @@ const reviewedModules = renderListingPresentation({
     })
   }
 });
-assert.equal(reviewedModules.modules.number_serial_grade.status, "REVIEW");
-assert.equal(reviewedModules.modules.number_serial_grade.requires_review, true);
+assert.equal(reviewedModules.modules.numerical_rarity.status, "REVIEW");
+assert.equal(reviewedModules.modules.numerical_rarity.requires_review, true);
 assert.deepEqual(reviewedModules.module_order, [
   "year",
-  "franchise_brand",
-  "product_set",
+  "product_identity",
   "subject",
   "card_name",
-  "card_type",
-  "variant_parallel_rarity",
-  "number_serial_grade",
-  "team"
+  "release_variant",
+  "print_finish",
+  "numerical_rarity",
+  "descriptive_rarity",
+  "card_number",
+  "search_optimization",
+  "grading"
 ]);
 
 const colorWithReviewDescriptor = renderListingPresentation({
@@ -691,11 +742,14 @@ const colorWithReviewDescriptor = renderListingPresentation({
     })
   }
 });
-const variantTokens = colorWithReviewDescriptor.modules.variant_parallel_rarity.tokens;
-assert.equal(colorWithReviewDescriptor.modules.variant_parallel_rarity.text, "Gold Sparkle");
+const releaseVariantTokens = colorWithReviewDescriptor.modules.release_variant.tokens;
+const printFinishTokens = colorWithReviewDescriptor.modules.print_finish.tokens;
+assert.equal(colorWithReviewDescriptor.modules.release_variant.text, "Gold");
+assert.equal(colorWithReviewDescriptor.modules.print_finish.text, "Sparkle");
 assert.match(colorWithReviewDescriptor.final_title, /Gold Sparkle/);
-assert.deepEqual(variantTokens.map((token) => token.text), ["Gold", "Sparkle"]);
-assert.equal(variantTokens.find((token) => token.text === "Gold").requires_review, false);
-assert.equal(variantTokens.find((token) => token.text === "Sparkle").requires_review, true);
+assert.deepEqual(releaseVariantTokens.map((token) => token.text), ["Gold"]);
+assert.deepEqual(printFinishTokens.map((token) => token.text), ["Sparkle"]);
+assert.equal(releaseVariantTokens.find((token) => token.text === "Gold").requires_review, false);
+assert.equal(printFinishTokens.find((token) => token.text === "Sparkle").requires_review, true);
 
 console.log("renderer tests passed");

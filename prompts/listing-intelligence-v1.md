@@ -273,52 +273,23 @@ Redemption cards: preserve the actual redemption contents, not the generic fact 
 
 ## 4. Title Engine
 
-Purpose: generate one eBay-ready title.
+Purpose: extract the fields needed by the deterministic title renderer. The model does not decide the final marketplace title.
 
-Maximum length: 85 characters.
+The preferred standard card serialization is LYNCA CSM Standard Card Grammar:
 
-Field priority tiers:
+`Year -> Manufacturer/Product/Set -> Subject -> Card Name -> Release Variant -> Print Finish -> Numerical Rarity -> Descriptive Rarity -> Card Number -> Search Optimization -> Grading Info`
 
-Tier 1 - Critical, must extract:
+Manufacturer, Product, and Set must remain structured fields, but the renderer will normalize the product hierarchy and remove redundant wording.
 
-- Player or character
-- RC / Rookie / Rookie Card / Rated Rookie when visible
-- Serial number
-- Grade
-- Auto or dual auto
-- Patch
-- Relic
-- Card number
-- 1/1 indicator
+Marketplace maximum length is 85 characters. Compression is deterministic:
 
-Missing or incorrect Tier 1 fields should heavily impact confidence.
+1. Remove tertiary Card Number first.
+2. Remove secondary Print Finish and Descriptive Rarity next.
+3. Remove highest-priority identity, SO, and grading terms only when absolutely necessary.
 
-Tier 2 - Important:
+Search Optimization is optional and not identity. It may contain directly supported keywords such as RC, Auto, Patch, Relic, Memorabilia, SSP, SP, Case Hit, On Card, Sticker Auto, Game Used, Player Worn, and team names.
 
-- Team
-- Product
-- Insert
-- Rookie
-- 1st Bowman
-
-Tier 3 - Best effort:
-
-- Rainbow parallel classification
-- Wave
-- Shimmer
-- Pattern
-- Foil
-- Lava
-- Velocity
-- Disco
-- Pulsar
-- Mojo
-
-Tier 4:
-
-- Redundant product terms
-
-Use the tiers to decide what to keep when the title must fit within 85 characters. Do not let Tier 2, Tier 3, or Tier 4 terms crowd out Tier 1 terms.
+Missing or incorrect identity-critical fields should heavily impact confidence. Do not generate filler fields simply to occupy title space.
 
 When uncertain, prefer:
 
@@ -329,10 +300,10 @@ When uncertain, prefer:
 
 Rules:
 
-- Sports title order is modular: Year + Manufacturer/Product + Subject + Card Name + Design Variation + Color Variation + Serial Limit + RC + Auto + Grading Company + Team.
+- Standard Card Grammar applies to Sports, Entertainment, Celebrity, and Non-Sport cards. These categories share the same serialization order.
 - Example standard: `1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)`.
 - `card_name` is the printed card/title segment such as `Best Performance`, `Club Legends`, `Gusto`, `Power Partnership`, or `Canvas Creations` when it functions as the card name. It renders after the subject.
-- Do not include checklist/card numbers by default. Codes such as `#TCAR-CF`, `#TCAR-AB`, `#PRP-3`, `#SR-KD`, and `#DRL-PT` are useful for resolution but usually too noisy for eBay title output.
+- Card Number is tertiary. Extract it when visible, but expect the renderer to remove it first when the title exceeds the marketplace limit.
 - Preserve serial limits, not instance serial numerators, in the final title: `31/150` should render as `/150`, `2/5` as `/5`, `01/10` as `/10`, and `1/1` as `1/1`. Keep the complete serial number in structured fields.
 - PSA, BGS, CGC, grade company, and grade number should be near the end of the title by default.
 - Do not put grading information at the beginning unless the card identity is primarily derived from the slab label and no better card-front identity is available.

@@ -45,12 +45,12 @@ assert.match(js, /fileSignatureHex/, "storage uploads should read first-byte fil
 assert.match(js, /signatureHex/, "signed upload requests should include file signature metadata");
 assert.match(js, /listing-image-verify-upload/, "storage uploads should be server-verified after the direct PUT");
 assert.match(js, /Storage upload verification failed/, "storage verification failures should block provider requests");
-assert.match(js, /原图会优先上传云端识别/, "status copy should explain original-file cloud recognition priority");
-assert.match(js, /已自动缩减辅助局部图并保留主图识别/, "oversized request fallback status should be visible without implying low-quality main-image recognition");
-assert.match(js, /正在准备高质量预览与云端原图上传…/, "upload preparation status should be visible");
-assert.match(js, /图片已准备，开始识别…/, "recognition start status should be visible");
-assert.match(js, /setStatus\("正在准备高质量预览与云端原图上传…",\s*\{\s*busy:\s*true\s*\}\)/, "upload preparation should render as an active waiting state");
-assert.match(js, /setStatus\("图片已准备，开始识别…",\s*\{\s*busy:\s*true\s*\}\)/, "recognition start should render as an active waiting state");
+assert.match(js, /点击开始生成后才会上传云端识别/, "status copy should explain recognition does not start before the user clicks generate");
+assert.match(js, /保留主图，缩减辅助局部图/, "oversized request fallback status should be visible without implying low-quality main-image recognition");
+assert.match(js, /正在读取本地图片预览，尚未开始识别…/, "local preview preparation status should be visible before recognition starts");
+assert.match(js, /0% · 图片已准备，开始识别…/, "recognition start status should include progress");
+assert.match(js, /setStatus\("正在读取本地图片预览，尚未开始识别…",\s*\{\s*busy:\s*true\s*\}\)/, "preview preparation should render as an active waiting state");
+assert.match(js, /setStatus\("0% · 图片已准备，开始识别…",\s*\{\s*busy:\s*true\s*\}\)/, "recognition start should render as an active waiting state");
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");

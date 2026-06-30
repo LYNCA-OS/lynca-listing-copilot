@@ -123,7 +123,7 @@ assert.equal(newModuleVariantEdit.corrected_resolved.parallel, "Gold Refractor")
 assert.equal(newModuleVariantEdit.corrected_resolved.rc, true);
 assert.equal(newModuleVariantEdit.corrected_resolved.one_of_one, true);
 assert.equal(newModuleVariantEdit.corrected_resolved.auto, true);
-assert.match(newModuleVariantEdit.final_title, /Gold Refractor RC 1\/1/);
+assert.match(newModuleVariantEdit.final_title, /Gold Refractor 1\/1 RC/);
 assert.match(newModuleVariantEdit.final_title, /\bAuto\b/);
 
 const newModuleNumberGradeEdit = applyWriterModuleEdit({
@@ -143,6 +143,42 @@ assert.equal(newModuleNumberGradeEdit.corrected_resolved.grade_company, "PSA");
 assert.equal(newModuleNumberGradeEdit.corrected_resolved.card_grade, "9");
 assert.equal(newModuleNumberGradeEdit.corrected_resolved.auto_grade, "10");
 assert.equal(newModuleNumberGradeEdit.corrected_resolved.grade_type, "CARD_AND_AUTO");
+
+const scgProductIdentityEdit = applyWriterModuleEdit({
+  resolved: {
+    year: "1997-98",
+    product: "Bowman's Best",
+    players: ["Michael Jordan"]
+  },
+  moduleKey: "product_identity",
+  moduleText: "Bowman's Best"
+});
+assert.equal(scgProductIdentityEdit.corrected_resolved.product, "Bowman's Best");
+assert.match(scgProductIdentityEdit.final_title, /1997-98 Bowman's Best Michael Jordan/);
+
+const scgNumericalRarityEdit = applyWriterModuleEdit({
+  resolved: {
+    year: "2025",
+    brand: "Topps Chrome",
+    players: ["Cooper Flagg"]
+  },
+  moduleKey: "numerical_rarity",
+  moduleText: "/50"
+});
+assert.equal(scgNumericalRarityEdit.corrected_resolved.serial_number, "/50");
+assert.match(scgNumericalRarityEdit.final_title, /\/50/);
+
+const scgCardNumberEdit = applyWriterModuleEdit({
+  resolved: {
+    year: "1997-98",
+    product: "Bowman's Best",
+    players: ["Michael Jordan"]
+  },
+  moduleKey: "card_number",
+  moduleText: "#96"
+});
+assert.equal(scgCardNumberEdit.corrected_resolved.collector_number, "96");
+assert.match(scgCardNumberEdit.final_title, /#96/);
 
 const apiEdit = await callRenderApi({
   resolved: {
