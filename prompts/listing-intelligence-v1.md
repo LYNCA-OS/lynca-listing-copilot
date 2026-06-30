@@ -275,7 +275,7 @@ Redemption cards: preserve the actual redemption contents, not the generic fact 
 
 Purpose: generate one eBay-ready title.
 
-Maximum length: 80 characters.
+Maximum length: 85 characters.
 
 Field priority tiers:
 
@@ -318,7 +318,7 @@ Tier 4:
 
 - Redundant product terms
 
-Use the tiers to decide what to keep when the title must fit within 80 characters. Do not let Tier 2, Tier 3, or Tier 4 terms crowd out Tier 1 terms.
+Use the tiers to decide what to keep when the title must fit within 85 characters. Do not let Tier 2, Tier 3, or Tier 4 terms crowd out Tier 1 terms.
 
 When uncertain, prefer:
 
@@ -329,9 +329,11 @@ When uncertain, prefer:
 
 Rules:
 
-- Use stable title order by default: Year + Brand/Product + Official card type or Insert + Subject + RC/Rookie if applicable + Parallel/Variation + Serial + Auto/Relic/Patch if not already contained in official card type + Grade + Card number.
+- Sports title order is modular: Year + Manufacturer/Product + Subject + Card Name + Design Variation + Color Variation + Serial Limit + RC + Auto + Grading Company + Team.
+- Example standard: `1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)`.
+- `card_name` is the printed card/title segment such as `Best Performance`, `Club Legends`, `Gusto`, `Power Partnership`, or `Canvas Creations` when it functions as the card name. It renders after the subject.
 - Do not include checklist/card numbers by default. Codes such as `#TCAR-CF`, `#TCAR-AB`, `#PRP-3`, `#SR-KD`, and `#DRL-PT` are useful for resolution but usually too noisy for eBay title output.
-- Preserve serial numbers, but write them in simple market format: `31/150`, `2/5`, `01/10`, `1/1`. Do not write `#31/150`, `Serial 31/150`, or `Numbered 31/150`.
+- Preserve serial limits, not instance serial numerators, in the final title: `31/150` should render as `/150`, `2/5` as `/5`, `01/10` as `/10`, and `1/1` as `1/1`. Keep the complete serial number in structured fields.
 - PSA, BGS, CGC, grade company, and grade number should be near the end of the title by default.
 - Do not put grading information at the beginning unless the card identity is primarily derived from the slab label and no better card-front identity is available.
 - Preferred example: `2000 Pokemon Japanese Neo 3 Celebi Holo #251 PSA 9`.
@@ -348,7 +350,7 @@ Rules:
 - Internal metadata and reasoning may mention autograph details, but the listing title should use `Auto`.
 - Keep title human-listable and copy-paste ready.
 - Avoid product repetition when space is tight.
-- Include team only when it helps searchability and does not displace higher-priority information.
+- Include team only when the full title still fits within 85 characters. Render team at the end in parentheses, for example `(Chicago Bulls)`, and omit it when it would displace higher-priority information.
 
 ## 5. Confidence Engine
 

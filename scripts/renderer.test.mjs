@@ -285,6 +285,31 @@ const setAlreadyCarriesInsert = renderResolvedTitle({
 assert.doesNotMatch(setAlreadyCarriesInsert.rendered_title, /Gusto.*Gusto/i);
 assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani /5");
 
+const bowmansBestJordan = renderListingPresentation({
+  resolved: {
+    year: "1997-98",
+    product: "Bowman's Best",
+    players: ["Michael Jordan"],
+    card_name: "Best Performance",
+    team: "Chicago Bulls"
+  },
+  maxLength: 85
+});
+assert.equal(bowmansBestJordan.final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(bowmansBestJordan.modules.card_name.text, "Best Performance");
+assert.equal(bowmansBestJordan.modules.team.text, "Chicago Bulls");
+
+const bowmansBestJordanInsertFallback = renderResolvedTitle({
+  year: "1997-98",
+  product: "Bowman's Best",
+  players: ["Michael Jordan"],
+  insert: "Best Performance",
+  team: "Chicago Bulls"
+}, {
+  maxLength: 85
+});
+assert.equal(bowmansBestJordanInsertFallback.rendered_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+
 const brandProductOverlapKeepsSet = renderResolvedTitle({
   year: "2025",
   brand: "Topps Finest",
@@ -297,7 +322,7 @@ const brandProductOverlapKeepsSet = renderResolvedTitle({
   maxLength: 80
 });
 assert.match(brandProductOverlapKeepsSet.rendered_title, /\bGusto\b/);
-assert.match(brandProductOverlapKeepsSet.rendered_title, /\bDodgers\b/);
+assert.match(brandProductOverlapKeepsSet.rendered_title, /\(Los Angeles Dodgers\)$/);
 assert.doesNotMatch(brandProductOverlapKeepsSet.rendered_title, /Topps Finest Topps Finest/i);
 
 const sportSuffixProductKeepsSet = renderResolvedTitle({
@@ -328,7 +353,7 @@ const teamIncludedOnlyWhenRoom = renderResolvedTitle({
 }, {
   maxLength: 85
 });
-assert.match(teamIncludedOnlyWhenRoom.rendered_title, /\bDodgers\b/);
+assert.match(teamIncludedOnlyWhenRoom.rendered_title, /\(Los Angeles Dodgers\)$/);
 assert.ok(teamIncludedOnlyWhenRoom.rendered_title.length <= 85);
 
 const teamOmittedWhenTitleWouldOverflow = renderResolvedTitle({
@@ -631,9 +656,11 @@ assert.deepEqual(reviewedModules.module_order, [
   "franchise_brand",
   "product_set",
   "subject",
+  "card_name",
   "card_type",
   "variant_parallel_rarity",
-  "number_serial_grade"
+  "number_serial_grade",
+  "team"
 ]);
 
 const colorWithReviewDescriptor = renderListingPresentation({
