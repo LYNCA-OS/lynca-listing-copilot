@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { deflateRawSync } from "node:zlib";
 import { componentBooleansFromObservableComponents } from "../lib/listing/card-type-policy.mjs";
 import {
   correctedTitleRecordToCatalogStaging
@@ -8,12 +9,14 @@ import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-pars
 import {
   buildToppsBasketballChecklistImport,
   extractToppsBasketballChecklistLinks,
+  extractXlsxText,
   isAllowedToppsBasketballChecklistLink,
   parseToppsBasketballChecklistText
 } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
 import { renderResolvedTitle } from "../lib/listing/renderer/listing-renderer.mjs";
 import { catalogProvider } from "../lib/listing/retrieval/catalog-provider.mjs";
 import { planRetrievalQueries } from "../lib/listing/retrieval/query-planner.mjs";
+import { importToppsBasketballChecklists } from "./import-topps-basketball-checklists.mjs";
 import {
   retrievalProviderIds,
   retrievalQueryFamilies
@@ -127,24 +130,117 @@ assert.ok(links.every((link) => /Basketball/i.test(link.text)));
 assert.equal(isAllowedToppsBasketballChecklistLink({ text: "2025 Topps Chrome Baseball Checklist" }), false);
 assert.equal(isAllowedToppsBasketballChecklistLink({ text: "2025 Topps Chrome Basketball Checklist" }), true);
 
-const rows = parseToppsBasketballChecklistText("TCAR-CF Cooper Flagg #136\nBAD ROW\nNS-CF Cooper Flagg", {
+function zipEntry(name, content, offset) {
+  const source = Buffer.from(content);
+  const compressed = deflateRawSync(source);
+  const nameBuffer = Buffer.from(name);
+  const crc = 0;
+  const local = Buffer.alloc(30 + nameBuffer.length);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(8, 8);
+  local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(compressed.length, 18);
+  local.writeUInt32LE(source.length, 22);
+  local.writeUInt16LE(nameBuffer.length, 26);
+  nameBuffer.copy(local, 30);
+
+  const central = Buffer.alloc(46 + nameBuffer.length);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(compressed.length, 20);
+  central.writeUInt32LE(source.length, 24);
+  central.writeUInt16LE(nameBuffer.length, 28);
+  central.writeUInt32LE(offset, 42);
+  nameBuffer.copy(central, 46);
+  return { local: Buffer.concat([local, compressed]), central };
+}
+
+function makeMiniXlsx() {
+  const sharedStrings = `<?xml version="1.0"?><sst><si><t>Base Set Checklist</t></si><si><t>1 Jayson Tatum, Boston Celtics</t></si><si><t>Flagship Real Ones Autographs</t></si><si><t>TFRA-SC Stephen Curry, Golden State Warriors</t></si></sst>`;
+  const sheet = `<?xml version="1.0"?><worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row><row r="2"><c r="A2" t="s"><v>1</v></c></row><row r="3"><c r="A3" t="s"><v>2</v></c></row><row r="4"><c r="A4" t="s"><v>3</v></c></row></sheetData></worksheet>`;
+  const entries = [];
+  let offset = 0;
+  for (const [name, content] of [
+    ["xl/sharedStrings.xml", sharedStrings],
+    ["xl/worksheets/sheet1.xml", sheet]
+  ]) {
+    const entry = zipEntry(name, content, offset);
+    entries.push(entry);
+    offset += entry.local.length;
+  }
+  const centralOffset = offset;
+  const central = Buffer.concat(entries.map((entry) => entry.central));
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(central.length, 12);
+  end.writeUInt32LE(centralOffset, 16);
+  return Buffer.concat([...entries.map((entry) => entry.local), central, end]);
+}
+
+const xlsxText = extractXlsxText(makeMiniXlsx());
+assert.match(xlsxText, /1 Jayson Tatum, Boston Celtics/);
+assert.match(xlsxText, /TFRA-SC Stephen Curry, Golden State Warriors/);
+
+const rows = parseToppsBasketballChecklistText("Base Set Checklist\n1 Pascal Siakam, Indiana Pacers\n201 Cooper Flagg, Dallas Mavericks RC\nFlagship Real Ones Autographs\nTCAR-CF Cooper Flagg #136\nTFRA-SC Stephen Curry, Golden State Warriors\nBAD ROW\nNS-CF Cooper Flagg", {
   sourceName: "2025 Topps Chrome Basketball Checklist",
   sourceUrl: "https://www.topps.com/checklists/2025-topps-chrome-basketball.pdf"
 });
-assert.equal(rows.length >= 2, true);
+assert.equal(rows.length >= 5, true);
 assert.equal(rows[0].identity_fields.sport, "basketball");
 assert.equal(rows[0].identity_fields.manufacturer, "Topps");
-assert.equal(rows[0].identity_fields.checklist_code, "TCAR-CF");
+assert.equal(rows[0].identity_fields.players[0], "Pascal Siakam");
+assert.equal(rows[0].identity_fields.team, "Indiana Pacers");
+assert.equal(rows[0].identity_fields.official_card_type, "Base");
+assert.equal(rows[1].identity_fields.players[0], "Cooper Flagg");
+assert.equal(rows[1].identity_fields.observable_components.includes("rc"), true);
+const curryOfficialAuto = rows.find((row) => row.identity_fields.checklist_code === "TFRA-SC");
+assert.equal(curryOfficialAuto.identity_fields.players[0], "Stephen Curry");
+assert.equal(curryOfficialAuto.identity_fields.team, "Golden State Warriors");
+assert.equal(curryOfficialAuto.identity_fields.official_card_type, "Autograph");
+assert.equal(curryOfficialAuto.identity_fields.observable_components.includes("auto"), true);
+assert.equal(rows.some((row) => row.identity_fields.card_number === "BAD"), false);
 
 const importReport = await buildToppsBasketballChecklistImport({
   indexUrl: "https://www.topps.com/pages/checklists",
   fetchImpl: async (url) => {
     if (String(url).endsWith("/pages/checklists")) return new Response(indexHtml, { status: 200 });
-    return new Response("TCAR-CF Cooper Flagg #136\n", { status: 200 });
+    return new Response(makeMiniXlsx(), {
+      status: 200,
+      headers: {
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      }
+    });
   }
 });
 assert.equal(importReport.metrics.topps_basketball_link_count, 2);
 assert.equal(importReport.metrics.topps_file_download_count, 2);
+assert.equal(importReport.metrics.catalog_card_count, 4);
+
+const officialImportDryRun = await importToppsBasketballChecklists({
+  argv: [
+    "--source-url",
+    "https://cdn.shopify.com/s/files/1/0586/3119/2678/files/2025-26-Topps-Basketball-Checklist.xlsx",
+    "--source-name",
+    "2025-26 Topps Basketball Checklist"
+  ],
+  env: {},
+  fetchImpl: async () => new Response(makeMiniXlsx(), {
+    status: 200,
+    headers: {
+      "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
+  })
+});
+assert.equal(officialImportDryRun.dry_run, true);
+assert.equal(officialImportDryRun.source_count, 1);
+assert.equal(officialImportDryRun.inserted_card_count, 2);
+assert.equal(officialImportDryRun.inserted_staging_count, 2);
 
 let catalogRpcBody = null;
 const provider = catalogProvider({
