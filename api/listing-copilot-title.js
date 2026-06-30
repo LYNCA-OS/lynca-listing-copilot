@@ -75,10 +75,12 @@ import {
 import { vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
+import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
-const maxPayloadImages = 10;
+// Accept optional bounded derived crop images while keeping provider input capped.
+const defaultMaxPayloadImages = 14;
 const signedUrlConcurrency = 4;
 const promptRoot = join(process.cwd(), "prompts");
 const promptFiles = [
@@ -97,9 +99,37 @@ function envFlag(env, key, fallback = true) {
   return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
 }
 
-function providerOptionsFromPayload(payload = {}) {
+function configuredMaxPayloadImages(env = process.env) {
+  return normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages;
+}
+
+function defaultProviderOptionsFromEnv(env = process.env) {
+  const vectorAssistDefault = envFlag(env, "ENABLE_VECTOR_ASSIST_DEFAULT", true);
+  const catalogAssistDefault = envFlag(env, "ENABLE_CATALOG_ASSIST_DEFAULT", true);
+  return {
+    single_model_fast: envFlag(env, "ENABLE_SINGLE_MODEL_FAST_PATH", false),
+    enable_evidence_completion: envFlag(env, "ENABLE_EVIDENCE_COMPLETION", true),
+    enable_catalog_assist: catalogAssistDefault,
+    enable_vector_assist: vectorAssistDefault,
+    enable_stored_visual_features: vectorAssistDefault,
+    enable_query_visual_embeddings: vectorAssistDefault,
+    enable_vector_retrieval: vectorAssistDefault,
+    vector_retrieval_mode: vectorAssistDefault ? "assist" : "off",
+    enable_advanced_retrieval: vectorAssistDefault,
+    enable_hybrid_retrieval: vectorAssistDefault,
+    enable_gpt_failure_fallback: false,
+    enable_gpt_provider_failure_fallback: false,
+    enable_gpt_critical_verifier: false
+  };
+}
+
+function providerOptionsFromPayload(payload = {}, env = process.env) {
   const options = payload.provider_options || payload.providerOptions || {};
-  return options && typeof options === "object" && !Array.isArray(options) ? options : {};
+  const explicitOptions = options && typeof options === "object" && !Array.isArray(options) ? options : {};
+  return {
+    ...defaultProviderOptionsFromEnv(env),
+    ...explicitOptions
+  };
 }
 
 function valuePresent(value) {
@@ -1401,6 +1431,258 @@ function suppressReviewOnlyParallelFields(fields, reason, unresolved = []) {
   return suppressed;
 }
 
+function narrowSurfaceColorFromOpenSetParallel(fields = {}) {
+  const explicitColor = safeSurfaceColor(fields.surface_color);
+  if (explicitColor && !openSetSurfaceColorPatternContaminated(fields)) return explicitColor;
+
+  for (const value of [
+    fields.parallel_exact,
+    fields.parallel,
+    fields.variation,
+    fields.parallel_family
+  ]) {
+    const text = String(value || "");
+    if (!text) continue;
+    if (/\btiger\s+stripe\b/i.test(text)) continue;
+    const color = safeSurfaceColor(text);
+    if (color) return color;
+  }
+  return "";
+}
+
+function openSetSurfaceColorPatternContaminated(fields = {}) {
+  const combined = searchable([
+    fields.insert,
+    fields.card_type,
+    fields.official_card_type,
+    fields.subset,
+    fields.parallel_exact,
+    fields.parallel,
+    fields.variation
+  ].filter(Boolean).join(" "));
+  return textMentionsAny(combined, [
+    "tiger",
+    "zebra",
+    "snakeskin",
+    "snake skin",
+    "elephant",
+    "leopard",
+    "animal print"
+  ]);
+}
+
+function stripOpenSetUnsupportedParallelTerms(value) {
+  const original = normalizeStringOrNull(value);
+  if (!original) return null;
+  const originalSearchable = searchable(original);
+  const hasUnsupportedParallelTerm = textMentionsAny(originalSearchable, [
+    "cracked ice",
+    "disco",
+    "geometric",
+    "holo",
+    "hyper",
+    "lava",
+    "mojo",
+    "prism",
+    "prizm",
+    "refractor",
+    "sapphire",
+    "shimmer",
+    "sparkle",
+    "speckle",
+    "tiger",
+    "velocity",
+    "vinyl",
+    "wave",
+    "x-fractor",
+    "xfractor"
+  ]);
+  if (!hasUnsupportedParallelTerm) return original;
+
+  const stripped = original
+    .replace(/\b(?:Cracked\s+Ice|Tiger\s+Stripes?|Tiger|X[-\s]?Fractor|Refractor|Sapphire|Shimmer|Sparkles?|Speckle|Geometric|Velocity|Prizms?|Prism|Mojo|Disco|Pulsar|Hyper|Holo|Lava|Vinyl|Wave)\b/gi, " ")
+    .replace(/\b(?:Black|Blue|Bronze|Gold|Green|Orange|Pink|Purple|Red|Silver|White|Yellow)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped || null;
+}
+
+function stripOpenSetUnsupportedTitleTerms(value) {
+  const original = normalizeStringOrNull(value);
+  if (!original) return "";
+  const protectedPhrases = [];
+  let text = original.replace(/\b(?:Topps|Bowman)\s+Chrome\s+Sapphire(?:\s+Edition)?\b/gi, (match) => {
+    const token = `__LYNCA_PRODUCT_${protectedPhrases.length}__`;
+    protectedPhrases.push({ token, value: match });
+    return token;
+  });
+  const animalPattern = /\b(?:Tiger|Zebra|Snakeskin|Snake\s+Skin|Elephant|Leopard|Animal\s+Print)\b/i.test(text);
+  text = text
+    .replace(/\b(?:Cracked\s+Ice|Tiger\s+Stripes?|Tiger|X[-\s]?Fractor|Refractor|Sapphire|Shimmer|Sparkles?|Speckle|Geometric|Velocity|Prizms?|Prism|Mojo|Disco|Pulsar|Hyper|Holo|Lava|Vinyl|Wave)\b/gi, " ");
+  if (animalPattern) {
+    text = text.replace(/\b(?:Black|Blue|Bronze|Gold|Green|Orange|Pink|Purple|Red|Silver|White|Yellow)\b/gi, " ");
+  }
+  text = text
+    .replace(/\s+-\s+/g, " ")
+    .replace(/\s+\/\s+/g, " / ")
+    .replace(/\s+/g, " ")
+    .trim();
+  for (const phrase of protectedPhrases) {
+    text = text.replace(phrase.token, phrase.value);
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function exactParallelFieldsPresent(fields = {}) {
+  return [
+    fields.parallel_exact,
+    fields.parallel_family,
+    fields.parallel,
+    fields.variation
+  ].some((value) => valuePresent(value));
+}
+
+function openSetUnsupportedParallelPresentationPresent(fields = {}) {
+  return [
+    fields.insert,
+    fields.card_type,
+    fields.official_card_type,
+    fields.subset
+  ].some((value) => stripOpenSetUnsupportedParallelTerms(value) !== normalizeStringOrNull(value));
+}
+
+function openSetAssistShadowGuardReason(result = {}) {
+  const fastPath = result.fast_path || {};
+  const reasonText = searchable([
+    result.route_reason,
+    fastPath.reason,
+    result.completion_state?.open_set_reason,
+    result.open_set_reason
+  ].filter(Boolean).join(" "));
+  if (fastPath.assist_shadow_only === true) return "assist_shadow_no_prompt_safe_candidates";
+  if (reasonText.includes("assist shadow no prompt safe candidates")) return "assist_shadow_no_prompt_safe_candidates";
+  if (reasonText.includes("no prompt safe catalog or vector candidates")) return "assist_shadow_no_prompt_safe_candidates";
+  return "";
+}
+
+function applyOpenSetAssistShadowPresentationGuard(result = {}, payload = {}) {
+  const guardReason = openSetAssistShadowGuardReason(result);
+  if (!guardReason) return result;
+
+  const legacyFields = {
+    ...(result.fields || {})
+  };
+  const resolvedFields = {
+    ...(result.resolved || result.resolved_fields || {})
+  };
+  const mergedFields = {
+    ...resolvedFields,
+    ...legacyFields
+  };
+  const hadExactParallel = exactParallelFieldsPresent(mergedFields);
+  const hadUnsupportedPresentationParallel = openSetUnsupportedParallelPresentationPresent(mergedFields);
+  const preservedSurfaceColor = narrowSurfaceColorFromOpenSetParallel(mergedFields);
+  const currentTitle = result.rendered_title || result.final_title || result.title || "";
+  const titleAfterOpenSetStrip = stripOpenSetUnsupportedTitleTerms(currentTitle);
+  const hadUnsupportedTitleParallel = Boolean(titleAfterOpenSetStrip && titleAfterOpenSetStrip !== normalizeStringOrNull(currentTitle));
+  if (!hadExactParallel && !hadUnsupportedPresentationParallel && !hadUnsupportedTitleParallel && !preservedSurfaceColor) {
+    return {
+      ...result,
+      open_set_presentation_guard: {
+        used: false,
+        reason: guardReason,
+        action: "no_parallel_fields_present"
+      }
+    };
+  }
+
+  const guardedLegacyFields = {
+    ...legacyFields,
+    insert: stripOpenSetUnsupportedParallelTerms(legacyFields.insert),
+    card_type: stripOpenSetUnsupportedParallelTerms(legacyFields.card_type),
+    official_card_type: stripOpenSetUnsupportedParallelTerms(legacyFields.official_card_type),
+    subset: stripOpenSetUnsupportedParallelTerms(legacyFields.subset),
+    surface_color: preservedSurfaceColor || null,
+    parallel_family: null,
+    parallel_exact: null,
+    parallel: null,
+    variation: null
+  };
+  const guardedResolvedFields = {
+    ...resolvedFields,
+    insert: stripOpenSetUnsupportedParallelTerms(resolvedFields.insert),
+    card_type: stripOpenSetUnsupportedParallelTerms(resolvedFields.card_type),
+    official_card_type: stripOpenSetUnsupportedParallelTerms(resolvedFields.official_card_type),
+    subset: stripOpenSetUnsupportedParallelTerms(resolvedFields.subset),
+    surface_color: preservedSurfaceColor || null,
+    parallel_family: null,
+    parallel_exact: null,
+    parallel: null,
+    variation: null
+  };
+  const presentation = renderListingPresentation({
+    resolved: guardedResolvedFields,
+    evidence: result.evidence || result.normalized_evidence || {},
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  });
+  const renderedTitle = stripOpenSetUnsupportedTitleTerms(
+    presentation.rendered_title || result.rendered_title || result.final_title || result.title || ""
+  );
+  const unresolved = uniqueValues([
+    ...(Array.isArray(result.unresolved) ? result.unresolved : []),
+    hadExactParallel || hadUnsupportedPresentationParallel || hadUnsupportedTitleParallel ? "open-set exact parallel requires catalog or writer review" : null,
+    preservedSurfaceColor ? "surface color retained as narrow observable value" : null
+  ]);
+
+  return {
+    ...result,
+    title: renderedTitle,
+    final_title: renderedTitle,
+    rendered_title: renderedTitle,
+    model_title_suggestion: renderedTitle,
+    title_render_source: "open_set_narrow_parallel_guard",
+    fields: guardedLegacyFields,
+    resolved: guardedResolvedFields,
+    resolved_fields: guardedResolvedFields,
+    evidence_fields: {
+      ...(result.evidence_fields || {}),
+      surface_color: preservedSurfaceColor || null,
+      parallel_family: null,
+      parallel_exact: null,
+      parallel: null,
+      variation: null
+    },
+    unresolved,
+    open_set_presentation_guard: {
+      used: true,
+      reason: guardReason,
+      action: "downgraded_exact_parallel_to_surface_color",
+      removed_fields: [
+        "parallel_exact",
+        "parallel_family",
+        "parallel",
+        "variation"
+      ],
+      preserved_surface_color: preservedSurfaceColor || null
+    },
+    rendered_fields: {
+      ...(result.rendered_fields || {}),
+      ...guardedLegacyFields,
+      title: renderedTitle,
+      rendered_title: renderedTitle,
+      modules: presentation.modules,
+      module_order: presentation.module_order,
+      title_render_source: "open_set_narrow_parallel_guard",
+      fields: guardedLegacyFields
+    },
+    modules: presentation.modules,
+    module_order: presentation.module_order,
+    renderer: presentation.renderer || result.renderer,
+    renderer_version: presentation.renderer_version || result.renderer_version,
+    title_length_policy: presentation.title_length_policy || result.title_length_policy
+  };
+}
+
 function auditMissingHighValueFields(title, fields) {
   const titleText = searchable(title);
   const missing = [];
@@ -2152,6 +2434,8 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
     "Serial rule: every digit must be readable; otherwise serial_number must be empty.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
+    "Sapphire discipline: Topps Chrome Sapphire or Bowman Chrome Sapphire is a product/set phrase when visibly attached to the Chrome product line; keep the full phrase in product or set. Non-product Sapphire such as Heir Apparent Sapphire is exact parallel/taxonomy wording and must stay out of final fields unless catalog/printed label evidence directly supports it.",
+    "Open-set taxonomy rule: without prompt-safe catalog/vector candidates, do not put Tiger, Zebra, Sapphire, Refractor, Wave, Shimmer, Mojo, Prizm, Sparkle, Holo, or similar optical pattern words in insert/card_type/parallel fields; leave them unresolved for writer/catalog confirmation.",
     "Multi-card rule: multi_card/card_count refer to separate physical cards in the photo, not the number of players or names printed on one card. A single card with two or more subjects must keep multi_card false and put every subject in players[]. Only set multi_card true when multiple separate card rectangles, slabs, or lot items are visible; then do not merge identities.",
     "recognition_status rule: use CONFIRMED when core identity is visible with no critical conflict; RESOLVED when core identity is visible but some non-core field needs review; ABSTAIN only when product/subject is unreadable, multiple cards are mixed, image quality blocks core identity, or critical fields conflict.",
     `Runtime title limit downstream: ${maxTitleLength} characters.`,
@@ -2746,11 +3030,16 @@ function retrievalCandidateApprovedForIdentity(candidate = {}, providerOptions =
     || candidate.reference_status
     || ""
   ).trim().toLowerCase();
-  if (status === "approved") return true;
+  if (/^(approved|reviewed|verified)$/.test(status)) return true;
   const evalCorrectedTitleGt = optionFlag(providerOptions, "corrected_title_as_temporary_gt", false) === true;
+  const sourceStatus = String(candidate.reference_metadata?.source_status || "").toUpperCase();
   return evalCorrectedTitleGt
-    && candidate.field_derivation?.corrected_title_used === true
-    && String(candidate.reference_metadata?.source_status || "").toUpperCase() === "AUTO_PARSED_FROM_VERIFIED_TITLE";
+    && (
+      candidate.field_derivation?.corrected_title_used === true
+      || candidate.field_derivation?.corrected_title_as_temporary_gt === true
+      || candidate.reference_metadata?.corrected_title_as_temporary_gt === true
+      || sourceStatus === "AUTO_PARSED_FROM_VERIFIED_TITLE"
+    );
 }
 
 function retrievalCandidatesForIdentity(completion = {}, providerOptions = {}) {
@@ -3739,6 +4028,10 @@ function retrievalSourceIsTrustedTitleAssist(source = {}) {
   return /INTERNAL_APPROVED_HISTORY|APPROVED_MEMORY|OFFICIAL_CHECKLIST|OFFICIAL_REGISTRY/.test(sourceType);
 }
 
+function retrievalSourceIsCatalogLike(source = {}) {
+  return /catalog|structured_database|official|approved|registry/i.test(`${source.provider_id || ""} ${source.source_provider || ""} ${source.source_type || ""} ${source.source_url || ""}`);
+}
+
 function retrievalSourceMatchedFields(source = {}) {
   return [...new Set([
     ...(Array.isArray(source.matched_fields) ? source.matched_fields : []),
@@ -3746,8 +4039,46 @@ function retrievalSourceMatchedFields(source = {}) {
   ].map((field) => String(field || "").toLowerCase()).filter(Boolean))];
 }
 
-function retrievalSourceHasStrongTitleSupport(source = {}) {
+function retrievalSourceEffectiveMatchedFields(source = {}, currentFields = {}, currentTitle = "") {
   const matched = new Set(retrievalSourceMatchedFields(source));
+  const sourceFields = normalizeFields(source.fields || {});
+  const normalizedCurrent = normalizeFields(currentFields || {});
+  if (titleSubjectOverlapWithCurrent(source, currentFields, currentTitle)) {
+    matched.add("subjects");
+  }
+  if (sourceFields.year && normalizedCurrent.year
+    && (yearsCompatibleForTitleAssist(sourceFields.year, normalizedCurrent.year)
+      || sourceCanSoftenYearConflict(source, currentFields, currentTitle))) {
+    matched.add("year");
+  }
+  if (sourceFields.product && (normalizedCurrent.product || currentTitle)
+    && (titleAssistProductTextCompatible(sourceFields.product, normalizedCurrent.product)
+      || titleAssistProductTextCompatible(sourceFields.product, currentTitle))) {
+    matched.add("product");
+  }
+  const sourceBrand = sourceFields.brand || sourceFields.manufacturer;
+  const currentBrand = normalizedCurrent.brand || normalizedCurrent.manufacturer;
+  if (sourceBrand && (currentBrand || currentTitle)
+    && (titleAssistIdentityTextCompatible(sourceBrand, currentBrand)
+      || titleAssistProductTextCompatible(sourceBrand, currentTitle))) {
+    matched.add("brand");
+  }
+  if (serialDenominatorCompatibleForTitleAssist(source, currentFields, currentTitle)) {
+    matched.add("serial_denominator");
+  }
+  if (sourceFields.collector_number && (normalizedCurrent.collector_number || currentTitle)
+    && compatibleTextField(sourceFields.collector_number, normalizedCurrent.collector_number || currentTitle)) {
+    matched.add("collector_number");
+  }
+  if (sourceFields.checklist_code && (normalizedCurrent.checklist_code || currentTitle)
+    && compatibleTextField(sourceFields.checklist_code, normalizedCurrent.checklist_code || currentTitle)) {
+    matched.add("checklist_code");
+  }
+  return matched;
+}
+
+function retrievalSourceHasStrongTitleSupport(source = {}, currentFields = {}, currentTitle = "") {
+  const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
   const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   if (exactEvidence) {
     return ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
@@ -3761,16 +4092,16 @@ function retrievalSourceHasStrongTitleSupport(source = {}) {
   return identityEvidenceCount >= 3 && Number(source.match_score || source.normalized_score || 0) >= 0.35;
 }
 
-function retrievalSourceHasExactIdentityAnchor(source = {}) {
-  const matched = new Set(retrievalSourceMatchedFields(source));
+function retrievalSourceHasExactIdentityAnchor(source = {}, currentFields = {}, currentTitle = "") {
+  const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
   const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .some((field) => matched.has(field));
   return exactEvidence && identityEvidence;
 }
 
-function retrievalSourceHasHardIdentityAnchor(source = {}) {
-  const matched = new Set(retrievalSourceMatchedFields(source));
+function retrievalSourceHasHardIdentityAnchor(source = {}, currentFields = {}, currentTitle = "") {
+  const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
   const exactEvidence = ["checklist_code", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .some((field) => matched.has(field));
@@ -3784,26 +4115,26 @@ function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {},
   if (!retrievalSourceIsTrustedTitleAssist(source)) return false;
   if (retrievalSourceHasBlockingTitleConflict(source, currentFields, currentTitle)) return false;
   if (!retrievalSourceCompatibleWithCurrent(source, currentFields, currentTitle)) return false;
-  const matched = new Set(retrievalSourceMatchedFields(source));
+  const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
   const sourceSubjects = subjectTextsForTitleAssist(source.fields || {});
   const currentSubjects = subjectTextsForTitleAssist(currentFields || {});
-  const exactAnchor = retrievalSourceHasExactIdentityAnchor(source);
+  const exactAnchor = retrievalSourceHasExactIdentityAnchor(source, currentFields, currentTitle);
   const subjectSupport = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle)
     || (exactAnchor && looseSubjectTokenOverlapWithCurrent(source, currentFields, currentTitle));
   const identitySupportCount = ["product", "set", "year", "brand", "manufacturer", "surface_color", "trigram", "collector_number", "checklist_code", "serial_denominator"]
     .filter((field) => matched.has(field)).length;
   const score = Number(source.match_score || source.normalized_score || source.raw_score || 0);
   const lowerRankedCatalogLane = sourceIndex > 0
-    && sourceIndex <= 4
-    && /catalog|structured_database|official|approved/i.test(`${source.provider_id || ""} ${source.source_type || ""} ${source.source_url || ""}`)
+    && sourceIndex <= 12
+    && retrievalSourceIsCatalogLike(source)
     && subjectSupport
     && (exactAnchor || identitySupportCount >= 3)
     && score >= 0.38;
   const lowerRankedExactCatalogLane = sourceIndex > 0
     && sourceIndex <= 12
-    && /catalog|structured_database|official|approved/i.test(`${source.provider_id || ""} ${source.source_type || ""} ${source.source_url || ""}`)
+    && retrievalSourceIsCatalogLike(source)
     && subjectSupport
-    && retrievalSourceHasHardIdentityAnchor(source)
+    && retrievalSourceHasHardIdentityAnchor(source, currentFields, currentTitle)
     && identitySupportCount >= 3
     && score >= 0.34;
   if (!selectedLane && !topRankedLane && !lowerRankedCatalogLane && !lowerRankedExactCatalogLane) return false;
@@ -3883,13 +4214,39 @@ function gradeTokenFromCurrentTitle(title) {
   return String(title || "").match(/\b(?:PSA|BGS|SGC|CGC)\s+(?:AUTO\s+)?(?:AUTH(?:ENTIC)?|\d+(?:\.\d+)?)(?:\s*\/\s*(?:AUTH(?:ENTIC)?|\d+(?:\.\d+)?))?\b/i)?.[0] || "";
 }
 
+function titleAssistFieldValuePresent(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "boolean") return value === true;
+  return value !== null && value !== undefined && String(value).replace(/\s+/g, " ").trim() !== "" && value !== "UNKNOWN";
+}
+
+function mergeCurrentFieldsForTitleAssist(...fieldSets) {
+  const merged = {};
+  fieldSets.forEach((fields) => {
+    const normalized = normalizeFields(fields || {});
+    Object.entries(normalized).forEach(([field, value]) => {
+      if (!titleAssistFieldValuePresent(value)) return;
+      merged[field] = value;
+    });
+  });
+  return merged;
+}
+
+function gradeTokenFromCurrentFields(fields = {}) {
+  const normalized = normalizeFields(fields || {});
+  const company = normalizeStringOrNull(normalized.grade_company);
+  const grade = normalizeStringOrNull(normalized.card_grade || normalized.grade);
+  if (!company || !grade) return "";
+  return `${company} ${grade}`.replace(/\s+/g, " ").trim();
+}
+
 function appendCurrentInstanceTerms(title, currentFields = {}, currentTitle = "") {
   let output = String(title || "").replace(/\s+/g, " ").trim();
   const serial = normalizeSerialText(currentFields.serial_number || "");
   if (/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(serial) && !titleIncludesSerial(output, { serial_number: serial })) {
     output = `${output} ${serial}`.trim();
   }
-  const grade = gradeTokenFromCurrentTitle(currentTitle);
+  const grade = gradeTokenFromCurrentFields(currentFields) || gradeTokenFromCurrentTitle(currentTitle);
   if (grade && !rawIncludes(output, grade)) output = `${output} ${grade}`.trim();
   const collector = normalizeStringOrNull(currentFields.collector_number || currentFields.card_number);
   if (collector && !rawIncludes(output, collector)) output = `${output} #${collector}`.trim();
@@ -3916,19 +4273,32 @@ function normalizeTitlePreservingSuffix(title, suffix, maxLength) {
 }
 
 function bestRetrievalTitleAssistSource(completion = {}, result = {}) {
-  const currentFields = result.resolved || result.resolved_fields || result.fields || {};
+  const currentFields = mergeCurrentFieldsForTitleAssist(
+    result.fields,
+    result.raw_provider_fields,
+    result.resolved,
+    result.resolved_fields
+  );
   const currentTitle = result.final_title || result.title || result.rendered_title || "";
   return retrievalSourcesFromCompletion(completion)
     .filter((source) => retrievalSourceCanEnterTitleAssistLane(source, currentFields, currentTitle))
     .filter((source) => source.title || source.reference_title)
     .filter(retrievalSourceIsTrustedTitleAssist)
     .filter((source) => !retrievalSourceHasBlockingTitleConflict(source, currentFields, currentTitle))
-    .filter(retrievalSourceHasStrongTitleSupport)
+    .filter((source) => retrievalSourceHasStrongTitleSupport(source, currentFields, currentTitle))
     .filter((source) => retrievalSourceCompatibleWithCurrent(source, currentFields, currentTitle))
     .sort((left, right) => {
-      const leftExact = retrievalSourceMatchedFields(left).some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
-      const rightExact = retrievalSourceMatchedFields(right).some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
+      const leftMatched = retrievalSourceEffectiveMatchedFields(left, currentFields, currentTitle);
+      const rightMatched = retrievalSourceEffectiveMatchedFields(right, currentFields, currentTitle);
+      const leftCatalog = retrievalSourceIsCatalogLike(left) ? 1 : 0;
+      const rightCatalog = retrievalSourceIsCatalogLike(right) ? 1 : 0;
+      if (leftCatalog !== rightCatalog) return rightCatalog - leftCatalog;
+      const leftExact = [...leftMatched].some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
+      const rightExact = [...rightMatched].some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
       if (leftExact !== rightExact) return rightExact - leftExact;
+      const leftSupport = leftMatched.size;
+      const rightSupport = rightMatched.size;
+      if (leftSupport !== rightSupport) return rightSupport - leftSupport;
       const leftOverlap = overlapTokenCount(left.title || left.reference_title, currentTitle);
       const rightOverlap = overlapTokenCount(right.title || right.reference_title, currentTitle);
       if (leftOverlap !== rightOverlap) return rightOverlap - leftOverlap;
@@ -3939,7 +4309,16 @@ function bestRetrievalTitleAssistSource(completion = {}, result = {}) {
 function applySafeRetrievalTitleAssist(draft = {}, result = {}, completion = {}, payload = {}) {
   const source = bestRetrievalTitleAssistSource(completion, result);
   if (!source) return draft;
-  const currentFields = draft.resolved || draft.resolved_fields || draft.fields || result.resolved || result.fields || {};
+  const currentFields = mergeCurrentFieldsForTitleAssist(
+    result.fields,
+    result.raw_provider_fields,
+    result.resolved,
+    result.resolved_fields,
+    draft.fields,
+    draft.raw_provider_fields,
+    draft.resolved,
+    draft.resolved_fields
+  );
   const currentTitle = draft.final_title || draft.title || result.final_title || result.title || "";
   const candidateTitle = stripReferenceInstanceOnlyTerms(source.title || source.reference_title || "");
   if (!candidateTitle) return draft;
@@ -3987,6 +4366,7 @@ async function withEvidenceCompletionShadow(result, payload, {
     assistShadowOnly: true
   });
   if (!draft) return null;
+  const guardedDraft = applyOpenSetAssistShadowPresentationGuard(draft, payload);
 
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
   const retrievalEnv = retrievalEnvForProviderOptions(env, providerOptions);
@@ -4008,7 +4388,7 @@ async function withEvidenceCompletionShadow(result, payload, {
     }));
   } catch (error) {
     return {
-      ...draft,
+      ...guardedDraft,
       route_reason: "No prompt-safe catalog or vector candidates were available; retrieval telemetry failed and did not alter the GPT draft.",
       retrieval: {
         skipped: true,
@@ -4020,7 +4400,7 @@ async function withEvidenceCompletionShadow(result, payload, {
         error_type: "RETRIEVAL_TELEMETRY_ERROR"
       },
       fast_path: {
-        ...(draft.fast_path || {}),
+        ...(guardedDraft.fast_path || {}),
         assist_shadow_only: true,
         assist_shadow_retrieval_only: true,
         reason: "assist_shadow_no_prompt_safe_candidates"
@@ -4028,32 +4408,33 @@ async function withEvidenceCompletionShadow(result, payload, {
     };
   }
   addTiming(timingContext, "retrieval_ms", Number(completion.retrieval?.latency_ms || completion.retrieval?.retrieval_time_ms || 0));
-  const assistedDraft = applySafeRetrievalTitleAssist(draft, result, completion, payload);
+  const assistedDraft = applySafeRetrievalTitleAssist(guardedDraft, result, completion, payload);
+  const finalAssistedDraft = applyOpenSetAssistShadowPresentationGuard(assistedDraft, payload);
 
   return {
-    ...assistedDraft,
-    route: assistedDraft.route || "ASSIST_SHADOW_WRITER_DRAFT",
-    route_reason: assistedDraft.retrieval_title_assist?.used
+    ...finalAssistedDraft,
+    route: finalAssistedDraft.route || "ASSIST_SHADOW_WRITER_DRAFT",
+    route_reason: finalAssistedDraft.retrieval_title_assist?.used
       ? "No prompt-safe catalog or vector candidates were available; selected approved retrieval evidence was used only as a stripped title scaffold without copying reference serial, grade, or cert values."
       : "No prompt-safe catalog or vector candidates were available; retrieval ran only for telemetry and did not alter the GPT draft.",
-    retrieval: completion.retrieval || assistedDraft.retrieval,
+    retrieval: completion.retrieval || finalAssistedDraft.retrieval,
     completion_state: {
       ...(completion.state || {}),
       shadow_only: true
     },
     completion_trace: [
-      ...(Array.isArray(assistedDraft.completion_trace) ? assistedDraft.completion_trace : []),
+      ...(Array.isArray(finalAssistedDraft.completion_trace) ? finalAssistedDraft.completion_trace : []),
       ...(Array.isArray(completion.resolution_trace) ? completion.resolution_trace : [])
     ],
     resolution_trace: [
-      ...(Array.isArray(assistedDraft.resolution_trace) ? assistedDraft.resolution_trace : []),
+      ...(Array.isArray(finalAssistedDraft.resolution_trace) ? finalAssistedDraft.resolution_trace : []),
       ...(Array.isArray(completion.resolution_trace) ? completion.resolution_trace : [])
     ],
-    usage: mergeUsage(assistedDraft.usage, completion.usage, {
+    usage: mergeUsage(finalAssistedDraft.usage, completion.usage, {
       providerCalls: result.provider ? 1 : 0
     }),
     fast_path: {
-      ...(assistedDraft.fast_path || {}),
+      ...(finalAssistedDraft.fast_path || {}),
       assist_shadow_only: true,
       assist_shadow_retrieval_only: true,
       reason: "assist_shadow_no_prompt_safe_candidates"
@@ -4289,6 +4670,13 @@ function explicitEmergencyFromPayload(payload = {}) {
   return payload.explicitEmergency === true || payload.explicit_emergency === true;
 }
 
+export const __listingCopilotTitleTestHooks = {
+  applyOpenSetAssistShadowPresentationGuard,
+  configuredMaxPayloadImages,
+  narrowSurfaceColorFromOpenSetParallel,
+  openSetAssistShadowGuardReason
+};
+
 async function createProviderTitle(payload, {
   recognitionEvidenceDocument = null,
   signedImages = null,
@@ -4343,8 +4731,13 @@ export default async function handler(req, res) {
 
   const payloadImages = Array.isArray(payload.images) ? payload.images : [];
   const primaryImages = explicitPrimaryImagesFromImages(payloadImages);
+  const maxPayloadImages = configuredMaxPayloadImages(process.env);
   if (payloadImages.length < 1 || payloadImages.length > maxPayloadImages || primaryImages.length < 1 || primaryImages.length > 2) {
-    sendJson(res, 400, { ok: false, message: "Expected one or two primary card images, with optional bounded derived crop images." });
+    sendJson(res, 400, {
+      ok: false,
+      code: "invalid_image_payload",
+      message: `Expected one or two primary card images plus bounded derived crops; received ${payloadImages.length} total images and ${primaryImages.length} primary images. Limit: ${maxPayloadImages}.`
+    });
     return;
   }
 

@@ -86,6 +86,8 @@ export default async function handler(req, res) {
 
   const payload = base64url(JSON.stringify({
     user: normalize(expectedUser),
+    sid: crypto.randomUUID(),
+    iat: Date.now(),
     exp: Date.now() + maxAgeSeconds * 1000
   }));
   const token = `${payload}.${sign(payload, authSecret)}`;

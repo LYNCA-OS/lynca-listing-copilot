@@ -22,10 +22,14 @@ const FIELD_MAX_CROPS_PER_ASSET = 6;
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
-  enable_stored_visual_features: false,
-  enable_query_visual_embeddings: false,
-  enable_vector_retrieval: false,
-  vector_retrieval_mode: "off",
+  enable_catalog_assist: true,
+  enable_vector_assist: true,
+  enable_stored_visual_features: true,
+  enable_query_visual_embeddings: true,
+  enable_vector_retrieval: true,
+  vector_retrieval_mode: "assist",
+  enable_advanced_retrieval: true,
+  enable_hybrid_retrieval: true,
   enable_gpt_failure_fallback: false,
   enable_gpt_provider_failure_fallback: false,
   enable_gpt_critical_verifier: false
@@ -747,6 +751,7 @@ function renderProviderControl() {
     elements.providerStatusText.textContent = state.providerStatus?.fallback_available
       ? "未配置服务端 Provider，当前使用本地 fallback。"
       : "未读取到可用 Provider。";
+    elements.processButton.disabled = !canGenerateTitles();
     return;
   }
 
@@ -767,12 +772,14 @@ function renderProviderControl() {
   const selected = providerById(state.selectedProvider);
   if (selected) {
     elements.providerStatusText.textContent = providerStatusText(selected);
+    elements.processButton.disabled = !canGenerateTitles();
     return;
   }
 
   elements.providerStatusText.textContent = state.providerStatus?.fallback_available
     ? "未配置服务端 Provider，当前使用本地 fallback。"
     : "请选择可用 Provider。";
+  elements.processButton.disabled = !canGenerateTitles();
 }
 
 function selectProvider(providerId) {
@@ -831,11 +838,30 @@ function assetCountLabel(count) {
 }
 
 function imagesForProvider(assetImages) {
-  return assetImages.flatMap((image) => [
-    image,
-    ...(Array.isArray(image.targetedCrops) ? image.targetedCrops : [])
-  ]);
+  const primaryImages = Array.isArray(assetImages) ? assetImages : [];
+  const targetedCrops = primaryImages
+    .flatMap((image, sourceIndex) => (Array.isArray(image.targetedCrops) ? image.targetedCrops : [])
+      .map((crop) => ({
+        crop,
+        sourceIndex,
+        priority: Number(crop.cropPlan?.priority || crop.crop_plan?.priority || 0)
+      })))
+    .sort((left, right) => {
+      if (right.priority !== left.priority) return right.priority - left.priority;
+      return left.sourceIndex - right.sourceIndex;
+    })
+    .slice(0, FIELD_MAX_CROPS_PER_ASSET)
+    .map((item) => item.crop);
+
+  return [
+    ...primaryImages,
+    ...targetedCrops
+  ];
 }
+
+export const __listingCopilotAppTestHooks = {
+  imagesForProvider
+};
 
 function buildAssets() {
   const assets = [];
@@ -1442,11 +1468,18 @@ async function processAsset(asset, options = {}) {
   const apiRoundtripMs = Math.round(performance.now() - apiStartedAt);
 
   if (!response.ok) {
+    let errorPayload = null;
+    try {
+      errorPayload = await response.json();
+    } catch {
+      errorPayload = null;
+    }
+    const detail = errorPayload?.message || errorPayload?.error || "";
     if (response.status === 413) {
-      throw new Error("请求失败：413，图片请求体过大，请压缩或裁剪图片后重试。");
+      throw new Error(detail || "请求失败：413，图片请求体过大，请压缩或裁剪图片后重试。");
     }
 
-    throw new Error(`请求失败：${response.status}`);
+    throw new Error(detail ? `请求失败：${response.status}，${detail}` : `请求失败：${response.status}`);
   }
 
   const payload = await response.json();
@@ -1490,6 +1523,24 @@ function failedResult(asset, error) {
   };
 }
 
+function processingCompletionStatus() {
+  const total = state.assets.length;
+  const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
+  const succeeded = Math.max(0, state.results.length - failed);
+
+  if (!total) return "";
+  if (failed && succeeded) return `已完成：${succeeded} 个成功，${failed} 个失败。失败项可查看错误后重试。`;
+  if (failed) return `已完成：${failed} 个失败。请查看每张卡错误信息后重试。`;
+  return "已完成，结果保持上传顺序。";
+}
+
+function processingProgressStatus(completedCount) {
+  const total = state.assets.length;
+  const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
+  const suffix = failed ? `，失败 ${failed}` : "";
+  return `正在处理：已完成 ${completedCount} / ${total}${suffix}...`;
+}
+
 async function processTitles() {
   if (!canGenerateTitles()) return;
 
@@ -1500,13 +1551,11 @@ async function processTitles() {
 
   const queue = [...state.assets];
   const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
-  let startedCount = 0;
+  let completedCount = 0;
 
   async function worker() {
     while (queue.length) {
       const asset = queue.shift();
-      startedCount += 1;
-      setStatus(`正在处理 ${startedCount} / ${state.assets.length}...`);
 
       try {
         const result = await processAsset(asset);
@@ -1515,8 +1564,10 @@ async function processTitles() {
         state.results.push(failedResult(asset, error));
       }
 
+      completedCount += 1;
       state.results.sort((a, b) => a.index - b.index);
       renderResults();
+      setStatus(processingProgressStatus(completedCount));
     }
   }
 
@@ -1524,7 +1575,7 @@ async function processTitles() {
   renderResults();
 
   elements.processButton.disabled = !canGenerateTitles();
-  setStatus("已完成，结果保持上传顺序。");
+  setStatus(processingCompletionStatus());
 }
 
 async function retryAssetWithEmergency(button) {

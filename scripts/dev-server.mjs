@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { extname, join, normalize } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createServer } from "node:http";
@@ -74,9 +74,12 @@ function sign(value) {
 }
 
 function createSession() {
+  const now = Date.now();
   const payload = Buffer.from(JSON.stringify({
     user: normalizeValue(process.env.METAVERSE_USERNAME),
-    exp: Date.now() + maxAgeSeconds * 1000
+    sid: randomUUID(),
+    iat: now,
+    exp: now + maxAgeSeconds * 1000
   })).toString("base64url");
 
   return `${payload}.${sign(payload)}`;

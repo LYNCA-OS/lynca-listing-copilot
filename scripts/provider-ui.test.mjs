@@ -9,6 +9,7 @@ const providerRegistry = await readFile("lib/listing/providers/provider-registry
 
 assert.match(html, /id="providerControl"/, "provider segmented control should exist");
 assert.match(html, /id="providerStatusText"/, "provider status text should exist");
+assert.match(html, /rel="icon"[^>]+href="\/app\/favicon\.svg"/, "main app should provide a favicon to avoid browser 404 noise");
 assert.match(js, /fetch\("\/api\/listing-provider-status"/, "frontend should load provider status from the server");
 assert.match(js, /state\.selectedProvider/, "frontend should keep selected provider in state");
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
@@ -17,10 +18,14 @@ assert.match(js, /body\.provider = provider/, "title requests should include the
 assert.match(js, /defaultProviderOptions/, "frontend should centralize default provider options");
 assert.match(js, /single_model_fast:\s*false/, "frontend default path should not skip evidence completion");
 assert.match(js, /enable_evidence_completion:\s*true/, "frontend default path should use evidence completion");
-assert.match(js, /enable_stored_visual_features:\s*false/, "frontend default path should not use legacy visual vector candidates");
-assert.match(js, /enable_query_visual_embeddings:\s*false/, "frontend default path should not request legacy query embeddings");
-assert.match(js, /enable_vector_retrieval:\s*false/, "vector retrieval must be explicitly enabled by feature flag");
-assert.match(js, /vector_retrieval_mode:\s*"off"/, "vector retrieval should default to off");
+assert.match(js, /enable_catalog_assist:\s*true/, "frontend default path should use catalog assist");
+assert.match(js, /enable_vector_assist:\s*true/, "frontend default path should use vector assist");
+assert.match(js, /enable_stored_visual_features:\s*true/, "frontend default path should allow stored visual feature lookup");
+assert.match(js, /enable_query_visual_embeddings:\s*true/, "frontend default path should request query visual embeddings when configured");
+assert.match(js, /enable_vector_retrieval:\s*true/, "vector retrieval should be part of the default C path");
+assert.match(js, /vector_retrieval_mode:\s*"assist"/, "vector retrieval should default to assist mode");
+assert.match(js, /enable_advanced_retrieval:\s*true/, "frontend default path should use advanced retrieval");
+assert.match(js, /enable_hybrid_retrieval:\s*true/, "frontend default path should use hybrid retrieval");
 assert.match(js, /vectorCandidateNotice/, "writer UI should expose lightweight vector candidate status");
 assert.match(js, /vector_prompt_assist_used/, "writer UI should show whether vector candidates entered the GPT prompt");
 assert.match(js, /provider_options:\s*{/, "title requests should include provider options");
@@ -63,6 +68,10 @@ assert.match(api, /if \(fastPathResult\) return withOpenSetReadiness\(fastPathRe
 assert.match(api, /open_set_readiness/, "title API should expose known-catalog versus catalog-gap diagnostics");
 assert.match(api, /singleModelFastPathEnabled/, "title API should expose a single-model fast path switch");
 assert.match(api, /envFlag\(env, "ENABLE_SINGLE_MODEL_FAST_PATH", false\)/, "title API should default to model plus evidence completion");
+assert.match(api, /defaultProviderOptionsFromEnv/, "title API should centralize default provider options server-side");
+assert.match(api, /ENABLE_CATALOG_ASSIST_DEFAULT", true/, "title API should default catalog assist on for the C path");
+assert.match(api, /ENABLE_VECTOR_ASSIST_DEFAULT", true/, "title API should default vector assist on for the C path");
+assert.match(api, /vector_retrieval_mode:\s*vectorAssistDefault \? "assist" : "off"/, "title API should default vector retrieval to assist mode when enabled");
 assert.match(api, /singleModelDraftPath/, "single-model provider requests should be able to skip Evidence Completion");
 assert.match(api, /skipped_evidence_completion: true/, "single-model fast drafts should record skipped Evidence Completion");
 assert.match(api, /assist_shadow_no_prompt_safe_candidates/, "assist-enabled requests with no prompt-safe candidates should stay in shadow-only mode");
@@ -115,6 +124,9 @@ assert.match(js, /dry_run: true/, "mock publish requests should remain dry-run f
 assert.match(js, /data-emergency-retry/, "failed assets should expose explicit GPT single-provider retry control");
 assert.match(js, /retryAssetWithEmergency/, "GPT single-provider retry should be a separate action");
 assert.match(js, /renderProviderControl/, "provider controls should be rendered from server status");
+assert.match(js, /function renderProviderControl\(\)[\s\S]*elements\.processButton\.disabled = !canGenerateTitles\(\)/, "provider status rendering should refresh the generate button state");
+assert.match(js, /processingCompletionStatus/, "batch completion should summarize success and failure counts");
+assert.match(js, /已完成：\$\{succeeded\} 个成功，\$\{failed\} 个失败/, "partial failures should produce an actionable completion status");
 assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.writer-modules/, "writer-facing modules should have a compact layout");
@@ -125,5 +137,112 @@ assert.match(css, /\.title-override-note/, "title override state should be visib
 assert.match(css, /\.publish-button/, "mock publish button should have a distinct approved-action style");
 assert.match(css, /\.publish-status/, "mock publish status should be visible after publishing");
 assert.doesNotMatch(html, /name="model_id"|name="endpoint"|id="modelId"|id="providerEndpoint"/i, "frontend must not expose arbitrary model or endpoint inputs");
+
+function makeDomElement() {
+  return {
+    addEventListener() {},
+    removeEventListener() {},
+    setAttribute() {},
+    removeAttribute() {},
+    appendChild() {},
+    focus() {},
+    closest() {
+      return null;
+    },
+    querySelector() {
+      return makeDomElement();
+    },
+    querySelectorAll() {
+      return [];
+    },
+    classList: {
+      add() {},
+      remove() {},
+      toggle() {}
+    },
+    dataset: {},
+    style: {},
+    value: "",
+    textContent: "",
+    innerHTML: "",
+    disabled: false,
+    checked: false
+  };
+}
+
+globalThis.document = {
+  body: makeDomElement(),
+  createElement(tagName) {
+    if (tagName === "canvas") {
+      return {
+        width: 0,
+        height: 0,
+        getContext() {
+          return {
+            drawImage() {},
+            getImageData() {
+              return { data: new Uint8ClampedArray(4) };
+            }
+          };
+        },
+        toDataURL() {
+          return "data:image/jpeg;base64,test";
+        }
+      };
+    }
+    return makeDomElement();
+  },
+  querySelector() {
+    return makeDomElement();
+  },
+  querySelectorAll() {
+    return [];
+  },
+  addEventListener() {}
+};
+
+globalThis.fetch = async (url) => {
+  if (String(url).includes("/api/listing-provider-status")) {
+    return {
+      ok: true,
+      json: async () => ({
+        default_provider: "openai_legacy",
+        providers: []
+      })
+    };
+  }
+  return {
+    ok: true,
+    json: async () => ({})
+  };
+};
+
+const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
+const frontImage = {
+  id: "front",
+  targetedCrops: Array.from({ length: 6 }, (_, index) => ({
+    id: `front-crop-${index}`,
+    derived: true,
+    cropPlan: { priority: 100 - index }
+  }))
+};
+const backImage = {
+  id: "back",
+  targetedCrops: Array.from({ length: 6 }, (_, index) => ({
+    id: `back-crop-${index}`,
+    derived: true,
+    cropPlan: { priority: 90 - index }
+  }))
+};
+const providerImages = __listingCopilotAppTestHooks.imagesForProvider([frontImage, backImage]);
+assert.equal(providerImages.length, 8, "pair mode provider payload should keep two originals plus six bounded crops");
+assert.equal(providerImages[0], frontImage, "front original should be preserved first");
+assert.equal(providerImages[1], backImage, "back original should be preserved second");
+assert.equal(providerImages.filter((image) => image.derived).length, 6, "field crops should be bounded across the whole card asset");
+assert.deepEqual(
+  providerImages.slice(2).map((image) => image.id),
+  ["front-crop-0", "front-crop-1", "front-crop-2", "front-crop-3", "front-crop-4", "front-crop-5"],
+  "highest-priority crops should be retained deterministically"
+);
 
 console.log("provider UI tests passed");
