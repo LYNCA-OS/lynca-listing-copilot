@@ -117,6 +117,21 @@ try {
   const slow = await compareVectorLazyGuardrail({ noLazyPath, lazyPath: slowPath });
   assert.equal(slow.status, "failed");
   assert.equal(slow.summary.timing_improved, false);
+  assert.ok(slow.summary.fail_reasons.includes("TIMING_NOT_IMPROVED"));
+
+  const noSkipPath = join(dir, "lazy-no-skip.json");
+  await writeJson(noSkipPath, {
+    ...lazy,
+    results: [{
+      ...lazy.results[0],
+      vector_lazy_skip: false,
+      vector_lazy_skip_reason: null
+    }]
+  });
+  const noSkip = await compareVectorLazyGuardrail({ noLazyPath, lazyPath: noSkipPath });
+  assert.equal(noSkip.status, "failed");
+  assert.equal(noSkip.summary.vector_lazy_skip_sample_requirement_met, false);
+  assert.ok(noSkip.summary.fail_reasons.includes("NO_VECTOR_LAZY_SKIP_SAMPLES"));
 
   console.log("cloud timing guardrail tests passed");
 } finally {

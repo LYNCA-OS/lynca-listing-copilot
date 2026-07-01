@@ -101,7 +101,8 @@ export async function compareVectorLazyGuardrail({
   noLazyPath,
   lazyPath,
   threshold = 0.72,
-  minRegressionDelta = -0.015
+  minRegressionDelta = -0.015,
+  requiredLazySkipCount = 1
 } = {}) {
   if (!noLazyPath || !lazyPath) throw new Error("noLazyPath and lazyPath are required.");
   const [noLazy, lazy] = await Promise.all([readJson(noLazyPath), readJson(lazyPath)]);
@@ -175,7 +176,17 @@ export async function compareVectorLazyGuardrail({
   const p50DeltaMs = latencyDelta(noLazy, lazy, "p50");
   const p95DeltaMs = latencyDelta(noLazy, lazy, "p95");
   const timingImproved = p50DeltaMs !== null && p95DeltaMs !== null && p50DeltaMs < 0 && p95DeltaMs < 0;
-  const guardrailPassed = regressionCount === 0
+  const enoughLazySkipSamples = lazySkipCount >= Math.max(0, Number(requiredLazySkipCount) || 0);
+  const failReasons = [
+    enoughLazySkipSamples ? "" : "NO_VECTOR_LAZY_SKIP_SAMPLES",
+    regressionCount === 0 ? "" : "OVERALL_TITLE_REGRESSION",
+    lazySkipRegressionCount === 0 ? "" : "VECTOR_LAZY_SKIP_TITLE_REGRESSION",
+    lazyCopiedCount === 0 ? "" : "COPIED_REFERENCE_INSTANCE_FIELD",
+    catalogRecoveryNotDown ? "" : "CATALOG_RECOVERY_DOWN",
+    timingImproved ? "" : "TIMING_NOT_IMPROVED"
+  ].filter(Boolean);
+  const guardrailPassed = enoughLazySkipSamples
+    && regressionCount === 0
     && lazySkipRegressionCount === 0
     && lazyCopiedCount === 0
     && catalogRecoveryNotDown
@@ -191,13 +202,17 @@ export async function compareVectorLazyGuardrail({
     },
     threshold,
     min_regression_delta: minRegressionDelta,
+    required_lazy_skip_count: requiredLazySkipCount,
     summary: {
       compared_count: trace.length,
+      overall_recovery_count: recoveryCount,
+      overall_regression_count: regressionCount,
       recovery_count: recoveryCount,
       regression_count: regressionCount,
       net_benefit: recoveryCount - regressionCount,
       vector_lazy_skip_count: lazySkipCount,
       vector_lazy_skip_rate: rate(lazySkipCount, trace.length),
+      vector_lazy_skip_sample_requirement_met: enoughLazySkipSamples,
       vector_lazy_skip_regression_count: lazySkipRegressionCount,
       copied_serial_grade_cert_from_reference_count: {
         no_lazy: copiedReferenceCount(noLazy),
@@ -240,6 +255,7 @@ export async function compareVectorLazyGuardrail({
       p50_delta_ms: p50DeltaMs,
       p95_delta_ms: p95DeltaMs,
       timing_improved: timingImproved,
+      fail_reasons: failReasons,
       guardrail_passed: guardrailPassed
     },
     per_card: trace
@@ -257,13 +273,15 @@ export async function main(argv = process.argv) {
     `vector lazy guardrail ${report.status}`,
     `compared_count: ${report.summary.compared_count}`,
     `vector_lazy_skip_count: ${report.summary.vector_lazy_skip_count}`,
+    `vector_lazy_skip_sample_requirement_met: ${report.summary.vector_lazy_skip_sample_requirement_met}`,
     `vector_lazy_skip_regression_count: ${report.summary.vector_lazy_skip_regression_count}`,
     `regression_count: ${report.summary.regression_count}`,
     `recovery_count: ${report.summary.recovery_count}`,
     `net_benefit: ${report.summary.net_benefit}`,
     `copied_serial_grade_cert_from_reference_count: ${JSON.stringify(report.summary.copied_serial_grade_cert_from_reference_count)}`,
     `p50_delta_ms: ${report.summary.p50_delta_ms ?? "n/a"}`,
-    `p95_delta_ms: ${report.summary.p95_delta_ms ?? "n/a"}`
+    `p95_delta_ms: ${report.summary.p95_delta_ms ?? "n/a"}`,
+    `fail_reasons: ${(report.summary.fail_reasons || []).join(",") || "n/a"}`
   ].join("\n") + "\n");
   return report.status === "passed" ? 0 : 1;
 }
