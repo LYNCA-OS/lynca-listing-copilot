@@ -27,6 +27,7 @@ import { renderListingPresentation } from "../lib/listing/renderer/listing-rende
 import { serialLimitText } from "../lib/listing/renderer/title-cleanup.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
+import { attachFieldTaskOrchestration } from "../lib/listing/orchestration/field-task-orchestrator.mjs";
 import {
   applyIdentityResolutionGate,
   applyIdentityResolutionGateWithConvergence
@@ -307,10 +308,11 @@ function finalizeTiming(timingContext, result = {}) {
 }
 
 function withTiming(result = {}, timingContext) {
-  return {
+  const timedResult = {
     ...result,
     timing: finalizeTiming(timingContext, result)
   };
+  return attachFieldTaskOrchestration(timedResult, { timing: timedResult.timing });
 }
 
 async function mapWithConcurrency(items, limit, worker) {

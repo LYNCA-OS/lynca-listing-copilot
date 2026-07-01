@@ -15,7 +15,11 @@ const timingKeys = [
   "provider_total_ms",
   "evidence_completion_ms",
   "resolver_ms",
-  "renderer_ms"
+  "renderer_ms",
+  "time_to_first_field_ms",
+  "time_to_core_identity_ms",
+  "time_to_writer_draft_ms",
+  "time_to_final_assisted_title_ms"
 ];
 
 function argValues(argv, name) {
@@ -176,10 +180,14 @@ function formatTimingLine(label, stats = {}) {
   const provider = stats.timing?.provider_total_ms || {};
   const vectorEmbedding = stats.timing?.vector_embedding_ms || {};
   const vectorRetrieval = stats.timing?.vector_retrieval_ms || {};
+  const firstField = stats.timing?.time_to_first_field_ms || {};
+  const writerDraft = stats.timing?.time_to_writer_draft_ms || {};
   return [
     `${label}: count=${stats.count}`,
     `total_p50=${total.p50 ?? "n/a"}`,
     `total_p95=${total.p95 ?? "n/a"}`,
+    `first_field_p50=${firstField.p50 ?? "n/a"}`,
+    `writer_draft_p50=${writerDraft.p50 ?? "n/a"}`,
     `provider_p95=${provider.p95 ?? "n/a"}`,
     `vector_embedding_p95=${vectorEmbedding.p95 ?? "n/a"}`,
     `vector_retrieval_p95=${vectorRetrieval.p95 ?? "n/a"}`,
