@@ -102,7 +102,10 @@ const packet = createCommercialReviewPacket(candidateManifest, {
 assert.equal(packet.schema_version, "commercial-review-packet-v1");
 assert.equal(packet.summary.task_count, 2);
 assert.equal(packet.summary.corrected_title_hint_count, 2);
+assert.equal(packet.summary.corrected_title_reviewed_ground_truth_count, 2);
+assert.equal(packet.summary.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(packet.summary.corrected_title_used_as_ground_truth, false);
+assert.equal(packet.summary.corrected_title_used_as_field_ground_truth, false);
 assert.equal(packet.summary.suggested_field_task_count, 1);
 assert.equal(packet.summary.suggested_fields_are_ground_truth, false);
 assert.equal(packet.summary.suggested_field_counts.year, 1);
@@ -126,7 +129,9 @@ await runBuildCommercialReviewPacket({
 });
 const writtenPacket = JSON.parse(await readFile(packetPath, "utf8"));
 assert.equal(writtenPacket.summary.task_count, 1);
+assert.equal(writtenPacket.tasks[0].corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(writtenPacket.tasks[0].corrected_title_used_as_ground_truth, false);
+assert.equal(writtenPacket.tasks[0].corrected_title_used_as_field_ground_truth, false);
 assert.equal(writtenPacket.tasks[0].suggested_fields.year, "2025");
 
 const suggestionsOnly = reviewPacketToRecognitionDataset(packet);
@@ -258,7 +263,9 @@ const reviewedManifest = JSON.parse(await readFile(reviewedManifestPath, "utf8")
 const reviewedReport = JSON.parse(await readFile(reviewedReportPath, "utf8"));
 assert.equal(reviewedManifest.summary.item_count, 1);
 assert.equal(reviewedManifest.summary.rejected_task_count, 1);
+assert.equal(reviewedManifest.summary.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(reviewedManifest.summary.corrected_title_used_as_ground_truth, false);
+assert.equal(reviewedManifest.summary.corrected_title_used_as_field_ground_truth, false);
 assert.equal(reviewedReport.dataset_stats.ground_truth_field_counts.year, 1);
 assert.equal(reviewedReport.summary.review_status, "FIELD_REVIEWED");
 

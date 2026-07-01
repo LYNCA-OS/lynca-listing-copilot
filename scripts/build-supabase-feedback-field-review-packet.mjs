@@ -107,8 +107,9 @@ function reviewTask(result = {}, index = 0) {
     review_status: "UNREVIEWED",
     corrected_title_hint: result.corrected_title_reference || "",
     corrected_title_hint_policy: {
-      can_be_used_as_ground_truth: false,
-      use_as: "review_hint_only"
+      can_be_used_as_title_ground_truth: Boolean(result.corrected_title_reference),
+      can_be_used_as_field_ground_truth: false,
+      use_as: "writer_reviewed_title_ground_truth_and_field_review_hint"
     },
     generated_title: result.prediction?.title || "",
     identity_resolution_status: result.identity_resolution_status || result.prediction?.identity_resolution_status || "",
@@ -162,12 +163,13 @@ export function buildSupabaseFeedbackFieldReviewPacket(report = {}, {
       report_provider_display_name: report.provider_display_name || null,
       source_manifest_hash: report.source_manifest_hash || null,
       source_table: report.source_table || null,
-      corrected_title_reference_only: report.corrected_title_reference_only === true,
+      corrected_title_is_reviewed_title_ground_truth: true,
+      corrected_title_reference_only: false,
       field_ground_truth_available: false
     },
     instructions: {
       purpose: "Create field-level reviewed labels for the fixed Supabase feedback development set.",
-      corrected_title_rule: "corrected_title_hint is a review hint only and must not be copied as ground truth without visual or trusted-source evidence.",
+      corrected_title_rule: "corrected_title_hint is writer-reviewed title ground truth. Title-derived field suggestions still require image/card/official evidence before becoming field-level ground truth.",
       required_distinction: "Use FACT_CORRECTION when a card fact changes; use TITLE_STYLE_CHANGE when only wording/order/style changes.",
       minimum_fields: ["year", "product", "players", "card_type", "parallel", "surface_color", "parallel_family", "parallel_exact", "serial_number", "collector_number", "checklist_code", "grade_company", "card_grade", "auto_grade", "grade_type"],
       reviewed_statuses: {
@@ -181,12 +183,14 @@ export function buildSupabaseFeedbackFieldReviewPacket(report = {}, {
         reviewed_value: "Use scalar strings, booleans, or players[] arrays matching the field type.",
         reviewed_status: "CONFIRMED, UNKNOWN, or NOT_APPLICABLE required before import.",
         evidence_sources: "At least one trusted source is required for CONFIRMED factual labels.",
-        corrected_title_hint: "Reference only; never imported as ground truth."
+        corrected_title_hint: "Reviewed title ground truth; never imported as field-level ground truth by itself."
       }
     },
     summary: {
       task_count: tasks.length,
+      corrected_title_is_reviewed_title_ground_truth: true,
       corrected_title_used_as_ground_truth: false,
+      corrected_title_used_as_field_ground_truth: false,
       field_ground_truth_available: false,
       review_fields: reviewFields
     },
@@ -199,7 +203,7 @@ function usage() {
     "Usage:",
     "  node scripts/build-supabase-feedback-field-review-packet.mjs --input <eval-report.json> --out <review-packet.json> [--limit 30]",
     "",
-    "The packet exports corrected_title only as a hint. Field reviewed_value cells start empty."
+    "The packet exports corrected_title as reviewed title ground truth and a field-review hint. Field reviewed_value cells start empty."
   ].join("\n");
 }
 

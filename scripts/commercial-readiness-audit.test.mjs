@@ -60,7 +60,9 @@ await writeFile(supabaseSnapshotPath, `${JSON.stringify({
     local_candidate_count: 248,
     filtered_out_no_image_count: 103,
     table_records_without_images: 103,
+    corrected_title_is_reviewed_title_ground_truth: true,
     corrected_title_used_as_ground_truth: false,
+    corrected_title_used_as_field_ground_truth: false,
     ground_truth_status: "NEEDS_REVIEW"
   }
 }, null, 2)}\n`);
@@ -73,7 +75,9 @@ await writeFile(supabaseCandidateReportPath, `${JSON.stringify({
     front_image_items: 248,
     back_image_items: 247,
     review_status: "NEEDS_REVIEW",
+    corrected_title_is_reviewed_title_ground_truth: true,
     corrected_title_used_as_ground_truth: false,
+    corrected_title_used_as_field_ground_truth: false,
     validation_error_count: 0
   },
   dataset_stats: {
@@ -94,7 +98,9 @@ await writeFile(commercialReviewPacketPath, `${JSON.stringify({
   summary: {
     task_count: 248,
     corrected_title_hint_count: 248,
+    corrected_title_is_reviewed_title_ground_truth: true,
     corrected_title_used_as_ground_truth: false,
+    corrected_title_used_as_field_ground_truth: false,
     suggested_field_task_count: 248,
     suggested_field_counts: {
       year: 248,
@@ -107,6 +113,7 @@ await writeFile(commercialReviewPacketPath, `${JSON.stringify({
   tasks: [
     {
       asset_id: "supabase_feedback_1",
+      corrected_title_is_reviewed_title_ground_truth: true,
       corrected_title_used_as_ground_truth: false
     }
   ]
@@ -197,11 +204,15 @@ assert.deepEqual(byId.supabase_commercial_ground_truth.details.required_truth_fi
   players: 0
 });
 assert.deepEqual(byId.supabase_commercial_ground_truth.details.missing_required_truth_fields, ["year", "product", "players"]);
+assert.equal(byId.supabase_commercial_ground_truth.details.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(byId.supabase_commercial_ground_truth.details.corrected_title_used_as_ground_truth, false);
+assert.equal(byId.supabase_commercial_ground_truth.details.corrected_title_used_as_field_ground_truth, false);
 assert.equal(byId.commercial_review_packet.status, "passed");
 assert.equal(byId.commercial_review_packet.details.task_count, 248);
 assert.equal(byId.commercial_review_packet.details.corrected_title_hint_count, 248);
+assert.equal(byId.commercial_review_packet.details.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(byId.commercial_review_packet.details.corrected_title_used_as_ground_truth, false);
+assert.equal(byId.commercial_review_packet.details.corrected_title_used_as_field_ground_truth, false);
 assert.equal(byId.commercial_review_packet.details.suggested_fields_are_ground_truth, false);
 assert.equal(byId.commercial_review_packet.details.suggested_field_task_count, 248);
 assert.equal(byId.commercial_review_packet.details.suggested_field_counts.year, 248);
@@ -227,7 +238,7 @@ assert.match(text, /external_retrieval_smoke_statuses: brave=missing, ebay_brows
 assert.match(text, /ebay_image_candidates: skipped 0\/300/);
 assert.match(text, /supabase_commercial_sample: passed rows 351, image-backed 248, no-image 103/);
 assert.match(text, /supabase_commercial_ground_truth: blocked required fields year=0, product=0, players=0/);
-assert.match(text, /commercial_review_packet: passed tasks 248, corrected-title-as-truth no, suggested-field-hints 248/);
+assert.match(text, /commercial_review_packet: passed tasks 248, reviewed-title-gt yes, field-gt-from-title no, suggested-field-hints 248/);
 assert.match(text, /commercial_review_worklist: passed tasks 248, P0 23, P1 97, uses-ground-truth no/);
 assert.match(text, /identity_result_cache: passed read yes, write no, training no/);
 assert.match(text, /gpt_implicit_default: production_primary/);

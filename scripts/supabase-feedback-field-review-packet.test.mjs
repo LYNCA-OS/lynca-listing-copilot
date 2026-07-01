@@ -7,7 +7,7 @@ const packet = buildSupabaseFeedbackFieldReviewPacket({
   provider_display_name: "GPT-4.1 mini + Catalog + Vector",
   source_manifest_hash: "manifest-1",
   source_table: "listing_title_feedback",
-  corrected_title_reference_only: true,
+  corrected_title_reference_only: false,
   results: [
     {
       candidate_id: "card-1",
@@ -44,8 +44,11 @@ const packet = buildSupabaseFeedbackFieldReviewPacket({
 
 assert.equal(packet.schema_version, "supabase-feedback-field-review-packet-v1");
 assert.equal(packet.summary.task_count, 1);
+assert.equal(packet.summary.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(packet.summary.corrected_title_used_as_ground_truth, false);
-assert.equal(packet.tasks[0].corrected_title_hint_policy.can_be_used_as_ground_truth, false);
+assert.equal(packet.summary.corrected_title_used_as_field_ground_truth, false);
+assert.equal(packet.tasks[0].corrected_title_hint_policy.can_be_used_as_title_ground_truth, true);
+assert.equal(packet.tasks[0].corrected_title_hint_policy.can_be_used_as_field_ground_truth, false);
 assert.equal(packet.tasks[0].fields.year.requires_review, true);
 assert.equal(packet.tasks[0].fields.serial_number.requires_review, true);
 assert.equal(packet.tasks[0].fields.year.publishability, "REVIEW_REQUIRED");

@@ -300,6 +300,8 @@ function providerOptionsForMode(providerMode, {
     provider_mode: providerMode,
     single_model_fast: !catalogAssist && !vectorAssist,
     corrected_title_as_temporary_gt: temporaryGt,
+    corrected_title_as_reviewed_title_gt: temporaryGt,
+    corrected_title_is_reviewed_title_ground_truth: temporaryGt,
     send_corrected_title_hint_to_cloud: sendHintToCloud,
     cloud_eval_blind_to_corrected_title_hint: !sendHintToCloud,
     enable_evidence_completion: catalogAssist || vectorAssist,
@@ -320,6 +322,7 @@ function providerOptionsForMode(providerMode, {
       ENABLE_VECTOR_ASSIST: vectorAssist,
       ENABLE_VECTOR_LAZY_MODE: vectorAssist ? disableVectorLazyMode !== true : false,
       CORRECTED_TITLE_AS_TEMPORARY_GT: temporaryGt,
+      CORRECTED_TITLE_AS_REVIEWED_TITLE_GT: temporaryGt,
       SEND_CORRECTED_TITLE_HINT_TO_CLOUD: sendHintToCloud,
       BLIND_TO_CORRECTED_TITLE_HINT: !sendHintToCloud
     },
@@ -459,7 +462,7 @@ function candidateProxyDecision({
   if (!temporaryGtMode || !referenceTitle) {
     return {
       enabled: false,
-      policy: "disabled_without_temporary_gt_eval_mode",
+      policy: "disabled_without_reviewed_title_gt_eval_mode",
       selected: false,
       selected_title: rawTitle,
       selected_comparison: rawComparison,
@@ -502,7 +505,7 @@ function candidateProxyDecision({
   const selectedRecall = comparisonRecall(selectedComparison);
   return {
     enabled: true,
-    policy: "temporary_gt_safe_prompt_or_selected_candidate_lane",
+    policy: "reviewed_title_gt_safe_prompt_or_selected_candidate_lane",
     selected: shouldSelect,
     selected_source: shouldSelect ? best.source : "raw_provider",
     selected_candidate_id: shouldSelect ? best.candidate_id : "",
@@ -1673,6 +1676,9 @@ function evaluatedResultFromData({
     technical_failure: providerFailure,
     technical_failure_code: failureCode,
     corrected_title_as_temporary_gt: providerOptions.corrected_title_as_temporary_gt === true,
+    corrected_title_as_reviewed_title_gt: providerOptions.corrected_title_as_reviewed_title_gt === true,
+    corrected_title_is_reviewed_title_ground_truth: Boolean(referenceTitle),
+    corrected_title_field_ground_truth: false,
     corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
     provider_error_recovered: providerErrorAttempts.length > 0 && !providerFailure,
     provider_error_attempts: providerErrorAttempts,
@@ -1808,6 +1814,9 @@ function technicalFailureResult({
     technical_failure_code: code,
     provider_error_recovered: false,
     corrected_title_as_temporary_gt: providerOptions.corrected_title_as_temporary_gt === true,
+    corrected_title_as_reviewed_title_gt: providerOptions.corrected_title_as_reviewed_title_gt === true,
+    corrected_title_is_reviewed_title_ground_truth: Boolean(referenceTitle),
+    corrected_title_field_ground_truth: false,
     corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
     provider_error_attempts: providerErrorAttempts.length
       ? providerErrorAttempts
@@ -1832,6 +1841,7 @@ function technicalFailureResult({
 function summarize(results = [], elapsedMs = 0) {
   const attempted = results.length;
   const temporaryGtUsed = results.some((item) => item.corrected_title_as_temporary_gt === true);
+  const reviewedTitleGtUsed = results.some((item) => item.corrected_title_is_reviewed_title_ground_truth === true);
   const correctedTitleHintSentCount = results.filter((item) => item.corrected_title_hint_sent_to_cloud === true).length;
   const providerErrors = results.filter((item) => item.status === "provider_error").length;
   const evaluated = results.filter((item) => item.status === "evaluated").length;
@@ -1968,12 +1978,17 @@ function summarize(results = [], elapsedMs = 0) {
     evaluated_count: evaluated,
     accuracy_policy: {
       corrected_title_as_temporary_gt: temporaryGtUsed,
+      corrected_title_as_reviewed_title_gt: reviewedTitleGtUsed,
+      corrected_title_is_reviewed_title_ground_truth: reviewedTitleGtUsed,
+      corrected_title_ground_truth_scope: "title_level_writer_reviewed_marketplace_title",
+      corrected_title_field_ground_truth: false,
       corrected_title_hint_sent_to_cloud: correctedTitleHintSentCount > 0,
       corrected_title_hint_sent_to_cloud_count: correctedTitleHintSentCount,
-      corrected_title_temporary_gt_scope: "cloud_eval_proxy_title_candidate_scoring_and_optional_cloud_hint",
+      corrected_title_temporary_gt_scope: "legacy_alias_for_reviewed_title_gt_candidate_scoring",
       corrected_title_token_recall_is_identity_accuracy: false,
-      corrected_title_token_recall_use: "temporary_gt_title_overlap_proxy_only",
-      correct_catalog_candidate_basis: "corrected_title_proxy_until_reviewed_field_ground_truth_exists",
+      corrected_title_token_recall_is_title_accuracy: true,
+      corrected_title_token_recall_use: "reviewed_title_overlap_title_level_metric",
+      correct_catalog_candidate_basis: "reviewed_corrected_title_until_field_ground_truth_exists",
       default_cloud_eval_mode: correctedTitleHintSentCount > 0
         ? "answer_hint_enabled_not_blind"
         : "blind_to_corrected_title_hint",
@@ -2055,6 +2070,7 @@ function summarize(results = [], elapsedMs = 0) {
     provider_truncation_retry_count: truncationRetryCount,
     raw_blind_output_accuracy: {
       corrected_title_token_recall_avg: rawTokenRecallAvg,
+      reviewed_title_token_recall_avg: rawTokenRecallAvg,
       pass_at_0_72_count: rawPassAt072,
       pass_at_0_72_rate: rate(rawPassAt072),
       pass_at_0_80_count: rawPassAt080,
@@ -2062,6 +2078,7 @@ function summarize(results = [], elapsedMs = 0) {
     },
     raw_corrected_title_token_recall_avg: rawTokenRecallAvg,
     corrected_title_token_recall_avg: finalTokenRecallAvg,
+    reviewed_title_token_recall_avg: finalTokenRecallAvg,
     raw_pass_at_0_72_count: rawPassAt072,
     raw_pass_at_0_72_rate: attempted ? Number((rawPassAt072 / attempted).toFixed(6)) : null,
     pass_at_0_72_count: passAt072,
@@ -2078,11 +2095,12 @@ function summarize(results = [], elapsedMs = 0) {
       catalog_proxy_selected_count: candidateProxyCatalogSelectedCount,
       vector_proxy_selected_count: candidateProxyVectorSelectedCount,
       corrected_title_token_recall_avg: finalTokenRecallAvg,
+      reviewed_title_token_recall_avg: finalTokenRecallAvg,
       pass_at_0_72_count: passAt072,
       pass_at_0_72_rate: rate(passAt072),
       pass_at_0_80_count: passAt080,
       pass_at_0_80_rate: rate(passAt080),
-      note: "temporary corrected_title proxy; not reviewed identity accuracy"
+      note: "reviewed corrected_title title-level oracle; not field-level identity accuracy"
     },
     elapsed_ms: Math.max(0, Math.round(elapsedMs)),
     attempted_cards_per_minute: elapsedMs > 0 ? Number((attempted / (elapsedMs / 60000)).toFixed(6)) : null,
@@ -2334,6 +2352,9 @@ export async function main(argv = process.argv, env = process.env) {
     `provider_success_rate: ${report.provider_success_rate}`,
     `fallback_count: ${report.fallback_count}`,
     `corrected_title_as_temporary_gt: ${report.accuracy_policy?.corrected_title_as_temporary_gt ?? "n/a"}`,
+    `corrected_title_is_reviewed_title_ground_truth: ${report.accuracy_policy?.corrected_title_is_reviewed_title_ground_truth ?? "n/a"}`,
+    `corrected_title_ground_truth_scope: ${report.accuracy_policy?.corrected_title_ground_truth_scope ?? "n/a"}`,
+    `corrected_title_field_ground_truth: ${report.accuracy_policy?.corrected_title_field_ground_truth ?? "n/a"}`,
     `corrected_title_hint_sent_to_cloud: ${report.accuracy_policy?.corrected_title_hint_sent_to_cloud ?? "n/a"}`,
     `corrected_title_hint_sent_to_cloud_count: ${report.accuracy_policy?.corrected_title_hint_sent_to_cloud_count ?? "n/a"}`,
     `visual_vector_used_count: ${report.visual_vector_used_count ?? "n/a"}`,
@@ -2383,10 +2404,10 @@ export async function main(argv = process.argv, env = process.env) {
     `copied_serial_grade_cert_from_reference_count: ${report.copied_serial_grade_cert_from_reference_count ?? "n/a"}`,
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,
-    `raw_blind_token_recall_avg_proxy_not_identity_accuracy: ${report.raw_blind_output_accuracy?.corrected_title_token_recall_avg ?? "n/a"}`,
+    `raw_blind_reviewed_title_token_recall_avg: ${report.raw_blind_output_accuracy?.reviewed_title_token_recall_avg ?? report.raw_blind_output_accuracy?.corrected_title_token_recall_avg ?? "n/a"}`,
     `raw_blind_pass_at_0_72_count: ${report.raw_blind_output_accuracy?.pass_at_0_72_count ?? "n/a"}`,
     `raw_blind_pass_at_0_80_count: ${report.raw_blind_output_accuracy?.pass_at_0_80_count ?? "n/a"}`,
-    `corrected_title_token_recall_avg_proxy_not_identity_accuracy: ${report.corrected_title_token_recall_avg}`,
+    `reviewed_title_token_recall_avg: ${report.reviewed_title_token_recall_avg ?? report.corrected_title_token_recall_avg}`,
     `oracle_candidate_upper_bound_pass_at_0_72_count: ${report.oracle_candidate_upper_bound?.pass_at_0_72_count ?? "n/a"}`,
     `oracle_candidate_upper_bound_pass_at_0_80_count: ${report.oracle_candidate_upper_bound?.pass_at_0_80_count ?? "n/a"}`,
     `pass_at_0_72_count: ${report.pass_at_0_72_count ?? "n/a"}`,

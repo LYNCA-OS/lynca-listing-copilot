@@ -52,7 +52,7 @@ http://localhost:3000
 
 If no vision provider is configured and no default provider is forced, the app uses filename fallback so upload, pairing, and copy flows can still be tested locally.
 
-Provider routing is intentionally single-model by default. Gemini is the primary vision provider, and GPT-4.1 mini remains an explicit single-model review action for operators and A/B checks. The browser renders only server-whitelisted provider buttons and sends explicit provider metadata with each request. There is no automatic mixed-model cascade in the production path. Model IDs are allowlisted server-side: Gemini accepts `gemini-3.1-flash-lite`; the OpenAI path accepts `gpt-4.1-mini-2025-04-14`, `gpt-4.1-mini`, or `gpt-4.1`.
+Provider routing is intentionally single-model by default. GPT-4.1 mini is the production vision provider, and the listing recognition path has no secondary vision provider. The browser renders only server-whitelisted provider buttons and sends explicit provider metadata with each request. There is no automatic mixed-model cascade in the production path. Model IDs are allowlisted server-side: the OpenAI path accepts `gpt-4.1-mini-2025-04-14`, `gpt-4.1-mini`, or `gpt-4.1`.
 
 When Supabase Storage is configured, the browser asks the server for signed upload URLs, sends MIME, byte size, dimensions, first-byte file signature metadata, and a client-side SHA-256 for validation, uploads original images to the private bucket, then asks the server to verify the stored object prefix before the object path is used in the title request. Successful verification returns a server-signed storage verification token scoped to that object path and metadata. The title API can create short-lived signed read URLs for provider calls, but it does not persist those signed URLs.
 
@@ -109,23 +109,14 @@ LISTING_IDENTITY_CACHE_WRITE_ENABLED=false
 LISTING_IDENTITY_INFLIGHT_DEDUP_ENABLED=true
 LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED=true
 LISTING_PUBLISH_RATE_LIMIT=60
-DEFAULT_VISION_PROVIDER=gemini
-EMERGENCY_VISION_PROVIDER=openai_legacy
+DEFAULT_VISION_PROVIDER=openai_legacy
+ENABLE_GPT41_EMERGENCY_PROVIDER=true
 SMOKE_PROVIDER_REPORT_PATH=
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.1-flash-lite
-GEMINI_MAX_OUTPUT_TOKENS=700
-GEMINI_SMOKE_IMAGE_URL=
-GEMINI_SMOKE_BACK_IMAGE_URL=
-GEMINI_SMOKE_REQUIRE_MULTI_IMAGE=false
-GEMINI_SMOKE_REPORT_PATH=
-GEMINI_INPUT_TOKEN_COST_PER_1M=
-GEMINI_OUTPUT_TOKEN_COST_PER_1M=
-GEMINI_IMAGE_COST_USD=
 OPENAI_API_KEY=
 OPENAI_LISTING_MODEL=gpt-4.1-mini-2025-04-14
 OPENAI_LISTING_TIMEOUT_MS=75000
-OPENAI_LISTING_MAX_OUTPUT_TOKENS=550
+OPENAI_LISTING_MAX_OUTPUT_TOKENS=4096
+OPENAI_LISTING_TRUNCATION_RETRY_MAX_OUTPUT_TOKENS=8192
 OPENAI_SMOKE_IMAGE_URL=
 OPENAI_SMOKE_IMAGE_DATA_URL=
 OPENAI_LISTING_INPUT_TOKEN_COST_PER_1M=
@@ -308,7 +299,7 @@ Run the commercial readiness audit:
 npm run readiness:audit
 ```
 
-The default result is expected to exit non-zero until real commercial evidence exists. The audit reports `held_out_commercial_assets`, `commercial_acceptance_gate`, provider default policy, mock-only publishing status, and external retrieval live-smoke evidence. Gemini is the default vision provider; GPT-4.1 mini remains an explicit single-model review path.
+The default result is expected to exit non-zero until real commercial evidence exists. The audit reports `held_out_commercial_assets`, `commercial_acceptance_gate`, provider default policy, mock-only publishing status, and external retrieval live-smoke evidence. GPT-4.1 mini is the default and only automatic listing vision provider.
 
 The commercial evaluator uses `lib/listing/evaluation/title-acceptance-policy.mjs` for `final_title_required_fields` and `final_title_unsubstantiated_fields`. This lets held-out commercial rows accept non-standard but factually correct titles while still failing wrong names, wrong color/parallel, missing serials, wrong grades, and conflicting critical fields.
 
@@ -335,12 +326,11 @@ When metrics miss target thresholds, the eval output includes `failure_root_caus
 
 The eval output also includes `final_approved_publish_accuracy`, `glare_impact`, `retrieval_provider_gains`, and `vision_provider_comparison`. These are diagnostics for final approved rows, glare samples, Brave recovery, eBay market-reference help, OWS fallback contribution, and provider-path differences; they do not replace the overall commercial denominator.
 
-Provider smoke commands exist but do not claim real validation when credentials, model config, or smoke inputs are missing. Gemini smoke requires `GEMINI_API_KEY` and `GEMINI_SMOKE_IMAGE_URL`; optional `GEMINI_SMOKE_BACK_IMAGE_URL` enables front/back multi-image capability checks. Smoke commands write sanitized capability reports by default under `data/smoke/`; pass `--report <path>` or set `SMOKE_PROVIDER_REPORT_PATH` to override the path. Reports do not include API keys, Authorization headers, image URLs, or Base64 payloads. OpenAI emergency smoke requires `OPENAI_API_KEY` plus `OPENAI_SMOKE_IMAGE_URL` or `OPENAI_SMOKE_IMAGE_DATA_URL`; Brave smoke requires `BRAVE_SEARCH_API_KEY`; eBay Browse requires `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`; OWS requires `OPENAI_API_KEY` and `OPENAI_WEB_SEARCH_MODEL`. Missing retrieval credentials produce a `skipped` report, not a pass.
+Provider smoke commands exist but do not claim real validation when credentials, model config, or smoke inputs are missing. Smoke commands write sanitized capability reports by default under `data/smoke/`; pass `--report <path>` or set `SMOKE_PROVIDER_REPORT_PATH` to override the path. Reports do not include API keys, Authorization headers, image URLs, or Base64 payloads. OpenAI listing smoke requires `OPENAI_API_KEY` plus `OPENAI_SMOKE_IMAGE_URL` or `OPENAI_SMOKE_IMAGE_DATA_URL`; Brave smoke requires `BRAVE_SEARCH_API_KEY`; eBay Browse requires `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`; OWS requires `OPENAI_API_KEY` and `OPENAI_WEB_SEARCH_MODEL`. Missing retrieval credentials produce a `skipped` report, not a pass.
 
-`/api/listing-provider-status` reads the Gemini smoke report when present and returns only sanitized capability fields under the Gemini provider status. It reports whether JSON baseline and multi-image checks have passed without returning the report path, API keys, Authorization headers, image URLs, or arbitrary provider error text.
+`/api/listing-provider-status` returns only sanitized GPT provider metadata and storage readiness. It does not expose API keys, Authorization headers, image URLs, or arbitrary provider error text.
 
 ```bash
-npm run smoke:gemini
 npm run smoke:openai
 npm run smoke:brave
 npm run smoke:ebay
@@ -349,7 +339,7 @@ npm run smoke:ows
 
 Default smoke report paths:
 
-- `data/smoke/gemini-smoke-latest.json`
+- `data/smoke/openai-smoke-latest.json`
 - `data/smoke/brave-smoke-latest.json`
 - `data/smoke/ebay-smoke-latest.json`
 - `data/smoke/ows-smoke-latest.json`

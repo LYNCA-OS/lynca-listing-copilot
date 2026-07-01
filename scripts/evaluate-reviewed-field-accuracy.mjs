@@ -835,8 +835,9 @@ export function evaluateReviewedFieldAccuracy({
     scope: {
       metric_dimensions: ["AI Card-Exact Accuracy", "Critical Risk Detection Quality"],
       key_fields: reviewedFieldKeys,
+      corrected_title_is_reviewed_title_ground_truth: true,
       corrected_title_used_as_ground_truth: false,
-      corrected_title_policy: "annotation_hint_only",
+      corrected_title_policy: "reviewed_title_ground_truth_not_field_ground_truth",
       commercial_heldout_acceptance_set: false,
       development_set_only: true,
       excluded_ground_truth_statuses: [...denominatorExcludedStatuses]
@@ -911,6 +912,7 @@ export function formatReviewedFieldAccuracySummary(report = {}) {
     `ai_card_exact_accuracy: ${card.correct ?? 0}/${card.total ?? 0} (${card.rate ?? "n/a"})`,
     `critical_risk_recall: ${risk.flagged_critical_error_count ?? 0}/${risk.total_critical_error_count ?? 0} (${risk.rate ?? "n/a"})`,
     `unflagged_critical_error_rate: ${unflagged.unflagged_critical_error_count ?? 0}/${unflagged.total_critical_error_count ?? 0} (${unflagged.rate ?? "n/a"})`,
+    "corrected_title_is_reviewed_title_ground_truth: true",
     "corrected_title_used_as_ground_truth: false",
     "commercial_heldout_acceptance_set: false"
   ].join("\n");

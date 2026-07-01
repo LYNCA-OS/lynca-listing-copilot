@@ -71,7 +71,9 @@ export async function runExportSupabaseRecognitionCandidates({
       back_image_items: backCount,
       buckets,
       review_status: "NEEDS_REVIEW",
+      corrected_title_is_reviewed_title_ground_truth: true,
       corrected_title_used_as_ground_truth: false,
+      corrected_title_used_as_field_ground_truth: false,
       validation_error_count: validationErrors.length
     },
     items

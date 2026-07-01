@@ -182,6 +182,12 @@ export async function collectEbayImageCandidates({
     target_count: targetCount,
     collected_count: items.length,
     blocked_reason: items.length >= targetCount ? "" : "Collected fewer image candidates than requested.",
+    ground_truth_policy: {
+      seller_titles_are_ground_truth: false,
+      seller_titles_are_market_reference_only: true,
+      reviewed_title_ground_truth_source: "supabase_listing_title_feedback_corrected_title_only",
+      requires_operator_or_official_labeling_before_accuracy_eval: true
+    },
     queries: queryReports,
     items
   };

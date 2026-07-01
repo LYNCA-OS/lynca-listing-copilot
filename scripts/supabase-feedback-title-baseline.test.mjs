@@ -46,19 +46,23 @@ const report = measureSupabaseFeedbackTitleBaseline({
   now: () => new Date("2026-06-23T12:00:00.000Z")
 });
 
-assert.equal(report.schema_version, "supabase-feedback-title-baseline-v1");
+assert.equal(report.schema_version, "supabase-feedback-reviewed-title-baseline-v2");
 assert.equal(report.source.row_count, 4);
 assert.equal(report.source.image_backed_row_count, 2);
 assert.equal(report.source.no_image_row_count, 2);
 assert.equal(report.source.first_created_at, "2026-06-21T08:00:00.000Z");
 assert.equal(report.source.last_created_at, "2026-06-22T11:00:00.000Z");
-assert.equal(report.scope.corrected_title_reference_only, true);
+assert.equal(report.scope.corrected_title_reference_only, false);
+assert.equal(report.scope.corrected_title_is_reviewed_title_ground_truth, true);
+assert.equal(report.scope.reviewed_title_ground_truth_available, true);
 assert.equal(report.scope.field_ground_truth_available, false);
 assert.equal(report.scope.image_level_provider_eval, false);
 assert.equal(report.scope.no_feedback_retention_side_effects, true);
 assert.equal(report.scope.raw_titles_in_report, false);
 assert.equal(report.scope.commercial_accuracy_claim_allowed, false);
-assert.equal(report.scope.commercial_proxy_metric_available, true);
+assert.equal(report.scope.commercial_title_accuracy_claim_allowed, true);
+assert.equal(report.scope.commercial_proxy_metric_available, false);
+assert.equal(report.scope.commercial_title_metric_available, true);
 
 const allRows = report.cohorts.find((cohort) => cohort.cohort === "all_feedback_rows");
 assert.equal(allRows.source_rows, 4);
@@ -68,6 +72,7 @@ assert.equal(allRows.raw_exact_count, 1);
 assert.equal(allRows.normalized_exact_count, 1);
 assert.equal(allRows.normalized_exact_rate, 0.333333);
 assert.equal(allRows.human_corrected_proxy_count, 2);
+assert.equal(allRows.writer_title_correction_count, 2);
 assert.equal(allRows.critical_title_error_count, 2);
 assert.equal(allRows.wrong_year_count, 1);
 assert.equal(allRows.wrong_serial_count, 1);
@@ -99,7 +104,9 @@ assert.doesNotMatch(serialized, /Caitlin Clark/);
 const summary = formatSupabaseFeedbackTitleBaselineSummary(report);
 assert.match(summary, /source_rows: 4/);
 assert.match(summary, /image_backed_rows: 2/);
+assert.match(summary, /reviewed_title_ground_truth_available: true/);
 assert.match(summary, /commercial_accuracy_claim_allowed: false/);
+assert.match(summary, /commercial_title_accuracy_claim_allowed: true/);
 assert.match(summary, /all_feedback_rows: comparable=3 normalized_exact=1\/3/);
 assert.doesNotMatch(summary, /Shohei Ohtani/);
 

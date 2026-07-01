@@ -120,6 +120,6 @@ const candidates = createRecognitionCandidatesFromFeedbackRows([
 ]);
 assert.equal(candidates[0].review_status, "NEEDS_REVIEW");
 assert.deepEqual(candidates[0].critical_fields, []);
-assert.match(candidates[0].notes, /Corrected title is not field-level ground truth/);
+assert.match(candidates[0].notes, /writer-reviewed title ground truth/);
 
 console.log("recognition dataset tests passed");

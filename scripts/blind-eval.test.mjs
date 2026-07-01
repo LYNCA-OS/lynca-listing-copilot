@@ -249,6 +249,8 @@ await withTempDir(async (dir) => {
   });
   assert.equal(result.listing_count, 1);
   assert.equal(result.layout_version, "strict_blind_eval_v2");
+  assert.equal(result.ground_truth_policy.seller_titles_are_ground_truth, false);
+  assert.equal(result.ground_truth_policy.reviewed_title_ground_truth_source, "supabase_listing_title_feedback_corrected_title_only");
   const blindRows = await readJsonl(paths.blind_inputs_path);
   assert.deepEqual(Object.keys(blindRows[0]), ["case_id", "image_paths"]);
   assert.match(blindRows[0].image_paths[0], /_img_0\.jpg$/);

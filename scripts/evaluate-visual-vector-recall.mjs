@@ -234,6 +234,7 @@ export async function evaluateVisualVectorRecall({
     scope: {
       metric_type: "vector_infrastructure_self_recall",
       candidate_pool_ground_truth: false,
+      corrected_title_is_reviewed_title_ground_truth: true,
       corrected_title_used_as_ground_truth: false,
       paid_provider_calls: false
     },

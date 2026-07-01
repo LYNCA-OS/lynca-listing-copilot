@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const schemaVersion = "supabase-feedback-title-baseline-v1";
+const schemaVersion = "supabase-feedback-reviewed-title-baseline-v2";
 const defaultInputPath = "data/recognition/reports/supabase-feedback-rows-all-mcp.json";
 const defaultOutPath = "data/eval/supabase-feedback-title-baseline-latest.json";
 const colorTokens = new Set([
@@ -251,7 +251,7 @@ function summarizeRows(rows = [], cohort) {
   const wrongSerial = count("wrong_serial");
   const wrongGrade = count("wrong_grade");
   const unexpectedColor = count("unexpected_color");
-  const humanCorrectedProxy = total - normalizedExact;
+  const writerTitleCorrectionCount = total - normalizedExact;
 
   return {
     cohort,
@@ -262,8 +262,12 @@ function summarizeRows(rows = [], cohort) {
     raw_exact_rate: rate(rawExact, total),
     normalized_exact_count: normalizedExact,
     normalized_exact_rate: rate(normalizedExact, total),
-    human_corrected_proxy_count: humanCorrectedProxy,
-    human_correction_proxy_rate: rate(humanCorrectedProxy, total),
+    writer_title_correction_count: writerTitleCorrectionCount,
+    writer_title_correction_rate: rate(writerTitleCorrectionCount, total),
+    human_corrected_proxy_count: writerTitleCorrectionCount,
+    human_correction_proxy_rate: rate(writerTitleCorrectionCount, total),
+    reviewed_title_token_recall_avg: average(comparisons.map((item) => item.token_recall)),
+    reviewed_title_token_precision_avg: average(comparisons.map((item) => item.token_precision)),
     corrected_title_token_recall_avg: average(comparisons.map((item) => item.token_recall)),
     corrected_title_token_precision_avg: average(comparisons.map((item) => item.token_precision)),
     critical_title_error_count: criticalErrors,
@@ -274,7 +278,8 @@ function summarizeRows(rows = [], cohort) {
     unexpected_color_count: unexpectedColor,
     confidence_intervals: {
       normalized_exact_rate: wilsonInterval(normalizedExact, total),
-      human_correction_proxy_rate: wilsonInterval(humanCorrectedProxy, total),
+      writer_title_correction_rate: wilsonInterval(writerTitleCorrectionCount, total),
+      human_correction_proxy_rate: wilsonInterval(writerTitleCorrectionCount, total),
       critical_title_error_rate: wilsonInterval(criticalErrors, total),
       wrong_year_rate: wilsonInterval(wrongYear, total),
       wrong_serial_rate: wilsonInterval(wrongSerial, total),
@@ -327,14 +332,20 @@ export function measureSupabaseFeedbackTitleBaseline({
       last_created_at: bounds.last
     },
     scope: {
-      metric_type: "historical_generated_title_vs_human_corrected_title",
-      corrected_title_reference_only: true,
+      metric_type: "historical_generated_title_vs_reviewed_corrected_title",
+      corrected_title_reference_only: false,
+      corrected_title_is_reviewed_title_ground_truth: true,
+      reviewed_title_ground_truth_available: true,
+      title_ground_truth_scope: "writer_reviewed_marketplace_title",
       field_ground_truth_available: false,
       image_level_provider_eval: false,
       no_feedback_retention_side_effects: true,
       raw_titles_in_report: false,
+      commercial_title_accuracy_claim_allowed: true,
+      commercial_field_accuracy_claim_allowed: false,
       commercial_accuracy_claim_allowed: false,
-      commercial_proxy_metric_available: true
+      commercial_proxy_metric_available: false,
+      commercial_title_metric_available: true
     },
     cohorts: [
       summarizeRows(allRows, "all_feedback_rows"),
@@ -350,8 +361,11 @@ export function formatSupabaseFeedbackTitleBaselineSummary(report = {}) {
     `source_rows: ${report.source?.row_count ?? "n/a"}`,
     `image_backed_rows: ${report.source?.image_backed_row_count ?? "n/a"}`,
     `no_image_rows: ${report.source?.no_image_row_count ?? "n/a"}`,
-    `corrected_title_reference_only: ${report.scope?.corrected_title_reference_only === true}`,
+    `reviewed_title_ground_truth_available: ${report.scope?.reviewed_title_ground_truth_available === true}`,
+    `corrected_title_is_reviewed_title_ground_truth: ${report.scope?.corrected_title_is_reviewed_title_ground_truth === true}`,
+    `field_ground_truth_available: ${report.scope?.field_ground_truth_available === true}`,
     `commercial_accuracy_claim_allowed: ${report.scope?.commercial_accuracy_claim_allowed === true}`,
+    `commercial_title_accuracy_claim_allowed: ${report.scope?.commercial_title_accuracy_claim_allowed === true}`,
     `raw_titles_in_report: ${report.scope?.raw_titles_in_report === true}`
   ];
 

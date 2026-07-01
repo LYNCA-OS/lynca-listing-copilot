@@ -375,8 +375,13 @@ async function auditSupabaseCommercialSample(env = process.env) {
     const fullyCoveredRequiredFields = requiredCommercialTruthFields.filter((field) => {
       return Number(groundTruthFieldCounts[field] || 0) >= minimumCommercialGroundTruthAssets;
     });
-    const correctedTitleUsedAsGroundTruth = candidateSummary.corrected_title_used_as_ground_truth === true
-      || candidateStatus.corrected_title_used_as_ground_truth === true;
+    const correctedTitleReviewedTitleGroundTruth = correctedTitleRows > 0
+      || candidateSummary.corrected_title_is_reviewed_title_ground_truth === true
+      || candidateStatus.corrected_title_is_reviewed_title_ground_truth === true;
+    const correctedTitleUsedAsFieldGroundTruth = candidateSummary.corrected_title_used_as_field_ground_truth === true
+      || candidateStatus.corrected_title_used_as_field_ground_truth === true
+      || candidateSummary.title_derived_fields_are_ground_truth === true
+      || candidateStatus.title_derived_fields_are_ground_truth === true;
     const details = {
       snapshot: snapshot.path,
       candidate_report: candidateReport?.path || resolve(candidateReportPath),
@@ -392,7 +397,11 @@ async function auditSupabaseCommercialSample(env = process.env) {
       candidate_validation_ok: candidateValidation?.ok === true,
       candidate_validation_error_count: Number(candidateValidation?.errors?.length || candidateSummary.validation_error_count || 0),
       review_status: candidateSummary.review_status || candidateStatus.ground_truth_status || "unknown",
-      corrected_title_used_as_ground_truth: correctedTitleUsedAsGroundTruth,
+      corrected_title_is_reviewed_title_ground_truth: correctedTitleReviewedTitleGroundTruth,
+      corrected_title_used_as_ground_truth: correctedTitleUsedAsFieldGroundTruth,
+      corrected_title_used_as_field_ground_truth: correctedTitleUsedAsFieldGroundTruth,
+      title_derived_fields_are_ground_truth: candidateSummary.title_derived_fields_are_ground_truth === true
+        || candidateStatus.title_derived_fields_are_ground_truth === true,
       ground_truth_field_counts: groundTruthFieldCounts,
       required_truth_field_coverage: requiredCoverage,
       minimum_commercial_inventory_rows: minimumCommercialInventoryRows,
@@ -406,8 +415,8 @@ async function auditSupabaseCommercialSample(env = process.env) {
       checks.push(blocked("supabase_commercial_inventory", "Supabase commercial sample inventory is incomplete or not image-backed.", details));
     }
 
-    if (correctedTitleUsedAsGroundTruth) {
-      checks.push(blocked("supabase_commercial_ground_truth", "Corrected titles are being treated as ground truth; field-level commercial accuracy would be invalid.", details));
+    if (correctedTitleUsedAsFieldGroundTruth) {
+      checks.push(blocked("supabase_commercial_ground_truth", "Corrected-title-derived fields are being treated as field-level ground truth; field-level commercial accuracy would be invalid.", details));
     } else if (
       candidateCount >= minimumCommercialGroundTruthAssets
       && fullyCoveredRequiredFields.length === requiredCommercialTruthFields.length
@@ -451,6 +460,8 @@ async function auditCommercialReviewPacket(env = process.env) {
     return warning("commercial_review_packet", "Commercial field-level review packet is missing; Supabase rows are not yet ready for operator labeling.", {
       packet: resolve(packetPath),
       task_count: 0,
+      corrected_title_is_reviewed_title_ground_truth: false,
+      corrected_title_used_as_field_ground_truth: false,
       corrected_title_used_as_ground_truth: false
     });
   }
@@ -459,22 +470,27 @@ async function auditCommercialReviewPacket(env = process.env) {
     const loaded = await readJsonFile(packetPath);
     const packet = loaded.value || {};
     const tasks = Array.isArray(packet.tasks) ? packet.tasks : [];
-    const correctedTitleUsedAsGroundTruth = packet.summary?.corrected_title_used_as_ground_truth === true
-      || tasks.some((task) => task.corrected_title_used_as_ground_truth === true);
+    const correctedTitleReviewedTitleGroundTruth = packet.summary?.corrected_title_is_reviewed_title_ground_truth === true
+      || tasks.some((task) => task.corrected_title_is_reviewed_title_ground_truth === true || Boolean(task.corrected_title_hint || task.source_titles?.corrected_title));
+    const correctedTitleUsedAsFieldGroundTruth = packet.summary?.corrected_title_used_as_field_ground_truth === true
+      || packet.summary?.corrected_title_used_as_ground_truth === true
+      || tasks.some((task) => task.corrected_title_used_as_field_ground_truth === true || task.corrected_title_used_as_ground_truth === true);
     const details = {
       packet: loaded.path,
       schema_version: packet.schema_version || "unknown",
       task_count: Number(packet.summary?.task_count ?? tasks.length),
       corrected_title_hint_count: Number(packet.summary?.corrected_title_hint_count || 0),
-      corrected_title_used_as_ground_truth: correctedTitleUsedAsGroundTruth,
+      corrected_title_is_reviewed_title_ground_truth: correctedTitleReviewedTitleGroundTruth,
+      corrected_title_used_as_ground_truth: correctedTitleUsedAsFieldGroundTruth,
+      corrected_title_used_as_field_ground_truth: correctedTitleUsedAsFieldGroundTruth,
       suggested_field_task_count: Number(packet.summary?.suggested_field_task_count || 0),
       suggested_field_counts: packet.summary?.suggested_field_counts || {},
       suggested_fields_are_ground_truth: packet.summary?.suggested_fields_are_ground_truth === true,
       required_critical_fields: packet.summary?.required_critical_fields || []
     };
 
-    if (correctedTitleUsedAsGroundTruth || details.suggested_fields_are_ground_truth) {
-      return blocked("commercial_review_packet", "Commercial review packet incorrectly marks title hints as ground truth.", details);
+    if (correctedTitleUsedAsFieldGroundTruth || details.suggested_fields_are_ground_truth) {
+      return blocked("commercial_review_packet", "Commercial review packet incorrectly marks title-derived fields as field-level ground truth.", details);
     }
     if (details.task_count > 0) {
       return passed("commercial_review_packet", "Commercial field-level review packet is ready for operator labeling.", details);
@@ -484,6 +500,8 @@ async function auditCommercialReviewPacket(env = process.env) {
     return warning("commercial_review_packet", "Commercial review packet could not be parsed.", {
       packet: resolve(packetPath),
       error: error.message,
+      corrected_title_is_reviewed_title_ground_truth: false,
+      corrected_title_used_as_field_ground_truth: false,
       corrected_title_used_as_ground_truth: false
     });
   }
@@ -675,7 +693,7 @@ export function formatCommercialReadinessReport(report) {
     : "n/a";
   const reviewPacket = report.checks.find((check) => check.id === "commercial_review_packet");
   const reviewPacketSummary = reviewPacket
-    ? `${reviewPacket.status} tasks ${reviewPacket.details.task_count ?? 0}, corrected-title-as-truth ${reviewPacket.details.corrected_title_used_as_ground_truth === true ? "yes" : "no"}, suggested-field-hints ${reviewPacket.details.suggested_field_task_count ?? 0}`
+    ? `${reviewPacket.status} tasks ${reviewPacket.details.task_count ?? 0}, reviewed-title-gt ${reviewPacket.details.corrected_title_is_reviewed_title_ground_truth === true ? "yes" : "no"}, field-gt-from-title ${reviewPacket.details.corrected_title_used_as_field_ground_truth === true || reviewPacket.details.corrected_title_used_as_ground_truth === true ? "yes" : "no"}, suggested-field-hints ${reviewPacket.details.suggested_field_task_count ?? 0}`
     : "n/a";
   const reviewWorklist = report.checks.find((check) => check.id === "commercial_review_worklist");
   const reviewWorklistSummary = reviewWorklist

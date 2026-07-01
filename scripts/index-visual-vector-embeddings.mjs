@@ -105,7 +105,11 @@ function fieldsForItem(item = {}) {
     annotation_hint: {
       corrected_title: item.source_titles?.corrected_title || item.corrected_title || "",
       generated_title: item.source_titles?.generated_title || "",
-      corrected_title_is_ground_truth: false,
+      corrected_title_is_ground_truth: Boolean(normalizeText(item.source_titles?.corrected_title || item.corrected_title)),
+      corrected_title_is_reviewed_title_ground_truth: Boolean(normalizeText(item.source_titles?.corrected_title || item.corrected_title)),
+      title_ground_truth_scope: normalizeText(item.source_titles?.corrected_title || item.corrected_title)
+        ? "writer_reviewed_marketplace_title"
+        : "",
       title_derived_fields_are_ground_truth: false,
       title_derived_field_names: Object.keys(titleDerivedFields).filter((fieldName) => {
         const value = titleDerivedFields[fieldName];
@@ -412,7 +416,12 @@ async function indexItem({
         asset_id: item.asset_id || "",
         physical_card_id: item.physical_card_id || "",
         source_manifest: item.source_manifest || "",
-        corrected_title_is_ground_truth: false
+        corrected_title_is_ground_truth: Boolean(normalizeText(item.source_titles?.corrected_title || item.corrected_title)),
+        corrected_title_is_reviewed_title_ground_truth: Boolean(normalizeText(item.source_titles?.corrected_title || item.corrected_title)),
+        title_ground_truth_scope: normalizeText(item.source_titles?.corrected_title || item.corrected_title)
+          ? "writer_reviewed_marketplace_title"
+          : "",
+        title_derived_fields_are_ground_truth: false
       }
     }],
     fetchImpl

@@ -125,8 +125,10 @@ function buildItem(item = {}, index = 0, options = {}) {
     annotation_hint: {
       corrected_title: item.source_titles?.corrected_title || "",
       generated_title: item.source_titles?.generated_title || "",
+      can_be_used_as_title_ground_truth: Boolean(item.source_titles?.corrected_title),
+      can_be_used_as_field_ground_truth: false,
       can_be_used_as_ground_truth: false,
-      use_as: "review_hint_only"
+      use_as: "writer_reviewed_title_ground_truth_and_field_review_hint"
     },
     source_notes: item.notes || "",
     fields: Object.fromEntries(reviewedFieldKeys.map((field) => [
@@ -168,8 +170,10 @@ export function buildReviewedGroundTruthDevSet(source = {}, {
     commercial_heldout: false,
     commercial_heldout_usage_allowed: false,
     corrected_title_policy: {
+      can_be_used_as_title_ground_truth: true,
+      can_be_used_as_field_ground_truth: false,
       can_be_used_as_ground_truth: false,
-      use_as: "annotation_hint_only"
+      use_as: "writer_reviewed_title_ground_truth_not_field_ground_truth"
     },
     field_contract: {
       key_fields: reviewedFieldKeys,
@@ -179,7 +183,7 @@ export function buildReviewedGroundTruthDevSet(source = {}, {
       variant_or_parallel_matching: "exact_required_with_auxiliary_narrow_and_color_match",
       serial_number_matching: "complete_exact_required_with_auxiliary_denominator_match",
       excluded_from_denominators: ["UNKNOWN", "NOT_APPLICABLE", "UNREVIEWED"],
-      corrected_title_rule: "corrected_title is a labeling aid only and is never imported as ground truth."
+      corrected_title_rule: "corrected_title is reviewed title ground truth. Title-derived fields still require explicit field review."
     },
     source: {
       schema_version: source.schema_version || null,
@@ -192,7 +196,9 @@ export function buildReviewedGroundTruthDevSet(source = {}, {
       reviewed_field_count: items.reduce((sum, item) => (
         sum + reviewedFieldKeys.filter((field) => item.fields[field]?.status === "CONFIRMED").length
       ), 0),
+      corrected_title_is_reviewed_title_ground_truth: true,
       corrected_title_used_as_ground_truth: false,
+      corrected_title_used_as_field_ground_truth: false,
       trust_existing_ground_truth: trustExistingGroundTruth
     },
     items
@@ -204,7 +210,7 @@ function usage() {
     "Usage:",
     "  node scripts/build-reviewed-ground-truth-dev-set.mjs --source <fixed-30.json> --out <reviewed-labels.json>",
     "",
-    "Default behavior creates an UNREVIEWED development import set and keeps corrected_title as a hint only.",
+    "Default behavior creates an UNREVIEWED development import set and keeps corrected_title as title ground truth, not field ground truth.",
     "Use --trust-existing-ground-truth only when the source file already contains human-reviewed field labels."
   ].join("\n");
 }
@@ -234,7 +240,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (dataset) {
       console.error(`Reviewed GT development items: ${dataset.summary.item_count}`);
       console.error(`Confirmed reviewed fields: ${dataset.summary.reviewed_field_count}`);
-      console.error("corrected_title remains annotation_hint_only.");
+      console.error("corrected_title is title_ground_truth_only; fields remain UNREVIEWED unless trusted.");
     }
   }).catch((error) => {
     console.error(error.message);

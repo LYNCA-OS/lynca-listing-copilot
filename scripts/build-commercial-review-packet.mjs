@@ -39,7 +39,7 @@ function usage() {
     "Usage:",
     "  node scripts/build-commercial-review-packet.mjs --input <recognition-candidates.json> --out <review-packet.json> [--limit 100]",
     "",
-    "Corrected titles are copied only as review hints. They are never written as ground truth."
+    "Corrected titles are writer-reviewed title ground truth. They are never written as field-level ground truth without field evidence."
   ].join("\n");
 }
 
@@ -73,7 +73,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   runBuildCommercialReviewPacket().then(({ packet }) => {
     if (packet) {
       console.error(`Commercial review packet tasks: ${packet.summary.task_count}`);
-      console.error("Corrected titles were exported as review hints only.");
+      console.error("Corrected titles were exported as reviewed title ground truth and field-review hints.");
     }
   }).catch((error) => {
     console.error(error.message);

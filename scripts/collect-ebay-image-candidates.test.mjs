@@ -102,6 +102,8 @@ const report = await collectEbayImageCandidates({
 assert.equal(report.status, "collected");
 assert.equal(report.target_count, 3);
 assert.equal(report.collected_count, 3);
+assert.equal(report.ground_truth_policy.seller_titles_are_ground_truth, false);
+assert.equal(report.ground_truth_policy.reviewed_title_ground_truth_source, "supabase_listing_title_feedback_corrected_title_only");
 assert.equal(report.items.length, 3);
 assert.equal(searchedQueries.length, 2);
 assert.deepEqual(report.items.map((item) => item.marketplace_item_id), ["itm-1", "itm-3", "itm-4"]);

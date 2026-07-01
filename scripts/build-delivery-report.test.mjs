@@ -109,7 +109,9 @@ await writeFile(supabaseSnapshotPath, `${JSON.stringify({
     local_candidate_count: 248,
     filtered_out_no_image_count: 103,
     table_records_without_images: 103,
+    corrected_title_is_reviewed_title_ground_truth: true,
     corrected_title_used_as_ground_truth: false,
+    corrected_title_used_as_field_ground_truth: false,
     ground_truth_status: "NEEDS_REVIEW"
   }
 }, null, 2)}\n`);
@@ -120,7 +122,9 @@ await writeFile(supabaseCandidateReportPath, `${JSON.stringify({
   summary: {
     item_count: 248,
     review_status: "NEEDS_REVIEW",
+    corrected_title_is_reviewed_title_ground_truth: true,
     corrected_title_used_as_ground_truth: false,
+    corrected_title_used_as_field_ground_truth: false,
     validation_error_count: 0
   },
   dataset_stats: {
@@ -141,7 +145,9 @@ await writeFile(commercialReviewPacketPath, `${JSON.stringify({
   summary: {
     task_count: 248,
     corrected_title_hint_count: 248,
+    corrected_title_is_reviewed_title_ground_truth: true,
     corrected_title_used_as_ground_truth: false,
+    corrected_title_used_as_field_ground_truth: false,
     suggested_field_task_count: 248,
     suggested_field_counts: {
       year: 248,
@@ -154,6 +160,7 @@ await writeFile(commercialReviewPacketPath, `${JSON.stringify({
   tasks: [
     {
       asset_id: "supabase_feedback_1",
+      corrected_title_is_reviewed_title_ground_truth: true,
       corrected_title_used_as_ground_truth: false
     }
   ]
@@ -229,7 +236,7 @@ assert.match(report, /Public card-name reference eval: missing/);
 assert.match(report, /Marketplace real-photo pilot: missing/);
 assert.match(report, /Supabase commercial inventory: passed rows 351, image-backed 248, no-image 103/);
 assert.match(report, /Supabase field-level ground truth: blocked required fields year=0, product=0, players=0/);
-assert.match(report, /Commercial review packet: passed tasks 248, corrected-title-as-truth=no, suggested-field-hints=248/);
+assert.match(report, /Commercial review packet: passed tasks 248, reviewed-title-gt=yes, field-gt-from-title=no, suggested-field-hints=248/);
 assert.match(report, /Commercial review worklist: passed tasks 248, P0=23, P1=97, uses-ground-truth=no/);
 assert.match(report, /Identity result cache: passed read=yes, write=no, write-resolved=no, training=no/);
 assert.match(report, /Public eval commercial claim allowed: no/);

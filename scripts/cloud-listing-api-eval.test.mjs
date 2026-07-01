@@ -306,10 +306,15 @@ assert.equal(openai.report.per_card_latency_ms.p50, 1234);
 assert.equal(openai.report.cloud_preflight.ok, true);
 assert.equal(openai.report.cloud_preflight.default_provider, "openai_legacy");
 assert.equal(openai.report.accuracy_policy.corrected_title_as_temporary_gt, false);
+assert.equal(openai.report.accuracy_policy.corrected_title_is_reviewed_title_ground_truth, true);
+assert.equal(openai.report.accuracy_policy.corrected_title_field_ground_truth, false);
 assert.equal(openai.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
-assert.equal(openai.report.accuracy_policy.corrected_title_temporary_gt_scope, "cloud_eval_proxy_title_candidate_scoring_and_optional_cloud_hint");
+assert.equal(openai.report.accuracy_policy.corrected_title_temporary_gt_scope, "legacy_alias_for_reviewed_title_gt_candidate_scoring");
+assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_title_accuracy, true);
 assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);
 assert.equal(openai.report.results[0].corrected_title_as_temporary_gt, false);
+assert.equal(openai.report.results[0].corrected_title_is_reviewed_title_ground_truth, true);
+assert.equal(openai.report.results[0].corrected_title_field_ground_truth, false);
 assert.equal(openai.report.results[0].corrected_title_hint_sent_to_cloud, false);
 assert.equal(openai.report.pass_at_0_72_count, 1);
 assert.equal(openai.report.pass_at_0_80_count, 1);
@@ -513,7 +518,7 @@ assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_t
   assert.equal(conflictedCatalogOnly.report.pass_at_0_72_count, 0);
   assert.equal(conflictedCatalogOnly.report.raw_pass_at_0_72_count, 0);
   assert.equal(conflictedCatalogOnly.report.candidate_proxy_selected_count, 0);
-  assert.equal(conflictedCatalogOnly.report.results[0].candidate_proxy_decision.policy, "temporary_gt_safe_prompt_or_selected_candidate_lane");
+  assert.equal(conflictedCatalogOnly.report.results[0].candidate_proxy_decision.policy, "reviewed_title_gt_safe_prompt_or_selected_candidate_lane");
 }
 
 {
@@ -557,7 +562,7 @@ assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_t
   assert.equal(conflictedVectorReview.report.pass_at_0_72_count, 0);
   assert.equal(conflictedVectorReview.report.candidate_proxy_selected_count, 0);
   assert.equal(conflictedVectorReview.report.candidate_proxy_catalog_selected_count, 0);
-  assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.policy, "temporary_gt_safe_prompt_or_selected_candidate_lane");
+  assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.policy, "reviewed_title_gt_safe_prompt_or_selected_candidate_lane");
   assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.selected_candidate_id, "");
   assert.equal(conflictedVectorReview.report.decision_trace[0].candidate_guided_title, "");
 }

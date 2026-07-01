@@ -295,7 +295,8 @@ const catalogTemporaryGtPacket = buildVectorCandidatePacket({
     },
     field_derivation: {
       corrected_title_as_temporary_gt: true,
-      title_derived_fields_are_ground_truth: true
+      corrected_title_is_reviewed_title_ground_truth: true,
+      title_derived_fields_are_ground_truth: false
     },
     supporting_fields: ["subjects", "year", "product", "collector_number"],
     fields: {
@@ -816,7 +817,8 @@ const correctedTitleGtRetrieval = await correctedTitleGtProvider.search({
 assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.retrieval_status, "");
 assert.equal(correctedTitleGtRetrieval.candidates[0].reference_metadata.reference_status, "");
 assert.equal(correctedTitleGtRetrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
-assert.equal(correctedTitleGtRetrieval.candidates[0].field_derivation.title_derived_fields_are_ground_truth, true);
+assert.equal(correctedTitleGtRetrieval.candidates[0].field_derivation.corrected_title_is_reviewed_title_ground_truth, true);
+assert.equal(correctedTitleGtRetrieval.candidates[0].field_derivation.title_derived_fields_are_ground_truth, false);
 const correctedTitleGtPacket = buildVectorCandidatePacket({ sources: correctedTitleGtRetrieval.candidates }, { limit: 5 });
 assert.equal(correctedTitleGtPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
 assert.equal(correctedTitleGtPacket.vector_retrieval.candidates[0].reference_title, "2025 Topps Chrome Corrected Player Gold #136");

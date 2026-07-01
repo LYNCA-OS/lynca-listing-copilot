@@ -35,7 +35,8 @@ assert.equal(candidates[0].images[0].bucket, "listing-feedback-images");
 assert.equal(candidates[0].images[0].object_path, "feedback/2026-06/card/front.jpg");
 assert.equal(candidates[0].ground_truth.year, null);
 assert.equal(candidates[0].source_titles.corrected_title, "corrected");
-assert.match(candidates[0].notes, /Corrected title is not field-level ground truth/);
+assert.equal(candidates[0].source_titles.corrected_title_is_reviewed_title_ground_truth, true);
+assert.match(candidates[0].notes, /writer-reviewed title ground truth/);
 assert.deepEqual(validateRecognitionDataset(candidates), []);
 
 const fetchedPayloads = [];
@@ -64,7 +65,9 @@ const exportPayload = await runExportSupabaseRecognitionCandidates({
   }
 });
 assert.equal(exportPayload.summary.item_count, 1);
+assert.equal(exportPayload.summary.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(exportPayload.summary.corrected_title_used_as_ground_truth, false);
+assert.equal(exportPayload.summary.corrected_title_used_as_field_ground_truth, false);
 assert.match(fetchedPayloads[0].endpoint, /listing_title_feedback/);
 assert.equal(fetchedPayloads[0].init.headers.authorization, "Bearer test-service-role");
 
@@ -114,7 +117,9 @@ const rowsPayload = await runExportSupabaseRecognitionCandidatesFromRows({
 assert.equal(rowsPayload.source.source_row_count, 2);
 assert.equal(rowsPayload.summary.item_count, 1);
 assert.equal(rowsPayload.source.filtered_out_no_image_count, 1);
+assert.equal(rowsPayload.summary.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(rowsPayload.summary.corrected_title_used_as_ground_truth, false);
+assert.equal(rowsPayload.summary.corrected_title_used_as_field_ground_truth, false);
 assert.equal(writtenFiles.get("manifest.json").items[0].source_feedback_id, "fb3");
 assert.equal(writtenFiles.get("report.json").validation.ok, true);
 

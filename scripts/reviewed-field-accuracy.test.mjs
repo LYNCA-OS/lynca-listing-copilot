@@ -65,7 +65,8 @@ const predictions = {
   schema_version: "provider-report-v1",
   provider: "openai_legacy",
   provider_display_name: "GPT-4.1 mini",
-  corrected_title_reference_only: true,
+  corrected_title_is_reviewed_title_ground_truth: true,
+  corrected_title_reference_only: false,
   results: [
     {
       candidate_id: "supabase_feedback_fb1",
@@ -149,6 +150,7 @@ const report = evaluateReviewedFieldAccuracy({
 
 assert.equal(report.schema_version, "reviewed-field-accuracy-report-v1");
 assert.equal(report.status, "completed");
+assert.equal(report.scope.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(report.scope.corrected_title_used_as_ground_truth, false);
 assert.equal(report.scope.commercial_heldout_acceptance_set, false);
 assert.equal(report.summary.label_item_count, 2);
@@ -187,6 +189,7 @@ assert.equal(report.cards[1].fields.grade.excluded_from_denominator, true);
 const summary = formatReviewedFieldAccuracySummary(report);
 assert.match(summary, /ai_card_exact_accuracy: 1\/2 \(0.5\)/);
 assert.match(summary, /critical_risk_recall: 2\/3 \(0.666667\)/);
+assert.match(summary, /corrected_title_is_reviewed_title_ground_truth: true/);
 assert.match(summary, /corrected_title_used_as_ground_truth: false/);
 
 const devSet = buildReviewedGroundTruthDevSet({
