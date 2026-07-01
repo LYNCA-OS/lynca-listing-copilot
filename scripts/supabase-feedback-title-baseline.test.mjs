@@ -54,7 +54,7 @@ assert.equal(report.source.first_created_at, "2026-06-21T08:00:00.000Z");
 assert.equal(report.source.last_created_at, "2026-06-22T11:00:00.000Z");
 assert.equal(report.scope.corrected_title_reference_only, true);
 assert.equal(report.scope.field_ground_truth_available, false);
-assert.equal(report.scope.image_level_agnes_eval, false);
+assert.equal(report.scope.image_level_provider_eval, false);
 assert.equal(report.scope.no_feedback_retention_side_effects, true);
 assert.equal(report.scope.raw_titles_in_report, false);
 assert.equal(report.scope.commercial_accuracy_claim_allowed, false);

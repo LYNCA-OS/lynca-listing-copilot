@@ -55,14 +55,14 @@ function visionOnlyEvidence(value) {
   });
 }
 
-function agnesInferenceEvidence(value) {
+function modelInferenceEvidence(value) {
   return createEvidenceField({
     value,
     status: "CONFIRMED",
     confidence: 0.96,
     sources: [
       {
-        source_type: "AGNES_INFERENCE",
+        source_type: "MODEL_INFERENCE",
         observed_text: Array.isArray(value) ? value.join(" / ") : value,
         trust_tier: 7
       }
@@ -70,12 +70,12 @@ function agnesInferenceEvidence(value) {
   });
 }
 
-const agnesOnly = applyIdentityResolutionGate({
+const modelInferenceOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
   model_title_suggestion: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
   confidence: "HIGH",
   reason: "Provider inferred card identity from the image.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2024",
     product: "Topps Chrome",
@@ -88,28 +88,28 @@ const agnesOnly = applyIdentityResolutionGate({
       value: "2024",
       status: "CONFIRMED",
       confidence: 0.96,
-      sources: [{ source_type: "AGNES_INFERENCE", observed_text: "2024", trust_tier: 7 }]
+      sources: [{ source_type: "MODEL_INFERENCE", observed_text: "2024", trust_tier: 7 }]
     }),
-    product: agnesInferenceEvidence("Topps Chrome"),
-    players: agnesInferenceEvidence(["Shohei Ohtani"])
+    product: modelInferenceEvidence("Topps Chrome"),
+    players: modelInferenceEvidence(["Shohei Ohtani"])
   },
   unresolved: []
 });
-assert.equal(agnesOnly.identity_resolution_status, "ABSTAIN");
-assert.equal(agnesOnly.final_title, "2024 Topps Chrome Shohei Ohtani");
-assert.equal(agnesOnly.title_render_source, "identity_resolution_partial_writer_draft");
-assert.equal(agnesOnly.publication_gate.auto_publish_allowed, false);
-assert.equal(agnesOnly.publication_gate.writer_review_ready, true);
-assert.equal(agnesOnly.publication_gate.workflow_route, "DEEP_REVIEW");
-assert.deepEqual(agnesOnly.publication_gate.writer_required_fields.sort(), ["parallel", "serial_number", "year"]);
-assert.equal(agnesOnly.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
-assert.equal(agnesOnly.draft_gate.by_field.year.requires_writer_confirmation, true);
-assert.equal(agnesOnly.accuracy_governor.enabled, true);
-assert.ok(agnesOnly.accuracy_governor.risk_flags.some((flag) => {
+assert.equal(modelInferenceOnly.identity_resolution_status, "ABSTAIN");
+assert.equal(modelInferenceOnly.final_title, "2024 Topps Chrome Shohei Ohtani");
+assert.equal(modelInferenceOnly.title_render_source, "identity_resolution_partial_writer_draft");
+assert.equal(modelInferenceOnly.publication_gate.auto_publish_allowed, false);
+assert.equal(modelInferenceOnly.publication_gate.writer_review_ready, true);
+assert.equal(modelInferenceOnly.publication_gate.workflow_route, "DEEP_REVIEW");
+assert.deepEqual(modelInferenceOnly.publication_gate.writer_required_fields.sort(), ["parallel", "serial_number", "year"]);
+assert.equal(modelInferenceOnly.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(modelInferenceOnly.draft_gate.by_field.year.requires_writer_confirmation, true);
+assert.equal(modelInferenceOnly.accuracy_governor.enabled, true);
+assert.ok(modelInferenceOnly.accuracy_governor.risk_flags.some((flag) => {
   return flag.field === "year" && flag.critical === true;
 }));
-assert.ok(agnesOnly.unresolved.includes("identity resolution requires writer review before upload"));
-assert.equal(agnesOnly.model_title_suggestion, "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50");
+assert.ok(modelInferenceOnly.unresolved.includes("identity resolution requires writer review before upload"));
+assert.equal(modelInferenceOnly.model_title_suggestion, "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50");
 
 const nonSlabGradeIsCandidateOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani PSA 10",
@@ -209,14 +209,14 @@ const primaryFastVisionItems = evidenceDocumentToIdentityEvidenceItems({
 });
 assert.equal(primaryFastVisionItems[0].source, "PRIMARY_FAST_VISION");
 
-const agnesVisionItems = evidenceDocumentToIdentityEvidenceItems({
+const modelInferenceItems = evidenceDocumentToIdentityEvidenceItems({
   evidence: {
-    year: agnesInferenceEvidence("2025")
+    year: modelInferenceEvidence("2025")
   }
 }, {
-  providerId: "agnes"
+  providerId: "legacy_removed_provider"
 });
-assert.equal(agnesVisionItems[0].source, "AGNES_INFERENCE");
+assert.equal(modelInferenceItems[0].source, "MODEL_INFERENCE");
 
 const exactVisualVectorItems = evidenceDocumentToIdentityEvidenceItems({
   evidence: {
@@ -498,7 +498,7 @@ const groundedMultiView = applyIdentityResolutionGate({
   title: "provider title must not decide final facts",
   confidence: "HIGH",
   reason: "Provider result should be replaced by deterministic renderer.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2024",
     product: "Topps Chrome",
@@ -526,7 +526,7 @@ const marketplaceOnly = applyIdentityResolutionGate({
   title: "marketplace title must not become final truth",
   confidence: "HIGH",
   reason: "Marketplace candidate matched.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: {},
   evidence: {},
   unresolved: []
@@ -583,18 +583,18 @@ const providerInvariantGpt = applyIdentityResolutionGate({
 }, {
   providerId: "openai_legacy"
 });
-const providerInvariantAgnes = applyIdentityResolutionGate({
+const providerInvariantRemoved = applyIdentityResolutionGate({
   ...providerInvariantInput,
-  provider: "agnes"
+  provider: "openai_legacy"
 }, {
-  providerId: "agnes"
+  providerId: "removed_legacy_provider"
 });
 assert.equal(providerInvariantPrimaryFast.identity_resolution_status, providerInvariantGpt.identity_resolution_status);
-assert.equal(providerInvariantPrimaryFast.identity_resolution_status, providerInvariantAgnes.identity_resolution_status);
+assert.equal(providerInvariantPrimaryFast.identity_resolution_status, providerInvariantRemoved.identity_resolution_status);
 assert.deepEqual(providerInvariantPrimaryFast.writer_required_fields.sort(), providerInvariantGpt.writer_required_fields.sort());
-assert.deepEqual(providerInvariantPrimaryFast.writer_required_fields.sort(), providerInvariantAgnes.writer_required_fields.sort());
+assert.deepEqual(providerInvariantPrimaryFast.writer_required_fields.sort(), providerInvariantRemoved.writer_required_fields.sort());
 assert.equal(providerInvariantPrimaryFast.final_title, providerInvariantGpt.final_title);
-assert.equal(providerInvariantPrimaryFast.final_title, providerInvariantAgnes.final_title);
+assert.equal(providerInvariantPrimaryFast.final_title, providerInvariantRemoved.final_title);
 
 function structuredHighRiskProviderResult(provider) {
   const evidenceDocument = providerPayloadToEvidenceDocument({
@@ -888,7 +888,7 @@ const duplicateVariationLowConfidence = applyIdentityResolutionGate({
   title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
   confidence: "HIGH",
   reason: "Parallel is slab-supported; variation is a duplicate weak focused read.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2025",
     product: "Topps Chrome",
@@ -929,7 +929,7 @@ const weakVisualParallelDropsWithoutBlocking = applyIdentityResolutionGate({
   title: "2025-26 Panini Prizm FIFA Club Legends Lionel Messi Auto 029/199",
   confidence: "HIGH",
   reason: "Parallel is weak visual inference, but auto and serial are printed.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2025-26",
     product: "Prizm FIFA Soccer",
@@ -966,7 +966,7 @@ const setFallbackSatisfiesProductIdentity = applyIdentityResolutionGate({
   title: "2025 Topps Sapphire Shohei Ohtani Gold 05/50 PSA 9",
   confidence: "HIGH",
   reason: "Product family is ambiguous, but set text is stable.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2025",
     product: "Topps Chrome",
@@ -1012,7 +1012,7 @@ const missingYear = applyIdentityResolutionGate({
   title: "Topps Chrome Shohei Ohtani 31/50",
   confidence: "HIGH",
   reason: "Year is not visible.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     product: "Topps Chrome",
     players: ["Shohei Ohtani"],
@@ -1035,7 +1035,7 @@ const serialFocusedFailure = applyIdentityResolutionGate({
   title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
   confidence: "HIGH",
   reason: "Initial serial read exists, but focused reread could not verify serial.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2022",
     product: "Gold Standard",
@@ -1070,7 +1070,7 @@ const serialSingleFrontSource = applyIdentityResolutionGate({
   title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
   confidence: "HIGH",
   reason: "Focused serial reread repeated one front-image serial value.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2022",
     product: "Gold Standard",
@@ -1103,7 +1103,7 @@ const serialDoubleFrontSource = applyIdentityResolutionGate({
   title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
   confidence: "HIGH",
   reason: "Initial read and focused serial crop agree on the same serial.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2022",
     product: "Gold Standard",
@@ -1144,7 +1144,7 @@ const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
   title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
   confidence: "HIGH",
   reason: "Focused serial crop confirmed the same serial.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2022",
     product: "Gold Standard",
@@ -1181,7 +1181,7 @@ const localizedOnlyGrounded = applyIdentityResolutionGate({
   title: "provider localized title must not become final title",
   confidence: "HIGH",
   reason: "Card text is localized and needs English title evidence before publishing.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2024",
     brand: "Pokemon TCG",
@@ -1210,7 +1210,7 @@ const multiCardLot = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani and Aaron Judge Lot",
   confidence: "HIGH",
   reason: "Multiple cards visible in the image.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     multi_card: true,
     card_count: 2,
@@ -1254,7 +1254,7 @@ const lowConfidenceYear = applyIdentityResolutionGate({
   title: "2017 Star Wars Chrome Black Paul Kasey Auto",
   confidence: "MEDIUM",
   reason: "Year was weakly inferred from front text.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2017",
     product: "Star Wars Chrome Black",
@@ -1286,7 +1286,7 @@ const frontOnlyColorDescriptorDropped = applyIdentityResolutionGate({
   title: "2024 Topps Heritage Jackson Chourio White Border RC",
   confidence: "HIGH",
   reason: "Front image suggested white border, but no independent source confirmed it.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2024",
     product: "Heritage",
@@ -1312,7 +1312,7 @@ const weakOcrOnlyChecklistDropped = applyIdentityResolutionGate({
   title: "2010 Panini Absolute Kobe Bryant Auto 08/25 PSA 10",
   confidence: "HIGH",
   reason: "Checklist-like OCR text is weak and not required for the listing title.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2010-11",
     product: "Absolute Memorabilia",
@@ -1354,7 +1354,7 @@ const convergedGate = await applyIdentityResolutionGateWithConvergence({
   title: "provider title must not decide serial conflict",
   confidence: "HIGH",
   reason: "Provider had conflicting serial evidence.",
-  provider: "agnes",
+  provider: "openai_legacy",
   resolved: normalizeResolvedFields({
     year: "2024",
     product: "Topps Chrome",
@@ -1398,7 +1398,7 @@ const convergedGate = await applyIdentityResolutionGateWithConvergence({
   unresolved: []
 }, {
   maxLength: 80,
-  providerId: "agnes",
+  providerId: "removed_legacy_provider",
   retrieveEvidence: async (request) => {
     convergenceGateRetrievalCalls += 1;
     assert.equal(request.status, "ABSTAIN");

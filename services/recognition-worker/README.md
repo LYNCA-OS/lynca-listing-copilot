@@ -60,7 +60,7 @@ PYTHONPATH=. python3 -m unittest discover -s tests
 PYTHONPATH=. python3 -m app.eval --input fixtures/worker-eval-sample.json
 ```
 
-The R2 tests use synthetic images and do not call external services, eBay, Agnes, Brave, or paid APIs.
+The R2 tests use synthetic images and do not call external services, eBay, legacy vision provider, Brave, or paid APIs.
 
 ## Docker
 

@@ -104,7 +104,7 @@ cd services/recognition-worker
 PYTHONPATH=. python3 -m app.eval --input fixtures/worker-eval-sample.json
 ```
 
-This evaluates worker field candidates only. It does not claim card-level commercial accuracy and does not use eBay, Agnes, Brave, or paid APIs.
+This evaluates worker field candidates only. It does not claim card-level commercial accuracy and does not use eBay, legacy vision provider, Brave, or paid APIs.
 
 ## Current Tests
 

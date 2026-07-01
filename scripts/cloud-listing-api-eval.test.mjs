@@ -973,7 +973,7 @@ assert.equal(openaiVectorNoLazy.report.results[0].vector_lazy_skip, false);
 }
 
 await assert.rejects(
-  () => runProvider("agnes"),
+  () => runProvider("removed_legacy_provider"),
   /Unsupported cloud eval provider/i
 );
 

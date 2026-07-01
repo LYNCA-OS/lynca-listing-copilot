@@ -289,5 +289,5 @@ def fuse_evidence_placeholder() -> dict:
         "resolved_fields": {},
         "conflicts": [],
         "trace": [],
-        "note": "Fusion waits for OCR, Agnes, and retrieval evidence. No generated facts are fabricated.",
+        "note": "Fusion waits for OCR, legacy vision provider, and retrieval evidence. No generated facts are fabricated.",
     }

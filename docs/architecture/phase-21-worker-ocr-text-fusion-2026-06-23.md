@@ -31,7 +31,7 @@ Supported deterministic field parsing:
 - `auto_grade`
 - `grade_type`
 
-The parser intentionally does not infer player, product, set, or parallel from style. Those still require stronger evidence such as OCR text, registry/checklist match, visual candidate verification, or Agnes as semantic evidence.
+The parser intentionally does not infer player, product, set, or parallel from style. Those still require stronger evidence such as OCR text, registry/checklist match, visual candidate verification, or legacy vision provider as semantic evidence.
 
 ## Safety Rules
 

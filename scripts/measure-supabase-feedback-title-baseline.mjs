@@ -330,7 +330,7 @@ export function measureSupabaseFeedbackTitleBaseline({
       metric_type: "historical_generated_title_vs_human_corrected_title",
       corrected_title_reference_only: true,
       field_ground_truth_available: false,
-      image_level_agnes_eval: false,
+      image_level_provider_eval: false,
       no_feedback_retention_side_effects: true,
       raw_titles_in_report: false,
       commercial_accuracy_claim_allowed: false,

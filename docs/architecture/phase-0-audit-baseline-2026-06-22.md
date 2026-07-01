@@ -94,7 +94,7 @@ Existing tests protect these behaviors:
 
 Commercial architecture gaps:
 
-- Agnes is not implemented and is not the default provider.
+- legacy vision provider is not implemented and is not the default provider.
 - GPT-4.1 legacy remains the only real configured model path when `OPENAI_API_KEY` exists.
 - The UI has no provider selector and no explicit GPT emergency retry.
 - There is no provider registry, provider contract, model whitelist, or provider metadata trace.
@@ -137,9 +137,9 @@ No real paid-provider smoke test was performed in Phase 0.
 
 Not yet verified:
 
-- Agnes Chat Completions behavior
-- Agnes image URL support
-- Agnes JSON/tool-call structured output stability
+- legacy vision provider Chat Completions behavior
+- legacy vision provider image URL support
+- legacy vision provider JSON/tool-call structured output stability
 - Brave Search API
 - eBay Browse OAuth and search
 - OpenAI Web Search fallback
@@ -153,8 +153,8 @@ Phase 1 should start with a provider contract and registry:
 
 - `lib/listing/providers/provider-contract.mjs`
 - `lib/listing/providers/provider-registry.mjs`
-- `lib/listing/providers/agnes-provider.mjs`
+- `lib/listing/providers/legacy-vision-provider-provider.mjs`
 - `lib/listing/providers/openai-emergency-provider.mjs`
 - mock tests for provider routing and no silent GPT fallback
 
-The legacy OpenAI path should remain as a compatibility layer while Agnes is introduced as the default provider.
+The legacy OpenAI path should remain as a compatibility layer while legacy vision provider is introduced as the default provider.

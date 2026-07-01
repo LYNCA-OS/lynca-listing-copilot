@@ -88,7 +88,7 @@ node scripts/index-visual-vector-embeddings.mjs \
 
 The script signs Supabase Storage URLs, calls the configured cloud Recognition
 Worker for embeddings, and upserts identities, reference images, and embeddings.
-It does not call Gemini, GPT, or Agnes. It fails if the worker returns
+It does not call Gemini, GPT, or legacy vision provider. It fails if the worker returns
 `UNAVAILABLE` instead of real embeddings.
 
 ## Cloud Boundary

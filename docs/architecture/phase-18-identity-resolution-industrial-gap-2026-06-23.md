@@ -23,7 +23,7 @@ The audited production-facing paths were:
 Before this patch, the runtime path was:
 
 1. image upload
-2. Agnes or emergency OpenAI vision provider
+2. legacy vision provider or emergency OpenAI vision provider
 3. provider JSON parsed into legacy fields and resolved fields
 4. deterministic renderer generated a title from those provider-derived fields
 5. feedback could store generated and corrected titles
@@ -51,7 +51,7 @@ The strongest existing rule is that marketplace evidence cannot become ground tr
 ## Critical Gaps Found
 
 1. Provider-derived fields were still able to flow into final rendering without a top-level `resolveIdentity` gate.
-2. Agnes/OpenAI confidence was still indirectly influencing listing readiness before identity resolution.
+2. legacy vision provider/OpenAI confidence was still indirectly influencing listing readiness before identity resolution.
 3. API output did not expose the full `identity_resolution` object on normal generation responses.
 4. `ABSTAIN` existed in the core resolver but was not enforced as the final production title gate.
 5. Provider evidence was represented as `EvidenceDocument`, but there was no adapter from that structure into identity resolver `EvidenceItems`.
@@ -71,7 +71,7 @@ Final title rules are now:
 
 - `CONFIRMED` or `RESOLVED`: final title comes from deterministic renderer using identity-resolved fields.
 - `ABSTAIN`: no final title is emitted; model title remains only as `model_title_suggestion`.
-- Agnes-only or GPT-only evidence cannot create a final title by itself.
+- legacy vision provider-only or GPT-only evidence cannot create a final title by itself.
 - marketplace-only evidence cannot create a final title by itself.
 - field states, conflict graph, conflict map, confidence report, and full resolution trace are returned as `identity_resolution`.
 

@@ -482,7 +482,7 @@ assert.equal(slabLabelTextDocument.evidence.players.sources[0].source_type, "SLA
 assert.equal(slabLabelTextDocument.evidence.parallel.sources[0].source_type, "SLAB_LABEL");
 assert.doesNotThrow(() => assertValidEvidenceDocument(slabLabelTextDocument));
 
-const agnesDescriptorDocument = providerPayloadToEvidenceDocument({
+const structuredDescriptorDocument = providerPayloadToEvidenceDocument({
   title: "2025 Topps Finest Shohei Ohtani Gusto Red Refractor",
   confidence: "HIGH",
   reason: "front card text explicitly states Topps Finest and printed parallel Red Refractor",
@@ -496,13 +496,13 @@ const agnesDescriptorDocument = providerPayloadToEvidenceDocument({
   },
   unresolved: []
 });
-assert.equal(agnesDescriptorDocument.resolved.manufacturer, "Topps");
-assert.equal(agnesDescriptorDocument.resolved.brand, "Topps");
-assert.equal(agnesDescriptorDocument.resolved.card_type, "Insert");
-assert.equal(agnesDescriptorDocument.resolved.variation, "Red Refractor");
-assert.equal(agnesDescriptorDocument.evidence.variation.value, "Red Refractor");
-assert.equal(agnesDescriptorDocument.evidence.variation.sources[0].source_type, "CARD_FRONT");
-assert.doesNotThrow(() => assertValidEvidenceDocument(agnesDescriptorDocument));
+assert.equal(structuredDescriptorDocument.resolved.manufacturer, "Topps");
+assert.equal(structuredDescriptorDocument.resolved.brand, "Topps");
+assert.equal(structuredDescriptorDocument.resolved.card_type, "Insert");
+assert.equal(structuredDescriptorDocument.resolved.variation, "Red Refractor");
+assert.equal(structuredDescriptorDocument.evidence.variation.value, "Red Refractor");
+assert.equal(structuredDescriptorDocument.evidence.variation.sources[0].source_type, "CARD_FRONT");
+assert.doesNotThrow(() => assertValidEvidenceDocument(structuredDescriptorDocument));
 
 const structuredProviderFieldsDocument = providerPayloadToEvidenceDocument({
   title: "2024 Topps Chrome Test Player Auto Purple Refractor 31/50 PSA 10",

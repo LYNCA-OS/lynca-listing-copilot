@@ -7,7 +7,7 @@ Branch: `v2_pai`
 
 Allow the Recognition Worker to inspect real uploaded card images without moving heavy vision dependencies into Vercel.
 
-This is needed before OCR, geometry, glare, and quality signals can reliably become low-cost evidence ahead of Agnes.
+This is needed before OCR, geometry, glare, and quality signals can reliably become low-cost evidence ahead of legacy vision provider.
 
 ## What Changed
 
@@ -45,7 +45,7 @@ The intended low-cost path becomes:
 5. OCR adapter
 6. OCR text fusion
 7. Identity Resolution Gate
-8. Agnes only when local evidence cannot resolve identity
+8. legacy vision provider only when local evidence cannot resolve identity
 
 ## Safety Notes
 

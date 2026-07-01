@@ -85,23 +85,18 @@ assert.equal(report.retrieval_provider_gains.openai_web_search.used_assets, 1);
 assert.equal(report.retrieval_provider_gains.openai_web_search.recovered_assets, 0);
 assert.equal(report.retrieval_provider_gains.openai_web_search.exact_when_used_rate, 0);
 
-assert.equal(report.breakdowns.provider.agnes.total_assets, 6);
-assert.equal(report.breakdowns.provider.agnes.exact_assets, 2);
-assert.equal(report.breakdowns.provider.agnes.rate, 1 / 3);
-assert.equal(report.breakdowns.provider.openai_legacy.total_assets, 1);
+assert.equal(report.breakdowns.provider.openai_legacy.total_assets, 7);
+assert.equal(report.breakdowns.provider.openai_legacy.exact_assets, 2);
+assert.equal(report.breakdowns.provider.openai_legacy.rate, 2 / 7);
 assert.equal(report.breakdowns.category.sports_card.total_assets, 6);
 assert.equal(report.breakdowns.category.sports_card.rate, 1 / 3);
 assert.equal(report.breakdowns.difficulty.serial.total_assets, 3);
 assert.equal(report.breakdowns.difficulty.serial.exact_assets, 1);
 assert.equal(report.breakdowns.difficulty.front_only.rate, 0);
 
-assert.equal(report.vision_provider_comparison.providers.agnes.ai_complete_precision, 2 / 3);
-assert.equal(report.vision_provider_comparison.providers.agnes.technical_failure_rate, 1 / 6);
-assert.equal(report.vision_provider_comparison.providers.openai_legacy.ai_complete_precision, 0);
-assert.equal(report.vision_provider_comparison.providers.openai_legacy.accepted_critical_error_rate, 1);
-assert.equal(report.vision_provider_comparison.agnes_vs_openai_legacy.exact_rate_delta, 1 / 3);
-assert.equal(report.vision_provider_comparison.agnes_vs_openai_legacy.ai_complete_precision_delta, 2 / 3);
-assert.equal(report.vision_provider_comparison.agnes_vs_openai_legacy.accepted_critical_error_rate_delta, -1);
+assert.equal(report.vision_provider_comparison.providers.openai_legacy.ai_complete_precision, 0.5);
+assert.equal(report.vision_provider_comparison.providers.openai_legacy.technical_failure_rate, 1 / 7);
+assert.equal(report.vision_provider_comparison.providers.openai_legacy.accepted_critical_error_rate, 1 / 7);
 
 assert.equal(report.confidence_intervals.method, "wilson_score");
 assert.equal(report.confidence_intervals.confidence_level, 0.95);
@@ -153,7 +148,7 @@ assert.match(cli.stdout, /held_out_commercial_assets: 0/);
 assert.match(cli.stdout, /commercial_acceptance_gate: scope:held_out_commercial eligible:false passed:false minimum_held_out_assets:100/);
 assert.match(cli.stdout, /commercial_acceptance_reasons: held_out_commercial split is empty/);
 assert.match(cli.stdout, /held_out_ai_overall_exact_resolution_rate: n\/a/);
-assert.match(cli.stdout, /provider_breakdown: .*agnes=2\/6\(0\.3333333333333333\).*openai_legacy=0\/1\(0\)/);
+assert.match(cli.stdout, /provider_breakdown: .*openai_legacy=2\/7\(0\.2857142857142857\)/);
 assert.match(cli.stdout, /category_breakdown: .*sports_card=2\/6\(0\.3333333333333333\).*non_standard_collectible=0\/1\(0\)/);
 assert.match(cli.stdout, /difficulty_breakdown: .*front_back=2\/4\(0\.5\).*serial=1\/3\(0\.3333333333333333\)/);
 assert.match(cli.stdout, /confidence_interval_method: wilson_score/);
@@ -166,8 +161,7 @@ assert.match(cli.stdout, /failure_root_causes: critical_field_mismatch=5\/7\(0\.
 assert.match(cli.stdout, /field_error_distribution: final_title_required_fields=5\/7\(0\.7142857142857143\).*final_title_unsubstantiated_fields=2\/7\(0\.2857142857142857\).*product=2\/7\(0\.2857142857142857\).*serial_number=1\/3\(0\.3333333333333333\).*parallel=1\/1\(1\)/);
 assert.match(cli.stdout, /glare_impact: glare_assets:1\/7\(0\.14285714285714285\) exact:1\/1\(1\) non_glare_exact:0\.16666666666666666 delta:0\.8333333333333334.*final_approved:1\/1\(1\)/);
 assert.match(cli.stdout, /retrieval_provider_gains: brave=used:1\/7\(0\.14285714285714285\) recovered:1\/1\(1\).*ebay_browse=used:1\/7\(0\.14285714285714285\) recovered:0\/1\(0\) reference:1\/1\(1\).*openai_web_search=used:1\/7\(0\.14285714285714285\) recovered:0\/1\(0\)/);
-assert.match(cli.stdout, /vision_provider_comparison: agnes=exact:2\/6\(0\.3333333333333333\).*ai_complete_precision:2\/3\(0\.6666666666666666\).*technical_failure:1\/6\(0\.16666666666666666\).*openai_legacy=exact:0\/1\(0\).*ai_complete_precision:0\/1\(0\).*accepted_critical_error:1\/1\(1\)/);
-assert.match(cli.stdout, /agnes_vs_openai_legacy: exact_rate_delta=0\.3333333333333333, ai_complete_precision_delta=0\.6666666666666666, technical_failure_rate_delta=0\.16666666666666666, accepted_critical_error_rate_delta=-1/);
+assert.match(cli.stdout, /vision_provider_comparison: openai_legacy=exact:2\/7\(0\.2857142857142857\).*ai_complete_precision:2\/4\(0\.5\).*technical_failure:1\/7\(0\.14285714285714285\).*accepted_critical_error:1\/7\(0\.14285714285714285\)/);
 
 const traceOnlyReport = evaluateGoldenDataset({
   schema_version: "golden-dataset-v1",
@@ -186,7 +180,7 @@ const traceOnlyReport = evaluateGoldenDataset({
         critical_fields: ["year"],
         prediction: {
           route: "WRITER_REVIEW_REQUIRED",
-          provider: "agnes",
+          provider: "openai_legacy",
           resolved_fields: {
             year: "2024"
           },
@@ -231,7 +225,7 @@ const heldOutScopedReport = evaluateGoldenDataset({
         critical_fields: ["year", "player"],
         prediction: {
           route: "AI_COMPLETE_REVIEW",
-          provider: "agnes",
+          provider: "openai_legacy",
           resolved_fields: {
             year: "2023",
             player: "Cooper Flagg"
@@ -255,7 +249,7 @@ const heldOutScopedReport = evaluateGoldenDataset({
         critical_fields: ["year", "player"],
         prediction: {
           route: "AI_COMPLETE_REVIEW",
-          provider: "agnes",
+          provider: "openai_legacy",
           resolved_fields: {
             year: "2024",
             player: "Cooper Flagg"

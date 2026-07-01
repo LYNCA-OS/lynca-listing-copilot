@@ -251,7 +251,7 @@ assert.notEqual(fieldState(marketplaceCannotOverride, "serial_number").source_su
 const visualOnlyParallelRejected = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
-    { field: "parallel", value: "Blue Prizm", source: "AGNES", confidence: 0.96 }
+    { field: "parallel", value: "Blue Prizm", source: "PRIMARY_FAST_VISION", confidence: 0.96 }
   ]
 });
 assert.equal(visualOnlyParallelRejected.identity.parallel, null);
@@ -271,7 +271,7 @@ const focusedVisualColorAccepted = resolveIdentity({
     {
       field: "surface_color",
       value: "Purple",
-      source: "AGNES",
+      source: "PRIMARY_FAST_VISION",
       confidence: 0.92,
       region: "CROP_AND_READ_PARALLEL",
       metadata: {
@@ -293,7 +293,7 @@ const focusedVisualColorReviewWithoutBlockerAccepted = resolveIdentity({
     {
       field: "surface_color",
       value: "Purple",
-      source: "AGNES",
+      source: "PRIMARY_FAST_VISION",
       confidence: 0.8,
       region: "CROP_AND_READ_PARALLEL",
       metadata: {
@@ -312,7 +312,7 @@ const focusedVisualColorReviewRejected = resolveIdentity({
     {
       field: "surface_color",
       value: "Purple",
-      source: "AGNES",
+      source: "PRIMARY_FAST_VISION",
       confidence: 0.92,
       region: "CROP_AND_READ_PARALLEL",
       metadata: {
@@ -332,7 +332,7 @@ const focusedVisualUncorrectedColorRejected = resolveIdentity({
     {
       field: "surface_color",
       value: "Purple",
-      source: "AGNES",
+      source: "PRIMARY_FAST_VISION",
       confidence: 0.94,
       region: "CROP_AND_READ_PARALLEL",
       metadata: {
@@ -353,7 +353,7 @@ const taxonomyUniqueWithoutCollectorKeepsColorOnly = resolveIdentity({
     {
       field: "surface_color",
       value: "Purple",
-      source: "AGNES",
+      source: "PRIMARY_FAST_VISION",
       confidence: 0.86,
       region: "CROP_AND_READ_PARALLEL",
       metadata: {
@@ -393,7 +393,7 @@ const taxonomyUniqueParallelExactPromotedWithCollector = resolveIdentity({
     {
       field: "surface_color",
       value: "Purple",
-      source: "AGNES",
+      source: "PRIMARY_FAST_VISION",
       confidence: 0.86,
       region: "CROP_AND_READ_PARALLEL",
       metadata: {
@@ -459,7 +459,7 @@ const focusedVisualParallelSerialMismatch = resolveIdentity({
     {
       field: "parallel_exact",
       value: "Rainbow Refractor",
-      source: "AGNES",
+      source: "PRIMARY_FAST_VISION",
       confidence: 0.86,
       region: "CROP_AND_READ_PARALLEL",
       metadata: {
@@ -500,7 +500,7 @@ const wholeCardCandidateRanking = resolveIdentity({
     {
       field: "surface_color",
       value: "Gold",
-      source: "AGNES",
+      source: "PRIMARY_FAST_VISION",
       confidence: 0.9,
       region: "CROP_AND_READ_PARALLEL",
       metadata: {
@@ -570,7 +570,7 @@ assert.equal(fieldState(printedRookieMarkersAccepted, "rc").resolution_reason, "
 
 const seasonRangeWinsCompatibleYear = resolveIdentity({
   evidenceItems: [
-    { field: "year", value: "2020", source: "AGNES", confidence: 0.9 },
+    { field: "year", value: "2020", source: "PRIMARY_FAST_VISION", confidence: 0.9 },
     { field: "year", value: "2020-21", source: "CARD_BACK", confidence: 0.9 },
     { field: "product", value: "Contenders", source: "CARD_BACK", confidence: 0.94 },
     { field: "players", value: "Anthony Edwards", source: "CARD_FRONT", confidence: 0.94 }
@@ -635,7 +635,7 @@ const officialCardTypeBeatsGenericInference = resolveIdentity({
   evidenceItems: [
     ...baseAnchors,
     { field: "card_type", value: "Dual Signatures", source: "CARD_FRONT", confidence: 0.94 },
-    { field: "card_type", value: "Dual Auto", source: "AGNES", confidence: 0.94 }
+    { field: "card_type", value: "Dual Auto", source: "PRIMARY_FAST_VISION", confidence: 0.94 }
   ]
 });
 assert.equal(officialCardTypeBeatsGenericInference.identity.card_type, "Dual Signatures");

@@ -19,8 +19,8 @@ The audit reads current repo evidence and reports independent checks:
 
 - `golden_dataset`: default Golden Dataset JSON can be read and validates against the expected schema.
 - `commercial_acceptance_gate`: held-out commercial split count, required strata, predictions, and thresholds pass.
-- `agnes_live_smoke`: sanitized Agnes smoke report exists and verifies the single-image JSON baseline.
-- `provider_default_policy`: Agnes remains the implicit default; GPT-4.1 is blocked as an implicit default and only exposed as an explicit emergency action.
+- `legacy-vision-provider_live_smoke`: sanitized legacy vision provider smoke report exists and verifies the single-image JSON baseline.
+- `provider_default_policy`: legacy vision provider remains the implicit default; GPT-4.1 is blocked as an implicit default and only exposed as an explicit emergency action.
 - `publishing_approval_gate`: publishing requires an approved `ListingDraft` and frontend mock publish remains dry-run.
 - `publishing_destination`: real B-end publishing remains blocked while only `mock_b_end` exists.
 - `external_retrieval_live_smoke`: Brave, eBay Browse, and OWS need complete live smoke evidence before commercial readiness can be claimed.
@@ -58,7 +58,7 @@ npm run readiness:audit -- --dataset data/golden-dataset.commercial.json
 The current workspace result is expected to be blocked:
 
 - `held_out_commercial` is empty.
-- Agnes JSON baseline, front/back multi-image JSON, controlled tool-call output, and provider-error behavior are live-smoke verified in the latest local report.
+- legacy vision provider JSON baseline, front/back multi-image JSON, controlled tool-call output, and provider-error behavior are live-smoke verified in the latest local report.
 - GPT-4.1 is visible only as an explicit emergency action and is not selected by default.
 - Publishing is approval-gated, but only the mock B-end destination exists.
 - External retrieval providers have skipped reports in this local workspace, so they still need credentialed live smoke evidence.
@@ -69,6 +69,6 @@ This audit can only declare commercial readiness when blockers are removed by re
 
 - Import a real held-out commercial dataset through `npm run commercial:heldout`.
 - Pass `commercial_acceptance_gate` on the held-out split.
-- Keep Agnes as the default provider and GPT-4.1 as explicit emergency only.
+- Keep legacy vision provider as the default provider and GPT-4.1 as explicit emergency only.
 - Add and validate a real B-end adapter from actual API documentation.
 - Produce complete live smoke evidence for the configured external retrieval providers.

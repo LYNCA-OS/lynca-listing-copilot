@@ -291,7 +291,7 @@ assert.doesNotMatch(response.body.final_title, /31\/50/);
 assert.equal(response.body.resolved.serial_number, "31/50");
 assert.match(response.body.final_title, /PSA 10/);
 assert.ok(response.body.field_states.find((field) => field.field === "serial_number").supporting_sources.some((source) => source.source === "CARD_FRONT_PRINTED_TEXT"));
-assert.ok(!fetchCalls.some((call) => call.host.includes("apihub.agnes-ai.com")));
+assert.ok(!fetchCalls.some((call) => call.host.includes("legacy-removed-provider.example")));
 assert.deepEqual(fetchCalls.map((call) => call.host), [
   "supabase.test",
   "supabase.test",

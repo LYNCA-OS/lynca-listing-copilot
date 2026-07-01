@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { buildSupabaseFeedbackFieldReviewPacket } from "./build-supabase-feedback-field-review-packet.mjs";
 
 const packet = buildSupabaseFeedbackFieldReviewPacket({
-  schema_version: "agnes-supabase-feedback-eval-v1",
-  provider: "cascade_fast",
-  provider_display_name: "GPT-4.1-mini → Agnes verifier",
+  schema_version: "provider-feedback-eval-v1",
+  provider: "openai_vector",
+  provider_display_name: "GPT-4.1 mini + Catalog + Vector",
   source_manifest_hash: "manifest-1",
   source_table: "listing_title_feedback",
   corrected_title_reference_only: true,

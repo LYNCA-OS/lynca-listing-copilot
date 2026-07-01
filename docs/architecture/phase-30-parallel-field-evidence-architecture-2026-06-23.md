@@ -39,9 +39,9 @@ Relevant conclusions for card identity:
 For each card:
 
 1. Generate or reuse signed URLs for front/back images.
-2. Run one global Agnes pass:
+2. Run one global legacy vision provider pass:
    - purpose: coarse identity, title draft, visible field list
-   - output source: `AGNES_INFERENCE`
+   - output source: `MODEL_INFERENCE`
    - never final truth by itself
 3. Run targeted probes in parallel when fields are critical or global pass is uncertain:
    - `subject_probe`: player/character/team
@@ -96,7 +96,7 @@ The system should enforce two concurrency budgets:
 - `CARD_CONCURRENCY`: number of cards processed at once.
 - `PROBE_CONCURRENCY_PER_CARD`: number of field probes per card.
 
-This avoids overloading Agnes while still exploiting parallelism.
+This avoids overloading legacy vision provider while still exploiting parallelism.
 
 ## Why This Should Be More Accurate
 
@@ -140,7 +140,7 @@ Add a sidecar object to recognition output:
 
 Run three reports on the same 248 image-backed Supabase cohort:
 
-1. `baseline_full_card_agnes`: current one-pass image eval.
+1. `baseline_full_card_legacy-vision-provider`: current one-pass image eval.
 2. `parallel_field_probe_v1`: global pass plus static targeted probes.
 3. `parallel_field_probe_v2`: global pass plus targeted probes plus low-confidence retry.
 
@@ -165,7 +165,7 @@ Near-term use:
 
 - Extract all visible text from front/back images or crops.
 - Feed extracted text as `OCR_ONLY` / `CARD_FRONT_PRINTED_TEXT` / `CARD_BACK_PRINTED_TEXT` evidence.
-- Use it to support or contradict Agnes, not to override slab/registry.
+- Use it to support or contradict legacy vision provider, not to override slab/registry.
 
 Production constraints:
 
@@ -176,7 +176,7 @@ Production constraints:
 ## Implementation Steps
 
 1. Add `lib/listing/perception/field-probe-plan.mjs`.
-2. Add `scripts/evaluate-agnes-parallel-field-probes.mjs`.
+2. Add `scripts/evaluate-legacy-vision-provider-parallel-field-probes.mjs`.
 3. Add prompt profiles for each probe, returning only one narrow JSON object.
 4. Reuse `createListingImageSignedReadUrl` for all image inputs.
 5. Convert probe outputs into Identity Resolution evidence items.

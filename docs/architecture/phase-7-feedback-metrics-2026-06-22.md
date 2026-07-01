@@ -145,7 +145,7 @@ This is a review-metrics foundation, not a held-out commercial accuracy report.
 - failure root-cause counts and field error distribution
 - correction rate per field
 - retrieval-provider contribution diagnostics for Brave, eBay Browse, and OWS
-- Agnes vs GPT-4.1 emergency provider comparison diagnostics
+- legacy vision provider vs GPT-4.1 emergency provider comparison diagnostics
 
 `npm run eval:golden` prints the breakdowns in the default console output as `provider_breakdown`, `category_breakdown`, and `difficulty_breakdown`. The optional JSON report written with `--report` keeps the same values under `breakdowns.provider`, `breakdowns.category`, and `breakdowns.difficulty`.
 
@@ -155,7 +155,7 @@ The report now separates regression diagnostics from commercial acceptance evide
 
 When the development or commercial set misses target thresholds, the evaluator now emits `failure_root_causes` and `field_error_distribution` in the CLI output. The JSON report stores the same information under `failure_analysis.root_causes` and `failure_analysis.field_error_distribution`. Future prediction fixtures may provide explicit `prediction.failure_root_causes`; otherwise the evaluator derives causes from route mismatches, technical failures, human critical corrections, false AI-complete assets, accepted critical errors, and critical-field mismatches.
 
-The evaluator also emits `retrieval_provider_gains`, `vision_provider_comparison`, and `agnes_vs_openai_legacy`. Retrieval contribution is explicit-trace based: Brave and OWS can count recovered assets only when the prediction metadata says that provider recovered the asset, while eBay Browse can separately count market-reference help without treating marketplace titles as ground truth. The provider comparison reports exact rate, AI-complete precision, false AI-complete assets, technical failures, and accepted critical errors for Agnes and GPT-4.1 emergency results.
+The evaluator also emits `retrieval_provider_gains`, `vision_provider_comparison`, and `legacy-vision-provider_vs_openai_legacy`. Retrieval contribution is explicit-trace based: Brave and OWS can count recovered assets only when the prediction metadata says that provider recovered the asset, while eBay Browse can separately count market-reference help without treating marketplace titles as ground truth. The provider comparison reports exact rate, AI-complete precision, false AI-complete assets, technical failures, and accepted critical errors for legacy vision provider and GPT-4.1 emergency results.
 
 The evaluator emits `glare_impact` as a separate diagnostic so glare samples remain visible even when the overall denominator includes every asset. It reports glare coverage, exact rate, non-glare comparison, human-critical rate, accepted critical errors, technical failures, glare recovery, and final approved accuracy for glare-tagged assets.
 
@@ -177,7 +177,7 @@ The builder deliberately keeps two separate records:
 - `prediction.resolved_fields` is the model output at analysis time.
 - `ground_truth_fields` is the corrected reviewer-approved field set plus final-title quality flags.
 
-This means corrected commercial rows do not become fake model passes. If Agnes predicted `37/50` and the reviewer corrected the serial to `31/50`, the held-out item keeps `37/50` in `prediction.resolved_fields`, stores `31/50` in `ground_truth_fields`, and the commercial gate counts the asset as a model miss while still allowing final-approved publish accuracy to use the corrected fields.
+This means corrected commercial rows do not become fake model passes. If legacy vision provider predicted `37/50` and the reviewer corrected the serial to `31/50`, the held-out item keeps `37/50` in `prediction.resolved_fields`, stores `31/50` in `ground_truth_fields`, and the commercial gate counts the asset as a model miss while still allowing final-approved publish accuracy to use the corrected fields.
 
 The importer rejects rows that are missing asset, analysis, or review ids; generated or corrected resolved fields; safe object paths; or explicit `final_title_required_fields` and `final_title_unsubstantiated_fields` booleans. It also rejects asset ids that already exist in development or calibration splits. This is intentional: the gate should only pass after real, stratified, held-out commercial samples exist with auditable predictions and reviewer truth.
 

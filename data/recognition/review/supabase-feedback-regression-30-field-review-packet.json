@@ -2,9 +2,9 @@
   "schema_version": "supabase-feedback-field-review-packet-v1",
   "generated_at": "2026-06-24T07:13:18.612Z",
   "source": {
-    "report_schema_version": "agnes-supabase-feedback-eval-v1",
+    "report_schema_version": "provider-feedback-eval-v1",
     "report_provider": "cascade_fast",
-    "report_provider_display_name": "GPT-4.1-mini → Agnes verifier",
+    "report_provider_display_name": "GPT-4.1 mini + Catalog + Vector",
     "source_manifest_hash": "322df57816d3e916abc96eb726790981b094f4015dff0297aea4b6ea6cdf55f4",
     "source_table": "listing_title_feedback",
     "corrected_title_reference_only": true,

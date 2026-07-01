@@ -22,12 +22,12 @@ function printUsage() {
   console.error([
     "Usage:",
     "  npm run commercial:heldout -- --source <reviews-export.json> --out <dataset-out.json> [--dataset data/golden-dataset.json] [--replace]",
-    "  npm run commercial:heldout -- --reviewed <reviewed-manifest.json> --agnes <agnes-eval.json> --out <dataset-out.json> [--dataset data/golden-dataset.json] [--replace]",
+    "  npm run commercial:heldout -- --reviewed <reviewed-manifest.json> --provider-report <provider-eval.json> --out <dataset-out.json> [--dataset data/golden-dataset.json] [--replace]",
     "",
     "Options:",
     "  --source                         JSON export containing approved review rows.",
     "  --reviewed                       Reviewed commercial manifest with operator-approved ground_truth.",
-    "  --agnes                          Agnes evaluation report for the reviewed manifest.",
+    "  --provider-report                Provider evaluation report for the reviewed manifest.",
     "  --dataset                        Base golden dataset path. Defaults to data/golden-dataset.json.",
     "  --out                            Output dataset path. Required; use an explicit path to avoid accidental overwrite.",
     "  --replace                        Replace the existing held_out_commercial split instead of appending.",
@@ -75,7 +75,7 @@ function gateSummary(gate = {}) {
 
 const sourceArg = argValue("--source", process.env.COMMERCIAL_HELDOUT_SOURCE || "");
 const reviewedArg = argValue("--reviewed", process.env.COMMERCIAL_REVIEWED_MANIFEST || "");
-const agnesArg = argValue("--agnes", process.env.COMMERCIAL_AGNES_EVAL || "");
+const providerReportArg = argValue("--provider-report", process.env.COMMERCIAL_PROVIDER_EVAL || "");
 const datasetArg = argValue("--dataset", process.env.GOLDEN_DATASET_PATH || "data/golden-dataset.json");
 const outArg = argValue("--out", process.env.COMMERCIAL_HELDOUT_OUT || "");
 const allowRejections = hasFlag("--allow-rejections");
@@ -91,19 +91,19 @@ if (!outArg) {
   process.exit(1);
 }
 
-if (sourceArg && (reviewedArg || agnesArg)) {
-  console.error("Use either --source or --reviewed/--agnes, not both.");
+if (sourceArg && (reviewedArg || providerReportArg)) {
+  console.error("Use either --source or --reviewed/--provider-report, not both.");
   process.exit(1);
 }
 
-if (!sourceArg && (!reviewedArg || !agnesArg)) {
+if (!sourceArg && (!reviewedArg || !providerReportArg)) {
   printUsage();
   process.exit(1);
 }
 
 const sourcePath = sourceArg ? resolve(sourceArg) : "";
 const reviewedPath = reviewedArg ? resolve(reviewedArg) : "";
-const agnesPath = agnesArg ? resolve(agnesArg) : "";
+const providerReportPath = providerReportArg ? resolve(providerReportArg) : "";
 const datasetPath = resolve(datasetArg);
 const outPath = resolve(outArg);
 
@@ -121,16 +121,16 @@ try {
       allowDerivedTitleFlags: hasFlag("--allow-derived-title-flags")
     });
   } else {
-    const [reviewedManifest, agnesReport] = await Promise.all([
+    const [reviewedManifest, providerReport] = await Promise.all([
       readJsonFile(reviewedPath, "Reviewed commercial manifest"),
-      readJsonFile(agnesPath, "Agnes evaluation report")
+      readJsonFile(providerReportPath, "Provider evaluation report")
     ]);
     sourceRows = Array.isArray(reviewedManifest.items) ? reviewedManifest.items : [];
-    sourceLabel = `${reviewedPath} + ${agnesPath}`;
-    mode = "reviewed_manifest_agnes_eval";
+    sourceLabel = `${reviewedPath} + ${providerReportPath}`;
+    mode = "reviewed_manifest_provider_eval";
     buildResult = buildHeldOutCommercialItemsFromReviewedEvaluation({
       reviewedManifest,
-      agnesReport
+      providerReport
     });
   }
 

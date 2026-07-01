@@ -5,14 +5,14 @@ Branch: `v2_pai`
 
 ## Goal
 
-Move one more step away from per-request vision generation by trying cheap grounded evidence before Agnes.
+Move one more step away from per-request vision generation by trying cheap grounded evidence before legacy vision provider.
 
 The production title route is now:
 
 1. approved identity memory exact fingerprint hit
 2. recognition worker OCR/slab preflight
 3. identity resolution gate
-4. Agnes only when local grounded evidence cannot resolve identity
+4. legacy vision provider only when local grounded evidence cannot resolve identity
 5. focused reread or retrieval only when the completion policy asks for it
 
 ## What Changed
@@ -28,9 +28,9 @@ The preflight:
 - preserves candidate-level sources so field conflicts remain explicit
 - sends the evidence through `applyIdentityResolutionGate`
 
-If the identity gate returns `CONFIRMED` or `RESOLVED`, the API returns a deterministic English title without calling Agnes or OpenAI.
+If the identity gate returns `CONFIRMED` or `RESOLVED`, the API returns a deterministic English title without calling legacy vision provider or OpenAI.
 
-If the gate returns `ABSTAIN`, the recognition evidence is merged into the normal provider path so OCR/slab evidence can still override Agnes inference field by field.
+If the gate returns `ABSTAIN`, the recognition evidence is merged into the normal provider path so OCR/slab evidence can still override legacy vision provider inference field by field.
 
 ## Evidence Contract
 
@@ -58,7 +58,7 @@ It maps sources conservatively:
 
 When recognition preflight resolves identity:
 
-- Agnes calls: `0`
+- legacy vision provider calls: `0`
 - OpenAI calls: `0`
 - retrieval calls: `0`
 - writes: `0`
@@ -76,7 +76,7 @@ Recognition does not bypass identity resolution. It still returns:
 - `confidence_report`
 - deterministic renderer output
 
-Provider fallback remains available, but Agnes cannot silently overwrite printed OCR/slab evidence because both sources now enter the same field-level solver.
+Provider fallback remains available, but legacy vision provider cannot silently overwrite printed OCR/slab evidence because both sources now enter the same field-level solver.
 
 ## Remaining Work
 

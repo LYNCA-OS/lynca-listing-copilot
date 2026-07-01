@@ -75,7 +75,7 @@ Baseline audit and evaluation scaffold added before the commercial-evidence migr
 
 ### `architecture/phase-1-provider-routing-2026-06-22.md`
 
-Backend provider routing history; current mainline uses the GPT-4.1-primary cascade with Agnes as auxiliary focused verifier.
+Backend provider routing history; current mainline uses the GPT-4.1-primary cascade with legacy vision provider as auxiliary focused verifier.
 
 ### `architecture/phase-2-storage-image-quality-2026-06-22.md`
 
@@ -107,7 +107,7 @@ ListingDraft contract, approval gate, mock B-end publisher, idempotency, retry, 
 
 ### `architecture/phase-9-commercial-readiness-audit-2026-06-22.md`
 
-Machine-readable commercial readiness audit covering held-out commercial evidence, Agnes smoke, provider default safety, mock-only publishing, and external retrieval validation gaps.
+Machine-readable commercial readiness audit covering held-out commercial evidence, legacy vision provider smoke, provider default safety, mock-only publishing, and external retrieval validation gaps.
 
 ### `architecture/phase-10-delivery-report-2026-06-22.md`
 
@@ -119,7 +119,7 @@ Official eBay Browse API path for collecting a 300-image marketplace-reference c
 
 ### `architecture/phase-12-public-card-image-reference-eval-2026-06-22.md`
 
-Repeatable 300-image public Pokémon card reference evaluation for Agnes card-name recognition, including the current 296/300 strict exact-match result and its commercial-gate boundary.
+Repeatable 300-image public Pokémon card reference evaluation for legacy vision provider card-name recognition, including the current 296/300 strict exact-match result and its commercial-gate boundary.
 
 ### `architecture/phase-13-commercial-title-acceptance-policy-2026-06-23.md`
 
@@ -127,7 +127,7 @@ Semantic commercial title acceptance policy: non-standard wording can pass when 
 
 ### `architecture/phase-14-uploaded-storage-memory-gate-2026-06-23.md`
 
-Uploaded-image storage stays enabled for Agnes recognition, while feedback retention, approved-memory reuse, and training data collection remain opt-in and default off until commercial rollout.
+Uploaded-image storage stays enabled for legacy vision provider recognition, while feedback retention, approved-memory reuse, and training data collection remain opt-in and default off until commercial rollout.
 
 ### `architecture/phase-15-recognition-accuracy-r0-r1-2026-06-23.md`
 

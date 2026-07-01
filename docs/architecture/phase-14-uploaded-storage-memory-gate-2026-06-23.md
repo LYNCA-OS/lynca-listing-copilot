@@ -10,7 +10,7 @@ Production recognition should start from uploaded card images, not from external
 
 - Supabase Storage upload, verification, object-path handling, and short-lived signed read URLs remain active infrastructure.
 - Browser uploads include client-side SHA-256. Server verification records object paths, metadata, and hash status when the object bytes are available.
-- Agnes recognition should use controlled storage signed read URLs.
+- legacy vision provider recognition should use controlled storage signed read URLs.
 - Marketplace or external image URLs are allowed only for pilot stress testing and are not production recognition inputs.
 - The current marketplace real-photo pilot attempted 10 external URLs, evaluated 6, hit 4 provider errors/timeouts, and accepted 0/6 evaluated titles under the stricter critical-field policy. This is input-pipeline evidence, not a commercial accuracy claim.
 - Feedback review persistence is opt-in through `LISTING_FEEDBACK_RETENTION_ENABLED=true`.
@@ -27,7 +27,7 @@ When commercial data retention is approved:
 4. Review approval writes cleaned rows only when feedback retention is enabled.
 5. Accepted unchanged reviews become `approved_clean`.
 6. Corrected or title-override reviews become `reviewed_correction`.
-7. Future assets can query by `asset_fingerprint` or content hash before calling Agnes.
+7. Future assets can query by `asset_fingerprint` or content hash before calling legacy vision provider.
 8. Stable approved samples can later feed product training and regression evaluation.
 
 ## Non-Goals In This Phase

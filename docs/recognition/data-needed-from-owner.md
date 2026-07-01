@@ -1,6 +1,6 @@
 # Recognition Data Needed From Owner
 
-The Recognition Accuracy Program needs owner-reviewed, image-backed, field-level data. Marketplace titles, Agnes outputs, GPT outputs, or pilot test feedback cannot be treated as ground truth.
+The Recognition Accuracy Program needs owner-reviewed, image-backed, field-level data. Marketplace titles, legacy vision provider outputs, GPT outputs, or pilot test feedback cannot be treated as ground truth.
 
 ## Minimum Dataset
 
@@ -138,7 +138,7 @@ Do not upload or retain current Codex tests, manual experiments, or pilot feedba
 
 Do not create synthetic ground truth from:
 
-- Agnes output
+- legacy vision provider output
 - GPT output
 - eBay listing titles
 - seller descriptions alone

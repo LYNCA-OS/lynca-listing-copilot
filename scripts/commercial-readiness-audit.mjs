@@ -169,7 +169,7 @@ async function auditProviderPolicy() {
     single_gpt_provider_only: failures.length === 0,
     gpt_primary_fast_vision: true,
     gpt_provider_present: /\[visionProviderIds\.OPENAI_LEGACY\]/.test(registry.text),
-    mixed_model_cascade: /cascade_fast|secondary_provider_id|AGNES/i.test(registry.text) ? "present" : "removed",
+    mixed_model_cascade: /cascade_fast|secondary_provider_id/i.test(registry.text) ? "present" : "removed",
     gpt_implicit_default: failures.length === 0 ? "production_primary" : "unknown",
     standalone_gpt_default: failures.length === 0 ? "server_default" : "unknown",
     gpt_visible_button: /provider === "openai_legacy"/.test(appJs.text),

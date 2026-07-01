@@ -126,7 +126,7 @@ It does not treat:
 
 - `corrected_title`
 - `generated_title`
-- Agnes output
+- legacy vision provider output
 - GPT output
 - marketplace title text
 

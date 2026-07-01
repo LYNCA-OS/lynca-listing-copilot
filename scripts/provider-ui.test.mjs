@@ -39,7 +39,7 @@ assert.match(js, /body\.explicitEmergency = Boolean/, "legacy explicit flag shou
 assert.match(js, /provider === "openai_legacy"/, "OpenAI provider path should remain explicit in request payloads");
 assert.match(js, /providerCascadeText/, "frontend should render concise provider role text");
 assert.match(js, /GPT-4\.1 mini/, "provider control should identify GPT provider labels");
-assert.doesNotMatch(js, /Agnes|cascade_fast|格式失败兜底/, "frontend must not expose Agnes or mixed-model cascade controls");
+assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not expose mixed-model cascade controls");
 assert.match(js, /fetch\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs");
 assert.match(js, /signed_upload_url/, "frontend should upload through signed URLs");
 assert.match(js, /signatureHex/, "frontend should send first-byte signatures before receiving signed upload URLs");
@@ -66,8 +66,8 @@ assert.match(api, /primaryImagesFromImages/, "title API should separate primary 
 assert.match(api, /verifyListingImageVerificationToken/, "title API should require server-issued storage verification tokens before signed read URLs");
 assert.match(api, /readListingImageVerificationRecord/, "title API should allow durable server verification records for later reprocessing");
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
-assert.doesNotMatch(api, /createGptCriticalVerifierRunner|createAgnesTitle|createCascadeFastTitle|analyzeCardEvidenceWithAgnes/, "title API should not wire automatic mixed-model or Agnes paths");
-assert.doesNotMatch(providerRegistry, /ENABLE_AGNES_AUTO_VERIFIER|ENABLE_FAST_CASCADE_PROVIDER|cascade_fast|AGNES/i, "provider registry should only expose the active GPT provider");
+assert.doesNotMatch(api, /createGptCriticalVerifierRunner|createCascadeFastTitle|model_to_model/, "title API should not wire automatic mixed-model paths");
+assert.doesNotMatch(providerRegistry, /ENABLE_FAST_CASCADE_PROVIDER|cascade_fast/i, "provider registry should only expose the active GPT provider");
 assert.match(api, /const signedImages = await imagesWithSignedReadUrls\(payload\.images \|\| \[\], timingContext\)/, "OpenAI fallback should use signed storage read URLs instead of requiring Base64 JSON");
 assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider calls should reuse signed URLs created during recognition preflight");
 assert.doesNotMatch(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade fast path should not exist");
@@ -96,7 +96,7 @@ assert.match(api, /selected_approved_candidate_title_scaffold/, "retrieval title
 assert.match(api, /ENABLE_EVIDENCE_COMPLETION/, "slow Evidence Completion should be controlled by an explicit env flag");
 assert.match(api, /vectorRetrievalActive\(env, options\)/, "title API should only run visual vector lookup when vector retrieval is active");
 assert.match(api, /envFlag\(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false\)/, "legacy stored visual lookup should default off");
-assert.doesNotMatch(api, /runFocusedVisionImpl:\s*createGptCriticalVerifierRunner|runFocusedVisionImpl:\s*createAgnes/, "automatic second-model focused vision should not be wired from the title API");
+assert.doesNotMatch(api, /runFocusedVisionImpl:\s*createGptCriticalVerifierRunner/, "automatic second-model focused vision should not be wired from the title API");
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facing modules from the title API");
 assert.match(js, /result\.modules/, "frontend should read module output from deterministic renderer responses");

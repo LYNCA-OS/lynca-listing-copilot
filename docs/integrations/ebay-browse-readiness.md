@@ -85,7 +85,7 @@ If credentials, token minting, Browse request, or live smoke is missing:
 
 - return provider status `unavailable`
 - keep `MARKETPLACE_SEARCH_PROVIDER=ebay_browse` configured but inactive
-- continue through internal registry, approved history, Brave, official sources, and Agnes paths
+- continue through internal registry, approved history, Brave, official sources, and legacy vision provider paths
 - do not block local unit tests
 - do not degrade recognition truth by falling back to scraped marketplace pages
 

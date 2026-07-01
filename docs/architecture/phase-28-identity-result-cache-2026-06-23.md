@@ -5,7 +5,7 @@ Branch: `v2_pai`
 
 ## Goal
 
-Reduce repeated Agnes and recognition-worker calls for identical uploaded card images without weakening the Identity Resolution gate.
+Reduce repeated legacy vision provider and recognition-worker calls for identical uploaded card images without weakening the Identity Resolution gate.
 
 This phase adds a short-lived server-side cache keyed by verified primary-image content hashes. It is a cost and latency fast path only. It is not approved memory, not feedback retention, and not a training table.
 

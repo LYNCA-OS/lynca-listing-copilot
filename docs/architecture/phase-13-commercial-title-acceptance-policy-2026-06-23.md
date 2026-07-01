@@ -13,7 +13,7 @@ This phase adds a semantic title acceptance policy so the commercial evaluator d
 - `lib/listing/evaluation/title-acceptance-policy.mjs` evaluates final title quality from the title text, reviewer ground-truth fields, model predicted fields, and the dataset critical-field list.
 - `lib/listing/evaluation/golden-dataset.mjs` now computes `final_title_required_fields` and `final_title_unsubstantiated_fields` through this policy instead of trusting model-provided booleans.
 - `lib/listing/resolver/trusted-name-candidate-resolver.mjs` supports trusted structured-name correction for near misses from internal, official, grading, registry, or public structured card databases.
-- `scripts/evaluate-agnes-public-card-images.mjs` now reports both raw strict card-name exact rate and trusted structured-name exact-or-corrected rate.
+- `scripts/evaluate-legacy-vision-provider-public-card-images.mjs` now reports both raw strict card-name exact rate and trusted structured-name exact-or-corrected rate.
 
 ## Acceptance Rules
 
@@ -21,7 +21,7 @@ Accepted examples:
 
 - `23-24 Prizm Wembanyama Silver PSA 10` can pass for a reviewed `2023-24 Panini Prizm Victor Wembanyama Silver Prizm PSA 10` asset because season shorthand, last-name shorthand, and omitted brand are tolerable when the critical facts are still present.
 - A title containing `Black Gold` can pass when `Black Gold` is the reviewed set or product descriptor, because the color words are supported by trusted fields.
-- Agnes spelling near misses can be corrected only when a high-similarity, high-margin trusted structured candidate exists.
+- legacy vision provider spelling near misses can be corrected only when a high-similarity, high-margin trusted structured candidate exists.
 
 Rejected examples:
 
@@ -48,7 +48,7 @@ It cannot use open-web snippets or marketplace seller titles as an automatic cor
 
 This policy improves how held-out commercial rows will be judged once real approved-review data exists. It does not unlock the commercial readiness gate by itself.
 
-The current public 300-card Agnes run remains non-commercial reference evidence. It now has two useful signals:
+The current public 300-card legacy vision provider run remains non-commercial reference evidence. It now has two useful signals:
 
 - raw strict card-name exact rate
 - trusted structured-name exact-or-corrected rate
@@ -63,7 +63,7 @@ Run:
 npm run test:title-acceptance
 node scripts/resolver.test.mjs
 node scripts/evaluation-metrics.test.mjs
-npm run eval:agnes-public-cards -- --limit 300 --out data/eval/agnes-public-card-image-eval-latest.json
+npm run eval:legacy-vision-provider-public-cards -- --limit 300 --out data/eval/legacy-vision-provider-public-card-image-eval-latest.json
 ```
 
 The title policy tests cover near-title acceptance, wrong color/parallel rejection, wrong name rejection, missing serial rejection, wrong critical brand field rejection, and legal color words inside a reviewed set name.

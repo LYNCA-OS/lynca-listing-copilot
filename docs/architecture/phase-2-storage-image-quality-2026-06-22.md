@@ -1,11 +1,11 @@
 # Phase 2 Storage And Image Quality
 
-Status: storage signed URL slice, first heuristic image quality gate, targeted crop generation, and focused Agnes crop reread orchestration implemented
+Status: storage signed URL slice, first heuristic image quality gate, targeted crop generation, and focused legacy vision provider crop reread orchestration implemented
 Date: 2026-06-22
 
 ## What Changed
 
-This phase starts the production image path required for Agnes:
+This phase starts the production image path required for legacy vision provider:
 
 - `api/listing-image-upload-url.js`
 - `api/listing-image-verify-upload.js`
@@ -29,7 +29,7 @@ This phase starts the production image path required for Agnes:
 
 The browser can now ask the server for a Supabase Storage signed upload URL, upload the original image directly to the private bucket, and keep the returned object path on the image record.
 
-`api/listing-copilot-title.js` converts storage object paths into short-lived signed read URLs only inside the server-side Agnes request path. Signed read URLs are not saved as long-lived record fields.
+`api/listing-copilot-title.js` converts storage object paths into short-lived signed read URLs only inside the server-side legacy vision provider request path. Signed read URLs are not saved as long-lived record fields.
 
 The browser computes a first-pass capture-quality report from the decoded preview canvas and sends it with each asset request. The backend returns this report in `capture_quality` and includes it in provider prompt context.
 
@@ -48,7 +48,7 @@ Browser selects file
   -> server returns a scoped storage verification token
   -> browser sends object_path in title request
   -> server validates the token, or a matching durable verification record after token expiry, before creating a short-lived signed read URL
-  -> Agnes receives image_url
+  -> legacy vision provider receives image_url
 ```
 
 ## Security Boundaries
@@ -81,7 +81,7 @@ Implemented:
 - durable `listing_image_verifications` persistence for server-verified object metadata when Supabase REST is configured
 - best-effort cleanup delete for objects that fail post-upload verification
 - direct browser upload path
-- signed read URL creation for Agnes
+- signed read URL creation for legacy vision provider
 - object path propagation to provider requests
 - `capture_profile_id` with default `standard-card-v1`
 - blur, glare, perspective, crop, readability, and resolution scores
@@ -109,7 +109,7 @@ Still pending:
 - live validation of the scheduled retention cleanup route in production
 - multiple capture profiles and admin configuration
 - stronger glare segmentation and blur detection
-- live focused reread validation against Agnes with configured signed crop images
+- live focused reread validation against legacy vision provider with configured signed crop images
 - targeted rescan orchestration after focused reread cannot recover the blocked region
 - live storage smoke test against a real bucket
 

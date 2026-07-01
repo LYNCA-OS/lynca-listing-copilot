@@ -46,8 +46,8 @@ function commercialRow({
       id: analysisId,
       asset_id: assetId,
       route,
-      provider: "agnes",
-      model_id: "agnes-commercial-test",
+      provider: "openai_legacy",
+      model_id: "gpt-4.1-mini-2025-04-14",
       rendered_title: `${generated.year} ${generated.product} ${generated.players[0]} ${generated.serial_number}`,
       generated_resolved_fields: generated,
       usage: {
@@ -269,15 +269,15 @@ const reviewedManifest = {
   ]
 };
 
-const agnesReport = {
-  schema_version: "agnes-reviewed-commercial-accuracy-v1",
+const providerReport = {
+  schema_version: "provider-reviewed-commercial-accuracy-v1",
   results: [
     {
       source_feedback_id: "fb-001",
       asset_id: "reviewed-commercial-001",
       status: "evaluated",
       prediction: {
-        model_id: "agnes-commercial-test",
+        model_id: "gpt-4.1-mini-2025-04-14",
         route: "AI_COMPLETE_REVIEW",
         title: "2025 Topps Chrome Cooper Flagg 029/199",
         fields: resolvedFields({ serial_number: "029/199" })
@@ -292,7 +292,7 @@ const agnesReport = {
       asset_id: "reviewed-commercial-002",
       status: "evaluated",
       prediction: {
-        model_id: "agnes-commercial-test",
+        model_id: "gpt-4.1-mini-2025-04-14",
         route: "AI_COMPLETE_REVIEW",
         title: "2025 Topps Chrome Cooper Flagg Red Refractor 37/50 PSA 9",
         fields: resolvedFields({
@@ -308,12 +308,12 @@ const agnesReport = {
 
 const reviewedBuildResult = buildHeldOutCommercialItemsFromReviewedEvaluation({
   reviewedManifest,
-  agnesReport
+  providerReport
 });
 assert.equal(reviewedBuildResult.items.length, 3);
 assert.equal(reviewedBuildResult.rejected_rows.length, 0);
 assert.equal(reviewedBuildResult.warnings.length, 1);
-assert.match(reviewedBuildResult.warnings[0], /no matching Agnes evaluation result/);
+assert.match(reviewedBuildResult.warnings[0], /no matching provider evaluation result/);
 
 const reviewedExact = reviewedBuildResult.items.find((item) => item.asset_id === "reviewed-commercial-001");
 const reviewedCorrected = reviewedBuildResult.items.find((item) => item.asset_id === "reviewed-commercial-002");
@@ -358,17 +358,17 @@ assert.equal(reviewedMergeResult.evaluation.held_out_commercial_evidence.commerc
 assert.equal(reviewedMergeResult.evaluation.held_out_commercial_evidence.commercial_metrics.ai_complete_result_precision, 0.5);
 
 const reviewedPath = join(tempDir, "reviewed.json");
-const agnesPath = join(tempDir, "agnes.json");
+const providerReportPath = join(tempDir, "provider-report.json");
 const reviewedOutPath = join(tempDir, "reviewed-out.json");
 await writeFile(reviewedPath, `${JSON.stringify(reviewedManifest, null, 2)}\n`);
-await writeFile(agnesPath, `${JSON.stringify(agnesReport, null, 2)}\n`);
+await writeFile(providerReportPath, `${JSON.stringify(providerReport, null, 2)}\n`);
 
 const reviewedCli = spawnSync(process.execPath, [
   "scripts/build-held-out-commercial.mjs",
   "--reviewed",
   reviewedPath,
-  "--agnes",
-  agnesPath,
+  "--provider-report",
+  providerReportPath,
   "--dataset",
   datasetPath,
   "--out",
@@ -380,7 +380,7 @@ const reviewedCli = spawnSync(process.execPath, [
 });
 
 assert.equal(reviewedCli.status, 0, reviewedCli.stderr || reviewedCli.stdout);
-assert.match(reviewedCli.stdout, /mode: reviewed_manifest_agnes_eval/);
+assert.match(reviewedCli.stdout, /mode: reviewed_manifest_provider_eval/);
 assert.match(reviewedCli.stdout, /source_rows: 3/);
 assert.match(reviewedCli.stdout, /imported_items: 3/);
 assert.match(reviewedCli.stdout, /warnings: 1/);

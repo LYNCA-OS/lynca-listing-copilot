@@ -4,7 +4,7 @@ Status: R0/R1 infrastructure implemented; real accuracy claims remain blocked un
 
 ## Scope
 
-This phase adds the Recognition Accuracy Program foundation without replacing Agnes, retrieval, renderer, writer modules, storage, or the identity resolver.
+This phase adds the Recognition Accuracy Program foundation without replacing legacy vision provider, retrieval, renderer, writer modules, storage, or the identity resolver.
 
 Implemented boundaries:
 
@@ -20,7 +20,7 @@ Implemented boundaries:
 
 Existing implementation before this phase already included:
 
-- Agnes as the default vision provider, with GPT-4.1 emergency retry gated behind explicit controls
+- legacy vision provider as the default vision provider, with GPT-4.1 emergency retry gated behind explicit controls
 - provider status, usage accounting, smoke-provider contract tests, and response normalization
 - Supabase image upload, signed read URLs, retention cleanup, and storage verification records
 - evidence schema, resolver modules, deterministic renderer modules, and writer module edit surfaces
@@ -36,7 +36,7 @@ Still mock, unavailable, or prompt-dependent:
 - recognition worker OCR, embeddings, candidate verification, and geometric checks are explicit placeholders
 - PaddleOCR and Unlimited-OCR are not enabled by default
 - Supabase feedback rows can be exported as `NEEDS_REVIEW` candidates only; corrected titles are not field-level truth
-- Agnes still performs the main semantic extraction until the worker has proven field-level gains
+- legacy vision provider still performs the main semantic extraction until the worker has proven field-level gains
 
 ## Baseline
 

@@ -27,7 +27,7 @@ This phase adds the first LYNCA Retrieval Engine foundation:
 - `lib/listing/retrieval/retrieval-trace.mjs`
 - `scripts/retrieval.test.mjs`
 
-The retrieval layer is separate from Vision providers. Agnes and GPT-4.1 do not choose search providers, do not access arbitrary web content, and do not decide source trust tiers.
+The retrieval layer is separate from Vision providers. legacy vision provider and GPT-4.1 do not choose search providers, do not access arbitrary web content, and do not decide source trust tiers.
 
 ## Provider Routing
 

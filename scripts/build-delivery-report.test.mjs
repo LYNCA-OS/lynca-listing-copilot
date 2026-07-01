@@ -6,13 +6,11 @@ import { createDeliveryReport } from "./build-delivery-report.mjs";
 
 const tmp = await mkdtemp(join(tmpdir(), "listing-delivery-report-"));
 const datasetPath = join(tmp, "golden-dataset.json");
-const agnesSmokePath = join(tmp, "agnes-smoke.json");
+const openaiSmokePath = join(tmp, "openai-smoke.json");
 const braveSmokePath = join(tmp, "brave-smoke.json");
 const ebaySmokePath = join(tmp, "ebay-smoke.json");
 const owsSmokePath = join(tmp, "ows-smoke.json");
 const ebayCandidatesPath = join(tmp, "ebay-candidates.json");
-const publicCardEvalPath = join(tmp, "public-card-eval.json");
-const realPhotoPilotPath = join(tmp, "real-photo-pilot.json");
 const supabaseSnapshotPath = join(tmp, "supabase-live-snapshot.json");
 const supabaseCandidateReportPath = join(tmp, "supabase-candidates-report.json");
 const commercialReviewPacketPath = join(tmp, "commercial-review-packet.json");
@@ -27,8 +25,8 @@ await writeFile(datasetPath, `${JSON.stringify({
   }
 }, null, 2)}\n`);
 
-await writeFile(agnesSmokePath, `${JSON.stringify({
-  provider: "agnes",
+await writeFile(openaiSmokePath, `${JSON.stringify({
+  provider: "openai_legacy",
   status: "passed",
   generated_at: "2026-06-22T12:27:58.668Z",
   capabilities: [
@@ -37,7 +35,7 @@ await writeFile(agnesSmokePath, `${JSON.stringify({
       status: "passed",
       required: true,
       details: {
-        model_id: "agnes-2.0-flash",
+        model_id: "gpt-4.1-mini-2025-04-14",
         parse_source: "content",
         image_count: "1",
         provider_calls: "1"
@@ -48,7 +46,7 @@ await writeFile(agnesSmokePath, `${JSON.stringify({
       status: "passed",
       required: false,
       details: {
-        model_id: "agnes-2.0-flash",
+        model_id: "gpt-4.1-mini-2025-04-14",
         parse_source: "tool_call"
       }
     }
@@ -87,45 +85,6 @@ await writeFile(ebayCandidatesPath, `${JSON.stringify({
   blocked_reason: "EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are not configured.",
   queries: [],
   items: []
-}, null, 2)}\n`);
-
-await writeFile(publicCardEvalPath, `${JSON.stringify({
-  schema_version: "agnes-public-card-image-eval-v1",
-  status: "completed",
-  generated_at: "2026-06-22T13:35:00.000Z",
-  provider: "agnes",
-  target_count: 300,
-  attempted_count: 300,
-  evaluated_count: 300,
-  provider_error_count: 0,
-  card_name_exact_count: 296,
-  card_name_exact_rate: 0.986667,
-  structured_reference_name_exact_or_corrected_count: 300,
-  structured_reference_name_exact_or_corrected_rate: 1,
-  commercial_accuracy_claim_allowed: false,
-  commercial_accuracy_eval_eligible: false,
-  name_reference_eval_only: true,
-  results: []
-}, null, 2)}\n`);
-
-await writeFile(realPhotoPilotPath, `${JSON.stringify({
-  schema_version: "agnes-real-photo-card-pilot-eval-v1",
-  status: "completed",
-  generated_at: "2026-06-23T09:35:00.000Z",
-  provider: "agnes",
-  target_count: 10,
-  attempted_count: 10,
-  evaluated_count: 7,
-  provider_error_count: 3,
-  title_accepted_count: 3,
-  title_acceptance_evaluated_rate: 0.428571,
-  controlled_storage_input_count: 0,
-  external_url_input_count: 10,
-  commercial_accuracy_claim_allowed: false,
-  commercial_accuracy_eval_eligible: false,
-  marketplace_reference_only: true,
-  controlled_storage_required_for_commercial: true,
-  results: []
 }, null, 2)}\n`);
 
 await writeFile(supabaseSnapshotPath, `${JSON.stringify({
@@ -234,15 +193,13 @@ await writeFile(commercialReviewWorklistPath, `${JSON.stringify({
 
 const report = await createDeliveryReport({
   datasetPath,
-  agnesSmokePath,
   now: () => new Date("2026-06-22T13:00:00.000Z"),
   env: {
+    OPENAI_SMOKE_REPORT_PATH: openaiSmokePath,
     BRAVE_SMOKE_REPORT_PATH: braveSmokePath,
     EBAY_SMOKE_REPORT_PATH: ebaySmokePath,
     OWS_SMOKE_REPORT_PATH: owsSmokePath,
     EBAY_IMAGE_CANDIDATES_OUT: ebayCandidatesPath,
-    AGNES_PUBLIC_CARD_EVAL_OUT: publicCardEvalPath,
-    AGNES_REAL_PHOTO_PILOT_OUT: realPhotoPilotPath,
     SUPABASE_LIVE_SNAPSHOT_PATH: supabaseSnapshotPath,
     SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath,
     COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath,
@@ -262,14 +219,14 @@ for (let index = 1; index <= 28; index += 1) {
 
 assert.match(report, /Commercial claim allowed: no/);
 assert.match(report, /Held-out commercial assets: 0/);
-assert.match(report, /Agnes Integration Status/);
+assert.match(report, /GPT Vision Provider Status/);
 assert.match(report, /Smoke report: passed/);
 assert.match(report, /Brave Search Status/);
 assert.match(report, /Smoke status: skipped/);
 assert.match(report, /eBay Browse Status/);
 assert.match(report, /300-image candidate queue: skipped 0\/300/);
-assert.match(report, /Public card-name reference eval: completed exact 296\/300 \(0.986667\), trusted 300\/300 \(1\)/);
-assert.match(report, /Marketplace real-photo pilot: completed evaluated 7\/10, title accepted 3\/7 \(0.428571\), provider errors 3, inputs controlled=0 external=10/);
+assert.match(report, /Public card-name reference eval: missing/);
+assert.match(report, /Marketplace real-photo pilot: missing/);
 assert.match(report, /Supabase commercial inventory: passed rows 351, image-backed 248, no-image 103/);
 assert.match(report, /Supabase field-level ground truth: blocked required fields year=0, product=0, players=0/);
 assert.match(report, /Commercial review packet: passed tasks 248, corrected-title-as-truth=no, suggested-field-hints=248/);
@@ -281,7 +238,7 @@ assert.match(report, /Approved-memory reuse enabled: no/);
 assert.match(report, /short-lived duplicate-image fast path and is not approved memory or a training table/);
 assert.match(report, /cache hits skip recognition, retrieval, and vision provider calls/);
 assert.match(report, /Pre-provider rescan gate variable: LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED/);
-assert.match(report, /pre-provider rescan gate returns TARGETED_RESCAN_REQUIRED before recognition or Agnes/);
+assert.match(report, /pre-provider rescan gate returns TARGETED_RESCAN_REQUIRED before recognition/);
 assert.match(report, /Pre-provider targeted-rescan hits also skip recognition, retrieval, and vision provider calls/);
 assert.match(report, /Data API for service_role only/);
 assert.match(report, /OWS Fallback Status/);
@@ -289,6 +246,9 @@ assert.match(report, /Only mock_b_end is configured/);
 assert.match(report, /Skipped smoke reports are explicit missing-validation evidence/);
 assert.match(report, /label those candidates before accuracy evaluation/);
 assert.match(report, /This generated report does not execute test commands/);
+assert.match(report, /Single-Provider Operating Policy/);
+assert.match(report, /GPT-4\.1 mini remains the only production vision model/);
+assert.doesNotMatch(report, /A[g]nes/i);
 assert.doesNotMatch(report, /commercial acceptance passed/i);
 assert.doesNotMatch(report, /95% achieved/i);
 

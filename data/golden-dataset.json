@@ -48,8 +48,8 @@
         ],
         "prediction": {
           "route": "AI_COMPLETE_REVIEW",
-          "provider": "agnes",
-          "model_id": "agnes-2.0-flash",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
           "resolved_fields": {
             "year": "2025",
             "brand": "Topps",
@@ -114,8 +114,8 @@
         ],
         "prediction": {
           "route": "AI_COMPLETE_REVIEW",
-          "provider": "agnes",
-          "model_id": "agnes-2.0-flash",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
           "resolved_fields": {
             "year": "2024",
             "brand": "Panini",
@@ -194,8 +194,8 @@
         ],
         "prediction": {
           "route": "AI_COMPLETE_REVIEW",
-          "provider": "agnes",
-          "model_id": "agnes-2.0-flash",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
           "resolved_fields": {
             "year": "2023-24",
             "brand": "Panini",
@@ -260,8 +260,8 @@
         ],
         "prediction": {
           "route": "WRITER_REVIEW_REQUIRED",
-          "provider": "agnes",
-          "model_id": "agnes-2.0-flash",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
           "resolved_fields": {
             "year": "2025",
             "brand": "Topps",
@@ -385,8 +385,8 @@
         ],
         "prediction": {
           "route": "FAILED_TECHNICAL",
-          "provider": "agnes",
-          "model_id": "agnes-2.0-flash",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
           "technical_failure": true,
           "resolved_fields": {},
           "review_outcome": "TECHNICAL_FAILURE",
@@ -424,8 +424,8 @@
         ],
         "prediction": {
           "route": "NON_STANDARD_MANUAL",
-          "provider": "agnes",
-          "model_id": "agnes-2.0-flash",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
           "resolved_fields": {
             "character": "Localized promo mascot",
             "final_title_required_fields": true,

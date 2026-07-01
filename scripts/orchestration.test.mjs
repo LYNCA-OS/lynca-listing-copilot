@@ -622,7 +622,7 @@ assert.equal(focusedRereadCalls, 1);
 assert.equal(focusedRereadCompletion.resolved.serial_number, "31/50");
 assert.equal(focusedRereadCompletion.evidence.serial_number.status, "CONFIRMED");
 assert.equal(focusedRereadCompletion.usage.provider_calls, 0);
-assert.equal("agnes_calls" in focusedRereadCompletion.budget.used, false);
+assert.equal("secondary_provider_calls" in focusedRereadCompletion.budget.used, false);
 assert.equal(focusedRereadCompletion.route, "AI_COMPLETE_REVIEW");
 const focusedRereadTrace = focusedRereadCompletion.resolution_trace.find((entry) => entry.output?.focused_vision?.updated_fields?.includes("serial_number"));
 assert.equal(focusedRereadTrace.status, "executed");
@@ -788,7 +788,7 @@ assert.ok(parallelFocusedCompletion.evidence.surface_color.sources.some((source)
   return source.capture_role === "focused_reread"
     && source.region === completionActions.CROP_AND_READ_PARALLEL;
 }));
-assert.equal("agnes_calls" in parallelFocusedCompletion.budget.used, false);
+assert.equal("secondary_provider_calls" in parallelFocusedCompletion.budget.used, false);
 assert.equal(parallelFocusedCompletion.usage.provider_calls, 0);
 
 let lowConfidenceFocusedParallelAction = null;
@@ -951,7 +951,7 @@ const retryFocusedTrace = retryFocusedParallelCompletion.resolution_trace.find((
 assert.equal(retryFocusedParallelAttempts, 2);
 assert.equal(retryFocusedParallelCompletion.resolved.surface_color, "Gold");
 assert.equal(retryFocusedParallelCompletion.resolved.parallel, null);
-assert.equal("agnes_calls" in retryFocusedParallelCompletion.budget.used, false);
+assert.equal("secondary_provider_calls" in retryFocusedParallelCompletion.budget.used, false);
 assert.equal(retryFocusedTrace.output.transient_retry_attempts, 1);
 
 const compatibleFocusedParallelCompletion = await completeEvidence({

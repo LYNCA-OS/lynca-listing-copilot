@@ -102,12 +102,6 @@ function formatVisionProviderComparison(comparison = {}) {
   }).join(", ");
 }
 
-function formatProviderDelta(delta = {}) {
-  const entries = Object.entries(delta);
-  if (!entries.length) return "n/a";
-  return entries.map(([key, value]) => `${key}=${value ?? "n/a"}`).join(", ");
-}
-
 function formatAcceptanceGate(gate = {}) {
   return [
     `scope:${gate.metric_scope || "n/a"}`,
@@ -181,5 +175,4 @@ console.log(`field_error_distribution: ${formatFieldErrors(report.failure_analys
 console.log(`glare_impact: ${formatGlareImpact(report.glare_impact)}`);
 console.log(`retrieval_provider_gains: ${formatRetrievalProviderGains(report.retrieval_provider_gains)}`);
 console.log(`vision_provider_comparison: ${formatVisionProviderComparison(report.vision_provider_comparison)}`);
-console.log(`agnes_vs_openai_legacy: ${formatProviderDelta(report.vision_provider_comparison.agnes_vs_openai_legacy)}`);
 report.warnings.forEach((warning) => console.log(`warning: ${warning}`));

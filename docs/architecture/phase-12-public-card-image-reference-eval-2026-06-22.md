@@ -4,7 +4,7 @@ Date: 2026-06-22
 
 ## Scope
 
-This phase adds a repeatable public card-image reference test for Agnes.
+This phase adds a repeatable public card-image reference test for legacy vision provider.
 
 The user asked for 300 card images even if eBay is not required. This implementation uses the Pokémon TCG API card search endpoint as a structured card-image source. It collects only card records with:
 
@@ -26,7 +26,7 @@ The Pokémon TCG API is treated as a public structured reference source for card
 ## Added Files
 
 - `scripts/collect-public-card-image-candidates.mjs`
-- `scripts/evaluate-agnes-public-card-images.mjs`
+- `scripts/evaluate-legacy-vision-provider-public-card-images.mjs`
 - `scripts/public-card-image-candidates.test.mjs`
 
 ## Package Commands
@@ -37,10 +37,10 @@ Collect 300 card-image candidates:
 npm run public:cards -- --target 300 --out data/public-card-candidates/public-card-image-candidates-latest.json
 ```
 
-Evaluate card-name recognition with Agnes:
+Evaluate card-name recognition with legacy vision provider:
 
 ```bash
-npm run eval:agnes-public-cards -- --limit 300 --concurrency 3 --out data/eval/agnes-public-card-image-eval-latest.json
+npm run eval:legacy-vision-provider-public-cards -- --limit 300 --concurrency 3 --out data/eval/legacy-vision-provider-public-card-image-eval-latest.json
 ```
 
 The eval script supports resume. It reuses already evaluated rows and retries provider errors.
@@ -56,7 +56,7 @@ Candidate collection:
 - categories: `pokemon_card`
 - invalid/missing card records in the saved candidate set: `0`
 
-Agnes evaluation after retrying transient provider errors:
+legacy vision provider evaluation after retrying transient provider errors:
 
 - status: `completed`
 - attempted_count: `300`
@@ -76,7 +76,7 @@ The four strict card-name misses were spelling-level OCR/name errors:
 
 ## Accuracy Boundary
 
-This run is useful evidence that Agnes can read card names from a 300-image public card reference set at `98.6667%` strict exact-match accuracy after retrying transient provider failures.
+This run is useful evidence that legacy vision provider can read card names from a 300-image public card reference set at `98.6667%` strict exact-match accuracy after retrying transient provider failures.
 
 `npm run readiness:audit` now reports this as:
 

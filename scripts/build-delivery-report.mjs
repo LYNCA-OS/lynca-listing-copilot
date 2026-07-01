@@ -6,11 +6,8 @@ import { evaluateGoldenDataset } from "../lib/listing/evaluation/golden-dataset.
 import { createCommercialReadinessReport } from "./commercial-readiness-audit.mjs";
 
 const defaultDatasetPath = "data/golden-dataset.json";
-const defaultAgnesSmokePath = "data/smoke/agnes-smoke-latest.json";
-const defaultPublicCardEvalPath = "data/eval/agnes-public-card-image-eval-latest.json";
-const defaultRealPhotoPilotPath = "data/eval/agnes-real-photo-card-pilot-latest.json";
 const defaultSmokeReports = Object.freeze({
-  agnes: "data/smoke/agnes-smoke-latest.json",
+  openai: "data/smoke/openai-smoke-latest.json",
   brave: "data/smoke/brave-smoke-latest.json",
   ebay_browse: "data/smoke/ebay-smoke-latest.json",
   openai_web_search: "data/smoke/ows-smoke-latest.json"
@@ -147,15 +144,11 @@ function blockerLines(readiness) {
 
 export async function createDeliveryReport({
   datasetPath = defaultDatasetPath,
-  agnesSmokePath = defaultAgnesSmokePath,
-  publicCardEvalPath = defaultPublicCardEvalPath,
-  realPhotoPilotPath = defaultRealPhotoPilotPath,
   now = () => new Date(),
   env = process.env
 } = {}) {
   const readiness = await createCommercialReadinessReport({
     datasetPath,
-    agnesSmokePath,
     env
   });
   const dataset = await readJson(datasetPath, null);
@@ -164,13 +157,13 @@ export async function createDeliveryReport({
   const migrations = await listFiles("supabase/migrations", { suffix: ".sql" });
   const architectureDocs = await listFiles("docs/architecture", { suffix: ".md", prefix: "docs/architecture/" });
   const smokeReports = {
-    agnes: await readJson(env.AGNES_SMOKE_REPORT_PATH || agnesSmokePath || defaultSmokeReports.agnes, null),
+    openai: await readJson(env.OPENAI_SMOKE_REPORT_PATH || defaultSmokeReports.openai, null),
     brave: await readJson(env.BRAVE_SMOKE_REPORT_PATH || defaultSmokeReports.brave, null),
     ebay_browse: await readJson(env.EBAY_SMOKE_REPORT_PATH || defaultSmokeReports.ebay_browse, null),
     openai_web_search: await readJson(env.OWS_SMOKE_REPORT_PATH || defaultSmokeReports.openai_web_search, null)
   };
-  const publicCardEval = await readJson(env.AGNES_PUBLIC_CARD_EVAL_OUT || publicCardEvalPath, null);
-  const realPhotoPilot = await readJson(env.AGNES_REAL_PHOTO_PILOT_OUT || realPhotoPilotPath, null);
+  const publicCardEval = null;
+  const realPhotoPilot = null;
   const gate = readiness.evidence.golden_dataset?.commercial_acceptance_gate || {};
   const metrics = evaluation?.ok ? evaluation.held_out_commercial_evidence.commercial_metrics : {};
   const operational = evaluation?.ok ? evaluation.operational_metrics : {};
@@ -194,7 +187,7 @@ export async function createDeliveryReport({
     ])),
     section(2, "Implementation Summary", bullet([
       "Evidence First compatibility layer, provider routing, storage verification, image-quality gates, retrieval, completion orchestration, renderer, feedback-retention gate, publishing boundary, semantic title acceptance, eval, smoke, readiness audit, and delivery-report scaffolds are present.",
-      "GPT-4.1 mini is the default primary fast-vision path inside the cascade; Agnes is a conditional auxiliary field verifier.",
+      "GPT-4.1 mini is the only production vision provider; catalog, vector, registry, and retrieval are evidence layers, not extra vision models.",
       "Commercial acceptance remains blocked until real held-out evidence, live external retrieval validation, and a real B-end adapter exist."
     ])),
     section(3, "Architecture Changes", bullet([
@@ -207,16 +200,16 @@ export async function createDeliveryReport({
       "Use git status or PR diff as the authoritative changed-file list for a final release package.",
       "Generated smoke reports live under data/smoke/; generated public card reference and real-photo pilot reports live under data/eval/."
     ])),
-    section(5, "Agnes Integration Status", bullet([
-      `Smoke report: ${smokeSummary(smokeReports.agnes)}`,
-      `Readiness check: ${readiness.checks.find((check) => check.id === "agnes_live_smoke")?.status || "missing"}`,
-      "Agnes uses Chat Completions image_url through short-lived signed read URLs when storage is configured.",
-      "JSON text parsing remains a required fallback even when the tool-call smoke path passes."
+    section(5, "GPT Vision Provider Status", bullet([
+      `Smoke report: ${smokeSummary(smokeReports.openai)}`,
+      `Provider policy: ${readiness.checks.find((check) => check.id === "provider_default_policy")?.status || "missing"}`,
+      "Only GPT-4.1 mini is exposed through the production provider registry.",
+      "Catalog and vector data may assist candidate selection, but they cannot copy serial, grade, cert, or unverified instance fields."
     ])),
     section(6, "GPT-4.1 Primary Status", bullet([
       `Implicit default status: ${readiness.checks.find((check) => check.id === "provider_default_policy")?.details?.gpt_implicit_default || "unknown"}`,
-      "GPT-4.1 is the first-pass recognizer in the default cascade when enabled and configured.",
-      "The standalone GPT-4.1 button remains an explicit manual action so operators cannot bypass the cascade accidentally."
+      "GPT-4.1 is the primary recognizer when enabled and configured.",
+      "The standalone GPT-4.1 retry action remains explicit and does not introduce another provider."
     ])),
     section(7, "Brave Search Status", bullet([
       `Smoke status: ${smokeStatusFromReadiness(readiness, "brave")}`,
@@ -232,21 +225,21 @@ export async function createDeliveryReport({
     section(9, "OWS Fallback Status", bullet([
       `Smoke status: ${smokeStatusFromReadiness(readiness, "openai_web_search")}`,
       "OWS is a replaceable fallback retrieval provider and is separate from GPT-4.1 primary vision.",
-      "OWS is not required for normal Agnes vision flow."
+      "OWS is not required for normal GPT vision flow."
     ])),
     section(10, "Environment Variables", bullet([
       "Primary variables are documented in .env.example and README.md.",
       "Provider/model ids are allowlisted server-side.",
-      "Smoke report override variables: AGNES_SMOKE_REPORT_PATH, BRAVE_SMOKE_REPORT_PATH, EBAY_SMOKE_REPORT_PATH, OWS_SMOKE_REPORT_PATH.",
+      "Smoke report override variables: OPENAI_SMOKE_REPORT_PATH, BRAVE_SMOKE_REPORT_PATH, EBAY_SMOKE_REPORT_PATH, OWS_SMOKE_REPORT_PATH.",
       "Identity result cache variables: LISTING_IDENTITY_CACHE_ENABLED, LISTING_IDENTITY_CACHE_READ_ENABLED, LISTING_IDENTITY_CACHE_WRITE_ENABLED, LISTING_IDENTITY_CACHE_WRITE_RESOLVED, LISTING_IDENTITY_CACHE_TTL_DAYS.",
       "Pre-provider rescan gate variable: LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED.",
-      `Package scripts present: ${inlineList(scripts.filter((name) => ["check", "test", "test:mock", "eval:golden", "commercial:heldout", "readiness:audit", "public:cards", "eval:agnes-public-cards", "eval:agnes-real-photos", "smoke:agnes", "smoke:brave", "smoke:ebay", "smoke:ows"].includes(name)))}`
+      `Package scripts present: ${inlineList(scripts.filter((name) => ["check", "test", "test:mock", "eval:golden", "commercial:heldout", "readiness:audit", "public:cards", "smoke:openai", "smoke:brave", "smoke:ebay", "smoke:ows"].includes(name)))}`
     ])),
     section(11, "Storage Structure", bullet([
       "Supabase Storage bucket default: listing-card-images.",
       `Supabase feedback snapshot: ${supabaseCommercialInventorySummary(readiness)}.`,
       "Image upload/verification APIs require server-side validation, content hash handling, and short-lived read URLs.",
-      "Production recognition should pass Agnes only controlled storage signed read URLs, not marketplace or other external image URLs.",
+      "Production recognition should pass GPT only controlled storage signed read URLs, not marketplace or other external image URLs.",
       "Signed URLs are not persisted; object paths, content SHA-256 values, and verification records are the durable references.",
       "Identity result cache keys are derived only from verified primary-image content SHA-256 fingerprints.",
       "Retention cleanup exists as a server-side script and cron-protected API."
@@ -273,19 +266,19 @@ export async function createDeliveryReport({
     ])),
     section(16, "Evidence Completion Strategy", bullet([
       "Completion state tracks missing, weak, conflicting fields and next best actions.",
-      "Focused Agnes reread, retrieval constraints, candidate verification, and targeted rescan routing are wired.",
+      "Retrieval constraints, candidate verification, and targeted rescan routing are wired.",
       "Budgets bound rounds, external queries, provider calls, time, and cost."
     ])),
     section(17, "Glare Handling Strategy", bullet([
       "Image-quality gate computes blur, glare, crop, readability, resolution, and critical-region occlusion signals.",
       "Derived crops support focused reread, but generated image cleanup is not used as fact evidence.",
-      "A pre-provider rescan gate returns TARGETED_RESCAN_REQUIRED before recognition or Agnes when identity-critical regions are already occluded.",
+      "A pre-provider rescan gate returns TARGETED_RESCAN_REQUIRED before recognition when identity-critical regions are already occluded.",
       "Current implementation is a conservative heuristic gate, not industrial-grade glare segmentation."
     ])),
     section(18, "Writer UI Behavior", bullet([
       "Writer modules render compact editable sections rather than raw JSON.",
       "Module edits update corrected resolved fields and rerender deterministic titles.",
-      "Provider controls expose the GPT-4.1 primary cascade plus Agnes auxiliary status without arbitrary endpoint/model inputs."
+      "Provider controls expose GPT-4.1 mini as the single production model without arbitrary endpoint/model inputs."
     ])),
     section(19, "Title Renderer Behavior", bullet([
       "Final title is rendered deterministically from resolved fields.",
@@ -352,11 +345,11 @@ export async function createDeliveryReport({
       "No real B-end endpoint, auth scheme, payload contract, or destination URL is invented.",
       "Real adapter work requires B-end API documentation and credentials."
     ])),
-    section(27, "Agnes Auxiliary Conditions", bullet([
-      "Phase A: GPT-4.1 primary cascade with Agnes focused secondary verification.",
-      "Phase B: Agnes auto-trigger restricted to high-risk fields, with manual review on timeout.",
-      "Phase C: focused verifier policy tuned by recovery/regression rate and dangerous error rate.",
-      "Phase D: add or remove secondary verifiers based on held-out risk-coverage evidence."
+    section(27, "Single-Provider Operating Policy", bullet([
+      "Phase A: GPT-4.1 mini remains the only production vision model.",
+      "Phase B: catalog, vector, official checklist, and approved memory improve evidence recall without becoming truth by themselves.",
+      "Phase C: risky fields route to writer review or targeted rescan instead of another automatic model.",
+      "Phase D: any future provider must prove positive net benefit on held-out data before it is exposed."
     ])),
     section(28, "Next Stage Recommendations", bullet([
       "Import a real approved-review export into a held-out commercial dataset.",
@@ -386,11 +379,9 @@ export async function createDeliveryReport({
 
 export async function main(argv = process.argv, env = process.env) {
   const datasetPath = argValue(argv, "--dataset", env.GOLDEN_DATASET_PATH || defaultDatasetPath);
-  const agnesSmokePath = argValue(argv, "--agnes-smoke-report", env.SMOKE_PROVIDER_REPORT_PATH || defaultAgnesSmokePath);
   const outPath = argValue(argv, "--out", env.DELIVERY_REPORT_PATH || "");
   const report = await createDeliveryReport({
     datasetPath,
-    agnesSmokePath,
     env
   });
 

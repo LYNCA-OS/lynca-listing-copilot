@@ -294,8 +294,8 @@ const unchangedSave = await callFeedbackApi({
     }
   ],
   review_duration_ms: 1234,
-  provider: "agnes",
-  model_id: "agnes-2.0-flash",
+  provider: "openai_legacy",
+  model_id: "gpt-4.1-mini-2025-04-14",
   route: "AI_COMPLETE_REVIEW"
 });
 assert.equal(unchangedSave.statusCode, 200);

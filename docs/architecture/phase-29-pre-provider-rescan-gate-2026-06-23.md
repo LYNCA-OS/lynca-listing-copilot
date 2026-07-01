@@ -5,7 +5,7 @@ Branch: `v2_pai`
 
 ## Goal
 
-Avoid spending recognition-worker or Agnes calls on images that are already known to have identity-critical regions occluded.
+Avoid spending recognition-worker or legacy vision provider calls on images that are already known to have identity-critical regions occluded.
 
 This is a low-cost and low-loss guardrail. It does not improve model accuracy directly; it prevents bad captures from producing expensive or misleading identity attempts.
 

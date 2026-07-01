@@ -38,7 +38,7 @@ npm run delivery:report -- --dataset data/golden-dataset.commercial.json
 The generator reads:
 
 - `data/golden-dataset.json` or the `--dataset` path
-- `data/smoke/agnes-smoke-latest.json`
+- `data/smoke/legacy-vision-provider-smoke-latest.json`
 - `data/smoke/brave-smoke-latest.json`
 - `data/smoke/ebay-smoke-latest.json`
 - `data/smoke/ows-smoke-latest.json`
@@ -55,7 +55,7 @@ The generated report includes all requested final-delivery sections:
 2. Implementation summary
 3. Architecture changes
 4. Modified and new files
-5. Agnes integration status
+5. legacy vision provider integration status
 6. GPT-4.1 emergency status
 7. Brave Search status
 8. eBay Browse status

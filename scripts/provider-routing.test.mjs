@@ -13,9 +13,9 @@ const providerRegistrySource = await readFile("lib/listing/providers/provider-re
 const providerContractSource = await readFile("lib/listing/providers/provider-contract.mjs", "utf8");
 const titleApiSource = await readFile("api/listing-copilot-title.js", "utf8");
 
-assert.doesNotMatch(providerRegistrySource, /cascade_fast|ENABLE_AGNES|AGNES/i, "provider registry must not expose Agnes or cascade providers");
-assert.doesNotMatch(providerContractSource, /cascade_fast|AGNES/i, "provider contract must only keep active providers");
-assert.doesNotMatch(titleApiSource, /createAgnesTitle|createCascadeFastTitle|analyzeCardEvidenceWithAgnes|model_to_model/i, "title API must not retain automatic mixed-model provider paths");
+assert.doesNotMatch(providerRegistrySource, /cascade_fast|ENABLE_FAST_CASCADE_PROVIDER/i, "provider registry must not expose cascade providers");
+assert.doesNotMatch(providerContractSource, /cascade_fast/i, "provider contract must only keep active providers");
+assert.doesNotMatch(titleApiSource, /createCascadeFastTitle|model_to_model/i, "title API must not retain automatic mixed-model provider paths");
 
 const remoteImages = [{ url: "https://example.com/front.jpg" }];
 const dataUrlImages = [{ dataUrl: "data:image/jpeg;base64,AAAA" }];
@@ -38,7 +38,7 @@ assert.throws(
   /Unknown vision provider/i
 );
 assert.throws(
-  () => selectVisionProvider({ requestedProvider: "agnes", images: remoteImages, env }),
+  () => selectVisionProvider({ requestedProvider: "removed_legacy_provider", images: remoteImages, env }),
   /Unknown vision provider/i
 );
 
