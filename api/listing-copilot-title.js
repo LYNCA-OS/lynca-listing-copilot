@@ -3495,6 +3495,18 @@ function catalogRetrievalFamilies() {
   ];
 }
 
+function catalogRetrievalEnv(env = process.env, providerOptions = {}) {
+  const providerMode = String(providerOptions.provider_mode || providerOptions.providerMode || providerOptions.eval_mode || providerOptions.evalMode || "").replace(/\s+/g, " ").trim();
+  const evalTemporaryGtAllowed = Boolean(providerMode);
+  const correctedTitleAsTemporaryGt = evalTemporaryGtAllowed
+    && optionFlag(providerOptions, "corrected_title_as_temporary_gt", false);
+  return {
+    ...env,
+    CATALOG_EVAL_CORRECTED_TITLE_AS_GT: correctedTitleAsTemporaryGt ? "true" : env.CATALOG_EVAL_CORRECTED_TITLE_AS_GT,
+    CATALOG_CORRECTED_TITLE_AS_TEMPORARY_GT: correctedTitleAsTemporaryGt ? "true" : env.CATALOG_CORRECTED_TITLE_AS_TEMPORARY_GT
+  };
+}
+
 function vectorRetrievalUnavailablePacket(status, reason) {
   const statusCode = status === "VECTOR_RETRIEVAL_TIMEOUT"
     ? "VECTOR_RETRIEVAL_TIMEOUT"
@@ -3751,7 +3763,7 @@ async function prepareCatalogCandidateContext({
     mode: retrievalModes.INTERNAL_ONLY,
     allowedFamilies,
     maxQueries: allowedFamilies.length,
-    env
+    env: catalogRetrievalEnv(env, providerOptions)
   }));
   const packet = buildVectorCandidatePacket(retrieval, {
     limit: 5,

@@ -126,6 +126,89 @@ assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(approvedPacket), t
 assert.equal(vectorCandidatePacketAssistEligibility(approvedPacket).reason, "approved_identity_candidate_available");
 assert.deepEqual(buildVectorCandidateAssistPacket(approvedPacket).vector_retrieval.candidates.map((candidate) => candidate.candidate_identity_id), ["identity-approved"]);
 
+const catalogApprovedPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-approved-1",
+    candidate_identity_id: "identity-catalog-approved",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_url: "supabase://catalog-cards/identity-catalog-approved",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["subjects", "year", "product", "collector_number", "serial_denominator"],
+    matched_fields: ["subjects", "year", "product", "collector_number", "serial_denominator"],
+    normalized_score: 0.82,
+    fields: {
+      year: "2025",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      collector_number: "136",
+      serial_number: "31/50",
+      grade_company: "PSA",
+      card_grade: "10"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    collector_number: "136",
+    serial_number: "12/50"
+  }
+});
+assert.equal(catalogApprovedPacket.vector_retrieval.retrieval_strategy, "catalog_exact_anchor");
+assert.equal(catalogApprovedPacket.vector_retrieval.candidates.length, 1);
+assert.equal(catalogApprovedPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
+assert.equal(catalogApprovedPacket.vector_retrieval.candidates[0].fields.expected_serial_denominator, "50");
+assert.equal(catalogApprovedPacket.vector_retrieval.candidates[0].fields.serial_number, undefined, "catalog prompt packet must not copy reference serial numerator");
+assert.equal(catalogApprovedPacket.vector_retrieval.candidates[0].fields.grade_company, undefined, "catalog prompt packet must not copy reference grade company");
+assert.equal(catalogApprovedPacket.vector_retrieval.candidates[0].fields.card_grade, undefined, "catalog prompt packet must not copy reference card grade");
+assert.equal(vectorCandidatePacketAssistEligibility(catalogApprovedPacket).prompt_candidate_count, 1);
+assert.deepEqual(buildVectorCandidateAssistPacket(catalogApprovedPacket).vector_retrieval.candidates.map((candidate) => candidate.candidate_identity_id), ["identity-catalog-approved"]);
+
+const catalogTemporaryGtPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-temporary-gt",
+    candidate_identity_id: "identity-catalog-temporary-gt",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_url: "supabase://catalog-cards/identity-catalog-temporary-gt",
+    reference_metadata: {
+      retrieval_status: "",
+      source_type: "INTERNAL_CORRECTED_TITLE",
+      corrected_title_as_temporary_gt: true
+    },
+    field_derivation: {
+      corrected_title_as_temporary_gt: true,
+      title_derived_fields_are_ground_truth: true
+    },
+    supporting_fields: ["subjects", "year", "product", "collector_number"],
+    fields: {
+      year: "2025",
+      product: "Topps Chrome",
+      players: ["Temporary Player"],
+      collector_number: "24"
+    }
+  }]
+}, { limit: 5 });
+assert.equal(catalogTemporaryGtPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
+assert.equal(vectorCandidatePacketAssistEligibility(catalogTemporaryGtPacket).prompt_candidate_count, 1);
+
+const catalogCandidateOnlyPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-candidate-only",
+    candidate_identity_id: "identity-catalog-candidate-only",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    reference_metadata: { retrieval_status: "candidate" },
+    supporting_fields: ["subjects", "year", "product"],
+    fields: { year: "2025", product: "Topps Chrome", players: ["Candidate Only"] }
+  }]
+}, { limit: 5 });
+assert.equal(vectorCandidatePacketAssistEligibility(catalogCandidateOnlyPacket).reason, "no_approved_identity_candidate");
+assert.equal(buildVectorCandidateAssistPacket(catalogCandidateOnlyPacket).vector_retrieval.candidates.length, 0);
+
 const queryConflictPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "approved-wrong-neighbor",
