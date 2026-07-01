@@ -167,6 +167,59 @@ assert.equal(catalogApprovedPacket.vector_retrieval.candidates[0].fields.card_gr
 assert.equal(vectorCandidatePacketAssistEligibility(catalogApprovedPacket).prompt_candidate_count, 1);
 assert.deepEqual(buildVectorCandidateAssistPacket(catalogApprovedPacket).vector_retrieval.candidates.map((candidate) => candidate.candidate_identity_id), ["identity-catalog-approved"]);
 
+const catalogHierarchySoftConflictPacket = buildVectorCandidatePacket({
+  sources: [
+    {
+      candidate_id: "catalog-hierarchy-soft-1",
+      candidate_identity_id: "identity-catalog-hierarchy-soft",
+      provider_id: "catalog",
+      source_type: "STRUCTURED_DATABASE",
+      source_url: "supabase://catalog-cards/identity-catalog-hierarchy-soft",
+      source_trust: "APPROVED_REFERENCE",
+      supporting_fields: ["players", "year", "product", "serial_denominator"],
+      conflicting_fields: ["serial_number", "product"],
+      fields: {
+        year: "2025-26",
+        manufacturer: "Panini",
+        product: "Panini Prizm FIFA Soccer",
+        set: "Club Legends",
+        players: ["Lionel Messi"],
+        serial_number: "/199"
+      }
+    },
+    {
+      candidate_id: "catalog-hierarchy-soft-duplicate",
+      candidate_identity_id: "identity-catalog-hierarchy-soft",
+      provider_id: "catalog",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "APPROVED_REFERENCE",
+      supporting_fields: ["players", "year", "product", "serial_denominator"],
+      fields: {
+        year: "2025-26",
+        manufacturer: "Panini",
+        product: "Panini Prizm FIFA Soccer",
+        set: "Club Legends",
+        players: ["Lionel Messi"],
+        serial_number: "/199"
+      }
+    }
+  ]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025-26",
+    manufacturer: "Panini",
+    product: "Prizm FIFA Soccer",
+    set: "Club Legends",
+    players: ["Lionel Messi"],
+    serial_number: "029/199"
+  }
+});
+assert.deepEqual(catalogHierarchySoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields, []);
+assert.deepEqual(catalogHierarchySoftConflictPacket.vector_retrieval.candidates[1].conflicting_fields, []);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogHierarchySoftConflictPacket).prompt_candidate_count, 1, "duplicate same identity should count as one prompt candidate");
+assert.equal(buildVectorCandidateAssistPacket(catalogHierarchySoftConflictPacket).vector_retrieval.candidates.length, 1);
+
 const catalogTemporaryGtPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "catalog-temporary-gt",
