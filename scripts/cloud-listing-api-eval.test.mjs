@@ -302,7 +302,7 @@ async function runProvider(provider, options = {}) {
   };
 
   const report = await evaluateCloudListingApi({
-    dataset,
+    dataset: options.dataset || dataset,
     baseUrl: "https://lynca.example",
     provider,
     limit: 1,
@@ -328,6 +328,33 @@ assert.equal(openai.report.accuracy_policy.corrected_title_as_temporary_gt, fals
 assert.equal(openai.report.accuracy_policy.corrected_title_is_reviewed_title_ground_truth, true);
 assert.equal(openai.report.accuracy_policy.corrected_title_field_ground_truth, false);
 assert.equal(openai.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
+
+{
+  const serialDataset = {
+    items: [{
+      ...dataset.items[0],
+      candidate_id: "serial-card",
+      source_titles: {
+        corrected_title: "2025 Panini Prizm Test Player Auto 29/199"
+      }
+    }]
+  };
+  const serialEval = await runProvider("openai_vector", {
+    dataset: serialDataset,
+    titleResponder: () => ({
+      final_title: "2025 Panini Prizm Test Player Auto /199",
+      confidence: "HIGH",
+      provider: "openai_legacy",
+      model_id: "gpt-4.1-mini-2025-04-14",
+      usage: { provider_calls: 1, input_tokens: 1, output_tokens: 1, total_tokens: 2 }
+    })
+  });
+  assert.equal(serialEval.report.serial_number_title_analysis.reference_serial_count, 1);
+  assert.equal(serialEval.report.serial_number_title_analysis.exact_match_count, 0);
+  assert.equal(serialEval.report.serial_number_title_analysis.denominator_match_count, 1);
+  assert.equal(serialEval.report.serial_number_title_analysis.numerator_omission_count, 1);
+  assert.equal(serialEval.report.numerical_rarity_title_token_recall_avg, 1);
+}
 assert.equal(openai.report.accuracy_policy.corrected_title_temporary_gt_scope, "legacy_alias_for_reviewed_title_gt_candidate_scoring");
 assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_title_accuracy, true);
 assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);

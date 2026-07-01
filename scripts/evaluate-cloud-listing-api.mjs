@@ -370,6 +370,50 @@ function titleComparison(referenceTitle, predictionTitle) {
   };
 }
 
+function serialMatches(value = "") {
+  return [...String(value || "").matchAll(/\b0*(\d+)\s*\/\s*(\d+)\b/g)].map((match) => ({
+    exact: `${match[1]}/${match[2]}`,
+    denominator: match[2],
+    numerical_rarity: `/${match[2]}`
+  }));
+}
+
+function titleWithSerialNumeratorRemoved(value = "") {
+  return normalizeText(String(value || "").replace(/\b0*(\d+)\s*\/\s*(\d+)\b/g, "/$2"));
+}
+
+function serialTitleAnalysis(referenceTitle = "", predictionTitle = "") {
+  const referenceSerials = serialMatches(referenceTitle);
+  const predictionSerials = serialMatches(predictionTitle);
+  const predictionText = normalizeText(predictionTitle);
+  const predictionExact = new Set(predictionSerials.map((item) => item.exact));
+  const predictionDenominators = new Set(predictionSerials.map((item) => item.denominator));
+  for (const match of [...predictionText.matchAll(/(?:^|\s)\/\s*(\d+)\b/g)]) {
+    predictionDenominators.add(match[1]);
+  }
+  const details = referenceSerials.map((serial) => {
+    const exact = predictionExact.has(serial.exact);
+    const denominator = predictionDenominators.has(serial.denominator);
+    return {
+      reference_serial: serial.exact,
+      numerical_rarity: serial.numerical_rarity,
+      exact_match: exact,
+      denominator_match: denominator,
+      numerator_omitted: !exact && denominator,
+      missing: !exact && !denominator
+    };
+  });
+  return {
+    reference_serial_count: referenceSerials.length,
+    prediction_serial_count: predictionSerials.length,
+    exact_match_count: details.filter((item) => item.exact_match).length,
+    denominator_match_count: details.filter((item) => item.denominator_match).length,
+    numerator_omission_count: details.filter((item) => item.numerator_omitted).length,
+    missing_count: details.filter((item) => item.missing).length,
+    details
+  };
+}
+
 function comparisonRecall(comparison = null) {
   const value = Number(comparison?.token_recall);
   return Number.isFinite(value) ? value : 0;
@@ -1698,6 +1742,13 @@ function evaluatedResultFromData({
   const scoredTitle = normalizeText(candidateProxy?.selected_title || finalTitle);
   const rawTitleMatch = providerFailure ? null : titleComparison(referenceTitle, finalTitle);
   const titleMatch = providerFailure ? null : titleComparison(referenceTitle, scoredTitle);
+  const numericalRarityTitleMatch = providerFailure
+    ? null
+    : titleComparison(titleWithSerialNumeratorRemoved(referenceTitle), titleWithSerialNumeratorRemoved(scoredTitle));
+  const rawNumericalRarityTitleMatch = providerFailure
+    ? null
+    : titleComparison(titleWithSerialNumeratorRemoved(referenceTitle), titleWithSerialNumeratorRemoved(finalTitle));
+  const serialAnalysis = providerFailure ? null : serialTitleAnalysis(referenceTitle, scoredTitle);
   const correctCatalogRank = providerFailure ? null : correctCatalogCandidateRank(data, referenceTitle);
   const gptSelectedCorrect = providerFailure ? null : gptSelectedCorrectCatalogCandidate(data, referenceTitle);
   const copiedReferenceFields = providerFailure ? [] : copiedReferenceInstanceFields(data);
@@ -1832,6 +1883,9 @@ function evaluatedResultFromData({
     corrected_title_reference: referenceTitle,
     corrected_title_comparison: titleMatch,
     raw_corrected_title_comparison: rawTitleMatch,
+    numerical_rarity_title_comparison: numericalRarityTitleMatch,
+    raw_numerical_rarity_title_comparison: rawNumericalRarityTitleMatch,
+    serial_number_title_analysis: serialAnalysis,
     pass_at_0_72: Number(titleMatch?.token_recall || 0) >= 0.72,
     pass_at_0_80: Number(titleMatch?.token_recall || 0) >= 0.80,
     timing: data.timing || null,
@@ -1948,6 +2002,29 @@ function summarize(results = [], elapsedMs = 0) {
   const rawAverageRecallValues = results
     .map((item) => item.raw_corrected_title_comparison?.token_recall)
     .filter((value) => Number.isFinite(value));
+  const numericalRarityRecallValues = results
+    .map((item) => item.numerical_rarity_title_comparison?.token_recall)
+    .filter((value) => Number.isFinite(value));
+  const rawNumericalRarityRecallValues = results
+    .map((item) => item.raw_numerical_rarity_title_comparison?.token_recall)
+    .filter((value) => Number.isFinite(value));
+  const serialTitleTotals = results.reduce((totals, item) => {
+    const analysis = item.serial_number_title_analysis || {};
+    totals.reference_serial_count += Number(analysis.reference_serial_count || 0);
+    totals.prediction_serial_count += Number(analysis.prediction_serial_count || 0);
+    totals.exact_match_count += Number(analysis.exact_match_count || 0);
+    totals.denominator_match_count += Number(analysis.denominator_match_count || 0);
+    totals.numerator_omission_count += Number(analysis.numerator_omission_count || 0);
+    totals.missing_count += Number(analysis.missing_count || 0);
+    return totals;
+  }, {
+    reference_serial_count: 0,
+    prediction_serial_count: 0,
+    exact_match_count: 0,
+    denominator_match_count: 0,
+    numerator_omission_count: 0,
+    missing_count: 0
+  });
   const passAt072 = results.filter((item) => item.pass_at_0_72 === true).length;
   const passAt080 = results.filter((item) => item.pass_at_0_80 === true).length;
   const rawPassAt072 = results.filter((item) => Number(item.raw_corrected_title_comparison?.token_recall || 0) >= 0.72).length;
@@ -2023,6 +2100,12 @@ function summarize(results = [], elapsedMs = 0) {
     : null;
   const finalTokenRecallAvg = averageRecallValues.length
     ? Number((averageRecallValues.reduce((sum, value) => sum + value, 0) / averageRecallValues.length).toFixed(6))
+    : null;
+  const numericalRarityTokenRecallAvg = numericalRarityRecallValues.length
+    ? Number((numericalRarityRecallValues.reduce((sum, value) => sum + value, 0) / numericalRarityRecallValues.length).toFixed(6))
+    : null;
+  const rawNumericalRarityTokenRecallAvg = rawNumericalRarityRecallValues.length
+    ? Number((rawNumericalRarityRecallValues.reduce((sum, value) => sum + value, 0) / rawNumericalRarityRecallValues.length).toFixed(6))
     : null;
   return {
     attempted_count: attempted,
@@ -2137,6 +2220,16 @@ function summarize(results = [], elapsedMs = 0) {
     raw_corrected_title_token_recall_avg: rawTokenRecallAvg,
     corrected_title_token_recall_avg: finalTokenRecallAvg,
     reviewed_title_token_recall_avg: finalTokenRecallAvg,
+    raw_numerical_rarity_title_token_recall_avg: rawNumericalRarityTokenRecallAvg,
+    numerical_rarity_title_token_recall_avg: numericalRarityTokenRecallAvg,
+    serial_number_title_analysis: {
+      ...serialTitleTotals,
+      exact_match_rate: rate(serialTitleTotals.exact_match_count, serialTitleTotals.reference_serial_count),
+      denominator_match_rate: rate(serialTitleTotals.denominator_match_count, serialTitleTotals.reference_serial_count),
+      numerator_omission_rate: rate(serialTitleTotals.numerator_omission_count, serialTitleTotals.reference_serial_count),
+      missing_rate: rate(serialTitleTotals.missing_count, serialTitleTotals.reference_serial_count),
+      policy_note: "SCG marketplace titles may omit serial numerator; denominator is Numerical Rarity and is scored separately."
+    },
     raw_pass_at_0_72_count: rawPassAt072,
     raw_pass_at_0_72_rate: attempted ? Number((rawPassAt072 / attempted).toFixed(6)) : null,
     pass_at_0_72_count: passAt072,
@@ -2473,6 +2566,11 @@ export async function main(argv = process.argv, env = process.env) {
     `raw_blind_pass_at_0_72_count: ${report.raw_blind_output_accuracy?.pass_at_0_72_count ?? "n/a"}`,
     `raw_blind_pass_at_0_80_count: ${report.raw_blind_output_accuracy?.pass_at_0_80_count ?? "n/a"}`,
     `reviewed_title_token_recall_avg: ${report.reviewed_title_token_recall_avg ?? report.corrected_title_token_recall_avg}`,
+    `numerical_rarity_title_token_recall_avg: ${report.numerical_rarity_title_token_recall_avg ?? "n/a"}`,
+    `serial_exact_match_count: ${report.serial_number_title_analysis?.exact_match_count ?? "n/a"}`,
+    `serial_denominator_match_count: ${report.serial_number_title_analysis?.denominator_match_count ?? "n/a"}`,
+    `serial_numerator_omission_count: ${report.serial_number_title_analysis?.numerator_omission_count ?? "n/a"}`,
+    `serial_missing_count: ${report.serial_number_title_analysis?.missing_count ?? "n/a"}`,
     `oracle_candidate_upper_bound_pass_at_0_72_count: ${report.oracle_candidate_upper_bound?.pass_at_0_72_count ?? "n/a"}`,
     `oracle_candidate_upper_bound_pass_at_0_80_count: ${report.oracle_candidate_upper_bound?.pass_at_0_80_count ?? "n/a"}`,
     `pass_at_0_72_count: ${report.pass_at_0_72_count ?? "n/a"}`,

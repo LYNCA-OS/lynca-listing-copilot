@@ -176,7 +176,7 @@ await assert.rejects(
 );
 assert.equal(invalidOpenAiModelFetchCalled, false);
 
-assert.equal(providerServerConcurrencyLimit("openai_legacy", {}), 6);
+assert.equal(providerServerConcurrencyLimit("openai_legacy", {}), 2);
 assert.equal(providerServerConcurrencyLimit("unknown", { LISTING_PROVIDER_SERVER_CONCURRENCY: "3" }), 3);
 
 clearProviderConcurrencyForTests();
