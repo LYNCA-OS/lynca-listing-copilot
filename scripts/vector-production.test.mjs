@@ -220,6 +220,67 @@ assert.deepEqual(catalogHierarchySoftConflictPacket.vector_retrieval.candidates[
 assert.equal(vectorCandidatePacketAssistEligibility(catalogHierarchySoftConflictPacket).prompt_candidate_count, 1, "duplicate same identity should count as one prompt candidate");
 assert.equal(buildVectorCandidateAssistPacket(catalogHierarchySoftConflictPacket).vector_retrieval.candidates.length, 1);
 
+const catalogSeasonYearSoftPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-season-year-soft",
+    candidate_identity_id: "identity-catalog-season-year-soft",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    supporting_fields: ["players", "product", "serial_denominator"],
+    conflicting_fields: ["year"],
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      players: ["Victor Wembanyama Spurs"],
+      surface_color: "Gold",
+      serial_number: "/50"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2024-25",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    surface_color: "Gold",
+    serial_number: "17/50"
+  }
+});
+assert.deepEqual(catalogSeasonYearSoftPacket.vector_retrieval.candidates[0].conflicting_fields, []);
+assert.deepEqual(catalogSeasonYearSoftPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["year"]);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogSeasonYearSoftPacket).prompt_candidate_count, 1);
+
+const catalogWeakYearConflictPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-weak-year-conflict",
+    candidate_identity_id: "identity-catalog-weak-year-conflict",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    supporting_fields: ["product"],
+    conflicting_fields: ["year"],
+    fields: {
+      year: "2025-26",
+      product: "Topps Chrome",
+      players: ["Wrong Player"],
+      serial_number: "/50"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2024-25",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    serial_number: "17/50"
+  }
+});
+assert.deepEqual(catalogWeakYearConflictPacket.vector_retrieval.candidates[0].conflicting_fields.sort(), ["players", "year"]);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogWeakYearConflictPacket).reason, "approved_identity_candidate_direct_conflict");
+
 const catalogTemporaryGtPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "catalog-temporary-gt",
