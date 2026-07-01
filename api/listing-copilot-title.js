@@ -4978,6 +4978,40 @@ async function createRecognitionIdentityPreflight(payload, {
   }
 }
 
+function shouldDeferVectorUntilProviderObservation({
+  catalogContext = null,
+  lazyDecision = {},
+  providerOptions = {},
+  env = process.env
+} = {}) {
+  if (optionFlag(providerOptions, "enable_vector_lazy_mode", envFlag(env, "ENABLE_VECTOR_LAZY_MODE", true)) !== true) return false;
+  if (optionFlag(providerOptions, "enable_vector_assist", false) !== true) return false;
+  if (optionFlag(providerOptions, "force_vector_assist", false) === true) return false;
+  if (lazyDecision.skip === true) return false;
+  return catalogContext?.promptPacket !== true;
+}
+
+function retrievalFieldsFromProviderObservation(result = {}, fallback = {}) {
+  return mergeCurrentFieldsForTitleAssist(
+    fallback,
+    result.fields,
+    result.raw_provider_fields,
+    result.resolved,
+    result.resolved_fields
+  );
+}
+
+function withoutAutomaticVectorAssist(providerOptions = {}) {
+  return {
+    ...providerOptions,
+    enable_vector_assist: false,
+    enable_query_visual_embeddings: false,
+    enable_vector_retrieval: false,
+    enable_stored_visual_features: false,
+    vector_retrieval_mode: "off"
+  };
+}
+
 async function createOpenAiTitle(payload, selection, {
   recognitionEvidenceDocument = null,
   signedImages: reusableSignedImages = null,
@@ -5021,6 +5055,12 @@ async function createOpenAiTitle(payload, selection, {
       env: process.env
     })
     : { skip: false, reason: "catalog_fast_lane_budget_elapsed" };
+  const deferVectorUntilProviderObservation = shouldDeferVectorUntilProviderObservation({
+    catalogContext,
+    lazyDecision,
+    providerOptions,
+    env: process.env
+  });
   const vectorContextPromise = lazyDecision.skip
     ? Promise.resolve(skippedVectorCandidateContext({
       reason: "vector_lazy_strong_catalog_anchor",
@@ -5029,7 +5069,9 @@ async function createOpenAiTitle(payload, selection, {
       providerOptions,
       skip: lazyDecision
     }))
-    : prepareVectorCandidateContext({
+    : deferVectorUntilProviderObservation
+      ? null
+      : prepareVectorCandidateContext({
       initialPayload: baseInitialPayload,
       signedImages,
       visualFeatures,
@@ -5037,17 +5079,23 @@ async function createOpenAiTitle(payload, selection, {
       providerOptions,
       timingContext
     });
-  const [finalCatalogContext, vectorContext] = await Promise.all([
-    catalogContext ? Promise.resolve(catalogContext) : catalogContextPromise,
-    vectorContextPromise
-  ]);
-  catalogContext = finalCatalogContext;
-  const strongCatalogCandidate = catalogStrongCandidateForVectorLazy(catalogContext, resolvedForRetrieval);
+  let vectorContext = null;
+  if (deferVectorUntilProviderObservation) {
+    catalogContext = catalogContext || null;
+  } else {
+    const [finalCatalogContext, earlyVectorContext] = await Promise.all([
+      catalogContext ? Promise.resolve(catalogContext) : catalogContextPromise,
+      vectorContextPromise
+    ]);
+    catalogContext = finalCatalogContext;
+    vectorContext = earlyVectorContext;
+  }
+  const strongCatalogCandidate = catalogStrongCandidateForVectorLazy(catalogContext || {}, resolvedForRetrieval);
   const promptCandidatePacket = strongCatalogCandidate && catalogContext.promptPacket
     ? catalogContext.assistPacket
-    : vectorContext.promptPacket
+    : vectorContext?.promptPacket
       ? vectorContext.assistPacket
-      : catalogContext.promptPacket
+      : catalogContext?.promptPacket
         ? catalogContext.assistPacket
         : null;
   const assistEnabled = optionFlag(providerOptions, "enable_catalog_assist", false) === true
@@ -5072,6 +5120,55 @@ async function createOpenAiTitle(payload, selection, {
       providerResult,
       selection
     ));
+  if (deferVectorUntilProviderObservation) {
+    const providerResolvedForRetrieval = retrievalFieldsFromProviderObservation(providerResultWithEvidence, resolvedForRetrieval);
+    const lateCatalogContext = await prepareCatalogCandidateContext({
+      resolvedForRetrieval: providerResolvedForRetrieval,
+      providerOptions,
+      timingContext
+    }).catch(() => null);
+    const lateStrongCatalogCandidate = lateCatalogContext
+      ? catalogStrongCandidateForVectorLazy(lateCatalogContext, providerResolvedForRetrieval)
+      : null;
+    if (lateStrongCatalogCandidate) {
+      catalogContext = {
+        ...lateCatalogContext,
+        promptPacket: false,
+        catalog_exact_anchor_after_provider_observation: true
+      };
+      vectorContext = skippedVectorCandidateContext({
+        reason: "vector_lazy_provider_catalog_anchor",
+        visualFeatures,
+        env: process.env,
+        providerOptions,
+        skip: {
+          candidate_id: lateStrongCatalogCandidate.candidate_id || lateStrongCatalogCandidate.candidate_identity_id || "",
+          candidate_identity_id: lateStrongCatalogCandidate.candidate_identity_id || ""
+        }
+      });
+    } else {
+      catalogContext = lateCatalogContext || catalogContext || await catalogContextPromise.catch(() => null);
+      vectorContext = await prepareVectorCandidateContext({
+        initialPayload: baseInitialPayload,
+        signedImages,
+        visualFeatures,
+        resolvedForRetrieval: providerResolvedForRetrieval,
+        providerOptions,
+        timingContext
+      });
+    }
+  }
+  if (!catalogContext) catalogContext = await catalogContextPromise.catch(() => null);
+  if (!vectorContext) {
+    vectorContext = await prepareVectorCandidateContext({
+      initialPayload: baseInitialPayload,
+      signedImages,
+      visualFeatures,
+      resolvedForRetrieval,
+      providerOptions,
+      timingContext
+    });
+  }
   const mergedResult = withVisualFeatures(
     withVectorCandidateContext(
       withCatalogCandidateContext(
@@ -5085,10 +5182,13 @@ async function createOpenAiTitle(payload, selection, {
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return withOpenSetReadiness(fastPathResult, { catalogContext, vectorContext, providerOptions });
   if (assistShadowOnly) {
+    const shadowProviderOptions = vectorContext.vector_lazy_skip?.skipped === true
+      ? withoutAutomaticVectorAssist(providerOptions)
+      : providerOptions;
     const shadowResult = await withEvidenceCompletionShadow(mergedResult, initialPayload, {
       timingContext,
       visualFeatures: vectorContext.visualFeatures,
-      providerOptions,
+      providerOptions: shadowProviderOptions,
       providerId: visionProviderIds.OPENAI_LEGACY
     });
     return withOpenSetReadiness(shadowResult, { catalogContext, vectorContext, providerOptions });
