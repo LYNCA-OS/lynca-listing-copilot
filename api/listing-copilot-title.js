@@ -3648,6 +3648,63 @@ function catalogStrongCandidateForVectorLazy(context = {}, queryFields = {}) {
   return candidate && catalogCandidateHasStrongAnchor(candidate, queryFields) ? candidate : null;
 }
 
+const exactAnchorForbiddenCopyFields = Object.freeze([
+  "serial_number",
+  "serial_numerator",
+  "grade",
+  "grade_company",
+  "card_grade",
+  "auto_grade",
+  "grade_type",
+  "cert_number",
+  "certification_number"
+]);
+
+function expectedExactAnchorSavedMs(env = process.env, providerOptions = {}) {
+  const raw = providerOptions.exact_anchor_expected_saved_ms ?? env.EXACT_ANCHOR_FAST_LANE_EXPECTED_SAVED_MS;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+}
+
+function buildExactAnchorFastLaneShadow({
+  catalogContext = {},
+  resolvedForRetrieval = {},
+  providerOptions = {},
+  env = process.env,
+  lazyDecision = null
+} = {}) {
+  const candidate = catalogStrongCandidateForVectorLazy(catalogContext, resolvedForRetrieval);
+  const skipDecision = lazyDecision || shouldSkipVectorForCatalogContext({
+    catalogContext,
+    resolvedForRetrieval,
+    providerOptions,
+    env
+  });
+  if (!candidate) {
+    return {
+      exact_anchor_fast_lane_eligible: false,
+      exact_anchor_candidate_id: "",
+      exact_anchor_candidate_identity_id: "",
+      exact_anchor_reason: skipDecision?.reason || "no_strong_catalog_anchor",
+      would_skip_vector: false,
+      would_use_title_scaffold: false,
+      forbidden_to_copy_fields: [...exactAnchorForbiddenCopyFields],
+      expected_saved_ms: null
+    };
+  }
+
+  return {
+    exact_anchor_fast_lane_eligible: true,
+    exact_anchor_candidate_id: candidate.candidate_id || candidate.candidate_identity_id || "",
+    exact_anchor_candidate_identity_id: candidate.candidate_identity_id || "",
+    exact_anchor_reason: "approved_reference_strong_catalog_anchor",
+    would_skip_vector: skipDecision?.skip === true,
+    would_use_title_scaffold: true,
+    forbidden_to_copy_fields: [...exactAnchorForbiddenCopyFields],
+    expected_saved_ms: expectedExactAnchorSavedMs(env, providerOptions)
+  };
+}
+
 function shouldSkipVectorForCatalogContext({
   catalogContext = {},
   resolvedForRetrieval = {},
@@ -3928,6 +3985,7 @@ function withVectorCandidateContext(result = {}, context = {}) {
 
 function withCatalogCandidateContext(result = {}, context = {}) {
   if (!context || !context.packet) return result;
+  const exactAnchorFastLane = context.exact_anchor_fast_lane_shadow || null;
   return {
     ...result,
     catalog_retrieval: context.retrieval || null,
@@ -3935,7 +3993,17 @@ function withCatalogCandidateContext(result = {}, context = {}) {
     catalog_assist_packet: context.assistPacket || null,
     catalog_prompt_assist_used: context.promptPacket === true,
     catalog_assist_eligibility: context.catalog_assist_eligibility || null,
-    catalog_cache_hit: context.catalog_cache_hit === true
+    catalog_cache_hit: context.catalog_cache_hit === true,
+    exact_anchor_fast_lane_shadow: exactAnchorFastLane,
+    exact_anchor_fast_lane_eligible: exactAnchorFastLane?.exact_anchor_fast_lane_eligible === true,
+    exact_anchor_candidate_id: exactAnchorFastLane?.exact_anchor_candidate_id || "",
+    exact_anchor_reason: exactAnchorFastLane?.exact_anchor_reason || null,
+    would_skip_vector: exactAnchorFastLane?.would_skip_vector === true,
+    would_use_title_scaffold: exactAnchorFastLane?.would_use_title_scaffold === true,
+    forbidden_to_copy_fields: Array.isArray(exactAnchorFastLane?.forbidden_to_copy_fields)
+      ? exactAnchorFastLane.forbidden_to_copy_fields
+      : [],
+    expected_saved_ms: exactAnchorFastLane?.expected_saved_ms ?? null
   };
 }
 
@@ -5055,6 +5123,18 @@ async function createOpenAiTitle(payload, selection, {
       env: process.env
     })
     : { skip: false, reason: "catalog_fast_lane_budget_elapsed" };
+  if (catalogContext) {
+    catalogContext = {
+      ...catalogContext,
+      exact_anchor_fast_lane_shadow: buildExactAnchorFastLaneShadow({
+        catalogContext,
+        resolvedForRetrieval,
+        providerOptions,
+        env: process.env,
+        lazyDecision
+      })
+    };
+  }
   const deferVectorUntilProviderObservation = shouldDeferVectorUntilProviderObservation({
     catalogContext,
     lazyDecision,
@@ -5131,20 +5211,30 @@ async function createOpenAiTitle(payload, selection, {
       ? catalogStrongCandidateForVectorLazy(lateCatalogContext, providerResolvedForRetrieval)
       : null;
     if (lateStrongCatalogCandidate) {
+      const lateLazyDecision = {
+        skip: true,
+        reason: "strong_catalog_anchor",
+        candidate_id: lateStrongCatalogCandidate.candidate_id || lateStrongCatalogCandidate.candidate_identity_id || "",
+        candidate_identity_id: lateStrongCatalogCandidate.candidate_identity_id || ""
+      };
       catalogContext = {
         ...lateCatalogContext,
         promptPacket: false,
-        catalog_exact_anchor_after_provider_observation: true
+        catalog_exact_anchor_after_provider_observation: true,
+        exact_anchor_fast_lane_shadow: buildExactAnchorFastLaneShadow({
+          catalogContext: lateCatalogContext,
+          resolvedForRetrieval: providerResolvedForRetrieval,
+          providerOptions,
+          env: process.env,
+          lazyDecision: lateLazyDecision
+        })
       };
       vectorContext = skippedVectorCandidateContext({
         reason: "vector_lazy_provider_catalog_anchor",
         visualFeatures,
         env: process.env,
         providerOptions,
-        skip: {
-          candidate_id: lateStrongCatalogCandidate.candidate_id || lateStrongCatalogCandidate.candidate_identity_id || "",
-          candidate_identity_id: lateStrongCatalogCandidate.candidate_identity_id || ""
-        }
+        skip: lateLazyDecision
       });
     } else {
       catalogContext = lateCatalogContext || catalogContext || await catalogContextPromise.catch(() => null);
@@ -5159,6 +5249,17 @@ async function createOpenAiTitle(payload, selection, {
     }
   }
   if (!catalogContext) catalogContext = await catalogContextPromise.catch(() => null);
+  if (catalogContext && !catalogContext.exact_anchor_fast_lane_shadow) {
+    catalogContext = {
+      ...catalogContext,
+      exact_anchor_fast_lane_shadow: buildExactAnchorFastLaneShadow({
+        catalogContext,
+        resolvedForRetrieval,
+        providerOptions,
+        env: process.env
+      })
+    };
+  }
   if (!vectorContext) {
     vectorContext = await prepareVectorCandidateContext({
       initialPayload: baseInitialPayload,
@@ -5222,6 +5323,7 @@ function explicitEmergencyFromPayload(payload = {}) {
 export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
   boundedPayloadImagesFromImages,
+  buildExactAnchorFastLaneShadow,
   catalogCandidateHasStrongAnchor,
   catalogStrongCandidateForVectorLazy,
   configuredMaxPayloadImages,

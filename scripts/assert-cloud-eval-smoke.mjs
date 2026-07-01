@@ -56,9 +56,11 @@ function assertAssistEligibility(eligibility = {}, label = "") {
 
 function assertCatalogVectorSafety(report = {}, label = "") {
   assert.equal(count(report, "card_type_default_base_count"), 0, `${label} must not default card_type to Base`);
+  assert.equal(count(report, "base_without_catalog_support_count"), 0, `${label} must not carry unsupported Base`);
   assert.equal(count(report, "copied_serial_grade_cert_from_reference_count"), 0, `${label} must not copy serial/grade/cert from reference`);
   for (const item of report.results || []) {
     assert.equal(item.card_type_default_base, false, `${label} ${item.candidate_id || ""} defaulted card_type Base`);
+    assert.equal(item.base_without_catalog_support, false, `${label} ${item.candidate_id || ""} carried unsupported Base`);
     assert.equal(item.copied_serial_grade_cert_from_reference, false, `${label} ${item.candidate_id || ""} copied reference instance fields`);
   }
 }

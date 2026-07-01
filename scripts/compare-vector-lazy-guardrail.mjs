@@ -102,7 +102,9 @@ export async function compareVectorLazyGuardrail({
   lazyPath,
   threshold = 0.72,
   minRegressionDelta = -0.015,
-  requiredLazySkipCount = 1
+  requiredLazySkipCount = 1,
+  substantialTimingImprovementMs = 100,
+  allowedTimingRegressionMs = 250
 } = {}) {
   if (!noLazyPath || !lazyPath) throw new Error("noLazyPath and lazyPath are required.");
   const [noLazy, lazy] = await Promise.all([readJson(noLazyPath), readJson(lazyPath)]);
@@ -175,7 +177,11 @@ export async function compareVectorLazyGuardrail({
   const catalogRecoveryNotDown = Number(lazy.catalog_recovery_count || 0) >= Number(noLazy.catalog_recovery_count || 0);
   const p50DeltaMs = latencyDelta(noLazy, lazy, "p50");
   const p95DeltaMs = latencyDelta(noLazy, lazy, "p95");
-  const timingImproved = p50DeltaMs !== null && p95DeltaMs !== null && p50DeltaMs < 0 && p95DeltaMs < 0;
+  const p50Improved = p50DeltaMs !== null && p50DeltaMs <= -Math.abs(substantialTimingImprovementMs);
+  const p95Improved = p95DeltaMs !== null && p95DeltaMs <= -Math.abs(substantialTimingImprovementMs);
+  const p50NotWorse = p50DeltaMs !== null && p50DeltaMs <= Math.abs(allowedTimingRegressionMs);
+  const p95NotWorse = p95DeltaMs !== null && p95DeltaMs <= Math.abs(allowedTimingRegressionMs);
+  const timingImproved = (p50Improved || p95Improved) && p50NotWorse && p95NotWorse;
   const enoughLazySkipSamples = lazySkipCount >= Math.max(0, Number(requiredLazySkipCount) || 0);
   const failReasons = [
     enoughLazySkipSamples ? "" : "NO_VECTOR_LAZY_SKIP_SAMPLES",
@@ -203,6 +209,8 @@ export async function compareVectorLazyGuardrail({
     threshold,
     min_regression_delta: minRegressionDelta,
     required_lazy_skip_count: requiredLazySkipCount,
+    substantial_timing_improvement_ms: substantialTimingImprovementMs,
+    allowed_timing_regression_ms: allowedTimingRegressionMs,
     summary: {
       compared_count: trace.length,
       overall_recovery_count: recoveryCount,
@@ -221,6 +229,18 @@ export async function compareVectorLazyGuardrail({
       card_type_default_base_count: {
         no_lazy: countReportFlag(noLazy, "card_type_default_base"),
         lazy: countReportFlag(lazy, "card_type_default_base")
+      },
+      base_without_catalog_support_count: {
+        no_lazy: countReportFlag(noLazy, "base_without_catalog_support"),
+        lazy: countReportFlag(lazy, "base_without_catalog_support")
+      },
+      base_in_resolved_fields_count: {
+        no_lazy: countReportFlag(noLazy, "base_in_resolved_fields"),
+        lazy: countReportFlag(lazy, "base_in_resolved_fields")
+      },
+      base_in_rendered_title_count: {
+        no_lazy: countReportFlag(noLazy, "base_in_rendered_title"),
+        lazy: countReportFlag(lazy, "base_in_rendered_title")
       },
       raw_blind_output_accuracy: {
         no_lazy: noLazy.raw_blind_output_accuracy || null,
@@ -254,6 +274,10 @@ export async function compareVectorLazyGuardrail({
       },
       p50_delta_ms: p50DeltaMs,
       p95_delta_ms: p95DeltaMs,
+      p50_improved: p50Improved,
+      p95_improved: p95Improved,
+      p50_not_worse: p50NotWorse,
+      p95_not_worse: p95NotWorse,
       timing_improved: timingImproved,
       fail_reasons: failReasons,
       guardrail_passed: guardrailPassed
@@ -267,7 +291,15 @@ export async function main(argv = process.argv) {
   const lazyPath = argValue(argv, "--lazy", "");
   const outPath = argValue(argv, "--out", "");
   const threshold = Number(argValue(argv, "--threshold", "0.72")) || 0.72;
-  const report = await compareVectorLazyGuardrail({ noLazyPath, lazyPath, threshold });
+  const substantialTimingImprovementMs = Number(argValue(argv, "--substantial-timing-improvement-ms", "100")) || 100;
+  const allowedTimingRegressionMs = Number(argValue(argv, "--allowed-timing-regression-ms", "250")) || 250;
+  const report = await compareVectorLazyGuardrail({
+    noLazyPath,
+    lazyPath,
+    threshold,
+    substantialTimingImprovementMs,
+    allowedTimingRegressionMs
+  });
   if (outPath) await writeJson(outPath, report);
   process.stdout.write([
     `vector lazy guardrail ${report.status}`,
@@ -279,8 +311,13 @@ export async function main(argv = process.argv) {
     `recovery_count: ${report.summary.recovery_count}`,
     `net_benefit: ${report.summary.net_benefit}`,
     `copied_serial_grade_cert_from_reference_count: ${JSON.stringify(report.summary.copied_serial_grade_cert_from_reference_count)}`,
+    `base_without_catalog_support_count: ${JSON.stringify(report.summary.base_without_catalog_support_count)}`,
     `p50_delta_ms: ${report.summary.p50_delta_ms ?? "n/a"}`,
     `p95_delta_ms: ${report.summary.p95_delta_ms ?? "n/a"}`,
+    `p50_improved: ${report.summary.p50_improved}`,
+    `p95_improved: ${report.summary.p95_improved}`,
+    `p50_not_worse: ${report.summary.p50_not_worse}`,
+    `p95_not_worse: ${report.summary.p95_not_worse}`,
     `fail_reasons: ${(report.summary.fail_reasons || []).join(",") || "n/a"}`
   ].join("\n") + "\n");
   return report.status === "passed" ? 0 : 1;

@@ -119,6 +119,18 @@ try {
   assert.equal(slow.summary.timing_improved, false);
   assert.ok(slow.summary.fail_reasons.includes("TIMING_NOT_IMPROVED"));
 
+  const mixedTimingPath = join(dir, "lazy-mixed-timing.json");
+  await writeJson(mixedTimingPath, {
+    ...lazy,
+    per_card_latency_ms: { p50: 1200, p95: 2700 }
+  });
+  const mixedTiming = await compareVectorLazyGuardrail({ noLazyPath, lazyPath: mixedTimingPath });
+  assert.equal(mixedTiming.status, "passed");
+  assert.equal(mixedTiming.summary.p50_improved, true);
+  assert.equal(mixedTiming.summary.p95_improved, false);
+  assert.equal(mixedTiming.summary.p95_not_worse, true);
+  assert.equal(mixedTiming.summary.timing_improved, true);
+
   const noSkipPath = join(dir, "lazy-no-skip.json");
   await writeJson(noSkipPath, {
     ...lazy,

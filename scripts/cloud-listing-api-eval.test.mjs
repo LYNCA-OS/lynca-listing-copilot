@@ -251,6 +251,25 @@ async function runProvider(provider, options = {}) {
             catalog_candidate_identity_id: "identity-1"
           }
           : null,
+        exact_anchor_fast_lane_shadow: vectorEnabled
+          ? {
+            exact_anchor_fast_lane_eligible: true,
+            exact_anchor_candidate_id: "identity-1",
+            exact_anchor_candidate_identity_id: "identity-1",
+            exact_anchor_reason: "approved_reference_strong_catalog_anchor",
+            would_skip_vector: body.provider_options?.enable_vector_lazy_mode === true,
+            would_use_title_scaffold: true,
+            forbidden_to_copy_fields: ["serial_number", "grade_company", "card_grade", "cert_number"],
+            expected_saved_ms: null
+          }
+          : null,
+        exact_anchor_fast_lane_eligible: vectorEnabled,
+        exact_anchor_candidate_id: vectorEnabled ? "identity-1" : "",
+        exact_anchor_reason: vectorEnabled ? "approved_reference_strong_catalog_anchor" : null,
+        would_skip_vector: vectorEnabled && body.provider_options?.enable_vector_lazy_mode === true,
+        would_use_title_scaffold: vectorEnabled,
+        forbidden_to_copy_fields: vectorEnabled ? ["serial_number", "grade_company", "card_grade", "cert_number"] : [],
+        expected_saved_ms: null,
         retrieval_title_assist: vectorEnabled
           ? {
             used: true,
@@ -330,6 +349,10 @@ assert.equal(openai.report.fail_closed_candidate_count, 0);
 assert.equal(openai.report.unknown_card_ready_count, 0);
 assert.deepEqual(openai.report.catalog_prompt_candidate_ids, []);
 assert.equal(openai.report.card_type_default_base_count, 0);
+assert.equal(openai.report.base_without_catalog_support_count, 0);
+assert.equal(openai.report.base_in_resolved_fields_count, 0);
+assert.equal(openai.report.base_in_rendered_title_count, 0);
+assert.equal(openai.report.exact_anchor_fast_lane_eligible_count, 0);
 assert.equal(openai.report.copied_serial_grade_cert_from_reference_count, 0);
 assert.equal(openai.report.decision_trace[0].gpt_only_title, "2025 Topps Chrome Test Player");
 assert.equal(openai.report.breakpoint_completeness_avg.raw_provider_fields, 0.375);
@@ -407,6 +430,9 @@ assert.equal(openai.titlePayload.catalog_observation_hint, null);
     }
   });
   assert.equal(referenceCopyRisk.report.card_type_default_base_count, 1);
+  assert.equal(referenceCopyRisk.report.base_without_catalog_support_count, 1);
+  assert.equal(referenceCopyRisk.report.base_in_resolved_fields_count, 1);
+  assert.equal(referenceCopyRisk.report.base_in_rendered_title_count, 1);
   assert.equal(referenceCopyRisk.report.copied_serial_grade_cert_from_reference_count, 1);
   assert.deepEqual(referenceCopyRisk.report.decision_trace[0].copied_serial_grade_cert_from_reference_fields.sort(), ["card_grade", "grade_company", "serial_number"]);
 }
@@ -682,12 +708,20 @@ assert.equal(openaiVector.report.fail_closed_candidate_count, 0);
 assert.equal(openaiVector.report.unknown_card_ready_count, 0);
 assert.equal(openaiVector.report.retrieval_title_assist_used_count, 1);
 assert.equal(openaiVector.report.fast_path_used_count, 0);
+assert.equal(openaiVector.report.exact_anchor_fast_lane_eligible_count, 1);
+assert.equal(openaiVector.report.exact_anchor_fast_lane_eligible_rate, 1);
+assert.equal(openaiVector.report.exact_anchor_would_skip_vector_count, 1);
+assert.equal(openaiVector.report.exact_anchor_would_use_title_scaffold_count, 1);
 assert.equal(openaiVector.report.results[0].catalog_prompt_assist_used, true);
 assert.equal(openaiVector.report.results[0].catalog_cache_hit, true);
 assert.equal(openaiVector.report.results[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.results[0].vector_prompt_assist_used, true);
 assert.equal(openaiVector.report.results[0].vector_lazy_skip, true);
 assert.equal(openaiVector.report.results[0].vector_lazy_skip_reason, "vector_lazy_strong_catalog_anchor");
+assert.equal(openaiVector.report.results[0].exact_anchor_fast_lane_eligible, true);
+assert.equal(openaiVector.report.results[0].exact_anchor_candidate_id, "identity-1");
+assert.equal(openaiVector.report.results[0].exact_anchor_would_skip_vector, true);
+assert.equal(openaiVector.report.results[0].exact_anchor_would_use_title_scaffold, true);
 assert.equal(openaiVector.report.results[0].vector_raw_candidate_count, 2);
 assert.deepEqual(openaiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
 assert.equal(openaiVector.report.results[0].open_set_status, "KNOWN_CATALOG_ASSISTED");
@@ -697,6 +731,8 @@ assert.deepEqual(openaiVector.report.results[0].retrieval_providers_used, ["cata
 assert.equal(openaiVector.report.decision_trace[0].catalog_vector_title, "2025 Topps Chrome Test Player");
 assert.equal(openaiVector.report.decision_trace[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.decision_trace[0].vector_prompt_candidate_count, 1);
+assert.equal(openaiVector.report.decision_trace[0].exact_anchor_fast_lane_eligible, true);
+assert.equal(openaiVector.report.decision_trace[0].exact_anchor_would_skip_vector, true);
 assert.equal(openaiVector.report.decision_trace[0].open_set_status, "KNOWN_CATALOG_ASSISTED");
 assert.equal(openaiVector.report.decision_trace[0].retrieval_title_assist_used, true);
 assert.equal(openaiVector.report.decision_trace[0].retrieval_title_assist.candidate_identity_id, "identity-1");

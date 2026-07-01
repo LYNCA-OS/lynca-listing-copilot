@@ -1135,12 +1135,37 @@ function catalogBaseSupport(data = {}) {
 }
 
 function cardTypeDefaultBaseDetected(data = {}) {
+  return baseWithoutCatalogSupportDetected(data);
+}
+
+function layerHasBase(layer = {}) {
+  return /^base$/i.test(normalizeText(fieldValue(layer, "card_type")))
+    || /^base$/i.test(normalizeText(fieldValue(layer, "official_card_type")))
+    || /^base$/i.test(normalizeText(fieldValue(layer, "insert")));
+}
+
+function baseInResolvedFieldsDetected(data = {}) {
+  const resolved = data.resolved_fields || data.resolved || {};
+  return layerHasBase(resolved);
+}
+
+function baseInRenderedTitleDetected(data = {}) {
+  const rendered = data.rendered_fields?.fields || data.rendered_fields || {};
+  const titles = [
+    data.final_title,
+    data.rendered_title,
+    data.title,
+    data.model_title_suggestion
+  ];
+  return layerHasBase(rendered) || titles.some((title) => /\bBase\b/i.test(normalizeText(title)));
+}
+
+function baseWithoutCatalogSupportDetected(data = {}) {
   const resolved = data.resolved_fields || data.resolved || {};
   const rendered = data.rendered_fields?.fields || data.rendered_fields || {};
   const raw = data.fields || {};
-  const cardTypeBase = [resolved, rendered, raw].some((layer) => /^base$/i.test(normalizeText(fieldValue(layer, "card_type"))));
-  const officialBase = [resolved, rendered, raw].some((layer) => /^base$/i.test(normalizeText(fieldValue(layer, "official_card_type"))));
-  if (!cardTypeBase && !officialBase) return false;
+  const anyBase = [resolved, rendered, raw].some(layerHasBase) || baseInRenderedTitleDetected(data);
+  if (!anyBase) return false;
   return !catalogBaseSupport(data);
 }
 
@@ -1227,6 +1252,13 @@ function perCardDecisionTrace(results = []) {
     vector_lazy_skip_reason: item.vector_lazy_skip_reason || null,
     vector_lazy_skip_catalog_candidate_id: item.vector_lazy_skip_catalog_candidate_id || "",
     vector_lazy_skip_catalog_candidate_identity_id: item.vector_lazy_skip_catalog_candidate_identity_id || "",
+    exact_anchor_fast_lane_shadow: item.exact_anchor_fast_lane_shadow || null,
+    exact_anchor_fast_lane_eligible: item.exact_anchor_fast_lane_eligible === true,
+    exact_anchor_candidate_id: item.exact_anchor_candidate_id || "",
+    exact_anchor_reason: item.exact_anchor_reason || null,
+    exact_anchor_would_skip_vector: item.exact_anchor_would_skip_vector === true,
+    exact_anchor_would_use_title_scaffold: item.exact_anchor_would_use_title_scaffold === true,
+    exact_anchor_expected_saved_ms: item.exact_anchor_expected_saved_ms ?? null,
     vector_assist_eligibility: item.vector_assist_eligibility || null,
     vector_selected_candidate_id: item.vector_selected_candidate_id || "",
     vector_selected: Boolean(item.vector_selected_candidate_id || item.visual_vector_selected_count > 0),
@@ -1240,6 +1272,9 @@ function perCardDecisionTrace(results = []) {
     fast_path_used: item.fast_path_used === true,
     fast_path: item.fast_path || null,
     card_type_default_base: item.card_type_default_base === true,
+    base_without_catalog_support: item.base_without_catalog_support === true,
+    base_in_resolved_fields: item.base_in_resolved_fields === true,
+    base_in_rendered_title: item.base_in_rendered_title === true,
     copied_serial_grade_cert_from_reference: item.copied_serial_grade_cert_from_reference === true,
     copied_serial_grade_cert_from_reference_fields: item.copied_serial_grade_cert_from_reference_fields || [],
     outcome: decisionOutcomeForSingleRun(item),
@@ -1739,6 +1774,13 @@ function evaluatedResultFromData({
     vector_lazy_skip_reason: data.vector_lazy_skip?.reason || null,
     vector_lazy_skip_catalog_candidate_id: data.vector_lazy_skip?.catalog_candidate_id || "",
     vector_lazy_skip_catalog_candidate_identity_id: data.vector_lazy_skip?.catalog_candidate_identity_id || "",
+    exact_anchor_fast_lane_shadow: data.exact_anchor_fast_lane_shadow || null,
+    exact_anchor_fast_lane_eligible: data.exact_anchor_fast_lane_eligible === true,
+    exact_anchor_candidate_id: data.exact_anchor_candidate_id || data.exact_anchor_fast_lane_shadow?.exact_anchor_candidate_id || "",
+    exact_anchor_reason: data.exact_anchor_reason || data.exact_anchor_fast_lane_shadow?.exact_anchor_reason || null,
+    exact_anchor_would_skip_vector: data.would_skip_vector === true || data.exact_anchor_fast_lane_shadow?.would_skip_vector === true,
+    exact_anchor_would_use_title_scaffold: data.would_use_title_scaffold === true || data.exact_anchor_fast_lane_shadow?.would_use_title_scaffold === true,
+    exact_anchor_expected_saved_ms: data.expected_saved_ms ?? data.exact_anchor_fast_lane_shadow?.expected_saved_ms ?? null,
     open_set_readiness: openSetReadiness,
     open_set_status: openSetReadiness?.status || null,
     known_catalog_candidate_available: openSetReadiness?.known_catalog_candidate_available === true,
@@ -1771,6 +1813,9 @@ function evaluatedResultFromData({
     fast_path: data.fast_path || null,
     fast_path_used: fastPathUsed(data),
     card_type_default_base: providerFailure ? false : cardTypeDefaultBaseDetected(data),
+    base_without_catalog_support: providerFailure ? false : baseWithoutCatalogSupportDetected(data),
+    base_in_resolved_fields: providerFailure ? false : baseInResolvedFieldsDetected(data),
+    base_in_rendered_title: providerFailure ? false : baseInRenderedTitleDetected(data),
     copied_serial_grade_cert_from_reference: copiedReferenceFields.length > 0,
     copied_serial_grade_cert_from_reference_fields: copiedReferenceFields,
     retrieval_providers_used: providersUsed(data),
@@ -1890,6 +1935,12 @@ function summarize(results = [], elapsedMs = 0) {
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
   const fastPathUsedCount = results.filter((item) => item.fast_path_used === true).length;
   const cardTypeDefaultBaseCount = results.filter((item) => item.card_type_default_base === true).length;
+  const baseWithoutCatalogSupportCount = results.filter((item) => item.base_without_catalog_support === true).length;
+  const baseInResolvedFieldsCount = results.filter((item) => item.base_in_resolved_fields === true).length;
+  const baseInRenderedTitleCount = results.filter((item) => item.base_in_rendered_title === true).length;
+  const exactAnchorFastLaneEligibleCount = results.filter((item) => item.exact_anchor_fast_lane_eligible === true).length;
+  const exactAnchorWouldSkipVectorCount = results.filter((item) => item.exact_anchor_would_skip_vector === true).length;
+  const exactAnchorWouldUseTitleScaffoldCount = results.filter((item) => item.exact_anchor_would_use_title_scaffold === true).length;
   const copiedSerialGradeCertFromReferenceCount = results.filter((item) => item.copied_serial_grade_cert_from_reference === true).length;
   const averageRecallValues = results
     .map((item) => item.corrected_title_comparison?.token_recall)
@@ -2064,7 +2115,14 @@ function summarize(results = [], elapsedMs = 0) {
     unknown_card_ready_count: unknownCardReadyCount,
     retrieval_title_assist_used_count: retrievalTitleAssistUsedCount,
     fast_path_used_count: fastPathUsedCount,
+    exact_anchor_fast_lane_eligible_count: exactAnchorFastLaneEligibleCount,
+    exact_anchor_fast_lane_eligible_rate: rate(exactAnchorFastLaneEligibleCount),
+    exact_anchor_would_skip_vector_count: exactAnchorWouldSkipVectorCount,
+    exact_anchor_would_use_title_scaffold_count: exactAnchorWouldUseTitleScaffoldCount,
     card_type_default_base_count: cardTypeDefaultBaseCount,
+    base_without_catalog_support_count: baseWithoutCatalogSupportCount,
+    base_in_resolved_fields_count: baseInResolvedFieldsCount,
+    base_in_rendered_title_count: baseInRenderedTitleCount,
     copied_serial_grade_cert_from_reference_count: copiedSerialGradeCertFromReferenceCount,
     visual_feature_count: storedVisualFeatureCount,
     provider_truncation_retry_count: truncationRetryCount,
@@ -2400,7 +2458,14 @@ export async function main(argv = process.argv, env = process.env) {
     `unknown_card_ready_count: ${report.unknown_card_ready_count ?? "n/a"}`,
     `retrieval_title_assist_used_count: ${report.retrieval_title_assist_used_count ?? "n/a"}`,
     `fast_path_used_count: ${report.fast_path_used_count ?? "n/a"}`,
+    `exact_anchor_fast_lane_eligible_count: ${report.exact_anchor_fast_lane_eligible_count ?? "n/a"}`,
+    `exact_anchor_fast_lane_eligible_rate: ${report.exact_anchor_fast_lane_eligible_rate ?? "n/a"}`,
+    `exact_anchor_would_skip_vector_count: ${report.exact_anchor_would_skip_vector_count ?? "n/a"}`,
+    `exact_anchor_would_use_title_scaffold_count: ${report.exact_anchor_would_use_title_scaffold_count ?? "n/a"}`,
     `card_type_default_base_count: ${report.card_type_default_base_count ?? "n/a"}`,
+    `base_without_catalog_support_count: ${report.base_without_catalog_support_count ?? "n/a"}`,
+    `base_in_resolved_fields_count: ${report.base_in_resolved_fields_count ?? "n/a"}`,
+    `base_in_rendered_title_count: ${report.base_in_rendered_title_count ?? "n/a"}`,
     `copied_serial_grade_cert_from_reference_count: ${report.copied_serial_grade_cert_from_reference_count ?? "n/a"}`,
     `visual_feature_count: ${report.visual_feature_count ?? "n/a"}`,
     `provider_truncation_retry_count: ${report.provider_truncation_retry_count ?? "n/a"}`,

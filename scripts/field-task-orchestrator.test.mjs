@@ -109,6 +109,10 @@ assert.equal(report.timing.time_to_final_assisted_title_ms, 1420);
 
 const attached = attachFieldTaskOrchestration({ ...baseResult, timing }, { timing });
 assert.equal(attached.module_task_status.vector_retrieval_lazy, "SUPPORTED");
+assert.equal(Array.isArray(attached.evidence_patches), true);
+assert.equal(attached.time_to_first_field_ms, 1200);
+assert.equal(attached.time_to_core_identity_ms, 1200);
+assert.equal(attached.time_to_final_assisted_title_ms, 1420);
 assert.equal(attached.timing.time_to_writer_draft_ms, 1200);
 assert.equal(attached.timing.per_task_latency_ms.catalog_exact_code_lookup, 82);
 
