@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,14 @@ async function writeJson(path, value) {
   await writeFile(resolved, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+async function loadDataset(input) {
+  if (!input) throw new Error("--dataset is required.");
+  if (typeof input === "string") {
+    return JSON.parse(await readFile(resolve(input), "utf8"));
+  }
+  return input;
+}
+
 function defaultOutDir() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   return `data/eval/timing-accuracy-smoke/${stamp}`;
@@ -50,9 +58,10 @@ export async function runTimingAccuracySmoke({
   if (!baseUrl) throw new Error("--base-url or API_BASE_URL is required.");
   if (!username) throw new Error("--username or METAVERSE_USERNAME is required.");
   if (!password) throw new Error("--password or METAVERSE_PASSWORD is required.");
+  const datasetObject = await loadDataset(dataset);
 
   const baseOptions = {
-    dataset,
+    dataset: datasetObject,
     baseUrl,
     provider,
     limit,
