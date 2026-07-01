@@ -285,7 +285,8 @@ function cloudProviderForMode(providerMode) {
 
 function providerOptionsForMode(providerMode, {
   correctedTitleAsTemporaryGt = true,
-  sendCorrectedTitleHintToCloud = false
+  sendCorrectedTitleHintToCloud = false,
+  disableVectorLazyMode = false
 } = {}) {
   const catalogAssist = providerMode === providerModes.OPENAI_CATALOG || providerMode === providerModes.OPENAI_VECTOR;
   const vectorAssist = providerMode === providerModes.OPENAI_VECTOR;
@@ -296,6 +297,7 @@ function providerOptionsForMode(providerMode, {
     120000
   );
   return {
+    provider_mode: providerMode,
     single_model_fast: !catalogAssist && !vectorAssist,
     corrected_title_as_temporary_gt: temporaryGt,
     send_corrected_title_hint_to_cloud: sendHintToCloud,
@@ -307,6 +309,7 @@ function providerOptionsForMode(providerMode, {
     enable_query_visual_embeddings: vectorAssist,
     enable_vector_retrieval: vectorAssist,
     vector_retrieval_mode: vectorAssist ? "assist" : "off",
+    enable_vector_lazy_mode: vectorAssist ? disableVectorLazyMode !== true : false,
     vector_corrected_title_as_temporary_gt: vectorAssist && temporaryGt,
     vector_query_timeout_ms: vectorAssist ? vectorQueryTimeoutMs : undefined,
     vector_retrieval_internal_top_n: vectorAssist ? 10 : undefined,
@@ -315,6 +318,7 @@ function providerOptionsForMode(providerMode, {
     eval_flags: {
       ENABLE_CATALOG_ASSIST: catalogAssist,
       ENABLE_VECTOR_ASSIST: vectorAssist,
+      ENABLE_VECTOR_LAZY_MODE: vectorAssist ? disableVectorLazyMode !== true : false,
       CORRECTED_TITLE_AS_TEMPORARY_GT: temporaryGt,
       SEND_CORRECTED_TITLE_HINT_TO_CLOUD: sendHintToCloud,
       BLIND_TO_CORRECTED_TITLE_HINT: !sendHintToCloud
@@ -1208,6 +1212,7 @@ function perCardDecisionTrace(results = []) {
     catalog_prompt_candidate_count: item.catalog_prompt_candidate_count || 0,
     catalog_prompt_candidate_ids: item.catalog_prompt_candidate_ids || [],
     catalog_prompt_assist_used: item.catalog_prompt_assist_used === true,
+    catalog_cache_hit: item.catalog_cache_hit === true,
     catalog_assist_eligibility: item.catalog_assist_eligibility || null,
     catalog_selected_candidate_id: item.catalog_selected_candidate_id || "",
     catalog_selected: Boolean(item.catalog_selected_candidate_id || item.catalog_candidate_selected_count > 0),
@@ -1215,6 +1220,10 @@ function perCardDecisionTrace(results = []) {
     vector_prompt_candidate_count: item.vector_prompt_candidate_count || 0,
     vector_prompt_candidate_ids: item.vector_prompt_candidate_ids || [],
     vector_prompt_assist_used: item.vector_prompt_assist_used === true,
+    vector_lazy_skip: item.vector_lazy_skip === true,
+    vector_lazy_skip_reason: item.vector_lazy_skip_reason || null,
+    vector_lazy_skip_catalog_candidate_id: item.vector_lazy_skip_catalog_candidate_id || "",
+    vector_lazy_skip_catalog_candidate_identity_id: item.vector_lazy_skip_catalog_candidate_identity_id || "",
     vector_assist_eligibility: item.vector_assist_eligibility || null,
     vector_selected_candidate_id: item.vector_selected_candidate_id || "",
     vector_selected: Boolean(item.vector_selected_candidate_id || item.visual_vector_selected_count > 0),
@@ -1704,6 +1713,7 @@ function evaluatedResultFromData({
     catalog_candidate_packet: data.catalog_candidate_packet || null,
     catalog_prompt_assist_used: data.catalog_prompt_assist_used === true,
     catalog_assist_eligibility: data.catalog_assist_eligibility || null,
+    catalog_cache_hit: data.catalog_cache_hit === true,
     catalog_prompt_candidate_ids: catalogAssistPromptCandidateIds(data),
     retrieval_title_assist: data.retrieval_title_assist || null,
     retrieval_title_assist_used: data.retrieval_title_assist?.used === true,
@@ -1716,6 +1726,10 @@ function evaluatedResultFromData({
     vector_conflict_blocked_count: vectorAssistCount(data, "conflict_blocked_count", 0),
     vector_prompt_candidate_count: vectorPromptCandidateCount(data),
     vector_prompt_candidate_ids: vectorAssistPromptCandidateIds(data),
+    vector_lazy_skip: data.vector_lazy_skip?.skipped === true,
+    vector_lazy_skip_reason: data.vector_lazy_skip?.reason || null,
+    vector_lazy_skip_catalog_candidate_id: data.vector_lazy_skip?.catalog_candidate_id || "",
+    vector_lazy_skip_catalog_candidate_identity_id: data.vector_lazy_skip?.catalog_candidate_identity_id || "",
     open_set_readiness: openSetReadiness,
     open_set_status: openSetReadiness?.status || null,
     known_catalog_candidate_available: openSetReadiness?.known_catalog_candidate_available === true,
@@ -1841,6 +1855,7 @@ function summarize(results = [], elapsedMs = 0) {
   const catalogPromptCandidateCount = results.reduce((sum, item) => sum + Number(item.catalog_prompt_candidate_count || 0), 0);
   const catalogCandidateSelectedCount = results.reduce((sum, item) => sum + Number(item.catalog_candidate_selected_count || 0), 0);
   const catalogPromptAssistUsedCount = results.filter((item) => item.catalog_prompt_assist_used === true).length;
+  const catalogCacheHitCount = results.filter((item) => item.catalog_cache_hit === true).length;
   const catalogPromptCandidateIds = [...new Set(results.flatMap((item) => Array.isArray(item.catalog_prompt_candidate_ids) ? item.catalog_prompt_candidate_ids : []))];
   const correctCatalogIdentityAvailableCount = results.filter((item) => item.correct_catalog_identity_available === true).length;
   const correctCandidateRecallAt1 = results.filter((item) => item.correct_candidate_recall_at_1 === true).length;
@@ -1856,6 +1871,7 @@ function summarize(results = [], elapsedMs = 0) {
   const vectorConflictBlockedCount = results.reduce((sum, item) => sum + Number(item.vector_conflict_blocked_count || 0), 0);
   const vectorPromptCandidateCount = results.reduce((sum, item) => sum + Number(item.vector_prompt_candidate_count || 0), 0);
   const vectorPromptCandidateIds = [...new Set(results.flatMap((item) => Array.isArray(item.vector_prompt_candidate_ids) ? item.vector_prompt_candidate_ids : []))];
+  const vectorLazySkipCount = results.filter((item) => item.vector_lazy_skip === true).length;
   const retrievalTitleAssistUsedCount = results.filter((item) => item.retrieval_title_assist_used === true).length;
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
@@ -1979,6 +1995,8 @@ function summarize(results = [], elapsedMs = 0) {
     catalog_candidate_count: catalogCandidateCountTotal,
     catalog_prompt_candidate_count: catalogPromptCandidateCount,
     catalog_prompt_assist_used_count: catalogPromptAssistUsedCount,
+    catalog_cache_hit_count: catalogCacheHitCount,
+    catalog_cache_hit_rate: rate(catalogCacheHitCount),
     catalog_prompt_candidate_ids: catalogPromptCandidateIds,
     catalog_candidate_selected_count: catalogCandidateSelectedCount,
     catalog_candidate_available_rate: rate(correctCatalogIdentityAvailableCount),
@@ -2019,6 +2037,8 @@ function summarize(results = [], elapsedMs = 0) {
     vector_conflict_blocked_count: vectorConflictBlockedCount,
     vector_prompt_candidate_count: vectorPromptCandidateCount,
     vector_prompt_candidate_ids: vectorPromptCandidateIds,
+    vector_lazy_skip_count: vectorLazySkipCount,
+    vector_lazy_skip_rate: rate(vectorLazySkipCount),
     open_set_status_counts: openSetStatusCounts,
     known_catalog_candidate_available_count: knownCatalogCandidateAvailableCount,
     catalog_gap_queue_candidate_count: catalogGapQueueCandidateCount,
@@ -2094,6 +2114,7 @@ export async function evaluateCloudListingApi({
   maxTitleLength = 80,
   correctedTitleAsTemporaryGt = true,
   sendCorrectedTitleHintToCloud = false,
+  disableVectorLazyMode = false,
   providerErrorRetries = 1,
   providerErrorRetryDelayMs = 1500,
   skipPreflight = false,
@@ -2107,7 +2128,8 @@ export async function evaluateCloudListingApi({
   const providerMode = normalizeProviderMode(provider);
   const evalOptions = {
     correctedTitleAsTemporaryGt,
-    sendCorrectedTitleHintToCloud
+    sendCorrectedTitleHintToCloud,
+    disableVectorLazyMode
   };
 
   const limitCount = Math.max(0, Math.trunc(Number(limit) || 0));
@@ -2267,6 +2289,8 @@ export async function main(argv = process.argv, env = process.env) {
   const sendCorrectedTitleHintToCloud = hasFlag(argv, "--send-corrected-title-hint-to-cloud")
     || hasFlag(argv, "--legacy-corrected-title-hint")
     || boolValue(runtimeEnv.SEND_CORRECTED_TITLE_HINT_TO_CLOUD ?? runtimeEnv.CLOUD_EVAL_SEND_CORRECTED_TITLE_HINT_TO_CLOUD, false);
+  const disableVectorLazyMode = hasFlag(argv, "--disable-vector-lazy-mode")
+    || boolValue(runtimeEnv.CLOUD_EVAL_DISABLE_VECTOR_LAZY_MODE, false);
   const progress = hasFlag(argv, "--progress");
   const checkpointPath = argValue(argv, "--checkpoint-path", hasFlag(argv, "--checkpoint") ? outPath : "");
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
@@ -2284,6 +2308,7 @@ export async function main(argv = process.argv, env = process.env) {
     requestTimeoutMs,
     correctedTitleAsTemporaryGt,
     sendCorrectedTitleHintToCloud,
+    disableVectorLazyMode,
     providerErrorRetries,
     providerErrorRetryDelayMs,
     skipPreflight,
@@ -2320,6 +2345,8 @@ export async function main(argv = process.argv, env = process.env) {
     `catalog_candidate_available_rate: ${report.catalog_candidate_available_rate ?? "n/a"}`,
     `catalog_prompt_candidate_count: ${report.catalog_prompt_candidate_count ?? "n/a"}`,
     `catalog_prompt_assist_used_count: ${report.catalog_prompt_assist_used_count ?? "n/a"}`,
+    `catalog_cache_hit_count: ${report.catalog_cache_hit_count ?? "n/a"}`,
+    `catalog_cache_hit_rate: ${report.catalog_cache_hit_rate ?? "n/a"}`,
     `catalog_prompt_candidate_ids: ${(report.catalog_prompt_candidate_ids || []).join(",") || "n/a"}`,
     `catalog_candidate_selected_count: ${report.catalog_candidate_selected_count ?? "n/a"}`,
     `correct_catalog_identity_available_count: ${report.correct_catalog_identity_available_count ?? "n/a"}`,
@@ -2340,6 +2367,8 @@ export async function main(argv = process.argv, env = process.env) {
     `vector_conflict_blocked_count: ${report.vector_conflict_blocked_count ?? "n/a"}`,
     `vector_prompt_candidate_count: ${report.vector_prompt_candidate_count ?? "n/a"}`,
     `vector_prompt_candidate_ids: ${(report.vector_prompt_candidate_ids || []).join(",") || "n/a"}`,
+    `vector_lazy_skip_count: ${report.vector_lazy_skip_count ?? "n/a"}`,
+    `vector_lazy_skip_rate: ${report.vector_lazy_skip_rate ?? "n/a"}`,
     `open_set_status_counts: ${JSON.stringify(report.open_set_status_counts || {})}`,
     `known_catalog_candidate_available_count: ${report.known_catalog_candidate_available_count ?? "n/a"}`,
     `catalog_gap_queue_candidate_count: ${report.catalog_gap_queue_candidate_count ?? "n/a"}`,

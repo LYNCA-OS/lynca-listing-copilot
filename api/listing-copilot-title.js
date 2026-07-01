@@ -3536,12 +3536,33 @@ function catalogFastLaneBudgetMs(env = process.env, providerOptions = {}) {
 }
 
 function catalogCandidateContextCacheKey({ resolvedForRetrieval = {}, providerOptions = {}, env = process.env } = {}) {
+  const normalized = normalizeFields(resolvedForRetrieval || {});
+  const serialDenominator = normalizeSerialText(normalized.serial_number || "").match(/\/\s*0*(\d{1,4})\b/)?.[1] || "";
+  const players = Array.isArray(normalized.players)
+    ? normalized.players
+    : [normalized.player, normalized.subject].map((value) => normalizeText(value)).filter(Boolean);
   const keyPayload = {
-    revision: env.CATALOG_LOOKUP_CACHE_REVISION || "v1",
-    resolved: resolvedForRetrieval || {},
+    revision: env.CATALOG_LOOKUP_CACHE_REVISION || "v2",
+    source_trust_policy_version: env.CATALOG_SOURCE_TRUST_POLICY_VERSION || "approved-reference-v1",
+    fields: {
+      year: normalized.year || "",
+      manufacturer: normalized.manufacturer || normalized.brand || "",
+      brand: normalized.brand || normalized.manufacturer || "",
+      product: normalized.product || "",
+      set: normalized.set || normalized.set_name || "",
+      players,
+      player: normalized.player || "",
+      subject: normalized.subject || "",
+      character: normalized.character || "",
+      collector_number: normalized.collector_number || "",
+      checklist_code: normalized.checklist_code || "",
+      serial_denominator: normalized.expected_serial_denominator || serialDenominator
+    },
     options: {
       corrected_title_as_temporary_gt: optionFlag(providerOptions, "corrected_title_as_temporary_gt", false),
-      enable_catalog_assist: optionFlag(providerOptions, "enable_catalog_assist", false)
+      enable_catalog_assist: optionFlag(providerOptions, "enable_catalog_assist", false),
+      cloud_eval_blind_to_corrected_title_hint: optionFlag(providerOptions, "cloud_eval_blind_to_corrected_title_hint", true),
+      provider_mode: providerOptions.provider_mode || providerOptions.providerMode || providerOptions.eval_mode || providerOptions.evalMode || ""
     }
   };
   return crypto.createHash("sha256").update(stableJson(keyPayload)).digest("hex");

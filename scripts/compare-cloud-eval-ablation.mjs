@@ -291,8 +291,14 @@ function perCardTrace({ baseline = {}, catalog = {}, vector = {}, threshold = 0.
       vector_candidate_proxy_decision: cDecision || null,
       catalog_prompt_candidate_count: Number(b.catalog_prompt_candidate_count || 0),
       catalog_prompt_candidate_ids: Array.isArray(b.catalog_prompt_candidate_ids) ? b.catalog_prompt_candidate_ids : [],
+      catalog_cache_hit: {
+        catalog_only: b.catalog_cache_hit === true,
+        catalog_vector: c.catalog_cache_hit === true
+      },
       vector_prompt_candidate_count: Number(c.vector_prompt_candidate_count || 0),
       vector_prompt_candidate_ids: Array.isArray(c.vector_prompt_candidate_ids) ? c.vector_prompt_candidate_ids : [],
+      vector_lazy_skip: c.vector_lazy_skip === true,
+      vector_lazy_skip_reason: c.vector_lazy_skip_reason || null,
       fast_path_used: {
         gpt_only: a.fast_path_used === true,
         catalog_only: b.fast_path_used === true,
@@ -409,6 +415,12 @@ function summarizeAblation({ baseline = {}, catalog = {}, vector = {}, trace = [
     vector_prompt_candidate_count: vector.vector_prompt_candidate_count ?? null,
     vector_prompt_assist_used_count: vector.vector_prompt_assist_used_count ?? null,
     vector_prompt_candidate_ids: vector.vector_prompt_candidate_ids || [],
+    vector_lazy_skip_count: vector.vector_lazy_skip_count ?? countWhere(trace, (item) => item.vector_lazy_skip === true),
+    vector_lazy_skip_rate: vector.vector_lazy_skip_rate ?? null,
+    catalog_cache_hit_count: {
+      catalog_only: catalog.catalog_cache_hit_count ?? countWhere(trace, (item) => item.catalog_cache_hit?.catalog_only === true),
+      catalog_vector: vector.catalog_cache_hit_count ?? countWhere(trace, (item) => item.catalog_cache_hit?.catalog_vector === true)
+    },
     vector_recovery_count: countWhere(trace, (item) => item.vector_change === "recovery"),
     vector_regression_count: countWhere(trace, (item) => item.vector_change === "regression"),
     vector_net_benefit: countWhere(trace, (item) => item.vector_change === "recovery") - countWhere(trace, (item) => item.vector_change === "regression"),
@@ -498,6 +510,8 @@ export async function main(argv = process.argv) {
     `catalog_regression_count: ${report.summary.catalog_regression_count}`,
     `vector_recovery_count: ${report.summary.vector_recovery_count}`,
     `vector_regression_count: ${report.summary.vector_regression_count}`,
+    `vector_lazy_skip_count: ${report.summary.vector_lazy_skip_count ?? "n/a"}`,
+    `catalog_cache_hit_count: ${JSON.stringify(report.summary.catalog_cache_hit_count)}`,
     `card_type_default_base_count: ${JSON.stringify(report.summary.card_type_default_base_count)}`,
     `copied_serial_grade_cert_from_reference_count: ${JSON.stringify(report.summary.copied_serial_grade_cert_from_reference_count)}`,
     `decision_trace_count: ${report.decision_trace.length}`

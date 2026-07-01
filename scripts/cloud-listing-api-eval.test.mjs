@@ -209,6 +209,7 @@ async function runProvider(provider, options = {}) {
           }
           : null,
         catalog_prompt_assist_used: catalogEnabled,
+        catalog_cache_hit: catalogEnabled,
         vector_retrieval: vectorEnabled
           ? {
             providers_used: ["visual_vector"],
@@ -242,6 +243,14 @@ async function runProvider(provider, options = {}) {
           }
           : null,
         vector_prompt_assist_used: vectorEnabled,
+        vector_lazy_skip: vectorEnabled && body.provider_options?.enable_vector_lazy_mode === true
+          ? {
+            skipped: true,
+            reason: "vector_lazy_strong_catalog_anchor",
+            catalog_candidate_id: "identity-1",
+            catalog_candidate_identity_id: "identity-1"
+          }
+          : null,
         retrieval_title_assist: vectorEnabled
           ? {
             used: true,
@@ -256,7 +265,16 @@ async function runProvider(provider, options = {}) {
           ? { features: [{ embedding: [0.1, 0.2], embedding_role: "front_global" }] }
           : null,
         timing: {
-          total_ms: 1234
+          total_ms: 1234,
+          signed_url_ms: 10,
+          catalog_retrieval_ms: 20,
+          catalog_cache_ms: catalogEnabled ? 1 : 0,
+          vector_embedding_ms: vectorEnabled ? 0 : 0,
+          vector_retrieval_ms: vectorEnabled ? 0 : 0,
+          provider_total_ms: 900,
+          evidence_completion_ms: catalogEnabled ? 30 : 0,
+          resolver_ms: 5,
+          renderer_ms: 4
         }
       });
     }
@@ -613,6 +631,7 @@ assert.equal(openaiVector.titlePayload.provider_options.enable_evidence_completi
 assert.equal(openaiVector.titlePayload.provider_options.enable_stored_visual_features, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_vector_retrieval, true);
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_mode, "assist");
+assert.equal(openaiVector.titlePayload.provider_options.enable_vector_lazy_mode, true);
 assert.equal(openaiVector.titlePayload.provider_options.corrected_title_as_temporary_gt, true);
 assert.equal(openaiVector.titlePayload.provider_options.vector_corrected_title_as_temporary_gt, true);
 assert.equal(openaiVector.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
@@ -629,6 +648,8 @@ assert.equal(openaiVector.report.catalog_lookup_used_count, 1);
 assert.equal(openaiVector.report.catalog_candidate_count, 1);
 assert.equal(openaiVector.report.catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.catalog_prompt_assist_used_count, 1);
+assert.equal(openaiVector.report.catalog_cache_hit_count, 1);
+assert.equal(openaiVector.report.catalog_cache_hit_rate, 1);
 assert.deepEqual(openaiVector.report.catalog_prompt_candidate_ids, ["identity-1"]);
 assert.equal(openaiVector.report.catalog_candidate_selected_count, 0);
 assert.equal(openaiVector.report.correct_catalog_identity_available_count, 1);
@@ -647,6 +668,8 @@ assert.equal(openaiVector.report.vector_approved_candidate_count, 1);
 assert.equal(openaiVector.report.vector_conflict_blocked_count, 1);
 assert.equal(openaiVector.report.vector_prompt_candidate_count, 1);
 assert.deepEqual(openaiVector.report.vector_prompt_candidate_ids, ["identity-1"]);
+assert.equal(openaiVector.report.vector_lazy_skip_count, 1);
+assert.equal(openaiVector.report.vector_lazy_skip_rate, 1);
 assert.deepEqual(openaiVector.report.open_set_status_counts, { KNOWN_CATALOG_ASSISTED: 1 });
 assert.equal(openaiVector.report.known_catalog_candidate_available_count, 1);
 assert.equal(openaiVector.report.catalog_gap_queue_candidate_count, 0);
@@ -655,8 +678,11 @@ assert.equal(openaiVector.report.unknown_card_ready_count, 0);
 assert.equal(openaiVector.report.retrieval_title_assist_used_count, 1);
 assert.equal(openaiVector.report.fast_path_used_count, 0);
 assert.equal(openaiVector.report.results[0].catalog_prompt_assist_used, true);
+assert.equal(openaiVector.report.results[0].catalog_cache_hit, true);
 assert.equal(openaiVector.report.results[0].catalog_prompt_candidate_count, 1);
 assert.equal(openaiVector.report.results[0].vector_prompt_assist_used, true);
+assert.equal(openaiVector.report.results[0].vector_lazy_skip, true);
+assert.equal(openaiVector.report.results[0].vector_lazy_skip_reason, "vector_lazy_strong_catalog_anchor");
 assert.equal(openaiVector.report.results[0].vector_raw_candidate_count, 2);
 assert.deepEqual(openaiVector.report.results[0].vector_prompt_candidate_ids, ["identity-1"]);
 assert.equal(openaiVector.report.results[0].open_set_status, "KNOWN_CATALOG_ASSISTED");
@@ -671,6 +697,16 @@ assert.equal(openaiVector.report.decision_trace[0].retrieval_title_assist_used, 
 assert.equal(openaiVector.report.decision_trace[0].retrieval_title_assist.candidate_identity_id, "identity-1");
 assert.equal(openaiVector.report.decision_trace[0].fast_path_used, false);
 assert.equal(openaiVector.report.decision_trace[0].recovery_regression_no_change, "paired_baseline_required");
+
+const openaiVectorNoLazy = await runProvider("d", {
+  evaluateOptions: {
+    disableVectorLazyMode: true
+  }
+});
+assert.equal(openaiVectorNoLazy.titlePayload.provider_options.enable_vector_lazy_mode, false);
+assert.equal(openaiVectorNoLazy.report.vector_lazy_skip_count, 0);
+assert.equal(openaiVectorNoLazy.report.vector_lazy_skip_rate, 0);
+assert.equal(openaiVectorNoLazy.report.results[0].vector_lazy_skip, false);
 
 {
   const recovered = await runProvider("d", {
