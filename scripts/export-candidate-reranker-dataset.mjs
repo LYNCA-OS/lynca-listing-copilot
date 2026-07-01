@@ -35,7 +35,8 @@ const rowColumns = Object.freeze([
   "candidate_margin",
   "title_token_overlap",
   "current_system_recovery",
-  "current_system_regression"
+  "current_system_regression",
+  "oracle_candidate_upper_bound_bucket"
 ]);
 
 function argValues(argv, name) {
@@ -187,6 +188,10 @@ function candidateScore(candidate = {}) {
   return finiteNumber(candidate.match_score, finiteNumber(candidate.normalized_score, finiteNumber(candidate.raw_score, null)));
 }
 
+function candidateRawSimilarity(candidate = {}) {
+  return finiteNumber(candidate.raw_score, finiteNumber(candidate.similarity, finiteNumber(candidate.front_similarity, finiteNumber(candidate.back_similarity, null))));
+}
+
 function uniqueStrings(values = []) {
   return [...new Set(values.map((value) => cleanText(typeof value === "string" ? value : value?.field || value?.field_name || value?.name)).filter(Boolean))];
 }
@@ -260,6 +265,17 @@ function currentSystemDelta(result = {}) {
   const before = finiteNumber(result.raw_corrected_title_comparison?.token_recall, 0);
   const after = finiteNumber(result.corrected_title_comparison?.token_recall, before);
   return Number((after - before).toFixed(6));
+}
+
+function oracleBucketForRows(queryRows = []) {
+  const sorted = [...queryRows].sort((left, right) => Number(left.candidate_rank || 9999) - Number(right.candidate_rank || 9999));
+  const index = sorted.findIndex((row) => row.label_is_correct === true);
+  if (index < 0) return "MISSING_CORRECT_CANDIDATE";
+  if (index === 0) return "TOP_1";
+  if (index < 3) return "TOP_3";
+  if (index < 5) return "TOP_5";
+  if (index < 10) return "TOP_10";
+  return "BEYOND_TOP_10";
 }
 
 function positiveIdentityLabel({
@@ -358,12 +374,26 @@ function buildRow({ result = {}, candidate = {}, index = 0, candidates = [], pos
     candidate_margin: margin,
     title_token_overlap: overlap,
     current_system_recovery: selected && delta > 0.015,
-    current_system_regression: selected && delta < -0.015
+    current_system_regression: selected && delta < -0.015,
+    oracle_candidate_upper_bound_bucket: ""
   };
 }
 
-function candidateRecall(rows = [], k = 10) {
+function attachOracleBuckets(rows = []) {
   const byQuery = groupBy(rows, (row) => row.query_card_id);
+  byQuery.forEach((queryRows) => {
+    const bucket = oracleBucketForRows(queryRows);
+    queryRows.forEach((row) => {
+      row.oracle_candidate_upper_bound_bucket = bucket;
+    });
+  });
+}
+
+function candidateRecall(rows = [], k = 10, queryIds = []) {
+  const byQuery = groupBy(rows, (row) => row.query_card_id);
+  queryIds.forEach((queryId) => {
+    if (!byQuery.has(queryId)) byQuery.set(queryId, []);
+  });
   let hit = 0;
   let total = 0;
   byQuery.forEach((queryRows) => {
@@ -388,13 +418,17 @@ function groupBy(rows = [], keyFn) {
   return groups;
 }
 
-function metrics(rows = [], reports = []) {
+function metrics(rows = [], reports = [], queryIds = []) {
   const byQuery = groupBy(rows, (row) => row.query_card_id);
+  queryIds.forEach((queryId) => {
+    if (!byQuery.has(queryId)) byQuery.set(queryId, []);
+  });
   const selectedRows = rows.filter((row) => row.selected_by_current_system === true);
   const selectedCorrect = selectedRows.filter((row) => row.label_is_correct === true).length;
   const positives = rows.filter((row) => row.label_is_correct === true).length;
   let hardNegatives = 0;
   let missingCorrect = 0;
+  const sourceBreakdown = {};
   byQuery.forEach((queryRows) => {
     if (!queryRows.some((row) => row.label_is_correct === true)) missingCorrect += 1;
     hardNegatives += queryRows.filter((row) => {
@@ -402,16 +436,33 @@ function metrics(rows = [], reports = []) {
         && (row.selected_by_current_system === true || Number(row.title_token_overlap || 0) >= 0.72 || row.direct_conflict_count > 0);
     }).length;
   });
+  rows.forEach((row) => {
+    const source = row.candidate_source_type || "unknown";
+    sourceBreakdown[source] ||= {
+      candidate_count: 0,
+      positive_candidate_count: 0,
+      selected_count: 0,
+      selected_correct_count: 0,
+      hard_negative_count: 0
+    };
+    sourceBreakdown[source].candidate_count += 1;
+    if (row.label_is_correct === true) sourceBreakdown[source].positive_candidate_count += 1;
+    if (row.selected_by_current_system === true) sourceBreakdown[source].selected_count += 1;
+    if (row.selected_by_current_system === true && row.label_is_correct === true) sourceBreakdown[source].selected_correct_count += 1;
+    if (row.label_is_correct !== true && (row.selected_by_current_system === true || Number(row.title_token_overlap || 0) >= 0.72 || row.direct_conflict_count > 0)) {
+      sourceBreakdown[source].hard_negative_count += 1;
+    }
+  });
   return {
     schema_version: "candidate-reranker-dataset-metrics-v1",
     generated_at: new Date().toISOString(),
     input_report_count: reports.length,
     query_count: byQuery.size,
     row_count: rows.length,
-    candidate_recall_at_1: candidateRecall(rows, 1),
-    candidate_recall_at_3: candidateRecall(rows, 3),
-    candidate_recall_at_5: candidateRecall(rows, 5),
-    candidate_recall_at_10: candidateRecall(rows, 10),
+    candidate_recall_at_1: candidateRecall(rows, 1, queryIds),
+    candidate_recall_at_3: candidateRecall(rows, 3, queryIds),
+    candidate_recall_at_5: candidateRecall(rows, 5, queryIds),
+    candidate_recall_at_10: candidateRecall(rows, 10, queryIds),
     oracle_upper_bound: {
       count: byQuery.size - missingCorrect,
       denominator: byQuery.size,
@@ -422,15 +473,273 @@ function metrics(rows = [], reports = []) {
       selected_count: selectedRows.length,
       rate: selectedRows.length ? Number((selectedCorrect / selectedRows.length).toFixed(6)) : null
     },
+    positive_candidate_count: positives,
     reranker_training_positive_count: positives,
     hard_negative_count: hardNegatives,
     missing_correct_candidate_count: missingCorrect,
+    candidate_source_breakdown: sourceBreakdown,
     label_policy: {
       basis: "reviewed corrected_title title-level proxy",
       positive_rule: `exact title match or token recall >= ${defaultPositiveRecallThreshold}, with no identity-field mismatch and no identity-blocking conflict`,
       field_ground_truth: false
     }
   };
+}
+
+function similarityFeatures(row = {}) {
+  return {
+    match_score: row.match_score,
+    normalized_score: row.normalized_score,
+    front_similarity: row.front_similarity,
+    back_similarity: row.back_similarity,
+    front_back_agreement: row.front_back_agreement,
+    title_token_overlap: row.title_token_overlap,
+    candidate_margin: row.candidate_margin
+  };
+}
+
+function candidateSupportingFields(candidate = {}) {
+  return uniqueStrings([
+    ...(Array.isArray(candidate.supporting_fields) ? candidate.supporting_fields : []),
+    ...(Array.isArray(candidate.matched_fields) ? candidate.matched_fields : [])
+  ]);
+}
+
+function hardNegativeRecord({
+  queryCardId = "",
+  correctIdentityId = "",
+  wrongCandidateId = "",
+  errorType = "",
+  row = {},
+  candidate = {},
+  writerResolution = "CORRECTED_TITLE_PROXY",
+  trainingEligible = true
+} = {}) {
+  return {
+    query_card_id: queryCardId,
+    correct_identity_id: correctIdentityId,
+    wrong_candidate_id: wrongCandidateId,
+    error_type: errorType,
+    similarity_features: similarityFeatures(row),
+    matched_fields: candidateSupportingFields(candidate),
+    conflicting_fields: row.conflicting_fields || [],
+    writer_resolution: writerResolution,
+    training_eligible: trainingEligible
+  };
+}
+
+function hardNegativeRecordsForQuery({ result = {}, rows = [], candidates = [] } = {}) {
+  const records = [];
+  const queryCardId = rows[0]?.query_card_id || cleanText(result.candidate_id || result.query_card_id || result.asset_id);
+  const candidateById = new Map(candidates.map((candidate, index) => [candidateId(candidate, index), candidate]));
+  const sorted = [...rows].sort((left, right) => Number(left.candidate_rank || 9999) - Number(right.candidate_rank || 9999));
+  const correctRows = sorted.filter((row) => row.label_is_correct === true);
+  const correctIdentityId = correctRows[0]?.candidate_id || "";
+  const top1 = sorted[0];
+
+  if (top1 && top1.label_is_correct !== true && correctIdentityId) {
+    records.push(hardNegativeRecord({
+      queryCardId,
+      correctIdentityId,
+      wrongCandidateId: top1.candidate_id,
+      errorType: "TOP1_WRONG_CORRECT_IN_TOPK",
+      row: top1,
+      candidate: candidateById.get(top1.candidate_id)
+    }));
+  }
+
+  rows.forEach((row) => {
+    const candidate = candidateById.get(row.candidate_id) || {};
+    const rawSimilarity = candidateRawSimilarity(candidate);
+    if (/vector/i.test(row.candidate_source_type || "") && row.direct_conflict_count > 0 && Number(rawSimilarity || row.normalized_score || 0) >= 0.72) {
+      records.push(hardNegativeRecord({
+        queryCardId,
+        correctIdentityId,
+        wrongCandidateId: row.candidate_id,
+        errorType: "VECTOR_HIGH_SIMILARITY_DIRECT_CONFLICT",
+        row,
+        candidate
+      }));
+    }
+    if (/catalog/i.test(row.candidate_source_type || "") && row.label_is_correct === true && row.selected_by_current_system !== true) {
+      records.push(hardNegativeRecord({
+        queryCardId,
+        correctIdentityId: row.candidate_id,
+        wrongCandidateId: cleanText(result.candidate_proxy_decision?.selected_candidate_id || ""),
+        errorType: "CATALOG_CORRECT_NOT_SELECTED",
+        row,
+        candidate,
+        trainingEligible: Boolean(result.candidate_proxy_decision?.selected_candidate_id)
+      }));
+    }
+    if (row.selected_by_current_system === true && row.current_system_recovery === true) {
+      records.push(hardNegativeRecord({
+        queryCardId,
+        correctIdentityId: row.label_is_correct ? row.candidate_id : correctIdentityId,
+        wrongCandidateId: row.label_is_correct ? "" : row.candidate_id,
+        errorType: "SAFE_ASSIST_IMPROVED_TITLE",
+        row,
+        candidate,
+        trainingEligible: false
+      }));
+    }
+    if (row.selected_by_current_system === true && row.direct_conflict_count > 0 && Number(row.title_token_overlap || 0) >= 0.72) {
+      records.push(hardNegativeRecord({
+        queryCardId,
+        correctIdentityId,
+        wrongCandidateId: row.candidate_id,
+        errorType: "SAFE_ASSIST_NEARLY_CONFLICTED",
+        row,
+        candidate
+      }));
+    }
+  });
+
+  const seen = new Set();
+  return records.filter((record) => {
+    const key = `${record.query_card_id}:${record.error_type}:${record.correct_identity_id}:${record.wrong_candidate_id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function shadowScore(row = {}) {
+  const sourceTrust = /approved/i.test(row.source_trust || "")
+    ? 0.25
+    : /catalog/i.test(row.candidate_source_type || "")
+      ? 0.15
+      : /vector/i.test(row.candidate_source_type || "")
+        ? 0.05
+        : 0;
+  const fieldScore = [
+    row.year_match,
+    row.product_match,
+    row.set_match,
+    row.subject_match,
+    row.subject_count_match,
+    row.collector_number_match,
+    row.checklist_code_match,
+    row.serial_denominator_match,
+    row.surface_color_match,
+    row.observable_component_match
+  ].reduce((sum, value) => sum + (value === true ? 0.08 : value === false ? -0.12 : 0), 0);
+  const baseScore = Math.max(0, Math.min(1, Number(row.normalized_score ?? row.match_score ?? 0)));
+  const conflictPenalty = Number(row.direct_conflict_count || 0) * 0.18;
+  const score = baseScore * 0.45 + sourceTrust + fieldScore - conflictPenalty;
+  return Number(Math.max(0, Math.min(1, score)).toFixed(6));
+}
+
+function shadowDecisionForQuery({ result = {}, rows = [], candidates = [] } = {}) {
+  const queryCardId = rows[0]?.query_card_id || cleanText(result.candidate_id || result.query_card_id || result.asset_id);
+  const currentSelectedIds = selectedCandidateIds(result);
+  const candidateById = new Map(candidates.map((candidate, index) => [candidateId(candidate, index), candidate]));
+  const scored = rows.map((row) => ({ row, score: shadowScore(row) })).sort((left, right) => right.score - left.score);
+  const top = scored[0] || null;
+  const runnerUp = scored[1] || null;
+  const selectedCandidate = top ? candidateById.get(top.row.candidate_id) || {} : {};
+  const selectedFields = selectedCandidate ? parseReviewedTitleFields(candidateTitle(selectedCandidate)) : {};
+  const margin = top && runnerUp ? Number((top.score - runnerUp.score).toFixed(6)) : top ? top.score : null;
+  const noneScore = top
+    ? Number(Math.max(0, Math.min(1, 0.65 - top.score + (margin !== null && margin < 0.08 ? 0.18 : 0) + Number(top.row.direct_conflict_count || 0) * 0.12)).toFixed(6))
+    : 1;
+  const wouldChange = top ? !currentSelectedIds.has(top.row.candidate_id) : false;
+  const expectedRisk = !top || noneScore >= 0.55 || Number(top.row.direct_conflict_count || 0) > 0
+    ? "HIGH"
+    : margin !== null && margin < 0.12
+      ? "MEDIUM"
+      : "LOW";
+  const trace = [];
+  if (top) {
+    trace.push(`selected ${top.row.candidate_id} with score ${top.score}`);
+    trace.push(`source=${top.row.candidate_source_type || "unknown"} rank=${top.row.candidate_rank}`);
+    if (Number(top.row.direct_conflict_count || 0) > 0) trace.push(`conflicts=${(top.row.conflicting_fields || []).join("|")}`);
+    if (margin !== null) trace.push(`margin=${margin}`);
+  } else {
+    trace.push("no candidates available");
+  }
+  return {
+    query_card_id: queryCardId,
+    shadow_candidate_score: top?.score ?? null,
+    shadow_selected_candidate_id: top?.row.candidate_id || "",
+    shadow_field_assignment: selectedFields,
+    shadow_none_of_the_above_score: noneScore,
+    shadow_would_change_title: wouldChange,
+    shadow_expected_risk: expectedRisk,
+    shadow_reason_trace: trace
+  };
+}
+
+function shadowDecisionsForReports(reportCandidateRows = []) {
+  return reportCandidateRows.map(({ result, rows, candidates }) => shadowDecisionForQuery({ result, rows, candidates }));
+}
+
+function hardNegativeBreakdown(records = []) {
+  const breakdown = {};
+  records.forEach((record) => {
+    breakdown[record.error_type] = (breakdown[record.error_type] || 0) + 1;
+  });
+  return breakdown;
+}
+
+function sourceBreakdownLines(sourceBreakdown = {}) {
+  return Object.entries(sourceBreakdown)
+    .sort((left, right) => right[1].candidate_count - left[1].candidate_count)
+    .map(([source, stats]) => `- ${source}: candidates=${stats.candidate_count}, positives=${stats.positive_candidate_count}, hard_negatives=${stats.hard_negative_count}, selected=${stats.selected_correct_count}/${stats.selected_count}`);
+}
+
+function buildMarkdownReport({ summary = {}, hardNegatives = [], shadowDecisions = [] } = {}) {
+  const currentSelected = summary.current_selected_accuracy || {};
+  const oracle = summary.oracle_upper_bound || {};
+  const oracleGap = Math.max(0, Number(oracle.count || 0) - Number(currentSelected.selected_correct_count || 0));
+  const hardNegativeByType = hardNegativeBreakdown(hardNegatives);
+  const riskyShadowCount = shadowDecisions.filter((decision) => decision.shadow_expected_risk === "HIGH").length;
+  const wouldChangeCount = shadowDecisions.filter((decision) => decision.shadow_would_change_title).length;
+  const hardNegativeLines = Object.entries(hardNegativeByType)
+    .sort((left, right) => right[1] - left[1])
+    .map(([type, count]) => `- ${type}: ${count}`);
+  return [
+    "# Decision Learning Foundation v1 Report",
+    "",
+    "## Scope",
+    "",
+    "This report is generated from saved eval artifacts only. It does not change the production prompt, provider, renderer, resolver, or gate.",
+    "",
+    "## Current System Failure Shape",
+    "",
+    `- Queries: ${summary.query_count ?? 0}`,
+    `- Candidate rows: ${summary.row_count ?? 0}`,
+    `- Candidate Recall@1/3/5/10: ${summary.candidate_recall_at_1?.rate ?? "n/a"} / ${summary.candidate_recall_at_3?.rate ?? "n/a"} / ${summary.candidate_recall_at_5?.rate ?? "n/a"} / ${summary.candidate_recall_at_10?.rate ?? "n/a"}`,
+    `- Current selected accuracy: ${currentSelected.selected_correct_count ?? 0}/${currentSelected.selected_count ?? 0}`,
+    `- Oracle upper bound: ${oracle.count ?? 0}/${oracle.denominator ?? 0}`,
+    `- Missing correct candidate count: ${summary.missing_correct_candidate_count ?? 0}`,
+    "",
+    "The main error surface is the oracle gap: correct candidates that exist in the candidate set but are not selected, plus queries where the correct candidate is missing entirely.",
+    "",
+    "## Candidate Error Sources",
+    "",
+    ...sourceBreakdownLines(summary.candidate_source_breakdown || {}),
+    "",
+    "## Hard Negative Breakdown",
+    "",
+    ...(hardNegativeLines.length ? hardNegativeLines : ["- none"]),
+    "",
+    "## Fields Worth Training First",
+    "",
+    "- subject and subject_count: wrong near-neighbor candidates usually share product/year but differ by subject or multi-subject composition.",
+    "- serial_denominator and surface_color: strong identity anchors that should separate visually similar parallels without copying serial numerator.",
+    "- product/set: catalog candidates must become hard constraints when they match direct evidence, not just prompt suggestions.",
+    "",
+    "## Reranker Expected Impact",
+    "",
+    `- Estimated oracle gap that a learned reranker can target now: ${oracleGap} query decisions.`,
+    `- Shadow decisions that would change the current selected candidate: ${wouldChangeCount}.`,
+    `- Shadow high-risk decisions requiring calibration before production: ${riskyShadowCount}.`,
+    "",
+    "## Next Validation Rule",
+    "",
+    "Train nothing until this export shows stable positives, hard negatives, and a non-zero oracle gap on a held-out eval set. A learned reranker should only graduate if recovery exceeds regression in shadow mode."
+  ].join("\n") + "\n";
 }
 
 function csvCell(value) {
@@ -467,40 +776,73 @@ export async function exportCandidateRerankerDataset({
   rowsPath = "",
   csvPath = "",
   metricsPath = "",
+  hardNegativesPath = "",
+  shadowPath = "",
+  reportPath = "",
   positiveRecallThreshold = defaultPositiveRecallThreshold
 } = {}) {
   if (!inputPaths.length) throw new Error("At least one --input report path is required.");
   const reports = await Promise.all(inputPaths.map(readJson));
   const rows = [];
+  const reportCandidateRows = [];
+  const hardNegatives = [];
+  const queryIds = [];
   reports.forEach((report) => {
     (Array.isArray(report.results) ? report.results : []).forEach((result) => {
+      const queryId = cleanText(result.candidate_id || result.query_card_id || result.asset_id);
+      if (queryId) queryIds.push(queryId);
       const candidates = allCandidates(result);
+      const queryRows = [];
       candidates.forEach((candidate, index) => {
-        rows.push(buildRow({ result, candidate, index, candidates, positiveRecallThreshold }));
+        const row = buildRow({ result, candidate, index, candidates, positiveRecallThreshold });
+        rows.push(row);
+        queryRows.push(row);
       });
+      attachOracleBuckets(queryRows);
+      reportCandidateRows.push({ result, rows: queryRows, candidates });
+      hardNegatives.push(...hardNegativeRecordsForQuery({ result, rows: queryRows, candidates }));
     });
   });
-  const summary = metrics(rows, reports);
+  attachOracleBuckets(rows);
+  const summary = metrics(rows, reports, queryIds);
+  const shadowDecisions = shadowDecisionsForReports(reportCandidateRows);
+  const markdownReport = buildMarkdownReport({ summary, hardNegatives, shadowDecisions });
   if (rowsPath) await writeText(rowsPath, rows.map((row) => JSON.stringify(row)).join("\n") + (rows.length ? "\n" : ""));
   if (csvPath) await writeText(csvPath, rowsToCsv(rows));
   if (metricsPath) await writeJson(metricsPath, summary);
+  if (hardNegativesPath) await writeText(hardNegativesPath, hardNegatives.map((row) => JSON.stringify(row)).join("\n") + (hardNegatives.length ? "\n" : ""));
+  if (shadowPath) await writeJson(shadowPath, {
+    schema_version: "shadow-decision-graph-v1",
+    generated_at: new Date().toISOString(),
+    decisions: shadowDecisions
+  });
+  if (reportPath) await writeText(reportPath, markdownReport);
   return {
     rows,
-    metrics: summary
+    metrics: summary,
+    hard_negatives: hardNegatives,
+    shadow_decisions: shadowDecisions,
+    markdown_report: markdownReport
   };
 }
 
 export async function main(argv = process.argv) {
   const inputPaths = argValues(argv, "--input");
-  const rowsPath = argValue(argv, "--rows-out", "data/eval/candidate-reranker/reranker-training-rows.jsonl");
+  const rowsPath = argValue(argv, "--rows-out", "data/eval/decision-learning/candidate-reranker-rows.jsonl");
   const csvPath = argValue(argv, "--csv-out", "");
-  const metricsPath = argValue(argv, "--metrics-out", "data/eval/candidate-reranker/reranker-training-metrics.json");
+  const metricsPath = argValue(argv, "--metrics-out", "data/eval/decision-learning/candidate-reranker-metrics.json");
+  const hardNegativesPath = argValue(argv, "--hard-negatives-out", "data/eval/decision-learning/hard-negatives.jsonl");
+  const shadowPath = argValue(argv, "--shadow-out", "data/eval/decision-learning/shadow-decisions.json");
+  const reportPath = argValue(argv, "--report-out", "data/eval/decision-learning/decision-learning-foundation-report.md");
   const positiveRecallThreshold = numberArg(argv, "--positive-recall-threshold", defaultPositiveRecallThreshold);
   const result = await exportCandidateRerankerDataset({
     inputPaths,
     rowsPath,
     csvPath,
     metricsPath,
+    hardNegativesPath,
+    shadowPath,
+    reportPath,
     positiveRecallThreshold
   });
   process.stdout.write([
@@ -514,12 +856,17 @@ export async function main(argv = process.argv) {
     `candidate_recall@10: ${result.metrics.candidate_recall_at_10.count}/${result.metrics.candidate_recall_at_10.denominator}`,
     `oracle_upper_bound: ${result.metrics.oracle_upper_bound.count}/${result.metrics.oracle_upper_bound.denominator}`,
     `current_selected_accuracy: ${result.metrics.current_selected_accuracy.selected_correct_count}/${result.metrics.current_selected_accuracy.selected_count}`,
-    `reranker_training_positive_count: ${result.metrics.reranker_training_positive_count}`,
+    `positive_candidate_count: ${result.metrics.positive_candidate_count}`,
     `hard_negative_count: ${result.metrics.hard_negative_count}`,
     `missing_correct_candidate_count: ${result.metrics.missing_correct_candidate_count}`,
+    `hard_negative_store_count: ${result.hard_negatives.length}`,
+    `shadow_decision_count: ${result.shadow_decisions.length}`,
     `rows_out: ${rowsPath || "n/a"}`,
     `csv_out: ${csvPath || "n/a"}`,
-    `metrics_out: ${metricsPath || "n/a"}`
+    `metrics_out: ${metricsPath || "n/a"}`,
+    `hard_negatives_out: ${hardNegativesPath || "n/a"}`,
+    `shadow_out: ${shadowPath || "n/a"}`,
+    `report_out: ${reportPath || "n/a"}`
   ].join("\n") + "\n");
 }
 

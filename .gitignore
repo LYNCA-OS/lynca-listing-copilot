@@ -41,5 +41,6 @@ data/eval/*-sample.json
 data/eval/timing-accuracy-smoke/
 data/eval/concurrency-sweep/
 data/eval/candidate-reranker/
+data/eval/decision-learning/
 data/eval/agnes-supabase-feedback-shards/
 data/recognition/review/agnes-auto-95-gap-plan.csv

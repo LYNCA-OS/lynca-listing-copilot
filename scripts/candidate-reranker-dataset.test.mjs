@@ -34,7 +34,8 @@ const requiredColumns = [
   "candidate_margin",
   "title_token_overlap",
   "current_system_recovery",
-  "current_system_regression"
+  "current_system_regression",
+  "oracle_candidate_upper_bound_bucket"
 ];
 
 const report = {
@@ -167,13 +168,19 @@ try {
   const rowsPath = join(tmp, "rows.jsonl");
   const csvPath = join(tmp, "rows.csv");
   const metricsPath = join(tmp, "metrics.json");
+  const hardNegativesPath = join(tmp, "hard-negatives.jsonl");
+  const shadowPath = join(tmp, "shadow.json");
+  const reportPath = join(tmp, "report.md");
   await writeFile(inputPath, `${JSON.stringify(report, null, 2)}\n`);
 
   const result = await exportCandidateRerankerDataset({
     inputPaths: [inputPath],
     rowsPath,
     csvPath,
-    metricsPath
+    metricsPath,
+    hardNegativesPath,
+    shadowPath,
+    reportPath
   });
 
   assert.equal(result.rows.length, 5);
@@ -181,9 +188,12 @@ try {
     assert.ok(Object.hasOwn(result.rows[0], column), `missing exported column: ${column}`);
   });
   assert.equal(result.metrics.query_count, 2);
+  assert.equal(result.metrics.positive_candidate_count, 1);
   assert.equal(result.metrics.reranker_training_positive_count, 1);
   assert.equal(result.metrics.missing_correct_candidate_count, 1);
   assert.ok(result.metrics.hard_negative_count >= 2);
+  assert.equal(result.metrics.candidate_source_breakdown.catalog.candidate_count, 4);
+  assert.equal(result.metrics.candidate_source_breakdown.vector.candidate_count, 1);
   assert.deepEqual(result.metrics.candidate_recall_at_1, {
     count: 1,
     denominator: 2,
@@ -206,12 +216,21 @@ try {
   });
 
   const vectorHardNegative = result.rows.find((row) => row.candidate_id === "identity-bad-vector");
+  assert.equal(vectorHardNegative.oracle_candidate_upper_bound_bucket, "TOP_1");
   assert.equal(vectorHardNegative.direct_conflict_count, 2);
   assert.deepEqual(vectorHardNegative.conflicting_fields.sort(), ["subject", "year"]);
   assert.equal(vectorHardNegative.front_back_agreement, true);
+  assert.ok(result.hard_negatives.some((row) => row.error_type === "VECTOR_HIGH_SIMILARITY_DIRECT_CONFLICT"));
+  assert.ok(result.hard_negatives.some((row) => row.error_type === "SAFE_ASSIST_IMPROVED_TITLE"));
+  assert.equal(result.shadow_decisions.length, 2);
+  assert.ok(result.shadow_decisions[0].shadow_selected_candidate_id);
+  assert.match(result.markdown_report, /Decision Learning Foundation v1 Report/);
 
   assert.ok(existsSync(rowsPath));
   assert.ok(existsSync(metricsPath));
+  assert.ok(existsSync(hardNegativesPath));
+  assert.ok(existsSync(shadowPath));
+  assert.ok(existsSync(reportPath));
   const csv = await readFile(csvPath, "utf8");
   assert.ok(csv.startsWith(requiredColumns.join(",")));
 } finally {
