@@ -1899,7 +1899,7 @@ async function callListingApi({
   bypassSecret = "",
   requestTimeoutMs = 240_000,
   verificationCache,
-  maxTitleLength = 80,
+  maxTitleLength = 85,
   fetchImpl = globalThis.fetch
 }) {
   const provider = cloudProviderForMode(providerMode);
@@ -2694,7 +2694,7 @@ export async function evaluateCloudListingApi({
   password,
   bypassSecret = "",
   requestTimeoutMs = 240_000,
-  maxTitleLength = 80,
+  maxTitleLength = 85,
   correctedTitleAsTemporaryGt = true,
   sendCorrectedTitleHintToCloud = false,
   disableVectorLazyMode = false,

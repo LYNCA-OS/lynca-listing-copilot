@@ -134,10 +134,51 @@ const nonSlabGradeIsCandidateOnly = applyIdentityResolutionGate({
   },
   unresolved: []
 });
-assert.doesNotMatch(nonSlabGradeIsCandidateOnly.final_title, /PSA|10/);
-assert.equal(nonSlabGradeIsCandidateOnly.draft_gate.by_field.grade_company.display_policy, "SUGGEST_ONLY");
-assert.equal(nonSlabGradeIsCandidateOnly.draft_gate.by_field.card_grade.display_policy, "SUGGEST_ONLY");
-assert.ok(nonSlabGradeIsCandidateOnly.accuracy_governor.high_risk_fields_omitted_from_title.includes("grade_company"));
+assert.match(nonSlabGradeIsCandidateOnly.final_title, /\bPSA 10\b/);
+assert.equal(nonSlabGradeIsCandidateOnly.draft_gate.by_field.grade_company.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(nonSlabGradeIsCandidateOnly.draft_gate.by_field.card_grade.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(nonSlabGradeIsCandidateOnly.draft_gate.by_field.grade_company.requires_writer_confirmation, true);
+assert.ok(nonSlabGradeIsCandidateOnly.publication_gate.writer_required_fields.includes("grade_company"));
+assert.ok(!nonSlabGradeIsCandidateOnly.accuracy_governor.high_risk_fields_omitted_from_title.includes("grade_company"));
+
+const cardNamePreservedThroughIdentityGate = applyIdentityResolutionGate({
+  title: "2018-19 Panini Status Trae Young New Breed 20/99 PSA 10",
+  confidence: "HIGH",
+  reason: "Front and back images support the product, subject and New Breed card name.",
+  provider: "openai_legacy",
+  resolved: normalizeResolvedFields({
+    year: "2018-19",
+    manufacturer: "Panini",
+    product: "Status Basketball",
+    players: ["Trae Young"],
+    card_name: "New Breed",
+    serial_number: "20/99",
+    rc: true,
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  }),
+  evidence: {
+    year: groundedEvidence("2018-19"),
+    manufacturer: groundedEvidence("Panini"),
+    product: groundedEvidence("Status Basketball"),
+    players: groundedEvidence(["Trae Young"]),
+    card_name: frontOnlyEvidence("New Breed"),
+    serial_number: frontOnlyEvidence("20/99"),
+    rc: frontOnlyEvidence(true),
+    grade_company: visionOnlyEvidence("PSA"),
+    card_grade: visionOnlyEvidence("10"),
+    grade_type: visionOnlyEvidence("CARD_ONLY")
+  },
+  unresolved: []
+}, {
+  maxLength: 85
+});
+assert.ok(cardNamePreservedThroughIdentityGate.identity_resolution.field_states.some((field) => field.field === "card_name"));
+assert.match(cardNamePreservedThroughIdentityGate.final_title, /\bStatus\b/i);
+assert.match(cardNamePreservedThroughIdentityGate.final_title, /\bNew Breed\b/i);
+assert.match(cardNamePreservedThroughIdentityGate.final_title, /#\/99/);
+assert.doesNotMatch(cardNamePreservedThroughIdentityGate.final_title, /20\/99/);
 assert.ok(nonSlabGradeIsCandidateOnly.publication_gate.writer_required_fields.includes("grade_company"));
 
 const visualExactParallelKeepsNarrowColorOnly = applyIdentityResolutionGate({
@@ -488,10 +529,11 @@ const visualOnlyGradeRequiresReview = primaryFastVisionResult({
 assert.equal(visualOnlyGradeRequiresReview.publication_gate.field_publication_states.grade_company, "REVIEW_REQUIRED");
 assert.equal(visualOnlyGradeRequiresReview.publication_gate.field_publication_states.card_grade, "REVIEW_REQUIRED");
 assert.ok(visualOnlyGradeRequiresReview.writer_required_fields.includes("grade_company"));
-assert.doesNotMatch(visualOnlyGradeRequiresReview.final_title, /\bPSA 10\b/);
-assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.grade_company.display_policy, "SUGGEST_ONLY");
-assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.card_grade.display_policy, "SUGGEST_ONLY");
-assert.ok(visualOnlyGradeRequiresReview.accuracy_governor.high_risk_fields_omitted_from_title.includes("grade_company"));
+assert.match(visualOnlyGradeRequiresReview.final_title, /\bPSA 10\b/);
+assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.grade_company.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.card_grade.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(visualOnlyGradeRequiresReview.draft_gate.by_field.grade_company.requires_writer_confirmation, true);
+assert.ok(!visualOnlyGradeRequiresReview.accuracy_governor.high_risk_fields_omitted_from_title.includes("grade_company"));
 
 const groundedMultiView = applyIdentityResolutionGate({
   title: "provider title must not decide final facts",

@@ -408,6 +408,26 @@ assert.equal(groundedIdentityMarkersDocument.evidence.rc.sources[0].source_type,
 assert.equal(groundedIdentityMarkersDocument.evidence.first_bowman.sources[0].source_type, "CARD_FRONT");
 assert.doesNotThrow(() => assertValidEvidenceDocument(groundedIdentityMarkersDocument));
 
+const providerLegacyCardNameDocument = providerPayloadToEvidenceDocument({
+  confidence: "HIGH",
+  reason: "front and back printed text explicitly identify the card name and slab label states PSA 10",
+  fields: {
+    year: "2018-19",
+    manufacturer: "Panini",
+    product: "Status",
+    players: ["Trae Young"],
+    card_name: "New Breed",
+    grade: "PSA 10"
+  },
+  unresolved: []
+});
+assert.equal(providerLegacyCardNameDocument.resolved.product, "Status");
+assert.equal(providerLegacyCardNameDocument.resolved.card_name, "New Breed");
+assert.equal(providerLegacyCardNameDocument.resolved.grade_company, "PSA");
+assert.equal(providerLegacyCardNameDocument.resolved.card_grade, "10");
+assert.equal(providerLegacyCardNameDocument.evidence.card_name.value, "New Breed");
+assert.doesNotThrow(() => assertValidEvidenceDocument(providerLegacyCardNameDocument));
+
 const beckettGradeDocument = providerPayloadToEvidenceDocument({
   title: "2021 Panini Test Player Beckett 8.5",
   confidence: "HIGH",

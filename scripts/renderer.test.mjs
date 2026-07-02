@@ -603,6 +603,48 @@ assert.match(rookieTicketPriority.rendered_title, /Rookie Ticket/i);
 assert.match(rookieTicketPriority.rendered_title, /Anthony Edwards/i);
 assert.match(rookieTicketPriority.rendered_title, /PSA 10$/);
 
+const statusNewBreedFieldFidelity = renderResolvedTitle({
+  year: "2018-19",
+  manufacturer: "Panini",
+  brand: "Panini",
+  product: "Status Basketball",
+  players: ["Trae Young"],
+  card_name: "New Breed",
+  parallel_family: "Gold Holo Foil Refractor Wave Shimmer",
+  serial_number: "20/99",
+  collector_number: "NB-TY",
+  rc: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY",
+  team: "Atlanta Hawks"
+}, {
+  maxLength: 85
+});
+assert.ok(statusNewBreedFieldFidelity.rendered_title.length <= 85);
+assert.match(statusNewBreedFieldFidelity.rendered_title, /\bStatus\b/i);
+assert.match(statusNewBreedFieldFidelity.rendered_title, /\bNew Breed\b/i);
+assert.match(statusNewBreedFieldFidelity.rendered_title, /#\/99/);
+assert.doesNotMatch(statusNewBreedFieldFidelity.rendered_title, /20\/99/);
+assert.match(statusNewBreedFieldFidelity.rendered_title, /PSA 10$/);
+
+const encasedGradeCompanyMissingStaysVisible = renderResolvedTitle({
+  year: "2020-21",
+  manufacturer: "Panini",
+  product: "Encased Basketball",
+  players: ["Anthony Edwards"],
+  card_name: "SIG-GOLD BREAKAWAY",
+  serial_number: "9/10",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 85
+});
+assert.ok(encasedGradeCompanyMissingStaysVisible.rendered_title.length <= 85);
+assert.match(encasedGradeCompanyMissingStaysVisible.rendered_title, /\bEncased\b/i);
+assert.match(encasedGradeCompanyMissingStaysVisible.rendered_title, /SIG-GOLD BREAKAWAY/i);
+assert.match(encasedGradeCompanyMissingStaysVisible.rendered_title, /Grade 10$/);
+
 const longTitle = renderResolvedTitle({
   year: "2015-16",
   brand: "Panini",
@@ -620,7 +662,24 @@ const longTitle = renderResolvedTitle({
 assert.ok(longTitle.rendered_title.length <= 80);
 assert.match(longTitle.rendered_title, /#\/25/);
 assert.doesNotMatch(longTitle.rendered_title, /01\/25/);
-assert.match(longTitle.rendered_title, /PSA 10$/);
+assert.doesNotMatch(longTitle.rendered_title, /PSA 10$/);
+
+const longTitleEbayLimit = renderResolvedTitle({
+  year: "2015-16",
+  brand: "Panini",
+  product: "Immaculate Collection Basketball",
+  players: ["Shaquille O'Neal", "Anfernee Hardaway"],
+  insert: "Dual Signatures Jersey No.",
+  parallel: "Gold Holo Foil Refractor Wave Shimmer",
+  serial_number: "01/25",
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 85
+});
+assert.ok(longTitleEbayLimit.rendered_title.length <= 85);
+assert.match(longTitleEbayLimit.rendered_title, /PSA 10$/);
 
 const pokemon = renderListingPresentation({
   resolved: {
