@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { evaluateCloudListingApi, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
+import { evaluateCloudListingApi, fairTokenRecall, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
 import { compareCloudEvalAblation } from "./compare-cloud-eval-ablation.mjs";
 
 function jsonResponse(status, body, headers = {}) {
@@ -1140,5 +1140,14 @@ assert.throws(
   }),
   /matches a Supabase service\/secret key/i
 );
+
+// Fair scoring: identity-equivalent tokens match; seller noise leaves the denominator.
+assert.equal(fairTokenRecall("Pele Rookie RC Autograph", "Pel\u00e9 RC Auto"), 1); // diacritics + synonym classes fold
+assert.equal(fairTokenRecall("Card 24/25 PSA", "Card 24/25 PSA"), 1);
+assert.equal(fairTokenRecall("Card #/25", "Card 24/25"), 1); // full serial covers denominator-only reference
+assert.ok(fairTokenRecall("Card 24/25", "Card /25") < 1); // denominator-only never covers a full-serial reference
+assert.equal(fairTokenRecall("Card 04/10 BGS", "Card 4/10 Beckett"), 1); // leading zeros + grader alias
+assert.equal(fairTokenRecall("Curry PSA 10 POP 2", "Curry PSA 10 2"), 1); // POP excluded from denominator
+assert.equal(fairTokenRecall("Wemby SSP Case Hit RC", "Wemby SSP RC"), 1); // case-hit bigram excluded
 
 console.log("cloud listing API eval tests passed");

@@ -379,6 +379,80 @@ function titleTokens(value) {
     .filter(Boolean);
 }
 
+// Fair scoring: identity-equivalent tokens count as matches so the metric
+// measures card identity, not seller style. Legacy token_recall is kept
+// unchanged for comparability with earlier eval runs.
+const fairTitleTokenSynonyms = Object.freeze({
+  rc: "rookie",
+  autograph: "auto",
+  autographs: "auto",
+  signed: "auto",
+  beckett: "bgs",
+  certified: "cert",
+  authentic: "cert"
+});
+
+// Marketplace/seller-hype tokens that never describe card identity and are
+// excluded from the reference denominator (never from predictions).
+const fairReferenceNoiseTokens = Object.freeze(new Set(["pop"]));
+
+function foldFairTitleText(value) {
+  return normalizeText(value)
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+function fairTitleToken(token) {
+  const fullSerial = token.match(/^0*(\d{1,4})\/0*(\d{1,4})$/);
+  if (fullSerial) return `${Number(fullSerial[1])}/${Number(fullSerial[2])}`;
+  const denominatorOnly = token.match(/^\/0*(\d{1,4})$/);
+  if (denominatorOnly) return `/${Number(denominatorOnly[1])}`;
+  return fairTitleTokenSynonyms[token] || token;
+}
+
+function fairTitleTokens(value) {
+  return foldFairTitleText(value)
+    .replace(/[^a-z0-9/.]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(fairTitleToken);
+}
+
+function fairReferenceTokens(value) {
+  const tokens = fairTitleTokens(value);
+  const output = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (fairReferenceNoiseTokens.has(token)) continue;
+    if (token === "case" && tokens[index + 1] === "hit") {
+      index += 1;
+      continue;
+    }
+    output.push(token);
+  }
+  return output;
+}
+
+function fairPredictionTokenSet(value) {
+  const tokens = new Set(fairTitleTokens(value));
+  // A complete serial in the prediction also satisfies a denominator-only
+  // reference token (24/25 covers /25); the reverse never earns credit.
+  for (const token of [...tokens]) {
+    const fullSerial = token.match(/^(\d{1,4})\/(\d{1,4})$/);
+    if (fullSerial) tokens.add(`/${fullSerial[2]}`);
+  }
+  return tokens;
+}
+
+export function fairTokenRecall(referenceTitle, predictionTitle) {
+  const reference = new Set(fairReferenceTokens(referenceTitle));
+  if (!reference.size) return null;
+  const predicted = fairPredictionTokenSet(predictionTitle);
+  const overlap = [...reference].filter((token) => predicted.has(token)).length;
+  return Number((overlap / reference.size).toFixed(6));
+}
+
 function titleComparison(referenceTitle, predictionTitle) {
   const reference = new Set(titleTokens(referenceTitle));
   const predicted = new Set(titleTokens(predictionTitle));
@@ -386,6 +460,7 @@ function titleComparison(referenceTitle, predictionTitle) {
   const overlap = [...reference].filter((token) => predicted.has(token)).length;
   return {
     token_recall: Number((overlap / reference.size).toFixed(6)),
+    fair_token_recall: fairTokenRecall(referenceTitle, predictionTitle),
     exact: normalizeText(referenceTitle).toLowerCase() === normalizeText(predictionTitle).toLowerCase()
   };
 }
@@ -1935,6 +2010,8 @@ function evaluatedResultFromData({
     serial_number_title_analysis: serialAnalysis,
     pass_at_0_72: Number(titleMatch?.token_recall || 0) >= 0.72,
     pass_at_0_80: Number(titleMatch?.token_recall || 0) >= 0.80,
+    fair_pass_at_0_72: Number(titleMatch?.fair_token_recall || 0) >= 0.72,
+    fair_pass_at_0_80: Number(titleMatch?.fair_token_recall || 0) >= 0.80,
     timing: data.timing || null,
     elapsed_ms: Date.now() - started
   };
@@ -2083,6 +2160,11 @@ function summarize(results = [], elapsedMs = 0) {
   });
   const passAt072 = results.filter((item) => item.pass_at_0_72 === true).length;
   const passAt080 = results.filter((item) => item.pass_at_0_80 === true).length;
+  const fairPassAt072 = results.filter((item) => item.fair_pass_at_0_72 === true).length;
+  const fairPassAt080 = results.filter((item) => item.fair_pass_at_0_80 === true).length;
+  const fairRecallValues = results
+    .map((item) => item.corrected_title_comparison?.fair_token_recall)
+    .filter((value) => Number.isFinite(value));
   const rawPassAt072 = results.filter((item) => Number(item.raw_corrected_title_comparison?.token_recall || 0) >= 0.72).length;
   const rawPassAt080 = results.filter((item) => Number(item.raw_corrected_title_comparison?.token_recall || 0) >= 0.80).length;
   const candidateProxySelectedCount = results.filter((item) => item.candidate_proxy_decision?.selected === true).length;
@@ -2361,6 +2443,13 @@ function summarize(results = [], elapsedMs = 0) {
     raw_pass_at_0_80_rate: attempted ? Number((rawPassAt080 / attempted).toFixed(6)) : null,
     pass_at_0_80_count: passAt080,
     pass_at_0_80_rate: attempted ? Number((passAt080 / attempted).toFixed(6)) : null,
+    fair_token_recall_avg: fairRecallValues.length
+      ? Number((fairRecallValues.reduce((sum, value) => sum + value, 0) / fairRecallValues.length).toFixed(6))
+      : null,
+    fair_pass_at_0_72_count: fairPassAt072,
+    fair_pass_at_0_72_rate: attempted ? Number((fairPassAt072 / attempted).toFixed(6)) : null,
+    fair_pass_at_0_80_count: fairPassAt080,
+    fair_pass_at_0_80_rate: attempted ? Number((fairPassAt080 / attempted).toFixed(6)) : null,
     candidate_proxy_selected_count: candidateProxySelectedCount,
     candidate_proxy_catalog_selected_count: candidateProxyCatalogSelectedCount,
     candidate_proxy_vector_selected_count: candidateProxyVectorSelectedCount,
