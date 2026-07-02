@@ -100,6 +100,8 @@ assert.equal(triggers.cleanlab, true);
 assert.equal(triggers.label_studio, true);
 assert.equal(triggers.cvat, true);
 assert.equal(triggers.fiftyone, true);
+assert.equal(triggers.lightgbm, true);
+assert.equal(triggers.phoenix, true);
 
 const actionPlan = buildWorkflowActionPlan(event);
 assert.equal(actionPlan.by_tool.paddle_ocr.length, 1);
@@ -108,9 +110,13 @@ assert.equal(actionPlan.by_tool.cleanlab.length, 1);
 assert.equal(actionPlan.by_tool.label_studio.length, 1);
 assert.equal(actionPlan.by_tool.cvat.length, 1);
 assert.equal(actionPlan.by_tool.fiftyone.length, 1);
+assert.equal(actionPlan.by_tool.lightgbm.length, 1);
+assert.equal(actionPlan.by_tool.phoenix.length, 1);
 assert.equal(actionPlan.by_tool.paddle_ocr[0].blocking, false);
 assert.ok(actionPlan.by_tool.paddle_ocr[0].output_contract.forbidden_outputs.includes("resolved_field_override"));
 assert.ok(actionPlan.by_tool.splink[0].idempotency_key.startsWith("splink:catalog_entity_cluster_lookup:"));
+assert.ok(actionPlan.by_tool.lightgbm[0].output_contract.forbidden_outputs.includes("production_decision"));
+assert.ok(actionPlan.by_tool.phoenix[0].output_contract.forbidden_outputs.includes("raw_credential"));
 assert.deepEqual(sidecarActionSummary(actionPlan, "label_studio").trigger_reasons, [
   "field_level_writer_review_required"
 ]);
@@ -136,6 +142,8 @@ assert.equal(attachedWithoutConfig.workflow_sidecars.cleanlab.status, workflowSi
 assert.equal(attachedWithoutConfig.workflow_sidecars.label_studio.status, workflowSidecarStatuses.NOT_CONFIGURED);
 assert.equal(attachedWithoutConfig.workflow_sidecars.cvat.status, workflowSidecarStatuses.NOT_CONFIGURED);
 assert.equal(attachedWithoutConfig.workflow_sidecars.fiftyone.status, workflowSidecarStatuses.QUEUED);
+assert.equal(attachedWithoutConfig.workflow_sidecars.lightgbm.status, workflowSidecarStatuses.QUEUED);
+assert.equal(attachedWithoutConfig.workflow_sidecars.phoenix.status, workflowSidecarStatuses.NOT_CONFIGURED);
 
 const writes = [];
 const fetchImpl = async (url, init = {}) => {
@@ -163,6 +171,8 @@ assert.equal(sidecarsWithEventLog.cleanlab.status, workflowSidecarStatuses.CREAT
 assert.equal(sidecarsWithEventLog.paddle_ocr.status, workflowSidecarStatuses.QUEUED);
 assert.equal(sidecarsWithEventLog.label_studio.status, workflowSidecarStatuses.NOT_CONFIGURED);
 assert.equal(sidecarsWithEventLog.cvat.status, workflowSidecarStatuses.NOT_CONFIGURED);
+assert.equal(sidecarsWithEventLog.lightgbm.status, workflowSidecarStatuses.QUEUED);
+assert.equal(sidecarsWithEventLog.phoenix.status, workflowSidecarStatuses.NOT_CONFIGURED);
 assert.ok(writes.some((write) => write.pathname.endsWith("/recognition_workflow_events")));
 assert.ok(writes.some((write) => write.pathname.endsWith("/data_quality_findings")));
 assert.ok(writes.some((write) => write.pathname.endsWith("/annotation_tasks")));
@@ -177,6 +187,32 @@ assert.equal(findingWrite.body[0].workflow_payload.tool, "cleanlab");
 const taskWrite = writes.find((write) => write.pathname.endsWith("/annotation_tasks"));
 assert.ok(taskWrite.body[0].idempotency_key.includes(":"));
 assert.equal(taskWrite.body[0].task_payload.workflow_action.blocking, false);
+
+const internalQueueWrites = [];
+const internalQueueSidecars = await dispatchWorkflowSidecars({
+  event,
+  env: {
+    DATA_LOOP_SIDECARS_ENABLED: "true",
+    DATA_LOOP_WORKFLOW_EVENT_LOG_ENABLED: "true",
+    DATA_LOOP_INTERNAL_ANNOTATION_QUEUE_ENABLED: "true",
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role"
+  },
+  fetchImpl: async (url, init = {}) => {
+    internalQueueWrites.push({
+      pathname: new URL(url).pathname,
+      body: init.body ? JSON.parse(init.body) : null
+    });
+    return jsonResponse(201, [{ ok: true }]);
+  }
+});
+assert.equal(internalQueueSidecars.label_studio.status, workflowSidecarStatuses.CREATED);
+assert.equal(internalQueueSidecars.label_studio.task_created, true);
+assert.equal(internalQueueSidecars.label_studio.reason, "label_studio_internal_queue_created");
+assert.equal(internalQueueSidecars.cvat.status, workflowSidecarStatuses.CREATED);
+assert.equal(internalQueueSidecars.cvat.task_created, true);
+assert.equal(internalQueueSidecars.cvat.reason, "cvat_internal_queue_created");
+assert.ok(internalQueueWrites.some((write) => write.pathname.endsWith("/annotation_tasks") && write.body[0].status === "QUEUED"));
 
 const tmp = await mkdtemp(join(tmpdir(), "lynca-fiftyone-sidecar-"));
 try {
@@ -198,6 +234,85 @@ try {
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }
+
+const externalCalls = [];
+const externalFetch = async (url, init = {}) => {
+  const parsed = new URL(url);
+  externalCalls.push({
+    host: parsed.host,
+    pathname: parsed.pathname,
+    method: init.method,
+    body: init.body ? JSON.parse(init.body) : null,
+    authorization: init.headers?.authorization || null
+  });
+  if (parsed.host === "ocr.internal") {
+    return jsonResponse(200, {
+      raw_text: "12/50",
+      confidence: 0.93,
+      normalized_fields: { serial_number: "12/50", serial_denominator: "50" },
+      model_id: "paddleocr",
+      model_revision: "ppocr-v5"
+    });
+  }
+  if (parsed.host === "splink.internal") return jsonResponse(200, { cluster_id: "cluster-1", match_probability: 0.88 });
+  if (parsed.host === "cleanlab.internal") return jsonResponse(200, { label_quality_score: 0.42, reason: "conflict candidate" });
+  if (parsed.host === "label.internal") return jsonResponse(201, { task_count: 1 });
+  if (parsed.host === "cvat.internal") return jsonResponse(201, { id: 77, url: "https://cvat.internal/tasks/77" });
+  if (parsed.host === "fiftyone.internal") return jsonResponse(200, { synced: true });
+  if (parsed.host === "lightgbm.internal") return jsonResponse(200, { selected_candidate_id: "catalog-1", score: 0.81 });
+  if (parsed.host === "phoenix.internal") return jsonResponse(200, { accepted: true });
+  return jsonResponse(404, { error: "unexpected endpoint" });
+};
+
+const externallyDispatched = await dispatchWorkflowSidecars({
+  event,
+  payload: {
+    ...payload,
+    images: [{
+      ...payload.images[0],
+      signed_url: "https://signed.example/front.jpg?token=runtime-only"
+    }]
+  },
+  env: {
+    DATA_LOOP_SIDECARS_ENABLED: "true",
+    DATA_LOOP_PADDLE_OCR_DISPATCH_ENABLED: "true",
+    ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+    PADDLE_OCR_WORKER_URL: "https://ocr.internal",
+    PADDLE_OCR_WORKER_TOKEN: "ocr-token",
+    DATA_LOOP_SPLINK_BATCH_ENABLED: "true",
+    DATA_LOOP_SPLINK_BATCH_URL: "https://splink.internal/batch",
+    DATA_LOOP_SPLINK_BATCH_TOKEN: "splink-token",
+    DATA_LOOP_CLEANLAB_SCORE_URL: "https://cleanlab.internal/score",
+    DATA_LOOP_CLEANLAB_SCORE_TOKEN: "cleanlab-token",
+    DATA_LOOP_EXTERNAL_TASK_CREATION_ENABLED: "true",
+    LABEL_STUDIO_URL: "https://label.internal",
+    LABEL_STUDIO_TOKEN: "label-token",
+    LABEL_STUDIO_PROJECT_ID: "123",
+    CVAT_URL: "https://cvat.internal",
+    CVAT_TOKEN: "cvat-token",
+    CVAT_PROJECT_ID: "456",
+    DATA_LOOP_FIFTYONE_SYNC_URL: "https://fiftyone.internal/sync",
+    DATA_LOOP_FIFTYONE_SYNC_TOKEN: "fiftyone-token",
+    DATA_LOOP_LIGHTGBM_RERANKER_URL: "https://lightgbm.internal/score",
+    DATA_LOOP_LIGHTGBM_RERANKER_TOKEN: "lightgbm-token",
+    PHOENIX_COLLECTOR_ENDPOINT: "https://phoenix.internal/v1/traces",
+    PHOENIX_API_KEY: "phoenix-token"
+  },
+  fetchImpl: externalFetch
+});
+
+assert.equal(externallyDispatched.paddle_ocr.status, workflowSidecarStatuses.COMPLETED);
+assert.equal(externallyDispatched.splink.status, workflowSidecarStatuses.COMPLETED);
+assert.equal(externallyDispatched.cleanlab.label_quality_score, 0.42);
+assert.equal(externallyDispatched.label_studio.status, workflowSidecarStatuses.CREATED);
+assert.equal(externallyDispatched.cvat.task_id, 77);
+assert.equal(externallyDispatched.fiftyone.reason, "fiftyone_cloud_gallery_synced");
+assert.equal(externallyDispatched.lightgbm.selected_candidate_id, "catalog-1");
+assert.equal(externallyDispatched.phoenix.trace_exported, true);
+assert.ok(externalCalls.some((call) => call.host === "ocr.internal" && call.body.image_url.includes("runtime-only")));
+assert.ok(externalCalls.some((call) => call.host === "label.internal" && call.pathname === "/api/projects/123/import"));
+assert.ok(externalCalls.some((call) => call.host === "cvat.internal" && call.pathname === "/api/tasks"));
+assert.ok(externalCalls.some((call) => call.host === "phoenix.internal" && call.body.spans?.[0]?.attributes?.workflow_action_count >= 1));
 
 const failureSafe = await attachWorkflowSidecarsToListingResult({
   result,
