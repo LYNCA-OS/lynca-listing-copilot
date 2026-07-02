@@ -4774,7 +4774,50 @@ function normalizeTitlePreservingSuffix(title, suffix, maxLength) {
   return `${prefix} ${suffixValue}`.replace(/\s+/g, " ").trim();
 }
 
-function bestRetrievalTitleAssistSource(completion = {}, result = {}) {
+function foldScaffoldText(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Hard direct-evidence guard for the title scaffold lane: a reference title
+// may never override what the current images directly established about the
+// player or the year. This is the last line of defense against candidates
+// that carry only a title (no structured fields) and therefore bypass the
+// field-level conflict checks.
+function scaffoldTitleConflictsWithDirectEvidence(candidateTitle, currentFields = {}) {
+  const title = foldScaffoldText(candidateTitle);
+  if (!title) return "";
+  const normalized = normalizeFields(currentFields || {});
+  const players = Array.isArray(normalized.players) && normalized.players.length
+    ? normalized.players
+    : normalized.player
+      ? [normalized.player]
+      : [];
+  if (players.length) {
+    const supported = players.some((player) => {
+      const folded = foldScaffoldText(player);
+      if (!folded) return true;
+      if (title.includes(folded)) return true;
+      const lastName = folded.split(" ").filter((part) => part.length > 2).at(-1) || "";
+      return lastName ? title.includes(lastName) : true;
+    });
+    if (!supported) return "scaffold_player_conflict";
+  }
+  const currentYears = [...String(normalized.year || "").matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
+  const titleYears = [...title.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
+  if (currentYears.length && titleYears.length) {
+    const compatible = titleYears.some((year) => currentYears.some((current) => Math.abs(current - year) <= 1));
+    if (!compatible) return "scaffold_year_conflict";
+  }
+  return "";
+}
+
+function bestRetrievalTitleAssistSource(completion = {}, result = {}, diagnostics = null) {
   const currentFields = mergeCurrentFieldsForTitleAssist(
     result.fields,
     result.raw_provider_fields,
@@ -4785,6 +4828,17 @@ function bestRetrievalTitleAssistSource(completion = {}, result = {}) {
   return retrievalSourcesFromCompletion(completion)
     .filter((source) => retrievalSourceCanEnterTitleAssistLane(source, currentFields, currentTitle))
     .filter((source) => source.title || source.reference_title)
+    .filter((source) => {
+      const conflict = scaffoldTitleConflictsWithDirectEvidence(source.title || source.reference_title || "", currentFields);
+      if (conflict && diagnostics) {
+        diagnostics.direct_evidence_rejected_count = (diagnostics.direct_evidence_rejected_count || 0) + 1;
+        diagnostics.direct_evidence_rejected_reasons = [
+          ...(diagnostics.direct_evidence_rejected_reasons || []),
+          conflict
+        ].slice(0, 8);
+      }
+      return !conflict;
+    })
     .filter(retrievalSourceIsTrustedTitleAssist)
     .filter((source) => !retrievalSourceHasBlockingTitleConflict(source, currentFields, currentTitle))
     .filter((source) => retrievalSourceHasStrongTitleSupport(source, currentFields, currentTitle))
@@ -4809,8 +4863,23 @@ function bestRetrievalTitleAssistSource(completion = {}, result = {}) {
 }
 
 function applySafeRetrievalTitleAssist(draft = {}, result = {}, completion = {}, payload = {}) {
-  const source = bestRetrievalTitleAssistSource(completion, result);
-  if (!source) return draft;
+  const diagnostics = {};
+  const source = bestRetrievalTitleAssistSource(completion, result, diagnostics);
+  if (!source) {
+    if (diagnostics.direct_evidence_rejected_count) {
+      return {
+        ...draft,
+        retrieval_title_assist: {
+          used: false,
+          mode: "",
+          blocked_by_direct_evidence_conflict: true,
+          rejected_candidate_count: diagnostics.direct_evidence_rejected_count,
+          rejected_reasons: diagnostics.direct_evidence_rejected_reasons || []
+        }
+      };
+    }
+    return draft;
+  }
   const currentFields = mergeCurrentFieldsForTitleAssist(
     result.fields,
     result.raw_provider_fields,
@@ -5350,6 +5419,7 @@ function explicitEmergencyFromPayload(payload = {}) {
 
 export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
+  applySafeRetrievalTitleAssist,
   boundedPayloadImagesFromImages,
   buildExactAnchorFastLaneShadow,
   catalogCandidateHasStrongAnchor,
@@ -5357,6 +5427,7 @@ export const __listingCopilotTitleTestHooks = {
   configuredMaxPayloadImages,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
+  scaffoldTitleConflictsWithDirectEvidence,
   shouldSkipVectorForCatalogContext
 };
 
