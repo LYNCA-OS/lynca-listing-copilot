@@ -465,8 +465,7 @@ const fastVisionSerialWithFocusedVerification = primaryFastVisionResult({
   ]
 });
 assert.equal(fastVisionSerialWithFocusedVerification.identity_resolution_status, "RESOLVED");
-assert.match(fastVisionSerialWithFocusedVerification.final_title, /\/50/);
-assert.doesNotMatch(fastVisionSerialWithFocusedVerification.final_title, /31\/50/);
+assert.match(fastVisionSerialWithFocusedVerification.final_title, /31\/50/);
 
 const visualOnlyGradeRequiresReview = primaryFastVisionResult({
   resolved: {
@@ -517,8 +516,7 @@ assert.equal(groundedMultiView.identity_resolution_status, "CONFIRMED");
 assert.match(groundedMultiView.final_title, /2024/);
 assert.match(groundedMultiView.final_title, /Topps Chrome/);
 assert.match(groundedMultiView.final_title, /Shohei Ohtani/);
-assert.match(groundedMultiView.final_title, /\/50/);
-assert.doesNotMatch(groundedMultiView.final_title, /31\/50/);
+assert.match(groundedMultiView.final_title, /31\/50/);
 assert.equal(groundedMultiView.title_render_source, "identity_resolution_deterministic_renderer");
 assert.notEqual(groundedMultiView.final_title, "provider title must not decide final facts");
 
@@ -1026,7 +1024,7 @@ const missingYear = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(missingYear.identity_resolution_status, "ABSTAIN");
-assert.equal(missingYear.final_title, "Topps Chrome Shohei Ohtani /50");
+assert.equal(missingYear.final_title, "Topps Chrome Shohei Ohtani 31/50");
 assert.equal(missingYear.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(missingYear.writer_required_fields, ["year"]);
 assert.ok(missingYear.unresolved.some((item) => /identity year/i.test(item)));
@@ -1173,8 +1171,7 @@ const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
   ]
 });
 assert.notEqual(serialFocusedVisionConfirmed.identity_resolution_status, "ABSTAIN");
-assert.match(serialFocusedVisionConfirmed.final_title, /\/299/);
-assert.doesNotMatch(serialFocusedVisionConfirmed.final_title, /196\/299/);
+assert.match(serialFocusedVisionConfirmed.final_title, /196\/299/);
 assert.ok(!serialFocusedVisionConfirmed.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const localizedOnlyGrounded = applyIdentityResolutionGate({
