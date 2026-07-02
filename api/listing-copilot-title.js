@@ -73,7 +73,8 @@ import { retrievalModes, retrievalQueryFamilies } from "../lib/listing/retrieval
 import {
   buildVectorCandidateAssistPacket,
   buildVectorCandidatePacket,
-  vectorCandidatePacketAssistEligibility
+  vectorCandidatePacketAssistEligibility,
+  vectorCandidatePacketHasPromptContent
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
@@ -2586,7 +2587,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
     "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
-    "Serial rule: every digit must be readable; otherwise serial_number must be empty. Deterministic title rendering will remove the instance numerator and publish only the serial limit such as /50; do not move serial_number into collector_number or checklist_code.",
+    "Serial rule: every digit must be readable; otherwise serial_number must be empty. Deterministic title rendering will remove the instance numerator and publish only the serial limit such as #/50; do not move serial_number into collector_number or checklist_code.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
     "Sapphire discipline: Topps Chrome Sapphire or Bowman Chrome Sapphire is a product/set phrase when visibly attached to the Chrome product line; keep the full phrase in product or set. Non-product Sapphire such as Heir Apparent Sapphire is exact parallel/taxonomy wording and must stay out of final fields unless catalog/printed label evidence directly supports it.",
     "Open-set taxonomy rule: without prompt-safe catalog/vector candidates, do not put Tiger, Zebra, Sapphire, Refractor, Wave, Shimmer, Mojo, Prizm, Sparkle, Holo, or similar optical pattern words in insert/card_type/parallel fields; leave them unresolved for writer/catalog confirmation.",
@@ -2691,19 +2692,26 @@ function providerMinimalOutputShape({
 
 function vectorCandidatePromptSection(packet = null) {
   if (!packet?.vector_retrieval) return "";
+  const fieldSupport = Array.isArray(packet.vector_retrieval.field_support)
+    ? packet.vector_retrieval.field_support
+    : [];
   const compactPacket = JSON.stringify(packet);
   return [
     "Vector Candidate Packet:",
     compactPacket,
     "Vector candidate policy:",
     "- Treat vector candidates as hypotheses only, never as ground truth.",
+    "- Field support rows are not identity candidates. They are approved/internal/official vocabulary or legality support only.",
+    "- Use a field support value only when the same field is visible or otherwise supported in the current uploaded images.",
+    "- Never use marketplace seller titles, reference serial numerators, reference grade, or reference cert numbers as current-card facts.",
     "- First read the current uploaded front/back images and crops.",
     "- You may select one candidate, partially use field support, reject all candidates, or return NOT_AVAILABLE.",
     "- Reject any candidate field that conflicts with current card/slab printed text, current serial, current collector/checklist code, current grade label, or current subject count.",
     "- Serial numerator and grade must come only from the current card/slab image, never from a reference candidate.",
     "- Exact parallel requires current image evidence, printed/slab text, product taxonomy, or clear denominator compatibility; visual color alone is surface_color.",
     "- Do not auto-fill unseen fields from a candidate. Leave uncertain fields empty and put the field name in unresolved.",
-    "- Populate vector_candidate_decision with supported_fields, rejected_fields, and conflicts. Use NOT_AVAILABLE when the packet has no candidates."
+    `- Packet field_support_count=${fieldSupport.length}. If there are no identity candidates but field support exists, use PARTIAL_SUPPORT only for verified fields.`,
+    "- Populate vector_candidate_decision with supported_fields, rejected_fields, and conflicts. Use NOT_AVAILABLE when the packet has no candidates and no field support."
   ].join("\n");
 }
 
@@ -3850,7 +3858,7 @@ async function prepareCatalogCandidateContext({
     packet,
     assistPacket,
     catalog_assist_eligibility: assistEligibility,
-    promptPacket: assistEligibility.prompt_candidate_count > 0,
+    promptPacket: vectorCandidatePacketHasPromptContent(assistPacket),
     catalog_cache_hit: false
   };
   if (cacheEnabled && cacheKey) {
@@ -3973,7 +3981,7 @@ async function prepareVectorCandidateContext({
     worker: workerResult,
     telemetry,
     vector_assist_eligibility: assistEligibility,
-    promptPacket: config.mode === vectorRetrievalModes.ASSIST && assistEligibility.prompt_candidate_count > 0
+    promptPacket: config.mode === vectorRetrievalModes.ASSIST && vectorCandidatePacketHasPromptContent(assistPacket)
   };
 }
 
@@ -4065,6 +4073,9 @@ function buildOpenSetReadiness(result = {}, {
   const catalogPromptCount = numericEligibilityValue(catalogEligibility, "prompt_candidate_count");
   const vectorPromptCount = numericEligibilityValue(vectorEligibility, "prompt_candidate_count");
   const promptCandidateCount = catalogPromptCount + vectorPromptCount;
+  const catalogFieldSupportCount = numericEligibilityValue(catalogEligibility, "field_support_count");
+  const vectorFieldSupportCount = numericEligibilityValue(vectorEligibility, "field_support_count");
+  const fieldSupportCount = catalogFieldSupportCount + vectorFieldSupportCount;
   const rawCandidateCount = numericEligibilityValue(catalogEligibility, "raw_candidate_count")
     + numericEligibilityValue(vectorEligibility, "raw_candidate_count");
   const approvedCandidateCount = numericEligibilityValue(catalogEligibility, "approved_candidate_count")
@@ -4088,6 +4099,9 @@ function buildOpenSetReadiness(result = {}, {
   if (assistEnabled && promptCandidateCount > 0) {
     status = "KNOWN_CATALOG_ASSISTED";
     releasePolicy = "writer_quick_review_with_catalog_assist";
+  } else if (assistEnabled && fieldSupportCount > 0) {
+    status = "CATALOG_FIELD_SUPPORT_ASSISTED";
+    releasePolicy = "writer_review_with_catalog_field_support";
   } else if (assistEnabled && conflictBlockedCount > 0 && approvedCandidateCount > 0) {
     status = "APPROVED_CANDIDATE_CONFLICT_REVIEW";
     releasePolicy = "writer_review_catalog_conflict";
@@ -4114,6 +4128,9 @@ function buildOpenSetReadiness(result = {}, {
     assist_enabled: assistEnabled,
     known_catalog_candidate_available: promptCandidateCount > 0,
     prompt_safe_candidate_count: promptCandidateCount,
+    prompt_field_support_count: fieldSupportCount,
+    catalog_field_support_count: catalogFieldSupportCount,
+    vector_field_support_count: vectorFieldSupportCount,
     prompt_candidate_ids: promptCandidateIdsFromEligibility(catalogEligibility, vectorEligibility),
     raw_candidate_count: rawCandidateCount,
     approved_candidate_count: approvedCandidateCount,

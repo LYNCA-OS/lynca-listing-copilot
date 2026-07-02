@@ -4,7 +4,8 @@ import {
   buildVectorCandidatePacket,
   candidateConflictFields,
   vectorCandidatePacketAssistEligibility,
-  vectorCandidatePacketHasAssistEligibleCandidates
+  vectorCandidatePacketHasAssistEligibleCandidates,
+  vectorCandidatePacketHasPromptContent
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { defaultVisualEmbeddingModelRevision } from "../lib/listing/retrieval/vector-model-defaults.mjs";
@@ -14,6 +15,15 @@ import { visualVectorProvider } from "../lib/listing/retrieval/visual-vector-pro
 import { openAiProviderResponseSchema } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { validateProviderEvidencePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import { evidenceSourceTypes } from "../lib/listing/evidence/evidence-schema.mjs";
+
+function eligibilityStableShape(eligibility = {}) {
+  const {
+    field_support_count: _fieldSupportCount,
+    field_support_fields: _fieldSupportFields,
+    ...rest
+  } = eligibility;
+  return rest;
+}
 
 const baseVectorEnv = {
   ENABLE_VECTOR_RETRIEVAL: "true",
@@ -88,7 +98,7 @@ assert.equal(packet.vector_retrieval.candidates[0].fields.serial_number, undefin
 assert.equal(packet.vector_retrieval.candidates[0].fields.grade_company, undefined, "reference grade must not enter GPT packet");
 assert.equal(packet.vector_retrieval.candidates[0].source_trust, "REFERENCE_CANDIDATE", "visual neighbors are not approved identity candidates by default");
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(packet), false);
-assert.deepEqual(vectorCandidatePacketAssistEligibility(packet), {
+assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(packet)), {
   eligible: false,
   reason: "no_approved_identity_candidate",
   raw_candidate_count: 1,
@@ -324,6 +334,78 @@ const catalogCandidateOnlyPacket = buildVectorCandidatePacket({
 assert.equal(vectorCandidatePacketAssistEligibility(catalogCandidateOnlyPacket).reason, "no_approved_identity_candidate");
 assert.equal(buildVectorCandidateAssistPacket(catalogCandidateOnlyPacket).vector_retrieval.candidates.length, 0);
 
+const marketplaceWeakPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "ebay-weak-title",
+    candidate_identity_id: "identity-ebay-weak-title",
+    provider_id: "catalog",
+    source_type: "MARKETPLACE_REFERENCE",
+    source_url: "https://www.ebay.com/itm/123",
+    title: "2025 Topps Chrome Seller Title 20/99 PSA 10",
+    reference_metadata: {
+      retrieval_status: "approved",
+      corrected_title_as_temporary_gt: true,
+      source_type: "MARKETPLACE_REFERENCE",
+      source_provider: "ebay"
+    },
+    field_derivation: {
+      corrected_title_as_temporary_gt: true
+    },
+    supporting_fields: ["subjects", "year", "product"],
+    fields: {
+      year: "2025",
+      product: "Topps Chrome",
+      players: ["Seller Title Player"],
+      serial_number: "20/99",
+      grade_company: "PSA",
+      card_grade: "10"
+    }
+  }]
+}, { limit: 5 });
+assert.equal(marketplaceWeakPacket.vector_retrieval.candidates[0].source_trust, "REFERENCE_CANDIDATE");
+assert.equal(vectorCandidatePacketAssistEligibility(marketplaceWeakPacket).prompt_candidate_count, 0);
+assert.equal(vectorCandidatePacketAssistEligibility(marketplaceWeakPacket).field_support_count, 0);
+assert.equal(buildVectorCandidateAssistPacket(marketplaceWeakPacket).vector_retrieval.candidates.length, 0);
+assert.equal(vectorCandidatePacketHasPromptContent(buildVectorCandidateAssistPacket(marketplaceWeakPacket)), false);
+
+const catalogFieldSupportOnlyPacket = buildVectorCandidatePacket({
+  open_set_decision: "LOW_MARGIN_MATCH",
+  open_set_reason: "similar catalog family but no exact identity lock",
+  sources: [{
+    candidate_id: "catalog-field-support-only",
+    candidate_identity_id: "identity-field-support-only",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    supporting_fields: ["players", "year", "product", "card_name"],
+    fields: {
+      year: "2024-25",
+      manufacturer: "Panini",
+      product: "Panini Encased",
+      card_name: "Rookie Endorsements",
+      players: ["Field Support Player"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2024-25",
+    manufacturer: "Panini",
+    players: ["Field Support Player"]
+  }
+});
+const fieldSupportEligibility = vectorCandidatePacketAssistEligibility(catalogFieldSupportOnlyPacket);
+assert.equal(fieldSupportEligibility.prompt_candidate_count, 0, "low margin identity candidate must not enter prompt");
+assert.equal(fieldSupportEligibility.field_support_count >= 2, true, "catalog should still provide safe field-level vocabulary support");
+const fieldSupportAssistPacket = buildVectorCandidateAssistPacket(catalogFieldSupportOnlyPacket);
+assert.equal(fieldSupportAssistPacket.vector_retrieval.candidates.length, 0);
+assert.equal(fieldSupportAssistPacket.vector_retrieval.status_code, "VECTOR_ASSIST_FIELD_SUPPORT_AVAILABLE");
+assert.equal(vectorCandidatePacketHasPromptContent(fieldSupportAssistPacket), true);
+assert.deepEqual(
+  fieldSupportAssistPacket.vector_retrieval.field_support.map((row) => row.field).filter((field) => ["product", "card_name"].includes(field)),
+  ["product", "card_name"]
+);
+
 const queryConflictPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "approved-wrong-neighbor",
@@ -352,9 +434,10 @@ const queryConflictPacket = buildVectorCandidatePacket({
   }
 });
 const queryConflictFields = queryConflictPacket.vector_retrieval.candidates[0].conflicting_fields.sort();
-assert.deepEqual(queryConflictFields, ["players", "product", "serial_number", "year"]);
+assert.deepEqual(queryConflictFields, ["players", "serial_number", "year"]);
+assert.deepEqual(queryConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["product"]);
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(queryConflictPacket), false);
-assert.deepEqual(vectorCandidatePacketAssistEligibility(queryConflictPacket), {
+assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(queryConflictPacket)), {
   eligible: false,
   reason: "approved_identity_candidate_direct_conflict",
   raw_candidate_count: 1,
@@ -414,7 +497,7 @@ const lowMarginOpenSetPacket = buildVectorCandidatePacket({
   }]
 }, { limit: 5 });
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(lowMarginOpenSetPacket), false);
-assert.deepEqual(vectorCandidatePacketAssistEligibility(lowMarginOpenSetPacket), {
+assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(lowMarginOpenSetPacket)), {
   eligible: false,
   reason: "open_set_low_margin_match_not_prompt_safe",
   raw_candidate_count: 1,
@@ -449,7 +532,7 @@ const lowMarginHardConstraintPacket = buildVectorCandidatePacket({
   }]
 }, { limit: 5 });
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(lowMarginHardConstraintPacket), true);
-assert.deepEqual(vectorCandidatePacketAssistEligibility(lowMarginHardConstraintPacket), {
+assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(lowMarginHardConstraintPacket)), {
   eligible: true,
   reason: "approved_identity_candidate_available",
   raw_candidate_count: 1,
@@ -482,7 +565,7 @@ const conflictingApprovedPacket = buildVectorCandidatePacket({
   }]
 }, { limit: 5 });
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(conflictingApprovedPacket), false);
-assert.deepEqual(vectorCandidatePacketAssistEligibility(conflictingApprovedPacket), {
+assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(conflictingApprovedPacket)), {
   eligible: false,
   reason: "approved_identity_candidate_direct_conflict",
   raw_candidate_count: 1,
@@ -533,7 +616,7 @@ const mixedAssistPacket = buildVectorCandidatePacket({
 }, { limit: 5 });
 const mixedEligibility = vectorCandidatePacketAssistEligibility(mixedAssistPacket);
 assert.equal(mixedAssistPacket.vector_retrieval.candidates.length, 3, "raw packet should preserve every candidate for telemetry");
-assert.deepEqual(mixedEligibility, {
+assert.deepEqual(eligibilityStableShape(mixedEligibility), {
   eligible: true,
   reason: "approved_identity_candidate_available",
   raw_candidate_count: 3,
@@ -562,7 +645,7 @@ const candidateOnlyPacket = buildVectorCandidatePacket({
   }]
 }, { limit: 5 });
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(candidateOnlyPacket), false);
-assert.deepEqual(vectorCandidatePacketAssistEligibility(candidateOnlyPacket), {
+assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(candidateOnlyPacket)), {
   eligible: false,
   reason: "no_approved_identity_candidate",
   raw_candidate_count: 1,
@@ -589,7 +672,7 @@ const approvedConflictOnlyPacket = buildVectorCandidatePacket({
   }]
 }, { limit: 5 });
 assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(approvedConflictOnlyPacket), false);
-assert.deepEqual(vectorCandidatePacketAssistEligibility(approvedConflictOnlyPacket), {
+assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(approvedConflictOnlyPacket)), {
   eligible: false,
   reason: "approved_identity_candidate_direct_conflict",
   raw_candidate_count: 1,

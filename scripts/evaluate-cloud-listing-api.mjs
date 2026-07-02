@@ -1003,6 +1003,27 @@ function catalogAssistPromptCandidateIds(data = {}) {
   return Array.isArray(ids) ? ids.map(normalizeText).filter(Boolean) : [];
 }
 
+function packetFieldSupport(packet = {}) {
+  const rows = packet?.vector_retrieval?.field_support || [];
+  return Array.isArray(rows) ? rows : [];
+}
+
+function catalogFieldSupportRows(data = {}) {
+  return packetFieldSupport(data.catalog_assist_packet).length
+    ? packetFieldSupport(data.catalog_assist_packet)
+    : packetFieldSupport(data.catalog_candidate_packet);
+}
+
+function vectorFieldSupportRows(data = {}) {
+  return packetFieldSupport(data.vector_assist_packet).length
+    ? packetFieldSupport(data.vector_assist_packet)
+    : packetFieldSupport(data.vector_candidate_packet);
+}
+
+function fieldSupportFields(rows = []) {
+  return [...new Set(rows.map((row) => normalizeText(row.field)).filter(Boolean))];
+}
+
 function fastPathUsed(data = {}) {
   if (data.fast_path?.assist_shadow_only === true) return false;
   return data.fast_path?.used === true || data.fast_path?.skipped_evidence_completion === true;
@@ -2068,6 +2089,8 @@ function evaluatedResultFromData({
     catalog_assist_eligibility: data.catalog_assist_eligibility || null,
     catalog_cache_hit: data.catalog_cache_hit === true,
     catalog_prompt_candidate_ids: catalogAssistPromptCandidateIds(data),
+    catalog_field_support_count: catalogFieldSupportRows(data).length,
+    catalog_field_support_fields: fieldSupportFields(catalogFieldSupportRows(data)),
     retrieval_title_assist: data.retrieval_title_assist || null,
     retrieval_title_assist_used: data.retrieval_title_assist?.used === true,
     vector_retrieval: data.vector_retrieval || null,
@@ -2079,6 +2102,8 @@ function evaluatedResultFromData({
     vector_conflict_blocked_count: vectorAssistCount(data, "conflict_blocked_count", 0),
     vector_prompt_candidate_count: vectorPromptCandidateCount(data),
     vector_prompt_candidate_ids: vectorAssistPromptCandidateIds(data),
+    vector_field_support_count: vectorFieldSupportRows(data).length,
+    vector_field_support_fields: fieldSupportFields(vectorFieldSupportRows(data)),
     vector_lazy_skip: data.vector_lazy_skip?.skipped === true,
     vector_lazy_skip_reason: data.vector_lazy_skip?.reason || null,
     vector_lazy_skip_catalog_candidate_id: data.vector_lazy_skip?.catalog_candidate_id || "",
@@ -2252,6 +2277,10 @@ function summarize(results = [], elapsedMs = 0) {
   const catalogLookupUsedCount = results.reduce((sum, item) => sum + Number(item.catalog_lookup_used_count || 0), 0);
   const catalogCandidateCountTotal = results.reduce((sum, item) => sum + Number(item.catalog_candidate_count || 0), 0);
   const catalogPromptCandidateCount = results.reduce((sum, item) => sum + Number(item.catalog_prompt_candidate_count || 0), 0);
+  const catalogFieldSupportCount = results.reduce((sum, item) => sum + Number(item.catalog_field_support_count || 0), 0);
+  const catalogFieldSupportFields = [...new Set(results.flatMap((item) => (
+    Array.isArray(item.catalog_field_support_fields) ? item.catalog_field_support_fields : []
+  )))];
   const catalogCandidateSelectedCount = results.reduce((sum, item) => sum + Number(item.catalog_candidate_selected_count || 0), 0);
   const catalogPromptAssistUsedCount = results.filter((item) => item.catalog_prompt_assist_used === true).length;
   const catalogCacheHitCount = results.filter((item) => item.catalog_cache_hit === true).length;
@@ -2269,6 +2298,10 @@ function summarize(results = [], elapsedMs = 0) {
   const vectorApprovedCandidateCount = results.reduce((sum, item) => sum + Number(item.vector_approved_candidate_count || 0), 0);
   const vectorConflictBlockedCount = results.reduce((sum, item) => sum + Number(item.vector_conflict_blocked_count || 0), 0);
   const vectorPromptCandidateCount = results.reduce((sum, item) => sum + Number(item.vector_prompt_candidate_count || 0), 0);
+  const vectorFieldSupportCount = results.reduce((sum, item) => sum + Number(item.vector_field_support_count || 0), 0);
+  const vectorFieldSupportFields = [...new Set(results.flatMap((item) => (
+    Array.isArray(item.vector_field_support_fields) ? item.vector_field_support_fields : []
+  )))];
   const vectorPromptCandidateIds = [...new Set(results.flatMap((item) => Array.isArray(item.vector_prompt_candidate_ids) ? item.vector_prompt_candidate_ids : []))];
   const vectorLazySkipCount = results.filter((item) => item.vector_lazy_skip === true).length;
   const retrievalTitleAssistUsedCount = results.filter((item) => item.retrieval_title_assist_used === true).length;
@@ -2492,6 +2525,8 @@ function summarize(results = [], elapsedMs = 0) {
     catalog_lookup_used_count: catalogLookupUsedCount,
     catalog_candidate_count: catalogCandidateCountTotal,
     catalog_prompt_candidate_count: catalogPromptCandidateCount,
+    catalog_field_support_count: catalogFieldSupportCount,
+    catalog_field_support_fields: catalogFieldSupportFields,
     catalog_prompt_assist_used_count: catalogPromptAssistUsedCount,
     catalog_cache_hit_count: catalogCacheHitCount,
     catalog_cache_hit_rate: rate(catalogCacheHitCount),
@@ -2534,6 +2569,8 @@ function summarize(results = [], elapsedMs = 0) {
     vector_approved_candidate_count: vectorApprovedCandidateCount,
     vector_conflict_blocked_count: vectorConflictBlockedCount,
     vector_prompt_candidate_count: vectorPromptCandidateCount,
+    vector_field_support_count: vectorFieldSupportCount,
+    vector_field_support_fields: vectorFieldSupportFields,
     vector_prompt_candidate_ids: vectorPromptCandidateIds,
     vector_lazy_skip_count: vectorLazySkipCount,
     vector_lazy_skip_rate: rate(vectorLazySkipCount),
@@ -2895,6 +2932,8 @@ export async function main(argv = process.argv, env = process.env) {
     `catalog_candidate_count: ${report.catalog_candidate_count ?? "n/a"}`,
     `catalog_candidate_available_rate: ${report.catalog_candidate_available_rate ?? "n/a"}`,
     `catalog_prompt_candidate_count: ${report.catalog_prompt_candidate_count ?? "n/a"}`,
+    `catalog_field_support_count: ${report.catalog_field_support_count ?? "n/a"}`,
+    `catalog_field_support_fields: ${(report.catalog_field_support_fields || []).join(",") || "n/a"}`,
     `catalog_prompt_assist_used_count: ${report.catalog_prompt_assist_used_count ?? "n/a"}`,
     `catalog_cache_hit_count: ${report.catalog_cache_hit_count ?? "n/a"}`,
     `catalog_cache_hit_rate: ${report.catalog_cache_hit_rate ?? "n/a"}`,
@@ -2917,6 +2956,8 @@ export async function main(argv = process.argv, env = process.env) {
     `vector_approved_candidate_count: ${report.vector_approved_candidate_count ?? "n/a"}`,
     `vector_conflict_blocked_count: ${report.vector_conflict_blocked_count ?? "n/a"}`,
     `vector_prompt_candidate_count: ${report.vector_prompt_candidate_count ?? "n/a"}`,
+    `vector_field_support_count: ${report.vector_field_support_count ?? "n/a"}`,
+    `vector_field_support_fields: ${(report.vector_field_support_fields || []).join(",") || "n/a"}`,
     `vector_prompt_candidate_ids: ${(report.vector_prompt_candidate_ids || []).join(",") || "n/a"}`,
     `vector_lazy_skip_count: ${report.vector_lazy_skip_count ?? "n/a"}`,
     `vector_lazy_skip_rate: ${report.vector_lazy_skip_rate ?? "n/a"}`,
