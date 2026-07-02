@@ -325,7 +325,7 @@ assert.equal(openai.report.per_card_latency_ms.p50, 1234);
 assert.equal(openai.report.cloud_preflight.ok, true);
 assert.equal(openai.report.cloud_preflight.default_provider, "openai_legacy");
 assert.equal(openai.report.accuracy_policy.corrected_title_as_temporary_gt, false);
-assert.equal(openai.report.accuracy_policy.corrected_title_is_reviewed_title_ground_truth, true);
+assert.equal(openai.report.accuracy_policy.corrected_title_is_reviewed_title_ground_truth, false);
 assert.equal(openai.report.accuracy_policy.corrected_title_field_ground_truth, false);
 assert.equal(openai.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
 
@@ -359,7 +359,7 @@ assert.equal(openai.report.accuracy_policy.corrected_title_temporary_gt_scope, "
 assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_title_accuracy, true);
 assert.equal(openai.report.accuracy_policy.corrected_title_token_recall_is_identity_accuracy, false);
 assert.equal(openai.report.results[0].corrected_title_as_temporary_gt, false);
-assert.equal(openai.report.results[0].corrected_title_is_reviewed_title_ground_truth, true);
+assert.equal(openai.report.results[0].corrected_title_is_reviewed_title_ground_truth, false);
 assert.equal(openai.report.results[0].corrected_title_field_ground_truth, false);
 assert.equal(openai.report.results[0].corrected_title_hint_sent_to_cloud, false);
 assert.equal(openai.report.pass_at_0_72_count, 1);
@@ -583,7 +583,7 @@ assert.equal(openaiCatalog.titlePayload.provider_options.enable_stored_visual_fe
 assert.equal(openaiCatalog.titlePayload.provider_options.enable_vector_retrieval, false);
 assert.equal(openaiCatalog.titlePayload.provider_options.vector_retrieval_mode, "off");
 assert.equal(openaiCatalog.titlePayload.catalog_observation_hint, null);
-assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_as_temporary_gt, true);
+assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_as_temporary_gt, false);
 assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
 assert.equal(openaiCatalog.report.results[0].corrected_title_hint_sent_to_cloud, false);
 assert.equal(openaiCatalog.report.fast_path_used_count, 0);
@@ -637,7 +637,7 @@ assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_t
   assert.equal(conflictedCatalogOnly.report.pass_at_0_72_count, 0);
   assert.equal(conflictedCatalogOnly.report.raw_pass_at_0_72_count, 0);
   assert.equal(conflictedCatalogOnly.report.candidate_proxy_selected_count, 0);
-  assert.equal(conflictedCatalogOnly.report.results[0].candidate_proxy_decision.policy, "reviewed_title_gt_safe_prompt_or_selected_candidate_lane");
+  assert.equal(conflictedCatalogOnly.report.results[0].candidate_proxy_decision.policy, "disabled_without_reviewed_title_gt_eval_mode");
 }
 
 {
@@ -681,7 +681,7 @@ assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_t
   assert.equal(conflictedVectorReview.report.pass_at_0_72_count, 0);
   assert.equal(conflictedVectorReview.report.candidate_proxy_selected_count, 0);
   assert.equal(conflictedVectorReview.report.candidate_proxy_catalog_selected_count, 0);
-  assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.policy, "reviewed_title_gt_safe_prompt_or_selected_candidate_lane");
+  assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.policy, "disabled_without_reviewed_title_gt_eval_mode");
   assert.equal(conflictedVectorReview.report.results[0].candidate_proxy_decision.selected_candidate_id, "");
   assert.equal(conflictedVectorReview.report.decision_trace[0].candidate_guided_title, "");
 }
@@ -776,17 +776,17 @@ assert.equal(openaiVector.report.catalog_cache_hit_count, 1);
 assert.equal(openaiVector.report.catalog_cache_hit_rate, 1);
 assert.deepEqual(openaiVector.report.catalog_prompt_candidate_ids, ["identity-1"]);
 assert.equal(openaiVector.report.catalog_candidate_selected_count, 0);
-assert.equal(openaiVector.report.correct_catalog_identity_available_count, 1);
-assert.equal(openaiVector.report.correct_candidate_recall_at_1, 1);
-assert.equal(openaiVector.report.correct_candidate_recall_at_3, 1);
-assert.equal(openaiVector.report.correct_candidate_recall_at_5, 1);
-assert.equal(openaiVector.report.catalog_candidate_available_rate, 1);
-assert.deepEqual(openaiVector.report.candidate_recall_at_1, { count: 1, denominator: 1, rate: 1 });
-assert.deepEqual(openaiVector.report.candidate_recall_at_3, { count: 1, denominator: 1, rate: 1 });
-assert.deepEqual(openaiVector.report.candidate_recall_at_5, { count: 1, denominator: 1, rate: 1 });
+assert.equal(openaiVector.report.correct_catalog_identity_available_count, 0);
+assert.equal(openaiVector.report.correct_candidate_recall_at_1, 0);
+assert.equal(openaiVector.report.correct_candidate_recall_at_3, 0);
+assert.equal(openaiVector.report.correct_candidate_recall_at_5, 0);
+assert.equal(openaiVector.report.catalog_candidate_available_rate, 0);
+assert.deepEqual(openaiVector.report.candidate_recall_at_1, { count: 0, denominator: 1, rate: 0 });
+assert.deepEqual(openaiVector.report.candidate_recall_at_3, { count: 0, denominator: 1, rate: 0 });
+assert.deepEqual(openaiVector.report.candidate_recall_at_5, { count: 0, denominator: 1, rate: 0 });
 assert.equal(openaiVector.report.gpt_selected_correct_candidate_count, 0);
 assert.equal(openaiVector.report.gpt_rejected_correct_candidate_count, 0);
-assert.equal(openaiVector.report.candidate_selection_accuracy.rate, 0);
+assert.equal(openaiVector.report.candidate_selection_accuracy.rate, null);
 assert.equal(openaiVector.report.vector_raw_candidate_count, 2);
 assert.equal(openaiVector.report.vector_approved_candidate_count, 1);
 assert.equal(openaiVector.report.vector_conflict_blocked_count, 1);
@@ -1145,7 +1145,7 @@ assert.throws(
 assert.equal(fairTokenRecall("Pele Rookie RC Autograph", "Pel\u00e9 RC Auto"), 1); // diacritics + synonym classes fold
 assert.equal(fairTokenRecall("Card 24/25 PSA", "Card 24/25 PSA"), 1);
 assert.equal(fairTokenRecall("Card #/25", "Card 24/25"), 1); // full serial covers denominator-only reference
-assert.ok(fairTokenRecall("Card 24/25", "Card /25") < 1); // denominator-only never covers a full-serial reference
+assert.equal(fairTokenRecall("Card 24/25", "Card #/25"), 1); // numerator omission is title policy; scored separately via serial analysis
 assert.equal(fairTokenRecall("Card 04/10 BGS", "Card 4/10 Beckett"), 1); // leading zeros + grader alias
 assert.equal(fairTokenRecall("Curry PSA 10 POP 2", "Curry PSA 10 2"), 1); // POP excluded from denominator
 assert.equal(fairTokenRecall("Wemby SSP Case Hit RC", "Wemby SSP RC"), 1); // case-hit bigram excluded

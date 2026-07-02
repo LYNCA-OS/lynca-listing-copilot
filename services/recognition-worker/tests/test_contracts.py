@@ -6,9 +6,9 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from app.contracts import validate_embed_request, validate_request
+from app.contracts import validate_embed_request, validate_ocr_field_request, validate_request
 from app.eval import evaluate_worker_items
-from app.main import embed_images_payload, analyze_payload
+from app.main import embed_images_payload, analyze_payload, ocr_field_payload
 from app.pipelines.card_rectification import rectify_card_from_array
 from app.pipelines.evidence_fusion import fuse_ocr_evidence
 from app.pipelines.field_parsers import parse_checklist_code, parse_collector_number, parse_grade, parse_serial
@@ -48,6 +48,18 @@ class RecognitionWorkerTests(unittest.TestCase):
         }
         self.assertEqual(validate_request(payload), [])
         self.assertTrue(validate_request({**payload, "images": []}))
+
+    def test_ocr_field_contract_validation(self):
+        payload = {
+            "request_id": "ocr_1",
+            "image_url": "https://example.supabase.co/storage/v1/object/sign/cards/serial.jpg?token=secret",
+            "crop_type": "serial_number",
+            "expected_pattern": "serial_number",
+            "crop_box": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.2},
+        }
+        self.assertEqual(validate_ocr_field_request(payload), [])
+        self.assertTrue(validate_ocr_field_request({**payload, "crop_type": "parallel_exact"}))
+        self.assertTrue(validate_ocr_field_request({**payload, "image_url": ""}))
 
     def test_embed_contract_validation(self):
         payload = {
@@ -124,6 +136,47 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["visual_features"]["models"]["primary"]["model_id"], "google/siglip2-base-patch16-384")
         self.assertFalse(result["glare_detection"]["generative_reconstruction_used"])
         self.assertEqual(result["rectification"]["status"], "UNAVAILABLE")
+
+    def test_ocr_field_payload_returns_field_evidence_without_signed_url_leak(self):
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
+        os.environ["ENABLE_PADDLEOCR"] = "true"
+        loaded = LoadedImage(
+            image_id="serial",
+            role="serial_number",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/serial.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+        payload = {
+            "request_id": "ocr_1",
+            "image_url": "https://example.supabase.co/storage/v1/object/sign/cards/serial.jpg?token=secret",
+            "crop_type": "serial_number",
+            "metadata": {"image_id": "serial"},
+        }
+
+        with patch("app.main.load_signed_image", return_value=loaded) as load_mock:
+            with patch("app.main.ocr_field_from_loaded_image", return_value={
+                "request_id": "ocr_1",
+                "crop_type": "serial_number",
+                "status": "OK",
+                "raw_text": "31/50",
+                "text_candidates": [{"text": "31/50", "confidence": 0.91}],
+                "boxes": [],
+                "confidence": 0.91,
+                "latency_ms": 12,
+                "model_id": "paddleocr",
+                "model_revision": "",
+            }) as ocr_mock:
+                result = ocr_field_payload(payload, authorization="Bearer test-token")
+
+        load_mock.assert_called_once()
+        ocr_mock.assert_called_once()
+        self.assertEqual(result["status"], "OK")
+        self.assertEqual(result["raw_text"], "31/50")
+        self.assertNotIn("token=secret", str(result))
 
     def test_embed_images_endpoint_returns_batch_embeddings_without_signed_urls(self):
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
@@ -237,6 +290,9 @@ class RecognitionWorkerTests(unittest.TestCase):
             request_timeout_seconds=3,
             enable_image_download=True,
             enable_paddleocr=False,
+            paddleocr_preload=False,
+            paddleocr_model_id="paddleocr",
+            paddleocr_model_revision="test-revision",
             enable_tesseract_ocr=False,
             enable_opencv_rectification=False,
             enable_visual_embeddings=True,
@@ -284,6 +340,9 @@ class RecognitionWorkerTests(unittest.TestCase):
             request_timeout_seconds=3,
             enable_image_download=True,
             enable_paddleocr=False,
+            paddleocr_preload=False,
+            paddleocr_model_id="paddleocr",
+            paddleocr_model_revision="test-revision",
             enable_tesseract_ocr=False,
             enable_opencv_rectification=False,
             enable_visual_embeddings=True,

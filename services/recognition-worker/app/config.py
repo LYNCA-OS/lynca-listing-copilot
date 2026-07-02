@@ -29,6 +29,9 @@ class WorkerConfig:
     request_timeout_seconds: int
     enable_image_download: bool
     enable_paddleocr: bool
+    paddleocr_preload: bool
+    paddleocr_model_id: str
+    paddleocr_model_revision: str
     enable_tesseract_ocr: bool
     enable_opencv_rectification: bool
     enable_visual_embeddings: bool
@@ -52,6 +55,9 @@ def load_config() -> WorkerConfig:
         request_timeout_seconds=_int_env("RECOGNITION_REQUEST_TIMEOUT_SECONDS", 30),
         enable_image_download=os.getenv("ENABLE_IMAGE_DOWNLOAD", "false").lower() == "true",
         enable_paddleocr=os.getenv("ENABLE_PADDLEOCR", "false").lower() == "true",
+        paddleocr_preload=os.getenv("PADDLEOCR_PRELOAD", "false").lower() == "true",
+        paddleocr_model_id=os.getenv("PADDLEOCR_MODEL_ID", os.getenv("PADDLE_OCR_MODEL_ID", "paddleocr")) or "paddleocr",
+        paddleocr_model_revision=os.getenv("PADDLEOCR_MODEL_REVISION", os.getenv("PADDLE_OCR_MODEL_REVISION", "")) or "",
         enable_tesseract_ocr=os.getenv("ENABLE_TESSERACT_OCR", "false").lower() == "true",
         enable_opencv_rectification=os.getenv("ENABLE_OPENCV_RECTIFICATION", "false").lower() == "true",
         enable_visual_embeddings=os.getenv("ENABLE_VISUAL_EMBEDDINGS", "false").lower() == "true",

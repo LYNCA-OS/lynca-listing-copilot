@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import {
   hasComplexVisualParallelRisk,
@@ -78,6 +79,7 @@ import { vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } fr
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
+import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
 
 const cookieName = "lynca_metaverse_session";
@@ -440,6 +442,18 @@ function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
+}
+
+async function sendListingResult(res, statusCode, result, timingContext, payload = {}) {
+  const timedResult = withTiming(result, timingContext);
+  const workflowResult = await attachWorkflowSidecarsToListingResult({
+    result: timedResult,
+    payload,
+    env: process.env,
+    fetchImpl: globalThis.fetch,
+    scheduler: typeof waitUntil === "function" ? waitUntil : null
+  });
+  sendJson(res, statusCode, workflowResult);
 }
 
 function normalizeTitle(title, maxLength) {
@@ -5430,17 +5444,17 @@ export default async function handler(req, res) {
     ]);
 
     if (approvedMemoryResult) {
-      sendJson(res, 200, withTiming(approvedMemoryResult, timingContext));
+      await sendListingResult(res, 200, approvedMemoryResult, timingContext, payload);
       return;
     }
 
     if (identityCacheResult) {
-      sendJson(res, 200, withTiming(identityCacheResult, timingContext));
+      await sendListingResult(res, 200, identityCacheResult, timingContext, payload);
       return;
     }
 
     if (preProviderRescanResult) {
-      sendJson(res, 200, withTiming(preProviderRescanResult, timingContext));
+      await sendListingResult(res, 200, preProviderRescanResult, timingContext, payload);
       return;
     }
 
@@ -5482,11 +5496,11 @@ export default async function handler(req, res) {
       }
     });
 
-    sendJson(res, 200, withTiming(result, timingContext));
+    await sendListingResult(res, 200, result, timingContext, payload);
   } catch (error) {
     const message = safeProviderErrorMessage(error);
 
-    sendJson(res, 200, withTiming({
+    await sendListingResult(res, 200, {
       title: "",
       confidence: "FAILED",
       reason: message,
@@ -5503,6 +5517,6 @@ export default async function handler(req, res) {
       provider_initial_token_diagnostics: error.details?.initial_token_diagnostics || null,
       provider_truncation_retry_attempted: error.details?.truncation_retry_attempted === true,
       provider_truncation_retry_attempts: Number(error.details?.truncation_retry_attempts || 0)
-    }, timingContext));
+    }, timingContext, payload);
   }
 }

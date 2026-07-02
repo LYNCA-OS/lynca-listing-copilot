@@ -99,9 +99,14 @@ assert.equal(task(report, "subject_team_observation").status, "SUPPORTED");
 assert.equal(task(report, "collector_number_observation").status, "CONFIRMED");
 assert.equal(task(report, "surface_color_observation").status, "REVIEW_REQUIRED");
 assert.equal(task(report, "grade_label_observation").status, "REVIEW_REQUIRED");
+assert.equal(task(report, "ocr_serial_verifier").status, "REVIEW_REQUIRED");
+assert.equal(task(report, "ocr_collector_number_verifier").status, "NOT_APPLICABLE");
+assert.equal(task(report, "ocr_slab_label_verifier").status, "REVIEW_REQUIRED");
+assert.equal(task(report, "ocr_tcg_code_verifier").status, "NOT_APPLICABLE");
 assert.equal(task(report, "catalog_exact_code_lookup").status, "SUPPORTED");
 assert.equal(task(report, "vector_retrieval_lazy").status, "SUPPORTED");
 assert.equal(task(report, "surface_color_observation").evidence_patch.surface_color.confidence, 0.72);
+assert.equal(task(report, "ocr_serial_verifier").source_summary[0].policy, "evidence_patch_only_resolver_gate_decides");
 assert.equal(report.module_task_status.catalog_exact_code_lookup, "SUPPORTED");
 assert.equal(report.timing.time_to_first_field_ms, 1200);
 assert.equal(report.timing.time_to_core_identity_ms, 1200);
@@ -134,5 +139,46 @@ const noCatalogPrompt = buildFieldTaskOrchestration({
 }, { timing });
 assert.equal(task(noCatalogPrompt, "catalog_exact_code_lookup").status, "REVIEW_REQUIRED");
 assert.equal(task(noCatalogPrompt, "vector_retrieval_lazy").status, "REVIEW_REQUIRED");
+
+const ocrSupported = buildFieldTaskOrchestration({
+  ...baseResult,
+  resolved: {
+    ...baseResult.resolved,
+    serial_number: "31/50"
+  },
+  evidence: {
+    ...baseResult.evidence,
+    serial_number: {
+      value: "31/50",
+      status: "CONFIRMED",
+      confidence: 0.94,
+      sources: [{ source_type: "OCR", region: "serial_number", observed_text: "31/50" }]
+    }
+  },
+  ocr_verification: {
+    provider: "paddle_ocr",
+    tasks: {
+      ocr_serial_verifier: {
+        status: "CONFIRMED",
+        trigger_reason: "serial_missing_low_confidence_or_conflicting",
+        latency_ms: 44,
+        model_id: "paddleocr",
+        model_revision: "ppocr-v5"
+      }
+    }
+  },
+  timing: {
+    ...timing,
+    paddle_ocr_ms: 44
+  }
+}, {
+  timing: {
+    ...timing,
+    paddle_ocr_ms: 44
+  }
+});
+assert.equal(task(ocrSupported, "ocr_serial_verifier").status, "CONFIRMED");
+assert.equal(task(ocrSupported, "ocr_serial_verifier").latency_ms, 44);
+assert.equal(task(ocrSupported, "ocr_serial_verifier").source_summary[0].model_revision, "ppocr-v5");
 
 console.log("field task orchestrator tests passed");

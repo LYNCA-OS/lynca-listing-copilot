@@ -18,7 +18,9 @@ This service is the container boundary for computer-vision and OCR work. The Ver
   returns explicit `UNAVAILABLE` rather than fabricated vectors.
 - Candidate-verification paths return explicit `UNAVAILABLE` or `DISABLED`
   placeholders until a verifier backend is enabled.
-- PaddleOCR is listed as an optional adapter dependency but is not enabled by default.
+- PaddleOCR is implemented as an optional field-level OCR verifier endpoint and is not enabled by default.
+  It reads local hard-text crops such as serial, collector number, checklist code, slab label, TCG code, product text, and player name.
+  It returns EvidencePatch-style text evidence only; it does not generate titles or override resolved identity fields.
 - Unlimited-OCR is documented as an experimental future adapter and is not included in this image.
 
 ## Endpoints
@@ -26,6 +28,7 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 - `GET /healthz`
 - `GET /readyz`
 - `POST /v1/analyze-card-images`
+- `POST /v1/ocr-field`
 
 ## Required Environment
 
@@ -35,6 +38,9 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 Optional:
 
 - `ENABLE_PADDLEOCR=false`
+- `PADDLEOCR_PRELOAD=false`
+- `PADDLEOCR_WORKER_PROCESSES=1`
+- `PADDLE_PDX_CACHE_HOME=` (optional model cache directory; use a mounted volume in production)
 - `ENABLE_TESSERACT_OCR=false`
 - `TESSERACT_LANGUAGE=eng`
 - `TESSERACT_PSM=11`
@@ -78,3 +84,7 @@ docker run --rm -p 8080:8080 \
 For production, run this worker as a dedicated cloud service with enough memory
 for SigLIP2 model weights. Keep the Vercel listing API as the orchestration
 layer; do not load PyTorch/Transformers inside Vercel serverless functions.
+For PaddleOCR throughput, prefer multiple single-process worker instances or
+container replicas and configure the Node app with `PADDLE_OCR_WORKER_URLS`.
+That keeps Paddle predictors isolated while still letting the orchestrator
+round-robin field verification requests.

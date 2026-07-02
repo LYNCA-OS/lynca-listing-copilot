@@ -12,7 +12,7 @@ except ImportError:  # pragma: no cover - local unit tests do not require FastAP
     HTTPException = Exception
 
 from .config import load_config
-from .contracts import response_for_unavailable, validate_embed_request, validate_request
+from .contracts import response_for_unavailable, validate_embed_request, validate_ocr_field_request, validate_request
 from .pipelines.card_rectification import rectification_unavailable, rectify_card_from_array
 from .pipelines.candidate_verification import candidate_verification_unavailable
 from .pipelines.evidence_fusion import fuse_ocr_evidence
@@ -20,12 +20,13 @@ from .pipelines.glare_detection import detect_glare_from_array, glare_unavailabl
 from .pipelines.image_loader import ImageLoadError, load_signed_image
 from .pipelines.image_quality import measure_image_quality_from_array, quality_unavailable
 from .pipelines.multi_card_detection import detect_multi_card_from_loaded_images, multi_card_detection_unavailable
-from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_unavailable
+from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_field_from_loaded_image, ocr_unavailable, preload_paddleocr_engine
 from .pipelines.region_proposal import propose_regions_for_rectified_card
 from .pipelines.visual_embeddings import extract_visual_embeddings
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
 
 _EMBEDDING_CACHE: dict[str, list[float]] = {}
+_PADDLEOCR_PRELOAD_STATUS: dict[str, Any] = {"status": "NOT_RUN"}
 
 
 def _image_cache_hash(image: dict[str, Any], loaded: Any) -> str:
@@ -305,8 +306,97 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
     }
 
 
+def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None) -> dict[str, Any]:
+    started = time.time()
+    config = load_config()
+    verify_bearer_token(authorization, config.token)
+    errors = validate_ocr_field_request(payload)
+    if errors:
+        raise ValueError({"errors": errors})
+
+    image_url = str(payload.get("image_url") or "")
+    validate_image_url(image_url, UrlPolicy(config.allowed_image_hosts))
+    request_id = str(payload.get("request_id") or "")
+    crop_type = str(payload.get("crop_type") or "")
+
+    if not config.enable_image_download:
+        return {
+            "request_id": request_id,
+            "crop_type": crop_type,
+            "status": "UNAVAILABLE",
+            "reason": "image_download_disabled",
+            "raw_text": "",
+            "text_candidates": [],
+            "boxes": [],
+            "confidence": 0,
+            "latency_ms": int((time.time() - started) * 1000),
+            "model_id": config.paddleocr_model_id,
+            "model_revision": config.paddleocr_model_revision,
+        }
+    if not config.enable_paddleocr:
+        return {
+            "request_id": request_id,
+            "crop_type": crop_type,
+            "status": "UNAVAILABLE",
+            "reason": "paddleocr_disabled",
+            "raw_text": "",
+            "text_candidates": [],
+            "boxes": [],
+            "confidence": 0,
+            "latency_ms": int((time.time() - started) * 1000),
+            "model_id": config.paddleocr_model_id,
+            "model_revision": config.paddleocr_model_revision,
+        }
+
+    try:
+        loaded = load_signed_image(
+            {
+                "image_id": payload.get("metadata", {}).get("image_id") or request_id or "ocr_field_image",
+                "role": crop_type,
+                "signed_url": image_url,
+            },
+            allowed_hosts=config.allowed_image_hosts,
+            max_bytes=config.max_image_bytes,
+            max_total_pixels=config.max_total_pixels,
+            timeout_seconds=config.request_timeout_seconds,
+        )
+    except (ImageLoadError, SecurityError) as error:
+        return {
+            "request_id": request_id,
+            "crop_type": crop_type,
+            "status": "UNAVAILABLE",
+            "reason": str(error)[:240],
+            "raw_text": "",
+            "text_candidates": [],
+            "boxes": [],
+            "confidence": 0,
+            "latency_ms": int((time.time() - started) * 1000),
+            "model_id": config.paddleocr_model_id,
+            "model_revision": config.paddleocr_model_revision,
+        }
+
+    return ocr_field_from_loaded_image(
+        loaded,
+        crop_type=crop_type,
+        crop_box=payload.get("crop_box"),
+        request_id=request_id,
+        model_id=config.paddleocr_model_id,
+        model_revision=config.paddleocr_model_revision,
+    )
+
+
 if FastAPI is not None:
     app = FastAPI(title="LYNCA Recognition Worker", version="0.1.0")
+
+    @app.on_event("startup")
+    def preload_paddleocr_on_startup() -> None:
+        global _PADDLEOCR_PRELOAD_STATUS
+        config = load_config()
+        if config.enable_paddleocr and config.paddleocr_preload:
+            _PADDLEOCR_PRELOAD_STATUS = preload_paddleocr_engine(
+                model_id=config.paddleocr_model_id,
+                model_revision=config.paddleocr_model_revision,
+            )
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -319,6 +409,10 @@ if FastAPI is not None:
             "status": "ready" if config.token else "not_ready",
             "pipeline_version": config.pipeline_version,
             "paddleocr_enabled": config.enable_paddleocr,
+            "paddleocr_preload_enabled": config.paddleocr_preload,
+            "paddleocr_preload_status": _PADDLEOCR_PRELOAD_STATUS,
+            "paddleocr_model_id": config.paddleocr_model_id,
+            "paddleocr_model_revision": config.paddleocr_model_revision,
             "tesseract_ocr_enabled": config.enable_tesseract_ocr,
             "opencv_rectification_enabled": config.enable_opencv_rectification,
             "visual_embeddings_enabled": config.enable_visual_embeddings,
@@ -343,6 +437,15 @@ if FastAPI is not None:
     def embed_images(payload: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
         try:
             return embed_images_payload(payload, authorization=authorization)
+        except SecurityError as error:
+            raise HTTPException(status_code=403, detail=str(error))
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=error.args[0])
+
+    @app.post("/v1/ocr-field")
+    def ocr_field(payload: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        try:
+            return ocr_field_payload(payload, authorization=authorization)
         except SecurityError as error:
             raise HTTPException(status_code=403, detail=str(error))
         except ValueError as error:

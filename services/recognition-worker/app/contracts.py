@@ -26,6 +26,18 @@ IMAGE_ROLES = {
     "additional",
 }
 
+OCR_FIELD_CROP_TYPES = {
+    "serial_number",
+    "serial_denominator",
+    "collector_number",
+    "checklist_code",
+    "slab_cert",
+    "grade_label",
+    "tcg_code",
+    "product_text",
+    "player_name",
+}
+
 EMBED_IMAGE_ROLES = {
     "front_global",
     "back_global",
@@ -164,6 +176,41 @@ def validate_embed_request(payload: dict[str, Any], config: Any | None = None) -
                 errors.append({"path": key, "message": f"{key} is required"})
             elif requested != _text(expected_value):
                 errors.append({"path": key, "message": f"{key} does not match configured embedding pipeline"})
+
+    return errors
+
+
+def validate_ocr_field_request(payload: dict[str, Any]) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    if not isinstance(payload, dict):
+        return [{"path": "payload", "message": "payload must be an object"}]
+
+    if not _text(payload.get("request_id")):
+        errors.append({"path": "request_id", "message": "request_id is required"})
+    if not _text(payload.get("image_url")):
+        errors.append({"path": "image_url", "message": "image_url is required"})
+
+    crop_type = _text(payload.get("crop_type"))
+    if crop_type not in OCR_FIELD_CROP_TYPES:
+        errors.append({"path": "crop_type", "message": "invalid OCR field crop type"})
+
+    crop_box = payload.get("crop_box")
+    if crop_box is not None:
+        if not isinstance(crop_box, dict) or isinstance(crop_box, list):
+            errors.append({"path": "crop_box", "message": "crop_box must be an object"})
+        else:
+            for key in ("x", "y", "width", "height"):
+                try:
+                    value = float(crop_box.get(key))
+                except (TypeError, ValueError):
+                    errors.append({"path": f"crop_box.{key}", "message": "crop_box value must be a number"})
+                    continue
+                if value < 0:
+                    errors.append({"path": f"crop_box.{key}", "message": "crop_box value must be non-negative"})
+
+    metadata = payload.get("metadata", {})
+    if metadata is not None and not isinstance(metadata, dict):
+        errors.append({"path": "metadata", "message": "metadata must be an object"})
 
     return errors
 

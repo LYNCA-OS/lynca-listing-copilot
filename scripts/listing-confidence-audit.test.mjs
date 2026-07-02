@@ -160,7 +160,8 @@ const visuallyGuessedParallel = await callApi({
 });
 
 assert.equal(visuallyGuessedParallel.confidence, "MEDIUM");
-assert.match(visuallyGuessedParallel.title, /137\/199/);
+assert.match(visuallyGuessedParallel.title, /#\/199/);
+assert.doesNotMatch(visuallyGuessedParallel.title, /137\/199/);
 assert.doesNotMatch(visuallyGuessedParallel.title, /Fuchsia|Wave/i);
 
 const missingVisibleSerial = await callApi({
@@ -180,7 +181,8 @@ const missingVisibleSerial = await callApi({
 });
 
 assert.equal(missingVisibleSerial.confidence, "MEDIUM");
-assert.match(missingVisibleSerial.title, /137\/199/);
+assert.match(missingVisibleSerial.title, /#\/199/);
+assert.doesNotMatch(missingVisibleSerial.title, /137\/199/);
 assert.doesNotMatch(missingVisibleSerial.unresolved.join(" "), /title missing serial/);
 
 const localizedTrainerIllustrator = await callApi({
@@ -410,7 +412,8 @@ const clearBowmanFirstAutoSerial = await callApi({
 });
 
 assert.equal(clearBowmanFirstAutoSerial.confidence, "MEDIUM");
-assert.match(clearBowmanFirstAutoSerial.title, /137\/199/);
+assert.match(clearBowmanFirstAutoSerial.title, /#\/199/);
+assert.doesNotMatch(clearBowmanFirstAutoSerial.title, /137\/199/);
 
 const redundantTitleCleaned = await callApi({
   title: "2025 Bowman Chrome Test Player Rookie RC Card Autograph Auto Refractor Parallel",
@@ -686,7 +689,8 @@ const aceBaileyChecklistSuppressed = await callApi({
 assert.match(aceBaileyChecklistSuppressed.title, /Topps Chrome/i);
 assert.match(aceBaileyChecklistSuppressed.title, /Ace Bailey/i);
 assert.match(aceBaileyChecklistSuppressed.title, /Chrome Rookie Auto/i);
-assert.match(aceBaileyChecklistSuppressed.title, /31\/150/);
+assert.match(aceBaileyChecklistSuppressed.title, /#\/150/);
+assert.doesNotMatch(aceBaileyChecklistSuppressed.title, /31\/150/);
 assert.doesNotMatch(aceBaileyChecklistSuppressed.title, /#?TCAR-AB/i);
 assert.doesNotMatch(aceBaileyChecklistSuppressed.title, /#31\/150|Serial 31\/150|Numbered 31\/150/i);
 assert.equal((aceBaileyChecklistSuppressed.title.match(/\bAuto\b/gi) || []).length, 1);
@@ -715,7 +719,8 @@ assert.match(aceBaileyChromeAutoOnce.title, /Topps Chrome/i);
 assert.match(aceBaileyChromeAutoOnce.title, /Chrome Auto/i);
 assert.match(aceBaileyChromeAutoOnce.title, /\bGold\b/i);
 assert.doesNotMatch(aceBaileyChromeAutoOnce.title, /Gold\s+Refractor/i);
-assert.match(aceBaileyChromeAutoOnce.title, /31\/50/);
+assert.match(aceBaileyChromeAutoOnce.title, /#\/50/);
+assert.doesNotMatch(aceBaileyChromeAutoOnce.title, /31\/50/);
 assert.match(aceBaileyChromeAutoOnce.title, /\bRC\b/);
 assert.equal((aceBaileyChromeAutoOnce.title.match(/\bAuto\b/gi) || []).length, 1);
 
@@ -759,7 +764,8 @@ const manufacturerDedupeGradeEnd = await callApi({
 assert.match(manufacturerDedupeGradeEnd.title, /^2024 Topps Dynasty Shohei Ohtani/i);
 assert.ok(manufacturerDedupeGradeEnd.writer_required_fields.includes("year"));
 assert.doesNotMatch(manufacturerDedupeGradeEnd.title, /Topps Topps Dynasty/i);
-assert.match(manufacturerDedupeGradeEnd.title, /3\/5/);
+assert.match(manufacturerDedupeGradeEnd.title, /#\/5/);
+assert.doesNotMatch(manufacturerDedupeGradeEnd.title, /3\/5/);
 assert.match(manufacturerDedupeGradeEnd.title, /PSA 9\/10$/);
 
 const cosmicChromeProductProtected = await callApi({
@@ -780,7 +786,8 @@ const cosmicChromeProductProtected = await callApi({
 }, { maxTitleLength: 120 });
 
 assert.match(cosmicChromeProductProtected.title, /^2025-26 Topps Cosmic Chrome Stephen Curry/i);
-assert.match(cosmicChromeProductProtected.title, /2\/5/);
+assert.match(cosmicChromeProductProtected.title, /#\/5/);
+assert.doesNotMatch(cosmicChromeProductProtected.title, /2\/5/);
 assert.match(cosmicChromeProductProtected.title, /PSA 10$/);
 assert.doesNotMatch(cosmicChromeProductProtected.title, /^2026 Topps Chrome\b/i);
 
@@ -802,7 +809,7 @@ const autoDedupeCanonicalOrder = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(autoDedupeCanonicalOrder.title, /^2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto Gold 31\/150 RC$/i);
+assert.match(autoDedupeCanonicalOrder.title, /^2025-26 Topps Chrome Ace Bailey Chrome Rookie Auto Gold #\/150 RC$/i);
 assert.ok(autoDedupeCanonicalOrder.writer_required_fields.includes("year"));
 assert.equal((autoDedupeCanonicalOrder.title.match(/\bAuto\b/gi) || []).length, 1);
 assert.doesNotMatch(autoDedupeCanonicalOrder.title, /RC Auto/i);
@@ -828,7 +835,7 @@ const starSwatchCodeSuppressedSerialPreserved = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum 04\/10 Auto Patch PSA 10$/i);
+assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum #\/10 Auto Patch PSA 10$/i);
 assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("year"));
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Panini Panini Flawless/i);
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /#04\/10|#?SR-KD|Serial 04\/10|Numbered 04\/10/i);
@@ -850,7 +857,8 @@ const curryRedPropulsion = await callApi({
 
 assert.match(curryRedPropulsion.title, /Cosmic Chrome/i);
 assert.match(curryRedPropulsion.title, /Red Propulsion/i);
-assert.match(curryRedPropulsion.title, /2\/5/);
+assert.match(curryRedPropulsion.title, /#\/5/);
+assert.doesNotMatch(curryRedPropulsion.title, /2\/5/);
 assert.doesNotMatch(curryRedPropulsion.title, /^2026 Topps Chrome Stephen Curry/i);
 
 const propulsionChecklistSuppressed = await callApi({
@@ -872,7 +880,8 @@ const propulsionChecklistSuppressed = await callApi({
 
 assert.match(propulsionChecklistSuppressed.title, /Propulsion/i);
 assert.match(propulsionChecklistSuppressed.title, /Stephen Curry/i);
-assert.match(propulsionChecklistSuppressed.title, /2\/5/);
+assert.match(propulsionChecklistSuppressed.title, /#\/5/);
+assert.doesNotMatch(propulsionChecklistSuppressed.title, /2\/5/);
 assert.doesNotMatch(propulsionChecklistSuppressed.title, /#2\/5|Serial 2\/5|Numbered 2\/5/i);
 assert.doesNotMatch(propulsionChecklistSuppressed.title, /#?PRP-3/i);
 
@@ -914,7 +923,8 @@ assert.match(immaculateDualSignatures.title, /Dual Signatures/i);
 assert.match(immaculateDualSignatures.title, /Dual Signatures Auto/i);
 assert.match(immaculateDualSignatures.title, /Shaquille O'Neal/i);
 assert.match(immaculateDualSignatures.title, /Anfernee Hardaway/i);
-assert.match(immaculateDualSignatures.title, /01\/25/);
+assert.match(immaculateDualSignatures.title, /#\/25/);
+assert.doesNotMatch(immaculateDualSignatures.title, /01\/25/);
 assert.doesNotMatch(immaculateDualSignatures.title, /#35/);
 assert.doesNotMatch(immaculateDualSignatures.title, /Dual Auto/i);
 assert.equal((immaculateDualSignatures.title.match(/\bAuto\b/gi) || []).length, 1);
@@ -934,7 +944,7 @@ const shaqPennyV124 = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(shaqPennyV124.title, "2015-16 Panini Immaculate Shaquille O'Neal / Anfernee Hardaway Dual Signatures Auto 01/25");
+assert.equal(shaqPennyV124.title, "2015-16 Panini Immaculate Shaquille O'Neal / Anfernee Hardaway Dual Signatures Auto #/25");
 assert.ok(shaqPennyV124.writer_required_fields.includes("year"));
 
 const compressedSerialPreserved = await callApi({
@@ -954,7 +964,8 @@ const compressedSerialPreserved = await callApi({
 }, { maxTitleLength: 80 });
 
 assert.match(compressedSerialPreserved.title, /Dual Signatures/i);
-assert.match(compressedSerialPreserved.title, /01\/25/);
+assert.match(compressedSerialPreserved.title, /#\/25/);
+assert.doesNotMatch(compressedSerialPreserved.title, /01\/25/);
 
 const psaAuthAutoStandard = await callApi({
   title: "2024 Topps Chrome Test Player Auto PSA AUTH Auto 10",
@@ -993,7 +1004,7 @@ const jaysonTatumBgsV124 = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(jaysonTatumBgsV124.title, "2017-18 Panini Prizm Jayson Tatum Rookie Auto /10 BGS 9.5/10");
+assert.equal(jaysonTatumBgsV124.title, "2017-18 Panini Prizm Jayson Tatum Rookie Auto #/10 BGS 9.5/10");
 assert.ok(jaysonTatumBgsV124.writer_required_fields.includes("year"));
 
 const jaysonTatumBgsLooseAutoGradeFolded = await callApi({
@@ -1014,9 +1025,9 @@ const jaysonTatumBgsLooseAutoGradeFolded = await callApi({
   unresolved: []
 }, { maxTitleLength: 140 });
 
-assert.equal(jaysonTatumBgsLooseAutoGradeFolded.title, "2017-18 Panini Prizm Jayson Tatum Fast Break Auto /10 BGS 9.5/10");
+assert.equal(jaysonTatumBgsLooseAutoGradeFolded.title, "2017-18 Panini Prizm Jayson Tatum Fast Break Auto #/10 BGS 9.5/10");
 assert.ok(jaysonTatumBgsLooseAutoGradeFolded.writer_required_fields.includes("year"));
-assert.match(jaysonTatumBgsLooseAutoGradeFolded.title, /Auto \/10 BGS 9\.5\/10$/);
+assert.match(jaysonTatumBgsLooseAutoGradeFolded.title, /Auto #\/10 BGS 9\.5\/10$/);
 assert.doesNotMatch(jaysonTatumBgsLooseAutoGradeFolded.title, /\bAuto 10\b/i);
 
 const genericPsaCardAndAutoGrade = await callApi({
@@ -1112,8 +1123,8 @@ const genericBgsCardAndAutoGrade = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.equal(genericBgsCardAndAutoGrade.title, "2024 Panini Prizm Placeholder Guard Silver /10 Auto BGS 9/9");
-assert.match(genericBgsCardAndAutoGrade.title, /\/10 Auto BGS 9\/9$/);
+assert.equal(genericBgsCardAndAutoGrade.title, "2024 Panini Prizm Placeholder Guard Silver #/10 Auto BGS 9/9");
+assert.match(genericBgsCardAndAutoGrade.title, /#\/10 Auto BGS 9\/9$/);
 assert.doesNotMatch(genericBgsCardAndAutoGrade.title, /\bAuto 9\b/i);
 
 const genericBgsAuthAndAutoGrade = await callApi({

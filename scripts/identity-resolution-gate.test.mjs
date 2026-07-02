@@ -428,7 +428,7 @@ const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   verificationFields: ["serial_number"]
 });
 assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
-assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani /50");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani #/50");
 assert.equal(fastVisionSerialWithoutFocusedVerification.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(fastVisionSerialWithoutFocusedVerification.writer_required_fields, ["year", "serial_number"]);
 assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
@@ -465,7 +465,7 @@ const fastVisionSerialWithFocusedVerification = primaryFastVisionResult({
   ]
 });
 assert.equal(fastVisionSerialWithFocusedVerification.identity_resolution_status, "RESOLVED");
-assert.match(fastVisionSerialWithFocusedVerification.final_title, /31\/50/);
+assert.match(fastVisionSerialWithFocusedVerification.final_title, /#\/50/);
 
 const visualOnlyGradeRequiresReview = primaryFastVisionResult({
   resolved: {
@@ -516,7 +516,7 @@ assert.equal(groundedMultiView.identity_resolution_status, "CONFIRMED");
 assert.match(groundedMultiView.final_title, /2024/);
 assert.match(groundedMultiView.final_title, /Topps Chrome/);
 assert.match(groundedMultiView.final_title, /Shohei Ohtani/);
-assert.match(groundedMultiView.final_title, /31\/50/);
+assert.match(groundedMultiView.final_title, /#\/50/);
 assert.equal(groundedMultiView.title_render_source, "identity_resolution_deterministic_renderer");
 assert.notEqual(groundedMultiView.final_title, "provider title must not decide final facts");
 
@@ -1024,7 +1024,7 @@ const missingYear = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(missingYear.identity_resolution_status, "ABSTAIN");
-assert.equal(missingYear.final_title, "Topps Chrome Shohei Ohtani 31/50");
+assert.equal(missingYear.final_title, "Topps Chrome Shohei Ohtani #/50");
 assert.equal(missingYear.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(missingYear.writer_required_fields, ["year"]);
 assert.ok(missingYear.unresolved.some((item) => /identity year/i.test(item)));
@@ -1055,7 +1055,7 @@ const serialFocusedFailure = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialFocusedFailure.identity_resolution_status, "ABSTAIN");
-assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow /299");
+assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialFocusedFailure.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialFocusedFailure.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialFocusedFailure.final_title, /196\/299/);
@@ -1090,7 +1090,7 @@ const serialSingleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialSingleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow /299");
+assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialSingleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialSingleFrontSource.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialSingleFrontSource.final_title, /196\/299/);
@@ -1131,7 +1131,7 @@ const serialDoubleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialDoubleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow /299");
+assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialDoubleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialDoubleFrontSource.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialDoubleFrontSource.final_title, /196\/299/);
@@ -1171,7 +1171,7 @@ const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
   ]
 });
 assert.notEqual(serialFocusedVisionConfirmed.identity_resolution_status, "ABSTAIN");
-assert.match(serialFocusedVisionConfirmed.final_title, /196\/299/);
+assert.match(serialFocusedVisionConfirmed.final_title, /#\/299/);
 assert.ok(!serialFocusedVisionConfirmed.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const localizedOnlyGrounded = applyIdentityResolutionGate({

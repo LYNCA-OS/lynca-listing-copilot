@@ -160,6 +160,78 @@ function curlFetchForConnectToIp(connectToIp = "") {
   };
 }
 
+function vercelCurlFetchForDeployment(deploymentUrl = "") {
+  const deployment = normalizeText(deploymentUrl).replace(/\/+$/, "");
+  if (!deployment) return null;
+  return async function vercelCurlFetch(url, init = {}) {
+    const parsedUrl = new URL(url);
+    const path = `${parsedUrl.pathname}${parsedUrl.search}`;
+    const tempDir = await mkdtemp(join(tmpdir(), "lynca-vercel-curl-eval-"));
+    const headerPath = join(tempDir, "headers.txt");
+    const bodyPath = join(tempDir, "body.txt");
+    const requestBodyPath = join(tempDir, "request-body.json");
+    const method = normalizeText(init.method || "GET").toUpperCase();
+    const args = [
+      "curl",
+      path,
+      "--deployment",
+      deployment,
+      "--",
+      "--silent",
+      "--show-error",
+      "--dump-header",
+      headerPath,
+      "--output",
+      bodyPath,
+      "--max-time",
+      String(Math.max(1, Math.ceil(Number(process.env.CLOUD_LISTING_API_CURL_TIMEOUT_MS || 240000) / 1000))),
+      "--connect-timeout",
+      String(Math.max(1, Math.ceil(Number(process.env.CLOUD_LISTING_API_CURL_CONNECT_TIMEOUT_MS || 30000) / 1000))),
+      "--request",
+      method
+    ];
+    for (const [key, value] of headerEntries(init.headers)) {
+      if (value === undefined || value === null) continue;
+      args.push("--header", `${key}: ${value}`);
+    }
+    if (init.body !== undefined && init.body !== null) {
+      await writeFile(requestBodyPath, String(init.body));
+      args.push("--data-binary", `@${requestBodyPath}`);
+    }
+
+    try {
+      await execFileAsync("vercel", args, {
+        maxBuffer: 1024 * 1024,
+        env: process.env
+      });
+      const [headerText, bodyText] = await Promise.all([
+        readFile(headerPath, "utf8").catch(() => ""),
+        readFile(bodyPath, "utf8").catch(() => "")
+      ]);
+      const parsedHeaders = parseHeaderBlock(headerText);
+      return {
+        ok: parsedHeaders.status >= 200 && parsedHeaders.status < 300,
+        status: parsedHeaders.status,
+        headers: {
+          get(name) {
+            return parsedHeaders.headers[String(name || "").toLowerCase()] || "";
+          }
+        },
+        text: async () => bodyText,
+        json: async () => JSON.parse(bodyText)
+      };
+    } catch (error) {
+      const detail = normalizeText(error?.stderr || `vercel curl exited with code ${error?.code || "unknown"}`).slice(0, 240);
+      const sanitized = new Error(`Cloud vercel curl request failed for ${method} ${path}: ${detail}`);
+      sanitized.code = error?.code || "vercel_curl_request_failed";
+      sanitized.retryable = true;
+      throw sanitized;
+    } finally {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  };
+}
+
 function unquoteEnvValue(value = "") {
   const trimmed = String(value || "").trim();
   if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
@@ -352,6 +424,51 @@ function providerOptionsForMode(providerMode, {
   };
 }
 
+function titleReferencePolicyForItem(item = {}, referenceTitle = "", providerOptions = {}) {
+  const hasReferenceTitle = Boolean(normalizeText(referenceTitle));
+  const groundTruth = item.ground_truth && typeof item.ground_truth === "object" ? item.ground_truth : {};
+  const sourceRecord = item.source_record && typeof item.source_record === "object" ? item.source_record : {};
+  const sourceProvider = normalizeText(item.source_provider || sourceRecord.source_provider).toLowerCase();
+  const sourceType = normalizeText(sourceRecord.source_type).toUpperCase();
+  const sourceText = [
+    groundTruth.source,
+    item.reference_capture_source,
+    item.source_manifest,
+    sourceType,
+    sourceProvider
+  ].map((value) => normalizeText(value).toLowerCase()).join(" ");
+  const explicitReviewed = groundTruth.reviewed_ground_truth === true
+    || sourceRecord.reviewed_ground_truth === true
+    || sourceRecord.ebay_answer_key_is_reviewed_ground_truth === true
+    || sourceRecord.internal_reviewed_ground_truth === true
+    || ["APPROVED", "REVIEWED", "REVIEWED_INTERNAL", "APPROVED_INTERNAL", "APPROVED_REVIEWED_INTERNAL"].includes(normalizeText(item.review_status).toUpperCase());
+  const explicitNotReviewed = groundTruth.reviewed_ground_truth === false
+    || sourceRecord.title_derived_fields_are_ground_truth === false
+    || sourceRecord.ebay_answer_key_is_reviewed_ground_truth === false;
+  const marketplaceWeak = sourceProvider.includes("ebay")
+    || sourceText.includes("marketplace")
+    || sourceText.includes("weak")
+    || sourceText.includes("seller_title")
+    || sourceText.includes("blind_eval");
+  const reviewedGroundTruth = hasReferenceTitle && explicitReviewed && !explicitNotReviewed && !marketplaceWeak;
+  const label_type = !hasReferenceTitle
+    ? "none"
+    : reviewedGroundTruth
+      ? "reviewed_ground_truth"
+      : marketplaceWeak
+        ? "marketplace_weak_label"
+        : "unreviewed_reference_title";
+  return {
+    has_reference_title: hasReferenceTitle,
+    label_type,
+    reviewed_ground_truth: reviewedGroundTruth,
+    marketplace_weak_label: hasReferenceTitle && marketplaceWeak,
+    can_drive_candidate_proxy: reviewedGroundTruth && providerOptions.corrected_title_as_temporary_gt === true,
+    can_score_weak_title_metrics: hasReferenceTitle,
+    model_prompt_visible: groundTruth.model_prompt_visible === true || sourceRecord.seller_title_visible_to_model === true
+  };
+}
+
 function imageInputs(item = {}) {
   return (Array.isArray(item.images) ? item.images : [])
     .filter((image) => image?.bucket && image?.object_path)
@@ -423,12 +540,18 @@ function fairReferenceTokens(value) {
   const tokens = fairTitleTokens(value);
   const output = [];
   for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
+    let token = tokens[index];
     if (fairReferenceNoiseTokens.has(token)) continue;
     if (token === "case" && tokens[index + 1] === "hit") {
       index += 1;
       continue;
     }
+    // Title policy renders numerical rarity only (#/50); numerator accuracy
+    // is scored separately via serial_number_title_analysis. Fold reference
+    // full serials to the denominator form so policy-compliant titles are
+    // not penalized for the deliberate numerator omission.
+    const fullSerial = token.match(/^\d{1,4}\/(\d{1,4})$/);
+    if (fullSerial) token = `/${fullSerial[1]}`;
     output.push(token);
   }
   return output;
@@ -603,13 +726,16 @@ function candidateProxyDecision({
       enabled: false,
       policy: "disabled_without_reviewed_title_gt_eval_mode",
       selected: false,
+      selected_source: "raw_provider",
+      selected_candidate_id: "",
       selected_title: rawTitle,
       selected_comparison: rawComparison,
       raw_title: rawTitle,
       raw_token_recall: rawRecall,
       selected_token_recall: rawRecall,
       delta: 0,
-      candidates_considered_count: 0
+      candidates_considered_count: 0,
+      best_candidate: null
     };
   }
 
@@ -1202,6 +1328,21 @@ function compactCandidate(candidate = {}, index = 0) {
 
 function compactCandidates(candidates = [], limit = 5) {
   return candidates.slice(0, limit).map(compactCandidate);
+}
+
+function compactWorkflowSidecars(workflowSidecars = null) {
+  if (!workflowSidecars || typeof workflowSidecars !== "object" || Array.isArray(workflowSidecars)) return null;
+  return Object.fromEntries(Object.entries(workflowSidecars).map(([tool, sidecar]) => {
+    const value = sidecar && typeof sidecar === "object" && !Array.isArray(sidecar) ? sidecar : {};
+    return [tool, {
+      status: normalizeText(value.status || ""),
+      task_count: Number.isFinite(Number(value.task_count)) ? Number(value.task_count) : 0,
+      workflow_action_ids: Array.isArray(value.workflow_action_ids) ? value.workflow_action_ids.slice(0, 5) : [],
+      trigger_reasons: Array.isArray(value.trigger_reasons) ? value.trigger_reasons.slice(0, 8) : [],
+      blocking: value.blocking === true,
+      reason: normalizeText(value.reason || "").slice(0, 180)
+    }];
+  }));
 }
 
 function compactComparableValue(value) {
@@ -1828,6 +1969,7 @@ function evaluatedResultFromData({
 } = {}) {
   const data = response?.data || {};
   const providerOptions = providerOptionsForMode(providerMode, evalOptions);
+  const titleReferencePolicy = titleReferencePolicyForItem(item, referenceTitle, providerOptions);
   const providerFailure = isProviderFailureResponse(response || {}, data);
   const breakpoints = resultBreakpoints(data, item);
   const finalTitle = normalizeText(data.final_title || data.title || data.rendered_title);
@@ -1839,7 +1981,7 @@ function evaluatedResultFromData({
     ? null
     : candidateProxyDecision({
       providerMode,
-      referenceTitle,
+      referenceTitle: titleReferencePolicy.can_drive_candidate_proxy ? referenceTitle : "",
       rawTitle: finalTitle,
       catalogCandidateList,
       vectorCandidateList
@@ -1854,8 +1996,8 @@ function evaluatedResultFromData({
     ? null
     : titleComparison(titleWithSerialNumeratorRemoved(referenceTitle), titleWithSerialNumeratorRemoved(finalTitle));
   const serialAnalysis = providerFailure ? null : serialTitleAnalysis(referenceTitle, scoredTitle);
-  const correctCatalogRank = providerFailure ? null : correctCatalogCandidateRank(data, referenceTitle);
-  const gptSelectedCorrect = providerFailure ? null : gptSelectedCorrectCatalogCandidate(data, referenceTitle);
+  const correctCatalogRank = providerFailure || !titleReferencePolicy.reviewed_ground_truth ? null : correctCatalogCandidateRank(data, referenceTitle);
+  const gptSelectedCorrect = providerFailure || !titleReferencePolicy.reviewed_ground_truth ? null : gptSelectedCorrectCatalogCandidate(data, referenceTitle);
   const copiedReferenceFields = providerFailure ? [] : copiedReferenceInstanceFields(data);
   const failureCode = providerFailure ? providerFailureCode(data, response?.http_status || 200) || "provider_failed" : null;
   const openSetReadiness = providerFailure ? technicalOpenSetReadiness(failureCode) : openSetReadinessForData(data);
@@ -1874,9 +2016,11 @@ function evaluatedResultFromData({
     status: "evaluated",
     technical_failure: providerFailure,
     technical_failure_code: failureCode,
-    corrected_title_as_temporary_gt: providerOptions.corrected_title_as_temporary_gt === true,
-    corrected_title_as_reviewed_title_gt: providerOptions.corrected_title_as_reviewed_title_gt === true,
-    corrected_title_is_reviewed_title_ground_truth: Boolean(referenceTitle),
+    corrected_title_as_temporary_gt: titleReferencePolicy.can_drive_candidate_proxy === true,
+    corrected_title_as_reviewed_title_gt: titleReferencePolicy.reviewed_ground_truth === true,
+    corrected_title_is_reviewed_title_ground_truth: titleReferencePolicy.reviewed_ground_truth === true,
+    reference_title_label_type: titleReferencePolicy.label_type,
+    reference_title_policy: titleReferencePolicy,
     corrected_title_field_ground_truth: false,
     corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
     provider_error_recovered: providerErrorAttempts.length > 0 && !providerFailure,
@@ -1914,6 +2058,7 @@ function evaluatedResultFromData({
     field_task_orchestration: data.field_task_orchestration || null,
     field_task_status: Array.isArray(data.field_task_status) ? data.field_task_status : [],
     module_task_status: data.module_task_status || null,
+    workflow_sidecars: compactWorkflowSidecars(data.workflow_sidecars),
     provider_truncation_retry_attempted: data.provider_truncation_retry_attempted === true,
     provider_truncation_retry_attempts: Number(data.provider_truncation_retry_attempts || 0),
     retrieval: data.retrieval || null,
@@ -2028,6 +2173,7 @@ function technicalFailureResult({
 } = {}) {
   const code = error?.code || "cloud_eval_error";
   const providerOptions = providerOptionsForMode(providerMode, evalOptions);
+  const titleReferencePolicy = titleReferencePolicyForItem(item, referenceTitle, providerOptions);
   return {
     candidate_id: candidateId(item),
     provider: providerMode,
@@ -2036,9 +2182,11 @@ function technicalFailureResult({
     technical_failure: true,
     technical_failure_code: code,
     provider_error_recovered: false,
-    corrected_title_as_temporary_gt: providerOptions.corrected_title_as_temporary_gt === true,
-    corrected_title_as_reviewed_title_gt: providerOptions.corrected_title_as_reviewed_title_gt === true,
-    corrected_title_is_reviewed_title_ground_truth: Boolean(referenceTitle),
+    corrected_title_as_temporary_gt: titleReferencePolicy.can_drive_candidate_proxy === true,
+    corrected_title_as_reviewed_title_gt: titleReferencePolicy.reviewed_ground_truth === true,
+    corrected_title_is_reviewed_title_ground_truth: titleReferencePolicy.reviewed_ground_truth === true,
+    reference_title_label_type: titleReferencePolicy.label_type,
+    reference_title_policy: titleReferencePolicy,
     corrected_title_field_ground_truth: false,
     corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
     provider_error_attempts: providerErrorAttempts.length
@@ -2074,6 +2222,12 @@ function summarize(results = [], elapsedMs = 0) {
   const attempted = results.length;
   const temporaryGtUsed = results.some((item) => item.corrected_title_as_temporary_gt === true);
   const reviewedTitleGtUsed = results.some((item) => item.corrected_title_is_reviewed_title_ground_truth === true);
+  const referenceTitleLabelTypeCounts = results.reduce((counts, item) => {
+    const key = normalizeText(item.reference_title_label_type || "unknown") || "unknown";
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+  const marketplaceWeakLabelCount = results.filter((item) => item.reference_title_label_type === "marketplace_weak_label").length;
   const correctedTitleHintSentCount = results.filter((item) => item.corrected_title_hint_sent_to_cloud === true).length;
   const providerErrors = results.filter((item) => item.status === "provider_error").length;
   const evaluated = results.filter((item) => item.status === "evaluated").length;
@@ -2298,15 +2452,23 @@ function summarize(results = [], elapsedMs = 0) {
       corrected_title_as_temporary_gt: temporaryGtUsed,
       corrected_title_as_reviewed_title_gt: reviewedTitleGtUsed,
       corrected_title_is_reviewed_title_ground_truth: reviewedTitleGtUsed,
-      corrected_title_ground_truth_scope: "title_level_writer_reviewed_marketplace_title",
+      reference_title_label_type_counts: referenceTitleLabelTypeCounts,
+      marketplace_weak_label_count: marketplaceWeakLabelCount,
+      corrected_title_ground_truth_scope: reviewedTitleGtUsed
+        ? "title_level_writer_reviewed_internal_title"
+        : "not_reviewed_ground_truth",
       corrected_title_field_ground_truth: false,
       corrected_title_hint_sent_to_cloud: correctedTitleHintSentCount > 0,
       corrected_title_hint_sent_to_cloud_count: correctedTitleHintSentCount,
       corrected_title_temporary_gt_scope: "legacy_alias_for_reviewed_title_gt_candidate_scoring",
       corrected_title_token_recall_is_identity_accuracy: false,
       corrected_title_token_recall_is_title_accuracy: true,
-      corrected_title_token_recall_use: "reviewed_title_overlap_title_level_metric",
-      correct_catalog_candidate_basis: "reviewed_corrected_title_until_field_ground_truth_exists",
+      corrected_title_token_recall_use: marketplaceWeakLabelCount > 0
+        ? "marketplace_weak_label_overlap_diagnostic_only"
+        : "reviewed_title_overlap_title_level_metric",
+      correct_catalog_candidate_basis: reviewedTitleGtUsed
+        ? "reviewed_corrected_title_until_field_ground_truth_exists"
+        : "disabled_without_reviewed_ground_truth",
       default_cloud_eval_mode: correctedTitleHintSentCount > 0
         ? "answer_hint_enabled_not_blind"
         : "blind_to_corrected_title_hint",
@@ -2678,7 +2840,9 @@ export async function main(argv = process.argv, env = process.env) {
   const progress = hasFlag(argv, "--progress");
   const checkpointPath = argValue(argv, "--checkpoint-path", hasFlag(argv, "--checkpoint") ? outPath : "");
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
-  const fetchImpl = curlFetchForConnectToIp(runtimeEnv.CLOUD_LISTING_API_CONNECT_TO_IP || "");
+  const fetchImpl = hasFlag(argv, "--vercel-curl") || boolValue(runtimeEnv.CLOUD_LISTING_API_USE_VERCEL_CURL, false)
+    ? vercelCurlFetchForDeployment(baseUrl)
+    : curlFetchForConnectToIp(runtimeEnv.CLOUD_LISTING_API_CONNECT_TO_IP || "");
   validateProtectionBypassSecret({ bypassSecret, env: runtimeEnv });
   const report = await evaluateCloudListingApi({
     dataset: await readJson(datasetPath),
