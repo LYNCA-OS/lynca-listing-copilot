@@ -91,6 +91,15 @@ Specific extraction rules:
 - If there are multiple unrelated cards or a lot listing, mark confidence FAILED.
 - Do not begin lot-card title generation. Multiple unrelated cards remain FAILED for this MVP.
 
+### Direct-observation confidence rules
+
+These fields are read directly off the current images. When the printed text is legible, do not hedge them to MEDIUM confidence:
+
+- Slab grade: a graded slab always prints its numeric grade next to the company. Read them together from the label, report the source as `SLAB_LABEL` with `text_visible: true`, and use HIGH confidence when the label is legible. If the company is readable but the numeric grade is not, list the grade in `unresolved` instead of returning a low-confidence guess. Never report the company at HIGH while leaving the equally legible numeric grade at MEDIUM.
+- Surface color: `surface_color` is a direct visual observation. When the border/parallel color is unmistakable (Gold, Orange, Green, Purple, ...), report it at HIGH confidence with a `CARD_FRONT` source. Reserve MEDIUM for genuinely ambiguous tints.
+- Season-format year: basketball, hockey, and club-soccer products are season-dated. The two-year season (for example `2023-24`) is printed in the product/copyright line on the card back. Actively look for it and prefer the full season format over a single year; never shorten `2023-24` to `2023`.
+- Printed parallel names: Topps and Bowman Chrome family cards print the parallel name on the card back near the card number (for example `REFRACTOR`, `GOLD REFRACTOR`, `ORANGE WAVE REFRACTOR`, `X-FRACTOR`). Actively check the back for this printed line. When present, extract it verbatim into `parallel_exact` with a `CARD_BACK` source and `text_visible: true`. This is OCR of printed text, not visual classification — the color-only rule still applies whenever no parallel name is printed.
+
 ## 2. Knowledge Registry / Resolution Engine
 
 Purpose: convert raw extracted fields into collectible-market terminology.
