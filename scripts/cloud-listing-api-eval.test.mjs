@@ -400,6 +400,72 @@ assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, f
 assert.equal(openai.titlePayload.catalog_observation_hint, null);
 
 {
+  const coldStart = await runProvider("ebay_cold_start_blind", {
+    titleResponder({ body }) {
+      return {
+        final_title: "2025 Topps Chrome Test Player Gold",
+        confidence: "HIGH",
+        provider: body.provider,
+        fields: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Test Player"],
+          surface_color: "Gold"
+        },
+        resolved: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Test Player"],
+          surface_color: "Gold"
+        },
+        catalog_assist_eligibility: {
+          eligible: false,
+          reason: "reference_candidates_only",
+          raw_candidate_count: 2,
+          approved_candidate_count: 0,
+          conflict_blocked_count: 0,
+          prompt_candidate_count: 0,
+          prompt_candidate_ids: []
+        },
+        vector_assist_eligibility: {
+          eligible: false,
+          reason: "reference_candidates_only",
+          raw_candidate_count: 3,
+          approved_candidate_count: 0,
+          conflict_blocked_count: 0,
+          prompt_candidate_count: 0,
+          prompt_candidate_ids: []
+        },
+        cold_start_status: "SAFE_DRAFT_READY",
+        writer_action_required: true,
+        cold_start_safe_draft: {
+          active: true,
+          status: "SAFE_DRAFT_READY",
+          safe_draft_ready: true
+        },
+        timing: { total_ms: 1000 },
+        usage: { provider_calls: 1, input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+      };
+    }
+  });
+  assert.equal(coldStart.report.provider, "ebay_cold_start_blind");
+  assert.equal(coldStart.titlePayload.provider_options.enable_catalog_assist, true);
+  assert.equal(coldStart.titlePayload.provider_options.enable_vector_assist, true);
+  assert.equal(coldStart.titlePayload.provider_options.cold_start_blind, true);
+  assert.equal(coldStart.titlePayload.provider_options.enable_ephemeral_external_retrieval, true);
+  assert.equal(coldStart.titlePayload.provider_options.corrected_title_as_temporary_gt, false);
+  assert.equal(coldStart.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
+  assert.equal(coldStart.titlePayload.catalog_observation_hint, null);
+  assert.equal(coldStart.report.accuracy_policy.corrected_title_as_temporary_gt, false);
+  assert.equal(coldStart.report.cold_start_safe_draft_count, 1);
+  assert.equal(coldStart.report.cold_start_safe_draft_rate, 1);
+  assert.equal(coldStart.report.no_approved_catalog_match_count, 1);
+  assert.equal(coldStart.report.catalog_gap_created_count, 1);
+  assert.equal(coldStart.report.decision_trace[0].cold_start_title, "2025 Topps Chrome Test Player Gold");
+  assert.equal(coldStart.report.decision_trace[0].cold_start_status, "SAFE_DRAFT_READY");
+}
+
+{
   const referenceCopyRisk = await runProvider("d", {
     titleResponder({ body }) {
       return {

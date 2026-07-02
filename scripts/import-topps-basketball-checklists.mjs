@@ -369,6 +369,8 @@ export async function importToppsBasketballChecklists({
       table: "catalog_sources",
       row: {
         ...source,
+        raw_checksum: source.raw_checksum || null,
+        source_trust: source.source_trust || "OFFICIAL_CHECKLIST_CANDIDATE",
         fetched_at: new Date().toISOString()
       },
       fetchImpl
@@ -415,6 +417,17 @@ export async function importToppsBasketballChecklists({
 
     const stagingRows = rows.map((row) => ({
       ...row,
+      raw_text: row.raw_text || null,
+      parsed_fields: row.identity_fields || {},
+      field_status_by_name: row.field_statuses || {},
+      review_required_fields: Object.entries(row.field_statuses || {})
+        .filter(([, status]) => /REVIEW_REQUIRED/i.test(status))
+        .map(([field]) => field),
+      source_type: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_type || sourceType,
+      source_trust: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_trust || "OFFICIAL_CHECKLIST_CANDIDATE",
+      raw_checksum: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.raw_checksum || null,
+      source_url: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_url || null,
+      source_title: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_name || null,
       source_id: sourceId
     }));
     for (const batch of chunks(stagingRows)) {

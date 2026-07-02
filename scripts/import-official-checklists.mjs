@@ -1,7 +1,12 @@
-import { importToppsBasketballChecklists } from "./import-topps-basketball-checklists.mjs";
+import { argValue, runOfficialCatalogImport } from "./official-catalog-cli.mjs";
 
 export async function importOfficialChecklists(options = {}) {
-  return importToppsBasketballChecklists(options);
+  const argv = options.argv || process.argv.slice(2);
+  return runOfficialCatalogImport({
+    ...options,
+    argv,
+    provider: argValue(argv, "--provider", options.provider || "topps")
+  });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

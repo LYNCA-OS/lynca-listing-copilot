@@ -7,6 +7,11 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
+import {
+  analyzeColdStartDraft,
+  externalRetrievalTraceFromResult,
+  focusedCropMetricsFromResult
+} from "../lib/listing/cold-start/cold-start-policy.mjs";
 
 const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candidates.json";
 const defaultOutPath = "data/eval/provider-regression-30/cloud-listing-api-latest.json";
@@ -15,7 +20,8 @@ const execFileAsync = promisify(execFile);
 const providerModes = Object.freeze({
   OPENAI_BASELINE: "openai_baseline",
   OPENAI_CATALOG: "openai_catalog",
-  OPENAI_VECTOR: "openai_vector"
+  OPENAI_VECTOR: "openai_vector",
+  EBAY_COLD_START_BLIND: "ebay_cold_start_blind"
 });
 
 function argValue(argv, name, fallback = "") {
@@ -276,7 +282,10 @@ function normalizeProviderMode(value = "") {
     return providerModes.OPENAI_CATALOG;
   }
   if (["c", "d", "openai-vector", "openai_vector", "gpt-vector", "gpt_vector"].includes(raw)) return providerModes.OPENAI_VECTOR;
-  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_baseline, openai_catalog, or openai_vector.`);
+  if (["cold-start", "cold_start", "cold-start-blind", "cold_start_blind", "ebay-cold-start-blind", "ebay_cold_start_blind"].includes(raw)) {
+    return providerModes.EBAY_COLD_START_BLIND;
+  }
+  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_baseline, openai_catalog, openai_vector, or ebay_cold_start_blind.`);
 }
 
 function cloudProviderForMode(providerMode) {
@@ -286,11 +295,15 @@ function cloudProviderForMode(providerMode) {
 function providerOptionsForMode(providerMode, {
   correctedTitleAsTemporaryGt = true,
   sendCorrectedTitleHintToCloud = false,
-  disableVectorLazyMode = false
+  disableVectorLazyMode = false,
+  coldStartBlind = false
 } = {}) {
-  const catalogAssist = providerMode === providerModes.OPENAI_CATALOG || providerMode === providerModes.OPENAI_VECTOR;
-  const vectorAssist = providerMode === providerModes.OPENAI_VECTOR;
-  const temporaryGt = catalogAssist && correctedTitleAsTemporaryGt === true;
+  const coldStartMode = coldStartBlind === true || providerMode === providerModes.EBAY_COLD_START_BLIND;
+  const catalogAssist = providerMode === providerModes.OPENAI_CATALOG
+    || providerMode === providerModes.OPENAI_VECTOR
+    || coldStartMode;
+  const vectorAssist = providerMode === providerModes.OPENAI_VECTOR || coldStartMode;
+  const temporaryGt = catalogAssist && correctedTitleAsTemporaryGt === true && coldStartMode !== true;
   const sendHintToCloud = temporaryGt && sendCorrectedTitleHintToCloud === true;
   const vectorQueryTimeoutMs = positiveInteger(
     process.env.CLOUD_LISTING_API_VECTOR_QUERY_TIMEOUT_MS || process.env.VECTOR_QUERY_TIMEOUT_MS,
@@ -298,6 +311,7 @@ function providerOptionsForMode(providerMode, {
   );
   return {
     provider_mode: providerMode,
+    provider_eval_mode: providerMode,
     single_model_fast: !catalogAssist && !vectorAssist,
     corrected_title_as_temporary_gt: temporaryGt,
     corrected_title_as_reviewed_title_gt: temporaryGt,
@@ -317,6 +331,10 @@ function providerOptionsForMode(providerMode, {
     vector_retrieval_internal_top_n: vectorAssist ? 10 : undefined,
     enable_advanced_retrieval: vectorAssist,
     enable_hybrid_retrieval: vectorAssist,
+    cold_start_blind: coldStartMode,
+    enable_cold_start_blind: coldStartMode,
+    enable_ephemeral_external_retrieval: coldStartMode,
+    external_retrieval_weak_only: coldStartMode,
     eval_flags: {
       ENABLE_CATALOG_ASSIST: catalogAssist,
       ENABLE_VECTOR_ASSIST: vectorAssist,
@@ -324,7 +342,9 @@ function providerOptionsForMode(providerMode, {
       CORRECTED_TITLE_AS_TEMPORARY_GT: temporaryGt,
       CORRECTED_TITLE_AS_REVIEWED_TITLE_GT: temporaryGt,
       SEND_CORRECTED_TITLE_HINT_TO_CLOUD: sendHintToCloud,
-      BLIND_TO_CORRECTED_TITLE_HINT: !sendHintToCloud
+      BLIND_TO_CORRECTED_TITLE_HINT: !sendHintToCloud,
+      COLD_START_BLIND: coldStartMode,
+      EPHEMERAL_EXTERNAL_RETRIEVAL: coldStartMode
     },
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
@@ -1271,6 +1291,7 @@ function perCardDecisionTrace(results = []) {
     gpt_only_title: item.provider === providerModes.OPENAI_BASELINE ? item.final_evaluated_title || item.title || "" : null,
     catalog_only_title: item.provider === providerModes.OPENAI_CATALOG ? item.final_evaluated_title || item.scored_title || item.title || "" : null,
     catalog_vector_title: item.provider === providerModes.OPENAI_VECTOR ? item.final_evaluated_title || item.scored_title || item.title || "" : null,
+    cold_start_title: item.provider === providerModes.EBAY_COLD_START_BLIND ? item.final_evaluated_title || item.scored_title || item.title || "" : null,
     raw_model_title: item.title || "",
     candidate_guided_title: item.candidate_proxy_decision?.selected === true ? item.candidate_proxy_decision.selected_title : "",
     final_title: item.final_evaluated_title || item.scored_title || item.title || "",
@@ -1311,6 +1332,15 @@ function perCardDecisionTrace(results = []) {
     catalog_gap_queue_candidate: item.catalog_gap_queue_candidate === true,
     fail_closed_candidate: item.fail_closed_candidate === true,
     unknown_card_ready: item.unknown_card_ready === true,
+    cold_start_status: item.cold_start_status || null,
+    cold_start_safe_draft: item.cold_start_safe_draft || null,
+    writer_action_required: item.writer_action_required === true,
+    review_fields: item.review_fields || [],
+    high_risk_guess_removed: item.high_risk_guess_removed || [],
+    cold_start_analysis: item.cold_start_analysis || null,
+    external_retrieval_used: item.external_retrieval_used === true,
+    external_retrieval_trace: item.external_retrieval_trace || [],
+    focused_crop_metrics: item.focused_crop_metrics || null,
     retrieval_title_assist: item.retrieval_title_assist || null,
     retrieval_title_assist_used: item.retrieval_title_assist_used === true,
     fast_path_used: item.fast_path_used === true,
@@ -1754,6 +1784,14 @@ function evaluatedResultFromData({
   const copiedReferenceFields = providerFailure ? [] : copiedReferenceInstanceFields(data);
   const failureCode = providerFailure ? providerFailureCode(data, response?.http_status || 200) || "provider_failed" : null;
   const openSetReadiness = providerFailure ? technicalOpenSetReadiness(failureCode) : openSetReadinessForData(data);
+  const externalRetrievalTrace = providerFailure ? [] : (Array.isArray(data.external_retrieval_trace)
+    ? data.external_retrieval_trace
+    : externalRetrievalTraceFromResult(data));
+  const coldStartAnalysis = providerFailure ? null : analyzeColdStartDraft(data, {
+    openSetReadiness,
+    externalRetrievalTrace
+  });
+  const focusedCropMetrics = providerFailure ? focusedCropMetricsFromResult({}) : focusedCropMetricsFromResult(data);
   return {
     candidate_id: candidateId(item),
     provider: providerMode,
@@ -1838,6 +1876,15 @@ function evaluatedResultFromData({
     catalog_gap_queue_candidate: openSetReadiness?.catalog_gap_queue_candidate === true,
     fail_closed_candidate: openSetReadiness?.fail_closed_candidate === true,
     unknown_card_ready: openSetReadiness?.unknown_card_ready === true,
+    cold_start_status: data.cold_start_status || data.cold_start_safe_draft?.status || null,
+    cold_start_safe_draft: data.cold_start_safe_draft || null,
+    writer_action_required: data.writer_action_required === true,
+    review_fields: Array.isArray(data.review_fields) ? data.review_fields : [],
+    high_risk_guess_removed: Array.isArray(data.high_risk_guess_removed) ? data.high_risk_guess_removed : [],
+    cold_start_analysis: coldStartAnalysis,
+    external_retrieval_trace: externalRetrievalTrace,
+    external_retrieval_used: externalRetrievalTrace.length > 0,
+    focused_crop_metrics: focusedCropMetrics,
     visual_vector_used: visualVectorUsed(data),
     visual_vector_candidate_count: visualVectorCandidateCount(data),
     visual_vector_selected_count: visualVectorSelectedCount(data),
@@ -1931,6 +1978,15 @@ function technicalFailureResult({
     catalog_gap_queue_candidate: false,
     fail_closed_candidate: false,
     unknown_card_ready: false,
+    cold_start_status: null,
+    cold_start_safe_draft: null,
+    writer_action_required: true,
+    review_fields: [],
+    high_risk_guess_removed: [],
+    cold_start_analysis: null,
+    external_retrieval_trace: [],
+    external_retrieval_used: false,
+    focused_crop_metrics: focusedCropMetricsFromResult({}),
     corrected_title_reference: referenceTitle,
     corrected_title_comparison: null,
     elapsed_ms: Date.now() - started
@@ -2041,6 +2097,52 @@ function summarize(results = [], elapsedMs = 0) {
   const catalogGapQueueCandidateCount = results.filter((item) => item.catalog_gap_queue_candidate === true).length;
   const failClosedCandidateCount = results.filter((item) => item.fail_closed_candidate === true).length;
   const unknownCardReadyCount = results.filter((item) => item.unknown_card_ready === true).length;
+  const coldStartSafeDraftReadyCount = results.filter((item) => item.cold_start_safe_draft?.safe_draft_ready === true || item.cold_start_status === "SAFE_DRAFT_READY").length;
+  const writerReviewRequiredCount = results.filter((item) => item.writer_action_required === true || item.cold_start_status === "WRITER_REVIEW_REQUIRED").length;
+  const noApprovedCatalogMatchCount = results.filter((item) => item.cold_start_analysis?.no_approved_catalog_match === true || (
+    item.known_catalog_candidate_available !== true
+      && item.open_set_readiness?.assist_enabled === true
+  )).length;
+  const unsupportedExactParallelCount = results.filter((item) => item.cold_start_analysis?.unsupported_exact_parallel === true).length;
+  const unsupportedOfficialCardTypeCount = results.filter((item) => item.cold_start_analysis?.unsupported_official_card_type === true).length;
+  const highRiskGuessCount = results.reduce((sum, item) => (
+    sum + (Array.isArray(item.cold_start_analysis?.high_risk_guess_fields)
+      ? item.cold_start_analysis.high_risk_guess_fields.length
+      : 0)
+  ), 0);
+  const highRiskGuessCardCount = results.filter((item) => (
+    Array.isArray(item.cold_start_analysis?.high_risk_guess_fields)
+      && item.cold_start_analysis.high_risk_guess_fields.length > 0
+  )).length;
+  const highRiskGuessRemovedCount = results.reduce((sum, item) => (
+    sum + (Array.isArray(item.high_risk_guess_removed)
+      ? item.high_risk_guess_removed.length
+      : 0)
+  ), 0);
+  const externalRetrievalUsedCount = results.filter((item) => item.external_retrieval_used === true).length;
+  const externalRetrievalRecoveryCount = results.filter((item) => item.external_retrieval_recovery === true || item.external_retrieval_trace?.some?.((trace) => trace.recovered === true)).length;
+  const externalRetrievalRegressionCount = results.filter((item) => item.external_retrieval_regression === true || item.external_retrieval_trace?.some?.((trace) => trace.regressed === true)).length;
+  const serialCurrentImageItems = results.filter((item) => item.cold_start_analysis?.serial_current_image_only !== null && item.cold_start_analysis?.serial_current_image_only !== undefined);
+  const serialCurrentImageOnlyCount = serialCurrentImageItems.filter((item) => item.cold_start_analysis?.serial_current_image_only === true).length;
+  const gradeCurrentImageItems = results.filter((item) => item.cold_start_analysis?.grade_current_image_only !== null && item.cold_start_analysis?.grade_current_image_only !== undefined);
+  const gradeCurrentImageOnlyCount = gradeCurrentImageItems.filter((item) => item.cold_start_analysis?.grade_current_image_only === true).length;
+  const focusedCropMetricsTotals = results.reduce((totals, item) => {
+    const metrics = item.focused_crop_metrics && typeof item.focused_crop_metrics === "object" && !Array.isArray(item.focused_crop_metrics)
+      ? item.focused_crop_metrics
+      : {};
+    for (const key of [
+      "focused_crop_used_count",
+      "serial_crop_reread_count",
+      "card_number_crop_reread_count",
+      "slab_label_crop_reread_count",
+      "product_text_crop_reread_count",
+      "crop_recovery_count",
+      "crop_regression_count"
+    ]) {
+      totals[key] = (totals[key] || 0) + Number(metrics[key] || 0);
+    }
+    return totals;
+  }, {});
   const elapsedValues = results
     .map((item) => item.timing?.total_ms ?? item.elapsed_ms)
     .filter((value) => Number.isFinite(value) && value >= 0)
@@ -2196,6 +2298,27 @@ function summarize(results = [], elapsedMs = 0) {
     catalog_gap_queue_candidate_count: catalogGapQueueCandidateCount,
     fail_closed_candidate_count: failClosedCandidateCount,
     unknown_card_ready_count: unknownCardReadyCount,
+    cold_start_safe_draft_count: coldStartSafeDraftReadyCount,
+    cold_start_safe_draft_rate: rate(coldStartSafeDraftReadyCount),
+    critical_error_rate: rate(highRiskGuessCardCount),
+    critical_error_rate_basis: "rule_proxy_high_risk_unsupported_identity_guess_without_reviewed_field_gt",
+    high_risk_guess_count: highRiskGuessCount,
+    high_risk_guess_card_count: highRiskGuessCardCount,
+    high_risk_guess_removed_count: highRiskGuessRemovedCount,
+    unsupported_exact_parallel_count: unsupportedExactParallelCount,
+    unsupported_official_card_type_count: unsupportedOfficialCardTypeCount,
+    serial_current_image_only_count: serialCurrentImageOnlyCount,
+    serial_current_image_only_rate: rate(serialCurrentImageOnlyCount, serialCurrentImageItems.length),
+    grade_current_image_only_count: gradeCurrentImageOnlyCount,
+    grade_current_image_only_rate: rate(gradeCurrentImageOnlyCount, gradeCurrentImageItems.length),
+    no_approved_catalog_match_count: noApprovedCatalogMatchCount,
+    catalog_gap_created_count: catalogGapQueueCandidateCount,
+    external_retrieval_used_count: externalRetrievalUsedCount,
+    external_retrieval_recovery_count: externalRetrievalRecoveryCount,
+    external_retrieval_regression_count: externalRetrievalRegressionCount,
+    writer_review_required_count: writerReviewRequiredCount,
+    writer_review_required_rate: rate(writerReviewRequiredCount),
+    focused_crop_metrics: focusedCropMetricsTotals,
     retrieval_title_assist_used_count: retrievalTitleAssistUsedCount,
     fast_path_used_count: fastPathUsedCount,
     exact_anchor_fast_lane_eligible_count: exactAnchorFastLaneEligibleCount,
@@ -2549,6 +2672,22 @@ export async function main(argv = process.argv, env = process.env) {
     `catalog_gap_queue_candidate_count: ${report.catalog_gap_queue_candidate_count ?? "n/a"}`,
     `fail_closed_candidate_count: ${report.fail_closed_candidate_count ?? "n/a"}`,
     `unknown_card_ready_count: ${report.unknown_card_ready_count ?? "n/a"}`,
+    `cold_start_safe_draft_count: ${report.cold_start_safe_draft_count ?? "n/a"}`,
+    `cold_start_safe_draft_rate: ${report.cold_start_safe_draft_rate ?? "n/a"}`,
+    `critical_error_rate: ${report.critical_error_rate ?? "n/a"}`,
+    `critical_error_rate_basis: ${report.critical_error_rate_basis ?? "n/a"}`,
+    `high_risk_guess_count: ${report.high_risk_guess_count ?? "n/a"}`,
+    `high_risk_guess_removed_count: ${report.high_risk_guess_removed_count ?? "n/a"}`,
+    `unsupported_exact_parallel_count: ${report.unsupported_exact_parallel_count ?? "n/a"}`,
+    `unsupported_official_card_type_count: ${report.unsupported_official_card_type_count ?? "n/a"}`,
+    `serial_current_image_only_rate: ${report.serial_current_image_only_rate ?? "n/a"}`,
+    `grade_current_image_only_rate: ${report.grade_current_image_only_rate ?? "n/a"}`,
+    `no_approved_catalog_match_count: ${report.no_approved_catalog_match_count ?? "n/a"}`,
+    `catalog_gap_created_count: ${report.catalog_gap_created_count ?? "n/a"}`,
+    `external_retrieval_used_count: ${report.external_retrieval_used_count ?? "n/a"}`,
+    `external_retrieval_recovery_count: ${report.external_retrieval_recovery_count ?? "n/a"}`,
+    `external_retrieval_regression_count: ${report.external_retrieval_regression_count ?? "n/a"}`,
+    `writer_review_required_rate: ${report.writer_review_required_rate ?? "n/a"}`,
     `retrieval_title_assist_used_count: ${report.retrieval_title_assist_used_count ?? "n/a"}`,
     `fast_path_used_count: ${report.fast_path_used_count ?? "n/a"}`,
     `exact_anchor_fast_lane_eligible_count: ${report.exact_anchor_fast_lane_eligible_count ?? "n/a"}`,

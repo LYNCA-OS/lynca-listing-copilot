@@ -77,6 +77,7 @@ import {
 import { vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
+import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
 
 const cookieName = "lynca_metaverse_session";
@@ -128,6 +129,8 @@ function defaultProviderOptionsFromEnv(env = process.env) {
     vector_retrieval_mode: vectorAssistDefault ? "assist" : "off",
     enable_advanced_retrieval: vectorAssistDefault,
     enable_hybrid_retrieval: vectorAssistDefault,
+    cold_start_blind: envFlag(env, "ENABLE_COLD_START_BLIND_DEFAULT", false),
+    enable_ephemeral_external_retrieval: envFlag(env, "ENABLE_EPHEMERAL_EXTERNAL_RETRIEVAL_DEFAULT", false),
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
     enable_gpt_critical_verifier: false
@@ -4124,10 +4127,16 @@ function buildOpenSetReadiness(result = {}, {
 
 function withOpenSetReadiness(result = {}, context = {}) {
   if (!result || typeof result !== "object") return result;
-  return {
+  const openSetReadiness = buildOpenSetReadiness(result, context);
+  return applyColdStartSafeDraftPolicy({
     ...result,
-    open_set_readiness: buildOpenSetReadiness(result, context)
-  };
+    open_set_readiness: openSetReadiness
+  }, {
+    providerOptions: context.providerOptions || {},
+    mode: context.mode || result.provider_eval_mode || "",
+    openSetReadiness,
+    maxLength: context.maxLength || maxFallbackTitleLength
+  });
 }
 
 async function withEvidenceCompletion(result, payload, {
@@ -5088,6 +5097,11 @@ async function createOpenAiTitle(payload, selection, {
 } = {}) {
   const providerOptions = providerOptionsFromPayload(payload);
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
+  const openSetContext = {
+    providerOptions,
+    mode: payload.provider_eval_mode || payload.eval_mode || payload.mode || "",
+    maxLength: maxTitleLength
+  };
   const resolvedForRetrieval = resolvedForRetrievalFromPayload(payload, providerOptions, recognitionEvidenceDocument);
   const signedImagesPromise = Array.isArray(reusableSignedImages) && reusableSignedImages.length
     ? reusableSignedImages
@@ -5281,7 +5295,7 @@ async function createOpenAiTitle(payload, selection, {
     vectorContext.visualFeatures
   );
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
-  if (fastPathResult) return withOpenSetReadiness(fastPathResult, { catalogContext, vectorContext, providerOptions });
+  if (fastPathResult) return withOpenSetReadiness(fastPathResult, { ...openSetContext, catalogContext, vectorContext });
   if (assistShadowOnly) {
     const shadowProviderOptions = vectorContext.vector_lazy_skip?.skipped === true
       ? withoutAutomaticVectorAssist(providerOptions)
@@ -5292,7 +5306,7 @@ async function createOpenAiTitle(payload, selection, {
       providerOptions: shadowProviderOptions,
       providerId: visionProviderIds.OPENAI_LEGACY
     });
-    return withOpenSetReadiness(shadowResult, { catalogContext, vectorContext, providerOptions });
+    return withOpenSetReadiness(shadowResult, { ...openSetContext, catalogContext, vectorContext });
   }
   const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
     mergedResult,
@@ -5306,10 +5320,10 @@ async function createOpenAiTitle(payload, selection, {
       assistShadowOnly
     }
   ));
-  if (singleModelResult) return withOpenSetReadiness(singleModelResult, { catalogContext, vectorContext, providerOptions });
+  if (singleModelResult) return withOpenSetReadiness(singleModelResult, { ...openSetContext, catalogContext, vectorContext });
 
   const completedResult = await withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures, providerOptions });
-  return withOpenSetReadiness(completedResult, { catalogContext, vectorContext, providerOptions });
+  return withOpenSetReadiness(completedResult, { ...openSetContext, catalogContext, vectorContext });
 }
 
 function requestedProviderFromPayload(payload = {}) {

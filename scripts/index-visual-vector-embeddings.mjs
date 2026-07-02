@@ -86,30 +86,54 @@ function identityKeyForItem(item = {}) {
   return item.identity_key || `supabase_feedback:${id}`;
 }
 
-function canonicalTitleForItem(item = {}) {
-  return normalizeText(
-    item.canonical_title
-      || item.source_titles?.corrected_title
-      || item.source_titles?.generated_title
-      || item.corrected_title
-      || item.title
+function reviewedCorrectedTitleForItem(item = {}) {
+  return normalizeText(item.source_titles?.corrected_title || item.corrected_title);
+}
+
+function sealedEvalLabelRefForItem(item = {}) {
+  const ref = item.sealed_eval_label_ref;
+  if (ref && typeof ref === "object") {
+    return normalizeText(ref.key || ref.path || ref.label_key);
+  }
+  return normalizeText(item.source_record?.sealed_eval_label_key || item.source_record?.sealed_eval_label_ref);
+}
+
+function sealedMarketplaceTitlePresent(item = {}) {
+  return Boolean(
+    normalizeText(item.source_titles?.marketplace_title || item.marketplace_title || item.title)
+    || item.source_record?.marketplace_title_is_sealed_answer_key === true
+    || sealedEvalLabelRefForItem(item)
   );
+}
+
+function canonicalTitleForItem(item = {}) {
+  const reviewedCorrectedTitle = reviewedCorrectedTitleForItem(item);
+  if (reviewedCorrectedTitle) return reviewedCorrectedTitle;
+  if (sealedMarketplaceTitlePresent(item)) return "";
+  return normalizeText(item.canonical_title);
 }
 
 function fieldsForItem(item = {}) {
   const canonicalTitle = canonicalTitleForItem(item);
   const titleDerivedFields = parseReviewedTitleFields(canonicalTitle);
+  const reviewedCorrectedTitle = reviewedCorrectedTitleForItem(item);
+  const sealedEvalLabelRef = sealedEvalLabelRefForItem(item);
   return {
     ...titleDerivedFields,
     ...(item.ground_truth && typeof item.ground_truth === "object" ? item.ground_truth : {}),
     annotation_hint: {
-      corrected_title: item.source_titles?.corrected_title || item.corrected_title || "",
+      corrected_title: reviewedCorrectedTitle,
       generated_title: item.source_titles?.generated_title || "",
-      corrected_title_is_ground_truth: Boolean(normalizeText(item.source_titles?.corrected_title || item.corrected_title)),
-      corrected_title_is_reviewed_title_ground_truth: Boolean(normalizeText(item.source_titles?.corrected_title || item.corrected_title)),
-      title_ground_truth_scope: normalizeText(item.source_titles?.corrected_title || item.corrected_title)
+      corrected_title_is_ground_truth: Boolean(reviewedCorrectedTitle),
+      corrected_title_is_reviewed_title_ground_truth: Boolean(reviewedCorrectedTitle),
+      sealed_eval_label_ref: sealedEvalLabelRef,
+      sealed_marketplace_title_present: sealedMarketplaceTitlePresent(item),
+      ebay_answer_key_is_reviewed_ground_truth: false,
+      title_ground_truth_scope: reviewedCorrectedTitle
         ? "writer_reviewed_marketplace_title"
-        : "",
+        : sealedEvalLabelRef
+          ? "sealed_market_reference_for_post_run_review_only"
+          : "",
       title_derived_fields_are_ground_truth: false,
       title_derived_field_names: Object.keys(titleDerivedFields).filter((fieldName) => {
         const value = titleDerivedFields[fieldName];
@@ -416,11 +440,18 @@ async function indexItem({
         asset_id: item.asset_id || "",
         physical_card_id: item.physical_card_id || "",
         source_manifest: item.source_manifest || "",
-        corrected_title_is_ground_truth: Boolean(normalizeText(item.source_titles?.corrected_title || item.corrected_title)),
-        corrected_title_is_reviewed_title_ground_truth: Boolean(normalizeText(item.source_titles?.corrected_title || item.corrected_title)),
-        title_ground_truth_scope: normalizeText(item.source_titles?.corrected_title || item.corrected_title)
+        source_provider: item.source_provider || item.source_record?.source_provider || "",
+        source_listing_key_hash: item.source_record?.source_listing_key_hash || "",
+        sealed_eval_label_ref: sealedEvalLabelRefForItem(item),
+        corrected_title_is_ground_truth: Boolean(reviewedCorrectedTitleForItem(item)),
+        corrected_title_is_reviewed_title_ground_truth: Boolean(reviewedCorrectedTitleForItem(item)),
+        sealed_marketplace_title_present: sealedMarketplaceTitlePresent(item),
+        ebay_answer_key_is_reviewed_ground_truth: false,
+        title_ground_truth_scope: reviewedCorrectedTitleForItem(item)
           ? "writer_reviewed_marketplace_title"
-          : "",
+          : sealedEvalLabelRefForItem(item)
+            ? "sealed_market_reference_for_post_run_review_only"
+            : "",
         title_derived_fields_are_ground_truth: false
       }
     }],
@@ -443,7 +474,7 @@ async function indexItem({
         object_path: image.object_path,
         image_url: null,
         content_sha256: image.content_sha256 || null,
-        capture_source: "supabase_feedback_candidate",
+        capture_source: item.reference_capture_source || item.source_provider || "supabase_feedback_candidate",
         approved_for_retrieval: retrievalEnabled,
         reference_status: referenceStatus,
         metadata: {
@@ -451,6 +482,16 @@ async function indexItem({
           image_id: image.image_id,
           capture_angle: image.capture_angle || "",
           has_glare: Boolean(image.has_glare),
+          content_sha256: image.content_sha256 || null,
+          source_feedback_id: item.source_feedback_id || "",
+          asset_id: item.asset_id || "",
+          physical_card_id: item.physical_card_id || "",
+          source_type: item.source_record?.source_type || item.source_type || "",
+          source_provider: item.source_provider || item.source_record?.source_provider || "",
+          sealed_eval_label_ref: sealedEvalLabelRefForItem(item),
+          sealed_marketplace_title_present: sealedMarketplaceTitlePresent(item),
+          ebay_answer_key_is_reviewed_ground_truth: false,
+          canonical_title: canonicalTitleForItem(item),
           retrieval_status: retrievalEnabled ? retrievalStatus : "candidate",
           reference_status: referenceStatus,
           source_url_present: Boolean(image.source_url),
@@ -477,6 +518,10 @@ async function indexItem({
         metadata: {
           image_id: imageFeature.image_id || image.image_id,
           source: "recognition_worker_visual_embedding",
+          content_sha256: image.content_sha256 || null,
+          source_feedback_id: item.source_feedback_id || "",
+          asset_id: item.asset_id || "",
+          physical_card_id: item.physical_card_id || "",
           recognition_asset_id: response.asset_id || ""
         }
       }],

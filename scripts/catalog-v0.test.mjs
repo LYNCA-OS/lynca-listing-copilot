@@ -7,6 +7,12 @@ import {
 import { normalizeResolvedFields } from "../lib/listing/evidence/evidence-schema.mjs";
 import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
 import {
+  catalogFieldStatuses,
+  catalogImportStatuses,
+  catalogSourceTypes,
+  isOfficialReleaseCatalogSourceType
+} from "../lib/listing/catalog/catalog-contract.mjs";
+import {
   buildOfficialChecklistImport,
   buildToppsBasketballChecklistImport,
   extractOfficialChecklistLinks,
@@ -16,6 +22,11 @@ import {
   parseOfficialChecklistText,
   parseToppsBasketballChecklistText
 } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
+import {
+  createOfficialCatalogSourceAdapter,
+  discoverOfficialCatalogSource,
+  officialCatalogSourceProfile
+} from "../lib/listing/catalog/official-catalog-source-adapter.mjs";
 import { renderResolvedTitle } from "../lib/listing/renderer/listing-renderer.mjs";
 import { catalogProvider } from "../lib/listing/retrieval/catalog-provider.mjs";
 import { planRetrievalQueries } from "../lib/listing/retrieval/query-planner.mjs";
@@ -205,6 +216,8 @@ const rows = parseToppsBasketballChecklistText("Base Set Checklist\n1 Pascal Sia
 assert.equal(rows.length >= 5, true);
 assert.equal(rows[0].identity_fields.sport, "basketball");
 assert.equal(rows[0].identity_fields.manufacturer, "Topps");
+assert.equal(rows[0].import_status, catalogImportStatuses.OFFICIAL_CHECKLIST_CANDIDATE);
+assert.equal(rows[0].field_statuses.product, catalogFieldStatuses.AUTO_PARSED_FROM_OFFICIAL_CHECKLIST);
 assert.equal(rows[0].identity_fields.players[0], "Pascal Siakam");
 assert.equal(rows[0].identity_fields.team, "Indiana Pacers");
 assert.equal(rows[0].identity_fields.official_card_type, "Base");
@@ -281,8 +294,48 @@ const officialImportReport = await buildOfficialChecklistImport({
 assert.equal(officialImportReport.metrics.official_source_type, "PANINI_OFFICIAL_CHECKLIST");
 assert.equal(officialImportReport.sources[0].source_type, "PANINI_OFFICIAL_CHECKLIST");
 assert.equal(officialImportReport.sources[0].source_status, "OFFICIAL_CHECKLIST_RAW");
+assert.equal(officialImportReport.sources[0].source_trust, "OFFICIAL_CHECKLIST_CANDIDATE");
+assert.match(officialImportReport.sources[0].raw_checksum, /^[a-f0-9]{64}$/);
 assert.equal(officialImportReport.staging.length, 1);
 assert.equal(officialImportReport.staging[0].staging.identity_fields.manufacturer, "Panini");
+assert.equal(officialImportReport.staging[0].staging.physical_instance_fields.serial_number, undefined);
+assert.equal(officialImportReport.metrics.parsed_row_count, 1);
+assert.equal(officialImportReport.metrics.promotion_candidate_count, 1);
+
+assert.equal(officialCatalogSourceProfile("leaf").source_type, catalogSourceTypes.LEAF_OFFICIAL_RELEASE);
+assert.equal(isOfficialReleaseCatalogSourceType(catalogSourceTypes.LEAF_OFFICIAL_RELEASE), true);
+
+const paniniDiscovery = await discoverOfficialCatalogSource({
+  provider: "panini",
+  indexUrl: "https://www.paniniamerica.net/checklist.html",
+  category: "basketball",
+  fetchImpl: async () => new Response(`
+    <script>window.__api='/api/checklists?sport=Basketball'</script>
+    <a href="/checklists/2024-prizm-basketball.txt">2024 Panini Prizm Basketball Checklist</a>
+  `, { status: 200 })
+});
+assert.equal(paniniDiscovery.provider, "panini");
+assert.equal(paniniDiscovery.source_type, catalogSourceTypes.PANINI_OFFICIAL_CHECKLIST);
+assert.equal(paniniDiscovery.sources.length, 1);
+assert.ok(paniniDiscovery.network_endpoint_hints.some((hint) => /api\/checklists/i.test(hint)));
+assert.equal(paniniDiscovery.manual_csv_fallback.enabled, true);
+assert.ok(paniniDiscovery.manual_csv_fallback.columns.includes("checklist_code"));
+
+const leafAdapter = createOfficialCatalogSourceAdapter({
+  provider: "leaf",
+  fetchImpl: async () => new Response("2025 Leaf Metal Basketball Autographs release page", { status: 200 })
+});
+const leafReport = await leafAdapter.buildImportReport({
+  sourceUrls: [{
+    href: "https://leaftradingcards.com/releases/2025-leaf-metal-basketball",
+    text: "2025 Leaf Metal Basketball"
+  }]
+});
+assert.equal(leafReport.source_type, catalogSourceTypes.LEAF_OFFICIAL_RELEASE);
+assert.equal(leafReport.metrics.source_count, 1);
+assert.equal(leafReport.raw.staging[0].staging.import_status, catalogImportStatuses.OFFICIAL_RELEASE_SUPPORT);
+assert.equal(leafReport.raw.staging[0].staging.physical_instance_fields.serial_number, undefined);
+assert.equal(leafReport.raw.staging[0].staging.identity_fields.manufacturer, "Leaf");
 
 const officialImportDryRun = await importToppsBasketballChecklists({
   argv: [

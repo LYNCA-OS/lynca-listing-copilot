@@ -1,7 +1,4 @@
-.env
-.env.*
-!.env.example
-
+artifacts/
 data/eval/
 data/eval/**
 data/recognition/reports/
@@ -24,3 +21,7 @@ __pycache__/
 .venv/**
 .venv-worker/
 .venv-worker/**
+
+.env
+.env.*
+!.env.example

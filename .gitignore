@@ -14,6 +14,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 .venv-worker/
+artifacts/
+data/eval/
 services/recognition-worker/models/*
 !services/recognition-worker/models/README.md
 !services/recognition-worker/models/*.json
