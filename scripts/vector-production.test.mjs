@@ -419,6 +419,36 @@ assert.equal(catalogCardNumberSoftConflictPacket.vector_retrieval.candidates[0].
 assert.deepEqual(catalogCardNumberSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["card_number", "collector_number"]);
 assert.equal(vectorCandidatePacketAssistEligibility(catalogCardNumberSoftConflictPacket).prompt_candidate_count, 1);
 
+const catalogManufacturerBrandSoftConflictPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-manufacturer-brand-soft-conflict",
+    candidate_identity_id: "identity-catalog-manufacturer-brand-soft-conflict",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["subject", "year", "product", "brand"],
+    matched_fields: ["subject", "year", "product", "brand"],
+    fields: {
+      year: "2025",
+      manufacturer: "Bowman",
+      product: "Bowman Chrome",
+      players: ["Jesus Made"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Bowman Chrome",
+    players: ["Jesus Made"]
+  }
+});
+assert.equal(catalogManufacturerBrandSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
+assert.deepEqual(catalogManufacturerBrandSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["manufacturer"]);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogManufacturerBrandSoftConflictPacket).prompt_candidate_count, 1);
+
 const catalogSerialNumeratorSoftConflictPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "catalog-serial-numerator-soft-conflict",
