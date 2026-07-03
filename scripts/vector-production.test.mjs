@@ -384,9 +384,12 @@ const catalogCollectorSoftConflictPacket = buildVectorCandidatePacket({
     collector_number: "BS-4"
   }
 });
-assert.equal(catalogCollectorSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
-assert.deepEqual(catalogCollectorSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["collector_number"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogCollectorSoftConflictPacket).prompt_candidate_count, 1);
+// An exact printed-code mismatch is proof of a different card: never soft,
+// never in the prompt (anchor hard filter keeps it shadow-only).
+assert.deepEqual(catalogCollectorSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields, ["collector_number"]);
+assert.deepEqual(catalogCollectorSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, []);
+assert.equal(catalogCollectorSoftConflictPacket.vector_retrieval.candidates[0].anchor_agreement.prompt_hard_filter_pass, false);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogCollectorSoftConflictPacket).prompt_candidate_count, 0);
 
 const catalogCardNumberSoftConflictPacket = buildVectorCandidatePacket({
   sources: [{
@@ -415,9 +418,73 @@ const catalogCardNumberSoftConflictPacket = buildVectorCandidatePacket({
     collector_number: "BS-4"
   }
 });
-assert.equal(catalogCardNumberSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
-assert.deepEqual(catalogCardNumberSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["card_number", "collector_number"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogCardNumberSoftConflictPacket).prompt_candidate_count, 1);
+assert.deepEqual(catalogCardNumberSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.sort(), ["card_number", "collector_number"]);
+assert.deepEqual(catalogCardNumberSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, []);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogCardNumberSoftConflictPacket).prompt_candidate_count, 0);
+
+// Anchor hard filter: a similar card from the same product line (subject
+// agrees, year and serial denominator contradict) must stay shadow-only.
+const catalogSimilarCardPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-similar-card",
+    candidate_identity_id: "identity-catalog-similar-card",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["subjects", "product"],
+    matched_fields: ["subjects", "product"],
+    fields: {
+      year: "2023-24",
+      product: "Panini Prizm",
+      players: ["Trae Young"],
+      serial_number: "/99"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2018-19",
+    product: "Panini Prizm",
+    players: ["Trae Young"],
+    serial_number: "17/50"
+  }
+});
+const similarCardRow = catalogSimilarCardPacket.vector_retrieval.candidates[0];
+assert.equal(similarCardRow.anchor_agreement.prompt_hard_filter_pass, false);
+assert.ok(similarCardRow.anchor_agreement.contradicted.includes("year"));
+assert.ok(similarCardRow.anchor_agreement.contradicted.includes("serial_denominator"));
+assert.equal(vectorCandidatePacketAssistEligibility(catalogSimilarCardPacket).prompt_candidate_count, 0);
+
+// Anchor hard filter: exact printed-code agreement with zero contradictions
+// admits the candidate even when only one other anchor dimension overlaps.
+const catalogExactCodePacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-exact-code",
+    candidate_identity_id: "identity-catalog-exact-code",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["subjects", "collector_number"],
+    matched_fields: ["subjects", "collector_number"],
+    fields: {
+      product: "Bowman Chrome",
+      players: ["Jesus Made"],
+      collector_number: "BS-4"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    players: ["Jesus Made"],
+    collector_number: "BS-4"
+  }
+});
+const exactCodeRow = catalogExactCodePacket.vector_retrieval.candidates[0];
+assert.equal(exactCodeRow.anchor_agreement.exact_code_match, true);
+assert.equal(exactCodeRow.anchor_agreement.prompt_hard_filter_pass, true);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogExactCodePacket).prompt_candidate_count, 1);
 
 const catalogManufacturerBrandSoftConflictPacket = buildVectorCandidatePacket({
   sources: [{
