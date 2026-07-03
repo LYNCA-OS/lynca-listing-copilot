@@ -1793,11 +1793,18 @@ function workflowStepClass(state = "") {
   return "workflow-muted";
 }
 
+function workflowActionClass(kind = "") {
+  return `workflow-action-${String(kind || "review").toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`;
+}
+
 function workflowSummaryNotice(result) {
   const summary = result.workflow_summary;
   if (!summary || typeof summary !== "object") return "";
   const hideRawCandidateDetails = summary.ui?.hide_raw_candidate_details !== false;
   const steps = Array.isArray(summary.compact_steps) ? summary.compact_steps : [];
+  const nextActions = Array.isArray(summary.operator_next_actions)
+    ? summary.operator_next_actions.filter((action) => action && action.text).slice(0, 5)
+    : [];
   const fields = Array.isArray(summary.highlighted_fields) && summary.highlighted_fields.length
     ? summary.highlighted_fields.slice(0, 6).map((field) => reviewFieldLabels[field] || field).join(", ")
     : "";
@@ -1818,6 +1825,13 @@ function workflowSummaryNotice(result) {
           </span>
         `).join("")}
       </div>
+      ${nextActions.length ? `
+        <ol class="workflow-action-list" aria-label="写手下一步动作">
+          ${nextActions.map((action) => `
+            <li class="${workflowActionClass(action.kind)}">${escapeHtml(action.text)}</li>
+          `).join("")}
+        </ol>
+      ` : ""}
     </div>
   `;
 }

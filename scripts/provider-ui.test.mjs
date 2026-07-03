@@ -102,6 +102,9 @@ assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facin
 assert.match(js, /workflowSummaryNotice\(result\)/, "frontend should render a compact workflow summary from the title API");
 assert.match(js, /data-workflow-summary/, "workflow summary should have a stable hook for UI validation");
 assert.match(js, /hide_raw_candidate_details/, "workflow summary should keep raw candidate diagnostics hidden from the writer UI by default");
+assert.match(js, /operator_next_actions/, "workflow summary should render explicit operator next actions");
+assert.match(js, /workflowActionClass/, "workflow action kinds should be sanitized before becoming CSS classes");
+assert.match(js, /aria-label="写手下一步动作"/, "workflow action queue should have a writer-facing accessibility label");
 assert.match(js, /result\.modules/, "frontend should read module output from deterministic renderer responses");
 assert.match(js, /data-module-input/, "writer modules should expose editable module text controls");
 assert.match(js, /module-edit-hint/, "writer modules should explain the keyboard edit workflow inline");
@@ -192,6 +195,8 @@ assert.match(css, /\.publication-gate/, "partial writer draft gate should be vis
 assert.match(css, /\.workflow-summary/, "workflow summary should have a compact writer-facing layout");
 assert.match(css, /\.workflow-step-row/, "workflow summary should show integrated pipeline steps compactly");
 assert.match(css, /\.workflow-step\.workflow-warn/, "non-blocking workflow issues should be visible without exposing raw technical packets");
+assert.match(css, /\.workflow-action-list/, "workflow summary should show a compact next-action list");
+assert.match(css, /\.workflow-action-list \.workflow-action-conflict/, "conflict next actions should be visually prominent");
 assert.match(css, /\.title-override-note/, "title override state should be visible");
 assert.match(css, /\.publish-button/, "mock publish button should have a distinct approved-action style");
 assert.match(css, /\.publish-status/, "mock publish status should be visible after publishing");
