@@ -133,6 +133,9 @@ assert.match(js, /useRenderedTitle/, "writers should be able to replace an overr
 assert.match(js, /generated_resolved_fields/, "feedback saves should include generated resolved snapshots");
 assert.match(js, /corrected_resolved_fields/, "feedback saves should include corrected resolved snapshots");
 assert.match(js, /review_duration_ms/, "feedback saves should include review duration");
+assert.match(js, /workflow_summary/, "feedback saves should include workflow summary context");
+assert.match(js, /workflow_sidecars/, "feedback saves should include sidecar context");
+assert.match(js, /open_set_readiness/, "feedback saves should include open-set catalog/vector diagnostics");
 assert.match(js, /reviewImageReference/, "feedback saves should pass storage object references without browser-only objects");
 assert.doesNotMatch(js, /标题未修改，未写入记忆/, "unchanged reviews must not be skipped client-side");
 assert.match(js, /payload\.retention_skipped/, "frontend should recognize feedback responses that are intentionally not retained");

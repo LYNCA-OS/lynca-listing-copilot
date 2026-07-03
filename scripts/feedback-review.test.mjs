@@ -46,10 +46,11 @@ function sessionCookie({ user = "operator-a" } = {}) {
 }
 
 async function callFeedbackApi(payload, {
-  authenticated = true
+  authenticated = true,
+  fetchImpl = null
 } = {}) {
   const calls = [];
-  globalThis.fetch = async (url, options = {}) => {
+  globalThis.fetch = fetchImpl || (async (url, options = {}) => {
     const parsed = new URL(String(url));
     const table = parsed.pathname.split("/").at(-1);
     const body = JSON.parse(options.body || "{}");
@@ -65,7 +66,7 @@ async function callFeedbackApi(payload, {
       status: 201,
       text: async () => JSON.stringify([{ ...body, id: body.id || `${table}_row` }])
     };
-  };
+  });
 
   const req = new EventEmitter();
   req.method = "POST";
@@ -224,6 +225,24 @@ const unchangedRecords = buildListingReviewRecords({
       brand: "Topps",
       product: "Topps Chrome",
       players: ["Cooper Flagg"]
+    },
+    open_set_readiness: {
+      status: "KNOWN_CATALOG",
+      catalog: { eligibility: { prompt_candidate_count: 1 } }
+    },
+    workflow_summary: {
+      schema_version: "listing-workflow-summary-v1",
+      status: "LOW_TOUCH_REVIEW",
+      operator_next_actions: [
+        { kind: "approve", text: "快速核对标题模块，确认无黄块后保存审核记录。" }
+      ]
+    },
+    workflow_sidecars: {
+      paddle_ocr: { status: "NOT_TRIGGERED" }
+    },
+    workflow_action_plan: {
+      plan_version: "workflow-sidecar-action-plan-v1",
+      actions: []
     }
   },
   operatorId: "operator-a",
@@ -233,6 +252,11 @@ assert.equal(unchangedRecords.review.review_outcome, reviewOutcomes.ACCEPTED_UNC
 assert.equal(unchangedRecords.review.stable_training_sample, true);
 assert.equal(unchangedRecords.review.training_status, "approved_clean");
 assert.equal(unchangedRecords.review.reusable_approved_title, true);
+assert.equal(unchangedRecords.analysisRun.open_set_readiness.status, "KNOWN_CATALOG");
+assert.equal(unchangedRecords.analysisRun.workflow_summary.status, "LOW_TOUCH_REVIEW");
+assert.equal(unchangedRecords.analysisRun.workflow_sidecars.paddle_ocr.status, "NOT_TRIGGERED");
+assert.equal(unchangedRecords.analysisRun.workflow_action_plan.plan_version, "workflow-sidecar-action-plan-v1");
+assert.equal(unchangedRecords.review.workflow_summary.status, "LOW_TOUCH_REVIEW");
 assert.equal(unchangedRecords.legacyFeedback, null);
 
 assert.equal(
@@ -315,6 +339,55 @@ assert.equal(unchangedSave.calls[2].body.training_status, "approved_clean");
 assert.equal(unchangedSave.calls[2].body.reusable_approved_title, true);
 assert.equal(unchangedSave.calls[2].body.asset_fingerprint, unchangedSave.calls[0].body.asset_fingerprint);
 assert.deepEqual(unchangedSave.calls[2].body.field_changes, []);
+
+const schemaLagCalls = [];
+let failedAnalysisOnce = false;
+const schemaLagSave = await callFeedbackApi({
+  asset_id: "asset-schema-lag",
+  analysis_run_id: "analysis-schema-lag",
+  generated_title: "2025 Topps Chrome Cooper Flagg",
+  corrected_title: "2025 Topps Chrome Cooper Flagg",
+  workflow_summary: {
+    schema_version: "listing-workflow-summary-v1",
+    status: "LOW_TOUCH_REVIEW"
+  },
+  open_set_readiness: {
+    status: "KNOWN_CATALOG"
+  },
+  workflow_sidecars: {
+    paddle_ocr: { status: "NOT_TRIGGERED" }
+  },
+  workflow_action_plan: {
+    plan_version: "workflow-sidecar-action-plan-v1"
+  }
+}, {
+  fetchImpl: async (url, options = {}) => {
+    const parsed = new URL(String(url));
+    const table = parsed.pathname.split("/").at(-1);
+    const body = JSON.parse(options.body || "{}");
+    schemaLagCalls.push({ table, body });
+    if (table === "listing_analysis_runs" && !failedAnalysisOnce) {
+      failedAnalysisOnce = true;
+      return {
+        ok: false,
+        status: 400,
+        text: async () => "Could not find the 'workflow_summary' column of 'listing_analysis_runs' in the schema cache"
+      };
+    }
+    return {
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify([{ ...body, id: body.id || `${table}_row` }])
+    };
+  }
+});
+assert.equal(schemaLagSave.statusCode, 200);
+assert.equal(schemaLagCalls.filter((call) => call.table === "listing_analysis_runs").length, 2);
+assert.equal(schemaLagCalls[1].body.workflow_summary.status, "LOW_TOUCH_REVIEW");
+assert.equal(schemaLagCalls[2].body.workflow_summary, undefined);
+assert.equal(schemaLagCalls[2].body.open_set_readiness, undefined);
+assert.equal(schemaLagCalls[2].body.workflow_sidecars, undefined);
+assert.equal(schemaLagCalls[2].body.workflow_action_plan, undefined);
 
 const hardenedPathSave = await callFeedbackApi({
   asset_id: "asset-path-hardening",
