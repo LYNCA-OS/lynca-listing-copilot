@@ -467,6 +467,9 @@ const finalizerCurrentImageFieldAllowList = Object.freeze([
   "serial_number",
   "numerical_rarity",
   "expected_serial_denominator",
+  "collector_number",
+  "card_number",
+  "checklist_code",
   "grade_company",
   "grade",
   "card_grade",
@@ -529,12 +532,36 @@ function finalizerTextLooksMoreSpecific(existing, incoming) {
   return nextFolded.includes(currentFolded) && next.length > current.length;
 }
 
-function finalizerMergeCurrentImageFields(base = {}, current = {}, supportFields = new Set()) {
+function finalizerArrayLooksMoreComplete(existing, incoming) {
+  if (!Array.isArray(incoming) || !incoming.length) return false;
+  const subjectKey = (value) => normalizeStringOrNull(value)
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const currentValues = Array.isArray(existing)
+    ? existing
+    : normalizeStringOrNull(existing)
+      ? String(existing).split(/\s*\/\s*/)
+      : [];
+  const currentKeys = new Set(currentValues
+    .map(subjectKey)
+    .filter(Boolean));
+  const incomingKeys = incoming
+    .map(subjectKey)
+    .filter(Boolean);
+  if (!incomingKeys.length) return false;
+  if (incomingKeys.length <= currentKeys.size) return false;
+  return [...currentKeys].every((value) => incomingKeys.includes(value));
+}
+
+function finalizerMergeCurrentImageFields(base = {}, current = {}, supportFields = new Set(), {
+  allowExactCodePromotion = false
+} = {}) {
   const normalizedCurrent = normalizeFields(current || {});
   const output = { ...(base || {}) };
 
   finalizerCurrentImageFieldAllowList.forEach((field) => {
-    if (finalizerNeverPromoteFromRawFields.includes(field)) return;
+    if (!allowExactCodePromotion && finalizerNeverPromoteFromRawFields.includes(field)) return;
     const incoming = normalizedCurrent[field];
     if (!finalizerValuePresent(incoming)) return;
 
@@ -542,8 +569,9 @@ function finalizerMergeCurrentImageFields(base = {}, current = {}, supportFields
     const supported = supportFields.has(field);
     const missing = !finalizerValuePresent(existing);
     const moreSpecific = finalizerTextLooksMoreSpecific(existing, incoming);
+    const moreCompleteArray = finalizerArrayLooksMoreComplete(existing, incoming);
 
-    if (missing || supported || moreSpecific) output[field] = incoming;
+    if (missing || supported || moreSpecific || moreCompleteArray) output[field] = incoming;
   });
 
   return output;
@@ -556,13 +584,20 @@ function finalResolvedFieldsForPresentation(result = {}) {
   const renderedFieldContainer = renderedFields.fields && typeof renderedFields.fields === "object" && !Array.isArray(renderedFields.fields)
     ? renderedFields.fields
     : null;
-  const base = renderedFieldContainer
-    || result.resolved_fields
-    || result.resolved
-    || result.fields
-    || {};
   const supportFields = finalizerFieldSupportSet(result);
-  const merged = finalizerMergeCurrentImageFields(base, result.raw_provider_fields, supportFields);
+  const fieldSources = [
+    renderedFieldContainer,
+    result.resolved_fields,
+    result.resolved,
+    result.fields,
+    result.raw_provider_fields
+  ].filter((fields) => fields && typeof fields === "object" && !Array.isArray(fields));
+  const [base = {}, ...rest] = fieldSources;
+  const merged = rest.reduce((current, fields) => (
+    finalizerMergeCurrentImageFields(current, fields, supportFields, {
+      allowExactCodePromotion: fields !== result.raw_provider_fields
+    })
+  ), { ...base });
   return Object.keys(merged).length ? merged : null;
 }
 

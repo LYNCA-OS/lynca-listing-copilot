@@ -1407,4 +1407,33 @@ assert.match(finalizerPreservesCurrentImageSpecificity.title, /#119/);
 assert.match(finalizerPreservesCurrentImageSpecificity.title, /\bFOTL\b/);
 assert.doesNotMatch(finalizerPreservesCurrentImageSpecificity.title, /Green Shimmer Prizm/);
 
+const finalizerMergesMoreCompletePublicFields = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  title: "1994 Upper Deck Ken Griffey Jr. Auto BGS",
+  confidence: "HIGH",
+  fields: {
+    year: "1994",
+    manufacturer: "Upper Deck",
+    product: "Upper Deck",
+    players: ["Ken Griffey Jr.", "Mickey Mantle"],
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "Authentic"
+  },
+  rendered_fields: {
+    fields: {
+      year: "1994",
+      manufacturer: "Upper Deck",
+      product: "Upper Deck",
+      players: ["Ken Griffey Jr."],
+      auto: true,
+      grade_company: "BGS"
+    }
+  }
+}, { maxTitleLength: 120 });
+
+assert.match(finalizerMergesMoreCompletePublicFields.title, /Ken Griffey Jr\.?/);
+assert.match(finalizerMergesMoreCompletePublicFields.title, /Mickey Mantle/);
+assert.match(finalizerMergesMoreCompletePublicFields.title, /Auto/);
+assert.match(finalizerMergesMoreCompletePublicFields.title, /BGS Auth/);
+
 console.log("listing confidence audit mock tests passed");
