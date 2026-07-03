@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildWriterTitleCatalogSeed } from "./import-writer-title-catalog-seed.mjs";
+import { applyCatalogSeed, buildWriterTitleCatalogSeed } from "./import-writer-title-catalog-seed.mjs";
 import { correctedTitleRecordToCatalogStaging } from "../lib/listing/catalog/internal-corrected-title-catalog.mjs";
 import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
 import { catalogProvider } from "../lib/listing/retrieval/catalog-provider.mjs";
@@ -180,5 +180,49 @@ assert.equal(importPayload.mode, "dry_run");
 assert.equal(importPayload.auth_mode, "internal_token");
 assert.equal(importPayload.selected_chunk.count, 1);
 assert.equal(importPayload.apply.reason, "dry_run_apply_false");
+
+const insertedCardPayloads = [];
+const applyFetch = async (url, options = {}) => {
+  const urlText = String(url);
+  if (options.method !== "POST") return new Response("[]", { status: 200 });
+  const table = urlText.match(/\/rest\/v1\/([^?]+)/)?.[1] || "";
+  const body = JSON.parse(options.body || "[]");
+  if (table === "catalog_sources") {
+    return new Response(JSON.stringify(body.map((row, index) => ({
+      id: `00000000-0000-0000-0000-00000000000${index + 1}`,
+      raw_checksum: row.raw_checksum
+    }))), { status: 201 });
+  }
+  if (table === "catalog_products") {
+    return new Response(JSON.stringify(body.map((row, index) => ({
+      id: `10000000-0000-0000-0000-00000000000${index + 1}`,
+      source_id: row.source_id
+    }))), { status: 201 });
+  }
+  if (table === "catalog_sets") {
+    return new Response(JSON.stringify(body.map((row, index) => ({
+      id: `20000000-0000-0000-0000-00000000000${index + 1}`,
+      source_id: row.source_id
+    }))), { status: 201 });
+  }
+  if (table === "catalog_cards") {
+    insertedCardPayloads.push(body);
+    const keySig = body.map((row) => Object.keys(row).sort().join("|"));
+    assert.equal(new Set(keySig).size, 1, "PostgREST insert rows must share identical keys");
+    return new Response(JSON.stringify(body.map((row, index) => ({
+      id: `30000000-0000-0000-0000-00000000000${index + 1}`,
+      source_id: row.source_id
+    }))), { status: 201 });
+  }
+  return new Response("[]", { status: 201 });
+};
+const applySummary = await applyCatalogSeed({
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "test-service-role" },
+  stagedRows: built.stagedRows,
+  fetchImpl: applyFetch,
+  batchSize: 2
+});
+assert.equal(applySummary.inserted_card_count, 2);
+assert.equal(insertedCardPayloads.length, 1);
 
 console.log("writer title catalog seed tests passed");

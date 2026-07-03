@@ -568,25 +568,60 @@ function chunk(values = [], size = 250) {
   return chunks;
 }
 
+function postgrestRows(rows = []) {
+  const keys = [...new Set(rows.flatMap((row) => Object.keys(row || {})))];
+  return rows.map((row) => Object.fromEntries(keys.map((key) => [key, row[key] === undefined ? null : row[key]])));
+}
+
 async function insertMany({ env, table, rows, fetchImpl, prefer = "return=representation" } = {}) {
   if (!rows.length) return [];
   const inserted = await supabaseRequest({
     env,
     path: `/rest/v1/${table}`,
     method: "POST",
-    body: rows,
+    body: postgrestRows(rows),
     prefer,
     fetchImpl
   });
   return Array.isArray(inserted) ? inserted : [];
 }
 
+async function fetchSourcesByChecksums({ env, checksums = [], fetchImpl } = {}) {
+  const rows = [];
+  const uniqueChecksums = [...new Set(checksums.filter(Boolean))];
+  for (const checksumsChunk of chunk(uniqueChecksums, 100)) {
+    const response = await supabaseRequest({
+      env,
+      path: `/rest/v1/catalog_sources?select=id,raw_checksum&raw_checksum=in.(${checksumsChunk.join(",")})`,
+      fetchImpl
+    });
+    rows.push(...(Array.isArray(response) ? response : []));
+  }
+  return rows;
+}
+
+async function fetchRowsBySourceIds({ env, table, sourceIds = [], select = "id,source_id", fetchImpl } = {}) {
+  const rows = [];
+  const uniqueSourceIds = [...new Set(sourceIds.filter(Boolean))];
+  for (const sourceIdsChunk of chunk(uniqueSourceIds, 100)) {
+    const response = await supabaseRequest({
+      env,
+      path: `/rest/v1/${table}?select=${encodeURIComponent(select)}&source_id=in.(${sourceIdsChunk.join(",")})`,
+      fetchImpl
+    });
+    rows.push(...(Array.isArray(response) ? response : []));
+  }
+  return rows;
+}
+
 export async function applyCatalogSeed({ env, stagedRows = [], fetchImpl = globalThis.fetch, batchSize = 250 } = {}) {
-  const existingChecksums = await fetchExistingSourceChecksums({ env, fetchImpl });
-  const rows = stagedRows.filter((row) => row.source.raw_checksum && !existingChecksums.has(row.source.raw_checksum));
   const summary = {
     apply_attempted_rows: stagedRows.length,
-    skipped_existing_source_count: stagedRows.length - rows.length,
+    skipped_existing_source_count: 0,
+    skipped_existing_staging_count: 0,
+    skipped_existing_product_count: 0,
+    skipped_existing_set_count: 0,
+    skipped_existing_card_count: 0,
     inserted_source_count: 0,
     inserted_staging_count: 0,
     inserted_product_count: 0,
@@ -595,21 +630,38 @@ export async function applyCatalogSeed({ env, stagedRows = [], fetchImpl = globa
     skipped_missing_product_count: 0
   };
 
-  for (const rowsChunk of chunk(rows, batchSize)) {
+  for (const rowsChunk of chunk(stagedRows, batchSize)) {
+    const existingSources = await fetchSourcesByChecksums({
+      env,
+      checksums: rowsChunk.map((row) => row.source.raw_checksum),
+      fetchImpl
+    });
+    const sourceByChecksum = new Map(existingSources.map((source) => [source.raw_checksum, source.id]));
+    const newSourceRows = rowsChunk.filter((row) => row.source.raw_checksum && !sourceByChecksum.has(row.source.raw_checksum));
     const sources = await insertMany({
       env,
       table: "catalog_sources",
-      rows: rowsChunk.map((row) => row.source),
+      rows: newSourceRows.map((row) => row.source),
       fetchImpl
     });
     summary.inserted_source_count += sources.length;
-    const sourceByChecksum = new Map(sources.map((source) => [source.raw_checksum, source.id]));
+    summary.skipped_existing_source_count += rowsChunk.length - newSourceRows.length;
+    sources.forEach((source) => sourceByChecksum.set(source.raw_checksum, source.id));
     const rowsWithSource = rowsChunk.map((row) => ({ ...row, source_id: sourceByChecksum.get(row.source.raw_checksum) })).filter((row) => row.source_id);
+    const sourceIds = rowsWithSource.map((row) => row.source_id);
 
+    const existingStaging = await fetchRowsBySourceIds({
+      env,
+      table: "catalog_import_staging",
+      sourceIds,
+      select: "id,source_id,source_row_key",
+      fetchImpl
+    });
+    const existingStagingKeys = new Set(existingStaging.map((row) => `${row.source_id}:${row.source_row_key}`));
     const stagingRows = rowsWithSource.map((row) => ({
       ...row.staging,
       source_id: row.source_id
-    }));
+    })).filter((row) => !existingStagingKeys.has(`${row.source_id}:${row.source_row_key}`));
     const insertedStaging = await insertMany({
       env,
       table: "catalog_import_staging",
@@ -618,29 +670,55 @@ export async function applyCatalogSeed({ env, stagedRows = [], fetchImpl = globa
       fetchImpl
     });
     summary.inserted_staging_count += insertedStaging.length || stagingRows.length;
+    summary.skipped_existing_staging_count += rowsWithSource.length - stagingRows.length;
 
+    const existingProducts = await fetchRowsBySourceIds({
+      env,
+      table: "catalog_products",
+      sourceIds,
+      select: "id,source_id",
+      fetchImpl
+    });
+    const productBySource = new Map(existingProducts.map((product) => [product.source_id, product]));
     const productInputs = rowsWithSource
-      .filter((row) => valuePresent(row.staging.identity_fields?.product))
+      .filter((row) => valuePresent(row.staging.identity_fields?.product) && !productBySource.has(row.source_id))
       .map((row) => productRow(row.source_id, row.staging.identity_fields, row.staging.source_row_key));
-    const missingProductCount = rowsWithSource.length - productInputs.length;
-    summary.skipped_missing_product_count += missingProductCount;
+    summary.skipped_missing_product_count += rowsWithSource.filter((row) => !valuePresent(row.staging.identity_fields?.product)).length;
+    summary.skipped_existing_product_count += rowsWithSource.filter((row) => productBySource.has(row.source_id)).length;
     const products = await insertMany({ env, table: "catalog_products", rows: productInputs, fetchImpl });
     summary.inserted_product_count += products.length;
-    const productBySource = new Map(products.map((product) => [product.source_id, product]));
+    products.forEach((product) => productBySource.set(product.source_id, product));
 
+    const existingSets = await fetchRowsBySourceIds({
+      env,
+      table: "catalog_sets",
+      sourceIds,
+      select: "id,source_id",
+      fetchImpl
+    });
+    const setBySource = new Map(existingSets.map((set) => [set.source_id, set]));
     const setInputs = rowsWithSource.flatMap((row) => {
       const product = productBySource.get(row.source_id);
-      if (!product) return [];
+      if (!product || setBySource.has(row.source_id)) return [];
       const prepared = setRow(row.source_id, product.id, row.staging.identity_fields, row.staging.source_row_key);
       return prepared ? [prepared] : [];
     });
     const sets = await insertMany({ env, table: "catalog_sets", rows: setInputs, fetchImpl });
     summary.inserted_set_count += sets.length;
-    const setBySource = new Map(sets.map((set) => [set.source_id, set]));
+    summary.skipped_existing_set_count += rowsWithSource.filter((row) => setBySource.has(row.source_id)).length;
+    sets.forEach((set) => setBySource.set(set.source_id, set));
 
+    const existingCards = await fetchRowsBySourceIds({
+      env,
+      table: "catalog_cards",
+      sourceIds,
+      select: "id,source_id",
+      fetchImpl
+    });
+    const existingCardSourceIds = new Set(existingCards.map((card) => card.source_id));
     const cardInputs = rowsWithSource.flatMap((row) => {
       const product = productBySource.get(row.source_id);
-      if (!product) return [];
+      if (!product || existingCardSourceIds.has(row.source_id)) return [];
       const set = setBySource.get(row.source_id);
       return [cardRow(
         row.source_id,
@@ -653,6 +731,7 @@ export async function applyCatalogSeed({ env, stagedRows = [], fetchImpl = globa
     });
     const cards = await insertMany({ env, table: "catalog_cards", rows: cardInputs, fetchImpl });
     summary.inserted_card_count += cards.length;
+    summary.skipped_existing_card_count += existingCardSourceIds.size;
   }
 
   return summary;
