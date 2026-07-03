@@ -358,6 +358,67 @@ assert.equal(weakAnchorEligibility.approved_candidate_count, 1);
 assert.equal(weakAnchorEligibility.prompt_candidate_count, 0);
 assert.equal(buildVectorCandidateAssistPacket(catalogWeakAnchorApprovedPacket).vector_retrieval.candidates.length, 0);
 
+const catalogCollectorSoftConflictPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-collector-soft-conflict",
+    candidate_identity_id: "identity-catalog-collector-soft-conflict",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["subjects", "year", "product", "collector_number"],
+    matched_fields: ["subjects", "year", "product"],
+    fields: {
+      year: "2025",
+      product: "Bowman Chrome",
+      players: ["Jesus Made"],
+      collector_number: "BCP-50"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025",
+    product: "Bowman Chrome",
+    players: ["Jesus Made"],
+    collector_number: "BS-4"
+  }
+});
+assert.equal(catalogCollectorSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
+assert.deepEqual(catalogCollectorSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["collector_number"]);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogCollectorSoftConflictPacket).prompt_candidate_count, 1);
+
+const catalogSerialNumeratorSoftConflictPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-serial-numerator-soft-conflict",
+    candidate_identity_id: "identity-catalog-serial-numerator-soft-conflict",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    conflicting_fields: ["serial_number"],
+    supporting_fields: ["subjects", "year", "product", "serial_denominator"],
+    matched_fields: ["subjects", "year", "product", "serial_denominator"],
+    fields: {
+      year: "2024",
+      product: "Bowman Chrome",
+      players: ["Yoshinobu Yamamoto"],
+      serial_number: "34/50"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2024",
+    product: "Bowman Chrome",
+    players: ["Yoshinobu Yamamoto"],
+    serial_number: "17/50"
+  }
+});
+assert.equal(catalogSerialNumeratorSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
+assert.deepEqual(catalogSerialNumeratorSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["serial_number"]);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogSerialNumeratorSoftConflictPacket).prompt_candidate_count, 1);
+
 const marketplaceWeakPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "ebay-weak-title",

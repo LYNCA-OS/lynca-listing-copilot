@@ -151,6 +151,19 @@ function cloudFetchRecorder({ titleResponder, uploadAlreadyExists = false } = {}
           input_tokens: 10,
           output_tokens: 20,
           total_tokens: 30
+        },
+        catalog_anchor_plan: {
+          version: "catalog_anchor_plan_v1",
+          phase: "provider_observation_catalog_lookup",
+          anchors: [{ field: "subject", value: "Test Player", strength: "identity" }],
+          retrieval_lanes: ["CATALOG_YEAR_PRODUCT_SUBJECT"],
+          eligibility_snapshot: {
+            raw_candidate_count: 1,
+            approved_candidate_count: 1,
+            conflict_blocked_count: 0,
+            prompt_candidate_count: 1,
+            prompt_candidate_ids: ["identity-test-player"]
+          }
         }
       });
     }
@@ -474,6 +487,8 @@ await withTempDir(async (dir) => {
   });
   assert.equal(result.prediction_count, 1);
   assert.match(result.predictions_sha256, /^[a-f0-9]{64}$/);
+  assert.equal(result.predictions[0].c_group_diagnostics.catalog_anchor_plan.version, "catalog_anchor_plan_v1");
+  assert.equal(result.predictions[0].c_group_diagnostics.catalog_anchor_plan.eligibility_snapshot.prompt_candidate_count, 1);
   assert.ok(calls.some((call) => new URL(call.url).pathname === "/api/listing-copilot-title"));
   const hashText = await readFile(join(dir, "predictions.sha256"), "utf8");
   assert.match(hashText, /^[a-f0-9]{64}\s+predictions\.jsonl/);

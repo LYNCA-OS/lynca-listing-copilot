@@ -3631,6 +3631,127 @@ function supportFieldSet(candidate = {}) {
   ].map((field) => String(field || "").trim().toLowerCase()).filter(Boolean));
 }
 
+function compactCatalogAnchorValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(compactCatalogAnchorValue).filter(valuePresent);
+  }
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function serialDenominatorAnchorValue(fields = {}) {
+  const explicit = compactCatalogAnchorValue(fields.expected_serial_denominator);
+  if (explicit) return explicit.replace(/^\/+/, "");
+  const serial = normalizeSerialText(fields.serial_number);
+  const match = serial.match(/\/\s*0*(\d{1,4})\b/);
+  return match ? match[1] : "";
+}
+
+function pushCatalogAnchor(anchors, {
+  field,
+  value,
+  strength,
+  lane,
+  role,
+  source = "current_card_observation"
+} = {}) {
+  const normalizedValue = compactCatalogAnchorValue(value);
+  if (!valuePresent(normalizedValue)) return;
+  anchors.push({
+    field,
+    value: normalizedValue,
+    strength,
+    lane,
+    role,
+    source
+  });
+}
+
+function catalogAnchorPlanFromFields(fields = {}, {
+  phase = "initial_payload",
+  eligibility = null,
+  retrieval = null
+} = {}) {
+  const normalized = normalizeFields(fields || {});
+  const anchors = [];
+  const primarySubject = normalized.players?.length ? normalized.players : normalized.player;
+  pushCatalogAnchor(anchors, {
+    field: "checklist_code",
+    value: normalized.checklist_code,
+    strength: "hard_exact",
+    lane: "CATALOG_EXACT_CODE",
+    role: "identity_candidate_recall"
+  });
+  pushCatalogAnchor(anchors, {
+    field: "collector_number",
+    value: normalized.collector_number || normalized.card_number,
+    strength: "soft_exact_verification",
+    lane: "CATALOG_EXACT_CODE",
+    role: "identity_candidate_recall"
+  });
+  pushCatalogAnchor(anchors, {
+    field: "subject",
+    value: primarySubject,
+    strength: "identity",
+    lane: "CATALOG_YEAR_PRODUCT_SUBJECT",
+    role: "identity_filter"
+  });
+  pushCatalogAnchor(anchors, {
+    field: "year",
+    value: normalized.year,
+    strength: "identity",
+    lane: "CATALOG_YEAR_PRODUCT_SUBJECT",
+    role: "identity_filter"
+  });
+  pushCatalogAnchor(anchors, {
+    field: "product",
+    value: normalized.product || normalized.set,
+    strength: "identity",
+    lane: "CATALOG_YEAR_PRODUCT_SUBJECT",
+    role: "identity_filter"
+  });
+  pushCatalogAnchor(anchors, {
+    field: "serial_denominator",
+    value: serialDenominatorAnchorValue(normalized),
+    strength: "soft_exact_verification",
+    lane: "CATALOG_PRODUCT_SERIAL_DENOMINATOR",
+    role: "legality_check"
+  });
+  pushCatalogAnchor(anchors, {
+    field: "surface_color",
+    value: normalized.surface_color,
+    strength: "soft_parallel_hint",
+    lane: "CATALOG_PRODUCT_SERIAL_DENOMINATOR",
+    role: "parallel_family_hint"
+  });
+
+  const retrievalLanes = [...new Set(anchors.map((anchor) => anchor.lane).filter(Boolean))];
+  const retrievalMetrics = retrieval?.catalog_retrieval_metrics || retrieval?.metrics || null;
+  return {
+    version: "catalog_anchor_plan_v1",
+    phase,
+    anchors,
+    retrieval_lanes: retrievalLanes,
+    candidate_policy: {
+      prompt_rule: "Only APPROVED_REFERENCE candidates with an identity anchor enter GPT assist.",
+      hard_identity_fields: ["subject", "year", "product", "checklist_code"],
+      soft_verification_fields: ["collector_number", "serial_denominator", "surface_color"],
+      forbidden_reference_copy_fields: [...exactAnchorForbiddenCopyFields]
+    },
+    eligibility_snapshot: eligibility ? {
+      raw_candidate_count: eligibility.raw_candidate_count ?? 0,
+      approved_candidate_count: eligibility.approved_candidate_count ?? 0,
+      conflict_blocked_count: eligibility.conflict_blocked_count ?? 0,
+      prompt_candidate_count: eligibility.prompt_candidate_count ?? 0,
+      prompt_candidate_ids: Array.isArray(eligibility.prompt_candidate_ids) ? eligibility.prompt_candidate_ids : [],
+      reason: eligibility.reason || ""
+    } : null,
+    retrieval_snapshot: retrievalMetrics ? {
+      catalog_raw_candidate_count: retrievalMetrics.catalog_raw_candidate_count ?? retrievalMetrics.raw_candidate_count ?? null,
+      catalog_source_count: retrievalMetrics.catalog_source_count ?? retrievalMetrics.source_count ?? null
+    } : null
+  };
+}
+
 function fieldHasValue(fields = {}, ...keys) {
   return keys.some((key) => valuePresent(fields?.[key]));
 }
@@ -3853,11 +3974,17 @@ async function prepareCatalogCandidateContext({
   });
   const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
   const assistPacket = buildVectorCandidateAssistPacket(packet);
+  const catalogAnchorPlan = catalogAnchorPlanFromFields(resolvedForRetrieval || {}, {
+    phase: "catalog_lookup",
+    eligibility: assistEligibility,
+    retrieval
+  });
   const context = {
     retrieval,
     packet,
     assistPacket,
     catalog_assist_eligibility: assistEligibility,
+    catalog_anchor_plan: catalogAnchorPlan,
     promptPacket: vectorCandidatePacketHasPromptContent(assistPacket),
     catalog_cache_hit: false
   };
@@ -4018,6 +4145,7 @@ function withCatalogCandidateContext(result = {}, context = {}) {
     catalog_assist_packet: context.assistPacket || null,
     catalog_prompt_assist_used: context.promptPacket === true,
     catalog_assist_eligibility: context.catalog_assist_eligibility || null,
+    catalog_anchor_plan: context.catalog_anchor_plan || null,
     catalog_cache_hit: context.catalog_cache_hit === true,
     exact_anchor_fast_lane_shadow: exactAnchorFastLane,
     exact_anchor_fast_lane_eligible: exactAnchorFastLane?.exact_anchor_fast_lane_eligible === true,
@@ -5335,6 +5463,11 @@ async function createOpenAiTitle(payload, selection, {
         ...lateCatalogContext,
         promptPacket: false,
         catalog_exact_anchor_after_provider_observation: true,
+        catalog_anchor_plan: catalogAnchorPlanFromFields(providerResolvedForRetrieval, {
+          phase: "provider_observation_catalog_lookup",
+          eligibility: lateCatalogContext.catalog_assist_eligibility,
+          retrieval: lateCatalogContext.retrieval
+        }),
         exact_anchor_fast_lane_shadow: buildExactAnchorFastLaneShadow({
           catalogContext: lateCatalogContext,
           resolvedForRetrieval: providerResolvedForRetrieval,
