@@ -23,6 +23,10 @@ assert.equal(parsedMtg.character, "Prompto Argentum");
 assert.equal(parsedMtg.rarity, "U");
 assert.equal(parsedMtg.collector_number, "0532");
 
+const parsedMtgLot = parseReviewedTitleFields("Final Fantasy MTG EN Prompto Argentum #U 0532 0387 FFXV Surge Foil lotx2");
+assert.equal(parsedMtgLot.card_name, "Prompto Argentum");
+assert.equal(parsedMtgLot.character, "Prompto Argentum");
+
 const mtgCatalog = correctedTitleRecordToCatalogStaging({
   id: "writer-row-1",
   corrected_title: mtgTitle

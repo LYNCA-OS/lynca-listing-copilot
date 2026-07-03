@@ -1,6 +1,6 @@
 {
   "schema_version": "writer-title-catalog-seed-report-v1",
-  "generated_at": "2026-07-03T04:12:51.878Z",
+  "generated_at": "2026-07-03T04:43:51.206Z",
   "input_path": "/Users/paidaxin/Desktop/卡片测试/Ebay上标(1).xlsx",
   "batch_id": "writer_ebay_upload_20260703",
   "file_sha256": "963c814b64217f378416fdd0b7e7231714131e61523d2b70a39ae332d392a7f3",
