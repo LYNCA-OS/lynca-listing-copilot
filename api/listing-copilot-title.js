@@ -1322,10 +1322,6 @@ function normalizeFields(fields = {}) {
     one_of_one: normalizeBoolean(fields.one_of_one)
   };
 
-  if (!normalized.numerical_rarity) {
-    normalized.numerical_rarity = currentImagePrintRunFromSerial(normalized.serial_number);
-  }
-
   Object.keys(normalized).forEach((key) => {
     if (typeof normalized[key] === "string" && containsBackgroundTerm(normalized[key])) {
       normalized[key] = null;
@@ -1392,19 +1388,6 @@ function normalizeFields(fields = {}) {
   }
 
   return normalized;
-}
-
-function currentImagePrintRunFromSerial(value) {
-  const serial = normalizeSerialText(value);
-  if (!serial) return null;
-  const full = serial.match(/^0*\d{1,6}\/0*\d{1,6}$/);
-  if (!full) return null;
-  const [numeratorText, denominatorText] = serial.split("/");
-  const numerator = Number(numeratorText);
-  const denominator = Number(denominatorText);
-  if (!Number.isInteger(numerator) || !Number.isInteger(denominator)) return null;
-  if (numerator < 1 || denominator < 1 || numerator > denominator) return null;
-  return serial;
 }
 
 function normalizeUnresolved(unresolved, fields = {}) {
@@ -2773,7 +2756,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
     "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
-    "Serial and Numerical Rarity rule: serial_number is the raw physical-copy reading and every digit must be readable; otherwise serial_number must be empty. numerical_rarity is the title print-limit module. Fill numerical_rarity when current-card evidence clearly shows a print limit such as 2/3, 14/99, 31/50, 01/10, 1/1, or denominator-only #/50. If you directly read a valid current-card print run in serial_number, repeat the same value in numerical_rarity. Do not invent numerical_rarity when no print limit is visible. Never copy a serial numerator from catalog/reference candidates, and do not move serial_number into collector_number or checklist_code.",
+    "Serial and Numerical Rarity rule: serial_number is the raw physical-copy reading and every digit must be readable; otherwise serial_number must be empty. numerical_rarity is the title print-limit module. Fill numerical_rarity only when current-card evidence clearly shows a print limit such as 2/3, 14/99, 31/50, 01/10, 1/1, or denominator-only #/50. If you directly read a valid current-card print run in serial_number and it is a product print limit, explicitly repeat the same value in numerical_rarity because backend code will not derive it for you. Do not invent numerical_rarity when no print limit is visible. Never copy a serial numerator from catalog/reference candidates, and do not move serial_number into collector_number or checklist_code.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
     "Sapphire discipline: Topps Chrome Sapphire or Bowman Chrome Sapphire is a product/set phrase when visibly attached to the Chrome product line; keep the full phrase in product or set. Non-product Sapphire such as Heir Apparent Sapphire is exact parallel/taxonomy wording and must stay out of final fields unless catalog/printed label evidence directly supports it.",
     "Open-set taxonomy rule: without prompt-safe catalog/vector candidates, do not put Tiger, Zebra, Sapphire, Refractor, Wave, Shimmer, Mojo, Prizm, Sparkle, Holo, or similar optical pattern words in insert/card_type/parallel fields; leave them unresolved for writer/catalog confirmation.",

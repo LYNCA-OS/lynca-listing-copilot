@@ -100,10 +100,35 @@ assert.equal(serialVisibleUncertainParallel.confidence, "MEDIUM");
 assert.match(serialVisibleUncertainParallel.title, /\/175/);
 assert.doesNotMatch(serialVisibleUncertainParallel.title, /Purple|Wave/i);
 
-const currentImageSerialPromotesNumericalRarity = await callApi({
+const explicitCurrentImageNumericalRarityPreserved = await callApi({
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto",
   confidence: "HIGH",
   reason: "The current card image directly shows serial 2/3 on the front and BGS 8.5/10 on the label.",
+  fields: {
+    year: "2024-25",
+    manufacturer: "Panini",
+    product: "Immaculate Collection",
+    player: "Anthony Edwards",
+    card_type: "Patch Auto",
+    serial_number: "2/3",
+    numerical_rarity: "2/3",
+    grade_company: "BGS",
+    card_grade: "8.5",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  unresolved: []
+});
+
+assert.equal(explicitCurrentImageNumericalRarityPreserved.resolved.serial_number, "2/3");
+assert.equal(explicitCurrentImageNumericalRarityPreserved.resolved.numerical_rarity, "2/3");
+assert.match(explicitCurrentImageNumericalRarityPreserved.title, /2\/3/);
+assert.match(explicitCurrentImageNumericalRarityPreserved.title, /BGS 8\.5\/10/);
+
+const serialNumberOnlyDoesNotBackfillNumericalRarity = await callApi({
+  title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto",
+  confidence: "HIGH",
+  reason: "The current card image shows a physical serial read, but the provider did not classify it as the title print-limit module.",
   fields: {
     year: "2024-25",
     manufacturer: "Panini",
@@ -116,13 +141,13 @@ const currentImageSerialPromotesNumericalRarity = await callApi({
     auto_grade: "10",
     grade_type: "CARD_AND_AUTO"
   },
-  unresolved: []
+  unresolved: ["numerical_rarity"]
 });
 
-assert.equal(currentImageSerialPromotesNumericalRarity.resolved.serial_number, "2/3");
-assert.equal(currentImageSerialPromotesNumericalRarity.resolved.numerical_rarity, "2/3");
-assert.match(currentImageSerialPromotesNumericalRarity.title, /2\/3/);
-assert.match(currentImageSerialPromotesNumericalRarity.title, /BGS 8\.5\/10/);
+assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.serial_number, "2/3");
+assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.numerical_rarity, null);
+assert.doesNotMatch(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /2\/3|#\/3/);
+assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /BGS 8\.5\/10/);
 
 const backgroundIgnored = await callApi({
   title: "Metaverse Cards 2024 Topps Chrome Shohei Ohtani",
