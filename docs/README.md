@@ -31,7 +31,8 @@ The documentation is organized so permanent source-of-truth docs are separate fr
 23. `recognition/supabase-feedback-data-connection.md`
 24. `recognition/data-needed-from-owner.md`
 25. `integrations/ebay-browse-readiness.md`
-26. `compliance/recognition-dependencies.md`
+26. `operations/workflow-readiness-audit.md`
+27. `compliance/recognition-dependencies.md`
 
 ## Foundation
 
@@ -156,6 +157,12 @@ Owner-reviewed, image-backed, field-level data requirements for turning Supabase
 ### `integrations/ebay-browse-readiness.md`
 
 Official eBay Browse API readiness checklist and marketplace-reference boundary. eBay remains reference evidence, not ground truth.
+
+## Operations
+
+### `operations/workflow-readiness-audit.md`
+
+Low-cost preflight gate for provider, storage, feedback schema, catalog, vector, OCR, data-loop sidecars, and marketplace-reference readiness.
 
 ## Compliance
 
