@@ -2,6 +2,7 @@
 node_modules/
 .vercel/
 .local/
+supabase/.temp/
 
 .env
 .env.local
