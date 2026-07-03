@@ -13,6 +13,23 @@ RUN apt-get update \
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
+# PaddleOCR 3.0.x pulls PaddleX code paths that still import older LangChain
+# module locations. Newer LangChain split those symbols into langchain-core and
+# langchain-text-splitters, so provide tiny compatibility shims inside the
+# image instead of downgrading unrelated dependency versions at runtime.
+RUN printf '%s\n' \
+  'from pathlib import Path' \
+  'import langchain' \
+  'root = Path(langchain.__file__).resolve().parent' \
+  'docstore_dir = root / "docstore"' \
+  'docstore_dir.mkdir(exist_ok=True)' \
+  '(docstore_dir / "__init__.py").write_text("", encoding="utf-8")' \
+  '(docstore_dir / "document.py").write_text("from langchain_core.documents import Document\n", encoding="utf-8")' \
+  '(root / "text_splitter.py").write_text("from langchain_text_splitters import RecursiveCharacterTextSplitter\n", encoding="utf-8")' \
+  > /tmp/lynca_langchain_compat.py \
+  && python /tmp/lynca_langchain_compat.py \
+  && rm /tmp/lynca_langchain_compat.py
+
 COPY app /app/app
 
 EXPOSE 8080
