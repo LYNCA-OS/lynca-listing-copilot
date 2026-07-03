@@ -3,7 +3,10 @@ import { applyCatalogSeed, buildWriterTitleCatalogSeed } from "../scripts/import
 import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
 
 export const config = {
-  maxDuration: 300
+  maxDuration: 300,
+  includeFiles: [
+    "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx"
+  ]
 };
 
 const defaultInputPath = "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx";

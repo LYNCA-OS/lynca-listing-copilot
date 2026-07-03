@@ -9,6 +9,7 @@ data/recognition/review/
 data/recognition/review/**
 data/smoke/
 data/smoke/**
+data/catalog/writer-title-seed/*.jsonl
 
 node_modules/
 node_modules/**
