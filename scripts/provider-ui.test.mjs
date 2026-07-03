@@ -32,8 +32,8 @@ assert.match(js, /enable_vector_retrieval:\s*true/, "vector retrieval should be 
 assert.match(js, /vector_retrieval_mode:\s*"assist"/, "vector retrieval should default to assist mode");
 assert.match(js, /enable_advanced_retrieval:\s*true/, "frontend default path should use advanced retrieval");
 assert.match(js, /enable_hybrid_retrieval:\s*true/, "frontend default path should use hybrid retrieval");
-assert.match(js, /vectorCandidateNotice/, "writer UI should expose lightweight vector candidate status");
-assert.match(js, /vector_prompt_assist_used/, "writer UI should show whether vector candidates entered the GPT prompt");
+assert.doesNotMatch(js, /vectorCandidateNotice/, "writer UI should not expose raw vector candidate diagnostics");
+assert.doesNotMatch(js, /vector_prompt_assist_used/, "writer UI should not surface technical prompt-assist status");
 assert.match(js, /provider_options:\s*{/, "title requests should include provider options");
 assert.match(js, /body\.explicitEmergency = Boolean/, "legacy explicit flag should remain backward-compatible");
 assert.match(js, /provider === "openai_legacy"/, "OpenAI provider path should remain explicit in request payloads");
@@ -104,6 +104,11 @@ assert.match(js, /data-workflow-summary/, "workflow summary should have a stable
 assert.match(js, /hide_raw_candidate_details/, "workflow summary should keep raw candidate diagnostics hidden from the writer UI by default");
 assert.match(js, /result\.modules/, "frontend should read module output from deterministic renderer responses");
 assert.match(js, /data-module-input/, "writer modules should expose editable module text controls");
+assert.match(js, /module-edit-hint/, "writer modules should explain the keyboard edit workflow inline");
+assert.match(js, /Enter 保存并跳到下一项/, "writer module keyboard behavior should be visible to operators");
+assert.match(js, /aria-label="\$\{escapeHtml\(module\.label \|\| module\.key\)\} 模块"/, "module editors should expose field-specific accessible labels");
+assert.match(js, /numerical_rarity: "Numerical Rarity"/, "workflow field summaries should label numerical rarity clearly");
+assert.match(js, /card_name: "Card Name"/, "workflow field summaries should label card name clearly");
 assert.match(js, /moduleTokenSummary/, "writer modules should render token-level confidence chips");
 assert.match(js, /draftGatePoliciesByField/, "token highlighting should use draft gate field policies");
 assert.match(js, /INCLUDE_HIGHLIGHTED/, "low-confidence title terms should be visibly highlightable");
@@ -162,6 +167,7 @@ assert.match(api, /scope: "listing_title"[\s\S]*limit: 120/, "title generation A
 assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.writer-modules/, "writer-facing modules should have a compact layout");
+assert.match(css, /\.module-edit-hint/, "writer-facing modules should show a compact keyboard edit hint");
 assert.match(css, /\.writer-module\.needs-review/, "module review state should be visible");
 assert.match(css, /\.writer-module\.needs-review textarea/, "low-confidence module blocks should highlight the entire editable block");
 assert.match(css, /\.side-decision-panel/, "front/back decision should have a visible result panel");

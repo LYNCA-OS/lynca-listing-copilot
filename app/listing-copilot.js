@@ -1822,46 +1822,45 @@ function workflowSummaryNotice(result) {
   `;
 }
 
-function vectorCandidateNotice(result) {
-  const retrieval = result.vector_candidate_packet?.vector_retrieval || result.vector_retrieval?.vector_retrieval || null;
-  if (!retrieval) return "";
-  const candidates = Array.isArray(retrieval.candidates) ? retrieval.candidates : [];
-  const top = candidates[0] || null;
-  const fields = top?.fields && typeof top.fields === "object"
-    ? Object.keys(top.fields).slice(0, 6).map((field) => reviewFieldLabels[field] || field).join(", ")
-    : "";
-  const status = retrieval.status_code || retrieval.status || "VECTOR_RETRIEVAL_UNAVAILABLE";
-  const assist = result.vector_prompt_assist_used === true ? "已进入 GPT" : "未进入 GPT";
-  const summary = top
-    ? `Top ${top.rank || 1} · sim ${top.similarity ?? "-"} · margin ${top.top1_top2_margin ?? "-"}`
-    : (retrieval.unavailable?.[0]?.reason || "无候选");
-
-  return `
-    <div class="publication-gate ${top ? "writer-ready" : "manual-required"}">
-      <span>向量候选支持 · ${escapeHtml(assist)}</span>
-      <strong>${escapeHtml(status)} · ${escapeHtml(summary)}</strong>
-      ${fields ? `<small>候选字段：${escapeHtml(fields)}</small>` : ""}
-    </div>
-  `;
-}
-
 const reviewFieldLabels = {
   year: "Year",
+  season_year: "Season Year",
+  product_year: "Product Year",
+  copyright_year: "Copyright Year",
+  display_year: "Display Year",
   brand: "Brand",
   manufacturer: "Manufacturer",
   product: "Product",
+  product_or_set: "Product / Set",
   set: "Set",
   subset: "Subset",
+  ip: "IP",
+  language: "Language",
+  subject: "Subject",
+  subjects: "Subject",
   players: "Player",
+  player: "Player",
   character: "Character",
   card_type: "Card Type",
+  official_card_type: "Card Type",
+  card_name: "Card Name",
   insert: "Insert",
+  release_variant: "Release Variant",
+  design_variation: "Design Variation",
+  variant: "Variant",
+  product_finish: "Product Finish",
+  print_finish: "Print Finish",
   surface_color: "Color",
   parallel_family: "Parallel Family",
   parallel_exact: "Exact Parallel",
+  variant_or_parallel: "Variant / Parallel",
   parallel: "Parallel",
   variation: "Variation",
+  descriptive_rarity: "Descriptive Rarity",
+  numerical_rarity: "Numerical Rarity",
+  serial_denominator: "Serial Limit",
   serial_number: "Serial",
+  card_number: "Card Number",
   collector_number: "Collector Number",
   checklist_code: "Checklist Code",
   grade_company: "Grade Company",
@@ -1877,6 +1876,14 @@ const reviewFieldLabels = {
   relic: "Relic",
   sketch: "Sketch",
   redemption: "Redemption",
+  special_stamp: "Special Stamp",
+  search_optimization: "Search Optimization",
+  team: "Team",
+  teams: "Team",
+  lot_quantity: "Lot Quantity",
+  lot_type: "Lot Type",
+  observable_components: "Visible Components",
+  cert_number: "Cert Number",
   one_of_one: "1/1"
 };
 
@@ -2068,11 +2075,12 @@ function moduleSummary(result) {
 
   return `
     <div class="writer-modules">
+      <p class="module-edit-hint">Enter 保存并跳到下一项，Shift+Enter 换行；黄色模块需要写手确认。</p>
       ${visibleModules.map((module) => `
         <div class="${moduleClassName(module, result)}">
           <span>${escapeHtml(module.label || module.key)}</span>
           ${moduleTokenSummary(module, result)}
-          <textarea data-module-input="${result.index}" data-module-key="${escapeHtml(module.key)}">${escapeHtml(module.text || "")}</textarea>
+          <textarea data-module-input="${result.index}" data-module-key="${escapeHtml(module.key)}" aria-label="${escapeHtml(module.label || module.key)} 模块" title="Enter 保存并跳到下一项，Shift+Enter 换行">${escapeHtml(module.text || "")}</textarea>
           <small>${escapeHtml(modulePolicySummary(module))}</small>
         </div>
       `).join("")}
