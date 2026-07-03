@@ -29,7 +29,7 @@
     "test:commercial-review": "node scripts/commercial-review-packet.test.mjs && node scripts/commercial-review-worklist.test.mjs",
     "check:commercial-readiness": "node --check scripts/commercial-readiness-audit.mjs && node --check scripts/commercial-readiness-audit.test.mjs",
     "test:commercial-readiness": "node scripts/commercial-readiness-audit.test.mjs",
-    "check:workflow-readiness": "node --check scripts/workflow-readiness-audit.mjs && node --check scripts/workflow-readiness-audit.test.mjs",
+    "check:workflow-readiness": "node --check lib/listing/readiness/workflow-readiness-audit.mjs && node --check scripts/workflow-readiness-audit.mjs && node --check scripts/workflow-readiness-audit.test.mjs",
     "test:workflow-readiness": "node scripts/workflow-readiness-audit.test.mjs",
     "check:delivery-report": "node --check scripts/build-delivery-report.mjs && node --check scripts/build-delivery-report.test.mjs",
     "test:delivery-report": "node scripts/build-delivery-report.test.mjs",

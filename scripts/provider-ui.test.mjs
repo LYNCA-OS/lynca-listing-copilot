@@ -15,6 +15,10 @@ assert.match(js, /fetch\("\/api\/listing-provider-status"/, "frontend should loa
 assert.match(js, /state\.selectedProvider/, "frontend should keep selected provider in state");
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
+assert.match(js, /workflowReadinessText/, "frontend should render server workflow readiness in the provider status area");
+assert.match(js, /workflowAllowsGeneration/, "frontend should gate generation on the cloud workflow readiness preflight");
+assert.match(js, /workflow_readiness/, "frontend should read integrated workflow readiness from provider status");
+assert.doesNotMatch(js, /state\.selectedProvider \|\| state\.providerStatus\?\.fallback_available/, "frontend must not allow local fallback to bypass cloud readiness");
 assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to front/back paired recognition");
 assert.match(html, /name="assetMode" value="pair" checked/, "front/back paired recognition should be the checked default control");
 assert.match(js, /sideDecisionForAsset/, "frontend should compute a visible front/back decision after recognition");

@@ -785,14 +785,35 @@ function providerStatusText(provider) {
   ].filter(Boolean).join(" · ");
 }
 
+function workflowReadinessText(readiness) {
+  if (!readiness) return "";
+  const summary = readiness.summary || {};
+  const ready = `${summary.ready_count ?? 0}/${summary.component_count ?? 0}`;
+  if (readiness.low_friction_ready) return `链路预检 OK · ${ready} 已就绪`;
+  if (readiness.can_run_cloud_recognition) {
+    const failClosed = summary.fail_closed_count || readiness.fail_closed_components?.length || 0;
+    const degraded = summary.degraded_count || 0;
+    return `链路可跑 · ${ready} 已就绪 · ${failClosed} 个安全降级 · ${degraded} 个降级`;
+  }
+  const blockers = (readiness.blockers || []).join(", ") || "cloud";
+  return `链路未就绪 · 阻断：${blockers}`;
+}
+
+function workflowAllowsGeneration() {
+  const readiness = state.providerStatus?.workflow_readiness;
+  if (!readiness) return false;
+  return readiness.can_run_cloud_recognition !== false;
+}
+
 function renderProviderControl() {
   const providers = state.providerStatus?.providers || [];
+  const readinessText = workflowReadinessText(state.providerStatus?.workflow_readiness);
 
   if (!providers.length) {
     elements.providerControl.innerHTML = "";
     elements.providerStatusText.textContent = state.providerStatus?.fallback_available
       ? "未配置服务端 Provider，当前使用本地 fallback。"
-      : "未读取到可用 Provider。";
+      : readinessText || "未读取到可用 Provider。";
     elements.processButton.disabled = !canGenerateTitles();
     return;
   }
@@ -813,14 +834,17 @@ function renderProviderControl() {
 
   const selected = providerById(state.selectedProvider);
   if (selected) {
-    elements.providerStatusText.textContent = providerStatusText(selected);
+    elements.providerStatusText.textContent = [
+      providerStatusText(selected),
+      readinessText
+    ].filter(Boolean).join(" · ");
     elements.processButton.disabled = !canGenerateTitles();
     return;
   }
 
   elements.providerStatusText.textContent = state.providerStatus?.fallback_available
     ? "未配置服务端 Provider，当前使用本地 fallback。"
-    : "请选择可用 Provider。";
+    : readinessText || "请选择可用 Provider。";
   elements.processButton.disabled = !canGenerateTitles();
 }
 
@@ -836,7 +860,7 @@ function selectProvider(providerId) {
 }
 
 function canGenerateTitles() {
-  return Boolean(state.assets.length && (state.selectedProvider || state.providerStatus?.fallback_available));
+  return Boolean(state.assets.length && state.selectedProvider && workflowAllowsGeneration());
 }
 
 function selectedProviderConfig() {

@@ -26,6 +26,18 @@ npm run readiness:workflow -- --allow-not-ready
 
 `--allow-not-ready` is for diagnostics only. It prevents local machines without production credentials from failing the command, but it does not mean the cloud path is ready.
 
+## Cloud Status Integration
+
+The same audit is also exposed through the authenticated provider status endpoint:
+
+```text
+GET /api/listing-provider-status
+```
+
+The response includes `workflow_readiness`. The browser uses `workflow_readiness.can_run_cloud_recognition` to decide whether the Generate button should be enabled. This prevents an operator from starting a paid or cloud-only recognition path when provider or storage prerequisites are missing.
+
+The API response is sanitized and cached briefly server-side. It must not expose API keys, service-role keys, worker tokens, or full private endpoints.
+
 ## Components
 
 The audit currently checks:

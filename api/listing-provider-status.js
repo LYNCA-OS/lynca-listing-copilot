@@ -2,9 +2,16 @@ import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
 import { providerCatalog } from "../lib/listing/providers/provider-registry.mjs";
+import { buildWorkflowReadinessAudit } from "../lib/listing/readiness/workflow-readiness-audit.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 
 const cookieName = "lynca_metaverse_session";
+const workflowReadinessCacheTtlMs = 60_000;
+let workflowReadinessCache = {
+  key: "",
+  expiresAt: 0,
+  report: null
+};
 
 function parseCookies(header) {
   return Object.fromEntries(
@@ -40,6 +47,102 @@ function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
+}
+
+function workflowReadinessCacheKey(env = process.env) {
+  const relevantKeys = [
+    "OPENAI_API_KEY",
+    "OPENAI_LISTING_MODEL",
+    "ENABLE_GPT41_PROVIDER",
+    "ENABLE_GPT41_EMERGENCY_PROVIDER",
+    "SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_SECRET_KEY",
+    "LISTING_IMAGE_BUCKET",
+    "LISTING_FEEDBACK_RETENTION_ENABLED",
+    "ENABLE_LISTING_FEEDBACK_RETENTION",
+    "ENABLE_VECTOR_RETRIEVAL",
+    "VECTOR_RETRIEVAL_MODE",
+    "VECTOR_WORKER_URL",
+    "RECOGNITION_WORKER_URL",
+    "VECTOR_WORKER_TOKEN",
+    "RECOGNITION_WORKER_TOKEN",
+    "ENABLE_PADDLE_OCR_FIELD_VERIFIER",
+    "PADDLE_OCR_WORKER_URL",
+    "PADDLE_OCR_WORKER_TOKEN",
+    "DATA_LOOP_SIDECARS_ENABLED",
+    "DATA_LOOP_PADDLE_OCR_DISPATCH_ENABLED",
+    "DATA_LOOP_SPLINK_LOOKUP_ENABLED",
+    "DATA_LOOP_SPLINK_BATCH_ENABLED",
+    "DATA_LOOP_FIFTYONE_EXPORT_ENABLED",
+    "DATA_LOOP_LIGHTGBM_SHADOW_ENABLED",
+    "DATA_LOOP_LIGHTGBM_RERANKER_URL",
+    "LIGHTGBM_RERANKER_URL",
+    "DATA_LOOP_CLEANLAB_SCORE_URL",
+    "CLEANLAB_SCORE_URL",
+    "LABEL_STUDIO_URL",
+    "LABEL_STUDIO_TOKEN",
+    "CVAT_URL",
+    "CVAT_TOKEN",
+    "PHOENIX_COLLECTOR_ENDPOINT",
+    "PHOENIX_ENDPOINT",
+    "DATA_LOOP_PHOENIX_ENDPOINT",
+    "EBAY_CLIENT_ID",
+    "EBAY_CLIENT_SECRET",
+    "EBAY_MARKETPLACE_ID",
+    "EBAY_SELLER_USERNAME"
+  ];
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(relevantKeys.map((key) => [key, env[key] || ""])))
+    .digest("hex");
+}
+
+function publicWorkflowReadiness(report = {}) {
+  return {
+    schema_version: report.schema_version || "",
+    checked_at: report.checked_at || "",
+    ok: Boolean(report.ok),
+    can_run_cloud_recognition: Boolean(report.can_run_cloud_recognition),
+    low_friction_ready: Boolean(report.low_friction_ready),
+    summary: report.summary || {},
+    blockers: Array.isArray(report.blockers) ? report.blockers : [],
+    fail_closed_components: Array.isArray(report.fail_closed_components) ? report.fail_closed_components : [],
+    next_actions: Array.isArray(report.next_actions) ? report.next_actions.slice(0, 8) : [],
+    components: Array.isArray(report.components)
+      ? report.components.map((item) => ({
+        id: item.id,
+        status: item.status,
+        required: Boolean(item.required),
+        fail_closed: Boolean(item.fail_closed),
+        ready: Boolean(item.ready),
+        summary: item.summary,
+        next_action: item.next_action || null
+      }))
+      : []
+  };
+}
+
+async function loadWorkflowReadiness() {
+  const now = Date.now();
+  const key = workflowReadinessCacheKey(process.env);
+  if (workflowReadinessCache.report && workflowReadinessCache.key === key && workflowReadinessCache.expiresAt > now) {
+    return workflowReadinessCache.report;
+  }
+
+  const report = publicWorkflowReadiness(await buildWorkflowReadinessAudit({
+    argv: ["--no-env-file"],
+    env: process.env,
+    cwd: process.cwd(),
+    fetchImpl: globalThis.fetch
+  }));
+  workflowReadinessCache = {
+    key,
+    expiresAt: now + workflowReadinessCacheTtlMs,
+    report
+  };
+  return report;
 }
 
 function providerDisabledReason(provider, storage) {
@@ -112,10 +215,13 @@ export default async function handler(req, res) {
     .filter((provider) => provider.visible !== false)
     .map((provider) => providerStatus(provider, storage));
 
+  const workflowReadiness = await loadWorkflowReadiness();
+
   sendJson(res, 200, {
     ok: true,
     default_provider: defaultProviderId(providers),
-    fallback_available: !process.env.OPENAI_API_KEY,
+    fallback_available: false,
+    workflow_readiness: workflowReadiness,
     storage,
     providers
   });
