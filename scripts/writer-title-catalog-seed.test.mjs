@@ -41,7 +41,8 @@ await writeFile(input, [
   "（1）河马150标\t7月-7573-河马1",
   `1\t${mtgTitle}`,
   `2\t${mtgTitle}`,
-  "3\t2025 Topps Chrome Baseball Shohei Ohtani Blue /150 #17"
+  "3\t2025 Topps Chrome Baseball Shohei Ohtani Blue /150 #17",
+  "4\t2025 Mystery Publisher Handmade Artist Card Blue #ABC"
 ].join("\n"));
 
 const built = await buildWriterTitleCatalogSeed({
@@ -50,8 +51,8 @@ const built = await buildWriterTitleCatalogSeed({
 });
 assert.equal(built.report.row_counts.skipped_non_title_rows, 1);
 assert.equal(built.report.row_counts.duplicate_title_rows, 1);
-assert.equal(built.report.row_counts.unique_catalog_seed_rows, 2);
-assert.equal(built.report.row_counts.vector_seed_rows, 2);
+assert.equal(built.report.row_counts.unique_catalog_seed_rows, 3);
+assert.equal(built.report.row_counts.vector_seed_rows, 3);
 assert.equal(built.vectorSeeds[0].source_trust, "APPROVED_REFERENCE");
 assert.equal(built.vectorSeeds[0].metadata.title_derived_fields_are_ground_truth, false);
 assert.equal(built.vectorSeeds[0].metadata.copy_serial_grade_cert_to_query, false);
@@ -222,7 +223,9 @@ const applySummary = await applyCatalogSeed({
   fetchImpl: applyFetch,
   batchSize: 2
 });
-assert.equal(applySummary.inserted_card_count, 2);
-assert.equal(insertedCardPayloads.length, 1);
+assert.equal(applySummary.inserted_card_count, 3);
+assert.equal(insertedCardPayloads.length, 2);
+assert.ok(insertedCardPayloads.flat().every((row) => Array.isArray(row.players)));
+assert.ok(insertedCardPayloads.flat().every((row) => Array.isArray(row.observable_components)));
 
 console.log("writer title catalog seed tests passed");

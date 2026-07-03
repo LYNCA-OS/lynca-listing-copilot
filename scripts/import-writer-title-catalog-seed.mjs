@@ -504,7 +504,7 @@ function setRow(sourceId, productId, fields = {}, sourceRowKey = "") {
 }
 
 function cardRow(sourceId, productId, setId, fields = {}, title = "", sourceRowKey = "") {
-  return compact({
+  const row = compact({
     product_id: productId,
     set_id: setId,
     sport: fields.sport || fields.category || "unknown",
@@ -540,6 +540,9 @@ function cardRow(sourceId, productId, setId, fields = {}, title = "", sourceRowK
       prompt_safe_internal_writer_title: true
     }
   });
+  if (!Array.isArray(row.players)) row.players = [];
+  if (!Array.isArray(row.observable_components)) row.observable_components = [];
+  return row;
 }
 
 async function fetchExistingSourceChecksums({ env, fetchImpl } = {}) {
