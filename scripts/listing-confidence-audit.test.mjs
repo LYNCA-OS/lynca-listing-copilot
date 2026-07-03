@@ -146,7 +146,10 @@ const serialNumberOnlyDoesNotBackfillNumericalRarity = await callApi({
 
 assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.serial_number, "2/3");
 assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.numerical_rarity, null);
-assert.doesNotMatch(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /2\/3|#\/3/);
+// Directly read current-image serial backfills the denominator-only print
+// run in the TITLE (presentation only; resolved.numerical_rarity stays null).
+assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /#\/3/);
+assert.doesNotMatch(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /2\/3/);
 assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /BGS 8\.5\/10/);
 
 const backgroundIgnored = await callApi({

@@ -56,7 +56,7 @@ const numberingEdit = applyWriterModuleEdit({
 assert.equal(numberingEdit.corrected_resolved.serial_number, "31/50");
 assert.equal(numberingEdit.corrected_resolved.collector_number, "136");
 assert.equal(numberingEdit.corrected_resolved.checklist_code, "UV-16");
-assert.doesNotMatch(numberingEdit.final_title, /\/50/);
+assert.match(numberingEdit.final_title, /#\/50/);
 assert.doesNotMatch(numberingEdit.final_title, /37\/50/);
 assert.ok(numberingEdit.field_changes.some((change) => change.field === "serial_number"));
 assert.equal(numberingEdit.corrected_evidence.serial_number.status, "MANUAL_CONFIRMED");
@@ -225,7 +225,7 @@ const apiEdit = await callRenderApi({
 assert.equal(apiEdit.statusCode, 200);
 assert.equal(apiEdit.body.ok, true);
 assert.equal(apiEdit.body.corrected_resolved.serial_number, "31/50");
-assert.doesNotMatch(apiEdit.body.final_title, /\/50/);
+assert.match(apiEdit.body.final_title, /#\/50/);
 
 const apiOverrideOnly = await callRenderApi({
   resolved: {

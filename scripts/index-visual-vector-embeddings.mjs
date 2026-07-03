@@ -115,7 +115,10 @@ function canonicalTitleForItem(item = {}) {
 
 function fieldsForItem(item = {}) {
   const canonicalTitle = canonicalTitleForItem(item);
-  const titleDerivedFields = parseReviewedTitleFields(canonicalTitle);
+  // No canonical title (sealed marketplace reference) -> no title-derived
+  // fields; parser defaults like product "Other Collectibles" must never
+  // enter the index as if they were observed values.
+  const titleDerivedFields = canonicalTitle ? parseReviewedTitleFields(canonicalTitle) : {};
   const reviewedCorrectedTitle = reviewedCorrectedTitleForItem(item);
   const sealedEvalLabelRef = sealedEvalLabelRefForItem(item);
   return {
