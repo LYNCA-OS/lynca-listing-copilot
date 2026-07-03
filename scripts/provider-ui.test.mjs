@@ -99,6 +99,9 @@ assert.match(api, /envFlag\(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false\)/
 assert.doesNotMatch(api, /runFocusedVisionImpl:\s*createGptCriticalVerifierRunner/, "automatic second-model focused vision should not be wired from the title API");
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facing modules from the title API");
+assert.match(js, /workflowSummaryNotice\(result\)/, "frontend should render a compact workflow summary from the title API");
+assert.match(js, /data-workflow-summary/, "workflow summary should have a stable hook for UI validation");
+assert.match(js, /hide_raw_candidate_details/, "workflow summary should keep raw candidate diagnostics hidden from the writer UI by default");
 assert.match(js, /result\.modules/, "frontend should read module output from deterministic renderer responses");
 assert.match(js, /data-module-input/, "writer modules should expose editable module text controls");
 assert.match(js, /moduleTokenSummary/, "writer modules should render token-level confidence chips");
@@ -180,6 +183,9 @@ assert.match(css, /\.title-output-pending::before/, "pending result cards should
 assert.match(css, /\.primary-button\.is-loading:disabled/, "busy generate button should remain visually legible while disabled");
 assert.match(css, /prefers-reduced-motion/, "loading animations should respect reduced motion preferences");
 assert.match(css, /\.publication-gate/, "partial writer draft gate should be visible");
+assert.match(css, /\.workflow-summary/, "workflow summary should have a compact writer-facing layout");
+assert.match(css, /\.workflow-step-row/, "workflow summary should show integrated pipeline steps compactly");
+assert.match(css, /\.workflow-step\.workflow-warn/, "non-blocking workflow issues should be visible without exposing raw technical packets");
 assert.match(css, /\.title-override-note/, "title override state should be visible");
 assert.match(css, /\.publish-button/, "mock publish button should have a distinct approved-action style");
 assert.match(css, /\.publish-status/, "mock publish status should be visible after publishing");

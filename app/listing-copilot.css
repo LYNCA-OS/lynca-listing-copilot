@@ -1449,6 +1449,114 @@ h3 {
   font-weight: 800;
 }
 
+.workflow-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  border: 1px solid rgba(88, 199, 245, 0.28);
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: rgba(88, 199, 245, 0.055);
+}
+
+.workflow-summary.manual-required {
+  border-color: rgba(255, 143, 143, 0.34);
+  background: rgba(255, 143, 143, 0.06);
+}
+
+.workflow-summary.quick-approval {
+  border-color: rgba(112, 214, 159, 0.34);
+  background: rgba(112, 214, 159, 0.055);
+}
+
+.workflow-summary-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.workflow-summary-head span {
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.workflow-summary-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.workflow-summary-head small {
+  color: var(--yellow);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.workflow-step-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.workflow-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.14);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.workflow-step b,
+.workflow-step em {
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.workflow-step b {
+  color: var(--muted);
+}
+
+.workflow-step.workflow-ok {
+  border-color: rgba(112, 214, 159, 0.36);
+  background: rgba(112, 214, 159, 0.08);
+}
+
+.workflow-step.workflow-ok em {
+  color: var(--green);
+}
+
+.workflow-step.workflow-pending {
+  border-color: rgba(240, 200, 117, 0.34);
+  background: rgba(240, 200, 117, 0.08);
+}
+
+.workflow-step.workflow-pending em {
+  color: var(--yellow);
+}
+
+.workflow-step.workflow-warn {
+  border-color: rgba(255, 143, 143, 0.38);
+  background: rgba(255, 143, 143, 0.08);
+}
+
+.workflow-step.workflow-warn em {
+  color: var(--red);
+}
+
+.workflow-step.workflow-muted em {
+  color: var(--subtle);
+}
+
 .feedback-save-status {
   margin: 0;
   color: var(--muted);

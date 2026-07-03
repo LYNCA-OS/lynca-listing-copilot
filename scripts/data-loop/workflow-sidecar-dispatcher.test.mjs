@@ -144,6 +144,14 @@ assert.equal(attachedWithoutConfig.workflow_sidecars.cvat.status, workflowSideca
 assert.equal(attachedWithoutConfig.workflow_sidecars.fiftyone.status, workflowSidecarStatuses.QUEUED);
 assert.equal(attachedWithoutConfig.workflow_sidecars.lightgbm.status, workflowSidecarStatuses.QUEUED);
 assert.equal(attachedWithoutConfig.workflow_sidecars.phoenix.status, workflowSidecarStatuses.NOT_CONFIGURED);
+assert.equal(attachedWithoutConfig.workflow_summary.schema_version, "listing-workflow-summary-v1");
+assert.equal(attachedWithoutConfig.workflow_summary.status, "FIELD_REVIEW");
+assert.equal(attachedWithoutConfig.workflow_summary.ready_to_edit, true);
+assert.equal(attachedWithoutConfig.workflow_summary.capability_summary.catalog.state, "FAIL_CLOSED");
+assert.equal(attachedWithoutConfig.workflow_summary.capability_summary.vector.state, "FAIL_CLOSED");
+assert.equal(attachedWithoutConfig.workflow_summary.capability_summary.ocr.state, "QUEUED");
+assert.equal(attachedWithoutConfig.workflow_summary.capability_summary.data_loop.active_tools.includes("paddle_ocr"), true);
+assert.equal(attachedWithoutConfig.workflow_summary.ui.hide_raw_candidate_details, true);
 
 const writes = [];
 const fetchImpl = async (url, init = {}) => {
@@ -329,5 +337,8 @@ const failureSafe = await attachWorkflowSidecarsToListingResult({
 });
 assert.equal(failureSafe.title, result.title);
 assert.ok(Object.values(failureSafe.workflow_sidecars).every((sidecar) => sidecar.status));
+assert.equal(failureSafe.workflow_summary.schema_version, "listing-workflow-summary-v1");
+assert.equal(failureSafe.workflow_summary.status, "FIELD_REVIEW");
+assert.equal(failureSafe.workflow_summary.capability_summary.data_loop.active_tools.length > 0, true);
 
 console.log("workflow-sidecar-dispatcher tests passed");

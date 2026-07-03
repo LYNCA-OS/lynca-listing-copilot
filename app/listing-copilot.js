@@ -1754,10 +1754,70 @@ function resultBox(result, asset = null) {
       ${titleOverrideNotice(result)}
       ${moduleSummary(result)}
       ${publicationGateNotice(result)}
+      ${workflowSummaryNotice(result)}
       <p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
       ${result.publishMessage ? `<p class="publish-status">${escapeHtml(result.publishMessage)}</p>` : ""}
       ${writerEvidenceDetails(result, asset, unresolved)}
+    </div>
+  `;
+}
+
+function workflowStepStateText(state = "") {
+  return {
+    DONE: "完成",
+    FAILED: "失败",
+    IDENTITY_ASSIST: "已支持",
+    FIELD_SUPPORT: "字段支持",
+    FAIL_CLOSED: "已挡冲突",
+    SHADOW_ONLY: "后台参考",
+    UNAVAILABLE: "不可用",
+    OFF: "未启用",
+    NO_MATCH: "未命中",
+    EVIDENCE_ATTACHED: "已补证据",
+    COMPLETED_NO_PATCH: "已检查",
+    QUEUED: "已排队",
+    FAILED_NON_BLOCKING: "失败不阻塞",
+    NOT_CONFIGURED: "未配置",
+    NOT_USED: "未触发",
+    QUEUED_OR_CREATED: "已连接",
+    COMPLETED_OR_SYNCED: "已同步",
+    TRACE_ONLY: "只追踪"
+  }[state] || state || "-";
+}
+
+function workflowStepClass(state = "") {
+  if (/DONE|IDENTITY_ASSIST|EVIDENCE_ATTACHED|COMPLETED|SYNCED/i.test(state)) return "workflow-ok";
+  if (/FIELD_SUPPORT|QUEUED|SHADOW|TRACE/i.test(state)) return "workflow-pending";
+  if (/FAIL_CLOSED|FAILED|UNAVAILABLE|NOT_CONFIGURED/i.test(state)) return "workflow-warn";
+  return "workflow-muted";
+}
+
+function workflowSummaryNotice(result) {
+  const summary = result.workflow_summary;
+  if (!summary || typeof summary !== "object") return "";
+  const hideRawCandidateDetails = summary.ui?.hide_raw_candidate_details !== false;
+  const steps = Array.isArray(summary.compact_steps) ? summary.compact_steps : [];
+  const fields = Array.isArray(summary.highlighted_fields) && summary.highlighted_fields.length
+    ? summary.highlighted_fields.slice(0, 6).map((field) => reviewFieldLabels[field] || field).join(", ")
+    : "";
+  const statusClass = summary.blocking ? "manual-required" : summary.status === "LOW_TOUCH_REVIEW" ? "quick-approval" : "writer-ready";
+
+  return `
+    <div class="workflow-summary ${statusClass}" data-workflow-summary data-hide-raw-candidate-details="${hideRawCandidateDetails ? "true" : "false"}">
+      <div class="workflow-summary-head">
+        <span>系统结论</span>
+        <strong>${escapeHtml(summary.writer_action || "草稿已生成，请检查后保存。")}</strong>
+        ${fields ? `<small>重点模块：${escapeHtml(fields)}</small>` : ""}
+      </div>
+      <div class="workflow-step-row">
+        ${steps.slice(0, 5).map((step) => `
+          <span class="workflow-step ${workflowStepClass(step.state)}" title="${escapeHtml(step.writer_text || "")}">
+            <b>${escapeHtml(step.label || step.key || "")}</b>
+            <em>${escapeHtml(workflowStepStateText(step.state))}</em>
+          </span>
+        `).join("")}
+      </div>
     </div>
   `;
 }
