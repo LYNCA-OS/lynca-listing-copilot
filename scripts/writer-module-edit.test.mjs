@@ -56,7 +56,7 @@ const numberingEdit = applyWriterModuleEdit({
 assert.equal(numberingEdit.corrected_resolved.serial_number, "31/50");
 assert.equal(numberingEdit.corrected_resolved.collector_number, "136");
 assert.equal(numberingEdit.corrected_resolved.checklist_code, "UV-16");
-assert.match(numberingEdit.final_title, /#\/50/);
+assert.doesNotMatch(numberingEdit.final_title, /\/50/);
 assert.doesNotMatch(numberingEdit.final_title, /37\/50/);
 assert.ok(numberingEdit.field_changes.some((change) => change.field === "serial_number"));
 assert.equal(numberingEdit.corrected_evidence.serial_number.status, "MANUAL_CONFIRMED");
@@ -104,9 +104,9 @@ const newModuleIdentityEdit = applyWriterModuleEdit({
   moduleKey: "product_set",
   moduleText: "Prizm Basketball"
 });
-assert.equal(newModuleIdentityEdit.corrected_resolved.product, "Prizm Basketball");
+assert.equal(newModuleIdentityEdit.corrected_resolved.product, "Panini Prizm");
 assert.equal(newModuleIdentityEdit.corrected_resolved.set, null);
-assert.match(newModuleIdentityEdit.final_title, /2023 Panini Prizm Basketball Victor Wembanyama/);
+assert.match(newModuleIdentityEdit.final_title, /2023 Panini Prizm Victor Wembanyama/);
 
 const newModuleVariantEdit = applyWriterModuleEdit({
   resolved: {
@@ -164,7 +164,8 @@ const scgNumericalRarityEdit = applyWriterModuleEdit({
   moduleKey: "numerical_rarity",
   moduleText: "/50"
 });
-assert.equal(scgNumericalRarityEdit.corrected_resolved.serial_number, "/50");
+assert.equal(scgNumericalRarityEdit.corrected_resolved.serial_number, null);
+assert.equal(scgNumericalRarityEdit.corrected_resolved.numerical_rarity, "/50");
 assert.match(scgNumericalRarityEdit.final_title, /\/50/);
 
 const scgCardNumberEdit = applyWriterModuleEdit({
@@ -178,6 +179,35 @@ const scgCardNumberEdit = applyWriterModuleEdit({
 });
 assert.equal(scgCardNumberEdit.corrected_resolved.collector_number, "96");
 assert.match(scgCardNumberEdit.final_title, /#96/);
+
+const printFinishEditDoesNotPolluteReleaseVariant = applyWriterModuleEdit({
+  resolved: {
+    year: "2024",
+    brand: "Topps Chrome",
+    players: ["Victor Wembanyama"]
+  },
+  moduleKey: "print_finish",
+  moduleText: "Gold Refractor"
+});
+assert.equal(printFinishEditDoesNotPolluteReleaseVariant.corrected_resolved.surface_color, "Gold");
+assert.equal(printFinishEditDoesNotPolluteReleaseVariant.corrected_resolved.parallel_family, "Refractor");
+assert.equal(printFinishEditDoesNotPolluteReleaseVariant.corrected_resolved.parallel_exact, "Gold Refractor");
+assert.equal(printFinishEditDoesNotPolluteReleaseVariant.corrected_resolved.insert, null);
+assert.match(printFinishEditDoesNotPolluteReleaseVariant.final_title, /Gold Refractor/);
+
+const releaseVariantEditDoesNotCaptureFinish = applyWriterModuleEdit({
+  resolved: {
+    year: "2024",
+    brand: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    surface_color: "Gold"
+  },
+  moduleKey: "release_variant",
+  moduleText: "Variation"
+});
+assert.equal(releaseVariantEditDoesNotCaptureFinish.corrected_resolved.variation, "Variation");
+assert.equal(releaseVariantEditDoesNotCaptureFinish.corrected_resolved.surface_color, "Gold");
+assert.equal(releaseVariantEditDoesNotCaptureFinish.corrected_resolved.parallel_exact, null);
 
 const apiEdit = await callRenderApi({
   resolved: {
@@ -195,7 +225,7 @@ const apiEdit = await callRenderApi({
 assert.equal(apiEdit.statusCode, 200);
 assert.equal(apiEdit.body.ok, true);
 assert.equal(apiEdit.body.corrected_resolved.serial_number, "31/50");
-assert.match(apiEdit.body.final_title, /#\/50/);
+assert.doesNotMatch(apiEdit.body.final_title, /\/50/);
 
 const apiOverrideOnly = await callRenderApi({
   resolved: {
@@ -209,7 +239,7 @@ const apiOverrideOnly = await callRenderApi({
 assert.equal(apiOverrideOnly.statusCode, 200);
 assert.equal(apiOverrideOnly.body.ok, true);
 assert.equal(apiOverrideOnly.body.title_override, "Custom human title");
-assert.match(apiOverrideOnly.body.final_title, /#\/50/);
+assert.doesNotMatch(apiOverrideOnly.body.final_title, /\/50/);
 assert.notEqual(apiOverrideOnly.body.final_title, "Custom human title");
 
 console.log("writer module edit tests passed");

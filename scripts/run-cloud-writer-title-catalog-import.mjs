@@ -24,6 +24,23 @@ function numberArg(argv, name, fallback) {
   return Number.isFinite(number) ? Math.trunc(number) : fallback;
 }
 
+async function readJsonlRows(path = "") {
+  const resolved = resolve(path || "");
+  if (!path || !existsSync(resolved)) return [];
+  const text = await readFile(resolved, "utf8");
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      try {
+        return JSON.parse(line);
+      } catch (error) {
+        throw new Error(`invalid_jsonl_row_${index + 1}: ${error.message}`);
+      }
+    });
+}
+
 function unquoteEnvValue(value = "") {
   const trimmed = String(value || "").trim();
   if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1).replace(/'\\''/g, "'");
@@ -144,12 +161,15 @@ export async function runCloudWriterTitleCatalogImport({
   const dryRun = hasFlag(argv, "--dry-run");
   const batchId = cleanText(argValue(argv, "--batch-id", "writer_ebay_upload_20260703"));
   const inputPath = cleanText(argValue(argv, "--input-path", ""));
+  const stagingJsonlPath = cleanText(argValue(argv, "--staging-jsonl", ""));
+  const stagedRows = stagingJsonlPath ? await readJsonlRows(stagingJsonlPath) : [];
   const useLogin = !cleanText(mergedEnv.DATA_LOOP_INTERNAL_SIDECAR_TOKEN || argValue(argv, "--auth-token", ""));
   const cookie = useLogin ? await login({ baseUrl, env: mergedEnv, fetchImpl }) : "";
 
   const chunks = [];
   let offset = startOffset;
   for (let index = 0; index < maxChunks; index += 1) {
+    const inlineRows = stagedRows.length ? stagedRows.slice(offset, offset + limit) : [];
     const chunk = await postImportChunk({
       baseUrl,
       cookie,
@@ -160,6 +180,11 @@ export async function runCloudWriterTitleCatalogImport({
         limit,
         batch_id: batchId,
         ...(inputPath ? { input_path: inputPath } : {}),
+        ...(stagedRows.length ? {
+          staged_rows: inlineRows,
+          total_rows: stagedRows.length,
+          done: offset + inlineRows.length >= stagedRows.length
+        } : {}),
         apply: !dryRun
       }
     });

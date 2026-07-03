@@ -10,6 +10,7 @@ const wemby = renderListingPresentation({
     players: ["Victor Wembanyama"],
     parallel: "Gold Prizm",
     serial_number: "31/50",
+    numerical_rarity: "31/50",
     rc: true,
     grade_company: "PSA",
     card_grade: "10",
@@ -18,14 +19,14 @@ const wemby = renderListingPresentation({
   maxLength: 80
 });
 
-assert.equal(wemby.final_title, "2023-24 Panini Prizm Victor Wembanyama Gold #/50 RC PSA 10");
+assert.equal(wemby.final_title, "2023-24 Panini Prizm Victor Wembanyama Gold 31/50 RC PSA 10");
 assert.ok(wemby.final_title.length <= 80);
-assert.match(wemby.final_title, /#\/50/);
-assert.doesNotMatch(wemby.final_title, /31\/50/);
+assert.match(wemby.final_title, /31\/50/);
 assert.match(wemby.final_title, /PSA 10$/);
 assert.equal((wemby.final_title.match(/\bRC\b/g) || []).length, 1);
-assert.equal(wemby.modules.release_variant.text, "Gold");
-assert.equal(wemby.modules.numerical_rarity.text, "#/50");
+assert.equal(wemby.modules.release_variant.text, "");
+assert.equal(wemby.modules.print_finish.text, "Gold Prizm");
+assert.equal(wemby.modules.numerical_rarity.text, "31/50");
 assert.equal(wemby.modules.search_optimization.text, "RC");
 assert.equal(wemby.modules.grading.text, "PSA 10");
 
@@ -104,6 +105,7 @@ const ronaldoCompact = renderResolvedTitle({
   players: ["Cristiano Ronaldo"],
   card_type: "auto",
   serial_number: "91/99",
+    numerical_rarity: "91/99",
   grade_company: "BGS",
   card_grade: "8.5",
   auto_grade: "8",
@@ -113,8 +115,7 @@ const ronaldoCompact = renderResolvedTitle({
 });
 assert.ok(ronaldoCompact.rendered_title.length <= 80);
 assert.match(ronaldoCompact.rendered_title, /Cristiano Ronaldo/i);
-assert.match(ronaldoCompact.rendered_title, /#\/99/);
-assert.doesNotMatch(ronaldoCompact.rendered_title, /91\/99/);
+assert.match(ronaldoCompact.rendered_title, /91\/99/);
 assert.match(ronaldoCompact.rendered_title, /BGS 8\.5\/8$/);
 
 const duplicateAutoGrade = renderResolvedTitle({
@@ -125,6 +126,7 @@ const duplicateAutoGrade = renderResolvedTitle({
   players: ["Kobe Bryant"],
   card_type: "relic/auto",
   serial_number: "08/25",
+    numerical_rarity: "08/25",
   grade_company: "PSA/DNA",
   card_grade: "10",
   auto_grade: "10",
@@ -147,6 +149,7 @@ const absoluteProductBrandOverlap = renderResolvedTitle({
   players: ["Kobe Bryant"],
   card_type: "Memorabilia",
   serial_number: "08/25",
+    numerical_rarity: "08/25",
   auto: true,
   patch: true,
   collector_number: "13",
@@ -167,6 +170,7 @@ const psaDnaCardOnlyAutoRelic = renderResolvedTitle({
   players: ["Kobe Bryant"],
   card_type: "relic/auto",
   serial_number: "08/25",
+    numerical_rarity: "08/25",
   grade_company: "PSA/DNA",
   card_grade: "10",
   grade_type: "CARD_ONLY",
@@ -179,8 +183,7 @@ assert.ok(psaDnaCardOnlyAutoRelic.rendered_title.length <= 80);
 assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /Kobe Bryant/i);
 assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /\bAuto\b/i);
 assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /\bRelic\b/i);
-assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /#\/25/);
-assert.doesNotMatch(psaDnaCardOnlyAutoRelic.rendered_title, /08\/25/);
+assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /08\/25/);
 assert.match(psaDnaCardOnlyAutoRelic.rendered_title, /PSA 10$/);
 assert.doesNotMatch(psaDnaCardOnlyAutoRelic.rendered_title, /PSA\/DNA 10$/);
 
@@ -205,12 +208,13 @@ const prizmFifaNoDuplicateBrand = renderResolvedTitle({
   insert: "Club Legends",
   players: ["Lionel Messi"],
   serial_number: "029/199",
+    numerical_rarity: "029/199",
   collector_number: "CL-LM",
   auto: true
 }, {
   maxLength: 80
 });
-assert.equal(prizmFifaNoDuplicateBrand.rendered_title, "2025-26 Panini Prizm FIFA Soccer Lionel Messi Club Legends #/199 #CL-LM Auto");
+assert.equal(prizmFifaNoDuplicateBrand.rendered_title, "2025-26 Panini Prizm FIFA Soccer Lionel Messi Club Legends 029/199 #CL Auto");
 assert.doesNotMatch(prizmFifaNoDuplicateBrand.rendered_title, /Prizm\s+Prizm/i);
 
 const tripleThreadsLongMultiplayer = renderResolvedTitle({
@@ -265,11 +269,12 @@ const insertCardType = renderResolvedTitle({
   players: ["Shohei Ohtani"],
   card_type: "insert",
   insert: "Gusto",
-  serial_number: "5/5"
+  serial_number: "5/5",
+  numerical_rarity: "5/5"
 }, {
   maxLength: 80
 });
-assert.equal(insertCardType.rendered_title, "2025 Topps Finest Shohei Ohtani Gusto #/5");
+assert.equal(insertCardType.rendered_title, "2025 Topps Finest Shohei Ohtani Gusto 5/5");
 
 const setAlreadyCarriesInsert = renderResolvedTitle({
   year: "2025",
@@ -280,12 +285,13 @@ const setAlreadyCarriesInsert = renderResolvedTitle({
   card_type: "Base",
   insert: "Gusto",
   serial_number: "5/5",
+    numerical_rarity: "5/5",
   collector_number: "G-11"
 }, {
   maxLength: 80
 });
 assert.doesNotMatch(setAlreadyCarriesInsert.rendered_title, /Gusto.*Gusto/i);
-assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani #/5 #G-11");
+assert.equal(setAlreadyCarriesInsert.rendered_title, "2025 Topps Finest Gusto Shohei Ohtani 5/5 #G-11");
 
 const bowmansBestJordan = renderListingPresentation({
   resolved: {
@@ -335,6 +341,7 @@ const cardNumberRemovedBeforeSecondaryFields = renderResolvedTitle({
   surface_color: "Gold",
   parallel_family: "Sparkle",
   serial_number: "17/50",
+    numerical_rarity: "17/50",
   collector_number: "TCAR-AB",
   ssp: true,
   auto: true,
@@ -366,6 +373,7 @@ const brandProductOverlapKeepsSet = renderResolvedTitle({
   set: "Gusto",
   players: ["Shohei Ohtani"],
   serial_number: "5/5",
+    numerical_rarity: "5/5",
   team: "Los Angeles Dodgers"
 }, {
   maxLength: 80
@@ -398,6 +406,7 @@ const teamIncludedOnlyWhenRoom = renderResolvedTitle({
   set: "Gusto",
   players: ["Shohei Ohtani"],
   serial_number: "5/5",
+    numerical_rarity: "5/5",
   team: "Los Angeles Dodgers"
 }, {
   maxLength: 85
@@ -413,6 +422,7 @@ const teamOmittedWhenTitleWouldOverflow = renderResolvedTitle({
   insert: "Next Stop Signatures",
   parallel_exact: "Purple Wave Refractor",
   serial_number: "12/50",
+    numerical_rarity: "12/50",
   rc: true,
   auto: true,
   grade_company: "PSA",
@@ -434,6 +444,7 @@ const productAlreadyCarriesInsert = renderResolvedTitle({
   card_type: "Auto Patch",
   insert: "Hoopla",
   serial_number: "08/25",
+    numerical_rarity: "08/25",
   auto: true,
   patch: true,
   grade_company: "PSA",
@@ -443,7 +454,7 @@ const productAlreadyCarriesInsert = renderResolvedTitle({
   maxLength: 80
 });
 assert.doesNotMatch(productAlreadyCarriesInsert.rendered_title, /Hoopla.*Hoopla/i);
-assert.equal(productAlreadyCarriesInsert.rendered_title, "2010-11 Panini Absolute Hoopla Kobe Bryant Auto Patch #/25 PSA 10");
+assert.equal(productAlreadyCarriesInsert.rendered_title, "2010-11 Panini Absolute Hoopla Kobe Bryant Auto Patch 08/25 PSA 10");
 
 const duplicatePsaCardAndAutoGrade = renderResolvedTitle({
   year: "2020",
@@ -469,6 +480,7 @@ const tripleThreadsMultiPlayer = renderResolvedTitle({
   players: ["Hank Aaron", "Ken Griffey Jr.", "Mike Trout"],
   card_type: "Auto Relic",
   serial_number: "6/9",
+    numerical_rarity: "6/9",
   grade_company: "BGS",
   card_grade: "9",
   auto_grade: "10",
@@ -484,8 +496,7 @@ assert.match(tripleThreadsMultiPlayer.rendered_title, /Triple Threads/i);
 assert.match(tripleThreadsMultiPlayer.rendered_title, /Aaron/i);
 assert.match(tripleThreadsMultiPlayer.rendered_title, /Griffey/i);
 assert.match(tripleThreadsMultiPlayer.rendered_title, /Trout/i);
-assert.match(tripleThreadsMultiPlayer.rendered_title, /#\/9/);
-assert.doesNotMatch(tripleThreadsMultiPlayer.rendered_title, /6\/9/);
+assert.match(tripleThreadsMultiPlayer.rendered_title, /6\/9/);
 assert.match(tripleThreadsMultiPlayer.rendered_title, /BGS 9\/10$/);
 
 const flangLongParallel = renderResolvedTitle({
@@ -497,6 +508,7 @@ const flangLongParallel = renderResolvedTitle({
   insert: "Next Stop Signatures",
   parallel: "Purple Refractor",
   serial_number: "72/75",
+    numerical_rarity: "72/75",
   rc: true,
   auto: true
 }, {
@@ -530,6 +542,7 @@ const oneOfOneSerialLimitPreserved = renderResolvedTitle({
   product: "Chrome",
   players: ["Michael Jackson"],
   serial_number: "01/01",
+    numerical_rarity: "01/01",
   one_of_one: true
 }, {
   maxLength: 85
@@ -574,6 +587,7 @@ const productSportSuffixKeepsBrandIdentity = renderResolvedTitle({
   insert: "Next Stop Signatures",
   parallel: "Purple",
   serial_number: "72/75",
+    numerical_rarity: "72/75",
   rc: true,
   auto: true
 }, {
@@ -612,6 +626,7 @@ const statusNewBreedFieldFidelity = renderResolvedTitle({
   card_name: "New Breed",
   parallel_family: "Gold Holo Foil Refractor Wave Shimmer",
   serial_number: "20/99",
+    numerical_rarity: "20/99",
   collector_number: "NB-TY",
   rc: true,
   grade_company: "PSA",
@@ -624,8 +639,7 @@ const statusNewBreedFieldFidelity = renderResolvedTitle({
 assert.ok(statusNewBreedFieldFidelity.rendered_title.length <= 85);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /\bStatus\b/i);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /\bNew Breed\b/i);
-assert.match(statusNewBreedFieldFidelity.rendered_title, /#\/99/);
-assert.doesNotMatch(statusNewBreedFieldFidelity.rendered_title, /20\/99/);
+assert.match(statusNewBreedFieldFidelity.rendered_title, /20\/99/);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /PSA 10$/);
 
 const encasedGradeCompanyMissingStaysVisible = renderResolvedTitle({
@@ -635,6 +649,7 @@ const encasedGradeCompanyMissingStaysVisible = renderResolvedTitle({
   players: ["Anthony Edwards"],
   card_name: "SIG-GOLD BREAKAWAY",
   serial_number: "9/10",
+    numerical_rarity: "9/10",
   card_grade: "10",
   grade_type: "CARD_ONLY"
 }, {
@@ -653,6 +668,7 @@ const longTitle = renderResolvedTitle({
   insert: "Dual Signatures Jersey No.",
   parallel: "Gold Holo Foil Refractor Wave Shimmer",
   serial_number: "01/25",
+    numerical_rarity: "01/25",
   grade_company: "PSA",
   card_grade: "10",
   grade_type: "CARD_ONLY"
@@ -660,8 +676,7 @@ const longTitle = renderResolvedTitle({
   maxLength: 80
 });
 assert.ok(longTitle.rendered_title.length <= 80);
-assert.match(longTitle.rendered_title, /#\/25/);
-assert.doesNotMatch(longTitle.rendered_title, /01\/25/);
+assert.match(longTitle.rendered_title, /01\/25/);
 assert.doesNotMatch(longTitle.rendered_title, /PSA 10$/);
 
 const longTitleEbayLimit = renderResolvedTitle({
@@ -672,6 +687,7 @@ const longTitleEbayLimit = renderResolvedTitle({
   insert: "Dual Signatures Jersey No.",
   parallel: "Gold Holo Foil Refractor Wave Shimmer",
   serial_number: "01/25",
+    numerical_rarity: "01/25",
   grade_company: "PSA",
   card_grade: "10",
   grade_type: "CARD_ONLY"
@@ -695,7 +711,7 @@ const pokemon = renderListingPresentation({
 });
 assert.equal(pokemon.renderer, "pokemon");
 assert.match(pokemon.final_title, /Lisia's Appeal/);
-assert.match(pokemon.final_title, /#257\/208/);
+assert.match(pokemon.final_title, /257\/208/);
 assert.match(pokemon.final_title, /SAR/);
 assert.doesNotMatch(pokemon.final_title, /En Morikura/i);
 assert.doesNotMatch(pokemon.final_title, /[\u4e00-\u9fff]/);
@@ -711,6 +727,7 @@ const onePieceTcg = renderListingPresentation({
     card_name: "Gear 5",
     surface_color: "Gold",
     serial_number: "12/100",
+    numerical_rarity: "12/100",
     grade_company: "PSA",
     card_grade: "10",
     grade_type: "CARD_ONLY"
@@ -719,11 +736,10 @@ const onePieceTcg = renderListingPresentation({
 });
 assert.equal(onePieceTcg.renderer, "pokemon");
 assert.match(onePieceTcg.final_title, /One Piece/i);
-assert.match(onePieceTcg.final_title, /\bJP\b/);
+assert.match(onePieceTcg.final_title, /\bJapanese\b/);
 assert.match(onePieceTcg.final_title, /Monkey D\. Luffy/i);
 assert.match(onePieceTcg.final_title, /Gear 5/i);
-assert.match(onePieceTcg.final_title, /#\/100/);
-assert.doesNotMatch(onePieceTcg.final_title, /12\/100/);
+assert.match(onePieceTcg.final_title, /12\/100/);
 assert.match(onePieceTcg.final_title, /PSA 10$/);
 
 const localizedOnlyPokemon = renderListingPresentation({
@@ -757,8 +773,10 @@ const reviewedModules = renderListingPresentation({
     })
   }
 });
-assert.equal(reviewedModules.modules.numerical_rarity.status, "REVIEW");
-assert.equal(reviewedModules.modules.numerical_rarity.requires_review, true);
+assert.equal(reviewedModules.modules.numerical_rarity.status, "NOT_APPLICABLE");
+assert.equal(reviewedModules.modules.numerical_rarity.requires_review, false);
+assert.equal(reviewedModules.modules.numerical_rarity.text, "");
+assert.doesNotMatch(reviewedModules.final_title, /31\/50|#\/50/);
 assert.deepEqual(reviewedModules.module_order, [
   "year",
   "product_identity",
@@ -803,12 +821,149 @@ const colorWithReviewDescriptor = renderListingPresentation({
 });
 const releaseVariantTokens = colorWithReviewDescriptor.modules.release_variant.tokens;
 const printFinishTokens = colorWithReviewDescriptor.modules.print_finish.tokens;
-assert.equal(colorWithReviewDescriptor.modules.release_variant.text, "Gold");
-assert.equal(colorWithReviewDescriptor.modules.print_finish.text, "Sparkle");
+assert.equal(colorWithReviewDescriptor.modules.release_variant.text, "");
+assert.equal(colorWithReviewDescriptor.modules.print_finish.text, "Gold Sparkle");
 assert.match(colorWithReviewDescriptor.final_title, /Gold Sparkle/);
-assert.deepEqual(releaseVariantTokens.map((token) => token.text), ["Gold"]);
-assert.deepEqual(printFinishTokens.map((token) => token.text), ["Sparkle"]);
-assert.equal(releaseVariantTokens.find((token) => token.text === "Gold").requires_review, false);
+assert.deepEqual(releaseVariantTokens.map((token) => token.text), []);
+assert.deepEqual(printFinishTokens.map((token) => token.text), ["Gold", "Sparkle"]);
+assert.equal(printFinishTokens.find((token) => token.text === "Gold").requires_review, false);
 assert.equal(printFinishTokens.find((token) => token.text === "Sparkle").requires_review, true);
+assert.doesNotMatch(colorWithReviewDescriptor.final_title, /17\/50|#\/50/);
+
+const explicitNumericalRarity = renderListingPresentation({
+  resolved: {
+    year: "2024-25",
+    brand: "Panini",
+    product: "Immaculate Collection",
+    players: ["Anthony Edwards"],
+    card_type: "Patch Auto",
+    numerical_rarity: "2/3",
+    grade_company: "BGS",
+    card_grade: "8.5",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  }
+});
+assert.match(explicitNumericalRarity.final_title, /2\/3/);
+assert.match(explicitNumericalRarity.final_title, /BGS 8\.5\/10/);
+
+const smartCollapsedProductHierarchy = renderListingPresentation({
+  resolved: {
+    manufacturer: "Panini",
+    product: "Panini Prizm Black",
+    set: "Panini Prizm Black FOTL",
+    players: ["Test Player"]
+  }
+});
+assert.match(smartCollapsedProductHierarchy.final_title, /Panini Prizm Black Test Player/);
+assert.doesNotMatch(smartCollapsedProductHierarchy.final_title, /Panini Panini|FOTL/);
+
+const smartComposedCardVariantFinish = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Chrome",
+    players: ["Test Player"],
+    card_name: "Gold Refractor Autograph",
+    variation: "Variation",
+    surface_color: "Gold",
+    auto: true
+  }
+});
+assert.match(smartComposedCardVariantFinish.final_title, /Gold Refractor Auto Variation/);
+assert.equal((smartComposedCardVariantFinish.final_title.match(/\bGold\b/g) || []).length, 1);
+
+const tcgMasterBallStress = renderListingPresentation({
+  resolved: {
+    year: "2023",
+    category: "Pokemon TCG",
+    language: "JP",
+    product: "Scarlet & Violet",
+    set: "Pokemon 151",
+    players: ["Charizard ex"],
+    card_name: "Charizard ex",
+    collector_number: "201/165",
+    rarity: "SAR",
+    parallel_exact: "Master Ball Reverse Holo",
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.equal(
+  tcgMasterBallStress.final_title,
+  "2023 Japanese Pokemon 151 Charizard ex SAR Master Ball Reverse Holo PSA 10"
+);
+assert.doesNotMatch(tcgMasterBallStress.final_title, /201\/165/);
+assert.equal(tcgMasterBallStress.final_title.length <= 80, true);
+
+const tcgPikachuIllustratorStress = renderListingPresentation({
+  resolved: {
+    year: "1998",
+    category: "Pokemon TCG",
+    language: "JP",
+    product: "Promo",
+    set: "CoroCoro Comic Illustration Contest",
+    players: ["Pikachu"],
+    card_name: "Illustrator",
+    rarity: "Promo / Prize Card",
+    insert: "Illustrator / CoroCoro",
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.equal(
+  tcgPikachuIllustratorStress.final_title,
+  "1998 Japanese Pokemon CoroCoro Promo Pikachu Illustrator PSA 10"
+);
+assert.doesNotMatch(tcgPikachuIllustratorStress.final_title, /Pikachu Illustrator Pikachu|Promo Promo/);
+
+const tcgGhostRareStress = renderListingPresentation({
+  resolved: {
+    year: "2007",
+    category: "Yu-Gi-Oh! TCG",
+    language: "EN",
+    manufacturer: "Konami",
+    product: "Tactical Evolution",
+    set: "Tactical Evolution",
+    players: ["Rainbow Dragon"],
+    card_name: "Rainbow Dragon",
+    collector_number: "TAEV-EN006",
+    rarity: "Ghost Rare",
+    parallel_exact: "Ghost Rare",
+    first_bowman: true,
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.equal(
+  tcgGhostRareStress.final_title,
+  "2007 Yu-Gi-Oh! Tactical Evolution Rainbow Dragon Ghost Rare 1st Edition PSA 10"
+);
+assert.doesNotMatch(tcgGhostRareStress.final_title, /TAEV-EN006|English/);
+
+const standardLotGrammar = renderResolvedTitle({
+  multi_card: true,
+  card_count: 12,
+  year: "2024",
+  manufacturer: "Panini",
+  product: "Prizm",
+  players: ["Anthony Edwards", "Victor Wembanyama", "Stephen Curry", "LeBron James"],
+  lot_type: "rookie insert lot",
+  rc: true
+}, {
+  maxLength: 80
+});
+assert.equal(
+  standardLotGrammar.rendered_title,
+  "Lot x12 2024 Panini Prizm Anthony Edwards / Victor Wembanyama / Stephen Curry RC"
+);
+assert.ok(standardLotGrammar.rendered_title.length <= 80);
+assert.doesNotMatch(standardLotGrammar.rendered_title, /LeBron James/);
 
 console.log("renderer tests passed");

@@ -59,7 +59,11 @@ function importAuth(req, env = process.env) {
   return { ok: false };
 }
 
-function publicReport(report = {}, { offset = 0, limit = 0, selectedRows = [] } = {}) {
+function publicReport(report = {}, { offset = 0, limit = 0, selectedRows = [], totalRows = null, done = null } = {}) {
+  const total = Number.isFinite(Number(totalRows))
+    ? Number(totalRows)
+    : Number(report.row_counts?.unique_catalog_seed_rows || 0);
+  const nextOffset = offset + selectedRows.length;
   return {
     schema_version: report.schema_version,
     batch_id: report.batch_id,
@@ -69,8 +73,8 @@ function publicReport(report = {}, { offset = 0, limit = 0, selectedRows = [] } 
       offset,
       limit,
       count: selectedRows.length,
-      next_offset: offset + selectedRows.length,
-      done: offset + selectedRows.length >= Number(report.row_counts?.unique_catalog_seed_rows || 0)
+      next_offset: nextOffset,
+      done: done === null ? nextOffset >= total : Boolean(done)
     },
     category_breakdown: report.category_breakdown,
     top_products: report.top_products,
@@ -111,16 +115,50 @@ export default async function handler(req, res) {
   const apply = body.apply !== false;
   const inputPath = resolve(cleanText(body.input_path) || defaultInputPath);
   const batchId = cleanText(body.batch_id || "writer_ebay_upload_20260703");
+  const inlineStagedRows = Array.isArray(body.staged_rows) ? body.staged_rows : null;
 
   try {
-    const built = await buildWriterTitleCatalogSeed({ inputPath, batchId });
-    const selectedRows = built.stagedRows.slice(offset, offset + limit);
-    const report = publicReport(built.report, { offset, limit, selectedRows });
+    let selectedRows = [];
+    let report = {};
+    if (inlineStagedRows) {
+      selectedRows = inlineStagedRows.slice(0, limit);
+      report = publicReport({
+        schema_version: "writer-title-catalog-seed-report-v1",
+        batch_id: batchId,
+        generated_at: new Date().toISOString(),
+        row_counts: {
+          unique_catalog_seed_rows: boundedInteger(body.total_rows, {
+            min: selectedRows.length,
+            max: 1_000_000,
+            fallback: offset + selectedRows.length
+          })
+        },
+        category_breakdown: body.category_breakdown || {},
+        top_products: body.top_products || [],
+        field_coverage: body.field_coverage || {},
+        policy: body.policy || {
+          writer_reviewed_upload_title: true,
+          staging_only_until_review: true,
+          title_derived_fields_are_ground_truth: false,
+          do_not_copy_instance_fields_from_reference: true
+        }
+      }, {
+        offset,
+        limit,
+        selectedRows,
+        totalRows: body.total_rows,
+        done: body.done
+      });
+    } else {
+      const built = await buildWriterTitleCatalogSeed({ inputPath, batchId });
+      selectedRows = built.stagedRows.slice(offset, offset + limit);
+      report = publicReport(built.report, { offset, limit, selectedRows });
+    }
 
     if (!apply) {
       sendJson(res, 200, {
         ok: true,
-        mode: "dry_run",
+        mode: inlineStagedRows ? "dry_run_inline" : "dry_run",
         auth_mode: auth.mode,
         ...report,
         apply: { skipped: true, reason: "dry_run_apply_false" }
@@ -136,7 +174,7 @@ export default async function handler(req, res) {
 
     sendJson(res, 200, {
       ok: true,
-      mode: "applied_chunk",
+      mode: inlineStagedRows ? "applied_inline_chunk" : "applied_chunk",
       auth_mode: auth.mode,
       ...report,
       apply: applyReport

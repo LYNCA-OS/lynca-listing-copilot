@@ -4,7 +4,7 @@ import { applyWriterModuleEdit } from "../lib/listing/writer/module-edit.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 
 const cookieName = "lynca_metaverse_session";
-const defaultMaxTitleLength = 85;
+const defaultMaxTitleLength = 80;
 
 function parseCookies(header) {
   return Object.fromEntries(

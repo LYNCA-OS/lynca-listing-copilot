@@ -414,14 +414,14 @@ const providerLegacyCardNameDocument = providerPayloadToEvidenceDocument({
   fields: {
     year: "2018-19",
     manufacturer: "Panini",
-    product: "Status",
+    product: "Status Basketball",
     players: ["Trae Young"],
     card_name: "New Breed",
     grade: "PSA 10"
   },
   unresolved: []
 });
-assert.equal(providerLegacyCardNameDocument.resolved.product, "Status");
+assert.equal(providerLegacyCardNameDocument.resolved.product, "Panini Status");
 assert.equal(providerLegacyCardNameDocument.resolved.card_name, "New Breed");
 assert.equal(providerLegacyCardNameDocument.resolved.grade_company, "PSA");
 assert.equal(providerLegacyCardNameDocument.resolved.card_grade, "10");

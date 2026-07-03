@@ -264,10 +264,12 @@ async function runtimeEnvFromFiles(argv = process.argv, env = process.env) {
   if (hasFlag(argv, "--no-env-file")) return { ...env };
   const envFilePath = argValue(argv, "--env-file", env.CLOUD_LISTING_API_ENV_FILE || defaultEnvFilePath);
   const fileEnv = await readEnvFile(envFilePath);
-  return {
-    ...fileEnv,
-    ...env
-  };
+  const merged = { ...fileEnv };
+  for (const [key, value] of Object.entries(env || {})) {
+    if (value === undefined || value === null || String(value) === "") continue;
+    merged[key] = value;
+  }
+  return merged;
 }
 
 function normalizeText(value) {
@@ -546,10 +548,10 @@ function fairReferenceTokens(value) {
       index += 1;
       continue;
     }
-    // Title policy renders numerical rarity only (#/50); numerator accuracy
-    // is scored separately via serial_number_title_analysis. Fold reference
-    // full serials to the denominator form so policy-compliant titles are
-    // not penalized for the deliberate numerator omission.
+    // Numerical rarity is scored on two layers: exact full value and
+    // denominator support. Fold reference full serials to a denominator token
+    // for broad title recall, while serial_number_title_analysis separately
+    // reports exact numerator/denominator behavior.
     const fullSerial = token.match(/^\d{1,4}\/(\d{1,4})$/);
     if (fullSerial) token = `/${fullSerial[1]}`;
     output.push(token);
@@ -559,8 +561,8 @@ function fairReferenceTokens(value) {
 
 function fairPredictionTokenSet(value) {
   const tokens = new Set(fairTitleTokens(value));
-  // A complete serial in the prediction also satisfies a denominator-only
-  // reference token (24/25 covers /25); the reverse never earns credit.
+  // A complete numerical rarity in the prediction also satisfies a
+  // denominator-only reference token (24/25 covers /25).
   for (const token of [...tokens]) {
     const fullSerial = token.match(/^(\d{1,4})\/(\d{1,4})$/);
     if (fullSerial) tokens.add(`/${fullSerial[2]}`);
@@ -1899,7 +1901,7 @@ async function callListingApi({
   bypassSecret = "",
   requestTimeoutMs = 240_000,
   verificationCache,
-  maxTitleLength = 85,
+  maxTitleLength = 80,
   fetchImpl = globalThis.fetch
 }) {
   const provider = cloudProviderForMode(providerMode);
@@ -2694,7 +2696,7 @@ export async function evaluateCloudListingApi({
   password,
   bypassSecret = "",
   requestTimeoutMs = 240_000,
-  maxTitleLength = 85,
+  maxTitleLength = 80,
   correctedTitleAsTemporaryGt = true,
   sendCorrectedTitleHintToCloud = false,
   disableVectorLazyMode = false,

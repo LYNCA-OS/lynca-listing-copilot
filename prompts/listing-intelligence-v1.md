@@ -88,8 +88,8 @@ Specific extraction rules:
 - Insert/card codes such as `UV-16`, `SE-28`, `BRR-1`, and `IMP-OTI` are important registry keys. Extract them in `card_number` when visible even if they do not all belong in the final title.
 - If a serial number looks ambiguous, put the ambiguous item in `unresolved` and do not mark confidence HIGH.
 - If a tradeoff exists between reading a serial number and classifying a rainbow parallel, prioritize the serial number every time.
-- If there are multiple unrelated cards or a lot listing, mark confidence FAILED.
-- Do not begin lot-card title generation. Multiple unrelated cards remain FAILED for this MVP.
+- If there are multiple unrelated cards or a lot listing, do not force a single-card identity. Set `multi_card=true`, fill `card_count` when visible, keep up to three recognizable subjects, and return common year/product/set only when they are shared or directly visible.
+- Generate a usable lot draft when the lot itself is readable. Mark ABSTAIN only when the lot is unreadable, mixed beyond a useful draft, or image quality blocks the core lot description.
 
 ### Direct-observation confidence rules
 
@@ -268,7 +268,8 @@ For Pokemon Trainer / Supporter / 支援者 / 训练家 cards:
 - Any name after `Illus.`, `Illustrator`, or `Artist` should go in `artist` only.
 - Do not use illustrator name as the title subject unless the item is a future artist-focused product category.
 - TCG title modules are Year, IP, language, product series, subject, card name, design variation, color variation, serial limit, additional info, and grading company.
-- Title priority is trainer/character name, card number, rarity, set code or set name, language/region if visible, then artist only as optional low-priority metadata that is normally omitted.
+- TCG storage can use compact language codes such as `JP`, `EN`, `CN`, and `KR`; marketplace output may render `JP` as `Japanese` and hide `EN` when the title is already clear.
+- Title priority is trainer/character name, rarity, print finish, special stamp, set code or set name, grading, then card number when the 80-character budget allows. Artist is optional low-priority metadata and is normally omitted.
 - If the front title is Chinese or Japanese and you cannot reliably translate it to an English character/trainer name, use the localized card name with card number, rarity, and set code.
 - In that localized unresolved case, confidence should be MEDIUM, not HIGH.
 - Reason should mention that localized trainer identity requires operator review or online reference.
@@ -286,13 +287,21 @@ Purpose: extract the fields needed by the deterministic title renderer. The mode
 
 The preferred standard card serialization is LYNCA CSM Standard Card Grammar:
 
-`Year -> Manufacturer/Product/Set -> Subject -> Card Name -> Release Variant -> Print Finish -> Numerical Rarity -> Descriptive Rarity -> Card Number -> Search Optimization -> Grading Info`
+`Year -> Manufacturer -> Product -> Set -> Subject -> Card Name -> Release Variant -> Print Finish -> Numerical Rarity -> Descriptive Rarity -> Card Number -> Search Optimization -> Grading Info`
 
 Manufacturer, Product, and Set must remain structured fields, but the renderer will normalize the product hierarchy and remove redundant wording.
 
-Marketplace maximum length is 85 characters. Compression is deterministic:
+Manufacturer/Product/Set smart composition: keep backend fields separate, but do not duplicate hierarchy in the title. Example backend data `Panini / Panini Prizm Black / Panini Prizm Black FOTL` should output as `Panini Prizm Black`.
 
-1. Remove tertiary Card Number first.
+Release Variant means same Card Name/Card Type in the same release system with layout, composition, or design-direction differences, such as `Variation`, `Horizontal`, `Vertical`, `Image Variation`, or `International`. It is not Product, Set, Finish, Rarity, or distribution/product configuration. Do not put `FOTL`, `Hobby`, `Retail`, `Choice`, `Fast Break`, or `Sapphire` in Release Variant.
+
+Card Name/Release Variant/Print Finish smart composition: keep backend fields separate, but the output should merge them naturally and remove duplicate words. Example `Gold Refractor Autograph / Variation / Gold` should output as `Gold Refractor Auto Variation`.
+
+TCG subject/card-name separation: `Pikachu Illustrator` should be structured as `subject=Pikachu` and `card_name=Illustrator`, not as one subject. `Charizard ex` can be both subject and card_name only when the printed card name is the same as the subject; the renderer deduplicates the output.
+
+Marketplace maximum length is 80 characters. Compression is deterministic:
+
+1. Remove tertiary non-TCG Card Number first.
 2. Remove secondary Print Finish and Descriptive Rarity next.
 3. Remove highest-priority identity, SO, and grading terms only when absolutely necessary.
 
@@ -310,10 +319,11 @@ When uncertain, prefer:
 Rules:
 
 - Standard Card Grammar applies to Sports, Entertainment, Celebrity, and Non-Sport cards. These categories share the same serialization order.
+- TCG Grammar is card-centric: `Year -> IP -> Language -> Manufacturer -> Product -> Set -> Subject -> Card Name -> Card Number -> Descriptive Rarity -> Numerical Rarity -> Variant -> Product Finish -> Special Stamp -> Grading Info -> Description -> Search Optimization`.
 - Example standard: `1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)`.
 - `card_name` is the printed card/title segment such as `Best Performance`, `Club Legends`, `Gusto`, `Power Partnership`, or `Canvas Creations` when it functions as the card name. It renders after the subject.
-- Card Number is tertiary. Extract it when visible, but expect the renderer to remove it first when the title exceeds the marketplace limit.
-- Preserve serial limits, not instance serial numerators, in the final title: `31/150` should render as `/150`, `2/5` as `/5`, `01/10` as `/10`, and `1/1` as `1/1`. Keep the complete serial number in structured fields.
+- Numerical Rarity is the product print-limit serialization for the title module. `serial_number` is the raw physical-copy reading. Fill `numerical_rarity` when the current image or authoritative current-card evidence clearly shows a print-limit value. Full directly readable values such as `2/3`, `14/99`, `31/150`, `2/5`, `01/10`, and `1/1` stay complete. If only the denominator is readable, use `#/150` or `#/5`. If no print limit is visible, leave `numerical_rarity` empty. Never copy a serial numerator from a catalog/reference candidate.
+- Card Number is not Numerical Rarity. For standard/non-TCG cards it is tertiary: extract it when visible and include it only when the 80-character title budget allows. For hyphenated card codes that end with a subject abbreviation, keep the card type prefix only when rendered, e.g. `PAU-AED` may render as `#PAU`. For TCG cards, card number is an important set identity field, but it can still be omitted from the marketplace title when it would displace more valuable rarity, finish, special stamp, or grading tokens under the 80-character budget.
 - PSA, BGS, CGC, grade company, and grade number should be near the end of the title by default.
 - Do not put grading information at the beginning unless the card identity is primarily derived from the slab label and no better card-front identity is available.
 - Preferred example: `2000 Pokemon Japanese Neo 3 Celebi Holo #251 PSA 9`.
@@ -330,7 +340,7 @@ Rules:
 - Internal metadata and reasoning may mention autograph details, but the listing title should use `Auto`.
 - Keep title human-listable and copy-paste ready.
 - Avoid product repetition when space is tight.
-- Include team only when the full title still fits within 85 characters. Render team at the end in parentheses, for example `(Chicago Bulls)`, and omit it when it would displace higher-priority information.
+- Include team only when the full title still fits within 80 characters. Render team at the end in parentheses, for example `(Chicago Bulls)`, and omit it when it would displace higher-priority information.
 
 ## 5. Confidence Engine
 

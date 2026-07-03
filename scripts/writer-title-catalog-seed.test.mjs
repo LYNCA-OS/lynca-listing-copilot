@@ -8,6 +8,7 @@ import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-pars
 import { catalogProvider } from "../lib/listing/retrieval/catalog-provider.mjs";
 import { planRetrievalQueries } from "../lib/listing/retrieval/query-planner.mjs";
 import { retrievalProviderIds } from "../lib/listing/retrieval/retrieval-contract.mjs";
+import adminCatalogSmokeHandler from "../api/admin-catalog-candidate-smoke.js";
 import adminImportHandler from "../api/admin-import-writer-title-catalog-seed.js";
 
 const mtgTitle = "Final Fantasy MTG JPN Prompto Argentum #U 0532 FFXV Surge Foil Borderless";
@@ -27,6 +28,82 @@ const parsedMtgLot = parseReviewedTitleFields("Final Fantasy MTG EN Prompto Arge
 assert.equal(parsedMtgLot.card_name, "Prompto Argentum");
 assert.equal(parsedMtgLot.character, "Prompto Argentum");
 
+const parsedEncased = parseReviewedTitleFields("2018-19 Panini Encased Jaren Jackson Jr. RC Jersey Auto #/99 Grizzlies BGS 9.5/9");
+assert.equal(parsedEncased.product, "Panini Encased");
+assert.deepEqual(parsedEncased.players, ["Jaren Jackson Jr"]);
+assert.equal(parsedEncased.team, "Grizzlies");
+assert.equal(parsedEncased.serial_number, null);
+assert.equal(parsedEncased.serial_denominator, "99");
+assert.equal(parsedEncased.grade_company, "BGS");
+assert.equal(parsedEncased.card_grade, "9.5");
+assert.equal(parsedEncased.auto_grade, "9");
+
+const parsedStatus = parseReviewedTitleFields("2018-19 Panini Status Trae Young New Breed Rookie RC Auto #NB-TYG Hawks");
+assert.equal(parsedStatus.product, "Panini Status");
+assert.deepEqual(parsedStatus.players, ["Trae Young"]);
+assert.equal(parsedStatus.official_card_type, "New Breed");
+assert.equal(parsedStatus.collector_number, "NB-TYG");
+assert.equal(parsedStatus.team, "Hawks");
+
+const parsedPrizmWorldCup = parseReviewedTitleFields("2022-23 Panini Prizm World Cup Pele Signatures Breakaway Gold Auto #/2 PSA 9");
+assert.equal(parsedPrizmWorldCup.category, "soccer");
+assert.equal(parsedPrizmWorldCup.product, "Panini Prizm FIFA World Cup");
+assert.deepEqual(parsedPrizmWorldCup.players, ["Pele"]);
+assert.equal(parsedPrizmWorldCup.official_card_type, "Signatures Breakaway");
+assert.equal(parsedPrizmWorldCup.serial_denominator, "2");
+
+const parsedBowmanSpotlight = parseReviewedTitleFields("2025 Bowman Jesus Made Spotlights Chrome Red Refractor #/5 Brewers");
+assert.equal(parsedBowmanSpotlight.manufacturer, "Topps");
+assert.equal(parsedBowmanSpotlight.brand, "Bowman");
+assert.equal(parsedBowmanSpotlight.product, "Bowman Chrome");
+assert.deepEqual(parsedBowmanSpotlight.players, ["Jesus Made"]);
+assert.equal(parsedBowmanSpotlight.official_card_type, "Spotlights Chrome");
+assert.equal(parsedBowmanSpotlight.surface_color, "Red");
+assert.equal(parsedBowmanSpotlight.serial_denominator, "5");
+
+const parsedEminence = parseReviewedTitleFields("2024 Eminence Patrick Mahomes Luxury Platinum Bar #1/1 Chiefs");
+assert.equal(parsedEminence.product, "Panini Eminence");
+assert.deepEqual(parsedEminence.players, ["Patrick Mahomes"]);
+assert.equal(parsedEminence.official_card_type, "Luxury Platinum Bar");
+assert.equal(parsedEminence.serial_number, "1/1");
+
+const statusCatalog = correctedTitleRecordToCatalogStaging({
+  id: "writer-row-status",
+  corrected_title: "2018-19 Panini Status Trae Young New Breed Rookie RC Auto #NB-TYG Hawks"
+});
+assert.equal(statusCatalog.staging.identity_fields.product, "Panini Status");
+assert.equal(statusCatalog.staging.identity_fields.card_name, "New Breed");
+assert.equal(statusCatalog.staging.identity_fields.set_or_insert, "New Breed");
+assert.deepEqual(statusCatalog.staging.identity_fields.players, ["Trae Young"]);
+
+const parsedPaniniDonruss = parseReviewedTitleFields("2024-25 Panini Donruss Brad Friedel The Beautiful Game Green Dragon auto 16/99");
+assert.equal(parsedPaniniDonruss.category, "soccer");
+assert.equal(parsedPaniniDonruss.product, "Panini Donruss");
+assert.deepEqual(parsedPaniniDonruss.players, ["Brad Friedel"]);
+assert.equal(parsedPaniniDonruss.official_card_type, "The Beautiful Game");
+
+const parsedGreenLava = parseReviewedTitleFields("2025 Topps Chrome Jordan James RC Auto Green Lava Refractor");
+assert.deepEqual(parsedGreenLava.players, ["Jordan James"]);
+
+const parsedLotPlayers = parseReviewedTitleFields("2025 Topps Chrome Riley Leonard Jordan James Pearce Jr RC Refractor Lotx16");
+assert.equal(parsedLotPlayers.players.some((player) => /lotx/i.test(player)), false);
+
+const parsedSpAuthentic = parseReviewedTitleFields("2024-25 Upper Deck SP Authentic Future Watch Frank Nazar /999 RC Auto PSA 8");
+assert.equal(parsedSpAuthentic.category, "hockey");
+assert.equal(parsedSpAuthentic.product, "Upper Deck SP Authentic");
+assert.deepEqual(parsedSpAuthentic.players, ["Frank Nazar"]);
+assert.equal(parsedSpAuthentic.official_card_type, "Future Watch");
+
+const parsedTcgNoTeam = parseReviewedTitleFields("Final Fantasy MTG EN Starting Town #R 0289 FFI Foil");
+assert.equal(parsedTcgNoTeam.product, "Magic: The Gathering Final Fantasy");
+assert.equal(parsedTcgNoTeam.card_name, "Starting Town");
+assert.equal(parsedTcgNoTeam.team, null);
+
+const parsedKakawow = parseReviewedTitleFields("2025 Kakawow Cosmos Disney Die-cut Prince Charming Refractor /20");
+assert.equal(parsedKakawow.product, "Kakawow Disney Cosmos");
+assert.deepEqual(parsedKakawow.players, ["Prince Charming"]);
+assert.equal(parsedKakawow.official_card_type, "Die-cut");
+
 const mtgCatalog = correctedTitleRecordToCatalogStaging({
   id: "writer-row-1",
   corrected_title: mtgTitle
@@ -34,6 +111,7 @@ const mtgCatalog = correctedTitleRecordToCatalogStaging({
 assert.equal(mtgCatalog.staging.identity_fields.sport, "tcg");
 assert.equal(mtgCatalog.staging.identity_fields.category, "tcg");
 assert.deepEqual(mtgCatalog.staging.identity_fields.players, ["Prompto Argentum"]);
+assert.equal(mtgCatalog.staging.identity_fields.collector_number, "0532");
 assert.equal(mtgCatalog.staging.identity_fields.card_number, "0532");
 assert.equal(mtgCatalog.staging.identity_fields.rarity, "U");
 assert.equal(mtgCatalog.staging.physical_instance_fields.serial_number, null);
@@ -118,6 +196,77 @@ assert.equal(providerResult.candidates[0].reference_metadata.corrected_title_as_
 assert.equal(providerResult.candidates[0].reference_metadata.prompt_safe_internal_writer_title, true);
 assert.equal(providerResult.candidates[0].field_derivation.title_derived_fields_are_ground_truth, false);
 
+const legacyGenericProductProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([
+    {
+      identity_id: "44444444-4444-4444-4444-444444444444",
+      canonical_title: "2018-19 Panini Status Shai Gilgeous-Alexander RC #106 Silver Holo",
+      identity_key: "sports:2018-19:panini:status:shai:106",
+      fields: {
+        category: "basketball",
+        manufacturer: "Panini",
+        brand: "Panini",
+        product: "Panini",
+        players: ["Shai Gilgeous-Alexander"],
+        collector_number: "106"
+      },
+      retrieval_status: "candidate",
+      source_type: "INTERNAL_CORRECTED_TITLE",
+      source_status: "VERIFIED_CANONICAL_TITLE",
+      supporting_fields: ["year", "canonical_title"],
+      raw_score: 0.3,
+      normalized_score: 0.3,
+      expected_serial_denominator: null
+    }
+  ]), { status: 200 })
+});
+const legacyGenericProductResult = await legacyGenericProductProvider.search({
+  query: {
+    exact_year: "2018-19",
+    exact_product: "Panini Status",
+    search_text: "2018-19 Panini Status"
+  }
+});
+assert.equal(
+  legacyGenericProductResult.candidates[0].fields.product,
+  "Panini Status",
+  "internal writer-title catalog rows should repair legacy generic product fields from the canonical title"
+);
+
+let productVocabularyRpcBody = null;
+const productVocabularyProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async (url, options) => {
+    productVocabularyRpcBody = JSON.parse(options.body);
+    return new Response("[]", { status: 200 });
+  }
+});
+await productVocabularyProvider.search({
+  query: {
+    lookup_scope: "product_vocabulary",
+    exact_year: "2018-19",
+    exact_product: "Panini Status",
+    search_text: "2018-19 Panini Status New Breed"
+  },
+  resolved: {
+    players: ["Trae Young"],
+    collector_number: "NB-TYG",
+    serial_number: "20/99"
+  }
+});
+assert.equal(productVocabularyRpcBody.exact_subject, "", "product vocabulary lookup must not inherit subject fallback");
+assert.equal(productVocabularyRpcBody.exact_card_number, "", "product vocabulary lookup must not inherit collector-number fallback");
+assert.equal(productVocabularyRpcBody.exact_serial_denominator, "", "product vocabulary lookup must not inherit serial-denominator fallback");
+
 const mixedCategory = parseReviewedTitleFields("2025 Topps Chrome Pokemon Pikachu #25 Gold");
 assert.equal(mixedCategory.category, "tcg");
 assert.ok(mixedCategory.category_candidates.includes("tcg"));
@@ -136,6 +285,56 @@ const catalogQueryWithCategories = mixedQueries.find((query) => query.provider_i
 assert.ok(catalogQueryWithCategories);
 assert.ok(catalogQueryWithCategories.category_candidates.includes("tcg"));
 assert.ok(catalogQueryWithCategories.category_candidates.includes("sports_card"));
+
+const cardNumberOnlyQueries = planRetrievalQueries({
+  resolved: {
+    product: "Magic: The Gathering Final Fantasy",
+    players: ["Prompto Argentum"],
+    card_number: "0532"
+  },
+  includeExternal: false
+});
+const exactCardNumberQuery = cardNumberOnlyQueries.find((query) => query.family === "SEARCH_CATALOG_EXACT_CODE");
+assert.ok(exactCardNumberQuery, "card_number-only records must still generate a catalog exact-code query");
+assert.equal(exactCardNumberQuery.exact_card_number, "0532");
+
+const seasonYearDenominatorQueries = planRetrievalQueries({
+  resolved: {
+    season_year: "2025",
+    product: "Topps Chrome",
+    players: ["Jordan James"],
+    serial_denominator: "99"
+  },
+  includeExternal: false
+});
+assert.ok(
+  seasonYearDenominatorQueries.some((query) => query.family === "SEARCH_CATALOG_YEAR_PRODUCT_SUBJECT"),
+  "season_year should normalize to year for catalog lookup"
+);
+const denominatorQuery = seasonYearDenominatorQueries.find((query) => query.family === "SEARCH_CATALOG_PRODUCT_SERIAL_DENOMINATOR");
+assert.ok(denominatorQuery, "serial_denominator should normalize to expected_serial_denominator for catalog lookup");
+assert.equal(denominatorQuery.exact_serial_denominator, "99");
+
+const productVocabularyQueries = planRetrievalQueries({
+  resolved: {
+    year: "2018-19",
+    manufacturer: "Panini",
+    product: "Panini Status",
+    card_name: "New Breed",
+    players: ["Trae Young"],
+    collector_number: "NB-TYG"
+  },
+  includeExternal: false
+});
+const productVocabularyQuery = productVocabularyQueries.find((query) => query.family === "SEARCH_CATALOG_PRODUCT_VOCABULARY");
+assert.ok(productVocabularyQuery, "catalog lookup should include product vocabulary support even before exact identity exists");
+assert.equal(productVocabularyQuery.exact_product, "Panini Status");
+assert.match(productVocabularyQuery.query, /New Breed/);
+assert.doesNotMatch(
+  productVocabularyQueries.find((query) => query.family === "SEARCH_INTERNAL_APPROVED_HISTORY")?.query || "",
+  /Panini Panini Status/,
+  "product hierarchy query should not duplicate the manufacturer when product already contains it"
+);
 
 const unknownFallback = correctedTitleRecordToCatalogStaging({
   id: "writer-row-unknown",
@@ -185,6 +384,109 @@ assert.equal(importPayload.mode, "dry_run");
 assert.equal(importPayload.auth_mode, "internal_token");
 assert.equal(importPayload.selected_chunk.count, 1);
 assert.equal(importPayload.apply.reason, "dry_run_apply_false");
+
+const inlineImportResponse = {
+  statusCode: 0,
+  headers: {},
+  body: "",
+  setHeader(key, value) {
+    this.headers[key.toLowerCase()] = value;
+  },
+  end(value) {
+    this.body = value;
+  }
+};
+const previousInlineImportToken = process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN;
+process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = "import-token";
+await adminImportHandler({
+  method: "POST",
+  headers: { authorization: "Bearer import-token" },
+  body: {
+    staged_rows: built.stagedRows.slice(0, 1),
+    total_rows: built.stagedRows.length,
+    batch_id: "writer-title-api-inline-test",
+    offset: 0,
+    limit: 1,
+    apply: false
+  }
+}, inlineImportResponse);
+if (previousInlineImportToken === undefined) {
+  delete process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN;
+} else {
+  process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = previousInlineImportToken;
+}
+assert.equal(inlineImportResponse.statusCode, 200);
+const inlineImportPayload = JSON.parse(inlineImportResponse.body);
+assert.equal(inlineImportPayload.ok, true);
+assert.equal(inlineImportPayload.mode, "dry_run_inline");
+assert.equal(inlineImportPayload.selected_chunk.count, 1);
+assert.equal(inlineImportPayload.sample_rows[0].source_row_key, built.stagedRows[0].staging.source_row_key);
+
+const smokeResponse = {
+  statusCode: 0,
+  headers: {},
+  body: "",
+  setHeader(key, value) {
+    this.headers[key.toLowerCase()] = value;
+  },
+  end(value) {
+    this.body = value;
+  }
+};
+const previousSmokeEnv = {
+  DATA_LOOP_INTERNAL_SIDECAR_TOKEN: process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN,
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY
+};
+const previousFetch = globalThis.fetch;
+process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = "import-token";
+process.env.SUPABASE_URL = "https://supabase.test";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
+globalThis.fetch = async (url, options = {}) => {
+  assert.match(String(url), /\/rest\/v1\/rpc\/search_catalog_candidates/);
+  assert.equal(options.method, "POST");
+  return new Response(JSON.stringify([{
+    identity_id: "identity-mtg-prompto",
+    identity_key: "identity-mtg-prompto",
+    canonical_title: mtgTitle,
+    fields: {
+      product: "Magic: The Gathering Final Fantasy",
+      players: ["Prompto Argentum"],
+      card_number: "0532",
+      rarity: "U"
+    },
+    retrieval_status: "reviewed",
+    source_type: "INTERNAL_CORRECTED_TITLE",
+    source_status: "VERIFIED_CANONICAL_TITLE",
+    supporting_fields: ["collector_number", "players", "product"],
+    raw_score: 0.98,
+    normalized_score: 0.98
+  }]), { status: 200 });
+};
+await adminCatalogSmokeHandler({
+  method: "POST",
+  headers: { authorization: "Bearer import-token" },
+  body: {
+    fields: {
+      product: "Magic: The Gathering Final Fantasy",
+      players: ["Prompto Argentum"],
+      collector_number: "0532",
+      rarity: "U"
+    }
+  }
+}, smokeResponse);
+globalThis.fetch = previousFetch;
+for (const [key, value] of Object.entries(previousSmokeEnv)) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+assert.equal(smokeResponse.statusCode, 200);
+const smokePayload = JSON.parse(smokeResponse.body);
+assert.equal(smokePayload.ok, true);
+assert.equal(smokePayload.raw_candidate_count, 1);
+assert.equal(smokePayload.prompt_candidate_count, 1);
+assert.equal(smokePayload.prompt_candidate_ids[0], "identity-mtg-prompto");
+assert.equal(smokePayload.candidates[0].source_trust, "APPROVED_REFERENCE");
 
 const insertedCardPayloads = [];
 const applyFetch = async (url, options = {}) => {

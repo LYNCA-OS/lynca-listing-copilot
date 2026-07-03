@@ -69,7 +69,10 @@ async function runtimeEnvFromFiles(argv = process.argv, env = process.env) {
   if (hasFlag(argv, "--no-env-file")) return { ...env };
   const envFilePath = argValue(argv, "--env-file", env.CATALOG_IMPORT_ENV_FILE || ".env.vercel.production.local");
   const fileEnv = await readEnvFile(envFilePath);
-  return { ...fileEnv, ...env };
+  const nonEmptyRuntimeEnv = Object.fromEntries(
+    Object.entries(env || {}).filter(([, value]) => String(value ?? "").trim() !== "")
+  );
+  return { ...fileEnv, ...nonEmptyRuntimeEnv };
 }
 
 function supabaseConfig(env = process.env) {
@@ -161,6 +164,7 @@ function nonTitleReason(title = "") {
   if (!text) return "blank";
   if (looksLikeSectionLabel(text)) return "section_marker";
   if (/^\d{1,2}月-\d{2,}-[\u4e00-\u9fffA-Za-z0-9_-]+$/u.test(text)) return "batch_marker";
+  if (/^\d+(?:\.\d+)?\s+offer$/i.test(text)) return "offer_marker";
   if (text.length < 8) return "too_short";
   const latinLetters = (text.match(/[A-Za-z]/g) || []).length;
   if (latinLetters < 3) return "not_enough_latin_text";
@@ -382,14 +386,19 @@ function fieldCoverage(stagedRows = []) {
     "players",
     "character",
     "card_name",
+    "team",
+    "official_card_type",
+    "observable_components",
     "language",
     "rarity",
+    "collector_number",
     "card_number",
     "checklist_code",
     "surface_color",
     "serial_denominator",
     "grade_company",
-    "card_grade"
+    "card_grade",
+    "auto_grade"
   ];
   return Object.fromEntries(fields.map((field) => [
     field,

@@ -84,7 +84,7 @@ import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
 
 const cookieName = "lynca_metaverse_session";
-const maxFallbackTitleLength = 85;
+const maxFallbackTitleLength = 80;
 // Accept optional bounded derived crop images while keeping provider input capped.
 const defaultMaxPayloadImages = 14;
 const signedUrlConcurrency = 4;
@@ -369,6 +369,7 @@ const defaultFields = {
   collector_number: null,
   checklist_code: null,
   serial_number: null,
+  numerical_rarity: null,
   grade_company: null,
   grade: null,
   card_grade: null,
@@ -445,8 +446,171 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+const finalizerCurrentImageFieldAllowList = Object.freeze([
+  "year",
+  "manufacturer",
+  "brand",
+  "product",
+  "set",
+  "subset",
+  "language",
+  "players",
+  "player",
+  "character",
+  "card_name",
+  "team",
+  "card_type",
+  "official_card_type",
+  "observable_components",
+  "insert",
+  "surface_color",
+  "serial_number",
+  "numerical_rarity",
+  "expected_serial_denominator",
+  "grade_company",
+  "grade",
+  "card_grade",
+  "auto_grade",
+  "grade_type",
+  "rc",
+  "first_bowman",
+  "ssp",
+  "case_hit",
+  "auto",
+  "patch",
+  "relic",
+  "jersey",
+  "sketch",
+  "redemption",
+  "one_of_one"
+]);
+
+const finalizerNeverPromoteFromRawFields = Object.freeze([
+  "parallel_exact",
+  "parallel_family",
+  "parallel",
+  "variation",
+  "collector_number",
+  "card_number",
+  "checklist_code"
+]);
+
+function finalizerFieldSupportSet(result = {}) {
+  const fields = new Set();
+  [
+    result.catalog_assist_eligibility?.field_support_fields,
+    result.vector_assist_eligibility?.field_support_fields,
+    result.catalog_assist_summary?.field_support_fields,
+    result.vector_assist_summary?.field_support_fields
+  ].forEach((list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((field) => {
+      const key = normalizeStringOrNull(field);
+      if (key) fields.add(key);
+    });
+  });
+  return fields;
+}
+
+function finalizerValuePresent(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "boolean") return value === true;
+  return value !== null && value !== undefined && String(value).replace(/\s+/g, " ").trim() !== "" && value !== "UNKNOWN";
+}
+
+function finalizerTextLooksMoreSpecific(existing, incoming) {
+  const current = normalizeStringOrNull(existing);
+  const next = normalizeStringOrNull(incoming);
+  if (!next) return false;
+  if (!current) return true;
+  const currentFolded = current.toLowerCase();
+  const nextFolded = next.toLowerCase();
+  if (currentFolded === nextFolded) return false;
+  return nextFolded.includes(currentFolded) && next.length > current.length;
+}
+
+function finalizerMergeCurrentImageFields(base = {}, current = {}, supportFields = new Set()) {
+  const normalizedCurrent = normalizeFields(current || {});
+  const output = { ...(base || {}) };
+
+  finalizerCurrentImageFieldAllowList.forEach((field) => {
+    if (finalizerNeverPromoteFromRawFields.includes(field)) return;
+    const incoming = normalizedCurrent[field];
+    if (!finalizerValuePresent(incoming)) return;
+
+    const existing = output[field];
+    const supported = supportFields.has(field);
+    const missing = !finalizerValuePresent(existing);
+    const moreSpecific = finalizerTextLooksMoreSpecific(existing, incoming);
+
+    if (missing || supported || moreSpecific) output[field] = incoming;
+  });
+
+  return output;
+}
+
+function finalResolvedFieldsForPresentation(result = {}) {
+  const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
+    ? result.rendered_fields
+    : {};
+  const renderedFieldContainer = renderedFields.fields && typeof renderedFields.fields === "object" && !Array.isArray(renderedFields.fields)
+    ? renderedFields.fields
+    : null;
+  const base = renderedFieldContainer
+    || result.resolved_fields
+    || result.resolved
+    || result.fields
+    || {};
+  const supportFields = finalizerFieldSupportSet(result);
+  const merged = finalizerMergeCurrentImageFields(base, result.raw_provider_fields, supportFields);
+  return Object.keys(merged).length ? merged : null;
+}
+
+function finalizeDeterministicPresentation(result = {}, payload = {}) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  if (result.confidence === "FAILED" || result.provider_error_code || result.provider_error_type) return result;
+
+  const resolved = finalResolvedFieldsForPresentation(result);
+  if (!resolved || typeof resolved !== "object" || Array.isArray(resolved) || !Object.keys(resolved).length) return result;
+
+  const presentation = renderListingPresentation({
+    resolved,
+    evidence: result.normalized_evidence || result.evidence || {},
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  });
+  const renderedTitle = presentation.rendered_title || "";
+  if (!renderedTitle) return result;
+
+  const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
+    ? result.rendered_fields
+    : {};
+  const nextRenderedFields = {
+    ...renderedFields,
+    title: renderedTitle,
+    rendered_title: renderedTitle,
+    modules: presentation.modules,
+    module_order: presentation.module_order,
+    title_render_source: "deterministic_renderer_finalizer",
+    fields: resolved
+  };
+
+  return {
+    ...result,
+    title: renderedTitle,
+    final_title: renderedTitle,
+    rendered_title: renderedTitle,
+    title_render_source: "deterministic_renderer_finalizer",
+    renderer: presentation.renderer,
+    renderer_version: presentation.renderer_version,
+    title_length_policy: presentation.title_length_policy,
+    rendered_fields: nextRenderedFields,
+    modules: presentation.modules,
+    module_order: presentation.module_order
+  };
+}
+
 async function sendListingResult(res, statusCode, result, timingContext, payload = {}) {
-  const timedResult = withTiming(result, timingContext);
+  const timedResult = withTiming(finalizeDeterministicPresentation(result, payload), timingContext);
   const workflowResult = await attachWorkflowSidecarsToListingResult({
     result: timedResult,
     payload,
@@ -709,7 +873,7 @@ function applySportsTitleGrammar(title, fields, maxLength) {
 
 function finalizeSportsTitle(title, fields, maxLength) {
   const requiredTerms = [
-    sportsTitleShouldRecoverSerial(fields, title) ? serialLimitForTitle(fields.serial_number, fields) : null,
+    sportsTitleShouldRecoverSerial(fields, title) ? serialLimitForTitle(fields.numerical_rarity, fields) : null,
     sportsTitleNeedsRc(fields, title) ? "RC" : null
   ].filter(Boolean);
   let cleaned = ensureSportsRcMarker(cleanupTitleWording(title, maxLength * 2), fields);
@@ -820,14 +984,14 @@ function sportsTitleNeedsRc(fields, title) {
 }
 
 function sportsTitleShouldRecoverSerial(fields, title) {
-  if (!fields.serial_number) return false;
+  if (!fields.numerical_rarity && !fields.one_of_one) return false;
   if (titleIncludesSerial(title, fields)) return true;
   const combined = `${fields.insert || ""} ${fields.product || ""} ${title || ""}`;
   return /Chrome Rookie Auto|Chrome Auto|Dual Signatures|Duo Logoman Autographs|Star Swatch Signatures|Immaculate|Flawless|Prizm/i.test(combined);
 }
 
 function repairOrphanAutoGradeSuffix(title, fields, maxLength) {
-  const serial = serialLimitForTitle(fields.serial_number || "", fields);
+  const serial = serialLimitForTitle(fields.numerical_rarity || "", fields);
   if (/^\/\d+(?:\.\d+)?$/.test(serial)) return title;
 
   const repaired = String(title || "")
@@ -877,8 +1041,8 @@ function rawIncludes(value, needle) {
 }
 
 function titleIncludesSerial(title, fields) {
-  const serial = normalizeSerialText(fields.serial_number);
-  const limit = serialLimitForTitle(fields.serial_number, fields);
+  const serial = normalizeSerialText(fields.numerical_rarity);
+  const limit = serialLimitForTitle(fields.numerical_rarity, fields);
   const normalizedTitle = normalizeSerialText(title);
   return Boolean(serial && rawIncludes(normalizedTitle, serial))
     || Boolean(limit && rawIncludes(normalizedTitle, limit));
@@ -1139,6 +1303,7 @@ function normalizeFields(fields = {}) {
     collector_number: normalizeStringOrNull(fields.collector_number),
     checklist_code: normalizeStringOrNull(fields.checklist_code),
     serial_number: normalizeStringOrNull(fields.serial_number),
+    numerical_rarity: normalizeStringOrNull(fields.numerical_rarity || fields.numericalRarity),
     grade_company: normalizeStringOrNull(fields.grade_company),
     grade: normalizeStringOrNull(fields.grade || fields.card_grade),
     card_grade: normalizeStringOrNull(fields.card_grade || fields.grade),
@@ -1156,6 +1321,10 @@ function normalizeFields(fields = {}) {
     redemption: normalizeBoolean(fields.redemption) || observableComponents.includes("redemption"),
     one_of_one: normalizeBoolean(fields.one_of_one)
   };
+
+  if (!normalized.numerical_rarity) {
+    normalized.numerical_rarity = currentImagePrintRunFromSerial(normalized.serial_number);
+  }
 
   Object.keys(normalized).forEach((key) => {
     if (typeof normalized[key] === "string" && containsBackgroundTerm(normalized[key])) {
@@ -1223,6 +1392,19 @@ function normalizeFields(fields = {}) {
   }
 
   return normalized;
+}
+
+function currentImagePrintRunFromSerial(value) {
+  const serial = normalizeSerialText(value);
+  if (!serial) return null;
+  const full = serial.match(/^0*\d{1,6}\/0*\d{1,6}$/);
+  if (!full) return null;
+  const [numeratorText, denominatorText] = serial.split("/");
+  const numerator = Number(numeratorText);
+  const denominator = Number(denominatorText);
+  if (!Number.isInteger(numerator) || !Number.isInteger(denominator)) return null;
+  if (numerator < 1 || denominator < 1 || numerator > denominator) return null;
+  return serial;
 }
 
 function normalizeUnresolved(unresolved, fields = {}) {
@@ -1809,8 +1991,8 @@ function auditMissingHighValueFields(title, fields) {
     missing.push("year");
   }
 
-  if (fields.serial_number && !titleIncludesSerial(title, fields)) {
-    missing.push("serial");
+  if (fields.numerical_rarity && !titleIncludesSerial(title, fields)) {
+    missing.push("numerical rarity");
   }
 
   const cardNumberRegistryEntry = resolveKnowledgeEntry(fields.card_number);
@@ -1993,7 +2175,7 @@ function sanitizeResultText(result, fields, confidence, unresolved, maxTitleLeng
     fields.product === "Topps Cosmic Chrome" ? "Cosmic Chrome" : null,
     highValueInsert,
     fields.parallel === "Platinum" ? "Platinum" : null,
-    titleIncludesSerial(rawTitle, fields) ? serialLimitForTitle(fields.serial_number, fields) : null,
+    titleIncludesSerial(rawTitle, fields) ? serialLimitForTitle(fields.numerical_rarity, fields) : null,
     fields.one_of_one ? "1/1" : null,
     fields.grade_company && fields.grade ? `${fields.grade_company} ${String(fields.grade).match(/\d+(?:\.\d+)?/)?.[0] || fields.grade}` : null,
     fields.grade_company && /auto/i.test(String(result.title || "")) && /auto\s*10/i.test(String(result.title || "")) ? "Auto 10" : null
@@ -2567,6 +2749,10 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "Leave only unreadable or uncertain high-risk fields empty.",
     "Use these downstream title modules: Standard Card Grammar = Year -> normalized Manufacturer/Product/Set -> Subject -> Card Name -> Release Variant -> Print Finish -> Numerical Rarity -> Descriptive Rarity -> Card Number -> Search Optimization -> Grading Info. TCG keeps its separate grammar. Deterministic code renders and compresses the final English title.",
     "Sports card_name rule: if the front/back prints a named card title or segment such as Best Performance, Club Legends, Gusto, Power Partnership, Canvas Creations, Rookie Ticket, or Next Stop Signatures, put the literal card name in fields.card_name when it is the card's named segment; use insert only for formal insert/set identity when that is the better structured field. Renderer places card_name after Subject.",
+    "Release Variant rule: release variant means layout/composition/design-direction differences within the same Card Name/Card Type, such as Horizontal, Vertical, Variation, Photo Variation, Image Variation, Design Variation, or International. Do not put FOTL, Hobby, Retail, Choice, Fast Break, Sapphire, colors, foil, holo, refractor, rarity, product, or set into Release Variant.",
+    "Product/Set storage vs output rule: keep manufacturer/product/set as structured backend fields even when long, but the renderer smart-collapses redundant hierarchy. Example fields manufacturer=Panini, product=Panini Prizm Black, set=Panini Prizm Black FOTL should resolve as product/set evidence, not as repeated title words; output will become Panini Prizm Black.",
+    "Card Name / Release Variant / Print Finish rule: keep the fields separate for learning, but do not duplicate the same word across them. Example card_name=Gold Refractor Autograph, release_variant=Variation, print_finish=Gold should render naturally as Gold Refractor Auto Variation; do not output Gold twice.",
+    "TCG field rule: Subject is the character/card subject, Card Name is the printed card-title segment. Example Pikachu Illustrator: subject=Pikachu, card_name=Illustrator. Do not put the whole phrase Pikachu Illustrator into Subject.",
     "Do not cross module boundaries: serial numbers are not grades, grade-label words are not checklist codes, product names are not player names, and visual color alone is surface_color rather than exact parallel.",
     "If a card has front and back images, combine them into one identity when they are the same card.",
     "Slab label rule: if a PSA/BGS/SGC/CGC label is visible, read it first and map label lines directly into year, product, players, collector_number/checklist_code, grade_company, card_grade, grade_type, insert, variation, and auto.",
@@ -2578,7 +2764,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- Keep field_evidence compact. Only include short evidence for non-empty high-risk fields or fields that may need writer review.",
     "- Do not dump OCR lines, legal text, copyright text, or repeated boilerplate into field_evidence.",
     "- Each evidence entry should include value, support_type/source_type, short visible_text/raw_text when useful, confidence, review_required, and direct_observation/directly_observed.",
-    "- Core/high-risk evidence fields include year, product, set, language, players, character, card_name, official_card_type, observable_components, insert, surface_color, parallel_exact, serial_number, collector_number, checklist_code, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
+    "- Core/high-risk evidence fields include year, product, set, language, players, character, card_name, official_card_type, observable_components, insert, surface_color, parallel_exact, serial_number, numerical_rarity, collector_number, checklist_code, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
     "- official_card_type must stay empty unless official wording is printed on the card/slab or supplied by trusted catalog/reviewed input. Never infer Base from visual context.",
     "- observable_components may include only directly visible components: auto, patch, relic, jersey, rc, sketch, redemption.",
     "- year: include field_evidence.year with value, support_type, visible_text, confidence, and review_required. Use support_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
@@ -2587,11 +2773,11 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
     "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
-    "Serial rule: every digit must be readable; otherwise serial_number must be empty. Deterministic title rendering will remove the instance numerator and publish only the serial limit such as #/50; do not move serial_number into collector_number or checklist_code.",
+    "Serial and Numerical Rarity rule: serial_number is the raw physical-copy reading and every digit must be readable; otherwise serial_number must be empty. numerical_rarity is the title print-limit module. Fill numerical_rarity when current-card evidence clearly shows a print limit such as 2/3, 14/99, 31/50, 01/10, 1/1, or denominator-only #/50. If you directly read a valid current-card print run in serial_number, repeat the same value in numerical_rarity. Do not invent numerical_rarity when no print limit is visible. Never copy a serial numerator from catalog/reference candidates, and do not move serial_number into collector_number or checklist_code.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
     "Sapphire discipline: Topps Chrome Sapphire or Bowman Chrome Sapphire is a product/set phrase when visibly attached to the Chrome product line; keep the full phrase in product or set. Non-product Sapphire such as Heir Apparent Sapphire is exact parallel/taxonomy wording and must stay out of final fields unless catalog/printed label evidence directly supports it.",
     "Open-set taxonomy rule: without prompt-safe catalog/vector candidates, do not put Tiger, Zebra, Sapphire, Refractor, Wave, Shimmer, Mojo, Prizm, Sparkle, Holo, or similar optical pattern words in insert/card_type/parallel fields; leave them unresolved for writer/catalog confirmation.",
-    "Multi-card rule: multi_card/card_count refer to separate physical cards in the photo, not the number of players or names printed on one card. A single card with two or more subjects must keep multi_card false and put every subject in players[]. Only set multi_card true when multiple separate card rectangles, slabs, or lot items are visible; then do not merge identities.",
+    "Lot / multi-card rule: multi_card/card_count refer to separate physical cards in the photo, not the number of players or names printed on one card. A single card with two or more subjects must keep multi_card false and put every subject in players[]. When a listing is visibly a lot or multiple separate cards, set multi_card true, fill card_count when visible, keep up to three recognizable subjects, and fill common year/product/set only if shared or clearly visible. Do not merge different identities into one single-card identity; renderer will use Lot grammar. Use ABSTAIN only when the lot itself is unreadable or mixed beyond a usable draft.",
     "recognition_status rule: use CONFIRMED when core identity is visible with no critical conflict; RESOLVED when core identity is visible but some non-core field needs review; ABSTAIN only when product/subject is unreadable, multiple cards are mixed, image quality blocks core identity, or critical fields conflict.",
     `Runtime title limit downstream: ${maxTitleLength} characters.`,
     "Return this shape:",
@@ -2628,6 +2814,7 @@ function providerMinimalOutputShape({
       surface_color: "",
       parallel_exact: "",
       serial_number: "",
+      numerical_rarity: "",
       collector_number: "",
       checklist_code: "",
       grade_company: "",
@@ -2723,7 +2910,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     intelligencePrompt,
     `Runtime title limit: ${maxTitleLength} characters.`,
     "Return only valid JSON. Do not wrap the response in Markdown.",
-    "Multi-card rule: fields.card_count is the count of separate physical cards, not the count of players. A single multi-subject card must have fields.multi_card false and all visible subjects in fields.players. Only set fields.multi_card true when multiple separate card rectangles, slabs, or lot items are visible; then include fields.card_count when visible, describe fields.lot_type, and do not merge identities across cards.",
+    "Lot / multi-card rule: fields.card_count is the count of separate physical cards, not the count of players. A single multi-subject card must have fields.multi_card false and all visible subjects in fields.players. When multiple separate card rectangles, slabs, or lot items are visible, set fields.multi_card true, include fields.card_count when visible, describe fields.lot_type, keep up to three recognizable subjects, and do not merge identities across cards. Renderer will use Lot grammar rather than a single-card title.",
     "Do not infer RC, 1st Bowman, SSP, case hit, parallel, or variation from seller style or generic foil color. Use RC only for readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker. For parallel/variation, use printed text, slab/checklist support, or clearly intentional high-confidence card-design color/pattern only; weak visual color impressions must stay empty with uncertainty in unresolved.",
     "Return compact provider-agnostic field_evidence only for high-risk or review-sensitive fields. Do not use provider confidence prose as fact evidence.",
     "Resolution hints:",
@@ -3226,8 +3413,25 @@ function retrievalCandidateApprovedForIdentity(candidate = {}, providerOptions =
     || ""
   ).trim().toLowerCase();
   if (/^(approved|reviewed|verified)$/.test(status)) return true;
+  const sourceType = String(candidate.source_type || candidate.reference_metadata?.source_type || "").toUpperCase();
+  const sourceStatus = String(candidate.reference_metadata?.source_status || candidate.source_status || "").toUpperCase();
+  if (
+    status === "registry"
+    || sourceType === "OFFICIAL_CHECKLIST"
+    || /_OFFICIAL_(?:CHECKLIST|CARDLIST|CARD_DATABASE|DATABASE)$|OFFICIAL_CARD_SEARCH|OFFICIAL_RELEASE|OFFICIAL_PRODUCT_PAGE|OFFICIAL_DIGITAL_LIBRARY/.test(sourceType)
+    || [
+      "AUTO_PARSED_FROM_OFFICIAL_CHECKLIST",
+      "OFFICIAL_CHECKLIST_CANDIDATE",
+      "OFFICIAL_CHECKLIST_CONFIRMED",
+      "OFFICIAL_RELEASE_SUPPORT",
+      "OFFICIAL_RELEASE_METADATA",
+      "TOPPS_OFFICIAL_RAW",
+      "OFFICIAL_CHECKLIST_RAW"
+    ].includes(sourceStatus)
+  ) {
+    return true;
+  }
   const evalCorrectedTitleGt = optionFlag(providerOptions, "corrected_title_as_temporary_gt", false) === true;
-  const sourceStatus = String(candidate.reference_metadata?.source_status || "").toUpperCase();
   return evalCorrectedTitleGt
     && (
       candidate.field_derivation?.corrected_title_used === true
@@ -3498,6 +3702,7 @@ function retrievalFamiliesForProviderOptions(env = process.env, providerOptions 
       retrievalQueryFamilies.INTERNAL_REGISTRY,
       retrievalQueryFamilies.CATALOG_EXACT_CODE,
       retrievalQueryFamilies.CATALOG_YEAR_PRODUCT_SUBJECT,
+      retrievalQueryFamilies.CATALOG_PRODUCT_VOCABULARY,
       retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR,
       retrievalQueryFamilies.CATALOG_SET_SUBJECT
     );
@@ -3515,6 +3720,7 @@ function catalogRetrievalFamilies() {
     retrievalQueryFamilies.INTERNAL_REGISTRY,
     retrievalQueryFamilies.CATALOG_EXACT_CODE,
     retrievalQueryFamilies.CATALOG_YEAR_PRODUCT_SUBJECT,
+    retrievalQueryFamilies.CATALOG_PRODUCT_VOCABULARY,
     retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR,
     retrievalQueryFamilies.CATALOG_SET_SUBJECT
   ];
@@ -4886,11 +5092,11 @@ function gradeTokenFromCurrentFields(fields = {}) {
 
 function appendCurrentInstanceTerms(title, currentFields = {}, currentTitle = "") {
   let output = String(title || "").replace(/\s+/g, " ").trim();
-  const serial = normalizeSerialText(currentFields.serial_number || "");
-  const serialLimit = serialLimitForTitle(serial, currentFields);
-  if ((/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(serial) || /^\/\d{1,4}\b/.test(serialLimit))
+  const numericalRarity = normalizeSerialText(currentFields.numerical_rarity || "");
+  const serialLimit = serialLimitForTitle(numericalRarity, currentFields);
+  if ((/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(numericalRarity) || /^\/\d{1,4}\b/.test(serialLimit))
     && serialLimit
-    && !titleIncludesSerial(output, { ...currentFields, serial_number: serial })) {
+    && !titleIncludesSerial(output, { ...currentFields, numerical_rarity: numericalRarity })) {
     output = `${output} ${serialLimit}`.trim();
   }
   const grade = gradeTokenFromCurrentFields(currentFields) || gradeTokenFromCurrentTitle(currentTitle);
@@ -5575,6 +5781,8 @@ export const __listingCopilotTitleTestHooks = {
   catalogCandidateHasStrongAnchor,
   catalogStrongCandidateForVectorLazy,
   configuredMaxPayloadImages,
+  finalizeDeterministicPresentation,
+  finalResolvedFieldsForPresentation,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
   scaffoldTitleConflictsWithDirectEvidence,
@@ -5620,7 +5828,7 @@ export default async function handler(req, res) {
 
   if (!enforceApiRateLimit(req, res, {
     scope: "listing_title",
-    limit: 30,
+    limit: 120,
     windowMs: 60_000,
     message: "Too many title generation requests. Please try again shortly."
   })) return;

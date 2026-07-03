@@ -6,7 +6,7 @@ import {
 import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
 
 const apiCostPerRequest = 0.003;
-const maxTitleLength = 85;
+const maxTitleLength = 80;
 const MAX_CONCURRENT_WORKERS = 6;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
@@ -1500,7 +1500,7 @@ function pendingBox(asset) {
         ${isWorking ? `<span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` : ""}
       </div>
       <textarea readonly placeholder="等待生成可编辑英文标题。"></textarea>
-      <p class="follow-up-advice">系统会先识别字段，再生成 85 字符以内英文标题；黄色模块需要写手确认。</p>
+      <p class="follow-up-advice">系统会先识别字段，再生成 80 字符以内英文标题；黄色模块需要写手确认。</p>
     </div>
   `;
 }
@@ -1713,26 +1713,28 @@ function writerEvidenceDetails(result, asset = null, unresolved = []) {
 
 function resultBox(result, asset = null) {
   const confidence = normalizeConfidence(result.confidence);
-  const disabled = confidence === "FAILED" || !result.title;
+  const failed = confidence === "FAILED";
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
   const generatedTitle = result.generatedTitle || result.final_title || result.title || "";
   const correctedTitle = result.correctedTitle ?? generatedTitle;
-  const saveDisabled = disabled || result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
+  const copyDisabled = !failed && !correctedTitle;
+  const saveDisabled = result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
   const showPublish = shouldShowPublishButton(result);
   const publishDisabled = !canPublishResult(result);
   const showQuickApprove = shouldShowQuickApproveButton(result);
   const quickApproveDisabled = !canQuickApproveAndPublish(result);
   const retryProvider = emergencyProvider();
-  const canEmergencyRetry = confidence === "FAILED" && retryProvider && result.provider !== "openai_legacy";
+  const canEmergencyRetry = failed && retryProvider && result.provider !== "openai_legacy";
   const saveLabel = {
     saved: "已保存",
     skipped: "未留存",
     saving: "保存中…"
   }[result.feedbackStatus] || "保存";
   const providerLabel = result.provider_label || providerById(result.provider)?.label || result.provider || "-";
-  const unavailableTitle = confidence === "FAILED"
+  const unavailableTitle = failed
     ? `标题暂不可用：${friendlyErrorSummary(result.reason)}`
     : "标题暂不可用";
+  const textareaValue = failed && !correctedTitle ? "" : (correctedTitle || unavailableTitle);
 
   return `
     <div class="title-output ${confidenceClass(confidence)}">
@@ -1741,14 +1743,14 @@ function resultBox(result, asset = null) {
         <div class="title-actions">
           <span>${escapeHtml(providerLabel)}</span>
           ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 单模型重试</button>` : ""}
-          <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(correctedTitle || "")}" ${disabled ? "disabled" : ""}>复制</button>
+          <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           ${showQuickApprove ? `<button class="copy-button publish-button quick-approve-button" type="button" data-quick-approve-publish="${result.index}" ${quickApproveDisabled ? "disabled" : ""}>快速批准并发布</button>` : ""}
           ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
         </div>
       </div>
       ${sideDecisionNotice(asset, result)}
-      <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || unavailableTitle)}</textarea>
+      <textarea data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}">${escapeHtml(textareaValue)}</textarea>
       ${titleOverrideNotice(result)}
       ${moduleSummary(result)}
       ${publicationGateNotice(result)}
@@ -2262,6 +2264,8 @@ function failedResult(asset, error) {
     index: asset.index,
     thumbnail: asset.images[0].dataUrl,
     title: "",
+    generatedTitle: "",
+    correctedTitle: "",
     confidence: "FAILED",
     reason: error.message,
     fields: {},
@@ -2381,7 +2385,13 @@ async function retryAssetWithEmergency(button) {
 }
 
 async function copyTitle(button) {
-  const title = decodeURIComponent(button.dataset.copyTitle || "");
+  const resultIndex = Number(button.dataset.copyResult);
+  const result = Number.isFinite(resultIndex)
+    ? state.results.find((item) => item.index === resultIndex)
+    : null;
+  const title = result
+    ? finalTitleForResult(result)
+    : decodeURIComponent(button.dataset.copyTitle || "");
   if (!title) return;
 
   await navigator.clipboard.writeText(title);
@@ -2490,11 +2500,19 @@ async function applyModuleEdit(input) {
       result.correctedTitle = payload.final_title || result.correctedTitle;
       result.feedbackMessage = "模块已更新，标题已重新渲染。";
     }
+    delete input.dataset.dirty;
   } catch (error) {
     result.feedbackMessage = error.message || "模块更新失败。";
   }
 
   renderResults();
+}
+
+async function flushActiveModuleEditForResult(resultIndex) {
+  const active = document.activeElement?.closest?.("[data-module-input]");
+  if (!active || active.dataset.dirty !== "true") return;
+  if (Number(active.dataset.moduleInput) !== Number(resultIndex)) return;
+  await applyModuleEdit(active);
 }
 
 function useRenderedTitle(button) {
@@ -2583,8 +2601,12 @@ function buildListingDraft(result, asset) {
 async function saveFeedbackForResult(result, asset) {
   if (!result) return;
 
-  const generatedTitle = String(result.generatedTitle || result.title || "").trim();
-  const correctedTitle = String(result.correctedTitle ?? generatedTitle).trim();
+  const generatedTitle = String(
+    result.generatedTitle
+    || result.title
+    || (normalizeConfidence(result.confidence) === "FAILED" ? `FAILED: ${friendlyErrorSummary(result.reason)}` : "")
+  ).trim();
+  const correctedTitle = String(result.correctedTitle ?? result.final_title ?? result.rendered_title ?? result.title ?? "").trim();
 
   if (!generatedTitle || !correctedTitle) return false;
 
@@ -2663,6 +2685,7 @@ async function saveFeedbackForResult(result, asset) {
 async function saveTitleFeedback(button) {
   const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
+  await flushActiveModuleEditForResult(result?.index);
   await saveFeedbackForResult(result, asset);
 }
 
@@ -2833,7 +2856,7 @@ function bindEvents() {
       return;
     }
 
-    const button = event.target.closest("[data-copy-title]");
+    const button = event.target.closest("[data-copy-title], [data-copy-result]");
     if (button) {
       copyTitle(button);
       return;
@@ -2870,6 +2893,8 @@ function bindEvents() {
   elements.assetPreviewList.addEventListener("input", (event) => {
     const input = event.target.closest("[data-title-input]");
     if (input) updateCorrectedTitle(input);
+    const moduleInput = event.target.closest("[data-module-input]");
+    if (moduleInput) moduleInput.dataset.dirty = "true";
   });
 
   elements.assetPreviewList.addEventListener("keydown", (event) => {

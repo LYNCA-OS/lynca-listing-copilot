@@ -151,6 +151,11 @@ assert.match(js, /status-dots/, "global status should render animated waiting do
 assert.match(js, /pending-wave/, "pending cards should render a wave animation while waiting");
 assert.match(js, /setProcessButtonBusy/, "generate button should show a busy state during recognition");
 assert.match(js, /friendlyErrorSummary/, "failed cards should explain why title output is unavailable");
+assert.match(js, /placeholder="\$\{escapeHtml\(unavailableTitle\)\}"/, "failed cards should render an editable empty draft with the error as placeholder");
+assert.match(js, /data-copy-result/, "copy buttons should read the latest edited title from state instead of stale HTML data");
+assert.match(js, /flushActiveModuleEditForResult/, "saving should flush the currently focused module edit before saving feedback");
+assert.match(js, /moduleInput\.dataset\.dirty = "true"/, "module inputs should mark dirty state so save does not require a second click");
+assert.match(api, /scope: "listing_title"[\s\S]*limit: 120/, "title generation API should default to a multi-tab friendly rate limit");
 assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.writer-modules/, "writer-facing modules should have a compact layout");

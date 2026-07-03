@@ -1145,7 +1145,7 @@ assert.throws(
 assert.equal(fairTokenRecall("Pele Rookie RC Autograph", "Pel\u00e9 RC Auto"), 1); // diacritics + synonym classes fold
 assert.equal(fairTokenRecall("Card 24/25 PSA", "Card 24/25 PSA"), 1);
 assert.equal(fairTokenRecall("Card #/25", "Card 24/25"), 1); // full serial covers denominator-only reference
-assert.equal(fairTokenRecall("Card 24/25", "Card #/25"), 1); // numerator omission is title policy; scored separately via serial analysis
+assert.equal(fairTokenRecall("Card 24/25", "Card #/25"), 1); // denominator support gets broad recall credit; exactness is scored separately
 assert.equal(fairTokenRecall("Card 04/10 BGS", "Card 4/10 Beckett"), 1); // leading zeros + grader alias
 assert.equal(fairTokenRecall("Curry PSA 10 POP 2", "Curry PSA 10 2"), 1); // POP excluded from denominator
 assert.equal(fairTokenRecall("Wemby SSP Case Hit RC", "Wemby SSP RC"), 1); // case-hit bigram excluded

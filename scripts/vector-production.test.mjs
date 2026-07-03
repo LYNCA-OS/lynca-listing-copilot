@@ -552,6 +552,39 @@ assert.deepEqual(
   ["product", "card_name"]
 );
 
+const productVocabularyDifferentSubjectPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-product-vocabulary-different-subject",
+    candidate_identity_id: "identity-panini-status-shai",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    supporting_fields: ["year", "product", "card_name"],
+    fields: {
+      year: "2018-19",
+      manufacturer: "Panini",
+      product: "Panini Status",
+      card_name: "New Breed",
+      players: ["Shai Gilgeous-Alexander"],
+      collector_number: "106"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2018-19",
+    manufacturer: "Panini",
+    product: "Panini Status",
+    card_name: "New Breed",
+    players: ["Trae Young"],
+    collector_number: "NB-TYG"
+  }
+});
+const differentSubjectEligibility = vectorCandidatePacketAssistEligibility(productVocabularyDifferentSubjectPacket);
+assert.equal(differentSubjectEligibility.prompt_candidate_count, 0, "different subject catalog row must not become an identity prompt candidate");
+assert.equal(differentSubjectEligibility.field_support_fields.includes("product"), true, "same product should still support product vocabulary");
+assert.equal(differentSubjectEligibility.field_support_fields.includes("card_name"), true, "same card name should still support card-name vocabulary");
+
 const queryConflictPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "approved-wrong-neighbor",

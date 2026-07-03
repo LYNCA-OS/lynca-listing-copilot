@@ -44,6 +44,8 @@
     "parallel": { "type": ["string", "null"] },
     "variation": { "type": ["string", "null"] },
     "serial_number": { "type": ["string", "null"] },
+    "numerical_rarity": { "type": ["string", "null"] },
+    "expected_serial_denominator": { "type": ["string", "null"] },
     "collector_number": { "type": ["string", "null"] },
     "checklist_code": { "type": ["string", "null"] },
     "attributes": {

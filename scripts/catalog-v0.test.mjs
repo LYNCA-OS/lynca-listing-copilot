@@ -458,7 +458,11 @@ const officialProviderResult = await officialProvider.search({
 });
 assert.equal(officialProviderResult.candidates[0].source_type, "OFFICIAL_CHECKLIST");
 assert.equal(officialProviderResult.candidates[0].trust_tier, 2);
+assert.equal(officialProviderResult.candidates[0].source_trust, "APPROVED_REFERENCE");
 assert.equal(officialProviderResult.candidates[0].reference_metadata.source_type, "PANINI_OFFICIAL_CHECKLIST");
+assert.equal(officialProviderResult.candidates[0].reference_metadata.official_catalog_prompt_safe, true);
+assert.equal(officialProviderResult.candidates[0].field_derivation.official_catalog_prompt_safe, true);
+assert.equal(officialProviderResult.candidates[0].field_derivation.reviewed_ground_truth_used, false);
 
 const planned = planRetrievalQueries({
   resolved: {
