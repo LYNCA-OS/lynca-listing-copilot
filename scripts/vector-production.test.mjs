@@ -334,6 +334,30 @@ const catalogCandidateOnlyPacket = buildVectorCandidatePacket({
 assert.equal(vectorCandidatePacketAssistEligibility(catalogCandidateOnlyPacket).reason, "no_approved_identity_candidate");
 assert.equal(buildVectorCandidateAssistPacket(catalogCandidateOnlyPacket).vector_retrieval.candidates.length, 0);
 
+const catalogWeakAnchorApprovedPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-approved-weak-anchor",
+    candidate_identity_id: "identity-catalog-approved-weak-anchor",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["year", "brand", "manufacturer"],
+    matched_fields: ["year", "brand", "manufacturer"],
+    fields: {
+      year: "2018-19",
+      manufacturer: "Panini",
+      product: "Panini Threads",
+      players: ["Wrong Player"]
+    }
+  }]
+}, { limit: 5 });
+const weakAnchorEligibility = vectorCandidatePacketAssistEligibility(catalogWeakAnchorApprovedPacket);
+assert.equal(weakAnchorEligibility.reason, "approved_identity_candidate_missing_identity_anchor");
+assert.equal(weakAnchorEligibility.approved_candidate_count, 1);
+assert.equal(weakAnchorEligibility.prompt_candidate_count, 0);
+assert.equal(buildVectorCandidateAssistPacket(catalogWeakAnchorApprovedPacket).vector_retrieval.candidates.length, 0);
+
 const marketplaceWeakPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "ebay-weak-title",

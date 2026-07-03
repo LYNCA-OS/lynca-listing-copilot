@@ -714,6 +714,60 @@ await withTempDir(async (dir) => {
 });
 
 await withTempDir(async (dir) => {
+  const inputPath = join(dir, "blind_inputs.jsonl");
+  const outputPath = join(dir, "predictions", "predictions.jsonl");
+  const imageA = join(dir, "a_img_0.jpg");
+  const imageB = join(dir, "b_img_0.jpg");
+  const imageC = join(dir, "c_img_0.jpg");
+  await writeFile(imageA, tinyPng);
+  await writeFile(imageB, tinyPng);
+  await writeFile(imageC, tinyPng);
+  await writeJsonl(inputPath, [{
+    case_id: "case-a",
+    image_paths: [imageA]
+  }, {
+    case_id: "case-b",
+    image_paths: [imageB]
+  }, {
+    case_id: "case-c",
+    image_paths: [imageC]
+  }]);
+  const { calls, fetchImpl } = cloudFetchRecorder({
+    titleResponder: (body) => ({
+      final_title: `2025 Topps Chrome ${body.assetId} Gold`,
+      confidence: "HIGH",
+      model_id: "gpt-4.1-mini",
+      resolved: {
+        year: "2025",
+        manufacturer: "Topps",
+        product: "Topps Chrome",
+        players: [body.assetId],
+        surface_color: "Gold"
+      }
+    })
+  });
+  const progressEvents = [];
+  const result = await runBlindRecognition({
+    inputPath,
+    outputPath,
+    baseUrl: "https://listing.test",
+    username: "metaverse",
+    password: "mtv",
+    limit: 2,
+    concurrency: 2,
+    resume: false,
+    fetchImpl,
+    onProgress: (event) => progressEvents.push(event)
+  });
+  assert.equal(result.configured_limit, 2);
+  assert.equal(result.configured_concurrency, 2);
+  assert.equal(result.prediction_count, 2);
+  assert.deepEqual(result.predictions.map((prediction) => prediction.case_id), ["case-a", "case-b"]);
+  assert.equal(calls.filter((call) => new URL(call.url).pathname === "/api/listing-copilot-title").length, 2);
+  assert.equal(progressEvents.filter((event) => !event.skipped).length, 2);
+});
+
+await withTempDir(async (dir) => {
   const root = join(dir, "run-root");
   const inferenceBundle = join(root, "inference_bundle");
   await writeJsonl(join(inferenceBundle, "blind_inputs.jsonl"), [{
@@ -1033,7 +1087,7 @@ const uncertain = comparePredictionToTitle({
   item_id: "item-2",
   item_web_url: "https://www.ebay.com/itm/item-2"
 });
-assert.equal(uncertain.field_comparison.player, "UNCERTAIN");
+assert.equal(uncertain.field_comparison.player, "MISSING_MODEL");
 
 await withTempDir(async (dir) => {
   const predictionsPath = join(dir, "predictions", "predictions.jsonl");

@@ -4,6 +4,8 @@ import {
   blindEvalRunPaths,
   defaultBlindEvalDir,
   envValue,
+  hasFlag,
+  integerArg,
   normalizeBaseUrl,
   runBlindRecognition
 } from "../lib/listing/evaluation/blind-eval.mjs";
@@ -19,6 +21,9 @@ export async function main(argv = process.argv, env = process.env) {
   const outputPath = argValue(argv, "--output", paths.predictions_path);
   const provider = argValue(argv, "--provider", env.BLIND_EVAL_PROVIDER || "openai_legacy");
   const providerMode = argValue(argv, "--provider-mode", argValue(argv, "--mode", env.BLIND_EVAL_PROVIDER_MODE || "openai_vector"));
+  const limit = integerArg(argv, "--limit", Number(env.BLIND_EVAL_LIMIT || 0));
+  const concurrency = integerArg(argv, "--concurrency", Number(env.BLIND_EVAL_CONCURRENCY || 1));
+  const resume = !hasFlag(argv, "--fresh");
   const summary = await runBlindRecognition({
     inputPath,
     outputPath,
@@ -29,6 +34,9 @@ export async function main(argv = process.argv, env = process.env) {
     provider,
     providerMode,
     env,
+    limit,
+    concurrency,
+    resume,
     onProgress: (event) => {
       const state = event.skipped ? "skipped" : "completed";
       const details = event.skipped
@@ -39,6 +47,8 @@ export async function main(argv = process.argv, env = process.env) {
   });
   console.log("blind recognition completed");
   console.log(`prediction_count=${summary.prediction_count}`);
+  console.log(`configured_limit=${summary.configured_limit ?? "all"}`);
+  console.log(`configured_concurrency=${summary.configured_concurrency}`);
   console.log(`provider=${provider}`);
   console.log(`provider_mode=${providerMode}`);
   console.log(`blind_inputs=${summary.blind_inputs_path}`);
