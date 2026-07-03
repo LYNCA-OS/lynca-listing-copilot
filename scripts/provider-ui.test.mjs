@@ -6,6 +6,7 @@ const js = await readFile("app/listing-copilot.js", "utf8");
 const css = await readFile("app/listing-copilot.css", "utf8");
 const api = await readFile("api/listing-copilot-title.js", "utf8");
 const providerRegistry = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
+const csmFieldLabels = await readFile("lib/listing/csm/field-labels.mjs", "utf8");
 
 assert.match(html, /id="providerControl"/, "provider segmented control should exist");
 assert.match(html, /id="providerStatusText"/, "provider status text should exist");
@@ -100,6 +101,8 @@ assert.doesNotMatch(api, /runFocusedVisionImpl:\s*createGptCriticalVerifierRunne
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /moduleSummary\(result\)/, "frontend should render writer-facing modules from the title API");
 assert.match(js, /workflowSummaryNotice\(result\)/, "frontend should render a compact workflow summary from the title API");
+assert.match(js, /labelForCsmField/, "frontend should use the shared CSM field label contract");
+assert.doesNotMatch(js, /const reviewFieldLabels = \{/, "frontend must not fork its own field label map");
 assert.match(js, /data-workflow-summary/, "workflow summary should have a stable hook for UI validation");
 assert.match(js, /hide_raw_candidate_details/, "workflow summary should keep raw candidate diagnostics hidden from the writer UI by default");
 assert.match(js, /operator_next_actions/, "workflow summary should render explicit operator next actions");
@@ -110,8 +113,9 @@ assert.match(js, /data-module-input/, "writer modules should expose editable mod
 assert.match(js, /module-edit-hint/, "writer modules should explain the keyboard edit workflow inline");
 assert.match(js, /Enter 保存并跳到下一项/, "writer module keyboard behavior should be visible to operators");
 assert.match(js, /aria-label="\$\{escapeHtml\(module\.label \|\| module\.key\)\} 模块"/, "module editors should expose field-specific accessible labels");
-assert.match(js, /numerical_rarity: "Numerical Rarity"/, "workflow field summaries should label numerical rarity clearly");
-assert.match(js, /card_name: "Card Name"/, "workflow field summaries should label card name clearly");
+assert.match(csmFieldLabels, /numerical_rarity: "Numerical Rarity"/, "workflow field summaries should label numerical rarity clearly");
+assert.match(csmFieldLabels, /card_name: "Card Name"/, "workflow field summaries should label card name clearly");
+assert.match(csmFieldLabels, /collector_number: "Card Number"/, "collector number should follow the current CSM output label");
 assert.match(js, /moduleTokenSummary/, "writer modules should render token-level confidence chips");
 assert.match(js, /draftGatePoliciesByField/, "token highlighting should use draft gate field policies");
 assert.match(js, /INCLUDE_HIGHLIGHTED/, "low-confidence title terms should be visibly highlightable");

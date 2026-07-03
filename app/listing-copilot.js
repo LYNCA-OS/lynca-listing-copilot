@@ -3,6 +3,7 @@ import {
   defaultCaptureProfileId,
   summarizeAssetImageQuality
 } from "../lib/listing/image-quality/quality-gate.mjs";
+import { labelForCsmField } from "../lib/listing/csm/field-labels.mjs";
 import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
 
 const apiCostPerRequest = 0.003;
@@ -1149,7 +1150,7 @@ function renderBatchTitles() {
 }
 
 function cropRegionLabel(region = "") {
-  return reviewFieldLabels[region] || String(region || "").replace(/_/g, " ") || "Field Crop";
+  return labelForCsmField(region, "Field Crop");
 }
 
 function modalImagesForAsset(asset = {}) {
@@ -1806,7 +1807,7 @@ function workflowSummaryNotice(result) {
     ? summary.operator_next_actions.filter((action) => action && action.text).slice(0, 5)
     : [];
   const fields = Array.isArray(summary.highlighted_fields) && summary.highlighted_fields.length
-    ? summary.highlighted_fields.slice(0, 6).map((field) => reviewFieldLabels[field] || field).join(", ")
+    ? summary.highlighted_fields.slice(0, 6).map((field) => labelForCsmField(field)).join(", ")
     : "";
   const statusClass = summary.blocking ? "manual-required" : summary.status === "LOW_TOUCH_REVIEW" ? "quick-approval" : "writer-ready";
 
@@ -1836,71 +1837,6 @@ function workflowSummaryNotice(result) {
   `;
 }
 
-const reviewFieldLabels = {
-  year: "Year",
-  season_year: "Season Year",
-  product_year: "Product Year",
-  copyright_year: "Copyright Year",
-  display_year: "Display Year",
-  brand: "Brand",
-  manufacturer: "Manufacturer",
-  product: "Product",
-  product_or_set: "Product / Set",
-  set: "Set",
-  subset: "Subset",
-  ip: "IP",
-  language: "Language",
-  subject: "Subject",
-  subjects: "Subject",
-  players: "Player",
-  player: "Player",
-  character: "Character",
-  card_type: "Card Type",
-  official_card_type: "Card Type",
-  card_name: "Card Name",
-  insert: "Insert",
-  release_variant: "Release Variant",
-  design_variation: "Design Variation",
-  variant: "Variant",
-  product_finish: "Product Finish",
-  print_finish: "Print Finish",
-  surface_color: "Color",
-  parallel_family: "Parallel Family",
-  parallel_exact: "Exact Parallel",
-  variant_or_parallel: "Variant / Parallel",
-  parallel: "Parallel",
-  variation: "Variation",
-  descriptive_rarity: "Descriptive Rarity",
-  numerical_rarity: "Numerical Rarity",
-  serial_denominator: "Serial Limit",
-  serial_number: "Serial",
-  card_number: "Card Number",
-  collector_number: "Collector Number",
-  checklist_code: "Checklist Code",
-  grade_company: "Grade Company",
-  card_grade: "Card Grade",
-  auto_grade: "Auto Grade",
-  grade_type: "Grade Type",
-  rc: "RC",
-  first_bowman: "1st Bowman",
-  ssp: "SSP",
-  case_hit: "Case Hit",
-  auto: "Auto",
-  patch: "Patch",
-  relic: "Relic",
-  sketch: "Sketch",
-  redemption: "Redemption",
-  special_stamp: "Special Stamp",
-  search_optimization: "Search Optimization",
-  team: "Team",
-  teams: "Team",
-  lot_quantity: "Lot Quantity",
-  lot_type: "Lot Type",
-  observable_components: "Visible Components",
-  cert_number: "Cert Number",
-  one_of_one: "1/1"
-};
-
 const workflowLabels = {
   LOW_TOUCH_REVIEW: "低触审核",
   STANDARD_REVIEW: "标准审核",
@@ -1916,7 +1852,7 @@ function publicationGateNotice(result) {
     ? gate.writer_required_fields
     : [];
   const fieldText = fields.length
-    ? fields.map((field) => reviewFieldLabels[field] || field).join(", ")
+    ? fields.map((field) => labelForCsmField(field)).join(", ")
     : "无需补字段";
   const quickApproval = modelQuickApprovalCandidate(result);
   const route = gate.workflow_route || gate.status;
@@ -1961,7 +1897,7 @@ function modulePolicySummary(module) {
   if (!pending.length) return module.status || "REVIEW";
   return pending
     .slice(0, 3)
-    .map((policy) => reviewFieldLabels[policy.field] || policy.field)
+    .map((policy) => labelForCsmField(policy.field))
     .join(", ");
 }
 
