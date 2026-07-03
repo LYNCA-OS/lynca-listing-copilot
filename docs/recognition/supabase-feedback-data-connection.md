@@ -70,6 +70,36 @@ The script reads `listing_title_feedback` through Supabase REST and writes local
 
 Current Vercel production env check on 2026-06-23 showed `SUPABASE_URL` is present but `SUPABASE_SERVICE_ROLE_KEY` is empty. Using the anon key for REST returned 0 rows, which means RLS is correctly preventing public reads of internal feedback data. Do not weaken RLS or expose `listing_title_feedback` to anon just to export candidates.
 
+## Feedback Workflow Context Schema Readiness
+
+Versioned feedback can now persist workflow context fields used by the low-friction writer loop:
+
+- `listing_analysis_runs.open_set_readiness`
+- `listing_analysis_runs.workflow_summary`
+- `listing_analysis_runs.workflow_sidecars`
+- `listing_analysis_runs.workflow_action_plan`
+- `listing_reviews.workflow_summary`
+
+The migration file is:
+
+```text
+supabase/migrations/20260703112438_feedback_workflow_context_v0.sql
+```
+
+Before enabling durable feedback retention in a deployment, verify that the Supabase REST layer can see those columns:
+
+```bash
+npm run schema:feedback-workflow -- --json
+```
+
+The command reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from the shell or the usual local env files, performs read-only `limit=0` REST checks, and never prints secrets. If local credentials are intentionally unavailable, use:
+
+```bash
+npm run schema:feedback-workflow -- --allow-missing-config --json
+```
+
+That mode is only for local developer machines; it reports `not_configured` without pretending the cloud schema is ready. A successful cloud-ready result must show all five required columns as visible. The REST check cannot prove the expression indexes exist, so use Supabase migration history or SQL inspection for the three supporting indexes when applying the migration.
+
 ## MCP / SQL Rows Export
 
 When service-role REST access is unavailable, use the read-only SQL file:
@@ -150,6 +180,6 @@ This keeps candidate data usable by future storage signed-URL generation without
 
 ## Current Limitation
 
-Local `.env.local` can be populated from Vercel, but the current Vercel production environment does not include a non-empty `SUPABASE_SERVICE_ROLE_KEY`. Supabase CLI is not installed locally.
+Local `.env.local` can be populated from Vercel, but the current checked env files do not expose a non-empty `SUPABASE_SERVICE_ROLE_KEY` to this machine. Supabase CLI is installed locally (`2.108.0` during the 2026-07-03 check), but the checkout is not linked to the remote project and no local Supabase access token or database URL is currently available for applying remote migrations from this machine.
 
 The REST code path, SQL/MCP rows importer, and chunked MCP session extractor are ready and covered by tests. The current local MCP export is present as ignored data; rerun the relevant export command above after adding new Supabase feedback rows or after configuring a local service-role key.
