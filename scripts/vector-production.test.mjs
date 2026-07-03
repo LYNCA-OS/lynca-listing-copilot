@@ -650,8 +650,9 @@ const productVocabularyDifferentSubjectPacket = buildVectorCandidatePacket({
 });
 const differentSubjectEligibility = vectorCandidatePacketAssistEligibility(productVocabularyDifferentSubjectPacket);
 assert.equal(differentSubjectEligibility.prompt_candidate_count, 0, "different subject catalog row must not become an identity prompt candidate");
-assert.equal(differentSubjectEligibility.field_support_fields.includes("product"), false, "conflicting subject catalog rows must not support product vocabulary");
-assert.equal(differentSubjectEligibility.field_support_fields.includes("card_name"), false, "conflicting subject catalog rows must not support card-name vocabulary");
+assert.equal(differentSubjectEligibility.field_support_fields.includes("product"), true, "field-level support can keep matching product vocabulary even when subject conflicts");
+assert.equal(differentSubjectEligibility.field_support_fields.includes("card_name"), true, "field-level support can keep matching card-name vocabulary even when subject conflicts");
+assert.equal(differentSubjectEligibility.field_support_fields.includes("collector_number"), false, "conflicting printed codes must not support collector number");
 
 const broadProductFamilyPacket = buildVectorCandidatePacket({
   sources: [{
@@ -681,7 +682,7 @@ const broadFamilyRow = broadProductFamilyPacket.vector_retrieval.candidates[0];
 assert.equal(broadFamilyRow.anchor_agreement.agreed.includes("product_hierarchy"), false, "generic product family must not count as specific set/product agreement");
 assert.equal(broadFamilyRow.anchor_agreement.contradicted.includes("product_hierarchy"), true);
 assert.equal(vectorCandidatePacketAssistEligibility(broadProductFamilyPacket).prompt_candidate_count, 0);
-assert.equal(vectorCandidatePacketAssistEligibility(broadProductFamilyPacket).field_support_count, 0);
+assert.equal(vectorCandidatePacketAssistEligibility(broadProductFamilyPacket).field_support_fields.includes("product"), false);
 
 const narrowProductHierarchyPacket = buildVectorCandidatePacket({
   sources: [{
