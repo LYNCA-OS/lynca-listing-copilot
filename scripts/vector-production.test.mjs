@@ -609,14 +609,15 @@ const catalogFieldSupportOnlyPacket = buildVectorCandidatePacket({
 });
 const fieldSupportEligibility = vectorCandidatePacketAssistEligibility(catalogFieldSupportOnlyPacket);
 assert.equal(fieldSupportEligibility.prompt_candidate_count, 0, "low margin identity candidate must not enter prompt");
-assert.equal(fieldSupportEligibility.field_support_count, 0, "field support must not come from prompt-unsafe catalog rows");
+assert.equal(fieldSupportEligibility.field_support_fields.includes("product"), true, "zero-conflict catalog rows should provide product vocabulary support");
+assert.equal(fieldSupportEligibility.field_support_fields.includes("card_name"), true, "zero-conflict catalog rows should provide card-name vocabulary support");
 const fieldSupportAssistPacket = buildVectorCandidateAssistPacket(catalogFieldSupportOnlyPacket);
 assert.equal(fieldSupportAssistPacket.vector_retrieval.candidates.length, 0);
-assert.equal(fieldSupportAssistPacket.vector_retrieval.status_code, "VECTOR_ASSIST_NO_APPROVED_PROMPT_CANDIDATES");
-assert.equal(vectorCandidatePacketHasPromptContent(fieldSupportAssistPacket), false);
+assert.equal(fieldSupportAssistPacket.vector_retrieval.status_code, "VECTOR_ASSIST_FIELD_SUPPORT_AVAILABLE");
+assert.equal(vectorCandidatePacketHasPromptContent(fieldSupportAssistPacket), true);
 assert.deepEqual(
   fieldSupportAssistPacket.vector_retrieval.field_support.map((row) => row.field).filter((field) => ["product", "card_name"].includes(field)),
-  []
+  ["product", "card_name"]
 );
 
 const productVocabularyDifferentSubjectPacket = buildVectorCandidatePacket({
@@ -651,6 +652,63 @@ const differentSubjectEligibility = vectorCandidatePacketAssistEligibility(produ
 assert.equal(differentSubjectEligibility.prompt_candidate_count, 0, "different subject catalog row must not become an identity prompt candidate");
 assert.equal(differentSubjectEligibility.field_support_fields.includes("product"), false, "conflicting subject catalog rows must not support product vocabulary");
 assert.equal(differentSubjectEligibility.field_support_fields.includes("card_name"), false, "conflicting subject catalog rows must not support card-name vocabulary");
+
+const broadProductFamilyPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-broad-product-family",
+    candidate_identity_id: "identity-broad-product-family",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    supporting_fields: ["year", "product"],
+    fields: {
+      year: "2006",
+      manufacturer: "Pokemon",
+      product: "Pokemon",
+      players: ["Alakazam"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2006",
+    manufacturer: "Pokemon",
+    product: "Pokemon EX Crystal Guardians",
+    players: ["Alakazam"]
+  }
+});
+const broadFamilyRow = broadProductFamilyPacket.vector_retrieval.candidates[0];
+assert.equal(broadFamilyRow.anchor_agreement.agreed.includes("product_hierarchy"), false, "generic product family must not count as specific set/product agreement");
+assert.equal(broadFamilyRow.anchor_agreement.contradicted.includes("product_hierarchy"), true);
+assert.equal(vectorCandidatePacketAssistEligibility(broadProductFamilyPacket).prompt_candidate_count, 0);
+assert.equal(vectorCandidatePacketAssistEligibility(broadProductFamilyPacket).field_support_count, 0);
+
+const narrowProductHierarchyPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-narrow-product-hierarchy",
+    candidate_identity_id: "identity-narrow-product-hierarchy",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    supporting_fields: ["year", "product", "players"],
+    fields: {
+      year: "2023",
+      manufacturer: "Bandai",
+      product: "Romance Dawn",
+      players: ["Luffy"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2023",
+    manufacturer: "Bandai",
+    product: "One Piece Romance Dawn",
+    players: ["Luffy"]
+  }
+});
+const narrowHierarchyRow = narrowProductHierarchyPacket.vector_retrieval.candidates[0];
+assert.equal(narrowHierarchyRow.anchor_agreement.agreed.includes("product_hierarchy"), true, "specific product hierarchy should survive family-token normalization");
 
 const queryConflictPacket = buildVectorCandidatePacket({
   sources: [{
