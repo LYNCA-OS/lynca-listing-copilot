@@ -489,6 +489,11 @@ h3 {
   opacity: 0.46;
 }
 
+.reject-button {
+  border-color: rgba(255, 112, 112, 0.48);
+  color: #ffd6d6;
+}
+
 .title-actions {
   display: flex;
   align-items: center;

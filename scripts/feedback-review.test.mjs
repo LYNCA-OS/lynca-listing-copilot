@@ -230,6 +230,17 @@ const unchangedRecords = buildListingReviewRecords({
       status: "KNOWN_CATALOG",
       catalog: { eligibility: { prompt_candidate_count: 1 } }
     },
+    retrieval_trace: {
+      catalog_candidates: [
+        {
+          candidate_id: "cat-cooper-flagg-1",
+          source_type: "APPROVED_REFERENCE",
+          canonical_title: "2025 Topps Chrome Cooper Flagg",
+          match_score: 0.94,
+          selected: true
+        }
+      ]
+    },
     workflow_summary: {
       schema_version: "listing-workflow-summary-v1",
       status: "LOW_TOUCH_REVIEW",
@@ -256,7 +267,18 @@ assert.equal(unchangedRecords.analysisRun.open_set_readiness.status, "KNOWN_CATA
 assert.equal(unchangedRecords.analysisRun.workflow_summary.status, "LOW_TOUCH_REVIEW");
 assert.equal(unchangedRecords.analysisRun.workflow_sidecars.paddle_ocr.status, "NOT_TRIGGERED");
 assert.equal(unchangedRecords.analysisRun.workflow_action_plan.plan_version, "workflow-sidecar-action-plan-v1");
+assert.equal(unchangedRecords.analysisRun.field_graph.schema_version, "listing-field-graph-v1");
+assert.equal(unchangedRecords.analysisRun.field_graph.player, "Cooper Flagg");
 assert.equal(unchangedRecords.review.workflow_summary.status, "LOW_TOUCH_REVIEW");
+assert.equal(unchangedRecords.review.field_graph.product, "Topps Chrome");
+assert.equal(unchangedRecords.review.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
+assert.equal(unchangedRecords.review.feedback_training_event.training_ready, true);
+assert.equal(unchangedRecords.review.candidate_reranker_dataset.length, 1);
+assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].candidate_id, "cat-cooper-flagg-1");
+assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].selected_by_system, true);
+assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].selected_by_writer, true);
+assert.equal(unchangedRecords.review.field_level_ground_truth.find((row) => row.field === "player").value, "Cooper Flagg");
+assert.equal(unchangedRecords.review.hard_negative_samples.length, 0);
 assert.equal(unchangedRecords.legacyFeedback, null);
 
 assert.equal(
@@ -320,7 +342,17 @@ const unchangedSave = await callFeedbackApi({
   review_duration_ms: 1234,
   provider: "openai_legacy",
   model_id: "gpt-4.1-mini-2025-04-14",
-  route: "AI_COMPLETE_REVIEW"
+  route: "AI_COMPLETE_REVIEW",
+  retrieval_trace: {
+    catalog_candidates: [
+      {
+        candidate_id: "cat-accepted",
+        source_type: "APPROVED_REFERENCE",
+        canonical_title: "2025 Topps Chrome Cooper Flagg",
+        selected: true
+      }
+    ]
+  }
 });
 assert.equal(unchangedSave.statusCode, 200);
 assert.equal(unchangedSave.body.review_outcome, reviewOutcomes.ACCEPTED_UNCHANGED);
@@ -339,6 +371,9 @@ assert.equal(unchangedSave.calls[2].body.training_status, "approved_clean");
 assert.equal(unchangedSave.calls[2].body.reusable_approved_title, true);
 assert.equal(unchangedSave.calls[2].body.asset_fingerprint, unchangedSave.calls[0].body.asset_fingerprint);
 assert.deepEqual(unchangedSave.calls[2].body.field_changes, []);
+assert.equal(unchangedSave.calls[1].body.field_graph.product, "Topps Chrome");
+assert.equal(unchangedSave.calls[2].body.feedback_training_event.datasets.candidate_reranker_dataset[0].candidate_id, "cat-accepted");
+assert.equal(unchangedSave.calls[2].body.field_level_ground_truth.find((row) => row.field === "year").value, "2025");
 
 const schemaLagCalls = [];
 let failedAnalysisOnce = false;
@@ -388,6 +423,7 @@ assert.equal(schemaLagCalls[2].body.workflow_summary, undefined);
 assert.equal(schemaLagCalls[2].body.open_set_readiness, undefined);
 assert.equal(schemaLagCalls[2].body.workflow_sidecars, undefined);
 assert.equal(schemaLagCalls[2].body.workflow_action_plan, undefined);
+assert.equal(schemaLagCalls[2].body.field_graph, undefined);
 
 const hardenedPathSave = await callFeedbackApi({
   asset_id: "asset-path-hardening",
@@ -465,6 +501,17 @@ const correctedFieldsSave = await callFeedbackApi({
       change_type: "UNTRUSTED_CLIENT_DIFF"
     }
   ],
+  retrieval_trace: {
+    catalog_candidates: [
+      {
+        candidate_id: "cat-wrong-serial",
+        source_type: "APPROVED_REFERENCE",
+        canonical_title: "2025 Topps Chrome Cooper Flagg 37/50",
+        conflicting_fields: ["serial_number"],
+        selected: true
+      }
+    ]
+  },
   images: [
     {
       id: "front",
@@ -494,6 +541,10 @@ assert.deepEqual(correctedReview.field_changes, [
     change_type: "OPERATOR_CORRECTION"
   }
 ]);
+assert.equal(correctedReview.feedback_training_event.correction_type, reviewOutcomes.CORRECTED_FIELDS);
+assert.equal(correctedReview.candidate_reranker_dataset[0].candidate_id, "cat-wrong-serial");
+assert.deepEqual(correctedReview.hard_negative_samples[0].conflicting_fields, ["serial_number"]);
+assert.equal(correctedReview.field_level_ground_truth.find((row) => row.field === "serial").value, "31/50");
 assert.equal(correctedFieldsSave.calls.some((call) => call.table === "listing_title_feedback"), true);
 const correctedAsset = correctedFieldsSave.calls.find((call) => call.table === "listing_assets").body;
 assert.equal(correctedAsset.additional_image_paths[0].role, "serial_crop");

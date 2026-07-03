@@ -1737,6 +1737,10 @@ function writerEvidenceDetails(result, asset = null, unresolved = []) {
 }
 
 function resultBox(result, asset = null) {
+  return TitleCardComponent(result, asset);
+}
+
+function TitleCardComponent(result, asset = null) {
   const confidence = normalizeConfidence(result.confidence);
   const failed = confidence === "FAILED";
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
@@ -1754,7 +1758,8 @@ function resultBox(result, asset = null) {
     saved: "已保存",
     skipped: "未留存",
     saving: "保存中…"
-  }[result.feedbackStatus] || "保存";
+  }[result.feedbackStatus] || "接受";
+  const rejectDisabled = result.feedbackStatus === "saving";
   const providerLabel = result.provider_label || providerById(result.provider)?.label || result.provider || "-";
   const unavailableTitle = failed
     ? `标题暂不可用：${friendlyErrorSummary(result.reason)}`
@@ -1770,6 +1775,7 @@ function resultBox(result, asset = null) {
           ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 单模型重试</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
+          <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
           ${showQuickApprove ? `<button class="copy-button publish-button quick-approve-button" type="button" data-quick-approve-publish="${result.index}" ${quickApproveDisabled ? "disabled" : ""}>快速批准并发布</button>` : ""}
           ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
         </div>
@@ -1777,10 +1783,7 @@ function resultBox(result, asset = null) {
       ${sideDecisionNotice(asset, result)}
       <textarea data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}">${escapeHtml(textareaValue)}</textarea>
       ${titleOverrideNotice(result)}
-      ${moduleSummary(result)}
-      ${publicationGateNotice(result)}
-      ${workflowSummaryNotice(result)}
-      <p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>
+      ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
       ${result.publishMessage ? `<p class="publish-status">${escapeHtml(result.publishMessage)}</p>` : ""}
       ${writerEvidenceDetails(result, asset, unresolved)}
@@ -1904,182 +1907,11 @@ function publicationGateNotice(result) {
 function titleOverrideNotice(result) {
   if (!result.title_override) return "";
 
-  const renderedTitle = result.rendered_title || result.final_title || "";
-  const canReplace = renderedTitle && renderedTitle !== result.title_override;
-
   return `
     <div class="title-override-note">
-      <span>人工标题覆盖</span>
-      ${canReplace ? `<button class="copy-button" type="button" data-use-rendered-title="${result.index}">使用模块标题</button>` : ""}
+      <span>人工标题覆盖会作为训练样本保存，不会反向修改内部结构化字段。</span>
     </div>
   `;
-}
-
-function modulePolicySummary(module) {
-  const policies = Array.isArray(module.field_policies) ? module.field_policies : [];
-  const pending = policies.filter((policy) => policy.requires_writer_confirmation === true);
-  if (!pending.length) return module.status || "REVIEW";
-  return pending
-    .slice(0, 3)
-    .map((policy) => labelForCsmField(policy.field))
-    .join(", ");
-}
-
-function draftGatePoliciesByField(result) {
-  return result?.publication_gate?.draft_gate?.by_field || result?.draft_gate?.by_field || {};
-}
-
-function policyForFields(fields = [], result, module = {}) {
-  const byField = draftGatePoliciesByField(result);
-  const policies = fields
-    .map((field) => byField[field])
-    .filter(Boolean);
-  if (policies.length) return policies;
-
-  const modulePolicies = Array.isArray(module.field_policies) ? module.field_policies : [];
-  return fields
-    .map((field) => modulePolicies.find((policy) => policy.field === field))
-    .filter(Boolean);
-}
-
-function strongestTokenPolicy(policies = []) {
-  if (policies.some((policy) => policy.display_policy === "SUGGEST_ONLY")) return "SUGGEST_ONLY";
-  if (policies.some((policy) => policy.display_policy === "OMIT")) return "OMIT";
-  if (policies.some((policy) => policy.display_policy === "INCLUDE_HIGHLIGHTED")) return "INCLUDE_HIGHLIGHTED";
-  if (policies.some((policy) => policy.display_policy === "INCLUDE_NORMAL")) return "INCLUDE_NORMAL";
-  return "";
-}
-
-function moduleTokenReviewReason(token = {}, policies = []) {
-  const highlighted = policies.find((policy) => policy.display_policy && policy.display_policy !== "INCLUDE_NORMAL");
-  if (highlighted?.resolution_reason) return highlighted.resolution_reason;
-  if (highlighted?.evidence_level) return `${highlighted.display_policy} · ${highlighted.evidence_level}`;
-  if (token.status && token.status !== "CONFIRMED") return token.status;
-  return "";
-}
-
-function moduleTokenClass(token = {}, result, module = {}) {
-  const policies = policyForFields(token.fields || [], result, module);
-  const policy = strongestTokenPolicy(policies);
-  const status = token.status || "";
-  const classes = ["module-token"];
-  if (policy) classes.push(`policy-${policy.toLowerCase().replace(/_/g, "-")}`);
-  if (policy === "INCLUDE_HIGHLIGHTED" || token.requires_review || ["REVIEW", "MISSING"].includes(status)) {
-    classes.push("needs-review");
-  }
-  if (policy === "SUGGEST_ONLY" || policy === "OMIT" || status === "CONFLICT") {
-    classes.push("suggest-only");
-  }
-  return classes.join(" ");
-}
-
-function moduleFieldKeys(module = {}) {
-  const fields = new Set();
-  if (Array.isArray(module.fields)) {
-    module.fields.forEach((field) => fields.add(field));
-  }
-  if (Array.isArray(module.field_keys)) {
-    module.field_keys.forEach((field) => fields.add(field));
-  }
-  if (Array.isArray(module.tokens)) {
-    module.tokens.forEach((token) => {
-      (token.fields || []).forEach((field) => fields.add(field));
-    });
-  }
-  if (!fields.size && module.key) fields.add(module.key);
-  return [...fields].filter(Boolean);
-}
-
-function moduleHasSpecificReview(module = {}, result) {
-  const tokens = Array.isArray(module.tokens) ? module.tokens : [];
-  if (tokens.some((token) => {
-    const status = token.status || "";
-    const policy = strongestTokenPolicy(policyForFields(token.fields || [], result, module));
-    return token.requires_review
-      || ["REVIEW", "MISSING", "CONFLICT"].includes(status)
-      || ["INCLUDE_HIGHLIGHTED", "SUGGEST_ONLY", "OMIT"].includes(policy);
-  })) return true;
-
-  const policies = policyForFields(moduleFieldKeys(module), result, module);
-  return policies.some((policy) => policy.requires_writer_confirmation === true
-    || ["INCLUDE_HIGHLIGHTED", "SUGGEST_ONLY", "OMIT"].includes(policy.display_policy));
-}
-
-function moduleClassName(module = {}, result) {
-  const classes = ["writer-module"];
-  const specificReview = moduleHasSpecificReview(module, result);
-  if (specificReview) classes.push("needs-review");
-  if (specificReview && module.display_policy) {
-    classes.push(`display-${String(module.display_policy).toLowerCase().replace(/_/g, "-")}`);
-  }
-  if (specificReview && module.review_priority) {
-    classes.push(`priority-${String(module.review_priority).toLowerCase()}`);
-  }
-  return classes.join(" ");
-}
-
-function moduleTokenSummary(module, result) {
-  const tokens = Array.isArray(module.tokens) ? module.tokens : [];
-  if (!tokens.length) return "";
-  return `
-    <div class="module-token-row" aria-label="模块词条置信状态">
-      ${tokens.map((token) => {
-        const policies = policyForFields(token.fields || [], result, module);
-        const reason = moduleTokenReviewReason(token, policies);
-        return `<mark class="${moduleTokenClass(token, result, module)}" title="${escapeHtml(reason)}">${escapeHtml(token.text || "")}</mark>`;
-      }).join("")}
-    </div>
-  `;
-}
-
-function moduleSummary(result) {
-  const modules = result.modules || {};
-  const order = Array.isArray(result.module_order) && result.module_order.length
-    ? result.module_order
-    : Object.keys(modules);
-  let visibleModules = order
-    .map((key) => modules[key])
-    .filter(Boolean);
-  const revealCount = Number(result.moduleRevealCount);
-  if (Number.isFinite(revealCount) && revealCount >= 0) {
-    visibleModules = visibleModules.slice(0, Math.max(0, Math.min(visibleModules.length, revealCount)));
-  }
-
-  if (!visibleModules.length) return "";
-
-  return `
-    <div class="writer-modules">
-      <p class="module-edit-hint">Enter 保存并跳到下一项，Shift+Enter 换行；黄色模块需要写手确认。</p>
-      ${visibleModules.map((module) => `
-        <div class="${moduleClassName(module, result)}">
-          <span>${escapeHtml(module.label || module.key)}</span>
-          ${moduleTokenSummary(module, result)}
-          <textarea data-module-input="${result.index}" data-module-key="${escapeHtml(module.key)}" aria-label="${escapeHtml(module.label || module.key)} 模块" title="Enter 保存并跳到下一项，Shift+Enter 换行">${escapeHtml(module.text || "")}</textarea>
-          <small>${escapeHtml(modulePolicySummary(module))}</small>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
-function resultModuleCount(result) {
-  const modules = result?.modules || {};
-  const order = Array.isArray(result?.module_order) && result.module_order.length
-    ? result.module_order
-    : Object.keys(modules);
-  return order.map((key) => modules[key]).filter(Boolean).length;
-}
-
-async function revealResultModules(result) {
-  const count = resultModuleCount(result);
-  if (!count) return;
-  result.moduleRevealCount = 0;
-  renderResults();
-  for (let index = 1; index <= count; index += 1) {
-    await wait(index === 1 ? 120 : 180);
-    result.moduleRevealCount = index;
-    renderResults();
-  }
 }
 
 function currentModalAsset() {
@@ -2363,7 +2195,6 @@ async function processTitles() {
         const result = await processAsset(asset);
         state.results.push(result);
         state.results.sort((a, b) => a.index - b.index);
-        await revealResultModules(result);
       } catch (error) {
         state.results.push(failedResult(asset, error));
       }
@@ -2473,101 +2304,6 @@ function finalizeTitleOverride(input) {
 
 function currentResolvedForResult(result) {
   return result.corrected_resolved || result.resolved || {};
-}
-
-function currentEvidenceForResult(result) {
-  return result.corrected_evidence || result.evidence || {};
-}
-
-function mergeFieldChanges(existing = [], incoming = []) {
-  const byField = new Map(existing.map((change) => [change.field, change]));
-  incoming.forEach((change) => byField.set(change.field, change));
-  return [...byField.values()];
-}
-
-async function applyModuleEdit(input) {
-  const result = state.results.find((item) => item.index === Number(input.dataset.moduleInput));
-  const moduleKey = input.dataset.moduleKey;
-  if (!result || !moduleKey) return;
-
-  input.disabled = true;
-  result.feedbackStatus = "";
-  result.feedbackMessage = "模块更新中…";
-  renderBatchTitles();
-
-  try {
-    const response = await fetch("/api/listing-render-title", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        resolved: currentResolvedForResult(result),
-        evidence: currentEvidenceForResult(result),
-        maxTitleLength,
-        module_edit: {
-          module_key: moduleKey,
-          module_text: input.value
-        }
-      })
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.message || `模块更新失败：${response.status}`);
-    }
-
-    result.corrected_resolved = payload.corrected_resolved;
-    result.corrected_evidence = payload.corrected_evidence;
-    result.resolved = payload.corrected_resolved;
-    result.evidence = payload.corrected_evidence;
-    result.fields = {
-      ...(result.fields || {}),
-      ...(payload.fields || {})
-    };
-    result.modules = payload.modules;
-    result.module_order = payload.module_order;
-    result.rendered_title = payload.rendered_title;
-    result.final_title = payload.final_title;
-    result.title = payload.final_title || result.title;
-    result.renderer = payload.renderer;
-    result.renderer_version = payload.renderer_version;
-    result.title_length_policy = payload.title_length_policy;
-    result.field_changes = mergeFieldChanges(result.field_changes || [], payload.field_changes || []);
-    resetPublishState(result);
-
-    if (result.title_override) {
-      result.feedbackMessage = "模块已更新；当前仍保留人工标题覆盖。";
-    } else {
-      result.correctedTitle = payload.final_title || result.correctedTitle;
-      result.feedbackMessage = "模块已更新，标题已重新渲染。";
-    }
-    delete input.dataset.dirty;
-  } catch (error) {
-    result.feedbackMessage = error.message || "模块更新失败。";
-  }
-
-  renderResults();
-}
-
-async function flushActiveModuleEditForResult(resultIndex) {
-  const active = document.activeElement?.closest?.("[data-module-input]");
-  if (!active || active.dataset.dirty !== "true") return;
-  if (Number(active.dataset.moduleInput) !== Number(resultIndex)) return;
-  await applyModuleEdit(active);
-}
-
-function useRenderedTitle(button) {
-  const result = state.results.find((item) => item.index === Number(button.dataset.useRenderedTitle));
-  if (!result) return;
-
-  const renderedTitle = result.rendered_title || result.final_title || result.title || "";
-  result.correctedTitle = renderedTitle;
-  result.title_override = null;
-  result.feedbackStatus = "";
-  result.feedbackMessage = "已使用模块重新渲染标题。";
-  resetPublishState(result);
-  renderResults();
 }
 
 function resetPublishState(result) {
@@ -2695,6 +2431,7 @@ async function saveFeedbackForResult(result, asset) {
         usage: result.usage || null,
         recovery: result.recovery || null,
         targeted_rescan_recovered: result.targeted_rescan_recovered === true,
+        review_outcome: result.explicitReviewOutcome || "",
         review_duration_ms: result.reviewStartedAt ? Date.now() - result.reviewStartedAt : null,
         field_changes: result.field_changes || [],
         images: (asset?.providerImages || asset?.images || []).map(reviewImageReference)
@@ -2731,7 +2468,17 @@ async function saveFeedbackForResult(result, asset) {
 async function saveTitleFeedback(button) {
   const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
-  await flushActiveModuleEditForResult(result?.index);
+  await saveFeedbackForResult(result, asset);
+}
+
+async function rejectTitleFeedback(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.rejectTitle));
+  const asset = state.assets.find((item) => item.index === Number(button.dataset.rejectTitle));
+  if (!result) return;
+  result.explicitReviewOutcome = "REJECTED";
+  result.feedbackStatus = "";
+  result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
+  resetPublishState(result);
   await saveFeedbackForResult(result, asset);
 }
 
@@ -2828,32 +2575,6 @@ function resetTool() {
   renderResults();
 }
 
-function nextModuleTarget(input) {
-  const resultIndex = input.dataset.moduleInput;
-  const inputs = [...elements.assetPreviewList.querySelectorAll("[data-module-input]")]
-    .filter((candidate) => candidate.dataset.moduleInput === resultIndex);
-  const currentIndex = inputs.indexOf(input);
-  const next = inputs[(currentIndex + 1) % Math.max(1, inputs.length)];
-  return next
-    ? {
-      resultIndex,
-      moduleKey: next.dataset.moduleKey
-    }
-    : null;
-}
-
-function focusModuleInput(target) {
-  if (!target) return;
-  requestAnimationFrame(() => {
-    const input = [...elements.assetPreviewList.querySelectorAll("[data-module-input]")]
-      .find((candidate) => candidate.dataset.moduleInput === target.resultIndex
-        && candidate.dataset.moduleKey === target.moduleKey);
-    if (!input) return;
-    input.focus();
-    input.select();
-  });
-}
-
 function bindEvents() {
   elements.imageInput.addEventListener("change", (event) => {
     handleFiles(event.target.files);
@@ -2914,6 +2635,12 @@ function bindEvents() {
       return;
     }
 
+    const rejectButton = event.target.closest("[data-reject-title]");
+    if (rejectButton) {
+      rejectTitleFeedback(rejectButton);
+      return;
+    }
+
     const quickApproveButton = event.target.closest("[data-quick-approve-publish]");
     if (quickApproveButton) {
       quickApproveAndPublish(quickApproveButton);
@@ -2926,12 +2653,6 @@ function bindEvents() {
       return;
     }
 
-    const useRenderedTitleButton = event.target.closest("[data-use-rendered-title]");
-    if (useRenderedTitleButton) {
-      useRenderedTitle(useRenderedTitleButton);
-      return;
-    }
-
     const emergencyRetryButton = event.target.closest("[data-emergency-retry]");
     if (emergencyRetryButton) retryAssetWithEmergency(emergencyRetryButton);
   });
@@ -2939,17 +2660,6 @@ function bindEvents() {
   elements.assetPreviewList.addEventListener("input", (event) => {
     const input = event.target.closest("[data-title-input]");
     if (input) updateCorrectedTitle(input);
-    const moduleInput = event.target.closest("[data-module-input]");
-    if (moduleInput) moduleInput.dataset.dirty = "true";
-  });
-
-  elements.assetPreviewList.addEventListener("keydown", (event) => {
-    const moduleInput = event.target.closest("[data-module-input]");
-    if (!moduleInput || event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
-
-    event.preventDefault();
-    const target = nextModuleTarget(moduleInput);
-    applyModuleEdit(moduleInput).finally(() => focusModuleInput(target));
   });
 
   elements.assetPreviewList.addEventListener("change", (event) => {
@@ -2958,9 +2668,6 @@ function bindEvents() {
       finalizeTitleOverride(titleInput);
       return;
     }
-
-    const moduleInput = event.target.closest("[data-module-input]");
-    if (moduleInput) applyModuleEdit(moduleInput);
   });
 
   elements.imageModal.addEventListener("click", (event) => {
