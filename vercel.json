@@ -22,9 +22,7 @@
   "functions": {
     "api/admin-import-writer-title-catalog-seed.js": {
       "maxDuration": 300,
-      "includeFiles": [
-        "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx"
-      ]
+      "includeFiles": "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx"
     }
   },
   "crons": [
