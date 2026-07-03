@@ -261,7 +261,7 @@ const catalogSeasonYearSoftPacket = buildVectorCandidatePacket({
 });
 assert.deepEqual(catalogSeasonYearSoftPacket.vector_retrieval.candidates[0].conflicting_fields, []);
 assert.deepEqual(catalogSeasonYearSoftPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["year"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogSeasonYearSoftPacket).prompt_candidate_count, 1);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogSeasonYearSoftPacket).prompt_candidate_count, 0);
 
 const catalogWeakYearConflictPacket = buildVectorCandidatePacket({
   sources: [{
@@ -514,7 +514,7 @@ const catalogManufacturerBrandSoftConflictPacket = buildVectorCandidatePacket({
 });
 assert.equal(catalogManufacturerBrandSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
 assert.deepEqual(catalogManufacturerBrandSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["manufacturer"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogManufacturerBrandSoftConflictPacket).prompt_candidate_count, 1);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogManufacturerBrandSoftConflictPacket).prompt_candidate_count, 0);
 
 const catalogSerialNumeratorSoftConflictPacket = buildVectorCandidatePacket({
   sources: [{
@@ -545,7 +545,7 @@ const catalogSerialNumeratorSoftConflictPacket = buildVectorCandidatePacket({
 });
 assert.equal(catalogSerialNumeratorSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
 assert.deepEqual(catalogSerialNumeratorSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["serial_number"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogSerialNumeratorSoftConflictPacket).prompt_candidate_count, 1);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogSerialNumeratorSoftConflictPacket).prompt_candidate_count, 0);
 
 const marketplaceWeakPacket = buildVectorCandidatePacket({
   sources: [{
@@ -609,14 +609,14 @@ const catalogFieldSupportOnlyPacket = buildVectorCandidatePacket({
 });
 const fieldSupportEligibility = vectorCandidatePacketAssistEligibility(catalogFieldSupportOnlyPacket);
 assert.equal(fieldSupportEligibility.prompt_candidate_count, 0, "low margin identity candidate must not enter prompt");
-assert.equal(fieldSupportEligibility.field_support_count >= 2, true, "catalog should still provide safe field-level vocabulary support");
+assert.equal(fieldSupportEligibility.field_support_count, 0, "field support must not come from prompt-unsafe catalog rows");
 const fieldSupportAssistPacket = buildVectorCandidateAssistPacket(catalogFieldSupportOnlyPacket);
 assert.equal(fieldSupportAssistPacket.vector_retrieval.candidates.length, 0);
-assert.equal(fieldSupportAssistPacket.vector_retrieval.status_code, "VECTOR_ASSIST_FIELD_SUPPORT_AVAILABLE");
-assert.equal(vectorCandidatePacketHasPromptContent(fieldSupportAssistPacket), true);
+assert.equal(fieldSupportAssistPacket.vector_retrieval.status_code, "VECTOR_ASSIST_NO_APPROVED_PROMPT_CANDIDATES");
+assert.equal(vectorCandidatePacketHasPromptContent(fieldSupportAssistPacket), false);
 assert.deepEqual(
   fieldSupportAssistPacket.vector_retrieval.field_support.map((row) => row.field).filter((field) => ["product", "card_name"].includes(field)),
-  ["product", "card_name"]
+  []
 );
 
 const productVocabularyDifferentSubjectPacket = buildVectorCandidatePacket({
@@ -649,8 +649,8 @@ const productVocabularyDifferentSubjectPacket = buildVectorCandidatePacket({
 });
 const differentSubjectEligibility = vectorCandidatePacketAssistEligibility(productVocabularyDifferentSubjectPacket);
 assert.equal(differentSubjectEligibility.prompt_candidate_count, 0, "different subject catalog row must not become an identity prompt candidate");
-assert.equal(differentSubjectEligibility.field_support_fields.includes("product"), true, "same product should still support product vocabulary");
-assert.equal(differentSubjectEligibility.field_support_fields.includes("card_name"), true, "same card name should still support card-name vocabulary");
+assert.equal(differentSubjectEligibility.field_support_fields.includes("product"), false, "conflicting subject catalog rows must not support product vocabulary");
+assert.equal(differentSubjectEligibility.field_support_fields.includes("card_name"), false, "conflicting subject catalog rows must not support card-name vocabulary");
 
 const queryConflictPacket = buildVectorCandidatePacket({
   sources: [{
@@ -754,6 +754,7 @@ assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(l
   eligible_candidate_count: 0,
   blocked_candidate_count: 1
 });
+assert.equal(vectorCandidatePacketAssistEligibility(lowMarginOpenSetPacket).field_support_count, 0, "open-set blocked candidates must not leak field support into prompt");
 assert.equal(buildVectorCandidateAssistPacket(lowMarginOpenSetPacket).vector_retrieval.candidates.length, 0);
 
 const lowMarginHardConstraintPacket = buildVectorCandidatePacket({

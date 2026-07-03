@@ -107,6 +107,56 @@ assert.equal(guarded.retrieval_title_assist?.blocked_by_direct_evidence_conflict
 assert.ok(guarded.retrieval_title_assist?.rejected_candidate_count >= 1);
 assert.ok(guarded.retrieval_title_assist?.rejected_reasons.length >= 1);
 
+const softConflictCompletion = {
+  retrieval: {
+    sources: [{
+      title: "2015-16 Panini Flawless Pele Legendary Signatures Auto /25",
+      fields: {
+        players: ["Pelé"],
+        year: "2015-16",
+        product: "Flawless Soccer"
+      },
+      provider_id: "postgres_hybrid",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "approved",
+      match_score: 0.91,
+      matched_fields: ["players", "year", "product", "serial_number"],
+      soft_conflicting_fields: ["product"],
+      selected: true
+    }]
+  }
+};
+const softConflictGuarded = applySafeRetrievalTitleAssist(draft, draft, softConflictCompletion, {});
+assert.equal(softConflictGuarded.final_title, draft.final_title);
+assert.notEqual(softConflictGuarded.retrieval_title_assist?.used, true);
+
+const anchorContradictionCompletion = {
+  retrieval: {
+    sources: [{
+      title: "2015-16 Panini Flawless Pele Legendary Signatures Auto /25",
+      fields: {
+        players: ["Pelé"],
+        year: "2015-16",
+        product: "Flawless Soccer"
+      },
+      provider_id: "postgres_hybrid",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "approved",
+      match_score: 0.91,
+      matched_fields: ["players", "year", "product", "serial_number"],
+      anchor_agreement: {
+        agreed: ["players", "year"],
+        contradicted: ["serial_denominator"],
+        prompt_hard_filter_pass: false
+      },
+      selected: true
+    }]
+  }
+};
+const anchorGuarded = applySafeRetrievalTitleAssist(draft, draft, anchorContradictionCompletion, {});
+assert.equal(anchorGuarded.final_title, draft.final_title);
+assert.notEqual(anchorGuarded.retrieval_title_assist?.used, true);
+
 // A same-identity scaffold is still allowed through the lane.
 const compatibleCompletion = {
   retrieval: {

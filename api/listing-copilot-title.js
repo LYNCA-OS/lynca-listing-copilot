@@ -3379,12 +3379,23 @@ function withCompletedEvidencePresentation(result, completion, payload) {
   };
 }
 
+function normalizedCandidateConflictFields(candidate = {}, extraKeys = []) {
+  const explicit = [
+    candidate.conflicting_fields,
+    candidate.direct_evidence_conflicts,
+    candidate.conflicts,
+    ...extraKeys.map((key) => candidate[key])
+  ].flatMap((value) => Array.isArray(value) ? value : []);
+  const anchorContradictions = Array.isArray(candidate.anchor_agreement?.contradicted)
+    ? candidate.anchor_agreement.contradicted
+    : [];
+  return [...new Set([...explicit, ...anchorContradictions].map((conflict) => normalizeStringOrNull(
+    typeof conflict === "string" ? conflict : conflict?.field || conflict?.field_name || conflict?.name || conflict?.conflicting_field
+  )).filter(Boolean))];
+}
+
 function candidateConflictFields(candidate = {}) {
-  return [
-    ...(Array.isArray(candidate.conflicting_fields) ? candidate.conflicting_fields : []),
-    ...(Array.isArray(candidate.direct_evidence_conflicts) ? candidate.direct_evidence_conflicts : []),
-    ...(Array.isArray(candidate.conflicts) ? candidate.conflicts : [])
-  ].map((conflict) => typeof conflict === "string" ? conflict : conflict?.field || conflict?.field_name || "").filter(Boolean);
+  return normalizedCandidateConflictFields(candidate, ["soft_conflicting_fields", "soft_conflicts"]);
 }
 
 function retrievalCandidateApprovedForIdentity(candidate = {}, providerOptions = {}) {
@@ -4572,18 +4583,20 @@ function retrievalSourcesFromCompletion(completion = {}) {
 }
 
 function retrievalSourceConflictFields(source = {}) {
-  const explicit = [
-    source.conflicting_fields,
-    source.direct_evidence_conflicts,
-    source.conflicts
-  ].flatMap((value) => Array.isArray(value) ? value : []);
-  return [...new Set(explicit.map((field) => normalizeStringOrNull(
-    typeof field === "string" ? field : field?.field || field?.field_name || field?.name || field?.conflicting_field
-  )).filter(Boolean))];
+  return normalizedCandidateConflictFields(source);
+}
+
+function retrievalSourcePromptConflictFields(source = {}) {
+  return normalizedCandidateConflictFields(source, ["soft_conflicting_fields", "soft_conflicts"]);
 }
 
 function retrievalSourceHasDirectConflict(source = {}) {
   if (retrievalSourceConflictFields(source).length) return true;
+  return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
+}
+
+function retrievalSourceHasPromptConflict(source = {}) {
+  if (retrievalSourcePromptConflictFields(source).length) return true;
   return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
 }
 
@@ -4946,6 +4959,7 @@ function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {},
   const sourceIndex = Number(source.__title_assist_source_index);
   const topRankedLane = sourceIndex === 0;
   if (!retrievalSourceIsTrustedTitleAssist(source)) return false;
+  if (retrievalSourceHasPromptConflict(source)) return false;
   if (retrievalSourceHasBlockingTitleConflict(source, currentFields, currentTitle)) return false;
   if (!retrievalSourceCompatibleWithCurrent(source, currentFields, currentTitle)) return false;
   const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
