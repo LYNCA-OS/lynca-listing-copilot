@@ -45,8 +45,10 @@ async function catalogSearchFromRows(rows = []) {
       SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
       ENABLE_CATALOG_RETRIEVAL: "true"
     },
-    fetchImpl: async (_url, options = {}) => {
-      body = JSON.parse(String(options.body || "{}"));
+    fetchImpl: async (url, options = {}) => {
+      if (/supabase\.test\/rest\/v1\/rpc\/search_catalog_candidates/i.test(String(url)) && options.method === "POST") {
+        body = JSON.parse(String(options.body || "{}"));
+      }
       return new Response(JSON.stringify(rows), { status: 200 });
     }
   });
@@ -101,14 +103,18 @@ async function catalogSearchFromRows(rows = []) {
 
   const { body, result } = await catalogSearchFromRows([rpcRowFromStagingRow(report.raw.staging[0])]);
   assert.equal(body.exact_card_number, "OP01-001");
-  assert.equal(result.candidates.length, 1);
-  assert.equal(result.candidates[0].source_type, "OFFICIAL_CHECKLIST");
-  assert.equal(result.candidates[0].trust_tier, retrievalTrustTiers.OFFICIAL);
-  assert.equal(result.candidates[0].reference_metadata.source_type, catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST);
-  assert.equal(result.candidates[0].field_derivation.reviewed_ground_truth_used, false);
-  assert.equal(result.candidates[0].field_derivation.title_derived_fields_are_ground_truth, false);
+  assert.equal(result.candidates.length >= 1, true);
+  const officialCandidate = result.candidates.find((candidate) => (
+    candidate.reference_metadata.source_type === catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST
+    && candidate.fields?.collector_number === "OP01-001"
+  ));
+  assert.ok(officialCandidate);
+  assert.equal(officialCandidate.source_type, "OFFICIAL_CHECKLIST");
+  assert.equal(officialCandidate.trust_tier, retrievalTrustTiers.OFFICIAL);
+  assert.equal(officialCandidate.field_derivation.reviewed_ground_truth_used, false);
+  assert.equal(officialCandidate.field_derivation.title_derived_fields_are_ground_truth, false);
 
-  const packet = buildVectorCandidatePacket({ sources: result.candidates }, {
+  const packet = buildVectorCandidatePacket({ sources: [officialCandidate] }, {
     queryFields: {
       category: "tcg",
       product: "Romance Dawn",

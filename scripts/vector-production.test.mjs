@@ -581,6 +581,76 @@ assert.equal(vectorCandidatePacketAssistEligibility(marketplaceWeakPacket).field
 assert.equal(buildVectorCandidateAssistPacket(marketplaceWeakPacket).vector_retrieval.candidates.length, 0);
 assert.equal(vectorCandidatePacketHasPromptContent(buildVectorCandidateAssistPacket(marketplaceWeakPacket)), false);
 
+const communityCatalogFieldSupportPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "pokemon-community-support",
+    candidate_identity_id: "pokemon-community-alakazam",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    reference_metadata: {
+      retrieval_status: "candidate",
+      source_type: "POKEMON_TCG_COMMUNITY_API",
+      source_status: "COMMUNITY_API_CANDIDATE"
+    },
+    supporting_fields: ["year", "product", "players", "collector_number", "rarity"],
+    fields: {
+      year: "2006",
+      manufacturer: "Pokemon",
+      product: "Pokemon EX Crystal Guardians",
+      players: ["Alakazam"],
+      collector_number: "99",
+      rarity: "Holo Rare"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2006",
+    manufacturer: "Pokemon",
+    product: "Pokemon EX Crystal Guardians",
+    players: ["Alakazam"],
+    collector_number: "99"
+  }
+});
+const communitySupportEligibility = vectorCandidatePacketAssistEligibility(communityCatalogFieldSupportPacket);
+assert.equal(communitySupportEligibility.prompt_candidate_count, 0, "community catalog rows must not become approved identity candidates");
+assert.equal(communitySupportEligibility.field_support_fields.includes("product"), true);
+assert.equal(communitySupportEligibility.field_support_fields.includes("collector_number"), true);
+const communityAssistPacket = buildVectorCandidateAssistPacket(communityCatalogFieldSupportPacket);
+assert.equal(communityAssistPacket.vector_retrieval.candidates.length, 0);
+assert.equal(communityAssistPacket.vector_retrieval.field_support.some((row) => row.source_trust === "CATALOG_FIELD_SUPPORT"), true);
+assert.equal(communityAssistPacket.vector_retrieval.field_support.some((row) => row.source_type === "POKEMON_TCG_COMMUNITY_API"), true);
+
+const externalWeakNormalizedPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "external-weak-normalized",
+    candidate_identity_id: "external-weak-normalized",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    reference_metadata: {
+      retrieval_status: "candidate",
+      source_type: "EXTERNAL_DIRECTORY_WEAK"
+    },
+    supporting_fields: ["year", "product", "players"],
+    fields: {
+      year: "2006",
+      manufacturer: "Pokemon",
+      product: "Pokemon EX Crystal Guardians",
+      players: ["Alakazam"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2006",
+    manufacturer: "Pokemon",
+    product: "Pokemon EX Crystal Guardians",
+    players: ["Alakazam"]
+  }
+});
+assert.equal(vectorCandidatePacketAssistEligibility(externalWeakNormalizedPacket).field_support_count, 0, "EXTERNAL_DIRECTORY_WEAK must fail closed even after source type normalization");
+assert.equal(buildVectorCandidateAssistPacket(externalWeakNormalizedPacket).vector_retrieval.field_support.length, 0);
+
 const catalogFieldSupportOnlyPacket = buildVectorCandidatePacket({
   open_set_decision: "LOW_MARGIN_MATCH",
   open_set_reason: "similar catalog family but no exact identity lock",

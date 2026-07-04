@@ -39,6 +39,34 @@ function liveFetch(url) {
   }));
 }
 
+const wrongSupabaseRows = [{
+  identity_id: "wrong-local-row",
+  identity_key: "wrong-local-row",
+  canonical_title: "Wrong Local Similar Card #999",
+  fields: {
+    category: "tcg",
+    product: "Wrong Local Product",
+    players: ["Wrong Local Subject"],
+    collector_number: "999"
+  },
+  retrieval_status: "reviewed",
+  source_type: "INTERNAL_CORRECTED_TITLE",
+  source_status: "AUTO_PARSED_FROM_VERIFIED_TITLE",
+  supporting_fields: ["product", "players", "collector_number"],
+  raw_score: 0.91,
+  normalized_score: 0.91
+}];
+
+function supabaseAndLiveFetch(url, options = {}) {
+  if (/supabase\.test\/rest\/v1\/rpc\/search_catalog_candidates/i.test(String(url)) && options.method === "POST") {
+    return Promise.resolve(new Response(JSON.stringify(wrongSupabaseRows), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    }));
+  }
+  return liveFetch(url, options);
+}
+
 {
   const provider = catalogProvider({
     env: {
@@ -71,6 +99,40 @@ function liveFetch(url) {
   assert.equal(result.candidates[0].fields.serial_number == null, true);
   assert.equal(result.candidates[0].fields.card_grade == null, true);
   assert.equal(result.candidates[0].fields.cert_number == null, true);
+}
+
+{
+  const provider = catalogProvider({
+    env: {
+      ENABLE_CATALOG_RETRIEVAL: "true",
+      ENABLE_LIVE_CURATED_CATALOG_FALLBACK: "true",
+      SUPABASE_URL: "https://supabase.test",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role"
+    },
+    fetchImpl: supabaseAndLiveFetch
+  });
+  const result = await provider.search({
+    query: {
+      exact_subject: "Chopper",
+      exact_product: "Star Wars Unlimited",
+      exact_card_number: "188"
+    },
+    resolved: {
+      category: "tcg",
+      product: "Star Wars Unlimited",
+      players: ["Chopper"],
+      collector_number: "188"
+    }
+  });
+  assert.equal(result.provider_id, retrievalProviderIds.CATALOG);
+  assert.equal(result.unavailable, undefined);
+  assert.equal(result.candidates.length, 2);
+  assert.equal(result.candidates.some((candidate) => candidate.candidate_identity_id === "wrong-local-row"), true);
+  const liveCandidate = result.candidates.find((candidate) => candidate.fields?.card_name === "Chopper - Metal Menace");
+  assert.ok(liveCandidate, "live curated catalog fallback must append even when Supabase returns wrong local rows");
+  assert.equal(liveCandidate.reference_metadata.source_type, "EXTERNAL_DIRECTORY_WEAK");
+  assert.equal(liveCandidate.source_trust, "");
+  assert.equal(liveCandidate.fields.collector_number, "188");
 }
 
 {
