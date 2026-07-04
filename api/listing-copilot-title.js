@@ -1236,6 +1236,21 @@ function normalizeStringOrNull(value) {
   return normalized || null;
 }
 
+function normalizeGradeCompanyForFields(value) {
+  const normalized = normalizeStringOrNull(value);
+  if (!normalized) return null;
+  if (/^(?:true|false|null|none|unknown|n\/a|na|graded|ungraded)$/i.test(normalized)) return null;
+  if (/\bpsa\s*\/?\s*dna\b/i.test(normalized)) return "PSA/DNA";
+  if (/\bpsa\b/i.test(normalized)) return "PSA";
+  if (/\b(?:beckett|bgs)\b/i.test(normalized)) return "BGS";
+  if (/\bsgc\b/i.test(normalized)) return "SGC";
+  if (/\b(?:cgc|csg)\b/i.test(normalized)) return "CGC";
+  if (/\btag\b/i.test(normalized)) return "TAG";
+  if (/\b(?:ccic|gtbc|bgn|hga|isa|gma|ksa|ace)\b/i.test(normalized)) return normalized.toUpperCase();
+  if (/\b(?:gem|mint|mt|pristine|auth|auto|sig|grade)\b|\d/.test(normalized.toLowerCase())) return null;
+  return normalized;
+}
+
 function cleanPlayerNameForFields(value) {
   let text = normalizeStringOrNull(value);
   if (!text) return null;
@@ -1339,7 +1354,7 @@ function normalizeFields(fields = {}) {
     checklist_code: normalizeStringOrNull(fields.checklist_code),
     serial_number: normalizeStringOrNull(fields.serial_number),
     numerical_rarity: normalizeStringOrNull(fields.numerical_rarity || fields.numericalRarity),
-    grade_company: normalizeStringOrNull(fields.grade_company),
+    grade_company: normalizeGradeCompanyForFields(fields.grade_company),
     grade: normalizeStringOrNull(fields.grade || fields.card_grade),
     card_grade: normalizeStringOrNull(fields.card_grade || fields.grade),
     auto_grade: normalizeStringOrNull(fields.auto_grade),

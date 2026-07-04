@@ -146,11 +146,34 @@ const serialNumberOnlyDoesNotBackfillNumericalRarity = await callApi({
 
 assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.serial_number, "2/3");
 assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.numerical_rarity, null);
-// Directly read current-image serial backfills the denominator-only print
-// run in the TITLE (presentation only; resolved.numerical_rarity stays null).
-assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /#\/3/);
-assert.doesNotMatch(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /2\/3/);
+// Directly read current-image serial backfills the print run in the TITLE
+// (presentation only; resolved.numerical_rarity stays null). Catalog/reference
+// candidates still cannot contribute the numerator.
+assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /2\/3/);
+assert.doesNotMatch(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /#\/3/);
 assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /BGS 8\.5\/10/);
+
+const booleanGradeCompanyRejected = await callApi({
+  title: "2018-19 Panini Court Kings Trae Young Heir Apparent Autographs Sapphire TRUE 10",
+  confidence: "HIGH",
+  reason: "Provider confused a non-company token with a grading company.",
+  fields: {
+    year: "2018-19",
+    manufacturer: "Panini",
+    product: "Court Kings",
+    player: "Trae Young",
+    card_name: "Heir Apparent Autographs",
+    parallel_exact: "Sapphire",
+    grade_company: "true",
+    card_grade: "10",
+    grade_type: "CARD_ONLY",
+    auto: true
+  },
+  unresolved: []
+});
+assert.equal(booleanGradeCompanyRejected.resolved.grade_company, null);
+assert.doesNotMatch(booleanGradeCompanyRejected.title, /\bTRUE\s+10\b/i);
+assert.doesNotMatch(booleanGradeCompanyRejected.rendered_fields?.modules?.grading?.text || "", /\bTRUE\b/i);
 
 const backgroundIgnored = await callApi({
   title: "Metaverse Cards 2024 Topps Chrome Shohei Ohtani",

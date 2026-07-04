@@ -791,6 +791,49 @@ assert.deepEqual(reviewedModules.module_order, [
   "grading"
 ]);
 
+const directCurrentSerialBackfill = renderListingPresentation({
+  resolved: {
+    year: "2024-25",
+    brand: "Panini",
+    product: "Immaculate",
+    players: ["Anthony Edwards"],
+    card_type: "Patch Auto",
+    serial_number: "2/3",
+    grade_company: "BGS",
+    card_grade: "8.5",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  evidence: {
+    serial_number: createEvidenceField({
+      value: "2/3",
+      status: "CONFIRMED",
+      confidence: 0.95,
+      sources: [{ source_type: "CARD_FRONT", observed_text: "2/3" }]
+    })
+  }
+});
+assert.match(directCurrentSerialBackfill.final_title, /2\/3/);
+assert.doesNotMatch(directCurrentSerialBackfill.final_title, /#\/3/);
+assert.equal(directCurrentSerialBackfill.modules.numerical_rarity.text, "2/3");
+
+const booleanGradeCompanySuppressed = renderListingPresentation({
+  resolved: {
+    year: "2018-19",
+    brand: "Panini",
+    product: "Court Kings",
+    players: ["Trae Young"],
+    card_name: "Heir Apparent Autographs",
+    parallel_exact: "Sapphire",
+    grade_company: "true",
+    card_grade: "10",
+    grade_type: "CARD_ONLY",
+    auto: true
+  }
+});
+assert.doesNotMatch(booleanGradeCompanySuppressed.final_title, /\bTRUE\s+10\b/i);
+assert.doesNotMatch(booleanGradeCompanySuppressed.modules.grading.text, /\bTRUE\b/i);
+
 const colorWithReviewDescriptor = renderListingPresentation({
   resolved: {
     year: "2024",
