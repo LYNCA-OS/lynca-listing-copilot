@@ -486,6 +486,36 @@ assert.equal(exactCodeRow.anchor_agreement.exact_code_match, true);
 assert.equal(exactCodeRow.anchor_agreement.prompt_hard_filter_pass, true);
 assert.equal(vectorCandidatePacketAssistEligibility(catalogExactCodePacket).prompt_candidate_count, 1);
 
+const tcgPartialCodePacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "ygopro-partial-code",
+    candidate_identity_id: "identity-dark-magician-ct14",
+    provider_id: "catalog",
+    source_type: "YGOPRODECK_COMMUNITY_API",
+    source_trust: "REFERENCE_CANDIDATE",
+    reference_metadata: { source_type: "YGOPRODECK_COMMUNITY_API" },
+    supporting_fields: ["subjects", "collector_number"],
+    matched_fields: ["subjects"],
+    fields: {
+      product: "Mega-Tins",
+      players: ["Dark Magician"],
+      collector_number: "CT14-EN001"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    players: ["Dark Magician"],
+    collector_number: "EN001"
+  }
+});
+const partialCodeRow = tcgPartialCodePacket.vector_retrieval.candidates[0];
+assert.equal(partialCodeRow.anchor_agreement.exact_code_match, false, "TCG suffix match must not become an exact printed-code anchor");
+assert.equal(partialCodeRow.anchor_agreement.prompt_hard_filter_pass, false);
+assert.ok(partialCodeRow.anchor_agreement.contradicted.includes("collector_number"));
+assert.ok(partialCodeRow.conflicting_fields.includes("collector_number"));
+assert.equal(vectorCandidatePacketAssistEligibility(tcgPartialCodePacket).prompt_candidate_count, 0);
+
 const catalogManufacturerBrandSoftConflictPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "catalog-manufacturer-brand-soft-conflict",

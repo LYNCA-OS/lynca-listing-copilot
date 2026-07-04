@@ -494,6 +494,83 @@ await withTempDir(async (dir) => {
   assert.match(hashText, /^[a-f0-9]{64}\s+predictions\.jsonl/);
 });
 
+await withTempDir(async (dir) => {
+  const inputPath = join(dir, "blind_inputs.jsonl");
+  const outputPath = join(dir, "predictions.jsonl");
+  const imagePath = join(dir, "opaque_img_0.jpg");
+  await writeFile(imagePath, tinyPng);
+  await writeJsonl(inputPath, [{
+    case_id: "case-anchor-pass-shadow",
+    image_paths: [imagePath]
+  }]);
+  const { fetchImpl } = cloudFetchRecorder({
+    titleResponder: () => ({
+      final_title: "2025 Topps Chrome Test Player Gold #/50 PSA 10",
+      confidence: "HIGH",
+      model_id: "gpt-4.1-mini",
+      resolved: {
+        year: "2025",
+        manufacturer: "Topps",
+        product: "Topps Chrome",
+        players: ["Test Player"],
+        surface_color: "Gold",
+        serial_number: "12/50",
+        grade_company: "PSA",
+        card_grade: "10"
+      },
+      usage: {
+        input_tokens: 10,
+        output_tokens: 20,
+        total_tokens: 30
+      },
+      catalog_assist_eligibility: {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        conflict_blocked_count: 0,
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: []
+      },
+      catalog_candidate_packet: {
+        vector_retrieval: {
+          candidates: [{
+            candidate_id: "anchor-pass-shadow-only",
+            candidate_identity_id: "identity-shadow-only",
+            source_trust: "APPROVED_REFERENCE",
+            reference_title: "2025 Topps Chrome Test Player Gold",
+            matched_fields: ["year", "players"],
+            supporting_fields: ["year", "players"],
+            conflicting_fields: [],
+            anchor_agreement: {
+              agreed: ["year", "subjects"],
+              contradicted: [],
+              exact_code_match: false,
+              prompt_hard_filter_applicable: true,
+              prompt_hard_filter_pass: true
+            },
+            fields: {
+              year: "2025",
+              product: "Topps Chrome",
+              players: ["Test Player"]
+            }
+          }]
+        }
+      }
+    })
+  });
+  const result = await runBlindRecognition({
+    inputPath,
+    outputPath,
+    baseUrl: "https://listing.test",
+    username: "metaverse",
+    password: "mtv",
+    fetchImpl
+  });
+  const debugRow = result.predictions[0].c_group_diagnostics.catalog_candidate_debug[0];
+  assert.equal(debugRow.anchor_agreement.prompt_hard_filter_pass, true);
+  assert.equal(debugRow.prompt_admitted, false, "debug output must not treat anchor-pass shadow candidates as prompt-admitted");
+  assert.equal(result.predictions[0].c_group_diagnostics.catalog_assist_eligibility.prompt_candidate_count, 0);
+});
+
 
 await withTempDir(async (dir) => {
   const largePng = tinyPng;
