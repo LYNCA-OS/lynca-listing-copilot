@@ -1,0 +1,456 @@
+{
+  "schema_version": "golden-dataset-v1",
+  "description": "Development-only fixture dataset for exercising commercial metric math. This is not a held-out commercial benchmark and must not be used for accuracy claims.",
+  "created_at": "2026-06-22",
+  "splits": {
+    "development": [
+      {
+        "asset_id": "dev-exact-focused-serial-001",
+        "images": [
+          {
+            "role": "front",
+            "object_path": "fixtures/dev-exact-focused-serial-001/front.jpg"
+          },
+          {
+            "role": "back",
+            "object_path": "fixtures/dev-exact-focused-serial-001/back.jpg"
+          },
+          {
+            "role": "serial_crop",
+            "object_path": "fixtures/dev-exact-focused-serial-001/serial-crop.jpg"
+          }
+        ],
+        "category": "sports_card",
+        "difficulty_tags": ["raw", "serial", "front_back"],
+        "capture_tags": ["front_back"],
+        "ground_truth_route": "AI_COMPLETE_REVIEW",
+        "ground_truth_fields": {
+          "year": "2025",
+          "brand": "Topps",
+          "product": "Topps Chrome",
+          "players": ["Cooper Flagg"],
+          "serial_number": "31/50",
+          "collector_number": "136",
+          "checklist_code": "TCAR-CF",
+          "final_title_required_fields": true,
+          "final_title_unsubstantiated_fields": false
+        },
+        "critical_fields": [
+          "year",
+          "brand",
+          "product",
+          "players",
+          "serial_number",
+          "collector_number",
+          "checklist_code",
+          "final_title_required_fields",
+          "final_title_unsubstantiated_fields"
+        ],
+        "prediction": {
+          "route": "AI_COMPLETE_REVIEW",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
+          "resolved_fields": {
+            "year": "2025",
+            "brand": "Topps",
+            "product": "Topps Chrome",
+            "players": ["Cooper Flagg"],
+            "serial_number": "31/50",
+            "collector_number": "136",
+            "checklist_code": "TCAR-CF",
+            "final_title_required_fields": true,
+            "final_title_unsubstantiated_fields": false
+          },
+          "final_title": "2025 Topps Chrome Cooper Flagg 31/50 RC",
+          "review_outcome": "ACCEPTED_UNCHANGED",
+          "review_duration_ms": 4200,
+          "usage": {
+            "provider_calls": 2,
+            "retrieval_rounds": 1,
+            "latency_ms": 3100,
+            "estimated_cost_usd": 0.012
+          },
+          "recovery": {
+            "focused_reread_attempted": true,
+            "focused_reread_recovered": true
+          }
+        }
+      },
+      {
+        "asset_id": "dev-exact-retrieval-002",
+        "images": [
+          {
+            "role": "front",
+            "object_path": "fixtures/dev-exact-retrieval-002/front.jpg"
+          },
+          {
+            "role": "back",
+            "object_path": "fixtures/dev-exact-retrieval-002/back.jpg"
+          }
+        ],
+        "category": "sports_card",
+        "difficulty_tags": ["high_value_insert", "front_back"],
+        "capture_tags": ["front_back"],
+        "ground_truth_route": "AI_COMPLETE_REVIEW",
+        "ground_truth_fields": {
+          "year": "2024",
+          "brand": "Panini",
+          "product": "Prizm",
+          "players": ["Victor Wembanyama"],
+          "insert": "Color Blast",
+          "case_hit": true,
+          "final_title_required_fields": true,
+          "final_title_unsubstantiated_fields": false
+        },
+        "critical_fields": [
+          "year",
+          "brand",
+          "product",
+          "players",
+          "insert",
+          "case_hit",
+          "final_title_required_fields",
+          "final_title_unsubstantiated_fields"
+        ],
+        "prediction": {
+          "route": "AI_COMPLETE_REVIEW",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
+          "resolved_fields": {
+            "year": "2024",
+            "brand": "Panini",
+            "product": "Prizm",
+            "players": ["Victor Wembanyama"],
+            "insert": "Color Blast",
+            "case_hit": true,
+            "final_title_required_fields": true,
+            "final_title_unsubstantiated_fields": false
+          },
+          "final_title": "2024 Panini Prizm Victor Wembanyama Color Blast Case Hit",
+          "retrieval": {
+            "providers_used": ["brave", "ebay_browse"],
+            "providers_recovered": ["brave"],
+            "reference_helped": ["ebay_browse"]
+          },
+          "review_outcome": "ACCEPTED_UNCHANGED",
+          "review_duration_ms": 3900,
+          "usage": {
+            "provider_calls": 1,
+            "retrieval_rounds": 2,
+            "latency_ms": 4500,
+            "estimated_cost_usd": 0.015
+          },
+          "recovery": {
+            "retrieval_attempted": true,
+            "retrieval_recovered": true,
+            "brave_attempted": true,
+            "brave_recovered": true,
+            "ebay_reference_used": true,
+            "ebay_reference_helped": true
+          }
+        }
+      },
+      {
+        "asset_id": "dev-glare-targeted-rescan-003",
+        "images": [
+          {
+            "role": "front",
+            "object_path": "fixtures/dev-glare-targeted-rescan-003/front.jpg"
+          },
+          {
+            "role": "back",
+            "object_path": "fixtures/dev-glare-targeted-rescan-003/back.jpg"
+          },
+          {
+            "role": "serial_crop",
+            "object_path": "fixtures/dev-glare-targeted-rescan-003/serial-after-rescan.jpg"
+          }
+        ],
+        "category": "sports_card",
+        "difficulty_tags": ["glare", "serial", "front_back"],
+        "capture_tags": ["front_back", "targeted_rescan"],
+        "ground_truth_route": "AI_COMPLETE_REVIEW",
+        "ground_truth_fields": {
+          "year": "2023-24",
+          "brand": "Panini",
+          "product": "National Treasures",
+          "players": ["Anthony Edwards"],
+          "serial_number": "2/5",
+          "patch": true,
+          "auto": true,
+          "final_title_required_fields": true,
+          "final_title_unsubstantiated_fields": false
+        },
+        "critical_fields": [
+          "year",
+          "brand",
+          "product",
+          "players",
+          "serial_number",
+          "patch",
+          "auto",
+          "final_title_required_fields",
+          "final_title_unsubstantiated_fields"
+        ],
+        "prediction": {
+          "route": "AI_COMPLETE_REVIEW",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
+          "resolved_fields": {
+            "year": "2023-24",
+            "brand": "Panini",
+            "product": "National Treasures",
+            "players": ["Anthony Edwards"],
+            "serial_number": "2/5",
+            "patch": true,
+            "auto": true,
+            "final_title_required_fields": true,
+            "final_title_unsubstantiated_fields": false
+          },
+          "final_title": "2023-24 Panini National Treasures Anthony Edwards Auto Patch 2/5",
+          "review_outcome": "TARGETED_RESCAN_RECOVERED",
+          "review_duration_ms": 6100,
+          "usage": {
+            "provider_calls": 2,
+            "retrieval_rounds": 0,
+            "latency_ms": 5200,
+            "estimated_cost_usd": 0.018
+          },
+          "recovery": {
+            "targeted_rescan_attempted": true,
+            "targeted_rescan_recovered": true,
+            "glare_attempted": true,
+            "glare_recovered": true
+          }
+        }
+      },
+      {
+        "asset_id": "dev-corrected-serial-004",
+        "images": [
+          {
+            "role": "front",
+            "object_path": "fixtures/dev-corrected-serial-004/front.jpg"
+          },
+          {
+            "role": "back",
+            "object_path": "fixtures/dev-corrected-serial-004/back.jpg"
+          }
+        ],
+        "category": "sports_card",
+        "difficulty_tags": ["serial", "front_back"],
+        "capture_tags": ["front_back"],
+        "ground_truth_route": "WRITER_REVIEW_REQUIRED",
+        "ground_truth_fields": {
+          "year": "2025",
+          "brand": "Topps",
+          "product": "Chrome",
+          "players": ["Cooper Flagg"],
+          "serial_number": "31/50",
+          "final_title_required_fields": true,
+          "final_title_unsubstantiated_fields": false
+        },
+        "critical_fields": [
+          "year",
+          "brand",
+          "product",
+          "players",
+          "serial_number",
+          "final_title_required_fields",
+          "final_title_unsubstantiated_fields"
+        ],
+        "prediction": {
+          "route": "WRITER_REVIEW_REQUIRED",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
+          "resolved_fields": {
+            "year": "2025",
+            "brand": "Topps",
+            "product": "Chrome",
+            "players": ["Cooper Flagg"],
+            "serial_number": "37/50",
+            "final_title_required_fields": true,
+            "final_title_unsubstantiated_fields": false
+          },
+          "final_title": "2025 Topps Chrome Cooper Flagg 37/50",
+          "corrected_resolved_fields": {
+            "year": "2025",
+            "brand": "Topps",
+            "product": "Chrome",
+            "players": ["Cooper Flagg"],
+            "serial_number": "31/50",
+            "final_title_required_fields": true,
+            "final_title_unsubstantiated_fields": false
+          },
+          "corrected_title": "2025 Topps Chrome Cooper Flagg 31/50",
+          "review_outcome": "CORRECTED_FIELDS",
+          "field_changes": [
+            {
+              "field": "serial_number",
+              "from": "37/50",
+              "to": "31/50",
+              "change_type": "OPERATOR_CORRECTION"
+            }
+          ],
+          "review_duration_ms": 8300,
+          "usage": {
+            "provider_calls": 1,
+            "retrieval_rounds": 1,
+            "latency_ms": 3600,
+            "estimated_cost_usd": 0.01
+          }
+        }
+      },
+      {
+        "asset_id": "dev-false-ai-complete-005",
+        "images": [
+          {
+            "role": "front",
+            "object_path": "fixtures/dev-false-ai-complete-005/front.jpg"
+          }
+        ],
+        "category": "sports_card",
+        "difficulty_tags": ["complex_parallel", "front_only"],
+        "capture_tags": ["front_only"],
+        "ground_truth_route": "WRITER_REVIEW_REQUIRED",
+        "ground_truth_fields": {
+          "year": "2023-24",
+          "brand": "Panini",
+          "product": "Prizm",
+          "players": ["Victor Wembanyama"],
+          "parallel": "Silver Prizm",
+          "final_title_required_fields": true,
+          "final_title_unsubstantiated_fields": false
+        },
+        "critical_fields": [
+          "year",
+          "brand",
+          "product",
+          "players",
+          "parallel",
+          "final_title_required_fields",
+          "final_title_unsubstantiated_fields"
+        ],
+        "prediction": {
+          "route": "AI_COMPLETE_REVIEW",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini",
+          "resolved_fields": {
+            "year": "2023-24",
+            "brand": "Panini",
+            "product": "Prizm",
+            "players": ["Victor Wembanyama"],
+            "parallel": "Gold Wave",
+            "final_title_required_fields": true,
+            "final_title_unsubstantiated_fields": false
+          },
+          "final_title": "2023-24 Panini Prizm Victor Wembanyama Gold Wave",
+          "review_outcome": "ACCEPTED_UNCHANGED",
+          "accepted_critical_error": true,
+          "review_duration_ms": 2800,
+          "usage": {
+            "provider_calls": 1,
+            "retrieval_rounds": 0,
+            "latency_ms": 2500,
+            "estimated_cost_usd": 0.006
+          }
+        }
+      },
+      {
+        "asset_id": "dev-technical-failure-006",
+        "images": [
+          {
+            "role": "front",
+            "object_path": "fixtures/dev-technical-failure-006/front.jpg"
+          }
+        ],
+        "category": "sports_card",
+        "difficulty_tags": ["blur", "front_only"],
+        "capture_tags": ["front_only"],
+        "ground_truth_route": "AI_COMPLETE_REVIEW",
+        "ground_truth_fields": {
+          "year": "2024",
+          "brand": "Topps",
+          "product": "Bowman Chrome",
+          "players": ["Dylan Crews"],
+          "final_title_required_fields": true,
+          "final_title_unsubstantiated_fields": false
+        },
+        "critical_fields": [
+          "year",
+          "brand",
+          "product",
+          "players",
+          "final_title_required_fields",
+          "final_title_unsubstantiated_fields"
+        ],
+        "prediction": {
+          "route": "FAILED_TECHNICAL",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
+          "technical_failure": true,
+          "resolved_fields": {},
+          "review_outcome": "TECHNICAL_FAILURE",
+          "usage": {
+            "provider_calls": 1,
+            "retrieval_rounds": 0,
+            "latency_ms": 1200,
+            "estimated_cost_usd": 0.002
+          }
+        }
+      },
+      {
+        "asset_id": "dev-nonstandard-manual-007",
+        "images": [
+          {
+            "role": "front",
+            "object_path": "fixtures/dev-nonstandard-manual-007/front.jpg"
+          }
+        ],
+        "category": "non_standard_collectible",
+        "difficulty_tags": ["non_standard", "localized", "front_only"],
+        "capture_tags": ["front_only"],
+        "ground_truth_route": "NON_STANDARD_MANUAL",
+        "ground_truth_fields": {
+          "character": "Localized promo mascot",
+          "product": "Regional event promo",
+          "final_title_required_fields": true,
+          "final_title_unsubstantiated_fields": false
+        },
+        "critical_fields": [
+          "character",
+          "product",
+          "final_title_required_fields",
+          "final_title_unsubstantiated_fields"
+        ],
+        "prediction": {
+          "route": "NON_STANDARD_MANUAL",
+          "provider": "openai_legacy",
+          "model_id": "gpt-4.1-mini-2025-04-14",
+          "resolved_fields": {
+            "character": "Localized promo mascot",
+            "final_title_required_fields": true,
+            "final_title_unsubstantiated_fields": false
+          },
+          "retrieval": {
+            "providers_used": ["openai_web_search"]
+          },
+          "review_outcome": "NON_STANDARD_MANUAL",
+          "human_authored_critical_resolution": true,
+          "review_duration_ms": 12400,
+          "usage": {
+            "provider_calls": 1,
+            "retrieval_rounds": 2,
+            "latency_ms": 4600,
+            "estimated_cost_usd": 0.009
+          },
+          "recovery": {
+            "ows_attempted": true,
+            "ows_recovered": false
+          }
+        }
+      }
+    ],
+    "calibration": [],
+    "held_out_commercial": []
+  }
+}

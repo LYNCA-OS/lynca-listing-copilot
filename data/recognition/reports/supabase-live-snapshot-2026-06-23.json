@@ -1,0 +1,63 @@
+{
+  "schema_version": "supabase-recognition-live-snapshot-v1",
+  "generated_at": "2026-06-23T07:27:43.000Z",
+  "source": {
+    "provider": "supabase_mcp",
+    "project_id": "osrrujmpxxiefppjfgpd",
+    "project_name": "Listing Copilot",
+    "region": "ap-southeast-2"
+  },
+  "tables": {
+    "public.listing_title_feedback": {
+      "rows": 351,
+      "rows_with_front_image_url": 248,
+      "rows_with_back_image_url": 247,
+      "image_backed_rows": 248,
+      "rows_with_corrected_title": 351,
+      "first_created_at": "2026-06-21 09:30:11.126+00",
+      "last_created_at": "2026-06-22 11:25:29.12+00",
+      "month_breakdown": [
+        {
+          "month": "2026-06-01",
+          "rows": 351,
+          "front_images": 248,
+          "back_images": 247
+        }
+      ]
+    },
+    "storage.objects": {
+      "rows": 495,
+      "bucket_breakdown": [
+        {
+          "bucket_id": "listing-feedback-images",
+          "object_count": 495
+        }
+      ]
+    }
+  },
+  "candidate_export_status": {
+    "local_rest_export_ready": false,
+    "local_rest_export_completed": false,
+    "blocked_reason": "Vercel production env has SUPABASE_URL, but SUPABASE_SERVICE_ROLE_KEY is empty; anon REST is RLS-filtered and returns 0 rows.",
+    "mcp_sql_export_ready": true,
+    "mcp_session_export_completed": true,
+    "mcp_sql_export_file": "supabase/queries/export_recognition_feedback_rows_for_mcp.sql",
+    "mcp_session_export_source_mode": "rows_b64_chunks",
+    "mcp_session_export_report_file": "data/recognition/reports/supabase-feedback-mcp-session-export-report.json",
+    "mcp_session_export_chunk_prefix": "LYNCA_SUPABASE_FEEDBACK_ALL_EXPORT_20260623_",
+    "mcp_session_export_chunks": 5,
+    "mcp_session_export_rows": 351,
+    "mcp_sql_image_backed_rows": 248,
+    "mcp_rows_full_table_count": 351,
+    "mcp_rows_local_file": "data/recognition/reports/supabase-feedback-rows-mcp.json",
+    "mcp_rows_import_command": "npm run recognition:supabase:rows -- --input data/recognition/reports/supabase-feedback-rows-mcp.json --output data/recognition/manifests/supabase-feedback-candidates.json --report-output data/recognition/reports/supabase-feedback-candidates-report.json",
+    "local_candidate_manifest_completed": true,
+    "local_candidate_manifest_file": "data/recognition/manifests/supabase-feedback-candidates.json",
+    "local_candidate_report_file": "data/recognition/reports/supabase-feedback-candidates-report.json",
+    "local_candidate_count": 248,
+    "filtered_out_no_image_count": 103,
+    "table_records_without_images": 103,
+    "ground_truth_status": "NEEDS_REVIEW",
+    "corrected_title_used_as_ground_truth": false
+  }
+}

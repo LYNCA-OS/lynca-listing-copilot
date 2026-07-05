@@ -1,0 +1,1125 @@
+{
+  "schema_version": "writer-title-catalog-seed-report-v1",
+  "generated_at": "2026-07-03T04:43:51.206Z",
+  "input_path": "/Users/paidaxin/Desktop/卡片测试/Ebay上标(1).xlsx",
+  "batch_id": "writer_ebay_upload_20260703",
+  "file_sha256": "963c814b64217f378416fdd0b7e7231714131e61523d2b70a39ae332d392a7f3",
+  "policy": {
+    "source_type": "INTERNAL_CORRECTED_TITLE",
+    "seller_or_marketplace_scraped_title": false,
+    "writer_reviewed_upload_title": true,
+    "enters_catalog_candidate_generation": true,
+    "enters_vector_seed_export": true,
+    "final_title_renderer_still_authoritative": true,
+    "title_derived_fields_are_ground_truth": false,
+    "serial_grade_cert_copy_forbidden": true
+  },
+  "row_counts": {
+    "source_rows": 16550,
+    "marker_rows": 39,
+    "skipped_non_title_rows": 1844,
+    "duplicate_title_rows": 611,
+    "unique_catalog_seed_rows": 14056,
+    "vector_seed_rows": 14056
+  },
+  "import_status_breakdown": [
+    {
+      "value": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "count": 14056
+    }
+  ],
+  "category_breakdown": [
+    {
+      "value": "other_collectibles",
+      "count": 3633
+    },
+    {
+      "value": "non_sports",
+      "count": 2436
+    },
+    {
+      "value": "baseball",
+      "count": 2051
+    },
+    {
+      "value": "tcg",
+      "count": 1317
+    },
+    {
+      "value": "wrestling",
+      "count": 895
+    },
+    {
+      "value": "basketball",
+      "count": 826
+    },
+    {
+      "value": "soccer",
+      "count": 701
+    },
+    {
+      "value": "racing",
+      "count": 619
+    },
+    {
+      "value": "mma",
+      "count": 437
+    },
+    {
+      "value": "hockey",
+      "count": 398
+    },
+    {
+      "value": "football",
+      "count": 339
+    },
+    {
+      "value": "tennis",
+      "count": 293
+    },
+    {
+      "value": "multi_sport",
+      "count": 91
+    },
+    {
+      "value": "sports_memorabilia",
+      "count": 20
+    }
+  ],
+  "top_products": [
+    {
+      "value": "Topps Chrome",
+      "count": 2749
+    },
+    {
+      "value": "Topps",
+      "count": 1508
+    },
+    {
+      "value": "Bowman Chrome",
+      "count": 1261
+    },
+    {
+      "value": "Other Collectibles",
+      "count": 1199
+    },
+    {
+      "value": "Magic: The Gathering Final Fantasy",
+      "count": 782
+    },
+    {
+      "value": "Panini",
+      "count": 488
+    },
+    {
+      "value": "Pokemon",
+      "count": 435
+    },
+    {
+      "value": "Panini Prizm",
+      "count": 422
+    },
+    {
+      "value": "Bowman",
+      "count": 371
+    },
+    {
+      "value": "Topps Chrome WWE",
+      "count": 350
+    },
+    {
+      "value": "Topps Finest",
+      "count": 332
+    },
+    {
+      "value": "Upper Deck",
+      "count": 305
+    },
+    {
+      "value": "Topps Chrome UFC",
+      "count": 261
+    },
+    {
+      "value": "Topps Chrome UEFA Club Competitions",
+      "count": 189
+    },
+    {
+      "value": "Skybox Metal Universe",
+      "count": 186
+    },
+    {
+      "value": "Topps Chrome VeeFriends",
+      "count": 184
+    },
+    {
+      "value": "Panini Noir",
+      "count": 179
+    },
+    {
+      "value": "Panini Select",
+      "count": 174
+    },
+    {
+      "value": "Topps Chrome Marvel",
+      "count": 138
+    },
+    {
+      "value": "Topps Chrome Black",
+      "count": 129
+    },
+    {
+      "value": "Topps Chrome Platinum",
+      "count": 121
+    },
+    {
+      "value": "Topps Heritage",
+      "count": 114
+    },
+    {
+      "value": "Topps Chrome Formula 1",
+      "count": 97
+    },
+    {
+      "value": "SkyBox Metal Universe",
+      "count": 91
+    },
+    {
+      "value": "Star Wars Smugglers Outpost",
+      "count": 91
+    },
+    {
+      "value": "Panini Mosaic",
+      "count": 83
+    },
+    {
+      "value": "Panini Clearly Donruss",
+      "count": 78
+    },
+    {
+      "value": "Upper Deck Goodwin Champions",
+      "count": 77
+    },
+    {
+      "value": "Bowman Draft",
+      "count": 72
+    },
+    {
+      "value": "Topps Chrome Sapphire",
+      "count": 70
+    },
+    {
+      "value": "Panini Donruss Optic",
+      "count": 69
+    },
+    {
+      "value": "Panini National Treasures",
+      "count": 66
+    },
+    {
+      "value": "O-Pee-Chee",
+      "count": 65
+    },
+    {
+      "value": "Panini Immaculate",
+      "count": 63
+    },
+    {
+      "value": "Topps Signature Class",
+      "count": 58
+    },
+    {
+      "value": "Panini Hoops",
+      "count": 56
+    },
+    {
+      "value": "Upper Deck Credentials",
+      "count": 55
+    },
+    {
+      "value": "Topps Allen & Ginter",
+      "count": 54
+    },
+    {
+      "value": "HOW2WORK The Monsters",
+      "count": 53
+    },
+    {
+      "value": "Fleer",
+      "count": 49
+    }
+  ],
+  "top_sections": [
+    {
+      "value": "飞哥 offer",
+      "count": 7064
+    },
+    {
+      "value": "6月-6847-河马",
+      "count": 1451
+    },
+    {
+      "value": "5月-16520-萨米斯基",
+      "count": 817
+    },
+    {
+      "value": "TTW总 Offer 标题",
+      "count": 617
+    },
+    {
+      "value": "4月-13583-大脚丫",
+      "count": 399
+    },
+    {
+      "value": "5月-20674-萨米斯基",
+      "count": 358
+    },
+    {
+      "value": "6月-1258-龙龙",
+      "count": 292
+    },
+    {
+      "value": "6月-14583-萨米斯基",
+      "count": 276
+    },
+    {
+      "value": "卡妙-204标",
+      "count": 165
+    },
+    {
+      "value": "4月-14977-河马",
+      "count": 146
+    },
+    {
+      "value": "张恩玮议价",
+      "count": 137
+    },
+    {
+      "value": "8月-16745-河马",
+      "count": 134
+    },
+    {
+      "value": "杨先生议价",
+      "count": 129
+    },
+    {
+      "value": "（1）河马150标",
+      "count": 125
+    },
+    {
+      "value": "大脚丫-126标",
+      "count": 125
+    },
+    {
+      "value": "（10）泡泡糖-125标",
+      "count": 122
+    },
+    {
+      "value": "高总-123标",
+      "count": 116
+    },
+    {
+      "value": "飞哥议价",
+      "count": 110
+    },
+    {
+      "value": "（5）高总-138标",
+      "count": 103
+    },
+    {
+      "value": "（19）卡妙-111标",
+      "count": 101
+    },
+    {
+      "value": "（11）PP2-90标",
+      "count": 89
+    },
+    {
+      "value": "（3）卡妙102标",
+      "count": 87
+    },
+    {
+      "value": "萨米斯基议价",
+      "count": 62
+    },
+    {
+      "value": "（12）高总-100标",
+      "count": 59
+    },
+    {
+      "value": "(14) 彭总-60标",
+      "count": 59
+    },
+    {
+      "value": "河马-58标",
+      "count": 58
+    },
+    {
+      "value": "克里斯-59标",
+      "count": 55
+    },
+    {
+      "value": "（8) 河马-59标",
+      "count": 51
+    },
+    {
+      "value": "（4）河马-65标",
+      "count": 46
+    },
+    {
+      "value": "（13）卡妙-57标",
+      "count": 43
+    }
+  ],
+  "field_coverage": {
+    "category": 14056,
+    "sport": 14056,
+    "season_year": 13076,
+    "manufacturer": 11847,
+    "brand": 11847,
+    "product": 14056,
+    "set_or_insert": 496,
+    "players": 6279,
+    "character": 1315,
+    "card_name": 1315,
+    "language": 1206,
+    "rarity": 666,
+    "card_number": 1666,
+    "checklist_code": 0,
+    "surface_color": 5293,
+    "serial_denominator": 5557,
+    "grade_company": 612,
+    "card_grade": 609
+  },
+  "review_required_count": 0,
+  "sample_rows": [
+    {
+      "row_number": 3,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Prompto Argentum #U 0532 FFXV Surge Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Prompto Argentum"
+        ],
+        "character": "Prompto Argentum",
+        "card_name": "Prompto Argentum",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "U",
+        "card_number": "0532"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 4,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Zenos yae Galvus #R 0529 FFXIV Surge Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Zenos Yae Galvus"
+        ],
+        "character": "Zenos Yae Galvus",
+        "card_name": "Zenos Yae Galvus",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "R",
+        "card_number": "0529"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 5,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Kuja, Genome Sorcerer #R 0544 FFIX Surge Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Kuja, Genome Sorcerer"
+        ],
+        "character": "Kuja, Genome Sorcerer",
+        "card_name": "Kuja, Genome Sorcerer",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "R",
+        "card_number": "0544"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 6,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Joshua, Phoenix's Dominant #R 0542 FFXVI Surge Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Joshua, Phoenix'S Dominant"
+        ],
+        "character": "Joshua, Phoenix'S Dominant",
+        "card_name": "Joshua, Phoenix'S Dominant",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "R",
+        "card_number": "0542"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 7,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Endwalker - Brainstorm #U 0028 FFXIV Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Endwalker - Brainstorm"
+        ],
+        "character": "Endwalker - Brainstorm",
+        "card_name": "Endwalker - Brainstorm",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "U",
+        "card_number": "0028"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 8,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Vanille, Cheerful I'Cie #U 0537 FFXIII Surge Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Vanille, Cheerful I'Cie"
+        ],
+        "character": "Vanille, Cheerful I'Cie",
+        "card_name": "Vanille, Cheerful I'Cie",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "U",
+        "card_number": "0537"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 9,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Sephiroth, Fabled SOLDIER #M 0382 FFVII Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Sephiroth, Fabled Soldier"
+        ],
+        "character": "Sephiroth, Fabled Soldier",
+        "card_name": "Sephiroth, Fabled Soldier",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "M",
+        "card_number": "0382"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 10,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Lightning Army of One #M 0400 FFXIII Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Lightning Army Of One"
+        ],
+        "character": "Lightning Army Of One",
+        "card_name": "Lightning Army Of One",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "M",
+        "card_number": "0400"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 11,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Zidane, Tantalus Thief #U 0550 FFIX Surge Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Zidane, Tantalus Thief"
+        ],
+        "character": "Zidane, Tantalus Thief",
+        "card_name": "Zidane, Tantalus Thief",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "U",
+        "card_number": "0550"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 12,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Sephiroth, One-Winged Angel / Robot Warrior #E 0024 Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Sephiroth, One-Winged Angel / Robot Warrior"
+        ],
+        "character": "Sephiroth, One-Winged Angel / Robot Warrior",
+        "card_name": "Sephiroth, One-Winged Angel / Robot Warrior",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "E",
+        "card_number": "0024"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 13,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Jenova, Ancient Calamity #R 0346 FFVII Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Jenova, Ancient Calamity"
+        ],
+        "character": "Jenova, Ancient Calamity",
+        "card_name": "Jenova, Ancient Calamity",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "R",
+        "card_number": "0346"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 14,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Summon: Brynhildr #R 0366 FFXIII Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Summon: Brynhildr"
+        ],
+        "character": "Summon: Brynhildr",
+        "card_name": "Summon: Brynhildr",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "R",
+        "card_number": "0366"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 16,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Tifa Lockhart #R 0391 FFVII Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Tifa Lockhart"
+        ],
+        "character": "Tifa Lockhart",
+        "card_name": "Tifa Lockhart",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "R",
+        "card_number": "0391"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 17,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Shadowbringers Dovin's Veto #U 0051 FFXIV Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Shadowbringers Dovin'S Veto"
+        ],
+        "character": "Shadowbringers Dovin'S Veto",
+        "card_name": "Shadowbringers Dovin'S Veto",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "U",
+        "card_number": "0051"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 18,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Dark Confidant #M 0334 FFXIV Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Dark Confidant"
+        ],
+        "character": "Dark Confidant",
+        "card_name": "Dark Confidant",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "M",
+        "card_number": "0334"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 19,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG EN Firion,Wild Rose Warrior #R 0386 FFII Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Firion,Wild Rose Warrior"
+        ],
+        "character": "Firion,Wild Rose Warrior",
+        "card_name": "Firion,Wild Rose Warrior",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "EN",
+        "rarity": "R",
+        "card_number": "0386"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 20,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG EN Firion,Wild Rose Warrior #R 0137 FFII Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Firion,Wild Rose Warrior"
+        ],
+        "character": "Firion,Wild Rose Warrior",
+        "card_name": "Firion,Wild Rose Warrior",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "EN",
+        "rarity": "R",
+        "card_number": "0137"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 21,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Sephiroth, Fabled SOLDIER #M 0382 FFVII Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Sephiroth, Fabled Soldier"
+        ],
+        "character": "Sephiroth, Fabled Soldier",
+        "card_name": "Sephiroth, Fabled Soldier",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "M",
+        "card_number": "0382"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 22,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN The Imperial City Of Archades #U 0027 FFXII Foil Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "The Imperial City Of Archades"
+        ],
+        "character": "The Imperial City Of Archades",
+        "card_name": "The Imperial City Of Archades",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "U",
+        "team": "The Imperial City",
+        "card_number": "0027"
+      },
+      "physical_instance_fields": {}
+    },
+    {
+      "row_number": 23,
+      "section_label": "（1）河马150标",
+      "title": "Final Fantasy MTG JPN Joshua Phoenix's Dominant #R 0397 FFXVI Borderless",
+      "import_status": "AUTO_PARSED_FROM_VERIFIED_TITLE",
+      "identity_fields": {
+        "sport": "tcg",
+        "category": "tcg",
+        "manufacturer": "Wizards of the Coast",
+        "brand": "Magic: The Gathering",
+        "product": "Magic: The Gathering Final Fantasy",
+        "players": [
+          "Joshua Phoenix'S Dominant"
+        ],
+        "character": "Joshua Phoenix'S Dominant",
+        "card_name": "Joshua Phoenix'S Dominant",
+        "category_candidates": [
+          "tcg"
+        ],
+        "language": "JPN",
+        "rarity": "R",
+        "card_number": "0397"
+      },
+      "physical_instance_fields": {}
+    }
+  ],
+  "skipped_samples": [
+    {
+      "row_number": 2,
+      "title": "7月-7573-河马1",
+      "reason": "section_marker",
+      "section_label": "（1）河马150标"
+    },
+    {
+      "row_number": 153,
+      "title": "7月-7958-河马3",
+      "reason": "section_marker",
+      "section_label": "（2）河马28标"
+    },
+    {
+      "row_number": 182,
+      "title": "7月-8014-卡妙",
+      "reason": "batch_marker",
+      "section_label": "（3）卡妙102标"
+    },
+    {
+      "row_number": 285,
+      "title": "7月-9652-河马",
+      "reason": "section_marker",
+      "section_label": "（4）河马-65标"
+    },
+    {
+      "row_number": 351,
+      "title": "7月-9750-高总",
+      "reason": "batch_marker",
+      "section_label": "（5）高总-138标"
+    },
+    {
+      "row_number": 490,
+      "title": "7月-10533-Day总",
+      "reason": "batch_marker",
+      "section_label": "（6）Day-32标"
+    },
+    {
+      "row_number": 523,
+      "title": "7月-11189-岳总",
+      "reason": "batch_marker",
+      "section_label": "（7）岳总-32标"
+    },
+    {
+      "row_number": 556,
+      "title": "7月-11222-河马",
+      "reason": "section_marker",
+      "section_label": "（8) 河马-59标"
+    },
+    {
+      "row_number": 616,
+      "title": "7月-11283-河马2",
+      "reason": "section_marker",
+      "section_label": "（9）河马2-51标"
+    },
+    {
+      "row_number": 640,
+      "title": "7月-12107-泡泡糖",
+      "reason": "batch_marker",
+      "section_label": "（10）泡泡糖-125标"
+    },
+    {
+      "row_number": 766,
+      "title": "7月-12217-彭总2",
+      "reason": "batch_marker",
+      "section_label": "（11）PP2-90标"
+    },
+    {
+      "row_number": 857,
+      "title": "7月-13777-高总",
+      "reason": "batch_marker",
+      "section_label": "（12）高总-100标"
+    },
+    {
+      "row_number": 958,
+      "title": "7月-14397-卡妙",
+      "reason": "batch_marker",
+      "section_label": "（13）卡妙-57标"
+    },
+    {
+      "row_number": 1016,
+      "title": "7月-14456-彭总",
+      "reason": "batch_marker",
+      "section_label": "(14) 彭总-60标"
+    },
+    {
+      "row_number": 1077,
+      "title": "7月-15087-Mort总",
+      "reason": "batch_marker",
+      "section_label": "（14）Mort总-12标"
+    },
+    {
+      "row_number": 1090,
+      "title": "7月-15731-河马",
+      "reason": "section_marker",
+      "section_label": "（15）河马-37标"
+    },
+    {
+      "row_number": 1128,
+      "title": "7月-15770-克里斯",
+      "reason": "section_marker",
+      "section_label": "（16）克里斯-4标"
+    },
+    {
+      "row_number": 1133,
+      "title": "7月-15776-卡妙",
+      "reason": "batch_marker",
+      "section_label": "（17）卡妙-12标"
+    },
+    {
+      "row_number": 1146,
+      "title": "7月-15790-高总",
+      "reason": "batch_marker",
+      "section_label": "（18) 高总-12标"
+    },
+    {
+      "row_number": 1159,
+      "title": "7月-19700-卡妙",
+      "reason": "batch_marker",
+      "section_label": "（19）卡妙-111标"
+    }
+  ],
+  "duplicate_samples": [
+    {
+      "row_number": 15,
+      "duplicate_of_row": 14,
+      "title": "Final Fantasy MTG JPN Summon: Brynhildr #R 0366 FFXIII Foil Borderless"
+    },
+    {
+      "row_number": 29,
+      "duplicate_of_row": 7,
+      "title": "Final Fantasy MTG JPN Endwalker - Brainstorm #U 0028 FFXIV Foil Borderless"
+    },
+    {
+      "row_number": 41,
+      "duplicate_of_row": 14,
+      "title": "Final Fantasy MTG JPN Summon: Brynhildr #R 0366 FFXIII Foil Borderless"
+    },
+    {
+      "row_number": 52,
+      "duplicate_of_row": 37,
+      "title": "Final Fantasy MTG JPN Yuna Hope of Spira #R 0404 FFX Borderless"
+    },
+    {
+      "row_number": 53,
+      "duplicate_of_row": 38,
+      "title": "Final Fantasy MTG JPN Ardyn,the Usurper #R 0379 FFXV Foil Borderless"
+    },
+    {
+      "row_number": 54,
+      "duplicate_of_row": 22,
+      "title": "Final Fantasy MTG JPN The Imperial City Of Archades #U 0027 FFXII Foil Borderless"
+    },
+    {
+      "row_number": 59,
+      "duplicate_of_row": 9,
+      "title": "Final Fantasy MTG JPN Sephiroth, Fabled SOLDIER #M 0382 FFVII Borderless"
+    },
+    {
+      "row_number": 62,
+      "duplicate_of_row": 17,
+      "title": "Final Fantasy MTG JPN Shadowbringers Dovin's Veto #U 0051 FFXIV Foil Borderless"
+    },
+    {
+      "row_number": 76,
+      "duplicate_of_row": 3,
+      "title": "Final Fantasy MTG JPN Prompto Argentum #U 0532 FFXV Surge Foil Borderless"
+    },
+    {
+      "row_number": 79,
+      "duplicate_of_row": 32,
+      "title": "Final Fantasy MTG JPN Fang, Fearless l'Cie #U 0381 FFXIII Foil Borderless"
+    },
+    {
+      "row_number": 83,
+      "duplicate_of_row": 82,
+      "title": "Final Fantasy MTG EN Summon：Ixion #R 0195 FFX Borderless"
+    },
+    {
+      "row_number": 103,
+      "duplicate_of_row": 19,
+      "title": "Final Fantasy MTG EN Firion,Wild Rose Warrior #R 0386 FFII Foil Borderless"
+    },
+    {
+      "row_number": 104,
+      "duplicate_of_row": 96,
+      "title": "Final Fantasy MTG EN Starting Town #R 0289 FFI"
+    },
+    {
+      "row_number": 106,
+      "duplicate_of_row": 105,
+      "title": "Final Fantasy MTG EN Aettir and Priwen #M 0350 FFXIV Foil Borderless"
+    },
+    {
+      "row_number": 111,
+      "duplicate_of_row": 95,
+      "title": "Final Fantasy MTG EN Traveling Chocobo #M 0210 FFVII"
+    },
+    {
+      "row_number": 115,
+      "duplicate_of_row": 95,
+      "title": "Final Fantasy MTG EN Traveling Chocobo #M 0210 FFVII"
+    },
+    {
+      "row_number": 120,
+      "duplicate_of_row": 91,
+      "title": "Final Fantasy MTG EN Cecil Harvey Tymna the Weaver #R 0018 FFIV Borderless"
+    },
+    {
+      "row_number": 121,
+      "duplicate_of_row": 96,
+      "title": "Final Fantasy MTG EN Starting Town #R 0289 FFI"
+    },
+    {
+      "row_number": 124,
+      "duplicate_of_row": 123,
+      "title": "Final Fantasy MTG EN Summon：Kujata #R 0199 FFVII Borderless"
+    },
+    {
+      "row_number": 126,
+      "duplicate_of_row": 96,
+      "title": "Final Fantasy MTG EN Starting Town #R 0289 FFI"
+    }
+  ],
+  "apply": {
+    "skipped": true,
+    "reason": "dry_run_without_apply_flag"
+  }
+}

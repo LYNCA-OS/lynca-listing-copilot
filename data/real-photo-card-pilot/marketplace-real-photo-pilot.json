@@ -1,0 +1,211 @@
+{
+  "schema_version": "marketplace-real-photo-card-pilot-v1",
+  "created_at": "2026-06-23T00:00:00.000Z",
+  "source_policy": "real_marketplace_photos_reference_only",
+  "commercial_accuracy_claim_allowed": false,
+  "commercial_accuracy_eval_eligible": false,
+  "marketplace_reference_only": true,
+  "note": "Public marketplace product-page photos are used only as a realistic image stress test. Marketplace titles and seller text are not commercial ground truth.",
+  "items": [
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-01",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/cjoAAOSwkNxnpi38/s-l1600.jpg",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": ["Victor Wembanyama"],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-02",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/OBoAAeSwgIhqIT~c/s-l1600.jpg",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": ["Victor Wembanyama"],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-03",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/aJsAAeSws9VqIT~d/s-l1600.jpg",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": ["Victor Wembanyama"],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-04",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/aDgAAeSwYQpqIT~c/s-l1600.jpg",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": ["Victor Wembanyama"],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-05",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/XWcAAeSwUGBqIT~c/s-l1600.jpg",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": ["Victor Wembanyama"],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-06",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/XAkAAeSw8XNqIT~e/s-l1600.jpg",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": ["Victor Wembanyama"],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-24065154341-wembanyama-07",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/24065154341",
+      "card_image_url": "https://i.ebayimg.com/images/g/PAkAAeSwJdhqIT~e/s-l1600.jpg",
+      "reference_title": "2023-24 Panini Prizm - Victor Wembanyama #136 Silver Prizm (RC)",
+      "reference_fields": {
+        "year": "2023-24",
+        "brand": "Panini",
+        "product": "Prizm",
+        "players": ["Victor Wembanyama"],
+        "parallel": "Silver Prizm",
+        "collector_number": "136",
+        "rc": true
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-20084919418-ohtani-01",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/20084919418",
+      "card_image_url": "https://i.ebayimg.com/images/g/kM0AAeSwfgZqMlSV/s-l1600.jpg",
+      "reference_title": "2025 Topps Chrome - Shohei Ohtani #1 Refractor",
+      "reference_fields": {
+        "year": "2025",
+        "brand": "Topps",
+        "product": "Topps Chrome",
+        "players": ["Shohei Ohtani"],
+        "parallel": "Refractor",
+        "collector_number": "1",
+        "rc": false
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-20084919418-ohtani-02",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/20084919418",
+      "card_image_url": "https://i.ebayimg.com/images/g/59UAAeSwGTpqBSov/s-l1600.jpg",
+      "reference_title": "2025 Topps Chrome - Shohei Ohtani #1 Refractor",
+      "reference_fields": {
+        "year": "2025",
+        "brand": "Topps",
+        "product": "Topps Chrome",
+        "players": ["Shohei Ohtani"],
+        "parallel": "Refractor",
+        "collector_number": "1",
+        "rc": false
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    },
+    {
+      "candidate_id": "ebay-product-20084919418-ohtani-03",
+      "category": "sports_card",
+      "source_provider": "ebay_public_product_page",
+      "source_type": "MARKETPLACE_REFERENCE",
+      "trust_tier": "MARKET_REFERENCE",
+      "source_page_url": "https://www.ebay.com/p/20084919418",
+      "card_image_url": "https://i.ebayimg.com/images/g/tuMAAeSw8P5qBSov/s-l1600.jpg",
+      "reference_title": "2025 Topps Chrome - Shohei Ohtani #1 Refractor",
+      "reference_fields": {
+        "year": "2025",
+        "brand": "Topps",
+        "product": "Topps Chrome",
+        "players": ["Shohei Ohtani"],
+        "parallel": "Refractor",
+        "collector_number": "1",
+        "rc": false
+      },
+      "critical_fields": ["year", "brand", "product", "players", "parallel", "collector_number", "rc"]
+    }
+  ]
+}

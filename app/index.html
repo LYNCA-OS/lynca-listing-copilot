@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>元宇宙 Listing Copilot</title>
+    <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
     <link rel="stylesheet" href="/app/listing-copilot.css">
   </head>
   <body>
@@ -50,22 +51,33 @@
           </div>
         </section>
 
+        <section class="provider-panel" aria-label="Vision Provider">
+          <div class="provider-head">
+            <div>
+              <p class="eyebrow">Vision Provider</p>
+              <h2>识别模型</h2>
+            </div>
+            <p id="providerStatusText" role="status" aria-live="polite">正在读取服务端 Provider 配置。</p>
+          </div>
+          <div class="provider-control" id="providerControl" role="radiogroup" aria-label="Vision Provider"></div>
+        </section>
+
         <section class="control-panel">
           <div class="mode-control" role="radiogroup" aria-label="上传模式">
             <label>
-              <input type="radio" name="assetMode" value="single" checked>
+              <input type="radio" name="assetMode" value="single">
               <span>单图模式</span>
             </label>
             <label>
-              <input type="radio" name="assetMode" value="pair">
+              <input type="radio" name="assetMode" value="pair" checked>
               <span>正反面配对</span>
             </label>
           </div>
 
           <label class="drop-zone" for="imageInput" id="dropZone">
             <input id="imageInput" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
-            <strong>支持 JPG / JPEG / PNG / WEBP / HEIC，系统会自动优化图片用于识别。</strong>
-            <span id="statusText" role="status" aria-live="polite">支持批量上传，前后图模式按上传顺序配对。</span>
+            <strong>支持 JPG / JPEG / PNG / WEBP / HEIC，原图优先上传云端识别，预览图会高质量优化。</strong>
+            <span id="statusText" role="status" aria-live="polite">支持批量上传；正反面模式每 2 张组成一卡，系统会再判断正背面。</span>
           </label>
 
           <label class="secondary-button" for="imageInput">上传图片</label>

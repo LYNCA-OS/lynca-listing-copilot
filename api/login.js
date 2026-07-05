@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxAgeSeconds = 60 * 60 * 24 * 7;
@@ -45,6 +46,13 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (!enforceApiRateLimit(req, res, {
+    scope: "login",
+    limit: 20,
+    windowMs: 5 * 60_000,
+    message: "Too many login attempts. Please wait before trying again."
+  })) return;
+
   const expectedUser = process.env.METAVERSE_USERNAME;
   const expectedPassword = process.env.METAVERSE_PASSWORD;
   const authSecret = process.env.METAVERSE_AUTH_SECRET;
@@ -78,6 +86,8 @@ export default async function handler(req, res) {
 
   const payload = base64url(JSON.stringify({
     user: normalize(expectedUser),
+    sid: crypto.randomUUID(),
+    iat: Date.now(),
     exp: Date.now() + maxAgeSeconds * 1000
   }));
   const token = `${payload}.${sign(payload, authSecret)}`;

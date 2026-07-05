@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynca.local/schemas/listing/evidence-field.schema.json",
+  "title": "Listing EvidenceField",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "confidence", "candidates", "sources", "conflicts"],
+  "properties": {
+    "value": {
+      "type": ["string", "number", "boolean", "array", "null"]
+    },
+    "normalized_value": {
+      "type": ["string", "number", "boolean", "array", "null"]
+    },
+    "status": {
+      "enum": ["CONFIRMED", "REVIEW", "MISSING", "CONFLICT", "MANUAL_CONFIRMED", "NOT_APPLICABLE"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "confidence"],
+        "properties": {
+          "value": {
+            "type": ["string", "number", "boolean", "array", "null"]
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["source_type", "trust_tier"],
+        "properties": {
+          "source_type": {
+            "enum": [
+              "CARD_FRONT",
+              "CARD_BACK",
+              "SLAB_LABEL",
+              "OCR",
+              "VISION_MODEL",
+              "INTERNAL_APPROVED_HISTORY",
+              "INTERNAL_REGISTRY",
+              "OFFICIAL_CHECKLIST",
+              "OFFICIAL_PRODUCT_PAGE",
+              "OFFICIAL_GRADING_DATA",
+              "STRUCTURED_DATABASE",
+              "VECTOR_APPROVED_REFERENCE",
+              "MARKETPLACE",
+              "OPEN_WEB",
+              "OPERATOR"
+            ]
+          },
+          "image_id": {
+            "type": ["string", "null"]
+          },
+          "source_crop_id": {
+            "type": ["string", "null"]
+          },
+          "side": {
+            "type": ["string", "null"]
+          },
+          "capture_role": {
+            "type": ["string", "null"]
+          },
+          "region": {
+            "type": ["string", "null"]
+          },
+          "observed_text": {
+            "type": ["string", "null"]
+          },
+          "raw_text": {
+            "type": ["string", "null"]
+          },
+          "source_inference_method": {
+            "type": ["string", "null"]
+          },
+          "source_object_path": {
+            "type": ["string", "null"]
+          },
+          "derived_object_path": {
+            "type": ["string", "null"]
+          },
+          "glare_occlusion": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "blur_score": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "trust_tier": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array"
+    },
+    "unresolved_reason": {
+      "type": ["string", "null"]
+    }
+  }
+}

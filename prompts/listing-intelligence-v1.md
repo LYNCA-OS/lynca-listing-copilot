@@ -40,15 +40,29 @@ Required fields:
   "set": null,
   "subset": null,
   "insert": null,
+  "surface_color": null,
+  "parallel_family": null,
+  "parallel_exact": null,
   "parallel": null,
+  "variation": null,
   "player": null,
+  "players": [],
   "character": null,
   "artist": null,
   "team": null,
   "card_number": null,
+  "collector_number": null,
+  "checklist_code": null,
   "serial_number": null,
   "grade_company": null,
   "grade": null,
+  "card_grade": null,
+  "auto_grade": null,
+  "grade_type": "UNKNOWN",
+  "rc": false,
+  "first_bowman": false,
+  "ssp": false,
+  "case_hit": false,
   "auto": false,
   "relic": false,
   "patch": false,
@@ -65,15 +79,26 @@ Specific extraction rules:
 - PSA label: extract grade company and grade if visible.
 - BGS label: extract grade company, grade, and visible subgrades only if the output schema later supports them; otherwise mention subgrades in unresolved.
 - CGC label: extract grade company and grade if visible.
+- Fill `auto_grade` only when a separate autograph grade is visibly printed on the slab/label. Never copy `card_grade` into `auto_grade` as a schema scaffold.
 - Serial number extraction has higher business value than advanced parallel classification. Serial accuracy is a Tier 1 objective.
 - Serial extraction evidence priority is: PSA/BGS/CGC label > card front text > card back text. Preserve the clearest complete serial. If sources conflict, mark the conflict in `unresolved` and do not use HIGH confidence.
+- RC booleans must be true only when a readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker is visible. 1st Bowman, SSP, and case-hit booleans must be true only when a printed marker/text, slab label, card code, or unmistakable card-specific logo is visible. Do not infer them from player age, year, or market memory.
 - Serial numbers such as `2/5`, `031/150`, `1/1`, `04/10`, `436/500`, and `17/99` must be extracted only when the denominator and numerator are clearly visible.
 - Card codes such as `SR-KD`, `FIN-10`, `TP-NYK`, `VPA-VIN`, `FGRA-RA`, `ADT-CG`, `CM-KDR`, and `LD-9` must be extracted if visible.
 - Insert/card codes such as `UV-16`, `SE-28`, `BRR-1`, and `IMP-OTI` are important registry keys. Extract them in `card_number` when visible even if they do not all belong in the final title.
 - If a serial number looks ambiguous, put the ambiguous item in `unresolved` and do not mark confidence HIGH.
 - If a tradeoff exists between reading a serial number and classifying a rainbow parallel, prioritize the serial number every time.
-- If there are multiple unrelated cards or a lot listing, mark confidence FAILED.
-- Do not begin lot-card title generation. Multiple unrelated cards remain FAILED for this MVP.
+- If there are multiple unrelated cards or a lot listing, do not force a single-card identity. Set `multi_card=true`, fill `card_count` when visible, keep up to three recognizable subjects, and return common year/product/set only when they are shared or directly visible.
+- Generate a usable lot draft when the lot itself is readable. Mark ABSTAIN only when the lot is unreadable, mixed beyond a useful draft, or image quality blocks the core lot description.
+
+### Direct-observation confidence rules
+
+These fields are read directly off the current images. When the printed text is legible, do not hedge them to MEDIUM confidence:
+
+- Slab grade: a graded slab always prints its numeric grade next to the company. Read them together from the label, report the source as `SLAB_LABEL` with `text_visible: true`, and use HIGH confidence when the label is legible. If the company is readable but the numeric grade is not, list the grade in `unresolved` instead of returning a low-confidence guess. Never report the company at HIGH while leaving the equally legible numeric grade at MEDIUM.
+- Surface color: `surface_color` is a direct visual observation. When the border/parallel color is unmistakable (Gold, Orange, Green, Purple, ...), report it at HIGH confidence with a `CARD_FRONT` source. Reserve MEDIUM for genuinely ambiguous tints.
+- Season-format year: basketball, hockey, and club-soccer products are season-dated. The two-year season (for example `2023-24`) is printed in the product/copyright line on the card back. Actively look for it and prefer the full season format over a single year; never shorten `2023-24` to `2023`.
+- Printed parallel names: Topps and Bowman Chrome family cards print the parallel name on the card back near the card number (for example `REFRACTOR`, `GOLD REFRACTOR`, `ORANGE WAVE REFRACTOR`, `X-FRACTOR`). Actively check the back for this printed line. When present, extract it verbatim into `parallel_exact` with a `CARD_BACK` source and `text_visible: true`. This is OCR of printed text, not visual classification — the color-only rule still applies whenever no parallel name is printed.
 
 ## 2. Knowledge Registry / Resolution Engine
 
@@ -105,6 +130,8 @@ Year resolution priority:
 
 The card-issued season overrides grading-label shorthand year. Example: if the card/back/product evidence says `2025-26`, do not simplify it to `2026` just because a grading label or copyright shorthand appears as `2026`.
 
+Do not use stats/context sentences as the issued product year. A sentence such as `in 2024/25, the player was selected...` is player context, not card identity. If the issued product/season year is not printed on the card/slab/product line, leave `year` null and explain the unresolved year instead of guessing.
+
 Never override label text or explicit card text with visual guesses. If a mapping conflicts with visible label/card text, use visible text and put the conflict in `unresolved`.
 
 Examples:
@@ -119,6 +146,13 @@ Examples:
 - `IMP-OTI` -> `Imperial Ink`
 
 If unresolved, mark unresolved. Do not invent.
+
+Official card type is separate from visible components.
+
+- `official_card_type` is allowed only when official wording is printed on the card/slab/back or supplied by trusted catalog/reviewed input.
+- `observable_components` is the model-readable component list: `auto`, `patch`, `relic`, `jersey`, `rc`, `sketch`, `redemption`.
+- Do not use `card_type` as a free-generation field. Keep it null unless a legacy caller explicitly requires it.
+- Renderer will use `official_card_type` first; if missing, it will render only observable components.
 
 Official card type beats generic description. If an official card type or subset is resolved from slab label, card text, card number pattern, or registry, use it instead of generic fallback wording.
 
@@ -139,25 +173,31 @@ Official card type and insert names are protected market terms. Do not simplify 
 - `Star Swatch Signatures` must not collapse to `Patch Auto`
 - `Propulsion` and `Red Propulsion` must not collapse to generic insert or parallel wording
 
-Do not hallucinate `Base`. Use `Base` only when slab/card text explicitly says Base, registry confirms the card number is the base version, or a trusted reference title says Base without conflicting with visible evidence.
+Do not hallucinate `Base`. Use `Base` only in `official_card_type` when slab/card text explicitly says Base, registry confirms the card number is the base version, or a trusted reference title says Base without conflicting with visible evidence. Never fill `card_type = "Base"` from visual context.
 
 ### Parallel and Insert Taxonomy Awareness
 
 Do not force the Vision Engine to solve all taxonomy problems during MVP. Vision should prioritize observable facts: OCR accuracy, serial accuracy, label accuracy, and card number accuracy.
 
-Do not force rainbow or parallel resolution from visual foil alone. If exact parallel taxonomy is not text-supported, use conservative generic wording or omit the parallel.
+Do not force rainbow or exact parallel resolution from visual foil alone. First-version parallel output is color-first:
 
-The current system often recognizes color better than pattern. Do not reduce pattern-based parallels to color-only terms.
+- Put visually observed card-design color in `surface_color`: `Gold`, `Purple`, `Red`, `Blue`, `Green`, `Silver`, `Black`, `Orange`, `Yellow`, `Pink`, `Bronze`, or `White`.
+- Leave `parallel_family` null unless the exact family text is printed on the card, slab label, card back, or supplied by a trusted catalog/registry input.
+- Leave `parallel_exact` null unless exact wording is printed on the card/slab/back or explicitly supplied by trusted catalog/registry evidence.
+- Do not write visual guesses such as `Gold Refractor`, `Gold Wave`, `Gold Shimmer`, `Gold Mojo`, `Gold Prizm`, `Purple Wave Refractor`, or similar exact optical names from appearance alone.
+- If only the color is visible, return the color only in `surface_color`; add unresolved note `exact parallel requires catalog or writer confirmation`.
 
 Examples:
 
-- If the card is `Yellow Wave`, do not output only `Yellow`.
-- If the card is `Gold Wave`, preserve `Gold Wave`.
-- If the card is `Aqua Shimmer`, preserve `Aqua Shimmer`.
+- Visual gold card surface without printed/catalog exact support: `surface_color = "Gold"`, `parallel_family = null`, `parallel_exact = null`.
+- Visual purple card surface without printed/catalog exact support: `surface_color = "Purple"`, `parallel_family = null`, `parallel_exact = null`.
+- Printed/slab text explicitly says `Gold Wave Refractor`: `surface_color = "Gold"`, `parallel_family = "Wave Refractor"`, `parallel_exact = "Gold Wave Refractor"`.
 
 Important parallel families include wave, shimmer, lava, speckle, mojo, mini diamond, pattern foil, logo parallels, and foil color variants.
 
 Insert names are a separate knowledge category from parallels. Preserve insert names such as `Spotlight`, `Power Chords`, and `Draft Pick Pairings` when visible or safely resolved.
+
+Named identity text such as `Gusto`, `All Kings`, `Club Legends`, `Canvas Creations`, `Rookie Ticket`, `First Day Issue`, `Metallic Marks`, `Historic Ties`, and `Next Stop Signatures` must be captured in `set` or `insert` when printed on the card/slab/back. If `product` repeats `brand`, still return the visible set/insert; do not drop it just because product and brand overlap.
 
 Advanced rainbow classification is useful, but it is Tier 3. It must not displace Tier 1 extraction.
 
@@ -212,9 +252,9 @@ Product hierarchy must stay separate. Do not collapse these products into each o
 
 `Cosmic Chrome` must not be normalized to plain `Topps Chrome`.
 
-Allowed generic parallels when the exact taxonomy is not supported: Green Refractor, Blue Refractor, Orange Refractor, Black Refractor.
+Allowed generic color layer when the exact taxonomy is not supported: Green, Blue, Orange, Black, Gold, Purple, Red, Silver.
 
-Do not output complex parallel names such as Green Geometric, Blue Mosaic, Sapphire, Mojo, Wave, or Shimmer unless card text, back text, card code, label text, or the registry clearly supports that terminology.
+Do not output complex parallel names such as Green Geometric, Blue Mosaic, Sapphire, Mojo, Wave, Refractor, Prizm, or Shimmer unless card text, back text, card code, label text, or the registry clearly supports that terminology.
 
 ## 3. Collectible Category Logic
 
@@ -227,7 +267,9 @@ For Pokemon Trainer / Supporter / 支援者 / 训练家 cards:
 - Illustrator is metadata, not primary identity.
 - Any name after `Illus.`, `Illustrator`, or `Artist` should go in `artist` only.
 - Do not use illustrator name as the title subject unless the item is a future artist-focused product category.
-- Title priority is trainer/character name, card number, rarity, set code or set name, language/region if visible, then artist only as optional low-priority metadata that is normally omitted.
+- TCG title modules are Year, IP, language, product series, subject, card name, design variation, color variation, serial limit, additional info, and grading company.
+- TCG storage can use compact language codes such as `JP`, `EN`, `CN`, and `KR`; marketplace output may render `JP` as `Japanese` and hide `EN` when the title is already clear.
+- Title priority is trainer/character name, rarity, print finish, special stamp, set code or set name, grading, then card number when the 80-character budget allows. Artist is optional low-priority metadata and is normally omitted.
 - If the front title is Chinese or Japanese and you cannot reliably translate it to an English character/trainer name, use the localized card name with card number, rarity, and set code.
 - In that localized unresolved case, confidence should be MEDIUM, not HIGH.
 - Reason should mention that localized trainer identity requires operator review or online reference.
@@ -241,65 +283,47 @@ Redemption cards: preserve the actual redemption contents, not the generic fact 
 
 ## 4. Title Engine
 
-Purpose: generate one eBay-ready title.
+Purpose: extract the fields needed by the deterministic title renderer. The model does not decide the final marketplace title.
 
-Maximum length: 80 characters.
+The preferred standard card serialization is LYNCA CSM Standard Card Grammar:
 
-Field priority tiers:
+`Year -> Manufacturer -> Product -> Set -> Subject -> Card Name -> Release Variant -> Print Finish -> Numerical Rarity -> Descriptive Rarity -> Card Number -> Search Optimization -> Grading Info`
 
-Tier 1 - Critical, must extract:
+Manufacturer, Product, and Set must remain structured fields, but the renderer will normalize the product hierarchy and remove redundant wording.
 
-- Player or character
-- RC / Rookie / Rookie Card / Rated Rookie when visible
-- Serial number
-- Grade
-- Auto or dual auto
-- Patch
-- Relic
-- Card number
-- 1/1 indicator
+Manufacturer/Product/Set smart composition: keep backend fields separate, but do not duplicate hierarchy in the title. Example backend data `Panini / Panini Prizm Black / Panini Prizm Black FOTL` should output as `Panini Prizm Black`.
 
-Missing or incorrect Tier 1 fields should heavily impact confidence.
+Release Variant means same Card Name/Card Type in the same release system with layout, composition, or design-direction differences, such as `Variation`, `Horizontal`, `Vertical`, `Image Variation`, or `International`. It is not Product, Set, Finish, Rarity, or distribution/product configuration. Do not put `FOTL`, `Hobby`, `Retail`, `Choice`, `Fast Break`, or `Sapphire` in Release Variant.
 
-Tier 2 - Important:
+Card Name/Release Variant/Print Finish smart composition: keep backend fields separate, but the output should merge them naturally and remove duplicate words. Example `Gold Refractor Autograph / Variation / Gold` should output as `Gold Refractor Auto Variation`.
 
-- Team
-- Product
-- Insert
-- Rookie
-- 1st Bowman
+TCG subject/card-name separation: `Pikachu Illustrator` should be structured as `subject=Pikachu` and `card_name=Illustrator`, not as one subject. `Charizard ex` can be both subject and card_name only when the printed card name is the same as the subject; the renderer deduplicates the output.
 
-Tier 3 - Best effort:
+Marketplace maximum length is 80 characters. Compression is deterministic:
 
-- Rainbow parallel classification
-- Wave
-- Shimmer
-- Pattern
-- Foil
-- Lava
-- Velocity
-- Disco
-- Pulsar
-- Mojo
+1. Remove tertiary non-TCG Card Number first.
+2. Remove secondary Print Finish and Descriptive Rarity next.
+3. Remove highest-priority identity, SO, and grading terms only when absolutely necessary.
 
-Tier 4:
+Search Optimization is optional and not identity. It may contain directly supported keywords such as RC, Auto, Patch, Relic, Memorabilia, SSP, SP, Case Hit, On Card, Sticker Auto, Game Used, Player Worn, and team names.
 
-- Redundant product terms
-
-Use the tiers to decide what to keep when the title must fit within 80 characters. Do not let Tier 2, Tier 3, or Tier 4 terms crowd out Tier 1 terms.
+Missing or incorrect identity-critical fields should heavily impact confidence. Do not generate filler fields simply to occupy title space.
 
 When uncertain, prefer:
 
-- `Orange Refractor 02/25` over `Orange Pattern Foil` with missing serial.
-- `Purple Parallel 137/199` over `Fuchsia Wave Refractor` without confidence.
+- `Orange 02/25` over `Orange Pattern Foil` with missing serial.
+- `Purple 137/199` over `Fuchsia Wave Refractor` without catalog/printed support.
 - `2025 Topps Chrome Quinshon Judkins RC Purple 130/175` over `2025 Topps Chrome Quinshon Judkins RC Purple Wave Refractor 130/175` unless Wave/Refractor is text-supported.
-- `Green Refractor 01/01` over `Green Geometric` when the serial is clear but the pattern name is not text-supported.
+- `Green 01/01` over `Green Geometric` when the serial is clear but the pattern name is not text-supported.
 
 Rules:
 
-- Use stable title order by default: Year + Brand/Product + Official card type or Insert + Subject + RC/Rookie if applicable + Parallel/Variation + Serial + Auto/Relic/Patch if not already contained in official card type + Grade + Card number.
-- Do not include checklist/card numbers by default. Codes such as `#TCAR-CF`, `#TCAR-AB`, `#PRP-3`, `#SR-KD`, and `#DRL-PT` are useful for resolution but usually too noisy for eBay title output.
-- Preserve serial numbers, but write them in simple market format: `31/150`, `2/5`, `01/10`, `1/1`. Do not write `#31/150`, `Serial 31/150`, or `Numbered 31/150`.
+- Standard Card Grammar applies to Sports, Entertainment, Celebrity, and Non-Sport cards. These categories share the same serialization order.
+- TCG Grammar is card-centric: `Year -> IP -> Language -> Manufacturer -> Product -> Set -> Subject -> Card Name -> Card Number -> Descriptive Rarity -> Numerical Rarity -> Variant -> Product Finish -> Special Stamp -> Grading Info -> Description -> Search Optimization`.
+- Example standard: `1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)`.
+- `card_name` is the printed card/title segment such as `Best Performance`, `Club Legends`, `Gusto`, `Power Partnership`, or `Canvas Creations` when it functions as the card name. It renders after the subject.
+- Numerical Rarity is the product print-limit serialization for the title module. `serial_number` is the raw physical-copy reading. Fill `numerical_rarity` only when the current image or authoritative current-card evidence clearly shows a print-limit value. Full directly readable values such as `2/3`, `14/99`, `31/150`, `2/5`, `01/10`, and `1/1` stay complete. If only the denominator is readable, use `#/150` or `#/5`. If no print limit is visible, leave `numerical_rarity` empty. Backend code will not derive `numerical_rarity` from `serial_number`; output it explicitly when it is supported. Never copy a serial numerator from a catalog/reference candidate.
+- Card Number is not Numerical Rarity. For standard/non-TCG cards it is tertiary: extract it when visible and include it only when the 80-character title budget allows. For hyphenated card codes that end with a subject abbreviation, keep the card type prefix only when rendered, e.g. `PAU-AED` may render as `#PAU`. For TCG cards, card number is an important set identity field, but it can still be omitted from the marketplace title when it would displace more valuable rarity, finish, special stamp, or grading tokens under the 80-character budget.
 - PSA, BGS, CGC, grade company, and grade number should be near the end of the title by default.
 - Do not put grading information at the beginning unless the card identity is primarily derived from the slab label and no better card-front identity is available.
 - Preferred example: `2000 Pokemon Japanese Neo 3 Celebi Holo #251 PSA 9`.
@@ -316,7 +340,7 @@ Rules:
 - Internal metadata and reasoning may mention autograph details, but the listing title should use `Auto`.
 - Keep title human-listable and copy-paste ready.
 - Avoid product repetition when space is tight.
-- Include team only when it helps searchability and does not displace higher-priority information.
+- Include team only when the full title still fits within 80 characters. Render team at the end in parentheses, for example `(Chicago Bulls)`, and omit it when it would displace higher-priority information.
 
 ## 5. Confidence Engine
 
@@ -384,13 +408,13 @@ Downgrade triggers:
 - Do not allow HIGH when serial appears incomplete.
 - Do not allow HIGH when year is not supported by strong evidence.
 - Parallel uncertainty alone should usually cap confidence at MEDIUM, not LOW, when Tier 1 fields are complete.
-- Incomplete or generic parallel family must cap confidence at MEDIUM unless Tier 1 fields are missing or wrong.
-- If the title includes a visually guessed parallel, downgrade HIGH to MEDIUM.
+- Incomplete exact parallel taxonomy should cap confidence at MEDIUM only when the title or fields claim an exact optical name that lacks text/catalog support.
+- If the title includes a visually guessed exact parallel, downgrade HIGH to MEDIUM.
 - Missing serial when a numbered card is visible.
 - Missing auto when an autograph is visible.
 - Missing or wrong year.
-- Missing Wave, Shimmer, Pattern, Foil, SSP, or Insert when visible or strongly indicated should usually downgrade HIGH to MEDIUM when Tier 1 fields are complete.
-- Color-only output when a pattern-specific parallel is visible should usually downgrade HIGH to MEDIUM when Tier 1 fields are complete.
+- Missing Wave, Shimmer, Pattern, Foil, SSP, or Insert should downgrade only when printed/slab/catalog evidence supports that exact term.
+- Color-only output is the preferred MVP behavior when exact optical taxonomy is not text/catalog supported.
 - Visual guess without text evidence.
 - Parallel uncertainty alone should not downgrade to LOW when the subject, year/product, serial/card number, auto, and grade fields are otherwise usable.
 - Title omits a visible high-value field.
@@ -434,10 +458,10 @@ If downgraded, state the specific operational reason when true:
 
 - Dasan Hill: Blue Wave vs Wave Refractor uncertainty means MEDIUM, not HIGH.
 - Wei-En Lin: wrong year, wrong parallel, or wrong/incomplete serial means LOW.
-- Ethan Dorchies: missed Aqua Shimmer or incorrect serial means LOW.
-- Luke Keaschall: Gold Foil misclassified as Yellow Parallel means LOW.
-- Michael Harris II: Orange Pattern Foil simplified to Orange Parallel means LOW or MEDIUM, not HIGH.
-- Dauri Fernandez: Yellow Wave likely correct but visual-only means MEDIUM.
+- Ethan Dorchies: missed visible/catalog-supported Aqua Shimmer or incorrect serial means LOW.
+- Luke Keaschall: Gold color misread as Yellow means LOW.
+- Michael Harris II: Orange color with unsupported Pattern Foil exact taxonomy should output Orange and keep exact taxonomy for review.
+- Dauri Fernandez: Yellow color is acceptable when Wave is visual-only; exact Wave needs printed/catalog support.
 - Power Chords: insert identified but not label-backed means MEDIUM unless all key fields are complete.
 - PSA/BGS/CGC slab with explicit label support can be HIGH if grade, player, product, parallel, auto, or serial are fully supported.
 
@@ -469,7 +493,13 @@ Return exactly this shape:
     "product": null,
     "set": null,
     "subset": null,
+    "official_card_type": null,
+    "observable_components": [],
+    "card_type": null,
     "insert": null,
+    "surface_color": null,
+    "parallel_family": null,
+    "parallel_exact": null,
     "parallel": null,
     "player": null,
     "character": null,
@@ -482,6 +512,8 @@ Return exactly this shape:
     "auto": false,
     "relic": false,
     "patch": false,
+    "jersey": false,
+    "rc": false,
     "sketch": false,
     "redemption": false,
     "one_of_one": false

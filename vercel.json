@@ -18,5 +18,17 @@
       "source": "/login.html",
       "destination": "/app/login"
     }
+  ],
+  "functions": {
+    "api/admin-import-writer-title-catalog-seed.js": {
+      "maxDuration": 300,
+      "includeFiles": "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx"
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/listing-storage-retention-cleanup",
+      "schedule": "0 9 * * *"
+    }
   ]
 }

@@ -1,24 +1,60 @@
+import {
+  analyzeImageQualityFromImageData,
+  defaultCaptureProfileId,
+  summarizeAssetImageQuality
+} from "../lib/listing/image-quality/quality-gate.mjs";
+import { labelForCsmField } from "../lib/listing/csm/field-labels.mjs";
+import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
+
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
 const MAX_CONCURRENT_WORKERS = 6;
-const IMAGE_MAX_EDGE = 1400;
-const IMAGE_MIN_EDGE = 900;
-const IMAGE_INITIAL_QUALITY = 0.82;
-const IMAGE_MIN_QUALITY = 0.72;
-const IMAGE_EMERGENCY_MIN_QUALITY = 0.58;
-const TARGET_IMAGE_DATA_URL_CHARS = 1_250_000;
+const IMAGE_PREPROCESS_CONCURRENCY = 4;
+const STORAGE_UPLOAD_CONCURRENCY = 3;
+const IMAGE_MAX_EDGE = 2200;
+const IMAGE_MIN_EDGE = 1400;
+const IMAGE_INITIAL_QUALITY = 0.9;
+const IMAGE_MIN_QUALITY = 0.78;
+const IMAGE_EMERGENCY_MIN_QUALITY = 0.64;
+const TARGET_IMAGE_DATA_URL_CHARS = 2_400_000;
 const MAX_ASSET_REQUEST_BYTES = 3_400_000;
+const REQUEST_IMAGE_BATCH_LIMIT = 14;
+const TARGETED_CROP_QUALITY = 0.88;
+const FIELD_MAX_CROPS_PER_ASSET = 6;
+const defaultProviderOptions = Object.freeze({
+  single_model_fast: false,
+  enable_evidence_completion: true,
+  enable_catalog_assist: true,
+  enable_vector_assist: true,
+  enable_stored_visual_features: true,
+  enable_query_visual_embeddings: true,
+  enable_vector_retrieval: true,
+  vector_retrieval_mode: "assist",
+  enable_advanced_retrieval: true,
+  enable_hybrid_retrieval: true,
+  enable_gpt_failure_fallback: false,
+  enable_gpt_provider_failure_fallback: false,
+  enable_gpt_critical_verifier: false
+});
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 const supportedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const heicUnsupportedMessage = "当前浏览器暂不支持 HEIC/HEIF 预览，请先在手机相册中导出为 JPG，或使用微信/系统截图后上传。";
 
 const state = {
   files: [],
-  mode: "single",
+  mode: "pair",
   assets: [],
   results: [],
   modal: null,
-  resolutionMap: {}
+  resolutionMap: {},
+  providerStatus: null,
+  selectedProvider: "",
+  processing: false,
+  activeAssetIndexes: new Set(),
+  assetProgress: new Map(),
+  progressTimer: null,
+  completedAssetCount: 0,
+  processingTotal: 0
 };
 
 const elements = {
@@ -27,6 +63,8 @@ const elements = {
   processButton: document.querySelector("#processButton"),
   resetButton: document.querySelector("#resetButton"),
   copyAllButton: document.querySelector("#copyAllButton"),
+  providerControl: document.querySelector("#providerControl"),
+  providerStatusText: document.querySelector("#providerStatusText"),
   batchTitleList: document.querySelector("#batchTitleList"),
   imageModal: document.querySelector("#imageModal"),
   imageModalClose: document.querySelector("#imageModalClose"),
@@ -60,9 +98,50 @@ function readFileAsDataUrl(file) {
   });
 }
 
+async function mapWithConcurrency(items, limit, worker) {
+  const source = Array.from(items || []);
+  const results = new Array(source.length);
+  const workerCount = Math.max(1, Math.min(Number(limit) || 1, source.length || 1));
+  let cursor = 0;
+
+  async function runWorker() {
+    while (cursor < source.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(source[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
+  return results;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function fileExtension(name) {
   const match = String(name || "").toLowerCase().match(/\.[^.]+$/);
   return match ? match[0] : "";
+}
+
+function imageId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `image-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function contentTypeForFile(file) {
+  const type = String(file.type || "").toLowerCase();
+  if (supportedImageTypes.includes(type)) return type;
+
+  return {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heif"
+  }[fileExtension(file.name)] || type;
 }
 
 function isHeicFile(file) {
@@ -91,11 +170,106 @@ function canvasToDataUrl(canvas, quality) {
   return canvas.toDataURL("image/jpeg", quality);
 }
 
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = String(dataUrl || "").split(",");
+  const contentType = header.match(/^data:([^;]+)/)?.[1] || "image/jpeg";
+  const binary = atob(base64 || "");
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new Blob([bytes], { type: contentType });
+}
+
 function stringByteLength(value) {
   return new Blob([String(value || "")]).size;
 }
 
-async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
+function cropCanvasDataUrl(sourceCanvas, cropRegion, quality = TARGETED_CROP_QUALITY) {
+  const left = Math.max(0, Math.floor(cropRegion.x * sourceCanvas.width));
+  const top = Math.max(0, Math.floor(cropRegion.y * sourceCanvas.height));
+  const width = Math.max(1, Math.min(sourceCanvas.width - left, Math.ceil(cropRegion.width * sourceCanvas.width)));
+  const height = Math.max(1, Math.min(sourceCanvas.height - top, Math.ceil(cropRegion.height * sourceCanvas.height)));
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { alpha: false });
+
+  canvas.width = width;
+  canvas.height = height;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(sourceCanvas, left, top, width, height, 0, 0, width, height);
+
+  return {
+    dataUrl: canvasToDataUrl(canvas, quality),
+    width,
+    height
+  };
+}
+
+function inferredSourceSide(image = {}) {
+  const text = [
+    image.side,
+    image.role,
+    image.captureRole,
+    image.capture_profile,
+    image.storageRole,
+    image.name
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  if (text.includes("back") || text.includes("reverse")) return "back";
+  if (text.includes("front") || text.includes("obverse")) return "front";
+  return "";
+}
+
+function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
+  const cropPlans = planTargetedCrops({
+    imageId: sourceImage.id,
+    sourceObjectPath: sourceImage.objectPath || "",
+    sourceSide: inferredSourceSide(sourceImage),
+    sourceWidth: sourceCanvas.width,
+    sourceHeight: sourceCanvas.height,
+    imageQuality,
+    maxCrops: FIELD_MAX_CROPS_PER_ASSET
+  });
+
+  return cropPlans.map((plan, index) => {
+    const crop = cropCanvasDataUrl(sourceCanvas, plan.crop_region);
+    const blob = dataUrlToBlob(crop.dataUrl);
+    const cropId = `${sourceImage.id}-${plan.source_region}-${index + 1}`;
+
+    return {
+      id: cropId,
+      name: `${sourceImage.name} ${plan.source_region} crop`,
+      originalType: "image/jpeg",
+      type: "image/jpeg",
+      size: stringByteLength(crop.dataUrl),
+      originalSize: blob.size,
+      width: crop.width,
+      height: crop.height,
+      dataUrl: crop.dataUrl,
+      captureProfileId: defaultCaptureProfileId,
+      imageQuality: null,
+      sourceBlob: blob,
+      sourceImageId: sourceImage.id,
+      sourceRegion: plan.source_region,
+      storageRole: plan.role,
+      cropPlan: plan,
+      cropMetadata: {
+        ...(plan.crop_metadata || {}),
+        crop_id: cropId,
+        source_image_id: sourceImage.id,
+        source_region: plan.source_region,
+        crop_role: plan.role
+      },
+      derived: true,
+      contentSha256: "",
+      objectPath: ""
+    };
+  });
+}
+
+async function compressImageDataUrl(originalDataUrl, maxEdge, quality, sourceImage = null) {
   const image = await loadImage(originalDataUrl);
   const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -109,21 +283,31 @@ async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
   context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
 
+  const imageQuality = analyzeImageQualityFromImageData(context.getImageData(0, 0, width, height));
+
   return {
     dataUrl: canvasToDataUrl(canvas, quality),
     width,
-    height
+    height,
+    originalWidth: image.naturalWidth,
+    originalHeight: image.naturalHeight,
+    imageQuality,
+    targetedCrops: sourceImage ? buildTargetedCropImages(sourceImage, canvas, imageQuality) : []
   };
 }
 
 async function fileToAssetImage(file) {
+  const id = imageId();
   const originalDataUrl = await readFileAsDataUrl(file);
   let maxEdge = IMAGE_MAX_EDGE;
   let quality = IMAGE_INITIAL_QUALITY;
   let compressed;
 
   try {
-    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality);
+    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality, {
+      id,
+      name: file.name
+    });
   } catch (error) {
     if (isHeicFile(file)) {
       throw new Error(heicUnsupportedMessage);
@@ -141,17 +325,30 @@ async function fileToAssetImage(file) {
       maxEdge = Math.max(IMAGE_MIN_EDGE, Math.round(maxEdge * 0.86));
     }
 
-    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality);
+    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality, {
+      id,
+      name: file.name
+    });
   }
 
   return {
+    id,
     name: file.name,
+    originalType: contentTypeForFile(file),
     type: "image/jpeg",
     size: stringByteLength(compressed.dataUrl),
     originalSize: file.size,
+    originalWidth: compressed.originalWidth,
+    originalHeight: compressed.originalHeight,
     width: compressed.width,
     height: compressed.height,
-    dataUrl: compressed.dataUrl
+    dataUrl: compressed.dataUrl,
+    captureProfileId: defaultCaptureProfileId,
+    imageQuality: compressed.imageQuality,
+    sourceFile: file,
+    contentSha256: "",
+    objectPath: "",
+    targetedCrops: compressed.targetedCrops
   };
 }
 
@@ -164,22 +361,131 @@ async function recompressAssetImage(image, maxEdge, quality) {
     size: stringByteLength(compressed.dataUrl),
     width: compressed.width,
     height: compressed.height,
-    dataUrl: compressed.dataUrl
+    dataUrl: compressed.dataUrl,
+    imageQuality: image.imageQuality || compressed.imageQuality,
+    sourceBlob: image.sourceBlob || dataUrlToBlob(compressed.dataUrl)
   };
 }
 
-function buildAssetRequestBody(asset) {
-  return JSON.stringify({
+function imageHasVerifiedStorageReference(image = {}) {
+  return Boolean(image.objectPath && image.storageVerified);
+}
+
+function serializableAssetImage(image, assetId = "") {
+  const useStorageReference = imageHasVerifiedStorageReference(image);
+  const cropMetadata = image.cropMetadata || image.crop_metadata || null;
+  const serializedCropMetadata = cropMetadata
+    ? {
+      ...cropMetadata,
+      asset_id: cropMetadata.asset_id || assetId || "",
+      source_object_path: cropMetadata.source_object_path || "",
+      derived_object_path: cropMetadata.derived_object_path || image.objectPath || ""
+    }
+    : null;
+  return {
+    id: image.id,
+    name: image.name,
+    type: image.type,
+    originalType: image.originalType,
+    size: image.size,
+    originalSize: image.originalSize,
+    originalWidth: image.originalWidth,
+    originalHeight: image.originalHeight,
+    width: image.width,
+    height: image.height,
+    dataUrl: useStorageReference ? "" : image.dataUrl,
+    captureProfileId: image.captureProfileId || defaultCaptureProfileId,
+    imageQuality: image.imageQuality || null,
+    sourceImageId: image.sourceImageId || "",
+    sourceRegion: image.sourceRegion || "",
+    storageRole: image.storageRole || "",
+    cropPlan: image.cropPlan || null,
+    cropMetadata: serializedCropMetadata,
+    crop_metadata: serializedCropMetadata,
+    derived: Boolean(image.derived),
+    contentSha256: image.contentSha256 || "",
+    objectPath: image.objectPath || "",
+    bucket: image.bucket || "",
+    storageVerificationToken: image.storageVerificationToken || "",
+    storageVerified: Boolean(image.storageVerified),
+    storageUploaded: Boolean(image.storageUploaded)
+  };
+}
+
+function reviewImageReference(image) {
+  const cropMetadata = image.cropMetadata || image.crop_metadata || null;
+  return {
+    id: image.id,
+    name: image.name,
+    type: image.type,
+    originalType: image.originalType,
+    originalWidth: image.originalWidth,
+    originalHeight: image.originalHeight,
+    width: image.width,
+    height: image.height,
+    captureProfileId: image.captureProfileId || defaultCaptureProfileId,
+    imageQuality: image.imageQuality || null,
+    sourceImageId: image.sourceImageId || "",
+    sourceRegion: image.sourceRegion || "",
+    storageRole: image.storageRole || "",
+    cropMetadata: cropMetadata || null,
+    crop_metadata: cropMetadata || null,
+    derived: Boolean(image.derived),
+    contentSha256: image.contentSha256 || "",
+    objectPath: image.objectPath || "",
+    bucket: image.bucket || "",
+    storageVerified: Boolean(image.storageVerified),
+    storageUploaded: Boolean(image.storageUploaded)
+  };
+}
+
+function imageIsDerivedForRequest(image = {}) {
+  return Boolean(image.derived || image.sourceRegion || image.source_region);
+}
+
+function boundedProviderImagesForRequest(images = [], maxImages = REQUEST_IMAGE_BATCH_LIMIT) {
+  const allImages = Array.isArray(images) ? images : [];
+  const primaryImages = allImages.filter((image) => !imageIsDerivedForRequest(image));
+  const derivedImages = allImages.filter(imageIsDerivedForRequest);
+  const maxDerived = Math.max(0, Math.max(2, Number(maxImages) || REQUEST_IMAGE_BATCH_LIMIT) - primaryImages.length);
+  return [
+    ...primaryImages,
+    ...derivedImages.slice(0, maxDerived)
+  ];
+}
+
+function buildAssetRequestBody(asset, options = {}) {
+  const provider = options.provider || state.selectedProvider;
+  const allProviderImages = asset.providerImages || asset.images || [];
+  const providerImages = boundedProviderImagesForRequest(allProviderImages);
+  const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
+  const body = {
     assetId: asset.id,
     mode: state.mode,
     maxTitleLength,
-    images: asset.images,
-    resolutionMap: state.resolutionMap
-  });
+    images: providerImages.map((image) => serializableAssetImage(image, asset.id)),
+    deferredImageCount,
+    deferred_image_count: deferredImageCount,
+    captureProfileId: defaultCaptureProfileId,
+    captureQuality: summarizeAssetImageQuality(providerImages),
+    resolutionMap: state.resolutionMap,
+    clientTiming: asset.clientTiming || {},
+    provider_options: {
+      ...defaultProviderOptions,
+      ...(options.provider_options || options.providerOptions || {})
+    }
+  };
+
+  if (provider) {
+    body.provider = provider;
+    body.explicitEmergency = Boolean(options.explicitEmergency || provider === "openai_legacy");
+  }
+
+  return JSON.stringify(body);
 }
 
-async function ensureSafeAssetPayload(asset) {
-  let requestBody = buildAssetRequestBody(asset);
+async function ensureSafeAssetPayload(asset, options = {}) {
+  let requestBody = buildAssetRequestBody(asset, options);
   let requestBytes = stringByteLength(requestBody);
 
   if (requestBytes <= MAX_ASSET_REQUEST_BYTES) {
@@ -193,8 +499,19 @@ async function ensureSafeAssetPayload(asset) {
   ];
 
   for (const step of compressionSteps) {
-    asset.images = await Promise.all(asset.images.map((image) => recompressAssetImage(image, step.maxEdge, step.quality)));
-    requestBody = buildAssetRequestBody(asset);
+    asset.images = await mapWithConcurrency(asset.images, IMAGE_PREPROCESS_CONCURRENCY, async (image) => {
+      const recompressed = await recompressAssetImage(image, step.maxEdge, step.quality);
+      if (Array.isArray(recompressed.targetedCrops)) {
+        recompressed.targetedCrops = await mapWithConcurrency(
+          recompressed.targetedCrops,
+          IMAGE_PREPROCESS_CONCURRENCY,
+          (crop) => recompressAssetImage(crop, step.maxEdge, step.quality)
+        );
+      }
+      return recompressed;
+    });
+    asset.providerImages = imagesForProvider(asset.images);
+    requestBody = buildAssetRequestBody(asset, options);
     requestBytes = stringByteLength(requestBody);
 
     if (requestBytes <= MAX_ASSET_REQUEST_BYTES) {
@@ -202,7 +519,197 @@ async function ensureSafeAssetPayload(asset) {
     }
   }
 
-  throw new Error(`图片请求体过大，请先裁剪或压缩后重试（约 ${(requestBytes / 1_000_000).toFixed(1)}MB）`);
+  while ((asset.providerImages || []).some(imageIsDerivedForRequest)) {
+    asset.providerImages = (asset.providerImages || []).slice(0, -1);
+    requestBody = buildAssetRequestBody(asset, options);
+    requestBytes = stringByteLength(requestBody);
+    if (requestBytes <= MAX_ASSET_REQUEST_BYTES) {
+      return { requestBody, compressedAgain: true };
+    }
+  }
+
+  throw new Error("这组原图仍然过大，系统已保留给下一批处理；请稍后重试或减少单张卡的原图数量。");
+}
+
+function storageReady() {
+  return Boolean(state.providerStatus?.storage?.configured);
+}
+
+function storageSourceForImage(image) {
+  if (image.sourceFile) return image.sourceFile;
+  if (image.sourceBlob) return image.sourceBlob;
+  return null;
+}
+
+function storageRoleForImage(image, imageIndex) {
+  if (image.storageRole) return image.storageRole;
+  if (state.mode === "pair") return imageIndex === 0 ? "front_original" : "back_original";
+  return "front_original";
+}
+
+function storageDimensionsForImage(image) {
+  if (image.sourceFile) {
+    return {
+      width: image.originalWidth || image.width,
+      height: image.originalHeight || image.height
+    };
+  }
+
+  return {
+    width: image.width,
+    height: image.height
+  };
+}
+
+async function fileSignatureHex(source, maxBytes = 32) {
+  if (!source || typeof source.slice !== "function" || typeof source.arrayBuffer !== "function") {
+    return "";
+  }
+
+  const buffer = await source.slice(0, maxBytes).arrayBuffer();
+  return Array.from(new Uint8Array(buffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function contentSha256Hex(source) {
+  if (!source || typeof source.arrayBuffer !== "function" || !globalThis.crypto?.subtle) {
+    return "";
+  }
+
+  const buffer = await source.arrayBuffer();
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function uploadAssetImage(asset, image, imageIndex) {
+  const source = storageSourceForImage(image);
+  if (image.objectPath || !source) return false;
+  const signatureHex = await fileSignatureHex(source);
+  const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
+  const dimensions = storageDimensionsForImage(image);
+  image.contentSha256 = contentSha256;
+
+  const uploadResponse = await fetch("/api/listing-image-upload-url", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      assetId: asset.id,
+      imageId: image.id,
+      role: storageRoleForImage(image, imageIndex),
+      fileName: image.name,
+      contentType: image.originalType || source.type || "image/jpeg",
+      size: source.size,
+      width: dimensions.width,
+      height: dimensions.height,
+      signatureHex,
+      contentSha256
+    })
+  });
+
+  const uploadPayload = await uploadResponse.json();
+  if (!uploadResponse.ok || !uploadPayload.ok) {
+    throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
+  }
+
+  const storageResponse = await fetch(uploadPayload.upload.signed_upload_url, {
+    method: "PUT",
+    headers: {
+      "content-type": uploadPayload.upload.content_type || image.originalType || "application/octet-stream"
+    },
+    body: source
+  });
+
+  if (!storageResponse.ok) {
+    throw new Error(`Storage upload failed: ${storageResponse.status}`);
+  }
+
+  const verifyResponse = await fetch("/api/listing-image-verify-upload", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      assetId: asset.id,
+      imageId: image.id,
+      role: storageRoleForImage(image, imageIndex),
+      objectPath: uploadPayload.upload.object_path,
+      contentType: uploadPayload.upload.content_type,
+      size: source.size,
+      width: dimensions.width,
+      height: dimensions.height,
+      signatureHex,
+      contentSha256
+    })
+  });
+  const verifyPayload = await verifyResponse.json();
+  if (!verifyResponse.ok || !verifyPayload.ok) {
+    throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
+  }
+
+  image.objectPath = verifyPayload.verification.object_path;
+  image.bucket = verifyPayload.verification.bucket;
+  image.storageVerificationToken = verifyPayload.verification.verification_token || "";
+  image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
+  image.storageVerified = true;
+  image.storageUploaded = true;
+  if (image.cropMetadata || image.crop_metadata) {
+    const metadata = {
+      ...(image.cropMetadata || image.crop_metadata || {}),
+      derived_object_path: image.objectPath,
+      source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
+      asset_id: (image.cropMetadata || image.crop_metadata || {}).asset_id || asset.id || ""
+    };
+    image.cropMetadata = metadata;
+    image.crop_metadata = metadata;
+    if (image.cropPlan) {
+      image.cropPlan = {
+        ...image.cropPlan,
+        crop_metadata: metadata
+      };
+    }
+  }
+  return true;
+}
+
+async function ensureAssetImagesUploaded(asset) {
+  if (!storageReady()) return false;
+
+  const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
+  asset.providerImages = images;
+  const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
+    return uploadAssetImage(asset, image, imageIndex);
+  });
+  const imagesById = new Map(images.map((image) => [image.id, image]));
+  images.forEach((image) => {
+    const metadata = image.cropMetadata || image.crop_metadata;
+    if (!metadata?.source_image_id) return;
+    const sourceImage = imagesById.get(metadata.source_image_id);
+    const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
+    if (!sourceObjectPath) return;
+    const updatedMetadata = {
+      ...metadata,
+      source_object_path: sourceObjectPath,
+      derived_object_path: metadata.derived_object_path || image.objectPath || "",
+      asset_id: metadata.asset_id || asset.id || ""
+    };
+    image.cropMetadata = updatedMetadata;
+    image.crop_metadata = updatedMetadata;
+    if (image.cropPlan) {
+      image.cropPlan = {
+        ...image.cropPlan,
+        crop_metadata: updatedMetadata
+      };
+    }
+  });
+
+  return uploadResults.some(Boolean);
 }
 
 function formatCost(requests) {
@@ -216,6 +723,156 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function providerById(providerId) {
+  return (state.providerStatus?.providers || []).find((provider) => provider.id === providerId) || null;
+}
+
+function emergencyProvider() {
+  return (state.providerStatus?.providers || []).find((provider) => provider.id === "openai_legacy" && provider.selectable) || null;
+}
+
+function providerDisabledText(provider) {
+  const reason = provider.disabled_reason || "";
+  if (reason === "storage_not_configured") return "Storage 未配置";
+  if (reason.includes("api_key")) return "未配置";
+  if (reason === "disabled_by_env") return "已禁用";
+  if (reason === "emergency_retry_disabled") return "手动关闭";
+  if (reason) return "不可用";
+  return provider.requires_explicit_retry ? "手动直跑" : "可用";
+}
+
+function providerSmokeText(provider) {
+  const smoke = provider.smoke;
+  if (!smoke) return "";
+
+  if (smoke.status === "not_run") return "Smoke 未验证";
+  if (smoke.status === "unreadable") return "Smoke 报告不可读";
+  if (smoke.status === "skipped") return "Smoke 已跳过";
+
+  const verified = [];
+  if (smoke.json_baseline_verified) verified.push("JSON");
+  if (smoke.multi_image_verified) verified.push("多图");
+  if (smoke.error_response_verified) verified.push("错误响应");
+  if (smoke.tool_call_verified) verified.push("工具调用");
+
+  const prefix = smoke.status === "passed"
+    ? "Smoke 已验证"
+    : smoke.status === "passed_with_limitations"
+      ? "Smoke 部分验证"
+      : "Smoke 未通过";
+
+  return verified.length ? `${prefix}: ${verified.join(" / ")}` : prefix;
+}
+
+function providerCascadeText(provider) {
+  const roles = new Set(provider.roles || [provider.role].filter(Boolean));
+  if (provider.id === "openai_legacy" || roles.has("primary")) {
+    return "GPT-4.1 mini 生产主路径，不参与自动混合";
+  }
+  if (roles.has("diagnostic")) {
+    return "离线/管理员诊断";
+  }
+  return "";
+}
+
+function providerStatusText(provider) {
+  return [
+    `${provider.label} · ${providerDisabledText(provider)}`,
+    providerCascadeText(provider),
+    providerSmokeText(provider)
+  ].filter(Boolean).join(" · ");
+}
+
+function workflowReadinessText(readiness) {
+  if (!readiness) return "";
+  const summary = readiness.summary || {};
+  const ready = `${summary.ready_count ?? 0}/${summary.component_count ?? 0}`;
+  if (readiness.low_friction_ready) return `链路预检 OK · ${ready} 已就绪`;
+  if (readiness.can_run_cloud_recognition) {
+    const failClosed = summary.fail_closed_count || readiness.fail_closed_components?.length || 0;
+    const degraded = summary.degraded_count || 0;
+    return `链路可跑 · ${ready} 已就绪 · ${failClosed} 个安全降级 · ${degraded} 个降级`;
+  }
+  const blockers = (readiness.blockers || []).join(", ") || "cloud";
+  return `链路未就绪 · 阻断：${blockers}`;
+}
+
+function workflowAllowsGeneration() {
+  const readiness = state.providerStatus?.workflow_readiness;
+  if (!readiness) return false;
+  return readiness.can_run_cloud_recognition !== false;
+}
+
+function renderProviderControl() {
+  const providers = state.providerStatus?.providers || [];
+  const readinessText = workflowReadinessText(state.providerStatus?.workflow_readiness);
+
+  if (!providers.length) {
+    elements.providerControl.innerHTML = "";
+    elements.providerStatusText.textContent = state.providerStatus?.fallback_available
+      ? "未配置服务端 Provider，当前使用本地 fallback。"
+      : readinessText || "未读取到可用 Provider。";
+    elements.processButton.disabled = !canGenerateTitles();
+    return;
+  }
+
+  elements.providerControl.innerHTML = providers.map((provider) => `
+    <button
+      class="provider-option ${state.selectedProvider === provider.id ? "active" : ""}"
+      type="button"
+      data-provider-id="${escapeHtml(provider.id)}"
+      ${provider.selectable ? "" : "disabled"}
+    >
+      <strong>${escapeHtml(provider.label)}</strong>
+      <small>${escapeHtml(provider.model_id)} · ${escapeHtml(providerDisabledText(provider))}</small>
+      ${providerCascadeText(provider) ? `<small>${escapeHtml(providerCascadeText(provider))}</small>` : ""}
+      ${providerSmokeText(provider) ? `<small class="provider-smoke">${escapeHtml(providerSmokeText(provider))}</small>` : ""}
+    </button>
+  `).join("");
+
+  const selected = providerById(state.selectedProvider);
+  if (selected) {
+    elements.providerStatusText.textContent = [
+      providerStatusText(selected),
+      readinessText
+    ].filter(Boolean).join(" · ");
+    elements.processButton.disabled = !canGenerateTitles();
+    return;
+  }
+
+  elements.providerStatusText.textContent = state.providerStatus?.fallback_available
+    ? "未配置服务端 Provider，当前使用本地 fallback。"
+    : readinessText || "请选择可用 Provider。";
+  elements.processButton.disabled = !canGenerateTitles();
+}
+
+function selectProvider(providerId) {
+  const provider = providerById(providerId);
+  if (!provider?.selectable) return;
+
+  state.selectedProvider = provider.id;
+  state.results = [];
+  renderProviderControl();
+  elements.processButton.disabled = !canGenerateTitles();
+  renderResults();
+}
+
+function canGenerateTitles() {
+  return Boolean(state.assets.length && state.selectedProvider && workflowAllowsGeneration());
+}
+
+function selectedProviderConfig() {
+  return (state.providerStatus?.providers || []).find((provider) => provider.id === state.selectedProvider) || null;
+}
+
+function processingConcurrencyLimit() {
+  const configured = Number(selectedProviderConfig()?.recommended_concurrency);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(1, Math.min(configured, MAX_CONCURRENT_WORKERS));
+  }
+  return Math.min(3, MAX_CONCURRENT_WORKERS);
 }
 
 function confidenceClass(confidence) {
@@ -238,13 +895,176 @@ function normalizeConfidence(confidence) {
   }[String(confidence || "").toUpperCase()] || "MEDIUM";
 }
 
-function setStatus(message) {
-  elements.statusText.textContent = message;
+function setStatus(message, options = {}) {
+  const text = String(message || "");
+  const busy = Boolean(options.busy && text);
+  elements.statusText.classList.toggle("status-busy", busy);
+  elements.statusText.setAttribute("aria-busy", busy ? "true" : "false");
+  elements.dropZone.classList.toggle("status-busy", busy);
+
+  if (busy) {
+    elements.statusText.innerHTML = `
+      <span class="status-spinner" aria-hidden="true"></span>
+      <span class="status-message">${escapeHtml(text)}</span>
+      <span class="status-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    `;
+    return;
+  }
+
+  elements.statusText.textContent = text;
+}
+
+function setProcessButtonBusy(isBusy) {
+  elements.processButton.classList.toggle("is-loading", Boolean(isBusy));
+  elements.processButton.setAttribute("aria-busy", isBusy ? "true" : "false");
+  elements.processButton.textContent = isBusy ? "识别中" : "开始生成";
+}
+
+function clampNumber(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.max(min, Math.min(max, number));
+}
+
+function currentProcessingPercent() {
+  const total = state.processingTotal || state.assets.length || 0;
+  if (!state.processing || !total) return 0;
+  const completed = clampNumber(state.completedAssetCount || 0, 0, total);
+  const activeFraction = [...state.assetProgress.values()].reduce((sum, progress) => {
+    return sum + clampNumber(progress.displayFraction ?? progress.targetFraction ?? progress.fraction, 0, 0.98);
+  }, 0);
+  return Math.max(1, Math.min(99, Math.round(((completed + activeFraction) / total) * 100)));
+}
+
+function statusWithProgress(message) {
+  const percent = currentProcessingPercent();
+  return percent ? `${percent}% · ${message}` : message;
+}
+
+function setAssetProgress(assetIndex, label, fraction) {
+  if (!state.processing) return;
+  const current = state.assetProgress.get(assetIndex) || {};
+  const targetFraction = clampNumber(fraction, 0.01, 0.98);
+  state.assetProgress.set(assetIndex, {
+    label,
+    targetFraction,
+    displayFraction: clampNumber(
+      current.displayFraction ?? current.targetFraction ?? 0.005,
+      0.005,
+      Math.max(0.005, targetFraction)
+    ),
+    updatedAt: performance.now()
+  });
+  startProgressTicker();
+  renderResults();
+  setStatus(statusWithProgress(`资产 ${assetIndex}：${label}`), { busy: true });
+}
+
+function clearAssetProgress(assetIndex) {
+  state.assetProgress.delete(assetIndex);
+}
+
+function progressStepForTarget(targetFraction) {
+  if (targetFraction <= 0.08) return 0.0028;
+  if (targetFraction <= 0.36) return 0.0045;
+  if (targetFraction <= 0.72) return 0.0032;
+  return 0.0024;
+}
+
+function stopProgressTicker() {
+  if (!state.progressTimer) return;
+  clearInterval(state.progressTimer);
+  state.progressTimer = null;
+}
+
+function startProgressTicker() {
+  if (state.progressTimer || !state.processing) return;
+  state.progressTimer = setInterval(() => {
+    if (!state.processing || !state.assetProgress.size) {
+      stopProgressTicker();
+      return;
+    }
+
+    let changed = false;
+    for (const [assetIndex, progress] of state.assetProgress.entries()) {
+      const target = clampNumber(progress.targetFraction ?? progress.fraction, 0.01, 0.98);
+      const display = clampNumber(progress.displayFraction ?? 0.005, 0.005, 0.98);
+      if (display >= target - 0.001) continue;
+      const nextDisplay = Math.min(target, display + progressStepForTarget(target));
+      state.assetProgress.set(assetIndex, {
+        ...progress,
+        displayFraction: nextDisplay
+      });
+      changed = true;
+    }
+
+    if (changed) {
+      renderResults();
+      setStatus(statusWithProgress("识别中，系统正在逐步读取模块…"), { busy: true });
+    }
+  }, 520);
+}
+
+function assetProgressSnapshot(asset) {
+  const progress = state.assetProgress.get(asset.index);
+  if (progress) {
+    return {
+      label: progress.label || "识别中",
+      percent: Math.max(1, Math.min(99, Math.round(clampNumber(progress.displayFraction ?? progress.targetFraction ?? progress.fraction, 0, 0.98) * 100))),
+      targetPercent: Math.max(1, Math.min(99, Math.round(clampNumber(progress.targetFraction ?? progress.fraction, 0, 0.98) * 100)))
+    };
+  }
+
+  if (state.processing && !resultForAsset(asset)) {
+    return {
+      label: "等待后台队列",
+      percent: currentProcessingPercent()
+    };
+  }
+
+  return { label: "", percent: 0 };
+}
+
+function progressMeter(percent, label = "") {
+  const safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  return `
+    <div class="progress-meter" aria-label="${escapeHtml(label || "识别进度")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${safePercent}" role="progressbar">
+      <span class="progress-fill" style="width: ${safePercent}%"></span>
+      <strong class="progress-value">${safePercent}%</strong>
+    </div>
+  `;
 }
 
 function assetCountLabel(count) {
   return `${count} 张图片`;
 }
+
+function imagesForProvider(assetImages) {
+  const primaryImages = Array.isArray(assetImages) ? assetImages : [];
+  const targetedCrops = primaryImages
+    .flatMap((image, sourceIndex) => (Array.isArray(image.targetedCrops) ? image.targetedCrops : [])
+      .map((crop) => ({
+        crop,
+        sourceIndex,
+        priority: Number(crop.cropPlan?.priority || crop.crop_plan?.priority || 0)
+      })))
+    .sort((left, right) => {
+      if (right.priority !== left.priority) return right.priority - left.priority;
+      return left.sourceIndex - right.sourceIndex;
+    })
+    .slice(0, FIELD_MAX_CROPS_PER_ASSET)
+    .map((item) => item.crop);
+
+  return [
+    ...primaryImages,
+    ...targetedCrops
+  ];
+}
+
+export const __listingCopilotAppTestHooks = {
+  boundedProviderImagesForRequest,
+  imagesForProvider
+};
 
 function buildAssets() {
   const assets = [];
@@ -254,15 +1074,18 @@ function buildAssets() {
       assets.push({
         id: `asset-${index + 1}`,
         index: index + 1,
-        images: [image]
+        images: [image],
+        providerImages: imagesForProvider([image])
       });
     });
   } else {
     for (let index = 0; index < state.files.length; index += 2) {
+      const images = state.files.slice(index, index + 2);
       assets.push({
         id: `asset-${Math.floor(index / 2) + 1}`,
         index: Math.floor(index / 2) + 1,
-        images: state.files.slice(index, index + 2)
+        images,
+        providerImages: imagesForProvider(images)
       });
     }
   }
@@ -291,7 +1114,7 @@ function renderPreviews() {
   buildAssets();
   updateStats();
 
-  elements.processButton.disabled = !state.assets.length;
+  elements.processButton.disabled = !canGenerateTitles();
 
   if (!state.assets.length) {
     closeImageModal();
@@ -318,41 +1141,19 @@ function resultForAsset(asset) {
   return state.results.find((result) => result.index === asset.index);
 }
 
-function assetForResult(result) {
-  return state.assets.find((asset) => asset.index === result.index) || null;
-}
-
-function isBase64ImageDataUrl(value) {
-  return /^data:image\/[^;,]+;base64,/i.test(String(value || ""));
-}
-
-function feedbackImagePayload(image) {
-  const dataUrl = String(image?.dataUrl || "");
-  if (!isBase64ImageDataUrl(dataUrl)) return null;
-
-  return {
-    name: String(image.name || ""),
-    type: String(image.type || "image/jpeg"),
-    dataUrl
-  };
-}
-
-function feedbackImagesForAsset(asset) {
-  const images = asset?.images || [];
-  const front = feedbackImagePayload(images[0]);
-  const back = feedbackImagePayload(images[1]);
-
-  return {
-    front,
-    back,
-    count: [front, back].filter(Boolean).length
-  };
-}
-
 function generatedTitleResults() {
   return [...state.results]
     .filter((result) => normalizeConfidence(result.confidence) !== "FAILED" && String((result.correctedTitle ?? result.title) || "").trim())
     .sort((a, b) => a.index - b.index);
+}
+
+function modelQuickApprovalCandidate(result) {
+  const gate = result?.publication_gate || {};
+  return gate.model_quick_review_recommended === true
+    || gate.writer_quick_approval_ready === true
+    || gate.workflow_route === "LOW_TOUCH_REVIEW"
+    || gate.status === "LOW_TOUCH_REVIEW"
+    || gate.legacy_status === "WRITER_QUICK_APPROVAL_READY";
 }
 
 function renderBatchTitles() {
@@ -372,16 +1173,276 @@ function renderBatchTitles() {
   `).join("");
 }
 
-function imageSideLabel(imageIndex) {
+function cropRegionLabel(region = "") {
+  return labelForCsmField(region, "Field Crop");
+}
+
+function modalImagesForAsset(asset = {}) {
+  return asset.images || [];
+}
+
+function evidenceEntriesFromContainer(container) {
+  if (!container) return [];
+  if (Array.isArray(container)) return container.flatMap(evidenceEntriesFromContainer);
+  if (typeof container !== "object") return [];
+  const directEntryKeys = [
+    "field",
+    "source_image_id",
+    "sourceImageId",
+    "source_type",
+    "sourceType",
+    "source_region",
+    "sourceRegion",
+    "image_role",
+    "imageRole",
+    "raw_text",
+    "visible_text",
+    "value"
+  ];
+  const isDirectEntry = directEntryKeys.some((key) => Object.prototype.hasOwnProperty.call(container, key));
+  if (isDirectEntry) return [container];
+  return Object.entries(container).flatMap(([field, value]) => {
+    return evidenceEntriesFromContainer(value).map((entry) => ({
+      field: entry.field || field,
+      ...entry
+    }));
+  });
+}
+
+function evidenceEntriesForSideDecision(result = {}) {
+  return [
+    result.field_evidence,
+    result.evidence?.field_evidence,
+    result.generated_evidence?.field_evidence,
+    result.evidence,
+    result.generated_evidence
+  ].flatMap(evidenceEntriesFromContainer);
+}
+
+function sourceImageIdForEvidence(entry = {}) {
+  return String(
+    entry.source_image_id
+      || entry.sourceImageId
+      || entry.image_id
+      || entry.imageId
+      || entry.crop_metadata?.source_image_id
+      || entry.cropMetadata?.sourceImageId
+      || ""
+  ).trim();
+}
+
+function imageIndexByEvidenceId(asset = {}) {
+  const indexById = new Map();
+  (asset.images || []).forEach((image, index) => {
+    if (image.id) indexById.set(String(image.id), index);
+  });
+  (asset.providerImages || []).forEach((image) => {
+    const sourceImageId = image.sourceImageId
+      || image.source_image_id
+      || image.cropMetadata?.source_image_id
+      || image.crop_metadata?.source_image_id
+      || "";
+    if (image.id && indexById.has(String(sourceImageId))) {
+      indexById.set(String(image.id), indexById.get(String(sourceImageId)));
+    }
+  });
+  return indexById;
+}
+
+function sideCueScore(entry = {}) {
+  const field = String(entry.field || "").toLowerCase();
+  const source = [
+    entry.source_type,
+    entry.sourceType,
+    entry.source_region,
+    entry.sourceRegion,
+    entry.image_role,
+    entry.imageRole,
+    entry.region,
+    entry.raw_text,
+    entry.visible_text,
+    entry.evidence_kind
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  const score = { front: 0, back: 0 };
+  if (/\bfront\b|card_front|front_printed|obverse/.test(source)) score.front += 5;
+  if (/\bback\b|card_back|back_printed|reverse|checklist|copyright/.test(source)) score.back += 5;
+
+  if (["players", "player", "subject", "subjects", "character", "card_name", "surface_color", "parallel_exact", "parallel", "variant_or_parallel", "auto", "rc"].includes(field)) {
+    score.front += 2;
+  }
+  if (["year", "season_year", "product_year", "product", "product_or_set", "set", "collector_number", "checklist_code"].includes(field)) {
+    score.back += 2;
+  }
+  if (["serial_number", "grade_company", "card_grade", "grade", "auto_grade"].includes(field)) {
+    score.front += 1;
+    score.back += 1;
+  }
+  return score;
+}
+
+function sideDecisionForAsset(asset = null, result = null) {
+  if (!asset || state.mode !== "pair") return [];
+  const images = asset.images || [];
+  if (!images.length) return [];
+
+  const scores = images.map((image, imageIndex) => ({
+    imageIndex,
+    side: imageIndex === 0 ? "front" : "back",
+    front: 0,
+    back: 0,
+    source: "POSITIONAL",
+    confidence: "LOW",
+    reason: "按上传顺序判断，写手确认即可"
+  }));
+
+  const indexById = imageIndexByEvidenceId(asset);
+  evidenceEntriesForSideDecision(result || {}).forEach((entry) => {
+    const evidenceImageId = sourceImageIdForEvidence(entry);
+    if (!evidenceImageId || !indexById.has(evidenceImageId)) return;
+    const index = indexById.get(evidenceImageId);
+    const cue = sideCueScore(entry);
+    scores[index].front += cue.front;
+    scores[index].back += cue.back;
+  });
+
+  if (scores.length === 1) {
+    return [{
+      ...scores[0],
+      side: scores[0].front >= scores[0].back ? "front" : "back",
+      confidence: scores[0].front || scores[0].back ? "MEDIUM" : "LOW"
+    }];
+  }
+
+  const two = scores.slice(0, 2);
+  const naturalScore = two[0].front + two[1].back;
+  const swappedScore = two[0].back + two[1].front;
+  const hasEvidence = two.some((item) => item.front + item.back > 0);
+  const useSwapped = hasEvidence && swappedScore >= naturalScore + 4;
+  const strongNatural = hasEvidence && naturalScore >= swappedScore + 4;
+  const sideByIndex = useSwapped ? ["back", "front"] : ["front", "back"];
+  const confidence = useSwapped || strongNatural ? "HIGH" : hasEvidence ? "MEDIUM" : "LOW";
+  const source = useSwapped ? "EVIDENCE_SWAPPED" : strongNatural ? "EVIDENCE_CONFIRMED" : hasEvidence ? "EVIDENCE_WEAK" : "POSITIONAL";
+  const reason = {
+    EVIDENCE_SWAPPED: "证据显示上传顺序可能反了，系统已校正",
+    EVIDENCE_CONFIRMED: "正背面证据与上传顺序一致",
+    EVIDENCE_WEAK: "有部分正背面证据，但仍建议写手确认",
+    POSITIONAL: "未取得足够正背面证据，暂按上传顺序判断"
+  }[source];
+
+  return scores.map((item, index) => ({
+    ...item,
+    side: sideByIndex[index] || item.side,
+    confidence,
+    source,
+    reason
+  }));
+}
+
+function sideDisplayName(side = "") {
+  if (side === "front") return "正面 Front";
+  if (side === "back") return "背面 Back";
+  return "未判断";
+}
+
+function imageSideLabel(imageIndex, asset = null, result = null) {
   if (state.mode !== "pair") return "图片 Image";
-  return imageIndex === 0 ? "正面 Front" : "背面 Back";
+  if (!result) return `图片 ${imageIndex + 1} · 生成后判断正背`;
+  const decision = sideDecisionForAsset(asset, result).find((item) => item.imageIndex === imageIndex);
+  if (decision) return `图片 ${imageIndex + 1} · ${sideDisplayName(decision.side)}`;
+  return `图片 ${imageIndex + 1} · 生成后判断正背`;
+}
+
+function imagePreviewLabel(image, imageIndex, asset = null, result = null) {
+  return imageSideLabel(imageIndex, asset, result);
+}
+
+function fieldCropStrip(asset) {
+  return "";
+}
+
+function sideDecisionNotice(asset = null, result = null) {
+  const decisions = sideDecisionForAsset(asset, result);
+  if (state.mode !== "pair" || !decisions.length) return "";
+  const source = decisions[0]?.source || "POSITIONAL";
+  const confidence = decisions[0]?.confidence || "LOW";
+  const reason = decisions[0]?.reason || "";
+  const confidenceLabel = {
+    HIGH: "证据充分",
+    MEDIUM: "部分证据",
+    LOW: "需确认"
+  }[confidence] || "需确认";
+  const sourceClass = source === "EVIDENCE_SWAPPED" ? "side-swapped" : confidence === "HIGH" ? "side-confirmed" : "side-review";
+
+  return `
+    <div class="side-decision-panel ${sourceClass}">
+      <div>
+        <span>系统正背面判断</span>
+        <strong>${escapeHtml(confidenceLabel)}</strong>
+      </div>
+      <ul>
+        ${decisions.map((decision) => `
+          <li>
+            <b>图片 ${decision.imageIndex + 1}</b>
+            <em>${escapeHtml(sideDisplayName(decision.side))}</em>
+          </li>
+        `).join("")}
+      </ul>
+      <small>${escapeHtml(reason)}</small>
+    </div>
+  `;
 }
 
 function renderAssetRows() {
   if (!state.assets.length) return;
 
-  // Preserve upload/pairing order so writers can match titles against eBay assets.
-  elements.assetPreviewList.innerHTML = state.assets.map((asset) => {
+  const hasAnyResult = state.results.length > 0;
+  if (!hasAnyResult) {
+    elements.assetPreviewList.innerHTML = state.assets.map(assetRowHtml).join("");
+    return;
+  }
+
+  const groups = [
+    {
+      key: "quick",
+      label: "低触审核",
+      assets: state.assets.filter((asset) => modelQuickApprovalCandidate(resultForAsset(asset)))
+    },
+    {
+      key: "review",
+      label: "标准审核",
+      assets: state.assets.filter((asset) => {
+        const result = resultForAsset(asset);
+        if (!result || modelQuickApprovalCandidate(result)) return false;
+        const gate = result.publication_gate || {};
+        return gate.writer_review_ready === true;
+      })
+    },
+    {
+      key: "manual",
+      label: "深度审核 / 补拍",
+      assets: state.assets.filter((asset) => {
+        const result = resultForAsset(asset);
+        if (!result) return true;
+        if (modelQuickApprovalCandidate(result)) return false;
+        const gate = result.publication_gate || {};
+        return gate.writer_review_ready !== true;
+      })
+    }
+  ].filter((group) => group.assets.length);
+
+  elements.assetPreviewList.innerHTML = groups.map((group) => `
+    <section class="asset-review-group ${group.key}">
+      <div class="asset-review-group-head">
+        <span>${escapeHtml(group.label)}</span>
+        <strong>${group.assets.length}</strong>
+      </div>
+      ${group.assets.map(assetRowHtml).join("")}
+    </section>
+  `).join("");
+}
+
+function assetRowHtml(asset) {
     const result = resultForAsset(asset);
 
     return `
@@ -389,75 +1450,466 @@ function renderAssetRows() {
         <div class="asset-source">
           <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
             ${asset.images.map((image, imageIndex) => `
-              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开${escapeHtml(imageSideLabel(imageIndex))}预览">
+              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开${escapeHtml(imageSideLabel(imageIndex, asset, result))}预览">
                 <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
-                <span>${imageSideLabel(imageIndex)}</span>
+                <span>${imageSideLabel(imageIndex, asset, result)}</span>
               </button>
             `).join("")}
           </div>
           <div class="preview-meta">
             <h3>资产 ${asset.index}</h3>
             ${asset.images.map((image, imageIndex) => `
-              <p class="file-name">${imageSideLabel(imageIndex)} · ${escapeHtml(image.name)}</p>
+              <p class="file-name">${imageSideLabel(imageIndex, asset, result)} · ${escapeHtml(image.name)}</p>
             `).join("")}
             <span>${assetCountLabel(asset.images.length)}</span>
+            ${fieldCropStrip(asset)}
           </div>
         </div>
-        ${result ? resultBox(result) : pendingBox(asset)}
+        ${result ? resultBox(result, asset) : pendingBox(asset)}
       </article>
     `;
-  }).join("");
 }
 
-function pendingBox(asset) {
+function pendingModuleSkeleton(progress = {}) {
+  const percent = Number(progress.percent || 0);
+  const modules = [
+    { label: "Year", threshold: 8 },
+    { label: "Product", threshold: 16 },
+    { label: "Subject", threshold: 24 },
+    { label: "Card Name", threshold: 34 },
+    { label: "Color", threshold: 46 },
+    { label: "Serial", threshold: 58 },
+    { label: "Grade", threshold: 70 }
+  ];
   return `
-    <div class="title-output title-output-pending">
-      <div class="title-output-head">
-        <span class="confidence-badge confidence-pending">等待中</span>
-        <span>资产 ${asset.index}</span>
-      </div>
-      <textarea readonly placeholder="点击开始生成后，这里会输出英文 eBay listing title。"></textarea>
-      <p class="follow-up-advice">等待 Vision Engine 提取字段，再由 Resolution Engine 补全映射，最后交给 Title Engine 生成 80 字符以内标题。</p>
+    <div class="pending-module-grid" aria-label="识别模块占位">
+      ${modules.map((module, index) => {
+        const active = percent >= module.threshold && percent < module.threshold + 12;
+        const done = percent >= module.threshold + 12;
+        const stateLabel = done ? "已读取" : active ? "读取中" : "等待";
+        return `
+        <span class="${done ? "module-done" : active ? "module-active" : "module-waiting"}" style="--module-delay:${index * 80}ms">
+          <b>${escapeHtml(module.label)}</b>
+          <em>${escapeHtml(stateLabel)}</em>
+          <i aria-hidden="true"></i>
+        </span>`;
+      }).join("")}
     </div>
   `;
 }
 
-function resultBox(result) {
+function pendingBox(asset) {
+  const isActive = state.activeAssetIndexes.has(asset.index);
+  const isQueued = state.processing && !isActive;
+  const isWorking = isActive || isQueued;
+  const label = isActive ? "识别中" : isQueued ? "排队中" : "等待中";
+  const progress = assetProgressSnapshot(asset);
+  const message = isActive
+    ? "正在读取原图与关键局部区域；识别完成后会按模块生成可编辑标题。"
+    : isQueued
+      ? "后台队列会自动按批处理，不需要重复点击。"
+      : "点击开始生成后才会开始识别；当前只是图片已准备好。";
+  return `
+    <div class="title-output title-output-pending ${isWorking ? "is-working" : "is-idle"}">
+      <div class="title-output-head">
+        <span class="confidence-badge confidence-pending">${escapeHtml(label)}</span>
+        <span>资产 ${asset.index}</span>
+      </div>
+      <div class="pending-state ${isWorking ? "pending-active" : "pending-idle"}" role="status" aria-live="polite">
+        ${isWorking ? `<span class="loading-spinner" aria-hidden="true"></span>` : `<span class="idle-dot" aria-hidden="true"></span>`}
+        <strong>${escapeHtml(label)}</strong>
+        <p>${escapeHtml(message)}</p>
+        ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
+        ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
+        ${isActive ? pendingModuleSkeleton(progress) : ""}
+        ${isWorking ? `<span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` : ""}
+      </div>
+      <textarea readonly placeholder="等待生成可编辑英文标题。"></textarea>
+      <p class="follow-up-advice">系统会先识别字段，再生成 80 字符以内英文标题；黄色模块需要写手确认。</p>
+    </div>
+  `;
+}
+
+function friendlyErrorSummary(reason = "") {
+  const text = String(reason || "").trim();
+  if (/field_evidence\.[\w-]+\s+Unknown structured field evidence key/i.test(text)) {
+    return "识别结果字段结构需要更新，请刷新页面后重试。";
+  }
+  if (/schema validation|schema_validation|response schema/i.test(text)) {
+    return "识别结果结构校验失败，请重试。";
+  }
+  if (/413|request body|too large|过大/i.test(text)) {
+    return "图片请求过大，系统已尝试缩减辅助图；请稍后重试。";
+  }
+  if (/timeout|timed out|超时/i.test(text)) {
+    return "模型响应超时，请重试。";
+  }
+  return text || "识别未返回可用标题。";
+}
+
+function compactDisplayValue(value) {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.map(compactDisplayValue).filter(Boolean).join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "";
+  if (typeof value === "object") {
+    const direct = value.resolved_value
+      ?? value.value
+      ?? value.text
+      ?? value.raw_text
+      ?? value.visible_text
+      ?? value.direct_observation
+      ?? value.best_reading;
+    if (direct !== undefined && direct !== value) return compactDisplayValue(direct);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "";
+    }
+  }
+  return String(value).trim();
+}
+
+function fieldValue(result, fields = []) {
+  const resolved = currentResolvedForResult(result) || {};
+  const rawFields = result.fields || {};
+  const generated = result.generated_resolved_fields || {};
+  const stores = [resolved, rawFields, generated];
+
+  for (const field of fields) {
+    for (const store of stores) {
+      const value = compactDisplayValue(store?.[field]);
+      if (value) return value;
+    }
+  }
+
+  return "";
+}
+
+function evidenceSourceLabel(item = {}) {
+  const source = String(
+    item.source_type
+      || item.sourceType
+      || item.source
+      || item.image_role
+      || item.imageRole
+      || item.region
+      || item.sourceRegion
+      || item.source_region
+      || ""
+  ).toUpperCase();
+
+  if (/SLAB|GRADE_LABEL|LABEL/.test(source)) return "评级标签";
+  if (/BACK/.test(source)) return "卡背文字";
+  if (/FRONT/.test(source)) return "卡面文字";
+  if (/SERIAL/.test(source)) return "Serial 局部";
+  if (/YEAR|PRODUCT|CHECKLIST|COLLECTOR/.test(source)) return "文字局部";
+  if (/OCR/.test(source)) return "OCR 文字";
+  if (/VISUAL|IMAGE|MODEL|GPT|OPENAI/.test(source)) return "图片观察";
+  if (/REGISTRY|CATALOG|CHECKLIST/.test(source)) return "目录核对";
+  return "图片识别";
+}
+
+function evidenceTextFromNode(node) {
+  if (!node) return "";
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) {
+    return node
+      .slice(0, 2)
+      .map(evidenceTextFromNode)
+      .filter(Boolean)
+      .join("；");
+  }
+  if (typeof node !== "object") return compactDisplayValue(node);
+
+  const value = compactDisplayValue(
+    node.raw_text
+      ?? node.visible_text
+      ?? node.direct_observation
+      ?? node.evidence_text
+      ?? node.text
+      ?? node.value
+      ?? node.best_reading
+      ?? node.resolved_value
+  );
+  const source = evidenceSourceLabel(node);
+  if (value) return `${source}：${value}`;
+
+  const supporting = node.supporting_sources || node.sources || node.evidence || node.items;
+  if (supporting) return evidenceTextFromNode(supporting);
+
+  return source;
+}
+
+function evidenceForField(result, fields = []) {
+  const containers = [
+    result.field_evidence,
+    result.evidence?.field_evidence,
+    result.generated_evidence?.field_evidence,
+    result.evidence,
+    result.generated_evidence,
+    result.field_states
+  ].filter((container) => container && typeof container === "object");
+
+  for (const field of fields) {
+    for (const container of containers) {
+      const direct = container[field];
+      const text = evidenceTextFromNode(direct);
+      if (text) return text;
+    }
+  }
+
+  const value = fieldValue(result, fields);
+  return value ? "图片识别结果，写手确认即可" : "未识别到";
+}
+
+function evidenceRows(result, unresolved = []) {
+  return [
+    { label: "Year", fields: ["year", "season_year", "product_year"] },
+    { label: "Product / Set", fields: ["product_or_set", "product", "set", "manufacturer", "brand"] },
+    { label: "Subject", fields: ["subject", "subjects", "players", "player", "character"] },
+    { label: "Card Name", fields: ["card_name", "insert", "subset", "card_type"] },
+    { label: "Color", fields: ["surface_color", "color", "parallel_family"] },
+    { label: "Exact Parallel", fields: ["parallel_exact", "parallel", "variant_or_parallel"] },
+    { label: "Collector #", fields: ["collector_number", "card_number", "checklist_code"] },
+    { label: "Serial", fields: ["serial_number"] },
+    { label: "Grade", fields: ["grade_company", "card_grade", "grade", "auto_grade"] }
+  ].map((row) => {
+    const value = fieldValue(result, row.fields);
+    const pending = row.fields.some((field) => unresolved.includes(field));
+    return {
+      ...row,
+      value,
+      evidence: evidenceForField(result, row.fields),
+      pending
+    };
+  }).filter((row) => row.value || row.pending || row.evidence !== "未识别到");
+}
+
+function evidenceCropStrip(asset = null) {
+  const images = (asset?.providerImages || [])
+    .filter((image) => imageIsDerivedForRequest(image))
+    .slice(0, 6);
+  if (!images.length) return "";
+
+  return `
+    <div class="evidence-crop-strip" aria-label="关键局部图">
+      ${images.map((image) => {
+        const label = cropRegionLabel(image.sourceRegion || image.source_region || image.cropPlan?.role || image.storageRole || "");
+        return `
+          <figure>
+            <img src="${image.dataUrl}" alt="${escapeHtml(label)}">
+            <figcaption>${escapeHtml(label)}</figcaption>
+          </figure>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function writerEvidenceDetails(result, asset = null, unresolved = []) {
+  const rows = evidenceRows(result, unresolved);
+  const quality = qualityFields(result);
+  if (!rows.length && !quality.length) return "";
+
+  return `
+    <details class="writer-evidence-details">
+      <summary>查看字段依据（写手版）</summary>
+      <p class="writer-evidence-help">这里只显示写手可用的信息：字段值、来自卡面/卡背/标签/局部图的位置，以及是否需要确认。</p>
+      ${evidenceCropStrip(asset)}
+      <div class="field-list writer-evidence-list">
+        ${rows.map((row) => `
+          <div class="${row.pending ? "needs-review" : ""}">
+            <span>${escapeHtml(row.label)}</span>
+            <strong>${escapeHtml(row.value || "待确认")}</strong>
+            <small>${escapeHtml(row.evidence || "未识别到")}</small>
+          </div>
+        `).join("")}
+        ${quality.map(([label, value]) => `
+          <div>
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || "-")}</strong>
+            <small>图片质量信息</small>
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function resultBox(result, asset = null) {
+  return TitleCardComponent(result, asset);
+}
+
+function TitleCardComponent(result, asset = null) {
   const confidence = normalizeConfidence(result.confidence);
-  const disabled = confidence === "FAILED" || !result.title;
+  const failed = confidence === "FAILED";
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
-  const generatedTitle = result.generatedTitle || result.title || "";
+  const generatedTitle = result.generatedTitle || result.final_title || result.title || "";
   const correctedTitle = result.correctedTitle ?? generatedTitle;
-  const saveDisabled = disabled || result.feedbackStatus === "saving" || result.feedbackStatus === "saved";
+  const copyDisabled = !failed && !correctedTitle;
+  const saveDisabled = result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
+  const showPublish = shouldShowPublishButton(result);
+  const publishDisabled = !canPublishResult(result);
+  const showQuickApprove = shouldShowQuickApproveButton(result);
+  const quickApproveDisabled = !canQuickApproveAndPublish(result);
+  const retryProvider = emergencyProvider();
+  const canEmergencyRetry = failed && retryProvider && result.provider !== "openai_legacy";
   const saveLabel = {
     saved: "已保存",
-    skipped: "未修改",
+    skipped: "未留存",
     saving: "保存中…"
-  }[result.feedbackStatus] || "保存";
+  }[result.feedbackStatus] || "接受";
+  const rejectDisabled = result.feedbackStatus === "saving";
+  const providerLabel = result.provider_label || providerById(result.provider)?.label || result.provider || "-";
+  const unavailableTitle = failed
+    ? `标题暂不可用：${friendlyErrorSummary(result.reason)}`
+    : "标题暂不可用";
+  const textareaValue = failed && !correctedTitle ? "" : (correctedTitle || unavailableTitle);
 
   return `
     <div class="title-output ${confidenceClass(confidence)}">
       <div class="title-output-head">
         <span class="confidence-badge ${confidenceClass(confidence)}">${confidence}</span>
         <div class="title-actions">
-          <button class="copy-button" type="button" data-copy-title="${encodeURIComponent(correctedTitle || "")}" ${disabled ? "disabled" : ""}>复制</button>
+          <span>${escapeHtml(providerLabel)}</span>
+          ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 单模型重试</button>` : ""}
+          <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
+          <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
+          ${showQuickApprove ? `<button class="copy-button publish-button quick-approve-button" type="button" data-quick-approve-publish="${result.index}" ${quickApproveDisabled ? "disabled" : ""}>快速批准并发布</button>` : ""}
+          ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
         </div>
       </div>
-      <textarea data-title-input="${result.index}" ${disabled ? "readonly" : ""}>${escapeHtml(correctedTitle || "标题暂不可用")}</textarea>
-      <p class="follow-up-advice">${result.reason || ""}</p>
+      ${sideDecisionNotice(asset, result)}
+      <textarea data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}">${escapeHtml(textareaValue)}</textarea>
+      ${titleOverrideNotice(result)}
+      ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
-      <details>
-        <summary>查看判断依据</summary>
-        <div class="field-list">
-          ${reasoningFields(result.fields || {}, unresolved).map(([label, value]) => `
-            <div>
-              <span>${label}</span>
-              <strong>${value || "-"}</strong>
-            </div>
+      ${result.publishMessage ? `<p class="publish-status">${escapeHtml(result.publishMessage)}</p>` : ""}
+      ${writerEvidenceDetails(result, asset, unresolved)}
+    </div>
+  `;
+}
+
+function workflowStepStateText(state = "") {
+  return {
+    DONE: "完成",
+    FAILED: "失败",
+    IDENTITY_ASSIST: "已支持",
+    FIELD_SUPPORT: "字段支持",
+    FAIL_CLOSED: "已挡冲突",
+    SHADOW_ONLY: "后台参考",
+    UNAVAILABLE: "不可用",
+    OFF: "未启用",
+    NO_MATCH: "未命中",
+    EVIDENCE_ATTACHED: "已补证据",
+    COMPLETED_NO_PATCH: "已检查",
+    QUEUED: "已排队",
+    FAILED_NON_BLOCKING: "失败不阻塞",
+    NOT_CONFIGURED: "未配置",
+    NOT_USED: "未触发",
+    QUEUED_OR_CREATED: "已连接",
+    COMPLETED_OR_SYNCED: "已同步",
+    TRACE_ONLY: "只追踪"
+  }[state] || state || "-";
+}
+
+function workflowStepClass(state = "") {
+  if (/DONE|IDENTITY_ASSIST|EVIDENCE_ATTACHED|COMPLETED|SYNCED/i.test(state)) return "workflow-ok";
+  if (/FIELD_SUPPORT|QUEUED|SHADOW|TRACE/i.test(state)) return "workflow-pending";
+  if (/FAIL_CLOSED|FAILED|UNAVAILABLE|NOT_CONFIGURED/i.test(state)) return "workflow-warn";
+  return "workflow-muted";
+}
+
+function workflowActionClass(kind = "") {
+  return `workflow-action-${String(kind || "review").toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`;
+}
+
+function workflowSummaryNotice(result) {
+  const summary = result.workflow_summary;
+  if (!summary || typeof summary !== "object") return "";
+  const hideRawCandidateDetails = summary.ui?.hide_raw_candidate_details !== false;
+  const steps = Array.isArray(summary.compact_steps) ? summary.compact_steps : [];
+  const nextActions = Array.isArray(summary.operator_next_actions)
+    ? summary.operator_next_actions.filter((action) => action && action.text).slice(0, 5)
+    : [];
+  const fields = Array.isArray(summary.highlighted_fields) && summary.highlighted_fields.length
+    ? summary.highlighted_fields.slice(0, 6).map((field) => labelForCsmField(field)).join(", ")
+    : "";
+  const statusClass = summary.blocking ? "manual-required" : summary.status === "LOW_TOUCH_REVIEW" ? "quick-approval" : "writer-ready";
+
+  return `
+    <div class="workflow-summary ${statusClass}" data-workflow-summary data-hide-raw-candidate-details="${hideRawCandidateDetails ? "true" : "false"}">
+      <div class="workflow-summary-head">
+        <span>系统结论</span>
+        <strong>${escapeHtml(summary.writer_action || "草稿已生成，请检查后保存。")}</strong>
+        ${fields ? `<small>重点模块：${escapeHtml(fields)}</small>` : ""}
+      </div>
+      <div class="workflow-step-row">
+        ${steps.slice(0, 5).map((step) => `
+          <span class="workflow-step ${workflowStepClass(step.state)}" title="${escapeHtml(step.writer_text || "")}">
+            <b>${escapeHtml(step.label || step.key || "")}</b>
+            <em>${escapeHtml(workflowStepStateText(step.state))}</em>
+          </span>
+        `).join("")}
+      </div>
+      ${nextActions.length ? `
+        <ol class="workflow-action-list" aria-label="写手下一步动作">
+          ${nextActions.map((action) => `
+            <li class="${workflowActionClass(action.kind)}">${escapeHtml(action.text)}</li>
           `).join("")}
-        </div>
-      </details>
+        </ol>
+      ` : ""}
+    </div>
+  `;
+}
+
+const workflowLabels = {
+  LOW_TOUCH_REVIEW: "低触审核",
+  STANDARD_REVIEW: "标准审核",
+  DEEP_REVIEW: "深度审核",
+  RESCAN_REQUIRED: "需要补拍"
+};
+
+function publicationGateNotice(result) {
+  const gate = result.publication_gate || {};
+  if (!gate.status) return "";
+
+  const fields = Array.isArray(gate.writer_required_fields)
+    ? gate.writer_required_fields
+    : [];
+  const fieldText = fields.length
+    ? fields.map((field) => labelForCsmField(field)).join(", ")
+    : "无需补字段";
+  const quickApproval = modelQuickApprovalCandidate(result);
+  const route = gate.workflow_route || gate.status;
+  const readyText = workflowLabels[route] || (gate.writer_review_ready ? "已生成可编辑草稿" : "需要人工处理");
+  const gateClass = quickApproval
+    ? "quick-approval"
+    : gate.writer_review_ready
+      ? "writer-ready"
+      : "manual-required";
+  const helpText = quickApproval
+    ? "写手看过并同意后保存审核记录，再一键发布。"
+    : gate.writer_review_ready
+      ? "黄色字段需要写手确认或编辑；上传前必须保存审核记录。"
+      : "请补拍、拆分多卡，或人工完成关键字段。";
+
+  return `
+    <div class="publication-gate ${gateClass}">
+      <span>${escapeHtml(readyText)}</span>
+      <strong>写手待补：${escapeHtml(fieldText)}</strong>
+      <small>${escapeHtml(helpText)}</small>
+    </div>
+  `;
+}
+
+function titleOverrideNotice(result) {
+  if (!result.title_override) return "";
+
+  return `
+    <div class="title-override-note">
+      <span>人工标题覆盖会作为训练样本保存，不会反向修改内部结构化字段。</span>
     </div>
   `;
 }
@@ -474,18 +1926,20 @@ function renderImageModal() {
     return;
   }
 
-  const imageIndex = Math.min(state.modal.imageIndex, asset.images.length - 1);
-  const image = asset.images[imageIndex];
-  const sideLabel = imageSideLabel(imageIndex);
+  const result = resultForAsset(asset);
+  const modalImages = modalImagesForAsset(asset);
+  const imageIndex = Math.min(state.modal.imageIndex, modalImages.length - 1);
+  const image = modalImages[imageIndex];
+  const sideLabel = imagePreviewLabel(image, imageIndex, asset, result);
 
   elements.imageModalImage.src = image.dataUrl;
   elements.imageModalImage.alt = image.name;
   elements.imageModalSide.textContent = `${sideLabel}预览`;
   elements.imageModalTitle.textContent = `资产 ${asset.index}`;
   elements.imageModalFileName.textContent = image.name;
-  elements.imageModalSwitcher.innerHTML = asset.images.map((assetImage, index) => `
+  elements.imageModalSwitcher.innerHTML = modalImages.map((assetImage, index) => `
     <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}">
-      ${imageSideLabel(index)}
+      ${escapeHtml(imagePreviewLabel(assetImage, index, asset, result))}
     </button>
   `).join("");
 }
@@ -512,7 +1966,7 @@ function switchModalImage(imageIndex) {
   renderImageModal();
 }
 
-function reasoningFields(fields, unresolved = []) {
+function reasoningFields(fields, unresolved = [], resolved = {}) {
   return [
     ["主体 Player / Character", fields.player || fields.character],
     ["画师 Artist", fields.artist],
@@ -524,7 +1978,10 @@ function reasoningFields(fields, unresolved = []) {
     ["队伍 Team", fields.team],
     ["卡号 / 编码", fields.card_number],
     ["Serial 编号", fields.serial_number],
+    ["Collector Number", resolved.collector_number],
+    ["Checklist Code", resolved.checklist_code],
     ["评级 Grade", [fields.grade_company, fields.grade].filter(Boolean).join(" ")],
+    ["Grade Type", resolved.grade_type && resolved.grade_type !== "UNKNOWN" ? resolved.grade_type : ""],
     ["Auto / Relic / Patch / Sketch", [
       fields.auto ? "auto" : "",
       fields.relic ? "relic" : "",
@@ -537,23 +1994,38 @@ function reasoningFields(fields, unresolved = []) {
   ];
 }
 
+function qualityFields(result) {
+  const quality = result.capture_quality || {};
+  return [
+    ["Capture Profile", result.capture_profile_id || quality.capture_profile_id],
+    ["Image Quality Route", quality.route],
+    ["Image Quality", quality.image_quality_degraded ? "degraded" : "clear"],
+    ["Images Evaluated", quality.image_count]
+  ];
+}
+
 async function handleFiles(fileList) {
   const candidates = [...fileList];
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
-  setStatus("正在优化图片…");
+  setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
   closeImageModal();
-  const settledImages = [];
   const failures = [];
-
-  for (const file of imageFiles) {
+  const prepareStartedAt = performance.now();
+  const prepared = await mapWithConcurrency(imageFiles, IMAGE_PREPROCESS_CONCURRENCY, async (file) => {
     try {
-      settledImages.push(await fileToAssetImage(file));
+      return { image: await fileToAssetImage(file) };
     } catch (error) {
-      failures.push(`${file.name}: ${error.message}`);
+      return { failure: `${file.name}: ${error.message}` };
     }
-  }
+  });
+  const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
+  const settledImages = [];
+  prepared.forEach((item) => {
+    if (item.image) settledImages.push(item.image);
+    if (item.failure) failures.push(item.failure);
+  });
 
   const ignoredFiles = candidates
     .filter((file) => !isSupportedImageFile(file))
@@ -561,22 +2033,51 @@ async function handleFiles(fileList) {
   const images = settledImages;
   state.files = images;
   state.results = [];
+  state.assetProgress = new Map();
+  stopProgressTicker();
+  state.activeAssetIndexes = new Set();
+  state.completedAssetCount = 0;
+  state.processingTotal = 0;
+  state.clientImagePrepareMs = prepareElapsedMs;
 
   if (failures.length || ignoredFiles.length) {
-    setStatus(`${images.length} 张图片已优化，${failures.length + ignoredFiles.length} 张未读取：${[...failures, ...ignoredFiles].join("；")}`);
+    setStatus(`${images.length} 张图片已准备，${failures.length + ignoredFiles.length} 张未读取：${[...failures, ...ignoredFiles].join("；")}`);
   } else {
-    const compressedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
-    setStatus(compressedCount ? `${images.length} 张图片已优化，图片过大，已自动压缩用于识别。` : `${images.length} 张图片已优化。`);
+    const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
+    setStatus(previewOptimizedCount
+      ? `${images.length} 张图片已准备。点击开始生成后才会上传云端识别；本地预览已高质量优化。`
+      : `${images.length} 张图片已准备。点击开始生成后才会上传云端识别。`);
   }
 
   renderPreviews();
   renderResults();
 }
 
-async function processAsset(asset) {
-  const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset);
-  if (compressedAgain) setStatus("图片过大，已自动压缩用于识别。");
+async function processAsset(asset, options = {}) {
+  const processStartedAt = performance.now();
+  setAssetProgress(asset.index, "上传原图", 0.08);
+  const uploadStartedAt = performance.now();
+  const uploaded = await ensureAssetImagesUploaded(asset);
+  const uploadMs = Math.round(performance.now() - uploadStartedAt);
+  setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
 
+  asset.clientTiming = {
+    client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
+    client_upload_ms: uploadMs
+  };
+  const requestPrepareStartedAt = performance.now();
+  setAssetProgress(asset.index, "准备识别请求", 0.3);
+  const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, options);
+  const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
+  asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
+  setAssetProgress(
+    asset.index,
+    compressedAgain ? "保留主图，缩减辅助局部图" : "请求已准备",
+    0.4
+  );
+
+  const apiStartedAt = performance.now();
+  setAssetProgress(asset.index, "云端识别中", 0.52);
   const response = await fetch("/api/listing-copilot-title", {
     method: "POST",
     headers: {
@@ -585,26 +2086,50 @@ async function processAsset(asset) {
     credentials: "same-origin",
     body: requestBody
   });
+  const apiRoundtripMs = Math.round(performance.now() - apiStartedAt);
 
   if (!response.ok) {
+    let errorPayload = null;
+    try {
+      errorPayload = await response.json();
+    } catch {
+      errorPayload = null;
+    }
+    const detail = errorPayload?.message || errorPayload?.error || "";
     if (response.status === 413) {
-      throw new Error("请求失败：413，图片请求体过大，请压缩或裁剪图片后重试。");
+      throw new Error(detail || "请求失败：413，图片请求体过大，请压缩或裁剪图片后重试。");
     }
 
-    throw new Error(`请求失败：${response.status}`);
+    throw new Error(detail ? `请求失败：${response.status}，${detail}` : `请求失败：${response.status}`);
   }
 
+  setAssetProgress(asset.index, "接收识别结果", 0.82);
   const payload = await response.json();
+  setAssetProgress(asset.index, "生成可编辑模块", 0.94);
+  const finalTitle = payload.final_title || payload.title || "";
+  const clientTotalMs = Math.round(performance.now() - processStartedAt);
+  const timing = {
+    ...(payload.timing || {}),
+    client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
+    client_upload_ms: uploadMs,
+    client_request_prepare_ms: requestPrepareMs,
+    client_api_roundtrip_ms: apiRoundtripMs,
+    client_total_ms: clientTotalMs
+  };
 
   return {
     index: asset.index,
     thumbnail: asset.images[0].dataUrl,
-    feedbackImages: feedbackImagesForAsset(asset),
-    generatedTitle: payload.title || "",
-    correctedTitle: payload.title || "",
+    generatedTitle: finalTitle,
+    correctedTitle: finalTitle,
+    generated_resolved_fields: payload.resolved || {},
+    generated_evidence: payload.evidence || {},
+    generated_modules: payload.modules || {},
+    reviewStartedAt: Date.now(),
     feedbackStatus: "",
     feedbackMessage: "",
-    ...payload
+    ...payload,
+    timing
   };
 }
 
@@ -613,52 +2138,133 @@ function failedResult(asset, error) {
     index: asset.index,
     thumbnail: asset.images[0].dataUrl,
     title: "",
+    generatedTitle: "",
+    correctedTitle: "",
     confidence: "FAILED",
     reason: error.message,
     fields: {},
-    unresolved: ["request"]
+    unresolved: ["request"],
+    provider: state.selectedProvider || null
   };
 }
 
+function processingCompletionStatus() {
+  const total = state.assets.length;
+  const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
+  const succeeded = Math.max(0, state.results.length - failed);
+
+  if (!total) return "";
+  if (failed && succeeded) return `100% · 已完成：${succeeded} 个成功，${failed} 个失败。失败项可查看错误后重试。`;
+  if (failed) return `100% · 已完成：${failed} 个失败。请查看每张卡错误信息后重试。`;
+  return "100% · 已完成，结果保持上传顺序。";
+}
+
+function processingProgressStatus(completedCount) {
+  const total = state.assets.length;
+  const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
+  const suffix = failed ? `，失败 ${failed}` : "";
+  return `识别中 ${currentProcessingPercent()}%：已完成 ${completedCount} / ${total}${suffix}...`;
+}
+
 async function processTitles() {
-  if (!state.assets.length) return;
+  if (!canGenerateTitles()) return;
 
   state.results = [];
+  state.processing = true;
+  state.activeAssetIndexes = new Set();
+  state.assetProgress = new Map();
+  state.completedAssetCount = 0;
+  state.processingTotal = state.assets.length;
   renderResults();
   elements.processButton.disabled = true;
-  setStatus("图片已优化，开始识别…");
+  setProcessButtonBusy(true);
+  setStatus("0% · 图片已准备，开始识别…", { busy: true });
 
   const queue = [...state.assets];
-  const workerCount = Math.min(MAX_CONCURRENT_WORKERS, queue.length);
-  let startedCount = 0;
+  const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
+  let completedCount = 0;
 
   async function worker() {
     while (queue.length) {
       const asset = queue.shift();
-      startedCount += 1;
-      setStatus(`正在处理 ${startedCount} / ${state.assets.length}...`);
+      state.activeAssetIndexes.add(asset.index);
+      setAssetProgress(asset.index, "进入识别队列", 0.03);
+      renderResults();
 
       try {
         const result = await processAsset(asset);
         state.results.push(result);
+        state.results.sort((a, b) => a.index - b.index);
       } catch (error) {
         state.results.push(failedResult(asset, error));
       }
 
+      clearAssetProgress(asset.index);
+      state.activeAssetIndexes.delete(asset.index);
+      completedCount += 1;
+      state.completedAssetCount = completedCount;
       state.results.sort((a, b) => a.index - b.index);
       renderResults();
+      setStatus(processingProgressStatus(completedCount), { busy: completedCount < state.assets.length });
     }
   }
 
   await Promise.all(Array.from({ length: workerCount }, worker));
+  state.processing = false;
+  state.activeAssetIndexes = new Set();
+  state.assetProgress = new Map();
+  stopProgressTicker();
+  state.completedAssetCount = 0;
+  state.processingTotal = 0;
   renderResults();
 
-  elements.processButton.disabled = false;
-  setStatus("已完成，结果保持上传顺序。");
+  elements.processButton.disabled = !canGenerateTitles();
+  setProcessButtonBusy(false);
+  setStatus(processingCompletionStatus());
+}
+
+async function retryAssetWithEmergency(button) {
+  const assetIndex = Number(button.dataset.emergencyRetry);
+  const asset = state.assets.find((item) => item.index === assetIndex);
+  const retryProvider = emergencyProvider();
+  if (!asset || !retryProvider) return;
+
+  button.disabled = true;
+  button.textContent = "GPT 重试中";
+  setStatus(`资产 ${asset.index} 正在使用 GPT‑4.1 单模型重试...`, { busy: true });
+
+  try {
+    const result = await processAsset(asset, {
+      provider: retryProvider.id,
+      explicitEmergency: true
+    });
+    state.results = state.results.filter((item) => item.index !== asset.index);
+    state.results.push(result);
+    state.results.sort((a, b) => a.index - b.index);
+    setStatus(`资产 ${asset.index} GPT‑4.1 单模型重试完成。`);
+  } catch (error) {
+    state.results = state.results.filter((item) => item.index !== asset.index);
+    state.results.push({
+      ...failedResult(asset, error),
+      provider: retryProvider.id,
+      provider_label: retryProvider.label,
+      explicit_emergency: true
+    });
+    state.results.sort((a, b) => a.index - b.index);
+    setStatus(`资产 ${asset.index} GPT‑4.1 单模型重试失败。`);
+  }
+
+  renderResults();
 }
 
 async function copyTitle(button) {
-  const title = decodeURIComponent(button.dataset.copyTitle || "");
+  const resultIndex = Number(button.dataset.copyResult);
+  const result = Number.isFinite(resultIndex)
+    ? state.results.find((item) => item.index === resultIndex)
+    : null;
+  const title = result
+    ? finalTitleForResult(result)
+    : decodeURIComponent(button.dataset.copyTitle || "");
   if (!title) return;
 
   await navigator.clipboard.writeText(title);
@@ -674,33 +2280,116 @@ function updateCorrectedTitle(input) {
   if (!result) return;
 
   result.correctedTitle = input.value;
+  const renderedTitle = String(result.rendered_title || result.final_title || result.generatedTitle || result.title || "").trim();
+  const correctedTitle = String(input.value || "").trim();
+  result.title_override = correctedTitle && renderedTitle && correctedTitle !== renderedTitle ? correctedTitle : null;
   result.feedbackStatus = "";
   result.feedbackMessage = "";
+  resetPublishState(result);
   renderBatchTitles();
 }
 
-async function saveTitleFeedback(button) {
-  const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
+function finalizeTitleOverride(input) {
+  const result = state.results.find((item) => item.index === Number(input.dataset.titleInput));
   if (!result) return;
 
-  const generatedTitle = String(result.generatedTitle || result.title || "").trim();
-  const correctedTitle = String(result.correctedTitle ?? generatedTitle).trim();
-
-  if (!generatedTitle || !correctedTitle) return;
-
-  if (generatedTitle === correctedTitle) {
-    result.feedbackStatus = "skipped";
-    result.feedbackMessage = "标题未修改，未写入记忆。";
-    renderResults();
-    return;
+  if (result.title_override) {
+    result.feedbackMessage = "人工标题覆盖已保留，不会反向修改 resolved fields。";
+  } else if (result.feedbackMessage === "人工标题覆盖已保留，不会反向修改 resolved fields。") {
+    result.feedbackMessage = "";
   }
 
-  const asset = assetForResult(result);
-  const feedbackImages = result.feedbackImages?.front
-    ? result.feedbackImages
-    : feedbackImagesForAsset(asset);
+  renderResults();
+}
+
+function currentResolvedForResult(result) {
+  return result.corrected_resolved || result.resolved || {};
+}
+
+function resetPublishState(result) {
+  result.publishStatus = "";
+  result.publishMessage = "";
+  result.publishAuditJobId = "";
+  result.publishExternalId = "";
+  result.publishDuplicate = false;
+}
+
+function finalTitleForResult(result) {
+  return String(result.correctedTitle ?? result.final_title ?? result.rendered_title ?? result.title ?? "").trim();
+}
+
+function resultHasResolvedFields(result) {
+  return Object.keys(currentResolvedForResult(result) || {}).length > 0;
+}
+
+function shouldShowPublishButton(result) {
+  if (result.publishStatus) return true;
+  return result.feedbackStatus === "saved"
+    && Boolean(result.review_id)
+    && Boolean(result.approved_at)
+    && Boolean(result.approved_by);
+}
+
+function shouldShowQuickApproveButton(result) {
+  if (!modelQuickApprovalCandidate(result)) return false;
+  if (["publishing", "PUBLISHED", "SKIPPED_DUPLICATE"].includes(result.publishStatus)) return false;
+  return result.feedbackStatus !== "saved" && result.feedbackStatus !== "skipped";
+}
+
+function canQuickApproveAndPublish(result) {
+  return shouldShowQuickApproveButton(result)
+    && result.feedbackStatus !== "saving"
+    && result.publishStatus !== "FAILED"
+    && finalTitleForResult(result)
+    && resultHasResolvedFields(result);
+}
+
+function publishButtonLabel(result) {
+  if (result.publishStatus === "publishing") return "发布中…";
+  if (result.publishStatus === "PUBLISHED") return "已发布";
+  if (result.publishStatus === "SKIPPED_DUPLICATE") return "已发布";
+  if (result.publishStatus === "FAILED") return "重试发布";
+  return "发布 Mock";
+}
+
+function canPublishResult(result) {
+  if (["publishing", "PUBLISHED", "SKIPPED_DUPLICATE"].includes(result.publishStatus)) return false;
+  return shouldShowPublishButton(result)
+    && Boolean(result.review_id)
+    && Boolean(result.approved_at)
+    && Boolean(result.approved_by)
+    && finalTitleForResult(result)
+    && resultHasResolvedFields(result);
+}
+
+function buildListingDraft(result, asset) {
+  return {
+    asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
+    review_id: result.review_id,
+    final_title: finalTitleForResult(result),
+    resolved_fields: currentResolvedForResult(result),
+    modules: result.modules || {},
+    review_status: "APPROVED",
+    approved_by: result.approved_by,
+    approved_at: result.approved_at,
+    publish_status: "READY"
+  };
+}
+
+async function saveFeedbackForResult(result, asset) {
+  if (!result) return;
+
+  const generatedTitle = String(
+    result.generatedTitle
+    || result.title
+    || (normalizeConfidence(result.confidence) === "FAILED" ? `FAILED: ${friendlyErrorSummary(result.reason)}` : "")
+  ).trim();
+  const correctedTitle = String(result.correctedTitle ?? result.final_title ?? result.rendered_title ?? result.title ?? "").trim();
+
+  if (!generatedTitle || !correctedTitle) return false;
+
   result.feedbackStatus = "saving";
-  result.feedbackMessage = "正在保存记忆…";
+  result.feedbackMessage = "正在保存审核记录…";
   renderResults();
 
   try {
@@ -711,11 +2400,41 @@ async function saveTitleFeedback(button) {
       },
       credentials: "same-origin",
       body: JSON.stringify({
+        asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
+        analysis_run_id: result.analysis_run_id || result.provider_response_id || "",
         generated_title: generatedTitle,
         corrected_title: correctedTitle,
-        front_image: feedbackImages.front || null,
-        back_image: feedbackImages.back || null,
-        image_count: feedbackImages.count || 0
+        generated_resolved_fields: result.generated_resolved_fields || result.resolved || {},
+        corrected_resolved_fields: currentResolvedForResult(result),
+        generated_evidence: result.generated_evidence || result.evidence || {},
+        generated_modules: result.generated_modules || result.modules || {},
+        corrected_modules: result.modules || {},
+        rendered_title: result.rendered_title || result.final_title || result.title || "",
+        model_title_suggestion: result.model_title_suggestion || "",
+        title_override: result.title_override || null,
+        route: result.route || "",
+        provider: result.provider || "",
+        model_id: result.model_id || "",
+        prompt_version: result.prompt_version || "",
+        schema_version: result.schema_version || result.evidence_schema_version || "",
+        evidence_schema_version: result.evidence_schema_version || "",
+        resolver_version: result.resolver_version || "",
+        registry_version: result.registry_version || "",
+        capture_profile_id: result.capture_profile_id || defaultCaptureProfileId,
+        capture_quality: result.capture_quality || null,
+        retrieval_trace: result.retrieval || null,
+        resolution_trace: result.resolution_trace || [],
+        open_set_readiness: result.open_set_readiness || null,
+        workflow_summary: result.workflow_summary || null,
+        workflow_sidecars: result.workflow_sidecars || null,
+        workflow_action_plan: result.workflow_action_plan || result.action_plan || null,
+        usage: result.usage || null,
+        recovery: result.recovery || null,
+        targeted_rescan_recovered: result.targeted_rescan_recovered === true,
+        review_outcome: result.explicitReviewOutcome || "",
+        review_duration_ms: result.reviewStartedAt ? Date.now() - result.reviewStartedAt : null,
+        field_changes: result.field_changes || [],
+        images: (asset?.providerImages || asset?.images || []).map(reviewImageReference)
       })
     });
 
@@ -724,14 +2443,107 @@ async function saveTitleFeedback(button) {
       throw new Error(payload.message || `保存失败：${response.status}`);
     }
 
-    result.feedbackStatus = payload.skipped ? "skipped" : "saved";
-    result.feedbackMessage = payload.skipped ? "标题未修改，未写入记忆。" : "已保存到 V2.0 Memory Layer。";
+    const retentionSkipped = payload.retention_skipped === true || payload.retention_enabled === false;
+    result.feedbackStatus = retentionSkipped ? "skipped" : "saved";
+    result.review_id = retentionSkipped ? "" : payload.record?.review?.id || "";
+    result.approved_at = retentionSkipped ? "" : payload.record?.review?.approved_at || "";
+    result.approved_by = retentionSkipped ? "" : payload.record?.review?.operator_id || "";
+    result.review_outcome = payload.review_outcome || payload.record?.review?.review_outcome || "";
+    resetPublishState(result);
+    result.feedbackMessage = retentionSkipped
+      ? `审核接口已接收，当前未开通反馈留存：${payload.review_outcome || "未写入"}。`
+      : payload.review_outcome
+      ? `已保存审核记录：${payload.review_outcome}。`
+      : "已保存审核记录。";
+    return result.feedbackStatus === "saved";
   } catch (error) {
     result.feedbackStatus = "";
     result.feedbackMessage = error.message || "记忆保存失败。";
+    return false;
+  } finally {
+    renderResults();
+  }
+}
+
+async function saveTitleFeedback(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
+  const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
+  await saveFeedbackForResult(result, asset);
+}
+
+async function rejectTitleFeedback(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.rejectTitle));
+  const asset = state.assets.find((item) => item.index === Number(button.dataset.rejectTitle));
+  if (!result) return;
+  result.explicitReviewOutcome = "REJECTED";
+  result.feedbackStatus = "";
+  result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
+  resetPublishState(result);
+  await saveFeedbackForResult(result, asset);
+}
+
+async function publishDraftForResult(result, asset) {
+  if (!result || !canPublishResult(result)) return;
+
+  result.publishStatus = "publishing";
+  result.publishMessage = "正在发布到 Mock B 端…";
+  renderResults();
+
+  try {
+    const response = await fetch("/api/listing-publish-draft", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        listing_draft: buildListingDraft(result, asset),
+        destination_context: {
+          destination: "mock_b_end",
+          dry_run: true
+        }
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || `发布失败：${response.status}`);
+    }
+
+    result.publishStatus = payload.status || "PUBLISHED";
+    result.publishAuditJobId = payload.audit_job?.id || "";
+    result.publishExternalId = payload.response?.external_id || "";
+    result.publishDuplicate = payload.duplicate === true;
+    result.publishMessage = payload.duplicate
+      ? "重复发布请求已跳过，Mock B 端未再次提交。"
+      : `已发布到 Mock B 端${result.publishExternalId ? `：${result.publishExternalId}` : ""}。`;
+  } catch (error) {
+    result.publishStatus = "FAILED";
+    result.publishMessage = error.message || "Mock 发布失败。";
   }
 
   renderResults();
+}
+
+async function publishDraft(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.publishDraft));
+  const asset = state.assets.find((item) => item.index === Number(button.dataset.publishDraft));
+  await publishDraftForResult(result, asset);
+}
+
+async function quickApproveAndPublish(button) {
+  const result = state.results.find((item) => item.index === Number(button.dataset.quickApprovePublish));
+  const asset = state.assets.find((item) => item.index === Number(button.dataset.quickApprovePublish));
+  if (!result || !canQuickApproveAndPublish(result)) return;
+
+  result.feedbackMessage = "正在快速批准…";
+  renderResults();
+  const saved = await saveFeedbackForResult(result, asset);
+  if (!saved) {
+    result.publishMessage = "未生成可发布的审核记录，无法一键发布。";
+    renderResults();
+    return;
+  }
+  await publishDraftForResult(result, asset);
 }
 
 async function copyAllTitles() {
@@ -750,6 +2562,12 @@ function resetTool() {
   state.files = [];
   state.assets = [];
   state.results = [];
+  state.processing = false;
+  state.activeAssetIndexes = new Set();
+  state.assetProgress = new Map();
+  stopProgressTicker();
+  state.completedAssetCount = 0;
+  state.processingTotal = 0;
   closeImageModal();
   elements.imageInput.value = "";
   setStatus("");
@@ -793,6 +2611,10 @@ function bindEvents() {
   elements.processButton.addEventListener("click", processTitles);
   elements.resetButton.addEventListener("click", resetTool);
   elements.copyAllButton.addEventListener("click", copyAllTitles);
+  elements.providerControl.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-provider-id]");
+    if (button) selectProvider(button.dataset.providerId);
+  });
 
   elements.assetPreviewList.addEventListener("click", (event) => {
     const previewButton = event.target.closest("[data-preview-asset]");
@@ -801,19 +2623,51 @@ function bindEvents() {
       return;
     }
 
-    const button = event.target.closest("[data-copy-title]");
+    const button = event.target.closest("[data-copy-title], [data-copy-result]");
     if (button) {
       copyTitle(button);
       return;
     }
 
     const saveButton = event.target.closest("[data-save-title]");
-    if (saveButton) saveTitleFeedback(saveButton);
+    if (saveButton) {
+      saveTitleFeedback(saveButton);
+      return;
+    }
+
+    const rejectButton = event.target.closest("[data-reject-title]");
+    if (rejectButton) {
+      rejectTitleFeedback(rejectButton);
+      return;
+    }
+
+    const quickApproveButton = event.target.closest("[data-quick-approve-publish]");
+    if (quickApproveButton) {
+      quickApproveAndPublish(quickApproveButton);
+      return;
+    }
+
+    const publishButton = event.target.closest("[data-publish-draft]");
+    if (publishButton) {
+      publishDraft(publishButton);
+      return;
+    }
+
+    const emergencyRetryButton = event.target.closest("[data-emergency-retry]");
+    if (emergencyRetryButton) retryAssetWithEmergency(emergencyRetryButton);
   });
 
   elements.assetPreviewList.addEventListener("input", (event) => {
     const input = event.target.closest("[data-title-input]");
     if (input) updateCorrectedTitle(input);
+  });
+
+  elements.assetPreviewList.addEventListener("change", (event) => {
+    const titleInput = event.target.closest("[data-title-input]");
+    if (titleInput) {
+      finalizeTitleOverride(titleInput);
+      return;
+    }
   });
 
   elements.imageModal.addEventListener("click", (event) => {
@@ -842,7 +2696,31 @@ async function loadResolutionMap() {
   }
 }
 
-await loadResolutionMap();
+async function loadProviderStatus() {
+  try {
+    const response = await fetch("/api/listing-provider-status", {
+      credentials: "same-origin"
+    });
+    if (!response.ok) throw new Error(`Provider status failed: ${response.status}`);
+
+    const payload = await response.json();
+    state.providerStatus = payload;
+    state.selectedProvider = payload.default_provider || "";
+  } catch {
+    state.providerStatus = {
+      fallback_available: true,
+      providers: []
+    };
+    state.selectedProvider = "";
+  }
+
+  renderProviderControl();
+}
+
+await Promise.all([
+  loadResolutionMap(),
+  loadProviderStatus()
+]);
 bindEvents();
 renderPreviews();
 renderResults();

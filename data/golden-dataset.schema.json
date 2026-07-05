@@ -1,0 +1,358 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynca.local/schemas/golden-dataset-v1.schema.json",
+  "title": "LYNCA Listing Copilot Golden Dataset v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "splits"],
+  "properties": {
+    "schema_version": {
+      "const": "golden-dataset-v1"
+    },
+    "description": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "commercial_acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum_held_out_assets": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "required_strata": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["operator", "value"],
+            "properties": {
+              "operator": {
+                "type": "string",
+                "enum": [">=", "<="]
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    },
+    "splits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["development", "calibration", "held_out_commercial"],
+      "properties": {
+        "development": {
+          "$ref": "#/$defs/datasetItems"
+        },
+        "calibration": {
+          "$ref": "#/$defs/datasetItems"
+        },
+        "held_out_commercial": {
+          "$ref": "#/$defs/datasetItems"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "datasetItems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/datasetItem"
+      }
+    },
+    "datasetItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "asset_id",
+        "images",
+        "category",
+        "difficulty_tags",
+        "capture_tags",
+        "ground_truth_route",
+        "ground_truth_fields",
+        "critical_fields"
+      ],
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "images": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["role"],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "front",
+                      "back",
+                      "alternate",
+                      "serial_crop",
+                      "card_code_crop",
+                      "grade_label_crop",
+                      "year_product_crop",
+                      "readability_derived",
+                      "surface_view"
+                    ]
+                  },
+                  "object_path": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "difficulty_tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "capture_tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ground_truth_route": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ground_truth_fields": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "critical_fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "prediction": {
+          "$ref": "#/$defs/prediction"
+        }
+      }
+    },
+    "prediction": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "route": {
+          "type": "string"
+        },
+        "resolved_fields": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "corrected_resolved_fields": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "final_resolved_fields": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "corrected_fields": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "final_title": {
+          "type": "string"
+        },
+        "corrected_title": {
+          "type": "string"
+        },
+        "review_outcome": {
+          "type": "string"
+        },
+        "review_status": {
+          "type": "string"
+        },
+        "publish_status": {
+          "type": "string"
+        },
+        "approved": {
+          "type": "boolean"
+        },
+        "approved_at": {
+          "type": "string"
+        },
+        "accepted_critical_error": {
+          "type": "boolean"
+        },
+        "technical_failure": {
+          "type": "boolean"
+        },
+        "human_authored_critical_resolution": {
+          "type": "boolean"
+        },
+        "failure_root_causes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retrieval": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "providers_used": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "providers_recovered": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reference_helped": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "queries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "trace": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "review_duration_ms": {
+          "type": "number"
+        },
+        "field_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "from": {},
+              "to": {},
+              "change_type": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "recovery": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "retrieval_attempted": {
+              "type": "boolean"
+            },
+            "retrieval_recovered": {
+              "type": "boolean"
+            },
+            "focused_reread_attempted": {
+              "type": "boolean"
+            },
+            "focused_reread_recovered": {
+              "type": "boolean"
+            },
+            "targeted_rescan_attempted": {
+              "type": "boolean"
+            },
+            "targeted_rescan_recovered": {
+              "type": "boolean"
+            },
+            "glare_attempted": {
+              "type": "boolean"
+            },
+            "glare_recovered": {
+              "type": "boolean"
+            },
+            "brave_attempted": {
+              "type": "boolean"
+            },
+            "brave_recovered": {
+              "type": "boolean"
+            },
+            "ebay_reference_used": {
+              "type": "boolean"
+            },
+            "ebay_reference_helped": {
+              "type": "boolean"
+            },
+            "ows_attempted": {
+              "type": "boolean"
+            },
+            "ows_recovered": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}

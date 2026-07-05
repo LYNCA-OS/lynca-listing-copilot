@@ -330,25 +330,34 @@ Auto should only appear once.
 
 ### Card Number Suppression
 
-Remove:
+Card Number is low-priority for non-TCG cards, not forbidden. Include it only when it is visible and the 80-character budget allows.
 
-- TCAR-CF
-- PRP-3
-- DRL-7
-- SR-KD
+When a code ends with a subject abbreviation, display the card-type prefix only:
 
-Checklist numbers are low-value.
+- `PAU-AED` -> `#PAU`
+- `SR-KD` -> `#SR`
 
-### Serial Preservation
+Remove Card Number before higher-priority fields when the title is too long.
 
-Keep:
+### Numerical Rarity / Serial Number Separation
 
-- 01/25
-- 31/50
-- 2/5
-- 1/1
+`serial_number` stores the raw physical-copy reading from the current image. `numerical_rarity` is the title module and must not be mechanically derived from `serial_number`.
 
-Never remove.
+If current-card evidence directly supports a print-limit value, preserve it in the title:
+
+- 01/25 -> 01/25
+- 31/50 -> 31/50
+- 2/5 -> 2/5
+- 1/1 -> 1/1
+
+If only the denominator is known, render the safe denominator placeholder:
+
+- /25 -> #/25
+- #/50 -> #/50
+
+Never copy a serial numerator from catalog/reference candidates.
+
+If no print limit is visible or confidently recognized, leave `numerical_rarity` empty even when other number-like text exists.
 
 ### Product Protection
 
