@@ -79,6 +79,7 @@ import {
 import { vectorIndexReady, vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
+import { buildCandidateContextSummary } from "../lib/listing/retrieval/candidate-context-summary.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
@@ -4550,9 +4551,18 @@ function buildOpenSetReadiness(result = {}, {
 function withOpenSetReadiness(result = {}, context = {}) {
   if (!result || typeof result !== "object") return result;
   const openSetReadiness = buildOpenSetReadiness(result, context);
+  const candidateContext = buildCandidateContextSummary({
+    result,
+    openSetReadiness,
+    catalogContext: context.catalogContext || {},
+    vectorContext: context.vectorContext || {},
+    providerOptions: context.providerOptions || {},
+    env: process.env
+  });
   return applyColdStartSafeDraftPolicy({
     ...result,
-    open_set_readiness: openSetReadiness
+    open_set_readiness: openSetReadiness,
+    candidate_context: candidateContext
   }, {
     providerOptions: context.providerOptions || {},
     mode: context.mode || result.provider_eval_mode || "",

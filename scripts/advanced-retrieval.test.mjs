@@ -5,6 +5,7 @@ import {
   summarizeAblationDelta,
   summarizeAnnRecallAudit
 } from "../lib/listing/retrieval/advanced-retrieval-eval.mjs";
+import { buildCandidateContextSummary } from "../lib/listing/retrieval/candidate-context-summary.mjs";
 import {
   extractQueryExpansionFields,
   hybridChannelIds,
@@ -332,5 +333,79 @@ assert.equal(delta.net_benefit, 0);
 assert.equal(delta.default_enable_allowed, false);
 
 assert.deepEqual(advancedRetrievalAblationSteps.map((step) => step.step), ["A", "B", "C", "D", "E", "F", "G"]);
+
+const candidateContext = buildCandidateContextSummary({
+  openSetReadiness: {
+    status: "APPROVED_CANDIDATE_CONFLICT_REVIEW",
+    assist_enabled: true,
+    raw_candidate_count: 4,
+    approved_candidate_count: 1,
+    conflict_blocked_count: 1,
+    prompt_candidate_ids: ["catalog-ok"]
+  },
+  catalogContext: {
+    catalog_assist_eligibility: {
+      raw_candidate_count: 2,
+      approved_candidate_count: 1,
+      conflict_blocked_count: 1,
+      prompt_candidate_count: 1,
+      prompt_candidate_ids: ["catalog-ok"]
+    },
+    promptPacket: true,
+    assistPacket: {
+      vector_retrieval: {
+        candidates: [{ candidate_identity_id: "catalog-ok" }]
+      }
+    },
+    exact_anchor_fast_lane_shadow: {
+      exact_anchor_fast_lane_eligible: true,
+      exact_anchor_candidate_id: "catalog-ok"
+    }
+  },
+  vectorContext: {
+    packet: {
+      vector_retrieval: {
+        status: "OK",
+        candidates: [
+          { candidate_identity_id: "vector-raw-conflict" },
+          { candidate_identity_id: "vector-raw-shadow" }
+        ]
+      }
+    },
+    assistPacket: {
+      vector_retrieval: {
+        candidates: [],
+        assist_filter: {
+          raw_candidate_count: 2,
+          approved_candidate_count: 0,
+          conflict_blocked_count: 2,
+          prompt_candidate_count: 0,
+          prompt_candidate_ids: []
+        }
+      }
+    },
+    vector_assist_eligibility: {
+      raw_candidate_count: 2,
+      approved_candidate_count: 0,
+      conflict_blocked_count: 2,
+      prompt_candidate_count: 0,
+      prompt_candidate_ids: []
+    },
+    promptPacket: false
+  },
+  env: {
+    VERCEL_REGION: "syd1",
+    SUPABASE_REGION: "ap-southeast-2"
+  }
+});
+assert.equal(candidateContext.compute_region, "syd1");
+assert.equal(candidateContext.storage_region, "ap-southeast-2");
+assert.equal(candidateContext.raw_candidate_count, 4);
+assert.equal(candidateContext.catalog.prompt_candidate_count, 1);
+assert.deepEqual(candidateContext.prompt_candidate_ids, ["catalog-ok"]);
+assert.equal(candidateContext.vector.raw_candidate_count, 2);
+assert.equal(candidateContext.vector.prompt_candidate_count, 0);
+assert.equal(candidateContext.vector.conflict_blocked_count, 2);
+assert.equal(candidateContext.invariants.raw_vector_candidates_are_shadow_until_prompt_safe, true);
 
 console.log("advanced retrieval tests passed");
