@@ -76,7 +76,7 @@ import {
   vectorCandidatePacketAssistEligibility,
   vectorCandidatePacketHasPromptContent
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
-import { vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
+import { vectorIndexReady, vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
@@ -4277,6 +4277,19 @@ async function prepareVectorCandidateContext({
       retrieval: null,
       promptPacket: false
     };
+  }
+
+  // Until the vector index is seeded past readiness, skip the blocking
+  // online embed entirely (eBay C10: 138 stored embeddings returned noise
+  // while costing 4.8s p50 / 83s p95 on the critical path). Catalog lanes
+  // are unaffected; flip VECTOR_INDEX_READY=true after seeding.
+  if (!vectorIndexReady(env, providerOptions)) {
+    return skippedVectorCandidateContext({
+      reason: "vector_index_below_ready_threshold",
+      visualFeatures,
+      env,
+      providerOptions
+    });
   }
 
   let activeVisualFeatures = visualFeatures;
