@@ -58,7 +58,11 @@ function bytesResponse(status, bytes, extraHeaders = {}) {
   };
 }
 
-function cloudFetchRecorder({ titleResponder, uploadAlreadyExists = false } = {}) {
+function cloudFetchRecorder({
+  titleResponder,
+  uploadAlreadyExists = false,
+  expectedProviderOptions = {}
+} = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url, init });
@@ -131,6 +135,9 @@ function cloudFetchRecorder({ titleResponder, uploadAlreadyExists = false } = {}
       assert.equal(body.provider_options.enable_query_visual_embeddings, true);
       assert.equal(body.provider_options.enable_vector_retrieval, true);
       assert.equal(body.provider_options.vector_retrieval_mode, "assist");
+      assert.equal(body.provider_options.enable_vector_lazy_mode, expectedProviderOptions.enable_vector_lazy_mode ?? true);
+      assert.equal(body.provider_options.force_vector_assist, expectedProviderOptions.force_vector_assist ?? false);
+      assert.equal(body.provider_options.vector_index_ready, expectedProviderOptions.vector_index_ready);
       assert.equal(body.provider_options.corrected_title_as_temporary_gt, false);
       assert.equal(body.provider_options.send_corrected_title_hint_to_cloud, false);
       return jsonResponse(200, titleResponder?.(body) || {
@@ -492,6 +499,88 @@ await withTempDir(async (dir) => {
   assert.ok(calls.some((call) => new URL(call.url).pathname === "/api/listing-copilot-title"));
   const hashText = await readFile(join(dir, "predictions.sha256"), "utf8");
   assert.match(hashText, /^[a-f0-9]{64}\s+predictions\.jsonl/);
+});
+
+await withTempDir(async (dir) => {
+  const inputPath = join(dir, "blind_inputs.jsonl");
+  const outputPath = join(dir, "predictions.jsonl");
+  const imagePath = join(dir, "opaque_img_0.jpg");
+  await writeFile(imagePath, tinyPng);
+  await writeJsonl(inputPath, [{
+    case_id: "case-vector-ready",
+    image_paths: [imagePath]
+  }]);
+  let titlePayload = null;
+  const { fetchImpl } = cloudFetchRecorder({
+    expectedProviderOptions: {
+      enable_vector_lazy_mode: false,
+      force_vector_assist: true,
+      vector_index_ready: true
+    },
+    titleResponder: (body) => {
+      titlePayload = body;
+      return {
+        final_title: "2025 Topps Chrome Test Player Gold #/50 PSA 10",
+        confidence: "HIGH",
+        model_id: "gpt-4.1-mini",
+        resolved: {
+          year: "2025",
+          manufacturer: "Topps",
+          product: "Topps Chrome",
+          players: ["Test Player"],
+          surface_color: "Gold",
+          serial_number: "12/50",
+          grade_company: "PSA",
+          card_grade: "10"
+        }
+      };
+    }
+  });
+  await runBlindRecognition({
+    inputPath,
+    outputPath,
+    baseUrl: "https://listing.test",
+    username: "metaverse",
+    password: "mtv",
+    env: {
+      BLIND_EVAL_FORCE_VECTOR_ASSIST: "true",
+      BLIND_EVAL_VECTOR_INDEX_READY: "true",
+      BLIND_EVAL_REQUIRE_VECTOR_INDEX_READY: "true"
+    },
+    fetchImpl
+  });
+  assert.equal(titlePayload.provider_options.force_vector_assist, true);
+  assert.equal(titlePayload.provider_options.enable_vector_lazy_mode, false);
+  assert.equal(titlePayload.provider_options.vector_index_ready, true);
+  assert.equal(titlePayload.provider_options.eval_flags.FORCE_VECTOR_ASSIST, true);
+  assert.equal(titlePayload.provider_options.eval_flags.VECTOR_INDEX_READY, true);
+});
+
+await withTempDir(async (dir) => {
+  const inputPath = join(dir, "blind_inputs.jsonl");
+  const outputPath = join(dir, "predictions.jsonl");
+  const imagePath = join(dir, "opaque_img_0.jpg");
+  await writeFile(imagePath, tinyPng);
+  await writeJsonl(inputPath, [{
+    case_id: "case-vector-not-ready",
+    image_paths: [imagePath]
+  }]);
+  await assert.rejects(
+    () => runBlindRecognition({
+      inputPath,
+      outputPath,
+      baseUrl: "https://listing.test",
+      username: "metaverse",
+      password: "mtv",
+      env: {
+        BLIND_EVAL_REQUIRE_VECTOR_INDEX_READY: "true"
+      },
+      fetchImpl: async () => {
+        throw new Error("recognition should fail before network calls");
+      }
+    }),
+    /VECTOR_INDEX_READY/
+  );
 });
 
 await withTempDir(async (dir) => {
@@ -1188,6 +1277,7 @@ await withTempDir(async (dir) => {
     case_id: "case-1",
     recognition_status: "CONFIRMED",
     recognition_output: {
+      title: "2025 Topps Chrome Test Player Gold 12/50 PSA 10",
       player: "Test Player",
       players: ["Test Player"],
       year: "2025",
@@ -1200,6 +1290,59 @@ await withTempDir(async (dir) => {
       serial_number: "12/50",
       grade_company: "PSA",
       grade: "10"
+    },
+    timing: {
+      total_ms: 1234,
+      provider_total_ms: 1000,
+      catalog_retrieval_ms: 111,
+      vector_retrieval_ms: 22,
+      evidence_completion_ms: 333
+    },
+    usage: {
+      input_tokens: 100,
+      output_tokens: 25,
+      total_tokens: 125,
+      provider_calls: 1,
+      retrieval_calls: 3,
+      estimated_cost_usd: 0.001
+    },
+    c_group_diagnostics: {
+      catalog_prompt_assist_used: true,
+      vector_prompt_assist_used: true,
+      catalog_assist_eligibility: {
+        raw_candidate_count: 4,
+        approved_candidate_count: 2,
+        conflict_blocked_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["catalog-1"],
+        field_support_count: 3,
+        field_support_fields: ["year", "product"]
+      },
+      vector_assist_eligibility: {
+        raw_candidate_count: 5,
+        approved_candidate_count: 1,
+        conflict_blocked_count: 2,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["vector-1"],
+        field_support_count: 2,
+        field_support_fields: ["surface_color"]
+      },
+      catalog_candidate_debug: [{
+        candidate_id: "catalog-1",
+        source_trust: "APPROVED_REFERENCE",
+        reference_title: "2025 Topps Chrome Test Player Gold",
+        matched_fields: ["year", "product"],
+        conflicting_fields: [],
+        prompt_admitted: true
+      }],
+      vector_candidate_debug: [{
+        candidate_id: "vector-1",
+        source_trust: "APPROVED_REFERENCE",
+        reference_title: "2025 Topps Chrome Test Player Gold",
+        matched_fields: ["surface_color"],
+        conflicting_fields: [],
+        prompt_admitted: true
+      }]
     }
   }]);
   const hash = crypto.createHash("sha256").update(await readFile(predictionsPath)).digest("hex");
@@ -1223,6 +1366,15 @@ await withTempDir(async (dir) => {
   assert.equal(summary.narrow_diagnostic_counts.core_identity.MATCH, 1);
   assert.equal(summary.narrow_diagnostic_counts.surface_color.MATCH, 1);
   assert.equal(summary.narrow_diagnostic_counts.serial_denominator.MATCH, 1);
+  assert.equal(summary.c_group_diagnostics.usage_totals.input_tokens, 100);
+  assert.equal(summary.c_group_diagnostics.usage_totals.output_tokens, 25);
+  assert.equal(summary.c_group_diagnostics.per_card_latency_ms.p50, 1234);
+  assert.equal(summary.c_group_diagnostics.catalog.prompt_candidate_count, 1);
+  assert.equal(summary.c_group_diagnostics.vector.prompt_candidate_count, 1);
+  assert.equal(summary.c_group_diagnostics.catalog.prompt_candidate_ids[0], "catalog-1");
+  assert.equal(summary.c_group_diagnostics.vector.prompt_candidate_ids[0], "vector-1");
+  assert.equal(summary.per_card_decision_trace[0].predicted_title, "2025 Topps Chrome Test Player Gold 12/50 PSA 10");
+  assert.equal(summary.per_card_decision_trace[0].catalog_candidate_debug[0].candidate_id, "catalog-1");
 });
 
 assert.ok(defaultBlindEvalDir.includes("blind_eval"));
