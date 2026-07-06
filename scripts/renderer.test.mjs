@@ -661,6 +661,24 @@ assert.match(statusNewBreedFieldFidelity.rendered_title, /\bNew Breed\b/i);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /20\/99/);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /PSA 10$/);
 
+const statusNewBreedKeepsCardNumberBeforePureSportSuffix = renderResolvedTitle({
+  year: "2018-19",
+  manufacturer: "Panini",
+  brand: "Panini",
+  product: "Panini Status",
+  set: "Status Basketball",
+  players: ["Trae Young"],
+  card_name: "New Breed",
+  collector_number: "NB-TYG",
+  auto: true,
+  team: "Atlanta Hawks"
+}, {
+  maxLength: 80
+});
+assert.ok(statusNewBreedKeepsCardNumberBeforePureSportSuffix.rendered_title.length <= 80);
+assert.match(statusNewBreedKeepsCardNumberBeforePureSportSuffix.rendered_title, /Panini Status Trae Young New Breed #NB-TYG RC Auto/i);
+assert.doesNotMatch(statusNewBreedKeepsCardNumberBeforePureSportSuffix.rendered_title, /Status Basketball/i);
+
 const encasedGradeCompanyMissingDoesNotInventGenericGrade = renderResolvedTitle({
   year: "2020-21",
   manufacturer: "Panini",
@@ -1013,6 +1031,27 @@ const bowmanOwnedByToppsButOutputAsBowman = renderListingPresentation({
 assert.equal(bowmanOwnedByToppsButOutputAsBowman.final_title, "2024 Bowman Chrome Yoshinobu Yamamoto Rookie Auto Gold Refractor 22/50 RC PSA 10");
 assert.equal(bowmanOwnedByToppsButOutputAsBowman.final_title.length, 80);
 assert.doesNotMatch(bowmanOwnedByToppsButOutputAsBowman.final_title, /Topps Bowman/);
+
+const bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Bowman Chrome",
+    players: ["Yoshinobu Yamamoto"],
+    card_name: "Rookie Auto-Gold Refractor",
+    surface_color: "Gold",
+    serial_number: "22/50",
+    numerical_rarity: "22/50",
+    rc: true,
+    auto: true,
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  }
+});
+assert.equal(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title, "2024 Bowman Chrome Yoshinobu Yamamoto Rookie Auto Gold Refractor 22/50 RC PSA 10");
+assert.equal(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title.length, 80);
+assert.doesNotMatch(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title, /Topps Bowman/);
 
 const smartComposedCardVariantFinish = renderListingPresentation({
   resolved: {
