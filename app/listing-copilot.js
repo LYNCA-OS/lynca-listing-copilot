@@ -11,6 +11,7 @@ const maxTitleLength = 80;
 const MAX_CONCURRENT_WORKERS = 6;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
+const BACKGROUND_PREP_CONCURRENCY = 2;
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
 const IMAGE_INITIAL_QUALITY = 0.9;
@@ -23,6 +24,7 @@ const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_ASSET = 6;
 const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
 const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
+const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const defaultProviderOptions = Object.freeze({
@@ -59,7 +61,8 @@ const state = {
   assetProgress: new Map(),
   progressTimer: null,
   completedAssetCount: 0,
-  processingTotal: 0
+  processingTotal: 0,
+  backgroundPreparationRunId: 0
 };
 
 const elements = {
@@ -475,6 +478,10 @@ function buildAssetRequestBody(asset, options = {}) {
     captureQuality: summarizeAssetImageQuality(providerImages),
     resolutionMap: state.resolutionMap,
     clientTiming: asset.clientTiming || {},
+    preingestion_bundle_id: asset.preingestionBundleId || "",
+    preingestionBundleId: asset.preingestionBundleId || "",
+    preingestion_bundle_status: asset.preingestionBundleStatus || "",
+    preingestion_summary: asset.preingestionSummary || null,
     provider_options: {
       ...defaultProviderOptions,
       ...(options.provider_options || options.providerOptions || {})
@@ -685,36 +692,197 @@ async function uploadAssetImage(asset, image, imageIndex) {
 
 async function ensureAssetImagesUploaded(asset) {
   if (!storageReady()) return false;
+  if (asset.storageUploadPromise) return asset.storageUploadPromise;
 
-  const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
-  asset.providerImages = images;
-  const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
-    return uploadAssetImage(asset, image, imageIndex);
-  });
-  const imagesById = new Map(images.map((image) => [image.id, image]));
-  images.forEach((image) => {
-    const metadata = image.cropMetadata || image.crop_metadata;
-    if (!metadata?.source_image_id) return;
-    const sourceImage = imagesById.get(metadata.source_image_id);
-    const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
-    if (!sourceObjectPath) return;
-    const updatedMetadata = {
-      ...metadata,
-      source_object_path: sourceObjectPath,
-      derived_object_path: metadata.derived_object_path || image.objectPath || "",
-      asset_id: metadata.asset_id || asset.id || ""
+  asset.storageUploadPromise = (async () => {
+    const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
+    asset.providerImages = images;
+    const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
+      return uploadAssetImage(asset, image, imageIndex);
+    });
+    const imagesById = new Map(images.map((image) => [image.id, image]));
+    images.forEach((image) => {
+      const metadata = image.cropMetadata || image.crop_metadata;
+      if (!metadata?.source_image_id) return;
+      const sourceImage = imagesById.get(metadata.source_image_id);
+      const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
+      if (!sourceObjectPath) return;
+      const updatedMetadata = {
+        ...metadata,
+        source_object_path: sourceObjectPath,
+        derived_object_path: metadata.derived_object_path || image.objectPath || "",
+        asset_id: metadata.asset_id || asset.id || ""
+      };
+      image.cropMetadata = updatedMetadata;
+      image.crop_metadata = updatedMetadata;
+      if (image.cropPlan) {
+        image.cropPlan = {
+          ...image.cropPlan,
+          crop_metadata: updatedMetadata
+        };
+      }
+    });
+
+    return uploadResults.some(Boolean);
+  })();
+
+  try {
+    return await asset.storageUploadPromise;
+  } catch (error) {
+    asset.storageUploadPromise = null;
+    throw error;
+  }
+}
+
+function preingestionImagesForAsset(asset) {
+  return boundedProviderImagesForRequest(asset.providerImages || asset.images)
+    .filter(imageHasVerifiedStorageReference)
+    .map((image) => serializableAssetImage(image, asset.id));
+}
+
+function backgroundPreparationLabel(asset = {}) {
+  return {
+    queued: "云端准备排队",
+    uploading: "云端图片准备中",
+    preingesting: "云端证据包准备中",
+    ready: "云端图片已准备",
+    failed: "后台准备未完成"
+  }[asset.backgroundPrepareStatus] || "";
+}
+
+async function ensurePreingestionBundle(asset) {
+  if (asset.preingestionBundleId) {
+    return {
+      bundleId: asset.preingestionBundleId,
+      reused: true
     };
-    image.cropMetadata = updatedMetadata;
-    image.crop_metadata = updatedMetadata;
-    if (image.cropPlan) {
-      image.cropPlan = {
-        ...image.cropPlan,
-        crop_metadata: updatedMetadata
+  }
+
+  const images = preingestionImagesForAsset(asset);
+  if (!images.length) {
+    throw new Error("no_verified_storage_images");
+  }
+
+  const response = await fetch(PREINGEST_API_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      asset_id: asset.id,
+      assetId: asset.id,
+      images,
+      captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
+      requested_fields: [
+        "serial_number",
+        "collector_number",
+        "checklist_code",
+        "grade_label",
+        "year_product",
+        "subject",
+        "surface"
+      ],
+      source: "listing_copilot_background_prepare",
+      enqueue_workers: true,
+      enqueue_ocr: true,
+      enqueue_embeddings: true,
+      enqueue_surface: true,
+      enqueue_quality: true,
+      verify_signed_read_urls: true
+    })
+  });
+
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.message || payload.code || `preingestion_failed_${response.status}`);
+  }
+
+  asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
+  asset.preingestionBundleStatus = payload.bundle_status || "";
+  asset.preingestionSummary = payload.preprocessing_summary || null;
+  return {
+    bundleId: asset.preingestionBundleId,
+    status: asset.preingestionBundleStatus,
+    summary: asset.preingestionSummary
+  };
+}
+
+async function prepareAssetInBackground(asset, runId) {
+  if (!asset || asset.backgroundPreparationPromise) return asset?.backgroundPreparationPromise || null;
+
+  asset.backgroundPrepareStatus = "queued";
+  asset.backgroundPreparationPromise = (async () => {
+    const startedAt = performance.now();
+    try {
+      if (runId !== state.backgroundPreparationRunId) return { stale: true };
+      asset.backgroundPrepareStatus = "uploading";
+      await ensureAssetImagesUploaded(asset);
+
+      if (runId !== state.backgroundPreparationRunId) return { stale: true };
+      asset.backgroundPrepareStatus = "preingesting";
+      const bundle = await ensurePreingestionBundle(asset);
+
+      asset.backgroundPrepareStatus = "ready";
+      asset.backgroundPrepareError = "";
+      asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+      return { ok: true, ...bundle };
+    } catch (error) {
+      asset.backgroundPrepareStatus = "failed";
+      asset.backgroundPrepareError = String(error.message || "background_prepare_failed").slice(0, 160);
+      asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+      return { ok: false, error: asset.backgroundPrepareError };
+    } finally {
+      if (!state.processing && runId === state.backgroundPreparationRunId) {
+        renderResults();
+      }
+    }
+  })();
+
+  return asset.backgroundPreparationPromise;
+}
+
+async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
+  if (!asset?.backgroundPreparationPromise) return { used: false };
+  const startedAt = performance.now();
+  try {
+    const timedOut = Symbol("background_prepare_timeout");
+    const result = await Promise.race([
+      asset.backgroundPreparationPromise,
+      wait(maxWaitMs).then(() => timedOut)
+    ]);
+    if (result === timedOut) {
+      return {
+        used: true,
+        timed_out: true,
+        wait_ms: Math.round(performance.now() - startedAt)
       };
     }
-  });
+    return {
+      used: true,
+      wait_ms: Math.round(performance.now() - startedAt),
+      ...result
+    };
+  } catch (error) {
+    return {
+      used: true,
+      ok: false,
+      wait_ms: Math.round(performance.now() - startedAt),
+      error: String(error.message || "background_prepare_failed").slice(0, 160)
+    };
+  }
+}
 
-  return uploadResults.some(Boolean);
+function startBackgroundPreparation(reason = "file_ready") {
+  if (!storageReady() || !state.assets.length) return false;
+  const runId = ++state.backgroundPreparationRunId;
+  const assets = [...state.assets];
+  void mapWithConcurrency(assets, BACKGROUND_PREP_CONCURRENCY, async (asset) => {
+    if (runId !== state.backgroundPreparationRunId) return null;
+    return prepareAssetInBackground(asset, runId);
+  });
+  void prewarmV4(`background_prepare_${reason}`);
+  return true;
 }
 
 function formatCost(requests) {
@@ -1509,6 +1677,7 @@ function pendingBox(asset) {
   const isWorking = isActive || isQueued;
   const label = isActive ? "识别中" : isQueued ? "排队中" : "等待中";
   const progress = assetProgressSnapshot(asset);
+  const backgroundLabel = !isWorking ? backgroundPreparationLabel(asset) : "";
   const message = isActive
     ? "正在读取原图与关键局部区域；识别完成后会按模块生成可编辑标题。"
     : isQueued
@@ -1524,6 +1693,7 @@ function pendingBox(asset) {
         ${isWorking ? `<span class="loading-spinner" aria-hidden="true"></span>` : `<span class="idle-dot" aria-hidden="true"></span>`}
         <strong>${escapeHtml(label)}</strong>
         <p>${escapeHtml(message)}</p>
+        ${backgroundLabel ? `<small class="background-prepare-note">${escapeHtml(backgroundLabel)}</small>` : ""}
         ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
         ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
         ${isActive ? pendingModuleSkeleton(progress) : ""}
@@ -2008,6 +2178,7 @@ async function handleFiles(fileList) {
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
+  state.backgroundPreparationRunId += 1;
   void prewarmV4("file_selected");
   setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
   closeImageModal();
@@ -2045,17 +2216,24 @@ async function handleFiles(fileList) {
   } else {
     const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
     setStatus(previewOptimizedCount
-      ? `${images.length} 张图片已准备。点击开始生成后才会上传云端识别；本地预览已高质量优化。`
-      : `${images.length} 张图片已准备。点击开始生成后才会上传云端识别。`);
+      ? `${images.length} 张图片已准备。点击开始生成后才会开始识别；系统会提前准备云端图片，本地预览已高质量优化。`
+      : `${images.length} 张图片已准备。点击开始生成后才会开始识别；系统会提前准备云端图片。`);
   }
 
   renderPreviews();
   renderResults();
+  startBackgroundPreparation("file_ready");
 }
 
 async function processAsset(asset, options = {}) {
   const processStartedAt = performance.now();
-  setAssetProgress(asset.index, "上传原图", 0.08);
+  setAssetProgress(asset.index, "检查云端准备", 0.05);
+  const backgroundPrepareResult = await settleBackgroundPreparation(asset);
+  setAssetProgress(
+    asset.index,
+    asset.preingestionBundleId ? "复用云端证据包" : "上传原图",
+    asset.preingestionBundleId ? 0.16 : 0.08
+  );
   const uploadStartedAt = performance.now();
   const uploaded = await ensureAssetImagesUploaded(asset);
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
@@ -2063,7 +2241,10 @@ async function processAsset(asset, options = {}) {
 
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
-    client_upload_ms: uploadMs
+    client_upload_ms: uploadMs,
+    client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
+    client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
+    client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId)
   };
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备识别请求", 0.3);
@@ -2502,6 +2683,7 @@ async function copyAllTitles() {
 }
 
 function resetTool() {
+  state.backgroundPreparationRunId += 1;
   state.files = [];
   state.assets = [];
   state.results = [];
@@ -2525,11 +2707,13 @@ function bindEvents() {
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
     input.addEventListener("change", () => {
+      state.backgroundPreparationRunId += 1;
       state.mode = input.value;
       state.results = [];
       closeImageModal();
       renderPreviews();
       renderResults();
+      startBackgroundPreparation("mode_changed");
     });
   });
 

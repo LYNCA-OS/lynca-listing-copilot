@@ -827,6 +827,18 @@ h3 {
   line-height: 1.45;
 }
 
+.background-prepare-note {
+  grid-column: 2;
+  justify-self: start;
+  padding: 3px 7px;
+  border: 1px solid rgba(88, 199, 245, 0.22);
+  border-radius: 999px;
+  color: var(--subtle);
+  background: rgba(88, 199, 245, 0.08);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .idle-dot {
   width: 18px;
   height: 18px;
