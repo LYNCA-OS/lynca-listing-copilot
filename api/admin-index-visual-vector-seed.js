@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { indexVisualVectorDataset } from "../scripts/index-visual-vector-embeddings.mjs";
 import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
 
@@ -9,6 +10,8 @@ export const config = {
 };
 
 const defaultDatasetPath = "data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json";
+const require = createRequire(import.meta.url);
+const defaultSeedDataset = require("../data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json");
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -126,6 +129,7 @@ export default async function handler(req, res) {
 
   try {
     const report = await indexVisualVectorDataset({
+      dataset: cleanText(body.dataset_path) ? null : defaultSeedDataset,
       datasetPath: cleanText(body.dataset_path) || defaultDatasetPath,
       outPath: "",
       offset,

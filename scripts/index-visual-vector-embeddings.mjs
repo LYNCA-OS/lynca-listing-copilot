@@ -556,6 +556,7 @@ async function runPool(items, worker, concurrency = 2) {
 }
 
 export async function indexVisualVectorDataset({
+  dataset = null,
   datasetPath = defaultDatasetPath,
   outPath = defaultOutPath,
   limit = 0,
@@ -585,8 +586,10 @@ export async function indexVisualVectorDataset({
     };
   }
 
-  const dataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
-  const sourceItems = Array.isArray(dataset.items) ? dataset.items : [];
+  const activeDataset = dataset && typeof dataset === "object"
+    ? dataset
+    : JSON.parse(await readFile(resolve(datasetPath), "utf8"));
+  const sourceItems = Array.isArray(activeDataset.items) ? activeDataset.items : [];
   const imageBackedItems = sourceItems.filter((item) => imageInputs(item).length > 0);
   const safeOffset = Math.max(0, Math.trunc(Number(offset) || 0));
   const items = imageBackedItems
