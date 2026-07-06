@@ -1618,19 +1618,6 @@ h3 {
   padding: 0 12px;
 }
 
-.publish-button:not(:disabled) {
-  border-color: rgba(112, 214, 159, 0.48);
-  background: rgba(112, 214, 159, 0.12);
-  color: var(--green);
-}
-
-.publish-status {
-  margin: 8px 0 0;
-  color: var(--green);
-  font-size: 12px;
-  font-weight: 800;
-}
-
 details {
   margin-top: 14px;
   border-top: 1px solid var(--line);

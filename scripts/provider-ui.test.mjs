@@ -46,6 +46,8 @@ assert.match(js, /providerCascadeText/, "frontend should render concise provider
 assert.match(js, /GPT-4\.1 mini/, "provider control should identify GPT provider labels");
 assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not expose mixed-model cascade controls");
 assert.match(js, /fetch\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs");
+assert.match(js, /const TITLE_API_ENDPOINT = "\/api\/v4\/listing-copilot-title"/, "frontend should use the V4 one-line title endpoint");
+assert.match(js, /fetch\(TITLE_API_ENDPOINT/, "title requests should go through the V4 endpoint constant");
 assert.match(js, /signed_upload_url/, "frontend should upload through signed URLs");
 assert.match(js, /signatureHex/, "frontend should send first-byte signatures before receiving signed upload URLs");
 assert.match(js, /width: dimensions\.width/, "frontend should send image width before receiving signed upload URLs");
@@ -110,7 +112,8 @@ assert.match(js, /data-title-input/, "title cards should expose a single editabl
 assert.match(js, /data-save-title/, "title cards should expose an accept action");
 assert.match(js, /data-reject-title/, "title cards should expose a reject action");
 assert.match(js, /rejectTitleFeedback/, "reject action should write a review record instead of becoming a dead UI button");
-assert.match(js, /review_outcome: result\.explicitReviewOutcome/, "feedback saves should carry explicit accept or reject review outcomes");
+assert.match(js, /const FEEDBACK_API_ENDPOINT = "\/api\/v4\/listing-feedback"/, "V4 reviews should use the V4 learning feedback endpoint");
+assert.match(js, /feedbackActionForResult/, "feedback saves should derive accept, edit, or reject actions from writer edits");
 assert.doesNotMatch(js, /moduleSummary\(result\)/, "writer UI must not render structured module forms by default");
 assert.doesNotMatch(js, /\$\{workflowSummaryNotice\(result\)\}/, "writer UI must not expose technical workflow summaries by default");
 assert.match(js, /labelForCsmField/, "frontend should use the shared CSM field label contract");
@@ -137,8 +140,8 @@ assert.match(js, /writer_required_fields/, "frontend should surface unresolved w
 assert.match(js, /modelQuickApprovalCandidate/, "frontend should group model quick-approval candidates for writer review");
 assert.match(js, /model_quick_review_recommended/, "frontend should treat model quick-review as a writer queue, not direct publishing");
 assert.match(js, /低触审核/, "frontend should label low-risk model results as a low-touch writer review queue");
-assert.match(js, /data-quick-approve-publish/, "writer quick approval should expose a one-click approve-and-publish action");
-assert.match(js, /quickApproveAndPublish/, "quick approval should save the writer review before publishing");
+assert.doesNotMatch(js, /data-quick-approve-publish/, "V4 title cards must not expose direct publish actions");
+assert.doesNotMatch(js, /quickApproveAndPublish/, "quick approval should be a writer review state, not a publish flow");
 assert.doesNotMatch(js, /fetch\("\/api\/listing-render-title"/, "writer UI should not call renderer rerender from a structured module form");
 assert.doesNotMatch(js, /module_edit/, "writer UI should not submit structured module edit payloads");
 assert.match(js, /title_override/, "manual title overrides should be tracked separately from resolved fields");
@@ -154,14 +157,14 @@ assert.doesNotMatch(js, /标题未修改，未写入记忆/, "unchanged reviews 
 assert.match(js, /payload\.retention_skipped/, "frontend should recognize feedback responses that are intentionally not retained");
 assert.match(js, /feedbackStatus = retentionSkipped \? "skipped" : "saved"/, "skipped feedback retention must not be treated as a saved review");
 assert.match(js, /未留存/, "skipped feedback retention should be visible to operators");
-assert.match(js, /payload\.record\?\.review\?\.id/, "frontend should keep the durable review id before publishing");
-assert.match(js, /payload\.record\?\.review\?\.approved_at/, "frontend should require server approval time before publishing");
-assert.match(js, /buildListingDraft/, "frontend should build a ListingDraft instead of publishing raw AI output");
-assert.match(js, /review_status: "APPROVED"/, "frontend publish draft should be explicitly approved");
-assert.match(js, /fetch\("\/api\/listing-publish-draft"/, "frontend should publish approved drafts through the server API");
-assert.match(js, /data-publish-draft/, "approved reviews should expose a publish action");
-assert.match(js, /destination: "mock_b_end"/, "frontend should only target the mock B-end adapter");
-assert.match(js, /dry_run: true/, "mock publish requests should remain dry-run from the UI");
+assert.match(js, /payload\.feedback_event_id/, "frontend should keep the durable V4 feedback event id");
+assert.match(js, /payload\.learning_event_id/, "frontend should surface V4 learning event persistence");
+assert.doesNotMatch(js, /buildListingDraft/, "V4 writer UI should not build publish drafts");
+assert.doesNotMatch(js, /review_status: "APPROVED"/, "V4 writer UI should not mark publish drafts approved");
+assert.doesNotMatch(js, /fetch\("\/api\/listing-publish-draft"/, "V4 writer UI should not publish directly");
+assert.doesNotMatch(js, /data-publish-draft/, "approved reviews should not expose a publish action in the title-only surface");
+assert.doesNotMatch(js, /destination: "mock_b_end"/, "V4 writer UI should not target a mock B-end adapter");
+assert.doesNotMatch(js, /dry_run: true/, "publish dry-run settings should not live in the title review UI");
 assert.match(js, /data-emergency-retry/, "failed assets should expose explicit GPT single-provider retry control");
 assert.match(js, /retryAssetWithEmergency/, "GPT single-provider retry should be a separate action");
 assert.match(js, /renderProviderControl/, "provider controls should be rendered from server status");
@@ -215,8 +218,8 @@ assert.match(css, /\.workflow-step\.workflow-warn/, "non-blocking workflow issue
 assert.match(css, /\.workflow-action-list/, "workflow summary should show a compact next-action list");
 assert.match(css, /\.workflow-action-list \.workflow-action-conflict/, "conflict next actions should be visually prominent");
 assert.match(css, /\.title-override-note/, "title override state should be visible");
-assert.match(css, /\.publish-button/, "mock publish button should have a distinct approved-action style");
-assert.match(css, /\.publish-status/, "mock publish status should be visible after publishing");
+assert.doesNotMatch(css, /\.publish-button/, "title-only writer UI should not keep publish button styling");
+assert.doesNotMatch(css, /\.publish-status/, "title-only writer UI should not keep publish status styling");
 assert.doesNotMatch(html, /name="model_id"|name="endpoint"|id="modelId"|id="providerEndpoint"/i, "frontend must not expose arbitrary model or endpoint inputs");
 
 function makeDomElement() {

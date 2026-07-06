@@ -93,6 +93,11 @@ assert.equal(artifacts.status, "EDITED");
 assert.equal(artifacts.feedbackEvent.correction_type, "EDIT");
 assert.ok(artifacts.feedbackEvent.title_diff.added.includes("timberwolves"));
 assert.equal(artifacts.learningEvent.training_eligible, true);
+assert.equal(artifacts.learningEvent.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
+assert.ok(Array.isArray(artifacts.learningEvent.field_level_ground_truth));
+assert.ok(artifacts.learningEvent.field_level_ground_truth.some((row) => row.field === "player" && row.training_eligible === true));
+assert.ok(Array.isArray(artifacts.learningEvent.field_level_diff));
+assert.equal(typeof artifacts.learningEvent.candidate_changes.candidate_count, "number");
 
 const writes = [];
 const reads = [];

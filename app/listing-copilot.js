@@ -21,6 +21,9 @@ const MAX_ASSET_REQUEST_BYTES = 3_400_000;
 const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_ASSET = 6;
+const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
+const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
+const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
@@ -1749,17 +1752,14 @@ function TitleCardComponent(result, asset = null) {
   const correctedTitle = result.correctedTitle ?? generatedTitle;
   const copyDisabled = !failed && !correctedTitle;
   const saveDisabled = result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
-  const showPublish = shouldShowPublishButton(result);
-  const publishDisabled = !canPublishResult(result);
-  const showQuickApprove = shouldShowQuickApproveButton(result);
-  const quickApproveDisabled = !canQuickApproveAndPublish(result);
   const retryProvider = emergencyProvider();
   const canEmergencyRetry = failed && retryProvider && result.provider !== "openai_legacy";
+  const titleEdited = String(correctedTitle || "").trim() && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
     saved: "已保存",
     skipped: "未留存",
     saving: "保存中…"
-  }[result.feedbackStatus] || "接受";
+  }[result.feedbackStatus] || (titleEdited ? "保存编辑" : "接受");
   const rejectDisabled = result.feedbackStatus === "saving";
   const providerLabel = result.provider_label || providerById(result.provider)?.label || result.provider || "-";
   const unavailableTitle = failed
@@ -1777,8 +1777,6 @@ function TitleCardComponent(result, asset = null) {
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
-          ${showQuickApprove ? `<button class="copy-button publish-button quick-approve-button" type="button" data-quick-approve-publish="${result.index}" ${quickApproveDisabled ? "disabled" : ""}>快速批准并发布</button>` : ""}
-          ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
         </div>
       </div>
       ${sideDecisionNotice(asset, result)}
@@ -1786,7 +1784,6 @@ function TitleCardComponent(result, asset = null) {
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
-      ${result.publishMessage ? `<p class="publish-status">${escapeHtml(result.publishMessage)}</p>` : ""}
       ${writerEvidenceDetails(result, asset, unresolved)}
     </div>
   `;
@@ -2079,7 +2076,7 @@ async function processAsset(asset, options = {}) {
 
   const apiStartedAt = performance.now();
   setAssetProgress(asset.index, "云端识别中", 0.52);
-  const response = await fetch("/api/listing-copilot-title", {
+  const response = await fetch(TITLE_API_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -2106,10 +2103,24 @@ async function processAsset(asset, options = {}) {
 
   setAssetProgress(asset.index, "接收识别结果", 0.82);
   const payload = await response.json();
-  setAssetProgress(asset.index, "生成可编辑模块", 0.94);
-  const finalTitle = payload.final_title || payload.title || "";
+  setAssetProgress(asset.index, "生成一段式标题", 0.94);
+  const legacyResult = payload.legacy_v2_result && typeof payload.legacy_v2_result === "object"
+    ? payload.legacy_v2_result
+    : {};
+  const finalTitle = payload.writer_draft?.title
+    || payload.final_title
+    || legacyResult.final_title
+    || legacyResult.rendered_title
+    || legacyResult.title
+    || payload.title
+    || "";
+  const resolvedFields = payload.resolved_fields || legacyResult.resolved_fields || legacyResult.resolved || legacyResult.fields || {};
+  const providerResult = payload.provider_result || {};
+  const confidence = providerResult.confidence || legacyResult.confidence || payload.confidence || (finalTitle ? "MEDIUM" : "FAILED");
   const clientTotalMs = Math.round(performance.now() - processStartedAt);
   const timing = {
+    ...(legacyResult.timing || {}),
+    ...(providerResult.timing || {}),
     ...(payload.timing || {}),
     client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
     client_upload_ms: uploadMs,
@@ -2121,15 +2132,24 @@ async function processAsset(asset, options = {}) {
   return {
     index: asset.index,
     thumbnail: asset.images[0].dataUrl,
+    ...legacyResult,
+    ...payload,
+    title: finalTitle,
+    final_title: finalTitle,
+    rendered_title: payload.final_title || legacyResult.rendered_title || finalTitle,
     generatedTitle: finalTitle,
     correctedTitle: finalTitle,
-    generated_resolved_fields: payload.resolved || {},
-    generated_evidence: payload.evidence || {},
-    generated_modules: payload.modules || {},
+    confidence,
+    provider: providerResult.provider || legacyResult.provider || payload.provider || state.selectedProvider || null,
+    model_id: providerResult.model || legacyResult.model_id || payload.model_id || "",
+    resolved: resolvedFields,
+    fields: resolvedFields,
+    generated_resolved_fields: resolvedFields,
+    generated_evidence: legacyResult.evidence || legacyResult.generated_evidence || payload.internal_field_graph || {},
+    generated_modules: legacyResult.modules || payload.modules || {},
     reviewStartedAt: Date.now(),
     feedbackStatus: "",
     feedbackMessage: "",
-    ...payload,
     timing
   };
 }
@@ -2286,7 +2306,6 @@ function updateCorrectedTitle(input) {
   result.title_override = correctedTitle && renderedTitle && correctedTitle !== renderedTitle ? correctedTitle : null;
   result.feedbackStatus = "";
   result.feedbackMessage = "";
-  resetPublishState(result);
   renderBatchTitles();
 }
 
@@ -2307,73 +2326,41 @@ function currentResolvedForResult(result) {
   return result.corrected_resolved || result.resolved || {};
 }
 
-function resetPublishState(result) {
-  result.publishStatus = "";
-  result.publishMessage = "";
-  result.publishAuditJobId = "";
-  result.publishExternalId = "";
-  result.publishDuplicate = false;
-}
-
 function finalTitleForResult(result) {
   return String(result.correctedTitle ?? result.final_title ?? result.rendered_title ?? result.title ?? "").trim();
 }
 
-function resultHasResolvedFields(result) {
-  return Object.keys(currentResolvedForResult(result) || {}).length > 0;
+function isV4Result(result = {}) {
+  return Boolean(result.recognition_session_id && result.v4_schema_version);
 }
 
-function shouldShowPublishButton(result) {
-  if (result.publishStatus) return true;
-  return result.feedbackStatus === "saved"
-    && Boolean(result.review_id)
-    && Boolean(result.approved_at)
-    && Boolean(result.approved_by);
+function feedbackActionForResult(result, generatedTitle, correctedTitle) {
+  if (result.explicitReviewOutcome === "REJECTED") return "REJECT";
+  return String(generatedTitle || "").trim() === String(correctedTitle || "").trim() ? "ACCEPT" : "EDIT";
 }
 
-function shouldShowQuickApproveButton(result) {
-  if (!modelQuickApprovalCandidate(result)) return false;
-  if (["publishing", "PUBLISHED", "SKIPPED_DUPLICATE"].includes(result.publishStatus)) return false;
-  return result.feedbackStatus !== "saved" && result.feedbackStatus !== "skipped";
-}
-
-function canQuickApproveAndPublish(result) {
-  return shouldShowQuickApproveButton(result)
-    && result.feedbackStatus !== "saving"
-    && result.publishStatus !== "FAILED"
-    && finalTitleForResult(result)
-    && resultHasResolvedFields(result);
-}
-
-function publishButtonLabel(result) {
-  if (result.publishStatus === "publishing") return "发布中…";
-  if (result.publishStatus === "PUBLISHED") return "已发布";
-  if (result.publishStatus === "SKIPPED_DUPLICATE") return "已发布";
-  if (result.publishStatus === "FAILED") return "重试发布";
-  return "发布 Mock";
-}
-
-function canPublishResult(result) {
-  if (["publishing", "PUBLISHED", "SKIPPED_DUPLICATE"].includes(result.publishStatus)) return false;
-  return shouldShowPublishButton(result)
-    && Boolean(result.review_id)
-    && Boolean(result.approved_at)
-    && Boolean(result.approved_by)
-    && finalTitleForResult(result)
-    && resultHasResolvedFields(result);
-}
-
-function buildListingDraft(result, asset) {
+function v4FeedbackResultPayload(result = {}) {
+  const {
+    thumbnail,
+    correctedTitle,
+    generatedTitle,
+    feedbackMessage,
+    feedbackStatus,
+    reviewStartedAt,
+    ...safeResult
+  } = result || {};
   return {
-    asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
-    review_id: result.review_id,
-    final_title: finalTitleForResult(result),
-    resolved_fields: currentResolvedForResult(result),
-    modules: result.modules || {},
-    review_status: "APPROVED",
-    approved_by: result.approved_by,
-    approved_at: result.approved_at,
-    publish_status: "READY"
+    ...safeResult,
+    final_title: generatedTitle || result.final_title || result.title || "",
+    resolved_fields: result.resolved_fields || result.resolved || result.fields || {},
+    fields: result.resolved_fields || result.resolved || result.fields || {},
+    field_states: result.field_states || {},
+    internal_field_graph: result.internal_field_graph || {},
+    candidate_control_plane_trace: result.candidate_control_plane_trace || {},
+    retrieval_trace: result.retrieval_trace || result.retrieval || {},
+    open_set_readiness: result.open_set_readiness || {},
+    workflow_sidecars: result.workflow_sidecars || {},
+    provider_result: result.provider_result || {}
   };
 }
 
@@ -2394,13 +2381,20 @@ async function saveFeedbackForResult(result, asset) {
   renderResults();
 
   try {
-    const response = await fetch("/api/listing-title-feedback", {
+    const useV4Feedback = isV4Result(result);
+    const response = await fetch(useV4Feedback ? FEEDBACK_API_ENDPOINT : LEGACY_FEEDBACK_API_ENDPOINT, {
       method: "POST",
       headers: {
         "content-type": "application/json"
       },
       credentials: "same-origin",
-      body: JSON.stringify({
+      body: JSON.stringify(useV4Feedback ? {
+        recognition_session_id: result.recognition_session_id,
+        action: feedbackActionForResult(result, generatedTitle, correctedTitle),
+        ai_generated_title: generatedTitle,
+        writer_final_title: correctedTitle,
+        result_payload: v4FeedbackResultPayload(result)
+      } : {
         asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
         analysis_run_id: result.analysis_run_id || result.provider_response_id || "",
         generated_title: generatedTitle,
@@ -2444,13 +2438,24 @@ async function saveFeedbackForResult(result, asset) {
       throw new Error(payload.message || `保存失败：${response.status}`);
     }
 
+    if (useV4Feedback) {
+      result.feedbackStatus = payload.training_eligible === false ? "skipped" : "saved";
+      result.review_id = payload.feedback_event_id || "";
+      result.approved_at = "";
+      result.approved_by = "";
+      result.review_outcome = payload.status || "";
+      result.feedbackMessage = payload.training_eligible === false
+        ? "V4 已记录拒绝/不可训练反馈，不进入正样本训练。"
+        : `V4 已保存写手反馈，并生成学习事件：${payload.learning_event_id || "已写入"}。`;
+      return result.feedbackStatus === "saved";
+    }
+
     const retentionSkipped = payload.retention_skipped === true || payload.retention_enabled === false;
     result.feedbackStatus = retentionSkipped ? "skipped" : "saved";
     result.review_id = retentionSkipped ? "" : payload.record?.review?.id || "";
     result.approved_at = retentionSkipped ? "" : payload.record?.review?.approved_at || "";
     result.approved_by = retentionSkipped ? "" : payload.record?.review?.operator_id || "";
     result.review_outcome = payload.review_outcome || payload.record?.review?.review_outcome || "";
-    resetPublishState(result);
     result.feedbackMessage = retentionSkipped
       ? `审核接口已接收，当前未开通反馈留存：${payload.review_outcome || "未写入"}。`
       : payload.review_outcome
@@ -2479,72 +2484,7 @@ async function rejectTitleFeedback(button) {
   result.explicitReviewOutcome = "REJECTED";
   result.feedbackStatus = "";
   result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
-  resetPublishState(result);
   await saveFeedbackForResult(result, asset);
-}
-
-async function publishDraftForResult(result, asset) {
-  if (!result || !canPublishResult(result)) return;
-
-  result.publishStatus = "publishing";
-  result.publishMessage = "正在发布到 Mock B 端…";
-  renderResults();
-
-  try {
-    const response = await fetch("/api/listing-publish-draft", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        listing_draft: buildListingDraft(result, asset),
-        destination_context: {
-          destination: "mock_b_end",
-          dry_run: true
-        }
-      })
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.message || `发布失败：${response.status}`);
-    }
-
-    result.publishStatus = payload.status || "PUBLISHED";
-    result.publishAuditJobId = payload.audit_job?.id || "";
-    result.publishExternalId = payload.response?.external_id || "";
-    result.publishDuplicate = payload.duplicate === true;
-    result.publishMessage = payload.duplicate
-      ? "重复发布请求已跳过，Mock B 端未再次提交。"
-      : `已发布到 Mock B 端${result.publishExternalId ? `：${result.publishExternalId}` : ""}。`;
-  } catch (error) {
-    result.publishStatus = "FAILED";
-    result.publishMessage = error.message || "Mock 发布失败。";
-  }
-
-  renderResults();
-}
-
-async function publishDraft(button) {
-  const result = state.results.find((item) => item.index === Number(button.dataset.publishDraft));
-  const asset = state.assets.find((item) => item.index === Number(button.dataset.publishDraft));
-  await publishDraftForResult(result, asset);
-}
-
-async function quickApproveAndPublish(button) {
-  const result = state.results.find((item) => item.index === Number(button.dataset.quickApprovePublish));
-  const asset = state.assets.find((item) => item.index === Number(button.dataset.quickApprovePublish));
-  if (!result || !canQuickApproveAndPublish(result)) return;
-
-  result.feedbackMessage = "正在快速批准…";
-  renderResults();
-  const saved = await saveFeedbackForResult(result, asset);
-  if (!saved) {
-    result.publishMessage = "未生成可发布的审核记录，无法一键发布。";
-    renderResults();
-    return;
-  }
-  await publishDraftForResult(result, asset);
 }
 
 async function copyAllTitles() {
@@ -2639,18 +2579,6 @@ function bindEvents() {
     const rejectButton = event.target.closest("[data-reject-title]");
     if (rejectButton) {
       rejectTitleFeedback(rejectButton);
-      return;
-    }
-
-    const quickApproveButton = event.target.closest("[data-quick-approve-publish]");
-    if (quickApproveButton) {
-      quickApproveAndPublish(quickApproveButton);
-      return;
-    }
-
-    const publishButton = event.target.closest("[data-publish-draft]");
-    if (publishButton) {
-      publishDraft(publishButton);
       return;
     }
 
