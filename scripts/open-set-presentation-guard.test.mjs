@@ -8,6 +8,9 @@ const {
   catalogStrongCandidateForVectorLazy,
   configuredMaxPayloadImages,
   narrowSurfaceColorFromOpenSetParallel,
+  retrievalAnchorSummary,
+  retrievalFieldsHavePrePromptVectorAnchor,
+  shouldDeferVectorUntilProviderObservation,
   shouldSkipVectorForCatalogContext
 } = __listingCopilotTitleTestHooks;
 
@@ -71,6 +74,32 @@ assert.equal(catalogCandidateHasStrongAnchor({
   supporting_fields: ["subject"],
   fields: { subjects: ["Michael Jordan"] }
 }, {}), false, "weak subject-only catalog candidates should not skip vector");
+
+assert.deepEqual(retrievalAnchorSummary({}).anchors, []);
+assert.equal(retrievalFieldsHavePrePromptVectorAnchor({}), false);
+assert.equal(shouldDeferVectorUntilProviderObservation({
+  providerOptions: {
+    enable_vector_assist: true,
+    force_vector_assist: true,
+    enable_vector_lazy_mode: false
+  },
+  resolvedForRetrieval: {},
+  env: {}
+}), true, "forced vector must wait for provider observations when no query anchors exist");
+assert.equal(shouldDeferVectorUntilProviderObservation({
+  providerOptions: {
+    enable_vector_assist: true,
+    force_vector_assist: true,
+    enable_vector_lazy_mode: false
+  },
+  resolvedForRetrieval: {
+    year: "2018-19",
+    product: "Panini Encased",
+    players: ["Jaren Jackson Jr."]
+  },
+  env: {}
+}), false, "forced vector may run pre-prompt only when field anchors can filter the query");
+assert.equal(retrievalFieldsHavePrePromptVectorAnchor({ collector_number: "202" }), true);
 
 const oversizedPayloadBatch = boundedPayloadImagesFromImages([
   { id: "front" },

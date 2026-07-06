@@ -30,6 +30,7 @@ const defaultProviderOptions = Object.freeze({
   enable_query_visual_embeddings: true,
   enable_vector_retrieval: true,
   vector_retrieval_mode: "assist",
+  vector_query_timeout_ms: 8000,
   enable_advanced_retrieval: true,
   enable_hybrid_retrieval: true,
   enable_gpt_failure_fallback: false,

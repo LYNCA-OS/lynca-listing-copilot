@@ -5562,14 +5562,54 @@ async function createRecognitionIdentityPreflight(payload, {
 function shouldDeferVectorUntilProviderObservation({
   catalogContext = null,
   lazyDecision = {},
+  resolvedForRetrieval = {},
   providerOptions = {},
   env = process.env
 } = {}) {
-  if (optionFlag(providerOptions, "enable_vector_lazy_mode", envFlag(env, "ENABLE_VECTOR_LAZY_MODE", true)) !== true) return false;
   if (optionFlag(providerOptions, "enable_vector_assist", false) !== true) return false;
-  if (optionFlag(providerOptions, "force_vector_assist", false) === true) return false;
+  if (optionFlag(providerOptions, "force_vector_assist", false) === true) {
+    return !retrievalFieldsHavePrePromptVectorAnchor(resolvedForRetrieval);
+  }
+  if (optionFlag(providerOptions, "enable_vector_lazy_mode", envFlag(env, "ENABLE_VECTOR_LAZY_MODE", true)) !== true) return false;
   if (lazyDecision.skip === true) return false;
   return catalogContext?.promptPacket !== true;
+}
+
+function fieldHasValueForRetrieval(value) {
+  if (Array.isArray(value)) return value.some(fieldHasValueForRetrieval);
+  if (typeof value === "boolean") return value === true;
+  return normalizeStringOrNull(value) !== null;
+}
+
+function serialDenominatorForRetrieval(value) {
+  const text = normalizeStringOrNull(value);
+  if (!text) return null;
+  return text.match(/\/\s*0*(\d{1,6})\b/)?.[1] || null;
+}
+
+function retrievalAnchorSummary(fields = {}) {
+  const normalized = normalizeFields(fields || {});
+  const players = Array.isArray(normalized.players)
+    ? normalized.players
+    : normalized.player
+      ? [normalized.player]
+      : [];
+  const anchors = [];
+  if (fieldHasValueForRetrieval(normalized.collector_number || normalized.checklist_code || normalized.card_number)) anchors.push("printed_code");
+  if (fieldHasValueForRetrieval(normalized.year)) anchors.push("year");
+  if (fieldHasValueForRetrieval(normalized.product || normalized.set || normalized.manufacturer || normalized.brand)) anchors.push("product");
+  if (players.some(fieldHasValueForRetrieval) || fieldHasValueForRetrieval(normalized.character)) anchors.push("subject");
+  if (fieldHasValueForRetrieval(normalized.expected_serial_denominator || serialDenominatorForRetrieval(normalized.serial_number))) anchors.push("serial_denominator");
+  return {
+    anchors: [...new Set(anchors)],
+    count: [...new Set(anchors)].length,
+    has_printed_code: anchors.includes("printed_code")
+  };
+}
+
+function retrievalFieldsHavePrePromptVectorAnchor(fields = {}) {
+  const summary = retrievalAnchorSummary(fields);
+  return summary.has_printed_code || summary.count >= 2;
 }
 
 function retrievalFieldsFromProviderObservation(result = {}, fallback = {}) {
@@ -5656,6 +5696,7 @@ async function createOpenAiTitle(payload, selection, {
   const deferVectorUntilProviderObservation = shouldDeferVectorUntilProviderObservation({
     catalogContext,
     lazyDecision,
+    resolvedForRetrieval,
     providerOptions,
     env: process.env
   });
@@ -5855,7 +5896,10 @@ export const __listingCopilotTitleTestHooks = {
   finalResolvedFieldsForPresentation,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
+  retrievalAnchorSummary,
+  retrievalFieldsHavePrePromptVectorAnchor,
   scaffoldTitleConflictsWithDirectEvidence,
+  shouldDeferVectorUntilProviderObservation,
   shouldSkipVectorForCatalogContext
 };
 
