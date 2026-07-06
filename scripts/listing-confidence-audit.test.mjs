@@ -914,7 +914,7 @@ const starSwatchCodeSuppressedSerialPreserved = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum 04\/10 Auto Patch PSA 10$/i);
+assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum 04\/10 PSA 10$/i);
 assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("year"));
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Panini Panini Flawless/i);
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /#04\/10|#?SR-KD|Serial 04\/10|Numbered 04\/10/i);
@@ -1429,6 +1429,41 @@ assert.match(finalizerPreservesCurrentImageSpecificity.title, /20\/99/);
 assert.match(finalizerPreservesCurrentImageSpecificity.title, /#119/);
 assert.match(finalizerPreservesCurrentImageSpecificity.title, /\bFOTL\b/);
 assert.doesNotMatch(finalizerPreservesCurrentImageSpecificity.title, /Green Shimmer Prizm/);
+
+const finalizerBackfillsCurrentImageCommercialFields = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  title: "2024-25 Anthony Edwards",
+  confidence: "HIGH",
+  raw_provider_fields: {
+    year: "2024-25",
+    manufacturer: "Panini",
+    product: "Immaculate",
+    players: ["Anthony Edwards"],
+    card_type: "Patch Auto",
+    serial_number: "2/3",
+    numerical_rarity: "2/3",
+    grade_company: "BGS",
+    card_grade: "8.5",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  resolved_fields: {
+    year: "2024-25",
+    players: ["Anthony Edwards"]
+  },
+  normalized_evidence: {
+    serial_number: {
+      value: "2/3",
+      status: "CONFIRMED",
+      confidence: 0.95,
+      sources: [{ source_type: "CARD_FRONT", observed_text: "2/3" }]
+    }
+  }
+}, { maxTitleLength: 80 });
+
+assert.match(finalizerBackfillsCurrentImageCommercialFields.title, /Panini Immaculate/);
+assert.match(finalizerBackfillsCurrentImageCommercialFields.title, /Patch Auto/);
+assert.match(finalizerBackfillsCurrentImageCommercialFields.title, /2\/3/);
+assert.match(finalizerBackfillsCurrentImageCommercialFields.title, /BGS 8\.5\/10/);
 
 const finalizerMergesMoreCompletePublicFields = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
   title: "1994 Upper Deck Ken Griffey Jr. Auto BGS",

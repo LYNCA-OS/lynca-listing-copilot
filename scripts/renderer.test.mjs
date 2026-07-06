@@ -441,7 +441,7 @@ const productAlreadyCarriesInsert = renderResolvedTitle({
   product: "Panini Absolute",
   set: "Absolute Hoopla",
   players: ["Kobe Bryant"],
-  card_type: "Auto Patch",
+  card_type: "Patch Auto",
   insert: "Hoopla",
   serial_number: "08/25",
     numerical_rarity: "08/25",
@@ -454,7 +454,7 @@ const productAlreadyCarriesInsert = renderResolvedTitle({
   maxLength: 80
 });
 assert.doesNotMatch(productAlreadyCarriesInsert.rendered_title, /Hoopla.*Hoopla/i);
-assert.equal(productAlreadyCarriesInsert.rendered_title, "2010-11 Panini Absolute Hoopla Kobe Bryant Auto Patch 08/25 PSA 10");
+assert.equal(productAlreadyCarriesInsert.rendered_title, "2010-11 Panini Absolute Hoopla Kobe Bryant Patch Auto 08/25 PSA 10");
 
 const duplicatePsaCardAndAutoGrade = renderResolvedTitle({
   year: "2020",
@@ -833,6 +833,21 @@ const booleanGradeCompanySuppressed = renderListingPresentation({
 });
 assert.doesNotMatch(booleanGradeCompanySuppressed.final_title, /\bTRUE\s+10\b/i);
 assert.doesNotMatch(booleanGradeCompanySuppressed.modules.grading.text, /\bTRUE\b/i);
+
+const booleanCardGradeSuppressed = renderListingPresentation({
+  resolved: {
+    year: "2022",
+    brand: "Panini",
+    product: "Prizm World Cup",
+    players: ["Pele"],
+    grade_company: "PSA",
+    card_grade: true,
+    grade_type: "CARD_ONLY"
+  }
+});
+assert.doesNotMatch(booleanCardGradeSuppressed.final_title, /\bPSA\s+true\b/i);
+assert.doesNotMatch(booleanCardGradeSuppressed.final_title, /\bPSA\b/i);
+assert.equal(booleanCardGradeSuppressed.modules.grading.text, "");
 
 const colorWithReviewDescriptor = renderListingPresentation({
   resolved: {

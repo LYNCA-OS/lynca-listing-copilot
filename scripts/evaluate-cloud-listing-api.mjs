@@ -370,6 +370,7 @@ function providerOptionsForMode(providerMode, {
   correctedTitleAsTemporaryGt = true,
   sendCorrectedTitleHintToCloud = false,
   disableVectorLazyMode = false,
+  forceVectorAssist = false,
   coldStartBlind = false
 } = {}) {
   const coldStartMode = coldStartBlind === true || providerMode === providerModes.EBAY_COLD_START_BLIND;
@@ -379,6 +380,7 @@ function providerOptionsForMode(providerMode, {
   const vectorAssist = providerMode === providerModes.OPENAI_VECTOR || coldStartMode;
   const temporaryGt = catalogAssist && correctedTitleAsTemporaryGt === true && coldStartMode !== true;
   const sendHintToCloud = temporaryGt && sendCorrectedTitleHintToCloud === true;
+  const forceVector = vectorAssist && forceVectorAssist === true;
   const vectorQueryTimeoutMs = positiveInteger(
     process.env.CLOUD_LISTING_API_VECTOR_QUERY_TIMEOUT_MS || process.env.VECTOR_QUERY_TIMEOUT_MS,
     120000
@@ -399,7 +401,9 @@ function providerOptionsForMode(providerMode, {
     enable_query_visual_embeddings: vectorAssist,
     enable_vector_retrieval: vectorAssist,
     vector_retrieval_mode: vectorAssist ? "assist" : "off",
-    enable_vector_lazy_mode: vectorAssist ? disableVectorLazyMode !== true : false,
+    enable_vector_lazy_mode: vectorAssist ? forceVector !== true && disableVectorLazyMode !== true : false,
+    force_vector_assist: forceVector,
+    vector_index_ready: forceVector ? true : undefined,
     vector_corrected_title_as_temporary_gt: vectorAssist && temporaryGt,
     vector_query_timeout_ms: vectorAssist ? vectorQueryTimeoutMs : undefined,
     vector_retrieval_internal_top_n: vectorAssist ? 10 : undefined,
@@ -412,7 +416,8 @@ function providerOptionsForMode(providerMode, {
     eval_flags: {
       ENABLE_CATALOG_ASSIST: catalogAssist,
       ENABLE_VECTOR_ASSIST: vectorAssist,
-      ENABLE_VECTOR_LAZY_MODE: vectorAssist ? disableVectorLazyMode !== true : false,
+      ENABLE_VECTOR_LAZY_MODE: vectorAssist ? forceVector !== true && disableVectorLazyMode !== true : false,
+      FORCE_VECTOR_ASSIST: forceVector,
       CORRECTED_TITLE_AS_TEMPORARY_GT: temporaryGt,
       CORRECTED_TITLE_AS_REVIEWED_TITLE_GT: temporaryGt,
       SEND_CORRECTED_TITLE_HINT_TO_CLOUD: sendHintToCloud,
@@ -2700,6 +2705,7 @@ export async function evaluateCloudListingApi({
   correctedTitleAsTemporaryGt = true,
   sendCorrectedTitleHintToCloud = false,
   disableVectorLazyMode = false,
+  forceVectorAssist = false,
   providerErrorRetries = 1,
   providerErrorRetryDelayMs = 1500,
   skipPreflight = false,
@@ -2714,7 +2720,8 @@ export async function evaluateCloudListingApi({
   const evalOptions = {
     correctedTitleAsTemporaryGt,
     sendCorrectedTitleHintToCloud,
-    disableVectorLazyMode
+    disableVectorLazyMode,
+    forceVectorAssist
   };
 
   const limitCount = Math.max(0, Math.trunc(Number(limit) || 0));
@@ -2876,6 +2883,8 @@ export async function main(argv = process.argv, env = process.env) {
     || boolValue(runtimeEnv.SEND_CORRECTED_TITLE_HINT_TO_CLOUD ?? runtimeEnv.CLOUD_EVAL_SEND_CORRECTED_TITLE_HINT_TO_CLOUD, false);
   const disableVectorLazyMode = hasFlag(argv, "--disable-vector-lazy-mode")
     || boolValue(runtimeEnv.CLOUD_EVAL_DISABLE_VECTOR_LAZY_MODE, false);
+  const forceVectorAssist = hasFlag(argv, "--force-vector-assist")
+    || boolValue(runtimeEnv.CLOUD_EVAL_FORCE_VECTOR_ASSIST, false);
   const progress = hasFlag(argv, "--progress");
   const checkpointPath = argValue(argv, "--checkpoint-path", hasFlag(argv, "--checkpoint") ? outPath : "");
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
@@ -2896,6 +2905,7 @@ export async function main(argv = process.argv, env = process.env) {
     correctedTitleAsTemporaryGt,
     sendCorrectedTitleHintToCloud,
     disableVectorLazyMode,
+    forceVectorAssist,
     providerErrorRetries,
     providerErrorRetryDelayMs,
     skipPreflight,

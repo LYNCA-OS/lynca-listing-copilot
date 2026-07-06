@@ -842,6 +842,20 @@ assert.equal(openaiVectorNoLazy.report.vector_lazy_skip_count, 0);
 assert.equal(openaiVectorNoLazy.report.vector_lazy_skip_rate, 0);
 assert.equal(openaiVectorNoLazy.report.results[0].vector_lazy_skip, false);
 
+const openaiVectorForced = await runProvider("d", {
+  evaluateOptions: {
+    forceVectorAssist: true
+  }
+});
+assert.equal(openaiVectorForced.titlePayload.provider_options.enable_vector_assist, true);
+assert.equal(openaiVectorForced.titlePayload.provider_options.force_vector_assist, true);
+assert.equal(openaiVectorForced.titlePayload.provider_options.vector_index_ready, true);
+assert.equal(openaiVectorForced.titlePayload.provider_options.enable_vector_lazy_mode, false);
+assert.equal(openaiVectorForced.titlePayload.provider_options.eval_flags.FORCE_VECTOR_ASSIST, true);
+assert.equal(openaiVectorForced.titlePayload.provider_options.eval_flags.ENABLE_VECTOR_LAZY_MODE, false);
+assert.equal(openaiVectorForced.report.vector_lazy_skip_count, 0);
+assert.equal(openaiVectorForced.report.results[0].vector_lazy_skip, false);
+
 {
   const recovered = await runProvider("d", {
     evaluateOptions: {
