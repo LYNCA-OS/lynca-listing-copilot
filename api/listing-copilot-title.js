@@ -2865,7 +2865,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- Keep field_evidence compact. Only include short evidence for non-empty high-risk fields or fields that may need writer review.",
     "- Do not dump OCR lines, legal text, copyright text, or repeated boilerplate into field_evidence.",
     "- Each evidence entry should include value, support_type/source_type, short visible_text/raw_text when useful, confidence, review_required, and direct_observation/directly_observed.",
-    "- Core/high-risk evidence fields include year, product, set, language, players, character, card_name, official_card_type, observable_components, insert, surface_color, parallel_exact, serial_number, numerical_rarity, collector_number, checklist_code, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
+    "- Core/high-risk evidence fields include year, product, set, language, players, character, card_name, official_card_type, observable_components, insert, surface_color, parallel_exact, print_run_number, print_run_denominator, numbered_to, collector_number, checklist_code, card_number, tcg_card_number, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
     "- official_card_type must stay empty unless official wording is printed on the card/slab or supplied by trusted catalog/reviewed input. Never infer Base from visual context.",
     "- observable_components may include only directly visible components: auto, patch, relic, jersey, rc, sketch, redemption.",
     "- year: include field_evidence.year with value, support_type, visible_text, confidence, and review_required. Use support_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
@@ -2874,7 +2874,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
     "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
-    "Serial and Numerical Rarity rule: serial_number is the raw physical-copy reading and every digit must be readable; otherwise serial_number must be empty. numerical_rarity is the title print-limit module. Fill numerical_rarity only when current-card evidence clearly shows a print limit such as 2/3, 14/99, 31/50, 01/10, 1/1, or denominator-only #/50. If you directly read a valid current-card print run in serial_number and it is a product print limit, explicitly repeat the same value in numerical_rarity because backend code will not derive it for you. Do not invent numerical_rarity when no print limit is visible. Never copy a serial numerator from catalog/reference candidates, and do not move serial_number into collector_number or checklist_code.",
+    "Numbered / Print Run rule: values such as 2/3, 14/99, 31/50, 01/10, #/50, and 1/1 are print_run_number / numbered facts, not checklist/card numbers. Use print_run_number for the current-card value, print_run_numerator for the numerator, print_run_denominator and numbered_to for the denominator. Fill the full numerator only when current uploaded card/slab/OCR evidence directly shows it. If only the denominator is known, use print_run_number #/D and leave print_run_numerator empty. Use one_of_one true for 1/1. serial_number and numerical_rarity are legacy aliases: copy print_run_number into them only for compatibility when current-card print-run evidence exists. Never copy a print-run numerator from catalog/vector/reference/marketplace candidates, and never move print_run_number into collector_number, checklist_code, card_number, or tcg_card_number.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
     "Sapphire discipline: Topps Chrome Sapphire or Bowman Chrome Sapphire is a product/set phrase when visibly attached to the Chrome product line; keep the full phrase in product or set. Non-product Sapphire such as Heir Apparent Sapphire is exact parallel/taxonomy wording and must stay out of final fields unless catalog/printed label evidence directly supports it.",
     "Open-set taxonomy rule: without prompt-safe catalog/vector candidates, do not put Tiger, Zebra, Sapphire, Refractor, Wave, Shimmer, Mojo, Prizm, Sparkle, Holo, or similar optical pattern words in insert/card_type/parallel fields; leave them unresolved for writer/catalog confirmation.",
@@ -2914,8 +2914,14 @@ function providerMinimalOutputShape({
       insert: "",
       surface_color: "",
       parallel_exact: "",
+      print_run_number: "",
+      print_run_numerator: "",
+      print_run_denominator: "",
+      numbered_to: "",
       serial_number: "",
       numerical_rarity: "",
+      card_number: "",
+      tcg_card_number: "",
       collector_number: "",
       checklist_code: "",
       grade_company: "",
@@ -2935,9 +2941,19 @@ function providerMinimalOutputShape({
         visible_text: "",
         review_required: true
       },
+      print_run_number: {
+        value: "",
+        print_run_numerator: "",
+        print_run_denominator: "",
+        numbered_to: "",
+        support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | OCR | VISION_ONLY | NONE",
+        source_region: "print_run_number",
+        visible_text: "",
+        review_required: true
+      },
       serial_number: {
         value: "",
-        source_region: "serial_number",
+        source_region: "legacy_serial_alias",
         visible_text: "",
         review_required: true
       },
@@ -2995,7 +3011,7 @@ function vectorCandidatePromptSection(packet = null) {
     "- First read the current uploaded front/back images and crops.",
     "- You may select one candidate, partially use field support, reject all candidates, or return NOT_AVAILABLE.",
     "- Reject any candidate field that conflicts with current card/slab printed text, current serial, current collector/checklist code, current grade label, or current subject count.",
-    "- Serial numerator and grade must come only from the current card/slab image, never from a reference candidate.",
+    "- Print-run numerator and grade must come only from the current card/slab image, never from a reference candidate. Reference candidates may support only the denominator/numbered_to.",
     "- Exact parallel requires current image evidence, printed/slab text, product taxonomy, or clear denominator compatibility; visual color alone is surface_color.",
     "- Do not auto-fill unseen fields from a candidate. Leave uncertain fields empty and put the field name in unresolved.",
     `- Packet field_support_count=${fieldSupport.length}. If there are no identity candidates but field support exists, use PARTIAL_SUPPORT only for verified fields.`,
@@ -3013,6 +3029,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     "Return only valid JSON. Do not wrap the response in Markdown.",
     "Lot / multi-card rule: fields.card_count is the count of separate physical cards, not the count of players. A single multi-subject card must have fields.multi_card false and all visible subjects in fields.players. When multiple separate card rectangles, slabs, or lot items are visible, set fields.multi_card true, include fields.card_count when visible, describe fields.lot_type, keep up to three recognizable subjects, and do not merge identities across cards. Renderer will use Lot grammar rather than a single-card title.",
     "Do not infer RC, 1st Bowman, SSP, case hit, parallel, or variation from seller style or generic foil color. Use RC only for readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker. For parallel/variation, use printed text, slab/checklist support, or clearly intentional high-confidence card-design color/pattern only; weak visual color impressions must stay empty with uncertainty in unresolved.",
+    "Numbered / Print Run rule: values such as 2/3, 14/99, 31/50, #/50, and 1/1 belong in print_run_number / print_run_numerator / print_run_denominator / numbered_to. serial_number and numerical_rarity are legacy aliases only. Never copy a print-run numerator from catalog/vector/reference/marketplace candidates; card_number, collector_number, checklist_code, and tcg_card_number are different printed identity codes.",
     "Return compact provider-agnostic field_evidence only for high-risk or review-sensitive fields. Do not use provider confidence prose as fact evidence.",
     "Resolution hints:",
     resolutionHints(payload.resolutionMap) || "None",
@@ -3129,6 +3146,9 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
   const finalTitle = renderedTitle || publicResult.title || "";
   const titleMissingRiskFields = new Set([
     "serial",
+    "print_run_number",
+    "print_run_denominator",
+    "numbered_to",
     "serial_number",
     "card_number",
     "collector_number",
@@ -4929,9 +4949,9 @@ function titleSubjectOverlapWithCurrent(source = {}, currentFields = {}, current
 }
 
 function serialDenominatorCompatibleForTitleAssist(source = {}, currentFields = {}, currentTitle = "") {
-  const currentDenominator = serialDenominatorForTitleAssist(currentFields.serial_number || currentTitle);
   const sourceFields = normalizeFields(source.fields || {});
-  const sourceDenominator = serialDenominatorForTitleAssist(sourceFields.serial_number || source.title || source.reference_title);
+  const currentDenominator = printRunDenominatorForTitleAssist(currentFields, currentTitle);
+  const sourceDenominator = printRunDenominatorForTitleAssist(sourceFields, source.title || source.reference_title);
   return Boolean(currentDenominator && sourceDenominator && currentDenominator === sourceDenominator);
 }
 
@@ -4988,7 +5008,7 @@ function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}
         || titleAssistProductTextCompatible(sourceProduct, currentTitle)
       ));
     }
-    if (field === "collector_number" || field === "checklist_code") {
+    if (field === "collector_number" || field === "checklist_code" || field === "card_number" || field === "tcg_card_number") {
       const sourceValue = sourceFields[field] || source.title || source.reference_title;
       const currentValue = normalizedCurrent[field] || currentTitle;
       return !compatibleTextField(sourceValue, currentValue);
@@ -4996,7 +5016,7 @@ function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}
     if (/^(players|subjects|subject|character)$/.test(field)) {
       return !titleSubjectOverlapWithCurrent(source, currentFields, currentTitle);
     }
-    if (field === "serial_number") {
+    if (field === "serial_number" || field === "serial_denominator" || field === "print_run_number" || field === "print_run_denominator" || field === "numbered_to" || field === "numerical_rarity") {
       return !serialDenominatorCompatibleForTitleAssist(source, currentFields, currentTitle);
     }
     return true;
@@ -5055,10 +5075,20 @@ function retrievalSourceEffectiveMatchedFields(source = {}, currentFields = {}, 
   }
   if (serialDenominatorCompatibleForTitleAssist(source, currentFields, currentTitle)) {
     matched.add("serial_denominator");
+    matched.add("print_run_denominator");
+    matched.add("numbered_to");
   }
   if (sourceFields.collector_number && (normalizedCurrent.collector_number || currentTitle)
     && compatibleTextField(sourceFields.collector_number, normalizedCurrent.collector_number || currentTitle)) {
     matched.add("collector_number");
+  }
+  if (sourceFields.card_number && (normalizedCurrent.card_number || currentTitle)
+    && compatibleTextField(sourceFields.card_number, normalizedCurrent.card_number || currentTitle)) {
+    matched.add("card_number");
+  }
+  if (sourceFields.tcg_card_number && (normalizedCurrent.tcg_card_number || currentTitle)
+    && compatibleTextField(sourceFields.tcg_card_number, normalizedCurrent.tcg_card_number || currentTitle)) {
+    matched.add("tcg_card_number");
   }
   if (sourceFields.checklist_code && (normalizedCurrent.checklist_code || currentTitle)
     && compatibleTextField(sourceFields.checklist_code, normalizedCurrent.checklist_code || currentTitle)) {
@@ -5069,7 +5099,7 @@ function retrievalSourceEffectiveMatchedFields(source = {}, currentFields = {}, 
 
 function retrievalSourceHasStrongTitleSupport(source = {}, currentFields = {}, currentTitle = "") {
   const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
-  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number", "serial_denominator"].some((field) => matched.has(field));
+  const exactEvidence = ["collector_number", "checklist_code", "card_number", "tcg_card_number", "print_run_number", "print_run_denominator", "numbered_to", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   if (exactEvidence) {
     return ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
       .some((field) => matched.has(field));
@@ -5084,7 +5114,7 @@ function retrievalSourceHasStrongTitleSupport(source = {}, currentFields = {}, c
 
 function retrievalSourceHasExactIdentityAnchor(source = {}, currentFields = {}, currentTitle = "") {
   const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
-  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number", "serial_denominator"].some((field) => matched.has(field));
+  const exactEvidence = ["collector_number", "checklist_code", "card_number", "tcg_card_number", "print_run_number", "print_run_denominator", "numbered_to", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .some((field) => matched.has(field));
   return exactEvidence && identityEvidence;
@@ -5092,7 +5122,7 @@ function retrievalSourceHasExactIdentityAnchor(source = {}, currentFields = {}, 
 
 function retrievalSourceHasHardIdentityAnchor(source = {}, currentFields = {}, currentTitle = "") {
   const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
-  const exactEvidence = ["checklist_code", "serial_number", "serial_denominator"].some((field) => matched.has(field));
+  const exactEvidence = ["checklist_code", "print_run_number", "print_run_denominator", "numbered_to", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .some((field) => matched.has(field));
   return exactEvidence && identityEvidence;
@@ -5112,7 +5142,7 @@ function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {},
   const exactAnchor = retrievalSourceHasExactIdentityAnchor(source, currentFields, currentTitle);
   const subjectSupport = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle)
     || (exactAnchor && looseSubjectTokenOverlapWithCurrent(source, currentFields, currentTitle));
-  const identitySupportCount = ["product", "set", "year", "brand", "manufacturer", "surface_color", "trigram", "collector_number", "checklist_code", "serial_denominator"]
+  const identitySupportCount = ["product", "set", "year", "brand", "manufacturer", "surface_color", "trigram", "collector_number", "checklist_code", "card_number", "tcg_card_number", "print_run_denominator", "numbered_to", "serial_denominator"]
     .filter((field) => matched.has(field)).length;
   const score = Number(source.match_score || source.normalized_score || source.raw_score || 0);
   const lowerRankedCatalogLane = sourceIndex > 0
@@ -5172,8 +5202,8 @@ function retrievalSourceCompatibleWithCurrent(source = {}, currentFields = {}, c
     return false;
   }
 
-  const currentDenominator = serialDenominatorForTitleAssist(normalizedCurrent.serial_number || currentTitle);
-  const sourceDenominator = serialDenominatorForTitleAssist(sourceFields.serial_number || source.title);
+  const currentDenominator = printRunDenominatorForTitleAssist(normalizedCurrent, currentTitle);
+  const sourceDenominator = printRunDenominatorForTitleAssist(sourceFields, source.title);
   if (!currentDenominator && sourceDenominator) return false;
   if (currentDenominator && sourceDenominator && currentDenominator !== sourceDenominator) return false;
   return true;
@@ -5190,6 +5220,21 @@ function yearsCompatibleForTitleAssist(left, right) {
 
 function serialDenominatorForTitleAssist(value) {
   return normalizeSerialText(value).match(/\/\s*0*(\d{1,4})\b/)?.[1] || null;
+}
+
+function printRunDenominatorForTitleAssist(fieldsOrValue = {}, fallbackText = "") {
+  if (fieldsOrValue && typeof fieldsOrValue === "object" && !Array.isArray(fieldsOrValue)) {
+    const fields = normalizeFields(fieldsOrValue || {});
+    return normalizeStringOrNull(fields.print_run_denominator)
+      || normalizeStringOrNull(fields.numbered_to)
+      || normalizeStringOrNull(fields.serial_denominator)
+      || normalizeStringOrNull(fields.expected_serial_denominator)
+      || serialDenominatorForTitleAssist(fields.print_run_number)
+      || serialDenominatorForTitleAssist(fields.numerical_rarity)
+      || serialDenominatorForTitleAssist(fields.serial_number)
+      || serialDenominatorForTitleAssist(fallbackText);
+  }
+  return serialDenominatorForTitleAssist(fieldsOrValue || fallbackText);
 }
 
 function stripReferenceInstanceOnlyTerms(title) {
@@ -5233,7 +5278,7 @@ function gradeTokenFromCurrentFields(fields = {}) {
 
 function appendCurrentInstanceTerms(title, currentFields = {}, currentTitle = "") {
   let output = String(title || "").replace(/\s+/g, " ").trim();
-  const numericalRarity = normalizeSerialText(currentFields.numerical_rarity || "");
+  const numericalRarity = normalizeSerialText(currentFields.print_run_number || currentFields.numerical_rarity || currentFields.serial_number || "");
   const serialLimit = serialLimitForTitle(numericalRarity, currentFields);
   if ((/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(numericalRarity) || /^\/\d{1,4}\b/.test(serialLimit))
     && serialLimit
@@ -5341,8 +5386,8 @@ function bestRetrievalTitleAssistSource(completion = {}, result = {}, diagnostic
       const leftCatalog = retrievalSourceIsCatalogLike(left) ? 1 : 0;
       const rightCatalog = retrievalSourceIsCatalogLike(right) ? 1 : 0;
       if (leftCatalog !== rightCatalog) return rightCatalog - leftCatalog;
-      const leftExact = [...leftMatched].some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
-      const rightExact = [...rightMatched].some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
+      const leftExact = [...leftMatched].some((field) => /collector_number|checklist_code|card_number|tcg_card_number|print_run_number|print_run_denominator|numbered_to|serial_number|serial_denominator/.test(field)) ? 1 : 0;
+      const rightExact = [...rightMatched].some((field) => /collector_number|checklist_code|card_number|tcg_card_number|print_run_number|print_run_denominator|numbered_to|serial_number|serial_denominator/.test(field)) ? 1 : 0;
       if (leftExact !== rightExact) return rightExact - leftExact;
       const leftSupport = leftMatched.size;
       const rightSupport = rightMatched.size;
@@ -5386,7 +5431,7 @@ function applySafeRetrievalTitleAssist(draft = {}, result = {}, completion = {},
   const candidateTitle = stripReferenceInstanceOnlyTerms(source.title || source.reference_title || "");
   if (!candidateTitle) return draft;
   const titleWithCurrentInstanceTerms = appendCurrentInstanceTerms(candidateTitle, currentFields, currentTitle);
-  const currentSerial = normalizeSerialText(currentFields.serial_number || "");
+  const currentSerial = normalizeSerialText(currentFields.print_run_number || currentFields.serial_number || "");
   const assistedTitle = /\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(currentSerial)
     ? normalizeTitlePreservingSuffix(titleWithCurrentInstanceTerms, currentSerial, payload.maxTitleLength || maxFallbackTitleLength)
     : normalizeTitle(titleWithCurrentInstanceTerms, payload.maxTitleLength || maxFallbackTitleLength);
