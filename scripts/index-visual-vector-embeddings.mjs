@@ -559,6 +559,7 @@ export async function indexVisualVectorDataset({
   datasetPath = defaultDatasetPath,
   outPath = defaultOutPath,
   limit = 0,
+  offset = 0,
   concurrency = 2,
   env = process.env,
   dryRun = false,
@@ -586,9 +587,10 @@ export async function indexVisualVectorDataset({
 
   const dataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
   const sourceItems = Array.isArray(dataset.items) ? dataset.items : [];
-  const items = sourceItems
-    .filter((item) => imageInputs(item).length > 0)
-    .slice(0, limit > 0 ? limit : sourceItems.length);
+  const imageBackedItems = sourceItems.filter((item) => imageInputs(item).length > 0);
+  const safeOffset = Math.max(0, Math.trunc(Number(offset) || 0));
+  const items = imageBackedItems
+    .slice(safeOffset, limit > 0 ? safeOffset + limit : imageBackedItems.length);
 
   if (!items.length) throw new Error("No image-backed items found for visual vector indexing.");
 
@@ -605,10 +607,10 @@ export async function indexVisualVectorDataset({
         analyzeImpl,
         fetchImpl
       });
-      return { index, ok: true, ...result };
+      return { index: safeOffset + index, ok: true, ...result };
     } catch (error) {
       return {
-        index,
+        index: safeOffset + index,
         ok: false,
         identity_key: (() => {
           try {
@@ -627,6 +629,7 @@ export async function indexVisualVectorDataset({
     generated_at: now.toISOString(),
     dataset_path: datasetPath,
     dry_run: dryRun,
+    offset: safeOffset,
     retrieval_status: retrievalStatus,
     retrieval_enabled: retrievalEnabled,
     model_id: config.modelId,
@@ -634,6 +637,9 @@ export async function indexVisualVectorDataset({
     preprocessing_version: config.preprocessingVersion,
     dimensions: config.dimensions,
     summary: {
+      source_items: sourceItems.length,
+      image_backed_items: imageBackedItems.length,
+      offset: safeOffset,
       requested_items: items.length,
       indexed_items: itemResults.filter((result) => result.ok).length,
       failed_items: itemResults.filter((result) => !result.ok).length,
@@ -668,6 +674,7 @@ async function main() {
     datasetPath: argValue(argv, "--dataset", env.VISUAL_VECTOR_INDEX_DATASET || defaultDatasetPath),
     outPath: argValue(argv, "--out", env.VISUAL_VECTOR_INDEX_OUT || defaultOutPath),
     limit: numberArg(argv, "--limit", Number(env.VISUAL_VECTOR_INDEX_LIMIT || 0)),
+    offset: numberArg(argv, "--offset", Number(env.VISUAL_VECTOR_INDEX_OFFSET || 0)),
     concurrency: Math.max(1, numberArg(argv, "--concurrency", Number(env.VISUAL_VECTOR_INDEX_CONCURRENCY || 2))),
     env,
     dryRun: hasFlag(argv, "--dry-run"),
