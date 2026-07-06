@@ -105,7 +105,8 @@ export default async function handler(req, res) {
         ...renderListingPresentation({
           resolved: payload.resolved || {},
           evidence: payload.evidence || {},
-          maxLength
+          maxLength,
+          trustResolvedPrintRunWithoutEvidence: false
         })
       };
 

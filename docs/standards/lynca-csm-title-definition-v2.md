@@ -10,13 +10,16 @@ The system stores complete structured identity, but the marketplace title is a c
 
 Current coverage principle: do not add new top-level grammar brackets just because an industry term appears to span multiple brackets. Mainstream Standard Card and TCG cases are covered by the current grammar. The hard cases are usually composite tokens, not missing top-level fields. Evolution should happen through richer internal structure and smarter output composition, especially inside `Print Finish`, while keeping marketplace output natural.
 
-Do not confuse these three fields:
+Do not confuse these fields:
 
-- `serial_number`: physical copy number, for example `2/3`.
-- `numerical_rarity`: print-limit serialization rendered in title, for example `2/3` when fully read or `#/3` when only the denominator is known.
+- `print_run_number` / `numbered`: the current-card print-limit value, for example `2/3`.
+- `print_run_numerator`: the current physical-copy numerator, for example `2`.
+- `print_run_denominator` / `numbered_to`: the product print-run denominator, for example `3`.
+- `numerical_rarity`: legacy title module name for print-limit serialization, rendered as `2/3` when fully read from the current card or `#/3` when only the denominator is known.
+- `serial_number`: legacy alias for `print_run_number`; do not use it as the primary CSM name.
 - `card_number`: card type or set number, for example `PAU`, `TCLA`, `139/205`.
 
-The title should preserve the complete current-image serial when it is directly read, such as `2/3` or `15/150`. If only the denominator is known, render the safe placeholder, such as `#/3`. Never copy a serial numerator from a catalog/reference candidate.
+The title should preserve the complete current-image print run when it is directly read, such as `2/3` or `15/150`. If only the denominator is known, render the safe placeholder, such as `#/3`. Never copy a print-run numerator from a catalog/reference candidate.
 
 ## Standard Card Grammar
 
@@ -66,7 +69,7 @@ Unlike Standard Card Grammar, TCG titles are card-centric. Card Number is an ide
 
 `Descriptive Rarity`: Especially common in TCG, such as `SR`, `AR`, `UR`. Less common in standard sports cards.
 
-`Numerical Rarity`: Print-limit serialization, such as `2/3`, `15/150`, `01/50`, or denominator-only `#/50`. This is the title module, not a renderer-derived copy of `serial_number`. Fill it only when current-card evidence clearly shows a print limit. If the current image directly supports the numerator and denominator, output the full value. If only the denominator is directly readable, output the denominator placeholder. If no print limit is visible, leave it empty. `1/1` remains `1/1`.
+`Numerical Rarity / Print Run`: Print-limit serialization, such as `2/3`, `15/150`, `01/50`, or denominator-only `#/50`. The primary internal fields are `print_run_number`, `print_run_numerator`, `print_run_denominator`, and `numbered_to`; `numerical_rarity` is the legacy title module name. Fill it only when current-card evidence clearly shows a print limit. If the current image directly supports the numerator and denominator, output the full value. If only the denominator is directly readable, output the denominator placeholder. If no print limit is visible, leave it empty. `1/1` remains `1/1`.
 
 `Product Finish`: Surface or finish terms such as `Aqua`, `Gold`, `Gold Shimmer`, `Master Ball Holo`, `Sparkle`, `Holo`.
 

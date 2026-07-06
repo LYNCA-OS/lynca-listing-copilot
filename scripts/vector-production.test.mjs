@@ -22,6 +22,13 @@ function eligibilityStableShape(eligibility = {}) {
     field_support_fields: _fieldSupportFields,
     ...rest
   } = eligibility;
+  [
+    "reference_print_run_numerator_copy_violation_count",
+    "external_print_run_numerator_copy_violation_count",
+    "catalog_full_print_run_copy_violation_count"
+  ].forEach((key) => {
+    if (rest[key] === 0) delete rest[key];
+  });
   return rest;
 }
 
@@ -106,6 +113,8 @@ assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(p
   conflict_blocked_count: 0,
   prompt_candidate_count: 0,
   prompt_candidate_ids: [],
+  reference_print_run_numerator_copy_violation_count: 1,
+  catalog_full_print_run_copy_violation_count: 1,
   eligible_candidate_count: 0,
   blocked_candidate_count: 0
 });
@@ -850,6 +859,8 @@ assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(q
   conflict_blocked_count: 1,
   prompt_candidate_count: 0,
   prompt_candidate_ids: [],
+  reference_print_run_numerator_copy_violation_count: 1,
+  catalog_full_print_run_copy_violation_count: 1,
   eligible_candidate_count: 0,
   blocked_candidate_count: 1
 });

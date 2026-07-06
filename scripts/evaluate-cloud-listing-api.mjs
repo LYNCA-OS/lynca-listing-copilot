@@ -2186,6 +2186,7 @@ function evaluatedResultFromData({
     numerical_rarity_title_comparison: numericalRarityTitleMatch,
     raw_numerical_rarity_title_comparison: rawNumericalRarityTitleMatch,
     serial_number_title_analysis: serialAnalysis,
+    print_run_title_analysis: serialAnalysis,
     pass_at_0_72: Number(titleMatch?.token_recall || 0) >= 0.72,
     pass_at_0_80: Number(titleMatch?.token_recall || 0) >= 0.80,
     fair_pass_at_0_72: Number(titleMatch?.fair_token_recall || 0) >= 0.72,
@@ -2641,6 +2642,14 @@ function summarize(results = [], elapsedMs = 0) {
       numerator_omission_rate: rate(serialTitleTotals.numerator_omission_count, serialTitleTotals.reference_serial_count),
       missing_rate: rate(serialTitleTotals.missing_count, serialTitleTotals.reference_serial_count),
       policy_note: "SCG marketplace titles may omit serial numerator; denominator is Numerical Rarity and is scored separately."
+    },
+    print_run_title_analysis: {
+      ...serialTitleTotals,
+      exact_match_rate: rate(serialTitleTotals.exact_match_count, serialTitleTotals.reference_serial_count),
+      denominator_match_rate: rate(serialTitleTotals.denominator_match_count, serialTitleTotals.reference_serial_count),
+      numerator_omission_rate: rate(serialTitleTotals.numerator_omission_count, serialTitleTotals.reference_serial_count),
+      missing_rate: rate(serialTitleTotals.missing_count, serialTitleTotals.reference_serial_count),
+      policy_note: "print_run_number is the primary CSM field; serial_number is a legacy alias."
     },
     raw_pass_at_0_72_count: rawPassAt072,
     raw_pass_at_0_72_rate: attempted ? Number((rawPassAt072 / attempted).toFixed(6)) : null,

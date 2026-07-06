@@ -26,6 +26,7 @@ import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs
 import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { serialLimitText } from "../lib/listing/renderer/title-cleanup.mjs";
+import { expandPrintRunFields } from "../lib/listing/print-run/print-run-fields.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
 import { attachFieldTaskOrchestration } from "../lib/listing/orchestration/field-task-orchestrator.mjs";
@@ -398,8 +399,14 @@ const defaultFields = {
   card_number: null,
   collector_number: null,
   checklist_code: null,
+  print_run_number: null,
+  print_run_numerator: null,
+  print_run_denominator: null,
+  numbered_to: null,
   serial_number: null,
+  serial_denominator: null,
   numerical_rarity: null,
+  expected_serial_denominator: null,
   grade_company: null,
   grade: null,
   card_grade: null,
@@ -415,7 +422,9 @@ const defaultFields = {
   jersey: false,
   sketch: false,
   redemption: false,
-  one_of_one: false
+  one_of_one: false,
+  suspicious_print_run: false,
+  print_run_review_required: false
 };
 const backgroundTerms = [
   "Metaverse Cards",
@@ -494,7 +503,12 @@ const finalizerCurrentImageFieldAllowList = Object.freeze([
   "observable_components",
   "insert",
   "surface_color",
+  "print_run_number",
+  "print_run_numerator",
+  "print_run_denominator",
+  "numbered_to",
   "serial_number",
+  "serial_denominator",
   "numerical_rarity",
   "expected_serial_denominator",
   "collector_number",
@@ -515,7 +529,9 @@ const finalizerCurrentImageFieldAllowList = Object.freeze([
   "jersey",
   "sketch",
   "redemption",
-  "one_of_one"
+  "one_of_one",
+  "suspicious_print_run",
+  "print_run_review_required"
 ]);
 
 const finalizerNeverPromoteFromRawFields = Object.freeze([
@@ -718,7 +734,11 @@ function normalizeSerialText(value) {
 }
 
 function serialLimitForTitle(value, fields = {}) {
-  return serialLimitText(value, { oneOfOne: fields.one_of_one });
+  return serialLimitText({
+    ...fields,
+    print_run_number: fields.print_run_number || value,
+    numerical_rarity: value || fields.numerical_rarity
+  }, { oneOfOne: fields.one_of_one });
 }
 
 function stripChecklistCardNumbers(title, fields = {}) {
@@ -1361,6 +1381,7 @@ function normalizeFields(fields = {}) {
   const players = normalizePlayerListForFields(fields);
   const rawInsertText = normalizeStringOrNull(fields.insert);
   const observableComponents = normalizeObservableComponents(fields.observable_components || fields.observableComponents);
+  const printRun = expandPrintRunFields(fields);
   const normalized = {
     year: normalizeStringOrNull(fields.year),
     manufacturer: normalizeStringOrNull(fields.manufacturer || fields.maker),
@@ -1390,8 +1411,14 @@ function normalizeFields(fields = {}) {
     card_number: normalizeStringOrNull(fields.card_number),
     collector_number: normalizeStringOrNull(fields.collector_number),
     checklist_code: normalizeStringOrNull(fields.checklist_code),
-    serial_number: normalizeStringOrNull(fields.serial_number),
+    print_run_number: normalizeStringOrNull(fields.print_run_number || printRun.print_run_number),
+    print_run_numerator: normalizeStringOrNull(fields.print_run_numerator || printRun.print_run_numerator),
+    print_run_denominator: normalizeStringOrNull(fields.print_run_denominator || printRun.print_run_denominator),
+    numbered_to: normalizeStringOrNull(fields.numbered_to || printRun.numbered_to),
+    serial_number: normalizeStringOrNull(fields.serial_number || printRun.serial_number),
+    serial_denominator: normalizeStringOrNull(fields.serial_denominator || printRun.serial_denominator),
     numerical_rarity: normalizeStringOrNull(fields.numerical_rarity || fields.numericalRarity),
+    expected_serial_denominator: normalizeStringOrNull(fields.expected_serial_denominator || printRun.expected_serial_denominator),
     grade_company: normalizeGradeCompanyForFields(fields.grade_company),
     grade: normalizeStringOrNull(fields.grade || fields.card_grade),
     card_grade: normalizeStringOrNull(fields.card_grade || fields.grade),
@@ -1407,7 +1434,9 @@ function normalizeFields(fields = {}) {
     jersey: normalizeBoolean(fields.jersey) || observableComponents.includes("jersey"),
     sketch: normalizeBoolean(fields.sketch) || observableComponents.includes("sketch"),
     redemption: normalizeBoolean(fields.redemption) || observableComponents.includes("redemption"),
-    one_of_one: normalizeBoolean(fields.one_of_one)
+    one_of_one: normalizeBoolean(fields.one_of_one) || printRun.one_of_one === true,
+    suspicious_print_run: normalizeBoolean(fields.suspicious_print_run) || printRun.suspicious_print_run === true,
+    print_run_review_required: normalizeBoolean(fields.print_run_review_required) || printRun.print_run_review_required === true
   };
 
   Object.keys(normalized).forEach((key) => {
