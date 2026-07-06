@@ -149,10 +149,33 @@ function defaultProviderOptionsFromEnv(env = process.env) {
 function providerOptionsFromPayload(payload = {}, env = process.env) {
   const options = payload.provider_options || payload.providerOptions || {};
   const explicitOptions = options && typeof options === "object" && !Array.isArray(options) ? options : {};
-  return {
+  const merged = {
     ...defaultProviderOptionsFromEnv(env),
     ...explicitOptions
   };
+
+  const explicitlyDisablesVectorAssist = Object.prototype.hasOwnProperty.call(explicitOptions, "enable_vector_assist")
+    && optionFlag(explicitOptions, "enable_vector_assist", true) !== true;
+  const explicitlyConfiguresVectorRetrieval = Object.prototype.hasOwnProperty.call(explicitOptions, "enable_vector_retrieval")
+    || Object.prototype.hasOwnProperty.call(explicitOptions, "enableVectorRetrieval")
+    || Object.prototype.hasOwnProperty.call(explicitOptions, "vector_retrieval_mode")
+    || Object.prototype.hasOwnProperty.call(explicitOptions, "vectorRetrievalMode")
+    || optionFlag(explicitOptions, "force_vector_assist", false) === true;
+  const fastPathWithoutExplicitVector = singleModelFastPathEnabled(env, merged)
+    && !explicitlyConfiguresVectorRetrieval
+    && optionFlag(explicitOptions, "force_vector_assist", false) !== true;
+
+  if ((explicitlyDisablesVectorAssist && !explicitlyConfiguresVectorRetrieval) || fastPathWithoutExplicitVector) {
+    merged.enable_vector_assist = false;
+    merged.enable_stored_visual_features = false;
+    merged.enable_query_visual_embeddings = false;
+    merged.enable_vector_retrieval = false;
+    merged.vector_retrieval_mode = "off";
+    merged.enable_advanced_retrieval = false;
+    merged.enable_hybrid_retrieval = false;
+  }
+
+  return merged;
 }
 
 function valuePresent(value) {
@@ -6006,6 +6029,7 @@ export const __listingCopilotTitleTestHooks = {
   finalResolvedFieldsForPresentation,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
+  providerOptionsFromPayload,
   retrievalAnchorSummary,
   retrievalFieldsHavePrePromptVectorAnchor,
   scaffoldTitleConflictsWithDirectEvidence,

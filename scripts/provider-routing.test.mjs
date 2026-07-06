@@ -8,6 +8,7 @@ import {
 } from "../lib/listing/providers/provider-concurrency.mjs";
 import { parseProviderMessagePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
+import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
 const providerRegistrySource = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
 const providerContractSource = await readFile("lib/listing/providers/provider-contract.mjs", "utf8");
@@ -101,6 +102,36 @@ assert.deepEqual(listAvailableVisionProviders({
   ...env,
   ALLOW_EXPLICIT_GPT41_RETRY: "false"
 }).map((provider) => provider.id), ["openai_legacy"]);
+
+const vectorDefaultEnv = {
+  ...env,
+  ENABLE_VECTOR_ASSIST_DEFAULT: "true",
+  ENABLE_VECTOR_RETRIEVAL: "true",
+  VECTOR_RETRIEVAL_MODE: "assist"
+};
+const fastPathOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
+  provider_options: { single_model_fast: true }
+}, vectorDefaultEnv);
+assert.equal(fastPathOptions.enable_vector_retrieval, false, "single-model fast path must not inherit blocking vector retrieval defaults");
+assert.equal(fastPathOptions.vector_retrieval_mode, "off");
+assert.equal(fastPathOptions.enable_query_visual_embeddings, false);
+
+const explicitVectorOffOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
+  provider_options: { enable_vector_assist: false }
+}, vectorDefaultEnv);
+assert.equal(explicitVectorOffOptions.enable_vector_retrieval, false, "explicit vector assist off must also disable query embedding");
+assert.equal(explicitVectorOffOptions.enable_stored_visual_features, false);
+assert.equal(explicitVectorOffOptions.enable_query_visual_embeddings, false);
+
+const explicitVectorOnOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
+  provider_options: {
+    enable_vector_assist: false,
+    enable_vector_retrieval: true,
+    vector_retrieval_mode: "assist"
+  }
+}, vectorDefaultEnv);
+assert.equal(explicitVectorOnOptions.enable_vector_retrieval, true, "explicit retrieval config can still force vector experiments");
+assert.equal(explicitVectorOnOptions.vector_retrieval_mode, "assist");
 
 const parsedContent = parseProviderMessagePayload({
   content: "```json\n{\"title\":\"Test\",\"fields\":{\"player\":\"A\"},\"unresolved\":[]}\n```"
