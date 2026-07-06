@@ -760,7 +760,7 @@ assert.equal(openaiVector.titlePayload.provider_options.corrected_title_as_tempo
 assert.equal(openaiVector.titlePayload.provider_options.vector_corrected_title_as_temporary_gt, true);
 assert.equal(openaiVector.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
 assert.equal(openaiVector.titlePayload.catalog_observation_hint, null);
-assert.equal(openaiVector.titlePayload.provider_options.vector_query_timeout_ms, 120000);
+assert.equal(openaiVector.titlePayload.provider_options.vector_query_timeout_ms, 8000);
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_internal_top_n, 10);
 assert.equal(openaiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
@@ -841,6 +841,40 @@ assert.equal(openaiVectorNoLazy.titlePayload.provider_options.enable_vector_lazy
 assert.equal(openaiVectorNoLazy.report.vector_lazy_skip_count, 0);
 assert.equal(openaiVectorNoLazy.report.vector_lazy_skip_rate, 0);
 assert.equal(openaiVectorNoLazy.report.results[0].vector_lazy_skip, false);
+
+const openaiVectorForced = await runProvider("d", {
+  evaluateOptions: {
+    forceVectorAssist: true
+  }
+});
+assert.equal(openaiVectorForced.titlePayload.provider_options.enable_vector_assist, true);
+assert.equal(openaiVectorForced.titlePayload.provider_options.force_vector_assist, true);
+assert.equal(openaiVectorForced.titlePayload.provider_options.vector_index_ready, undefined);
+assert.equal(openaiVectorForced.titlePayload.provider_options.enable_vector_lazy_mode, false);
+assert.equal(openaiVectorForced.titlePayload.provider_options.eval_flags.FORCE_VECTOR_ASSIST, true);
+assert.equal(openaiVectorForced.titlePayload.provider_options.eval_flags.ENABLE_VECTOR_LAZY_MODE, false);
+assert.equal(openaiVectorForced.report.vector_lazy_skip_count, 0);
+assert.equal(openaiVectorForced.report.results[0].vector_lazy_skip, false);
+
+const openaiVectorForcedReady = await runProvider("d", {
+  evaluateOptions: {
+    forceVectorAssist: true,
+    vectorIndexReady: true
+  }
+});
+assert.equal(openaiVectorForcedReady.titlePayload.provider_options.force_vector_assist, true);
+assert.equal(openaiVectorForcedReady.titlePayload.provider_options.vector_index_ready, true);
+
+const openaiVectorRuntimeTimeout = await runProvider("d", {
+  evaluateOptions: {
+    forceVectorAssist: true,
+    vectorIndexReady: true,
+    runtimeEnv: {
+      VECTOR_QUERY_TIMEOUT_MS: "120000"
+    }
+  }
+});
+assert.equal(openaiVectorRuntimeTimeout.titlePayload.provider_options.vector_query_timeout_ms, 120000);
 
 {
   const recovered = await runProvider("d", {

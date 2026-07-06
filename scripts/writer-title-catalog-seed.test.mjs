@@ -32,7 +32,9 @@ const parsedEncased = parseReviewedTitleFields("2018-19 Panini Encased Jaren Jac
 assert.equal(parsedEncased.product, "Panini Encased");
 assert.deepEqual(parsedEncased.players, ["Jaren Jackson Jr"]);
 assert.equal(parsedEncased.team, "Grizzlies");
-assert.equal(parsedEncased.serial_number, null);
+assert.equal(parsedEncased.serial_number, "#/99");
+assert.equal(parsedEncased.print_run_number, "#/99");
+assert.equal(parsedEncased.print_run_numerator, null);
 assert.equal(parsedEncased.serial_denominator, "99");
 assert.equal(parsedEncased.grade_company, "BGS");
 assert.equal(parsedEncased.card_grade, "9.5");

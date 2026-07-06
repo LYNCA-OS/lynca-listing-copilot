@@ -68,6 +68,8 @@ assert.match(js, /cropMetadata/, "frontend should preserve crop metadata through
 assert.match(js, /sourceBlob/, "derived crop images should be uploadable without service credentials");
 assert.match(js, /storageRoleForImage\(image, imageIndex\)/, "storage upload should use crop-specific image roles");
 assert.match(api, /primaryImagesFromImages/, "title API should separate primary card images from derived crops");
+assert.match(api, /BGS\/Beckett slab discipline/, "provider prompt should explicitly separate BGS card grade and autograph grade");
+assert.match(api, /never copy card_grade into auto_grade/, "provider prompt must forbid BGS auto-grade scaffolding");
 assert.match(api, /verifyListingImageVerificationToken/, "title API should require server-issued storage verification tokens before signed read URLs");
 assert.match(api, /readListingImageVerificationRecord/, "title API should allow durable server verification records for later reprocessing");
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
@@ -123,7 +125,8 @@ assert.doesNotMatch(js, /data-module-input/, "writer UI must not expose editable
 assert.doesNotMatch(js, /module-edit-hint/, "writer UI must not prompt operators to edit internal modules");
 assert.doesNotMatch(js, /Enter 保存并跳到下一项/, "writer UI should not require module keyboard workflows");
 assert.doesNotMatch(js, /aria-label="\$\{escapeHtml\(module\.label \|\| module\.key\)\} 模块"/, "module editors should not be exposed as product UI");
-assert.match(csmFieldLabels, /numerical_rarity: "Numerical Rarity"/, "workflow field summaries should label numerical rarity clearly");
+assert.match(csmFieldLabels, /numerical_rarity: "Numbered \/ Print Run \/ 数字限编"/, "workflow field summaries should label numerical rarity as numbered print run");
+assert.match(csmFieldLabels, /print_run_number: "Numbered \/ Print Run \/ 数字限编"/, "workflow field summaries should prefer print_run_number terminology");
 assert.match(csmFieldLabels, /card_name: "Card Name"/, "workflow field summaries should label card name clearly");
 assert.match(csmFieldLabels, /collector_number: "Card Number"/, "collector number should follow the current CSM output label");
 assert.doesNotMatch(js, /moduleTokenSummary/, "token-level structured module UI should remain internal");

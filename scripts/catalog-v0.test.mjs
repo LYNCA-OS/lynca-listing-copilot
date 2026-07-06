@@ -415,7 +415,7 @@ assert.equal(catalogRpcBody.exact_card_number, "136");
 assert.equal(catalogRpcBody.exact_serial_denominator, "50");
 assert.equal(providerResult.candidates.length, 1);
 assert.equal(providerResult.candidates[0].provider_id, retrievalProviderIds.CATALOG);
-assert.equal(providerResult.candidates[0].fields.serial_number, "/50");
+assert.equal(providerResult.candidates[0].fields.serial_number, "#/50");
 assert.equal(providerResult.candidates[0].reference_metadata.expected_serial_denominator, "50");
 
 const officialProvider = catalogProvider({

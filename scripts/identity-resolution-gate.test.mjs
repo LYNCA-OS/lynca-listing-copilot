@@ -508,7 +508,7 @@ const fastVisionSerialWithFocusedVerification = primaryFastVisionResult({
   ]
 });
 assert.equal(fastVisionSerialWithFocusedVerification.identity_resolution_status, "RESOLVED");
-assert.doesNotMatch(fastVisionSerialWithFocusedVerification.final_title, /\/50/);
+assert.match(fastVisionSerialWithFocusedVerification.final_title, /31\/50/);
 
 const visualOnlyGradeRequiresReview = primaryFastVisionResult({
   resolved: {

@@ -341,7 +341,7 @@ Remove Card Number before higher-priority fields when the title is too long.
 
 ### Numerical Rarity / Serial Number Separation
 
-`serial_number` stores the raw physical-copy reading from the current image. `numerical_rarity` is the title module and must not be mechanically derived from `serial_number`.
+`print_run_number` / `numbered` stores the current-card print-limit reading from the current image. `print_run_denominator` / `numbered_to` stores the denominator. `serial_number` remains a legacy alias, not the primary CSM field. `numerical_rarity` is the legacy title module and must not be mechanically derived from catalog/reference `serial_number`.
 
 If current-card evidence directly supports a print-limit value, preserve it in the title:
 

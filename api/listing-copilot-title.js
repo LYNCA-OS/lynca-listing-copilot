@@ -26,6 +26,7 @@ import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs
 import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { serialLimitText } from "../lib/listing/renderer/title-cleanup.mjs";
+import { expandPrintRunFields } from "../lib/listing/print-run/print-run-fields.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
 import { attachFieldTaskOrchestration } from "../lib/listing/orchestration/field-task-orchestrator.mjs";
@@ -76,12 +77,19 @@ import {
   vectorCandidatePacketAssistEligibility,
   vectorCandidatePacketHasPromptContent
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
-import { vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
+import { vectorIndexReady, vectorRetrievalActive, vectorRetrievalConfig, vectorRetrievalModes } from "../lib/listing/retrieval/vector-feature-flags.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
+import { buildCandidateContextSummary } from "../lib/listing/retrieval/candidate-context-summary.mjs";
+import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
+import {
+  imagesFromPreIngestionBundle,
+  readPreIngestionBundle,
+  summarizePreIngestionBundle
+} from "../lib/listing/preingestion/preingestion-bundle.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -143,10 +151,33 @@ function defaultProviderOptionsFromEnv(env = process.env) {
 function providerOptionsFromPayload(payload = {}, env = process.env) {
   const options = payload.provider_options || payload.providerOptions || {};
   const explicitOptions = options && typeof options === "object" && !Array.isArray(options) ? options : {};
-  return {
+  const merged = {
     ...defaultProviderOptionsFromEnv(env),
     ...explicitOptions
   };
+
+  const explicitlyDisablesVectorAssist = Object.prototype.hasOwnProperty.call(explicitOptions, "enable_vector_assist")
+    && optionFlag(explicitOptions, "enable_vector_assist", true) !== true;
+  const explicitlyConfiguresVectorRetrieval = Object.prototype.hasOwnProperty.call(explicitOptions, "enable_vector_retrieval")
+    || Object.prototype.hasOwnProperty.call(explicitOptions, "enableVectorRetrieval")
+    || Object.prototype.hasOwnProperty.call(explicitOptions, "vector_retrieval_mode")
+    || Object.prototype.hasOwnProperty.call(explicitOptions, "vectorRetrievalMode")
+    || optionFlag(explicitOptions, "force_vector_assist", false) === true;
+  const fastPathWithoutExplicitVector = singleModelFastPathEnabled(env, merged)
+    && !explicitlyConfiguresVectorRetrieval
+    && optionFlag(explicitOptions, "force_vector_assist", false) !== true;
+
+  if ((explicitlyDisablesVectorAssist && !explicitlyConfiguresVectorRetrieval) || fastPathWithoutExplicitVector) {
+    merged.enable_vector_assist = false;
+    merged.enable_stored_visual_features = false;
+    merged.enable_query_visual_embeddings = false;
+    merged.enable_vector_retrieval = false;
+    merged.vector_retrieval_mode = "off";
+    merged.enable_advanced_retrieval = false;
+    merged.enable_hybrid_retrieval = false;
+  }
+
+  return merged;
 }
 
 function valuePresent(value) {
@@ -227,6 +258,7 @@ function emptyTiming() {
     approved_memory_lookup_ms: 0,
     identity_cache_lookup_ms: 0,
     memory_lookup_ms: 0,
+    preingestion_bundle_load_ms: 0,
     signed_url_ms: 0,
     image_quality_check_ms: 0,
     recognition_preflight_ms: 0,
@@ -368,8 +400,14 @@ const defaultFields = {
   card_number: null,
   collector_number: null,
   checklist_code: null,
+  print_run_number: null,
+  print_run_numerator: null,
+  print_run_denominator: null,
+  numbered_to: null,
   serial_number: null,
+  serial_denominator: null,
   numerical_rarity: null,
+  expected_serial_denominator: null,
   grade_company: null,
   grade: null,
   card_grade: null,
@@ -385,7 +423,9 @@ const defaultFields = {
   jersey: false,
   sketch: false,
   redemption: false,
-  one_of_one: false
+  one_of_one: false,
+  suspicious_print_run: false,
+  print_run_review_required: false
 };
 const backgroundTerms = [
   "Metaverse Cards",
@@ -464,7 +504,12 @@ const finalizerCurrentImageFieldAllowList = Object.freeze([
   "observable_components",
   "insert",
   "surface_color",
+  "print_run_number",
+  "print_run_numerator",
+  "print_run_denominator",
+  "numbered_to",
   "serial_number",
+  "serial_denominator",
   "numerical_rarity",
   "expected_serial_denominator",
   "collector_number",
@@ -485,7 +530,9 @@ const finalizerCurrentImageFieldAllowList = Object.freeze([
   "jersey",
   "sketch",
   "redemption",
-  "one_of_one"
+  "one_of_one",
+  "suspicious_print_run",
+  "print_run_review_required"
 ]);
 
 const finalizerNeverPromoteFromRawFields = Object.freeze([
@@ -645,7 +692,15 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
 }
 
 async function sendListingResult(res, statusCode, result, timingContext, payload = {}) {
-  const timedResult = withTiming(finalizeDeterministicPresentation(result, payload), timingContext);
+  const finalizedResult = finalizeDeterministicPresentation(result, payload);
+  const preingestionSummary = payload.preingestion_summary || null;
+  const timedResult = withTiming({
+    ...finalizedResult,
+    preingestion_bundle_id: payload.preingestion_bundle_id || payload.preingestionBundleId || null,
+    bundle_used: payload.preingestion_bundle_used === true,
+    bundle_status: payload.preingestion_bundle_status || null,
+    preprocessing_summary: preingestionSummary
+  }, timingContext);
   const workflowResult = await attachWorkflowSidecarsToListingResult({
     result: timedResult,
     payload,
@@ -680,7 +735,11 @@ function normalizeSerialText(value) {
 }
 
 function serialLimitForTitle(value, fields = {}) {
-  return serialLimitText(value, { oneOfOne: fields.one_of_one });
+  return serialLimitText({
+    ...fields,
+    print_run_number: fields.print_run_number || value,
+    numerical_rarity: value || fields.numerical_rarity
+  }, { oneOfOne: fields.one_of_one });
 }
 
 function stripChecklistCardNumbers(title, fields = {}) {
@@ -1323,6 +1382,7 @@ function normalizeFields(fields = {}) {
   const players = normalizePlayerListForFields(fields);
   const rawInsertText = normalizeStringOrNull(fields.insert);
   const observableComponents = normalizeObservableComponents(fields.observable_components || fields.observableComponents);
+  const printRun = expandPrintRunFields(fields);
   const normalized = {
     year: normalizeStringOrNull(fields.year),
     manufacturer: normalizeStringOrNull(fields.manufacturer || fields.maker),
@@ -1352,8 +1412,14 @@ function normalizeFields(fields = {}) {
     card_number: normalizeStringOrNull(fields.card_number),
     collector_number: normalizeStringOrNull(fields.collector_number),
     checklist_code: normalizeStringOrNull(fields.checklist_code),
-    serial_number: normalizeStringOrNull(fields.serial_number),
+    print_run_number: normalizeStringOrNull(fields.print_run_number || printRun.print_run_number),
+    print_run_numerator: normalizeStringOrNull(fields.print_run_numerator || printRun.print_run_numerator),
+    print_run_denominator: normalizeStringOrNull(fields.print_run_denominator || printRun.print_run_denominator),
+    numbered_to: normalizeStringOrNull(fields.numbered_to || printRun.numbered_to),
+    serial_number: normalizeStringOrNull(fields.serial_number || printRun.serial_number),
+    serial_denominator: normalizeStringOrNull(fields.serial_denominator || printRun.serial_denominator),
     numerical_rarity: normalizeStringOrNull(fields.numerical_rarity || fields.numericalRarity),
+    expected_serial_denominator: normalizeStringOrNull(fields.expected_serial_denominator || printRun.expected_serial_denominator),
     grade_company: normalizeGradeCompanyForFields(fields.grade_company),
     grade: normalizeStringOrNull(fields.grade || fields.card_grade),
     card_grade: normalizeStringOrNull(fields.card_grade || fields.grade),
@@ -1369,7 +1435,9 @@ function normalizeFields(fields = {}) {
     jersey: normalizeBoolean(fields.jersey) || observableComponents.includes("jersey"),
     sketch: normalizeBoolean(fields.sketch) || observableComponents.includes("sketch"),
     redemption: normalizeBoolean(fields.redemption) || observableComponents.includes("redemption"),
-    one_of_one: normalizeBoolean(fields.one_of_one)
+    one_of_one: normalizeBoolean(fields.one_of_one) || printRun.one_of_one === true,
+    suspicious_print_run: normalizeBoolean(fields.suspicious_print_run) || printRun.suspicious_print_run === true,
+    print_run_review_required: normalizeBoolean(fields.print_run_review_required) || printRun.print_run_review_required === true
   };
 
   Object.keys(normalized).forEach((key) => {
@@ -2792,21 +2860,22 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "Never return only a year when the slab label also contains readable product, player, grade, or card number.",
     "Example slab mapping: 2018 TOPPS CHROME / SHOHEI OHTANI / 1983 TOPPS / #83T-6 / GEM MT 10 => year 2018, product Topps Chrome, players [Shohei Ohtani], insert 1983 Topps, collector_number 83T-6, grade_company PSA, card_grade 10.",
     "Example slab mapping: 2020 CONTENDERS / ANTHONY EDWARDS / VARIATION-AUTOGRAPH / #105 / GEM MT 10 => year 2020, product Contenders, players [Anthony Edwards], variation Variation Autograph, auto true, collector_number 105, grade_company PSA, card_grade 10.",
+    "BGS/Beckett slab discipline: inspect the main card grade and the separate autograph grade as two different facts. If a BGS/Beckett label shows GEM MINT 9.5 and AUTO 9, set grade_company BGS, card_grade 9.5, auto_grade 9, grade_type CARD_AND_AUTO. If a visible BGS/Beckett autographed-card label has no readable AUTO/AUTOGRAPH grade, leave auto_grade empty and grade_type CARD_ONLY; never copy card_grade into auto_grade.",
     "Structured high-risk field evidence contract:",
     "- field_evidence is provider-agnostic and must be used by GPT outputs.",
     "- Keep field_evidence compact. Only include short evidence for non-empty high-risk fields or fields that may need writer review.",
     "- Do not dump OCR lines, legal text, copyright text, or repeated boilerplate into field_evidence.",
     "- Each evidence entry should include value, support_type/source_type, short visible_text/raw_text when useful, confidence, review_required, and direct_observation/directly_observed.",
-    "- Core/high-risk evidence fields include year, product, set, language, players, character, card_name, official_card_type, observable_components, insert, surface_color, parallel_exact, serial_number, numerical_rarity, collector_number, checklist_code, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
+    "- Core/high-risk evidence fields include year, product, set, language, players, character, card_name, official_card_type, observable_components, insert, surface_color, parallel_exact, print_run_number, print_run_denominator, numbered_to, collector_number, checklist_code, card_number, tcg_card_number, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
     "- official_card_type must stay empty unless official wording is printed on the card/slab or supplied by trusted catalog/reviewed input. Never infer Base from visual context.",
     "- observable_components may include only directly visible components: auto, patch, relic, jersey, rc, sketch, redemption.",
     "- year: include field_evidence.year with value, support_type, visible_text, confidence, and review_required. Use support_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
-    "- grade: include field_evidence.grade only when a slab label directly shows grade. Fill grade_company, card_grade, auto_grade, grade_type, support_type SLAB_LABEL, visible_text, confidence, review_required false. If grade is only guessed, leave grade fields empty.",
+    "- grade: include field_evidence.grade only when a slab label directly shows grade. Fill grade_company, card_grade, auto_grade, grade_type, support_type SLAB_LABEL, visible_text, confidence, review_required false. For BGS/Beckett labels, visible_text should include the separate AUTO/AUTOGRAPH grade line when it is readable. If grade is only guessed, leave grade fields empty.",
     "- rc: fields.rc may be true only with a visible RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, or slab/card text. Also include field_evidence.rc with value true, support_type, evidence_kind, visible_text, visible_marker, confidence.",
     "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
     "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
-    "Serial and Numerical Rarity rule: serial_number is the raw physical-copy reading and every digit must be readable; otherwise serial_number must be empty. numerical_rarity is the title print-limit module. Fill numerical_rarity only when current-card evidence clearly shows a print limit such as 2/3, 14/99, 31/50, 01/10, 1/1, or denominator-only #/50. If you directly read a valid current-card print run in serial_number and it is a product print limit, explicitly repeat the same value in numerical_rarity because backend code will not derive it for you. Do not invent numerical_rarity when no print limit is visible. Never copy a serial numerator from catalog/reference candidates, and do not move serial_number into collector_number or checklist_code.",
+    "Numbered / Print Run rule: values such as 2/3, 14/99, 31/50, 01/10, #/50, and 1/1 are print_run_number / numbered facts, not checklist/card numbers. Use print_run_number for the current-card value, print_run_numerator for the numerator, print_run_denominator and numbered_to for the denominator. Fill the full numerator only when current uploaded card/slab/OCR evidence directly shows it. If only the denominator is known, use print_run_number #/D and leave print_run_numerator empty. Use one_of_one true for 1/1. serial_number and numerical_rarity are legacy aliases: copy print_run_number into them only for compatibility when current-card print-run evidence exists. Never copy a print-run numerator from catalog/vector/reference/marketplace candidates, and never move print_run_number into collector_number, checklist_code, card_number, or tcg_card_number.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
     "Sapphire discipline: Topps Chrome Sapphire or Bowman Chrome Sapphire is a product/set phrase when visibly attached to the Chrome product line; keep the full phrase in product or set. Non-product Sapphire such as Heir Apparent Sapphire is exact parallel/taxonomy wording and must stay out of final fields unless catalog/printed label evidence directly supports it.",
     "Open-set taxonomy rule: without prompt-safe catalog/vector candidates, do not put Tiger, Zebra, Sapphire, Refractor, Wave, Shimmer, Mojo, Prizm, Sparkle, Holo, or similar optical pattern words in insert/card_type/parallel fields; leave them unresolved for writer/catalog confirmation.",
@@ -2846,8 +2915,14 @@ function providerMinimalOutputShape({
       insert: "",
       surface_color: "",
       parallel_exact: "",
+      print_run_number: "",
+      print_run_numerator: "",
+      print_run_denominator: "",
+      numbered_to: "",
       serial_number: "",
       numerical_rarity: "",
+      card_number: "",
+      tcg_card_number: "",
       collector_number: "",
       checklist_code: "",
       grade_company: "",
@@ -2867,9 +2942,19 @@ function providerMinimalOutputShape({
         visible_text: "",
         review_required: true
       },
+      print_run_number: {
+        value: "",
+        print_run_numerator: "",
+        print_run_denominator: "",
+        numbered_to: "",
+        support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | OCR | VISION_ONLY | NONE",
+        source_region: "print_run_number",
+        visible_text: "",
+        review_required: true
+      },
       serial_number: {
         value: "",
-        source_region: "serial_number",
+        source_region: "legacy_serial_alias",
         visible_text: "",
         review_required: true
       },
@@ -2927,7 +3012,7 @@ function vectorCandidatePromptSection(packet = null) {
     "- First read the current uploaded front/back images and crops.",
     "- You may select one candidate, partially use field support, reject all candidates, or return NOT_AVAILABLE.",
     "- Reject any candidate field that conflicts with current card/slab printed text, current serial, current collector/checklist code, current grade label, or current subject count.",
-    "- Serial numerator and grade must come only from the current card/slab image, never from a reference candidate.",
+    "- Print-run numerator and grade must come only from the current card/slab image, never from a reference candidate. Reference candidates may support only the denominator/numbered_to.",
     "- Exact parallel requires current image evidence, printed/slab text, product taxonomy, or clear denominator compatibility; visual color alone is surface_color.",
     "- Do not auto-fill unseen fields from a candidate. Leave uncertain fields empty and put the field name in unresolved.",
     `- Packet field_support_count=${fieldSupport.length}. If there are no identity candidates but field support exists, use PARTIAL_SUPPORT only for verified fields.`,
@@ -2945,6 +3030,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     "Return only valid JSON. Do not wrap the response in Markdown.",
     "Lot / multi-card rule: fields.card_count is the count of separate physical cards, not the count of players. A single multi-subject card must have fields.multi_card false and all visible subjects in fields.players. When multiple separate card rectangles, slabs, or lot items are visible, set fields.multi_card true, include fields.card_count when visible, describe fields.lot_type, keep up to three recognizable subjects, and do not merge identities across cards. Renderer will use Lot grammar rather than a single-card title.",
     "Do not infer RC, 1st Bowman, SSP, case hit, parallel, or variation from seller style or generic foil color. Use RC only for readable RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, slab text, or card-code-backed rookie marker. For parallel/variation, use printed text, slab/checklist support, or clearly intentional high-confidence card-design color/pattern only; weak visual color impressions must stay empty with uncertainty in unresolved.",
+    "Numbered / Print Run rule: values such as 2/3, 14/99, 31/50, #/50, and 1/1 belong in print_run_number / print_run_numerator / print_run_denominator / numbered_to. serial_number and numerical_rarity are legacy aliases only. Never copy a print-run numerator from catalog/vector/reference/marketplace candidates; card_number, collector_number, checklist_code, and tcg_card_number are different printed identity codes.",
     "Return compact provider-agnostic field_evidence only for high-risk or review-sensitive fields. Do not use provider confidence prose as fact evidence.",
     "Resolution hints:",
     resolutionHints(payload.resolutionMap) || "None",
@@ -3061,6 +3147,9 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
   const finalTitle = renderedTitle || publicResult.title || "";
   const titleMissingRiskFields = new Set([
     "serial",
+    "print_run_number",
+    "print_run_denominator",
+    "numbered_to",
     "serial_number",
     "card_number",
     "collector_number",
@@ -3304,6 +3393,8 @@ function withProviderMetadata(result, providerResult, selection) {
     provider_error_type: providerResult.error_type || providerResult.parsed?.error_type || null,
     provider_token_diagnostics: providerResult.token_diagnostics || null,
     provider_initial_token_diagnostics: providerResult.initial_token_diagnostics || null,
+    provider_transient_retry_attempted: providerResult.transient_retry_attempted === true,
+    provider_transient_retry_attempts: Number(providerResult.transient_retry_attempts || 0),
     provider_truncation_retry_attempted: providerResult.truncation_retry_attempted === true,
     provider_truncation_retry_attempts: Number(providerResult.truncation_retry_attempts || 0),
     format_error_type: providerResult.format_error_type || null,
@@ -3328,6 +3419,8 @@ function safeProviderDiagnostics(details = {}) {
     "native_schema_valid",
     "token_diagnostics",
     "initial_token_diagnostics",
+    "transient_retry_attempted",
+    "transient_retry_attempts",
     "truncation_retry_attempted",
     "truncation_retry_attempts",
     "empty_retry_attempted",
@@ -4279,6 +4372,19 @@ async function prepareVectorCandidateContext({
     };
   }
 
+  // Until the vector index is seeded past readiness, skip the blocking
+  // online embed entirely (eBay C10: 138 stored embeddings returned noise
+  // while costing 4.8s p50 / 83s p95 on the critical path). Catalog lanes
+  // are unaffected; flip VECTOR_INDEX_READY=true after seeding.
+  if (!vectorIndexReady(env, providerOptions)) {
+    return skippedVectorCandidateContext({
+      reason: "vector_index_below_ready_threshold",
+      visualFeatures,
+      env,
+      providerOptions
+    });
+  }
+
   let activeVisualFeatures = visualFeatures;
   let workerResult = null;
   if (!hasUsableVisualFeatures(activeVisualFeatures)) {
@@ -4537,9 +4643,35 @@ function buildOpenSetReadiness(result = {}, {
 function withOpenSetReadiness(result = {}, context = {}) {
   if (!result || typeof result !== "object") return result;
   const openSetReadiness = buildOpenSetReadiness(result, context);
+  const candidateControl = buildCandidateSelectionPass({
+    result,
+    catalogContext: context.catalogContext || {},
+    vectorContext: context.vectorContext || {}
+  });
+  const candidateContext = buildCandidateContextSummary({
+    result,
+    openSetReadiness,
+    catalogContext: context.catalogContext || {},
+    vectorContext: context.vectorContext || {},
+    providerOptions: context.providerOptions || {},
+    env: process.env
+  });
   return applyColdStartSafeDraftPolicy({
     ...result,
-    open_set_readiness: openSetReadiness
+    open_set_readiness: openSetReadiness,
+    candidate_context: candidateContext,
+    participation_level: candidateControl.participation_level,
+    selected_candidate_decision: candidateControl.selected_candidate_decision,
+    candidate_application_trace: candidateControl.candidate_application_trace,
+    candidate_field_evidence: candidateControl.candidate_field_evidence,
+    candidate_activation_funnel: candidateControl.candidate_activation_funnel,
+    catalog_activation_funnel: candidateControl.catalog_activation_funnel,
+    vector_activation_funnel: candidateControl.vector_activation_funnel,
+    pre_observation_candidate_count: candidateControl.pre_observation_candidate_count,
+    post_observation_candidate_count: candidateControl.post_observation_candidate_count,
+    post_observation_selected_candidate_id: candidateControl.post_observation_selected_candidate_id,
+    retrieval_used_observation_fields: candidateControl.retrieval_used_observation_fields,
+    selected_candidate_verifier: candidateControl.selected_candidate_verifier
   }, {
     providerOptions: context.providerOptions || {},
     mode: context.mode || result.provider_eval_mode || "",
@@ -4835,9 +4967,9 @@ function titleSubjectOverlapWithCurrent(source = {}, currentFields = {}, current
 }
 
 function serialDenominatorCompatibleForTitleAssist(source = {}, currentFields = {}, currentTitle = "") {
-  const currentDenominator = serialDenominatorForTitleAssist(currentFields.serial_number || currentTitle);
   const sourceFields = normalizeFields(source.fields || {});
-  const sourceDenominator = serialDenominatorForTitleAssist(sourceFields.serial_number || source.title || source.reference_title);
+  const currentDenominator = printRunDenominatorForTitleAssist(currentFields, currentTitle);
+  const sourceDenominator = printRunDenominatorForTitleAssist(sourceFields, source.title || source.reference_title);
   return Boolean(currentDenominator && sourceDenominator && currentDenominator === sourceDenominator);
 }
 
@@ -4894,7 +5026,7 @@ function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}
         || titleAssistProductTextCompatible(sourceProduct, currentTitle)
       ));
     }
-    if (field === "collector_number" || field === "checklist_code") {
+    if (field === "collector_number" || field === "checklist_code" || field === "card_number" || field === "tcg_card_number") {
       const sourceValue = sourceFields[field] || source.title || source.reference_title;
       const currentValue = normalizedCurrent[field] || currentTitle;
       return !compatibleTextField(sourceValue, currentValue);
@@ -4902,7 +5034,7 @@ function retrievalSourceHasBlockingTitleConflict(source = {}, currentFields = {}
     if (/^(players|subjects|subject|character)$/.test(field)) {
       return !titleSubjectOverlapWithCurrent(source, currentFields, currentTitle);
     }
-    if (field === "serial_number") {
+    if (field === "serial_number" || field === "serial_denominator" || field === "print_run_number" || field === "print_run_denominator" || field === "numbered_to" || field === "numerical_rarity") {
       return !serialDenominatorCompatibleForTitleAssist(source, currentFields, currentTitle);
     }
     return true;
@@ -4961,10 +5093,20 @@ function retrievalSourceEffectiveMatchedFields(source = {}, currentFields = {}, 
   }
   if (serialDenominatorCompatibleForTitleAssist(source, currentFields, currentTitle)) {
     matched.add("serial_denominator");
+    matched.add("print_run_denominator");
+    matched.add("numbered_to");
   }
   if (sourceFields.collector_number && (normalizedCurrent.collector_number || currentTitle)
     && compatibleTextField(sourceFields.collector_number, normalizedCurrent.collector_number || currentTitle)) {
     matched.add("collector_number");
+  }
+  if (sourceFields.card_number && (normalizedCurrent.card_number || currentTitle)
+    && compatibleTextField(sourceFields.card_number, normalizedCurrent.card_number || currentTitle)) {
+    matched.add("card_number");
+  }
+  if (sourceFields.tcg_card_number && (normalizedCurrent.tcg_card_number || currentTitle)
+    && compatibleTextField(sourceFields.tcg_card_number, normalizedCurrent.tcg_card_number || currentTitle)) {
+    matched.add("tcg_card_number");
   }
   if (sourceFields.checklist_code && (normalizedCurrent.checklist_code || currentTitle)
     && compatibleTextField(sourceFields.checklist_code, normalizedCurrent.checklist_code || currentTitle)) {
@@ -4975,7 +5117,7 @@ function retrievalSourceEffectiveMatchedFields(source = {}, currentFields = {}, 
 
 function retrievalSourceHasStrongTitleSupport(source = {}, currentFields = {}, currentTitle = "") {
   const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
-  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number", "serial_denominator"].some((field) => matched.has(field));
+  const exactEvidence = ["collector_number", "checklist_code", "card_number", "tcg_card_number", "print_run_number", "print_run_denominator", "numbered_to", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   if (exactEvidence) {
     return ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
       .some((field) => matched.has(field));
@@ -4990,7 +5132,7 @@ function retrievalSourceHasStrongTitleSupport(source = {}, currentFields = {}, c
 
 function retrievalSourceHasExactIdentityAnchor(source = {}, currentFields = {}, currentTitle = "") {
   const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
-  const exactEvidence = ["collector_number", "checklist_code", "card_number", "serial_number", "serial_denominator"].some((field) => matched.has(field));
+  const exactEvidence = ["collector_number", "checklist_code", "card_number", "tcg_card_number", "print_run_number", "print_run_denominator", "numbered_to", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .some((field) => matched.has(field));
   return exactEvidence && identityEvidence;
@@ -4998,7 +5140,7 @@ function retrievalSourceHasExactIdentityAnchor(source = {}, currentFields = {}, 
 
 function retrievalSourceHasHardIdentityAnchor(source = {}, currentFields = {}, currentTitle = "") {
   const matched = retrievalSourceEffectiveMatchedFields(source, currentFields, currentTitle);
-  const exactEvidence = ["checklist_code", "serial_number", "serial_denominator"].some((field) => matched.has(field));
+  const exactEvidence = ["checklist_code", "print_run_number", "print_run_denominator", "numbered_to", "serial_number", "serial_denominator"].some((field) => matched.has(field));
   const identityEvidence = ["subjects", "players", "product", "year", "brand", "manufacturer", "surface_color", "trigram"]
     .some((field) => matched.has(field));
   return exactEvidence && identityEvidence;
@@ -5018,7 +5160,7 @@ function retrievalSourceCanEnterTitleAssistLane(source = {}, currentFields = {},
   const exactAnchor = retrievalSourceHasExactIdentityAnchor(source, currentFields, currentTitle);
   const subjectSupport = titleSubjectOverlapWithCurrent(source, currentFields, currentTitle)
     || (exactAnchor && looseSubjectTokenOverlapWithCurrent(source, currentFields, currentTitle));
-  const identitySupportCount = ["product", "set", "year", "brand", "manufacturer", "surface_color", "trigram", "collector_number", "checklist_code", "serial_denominator"]
+  const identitySupportCount = ["product", "set", "year", "brand", "manufacturer", "surface_color", "trigram", "collector_number", "checklist_code", "card_number", "tcg_card_number", "print_run_denominator", "numbered_to", "serial_denominator"]
     .filter((field) => matched.has(field)).length;
   const score = Number(source.match_score || source.normalized_score || source.raw_score || 0);
   const lowerRankedCatalogLane = sourceIndex > 0
@@ -5078,8 +5220,8 @@ function retrievalSourceCompatibleWithCurrent(source = {}, currentFields = {}, c
     return false;
   }
 
-  const currentDenominator = serialDenominatorForTitleAssist(normalizedCurrent.serial_number || currentTitle);
-  const sourceDenominator = serialDenominatorForTitleAssist(sourceFields.serial_number || source.title);
+  const currentDenominator = printRunDenominatorForTitleAssist(normalizedCurrent, currentTitle);
+  const sourceDenominator = printRunDenominatorForTitleAssist(sourceFields, source.title);
   if (!currentDenominator && sourceDenominator) return false;
   if (currentDenominator && sourceDenominator && currentDenominator !== sourceDenominator) return false;
   return true;
@@ -5096,6 +5238,21 @@ function yearsCompatibleForTitleAssist(left, right) {
 
 function serialDenominatorForTitleAssist(value) {
   return normalizeSerialText(value).match(/\/\s*0*(\d{1,4})\b/)?.[1] || null;
+}
+
+function printRunDenominatorForTitleAssist(fieldsOrValue = {}, fallbackText = "") {
+  if (fieldsOrValue && typeof fieldsOrValue === "object" && !Array.isArray(fieldsOrValue)) {
+    const fields = normalizeFields(fieldsOrValue || {});
+    return normalizeStringOrNull(fields.print_run_denominator)
+      || normalizeStringOrNull(fields.numbered_to)
+      || normalizeStringOrNull(fields.serial_denominator)
+      || normalizeStringOrNull(fields.expected_serial_denominator)
+      || serialDenominatorForTitleAssist(fields.print_run_number)
+      || serialDenominatorForTitleAssist(fields.numerical_rarity)
+      || serialDenominatorForTitleAssist(fields.serial_number)
+      || serialDenominatorForTitleAssist(fallbackText);
+  }
+  return serialDenominatorForTitleAssist(fieldsOrValue || fallbackText);
 }
 
 function stripReferenceInstanceOnlyTerms(title) {
@@ -5139,7 +5296,7 @@ function gradeTokenFromCurrentFields(fields = {}) {
 
 function appendCurrentInstanceTerms(title, currentFields = {}, currentTitle = "") {
   let output = String(title || "").replace(/\s+/g, " ").trim();
-  const numericalRarity = normalizeSerialText(currentFields.numerical_rarity || "");
+  const numericalRarity = normalizeSerialText(currentFields.print_run_number || currentFields.numerical_rarity || currentFields.serial_number || "");
   const serialLimit = serialLimitForTitle(numericalRarity, currentFields);
   if ((/\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(numericalRarity) || /^\/\d{1,4}\b/.test(serialLimit))
     && serialLimit
@@ -5247,8 +5404,8 @@ function bestRetrievalTitleAssistSource(completion = {}, result = {}, diagnostic
       const leftCatalog = retrievalSourceIsCatalogLike(left) ? 1 : 0;
       const rightCatalog = retrievalSourceIsCatalogLike(right) ? 1 : 0;
       if (leftCatalog !== rightCatalog) return rightCatalog - leftCatalog;
-      const leftExact = [...leftMatched].some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
-      const rightExact = [...rightMatched].some((field) => /collector_number|checklist_code|card_number|serial_number/.test(field)) ? 1 : 0;
+      const leftExact = [...leftMatched].some((field) => /collector_number|checklist_code|card_number|tcg_card_number|print_run_number|print_run_denominator|numbered_to|serial_number|serial_denominator/.test(field)) ? 1 : 0;
+      const rightExact = [...rightMatched].some((field) => /collector_number|checklist_code|card_number|tcg_card_number|print_run_number|print_run_denominator|numbered_to|serial_number|serial_denominator/.test(field)) ? 1 : 0;
       if (leftExact !== rightExact) return rightExact - leftExact;
       const leftSupport = leftMatched.size;
       const rightSupport = rightMatched.size;
@@ -5292,7 +5449,7 @@ function applySafeRetrievalTitleAssist(draft = {}, result = {}, completion = {},
   const candidateTitle = stripReferenceInstanceOnlyTerms(source.title || source.reference_title || "");
   if (!candidateTitle) return draft;
   const titleWithCurrentInstanceTerms = appendCurrentInstanceTerms(candidateTitle, currentFields, currentTitle);
-  const currentSerial = normalizeSerialText(currentFields.serial_number || "");
+  const currentSerial = normalizeSerialText(currentFields.print_run_number || currentFields.serial_number || "");
   const assistedTitle = /\b\d{1,4}\s*\/\s*\d{1,4}\b/.test(currentSerial)
     ? normalizeTitlePreservingSuffix(titleWithCurrentInstanceTerms, currentSerial, payload.maxTitleLength || maxFallbackTitleLength)
     : normalizeTitle(titleWithCurrentInstanceTerms, payload.maxTitleLength || maxFallbackTitleLength);
@@ -5336,6 +5493,36 @@ async function withEvidenceCompletionShadow(result, payload, {
   });
   if (!draft) return null;
   const guardedDraft = applyOpenSetAssistShadowPresentationGuard(draft, payload);
+  const shadowEvidenceCompletionEnabled = optionFlag(
+    providerOptions,
+    "enable_assist_shadow_evidence_completion",
+    envFlag(env, "ENABLE_ASSIST_SHADOW_EVIDENCE_COMPLETION", false)
+  );
+  if (shadowEvidenceCompletionEnabled !== true) {
+    return {
+      ...guardedDraft,
+      route: guardedDraft.route || "ASSIST_SHADOW_WRITER_DRAFT",
+      route_reason: "No prompt-safe catalog or vector candidates were available; skipped shadow retrieval/evidence completion and kept the GPT draft for writer review.",
+      retrieval: {
+        skipped: true,
+        reason: "assist_shadow_no_prompt_safe_candidates"
+      },
+      completion_state: {
+        shadow_only: true,
+        skipped: true,
+        reason: "assist_shadow_no_prompt_safe_candidates"
+      },
+      fast_path: {
+        ...(guardedDraft.fast_path || {}),
+        assist_shadow_only: true,
+        assist_shadow_retrieval_only: false,
+        skipped_evidence_completion: true,
+        skipped_focused_reread: true,
+        skipped_retrieval: true,
+        reason: "assist_shadow_no_prompt_safe_candidates"
+      }
+    };
+  }
 
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
   const retrievalEnv = retrievalEnvForProviderOptions(env, providerOptions);
@@ -5539,14 +5726,54 @@ async function createRecognitionIdentityPreflight(payload, {
 function shouldDeferVectorUntilProviderObservation({
   catalogContext = null,
   lazyDecision = {},
+  resolvedForRetrieval = {},
   providerOptions = {},
   env = process.env
 } = {}) {
-  if (optionFlag(providerOptions, "enable_vector_lazy_mode", envFlag(env, "ENABLE_VECTOR_LAZY_MODE", true)) !== true) return false;
   if (optionFlag(providerOptions, "enable_vector_assist", false) !== true) return false;
-  if (optionFlag(providerOptions, "force_vector_assist", false) === true) return false;
+  if (optionFlag(providerOptions, "force_vector_assist", false) === true) {
+    return !retrievalFieldsHavePrePromptVectorAnchor(resolvedForRetrieval);
+  }
+  if (optionFlag(providerOptions, "enable_vector_lazy_mode", envFlag(env, "ENABLE_VECTOR_LAZY_MODE", true)) !== true) return false;
   if (lazyDecision.skip === true) return false;
   return catalogContext?.promptPacket !== true;
+}
+
+function fieldHasValueForRetrieval(value) {
+  if (Array.isArray(value)) return value.some(fieldHasValueForRetrieval);
+  if (typeof value === "boolean") return value === true;
+  return normalizeStringOrNull(value) !== null;
+}
+
+function serialDenominatorForRetrieval(value) {
+  const text = normalizeStringOrNull(value);
+  if (!text) return null;
+  return text.match(/\/\s*0*(\d{1,6})\b/)?.[1] || null;
+}
+
+function retrievalAnchorSummary(fields = {}) {
+  const normalized = normalizeFields(fields || {});
+  const players = Array.isArray(normalized.players)
+    ? normalized.players
+    : normalized.player
+      ? [normalized.player]
+      : [];
+  const anchors = [];
+  if (fieldHasValueForRetrieval(normalized.collector_number || normalized.checklist_code || normalized.card_number)) anchors.push("printed_code");
+  if (fieldHasValueForRetrieval(normalized.year)) anchors.push("year");
+  if (fieldHasValueForRetrieval(normalized.product || normalized.set || normalized.manufacturer || normalized.brand)) anchors.push("product");
+  if (players.some(fieldHasValueForRetrieval) || fieldHasValueForRetrieval(normalized.character)) anchors.push("subject");
+  if (fieldHasValueForRetrieval(normalized.expected_serial_denominator || serialDenominatorForRetrieval(normalized.serial_number))) anchors.push("serial_denominator");
+  return {
+    anchors: [...new Set(anchors)],
+    count: [...new Set(anchors)].length,
+    has_printed_code: anchors.includes("printed_code")
+  };
+}
+
+function retrievalFieldsHavePrePromptVectorAnchor(fields = {}) {
+  const summary = retrievalAnchorSummary(fields);
+  return summary.has_printed_code || summary.count >= 2;
 }
 
 function retrievalFieldsFromProviderObservation(result = {}, fallback = {}) {
@@ -5633,6 +5860,7 @@ async function createOpenAiTitle(payload, selection, {
   const deferVectorUntilProviderObservation = shouldDeferVectorUntilProviderObservation({
     catalogContext,
     lazyDecision,
+    resolvedForRetrieval,
     providerOptions,
     env: process.env
   });
@@ -5714,6 +5942,7 @@ async function createOpenAiTitle(payload, selection, {
       };
       catalogContext = {
         ...lateCatalogContext,
+        retrieval_phase: "provider_observation_catalog_lookup",
         promptPacket: false,
         catalog_exact_anchor_after_provider_observation: true,
         catalog_anchor_plan: catalogAnchorPlanFromFields(providerResolvedForRetrieval, {
@@ -5737,7 +5966,12 @@ async function createOpenAiTitle(payload, selection, {
         skip: lateLazyDecision
       });
     } else {
-      catalogContext = lateCatalogContext || catalogContext || await catalogContextPromise.catch(() => null);
+      catalogContext = lateCatalogContext
+        ? {
+          ...lateCatalogContext,
+          retrieval_phase: "provider_observation_catalog_lookup"
+        }
+        : catalogContext || await catalogContextPromise.catch(() => null);
       vectorContext = await prepareVectorCandidateContext({
         initialPayload: baseInitialPayload,
         signedImages,
@@ -5746,6 +5980,12 @@ async function createOpenAiTitle(payload, selection, {
         providerOptions,
         timingContext
       });
+      if (vectorContext) {
+        vectorContext = {
+          ...vectorContext,
+          retrieval_phase: "provider_observation_vector_lookup"
+        };
+      }
     }
   }
   if (!catalogContext) catalogContext = await catalogContextPromise.catch(() => null);
@@ -5820,8 +6060,69 @@ function explicitEmergencyFromPayload(payload = {}) {
   return payload.explicitEmergency === true || payload.explicit_emergency === true;
 }
 
+async function applyPreIngestionBundleToPayload(payload = {}, {
+  timingContext = null,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  const bundleId = payload.preingestion_bundle_id || payload.preingestionBundleId;
+  if (!bundleId) {
+    return {
+      applied: false,
+      reason: "bundle_id_missing"
+    };
+  }
+
+  const loaded = await timeAsync(timingContext, "preingestion_bundle_load_ms", () => readPreIngestionBundle({
+    bundleId,
+    env: process.env,
+    fetchImpl
+  }));
+  if (!loaded.found || !loaded.bundle) {
+    payload.preingestion_bundle_id = bundleId;
+    payload.preingestion_bundle_used = false;
+    payload.preingestion_bundle_status = loaded.reason || "bundle_not_found";
+    payload.preingestion_summary = {
+      bundle_id: bundleId,
+      status: payload.preingestion_bundle_status,
+      found: false
+    };
+    return {
+      applied: false,
+      reason: loaded.reason || "bundle_not_found"
+    };
+  }
+
+  const bundle = loaded.bundle;
+  const bundleImages = imagesFromPreIngestionBundle(bundle);
+  payload.preingestion_bundle_id = bundle.bundle_id;
+  payload.preingestionBundleId = bundle.bundle_id;
+  payload.preingestion_bundle = bundle;
+  payload.preingestion_bundle_used = true;
+  payload.preingestion_bundle_status = bundle.status || "READY";
+  payload.preingestion_summary = summarizePreIngestionBundle(bundle);
+  payload.preingestion_initial_evidence = bundle.initial_evidence || {};
+  payload.preingestion_evidence_patches = bundle.evidence_patches || [];
+  payload.images = bundleImages;
+
+  if (!payload.asset_id && bundle.asset_id) payload.asset_id = bundle.asset_id;
+  if (!payload.assetId && bundle.asset_id) payload.assetId = bundle.asset_id;
+  if (!payload.capture_quality && bundle.quality_summary?.capture_quality) {
+    payload.capture_quality = bundle.quality_summary.capture_quality;
+  }
+  if (!payload.captureQuality && bundle.quality_summary?.capture_quality) {
+    payload.captureQuality = bundle.quality_summary.capture_quality;
+  }
+
+  return {
+    applied: true,
+    bundle,
+    image_count: bundleImages.length
+  };
+}
+
 export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
+  applyPreIngestionBundleToPayload,
   applySafeRetrievalTitleAssist,
   boundedPayloadImagesFromImages,
   buildExactAnchorFastLaneShadow,
@@ -5832,7 +6133,11 @@ export const __listingCopilotTitleTestHooks = {
   finalResolvedFieldsForPresentation,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
+  providerOptionsFromPayload,
+  retrievalAnchorSummary,
+  retrievalFieldsHavePrePromptVectorAnchor,
   scaffoldTitleConflictsWithDirectEvidence,
+  shouldDeferVectorUntilProviderObservation,
   shouldSkipVectorForCatalogContext
 };
 
@@ -5888,6 +6193,33 @@ export default async function handler(req, res) {
     return;
   }
 
+  const timingContext = createTimingContext(payload);
+
+  if (payload.preingestion_bundle_id || payload.preingestionBundleId) {
+    try {
+      await applyPreIngestionBundleToPayload(payload, {
+        timingContext,
+        fetchImpl: globalThis.fetch
+      });
+    } catch (error) {
+      payload.preingestion_bundle_used = false;
+      payload.preingestion_bundle_status = "bundle_load_error";
+      payload.preingestion_summary = {
+        bundle_id: payload.preingestion_bundle_id || payload.preingestionBundleId || null,
+        status: "bundle_load_error",
+        reason: String(error.message || "bundle_load_error").slice(0, 180)
+      };
+      if (!Array.isArray(payload.images) || payload.images.length === 0) {
+        sendJson(res, 400, {
+          ok: false,
+          code: "preingestion_bundle_load_failed",
+          message: payload.preingestion_summary.reason
+        });
+        return;
+      }
+    }
+  }
+
   const payloadImages = Array.isArray(payload.images) ? payload.images : [];
   const maxPayloadImages = configuredMaxPayloadImages(process.env);
   const imageBatch = boundedPayloadImagesFromImages(payloadImages, { maxImages: maxPayloadImages });
@@ -5909,8 +6241,6 @@ export default async function handler(req, res) {
       deferred_image_count: imageBatch.deferred_image_count
     };
   }
-
-  const timingContext = createTimingContext(payload);
 
   try {
     const preProviderRescanResult = timeSync(timingContext, "image_quality_check_ms", () => createPreProviderRescanResult(payload));

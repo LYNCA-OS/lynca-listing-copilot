@@ -67,7 +67,7 @@ const providerOptions = { cold_start_blind: true };
   assert.equal(result.resolved.serial_number, null);
   assert.equal(result.resolved.grade_company, null);
   assert.equal(result.resolved.card_grade, null);
-  assert.deepEqual(result.cold_start_safe_draft.analysis.copied_reference_instance_fields, []);
+  assert.deepEqual(result.cold_start_safe_draft.analysis.copied_reference_instance_fields, ["serial_number"]);
   assert.match(JSON.stringify(result.high_risk_guess_removed), /serial_number_must_come_from_current_image/);
   assert.match(JSON.stringify(result.high_risk_guess_removed), /grade_must_come_from_current_slab_label/);
 }

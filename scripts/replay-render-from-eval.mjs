@@ -48,6 +48,20 @@ function referenceTitleForResult(result = {}) {
   );
 }
 
+function replayResolvedFields(result = {}) {
+  const rendered = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
+    ? result.rendered_fields
+    : {};
+  const renderedFields = rendered.fields && typeof rendered.fields === "object" && !Array.isArray(rendered.fields)
+    ? rendered.fields
+    : {};
+  const resolved = result.resolved_fields || result.resolved || {};
+  return {
+    ...resolved,
+    ...renderedFields
+  };
+}
+
 export async function replayRenderFromEval({
   inputPath,
   maxLength = 80
@@ -74,7 +88,7 @@ export async function replayRenderFromEval({
     const replayed = preserveRecorded
       ? recorded
       : normalizeText(renderListingPresentation({
-        resolved: result.resolved_fields || result.resolved || {},
+        resolved: replayResolvedFields(result),
         evidence: result.normalized_evidence || result.evidence || {},
         maxLength
       }).final_title || "");

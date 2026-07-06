@@ -22,6 +22,13 @@ function eligibilityStableShape(eligibility = {}) {
     field_support_fields: _fieldSupportFields,
     ...rest
   } = eligibility;
+  [
+    "reference_print_run_numerator_copy_violation_count",
+    "external_print_run_numerator_copy_violation_count",
+    "catalog_full_print_run_copy_violation_count"
+  ].forEach((key) => {
+    if (rest[key] === 0) delete rest[key];
+  });
   return rest;
 }
 
@@ -106,6 +113,8 @@ assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(p
   conflict_blocked_count: 0,
   prompt_candidate_count: 0,
   prompt_candidate_ids: [],
+  reference_print_run_numerator_copy_violation_count: 1,
+  catalog_full_print_run_copy_violation_count: 1,
   eligible_candidate_count: 0,
   blocked_candidate_count: 0
 });
@@ -850,6 +859,8 @@ assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(q
   conflict_blocked_count: 1,
   prompt_candidate_count: 0,
   prompt_candidate_ids: [],
+  reference_print_run_numerator_copy_violation_count: 1,
+  catalog_full_print_run_copy_violation_count: 1,
   eligible_candidate_count: 0,
   blocked_candidate_count: 1
 });
@@ -915,6 +926,50 @@ assert.deepEqual(eligibilityStableShape(vectorCandidatePacketAssistEligibility(l
 });
 assert.equal(vectorCandidatePacketAssistEligibility(lowMarginOpenSetPacket).field_support_count, 0, "open-set blocked candidates must not leak field support into prompt");
 assert.equal(buildVectorCandidateAssistPacket(lowMarginOpenSetPacket).vector_retrieval.candidates.length, 0);
+
+const noExactVisualFieldSupportPacket = buildVectorCandidatePacket({
+  open_set_decision: "NO_EXACT_MATCH",
+  open_set_reason: "near visual neighbor but exact identity is not proven",
+  sources: [{
+    candidate_id: "approved-near-vector-support",
+    candidate_identity_id: "identity-approved-near-vector-support",
+    source_type: "VISUAL_VECTOR",
+    source_trust: "APPROVED_REFERENCE",
+    visual_similarity: 0.91,
+    match_score: 0.91,
+    embedding_role: "front_global",
+    reference_metadata: { reference_status: "APPROVED", retrieval_status: "approved" },
+    fields: {
+      year: "2023-24",
+      manufacturer: "Panini",
+      product: "Panini Prizm",
+      players: ["Stephen Curry"],
+      surface_color: "Blue",
+      serial_number: "17/125"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2023",
+    manufacturer: "Panini",
+    product: "Panini Prizm",
+    players: ["Stephen Curry"],
+    surface_color: "Green",
+    serial_number: "2/5"
+  }
+});
+const noExactVisualEligibility = vectorCandidatePacketAssistEligibility(noExactVisualFieldSupportPacket);
+assert.equal(noExactVisualEligibility.prompt_candidate_count, 0, "NO_EXACT_MATCH must still block identity prompt candidates");
+assert.equal(noExactVisualEligibility.field_support_fields.includes("year"), true);
+assert.equal(noExactVisualEligibility.field_support_fields.includes("manufacturer"), true);
+assert.equal(noExactVisualEligibility.field_support_fields.includes("product"), true);
+assert.equal(noExactVisualEligibility.field_support_fields.includes("surface_color"), false, "conflicting color must not become field support");
+assert.equal(noExactVisualEligibility.field_support_fields.includes("expected_serial_denominator"), false, "conflicting denominator must not become field support");
+const noExactVisualAssistPacket = buildVectorCandidateAssistPacket(noExactVisualFieldSupportPacket);
+assert.equal(noExactVisualAssistPacket.vector_retrieval.candidates.length, 0);
+assert.equal(noExactVisualAssistPacket.vector_retrieval.status_code, "VECTOR_ASSIST_FIELD_SUPPORT_AVAILABLE");
+assert.equal(noExactVisualAssistPacket.vector_retrieval.field_support.some((row) => row.provider_id === "visual_vector"), true);
 
 const lowMarginHardConstraintPacket = buildVectorCandidatePacket({
   open_set_decision: "LOW_MARGIN_MATCH",

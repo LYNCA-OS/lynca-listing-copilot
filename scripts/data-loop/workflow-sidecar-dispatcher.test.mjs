@@ -226,6 +226,114 @@ assert.equal(internalQueueSidecars.cvat.task_created, true);
 assert.equal(internalQueueSidecars.cvat.reason, "cvat_internal_queue_created");
 assert.ok(internalQueueWrites.some((write) => write.pathname.endsWith("/annotation_tasks") && write.body[0].status === "QUEUED"));
 
+const nestedGapWrites = [];
+const nestedGapResult = {
+  ...result,
+  asset_id: payload.candidate_id,
+  title: "2024 Panini Donruss Test Gap Draft",
+  provider: "openai_legacy",
+  open_set_readiness: {
+    catalog_gap_queue_candidate: true,
+    status: "EVIDENCE_BACKED_NO_CATALOG",
+    prompt_safe_candidate_count: 0,
+    raw_candidate_count: 5,
+    approved_candidate_count: 4,
+    conflict_blocked_count: 4
+  },
+  c_group_diagnostics: {
+    catalog_candidate_debug: [{
+      candidate_id: "catalog-blocked-1",
+      candidate_identity_id: "identity-blocked-1",
+      reference_title: "2024 Panini Donruss Similar Player",
+      source_trust: "APPROVED_REFERENCE",
+      prompt_blocked: true,
+      conflicting_fields: ["product"],
+      anchor_agreement: {
+        agreed: ["year", "subjects"],
+        contradicted: ["product_hierarchy"],
+        prompt_hard_filter_pass: false
+      }
+    }]
+  }
+};
+const nestedGapSidecars = await dispatchWorkflowSidecars({
+  event: buildRecognitionWorkflowEvent({ result: nestedGapResult, payload }),
+  result: nestedGapResult,
+  payload,
+  env: {
+    DATA_LOOP_SIDECARS_ENABLED: "true",
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role"
+  },
+  fetchImpl: async (url, init = {}) => {
+    const pathname = new URL(url).pathname;
+    if (pathname.endsWith("/catalog_gap_queue") && init.method === "GET") return jsonResponse(200, []);
+    if (pathname.endsWith("/catalog_gap_queue") && init.method === "POST") {
+      nestedGapWrites.push(JSON.parse(init.body));
+      return jsonResponse(201, [{ gap_id: "gap-nested" }]);
+    }
+    return jsonResponse(201, [{ ok: true }]);
+  }
+});
+assert.equal(nestedGapSidecars.catalog_gap_queue.status, workflowSidecarStatuses.DISPATCHED);
+assert.equal(nestedGapSidecars.catalog_gap_queue.gap_id, "gap-nested");
+assert.equal(nestedGapWrites[0][0].asset_id, payload.candidate_id);
+assert.equal(nestedGapWrites[0][0].gap_reason, "EVIDENCE_BACKED_NO_CATALOG");
+assert.equal(nestedGapWrites[0][0].internal_candidates[0].candidate_identity_id, "identity-blocked-1");
+assert.deepEqual(nestedGapWrites[0][0].metadata.catalog_gap_eligibility.conflict_blocked_count, 4);
+
+const eligibilityOnlyGapWrites = [];
+const eligibilityOnlyResult = {
+  ...result,
+  asset_id: payload.candidate_id,
+  open_set_readiness: undefined,
+  c_group_diagnostics: {
+    catalog_assist_eligibility: {
+      raw_candidate_count: 5,
+      approved_candidate_count: 5,
+      conflict_blocked_count: 5,
+      prompt_candidate_count: 0,
+      reason: "approved_identity_candidate_direct_conflict"
+    },
+    catalog_candidate_debug: [{
+      candidate_id: "catalog-blocked-2",
+      candidate_identity_id: "identity-blocked-2",
+      reference_title: "2024 Panini Prizm Similar Player",
+      source_trust: "APPROVED_REFERENCE",
+      prompt_blocked: true,
+      conflicting_fields: ["collector_number"],
+      anchor_agreement: {
+        agreed: ["year", "manufacturer"],
+        contradicted: ["collector_number"],
+        prompt_hard_filter_pass: false
+      }
+    }]
+  }
+};
+const eligibilityOnlyGapSidecars = await dispatchWorkflowSidecars({
+  event: buildRecognitionWorkflowEvent({ result: eligibilityOnlyResult, payload }),
+  result: eligibilityOnlyResult,
+  payload,
+  env: {
+    DATA_LOOP_SIDECARS_ENABLED: "true",
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role"
+  },
+  fetchImpl: async (url, init = {}) => {
+    const pathname = new URL(url).pathname;
+    if (pathname.endsWith("/catalog_gap_queue") && init.method === "GET") return jsonResponse(200, []);
+    if (pathname.endsWith("/catalog_gap_queue") && init.method === "POST") {
+      eligibilityOnlyGapWrites.push(JSON.parse(init.body));
+      return jsonResponse(201, [{ gap_id: "gap-eligibility" }]);
+    }
+    return jsonResponse(201, [{ ok: true }]);
+  }
+});
+assert.equal(eligibilityOnlyGapSidecars.catalog_gap_queue.status, workflowSidecarStatuses.DISPATCHED);
+assert.equal(eligibilityOnlyGapSidecars.catalog_gap_queue.gap_id, "gap-eligibility");
+assert.equal(eligibilityOnlyGapWrites[0][0].gap_reason, "approved_identity_candidate_direct_conflict");
+assert.equal(eligibilityOnlyGapWrites[0][0].internal_candidates[0].candidate_identity_id, "identity-blocked-2");
+
 const tmp = await mkdtemp(join(tmpdir(), "lynca-fiftyone-sidecar-"));
 try {
   const exported = await dispatchWorkflowSidecars({

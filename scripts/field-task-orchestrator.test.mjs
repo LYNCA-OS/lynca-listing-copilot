@@ -140,6 +140,45 @@ const noCatalogPrompt = buildFieldTaskOrchestration({
 assert.equal(task(noCatalogPrompt, "catalog_exact_code_lookup").status, "REVIEW_REQUIRED");
 assert.equal(task(noCatalogPrompt, "vector_retrieval_lazy").status, "REVIEW_REQUIRED");
 
+const bgsAutoGradeMissing = buildFieldTaskOrchestration({
+  ...baseResult,
+  resolved: {
+    ...baseResult.resolved,
+    grade_company: "BGS",
+    card_grade: "9.5",
+    auto_grade: null,
+    grade_type: "CARD_ONLY",
+    auto: true
+  },
+  evidence: {
+    ...baseResult.evidence,
+    grade_company: {
+      value: "BGS",
+      status: "CONFIRMED",
+      confidence: 0.94,
+      sources: [{ source_type: "SLAB_LABEL", region: "grade_label" }]
+    },
+    card_grade: {
+      value: "9.5",
+      status: "CONFIRMED",
+      confidence: 0.94,
+      sources: [{ source_type: "SLAB_LABEL", region: "grade_label" }]
+    },
+    auto: {
+      value: true,
+      status: "CONFIRMED",
+      confidence: 0.92,
+      visible_text: "AUTO",
+      sources: [{ source_type: "SLAB_LABEL", region: "grade_label" }]
+    }
+  }
+}, { timing });
+assert.equal(task(bgsAutoGradeMissing, "ocr_slab_label_verifier").status, "REVIEW_REQUIRED");
+assert.equal(
+  task(bgsAutoGradeMissing, "ocr_slab_label_verifier").source_summary[0].trigger_reason,
+  "slab_detected_auto_grade_missing_for_autographed_card"
+);
+
 const ocrSupported = buildFieldTaskOrchestration({
   ...baseResult,
   resolved: {

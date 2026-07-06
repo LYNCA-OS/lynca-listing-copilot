@@ -28,7 +28,7 @@ const fieldSourceMap = Object.freeze({
   card_type: ["official_card_type", "observable_components", "card_type", "insert", "rc", "auto", "patch", "relic", "jersey", "sketch", "redemption"],
   variant_or_parallel: ["variant_or_parallel", "parallel_exact", "parallel", "parallel_family", "surface_color", "variation"],
   collector_number: ["collector_number", "card_number", "checklist_code"],
-  serial_number: ["serial_number"],
+  serial_number: ["print_run_number", "numbered", "serial_number", "numerical_rarity"],
   grade: ["grade", "grade_company", "card_grade", "auto_grade", "grade_type"]
 });
 
@@ -351,7 +351,7 @@ function pickPredictionValue(result = {}, field) {
     case "collector_number":
       return normalizeText(fields.collector_number || fields.card_number || fields.checklist_code);
     case "serial_number":
-      return normalizeText(fields.serial_number);
+      return normalizeText(fields.print_run_number || fields.numbered || fields.serial_number || fields.numerical_rarity);
     case "grade":
       return predictionGrade(fields);
     default:
@@ -383,7 +383,7 @@ function legacyGroundTruthValue(item = {}, field) {
     case "collector_number":
       return groundTruth.collector_number || groundTruth.card_number;
     case "serial_number":
-      return groundTruth.serial_number;
+      return groundTruth.print_run_number || groundTruth.numbered || groundTruth.serial_number || groundTruth.numerical_rarity;
     case "grade":
       return {
         company: normalizeText(groundTruth.grade_company),
@@ -433,7 +433,8 @@ function compareValues(field, groundTruth, prediction) {
       is_correct: expected !== "" && expected === actual,
       normalized_ground_truth: expected,
       normalized_prediction: actual,
-      serial_denominator_match: Boolean(expectedDenominator && expectedDenominator === actualDenominator)
+      serial_denominator_match: Boolean(expectedDenominator && expectedDenominator === actualDenominator),
+      print_run_denominator_match: Boolean(expectedDenominator && expectedDenominator === actualDenominator)
     };
   }
 

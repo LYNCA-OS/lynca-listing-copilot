@@ -165,9 +165,12 @@ const scgNumericalRarityEdit = applyWriterModuleEdit({
   moduleKey: "numerical_rarity",
   moduleText: "/50"
 });
-assert.equal(scgNumericalRarityEdit.corrected_resolved.serial_number, null);
-assert.equal(scgNumericalRarityEdit.corrected_resolved.numerical_rarity, "/50");
-assert.match(scgNumericalRarityEdit.final_title, /\/50/);
+assert.equal(scgNumericalRarityEdit.corrected_resolved.print_run_number, "#/50");
+assert.equal(scgNumericalRarityEdit.corrected_resolved.print_run_numerator, null);
+assert.equal(scgNumericalRarityEdit.corrected_resolved.print_run_denominator, "50");
+assert.equal(scgNumericalRarityEdit.corrected_resolved.serial_number, "#/50");
+assert.equal(scgNumericalRarityEdit.corrected_resolved.numerical_rarity, "#/50");
+assert.match(scgNumericalRarityEdit.final_title, /#\/50/);
 
 const scgCardNumberEdit = applyWriterModuleEdit({
   resolved: {

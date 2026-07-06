@@ -8,6 +8,7 @@ import {
 } from "../lib/listing/providers/provider-concurrency.mjs";
 import { parseProviderMessagePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
+import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
 const providerRegistrySource = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
 const providerContractSource = await readFile("lib/listing/providers/provider-contract.mjs", "utf8");
@@ -102,6 +103,36 @@ assert.deepEqual(listAvailableVisionProviders({
   ALLOW_EXPLICIT_GPT41_RETRY: "false"
 }).map((provider) => provider.id), ["openai_legacy"]);
 
+const vectorDefaultEnv = {
+  ...env,
+  ENABLE_VECTOR_ASSIST_DEFAULT: "true",
+  ENABLE_VECTOR_RETRIEVAL: "true",
+  VECTOR_RETRIEVAL_MODE: "assist"
+};
+const fastPathOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
+  provider_options: { single_model_fast: true }
+}, vectorDefaultEnv);
+assert.equal(fastPathOptions.enable_vector_retrieval, false, "single-model fast path must not inherit blocking vector retrieval defaults");
+assert.equal(fastPathOptions.vector_retrieval_mode, "off");
+assert.equal(fastPathOptions.enable_query_visual_embeddings, false);
+
+const explicitVectorOffOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
+  provider_options: { enable_vector_assist: false }
+}, vectorDefaultEnv);
+assert.equal(explicitVectorOffOptions.enable_vector_retrieval, false, "explicit vector assist off must also disable query embedding");
+assert.equal(explicitVectorOffOptions.enable_stored_visual_features, false);
+assert.equal(explicitVectorOffOptions.enable_query_visual_embeddings, false);
+
+const explicitVectorOnOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
+  provider_options: {
+    enable_vector_assist: false,
+    enable_vector_retrieval: true,
+    vector_retrieval_mode: "assist"
+  }
+}, vectorDefaultEnv);
+assert.equal(explicitVectorOnOptions.enable_vector_retrieval, true, "explicit retrieval config can still force vector experiments");
+assert.equal(explicitVectorOnOptions.vector_retrieval_mode, "assist");
+
 const parsedContent = parseProviderMessagePayload({
   content: "```json\n{\"title\":\"Test\",\"fields\":{\"player\":\"A\"},\"unresolved\":[]}\n```"
 });
@@ -158,6 +189,44 @@ assert.equal(openAiResult.usage.input_tokens, 11);
 assert.equal(openAiResult.usage.output_tokens, 9);
 assert.equal(openAiResult.usage.total_tokens, 20);
 assert.equal(openAiResult.usage.image_count, 1);
+
+let transientOpenAiCalls = 0;
+const transientOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  env: {
+    ...env,
+    OPENAI_LISTING_TRANSIENT_RETRIES: "1",
+    OPENAI_LISTING_TRANSIENT_RETRY_DELAY_MS: "0"
+  },
+  fetchImpl: async () => {
+    transientOpenAiCalls += 1;
+    if (transientOpenAiCalls === 1) {
+      return {
+        ok: false,
+        status: 520,
+        text: async () => "<!DOCTYPE html><html><body>Cloudflare 520</body></html>"
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "resp_retry_test",
+        output_text: "{\"title\":\"OpenAI Retry Test\",\"fields\":{\"player\":\"Recovered\"},\"unresolved\":[]}",
+        usage: {
+          input_tokens: 12,
+          output_tokens: 8,
+          total_tokens: 20
+        }
+      })
+    };
+  }
+});
+assert.equal(transientOpenAiCalls, 2);
+assert.equal(transientOpenAiResult.parsed.fields.player, "Recovered");
+assert.equal(transientOpenAiResult.transient_retry_attempted, true);
+assert.equal(transientOpenAiResult.transient_retry_attempts, 1);
 
 let invalidOpenAiModelFetchCalled = false;
 await assert.rejects(
