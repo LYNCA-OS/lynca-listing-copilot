@@ -371,6 +371,7 @@ function providerOptionsForMode(providerMode, {
   sendCorrectedTitleHintToCloud = false,
   disableVectorLazyMode = false,
   forceVectorAssist = false,
+  vectorIndexReady = false,
   coldStartBlind = false
 } = {}) {
   const coldStartMode = coldStartBlind === true || providerMode === providerModes.EBAY_COLD_START_BLIND;
@@ -403,7 +404,7 @@ function providerOptionsForMode(providerMode, {
     vector_retrieval_mode: vectorAssist ? "assist" : "off",
     enable_vector_lazy_mode: vectorAssist ? forceVector !== true && disableVectorLazyMode !== true : false,
     force_vector_assist: forceVector,
-    vector_index_ready: forceVector ? true : undefined,
+    vector_index_ready: vectorAssist && vectorIndexReady === true ? true : undefined,
     vector_corrected_title_as_temporary_gt: vectorAssist && temporaryGt,
     vector_query_timeout_ms: vectorAssist ? vectorQueryTimeoutMs : undefined,
     vector_retrieval_internal_top_n: vectorAssist ? 10 : undefined,
@@ -2706,6 +2707,7 @@ export async function evaluateCloudListingApi({
   sendCorrectedTitleHintToCloud = false,
   disableVectorLazyMode = false,
   forceVectorAssist = false,
+  vectorIndexReady = false,
   providerErrorRetries = 1,
   providerErrorRetryDelayMs = 1500,
   skipPreflight = false,
@@ -2721,7 +2723,8 @@ export async function evaluateCloudListingApi({
     correctedTitleAsTemporaryGt,
     sendCorrectedTitleHintToCloud,
     disableVectorLazyMode,
-    forceVectorAssist
+    forceVectorAssist,
+    vectorIndexReady
   };
 
   const limitCount = Math.max(0, Math.trunc(Number(limit) || 0));
@@ -2885,6 +2888,8 @@ export async function main(argv = process.argv, env = process.env) {
     || boolValue(runtimeEnv.CLOUD_EVAL_DISABLE_VECTOR_LAZY_MODE, false);
   const forceVectorAssist = hasFlag(argv, "--force-vector-assist")
     || boolValue(runtimeEnv.CLOUD_EVAL_FORCE_VECTOR_ASSIST, false);
+  const vectorIndexReady = hasFlag(argv, "--vector-index-ready")
+    || boolValue(runtimeEnv.CLOUD_EVAL_VECTOR_INDEX_READY, false);
   const progress = hasFlag(argv, "--progress");
   const checkpointPath = argValue(argv, "--checkpoint-path", hasFlag(argv, "--checkpoint") ? outPath : "");
   const bypassSecret = argValue(argv, "--bypass-secret", runtimeEnv.VERCEL_AUTOMATION_BYPASS_SECRET || "");
@@ -2906,6 +2911,7 @@ export async function main(argv = process.argv, env = process.env) {
     sendCorrectedTitleHintToCloud,
     disableVectorLazyMode,
     forceVectorAssist,
+    vectorIndexReady,
     providerErrorRetries,
     providerErrorRetryDelayMs,
     skipPreflight,
