@@ -753,6 +753,7 @@ const shieldCardNamePreservesPatchMeaning = renderResolvedTitle({
 assert.ok(shieldCardNamePreservesPatchMeaning.rendered_title.length <= 80);
 assert.match(shieldCardNamePreservesPatchMeaning.rendered_title, /NFL Shield Patch/i);
 assert.match(shieldCardNamePreservesPatchMeaning.rendered_title, /RC Auto/i);
+assert.doesNotMatch(shieldCardNamePreservesPatchMeaning.rendered_title, /Patch\s+Patch\s+Auto/i);
 
 const longTitle = renderResolvedTitle({
   year: "2015-16",
