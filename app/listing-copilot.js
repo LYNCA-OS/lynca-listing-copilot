@@ -809,8 +809,12 @@ async function ensurePreingestionBundle(asset) {
 }
 
 async function prepareAssetInBackground(asset, runId) {
-  if (!asset || asset.backgroundPreparationPromise) return asset?.backgroundPreparationPromise || null;
+  if (!asset) return null;
+  if (asset.backgroundPreparationPromise && asset.backgroundPreparationRunId === runId) {
+    return asset.backgroundPreparationPromise;
+  }
 
+  asset.backgroundPreparationRunId = runId;
   asset.backgroundPrepareStatus = "queued";
   asset.backgroundPreparationPromise = (async () => {
     const startedAt = performance.now();
@@ -877,6 +881,15 @@ function startBackgroundPreparation(reason = "file_ready") {
   if (!storageReady() || !state.assets.length) return false;
   const runId = ++state.backgroundPreparationRunId;
   const assets = [...state.assets];
+  assets.forEach((asset) => {
+    if (!asset.preingestionBundleId && asset.backgroundPrepareStatus !== "ready") {
+      asset.backgroundPrepareStatus = "queued";
+      asset.backgroundPreparationRunId = runId;
+    }
+  });
+  if (!state.processing) {
+    renderResults();
+  }
   void mapWithConcurrency(assets, BACKGROUND_PREP_CONCURRENCY, async (asset) => {
     if (runId !== state.backgroundPreparationRunId) return null;
     return prepareAssetInBackground(asset, runId);
