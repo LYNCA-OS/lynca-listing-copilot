@@ -5359,6 +5359,36 @@ async function withEvidenceCompletionShadow(result, payload, {
   });
   if (!draft) return null;
   const guardedDraft = applyOpenSetAssistShadowPresentationGuard(draft, payload);
+  const shadowEvidenceCompletionEnabled = optionFlag(
+    providerOptions,
+    "enable_assist_shadow_evidence_completion",
+    envFlag(env, "ENABLE_ASSIST_SHADOW_EVIDENCE_COMPLETION", false)
+  );
+  if (shadowEvidenceCompletionEnabled !== true) {
+    return {
+      ...guardedDraft,
+      route: guardedDraft.route || "ASSIST_SHADOW_WRITER_DRAFT",
+      route_reason: "No prompt-safe catalog or vector candidates were available; skipped shadow retrieval/evidence completion and kept the GPT draft for writer review.",
+      retrieval: {
+        skipped: true,
+        reason: "assist_shadow_no_prompt_safe_candidates"
+      },
+      completion_state: {
+        shadow_only: true,
+        skipped: true,
+        reason: "assist_shadow_no_prompt_safe_candidates"
+      },
+      fast_path: {
+        ...(guardedDraft.fast_path || {}),
+        assist_shadow_only: true,
+        assist_shadow_retrieval_only: false,
+        skipped_evidence_completion: true,
+        skipped_focused_reread: true,
+        skipped_retrieval: true,
+        reason: "assist_shadow_no_prompt_safe_candidates"
+      }
+    };
+  }
 
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
   const retrievalEnv = retrievalEnvForProviderOptions(env, providerOptions);
