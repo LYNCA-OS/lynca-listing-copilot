@@ -695,6 +695,47 @@ assert.match(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /Ro
 assert.match(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /RC\b/i);
 assert.doesNotMatch(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /Panini America/i);
 
+const prizmWorldCupSetSurvivesCompression = renderResolvedTitle({
+  year: "2022",
+  manufacturer: "Panini",
+  product: "Panini Prizm",
+  set: "Prizm FIFA World Cup Qatar 2022",
+  players: ["Pele"],
+  card_name: "SIG-GOLD BREAKAWAY",
+  surface_color: "Gold",
+  numerical_rarity: "2/2",
+  collector_number: "S-P",
+  auto: true,
+  grade_company: "PSA",
+  card_grade: "9",
+  grade_type: "CARD_ONLY",
+  team: "Brazil"
+}, {
+  maxLength: 80
+});
+assert.ok(prizmWorldCupSetSurvivesCompression.rendered_title.length <= 80);
+assert.match(prizmWorldCupSetSurvivesCompression.rendered_title, /Panini Prizm World Cup/i);
+assert.match(prizmWorldCupSetSurvivesCompression.rendered_title, /Signatures Breakaway Gold/i);
+assert.doesNotMatch(prizmWorldCupSetSurvivesCompression.rendered_title, /Qatar 2022/i);
+
+const shieldCardNamePreservesPatchMeaning = renderResolvedTitle({
+  year: "2023",
+  manufacturer: "Panini",
+  product: "Flawless Football",
+  players: ["Rashee Rice"],
+  card_name: "Shield",
+  numerical_rarity: "1/1",
+  collector_number: "LTS",
+  rc: true,
+  auto: true,
+  team: "Chiefs"
+}, {
+  maxLength: 80
+});
+assert.ok(shieldCardNamePreservesPatchMeaning.rendered_title.length <= 80);
+assert.match(shieldCardNamePreservesPatchMeaning.rendered_title, /NFL Shield Patch/i);
+assert.match(shieldCardNamePreservesPatchMeaning.rendered_title, /RC Auto/i);
+
 const longTitle = renderResolvedTitle({
   year: "2015-16",
   brand: "Panini",
