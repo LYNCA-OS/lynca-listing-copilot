@@ -865,6 +865,17 @@ const openaiVectorForcedReady = await runProvider("d", {
 assert.equal(openaiVectorForcedReady.titlePayload.provider_options.force_vector_assist, true);
 assert.equal(openaiVectorForcedReady.titlePayload.provider_options.vector_index_ready, true);
 
+const openaiVectorRuntimeTimeout = await runProvider("d", {
+  evaluateOptions: {
+    forceVectorAssist: true,
+    vectorIndexReady: true,
+    runtimeEnv: {
+      VECTOR_QUERY_TIMEOUT_MS: "120000"
+    }
+  }
+});
+assert.equal(openaiVectorRuntimeTimeout.titlePayload.provider_options.vector_query_timeout_ms, 120000);
+
 {
   const recovered = await runProvider("d", {
     evaluateOptions: {

@@ -372,7 +372,8 @@ function providerOptionsForMode(providerMode, {
   disableVectorLazyMode = false,
   forceVectorAssist = false,
   vectorIndexReady = false,
-  coldStartBlind = false
+  coldStartBlind = false,
+  env = process.env
 } = {}) {
   const coldStartMode = coldStartBlind === true || providerMode === providerModes.EBAY_COLD_START_BLIND;
   const catalogAssist = providerMode === providerModes.OPENAI_CATALOG
@@ -383,7 +384,7 @@ function providerOptionsForMode(providerMode, {
   const sendHintToCloud = temporaryGt && sendCorrectedTitleHintToCloud === true;
   const forceVector = vectorAssist && forceVectorAssist === true;
   const vectorQueryTimeoutMs = positiveInteger(
-    process.env.CLOUD_LISTING_API_VECTOR_QUERY_TIMEOUT_MS || process.env.VECTOR_QUERY_TIMEOUT_MS,
+    env.CLOUD_LISTING_API_VECTOR_QUERY_TIMEOUT_MS || env.VECTOR_QUERY_TIMEOUT_MS,
     8000
   );
   return {
@@ -1572,6 +1573,17 @@ function perCardDecisionTrace(results = []) {
     vector_assist_eligibility: item.vector_assist_eligibility || null,
     vector_selected_candidate_id: item.vector_selected_candidate_id || "",
     vector_selected: Boolean(item.vector_selected_candidate_id || item.visual_vector_selected_count > 0),
+    participation_level: item.participation_level || "",
+    selected_candidate_decision: item.selected_candidate_decision || null,
+    candidate_application_trace: item.candidate_application_trace || [],
+    candidate_field_evidence: item.candidate_field_evidence || [],
+    candidate_activation_funnel: item.candidate_activation_funnel || null,
+    catalog_activation_funnel: item.catalog_activation_funnel || null,
+    vector_activation_funnel: item.vector_activation_funnel || null,
+    pre_observation_candidate_count: item.pre_observation_candidate_count || 0,
+    post_observation_candidate_count: item.post_observation_candidate_count || 0,
+    post_observation_selected_candidate_id: item.post_observation_selected_candidate_id || "",
+    retrieval_used_observation_fields: item.retrieval_used_observation_fields || [],
     open_set_readiness: item.open_set_readiness || null,
     open_set_status: item.open_set_status || "",
     catalog_gap_queue_candidate: item.catalog_gap_queue_candidate === true,
@@ -2125,6 +2137,18 @@ function evaluatedResultFromData({
     exact_anchor_expected_saved_ms: data.expected_saved_ms ?? data.exact_anchor_fast_lane_shadow?.expected_saved_ms ?? null,
     open_set_readiness: openSetReadiness,
     open_set_status: openSetReadiness?.status || null,
+    participation_level: data.participation_level || null,
+    selected_candidate_decision: data.selected_candidate_decision || null,
+    candidate_application_trace: Array.isArray(data.candidate_application_trace) ? data.candidate_application_trace : [],
+    candidate_field_evidence: Array.isArray(data.candidate_field_evidence) ? data.candidate_field_evidence : [],
+    candidate_activation_funnel: data.candidate_activation_funnel || null,
+    catalog_activation_funnel: data.catalog_activation_funnel || null,
+    vector_activation_funnel: data.vector_activation_funnel || null,
+    pre_observation_candidate_count: Number(data.pre_observation_candidate_count || 0),
+    post_observation_candidate_count: Number(data.post_observation_candidate_count || 0),
+    post_observation_selected_candidate_id: data.post_observation_selected_candidate_id || "",
+    retrieval_used_observation_fields: Array.isArray(data.retrieval_used_observation_fields) ? data.retrieval_used_observation_fields : [],
+    selected_candidate_verifier: data.selected_candidate_verifier || null,
     known_catalog_candidate_available: openSetReadiness?.known_catalog_candidate_available === true,
     catalog_gap_queue_candidate: openSetReadiness?.catalog_gap_queue_candidate === true,
     fail_closed_candidate: openSetReadiness?.fail_closed_candidate === true,
@@ -2233,6 +2257,18 @@ function technicalFailureResult({
     title: "",
     open_set_readiness: technicalOpenSetReadiness(code),
     open_set_status: "TECHNICAL_FAILURE",
+    participation_level: null,
+    selected_candidate_decision: null,
+    candidate_application_trace: [],
+    candidate_field_evidence: [],
+    candidate_activation_funnel: null,
+    catalog_activation_funnel: null,
+    vector_activation_funnel: null,
+    pre_observation_candidate_count: 0,
+    post_observation_candidate_count: 0,
+    post_observation_selected_candidate_id: "",
+    retrieval_used_observation_fields: [],
+    selected_candidate_verifier: null,
     known_catalog_candidate_available: false,
     catalog_gap_queue_candidate: false,
     fail_closed_candidate: false,
@@ -2313,6 +2349,62 @@ function summarize(results = [], elapsedMs = 0) {
   )))];
   const vectorPromptCandidateIds = [...new Set(results.flatMap((item) => Array.isArray(item.vector_prompt_candidate_ids) ? item.vector_prompt_candidate_ids : []))];
   const vectorLazySkipCount = results.filter((item) => item.vector_lazy_skip === true).length;
+  const participationLevelCounts = results.reduce((counts, item) => {
+    const key = normalizeText(item.participation_level || "UNKNOWN") || "UNKNOWN";
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+  const selectedCandidateDecisionCount = results.filter((item) => normalizeText(item.selected_candidate_decision?.selected_candidate_id)).length;
+  const selectedCandidateMatchLevelCounts = results.reduce((counts, item) => {
+    const key = normalizeText(item.selected_candidate_decision?.match_level || "UNKNOWN") || "UNKNOWN";
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+  const candidateApplicationTraceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_application_trace) ? item.candidate_application_trace.length : 0), 0);
+  const candidateFieldEvidenceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_field_evidence) ? item.candidate_field_evidence.length : 0), 0);
+  const candidateCanApplyEvidenceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_field_evidence)
+    ? item.candidate_field_evidence.filter((row) => row?.permission === "can_apply").length
+    : 0), 0);
+  const candidateSupportOnlyEvidenceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_field_evidence)
+    ? item.candidate_field_evidence.filter((row) => row?.permission === "support_only").length
+    : 0), 0);
+  const candidateSuggestOnlyEvidenceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_field_evidence)
+    ? item.candidate_field_evidence.filter((row) => row?.permission === "suggest_only").length
+    : 0), 0);
+  const preObservationCandidateCount = results.reduce((sum, item) => sum + Number(item.pre_observation_candidate_count || 0), 0);
+  const postObservationCandidateCount = results.reduce((sum, item) => sum + Number(item.post_observation_candidate_count || 0), 0);
+  const postObservationSelectedCandidateCount = results.filter((item) => normalizeText(item.post_observation_selected_candidate_id)).length;
+  const retrievalUsedObservationFields = [...new Set(results.flatMap((item) => (
+    Array.isArray(item.retrieval_used_observation_fields) ? item.retrieval_used_observation_fields : []
+  )))];
+  const candidateControlBlockedReasonCounts = results
+    .flatMap((item) => Array.isArray(item.selected_candidate_decision?.rejected_candidate_reasons)
+      ? item.selected_candidate_decision.rejected_candidate_reasons
+      : [])
+    .flatMap((row) => Array.isArray(row.reasons) ? row.reasons : [])
+    .reduce((counts, reason) => {
+      const key = normalizeText(reason || "UNKNOWN") || "UNKNOWN";
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {});
+  const candidateRawButNoApprovedCount = results.filter((item) => (
+    Number(item.catalog_activation_funnel?.raw_candidate_count || 0) + Number(item.vector_activation_funnel?.raw_candidate_count || 0) > 0
+      && Number(item.catalog_activation_funnel?.approved_candidate_count || 0) + Number(item.vector_activation_funnel?.approved_candidate_count || 0) === 0
+  )).length;
+  const candidateApprovedButNoPromptCount = results.filter((item) => (
+    Number(item.catalog_activation_funnel?.approved_candidate_count || 0) + Number(item.vector_activation_funnel?.approved_candidate_count || 0) > 0
+      && Number(item.catalog_activation_funnel?.prompt_candidate_count || 0) + Number(item.vector_activation_funnel?.prompt_candidate_count || 0) === 0
+  )).length;
+  const candidatePromptButNoEvidenceCount = results.filter((item) => (
+    Number(item.catalog_activation_funnel?.prompt_candidate_count || 0) + Number(item.vector_activation_funnel?.prompt_candidate_count || 0) > 0
+      && Array.isArray(item.candidate_field_evidence)
+      && item.candidate_field_evidence.length === 0
+  )).length;
+  const candidateEvidenceNoApplicationCount = results.filter((item) => (
+    Array.isArray(item.candidate_field_evidence)
+      && item.candidate_field_evidence.length > 0
+      && Number(item.candidate_activation_funnel?.applied_field_count || 0) === 0
+  )).length;
   const retrievalTitleAssistUsedCount = results.filter((item) => item.retrieval_title_assist_used === true).length;
   const storedVisualFeatureCount = results.reduce((sum, item) => sum + Number(item.visual_feature_count || 0), 0);
   const truncationRetryCount = results.filter((item) => item.provider_truncation_retry_attempted === true).length;
@@ -2583,6 +2675,42 @@ function summarize(results = [], elapsedMs = 0) {
     vector_prompt_candidate_ids: vectorPromptCandidateIds,
     vector_lazy_skip_count: vectorLazySkipCount,
     vector_lazy_skip_rate: rate(vectorLazySkipCount),
+    candidate_control_plane: {
+      participation_level_counts: participationLevelCounts,
+      selected_candidate_decision_count: selectedCandidateDecisionCount,
+      selected_candidate_match_level_counts: selectedCandidateMatchLevelCounts,
+      candidate_application_trace_count: candidateApplicationTraceCount,
+      candidate_field_evidence_count: candidateFieldEvidenceCount,
+      candidate_can_apply_evidence_count: candidateCanApplyEvidenceCount,
+      candidate_support_only_evidence_count: candidateSupportOnlyEvidenceCount,
+      candidate_suggest_only_evidence_count: candidateSuggestOnlyEvidenceCount,
+      pre_observation_candidate_count: preObservationCandidateCount,
+      post_observation_candidate_count: postObservationCandidateCount,
+      post_observation_selected_candidate_count: postObservationSelectedCandidateCount,
+      retrieval_used_observation_fields: retrievalUsedObservationFields,
+      raw_but_no_approved_count: candidateRawButNoApprovedCount,
+      approved_but_no_prompt_count: candidateApprovedButNoPromptCount,
+      prompt_but_no_evidence_count: candidatePromptButNoEvidenceCount,
+      evidence_but_no_application_count: candidateEvidenceNoApplicationCount,
+      blocked_reason_counts: candidateControlBlockedReasonCounts
+    },
+    participation_level_counts: participationLevelCounts,
+    selected_candidate_decision_count: selectedCandidateDecisionCount,
+    selected_candidate_match_level_counts: selectedCandidateMatchLevelCounts,
+    candidate_application_trace_count: candidateApplicationTraceCount,
+    candidate_field_evidence_count: candidateFieldEvidenceCount,
+    candidate_can_apply_evidence_count: candidateCanApplyEvidenceCount,
+    candidate_support_only_evidence_count: candidateSupportOnlyEvidenceCount,
+    candidate_suggest_only_evidence_count: candidateSuggestOnlyEvidenceCount,
+    pre_observation_candidate_count: preObservationCandidateCount,
+    post_observation_candidate_count: postObservationCandidateCount,
+    post_observation_selected_candidate_count: postObservationSelectedCandidateCount,
+    retrieval_used_observation_fields: retrievalUsedObservationFields,
+    candidate_raw_but_no_approved_count: candidateRawButNoApprovedCount,
+    candidate_approved_but_no_prompt_count: candidateApprovedButNoPromptCount,
+    candidate_prompt_but_no_evidence_count: candidatePromptButNoEvidenceCount,
+    candidate_evidence_but_no_application_count: candidateEvidenceNoApplicationCount,
+    candidate_blocked_reason_counts: candidateControlBlockedReasonCounts,
     open_set_status_counts: openSetStatusCounts,
     known_catalog_candidate_available_count: knownCatalogCandidateAvailableCount,
     catalog_gap_queue_candidate_count: catalogGapQueueCandidateCount,
@@ -2717,6 +2845,7 @@ export async function evaluateCloudListingApi({
   disableVectorLazyMode = false,
   forceVectorAssist = false,
   vectorIndexReady = false,
+  runtimeEnv = process.env,
   providerErrorRetries = 1,
   providerErrorRetryDelayMs = 1500,
   skipPreflight = false,
@@ -2733,7 +2862,8 @@ export async function evaluateCloudListingApi({
     sendCorrectedTitleHintToCloud,
     disableVectorLazyMode,
     forceVectorAssist,
-    vectorIndexReady
+    vectorIndexReady,
+    env: runtimeEnv
   };
 
   const limitCount = Math.max(0, Math.trunc(Number(limit) || 0));
@@ -2926,6 +3056,7 @@ export async function main(argv = process.argv, env = process.env) {
     skipPreflight,
     progress,
     checkpointPath,
+    runtimeEnv,
     fetchImpl: fetchImpl || globalThis.fetch
   });
   if (outPath) await writeJson(outPath, report);
@@ -2988,6 +3119,21 @@ export async function main(argv = process.argv, env = process.env) {
     `vector_prompt_candidate_ids: ${(report.vector_prompt_candidate_ids || []).join(",") || "n/a"}`,
     `vector_lazy_skip_count: ${report.vector_lazy_skip_count ?? "n/a"}`,
     `vector_lazy_skip_rate: ${report.vector_lazy_skip_rate ?? "n/a"}`,
+    `participation_level_counts: ${JSON.stringify(report.participation_level_counts || {})}`,
+    `selected_candidate_decision_count: ${report.selected_candidate_decision_count ?? "n/a"}`,
+    `selected_candidate_match_level_counts: ${JSON.stringify(report.selected_candidate_match_level_counts || {})}`,
+    `candidate_application_trace_count: ${report.candidate_application_trace_count ?? "n/a"}`,
+    `candidate_field_evidence_count: ${report.candidate_field_evidence_count ?? "n/a"}`,
+    `candidate_can_apply_evidence_count: ${report.candidate_can_apply_evidence_count ?? "n/a"}`,
+    `candidate_support_only_evidence_count: ${report.candidate_support_only_evidence_count ?? "n/a"}`,
+    `candidate_raw_but_no_approved_count: ${report.candidate_raw_but_no_approved_count ?? "n/a"}`,
+    `candidate_approved_but_no_prompt_count: ${report.candidate_approved_but_no_prompt_count ?? "n/a"}`,
+    `candidate_prompt_but_no_evidence_count: ${report.candidate_prompt_but_no_evidence_count ?? "n/a"}`,
+    `candidate_evidence_but_no_application_count: ${report.candidate_evidence_but_no_application_count ?? "n/a"}`,
+    `pre_observation_candidate_count: ${report.pre_observation_candidate_count ?? "n/a"}`,
+    `post_observation_candidate_count: ${report.post_observation_candidate_count ?? "n/a"}`,
+    `post_observation_selected_candidate_count: ${report.post_observation_selected_candidate_count ?? "n/a"}`,
+    `retrieval_used_observation_fields: ${(report.retrieval_used_observation_fields || []).join(",") || "n/a"}`,
     `open_set_status_counts: ${JSON.stringify(report.open_set_status_counts || {})}`,
     `known_catalog_candidate_available_count: ${report.known_catalog_candidate_available_count ?? "n/a"}`,
     `catalog_gap_queue_candidate_count: ${report.catalog_gap_queue_candidate_count ?? "n/a"}`,

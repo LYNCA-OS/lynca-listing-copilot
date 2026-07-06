@@ -81,6 +81,7 @@ import { vectorIndexReady, vectorRetrievalActive, vectorRetrievalConfig, vectorR
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
 import { buildCandidateContextSummary } from "../lib/listing/retrieval/candidate-context-summary.mjs";
+import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
@@ -4642,6 +4643,11 @@ function buildOpenSetReadiness(result = {}, {
 function withOpenSetReadiness(result = {}, context = {}) {
   if (!result || typeof result !== "object") return result;
   const openSetReadiness = buildOpenSetReadiness(result, context);
+  const candidateControl = buildCandidateSelectionPass({
+    result,
+    catalogContext: context.catalogContext || {},
+    vectorContext: context.vectorContext || {}
+  });
   const candidateContext = buildCandidateContextSummary({
     result,
     openSetReadiness,
@@ -4653,7 +4659,19 @@ function withOpenSetReadiness(result = {}, context = {}) {
   return applyColdStartSafeDraftPolicy({
     ...result,
     open_set_readiness: openSetReadiness,
-    candidate_context: candidateContext
+    candidate_context: candidateContext,
+    participation_level: candidateControl.participation_level,
+    selected_candidate_decision: candidateControl.selected_candidate_decision,
+    candidate_application_trace: candidateControl.candidate_application_trace,
+    candidate_field_evidence: candidateControl.candidate_field_evidence,
+    candidate_activation_funnel: candidateControl.candidate_activation_funnel,
+    catalog_activation_funnel: candidateControl.catalog_activation_funnel,
+    vector_activation_funnel: candidateControl.vector_activation_funnel,
+    pre_observation_candidate_count: candidateControl.pre_observation_candidate_count,
+    post_observation_candidate_count: candidateControl.post_observation_candidate_count,
+    post_observation_selected_candidate_id: candidateControl.post_observation_selected_candidate_id,
+    retrieval_used_observation_fields: candidateControl.retrieval_used_observation_fields,
+    selected_candidate_verifier: candidateControl.selected_candidate_verifier
   }, {
     providerOptions: context.providerOptions || {},
     mode: context.mode || result.provider_eval_mode || "",
@@ -5924,6 +5942,7 @@ async function createOpenAiTitle(payload, selection, {
       };
       catalogContext = {
         ...lateCatalogContext,
+        retrieval_phase: "provider_observation_catalog_lookup",
         promptPacket: false,
         catalog_exact_anchor_after_provider_observation: true,
         catalog_anchor_plan: catalogAnchorPlanFromFields(providerResolvedForRetrieval, {
@@ -5947,7 +5966,12 @@ async function createOpenAiTitle(payload, selection, {
         skip: lateLazyDecision
       });
     } else {
-      catalogContext = lateCatalogContext || catalogContext || await catalogContextPromise.catch(() => null);
+      catalogContext = lateCatalogContext
+        ? {
+          ...lateCatalogContext,
+          retrieval_phase: "provider_observation_catalog_lookup"
+        }
+        : catalogContext || await catalogContextPromise.catch(() => null);
       vectorContext = await prepareVectorCandidateContext({
         initialPayload: baseInitialPayload,
         signedImages,
@@ -5956,6 +5980,12 @@ async function createOpenAiTitle(payload, selection, {
         providerOptions,
         timingContext
       });
+      if (vectorContext) {
+        vectorContext = {
+          ...vectorContext,
+          retrieval_phase: "provider_observation_vector_lookup"
+        };
+      }
     }
   }
   if (!catalogContext) catalogContext = await catalogContextPromise.catch(() => null);
