@@ -159,6 +159,44 @@ assert.equal(openAiResult.usage.output_tokens, 9);
 assert.equal(openAiResult.usage.total_tokens, 20);
 assert.equal(openAiResult.usage.image_count, 1);
 
+let transientOpenAiCalls = 0;
+const transientOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  env: {
+    ...env,
+    OPENAI_LISTING_TRANSIENT_RETRIES: "1",
+    OPENAI_LISTING_TRANSIENT_RETRY_DELAY_MS: "0"
+  },
+  fetchImpl: async () => {
+    transientOpenAiCalls += 1;
+    if (transientOpenAiCalls === 1) {
+      return {
+        ok: false,
+        status: 520,
+        text: async () => "<!DOCTYPE html><html><body>Cloudflare 520</body></html>"
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "resp_retry_test",
+        output_text: "{\"title\":\"OpenAI Retry Test\",\"fields\":{\"player\":\"Recovered\"},\"unresolved\":[]}",
+        usage: {
+          input_tokens: 12,
+          output_tokens: 8,
+          total_tokens: 20
+        }
+      })
+    };
+  }
+});
+assert.equal(transientOpenAiCalls, 2);
+assert.equal(transientOpenAiResult.parsed.fields.player, "Recovered");
+assert.equal(transientOpenAiResult.transient_retry_attempted, true);
+assert.equal(transientOpenAiResult.transient_retry_attempts, 1);
+
 let invalidOpenAiModelFetchCalled = false;
 await assert.rejects(
   analyzeCardEvidenceWithOpenAiEmergency({
