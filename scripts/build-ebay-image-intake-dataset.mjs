@@ -147,6 +147,7 @@ export async function buildEbayImageIntakeDataset({
   const sealedLabelsOutPath = argValue(argv, "--sealed-labels-out", env.EBAY_IMAGE_INTAKE_SEALED_LABELS_OUT || defaultSealedLabelsOutPath);
   const limit = numberArg(argv, "--limit", Number(env.EBAY_IMAGE_INTAKE_LIMIT || 0));
   const uploadImages = hasFlag(argv, "--upload-images");
+  const progress = hasFlag(argv, "--progress") || /^(?:1|true|yes)$/i.test(String(env.EBAY_IMAGE_INTAKE_PROGRESS || ""));
   const baseUrl = uploadImages
     ? normalizeBaseUrl(argValue(argv, "--base-url", env.API_BASE_URL || ""))
     : "";
@@ -162,6 +163,9 @@ export async function buildEbayImageIntakeDataset({
       requestTimeoutMs
     }
     : null;
+  if (progress) {
+    process.stderr.write(`[image-intake] upload_images=${uploadImages} run_ids=${runIds.join(",")} limit=${limit || "all"}\n`);
+  }
 
   const items = [];
   const sealedLabels = [];
@@ -181,6 +185,9 @@ export async function buildEbayImageIntakeDataset({
       const labelKey = sealedLabelKey(answer);
       const images = [];
       for (const [imageIndex, blindImagePath] of (blindRow.image_paths || []).entries()) {
+        if (progress) {
+          process.stderr.write(`[image-intake] item ${items.length + 1}${limit ? `/${limit}` : ""} ${blindRow.case_id} image ${imageIndex + 1}/${blindRow.image_paths.length}\n`);
+        }
         images.push(await imageRecord({
           blindImagePath,
           caseId: blindRow.case_id,
