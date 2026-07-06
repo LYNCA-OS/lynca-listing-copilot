@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
@@ -159,5 +160,62 @@ assert.ok(writes.some((write) => write.table === "v4_field_evidence"));
 assert.ok(writes.some((write) => write.table === "v4_candidate_traces"));
 assert.ok(writes.some((write) => write.table === "v4_learning_events"));
 assert.ok(reads.includes("v4_production_quality_ledger"));
+
+const prewarmCalls = [];
+const fakePrewarmFetch = async (url, init = {}) => {
+  const parsed = new URL(String(url));
+  prewarmCalls.push({ path: parsed.pathname, method: init.method || "GET" });
+  if (parsed.pathname.includes("/rpc/search_catalog_candidates")) {
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify([{
+        identity_id: "catalog-1",
+        canonical_title: "1997-98 Bowman's Best Michael Jordan Best Performance",
+        fields: { year: "1997-98", players: ["Michael Jordan"], product: "Bowman's Best" },
+        retrieval_status: "reviewed",
+        source_type: "INTERNAL_CORRECTED_TITLE",
+        source_status: "REVIEWED_INTERNAL",
+        normalized_score: 0.8,
+        supporting_fields: ["year", "players", "product"]
+      }])
+    };
+  }
+  if (parsed.pathname.includes("/rpc/search_card_identities_hybrid")) {
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify([{
+        identity_id: "identity-1",
+        canonical_title: "1997-98 Bowman's Best Michael Jordan Best Performance",
+        fields: { year: "1997-98", players: ["Michael Jordan"], product: "Bowman's Best" },
+        retrieval_status: "reviewed",
+        normalized_score: 0.7,
+        supporting_fields: ["players"]
+      }])
+    };
+  }
+  return { ok: true, status: 200, text: async () => "[]" };
+};
+const prewarm = await runV4Prewarm({
+  env: {
+    ...env,
+    VECTOR_INDEX_READY: "true",
+    VERCEL_GIT_COMMIT_SHA: "abc123",
+    VERCEL_GIT_COMMIT_REF: "main",
+    PREWARM_CATALOG_TIMEOUT_MS: "1000",
+    PREWARM_HYBRID_TIMEOUT_MS: "1000"
+  },
+  fetchImpl: fakePrewarmFetch
+});
+assert.equal(prewarm.ok, true);
+assert.equal(prewarm.vector_index_ready, true);
+assert.equal(prewarm.deployment.git_commit_sha, "abc123");
+assert.ok(prewarm.steps.some((step) => step.name === "supabase_v4_tables" && step.ok));
+assert.ok(prewarm.steps.some((step) => step.name === "catalog_rpc" && step.ok && step.candidate_count === 1));
+assert.ok(prewarm.steps.some((step) => step.name === "postgres_hybrid_rpc" && step.ok && step.candidate_count === 1));
+assert.ok(prewarmCalls.some((call) => call.path.includes("/rpc/search_catalog_candidates")));
+assert.ok(prewarmCalls.some((call) => call.path.includes("/rpc/search_card_identities_hybrid")));
+assert.deepEqual(v4DeploymentInfo({}).git_commit_sha, "");
 
 console.log("v4 spine tests passed");

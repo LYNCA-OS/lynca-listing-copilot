@@ -22,6 +22,7 @@ const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_ASSET = 6;
 const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
+const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const defaultProviderOptions = Object.freeze({
@@ -2007,6 +2008,7 @@ async function handleFiles(fileList) {
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
+  void prewarmV4("file_selected");
   setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
   closeImageModal();
   const failures = [];
@@ -2646,6 +2648,21 @@ async function loadProviderStatus() {
   renderProviderControl();
 }
 
+async function prewarmV4(reason = "page_load") {
+  try {
+    const params = new URLSearchParams({ reason });
+    await fetch(`${PREWARM_API_ENDPOINT}?${params.toString()}`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      keepalive: true
+    });
+  } catch {
+    // Prewarm is opportunistic. Formal recognition must remain the source of truth.
+  }
+}
+
+void prewarmV4("page_load");
 await Promise.all([
   loadResolutionMap(),
   loadProviderStatus()
