@@ -83,6 +83,11 @@ import { buildCandidateContextSummary } from "../lib/listing/retrieval/candidate
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
+import {
+  imagesFromPreIngestionBundle,
+  readPreIngestionBundle,
+  summarizePreIngestionBundle
+} from "../lib/listing/preingestion/preingestion-bundle.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -228,6 +233,7 @@ function emptyTiming() {
     approved_memory_lookup_ms: 0,
     identity_cache_lookup_ms: 0,
     memory_lookup_ms: 0,
+    preingestion_bundle_load_ms: 0,
     signed_url_ms: 0,
     image_quality_check_ms: 0,
     recognition_preflight_ms: 0,
@@ -646,7 +652,15 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
 }
 
 async function sendListingResult(res, statusCode, result, timingContext, payload = {}) {
-  const timedResult = withTiming(finalizeDeterministicPresentation(result, payload), timingContext);
+  const finalizedResult = finalizeDeterministicPresentation(result, payload);
+  const preingestionSummary = payload.preingestion_summary || null;
+  const timedResult = withTiming({
+    ...finalizedResult,
+    preingestion_bundle_id: payload.preingestion_bundle_id || payload.preingestionBundleId || null,
+    bundle_used: payload.preingestion_bundle_used === true,
+    bundle_status: payload.preingestion_bundle_status || null,
+    preprocessing_summary: preingestionSummary
+  }, timingContext);
   const workflowResult = await attachWorkflowSidecarsToListingResult({
     result: timedResult,
     payload,
@@ -5919,8 +5933,69 @@ function explicitEmergencyFromPayload(payload = {}) {
   return payload.explicitEmergency === true || payload.explicit_emergency === true;
 }
 
+async function applyPreIngestionBundleToPayload(payload = {}, {
+  timingContext = null,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  const bundleId = payload.preingestion_bundle_id || payload.preingestionBundleId;
+  if (!bundleId) {
+    return {
+      applied: false,
+      reason: "bundle_id_missing"
+    };
+  }
+
+  const loaded = await timeAsync(timingContext, "preingestion_bundle_load_ms", () => readPreIngestionBundle({
+    bundleId,
+    env: process.env,
+    fetchImpl
+  }));
+  if (!loaded.found || !loaded.bundle) {
+    payload.preingestion_bundle_id = bundleId;
+    payload.preingestion_bundle_used = false;
+    payload.preingestion_bundle_status = loaded.reason || "bundle_not_found";
+    payload.preingestion_summary = {
+      bundle_id: bundleId,
+      status: payload.preingestion_bundle_status,
+      found: false
+    };
+    return {
+      applied: false,
+      reason: loaded.reason || "bundle_not_found"
+    };
+  }
+
+  const bundle = loaded.bundle;
+  const bundleImages = imagesFromPreIngestionBundle(bundle);
+  payload.preingestion_bundle_id = bundle.bundle_id;
+  payload.preingestionBundleId = bundle.bundle_id;
+  payload.preingestion_bundle = bundle;
+  payload.preingestion_bundle_used = true;
+  payload.preingestion_bundle_status = bundle.status || "READY";
+  payload.preingestion_summary = summarizePreIngestionBundle(bundle);
+  payload.preingestion_initial_evidence = bundle.initial_evidence || {};
+  payload.preingestion_evidence_patches = bundle.evidence_patches || [];
+  payload.images = bundleImages;
+
+  if (!payload.asset_id && bundle.asset_id) payload.asset_id = bundle.asset_id;
+  if (!payload.assetId && bundle.asset_id) payload.assetId = bundle.asset_id;
+  if (!payload.capture_quality && bundle.quality_summary?.capture_quality) {
+    payload.capture_quality = bundle.quality_summary.capture_quality;
+  }
+  if (!payload.captureQuality && bundle.quality_summary?.capture_quality) {
+    payload.captureQuality = bundle.quality_summary.capture_quality;
+  }
+
+  return {
+    applied: true,
+    bundle,
+    image_count: bundleImages.length
+  };
+}
+
 export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
+  applyPreIngestionBundleToPayload,
   applySafeRetrievalTitleAssist,
   boundedPayloadImagesFromImages,
   buildExactAnchorFastLaneShadow,
@@ -5990,6 +6065,33 @@ export default async function handler(req, res) {
     return;
   }
 
+  const timingContext = createTimingContext(payload);
+
+  if (payload.preingestion_bundle_id || payload.preingestionBundleId) {
+    try {
+      await applyPreIngestionBundleToPayload(payload, {
+        timingContext,
+        fetchImpl: globalThis.fetch
+      });
+    } catch (error) {
+      payload.preingestion_bundle_used = false;
+      payload.preingestion_bundle_status = "bundle_load_error";
+      payload.preingestion_summary = {
+        bundle_id: payload.preingestion_bundle_id || payload.preingestionBundleId || null,
+        status: "bundle_load_error",
+        reason: String(error.message || "bundle_load_error").slice(0, 180)
+      };
+      if (!Array.isArray(payload.images) || payload.images.length === 0) {
+        sendJson(res, 400, {
+          ok: false,
+          code: "preingestion_bundle_load_failed",
+          message: payload.preingestion_summary.reason
+        });
+        return;
+      }
+    }
+  }
+
   const payloadImages = Array.isArray(payload.images) ? payload.images : [];
   const maxPayloadImages = configuredMaxPayloadImages(process.env);
   const imageBatch = boundedPayloadImagesFromImages(payloadImages, { maxImages: maxPayloadImages });
@@ -6011,8 +6113,6 @@ export default async function handler(req, res) {
       deferred_image_count: imageBatch.deferred_image_count
     };
   }
-
-  const timingContext = createTimingContext(payload);
 
   try {
     const preProviderRescanResult = timeSync(timingContext, "image_quality_check_ms", () => createPreProviderRescanResult(payload));
