@@ -140,6 +140,25 @@ assert.match(duplicateAutoGrade.rendered_title, /Absolute/i);
 assert.doesNotMatch(duplicateAutoGrade.rendered_title, /relic\/auto/i);
 assert.match(duplicateAutoGrade.rendered_title, /Auto Relic/i);
 
+const dirtyAutoGradeRejected = renderResolvedTitle({
+  year: "2018",
+  manufacturer: "Panini",
+  product: "Encased",
+  players: ["Kobe Bryant"],
+  card_name: "Auto",
+  numerical_rarity: "20/99",
+  grade_company: "BGS",
+  card_grade: "9.5",
+  auto_grade: "9.5 GEM MINT",
+  grade_type: "CARD_AND_AUTO",
+  auto: true
+}, {
+  maxLength: 80
+});
+assert.match(dirtyAutoGradeRejected.rendered_title, /BGS 9\.5$/);
+assert.doesNotMatch(dirtyAutoGradeRejected.rendered_title, /9\.5\/9\.5/);
+assert.doesNotMatch(dirtyAutoGradeRejected.rendered_title, /GEM MINT/);
+
 const absoluteProductBrandOverlap = renderResolvedTitle({
   year: "2010-11",
   manufacturer: "Panini",
@@ -642,7 +661,7 @@ assert.match(statusNewBreedFieldFidelity.rendered_title, /\bNew Breed\b/i);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /20\/99/);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /PSA 10$/);
 
-const encasedGradeCompanyMissingStaysVisible = renderResolvedTitle({
+const encasedGradeCompanyMissingDoesNotInventGenericGrade = renderResolvedTitle({
   year: "2020-21",
   manufacturer: "Panini",
   product: "Encased Basketball",
@@ -655,10 +674,25 @@ const encasedGradeCompanyMissingStaysVisible = renderResolvedTitle({
 }, {
   maxLength: 85
 });
-assert.ok(encasedGradeCompanyMissingStaysVisible.rendered_title.length <= 85);
-assert.match(encasedGradeCompanyMissingStaysVisible.rendered_title, /\bEncased\b/i);
-assert.match(encasedGradeCompanyMissingStaysVisible.rendered_title, /SIG-GOLD BREAKAWAY/i);
-assert.match(encasedGradeCompanyMissingStaysVisible.rendered_title, /Grade 10$/);
+assert.ok(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title.length <= 85);
+assert.match(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /\bEncased\b/i);
+assert.match(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /SIG-GOLD BREAKAWAY/i);
+assert.doesNotMatch(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /Grade 10$/);
+
+const rookieMaterialSignaturesPreserveKnownComponents = renderResolvedTitle({
+  year: "2018",
+  manufacturer: "Panini America, Inc.",
+  product: "National Treasures",
+  players: ["Shohei Ohtani"],
+  card_name: "Rookie Material Signatures",
+  numerical_rarity: "20/25"
+}, {
+  maxLength: 80
+});
+assert.match(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /^2018 Panini National Treasures/i);
+assert.match(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /Rookie Patch Auto/i);
+assert.match(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /RC\b/i);
+assert.doesNotMatch(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /Panini America/i);
 
 const longTitle = renderResolvedTitle({
   year: "2015-16",
