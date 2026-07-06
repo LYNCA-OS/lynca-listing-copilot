@@ -667,6 +667,7 @@ const encasedGradeCompanyMissingDoesNotInventGenericGrade = renderResolvedTitle(
   product: "Encased Basketball",
   players: ["Anthony Edwards"],
   card_name: "SIG-GOLD BREAKAWAY",
+  surface_color: "Gold",
   serial_number: "9/10",
     numerical_rarity: "9/10",
   card_grade: "10",
@@ -676,7 +677,7 @@ const encasedGradeCompanyMissingDoesNotInventGenericGrade = renderResolvedTitle(
 });
 assert.ok(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title.length <= 85);
 assert.match(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /\bEncased\b/i);
-assert.match(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /SIG-GOLD BREAKAWAY/i);
+assert.match(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /Signatures Breakaway Gold/i);
 assert.doesNotMatch(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /Grade 10$/);
 
 const rookieMaterialSignaturesPreserveKnownComponents = renderResolvedTitle({
@@ -949,6 +950,28 @@ const smartCollapsedProductHierarchy = renderListingPresentation({
 });
 assert.match(smartCollapsedProductHierarchy.final_title, /Panini Prizm Black Test Player/);
 assert.doesNotMatch(smartCollapsedProductHierarchy.final_title, /Panini Panini|FOTL/);
+
+const bowmanOwnedByToppsButOutputAsBowman = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yoshinobu Yamamoto"],
+    card_name: "Rookie Auto-Gold Refractor",
+    surface_color: "Gold",
+    serial_number: "22/50",
+    numerical_rarity: "22/50",
+    rc: true,
+    auto: true,
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  }
+});
+assert.equal(bowmanOwnedByToppsButOutputAsBowman.final_title, "2024 Bowman Chrome Yoshinobu Yamamoto Rookie Auto Gold Refractor 22/50 RC PSA 10");
+assert.equal(bowmanOwnedByToppsButOutputAsBowman.final_title.length, 80);
+assert.doesNotMatch(bowmanOwnedByToppsButOutputAsBowman.final_title, /Topps Bowman/);
 
 const smartComposedCardVariantFinish = renderListingPresentation({
   resolved: {

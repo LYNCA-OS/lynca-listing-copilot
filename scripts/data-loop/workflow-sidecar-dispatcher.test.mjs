@@ -232,6 +232,26 @@ const nestedGapResult = {
   asset_id: payload.candidate_id,
   title: "2024 Panini Donruss Test Gap Draft",
   provider: "openai_legacy",
+  raw_provider_fields: {
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Donruss",
+    players: ["Test Player"],
+    card_name: "Net Marvels",
+    card_number: "NM-TP",
+    surface_color: "Gold",
+    serial_number: "2/10",
+    grade_company: "PSA",
+    card_grade: "10",
+    rc: true,
+    auto: true
+  },
+  resolved_fields: {
+    year: "2024",
+    manufacturer: "Panini",
+    players: ["Test Player"],
+    rc: true
+  },
   open_set_readiness: {
     catalog_gap_queue_candidate: true,
     status: "EVIDENCE_BACKED_NO_CATALOG",
@@ -281,6 +301,13 @@ assert.equal(nestedGapWrites[0][0].asset_id, payload.candidate_id);
 assert.equal(nestedGapWrites[0][0].gap_reason, "EVIDENCE_BACKED_NO_CATALOG");
 assert.equal(nestedGapWrites[0][0].internal_candidates[0].candidate_identity_id, "identity-blocked-1");
 assert.deepEqual(nestedGapWrites[0][0].metadata.catalog_gap_eligibility.conflict_blocked_count, 4);
+assert.equal(nestedGapWrites[0][0].proposed_identity_fields.card_name, "Net Marvels");
+assert.equal(nestedGapWrites[0][0].proposed_identity_fields.card_number, "NM-TP");
+assert.equal(nestedGapWrites[0][0].proposed_identity_fields.surface_color, "Gold");
+assert.equal(nestedGapWrites[0][0].proposed_identity_fields.auto, true);
+assert.equal(nestedGapWrites[0][0].proposed_instance_fields.serial_number, "2/10");
+assert.equal(nestedGapWrites[0][0].proposed_instance_fields.grade_company, "PSA");
+assert.equal(nestedGapWrites[0][0].observed_fields.current_image_instance.card_grade, "10");
 
 const eligibilityOnlyGapWrites = [];
 const eligibilityOnlyResult = {
