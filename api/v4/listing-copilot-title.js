@@ -22,6 +22,7 @@ import {
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 
 function titleFromResult(result = {}) {
   return result.final_title || result.rendered_title || result.title || null;
@@ -198,6 +199,7 @@ function addL1ReturnBarrierMetadata(response = {}, fastScout = {}) {
 
 function canReturnFastScoutL1(payload = {}, env = process.env) {
   if (String(env.ENABLE_V4_FAST_SCOUT_L1 || "true").toLowerCase() === "false") return false;
+  if (payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true || payload.disable_fast_scout_l1 === true) return false;
   return Array.isArray(payload.images) && payload.images.length > 0;
 }
 
@@ -427,12 +429,13 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (!getSessionFromRequest(req)) {
+  const workerAuthorized = isV4WorkerRequest(req, process.env);
+  if (!getSessionFromRequest(req) && !workerAuthorized) {
     sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
 
-  if (!enforceApiRateLimit(req, res, {
+  if (!workerAuthorized && !enforceApiRateLimit(req, res, {
     scope: "v4_listing_title",
     limit: 120,
     windowMs: 60_000,
@@ -453,7 +456,7 @@ export default async function handler(req, res) {
     sessionId,
     payload,
     routePlan,
-    operatorId: operatorIdFromRequest(req)
+    operatorId: workerAuthorized ? "v4-production-worker" : operatorIdFromRequest(req)
   });
   scheduleV4Background(createResultPromise, "recognition session create");
   const deferredCreateResult = {
@@ -552,13 +555,16 @@ export default async function handler(req, res) {
     patch: { status: v4SessionStatuses.OBSERVING }
   });
 
-  const progressiveProviderOptions = providerOptionsForV4ProgressiveL1({ payload, routePlan });
+  const forceL2Direct = payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true;
+  const progressiveProviderOptions = forceL2Direct
+    ? providerOptionsForV4BackgroundL2({ payload, routePlan })
+    : providerOptionsForV4ProgressiveL1({ payload, routePlan });
   const v2Payload = v2PayloadFor({
     payload,
     sessionId,
     routePlan,
     providerOptions: progressiveProviderOptions,
-    titleStageTarget: progressiveProviderOptions.v4_title_stage_target
+    titleStageTarget: forceL2Direct ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
   const v2Response = await callJsonHandler(v2ListingHandler, {
     method: "POST",

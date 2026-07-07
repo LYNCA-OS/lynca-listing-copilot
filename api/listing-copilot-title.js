@@ -85,6 +85,7 @@ import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { safeSurfaceColor } from "../lib/listing/parallel-policy.mjs";
+import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import {
   imagesFromPreIngestionBundle,
   readPreIngestionBundle,
@@ -6190,13 +6191,14 @@ export default async function handler(req, res) {
 
   const cookies = parseCookies(req.headers.cookie);
   const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
+  const workerAuthorized = isV4WorkerRequest(req, process.env);
 
-  if (!authenticated) {
+  if (!authenticated && !workerAuthorized) {
     sendJson(res, 401, { ok: false, message: "Unauthorized" });
     return;
   }
 
-  if (!enforceApiRateLimit(req, res, {
+  if (!workerAuthorized && !enforceApiRateLimit(req, res, {
     scope: "listing_title",
     limit: 120,
     windowMs: 60_000,
