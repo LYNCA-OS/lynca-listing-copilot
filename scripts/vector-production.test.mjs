@@ -495,6 +495,66 @@ assert.equal(exactCodeRow.anchor_agreement.exact_code_match, true);
 assert.equal(exactCodeRow.anchor_agreement.prompt_hard_filter_pass, true);
 assert.equal(vectorCandidatePacketAssistEligibility(catalogExactCodePacket).prompt_candidate_count, 1);
 
+const catalogLowMarginPromptPacket = buildVectorCandidatePacket({
+  open_set_decision: "LOW_MARGIN_MATCH",
+  sources: [
+    {
+      candidate_id: "catalog-low-margin-a",
+      candidate_identity_id: "identity-low-margin-a",
+      provider_id: "catalog",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "APPROVED_REFERENCE",
+      reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+      supporting_fields: ["subjects", "product", "collector_number"],
+      matched_fields: ["subjects", "product", "collector_number"],
+      reference_title: "2025 Bowman Chrome Jesus Made Spotlights Chrome Red",
+      fields: {
+        year: "2025",
+        product: "Bowman Chrome",
+        players: ["Jesus Made"],
+        collector_number: "BS-4",
+        card_name: "Spotlights Chrome",
+        surface_color: "Red"
+      }
+    },
+    {
+      candidate_id: "catalog-low-margin-b",
+      candidate_identity_id: "identity-low-margin-b",
+      provider_id: "catalog",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "APPROVED_REFERENCE",
+      reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+      supporting_fields: ["subjects", "product", "collector_number"],
+      matched_fields: ["subjects", "product", "collector_number"],
+      reference_title: "2025 Bowman Chrome Jesus Made Chrome Red",
+      fields: {
+        year: "2025",
+        product: "Bowman Chrome",
+        players: ["Jesus Made"],
+        collector_number: "BS-4",
+        card_name: "Chrome",
+        surface_color: "Red"
+      }
+    }
+  ]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025",
+    product: "Bowman Chrome",
+    players: ["Jesus Made"],
+    collector_number: "BS-4",
+    surface_color: "Red"
+  }
+});
+const lowMarginEligibility = vectorCandidatePacketAssistEligibility(catalogLowMarginPromptPacket);
+assert.equal(lowMarginEligibility.reason, "approved_identity_candidate_available");
+assert.equal(lowMarginEligibility.prompt_candidate_count, 2, "low-margin but anchor-safe approved candidates should still enter prompt for comparison");
+assert.deepEqual(buildVectorCandidateAssistPacket(catalogLowMarginPromptPacket).vector_retrieval.candidates.map((candidate) => candidate.candidate_id), [
+  "catalog-low-margin-a",
+  "catalog-low-margin-b"
+]);
+
 const tcgPartialCodePacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "ygopro-partial-code",
