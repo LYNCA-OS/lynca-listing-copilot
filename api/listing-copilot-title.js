@@ -562,85 +562,6 @@ function finalizerFieldSupportSet(result = {}) {
   return fields;
 }
 
-const candidateEvidencePresentationFieldAllowList = new Set([
-  "year",
-  "manufacturer",
-  "brand",
-  "product",
-  "set",
-  "subset",
-  "language",
-  "players",
-  "player",
-  "character",
-  "card_name",
-  "card_type",
-  "official_card_type",
-  "observable_components",
-  "insert",
-  "surface_color",
-  "parallel",
-  "parallel_family",
-  "parallel_exact",
-  "collector_number",
-  "card_number",
-  "checklist_code",
-  "tcg_card_number",
-  "print_run_denominator",
-  "numbered_to",
-  "serial_denominator",
-  "expected_serial_denominator",
-  "numerical_rarity",
-  "rc",
-  "first_bowman",
-  "ssp",
-  "case_hit",
-  "auto",
-  "patch",
-  "relic",
-  "jersey",
-  "one_of_one"
-]);
-
-const candidateEvidencePresentationTrustAllowList = new Set([
-  "APPROVED_REFERENCE",
-  "REVIEWED_INTERNAL",
-  "INTERNAL_APPROVED_HISTORY",
-  "OFFICIAL_CHECKLIST",
-  "CATALOG_FIELD_SUPPORT"
-]);
-
-function candidateEvidenceValueKey(value) {
-  if (Array.isArray(value)) return JSON.stringify(value.map(normalizeStringOrNull).filter(Boolean).sort());
-  return normalizeStringOrNull(value)?.toLowerCase() || "";
-}
-
-function candidateEvidenceFieldsForPresentation(result = {}) {
-  const rows = Array.isArray(result.candidate_field_evidence) ? result.candidate_field_evidence : [];
-  const grouped = new Map();
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    if (row.permission && row.permission !== "can_apply") continue;
-    const field = normalizeStringOrNull(row.field_name || row.field);
-    if (!field || !candidateEvidencePresentationFieldAllowList.has(field)) continue;
-    const trust = normalizeStringOrNull(row.source_trust)?.toUpperCase() || "";
-    if (trust && !candidateEvidencePresentationTrustAllowList.has(trust)) continue;
-    if (!finalizerValuePresent(row.value)) continue;
-    const key = candidateEvidenceValueKey(row.value);
-    if (!key) continue;
-    if (!grouped.has(field)) grouped.set(field, new Map());
-    const values = grouped.get(field);
-    if (!values.has(key)) values.set(key, row.value);
-  }
-
-  const output = {};
-  for (const [field, values] of grouped.entries()) {
-    if (values.size !== 1) continue;
-    output[field] = [...values.values()][0];
-  }
-  return output;
-}
-
 function finalizerValuePresent(value) {
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === "boolean") return value === true;
@@ -716,8 +637,7 @@ function finalResolvedFieldsForPresentation(result = {}) {
     result.resolved_fields,
     result.resolved,
     result.fields,
-    result.raw_provider_fields,
-    candidateEvidenceFieldsForPresentation(result)
+    result.raw_provider_fields
   ].filter((fields) => fields && typeof fields === "object" && !Array.isArray(fields));
   const [base = {}, ...rest] = fieldSources;
   const merged = rest.reduce((current, fields) => (
