@@ -304,6 +304,35 @@ function sessionL2Summary(statusPayload = {}) {
   };
 }
 
+function compactCandidateTrace(trace = {}) {
+  const rows = Array.isArray(trace.candidate_application_trace)
+    ? trace.candidate_application_trace
+    : [];
+  return {
+    participation_level: trace.participation_level || null,
+    selected_candidate_id: trace.selected_candidate_decision?.selected_candidate_id || trace.selected_candidate_id || "",
+    selection_margin: trace.selected_candidate_decision?.selection_margin ?? null,
+    selected_reason_codes: trace.selected_candidate_decision?.selected_reason_codes || [],
+    rejected_candidate_reasons: trace.selected_candidate_decision?.rejected_candidate_reasons || [],
+    catalog_activation_funnel: trace.catalog_activation_funnel || {},
+    vector_activation_funnel: trace.vector_activation_funnel || {},
+    candidate_application_trace: rows.map((row) => ({
+      candidate_id: row.candidate_id || "",
+      candidate_identity_id: row.candidate_identity_id || "",
+      candidate_lane: row.candidate_lane || "",
+      provider_id: row.provider_id || "",
+      source_type: row.source_type || "",
+      source_trust: row.source_trust || "",
+      participation_level: row.participation_level || "",
+      match_level: row.match_level || "",
+      blocked_fields: row.blocked_fields || [],
+      support_only_fields: row.support_only_fields || [],
+      can_apply_fields: row.can_apply_fields || [],
+      anchor_agreement: row.anchor_agreement || null
+    }))
+  };
+}
+
 async function pollSessionStatus({
   baseUrl,
   cookie,
@@ -325,18 +354,25 @@ async function pollSessionStatus({
       requestTimeoutMs
     });
     const summary = sessionL2Summary(last.data || {});
+    const candidateDebug = compactCandidateTrace(last.data?.session?.candidate_control_plane_trace || {});
     if (summary.assisted_draft_status === "READY") {
-      return { polls, ready: true, summary, last };
+      return { polls, ready: true, summary, candidateDebug, last };
     }
     if (summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT") {
-      return { polls, ready: false, summary, last };
+      return { polls, ready: false, summary, candidateDebug, last };
     }
     if (!summary.assisted_draft_status && summary.session_status === "DRAFT_READY") {
-      return { polls, ready: false, summary, last };
+      return { polls, ready: false, summary, candidateDebug, last };
     }
     await delay(intervalMs);
   }
-  return { polls, ready: false, summary: sessionL2Summary(last?.data || {}), last };
+  return {
+    polls,
+    ready: false,
+    summary: sessionL2Summary(last?.data || {}),
+    candidateDebug: compactCandidateTrace(last?.data?.session?.candidate_control_plane_trace || {}),
+    last
+  };
 }
 
 function titleTokens(value) {
@@ -519,6 +555,7 @@ async function runOne({
     l2_ready: Boolean(l2.ready),
     l2_poll_count: l2.polls,
     l2_status: l2.summary,
+    l2_candidate_debug: l2.candidateDebug || {},
     final_title: finalTitle,
     l1_return_reason: data.l1_return_reason || null,
     l1_return_barrier_version: data.l1_return_barrier_version || null,

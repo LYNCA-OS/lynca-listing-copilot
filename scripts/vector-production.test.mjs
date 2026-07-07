@@ -555,6 +555,39 @@ assert.deepEqual(buildVectorCandidateAssistPacket(catalogLowMarginPromptPacket).
   "catalog-low-margin-b"
 ]);
 
+const catalogLowMarginProductYearPromptPacket = buildVectorCandidatePacket({
+  open_set_decision: "LOW_MARGIN_MATCH",
+  sources: [{
+    candidate_id: "catalog-low-margin-product-year",
+    candidate_identity_id: "identity-low-margin-product-year",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["year", "product"],
+    matched_fields: ["year", "product"],
+    reference_title: "2024 Bowman Chrome Rookie Auto Gold Refractor",
+    fields: {
+      year: "2024",
+      product: "Bowman Chrome",
+      card_name: "Rookie Auto",
+      surface_color: "Gold"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2024",
+    product: "Bowman Chrome",
+    surface_color: "Gold"
+  }
+});
+assert.equal(
+  vectorCandidatePacketAssistEligibility(catalogLowMarginProductYearPromptPacket).prompt_candidate_count,
+  1,
+  "low-margin product-level candidates should enter prompt when product hierarchy plus year are anchored"
+);
+
 const tcgPartialCodePacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "ygopro-partial-code",
