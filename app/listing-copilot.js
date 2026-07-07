@@ -561,8 +561,8 @@ function storageSourceForImage(image) {
 
 function storageRoleForImage(image, imageIndex) {
   if (image.storageRole) return image.storageRole;
-  if (state.mode === "pair") return imageIndex === 0 ? "front_original" : "back_original";
-  return "front_original";
+  if (imageIsDerivedForRequest(image)) return image.storageRole || image.cropRole || "readability_derived";
+  return `image_${imageIndex + 1}_original`;
 }
 
 function storageDimensionsForImage(image) {
@@ -605,6 +605,8 @@ async function contentSha256Hex(source) {
 async function uploadAssetImage(asset, image, imageIndex) {
   const source = storageSourceForImage(image);
   if (image.objectPath || !source) return false;
+  const storageRole = storageRoleForImage(image, imageIndex);
+  image.storageRole = storageRole;
   const signatureHex = await fileSignatureHex(source);
   const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
   const dimensions = storageDimensionsForImage(image);
@@ -619,7 +621,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
     body: JSON.stringify({
       assetId: asset.id,
       imageId: image.id,
-      role: storageRoleForImage(image, imageIndex),
+      role: storageRole,
       fileName: image.name,
       contentType: image.originalType || source.type || "image/jpeg",
       size: source.size,
@@ -656,7 +658,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
     body: JSON.stringify({
       assetId: asset.id,
       imageId: image.id,
-      role: storageRoleForImage(image, imageIndex),
+      role: storageRole,
       objectPath: uploadPayload.upload.object_path,
       contentType: uploadPayload.upload.content_type,
       size: source.size,
@@ -1414,12 +1416,12 @@ function renderPreviews() {
   if (!state.assets.length) {
     closeImageModal();
     elements.previewSummary.textContent = "等待上传图片。";
-    elements.assetPreviewList.innerHTML = `<div class="empty-state">上传 10 张图片后，正反面配对模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>`;
+    elements.assetPreviewList.innerHTML = `<div class="empty-state">上传 10 张图片后，两图配对模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>`;
     return;
   }
 
   const orphanNote = state.mode === "pair" && state.files.length % 2 === 1
-    ? "最后 1 张图会作为缺少背面的资产处理。"
+    ? "最后 1 张图会作为单图资产处理。"
     : "";
 
   elements.previewSummary.textContent = `${state.files.length} 张图片，${state.assets.length} 个 card asset。${orphanNote}`;
@@ -1476,216 +1478,8 @@ function modalImagesForAsset(asset = {}) {
   return asset.images || [];
 }
 
-function evidenceEntriesFromContainer(container) {
-  if (!container) return [];
-  if (Array.isArray(container)) return container.flatMap(evidenceEntriesFromContainer);
-  if (typeof container !== "object") return [];
-  const directEntryKeys = [
-    "field",
-    "source_image_id",
-    "sourceImageId",
-    "source_type",
-    "sourceType",
-    "source_region",
-    "sourceRegion",
-    "image_role",
-    "imageRole",
-    "raw_text",
-    "visible_text",
-    "value"
-  ];
-  const isDirectEntry = directEntryKeys.some((key) => Object.prototype.hasOwnProperty.call(container, key));
-  if (isDirectEntry) return [container];
-  return Object.entries(container).flatMap(([field, value]) => {
-    return evidenceEntriesFromContainer(value).map((entry) => ({
-      field: entry.field || field,
-      ...entry
-    }));
-  });
-}
-
-function evidenceEntriesForSideDecision(result = {}) {
-  return [
-    result.field_evidence,
-    result.evidence?.field_evidence,
-    result.generated_evidence?.field_evidence,
-    result.evidence,
-    result.generated_evidence
-  ].flatMap(evidenceEntriesFromContainer);
-}
-
-function sourceImageIdForEvidence(entry = {}) {
-  return String(
-    entry.source_image_id
-      || entry.sourceImageId
-      || entry.image_id
-      || entry.imageId
-      || entry.crop_metadata?.source_image_id
-      || entry.cropMetadata?.sourceImageId
-      || ""
-  ).trim();
-}
-
-function imageIndexByEvidenceId(asset = {}) {
-  const indexById = new Map();
-  (asset.images || []).forEach((image, index) => {
-    if (image.id) indexById.set(String(image.id), index);
-  });
-  (asset.providerImages || []).forEach((image) => {
-    const sourceImageId = image.sourceImageId
-      || image.source_image_id
-      || image.cropMetadata?.source_image_id
-      || image.crop_metadata?.source_image_id
-      || "";
-    if (image.id && indexById.has(String(sourceImageId))) {
-      indexById.set(String(image.id), indexById.get(String(sourceImageId)));
-    }
-  });
-  return indexById;
-}
-
-function sideCueScore(entry = {}) {
-  const field = String(entry.field || "").toLowerCase();
-  const source = [
-    entry.source_type,
-    entry.sourceType,
-    entry.source_region,
-    entry.sourceRegion,
-    entry.image_role,
-    entry.imageRole,
-    entry.region,
-    entry.raw_text,
-    entry.visible_text,
-    entry.evidence_kind
-  ].filter(Boolean).join(" ").toLowerCase();
-
-  const score = { front: 0, back: 0 };
-  if (/\bfront\b|card_front|front_printed|obverse/.test(source)) score.front += 5;
-  if (/\bback\b|card_back|back_printed|reverse|checklist|copyright/.test(source)) score.back += 5;
-
-  if (["players", "player", "subject", "subjects", "character", "card_name", "surface_color", "parallel_exact", "parallel", "variant_or_parallel", "auto", "rc"].includes(field)) {
-    score.front += 2;
-  }
-  if (["year", "season_year", "product_year", "product", "product_or_set", "set", "collector_number", "checklist_code"].includes(field)) {
-    score.back += 2;
-  }
-  if (["serial_number", "grade_company", "card_grade", "grade", "auto_grade"].includes(field)) {
-    score.front += 1;
-    score.back += 1;
-  }
-  return score;
-}
-
-function sideDecisionForAsset(asset = null, result = null) {
-  if (!asset || state.mode !== "pair") return [];
-  const images = asset.images || [];
-  if (!images.length) return [];
-
-  const scores = images.map((image, imageIndex) => ({
-    imageIndex,
-    side: imageIndex === 0 ? "front" : "back",
-    front: 0,
-    back: 0,
-    source: "POSITIONAL",
-    confidence: "LOW",
-    reason: "按上传顺序判断，写手确认即可"
-  }));
-
-  const indexById = imageIndexByEvidenceId(asset);
-  evidenceEntriesForSideDecision(result || {}).forEach((entry) => {
-    const evidenceImageId = sourceImageIdForEvidence(entry);
-    if (!evidenceImageId || !indexById.has(evidenceImageId)) return;
-    const index = indexById.get(evidenceImageId);
-    const cue = sideCueScore(entry);
-    scores[index].front += cue.front;
-    scores[index].back += cue.back;
-  });
-
-  if (scores.length === 1) {
-    return [{
-      ...scores[0],
-      side: scores[0].front >= scores[0].back ? "front" : "back",
-      confidence: scores[0].front || scores[0].back ? "MEDIUM" : "LOW"
-    }];
-  }
-
-  const two = scores.slice(0, 2);
-  const naturalScore = two[0].front + two[1].back;
-  const swappedScore = two[0].back + two[1].front;
-  const hasEvidence = two.some((item) => item.front + item.back > 0);
-  const useSwapped = hasEvidence && swappedScore >= naturalScore + 4;
-  const strongNatural = hasEvidence && naturalScore >= swappedScore + 4;
-  const sideByIndex = useSwapped ? ["back", "front"] : ["front", "back"];
-  const confidence = useSwapped || strongNatural ? "HIGH" : hasEvidence ? "MEDIUM" : "LOW";
-  const source = useSwapped ? "EVIDENCE_SWAPPED" : strongNatural ? "EVIDENCE_CONFIRMED" : hasEvidence ? "EVIDENCE_WEAK" : "POSITIONAL";
-  const reason = {
-    EVIDENCE_SWAPPED: "证据显示上传顺序可能反了，系统已校正",
-    EVIDENCE_CONFIRMED: "正背面证据与上传顺序一致",
-    EVIDENCE_WEAK: "有部分正背面证据，但仍建议写手确认",
-    POSITIONAL: "未取得足够正背面证据，暂按上传顺序判断"
-  }[source];
-
-  return scores.map((item, index) => ({
-    ...item,
-    side: sideByIndex[index] || item.side,
-    confidence,
-    source,
-    reason
-  }));
-}
-
-function sideDisplayName(side = "") {
-  if (side === "front") return "正面 Front";
-  if (side === "back") return "背面 Back";
-  return "未判断";
-}
-
-function imageSideLabel(imageIndex, asset = null, result = null) {
-  if (state.mode !== "pair") return "图片 Image";
-  if (!result) return `图片 ${imageIndex + 1} · 生成后判断正背`;
-  const decision = sideDecisionForAsset(asset, result).find((item) => item.imageIndex === imageIndex);
-  if (decision) return `图片 ${imageIndex + 1} · ${sideDisplayName(decision.side)}`;
-  return `图片 ${imageIndex + 1} · 生成后判断正背`;
-}
-
-function imagePreviewLabel(image, imageIndex, asset = null, result = null) {
-  return imageSideLabel(imageIndex, asset, result);
-}
-
 function fieldCropStrip(asset) {
   return "";
-}
-
-function sideDecisionNotice(asset = null, result = null) {
-  const decisions = sideDecisionForAsset(asset, result);
-  if (state.mode !== "pair" || !decisions.length) return "";
-  const source = decisions[0]?.source || "POSITIONAL";
-  const confidence = decisions[0]?.confidence || "LOW";
-  const reason = decisions[0]?.reason || "";
-  const confidenceLabel = {
-    HIGH: "证据充分",
-    MEDIUM: "部分证据",
-    LOW: "需确认"
-  }[confidence] || "需确认";
-  const sourceClass = source === "EVIDENCE_SWAPPED" ? "side-swapped" : confidence === "HIGH" ? "side-confirmed" : "side-review";
-
-  return `
-    <div class="side-decision-panel ${sourceClass}">
-      <div>
-        <span>系统正背面判断</span>
-        <strong>${escapeHtml(confidenceLabel)}</strong>
-      </div>
-      <ul>
-        ${decisions.map((decision) => `
-          <li>
-            <b>图片 ${decision.imageIndex + 1}</b>
-            <em>${escapeHtml(sideDisplayName(decision.side))}</em>
-          </li>
-        `).join("")}
-      </ul>
-      <small>${escapeHtml(reason)}</small>
-    </div>
-  `;
 }
 
 function renderAssetRows() {
@@ -1745,17 +1539,13 @@ function assetRowHtml(asset) {
         <div class="asset-source">
           <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
             ${asset.images.map((image, imageIndex) => `
-              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开${escapeHtml(imageSideLabel(imageIndex, asset, result))}预览">
+              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开卡片图片预览">
                 <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
-                <span>${imageSideLabel(imageIndex, asset, result)}</span>
               </button>
             `).join("")}
           </div>
           <div class="preview-meta">
             <h3>资产 ${asset.index}</h3>
-            ${asset.images.map((image, imageIndex) => `
-              <p class="file-name">${imageSideLabel(imageIndex, asset, result)} · ${escapeHtml(image.name)}</p>
-            `).join("")}
             <span>${assetCountLabel(asset.images.length)}</span>
             ${fieldCropStrip(asset)}
           </div>
@@ -2040,11 +1830,12 @@ function resultBox(result, asset = null) {
 function TitleCardComponent(result, asset = null) {
   const confidence = normalizeConfidence(result.confidence);
   const failed = confidence === "FAILED";
+  const titlePending = v4WriterTitlePending(result);
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
   const generatedTitle = result.generatedTitle || result.final_title || result.title || "";
   const correctedTitle = result.correctedTitle ?? generatedTitle;
-  const copyDisabled = !failed && !correctedTitle;
-  const saveDisabled = result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
+  const copyDisabled = titlePending || (!failed && !correctedTitle);
+  const saveDisabled = titlePending || result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
   const retryProvider = emergencyProvider();
   const canEmergencyRetry = failed && retryProvider && result.provider !== "openai_legacy";
   const titleEdited = String(correctedTitle || "").trim() && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
@@ -2053,12 +1844,14 @@ function TitleCardComponent(result, asset = null) {
     skipped: "未留存",
     saving: "保存中…"
   }[result.feedbackStatus] || (titleEdited ? "保存编辑" : "接受");
-  const rejectDisabled = result.feedbackStatus === "saving";
+  const rejectDisabled = titlePending || result.feedbackStatus === "saving";
   const providerLabel = result.provider_label || providerById(result.provider)?.label || result.provider || "-";
-  const unavailableTitle = failed
+  const unavailableTitle = titlePending
+    ? "正在生成一段式标题"
+    : failed
     ? `标题暂不可用：${friendlyErrorSummary(result.reason)}`
     : "标题暂不可用";
-  const textareaValue = failed && !correctedTitle ? "" : (correctedTitle || unavailableTitle);
+  const textareaValue = titlePending || (failed && !correctedTitle) ? "" : (correctedTitle || unavailableTitle);
 
   return `
     <div class="title-output ${confidenceClass(confidence)}">
@@ -2072,9 +1865,8 @@ function TitleCardComponent(result, asset = null) {
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
         </div>
       </div>
-      ${sideDecisionNotice(asset, result)}
       ${assistedDraftNotice(result)}
-      <textarea data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}">${escapeHtml(textareaValue)}</textarea>
+      <textarea data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${titlePending ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
@@ -2211,16 +2003,16 @@ function assistedDraftNotice(result = {}) {
   const status = v4AssistedStatus(result);
   if (!status && result.full_assist_continued_after_l1 !== true) return "";
   const label = {
-    READY: result.l2UpgradeApplied ? "完整标题已更新" : "完整标题已生成",
-    RUNNING: "完整标题补全中",
-    PENDING: "完整标题补全中",
-    TIMEOUT: "完整标题暂未完成",
-    FAILED: "完整标题补全失败"
-  }[status || "PENDING"] || "完整标题补全中";
+    READY: "一段式标题已生成",
+    RUNNING: "一段式标题生成中",
+    PENDING: "一段式标题生成中",
+    TIMEOUT: "一段式标题暂未完成",
+    FAILED: "一段式标题生成失败"
+  }[status || "PENDING"] || "一段式标题生成中";
   const detail = {
-    READY: titleWasEditedByWriter(result) ? "已保留写手当前编辑，不自动覆盖人工标题。" : "系统已自动替换为更完整的一段式标题。",
-    RUNNING: "首屏草稿可先看，后台完成后会自动替换。",
-    PENDING: "首屏草稿可先看，后台完成后会自动替换。",
+    READY: "现在可以直接检查或编辑这一条标题。",
+    RUNNING: "系统正在使用内部 scout、目录和向量证据生成最终标题。",
+    PENDING: "系统正在使用内部 scout、目录和向量证据生成最终标题。",
     TIMEOUT: "当前标题仍可编辑，稍后可重试或保存人工修改。",
     FAILED: "当前标题仍可编辑，必要时使用单模型重试。"
   }[status || "PENDING"];
@@ -2249,16 +2041,14 @@ function renderImageModal() {
   const modalImages = modalImagesForAsset(asset);
   const imageIndex = Math.min(state.modal.imageIndex, modalImages.length - 1);
   const image = modalImages[imageIndex];
-  const sideLabel = imagePreviewLabel(image, imageIndex, asset, result);
-
   elements.imageModalImage.src = image.dataUrl;
   elements.imageModalImage.alt = image.name;
-  elements.imageModalSide.textContent = `${sideLabel}预览`;
+  elements.imageModalSide.textContent = "预览";
   elements.imageModalTitle.textContent = `资产 ${asset.index}`;
   elements.imageModalFileName.textContent = image.name;
   elements.imageModalSwitcher.innerHTML = modalImages.map((assetImage, index) => `
-    <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}">
-      ${escapeHtml(imagePreviewLabel(assetImage, index, asset, result))}
+    <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}" aria-label="切换卡片图片">
+      <span class="sr-only">切换卡片图片</span>
     </button>
   `).join("");
 }
@@ -2447,13 +2237,14 @@ async function processAsset(asset, options = {}) {
   const legacyResult = payload.legacy_v2_result && typeof payload.legacy_v2_result === "object"
     ? payload.legacy_v2_result
     : {};
-  const finalTitle = payload.writer_draft?.title
+  const writerTitlePending = v4PayloadWriterTitlePending(payload);
+  const finalTitle = writerTitlePending ? "" : (payload.writer_draft?.title
     || payload.final_title
     || legacyResult.final_title
     || legacyResult.rendered_title
     || legacyResult.title
     || payload.title
-    || "";
+    || "");
   const resolvedFields = payload.resolved_fields || legacyResult.resolved_fields || legacyResult.resolved || legacyResult.fields || {};
   const providerResult = payload.provider_result || {};
   const confidence = providerResult.confidence || legacyResult.confidence || payload.confidence || (finalTitle ? "MEDIUM" : "FAILED");
@@ -2481,6 +2272,7 @@ async function processAsset(asset, options = {}) {
     rendered_title: payload.final_title || legacyResult.rendered_title || finalTitle,
     generatedTitle: finalTitle,
     correctedTitle: finalTitle,
+    writerTitlePending,
     confidence,
     provider: providerResult.provider || legacyResult.provider || payload.provider || state.selectedProvider || null,
     model_id: providerResult.model || legacyResult.model_id || payload.model_id || "",
@@ -2586,7 +2378,7 @@ async function processTitles() {
   elements.processButton.disabled = !canGenerateTitles();
   setProcessButtonBusy(false);
   const pendingL2 = pendingAssistedDraftCount();
-  setStatus(pendingL2 ? `${processingCompletionStatus()} 后台继续补全 ${pendingL2} 张完整标题。` : processingCompletionStatus(), {
+  setStatus(pendingL2 ? `${processingCompletionStatus()} 后台继续生成 ${pendingL2} 张一段式标题。` : processingCompletionStatus(), {
     busy: pendingL2 > 0
   });
 }
@@ -2682,6 +2474,22 @@ function isV4Result(result = {}) {
   return Boolean(result.recognition_session_id && result.v4_schema_version);
 }
 
+function v4PayloadWriterTitlePending(payload = {}) {
+  if (!payload || typeof payload !== "object") return false;
+  if (payload.title_stage === "L1_INTERNAL_SCOUT") return true;
+  const status = String(payload.assisted_draft_status || "").toUpperCase();
+  const hasVisibleTitle = String(payload.writer_draft?.title || payload.final_title || payload.title || "").trim();
+  return !hasVisibleTitle && (status === "PENDING" || status === "RUNNING") && payload.full_assist_continued_after_l1 === true;
+}
+
+function v4WriterTitlePending(result = {}) {
+  if (!isV4Result(result)) return false;
+  if (result.title_stage === "L1_INTERNAL_SCOUT") return true;
+  const status = v4AssistedStatus(result);
+  const hasVisibleTitle = String(result.correctedTitle || result.generatedTitle || result.final_title || result.title || "").trim();
+  return !hasVisibleTitle && (status === "PENDING" || status === "RUNNING");
+}
+
 function v4AssistedStatus(result = {}) {
   return String(result.assisted_draft_status || result.l2AssistedDraftStatus || result.provider_result_summary?.assisted_draft_status || "").toUpperCase();
 }
@@ -2725,6 +2533,7 @@ function applyV4AssistedDraftUpdate(result = {}, session = {}) {
   const oldGenerated = String(result.generatedTitle || result.final_title || result.title || "").trim();
   const writerEdited = titleWasEditedByWriter(result);
   result.title_stage = "L2_ASSISTED_DRAFT";
+  result.writerTitlePending = false;
   result.assisted_draft = finalTitle;
   result.assistedTitle = finalTitle;
   result.l2UpgradeApplied = finalTitle !== oldGenerated;
@@ -2746,8 +2555,8 @@ function applyV4AssistedDraftUpdate(result = {}, session = {}) {
     result.field_states = session.field_states;
   }
   result.feedbackMessage = writerEdited
-    ? "后台完整标题已生成；保留你当前的人工编辑。"
-    : "后台完整标题已自动更新。";
+    ? "一段式标题已生成；保留你当前的人工编辑。"
+    : "一段式标题已生成。";
   return true;
 }
 
@@ -2778,7 +2587,7 @@ async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), a
   if (performance.now() - startedAt > ASSISTED_DRAFT_MAX_POLL_MS) {
     result.l2AssistedDraftStatus = "TIMEOUT";
     result.assisted_draft_status = "TIMEOUT";
-    result.feedbackMessage = result.feedbackMessage || "后台完整标题暂未完成，当前标题仍可编辑。";
+    result.feedbackMessage = result.feedbackMessage || "一段式标题暂未完成，请稍后重试或使用单模型重试。";
     stopV4AssistedDraftPolling(resultIndex);
     renderResults();
     return;
@@ -2798,7 +2607,7 @@ async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), a
       if (upgraded || v4AssistedStatus(result) === "READY") {
         stopV4AssistedDraftPolling(resultIndex);
         const remaining = pendingAssistedDraftCount();
-        setStatus(remaining ? `后台完整标题已更新，剩余 ${remaining} 张继续补全中…` : "完整标题已全部更新。");
+        setStatus(remaining ? `一段式标题已生成，剩余 ${remaining} 张继续生成中…` : "一段式标题已全部生成。");
         return;
       }
     }

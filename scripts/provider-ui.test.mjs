@@ -19,12 +19,13 @@ assert.match(js, /workflowReadinessText/, "frontend should render server workflo
 assert.match(js, /workflowAllowsGeneration/, "frontend should gate generation on the cloud workflow readiness preflight");
 assert.match(js, /workflow_readiness/, "frontend should read integrated workflow readiness from provider status");
 assert.doesNotMatch(js, /state\.selectedProvider \|\| state\.providerStatus\?\.fallback_available/, "frontend must not allow local fallback to bypass cloud readiness");
-assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to front/back paired recognition");
-assert.match(html, /name="assetMode" value="pair" checked/, "front/back paired recognition should be the checked default control");
-assert.match(js, /sideDecisionForAsset/, "frontend should compute a visible front/back decision after recognition");
-assert.match(js, /sideDecisionNotice\(asset, result\)/, "result cards should show the final front/back decision");
-assert.match(js, /source_image_id/, "front/back decision should use provider evidence image ids when available");
-assert.match(js, /EVIDENCE_SWAPPED/, "front/back decision should detect when upload order appears swapped");
+assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to two-image paired recognition");
+assert.match(html, /name="assetMode" value="pair" checked/, "two-image paired recognition should be the checked default control");
+assert.match(html, /两图配对/, "paired upload mode should be labeled without front/back judgment");
+assert.match(html, /不做正背面判断/, "paired upload copy should explicitly avoid front/back judgment");
+assert.doesNotMatch(js, /sideDecisionForAsset/, "frontend must not compute a front/back side decision");
+assert.doesNotMatch(js, /sideDecisionNotice\(asset, result\)/, "result cards must not show front/back decision panels");
+assert.doesNotMatch(js, /EVIDENCE_SWAPPED/, "frontend must not swap uploaded images based on side evidence");
 assert.match(js, /body\.provider = provider/, "title requests should include the selected provider");
 assert.match(js, /defaultProviderOptions/, "frontend should centralize default provider options");
 assert.match(js, /single_model_fast:\s*false/, "frontend default path should not skip evidence completion");
@@ -53,7 +54,8 @@ assert.match(js, /fetch\(TITLE_API_ENDPOINT/, "title requests should go through 
 assert.match(js, /fetch\(FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend should call the asset-level fast scout prewarm endpoint");
 assert.match(js, /fetch\(`\$\{SESSION_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\)\}`/, "frontend should poll session status using the durable recognition_session_id");
 assert.match(js, /startV4AssistedDraftPolling\(result\)/, "frontend should start L2 assisted-draft polling after each L1 response");
-assert.match(js, /applyV4AssistedDraftUpdate/, "frontend should apply L2 assisted drafts back into the visible one-line title");
+assert.match(js, /applyV4AssistedDraftUpdate/, "frontend should place the first writer-visible one-line title when L2 is ready");
+assert.match(js, /v4WriterTitlePending/, "frontend should keep internal L1 scout output out of the writer title box");
 assert.match(js, /titleWasEditedByWriter/, "L2 assisted drafts must not overwrite writer-edited titles");
 assert.match(js, /stopAllV4AssistedDraftPolling/, "frontend should clear stale L2 polling when files or mode change");
 assert.match(js, /signed_upload_url/, "frontend should upload through signed URLs");
@@ -77,6 +79,7 @@ assert.match(js, /modalImagesForAsset/, "image modal should be limited to writer
 assert.match(js, /cropMetadata/, "frontend should preserve crop metadata through request and review payloads");
 assert.match(js, /sourceBlob/, "derived crop images should be uploadable without service credentials");
 assert.match(js, /storageRoleForImage\(image, imageIndex\)/, "storage upload should use crop-specific image roles");
+assert.match(js, /image_\$\{imageIndex \+ 1\}_original/, "new original uploads should use neutral image slot roles instead of front/back roles");
 assert.match(api, /primaryImagesFromImages/, "title API should separate primary card images from derived crops");
 assert.match(api, /BGS\/Beckett slab discipline/, "provider prompt should explicitly separate BGS card grade and autograph grade");
 assert.match(api, /never copy card_grade into auto_grade/, "provider prompt must forbid BGS auto-grade scaffolding");
@@ -187,7 +190,7 @@ assert.match(js, /progressStepForTarget/, "progress should move slowly and wait 
 assert.doesNotMatch(js, /moduleRevealCount/, "title-only UI should not stage module reveal state");
 assert.doesNotMatch(js, /revealResultModules/, "title-only UI should not animate structured module reveal");
 assert.match(js, /loading-spinner/, "pending cards should render an obvious waiting spinner");
-assert.match(js, /assistedDraftNotice/, "title cards should visibly explain background L2 title upgrades");
+assert.match(js, /assistedDraftNotice/, "title cards should visibly explain pending final one-line title generation");
 assert.match(js, /setStatus\(message,\s*options\s*=\s*\{\}\)/, "status updates should support explicit busy rendering");
 assert.match(js, /status-spinner/, "global status should render a spinner while busy");
 assert.match(js, /status-dots/, "global status should render animated waiting dots while busy");
@@ -196,6 +199,8 @@ assert.match(js, /setProcessButtonBusy/, "generate button should show a busy sta
 assert.match(js, /friendlyErrorSummary/, "failed cards should explain why title output is unavailable");
 assert.match(js, /placeholder="\$\{escapeHtml\(unavailableTitle\)\}"/, "failed cards should render an editable empty draft with the error as placeholder");
 assert.match(js, /data-copy-result/, "copy buttons should read the latest edited title from state instead of stale HTML data");
+assert.doesNotMatch(js, /imageSideLabel|imagePreviewLabel/, "writer UI should not render visible image slot labels");
+assert.doesNotMatch(js, /<span>\$\{imageSideLabel/, "thumbnail cards should show bare images without image slot badges");
 assert.doesNotMatch(js, /flushActiveModuleEditForResult/, "saving should no longer depend on hidden module edit flushing");
 assert.doesNotMatch(js, /moduleInput\.dataset\.dirty = "true"/, "title-only UI should not keep module dirty state");
 assert.match(api, /scope: "listing_title"[\s\S]*limit: 120/, "title generation API should default to a multi-tab friendly rate limit");
@@ -203,9 +208,9 @@ assert.match(css, /\.provider-option\.active/, "selected provider should have a 
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.title-output/, "title card output should keep a stable card layout");
 assert.match(css, /\.reject-button/, "reject action should have a stable UI hook");
-assert.match(css, /\.side-decision-panel/, "front/back decision should have a visible result panel");
-assert.match(css, /\.side-decision-panel\.side-confirmed/, "confirmed front/back decisions should be visually distinct");
-assert.match(css, /\.side-decision-panel\.side-swapped/, "swapped front/back decisions should be visually distinct");
+assert.doesNotMatch(css, /\.side-decision-panel/, "front/back decision panels should be removed from the title-only UI");
+assert.doesNotMatch(css, /\.side-decision-panel\.side-confirmed/, "confirmed front/back side states should not be styled");
+assert.doesNotMatch(css, /\.side-decision-panel\.side-swapped/, "swapped front/back side states should not be styled");
 assert.match(css, /\.module-token\.needs-review/, "low-confidence module tokens should be yellow-highlighted");
 assert.match(css, /transition: width 900ms/, "progress bar width should animate slowly instead of jumping");
 assert.match(css, /\.pending-module-grid span\.module-active/, "pending recognition modules should show staged active states");
@@ -215,6 +220,9 @@ assert.match(css, /\.loading-spinner/, "pending cards should show a loading spin
 assert.match(css, /\.status-spinner/, "global upload/recognition status should show a spinner");
 assert.match(css, /\.status-dots i/, "global upload/recognition status should show waiting dots");
 assert.match(css, /\.pending-wave/, "pending cards should include a wave loading animation");
+assert.match(css, /\.sr-only/, "modal image switcher should keep accessible labels without visible image-slot text");
+assert.match(css, /\.modal-side-button::before/, "modal image switcher should use compact dots instead of image-slot labels");
+assert.doesNotMatch(css, /\.thumb-button span/, "thumbnail cards should not render image slot badges");
 assert.match(css, /\.assisted-draft-status/, "title cards should show background assisted-draft status");
 assert.match(css, /\.assisted-draft-status\.ready/, "completed L2 assisted drafts should have a distinct ready state");
 assert.match(css, /\.drop-zone\.status-busy::after/, "busy upload zone should show an animated progress sweep");
@@ -330,9 +338,9 @@ const backImage = {
   }))
 };
 const providerImages = __listingCopilotAppTestHooks.imagesForProvider([frontImage, backImage]);
-assert.equal(providerImages.length, 8, "pair mode provider payload should keep two originals plus six bounded crops");
-assert.equal(providerImages[0], frontImage, "front original should be preserved first");
-assert.equal(providerImages[1], backImage, "back original should be preserved second");
+assert.equal(providerImages.length, 8, "pair mode provider payload should keep two original images plus six bounded crops");
+assert.equal(providerImages[0], frontImage, "first uploaded original should be preserved first");
+assert.equal(providerImages[1], backImage, "second uploaded original should be preserved second");
 assert.equal(providerImages.filter((image) => image.derived).length, 6, "field crops should be bounded across the whole card asset");
 assert.deepEqual(
   providerImages.slice(2).map((image) => image.id),
@@ -349,7 +357,7 @@ assert.equal(boundedRequestImages.length, 14, "oversized provider image batches 
 assert.deepEqual(
   boundedRequestImages.slice(0, 2).map((image) => image.id),
   ["front", "back"],
-  "bounded request batches must preserve primary front/back images"
+  "bounded request batches must preserve primary paired images"
 );
 assert.deepEqual(
   boundedRequestImages.slice(2).map((image) => image.id),

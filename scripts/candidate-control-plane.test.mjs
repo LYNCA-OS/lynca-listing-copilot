@@ -175,9 +175,69 @@ function testFunnelAndEvidenceTraceFailClosedOnConflict() {
   assert.ok(conflictTrace.forbidden_fields.includes("card_grade"));
 }
 
+function testLowMarginCandidateOnlySupportsCurrentImageFields() {
+  const topCandidate = {
+    candidate_id: "catalog-low-margin-a",
+    candidate_identity_id: "identity-low-a",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "REVIEWED_INTERNAL",
+    match_score: 0.8,
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025",
+      product: "Bowman Chrome",
+      players: ["Jesus Made"],
+      card_name: "Spotlights",
+      parallel_exact: "Red Refractor",
+      collector_number: "BS-4"
+    }
+  };
+  const closeCandidate = {
+    ...topCandidate,
+    candidate_id: "catalog-low-margin-b",
+    candidate_identity_id: "identity-low-b",
+    fields: {
+      ...topCandidate.fields,
+      card_name: "Spotlight Signatures",
+      collector_number: "BSA-JM"
+    }
+  };
+  const control = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        year: "2025",
+        product: "Bowman Chrome",
+        players: ["Jesus Made"],
+        parallel_exact: "Red Refractor"
+      },
+      catalog_candidate_packet: packet([topCandidate, closeCandidate], {
+        raw_candidate_count: 2,
+        approved_candidate_count: 2,
+        conflict_blocked_count: 0,
+        prompt_candidate_count: 2,
+        prompt_candidate_ids: ["catalog-low-margin-a", "catalog-low-margin-b"]
+      })
+    }
+  });
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
+  assert.deepEqual(control.selected_candidate_decision.selected_reason_codes, ["low_margin_no_application"]);
+  assert.equal(control.selected_candidate_verifier.enabled, true);
+  assert.equal(control.selected_candidate_verifier.status, "current_image_support_only");
+  assert.equal(control.low_margin_safe_field_application.status, "evidence_support_only");
+  assert.equal(control.low_margin_safe_field_application.renderer_application_allowed, false);
+  assert.ok(control.low_margin_safe_field_application.supported_fields.includes("product"));
+  assert.ok(control.low_margin_safe_field_application.supported_fields.includes("parallel_exact"));
+  assert.ok(control.low_margin_safe_field_application.verifier_required_fields.includes("collector_number"));
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testFunnelAndEvidenceTraceFailClosedOnConflict();
+testLowMarginCandidateOnlySupportsCurrentImageFields();
 
 console.log("candidate-control-plane tests passed");
-

@@ -2502,7 +2502,7 @@ function createPreProviderRescanResult(payload = {}) {
 function storageRoleIsDerived(role = "") {
   const normalized = String(role || "").trim().toLowerCase();
   if (!normalized) return false;
-  return !["front_original", "back_original", "front", "back", "primary"].includes(normalized);
+  return !["image_1_original", "image_2_original", "front_original", "back_original", "front", "back", "primary"].includes(normalized);
 }
 
 function imageIsDerived(image = {}) {
@@ -2849,7 +2849,7 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "Fill every directly visible core field. Missing serial, grade, or exact parallel must not erase visible year, product, set, or players.",
     "Leave only unreadable or uncertain high-risk fields empty.",
     "Use these downstream title modules: Standard Card Grammar = Year -> normalized Manufacturer/Product/Set -> Subject -> Card Name -> Release Variant -> Print Finish -> Numerical Rarity -> Descriptive Rarity -> Card Number -> Search Optimization -> Grading Info. TCG keeps its separate grammar. Deterministic code renders and compresses the final English title.",
-    "Sports card_name rule: if the front/back prints a named card title or segment such as Best Performance, Club Legends, Gusto, Power Partnership, Canvas Creations, Rookie Ticket, or Next Stop Signatures, put the literal card name in fields.card_name when it is the card's named segment; use insert only for formal insert/set identity when that is the better structured field. Renderer places card_name after Subject.",
+    "Sports card_name rule: if any uploaded image prints a named card title or segment such as Best Performance, Club Legends, Gusto, Power Partnership, Canvas Creations, Rookie Ticket, or Next Stop Signatures, put the literal card name in fields.card_name when it is the card's named segment; use insert only for formal insert/set identity when that is the better structured field. Renderer places card_name after Subject.",
     "High-value material/card-name rule: when directly visible, preserve words such as NFL Shield, Logoman, Laundry Tag, Platinum Bar, Spotlight/Spotlights, Rookie Material Signatures, and Rookie Patch Auto in card_name or observable_components. If only a generic patch is visible, keep Patch and do not invent Shield/Logoman/Platinum.",
     "Chrome finish rule: if Refractor/Holo/Prizm/Chrome finish wording is printed on the card/slab/back or is directly readable as a named card text, capture it in card_name or print finish. If it is only visual shine without text/catalog support, keep only surface_color.",
     "Release Variant rule: release variant means layout/composition/design-direction differences within the same Card Name/Card Type, such as Horizontal, Vertical, Variation, Photo Variation, Image Variation, Design Variation, or International. Do not put FOTL, Hobby, Retail, Choice, Fast Break, Sapphire, colors, foil, holo, refractor, rarity, product, or set into Release Variant.",
@@ -3011,7 +3011,8 @@ function vectorCandidatePromptSection(packet = null) {
     "- Field support rows are not identity candidates. They are approved/internal/official vocabulary or legality support only.",
     "- Use a field support value only when the same field is visible or otherwise supported in the current uploaded images.",
     "- Never use marketplace seller titles, reference serial numerators, reference grade, or reference cert numbers as current-card facts.",
-    "- First read the current uploaded front/back images and crops.",
+    "- First read all current uploaded card images and crops in upload order.",
+    "- Do not decide, swap, or report front/back side labels; the system treats paired images as same-card evidence only.",
     "- You may select one candidate, partially use field support, reject all candidates, or return NOT_AVAILABLE.",
     "- Reject any candidate field that conflicts with current card/slab printed text, current serial, current collector/checklist code, current grade label, or current subject count.",
     "- Print-run numerator and grade must come only from the current card/slab image, never from a reference candidate. Reference candidates may support only the denominator/numbered_to.",
@@ -4673,6 +4674,7 @@ function withOpenSetReadiness(result = {}, context = {}) {
     post_observation_candidate_count: candidateControl.post_observation_candidate_count,
     post_observation_selected_candidate_id: candidateControl.post_observation_selected_candidate_id,
     retrieval_used_observation_fields: candidateControl.retrieval_used_observation_fields,
+    low_margin_safe_field_application: candidateControl.low_margin_safe_field_application,
     selected_candidate_verifier: candidateControl.selected_candidate_verifier
   }, {
     providerOptions: context.providerOptions || {},
@@ -6244,8 +6246,8 @@ export default async function handler(req, res) {
       ok: false,
       code: "invalid_image_payload",
       message: imageBatch.reason === "too_many_primary_images"
-        ? "系统无法判断这组图片属于同一张卡还是多张卡，请使用单图或正反面配对模式重新上传。"
-        : "系统没有读到可用于识别的卡片原图，请重新上传正面或正反面图片。"
+        ? "系统无法判断这组图片属于同一张卡还是多张卡，请使用单图或两图配对模式重新上传。"
+        : "系统没有读到可用于识别的卡片原图，请重新上传卡片图片或两图配对图片。"
     });
     return;
   }

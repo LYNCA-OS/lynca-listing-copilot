@@ -26,7 +26,7 @@
             <div>
               <p class="eyebrow">内部上架工具</p>
               <h1>元宇宙卡牌标题生成助手</h1>
-              <p class="subtitle">批量上传卡图，按单图或前后图配对生成英文 eBay listing title。当前作为独立内部工具，仅服务元宇宙上架工作流。</p>
+              <p class="subtitle">批量上传卡图，按单图或两图配对生成英文 eBay listing title。当前作为独立内部工具，仅服务元宇宙上架工作流。</p>
             </div>
             <span class="version-pill">MVP PREVIEW</span>
           </div>
@@ -34,7 +34,7 @@
           <div class="principle-grid">
             <article>
               <h2>适用素材</h2>
-              <p>单张卡正面、正反面组合、评级卡照片、球星卡、动漫卡、Patch / Auto / Sketch 等常规上架图片。</p>
+              <p>单张卡图、两图组合、评级卡照片、球星卡、动漫卡、Patch / Auto / Sketch 等常规上架图片。</p>
             </article>
             <article>
               <h2>标题目标</h2>
@@ -70,14 +70,14 @@
             </label>
             <label>
               <input type="radio" name="assetMode" value="pair" checked>
-              <span>正反面配对</span>
+              <span>两图配对</span>
             </label>
           </div>
 
           <label class="drop-zone" for="imageInput" id="dropZone">
             <input id="imageInput" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
             <strong>支持 JPG / JPEG / PNG / WEBP / HEIC，原图优先上传云端识别，预览图会高质量优化。</strong>
-            <span id="statusText" role="status" aria-live="polite">支持批量上传；正反面模式每 2 张组成一卡，系统会再判断正背面。</span>
+            <span id="statusText" role="status" aria-live="polite">支持批量上传；两图模式每 2 张组成一卡，不做正背面判断。</span>
           </label>
 
           <label class="secondary-button" for="imageInput">上传图片</label>
@@ -121,7 +121,7 @@
               <p id="previewSummary">等待上传图片。</p>
             </div>
             <div class="asset-preview-list" id="assetPreviewList">
-              <div class="empty-state">上传 10 张图片后，正反面配对模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>
+              <div class="empty-state">上传 10 张图片后，两图配对模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>
             </div>
           </article>
         </section>
@@ -142,7 +142,7 @@
           <img id="imageModalImage" alt="">
         </div>
         <footer class="image-modal-footer">
-          <div class="image-modal-switcher" id="imageModalSwitcher" aria-label="图片正反面切换"></div>
+          <div class="image-modal-switcher" id="imageModalSwitcher" aria-label="图片切换"></div>
           <p id="imageModalFileName"></p>
         </footer>
       </section>

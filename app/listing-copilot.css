@@ -20,6 +20,18 @@
   box-sizing: border-box;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
@@ -667,20 +679,6 @@ h3 {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.thumb-button span {
-  position: absolute;
-  left: 13px;
-  top: 13px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: rgba(5, 7, 17, 0.76);
-  color: var(--ink);
-  font-size: 10px;
-  font-weight: 900;
-  pointer-events: none;
-}
-
 .thumb-button:hover {
   border-color: rgba(235, 241, 255, 0.42);
   background: linear-gradient(180deg, rgba(88, 199, 245, 0.12), rgba(255, 255, 255, 0.035));
@@ -1147,97 +1145,6 @@ h3 {
 .title-output textarea::placeholder {
   color: var(--subtle);
   font-weight: 700;
-}
-
-.side-decision-panel {
-  display: grid;
-  grid-template-columns: minmax(120px, auto) 1fr;
-  gap: 8px 12px;
-  align-items: center;
-  margin: 8px 0;
-  border: 1px solid rgba(240, 200, 117, 0.54);
-  border-radius: 7px;
-  padding: 9px 10px;
-  background: rgba(240, 200, 117, 0.1);
-}
-
-.side-decision-panel > div {
-  min-width: 0;
-}
-
-.side-decision-panel span {
-  display: block;
-  color: var(--subtle);
-  font-size: 10px;
-  font-weight: 950;
-  text-transform: uppercase;
-}
-
-.side-decision-panel strong {
-  display: block;
-  margin-top: 2px;
-  color: var(--yellow);
-  font-size: 12px;
-  font-weight: 950;
-}
-
-.side-decision-panel ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.side-decision-panel li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  padding: 4px 8px;
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.side-decision-panel b {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.side-decision-panel em {
-  color: var(--ink);
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 950;
-}
-
-.side-decision-panel small {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 760;
-}
-
-.side-decision-panel.side-confirmed {
-  border-color: rgba(112, 214, 159, 0.54);
-  background: rgba(112, 214, 159, 0.09);
-}
-
-.side-decision-panel.side-confirmed strong {
-  color: var(--green);
-}
-
-.side-decision-panel.side-swapped {
-  border-color: rgba(255, 176, 114, 0.72);
-  background: rgba(255, 176, 114, 0.12);
-}
-
-.side-decision-panel.side-swapped strong {
-  color: var(--orange);
 }
 
 .assisted-draft-status {
@@ -1867,14 +1774,25 @@ summary {
 }
 
 .modal-side-button {
+  width: 34px;
   min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 7px 12px;
+  padding: 0;
   background: rgba(255, 255, 255, 0.045);
   color: var(--muted);
   cursor: pointer;
   font-weight: 900;
+}
+
+.modal-side-button::before {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 8px;
+  margin: 12px auto;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 .modal-side-button.active {

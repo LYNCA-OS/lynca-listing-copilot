@@ -87,11 +87,11 @@ async function imageRecord({
   const localPath = resolve(blindImagePath);
   if (!existsSync(localPath)) throw new Error(`Missing blind image: ${blindImagePath}`);
   const contentSha256 = await fileSha256(localPath);
-  const role = imageIndex === 0 ? "front_original" : imageIndex === 1 ? "back_original" : `detail_${imageIndex}`;
+  const role = imageIndex <= 1 ? `image_${imageIndex + 1}_original` : `detail_${imageIndex}`;
   const base = {
     image_id: `${caseId}_img_${imageIndex}`,
     role,
-    capture_angle: imageIndex === 0 ? "front" : imageIndex === 1 ? "back" : "detail",
+    capture_angle: imageIndex <= 1 ? `image_${imageIndex + 1}` : "detail",
     local_path: relativePortablePath(localPath),
     content_sha256: contentSha256
   };

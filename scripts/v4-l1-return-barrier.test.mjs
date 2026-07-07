@@ -16,7 +16,8 @@ const fastScoutBranch = apiSource.slice(
 );
 
 assert.ok(fastScoutBranch.includes("addL1ReturnBarrierMetadata(adaptV2ResultToV4"), "fast scout L1 must build response directly from adapter");
-assert.ok(fastScoutBranch.includes("sendJson(res, 200, v4Response);"), "fast scout L1 must send response in the branch");
+assert.ok(fastScoutBranch.includes("writerPendingL1Response(v4Response, l1Result)"), "fast scout L1 must hide internal scout titles from the writer response");
+assert.ok(fastScoutBranch.includes("sendJson(res, 200, writerResponse);"), "fast scout L1 must send a writer-pending response in the branch");
 assert.ok(!fastScoutBranch.includes("await persistPipelineResult"), "fast scout L1 must not await pipeline persistence before response");
 assert.ok(fastScoutBranch.includes("scheduleV4Background(l1PersistencePromise"), "L1 persistence must be scheduled after response construction");
 assert.ok(apiSource.includes("l1_deferred_modules"), "V4 response must expose deferred modules");

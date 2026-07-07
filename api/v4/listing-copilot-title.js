@@ -27,6 +27,69 @@ function titleFromResult(result = {}) {
   return result.final_title || result.rendered_title || result.title || null;
 }
 
+function buildInternalScoutSummary(response = {}, result = {}) {
+  return {
+    title: titleFromResult(result) || titleFromResult(response) || "",
+    resolved_fields: resolvedFromResult(result),
+    confidence: result.confidence || response.provider_result?.confidence || null,
+    provider: result.provider || result.provider_id || response.provider_result?.provider || null,
+    model: result.model || result.model_id || response.provider_result?.model || null,
+    fast_scout: response.provider_result?.fast_scout || result.fast_scout || null,
+    timing: response.provider_result?.timing || result.timing || result.timings || null,
+    writer_visible: false
+  };
+}
+
+function hideTitleFields(value = {}) {
+  if (!value || typeof value !== "object") return value;
+  return {
+    ...value,
+    title: "",
+    final_title: "",
+    rendered_title: "",
+    model_title_suggestion: "",
+    writer_visible: false,
+    internal_fast_scout_title: titleFromResult(value) || ""
+  };
+}
+
+function writerPendingL1Response(response = {}, result = {}) {
+  const scout = buildInternalScoutSummary(response, result);
+  const legacy = hideTitleFields(response.legacy_v2_result || result || {});
+  return withV4Version({
+    ...response,
+    ok: true,
+    status: v4SessionStatuses.OBSERVING,
+    title_stage: v4TitleStages.L1_INTERNAL_SCOUT,
+    final_title: "",
+    title: "",
+    rendered_title: "",
+    writer_safe_draft: "",
+    assisted_draft: null,
+    assisted_draft_status: "PENDING",
+    writer_draft: {
+      ...(response.writer_draft || {}),
+      title: "",
+      display_title: "正在生成一段式标题",
+      status: "PENDING",
+      confidence_score: 0,
+      actions: [],
+      user_edit_mode: "one_line_title_only",
+      structured_fields_visible: false
+    },
+    title_stage_reason: "Fast scout is internal evidence only. Writer-visible one-line title will appear after L2 completes.",
+    l1_return_reason: "fast_scout_internal_scout_ready",
+    title_stage_readiness: {
+      ...(response.title_stage_readiness || {}),
+      writer_safe_ready: false,
+      writer_visible_title_ready: false,
+      internal_scout_ready: Boolean(scout.title || Object.keys(scout.resolved_fields || {}).length)
+    },
+    l1_internal_scout: scout,
+    legacy_v2_result: legacy
+  });
+}
+
 function resolvedFromResult(result = {}) {
   return result.resolved_fields || result.fields || result.resolved || {};
 }
@@ -71,6 +134,18 @@ export function backgroundPayloadWithL1ResolvedHint(payload = {}, l1Result = nul
 
 function catalogPromptCountFromTrace(trace = {}) {
   return Number(trace.catalog_activation_funnel?.prompt_candidate_count || 0);
+}
+
+function catalogGapTypeFromTrace(trace = {}) {
+  const catalog = trace.catalog_activation_funnel || {};
+  const vector = trace.vector_activation_funnel || {};
+  const rawCount = Number(catalog.raw_candidate_count || 0) + Number(vector.raw_candidate_count || 0);
+  const promptCount = Number(catalog.prompt_candidate_count || 0) + Number(vector.prompt_candidate_count || 0);
+  const blockedCount = Number(catalog.conflict_blocked_count || 0) + Number(vector.conflict_blocked_count || 0);
+  if (promptCount > 0) return "";
+  if (rawCount <= 0) return "CATALOG_COVERAGE_GAP";
+  if (blockedCount > 0) return "CANDIDATE_CONFLICT_BLOCKED_GAP";
+  return "NO_PROMPT_SAFE_CANDIDATE_GAP";
 }
 
 function scheduleV4Background(promise, label = "background task") {
@@ -127,7 +202,7 @@ function v2PayloadFor({
   sessionId,
   routePlan,
   providerOptions = {},
-  titleStageTarget = v4TitleStages.L1_WRITER_SAFE_DRAFT
+  titleStageTarget = v4TitleStages.L1_INTERNAL_SCOUT
 } = {}) {
   return {
     ...payload,
@@ -161,11 +236,14 @@ async function persistPipelineResult({
         id: `${sessionId}_catalog_gap`,
         recognition_session_id: sessionId,
         asset_id: payload.asset_id || payload.assetId || null,
+        gap_type: catalogGapTypeFromTrace(rows.candidateTrace),
         observed_fields: resolvedFromResult(result),
         candidate_snapshot: {
           candidate_activation_funnel: rows.candidateTrace.candidate_activation_funnel,
           catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
-          vector_activation_funnel: rows.candidateTrace.vector_activation_funnel
+          vector_activation_funnel: rows.candidateTrace.vector_activation_funnel,
+          low_margin_safe_field_application: rows.candidateTrace.low_margin_safe_field_application || null,
+          selected_candidate_verifier: rows.candidateTrace.selected_candidate_verifier || null
         },
         draft_title: titleFromResult(result)
       }
@@ -368,9 +446,9 @@ export default async function handler(req, res) {
       const fastScoutResult = await fastScoutPromise;
       const l1Result = {
         ...fastScoutResult,
-        title_stage: v4TitleStages.L1_WRITER_SAFE_DRAFT,
+        title_stage: v4TitleStages.L1_INTERNAL_SCOUT,
         assisted_draft_status: "PENDING",
-        l1_return_reason: "fast_scout_safe_draft_ready",
+        l1_return_reason: "fast_scout_internal_scout_ready",
         full_assist_continued_after_l1: true,
         l1_return_barrier_version: l1ReturnBarrierVersion
       };
@@ -379,7 +457,7 @@ export default async function handler(req, res) {
         sessionId,
         routePlan,
         providerOptions: providerOptionsForV4ProgressiveL1({ payload, routePlan }),
-        titleStageTarget: v4TitleStages.L1_WRITER_SAFE_DRAFT
+        titleStageTarget: v4TitleStages.L1_INTERNAL_SCOUT
       });
       const v4Response = addL1ReturnBarrierMetadata(adaptV2ResultToV4({
         sessionId,
@@ -391,6 +469,7 @@ export default async function handler(req, res) {
           l1_persistence: { saved: false, deferred: true }
         }
       }), l1Result.fast_scout || {});
+      const writerResponse = writerPendingL1Response(v4Response, l1Result);
       const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({
         sessionId,
         result: l1Result,
@@ -411,7 +490,7 @@ export default async function handler(req, res) {
         headers: req.headers,
         createResult: deferredCreateResult
       })), "background L2 assisted draft");
-      sendJson(res, 200, v4Response);
+      sendJson(res, 200, writerResponse);
       return;
     } catch (error) {
       scheduleV4Background(createResultPromise.then((createResult) => updateV4RecognitionSession({

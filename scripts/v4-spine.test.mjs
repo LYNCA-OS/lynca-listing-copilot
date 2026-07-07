@@ -27,7 +27,7 @@ const route = planV4RecognitionRoute({
   initial_evidence: {
     collector_number: "PAU"
   },
-  images: [{ role: "front" }, { role: "back" }]
+  images: [{ role: "image_1" }, { role: "image_2" }]
 }, {
   VECTOR_INDEX_READY: "true"
 });
@@ -45,10 +45,10 @@ const exactFastLaneOptions = providerOptionsForV4ProgressiveL1({
 assert.equal(exactFastLaneOptions.enable_catalog_assist, false);
 assert.equal(exactFastLaneOptions.enable_vector_assist, false);
 assert.equal(exactFastLaneOptions.enable_ephemeral_external_retrieval, false);
-assert.equal(exactFastLaneOptions.v4_title_stage_target, v4TitleStages.L1_WRITER_SAFE_DRAFT);
+assert.equal(exactFastLaneOptions.v4_title_stage_target, v4TitleStages.L1_INTERNAL_SCOUT);
 
 const coldStartRoute = planV4RecognitionRoute({
-  images: [{ role: "front" }, { role: "back" }]
+  images: [{ role: "image_1" }, { role: "image_2" }]
 }, {
   VECTOR_INDEX_READY: "true"
 });
@@ -57,7 +57,7 @@ assert.ok(coldStartRoute.blocking_modules.includes("fast_scout_observation"));
 assert.ok(coldStartRoute.background_modules.includes("full_assisted_observation"));
 
 const assistedRoute = planV4RecognitionRoute({
-  images: [{ role: "front" }, { role: "back" }],
+  images: [{ role: "image_1" }, { role: "image_2" }],
   approved_candidate_count: 2
 }, {
   VECTOR_INDEX_READY: "true"
@@ -138,6 +138,20 @@ assert.equal(v4.field_states.product.display_status, "NORMAL");
 assert.equal(v4.candidate_control_plane_trace.prompt_candidate_count, 2);
 assert.equal(v4.catalog_activation_funnel.prompt_candidate_count, 1);
 
+const internalScoutV4 = adaptV2ResultToV4({
+  sessionId: "v4sess-internal-scout",
+  result: {
+    ...v2Result,
+    title_stage: v4TitleStages.L1_INTERNAL_SCOUT
+  },
+  payload: {},
+  routePlan: route
+});
+assert.equal(internalScoutV4.title_stage, "L1_INTERNAL_SCOUT");
+assert.equal(internalScoutV4.writer_safe_draft, "");
+assert.equal(internalScoutV4.assisted_draft_status, "PENDING");
+assert.equal(internalScoutV4.title_stage_readiness.writer_visible_title_ready, false);
+
 const rows = buildV4PersistenceRows({ sessionId: "v4sess-test", result: v2Result, payload: {} });
 assert.ok(rows.fieldEvidenceRows.some((row) => row.field_name === "serial" && row.field_value === "2/3"));
 assert.equal(rows.candidateTrace.applied_field_count, 3);
@@ -148,7 +162,7 @@ const fastScoutResult = buildFastScoutListingResult({
     fast_scout_confidence: 0.72,
     fast_scout_review_fields: ["print_finish"],
     unresolved: ["exact_parallel"],
-    evidence_notes: ["Visible card front reads 2/3 and Anthony Edwards."],
+    evidence_notes: ["Visible current card image reads 2/3 and Anthony Edwards."],
     fast_scout_fields: {
       subject: "Anthony Edwards",
       players: ["Anthony Edwards"],
@@ -183,7 +197,7 @@ const fastScoutResult = buildFastScoutListingResult({
     }
   },
   payload: { maxTitleLength: 80 },
-  signedImages: [{ image_id: "front-1", role: "front", width: 1200, height: 1600 }],
+  signedImages: [{ image_id: "image-1", role: "image_1", width: 1200, height: 1600 }],
   latencyMs: 1500,
   modelId: "gpt-4.1-mini-2025-04-14",
   tokenDiagnostics: { input_tokens: 100, output_tokens: 80, total_tokens: 180 }
@@ -201,22 +215,22 @@ const fastScoutV4 = adaptV2ResultToV4({
 });
 assert.equal(fastScoutV4.provider_result.fast_scout.input_image_count, 1);
 assert.equal(fastScoutV4.module_speed_metrics.fast_scout_input_image_count, 1);
-assert.equal(fastScoutV4.provider_result.fast_scout.input_images[0].role, "front");
+assert.equal(fastScoutV4.provider_result.fast_scout.input_images[0].role, "image_1");
 
-const fastScoutSelectedFront = selectFastScoutImages([
+const fastScoutSelectedUploadOrder = selectFastScoutImages([
   { id: "back-1", role: "back_original" },
   { id: "serial-1", role: "serial_crop" },
   { id: "front-1", role: "front_original" }
 ], { maxImages: 1 });
-assert.equal(fastScoutSelectedFront.length, 1);
-assert.equal(fastScoutSelectedFront[0].id, "front-1");
+assert.equal(fastScoutSelectedUploadOrder.length, 1);
+assert.equal(fastScoutSelectedUploadOrder[0].id, "back-1");
 
 const fastScoutSelectedPair = selectFastScoutImages([
   { id: "grade-1", role: "grade_label_crop" },
   { id: "back-ready", role: "back_model_ready" },
   { id: "front-ready", role: "front_model_ready" }
 ], { maxImages: 2 });
-assert.deepEqual(fastScoutSelectedPair.map((image) => image.id), ["front-ready", "back-ready"]);
+assert.deepEqual(fastScoutSelectedPair.map((image) => image.id), ["back-ready", "front-ready"]);
 
 const riskyStage = buildV4TitleStageState({
   result: {

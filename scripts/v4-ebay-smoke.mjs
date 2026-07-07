@@ -78,8 +78,8 @@ function itemImages(item = {}) {
       name: `${image.role || `image_${index + 1}`}:${candidateId(item)}`,
       bucket: image.bucket,
       object_path: image.object_path,
-      role: image.role || (index === 0 ? "front_original" : "back_original"),
-      capture_angle: image.capture_angle || (index === 0 ? "front" : "back"),
+      role: image.role || `image_${index + 1}_original`,
+      capture_angle: image.capture_angle || `image_${index + 1}`,
       width: image.width || null,
       height: image.height || null
     }));

@@ -63,6 +63,6 @@ assert.match(js, /mapWithConcurrency\(imageFiles,\s*IMAGE_PREPROCESS_CONCURRENCY
 assert.match(js, /mapWithConcurrency\(images,\s*STORAGE_UPLOAD_CONCURRENCY/, "storage uploads should not run serially for every original and crop image");
 assert.match(js, /uploadAssetImage\(asset, image, imageIndex\)/, "bounded storage upload workers should preserve image role assignment");
 assert.match(js, /state\.files = images/, "optimized images should preserve upload order in state");
-assert.match(js, /state\.files\.slice\(index, index \+ 2\)/, "front/back pairing should remain upload-order based");
+assert.match(js, /state\.files\.slice\(index, index \+ 2\)/, "two-image pairing should remain upload-order based");
 
 console.log("upload safety layer tests passed");
