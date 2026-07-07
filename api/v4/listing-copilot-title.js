@@ -155,6 +155,22 @@ function catalogGapTypeFromTrace(trace = {}) {
   return "NO_PROMPT_SAFE_CANDIDATE_GAP";
 }
 
+function providerRuntimeSummary(result = {}) {
+  return {
+    provider_latency_ms: result.provider_latency_ms ?? null,
+    provider_prompt_mode: result.provider_prompt_mode || null,
+    provider_prompt_chars: Number.isFinite(Number(result.provider_prompt_chars)) ? Number(result.provider_prompt_chars) : null,
+    provider_input_image_count: Number.isFinite(Number(result.provider_input_image_count)) ? Number(result.provider_input_image_count) : null,
+    provider_image_detail: result.provider_image_detail || null,
+    provider_finish_reason: result.provider_finish_reason || null,
+    provider_token_diagnostics: result.provider_token_diagnostics || null,
+    provider_initial_token_diagnostics: result.provider_initial_token_diagnostics || null,
+    provider_truncation_retry_attempted: result.provider_truncation_retry_attempted === true,
+    provider_truncation_retry_attempts: Number(result.provider_truncation_retry_attempts || 0),
+    usage: result.usage || null
+  };
+}
+
 function scheduleV4Background(promise, label = "background task") {
   const guarded = Promise.resolve(promise).catch((error) => {
     console.error(`[v4-listing] ${label} failed`, error);
@@ -287,6 +303,7 @@ async function persistPipelineResult({
           l1_already_returned: true,
           l1_visible_to_writer: false,
           l1_return_barrier_version: l1ReturnBarrierVersion,
+          ...providerRuntimeSummary(result),
           ...extraProviderSummary
         },
         resolved_fields: resolvedFromResult(result)
@@ -322,6 +339,7 @@ async function persistPipelineResult({
       title_stage: result.title_stage || null,
       assisted_draft_status: result.assisted_draft_status || extraProviderSummary.assisted_draft_status || null,
       provider_error_type: result.provider_error_type || result.provider_error_code || null,
+      ...providerRuntimeSummary(result),
       ...extraProviderSummary
     }
   };

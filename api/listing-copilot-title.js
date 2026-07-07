@@ -2963,6 +2963,42 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
   ].join("\n");
 }
 
+function compactV4L2RecognitionPrompt(payload, maxTitleLength) {
+  const vectorPacket = payload.vectorCandidatePacket || payload.vector_candidate_packet || null;
+  return [
+    "You are LYNCA Listing Copilot L2 final evidence reader.",
+    "Use only the uploaded card/slab images, internal L1 scout context, and prompt-safe catalog/vector support. Seller titles and marketplace wording are not evidence.",
+    "Return compact valid JSON only. Deterministic code renders the final English one-line title.",
+    "L2 job: confirm, correct, and complete L1. Do not restart with broad prose. Current image/slab/card printed text overrides L1 and every candidate.",
+    "Required CSM output order downstream: Standard = Year -> smart Manufacturer/Product/Set -> Subject -> Card Name -> Release Variant -> Print Finish -> Numerical Rarity -> Descriptive Rarity -> Card Number -> SO -> Grading Info. TCG = Year -> IP -> Language -> smart Manufacturer/Product/Set -> Subject -> Card Name -> Card Number -> Rarity -> Variant/Finish/Stamp -> Grading/SO.",
+    "Smart compose: keep manufacturer/product/set separate for storage but avoid repeated title words. Keep card_name/release_variant/print_finish separate for learning but do not duplicate the same term across them.",
+    "Release Variant means layout/design-direction differences only: Horizontal, Vertical, Variation, Photo Variation, Image Variation, Design Variation, International. Never put FOTL, Hobby, Retail, Choice, Fast Break, Sapphire, color, foil, holo, refractor, rarity, product, or set into Release Variant.",
+    "Product/set/card-name preservation: visible product/set/card-name words such as Encased, Status, Prizm, Bowman Chrome, National Treasures, Eminence, New Breed, Spotlight, Gusto, Best Performance, Rookie Ticket, Patch Auto, Signatures, NFL Shield, Logoman, Laundry Tag, and Platinum Bar must not disappear merely because serial/grade/parallel is uncertain.",
+    "Print-run / Numerical Rarity: 2/3, 14/99, 31/50, #/50, and 1/1 are print_run_number facts. Preserve visible full numerator/denominator from the current image. If only denominator is supported, use #/D. Do not treat print-run as collector_number/checklist_code/card_number/tcg_card_number.",
+    "Card number/code: PAU, NB-TYG, S-P, #256, 201/165, TAEV-EN006 are identity card numbers/codes. Include them when visible and title space allows; they are lower priority than core identity and numerical rarity for Standard cards, high priority for TCG.",
+    "Grade: fill grade_company/card_grade/auto_grade only from a visible slab label. BGS card grade and auto grade are separate facts.",
+    "RC/Auto/Patch: set true only from visible logo/text/signature/material evidence or slab/card text. Do not infer rookie or auto from year/player alone.",
+    "Color/parallel safety: visual Gold/Purple/Red/Blue/Green/Silver/Black/Orange may be surface_color. Exact optical parallel words such as Refractor, Wave, Shimmer, Mojo, Prizm, Sparkle, Holo, Tiger, Sapphire need printed/slab/catalog support or strong current-image evidence plus compatible product context.",
+    "TCG discipline: Subject is the character/card subject, Card Name is the printed card-title segment. Example Pikachu Illustrator => subject=Pikachu, card_name=Illustrator.",
+    "Multi-card: multiple separate physical cards make a Lot. Multiple subjects on one card stay one identity with players[].",
+    "Field evidence: keep field_evidence short and only for non-empty high-risk/review-sensitive fields. Do not transcribe boilerplate or long OCR text.",
+    "If a high-risk field is unreadable, leave it empty and add the field name to unresolved. Do not guess.",
+    `Runtime title limit downstream: ${maxTitleLength} characters.`,
+    "Internal context and current asset:",
+    JSON.stringify({
+      assetId: payload.assetId || payload.asset_id || null,
+      mode: payload.mode || null,
+      imageCount: Array.isArray(payload.images) ? payload.images.length : 0,
+      fileNames: (payload.images || []).map((image) => image.name).filter(Boolean).slice(0, 2),
+      captureQuality: captureQualityForPayload(payload)
+    }),
+    l1FastScoutHintPromptSection(payload),
+    "Required JSON shape:",
+    JSON.stringify(providerMinimalOutputShape({ includeVectorDecision: Boolean(vectorPacket) })),
+    vectorCandidatePromptSection(vectorPacket)
+  ].join("\n");
+}
+
 function providerMinimalOutputShape({
   includeVectorDecision = false
 } = {}) {
@@ -3120,7 +3156,21 @@ async function buildListingPrompt(payload, maxTitleLength) {
   ].join("\n");
 }
 
+function compactL2PromptEnabled(payload = {}, env = process.env) {
+  const providerOptions = providerOptionsFromPayload(payload, env);
+  const stageTarget = String(
+    providerOptions.v4_title_stage_target
+    || payload.v4_title_stage_target
+    || ""
+  ).trim();
+  return stageTarget === "L2_ASSISTED_DRAFT"
+    && optionFlag(providerOptions, "v4_compact_l2_prompt", envFlag(env, "ENABLE_V4_COMPACT_L2_PROMPT", true)) === true;
+}
+
 async function buildInitialProviderPrompt(payload, maxTitleLength) {
+  if (compactL2PromptEnabled(payload, process.env)) {
+    return compactV4L2RecognitionPrompt(payload, maxTitleLength);
+  }
   if (envFlag(process.env, "ENABLE_FAST_INITIAL_PROVIDER_PROMPT", true)) {
     return fastInitialRecognitionPrompt(payload, maxTitleLength);
   }
@@ -5994,12 +6044,18 @@ async function createOpenAiTitle(payload, selection, {
   };
   if (promptCandidatePacket) initialPayload.vectorCandidatePacket = promptCandidatePacket;
   const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
+  const providerPromptMode = compactL2PromptEnabled(initialPayload, process.env)
+    ? "v4_compact_l2"
+    : envFlag(process.env, "ENABLE_FAST_INITIAL_PROVIDER_PROMPT", true)
+      ? "fast_initial"
+      : "full_listing";
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
     prompt
   }));
 
-  const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => withProviderMetadata(
+  const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => ({
+    ...withProviderMetadata(
       withEvidenceCompatibility(
         withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY), initialPayload),
         providerResult.parsed,
@@ -6007,7 +6063,12 @@ async function createOpenAiTitle(payload, selection, {
       ),
       providerResult,
       selection
-    ));
+    ),
+    provider_prompt_mode: providerPromptMode,
+    provider_prompt_chars: prompt.length,
+    provider_input_image_count: Array.isArray(initialPayload.images) ? initialPayload.images.length : 0,
+    provider_image_detail: "high"
+  }));
   if (deferVectorUntilProviderObservation) {
     const providerResolvedForRetrieval = retrievalFieldsFromProviderObservation(providerResultWithEvidence, resolvedForRetrieval);
     const lateCatalogContext = await prepareCatalogCandidateContext({
