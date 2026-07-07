@@ -65,6 +65,9 @@ export default async function handler(req, res) {
     status: artifacts.status,
     feedback_event_id: artifacts.feedbackEvent.id,
     learning_event_id: artifacts.learningEvent.id,
+    writer_final_title: artifacts.feedbackEvent.writer_final_title,
+    writer_raw_title: artifacts.rawWriterTitle,
+    csm_normalization: artifacts.csmNormalization,
     title_diff: artifacts.feedbackEvent.title_diff,
     training_eligible: artifacts.learningEvent.training_eligible,
     v4_persistence: { feedback, learning, session }

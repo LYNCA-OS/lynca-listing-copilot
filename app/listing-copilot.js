@@ -2736,6 +2736,15 @@ async function saveFeedbackForResult(result, asset) {
     }
 
     if (useV4Feedback) {
+      const canonicalWriterTitle = String(payload.writer_final_title || "").trim();
+      if (canonicalWriterTitle) {
+        result.correctedTitle = canonicalWriterTitle;
+        result.final_title = canonicalWriterTitle;
+        result.rendered_title = canonicalWriterTitle;
+        result.title = canonicalWriterTitle;
+        result.title_override = null;
+      }
+      result.csmNormalization = payload.csm_normalization || null;
       result.feedbackStatus = payload.training_eligible === false ? "skipped" : "saved";
       result.review_id = payload.feedback_event_id || "";
       result.approved_at = "";
@@ -2743,6 +2752,8 @@ async function saveFeedbackForResult(result, asset) {
       result.review_outcome = payload.status || "";
       result.feedbackMessage = payload.training_eligible === false
         ? "V4 已记录拒绝/不可训练反馈，不进入正样本训练。"
+        : payload.csm_normalization?.applied === true
+          ? `V4 已保存写手反馈，标题已按 CSM 标准顺序整理：${payload.learning_event_id || "已写入"}。`
         : `V4 已保存写手反馈，并生成学习事件：${payload.learning_event_id || "已写入"}。`;
       return result.feedbackStatus === "saved";
     }

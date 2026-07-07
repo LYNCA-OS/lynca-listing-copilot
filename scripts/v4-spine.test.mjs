@@ -269,13 +269,60 @@ const artifacts = buildV4FeedbackArtifacts({
 });
 assert.equal(artifacts.status, "EDITED");
 assert.equal(artifacts.feedbackEvent.correction_type, "EDIT");
-assert.ok(artifacts.feedbackEvent.title_diff.added.includes("timberwolves"));
+assert.equal(artifacts.rawWriterTitle, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
+assert.equal(artifacts.csmNormalization.applied, true);
+assert.equal(artifacts.feedbackEvent.title_diff.raw_writer_title, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
 assert.equal(artifacts.learningEvent.training_eligible, true);
 assert.equal(artifacts.learningEvent.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_ground_truth));
 assert.ok(artifacts.learningEvent.field_level_ground_truth.some((row) => row.field === "player" && row.training_eligible === true));
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_diff));
 assert.equal(typeof artifacts.learningEvent.candidate_changes.candidate_count, "number");
+
+const csmOrderedFeedback = buildV4FeedbackArtifacts({
+  sessionId: "v4sess-csm-order",
+  action: "EDIT",
+  aiTitle: "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)",
+  writerTitle: "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best",
+  resultPayload: {
+    max_title_length: 85,
+    resolved_fields: {
+      year: "1997-98",
+      product: "Bowman's Best",
+      players: ["Michael Jordan"],
+      card_name: "Best Performance",
+      team: "Chicago Bulls"
+    }
+  }
+});
+assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(csmOrderedFeedback.rawWriterTitle, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
+assert.equal(csmOrderedFeedback.csmNormalization.applied, true);
+assert.equal(csmOrderedFeedback.feedbackEvent.title_diff.raw_writer_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
+assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(
+  csmOrderedFeedback.learningEvent.feedback_training_event.writer_raw_title,
+  "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best"
+);
+
+const rejectedFeedback = buildV4FeedbackArtifacts({
+  sessionId: "v4sess-csm-reject",
+  action: "REJECT",
+  aiTitle: "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)",
+  writerTitle: "wrong loose title",
+  resultPayload: {
+    resolved_fields: {
+      year: "1997-98",
+      product: "Bowman's Best",
+      players: ["Michael Jordan"],
+      card_name: "Best Performance",
+      team: "Chicago Bulls"
+    }
+  }
+});
+assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "wrong loose title");
+assert.equal(rejectedFeedback.csmNormalization.skipped_reason, "REJECTED_FEEDBACK");
+assert.equal(rejectedFeedback.learningEvent.training_eligible, false);
 
 const writes = [];
 const reads = [];
