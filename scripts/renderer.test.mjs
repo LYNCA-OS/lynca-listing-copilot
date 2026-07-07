@@ -1217,6 +1217,72 @@ assert.match(patchAutoAbbreviationCompose.final_title, /Patch Auto Gold/);
 assert.match(patchAutoAbbreviationCompose.final_title, /PSA 9\/10/);
 assert.doesNotMatch(patchAutoAbbreviationCompose.final_title, /\b(?:HOR|PAT)\b|Patch Auto .*Patch Auto/i);
 
+const bowmanChromeProspectsKeepsDifferentiatingCardName = renderListingPresentation({
+  resolved: {
+    year: "2025",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    set: "Bowman Chrome Prospects",
+    players: ["Jhonkensy Noel"],
+    card_name: "Chrome Prospects Auto Orange Refractor",
+    surface_color: "Orange",
+    numerical_rarity: "24/25",
+    grade_company: "PSA",
+    card_grade: "9",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.ok(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title.length <= 80);
+assert.match(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title, /Bowman Chrome Prospects/);
+assert.match(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title, /Auto Orange Refractor/);
+assert.match(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title, /PSA 9$/);
+assert.doesNotMatch(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title, /Chrome Prospects.*Chrome Prospects/i);
+
+const bowmanRefAbbreviationKeepsCardName = renderListingPresentation({
+  resolved: {
+    year: "2025",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    set: "Bowman Chrome Prospects",
+    players: ["Aeverson Arteaga"],
+    card_name: "Chrome Prospects Auto - Orange Ref.",
+    surface_color: "Orange",
+    numerical_rarity: "24/25",
+    grade_company: "PSA",
+    card_grade: "9",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.ok(bowmanRefAbbreviationKeepsCardName.final_title.length <= 80);
+assert.match(bowmanRefAbbreviationKeepsCardName.final_title, /Auto Orange Refractor/);
+assert.match(bowmanRefAbbreviationKeepsCardName.final_title, /PSA 9$/);
+
+const rookieSignaturesSurvivesCardNumberCompression = renderListingPresentation({
+  resolved: {
+    year: "2018-19",
+    manufacturer: "Panini",
+    product: "Panini Prizm",
+    set: "Rookie Signatures Prizms Silver",
+    players: ["Jaren Jackson Jr"],
+    card_name: "Rookie Signatures Prizms Silver",
+    collector_number: "4",
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "9",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  maxLength: 80
+});
+assert.ok(rookieSignaturesSurvivesCardNumberCompression.final_title.length <= 80);
+assert.match(rookieSignaturesSurvivesCardNumberCompression.final_title, /Rookie Signatures/);
+assert.match(rookieSignaturesSurvivesCardNumberCompression.final_title, /Silver/);
+assert.match(rookieSignaturesSurvivesCardNumberCompression.final_title, /BGS 9\/10$/);
+
 const standardLotGrammar = renderResolvedTitle({
   multi_card: true,
   card_count: 12,
