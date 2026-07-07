@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { backgroundPayloadWithL1ResolvedHint } from "../api/v4/listing-copilot-title.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const apiSource = await fs.readFile(path.join(root, "api/v4/listing-copilot-title.js"), "utf8");
@@ -25,5 +26,29 @@ assert.ok(fastScoutSource.includes("persistV4FastScoutCache"), "fast scout must 
 assert.ok(fastScoutSource.includes("cacheWriteMode = \"background\""), "fast scout API path must default cache writes to background");
 assert.ok(fastScoutSource.includes("signed_url_ms"), "fast scout timing must expose signed_url_ms");
 assert.ok(fastScoutSource.includes("image_verify_ms"), "fast scout timing must expose image_verify_ms");
+
+const originalPayload = {
+  asset_id: "asset-l1-hint",
+  resolved_hint: {
+    product: "Panini Status"
+  }
+};
+const enrichedPayload = backgroundPayloadWithL1ResolvedHint(originalPayload, {
+  fields: {
+    year: "2018-19",
+    players: ["Trae Young"],
+    collector_number: "NB-TYG"
+  }
+});
+assert.equal(originalPayload.resolved_hint.year, undefined, "L1 hint merge must not mutate the original payload");
+assert.equal(enrichedPayload.resolved_hint.product, "Panini Status");
+assert.equal(enrichedPayload.resolved_hint.year, "2018-19");
+assert.deepEqual(enrichedPayload.resolved_hint.players, ["Trae Young"]);
+assert.equal(enrichedPayload.resolved_hint.collector_number, "NB-TYG");
+assert.deepEqual(enrichedPayload.resolvedHint, enrichedPayload.resolved_hint);
+assert.equal(enrichedPayload.l1_fast_scout_resolved_hint_source, "v4_fast_scout_l1");
+
+const unchangedPayload = { asset_id: "asset-empty-l1" };
+assert.equal(backgroundPayloadWithL1ResolvedHint(unchangedPayload, { fields: {} }), unchangedPayload);
 
 console.log("v4-l1-return-barrier tests passed");

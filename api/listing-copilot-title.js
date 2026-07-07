@@ -5738,7 +5738,21 @@ function shouldDeferVectorUntilProviderObservation({
   }
   if (optionFlag(providerOptions, "enable_vector_lazy_mode", envFlag(env, "ENABLE_VECTOR_LAZY_MODE", true)) !== true) return false;
   if (lazyDecision.skip === true) return false;
-  return catalogContext?.promptPacket !== true;
+  return !contextHasPromptSafeIdentityCandidate(catalogContext);
+}
+
+function contextHasPromptSafeIdentityCandidate(context = null) {
+  if (!context || typeof context !== "object") return false;
+  const eligibility = context.catalog_assist_eligibility
+    || context.vector_assist_eligibility
+    || context.assistPacket?.vector_retrieval?.assist_filter
+    || context.assistPacket?.assist_filter
+    || {};
+  if (Number(eligibility.prompt_candidate_count || 0) > 0) return true;
+  const candidates = context.assistPacket?.vector_retrieval?.candidates
+    || context.assistPacket?.candidates
+    || [];
+  return Array.isArray(candidates) && candidates.length > 0;
 }
 
 function fieldHasValueForRetrieval(value) {

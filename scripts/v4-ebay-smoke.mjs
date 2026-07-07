@@ -274,15 +274,32 @@ function delay(ms) {
 function sessionL2Summary(statusPayload = {}) {
   const session = statusPayload.session || {};
   const summary = session.provider_result_summary || {};
+  const trace = session.candidate_control_plane_trace || {};
+  const catalogFunnel = trace.catalog_activation_funnel || {};
+  const vectorFunnel = trace.vector_activation_funnel || {};
   return {
     session_status: session.status || null,
     assisted_draft_status: summary.assisted_draft_status || null,
     title: session.final_title || summary.final_title || null,
     route: session.route || null,
-    prompt_candidate_count: Number(session.candidate_control_plane_trace?.catalog_activation_funnel?.prompt_candidate_count || 0)
-      + Number(session.candidate_control_plane_trace?.vector_activation_funnel?.prompt_candidate_count || 0),
-    catalog_prompt_candidate_count: Number(session.candidate_control_plane_trace?.catalog_activation_funnel?.prompt_candidate_count || 0),
-    vector_prompt_candidate_count: Number(session.candidate_control_plane_trace?.vector_activation_funnel?.prompt_candidate_count || 0),
+    prompt_candidate_count: Number(catalogFunnel.prompt_candidate_count || 0)
+      + Number(vectorFunnel.prompt_candidate_count || 0),
+    catalog_raw_candidate_count: Number(catalogFunnel.raw_candidate_count || 0),
+    catalog_approved_candidate_count: Number(catalogFunnel.approved_candidate_count || 0),
+    catalog_conflict_blocked_count: Number(catalogFunnel.conflict_blocked_count || 0),
+    catalog_prompt_candidate_count: Number(catalogFunnel.prompt_candidate_count || 0),
+    catalog_evidence_support_field_count: Number(catalogFunnel.evidence_support_field_count || 0),
+    catalog_participation_level: catalogFunnel.participation_level || null,
+    catalog_pre_observation_query_attempted: catalogFunnel.pre_observation_query_attempted ?? null,
+    catalog_post_observation_query_attempted: catalogFunnel.post_observation_query_attempted ?? null,
+    vector_raw_candidate_count: Number(vectorFunnel.raw_candidate_count || 0),
+    vector_approved_candidate_count: Number(vectorFunnel.approved_candidate_count || 0),
+    vector_conflict_blocked_count: Number(vectorFunnel.conflict_blocked_count || 0),
+    vector_prompt_candidate_count: Number(vectorFunnel.prompt_candidate_count || 0),
+    vector_evidence_support_field_count: Number(vectorFunnel.evidence_support_field_count || 0),
+    vector_participation_level: vectorFunnel.participation_level || null,
+    vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
+    vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
     related_counts: statusPayload.related_counts || {}
   };
 }
@@ -523,8 +540,22 @@ async function runOne({
     catalog_prompt_candidate_count: Number(data.catalog_activation_funnel?.prompt_candidate_count || 0),
     vector_prompt_candidate_count: Number(data.vector_activation_funnel?.prompt_candidate_count || 0),
     provider_prompt_candidate_count: Number(data.provider_result?.prompt_candidate_count || 0),
+    l2_catalog_raw_candidate_count: l2.summary?.catalog_raw_candidate_count ?? null,
+    l2_catalog_approved_candidate_count: l2.summary?.catalog_approved_candidate_count ?? null,
+    l2_catalog_conflict_blocked_count: l2.summary?.catalog_conflict_blocked_count ?? null,
     l2_catalog_prompt_candidate_count: l2.summary?.catalog_prompt_candidate_count ?? null,
+    l2_catalog_evidence_support_field_count: l2.summary?.catalog_evidence_support_field_count ?? null,
+    l2_catalog_participation_level: l2.summary?.catalog_participation_level ?? null,
+    l2_catalog_pre_observation_query_attempted: l2.summary?.catalog_pre_observation_query_attempted ?? null,
+    l2_catalog_post_observation_query_attempted: l2.summary?.catalog_post_observation_query_attempted ?? null,
+    l2_vector_raw_candidate_count: l2.summary?.vector_raw_candidate_count ?? null,
+    l2_vector_approved_candidate_count: l2.summary?.vector_approved_candidate_count ?? null,
+    l2_vector_conflict_blocked_count: l2.summary?.vector_conflict_blocked_count ?? null,
     l2_vector_prompt_candidate_count: l2.summary?.vector_prompt_candidate_count ?? null,
+    l2_vector_evidence_support_field_count: l2.summary?.vector_evidence_support_field_count ?? null,
+    l2_vector_participation_level: l2.summary?.vector_participation_level ?? null,
+    l2_vector_pre_observation_query_attempted: l2.summary?.vector_pre_observation_query_attempted ?? null,
+    l2_vector_post_observation_query_attempted: l2.summary?.vector_post_observation_query_attempted ?? null,
     l1_scoring: l1Score,
     final_scoring: finalScore,
     item_web_url: label.item_web_url || null
@@ -553,8 +584,16 @@ function summarize(results = []) {
     prewarm_p95_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.95),
     catalog_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.catalog_prompt_candidate_count || 0), 0),
     vector_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.vector_prompt_candidate_count || 0), 0),
+    l2_catalog_raw_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_catalog_raw_candidate_count || 0), 0),
+    l2_catalog_approved_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_catalog_approved_candidate_count || 0), 0),
+    l2_catalog_conflict_blocked_count: results.reduce((sum, item) => sum + Number(item.l2_catalog_conflict_blocked_count || 0), 0),
     l2_catalog_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_catalog_prompt_candidate_count || 0), 0),
+    l2_catalog_evidence_support_field_count: results.reduce((sum, item) => sum + Number(item.l2_catalog_evidence_support_field_count || 0), 0),
+    l2_vector_raw_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_vector_raw_candidate_count || 0), 0),
+    l2_vector_approved_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_vector_approved_candidate_count || 0), 0),
+    l2_vector_conflict_blocked_count: results.reduce((sum, item) => sum + Number(item.l2_vector_conflict_blocked_count || 0), 0),
     l2_vector_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_vector_prompt_candidate_count || 0), 0),
+    l2_vector_evidence_support_field_count: results.reduce((sum, item) => sum + Number(item.l2_vector_evidence_support_field_count || 0), 0),
     l1_accuracy_proxy: {
       raw_token_recall_avg: average(l1Raw),
       fair_token_recall_avg: average(l1Fair),
@@ -599,6 +638,14 @@ function perCardTsv(results = []) {
     "final_policy_fair",
     "catalog_prompt",
     "vector_prompt",
+    "l2_catalog_raw",
+    "l2_catalog_approved",
+    "l2_catalog_blocked",
+    "l2_catalog_prompt",
+    "l2_vector_raw",
+    "l2_vector_approved",
+    "l2_vector_blocked",
+    "l2_vector_prompt",
     "l1_title",
     "final_title",
     "seller_title"
@@ -614,6 +661,14 @@ function perCardTsv(results = []) {
     item.final_scoring?.policy_fair_token_recall,
     item.catalog_prompt_candidate_count,
     item.vector_prompt_candidate_count,
+    item.l2_catalog_raw_candidate_count,
+    item.l2_catalog_approved_candidate_count,
+    item.l2_catalog_conflict_blocked_count,
+    item.l2_catalog_prompt_candidate_count,
+    item.l2_vector_raw_candidate_count,
+    item.l2_vector_approved_candidate_count,
+    item.l2_vector_conflict_blocked_count,
+    item.l2_vector_prompt_candidate_count,
     item.l1_title,
     item.final_title,
     item.seller_title

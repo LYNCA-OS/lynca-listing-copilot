@@ -101,6 +101,33 @@ assert.equal(shouldDeferVectorUntilProviderObservation({
 }), false, "forced vector may run pre-prompt only when field anchors can filter the query");
 assert.equal(retrievalFieldsHavePrePromptVectorAnchor({ collector_number: "202" }), true);
 
+assert.equal(shouldDeferVectorUntilProviderObservation({
+  catalogContext: {
+    promptPacket: true,
+    catalog_assist_eligibility: {
+      prompt_candidate_count: 0,
+      field_support_count: 3
+    },
+    assistPacket: {
+      vector_retrieval: {
+        candidates: [],
+        field_support: [
+          { field: "product", value: "Panini Status" },
+          { field: "year", value: "2018-19" },
+          { field: "player", value: "Trae Young" }
+        ]
+      }
+    }
+  },
+  providerOptions: { enable_vector_assist: true, enable_vector_lazy_mode: true },
+  env: {}
+}), true, "field-support-only catalog packets must not block post-observation vector retrieval");
+assert.equal(shouldDeferVectorUntilProviderObservation({
+  catalogContext: strongCatalogContext,
+  providerOptions: { enable_vector_assist: true, enable_vector_lazy_mode: true },
+  env: {}
+}), false, "a prompt-safe identity candidate may satisfy vector lazy mode");
+
 const oversizedPayloadBatch = boundedPayloadImagesFromImages([
   { id: "front" },
   { id: "back" },

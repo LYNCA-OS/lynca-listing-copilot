@@ -31,6 +31,44 @@ function resolvedFromResult(result = {}) {
   return result.resolved_fields || result.fields || result.resolved || {};
 }
 
+function resolvedHintHasValue(value) {
+  if (Array.isArray(value)) return value.some(resolvedHintHasValue);
+  if (value && typeof value === "object") return Object.values(value).some(resolvedHintHasValue);
+  if (typeof value === "boolean") return value === true;
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
+function mergeResolvedHintObjects(...hints) {
+  const merged = {};
+  for (const hint of hints) {
+    if (!hint || typeof hint !== "object" || Array.isArray(hint)) continue;
+    for (const [key, value] of Object.entries(hint)) {
+      if (!resolvedHintHasValue(value)) continue;
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+export function backgroundPayloadWithL1ResolvedHint(payload = {}, l1Result = null) {
+  const l1Resolved = resolvedFromResult(l1Result || {});
+  if (!resolvedHintHasValue(l1Resolved)) return payload;
+  const existingHint = mergeResolvedHintObjects(
+    payload.resolved || {},
+    payload.resolvedHint || {},
+    payload.resolved_hint || {}
+  );
+  const mergedHint = mergeResolvedHintObjects(existingHint, l1Resolved);
+  if (!resolvedHintHasValue(mergedHint)) return payload;
+  return {
+    ...payload,
+    resolvedHint: mergedHint,
+    resolved_hint: mergedHint,
+    l1_fast_scout_resolved_hint: mergedHint,
+    l1_fast_scout_resolved_hint_source: "v4_fast_scout_l1"
+  };
+}
+
 function catalogPromptCountFromTrace(trace = {}) {
   return Number(trace.catalog_activation_funnel?.prompt_candidate_count || 0);
 }
@@ -191,6 +229,7 @@ async function persistPipelineResult({
 async function runBackgroundAssistedDraft({
   sessionId,
   payload = {},
+  l1Result = null,
   routePlan = {},
   headers = {},
   createResult = {}
@@ -204,9 +243,10 @@ async function runBackgroundAssistedDraft({
       }
     }
   });
-  const providerOptions = providerOptionsForV4BackgroundL2({ payload, routePlan });
+  const l2Payload = backgroundPayloadWithL1ResolvedHint(payload, l1Result);
+  const providerOptions = providerOptionsForV4BackgroundL2({ payload: l2Payload, routePlan });
   const v2Payload = v2PayloadFor({
-    payload,
+    payload: l2Payload,
     sessionId,
     routePlan,
     providerOptions,
@@ -366,6 +406,7 @@ export default async function handler(req, res) {
       scheduleV4Background(l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft({
         sessionId,
         payload,
+        l1Result,
         routePlan,
         headers: req.headers,
         createResult: deferredCreateResult
