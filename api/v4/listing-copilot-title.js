@@ -35,12 +35,48 @@ function catalogPromptCountFromTrace(trace = {}) {
   return Number(trace.catalog_activation_funnel?.prompt_candidate_count || 0);
 }
 
-function scheduleV4Background(promise) {
+function scheduleV4Background(promise, label = "background task") {
   const guarded = Promise.resolve(promise).catch((error) => {
-    console.error("[v4-listing] background L2 failed", error);
+    console.error(`[v4-listing] ${label} failed`, error);
   });
   if (typeof waitUntil === "function") waitUntil(guarded);
   return guarded;
+}
+
+const l1ReturnBarrierVersion = "v4_l1_return_barrier_2026_07_07";
+const l1BlockingModules = Object.freeze([
+  "image_access_signed_read_url",
+  "fast_scout_or_cached_fast_scout",
+  "minimal_resolver_safety_check",
+  "deterministic_renderer"
+]);
+const l1DeferredModules = Object.freeze([
+  "recognition_session_persistence",
+  "field_evidence_persistence",
+  "candidate_trace_persistence",
+  "production_quality_ledger",
+  "catalog_gap_queue",
+  "workflow_sidecars",
+  "l2_assisted_draft",
+  "vector_retrieval",
+  "external_retrieval",
+  "full_evidence_persistence"
+]);
+
+function addL1ReturnBarrierMetadata(response = {}, fastScout = {}) {
+  return withV4Version({
+    ...response,
+    l1_return_barrier_version: l1ReturnBarrierVersion,
+    l1_blocking_modules: [...l1BlockingModules],
+    l1_deferred_modules: [...l1DeferredModules],
+    deferred_persistence_status: "SCHEDULED",
+    l2_background_status: "SCHEDULED",
+    time_after_l1_spent_on_persistence_ms: null,
+    fast_scout_cache_hit: Boolean(fastScout.cache_hit),
+    fast_scout_cache_status: fastScout.cache_status || (fastScout.cache_hit ? "HIT" : "MISS"),
+    fast_scout_prewarmer_used: Boolean(fastScout.prewarmer_used),
+    fast_scout_blocking_call_used: fastScout.blocking_call_used !== false
+  });
 }
 
 function canReturnFastScoutL1(payload = {}, env = process.env) {
@@ -270,63 +306,74 @@ export default async function handler(req, res) {
 
   const sessionId = payload.recognition_session_id || createV4SessionId();
   const routePlan = planV4RecognitionRoute(payload, process.env);
-  const createResult = await createV4RecognitionSession({
+  const createResultPromise = createV4RecognitionSession({
     sessionId,
     payload,
     routePlan,
     operatorId: operatorIdFromRequest(req)
   });
-  await updateV4RecognitionSession({
+  scheduleV4Background(createResultPromise, "recognition session create");
+  const deferredCreateResult = {
     sessionId,
-    patch: { status: v4SessionStatuses.OBSERVING }
-  });
+    persistence: { recognition_session: { saved: false, deferred: true } }
+  };
 
   if (canReturnFastScoutL1(payload, process.env)) {
     try {
-      const fastScoutResult = await runV4FastScoutObservation({
+      const fastScoutPromise = runV4FastScoutObservation({
         payload,
         env: process.env,
         fetchImpl: globalThis.fetch
       });
+      const fastScoutResult = await fastScoutPromise;
       const l1Result = {
         ...fastScoutResult,
         title_stage: v4TitleStages.L1_WRITER_SAFE_DRAFT,
         assisted_draft_status: "PENDING",
         l1_return_reason: "fast_scout_safe_draft_ready",
-        full_assist_continued_after_l1: true
+        full_assist_continued_after_l1: true,
+        l1_return_barrier_version: l1ReturnBarrierVersion
       };
-      scheduleV4Background(runBackgroundAssistedDraft({
+      const l1Payload = v2PayloadFor({
+        payload,
+        sessionId,
+        routePlan,
+        providerOptions: providerOptionsForV4ProgressiveL1({ payload, routePlan }),
+        titleStageTarget: v4TitleStages.L1_WRITER_SAFE_DRAFT
+      });
+      const v4Response = addL1ReturnBarrierMetadata(adaptV2ResultToV4({
+        sessionId,
+        result: l1Result,
+        payload: l1Payload,
+        routePlan,
+        persistence: {
+          create_session: deferredCreateResult.persistence.recognition_session,
+          l1_persistence: { saved: false, deferred: true }
+        }
+      }), l1Result.fast_scout || {});
+      const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({
+        sessionId,
+        result: l1Result,
+        payload: l1Payload,
+        routePlan,
+        createResult,
+        extraProviderSummary: {
+          assisted_draft_status: "PENDING",
+          l1_return_barrier_version: l1ReturnBarrierVersion
+        }
+      }));
+      scheduleV4Background(l1PersistencePromise, "L1 persistence");
+      scheduleV4Background(l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft({
         sessionId,
         payload,
         routePlan,
         headers: req.headers,
-        createResult
-      }));
-      const v4Response = await persistPipelineResult({
-        sessionId,
-        result: l1Result,
-        payload: v2PayloadFor({
-          payload,
-          sessionId,
-          routePlan,
-          providerOptions: providerOptionsForV4ProgressiveL1({ payload, routePlan }),
-          titleStageTarget: v4TitleStages.L1_WRITER_SAFE_DRAFT
-        }),
-        routePlan,
-        createResult,
-        extraProviderSummary: { assisted_draft_status: "PENDING" }
-      });
+        createResult: deferredCreateResult
+      })), "background L2 assisted draft");
       sendJson(res, 200, v4Response);
       return;
     } catch (error) {
-      scheduleV4Background(runBackgroundAssistedDraft({
-        sessionId,
-        payload,
-        routePlan,
-        headers: req.headers,
-        createResult
-      }));
-      await updateV4RecognitionSession({
+      scheduleV4Background(createResultPromise.then((createResult) => updateV4RecognitionSession({
         sessionId,
         patch: {
           provider_result_summary: {
@@ -334,14 +381,31 @@ export default async function handler(req, res) {
             confidence: "FAILED",
             assisted_draft_status: "PENDING",
             provider_error_type: "FAST_SCOUT_FAILED",
-            message: String(error?.message || error || "").slice(0, 240)
+            message: String(error?.message || error || "").slice(0, 240),
+            l1_return_barrier_version: l1ReturnBarrierVersion
           }
         }
-      });
-      sendJson(res, 200, buildFastScoutPendingFailureResponse({ sessionId, routePlan, createResult, error }));
+      }).then(() => createResult)), "fast scout failure session update");
+      scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft({
+        sessionId,
+        payload,
+        routePlan,
+        headers: req.headers,
+        createResult
+      })), "background L2 assisted draft after fast scout failure");
+      sendJson(res, 200, addL1ReturnBarrierMetadata(
+        buildFastScoutPendingFailureResponse({ sessionId, routePlan, createResult: deferredCreateResult, error }),
+        { cache_hit: false, cache_status: "ERROR", blocking_call_used: true }
+      ));
       return;
     }
   }
+
+  const createResult = await createResultPromise;
+  await updateV4RecognitionSession({
+    sessionId,
+    patch: { status: v4SessionStatuses.OBSERVING }
+  });
 
   const progressiveProviderOptions = providerOptionsForV4ProgressiveL1({ payload, routePlan });
   const v2Payload = v2PayloadFor({
