@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
-import { fairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
+import { fairTokenRecall, policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 
 // Offline replay harness: re-render every card of a recorded cloud eval
 // through the CURRENT deterministic renderer (resolved_fields + evidence)
@@ -71,6 +71,8 @@ export async function replayRenderFromEval({
   const rows = [];
   let recordedFairSum = 0;
   let replayedFairSum = 0;
+  let recordedPolicyFairSum = 0;
+  let replayedPolicyFairSum = 0;
   let scored = 0;
   let up = 0;
   let down = 0;
@@ -105,8 +107,12 @@ export async function replayRenderFromEval({
     }
     const recordedFair = fairTokenRecall(reference, recorded);
     const replayedFair = fairTokenRecall(reference, replayed);
+    const recordedPolicyFair = policyFairTokenRecall(reference, recorded);
+    const replayedPolicyFair = policyFairTokenRecall(reference, replayed);
     recordedFairSum += recordedFair || 0;
     replayedFairSum += replayedFair || 0;
+    recordedPolicyFairSum += recordedPolicyFair || 0;
+    replayedPolicyFairSum += replayedPolicyFair || 0;
     scored += 1;
     if (replayedFair > recordedFair + 1e-9) up += 1;
     else if (replayedFair < recordedFair - 1e-9) down += 1;
@@ -120,6 +126,8 @@ export async function replayRenderFromEval({
       recorded_legacy_recall: legacyRecall(reference, recorded),
       recorded_fair_recall: recordedFair,
       replayed_fair_recall: replayedFair,
+      recorded_policy_fair_recall: recordedPolicyFair,
+      replayed_policy_fair_recall: replayedPolicyFair,
       delta: Number(((replayedFair || 0) - (recordedFair || 0)).toFixed(6))
     });
   }
@@ -137,12 +145,18 @@ export async function replayRenderFromEval({
     recorded: {
       fair_avg: scored ? Number((recordedFairSum / scored).toFixed(6)) : null,
       fair_pass_at_0_72: passAt(0.72, "recorded_fair_recall"),
-      fair_pass_at_0_80: passAt(0.80, "recorded_fair_recall")
+      fair_pass_at_0_80: passAt(0.80, "recorded_fair_recall"),
+      policy_fair_avg: scored ? Number((recordedPolicyFairSum / scored).toFixed(6)) : null,
+      policy_fair_pass_at_0_72: passAt(0.72, "recorded_policy_fair_recall"),
+      policy_fair_pass_at_0_80: passAt(0.80, "recorded_policy_fair_recall")
     },
     replayed: {
       fair_avg: scored ? Number((replayedFairSum / scored).toFixed(6)) : null,
       fair_pass_at_0_72: passAt(0.72, "replayed_fair_recall"),
-      fair_pass_at_0_80: passAt(0.80, "replayed_fair_recall")
+      fair_pass_at_0_80: passAt(0.80, "replayed_fair_recall"),
+      policy_fair_avg: scored ? Number((replayedPolicyFairSum / scored).toFixed(6)) : null,
+      policy_fair_pass_at_0_72: passAt(0.72, "replayed_policy_fair_recall"),
+      policy_fair_pass_at_0_80: passAt(0.80, "replayed_policy_fair_recall")
     },
     up_count: up,
     down_count: down,
@@ -168,6 +182,8 @@ export async function main(argv = process.argv) {
     `replay-render-from-eval: ${report.scored_count}/${report.result_count} scored (maxLength=${report.max_length}, assist preserved=${report.assist_titles_preserved})`,
     `recorded fair: avg=${report.recorded.fair_avg} pass@0.72=${report.recorded.fair_pass_at_0_72} pass@0.80=${report.recorded.fair_pass_at_0_80}`,
     `replayed fair: avg=${report.replayed.fair_avg} pass@0.72=${report.replayed.fair_pass_at_0_72} pass@0.80=${report.replayed.fair_pass_at_0_80}`,
+    `recorded policy fair: avg=${report.recorded.policy_fair_avg} pass@0.72=${report.recorded.policy_fair_pass_at_0_72} pass@0.80=${report.recorded.policy_fair_pass_at_0_80}`,
+    `replayed policy fair: avg=${report.replayed.policy_fair_avg} pass@0.72=${report.replayed.policy_fair_pass_at_0_72} pass@0.80=${report.replayed.policy_fair_pass_at_0_80}`,
     `up=${report.up_count} down=${report.down_count}`
   ];
   for (const row of report.rows.filter((item) => item.scored && Math.abs(item.delta) > 1e-9)) {

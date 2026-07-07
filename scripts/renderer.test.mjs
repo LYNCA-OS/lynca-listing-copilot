@@ -1143,6 +1143,80 @@ assert.equal(
 );
 assert.doesNotMatch(tcgGhostRareStress.final_title, /TAEV-EN006|English/);
 
+const bowmanLongDescriptorKeepsGrade = renderListingPresentation({
+  resolved: {
+    year: "2018",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yordan Alvarez"],
+    insert: "Prospect Autographs Gold Shimmer Refractors",
+    surface_color: "Gold",
+    collector_number: "CPAYA",
+    rc: true,
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "9.5",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  maxLength: 80
+});
+assert.ok(bowmanLongDescriptorKeepsGrade.final_title.length <= 80);
+assert.match(bowmanLongDescriptorKeepsGrade.final_title, /BGS 9\.5\/10/);
+assert.match(bowmanLongDescriptorKeepsGrade.final_title, /\bAuto\b/);
+assert.match(bowmanLongDescriptorKeepsGrade.final_title, /Gold/i);
+assert.doesNotMatch(bowmanLongDescriptorKeepsGrade.final_title, /Autographs/i);
+
+const firstBowmanEvidenceBeatsGenericRc = renderListingPresentation({
+  resolved: {
+    year: "2018",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yordan Alvarez"],
+    rc: true,
+    auto: true
+  },
+  evidence: {
+    rc: createEvidenceField({
+      value: true,
+      status: "CONFIRMED",
+      confidence: 0.95,
+      sources: [{ source_type: "CARD_FRONT", observed_text: "1ST BOWMAN" }]
+    })
+  },
+  maxLength: 80
+});
+assert.match(firstBowmanEvidenceBeatsGenericRc.final_title, /1st Bowman/i);
+assert.doesNotMatch(firstBowmanEvidenceBeatsGenericRc.final_title, /\bRC\b/);
+
+const patchAutoAbbreviationCompose = renderListingPresentation({
+  resolved: {
+    year: "2023",
+    manufacturer: "Panini",
+    product: "Panini Flawless Basketball",
+    players: ["Amen Thompson"],
+    card_name: "HOR PAT AUTO GOLD",
+    surface_color: "Gold",
+    serial_number: "05/10",
+    numerical_rarity: "05/10",
+    collector_number: "HPA-ATH",
+    rc: true,
+    auto: true,
+    patch: true,
+    grade_company: "PSA",
+    card_grade: "9",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  maxLength: 80
+});
+assert.ok(patchAutoAbbreviationCompose.final_title.length <= 80);
+assert.match(patchAutoAbbreviationCompose.final_title, /Patch Auto Gold/);
+assert.match(patchAutoAbbreviationCompose.final_title, /PSA 9\/10/);
+assert.doesNotMatch(patchAutoAbbreviationCompose.final_title, /\b(?:HOR|PAT)\b|Patch Auto .*Patch Auto/i);
+
 const standardLotGrammar = renderResolvedTitle({
   multi_card: true,
   card_count: 12,
