@@ -89,6 +89,35 @@ const now = new Date("2026-07-01T12:00:00.000Z");
   assert.equal(reviewed.promotion_event.action, "promote_external_candidate_after_review");
   assert.equal(reviewed.hard_negatives.length, 1);
   assert.equal(reviewed.hard_negatives[0].training_eligible, false);
+
+  const correctedAfterPromotion = applyWriterConfirmationToFlywheel({
+    gapRow: {
+      ...reviewed.gap_row,
+      status: "promoted",
+      promotion_status: "promoted",
+      ai_draft_title: "1997-98 Bowman's Best Michael Jordan #96 Bulls",
+      metadata: {
+        ...reviewed.gap_row.metadata,
+        ai_draft_title_at_promotion: "1997-98 Bowman's Best Michael Jordan #96 Bulls"
+      }
+    },
+    action: writerConfirmationActions.EDIT_AND_CONFIRM,
+    writerFinalTitle: "1997-98 Bowman's Best Michael Jordan Best Performance",
+    writerConfirmedFields: {
+      year: "1997-98",
+      product: "Bowman's Best",
+      card_name: "Best Performance",
+      players: ["Michael Jordan"],
+      collector_number: "96"
+    },
+    actor: "writer-1",
+    now
+  });
+  assert.equal(correctedAfterPromotion.gap_row.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance");
+  assert.equal(correctedAfterPromotion.gap_row.metadata.writer_final_title_overrides_ai_draft, true);
+  assert.equal(correctedAfterPromotion.gap_row.metadata.writer_title_supersedes_previous_promotion, true);
+  assert.equal(correctedAfterPromotion.catalog_staging.source.source_metadata.writer_title_supersedes_previous_promotion, true);
+  assert.equal(correctedAfterPromotion.catalog_staging.source.source_metadata.previous_promotion_title, "1997-98 Bowman's Best Michael Jordan #96 Bulls");
 }
 
 {

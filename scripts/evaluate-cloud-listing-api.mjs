@@ -510,9 +510,15 @@ function titleTokens(value) {
 // unchanged for comparability with earlier eval runs.
 const fairTitleTokenSynonyms = Object.freeze({
   rc: "rookie",
+  rookies: "rookie",
   autograph: "auto",
   autographs: "auto",
+  signature: "auto",
+  signatures: "auto",
   signed: "auto",
+  ref: "refractor",
+  refractors: "refractor",
+  prizms: "prizm",
   beckett: "bgs",
   certified: "cert",
   authentic: "cert"
@@ -521,6 +527,94 @@ const fairTitleTokenSynonyms = Object.freeze({
 // Marketplace/seller-hype tokens that never describe card identity and are
 // excluded from the reference denominator (never from predictions).
 const fairReferenceNoiseTokens = Object.freeze(new Set(["pop"]));
+const policyFairReferenceNoiseTokens = Object.freeze(new Set([
+  ...fairReferenceNoiseTokens,
+  "approximately",
+  "authenticated",
+  "bid",
+  "bids",
+  "bn",
+  "card",
+  "cards",
+  "case",
+  "cert",
+  "condition",
+  "consign",
+  "consignment",
+  "ebay",
+  "fotl",
+  "get",
+  "hit",
+  "on",
+  "pop",
+  "seller",
+  "shop",
+  "sign",
+  "started",
+  "today",
+  "trading",
+  "up",
+  "watched",
+  "x"
+]));
+const policyFairOptionalTeamTokens = Object.freeze(new Set([
+  "angels",
+  "astros",
+  "atlanta",
+  "baltimore",
+  "boston",
+  "brewers",
+  "browns",
+  "bulls",
+  "chiefs",
+  "cleveland",
+  "dodgers",
+  "houston",
+  "kansas",
+  "knicks",
+  "lakers",
+  "magic",
+  "mets",
+  "milwaukee",
+  "minnesota",
+  "orioles",
+  "orlando",
+  "rockets",
+  "seattle",
+  "sooners",
+  "spurs",
+  "tigers",
+  "warriors",
+  "yankees"
+]));
+const policyFairOptionalTeamPhrases = Object.freeze([
+  ["golden", "state"],
+  ["kansas", "city"],
+  ["la", "dodgers"],
+  ["la", "lakers"],
+  ["los", "angeles"],
+  ["new", "york"],
+  ["red", "sox"],
+  ["san", "antonio"]
+]);
+const policyFairLowPriorityCodeTokens = Object.freeze(new Set([
+  "bc",
+  "bcp",
+  "cda",
+  "chr",
+  "cpaya",
+  "hpa",
+  "kd",
+  "nb",
+  "pa",
+  "pat",
+  "pros",
+  "rd",
+  "rjb",
+  "s41",
+  "tyg"
+]));
+const policyFairOptionalRomanSuffixTokens = Object.freeze(new Set(["ii", "iii", "iv", "v"]));
 
 function foldFairTitleText(value) {
   return normalizeText(value)
@@ -566,8 +660,40 @@ function fairReferenceTokens(value) {
   return output;
 }
 
+function policyFairReferenceTokens(value) {
+  const tokens = fairTitleTokens(value);
+  const output = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    let token = tokens[index];
+    const optionalPhrase = policyFairOptionalTeamPhrases.find((phrase) => phrase.every((part, offset) => tokens[index + offset] === part));
+    if (optionalPhrase) {
+      index += optionalPhrase.length - 1;
+      continue;
+    }
+    if (policyFairReferenceNoiseTokens.has(token)
+      || policyFairOptionalTeamTokens.has(token)
+      || policyFairLowPriorityCodeTokens.has(token)
+      || policyFairOptionalRomanSuffixTokens.has(token)
+      || /^#?[a-z]{1,5}\d{1,4}$/i.test(token)
+      || /^#?\d{1,4}[a-z]{1,5}$/i.test(token)) continue;
+    if (token === "case" && tokens[index + 1] === "hit") {
+      index += 1;
+      continue;
+    }
+    const fullSerial = token.match(/^\d{1,4}\/(\d{1,4})$/);
+    if (fullSerial) token = `/${fullSerial[1]}`;
+    output.push(token);
+  }
+  return output;
+}
+
 function fairPredictionTokenSet(value) {
   const tokens = new Set(fairTitleTokens(value));
+  const gradePairPattern = /\b(?:PSA|BGS|SGC|CGC|TAG|Beckett)\s+(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\b/gi;
+  for (const match of foldFairTitleText(value).matchAll(gradePairPattern)) {
+    tokens.add(String(Number(match[1])));
+    tokens.add(String(Number(match[2])));
+  }
   // A complete numerical rarity in the prediction also satisfies a
   // denominator-only reference token (24/25 covers /25).
   for (const token of [...tokens]) {
@@ -585,6 +711,14 @@ export function fairTokenRecall(referenceTitle, predictionTitle) {
   return Number((overlap / reference.size).toFixed(6));
 }
 
+export function policyFairTokenRecall(referenceTitle, predictionTitle) {
+  const reference = new Set(policyFairReferenceTokens(referenceTitle));
+  if (!reference.size) return null;
+  const predicted = fairPredictionTokenSet(predictionTitle);
+  const overlap = [...reference].filter((token) => predicted.has(token)).length;
+  return Number((overlap / reference.size).toFixed(6));
+}
+
 function titleComparison(referenceTitle, predictionTitle) {
   const reference = new Set(titleTokens(referenceTitle));
   const predicted = new Set(titleTokens(predictionTitle));
@@ -593,6 +727,7 @@ function titleComparison(referenceTitle, predictionTitle) {
   return {
     token_recall: Number((overlap / reference.size).toFixed(6)),
     fair_token_recall: fairTokenRecall(referenceTitle, predictionTitle),
+    policy_fair_token_recall: policyFairTokenRecall(referenceTitle, predictionTitle),
     exact: normalizeText(referenceTitle).toLowerCase() === normalizeText(predictionTitle).toLowerCase()
   };
 }
@@ -2215,6 +2350,8 @@ function evaluatedResultFromData({
     pass_at_0_80: Number(titleMatch?.token_recall || 0) >= 0.80,
     fair_pass_at_0_72: Number(titleMatch?.fair_token_recall || 0) >= 0.72,
     fair_pass_at_0_80: Number(titleMatch?.fair_token_recall || 0) >= 0.80,
+    policy_fair_pass_at_0_72: Number(titleMatch?.policy_fair_token_recall || 0) >= 0.72,
+    policy_fair_pass_at_0_80: Number(titleMatch?.policy_fair_token_recall || 0) >= 0.80,
     timing: data.timing || null,
     elapsed_ms: Date.now() - started
   };
@@ -2452,6 +2589,11 @@ function summarize(results = [], elapsedMs = 0) {
   const fairPassAt080 = results.filter((item) => item.fair_pass_at_0_80 === true).length;
   const fairRecallValues = results
     .map((item) => item.corrected_title_comparison?.fair_token_recall)
+    .filter((value) => Number.isFinite(value));
+  const policyFairPassAt072 = results.filter((item) => Number(item.corrected_title_comparison?.policy_fair_token_recall || 0) >= 0.72).length;
+  const policyFairPassAt080 = results.filter((item) => Number(item.corrected_title_comparison?.policy_fair_token_recall || 0) >= 0.80).length;
+  const policyFairRecallValues = results
+    .map((item) => item.corrected_title_comparison?.policy_fair_token_recall)
     .filter((value) => Number.isFinite(value));
   const rawPassAt072 = results.filter((item) => Number(item.raw_corrected_title_comparison?.token_recall || 0) >= 0.72).length;
   const rawPassAt080 = results.filter((item) => Number(item.raw_corrected_title_comparison?.token_recall || 0) >= 0.80).length;
@@ -2794,6 +2936,13 @@ function summarize(results = [], elapsedMs = 0) {
     fair_pass_at_0_72_rate: attempted ? Number((fairPassAt072 / attempted).toFixed(6)) : null,
     fair_pass_at_0_80_count: fairPassAt080,
     fair_pass_at_0_80_rate: attempted ? Number((fairPassAt080 / attempted).toFixed(6)) : null,
+    policy_fair_token_recall_avg: policyFairRecallValues.length
+      ? Number((policyFairRecallValues.reduce((sum, value) => sum + value, 0) / policyFairRecallValues.length).toFixed(6))
+      : null,
+    policy_fair_pass_at_0_72_count: policyFairPassAt072,
+    policy_fair_pass_at_0_72_rate: attempted ? Number((policyFairPassAt072 / attempted).toFixed(6)) : null,
+    policy_fair_pass_at_0_80_count: policyFairPassAt080,
+    policy_fair_pass_at_0_80_rate: attempted ? Number((policyFairPassAt080 / attempted).toFixed(6)) : null,
     candidate_proxy_selected_count: candidateProxySelectedCount,
     candidate_proxy_catalog_selected_count: candidateProxyCatalogSelectedCount,
     candidate_proxy_vector_selected_count: candidateProxyVectorSelectedCount,

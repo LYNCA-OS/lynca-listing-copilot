@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { evaluateCloudListingApi, fairTokenRecall, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
+import { evaluateCloudListingApi, fairTokenRecall, policyFairTokenRecall, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
 import { compareCloudEvalAblation } from "./compare-cloud-eval-ablation.mjs";
 
 function jsonResponse(status, body, headers = {}) {
@@ -1183,5 +1183,13 @@ assert.equal(fairTokenRecall("Card 24/25", "Card #/25"), 1); // denominator supp
 assert.equal(fairTokenRecall("Card 04/10 BGS", "Card 4/10 Beckett"), 1); // leading zeros + grader alias
 assert.equal(fairTokenRecall("Curry PSA 10 POP 2", "Curry PSA 10 2"), 1); // POP excluded from denominator
 assert.equal(fairTokenRecall("Wemby SSP Case Hit RC", "Wemby SSP RC"), 1); // case-hit bigram excluded
+assert.equal(policyFairTokenRecall("2024 Bowman Chrome Sample Auto #BCP79 Yankees", "2024 Bowman Chrome Sample Auto"), 1);
+assert.equal(policyFairTokenRecall("2018-19 Panini Threads Trae Young Rookies Premium RC Auto #/105 Hawks BGS 9.5", "2018-19 Panini Threads Trae Young Rookie Signatures Red 87/105 Auto BGS 9.5/10") >= 0.72, true);
+assert.equal(policyFairTokenRecall("2022 Mosaic Patrick Mahomes II Choice Nebula #1/1 Chiefs PSA 10", "2022 Mosaic Patrick Mahomes Choice Nebula 1/1 PSA 10"), 1);
+assert.equal(policyFairTokenRecall("2024 Topps Chrome Red Refractor", "2024 Topps Chrome Refractor") < 1, true); // Red is a finish/color, not a removable team token.
+assert.equal(policyFairTokenRecall("2024 Bowman Chrome New Breed Auto", "2024 Bowman Chrome Auto") < 1, true); // New Breed is a card name, not New York.
+assert.equal(policyFairTokenRecall("2024 Topps Red Sox Auto", "2024 Topps Auto"), 1);
+assert.equal(policyFairTokenRecall("2024 New York Yankees Auto", "2024 Auto"), 1);
+assert.equal(policyFairTokenRecall("2021 Bowman Draft Tyler Black Chrome Auto RC Red Refractor 1st #/5 PSA 10 9", "2021 Bowman Chrome Tyler Black Chrome Draft Pick Auto Red Ref. 4/5 #CDA PSA 10/9") >= 0.72, true);
 
 console.log("cloud listing API eval tests passed");

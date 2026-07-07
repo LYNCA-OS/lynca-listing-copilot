@@ -661,12 +661,31 @@ assert.match(statusNewBreedFieldFidelity.rendered_title, /\bNew Breed\b/i);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /20\/99/);
 assert.match(statusNewBreedFieldFidelity.rendered_title, /PSA 10$/);
 
+const statusNewBreedKeepsCardNumberBeforePureSportSuffix = renderResolvedTitle({
+  year: "2018-19",
+  manufacturer: "Panini",
+  brand: "Panini",
+  product: "Panini Status",
+  set: "Status Basketball",
+  players: ["Trae Young"],
+  card_name: "New Breed",
+  collector_number: "NB-TYG",
+  auto: true,
+  team: "Atlanta Hawks"
+}, {
+  maxLength: 80
+});
+assert.ok(statusNewBreedKeepsCardNumberBeforePureSportSuffix.rendered_title.length <= 80);
+assert.match(statusNewBreedKeepsCardNumberBeforePureSportSuffix.rendered_title, /Panini Status Trae Young New Breed #NB-TYG RC Auto/i);
+assert.doesNotMatch(statusNewBreedKeepsCardNumberBeforePureSportSuffix.rendered_title, /Status Basketball/i);
+
 const encasedGradeCompanyMissingDoesNotInventGenericGrade = renderResolvedTitle({
   year: "2020-21",
   manufacturer: "Panini",
   product: "Encased Basketball",
   players: ["Anthony Edwards"],
   card_name: "SIG-GOLD BREAKAWAY",
+  surface_color: "Gold",
   serial_number: "9/10",
     numerical_rarity: "9/10",
   card_grade: "10",
@@ -676,7 +695,7 @@ const encasedGradeCompanyMissingDoesNotInventGenericGrade = renderResolvedTitle(
 });
 assert.ok(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title.length <= 85);
 assert.match(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /\bEncased\b/i);
-assert.match(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /SIG-GOLD BREAKAWAY/i);
+assert.match(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /Signatures Breakaway Gold/i);
 assert.doesNotMatch(encasedGradeCompanyMissingDoesNotInventGenericGrade.rendered_title, /Grade 10$/);
 
 const rookieMaterialSignaturesPreserveKnownComponents = renderResolvedTitle({
@@ -693,6 +712,48 @@ assert.match(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /^2
 assert.match(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /Rookie Patch Auto/i);
 assert.match(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /RC\b/i);
 assert.doesNotMatch(rookieMaterialSignaturesPreserveKnownComponents.rendered_title, /Panini America/i);
+
+const prizmWorldCupSetSurvivesCompression = renderResolvedTitle({
+  year: "2022",
+  manufacturer: "Panini",
+  product: "Panini Prizm",
+  set: "Prizm FIFA World Cup Qatar 2022",
+  players: ["Pele"],
+  card_name: "SIG-GOLD BREAKAWAY",
+  surface_color: "Gold",
+  numerical_rarity: "2/2",
+  collector_number: "S-P",
+  auto: true,
+  grade_company: "PSA",
+  card_grade: "9",
+  grade_type: "CARD_ONLY",
+  team: "Brazil"
+}, {
+  maxLength: 80
+});
+assert.ok(prizmWorldCupSetSurvivesCompression.rendered_title.length <= 80);
+assert.match(prizmWorldCupSetSurvivesCompression.rendered_title, /Panini Prizm World Cup/i);
+assert.match(prizmWorldCupSetSurvivesCompression.rendered_title, /Signatures Breakaway Gold/i);
+assert.doesNotMatch(prizmWorldCupSetSurvivesCompression.rendered_title, /Qatar 2022/i);
+
+const shieldCardNamePreservesPatchMeaning = renderResolvedTitle({
+  year: "2023",
+  manufacturer: "Panini",
+  product: "Flawless Football",
+  players: ["Rashee Rice"],
+  card_name: "Shield",
+  numerical_rarity: "1/1",
+  collector_number: "LTS",
+  rc: true,
+  auto: true,
+  team: "Chiefs"
+}, {
+  maxLength: 80
+});
+assert.ok(shieldCardNamePreservesPatchMeaning.rendered_title.length <= 80);
+assert.match(shieldCardNamePreservesPatchMeaning.rendered_title, /NFL Shield Patch/i);
+assert.match(shieldCardNamePreservesPatchMeaning.rendered_title, /RC Auto/i);
+assert.doesNotMatch(shieldCardNamePreservesPatchMeaning.rendered_title, /Patch\s+Patch\s+Auto/i);
 
 const longTitle = renderResolvedTitle({
   year: "2015-16",
@@ -950,6 +1011,49 @@ const smartCollapsedProductHierarchy = renderListingPresentation({
 assert.match(smartCollapsedProductHierarchy.final_title, /Panini Prizm Black Test Player/);
 assert.doesNotMatch(smartCollapsedProductHierarchy.final_title, /Panini Panini|FOTL/);
 
+const bowmanOwnedByToppsButOutputAsBowman = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yoshinobu Yamamoto"],
+    card_name: "Rookie Auto-Gold Refractor",
+    surface_color: "Gold",
+    serial_number: "22/50",
+    numerical_rarity: "22/50",
+    rc: true,
+    auto: true,
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  }
+});
+assert.equal(bowmanOwnedByToppsButOutputAsBowman.final_title, "2024 Bowman Chrome Yoshinobu Yamamoto Rookie Auto Gold Refractor 22/50 RC PSA 10");
+assert.equal(bowmanOwnedByToppsButOutputAsBowman.final_title.length, 80);
+assert.doesNotMatch(bowmanOwnedByToppsButOutputAsBowman.final_title, /Topps Bowman/);
+
+const bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Bowman Chrome",
+    players: ["Yoshinobu Yamamoto"],
+    card_name: "Rookie Auto-Gold Refractor",
+    surface_color: "Gold",
+    serial_number: "22/50",
+    numerical_rarity: "22/50",
+    rc: true,
+    auto: true,
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  }
+});
+assert.equal(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title, "2024 Bowman Chrome Yoshinobu Yamamoto Rookie Auto Gold Refractor 22/50 RC PSA 10");
+assert.equal(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title.length, 80);
+assert.doesNotMatch(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title, /Topps Bowman/);
+
 const smartComposedCardVariantFinish = renderListingPresentation({
   resolved: {
     year: "2024",
@@ -1038,6 +1142,146 @@ assert.equal(
   "2007 Yu-Gi-Oh! Tactical Evolution Rainbow Dragon Ghost Rare 1st Edition PSA 10"
 );
 assert.doesNotMatch(tcgGhostRareStress.final_title, /TAEV-EN006|English/);
+
+const bowmanLongDescriptorKeepsGrade = renderListingPresentation({
+  resolved: {
+    year: "2018",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yordan Alvarez"],
+    insert: "Prospect Autographs Gold Shimmer Refractors",
+    surface_color: "Gold",
+    collector_number: "CPAYA",
+    rc: true,
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "9.5",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  maxLength: 80
+});
+assert.ok(bowmanLongDescriptorKeepsGrade.final_title.length <= 80);
+assert.match(bowmanLongDescriptorKeepsGrade.final_title, /BGS 9\.5\/10/);
+assert.match(bowmanLongDescriptorKeepsGrade.final_title, /\bAuto\b/);
+assert.match(bowmanLongDescriptorKeepsGrade.final_title, /Gold/i);
+assert.doesNotMatch(bowmanLongDescriptorKeepsGrade.final_title, /Autographs/i);
+
+const firstBowmanEvidenceBeatsGenericRc = renderListingPresentation({
+  resolved: {
+    year: "2018",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yordan Alvarez"],
+    rc: true,
+    auto: true
+  },
+  evidence: {
+    rc: createEvidenceField({
+      value: true,
+      status: "CONFIRMED",
+      confidence: 0.95,
+      sources: [{ source_type: "CARD_FRONT", observed_text: "1ST BOWMAN" }]
+    })
+  },
+  maxLength: 80
+});
+assert.match(firstBowmanEvidenceBeatsGenericRc.final_title, /1st Bowman/i);
+assert.doesNotMatch(firstBowmanEvidenceBeatsGenericRc.final_title, /\bRC\b/);
+
+const patchAutoAbbreviationCompose = renderListingPresentation({
+  resolved: {
+    year: "2023",
+    manufacturer: "Panini",
+    product: "Panini Flawless Basketball",
+    players: ["Amen Thompson"],
+    card_name: "HOR PAT AUTO GOLD",
+    surface_color: "Gold",
+    serial_number: "05/10",
+    numerical_rarity: "05/10",
+    collector_number: "HPA-ATH",
+    rc: true,
+    auto: true,
+    patch: true,
+    grade_company: "PSA",
+    card_grade: "9",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  maxLength: 80
+});
+assert.ok(patchAutoAbbreviationCompose.final_title.length <= 80);
+assert.match(patchAutoAbbreviationCompose.final_title, /Patch Auto Gold/);
+assert.match(patchAutoAbbreviationCompose.final_title, /PSA 9\/10/);
+assert.doesNotMatch(patchAutoAbbreviationCompose.final_title, /\b(?:HOR|PAT)\b|Patch Auto .*Patch Auto/i);
+
+const bowmanChromeProspectsKeepsDifferentiatingCardName = renderListingPresentation({
+  resolved: {
+    year: "2025",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    set: "Bowman Chrome Prospects",
+    players: ["Jhonkensy Noel"],
+    card_name: "Chrome Prospects Auto Orange Refractor",
+    surface_color: "Orange",
+    numerical_rarity: "24/25",
+    grade_company: "PSA",
+    card_grade: "9",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.ok(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title.length <= 80);
+assert.match(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title, /Bowman Chrome Prospects/);
+assert.match(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title, /Auto Orange Refractor/);
+assert.match(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title, /PSA 9$/);
+assert.doesNotMatch(bowmanChromeProspectsKeepsDifferentiatingCardName.final_title, /Chrome Prospects.*Chrome Prospects/i);
+
+const bowmanRefAbbreviationKeepsCardName = renderListingPresentation({
+  resolved: {
+    year: "2025",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    set: "Bowman Chrome Prospects",
+    players: ["Aeverson Arteaga"],
+    card_name: "Chrome Prospects Auto - Orange Ref.",
+    surface_color: "Orange",
+    numerical_rarity: "24/25",
+    grade_company: "PSA",
+    card_grade: "9",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.ok(bowmanRefAbbreviationKeepsCardName.final_title.length <= 80);
+assert.match(bowmanRefAbbreviationKeepsCardName.final_title, /Auto Orange Refractor/);
+assert.match(bowmanRefAbbreviationKeepsCardName.final_title, /PSA 9$/);
+
+const rookieSignaturesSurvivesCardNumberCompression = renderListingPresentation({
+  resolved: {
+    year: "2018-19",
+    manufacturer: "Panini",
+    product: "Panini Prizm",
+    set: "Rookie Signatures Prizms Silver",
+    players: ["Jaren Jackson Jr"],
+    card_name: "Rookie Signatures Prizms Silver",
+    collector_number: "4",
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "9",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  maxLength: 80
+});
+assert.ok(rookieSignaturesSurvivesCardNumberCompression.final_title.length <= 80);
+assert.match(rookieSignaturesSurvivesCardNumberCompression.final_title, /Rookie Signatures/);
+assert.match(rookieSignaturesSurvivesCardNumberCompression.final_title, /Silver/);
+assert.match(rookieSignaturesSurvivesCardNumberCompression.final_title, /BGS 9\/10$/);
 
 const standardLotGrammar = renderResolvedTitle({
   multi_card: true,

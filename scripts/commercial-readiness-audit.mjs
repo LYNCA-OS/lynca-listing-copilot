@@ -212,8 +212,8 @@ async function auditPublishingBoundary() {
   if (!/publish_status must be READY before publishing/.test(listingDraft.text)) {
     approvalFailures.push("ListingDraft validator does not require READY publish_status");
   }
-  if (!/destination: "mock_b_end"/.test(appJs.text) || !/dry_run: true/.test(appJs.text)) {
-    approvalFailures.push("frontend mock publish path is not fixed to dry-run mock_b_end");
+  if (/fetch\("\/api\/listing-publish-draft"/.test(appJs.text) || /data-publish-draft|data-quick-approve-publish/.test(appJs.text)) {
+    approvalFailures.push("frontend title review surface exposes direct publish controls");
   }
 
   const approvalDetails = {
@@ -229,7 +229,7 @@ async function auditPublishingBoundary() {
   return [
     approvalFailures.length
       ? blocked("publishing_approval_gate", "Publishing approval gate is not sufficiently enforced.", approvalDetails)
-      : passed("publishing_approval_gate", "Publishing requires an approved ListingDraft and keeps the frontend mock publish path dry-run.", approvalDetails),
+      : passed("publishing_approval_gate", "Publishing requires an approved ListingDraft and the V4 title review surface has no direct publish controls.", approvalDetails),
     destinationDetails.mock_only
       ? blocked("publishing_destination", "Only mock_b_end is configured; real B-end publishing remains blocked until API docs and an adapter exist.", destinationDetails)
       : passed("publishing_destination", "At least one non-mock publish destination is configured.", destinationDetails)

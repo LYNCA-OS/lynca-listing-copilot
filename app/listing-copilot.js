@@ -11,6 +11,7 @@ const maxTitleLength = 80;
 const MAX_CONCURRENT_WORKERS = 6;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
+const BACKGROUND_PREP_CONCURRENCY = 2;
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
 const IMAGE_INITIAL_QUALITY = 0.9;
@@ -21,6 +22,11 @@ const MAX_ASSET_REQUEST_BYTES = 3_400_000;
 const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_ASSET = 6;
+const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
+const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
+const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
+const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
+const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
@@ -55,7 +61,8 @@ const state = {
   assetProgress: new Map(),
   progressTimer: null,
   completedAssetCount: 0,
-  processingTotal: 0
+  processingTotal: 0,
+  backgroundPreparationRunId: 0
 };
 
 const elements = {
@@ -471,6 +478,10 @@ function buildAssetRequestBody(asset, options = {}) {
     captureQuality: summarizeAssetImageQuality(providerImages),
     resolutionMap: state.resolutionMap,
     clientTiming: asset.clientTiming || {},
+    preingestion_bundle_id: asset.preingestionBundleId || "",
+    preingestionBundleId: asset.preingestionBundleId || "",
+    preingestion_bundle_status: asset.preingestionBundleStatus || "",
+    preingestion_summary: asset.preingestionSummary || null,
     provider_options: {
       ...defaultProviderOptions,
       ...(options.provider_options || options.providerOptions || {})
@@ -681,36 +692,210 @@ async function uploadAssetImage(asset, image, imageIndex) {
 
 async function ensureAssetImagesUploaded(asset) {
   if (!storageReady()) return false;
+  if (asset.storageUploadPromise) return asset.storageUploadPromise;
 
-  const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
-  asset.providerImages = images;
-  const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
-    return uploadAssetImage(asset, image, imageIndex);
-  });
-  const imagesById = new Map(images.map((image) => [image.id, image]));
-  images.forEach((image) => {
-    const metadata = image.cropMetadata || image.crop_metadata;
-    if (!metadata?.source_image_id) return;
-    const sourceImage = imagesById.get(metadata.source_image_id);
-    const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
-    if (!sourceObjectPath) return;
-    const updatedMetadata = {
-      ...metadata,
-      source_object_path: sourceObjectPath,
-      derived_object_path: metadata.derived_object_path || image.objectPath || "",
-      asset_id: metadata.asset_id || asset.id || ""
+  asset.storageUploadPromise = (async () => {
+    const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
+    asset.providerImages = images;
+    const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
+      return uploadAssetImage(asset, image, imageIndex);
+    });
+    const imagesById = new Map(images.map((image) => [image.id, image]));
+    images.forEach((image) => {
+      const metadata = image.cropMetadata || image.crop_metadata;
+      if (!metadata?.source_image_id) return;
+      const sourceImage = imagesById.get(metadata.source_image_id);
+      const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
+      if (!sourceObjectPath) return;
+      const updatedMetadata = {
+        ...metadata,
+        source_object_path: sourceObjectPath,
+        derived_object_path: metadata.derived_object_path || image.objectPath || "",
+        asset_id: metadata.asset_id || asset.id || ""
+      };
+      image.cropMetadata = updatedMetadata;
+      image.crop_metadata = updatedMetadata;
+      if (image.cropPlan) {
+        image.cropPlan = {
+          ...image.cropPlan,
+          crop_metadata: updatedMetadata
+        };
+      }
+    });
+
+    return uploadResults.some(Boolean);
+  })();
+
+  try {
+    return await asset.storageUploadPromise;
+  } catch (error) {
+    asset.storageUploadPromise = null;
+    throw error;
+  }
+}
+
+function preingestionImagesForAsset(asset) {
+  return boundedProviderImagesForRequest(asset.providerImages || asset.images)
+    .filter(imageHasVerifiedStorageReference)
+    .map((image) => serializableAssetImage(image, asset.id));
+}
+
+function backgroundPreparationLabel(asset = {}) {
+  return {
+    queued: "云端准备排队",
+    uploading: "云端图片准备中",
+    preingesting: "云端证据包准备中",
+    ready: "云端图片已准备",
+    failed: "后台准备未完成"
+  }[asset.backgroundPrepareStatus] || "";
+}
+
+async function ensurePreingestionBundle(asset) {
+  if (asset.preingestionBundleId) {
+    return {
+      bundleId: asset.preingestionBundleId,
+      reused: true
     };
-    image.cropMetadata = updatedMetadata;
-    image.crop_metadata = updatedMetadata;
-    if (image.cropPlan) {
-      image.cropPlan = {
-        ...image.cropPlan,
-        crop_metadata: updatedMetadata
+  }
+
+  const images = preingestionImagesForAsset(asset);
+  if (!images.length) {
+    throw new Error("no_verified_storage_images");
+  }
+
+  const response = await fetch(PREINGEST_API_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      asset_id: asset.id,
+      assetId: asset.id,
+      images,
+      captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
+      requested_fields: [
+        "serial_number",
+        "collector_number",
+        "checklist_code",
+        "grade_label",
+        "year_product",
+        "subject",
+        "surface"
+      ],
+      source: "listing_copilot_background_prepare",
+      enqueue_workers: true,
+      enqueue_ocr: true,
+      enqueue_embeddings: true,
+      enqueue_surface: true,
+      enqueue_quality: true,
+      verify_signed_read_urls: true
+    })
+  });
+
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.message || payload.code || `preingestion_failed_${response.status}`);
+  }
+
+  asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
+  asset.preingestionBundleStatus = payload.bundle_status || "";
+  asset.preingestionSummary = payload.preprocessing_summary || null;
+  return {
+    bundleId: asset.preingestionBundleId,
+    status: asset.preingestionBundleStatus,
+    summary: asset.preingestionSummary
+  };
+}
+
+async function prepareAssetInBackground(asset, runId) {
+  if (!asset) return null;
+  if (asset.backgroundPreparationPromise && asset.backgroundPreparationRunId === runId) {
+    return asset.backgroundPreparationPromise;
+  }
+
+  asset.backgroundPreparationRunId = runId;
+  asset.backgroundPrepareStatus = "queued";
+  asset.backgroundPreparationPromise = (async () => {
+    const startedAt = performance.now();
+    try {
+      if (runId !== state.backgroundPreparationRunId) return { stale: true };
+      asset.backgroundPrepareStatus = "uploading";
+      await ensureAssetImagesUploaded(asset);
+
+      if (runId !== state.backgroundPreparationRunId) return { stale: true };
+      asset.backgroundPrepareStatus = "preingesting";
+      const bundle = await ensurePreingestionBundle(asset);
+
+      asset.backgroundPrepareStatus = "ready";
+      asset.backgroundPrepareError = "";
+      asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+      return { ok: true, ...bundle };
+    } catch (error) {
+      asset.backgroundPrepareStatus = "failed";
+      asset.backgroundPrepareError = String(error.message || "background_prepare_failed").slice(0, 160);
+      asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+      return { ok: false, error: asset.backgroundPrepareError };
+    } finally {
+      if (!state.processing && runId === state.backgroundPreparationRunId) {
+        renderResults();
+      }
+    }
+  })();
+
+  return asset.backgroundPreparationPromise;
+}
+
+async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
+  if (!asset?.backgroundPreparationPromise) return { used: false };
+  const startedAt = performance.now();
+  try {
+    const timedOut = Symbol("background_prepare_timeout");
+    const result = await Promise.race([
+      asset.backgroundPreparationPromise,
+      wait(maxWaitMs).then(() => timedOut)
+    ]);
+    if (result === timedOut) {
+      return {
+        used: true,
+        timed_out: true,
+        wait_ms: Math.round(performance.now() - startedAt)
       };
     }
-  });
+    return {
+      used: true,
+      wait_ms: Math.round(performance.now() - startedAt),
+      ...result
+    };
+  } catch (error) {
+    return {
+      used: true,
+      ok: false,
+      wait_ms: Math.round(performance.now() - startedAt),
+      error: String(error.message || "background_prepare_failed").slice(0, 160)
+    };
+  }
+}
 
-  return uploadResults.some(Boolean);
+function startBackgroundPreparation(reason = "file_ready") {
+  if (!storageReady() || !state.assets.length) return false;
+  const runId = ++state.backgroundPreparationRunId;
+  const assets = [...state.assets];
+  assets.forEach((asset) => {
+    if (!asset.preingestionBundleId && asset.backgroundPrepareStatus !== "ready") {
+      asset.backgroundPrepareStatus = "queued";
+      asset.backgroundPreparationRunId = runId;
+    }
+  });
+  if (!state.processing) {
+    renderResults();
+  }
+  void mapWithConcurrency(assets, BACKGROUND_PREP_CONCURRENCY, async (asset) => {
+    if (runId !== state.backgroundPreparationRunId) return null;
+    return prepareAssetInBackground(asset, runId);
+  });
+  void prewarmV4(`background_prepare_${reason}`);
+  return true;
 }
 
 function formatCost(requests) {
@@ -1505,6 +1690,7 @@ function pendingBox(asset) {
   const isWorking = isActive || isQueued;
   const label = isActive ? "识别中" : isQueued ? "排队中" : "等待中";
   const progress = assetProgressSnapshot(asset);
+  const backgroundLabel = !isWorking ? backgroundPreparationLabel(asset) : "";
   const message = isActive
     ? "正在读取原图与关键局部区域；识别完成后会按模块生成可编辑标题。"
     : isQueued
@@ -1520,6 +1706,7 @@ function pendingBox(asset) {
         ${isWorking ? `<span class="loading-spinner" aria-hidden="true"></span>` : `<span class="idle-dot" aria-hidden="true"></span>`}
         <strong>${escapeHtml(label)}</strong>
         <p>${escapeHtml(message)}</p>
+        ${backgroundLabel ? `<small class="background-prepare-note">${escapeHtml(backgroundLabel)}</small>` : ""}
         ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
         ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
         ${isActive ? pendingModuleSkeleton(progress) : ""}
@@ -1749,17 +1936,14 @@ function TitleCardComponent(result, asset = null) {
   const correctedTitle = result.correctedTitle ?? generatedTitle;
   const copyDisabled = !failed && !correctedTitle;
   const saveDisabled = result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
-  const showPublish = shouldShowPublishButton(result);
-  const publishDisabled = !canPublishResult(result);
-  const showQuickApprove = shouldShowQuickApproveButton(result);
-  const quickApproveDisabled = !canQuickApproveAndPublish(result);
   const retryProvider = emergencyProvider();
   const canEmergencyRetry = failed && retryProvider && result.provider !== "openai_legacy";
+  const titleEdited = String(correctedTitle || "").trim() && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
     saved: "已保存",
     skipped: "未留存",
     saving: "保存中…"
-  }[result.feedbackStatus] || "接受";
+  }[result.feedbackStatus] || (titleEdited ? "保存编辑" : "接受");
   const rejectDisabled = result.feedbackStatus === "saving";
   const providerLabel = result.provider_label || providerById(result.provider)?.label || result.provider || "-";
   const unavailableTitle = failed
@@ -1777,8 +1961,6 @@ function TitleCardComponent(result, asset = null) {
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
-          ${showQuickApprove ? `<button class="copy-button publish-button quick-approve-button" type="button" data-quick-approve-publish="${result.index}" ${quickApproveDisabled ? "disabled" : ""}>快速批准并发布</button>` : ""}
-          ${showPublish ? `<button class="copy-button publish-button" type="button" data-publish-draft="${result.index}" ${publishDisabled ? "disabled" : ""}>${escapeHtml(publishButtonLabel(result))}</button>` : ""}
         </div>
       </div>
       ${sideDecisionNotice(asset, result)}
@@ -1786,7 +1968,6 @@ function TitleCardComponent(result, asset = null) {
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
-      ${result.publishMessage ? `<p class="publish-status">${escapeHtml(result.publishMessage)}</p>` : ""}
       ${writerEvidenceDetails(result, asset, unresolved)}
     </div>
   `;
@@ -2010,6 +2191,8 @@ async function handleFiles(fileList) {
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
+  state.backgroundPreparationRunId += 1;
+  void prewarmV4("file_selected");
   setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
   closeImageModal();
   const failures = [];
@@ -2046,17 +2229,24 @@ async function handleFiles(fileList) {
   } else {
     const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
     setStatus(previewOptimizedCount
-      ? `${images.length} 张图片已准备。点击开始生成后才会上传云端识别；本地预览已高质量优化。`
-      : `${images.length} 张图片已准备。点击开始生成后才会上传云端识别。`);
+      ? `${images.length} 张图片已准备。点击开始生成后才会开始识别；系统会提前准备云端图片，本地预览已高质量优化。`
+      : `${images.length} 张图片已准备。点击开始生成后才会开始识别；系统会提前准备云端图片。`);
   }
 
   renderPreviews();
   renderResults();
+  startBackgroundPreparation("file_ready");
 }
 
 async function processAsset(asset, options = {}) {
   const processStartedAt = performance.now();
-  setAssetProgress(asset.index, "上传原图", 0.08);
+  setAssetProgress(asset.index, "检查云端准备", 0.05);
+  const backgroundPrepareResult = await settleBackgroundPreparation(asset);
+  setAssetProgress(
+    asset.index,
+    asset.preingestionBundleId ? "复用云端证据包" : "上传原图",
+    asset.preingestionBundleId ? 0.16 : 0.08
+  );
   const uploadStartedAt = performance.now();
   const uploaded = await ensureAssetImagesUploaded(asset);
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
@@ -2064,7 +2254,10 @@ async function processAsset(asset, options = {}) {
 
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
-    client_upload_ms: uploadMs
+    client_upload_ms: uploadMs,
+    client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
+    client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
+    client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId)
   };
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备识别请求", 0.3);
@@ -2079,7 +2272,7 @@ async function processAsset(asset, options = {}) {
 
   const apiStartedAt = performance.now();
   setAssetProgress(asset.index, "云端识别中", 0.52);
-  const response = await fetch("/api/listing-copilot-title", {
+  const response = await fetch(TITLE_API_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -2106,10 +2299,24 @@ async function processAsset(asset, options = {}) {
 
   setAssetProgress(asset.index, "接收识别结果", 0.82);
   const payload = await response.json();
-  setAssetProgress(asset.index, "生成可编辑模块", 0.94);
-  const finalTitle = payload.final_title || payload.title || "";
+  setAssetProgress(asset.index, "生成一段式标题", 0.94);
+  const legacyResult = payload.legacy_v2_result && typeof payload.legacy_v2_result === "object"
+    ? payload.legacy_v2_result
+    : {};
+  const finalTitle = payload.writer_draft?.title
+    || payload.final_title
+    || legacyResult.final_title
+    || legacyResult.rendered_title
+    || legacyResult.title
+    || payload.title
+    || "";
+  const resolvedFields = payload.resolved_fields || legacyResult.resolved_fields || legacyResult.resolved || legacyResult.fields || {};
+  const providerResult = payload.provider_result || {};
+  const confidence = providerResult.confidence || legacyResult.confidence || payload.confidence || (finalTitle ? "MEDIUM" : "FAILED");
   const clientTotalMs = Math.round(performance.now() - processStartedAt);
   const timing = {
+    ...(legacyResult.timing || {}),
+    ...(providerResult.timing || {}),
     ...(payload.timing || {}),
     client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
     client_upload_ms: uploadMs,
@@ -2121,15 +2328,24 @@ async function processAsset(asset, options = {}) {
   return {
     index: asset.index,
     thumbnail: asset.images[0].dataUrl,
+    ...legacyResult,
+    ...payload,
+    title: finalTitle,
+    final_title: finalTitle,
+    rendered_title: payload.final_title || legacyResult.rendered_title || finalTitle,
     generatedTitle: finalTitle,
     correctedTitle: finalTitle,
-    generated_resolved_fields: payload.resolved || {},
-    generated_evidence: payload.evidence || {},
-    generated_modules: payload.modules || {},
+    confidence,
+    provider: providerResult.provider || legacyResult.provider || payload.provider || state.selectedProvider || null,
+    model_id: providerResult.model || legacyResult.model_id || payload.model_id || "",
+    resolved: resolvedFields,
+    fields: resolvedFields,
+    generated_resolved_fields: resolvedFields,
+    generated_evidence: legacyResult.evidence || legacyResult.generated_evidence || payload.internal_field_graph || {},
+    generated_modules: legacyResult.modules || payload.modules || {},
     reviewStartedAt: Date.now(),
     feedbackStatus: "",
     feedbackMessage: "",
-    ...payload,
     timing
   };
 }
@@ -2286,7 +2502,6 @@ function updateCorrectedTitle(input) {
   result.title_override = correctedTitle && renderedTitle && correctedTitle !== renderedTitle ? correctedTitle : null;
   result.feedbackStatus = "";
   result.feedbackMessage = "";
-  resetPublishState(result);
   renderBatchTitles();
 }
 
@@ -2307,73 +2522,41 @@ function currentResolvedForResult(result) {
   return result.corrected_resolved || result.resolved || {};
 }
 
-function resetPublishState(result) {
-  result.publishStatus = "";
-  result.publishMessage = "";
-  result.publishAuditJobId = "";
-  result.publishExternalId = "";
-  result.publishDuplicate = false;
-}
-
 function finalTitleForResult(result) {
   return String(result.correctedTitle ?? result.final_title ?? result.rendered_title ?? result.title ?? "").trim();
 }
 
-function resultHasResolvedFields(result) {
-  return Object.keys(currentResolvedForResult(result) || {}).length > 0;
+function isV4Result(result = {}) {
+  return Boolean(result.recognition_session_id && result.v4_schema_version);
 }
 
-function shouldShowPublishButton(result) {
-  if (result.publishStatus) return true;
-  return result.feedbackStatus === "saved"
-    && Boolean(result.review_id)
-    && Boolean(result.approved_at)
-    && Boolean(result.approved_by);
+function feedbackActionForResult(result, generatedTitle, correctedTitle) {
+  if (result.explicitReviewOutcome === "REJECTED") return "REJECT";
+  return String(generatedTitle || "").trim() === String(correctedTitle || "").trim() ? "ACCEPT" : "EDIT";
 }
 
-function shouldShowQuickApproveButton(result) {
-  if (!modelQuickApprovalCandidate(result)) return false;
-  if (["publishing", "PUBLISHED", "SKIPPED_DUPLICATE"].includes(result.publishStatus)) return false;
-  return result.feedbackStatus !== "saved" && result.feedbackStatus !== "skipped";
-}
-
-function canQuickApproveAndPublish(result) {
-  return shouldShowQuickApproveButton(result)
-    && result.feedbackStatus !== "saving"
-    && result.publishStatus !== "FAILED"
-    && finalTitleForResult(result)
-    && resultHasResolvedFields(result);
-}
-
-function publishButtonLabel(result) {
-  if (result.publishStatus === "publishing") return "发布中…";
-  if (result.publishStatus === "PUBLISHED") return "已发布";
-  if (result.publishStatus === "SKIPPED_DUPLICATE") return "已发布";
-  if (result.publishStatus === "FAILED") return "重试发布";
-  return "发布 Mock";
-}
-
-function canPublishResult(result) {
-  if (["publishing", "PUBLISHED", "SKIPPED_DUPLICATE"].includes(result.publishStatus)) return false;
-  return shouldShowPublishButton(result)
-    && Boolean(result.review_id)
-    && Boolean(result.approved_at)
-    && Boolean(result.approved_by)
-    && finalTitleForResult(result)
-    && resultHasResolvedFields(result);
-}
-
-function buildListingDraft(result, asset) {
+function v4FeedbackResultPayload(result = {}) {
+  const {
+    thumbnail,
+    correctedTitle,
+    generatedTitle,
+    feedbackMessage,
+    feedbackStatus,
+    reviewStartedAt,
+    ...safeResult
+  } = result || {};
   return {
-    asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
-    review_id: result.review_id,
-    final_title: finalTitleForResult(result),
-    resolved_fields: currentResolvedForResult(result),
-    modules: result.modules || {},
-    review_status: "APPROVED",
-    approved_by: result.approved_by,
-    approved_at: result.approved_at,
-    publish_status: "READY"
+    ...safeResult,
+    final_title: generatedTitle || result.final_title || result.title || "",
+    resolved_fields: result.resolved_fields || result.resolved || result.fields || {},
+    fields: result.resolved_fields || result.resolved || result.fields || {},
+    field_states: result.field_states || {},
+    internal_field_graph: result.internal_field_graph || {},
+    candidate_control_plane_trace: result.candidate_control_plane_trace || {},
+    retrieval_trace: result.retrieval_trace || result.retrieval || {},
+    open_set_readiness: result.open_set_readiness || {},
+    workflow_sidecars: result.workflow_sidecars || {},
+    provider_result: result.provider_result || {}
   };
 }
 
@@ -2394,13 +2577,20 @@ async function saveFeedbackForResult(result, asset) {
   renderResults();
 
   try {
-    const response = await fetch("/api/listing-title-feedback", {
+    const useV4Feedback = isV4Result(result);
+    const response = await fetch(useV4Feedback ? FEEDBACK_API_ENDPOINT : LEGACY_FEEDBACK_API_ENDPOINT, {
       method: "POST",
       headers: {
         "content-type": "application/json"
       },
       credentials: "same-origin",
-      body: JSON.stringify({
+      body: JSON.stringify(useV4Feedback ? {
+        recognition_session_id: result.recognition_session_id,
+        action: feedbackActionForResult(result, generatedTitle, correctedTitle),
+        ai_generated_title: generatedTitle,
+        writer_final_title: correctedTitle,
+        result_payload: v4FeedbackResultPayload(result)
+      } : {
         asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
         analysis_run_id: result.analysis_run_id || result.provider_response_id || "",
         generated_title: generatedTitle,
@@ -2444,13 +2634,24 @@ async function saveFeedbackForResult(result, asset) {
       throw new Error(payload.message || `保存失败：${response.status}`);
     }
 
+    if (useV4Feedback) {
+      result.feedbackStatus = payload.training_eligible === false ? "skipped" : "saved";
+      result.review_id = payload.feedback_event_id || "";
+      result.approved_at = "";
+      result.approved_by = "";
+      result.review_outcome = payload.status || "";
+      result.feedbackMessage = payload.training_eligible === false
+        ? "V4 已记录拒绝/不可训练反馈，不进入正样本训练。"
+        : `V4 已保存写手反馈，并生成学习事件：${payload.learning_event_id || "已写入"}。`;
+      return result.feedbackStatus === "saved";
+    }
+
     const retentionSkipped = payload.retention_skipped === true || payload.retention_enabled === false;
     result.feedbackStatus = retentionSkipped ? "skipped" : "saved";
     result.review_id = retentionSkipped ? "" : payload.record?.review?.id || "";
     result.approved_at = retentionSkipped ? "" : payload.record?.review?.approved_at || "";
     result.approved_by = retentionSkipped ? "" : payload.record?.review?.operator_id || "";
     result.review_outcome = payload.review_outcome || payload.record?.review?.review_outcome || "";
-    resetPublishState(result);
     result.feedbackMessage = retentionSkipped
       ? `审核接口已接收，当前未开通反馈留存：${payload.review_outcome || "未写入"}。`
       : payload.review_outcome
@@ -2479,72 +2680,7 @@ async function rejectTitleFeedback(button) {
   result.explicitReviewOutcome = "REJECTED";
   result.feedbackStatus = "";
   result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
-  resetPublishState(result);
   await saveFeedbackForResult(result, asset);
-}
-
-async function publishDraftForResult(result, asset) {
-  if (!result || !canPublishResult(result)) return;
-
-  result.publishStatus = "publishing";
-  result.publishMessage = "正在发布到 Mock B 端…";
-  renderResults();
-
-  try {
-    const response = await fetch("/api/listing-publish-draft", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        listing_draft: buildListingDraft(result, asset),
-        destination_context: {
-          destination: "mock_b_end",
-          dry_run: true
-        }
-      })
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.message || `发布失败：${response.status}`);
-    }
-
-    result.publishStatus = payload.status || "PUBLISHED";
-    result.publishAuditJobId = payload.audit_job?.id || "";
-    result.publishExternalId = payload.response?.external_id || "";
-    result.publishDuplicate = payload.duplicate === true;
-    result.publishMessage = payload.duplicate
-      ? "重复发布请求已跳过，Mock B 端未再次提交。"
-      : `已发布到 Mock B 端${result.publishExternalId ? `：${result.publishExternalId}` : ""}。`;
-  } catch (error) {
-    result.publishStatus = "FAILED";
-    result.publishMessage = error.message || "Mock 发布失败。";
-  }
-
-  renderResults();
-}
-
-async function publishDraft(button) {
-  const result = state.results.find((item) => item.index === Number(button.dataset.publishDraft));
-  const asset = state.assets.find((item) => item.index === Number(button.dataset.publishDraft));
-  await publishDraftForResult(result, asset);
-}
-
-async function quickApproveAndPublish(button) {
-  const result = state.results.find((item) => item.index === Number(button.dataset.quickApprovePublish));
-  const asset = state.assets.find((item) => item.index === Number(button.dataset.quickApprovePublish));
-  if (!result || !canQuickApproveAndPublish(result)) return;
-
-  result.feedbackMessage = "正在快速批准…";
-  renderResults();
-  const saved = await saveFeedbackForResult(result, asset);
-  if (!saved) {
-    result.publishMessage = "未生成可发布的审核记录，无法一键发布。";
-    renderResults();
-    return;
-  }
-  await publishDraftForResult(result, asset);
 }
 
 async function copyAllTitles() {
@@ -2560,6 +2696,7 @@ async function copyAllTitles() {
 }
 
 function resetTool() {
+  state.backgroundPreparationRunId += 1;
   state.files = [];
   state.assets = [];
   state.results = [];
@@ -2583,11 +2720,13 @@ function bindEvents() {
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
     input.addEventListener("change", () => {
+      state.backgroundPreparationRunId += 1;
       state.mode = input.value;
       state.results = [];
       closeImageModal();
       renderPreviews();
       renderResults();
+      startBackgroundPreparation("mode_changed");
     });
   });
 
@@ -2639,18 +2778,6 @@ function bindEvents() {
     const rejectButton = event.target.closest("[data-reject-title]");
     if (rejectButton) {
       rejectTitleFeedback(rejectButton);
-      return;
-    }
-
-    const quickApproveButton = event.target.closest("[data-quick-approve-publish]");
-    if (quickApproveButton) {
-      quickApproveAndPublish(quickApproveButton);
-      return;
-    }
-
-    const publishButton = event.target.closest("[data-publish-draft]");
-    if (publishButton) {
-      publishDraft(publishButton);
       return;
     }
 
@@ -2718,6 +2845,21 @@ async function loadProviderStatus() {
   renderProviderControl();
 }
 
+async function prewarmV4(reason = "page_load") {
+  try {
+    const params = new URLSearchParams({ reason });
+    await fetch(`${PREWARM_API_ENDPOINT}?${params.toString()}`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      keepalive: true
+    });
+  } catch {
+    // Prewarm is opportunistic. Formal recognition must remain the source of truth.
+  }
+}
+
+void prewarmV4("page_load");
 await Promise.all([
   loadResolutionMap(),
   loadProviderStatus()

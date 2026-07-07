@@ -1,6 +1,6 @@
 # Listing Copilot V2.0B Image Evidence Design
 
-Status: Design Draft v2.0B
+Status: Implemented v2.0B
 Owner: LYNCA Listing Intelligence
 Companion Documents:
 
@@ -173,4 +173,3 @@ V2.0B does not include:
 - new table columns
 
 V2.0B only adds image evidence storage for new feedback rows.
-
