@@ -29,6 +29,12 @@
     "api/v4/listing-copilot-title.js": {
       "maxDuration": 300
     },
+    "api/v4/listing-job-worker.js": {
+      "maxDuration": 300
+    },
+    "api/v4/listing-job-pump.js": {
+      "maxDuration": 300
+    },
     "api/v4/fast-scout-prewarm.js": {
       "maxDuration": 300
     },
@@ -38,6 +44,10 @@
     }
   },
   "crons": [
+    {
+      "path": "/api/v4/listing-job-pump",
+      "schedule": "* * * * *"
+    },
     {
       "path": "/api/listing-storage-retention-cleanup",
       "schedule": "0 9 * * *"
