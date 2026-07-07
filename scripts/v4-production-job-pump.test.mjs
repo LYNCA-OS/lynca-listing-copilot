@@ -114,6 +114,7 @@ assert.match(workerSource, /l1_ready_wake_l2/);
 assert.match(workerSource, /pairedRelease\.saved !== true/);
 assert.match(workerSource, /lane: v4JobLanes\.BACKGROUND/);
 assert.match(workerSource, /V4_L2_WAKE_BACKGROUND_CONCURRENCY/);
+assert.match(workerSource, /callJsonHandler\(handler/);
 
 const previousSecret = process.env.V4_JOB_WORKER_SECRET;
 try {

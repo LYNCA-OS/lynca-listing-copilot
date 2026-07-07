@@ -103,8 +103,8 @@ function triggerV4BackgroundWorkerAfterL1Release(req, {
   if (pairedRelease.saved !== true) return { triggered: false, reason: "paired_l2_not_released" };
   const origin = requestOrigin(req);
   const secret = workerSecretFromRequest(req);
-  if (!origin || !secret) return { triggered: false, reason: "wake_context_missing" };
-  const processConcurrency = positiveInteger(process.env.V4_L2_WAKE_BACKGROUND_CONCURRENCY, 1, { min: 1, max: 4 });
+  if (!secret) return { triggered: false, reason: "wake_secret_missing" };
+  const processConcurrency = positiveInteger(process.env.V4_L2_WAKE_BACKGROUND_CONCURRENCY, 2, { min: 1, max: 4 });
   const body = {
     lane: v4JobLanes.BACKGROUND,
     tenant_id: job.tenant_id || job.payload?.tenant_id || null,
@@ -114,16 +114,24 @@ function triggerV4BackgroundWorkerAfterL1Release(req, {
     worker_id: `v4-l2-wake-${String(job.id || "job").slice(0, 96)}`,
     reason
   };
-  waitUntil(
-    fetch(`${origin}/api/v4/listing-job-worker`, {
+  const headers = {
+    "content-type": "application/json",
+    [workerSecretHeader]: secret,
+    "user-agent": "lynca-v4-l1-l2-wake",
+    "x-forwarded-for": "v4-l1-l2-wake"
+  };
+  const wakePromise = origin
+    ? fetch(`${origin}/api/v4/listing-job-worker`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [workerSecretHeader]: secret
-      },
+      headers,
       body: JSON.stringify(body)
     }).catch(() => null)
-  );
+    : callJsonHandler(handler, {
+      method: "POST",
+      headers,
+      payload: body
+    }).catch(() => null);
+  waitUntil(wakePromise);
   return { triggered: true, reason };
 }
 
