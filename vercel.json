@@ -23,6 +23,15 @@
     }
   ],
   "functions": {
+    "api/listing-copilot-title.js": {
+      "maxDuration": 300
+    },
+    "api/v4/listing-copilot-title.js": {
+      "maxDuration": 300
+    },
+    "api/v4/fast-scout-prewarm.js": {
+      "maxDuration": 300
+    },
     "api/admin-import-writer-title-catalog-seed.js": {
       "maxDuration": 300,
       "includeFiles": "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx"
