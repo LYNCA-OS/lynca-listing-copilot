@@ -15,6 +15,17 @@ function dbUrl(env = process.env) {
   return String(env.POSTGRES_URL_NON_POOLING || env.POSTGRES_URL || "").trim();
 }
 
+function connectionStringForPg(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.searchParams.delete("sslmode");
+    parsed.searchParams.delete("ssl");
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 async function verify(client) {
   const result = await client.query(`
     select
@@ -50,7 +61,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const client = new pg.Client({ connectionString, ssl: { rejectUnauthorized: false } });
+  const client = new pg.Client({
+    connectionString: connectionStringForPg(connectionString),
+    ssl: { rejectUnauthorized: false }
+  });
   try {
     const sql = await readFile(migrationPath, "utf8");
     await client.connect();
