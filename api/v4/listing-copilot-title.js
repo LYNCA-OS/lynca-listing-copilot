@@ -276,7 +276,7 @@ async function persistPipelineResult({
   extraProviderSummary = {}
 } = {}) {
   const internalScout = isInternalScoutResult(result);
-  const l1Visible = internalScout && (payload.v4_return_l1_writer_safe_draft === true || queueL1Only(payload));
+  const l1Visible = internalScout && payload.v4_return_l1_writer_safe_draft === true && !queueL1Only(payload);
   const rows = buildV4PersistenceRows({ sessionId, result, payload });
   const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
   const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
@@ -575,7 +575,7 @@ export default async function handler(req, res) {
           l1_persistence: { saved: false, deferred: true }
         }
       }), l1Result.fast_scout || {});
-      const writerResponse = queueL1Only(payload) || payload.v4_return_l1_writer_safe_draft === true
+      const writerResponse = payload.v4_return_l1_writer_safe_draft === true && !queueL1Only(payload)
         ? writerVisibleL1Response(v4Response, l1Result)
         : writerPendingL1Response(v4Response, l1Result);
       const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({

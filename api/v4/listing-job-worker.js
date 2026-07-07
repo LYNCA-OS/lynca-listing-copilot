@@ -4,6 +4,7 @@ import {
   claimV4RecognitionJobs,
   completeV4RecognitionJob,
   failV4RecognitionJob,
+  releasePairedV4FinalJob,
   v4JobLanes,
   v4JobStatuses,
   v4JobTypes,
@@ -61,8 +62,7 @@ export function payloadForV4ProductionJob(job = {}) {
         v4_worker_synchronous: false,
         v4_force_l2_direct: false,
         disable_fast_scout_l1: false,
-        v4_queue_l1_only: true,
-        v4_return_l1_writer_safe_draft: true
+        v4_queue_l1_only: true
       }
       : {
         v4_worker_synchronous: true,
@@ -185,6 +185,9 @@ export default async function handler(req, res) {
           response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null
         }
       });
+      const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
+        ? await releasePairedV4FinalJob({ job, reason: "l1_ready" })
+        : { saved: false, skipped: true };
       return {
         job_id: job.id,
         lane: job.lane || null,
@@ -193,6 +196,7 @@ export default async function handler(req, res) {
         recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
         latency_ms: result.latency_ms,
         saved: completion.saved,
+        paired_final_released: pairedRelease.saved === true,
         error: completion.error || null
       };
     } catch (error) {
@@ -205,6 +209,9 @@ export default async function handler(req, res) {
         },
         retryDelaySeconds: positiveInteger(payload.retry_delay_seconds, 15, { min: 1, max: 900 })
       });
+      const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
+        ? await releasePairedV4FinalJob({ job, reason: "l1_failed_release_final" })
+        : { saved: false, skipped: true };
       return {
         job_id: job.id,
         lane: job.lane || null,
@@ -213,6 +220,7 @@ export default async function handler(req, res) {
         recognition_session_id: job.recognition_session_id,
         latency_ms: error?.latency_ms || null,
         saved: failure.saved,
+        paired_final_released: pairedRelease.saved === true,
         error: failure.error || safeError(error)
       };
     }

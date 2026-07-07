@@ -17,7 +17,7 @@ const fastScoutBranch = apiSource.slice(
 
 assert.ok(fastScoutBranch.includes("addL1ReturnBarrierMetadata(adaptV2ResultToV4"), "fast scout L1 must build response directly from adapter");
 assert.ok(fastScoutBranch.includes("writerPendingL1Response(v4Response, l1Result)"), "fast scout L1 must hide internal scout titles from the writer response");
-assert.ok(fastScoutBranch.includes("writerVisibleL1Response(v4Response, l1Result)"), "queue-backed fast scout L1 must expose writer-visible drafts");
+assert.ok(fastScoutBranch.includes("!queueL1Only(payload)"), "queue-backed fast scout L1 must not expose writer-visible drafts");
 assert.ok(fastScoutBranch.includes("sendJson(res, 200, writerResponse);"), "fast scout L1 must send a writer-pending response in the branch");
 assert.ok(fastScoutBranch.includes("if (queueL1Only(payload))"), "queue-backed L1 must take the explicit L1-only path");
 assert.ok(fastScoutBranch.includes("await l1PersistencePromise"), "queue-backed L1 must persist before job completion/status polling");

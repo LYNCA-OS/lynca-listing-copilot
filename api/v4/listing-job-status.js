@@ -47,12 +47,9 @@ function displayStateForSession(session = null) {
     };
   }
   const l2Ready = session.l2_status === "READY" && (session.l2_title || session.final_title);
-  const l1Ready = session.l1_status === "READY" && session.l1_title;
   const title = l2Ready
     ? (session.l2_title || session.final_title || "")
-    : l1Ready
-      ? (session.l1_title || "")
-      : (session.final_title || "");
+    : "";
   if (l2Ready) {
     return {
       display_status: "FINAL_READY",
@@ -65,14 +62,14 @@ function displayStateForSession(session = null) {
       background_modules: []
     };
   }
-  if (l1Ready || title) {
+  if (session.l1_status === "READY") {
     return {
-      display_status: "DRAFT_READY",
-      display_title: title,
-      title_stage: "L1_WRITER_SAFE_DRAFT",
-      current_best_title: title,
+      display_status: "PROCESSING_FINAL",
+      display_title: "",
+      title_stage: "L1_INTERNAL_SCOUT",
+      current_best_title: "",
       is_final: false,
-      can_writer_start: true,
+      can_writer_start: false,
       pending_modules: ["final_assisted_title"],
       background_modules: ["final_assisted_title"]
     };

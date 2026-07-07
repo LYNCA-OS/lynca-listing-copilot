@@ -9,6 +9,7 @@ import {
   failV4RecognitionJob,
   normalizeV4JobInput,
   readV4RecognitionJobs,
+  releasePairedV4FinalJob,
   v4JobLanes,
   v4JobTypes,
   v4JobStatuses
@@ -58,6 +59,7 @@ assert.equal(stageJobs[1].lane, v4JobLanes.BACKGROUND);
 assert.equal(stageJobs[0].recognition_session_id, stageJobs[1].recognition_session_id);
 assert.equal(stageJobs[0].paired_job_id, stageJobs[1].id);
 assert.equal(stageJobs[1].parent_job_id, stageJobs[0].id);
+assert.ok(Date.parse(stageJobs[1].not_before) > Date.now() + 60_000, "paired L2 should wait for its L1 release");
 
 const l2OnlyJobs = expandV4RecognitionStageJobs({
   jobs: [{ payload: { force_l2_only: true, images: [] } }]
@@ -67,7 +69,7 @@ assert.equal(l2OnlyJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
 
 const l1Payload = payloadForV4ProductionJob(stageJobs[0]);
 assert.equal(l1Payload.v4_queue_l1_only, true);
-assert.equal(l1Payload.v4_return_l1_writer_safe_draft, true);
+assert.equal(l1Payload.v4_return_l1_writer_safe_draft, undefined);
 assert.equal(l1Payload.v4_force_l2_direct, false);
 assert.equal(l1Payload.disable_fast_scout_l1, false);
 const l2Payload = payloadForV4ProductionJob(stageJobs[1]);
@@ -142,6 +144,20 @@ await completeV4RecognitionJob({
 });
 assert.ok(l1Patches[0].request.body.includes('"status":"L1_READY"'));
 assert.ok(l1Patches[0].request.body.includes('"stage_result"'));
+
+const releasePatches = [];
+const release = await releasePairedV4FinalJob({
+  job: stageJobs[0],
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    releasePatches.push({ url: String(url), request });
+    return jsonResponse([{ id: stageJobs[1].id, status: "QUEUED" }]);
+  }
+});
+assert.equal(release.saved, true);
+assert.ok(releasePatches[0].url.includes(`/v4_recognition_jobs?id=eq.${stageJobs[1].id}`));
+assert.ok(releasePatches[0].request.body.includes('"not_before"'));
+assert.ok(releasePatches[0].request.body.includes('"released_by_parent_job_id"'));
 
 const retry = await failV4RecognitionJob({
   job: { id: "v4job-retry", attempt_count: 1, max_attempts: 2 },
