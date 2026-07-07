@@ -4,6 +4,11 @@ import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/res
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
 import {
+  buildV4TitleStageState,
+  providerOptionsForV4ProgressiveL1,
+  v4TitleStages
+} from "../lib/listing/v4/stages/title-stages.mjs";
+import {
   checkV4Tables,
   createV4RecognitionSession,
   persistV4CandidateTrace,
@@ -22,6 +27,33 @@ const route = planV4RecognitionRoute({
   VECTOR_INDEX_READY: "true"
 });
 assert.equal(route.route, "EXACT_ANCHOR_FAST_LANE");
+assert.ok(route.blocking_modules.includes("full_card_gpt_observation"));
+assert.ok(route.blocking_modules.includes("deterministic_renderer"));
+assert.ok(route.background_modules.includes("post_observation_catalog_lookup"));
+assert.ok(route.skipped_modules.includes("visual_vector_retrieval"));
+
+const exactFastLaneOptions = providerOptionsForV4ProgressiveL1({
+  payload: { provider_options: { enable_catalog_assist: true, force_vector_assist: true } },
+  routePlan: route
+});
+assert.equal(exactFastLaneOptions.enable_catalog_assist, true);
+assert.equal(exactFastLaneOptions.enable_vector_assist, false);
+assert.equal(exactFastLaneOptions.enable_ephemeral_external_retrieval, false);
+assert.equal(exactFastLaneOptions.v4_title_stage_target, v4TitleStages.L1_WRITER_SAFE_DRAFT);
+
+const assistedRoute = planV4RecognitionRoute({
+  images: [{ role: "front" }, { role: "back" }]
+}, {
+  VECTOR_INDEX_READY: "true"
+});
+assert.equal(assistedRoute.route, "ASSISTED_FULL");
+assert.ok(assistedRoute.background_modules.includes("visual_vector_retrieval"));
+const assistedOptions = providerOptionsForV4ProgressiveL1({
+  payload: { provider_options: { enable_catalog_assist: true } },
+  routePlan: assistedRoute
+});
+assert.equal(assistedOptions.enable_catalog_assist, false);
+assert.equal(assistedOptions.enable_vector_retrieval, false);
 
 const v2Result = {
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",
@@ -73,6 +105,14 @@ assert.equal(v4.v4_schema_version, "v4-recognition-session-v1");
 assert.equal(v4.recognition_session_id, "v4sess-test");
 assert.equal(v4.writer_draft.user_edit_mode, "one_line_title_only");
 assert.equal(v4.writer_draft.structured_fields_visible, false);
+assert.equal(v4.title_stage, "L1_WRITER_SAFE_DRAFT");
+assert.equal(v4.writer_safe_draft, v4.final_title);
+assert.equal(v4.assisted_draft, v4.final_title);
+assert.ok(v4.blocking_modules.includes("full_card_gpt_observation"));
+assert.ok(v4.background_modules.includes("post_observation_catalog_lookup"));
+assert.ok(Array.isArray(v4.pending_modules));
+assert.equal(v4.title_stage_readiness.writer_safe_ready, true);
+assert.ok(v4.module_speed_metrics.modules_skipped_by_route.includes("visual_vector_retrieval"));
 assert.equal(v4.resolved_fields.print_run_number, "2/3");
 assert.equal(v4.resolved_fields.print_run_denominator, "3");
 assert.equal(v4.field_states.product.display_status, "NORMAL");
@@ -82,6 +122,34 @@ assert.equal(v4.catalog_activation_funnel.prompt_candidate_count, 1);
 const rows = buildV4PersistenceRows({ sessionId: "v4sess-test", result: v2Result, payload: {} });
 assert.ok(rows.fieldEvidenceRows.some((row) => row.field_name === "serial" && row.field_value === "2/3"));
 assert.equal(rows.candidateTrace.applied_field_count, 3);
+
+const riskyStage = buildV4TitleStageState({
+  result: {
+    final_title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto BGS 8.5",
+    confidence: "HIGH",
+    unresolved: ["parallel_exact"],
+    resolved_fields: {
+      year: "2024-25",
+      product: "Immaculate",
+      players: ["Anthony Edwards"],
+      parallel_exact: "International Green"
+    }
+  },
+  routePlan: assistedRoute,
+  writerDraft: {
+    title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto BGS 8.5"
+  },
+  resolvedFields: {
+    year: "2024-25",
+    product: "Immaculate",
+    players: ["Anthony Edwards"],
+    parallel_exact: "International Green"
+  },
+  fieldStates: {}
+});
+assert.equal(riskyStage.title_stage, "L1_WRITER_SAFE_DRAFT");
+assert.ok(riskyStage.review_required_fields.includes("parallel_exact"));
+assert.ok(riskyStage.background_modules.includes("visual_vector_retrieval"));
 
 const artifacts = buildV4FeedbackArtifacts({
   sessionId: "v4sess-test",

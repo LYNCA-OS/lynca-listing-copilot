@@ -4,6 +4,7 @@ import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-
 import { planV4RecognitionRoute } from "../../lib/listing/v4/route-planner/route-planner.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../../lib/listing/v4/result-adapter.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
+import { providerOptionsForV4ProgressiveL1 } from "../../lib/listing/v4/stages/title-stages.mjs";
 import {
   createV4RecognitionSession,
   createV4SessionId,
@@ -44,6 +45,7 @@ export default async function handler(req, res) {
 
   const sessionId = payload.recognition_session_id || createV4SessionId();
   const routePlan = planV4RecognitionRoute(payload, process.env);
+  const progressiveProviderOptions = providerOptionsForV4ProgressiveL1({ payload, routePlan });
   const createResult = await createV4RecognitionSession({
     sessionId,
     payload,
@@ -57,9 +59,12 @@ export default async function handler(req, res) {
 
   const v2Payload = {
     ...payload,
+    provider_options: progressiveProviderOptions,
+    providerOptions: progressiveProviderOptions,
     recognition_session_id: sessionId,
     v4_request: true,
-    v4_route_plan: routePlan
+    v4_route_plan: routePlan,
+    v4_title_stage_target: progressiveProviderOptions.v4_title_stage_target
   };
   const v2Response = await callJsonHandler(v2ListingHandler, {
     method: "POST",
