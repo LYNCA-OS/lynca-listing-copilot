@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { buildFastScoutListingResult } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
+import {
+  buildFastScoutListingResult,
+  selectFastScoutImages
+} from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
@@ -189,6 +192,21 @@ assert.match(fastScoutResult.final_title, /Anthony Edwards/);
 assert.match(fastScoutResult.final_title, /2\/3|#\/3/);
 assert.equal(fastScoutResult.fast_scout.input_image_count, 1);
 assert.equal(fastScoutResult.evidence.print_run_number.status, "CONFIRMED");
+
+const fastScoutSelectedFront = selectFastScoutImages([
+  { id: "back-1", role: "back_original" },
+  { id: "serial-1", role: "serial_crop" },
+  { id: "front-1", role: "front_original" }
+], { maxImages: 1 });
+assert.equal(fastScoutSelectedFront.length, 1);
+assert.equal(fastScoutSelectedFront[0].id, "front-1");
+
+const fastScoutSelectedPair = selectFastScoutImages([
+  { id: "grade-1", role: "grade_label_crop" },
+  { id: "back-ready", role: "back_model_ready" },
+  { id: "front-ready", role: "front_model_ready" }
+], { maxImages: 2 });
+assert.deepEqual(fastScoutSelectedPair.map((image) => image.id), ["front-ready", "back-ready"]);
 
 const riskyStage = buildV4TitleStageState({
   result: {
