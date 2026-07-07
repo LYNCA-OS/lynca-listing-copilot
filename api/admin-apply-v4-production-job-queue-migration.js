@@ -1,0 +1,77 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import pg from "pg";
+import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
+
+const migrationPath = join(process.cwd(), "supabase/migrations/20260707122154_v4_production_job_queue.sql");
+
+function sendJson(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(payload));
+}
+
+function dbUrl(env = process.env) {
+  return String(env.POSTGRES_URL_NON_POOLING || env.POSTGRES_URL || "").trim();
+}
+
+async function verify(client) {
+  const result = await client.query(`
+    select
+      exists (
+        select 1
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = 'v4_recognition_jobs'
+      ) as jobs_table,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'claim_v4_recognition_jobs'
+      ) as claim_rpc
+  `);
+  return result.rows[0] || {};
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { ok: false, message: "Method not allowed" });
+    return;
+  }
+  if (!isV4WorkerRequest(req, process.env)) {
+    sendJson(res, 401, { ok: false, message: "Unauthorized" });
+    return;
+  }
+  const connectionString = dbUrl(process.env);
+  if (!connectionString) {
+    sendJson(res, 503, { ok: false, message: "Postgres URL is not configured." });
+    return;
+  }
+
+  const client = new pg.Client({ connectionString, ssl: { rejectUnauthorized: false } });
+  try {
+    const sql = await readFile(migrationPath, "utf8");
+    await client.connect();
+    await client.query(sql);
+    const verification = await verify(client);
+    sendJson(res, verification.jobs_table && verification.claim_rpc ? 200 : 500, {
+      ok: Boolean(verification.jobs_table && verification.claim_rpc),
+      migration: "20260707122154_v4_production_job_queue",
+      verification
+    });
+  } catch (error) {
+    sendJson(res, 500, {
+      ok: false,
+      migration: "20260707122154_v4_production_job_queue",
+      message: String(error?.message || error || "migration_failed").slice(0, 500)
+    });
+  } finally {
+    try {
+      await client.end();
+    } catch {
+      // ignore close errors
+    }
+  }
+}
