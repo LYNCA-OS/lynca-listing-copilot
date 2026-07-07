@@ -28,6 +28,7 @@ const FAST_SCOUT_PREWARM_API_ENDPOINT = "/api/v4/fast-scout-prewarm";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
+const EXPORT_WORKBOOK_API_ENDPOINT = "/api/v4/listing-export-workbook";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const FAST_SCOUT_PREWARM_WAIT_MS = 1200;
 const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
@@ -68,6 +69,7 @@ const state = {
   assistedDraftPollTimers: new Map(),
   completedAssetCount: 0,
   processingTotal: 0,
+  exportingWorkbook: false,
   backgroundPreparationRunId: 0
 };
 
@@ -77,6 +79,8 @@ const elements = {
   processButton: document.querySelector("#processButton"),
   resetButton: document.querySelector("#resetButton"),
   copyAllButton: document.querySelector("#copyAllButton"),
+  exportWorkbookButton: document.querySelector("#exportWorkbookButton"),
+  exportWorkbookStatus: document.querySelector("#exportWorkbookStatus"),
   providerControl: document.querySelector("#providerControl"),
   providerStatusText: document.querySelector("#providerStatusText"),
   batchTitleList: document.querySelector("#batchTitleList"),
@@ -451,6 +455,21 @@ function reviewImageReference(image) {
     storageVerified: Boolean(image.storageVerified),
     storageUploaded: Boolean(image.storageUploaded)
   };
+}
+
+function excelEmbeddableImageType(image = {}) {
+  const type = String(image.originalType || image.type || "").toLowerCase();
+  return type === "image/jpeg" || type === "image/jpg" || type === "image/png";
+}
+
+function exportImageReference(image) {
+  const reference = reviewImageReference(image);
+  if (!reference.objectPath || !excelEmbeddableImageType(image)) {
+    reference.embedDataUrl = String(image.dataUrl || "").startsWith("data:image/")
+      ? image.dataUrl
+      : "";
+  }
+  return reference;
 }
 
 function imageIsDerivedForRequest(image = {}) {
@@ -1440,8 +1459,28 @@ function resultForAsset(asset) {
 
 function generatedTitleResults() {
   return [...state.results]
-    .filter((result) => normalizeConfidence(result.confidence) !== "FAILED" && String((result.correctedTitle ?? result.title) || "").trim())
+    .filter((result) => normalizeConfidence(result.confidence) !== "FAILED" && finalTitleForResult(result))
     .sort((a, b) => a.index - b.index);
+}
+
+function completedExportRowsReady() {
+  if (!state.assets.length) return false;
+  if (state.processing || state.exportingWorkbook) return false;
+  return state.assets.every((asset) => {
+    const result = resultForAsset(asset);
+    return Boolean(result && finalTitleForResult(result) && !v4WriterTitlePending(result));
+  });
+}
+
+function setExportWorkbookStatus(message = "") {
+  if (!elements.exportWorkbookStatus) return;
+  elements.exportWorkbookStatus.textContent = message;
+}
+
+function updateExportWorkbookControls() {
+  if (!elements.exportWorkbookButton) return;
+  elements.exportWorkbookButton.disabled = !completedExportRowsReady();
+  elements.exportWorkbookButton.textContent = state.exportingWorkbook ? "正在导出…" : "导出 Excel";
 }
 
 function modelQuickApprovalCandidate(result) {
@@ -1456,6 +1495,7 @@ function modelQuickApprovalCandidate(result) {
 function renderBatchTitles() {
   const titleResults = generatedTitleResults();
   elements.copyAllButton.disabled = titleResults.length === 0;
+  updateExportWorkbookControls();
 
   if (!titleResults.length) {
     elements.batchTitleList.innerHTML = `<li class="batch-empty">生成完成后，这里会按上传顺序汇总所有非空英文 eBay title。</li>`;
@@ -2796,7 +2836,7 @@ async function rejectTitleFeedback(button) {
 }
 
 async function copyAllTitles() {
-  const titles = generatedTitleResults().map((result) => String(result.correctedTitle ?? result.title).trim());
+  const titles = generatedTitleResults().map((result) => finalTitleForResult(result));
   if (!titles.length) return;
 
   await navigator.clipboard.writeText(titles.join("\n"));
@@ -2805,6 +2845,84 @@ async function copyAllTitles() {
   setTimeout(() => {
     elements.copyAllButton.textContent = original;
   }, 1200);
+}
+
+function primaryImagesForExport(asset = {}) {
+  return (asset.images || [])
+    .filter((image) => !imageIsDerivedForRequest(image))
+    .slice(0, 2);
+}
+
+function buildWriterExportRows() {
+  return state.assets.map((asset) => {
+    const result = resultForAsset(asset);
+    if (!result) throw new Error(`资产 ${asset.index} 还没有生成结果。`);
+    const finalTitle = finalTitleForResult(result);
+    if (!finalTitle) throw new Error(`资产 ${asset.index} 缺少最终标题。`);
+    if (v4WriterTitlePending(result)) throw new Error(`资产 ${asset.index} 的一段式标题仍在生成中。`);
+    const images = primaryImagesForExport(asset).map(exportImageReference).filter((image) => {
+      return image.objectPath || image.embedDataUrl;
+    });
+    if (!images.length) throw new Error(`资产 ${asset.index} 缺少可导出的图片。`);
+    return {
+      asset_id: asset.id,
+      asset_index: asset.index,
+      recognition_session_id: result.recognition_session_id || "",
+      final_title: finalTitle,
+      images
+    };
+  });
+}
+
+async function exportWriterWorkbook() {
+  if (state.exportingWorkbook) return;
+  if (!completedExportRowsReady()) {
+    setExportWorkbookStatus("所有资产生成并完成写手编辑后才能导出。");
+    return;
+  }
+  if (!storageReady()) {
+    setExportWorkbookStatus("图片存储未配置，暂时无法生成可留存的 Excel。");
+    return;
+  }
+
+  state.exportingWorkbook = true;
+  updateExportWorkbookControls();
+  setExportWorkbookStatus("正在上传图片并生成 Excel…");
+
+  try {
+    await mapWithConcurrency(state.assets, 2, async (asset) => {
+      await ensureAssetImagesUploaded(asset);
+    });
+    const rows = buildWriterExportRows();
+    const response = await fetch(EXPORT_WORKBOOK_API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({ rows })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.message || `导出失败：${response.status}`);
+    }
+
+    if (payload.download_url) {
+      const link = document.createElement("a");
+      link.href = payload.download_url;
+      link.download = payload.file_name || "lynca-writer-export.xlsx";
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+    setExportWorkbookStatus(`已生成 Excel，并留存批次 ${payload.batch_id || ""}。`);
+  } catch (error) {
+    setExportWorkbookStatus(error.message || "导出失败。");
+  } finally {
+    state.exportingWorkbook = false;
+    updateExportWorkbookControls();
+  }
 }
 
 function resetTool() {
@@ -2816,6 +2934,8 @@ function resetTool() {
   state.processing = false;
   state.activeAssetIndexes = new Set();
   state.assetProgress = new Map();
+  state.exportingWorkbook = false;
+  setExportWorkbookStatus("");
   stopProgressTicker();
   state.completedAssetCount = 0;
   state.processingTotal = 0;
@@ -2865,6 +2985,7 @@ function bindEvents() {
   elements.processButton.addEventListener("click", processTitles);
   elements.resetButton.addEventListener("click", resetTool);
   elements.copyAllButton.addEventListener("click", copyAllTitles);
+  elements.exportWorkbookButton.addEventListener("click", exportWriterWorkbook);
   elements.providerControl.addEventListener("click", (event) => {
     const button = event.target.closest("[data-provider-id]");
     if (button) selectProvider(button.dataset.providerId);

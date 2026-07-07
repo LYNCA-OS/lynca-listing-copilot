@@ -103,8 +103,12 @@
                 <p class="eyebrow">批量标题 Batch Generated Titles</p>
                 <h2>按上传顺序汇总生成结果</h2>
               </div>
-              <button class="copy-button" type="button" id="copyAllButton" disabled>复制全部</button>
+              <div class="batch-actions">
+                <button class="copy-button" type="button" id="copyAllButton" disabled>复制全部</button>
+                <button class="copy-button" type="button" id="exportWorkbookButton" disabled>导出 Excel</button>
+              </div>
             </div>
+            <p class="export-workbook-status" id="exportWorkbookStatus" role="status" aria-live="polite"></p>
             <ol class="batch-title-list" id="batchTitleList">
               <li class="batch-empty">生成完成后，这里会按上传顺序汇总所有非空英文 eBay title。</li>
             </ol>

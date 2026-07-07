@@ -14,6 +14,7 @@ const advancedRetrievalRollback = await readFile("supabase/migrations/2026062515
 const referencePromotionMigration = await readFile("supabase/migrations/20260626051832_promote_card_reference_to_approved.sql", "utf8");
 const referencePromotionRollback = await readFile("supabase/migrations/20260626051832_promote_card_reference_to_approved_rollback.sql", "utf8");
 const catalogFirstMigration = await readFile("supabase/migrations/20260626115429_catalog_first_corrected_title_v0.sql", "utf8");
+const writerExportMigration = await readFile("supabase/migrations/20260707130906_v4_writer_export_batches.sql", "utf8");
 const phase2 = await readFile("docs/architecture/phase-2-storage-image-quality-2026-06-22.md", "utf8");
 
 assert.match(migration, /insert into storage\.buckets/i, "storage migration should create the Supabase bucket");
@@ -124,6 +125,13 @@ assert.match(referencePromotionMigration, /grant execute on function public\.pro
 assert.match(referencePromotionRollback, /drop function if exists public\.promote_card_reference_to_approved/i, "promotion rollback should drop the promotion RPC");
 
 assert.match(catalogFirstMigration, /create or replace function public\.search_catalog_candidates/i, "catalog-first migration should replace the catalog RPC");
+assert.match(writerExportMigration, /create table if not exists public\.v4_writer_export_batches/i, "writer export migration should create export batch table");
+assert.match(writerExportMigration, /create table if not exists public\.v4_writer_export_items/i, "writer export migration should create export item table");
+assert.match(writerExportMigration, /alter table public\.v4_writer_export_batches enable row level security/i, "writer export batch table must keep RLS enabled");
+assert.match(writerExportMigration, /alter table public\.v4_writer_export_items enable row level security/i, "writer export item table must keep RLS enabled");
+assert.match(writerExportMigration, /grant select, insert, update, delete on public\.v4_writer_export_batches to service_role/i, "writer export batches should be service-role only");
+assert.match(writerExportMigration, /grant select, insert, update, delete on public\.v4_writer_export_items to service_role/i, "writer export items should be service-role only");
+assert.doesNotMatch(writerExportMigration, /grant\s+[^;]*\s+to\s+(anon|authenticated)/i, "writer export tables must not grant browser roles");
 assert.doesNotMatch(catalogFirstMigration, /where\s+c\.sport\s*=\s*'basketball'/i, "catalog RPC must not hard-filter to basketball");
 assert.match(catalogFirstMigration, /'serial_denominator',\s*scored\.serial_denominator/i, "catalog RPC should return serial denominator as candidate metadata");
 assert.match(catalogFirstMigration, /'insert',\s*scored\.set_or_insert/i, "catalog RPC should expose set or insert as a structured candidate field");

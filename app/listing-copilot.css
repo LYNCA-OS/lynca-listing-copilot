@@ -559,6 +559,20 @@ h3 {
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.18);
 }
 
+.batch-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.export-workbook-status {
+  min-height: 18px;
+  margin-top: 8px;
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .batch-title-list {
   display: grid;
   gap: 8px;
@@ -1832,6 +1846,14 @@ summary {
   .section-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .batch-actions {
+    width: 100%;
+  }
+
+  .batch-actions .copy-button {
+    flex: 1 1 0;
   }
 
   .app-header {
