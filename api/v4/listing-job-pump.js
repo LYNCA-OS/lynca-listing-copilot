@@ -107,6 +107,26 @@ export async function runV4QueuePump({
     v4WorkerProcessConcurrency(env),
     { min: 1, max: 8 }
   );
+  const interactiveLimit = positiveInteger(
+    payload.interactive_limit ?? payload.interactiveLimit,
+    limit,
+    { min: 1, max: 12 }
+  );
+  const backgroundLimit = positiveInteger(
+    payload.background_limit ?? payload.backgroundLimit,
+    limit,
+    { min: 1, max: 12 }
+  );
+  const interactiveProcessConcurrency = positiveInteger(
+    payload.interactive_process_concurrency ?? payload.interactiveProcessConcurrency,
+    processConcurrency,
+    { min: 1, max: 8 }
+  );
+  const backgroundProcessConcurrency = positiveInteger(
+    payload.background_process_concurrency ?? payload.backgroundProcessConcurrency,
+    processConcurrency,
+    { min: 1, max: 8 }
+  );
   const maxRuntimeMs = positiveInteger(payload.max_runtime_ms ?? payload.maxRuntimeMs, 250_000, { min: 5_000, max: 290_000 });
   const retryDelaySeconds = positiveInteger(payload.retry_delay_seconds ?? payload.retryDelaySeconds, 8, { min: 1, max: 900 });
   const tenantId = payload.tenant_id || payload.tenantId || null;
@@ -134,11 +154,13 @@ export async function runV4QueuePump({
       if (now() - started >= maxRuntimeMs) break;
       laneCycles += 1;
       const callStarted = now();
+      const laneLimit = lane === v4JobLanes.BACKGROUND ? backgroundLimit : interactiveLimit;
+      const laneProcessConcurrency = lane === v4JobLanes.BACKGROUND ? backgroundProcessConcurrency : interactiveProcessConcurrency;
       const workerPayload = {
         lane,
         tenant_id: tenantId,
-        limit,
-        process_concurrency: processConcurrency,
+        limit: laneLimit,
+        process_concurrency: laneProcessConcurrency,
         retry_delay_seconds: retryDelaySeconds,
         worker_id: `v4-pump-${lane}-${cycle + 1}`
       };
@@ -188,6 +210,10 @@ export async function runV4QueuePump({
     parallel_lanes: parallelLanes,
     limit,
     process_concurrency: processConcurrency,
+    interactive_limit: interactiveLimit,
+    background_limit: backgroundLimit,
+    interactive_process_concurrency: interactiveProcessConcurrency,
+    background_process_concurrency: backgroundProcessConcurrency,
     idle_delay_ms: idleDelayMs,
     idle_cycles_before_stop: defaultIdleCycles,
     background_idle_cycles: backgroundIdleCycles,

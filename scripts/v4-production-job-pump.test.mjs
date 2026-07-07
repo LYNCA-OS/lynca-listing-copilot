@@ -27,6 +27,8 @@ const pump = await runV4QueuePump({
     tenant_id: "tenant-batch-1",
     limit: 2,
     process_concurrency: 2,
+    background_limit: 4,
+    background_process_concurrency: 4,
     cycles: 5,
     max_runtime_ms: 30_000
   },
@@ -56,6 +58,8 @@ assert.deepEqual(calls.map((entry) => entry.payload.lane), ["interactive", "back
 assert.equal(calls[0].payload.tenant_id, "tenant-batch-1");
 assert.equal(calls[0].payload.limit, 2);
 assert.equal(calls[0].payload.process_concurrency, 2);
+assert.equal(calls[1].payload.limit, 4);
+assert.equal(calls[1].payload.process_concurrency, 4);
 assert.equal(calls[0].workerSecret, "secret");
 
 const interactiveOnlyCalls = [];
