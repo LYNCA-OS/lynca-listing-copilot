@@ -123,7 +123,7 @@ assert.equal(v4.v4_schema_version, "v4-recognition-session-v1");
 assert.equal(v4.recognition_session_id, "v4sess-test");
 assert.equal(v4.writer_draft.user_edit_mode, "one_line_title_only");
 assert.equal(v4.writer_draft.structured_fields_visible, false);
-assert.equal(v4.title_stage, "L1_WRITER_SAFE_DRAFT");
+assert.equal(v4.title_stage, "L2_ASSISTED_DRAFT");
 assert.equal(v4.writer_safe_draft, v4.final_title);
 assert.equal(v4.assisted_draft, v4.final_title);
 assert.ok(v4.blocking_modules.includes("fast_scout_observation"));
@@ -256,7 +256,7 @@ const riskyStage = buildV4TitleStageState({
   },
   fieldStates: {}
 });
-assert.equal(riskyStage.title_stage, "L1_WRITER_SAFE_DRAFT");
+assert.equal(riskyStage.title_stage, "L2_ASSISTED_DRAFT");
 assert.ok(riskyStage.review_required_fields.includes("parallel_exact"));
 assert.ok(riskyStage.background_modules.includes("visual_vector_retrieval"));
 

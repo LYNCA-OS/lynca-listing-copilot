@@ -544,9 +544,12 @@ async function runOne({
     ok: Boolean(l1.ok && data.ok),
     error: l1.ok ? null : data,
     l1_wall_latency_ms: l1.latency_ms,
+    l1_internal_scout_ms: cache.cache_hit
+      ? l1.latency_ms
+      : (data.module_speed_metrics?.time_to_l1_internal_scout_ms || data.module_speed_metrics?.time_to_l1_safe_draft_ms || l1.latency_ms),
     l1_time_to_safe_draft_ms: cache.cache_hit
       ? l1.latency_ms
-      : (data.module_speed_metrics?.time_to_l1_safe_draft_ms || l1.latency_ms),
+      : (data.module_speed_metrics?.time_to_l1_safe_draft_ms || null),
     cached_fast_scout_source_latency_ms: fastScout.latency_ms ?? data.provider_result?.timing?.fast_scout_latency_ms ?? null,
     route: data.route_plan?.route || null,
     title_stage: data.title_stage || null,
@@ -615,6 +618,8 @@ function summarize(results = []) {
     prewarm_cache_hit_count: results.filter((item) => item.prewarm_cache_hit === true).length,
     l1_p50_ms: quantile(results.map((item) => item.l1_wall_latency_ms), 0.5),
     l1_p95_ms: quantile(results.map((item) => item.l1_wall_latency_ms), 0.95),
+    l1_internal_scout_p50_ms: quantile(results.map((item) => item.l1_internal_scout_ms), 0.5),
+    l1_internal_scout_p95_ms: quantile(results.map((item) => item.l1_internal_scout_ms), 0.95),
     l1_safe_draft_p50_ms: quantile(results.map((item) => item.l1_time_to_safe_draft_ms), 0.5),
     l1_safe_draft_p95_ms: quantile(results.map((item) => item.l1_time_to_safe_draft_ms), 0.95),
     prewarm_p50_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.5),
@@ -632,6 +637,8 @@ function summarize(results = []) {
     l2_vector_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_vector_prompt_candidate_count || 0), 0),
     l2_vector_evidence_support_field_count: results.reduce((sum, item) => sum + Number(item.l2_vector_evidence_support_field_count || 0), 0),
     l1_accuracy_proxy: {
+      note: "L1 is internal scout only; use final_accuracy_proxy for writer-visible title quality.",
+      writer_visible_title_count: results.filter((item) => cleanText(item.l1_title)).length,
       raw_token_recall_avg: average(l1Raw),
       fair_token_recall_avg: average(l1Fair),
       policy_fair_token_recall_avg: average(l1Policy),
@@ -668,6 +675,7 @@ function perCardTsv(results = []) {
     "asset_id",
     "ok",
     "l1_ms",
+    "l1_internal_scout_ms",
     "l1_safe_ms",
     "cache",
     "l2_ready",
@@ -691,6 +699,7 @@ function perCardTsv(results = []) {
     item.asset_id,
     item.ok,
     item.l1_wall_latency_ms,
+    item.l1_internal_scout_ms,
     item.l1_time_to_safe_draft_ms,
     item.fast_scout_cache_status,
     item.l2_ready,

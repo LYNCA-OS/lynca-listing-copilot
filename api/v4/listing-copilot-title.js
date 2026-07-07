@@ -27,6 +27,10 @@ function titleFromResult(result = {}) {
   return result.final_title || result.rendered_title || result.title || null;
 }
 
+function isInternalScoutResult(result = {}) {
+  return result?.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
+}
+
 function buildInternalScoutSummary(response = {}, result = {}) {
   return {
     title: titleFromResult(result) || titleFromResult(response) || "",
@@ -226,11 +230,14 @@ async function persistPipelineResult({
   createResult = {},
   extraProviderSummary = {}
 } = {}) {
+  const internalScout = isInternalScoutResult(result);
   const rows = buildV4PersistenceRows({ sessionId, result, payload });
   const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
   const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
   const catalogPromptCount = catalogPromptCountFromTrace(rows.candidateTrace);
-  const catalogGap = catalogPromptCount === 0
+  const catalogGap = internalScout
+    ? { saved: false, skipped: true, reason: "internal_scout_not_catalog_gap" }
+    : catalogPromptCount === 0
     ? await persistV4CatalogGap({
       gap: {
         id: `${sessionId}_catalog_gap`,
@@ -249,26 +256,44 @@ async function persistPipelineResult({
       }
     })
     : { saved: false, skipped: true, reason: "catalog_prompt_candidate_available" };
+  if (internalScout) {
+    const persistence = {
+      create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
+      update_session: { saved: false, skipped: true, reason: "internal_scout_does_not_update_session" },
+      field_evidence: fieldEvidence,
+      candidate_trace: candidateTrace,
+      catalog_gap: catalogGap,
+      quality_ledger: { saved: false, skipped: true, reason: "internal_scout_not_production_quality" }
+    };
+    return adaptV2ResultToV4({
+      sessionId,
+      result,
+      payload,
+      routePlan,
+      persistence
+    });
+  }
   const status = result.confidence === "FAILED" ? v4SessionStatuses.FAILED : v4SessionStatuses.DRAFT_READY;
+  const sessionPatch = {
+    status,
+    field_states: rows.fieldEvidenceRows,
+    route: routePlan.route,
+    route_plan: routePlan,
+    candidate_control_plane_trace: rows.candidateTrace,
+    provider_result_summary: {
+      provider: result.provider || result.provider_id || null,
+      confidence: result.confidence || null,
+      title_stage: result.title_stage || null,
+      assisted_draft_status: result.assisted_draft_status || extraProviderSummary.assisted_draft_status || null,
+      provider_error_type: result.provider_error_type || result.provider_error_code || null,
+      ...extraProviderSummary
+    }
+  };
+  sessionPatch.final_title = titleFromResult(result);
+  sessionPatch.resolved_fields = resolvedFromResult(result);
   const sessionUpdate = await updateV4RecognitionSession({
     sessionId,
-    patch: {
-      status,
-      final_title: titleFromResult(result),
-      resolved_fields: resolvedFromResult(result),
-      field_states: rows.fieldEvidenceRows,
-      route: routePlan.route,
-      route_plan: routePlan,
-      candidate_control_plane_trace: rows.candidateTrace,
-      provider_result_summary: {
-        provider: result.provider || result.provider_id || null,
-        confidence: result.confidence || null,
-        title_stage: result.title_stage || null,
-        assisted_draft_status: result.assisted_draft_status || extraProviderSummary.assisted_draft_status || null,
-        provider_error_type: result.provider_error_type || result.provider_error_code || null,
-        ...extraProviderSummary
-      }
-    }
+    patch: sessionPatch
   });
   const partialPersistence = {
     create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
@@ -482,13 +507,13 @@ export default async function handler(req, res) {
         }
       }));
       scheduleV4Background(l1PersistencePromise, "L1 persistence");
-      scheduleV4Background(l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft({
+      scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft({
         sessionId,
         payload,
         l1Result,
         routePlan,
         headers: req.headers,
-        createResult: deferredCreateResult
+        createResult
       })), "background L2 assisted draft");
       sendJson(res, 200, writerResponse);
       return;

@@ -20,6 +20,10 @@ assert.ok(fastScoutBranch.includes("writerPendingL1Response(v4Response, l1Result
 assert.ok(fastScoutBranch.includes("sendJson(res, 200, writerResponse);"), "fast scout L1 must send a writer-pending response in the branch");
 assert.ok(!fastScoutBranch.includes("await persistPipelineResult"), "fast scout L1 must not await pipeline persistence before response");
 assert.ok(fastScoutBranch.includes("scheduleV4Background(l1PersistencePromise"), "L1 persistence must be scheduled after response construction");
+assert.ok(fastScoutBranch.includes("scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft"), "L2 must be scheduled from session creation, not chained after L1 persistence");
+assert.ok(!fastScoutBranch.includes("l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft"), "L2 must not wait for L1 persistence before starting");
+assert.ok(apiSource.includes("internal_scout_does_not_update_session"), "L1 internal scout persistence must not overwrite the L2 session state");
+assert.ok(apiSource.includes("internal_scout_not_catalog_gap"), "L1 internal scout must not create catalog gap rows");
 assert.ok(apiSource.includes("l1_deferred_modules"), "V4 response must expose deferred modules");
 assert.ok(apiSource.includes("fast_scout_blocking_call_used"), "V4 response must expose fast scout blocking-call diagnostic");
 assert.ok(fastScoutSource.includes("readV4FastScoutCache"), "fast scout must read persistent cache");
