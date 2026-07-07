@@ -172,6 +172,8 @@ export function backgroundPayloadWithL1ResolvedHint(payload = {}, l1Result = nul
     resolvedHint: mergedHint,
     resolved_hint: mergedHint,
     l1_fast_scout_resolved_hint: mergedHint,
+    l1_fast_scout_title_hint: titleFromResult(l1Result || {}) || "",
+    l1_fast_scout_unresolved_hint: Array.isArray(l1Result?.unresolved) ? l1Result.unresolved : [],
     l1_fast_scout_resolved_hint_source: "v4_fast_scout_l1"
   };
 }

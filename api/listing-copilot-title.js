@@ -1240,6 +1240,70 @@ function resolutionHints(resolutionMap) {
     .join("\n");
 }
 
+function compactScoutHintFields(fields = {}) {
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return {};
+  const allowed = [
+    "year",
+    "manufacturer",
+    "brand",
+    "product",
+    "set",
+    "players",
+    "subject",
+    "character",
+    "card_name",
+    "insert",
+    "surface_color",
+    "print_run_number",
+    "print_run_denominator",
+    "numbered_to",
+    "collector_number",
+    "checklist_code",
+    "card_number",
+    "tcg_card_number",
+    "grade_company",
+    "card_grade",
+    "auto_grade",
+    "grade_type",
+    "rc",
+    "auto",
+    "patch",
+    "relic",
+    "jersey",
+    "one_of_one"
+  ];
+  const output = {};
+  for (const field of allowed) {
+    const value = fields[field];
+    if (!valuePresent(value)) continue;
+    output[field] = value;
+  }
+  return output;
+}
+
+function l1FastScoutHintPromptSection(payload = {}) {
+  const fields = compactScoutHintFields(payload.l1_fast_scout_resolved_hint || payload.l1FastScoutResolvedHint || {});
+  const title = String(payload.l1_fast_scout_title_hint || payload.l1FastScoutTitleHint || "").replace(/\s+/g, " ").trim();
+  const unresolved = Array.isArray(payload.l1_fast_scout_unresolved_hint || payload.l1FastScoutUnresolvedHint)
+    ? (payload.l1_fast_scout_unresolved_hint || payload.l1FastScoutUnresolvedHint).map(String).filter(Boolean).slice(0, 12)
+    : [];
+  if (!title && !Object.keys(fields).length && !unresolved.length) return "";
+  return [
+    "Internal L1 scout context:",
+    JSON.stringify({
+      title,
+      fields,
+      unresolved
+    }),
+    "L1 scout policy:",
+    "- L1 scout is an internal fast observation from the same uploaded images, not a ground-truth source.",
+    "- Use it to focus L2 on confirming, correcting, and completing fields instead of starting from scratch.",
+    "- Current image/slab/card text always overrides L1 when they conflict.",
+    "- Do not copy any field from L1 unless it is visible or supported in the current images or prompt-safe catalog/vector evidence.",
+    "- If L1 only saw a denominator such as #/99, reread the current image for a visible numerator; keep #/D only when numerator is not directly readable."
+  ].join("\n");
+}
+
 function findResolutionLabel(text, resolutionMap) {
   const upperText = text.toUpperCase();
   const match = Object.entries(resolutionMap || {}).find(([code]) => upperText.includes(code.toUpperCase()));
@@ -2894,7 +2958,8 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
       mode: payload.mode || null,
       imageCount: payload.images.length,
       fileNames: payload.images.map((image) => image.name).filter(Boolean).slice(0, 2)
-    })
+    }),
+    l1FastScoutHintPromptSection(payload)
   ].join("\n");
 }
 
@@ -3048,6 +3113,7 @@ async function buildListingPrompt(payload, maxTitleLength) {
     }),
     "Capture quality:",
     JSON.stringify(captureQualityForPayload(payload)),
+    l1FastScoutHintPromptSection(payload),
     "Required JSON shape:",
     JSON.stringify(providerMinimalOutputShape({ includeVectorDecision: Boolean(vectorPacket) })),
     vectorCandidatePromptSection(vectorPacket),
