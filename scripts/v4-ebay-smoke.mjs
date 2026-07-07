@@ -308,8 +308,14 @@ async function pollSessionStatus({
       requestTimeoutMs
     });
     const summary = sessionL2Summary(last.data || {});
-    if (summary.assisted_draft_status === "READY" || summary.session_status === "DRAFT_READY") {
-      return { polls, ready: summary.assisted_draft_status === "READY", summary, last };
+    if (summary.assisted_draft_status === "READY") {
+      return { polls, ready: true, summary, last };
+    }
+    if (summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT") {
+      return { polls, ready: false, summary, last };
+    }
+    if (!summary.assisted_draft_status && summary.session_status === "DRAFT_READY") {
+      return { polls, ready: false, summary, last };
     }
     await delay(intervalMs);
   }
