@@ -9,6 +9,7 @@ import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-lo
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
 import {
   buildV4TitleStageState,
+  providerOptionsForV4BackgroundL2,
   providerOptionsForV4ProgressiveL1,
   v4TitleStages
 } from "../lib/listing/v4/stages/title-stages.mjs";
@@ -72,6 +73,13 @@ const assistedOptions = providerOptionsForV4ProgressiveL1({
 });
 assert.equal(assistedOptions.enable_catalog_assist, false);
 assert.equal(assistedOptions.enable_vector_retrieval, false);
+
+const l2Options = providerOptionsForV4BackgroundL2({
+  payload: { provider_options: { enable_catalog_assist: true } },
+  routePlan: assistedRoute
+});
+assert.equal(l2Options.v4_title_stage_target, v4TitleStages.L2_ASSISTED_DRAFT);
+assert.equal(l2Options.v4_compact_l2_prompt, undefined, "compact L2 prompt must be explicit opt-in, not the default production path");
 
 const v2Result = {
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",

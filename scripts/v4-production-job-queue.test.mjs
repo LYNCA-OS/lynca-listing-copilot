@@ -159,6 +159,30 @@ assert.ok(releasePatches[0].url.includes(`/v4_recognition_jobs?id=eq.${stageJobs
 assert.ok(releasePatches[0].request.body.includes('"not_before"'));
 assert.ok(releasePatches[0].request.body.includes('"released_by_parent_job_id"'));
 
+const multiStageJobs = expandV4RecognitionStageJobs({
+  batchId: "batch-no-l2-barrier",
+  operatorId: "operator-stage",
+  jobs: [
+    { asset_id: "asset-a", payload: { images: [{ url: "https://example.test/a.jpg" }] } },
+    { asset_id: "asset-b", payload: { images: [{ url: "https://example.test/b.jpg" }] } }
+  ]
+});
+const multiReleasePatches = [];
+const firstL1 = multiStageJobs.find((job) => job.asset_id === "asset-a" && job.job_type === v4JobTypes.FAST_SCOUT_DRAFT);
+const firstL2 = multiStageJobs.find((job) => job.parent_job_id === firstL1.id);
+const secondL2 = multiStageJobs.find((job) => job.asset_id === "asset-b" && job.job_type === v4JobTypes.FINAL_ASSISTED_TITLE);
+await releasePairedV4FinalJob({
+  job: firstL1,
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    multiReleasePatches.push({ url: String(url), request });
+    return jsonResponse([{ id: firstL2.id, status: "QUEUED" }]);
+  }
+});
+assert.equal(multiReleasePatches.length, 1);
+assert.ok(multiReleasePatches[0].url.includes(`/v4_recognition_jobs?id=eq.${firstL2.id}`), "each L1 must release its own paired L2 immediately");
+assert.ok(!multiReleasePatches[0].url.includes(secondL2.id), "one completed L1 must not wait for or release other cards' L2 jobs");
+
 const retry = await failV4RecognitionJob({
   job: { id: "v4job-retry", attempt_count: 1, max_attempts: 2 },
   error: { message: "provider timeout" },

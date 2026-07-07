@@ -3164,7 +3164,7 @@ function compactL2PromptEnabled(payload = {}, env = process.env) {
     || ""
   ).trim();
   return stageTarget === "L2_ASSISTED_DRAFT"
-    && optionFlag(providerOptions, "v4_compact_l2_prompt", envFlag(env, "ENABLE_V4_COMPACT_L2_PROMPT", true)) === true;
+    && optionFlag(providerOptions, "v4_compact_l2_prompt", envFlag(env, "ENABLE_V4_COMPACT_L2_PROMPT", false)) === true;
 }
 
 async function buildInitialProviderPrompt(payload, maxTitleLength) {
