@@ -23,7 +23,7 @@ async function readSessionsForJobs(jobs = []) {
   if (!sessionIds.length) return {};
   const result = await readV4Rows({
     table: "v4_recognition_sessions",
-    select: "id,status,final_title,provider_result_summary,updated_at,failure_reason",
+    select: "id,status,final_title,l1_status,l1_title,l1_ready_at,l1_route,l1_timing,l2_status,l2_title,l2_ready_at,l2_route,l2_timing,provider_result_summary,updated_at,failure_reason",
     search: {
       id: `in.(${sessionIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",")})`,
       limit: String(sessionIds.length)
@@ -31,6 +31,69 @@ async function readSessionsForJobs(jobs = []) {
   });
   if (!result.ok) return {};
   return Object.fromEntries(result.rows.map((row) => [row.id, row]));
+}
+
+function displayStateForSession(session = null) {
+  if (!session) {
+    return {
+      display_status: "PENDING",
+      display_title: "",
+      title_stage: "PENDING",
+      current_best_title: "",
+      is_final: false,
+      can_writer_start: false,
+      pending_modules: ["fast_scout_draft", "final_assisted_title"],
+      background_modules: ["final_assisted_title"]
+    };
+  }
+  const l2Ready = session.l2_status === "READY" && (session.l2_title || session.final_title);
+  const l1Ready = session.l1_status === "READY" && session.l1_title;
+  const title = l2Ready
+    ? (session.l2_title || session.final_title || "")
+    : l1Ready
+      ? (session.l1_title || "")
+      : (session.final_title || "");
+  if (l2Ready) {
+    return {
+      display_status: "FINAL_READY",
+      display_title: title,
+      title_stage: "L2_ASSISTED_DRAFT",
+      current_best_title: title,
+      is_final: true,
+      can_writer_start: true,
+      pending_modules: [],
+      background_modules: []
+    };
+  }
+  if (l1Ready || title) {
+    return {
+      display_status: "DRAFT_READY",
+      display_title: title,
+      title_stage: "L1_WRITER_SAFE_DRAFT",
+      current_best_title: title,
+      is_final: false,
+      can_writer_start: true,
+      pending_modules: ["final_assisted_title"],
+      background_modules: ["final_assisted_title"]
+    };
+  }
+  return {
+    display_status: session.failure_reason ? "FAILED" : "PENDING",
+    display_title: "",
+    title_stage: "PENDING",
+    current_best_title: "",
+    is_final: false,
+    can_writer_start: false,
+    pending_modules: ["fast_scout_draft", "final_assisted_title"],
+    background_modules: ["final_assisted_title"]
+  };
+}
+
+function elapsedMs(startedAt, finishedAt) {
+  const start = Date.parse(startedAt || "");
+  const finish = Date.parse(finishedAt || "");
+  if (!Number.isFinite(start) || !Number.isFinite(finish) || finish < start) return null;
+  return finish - start;
 }
 
 export default async function handler(req, res) {
@@ -63,12 +126,35 @@ export default async function handler(req, res) {
     job_count: result.rows.length,
     jobs: result.rows.map((job) => {
       const session = sessions[job.recognition_session_id] || null;
+      const display = displayStateForSession(session);
       return {
         job_id: job.id,
         batch_id: job.batch_id,
         asset_id: job.asset_id,
         recognition_session_id: job.recognition_session_id,
+        lane: job.lane || null,
+        job_type: job.job_type || null,
+        parent_job_id: job.parent_job_id || null,
+        paired_job_id: job.paired_job_id || null,
         status: job.status,
+        display_status: display.display_status,
+        display_title: display.display_title,
+        title_stage: display.title_stage,
+        current_best_title: display.current_best_title,
+        is_final: display.is_final,
+        can_writer_start: display.can_writer_start,
+        pending_modules: display.pending_modules,
+        background_modules: display.background_modules,
+        l1_status: session?.l1_status || "PENDING",
+        l1_title: session?.l1_title || "",
+        l2_status: session?.l2_status || "PENDING",
+        l2_title: session?.l2_title || "",
+        timing: {
+          time_to_l1_ready_ms: elapsedMs(job.created_at, session?.l1_ready_at),
+          time_to_l2_ready_ms: elapsedMs(job.created_at, session?.l2_ready_at),
+          worker_queue_wait_ms: elapsedMs(job.created_at, job.started_at),
+          worker_processing_ms: elapsedMs(job.started_at, job.completed_at)
+        },
         attempt_count: job.attempt_count,
         max_attempts: job.max_attempts,
         priority: job.priority,

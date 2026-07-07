@@ -4,9 +4,13 @@ import {
   claimV4RecognitionJobs,
   completeV4RecognitionJob,
   failV4RecognitionJob,
+  v4JobLanes,
+  v4JobStatuses,
+  v4JobTypes,
   v4QueueConfigured,
   v4WorkerClaimLimit,
-  v4WorkerLeaseSeconds
+  v4WorkerLeaseSeconds,
+  v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
@@ -32,19 +36,63 @@ function workerIdFrom(req, payload = {}) {
   ).slice(0, 120);
 }
 
+function normalizedJobType(job = {}) {
+  const raw = String(job.job_type || job.payload?.job_type || "").trim().toUpperCase();
+  return raw === v4JobTypes.FAST_SCOUT_DRAFT ? v4JobTypes.FAST_SCOUT_DRAFT : v4JobTypes.FINAL_ASSISTED_TITLE;
+}
+
+export function payloadForV4ProductionJob(job = {}) {
+  const jobType = normalizedJobType(job);
+  const fastScoutDraft = jobType === v4JobTypes.FAST_SCOUT_DRAFT;
+  const basePayload = job.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+    ? { ...job.payload }
+    : {};
+  return {
+    ...basePayload,
+    recognition_session_id: job.recognition_session_id || basePayload.recognition_session_id,
+    asset_id: job.asset_id || basePayload.asset_id || basePayload.assetId || undefined,
+    provider: basePayload.provider || job.provider_id || "openai_legacy",
+    provider_id: basePayload.provider_id || job.provider_id || "openai_legacy",
+    vision_provider: basePayload.vision_provider || job.provider_id || "openai_legacy",
+    v4_queue_job_type: jobType,
+    v4_queue_lane: job.lane || basePayload.lane || (fastScoutDraft ? v4JobLanes.INTERACTIVE : v4JobLanes.BACKGROUND),
+    ...(fastScoutDraft
+      ? {
+        v4_worker_synchronous: false,
+        v4_force_l2_direct: false,
+        disable_fast_scout_l1: false,
+        v4_queue_l1_only: true,
+        v4_return_l1_writer_safe_draft: true
+      }
+      : {
+        v4_worker_synchronous: true,
+        v4_force_l2_direct: true,
+        disable_fast_scout_l1: true
+      })
+  };
+}
+
+function completionStatusForJob(job = {}) {
+  return normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT ? v4JobStatuses.L1_READY : v4JobStatuses.L2_READY;
+}
+
+async function mapWithConcurrency(items = [], concurrency = 1, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
 async function runJob(job, req) {
   const started = Date.now();
-  const payload = {
-    ...(job.payload || {}),
-    recognition_session_id: job.recognition_session_id || job.payload?.recognition_session_id,
-    asset_id: job.asset_id || job.payload?.asset_id || job.payload?.assetId || undefined,
-    provider: job.payload?.provider || job.provider_id || "openai_legacy",
-    provider_id: job.payload?.provider_id || job.provider_id || "openai_legacy",
-    vision_provider: job.payload?.vision_provider || job.provider_id || "openai_legacy",
-    v4_worker_synchronous: true,
-    v4_force_l2_direct: true,
-    disable_fast_scout_l1: true
-  };
+  const payload = payloadForV4ProductionJob(job);
   const response = await callJsonHandler(v4ListingHandler, {
     method: "POST",
     headers: {
@@ -99,25 +147,33 @@ export default async function handler(req, res) {
   }
 
   const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 12 });
+  const lane = payload.lane || payload.queue_lane || payload.queueLane || null;
+  const tenantId = payload.tenant_id || payload.tenantId || null;
   const workerId = workerIdFrom(req, payload);
   const claim = await claimV4RecognitionJobs({
     limit,
     workerId,
-    leaseSeconds: positiveInteger(payload.lease_seconds, v4WorkerLeaseSeconds(process.env), { min: 30, max: 900 })
+    leaseSeconds: positiveInteger(payload.lease_seconds, v4WorkerLeaseSeconds(process.env), { min: 30, max: 900 }),
+    lane,
+    tenantId
   });
   if (!claim.ok) {
     sendJson(res, 500, withV4Version({ ok: false, message: "Unable to claim V4 jobs.", error: claim.error }));
     return;
   }
 
-  const processed = [];
-  for (const job of claim.rows) {
+  const concurrency = positiveInteger(payload.process_concurrency, v4WorkerProcessConcurrency(process.env), { min: 1, max: 8 });
+  const processed = await mapWithConcurrency(claim.rows, concurrency, async (job) => {
     try {
       const result = await runJob(job, req);
+      const jobStatus = completionStatusForJob(job);
       const completion = await completeV4RecognitionJob({
         jobId: job.id,
+        status: jobStatus,
         result: {
           ok: true,
+          lane: job.lane || null,
+          job_type: normalizedJobType(job),
           recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
           final_title: result.response.final_title || result.response.title || result.response.writer_safe_draft || null,
           title_stage: result.response.title_stage || null,
@@ -129,14 +185,16 @@ export default async function handler(req, res) {
           response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null
         }
       });
-      processed.push({
+      return {
         job_id: job.id,
-        status: "L2_READY",
+        lane: job.lane || null,
+        job_type: normalizedJobType(job),
+        status: jobStatus,
         recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
         latency_ms: result.latency_ms,
         saved: completion.saved,
         error: completion.error || null
-      });
+      };
     } catch (error) {
       const failure = await failV4RecognitionJob({
         job,
@@ -147,20 +205,25 @@ export default async function handler(req, res) {
         },
         retryDelaySeconds: positiveInteger(payload.retry_delay_seconds, 15, { min: 1, max: 900 })
       });
-      processed.push({
+      return {
         job_id: job.id,
+        lane: job.lane || null,
+        job_type: normalizedJobType(job),
         status: failure.row?.status || "FAILED",
         recognition_session_id: job.recognition_session_id,
         latency_ms: error?.latency_ms || null,
         saved: failure.saved,
         error: failure.error || safeError(error)
-      });
+      };
     }
-  }
+  });
 
   sendJson(res, 200, withV4Version({
     ok: true,
     worker_id: workerId,
+    lane: lane || null,
+    tenant_id: tenantId || null,
+    process_concurrency: concurrency,
     claimed_count: claim.rows.length,
     processed_count: processed.length,
     jobs: processed

@@ -17,12 +17,15 @@ const fastScoutBranch = apiSource.slice(
 
 assert.ok(fastScoutBranch.includes("addL1ReturnBarrierMetadata(adaptV2ResultToV4"), "fast scout L1 must build response directly from adapter");
 assert.ok(fastScoutBranch.includes("writerPendingL1Response(v4Response, l1Result)"), "fast scout L1 must hide internal scout titles from the writer response");
+assert.ok(fastScoutBranch.includes("writerVisibleL1Response(v4Response, l1Result)"), "queue-backed fast scout L1 must expose writer-visible drafts");
 assert.ok(fastScoutBranch.includes("sendJson(res, 200, writerResponse);"), "fast scout L1 must send a writer-pending response in the branch");
-assert.ok(!fastScoutBranch.includes("await persistPipelineResult"), "fast scout L1 must not await pipeline persistence before response");
+assert.ok(fastScoutBranch.includes("if (queueL1Only(payload))"), "queue-backed L1 must take the explicit L1-only path");
+assert.ok(fastScoutBranch.includes("await l1PersistencePromise"), "queue-backed L1 must persist before job completion/status polling");
 assert.ok(fastScoutBranch.includes("scheduleV4Background(l1PersistencePromise"), "L1 persistence must be scheduled after response construction");
 assert.ok(fastScoutBranch.includes("scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft"), "L2 must be scheduled from session creation, not chained after L1 persistence");
 assert.ok(!fastScoutBranch.includes("l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft"), "L2 must not wait for L1 persistence before starting");
-assert.ok(apiSource.includes("internal_scout_does_not_update_session"), "L1 internal scout persistence must not overwrite the L2 session state");
+assert.ok(apiSource.includes("l1_status"), "L1 persistence must update dedicated l1 status fields instead of relying on final-only state");
+assert.ok(apiSource.includes("l2_status"), "L2 persistence must update dedicated l2 status fields");
 assert.ok(apiSource.includes("internal_scout_not_catalog_gap"), "L1 internal scout must not create catalog gap rows");
 assert.ok(apiSource.includes("l1_deferred_modules"), "V4 response must expose deferred modules");
 assert.ok(apiSource.includes("fast_scout_blocking_call_used"), "V4 response must expose fast scout blocking-call diagnostic");

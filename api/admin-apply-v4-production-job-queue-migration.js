@@ -3,7 +3,10 @@ import { join } from "node:path";
 import pg from "pg";
 import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
 
-const migrationPath = join(process.cwd(), "supabase/migrations/20260707122154_v4_production_job_queue.sql");
+const migrationPaths = [
+  "supabase/migrations/20260707122154_v4_production_job_queue.sql",
+  "supabase/migrations/20260707133128_v4_queue_interactive_background_lanes.sql"
+].map((path) => join(process.cwd(), path));
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -41,7 +44,23 @@ async function verify(client) {
         join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'public'
           and p.proname = 'claim_v4_recognition_jobs'
+          and p.pronargs = 5
       ) as claim_rpc
+      ,
+      exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'v4_recognition_jobs'
+          and column_name = 'lane'
+      ) as lane_column,
+      exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'v4_recognition_sessions'
+          and column_name = 'l1_title'
+      ) as l1_session_column
   `);
   return result.rows[0] || {};
 }
@@ -66,19 +85,20 @@ export default async function handler(req, res) {
     ssl: { rejectUnauthorized: false }
   });
   try {
-    const sql = await readFile(migrationPath, "utf8");
+    const sql = (await Promise.all(migrationPaths.map((path) => readFile(path, "utf8")))).join("\n\n");
     await client.connect();
     await client.query(sql);
     const verification = await verify(client);
-    sendJson(res, verification.jobs_table && verification.claim_rpc ? 200 : 500, {
-      ok: Boolean(verification.jobs_table && verification.claim_rpc),
-      migration: "20260707122154_v4_production_job_queue",
+    const ok = Boolean(verification.jobs_table && verification.claim_rpc && verification.lane_column && verification.l1_session_column);
+    sendJson(res, ok ? 200 : 500, {
+      ok,
+      migration: "v4_production_job_queue_all",
       verification
     });
   } catch (error) {
     sendJson(res, 500, {
       ok: false,
-      migration: "20260707122154_v4_production_job_queue",
+      migration: "v4_production_job_queue_all",
       message: String(error?.message || error || "migration_failed").slice(0, 500)
     });
   } finally {

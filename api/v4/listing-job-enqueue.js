@@ -1,6 +1,10 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
-import { enqueueV4RecognitionJobs, v4QueueConfigured } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
+import {
+  enqueueV4RecognitionJobs,
+  expandV4RecognitionStageJobs,
+  v4QueueConfigured
+} from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -40,11 +44,21 @@ export default async function handler(req, res) {
   }
 
   const batchId = payload.batch_id || payload.batchId;
-  const result = await enqueueV4RecognitionJobs({
-    jobs: jobsFromPayload(payload),
+  const operatorId = operatorIdFromRequest(req);
+  const tenantId = payload.tenant_id || payload.tenantId || null;
+  const sourceJobs = jobsFromPayload(payload);
+  const stageJobs = expandV4RecognitionStageJobs({
+    jobs: sourceJobs,
     batchId,
-    operatorId: operatorIdFromRequest(req),
-    tenantId: payload.tenant_id || payload.tenantId || null,
+    operatorId,
+    tenantId,
+    priority: payload.priority || 100
+  });
+  const result = await enqueueV4RecognitionJobs({
+    jobs: stageJobs,
+    batchId,
+    operatorId,
+    tenantId,
     priority: payload.priority || 100
   });
 
@@ -55,6 +69,10 @@ export default async function handler(req, res) {
     jobs: result.jobs.map((entry) => ({
       ok: entry.saved,
       job_id: entry.row?.id || null,
+      lane: entry.row?.lane || null,
+      job_type: entry.row?.job_type || null,
+      parent_job_id: entry.row?.parent_job_id || null,
+      paired_job_id: entry.row?.paired_job_id || null,
       recognition_session_id: entry.row?.recognition_session_id || null,
       asset_id: entry.row?.asset_id || null,
       status: entry.row?.status || null,

@@ -95,6 +95,45 @@ function writerPendingL1Response(response = {}, result = {}) {
   });
 }
 
+function writerVisibleL1Response(response = {}, result = {}) {
+  const scout = buildInternalScoutSummary(response, result);
+  const title = titleFromResult(result) || titleFromResult(response) || "";
+  return withV4Version({
+    ...response,
+    ok: Boolean(title),
+    status: title ? v4SessionStatuses.DRAFT_READY : v4SessionStatuses.OBSERVING,
+    title_stage: v4TitleStages.L1_WRITER_SAFE_DRAFT,
+    final_title: title,
+    title,
+    rendered_title: title,
+    writer_safe_draft: title,
+    assisted_draft: null,
+    assisted_draft_status: "PENDING",
+    writer_draft: {
+      ...(response.writer_draft || {}),
+      title,
+      display_title: title || "正在生成一段式标题",
+      status: title ? "READY" : "PENDING",
+      confidence_score: title ? (response.writer_draft?.confidence_score ?? 0.72) : 0,
+      actions: title ? ["EDIT", "ACCEPT"] : [],
+      user_edit_mode: "one_line_title_only",
+      structured_fields_visible: false
+    },
+    title_stage_reason: title
+      ? "Fast scout writer-safe draft is ready. Final assisted title continues as a separate background job."
+      : "Fast scout did not produce a safe writer-visible title.",
+    l1_return_reason: title ? "fast_scout_writer_safe_draft_ready" : "fast_scout_no_writer_safe_title",
+    title_stage_readiness: {
+      ...(response.title_stage_readiness || {}),
+      writer_safe_ready: Boolean(title),
+      writer_visible_title_ready: Boolean(title),
+      internal_scout_ready: Boolean(scout.title || Object.keys(scout.resolved_fields || {}).length)
+    },
+    l1_internal_scout: { ...scout, writer_visible: Boolean(title) },
+    l1_visible_to_writer: Boolean(title)
+  });
+}
+
 function resolvedFromResult(result = {}) {
   return result.resolved_fields || result.fields || result.resolved || {};
 }
@@ -203,6 +242,10 @@ function canReturnFastScoutL1(payload = {}, env = process.env) {
   return Array.isArray(payload.images) && payload.images.length > 0;
 }
 
+function queueL1Only(payload = {}) {
+  return payload.v4_queue_l1_only === true || payload.v4_queue_job_type === "FAST_SCOUT_DRAFT";
+}
+
 function v2PayloadFor({
   payload = {},
   sessionId,
@@ -233,6 +276,7 @@ async function persistPipelineResult({
   extraProviderSummary = {}
 } = {}) {
   const internalScout = isInternalScoutResult(result);
+  const l1Visible = internalScout && (payload.v4_return_l1_writer_safe_draft === true || queueL1Only(payload));
   const rows = buildV4PersistenceRows({ sessionId, result, payload });
   const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
   const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
@@ -259,9 +303,37 @@ async function persistPipelineResult({
     })
     : { saved: false, skipped: true, reason: "catalog_prompt_candidate_available" };
   if (internalScout) {
+    const l1Title = titleFromResult(result);
+    const sessionUpdate = await updateV4RecognitionSession({
+      sessionId,
+      patch: {
+        status: l1Visible && l1Title ? v4SessionStatuses.DRAFT_READY : v4SessionStatuses.OBSERVING,
+        ...(l1Visible && l1Title ? { final_title: l1Title } : {}),
+        l1_status: l1Title ? "READY" : "FAILED",
+        l1_title: l1Title || null,
+        l1_ready_at: new Date().toISOString(),
+        l1_route: routePlan.route || null,
+        l1_timing: result.timing || result.timings || {},
+        field_states: rows.fieldEvidenceRows,
+        route: routePlan.route,
+        route_plan: routePlan,
+        candidate_control_plane_trace: rows.candidateTrace,
+        provider_result_summary: {
+          provider: result.provider || result.provider_id || null,
+          confidence: result.confidence || null,
+          title_stage: l1Visible ? v4TitleStages.L1_WRITER_SAFE_DRAFT : result.title_stage || null,
+          assisted_draft_status: "PENDING",
+          l1_already_returned: true,
+          l1_visible_to_writer: l1Visible,
+          l1_return_barrier_version: l1ReturnBarrierVersion,
+          ...extraProviderSummary
+        },
+        resolved_fields: resolvedFromResult(result)
+      }
+    });
     const persistence = {
       create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
-      update_session: { saved: false, skipped: true, reason: "internal_scout_does_not_update_session" },
+      update_session: sessionUpdate,
       field_evidence: fieldEvidence,
       candidate_trace: candidateTrace,
       catalog_gap: catalogGap,
@@ -276,6 +348,7 @@ async function persistPipelineResult({
     });
   }
   const status = result.confidence === "FAILED" ? v4SessionStatuses.FAILED : v4SessionStatuses.DRAFT_READY;
+  const l2Title = titleFromResult(result);
   const sessionPatch = {
     status,
     field_states: rows.fieldEvidenceRows,
@@ -291,7 +364,12 @@ async function persistPipelineResult({
       ...extraProviderSummary
     }
   };
-  sessionPatch.final_title = titleFromResult(result);
+  sessionPatch.final_title = l2Title;
+  sessionPatch.l2_status = status === v4SessionStatuses.FAILED ? "FAILED" : "READY";
+  sessionPatch.l2_title = l2Title;
+  sessionPatch.l2_ready_at = new Date().toISOString();
+  sessionPatch.l2_route = routePlan.route || null;
+  sessionPatch.l2_timing = result.timing || result.timings || {};
   sessionPatch.resolved_fields = resolvedFromResult(result);
   const sessionUpdate = await updateV4RecognitionSession({
     sessionId,
@@ -497,7 +575,9 @@ export default async function handler(req, res) {
           l1_persistence: { saved: false, deferred: true }
         }
       }), l1Result.fast_scout || {});
-      const writerResponse = writerPendingL1Response(v4Response, l1Result);
+      const writerResponse = queueL1Only(payload) || payload.v4_return_l1_writer_safe_draft === true
+        ? writerVisibleL1Response(v4Response, l1Result)
+        : writerPendingL1Response(v4Response, l1Result);
       const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({
         sessionId,
         result: l1Result,
@@ -509,18 +589,44 @@ export default async function handler(req, res) {
           l1_return_barrier_version: l1ReturnBarrierVersion
         }
       }));
-      scheduleV4Background(l1PersistencePromise, "L1 persistence");
-      scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft({
-        sessionId,
-        payload,
-        l1Result,
-        routePlan,
-        headers: req.headers,
-        createResult
-      })), "background L2 assisted draft");
+      if (queueL1Only(payload)) {
+        await l1PersistencePromise;
+      } else {
+        scheduleV4Background(l1PersistencePromise, "L1 persistence");
+        scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft({
+          sessionId,
+          payload,
+          l1Result,
+          routePlan,
+          headers: req.headers,
+          createResult
+        })), "background L2 assisted draft");
+      }
       sendJson(res, 200, writerResponse);
       return;
     } catch (error) {
+      if (queueL1Only(payload)) {
+        await createResultPromise.then((createResult) => updateV4RecognitionSession({
+          sessionId,
+          patch: {
+            status: v4SessionStatuses.OBSERVING,
+            l1_status: "FAILED",
+            provider_result_summary: {
+              provider: "openai_fast_scout",
+              confidence: "FAILED",
+              assisted_draft_status: "PENDING",
+              provider_error_type: "FAST_SCOUT_FAILED",
+              message: String(error?.message || error || "").slice(0, 240),
+              l1_return_barrier_version: l1ReturnBarrierVersion
+            }
+          }
+        }).then(() => createResult));
+        sendJson(res, 500, addL1ReturnBarrierMetadata(
+          buildFastScoutPendingFailureResponse({ sessionId, routePlan, createResult: deferredCreateResult, error }),
+          { cache_hit: false, cache_status: "ERROR", blocking_call_used: true }
+        ));
+        return;
+      }
       scheduleV4Background(createResultPromise.then((createResult) => updateV4RecognitionSession({
         sessionId,
         patch: {
