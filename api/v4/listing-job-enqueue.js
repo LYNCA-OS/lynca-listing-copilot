@@ -47,7 +47,7 @@ function triggerV4QueuePumpAfterEnqueue(req, {
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
   const origin = requestOrigin(req);
   if (!origin) return { triggered: false, reason: "request_origin_missing" };
-  const interactiveConcurrency = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, 2, { min: 1, max: 6 });
+  const interactiveConcurrency = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, 4, { min: 1, max: 8 });
   const backgroundConcurrency = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, 6, { min: 1, max: 8 });
 
   const body = {
