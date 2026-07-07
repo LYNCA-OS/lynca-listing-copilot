@@ -110,7 +110,7 @@ node scripts/v4-prewarm-fast-scout-for-batch.mjs \
   --concurrency=1
 ```
 
-The prewarm path runs fast scout only, writes `v4_fast_scout_cache`, and does not generate a final listing title or promote catalog data.
+The prewarm path runs fast scout only and does not generate a final listing title or promote catalog data. It writes `v4_fast_scout_cache` when that table exists; otherwise it fails open to the existing `v4_preingestion_bundles` table with `status = FAST_SCOUT_CACHE`, so cloud deployments do not block on a migration before cache can be useful.
 
 ## Expected Validation
 
