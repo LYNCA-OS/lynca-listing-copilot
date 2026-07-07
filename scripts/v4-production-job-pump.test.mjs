@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import pumpHandler, { runV4QueuePump } from "../api/v4/listing-job-pump.js";
 import { workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import { callJsonHandler } from "../lib/listing/v4/session/http-handler-utils.mjs";
@@ -100,6 +101,12 @@ const l2WaitingPump = await runV4QueuePump({
 });
 assert.equal(l2WaitingPump.claimed_count, 2);
 assert.ok(waitForReleasedL2Calls.filter((call) => call.lane === "background").length >= 2, "background lane must wait for L1-released L2 work instead of exiting after one empty claim");
+
+const enqueueSource = readFileSync(new URL("../api/v4/listing-job-enqueue.js", import.meta.url), "utf8");
+assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY/);
+assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
+assert.match(enqueueSource, /background_limit: backgroundConcurrency/);
+assert.match(enqueueSource, /interactive_process_concurrency: interactiveConcurrency/);
 
 const previousSecret = process.env.V4_JOB_WORKER_SECRET;
 try {

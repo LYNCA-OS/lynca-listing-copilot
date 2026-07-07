@@ -31,6 +31,12 @@ function requestOrigin(req) {
   return `${proto}://${host}`;
 }
 
+function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
 function triggerV4QueuePumpAfterEnqueue(req, {
   tenantId,
   batchId,
@@ -41,15 +47,17 @@ function triggerV4QueuePumpAfterEnqueue(req, {
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
   const origin = requestOrigin(req);
   if (!origin) return { triggered: false, reason: "request_origin_missing" };
+  const interactiveConcurrency = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, 2, { min: 1, max: 6 });
+  const backgroundConcurrency = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, 6, { min: 1, max: 8 });
 
   const body = {
     tenant_id: tenantId || batchId || null,
-    limit: 2,
-    process_concurrency: 2,
-    interactive_limit: 2,
-    interactive_process_concurrency: 2,
-    background_limit: 4,
-    background_process_concurrency: 4,
+    limit: interactiveConcurrency,
+    process_concurrency: interactiveConcurrency,
+    interactive_limit: interactiveConcurrency,
+    interactive_process_concurrency: interactiveConcurrency,
+    background_limit: backgroundConcurrency,
+    background_process_concurrency: backgroundConcurrency,
     cycles: 6,
     max_runtime_ms: 250_000,
     retry_delay_seconds: 8,
