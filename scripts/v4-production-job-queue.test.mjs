@@ -77,6 +77,7 @@ assert.equal(l2Payload.disable_fast_scout_l1, true);
 const writes = [];
 const fetchForWrites = async (url, request = {}) => {
   writes.push({ url: String(url), request });
+  if (request.method === "GET") return jsonResponse([]);
   return jsonResponse([{ id: "v4job-test", recognition_session_id: "v4sess-test", status: "QUEUED" }]);
 };
 const enqueue = await enqueueV4RecognitionJobs({
@@ -91,8 +92,9 @@ const enqueue = await enqueueV4RecognitionJobs({
 });
 assert.equal(enqueue.batchId, "batch-enqueue");
 assert.equal(enqueue.queued_count, 2);
-assert.equal(writes.length, 2);
-assert.ok(writes[0].request.body.includes('"status":"QUEUED"'));
+assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").length, 2);
+assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_jobs")).length, 2);
+assert.ok(writes.find((entry) => entry.url.includes("/v4_recognition_jobs")).request.body.includes('"status":"QUEUED"'));
 
 const rpcCalls = [];
 const claim = await claimV4RecognitionJobs({
