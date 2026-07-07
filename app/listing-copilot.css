@@ -1240,6 +1240,46 @@ h3 {
   color: var(--orange);
 }
 
+.assisted-draft-status {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0;
+  border: 1px solid rgba(88, 199, 245, 0.42);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: rgba(88, 199, 245, 0.085);
+}
+
+.assisted-draft-status span {
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.assisted-draft-status small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.assisted-draft-status.ready {
+  border-color: rgba(112, 214, 159, 0.5);
+  background: rgba(112, 214, 159, 0.09);
+}
+
+.assisted-draft-status.ready span {
+  color: var(--green);
+}
+
+.assisted-draft-status.warn {
+  border-color: rgba(255, 143, 143, 0.48);
+  background: rgba(255, 143, 143, 0.09);
+}
+
+.assisted-draft-status.warn span {
+  color: var(--red);
+}
+
 .title-override-note {
   display: flex;
   align-items: center;

@@ -47,7 +47,15 @@ assert.match(js, /GPT-4\.1 mini/, "provider control should identify GPT provider
 assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not expose mixed-model cascade controls");
 assert.match(js, /fetch\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs");
 assert.match(js, /const TITLE_API_ENDPOINT = "\/api\/v4\/listing-copilot-title"/, "frontend should use the V4 one-line title endpoint");
+assert.match(js, /const FAST_SCOUT_PREWARM_API_ENDPOINT = "\/api\/v4\/fast-scout-prewarm"/, "frontend should prewarm asset-level V4 fast scout cache after image verification");
+assert.match(js, /const SESSION_STATUS_API_ENDPOINT = "\/api\/v4\/listing-session-status"/, "frontend should poll the V4 session status endpoint for background assisted drafts");
 assert.match(js, /fetch\(TITLE_API_ENDPOINT/, "title requests should go through the V4 endpoint constant");
+assert.match(js, /fetch\(FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend should call the asset-level fast scout prewarm endpoint");
+assert.match(js, /fetch\(`\$\{SESSION_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\)\}`/, "frontend should poll session status using the durable recognition_session_id");
+assert.match(js, /startV4AssistedDraftPolling\(result\)/, "frontend should start L2 assisted-draft polling after each L1 response");
+assert.match(js, /applyV4AssistedDraftUpdate/, "frontend should apply L2 assisted drafts back into the visible one-line title");
+assert.match(js, /titleWasEditedByWriter/, "L2 assisted drafts must not overwrite writer-edited titles");
+assert.match(js, /stopAllV4AssistedDraftPolling/, "frontend should clear stale L2 polling when files or mode change");
 assert.match(js, /signed_upload_url/, "frontend should upload through signed URLs");
 assert.match(js, /signatureHex/, "frontend should send first-byte signatures before receiving signed upload URLs");
 assert.match(js, /width: dimensions\.width/, "frontend should send image width before receiving signed upload URLs");
@@ -179,6 +187,7 @@ assert.match(js, /progressStepForTarget/, "progress should move slowly and wait 
 assert.doesNotMatch(js, /moduleRevealCount/, "title-only UI should not stage module reveal state");
 assert.doesNotMatch(js, /revealResultModules/, "title-only UI should not animate structured module reveal");
 assert.match(js, /loading-spinner/, "pending cards should render an obvious waiting spinner");
+assert.match(js, /assistedDraftNotice/, "title cards should visibly explain background L2 title upgrades");
 assert.match(js, /setStatus\(message,\s*options\s*=\s*\{\}\)/, "status updates should support explicit busy rendering");
 assert.match(js, /status-spinner/, "global status should render a spinner while busy");
 assert.match(js, /status-dots/, "global status should render animated waiting dots while busy");
@@ -206,6 +215,8 @@ assert.match(css, /\.loading-spinner/, "pending cards should show a loading spin
 assert.match(css, /\.status-spinner/, "global upload/recognition status should show a spinner");
 assert.match(css, /\.status-dots i/, "global upload/recognition status should show waiting dots");
 assert.match(css, /\.pending-wave/, "pending cards should include a wave loading animation");
+assert.match(css, /\.assisted-draft-status/, "title cards should show background assisted-draft status");
+assert.match(css, /\.assisted-draft-status\.ready/, "completed L2 assisted drafts should have a distinct ready state");
 assert.match(css, /\.drop-zone\.status-busy::after/, "busy upload zone should show an animated progress sweep");
 assert.match(css, /\.primary-button\.is-loading::before/, "generate button should show a loading spinner");
 assert.match(css, /\.title-output-pending::before/, "pending result cards should show a subtle progress sweep");

@@ -24,9 +24,14 @@ const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_ASSET = 6;
 const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
 const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
+const FAST_SCOUT_PREWARM_API_ENDPOINT = "/api/v4/fast-scout-prewarm";
+const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
+const FAST_SCOUT_PREWARM_WAIT_MS = 1200;
+const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
+const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
@@ -60,6 +65,7 @@ const state = {
   activeAssetIndexes: new Set(),
   assetProgress: new Map(),
   progressTimer: null,
+  assistedDraftPollTimers: new Map(),
   completedAssetCount: 0,
   processingTotal: 0,
   backgroundPreparationRunId: 0
@@ -744,6 +750,7 @@ function backgroundPreparationLabel(asset = {}) {
   return {
     queued: "云端准备排队",
     uploading: "云端图片准备中",
+    fast_scout_prewarming: "首屏识别预热中",
     preingesting: "云端证据包准备中",
     ready: "云端图片已准备",
     failed: "后台准备未完成"
@@ -808,6 +815,102 @@ async function ensurePreingestionBundle(asset) {
   };
 }
 
+async function ensureFastScoutPrewarm(asset) {
+  if (!storageReady()) return { skipped: true, reason: "storage_not_configured" };
+  if (asset.fastScoutPrewarmStatus === "ready" && asset.fastScoutPrewarmResult?.ok !== false) {
+    return asset.fastScoutPrewarmResult;
+  }
+  if (asset.fastScoutPrewarmPromise) return asset.fastScoutPrewarmPromise;
+
+  const images = preingestionImagesForAsset(asset);
+  if (!images.length) return { skipped: true, reason: "no_verified_storage_images" };
+
+  asset.fastScoutPrewarmStatus = "running";
+  asset.fastScoutPrewarmPromise = (async () => {
+    const startedAt = performance.now();
+    try {
+      const response = await fetch(FAST_SCOUT_PREWARM_API_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        credentials: "same-origin",
+        body: buildAssetRequestBody(asset, {
+          provider_options: {
+            ...defaultProviderOptions,
+            single_model_fast: true,
+            enable_evidence_completion: false,
+            enable_catalog_assist: false,
+            enable_vector_assist: false,
+            enable_vector_retrieval: false,
+            vector_retrieval_mode: "off",
+            enable_advanced_retrieval: false,
+            enable_hybrid_retrieval: false
+          }
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.message || payload.error_type || `fast_scout_prewarm_failed_${response.status}`);
+      }
+      const result = {
+        ok: true,
+        wait_ms: Math.round(performance.now() - startedAt),
+        cache_status: payload.fast_scout_cache_status || "",
+        cache_hit: payload.fast_scout_cache_hit === true,
+        provider_latency_ms: payload.provider_latency_ms ?? null,
+        payload
+      };
+      asset.fastScoutPrewarmStatus = "ready";
+      asset.fastScoutPrewarmResult = result;
+      return result;
+    } catch (error) {
+      const result = {
+        ok: false,
+        wait_ms: Math.round(performance.now() - startedAt),
+        error: String(error.message || "fast_scout_prewarm_failed").slice(0, 180)
+      };
+      asset.fastScoutPrewarmStatus = "failed";
+      asset.fastScoutPrewarmError = result.error;
+      asset.fastScoutPrewarmResult = result;
+      return result;
+    } finally {
+      asset.fastScoutPrewarmPromise = null;
+      if (!state.processing) renderResults();
+    }
+  })();
+
+  return asset.fastScoutPrewarmPromise;
+}
+
+async function settleFastScoutPrewarm(asset, maxWaitMs = FAST_SCOUT_PREWARM_WAIT_MS) {
+  if (!asset?.fastScoutPrewarmPromise) {
+    return {
+      used: Boolean(asset?.fastScoutPrewarmResult),
+      wait_ms: 0,
+      ...(asset?.fastScoutPrewarmResult || {})
+    };
+  }
+  const startedAt = performance.now();
+  const timedOut = Symbol("fast_scout_prewarm_timeout");
+  const result = await Promise.race([
+    asset.fastScoutPrewarmPromise,
+    wait(maxWaitMs).then(() => timedOut)
+  ]);
+  if (result === timedOut) {
+    return {
+      used: true,
+      timed_out: true,
+      wait_ms: Math.round(performance.now() - startedAt)
+    };
+  }
+  return {
+    used: true,
+    wait_ms: Math.round(performance.now() - startedAt),
+    ...result
+  };
+}
+
 async function prepareAssetInBackground(asset, runId) {
   if (!asset) return null;
   if (asset.backgroundPreparationPromise && asset.backgroundPreparationRunId === runId) {
@@ -822,10 +925,16 @@ async function prepareAssetInBackground(asset, runId) {
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "uploading";
       await ensureAssetImagesUploaded(asset);
+      if (runId !== state.backgroundPreparationRunId) return { stale: true };
+      asset.backgroundPrepareStatus = "fast_scout_prewarming";
+      const fastScoutPrewarm = ensureFastScoutPrewarm(asset);
 
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
-      const bundle = await ensurePreingestionBundle(asset);
+      const [bundle] = await Promise.all([
+        ensurePreingestionBundle(asset),
+        fastScoutPrewarm
+      ]);
 
       asset.backgroundPrepareStatus = "ready";
       asset.backgroundPrepareError = "";
@@ -1964,6 +2073,7 @@ function TitleCardComponent(result, asset = null) {
         </div>
       </div>
       ${sideDecisionNotice(asset, result)}
+      ${assistedDraftNotice(result)}
       <textarea data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}">${escapeHtml(textareaValue)}</textarea>
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>` : ""}
@@ -2096,6 +2206,33 @@ function titleOverrideNotice(result) {
   `;
 }
 
+function assistedDraftNotice(result = {}) {
+  if (!isV4Result(result)) return "";
+  const status = v4AssistedStatus(result);
+  if (!status && result.full_assist_continued_after_l1 !== true) return "";
+  const label = {
+    READY: result.l2UpgradeApplied ? "完整标题已更新" : "完整标题已生成",
+    RUNNING: "完整标题补全中",
+    PENDING: "完整标题补全中",
+    TIMEOUT: "完整标题暂未完成",
+    FAILED: "完整标题补全失败"
+  }[status || "PENDING"] || "完整标题补全中";
+  const detail = {
+    READY: titleWasEditedByWriter(result) ? "已保留写手当前编辑，不自动覆盖人工标题。" : "系统已自动替换为更完整的一段式标题。",
+    RUNNING: "首屏草稿可先看，后台完成后会自动替换。",
+    PENDING: "首屏草稿可先看，后台完成后会自动替换。",
+    TIMEOUT: "当前标题仍可编辑，稍后可重试或保存人工修改。",
+    FAILED: "当前标题仍可编辑，必要时使用单模型重试。"
+  }[status || "PENDING"];
+  const className = status === "READY" ? "ready" : status === "FAILED" || status === "TIMEOUT" ? "warn" : "pending";
+  return `
+    <div class="assisted-draft-status ${className}">
+      <span>${escapeHtml(label)}</span>
+      <small>${escapeHtml(detail)}</small>
+    </div>
+  `;
+}
+
 function currentModalAsset() {
   if (!state.modal) return null;
   return state.assets.find((asset) => asset.index === state.modal.assetIndex) || null;
@@ -2192,6 +2329,7 @@ async function handleFiles(fileList) {
   if (!imageFiles.length) return;
 
   state.backgroundPreparationRunId += 1;
+  stopAllV4AssistedDraftPolling();
   void prewarmV4("file_selected");
   setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
   closeImageModal();
@@ -2251,13 +2389,19 @@ async function processAsset(asset, options = {}) {
   const uploaded = await ensureAssetImagesUploaded(asset);
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
   setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
+  setAssetProgress(asset.index, "等待首屏缓存", 0.24);
+  const fastScoutPrewarm = await settleFastScoutPrewarm(asset, FAST_SCOUT_PREWARM_WAIT_MS);
 
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
     client_upload_ms: uploadMs,
     client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
     client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
-    client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId)
+    client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId),
+    client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
+    client_fast_scout_prewarm_wait_ms: Math.round(Number(fastScoutPrewarm.wait_ms || 0)),
+    client_fast_scout_prewarm_cache_status: fastScoutPrewarm.cache_status || "",
+    client_fast_scout_prewarm_timed_out: fastScoutPrewarm.timed_out === true
   };
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备识别请求", 0.3);
@@ -2321,6 +2465,8 @@ async function processAsset(asset, options = {}) {
     client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
     client_upload_ms: uploadMs,
     client_request_prepare_ms: requestPrepareMs,
+    client_fast_scout_prewarm_wait_ms: asset.clientTiming.client_fast_scout_prewarm_wait_ms,
+    client_fast_scout_prewarm_cache_status: asset.clientTiming.client_fast_scout_prewarm_cache_status,
     client_api_roundtrip_ms: apiRoundtripMs,
     client_total_ms: clientTotalMs
   };
@@ -2388,6 +2534,7 @@ async function processTitles() {
 
   state.results = [];
   state.processing = true;
+  stopAllV4AssistedDraftPolling();
   state.activeAssetIndexes = new Set();
   state.assetProgress = new Map();
   state.completedAssetCount = 0;
@@ -2412,6 +2559,7 @@ async function processTitles() {
         const result = await processAsset(asset);
         state.results.push(result);
         state.results.sort((a, b) => a.index - b.index);
+        startV4AssistedDraftPolling(result);
       } catch (error) {
         state.results.push(failedResult(asset, error));
       }
@@ -2437,7 +2585,10 @@ async function processTitles() {
 
   elements.processButton.disabled = !canGenerateTitles();
   setProcessButtonBusy(false);
-  setStatus(processingCompletionStatus());
+  const pendingL2 = pendingAssistedDraftCount();
+  setStatus(pendingL2 ? `${processingCompletionStatus()} 后台继续补全 ${pendingL2} 张完整标题。` : processingCompletionStatus(), {
+    busy: pendingL2 > 0
+  });
 }
 
 async function retryAssetWithEmergency(button) {
@@ -2458,6 +2609,7 @@ async function retryAssetWithEmergency(button) {
     state.results = state.results.filter((item) => item.index !== asset.index);
     state.results.push(result);
     state.results.sort((a, b) => a.index - b.index);
+    startV4AssistedDraftPolling(result);
     setStatus(`资产 ${asset.index} GPT‑4.1 单模型重试完成。`);
   } catch (error) {
     state.results = state.results.filter((item) => item.index !== asset.index);
@@ -2528,6 +2680,146 @@ function finalTitleForResult(result) {
 
 function isV4Result(result = {}) {
   return Boolean(result.recognition_session_id && result.v4_schema_version);
+}
+
+function v4AssistedStatus(result = {}) {
+  return String(result.assisted_draft_status || result.l2AssistedDraftStatus || result.provider_result_summary?.assisted_draft_status || "").toUpperCase();
+}
+
+function shouldPollV4AssistedDraft(result = {}) {
+  if (!isV4Result(result)) return false;
+  if (!result.recognition_session_id) return false;
+  if (["saving", "saved", "skipped"].includes(String(result.feedbackStatus || ""))) return false;
+  const status = v4AssistedStatus(result);
+  if (status === "READY" || status === "FAILED" || status === "TIMEOUT") return false;
+  return result.full_assist_continued_after_l1 === true
+    || result.l2_background_status === "SCHEDULED"
+    || status === "PENDING"
+    || status === "RUNNING";
+}
+
+function titleWasEditedByWriter(result = {}) {
+  const corrected = String(result.correctedTitle || "").trim();
+  const generated = String(result.generatedTitle || result.final_title || result.title || "").trim();
+  return Boolean(result.title_override || (corrected && generated && corrected !== generated));
+}
+
+function finalTitleFromV4Session(session = {}) {
+  const summary = session.provider_result_summary || {};
+  return String(session.final_title || summary.final_title || "").replace(/\s+/g, " ").trim();
+}
+
+function applyV4AssistedDraftUpdate(result = {}, session = {}) {
+  const summary = session.provider_result_summary || {};
+  const assistedStatus = String(summary.assisted_draft_status || "").toUpperCase();
+  const finalTitle = finalTitleFromV4Session(session);
+  result.l2AssistedDraftStatus = assistedStatus || result.l2AssistedDraftStatus || "PENDING";
+  result.assisted_draft_status = result.l2AssistedDraftStatus;
+  result.provider_result_summary = {
+    ...(result.provider_result_summary || {}),
+    ...summary
+  };
+
+  if (assistedStatus !== "READY" || !finalTitle) return false;
+
+  const oldGenerated = String(result.generatedTitle || result.final_title || result.title || "").trim();
+  const writerEdited = titleWasEditedByWriter(result);
+  result.title_stage = "L2_ASSISTED_DRAFT";
+  result.assisted_draft = finalTitle;
+  result.assistedTitle = finalTitle;
+  result.l2UpgradeApplied = finalTitle !== oldGenerated;
+  result.l2UpgradeAppliedAt = Date.now();
+  result.title = finalTitle;
+  result.final_title = finalTitle;
+  result.rendered_title = finalTitle;
+  result.generatedTitle = finalTitle;
+  if (!writerEdited) {
+    result.correctedTitle = finalTitle;
+    result.title_override = null;
+  }
+  if (session.resolved_fields && typeof session.resolved_fields === "object") {
+    result.resolved = session.resolved_fields;
+    result.fields = session.resolved_fields;
+    result.generated_resolved_fields = session.resolved_fields;
+  }
+  if (session.field_states && typeof session.field_states === "object") {
+    result.field_states = session.field_states;
+  }
+  result.feedbackMessage = writerEdited
+    ? "后台完整标题已生成；保留你当前的人工编辑。"
+    : "后台完整标题已自动更新。";
+  return true;
+}
+
+function stopV4AssistedDraftPolling(resultIndex) {
+  const timer = state.assistedDraftPollTimers.get(resultIndex);
+  if (timer) clearTimeout(timer);
+  state.assistedDraftPollTimers.delete(resultIndex);
+}
+
+function stopAllV4AssistedDraftPolling() {
+  for (const timer of state.assistedDraftPollTimers.values()) {
+    clearTimeout(timer);
+  }
+  state.assistedDraftPollTimers = new Map();
+}
+
+function pendingAssistedDraftCount() {
+  return state.results.filter(shouldPollV4AssistedDraft).length;
+}
+
+async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), attempt = 0) {
+  const result = state.results.find((item) => item.index === resultIndex);
+  if (!result || !shouldPollV4AssistedDraft(result)) {
+    stopV4AssistedDraftPolling(resultIndex);
+    return;
+  }
+
+  if (performance.now() - startedAt > ASSISTED_DRAFT_MAX_POLL_MS) {
+    result.l2AssistedDraftStatus = "TIMEOUT";
+    result.assisted_draft_status = "TIMEOUT";
+    result.feedbackMessage = result.feedbackMessage || "后台完整标题暂未完成，当前标题仍可编辑。";
+    stopV4AssistedDraftPolling(resultIndex);
+    renderResults();
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({ recognition_session_id: result.recognition_session_id });
+    const response = await fetch(`${SESSION_STATUS_API_ENDPOINT}?${params.toString()}`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok && payload.ok !== false && payload.session) {
+      const upgraded = applyV4AssistedDraftUpdate(result, payload.session);
+      renderResults();
+      if (upgraded || v4AssistedStatus(result) === "READY") {
+        stopV4AssistedDraftPolling(resultIndex);
+        const remaining = pendingAssistedDraftCount();
+        setStatus(remaining ? `后台完整标题已更新，剩余 ${remaining} 张继续补全中…` : "完整标题已全部更新。");
+        return;
+      }
+    }
+  } catch {
+    result.l2AssistedDraftStatus = result.l2AssistedDraftStatus || "PENDING";
+  }
+
+  const delay = ASSISTED_DRAFT_POLL_INTERVALS_MS[Math.min(attempt, ASSISTED_DRAFT_POLL_INTERVALS_MS.length - 1)];
+  const timer = setTimeout(() => {
+    state.assistedDraftPollTimers.delete(resultIndex);
+    void pollV4AssistedDraft(resultIndex, startedAt, attempt + 1);
+  }, delay);
+  state.assistedDraftPollTimers.set(resultIndex, timer);
+}
+
+function startV4AssistedDraftPolling(result = {}) {
+  if (!shouldPollV4AssistedDraft(result)) return;
+  if (state.assistedDraftPollTimers.has(result.index)) return;
+  result.l2AssistedDraftStatus = v4AssistedStatus(result) || "PENDING";
+  result.assisted_draft_status = result.l2AssistedDraftStatus;
+  void pollV4AssistedDraft(result.index, performance.now(), 0);
 }
 
 function feedbackActionForResult(result, generatedTitle, correctedTitle) {
@@ -2697,6 +2989,7 @@ async function copyAllTitles() {
 
 function resetTool() {
   state.backgroundPreparationRunId += 1;
+  stopAllV4AssistedDraftPolling();
   state.files = [];
   state.assets = [];
   state.results = [];
@@ -2721,6 +3014,7 @@ function bindEvents() {
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
     input.addEventListener("change", () => {
       state.backgroundPreparationRunId += 1;
+      stopAllV4AssistedDraftPolling();
       state.mode = input.value;
       state.results = [];
       closeImageModal();
