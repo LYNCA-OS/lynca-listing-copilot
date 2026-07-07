@@ -57,6 +57,9 @@ function v2PayloadFor({
 } = {}) {
   return {
     ...payload,
+    provider: payload.provider || "openai_legacy",
+    provider_id: payload.provider_id || payload.provider || "openai_legacy",
+    vision_provider: payload.vision_provider || payload.visionProvider || payload.provider_id || payload.provider || "openai_legacy",
     provider_options: providerOptions,
     providerOptions: providerOptions,
     recognition_session_id: sessionId,

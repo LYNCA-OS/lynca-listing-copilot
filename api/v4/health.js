@@ -2,6 +2,7 @@ import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { v4DeploymentInfo } from "../../lib/listing/v4/prewarm.mjs";
 import { checkV4Tables } from "../../lib/listing/v4/session/session-store.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { visionProviderIds } from "../../lib/listing/providers/provider-contract.mjs";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -15,7 +16,8 @@ export default async function handler(req, res) {
     service: "lynca-listing-copilot-v4",
     branch_target: "v4_pai",
     deployment: v4DeploymentInfo(),
-    default_provider: process.env.DEFAULT_VISION_PROVIDER || "openai",
+    default_provider: visionProviderIds.OPENAI_LEGACY,
+    env_default_provider: process.env.DEFAULT_VISION_PROVIDER || null,
     vector_index_ready: ["1", "true", "yes", "on"].includes(String(process.env.VECTOR_INDEX_READY || "").toLowerCase()),
     supabase: tables,
     ready: allTablesOk
