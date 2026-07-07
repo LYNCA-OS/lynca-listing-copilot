@@ -1631,9 +1631,9 @@ function pendingBox(asset) {
   const progress = assetProgressSnapshot(asset);
   const backgroundLabel = !isWorking ? backgroundPreparationLabel(asset) : "";
   const message = isActive
-    ? "正在读取原图与关键局部区域；识别完成后会按模块生成可编辑标题。"
+    ? "正在读取原图与关键局部区域；当前卡完成后会直接显示最终标题。"
     : isQueued
-      ? "后台队列会自动按批处理，不需要重复点击。"
+      ? "队列会自动处理这一张，不需要重复点击。"
       : "点击开始生成后才会开始识别；当前只是图片已准备好。";
   return `
     <div class="title-output title-output-pending ${isWorking ? "is-working" : "is-idle"}">
@@ -1651,8 +1651,8 @@ function pendingBox(asset) {
         ${isActive ? pendingModuleSkeleton(progress) : ""}
         ${isWorking ? `<span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` : ""}
       </div>
-      <textarea readonly placeholder="等待生成可编辑英文标题。"></textarea>
-      <p class="follow-up-advice">系统会先识别字段，再生成 80 字符以内英文标题；黄色模块需要写手确认。</p>
+      <textarea readonly placeholder="等待生成最终英文标题。"></textarea>
+      <p class="follow-up-advice">系统会生成 80 字符以内英文标题；黄色模块需要写手确认。</p>
     </div>
   `;
 }
@@ -1966,7 +1966,7 @@ function workflowSummaryNotice(result) {
     <div class="workflow-summary ${statusClass}" data-workflow-summary data-hide-raw-candidate-details="${hideRawCandidateDetails ? "true" : "false"}">
       <div class="workflow-summary-head">
         <span>系统结论</span>
-        <strong>${escapeHtml(summary.writer_action || "草稿已生成，请检查后保存。")}</strong>
+        <strong>${escapeHtml(summary.writer_action || "标题已生成，请检查后保存。")}</strong>
         ${fields ? `<small>重点模块：${escapeHtml(fields)}</small>` : ""}
       </div>
       <div class="workflow-step-row">
@@ -2007,7 +2007,7 @@ function publicationGateNotice(result) {
     : "无需补字段";
   const quickApproval = modelQuickApprovalCandidate(result);
   const route = gate.workflow_route || gate.status;
-  const readyText = workflowLabels[route] || (gate.writer_review_ready ? "已生成可编辑草稿" : "需要人工处理");
+  const readyText = workflowLabels[route] || (gate.writer_review_ready ? "已生成可编辑标题" : "需要人工处理");
   const gateClass = quickApproval
     ? "quick-approval"
     : gate.writer_review_ready
@@ -2051,8 +2051,8 @@ function assistedDraftNotice(result = {}) {
   }[status || "PENDING"] || "一段式标题生成中";
   const detail = {
     READY: "现在可以直接检查或编辑这一条标题。",
-    RUNNING: "系统正在使用内部 scout、目录和向量证据生成最终标题。",
-    PENDING: "系统正在使用内部 scout、目录和向量证据生成最终标题。",
+    RUNNING: "系统正在组合图片识别、目录和向量证据，生成最终标题。",
+    PENDING: "系统正在组合图片识别、目录和向量证据，生成最终标题。",
     TIMEOUT: "当前标题仍可编辑，稍后可重试或保存人工修改。",
     FAILED: "当前标题仍可编辑，必要时使用单模型重试。"
   }[status || "PENDING"];
@@ -2418,7 +2418,7 @@ async function processTitles() {
   elements.processButton.disabled = !canGenerateTitles();
   setProcessButtonBusy(false);
   const pendingL2 = pendingAssistedDraftCount();
-  setStatus(pendingL2 ? `${processingCompletionStatus()} 后台继续生成 ${pendingL2} 张一段式标题。` : processingCompletionStatus(), {
+  setStatus(pendingL2 ? `${processingCompletionStatus()} 还有 ${pendingL2} 张最终标题生成中。` : processingCompletionStatus(), {
     busy: pendingL2 > 0
   });
 }

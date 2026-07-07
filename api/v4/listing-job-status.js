@@ -23,7 +23,7 @@ async function readSessionsForJobs(jobs = []) {
   if (!sessionIds.length) return {};
   const result = await readV4Rows({
     table: "v4_recognition_sessions",
-    select: "id,status,final_title,l1_status,l1_title,l1_ready_at,l1_route,l1_timing,l2_status,l2_title,l2_ready_at,l2_route,l2_timing,provider_result_summary,updated_at,failure_reason",
+    select: "id,status,final_title,l1_status,l1_ready_at,l1_route,l1_timing,l2_status,l2_title,l2_ready_at,l2_route,l2_timing,provider_result_summary,updated_at,failure_reason",
     search: {
       id: `in.(${sessionIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",")})`,
       limit: String(sessionIds.length)
@@ -31,6 +31,32 @@ async function readSessionsForJobs(jobs = []) {
   });
   if (!result.ok) return {};
   return Object.fromEntries(result.rows.map((row) => [row.id, row]));
+}
+
+function writerSafeSessionStatus(session = null) {
+  if (!session) return null;
+  const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
+    ? session.provider_result_summary
+    : {};
+  return {
+    id: session.id || null,
+    status: session.status || null,
+    final_title: session.l2_status === "READY" ? (session.final_title || session.l2_title || "") : "",
+    l1_status: session.l1_status || "PENDING",
+    l1_ready_at: session.l1_ready_at || null,
+    l1_route: session.l1_route || null,
+    l1_timing: session.l1_timing || null,
+    l2_status: session.l2_status || "PENDING",
+    l2_title: session.l2_status === "READY" ? (session.l2_title || session.final_title || "") : "",
+    l2_ready_at: session.l2_ready_at || null,
+    l2_route: session.l2_route || null,
+    l2_timing: session.l2_timing || null,
+    provider_result_summary: {
+      assisted_draft_status: summary.assisted_draft_status || null
+    },
+    updated_at: session.updated_at || null,
+    failure_reason: session.failure_reason || null
+  };
 }
 
 function displayStateForSession(session = null) {
@@ -143,9 +169,9 @@ export default async function handler(req, res) {
         pending_modules: display.pending_modules,
         background_modules: display.background_modules,
         l1_status: session?.l1_status || "PENDING",
-        l1_title: session?.l1_title || "",
+        l1_title: "",
         l2_status: session?.l2_status || "PENDING",
-        l2_title: session?.l2_title || "",
+        l2_title: session?.l2_status === "READY" ? (session?.l2_title || session?.final_title || "") : "",
         timing: {
           time_to_l1_ready_ms: elapsedMs(job.created_at, session?.l1_ready_at),
           time_to_l2_ready_ms: elapsedMs(job.created_at, session?.l2_ready_at),
@@ -162,7 +188,7 @@ export default async function handler(req, res) {
         lease_expires_at: job.lease_expires_at,
         error: job.error,
         result: job.result,
-        session
+        session: writerSafeSessionStatus(session)
       };
     })
   }));

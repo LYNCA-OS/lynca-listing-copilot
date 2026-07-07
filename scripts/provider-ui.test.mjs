@@ -5,6 +5,7 @@ const html = await readFile("app/index.html", "utf8");
 const js = await readFile("app/listing-copilot.js", "utf8");
 const css = await readFile("app/listing-copilot.css", "utf8");
 const api = await readFile("api/listing-copilot-title.js", "utf8");
+const v4JobStatusApi = await readFile("api/v4/listing-job-status.js", "utf8");
 const providerRegistry = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
 const csmFieldLabels = await readFile("lib/listing/csm/field-labels.mjs", "utf8");
 
@@ -56,8 +57,13 @@ assert.match(js, /fetch\(`\$\{SESSION_STATUS_API_ENDPOINT\}\?\$\{params\.toStrin
 assert.match(js, /startV4AssistedDraftPolling\(result\)/, "frontend should start L2 assisted-draft polling after each L1 response");
 assert.match(js, /applyV4AssistedDraftUpdate/, "frontend should place the first writer-visible one-line title when L2 is ready");
 assert.match(js, /v4WriterTitlePending/, "frontend should keep internal L1 scout output out of the writer title box");
+assert.match(js, /if \(result\.title_stage === "L1_INTERNAL_SCOUT"\) return true;/, "L1 must stay pending and writer-invisible until L2 is ready");
+assert.match(js, /titlePending \? "disabled" : ""/, "the title editor must stay disabled while only L1 exists");
 assert.match(js, /titleWasEditedByWriter/, "L2 assisted drafts must not overwrite writer-edited titles");
 assert.match(js, /stopAllV4AssistedDraftPolling/, "frontend should clear stale L2 polling when files or mode change");
+assert.doesNotMatch(v4JobStatusApi, /select: "[^"]*l1_title/, "writer-facing job status API must not fetch L1 internal titles");
+assert.match(v4JobStatusApi, /l1_title: ""/, "writer-facing job status API should expose an empty L1 title");
+assert.match(v4JobStatusApi, /writerSafeSessionStatus/, "job status API should return a sanitized session object");
 assert.match(js, /signed_upload_url/, "frontend should upload through signed URLs");
 assert.match(js, /signatureHex/, "frontend should send first-byte signatures before receiving signed upload URLs");
 assert.match(js, /width: dimensions\.width/, "frontend should send image width before receiving signed upload URLs");
@@ -197,7 +203,8 @@ assert.match(js, /status-dots/, "global status should render animated waiting do
 assert.match(js, /pending-wave/, "pending cards should render a wave animation while waiting");
 assert.match(js, /setProcessButtonBusy/, "generate button should show a busy state during recognition");
 assert.match(js, /friendlyErrorSummary/, "failed cards should explain why title output is unavailable");
-assert.match(js, /placeholder="\$\{escapeHtml\(unavailableTitle\)\}"/, "failed cards should render an editable empty draft with the error as placeholder");
+assert.match(js, /placeholder="\$\{escapeHtml\(unavailableTitle\)\}"/, "failed cards should render an editable empty title with the error as placeholder");
+assert.doesNotMatch(js, /草稿|后台继续|内部 scout/, "writer-facing UI copy must not expose draft/L1 internals");
 assert.match(js, /data-copy-result/, "copy buttons should read the latest edited title from state instead of stale HTML data");
 assert.doesNotMatch(js, /imageSideLabel|imagePreviewLabel/, "writer UI should not render visible image slot labels");
 assert.doesNotMatch(js, /<span>\$\{imageSideLabel/, "thumbnail cards should show bare images without image slot badges");
