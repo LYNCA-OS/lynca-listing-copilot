@@ -4780,7 +4780,7 @@ function retrievalSourceHasDirectConflict(source = {}) {
 }
 
 function retrievalSourceHasPromptConflict(source = {}) {
-  if (retrievalSourceConflictFields(source).length) return true;
+  if (retrievalSourcePromptConflictFields(source).length) return true;
   return Number(source.field_conflict_count || source.direct_evidence_conflict_count || 0) > 0;
 }
 
