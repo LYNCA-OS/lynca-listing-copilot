@@ -193,6 +193,16 @@ assert.match(fastScoutResult.final_title, /2\/3|#\/3/);
 assert.equal(fastScoutResult.fast_scout.input_image_count, 1);
 assert.equal(fastScoutResult.evidence.print_run_number.status, "CONFIRMED");
 
+const fastScoutV4 = adaptV2ResultToV4({
+  sessionId: "v4sess-fast-scout",
+  result: fastScoutResult,
+  payload: {},
+  routePlan: coldStartRoute
+});
+assert.equal(fastScoutV4.provider_result.fast_scout.input_image_count, 1);
+assert.equal(fastScoutV4.module_speed_metrics.fast_scout_input_image_count, 1);
+assert.equal(fastScoutV4.provider_result.fast_scout.input_images[0].role, "front");
+
 const fastScoutSelectedFront = selectFastScoutImages([
   { id: "back-1", role: "back_original" },
   { id: "serial-1", role: "serial_crop" },
