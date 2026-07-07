@@ -108,6 +108,13 @@ assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
 assert.match(enqueueSource, /background_limit: backgroundConcurrency/);
 assert.match(enqueueSource, /interactive_process_concurrency: interactiveConcurrency/);
 
+const workerSource = readFileSync(new URL("../api/v4/listing-job-worker.js", import.meta.url), "utf8");
+assert.match(workerSource, /triggerV4BackgroundWorkerAfterL1Release/);
+assert.match(workerSource, /l1_ready_wake_l2/);
+assert.match(workerSource, /pairedRelease\.saved !== true/);
+assert.match(workerSource, /lane: v4JobLanes\.BACKGROUND/);
+assert.match(workerSource, /V4_L2_WAKE_BACKGROUND_CONCURRENCY/);
+
 const previousSecret = process.env.V4_JOB_WORKER_SECRET;
 try {
   delete process.env.V4_JOB_WORKER_SECRET;

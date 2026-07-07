@@ -1,3 +1,4 @@
+import { waitUntil } from "@vercel/functions";
 import v4ListingHandler from "./listing-copilot-title.js";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import {
@@ -25,6 +26,24 @@ function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEG
 
 function safeError(error) {
   return String(error?.message || error || "unknown_error").slice(0, 500);
+}
+
+function headerValue(req, name) {
+  const lower = String(name || "").toLowerCase();
+  const value = req?.headers?.[lower] ?? req?.headers?.[name];
+  if (Array.isArray(value)) return String(value[0] || "").trim();
+  return String(value || "").trim();
+}
+
+function requestOrigin(req) {
+  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
+  if (!host) return "";
+  const proto = headerValue(req, "x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
+}
+
+function workerSecretFromRequest(req) {
+  return headerValue(req, workerSecretHeader);
 }
 
 function workerIdFrom(req, payload = {}) {
@@ -74,6 +93,38 @@ export function payloadForV4ProductionJob(job = {}) {
 
 function completionStatusForJob(job = {}) {
   return normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT ? v4JobStatuses.L1_READY : v4JobStatuses.L2_READY;
+}
+
+function triggerV4BackgroundWorkerAfterL1Release(req, {
+  job = {},
+  pairedRelease = {},
+  reason = "l1_released_paired_l2"
+} = {}) {
+  if (pairedRelease.saved !== true) return { triggered: false, reason: "paired_l2_not_released" };
+  const origin = requestOrigin(req);
+  const secret = workerSecretFromRequest(req);
+  if (!origin || !secret) return { triggered: false, reason: "wake_context_missing" };
+  const processConcurrency = positiveInteger(process.env.V4_L2_WAKE_BACKGROUND_CONCURRENCY, 1, { min: 1, max: 4 });
+  const body = {
+    lane: v4JobLanes.BACKGROUND,
+    tenant_id: job.tenant_id || job.payload?.tenant_id || null,
+    limit: processConcurrency,
+    process_concurrency: processConcurrency,
+    retry_delay_seconds: 8,
+    worker_id: `v4-l2-wake-${String(job.id || "job").slice(0, 96)}`,
+    reason
+  };
+  waitUntil(
+    fetch(`${origin}/api/v4/listing-job-worker`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [workerSecretHeader]: secret
+      },
+      body: JSON.stringify(body)
+    }).catch(() => null)
+  );
+  return { triggered: true, reason };
 }
 
 async function mapWithConcurrency(items = [], concurrency = 1, worker) {
@@ -188,6 +239,9 @@ export default async function handler(req, res) {
       const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
         ? await releasePairedV4FinalJob({ job, reason: "l1_ready" })
         : { saved: false, skipped: true };
+      const pairedWake = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
+        ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_ready_wake_l2" })
+        : { triggered: false, reason: "not_l1_job" };
       return {
         job_id: job.id,
         lane: job.lane || null,
@@ -197,6 +251,7 @@ export default async function handler(req, res) {
         latency_ms: result.latency_ms,
         saved: completion.saved,
         paired_final_released: pairedRelease.saved === true,
+        paired_final_wake_triggered: pairedWake.triggered === true,
         error: completion.error || null
       };
     } catch (error) {
@@ -212,6 +267,9 @@ export default async function handler(req, res) {
       const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
         ? await releasePairedV4FinalJob({ job, reason: "l1_failed_release_final" })
         : { saved: false, skipped: true };
+      const pairedWake = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
+        ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_failed_wake_l2" })
+        : { triggered: false, reason: "not_l1_job" };
       return {
         job_id: job.id,
         lane: job.lane || null,
@@ -221,6 +279,7 @@ export default async function handler(req, res) {
         latency_ms: error?.latency_ms || null,
         saved: failure.saved,
         paired_final_released: pairedRelease.saved === true,
+        paired_final_wake_triggered: pairedWake.triggered === true,
         error: failure.error || safeError(error)
       };
     }
