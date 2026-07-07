@@ -48,6 +48,7 @@ const pump = await runV4QueuePump({
 
 assert.equal(pump.ok, true);
 assert.equal(pump.tenant_id, "tenant-batch-1");
+assert.equal(pump.parallel_lanes, true);
 assert.equal(pump.cycles_run, 2);
 assert.equal(pump.claimed_count, 2);
 assert.equal(pump.processed_count, 2);
@@ -67,6 +68,34 @@ await runV4QueuePump({
   }
 });
 assert.deepEqual(interactiveOnlyCalls.map((entry) => entry.lane), ["interactive"]);
+
+const waitForReleasedL2Calls = [];
+const l2WaitingPump = await runV4QueuePump({
+  payload: {
+    tenant_id: "tenant-wait-l2",
+    cycles: 3,
+    background_idle_cycles: 3,
+    idle_delay_ms: 0
+  },
+  env: { V4_JOB_WORKER_SECRET: "secret" },
+  invokeWorker: async (payload) => {
+    waitForReleasedL2Calls.push(payload);
+    if (payload.lane === "interactive") {
+      return { statusCode: 200, body: { ok: true, claimed_count: waitForReleasedL2Calls.filter((call) => call.lane === "interactive").length === 1 ? 1 : 0, processed_count: 1 } };
+    }
+    const backgroundAttempt = waitForReleasedL2Calls.filter((call) => call.lane === "background").length;
+    return {
+      statusCode: 200,
+      body: {
+        ok: true,
+        claimed_count: backgroundAttempt === 2 ? 1 : 0,
+        processed_count: backgroundAttempt === 2 ? 1 : 0
+      }
+    };
+  }
+});
+assert.equal(l2WaitingPump.claimed_count, 2);
+assert.ok(waitForReleasedL2Calls.filter((call) => call.lane === "background").length >= 2, "background lane must wait for L1-released L2 work instead of exiting after one empty claim");
 
 const previousSecret = process.env.V4_JOB_WORKER_SECRET;
 try {

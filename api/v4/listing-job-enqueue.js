@@ -49,6 +49,9 @@ function triggerV4QueuePumpAfterEnqueue(req, {
     cycles: 6,
     max_runtime_ms: 250_000,
     retry_delay_seconds: 8,
+    parallel_lanes: true,
+    idle_delay_ms: 5000,
+    background_idle_cycles: 24,
     reason: "post_enqueue"
   };
   waitUntil(

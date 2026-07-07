@@ -57,10 +57,18 @@ function boolFlag(value) {
   return /^(?:1|true|yes)$/i.test(String(value || ""));
 }
 
+function falseFlag(value) {
+  return /^(?:0|false|no)$/i.test(String(value || ""));
+}
+
 function lanePlanFromPayload(payload = {}) {
   if (boolFlag(payload.interactive_only)) return [v4JobLanes.INTERACTIVE];
   if (boolFlag(payload.background_only)) return [v4JobLanes.BACKGROUND];
   return [v4JobLanes.INTERACTIVE, v4JobLanes.BACKGROUND];
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
 async function defaultInvokeWorker(payload, { workerSecret }) {
@@ -103,19 +111,28 @@ export async function runV4QueuePump({
   const retryDelaySeconds = positiveInteger(payload.retry_delay_seconds ?? payload.retryDelaySeconds, 8, { min: 1, max: 900 });
   const tenantId = payload.tenant_id || payload.tenantId || null;
   const lanes = lanePlanFromPayload(payload);
+  const parallelLanes = lanes.length > 1 && !falseFlag(payload.parallel_lanes ?? payload.parallelLanes);
+  const idleDelayMs = positiveInteger(payload.idle_delay_ms ?? payload.idleDelayMs, 0, { min: 0, max: 30_000 });
+  const defaultIdleCycles = positiveInteger(payload.idle_cycles_before_stop ?? payload.idleCyclesBeforeStop, 1, { min: 1, max: 60 });
+  const backgroundIdleCycles = positiveInteger(
+    payload.background_idle_cycles ?? payload.backgroundIdleCycles,
+    defaultIdleCycles,
+    { min: 1, max: 120 }
+  );
   const calls = [];
-  let cyclesRun = 0;
   let totalClaimed = 0;
   let totalProcessed = 0;
-  let idleCycles = 0;
+  const laneSummaries = [];
 
-  for (let cycle = 0; cycle < maxCycles; cycle += 1) {
-    if (now() - started >= maxRuntimeMs) break;
-    cyclesRun += 1;
-    let claimedThisCycle = 0;
-
-    for (const lane of lanes) {
+  async function runLane(lane) {
+    const stopAfterIdle = lane === v4JobLanes.BACKGROUND ? backgroundIdleCycles : defaultIdleCycles;
+    let laneCycles = 0;
+    let idleCycles = 0;
+    let laneClaimed = 0;
+    let laneProcessed = 0;
+    for (let cycle = 0; cycle < maxCycles; cycle += 1) {
       if (now() - started >= maxRuntimeMs) break;
+      laneCycles += 1;
       const callStarted = now();
       const workerPayload = {
         lane,
@@ -131,7 +148,8 @@ export async function runV4QueuePump({
       const processed = positiveInteger(body.processed_count, 0, { min: 0, max: 10_000 });
       totalClaimed += claimed;
       totalProcessed += processed;
-      claimedThisCycle += claimed;
+      laneClaimed += claimed;
+      laneProcessed += processed;
       calls.push({
         cycle: cycle + 1,
         lane,
@@ -142,26 +160,41 @@ export async function runV4QueuePump({
         latency_ms: now() - callStarted,
         message: body.message || null
       });
-    }
 
-    if (!claimedThisCycle) {
-      idleCycles += 1;
-      if (idleCycles >= 1) break;
-    } else {
-      idleCycles = 0;
+      if (!claimed) {
+        idleCycles += 1;
+        if (idleCycles >= stopAfterIdle) break;
+        if (idleDelayMs > 0) await delay(idleDelayMs);
+      } else {
+        idleCycles = 0;
+      }
+    }
+    return { lane, cycles_run: laneCycles, claimed_count: laneClaimed, processed_count: laneProcessed };
+  }
+
+  if (parallelLanes) {
+    laneSummaries.push(...await Promise.all(lanes.map((lane) => runLane(lane))));
+  } else {
+    for (const lane of lanes) {
+      laneSummaries.push(await runLane(lane));
     }
   }
 
   return {
     ok: true,
     tenant_id: tenantId,
-    cycles_run: cyclesRun,
+    cycles_run: Math.max(0, ...laneSummaries.map((summary) => summary.cycles_run || 0)),
     lanes,
+    parallel_lanes: parallelLanes,
     limit,
     process_concurrency: processConcurrency,
+    idle_delay_ms: idleDelayMs,
+    idle_cycles_before_stop: defaultIdleCycles,
+    background_idle_cycles: backgroundIdleCycles,
     claimed_count: totalClaimed,
     processed_count: totalProcessed,
     elapsed_ms: now() - started,
+    lane_summaries: laneSummaries,
     calls
   };
 }
