@@ -1,10 +1,16 @@
+import { waitUntil } from "@vercel/functions";
 import v2ListingHandler from "../listing-copilot-title.js";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { planV4RecognitionRoute } from "../../lib/listing/v4/route-planner/route-planner.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../../lib/listing/v4/result-adapter.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
-import { providerOptionsForV4ProgressiveL1 } from "../../lib/listing/v4/stages/title-stages.mjs";
+import {
+  providerOptionsForV4BackgroundL2,
+  providerOptionsForV4ProgressiveL1,
+  v4TitleStages
+} from "../../lib/listing/v4/stages/title-stages.mjs";
 import {
   createV4RecognitionSession,
   createV4SessionId,
@@ -16,6 +22,222 @@ import {
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+
+function titleFromResult(result = {}) {
+  return result.final_title || result.rendered_title || result.title || null;
+}
+
+function resolvedFromResult(result = {}) {
+  return result.resolved_fields || result.fields || result.resolved || {};
+}
+
+function catalogPromptCountFromTrace(trace = {}) {
+  return Number(trace.catalog_activation_funnel?.prompt_candidate_count || 0);
+}
+
+function scheduleV4Background(promise) {
+  const guarded = Promise.resolve(promise).catch((error) => {
+    console.error("[v4-listing] background L2 failed", error);
+  });
+  if (typeof waitUntil === "function") waitUntil(guarded);
+  return guarded;
+}
+
+function canReturnFastScoutL1(payload = {}, env = process.env) {
+  if (String(env.ENABLE_V4_FAST_SCOUT_L1 || "true").toLowerCase() === "false") return false;
+  return Array.isArray(payload.images) && payload.images.length > 0;
+}
+
+function v2PayloadFor({
+  payload = {},
+  sessionId,
+  routePlan,
+  providerOptions = {},
+  titleStageTarget = v4TitleStages.L1_WRITER_SAFE_DRAFT
+} = {}) {
+  return {
+    ...payload,
+    provider_options: providerOptions,
+    providerOptions: providerOptions,
+    recognition_session_id: sessionId,
+    v4_request: true,
+    v4_route_plan: routePlan,
+    v4_title_stage_target: titleStageTarget
+  };
+}
+
+async function persistPipelineResult({
+  sessionId,
+  result = {},
+  payload = {},
+  routePlan = {},
+  createResult = {},
+  extraProviderSummary = {}
+} = {}) {
+  const rows = buildV4PersistenceRows({ sessionId, result, payload });
+  const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
+  const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
+  const catalogPromptCount = catalogPromptCountFromTrace(rows.candidateTrace);
+  const catalogGap = catalogPromptCount === 0
+    ? await persistV4CatalogGap({
+      gap: {
+        id: `${sessionId}_catalog_gap`,
+        recognition_session_id: sessionId,
+        asset_id: payload.asset_id || payload.assetId || null,
+        observed_fields: resolvedFromResult(result),
+        candidate_snapshot: {
+          candidate_activation_funnel: rows.candidateTrace.candidate_activation_funnel,
+          catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
+          vector_activation_funnel: rows.candidateTrace.vector_activation_funnel
+        },
+        draft_title: titleFromResult(result)
+      }
+    })
+    : { saved: false, skipped: true, reason: "catalog_prompt_candidate_available" };
+  const status = result.confidence === "FAILED" ? v4SessionStatuses.FAILED : v4SessionStatuses.DRAFT_READY;
+  const sessionUpdate = await updateV4RecognitionSession({
+    sessionId,
+    patch: {
+      status,
+      final_title: titleFromResult(result),
+      resolved_fields: resolvedFromResult(result),
+      field_states: rows.fieldEvidenceRows,
+      route: routePlan.route,
+      route_plan: routePlan,
+      candidate_control_plane_trace: rows.candidateTrace,
+      provider_result_summary: {
+        provider: result.provider || result.provider_id || null,
+        confidence: result.confidence || null,
+        title_stage: result.title_stage || null,
+        assisted_draft_status: result.assisted_draft_status || extraProviderSummary.assisted_draft_status || null,
+        provider_error_type: result.provider_error_type || result.provider_error_code || null,
+        ...extraProviderSummary
+      }
+    }
+  });
+  const partialPersistence = {
+    create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
+    update_session: sessionUpdate,
+    field_evidence: fieldEvidence,
+    candidate_trace: candidateTrace,
+    catalog_gap: catalogGap
+  };
+  const ledger = await persistV4QualityLedger({
+    ledger: {
+      ...adaptV2ResultToV4({
+        sessionId,
+        result,
+        payload,
+        routePlan,
+        persistence: partialPersistence
+      }).provider_result,
+      id: `${sessionId}_quality`,
+      recognition_session_id: sessionId,
+      route: routePlan.route,
+      status,
+      route_plan: routePlan,
+      persistence_summary: partialPersistence
+    }
+  });
+  const persistence = { ...partialPersistence, quality_ledger: ledger };
+  return adaptV2ResultToV4({
+    sessionId,
+    result,
+    payload,
+    routePlan,
+    persistence
+  });
+}
+
+async function runBackgroundAssistedDraft({
+  sessionId,
+  payload = {},
+  routePlan = {},
+  headers = {},
+  createResult = {}
+} = {}) {
+  await updateV4RecognitionSession({
+    sessionId,
+    patch: {
+      provider_result_summary: {
+        assisted_draft_status: "RUNNING",
+        l1_already_returned: true
+      }
+    }
+  });
+  const providerOptions = providerOptionsForV4BackgroundL2({ payload, routePlan });
+  const v2Payload = v2PayloadFor({
+    payload,
+    sessionId,
+    routePlan,
+    providerOptions,
+    titleStageTarget: v4TitleStages.L2_ASSISTED_DRAFT
+  });
+  const v2Response = await callJsonHandler(v2ListingHandler, {
+    method: "POST",
+    headers,
+    payload: v2Payload
+  });
+  if (v2Response.statusCode < 200 || v2Response.statusCode >= 300 || !v2Response.body) {
+    await updateV4RecognitionSession({
+      sessionId,
+      patch: {
+        provider_result_summary: {
+          assisted_draft_status: "FAILED",
+          failure_reason: `v2_handler_failed_${v2Response.statusCode}`,
+          l1_already_returned: true
+        }
+      }
+    });
+    return null;
+  }
+  const result = {
+    ...v2Response.body,
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+    assisted_draft_status: "READY",
+    l1_return_reason: "background_assisted_draft_ready",
+    full_assist_continued_after_l1: false
+  };
+  return persistPipelineResult({
+    sessionId,
+    result,
+    payload: v2Payload,
+    routePlan,
+    createResult,
+    extraProviderSummary: { assisted_draft_status: "READY" }
+  });
+}
+
+function buildFastScoutPendingFailureResponse({
+  sessionId,
+  routePlan = {},
+  createResult = {},
+  error
+} = {}) {
+  return withV4Version({
+    ok: false,
+    recognition_session_id: sessionId,
+    status: v4SessionStatuses.OBSERVING,
+    route_plan: routePlan,
+    title_stage: v4TitleStages.L0_INSTANT_SKELETON,
+    final_title: "",
+    writer_safe_draft: "",
+    assisted_draft: null,
+    assisted_draft_status: "PENDING",
+    pending_modules: ["full_assisted_observation"],
+    background_modules: routePlan.background_modules || [],
+    blocking_modules: routePlan.blocking_modules || [],
+    title_stage_reason: "Fast scout failed; full assisted draft is continuing in background.",
+    l1_return_reason: "fast_scout_failed_background_assist_started",
+    provider_result: {
+      provider: "openai_fast_scout",
+      confidence: "FAILED",
+      provider_error_type: "FAST_SCOUT_FAILED",
+      message: String(error?.message || error || "").slice(0, 240)
+    },
+    v4_persistence: { create_session: createResult.persistence?.recognition_session || createResult.persistence || null }
+  });
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -45,7 +267,6 @@ export default async function handler(req, res) {
 
   const sessionId = payload.recognition_session_id || createV4SessionId();
   const routePlan = planV4RecognitionRoute(payload, process.env);
-  const progressiveProviderOptions = providerOptionsForV4ProgressiveL1({ payload, routePlan });
   const createResult = await createV4RecognitionSession({
     sessionId,
     payload,
@@ -57,15 +278,76 @@ export default async function handler(req, res) {
     patch: { status: v4SessionStatuses.OBSERVING }
   });
 
-  const v2Payload = {
-    ...payload,
-    provider_options: progressiveProviderOptions,
+  if (canReturnFastScoutL1(payload, process.env)) {
+    try {
+      const fastScoutResult = await runV4FastScoutObservation({
+        payload,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      });
+      const l1Result = {
+        ...fastScoutResult,
+        title_stage: v4TitleStages.L1_WRITER_SAFE_DRAFT,
+        assisted_draft_status: "PENDING",
+        l1_return_reason: "fast_scout_safe_draft_ready",
+        full_assist_continued_after_l1: true
+      };
+      scheduleV4Background(runBackgroundAssistedDraft({
+        sessionId,
+        payload,
+        routePlan,
+        headers: req.headers,
+        createResult
+      }));
+      const v4Response = await persistPipelineResult({
+        sessionId,
+        result: l1Result,
+        payload: v2PayloadFor({
+          payload,
+          sessionId,
+          routePlan,
+          providerOptions: providerOptionsForV4ProgressiveL1({ payload, routePlan }),
+          titleStageTarget: v4TitleStages.L1_WRITER_SAFE_DRAFT
+        }),
+        routePlan,
+        createResult,
+        extraProviderSummary: { assisted_draft_status: "PENDING" }
+      });
+      sendJson(res, 200, v4Response);
+      return;
+    } catch (error) {
+      scheduleV4Background(runBackgroundAssistedDraft({
+        sessionId,
+        payload,
+        routePlan,
+        headers: req.headers,
+        createResult
+      }));
+      await updateV4RecognitionSession({
+        sessionId,
+        patch: {
+          provider_result_summary: {
+            provider: "openai_fast_scout",
+            confidence: "FAILED",
+            assisted_draft_status: "PENDING",
+            provider_error_type: "FAST_SCOUT_FAILED",
+            message: String(error?.message || error || "").slice(0, 240)
+          }
+        }
+      });
+      sendJson(res, 200, buildFastScoutPendingFailureResponse({ sessionId, routePlan, createResult, error }));
+      return;
+    }
+  }
+
+  const progressiveProviderOptions = providerOptionsForV4ProgressiveL1({ payload, routePlan });
+  const v2Payload = v2PayloadFor({
+    payload,
+    sessionId,
+    routePlan,
     providerOptions: progressiveProviderOptions,
-    recognition_session_id: sessionId,
-    v4_request: true,
-    v4_route_plan: routePlan,
-    v4_title_stage_target: progressiveProviderOptions.v4_title_stage_target
-  };
+    titleStageTarget: progressiveProviderOptions.v4_title_stage_target
+  });
   const v2Response = await callJsonHandler(v2ListingHandler, {
     method: "POST",
     headers: req.headers,
@@ -89,75 +371,12 @@ export default async function handler(req, res) {
     return;
   }
 
-  const rows = buildV4PersistenceRows({ sessionId, result: v2Response.body, payload: v2Payload });
-  const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
-  const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
-  const catalogPromptCount = Number(rows.candidateTrace.catalog_activation_funnel?.prompt_candidate_count || 0);
-  const catalogGap = catalogPromptCount === 0
-    ? await persistV4CatalogGap({
-      gap: {
-        id: `${sessionId}_catalog_gap`,
-        recognition_session_id: sessionId,
-        asset_id: v2Payload.asset_id || v2Payload.assetId || null,
-        observed_fields: v2Response.body.resolved_fields || v2Response.body.fields || {},
-        candidate_snapshot: {
-          candidate_activation_funnel: rows.candidateTrace.candidate_activation_funnel,
-          catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
-          vector_activation_funnel: rows.candidateTrace.vector_activation_funnel
-        },
-        draft_title: v2Response.body.final_title || v2Response.body.rendered_title || v2Response.body.title || null
-      }
-    })
-    : { saved: false, skipped: true, reason: "catalog_prompt_candidate_available" };
-  const status = v2Response.body.confidence === "FAILED" ? v4SessionStatuses.FAILED : v4SessionStatuses.DRAFT_READY;
-  const sessionUpdate = await updateV4RecognitionSession({
-    sessionId,
-    patch: {
-      status,
-      final_title: v2Response.body.final_title || v2Response.body.rendered_title || v2Response.body.title || null,
-      resolved_fields: v2Response.body.resolved_fields || v2Response.body.fields || {},
-      field_states: rows.fieldEvidenceRows,
-      route: routePlan.route,
-      route_plan: routePlan,
-      candidate_control_plane_trace: rows.candidateTrace,
-      provider_result_summary: {
-        provider: v2Response.body.provider || null,
-        confidence: v2Response.body.confidence || null,
-        provider_error_type: v2Response.body.provider_error_type || v2Response.body.provider_error_code || null
-      }
-    }
-  });
-  const partialPersistence = {
-    create_session: createResult.persistence.recognition_session,
-    update_session: sessionUpdate,
-    field_evidence: fieldEvidence,
-    candidate_trace: candidateTrace,
-    catalog_gap: catalogGap
-  };
-  const ledger = await persistV4QualityLedger({
-    ledger: {
-      ...adaptV2ResultToV4({
-        sessionId,
-        result: v2Response.body,
-        payload: v2Payload,
-        routePlan,
-        persistence: partialPersistence
-      }).provider_result,
-      id: `${sessionId}_quality`,
-      recognition_session_id: sessionId,
-      route: routePlan.route,
-      status,
-      route_plan: routePlan,
-      persistence_summary: partialPersistence
-    }
-  });
-  const persistence = { ...partialPersistence, quality_ledger: ledger };
-  const v4Response = adaptV2ResultToV4({
+  const v4Response = await persistPipelineResult({
     sessionId,
     result: v2Response.body,
     payload: v2Payload,
     routePlan,
-    persistence
+    createResult
   });
 
   sendJson(res, 200, v4Response);

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { buildFastScoutListingResult } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
@@ -19,6 +20,7 @@ import {
 
 const route = planV4RecognitionRoute({
   preingestion_bundle_id: "bundle-1",
+  approved_candidate_count: 1,
   initial_evidence: {
     collector_number: "PAU"
   },
@@ -27,8 +29,9 @@ const route = planV4RecognitionRoute({
   VECTOR_INDEX_READY: "true"
 });
 assert.equal(route.route, "EXACT_ANCHOR_FAST_LANE");
-assert.ok(route.blocking_modules.includes("full_card_gpt_observation"));
+assert.ok(route.blocking_modules.includes("fast_scout_observation"));
 assert.ok(route.blocking_modules.includes("deterministic_renderer"));
+assert.ok(route.background_modules.includes("full_assisted_observation"));
 assert.ok(route.background_modules.includes("post_observation_catalog_lookup"));
 assert.ok(route.skipped_modules.includes("visual_vector_retrieval"));
 
@@ -36,17 +39,29 @@ const exactFastLaneOptions = providerOptionsForV4ProgressiveL1({
   payload: { provider_options: { enable_catalog_assist: true, force_vector_assist: true } },
   routePlan: route
 });
-assert.equal(exactFastLaneOptions.enable_catalog_assist, true);
+assert.equal(exactFastLaneOptions.enable_catalog_assist, false);
 assert.equal(exactFastLaneOptions.enable_vector_assist, false);
 assert.equal(exactFastLaneOptions.enable_ephemeral_external_retrieval, false);
 assert.equal(exactFastLaneOptions.v4_title_stage_target, v4TitleStages.L1_WRITER_SAFE_DRAFT);
 
-const assistedRoute = planV4RecognitionRoute({
+const coldStartRoute = planV4RecognitionRoute({
   images: [{ role: "front" }, { role: "back" }]
 }, {
   VECTOR_INDEX_READY: "true"
 });
+assert.equal(coldStartRoute.route, "COLD_START_SAFE_DRAFT");
+assert.ok(coldStartRoute.blocking_modules.includes("fast_scout_observation"));
+assert.ok(coldStartRoute.background_modules.includes("full_assisted_observation"));
+
+const assistedRoute = planV4RecognitionRoute({
+  images: [{ role: "front" }, { role: "back" }],
+  approved_candidate_count: 2
+}, {
+  VECTOR_INDEX_READY: "true"
+});
 assert.equal(assistedRoute.route, "ASSISTED_FULL");
+assert.ok(assistedRoute.blocking_modules.includes("fast_scout_observation"));
+assert.ok(assistedRoute.background_modules.includes("full_assisted_observation"));
 assert.ok(assistedRoute.background_modules.includes("visual_vector_retrieval"));
 const assistedOptions = providerOptionsForV4ProgressiveL1({
   payload: { provider_options: { enable_catalog_assist: true } },
@@ -108,8 +123,9 @@ assert.equal(v4.writer_draft.structured_fields_visible, false);
 assert.equal(v4.title_stage, "L1_WRITER_SAFE_DRAFT");
 assert.equal(v4.writer_safe_draft, v4.final_title);
 assert.equal(v4.assisted_draft, v4.final_title);
-assert.ok(v4.blocking_modules.includes("full_card_gpt_observation"));
+assert.ok(v4.blocking_modules.includes("fast_scout_observation"));
 assert.ok(v4.background_modules.includes("post_observation_catalog_lookup"));
+assert.equal(v4.assisted_draft_status, "READY");
 assert.ok(Array.isArray(v4.pending_modules));
 assert.equal(v4.title_stage_readiness.writer_safe_ready, true);
 assert.ok(v4.module_speed_metrics.modules_skipped_by_route.includes("visual_vector_retrieval"));
@@ -122,6 +138,57 @@ assert.equal(v4.catalog_activation_funnel.prompt_candidate_count, 1);
 const rows = buildV4PersistenceRows({ sessionId: "v4sess-test", result: v2Result, payload: {} });
 assert.ok(rows.fieldEvidenceRows.some((row) => row.field_name === "serial" && row.field_value === "2/3"));
 assert.equal(rows.candidateTrace.applied_field_count, 3);
+
+const fastScoutResult = buildFastScoutListingResult({
+  parsed: {
+    recognition_status: "RESOLVED",
+    fast_scout_confidence: 0.72,
+    fast_scout_review_fields: ["print_finish"],
+    unresolved: ["exact_parallel"],
+    evidence_notes: ["Visible card front reads 2/3 and Anthony Edwards."],
+    fast_scout_fields: {
+      subject: "Anthony Edwards",
+      players: ["Anthony Edwards"],
+      character: null,
+      year: "2024-25",
+      manufacturer: "Panini",
+      product_family: "Immaculate",
+      set: null,
+      card_name: "Patch Auto",
+      release_variant: null,
+      print_finish: "Green",
+      surface_color: "Green",
+      print_run_number: "2/3",
+      print_run_denominator: "3",
+      collector_number: "PAU",
+      checklist_code: null,
+      tcg_card_number: null,
+      grade_company: "BGS",
+      card_grade: "8.5",
+      auto_grade: "10",
+      grade_type: "CARD_AND_AUTO",
+      team: "Minnesota Timberwolves",
+      language: null,
+      observable_components: ["auto", "patch"],
+      rc: null,
+      auto: true,
+      patch: true,
+      relic: null,
+      jersey: null,
+      one_of_one: false,
+      unsafe_fields_omitted: ["exact_parallel"]
+    }
+  },
+  payload: { maxTitleLength: 80 },
+  signedImages: [{ image_id: "front-1", role: "front", width: 1200, height: 1600 }],
+  latencyMs: 1500,
+  modelId: "gpt-4.1-mini-2025-04-14",
+  tokenDiagnostics: { input_tokens: 100, output_tokens: 80, total_tokens: 180 }
+});
+assert.match(fastScoutResult.final_title, /Anthony Edwards/);
+assert.match(fastScoutResult.final_title, /2\/3|#\/3/);
+assert.equal(fastScoutResult.fast_scout.input_image_count, 1);
+assert.equal(fastScoutResult.evidence.print_run_number.status, "CONFIRMED");
 
 const riskyStage = buildV4TitleStageState({
   result: {
