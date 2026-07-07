@@ -646,7 +646,12 @@ const catalogManufacturerBrandSoftConflictPacket = buildVectorCandidatePacket({
 });
 assert.equal(catalogManufacturerBrandSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
 assert.deepEqual(catalogManufacturerBrandSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["manufacturer"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogManufacturerBrandSoftConflictPacket).prompt_candidate_count, 0);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogManufacturerBrandSoftConflictPacket).prompt_candidate_count, 1);
+assert.deepEqual(
+  buildVectorCandidateAssistPacket(catalogManufacturerBrandSoftConflictPacket).vector_retrieval.candidates[0].soft_conflicting_fields,
+  ["manufacturer"],
+  "soft conflicts should warn the prompt without blocking the approved candidate"
+);
 
 const catalogSerialNumeratorSoftConflictPacket = buildVectorCandidatePacket({
   sources: [{
@@ -677,7 +682,11 @@ const catalogSerialNumeratorSoftConflictPacket = buildVectorCandidatePacket({
 });
 assert.equal(catalogSerialNumeratorSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
 assert.deepEqual(catalogSerialNumeratorSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["serial_number"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogSerialNumeratorSoftConflictPacket).prompt_candidate_count, 0);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogSerialNumeratorSoftConflictPacket).prompt_candidate_count, 1);
+const serialSoftPromptCandidate = buildVectorCandidateAssistPacket(catalogSerialNumeratorSoftConflictPacket).vector_retrieval.candidates[0];
+assert.equal(serialSoftPromptCandidate.fields.serial_number, undefined, "reference serial numerator must not enter prompt candidates");
+assert.equal(serialSoftPromptCandidate.fields.expected_serial_denominator, "50");
+assert.deepEqual(serialSoftPromptCandidate.soft_conflicting_fields, ["serial_number"]);
 
 const marketplaceWeakPacket = buildVectorCandidatePacket({
   sources: [{
