@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
+import {
+  analyzeCardEvidenceWithOpenAiEmergency,
+  openAiEmergencyConfigFromEnv
+} from "../lib/listing/providers/openai-emergency-provider.mjs";
 import {
   clearProviderConcurrencyForTests,
   providerServerConcurrencyLimit,
@@ -262,12 +265,79 @@ const gpt5OpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
 });
 const gpt5Body = JSON.parse(gpt5OpenAiRequest.init.body);
 assert.equal(gpt5Body.model, "gpt-5-mini");
+assert.equal(gpt5Body.max_output_tokens, 40960);
 assert.equal(gpt5Body.temperature, undefined);
 assert.deepEqual(gpt5Body.reasoning, { effort: "medium" });
 assert.equal(gpt5Body.text.verbosity, "medium");
 assert.match(gpt5Body.input[0].content[0].text, /GPT-5 mini main-path extraction profile/);
 assert.match(gpt5Body.input[0].content[0].text, /Never leave product, set, players, card_name, print_run_number/);
 assert.equal(gpt5OpenAiResult.parsed.fields.player, "Five");
+
+const gpt5DefaultConfig = openAiEmergencyConfigFromEnv({
+  ...env,
+  OPENAI_LISTING_MODEL: "gpt-5-mini"
+});
+assert.equal(gpt5DefaultConfig.maxOutputTokens, 40960);
+assert.equal(gpt5DefaultConfig.truncationRetryMaxOutputTokens, 81920);
+
+const gpt5OverrideConfig = openAiEmergencyConfigFromEnv({
+  ...env,
+  OPENAI_LISTING_MODEL: "gpt-5-mini",
+  OPENAI_GPT5_MAX_OUTPUT_TOKENS: "50000",
+  OPENAI_GPT5_TRUNCATION_RETRY_MAX_OUTPUT_TOKENS: "90000"
+});
+assert.equal(gpt5OverrideConfig.maxOutputTokens, 50000);
+assert.equal(gpt5OverrideConfig.truncationRetryMaxOutputTokens, 90000);
+
+let gpt5TruncationCalls = 0;
+const gpt5TruncationCaps = [];
+const gpt5TruncationResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  env: {
+    ...env,
+    OPENAI_LISTING_MODEL: "gpt-5-mini"
+  },
+  fetchImpl: async (url, init) => {
+    gpt5TruncationCalls += 1;
+    const body = JSON.parse(init.body);
+    gpt5TruncationCaps.push(body.max_output_tokens);
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => gpt5TruncationCalls === 1
+        ? {
+            id: "resp_gpt5_truncated",
+            model: "gpt-5-mini",
+            status: "incomplete",
+            output_text: "{\"recognition_status\":\"CONFIRMED\"",
+            usage: {
+              input_tokens: 21,
+              output_tokens: 40960,
+              total_tokens: 40981
+            }
+          }
+        : {
+            id: "resp_gpt5_retry_ok",
+            model: "gpt-5-mini",
+            status: "completed",
+            output_text: "{\"title\":\"GPT-5 Retry Test\",\"fields\":{\"player\":\"Retry\"},\"field_evidence\":[],\"unresolved\":[],\"vector_candidate_decision\":{\"selected_candidate_id\":null,\"decision\":\"NOT_AVAILABLE\",\"supported_fields\":[],\"rejected_fields\":[],\"conflicts\":[]}}",
+            usage: {
+              input_tokens: 21,
+              output_tokens: 100,
+              total_tokens: 121
+            }
+          }
+    };
+  }
+});
+assert.equal(gpt5TruncationCalls, 2);
+assert.deepEqual(gpt5TruncationCaps, [40960, 81920]);
+assert.equal(gpt5TruncationResult.parsed.fields.player, "Retry");
+assert.equal(gpt5TruncationResult.truncation_retry_attempted, true);
+assert.equal(gpt5TruncationResult.truncation_retry_attempts, 1);
+assert.equal(gpt5TruncationResult.initial_token_diagnostics.output_utilization, 1);
 
 let pooledOpenAiRequest;
 const pooledOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
