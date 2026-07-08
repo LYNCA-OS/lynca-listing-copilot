@@ -777,7 +777,7 @@ function finalResolvedFieldsForPresentation(result = {}) {
 
 function finalizeDeterministicPresentation(result = {}, payload = {}) {
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
-  if (result.confidence === "FAILED" || result.provider_error_code || result.provider_error_type) return result;
+  if (result.provider_error_code || result.provider_error_type) return result;
 
   const resolved = finalResolvedFieldsForPresentation(result);
   if (!resolved || typeof resolved !== "object" || Array.isArray(resolved) || !Object.keys(resolved).length) return result;
@@ -805,6 +805,8 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
 
   return {
     ...result,
+    confidence: result.confidence === "FAILED" ? "LOW" : result.confidence,
+    title_recovered_from_structured_fields: result.confidence === "FAILED" || !result.final_title,
     title: renderedTitle,
     final_title: renderedTitle,
     rendered_title: renderedTitle,
