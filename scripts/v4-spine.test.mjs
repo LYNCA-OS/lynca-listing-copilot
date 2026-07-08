@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   buildFastScoutListingResult,
   selectFastScoutImages
@@ -21,6 +22,11 @@ import {
   persistV4LearningEvent,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
+
+const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
+assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
+assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
+assert.match(v4TitleApiSource, /scheduleV4Background\(persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must not block writer-ready L2 by default.");
 
 const route = planV4RecognitionRoute({
   preingestion_bundle_id: "bundle-1",

@@ -270,6 +270,96 @@ function scheduleV4Background(promise, label = "background task") {
   return guarded;
 }
 
+function nonCriticalPersistenceDeferred(payload = {}, env = process.env) {
+  if (payload.v4_defer_noncritical_persistence === false || payload.defer_noncritical_persistence === false) return false;
+  return String(env.ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE || "true").toLowerCase() !== "false";
+}
+
+function deferredArtifact(reason = "writer_ready_first") {
+  return { saved: false, deferred: true, reason };
+}
+
+async function persistCatalogGapForRows({
+  sessionId,
+  result = {},
+  payload = {},
+  rows = {},
+  l1Stage = false,
+  catalogPromptCount = 0
+} = {}) {
+  if (l1Stage) return { saved: false, skipped: true, reason: "internal_scout_not_catalog_gap" };
+  if (Number(catalogPromptCount || 0) > 0) {
+    return { saved: false, skipped: true, reason: "catalog_prompt_candidate_available" };
+  }
+  return persistV4CatalogGap({
+    gap: {
+      id: `${sessionId}_catalog_gap`,
+      recognition_session_id: sessionId,
+      asset_id: payload.asset_id || payload.assetId || null,
+      gap_type: catalogGapTypeFromTrace(rows.candidateTrace),
+      observed_fields: resolvedFromResult(result),
+      candidate_snapshot: {
+        candidate_activation_funnel: rows.candidateTrace.candidate_activation_funnel,
+        catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
+        vector_activation_funnel: rows.candidateTrace.vector_activation_funnel,
+        low_margin_safe_field_application: rows.candidateTrace.low_margin_safe_field_application || null,
+        selected_candidate_verifier: rows.candidateTrace.selected_candidate_verifier || null
+      },
+      draft_title: titleFromResult(result)
+    }
+  });
+}
+
+async function persistV4NonCriticalArtifacts({
+  sessionId,
+  result = {},
+  payload = {},
+  routePlan = {},
+  createResult = {},
+  rows = {},
+  status = v4SessionStatuses.DRAFT_READY,
+  catalogPromptCount = 0
+} = {}) {
+  const startedAt = Date.now();
+  const [fieldEvidence, candidateTrace, catalogGap] = await Promise.all([
+    persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows }),
+    persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace }),
+    persistCatalogGapForRows({ sessionId, result, payload, rows, catalogPromptCount })
+  ]);
+  const partialPersistence = {
+    create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
+    update_session: deferredArtifact("already_updated_writer_ready_session"),
+    field_evidence: fieldEvidence,
+    candidate_trace: candidateTrace,
+    catalog_gap: catalogGap
+  };
+  const ledger = await persistV4QualityLedger({
+    ledger: {
+      ...adaptV2ResultToV4({
+        sessionId,
+        result,
+        payload,
+        routePlan,
+        persistence: partialPersistence
+      }).provider_result,
+      id: `${sessionId}_quality`,
+      recognition_session_id: sessionId,
+      route: routePlan.route,
+      status,
+      route_plan: routePlan,
+      persistence_summary: {
+        ...partialPersistence,
+        noncritical_persistence_latency_ms: Date.now() - startedAt
+      }
+    }
+  });
+  return {
+    ...partialPersistence,
+    quality_ledger: ledger,
+    noncritical_persistence_latency_ms: Date.now() - startedAt
+  };
+}
+
 const l1ReturnBarrierVersion = "v4_l1_return_barrier_2026_07_07";
 const l1BlockingModules = Object.freeze([
   "image_access_signed_read_url",
@@ -389,31 +479,18 @@ async function persistPipelineResult({
   result = prepareV4PresentationResult({ result, payload }).result;
   const l1Stage = result.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
   const rows = buildV4PersistenceRows({ sessionId, result, payload });
-  const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
-  const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
   const catalogPromptCount = catalogPromptCountFromTrace(rows.candidateTrace);
-  const catalogGap = l1Stage
-    ? { saved: false, skipped: true, reason: "internal_scout_not_catalog_gap" }
-    : catalogPromptCount === 0
-    ? await persistV4CatalogGap({
-      gap: {
-        id: `${sessionId}_catalog_gap`,
-        recognition_session_id: sessionId,
-        asset_id: payload.asset_id || payload.assetId || null,
-        gap_type: catalogGapTypeFromTrace(rows.candidateTrace),
-        observed_fields: resolvedFromResult(result),
-        candidate_snapshot: {
-          candidate_activation_funnel: rows.candidateTrace.candidate_activation_funnel,
-          catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
-          vector_activation_funnel: rows.candidateTrace.vector_activation_funnel,
-          low_margin_safe_field_application: rows.candidateTrace.low_margin_safe_field_application || null,
-          selected_candidate_verifier: rows.candidateTrace.selected_candidate_verifier || null
-        },
-        draft_title: titleFromResult(result)
-      }
-    })
-    : { saved: false, skipped: true, reason: "catalog_prompt_candidate_available" };
   if (l1Stage) {
+    const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
+    const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
+    const catalogGap = await persistCatalogGapForRows({
+      sessionId,
+      result,
+      payload,
+      rows,
+      l1Stage,
+      catalogPromptCount
+    });
     const l1Title = titleFromResult(result);
     const sessionUpdate = await updateV4RecognitionSession({
       sessionId,
@@ -461,6 +538,7 @@ async function persistPipelineResult({
   const l2Title = titleFromResult(result);
   const failed = isFailedResult(result);
   const status = failed ? v4SessionStatuses.FAILED : v4SessionStatuses.DRAFT_READY;
+  const deferNonCriticalPersistence = nonCriticalPersistenceDeferred(payload, process.env);
   const sessionPatch = {
     status,
     field_states: rows.fieldEvidenceRows,
@@ -473,6 +551,8 @@ async function persistPipelineResult({
       title_stage: result.title_stage || null,
       assisted_draft_status: failed ? "FAILED" : (result.assisted_draft_status || extraProviderSummary.assisted_draft_status || null),
       provider_error_type: result.provider_error_type || result.provider_error_code || null,
+      noncritical_persistence_status: deferNonCriticalPersistence ? "DEFERRED" : "SYNC",
+      writer_ready_persistence_mode: deferNonCriticalPersistence ? "minimal_session_first" : "synchronous_full_persistence",
       ...providerRuntimeSummary(result),
       ...extraProviderSummary
     }
@@ -490,6 +570,43 @@ async function persistPipelineResult({
   const sessionUpdate = await updateV4RecognitionSession({
     sessionId,
     patch: sessionPatch
+  });
+  if (deferNonCriticalPersistence) {
+    const persistence = {
+      create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
+      update_session: sessionUpdate,
+      field_evidence: deferredArtifact("writer_ready_first"),
+      candidate_trace: deferredArtifact("writer_ready_first"),
+      catalog_gap: deferredArtifact("writer_ready_first"),
+      quality_ledger: deferredArtifact("writer_ready_first")
+    };
+    scheduleV4Background(persistV4NonCriticalArtifacts({
+      sessionId,
+      result,
+      payload,
+      routePlan,
+      createResult,
+      rows,
+      status,
+      catalogPromptCount
+    }), "V4 non-critical persistence");
+    return adaptV2ResultToV4({
+      sessionId,
+      result,
+      payload,
+      routePlan,
+      persistence
+    });
+  }
+
+  const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
+  const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
+  const catalogGap = await persistCatalogGapForRows({
+    sessionId,
+    result,
+    payload,
+    rows,
+    catalogPromptCount
   });
   const partialPersistence = {
     create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
