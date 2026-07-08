@@ -881,6 +881,18 @@ async function runOne({
       l2_vector_participation_level: l2.summary?.vector_participation_level ?? null,
       l2_vector_pre_observation_query_attempted: l2.summary?.vector_pre_observation_query_attempted ?? null,
       l2_vector_post_observation_query_attempted: l2.summary?.vector_post_observation_query_attempted ?? null,
+      vector_runtime_status: l2.summary?.vector_runtime_status ?? null,
+      vector_runtime_status_code: l2.summary?.vector_runtime_status_code ?? null,
+      vector_runtime_unavailable_reasons: l2.summary?.vector_runtime_unavailable_reasons ?? null,
+      vector_worker_status: l2.summary?.vector_worker_status ?? null,
+      vector_worker_reason: l2.summary?.vector_worker_reason ?? null,
+      vector_worker_feature_count: l2.summary?.vector_worker_feature_count ?? null,
+      vector_worker_latency_ms: l2.summary?.vector_worker_latency_ms ?? null,
+      vector_query_embedding_role: l2.summary?.vector_query_embedding_role ?? null,
+      vector_role_agnostic_fallback_used: l2.summary?.vector_role_agnostic_fallback_used ?? null,
+      vector_role_agnostic_fallback_reason: l2.summary?.vector_role_agnostic_fallback_reason ?? null,
+      vector_returned_row_count: l2.summary?.vector_returned_row_count ?? null,
+      vector_self_excluded_count: l2.summary?.vector_self_excluded_count ?? null,
       provider_diagnostics: finalProviderDiagnostics,
       v4_l2_timing: l2.summary?.v4_l2_timing || null,
       input_tokens: finalProviderDiagnostics.input_tokens,
@@ -1098,6 +1110,11 @@ function summarize(results = []) {
   const finalRaw = results.map((item) => item.final_scoring?.raw_token_recall);
   const finalFair = results.map((item) => item.final_scoring?.fair_token_recall);
   const finalPolicy = results.map((item) => item.final_scoring?.policy_fair_token_recall);
+  const countBy = (field) => results.reduce((acc, item) => {
+    const key = cleanText(item[field] ?? "missing") || "missing";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
   return {
     attempted_count: results.length,
     ok_count: results.filter((item) => item.ok).length,
@@ -1132,6 +1149,10 @@ function summarize(results = []) {
     l2_vector_conflict_blocked_count: results.reduce((sum, item) => sum + Number(item.l2_vector_conflict_blocked_count || 0), 0),
     l2_vector_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_vector_prompt_candidate_count || 0), 0),
     l2_vector_evidence_support_field_count: results.reduce((sum, item) => sum + Number(item.l2_vector_evidence_support_field_count || 0), 0),
+    vector_runtime_status_breakdown: countBy("vector_runtime_status"),
+    vector_runtime_status_code_breakdown: countBy("vector_runtime_status_code"),
+    vector_worker_status_breakdown: countBy("vector_worker_status"),
+    vector_role_agnostic_fallback_count: results.filter((item) => item.vector_role_agnostic_fallback_used === true).length,
     provider_diagnostics: {
       input_tokens_total: results.reduce((sum, item) => sum + Number(item.input_tokens || 0), 0),
       output_tokens_total: results.reduce((sum, item) => sum + Number(item.output_tokens || 0), 0),
