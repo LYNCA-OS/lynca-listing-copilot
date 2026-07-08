@@ -180,7 +180,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
     enable_catalog_assist: true,
     enable_vector_retrieval: true,
     vector_retrieval_mode: "assist",
-    vector_query_timeout_ms: 8000,
+    vector_query_timeout_ms: 20000,
     enable_v4_progressive_l1: true,
     cloud_eval_blind_to_corrected_title_hint: true,
     corrected_title_as_temporary_gt: false,
@@ -281,6 +281,57 @@ async function getJson({ baseUrl, path, cookie, requestTimeoutMs, fetchImpl = gl
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function preingestItem({
+  baseUrl,
+  cookie,
+  assetId,
+  images,
+  requestTimeoutMs,
+  fetchImpl = globalThis.fetch
+}) {
+  const payload = {
+    asset_id: assetId,
+    assetId,
+    images,
+    source: "v4_ebay_smoke_preingestion",
+    requested_fields: [
+      "serial_number",
+      "collector_number",
+      "checklist_code",
+      "grade_label",
+      "year_product",
+      "subject",
+      "surface"
+    ],
+    enqueue_workers: true,
+    enqueue_ocr: true,
+    enqueue_embeddings: true,
+    enqueue_surface: true,
+    enqueue_quality: true,
+    verify_signed_read_urls: true
+  };
+  const response = await postJson({
+    baseUrl,
+    path: "/api/v4/listing-preingest",
+    cookie,
+    payload,
+    requestTimeoutMs,
+    fetchImpl
+  });
+  return {
+    ok: response.ok && response.data?.ok === true,
+    http_status: response.http_status,
+    latency_ms: response.latency_ms,
+    bundle_id: response.data?.bundle_id || null,
+    bundle_status: response.data?.bundle_status || null,
+    worker_jobs_enqueued: response.data?.worker_jobs_enqueued ?? null,
+    signed_read_url_count: response.data?.signed_read_url_count ?? null,
+    signed_read_url_error_count: response.data?.signed_read_url_error_count ?? null,
+    preprocessing_summary: response.data?.preprocessing_summary || null,
+    error: response.ok ? null : response.data
+  };
 }
 
 function delay(ms) {
@@ -757,6 +808,7 @@ async function runOne({
   forceL2Direct = false,
   modelOverride = "",
   enableL1 = false,
+  usePreingestion = false,
   l2WaitMs,
   requestTimeoutMs
 }) {
@@ -772,6 +824,37 @@ async function runOne({
     verificationCache
   });
   const payload = payloadForItem(item, index, images, { forceL2Direct, modelOverride, enableL1 });
+  let preingestionResult = null;
+  if (usePreingestion) {
+    try {
+      preingestionResult = await preingestItem({
+        baseUrl,
+        cookie,
+        assetId: id,
+        images,
+        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      });
+      if (preingestionResult.ok && preingestionResult.bundle_id) {
+        payload.preingestion_bundle_id = preingestionResult.bundle_id;
+        payload.preingestionBundleId = preingestionResult.bundle_id;
+        payload.preingestion_bundle_status = preingestionResult.bundle_status;
+        payload.preingestion_summary = preingestionResult.preprocessing_summary;
+      }
+    } catch (error) {
+      preingestionResult = {
+        ok: false,
+        http_status: null,
+        latency_ms: null,
+        bundle_id: null,
+        bundle_status: "preingestion_request_failed",
+        worker_jobs_enqueued: null,
+        signed_read_url_count: null,
+        signed_read_url_error_count: null,
+        preprocessing_summary: null,
+        error: { message: String(error.message || error).slice(0, 240) }
+      };
+    }
+  }
   const sealedKey = item.sealed_eval_label_ref?.key || "";
   const sealed = sealedLabels.get(id.replace(/^ebay_image_only_/, "")) || sealedLabels.get(item.source_record?.case_id) || null;
   const fallbackSealed = [...sealedLabels.values()].find((row) => row.key === sealedKey) || null;
@@ -838,6 +921,14 @@ async function runOne({
       seller_title_used_for_local_eval_only: Boolean(sellerTitle),
       seller_title: sellerTitle,
       image_count: payload.images.length,
+      preingestion_used: usePreingestion,
+      preingestion_ok: preingestionResult?.ok ?? null,
+      preingestion_latency_ms: preingestionResult?.latency_ms ?? null,
+      preingestion_bundle_id: preingestionResult?.bundle_id || null,
+      preingestion_bundle_status: preingestionResult?.bundle_status || null,
+      preingestion_worker_jobs_enqueued: preingestionResult?.worker_jobs_enqueued ?? null,
+      preingestion_signed_read_url_count: preingestionResult?.signed_read_url_count ?? null,
+      preingestion_signed_read_url_error_count: preingestionResult?.signed_read_url_error_count ?? null,
       queue_mode: true,
       job_id: job.job_id || null,
       http_status: enqueue.http_status,
@@ -1015,6 +1106,14 @@ async function runOne({
     seller_title_used_for_local_eval_only: Boolean(sellerTitle),
     seller_title: sellerTitle,
     image_count: payload.images.length,
+    preingestion_used: usePreingestion,
+    preingestion_ok: preingestionResult?.ok ?? null,
+    preingestion_latency_ms: preingestionResult?.latency_ms ?? null,
+    preingestion_bundle_id: preingestionResult?.bundle_id || null,
+    preingestion_bundle_status: preingestionResult?.bundle_status || null,
+    preingestion_worker_jobs_enqueued: preingestionResult?.worker_jobs_enqueued ?? null,
+    preingestion_signed_read_url_count: preingestionResult?.signed_read_url_count ?? null,
+    preingestion_signed_read_url_error_count: preingestionResult?.signed_read_url_error_count ?? null,
     http_status: l1.http_status,
     ok: writerReady,
     l1_ok: l1Ok,
@@ -1131,6 +1230,11 @@ function summarize(results = []) {
     fast_scout_cache_hit_count: results.filter((item) => item.fast_scout_cache_hit).length,
     fast_scout_blocking_call_count: results.filter((item) => item.fast_scout_blocking_call_used).length,
     prewarm_cache_hit_count: results.filter((item) => item.prewarm_cache_hit === true).length,
+    preingestion_used_count: results.filter((item) => item.preingestion_used === true).length,
+    preingestion_ok_count: results.filter((item) => item.preingestion_ok === true).length,
+    preingestion_p50_ms: quantile(results.map((item) => item.preingestion_latency_ms), 0.5),
+    preingestion_p95_ms: quantile(results.map((item) => item.preingestion_latency_ms), 0.95),
+    preingestion_worker_jobs_enqueued_count: results.reduce((sum, item) => sum + Number(item.preingestion_worker_jobs_enqueued || 0), 0),
     l1_p50_ms: quantile(results.map((item) => item.l1_wall_latency_ms), 0.5),
     l1_p95_ms: quantile(results.map((item) => item.l1_wall_latency_ms), 0.95),
     l1_internal_scout_p50_ms: quantile(results.map((item) => item.l1_internal_scout_ms), 0.5),
@@ -1216,6 +1320,14 @@ function perCardTsv(results = []) {
     "ok",
     "l1_ok",
     "writer_ready",
+    "preingestion_used",
+    "preingestion_ok",
+    "preingestion_ms",
+    "preingestion_bundle_id",
+    "preingestion_bundle_status",
+    "preingestion_worker_jobs",
+    "preingestion_signed_urls",
+    "preingestion_signed_url_errors",
     "l1_ms",
     "l1_internal_scout_ms",
     "l1_safe_ms",
@@ -1273,6 +1385,14 @@ function perCardTsv(results = []) {
     item.ok,
     item.l1_ok,
     item.writer_ready,
+    item.preingestion_used,
+    item.preingestion_ok,
+    item.preingestion_latency_ms,
+    item.preingestion_bundle_id,
+    item.preingestion_bundle_status,
+    item.preingestion_worker_jobs_enqueued,
+    item.preingestion_signed_read_url_count,
+    item.preingestion_signed_read_url_error_count,
     item.l1_wall_latency_ms,
     item.l1_internal_scout_ms,
     item.l1_time_to_safe_draft_ms,
@@ -1341,6 +1461,7 @@ export async function runV4EbaySmoke({
   forceL2Direct = false,
   modelOverride = "",
   enableL1 = false,
+  usePreingestion = false,
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
   outPath = "",
@@ -1356,7 +1477,7 @@ export async function runV4EbaySmoke({
   const results = [];
   for (const [localIndex, item] of items.entries()) {
     const index = offset + localIndex;
-    if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
+    if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} preingestion=${usePreingestion} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
     const row = await runOne({
       item,
       index,
@@ -1368,6 +1489,7 @@ export async function runV4EbaySmoke({
       forceL2Direct,
       modelOverride,
       enableL1,
+      usePreingestion,
       l2WaitMs,
       requestTimeoutMs
     });
@@ -1388,6 +1510,7 @@ export async function runV4EbaySmoke({
     queue_mode: queueMode,
     force_l2_direct: forceL2Direct,
     l1_explicitly_enabled: enableL1,
+    preingestion_enabled: usePreingestion,
     model_override: modelOverride || null,
     blind_policy: {
       seller_title_visible_to_model: false,
@@ -1419,6 +1542,7 @@ export async function main(argv = process.argv, env = process.env) {
     queueMode: hasFlag(argv, "--queue"),
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),
+    usePreingestion: hasFlag(argv, "--use-preingestion"),
     modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
@@ -1434,6 +1558,11 @@ export async function main(argv = process.argv, env = process.env) {
     `l2_ready: ${report.summary.l2_ready_count}`,
     `l1_p50_ms: ${report.summary.l1_p50_ms}`,
     `l1_p95_ms: ${report.summary.l1_p95_ms}`,
+    `preingestion_enabled: ${report.preingestion_enabled}`,
+    `preingestion_ok: ${report.summary.preingestion_ok_count}/${report.summary.preingestion_used_count}`,
+    `preingestion_p50_ms: ${report.summary.preingestion_p50_ms}`,
+    `preingestion_p95_ms: ${report.summary.preingestion_p95_ms}`,
+    `preingestion_worker_jobs_enqueued: ${report.summary.preingestion_worker_jobs_enqueued_count}`,
     `writer_ready_p50_ms: ${report.summary.writer_ready_p50_ms}`,
     `writer_ready_p95_ms: ${report.summary.writer_ready_p95_ms}`,
     `fast_scout_cache_hit_count: ${report.summary.fast_scout_cache_hit_count}`,

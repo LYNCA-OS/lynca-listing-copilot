@@ -385,7 +385,7 @@ function providerOptionsForMode(providerMode, {
   const forceVector = vectorAssist && forceVectorAssist === true;
   const vectorQueryTimeoutMs = positiveInteger(
     env.CLOUD_LISTING_API_VECTOR_QUERY_TIMEOUT_MS || env.VECTOR_QUERY_TIMEOUT_MS,
-    8000
+    20000
   );
   return {
     provider_mode: providerMode,

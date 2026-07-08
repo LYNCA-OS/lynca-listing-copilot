@@ -115,7 +115,7 @@ assert.match(api, /defaultProviderOptionsFromEnv/, "title API should centralize 
 assert.match(api, /ENABLE_CATALOG_ASSIST_DEFAULT", true/, "title API should default catalog assist on for the C path");
 assert.match(api, /ENABLE_VECTOR_ASSIST_DEFAULT", true/, "title API should default vector assist on for the C path");
 assert.match(api, /vector_retrieval_mode:\s*vectorAssistDefault \? "assist" : "off"/, "title API should default vector retrieval to assist mode when enabled");
-assert.match(api, /vector_query_timeout_ms:\s*8000/, "title API should cap default online vector query work before it dominates writer-ready latency");
+assert.match(api, /vector_query_timeout_ms:\s*20000/, "title API should give vector retrieval the production-ready overlap budget before degrading");
 assert.match(api, /vectorEmbeddingPostProviderWaitMs/, "L2 should cap post-provider vector waiting before it dominates writer-ready latency");
 assert.match(api, /vector_embedding_overlap_timeout_after_provider/, "slow vector warmup after provider should degrade to a timeout packet instead of blocking the title");
 assert.match(api, /Math\.max\(\s*20000,[\s\S]*VECTOR_QUERY_TIMEOUT_MS/, "vector warmup should get a longer overlapped window than the post-provider wait");

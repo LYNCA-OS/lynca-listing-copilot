@@ -760,7 +760,7 @@ assert.equal(openaiVector.titlePayload.provider_options.corrected_title_as_tempo
 assert.equal(openaiVector.titlePayload.provider_options.vector_corrected_title_as_temporary_gt, true);
 assert.equal(openaiVector.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
 assert.equal(openaiVector.titlePayload.catalog_observation_hint, null);
-assert.equal(openaiVector.titlePayload.provider_options.vector_query_timeout_ms, 8000);
+assert.equal(openaiVector.titlePayload.provider_options.vector_query_timeout_ms, 20000);
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_internal_top_n, 10);
 assert.equal(openaiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
 assert.equal(openaiVector.titlePayload.provider_options.enable_hybrid_retrieval, true);
