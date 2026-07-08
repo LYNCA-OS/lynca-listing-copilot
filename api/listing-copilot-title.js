@@ -146,6 +146,7 @@ function defaultProviderOptionsFromEnv(env = process.env) {
     enable_query_visual_embeddings: vectorAssistDefault,
     enable_vector_retrieval: vectorAssistDefault,
     vector_retrieval_mode: vectorAssistDefault ? "assist" : "off",
+    vector_query_timeout_ms: 8000,
     enable_advanced_retrieval: vectorAssistDefault,
     enable_hybrid_retrieval: vectorAssistDefault,
     cold_start_blind: envFlag(env, "ENABLE_COLD_START_BLIND_DEFAULT", false),

@@ -180,6 +180,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
     enable_catalog_assist: true,
     enable_vector_retrieval: true,
     vector_retrieval_mode: "assist",
+    vector_query_timeout_ms: 8000,
     enable_v4_progressive_l1: true,
     cloud_eval_blind_to_corrected_title_hint: true,
     corrected_title_as_temporary_gt: false,
