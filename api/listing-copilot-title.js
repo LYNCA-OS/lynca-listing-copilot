@@ -102,7 +102,7 @@ import {
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
 // Accept optional bounded derived crop images while keeping provider input capped.
-const defaultMaxPayloadImages = 14;
+const defaultMaxPayloadImages = 140;
 const signedUrlConcurrency = 4;
 const promptRoot = join(process.cwd(), "prompts");
 const promptFiles = [
