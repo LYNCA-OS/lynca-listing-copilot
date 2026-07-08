@@ -2697,7 +2697,7 @@ function storageRoleIsDerived(role = "") {
 }
 
 function imageIsDerived(image = {}) {
-  const role = image.storageRole || image.storage_role || "";
+  const role = image.storageRole || image.storage_role || image.role || image.capture_angle || "";
   return Boolean(image.derived || image.sourceRegion || image.source_region || storageRoleIsDerived(role));
 }
 
@@ -2732,23 +2732,17 @@ function boundedPayloadImagesFromImages(images = [], {
     };
   }
 
-  const primaryImages = explicitPrimaryImagesFromImages(payloadImages);
+  const explicitPrimaryImages = explicitPrimaryImagesFromImages(payloadImages);
+  const primaryImages = (explicitPrimaryImages.length ? explicitPrimaryImages : primaryImagesFromImages(payloadImages)).slice(0, 2);
   if (!primaryImages.length) {
     return {
       ok: false,
       reason: "primary_images_missing"
     };
   }
-  if (primaryImages.length > 2) {
-    return {
-      ok: false,
-      reason: "too_many_primary_images",
-      primary_image_count: primaryImages.length
-    };
-  }
 
   const primarySet = new Set(primaryImages);
-  const derivedImages = derivedImagesFromImages(payloadImages)
+  const derivedImages = payloadImages
     .filter((image) => !primarySet.has(image));
   const maxDerived = Math.max(0, Math.max(2, Number(maxImages) || defaultMaxPayloadImages) - primaryImages.length);
   const currentBatchImages = [
@@ -6510,9 +6504,7 @@ export default async function handler(req, res) {
     sendJson(res, 400, {
       ok: false,
       code: "invalid_image_payload",
-      message: imageBatch.reason === "too_many_primary_images"
-        ? "系统无法判断这组图片属于同一张卡还是多张卡，请使用单图或两图配对模式重新上传。"
-        : "系统没有读到可用于识别的卡片原图，请重新上传卡片图片或两图配对图片。"
+      message: "系统没有读到可用于识别的卡片原图，请重新上传卡片图片或两图配对图片。"
     });
     return;
   }

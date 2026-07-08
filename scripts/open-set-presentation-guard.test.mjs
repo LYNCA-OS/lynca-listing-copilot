@@ -144,8 +144,19 @@ const tooManyPrimaryPayloadBatch = boundedPayloadImagesFromImages([
   { id: "back" },
   { id: "third-primary" }
 ], { maxImages: 14 });
-assert.equal(tooManyPrimaryPayloadBatch.ok, false);
-assert.equal(tooManyPrimaryPayloadBatch.reason, "too_many_primary_images");
+assert.equal(tooManyPrimaryPayloadBatch.ok, true);
+assert.deepEqual(tooManyPrimaryPayloadBatch.images.map((image) => image.id), ["front", "back", "third-primary"]);
+assert.equal(tooManyPrimaryPayloadBatch.deferred_image_count, 0);
+
+const mislabeledDerivedPayloadBatch = boundedPayloadImagesFromImages([
+  { id: "image-1", role: "image_1_original" },
+  { id: "image-2", role: "image_2_original" },
+  { id: "serial-crop", role: "serial_crop" },
+  { id: "grade-crop", capture_angle: "grade_label_crop" }
+], { maxImages: 3 });
+assert.equal(mislabeledDerivedPayloadBatch.ok, true);
+assert.deepEqual(mislabeledDerivedPayloadBatch.images.map((image) => image.id), ["image-1", "image-2", "serial-crop"]);
+assert.equal(mislabeledDerivedPayloadBatch.deferred_image_count, 1);
 
 function shadowResult({
   title,
