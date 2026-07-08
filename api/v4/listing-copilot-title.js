@@ -235,6 +235,8 @@ function catalogGapTypeFromTrace(trace = {}) {
 }
 
 function providerRuntimeSummary(result = {}) {
+  const vectorContext = result.candidate_context?.vector || {};
+  const vectorProviderMetadata = vectorContext.provider_metadata || {};
   return {
     provider_latency_ms: result.provider_latency_ms ?? null,
     provider_prompt_mode: result.provider_prompt_mode || null,
@@ -258,6 +260,22 @@ function providerRuntimeSummary(result = {}) {
     gpt5_empty_result_retry_attempted: result.gpt5_empty_result_retry_attempted === true,
     gpt5_empty_result_retry_success: result.gpt5_empty_result_retry_success === true,
     gpt5_empty_result_retry_status_code: result.gpt5_empty_result_retry_status_code ?? null,
+    vector_runtime_status: vectorContext.signal?.status || vectorContext.status || null,
+    vector_runtime_status_code: vectorContext.signal?.status_code || null,
+    vector_runtime_unavailable_reasons: vectorContext.signal?.unavailable_reasons || [],
+    vector_worker_status: vectorContext.worker_status || null,
+    vector_worker_reason: vectorContext.worker_reason || "",
+    vector_worker_feature_count: vectorContext.worker_feature_count ?? null,
+    vector_worker_latency_ms: vectorContext.worker_latency_ms ?? null,
+    vector_query_embedding_role: vectorProviderMetadata.query_embedding_role || "",
+    vector_role_agnostic_fallback_used: vectorProviderMetadata.role_agnostic_fallback_used === true,
+    vector_role_agnostic_fallback_reason: vectorProviderMetadata.role_agnostic_fallback_reason || "",
+    vector_returned_row_count: Number.isFinite(Number(vectorProviderMetadata.returned_row_count))
+      ? Number(vectorProviderMetadata.returned_row_count)
+      : null,
+    vector_self_excluded_count: Number.isFinite(Number(vectorProviderMetadata.self_excluded_count))
+      ? Number(vectorProviderMetadata.self_excluded_count)
+      : null,
     usage: result.usage || null
   };
 }

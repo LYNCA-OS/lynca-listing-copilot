@@ -355,6 +355,25 @@ function providerDiagnosticsFromApiData(data = {}) {
   });
 }
 
+function vectorRuntimeFromSummary(summary = {}) {
+  return {
+    vector_runtime_status: summary.vector_runtime_status || null,
+    vector_runtime_status_code: summary.vector_runtime_status_code || null,
+    vector_runtime_unavailable_reasons: Array.isArray(summary.vector_runtime_unavailable_reasons)
+      ? summary.vector_runtime_unavailable_reasons.join("; ")
+      : (summary.vector_runtime_unavailable_reasons || ""),
+    vector_worker_status: summary.vector_worker_status || null,
+    vector_worker_reason: summary.vector_worker_reason || "",
+    vector_worker_feature_count: summary.vector_worker_feature_count ?? null,
+    vector_worker_latency_ms: summary.vector_worker_latency_ms ?? null,
+    vector_query_embedding_role: summary.vector_query_embedding_role || "",
+    vector_role_agnostic_fallback_used: summary.vector_role_agnostic_fallback_used === true,
+    vector_role_agnostic_fallback_reason: summary.vector_role_agnostic_fallback_reason || "",
+    vector_returned_row_count: summary.vector_returned_row_count ?? null,
+    vector_self_excluded_count: summary.vector_self_excluded_count ?? null
+  };
+}
+
 function sessionL2Summary(statusPayload = {}) {
   const session = statusPayload.session || {};
   const summary = session.provider_result_summary || {};
@@ -362,6 +381,7 @@ function sessionL2Summary(statusPayload = {}) {
   const catalogFunnel = trace.catalog_activation_funnel || {};
   const vectorFunnel = trace.vector_activation_funnel || {};
   const providerDiagnostics = providerDiagnosticsFromSummary(summary);
+  const vectorRuntime = vectorRuntimeFromSummary(summary);
   return {
     session_status: session.status || null,
     l2_status: session.l2_status || null,
@@ -386,6 +406,7 @@ function sessionL2Summary(statusPayload = {}) {
     vector_participation_level: vectorFunnel.participation_level || null,
     vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
+    ...vectorRuntime,
     provider_diagnostics: providerDiagnostics,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
@@ -410,6 +431,7 @@ function jobL2Summary(statusPayload = {}) {
   const catalogFunnel = trace.catalog_activation_funnel || {};
   const vectorFunnel = trace.vector_activation_funnel || {};
   const providerDiagnostics = providerDiagnosticsFromSummary(summary);
+  const vectorRuntime = vectorRuntimeFromSummary(summary);
   return {
     session_status: session.status || job.internal_status || null,
     l2_status: session.l2_status || job.l2_status || null,
@@ -440,6 +462,7 @@ function jobL2Summary(statusPayload = {}) {
     vector_participation_level: vectorFunnel.participation_level || null,
     vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
+    ...vectorRuntime,
     provider_diagnostics: providerDiagnostics,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
@@ -872,6 +895,7 @@ async function runOne({
         vector_conflict_blocked_count: Number(data.vector_activation_funnel?.conflict_blocked_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.conflict_blocked_count || 0),
         vector_prompt_candidate_count: Number(data.vector_activation_funnel?.prompt_candidate_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.prompt_candidate_count || 0),
         vector_evidence_support_field_count: Number(data.vector_activation_funnel?.evidence_support_field_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.evidence_support_field_count || 0),
+        ...vectorRuntimeFromSummary(data.provider_result || data.provider_result_summary || data),
         provider_diagnostics: l1ProviderDiagnostics,
         input_tokens: l1ProviderDiagnostics.input_tokens,
         output_tokens: l1ProviderDiagnostics.output_tokens,
@@ -982,6 +1006,18 @@ async function runOne({
     l2_vector_participation_level: l2.summary?.vector_participation_level ?? null,
     l2_vector_pre_observation_query_attempted: l2.summary?.vector_pre_observation_query_attempted ?? null,
     l2_vector_post_observation_query_attempted: l2.summary?.vector_post_observation_query_attempted ?? null,
+    vector_runtime_status: l2.summary?.vector_runtime_status ?? null,
+    vector_runtime_status_code: l2.summary?.vector_runtime_status_code ?? null,
+    vector_runtime_unavailable_reasons: l2.summary?.vector_runtime_unavailable_reasons ?? null,
+    vector_worker_status: l2.summary?.vector_worker_status ?? null,
+    vector_worker_reason: l2.summary?.vector_worker_reason ?? null,
+    vector_worker_feature_count: l2.summary?.vector_worker_feature_count ?? null,
+    vector_worker_latency_ms: l2.summary?.vector_worker_latency_ms ?? null,
+    vector_query_embedding_role: l2.summary?.vector_query_embedding_role ?? null,
+    vector_role_agnostic_fallback_used: l2.summary?.vector_role_agnostic_fallback_used ?? null,
+    vector_role_agnostic_fallback_reason: l2.summary?.vector_role_agnostic_fallback_reason ?? null,
+    vector_returned_row_count: l2.summary?.vector_returned_row_count ?? null,
+    vector_self_excluded_count: l2.summary?.vector_self_excluded_count ?? null,
     provider_diagnostics: finalProviderDiagnostics,
     l1_provider_diagnostics: l1ProviderDiagnostics,
     l2_provider_diagnostics: l2ProviderDiagnostics,
@@ -1122,6 +1158,18 @@ function perCardTsv(results = []) {
     "l2_vector_approved",
     "l2_vector_blocked",
     "l2_vector_prompt",
+    "vector_status",
+    "vector_status_code",
+    "vector_unavailable_reasons",
+    "vector_worker_status",
+    "vector_worker_reason",
+    "vector_worker_feature_count",
+    "vector_worker_latency_ms",
+    "vector_query_embedding_role",
+    "vector_role_fallback",
+    "vector_role_fallback_reason",
+    "vector_returned_rows",
+    "vector_self_excluded",
     "input_tokens",
     "output_tokens",
     "total_tokens",
@@ -1167,6 +1215,18 @@ function perCardTsv(results = []) {
     item.l2_vector_approved_candidate_count,
     item.l2_vector_conflict_blocked_count,
     item.l2_vector_prompt_candidate_count,
+    item.vector_runtime_status,
+    item.vector_runtime_status_code,
+    item.vector_runtime_unavailable_reasons,
+    item.vector_worker_status,
+    item.vector_worker_reason,
+    item.vector_worker_feature_count,
+    item.vector_worker_latency_ms,
+    item.vector_query_embedding_role,
+    item.vector_role_agnostic_fallback_used,
+    item.vector_role_agnostic_fallback_reason,
+    item.vector_returned_row_count,
+    item.vector_self_excluded_count,
     item.input_tokens,
     item.output_tokens,
     item.total_tokens,

@@ -163,6 +163,58 @@ assert.equal(activeVisualResult.candidates[0].source_type, "VISUAL_VECTOR");
 assert.equal(activeVisualResult.candidates[0].trust_tier, 6);
 assert.equal(activeVisualResult.candidates[0].visual_similarity, 0.92);
 assert.equal(activeVisualResult.candidates[0].visual_margin_to_next, 0.21);
+assert.equal(activeVisualResult.metadata.role_agnostic_fallback_used, false);
+
+let visualFallbackRpcCalls = 0;
+const roleFallbackVisualProvider = visualVectorProvider({
+  env: {
+    ENABLE_VISUAL_VECTOR_RETRIEVAL: "true",
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    VISUAL_VECTOR_MATCH_COUNT: "2"
+  },
+  fetchImpl: async (url, options) => {
+    visualFallbackRpcCalls += 1;
+    assert.equal(String(url), "https://supabase.test/rest/v1/rpc/match_card_image_embeddings");
+    const body = JSON.parse(options.body);
+    if (visualFallbackRpcCalls === 1) {
+      assert.equal(body.match_embedding_role, "front_global");
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
+    assert.equal(body.match_embedding_role, null);
+    return new Response(JSON.stringify([
+      {
+        identity_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        reference_image_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        embedding_id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        embedding_role: "identity_text",
+        model_id: "google/siglip2-base-patch16-384",
+        model_revision: "main",
+        preprocessing_version: "card-rectification-v1",
+        similarity: 0.86,
+        distance: 0.14,
+        canonical_title: "2025 Topps Chrome Cooper Flagg #136",
+        category: "basketball",
+        fields: {
+          year: "2025",
+          product: "Topps Chrome",
+          players: ["Cooper Flagg"],
+          collector_number: "136"
+        },
+        reference_metadata: { approved_by: "test" }
+      }
+    ]), { status: 200 });
+  }
+});
+const roleFallbackVisualResult = await roleFallbackVisualProvider.search({
+  query: visualQuery,
+  resolved: { category: "basketball" }
+});
+assert.equal(visualFallbackRpcCalls, 2);
+assert.equal(roleFallbackVisualResult.candidates.length, 1);
+assert.equal(roleFallbackVisualResult.metadata.role_agnostic_fallback_used, true);
+assert.equal(roleFallbackVisualResult.metadata.role_agnostic_fallback_reason, "embedding_role_zero_hit");
+assert.equal(roleFallbackVisualResult.metadata.returned_row_count, 1);
 
 const titleDerivedVisualProvider = visualVectorProvider({
   env: {
