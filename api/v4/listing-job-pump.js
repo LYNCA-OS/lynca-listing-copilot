@@ -261,10 +261,10 @@ function triggerV4QueuePumpContinuation(req, payload = {}, result = {}, env = pr
 
   const body = {
     ...payload,
-    cycles: positiveInteger(payload.continuation_cycles ?? payload.continuationCycles, 1, { min: 1, max: 4 }),
+    cycles: positiveInteger(payload.continuation_cycles ?? payload.continuationCycles, 2, { min: 1, max: 4 }),
     max_runtime_ms: positiveInteger(
       payload.continuation_max_runtime_ms ?? payload.continuationMaxRuntimeMs ?? payload.max_runtime_ms ?? payload.maxRuntimeMs,
-      180_000,
+      240_000,
       { min: 5_000, max: 240_000 }
     ),
     idle_delay_ms: 0,
