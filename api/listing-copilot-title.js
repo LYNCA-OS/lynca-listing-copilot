@@ -1501,6 +1501,43 @@ function normalizeGradeCompanyForFields(value) {
   return normalized;
 }
 
+function playerInitialsForCodeGuard(value) {
+  const text = normalizeStringOrNull(value);
+  if (!text) return "";
+  const words = text
+    .replace(/[^A-Za-z\s'-]/g, " ")
+    .split(/\s+/)
+    .map((word) => word.replace(/[^A-Za-z]/g, ""))
+    .filter(Boolean);
+  if (words.length < 2) return "";
+  return words.map((word) => word[0]).join("").toUpperCase();
+}
+
+function normalizePrintedCardCodeForFields(value, context = {}) {
+  const normalized = normalizeStringOrNull(value);
+  if (!normalized) return null;
+  const code = normalized.replace(/^#\s*/, "").trim();
+  if (!code) return null;
+  if (/^(?:unknown|none|null|n\/a|na|not\s+visible|unreadable|unclear)$/i.test(code)) return null;
+
+  // Two-letter all-alpha values are usually player initials leaked from labels
+  // such as PAU-AED -> AED/JS, not a standalone card number. Keep real product
+  // codes like PAU, PAU-AED, CA-LY, OP01-001, or numeric card numbers.
+  if (/^[A-Z]{1,2}$/i.test(code)) return null;
+
+  const subjects = [
+    ...(Array.isArray(context.players) ? context.players : []),
+    context.player,
+    context.subject,
+    context.character
+  ].filter(Boolean);
+  const upperCode = code.toUpperCase();
+  const subjectInitials = subjects.map(playerInitialsForCodeGuard).filter(Boolean);
+  if (subjectInitials.includes(upperCode)) return null;
+
+  return code;
+}
+
 function cleanPlayerNameForFields(value) {
   let text = normalizeStringOrNull(value);
   if (!text) return null;
@@ -1600,9 +1637,9 @@ function normalizeFields(fields = {}) {
     card_name: normalizeStringOrNull(fields.card_name || fields.cardName || fields.name),
     artist: normalizeStringOrNull(fields.artist),
     team: normalizeStringOrNull(fields.team),
-    card_number: normalizeStringOrNull(fields.card_number),
-    collector_number: normalizeStringOrNull(fields.collector_number),
-    checklist_code: normalizeStringOrNull(fields.checklist_code),
+    card_number: null,
+    collector_number: null,
+    checklist_code: null,
     print_run_number: normalizeStringOrNull(fields.print_run_number || printRun.print_run_number),
     print_run_numerator: normalizeStringOrNull(fields.print_run_numerator || printRun.print_run_numerator),
     print_run_denominator: normalizeStringOrNull(fields.print_run_denominator || printRun.print_run_denominator),
@@ -1630,6 +1667,10 @@ function normalizeFields(fields = {}) {
     suspicious_print_run: normalizeBoolean(fields.suspicious_print_run) || printRun.suspicious_print_run === true,
     print_run_review_required: normalizeBoolean(fields.print_run_review_required) || printRun.print_run_review_required === true
   };
+
+  normalized.card_number = normalizePrintedCardCodeForFields(fields.card_number, normalized);
+  normalized.collector_number = normalizePrintedCardCodeForFields(fields.collector_number, normalized);
+  normalized.checklist_code = normalizePrintedCardCodeForFields(fields.checklist_code, normalized);
 
   Object.keys(normalized).forEach((key) => {
     if (typeof normalized[key] === "string" && containsBackgroundTerm(normalized[key])) {

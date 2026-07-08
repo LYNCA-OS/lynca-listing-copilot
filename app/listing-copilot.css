@@ -1683,6 +1683,18 @@ summary {
   line-height: 1.45;
 }
 
+.writer-quality-warning {
+  margin: 10px 0 0;
+  border: 1px solid rgba(240, 200, 117, 0.38);
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: var(--yellow);
+  background: rgba(240, 200, 117, 0.1);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
 .evidence-crop-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));

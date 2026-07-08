@@ -89,6 +89,8 @@ assert.match(js, /image_\$\{imageIndex \+ 1\}_original/, "new original uploads s
 assert.match(api, /primaryImagesFromImages/, "title API should separate primary card images from derived crops");
 assert.match(api, /BGS\/Beckett slab discipline/, "provider prompt should explicitly separate BGS card grade and autograph grade");
 assert.match(api, /never copy card_grade into auto_grade/, "provider prompt must forbid BGS auto-grade scaffolding");
+assert.match(api, /normalizePrintedCardCodeForFields/, "title API should suppress player initials from collector/card/checklist code fields");
+assert.match(api, /Two-letter all-alpha values are usually player initials/, "printed-code guard should document why JS/MJ-style values are rejected");
 assert.match(api, /verifyListingImageVerificationToken/, "title API should require server-issued storage verification tokens before signed read URLs");
 assert.match(api, /readListingImageVerificationRecord/, "title API should allow durable server verification records for later reprocessing");
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
@@ -135,6 +137,10 @@ assert.doesNotMatch(js, /moduleSummary\(result\)/, "writer UI must not render st
 assert.doesNotMatch(js, /\$\{workflowSummaryNotice\(result\)\}/, "writer UI must not expose technical workflow summaries by default");
 assert.match(js, /labelForCsmField/, "frontend should use the shared CSM field label contract");
 assert.doesNotMatch(js, /const reviewFieldLabels = \{/, "frontend must not fork its own field label map");
+assert.match(js, /sanitizeCollectorNumberDisplay/, "writer field evidence should suppress player initials before showing collector numbers");
+assert.match(js, /\^\[A-Z\]\{1,2\}\$/, "writer field evidence should not show one- or two-letter initials as collector numbers");
+assert.match(js, /gradeDisplayValue/, "writer field evidence should only show complete grading facts");
+assert.doesNotMatch(js, /Capture Profile[\s\S]*Image Quality Route[\s\S]*Images Evaluated/, "writer field evidence must not render technical capture-quality rows as card modules");
 assert.match(js, /data-workflow-summary/, "workflow summary should have a stable hook for UI validation");
 assert.match(js, /hide_raw_candidate_details/, "workflow summary should keep raw candidate diagnostics hidden from the writer UI by default");
 assert.match(js, /operator_next_actions/, "workflow summary should render explicit operator next actions");

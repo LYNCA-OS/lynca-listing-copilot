@@ -1870,6 +1870,83 @@ function fieldValue(result, fields = []) {
   return "";
 }
 
+function subjectInitialsForDisplay(value) {
+  const words = String(value || "")
+    .replace(/[^A-Za-z\s'-]/g, " ")
+    .split(/\s+/)
+    .map((word) => word.replace(/[^A-Za-z]/g, ""))
+    .filter(Boolean);
+  if (words.length < 2) return "";
+  return words.map((word) => word[0]).join("").toUpperCase();
+}
+
+function subjectInitialsForResult(result = {}) {
+  const resolved = currentResolvedForResult(result) || {};
+  const rawFields = result.fields || {};
+  const subjects = [
+    resolved.subject,
+    resolved.player,
+    rawFields.subject,
+    rawFields.player,
+    ...[].concat(resolved.subjects || [], resolved.players || [], rawFields.subjects || [], rawFields.players || [])
+  ].filter(Boolean);
+  return subjects.map(subjectInitialsForDisplay).filter(Boolean);
+}
+
+function sanitizeCollectorNumberDisplay(value, result = {}) {
+  const text = compactDisplayValue(value).replace(/^#\s*/, "").trim();
+  if (!text) return "";
+  if (/^(?:unknown|none|null|n\/a|na|not visible|unreadable|unclear)$/i.test(text)) return "";
+  if (/^[A-Z]{1,2}$/i.test(text)) return "";
+  if (subjectInitialsForResult(result).includes(text.toUpperCase())) return "";
+  return text;
+}
+
+function collectorNumberDisplayValue(result = {}) {
+  const resolved = currentResolvedForResult(result) || {};
+  const rawFields = result.fields || {};
+  const generated = result.generated_resolved_fields || {};
+  const stores = [resolved, rawFields, generated];
+  for (const field of ["collector_number", "card_number", "checklist_code", "tcg_card_number"]) {
+    for (const store of stores) {
+      const value = sanitizeCollectorNumberDisplay(store?.[field], result);
+      if (value) return value;
+    }
+  }
+  return "";
+}
+
+function gradeDisplayValue(result = {}) {
+  const resolved = currentResolvedForResult(result) || {};
+  const rawFields = result.fields || {};
+  const generated = result.generated_resolved_fields || {};
+  const stores = [resolved, rawFields, generated];
+
+  for (const store of stores) {
+    const fullGrade = compactDisplayValue(store?.grade);
+    if (/\b(?:PSA|BGS|SGC|CGC|TAG|PSA\/DNA)\b/i.test(fullGrade) && /\b(?:AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b/i.test(fullGrade.replace(/\b(?:PSA|BGS|SGC|CGC|TAG|PSA\/DNA)\b/gi, ""))) {
+      return fullGrade;
+    }
+  }
+
+  for (const store of stores) {
+    const company = compactDisplayValue(store?.grade_company).toUpperCase();
+    const cardGrade = compactDisplayValue(store?.card_grade || store?.grade);
+    const autoGrade = compactDisplayValue(store?.auto_grade);
+    if (!company || !/\b(?:PSA|BGS|SGC|CGC|TAG|PSA\/DNA)\b/i.test(company)) continue;
+    if (!/\b(?:AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b/i.test(cardGrade)) continue;
+    return [company, [cardGrade, autoGrade].filter(Boolean).join("/")].filter(Boolean).join(" ");
+  }
+
+  return "";
+}
+
+function displayValueForEvidenceRow(result = {}, row = {}) {
+  if (row.valueGetter === "collector_number") return collectorNumberDisplayValue(result);
+  if (row.valueGetter === "grade") return gradeDisplayValue(result);
+  return fieldValue(result, row.fields);
+}
+
 function evidenceSourceLabel(item = {}) {
   const source = String(
     item.source_type
@@ -1955,11 +2032,11 @@ function evidenceRows(result, unresolved = []) {
     { label: "Card Name", fields: ["card_name", "insert", "subset", "card_type"] },
     { label: "Color", fields: ["surface_color", "color", "parallel_family"] },
     { label: "Exact Parallel", fields: ["parallel_exact", "parallel", "variant_or_parallel"] },
-    { label: "Collector #", fields: ["collector_number", "card_number", "checklist_code"] },
+    { label: "Collector #", fields: ["collector_number", "card_number", "checklist_code", "tcg_card_number"], valueGetter: "collector_number" },
     { label: "Serial", fields: ["serial_number"] },
-    { label: "Grade", fields: ["grade_company", "card_grade", "grade", "auto_grade"] }
+    { label: "Grade", fields: ["grade_company", "card_grade", "grade", "auto_grade"], valueGetter: "grade" }
   ].map((row) => {
-    const value = fieldValue(result, row.fields);
+    const value = displayValueForEvidenceRow(result, row);
     const pending = row.fields.some((field) => unresolved.includes(field));
     return {
       ...row,
@@ -1967,7 +2044,7 @@ function evidenceRows(result, unresolved = []) {
       evidence: evidenceForField(result, row.fields),
       pending
     };
-  }).filter((row) => row.value || row.pending || row.evidence !== "未识别到");
+  }).filter((row) => row.value || row.pending);
 }
 
 function evidenceCropStrip(asset = null) {
@@ -1993,13 +2070,14 @@ function evidenceCropStrip(asset = null) {
 
 function writerEvidenceDetails(result, asset = null, unresolved = []) {
   const rows = evidenceRows(result, unresolved);
-  const quality = qualityFields(result);
-  if (!rows.length && !quality.length) return "";
+  const qualityWarning = writerQualityWarning(result);
+  if (!rows.length && !qualityWarning) return "";
 
   return `
     <details class="writer-evidence-details">
       <summary>查看字段依据（写手版）</summary>
       <p class="writer-evidence-help">这里只显示写手可用的信息：字段值、来自卡面/卡背/标签/局部图的位置，以及是否需要确认。</p>
+      ${qualityWarning ? `<p class="writer-quality-warning">${escapeHtml(qualityWarning)}</p>` : ""}
       ${evidenceCropStrip(asset)}
       <div class="field-list writer-evidence-list">
         ${rows.map((row) => `
@@ -2007,13 +2085,6 @@ function writerEvidenceDetails(result, asset = null, unresolved = []) {
             <span>${escapeHtml(row.label)}</span>
             <strong>${escapeHtml(row.value || "待确认")}</strong>
             <small>${escapeHtml(row.evidence || "未识别到")}</small>
-          </div>
-        `).join("")}
-        ${quality.map(([label, value]) => `
-          <div>
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(value || "-")}</strong>
-            <small>图片质量信息</small>
           </div>
         `).join("")}
       </div>
@@ -2302,14 +2373,13 @@ function reasoningFields(fields, unresolved = [], resolved = {}) {
   ];
 }
 
-function qualityFields(result) {
+function writerQualityWarning(result = {}) {
   const quality = result.capture_quality || {};
-  return [
-    ["Capture Profile", result.capture_profile_id || quality.capture_profile_id],
-    ["Image Quality Route", quality.route],
-    ["Image Quality", quality.image_quality_degraded ? "degraded" : "clear"],
-    ["Images Evaluated", quality.image_count]
-  ];
+  const parts = [];
+  if (quality.image_quality_degraded) parts.push("图片质量偏低");
+  if (quality.route && !/^clear$/i.test(String(quality.route))) parts.push(`质量路线：${quality.route}`);
+  if (!parts.length) return "";
+  return `${parts.join(" · ")}，小字、编号、评级分数需要写手重点核对。`;
 }
 
 async function handleFiles(fileList) {
