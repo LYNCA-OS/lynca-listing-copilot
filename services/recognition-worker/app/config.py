@@ -50,7 +50,7 @@ def load_config() -> WorkerConfig:
     return WorkerConfig(
         token=os.getenv("RECOGNITION_WORKER_TOKEN", ""),
         allowed_image_hosts=_csv_env("RECOGNITION_ALLOWED_IMAGE_HOSTS", ["localhost"]),
-        max_image_bytes=_int_env("RECOGNITION_MAX_IMAGE_BYTES", 25 * 1024 * 1024),
+        max_image_bytes=_int_env("RECOGNITION_MAX_IMAGE_BYTES", 250 * 1024 * 1024),
         max_total_pixels=_int_env("RECOGNITION_MAX_TOTAL_PIXELS", 50_000_000),
         request_timeout_seconds=_int_env("RECOGNITION_REQUEST_TIMEOUT_SECONDS", 30),
         enable_image_download=os.getenv("ENABLE_IMAGE_DOWNLOAD", "false").lower() == "true",

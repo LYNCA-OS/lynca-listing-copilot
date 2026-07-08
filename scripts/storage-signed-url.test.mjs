@@ -191,7 +191,10 @@ await assert.rejects(
     width: 10000,
     height: 6000,
     signatureHex: jpegSignatureHex,
-    env,
+    env: {
+      ...env,
+      LISTING_IMAGE_MAX_TOTAL_PIXELS: "50000000"
+    },
     fetchImpl: async () => ({})
   }),
   /Image exceeds max pixel area/
