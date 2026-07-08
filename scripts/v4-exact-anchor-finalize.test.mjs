@@ -1,0 +1,113 @@
+import assert from "node:assert/strict";
+import {
+  exactAnchorQueryFieldsFromScout,
+  maybeFinalizeL1FromExactAnchor,
+  scoutHasFinalizeAnchors
+} from "../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
+
+const env = {
+  SUPABASE_URL: "https://supabase.test",
+  SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+};
+
+const scoutResult = {
+  resolved_fields: {
+    players: ["Jesus Made"],
+    year: "2025",
+    manufacturer: "Topps",
+    product_family: "Bowman Chrome",
+    collector_number: "BS-4",
+    print_run_denominator: "5",
+    serial_number: "3/5",
+    surface_color: "Red"
+  }
+};
+
+function catalogRow(overrides = {}) {
+  return {
+    identity_id: "11111111-1111-1111-1111-111111111111",
+    canonical_title: "2025 Bowman Chrome Jesus Made Spotlights BS-4",
+    retrieval_status: "candidate",
+    source_type: "STRUCTURED_DATABASE",
+    supporting_fields: ["subject", "year", "product", "collector_number"],
+    raw_score: 0.8,
+    normalized_score: 0.8,
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      brand: "Bowman",
+      product: "Bowman Chrome",
+      set: "Spotlights",
+      players: ["Jesus Made"],
+      collector_number: "BS-4"
+    },
+    ...overrides
+  };
+}
+
+function fetchReturning(rows) {
+  return async () => ({ ok: true, json: async () => rows });
+}
+
+// Query-field mapping and anchor precondition.
+const queryFields = exactAnchorQueryFieldsFromScout(scoutResult.resolved_fields);
+assert.deepEqual(queryFields.subjects, ["Jesus Made"]);
+assert.equal(queryFields.collector_number, "BS-4");
+assert.equal(queryFields.expected_serial_denominator, "5");
+assert.equal(scoutHasFinalizeAnchors(queryFields), true);
+assert.equal(scoutHasFinalizeAnchors(exactAnchorQueryFieldsFromScout({ players: ["X"], year: "2024" })), false);
+
+// Unique strict-tier hit -> finalized, catalog identity merged, instance
+// fields (serial from the current image) preserved and never overwritten.
+const finalized = await maybeFinalizeL1FromExactAnchor({
+  scoutResult,
+  env,
+  fetchImpl: fetchReturning([catalogRow()])
+});
+assert.equal(finalized.finalized, true);
+assert.equal(finalized.reason, "exact_anchor_catalog_finalized");
+assert.match(finalized.title, /Bowman Chrome/i);
+assert.match(finalized.title, /Jesus Made/i);
+assert.equal(finalized.resolved_fields.set, "Spotlights");
+assert.equal(finalized.resolved_fields.serial_number, "3/5");
+assert.equal(finalized.candidate.candidate_identity_id, "11111111-1111-1111-1111-111111111111");
+
+// Two strict-tier candidates -> ambiguous, no finalize.
+const ambiguous = await maybeFinalizeL1FromExactAnchor({
+  scoutResult,
+  env,
+  fetchImpl: fetchReturning([
+    catalogRow(),
+    catalogRow({ identity_id: "22222222-2222-2222-2222-222222222222", canonical_title: "2025 Bowman Chrome Jesus Made Alt BS-4" })
+  ])
+});
+assert.equal(ambiguous.finalized, false);
+assert.equal(ambiguous.reason, "ambiguous_exact_anchor_candidates");
+
+// Code mismatch -> hard conflict -> no finalize.
+const mismatch = await maybeFinalizeL1FromExactAnchor({
+  scoutResult,
+  env,
+  fetchImpl: fetchReturning([catalogRow({ fields: { ...catalogRow().fields, collector_number: "BCP-50" } })])
+});
+assert.equal(mismatch.finalized, false);
+
+// Scout without a printed exact code never attempts the fast lane.
+const noAnchor = await maybeFinalizeL1FromExactAnchor({
+  scoutResult: { resolved_fields: { players: ["Jesus Made"], year: "2025", product_family: "Bowman Chrome" } },
+  env,
+  fetchImpl: fetchReturning([catalogRow()])
+});
+assert.equal(noAnchor.finalized, false);
+assert.equal(noAnchor.reason, "scout_missing_exact_anchors");
+
+// Kill switch.
+const disabled = await maybeFinalizeL1FromExactAnchor({
+  scoutResult,
+  env: { ...env, ENABLE_V4_EXACT_ANCHOR_FINALIZE: "false" },
+  fetchImpl: fetchReturning([catalogRow()])
+});
+assert.equal(disabled.finalized, false);
+assert.equal(disabled.reason, "disabled_by_env");
+
+console.log("v4 exact anchor finalize tests passed");

@@ -3,6 +3,7 @@ import v2ListingHandler from "../listing-copilot-title.js";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
+import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 import { planV4RecognitionRoute } from "../../lib/listing/v4/route-planner/route-planner.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../../lib/listing/v4/result-adapter.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
@@ -56,6 +57,45 @@ function hideTitleFields(value = {}) {
     writer_visible: false,
     internal_fast_scout_title: titleFromResult(value) || ""
   };
+}
+
+function writerFinalizedL1Response(response = {}, result = {}, finalize = {}) {
+  const scout = buildInternalScoutSummary(response, result);
+  return withV4Version({
+    ...response,
+    ok: true,
+    status: v4SessionStatuses.DRAFT_READY,
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+    final_title: finalize.title,
+    title: finalize.title,
+    rendered_title: finalize.title,
+    writer_safe_draft: finalize.title,
+    assisted_draft: finalize.title,
+    assisted_draft_status: "READY",
+    writer_draft: {
+      ...(response.writer_draft || {}),
+      title: finalize.title,
+      display_title: finalize.title,
+      status: "READY",
+      user_edit_mode: "one_line_title_only",
+      structured_fields_visible: false
+    },
+    title_render_source: "exact_anchor_catalog_finalized",
+    title_stage_reason: "Exact printed-code anchor matched exactly one catalog identity with zero contradictions; the catalog-grounded title is writer-visible now and L2 continues as background verification.",
+    l1_return_reason: "exact_anchor_catalog_finalized",
+    exact_anchor_finalize: {
+      used: true,
+      candidate: finalize.candidate || null,
+      query_fields: finalize.query_fields || null
+    },
+    title_stage_readiness: {
+      ...(response.title_stage_readiness || {}),
+      writer_safe_ready: true,
+      writer_visible_title_ready: true,
+      internal_scout_ready: true
+    },
+    l1_internal_scout: { ...scout, writer_visible: true }
+  });
 }
 
 function writerPendingL1Response(response = {}, result = {}) {
@@ -529,11 +569,36 @@ export default async function handler(req, res) {
         fetchImpl: globalThis.fetch
       });
       const fastScoutResult = await fastScoutPromise;
+      // Exact-anchor finalize: a unique strict-tier catalog hit lets L1 emit
+      // the writer-visible title now (~2-3s); L2 stays on as verification.
+      const finalize = await maybeFinalizeL1FromExactAnchor({
+        scoutResult: fastScoutResult,
+        env: process.env,
+        fetchImpl: globalThis.fetch,
+        timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 1500)
+      }).catch(() => ({ finalized: false, reason: "finalize_error" }));
+      const finalized = finalize?.finalized === true;
       const l1Result = {
         ...fastScoutResult,
-        title_stage: v4TitleStages.L1_INTERNAL_SCOUT,
-        assisted_draft_status: "PENDING",
-        l1_return_reason: "fast_scout_internal_scout_ready",
+        ...(finalized ? {
+          title: finalize.title,
+          final_title: finalize.title,
+          rendered_title: finalize.title,
+          resolved: finalize.resolved_fields,
+          resolved_fields: finalize.resolved_fields,
+          fields: finalize.resolved_fields,
+          title_render_source: "exact_anchor_catalog_finalized",
+          exact_anchor_finalize: {
+            used: true,
+            candidate: finalize.candidate || null,
+            query_fields: finalize.query_fields || null
+          }
+        } : {
+          exact_anchor_finalize: { used: false, reason: finalize?.reason || "not_attempted" }
+        }),
+        title_stage: finalized ? v4TitleStages.L2_ASSISTED_DRAFT : v4TitleStages.L1_INTERNAL_SCOUT,
+        assisted_draft_status: finalized ? "READY" : "PENDING",
+        l1_return_reason: finalized ? "exact_anchor_catalog_finalized" : "fast_scout_internal_scout_ready",
         full_assist_continued_after_l1: true,
         l1_return_barrier_version: l1ReturnBarrierVersion
       };
@@ -554,7 +619,9 @@ export default async function handler(req, res) {
           l1_persistence: { saved: false, deferred: true }
         }
       }), l1Result.fast_scout || {});
-      const writerResponse = writerPendingL1Response(v4Response, l1Result);
+      const writerResponse = finalized
+        ? writerFinalizedL1Response(v4Response, l1Result, finalize)
+        : writerPendingL1Response(v4Response, l1Result);
       const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({
         sessionId,
         result: l1Result,
@@ -639,6 +706,62 @@ export default async function handler(req, res) {
   });
 
   const forceL2Direct = payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true;
+
+  // L2-direct short-circuit: even when the fast-scout L1 response is skipped
+  // (queue workers, forced L2), a unique strict-tier catalog hit lets us skip
+  // the 30-40s full observation entirely - the scout runs from cache/prewarm,
+  // the finalize race is bounded, and anything short of a unique exact-code
+  // agreement falls through to the normal L2 call unchanged.
+  if (forceL2Direct && Array.isArray(payload.images) && payload.images.length > 0
+    && payload.disable_exact_anchor_finalize !== true) {
+    try {
+      const scoutResult = await runV4FastScoutObservation({
+        payload,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      });
+      const finalize = await maybeFinalizeL1FromExactAnchor({
+        scoutResult,
+        env: process.env,
+        fetchImpl: globalThis.fetch,
+        timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 1500)
+      });
+      if (finalize?.finalized === true) {
+        const finalizedResult = {
+          ...scoutResult,
+          title: finalize.title,
+          final_title: finalize.title,
+          rendered_title: finalize.title,
+          resolved: finalize.resolved_fields,
+          resolved_fields: finalize.resolved_fields,
+          fields: finalize.resolved_fields,
+          title_render_source: "exact_anchor_catalog_finalized",
+          exact_anchor_finalize: {
+            used: true,
+            candidate: finalize.candidate || null,
+            query_fields: finalize.query_fields || null
+          },
+          title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+          assisted_draft_status: "READY",
+          l1_return_reason: "exact_anchor_catalog_finalized",
+          full_assist_continued_after_l1: false
+        };
+        const finalizedResponse = await persistPipelineResult({
+          sessionId,
+          result: finalizedResult,
+          payload,
+          routePlan,
+          createResult,
+          extraProviderSummary: { assisted_draft_status: "READY", exact_anchor_finalized: true }
+        });
+        sendJson(res, 200, writerFinalizedL1Response(finalizedResponse, finalizedResult, finalize));
+        return;
+      }
+    } catch (error) {
+      console.error("[v4-listing] exact anchor finalize (L2-direct) failed", error);
+    }
+  }
+
   const progressiveProviderOptions = forceL2Direct
     ? providerOptionsForV4BackgroundL2({ payload, routePlan })
     : providerOptionsForV4ProgressiveL1({ payload, routePlan });
