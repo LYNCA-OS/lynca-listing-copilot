@@ -104,7 +104,7 @@ function triggerV4BackgroundWorkerAfterL1Release(req, {
   const origin = requestOrigin(req);
   const secret = workerSecretFromRequest(req);
   if (!secret) return { triggered: false, reason: "wake_secret_missing" };
-  const processConcurrency = positiveInteger(process.env.V4_L2_WAKE_BACKGROUND_CONCURRENCY, 2, { min: 1, max: 4 });
+  const processConcurrency = positiveInteger(process.env.V4_L2_WAKE_BACKGROUND_CONCURRENCY, v4WorkerProcessConcurrency(process.env), { min: 1, max: 96 });
   const body = {
     lane: v4JobLanes.BACKGROUND,
     tenant_id: job.tenant_id || job.payload?.tenant_id || null,
@@ -205,7 +205,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 12 });
+  const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 96 });
   const lane = payload.lane || payload.queue_lane || payload.queueLane || null;
   const tenantId = payload.tenant_id || payload.tenantId || null;
   const workerId = workerIdFrom(req, payload);
@@ -221,7 +221,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const concurrency = positiveInteger(payload.process_concurrency, v4WorkerProcessConcurrency(process.env), { min: 1, max: 8 });
+  const concurrency = positiveInteger(payload.process_concurrency, v4WorkerProcessConcurrency(process.env), { min: 1, max: 96 });
   const processed = await mapWithConcurrency(claim.rows, concurrency, async (job) => {
     try {
       const result = await runJob(job, req);

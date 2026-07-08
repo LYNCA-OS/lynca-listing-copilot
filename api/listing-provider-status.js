@@ -168,6 +168,7 @@ function providerStatus(provider, storage) {
     secondary_configured: provider.secondary_configured ?? null,
     secondary_disabled_reason: provider.secondary_disabled_reason || null,
     recommended_concurrency: provider.recommended_concurrency || null,
+    key_pool_size: provider.key_pool_size || 0,
     enabled: provider.enabled,
     configured: provider.configured,
     selectable: !disabledReason,

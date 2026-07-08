@@ -1,4 +1,5 @@
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
+import { openAiKeyPoolSize } from "../lib/listing/providers/openai-key-pool.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { braveSearchProvider } from "../lib/listing/retrieval/brave-search-provider.mjs";
 import { ebayBrowseProvider } from "../lib/listing/retrieval/ebay-browse-provider.mjs";
@@ -137,7 +138,7 @@ async function runCapability(report, name, fn, {
 }
 
 async function runOpenAiSmoke() {
-  if (!process.env.OPENAI_API_KEY) skip("OPENAI_API_KEY is not configured.");
+  if (openAiKeyPoolSize(process.env) < 1) skip("OPENAI_API_KEY or OPENAI_API_KEY_POOL is not configured.");
   if (!process.env.OPENAI_SMOKE_IMAGE_URL && !process.env.OPENAI_SMOKE_IMAGE_DATA_URL) {
     skip("OPENAI_SMOKE_IMAGE_URL or OPENAI_SMOKE_IMAGE_DATA_URL is not configured.");
   }

@@ -189,6 +189,39 @@ assert.equal(openAiResult.usage.input_tokens, 11);
 assert.equal(openAiResult.usage.output_tokens, 9);
 assert.equal(openAiResult.usage.total_tokens, 20);
 assert.equal(openAiResult.usage.image_count, 1);
+assert.equal(openAiResult.provider_key_pool_size, 1);
+assert.equal(openAiResult.provider_key_slot, 1);
+
+let pooledOpenAiRequest;
+const pooledOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  shardKey: "asset-pool-test",
+  env: {
+    ...env,
+    OPENAI_API_KEY: "",
+    OPENAI_API_KEY_POOL: "sk-pool-a,sk-pool-b,sk-pool-c"
+  },
+  fetchImpl: async (url, init) => {
+    pooledOpenAiRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "resp_pool_test",
+        output_text: "{\"title\":\"OpenAI Pool Test\",\"fields\":{\"player\":\"Pool\"},\"unresolved\":[]}",
+        usage: {
+          input_tokens: 5,
+          output_tokens: 5,
+          total_tokens: 10
+        }
+      })
+    };
+  }
+});
+assert.match(pooledOpenAiRequest.init.headers.authorization, /^Bearer sk-pool-/);
+assert.equal(pooledOpenAiResult.provider_key_pool_size, 3);
+assert.ok(pooledOpenAiResult.provider_key_slot >= 1 && pooledOpenAiResult.provider_key_slot <= 3);
 
 let transientOpenAiCalls = 0;
 const transientOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
@@ -245,8 +278,12 @@ await assert.rejects(
 );
 assert.equal(invalidOpenAiModelFetchCalled, false);
 
-assert.equal(providerServerConcurrencyLimit("openai_legacy", {}), 4);
+assert.equal(providerServerConcurrencyLimit("openai_legacy", {}), 2);
 assert.equal(providerServerConcurrencyLimit("openai_legacy", { OPENAI_PROVIDER_SERVER_CONCURRENCY: "2" }), 2);
+assert.equal(providerServerConcurrencyLimit("openai_legacy", {
+  OPENAI_API_KEY_POOL: "sk-a,sk-b,sk-c",
+  OPENAI_PER_KEY_STABLE_CONCURRENCY: "2"
+}), 6);
 assert.equal(providerServerConcurrencyLimit("unknown", { LISTING_PROVIDER_SERVER_CONCURRENCY: "3" }), 3);
 
 clearProviderConcurrencyForTests();

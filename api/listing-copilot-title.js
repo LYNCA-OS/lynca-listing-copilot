@@ -13,6 +13,7 @@ import {
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import { defaultProviderModels, providerLabels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
+import { openAiKeyPoolSize } from "../lib/listing/providers/openai-key-pool.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 import {
@@ -6151,7 +6152,8 @@ async function createOpenAiTitle(payload, selection, {
       : "full_listing";
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
-    prompt
+    prompt,
+    shardKey: initialPayload.recognition_session_id || initialPayload.asset_id || initialPayload.assetId || ""
   }));
 
   const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => ({
@@ -6397,7 +6399,7 @@ async function createProviderTitle(payload, {
   const explicitEmergency = explicitEmergencyFromPayload(payload);
   const primaryImages = primaryImagesFromImages(payload.images || []);
 
-  if (!requestedProvider && !process.env.OPENAI_API_KEY) {
+  if (!requestedProvider && openAiKeyPoolSize(process.env) < 1) {
     return fallbackResult(payload);
   }
 

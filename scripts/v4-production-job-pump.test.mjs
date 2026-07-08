@@ -105,8 +105,9 @@ assert.ok(waitForReleasedL2Calls.filter((call) => call.lane === "background").le
 const enqueueSource = readFileSync(new URL("../api/v4/listing-job-enqueue.js", import.meta.url), "utf8");
 assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY/);
 assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
-assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY,\s*2,\s*\{\s*min:\s*1,\s*max:\s*2\s*\}/);
-assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY,\s*2,\s*\{\s*min:\s*1,\s*max:\s*2\s*\}/);
+assert.match(enqueueSource, /const stableConcurrency = v4WorkerProcessConcurrency\(process\.env\)/);
+assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY,\s*stableConcurrency,\s*\{\s*min:\s*1,\s*max:\s*96\s*\}/);
+assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY,\s*stableConcurrency,\s*\{\s*min:\s*1,\s*max:\s*96\s*\}/);
 assert.match(enqueueSource, /cycles:\s*2/);
 assert.match(enqueueSource, /lease_seconds:\s*240/);
 assert.match(enqueueSource, /continuation_cycles:\s*2/);
@@ -120,6 +121,7 @@ assert.match(workerSource, /l1_ready_wake_l2/);
 assert.match(workerSource, /pairedRelease\.saved !== true/);
 assert.match(workerSource, /lane: v4JobLanes\.BACKGROUND/);
 assert.match(workerSource, /V4_L2_WAKE_BACKGROUND_CONCURRENCY/);
+assert.match(workerSource, /v4WorkerProcessConcurrency\(process\.env\),\s*\{\s*min:\s*1,\s*max:\s*96\s*\}/);
 assert.match(workerSource, /callJsonHandler\(handler/);
 
 const pumpSource = readFileSync(new URL("../api/v4/listing-job-pump.js", import.meta.url), "utf8");

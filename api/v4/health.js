@@ -3,6 +3,7 @@ import { v4DeploymentInfo } from "../../lib/listing/v4/prewarm.mjs";
 import { checkV4Tables } from "../../lib/listing/v4/session/session-store.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { visionProviderIds } from "../../lib/listing/providers/provider-contract.mjs";
+import { openAiProviderPoolStatus } from "../../lib/listing/providers/openai-key-pool.mjs";
 import { v4QueueConfigured, v4WorkerClaimLimit, v4WorkerLeaseSeconds } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { isV4WorkerSecretConfigured } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 
@@ -20,6 +21,7 @@ export default async function handler(req, res) {
     deployment: v4DeploymentInfo(),
     default_provider: visionProviderIds.OPENAI_LEGACY,
     env_default_provider: process.env.DEFAULT_VISION_PROVIDER || null,
+    openai_pool: openAiProviderPoolStatus(process.env),
     vector_index_ready: ["1", "true", "yes", "on"].includes(String(process.env.VECTOR_INDEX_READY || "").toLowerCase()),
     production_queue: {
       configured: v4QueueConfigured(process.env),

@@ -5,7 +5,8 @@ import {
   createV4BatchId,
   enqueueV4RecognitionJobs,
   expandV4RecognitionStageJobs,
-  v4QueueConfigured
+  v4QueueConfigured,
+  v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
@@ -47,8 +48,9 @@ function triggerV4QueuePumpAfterEnqueue(req, {
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
   const origin = requestOrigin(req);
   if (!origin) return { triggered: false, reason: "request_origin_missing" };
-  const interactiveConcurrency = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, 2, { min: 1, max: 2 });
-  const backgroundConcurrency = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, 2, { min: 1, max: 2 });
+  const stableConcurrency = v4WorkerProcessConcurrency(process.env);
+  const interactiveConcurrency = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, stableConcurrency, { min: 1, max: 96 });
+  const backgroundConcurrency = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, stableConcurrency, { min: 1, max: 96 });
 
   const body = {
     tenant_id: tenantId || batchId || null,

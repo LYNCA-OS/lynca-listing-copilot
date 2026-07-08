@@ -115,31 +115,31 @@ export async function runV4QueuePump({
 
   const started = now();
   const maxCycles = positiveInteger(payload.cycles ?? payload.max_cycles, 6, { min: 1, max: 30 });
-  const limit = positiveInteger(payload.limit, 2, { min: 1, max: 12 });
+  const limit = positiveInteger(payload.limit, v4WorkerProcessConcurrency(env), { min: 1, max: 96 });
   const processConcurrency = positiveInteger(
     payload.process_concurrency ?? payload.processConcurrency,
     v4WorkerProcessConcurrency(env),
-    { min: 1, max: 8 }
+    { min: 1, max: 96 }
   );
   const interactiveLimit = positiveInteger(
     payload.interactive_limit ?? payload.interactiveLimit,
     limit,
-    { min: 1, max: 12 }
+    { min: 1, max: 96 }
   );
   const backgroundLimit = positiveInteger(
     payload.background_limit ?? payload.backgroundLimit,
     limit,
-    { min: 1, max: 12 }
+    { min: 1, max: 96 }
   );
   const interactiveProcessConcurrency = positiveInteger(
     payload.interactive_process_concurrency ?? payload.interactiveProcessConcurrency,
     processConcurrency,
-    { min: 1, max: 8 }
+    { min: 1, max: 96 }
   );
   const backgroundProcessConcurrency = positiveInteger(
     payload.background_process_concurrency ?? payload.backgroundProcessConcurrency,
     processConcurrency,
-    { min: 1, max: 8 }
+    { min: 1, max: 96 }
   );
   const maxRuntimeMs = positiveInteger(payload.max_runtime_ms ?? payload.maxRuntimeMs, 250_000, { min: 5_000, max: 290_000 });
   const leaseSeconds = positiveInteger(payload.lease_seconds ?? payload.leaseSeconds, 240, { min: 30, max: 900 });
