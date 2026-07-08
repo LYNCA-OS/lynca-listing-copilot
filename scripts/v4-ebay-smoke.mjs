@@ -173,7 +173,8 @@ async function verifiedItemImages({
 
 function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   forceL2Direct = false,
-  modelOverride = ""
+  modelOverride = "",
+  enableL1 = false
 } = {}) {
   const providerOptions = {
     enable_catalog_assist: true,
@@ -196,6 +197,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
     provider_id: "openai_legacy",
     vision_provider: "openai_legacy",
     provider_options: providerOptions,
+    ...(enableL1 ? { v4_force_fast_scout_l1: true } : {}),
     ...(forceL2Direct
       ? {
         force_l2_only: true,
@@ -495,6 +497,7 @@ async function runOne({
   prewarm,
   forceL2Direct = false,
   modelOverride = "",
+  enableL1 = false,
   l2WaitMs,
   requestTimeoutMs
 }) {
@@ -509,7 +512,7 @@ async function runOne({
     requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
     verificationCache
   });
-  const payload = payloadForItem(item, index, images, { forceL2Direct, modelOverride });
+  const payload = payloadForItem(item, index, images, { forceL2Direct, modelOverride, enableL1 });
   const sealedKey = item.sealed_eval_label_ref?.key || "";
   const sealed = sealedLabels.get(id.replace(/^ebay_image_only_/, "")) || sealedLabels.get(item.source_record?.case_id) || null;
   const fallbackSealed = [...sealedLabels.values()].find((row) => row.key === sealedKey) || null;
@@ -780,6 +783,7 @@ export async function runV4EbaySmoke({
   prewarm = false,
   forceL2Direct = false,
   modelOverride = "",
+  enableL1 = false,
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
   outPath = "",
@@ -805,6 +809,7 @@ export async function runV4EbaySmoke({
       prewarm,
       forceL2Direct,
       modelOverride,
+      enableL1,
       l2WaitMs,
       requestTimeoutMs
     });
@@ -823,6 +828,7 @@ export async function runV4EbaySmoke({
     offset,
     prewarm_enabled: prewarm,
     force_l2_direct: forceL2Direct,
+    l1_explicitly_enabled: enableL1,
     model_override: modelOverride || null,
     blind_policy: {
       seller_title_visible_to_model: false,
@@ -852,6 +858,7 @@ export async function main(argv = process.argv, env = process.env) {
     offset: Math.max(0, Math.trunc(numberArg(argv, "--offset", 0))),
     prewarm: hasFlag(argv, "--prewarm"),
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
+    enableL1: hasFlag(argv, "--enable-l1"),
     modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
