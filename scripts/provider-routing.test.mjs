@@ -217,13 +217,13 @@ assert.equal(openAiResult.provider_request_diagnostics.output_tokens, 9);
 assert.ok(openAiResult.provider_request_diagnostics.provider_latency_ms >= 0);
 
 const gpt5Controls = openAiResponsesModelControls("gpt-5-mini");
-assert.deepEqual(gpt5Controls, { reasoning: { effort: "medium" } });
+assert.deepEqual(gpt5Controls, { reasoning: { effort: "low" } });
 const gpt5Text = openAiResponsesTextOptions({
   model: "gpt-5-mini",
   name: "test_schema",
   schema: { type: "object", additionalProperties: false, properties: {}, required: [] }
 });
-assert.equal(gpt5Text.verbosity, "medium");
+assert.equal(gpt5Text.verbosity, "low");
 assert.equal(gpt5Text.format.type, "json_schema");
 
 assert.deepEqual(openAiResponsesModelControls("gpt-5-mini", {
@@ -267,8 +267,8 @@ const gpt5Body = JSON.parse(gpt5OpenAiRequest.init.body);
 assert.equal(gpt5Body.model, "gpt-5-mini");
 assert.equal(gpt5Body.max_output_tokens, 40960);
 assert.equal(gpt5Body.temperature, undefined);
-assert.deepEqual(gpt5Body.reasoning, { effort: "medium" });
-assert.equal(gpt5Body.text.verbosity, "medium");
+assert.deepEqual(gpt5Body.reasoning, { effort: "low" });
+assert.equal(gpt5Body.text.verbosity, "low");
 assert.match(gpt5Body.input[0].content[0].text, /GPT-5 mini main-path extraction profile/);
 assert.match(gpt5Body.input[0].content[0].text, /Never leave product, set, players, card_name, print_run_number/);
 assert.equal(gpt5OpenAiResult.parsed.fields.player, "Five");
