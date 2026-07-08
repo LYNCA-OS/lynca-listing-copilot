@@ -51,15 +51,24 @@ const stageJobs = expandV4RecognitionStageJobs({
   operatorId: "operator-stage",
   jobs: [{ asset_id: "asset-stage", payload: { images: [{ url: "https://example.test/a.jpg" }] } }]
 });
-assert.equal(stageJobs.length, 2);
-assert.equal(stageJobs[0].job_type, v4JobTypes.FAST_SCOUT_DRAFT);
-assert.equal(stageJobs[0].lane, v4JobLanes.INTERACTIVE);
-assert.equal(stageJobs[1].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
-assert.equal(stageJobs[1].lane, v4JobLanes.BACKGROUND);
-assert.equal(stageJobs[0].recognition_session_id, stageJobs[1].recognition_session_id);
-assert.equal(stageJobs[0].paired_job_id, stageJobs[1].id);
-assert.equal(stageJobs[1].parent_job_id, stageJobs[0].id);
-assert.ok(Date.parse(stageJobs[1].not_before) > Date.now() + 60_000, "paired L2 should wait for its L1 release");
+assert.equal(stageJobs.length, 1);
+assert.equal(stageJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+assert.equal(stageJobs[0].lane, v4JobLanes.BACKGROUND);
+
+const optInStageJobs = expandV4RecognitionStageJobs({
+  batchId: "batch-staged",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: "asset-stage", enable_queue_fast_scout: true, payload: { images: [{ url: "https://example.test/a.jpg" }] } }]
+});
+assert.equal(optInStageJobs.length, 2);
+assert.equal(optInStageJobs[0].job_type, v4JobTypes.FAST_SCOUT_DRAFT);
+assert.equal(optInStageJobs[0].lane, v4JobLanes.INTERACTIVE);
+assert.equal(optInStageJobs[1].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+assert.equal(optInStageJobs[1].lane, v4JobLanes.BACKGROUND);
+assert.equal(optInStageJobs[0].recognition_session_id, optInStageJobs[1].recognition_session_id);
+assert.equal(optInStageJobs[0].paired_job_id, optInStageJobs[1].id);
+assert.equal(optInStageJobs[1].parent_job_id, optInStageJobs[0].id);
+assert.ok(Date.parse(optInStageJobs[1].not_before) > Date.now() + 60_000, "paired L2 should wait for its L1 release when fast scout is explicitly enabled");
 
 const l2OnlyJobs = expandV4RecognitionStageJobs({
   jobs: [{ payload: { force_l2_only: true, images: [] } }]
@@ -67,12 +76,12 @@ const l2OnlyJobs = expandV4RecognitionStageJobs({
 assert.equal(l2OnlyJobs.length, 1);
 assert.equal(l2OnlyJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
 
-const l1Payload = payloadForV4ProductionJob(stageJobs[0]);
+const l1Payload = payloadForV4ProductionJob(optInStageJobs[0]);
 assert.equal(l1Payload.v4_queue_l1_only, true);
 assert.equal(l1Payload.v4_return_l1_writer_safe_draft, undefined);
 assert.equal(l1Payload.v4_force_l2_direct, false);
 assert.equal(l1Payload.disable_fast_scout_l1, false);
-const l2Payload = payloadForV4ProductionJob(stageJobs[1]);
+const l2Payload = payloadForV4ProductionJob(optInStageJobs[1]);
 assert.equal(l2Payload.v4_force_l2_direct, true);
 assert.equal(l2Payload.disable_fast_scout_l1, true);
 
@@ -147,15 +156,15 @@ assert.ok(l1Patches[0].request.body.includes('"stage_result"'));
 
 const releasePatches = [];
 const release = await releasePairedV4FinalJob({
-  job: stageJobs[0],
+  job: optInStageJobs[0],
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
     releasePatches.push({ url: String(url), request });
-    return jsonResponse([{ id: stageJobs[1].id, status: "QUEUED" }]);
+    return jsonResponse([{ id: optInStageJobs[1].id, status: "QUEUED" }]);
   }
 });
 assert.equal(release.saved, true);
-assert.ok(releasePatches[0].url.includes(`/v4_recognition_jobs?id=eq.${stageJobs[1].id}`));
+assert.ok(releasePatches[0].url.includes(`/v4_recognition_jobs?id=eq.${optInStageJobs[1].id}`));
 assert.ok(releasePatches[0].request.body.includes('"not_before"'));
 assert.ok(releasePatches[0].request.body.includes('"released_by_parent_job_id"'));
 
@@ -163,8 +172,8 @@ const multiStageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-no-l2-barrier",
   operatorId: "operator-stage",
   jobs: [
-    { asset_id: "asset-a", payload: { images: [{ url: "https://example.test/a.jpg" }] } },
-    { asset_id: "asset-b", payload: { images: [{ url: "https://example.test/b.jpg" }] } }
+    { asset_id: "asset-a", enable_queue_fast_scout: true, payload: { images: [{ url: "https://example.test/a.jpg" }] } },
+    { asset_id: "asset-b", enable_queue_fast_scout: true, payload: { images: [{ url: "https://example.test/b.jpg" }] } }
   ]
 });
 const multiReleasePatches = [];

@@ -171,7 +171,9 @@ async function verifiedItemImages({
   return verified;
 }
 
-function payloadForItem(item = {}, index = 0, images = itemImages(item)) {
+function payloadForItem(item = {}, index = 0, images = itemImages(item), {
+  forceL2Direct = false
+} = {}) {
   return {
     asset_id: candidateId(item, index),
     source_feedback_id: item.source_feedback_id || item.source_record_id || null,
@@ -191,6 +193,14 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item)) {
       corrected_title_as_temporary_gt: false,
       send_corrected_title_hint_to_cloud: false
     },
+    ...(forceL2Direct
+      ? {
+        force_l2_only: true,
+        v4_worker_synchronous: true,
+        v4_force_l2_direct: true,
+        disable_fast_scout_l1: true
+      }
+      : {}),
     images
   };
 }
@@ -479,6 +489,7 @@ async function runOne({
   baseUrl,
   cookie,
   prewarm,
+  forceL2Direct = false,
   l2WaitMs,
   requestTimeoutMs
 }) {
@@ -493,7 +504,7 @@ async function runOne({
     requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
     verificationCache
   });
-  const payload = payloadForItem(item, index, images);
+  const payload = payloadForItem(item, index, images, { forceL2Direct });
   const sealedKey = item.sealed_eval_label_ref?.key || "";
   const sealed = sealedLabels.get(id.replace(/^ebay_image_only_/, "")) || sealedLabels.get(item.source_record?.case_id) || null;
   const fallbackSealed = [...sealedLabels.values()].find((row) => row.key === sealedKey) || null;
@@ -519,13 +530,34 @@ async function runOne({
   });
   const data = l1.data || {};
   const sessionId = data.recognition_session_id || null;
-  const l2 = await pollSessionStatus({
-    baseUrl,
-    cookie,
-    sessionId,
-    waitMs: l2WaitMs,
-    requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
-  });
+  const l2 = forceL2Direct
+    ? {
+      polls: 0,
+      ready: Boolean(data.ok),
+      summary: {
+        assisted_draft_status: data.assisted_draft_status || (data.ok ? "READY" : "FAILED"),
+        title: resultTitle(data),
+        route: data.route_plan?.route || data.route || null,
+        catalog_raw_candidate_count: Number(data.catalog_activation_funnel?.raw_candidate_count || data.provider_result?.candidate_control_plane_trace?.catalog_activation_funnel?.raw_candidate_count || 0),
+        catalog_approved_candidate_count: Number(data.catalog_activation_funnel?.approved_candidate_count || data.provider_result?.candidate_control_plane_trace?.catalog_activation_funnel?.approved_candidate_count || 0),
+        catalog_conflict_blocked_count: Number(data.catalog_activation_funnel?.conflict_blocked_count || data.provider_result?.candidate_control_plane_trace?.catalog_activation_funnel?.conflict_blocked_count || 0),
+        catalog_prompt_candidate_count: Number(data.catalog_activation_funnel?.prompt_candidate_count || data.provider_result?.candidate_control_plane_trace?.catalog_activation_funnel?.prompt_candidate_count || 0),
+        catalog_evidence_support_field_count: Number(data.catalog_activation_funnel?.evidence_support_field_count || data.provider_result?.candidate_control_plane_trace?.catalog_activation_funnel?.evidence_support_field_count || 0),
+        vector_raw_candidate_count: Number(data.vector_activation_funnel?.raw_candidate_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.raw_candidate_count || 0),
+        vector_approved_candidate_count: Number(data.vector_activation_funnel?.approved_candidate_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.approved_candidate_count || 0),
+        vector_conflict_blocked_count: Number(data.vector_activation_funnel?.conflict_blocked_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.conflict_blocked_count || 0),
+        vector_prompt_candidate_count: Number(data.vector_activation_funnel?.prompt_candidate_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.prompt_candidate_count || 0),
+        vector_evidence_support_field_count: Number(data.vector_activation_funnel?.evidence_support_field_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.evidence_support_field_count || 0)
+      },
+      candidateDebug: compactCandidateTrace(data.provider_result?.candidate_control_plane_trace || data.candidate_control_plane_trace || {})
+    }
+    : await pollSessionStatus({
+      baseUrl,
+      cookie,
+      sessionId,
+      waitMs: l2WaitMs,
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+    });
   const l1Title = resultTitle(data);
   const l2Title = cleanText(l2.summary?.title || "");
   const finalTitle = l2Title || l1Title;
@@ -574,6 +606,7 @@ async function runOne({
     fast_scout_input_image_count: fastScout.input_image_count || null,
     fast_scout_input_roles: (fastScout.input_images || []).map((image) => image.role).filter(Boolean),
     prewarm_status: prewarmResult?.data?.prewarm_status || null,
+    force_l2_direct: forceL2Direct,
     prewarm_latency_ms: prewarmResult?.latency_ms || null,
     prewarm_cache_hit: prewarmResult?.data?.fast_scout_cache_hit ?? null,
     prewarm_cache_status: prewarmResult?.data?.fast_scout_cache_status || null,
@@ -731,6 +764,7 @@ export async function runV4EbaySmoke({
   limit = 10,
   offset = 0,
   prewarm = false,
+  forceL2Direct = false,
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
   outPath = "",
@@ -746,7 +780,7 @@ export async function runV4EbaySmoke({
   const results = [];
   for (const [localIndex, item] of items.entries()) {
     const index = offset + localIndex;
-    if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm}\n`);
+    if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} force_l2_direct=${forceL2Direct}\n`);
     const row = await runOne({
       item,
       index,
@@ -754,6 +788,7 @@ export async function runV4EbaySmoke({
       baseUrl,
       cookie,
       prewarm,
+      forceL2Direct,
       l2WaitMs,
       requestTimeoutMs
     });
@@ -771,6 +806,7 @@ export async function runV4EbaySmoke({
     limit,
     offset,
     prewarm_enabled: prewarm,
+    force_l2_direct: forceL2Direct,
     blind_policy: {
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: true,
@@ -798,6 +834,7 @@ export async function main(argv = process.argv, env = process.env) {
     limit: Math.max(1, Math.trunc(numberArg(argv, "--limit", 10))),
     offset: Math.max(0, Math.trunc(numberArg(argv, "--offset", 0))),
     prewarm: hasFlag(argv, "--prewarm"),
+    forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
     outPath,
