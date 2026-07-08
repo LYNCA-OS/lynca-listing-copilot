@@ -286,12 +286,71 @@ function delay(ms) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, Math.max(0, Number(ms) || 0)));
 }
 
+const openAiRateLimitHeaderNames = Object.freeze([
+  "x-ratelimit-limit-requests",
+  "x-ratelimit-remaining-requests",
+  "x-ratelimit-limit-tokens",
+  "x-ratelimit-remaining-tokens",
+  "x-ratelimit-reset-requests",
+  "x-ratelimit-reset-tokens"
+]);
+
+function numberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function objectOrNull(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function providerDiagnosticsFromSummary(summary = {}) {
+  const source = objectOrNull(summary) || {};
+  const request = objectOrNull(source.provider_request_diagnostics)
+    || objectOrNull(source.request_diagnostics)
+    || {};
+  const token = objectOrNull(source.provider_token_diagnostics)
+    || objectOrNull(source.token_diagnostics)
+    || objectOrNull(source.usage)
+    || {};
+  const rateLimit = objectOrNull(source.provider_rate_limit_diagnostics)
+    || objectOrNull(source.rate_limit_diagnostics)
+    || request;
+  const output = {
+    input_tokens: numberOrNull(token.input_tokens ?? request.input_tokens),
+    output_tokens: numberOrNull(token.output_tokens ?? request.output_tokens),
+    total_tokens: numberOrNull(token.total_tokens),
+    provider_latency_ms: numberOrNull(source.provider_latency_ms ?? request.provider_latency_ms ?? source.usage?.latency_ms),
+    response_status: source.provider_finish_reason || token.response_status || request.response_status || null,
+    incomplete_reason: token.incomplete_reason || null,
+    output_cap: numberOrNull(token.output_cap),
+    output_utilization: numberOrNull(token.output_utilization)
+  };
+  for (const header of openAiRateLimitHeaderNames) {
+    output[header] = rateLimit?.[header] ?? request?.[header] ?? null;
+  }
+  return output;
+}
+
+function providerDiagnosticsFromApiData(data = {}) {
+  const providerResult = objectOrNull(data.provider_result) || {};
+  return providerDiagnosticsFromSummary({
+    provider_latency_ms: data.provider_latency_ms ?? providerResult.provider_latency_ms ?? providerResult.fast_scout?.latency_ms,
+    provider_finish_reason: data.provider_finish_reason || providerResult.provider_finish_reason || null,
+    provider_token_diagnostics: data.provider_token_diagnostics || providerResult.token_diagnostics || null,
+    provider_rate_limit_diagnostics: data.provider_rate_limit_diagnostics || providerResult.rate_limit_diagnostics || null,
+    provider_request_diagnostics: data.provider_request_diagnostics || providerResult.request_diagnostics || null,
+    usage: data.usage || providerResult.usage || null
+  });
+}
+
 function sessionL2Summary(statusPayload = {}) {
   const session = statusPayload.session || {};
   const summary = session.provider_result_summary || {};
   const trace = session.candidate_control_plane_trace || {};
   const catalogFunnel = trace.catalog_activation_funnel || {};
   const vectorFunnel = trace.vector_activation_funnel || {};
+  const providerDiagnostics = providerDiagnosticsFromSummary(summary);
   return {
     session_status: session.status || null,
     l2_status: session.l2_status || null,
@@ -316,6 +375,17 @@ function sessionL2Summary(statusPayload = {}) {
     vector_participation_level: vectorFunnel.participation_level || null,
     vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
+    provider_diagnostics: providerDiagnostics,
+    input_tokens: providerDiagnostics.input_tokens,
+    output_tokens: providerDiagnostics.output_tokens,
+    total_tokens: providerDiagnostics.total_tokens,
+    provider_latency_ms: providerDiagnostics.provider_latency_ms,
+    "x-ratelimit-limit-requests": providerDiagnostics["x-ratelimit-limit-requests"],
+    "x-ratelimit-remaining-requests": providerDiagnostics["x-ratelimit-remaining-requests"],
+    "x-ratelimit-limit-tokens": providerDiagnostics["x-ratelimit-limit-tokens"],
+    "x-ratelimit-remaining-tokens": providerDiagnostics["x-ratelimit-remaining-tokens"],
+    "x-ratelimit-reset-requests": providerDiagnostics["x-ratelimit-reset-requests"],
+    "x-ratelimit-reset-tokens": providerDiagnostics["x-ratelimit-reset-tokens"],
     related_counts: statusPayload.related_counts || {}
   };
 }
@@ -546,6 +616,7 @@ async function runOne({
     requestTimeoutMs
   });
   const data = l1.data || {};
+  const l1ProviderDiagnostics = providerDiagnosticsFromApiData(data);
   const sessionId = data.recognition_session_id || null;
   const l2 = forceL2Direct
     ? {
@@ -565,7 +636,18 @@ async function runOne({
         vector_approved_candidate_count: Number(data.vector_activation_funnel?.approved_candidate_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.approved_candidate_count || 0),
         vector_conflict_blocked_count: Number(data.vector_activation_funnel?.conflict_blocked_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.conflict_blocked_count || 0),
         vector_prompt_candidate_count: Number(data.vector_activation_funnel?.prompt_candidate_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.prompt_candidate_count || 0),
-        vector_evidence_support_field_count: Number(data.vector_activation_funnel?.evidence_support_field_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.evidence_support_field_count || 0)
+        vector_evidence_support_field_count: Number(data.vector_activation_funnel?.evidence_support_field_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.evidence_support_field_count || 0),
+        provider_diagnostics: l1ProviderDiagnostics,
+        input_tokens: l1ProviderDiagnostics.input_tokens,
+        output_tokens: l1ProviderDiagnostics.output_tokens,
+        total_tokens: l1ProviderDiagnostics.total_tokens,
+        provider_latency_ms: l1ProviderDiagnostics.provider_latency_ms,
+        "x-ratelimit-limit-requests": l1ProviderDiagnostics["x-ratelimit-limit-requests"],
+        "x-ratelimit-remaining-requests": l1ProviderDiagnostics["x-ratelimit-remaining-requests"],
+        "x-ratelimit-limit-tokens": l1ProviderDiagnostics["x-ratelimit-limit-tokens"],
+        "x-ratelimit-remaining-tokens": l1ProviderDiagnostics["x-ratelimit-remaining-tokens"],
+        "x-ratelimit-reset-requests": l1ProviderDiagnostics["x-ratelimit-reset-requests"],
+        "x-ratelimit-reset-tokens": l1ProviderDiagnostics["x-ratelimit-reset-tokens"]
       },
       candidateDebug: compactCandidateTrace(data.provider_result?.candidate_control_plane_trace || data.candidate_control_plane_trace || {})
     }
@@ -582,6 +664,13 @@ async function runOne({
   const l1Score = scoreTitles(sellerTitle, l1Title);
   const finalScore = scoreTitles(sellerTitle, finalTitle);
   const fastScout = data.provider_result?.fast_scout || {};
+  const l2ProviderDiagnostics = objectOrNull(l2.summary?.provider_diagnostics)
+    || providerDiagnosticsFromSummary(l2.summary || {});
+  const finalProviderDiagnostics = l2ProviderDiagnostics.input_tokens !== null
+    || l2ProviderDiagnostics.output_tokens !== null
+    || l2ProviderDiagnostics.provider_latency_ms !== null
+    ? l2ProviderDiagnostics
+    : l1ProviderDiagnostics;
   const cache = cacheStatusFromResponse(data);
   const l1InternalScoutMs = cache.blocking_call_used || cache.cache_hit
     ? (cache.cache_hit
@@ -658,6 +747,23 @@ async function runOne({
     l2_vector_participation_level: l2.summary?.vector_participation_level ?? null,
     l2_vector_pre_observation_query_attempted: l2.summary?.vector_pre_observation_query_attempted ?? null,
     l2_vector_post_observation_query_attempted: l2.summary?.vector_post_observation_query_attempted ?? null,
+    provider_diagnostics: finalProviderDiagnostics,
+    l1_provider_diagnostics: l1ProviderDiagnostics,
+    l2_provider_diagnostics: l2ProviderDiagnostics,
+    input_tokens: finalProviderDiagnostics.input_tokens,
+    output_tokens: finalProviderDiagnostics.output_tokens,
+    total_tokens: finalProviderDiagnostics.total_tokens,
+    provider_latency_ms: finalProviderDiagnostics.provider_latency_ms,
+    response_status: finalProviderDiagnostics.response_status,
+    incomplete_reason: finalProviderDiagnostics.incomplete_reason,
+    output_cap: finalProviderDiagnostics.output_cap,
+    output_utilization: finalProviderDiagnostics.output_utilization,
+    "x-ratelimit-limit-requests": finalProviderDiagnostics["x-ratelimit-limit-requests"],
+    "x-ratelimit-remaining-requests": finalProviderDiagnostics["x-ratelimit-remaining-requests"],
+    "x-ratelimit-limit-tokens": finalProviderDiagnostics["x-ratelimit-limit-tokens"],
+    "x-ratelimit-remaining-tokens": finalProviderDiagnostics["x-ratelimit-remaining-tokens"],
+    "x-ratelimit-reset-requests": finalProviderDiagnostics["x-ratelimit-reset-requests"],
+    "x-ratelimit-reset-tokens": finalProviderDiagnostics["x-ratelimit-reset-tokens"],
     l1_scoring: l1Score,
     final_scoring: finalScore,
     item_web_url: label.item_web_url || null
@@ -700,6 +806,16 @@ function summarize(results = []) {
     l2_vector_conflict_blocked_count: results.reduce((sum, item) => sum + Number(item.l2_vector_conflict_blocked_count || 0), 0),
     l2_vector_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_vector_prompt_candidate_count || 0), 0),
     l2_vector_evidence_support_field_count: results.reduce((sum, item) => sum + Number(item.l2_vector_evidence_support_field_count || 0), 0),
+    provider_diagnostics: {
+      input_tokens_total: results.reduce((sum, item) => sum + Number(item.input_tokens || 0), 0),
+      output_tokens_total: results.reduce((sum, item) => sum + Number(item.output_tokens || 0), 0),
+      total_tokens_total: results.reduce((sum, item) => sum + Number(item.total_tokens || 0), 0),
+      provider_latency_p50_ms: quantile(results.map((item) => item.provider_latency_ms), 0.5),
+      provider_latency_p95_ms: quantile(results.map((item) => item.provider_latency_ms), 0.95),
+      diagnostics_missing_count: results.filter((item) => item.input_tokens === null && item.output_tokens === null && item.provider_latency_ms === null).length,
+      latest_remaining_requests: [...results].reverse().find((item) => item["x-ratelimit-remaining-requests"])?.["x-ratelimit-remaining-requests"] || null,
+      latest_remaining_tokens: [...results].reverse().find((item) => item["x-ratelimit-remaining-tokens"])?.["x-ratelimit-remaining-tokens"] || null
+    },
     l1_accuracy_proxy: {
       note: "L1 is internal scout only; use final_accuracy_proxy for writer-visible title quality.",
       writer_visible_title_count: results.filter((item) => cleanText(item.l1_title)).length,
@@ -758,6 +874,16 @@ function perCardTsv(results = []) {
     "l2_vector_approved",
     "l2_vector_blocked",
     "l2_vector_prompt",
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "provider_latency_ms",
+    "x-ratelimit-limit-requests",
+    "x-ratelimit-remaining-requests",
+    "x-ratelimit-limit-tokens",
+    "x-ratelimit-remaining-tokens",
+    "x-ratelimit-reset-requests",
+    "x-ratelimit-reset-tokens",
     "l1_title",
     "final_title",
     "seller_title"
@@ -785,6 +911,16 @@ function perCardTsv(results = []) {
     item.l2_vector_approved_candidate_count,
     item.l2_vector_conflict_blocked_count,
     item.l2_vector_prompt_candidate_count,
+    item.input_tokens,
+    item.output_tokens,
+    item.total_tokens,
+    item.provider_latency_ms,
+    item["x-ratelimit-limit-requests"],
+    item["x-ratelimit-remaining-requests"],
+    item["x-ratelimit-limit-tokens"],
+    item["x-ratelimit-remaining-tokens"],
+    item["x-ratelimit-reset-requests"],
+    item["x-ratelimit-reset-tokens"],
     item.l1_title,
     item.final_title,
     item.seller_title
@@ -897,6 +1033,10 @@ export async function main(argv = process.argv, env = process.env) {
     `writer_ready_p50_ms: ${report.summary.writer_ready_p50_ms}`,
     `writer_ready_p95_ms: ${report.summary.writer_ready_p95_ms}`,
     `fast_scout_cache_hit_count: ${report.summary.fast_scout_cache_hit_count}`,
+    `provider_input_tokens_total: ${report.summary.provider_diagnostics.input_tokens_total}`,
+    `provider_output_tokens_total: ${report.summary.provider_diagnostics.output_tokens_total}`,
+    `provider_latency_p50_ms: ${report.summary.provider_diagnostics.provider_latency_p50_ms}`,
+    `provider_latency_p95_ms: ${report.summary.provider_diagnostics.provider_latency_p95_ms}`,
     `final_policy_fair_avg: ${report.summary.final_accuracy_proxy.policy_fair_token_recall_avg}`,
     `final_policy_fair_pass@0.72: ${report.summary.final_accuracy_proxy.policy_fair_pass_at_0_72}/${report.summary.attempted_count}`,
     `final_policy_fair_pass@0.80: ${report.summary.final_accuracy_proxy.policy_fair_pass_at_0_80}/${report.summary.attempted_count}`

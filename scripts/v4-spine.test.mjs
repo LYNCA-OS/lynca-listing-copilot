@@ -118,6 +118,20 @@ const v2Result = {
     input_tokens: 1000,
     output_tokens: 500,
     total_tokens: 1500
+  },
+  provider_rate_limit_diagnostics: {
+    "x-ratelimit-limit-requests": "5000",
+    "x-ratelimit-remaining-requests": "4998",
+    "x-ratelimit-limit-tokens": "2000000",
+    "x-ratelimit-remaining-tokens": "1998500",
+    "x-ratelimit-reset-requests": "12ms",
+    "x-ratelimit-reset-tokens": "90ms"
+  },
+  provider_request_diagnostics: {
+    input_tokens: 1000,
+    output_tokens: 500,
+    provider_latency_ms: 12345,
+    response_status: "completed"
   }
 };
 
@@ -145,6 +159,9 @@ assert.equal(v4.resolved_fields.print_run_denominator, "3");
 assert.equal(v4.field_states.product.display_status, "NORMAL");
 assert.equal(v4.candidate_control_plane_trace.prompt_candidate_count, 2);
 assert.equal(v4.catalog_activation_funnel.prompt_candidate_count, 1);
+assert.equal(v4.provider_result.token_diagnostics.input_tokens, 1000);
+assert.equal(v4.provider_result.rate_limit_diagnostics["x-ratelimit-remaining-tokens"], "1998500");
+assert.equal(v4.provider_result.request_diagnostics.provider_latency_ms, 12345);
 
 const failedL2V4 = adaptV2ResultToV4({
   sessionId: "v4sess-failed-l2",
