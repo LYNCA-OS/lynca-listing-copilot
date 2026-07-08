@@ -97,6 +97,20 @@ export function analyzeCandidateActivationFunnel(report = {}) {
     pre_observation_candidate_count: Number(item.pre_observation_candidate_count || 0),
     post_observation_candidate_count: Number(item.post_observation_candidate_count || 0),
     post_observation_selected_candidate_id: item.post_observation_selected_candidate_id || "",
+    applied_fields: [...new Set(traceRows(item).flatMap((row) => Array.isArray(row.applied_fields) ? row.applied_fields : []))],
+    blocked_fields: [...new Set(traceRows(item).flatMap((row) => Array.isArray(row.blocked_fields) ? row.blocked_fields : []))],
+    candidate_trace_summary: traceRows(item).map((row) => ({
+      candidate_id: row.candidate_id || "",
+      source_type: row.source_type || "",
+      source_trust: row.source_trust || "",
+      participation_level: row.participation_level || "",
+      applied_fields: Array.isArray(row.applied_fields) ? row.applied_fields : [],
+      blocked_fields: Array.isArray(row.blocked_fields) ? row.blocked_fields : [],
+      field_permissions: row.field_permissions || {},
+      anchor_agreement: row.anchor_agreement || null,
+      direct_conflicts: Array.isArray(row.direct_conflicts) ? row.direct_conflicts : [],
+      reason_per_field: row.reason_per_field || {}
+    })),
     blocked_reasons: [...new Set(blockedReasons(item))],
     final_title: item.final_evaluated_title || item.scored_title || item.title || "",
     reference_title: item.corrected_title_reference || "",
@@ -120,6 +134,26 @@ export function analyzeCandidateActivationFunnel(report = {}) {
     selected_candidate_count: results.filter((item) => selectedCandidateId(item)).length,
     candidate_application_trace_count: allTraceRows.length,
     candidate_field_evidence_count: allEvidenceRows.length,
+    candidate_participation_contract: {
+      levels: [
+        "LEVEL_0_SHADOW",
+        "LEVEL_1_PROMPT_ASSIST",
+        "LEVEL_2_EVIDENCE_SUPPORT",
+        "LEVEL_3_FIELD_APPLICATION"
+      ],
+      required_trace_fields: [
+        "candidate_id",
+        "source_type",
+        "source_trust",
+        "participation_level",
+        "anchor_agreement",
+        "direct_conflicts",
+        "field_permissions",
+        "applied_fields",
+        "blocked_fields",
+        "reason_per_field"
+      ]
+    },
     can_apply_evidence_count: allEvidenceRows.filter((row) => row.permission === "can_apply").length,
     support_only_evidence_count: allEvidenceRows.filter((row) => row.permission === "support_only").length,
     suggest_only_evidence_count: allEvidenceRows.filter((row) => row.permission === "suggest_only").length,
@@ -153,4 +187,3 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   });
 }
-

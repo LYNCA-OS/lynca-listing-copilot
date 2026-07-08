@@ -3,7 +3,7 @@ import { join } from "node:path";
 import pg from "pg";
 import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
 
-const migrationPath = join(process.cwd(), "supabase/migrations/20260708084634_sem_definition_canonical_v1.sql");
+const migrationPath = join(process.cwd(), "supabase/migrations/20260708100324_sem_definition_canonical_v25.sql");
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -39,7 +39,7 @@ async function verify(client) {
         select 1
         from public.sem_definitions
         where id = 'lynca_sem_canonical_v1'
-          and version = 'linear-cos-10-14-v1'
+          and version = 'linear-cos-10-23-v25'
           and upper(status) = 'CANONICAL'
       ) as sem_definition_row,
       exists (
@@ -100,13 +100,13 @@ export default async function handler(req, res) {
     );
     sendJson(res, ok ? 200 : 500, {
       ok,
-      migration: "20260708084634_sem_definition_canonical_v1",
+      migration: "20260708100324_sem_definition_canonical_v25",
       verification
     });
   } catch (error) {
     sendJson(res, 500, {
       ok: false,
-      migration: "20260708084634_sem_definition_canonical_v1",
+      migration: "20260708100324_sem_definition_canonical_v25",
       message: String(error?.message || error || "migration_failed").slice(0, 500)
     });
   } finally {

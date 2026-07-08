@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 
 import {
+  SEM_CANDIDATE_PARTICIPATION_LEVELS,
   SEM_FEEDBACK_LAYER,
+  SEM_FIELD_PERMISSIONS,
   SEM_LINEAR_ISSUES,
   SEM_STANDARD_VERSION,
+  SEM_TERM_CLASSIFICATION,
   classifySemNumberBoundary,
+  classifySemTerm,
   classifyWriterFeedbackForSemanticLearning,
+  semCanonicalEditableFields,
   semCatalogTrustVerdict,
   semDefinition,
   semIssueCoverage,
@@ -14,9 +19,19 @@ import {
   semTcgTitleOrder
 } from "../lib/listing/csm/sem-definition.mjs";
 
-assert.equal(SEM_STANDARD_VERSION, "linear-cos-10-14-v1");
+assert.equal(SEM_STANDARD_VERSION, "linear-cos-10-23-v25");
 assert.equal(semIssueCoverage(SEM_LINEAR_ISSUES), true);
+assert.ok(SEM_LINEAR_ISSUES.includes("COS-20"));
+assert.ok(SEM_LINEAR_ISSUES.includes("COS-21"));
+assert.ok(SEM_LINEAR_ISSUES.includes("COS-22"));
+assert.ok(SEM_LINEAR_ISSUES.includes("COS-23"));
 assert.equal(semDefinition.marketplace_title_limit, 80);
+assert.equal(semDefinition.source, "LINEAR_COS_10_TO_COS_23");
+assert.equal(SEM_CANDIDATE_PARTICIPATION_LEVELS.FIELD_APPLICATION, "LEVEL_3_FIELD_APPLICATION");
+assert.equal(SEM_FIELD_PERMISSIONS.CAN_APPLY, "can_apply");
+assert.ok(semCanonicalEditableFields.includes("numerical_rarity"));
+assert.ok(!semCanonicalEditableFields.includes("serial_number"));
+assert.ok(!semCanonicalEditableFields.includes("print_run_number"));
 
 assert.deepEqual(semStandardTitleOrder.slice(0, 6), [
   "year",
@@ -62,6 +77,24 @@ assert.deepEqual(classifySemNumberBoundary("139/205", {
   csm_field: "card_number",
   reason: "tcg_checklist_number_context"
 });
+
+assert.deepEqual(classifySemTerm("serial_number"), {
+  term: "serial_number",
+  classification: SEM_TERM_CLASSIFICATION.EVIDENCE_ARTIFACT,
+  canonical_field: "numerical_rarity",
+  promotion_allowed: false,
+  reason: "current-copy numbering evidence; not a canonical editable CSM field"
+});
+assert.deepEqual(classifySemTerm("print_run_denominator"), {
+  term: "print_run_denominator",
+  classification: SEM_TERM_CLASSIFICATION.EVIDENCE_ARTIFACT,
+  canonical_field: "numerical_rarity",
+  promotion_allowed: false,
+  reason: "denominator or production quantity support for Numerical Rarity"
+});
+assert.equal(classifySemTerm("provider_slot").classification, SEM_TERM_CLASSIFICATION.WORKFLOW_QUEUE_BEHAVIOR);
+assert.equal(classifySemTerm("card_name").promotion_allowed, true);
+assert.equal(classifySemTerm("new_possible_field").classification, SEM_TERM_CLASSIFICATION.CSM_DEFINITION_PROPOSAL);
 
 const trustedCatalog = semCatalogTrustVerdict({
   sourceTrust: "APPROVED_REFERENCE",

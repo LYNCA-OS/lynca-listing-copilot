@@ -3,8 +3,8 @@
 Status: Canonical SEM standard
 Scope: Standard collectible cards plus TCG cards
 Marketplace title limit: 80 characters
-Source of record: Linear COS-10, COS-11, COS-12, COS-13, COS-14
-Machine version: `linear-cos-10-14-v1`
+Source of record: Linear COS-10, COS-11, COS-12, COS-13, COS-14, COS-20, COS-21, COS-22, COS-23
+Machine version: `linear-cos-10-23-v25`
 
 ## Core Principle
 
@@ -12,14 +12,11 @@ The system stores complete structured identity, but the marketplace title is a c
 
 Current coverage principle: do not add new top-level grammar brackets just because an industry term appears to span multiple brackets. Mainstream Standard Card and TCG cases are covered by the current grammar. The hard cases are usually composite tokens, not missing top-level fields. Evolution should happen through richer internal structure and smarter output composition, especially inside `Print Finish`, while keeping marketplace output natural.
 
-Do not confuse these fields:
+Do not confuse CSM fields with implementation or evidence terms:
 
-- `print_run_number` / `numbered`: the current-card print-limit value, for example `2/3`.
-- `print_run_numerator`: the current physical-copy numerator, for example `2`.
-- `print_run_denominator` / `numbered_to`: the product print-run denominator, for example `3`.
-- `numerical_rarity`: legacy title module name for print-limit serialization, rendered as `2/3` when fully read from the current card or `#/3` when only the denominator is known.
-- `serial_number`: legacy alias for `print_run_number`; do not use it as the primary CSM name.
-- `card_number`: card type or set number, for example `PAU`, `TCLA`, `139/205`.
+- `Numerical Rarity`: the CSM field for production quantity / limited-numbering semantics, rendered as `2/3` when fully read from the current card or `#/3` when only the denominator is known.
+- `print_run_number`, `print_run_numerator`, `print_run_denominator`, `numbered_to`, `serial_number`, and `serial_denominator`: implementation/evidence terms that may support Numerical Rarity. They are not canonical editable CSM fields.
+- `Card Number`: card type, checklist, design, or set number, for example `PAU`, `TCLA`, `OP01-120`, `TAEV-EN006`, or TCG set numbering such as `139/205`.
 
 The title should preserve the complete current-image print run when it is directly read, such as `2/3` or `15/150`. If only the denominator is known, render the safe placeholder, such as `#/3`. Never copy a print-run numerator from a catalog/reference candidate.
 
@@ -71,7 +68,7 @@ Unlike Standard Card Grammar, TCG titles are card-centric. Card Number is an ide
 
 `Descriptive Rarity`: Especially common in TCG, such as `SR`, `AR`, `UR`. Less common in standard sports cards.
 
-`Numerical Rarity / Print Run`: Print-limit serialization, such as `2/3`, `15/150`, `01/50`, or denominator-only `#/50`. The primary internal fields are `print_run_number`, `print_run_numerator`, `print_run_denominator`, and `numbered_to`; `numerical_rarity` is the legacy title module name. Fill it only when current-card evidence clearly shows a print limit. If the current image directly supports the numerator and denominator, output the full value. If only the denominator is directly readable, output the denominator placeholder. If no print limit is visible, leave it empty. `1/1` remains `1/1`.
+`Numerical Rarity`: Production quantity / limited-numbering semantics, such as `2/3`, `15/150`, `01/50`, or denominator-only `#/50`. Implementation may store supporting evidence in fields such as `print_run_number`, `print_run_numerator`, `print_run_denominator`, `numbered_to`, `serial_number`, or `serial_denominator`, but those names are not canonical editable CSM fields. Fill Numerical Rarity only when current-card evidence clearly shows a print limit. If the current image directly supports the numerator and denominator, output the full value. If only the denominator is directly readable, output the denominator placeholder. If no print limit is visible, leave it empty. `1/1` remains `1/1`.
 
 `Product Finish`: Surface or finish terms such as `Aqua`, `Gold`, `Gold Shimmer`, `Master Ball Holo`, `Sparkle`, `Holo`.
 
@@ -145,3 +142,32 @@ When multiple separate physical cards are visible, route to Lot grammar:
 `Lot quantity -> Year -> Manufacturer/Product/Set -> Subjects max 3 -> Shared Card Name/Design -> Shared Print Finish -> Shared Numerical Rarity -> Search Optimization`
 
 A single card with multiple subjects is not a Lot. It remains one card identity with multiple subjects.
+
+### COS-20: Candidate Participation Boundary
+
+Catalog, vector, marketplace, and external-directory rows are candidate evidence. V4 records their production participation as:
+
+`LEVEL_0_SHADOW -> LEVEL_1_PROMPT_ASSIST -> LEVEL_2_EVIDENCE_SUPPORT -> LEVEL_3_FIELD_APPLICATION`
+
+Every candidate trace must preserve `candidate_id`, `source_type`, `source_trust`, `participation_level`, `anchor_agreement`, `direct_conflicts`, `field_permissions`, `applied_fields`, `blocked_fields`, and `reason_per_field`.
+
+Candidates may support identity fields only through field permissions: `can_apply`, `support_only`, `suggest_only`, or `forbidden`. They must not override visible evidence, OCR evidence, grading-label evidence, current-copy identifiers, physical condition, grade, or certificate evidence.
+
+### COS-21: Serial Evidence vs CSM Fields
+
+`serial_number`, `serial_denominator`, `print_run_*`, and `numbered_to` are implementation/evidence terms. They must not become canonical editable CSM fields without explicit founder / CSM approval and repeated real collectible outlier evidence.
+
+The CSM boundary remains:
+
+- `Card Number` = checklist / design / card-type identifier.
+- `Numerical Rarity` = production quantity / limited-numbering semantics.
+
+Renderer display choices such as `2/3`, `#/50`, or `1/1` do not create new CSM categories.
+
+### COS-22: V4 Release Gate
+
+V4 cannot be called commercially ready based on title proxy recall alone. Release requires field-level semantic quality, Candidate Control Plane readiness, leak-resistant blind evaluation, queue / worker production metrics, writer-facing boundary compliance, and shadow-only boundaries for systems that are not production-authoritative.
+
+### COS-23: Boundary-First Governance
+
+CSM V2.5 is boundary-first, not field-expansion-first. New engineering terms must first be classified as implementation detail, recognition schema, evidence artifact, renderer behavior, workflow behavior, boundary clarification, definition proposal, or founder decision. New CSM fields require repeated real collectible outlier evidence, not implementation convenience.

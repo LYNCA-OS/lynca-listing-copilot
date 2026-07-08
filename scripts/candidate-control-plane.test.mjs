@@ -15,6 +15,25 @@ function packet(candidates = [], assistFilter = {}) {
   };
 }
 
+const REQUIRED_TRACE_FIELDS = [
+  "candidate_id",
+  "source_type",
+  "source_trust",
+  "participation_level",
+  "anchor_agreement",
+  "direct_conflicts",
+  "field_permissions",
+  "applied_fields",
+  "blocked_fields",
+  "reason_per_field"
+];
+
+function assertCandidateTraceContract(trace) {
+  for (const field of REQUIRED_TRACE_FIELDS) {
+    assert.ok(Object.prototype.hasOwnProperty.call(trace, field), `candidate trace missing ${field}`);
+  }
+}
+
 function testVectorOnlyCannotApplyIdentityOrInstanceFields() {
   const candidate = {
     candidate_id: "vector-1",
@@ -170,9 +189,11 @@ function testFunnelAndEvidenceTraceFailClosedOnConflict() {
   assert.ok(control.candidate_field_evidence.some((row) => row.candidate_id === "safe-candidate" && row.permission === fieldPermissions.CAN_APPLY));
   assert.equal(control.candidate_field_evidence.some((row) => row.candidate_id === "conflict-candidate"), false);
   const conflictTrace = control.candidate_application_trace.find((row) => row.candidate_id === "conflict-candidate");
+  for (const trace of control.candidate_application_trace) assertCandidateTraceContract(trace);
   assert.ok(conflictTrace.blocked_fields.includes("collector_number"));
   assert.ok(conflictTrace.forbidden_fields.includes("grade_company"));
   assert.ok(conflictTrace.forbidden_fields.includes("card_grade"));
+  assert.equal(control.catalog_activation_funnel.participation_level, "LEVEL_2_EVIDENCE_SUPPORT");
 }
 
 function testLowMarginCandidateOnlySupportsCurrentImageFields() {

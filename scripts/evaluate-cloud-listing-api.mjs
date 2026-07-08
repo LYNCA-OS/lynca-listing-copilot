@@ -2919,7 +2919,7 @@ function summarize(results = [], elapsedMs = 0) {
       denominator_match_rate: rate(serialTitleTotals.denominator_match_count, serialTitleTotals.reference_serial_count),
       numerator_omission_rate: rate(serialTitleTotals.numerator_omission_count, serialTitleTotals.reference_serial_count),
       missing_rate: rate(serialTitleTotals.missing_count, serialTitleTotals.reference_serial_count),
-      policy_note: "print_run_number is the primary CSM field; serial_number is a legacy alias."
+      policy_note: "Numerical Rarity is the CSM field; print_run_number and serial_number are implementation/evidence aliases."
     },
     raw_pass_at_0_72_count: rawPassAt072,
     raw_pass_at_0_72_rate: attempted ? Number((rawPassAt072 / attempted).toFixed(6)) : null,
