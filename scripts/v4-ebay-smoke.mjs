@@ -526,6 +526,14 @@ function summaryHasVisibleL2Title(summary = {}) {
     && cleanText(summary.title);
 }
 
+function activeJobStatus(status = "") {
+  return ["QUEUED", "RUNNING", "RETRYING"].includes(String(status || "").toUpperCase());
+}
+
+function terminalJobStatus(status = "") {
+  return ["FAILED", "CANCELLED"].includes(String(status || "").toUpperCase());
+}
+
 function compactCandidateTrace(trace = {}) {
   const rows = Array.isArray(trace.candidate_application_trace)
     ? trace.candidate_application_trace
@@ -623,7 +631,8 @@ async function pollJobStatus({
     if (summaryHasVisibleL2Title(summary)) {
       return { polls, ready: true, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
-    if (summary.job_status === "FAILED" || summary.job_status === "CANCELLED" || summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT") {
+    if (terminalJobStatus(summary.job_status)
+      || (!activeJobStatus(summary.job_status) && (summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT"))) {
       return { polls, ready: false, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
     await delay(intervalMs);

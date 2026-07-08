@@ -1,6 +1,6 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest } from "../../lib/listing-session.mjs";
-import { readV4RecognitionJobs } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
+import { readV4RecognitionJobs, v4JobStatuses } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
@@ -33,8 +33,19 @@ async function readSessionsForJobs(jobs = []) {
   return Object.fromEntries(result.rows.map((row) => [row.id, row]));
 }
 
-function writerSafeSessionStatus(session = null) {
+const activeJobStatuses = new Set([
+  v4JobStatuses.QUEUED,
+  v4JobStatuses.RETRYING,
+  v4JobStatuses.RUNNING
+]);
+
+function jobStillActive(job = null) {
+  return activeJobStatuses.has(String(job?.status || "").toUpperCase());
+}
+
+function writerSafeSessionStatus(session = null, job = null) {
   if (!session) return null;
+  const activeRetry = jobStillActive(job);
   const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
     ? session.provider_result_summary
     : {};
@@ -42,22 +53,25 @@ function writerSafeSessionStatus(session = null) {
     ? session.candidate_control_plane_trace
     : {};
   const l2Ready = session.l2_status === "READY" && (session.final_title || session.l2_title);
+  const assistedDraftStatus = activeRetry && !l2Ready
+    ? "RUNNING"
+    : summary.assisted_draft_status || (l2Ready ? "READY" : null);
   return {
     id: session.id || null,
-    status: session.status || null,
+    status: activeRetry && !l2Ready ? "RUNNING" : session.status || null,
     final_title: l2Ready ? (session.final_title || session.l2_title || "") : "",
     l1_status: session.l1_status || "PENDING",
     l1_title: "",
     l1_ready_at: session.l1_ready_at || null,
     l1_route: session.l1_route || null,
     l1_timing: session.l1_timing || null,
-    l2_status: session.l2_status || "PENDING",
+    l2_status: activeRetry && !l2Ready ? "PENDING" : session.l2_status || "PENDING",
     l2_title: l2Ready ? (session.l2_title || session.final_title || "") : "",
     l2_ready_at: session.l2_ready_at || null,
     l2_route: session.l2_route || null,
     l2_timing: session.l2_timing || null,
     provider_result_summary: {
-      assisted_draft_status: summary.assisted_draft_status || (l2Ready ? "READY" : null),
+      assisted_draft_status: assistedDraftStatus,
       provider: summary.provider || null,
       model: summary.model || summary.model_id || null,
       confidence: summary.confidence || null,
@@ -90,11 +104,12 @@ function writerSafeSessionStatus(session = null) {
     resolved_fields: session.resolved_fields && typeof session.resolved_fields === "object" ? session.resolved_fields : {},
     field_states: session.field_states && typeof session.field_states === "object" ? session.field_states : {},
     updated_at: session.updated_at || null,
-    failure_reason: session.failure_reason || null
+    failure_reason: activeRetry && !l2Ready ? null : session.failure_reason || null
   };
 }
 
-function displayStateForSession(session = null) {
+function displayStateForSession(session = null, job = null) {
+  const activeRetry = jobStillActive(job);
   if (!session) {
     return {
       internal_status: "PENDING",
@@ -127,6 +142,21 @@ function displayStateForSession(session = null) {
       can_writer_start: true,
       pending_modules: [],
       background_modules: []
+    };
+  }
+  if (activeRetry) {
+    return {
+      internal_status: job.status || "RUNNING",
+      writer_status: "GENERATING",
+      display_status: "PENDING",
+      display_title: "",
+      writer_display_title: null,
+      title_stage: "PENDING",
+      current_best_title: "",
+      is_final: false,
+      can_writer_start: false,
+      pending_modules: ["final_assisted_title"],
+      background_modules: ["final_assisted_title"]
     };
   }
   return {
@@ -181,7 +211,7 @@ export default async function handler(req, res) {
     job_count: result.rows.length,
     jobs: result.rows.map((job) => {
       const session = sessions[job.recognition_session_id] || null;
-      const display = displayStateForSession(session);
+      const display = displayStateForSession(session, job);
       return {
         job_id: job.id,
         batch_id: job.batch_id,
@@ -225,7 +255,7 @@ export default async function handler(req, res) {
         lease_expires_at: job.lease_expires_at,
         error: job.error,
         result: job.result,
-        session: writerSafeSessionStatus(session)
+        session: writerSafeSessionStatus(session, job)
       };
     })
   }));
