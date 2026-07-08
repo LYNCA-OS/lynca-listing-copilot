@@ -35,6 +35,39 @@ function isFailedResult(result = {}) {
   return String(result.confidence || "").toUpperCase() === "FAILED" || !titleFromResult(result);
 }
 
+function isRetrySuppressedProviderError(result = {}) {
+  const code = String(result.provider_error_code || result.provider_error_type || "").toLowerCase();
+  if (!code) return false;
+  return /auth|permission|quota|rate|unsupported|bad_request|invalid_request|input/.test(code);
+}
+
+function shouldRetryGpt5EmptyResult({
+  payload = {},
+  result = {},
+  env = process.env
+} = {}) {
+  if (!isGpt5ResponsesModel(requestedListingModelFromPayload(payload, env))) return false;
+  if (payload.v4_gpt5_empty_result_retry_attempted === true) return false;
+  if (titleFromResult(result)) return false;
+  if (isInternalScoutResult(result)) return false;
+  if (isRetrySuppressedProviderError(result)) return false;
+  return true;
+}
+
+function withGpt5EmptyRetryMetadata(result = {}, {
+  attempted = false,
+  success = false,
+  retryStatusCode = null
+} = {}) {
+  if (!attempted) return result;
+  return {
+    ...result,
+    gpt5_empty_result_retry_attempted: true,
+    gpt5_empty_result_retry_success: success === true,
+    gpt5_empty_result_retry_status_code: retryStatusCode
+  };
+}
+
 function isInternalScoutResult(result = {}) {
   return result?.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
 }
@@ -217,6 +250,9 @@ function providerRuntimeSummary(result = {}) {
     provider_initial_request_diagnostics: result.provider_initial_request_diagnostics || null,
     provider_truncation_retry_attempted: result.provider_truncation_retry_attempted === true,
     provider_truncation_retry_attempts: Number(result.provider_truncation_retry_attempts || 0),
+    gpt5_empty_result_retry_attempted: result.gpt5_empty_result_retry_attempted === true,
+    gpt5_empty_result_retry_success: result.gpt5_empty_result_retry_success === true,
+    gpt5_empty_result_retry_status_code: result.gpt5_empty_result_retry_status_code ?? null,
     usage: result.usage || null
   };
 }
@@ -835,7 +871,7 @@ export default async function handler(req, res) {
     providerOptions: progressiveProviderOptions,
     titleStageTarget: forceL2Direct || modelRequiresFullL2Options ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
-  const v2Response = await callJsonHandler(v2ListingHandler, {
+  let v2Response = await callJsonHandler(v2ListingHandler, {
     method: "POST",
     headers: req.headers,
     payload: v2Payload
@@ -856,6 +892,49 @@ export default async function handler(req, res) {
       v4_persistence: { create_session: createResult.persistence.recognition_session }
     }));
     return;
+  }
+
+  if (shouldRetryGpt5EmptyResult({ payload: v2Payload, result: v2Response.body, env: process.env })) {
+    const retryPayload = {
+      ...v2Payload,
+      v4_gpt5_empty_result_retry_attempted: true,
+      provider_options: {
+        ...(v2Payload.provider_options || {}),
+        gpt5_empty_result_retry: true
+      },
+      providerOptions: {
+        ...(v2Payload.providerOptions || {}),
+        gpt5_empty_result_retry: true
+      }
+    };
+    const retryResponse = await callJsonHandler(v2ListingHandler, {
+      method: "POST",
+      headers: req.headers,
+      payload: retryPayload
+    });
+    const retryPrepared = retryResponse.statusCode >= 200 && retryResponse.statusCode < 300 && retryResponse.body
+      ? prepareV4PresentationResult({ result: retryResponse.body, payload: retryPayload })
+      : { finalTitle: "" };
+    const retrySucceeded = Boolean(retryPrepared.finalTitle);
+    if (retrySucceeded) {
+      v2Response = {
+        ...retryResponse,
+        body: withGpt5EmptyRetryMetadata(retryPrepared.result, {
+          attempted: true,
+          success: true,
+          retryStatusCode: retryResponse.statusCode || null
+        })
+      };
+    } else {
+      v2Response = {
+        ...v2Response,
+        body: withGpt5EmptyRetryMetadata(v2Response.body, {
+          attempted: true,
+          success: false,
+          retryStatusCode: retryResponse.statusCode || null
+        })
+      };
+    }
   }
 
   const v4Response = await persistPipelineResult({
