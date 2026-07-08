@@ -97,6 +97,19 @@ assert.match(multiplayer.rendered_title, /Charles Leclerc/i);
 assert.match(multiplayer.rendered_title, /Lewis Hamilton/i);
 assert.match(multiplayer.rendered_title, /Power Partnership/i);
 
+const jsonStringSubject = renderResolvedTitle({
+  year: "2025",
+  product: "Bowman Draft",
+  players: "[\"Seth Hernandez\"]",
+  card_name: "Auto",
+  serial_number: "02/10",
+  numerical_rarity: "02/10"
+}, {
+  maxLength: 80
+});
+assert.match(jsonStringSubject.rendered_title, /Seth Hernandez/);
+assert.doesNotMatch(jsonStringSubject.rendered_title, /\["Seth Hernandez"\]/);
+
 const ronaldoCompact = renderResolvedTitle({
   year: "2021-22",
   brand: "Panini",

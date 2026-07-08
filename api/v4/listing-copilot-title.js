@@ -24,6 +24,8 @@ import {
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { providerModelOverrideFromOptions } from "../../lib/listing/providers/provider-contract.mjs";
+import { isGpt5ResponsesModel } from "../../lib/listing/providers/openai-responses-request.mjs";
 
 function titleFromResult(result = {}) {
   return result.final_title || result.rendered_title || result.title || null;
@@ -267,6 +269,15 @@ function canReturnFastScoutL1(payload = {}, env = process.env) {
   const explicitExperiment = payload.v4_force_fast_scout_l1 === true || payload.v4_queue_l1_only === true;
   if (!explicitExperiment && String(env.ENABLE_V4_FAST_SCOUT_L1 || "false").toLowerCase() !== "true") return false;
   if (payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true || payload.disable_fast_scout_l1 === true) return false;
+  const providerOptions = payload.provider_options || payload.providerOptions || {};
+  const requestedListingModel = providerModelOverrideFromOptions(providerOptions) || env.OPENAI_LISTING_MODEL || "";
+  if (
+    isGpt5ResponsesModel(requestedListingModel)
+    && String(env.ENABLE_GPT5_FAST_SCOUT_L1 || "false").toLowerCase() !== "true"
+    && payload.v4_queue_l1_only !== true
+  ) {
+    return false;
+  }
   return Array.isArray(payload.images) && payload.images.length > 0;
 }
 

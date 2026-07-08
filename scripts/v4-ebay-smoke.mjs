@@ -581,6 +581,8 @@ async function runOne({
   const finalScore = scoreTitles(sellerTitle, finalTitle);
   const fastScout = data.provider_result?.fast_scout || {};
   const cache = cacheStatusFromResponse(data);
+  const l1Ok = Boolean(l1.ok && data.ok);
+  const writerReady = Boolean(l2.ready || cleanText(finalTitle));
   return compactObject({
     asset_id: id,
     sealed_label_key: sealedKey || label.key || null,
@@ -589,7 +591,9 @@ async function runOne({
     seller_title: sellerTitle,
     image_count: payload.images.length,
     http_status: l1.http_status,
-    ok: Boolean(l1.ok && data.ok),
+    ok: writerReady,
+    l1_ok: l1Ok,
+    writer_ready: writerReady,
     error: l1.ok ? null : data,
     l1_wall_latency_ms: l1.latency_ms,
     l1_internal_scout_ms: cache.cache_hit
@@ -729,6 +733,8 @@ function perCardTsv(results = []) {
   const columns = [
     "asset_id",
     "ok",
+    "l1_ok",
+    "writer_ready",
     "l1_ms",
     "l1_internal_scout_ms",
     "l1_safe_ms",
@@ -754,6 +760,8 @@ function perCardTsv(results = []) {
   const rows = results.map((item) => [
     item.asset_id,
     item.ok,
+    item.l1_ok,
+    item.writer_ready,
     item.l1_wall_latency_ms,
     item.l1_internal_scout_ms,
     item.l1_time_to_safe_draft_ms,
