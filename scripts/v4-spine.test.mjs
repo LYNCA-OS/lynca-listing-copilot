@@ -162,6 +162,38 @@ assert.equal(failedL2V4.status, "FAILED");
 assert.equal(failedL2V4.assisted_draft_status, "FAILED");
 assert.equal(failedL2V4.title_stage_readiness.writer_visible_title_ready, false);
 
+const recoveredFailedL2V4 = adaptV2ResultToV4({
+  sessionId: "v4sess-recovered-l2",
+  result: {
+    confidence: "FAILED",
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+    assisted_draft_status: "FAILED",
+    provider_error_type: "SCHEMA_INVALID",
+    fields: {
+      year: "2018",
+      manufacturer: "Panini",
+      product: "Select",
+      set: "Premier Level",
+      players: ["Nick Chubb"],
+      card_name: "Die-Cut",
+      print_finish: "Gold Prizm",
+      print_run_number: "10/10",
+      rc: true,
+      team: "Cleveland Browns"
+    }
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.equal(recoveredFailedL2V4.ok, true);
+assert.equal(recoveredFailedL2V4.status, "DRAFT_READY");
+assert.equal(recoveredFailedL2V4.writer_safe_draft, recoveredFailedL2V4.final_title);
+assert.match(recoveredFailedL2V4.final_title, /Nick Chubb/);
+assert.match(recoveredFailedL2V4.final_title, /10\/10/);
+assert.equal(recoveredFailedL2V4.provider_result.confidence, "LOW");
+assert.equal(recoveredFailedL2V4.provider_result.title_recovered_from_v4_field_graph, true);
+assert.equal(recoveredFailedL2V4.legacy_v2_result.title_recovered_from_v4_field_graph, true);
+
 const internalScoutV4 = adaptV2ResultToV4({
   sessionId: "v4sess-internal-scout",
   result: {

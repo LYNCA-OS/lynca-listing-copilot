@@ -5,7 +5,7 @@ import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 import { planV4RecognitionRoute } from "../../lib/listing/v4/route-planner/route-planner.mjs";
-import { adaptV2ResultToV4, buildV4PersistenceRows } from "../../lib/listing/v4/result-adapter.mjs";
+import { adaptV2ResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
   providerOptionsForV4BackgroundL2,
@@ -345,6 +345,7 @@ async function persistPipelineResult({
   createResult = {},
   extraProviderSummary = {}
 } = {}) {
+  result = prepareV4PresentationResult({ result, payload }).result;
   const l1Stage = result.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
   const rows = buildV4PersistenceRows({ sessionId, result, payload });
   const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
