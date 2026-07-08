@@ -58,12 +58,15 @@ function triggerV4QueuePumpAfterEnqueue(req, {
     interactive_process_concurrency: interactiveConcurrency,
     background_limit: backgroundConcurrency,
     background_process_concurrency: backgroundConcurrency,
-    cycles: 6,
-    max_runtime_ms: 250_000,
+    cycles: 1,
+    max_runtime_ms: 180_000,
+    lease_seconds: 240,
     retry_delay_seconds: 8,
     parallel_lanes: true,
-    idle_delay_ms: 5000,
-    background_idle_cycles: 24,
+    idle_delay_ms: 0,
+    idle_cycles_before_stop: 1,
+    background_idle_cycles: 1,
+    max_continuation_depth: 20,
     reason: "post_enqueue"
   };
   waitUntil(

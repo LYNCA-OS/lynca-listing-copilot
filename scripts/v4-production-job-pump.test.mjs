@@ -107,6 +107,9 @@ assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY/);
 assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
 assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY,\s*2,\s*\{\s*min:\s*1,\s*max:\s*2\s*\}/);
 assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY,\s*2,\s*\{\s*min:\s*1,\s*max:\s*2\s*\}/);
+assert.match(enqueueSource, /cycles:\s*1/);
+assert.match(enqueueSource, /lease_seconds:\s*240/);
+assert.match(enqueueSource, /max_continuation_depth:\s*20/);
 assert.match(enqueueSource, /background_limit: backgroundConcurrency/);
 assert.match(enqueueSource, /interactive_process_concurrency: interactiveConcurrency/);
 
@@ -117,6 +120,16 @@ assert.match(workerSource, /pairedRelease\.saved !== true/);
 assert.match(workerSource, /lane: v4JobLanes\.BACKGROUND/);
 assert.match(workerSource, /V4_L2_WAKE_BACKGROUND_CONCURRENCY/);
 assert.match(workerSource, /callJsonHandler\(handler/);
+
+const pumpSource = readFileSync(new URL("../api/v4/listing-job-pump.js", import.meta.url), "utf8");
+assert.match(pumpSource, /triggerV4QueuePumpContinuation/);
+assert.match(pumpSource, /continuation_depth/);
+assert.match(pumpSource, /continuation_triggered/);
+assert.match(pumpSource, /lease_seconds: leaseSeconds/);
+
+const reclaimMigration = readFileSync(new URL("../supabase/migrations/20260708043000_v4_queue_reclaim_expired_running_jobs.sql", import.meta.url), "utf8");
+assert.match(reclaimMigration, /status = 'RUNNING' and lease_expires_at is not null and lease_expires_at < now\(\)/);
+assert.match(reclaimMigration, /where status in \('QUEUED', 'RETRYING', 'RUNNING'\)/);
 
 const previousSecret = process.env.V4_JOB_WORKER_SECRET;
 try {

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import listingJobWorkerHandler from "./listing-job-worker.js";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import {
@@ -61,6 +62,12 @@ function falseFlag(value) {
   return /^(?:0|false|no)$/i.test(String(value || ""));
 }
 
+function zeroBasedInteger(value, fallback, { max = Number.MAX_SAFE_INTEGER } = {}) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(max, parsed));
+}
+
 function lanePlanFromPayload(payload = {}) {
   if (boolFlag(payload.interactive_only)) return [v4JobLanes.INTERACTIVE];
   if (boolFlag(payload.background_only)) return [v4JobLanes.BACKGROUND];
@@ -69,6 +76,13 @@ function lanePlanFromPayload(payload = {}) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function requestOrigin(req) {
+  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
+  if (!host) return "";
+  const proto = headerValue(req, "x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
 }
 
 async function defaultInvokeWorker(payload, { workerSecret }) {
@@ -128,6 +142,7 @@ export async function runV4QueuePump({
     { min: 1, max: 8 }
   );
   const maxRuntimeMs = positiveInteger(payload.max_runtime_ms ?? payload.maxRuntimeMs, 250_000, { min: 5_000, max: 290_000 });
+  const leaseSeconds = positiveInteger(payload.lease_seconds ?? payload.leaseSeconds, 240, { min: 30, max: 900 });
   const retryDelaySeconds = positiveInteger(payload.retry_delay_seconds ?? payload.retryDelaySeconds, 8, { min: 1, max: 900 });
   const tenantId = payload.tenant_id || payload.tenantId || null;
   const lanes = lanePlanFromPayload(payload);
@@ -161,6 +176,7 @@ export async function runV4QueuePump({
         tenant_id: tenantId,
         limit: laneLimit,
         process_concurrency: laneProcessConcurrency,
+        lease_seconds: leaseSeconds,
         retry_delay_seconds: retryDelaySeconds,
         worker_id: `v4-pump-${lane}-${cycle + 1}`
       };
@@ -210,6 +226,7 @@ export async function runV4QueuePump({
     parallel_lanes: parallelLanes,
     limit,
     process_concurrency: processConcurrency,
+    lease_seconds: leaseSeconds,
     interactive_limit: interactiveLimit,
     background_limit: backgroundLimit,
     interactive_process_concurrency: interactiveProcessConcurrency,
@@ -223,6 +240,53 @@ export async function runV4QueuePump({
     lane_summaries: laneSummaries,
     calls
   };
+}
+
+function triggerV4QueuePumpContinuation(req, payload = {}, result = {}, env = process.env) {
+  if (falseFlag(payload.enable_continuation ?? payload.enableContinuation ?? "true")) {
+    return { triggered: false, reason: "disabled" };
+  }
+  if (Number(result.claimed_count || 0) <= 0) {
+    return { triggered: false, reason: "no_claimed_jobs" };
+  }
+  const depth = zeroBasedInteger(payload.continuation_depth ?? payload.continuationDepth, 0, { max: 100 });
+  const maxDepth = zeroBasedInteger(payload.max_continuation_depth ?? payload.maxContinuationDepth, 20, { max: 100 });
+  if (depth >= maxDepth) {
+    return { triggered: false, reason: "max_continuation_depth_reached", depth, max_depth: maxDepth };
+  }
+  const secret = configuredWorkerSecret(env);
+  if (!secret) return { triggered: false, reason: "worker_secret_missing" };
+  const origin = requestOrigin(req);
+  if (!origin) return { triggered: false, reason: "request_origin_missing" };
+
+  const body = {
+    ...payload,
+    cycles: positiveInteger(payload.continuation_cycles ?? payload.continuationCycles, 1, { min: 1, max: 4 }),
+    max_runtime_ms: positiveInteger(
+      payload.continuation_max_runtime_ms ?? payload.continuationMaxRuntimeMs ?? payload.max_runtime_ms ?? payload.maxRuntimeMs,
+      180_000,
+      { min: 5_000, max: 240_000 }
+    ),
+    idle_delay_ms: 0,
+    idle_cycles_before_stop: 1,
+    background_idle_cycles: 1,
+    continuation_depth: depth + 1,
+    max_continuation_depth: maxDepth,
+    reason: "pump_continuation"
+  };
+  waitUntil(
+    fetch(`${origin}/api/v4/listing-job-pump`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [workerSecretHeader]: secret,
+        "user-agent": "lynca-v4-job-pump-continuation",
+        "x-forwarded-for": "v4-job-pump-continuation"
+      },
+      body: JSON.stringify(body)
+    }).catch(() => null)
+  );
+  return { triggered: true, reason: "claimed_jobs_remaining_possible", depth: depth + 1, max_depth: maxDepth };
 }
 
 export default async function handler(req, res) {
@@ -253,5 +317,14 @@ export default async function handler(req, res) {
   }
 
   const result = await runV4QueuePump({ payload, env: process.env });
-  sendJson(res, result.ok ? 200 : 503, withV4Version(result));
+  const continuation = result.ok
+    ? triggerV4QueuePumpContinuation(req, payload, result, process.env)
+    : { triggered: false, reason: "pump_failed" };
+  sendJson(res, result.ok ? 200 : 503, withV4Version({
+    ...result,
+    continuation_triggered: continuation.triggered,
+    continuation_reason: continuation.reason,
+    continuation_depth: continuation.depth ?? null,
+    max_continuation_depth: continuation.max_depth ?? null
+  }));
 }

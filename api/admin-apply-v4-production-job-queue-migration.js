@@ -5,7 +5,8 @@ import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
 
 const migrationPaths = [
   "supabase/migrations/20260707122154_v4_production_job_queue.sql",
-  "supabase/migrations/20260707133128_v4_queue_interactive_background_lanes.sql"
+  "supabase/migrations/20260707133128_v4_queue_interactive_background_lanes.sql",
+  "supabase/migrations/20260708043000_v4_queue_reclaim_expired_running_jobs.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `
