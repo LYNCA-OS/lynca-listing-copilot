@@ -295,6 +295,13 @@ const openAiRateLimitHeaderNames = Object.freeze([
   "x-ratelimit-reset-requests",
   "x-ratelimit-reset-tokens"
 ]);
+const openAiProviderPoolDiagnosticNames = Object.freeze([
+  "provider_key_pool_size",
+  "provider_key_slot",
+  "provider_key_source",
+  "provider_key_rotation_attempted",
+  "provider_key_rotation_attempts"
+]);
 
 function numberOrNull(value) {
   const number = Number(value);
@@ -327,6 +334,9 @@ function providerDiagnosticsFromSummary(summary = {}) {
     output_cap: numberOrNull(token.output_cap),
     output_utilization: numberOrNull(token.output_utilization)
   };
+  for (const field of openAiProviderPoolDiagnosticNames) {
+    output[field] = source[field] ?? request[field] ?? null;
+  }
   for (const header of openAiRateLimitHeaderNames) {
     output[header] = rateLimit?.[header] ?? request?.[header] ?? null;
   }
@@ -809,6 +819,11 @@ async function runOne({
       output_tokens: finalProviderDiagnostics.output_tokens,
       total_tokens: finalProviderDiagnostics.total_tokens,
       provider_latency_ms: finalProviderDiagnostics.provider_latency_ms,
+      provider_key_pool_size: finalProviderDiagnostics.provider_key_pool_size,
+      provider_key_slot: finalProviderDiagnostics.provider_key_slot,
+      provider_key_source: finalProviderDiagnostics.provider_key_source,
+      provider_key_rotation_attempted: finalProviderDiagnostics.provider_key_rotation_attempted,
+      provider_key_rotation_attempts: finalProviderDiagnostics.provider_key_rotation_attempts,
       response_status: finalProviderDiagnostics.response_status,
       incomplete_reason: finalProviderDiagnostics.incomplete_reason,
       output_cap: finalProviderDiagnostics.output_cap,
@@ -1034,6 +1049,10 @@ function summarize(results = []) {
       total_tokens_total: results.reduce((sum, item) => sum + Number(item.total_tokens || 0), 0),
       provider_latency_p50_ms: quantile(results.map((item) => item.provider_latency_ms), 0.5),
       provider_latency_p95_ms: quantile(results.map((item) => item.provider_latency_ms), 0.95),
+      key_pool_size_latest: [...results].reverse().find((item) => item.provider_key_pool_size)?.provider_key_pool_size || null,
+      key_slots_used: [...new Set(results.map((item) => item.provider_key_slot).filter((value) => value !== null && value !== undefined && value !== ""))],
+      key_rotation_attempt_count: results.reduce((sum, item) => sum + Number(item.provider_key_rotation_attempts || 0), 0),
+      key_rotation_card_count: results.filter((item) => item.provider_key_rotation_attempted === true).length,
       diagnostics_missing_count: results.filter((item) => item.input_tokens === null && item.output_tokens === null && item.provider_latency_ms === null).length,
       latest_remaining_requests: [...results].reverse().find((item) => item["x-ratelimit-remaining-requests"])?.["x-ratelimit-remaining-requests"] || null,
       latest_remaining_tokens: [...results].reverse().find((item) => item["x-ratelimit-remaining-tokens"])?.["x-ratelimit-remaining-tokens"] || null
@@ -1103,6 +1122,11 @@ function perCardTsv(results = []) {
     "output_tokens",
     "total_tokens",
     "provider_latency_ms",
+    "provider_key_pool_size",
+    "provider_key_slot",
+    "provider_key_source",
+    "provider_key_rotation_attempted",
+    "provider_key_rotation_attempts",
     "x-ratelimit-limit-requests",
     "x-ratelimit-remaining-requests",
     "x-ratelimit-limit-tokens",
@@ -1143,6 +1167,11 @@ function perCardTsv(results = []) {
     item.output_tokens,
     item.total_tokens,
     item.provider_latency_ms,
+    item.provider_key_pool_size,
+    item.provider_key_slot,
+    item.provider_key_source,
+    item.provider_key_rotation_attempted,
+    item.provider_key_rotation_attempts,
     item["x-ratelimit-limit-requests"],
     item["x-ratelimit-remaining-requests"],
     item["x-ratelimit-limit-tokens"],
