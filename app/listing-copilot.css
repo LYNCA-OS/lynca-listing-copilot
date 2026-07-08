@@ -514,6 +514,39 @@ h3 {
   justify-content: flex-end;
 }
 
+.generation-time-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid rgba(88, 199, 245, 0.22);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--subtle);
+  background: rgba(88, 199, 245, 0.07);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.generation-time-running {
+  color: var(--cyan);
+  border-color: rgba(88, 199, 245, 0.38);
+  background: rgba(88, 199, 245, 0.12);
+}
+
+.generation-time-done {
+  color: var(--green);
+  border-color: rgba(112, 214, 159, 0.34);
+  background: rgba(112, 214, 159, 0.1);
+}
+
+.generation-time-failed {
+  color: var(--red);
+  border-color: rgba(255, 143, 143, 0.4);
+  background: rgba(255, 143, 143, 0.1);
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(9, minmax(0, 1fr));
@@ -895,6 +928,11 @@ h3 {
   color: var(--muted);
   font-size: 11px;
   font-weight: 850;
+}
+
+.pending-timing {
+  grid-column: 1 / -1;
+  justify-self: start;
 }
 
 .pending-module-grid {

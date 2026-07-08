@@ -66,6 +66,8 @@ const state = {
   activeAssetIndexes: new Set(),
   assetProgress: new Map(),
   progressTimer: null,
+  assetGenerationTimings: new Map(),
+  generationTimer: null,
   assistedDraftPollTimers: new Map(),
   completedAssetCount: 0,
   processingTotal: 0,
@@ -1170,6 +1172,7 @@ function selectProvider(providerId) {
 
   state.selectedProvider = provider.id;
   state.results = [];
+  resetGenerationTimings();
   renderProviderControl();
   elements.processButton.disabled = !canGenerateTitles();
   renderResults();
@@ -1255,6 +1258,159 @@ function currentProcessingPercent() {
 function statusWithProgress(message) {
   const percent = currentProcessingPercent();
   return percent ? `${percent}% · ${message}` : message;
+}
+
+function stopGenerationTicker() {
+  if (!state.generationTimer) return;
+  clearInterval(state.generationTimer);
+  state.generationTimer = null;
+}
+
+function hasLiveGenerationTiming() {
+  if (state.processing || state.activeAssetIndexes.size) return true;
+  for (const timing of state.assetGenerationTimings.values()) {
+    if (timing?.startedAt && !timing.finishedAt) return true;
+  }
+  return state.results.some((result) => {
+    const timing = state.assetGenerationTimings.get(result.index);
+    return Boolean(timing?.startedAt && !timing.finishedAt && v4WriterTitlePending(result));
+  });
+}
+
+function startGenerationTicker() {
+  if (state.generationTimer) return;
+  state.generationTimer = setInterval(() => {
+    if (!hasLiveGenerationTiming()) {
+      stopGenerationTicker();
+      return;
+    }
+    renderResults();
+  }, 1000);
+}
+
+function resetGenerationTimings() {
+  state.assetGenerationTimings = new Map();
+  stopGenerationTicker();
+}
+
+function timingForAssetIndex(assetIndex) {
+  const index = Number(assetIndex);
+  if (!Number.isFinite(index)) return null;
+  return state.assetGenerationTimings.get(index) || null;
+}
+
+function ensureGenerationTiming(assetIndex, queuedAt = Date.now()) {
+  const index = Number(assetIndex);
+  if (!Number.isFinite(index)) return null;
+  const existing = timingForAssetIndex(index);
+  if (existing) return existing;
+  const timing = {
+    queuedAt,
+    startedAt: null,
+    finishedAt: null,
+    failed: false
+  };
+  state.assetGenerationTimings.set(index, timing);
+  return timing;
+}
+
+function markAssetQueued(asset, queuedAt = Date.now()) {
+  const timing = ensureGenerationTiming(asset.index, queuedAt);
+  if (timing && !timing.queuedAt) timing.queuedAt = queuedAt;
+  startGenerationTicker();
+}
+
+function markAssetStarted(asset, startedAt = Date.now()) {
+  const timing = ensureGenerationTiming(asset.index, startedAt);
+  if (!timing) return null;
+  if (!timing.startedAt) timing.startedAt = startedAt;
+  timing.finishedAt = null;
+  timing.failed = false;
+  startGenerationTicker();
+  return timing;
+}
+
+function markAssetFinished(assetIndex, options = {}) {
+  const timing = ensureGenerationTiming(assetIndex);
+  if (!timing) return null;
+  if (!timing.startedAt) timing.startedAt = timing.queuedAt || Date.now();
+  timing.finishedAt = timing.finishedAt || Date.now();
+  timing.failed = Boolean(options.failed);
+  return timing;
+}
+
+function formatGenerationElapsed(ms) {
+  const safeMs = Math.max(0, Number(ms) || 0);
+  const seconds = safeMs / 1000;
+  if (seconds < 10) return `${seconds.toFixed(1)}s`;
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
+}
+
+function generationTimingSnapshot(assetIndex) {
+  const timing = timingForAssetIndex(assetIndex);
+  if (!timing) return null;
+  const now = Date.now();
+  const startedAt = timing.startedAt || null;
+  const finishedAt = timing.finishedAt || null;
+  const activeEnd = finishedAt || now;
+  const activeMs = startedAt ? Math.max(0, activeEnd - startedAt) : 0;
+  const queueMs = timing.queuedAt && startedAt ? Math.max(0, startedAt - timing.queuedAt) : 0;
+  const waitingMs = timing.queuedAt && !startedAt ? Math.max(0, now - timing.queuedAt) : 0;
+  return {
+    queuedAt: timing.queuedAt || null,
+    startedAt,
+    finishedAt,
+    failed: Boolean(timing.failed),
+    active_ms: activeMs,
+    queue_ms: queueMs,
+    waiting_ms: waitingMs
+  };
+}
+
+function attachGenerationTimingToResult(result = {}) {
+  const snapshot = generationTimingSnapshot(result.index);
+  if (!snapshot) return result;
+  result.generation_timing = snapshot;
+  result.generationStartedAt = snapshot.startedAt;
+  result.generationFinishedAt = snapshot.finishedAt;
+  result.generationElapsedMs = snapshot.active_ms;
+  result.queueWaitMs = snapshot.queue_ms;
+  return result;
+}
+
+function generationTimingView(assetIndex) {
+  const snapshot = generationTimingSnapshot(assetIndex);
+  if (!snapshot) return null;
+  if (!snapshot.startedAt) {
+    return {
+      label: "排队",
+      value: formatGenerationElapsed(snapshot.waiting_ms),
+      status: "queued"
+    };
+  }
+  if (!snapshot.finishedAt) {
+    return {
+      label: "生成中",
+      value: formatGenerationElapsed(snapshot.active_ms),
+      status: "running"
+    };
+  }
+  return {
+    label: snapshot.failed ? "失败耗时" : "生成耗时",
+    value: formatGenerationElapsed(snapshot.active_ms),
+    status: snapshot.failed ? "failed" : "done",
+    queueValue: snapshot.queue_ms >= 1000 ? formatGenerationElapsed(snapshot.queue_ms) : ""
+  };
+}
+
+function generationTimingBadge(assetIndex) {
+  const view = generationTimingView(assetIndex);
+  if (!view) return "";
+  const queueSuffix = view.queueValue ? ` · 等待 ${view.queueValue}` : "";
+  return `<span class="generation-time-badge generation-time-${escapeHtml(view.status)}">${escapeHtml(view.label)} ${escapeHtml(view.value)}${escapeHtml(queueSuffix)}</span>`;
 }
 
 function setAssetProgress(assetIndex, label, fraction) {
@@ -1640,6 +1796,7 @@ function pendingBox(asset) {
       <div class="title-output-head">
         <span class="confidence-badge confidence-pending">${escapeHtml(label)}</span>
         <span>资产 ${asset.index}</span>
+        ${generationTimingBadge(asset.index)}
       </div>
       <div class="pending-state ${isWorking ? "pending-active" : "pending-idle"}" role="status" aria-live="polite">
         ${isWorking ? `<span class="loading-spinner" aria-hidden="true"></span>` : `<span class="idle-dot" aria-hidden="true"></span>`}
@@ -1648,6 +1805,7 @@ function pendingBox(asset) {
         ${backgroundLabel ? `<small class="background-prepare-note">${escapeHtml(backgroundLabel)}</small>` : ""}
         ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
         ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
+        ${isWorking ? `<span class="pending-timing">${generationTimingBadge(asset.index)}</span>` : ""}
         ${isActive ? pendingModuleSkeleton(progress) : ""}
         ${isWorking ? `<span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` : ""}
       </div>
@@ -1898,6 +2056,7 @@ function TitleCardComponent(result, asset = null) {
       <div class="title-output-head">
         <span class="confidence-badge ${confidenceClass(confidence)}">${confidence}</span>
         <div class="title-actions">
+          ${generationTimingBadge(result.index)}
           <span>${escapeHtml(providerLabel)}</span>
           ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 单模型重试</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
@@ -2187,6 +2346,7 @@ async function handleFiles(fileList) {
   state.results = [];
   state.assetProgress = new Map();
   stopProgressTicker();
+  resetGenerationTimings();
   state.activeAssetIndexes = new Set();
   state.completedAssetCount = 0;
   state.processingTotal = 0;
@@ -2329,7 +2489,7 @@ async function processAsset(asset, options = {}) {
 }
 
 function failedResult(asset, error) {
-  return {
+  return attachGenerationTimingToResult({
     index: asset.index,
     thumbnail: asset.images[0].dataUrl,
     title: "",
@@ -2340,7 +2500,7 @@ function failedResult(asset, error) {
     fields: {},
     unresolved: ["request"],
     provider: state.selectedProvider || null
-  };
+  });
 }
 
 function processingCompletionStatus() {
@@ -2369,8 +2529,11 @@ async function processTitles() {
   stopAllV4AssistedDraftPolling();
   state.activeAssetIndexes = new Set();
   state.assetProgress = new Map();
+  resetGenerationTimings();
   state.completedAssetCount = 0;
   state.processingTotal = state.assets.length;
+  const generationQueuedAt = Date.now();
+  state.assets.forEach((asset) => markAssetQueued(asset, generationQueuedAt));
   renderResults();
   elements.processButton.disabled = true;
   setProcessButtonBusy(true);
@@ -2384,15 +2547,21 @@ async function processTitles() {
     while (queue.length) {
       const asset = queue.shift();
       state.activeAssetIndexes.add(asset.index);
+      markAssetStarted(asset);
       setAssetProgress(asset.index, "进入识别队列", 0.03);
       renderResults();
 
       try {
         const result = await processAsset(asset);
+        if (!v4WriterTitlePending(result)) {
+          markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });
+        }
+        attachGenerationTimingToResult(result);
         state.results.push(result);
         state.results.sort((a, b) => a.index - b.index);
         startV4AssistedDraftPolling(result);
       } catch (error) {
+        markAssetFinished(asset.index, { failed: true });
         state.results.push(failedResult(asset, error));
       }
 
@@ -2418,6 +2587,7 @@ async function processTitles() {
   elements.processButton.disabled = !canGenerateTitles();
   setProcessButtonBusy(false);
   const pendingL2 = pendingAssistedDraftCount();
+  if (pendingL2) startGenerationTicker();
   setStatus(pendingL2 ? `${processingCompletionStatus()} 还有 ${pendingL2} 张最终标题生成中。` : processingCompletionStatus(), {
     busy: pendingL2 > 0
   });
@@ -2432,18 +2602,27 @@ async function retryAssetWithEmergency(button) {
   button.disabled = true;
   button.textContent = "GPT 重试中";
   setStatus(`资产 ${asset.index} 正在使用 GPT‑4.1 单模型重试...`, { busy: true });
+  state.assetGenerationTimings.delete(asset.index);
+  markAssetQueued(asset, Date.now());
+  markAssetStarted(asset);
+  renderResults();
 
   try {
     const result = await processAsset(asset, {
       provider: retryProvider.id,
       explicitEmergency: true
     });
+    if (!v4WriterTitlePending(result)) {
+      markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });
+    }
+    attachGenerationTimingToResult(result);
     state.results = state.results.filter((item) => item.index !== asset.index);
     state.results.push(result);
     state.results.sort((a, b) => a.index - b.index);
     startV4AssistedDraftPolling(result);
     setStatus(`资产 ${asset.index} GPT‑4.1 单模型重试完成。`);
   } catch (error) {
+    markAssetFinished(asset.index, { failed: true });
     state.results = state.results.filter((item) => item.index !== asset.index);
     state.results.push({
       ...failedResult(asset, error),
@@ -2570,6 +2749,8 @@ function applyV4AssistedDraftUpdate(result = {}, session = {}) {
 
   if (assistedStatus !== "READY" || !finalTitle) return false;
 
+  markAssetFinished(result.index);
+  attachGenerationTimingToResult(result);
   const oldGenerated = String(result.generatedTitle || result.final_title || result.title || "").trim();
   const writerEdited = titleWasEditedByWriter(result);
   result.title_stage = "L2_ASSISTED_DRAFT";
@@ -2628,6 +2809,8 @@ async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), a
     result.l2AssistedDraftStatus = "TIMEOUT";
     result.assisted_draft_status = "TIMEOUT";
     result.feedbackMessage = result.feedbackMessage || "一段式标题暂未完成，请稍后重试或使用单模型重试。";
+    markAssetFinished(result.index, { failed: true });
+    attachGenerationTimingToResult(result);
     stopV4AssistedDraftPolling(resultIndex);
     renderResults();
     return;
@@ -2644,10 +2827,19 @@ async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), a
     if (response.ok && payload.ok !== false && payload.session) {
       const upgraded = applyV4AssistedDraftUpdate(result, payload.session);
       renderResults();
-      if (upgraded || v4AssistedStatus(result) === "READY") {
+      const terminalStatus = v4AssistedStatus(result);
+      if (upgraded || ["READY", "FAILED", "TIMEOUT"].includes(terminalStatus)) {
+        if (!upgraded && terminalStatus !== "READY") {
+          markAssetFinished(result.index, { failed: true });
+          attachGenerationTimingToResult(result);
+        }
         stopV4AssistedDraftPolling(resultIndex);
         const remaining = pendingAssistedDraftCount();
-        setStatus(remaining ? `一段式标题已生成，剩余 ${remaining} 张继续生成中…` : "一段式标题已全部生成。");
+        setStatus(remaining
+          ? `一段式标题已生成，剩余 ${remaining} 张继续生成中…`
+          : terminalStatus === "READY"
+            ? "一段式标题已全部生成。"
+            : "一段式标题生成已结束，失败项可重试。");
         return;
       }
     }
@@ -2668,6 +2860,7 @@ function startV4AssistedDraftPolling(result = {}) {
   if (state.assistedDraftPollTimers.has(result.index)) return;
   result.l2AssistedDraftStatus = v4AssistedStatus(result) || "PENDING";
   result.assisted_draft_status = result.l2AssistedDraftStatus;
+  startGenerationTicker();
   void pollV4AssistedDraft(result.index, performance.now(), 0);
 }
 
@@ -2934,6 +3127,7 @@ function resetTool() {
   state.processing = false;
   state.activeAssetIndexes = new Set();
   state.assetProgress = new Map();
+  resetGenerationTimings();
   state.exportingWorkbook = false;
   setExportWorkbookStatus("");
   stopProgressTicker();
@@ -2957,6 +3151,7 @@ function bindEvents() {
       stopAllV4AssistedDraftPolling();
       state.mode = input.value;
       state.results = [];
+      resetGenerationTimings();
       closeImageModal();
       renderPreviews();
       renderResults();
