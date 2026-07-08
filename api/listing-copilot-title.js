@@ -103,7 +103,7 @@ import {
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
 // Accept optional bounded derived crop images while keeping provider input capped.
-const defaultMaxPayloadImages = 1400;
+const defaultMaxPayloadImages = 14000;
 const signedUrlConcurrency = 4;
 const promptRoot = join(process.cwd(), "prompts");
 const promptFiles = [
@@ -3226,7 +3226,7 @@ function primaryPayloadForProvider(payload = {}) {
   return {
     ...payload,
     images: providerImagesFromImages(payload.images || [], {
-      maxDerived: Number(process.env.PROVIDER_MAX_FIELD_CROPS || process.env.FIELD_MAX_CROPS_PER_ASSET || 120)
+      maxDerived: Number(process.env.PROVIDER_MAX_FIELD_CROPS || process.env.FIELD_MAX_CROPS_PER_ASSET || 1200)
     })
   };
 }
