@@ -546,6 +546,55 @@ const finalizerNeverPromoteFromRawFields = Object.freeze([
   "checklist_code"
 ]);
 
+const lowMarginOverlayForbiddenFields = new Set([
+  "print_run_number",
+  "print_run_numerator",
+  "serial_number",
+  "grade",
+  "grade_company",
+  "card_grade",
+  "auto_grade",
+  "grade_type",
+  "cert_number",
+  "condition",
+  "current_physical_defects",
+  "physical_defects"
+]);
+
+const lowMarginOverlayAllowedFields = new Set([
+  "year",
+  "manufacturer",
+  "brand",
+  "product",
+  "release",
+  "set",
+  "subset",
+  "insert",
+  "language",
+  "rarity",
+  "card_name",
+  "players",
+  "player",
+  "character",
+  "team",
+  "card_type",
+  "official_card_type",
+  "observable_components",
+  "surface_color",
+  "parallel",
+  "parallel_family",
+  "parallel_exact",
+  "variation",
+  "collector_number",
+  "card_number",
+  "checklist_code",
+  "tcg_card_number",
+  "numbered_to",
+  "print_run_denominator",
+  "serial_denominator",
+  "expected_serial_denominator"
+]);
+
 function finalizerFieldSupportSet(result = {}) {
   const fields = new Set();
   [
@@ -567,6 +616,56 @@ function finalizerValuePresent(value) {
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === "boolean") return value === true;
   return value !== null && value !== undefined && String(value).replace(/\s+/g, " ").trim() !== "" && value !== "UNKNOWN";
+}
+
+function lowMarginSafeFieldOverlay(result = {}) {
+  const application = result.low_margin_safe_field_application && typeof result.low_margin_safe_field_application === "object"
+    ? result.low_margin_safe_field_application
+    : {};
+  if (application.status !== "evidence_support_only") return {};
+  const candidateId = normalizeStringOrNull(application.candidate_id);
+  if (!candidateId) return {};
+  const supported = new Set((Array.isArray(application.supported_fields) ? application.supported_fields : [])
+    .map(normalizeStringOrNull)
+    .filter(Boolean));
+  if (!supported.size) return {};
+  const evidenceRows = Array.isArray(result.candidate_field_evidence) ? result.candidate_field_evidence : [];
+  const overlay = {};
+  for (const row of evidenceRows) {
+    if (!row || typeof row !== "object") continue;
+    if (normalizeStringOrNull(row.candidate_id) !== candidateId) continue;
+    const field = normalizeStringOrNull(row.field_name);
+    if (!field || !supported.has(field)) continue;
+    if (!lowMarginOverlayAllowedFields.has(field) || lowMarginOverlayForbiddenFields.has(field)) continue;
+    if (row.permission === "forbidden" || row.permission === "suggest_only") continue;
+    if (!finalizerValuePresent(row.value)) continue;
+    overlay[field] = row.value;
+  }
+  return normalizeFields(overlay);
+}
+
+function applyLowMarginSafeFieldOverlay(base = {}, result = {}) {
+  const overlay = lowMarginSafeFieldOverlay(result);
+  if (!Object.keys(overlay).length) return base;
+  const output = { ...(base || {}) };
+  const applied = [];
+  for (const [field, value] of Object.entries(overlay)) {
+    if (!finalizerValuePresent(value)) continue;
+    if (lowMarginOverlayForbiddenFields.has(field)) continue;
+    if (finalizerValuePresent(output[field])) continue;
+    output[field] = value;
+    applied.push(field);
+  }
+  if (applied.length) {
+    result.low_margin_safe_field_application = {
+      ...(result.low_margin_safe_field_application || {}),
+      renderer_application_allowed: true,
+      renderer_applied_fields: applied,
+      renderer_application_policy: "fill_missing_fields_only_when_candidate_value_matches_current_image_evidence"
+    };
+    result.candidate_safe_overlay_applied_fields = applied;
+  }
+  return output;
 }
 
 function finalizerTextLooksMoreSpecific(existing, incoming) {
@@ -646,7 +745,8 @@ function finalResolvedFieldsForPresentation(result = {}) {
       allowExactCodePromotion: fields !== result.raw_provider_fields
     })
   ), { ...base });
-  return Object.keys(merged).length ? merged : null;
+  const withCandidateOverlay = applyLowMarginSafeFieldOverlay(merged, result);
+  return Object.keys(withCandidateOverlay).length ? withCandidateOverlay : null;
 }
 
 function finalizeDeterministicPresentation(result = {}, payload = {}) {

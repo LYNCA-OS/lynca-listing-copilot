@@ -1494,4 +1494,80 @@ assert.match(finalizerMergesMoreCompletePublicFields.title, /Mickey Mantle/);
 assert.match(finalizerMergesMoreCompletePublicFields.title, /Auto/);
 assert.match(finalizerMergesMoreCompletePublicFields.title, /BGS Auth/);
 
+const lowMarginSafeOverlayResult = {
+  title: "2025 Bowman Chrome Jesus Made Red",
+  confidence: "HIGH",
+  resolved_fields: {
+    year: "2025",
+    manufacturer: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Jesus Made"],
+    surface_color: "Red"
+  },
+  low_margin_safe_field_application: {
+    status: "evidence_support_only",
+    candidate_id: "catalog-low-margin-safe",
+    supported_fields: ["card_name", "variation", "print_run_denominator", "serial_number", "grade_company", "card_grade", "cert_number"],
+    verifier_required_fields: ["collector_number"],
+    blocked_fields: []
+  },
+  candidate_field_evidence: [
+    {
+      candidate_id: "catalog-low-margin-safe",
+      field_name: "card_name",
+      value: "Spotlights",
+      permission: "can_apply"
+    },
+    {
+      candidate_id: "catalog-low-margin-safe",
+      field_name: "variation",
+      value: "Variation",
+      permission: "can_apply"
+    },
+    {
+      candidate_id: "catalog-low-margin-safe",
+      field_name: "print_run_denominator",
+      value: "5",
+      permission: "support_only"
+    },
+    {
+      candidate_id: "catalog-low-margin-safe",
+      field_name: "serial_number",
+      value: "3/5",
+      permission: "can_apply"
+    },
+    {
+      candidate_id: "catalog-low-margin-safe",
+      field_name: "grade_company",
+      value: "PSA",
+      permission: "can_apply"
+    },
+    {
+      candidate_id: "catalog-low-margin-safe",
+      field_name: "card_grade",
+      value: "10",
+      permission: "can_apply"
+    },
+    {
+      candidate_id: "catalog-low-margin-safe",
+      field_name: "cert_number",
+      value: "12345678",
+      permission: "can_apply"
+    }
+  ]
+};
+const lowMarginSafeOverlay = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation(lowMarginSafeOverlayResult, { maxTitleLength: 80 });
+assert.match(lowMarginSafeOverlay.title, /Spotlights/);
+assert.match(lowMarginSafeOverlay.title, /Variation/);
+assert.match(lowMarginSafeOverlay.title, /#\/5/);
+assert.doesNotMatch(lowMarginSafeOverlay.title, /3\/5/);
+assert.doesNotMatch(lowMarginSafeOverlay.title, /PSA|12345678/);
+assert.ok(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("card_name"));
+assert.ok(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("variation"));
+assert.ok(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("print_run_denominator"));
+assert.ok(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("serial_denominator"));
+assert.equal(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("serial_number"), false);
+assert.equal(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("grade_company"), false);
+assert.equal(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("cert_number"), false);
+
 console.log("listing confidence audit mock tests passed");

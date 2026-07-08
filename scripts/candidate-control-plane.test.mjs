@@ -213,6 +213,7 @@ function testLowMarginCandidateOnlySupportsCurrentImageFields() {
         year: "2025",
         product: "Bowman Chrome",
         players: ["Jesus Made"],
+        card_name: "Spotlights",
         parallel_exact: "Red Refractor"
       },
       catalog_candidate_packet: packet([topCandidate, closeCandidate], {
@@ -231,7 +232,9 @@ function testLowMarginCandidateOnlySupportsCurrentImageFields() {
   assert.equal(control.low_margin_safe_field_application.status, "evidence_support_only");
   assert.equal(control.low_margin_safe_field_application.renderer_application_allowed, false);
   assert.ok(control.low_margin_safe_field_application.supported_fields.includes("product"));
+  assert.ok(control.low_margin_safe_field_application.supported_fields.includes("card_name"));
   assert.ok(control.low_margin_safe_field_application.supported_fields.includes("parallel_exact"));
+  assert.ok(control.candidate_field_evidence.some((row) => row.field_name === "card_name" && row.value === "Spotlights"));
   assert.ok(control.low_margin_safe_field_application.verifier_required_fields.includes("collector_number"));
 }
 
