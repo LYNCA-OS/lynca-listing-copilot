@@ -280,6 +280,21 @@ const gpt5DefaultConfig = openAiEmergencyConfigFromEnv({
 assert.equal(gpt5DefaultConfig.maxOutputTokens, 81920);
 assert.equal(gpt5DefaultConfig.truncationRetryMaxOutputTokens, 128000);
 
+const gpt41DefaultExpandedConfig = openAiEmergencyConfigFromEnv({
+  ...env,
+  OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
+});
+assert.equal(gpt41DefaultExpandedConfig.maxOutputTokens, 32768);
+assert.equal(gpt41DefaultExpandedConfig.truncationRetryMaxOutputTokens, 32768);
+
+const gpt41ExpandedCapOverrideConfig = openAiEmergencyConfigFromEnv({
+  ...env,
+  OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14",
+  OPENAI_GPT41_MAX_OUTPUT_TOKEN_CAP: "40960"
+});
+assert.equal(gpt41ExpandedCapOverrideConfig.maxOutputTokens, 40960);
+assert.equal(gpt41ExpandedCapOverrideConfig.truncationRetryMaxOutputTokens, 40960);
+
 const gpt5OverrideConfig = openAiEmergencyConfigFromEnv({
   ...env,
   OPENAI_LISTING_MODEL: "gpt-5-mini",
