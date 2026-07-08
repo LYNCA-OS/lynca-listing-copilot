@@ -865,5 +865,14 @@ export default async function handler(req, res) {
     createResult
   });
 
-  sendJson(res, 200, v4Response);
+  sendJson(res, 200, withV4Version({
+    ...v4Response,
+    ...(modelRequiresFullL2Options ? {
+      fast_scout_cache_hit: false,
+      fast_scout_cache_status: "SKIPPED",
+      fast_scout_prewarmer_used: false,
+      fast_scout_blocking_call_used: false,
+      fast_scout_skip_reason: "model_requires_full_l2"
+    } : {})
+  }));
 }

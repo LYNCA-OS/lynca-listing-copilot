@@ -487,11 +487,13 @@ function resultTitle(response = {}) {
 }
 
 function cacheStatusFromResponse(data = {}) {
+  const fastScout = data.provider_result?.fast_scout || null;
+  const explicitBlocking = data.fast_scout_blocking_call_used;
   return {
-    cache_hit: data.fast_scout_cache_hit === true || data.provider_result?.fast_scout?.cache_hit === true,
-    cache_status: data.fast_scout_cache_status || (data.provider_result?.fast_scout?.cache_hit ? "HIT" : null),
+    cache_hit: data.fast_scout_cache_hit === true || fastScout?.cache_hit === true,
+    cache_status: data.fast_scout_cache_status || (fastScout?.cache_hit ? "HIT" : null),
     prewarmer_used: data.fast_scout_prewarmer_used === true,
-    blocking_call_used: data.fast_scout_blocking_call_used !== false
+    blocking_call_used: explicitBlocking === true || (explicitBlocking !== false && Boolean(fastScout))
   };
 }
 
@@ -581,6 +583,11 @@ async function runOne({
   const finalScore = scoreTitles(sellerTitle, finalTitle);
   const fastScout = data.provider_result?.fast_scout || {};
   const cache = cacheStatusFromResponse(data);
+  const l1InternalScoutMs = cache.blocking_call_used || cache.cache_hit
+    ? (cache.cache_hit
+      ? l1.latency_ms
+      : (data.module_speed_metrics?.time_to_l1_internal_scout_ms || data.module_speed_metrics?.time_to_l1_safe_draft_ms || l1.latency_ms))
+    : null;
   const l1Ok = Boolean(l1.ok && data.ok);
   const writerReady = Boolean(l2.ready || cleanText(finalTitle));
   return compactObject({
@@ -596,12 +603,10 @@ async function runOne({
     writer_ready: writerReady,
     error: l1.ok ? null : data,
     l1_wall_latency_ms: l1.latency_ms,
-    l1_internal_scout_ms: cache.cache_hit
-      ? l1.latency_ms
-      : (data.module_speed_metrics?.time_to_l1_internal_scout_ms || data.module_speed_metrics?.time_to_l1_safe_draft_ms || l1.latency_ms),
-    l1_time_to_safe_draft_ms: cache.cache_hit
-      ? l1.latency_ms
-      : (data.module_speed_metrics?.time_to_l1_safe_draft_ms || null),
+    l1_internal_scout_ms: l1InternalScoutMs,
+    l1_time_to_safe_draft_ms: cache.blocking_call_used || cache.cache_hit
+      ? (cache.cache_hit ? l1.latency_ms : (data.module_speed_metrics?.time_to_l1_safe_draft_ms || null))
+      : null,
     cached_fast_scout_source_latency_ms: fastScout.latency_ms ?? data.provider_result?.timing?.fast_scout_latency_ms ?? null,
     route: data.route_plan?.route || null,
     title_stage: data.title_stage || null,
