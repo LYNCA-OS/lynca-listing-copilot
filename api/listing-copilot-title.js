@@ -3614,6 +3614,10 @@ function withProviderMetadata(result, providerResult, selection) {
     provider_error_type: providerResult.error_type || providerResult.parsed?.error_type || null,
     provider_token_diagnostics: providerResult.token_diagnostics || null,
     provider_initial_token_diagnostics: providerResult.initial_token_diagnostics || null,
+    provider_rate_limit_diagnostics: providerResult.rate_limit_diagnostics || null,
+    provider_initial_rate_limit_diagnostics: providerResult.initial_rate_limit_diagnostics || null,
+    provider_request_diagnostics: providerResult.provider_request_diagnostics || null,
+    provider_initial_request_diagnostics: providerResult.provider_initial_request_diagnostics || null,
     provider_transient_retry_attempted: providerResult.transient_retry_attempted === true,
     provider_transient_retry_attempts: Number(providerResult.transient_retry_attempts || 0),
     provider_truncation_retry_attempted: providerResult.truncation_retry_attempted === true,
@@ -6570,6 +6574,8 @@ export default async function handler(req, res) {
       provider_error_details: safeProviderDiagnostics(error.details),
       provider_token_diagnostics: error.details?.token_diagnostics || null,
       provider_initial_token_diagnostics: error.details?.initial_token_diagnostics || null,
+      provider_rate_limit_diagnostics: error.details?.rate_limit_diagnostics || null,
+      provider_initial_rate_limit_diagnostics: error.details?.initial_rate_limit_diagnostics || null,
       provider_truncation_retry_attempted: error.details?.truncation_retry_attempted === true,
       provider_truncation_retry_attempts: Number(error.details?.truncation_retry_attempts || 0)
     }, timingContext, payload);

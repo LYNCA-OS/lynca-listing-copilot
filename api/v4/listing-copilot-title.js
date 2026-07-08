@@ -205,6 +205,10 @@ function providerRuntimeSummary(result = {}) {
     provider_finish_reason: result.provider_finish_reason || null,
     provider_token_diagnostics: result.provider_token_diagnostics || null,
     provider_initial_token_diagnostics: result.provider_initial_token_diagnostics || null,
+    provider_rate_limit_diagnostics: result.provider_rate_limit_diagnostics || null,
+    provider_initial_rate_limit_diagnostics: result.provider_initial_rate_limit_diagnostics || null,
+    provider_request_diagnostics: result.provider_request_diagnostics || null,
+    provider_initial_request_diagnostics: result.provider_initial_request_diagnostics || null,
     provider_truncation_retry_attempted: result.provider_truncation_retry_attempted === true,
     provider_truncation_retry_attempts: Number(result.provider_truncation_retry_attempts || 0),
     usage: result.usage || null

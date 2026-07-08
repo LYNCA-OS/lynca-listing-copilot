@@ -163,6 +163,14 @@ const openAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
     return {
       ok: true,
       status: 200,
+      headers: new Headers({
+        "x-ratelimit-limit-requests": "5000",
+        "x-ratelimit-remaining-requests": "4999",
+        "x-ratelimit-limit-tokens": "800000",
+        "x-ratelimit-remaining-tokens": "799000",
+        "x-ratelimit-reset-requests": "12ms",
+        "x-ratelimit-reset-tokens": "40ms"
+      }),
       json: async () => ({
         id: "resp_test",
         output_text: "{\"title\":\"OpenAI Test\",\"fields\":{\"player\":\"Emergency\"},\"unresolved\":[]}",
@@ -191,6 +199,15 @@ assert.equal(openAiResult.usage.total_tokens, 20);
 assert.equal(openAiResult.usage.image_count, 1);
 assert.equal(openAiResult.provider_key_pool_size, 1);
 assert.equal(openAiResult.provider_key_slot, 1);
+assert.equal(openAiResult.rate_limit_diagnostics["x-ratelimit-limit-requests"], "5000");
+assert.equal(openAiResult.rate_limit_diagnostics["x-ratelimit-remaining-requests"], "4999");
+assert.equal(openAiResult.rate_limit_diagnostics["x-ratelimit-limit-tokens"], "800000");
+assert.equal(openAiResult.rate_limit_diagnostics["x-ratelimit-remaining-tokens"], "799000");
+assert.equal(openAiResult.rate_limit_diagnostics["x-ratelimit-reset-requests"], "12ms");
+assert.equal(openAiResult.rate_limit_diagnostics["x-ratelimit-reset-tokens"], "40ms");
+assert.equal(openAiResult.provider_request_diagnostics.input_tokens, 11);
+assert.equal(openAiResult.provider_request_diagnostics.output_tokens, 9);
+assert.ok(openAiResult.provider_request_diagnostics.provider_latency_ms >= 0);
 
 let pooledOpenAiRequest;
 const pooledOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
