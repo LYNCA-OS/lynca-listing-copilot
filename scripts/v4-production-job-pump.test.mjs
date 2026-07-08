@@ -105,6 +105,8 @@ assert.ok(waitForReleasedL2Calls.filter((call) => call.lane === "background").le
 const enqueueSource = readFileSync(new URL("../api/v4/listing-job-enqueue.js", import.meta.url), "utf8");
 assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY/);
 assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
+assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY,\s*2,\s*\{\s*min:\s*1,\s*max:\s*2\s*\}/);
+assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY,\s*2,\s*\{\s*min:\s*1,\s*max:\s*2\s*\}/);
 assert.match(enqueueSource, /background_limit: backgroundConcurrency/);
 assert.match(enqueueSource, /interactive_process_concurrency: interactiveConcurrency/);
 
