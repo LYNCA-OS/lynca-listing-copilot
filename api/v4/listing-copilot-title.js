@@ -269,16 +269,28 @@ function canReturnFastScoutL1(payload = {}, env = process.env) {
   const explicitExperiment = payload.v4_force_fast_scout_l1 === true || payload.v4_queue_l1_only === true;
   if (!explicitExperiment && String(env.ENABLE_V4_FAST_SCOUT_L1 || "false").toLowerCase() !== "true") return false;
   if (payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true || payload.disable_fast_scout_l1 === true) return false;
-  const providerOptions = payload.provider_options || payload.providerOptions || {};
-  const requestedListingModel = providerModelOverrideFromOptions(providerOptions) || env.OPENAI_LISTING_MODEL || "";
-  if (
-    isGpt5ResponsesModel(requestedListingModel)
-    && String(env.ENABLE_GPT5_FAST_SCOUT_L1 || "false").toLowerCase() !== "true"
-    && payload.v4_queue_l1_only !== true
-  ) {
-    return false;
-  }
+  if (shouldSkipFastScoutForRequestedModel(payload, env)) return false;
   return Array.isArray(payload.images) && payload.images.length > 0;
+}
+
+function requestedListingModelFromPayload(payload = {}, env = process.env) {
+  const providerOptions = payload.provider_options || payload.providerOptions || {};
+  return providerModelOverrideFromOptions(providerOptions)
+    || payload.openai_listing_model_override
+    || payload.openaiListingModelOverride
+    || payload.openai_model_override
+    || payload.model_override
+    || payload.modelOverride
+    || payload.model
+    || env.OPENAI_LISTING_MODEL
+    || "";
+}
+
+function shouldSkipFastScoutForRequestedModel(payload = {}, env = process.env) {
+  const requestedListingModel = requestedListingModelFromPayload(payload, env);
+  return isGpt5ResponsesModel(requestedListingModel)
+    && String(env.ENABLE_GPT5_FAST_SCOUT_L1 || "false").toLowerCase() !== "true"
+    && payload.v4_queue_l1_only !== true;
 }
 
 function queueL1Only(payload = {}) {
@@ -811,7 +823,8 @@ export default async function handler(req, res) {
     }
   }
 
-  const progressiveProviderOptions = forceL2Direct
+  const modelRequiresFullL2Options = shouldSkipFastScoutForRequestedModel(payload, process.env);
+  const progressiveProviderOptions = forceL2Direct || modelRequiresFullL2Options
     ? providerOptionsForV4BackgroundL2({ payload, routePlan })
     : providerOptionsForV4ProgressiveL1({ payload, routePlan });
   const v2Payload = v2PayloadFor({
@@ -819,7 +832,7 @@ export default async function handler(req, res) {
     sessionId,
     routePlan,
     providerOptions: progressiveProviderOptions,
-    titleStageTarget: forceL2Direct ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
+    titleStageTarget: forceL2Direct || modelRequiresFullL2Options ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
   const v2Response = await callJsonHandler(v2ListingHandler, {
     method: "POST",

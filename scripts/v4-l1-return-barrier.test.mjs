@@ -28,6 +28,7 @@ assert.ok(fastScoutBranch.includes("scheduleV4Background(createResultPromise.the
 assert.ok(!fastScoutBranch.includes("l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft"), "L2 must not wait for L1 persistence before starting");
 assert.ok(apiSource.includes("ENABLE_GPT5_FAST_SCOUT_L1"), "GPT-5 main-path requests must be able to skip blocking L1 unless explicitly enabled");
 assert.ok(apiSource.includes("isGpt5ResponsesModel(requestedListingModel)"), "GPT-5 model detection must guard the fast scout L1 branch");
+assert.ok(apiSource.includes("modelRequiresFullL2Options") && apiSource.includes("providerOptionsForV4BackgroundL2({ payload, routePlan })"), "GPT-5 model detection must also select full L2 provider options after skipping the L1 branch");
 assert.ok(apiSource.includes("l1_status"), "L1 persistence must update dedicated l1 status fields instead of relying on final-only state");
 assert.ok(apiSource.includes("l2_status"), "L2 persistence must update dedicated l2 status fields");
 assert.ok(apiSource.includes("internal_scout_not_catalog_gap"), "L1 internal scout must not create catalog gap rows");
