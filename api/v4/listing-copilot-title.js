@@ -59,7 +59,7 @@ function hideTitleFields(value = {}) {
   };
 }
 
-function writerFinalizedL1Response(response = {}, result = {}, finalize = {}) {
+function writerFinalizedL2ExactAnchorResponse(response = {}, result = {}, finalize = {}) {
   const scout = buildInternalScoutSummary(response, result);
   return withV4Version({
     ...response,
@@ -81,8 +81,8 @@ function writerFinalizedL1Response(response = {}, result = {}, finalize = {}) {
       structured_fields_visible: false
     },
     title_render_source: "exact_anchor_catalog_finalized",
-    title_stage_reason: "Exact printed-code anchor matched exactly one catalog identity with zero contradictions; the catalog-grounded title is writer-visible now and L2 continues as background verification.",
-    l1_return_reason: "exact_anchor_catalog_finalized",
+    title_stage_reason: "Exact printed-code anchor matched exactly one catalog identity with zero contradictions; the catalog-grounded L2 title is writer-visible.",
+    l1_return_reason: "l2_direct_exact_anchor_catalog_finalized",
     exact_anchor_finalize: {
       used: true,
       candidate: finalize.candidate || null,
@@ -94,7 +94,7 @@ function writerFinalizedL1Response(response = {}, result = {}, finalize = {}) {
       writer_visible_title_ready: true,
       internal_scout_ready: true
     },
-    l1_internal_scout: { ...scout, writer_visible: true }
+    l1_internal_scout: { ...scout, writer_visible: false }
   });
 }
 
@@ -269,6 +269,25 @@ function queueL1Only(payload = {}) {
   return payload.v4_queue_l1_only === true || payload.v4_queue_job_type === "FAST_SCOUT_DRAFT";
 }
 
+function openAiRequestContextFromV4Payload(payload = {}, {
+  providerCallPurpose = "fast_scout",
+  titleStage = ""
+} = {}) {
+  return {
+    job_id: payload.v4_queue_job_id || payload.job_id || payload.jobId || "",
+    job_type: payload.v4_queue_job_type || payload.job_type || "",
+    lane: payload.v4_queue_lane || payload.lane || "",
+    recognition_session_id: payload.recognition_session_id || "",
+    asset_id: payload.asset_id || payload.assetId || "",
+    worker_id: payload.worker_id || payload.workerId || "",
+    title_stage: titleStage || payload.v4_title_stage_target || "",
+    provider_call_purpose: providerCallPurpose,
+    v4_force_l2_direct: payload.v4_force_l2_direct === true,
+    disable_fast_scout_l1: payload.disable_fast_scout_l1 === true,
+    v4_queue_l1_only: payload.v4_queue_l1_only === true
+  };
+}
+
 function v2PayloadFor({
   payload = {},
   sessionId,
@@ -298,12 +317,12 @@ async function persistPipelineResult({
   createResult = {},
   extraProviderSummary = {}
 } = {}) {
-  const internalScout = isInternalScoutResult(result);
+  const l1Stage = result.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
   const rows = buildV4PersistenceRows({ sessionId, result, payload });
   const fieldEvidence = await persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows });
   const candidateTrace = await persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace });
   const catalogPromptCount = catalogPromptCountFromTrace(rows.candidateTrace);
-  const catalogGap = internalScout
+  const catalogGap = l1Stage
     ? { saved: false, skipped: true, reason: "internal_scout_not_catalog_gap" }
     : catalogPromptCount === 0
     ? await persistV4CatalogGap({
@@ -324,7 +343,7 @@ async function persistPipelineResult({
       }
     })
     : { saved: false, skipped: true, reason: "catalog_prompt_candidate_available" };
-  if (internalScout) {
+  if (l1Stage) {
     const l1Title = titleFromResult(result);
     const sessionUpdate = await updateV4RecognitionSession({
       sessionId,
@@ -570,7 +589,11 @@ export default async function handler(req, res) {
       const fastScoutPromise = runV4FastScoutObservation({
         payload,
         env: process.env,
-        fetchImpl: globalThis.fetch
+        fetchImpl: globalThis.fetch,
+        requestContext: openAiRequestContextFromV4Payload(payload, {
+          providerCallPurpose: "fast_scout",
+          titleStage: v4TitleStages.L1_INTERNAL_SCOUT
+        })
       });
       const fastScoutResult = await fastScoutPromise;
       // Exact-anchor finalize: a unique strict-tier catalog hit lets L1 emit
@@ -600,9 +623,9 @@ export default async function handler(req, res) {
         } : {
           exact_anchor_finalize: { used: false, reason: finalize?.reason || "not_attempted" }
         }),
-        title_stage: finalized ? v4TitleStages.L2_ASSISTED_DRAFT : v4TitleStages.L1_INTERNAL_SCOUT,
-        assisted_draft_status: finalized ? "READY" : "PENDING",
-        l1_return_reason: finalized ? "exact_anchor_catalog_finalized" : "fast_scout_internal_scout_ready",
+        title_stage: v4TitleStages.L1_INTERNAL_SCOUT,
+        assisted_draft_status: "PENDING",
+        l1_return_reason: finalized ? "exact_anchor_catalog_internal_scout" : "fast_scout_internal_scout_ready",
         full_assist_continued_after_l1: true,
         l1_return_barrier_version: l1ReturnBarrierVersion
       };
@@ -623,9 +646,7 @@ export default async function handler(req, res) {
           l1_persistence: { saved: false, deferred: true }
         }
       }), l1Result.fast_scout || {});
-      const writerResponse = finalized
-        ? writerFinalizedL1Response(v4Response, l1Result, finalize)
-        : writerPendingL1Response(v4Response, l1Result);
+      const writerResponse = writerPendingL1Response(v4Response, l1Result);
       const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({
         sessionId,
         result: l1Result,
@@ -722,7 +743,11 @@ export default async function handler(req, res) {
       const scoutResult = await runV4FastScoutObservation({
         payload,
         env: process.env,
-        fetchImpl: globalThis.fetch
+        fetchImpl: globalThis.fetch,
+        requestContext: openAiRequestContextFromV4Payload(payload, {
+          providerCallPurpose: "l2_direct_exact_anchor_scout",
+          titleStage: v4TitleStages.L1_INTERNAL_SCOUT
+        })
       });
       const finalize = await maybeFinalizeL1FromExactAnchor({
         scoutResult,
@@ -758,7 +783,7 @@ export default async function handler(req, res) {
           createResult,
           extraProviderSummary: { assisted_draft_status: "READY", exact_anchor_finalized: true }
         });
-        sendJson(res, 200, writerFinalizedL1Response(finalizedResponse, finalizedResult, finalize));
+        sendJson(res, 200, writerFinalizedL2ExactAnchorResponse(finalizedResponse, finalizedResult, finalize));
         return;
       }
     } catch (error) {

@@ -105,14 +105,20 @@ assert.ok(waitForReleasedL2Calls.filter((call) => call.lane === "background").le
 const enqueueSource = readFileSync(new URL("../api/v4/listing-job-enqueue.js", import.meta.url), "utf8");
 assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY/);
 assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
+assert.match(enqueueSource, /V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER/);
+assert.match(enqueueSource, /V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS/);
+assert.match(enqueueSource, /V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS/);
 assert.match(enqueueSource, /const stableConcurrency = v4WorkerProcessConcurrency\(process\.env\)/);
-assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY,\s*stableConcurrency,\s*\{\s*min:\s*1,\s*max:\s*96\s*\}/);
-assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY,\s*stableConcurrency,\s*\{\s*min:\s*1,\s*max:\s*96\s*\}/);
+assert.match(enqueueSource, /interactiveWorkers \* perWorkerLimit/);
+assert.match(enqueueSource, /backgroundWorkers \* perWorkerLimit/);
+assert.match(enqueueSource, /const interactiveConcurrency = Math\.min\(stableConcurrency, interactiveLimit\)/);
+assert.match(enqueueSource, /const backgroundConcurrency = Math\.min\(stableConcurrency, backgroundLimit\)/);
 assert.match(enqueueSource, /cycles:\s*2/);
 assert.match(enqueueSource, /lease_seconds:\s*240/);
 assert.match(enqueueSource, /continuation_cycles:\s*2/);
 assert.match(enqueueSource, /max_continuation_depth:\s*20/);
-assert.match(enqueueSource, /background_limit: backgroundConcurrency/);
+assert.match(enqueueSource, /background_limit: backgroundLimit/);
+assert.match(enqueueSource, /interactive_limit: interactiveLimit/);
 assert.match(enqueueSource, /interactive_process_concurrency: interactiveConcurrency/);
 
 const workerSource = readFileSync(new URL("../api/v4/listing-job-worker.js", import.meta.url), "utf8");

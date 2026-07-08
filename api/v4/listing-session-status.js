@@ -9,6 +9,22 @@ function queryParam(req, name) {
   return String(url.searchParams.get(name) || "").trim();
 }
 
+function writerSafeSession(session = null) {
+  if (!session || typeof session !== "object") return session;
+  const l2Ready = session.l2_status === "READY" && (session.l2_title || session.final_title);
+  return {
+    ...session,
+    l1_title: "",
+    final_title: l2Ready ? (session.final_title || session.l2_title || "") : "",
+    writer_status: l2Ready ? "ASSISTED_READY" : (session.failure_reason ? "FAILED" : "GENERATING"),
+    writer_display_title: l2Ready ? (session.l2_title || session.final_title || "") : null,
+    current_best_title: l2Ready ? (session.l2_title || session.final_title || "") : "",
+    can_writer_start: Boolean(l2Ready),
+    is_final: Boolean(l2Ready),
+    title_stage: l2Ready ? "L2_ASSISTED_DRAFT" : "PENDING"
+  };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
@@ -46,7 +62,7 @@ export default async function handler(req, res) {
   sendJson(res, status.ok ? 200 : 500, withV4Version({
     ok: status.ok,
     recognition_session_id: sessionId,
-    session: status.session,
+    session: writerSafeSession(status.session),
     related_counts: counts,
     error: status.error
   }));

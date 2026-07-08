@@ -43,6 +43,7 @@ function writerSafeSessionStatus(session = null) {
     status: session.status || null,
     final_title: session.l2_status === "READY" ? (session.final_title || session.l2_title || "") : "",
     l1_status: session.l1_status || "PENDING",
+    l1_title: "",
     l1_ready_at: session.l1_ready_at || null,
     l1_route: session.l1_route || null,
     l1_timing: session.l1_timing || null,
@@ -62,8 +63,11 @@ function writerSafeSessionStatus(session = null) {
 function displayStateForSession(session = null) {
   if (!session) {
     return {
+      internal_status: "PENDING",
+      writer_status: "GENERATING",
       display_status: "PENDING",
       display_title: "",
+      writer_display_title: null,
       title_stage: "PENDING",
       current_best_title: "",
       is_final: false,
@@ -73,36 +77,30 @@ function displayStateForSession(session = null) {
     };
   }
   const l2Ready = session.l2_status === "READY" && (session.l2_title || session.final_title);
-  const title = l2Ready
+  const l2Title = l2Ready
     ? (session.l2_title || session.final_title || "")
     : "";
   if (l2Ready) {
     return {
+      internal_status: session.status || "L2_READY",
+      writer_status: "ASSISTED_READY",
       display_status: "FINAL_READY",
-      display_title: title,
+      display_title: l2Title,
+      writer_display_title: l2Title,
       title_stage: "L2_ASSISTED_DRAFT",
-      current_best_title: title,
+      current_best_title: l2Title,
       is_final: true,
       can_writer_start: true,
       pending_modules: [],
       background_modules: []
     };
   }
-  if (session.l1_status === "READY") {
-    return {
-      display_status: "PROCESSING_FINAL",
-      display_title: "",
-      title_stage: "L1_INTERNAL_SCOUT",
-      current_best_title: "",
-      is_final: false,
-      can_writer_start: false,
-      pending_modules: ["final_assisted_title"],
-      background_modules: ["final_assisted_title"]
-    };
-  }
   return {
+    internal_status: session.status || (session.l1_status === "READY" ? "L1_READY" : session.failure_reason ? "FAILED" : "PENDING"),
+    writer_status: session.failure_reason ? "FAILED" : "GENERATING",
     display_status: session.failure_reason ? "FAILED" : "PENDING",
     display_title: "",
+    writer_display_title: null,
     title_stage: "PENDING",
     current_best_title: "",
     is_final: false,
@@ -160,6 +158,9 @@ export default async function handler(req, res) {
         parent_job_id: job.parent_job_id || null,
         paired_job_id: job.paired_job_id || null,
         status: job.status,
+        internal_status: display.internal_status,
+        writer_status: display.writer_status,
+        writer_display_title: display.writer_display_title,
         display_status: display.display_status,
         display_title: display.display_title,
         title_stage: display.title_stage,
@@ -170,8 +171,10 @@ export default async function handler(req, res) {
         background_modules: display.background_modules,
         l1_status: session?.l1_status || "PENDING",
         l1_title: "",
+        l1_ready_at: session?.l1_ready_at || null,
         l2_status: session?.l2_status || "PENDING",
         l2_title: session?.l2_status === "READY" ? (session?.l2_title || session?.final_title || "") : "",
+        l2_ready_at: session?.l2_ready_at || null,
         timing: {
           time_to_l1_ready_ms: elapsedMs(job.created_at, session?.l1_ready_at),
           time_to_l2_ready_ms: elapsedMs(job.created_at, session?.l2_ready_at),

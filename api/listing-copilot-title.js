@@ -12,7 +12,13 @@ import {
 } from "../lib/listing-knowledge-registry.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
-import { defaultProviderModels, providerLabels, providerMetadata, visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
+import {
+  defaultProviderModels,
+  providerLabels,
+  providerMetadata,
+  providerModelOverrideFromOptions,
+  visionProviderIds
+} from "../lib/listing/providers/provider-contract.mjs";
 import { openAiKeyPoolSize } from "../lib/listing/providers/openai-key-pool.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
@@ -180,6 +186,25 @@ function providerOptionsFromPayload(payload = {}, env = process.env) {
   }
 
   return merged;
+}
+
+function openAiRequestContextFromPayload(payload = {}, {
+  providerCallPurpose = "listing_full_provider",
+  titleStage = ""
+} = {}) {
+  return {
+    job_id: payload.v4_queue_job_id || payload.job_id || payload.jobId || "",
+    job_type: payload.v4_queue_job_type || payload.job_type || "",
+    lane: payload.v4_queue_lane || payload.lane || "",
+    recognition_session_id: payload.recognition_session_id || "",
+    asset_id: payload.asset_id || payload.assetId || "",
+    worker_id: payload.worker_id || payload.workerId || "",
+    title_stage: titleStage || payload.v4_title_stage_target || "",
+    provider_call_purpose: providerCallPurpose,
+    v4_force_l2_direct: payload.v4_force_l2_direct === true,
+    disable_fast_scout_l1: payload.disable_fast_scout_l1 === true,
+    v4_queue_l1_only: payload.v4_queue_l1_only === true
+  };
 }
 
 function valuePresent(value) {
@@ -6157,7 +6182,12 @@ async function createOpenAiTitle(payload, selection, {
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
     prompt,
-    shardKey: initialPayload.recognition_session_id || initialPayload.asset_id || initialPayload.assetId || ""
+    shardKey: initialPayload.recognition_session_id || initialPayload.asset_id || initialPayload.assetId || "",
+    modelOverride: providerModelOverrideFromOptions(providerOptions),
+    requestContext: openAiRequestContextFromPayload(initialPayload, {
+      providerCallPurpose: "full_l2",
+      titleStage: providerOptions.v4_title_stage_target || initialPayload.v4_title_stage_target || ""
+    })
   }));
 
   const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => ({

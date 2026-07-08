@@ -172,8 +172,19 @@ async function verifiedItemImages({
 }
 
 function payloadForItem(item = {}, index = 0, images = itemImages(item), {
-  forceL2Direct = false
+  forceL2Direct = false,
+  modelOverride = ""
 } = {}) {
+  const providerOptions = {
+    enable_catalog_assist: true,
+    enable_vector_retrieval: true,
+    vector_retrieval_mode: "assist",
+    enable_v4_progressive_l1: true,
+    cloud_eval_blind_to_corrected_title_hint: true,
+    corrected_title_as_temporary_gt: false,
+    send_corrected_title_hint_to_cloud: false
+  };
+  if (modelOverride) providerOptions.openai_listing_model_override = modelOverride;
   return {
     asset_id: candidateId(item, index),
     source_feedback_id: item.source_feedback_id || item.source_record_id || null,
@@ -184,15 +195,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
     provider: "openai_legacy",
     provider_id: "openai_legacy",
     vision_provider: "openai_legacy",
-    provider_options: {
-      enable_catalog_assist: true,
-      enable_vector_retrieval: true,
-      vector_retrieval_mode: "assist",
-      enable_v4_progressive_l1: true,
-      cloud_eval_blind_to_corrected_title_hint: true,
-      corrected_title_as_temporary_gt: false,
-      send_corrected_title_hint_to_cloud: false
-    },
+    provider_options: providerOptions,
     ...(forceL2Direct
       ? {
         force_l2_only: true,
@@ -366,13 +369,13 @@ async function pollSessionStatus({
     const summary = sessionL2Summary(last.data || {});
     const candidateDebug = compactCandidateTrace(last.data?.session?.candidate_control_plane_trace || {});
     if (summary.assisted_draft_status === "READY") {
-      return { polls, ready: true, summary, candidateDebug, last };
+      return { polls, ready: true, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
     if (summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT") {
-      return { polls, ready: false, summary, candidateDebug, last };
+      return { polls, ready: false, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
     if (!summary.assisted_draft_status && summary.session_status === "DRAFT_READY") {
-      return { polls, ready: false, summary, candidateDebug, last };
+      return { polls, ready: false, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
     await delay(intervalMs);
   }
@@ -381,7 +384,8 @@ async function pollSessionStatus({
     ready: false,
     summary: sessionL2Summary(last?.data || {}),
     candidateDebug: compactCandidateTrace(last?.data?.session?.candidate_control_plane_trace || {}),
-    last
+    last,
+    elapsed_ms: Date.now() - started
   };
 }
 
@@ -490,6 +494,7 @@ async function runOne({
   cookie,
   prewarm,
   forceL2Direct = false,
+  modelOverride = "",
   l2WaitMs,
   requestTimeoutMs
 }) {
@@ -504,7 +509,7 @@ async function runOne({
     requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
     verificationCache
   });
-  const payload = payloadForItem(item, index, images, { forceL2Direct });
+  const payload = payloadForItem(item, index, images, { forceL2Direct, modelOverride });
   const sealedKey = item.sealed_eval_label_ref?.key || "";
   const sealed = sealedLabels.get(id.replace(/^ebay_image_only_/, "")) || sealedLabels.get(item.source_record?.case_id) || null;
   const fallbackSealed = [...sealedLabels.values()].find((row) => row.key === sealedKey) || null;
@@ -534,6 +539,7 @@ async function runOne({
     ? {
       polls: 0,
       ready: Boolean(data.ok),
+      elapsed_ms: 0,
       summary: {
         assisted_draft_status: data.assisted_draft_status || (data.ok ? "READY" : "FAILED"),
         title: resultTitle(data),
@@ -589,6 +595,10 @@ async function runOne({
     l1_title: l1Title,
     l2_ready: Boolean(l2.ready),
     l2_poll_count: l2.polls,
+    l2_poll_elapsed_ms: l2.elapsed_ms ?? null,
+    time_to_writer_ready_ms: forceL2Direct
+      ? l1.latency_ms
+      : (l2.ready ? l1.latency_ms + Number(l2.elapsed_ms || 0) : null),
     l2_status: l2.summary,
     l2_candidate_debug: l2.candidateDebug || {},
     final_title: finalTitle,
@@ -655,6 +665,8 @@ function summarize(results = []) {
     l1_internal_scout_p95_ms: quantile(results.map((item) => item.l1_internal_scout_ms), 0.95),
     l1_safe_draft_p50_ms: quantile(results.map((item) => item.l1_time_to_safe_draft_ms), 0.5),
     l1_safe_draft_p95_ms: quantile(results.map((item) => item.l1_time_to_safe_draft_ms), 0.95),
+    writer_ready_p50_ms: quantile(results.map((item) => item.time_to_writer_ready_ms), 0.5),
+    writer_ready_p95_ms: quantile(results.map((item) => item.time_to_writer_ready_ms), 0.95),
     prewarm_p50_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.5),
     prewarm_p95_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.95),
     catalog_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.catalog_prompt_candidate_count || 0), 0),
@@ -712,6 +724,7 @@ function perCardTsv(results = []) {
     "l1_safe_ms",
     "cache",
     "l2_ready",
+    "writer_ready_ms",
     "l1_policy_fair",
     "final_policy_fair",
     "catalog_prompt",
@@ -736,6 +749,7 @@ function perCardTsv(results = []) {
     item.l1_time_to_safe_draft_ms,
     item.fast_scout_cache_status,
     item.l2_ready,
+    item.time_to_writer_ready_ms,
     item.l1_scoring?.policy_fair_token_recall,
     item.final_scoring?.policy_fair_token_recall,
     item.catalog_prompt_candidate_count,
@@ -765,6 +779,7 @@ export async function runV4EbaySmoke({
   offset = 0,
   prewarm = false,
   forceL2Direct = false,
+  modelOverride = "",
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
   outPath = "",
@@ -789,6 +804,7 @@ export async function runV4EbaySmoke({
       cookie,
       prewarm,
       forceL2Direct,
+      modelOverride,
       l2WaitMs,
       requestTimeoutMs
     });
@@ -807,6 +823,7 @@ export async function runV4EbaySmoke({
     offset,
     prewarm_enabled: prewarm,
     force_l2_direct: forceL2Direct,
+    model_override: modelOverride || null,
     blind_policy: {
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: true,
@@ -835,6 +852,7 @@ export async function main(argv = process.argv, env = process.env) {
     offset: Math.max(0, Math.trunc(numberArg(argv, "--offset", 0))),
     prewarm: hasFlag(argv, "--prewarm"),
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
+    modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
     outPath,
@@ -849,6 +867,8 @@ export async function main(argv = process.argv, env = process.env) {
     `l2_ready: ${report.summary.l2_ready_count}`,
     `l1_p50_ms: ${report.summary.l1_p50_ms}`,
     `l1_p95_ms: ${report.summary.l1_p95_ms}`,
+    `writer_ready_p50_ms: ${report.summary.writer_ready_p50_ms}`,
+    `writer_ready_p95_ms: ${report.summary.writer_ready_p95_ms}`,
     `fast_scout_cache_hit_count: ${report.summary.fast_scout_cache_hit_count}`,
     `final_policy_fair_avg: ${report.summary.final_accuracy_proxy.policy_fair_token_recall_avg}`,
     `final_policy_fair_pass@0.72: ${report.summary.final_accuracy_proxy.policy_fair_pass_at_0_72}/${report.summary.attempted_count}`,

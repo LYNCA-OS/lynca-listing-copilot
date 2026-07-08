@@ -12,6 +12,7 @@ import {
   v4QueueConfigured,
   v4WorkerClaimLimit,
   v4WorkerLeaseSeconds,
+  v4WorkerMaxWaitMs,
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
@@ -61,6 +62,35 @@ function normalizedJobType(job = {}) {
   return raw === v4JobTypes.FAST_SCOUT_DRAFT ? v4JobTypes.FAST_SCOUT_DRAFT : v4JobTypes.FINAL_ASSISTED_TITLE;
 }
 
+function laneLeaseSeconds(lane, payload = {}) {
+  if (payload.lease_seconds || payload.leaseSeconds) {
+    return positiveInteger(payload.lease_seconds ?? payload.leaseSeconds, v4WorkerLeaseSeconds(process.env), { min: 30, max: 900 });
+  }
+  const laneKey = lane === v4JobLanes.INTERACTIVE ? "V4_JOB_LEASE_SECONDS_INTERACTIVE" : "V4_JOB_LEASE_SECONDS_BACKGROUND";
+  const fallback = lane === v4JobLanes.INTERACTIVE ? 120 : 300;
+  return positiveInteger(process.env[laneKey], fallback, { min: 30, max: 900 });
+}
+
+function laneProcessConcurrency(lane, payload = {}) {
+  const globalFallback = v4WorkerProcessConcurrency(process.env);
+  const laneKey = lane === v4JobLanes.INTERACTIVE
+    ? "V4_JOB_WORKER_PROCESS_CONCURRENCY_INTERACTIVE"
+    : "V4_JOB_WORKER_PROCESS_CONCURRENCY_BACKGROUND";
+  const requested = positiveInteger(
+    payload.process_concurrency ?? payload.processConcurrency ?? process.env[laneKey],
+    positiveInteger(process.env[laneKey], globalFallback, { min: 1, max: 96 }),
+    { min: 1, max: 96 }
+  );
+  const hardMax = positiveInteger(process.env.V4_JOB_WORKER_PROCESS_CONCURRENCY_MAX, 4, { min: 1, max: 96 });
+  return Math.min(requested, hardMax);
+}
+
+function shouldDrainLoop(payload = {}) {
+  const raw = payload.drain_loop_enabled ?? payload.drainLoopEnabled ?? process.env.V4_JOB_WORKER_DRAIN_LOOP_ENABLED;
+  if (raw === undefined || raw === null || raw === "") return true;
+  return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
+}
+
 export function payloadForV4ProductionJob(job = {}) {
   const jobType = normalizedJobType(job);
   const fastScoutDraft = jobType === v4JobTypes.FAST_SCOUT_DRAFT;
@@ -74,6 +104,7 @@ export function payloadForV4ProductionJob(job = {}) {
     provider: basePayload.provider || job.provider_id || "openai_legacy",
     provider_id: basePayload.provider_id || job.provider_id || "openai_legacy",
     vision_provider: basePayload.vision_provider || job.provider_id || "openai_legacy",
+    v4_queue_job_id: job.id || basePayload.v4_queue_job_id || basePayload.job_id || undefined,
     v4_queue_job_type: jobType,
     v4_queue_lane: job.lane || basePayload.lane || (fastScoutDraft ? v4JobLanes.INTERACTIVE : v4JobLanes.BACKGROUND),
     ...(fastScoutDraft
@@ -205,24 +236,11 @@ export default async function handler(req, res) {
     return;
   }
 
-  const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 96 });
   const lane = payload.lane || payload.queue_lane || payload.queueLane || null;
   const tenantId = payload.tenant_id || payload.tenantId || null;
   const workerId = workerIdFrom(req, payload);
-  const claim = await claimV4RecognitionJobs({
-    limit,
-    workerId,
-    leaseSeconds: positiveInteger(payload.lease_seconds, v4WorkerLeaseSeconds(process.env), { min: 30, max: 900 }),
-    lane,
-    tenantId
-  });
-  if (!claim.ok) {
-    sendJson(res, 500, withV4Version({ ok: false, message: "Unable to claim V4 jobs.", error: claim.error }));
-    return;
-  }
-
-  const concurrency = positiveInteger(payload.process_concurrency, v4WorkerProcessConcurrency(process.env), { min: 1, max: 96 });
-  const processed = await mapWithConcurrency(claim.rows, concurrency, async (job) => {
+  const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 96 });
+  const processBatch = async (rows = [], concurrency = 1) => mapWithConcurrency(rows, concurrency, async (job) => {
     try {
       const result = await runJob(job, req);
       const jobStatus = completionStatusForJob(job);
@@ -293,14 +311,58 @@ export default async function handler(req, res) {
     }
   });
 
+  const startedAt = Date.now();
+  const maxWaitMs = positiveInteger(payload.max_wait_ms ?? payload.maxWaitMs, v4WorkerMaxWaitMs(process.env), { min: 5_000, max: 240_000 });
+  const maxBatches = shouldDrainLoop(payload)
+    ? positiveInteger(payload.max_batches_per_invocation ?? payload.maxBatchesPerInvocation ?? process.env.V4_JOB_WORKER_MAX_BATCHES_PER_INVOCATION, 3, { min: 1, max: 10 })
+    : 1;
+  const emptyClaimStop = String(payload.empty_claim_stop ?? payload.emptyClaimStop ?? process.env.V4_JOB_WORKER_EMPTY_CLAIM_STOP ?? "true").toLowerCase() !== "false";
+  const batches = [];
+  let processed = [];
+  for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
+    if (Date.now() - startedAt > maxWaitMs - 2_000) break;
+    const claimStarted = Date.now();
+    const leaseSeconds = laneLeaseSeconds(lane, payload);
+    const claim = await claimV4RecognitionJobs({
+      limit,
+      workerId: `${workerId}-b${batchIndex + 1}`,
+      leaseSeconds,
+      lane,
+      tenantId
+    });
+    if (!claim.ok) {
+      sendJson(res, 500, withV4Version({ ok: false, message: "Unable to claim V4 jobs.", error: claim.error }));
+      return;
+    }
+    const concurrency = laneProcessConcurrency(lane, payload);
+    const batchRows = Array.isArray(claim.rows) ? claim.rows : [];
+    const batchProcessed = await processBatch(batchRows, concurrency);
+    processed = processed.concat(batchProcessed);
+    batches.push({
+      batch_index: batchIndex + 1,
+      lane: lane || null,
+      claimed_count: batchRows.length,
+      processed_count: batchProcessed.length,
+      process_concurrency: concurrency,
+      lease_seconds: leaseSeconds,
+      worker_claim_latency_ms: Date.now() - claimStarted
+    });
+    if (!batchRows.length && emptyClaimStop) break;
+  }
+
   sendJson(res, 200, withV4Version({
     ok: true,
     worker_id: workerId,
     lane: lane || null,
     tenant_id: tenantId || null,
-    process_concurrency: concurrency,
-    claimed_count: claim.rows.length,
+    process_concurrency: batches[0]?.process_concurrency || laneProcessConcurrency(lane, payload),
+    claimed_count: batches.reduce((sum, batch) => sum + Number(batch.claimed_count || 0), 0),
     processed_count: processed.length,
+    batches_claimed: batches.filter((batch) => Number(batch.claimed_count || 0) > 0).length,
+    batches_run: batches.length,
+    jobs_processed_per_invocation: processed.length,
+    worker_elapsed_ms: Date.now() - startedAt,
+    batches,
     jobs: processed
   }));
 }

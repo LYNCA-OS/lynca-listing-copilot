@@ -38,27 +38,39 @@ function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEG
   return Math.max(min, Math.min(max, parsed));
 }
 
+function envFlag(env, key, fallback = true) {
+  const raw = env[key];
+  if (raw === undefined || raw === null || raw === "") return fallback;
+  return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
+}
+
 function triggerV4QueuePumpAfterEnqueue(req, {
   tenantId,
   batchId,
   queuedCount
 } = {}) {
   if (!queuedCount) return { triggered: false, reason: "no_jobs_queued" };
+  if (!envFlag(process.env, "V4_QUEUE_AUTOKICK_ENABLED", true)) return { triggered: false, reason: "autokick_disabled" };
   const secret = configuredWorkerSecret(process.env);
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
   const origin = requestOrigin(req);
   if (!origin) return { triggered: false, reason: "request_origin_missing" };
   const stableConcurrency = v4WorkerProcessConcurrency(process.env);
-  const interactiveConcurrency = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, stableConcurrency, { min: 1, max: 96 });
-  const backgroundConcurrency = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, stableConcurrency, { min: 1, max: 96 });
+  const perWorkerLimit = positiveInteger(process.env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
+  const interactiveWorkers = positiveInteger(process.env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });
+  const backgroundWorkers = positiveInteger(process.env.V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS, 2, { min: 1, max: 32 });
+  const interactiveLimit = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, interactiveWorkers * perWorkerLimit, { min: 1, max: 96 });
+  const backgroundLimit = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, backgroundWorkers * perWorkerLimit, { min: 1, max: 96 });
+  const interactiveConcurrency = Math.min(stableConcurrency, interactiveLimit);
+  const backgroundConcurrency = Math.min(stableConcurrency, backgroundLimit);
 
   const body = {
     tenant_id: tenantId || batchId || null,
-    limit: interactiveConcurrency,
+    limit: interactiveLimit,
     process_concurrency: interactiveConcurrency,
-    interactive_limit: interactiveConcurrency,
+    interactive_limit: interactiveLimit,
     interactive_process_concurrency: interactiveConcurrency,
-    background_limit: backgroundConcurrency,
+    background_limit: backgroundLimit,
     background_process_concurrency: backgroundConcurrency,
     cycles: 2,
     max_runtime_ms: 240_000,

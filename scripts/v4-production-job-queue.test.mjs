@@ -17,6 +17,8 @@ import {
 import { payloadForV4ProductionJob } from "../api/v4/listing-job-worker.js";
 import { isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 
+const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
+
 function jsonResponse(body, init = {}) {
   return {
     ok: init.ok ?? true,
@@ -51,9 +53,11 @@ const stageJobs = expandV4RecognitionStageJobs({
   operatorId: "operator-stage",
   jobs: [{ asset_id: "asset-stage", payload: { images: [{ url: "https://example.test/a.jpg" }] } }]
 });
-assert.equal(stageJobs.length, 1);
-assert.equal(stageJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
-assert.equal(stageJobs[0].lane, v4JobLanes.BACKGROUND);
+assert.equal(stageJobs.length, 2);
+assert.equal(stageJobs[0].job_type, v4JobTypes.FAST_SCOUT_DRAFT);
+assert.equal(stageJobs[0].lane, v4JobLanes.INTERACTIVE);
+assert.equal(stageJobs[1].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+assert.equal(stageJobs[1].lane, v4JobLanes.BACKGROUND);
 
 const optInStageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-staged",
@@ -75,6 +79,22 @@ const l2OnlyJobs = expandV4RecognitionStageJobs({
 });
 assert.equal(l2OnlyJobs.length, 1);
 assert.equal(l2OnlyJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+
+process.env.V4_QUEUE_DEFAULT_CREATE_L1 = "false";
+const envDefaultL2Jobs = expandV4RecognitionStageJobs({
+  jobs: [{ payload: { images: [] } }]
+});
+assert.equal(envDefaultL2Jobs.length, 1);
+assert.equal(envDefaultL2Jobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+const envOverrideL1Jobs = expandV4RecognitionStageJobs({
+  jobs: [{ payload: { create_l1_job: true, images: [] } }]
+});
+assert.equal(envOverrideL1Jobs.length, 2);
+if (originalDefaultCreateL1 === undefined) {
+  delete process.env.V4_QUEUE_DEFAULT_CREATE_L1;
+} else {
+  process.env.V4_QUEUE_DEFAULT_CREATE_L1 = originalDefaultCreateL1;
+}
 
 const l1Payload = payloadForV4ProductionJob(optInStageJobs[0]);
 assert.equal(l1Payload.v4_queue_l1_only, true);
