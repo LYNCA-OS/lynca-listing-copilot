@@ -14,10 +14,10 @@ const {
   shouldSkipVectorForCatalogContext
 } = __listingCopilotTitleTestHooks;
 
-assert.equal(configuredMaxPayloadImages({}), 140);
+assert.equal(configuredMaxPayloadImages({}), 1400);
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "18" }), 18);
-assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "0" }), 140);
-assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "not-a-number" }), 140);
+assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "0" }), 1400);
+assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "not-a-number" }), 1400);
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "1" }), 2);
 
 const strongCatalogCandidate = {

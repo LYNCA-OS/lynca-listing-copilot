@@ -360,13 +360,26 @@ const backImage = {
   }))
 };
 const providerImages = __listingCopilotAppTestHooks.imagesForProvider([frontImage, backImage]);
-assert.equal(providerImages.length, 8, "pair mode provider payload should keep two original images plus six bounded crops");
+assert.equal(providerImages.length, 14, "pair mode provider payload should keep two original images plus expanded bounded crops");
 assert.equal(providerImages[0], frontImage, "first uploaded original should be preserved first");
 assert.equal(providerImages[1], backImage, "second uploaded original should be preserved second");
-assert.equal(providerImages.filter((image) => image.derived).length, 6, "field crops should be bounded across the whole card asset");
+assert.equal(providerImages.filter((image) => image.derived).length, 12, "field crops should be bounded across the whole card asset");
 assert.deepEqual(
   providerImages.slice(2).map((image) => image.id),
-  ["front-crop-0", "front-crop-1", "front-crop-2", "front-crop-3", "front-crop-4", "front-crop-5"],
+  [
+    "front-crop-0",
+    "front-crop-1",
+    "front-crop-2",
+    "front-crop-3",
+    "front-crop-4",
+    "front-crop-5",
+    "back-crop-0",
+    "back-crop-1",
+    "back-crop-2",
+    "back-crop-3",
+    "back-crop-4",
+    "back-crop-5"
+  ],
   "highest-priority crops should be retained deterministically"
 );
 
@@ -374,8 +387,8 @@ const boundedRequestImages = __listingCopilotAppTestHooks.boundedProviderImagesF
   { id: "front" },
   { id: "back" },
   ...Array.from({ length: 20 }, (_, index) => ({ id: `crop-${index}`, derived: true }))
-], 14);
-assert.equal(boundedRequestImages.length, 14, "oversized provider image batches should be bounded before request serialization");
+]);
+assert.equal(boundedRequestImages.length, 22, "expanded provider image batches should retain all evidence images when under the 10x cap");
 assert.deepEqual(
   boundedRequestImages.slice(0, 2).map((image) => image.id),
   ["front", "back"],
@@ -383,8 +396,15 @@ assert.deepEqual(
 );
 assert.deepEqual(
   boundedRequestImages.slice(2).map((image) => image.id),
-  Array.from({ length: 12 }, (_, index) => `crop-${index}`),
-  "bounded request batches should defer lower-priority overflow images"
+  Array.from({ length: 20 }, (_, index) => `crop-${index}`),
+  "expanded request batches should retain lower-priority evidence images under the 10x cap"
 );
+
+const explicitlyBoundedRequestImages = __listingCopilotAppTestHooks.boundedProviderImagesForRequest([
+  { id: "front" },
+  { id: "back" },
+  ...Array.from({ length: 20 }, (_, index) => ({ id: `crop-${index}`, derived: true }))
+], 14);
+assert.equal(explicitlyBoundedRequestImages.length, 14, "explicit request bounds should still cap evidence images when needed");
 
 console.log("provider UI tests passed");
