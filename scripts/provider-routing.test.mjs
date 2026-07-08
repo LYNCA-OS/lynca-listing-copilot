@@ -223,6 +223,42 @@ const gpt5Text = openAiResponsesTextOptions({
 assert.equal(gpt5Text.verbosity, "low");
 assert.equal(gpt5Text.format.type, "json_schema");
 
+let gpt5OpenAiRequest;
+const gpt5OpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  env: {
+    ...env,
+    OPENAI_LISTING_MODEL: "gpt-5-mini"
+  },
+  fetchImpl: async (url, init) => {
+    gpt5OpenAiRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        id: "resp_gpt5_test",
+        model: "gpt-5-mini",
+        output_text: "{\"title\":\"GPT-5 Test\",\"fields\":{\"player\":\"Five\"},\"field_evidence\":[],\"unresolved\":[],\"vector_candidate_decision\":{\"selected_candidate_id\":null,\"decision\":\"NOT_AVAILABLE\",\"supported_fields\":[],\"rejected_fields\":[],\"conflicts\":[]}}",
+        usage: {
+          input_tokens: 13,
+          output_tokens: 7,
+          total_tokens: 20
+        }
+      })
+    };
+  }
+});
+const gpt5Body = JSON.parse(gpt5OpenAiRequest.init.body);
+assert.equal(gpt5Body.model, "gpt-5-mini");
+assert.equal(gpt5Body.temperature, undefined);
+assert.deepEqual(gpt5Body.reasoning, { effort: "low" });
+assert.equal(gpt5Body.text.verbosity, "low");
+assert.match(gpt5Body.input[0].content[0].text, /GPT-5 mini main-path extraction profile/);
+assert.match(gpt5Body.input[0].content[0].text, /Never leave product, set, players, card_name, print_run_number/);
+assert.equal(gpt5OpenAiResult.parsed.fields.player, "Five");
+
 let pooledOpenAiRequest;
 const pooledOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
   images: dataUrlImages,

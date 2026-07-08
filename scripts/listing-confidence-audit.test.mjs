@@ -153,6 +153,57 @@ assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /2\/3/);
 assert.doesNotMatch(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /#\/3/);
 assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /BGS 8\.5\/10/);
 
+const structuredEvidenceArrayBackfillsCriticalFields = await callApi({
+  title: "",
+  confidence: "HIGH",
+  reason: "Provider kept critical direct reads in structured evidence only.",
+  fields: {
+    year: "2017",
+    manufacturer: "Panini",
+    product: "Origins",
+    players: ["Patrick Mahomes II"],
+    card_name: "Rookie Auto",
+    auto: true
+  },
+  field_evidence: [
+    {
+      field: "print_run_number",
+      value: "",
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      source_image_id: "front",
+      source_region: "serial_number",
+      raw_text: "02/10",
+      visible_text: "02/10",
+      evidence_kind: "PRINTED_LIMITED_NUMBERING",
+      confidence: 0.94,
+      review_required: false,
+      directly_observed: true,
+      direct_observation: true
+    },
+    {
+      field: "grade",
+      value: "",
+      source_type: "SLAB_LABEL",
+      source_image_id: "front",
+      source_region: "grade_label",
+      raw_text: "PSA MINT 9 AUTO 10",
+      visible_text: "PSA MINT 9 AUTO 10",
+      evidence_kind: "GRADE_LABEL",
+      confidence: 0.94,
+      review_required: false,
+      directly_observed: true,
+      direct_observation: true
+    }
+  ],
+  unresolved: []
+});
+
+assert.match(structuredEvidenceArrayBackfillsCriticalFields.title, /02\/10/);
+assert.match(structuredEvidenceArrayBackfillsCriticalFields.title, /PSA 9\/10/);
+assert.equal(structuredEvidenceArrayBackfillsCriticalFields.resolved.print_run_number, "02/10");
+assert.equal(structuredEvidenceArrayBackfillsCriticalFields.resolved.card_grade, "9");
+assert.equal(structuredEvidenceArrayBackfillsCriticalFields.resolved.auto_grade, "10");
+
 const booleanGradeCompanyRejected = await callApi({
   title: "2018-19 Panini Court Kings Trae Young Heir Apparent Autographs Sapphire TRUE 10",
   confidence: "HIGH",
