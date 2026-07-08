@@ -116,6 +116,8 @@ assert.match(api, /ENABLE_CATALOG_ASSIST_DEFAULT", true/, "title API should defa
 assert.match(api, /ENABLE_VECTOR_ASSIST_DEFAULT", true/, "title API should default vector assist on for the C path");
 assert.match(api, /vector_retrieval_mode:\s*vectorAssistDefault \? "assist" : "off"/, "title API should default vector retrieval to assist mode when enabled");
 assert.match(api, /vector_query_timeout_ms:\s*8000/, "title API should cap default online vector query work before it dominates writer-ready latency");
+assert.match(api, /vectorEmbeddingPostProviderWaitMs/, "L2 should cap post-provider vector waiting before it dominates writer-ready latency");
+assert.match(api, /vector_embedding_overlap_timeout_after_provider/, "slow vector warmup after provider should degrade to a timeout packet instead of blocking the title");
 assert.match(api, /singleModelDraftPath/, "single-model provider requests should be able to skip Evidence Completion");
 assert.match(api, /skipped_evidence_completion: true/, "single-model fast drafts should record skipped Evidence Completion");
 assert.match(api, /assist_shadow_no_prompt_safe_candidates/, "assist-enabled requests with no prompt-safe candidates should stay in shadow-only mode");

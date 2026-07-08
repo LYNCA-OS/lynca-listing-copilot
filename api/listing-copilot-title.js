@@ -164,13 +164,35 @@ function vectorEmbeddingWarmupTimeoutMs(env = process.env, providerOptions = {})
     ?? providerOptions.vectorEmbeddingWarmupTimeoutMs
     ?? env.VECTOR_EMBEDDING_WARMUP_TIMEOUT_MS
   );
-  if (configured !== null) return configured;
-  return Math.max(
-    20000,
-    normalizePositiveIntegerOrNull(providerOptions.vector_query_timeout_ms ?? providerOptions.vectorQueryTimeoutMs) || 0,
-    positiveIntegerFromEnv(env, "VECTOR_QUERY_TIMEOUT_MS", 0),
-    positiveIntegerFromEnv(env, "VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS", 0)
+  const requested = configured !== null
+    ? configured
+    : Math.max(
+      8000,
+      normalizePositiveIntegerOrNull(providerOptions.vector_query_timeout_ms ?? providerOptions.vectorQueryTimeoutMs) || 0,
+      positiveIntegerFromEnv(env, "VECTOR_QUERY_TIMEOUT_MS", 0),
+      positiveIntegerFromEnv(env, "VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS", 0)
+    );
+  const hardCap = normalizePositiveIntegerOrNull(
+    providerOptions.vector_embedding_max_blocking_timeout_ms
+    ?? providerOptions.vectorEmbeddingMaxBlockingTimeoutMs
+    ?? env.VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS
+  ) || 8000;
+  return Math.max(250, Math.min(requested, hardCap));
+}
+
+function vectorEmbeddingPostProviderWaitMs(env = process.env, providerOptions = {}) {
+  const configured = normalizePositiveIntegerOrNull(
+    providerOptions.vector_embedding_post_provider_wait_ms
+    ?? providerOptions.vectorEmbeddingPostProviderWaitMs
+    ?? env.VECTOR_EMBEDDING_POST_PROVIDER_WAIT_MS
   );
+  if (configured !== null) return configured;
+  const candidates = [
+    1500,
+    normalizePositiveIntegerOrNull(providerOptions.vector_query_timeout_ms ?? providerOptions.vectorQueryTimeoutMs),
+    vectorEmbeddingWarmupTimeoutMs(env, providerOptions)
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  return Math.min(...candidates);
 }
 
 function vectorEmbeddingWarmupOptions(providerOptions = {}, env = process.env) {
@@ -6586,9 +6608,21 @@ async function createOpenAiTitle(payload, selection, {
         skip: lateLazyDecision
       });
     } else {
-      const overlappedVectorFeatures = vectorEmbeddingWarmupPromise
-        ? await vectorEmbeddingWarmupPromise
-        : visualFeatures;
+      let overlappedVectorFeatures = visualFeatures;
+      if (vectorEmbeddingWarmupPromise) {
+        const postProviderWaitMs = vectorEmbeddingPostProviderWaitMs(process.env, providerOptions);
+        const waitedVector = await waitForPromiseWithin(vectorEmbeddingWarmupPromise, postProviderWaitMs);
+        if (waitedVector.settled) {
+          overlappedVectorFeatures = waitedVector.value;
+        } else {
+          addTiming(timingContext, "vector_embedding_overlap_post_provider_timeout_ms", postProviderWaitMs);
+          overlappedVectorFeatures = {
+            status: "VECTOR_RETRIEVAL_TIMEOUT",
+            reason: "vector_embedding_overlap_timeout_after_provider",
+            features: []
+          };
+        }
+      }
       catalogContext = lateCatalogContext
         ? {
           ...lateCatalogContext,
