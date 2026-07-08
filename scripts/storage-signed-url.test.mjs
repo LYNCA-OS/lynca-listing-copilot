@@ -172,7 +172,7 @@ await assert.rejects(
     fileName: "front.jpg",
     contentType: "image/jpeg",
     size: 1000,
-    width: 12001,
+    width: 120001,
     height: 900,
     signatureHex: jpegSignatureHex,
     env,

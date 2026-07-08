@@ -277,7 +277,7 @@ const gpt5DefaultConfig = openAiEmergencyConfigFromEnv({
   ...env,
   OPENAI_LISTING_MODEL: "gpt-5-mini"
 });
-assert.equal(gpt5DefaultConfig.requestedMaxOutputTokens, 819200);
+assert.equal(gpt5DefaultConfig.requestedMaxOutputTokens, 8192000);
 assert.equal(gpt5DefaultConfig.maxOutputTokens, 128000);
 assert.equal(gpt5DefaultConfig.truncationRetryMaxOutputTokens, 128000);
 
