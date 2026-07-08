@@ -355,22 +355,64 @@ function providerDiagnosticsFromApiData(data = {}) {
   });
 }
 
-function vectorRuntimeFromSummary(summary = {}) {
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    const text = cleanText(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function firstPresent(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value;
+  }
+  return null;
+}
+
+function firstArray(...values) {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length) return value;
+  }
+  return [];
+}
+
+function vectorRuntimeFromSummary(...sources) {
+  const flattened = Object.assign({}, ...sources.filter((source) => source && typeof source === "object"));
+  const vectorContext = sources
+    .map((source) => source?.candidate_context?.vector)
+    .find((value) => value && typeof value === "object") || {};
+  const vectorSignal = vectorContext.signal || {};
+  const providerMetadata = vectorContext.provider_metadata || {};
+  const unavailableReasons = firstArray(
+    flattened.vector_runtime_unavailable_reasons,
+    vectorSignal.unavailable_reasons,
+    flattened.runtime_unavailable_reasons,
+    vectorContext.runtime_unavailable_reasons
+  );
   return {
-    vector_runtime_status: summary.vector_runtime_status || null,
-    vector_runtime_status_code: summary.vector_runtime_status_code || null,
-    vector_runtime_unavailable_reasons: Array.isArray(summary.vector_runtime_unavailable_reasons)
-      ? summary.vector_runtime_unavailable_reasons.join("; ")
-      : (summary.vector_runtime_unavailable_reasons || ""),
-    vector_worker_status: summary.vector_worker_status || null,
-    vector_worker_reason: summary.vector_worker_reason || "",
-    vector_worker_feature_count: summary.vector_worker_feature_count ?? null,
-    vector_worker_latency_ms: summary.vector_worker_latency_ms ?? null,
-    vector_query_embedding_role: summary.vector_query_embedding_role || "",
-    vector_role_agnostic_fallback_used: summary.vector_role_agnostic_fallback_used === true,
-    vector_role_agnostic_fallback_reason: summary.vector_role_agnostic_fallback_reason || "",
-    vector_returned_row_count: summary.vector_returned_row_count ?? null,
-    vector_self_excluded_count: summary.vector_self_excluded_count ?? null
+    vector_runtime_status: firstNonEmptyString(flattened.vector_runtime_status, flattened.runtime_status, vectorSignal.status, vectorContext.runtime_status) || null,
+    vector_runtime_status_code: firstPresent(flattened.vector_runtime_status_code, flattened.runtime_status_code, vectorSignal.status_code, vectorContext.runtime_status_code),
+    vector_runtime_unavailable_reasons: unavailableReasons.length
+      ? unavailableReasons.join("; ")
+      : firstNonEmptyString(flattened.vector_runtime_unavailable_reasons, flattened.runtime_unavailable_reasons),
+    vector_worker_status: firstNonEmptyString(flattened.vector_worker_status, flattened.worker_status, vectorContext.worker_status) || null,
+    vector_worker_reason: firstNonEmptyString(flattened.vector_worker_reason, flattened.worker_reason, vectorContext.worker_reason),
+    vector_worker_feature_count: firstPresent(flattened.vector_worker_feature_count, flattened.worker_feature_count, vectorContext.worker_feature_count),
+    vector_worker_latency_ms: firstPresent(flattened.vector_worker_latency_ms, flattened.worker_latency_ms, vectorContext.worker_latency_ms),
+    vector_query_embedding_role: firstNonEmptyString(flattened.vector_query_embedding_role, flattened.query_embedding_role, vectorContext.query_embedding_role, providerMetadata.query_embedding_role),
+    vector_role_agnostic_fallback_used: flattened.vector_role_agnostic_fallback_used === true
+      || flattened.role_agnostic_fallback_used === true
+      || vectorContext.role_agnostic_fallback_used === true
+      || providerMetadata.role_agnostic_fallback_used === true,
+    vector_role_agnostic_fallback_reason: firstNonEmptyString(
+      flattened.vector_role_agnostic_fallback_reason,
+      flattened.role_agnostic_fallback_reason,
+      vectorContext.role_agnostic_fallback_reason,
+      providerMetadata.role_agnostic_fallback_reason
+    ),
+    vector_returned_row_count: firstPresent(flattened.vector_returned_row_count, flattened.returned_row_count, vectorContext.returned_row_count, providerMetadata.returned_row_count),
+    vector_self_excluded_count: firstPresent(flattened.vector_self_excluded_count, flattened.self_excluded_count, vectorContext.self_excluded_count, providerMetadata.self_excluded_count)
   };
 }
 
@@ -381,7 +423,7 @@ function sessionL2Summary(statusPayload = {}) {
   const catalogFunnel = trace.catalog_activation_funnel || {};
   const vectorFunnel = trace.vector_activation_funnel || {};
   const providerDiagnostics = providerDiagnosticsFromSummary(summary);
-  const vectorRuntime = vectorRuntimeFromSummary(summary);
+  const vectorRuntime = vectorRuntimeFromSummary(summary, vectorFunnel);
   return {
     session_status: session.status || null,
     l2_status: session.l2_status || null,
@@ -431,7 +473,7 @@ function jobL2Summary(statusPayload = {}) {
   const catalogFunnel = trace.catalog_activation_funnel || {};
   const vectorFunnel = trace.vector_activation_funnel || {};
   const providerDiagnostics = providerDiagnosticsFromSummary(summary);
-  const vectorRuntime = vectorRuntimeFromSummary(summary);
+  const vectorRuntime = vectorRuntimeFromSummary(summary, vectorFunnel);
   return {
     session_status: session.status || job.internal_status || null,
     l2_status: session.l2_status || job.l2_status || null,
@@ -895,7 +937,14 @@ async function runOne({
         vector_conflict_blocked_count: Number(data.vector_activation_funnel?.conflict_blocked_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.conflict_blocked_count || 0),
         vector_prompt_candidate_count: Number(data.vector_activation_funnel?.prompt_candidate_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.prompt_candidate_count || 0),
         vector_evidence_support_field_count: Number(data.vector_activation_funnel?.evidence_support_field_count || data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel?.evidence_support_field_count || 0),
-        ...vectorRuntimeFromSummary(data.provider_result || data.provider_result_summary || data),
+        ...vectorRuntimeFromSummary(
+          data.provider_result || {},
+          data.provider_result_summary || {},
+          data.provider_result?.candidate_control_plane_trace?.vector_activation_funnel || {},
+          data.candidate_control_plane_trace?.vector_activation_funnel || {},
+          data.vector_activation_funnel || {},
+          data
+        ),
         provider_diagnostics: l1ProviderDiagnostics,
         input_tokens: l1ProviderDiagnostics.input_tokens,
         output_tokens: l1ProviderDiagnostics.output_tokens,
