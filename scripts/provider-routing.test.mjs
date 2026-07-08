@@ -6,6 +6,7 @@ import {
   providerServerConcurrencyLimit,
   runWithProviderConcurrency
 } from "../lib/listing/providers/provider-concurrency.mjs";
+import { openAiResponsesModelControls, openAiResponsesTextOptions } from "../lib/listing/providers/openai-responses-request.mjs";
 import { parseProviderMessagePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
@@ -188,6 +189,9 @@ assert.equal(openAiRequest.url, "https://api.openai.com/v1/responses");
 assert.equal(openAiRequest.init.headers.authorization, "Bearer test-openai-key");
 const openAiBody = JSON.parse(openAiRequest.init.body);
 assert.equal(openAiBody.model, "gpt-4.1-mini-2025-04-14");
+assert.equal(openAiBody.temperature, 0);
+assert.equal(openAiBody.reasoning, undefined);
+assert.equal(openAiBody.text.verbosity, undefined);
 assert.equal(openAiBody.text.format.type, "json_schema");
 assert.equal(openAiBody.text.format.strict, true);
 assert.equal(openAiBody.input[0].content[1].type, "input_image");
@@ -208,6 +212,16 @@ assert.equal(openAiResult.rate_limit_diagnostics["x-ratelimit-reset-tokens"], "4
 assert.equal(openAiResult.provider_request_diagnostics.input_tokens, 11);
 assert.equal(openAiResult.provider_request_diagnostics.output_tokens, 9);
 assert.ok(openAiResult.provider_request_diagnostics.provider_latency_ms >= 0);
+
+const gpt5Controls = openAiResponsesModelControls("gpt-5-mini");
+assert.deepEqual(gpt5Controls, { reasoning: { effort: "low" } });
+const gpt5Text = openAiResponsesTextOptions({
+  model: "gpt-5-mini",
+  name: "test_schema",
+  schema: { type: "object", additionalProperties: false, properties: {}, required: [] }
+});
+assert.equal(gpt5Text.verbosity, "low");
+assert.equal(gpt5Text.format.type, "json_schema");
 
 let pooledOpenAiRequest;
 const pooledOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
