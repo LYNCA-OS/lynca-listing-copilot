@@ -370,6 +370,62 @@ assert.match(pooledOpenAiRequest.init.headers.authorization, /^Bearer sk-pool-/)
 assert.equal(pooledOpenAiResult.provider_key_pool_size, 3);
 assert.ok(pooledOpenAiResult.provider_key_slot >= 1 && pooledOpenAiResult.provider_key_slot <= 3);
 
+let rotatedOpenAiCalls = 0;
+const rotatedAuthorizations = [];
+const rotatedOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  shardKey: "asset-rotation-test",
+  env: {
+    ...env,
+    OPENAI_API_KEY: "",
+    OPENAI_API_KEY_POOL: "sk-rotate-a,sk-rotate-b,sk-rotate-c",
+    OPENAI_LISTING_TRANSIENT_RETRY_DELAY_MS: "0"
+  },
+  fetchImpl: async (url, init) => {
+    rotatedOpenAiCalls += 1;
+    rotatedAuthorizations.push(init.headers.authorization);
+    if (rotatedOpenAiCalls === 1) {
+      return {
+        ok: false,
+        status: 429,
+        headers: new Headers({
+          "x-ratelimit-limit-requests": "1",
+          "x-ratelimit-remaining-requests": "0",
+          "x-ratelimit-reset-requests": "250ms"
+        }),
+        text: async () => "{\"error\":\"rate_limited\"}"
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "x-ratelimit-limit-requests": "5000",
+        "x-ratelimit-remaining-requests": "4999"
+      }),
+      json: async () => ({
+        id: "resp_rotated_pool_test",
+        output_text: "{\"title\":\"OpenAI Rotated Pool Test\",\"fields\":{\"player\":\"Rotated\"},\"unresolved\":[]}",
+        usage: {
+          input_tokens: 6,
+          output_tokens: 4,
+          total_tokens: 10
+        }
+      })
+    };
+  }
+});
+assert.equal(rotatedOpenAiCalls, 2);
+assert.equal(new Set(rotatedAuthorizations).size, 2, "retryable rate limits should rotate to the next OpenAI key slot before retrying");
+assert.equal(rotatedOpenAiResult.parsed.fields.player, "Rotated");
+assert.equal(rotatedOpenAiResult.provider_key_pool_size, 3);
+assert.equal(rotatedOpenAiResult.provider_key_rotation_attempted, true);
+assert.equal(rotatedOpenAiResult.provider_key_rotation_attempts, 1);
+assert.equal(rotatedOpenAiResult.transient_retry_attempted, true);
+assert.equal(rotatedOpenAiResult.transient_retry_attempts, 1);
+assert.equal(rotatedOpenAiResult.provider_request_diagnostics.provider_key_slot, rotatedOpenAiResult.provider_key_slot);
+
 let transientOpenAiCalls = 0;
 const transientOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
   images: dataUrlImages,
