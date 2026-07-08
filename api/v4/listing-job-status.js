@@ -23,7 +23,7 @@ async function readSessionsForJobs(jobs = []) {
   if (!sessionIds.length) return {};
   const result = await readV4Rows({
     table: "v4_recognition_sessions",
-    select: "id,status,final_title,l1_status,l1_ready_at,l1_route,l1_timing,l2_status,l2_title,l2_ready_at,l2_route,l2_timing,provider_result_summary,updated_at,failure_reason",
+    select: "id,status,final_title,l1_status,l1_ready_at,l1_route,l1_timing,l2_status,l2_title,l2_ready_at,l2_route,l2_timing,provider_result_summary,candidate_control_plane_trace,resolved_fields,field_states,updated_at,failure_reason",
     search: {
       id: `in.(${sessionIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",")})`,
       limit: String(sessionIds.length)
@@ -38,23 +38,49 @@ function writerSafeSessionStatus(session = null) {
   const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
     ? session.provider_result_summary
     : {};
+  const trace = session.candidate_control_plane_trace && typeof session.candidate_control_plane_trace === "object"
+    ? session.candidate_control_plane_trace
+    : {};
+  const l2Ready = session.l2_status === "READY" && (session.final_title || session.l2_title);
   return {
     id: session.id || null,
     status: session.status || null,
-    final_title: session.l2_status === "READY" ? (session.final_title || session.l2_title || "") : "",
+    final_title: l2Ready ? (session.final_title || session.l2_title || "") : "",
     l1_status: session.l1_status || "PENDING",
     l1_title: "",
     l1_ready_at: session.l1_ready_at || null,
     l1_route: session.l1_route || null,
     l1_timing: session.l1_timing || null,
     l2_status: session.l2_status || "PENDING",
-    l2_title: session.l2_status === "READY" ? (session.l2_title || session.final_title || "") : "",
+    l2_title: l2Ready ? (session.l2_title || session.final_title || "") : "",
     l2_ready_at: session.l2_ready_at || null,
     l2_route: session.l2_route || null,
     l2_timing: session.l2_timing || null,
     provider_result_summary: {
-      assisted_draft_status: summary.assisted_draft_status || null
+      assisted_draft_status: summary.assisted_draft_status || (l2Ready ? "READY" : null),
+      provider: summary.provider || null,
+      model: summary.model || summary.model_id || null,
+      confidence: summary.confidence || null,
+      provider_latency_ms: summary.provider_latency_ms ?? null,
+      provider_finish_reason: summary.provider_finish_reason || null,
+      provider_token_diagnostics: summary.provider_token_diagnostics || summary.token_diagnostics || summary.usage || null,
+      provider_initial_token_diagnostics: summary.provider_initial_token_diagnostics || summary.initial_token_diagnostics || null,
+      provider_rate_limit_diagnostics: summary.provider_rate_limit_diagnostics || summary.rate_limit_diagnostics || null,
+      provider_initial_rate_limit_diagnostics: summary.provider_initial_rate_limit_diagnostics || summary.initial_rate_limit_diagnostics || null,
+      provider_request_diagnostics: summary.provider_request_diagnostics || summary.request_diagnostics || null,
+      provider_initial_request_diagnostics: summary.provider_initial_request_diagnostics || summary.initial_request_diagnostics || null,
+      provider_truncation_retry_attempted: summary.provider_truncation_retry_attempted === true,
+      provider_truncation_retry_attempts: Number(summary.provider_truncation_retry_attempts || 0),
+      gpt5_empty_result_retry_attempted: summary.gpt5_empty_result_retry_attempted === true,
+      gpt5_empty_result_retry_success: summary.gpt5_empty_result_retry_success === true,
+      gpt5_empty_result_retry_status_code: summary.gpt5_empty_result_retry_status_code ?? null
     },
+    candidate_control_plane_trace: {
+      catalog_activation_funnel: trace.catalog_activation_funnel || {},
+      vector_activation_funnel: trace.vector_activation_funnel || {}
+    },
+    resolved_fields: session.resolved_fields && typeof session.resolved_fields === "object" ? session.resolved_fields : {},
+    field_states: session.field_states && typeof session.field_states === "object" ? session.field_states : {},
     updated_at: session.updated_at || null,
     failure_reason: session.failure_reason || null
   };

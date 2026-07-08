@@ -390,6 +390,58 @@ function sessionL2Summary(statusPayload = {}) {
   };
 }
 
+function jobL2Summary(statusPayload = {}) {
+  const job = (statusPayload.jobs || [])[0] || {};
+  const session = job.session || {};
+  const summary = session.provider_result_summary || {};
+  const trace = session.candidate_control_plane_trace || {};
+  const catalogFunnel = trace.catalog_activation_funnel || {};
+  const vectorFunnel = trace.vector_activation_funnel || {};
+  const providerDiagnostics = providerDiagnosticsFromSummary(summary);
+  return {
+    session_status: session.status || job.internal_status || null,
+    l2_status: session.l2_status || job.l2_status || null,
+    assisted_draft_status: summary.assisted_draft_status || null,
+    title: session.final_title || session.l2_title || job.display_title || job.writer_display_title || null,
+    route: session.l2_route || job.l2_route || null,
+    job_status: job.status || null,
+    job_id: job.job_id || null,
+    recognition_session_id: job.recognition_session_id || null,
+    worker_queue_wait_ms: job.timing?.worker_queue_wait_ms ?? null,
+    worker_processing_ms: job.timing?.worker_processing_ms ?? null,
+    time_to_l2_ready_ms: job.timing?.time_to_l2_ready_ms ?? null,
+    prompt_candidate_count: Number(catalogFunnel.prompt_candidate_count || 0)
+      + Number(vectorFunnel.prompt_candidate_count || 0),
+    catalog_raw_candidate_count: Number(catalogFunnel.raw_candidate_count || 0),
+    catalog_approved_candidate_count: Number(catalogFunnel.approved_candidate_count || 0),
+    catalog_conflict_blocked_count: Number(catalogFunnel.conflict_blocked_count || 0),
+    catalog_prompt_candidate_count: Number(catalogFunnel.prompt_candidate_count || 0),
+    catalog_evidence_support_field_count: Number(catalogFunnel.evidence_support_field_count || 0),
+    catalog_participation_level: catalogFunnel.participation_level || null,
+    catalog_pre_observation_query_attempted: catalogFunnel.pre_observation_query_attempted ?? null,
+    catalog_post_observation_query_attempted: catalogFunnel.post_observation_query_attempted ?? null,
+    vector_raw_candidate_count: Number(vectorFunnel.raw_candidate_count || 0),
+    vector_approved_candidate_count: Number(vectorFunnel.approved_candidate_count || 0),
+    vector_conflict_blocked_count: Number(vectorFunnel.conflict_blocked_count || 0),
+    vector_prompt_candidate_count: Number(vectorFunnel.prompt_candidate_count || 0),
+    vector_evidence_support_field_count: Number(vectorFunnel.evidence_support_field_count || 0),
+    vector_participation_level: vectorFunnel.participation_level || null,
+    vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
+    vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
+    provider_diagnostics: providerDiagnostics,
+    input_tokens: providerDiagnostics.input_tokens,
+    output_tokens: providerDiagnostics.output_tokens,
+    total_tokens: providerDiagnostics.total_tokens,
+    provider_latency_ms: providerDiagnostics.provider_latency_ms,
+    "x-ratelimit-limit-requests": providerDiagnostics["x-ratelimit-limit-requests"],
+    "x-ratelimit-remaining-requests": providerDiagnostics["x-ratelimit-remaining-requests"],
+    "x-ratelimit-limit-tokens": providerDiagnostics["x-ratelimit-limit-tokens"],
+    "x-ratelimit-remaining-tokens": providerDiagnostics["x-ratelimit-remaining-tokens"],
+    "x-ratelimit-reset-requests": providerDiagnostics["x-ratelimit-reset-requests"],
+    "x-ratelimit-reset-tokens": providerDiagnostics["x-ratelimit-reset-tokens"]
+  };
+}
+
 function summaryHasVisibleL2Title(summary = {}) {
   return summary.session_status !== "FAILED"
     && summary.l2_status === "READY"
@@ -463,6 +515,46 @@ async function pollSessionStatus({
     ready: false,
     summary: sessionL2Summary(last?.data || {}),
     candidateDebug: compactCandidateTrace(last?.data?.session?.candidate_control_plane_trace || {}),
+    last,
+    elapsed_ms: Date.now() - started
+  };
+}
+
+async function pollJobStatus({
+  baseUrl,
+  cookie,
+  jobId,
+  waitMs = 18000,
+  intervalMs = 1500,
+  requestTimeoutMs = 30000
+}) {
+  if (!jobId) return { polls: 0, ready: false, summary: null, last: null };
+  const started = Date.now();
+  let polls = 0;
+  let last = null;
+  while (Date.now() - started <= waitMs) {
+    polls += 1;
+    last = await getJson({
+      baseUrl,
+      path: `/api/v4/listing-job-status?job_ids=${encodeURIComponent(jobId)}&limit=1`,
+      cookie,
+      requestTimeoutMs
+    });
+    const summary = jobL2Summary(last.data || {});
+    const candidateDebug = compactCandidateTrace(last.data?.jobs?.[0]?.session?.candidate_control_plane_trace || {});
+    if (summaryHasVisibleL2Title(summary)) {
+      return { polls, ready: true, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
+    }
+    if (summary.job_status === "FAILED" || summary.job_status === "CANCELLED" || summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT") {
+      return { polls, ready: false, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
+    }
+    await delay(intervalMs);
+  }
+  return {
+    polls,
+    ready: false,
+    summary: jobL2Summary(last?.data || {}),
+    candidateDebug: compactCandidateTrace(last?.data?.jobs?.[0]?.session?.candidate_control_plane_trace || {}),
     last,
     elapsed_ms: Date.now() - started
   };
@@ -574,6 +666,7 @@ async function runOne({
   baseUrl,
   cookie,
   prewarm,
+  queueMode = false,
   forceL2Direct = false,
   modelOverride = "",
   enableL1 = false,
@@ -605,6 +698,129 @@ async function runOne({
       cookie,
       payload,
       requestTimeoutMs
+    });
+  }
+
+  if (queueMode) {
+    const batchId = `smoke-v4-${Date.now()}-${index}`;
+    const queuedPayload = {
+      ...payload,
+      force_l2_only: true,
+      create_l1_job: false,
+      create_l2_job: true,
+      disable_fast_scout_l1: true,
+      v4_force_l2_direct: true
+    };
+    const enqueue = await postJson({
+      baseUrl,
+      path: "/api/v4/listing-job-enqueue",
+      cookie,
+      payload: {
+        batch_id: batchId,
+        tenant_id: batchId,
+        priority: 100,
+        jobs: [{
+          asset_id: id,
+          force_l2_only: true,
+          create_l1_job: false,
+          create_l2_job: true,
+          payload: queuedPayload
+        }]
+      },
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+    });
+    const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
+      || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
+      || {};
+    const l2 = await pollJobStatus({
+      baseUrl,
+      cookie,
+      jobId: job.job_id,
+      waitMs: l2WaitMs,
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+    });
+    const finalTitle = cleanText(l2.summary?.title || "");
+    const finalScore = scoreTitles(sellerTitle, finalTitle);
+    const finalProviderDiagnostics = objectOrNull(l2.summary?.provider_diagnostics)
+      || providerDiagnosticsFromSummary(l2.summary || {});
+    const writerReady = Boolean(l2.ready || finalTitle);
+    return compactObject({
+      asset_id: id,
+      sealed_label_key: sealedKey || label.key || null,
+      seller_title_visible_to_model: false,
+      seller_title_used_for_local_eval_only: Boolean(sellerTitle),
+      seller_title: sellerTitle,
+      image_count: payload.images.length,
+      queue_mode: true,
+      job_id: job.job_id || null,
+      http_status: enqueue.http_status,
+      ok: writerReady,
+      l1_ok: Boolean(enqueue.ok && enqueue.data?.ok !== false),
+      writer_ready: writerReady,
+      error: enqueue.ok ? null : enqueue.data,
+      l1_wall_latency_ms: enqueue.latency_ms,
+      l1_internal_scout_ms: null,
+      l1_time_to_safe_draft_ms: null,
+      route: l2.summary?.route || null,
+      title_stage: "V4_QUEUE_L2",
+      recognition_session_id: job.recognition_session_id || l2.summary?.recognition_session_id || null,
+      l1_title: "",
+      l2_ready: Boolean(l2.ready),
+      l2_poll_count: l2.polls,
+      l2_poll_elapsed_ms: l2.elapsed_ms ?? null,
+      time_to_writer_ready_ms: l2.ready ? enqueue.latency_ms + Number(l2.elapsed_ms || 0) : null,
+      worker_queue_wait_ms: l2.summary?.worker_queue_wait_ms ?? null,
+      worker_processing_ms: l2.summary?.worker_processing_ms ?? null,
+      time_to_l2_ready_ms: l2.summary?.time_to_l2_ready_ms ?? null,
+      l2_status: l2.summary,
+      l2_candidate_debug: l2.candidateDebug || {},
+      final_title: finalTitle,
+      fast_scout_cache_hit: null,
+      fast_scout_cache_status: null,
+      fast_scout_prewarmer_used: prewarmResult?.data?.ok === true,
+      fast_scout_blocking_call_used: false,
+      prewarm_status: prewarmResult?.data?.prewarm_status || null,
+      force_l2_direct: true,
+      prewarm_latency_ms: prewarmResult?.latency_ms || null,
+      prewarm_cache_hit: prewarmResult?.data?.fast_scout_cache_hit ?? null,
+      prewarm_cache_status: prewarmResult?.data?.fast_scout_cache_status || null,
+      catalog_prompt_candidate_count: 0,
+      vector_prompt_candidate_count: 0,
+      provider_prompt_candidate_count: 0,
+      l2_catalog_raw_candidate_count: l2.summary?.catalog_raw_candidate_count ?? null,
+      l2_catalog_approved_candidate_count: l2.summary?.catalog_approved_candidate_count ?? null,
+      l2_catalog_conflict_blocked_count: l2.summary?.catalog_conflict_blocked_count ?? null,
+      l2_catalog_prompt_candidate_count: l2.summary?.catalog_prompt_candidate_count ?? null,
+      l2_catalog_evidence_support_field_count: l2.summary?.catalog_evidence_support_field_count ?? null,
+      l2_catalog_participation_level: l2.summary?.catalog_participation_level ?? null,
+      l2_catalog_pre_observation_query_attempted: l2.summary?.catalog_pre_observation_query_attempted ?? null,
+      l2_catalog_post_observation_query_attempted: l2.summary?.catalog_post_observation_query_attempted ?? null,
+      l2_vector_raw_candidate_count: l2.summary?.vector_raw_candidate_count ?? null,
+      l2_vector_approved_candidate_count: l2.summary?.vector_approved_candidate_count ?? null,
+      l2_vector_conflict_blocked_count: l2.summary?.vector_conflict_blocked_count ?? null,
+      l2_vector_prompt_candidate_count: l2.summary?.vector_prompt_candidate_count ?? null,
+      l2_vector_evidence_support_field_count: l2.summary?.vector_evidence_support_field_count ?? null,
+      l2_vector_participation_level: l2.summary?.vector_participation_level ?? null,
+      l2_vector_pre_observation_query_attempted: l2.summary?.vector_pre_observation_query_attempted ?? null,
+      l2_vector_post_observation_query_attempted: l2.summary?.vector_post_observation_query_attempted ?? null,
+      provider_diagnostics: finalProviderDiagnostics,
+      input_tokens: finalProviderDiagnostics.input_tokens,
+      output_tokens: finalProviderDiagnostics.output_tokens,
+      total_tokens: finalProviderDiagnostics.total_tokens,
+      provider_latency_ms: finalProviderDiagnostics.provider_latency_ms,
+      response_status: finalProviderDiagnostics.response_status,
+      incomplete_reason: finalProviderDiagnostics.incomplete_reason,
+      output_cap: finalProviderDiagnostics.output_cap,
+      output_utilization: finalProviderDiagnostics.output_utilization,
+      "x-ratelimit-limit-requests": finalProviderDiagnostics["x-ratelimit-limit-requests"],
+      "x-ratelimit-remaining-requests": finalProviderDiagnostics["x-ratelimit-remaining-requests"],
+      "x-ratelimit-limit-tokens": finalProviderDiagnostics["x-ratelimit-limit-tokens"],
+      "x-ratelimit-remaining-tokens": finalProviderDiagnostics["x-ratelimit-remaining-tokens"],
+      "x-ratelimit-reset-requests": finalProviderDiagnostics["x-ratelimit-reset-requests"],
+      "x-ratelimit-reset-tokens": finalProviderDiagnostics["x-ratelimit-reset-tokens"],
+      l1_scoring: scoreTitles(sellerTitle, ""),
+      final_scoring: finalScore,
+      item_web_url: label.item_web_url || null
     });
   }
 
@@ -794,6 +1010,11 @@ function summarize(results = []) {
     writer_ready_p95_ms: quantile(results.map((item) => item.time_to_writer_ready_ms), 0.95),
     prewarm_p50_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.5),
     prewarm_p95_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.95),
+    queue_mode_count: results.filter((item) => item.queue_mode === true).length,
+    worker_queue_wait_p50_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.5),
+    worker_queue_wait_p95_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.95),
+    worker_processing_p50_ms: quantile(results.map((item) => item.worker_processing_ms), 0.5),
+    worker_processing_p95_ms: quantile(results.map((item) => item.worker_processing_ms), 0.95),
     catalog_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.catalog_prompt_candidate_count || 0), 0),
     vector_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.vector_prompt_candidate_count || 0), 0),
     l2_catalog_raw_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_catalog_raw_candidate_count || 0), 0),
@@ -862,6 +1083,9 @@ function perCardTsv(results = []) {
     "cache",
     "l2_ready",
     "writer_ready_ms",
+    "queue_mode",
+    "worker_queue_wait_ms",
+    "worker_processing_ms",
     "l1_policy_fair",
     "final_policy_fair",
     "catalog_prompt",
@@ -899,6 +1123,9 @@ function perCardTsv(results = []) {
     item.fast_scout_cache_status,
     item.l2_ready,
     item.time_to_writer_ready_ms,
+    item.queue_mode,
+    item.worker_queue_wait_ms,
+    item.worker_processing_ms,
     item.l1_scoring?.policy_fair_token_recall,
     item.final_scoring?.policy_fair_token_recall,
     item.catalog_prompt_candidate_count,
@@ -937,6 +1164,7 @@ export async function runV4EbaySmoke({
   limit = 10,
   offset = 0,
   prewarm = false,
+  queueMode = false,
   forceL2Direct = false,
   modelOverride = "",
   enableL1 = false,
@@ -955,7 +1183,7 @@ export async function runV4EbaySmoke({
   const results = [];
   for (const [localIndex, item] of items.entries()) {
     const index = offset + localIndex;
-    if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} force_l2_direct=${forceL2Direct}\n`);
+    if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
     const row = await runOne({
       item,
       index,
@@ -963,6 +1191,7 @@ export async function runV4EbaySmoke({
       baseUrl,
       cookie,
       prewarm,
+      queueMode,
       forceL2Direct,
       modelOverride,
       enableL1,
@@ -983,6 +1212,7 @@ export async function runV4EbaySmoke({
     limit,
     offset,
     prewarm_enabled: prewarm,
+    queue_mode: queueMode,
     force_l2_direct: forceL2Direct,
     l1_explicitly_enabled: enableL1,
     model_override: modelOverride || null,
@@ -1013,6 +1243,7 @@ export async function main(argv = process.argv, env = process.env) {
     limit: Math.max(1, Math.trunc(numberArg(argv, "--limit", 10))),
     offset: Math.max(0, Math.trunc(numberArg(argv, "--offset", 0))),
     prewarm: hasFlag(argv, "--prewarm"),
+    queueMode: hasFlag(argv, "--queue"),
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),
     modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),

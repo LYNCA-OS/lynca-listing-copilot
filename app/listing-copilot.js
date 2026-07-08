@@ -23,6 +23,8 @@ const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_ASSET = 6;
 const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
+const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
+const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
 const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
 const FAST_SCOUT_PREWARM_API_ENDPOINT = "/api/v4/fast-scout-prewarm";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
@@ -33,6 +35,7 @@ const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const FAST_SCOUT_PREWARM_WAIT_MS = 1200;
 const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
+const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
@@ -568,6 +571,53 @@ async function ensureSafeAssetPayload(asset, options = {}) {
   }
 
   throw new Error("这组原图仍然过大，系统已保留给下一批处理；请稍后重试或减少单张卡的原图数量。");
+}
+
+function createClientBatchId() {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `web-v4-${random}`;
+}
+
+function v4SchemaVersionFromPayload(payload = {}) {
+  return payload.v4_schema_version || payload.schema_version || payload.version || "v4";
+}
+
+function queuedPendingResult(asset, enqueuePayload = {}, job = {}, timing = {}) {
+  const providerId = state.selectedProvider || null;
+  return attachGenerationTimingToResult({
+    index: asset.index,
+    asset_id: asset.id,
+    thumbnail: asset.images[0]?.dataUrl || "",
+    title: "",
+    final_title: "",
+    rendered_title: "",
+    generatedTitle: "",
+    correctedTitle: "",
+    writerTitlePending: true,
+    confidence: "MEDIUM",
+    provider: providerId,
+    provider_label: providerById(providerId)?.label || providerId || "",
+    model_id: "",
+    reason: "",
+    fields: {},
+    resolved: {},
+    generated_resolved_fields: {},
+    unresolved: ["final_title"],
+    recognition_session_id: job.recognition_session_id || "",
+    v4_schema_version: v4SchemaVersionFromPayload(enqueuePayload),
+    title_stage: "PENDING",
+    assisted_draft_status: "PENDING",
+    l2AssistedDraftStatus: "PENDING",
+    full_assist_continued_after_l1: true,
+    v4QueuedJob: true,
+    v4_job_id: job.job_id || "",
+    v4_batch_id: enqueuePayload.batch_id || job.batch_id || "",
+    v4_job_status: job.status || "QUEUED",
+    reviewStartedAt: Date.now(),
+    feedbackStatus: "",
+    feedbackMessage: "已进入云端生产队列，最终标题生成后会自动显示。",
+    timing
+  });
 }
 
 function storageReady() {
@@ -1414,7 +1464,8 @@ function generationTimingBadge(assetIndex) {
 }
 
 function setAssetProgress(assetIndex, label, fraction) {
-  if (!state.processing) return;
+  const hasPendingResult = state.results.some((result) => Number(result.index) === Number(assetIndex) && v4WriterTitlePending(result));
+  if (!state.processing && !hasPendingResult) return;
   const current = state.assetProgress.get(assetIndex) || {};
   const targetFraction = clampNumber(fraction, 0.01, 0.98);
   state.assetProgress.set(assetIndex, {
@@ -2121,6 +2172,7 @@ function TitleCardComponent(result, asset = null) {
     ? `标题暂不可用：${friendlyErrorSummary(result.reason)}`
     : "标题暂不可用";
   const textareaValue = titlePending || (failed && !correctedTitle) ? "" : (correctedTitle || unavailableTitle);
+  const pendingProgress = titlePending ? assetProgressSnapshot(result.index) : null;
 
   return `
     <div class="title-output ${confidenceClass(confidence)}">
@@ -2136,6 +2188,8 @@ function TitleCardComponent(result, asset = null) {
         </div>
       </div>
       ${assistedDraftNotice(result)}
+      ${titlePending && pendingProgress ? progressMeter(pendingProgress.percent, pendingProgress.label || "云端生成中") : ""}
+      ${titlePending && pendingProgress ? `<span class="progress-label">${escapeHtml(pendingProgress.label || "云端生成中")}</span>` : ""}
       <textarea data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${titlePending ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>` : ""}
@@ -2558,6 +2612,114 @@ async function processAsset(asset, options = {}) {
   };
 }
 
+async function processAssetViaQueue(asset, options = {}) {
+  const processStartedAt = performance.now();
+  setAssetProgress(asset.index, "检查云端准备", 0.05);
+  const backgroundPrepareResult = await settleBackgroundPreparation(asset, QUEUED_BACKGROUND_PREP_WAIT_MS);
+  setAssetProgress(
+    asset.index,
+    asset.preingestionBundleId ? "复用云端证据包" : "上传原图",
+    asset.preingestionBundleId ? 0.16 : 0.08
+  );
+  const uploadStartedAt = performance.now();
+  const uploaded = await ensureAssetImagesUploaded(asset);
+  const uploadMs = Math.round(performance.now() - uploadStartedAt);
+  setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
+
+  const fastScoutPrewarm = asset.fastScoutPrewarmResult || {
+    used: Boolean(asset.fastScoutPrewarmStatus),
+    wait_ms: 0,
+    cache_status: asset.fastScoutPrewarmStatus || "",
+    timed_out: false
+  };
+  asset.clientTiming = {
+    client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
+    client_upload_ms: uploadMs,
+    client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
+    client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
+    client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId),
+    client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
+    client_fast_scout_prewarm_wait_ms: Math.round(Number(fastScoutPrewarm.wait_ms || 0)),
+    client_fast_scout_prewarm_cache_status: fastScoutPrewarm.cache_status || "",
+    client_fast_scout_prewarm_timed_out: fastScoutPrewarm.timed_out === true
+  };
+
+  const requestPrepareStartedAt = performance.now();
+  setAssetProgress(asset.index, "准备生产队列请求", 0.3);
+  const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, {
+    ...options,
+    provider_options: {
+      ...defaultProviderOptions,
+      ...(options.provider_options || options.providerOptions || {})
+    }
+  });
+  const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
+  asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
+  setAssetProgress(
+    asset.index,
+    compressedAgain ? "保留主图，缩减辅助局部图" : "队列请求已准备",
+    0.36
+  );
+
+  const payload = JSON.parse(requestBody);
+  payload.force_l2_only = true;
+  payload.create_l1_job = false;
+  payload.create_l2_job = true;
+  payload.disable_fast_scout_l1 = true;
+  payload.v4_force_l2_direct = true;
+  payload.clientTiming = {
+    ...(payload.clientTiming || {}),
+    ...asset.clientTiming
+  };
+
+  const batchId = options.batchId || createClientBatchId();
+  const enqueueStartedAt = performance.now();
+  setAssetProgress(asset.index, "提交云端生产队列", 0.42);
+  const response = await fetch(JOB_ENQUEUE_API_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      batch_id: batchId,
+      tenant_id: batchId,
+      priority: 100,
+      jobs: [{
+        asset_id: asset.id,
+        force_l2_only: true,
+        create_l1_job: false,
+        create_l2_job: true,
+        payload
+      }]
+    })
+  });
+  const enqueueRoundtripMs = Math.round(performance.now() - enqueueStartedAt);
+  const enqueuePayload = await response.json().catch(() => ({}));
+  if (!response.ok || enqueuePayload.ok === false) {
+    const detail = enqueuePayload.message || enqueuePayload.error || enqueuePayload.jobs?.find((entry) => entry?.error)?.error || "";
+    throw new Error(detail ? `队列提交失败：${response.status}，${detail}` : `队列提交失败：${response.status}`);
+  }
+
+  const job = (enqueuePayload.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
+    || (enqueuePayload.jobs || []).find((entry) => entry?.ok)
+    || {};
+  if (!job.job_id || !job.recognition_session_id) {
+    throw new Error("队列提交失败：云端没有返回可追踪的 job_id / recognition_session_id。");
+  }
+
+  setAssetProgress(asset.index, "队列已提交，等待云端生成", 0.5);
+  const clientTotalMs = Math.round(performance.now() - processStartedAt);
+  return queuedPendingResult(asset, enqueuePayload, job, {
+    client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
+    client_upload_ms: uploadMs,
+    client_request_prepare_ms: requestPrepareMs,
+    client_background_prepare_wait_ms: asset.clientTiming.client_background_prepare_wait_ms,
+    client_enqueue_roundtrip_ms: enqueueRoundtripMs,
+    client_total_ms: clientTotalMs
+  });
+}
+
 function failedResult(asset, error) {
   return attachGenerationTimingToResult({
     index: asset.index,
@@ -2622,9 +2784,12 @@ async function processTitles() {
       renderResults();
 
       try {
-        const result = await processAsset(asset);
+        const result = await processAssetViaQueue(asset);
         if (!v4WriterTitlePending(result)) {
           markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });
+          clearAssetProgress(asset.index);
+        } else {
+          setAssetProgress(asset.index, "云端生成中", 0.58);
         }
         attachGenerationTimingToResult(result);
         state.results.push(result);
@@ -2632,10 +2797,10 @@ async function processTitles() {
         startV4AssistedDraftPolling(result);
       } catch (error) {
         markAssetFinished(asset.index, { failed: true });
+        clearAssetProgress(asset.index);
         state.results.push(failedResult(asset, error));
       }
 
-      clearAssetProgress(asset.index);
       state.activeAssetIndexes.delete(asset.index);
       completedCount += 1;
       state.completedAssetCount = completedCount;
@@ -2787,6 +2952,10 @@ function shouldPollV4AssistedDraft(result = {}) {
   if (!isV4Result(result)) return false;
   if (!result.recognition_session_id) return false;
   if (["saving", "saved", "skipped"].includes(String(result.feedbackStatus || ""))) return false;
+  if (result.v4QueuedJob && result.v4_job_id) {
+    const jobStatus = String(result.v4_job_status || "").toUpperCase();
+    if (["FAILED", "CANCELLED"].includes(jobStatus)) return false;
+  }
   const status = v4AssistedStatus(result);
   if (status === "READY" || status === "FAILED" || status === "TIMEOUT") return false;
   return result.full_assist_continued_after_l1 === true
@@ -2808,8 +2977,9 @@ function finalTitleFromV4Session(session = {}) {
 
 function applyV4AssistedDraftUpdate(result = {}, session = {}) {
   const summary = session.provider_result_summary || {};
-  const assistedStatus = String(summary.assisted_draft_status || "").toUpperCase();
   const finalTitle = finalTitleFromV4Session(session);
+  const l2Ready = session.l2_status === "READY" && Boolean(finalTitle);
+  const assistedStatus = String(summary.assisted_draft_status || (l2Ready ? "READY" : "")).toUpperCase();
   result.l2AssistedDraftStatus = assistedStatus || result.l2AssistedDraftStatus || "PENDING";
   result.assisted_draft_status = result.l2AssistedDraftStatus;
   result.provider_result_summary = {
@@ -2817,7 +2987,7 @@ function applyV4AssistedDraftUpdate(result = {}, session = {}) {
     ...summary
   };
 
-  if (assistedStatus !== "READY" || !finalTitle) return false;
+  if ((assistedStatus !== "READY" && !l2Ready) || !finalTitle) return false;
 
   markAssetFinished(result.index);
   attachGenerationTimingToResult(result);
@@ -2868,8 +3038,122 @@ function pendingAssistedDraftCount() {
   return state.results.filter(shouldPollV4AssistedDraft).length;
 }
 
+function queuedJobFailureReason(job = {}) {
+  const error = job.error && typeof job.error === "object" ? job.error : {};
+  return job.session?.failure_reason
+    || error.message
+    || error.error
+    || error.provider_error_type
+    || job.result?.message
+    || "云端生产队列生成失败。";
+}
+
+function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
+  result.v4_job_status = job.status || result.v4_job_status || "QUEUED";
+  result.v4_job_timing = job.timing || result.v4_job_timing || {};
+  result.timing = {
+    ...(result.timing || {}),
+    v4_queue: result.v4_job_timing,
+    worker_queue_wait_ms: job.timing?.worker_queue_wait_ms ?? result.timing?.worker_queue_wait_ms,
+    worker_processing_ms: job.timing?.worker_processing_ms ?? result.timing?.worker_processing_ms,
+    time_to_l2_ready_ms: job.timing?.time_to_l2_ready_ms ?? result.timing?.time_to_l2_ready_ms
+  };
+
+  const jobStatus = String(job.status || "").toUpperCase();
+  if (jobStatus === "QUEUED" || jobStatus === "RETRYING") {
+    setAssetProgress(result.index, "云端队列排队中", 0.56);
+  } else if (jobStatus === "RUNNING") {
+    setAssetProgress(result.index, "云端模型生成中", 0.68);
+  } else if (jobStatus === "L2_READY" || job.display_status === "FINAL_READY") {
+    setAssetProgress(result.index, "接收最终标题", 0.94);
+  }
+
+  let upgraded = false;
+  if (job.session) {
+    upgraded = applyV4AssistedDraftUpdate(result, job.session);
+  }
+
+  if (upgraded) {
+    clearAssetProgress(result.index);
+    return { terminal: true, upgraded: true };
+  }
+
+  if (jobStatus === "FAILED" || job.display_status === "FAILED") {
+    result.confidence = "FAILED";
+    result.reason = queuedJobFailureReason(job);
+    result.writerTitlePending = false;
+    result.title_stage = "FAILED";
+    result.assisted_draft_status = "FAILED";
+    result.l2AssistedDraftStatus = "FAILED";
+    markAssetFinished(result.index, { failed: true });
+    attachGenerationTimingToResult(result);
+    clearAssetProgress(result.index);
+    return { terminal: true, upgraded: false };
+  }
+
+  return { terminal: false, upgraded: false };
+}
+
+async function pollV4QueuedJob(resultIndex, startedAt = performance.now(), attempt = 0) {
+  const result = state.results.find((item) => item.index === resultIndex);
+  if (!result || !shouldPollV4AssistedDraft(result) || !result.v4_job_id) {
+    stopV4AssistedDraftPolling(resultIndex);
+    return;
+  }
+
+  if (performance.now() - startedAt > ASSISTED_DRAFT_MAX_POLL_MS) {
+    result.l2AssistedDraftStatus = "TIMEOUT";
+    result.assisted_draft_status = "TIMEOUT";
+    result.feedbackMessage = result.feedbackMessage || "一段式标题暂未完成，请稍后重试或使用单模型重试。";
+    markAssetFinished(result.index, { failed: true });
+    attachGenerationTimingToResult(result);
+    clearAssetProgress(result.index);
+    stopV4AssistedDraftPolling(resultIndex);
+    renderResults();
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams({ job_ids: result.v4_job_id, limit: "1" });
+    const response = await fetch(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+    const payload = await response.json().catch(() => ({}));
+    const job = response.ok && payload.ok !== false ? (payload.jobs || [])[0] : null;
+    if (job) {
+      const { terminal, upgraded } = applyV4QueuedJobStatusUpdate(result, job);
+      renderResults();
+      if (terminal) {
+        stopV4AssistedDraftPolling(resultIndex);
+        const remaining = pendingAssistedDraftCount();
+        setStatus(remaining
+          ? `一段式标题已生成，剩余 ${remaining} 张继续生成中…`
+          : upgraded
+            ? "一段式标题已全部生成。"
+            : "一段式标题生成已结束，失败项可重试。", { busy: remaining > 0 });
+        return;
+      }
+    }
+  } catch {
+    result.l2AssistedDraftStatus = result.l2AssistedDraftStatus || "PENDING";
+  }
+
+  const delay = ASSISTED_DRAFT_POLL_INTERVALS_MS[Math.min(attempt, ASSISTED_DRAFT_POLL_INTERVALS_MS.length - 1)];
+  const timer = setTimeout(() => {
+    state.assistedDraftPollTimers.delete(resultIndex);
+    void pollV4QueuedJob(resultIndex, startedAt, attempt + 1);
+  }, delay);
+  state.assistedDraftPollTimers.set(resultIndex, timer);
+}
+
 async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), attempt = 0) {
   const result = state.results.find((item) => item.index === resultIndex);
+  if (result?.v4QueuedJob && result.v4_job_id) {
+    await pollV4QueuedJob(resultIndex, startedAt, attempt);
+    return;
+  }
   if (!result || !shouldPollV4AssistedDraft(result)) {
     stopV4AssistedDraftPolling(resultIndex);
     return;
