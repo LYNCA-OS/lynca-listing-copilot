@@ -190,6 +190,76 @@ assert.equal(titlePayload.images[0].storageVerified, true);
 assert.equal(titlePayload.preprocessing_summary, undefined);
 assert.equal(titlePayload.preingestion_summary.bundle_id, bundle.bundle_id);
 
+const hardEvidencePayload = {
+  maxTitleLength: 80,
+  preingestion_evidence_patches: [
+    {
+      field: "serial_number",
+      value: "09/50",
+      raw_text: "09/50",
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      source_image_id: "front",
+      crop_id: "serial-crop",
+      confidence: 0.96,
+      provenance: { region: "serial_number" }
+    },
+    {
+      field: "grade_label",
+      value: "BGS 9.5 AUTO 10",
+      raw_text: "BGS 9.5 AUTO 10",
+      source_type: "SLAB_LABEL",
+      source_image_id: "front",
+      crop_id: "slab-label",
+      confidence: 0.95,
+      provenance: { region: "slab_label" }
+    }
+  ]
+};
+const hardEvidenceDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload(hardEvidencePayload);
+assert.equal(hardEvidenceDocument.evidence.print_run_number.value, "09/50");
+assert.equal(hardEvidenceDocument.evidence.card_grade.value, "9.5");
+assert.equal(hardEvidenceDocument.evidence.auto_grade.value, "10");
+
+const staleGpt5Result = {
+  title: "2018 Bowman Chrome Yordan Alvarez Auto Gold #CPA BGS 10/9.5",
+  confidence: "HIGH",
+  resolved: {
+    year: "2018",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yordan Alvarez"],
+    card_name: "Prospect Autographs Gold Shimmer Refractor",
+    surface_color: "Gold",
+    collector_number: "CPA",
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "10",
+    auto_grade: "9.5",
+    grade_type: "CARD_AND_AUTO"
+  },
+  evidence: {
+    grade: {
+      value: "BGS 10 AUTO 9.5",
+      status: "CONFIRMED",
+      confidence: 0.72,
+      sources: [{ source_type: "VISION_MODEL", observed_text: "BGS 10 AUTO 9.5" }],
+      candidates: [{ value: "BGS 10 AUTO 9.5", confidence: 0.72, sources: [{ source_type: "VISION_MODEL" }] }]
+    }
+  }
+};
+const mergedWithPreingestion = __listingCopilotTitleTestHooks.withRecognitionEvidence(
+  staleGpt5Result,
+  null,
+  hardEvidencePayload
+);
+const finalizedWithPreingestion = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation(
+  mergedWithPreingestion,
+  hardEvidencePayload
+);
+assert.match(finalizedWithPreingestion.title, /09\/50/);
+assert.match(finalizedWithPreingestion.title, /BGS 9\.5\/10/);
+assert.doesNotMatch(finalizedWithPreingestion.title, /BGS 10\/9\.5/);
+
 const missingPayload = {
   preingestion_bundle_id: "00000000-0000-0000-0000-000000000000"
 };

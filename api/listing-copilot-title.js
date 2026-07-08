@@ -29,7 +29,7 @@ import {
 import { readListingImageVerificationRecord } from "../lib/listing/storage/storage-verification-store.mjs";
 import { defaultCaptureProfileId, summarizeAssetImageQuality } from "../lib/listing/image-quality/quality-gate.mjs";
 import { evaluatePreProviderRescanGate } from "../lib/listing/image-quality/pre-provider-rescan-gate.mjs";
-import { createEvidenceField } from "../lib/listing/evidence/evidence-schema.mjs";
+import { createEvidenceField, createVisionSource } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { serialLimitText } from "../lib/listing/renderer/title-cleanup.mjs";
@@ -735,6 +735,43 @@ function finalizerEvidenceHasSource(field = {}, allowedSources = new Set()) {
   return finalizerEvidenceSources(field).some((sourceType) => allowedSources.has(sourceType));
 }
 
+function finalizerCandidateHasSource(candidate = {}, allowedSources = new Set()) {
+  const sources = Array.isArray(candidate.sources) ? candidate.sources : [];
+  return sources
+    .map((source) => normalizeStringOrNull(source?.source_type || source?.sourceType || source?.type))
+    .filter(Boolean)
+    .some((sourceType) => allowedSources.has(sourceType.toUpperCase()));
+}
+
+function finalizerDirectEvidenceEntry(field = {}, allowedSources = new Set()) {
+  if (!field || typeof field !== "object" || Array.isArray(field)) return null;
+  if (finalizerEvidenceStatusIsConfirmed(field) && finalizerEvidenceHasSource(field, allowedSources)) return field;
+
+  const candidate = (Array.isArray(field.candidates) ? field.candidates : [])
+    .filter((item) => (
+      finalizerValuePresent(item?.value)
+      && Number(item?.confidence || 0) >= 0.86
+      && finalizerCandidateHasSource(item, allowedSources)
+    ))
+    .sort((left, right) => Number(right.confidence || 0) - Number(left.confidence || 0))[0];
+  if (!candidate) return null;
+
+  return {
+    ...field,
+    value: candidate.value,
+    normalized_value: candidate.value,
+    status: "CONFIRMED",
+    confidence: candidate.confidence,
+    sources: candidate.sources || field.sources || []
+  };
+}
+
+function finalizerCurrentImageEvidenceEntriesForField(evidence = {}, fieldNames = [], allowedSources = new Set()) {
+  return finalizerEvidenceEntriesForField(evidence, fieldNames)
+    .map((field) => finalizerDirectEvidenceEntry(field, allowedSources))
+    .filter(Boolean);
+}
+
 function finalizerEvidenceText(field = {}) {
   return [
     field.value,
@@ -761,18 +798,16 @@ function finalizerEvidenceValue(field = {}) {
 }
 
 function finalizerEvidencePrintRunFields(evidence = {}) {
-  const entries = finalizerEvidenceEntriesForField(evidence, [
+  const entries = finalizerCurrentImageEvidenceEntriesForField(evidence, [
     "print_run_number",
     "numerical_rarity",
     "serial_number",
     "print_run_denominator",
     "numbered_to",
     "serial_denominator"
-  ]);
+  ], finalizerCurrentInstancePrintRunSources);
 
   for (const field of entries) {
-    if (!finalizerEvidenceStatusIsConfirmed(field)) continue;
-    if (!finalizerEvidenceHasSource(field, finalizerCurrentInstancePrintRunSources)) continue;
     const value = finalizerEvidenceValue(field);
     const expanded = expandPrintRunFields({
       print_run_number: value,
@@ -789,11 +824,11 @@ function finalizerEvidencePrintRunFields(evidence = {}) {
 }
 
 function finalizerEvidenceGradeFields(evidence = {}) {
-  const gradeEntry = finalizerEvidenceEntriesForField(evidence, ["grade"])
-    .find((field) => (
-      finalizerEvidenceStatusIsConfirmed(field)
-      && finalizerEvidenceHasSource(field, finalizerCurrentInstanceGradeSources)
-    ));
+  const gradeEntry = finalizerCurrentImageEvidenceEntriesForField(
+    evidence,
+    ["grade"],
+    finalizerCurrentInstanceGradeSources
+  )[0] || null;
   const atomicEvidence = Object.fromEntries(["grade_company", "card_grade", "auto_grade", "grade_type"]
     .map((fieldName) => [fieldName, evidence?.[fieldName]])
     .filter(([, field]) => (
@@ -3921,11 +3956,243 @@ function mergeResolvedFields(...resolvedDocuments) {
   return merged;
 }
 
-function withRecognitionEvidence(result, recognitionEvidenceDocument = null, payload = {}) {
-  if (!hasRecognitionEvidence(recognitionEvidenceDocument)) return result;
+const preingestionHardEvidenceFields = new Set([
+  "print_run_number",
+  "print_run_denominator",
+  "serial_number",
+  "serial_denominator",
+  "numerical_rarity",
+  "grade",
+  "grade_company",
+  "card_grade",
+  "auto_grade",
+  "card_number",
+  "tcg_card_number",
+  "collector_number",
+  "checklist_code"
+]);
 
-  const evidence = mergeEvidenceMaps(recognitionEvidenceDocument.evidence, result.evidence);
-  const resolved = mergeResolvedFields(recognitionEvidenceDocument.resolved, result.resolved);
+const preingestionFieldAliases = new Map(Object.entries({
+  print_run_candidate: "print_run_number",
+  numerical_rarity_candidate: "numerical_rarity",
+  serial_candidate: "serial_number",
+  serial_number_candidate: "serial_number",
+  serial_denominator_candidate: "serial_denominator",
+  grade_candidate: "grade",
+  grade_label: "grade",
+  grade_label_candidate: "grade",
+  slab_label: "grade",
+  card_number_candidate: "card_number",
+  tcg_card_number_candidate: "tcg_card_number",
+  collector_number_candidate: "collector_number",
+  checklist_code_candidate: "checklist_code"
+}));
+
+function normalizePreingestionEvidenceFieldName(fieldName = "") {
+  const normalized = normalizeStringOrNull(fieldName)?.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!normalized) return null;
+  const field = preingestionFieldAliases.get(normalized) || normalized;
+  return preingestionHardEvidenceFields.has(field) ? field : null;
+}
+
+function preingestionEvidenceSourceType(sourceType = "", fieldName = "") {
+  const normalized = normalizeStringOrNull(sourceType)?.toUpperCase() || "";
+  if (!normalized) return null;
+  if (normalized.includes("SLAB") || normalized.includes("GRADE_LABEL")) return "SLAB_LABEL";
+  if (normalized.includes("CARD_FRONT")) return "CARD_FRONT";
+  if (normalized.includes("CARD_BACK")) return "CARD_BACK";
+  if (normalized.includes("OCR") || normalized.includes("PADDLE")) return "OCR";
+  if (normalized.includes("OPERATOR")) return "OPERATOR";
+  if (normalized.includes("PREINGESTION") && /^(?:print_run|serial|card_number|tcg_card_number|collector_number|checklist_code)/.test(fieldName)) return "OCR";
+  return null;
+}
+
+function clampPreingestionConfidence(value, fallback = 0.78) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(0, Math.min(1, numeric));
+}
+
+function preingestionPatchValue(patch = {}) {
+  return normalizeStringOrNull(
+    patch.value
+    ?? patch.normalized_value
+    ?? patch.normalizedValue
+    ?? patch.raw_text
+    ?? patch.rawText
+  );
+}
+
+function preingestionEvidenceSourceForPatch(patch = {}, fieldName = "") {
+  const sourceType = preingestionEvidenceSourceType(patch.source_type || patch.sourceType, fieldName);
+  const imageId = normalizeStringOrNull(patch.source_image_id || patch.sourceImageId || patch.image_id || patch.imageId);
+  if (!sourceType || !imageId) return null;
+  return createVisionSource({
+    sourceType,
+    imageId,
+    sourceCropId: normalizeStringOrNull(patch.crop_id || patch.cropId || patch.source_crop_id || patch.sourceCropId),
+    side: sourceType === "CARD_BACK" ? "back" : sourceType === "CARD_FRONT" ? "front" : null,
+    captureRole: "preingestion_evidence",
+    region: normalizeStringOrNull(patch.provenance?.region || patch.provenance?.source_region || patch.crop_type || patch.cropType),
+    observedText: preingestionPatchValue(patch),
+    rawText: normalizeStringOrNull(patch.raw_text || patch.rawText) || preingestionPatchValue(patch),
+    sourceInferenceMethod: "preingestion_evidence_bundle",
+    sourceObjectPath: normalizeStringOrNull(patch.provenance?.source_object_path || patch.source_object_path),
+    derivedObjectPath: normalizeStringOrNull(patch.provenance?.derived_object_path || patch.derived_object_path),
+    trustTier: sourceType === "SLAB_LABEL" || sourceType === "OCR" ? 1 : 2
+  });
+}
+
+function createPreingestionEvidenceField(fieldName, value, patch = {}) {
+  if (!fieldName || !hasEvidenceValue(value)) return null;
+  const source = preingestionEvidenceSourceForPatch(patch, fieldName);
+  if (!source) return null;
+  const confidence = clampPreingestionConfidence(patch.confidence);
+  const candidates = [{ value, confidence, sources: [source] }];
+  if (Array.isArray(patch.text_candidates) || Array.isArray(patch.textCandidates)) {
+    for (const candidate of (patch.text_candidates || patch.textCandidates || [])) {
+      const candidateValue = normalizeStringOrNull(typeof candidate === "object" ? candidate.value || candidate.text : candidate);
+      if (!candidateValue || candidateValue === value) continue;
+      candidates.push({
+        value: candidateValue,
+        confidence: clampPreingestionConfidence(typeof candidate === "object" ? candidate.confidence : null, Math.max(0.5, confidence - 0.12)),
+        sources: [source]
+      });
+    }
+  }
+  return createEvidenceField({
+    value,
+    normalizedValue: value,
+    status: confidence >= 0.86 ? "CONFIRMED" : "REVIEW",
+    confidence,
+    candidates,
+    sources: [source],
+    conflicts: [],
+    unresolvedReason: confidence >= 0.86 ? null : "preingestion_evidence_requires_writer_review"
+  });
+}
+
+function addPreingestionEvidence(evidence, resolved, fieldName, value, patch = {}) {
+  const field = createPreingestionEvidenceField(fieldName, value, patch);
+  if (!field) return;
+  evidence[fieldName] = evidence[fieldName]
+    ? mergeEvidenceField(fieldName, [evidence[fieldName], field])
+    : field;
+  if (hasEvidenceValue(value)) resolved[fieldName] = value;
+}
+
+function addPreingestionPrintRunEvidence(evidence, resolved, fieldName, value, patch = {}) {
+  const expanded = expandPrintRunFields({
+    [fieldName]: value,
+    print_run_number: value,
+    serial_number: value,
+    numerical_rarity: value
+  });
+  const sourceValueMap = {
+    print_run_number: expanded.print_run_number || value,
+    serial_number: expanded.serial_number || expanded.print_run_number || value,
+    numerical_rarity: expanded.print_run_number || value,
+    print_run_numerator: expanded.print_run_numerator,
+    print_run_denominator: expanded.print_run_denominator,
+    numbered_to: expanded.numbered_to,
+    serial_denominator: expanded.serial_denominator || expanded.print_run_denominator,
+    expected_serial_denominator: expanded.expected_serial_denominator || expanded.print_run_denominator
+  };
+  Object.entries(sourceValueMap).forEach(([nextField, nextValue]) => {
+    if (!hasEvidenceValue(nextValue)) return;
+    addPreingestionEvidence(evidence, resolved, nextField, nextValue, patch);
+  });
+}
+
+function addPreingestionGradeEvidence(evidence, resolved, value, patch = {}) {
+  addPreingestionEvidence(evidence, resolved, "grade", value, patch);
+  const parsed = resolveGradeFields({
+    resolved: {},
+    legacyFields: {
+      title: value,
+      model_title_suggestion: value,
+      grade: value,
+      grade_company: value
+    }
+  }).resolved || {};
+  ["grade_company", "card_grade", "auto_grade", "grade_type"].forEach((fieldName) => {
+    if (!hasEvidenceValue(parsed[fieldName]) || parsed[fieldName] === "UNKNOWN") return;
+    addPreingestionEvidence(evidence, resolved, fieldName, parsed[fieldName], patch);
+  });
+}
+
+function preingestionEvidenceDocumentFromPayload(payload = {}) {
+  const initialEvidence = payload.preingestion_initial_evidence
+    && typeof payload.preingestion_initial_evidence === "object"
+    && !Array.isArray(payload.preingestion_initial_evidence)
+    ? payload.preingestion_initial_evidence
+    : {};
+  const patches = [
+    ...Object.values(initialEvidence),
+    ...(Array.isArray(payload.preingestion_evidence_patches) ? payload.preingestion_evidence_patches : [])
+  ].filter((patch) => patch && typeof patch === "object" && !Array.isArray(patch));
+  if (!patches.length) return null;
+
+  const evidence = {};
+  const resolved = {};
+  const skipped = [];
+  for (const patch of patches) {
+    const fieldName = normalizePreingestionEvidenceFieldName(patch.field || patch.evidence_field);
+    const value = preingestionPatchValue(patch);
+    if (!fieldName || !value) {
+      skipped.push(patch.field || patch.evidence_field || "unknown");
+      continue;
+    }
+    if (/^(?:print_run|serial|numerical_rarity)/.test(fieldName)) {
+      addPreingestionPrintRunEvidence(evidence, resolved, fieldName, value, patch);
+    } else if (/^grade/.test(fieldName)) {
+      addPreingestionGradeEvidence(evidence, resolved, value, patch);
+    } else {
+      addPreingestionEvidence(evidence, resolved, fieldName, value, patch);
+    }
+  }
+  if (!Object.keys(evidence).length) return null;
+
+  return {
+    evidence,
+    resolved,
+    unresolved: [],
+    recognition: null,
+    resolution_trace: [{
+      phase: "preingestion",
+      step: "normalize_preingestion_evidence",
+      input: {
+        bundle_id: payload.preingestion_bundle_id || payload.preingestionBundleId || null,
+        patch_count: patches.length
+      },
+      output: {
+        evidence_fields: Object.keys(evidence),
+        skipped_fields: skipped.slice(0, 12)
+      },
+      decision: "emit_current_image_hard_evidence",
+      created_at: new Date().toISOString()
+    }],
+    schema_version: "preingestion-evidence-fields-v1"
+  };
+}
+
+function withRecognitionEvidence(result, recognitionEvidenceDocument = null, payload = {}) {
+  const preingestionEvidenceDocument = preingestionEvidenceDocumentFromPayload(payload);
+  const evidenceDocuments = [
+    hasRecognitionEvidence(recognitionEvidenceDocument) ? recognitionEvidenceDocument : null,
+    hasRecognitionEvidence(preingestionEvidenceDocument) ? preingestionEvidenceDocument : null
+  ].filter(Boolean);
+  if (!evidenceDocuments.length) return result;
+
+  const evidence = mergeEvidenceMaps(
+    ...evidenceDocuments.map((document) => document.evidence),
+    result.evidence
+  );
+  const resolved = mergeResolvedFields(
+    ...evidenceDocuments.map((document) => document.resolved),
+    result.resolved,
+    preingestionEvidenceDocument?.resolved
+  );
   const presentation = renderListingPresentation({
     resolved,
     evidence,
@@ -3942,13 +4209,14 @@ function withRecognitionEvidence(result, recognitionEvidenceDocument = null, pay
     renderer: presentation.renderer,
     renderer_version: presentation.renderer_version,
     title_length_policy: presentation.title_length_policy,
-    recognition_preflight: recognitionEvidenceDocument.recognition || null,
+    recognition_preflight: recognitionEvidenceDocument?.recognition || null,
+    preingestion_evidence_applied: hasRecognitionEvidence(preingestionEvidenceDocument),
     unresolved: [
       ...(Array.isArray(result.unresolved) ? result.unresolved : []),
-      ...(Array.isArray(recognitionEvidenceDocument.unresolved) ? recognitionEvidenceDocument.unresolved : [])
+      ...evidenceDocuments.flatMap((document) => Array.isArray(document.unresolved) ? document.unresolved : [])
     ].slice(0, 16),
     resolution_trace: [
-      ...(Array.isArray(recognitionEvidenceDocument.resolution_trace) ? recognitionEvidenceDocument.resolution_trace : []),
+      ...evidenceDocuments.flatMap((document) => Array.isArray(document.resolution_trace) ? document.resolution_trace : []),
       ...(Array.isArray(result.resolution_trace) ? result.resolution_trace : [])
     ]
   };
@@ -6791,12 +7059,14 @@ export const __listingCopilotTitleTestHooks = {
   finalResolvedFieldsForPresentation,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
+  preingestionEvidenceDocumentFromPayload,
   providerOptionsFromPayload,
   retrievalAnchorSummary,
   retrievalFieldsHavePrePromptVectorAnchor,
   scaffoldTitleConflictsWithDirectEvidence,
   shouldDeferVectorUntilProviderObservation,
-  shouldSkipVectorForCatalogContext
+  shouldSkipVectorForCatalogContext,
+  withRecognitionEvidence
 };
 
 async function createProviderTitle(payload, {
