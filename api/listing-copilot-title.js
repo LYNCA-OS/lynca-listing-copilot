@@ -157,6 +157,28 @@ function defaultProviderOptionsFromEnv(env = process.env) {
   };
 }
 
+function vectorEmbeddingWarmupTimeoutMs(env = process.env, providerOptions = {}) {
+  const configured = normalizePositiveIntegerOrNull(
+    providerOptions.vector_embedding_warmup_timeout_ms
+    ?? providerOptions.vectorEmbeddingWarmupTimeoutMs
+    ?? env.VECTOR_EMBEDDING_WARMUP_TIMEOUT_MS
+  );
+  if (configured !== null) return configured;
+  return Math.max(
+    20000,
+    normalizePositiveIntegerOrNull(providerOptions.vector_query_timeout_ms ?? providerOptions.vectorQueryTimeoutMs) || 0,
+    positiveIntegerFromEnv(env, "VECTOR_QUERY_TIMEOUT_MS", 0),
+    positiveIntegerFromEnv(env, "VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS", 0)
+  );
+}
+
+function vectorEmbeddingWarmupOptions(providerOptions = {}, env = process.env) {
+  return {
+    ...providerOptions,
+    vector_query_timeout_ms: vectorEmbeddingWarmupTimeoutMs(env, providerOptions)
+  };
+}
+
 function providerOptionsFromPayload(payload = {}, env = process.env) {
   const options = payload.provider_options || payload.providerOptions || {};
   const explicitOptions = options && typeof options === "object" && !Array.isArray(options) ? options : {};
@@ -4653,6 +4675,7 @@ async function prepareVectorCandidateContext({
   initialPayload,
   signedImages,
   visualFeatures = {},
+  precomputedWorkerResult = null,
   resolvedForRetrieval = {},
   providerOptions = {},
   timingContext = null,
@@ -4684,16 +4707,21 @@ async function prepareVectorCandidateContext({
   }
 
   let activeVisualFeatures = visualFeatures;
-  let workerResult = null;
+  let workerResult = precomputedWorkerResult;
+  if (!hasUsableVisualFeatures(activeVisualFeatures) && hasUsableVisualFeatures(workerResult)) {
+    activeVisualFeatures = workerResult;
+  }
   if (!hasUsableVisualFeatures(activeVisualFeatures)) {
-    workerResult = await timeAsync(timingContext, "vector_embedding_ms", () => embedImagesWithVectorWorker({
-      images: signedImages || initialPayload.images || [],
-      requestId: `${initialPayload.assetId || initialPayload.asset_id || "asset"}_vector_query`,
-      env,
-      options: providerOptions
-    }));
-    if (hasUsableVisualFeatures(workerResult)) {
-      activeVisualFeatures = workerResult;
+    if (!workerResult) {
+      workerResult = await timeAsync(timingContext, "vector_embedding_ms", () => embedImagesWithVectorWorker({
+        images: signedImages || initialPayload.images || [],
+        requestId: `${initialPayload.assetId || initialPayload.asset_id || "asset"}_vector_query`,
+        env,
+        options: providerOptions
+      }));
+      if (hasUsableVisualFeatures(workerResult)) {
+        activeVisualFeatures = workerResult;
+      }
     }
   }
 
@@ -6177,6 +6205,22 @@ async function createOpenAiTitle(payload, selection, {
     providerOptions,
     env: process.env
   });
+  const vectorEmbeddingWarmupPromise = deferVectorUntilProviderObservation
+    ? (
+      hasUsableVisualFeatures(visualFeatures)
+        ? Promise.resolve(visualFeatures)
+        : timeAsync(timingContext, "vector_embedding_overlap_ms", () => embedImagesWithVectorWorker({
+          images: signedImages || baseInitialPayload.images || [],
+          requestId: `${baseInitialPayload.assetId || baseInitialPayload.asset_id || "asset"}_vector_query_overlap`,
+          env: process.env,
+          options: vectorEmbeddingWarmupOptions(providerOptions, process.env)
+        })).catch(() => ({
+          status: "VECTOR_RETRIEVAL_ERROR",
+          reason: "vector_embedding_overlap_error",
+          features: []
+        }))
+    )
+    : null;
   const vectorContextPromise = lazyDecision.skip
     ? Promise.resolve(skippedVectorCandidateContext({
       reason: "vector_lazy_strong_catalog_anchor",
@@ -6296,6 +6340,9 @@ async function createOpenAiTitle(payload, selection, {
         skip: lateLazyDecision
       });
     } else {
+      const overlappedVectorFeatures = vectorEmbeddingWarmupPromise
+        ? await vectorEmbeddingWarmupPromise
+        : visualFeatures;
       catalogContext = lateCatalogContext
         ? {
           ...lateCatalogContext,
@@ -6305,7 +6352,8 @@ async function createOpenAiTitle(payload, selection, {
       vectorContext = await prepareVectorCandidateContext({
         initialPayload: baseInitialPayload,
         signedImages,
-        visualFeatures,
+        visualFeatures: hasUsableVisualFeatures(overlappedVectorFeatures) ? overlappedVectorFeatures : visualFeatures,
+        precomputedWorkerResult: overlappedVectorFeatures,
         resolvedForRetrieval: providerResolvedForRetrieval,
         providerOptions,
         timingContext
