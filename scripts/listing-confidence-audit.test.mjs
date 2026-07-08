@@ -125,6 +125,70 @@ assert.equal(explicitCurrentImageNumericalRarityPreserved.resolved.numerical_rar
 assert.match(explicitCurrentImageNumericalRarityPreserved.title, /2\/3/);
 assert.match(explicitCurrentImageNumericalRarityPreserved.title, /BGS 8\.5\/10/);
 
+const providerFieldEvidenceArrayPreservesInstanceFields = await callApi({
+  recognition_status: "CONFIRMED",
+  fields: {
+    year: "2018",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yordan Alvarez"],
+    card_name: "Prospect Autographs Gold Shimmer Refractor",
+    surface_color: "Gold",
+    collector_number: "CPA",
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "10",
+    auto_grade: "9.5",
+    grade_type: "CARD_AND_AUTO"
+  },
+  field_evidence: [
+    {
+      field: "print_run_number",
+      value: "09/50",
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      source_image_id: "front",
+      source_region: "serial",
+      raw_text: "09/50",
+      visible_text: "09/50",
+      evidence_kind: "PRINTED_SERIAL",
+      confidence: 0.96,
+      review_required: false,
+      directly_observed: true,
+      direct_observation: true
+    },
+    {
+      field: "grade",
+      value: "BGS 9.5 AUTO 10",
+      source_type: "SLAB_LABEL",
+      source_image_id: "front",
+      source_region: "slab_label",
+      raw_text: "BGS 9.5 AUTO 10",
+      visible_text: "BGS 9.5 AUTO 10",
+      evidence_kind: "SLAB_LABEL_TEXT",
+      confidence: 0.95,
+      review_required: false,
+      directly_observed: true,
+      direct_observation: true
+    }
+  ],
+  unresolved: [],
+  vector_candidate_decision: {
+    selected_candidate_id: null,
+    decision: "NOT_AVAILABLE",
+    supported_fields: [],
+    rejected_fields: [],
+    conflicts: []
+  }
+});
+
+assert.equal(providerFieldEvidenceArrayPreservesInstanceFields.resolved.numerical_rarity, "09/50");
+assert.equal(providerFieldEvidenceArrayPreservesInstanceFields.resolved.card_grade, "9.5");
+assert.equal(providerFieldEvidenceArrayPreservesInstanceFields.resolved.auto_grade, "10");
+assert.match(providerFieldEvidenceArrayPreservesInstanceFields.title, /09\/50/);
+assert.match(providerFieldEvidenceArrayPreservesInstanceFields.title, /BGS 9\.5\/10/);
+assert.doesNotMatch(providerFieldEvidenceArrayPreservesInstanceFields.title, /#CPA|BGS 10\/9\.5/);
+
 const serialNumberOnlyDoesNotBackfillNumericalRarity = await callApi({
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto",
   confidence: "HIGH",
