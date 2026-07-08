@@ -118,6 +118,8 @@ assert.match(api, /vector_retrieval_mode:\s*vectorAssistDefault \? "assist" : "o
 assert.match(api, /vector_query_timeout_ms:\s*8000/, "title API should cap default online vector query work before it dominates writer-ready latency");
 assert.match(api, /vectorEmbeddingPostProviderWaitMs/, "L2 should cap post-provider vector waiting before it dominates writer-ready latency");
 assert.match(api, /vector_embedding_overlap_timeout_after_provider/, "slow vector warmup after provider should degrade to a timeout packet instead of blocking the title");
+assert.match(api, /Math\.max\(\s*20000,[\s\S]*VECTOR_QUERY_TIMEOUT_MS/, "vector warmup should get a longer overlapped window than the post-provider wait");
+assert.match(api, /VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS[\s\S]*\|\|\s*20000/, "vector warmup hard cap should default to the overlapped 20s budget");
 assert.match(api, /singleModelDraftPath/, "single-model provider requests should be able to skip Evidence Completion");
 assert.match(api, /skipped_evidence_completion: true/, "single-model fast drafts should record skipped Evidence Completion");
 assert.match(api, /assist_shadow_no_prompt_safe_candidates/, "assist-enabled requests with no prompt-safe candidates should stay in shadow-only mode");

@@ -167,7 +167,7 @@ function vectorEmbeddingWarmupTimeoutMs(env = process.env, providerOptions = {})
   const requested = configured !== null
     ? configured
     : Math.max(
-      8000,
+      20000,
       normalizePositiveIntegerOrNull(providerOptions.vector_query_timeout_ms ?? providerOptions.vectorQueryTimeoutMs) || 0,
       positiveIntegerFromEnv(env, "VECTOR_QUERY_TIMEOUT_MS", 0),
       positiveIntegerFromEnv(env, "VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS", 0)
@@ -176,7 +176,7 @@ function vectorEmbeddingWarmupTimeoutMs(env = process.env, providerOptions = {})
     providerOptions.vector_embedding_max_blocking_timeout_ms
     ?? providerOptions.vectorEmbeddingMaxBlockingTimeoutMs
     ?? env.VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS
-  ) || 8000;
+  ) || 20000;
   return Math.max(250, Math.min(requested, hardCap));
 }
 
