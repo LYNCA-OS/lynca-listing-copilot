@@ -78,7 +78,10 @@ function writerSafeSessionStatus(session = null) {
       provider_truncation_retry_attempts: Number(summary.provider_truncation_retry_attempts || 0),
       gpt5_empty_result_retry_attempted: summary.gpt5_empty_result_retry_attempted === true,
       gpt5_empty_result_retry_success: summary.gpt5_empty_result_retry_success === true,
-      gpt5_empty_result_retry_status_code: summary.gpt5_empty_result_retry_status_code ?? null
+      gpt5_empty_result_retry_status_code: summary.gpt5_empty_result_retry_status_code ?? null,
+      noncritical_persistence_status: summary.noncritical_persistence_status || null,
+      writer_ready_persistence_mode: summary.writer_ready_persistence_mode || null,
+      v4_l2_timing: summary.v4_l2_timing || null
     },
     candidate_control_plane_trace: {
       catalog_activation_funnel: trace.catalog_activation_funnel || {},

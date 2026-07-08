@@ -40,9 +40,15 @@ assert.ok(apiSource.includes("l2_status"), "L2 persistence must update dedicated
 assert.ok(apiSource.includes("internal_scout_not_catalog_gap"), "L1 internal scout must not create catalog gap rows");
 assert.ok(apiSource.includes("l1_deferred_modules"), "V4 response must expose deferred modules");
 assert.ok(apiSource.includes("fast_scout_blocking_call_used"), "V4 response must expose fast scout blocking-call diagnostic");
+assert.ok(apiSource.includes("ENABLE_V4_L2_EXACT_ANCHOR_BLOCKING_SCOUT"), "L2 exact-anchor scout must default to cache-only unless explicitly enabled.");
+assert.ok(apiSource.includes("allowProviderCall: allowBlockingScout"), "L2 exact-anchor scout must not make a blocking provider call by default.");
+assert.ok(apiSource.includes("CACHE_MISS_PROVIDER_DISABLED"), "L2 exact-anchor cache miss must fall through to full L2 without waiting on a scout model call.");
+assert.ok(apiSource.includes("v4_l2_timing"), "V4 L2 must expose stage timings for worker latency diagnosis.");
 assert.ok(fastScoutSource.includes("readV4FastScoutCache"), "fast scout must read persistent cache");
 assert.ok(fastScoutSource.includes("persistV4FastScoutCache"), "fast scout must persist cache");
 assert.ok(fastScoutSource.includes("cacheWriteMode = \"background\""), "fast scout API path must default cache writes to background");
+assert.ok(fastScoutSource.includes("allowProviderCall = true"), "fast scout must keep normal provider behavior for L1/prewarm paths.");
+assert.ok(fastScoutSource.includes("FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED"), "fast scout cache-only mode must fail closed before provider call.");
 assert.ok(fastScoutSource.includes("signed_url_ms"), "fast scout timing must expose signed_url_ms");
 assert.ok(fastScoutSource.includes("image_verify_ms"), "fast scout timing must expose image_verify_ms");
 

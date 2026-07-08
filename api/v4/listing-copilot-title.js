@@ -424,6 +424,24 @@ function shouldSkipFastScoutForRequestedModel(payload = {}, env = process.env) {
     && payload.v4_queue_l1_only !== true;
 }
 
+function l2ExactAnchorBlockingScoutAllowed(payload = {}, env = process.env) {
+  const explicit = payload.v4_l2_exact_anchor_allow_blocking_scout
+    ?? payload.l2_exact_anchor_allow_blocking_scout
+    ?? payload.provider_options?.v4_l2_exact_anchor_allow_blocking_scout
+    ?? payload.providerOptions?.v4_l2_exact_anchor_allow_blocking_scout;
+  if (explicit !== undefined && explicit !== null && explicit !== "") {
+    return String(explicit).toLowerCase() === "true" || explicit === true;
+  }
+  return String(env.ENABLE_V4_L2_EXACT_ANCHOR_BLOCKING_SCOUT || "false").toLowerCase() === "true";
+}
+
+function l2TimingWithTotal(timing = {}, startedAt = Date.now()) {
+  return {
+    ...timing,
+    handler_total_ms: Date.now() - startedAt
+  };
+}
+
 function queueL1Only(payload = {}) {
   return payload.v4_queue_l1_only === true || payload.v4_queue_job_type === "FAST_SCOUT_DRAFT";
 }
@@ -818,6 +836,17 @@ export default async function handler(req, res) {
   }
 
   const sessionId = payload.recognition_session_id || createV4SessionId();
+  const handlerStartedAt = Date.now();
+  const l2Timing = {
+    exact_anchor_scout_attempted: false,
+    exact_anchor_scout_status: null,
+    exact_anchor_scout_ms: null,
+    exact_anchor_finalize_ms: null,
+    exact_anchor_blocking_scout_allowed: null,
+    v2_call_ms: null,
+    persist_pipeline_ms: null,
+    handler_total_ms: null
+  };
   const routePlan = planV4RecognitionRoute(payload, process.env);
   const createResultPromise = createV4RecognitionSession({
     sessionId,
@@ -986,22 +1015,31 @@ export default async function handler(req, res) {
   // agreement falls through to the normal L2 call unchanged.
   if (forceL2Direct && Array.isArray(payload.images) && payload.images.length > 0
     && payload.disable_exact_anchor_finalize !== true) {
+    const allowBlockingScout = l2ExactAnchorBlockingScoutAllowed(payload, process.env);
+    l2Timing.exact_anchor_scout_attempted = true;
+    l2Timing.exact_anchor_blocking_scout_allowed = allowBlockingScout;
+    const scoutStartedAt = Date.now();
     try {
       const scoutResult = await runV4FastScoutObservation({
         payload,
         env: process.env,
         fetchImpl: globalThis.fetch,
+        allowProviderCall: allowBlockingScout,
         requestContext: openAiRequestContextFromV4Payload(payload, {
           providerCallPurpose: "l2_direct_exact_anchor_scout",
           titleStage: v4TitleStages.L1_INTERNAL_SCOUT
         })
       });
+      l2Timing.exact_anchor_scout_ms = Date.now() - scoutStartedAt;
+      l2Timing.exact_anchor_scout_status = scoutResult.fast_scout?.cache_hit ? "CACHE_HIT" : "PROVIDER_CALL";
+      const finalizeStartedAt = Date.now();
       const finalize = await maybeFinalizeL1FromExactAnchor({
         scoutResult,
         env: process.env,
         fetchImpl: globalThis.fetch,
         timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 1500)
       });
+      l2Timing.exact_anchor_finalize_ms = Date.now() - finalizeStartedAt;
       if (finalize?.finalized === true) {
         const finalizedResult = {
           ...scoutResult,
@@ -1020,21 +1058,41 @@ export default async function handler(req, res) {
           title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
           assisted_draft_status: "READY",
           l1_return_reason: "exact_anchor_catalog_finalized",
-          full_assist_continued_after_l1: false
+          full_assist_continued_after_l1: false,
+          module_speed_metrics: {
+            ...(scoutResult.module_speed_metrics || {}),
+            v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
+          }
         };
+        const persistStartedAt = Date.now();
         const finalizedResponse = await persistPipelineResult({
           sessionId,
           result: finalizedResult,
           payload,
           routePlan,
           createResult,
-          extraProviderSummary: { assisted_draft_status: "READY", exact_anchor_finalized: true }
+          extraProviderSummary: {
+            assisted_draft_status: "READY",
+            exact_anchor_finalized: true,
+            v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
+          }
         });
+        l2Timing.persist_pipeline_ms = Date.now() - persistStartedAt;
+        finalizedResponse.module_speed_metrics = {
+          ...(finalizedResponse.module_speed_metrics || {}),
+          v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
+        };
         sendJson(res, 200, writerFinalizedL2ExactAnchorResponse(finalizedResponse, finalizedResult, finalize));
         return;
       }
     } catch (error) {
-      console.error("[v4-listing] exact anchor finalize (L2-direct) failed", error);
+      l2Timing.exact_anchor_scout_ms = Date.now() - scoutStartedAt;
+      l2Timing.exact_anchor_scout_status = error?.code === "FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED"
+        ? "CACHE_MISS_PROVIDER_DISABLED"
+        : "ERROR";
+      if (error?.code !== "FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED") {
+        console.error("[v4-listing] exact anchor finalize (L2-direct) failed", error);
+      }
     }
   }
 
@@ -1049,10 +1107,12 @@ export default async function handler(req, res) {
     providerOptions: progressiveProviderOptions,
     titleStageTarget: forceL2Direct || modelRequiresFullL2Options ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
+  const v2StartedAt = Date.now();
   const v2Response = await callV2WithGpt5EmptyRetry({
     headers: req.headers,
     payload: v2Payload
   });
+  l2Timing.v2_call_ms = Date.now() - v2StartedAt;
 
   if (v2Response.statusCode < 200 || v2Response.statusCode >= 300 || !v2Response.body) {
     await updateV4RecognitionSession({
@@ -1071,13 +1131,22 @@ export default async function handler(req, res) {
     return;
   }
 
+  const persistStartedAt = Date.now();
   const v4Response = await persistPipelineResult({
     sessionId,
     result: v2Response.body,
     payload: v2Payload,
     routePlan,
-    createResult
+    createResult,
+    extraProviderSummary: {
+      v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
+    }
   });
+  l2Timing.persist_pipeline_ms = Date.now() - persistStartedAt;
+  v4Response.module_speed_metrics = {
+    ...(v4Response.module_speed_metrics || {}),
+    v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
+  };
 
   sendJson(res, 200, withV4Version({
     ...v4Response,

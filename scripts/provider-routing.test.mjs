@@ -265,7 +265,7 @@ const gpt5OpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
 });
 const gpt5Body = JSON.parse(gpt5OpenAiRequest.init.body);
 assert.equal(gpt5Body.model, "gpt-5-mini");
-assert.equal(gpt5Body.max_output_tokens, 81920);
+assert.equal(gpt5Body.max_output_tokens, 128000);
 assert.equal(gpt5Body.temperature, undefined);
 assert.deepEqual(gpt5Body.reasoning, { effort: "low" });
 assert.equal(gpt5Body.text.verbosity, "low");
@@ -277,7 +277,8 @@ const gpt5DefaultConfig = openAiEmergencyConfigFromEnv({
   ...env,
   OPENAI_LISTING_MODEL: "gpt-5-mini"
 });
-assert.equal(gpt5DefaultConfig.maxOutputTokens, 81920);
+assert.equal(gpt5DefaultConfig.requestedMaxOutputTokens, 819200);
+assert.equal(gpt5DefaultConfig.maxOutputTokens, 128000);
 assert.equal(gpt5DefaultConfig.truncationRetryMaxOutputTokens, 128000);
 
 const gpt41DefaultExpandedConfig = openAiEmergencyConfigFromEnv({
@@ -311,7 +312,9 @@ const gpt5TruncationResult = await analyzeCardEvidenceWithOpenAiEmergency({
   prompt: "Return JSON.",
   env: {
     ...env,
-    OPENAI_LISTING_MODEL: "gpt-5-mini"
+    OPENAI_LISTING_MODEL: "gpt-5-mini",
+    OPENAI_GPT5_MAX_OUTPUT_TOKENS: "50000",
+    OPENAI_GPT5_TRUNCATION_RETRY_MAX_OUTPUT_TOKENS: "90000"
   },
   fetchImpl: async (url, init) => {
     gpt5TruncationCalls += 1;
@@ -329,8 +332,8 @@ const gpt5TruncationResult = await analyzeCardEvidenceWithOpenAiEmergency({
             output_text: "{\"recognition_status\":\"CONFIRMED\"",
             usage: {
               input_tokens: 21,
-              output_tokens: 81920,
-              total_tokens: 81941
+              output_tokens: 50000,
+              total_tokens: 50021
             }
           }
         : {
@@ -348,7 +351,7 @@ const gpt5TruncationResult = await analyzeCardEvidenceWithOpenAiEmergency({
   }
 });
 assert.equal(gpt5TruncationCalls, 2);
-assert.deepEqual(gpt5TruncationCaps, [81920, 128000]);
+assert.deepEqual(gpt5TruncationCaps, [50000, 90000]);
 assert.equal(gpt5TruncationResult.parsed.fields.player, "Retry");
 assert.equal(gpt5TruncationResult.truncation_retry_attempted, true);
 assert.equal(gpt5TruncationResult.truncation_retry_attempts, 1);
