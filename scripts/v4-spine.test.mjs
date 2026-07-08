@@ -146,6 +146,22 @@ assert.equal(v4.field_states.product.display_status, "NORMAL");
 assert.equal(v4.candidate_control_plane_trace.prompt_candidate_count, 2);
 assert.equal(v4.catalog_activation_funnel.prompt_candidate_count, 1);
 
+const failedL2V4 = adaptV2ResultToV4({
+  sessionId: "v4sess-failed-l2",
+  result: {
+    confidence: "FAILED",
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+    assisted_draft_status: "READY",
+    provider_error_type: "PROVIDER_ERROR"
+  },
+  payload: {},
+  routePlan: assistedRoute
+});
+assert.equal(failedL2V4.ok, false);
+assert.equal(failedL2V4.status, "FAILED");
+assert.equal(failedL2V4.assisted_draft_status, "FAILED");
+assert.equal(failedL2V4.title_stage_readiness.writer_visible_title_ready, false);
+
 const internalScoutV4 = adaptV2ResultToV4({
   sessionId: "v4sess-internal-scout",
   result: {

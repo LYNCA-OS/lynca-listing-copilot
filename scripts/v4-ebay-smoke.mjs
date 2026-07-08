@@ -294,6 +294,7 @@ function sessionL2Summary(statusPayload = {}) {
   const vectorFunnel = trace.vector_activation_funnel || {};
   return {
     session_status: session.status || null,
+    l2_status: session.l2_status || null,
     assisted_draft_status: summary.assisted_draft_status || null,
     title: session.final_title || summary.final_title || null,
     route: session.route || null,
@@ -317,6 +318,12 @@ function sessionL2Summary(statusPayload = {}) {
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
     related_counts: statusPayload.related_counts || {}
   };
+}
+
+function summaryHasVisibleL2Title(summary = {}) {
+  return summary.session_status !== "FAILED"
+    && summary.l2_status === "READY"
+    && cleanText(summary.title);
 }
 
 function compactCandidateTrace(trace = {}) {
@@ -370,10 +377,10 @@ async function pollSessionStatus({
     });
     const summary = sessionL2Summary(last.data || {});
     const candidateDebug = compactCandidateTrace(last.data?.session?.candidate_control_plane_trace || {});
-    if (summary.assisted_draft_status === "READY") {
+    if (summaryHasVisibleL2Title(summary)) {
       return { polls, ready: true, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
-    if (summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT") {
+    if (summary.session_status === "FAILED" || summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT") {
       return { polls, ready: false, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
     if (!summary.assisted_draft_status && summary.session_status === "DRAFT_READY") {

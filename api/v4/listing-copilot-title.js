@@ -29,6 +29,10 @@ function titleFromResult(result = {}) {
   return result.final_title || result.rendered_title || result.title || null;
 }
 
+function isFailedResult(result = {}) {
+  return String(result.confidence || "").toUpperCase() === "FAILED" || !titleFromResult(result);
+}
+
 function isInternalScoutResult(result = {}) {
   return result?.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
 }
@@ -389,8 +393,9 @@ async function persistPipelineResult({
       persistence
     });
   }
-  const status = result.confidence === "FAILED" ? v4SessionStatuses.FAILED : v4SessionStatuses.DRAFT_READY;
   const l2Title = titleFromResult(result);
+  const failed = isFailedResult(result);
+  const status = failed ? v4SessionStatuses.FAILED : v4SessionStatuses.DRAFT_READY;
   const sessionPatch = {
     status,
     field_states: rows.fieldEvidenceRows,
@@ -401,12 +406,15 @@ async function persistPipelineResult({
       provider: result.provider || result.provider_id || null,
       confidence: result.confidence || null,
       title_stage: result.title_stage || null,
-      assisted_draft_status: result.assisted_draft_status || extraProviderSummary.assisted_draft_status || null,
+      assisted_draft_status: failed ? "FAILED" : (result.assisted_draft_status || extraProviderSummary.assisted_draft_status || null),
       provider_error_type: result.provider_error_type || result.provider_error_code || null,
       ...providerRuntimeSummary(result),
       ...extraProviderSummary
     }
   };
+  if (failed) {
+    sessionPatch.provider_result_summary.assisted_draft_status = "FAILED";
+  }
   sessionPatch.final_title = l2Title;
   sessionPatch.l2_status = status === v4SessionStatuses.FAILED ? "FAILED" : "READY";
   sessionPatch.l2_title = l2Title;
@@ -499,17 +507,17 @@ async function runBackgroundAssistedDraft({
   const result = {
     ...v2Response.body,
     title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
-    assisted_draft_status: "READY",
     l1_return_reason: "background_assisted_draft_ready",
     full_assist_continued_after_l1: false
   };
+  result.assisted_draft_status = isFailedResult(result) ? "FAILED" : "READY";
   return persistPipelineResult({
     sessionId,
     result,
     payload: v2Payload,
     routePlan,
     createResult,
-    extraProviderSummary: { assisted_draft_status: "READY" }
+    extraProviderSummary: { assisted_draft_status: result.assisted_draft_status }
   });
 }
 

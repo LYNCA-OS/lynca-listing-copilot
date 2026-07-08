@@ -11,7 +11,7 @@ function queryParam(req, name) {
 
 function writerSafeSession(session = null) {
   if (!session || typeof session !== "object") return session;
-  const l2Ready = session.l2_status === "READY" && (session.l2_title || session.final_title);
+  const l2Ready = session.status !== "FAILED" && session.l2_status === "READY" && (session.l2_title || session.final_title);
   return {
     ...session,
     l1_title: "",
