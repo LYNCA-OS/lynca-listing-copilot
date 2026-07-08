@@ -34,6 +34,7 @@ import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from 
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { serialLimitText } from "../lib/listing/renderer/title-cleanup.mjs";
 import { expandPrintRunFields } from "../lib/listing/print-run/print-run-fields.mjs";
+import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
 import { attachFieldTaskOrchestration } from "../lib/listing/orchestration/field-task-orchestrator.mjs";
@@ -667,6 +668,207 @@ function finalizerValuePresent(value) {
   return value !== null && value !== undefined && String(value).replace(/\s+/g, " ").trim() !== "" && value !== "UNKNOWN";
 }
 
+const finalizerConfirmedEvidenceStatuses = new Set(["CONFIRMED", "MANUAL_CONFIRMED"]);
+const finalizerCurrentInstancePrintRunSources = new Set([
+  "CARD_FRONT",
+  "CARD_FRONT_PRINTED_TEXT",
+  "CARD_BACK",
+  "CARD_BACK_PRINTED_TEXT",
+  "SLAB_LABEL",
+  "OCR",
+  "OPERATOR",
+  "OFFICIAL_GRADING_DATA"
+]);
+const finalizerCurrentInstanceGradeSources = new Set([
+  "SLAB_LABEL",
+  "OCR",
+  "OPERATOR",
+  "OFFICIAL_GRADING_DATA"
+]);
+
+function finalizerEvidenceEntriesForField(evidence = {}, fieldNames = []) {
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return [];
+  return fieldNames
+    .map((fieldName) => evidence[fieldName])
+    .filter((field) => field && typeof field === "object" && !Array.isArray(field));
+}
+
+function finalizerEvidenceStatusIsConfirmed(field = {}) {
+  const status = normalizeStringOrNull(field.status || field.resolution_status || field.display_status);
+  if (!status) return true;
+  return finalizerConfirmedEvidenceStatuses.has(status.toUpperCase());
+}
+
+function finalizerEvidenceSources(field = {}) {
+  const sources = Array.isArray(field.sources) ? field.sources : [];
+  const sourceTypes = sources
+    .map((source) => normalizeStringOrNull(source?.source_type || source?.sourceType || source?.type))
+    .filter(Boolean);
+  const direct = normalizeStringOrNull(field.source_type || field.sourceType || field.support_type || field.supportType);
+  if (direct) sourceTypes.push(direct);
+  return sourceTypes.map((sourceType) => sourceType.toUpperCase());
+}
+
+function finalizerEvidenceHasSource(field = {}, allowedSources = new Set()) {
+  return finalizerEvidenceSources(field).some((sourceType) => allowedSources.has(sourceType));
+}
+
+function finalizerEvidenceText(field = {}) {
+  return [
+    field.value,
+    field.normalized_value,
+    field.normalizedValue,
+    field.visible_text,
+    field.raw_text,
+    field.observed_text,
+    field.text,
+    ...(Array.isArray(field.sources)
+      ? field.sources.flatMap((source) => [
+        source?.observed_text,
+        source?.raw_text,
+        source?.visible_text,
+        source?.text
+      ])
+      : [])
+  ].map(normalizeStringOrNull).filter(Boolean).join(" ");
+}
+
+function finalizerEvidenceValue(field = {}) {
+  return normalizeStringOrNull(field.value ?? field.normalized_value ?? field.normalizedValue)
+    || finalizerEvidenceText(field);
+}
+
+function finalizerEvidencePrintRunFields(evidence = {}) {
+  const entries = finalizerEvidenceEntriesForField(evidence, [
+    "print_run_number",
+    "numerical_rarity",
+    "serial_number",
+    "print_run_denominator",
+    "numbered_to",
+    "serial_denominator"
+  ]);
+
+  for (const field of entries) {
+    if (!finalizerEvidenceStatusIsConfirmed(field)) continue;
+    if (!finalizerEvidenceHasSource(field, finalizerCurrentInstancePrintRunSources)) continue;
+    const value = finalizerEvidenceValue(field);
+    const expanded = expandPrintRunFields({
+      print_run_number: value,
+      serial_number: value,
+      numerical_rarity: value,
+      print_run_numerator: field.print_run_numerator,
+      print_run_denominator: field.print_run_denominator,
+      numbered_to: field.numbered_to,
+      serial_denominator: field.serial_denominator
+    });
+    if (expanded.print_run_number || expanded.print_run_denominator) return expanded;
+  }
+  return {};
+}
+
+function finalizerEvidenceGradeFields(evidence = {}) {
+  const gradeEntry = finalizerEvidenceEntriesForField(evidence, ["grade"])
+    .find((field) => (
+      finalizerEvidenceStatusIsConfirmed(field)
+      && finalizerEvidenceHasSource(field, finalizerCurrentInstanceGradeSources)
+    ));
+  const atomicEvidence = Object.fromEntries(["grade_company", "card_grade", "auto_grade", "grade_type"]
+    .map((fieldName) => [fieldName, evidence?.[fieldName]])
+    .filter(([, field]) => (
+      field
+      && typeof field === "object"
+      && !Array.isArray(field)
+      && finalizerEvidenceStatusIsConfirmed(field)
+      && finalizerEvidenceHasSource(field, finalizerCurrentInstanceGradeSources)
+    )));
+  const gradeText = finalizerEvidenceText(gradeEntry || {});
+  const parsed = gradeText
+    ? resolveGradeFields({
+      resolved: {},
+      legacyFields: {
+        title: gradeText,
+        model_title_suggestion: gradeText,
+        grade: gradeText,
+        grade_company: gradeText,
+        card_grade: "",
+        auto_grade: ""
+      }
+    }).resolved || {}
+    : {};
+
+  const output = {};
+  const company = normalizeGradeCompanyForFields(
+    finalizerEvidenceValue(atomicEvidence.grade_company)
+    || gradeEntry?.grade_company
+    || parsed.grade_company
+  );
+  const cardGrade = normalizeStringOrNull(
+    finalizerEvidenceValue(atomicEvidence.card_grade)
+    || gradeEntry?.card_grade
+    || parsed.card_grade
+  );
+  const autoGrade = normalizeStringOrNull(
+    finalizerEvidenceValue(atomicEvidence.auto_grade)
+    || gradeEntry?.auto_grade
+    || parsed.auto_grade
+  );
+  const gradeType = normalizeStringOrNull(
+    finalizerEvidenceValue(atomicEvidence.grade_type)
+    || gradeEntry?.grade_type
+    || parsed.grade_type
+  );
+
+  if (company) output.grade_company = company;
+  if (cardGrade) {
+    output.card_grade = cardGrade;
+    output.grade = cardGrade;
+  }
+  if (autoGrade) output.auto_grade = autoGrade;
+  if (gradeType && gradeType !== "UNKNOWN") {
+    output.grade_type = gradeType;
+  } else if (cardGrade && autoGrade) {
+    output.grade_type = "CARD_AND_AUTO";
+  } else if (cardGrade) {
+    output.grade_type = "CARD_ONLY";
+  } else if (autoGrade) {
+    output.grade_type = "AUTO_ONLY";
+  }
+  return output;
+}
+
+function applyEvidenceBackedPresentationOverrides(base = {}, evidence = {}) {
+  if (!base || typeof base !== "object" || Array.isArray(base)) return base;
+  const output = { ...base };
+  const printRun = finalizerEvidencePrintRunFields(evidence);
+  if (printRun.print_run_number || printRun.print_run_denominator) {
+    [
+      "print_run_number",
+      "print_run_numerator",
+      "print_run_denominator",
+      "numbered_to",
+      "serial_number",
+      "serial_denominator",
+      "numerical_rarity",
+      "expected_serial_denominator",
+      "one_of_one",
+      "suspicious_print_run",
+      "print_run_review_required"
+    ].forEach((fieldName) => {
+      if (printRun[fieldName] !== undefined && printRun[fieldName] !== null && printRun[fieldName] !== "") {
+        output[fieldName] = printRun[fieldName];
+      }
+    });
+    if (!output.numerical_rarity && printRun.print_run_number) output.numerical_rarity = printRun.print_run_number;
+  }
+
+  const gradeFields = finalizerEvidenceGradeFields(evidence);
+  Object.entries(gradeFields).forEach(([fieldName, value]) => {
+    if (finalizerValuePresent(value)) output[fieldName] = value;
+  });
+
+  return output;
+}
+
 function lowMarginSafeFieldOverlay(result = {}) {
   const application = result.low_margin_safe_field_application && typeof result.low_margin_safe_field_application === "object"
     ? result.low_margin_safe_field_application
@@ -795,7 +997,11 @@ function finalResolvedFieldsForPresentation(result = {}) {
     })
   ), { ...base });
   const withCandidateOverlay = applyLowMarginSafeFieldOverlay(merged, result);
-  return Object.keys(withCandidateOverlay).length ? withCandidateOverlay : null;
+  const withEvidenceOverrides = applyEvidenceBackedPresentationOverrides(
+    withCandidateOverlay,
+    result.normalized_evidence || result.evidence || {}
+  );
+  return Object.keys(withEvidenceOverrides).length ? withEvidenceOverrides : null;
 }
 
 function finalizeDeterministicPresentation(result = {}, payload = {}) {
@@ -3120,15 +3326,15 @@ function fastInitialRecognitionPrompt(payload, maxTitleLength) {
     "- field_evidence is provider-agnostic and must be used by GPT outputs.",
     "- Keep field_evidence compact. Only include short evidence for non-empty high-risk fields or fields that may need writer review.",
     "- Do not dump OCR lines, legal text, copyright text, or repeated boilerplate into field_evidence.",
-    "- Each evidence entry should include value, support_type/source_type, short visible_text/raw_text when useful, confidence, review_required, and direct_observation/directly_observed.",
+    "- Each evidence entry should include value, source_type, short visible_text/raw_text when useful, confidence, review_required, and direct_observation/directly_observed.",
     "- Core/high-risk evidence fields include year, product, set, language, players, character, card_name, official_card_type, observable_components, insert, surface_color, parallel_exact, print_run_number, print_run_denominator, numbered_to, collector_number, checklist_code, card_number, tcg_card_number, grade, rc, auto, patch, relic, jersey, sketch, and redemption.",
     "- official_card_type must stay empty unless official wording is printed on the card/slab or supplied by trusted catalog/reviewed input. Never infer Base from visual context.",
     "- observable_components may include only directly visible components: auto, patch, relic, jersey, rc, sketch, redemption.",
-    "- year: include field_evidence.year with value, support_type, visible_text, confidence, and review_required. Use support_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
-    "- grade: include field_evidence.grade only when a slab label directly shows grade. Fill grade_company, card_grade, auto_grade, grade_type, support_type SLAB_LABEL, visible_text, confidence, review_required false. For BGS/Beckett labels, visible_text should include the separate AUTO/AUTOGRAPH grade line when it is readable. If grade is only guessed, leave grade fields empty.",
-    "- rc: fields.rc may be true only with a visible RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, or slab/card text. Also include field_evidence.rc with value true, support_type, evidence_kind, visible_text, visible_marker, confidence.",
-    "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include field_evidence.auto with value true, support_type, evidence_kind, visible_text, signature_visible or text_visible, confidence.",
-    "- If year is visible but only from visual model reading, still return fields.year and field_evidence.year.support_type VISION_ONLY; Gate will leave it for writer review.",
+    "- year: include a field_evidence entry with field \"year\", value, source_type, visible_text, confidence, and review_required. Use source_type SLAB_LABEL, CARD_BACK_PRINTED_TEXT, CARD_FRONT_PRINTED_TEXT, VISION_ONLY, or NONE.",
+    "- grade: include a field_evidence entry with field \"grade\" only when a slab label directly shows grade. Put grade_company/card_grade/auto_grade/grade_type in fields, and put source_type SLAB_LABEL, visible_text, confidence, review_required false in the evidence entry. For BGS/Beckett labels, visible_text should include the separate AUTO/AUTOGRAPH grade line when it is readable. If grade is only guessed, leave grade fields empty.",
+    "- rc: fields.rc may be true only with a visible RC logo, Rookie Ticket, Rated Rookie, Rookie Card, rookie marker, or slab/card text. Also include a field_evidence entry with field \"rc\", value true, source_type, evidence_kind, visible_text, confidence, and directly_observed true.",
+    "- auto: fields.auto may be true only with visible Auto/Autograph/Signature/Signed text or an actual visible signature. Also include a field_evidence entry with field \"auto\", value true, source_type, evidence_kind, visible_text, confidence, and directly_observed true.",
+    "- If year is visible but only from visual model reading, still return fields.year and a field_evidence entry for year with source_type VISION_ONLY; Gate will leave it for writer review.",
     "If readable slab/card text exists but you leave year, product, or players empty, add a short unresolved note naming the missing field and image region. Do not transcribe long text, legal lines, copyright lines, or repeated boilerplate.",
     "Numbered / Numerical Rarity evidence rule: values such as 2/3, 14/99, 31/50, 01/10, #/50, and 1/1 are current-card limited-numbering evidence for the CSM field Numerical Rarity, not checklist/card numbers. Search the full card face and slab area for small foil numbering such as top-left, top-center, lower edge, or autograph-window numbering before leaving it empty. Use implementation fields print_run_number, print_run_numerator, print_run_denominator, and numbered_to to carry the evidence. Fill the full numerator only when current uploaded card/slab/OCR evidence directly shows it. If only the denominator is known, use print_run_number #/D and leave print_run_numerator empty. Use one_of_one true for 1/1. serial_number is a legacy compatibility alias, not a CSM field. Never copy a print-run numerator from catalog/vector/reference/marketplace candidates, and never move limited numbering into collector_number, checklist_code, card_number, or tcg_card_number.",
     "Parallel/color rule: first-version output is color-first. Put visible Gold/Purple/Red/Blue/Green/Silver/Black/Orange only in surface_color. Leave parallel_exact empty unless exact wording is printed/slab/catalog-supported; do not infer Refractor/Wave/Shimmer/Mojo/Prizm/Sparkle/Holo from appearance alone.",
@@ -3230,52 +3436,92 @@ function providerMinimalOutputShape({
       card_count: null,
       lot_type: ""
     },
-    field_evidence: {
-      year: {
+    field_evidence: [
+      {
+        field: "year",
         value: "",
-        support_type: "SLAB_LABEL | CARD_BACK_PRINTED_TEXT | CARD_FRONT_PRINTED_TEXT | VISION_ONLY | NONE",
+        source_type: "SLAB_LABEL | CARD_BACK_PRINTED_TEXT | CARD_FRONT_PRINTED_TEXT | VISION_ONLY | NONE",
+        source_image_id: "",
+        source_region: "year_product",
+        raw_text: "",
         visible_text: "",
-        review_required: true
+        evidence_kind: "YEAR_TEXT",
+        confidence: null,
+        review_required: true,
+        directly_observed: false,
+        direct_observation: false
       },
-      print_run_number: {
+      {
+        field: "print_run_number",
         value: "",
-        print_run_numerator: "",
-        print_run_denominator: "",
-        numbered_to: "",
-        support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | OCR | VISION_ONLY | NONE",
+        source_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | OCR | VISION_ONLY | NONE",
+        source_image_id: "",
         source_region: "print_run_number",
+        raw_text: "",
         visible_text: "",
-        review_required: true
+        evidence_kind: "PRINTED_LIMITED_NUMBERING",
+        confidence: null,
+        review_required: true,
+        directly_observed: false,
+        direct_observation: false
       },
-      serial_number: {
+      {
+        field: "serial_number",
         value: "",
+        source_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | OCR | NONE",
+        source_image_id: "",
         source_region: "legacy_serial_alias",
+        raw_text: "",
         visible_text: "",
-        review_required: true
+        evidence_kind: "LEGACY_SERIAL_ALIAS",
+        confidence: null,
+        review_required: true,
+        directly_observed: false,
+        direct_observation: false
       },
-      grade: {
-        grade_company: "",
-        card_grade: "",
-        auto_grade: "",
-        grade_type: "",
-        support_type: "SLAB_LABEL | NONE",
+      {
+        field: "grade",
+        value: "",
+        source_type: "SLAB_LABEL | OCR | NONE",
+        source_image_id: "",
         source_region: "grade_label",
+        raw_text: "",
         visible_text: "",
-        review_required: false
+        evidence_kind: "GRADE_LABEL",
+        confidence: null,
+        review_required: false,
+        directly_observed: false,
+        direct_observation: false
       },
-      rc: {
+      {
+        field: "rc",
         value: false,
-        support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISION_ONLY | NONE",
+        source_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISION_ONLY | NONE",
+        source_image_id: "",
+        source_region: "rc_marker",
+        raw_text: "",
         visible_text: "",
-        review_required: true
+        evidence_kind: "RC_MARKER",
+        confidence: null,
+        review_required: true,
+        directly_observed: false,
+        direct_observation: false
       },
-      auto: {
+      {
+        field: "auto",
         value: false,
-        support_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISIBLE_SIGNATURE | VISION_ONLY | NONE",
+        source_type: "SLAB_LABEL | CARD_FRONT_PRINTED_TEXT | CARD_BACK_PRINTED_TEXT | VISIBLE_SIGNATURE | VISION_ONLY | NONE",
+        source_image_id: "",
+        source_region: "autograph",
+        raw_text: "",
         visible_text: "",
-        review_required: true
+        evidence_kind: "AUTO_EVIDENCE",
+        confidence: null,
+        review_required: true,
+        directly_observed: false,
+        direct_observation: false
       }
-    },
+    ],
     unresolved: []
   };
   if (includeVectorDecision) {

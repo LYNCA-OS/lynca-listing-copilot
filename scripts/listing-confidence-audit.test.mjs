@@ -1516,6 +1516,58 @@ assert.match(finalizerBackfillsCurrentImageCommercialFields.title, /Patch Auto/)
 assert.match(finalizerBackfillsCurrentImageCommercialFields.title, /2\/3/);
 assert.match(finalizerBackfillsCurrentImageCommercialFields.title, /BGS 8\.5\/10/);
 
+const finalizerEvidenceBeatsStaleProviderScaffold = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  title: "2018 Bowman Chrome Yordan Alvarez Auto Gold Shimmer Refractor #CPA BGS 10/9.5",
+  confidence: "HIGH",
+  raw_provider_fields: {
+    year: "2018",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yordan Alvarez"],
+    card_name: "Prospect Autographs Gold Shimmer Refractor",
+    surface_color: "Gold",
+    collector_number: "CPA",
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "10",
+    auto_grade: "9.5",
+    grade_type: "CARD_AND_AUTO"
+  },
+  resolved_fields: {
+    year: "2018",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    players: ["Yordan Alvarez"],
+    card_name: "Prospect Autographs Gold Shimmer Refractor",
+    surface_color: "Gold",
+    collector_number: "CPA",
+    auto: true,
+    grade_company: "BGS",
+    card_grade: "10",
+    auto_grade: "9.5",
+    grade_type: "CARD_AND_AUTO"
+  },
+  normalized_evidence: {
+    print_run_number: {
+      value: "09/50",
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [{ source_type: "CARD_FRONT", observed_text: "09/50" }]
+    },
+    grade: {
+      value: "BGS 9.5 AUTO 10",
+      status: "CONFIRMED",
+      confidence: 0.95,
+      sources: [{ source_type: "SLAB_LABEL", observed_text: "BGS 9.5 AUTO 10" }]
+    }
+  }
+}, { maxTitleLength: 80 });
+
+assert.match(finalizerEvidenceBeatsStaleProviderScaffold.title, /09\/50/);
+assert.match(finalizerEvidenceBeatsStaleProviderScaffold.title, /BGS 9\.5\/10/);
+assert.doesNotMatch(finalizerEvidenceBeatsStaleProviderScaffold.title, /#CPA|BGS 10\/9\.5/);
+
 const finalizerMergesMoreCompletePublicFields = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
   title: "1994 Upper Deck Ken Griffey Jr. Auto BGS",
   confidence: "HIGH",
