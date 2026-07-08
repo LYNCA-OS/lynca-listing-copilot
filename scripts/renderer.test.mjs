@@ -1315,4 +1315,72 @@ assert.equal(
 assert.ok(standardLotGrammar.rendered_title.length <= 80);
 assert.doesNotMatch(standardLotGrammar.rendered_title, /LeBron James/);
 
+const subjectPrefixRemovedFromCardName = renderResolvedTitle({
+  year: "2024",
+  manufacturer: "Topps",
+  product: "Topps Dynasty",
+  players: ["Yoshinobu Yamamoto"],
+  card_name: "Yamamoto Patch Auto",
+  auto: true,
+  patch: true,
+  print_run_number: "05/10",
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 80
+});
+assert.match(subjectPrefixRemovedFromCardName.rendered_title, /Yoshinobu Yamamoto Patch Auto/);
+assert.doesNotMatch(subjectPrefixRemovedFromCardName.rendered_title, /Yamamoto Yamamoto/i);
+assert.match(subjectPrefixRemovedFromCardName.rendered_title, /05\/10/);
+
+const englishMarketplaceSpelling = renderResolvedTitle({
+  year: "2015-16",
+  manufacturer: "Panini",
+  product: "Flawless",
+  players: ["Pele"],
+  card_name: "Legendary Signatures",
+  team: "Brasil",
+  auto: true,
+  print_run_number: "20/25"
+}, {
+  maxLength: 80
+});
+assert.match(englishMarketplaceSpelling.rendered_title, /Brazil/);
+assert.doesNotMatch(englishMarketplaceSpelling.rendered_title, /Brasil/);
+
+const gpt5CodeLeakageCleaned = renderResolvedTitle({
+  year: "2025",
+  manufacturer: "Bowman",
+  product: "Bowman Draft",
+  players: ["Seth Hernandez"],
+  card_name: "BWM PROS MEGA AU-BLACK Refractor",
+  surface_color: "Black",
+  auto: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 80
+});
+assert.match(gpt5CodeLeakageCleaned.rendered_title, /Auto Black Refractor/);
+assert.doesNotMatch(gpt5CodeLeakageCleaned.rendered_title, /\bBWM\b|\bPROS\b|\bMEGA\b|\bAU-BLACK\b/i);
+
+const chromeAbbreviationExpanded = renderResolvedTitle({
+  year: "2018",
+  manufacturer: "Topps",
+  product: "Topps Chrome",
+  players: ["Shohei Ohtani"],
+  card_name: "Chr. Promo",
+  surface_color: "Gold",
+  rc: true,
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 80
+});
+assert.match(chromeAbbreviationExpanded.rendered_title, /Chrome Promo/);
+assert.doesNotMatch(chromeAbbreviationExpanded.rendered_title, /\bChr\./);
+
 console.log("renderer tests passed");

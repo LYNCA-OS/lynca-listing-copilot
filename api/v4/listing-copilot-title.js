@@ -325,7 +325,7 @@ function requestedListingModelFromPayload(payload = {}, env = process.env) {
 function shouldSkipFastScoutForRequestedModel(payload = {}, env = process.env) {
   const requestedListingModel = requestedListingModelFromPayload(payload, env);
   return isGpt5ResponsesModel(requestedListingModel)
-    && String(env.ENABLE_GPT5_FAST_SCOUT_L1 || "false").toLowerCase() !== "true"
+    && String(env.DISABLE_GPT5_FAST_SCOUT_L1 || "false").toLowerCase() === "true"
     && payload.v4_queue_l1_only !== true;
 }
 
@@ -546,8 +546,7 @@ async function runBackgroundAssistedDraft({
     providerOptions,
     titleStageTarget: v4TitleStages.L2_ASSISTED_DRAFT
   });
-  const v2Response = await callJsonHandler(v2ListingHandler, {
-    method: "POST",
+  const v2Response = await callV2WithGpt5EmptyRetry({
     headers,
     payload: v2Payload
   });
@@ -579,6 +578,63 @@ async function runBackgroundAssistedDraft({
     createResult,
     extraProviderSummary: { assisted_draft_status: result.assisted_draft_status }
   });
+}
+
+async function callV2WithGpt5EmptyRetry({
+  headers = {},
+  payload = {}
+} = {}) {
+  let v2Response = await callJsonHandler(v2ListingHandler, {
+    method: "POST",
+    headers,
+    payload
+  });
+
+  if (v2Response.statusCode < 200 || v2Response.statusCode >= 300 || !v2Response.body
+    || !shouldRetryGpt5EmptyResult({ payload, result: v2Response.body, env: process.env })) {
+    return v2Response;
+  }
+
+  const retryPayload = {
+    ...payload,
+    v4_gpt5_empty_result_retry_attempted: true,
+    provider_options: {
+      ...(payload.provider_options || {}),
+      gpt5_empty_result_retry: true
+    },
+    providerOptions: {
+      ...(payload.providerOptions || {}),
+      gpt5_empty_result_retry: true
+    }
+  };
+  const retryResponse = await callJsonHandler(v2ListingHandler, {
+    method: "POST",
+    headers,
+    payload: retryPayload
+  });
+  const retryPrepared = retryResponse.statusCode >= 200 && retryResponse.statusCode < 300 && retryResponse.body
+    ? prepareV4PresentationResult({ result: retryResponse.body, payload: retryPayload })
+    : { finalTitle: "" };
+  const retrySucceeded = Boolean(retryPrepared.finalTitle);
+  if (retrySucceeded) {
+    return {
+      ...retryResponse,
+      body: withGpt5EmptyRetryMetadata(retryPrepared.result, {
+        attempted: true,
+        success: true,
+        retryStatusCode: retryResponse.statusCode || null
+      })
+    };
+  }
+
+  return {
+    ...v2Response,
+    body: withGpt5EmptyRetryMetadata(v2Response.body, {
+      attempted: true,
+      success: false,
+      retryStatusCode: retryResponse.statusCode || null
+    })
+  };
 }
 
 function buildFastScoutPendingFailureResponse({
@@ -871,8 +927,7 @@ export default async function handler(req, res) {
     providerOptions: progressiveProviderOptions,
     titleStageTarget: forceL2Direct || modelRequiresFullL2Options ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
-  let v2Response = await callJsonHandler(v2ListingHandler, {
-    method: "POST",
+  const v2Response = await callV2WithGpt5EmptyRetry({
     headers: req.headers,
     payload: v2Payload
   });
@@ -892,49 +947,6 @@ export default async function handler(req, res) {
       v4_persistence: { create_session: createResult.persistence.recognition_session }
     }));
     return;
-  }
-
-  if (shouldRetryGpt5EmptyResult({ payload: v2Payload, result: v2Response.body, env: process.env })) {
-    const retryPayload = {
-      ...v2Payload,
-      v4_gpt5_empty_result_retry_attempted: true,
-      provider_options: {
-        ...(v2Payload.provider_options || {}),
-        gpt5_empty_result_retry: true
-      },
-      providerOptions: {
-        ...(v2Payload.providerOptions || {}),
-        gpt5_empty_result_retry: true
-      }
-    };
-    const retryResponse = await callJsonHandler(v2ListingHandler, {
-      method: "POST",
-      headers: req.headers,
-      payload: retryPayload
-    });
-    const retryPrepared = retryResponse.statusCode >= 200 && retryResponse.statusCode < 300 && retryResponse.body
-      ? prepareV4PresentationResult({ result: retryResponse.body, payload: retryPayload })
-      : { finalTitle: "" };
-    const retrySucceeded = Boolean(retryPrepared.finalTitle);
-    if (retrySucceeded) {
-      v2Response = {
-        ...retryResponse,
-        body: withGpt5EmptyRetryMetadata(retryPrepared.result, {
-          attempted: true,
-          success: true,
-          retryStatusCode: retryResponse.statusCode || null
-        })
-      };
-    } else {
-      v2Response = {
-        ...v2Response,
-        body: withGpt5EmptyRetryMetadata(v2Response.body, {
-          attempted: true,
-          success: false,
-          retryStatusCode: retryResponse.statusCode || null
-        })
-      };
-    }
   }
 
   const v4Response = await persistPipelineResult({
