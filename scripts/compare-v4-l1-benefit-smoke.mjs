@@ -104,16 +104,37 @@ function assessL1Benefit({ directReport, hiddenReport } = {}) {
     policy_fair_pass_at_0_80: delta(hidden, direct, ["final_accuracy_proxy", "policy_fair_pass_at_0_80"])
   };
   const l2ReadyNotWorse = deltas.l2_ready_count === null || deltas.l2_ready_count >= 0;
-  const accuracyNotWorse = deltas.policy_fair_pass_at_0_72 === null || deltas.policy_fair_pass_at_0_72 >= 0;
+  const policyAvgDelta = deltas.policy_fair_avg ?? 0;
+  const pass72Delta = deltas.policy_fair_pass_at_0_72 ?? 0;
+  const pass80Delta = deltas.policy_fair_pass_at_0_80 ?? 0;
+  const accuracyNotWorse = pass72Delta >= 0 && pass80Delta >= 0 && policyAvgDelta >= -0.01;
   const latencyImproved = deltas.writer_ready_p50_ms !== null && deltas.writer_ready_p50_ms < 0;
-  const accuracyImproved = (deltas.policy_fair_pass_at_0_72 ?? 0) > 0 || (deltas.policy_fair_avg ?? 0) > 0.01;
-  const hasPositiveBenefit = l2ReadyNotWorse && accuracyNotWorse && (latencyImproved || accuracyImproved);
+  const accuracyImproved = pass72Delta > 0 || pass80Delta > 0 || policyAvgDelta > 0.01;
+  const hasProductionSafeBenefit = l2ReadyNotWorse && accuracyNotWorse && (latencyImproved || accuracyImproved);
+  const hasExplorationSignal = l2ReadyNotWorse && (latencyImproved || accuracyImproved);
   return {
-    conclusion: hasPositiveBenefit ? "KEEP_L1_INTERNAL" : "DISABLE_L1_DEFAULT_TO_DIRECT_L2",
-    reason: hasPositiveBenefit
-      ? "Hidden L1 improved writer-ready latency or final title quality without reducing L2 readiness."
-      : "Hidden L1 did not improve writer-ready latency or final title quality enough to justify extra work.",
-    recommended_env_if_disabling: hasPositiveBenefit ? null : "V4_QUEUE_DEFAULT_CREATE_L1=false",
+    conclusion: hasProductionSafeBenefit
+      ? "KEEP_L1_INTERNAL_PRODUCTION_ELIGIBLE"
+      : hasExplorationSignal
+        ? "KEEP_L1_SHADOW_NOT_PRODUCTION_DEFAULT_YET"
+        : "KEEP_L1_EXPERIMENT_OFF_UNTIL_NEW_SIGNAL",
+    reason: hasProductionSafeBenefit
+      ? "Hidden L1 improved writer-ready latency or final title quality without reducing L2 readiness or title-quality guardrails."
+      : hasExplorationSignal
+        ? "Hidden L1 has exploratory value, but current quality regression means it should stay shadow/controlled-experiment only and not become the production default yet."
+        : "Hidden L1 did not show enough latency or quality upside in this run; keep it available for future experiments, but do not spend production traffic on it by default.",
+    quality_guard: {
+      policy_fair_avg_delta_min: -0.01,
+      require_pass_at_0_72_not_worse: true,
+      require_pass_at_0_80_not_worse: true,
+      l2_ready_not_worse,
+      accuracy_not_worse: accuracyNotWorse,
+      latency_improved: latencyImproved,
+      accuracy_improved: accuracyImproved,
+      exploration_signal: hasExplorationSignal
+    },
+    production_default_env: hasProductionSafeBenefit ? "V4_QUEUE_DEFAULT_CREATE_L1=true" : "V4_QUEUE_DEFAULT_CREATE_L1=false",
+    controlled_experiment_env: "V4_QUEUE_DEFAULT_CREATE_L1=true or per-job create_l1_job=true",
     deltas
   };
 }

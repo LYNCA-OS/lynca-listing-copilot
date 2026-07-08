@@ -53,16 +53,14 @@ const stageJobs = expandV4RecognitionStageJobs({
   operatorId: "operator-stage",
   jobs: [{ asset_id: "asset-stage", payload: { images: [{ url: "https://example.test/a.jpg" }] } }]
 });
-assert.equal(stageJobs.length, 2);
-assert.equal(stageJobs[0].job_type, v4JobTypes.FAST_SCOUT_DRAFT);
-assert.equal(stageJobs[0].lane, v4JobLanes.INTERACTIVE);
-assert.equal(stageJobs[1].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
-assert.equal(stageJobs[1].lane, v4JobLanes.BACKGROUND);
+assert.equal(stageJobs.length, 1);
+assert.equal(stageJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+assert.equal(stageJobs[0].lane, v4JobLanes.BACKGROUND);
 
 const optInStageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-staged",
   operatorId: "operator-stage",
-  jobs: [{ asset_id: "asset-stage", enable_queue_fast_scout: true, payload: { images: [{ url: "https://example.test/a.jpg" }] } }]
+  jobs: [{ asset_id: "asset-stage", create_l1_job: true, payload: { images: [{ url: "https://example.test/a.jpg" }] } }]
 });
 assert.equal(optInStageJobs.length, 2);
 assert.equal(optInStageJobs[0].job_type, v4JobTypes.FAST_SCOUT_DRAFT);
@@ -80,16 +78,17 @@ const l2OnlyJobs = expandV4RecognitionStageJobs({
 assert.equal(l2OnlyJobs.length, 1);
 assert.equal(l2OnlyJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
 
-process.env.V4_QUEUE_DEFAULT_CREATE_L1 = "false";
+process.env.V4_QUEUE_DEFAULT_CREATE_L1 = "true";
 const envDefaultL2Jobs = expandV4RecognitionStageJobs({
   jobs: [{ payload: { images: [] } }]
 });
-assert.equal(envDefaultL2Jobs.length, 1);
-assert.equal(envDefaultL2Jobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+assert.equal(envDefaultL2Jobs.length, 2);
+assert.equal(envDefaultL2Jobs[0].job_type, v4JobTypes.FAST_SCOUT_DRAFT);
 const envOverrideL1Jobs = expandV4RecognitionStageJobs({
-  jobs: [{ payload: { create_l1_job: true, images: [] } }]
+  jobs: [{ payload: { create_l1_job: false, images: [] } }]
 });
-assert.equal(envOverrideL1Jobs.length, 2);
+assert.equal(envOverrideL1Jobs.length, 1);
+assert.equal(envOverrideL1Jobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
 if (originalDefaultCreateL1 === undefined) {
   delete process.env.V4_QUEUE_DEFAULT_CREATE_L1;
 } else {
@@ -192,8 +191,8 @@ const multiStageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-no-l2-barrier",
   operatorId: "operator-stage",
   jobs: [
-    { asset_id: "asset-a", enable_queue_fast_scout: true, payload: { images: [{ url: "https://example.test/a.jpg" }] } },
-    { asset_id: "asset-b", enable_queue_fast_scout: true, payload: { images: [{ url: "https://example.test/b.jpg" }] } }
+    { asset_id: "asset-a", create_l1_job: true, payload: { images: [{ url: "https://example.test/a.jpg" }] } },
+    { asset_id: "asset-b", create_l1_job: true, payload: { images: [{ url: "https://example.test/b.jpg" }] } }
   ]
 });
 const multiReleasePatches = [];
