@@ -1,8 +1,10 @@
 # LYNCA CSM Title Definition v2
 
-Status: Active draft
+Status: Canonical SEM standard
 Scope: Standard collectible cards plus TCG cards
 Marketplace title limit: 80 characters
+Source of record: Linear COS-10, COS-11, COS-12, COS-13, COS-14
+Machine version: `linear-cos-10-14-v1`
 
 ## Core Principle
 
@@ -90,3 +92,56 @@ For non-TCG cards, remove `Card Number` before Product Finish, Variant, Numerica
 For TCG cards, prefer `Card Number` when the title budget allows, but do not let it displace higher-value rarity, finish, special stamp, or grading tokens in the 80-character marketplace title.
 
 Do not add filler tokens to occupy space.
+
+## Linear SEM Decision Bindings
+
+These bindings are now the canonical interpretation layer for GitHub code, Supabase records, catalog promotion, feedback learning, and future training exports.
+
+### COS-10: Card Number vs Numerical Rarity
+
+`Card Number` is a printed design, checklist, set, or card-type identifier. Examples: `SWS`, `SWS-LBJ`, `PAU`, `DPA`, `TCAR`, `OP01-120`, and TCG set numbers such as `139/205`.
+
+`Numerical Rarity` is the current-card print-limit serialization. Examples: `04/10`, `02/99`, `2/3`, `15/150`, `#/50`, and `1/1`.
+
+The same visual pattern can only be treated as TCG `Card Number` when the card/listing context is a TCG checklist or set-number context. Otherwise a directly visible `N/D` token is `Numerical Rarity`.
+
+### COS-11: Catalog Assist Boundary
+
+Catalog, registry, checklist, and vector candidates are not truth by default.
+
+They may become trusted evidence only when all conditions are true:
+
+1. The source is trusted enough for the intended use, such as reviewed internal reference, approved reference, official checklist, or structured database.
+2. Current-image recognition agrees with the candidate on concrete anchors.
+3. There are no direct evidence conflicts and no material anchor contradictions.
+
+Useful anchors include `Year`, `Subject`, `Product/Set`, `Card Number`, `Card Name`, visible `Numerical Rarity`, and `Grade label`.
+
+Fast path is allowed only after anchor agreement. Blind trust is not allowed. Marketplace data and weak external directories remain candidate-generation or research signals only.
+
+### COS-12: Observation Fusion Terminology
+
+Recognition Worker, OCR, vector retrieval, and catalog retrieval may produce:
+
+- observed field candidates
+- best observed fields
+- evidence patches
+- supporting or conflicting sources
+
+They must not call those fields `resolved semantic fields`. Identity Resolution and the SEM decision layer own resolved semantic fields and canonical semantic objects.
+
+### COS-13: Commercial Feedback vs Semantic Learning
+
+Writer title edits are `Commercial Feedback`, not immediate `Semantic Truth`.
+
+Writers approve or edit one-line marketplace titles. They should not be asked to do semantic labeling. The system may later mine accumulated commercial feedback into semantic learning candidates, hard negatives, reranker rows, and field-level training candidates. A field becomes semantic truth only after explicit field review, trusted source agreement, or a separate promotion workflow.
+
+### COS-14: Lot Workflow
+
+Lot is a separate commercial listing workflow, not a failed single-card route.
+
+When multiple separate physical cards are visible, route to Lot grammar:
+
+`Lot quantity -> Year -> Manufacturer/Product/Set -> Subjects max 3 -> Shared Card Name/Design -> Shared Print Finish -> Shared Numerical Rarity -> Search Optimization`
+
+A single card with multiple subjects is not a Lot. It remains one card identity with multiple subjects.
