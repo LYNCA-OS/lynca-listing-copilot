@@ -100,7 +100,7 @@ async function verifyExistingImage({
 }) {
   const cacheKey = verificationCacheKey(image);
   if (verificationCache?.has(cacheKey)) return verificationCache.get(cacheKey);
-  const response = await postJson({
+  const verifyOnce = () => postJson({
     baseUrl,
     path: "/api/listing-image-verify-existing",
     cookie,
@@ -114,6 +114,15 @@ async function verifyExistingImage({
     requestTimeoutMs,
     fetchImpl
   });
+  let response;
+  try {
+    response = await verifyOnce();
+  } catch (error) {
+    // 生产偶发的长尾挂起（如 Supabase 连接池瞬时排队）会让单发 verify 超时；
+    // 浏览器端的真实上传流程天然带重试，这里补一次以对齐。
+    await delay(2000);
+    response = await verifyOnce();
+  }
   const verification = response.data?.verification || {};
   if (!response.ok || response.data?.ok !== true || !verification.verification_token) {
     throw new Error(`image verification failed HTTP ${response.http_status}: ${cleanText(response.data?.message).slice(0, 180)}`);
@@ -810,6 +819,8 @@ async function runOne({
   modelOverride = "",
   enableL1 = false,
   usePreingestion = false,
+  speculative = false,
+  thinkMs = 6000,
   l2WaitMs,
   requestTimeoutMs
 }) {
@@ -869,6 +880,147 @@ async function runOne({
       cookie,
       payload,
       requestTimeoutMs
+    });
+  }
+
+  if (queueMode && speculative) {
+    // 复刻新前端“识别前移”行为：图片/证据包就绪（=preingest 完成）的时刻 T0，
+    // 同时发 L1-only 直连调用（exact-anchor 快车道）+ L2 生产 job 入队；
+    // 模拟写手思考 thinkMs 后在 T1“点击”，此后测的才是写手感知延迟。
+    const batchId = `smoke-v4-spec-${Date.now()}-${index}`;
+    const queuedPayload = {
+      ...payload,
+      force_l2_only: true,
+      create_l1_job: false,
+      create_l2_job: true,
+      disable_fast_scout_l1: true,
+      v4_force_l2_direct: true,
+      client_speculative: true
+    };
+    const l1Payload = {
+      ...payload,
+      v4_queue_l1_only: true,
+      v4_force_l2_direct: false,
+      disable_fast_scout_l1: false,
+      force_l2_only: false,
+      client_speculative: true
+    };
+    const t0 = Date.now();
+    const [enqueueOutcome, l1Outcome] = await Promise.allSettled([
+      postJson({
+        baseUrl,
+        path: "/api/v4/listing-job-enqueue",
+        cookie,
+        payload: {
+          batch_id: batchId,
+          tenant_id: batchId,
+          priority: 100,
+          jobs: [{
+            asset_id: id,
+            force_l2_only: true,
+            create_l1_job: false,
+            create_l2_job: true,
+            payload: queuedPayload
+          }]
+        },
+        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      }),
+      postJson({
+        baseUrl,
+        path: "/api/v4/listing-copilot-title",
+        cookie,
+        payload: l1Payload,
+        requestTimeoutMs: Math.min(requestTimeoutMs, 60000)
+      })
+    ]);
+    const enqueue = enqueueOutcome.status === "fulfilled" ? enqueueOutcome.value : { ok: false, http_status: null, latency_ms: null, data: { error: String(enqueueOutcome.reason?.message || enqueueOutcome.reason || "enqueue_failed") } };
+    const l1Response = l1Outcome.status === "fulfilled" ? l1Outcome.value : { ok: false, http_status: null, latency_ms: null, data: null };
+    const l1Data = l1Response.data || {};
+    const speculativeL1Title = cleanText(l1Data.writer_draft?.title || l1Data.final_title || l1Data.title || "");
+    const fastLaneHit = Boolean(speculativeL1Title) && l1Data.title_render_source === "exact_anchor_catalog_finalized";
+    const speculativeSetupMs = Date.now() - t0;
+
+    // 写手思考时间：L2 在后台跑，OCR 证据 patch 持续回灌 bundle。
+    const remainingThinkMs = Math.max(0, thinkMs - speculativeSetupMs);
+    if (remainingThinkMs > 0) await delay(remainingThinkMs);
+
+    const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
+      || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
+      || {};
+
+    // T1 = “点击”时刻：此刻起才是写手感知延迟。
+    const clickAt = Date.now();
+    const l2 = await pollJobStatus({
+      baseUrl,
+      cookie,
+      jobId: job.job_id,
+      waitMs: l2WaitMs,
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+    });
+    const l2ElapsedFromClickMs = Date.now() - clickAt;
+    const l2DoneBeforeClick = Boolean(l2.ready) && l2.polls <= 1;
+    const finalTitle = cleanText(l2.summary?.title || "");
+    const finalScore = scoreTitles(sellerTitle, finalTitle);
+    const speculativeL1Score = fastLaneHit ? scoreTitles(sellerTitle, speculativeL1Title) : null;
+    const finalProviderDiagnostics = objectOrNull(l2.summary?.provider_diagnostics)
+      || providerDiagnosticsFromSummary(l2.summary || {});
+    const writerReady = Boolean(l2.ready || finalTitle);
+    // 感知延迟：点击时若快车道标题已可见则为 0；否则等到 L2 就绪为止。
+    // 未就绪时置 undefined（而非 null），避免 quantile 把 Number(null)=0 计入。
+    const perceivedTitleMs = fastLaneHit ? 0 : (l2.ready ? l2ElapsedFromClickMs : undefined);
+    return compactObject({
+      asset_id: id,
+      sealed_label_key: sealedKey || label.key || null,
+      seller_title_visible_to_model: false,
+      seller_title_used_for_local_eval_only: Boolean(sellerTitle),
+      seller_title: sellerTitle,
+      image_count: payload.images.length,
+      preingestion_used: usePreingestion,
+      preingestion_ok: preingestionResult?.ok ?? null,
+      preingestion_http_status: preingestionResult?.http_status ?? null,
+      preingestion_latency_ms: preingestionResult?.latency_ms ?? null,
+      preingestion_bundle_id: preingestionResult?.bundle_id || null,
+      preingestion_bundle_status: preingestionResult?.bundle_status || null,
+      preingestion_worker_jobs_enqueued: preingestionResult?.worker_jobs_enqueued ?? null,
+      preingestion_error: preingestionResult?.error ? JSON.stringify(preingestionResult.error).slice(0, 500) : null,
+      queue_mode: true,
+      speculative_mode: true,
+      think_ms: thinkMs,
+      job_id: job.job_id || null,
+      http_status: enqueue.http_status,
+      ok: writerReady,
+      l1_ok: l1Response.http_status === 200,
+      writer_ready: writerReady,
+      error: enqueue.ok ? null : enqueue.data,
+      l1_wall_latency_ms: l1Response.latency_ms ?? null,
+      speculative_setup_ms: speculativeSetupMs,
+      speculative_l1_http_status: l1Response.http_status ?? null,
+      speculative_l1_title: speculativeL1Title,
+      speculative_l1_title_render_source: l1Data.title_render_source || null,
+      speculative_l1_title_stage: l1Data.title_stage || null,
+      speculative_l1_fast_lane_hit: fastLaneHit,
+      speculative_l1_exact_anchor: l1Data.exact_anchor_finalize || null,
+      speculative_l1_scoring: speculativeL1Score,
+      l2_done_before_click: l2DoneBeforeClick,
+      perceived_title_ms: perceivedTitleMs,
+      route: l2.summary?.route || null,
+      title_stage: fastLaneHit ? "SPEC_FAST_LANE" : "V4_QUEUE_L2",
+      recognition_session_id: job.recognition_session_id || l2.summary?.recognition_session_id || null,
+      l1_title: speculativeL1Title,
+      l2_ready: Boolean(l2.ready),
+      l2_poll_count: l2.polls,
+      l2_poll_elapsed_ms: l2.elapsed_ms ?? null,
+      time_to_writer_ready_ms: l2.ready ? (Date.now() - t0) : null,
+      worker_queue_wait_ms: l2.summary?.worker_queue_wait_ms ?? null,
+      worker_processing_ms: l2.summary?.worker_processing_ms ?? null,
+      time_to_l2_ready_ms: l2.summary?.time_to_l2_ready_ms ?? null,
+      l2_status: l2.summary,
+      final_title: finalTitle,
+      provider_diagnostics: finalProviderDiagnostics,
+      v4_l2_timing: l2.summary?.v4_l2_timing || null,
+      final_scoring: finalScore,
+      l2_catalog_prompt_candidate_count: l2.summary?.catalog_prompt_candidate_count ?? null,
+      l2_vector_prompt_candidate_count: l2.summary?.vector_prompt_candidate_count ?? null
     });
   }
 
@@ -1251,6 +1403,12 @@ function summarize(results = []) {
     prewarm_p50_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.5),
     prewarm_p95_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.95),
     queue_mode_count: results.filter((item) => item.queue_mode === true).length,
+    speculative_count: results.filter((item) => item.speculative_mode === true).length,
+    speculative_fast_lane_hit_count: results.filter((item) => item.speculative_l1_fast_lane_hit === true).length,
+    speculative_l2_done_before_click_count: results.filter((item) => item.l2_done_before_click === true).length,
+    perceived_title_p50_ms: quantile(results.map((item) => item.perceived_title_ms), 0.5),
+    perceived_title_p95_ms: quantile(results.map((item) => item.perceived_title_ms), 0.95),
+    speculative_setup_p50_ms: quantile(results.map((item) => item.speculative_setup_ms), 0.5),
     worker_queue_wait_p50_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.5),
     worker_queue_wait_p95_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.95),
     worker_processing_p50_ms: quantile(results.map((item) => item.worker_processing_ms), 0.5),
@@ -1471,6 +1629,8 @@ export async function runV4EbaySmoke({
   modelOverride = "",
   enableL1 = false,
   usePreingestion = false,
+  speculative = false,
+  thinkMs = 6000,
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
   outPath = "",
@@ -1487,21 +1647,35 @@ export async function runV4EbaySmoke({
   for (const [localIndex, item] of items.entries()) {
     const index = offset + localIndex;
     if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} preingestion=${usePreingestion} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
-    const row = await runOne({
-      item,
-      index,
-      sealedLabels,
-      baseUrl,
-      cookie,
-      prewarm,
-      queueMode,
-      forceL2Direct,
-      modelOverride,
-      enableL1,
-      usePreingestion,
-      l2WaitMs,
-      requestTimeoutMs
-    });
+    let row;
+    try {
+      row = await runOne({
+        item,
+        index,
+        sealedLabels,
+        baseUrl,
+        cookie,
+        prewarm,
+        queueMode,
+        forceL2Direct,
+        modelOverride,
+        enableL1,
+        usePreingestion,
+        speculative,
+        thinkMs,
+        l2WaitMs,
+        requestTimeoutMs
+      });
+    } catch (error) {
+      row = {
+        asset_id: candidateId(item, index),
+        ok: false,
+        writer_ready: false,
+        error: String(error?.message || error || "run_one_failed").slice(0, 240),
+        final_title: "",
+        final_scoring: scoreTitles(cleanText(item.corrected_title || item.canonical_title || ""), "")
+      };
+    }
     results.push(row);
     if (progress) {
       process.stderr.write(`  ok=${row.ok} l1=${row.l1_wall_latency_ms}ms cache=${row.fast_scout_cache_status || "n/a"} final_policy=${row.final_scoring?.policy_fair_token_recall ?? "n/a"} title=${row.final_title}\n`);
@@ -1517,6 +1691,8 @@ export async function runV4EbaySmoke({
     offset,
     prewarm_enabled: prewarm,
     queue_mode: queueMode,
+    speculative_mode: speculative,
+    think_ms: speculative ? thinkMs : null,
     force_l2_direct: forceL2Direct,
     l1_explicitly_enabled: enableL1,
     preingestion_enabled: usePreingestion,
@@ -1552,6 +1728,8 @@ export async function main(argv = process.argv, env = process.env) {
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),
     usePreingestion: hasFlag(argv, "--use-preingestion"),
+    speculative: hasFlag(argv, "--speculative"),
+    thinkMs: Math.max(0, Math.trunc(numberArg(argv, "--think-ms", 6000))),
     modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
@@ -1574,6 +1752,11 @@ export async function main(argv = process.argv, env = process.env) {
     `preingestion_worker_jobs_enqueued: ${report.summary.preingestion_worker_jobs_enqueued_count}`,
     `writer_ready_p50_ms: ${report.summary.writer_ready_p50_ms}`,
     `writer_ready_p95_ms: ${report.summary.writer_ready_p95_ms}`,
+    `speculative: ${report.summary.speculative_count}`,
+    `speculative_fast_lane_hits: ${report.summary.speculative_fast_lane_hit_count}`,
+    `speculative_l2_done_before_click: ${report.summary.speculative_l2_done_before_click_count}`,
+    `perceived_title_p50_ms: ${report.summary.perceived_title_p50_ms}`,
+    `perceived_title_p95_ms: ${report.summary.perceived_title_p95_ms}`,
     `fast_scout_cache_hit_count: ${report.summary.fast_scout_cache_hit_count}`,
     `provider_input_tokens_total: ${report.summary.provider_diagnostics.input_tokens_total}`,
     `provider_output_tokens_total: ${report.summary.provider_diagnostics.output_tokens_total}`,

@@ -14,6 +14,7 @@ import {
   normalizePreingestionImageRecord,
   preingestionStatuses,
   readDerivedImageAssetsByAssetId,
+  readPreIngestionBundleIdByAsset,
   readVerifiedImageRecordsByAssetId,
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
@@ -170,8 +171,15 @@ export default async function handler(req, res) {
       ? { signedReadUrlCount: 0, errors: [] }
       : await countSignedReadUrls(images, process.env, globalThis.fetch);
 
+    const existingBundleId = await readPreIngestionBundleIdByAsset({
+      assetId,
+      source: payload.source || "listing_preingest_api",
+      env: process.env,
+      fetchImpl: globalThis.fetch
+    });
     const bundle = createPreIngestionBundle({
       assetId,
+      bundleId: existingBundleId,
       source: payload.source || "listing_preingest_api",
       status: signed.errors.length ? preingestionStatuses.PARTIAL : preingestionStatuses.READY,
       images,
