@@ -3969,7 +3969,8 @@ const preingestionHardEvidenceFields = new Set([
   "card_number",
   "tcg_card_number",
   "collector_number",
-  "checklist_code"
+  "checklist_code",
+  "cert_number"
 ]);
 
 const preingestionFieldAliases = new Map(Object.entries({
@@ -3985,7 +3986,10 @@ const preingestionFieldAliases = new Map(Object.entries({
   card_number_candidate: "card_number",
   tcg_card_number_candidate: "tcg_card_number",
   collector_number_candidate: "collector_number",
-  checklist_code_candidate: "checklist_code"
+  checklist_code_candidate: "checklist_code",
+  cert_number_candidate: "cert_number",
+  slab_cert: "cert_number",
+  slab_cert_candidate: "cert_number"
 }));
 
 function normalizePreingestionEvidenceFieldName(fieldName = "") {

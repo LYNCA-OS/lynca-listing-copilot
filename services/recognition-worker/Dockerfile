@@ -30,17 +30,18 @@ RUN printf '%s\n' \
   && python /tmp/lynca_langchain_compat.py \
   && rm /tmp/lynca_langchain_compat.py
 
-# Bake the PaddleOCR field-verifier weights and fonts into the image layer.
-# Without this, every cold Cloud Run instance re-downloads the PP-OCRv5 det/rec
-# models plus fonts from the upstream (Baidu) CDN on first use — 30-60s of
+COPY app /app/app
+
+# Bake the exact PaddleOCR field-verifier weights and fonts the runtime uses
+# into the image layer. Without this, every cold Cloud Run instance re-downloads
+# the models plus fonts from the upstream (Baidu) CDN on first use — 30-60s of
 # blocking work during which the instance cannot answer health probes, so
-# Cloud Run returns 503 and callers time out. Constructing the engine pulls the
-# models; a dummy predict pulls the fonts (simfang.ttf / PingFang). All of it
+# Cloud Run returns 503 and callers time out. We call the app's own preload so
+# the baked models match _get_paddleocr_engine()'s selection exactly (mobile
+# PP-OCRv5, mkldnn disabled); the follow-up predict pulls the fonts. Everything
 # lands in PADDLE_PDX_CACHE_HOME and is committed to the image.
 ENV PADDLE_PDX_CACHE_HOME=/opt/paddlex
-RUN python -c "import numpy as np; from paddleocr import PaddleOCR; ocr = PaddleOCR(lang='en', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False); ocr.predict(np.zeros((64, 256, 3), dtype='uint8'))"
-
-COPY app /app/app
+RUN python -c "import numpy as np; from app.pipelines.ocr_pipeline import preload_paddleocr_engine, _get_paddleocr_engine; status = preload_paddleocr_engine(); print('preload:', status); _get_paddleocr_engine().predict(np.zeros((64, 256, 3), dtype='uint8')); print('bake predict ok')"
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

@@ -1,6 +1,9 @@
+import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { buildV4FeedbackArtifacts } from "../../lib/listing/v4/feedback/feedback-loop.mjs";
+import { normalizeGrader } from "../../lib/listing/v4/anchors/anchor-classifier.mjs";
+import { upsertCertRegistryEntry } from "../../lib/listing/v4/anchors/cert-lookup.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
   persistV4FeedbackEvent,
@@ -58,6 +61,45 @@ export default async function handler(req, res) {
       learning_event_id: artifacts.learningEvent.id
     }
   });
+
+  // Cert registry flywheel: a writer-confirmed recognition that carries a
+  // grading cert number becomes an identity record, so the next time this
+  // slab (or a relisting of it) appears, identity is a sub-second registry
+  // lookup instead of a full model pass. Identity fields only; instance
+  // fields of future copies still come from their own images.
+  const resolvedForCert = payload.result_payload?.resolved_fields
+    || payload.result_payload?.resolved
+    || payload.resolved_fields
+    || {};
+  const certNumber = String(resolvedForCert.cert_number || "").trim();
+  const grader = normalizeGrader(resolvedForCert.grade_company || "");
+  const confirmedTitle = String(artifacts.feedbackEvent.writer_final_title || "").trim();
+  if (certNumber && grader && confirmedTitle && artifacts.status !== "REJECTED") {
+    waitUntil(upsertCertRegistryEntry({
+      grader,
+      certNumber,
+      identity: {
+        category: resolvedForCert.category || resolvedForCert.sport || null,
+        year: resolvedForCert.year || null,
+        manufacturer: resolvedForCert.manufacturer || null,
+        brand: resolvedForCert.brand || null,
+        product: resolvedForCert.product || null,
+        set: resolvedForCert.set || null,
+        subset: resolvedForCert.subset || null,
+        players: resolvedForCert.players || (resolvedForCert.subject ? [resolvedForCert.subject] : null),
+        team: resolvedForCert.team || null,
+        collector_number: resolvedForCert.collector_number || resolvedForCert.card_number || null,
+        checklist_code: resolvedForCert.checklist_code || null
+      },
+      grade: resolvedForCert.card_grade || resolvedForCert.grade || "",
+      autoGrade: resolvedForCert.auto_grade || "",
+      canonicalTitle: confirmedTitle,
+      source: "writer_feedback",
+      reviewStatus: "REVIEWED_INTERNAL",
+      sessionId,
+      metadata: { feedback_event_id: artifacts.feedbackEvent.id, action: payload.action || null }
+    }).catch(() => {}));
+  }
 
   sendJson(res, 200, withV4Version({
     ok: true,

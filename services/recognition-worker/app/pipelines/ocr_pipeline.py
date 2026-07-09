@@ -303,13 +303,29 @@ def _get_paddleocr_engine() -> Any:
             raise RuntimeError(f"paddleocr_import_failed: {error}") from error
 
         last_error: Exception | None = None
+        # Prefer the mobile PP-OCRv5 det/rec models with oneDNN (mkldnn) disabled.
+        # The default server models take the FusedConv2DKernel<OneDNNContext>
+        # inference path, which raised a SIGFPE ("Erroneous arithmetic
+        # operation") and crashed the uvicorn worker process on every field OCR
+        # call on this Cloud Run CPU. The mobile models are smaller, faster, and
+        # accurate enough for the short printed field crops we verify (serials,
+        # card codes, grades); disabling mkldnn keeps inference off the crashing
+        # kernel. Each entry falls back to the next if a kwarg is unsupported by
+        # the installed PaddleOCR build.
+        base_flags = {
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
+            "use_textline_orientation": False,
+        }
+        mobile_models = {
+            "text_detection_model_name": "PP-OCRv5_mobile_det",
+            "text_recognition_model_name": "PP-OCRv5_mobile_rec",
+        }
         constructor_kwargs = [
-            {
-                "lang": "en",
-                "use_doc_orientation_classify": False,
-                "use_doc_unwarping": False,
-                "use_textline_orientation": False,
-            },
+            {"lang": "en", "enable_mkldnn": False, **mobile_models, **base_flags},
+            {"lang": "en", "enable_mkldnn": False, **base_flags},
+            {"lang": "en", **mobile_models, **base_flags},
+            {"lang": "en", **base_flags},
             {"lang": "en"},
             {},
         ]
