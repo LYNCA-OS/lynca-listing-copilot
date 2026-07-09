@@ -39,6 +39,19 @@ import {
   preingestionEvidenceDocumentFromPayload
 } from "../lib/listing/pipeline/preingestion-evidence.mjs";
 import {
+  defaultProviderOptionsFromEnv,
+  evidenceCompletionEnabled,
+  resolvedForRetrievalFromPayload,
+  valuePresent,
+  normalizePositiveIntegerOrNull,
+  positiveIntegerFromEnv,
+  providerOptionsFromPayload,
+  singleModelFastPathEnabled,
+  vectorEmbeddingPostProviderWaitMs,
+  vectorEmbeddingWarmupOptions,
+  vectorEmbeddingWarmupTimeoutMs
+} from "../lib/listing/pipeline/provider-options.mjs";
+import {
   defaultProviderModels,
   providerLabels,
   providerMetadata,
@@ -146,150 +159,8 @@ const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
 const defaultCatalogFastLaneBudgetMs = 120;
 
-function positiveIntegerFromEnv(env, key, fallback) {
-  const value = normalizePositiveIntegerOrNull(env?.[key]);
-  return value === null ? fallback : value;
-}
-
 function configuredMaxPayloadImages(env = process.env) {
   return Math.max(2, normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages);
-}
-
-function defaultProviderOptionsFromEnv(env = process.env) {
-  const vectorAssistDefault = envFlag(env, "ENABLE_VECTOR_ASSIST_DEFAULT", true);
-  const catalogAssistDefault = envFlag(env, "ENABLE_CATALOG_ASSIST_DEFAULT", true);
-  return {
-    single_model_fast: envFlag(env, "ENABLE_SINGLE_MODEL_FAST_PATH", false),
-    enable_evidence_completion: envFlag(env, "ENABLE_EVIDENCE_COMPLETION", true),
-    enable_catalog_assist: catalogAssistDefault,
-    enable_vector_assist: vectorAssistDefault,
-    enable_stored_visual_features: vectorAssistDefault,
-    enable_query_visual_embeddings: vectorAssistDefault,
-    enable_vector_retrieval: vectorAssistDefault,
-    vector_retrieval_mode: vectorAssistDefault ? "assist" : "off",
-    vector_query_timeout_ms: 20000,
-    enable_advanced_retrieval: vectorAssistDefault,
-    enable_hybrid_retrieval: vectorAssistDefault,
-    cold_start_blind: envFlag(env, "ENABLE_COLD_START_BLIND_DEFAULT", false),
-    enable_ephemeral_external_retrieval: envFlag(env, "ENABLE_EPHEMERAL_EXTERNAL_RETRIEVAL_DEFAULT", false),
-    enable_gpt_failure_fallback: false,
-    enable_gpt_provider_failure_fallback: false,
-    enable_gpt_critical_verifier: false
-  };
-}
-
-function vectorEmbeddingWarmupTimeoutMs(env = process.env, providerOptions = {}) {
-  const configured = normalizePositiveIntegerOrNull(
-    providerOptions.vector_embedding_warmup_timeout_ms
-    ?? providerOptions.vectorEmbeddingWarmupTimeoutMs
-    ?? env.VECTOR_EMBEDDING_WARMUP_TIMEOUT_MS
-  );
-  const requested = configured !== null
-    ? configured
-    : Math.max(
-      20000,
-      normalizePositiveIntegerOrNull(providerOptions.vector_query_timeout_ms ?? providerOptions.vectorQueryTimeoutMs) || 0,
-      positiveIntegerFromEnv(env, "VECTOR_QUERY_TIMEOUT_MS", 0),
-      positiveIntegerFromEnv(env, "VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS", 0)
-    );
-  const hardCap = normalizePositiveIntegerOrNull(
-    providerOptions.vector_embedding_max_blocking_timeout_ms
-    ?? providerOptions.vectorEmbeddingMaxBlockingTimeoutMs
-    ?? env.VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS
-  ) || 20000;
-  return Math.max(250, Math.min(requested, hardCap));
-}
-
-function vectorEmbeddingPostProviderWaitMs(env = process.env, providerOptions = {}) {
-  const configured = normalizePositiveIntegerOrNull(
-    providerOptions.vector_embedding_post_provider_wait_ms
-    ?? providerOptions.vectorEmbeddingPostProviderWaitMs
-    ?? env.VECTOR_EMBEDDING_POST_PROVIDER_WAIT_MS
-  );
-  if (configured !== null) return configured;
-  const candidates = [
-    1500,
-    normalizePositiveIntegerOrNull(providerOptions.vector_query_timeout_ms ?? providerOptions.vectorQueryTimeoutMs),
-    vectorEmbeddingWarmupTimeoutMs(env, providerOptions)
-  ].filter((value) => Number.isFinite(value) && value > 0);
-  return Math.min(...candidates);
-}
-
-function vectorEmbeddingWarmupOptions(providerOptions = {}, env = process.env) {
-  return {
-    ...providerOptions,
-    vector_query_timeout_ms: vectorEmbeddingWarmupTimeoutMs(env, providerOptions)
-  };
-}
-
-function providerOptionsFromPayload(payload = {}, env = process.env) {
-  const options = payload.provider_options || payload.providerOptions || {};
-  const explicitOptions = options && typeof options === "object" && !Array.isArray(options) ? options : {};
-  const merged = {
-    ...defaultProviderOptionsFromEnv(env),
-    ...explicitOptions
-  };
-
-  const explicitlyDisablesVectorAssist = Object.prototype.hasOwnProperty.call(explicitOptions, "enable_vector_assist")
-    && optionFlag(explicitOptions, "enable_vector_assist", true) !== true;
-  const explicitlyConfiguresVectorRetrieval = Object.prototype.hasOwnProperty.call(explicitOptions, "enable_vector_retrieval")
-    || Object.prototype.hasOwnProperty.call(explicitOptions, "enableVectorRetrieval")
-    || Object.prototype.hasOwnProperty.call(explicitOptions, "vector_retrieval_mode")
-    || Object.prototype.hasOwnProperty.call(explicitOptions, "vectorRetrievalMode")
-    || optionFlag(explicitOptions, "force_vector_assist", false) === true;
-  const fastPathWithoutExplicitVector = singleModelFastPathEnabled(env, merged)
-    && !explicitlyConfiguresVectorRetrieval
-    && optionFlag(explicitOptions, "force_vector_assist", false) !== true;
-
-  if ((explicitlyDisablesVectorAssist && !explicitlyConfiguresVectorRetrieval) || fastPathWithoutExplicitVector) {
-    merged.enable_vector_assist = false;
-    merged.enable_stored_visual_features = false;
-    merged.enable_query_visual_embeddings = false;
-    merged.enable_vector_retrieval = false;
-    merged.vector_retrieval_mode = "off";
-    merged.enable_advanced_retrieval = false;
-    merged.enable_hybrid_retrieval = false;
-  }
-
-  return merged;
-}
-
-function valuePresent(value) {
-  if (Array.isArray(value)) return value.some(valuePresent);
-  if (typeof value === "boolean") return value === true;
-  return value !== null && value !== undefined && String(value).replace(/\s+/g, " ").trim() !== "" && value !== "UNKNOWN";
-}
-
-function meaningfulObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value) && Object.values(value).some(valuePresent);
-}
-
-function evalCatalogObservationHint(payload = {}, providerOptions = {}) {
-  const evalMode = String(payload.provider_eval_mode || payload.providerEvalMode || "").trim();
-  if (!evalMode) return {};
-  if (optionFlag(providerOptions, "corrected_title_as_temporary_gt", false) !== true) return {};
-  const hint = payload.catalog_observation_hint || payload.catalogObservationHint;
-  return meaningfulObject(hint) ? hint : {};
-}
-
-function resolvedForRetrievalFromPayload(payload = {}, providerOptions = {}, recognitionEvidenceDocument = null) {
-  const candidates = [
-    recognitionEvidenceDocument?.resolved,
-    evalCatalogObservationHint(payload, providerOptions),
-    payload.resolved,
-    payload.resolvedHint,
-    payload.resolved_hint
-  ];
-  return candidates.find(meaningfulObject) || {};
-}
-
-function singleModelFastPathEnabled(env = process.env, options = {}) {
-  return optionFlag(options, "single_model_fast", envFlag(env, "ENABLE_SINGLE_MODEL_FAST_PATH", false));
-}
-
-function evidenceCompletionEnabled(env = process.env, options = {}) {
-  if (singleModelFastPathEnabled(env, options)) return false;
-  return optionFlag(options, "enable_evidence_completion", envFlag(env, "ENABLE_EVIDENCE_COMPLETION", true));
 }
 
 function storedVisualFeatureLookupEnabled(env = process.env, options = {}) {
@@ -1790,12 +1661,6 @@ function normalizePlayerListForFields(fields = {}) {
     .filter(Boolean)
     .filter((player, index, list) => list.findIndex((item) => item.toLowerCase() === player.toLowerCase()) === index);
   return players;
-}
-
-function normalizePositiveIntegerOrNull(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
 }
 
 function normalizeFields(fields = {}) {
