@@ -25,6 +25,15 @@ import {
   safeProviderDiagnostics,
   withProviderMetadata
 } from "../lib/listing/pipeline/provider-result-metadata.mjs";
+import { envFlag, optionFlag } from "../lib/listing/pipeline/flags.mjs";
+import { normalizeStringOrNull } from "../lib/listing/pipeline/text.mjs";
+import {
+  evidenceCandidateKey,
+  evidenceFieldCandidatesWithSources,
+  hasEvidenceValue,
+  mergeEvidenceField
+} from "../lib/listing/pipeline/evidence-merge.mjs";
+import { openAiRequestContextFromPayload, runTimedProviderCall } from "../lib/listing/pipeline/provider-stage.mjs";
 import {
   defaultProviderModels,
   providerLabels,
@@ -132,12 +141,6 @@ const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
 const defaultCatalogFastLaneBudgetMs = 120;
-
-function envFlag(env, key, fallback = true) {
-  const raw = env[key];
-  if (raw === undefined || raw === null || raw === "") return fallback;
-  return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
-}
 
 function positiveIntegerFromEnv(env, key, fallback) {
   const value = normalizePositiveIntegerOrNull(env?.[key]);
@@ -247,25 +250,6 @@ function providerOptionsFromPayload(payload = {}, env = process.env) {
   return merged;
 }
 
-function openAiRequestContextFromPayload(payload = {}, {
-  providerCallPurpose = "listing_full_provider",
-  titleStage = ""
-} = {}) {
-  return {
-    job_id: payload.v4_queue_job_id || payload.job_id || payload.jobId || "",
-    job_type: payload.v4_queue_job_type || payload.job_type || "",
-    lane: payload.v4_queue_lane || payload.lane || "",
-    recognition_session_id: payload.recognition_session_id || "",
-    asset_id: payload.asset_id || payload.assetId || "",
-    worker_id: payload.worker_id || payload.workerId || "",
-    title_stage: titleStage || payload.v4_title_stage_target || "",
-    provider_call_purpose: providerCallPurpose,
-    v4_force_l2_direct: payload.v4_force_l2_direct === true,
-    disable_fast_scout_l1: payload.disable_fast_scout_l1 === true,
-    v4_queue_l1_only: payload.v4_queue_l1_only === true
-  };
-}
-
 function valuePresent(value) {
   if (Array.isArray(value)) return value.some(valuePresent);
   if (typeof value === "boolean") return value === true;
@@ -293,13 +277,6 @@ function resolvedForRetrievalFromPayload(payload = {}, providerOptions = {}, rec
     payload.resolved_hint
   ];
   return candidates.find(meaningfulObject) || {};
-}
-
-function optionFlag(options, key, fallback) {
-  if (!Object.prototype.hasOwnProperty.call(options, key)) return fallback;
-  const raw = options[key];
-  if (raw === undefined || raw === null || raw === "") return fallback;
-  return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
 }
 
 function singleModelFastPathEnabled(env = process.env, options = {}) {
@@ -1696,11 +1673,6 @@ function normalizeObservableComponents(value) {
     .map((item) => String(item || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""))
     .map((item) => aliases[item] || item)
     .filter((item) => allowed.has(item)))];
-}
-
-function normalizeStringOrNull(value) {
-  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
-  return normalized || null;
 }
 
 function normalizeGradeCompanyForFields(value) {
@@ -3779,87 +3751,6 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
   };
 }
 
-function hasEvidenceValue(value) {
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "boolean") return value === true;
-  return value !== null && value !== undefined && value !== "";
-}
-
-function evidenceFieldCandidatesWithSources(field = {}) {
-  const baseSources = Array.isArray(field.sources) ? field.sources : [];
-  const candidates = Array.isArray(field.candidates) && field.candidates.length
-    ? field.candidates
-    : hasEvidenceValue(field.value)
-      ? [{ value: field.value, confidence: field.confidence }]
-      : [];
-
-  return candidates
-    .filter((candidate) => hasEvidenceValue(candidate?.value))
-    .map((candidate) => ({
-      value: candidate.value,
-      confidence: Number.isFinite(Number(candidate.confidence)) ? Number(candidate.confidence) : Number(field.confidence || 0),
-      sources: Array.isArray(candidate.sources) && candidate.sources.length ? candidate.sources : baseSources
-    }));
-}
-
-function evidenceCandidateKey(value) {
-  const text = Array.isArray(value) ? value.join(" / ") : value;
-  return String(text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function mergeEvidenceField(fieldName, fields = []) {
-  const candidateMap = new Map();
-  const conflicts = [];
-
-  fields.forEach((field) => {
-    conflicts.push(...(Array.isArray(field?.conflicts) ? field.conflicts : []));
-    evidenceFieldCandidatesWithSources(field).forEach((candidate) => {
-      const key = evidenceCandidateKey(candidate.value);
-      const existing = candidateMap.get(key);
-      if (!existing) {
-        candidateMap.set(key, {
-          value: candidate.value,
-          confidence: candidate.confidence,
-          sources: [...candidate.sources]
-        });
-        return;
-      }
-
-      existing.confidence = Math.max(existing.confidence, candidate.confidence);
-      existing.sources.push(...candidate.sources);
-    });
-  });
-
-  const candidates = [...candidateMap.values()]
-    .map((candidate) => ({
-      ...candidate,
-      sources: candidate.sources.filter(Boolean)
-    }))
-    .sort((left, right) => right.confidence - left.confidence);
-  const top = candidates[0] || null;
-  const distinctValueCount = new Set(candidates.map((candidate) => evidenceCandidateKey(candidate.value))).size;
-  const mergedConflicts = [
-    ...conflicts,
-    ...(distinctValueCount > 1 ? [{
-      field: fieldName,
-      conflict_type: "MULTI_SOURCE_VALUE_CONFLICT",
-      conflicting_values: candidates.map((candidate) => candidate.value),
-      severity: "MEDIUM",
-      reason: "Recognition and provider evidence produced competing values for this field."
-    }] : [])
-  ];
-
-  return createEvidenceField({
-    value: top?.value ?? null,
-    normalizedValue: top?.value ?? null,
-    status: mergedConflicts.length ? "CONFLICT" : top?.confidence >= 0.86 ? "CONFIRMED" : "REVIEW",
-    confidence: top?.confidence ?? 0,
-    candidates,
-    sources: candidates.flatMap((candidate) => candidate.sources || []),
-    conflicts: mergedConflicts
-  });
-}
-
 function mergeEvidenceMaps(...maps) {
   const fieldNames = new Set();
   maps.forEach((map) => {
@@ -4163,15 +4054,6 @@ function withRequestMetadata(result, payload) {
     capture_profile_id: payload.captureProfileId || payload.capture_profile_id || defaultCaptureProfileId,
     capture_quality: captureQualityForPayload(payload)
   };
-}
-
-async function runTimedProviderCall(providerId, timingContext, work) {
-  const queued = await runWithProviderConcurrency({
-    providerId,
-    work: () => timeAsync(timingContext, "provider_total_ms", work)
-  });
-  addTiming(timingContext, "server_queue_ms", queued.queue_ms);
-  return queued.result;
 }
 
 function withCompletedEvidencePresentation(result, completion, payload) {
