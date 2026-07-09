@@ -216,14 +216,15 @@ assert.equal(openAiResult.provider_request_diagnostics.input_tokens, 11);
 assert.equal(openAiResult.provider_request_diagnostics.output_tokens, 9);
 assert.ok(openAiResult.provider_request_diagnostics.provider_latency_ms >= 0);
 
-const gpt5Controls = openAiResponsesModelControls("gpt-5-mini");
-assert.deepEqual(gpt5Controls, { reasoning: { effort: "low" } });
+const gpt5Controls = openAiResponsesModelControls("gpt-5-mini", { env: {} });
+assert.deepEqual(gpt5Controls, { reasoning: { effort: "minimal" } });
 const gpt5Text = openAiResponsesTextOptions({
   model: "gpt-5-mini",
   name: "test_schema",
-  schema: { type: "object", additionalProperties: false, properties: {}, required: [] }
+  schema: { type: "object", additionalProperties: false, properties: {}, required: [] },
+  env: {}
 });
-assert.equal(gpt5Text.verbosity, "low");
+assert.equal(gpt5Text.verbosity, "medium");
 assert.equal(gpt5Text.format.type, "json_schema");
 
 assert.deepEqual(openAiResponsesModelControls("gpt-5-mini", {
@@ -265,10 +266,10 @@ const gpt5OpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
 });
 const gpt5Body = JSON.parse(gpt5OpenAiRequest.init.body);
 assert.equal(gpt5Body.model, "gpt-5-mini");
-assert.equal(gpt5Body.max_output_tokens, 1280000);
+assert.equal(gpt5Body.max_output_tokens, 128000);
 assert.equal(gpt5Body.temperature, undefined);
-assert.deepEqual(gpt5Body.reasoning, { effort: "low" });
-assert.equal(gpt5Body.text.verbosity, "low");
+assert.deepEqual(gpt5Body.reasoning, { effort: "minimal" });
+assert.equal(gpt5Body.text.verbosity, "medium");
 assert.match(gpt5Body.input[0].content[0].text, /GPT-5 mini main-path extraction profile/);
 assert.match(gpt5Body.input[0].content[0].text, /Never leave product, set, players, card_name, print_run_number/);
 assert.equal(gpt5OpenAiResult.parsed.fields.player, "Five");
@@ -277,16 +278,16 @@ const gpt5DefaultConfig = openAiEmergencyConfigFromEnv({
   ...env,
   OPENAI_LISTING_MODEL: "gpt-5-mini"
 });
-assert.equal(gpt5DefaultConfig.requestedMaxOutputTokens, 819200000);
-assert.equal(gpt5DefaultConfig.maxOutputTokens, 1280000);
-assert.equal(gpt5DefaultConfig.truncationRetryMaxOutputTokens, 1280000);
+assert.equal(gpt5DefaultConfig.requestedMaxOutputTokens, 128000);
+assert.equal(gpt5DefaultConfig.maxOutputTokens, 128000);
+assert.equal(gpt5DefaultConfig.truncationRetryMaxOutputTokens, 128000);
 
 const gpt41DefaultExpandedConfig = openAiEmergencyConfigFromEnv({
   ...env,
   OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
 });
-assert.equal(gpt41DefaultExpandedConfig.maxOutputTokens, 327680);
-assert.equal(gpt41DefaultExpandedConfig.truncationRetryMaxOutputTokens, 327680);
+assert.equal(gpt41DefaultExpandedConfig.maxOutputTokens, 32768);
+assert.equal(gpt41DefaultExpandedConfig.truncationRetryMaxOutputTokens, 32768);
 
 const gpt41ExpandedCapOverrideConfig = openAiEmergencyConfigFromEnv({
   ...env,
@@ -303,7 +304,11 @@ const gpt5OutputCapFallbackResult = await analyzeCardEvidenceWithOpenAiEmergency
   prompt: "Return JSON.",
   env: {
     ...env,
-    OPENAI_LISTING_MODEL: "gpt-5-mini"
+    OPENAI_LISTING_MODEL: "gpt-5-mini",
+    // Force an out-of-spec request so the output-cap downgrade safety net
+    // still gets exercised now that defaults are within model spec.
+    OPENAI_GPT5_MAX_OUTPUT_TOKEN_CAP: "1280000",
+    OPENAI_GPT5_MAX_OUTPUT_TOKENS: "1280000"
   },
   fetchImpl: async (url, init) => {
     gpt5OutputCapFallbackCalls += 1;
@@ -338,7 +343,7 @@ assert.equal(gpt5OutputCapFallbackCalls, 2);
 assert.deepEqual(gpt5OutputCapFallbackCaps, [1280000, 128000]);
 assert.equal(gpt5OutputCapFallbackResult.output_cap_downgrade_attempted, true);
 assert.equal(gpt5OutputCapFallbackResult.output_cap_downgrade_attempts, 1);
-assert.equal(gpt5OutputCapFallbackResult.token_diagnostics.requested_output_cap, 819200000);
+assert.equal(gpt5OutputCapFallbackResult.token_diagnostics.requested_output_cap, 1280000);
 assert.equal(gpt5OutputCapFallbackResult.token_diagnostics.model_output_token_cap, 1280000);
 assert.equal(gpt5OutputCapFallbackResult.token_diagnostics.output_cap, 128000);
 assert.equal(gpt5OutputCapFallbackResult.parsed.fields.player, "Fallback");
