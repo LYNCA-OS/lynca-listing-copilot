@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run offline test suites
+        # Every scripts/**/*.test.mjs runs with no credentials; suites that
+        # need runtime credentials are excluded explicitly below.
+        run: |
+          set -u
+          pass=0; fail=0; failed_list=""
+          for t in scripts/*.test.mjs scripts/data-loop/*.test.mjs; do
+            case "$t" in
+              *v4-writer-export*) continue;;  # needs runtime credentials
+            esac
+            if node "$t" >/tmp/test-out.log 2>&1; then
+              pass=$((pass+1))
+            else
+              fail=$((fail+1)); failed_list="$failed_list $t"
+              echo "::error::FAIL $t"
+              tail -30 /tmp/test-out.log
+            fi
+          done
+          echo "PASS=$pass FAIL=$fail"
+          [ "$fail" -eq 0 ]
+      - name: Syntax-check API handlers and app bundle
+        run: |
+          set -e
+          for f in api/*.js api/v4/*.js app/*.js; do
+            node --check "$f"
+          done

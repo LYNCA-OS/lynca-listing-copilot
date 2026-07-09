@@ -97,8 +97,8 @@ function cookieFromSetCookie(headers) {
 }
 
 async function login({ baseUrl, env, fetchImpl = globalThis.fetch } = {}) {
-  const username = cleanText(env.METAVERSE_USERNAME || "metaverse");
-  const password = cleanText(env.METAVERSE_PASSWORD || "mtv");
+  const username = cleanText(env.METAVERSE_USERNAME || "");
+  const password = cleanText(env.METAVERSE_PASSWORD || "");
   const response = await fetchImpl(`${baseUrl}/api/login`, {
     method: "POST",
     headers: {

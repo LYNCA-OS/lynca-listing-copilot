@@ -51,3 +51,4 @@ data/recognition/review/agnes-auto-95-gap-plan.csv
 data/catalog/writer-title-seed/*.jsonl
 data/catalog/writer-title-seed/audit-*.json
 .vercel
+.secrets/

@@ -125,10 +125,14 @@ assert.equal(summary.image_count, 2);
 assert.equal(summary.derived_image_count, 1);
 assert.equal(summary.initial_evidence_count, 1);
 
+// Consumerless job types default OFF: only OCR (which has a consumer) is
+// enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
-assert.ok(jobs.some((job) => job.job_type === "visual_embedding"));
-assert.ok(jobs.some((job) => job.job_type === "image_quality_deep_analysis"));
-assert.equal(new Set(jobs.map((job) => job.job_key)).size, jobs.length);
+assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
+const optInJobs = buildPreingestionWorkerJobs({ bundle, enableEmbeddings: true, enableQuality: true });
+assert.ok(optInJobs.some((job) => job.job_type === "visual_embedding"));
+assert.ok(optInJobs.some((job) => job.job_type === "image_quality_deep_analysis"));
+assert.equal(new Set(optInJobs.map((job) => job.job_key)).size, optInJobs.length);
 
 const calls = [];
 const fetchImpl = async (url, init = {}) => {

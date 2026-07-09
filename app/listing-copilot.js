@@ -1182,7 +1182,23 @@ async function settleSpeculativeRecognition(asset, maxWaitMs = SPECULATIVE_SETTL
 }
 
 function applySpeculativeL1ToPendingResult(pending, l1) {
-  if (!l1 || v4PayloadWriterTitlePending(l1)) return pending;
+  if (!l1) return pending;
+  if (v4PayloadWriterTitlePending(l1)) {
+    // 标题仍在生成（barrier 生效），但 scout 骨架字段已经可以给写手看：
+    // 等待卡从“黑箱转圈”变成“字段逐步点亮”。字段仅为暂定，L2 完成后覆盖。
+    const scoutResolved = l1.l1_internal_scout?.resolved_fields
+      || l1.l1_internal_scout?.resolved
+      || {};
+    if (Object.keys(scoutResolved).length) {
+      pending.resolved = scoutResolved;
+      pending.resolved_fields = scoutResolved;
+      pending.fields = scoutResolved;
+      pending.generated_resolved_fields = scoutResolved;
+      pending.provisional_fields = true;
+      pending.feedbackMessage = "字段已初步识别（暂定），一段式标题生成中…";
+    }
+    return pending;
+  }
   const l1Title = String(l1.writer_draft?.title || l1.final_title || l1.title || "").trim();
   if (!l1Title) return pending;
   const resolved = l1.resolved_fields || l1.resolved || l1.fields || {};

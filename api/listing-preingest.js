@@ -200,9 +200,9 @@ export default async function handler(req, res) {
       ? buildPreingestionWorkerJobs({
         bundle: durableBundle,
         enableOcr: payload.enqueue_ocr !== false,
-        enableEmbeddings: payload.enqueue_embeddings !== false,
-        enableSurface: payload.enqueue_surface !== false,
-        enableQuality: payload.enqueue_quality !== false
+        enableEmbeddings: payload.enqueue_embeddings === true,
+        enableSurface: payload.enqueue_surface === true,
+        enableQuality: payload.enqueue_quality === true
       })
       : [];
     const enqueueResult = enqueueWorkers

@@ -159,7 +159,8 @@ assert.equal(bundleWrite.images.length, 2);
 assert.equal(bundleWrite.initial_evidence.print_run_candidate.value, "#/3");
 assert.equal(JSON.stringify(bundleWrite).includes("read-token"), false, "signed read URLs must not be written to Supabase");
 assert.ok(Array.isArray(jobsWrite));
-assert.ok(jobsWrite.some((job) => job.job_type === "visual_embedding"));
+// Consumerless job types default OFF; only OCR crop jobs are enqueued.
+assert.ok(jobsWrite.every((job) => job.job_type === "ocr_crop_verification"));
 assert.equal(new Set(jobsWrite.map((job) => job.job_key)).size, jobsWrite.length);
 
 const missing = await callApi({ asset_id: "" });
