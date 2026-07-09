@@ -174,6 +174,56 @@ function writerPendingL1Response(response = {}, result = {}) {
   });
 }
 
+// Exact-anchor finalize is the one L1 outcome allowed through the writer
+// barrier: a unique strictest-tier catalog identity (exact printed code +
+// year agreement + zero contradicted anchors) IS the answer, so the writer
+// sees the title in the L1 window (~2-3s) while the background L2 run stays
+// on as verification and overwrites on completion. Every other L1 result
+// stays behind the barrier as internal evidence.
+function exactAnchorWriterFastLaneEnabled(env = process.env) {
+  return String(env.ENABLE_V4_EXACT_ANCHOR_WRITER_FAST_LANE ?? "true").toLowerCase() !== "false";
+}
+
+function writerFinalizedL1Response(response = {}, result = {}) {
+  const scout = buildInternalScoutSummary(response, result);
+  const title = String(result.final_title || result.title || "").replace(/\s+/g, " ").trim();
+  return withV4Version({
+    ...response,
+    ok: true,
+    status: v4SessionStatuses.OBSERVING,
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+    final_title: title,
+    title,
+    rendered_title: title,
+    writer_safe_draft: title,
+    assisted_draft: null,
+    assisted_draft_status: "PENDING",
+    title_render_source: "exact_anchor_catalog_finalized",
+    resolved_fields: result.resolved_fields || result.resolved || {},
+    exact_anchor_finalize: result.exact_anchor_finalize || { used: true },
+    writer_draft: {
+      ...(response.writer_draft || {}),
+      title,
+      display_title: title,
+      status: "DRAFT_READY",
+      confidence_score: 0.9,
+      actions: [],
+      user_edit_mode: "one_line_title_only",
+      structured_fields_visible: true
+    },
+    title_stage_reason: "Unique exact-anchor catalog identity finalized in the L1 window; background L2 continues as verification and overwrites on completion.",
+    l1_return_reason: "exact_anchor_catalog_internal_scout",
+    title_stage_readiness: {
+      ...(response.title_stage_readiness || {}),
+      writer_safe_ready: true,
+      writer_visible_title_ready: true,
+      internal_scout_ready: true
+    },
+    l1_internal_scout: scout,
+    legacy_v2_result: hideTitleFields(response.legacy_v2_result || result || {})
+  });
+}
+
 function resolvedFromResult(result = {}) {
   return result.resolved_fields || result.fields || result.resolved || {};
 }
@@ -940,7 +990,9 @@ export default async function handler(req, res) {
           l1_persistence: { saved: false, deferred: true }
         }
       }), l1Result.fast_scout || {});
-      const writerResponse = writerPendingL1Response(v4Response, l1Result);
+      const writerResponse = finalized && exactAnchorWriterFastLaneEnabled()
+        ? writerFinalizedL1Response(v4Response, l1Result)
+        : writerPendingL1Response(v4Response, l1Result);
       const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({
         sessionId,
         result: l1Result,

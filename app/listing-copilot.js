@@ -36,6 +36,11 @@ const FAST_SCOUT_PREWARM_WAIT_MS = 1200;
 const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
+// 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
+// L2 生产 job 提前入队开始计时；L1-only 直连调用产出 exact-anchor 秒级标题。
+// 点击“开始生成”变成“展示已就绪的结果”，而不是“从零启动识别”。
+const ENABLE_SPECULATIVE_RECOGNITION = true;
+const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
@@ -1009,6 +1014,12 @@ async function prepareAssetInBackground(asset, runId) {
         fastScoutPrewarm
       ]);
 
+      if (runId === state.backgroundPreparationRunId) {
+        // 证据包 id 已经落在 asset 上，这里点火的识别请求会带上它；
+        // 不阻塞 ready 状态，写手提前点击也只是回落到常规路径。
+        void ensureSpeculativeRecognition(asset, runId);
+      }
+
       asset.backgroundPrepareStatus = "ready";
       asset.backgroundPrepareError = "";
       asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
@@ -1057,6 +1068,140 @@ async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
       error: String(error.message || "background_prepare_failed").slice(0, 160)
     };
   }
+}
+
+async function ensureSpeculativeRecognition(asset, runId) {
+  if (!ENABLE_SPECULATIVE_RECOGNITION || !asset) return null;
+  if (asset.speculativeRunId === runId && asset.speculativePromise) return asset.speculativePromise;
+  asset.speculativeRunId = runId;
+  asset.speculativePromise = (async () => {
+    const startedAt = performance.now();
+    try {
+      const { requestBody } = await ensureSafeAssetPayload(asset, {
+        provider_options: { ...defaultProviderOptions }
+      });
+      if (runId !== state.backgroundPreparationRunId) return { stale: true, run_id: runId };
+
+      const enqueueJobPayload = JSON.parse(requestBody);
+      enqueueJobPayload.force_l2_only = true;
+      enqueueJobPayload.create_l1_job = false;
+      enqueueJobPayload.create_l2_job = true;
+      enqueueJobPayload.disable_fast_scout_l1 = true;
+      enqueueJobPayload.v4_force_l2_direct = true;
+      enqueueJobPayload.client_speculative = true;
+
+      const l1Body = JSON.parse(requestBody);
+      l1Body.v4_queue_l1_only = true;
+      l1Body.client_speculative = true;
+
+      const batchId = createClientBatchId();
+      const [enqueueOutcome, l1Outcome] = await Promise.allSettled([
+        fetch(JOB_ENQUEUE_API_ENDPOINT, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            batch_id: batchId,
+            tenant_id: batchId,
+            priority: 100,
+            jobs: [{
+              asset_id: asset.id,
+              force_l2_only: true,
+              create_l1_job: false,
+              create_l2_job: true,
+              payload: enqueueJobPayload
+            }]
+          })
+        }).then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload.ok === false) {
+            throw new Error(payload.message || `speculative enqueue ${response.status}`);
+          }
+          return payload;
+        }),
+        fetch(TITLE_API_ENDPOINT, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(l1Body)
+        }).then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload?.message || `speculative L1 ${response.status}`);
+          return payload;
+        })
+      ]);
+
+      const enqueuePayload = enqueueOutcome.status === "fulfilled" ? enqueueOutcome.value : null;
+      const job = enqueuePayload
+        ? ((enqueuePayload.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
+          || (enqueuePayload.jobs || []).find((entry) => entry?.ok)
+          || null)
+        : null;
+      return {
+        ok: Boolean((job && job.job_id && job.recognition_session_id) || l1Outcome.status === "fulfilled"),
+        run_id: runId,
+        request_body: requestBody,
+        enqueue_payload: enqueuePayload,
+        job: job && job.job_id && job.recognition_session_id ? job : null,
+        l1: l1Outcome.status === "fulfilled" ? l1Outcome.value : null,
+        speculative_ms: Math.round(performance.now() - startedAt)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        run_id: runId,
+        error: String(error?.message || "speculative_failed").slice(0, 160),
+        speculative_ms: Math.round(performance.now() - startedAt)
+      };
+    }
+  })();
+  return asset.speculativePromise;
+}
+
+async function settleSpeculativeRecognition(asset, maxWaitMs = SPECULATIVE_SETTLE_MAX_WAIT_MS) {
+  if (!ENABLE_SPECULATIVE_RECOGNITION) return { used: false };
+  if (!asset?.speculativePromise || asset.speculativeRunId !== state.backgroundPreparationRunId) {
+    return { used: false };
+  }
+  const startedAt = performance.now();
+  const timedOut = Symbol("speculative_timeout");
+  // 完整等待（有上限）而不是短超时后另起一路：投机流程里已经包含一次 L2 入队，
+  // 若这里超时改走常规入队，会给同一张卡排两个 L2 任务。
+  const result = await Promise.race([
+    asset.speculativePromise,
+    wait(maxWaitMs).then(() => timedOut)
+  ]).catch(() => null);
+  if (result === timedOut || !result || result.stale || result.run_id !== state.backgroundPreparationRunId) {
+    return {
+      used: false,
+      timed_out: result === timedOut,
+      wait_ms: Math.round(performance.now() - startedAt)
+    };
+  }
+  return { used: true, wait_ms: Math.round(performance.now() - startedAt), ...result };
+}
+
+function applySpeculativeL1ToPendingResult(pending, l1) {
+  if (!l1 || v4PayloadWriterTitlePending(l1)) return pending;
+  const l1Title = String(l1.writer_draft?.title || l1.final_title || l1.title || "").trim();
+  if (!l1Title) return pending;
+  const resolved = l1.resolved_fields || l1.resolved || l1.fields || {};
+  pending.title = l1Title;
+  pending.final_title = l1Title;
+  pending.rendered_title = l1Title;
+  pending.generatedTitle = l1Title;
+  pending.correctedTitle = l1Title;
+  pending.writerTitlePending = false;
+  pending.title_stage = l1.title_stage || pending.title_stage;
+  pending.title_render_source = l1.title_render_source || "";
+  pending.exact_anchor_finalize = l1.exact_anchor_finalize || null;
+  pending.resolved = resolved;
+  pending.resolved_fields = resolved;
+  pending.fields = resolved;
+  pending.generated_resolved_fields = resolved;
+  pending.confidence = "HIGH";
+  pending.feedbackMessage = "首屏标题已就绪（目录精确锚定）；云端一段式标题完成后会自动覆盖。";
+  return pending;
 }
 
 function startBackgroundPreparation(reason = "file_ready") {
@@ -2643,6 +2788,27 @@ async function processAssetViaQueue(asset, options = {}) {
     client_fast_scout_prewarm_cache_status: fastScoutPrewarm.cache_status || "",
     client_fast_scout_prewarm_timed_out: fastScoutPrewarm.timed_out === true
   };
+
+  const speculative = await settleSpeculativeRecognition(asset);
+  if (speculative.used && speculative.job) {
+    // 识别在图片就绪时已经开始：直接挂到已在跑的 L2 job 上，
+    // 若 L1 exact-anchor 已定稿则立即展示首屏标题。
+    asset.clientTiming.client_speculative_used = true;
+    asset.clientTiming.client_speculative_ms = Math.round(Number(speculative.speculative_ms || 0));
+    asset.clientTiming.client_speculative_wait_ms = Math.round(Number(speculative.wait_ms || 0));
+    setAssetProgress(asset.index, "复用预识别结果", 0.5);
+    const clientTotalMs = Math.round(performance.now() - processStartedAt);
+    const pending = queuedPendingResult(asset, speculative.enqueue_payload || {}, speculative.job, {
+      client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
+      client_upload_ms: uploadMs,
+      client_background_prepare_wait_ms: asset.clientTiming.client_background_prepare_wait_ms,
+      client_speculative_used: true,
+      client_speculative_ms: asset.clientTiming.client_speculative_ms,
+      client_speculative_wait_ms: asset.clientTiming.client_speculative_wait_ms,
+      client_total_ms: clientTotalMs
+    });
+    return applySpeculativeL1ToPendingResult(pending, speculative.l1);
+  }
 
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备生产队列请求", 0.3);
