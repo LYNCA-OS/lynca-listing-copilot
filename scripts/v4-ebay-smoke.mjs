@@ -253,6 +253,9 @@ async function postJson({ baseUrl, path, cookie, payload, requestTimeoutMs, fetc
       method: "POST",
       headers: {
         "content-type": "application/json",
+        // undici 的 keep-alive 套接字一旦僵死会级联拖垮后续同源请求
+        //（表现为成串的 45s request_timeout）；烟测逐请求关闭连接复用。
+        connection: "close",
         cookie
       },
       body: JSON.stringify(payload),
@@ -277,7 +280,7 @@ async function getJson({ baseUrl, path, cookie, requestTimeoutMs, fetchImpl = gl
   try {
     const response = await fetchImpl(`${baseUrl}${path}`, {
       method: "GET",
-      headers: { cookie },
+      headers: { connection: "close", cookie },
       signal: controller.signal
     });
     const data = await readJsonResponse(response);
