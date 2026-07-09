@@ -1,6 +1,8 @@
+import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
+import { processQueuedPreingestionOcrJobs } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 import {
   buildPreingestionCropPlan,
   buildPreingestionQualitySummary,
@@ -202,6 +204,19 @@ export default async function handler(req, res) {
         fetchImpl: globalThis.fetch
       })
       : { enqueued: 0, durable: true, skipped: true };
+
+    if ((enqueueResult.enqueued || 0) > 0) {
+      // Consume the OCR jobs right after responding so evidence patches are
+      // already on the bundle by the time the title request loads it. The
+      // worker fails closed (jobs stay queued) when PaddleOCR is unconfigured;
+      // /api/v4/listing-preingest-worker re-sweeps anything left behind.
+      waitUntil(processQueuedPreingestionOcrJobs({
+        assetId,
+        bundleId: durableBundle.bundle_id,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      }).catch(() => {}));
+    }
 
     sendJson(res, 200, {
       ok: true,
