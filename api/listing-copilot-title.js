@@ -13,6 +13,19 @@ import {
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import {
+  addTiming,
+  createTimingContext,
+  emptyTiming,
+  nowMs,
+  timeAsync,
+  timeSync
+} from "../lib/listing/pipeline/timing.mjs";
+import {
+  mergeUsage,
+  safeProviderDiagnostics,
+  withProviderMetadata
+} from "../lib/listing/pipeline/provider-result-metadata.mjs";
+import {
   defaultProviderModels,
   providerLabels,
   providerMetadata,
@@ -314,90 +327,6 @@ function queryVisualVectorPreflightEnabled(env = process.env, options = {}) {
   return envFlag(env, "ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT", false);
 }
 
-function nowMs() {
-  return Date.now();
-}
-
-function emptyTiming() {
-  return {
-    client_image_prepare_ms: null,
-    client_upload_ms: null,
-    client_request_prepare_ms: null,
-    client_api_roundtrip_ms: null,
-    server_queue_ms: 0,
-    provider_connect_ms: null,
-    provider_first_token_ms: null,
-    provider_total_ms: 0,
-    approved_memory_lookup_ms: 0,
-    identity_cache_lookup_ms: 0,
-    memory_lookup_ms: 0,
-    preingestion_bundle_load_ms: 0,
-    signed_url_ms: 0,
-    image_quality_check_ms: 0,
-    recognition_preflight_ms: 0,
-    stored_visual_feature_lookup_ms: 0,
-    catalog_retrieval_ms: 0,
-    catalog_cache_ms: 0,
-    vector_embedding_ms: 0,
-    vector_retrieval_ms: 0,
-    evidence_completion_ms: 0,
-    retrieval_ms: 0,
-    focused_reread_ms: 0,
-    resolver_ms: 0,
-    renderer_ms: 0,
-    identity_cache_write_ms: 0,
-    total_ms: 0
-  };
-}
-
-function createTimingContext(payload = {}) {
-  const timing = emptyTiming();
-  const clientTiming = payload.clientTiming || payload.client_timing || {};
-  [
-    "client_image_prepare_ms",
-    "client_upload_ms",
-    "client_request_prepare_ms",
-    "client_api_roundtrip_ms"
-  ].forEach((key) => {
-    const value = Number(clientTiming[key]);
-    timing[key] = Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
-  });
-  return {
-    started_at_ms: nowMs(),
-    timing
-  };
-}
-
-function addTiming(timingContext, key, elapsedMs) {
-  if (!timingContext?.timing || !key) return;
-  const value = Number(elapsedMs);
-  if (!Number.isFinite(value) || value < 0) return;
-  timingContext.timing[key] = Math.round(Number(timingContext.timing[key] || 0) + value);
-  if (key === "approved_memory_lookup_ms" || key === "identity_cache_lookup_ms") {
-    timingContext.timing.memory_lookup_ms = Math.round(
-      Number(timingContext.timing.approved_memory_lookup_ms || 0)
-      + Number(timingContext.timing.identity_cache_lookup_ms || 0)
-    );
-  }
-}
-
-async function timeAsync(timingContext, key, work) {
-  const startedAt = nowMs();
-  try {
-    return await work();
-  } finally {
-    addTiming(timingContext, key, nowMs() - startedAt);
-  }
-}
-
-function timeSync(timingContext, key, work) {
-  const startedAt = nowMs();
-  try {
-    return work();
-  } finally {
-    addTiming(timingContext, key, nowMs() - startedAt);
-  }
-}
 
 function finalizeTiming(timingContext, result = {}) {
   const timing = {
@@ -4226,77 +4155,6 @@ function withRecognitionEvidence(result, recognitionEvidenceDocument = null, pay
   };
 }
 
-function withProviderMetadata(result, providerResult, selection) {
-  const providerId = providerResult.provider || selection?.provider_id || result.source;
-
-  return {
-    ...result,
-    ...providerMetadata({
-      provider: providerId,
-      modelId: providerResult.model_id || selection?.model_id
-    }),
-    source: providerId,
-    provider_response_id: providerResult.response_id || null,
-    provider_finish_reason: providerResult.finish_reason || null,
-    provider_parse_source: providerResult.parse_source || null,
-    provider_latency_ms: providerResult.latency_ms ?? null,
-    provider_recognition_status: providerResult.recognition_status || providerResult.parsed?.recognition_status || null,
-    provider_error_type: providerResult.error_type || providerResult.parsed?.error_type || null,
-    provider_token_diagnostics: providerResult.token_diagnostics || null,
-    provider_initial_token_diagnostics: providerResult.initial_token_diagnostics || null,
-    provider_rate_limit_diagnostics: providerResult.rate_limit_diagnostics || null,
-    provider_initial_rate_limit_diagnostics: providerResult.initial_rate_limit_diagnostics || null,
-    provider_request_diagnostics: providerResult.provider_request_diagnostics || null,
-    provider_initial_request_diagnostics: providerResult.provider_initial_request_diagnostics || null,
-    provider_key_pool_size: Number(providerResult.provider_key_pool_size || 0) || null,
-    provider_key_slot: Number(providerResult.provider_key_slot || 0) || null,
-    provider_key_source: providerResult.provider_key_source || null,
-    provider_key_rotation_attempted: providerResult.provider_key_rotation_attempted === true,
-    provider_key_rotation_attempts: Number(providerResult.provider_key_rotation_attempts || 0),
-    provider_transient_retry_attempted: providerResult.transient_retry_attempted === true,
-    provider_transient_retry_attempts: Number(providerResult.transient_retry_attempts || 0),
-    provider_truncation_retry_attempted: providerResult.truncation_retry_attempted === true,
-    provider_truncation_retry_attempts: Number(providerResult.truncation_retry_attempts || 0),
-    format_error_type: providerResult.format_error_type || null,
-    format_repair_attempted: providerResult.format_repair_attempted === true,
-    local_json_repair_success: providerResult.local_json_repair_success === true,
-    text_repair_success: providerResult.text_repair_success === true,
-    native_schema_valid: providerResult.native_schema_valid === true,
-    fallback_provider_id: providerResult.fallback_provider_id || null,
-    fallback_reason: providerResult.fallback_reason || null,
-    usage: providerResult.usage || null,
-    explicit_emergency: Boolean(selection?.explicit_emergency)
-  };
-}
-
-function safeProviderDiagnostics(details = {}) {
-  if (!details || typeof details !== "object") return undefined;
-  const allowedKeys = [
-    "format_error_type",
-    "format_repair_attempted",
-    "local_json_repair_success",
-    "text_repair_success",
-    "native_schema_valid",
-    "token_diagnostics",
-    "initial_token_diagnostics",
-    "transient_retry_attempted",
-    "transient_retry_attempts",
-    "truncation_retry_attempted",
-    "truncation_retry_attempts",
-    "empty_retry_attempted",
-    "empty_retry_attempts",
-    "request_summary",
-    "schema_errors",
-    "local_repair_error",
-    "text_repair_error"
-  ];
-  const output = {};
-  allowedKeys.forEach((key) => {
-    if (details[key] !== undefined) output[key] = details[key];
-  });
-  return Object.keys(output).length ? output : undefined;
-}
-
 function withRequestMetadata(result, payload) {
   return {
     ...result,
@@ -4304,26 +4162,6 @@ function withRequestMetadata(result, payload) {
     analysis_run_id: payload.analysisRunId || payload.analysis_run_id || `analysis_${crypto.randomUUID()}`,
     capture_profile_id: payload.captureProfileId || payload.capture_profile_id || defaultCaptureProfileId,
     capture_quality: captureQualityForPayload(payload)
-  };
-}
-
-function mergeUsage(providerUsage, completionUsage, {
-  providerCalls = 0
-} = {}) {
-  const base = providerUsage && typeof providerUsage === "object" && !Array.isArray(providerUsage)
-    ? providerUsage
-    : {};
-  const baseProviderCalls = Number.isFinite(Number(base.provider_calls))
-    ? Number(base.provider_calls)
-    : providerCalls;
-
-  return {
-    ...base,
-    provider_calls: baseProviderCalls + Number(completionUsage?.provider_calls || 0),
-    retrieval_calls: Number(base.retrieval_calls || 0) + Number(completionUsage?.retrieval_calls || 0),
-    latency_ms: Number(base.latency_ms || 0) + Number(completionUsage?.latency_ms || 0),
-    estimated_cost_usd: Number(base.estimated_cost_usd || 0) + Number(completionUsage?.estimated_cost_usd || 0),
-    resolution_rounds: Number(base.resolution_rounds || 0) + Number(completionUsage?.resolution_rounds || 0)
   };
 }
 
@@ -7052,6 +6890,7 @@ async function applyPreIngestionBundleToPayload(payload = {}, {
 
 export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
+  buildInitialProviderPrompt,
   applyPreIngestionBundleToPayload,
   applySafeRetrievalTitleAssist,
   boundedPayloadImagesFromImages,
