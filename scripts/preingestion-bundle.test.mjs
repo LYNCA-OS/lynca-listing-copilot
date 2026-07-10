@@ -245,6 +245,31 @@ assert.equal(hardEvidenceDocument.evidence.print_run_number.value, "09/50");
 assert.equal(hardEvidenceDocument.evidence.card_grade.value, "9.5");
 assert.equal(hardEvidenceDocument.evidence.auto_grade.value, "10");
 
+const lineConfidenceDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+  preingestion_evidence_patches: [
+    {
+      field: "print_run_number",
+      value: "30/99",
+      raw_text: "JUSTIN HERBERT 30/99 AUTO",
+      source_type: "OCR",
+      source_image_id: "front",
+      confidence: 0.71,
+      text_candidates: [{ value: "30/99", confidence: 0.95 }]
+    },
+    {
+      field: "card_grade",
+      value: "63221071",
+      raw_text: "PSA 63221071",
+      source_type: "OCR",
+      source_image_id: "front",
+      confidence: 0.92
+    }
+  ]
+});
+assert.equal(lineConfidenceDocument.evidence.print_run_number.status, "CONFIRMED");
+assert.equal(lineConfidenceDocument.evidence.print_run_number.confidence, 0.95);
+assert.equal(lineConfidenceDocument.evidence.card_grade, undefined, "cert-like long numbers must not become card grades");
+
 const staleGpt5Result = {
   title: "2018 Bowman Chrome Yordan Alvarez Auto Gold #CPA BGS 10/9.5",
   confidence: "HIGH",

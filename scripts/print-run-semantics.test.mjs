@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {
   __listingCopilotTitleTestHooks,
-  serialNumeratorVerificationFromPreingestion
+  serialNumeratorVerificationFromPreingestion,
+  verifiedSerialNumeratorFromPreingestion
 } from "../api/listing-copilot-title.js";
 import {
   createEvidenceField,
@@ -105,6 +106,49 @@ assert.equal(serialNumeratorVerificationFromPreingestion({
     text_candidates: [{ value: "31/50", confidence: 0.95 }]
   }]
 }, { job_count: 1 }), true, "an exact OCR line must keep its own confidence instead of the crop-wide average");
+
+const verifiedOcrPayload = {
+  images: [{ image_id: "img-current" }],
+  preingestion_evidence_patches: [{
+    ...ocrSerialPatch("30/99", 0.71),
+    source_image_id: "img-current",
+    raw_text: "TEST PLAYER 30/99 AUTO",
+    text_candidates: [{ value: "30/99", confidence: 0.95 }]
+  }]
+};
+const verifiedSerial = verifiedSerialNumeratorFromPreingestion(verifiedOcrPayload);
+assert.equal(verifiedSerial.verified, true);
+assert.equal(verifiedSerial.value, "30/99");
+
+const lockedOcrTitle = __listingCopilotTitleTestHooks.withVerifiedPreingestionPrintRun({
+  confidence: "HIGH",
+  fields: {
+    year: "2020",
+    manufacturer: "Panini",
+    product: "Plates & Patches",
+    players: ["Justin Herbert"],
+    serial_number: "06/09"
+  },
+  resolved: {
+    year: "2020",
+    manufacturer: "Panini",
+    product: "Plates & Patches",
+    players: ["Justin Herbert"],
+    serial_number: "06/09"
+  },
+  resolved_fields: {
+    year: "2020",
+    manufacturer: "Panini",
+    product: "Plates & Patches",
+    players: ["Justin Herbert"],
+    serial_number: "06/09"
+  },
+  evidence: {}
+}, verifiedOcrPayload);
+assert.match(lockedOcrTitle.final_title, /30\/99/);
+assert.doesNotMatch(lockedOcrTitle.final_title, /06\/9/);
+assert.equal(lockedOcrTitle.serial_numerator_verified, true);
+assert.equal(lockedOcrTitle.conflict_map.at(-1).conflict_type, "OCR_CURRENT_IMAGE_OVERRIDE");
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.93), ocrSerialPatch("37/50", 0.94)]
 }, { job_count: 1 }), false);
@@ -226,5 +270,16 @@ const ocrHyphenBlocked = normalizePaddleOcrResponse({
   crop_type: "product_text"
 });
 assert.equal(ocrHyphenBlocked.normalized_fields.print_run_number, undefined);
+
+const certMustNotBecomeGrade = normalizePaddleOcrResponse({
+  raw_text: "PSA TSA 63221071",
+  confidence: 0.93
+}, {
+  request_id: "grade-ocr-1",
+  image_url: "https://storage.test/slab.jpg",
+  crop_type: "grade_label"
+});
+assert.equal(certMustNotBecomeGrade.normalized_fields.card_grade, undefined);
+assert.equal(certMustNotBecomeGrade.normalized_fields.cert_number, "63221071");
 
 console.log("print-run semantics tests passed");

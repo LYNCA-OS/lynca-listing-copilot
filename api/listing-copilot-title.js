@@ -191,23 +191,56 @@ function configuredMaxPayloadImages(env = process.env) {
   return Math.max(2, normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages);
 }
 
-export function serialNumeratorVerificationFromPreingestion(payload = {}, rendezvous = null) {
+export function verifiedSerialNumeratorFromPreingestion(payload = {}) {
   const patches = Array.isArray(payload.preingestion_evidence_patches)
     ? payload.preingestion_evidence_patches
     : [];
-  const fullValues = new Set();
+  const currentImageIds = new Set((Array.isArray(payload.images) ? payload.images : [])
+    .map((image) => String(image?.image_id || image?.imageId || image?.id || "").trim())
+    .filter(Boolean));
+  const fullValues = new Map();
   for (const patch of patches) {
     if (!["print_run_number", "serial_number", "numerical_rarity"].includes(String(patch?.field || "").trim())) continue;
     if (String(patch?.source_type || "").trim().toUpperCase() !== "OCR") continue;
+    const patchImageId = String(patch?.source_image_id || patch?.sourceImageId || "").trim();
+    if (patchImageId && currentImageIds.size > 0 && !currentImageIds.has(patchImageId)) continue;
     const expanded = expandPrintRunFields({ print_run_number: patch.value, serial_number: patch.value });
     const fieldConfidence = ocrPatchPrintRunConfidence(patch, expanded.print_run_number || "");
     if (fieldConfidence < confirmedOcrSerialConfidence) continue;
     if (expanded.print_run_numerator && expanded.print_run_denominator) {
-      fullValues.add(`${expanded.print_run_numerator}/${expanded.print_run_denominator}`);
+      const value = `${expanded.print_run_numerator}/${expanded.print_run_denominator}`;
+      const current = fullValues.get(value) || { value, confidence: 0, patch_count: 0, source_image_ids: new Set() };
+      current.confidence = Math.max(current.confidence, fieldConfidence);
+      current.patch_count += 1;
+      if (patchImageId) current.source_image_ids.add(patchImageId);
+      fullValues.set(value, current);
     }
   }
-  if (fullValues.size === 1) return true;
-  if (fullValues.size > 1) return false;
+  if (fullValues.size !== 1) {
+    return {
+      verified: false,
+      value: null,
+      confidence: 0,
+      conflict: fullValues.size > 1,
+      candidate_values: [...fullValues.keys()]
+    };
+  }
+  const only = [...fullValues.values()][0];
+  return {
+    verified: true,
+    value: only.value,
+    confidence: only.confidence,
+    patch_count: only.patch_count,
+    source_image_ids: [...only.source_image_ids],
+    conflict: false,
+    candidate_values: [only.value]
+  };
+}
+
+export function serialNumeratorVerificationFromPreingestion(payload = {}, rendezvous = null) {
+  const verification = verifiedSerialNumeratorFromPreingestion(payload);
+  if (verification.verified) return true;
+  if (verification.conflict) return false;
   if (rendezvous?.job_count > 0) return false;
   return null;
 }
@@ -946,6 +979,81 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
     modules: presentation.modules,
     module_order: presentation.module_order
   };
+}
+
+function withVerifiedPreingestionPrintRun(result = {}, payload = {}) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const verification = verifiedSerialNumeratorFromPreingestion(payload);
+  if (!verification.verified || !verification.value) {
+    return {
+      ...result,
+      preingestion_serial_verification: verification
+    };
+  }
+
+  const providerPrintRun = expandPrintRunFields(
+    result.resolved_fields || result.resolved || result.fields || result.raw_provider_fields || {}
+  );
+  const evidenceResult = withRecognitionEvidence(result, null, payload);
+
+  const printRun = expandPrintRunFields({
+    print_run_number: verification.value,
+    serial_number: verification.value
+  });
+  const overlay = {
+    print_run_number: printRun.print_run_number,
+    print_run_numerator: printRun.print_run_numerator,
+    print_run_denominator: printRun.print_run_denominator,
+    numbered_to: printRun.numbered_to,
+    numerical_rarity: printRun.print_run_number,
+    serial_number: printRun.serial_number,
+    serial_denominator: printRun.serial_denominator,
+    expected_serial_denominator: printRun.expected_serial_denominator,
+    one_of_one: printRun.one_of_one === true
+  };
+  const previous = providerPrintRun;
+  const conflict = previous.print_run_number
+    && previous.print_run_number !== printRun.print_run_number
+    ? {
+      field: "serial_number",
+      conflict_type: "OCR_CURRENT_IMAGE_OVERRIDE",
+      conflicting_values: [previous.print_run_number, printRun.print_run_number],
+      severity: "HIGH",
+      resolved: true,
+      resolved_value: printRun.print_run_number,
+      reason: "Unique high-confidence current-image OCR print run overrides the provider reading."
+    }
+    : null;
+  const renderedFields = evidenceResult.rendered_fields && typeof evidenceResult.rendered_fields === "object"
+    ? evidenceResult.rendered_fields
+    : {};
+  const next = {
+    ...evidenceResult,
+    fields: { ...(evidenceResult.fields || {}), ...overlay },
+    resolved: { ...(evidenceResult.resolved || {}), ...overlay },
+    resolved_fields: { ...(evidenceResult.resolved_fields || evidenceResult.resolved || evidenceResult.fields || {}), ...overlay },
+    rendered_fields: {
+      ...renderedFields,
+      ...overlay,
+      fields: { ...(renderedFields.fields || {}), ...overlay }
+    },
+    serial_numerator_verified: true,
+    preingestion_serial_verification: verification,
+    conflict_map: conflict
+      ? [...(Array.isArray(evidenceResult.conflict_map) ? evidenceResult.conflict_map : []), conflict]
+      : evidenceResult.conflict_map,
+    resolution_trace: [
+      ...(Array.isArray(evidenceResult.resolution_trace) ? evidenceResult.resolution_trace : []),
+      {
+        phase: "preingestion_ocr",
+        step: "lock_verified_print_run",
+        input: { provider_value: previous.print_run_number || null },
+        output: { resolved_value: printRun.print_run_number },
+        decision: conflict ? "override_provider_with_current_image_ocr" : "confirm_current_image_print_run"
+      }
+    ]
+  };
+  return finalizeDeterministicPresentation(next, payload);
 }
 
 async function sendListingResult(res, statusCode, result, timingContext, payload = {}) {
@@ -4473,8 +4581,12 @@ async function createOpenAiTitle(payload, selection, {
   mergedResult.preingestion_ocr_rendezvous = preingestionOcrRendezvous;
   mergedResult.preingestion_evidence_refresh = preingestionEvidenceRefresh;
   mergedResult.serial_numerator_verified = initialPayload.serial_numerator_verified;
+  const finalizeProviderResult = (result) => withVerifiedPreingestionPrintRun(
+    withOpenSetReadiness(result, { ...openSetContext, catalogContext, vectorContext }),
+    initialPayload
+  );
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
-  if (fastPathResult) return withOpenSetReadiness(fastPathResult, { ...openSetContext, catalogContext, vectorContext });
+  if (fastPathResult) return finalizeProviderResult(fastPathResult);
   if (assistShadowOnly) {
     const shadowProviderOptions = vectorContext.vector_lazy_skip?.skipped === true
       ? withoutAutomaticVectorAssist(providerOptions)
@@ -4485,7 +4597,7 @@ async function createOpenAiTitle(payload, selection, {
       providerOptions: shadowProviderOptions,
       providerId: visionProviderIds.OPENAI_LEGACY
     });
-    return withOpenSetReadiness(shadowResult, { ...openSetContext, catalogContext, vectorContext });
+    return finalizeProviderResult(shadowResult);
   }
   const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
     mergedResult,
@@ -4499,10 +4611,10 @@ async function createOpenAiTitle(payload, selection, {
       assistShadowOnly
     }
   ));
-  if (singleModelResult) return withOpenSetReadiness(singleModelResult, { ...openSetContext, catalogContext, vectorContext });
+  if (singleModelResult) return finalizeProviderResult(singleModelResult);
 
   const completedResult = await withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures, providerOptions });
-  return withOpenSetReadiness(completedResult, { ...openSetContext, catalogContext, vectorContext });
+  return finalizeProviderResult(completedResult);
 }
 
 function requestedProviderFromPayload(payload = {}) {
@@ -4535,6 +4647,7 @@ export const __listingCopilotTitleTestHooks = {
   scaffoldTitleConflictsWithDirectEvidence,
   shouldDeferVectorUntilProviderObservation,
   shouldSkipVectorForCatalogContext,
+  withVerifiedPreingestionPrintRun,
   withRecognitionEvidence
 };
 
