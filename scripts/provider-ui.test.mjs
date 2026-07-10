@@ -7,7 +7,8 @@ const css = await readFile("app/listing-copilot.css", "utf8");
 const api = await readFile("api/listing-copilot-title.js", "utf8");
 const providerOptionsModule = await readFile(new URL("../lib/listing/pipeline/provider-options.mjs", import.meta.url), "utf8");
 const providerPromptModule = await readFile(new URL("../lib/listing/pipeline/provider-prompt.mjs", import.meta.url), "utf8");
-const apiWithOptions = api + providerOptionsModule + providerPromptModule;
+const fieldNormalizationModule = await readFile(new URL("../lib/listing/pipeline/field-normalization.mjs", import.meta.url), "utf8");
+const apiWithOptions = api + providerOptionsModule + providerPromptModule + fieldNormalizationModule;
 const v4JobStatusApi = await readFile("api/v4/listing-job-status.js", "utf8");
 const providerRegistry = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
 const csmFieldLabels = await readFile("lib/listing/csm/field-labels.mjs", "utf8");
@@ -101,7 +102,7 @@ assert.match(api, /primaryImagesFromImages/, "title API should separate primary 
 assert.match(apiWithOptions, /BGS\/Beckett slab discipline/, "provider prompt should explicitly separate BGS card grade and autograph grade");
 assert.match(apiWithOptions, /never copy card_grade into auto_grade/, "provider prompt must forbid BGS auto-grade scaffolding");
 assert.match(api, /normalizePrintedCardCodeForFields/, "title API should suppress player initials from collector/card/checklist code fields");
-assert.match(api, /Two-letter all-alpha values are usually player initials/, "printed-code guard should document why JS/MJ-style values are rejected");
+assert.match(apiWithOptions, /Two-letter all-alpha values are usually player initials/, "printed-code guard should document why JS/MJ-style values are rejected");
 assert.match(api, /verifyListingImageVerificationToken/, "title API should require server-issued storage verification tokens before signed read URLs");
 assert.match(api, /readListingImageVerificationRecord/, "title API should allow durable server verification records for later reprocessing");
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
