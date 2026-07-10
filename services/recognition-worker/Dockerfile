@@ -32,12 +32,6 @@ RUN printf '%s\n' \
 
 COPY app /app/app
 
-# A production vector worker must never download model weights on its first
-# card request. Bake the exact reviewed revision into the immutable image.
-ENV HF_HOME=/opt/huggingface \
-    TRANSFORMERS_CACHE=/opt/huggingface/transformers
-RUN python -c "from transformers import AutoModel, AutoProcessor; model='google/siglip2-base-patch16-384'; revision='f775b65a79762255128c981547af89addcfe0f88'; AutoProcessor.from_pretrained(model, revision=revision); AutoModel.from_pretrained(model, revision=revision); print('siglip2 snapshot baked')"
-
 # Bake the exact PaddleOCR field-verifier weights and fonts the runtime uses
 # into the image layer. Without this, every cold Cloud Run instance re-downloads
 # the models plus fonts from the upstream (Baidu) CDN on first use — 30-60s of

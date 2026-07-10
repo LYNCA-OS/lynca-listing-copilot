@@ -13,9 +13,13 @@ CPU="${VECTOR_WORKER_CPU:-4}"
 CONCURRENCY="${VECTOR_WORKER_CONTAINER_CONCURRENCY:-2}"
 TIMEOUT="${VECTOR_WORKER_TIMEOUT_SECONDS:-300}"
 MIN_INSTANCES="${VECTOR_WORKER_MIN_INSTANCES:-1}"
-MAX_INSTANCES="${VECTOR_WORKER_MAX_INSTANCES:-10}"
+# Current us-central1 project quota is 20 vCPU / 40 GiB. At 4 vCPU and 8 GiB
+# per instance, five replicas use the full safe regional budget.
+MAX_INSTANCES="${VECTOR_WORKER_MAX_INSTANCES:-5}"
 ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:-osrrujmpxxiefppjfgpd.supabase.co}"
 TOKEN_SECRET_NAME="${RECOGNITION_WORKER_TOKEN_SECRET_NAME:-lynca-recognition-worker-token}"
+IMAGE_TAG="${VECTOR_WORKER_IMAGE_TAG:-$(date -u +%Y%m%d%H%M%S)}"
+IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/cloud-run-source-deploy/${SERVICE_NAME}:${IMAGE_TAG}"
 
 command -v gcloud >/dev/null 2>&1 || {
   echo "gcloud CLI is required." >&2
@@ -36,8 +40,14 @@ gcloud secrets add-iam-policy-binding "$TOKEN_SECRET_NAME" \
   --role roles/secretmanager.secretAccessor \
   --project "$GCP_PROJECT_ID" >/dev/null
 
+gcloud builds submit "$SERVICE_DIR" \
+  --project "$GCP_PROJECT_ID" \
+  --region "$GCP_REGION" \
+  --config "$SERVICE_DIR/cloudbuild-vector.yaml" \
+  --substitutions "_IMAGE_URI=${IMAGE_URI}"
+
 gcloud run deploy "$SERVICE_NAME" \
-  --source "$SERVICE_DIR" \
+  --image "$IMAGE_URI" \
   --project "$GCP_PROJECT_ID" \
   --region "$GCP_REGION" \
   --allow-unauthenticated \
