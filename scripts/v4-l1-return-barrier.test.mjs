@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { backgroundPayloadWithL1ResolvedHint } from "../api/v4/listing-copilot-title.js";
+import {
+  alternateOpenAiKeySlot,
+  backgroundPayloadWithL1ResolvedHint
+} from "../api/v4/listing-copilot-title.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const apiSource = await fs.readFile(path.join(root, "api/v4/listing-copilot-title.js"), "utf8");
@@ -35,6 +38,13 @@ assert.ok(apiSource.includes("v4_gpt5_empty_result_retry_attempted: true"), "GPT
 assert.ok(apiSource.includes("prepareV4PresentationResult({ result: retryResponse.body"), "GPT-5 retry must only replace the first response when the retry can render a title");
 assert.ok(apiSource.includes("callV2WithGpt5EmptyRetry") && apiSource.includes("const v2Response = await callV2WithGpt5EmptyRetry"), "GPT-5 empty-title retry must be shared by direct and background L2 calls");
 assert.ok(apiSource.includes("gpt5_empty_result_retry_success"), "GPT-5 retry outcome must be exposed in provider diagnostics");
+assert.ok(apiSource.includes("alternateOpenAiKeySlot"), "GPT-5 semantic-empty recovery must choose a different configured key when available");
+assert.ok(apiSource.includes("retryPayload.openai_preferred_key_slot = retryKeySlot"), "GPT-5 semantic-empty recovery must pass the alternate key slot into the shared provider path");
+assert.ok(apiSource.includes("gpt5_empty_result_retry_key_slot"), "GPT-5 semantic-empty recovery must expose which key slot handled the retry");
+const twoKeyEnv = { OPENAI_API_KEY: "key-a", OPENAI_API_KEY_2: "key-b" };
+assert.equal(alternateOpenAiKeySlot({ openai_preferred_key_slot: 1 }, twoKeyEnv), 2);
+assert.equal(alternateOpenAiKeySlot({ openai_preferred_key_slot: 2 }, twoKeyEnv), 1);
+assert.equal(alternateOpenAiKeySlot({ openai_preferred_key_slot: 1 }, { OPENAI_API_KEY: "key-a" }), null);
 assert.ok(apiSource.includes("l1_status"), "L1 persistence must update dedicated l1 status fields instead of relying on final-only state");
 assert.ok(apiSource.includes("l2_status"), "L2 persistence must update dedicated l2 status fields");
 assert.ok(apiSource.includes("internal_scout_not_catalog_gap"), "L1 internal scout must not create catalog gap rows");

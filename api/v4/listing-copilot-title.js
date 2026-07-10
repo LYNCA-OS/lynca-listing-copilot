@@ -26,6 +26,7 @@ import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4
 import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { providerModelOverrideFromOptions } from "../../lib/listing/providers/provider-contract.mjs";
 import { isGpt5ResponsesModel } from "../../lib/listing/providers/openai-responses-request.mjs";
+import { openAiKeyPoolSize } from "../../lib/listing/providers/openai-key-pool.mjs";
 
 function titleFromResult(result = {}) {
   return result.final_title || result.rendered_title || result.title || null;
@@ -57,15 +58,24 @@ function shouldRetryGpt5EmptyResult({
 function withGpt5EmptyRetryMetadata(result = {}, {
   attempted = false,
   success = false,
-  retryStatusCode = null
+  retryStatusCode = null,
+  retryKeySlot = null
 } = {}) {
   if (!attempted) return result;
   return {
     ...result,
     gpt5_empty_result_retry_attempted: true,
     gpt5_empty_result_retry_success: success === true,
-    gpt5_empty_result_retry_status_code: retryStatusCode
+    gpt5_empty_result_retry_status_code: retryStatusCode,
+    gpt5_empty_result_retry_key_slot: retryKeySlot
   };
+}
+
+export function alternateOpenAiKeySlot(payload = {}, env = process.env) {
+  const poolSize = openAiKeyPoolSize(env);
+  const currentSlot = Number(payload.openai_preferred_key_slot || payload.provider_key_slot_hint || 0);
+  if (poolSize <= 1 || !Number.isFinite(currentSlot) || currentSlot < 1 || currentSlot > poolSize) return null;
+  return (Math.trunc(currentSlot) % poolSize) + 1;
 }
 
 function isInternalScoutResult(result = {}) {
@@ -315,6 +325,10 @@ function providerRuntimeSummary(result = {}) {
     gpt5_empty_result_retry_attempted: result.gpt5_empty_result_retry_attempted === true,
     gpt5_empty_result_retry_success: result.gpt5_empty_result_retry_success === true,
     gpt5_empty_result_retry_status_code: result.gpt5_empty_result_retry_status_code ?? null,
+    gpt5_empty_result_retry_key_slot: Number(result.gpt5_empty_result_retry_key_slot || 0) || null,
+    failure_reason: isFailedResult(result)
+      ? String(result.reason || result.provider_error_type || result.provider_error_code || "recognition_result_empty").slice(0, 500)
+      : null,
     vector_runtime_status: vectorContext.signal?.status || vectorContext.status || null,
     vector_runtime_status_code: vectorContext.signal?.status_code || null,
     vector_runtime_unavailable_reasons: vectorContext.signal?.unavailable_reasons || [],
@@ -820,6 +834,11 @@ async function callV2WithGpt5EmptyRetry({
       gpt5_empty_result_retry: true
     }
   };
+  const retryKeySlot = alternateOpenAiKeySlot(payload, process.env);
+  if (retryKeySlot) {
+    retryPayload.openai_preferred_key_slot = retryKeySlot;
+    retryPayload.provider_key_slot_hint = retryKeySlot;
+  }
   const retryResponse = await callJsonHandler(v2ListingHandler, {
     method: "POST",
     headers,
@@ -835,7 +854,8 @@ async function callV2WithGpt5EmptyRetry({
       body: withGpt5EmptyRetryMetadata(retryPrepared.result, {
         attempted: true,
         success: true,
-        retryStatusCode: retryResponse.statusCode || null
+        retryStatusCode: retryResponse.statusCode || null,
+        retryKeySlot
       })
     };
   }
@@ -845,7 +865,8 @@ async function callV2WithGpt5EmptyRetry({
     body: withGpt5EmptyRetryMetadata(v2Response.body, {
       attempted: true,
       success: false,
-      retryStatusCode: retryResponse.statusCode || null
+      retryStatusCode: retryResponse.statusCode || null,
+      retryKeySlot
     })
   };
 }

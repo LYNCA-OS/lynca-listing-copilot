@@ -198,7 +198,12 @@ async function runJob(job, req) {
   });
   const latencyMs = Date.now() - started;
   if (response.statusCode < 200 || response.statusCode >= 300 || !response.body?.ok) {
-    throw Object.assign(new Error(response.body?.message || `v4_handler_failed_${response.statusCode}`), {
+    const failureReason = response.body?.message
+      || response.body?.failure_reason
+      || response.body?.provider_result?.failure_reason
+      || response.body?.provider_result?.provider_error_type
+      || `v4_handler_failed_${response.statusCode}`;
+    throw Object.assign(new Error(failureReason), {
       status: response.statusCode,
       body: response.body,
       latency_ms: latencyMs

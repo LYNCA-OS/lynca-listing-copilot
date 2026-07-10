@@ -63,7 +63,7 @@ assert.match(js, /fetch\(`\$\{JOB_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\
 assert.match(js, /processAssetViaQueue\(asset, \{ batchId: recognitionBatchId \}\)/, "batch generation should use one shared production batch identity");
 assert.match(js, /force_l2_only:\s*true/, "frontend queue jobs should start L2 directly unless an A/B explicitly opts into L1");
 assert.match(js, /const \[bundle\] = await Promise\.all/, "hidden L1 and preingestion should run concurrently before the single L2 enqueue");
-assert.match(js, /v4_fast_scout_cache_only:\s*true/, "production prewarm must probe the hidden scout cache without adding a sequential paid model call");
+assert.match(js, /v4_fast_scout_cache_only:\s*false/, "production prewarm must build hidden same-image evidence before the writer requests the final title");
 assert.match(js, /fastScoutPrewarm/, "L2 should reuse a hidden scout cache hit instead of competing with it for provider capacity");
 assert.doesNotMatch(js, /l1Body|l1Outcome|applySpeculativeL1ToPendingResult/, "writer flow must not issue or display a duplicate speculative L1 request");
 assert.match(js, /fetch\(FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend should call the asset-level fast scout prewarm endpoint");

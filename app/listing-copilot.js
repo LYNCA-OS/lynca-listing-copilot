@@ -919,7 +919,7 @@ async function ensureFastScoutPrewarm(asset) {
         },
         credentials: "same-origin",
         body: buildAssetRequestBody(asset, {
-          v4_fast_scout_cache_only: true,
+          v4_fast_scout_cache_only: false,
           provider_options: {
             ...defaultProviderOptions,
             single_model_fast: true,

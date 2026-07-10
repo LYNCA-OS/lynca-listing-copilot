@@ -93,6 +93,8 @@ function writerSafeSessionStatus(session = null, job = null) {
       gpt5_empty_result_retry_attempted: summary.gpt5_empty_result_retry_attempted === true,
       gpt5_empty_result_retry_success: summary.gpt5_empty_result_retry_success === true,
       gpt5_empty_result_retry_status_code: summary.gpt5_empty_result_retry_status_code ?? null,
+      gpt5_empty_result_retry_key_slot: Number(summary.gpt5_empty_result_retry_key_slot || 0) || null,
+      failure_reason: summary.failure_reason || null,
       noncritical_persistence_status: summary.noncritical_persistence_status || null,
       writer_ready_persistence_mode: summary.writer_ready_persistence_mode || null,
       v4_l2_timing: summary.v4_l2_timing || null
