@@ -129,6 +129,7 @@ assert.equal(summary.initial_evidence_count, 1);
 // enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
+assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v2:")));
 const optInJobs = buildPreingestionWorkerJobs({ bundle, enableEmbeddings: true, enableQuality: true });
 assert.ok(optInJobs.some((job) => job.job_type === "visual_embedding"));
 assert.ok(optInJobs.some((job) => job.job_type === "image_quality_deep_analysis"));
@@ -193,6 +194,25 @@ assert.equal(titlePayload.images.length, 3);
 assert.equal(titlePayload.images[0].storageVerified, true);
 assert.equal(titlePayload.preprocessing_summary, undefined);
 assert.equal(titlePayload.preingestion_summary.bundle_id, bundle.bundle_id);
+
+const signedImages = [{ signed_url: "https://signed.test/front", image_id: "front" }];
+const refreshPayload = {
+  preingestion_bundle_id: bundle.bundle_id,
+  images: signedImages,
+  preingestion_evidence_patches: []
+};
+const refreshed = await __listingCopilotTitleTestHooks.refreshPreIngestionEvidencePatches(refreshPayload, {
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify([{ ...bundle, evidence_patches: [patch] }])
+  })
+});
+assert.equal(refreshed.refreshed, true);
+assert.equal(refreshed.patch_count, 1);
+assert.equal(refreshed.added_patch_count, 1);
+assert.equal(refreshPayload.preingestion_evidence_patches[0].value, "2/3");
+assert.equal(refreshPayload.images, signedImages, "evidence refresh must not replace provider-ready signed images");
 
 const hardEvidencePayload = {
   maxTitleLength: 80,

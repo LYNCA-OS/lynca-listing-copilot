@@ -118,6 +118,12 @@ globalThis.fetch = async (url, init = {}) => {
   }
 
   if (parsed.pathname.endsWith("/preingestion_bundles")) {
+    if (!init.method) {
+      if (parsed.searchParams.get("select") === "bundle_id") {
+        return jsonResponse(bundleWrite ? [{ bundle_id: bundleWrite.bundle_id }] : []);
+      }
+      return jsonResponse(bundleWrite ? [bundleWrite] : []);
+    }
     bundleWrite = JSON.parse(init.body);
     return jsonResponse([bundleWrite], 201);
   }
@@ -127,7 +133,7 @@ globalThis.fetch = async (url, init = {}) => {
     return {
       ok: true,
       status: 201,
-      text: async () => ""
+      text: async () => JSON.stringify(jobsWrite)
     };
   }
 
@@ -144,7 +150,16 @@ const result = await callApi({
       source_image_id: "front",
       confidence: 0.8
     }
-  }
+  },
+  evidence_patches: [{
+    field: "serial_number",
+    value: "2/3",
+    raw_text: "2/3",
+    source_type: "OCR",
+    source_image_id: "front",
+    crop_id: "serial-front",
+    confidence: 0.94
+  }]
 });
 
 assert.equal(result.statusCode, 200);
@@ -157,11 +172,21 @@ assert.ok(result.body.worker_jobs_enqueued >= 2);
 assert.equal(bundleWrite.asset_id, "asset-pre");
 assert.equal(bundleWrite.images.length, 2);
 assert.equal(bundleWrite.initial_evidence.print_run_candidate.value, "#/3");
+assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
 assert.equal(JSON.stringify(bundleWrite).includes("read-token"), false, "signed read URLs must not be written to Supabase");
 assert.ok(Array.isArray(jobsWrite));
 // Consumerless job types default OFF; only OCR crop jobs are enqueued.
 assert.ok(jobsWrite.every((job) => job.job_type === "ocr_crop_verification"));
 assert.equal(new Set(jobsWrite.map((job) => job.job_key)).size, jobsWrite.length);
+
+// Re-ingestion refreshes crops and images but must retain computed OCR evidence.
+const secondResult = await callApi({
+  asset_id: "asset-pre",
+  requested_fields: ["serial_number", "grade_label"]
+});
+assert.equal(secondResult.statusCode, 200);
+assert.equal(bundleWrite.evidence_patches.length, 1);
+assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
 
 const missing = await callApi({ asset_id: "" });
 assert.equal(missing.statusCode, 400);

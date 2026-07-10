@@ -14,6 +14,7 @@ import {
   normalizePreingestionImageRecord,
   preingestionStatuses,
   readDerivedImageAssetsByAssetId,
+  readPreIngestionBundle,
   readPreIngestionBundleIdByAsset,
   readVerifiedImageRecordsByAssetId,
   summarizePreIngestionBundle,
@@ -177,6 +178,15 @@ export default async function handler(req, res) {
       env: process.env,
       fetchImpl: globalThis.fetch
     });
+    const existingBundle = existingBundleId
+      ? await readPreIngestionBundle({
+        bundleId: existingBundleId,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      }).then((result) => result.bundle || null).catch(() => null)
+      : null;
+    const incomingInitialEvidence = payload.initial_evidence || payload.initialEvidence || {};
+    const incomingEvidencePatches = payload.evidence_patches || payload.evidencePatches || [];
     const bundle = createPreIngestionBundle({
       assetId,
       bundleId: existingBundleId,
@@ -184,8 +194,17 @@ export default async function handler(req, res) {
       status: signed.errors.length ? preingestionStatuses.PARTIAL : preingestionStatuses.READY,
       images,
       derivedImages,
-      initialEvidence: payload.initial_evidence || payload.initialEvidence || {},
-      evidencePatches: payload.evidence_patches || payload.evidencePatches || [],
+      // Re-ingestion refreshes images/crops but must never erase already
+      // computed evidence. Old cards therefore reuse OCR instead of paying to
+      // rediscover the same serial/grade on every title request.
+      initialEvidence: {
+        ...(existingBundle?.initial_evidence || {}),
+        ...incomingInitialEvidence
+      },
+      evidencePatches: [
+        ...(Array.isArray(existingBundle?.evidence_patches) ? existingBundle.evidence_patches : []),
+        ...(Array.isArray(incomingEvidencePatches) ? incomingEvidencePatches : [])
+      ],
       qualitySummary,
       cropPlan
     });
@@ -221,6 +240,7 @@ export default async function handler(req, res) {
       waitUntil(processQueuedPreingestionOcrJobs({
         assetId,
         bundleId: durableBundle.bundle_id,
+        limit: 32,
         env: process.env,
         fetchImpl: globalThis.fetch
       }).catch(() => {}));
@@ -232,13 +252,15 @@ export default async function handler(req, res) {
       bundle_status: durableBundle.status,
       saved: Boolean(writeResult.saved),
       worker_jobs_enqueued: enqueueResult.enqueued || 0,
+      worker_jobs_attempted: enqueueResult.attempted || jobs.length,
       signed_read_url_count: signed.signedReadUrlCount,
       signed_read_url_error_count: signed.errors.length,
       preprocessing_summary: {
         ...summarizePreIngestionBundle(durableBundle),
         signed_read_url_count: signed.signedReadUrlCount,
         signed_read_url_error_count: signed.errors.length,
-        worker_jobs_enqueued: enqueueResult.enqueued || 0
+        worker_jobs_enqueued: enqueueResult.enqueued || 0,
+        worker_jobs_attempted: enqueueResult.attempted || jobs.length
       }
     });
   } catch (error) {

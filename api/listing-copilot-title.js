@@ -29,7 +29,8 @@ import {
 import { openAiRequestContextFromPayload, runTimedProviderCall } from "../lib/listing/pipeline/provider-stage.mjs";
 import {
   applyPreIngestionBundleToPayload,
-  preingestionEvidenceDocumentFromPayload
+  preingestionEvidenceDocumentFromPayload,
+  refreshPreIngestionEvidencePatches
 } from "../lib/listing/pipeline/preingestion-evidence.mjs";
 import {
   defaultProviderOptionsFromEnv,
@@ -4372,6 +4373,17 @@ async function createOpenAiTitle(payload, selection, {
       timingContext
     });
   }
+  const preingestionEvidenceRefresh = await refreshPreIngestionEvidencePatches(initialPayload, {
+    timingContext,
+    fetchImpl: globalThis.fetch
+  }).catch((error) => ({
+    refreshed: false,
+    reason: String(error?.message || "preingestion_evidence_refresh_failed").slice(0, 160),
+    patch_count: Array.isArray(initialPayload.preingestion_evidence_patches)
+      ? initialPayload.preingestion_evidence_patches.length
+      : 0,
+    added_patch_count: 0
+  }));
   const mergedResult = withVisualFeatures(
     withVectorCandidateContext(
       withCatalogCandidateContext(
@@ -4382,6 +4394,7 @@ async function createOpenAiTitle(payload, selection, {
     ),
     vectorContext.visualFeatures
   );
+  mergedResult.preingestion_evidence_refresh = preingestionEvidenceRefresh;
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return withOpenSetReadiness(fastPathResult, { ...openSetContext, catalogContext, vectorContext });
   if (assistShadowOnly) {
@@ -4426,6 +4439,7 @@ export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
   buildInitialProviderPrompt,
   applyPreIngestionBundleToPayload,
+  refreshPreIngestionEvidencePatches,
   applySafeRetrievalTitleAssist,
   boundedPayloadImagesFromImages,
   buildExactAnchorFastLaneShadow,

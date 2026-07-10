@@ -222,4 +222,56 @@ assert.equal(serialPatch.provenance.job_key, "ocr:bundle-1:crop-1");
   assert.equal(jobStatusWrites.at(-1), "failed");
 }
 
+// --- all crop jobs are drained with bounded parallel OCR ---
+{
+  const jobs = Array.from({ length: 5 }, (_, index) => ({
+    ...sampleJob,
+    job_id: `parallel-job-${index}`,
+    job_key: `ocr:ocr-crop-v2:bundle-1:parallel-crop-${index}`,
+    payload: {
+      crop: {
+        ...sampleJob.payload.crop,
+        crop_metadata: {
+          ...sampleJob.payload.crop.crop_metadata,
+          crop_id: `parallel-crop-${index}`
+        }
+      }
+    }
+  }));
+  let active = 0;
+  let peakActive = 0;
+  const result = await processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env: { ...env, PREINGESTION_OCR_CONCURRENCY: "3" },
+    fetchImpl: async (url, init = {}) => {
+      const target = String(url);
+      if (!init.method && target.includes("preingestion_jobs")) return jsonResponse(jobs);
+      if (init.method === "PATCH" && target.includes("preingestion_jobs")) {
+        return jsonResponse([{ status: JSON.parse(init.body).status || "running", attempts: 1 }]);
+      }
+      if (!init.method && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", evidence_patches: [] }]);
+      }
+      if (init.method === "PATCH" && target.includes("preingestion_bundles")) return jsonResponse(null);
+      throw new Error(`unexpected fetch: ${target}`);
+    },
+    paddleClient: {
+      configured: true,
+      verifyCrop: async () => {
+        active += 1;
+        peakActive = Math.max(peakActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return ocrResult;
+      }
+    },
+    signedReadUrlFor: async () => "https://signed.test/front.jpg"
+  });
+  assert.equal(result.claimed, 5);
+  assert.equal(result.succeeded, 5);
+  assert.equal(result.failed, 0);
+  assert.equal(result.concurrency, 3);
+  assert.equal(peakActive, 3);
+}
+
 console.log("preingestion-ocr-worker.test.mjs OK");
