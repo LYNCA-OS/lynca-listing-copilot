@@ -37,7 +37,7 @@ const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
-// L2 生产 job 提前入队开始计时；L1-only 直连调用产出 exact-anchor 秒级标题。
+// L1 scout 只在后台为 L2 提供可选缓存证据，永不阻塞 L2，也不直接展示给写手。
 // 点击“开始生成”变成“展示已就绪的结果”，而不是“从零启动识别”。
 const ENABLE_SPECULATIVE_RECOGNITION = true;
 const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
@@ -1005,18 +1005,15 @@ async function prepareAssetInBackground(asset, runId) {
       await ensureAssetImagesUploaded(asset);
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "fast_scout_prewarming";
-      const fastScoutPrewarm = ensureFastScoutPrewarm(asset);
+      void ensureFastScoutPrewarm(asset);
 
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
-      const [bundle] = await Promise.all([
-        ensurePreingestionBundle(asset),
-        fastScoutPrewarm
-      ]);
+      const bundle = await ensurePreingestionBundle(asset);
 
       if (runId === state.backgroundPreparationRunId) {
-        // 证据包 id 已经落在 asset 上，这里点火的识别请求会带上它；
-        // 不阻塞 ready 状态，写手提前点击也只是回落到常规路径。
+        // 证据包 id 已经落在 asset 上，立即让 L2 入队。Fast scout 若先完成，
+        // L2 会复用同图缓存；若未完成，L2 直接继续，绝不为 L1 等待。
         void ensureSpeculativeRecognition(asset, runId);
       }
 
@@ -1090,60 +1087,41 @@ async function ensureSpeculativeRecognition(asset, runId) {
       enqueueJobPayload.v4_force_l2_direct = true;
       enqueueJobPayload.client_speculative = true;
 
-      const l1Body = JSON.parse(requestBody);
-      l1Body.v4_queue_l1_only = true;
-      l1Body.client_speculative = true;
-
       const batchId = createClientBatchId();
-      const [enqueueOutcome, l1Outcome] = await Promise.allSettled([
-        fetch(JOB_ENQUEUE_API_ENDPOINT, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify({
-            batch_id: batchId,
-            tenant_id: batchId,
-            priority: 100,
-            jobs: [{
-              asset_id: asset.id,
-              force_l2_only: true,
-              create_l1_job: false,
-              create_l2_job: true,
-              payload: enqueueJobPayload
-            }]
-          })
-        }).then(async (response) => {
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok || payload.ok === false) {
-            throw new Error(payload.message || `speculative enqueue ${response.status}`);
-          }
-          return payload;
-        }),
-        fetch(TITLE_API_ENDPOINT, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify(l1Body)
-        }).then(async (response) => {
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(payload?.message || `speculative L1 ${response.status}`);
-          return payload;
+      const enqueuePayload = await fetch(JOB_ENQUEUE_API_ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          batch_id: batchId,
+          tenant_id: batchId,
+          priority: 100,
+          jobs: [{
+            asset_id: asset.id,
+            force_l2_only: true,
+            create_l1_job: false,
+            create_l2_job: true,
+            payload: enqueueJobPayload
+          }]
         })
-      ]);
-
-      const enqueuePayload = enqueueOutcome.status === "fulfilled" ? enqueueOutcome.value : null;
+      }).then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.message || `speculative enqueue ${response.status}`);
+        }
+        return payload;
+      });
       const job = enqueuePayload
         ? ((enqueuePayload.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
           || (enqueuePayload.jobs || []).find((entry) => entry?.ok)
           || null)
         : null;
       return {
-        ok: Boolean((job && job.job_id && job.recognition_session_id) || l1Outcome.status === "fulfilled"),
+        ok: Boolean(job && job.job_id && job.recognition_session_id),
         run_id: runId,
         request_body: requestBody,
         enqueue_payload: enqueuePayload,
         job: job && job.job_id && job.recognition_session_id ? job : null,
-        l1: l1Outcome.status === "fulfilled" ? l1Outcome.value : null,
         speculative_ms: Math.round(performance.now() - startedAt)
       };
     } catch (error) {
@@ -1179,45 +1157,6 @@ async function settleSpeculativeRecognition(asset, maxWaitMs = SPECULATIVE_SETTL
     };
   }
   return { used: true, wait_ms: Math.round(performance.now() - startedAt), ...result };
-}
-
-function applySpeculativeL1ToPendingResult(pending, l1) {
-  if (!l1) return pending;
-  if (v4PayloadWriterTitlePending(l1)) {
-    // 标题仍在生成（barrier 生效），但 scout 骨架字段已经可以给写手看：
-    // 等待卡从“黑箱转圈”变成“字段逐步点亮”。字段仅为暂定，L2 完成后覆盖。
-    const scoutResolved = l1.l1_internal_scout?.resolved_fields
-      || l1.l1_internal_scout?.resolved
-      || {};
-    if (Object.keys(scoutResolved).length) {
-      pending.resolved = scoutResolved;
-      pending.resolved_fields = scoutResolved;
-      pending.fields = scoutResolved;
-      pending.generated_resolved_fields = scoutResolved;
-      pending.provisional_fields = true;
-      pending.feedbackMessage = "字段已初步识别（暂定），一段式标题生成中…";
-    }
-    return pending;
-  }
-  const l1Title = String(l1.writer_draft?.title || l1.final_title || l1.title || "").trim();
-  if (!l1Title) return pending;
-  const resolved = l1.resolved_fields || l1.resolved || l1.fields || {};
-  pending.title = l1Title;
-  pending.final_title = l1Title;
-  pending.rendered_title = l1Title;
-  pending.generatedTitle = l1Title;
-  pending.correctedTitle = l1Title;
-  pending.writerTitlePending = false;
-  pending.title_stage = l1.title_stage || pending.title_stage;
-  pending.title_render_source = l1.title_render_source || "";
-  pending.exact_anchor_finalize = l1.exact_anchor_finalize || null;
-  pending.resolved = resolved;
-  pending.resolved_fields = resolved;
-  pending.fields = resolved;
-  pending.generated_resolved_fields = resolved;
-  pending.confidence = "HIGH";
-  pending.feedbackMessage = "首屏标题已就绪（目录精确锚定）；云端一段式标题完成后会自动覆盖。";
-  return pending;
 }
 
 function startBackgroundPreparation(reason = "file_ready") {
@@ -2808,8 +2747,8 @@ async function processAssetViaQueue(asset, options = {}) {
 
   const speculative = await settleSpeculativeRecognition(asset);
   if (speculative.used && speculative.job) {
-    // 识别在图片就绪时已经开始：直接挂到已在跑的 L2 job 上，
-    // 若 L1 exact-anchor 已定稿则立即展示首屏标题。
+    // 识别在图片就绪时已经开始：直接挂到已在跑的 L2 job 上。
+    // L1 始终隐藏，只作为 L2 可选的同图证据缓存。
     asset.clientTiming.client_speculative_used = true;
     asset.clientTiming.client_speculative_ms = Math.round(Number(speculative.speculative_ms || 0));
     asset.clientTiming.client_speculative_wait_ms = Math.round(Number(speculative.wait_ms || 0));
@@ -2824,7 +2763,7 @@ async function processAssetViaQueue(asset, options = {}) {
       client_speculative_wait_ms: asset.clientTiming.client_speculative_wait_ms,
       client_total_ms: clientTotalMs
     });
-    return applySpeculativeL1ToPendingResult(pending, speculative.l1);
+    return pending;
   }
 
   const requestPrepareStartedAt = performance.now();

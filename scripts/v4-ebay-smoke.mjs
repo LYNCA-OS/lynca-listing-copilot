@@ -841,6 +841,24 @@ async function runOne({
     verificationCache
   });
   const payload = payloadForItem(item, index, images, { forceL2Direct, modelOverride, enableL1 });
+  const prewarmPromise = prewarm
+    ? postJson({
+      baseUrl,
+      path: "/api/v4/fast-scout-prewarm",
+      cookie,
+      payload,
+      requestTimeoutMs
+    }).catch((error) => ({
+      ok: false,
+      http_status: null,
+      latency_ms: null,
+      data: {
+        ok: false,
+        prewarm_status: "REQUEST_FAILED",
+        message: String(error?.message || error || "fast_scout_prewarm_failed").slice(0, 240)
+      }
+    }))
+    : Promise.resolve(null);
   let preingestionResult = null;
   if (usePreingestion) {
     try {
@@ -877,20 +895,11 @@ async function runOne({
   const fallbackSealed = [...sealedLabels.values()].find((row) => row.key === sealedKey) || null;
   const label = sealed || fallbackSealed || {};
   const sellerTitle = cleanText(label.title || item.corrected_title || item.canonical_title || "");
-  let prewarmResult = null;
-  if (prewarm) {
-    prewarmResult = await postJson({
-      baseUrl,
-      path: "/api/v4/fast-scout-prewarm",
-      cookie,
-      payload,
-      requestTimeoutMs
-    });
-  }
+  let prewarmResult = queueMode && speculative ? null : await prewarmPromise;
 
   if (queueMode && speculative) {
     // 复刻新前端“识别前移”行为：图片/证据包就绪（=preingest 完成）的时刻 T0，
-    // 同时发 L1-only 直连调用（exact-anchor 快车道）+ L2 生产 job 入队；
+    // L2 生产 job 立即入队；更早启动的隐藏 fast scout 继续并行，绝不阻塞 L2；
     // 模拟写手思考 thinkMs 后在 T1“点击”，此后测的才是写手感知延迟。
     const batchId = `smoke-v4-spec-${Date.now()}-${index}`;
     const queuedPayload = {
@@ -902,47 +911,25 @@ async function runOne({
       v4_force_l2_direct: true,
       client_speculative: true
     };
-    const l1Payload = {
-      ...payload,
-      v4_queue_l1_only: true,
-      v4_force_l2_direct: false,
-      disable_fast_scout_l1: false,
-      force_l2_only: false,
-      client_speculative: true
-    };
     const t0 = Date.now();
-    const [enqueueOutcome, l1Outcome] = await Promise.allSettled([
-      postJson({
-        baseUrl,
-        path: "/api/v4/listing-job-enqueue",
-        cookie,
-        payload: {
-          batch_id: batchId,
-          tenant_id: batchId,
-          priority: 100,
-          jobs: [{
-            asset_id: id,
-            force_l2_only: true,
-            create_l1_job: false,
-            create_l2_job: true,
-            payload: queuedPayload
-          }]
-        },
-        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
-      }),
-      postJson({
-        baseUrl,
-        path: "/api/v4/listing-copilot-title",
-        cookie,
-        payload: l1Payload,
-        requestTimeoutMs: Math.min(requestTimeoutMs, 60000)
-      })
-    ]);
-    const enqueue = enqueueOutcome.status === "fulfilled" ? enqueueOutcome.value : { ok: false, http_status: null, latency_ms: null, data: { error: String(enqueueOutcome.reason?.message || enqueueOutcome.reason || "enqueue_failed") } };
-    const l1Response = l1Outcome.status === "fulfilled" ? l1Outcome.value : { ok: false, http_status: null, latency_ms: null, data: null };
-    const l1Data = l1Response.data || {};
-    const speculativeL1Title = cleanText(l1Data.writer_draft?.title || l1Data.final_title || l1Data.title || "");
-    const fastLaneHit = Boolean(speculativeL1Title) && l1Data.title_render_source === "exact_anchor_catalog_finalized";
+    const enqueue = await postJson({
+      baseUrl,
+      path: "/api/v4/listing-job-enqueue",
+      cookie,
+      payload: {
+        batch_id: batchId,
+        tenant_id: batchId,
+        priority: 100,
+        jobs: [{
+          asset_id: id,
+          force_l2_only: true,
+          create_l1_job: false,
+          create_l2_job: true,
+          payload: queuedPayload
+        }]
+      },
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+    });
     const speculativeSetupMs = Date.now() - t0;
 
     // 写手思考时间：L2 在后台跑，OCR 证据 patch 持续回灌 bundle。
@@ -966,13 +953,16 @@ async function runOne({
     const l2DoneBeforeClick = Boolean(l2.ready) && l2.polls <= 1;
     const finalTitle = cleanText(l2.summary?.title || "");
     const finalScore = scoreTitles(sellerTitle, finalTitle);
-    const speculativeL1Score = fastLaneHit ? scoreTitles(sellerTitle, speculativeL1Title) : null;
     const finalProviderDiagnostics = objectOrNull(l2.summary?.provider_diagnostics)
       || providerDiagnosticsFromSummary(l2.summary || {});
     const writerReady = Boolean(l2.ready || finalTitle);
-    // 感知延迟：点击时若快车道标题已可见则为 0；否则等到 L2 就绪为止。
+    prewarmResult = await prewarmPromise;
+    const fastLaneHit = l2.summary?.v4_l2_timing?.exact_anchor_scout_status === "CACHE_HIT"
+      && Number(l2.summary?.v4_l2_timing?.exact_anchor_finalize_ms || 0) > 0
+      && Number(l2.summary?.worker_processing_ms || 0) < 5000;
+    // 感知延迟：点击时若最终 L2 已可见则为 0；否则等到 L2 就绪为止。
     // 未就绪时置 undefined（而非 null），避免 quantile 把 Number(null)=0 计入。
-    const perceivedTitleMs = fastLaneHit ? 0 : (l2.ready ? l2ElapsedFromClickMs : undefined);
+    const perceivedTitleMs = l2DoneBeforeClick ? 0 : (l2.ready ? l2ElapsedFromClickMs : undefined);
     return compactObject({
       asset_id: id,
       sealed_label_key: sealedKey || label.key || null,
@@ -994,24 +984,24 @@ async function runOne({
       job_id: job.job_id || null,
       http_status: enqueue.http_status,
       ok: writerReady,
-      l1_ok: l1Response.http_status === 200,
+      l1_ok: prewarmResult?.data?.ok === true,
       writer_ready: writerReady,
       error: enqueue.ok ? null : enqueue.data,
-      l1_wall_latency_ms: l1Response.latency_ms ?? null,
+      l1_wall_latency_ms: prewarmResult?.latency_ms ?? null,
       speculative_setup_ms: speculativeSetupMs,
-      speculative_l1_http_status: l1Response.http_status ?? null,
-      speculative_l1_title: speculativeL1Title,
-      speculative_l1_title_render_source: l1Data.title_render_source || null,
-      speculative_l1_title_stage: l1Data.title_stage || null,
+      speculative_l1_http_status: prewarmResult?.http_status ?? null,
+      speculative_l1_title: "",
+      speculative_l1_title_render_source: null,
+      speculative_l1_title_stage: "L1_INTERNAL_SCOUT",
       speculative_l1_fast_lane_hit: fastLaneHit,
-      speculative_l1_exact_anchor: l1Data.exact_anchor_finalize || null,
-      speculative_l1_scoring: speculativeL1Score,
+      speculative_l1_exact_anchor: null,
+      speculative_l1_scoring: null,
       l2_done_before_click: l2DoneBeforeClick,
       perceived_title_ms: perceivedTitleMs,
       route: l2.summary?.route || null,
-      title_stage: fastLaneHit ? "SPEC_FAST_LANE" : "V4_QUEUE_L2",
+      title_stage: fastLaneHit ? "SPEC_L2_EXACT_ANCHOR" : "V4_QUEUE_L2",
       recognition_session_id: job.recognition_session_id || l2.summary?.recognition_session_id || null,
-      l1_title: speculativeL1Title,
+      l1_title: "",
       l2_ready: Boolean(l2.ready),
       l2_poll_count: l2.polls,
       l2_poll_elapsed_ms: l2.elapsed_ms ?? null,
@@ -1020,12 +1010,58 @@ async function runOne({
       worker_processing_ms: l2.summary?.worker_processing_ms ?? null,
       time_to_l2_ready_ms: l2.summary?.time_to_l2_ready_ms ?? null,
       l2_status: l2.summary,
+      l2_candidate_debug: l2.candidateDebug || {},
       final_title: finalTitle,
       provider_diagnostics: finalProviderDiagnostics,
       v4_l2_timing: l2.summary?.v4_l2_timing || null,
+      fast_scout_cache_hit: fastLaneHit,
+      fast_scout_cache_status: l2.summary?.v4_l2_timing?.exact_anchor_scout_status || null,
+      fast_scout_prewarmer_used: prewarmResult?.data?.ok === true,
+      fast_scout_blocking_call_used: false,
+      prewarm_status: prewarmResult?.data?.prewarm_status || null,
+      prewarm_http_status: prewarmResult?.http_status ?? null,
+      prewarm_latency_ms: prewarmResult?.latency_ms ?? null,
+      prewarm_cache_hit: prewarmResult?.data?.fast_scout_cache_hit ?? null,
+      prewarm_cache_status: prewarmResult?.data?.fast_scout_cache_status || null,
       final_scoring: finalScore,
+      l2_catalog_raw_candidate_count: l2.summary?.catalog_raw_candidate_count ?? null,
+      l2_catalog_approved_candidate_count: l2.summary?.catalog_approved_candidate_count ?? null,
+      l2_catalog_conflict_blocked_count: l2.summary?.catalog_conflict_blocked_count ?? null,
       l2_catalog_prompt_candidate_count: l2.summary?.catalog_prompt_candidate_count ?? null,
-      l2_vector_prompt_candidate_count: l2.summary?.vector_prompt_candidate_count ?? null
+      l2_catalog_evidence_support_field_count: l2.summary?.catalog_evidence_support_field_count ?? null,
+      l2_catalog_participation_level: l2.summary?.catalog_participation_level ?? null,
+      l2_vector_raw_candidate_count: l2.summary?.vector_raw_candidate_count ?? null,
+      l2_vector_approved_candidate_count: l2.summary?.vector_approved_candidate_count ?? null,
+      l2_vector_conflict_blocked_count: l2.summary?.vector_conflict_blocked_count ?? null,
+      l2_vector_prompt_candidate_count: l2.summary?.vector_prompt_candidate_count ?? null,
+      l2_vector_evidence_support_field_count: l2.summary?.vector_evidence_support_field_count ?? null,
+      l2_vector_participation_level: l2.summary?.vector_participation_level ?? null,
+      vector_runtime_status: l2.summary?.vector_runtime_status ?? null,
+      vector_runtime_status_code: l2.summary?.vector_runtime_status_code ?? null,
+      vector_runtime_unavailable_reasons: l2.summary?.vector_runtime_unavailable_reasons ?? null,
+      vector_worker_status: l2.summary?.vector_worker_status ?? null,
+      vector_worker_reason: l2.summary?.vector_worker_reason ?? null,
+      vector_worker_feature_count: l2.summary?.vector_worker_feature_count ?? null,
+      vector_worker_latency_ms: l2.summary?.vector_worker_latency_ms ?? null,
+      input_tokens: finalProviderDiagnostics.input_tokens,
+      output_tokens: finalProviderDiagnostics.output_tokens,
+      total_tokens: finalProviderDiagnostics.total_tokens,
+      provider_latency_ms: finalProviderDiagnostics.provider_latency_ms,
+      provider_key_pool_size: finalProviderDiagnostics.provider_key_pool_size,
+      provider_key_slot: finalProviderDiagnostics.provider_key_slot,
+      provider_key_source: finalProviderDiagnostics.provider_key_source,
+      provider_key_rotation_attempted: finalProviderDiagnostics.provider_key_rotation_attempted,
+      provider_key_rotation_attempts: finalProviderDiagnostics.provider_key_rotation_attempts,
+      response_status: finalProviderDiagnostics.response_status,
+      incomplete_reason: finalProviderDiagnostics.incomplete_reason,
+      output_cap: finalProviderDiagnostics.output_cap,
+      output_utilization: finalProviderDiagnostics.output_utilization,
+      "x-ratelimit-limit-requests": finalProviderDiagnostics["x-ratelimit-limit-requests"],
+      "x-ratelimit-remaining-requests": finalProviderDiagnostics["x-ratelimit-remaining-requests"],
+      "x-ratelimit-limit-tokens": finalProviderDiagnostics["x-ratelimit-limit-tokens"],
+      "x-ratelimit-remaining-tokens": finalProviderDiagnostics["x-ratelimit-remaining-tokens"],
+      "x-ratelimit-reset-requests": finalProviderDiagnostics["x-ratelimit-reset-requests"],
+      "x-ratelimit-reset-tokens": finalProviderDiagnostics["x-ratelimit-reset-tokens"]
     });
   }
 

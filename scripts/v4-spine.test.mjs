@@ -30,9 +30,15 @@ assert.equal(smokeNumberArg(["node", "smoke", "--offset", "0"], "--offset", 12),
 assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--limit", 10), 10);
 
 const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
+const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /scheduleV4Background\(persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must not block writer-ready L2 by default.");
+assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start hidden L1 prewarm independently.");
+assert.match(v4SmokeSource, /let prewarmResult = queueMode && speculative \? null : await prewarmPromise/, "speculative smoke must not await hidden L1 before L2 enqueue.");
+assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
+assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
+assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");
 
 const route = planV4RecognitionRoute({
   preingestion_bundle_id: "bundle-1",
