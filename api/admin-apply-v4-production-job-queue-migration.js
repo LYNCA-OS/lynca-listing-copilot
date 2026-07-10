@@ -254,12 +254,13 @@ async function readMigrationSql() {
     } catch (error) {
       if (path.includes("20260707133128_v4_queue_interactive_background_lanes")) {
         chunks.push(inlineInteractiveBackgroundLaneMigrationSql);
-      } else if (error?.code !== "ENOENT") {
+      } else if (error?.code === "ENOENT") {
+        throw new Error(`required_migration_not_bundled:${path.split("/").pop()}`);
+      } else {
         throw error;
       }
     }
   }
-  if (!chunks.length) chunks.push(inlineInteractiveBackgroundLaneMigrationSql);
   return chunks.join("\n\n");
 }
 

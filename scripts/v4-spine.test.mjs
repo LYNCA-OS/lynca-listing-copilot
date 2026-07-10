@@ -32,6 +32,7 @@ assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--lim
 const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
 const fastScoutPrewarmApiSource = await readFile("api/v4/fast-scout-prewarm.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
+const vercelConfigSource = await readFile("vercel.json", "utf8");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /scheduleV4Background\(persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must not block writer-ready L2 by default.");
@@ -44,6 +45,8 @@ assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_token
 assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
 assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");
 assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-only misses must return a stable non-error response.");
+assert.match(vercelConfigSource, /admin-apply-v4-production-job-queue-migration\.js/, "the production migration function must have an explicit Vercel bundle rule.");
+assert.match(vercelConfigSource, /supabase\/migrations\/\*\.sql/, "all required SQL migrations must ship with the admin migration function.");
 
 const route = planV4RecognitionRoute({
   preingestion_bundle_id: "bundle-1",
