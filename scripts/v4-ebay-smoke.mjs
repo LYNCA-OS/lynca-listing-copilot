@@ -959,7 +959,6 @@ async function runOne({
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
       || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
       || {};
-    const l1Job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FAST_SCOUT_DRAFT") || null;
 
     // T1 = “点击”时刻：此刻起才是写手感知延迟。
     const clickAt = Date.now();
@@ -1528,6 +1527,7 @@ async function enqueueSpeculativeItem({
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
       || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
       || {};
+    const l1Job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FAST_SCOUT_DRAFT") || null;
     if (!enqueue.ok || !job.job_id) {
       throw new Error(`queue_enqueue_failed:${enqueue.http_status}:${cleanText(enqueue.data?.message || enqueue.data?.error).slice(0, 160)}`);
     }

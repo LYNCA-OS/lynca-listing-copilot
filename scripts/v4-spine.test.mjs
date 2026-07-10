@@ -49,6 +49,7 @@ assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_token
 assert.match(v4SmokeSource, /recognition_phase_loaded_sealed_labels: false/, "blind smoke must not load sealed seller titles during recognition.");
 assert.match(v4SmokeSource, /predictions_frozen_before_scoring: true/, "blind smoke must freeze predictions before local weak-label scoring.");
 assert.match(v4SmokeSource, /pollBatchJobs/, "large production smoke must use one shared batch poller instead of one poll loop per card.");
+assert.match(v4SmokeSource, /async function enqueueSpeculativeItem[\s\S]*const l1Job =[\s\S]*l1_job: l1Job/, "batch enqueue must retain the paired L1 job without referencing an out-of-scope variable.");
 assert.match(v4SmokeSource, /concurrency: Math\.max\(1, Math\.trunc\(numberArg\(argv, "--concurrency", 2\)\)\)/, "smoke preparation and enqueue must default to the validated concurrency of two.");
 assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
 assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");
