@@ -51,6 +51,13 @@ requests — the hangs die before reaching a function. Treat a first-run
 all-timeout gate immediately after a deploy as suspect infrastructure, not
 code: rerun once after ~10 minutes before investigating.
 
+Final diagnosis (2026-07-10): the hangs are LOCAL-EGRESS network flake
+on the dev machine's path to the Vercel edge — the same gate run from
+GitHub Actions (`smoke-gate` workflow, workflow_dispatch) had zero
+timeouts while local runs failed 0/3 twice in the same hour. The
+Actions workflow is now the canonical gate; local smokes are for
+iteration only.
+
 ## Tracked baselines (C100 first-10 slice, policy-fair)
 
 | Date | Config | avg | pass@0.72 | perceived p50 | Notes |
