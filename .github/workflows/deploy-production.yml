@@ -26,16 +26,28 @@ jobs:
         run: |
           npm install --global vercel@55 --no-audit --no-fund
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel deploy --prod --yes --token="$VERCEL_TOKEN"
+          deployed=false
+          for attempt in 1 2 3; do
+            if vercel deploy --prod --yes --token="$VERCEL_TOKEN"; then
+              deployed=true
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep "$((attempt * 10))"
+            fi
+          done
+          test "$deployed" = true
       - name: Verify production alias and V4 runtime
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
           METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: |
           for attempt in $(seq 1 18); do
-            if curl -fsS --max-time 30 https://listing.lyncafei.team/api/v4/health -o /tmp/v4-health.json; then
+            if curl -fsS --max-time 30 https://listing.lyncafei.team/api/v4/health -o /tmp/v4-health.json \
+              && node -e 'const h=require("/tmp/v4-health.json"); process.exit(h.deployment?.git_commit_sha === process.env.GITHUB_SHA ? 0 : 1)'; then
               break
             fi
+            rm -f /tmp/v4-health.json
             sleep 10
           done
           test -s /tmp/v4-health.json
@@ -54,6 +66,7 @@ jobs:
           const vision = components.get('vision_provider') || {};
           const checks = {
             v4_ready: health.ready === true,
+            deployed_commit_matches: health.deployment?.git_commit_sha === process.env.GITHUB_SHA,
             queue_configured: health.production_queue?.configured === true,
             cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
             model_ready: vision.details?.model_id === 'gpt-5-mini',
