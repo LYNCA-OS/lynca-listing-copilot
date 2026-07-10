@@ -2963,6 +2963,7 @@ function withVectorCandidateContext(result = {}, context = {}) {
         status: context.worker.status || null,
         reason: context.worker.reason || "",
         latency_ms: context.worker.latency_ms ?? null,
+        attempt_count: context.worker.attempt_count ?? null,
         feature_count: Array.isArray(context.worker.features) ? context.worker.features.length : 0
       }
       : null
@@ -4301,7 +4302,11 @@ async function createOpenAiTitle(payload, selection, {
     ? waitForPreingestionOcrEvidence({
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: preingestionBundleId,
-      timeoutMs: positiveIntegerFromEnv(process.env, "PREINGESTION_OCR_RENDEZVOUS_TIMEOUT_MS", 30_000),
+      // OCR starts during pre-ingestion and runs in parallel with the provider.
+      // Do not hold a provider capacity slot for a full extra 30 seconds when
+      // no verified hard-text evidence has arrived; late patches remain stored
+      // for the next request and the title safely omits an unverified numerator.
+      timeoutMs: positiveIntegerFromEnv(process.env, "PREINGESTION_OCR_RENDEZVOUS_TIMEOUT_MS", 22_000),
       pollMs: positiveIntegerFromEnv(process.env, "PREINGESTION_OCR_RENDEZVOUS_POLL_MS", 400),
       env: process.env,
       fetchImpl: globalThis.fetch,

@@ -1343,6 +1343,43 @@ assert.equal(worker.features[0].content_sha256, "a".repeat(64));
 assert.equal(workerCalls[0].body.images[0].role, "front_global");
 assert.doesNotMatch(JSON.stringify(worker), /token=secret|worker-token/);
 
+let transientWorkerCalls = 0;
+const recoveredWorker = await embedImagesWithVectorWorker({
+  images: [{
+    image_id: "front",
+    role: "image_1_original",
+    signedUrl: "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret"
+  }],
+  env: {
+    ...baseVectorEnv,
+    VECTOR_WORKER_URL: "https://worker.test",
+    VECTOR_WORKER_TOKEN: "worker-token",
+    VECTOR_WORKER_MAX_ATTEMPTS: "2",
+    VECTOR_WORKER_RETRY_BASE_MS: "1"
+  },
+  fetchImpl: async () => {
+    transientWorkerCalls += 1;
+    if (transientWorkerCalls === 1) return new Response("temporarily unavailable", { status: 503 });
+    return new Response(JSON.stringify({
+      request_id: "req-retry",
+      status: "completed",
+      model_id: "google/siglip2-base-patch16-384",
+      model_revision: defaultVisualEmbeddingModelRevision,
+      preprocessing_version: "card-rectification-v1",
+      latency_ms: 10,
+      embeddings: [{
+        image_id: "front",
+        role: "front_global",
+        embedding: [1, ...Array.from({ length: 767 }, () => 0)],
+        dimensions: 768
+      }]
+    }), { status: 200 });
+  }
+});
+assert.equal(recoveredWorker.status, "OK");
+assert.equal(recoveredWorker.attempt_count, 2);
+assert.equal(transientWorkerCalls, 2, "a transient 503 should be retried exactly once");
+
 const provider = visualVectorProvider({
   env: baseVectorEnv,
   fetchImpl: async (url, options) => {

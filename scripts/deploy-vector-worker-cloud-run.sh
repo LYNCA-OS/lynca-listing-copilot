@@ -6,15 +6,16 @@ SERVICE_DIR="$ROOT_DIR/services/recognition-worker"
 
 : "${GCP_PROJECT_ID:?GCP_PROJECT_ID is required.}"
 
-GCP_REGION="${GCP_REGION:-us-central1}"
+GCP_REGION="${VECTOR_WORKER_REGION:-${GCP_REGION:-us-east1}}"
 SERVICE_NAME="${VECTOR_WORKER_SERVICE_NAME:-lynca-vector-worker}"
 MEMORY="${VECTOR_WORKER_MEMORY:-8Gi}"
 CPU="${VECTOR_WORKER_CPU:-4}"
 CONCURRENCY="${VECTOR_WORKER_CONTAINER_CONCURRENCY:-2}"
 TIMEOUT="${VECTOR_WORKER_TIMEOUT_SECONDS:-300}"
-MIN_INSTANCES="${VECTOR_WORKER_MIN_INSTANCES:-1}"
-# Current us-central1 project quota is 20 vCPU / 40 GiB. At 4 vCPU and 8 GiB
-# per instance, five replicas use the full safe regional budget.
+MIN_INSTANCES="${VECTOR_WORKER_MIN_INSTANCES:-2}"
+# Keep vectors in a separate region from PaddleOCR so neither model can starve
+# the other of regional Cloud Run CPU. At 4 vCPU and 8 GiB per instance, five
+# replicas use the full 20 vCPU / 40 GiB regional budget.
 MAX_INSTANCES="${VECTOR_WORKER_MAX_INSTANCES:-5}"
 ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:-osrrujmpxxiefppjfgpd.supabase.co}"
 TOKEN_SECRET_NAME="${RECOGNITION_WORKER_TOKEN_SECRET_NAME:-lynca-recognition-worker-token}"

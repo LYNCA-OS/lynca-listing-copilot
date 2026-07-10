@@ -391,6 +391,12 @@ const candidateContext = buildCandidateContextSummary({
       prompt_candidate_count: 0,
       prompt_candidate_ids: []
     },
+    worker: {
+      status: "OK",
+      latency_ms: 12,
+      attempt_count: 2,
+      features: [{ image_id: "front" }]
+    },
     promptPacket: false
   },
   env: {
@@ -406,6 +412,7 @@ assert.deepEqual(candidateContext.prompt_candidate_ids, ["catalog-ok"]);
 assert.equal(candidateContext.vector.raw_candidate_count, 2);
 assert.equal(candidateContext.vector.prompt_candidate_count, 0);
 assert.equal(candidateContext.vector.conflict_blocked_count, 2);
+assert.equal(candidateContext.vector.worker_attempt_count, 2);
 assert.equal(candidateContext.invariants.raw_vector_candidates_are_shadow_until_prompt_safe, true);
 
 console.log("advanced retrieval tests passed");

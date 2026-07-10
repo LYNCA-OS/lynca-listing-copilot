@@ -336,6 +336,7 @@ function providerRuntimeSummary(result = {}) {
     vector_worker_reason: vectorContext.worker_reason || "",
     vector_worker_feature_count: vectorContext.worker_feature_count ?? null,
     vector_worker_latency_ms: vectorContext.worker_latency_ms ?? null,
+    vector_worker_attempt_count: vectorContext.worker_attempt_count ?? null,
     vector_query_embedding_role: vectorProviderMetadata.query_embedding_role || "",
     vector_role_agnostic_fallback_used: vectorProviderMetadata.role_agnostic_fallback_used === true,
     vector_role_agnostic_fallback_reason: vectorProviderMetadata.role_agnostic_fallback_reason || "",

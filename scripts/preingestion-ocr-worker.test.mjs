@@ -10,6 +10,7 @@ import {
   requeueRetryableFailedPreingestionOcrJobs,
   waitForPreingestionOcrEvidence
 } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
+import { preingestionOcrJobVersion } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 
 const env = {
   SUPABASE_URL: "https://supabase.test",
@@ -131,9 +132,9 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     fetchImpl: async (url, init = {}) => {
       if (!init.method) {
         return jsonResponse([
-          { job_id: "retry-current", job_key: "ocr:ocr-crop-v3:bundle-1:crop-1", attempts: 1, last_error: "PaddleOCR worker request timed out." },
-          { job_id: "old-version", job_key: "ocr:ocr-crop-v2:bundle-1:crop-1", attempts: 1, last_error: "PaddleOCR worker request timed out." },
-          { job_id: "permanent", job_key: "ocr:ocr-crop-v3:bundle-1:crop-2", attempts: 1, last_error: "crop source_object_path missing" }
+          { job_id: "retry-current", job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-1`, attempts: 1, last_error: "PaddleOCR worker request timed out." },
+          { job_id: "old-version", job_key: "ocr:ocr-crop-v3:bundle-1:crop-1", attempts: 1, last_error: "PaddleOCR worker request timed out." },
+          { job_id: "permanent", job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-2`, attempts: 1, last_error: "crop source_object_path missing" }
         ]);
       }
       updates.push(String(url));
@@ -197,13 +198,14 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       const target = String(url);
       if (target.includes("preingestion_jobs")) {
         return jsonResponse([
-          { job_id: "a", status: "succeeded", attempts: 1, job_key: "ocr:a" },
-          { job_id: "b", status: "failed", attempts: 1, job_key: "ocr:b", last_error: "no text" }
+          { job_id: "a", status: "succeeded", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:a` },
+          { job_id: "b", status: "failed", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:b`, last_error: "no text" },
+          { job_id: "historical", status: "failed", attempts: 1, job_key: "ocr:ocr-crop-v3:bundle-1:old", last_error: "old timeout" }
         ]);
       }
       return jsonResponse([{
         bundle_id: "bundle-1",
-        evidence_patches: [{ field: "serial_number", value: "30/99" }]
+        evidence_patches: [{ field: "serial_number", value: "30/99", source_type: "OCR", confidence: 0.95 }]
       }]);
     }
   });
@@ -212,6 +214,8 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(state.status_counts.succeeded, 1);
   assert.equal(state.status_counts.failed, 1);
   assert.equal(state.serial_patch_count, 1);
+  assert.equal(state.historical_job_count, 1);
+  assert.equal(state.verified_serial_ready, true);
 }
 
 // --- rendezvous waits through a running state and returns the completed patch state ---
@@ -227,15 +231,16 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       const target = String(url);
       if (target.includes("preingestion_jobs")) {
         jobReads += 1;
-        return jsonResponse([{ job_id: "a", status: jobReads === 1 ? "running" : "succeeded", attempts: 1, job_key: "ocr:a" }]);
+        return jsonResponse([{ job_id: "a", status: jobReads === 1 ? "running" : "succeeded", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:a` }]);
       }
       return jsonResponse([{
         bundle_id: "bundle-1",
-        evidence_patches: jobReads === 1 ? [] : [{ field: "serial_number", value: "30/99" }]
+        evidence_patches: jobReads === 1 ? [] : [{ field: "serial_number", value: "30/99", source_type: "OCR", confidence: 0.95 }]
       }]);
     }
   });
-  assert.equal(state.status, "TERMINAL");
+  assert.equal(state.status, "EVIDENCE_READY");
+  assert.equal(state.evidence_ready, true);
   assert.equal(state.serial_patch_count, 1);
   assert.ok(state.state_reads >= 2);
 }
