@@ -39,6 +39,18 @@ Credentials come from `METAVERSE_USERNAME` / `METAVERSE_PASSWORD` env (no
 defaults in code; local values in `.secrets/local.env`, gitignored).
 `--model X` overrides the production default per request.
 
+## Operational quirk: post-deploy propagation window
+
+For several minutes after `vercel deploy --prod` switches the alias, smoke
+requests from Node fetch intermittently hang for the full client timeout
+(observed repeatedly on 2026-07-09: first gate after deploy fails 0/N with
+request_timeout at image verification; an identical rerun >=5-15 minutes
+later passes, twice with the day's best scores). Direct curl probes during
+and after the window are sub-second, and server logs show no failed
+requests — the hangs die before reaching a function. Treat a first-run
+all-timeout gate immediately after a deploy as suspect infrastructure, not
+code: rerun once after ~10 minutes before investigating.
+
 ## Tracked baselines (C100 first-10 slice, policy-fair)
 
 | Date | Config | avg | pass@0.72 | perceived p50 | Notes |

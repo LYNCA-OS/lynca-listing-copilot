@@ -1,0 +1,60 @@
+name: smoke-gate
+
+# Production gate smoke, run from GitHub's network. Local-network egress to
+# the Vercel edge proved flaky (see docs/EVAL_REGISTRY.md "post-deploy
+# propagation window" — later isolated to local-egress hangs); running the
+# gate from a runner removes that variable entirely.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Cards to run"
+        default: "3"
+      model:
+        description: "Model override"
+        default: "gpt-5-mini"
+      think_ms:
+        description: "Simulated writer think time (ms)"
+        default: "5000"
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run gate smoke
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          node scripts/v4-ebay-smoke.mjs \
+            --limit "${{ inputs.limit }}" \
+            --queue --speculative --use-preingestion --prewarm \
+            --model "${{ inputs.model }}" \
+            --think-ms "${{ inputs.think_ms }}" \
+            --l2-wait-ms 120000 \
+            --out /tmp/gate-report.json
+      - name: Summarize
+        run: |
+          node -e '
+            const r = require("/tmp/gate-report.json");
+            const s = r.summary;
+            const ok = s.ok_count, n = s.attempted_count;
+            console.log(`ok=${ok}/${n} policy_avg=${s.final_accuracy_proxy.policy_fair_token_recall_avg} fast_lane=${s.speculative_fast_lane_hit_count} perceived_p50=${s.perceived_title_p50_ms}ms`);
+            for (const row of r.results) {
+              console.log(`  ${row.asset_id.slice(-8)} ok=${row.ok} policy=${row.final_scoring?.policy_fair_token_recall ?? "n/a"} perceived=${row.perceived_title_ms ?? "n/a"} err=${row.error ?? "-"}`);
+            }
+            if (ok < n) process.exit(1);
+          '
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-report
+          path: /tmp/gate-report.json

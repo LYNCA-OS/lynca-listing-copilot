@@ -17,6 +17,10 @@ __pycache__/
 .venv-worker/
 artifacts/
 data/eval/
+# eval reference datasets are needed by the Actions smoke gate (no secrets inside)
+!data/eval/ebay-reference/
+!data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json
+!data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl
 services/recognition-worker/models/*
 !services/recognition-worker/models/README.md
 !services/recognition-worker/models/*.json
