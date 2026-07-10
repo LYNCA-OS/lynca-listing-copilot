@@ -185,18 +185,21 @@ const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
 const defaultCatalogFastLaneBudgetMs = 120;
+const confirmedOcrSerialConfidence = 0.86;
 
 function configuredMaxPayloadImages(env = process.env) {
   return Math.max(2, normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages);
 }
 
-function serialNumeratorVerificationFromPreingestion(payload = {}, rendezvous = null) {
+export function serialNumeratorVerificationFromPreingestion(payload = {}, rendezvous = null) {
   const patches = Array.isArray(payload.preingestion_evidence_patches)
     ? payload.preingestion_evidence_patches
     : [];
   const fullValues = new Set();
   for (const patch of patches) {
     if (!["print_run_number", "serial_number", "numerical_rarity"].includes(String(patch?.field || "").trim())) continue;
+    if (String(patch?.source_type || "").trim().toUpperCase() !== "OCR") continue;
+    if (!Number.isFinite(Number(patch?.confidence)) || Number(patch.confidence) < confirmedOcrSerialConfidence) continue;
     const expanded = expandPrintRunFields({ print_run_number: patch.value, serial_number: patch.value });
     if (expanded.print_run_numerator && expanded.print_run_denominator) {
       fullValues.add(`${expanded.print_run_numerator}/${expanded.print_run_denominator}`);

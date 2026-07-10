@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { serialNumeratorVerificationFromPreingestion } from "../api/listing-copilot-title.js";
 import {
   createEvidenceField,
   createVisionSource,
@@ -58,6 +59,22 @@ const directAwaitingOcrVerification = renderListingPresentation({
 });
 assert.match(directAwaitingOcrVerification.final_title, /#\/50/);
 assert.doesNotMatch(directAwaitingOcrVerification.final_title, /31\/50/);
+
+const ocrSerialPatch = (value, confidence) => ({
+  field: "print_run_number",
+  value,
+  source_type: "OCR",
+  confidence
+});
+assert.equal(serialNumeratorVerificationFromPreingestion({
+  preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.93)]
+}, { job_count: 1 }), true);
+assert.equal(serialNumeratorVerificationFromPreingestion({
+  preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.72)]
+}, { job_count: 1 }), false);
+assert.equal(serialNumeratorVerificationFromPreingestion({
+  preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.93), ocrSerialPatch("37/50", 0.94)]
+}, { job_count: 1 }), false);
 
 const denominatorOnly = renderListingPresentation({
   resolved: {
