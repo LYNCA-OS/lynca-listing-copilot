@@ -46,13 +46,22 @@ drift (golden prompt snapshot test before step 1).
 | 3 | 666c6ad | flags, text, evidence-merge, provider-stage | 6,982 |
 | 4 | 6b02ccb | preingestion-evidence | 6,702 |
 | 5 | 6fe2dec | provider-options | 6,565 |
-| 6 | (prompt) | provider-prompt (bit-identical snapshot) | **6,160** |
+| 6 | (prompt) | provider-prompt (bit-identical snapshot) | 6,160 |
+| 7 | (fields) | field-normalization (26 call sites; runtime tendril extractHighValueInsert caught+moved) | 5,859 |
+| 8a | (decor) | result-decoration quartet | **5,784** |
 
 Every slice: copy-then-delegate, 97 offline suites, cloud smoke-gate
 (GitHub Actions `smoke-gate` workflow — canonical since local egress proved
-flaky). Next target: the result-shaping cluster (normalizeAiResult /
-withEvidenceCompatibility / withRequestMetadata + the normalizeFields
-family, 26 call sites — take the full closure in one slice).
+flaky). Gate protocol update: dispatch the cloud smoke-gate >=7 minutes after the
+alias switch — first-minutes gates hit the propagation window even from
+runners. Next target (8b): normalizeAiResult + withEvidenceCompatibility +
+the calibration/sanitize thicket (calibrateConfidence, sanitizeResultText,
+moveLeadingGradeToEnd, repairOrphanAutoGradeSuffix,
+suppressReviewOnlyParallelFields, normalizeUnresolved) whose closure reaches
+into title-grammar helpers (applySportsTitleGrammar, serialLimitForTitle,
+stripBackgroundTerms, yearConflict...) — recon the full closure before
+cutting; likely lands as pipeline/result-calibration.mjs +
+pipeline/title-grammar.mjs in one coordinated slice.
 
 ## R4 — Catalog entity resolution
 
