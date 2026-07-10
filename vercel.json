@@ -26,7 +26,13 @@
     "api/listing-copilot-title.js": {
       "maxDuration": 300
     },
+    "api/listing-preingest.js": {
+      "maxDuration": 300
+    },
     "api/v4/listing-copilot-title.js": {
+      "maxDuration": 300
+    },
+    "api/v4/listing-preingest-worker.js": {
       "maxDuration": 300
     },
     "api/v4/listing-job-worker.js": {
