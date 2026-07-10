@@ -52,6 +52,15 @@ upload/storage verification
     HTTP request per card.
 11. A failed hidden L1 is terminal and immediately hands off to its paired L2;
     it cannot retry alongside L2 and duplicate provider work.
+12. Multi-card enqueue persists session stubs and jobs in bulk. If PostgREST
+    rejects a bulk write, the queue degrades to bounded row writes instead of
+    losing the whole batch.
+13. Every Supabase read, write, patch, and RPC has an explicit timeout. A
+    degraded database returns a classified queue error and never leaves the
+    browser waiting on an unbounded HTTP request.
+14. Paid blind evaluation freezes every prediction and its SHA-256 before the
+    sealed marketplace labels are loaded. One shared batch poller observes the
+    production queue exactly as the writer UI does.
 
 ## Expected Effects
 

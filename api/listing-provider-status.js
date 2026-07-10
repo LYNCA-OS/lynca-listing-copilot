@@ -58,6 +58,8 @@ function sendJson(res, statusCode, payload) {
 function workflowReadinessCacheKey(env = process.env) {
   const relevantKeys = [
     "OPENAI_API_KEY",
+    "OPENAI_API_KEY_POOL",
+    "OPENAI_API_KEYS",
     "OPENAI_LISTING_MODEL",
     "ENABLE_GPT41_PROVIDER",
     "ENABLE_GPT41_EMERGENCY_PROVIDER",
@@ -98,7 +100,8 @@ function workflowReadinessCacheKey(env = process.env) {
     "EBAY_CLIENT_ID",
     "EBAY_CLIENT_SECRET",
     "EBAY_MARKETPLACE_ID",
-    "EBAY_SELLER_USERNAME"
+    "EBAY_SELLER_USERNAME",
+    ...Array.from({ length: 50 }, (_, index) => `OPENAI_API_KEY_${index + 1}`)
   ];
   return crypto
     .createHash("sha256")

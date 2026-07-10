@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
@@ -59,6 +60,7 @@ async function readSealedLabels(path) {
     try {
       const row = JSON.parse(line);
       if (row.case_id) byCaseId.set(row.case_id, row);
+      if (row.key) byCaseId.set(row.key, row);
     } catch {
       // Ignore bad sealed-label rows; smoke should still run.
     }
@@ -351,6 +353,20 @@ async function preingestItem({
 
 function delay(ms) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, Math.max(0, Number(ms) || 0)));
+}
+
+async function mapWithConcurrency(items = [], concurrency = 1, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(items.length, Math.max(1, concurrency)) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 const openAiRateLimitHeaderNames = Object.freeze([
@@ -817,7 +833,6 @@ function cacheStatusFromResponse(data = {}) {
 async function runOne({
   item,
   index,
-  sealedLabels,
   baseUrl,
   cookie,
   prewarm,
@@ -897,10 +912,9 @@ async function runOne({
     }
   }
   const sealedKey = item.sealed_eval_label_ref?.key || "";
-  const sealed = sealedLabels.get(id.replace(/^ebay_image_only_/, "")) || sealedLabels.get(item.source_record?.case_id) || null;
-  const fallbackSealed = [...sealedLabels.values()].find((row) => row.key === sealedKey) || null;
-  const label = sealed || fallbackSealed || {};
-  const sellerTitle = cleanText(label.title || item.corrected_title || item.canonical_title || "");
+  // The recognition phase never loads or reads the sealed seller title. Local
+  // scoring is attached only after every prediction has been frozen.
+  const sellerTitle = "";
   const prewarmResult = await prewarmPromise;
 
   if (queueMode && speculative) {
@@ -945,6 +959,7 @@ async function runOne({
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
       || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
       || {};
+    const l1Job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FAST_SCOUT_DRAFT") || null;
 
     // T1 = “点击”时刻：此刻起才是写手感知延迟。
     const clickAt = Date.now();
@@ -970,7 +985,7 @@ async function runOne({
     const perceivedTitleMs = l2DoneBeforeClick ? 0 : (l2.ready ? l2ElapsedFromClickMs : undefined);
     return compactObject({
       asset_id: id,
-      sealed_label_key: sealedKey || label.key || null,
+      sealed_label_key: sealedKey || null,
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: Boolean(sellerTitle),
       seller_title: sellerTitle,
@@ -1117,7 +1132,7 @@ async function runOne({
     const writerReady = Boolean(l2.ready || finalTitle);
     return compactObject({
       asset_id: id,
-      sealed_label_key: sealedKey || label.key || null,
+      sealed_label_key: sealedKey || null,
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: Boolean(sellerTitle),
       seller_title: sellerTitle,
@@ -1219,7 +1234,7 @@ async function runOne({
       "x-ratelimit-reset-tokens": finalProviderDiagnostics["x-ratelimit-reset-tokens"],
       l1_scoring: scoreTitles(sellerTitle, ""),
       final_scoring: finalScore,
-      item_web_url: label.item_web_url || null
+      item_web_url: null
     });
   }
 
@@ -1304,7 +1319,7 @@ async function runOne({
   const writerReady = Boolean(l2.ready || cleanText(finalTitle));
   return compactObject({
     asset_id: id,
-    sealed_label_key: sealedKey || label.key || null,
+    sealed_label_key: sealedKey || null,
     seller_title_visible_to_model: false,
     seller_title_used_for_local_eval_only: Boolean(sellerTitle),
     seller_title: sellerTitle,
@@ -1412,11 +1427,377 @@ async function runOne({
     "x-ratelimit-reset-tokens": finalProviderDiagnostics["x-ratelimit-reset-tokens"],
     l1_scoring: l1Score,
     final_scoring: finalScore,
-    item_web_url: label.item_web_url || null
+    item_web_url: null
   });
 }
 
-function summarize(results = []) {
+async function enqueueSpeculativeItem({
+  item,
+  index,
+  batchId,
+  baseUrl,
+  cookie,
+  prewarm,
+  prewarmCacheOnly,
+  modelOverride,
+  enableL1,
+  usePreingestion,
+  requestTimeoutMs,
+  verificationCache
+}) {
+  const id = candidateId(item, index);
+  const startedAt = Date.now();
+  try {
+    const images = await verifiedItemImages({
+      item,
+      index,
+      baseUrl,
+      cookie,
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
+      verificationCache
+    });
+    const payload = payloadForItem(item, index, images, { modelOverride, enableL1 });
+    const prewarmPromise = prewarm
+      ? postJson({
+        baseUrl,
+        path: "/api/v4/fast-scout-prewarm",
+        cookie,
+        payload: { ...payload, v4_fast_scout_cache_only: prewarmCacheOnly },
+        requestTimeoutMs
+      }).catch((error) => ({
+        ok: false,
+        http_status: null,
+        latency_ms: null,
+        data: { ok: false, prewarm_status: "REQUEST_FAILED", message: cleanText(error?.message).slice(0, 240) }
+      }))
+      : Promise.resolve(null);
+
+    let preingestionResult = null;
+    if (usePreingestion) {
+      try {
+        preingestionResult = await preingestItem({
+          baseUrl,
+          cookie,
+          assetId: id,
+          images,
+          requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+        });
+        if (preingestionResult.ok && preingestionResult.bundle_id) {
+          payload.preingestion_bundle_id = preingestionResult.bundle_id;
+          payload.preingestionBundleId = preingestionResult.bundle_id;
+          payload.preingestion_bundle_status = preingestionResult.bundle_status;
+          payload.preingestion_summary = preingestionResult.preprocessing_summary;
+        }
+      } catch (error) {
+        preingestionResult = {
+          ok: false,
+          bundle_status: "preingestion_request_failed",
+          error: { message: cleanText(error?.message || error).slice(0, 240) }
+        };
+      }
+    }
+    const prewarmResult = await prewarmPromise;
+    const queuedPayload = {
+      ...payload,
+      force_l2_only: false,
+      create_l1_job: true,
+      create_l2_job: true,
+      disable_fast_scout_l1: false,
+      v4_force_l2_direct: false,
+      client_speculative: true
+    };
+    const enqueueStartedAt = Date.now();
+    const enqueue = await postJson({
+      baseUrl,
+      path: "/api/v4/listing-job-enqueue",
+      cookie,
+      payload: {
+        batch_id: batchId,
+        tenant_id: batchId,
+        priority: 100,
+        jobs: [{
+          asset_id: id,
+          force_l2_only: false,
+          create_l1_job: true,
+          create_l2_job: true,
+          payload: queuedPayload
+        }]
+      },
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+    });
+    const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
+      || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
+      || {};
+    if (!enqueue.ok || !job.job_id) {
+      throw new Error(`queue_enqueue_failed:${enqueue.http_status}:${cleanText(enqueue.data?.message || enqueue.data?.error).slice(0, 160)}`);
+    }
+    return {
+      asset_id: id,
+      index,
+      item,
+      batch_id: batchId,
+      job,
+      l1_job: l1Job,
+      enqueue,
+      enqueue_latency_ms: Date.now() - enqueueStartedAt,
+      preparation_latency_ms: Date.now() - startedAt,
+      preingestion: preingestionResult,
+      prewarm: prewarmResult,
+      error: null
+    };
+  } catch (error) {
+    return {
+      asset_id: id,
+      index,
+      item,
+      batch_id: batchId,
+      job: null,
+      enqueue: null,
+      enqueue_latency_ms: null,
+      preparation_latency_ms: Date.now() - startedAt,
+      preingestion: null,
+      prewarm: null,
+      error: cleanText(error?.message || error || "batch_enqueue_failed").slice(0, 240)
+    };
+  }
+}
+
+async function pollBatchJobs({
+  baseUrl,
+  cookie,
+  batchId,
+  expectedJobIds = [],
+  waitMs,
+  requestTimeoutMs
+}) {
+  const expected = new Set(expectedJobIds.filter(Boolean));
+  const jobsById = new Map();
+  const startedAt = Date.now();
+  let polls = 0;
+  let last = null;
+  let fatalError = null;
+  let consecutiveErrors = 0;
+  let maxConsecutiveErrors = 0;
+  const httpStatusBreakdown = {};
+  while (Date.now() - startedAt <= waitMs) {
+    polls += 1;
+    last = await getJson({
+      baseUrl,
+      path: `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`,
+      cookie,
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+    });
+    const httpStatus = String(last.http_status ?? "unknown");
+    httpStatusBreakdown[httpStatus] = (httpStatusBreakdown[httpStatus] || 0) + 1;
+    if (!last.ok) {
+      consecutiveErrors += 1;
+      maxConsecutiveErrors = Math.max(maxConsecutiveErrors, consecutiveErrors);
+      const status = Number(last.http_status || 0);
+      if (status >= 400 && status < 500 && status !== 429) {
+        fatalError = `batch_status_http_${status}`;
+        break;
+      }
+    } else {
+      consecutiveErrors = 0;
+    }
+    for (const job of last.data?.jobs || []) {
+      if (job?.job_id) jobsById.set(job.job_id, job);
+    }
+    const complete = [...expected].every((jobId) => {
+      const job = jobsById.get(jobId);
+      return job && (job.status === "L2_READY" || terminalJobStatus(job.status) || job.display_status === "FINAL_READY");
+    });
+    if (complete) break;
+    const elapsed = Date.now() - startedAt;
+    await delay(elapsed < 30_000 ? 800 : elapsed < 180_000 ? 1500 : 2500);
+  }
+  return {
+    jobsById,
+    polls,
+    elapsed_ms: Date.now() - startedAt,
+    completed_count: [...expected].filter((jobId) => {
+      const job = jobsById.get(jobId);
+      return job && (job.status === "L2_READY" || terminalJobStatus(job.status) || job.display_status === "FINAL_READY");
+    }).length,
+    expected_count: expected.size,
+    http_status_breakdown: httpStatusBreakdown,
+    max_consecutive_errors: maxConsecutiveErrors,
+    fatal_error: fatalError,
+    last
+  };
+}
+
+function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
+  if (prepared.error || !prepared.job?.job_id) {
+    return {
+      asset_id: prepared.asset_id,
+      ok: false,
+      writer_ready: false,
+      error: prepared.error || "missing_final_job",
+      final_title: "",
+      l1_title: "",
+      queue_mode: true,
+      speculative_mode: true,
+      batch_poll_mode: true,
+      preparation_latency_ms: prepared.preparation_latency_ms ?? null,
+      enqueue_latency_ms: prepared.enqueue_latency_ms ?? null
+    };
+  }
+  const jobRow = batchPoll.jobsById.get(prepared.job.job_id) || null;
+  const l1JobRow = prepared.l1_job?.job_id
+    ? batchPoll.jobsById.get(prepared.l1_job.job_id) || null
+    : null;
+  const summary = jobL2Summary({ jobs: jobRow ? [jobRow] : [] });
+  const providerDiagnostics = objectOrNull(summary.provider_diagnostics)
+    || providerDiagnosticsFromSummary(summary);
+  const finalTitle = cleanText(summary.title || "");
+  const ready = summaryHasVisibleL2Title(summary);
+  const timeToReady = numberOrNull(summary.time_to_l2_ready_ms);
+  const fastLaneHit = summary.v4_l2_timing?.exact_anchor_scout_status === "CACHE_HIT"
+    && Number(summary.v4_l2_timing?.exact_anchor_finalize_ms || 0) > 0
+    && Number(summary.worker_processing_ms || 0) < 5000;
+  const preingestion = prepared.preingestion || {};
+  const prewarm = prepared.prewarm || {};
+  return compactObject({
+    asset_id: prepared.asset_id,
+    sealed_label_key: prepared.item?.sealed_eval_label_ref?.key || null,
+    seller_title_visible_to_model: false,
+    seller_title_used_for_local_eval_only: false,
+    seller_title: "",
+    image_count: itemImages(prepared.item).length,
+    preingestion_used: Boolean(prepared.preingestion),
+    preingestion_ok: preingestion.ok ?? null,
+    preingestion_http_status: preingestion.http_status ?? null,
+    preingestion_latency_ms: preingestion.latency_ms ?? null,
+    preingestion_bundle_id: preingestion.bundle_id || null,
+    preingestion_bundle_status: preingestion.bundle_status || null,
+    preingestion_worker_jobs_enqueued: preingestion.worker_jobs_enqueued ?? null,
+    preingestion_error: preingestion.error ? JSON.stringify(preingestion.error).slice(0, 500) : null,
+    queue_mode: true,
+    speculative_mode: true,
+    batch_poll_mode: true,
+    batch_id: prepared.batch_id,
+    job_id: prepared.job.job_id,
+    recognition_session_id: prepared.job.recognition_session_id || summary.recognition_session_id || null,
+    http_status: prepared.enqueue?.http_status ?? null,
+    ok: ready,
+    l1_ok: l1JobRow ? l1JobRow.status === "L1_READY" : null,
+    l1_job_id: prepared.l1_job?.job_id || null,
+    l1_job_status: l1JobRow?.status || null,
+    writer_ready: ready,
+    error: ready ? null : (jobRow?.error || batchPoll.fatal_error || summary.job_status || "batch_poll_timeout"),
+    preparation_latency_ms: prepared.preparation_latency_ms ?? null,
+    enqueue_latency_ms: prepared.enqueue_latency_ms ?? null,
+    enqueue_persistence_mode: prepared.enqueue?.data?.persistence_mode || null,
+    l1_wall_latency_ms: prewarm.latency_ms ?? null,
+    l2_ready: ready,
+    l2_poll_count: batchPoll.polls,
+    l2_poll_elapsed_ms: batchPoll.elapsed_ms,
+    time_to_writer_ready_ms: timeToReady,
+    perceived_title_ms: timeToReady === null ? undefined : Math.max(0, timeToReady - Math.max(0, thinkMs)),
+    l2_done_before_click: timeToReady !== null ? timeToReady <= Math.max(0, thinkMs) : false,
+    worker_queue_wait_ms: summary.worker_queue_wait_ms ?? null,
+    paired_l1_wait_ms: summary.paired_l1_wait_ms ?? null,
+    scheduler_queue_wait_ms: summary.scheduler_queue_wait_ms ?? null,
+    worker_processing_ms: summary.worker_processing_ms ?? null,
+    time_to_l2_ready_ms: timeToReady,
+    l2_status: summary,
+    l2_candidate_debug: compactCandidateTrace(jobRow?.session?.candidate_control_plane_trace || {}),
+    final_title: finalTitle,
+    l1_title: "",
+    route: summary.route || null,
+    title_stage: fastLaneHit ? "SPEC_L2_EXACT_ANCHOR" : "V4_QUEUE_L2",
+    speculative_l1_fast_lane_hit: fastLaneHit,
+    fast_scout_cache_hit: fastLaneHit,
+    fast_scout_cache_status: summary.v4_l2_timing?.exact_anchor_scout_status || null,
+    fast_scout_prewarmer_used: prewarm.data?.ok === true,
+    fast_scout_blocking_call_used: false,
+    prewarm_status: prewarm.data?.prewarm_status || null,
+    prewarm_http_status: prewarm.http_status ?? null,
+    prewarm_latency_ms: prewarm.latency_ms ?? null,
+    l2_catalog_raw_candidate_count: summary.catalog_raw_candidate_count ?? null,
+    l2_catalog_approved_candidate_count: summary.catalog_approved_candidate_count ?? null,
+    l2_catalog_conflict_blocked_count: summary.catalog_conflict_blocked_count ?? null,
+    l2_catalog_prompt_candidate_count: summary.catalog_prompt_candidate_count ?? null,
+    l2_catalog_evidence_support_field_count: summary.catalog_evidence_support_field_count ?? null,
+    l2_catalog_participation_level: summary.catalog_participation_level ?? null,
+    l2_vector_raw_candidate_count: summary.vector_raw_candidate_count ?? null,
+    l2_vector_approved_candidate_count: summary.vector_approved_candidate_count ?? null,
+    l2_vector_conflict_blocked_count: summary.vector_conflict_blocked_count ?? null,
+    l2_vector_prompt_candidate_count: summary.vector_prompt_candidate_count ?? null,
+    l2_vector_evidence_support_field_count: summary.vector_evidence_support_field_count ?? null,
+    l2_vector_participation_level: summary.vector_participation_level ?? null,
+    vector_runtime_status: summary.vector_runtime_status ?? null,
+    vector_runtime_status_code: summary.vector_runtime_status_code ?? null,
+    vector_runtime_unavailable_reasons: summary.vector_runtime_unavailable_reasons ?? null,
+    vector_worker_status: summary.vector_worker_status ?? null,
+    vector_worker_reason: summary.vector_worker_reason ?? null,
+    vector_worker_feature_count: summary.vector_worker_feature_count ?? null,
+    vector_worker_latency_ms: summary.vector_worker_latency_ms ?? null,
+    provider_diagnostics: providerDiagnostics,
+    v4_l2_timing: summary.v4_l2_timing || null,
+    input_tokens: providerDiagnostics.input_tokens,
+    output_tokens: providerDiagnostics.output_tokens,
+    total_tokens: providerDiagnostics.total_tokens,
+    provider_latency_ms: providerDiagnostics.provider_latency_ms,
+    provider_key_pool_size: providerDiagnostics.provider_key_pool_size,
+    provider_key_slot: providerDiagnostics.provider_key_slot,
+    provider_key_source: providerDiagnostics.provider_key_source,
+    provider_key_rotation_attempted: providerDiagnostics.provider_key_rotation_attempted,
+    provider_key_rotation_attempts: providerDiagnostics.provider_key_rotation_attempts,
+    attempt_count: jobRow?.attempt_count ?? null,
+    job_status: jobRow?.status || null,
+    response_status: providerDiagnostics.response_status,
+    incomplete_reason: providerDiagnostics.incomplete_reason,
+    output_cap: providerDiagnostics.output_cap,
+    output_utilization: providerDiagnostics.output_utilization,
+    "x-ratelimit-limit-requests": providerDiagnostics["x-ratelimit-limit-requests"],
+    "x-ratelimit-remaining-requests": providerDiagnostics["x-ratelimit-remaining-requests"],
+    "x-ratelimit-limit-tokens": providerDiagnostics["x-ratelimit-limit-tokens"],
+    "x-ratelimit-remaining-tokens": providerDiagnostics["x-ratelimit-remaining-tokens"],
+    "x-ratelimit-reset-requests": providerDiagnostics["x-ratelimit-reset-requests"],
+    "x-ratelimit-reset-tokens": providerDiagnostics["x-ratelimit-reset-tokens"]
+  });
+}
+
+function predictionHash(results = []) {
+  const frozen = results.map((row) => ({
+    asset_id: row.asset_id || null,
+    recognition_session_id: row.recognition_session_id || null,
+    final_title: cleanText(row.final_title),
+    ok: row.ok === true,
+    error: row.error || null
+  }));
+  return crypto.createHash("sha256").update(JSON.stringify(frozen)).digest("hex");
+}
+
+function sealedLabelForItem(item = {}, index = 0, sealedLabels = new Map()) {
+  const id = candidateId(item, index);
+  const sealedKey = item.sealed_eval_label_ref?.key || "";
+  return sealedLabels.get(sealedKey)
+    || sealedLabels.get(id.replace(/^ebay_image_only_/, ""))
+    || sealedLabels.get(item.source_record?.case_id)
+    || null;
+}
+
+function attachPostRecognitionScoring(results = [], items = [], sealedLabels = new Map(), offset = 0) {
+  return results.map((row, localIndex) => {
+    const item = items[localIndex] || {};
+    const label = sealedLabelForItem(item, offset + localIndex, sealedLabels) || {};
+    const sellerTitle = cleanText(label.title || "");
+    return {
+      ...row,
+      sealed_label_key: item.sealed_eval_label_ref?.key || label.key || row.sealed_label_key || null,
+      seller_title_used_for_local_eval_only: Boolean(sellerTitle),
+      seller_title: sellerTitle,
+      l1_scoring: scoreTitles(sellerTitle, row.l1_title || ""),
+      final_scoring: scoreTitles(sellerTitle, row.final_title || ""),
+      item_web_url: label.item_web_url || null
+    };
+  });
+}
+
+function summarize(results = [], { runWallMs = null } = {}) {
   const l1Raw = results.map((item) => item.l1_scoring?.raw_token_recall);
   const l1Fair = results.map((item) => item.l1_scoring?.fair_token_recall);
   const l1Policy = results.map((item) => item.l1_scoring?.policy_fair_token_recall);
@@ -1431,6 +1812,13 @@ function summarize(results = []) {
   return {
     attempted_count: results.length,
     ok_count: results.filter((item) => item.ok).length,
+    final_failure_count: results.filter((item) => item.ok !== true).length,
+    retry_card_count: results.filter((item) => Number(item.attempt_count || 0) > 1).length,
+    retry_attempt_count: results.reduce((sum, item) => sum + Math.max(0, Number(item.attempt_count || 0) - 1), 0),
+    run_wall_ms: runWallMs,
+    completed_cards_per_minute: Number.isFinite(Number(runWallMs)) && Number(runWallMs) > 0
+      ? Number((results.filter((item) => item.ok).length * 60000 / Number(runWallMs)).toFixed(3))
+      : null,
     l2_ready_count: results.filter((item) => item.l2_ready).length,
     fast_scout_cache_hit_count: results.filter((item) => item.fast_scout_cache_hit).length,
     fast_scout_blocking_call_count: results.filter((item) => item.fast_scout_blocking_call_used).length,
@@ -1448,6 +1836,7 @@ function summarize(results = []) {
     l1_safe_draft_p95_ms: quantile(results.map((item) => item.l1_time_to_safe_draft_ms), 0.95),
     writer_ready_p50_ms: quantile(results.map((item) => item.time_to_writer_ready_ms), 0.5),
     writer_ready_p95_ms: quantile(results.map((item) => item.time_to_writer_ready_ms), 0.95),
+    writer_ready_p99_ms: quantile(results.map((item) => item.time_to_writer_ready_ms), 0.99),
     prewarm_p50_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.5),
     prewarm_p95_ms: quantile(results.map((item) => item.prewarm_latency_ms), 0.95),
     queue_mode_count: results.filter((item) => item.queue_mode === true).length,
@@ -1456,15 +1845,26 @@ function summarize(results = []) {
     speculative_l2_done_before_click_count: results.filter((item) => item.l2_done_before_click === true).length,
     perceived_title_p50_ms: quantile(results.map((item) => item.perceived_title_ms), 0.5),
     perceived_title_p95_ms: quantile(results.map((item) => item.perceived_title_ms), 0.95),
+    perceived_title_p99_ms: quantile(results.map((item) => item.perceived_title_ms), 0.99),
+    preparation_p50_ms: quantile(results.map((item) => item.preparation_latency_ms), 0.5),
+    preparation_p95_ms: quantile(results.map((item) => item.preparation_latency_ms), 0.95),
+    enqueue_p50_ms: quantile(results.map((item) => item.enqueue_latency_ms), 0.5),
+    enqueue_p95_ms: quantile(results.map((item) => item.enqueue_latency_ms), 0.95),
     speculative_setup_p50_ms: quantile(results.map((item) => item.speculative_setup_ms), 0.5),
     worker_queue_wait_p50_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.5),
     worker_queue_wait_p95_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.95),
+    worker_queue_wait_p99_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.99),
     paired_l1_wait_p50_ms: quantile(results.map((item) => item.paired_l1_wait_ms), 0.5),
     paired_l1_wait_p95_ms: quantile(results.map((item) => item.paired_l1_wait_ms), 0.95),
     scheduler_queue_wait_p50_ms: quantile(results.map((item) => item.scheduler_queue_wait_ms), 0.5),
     scheduler_queue_wait_p95_ms: quantile(results.map((item) => item.scheduler_queue_wait_ms), 0.95),
+    scheduler_queue_wait_p99_ms: quantile(results.map((item) => item.scheduler_queue_wait_ms), 0.99),
     worker_processing_p50_ms: quantile(results.map((item) => item.worker_processing_ms), 0.5),
     worker_processing_p95_ms: quantile(results.map((item) => item.worker_processing_ms), 0.95),
+    worker_processing_p99_ms: quantile(results.map((item) => item.worker_processing_ms), 0.99),
+    job_status_breakdown: countBy("job_status"),
+    l1_job_status_breakdown: countBy("l1_job_status"),
+    enqueue_persistence_mode_breakdown: countBy("enqueue_persistence_mode"),
     catalog_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.catalog_prompt_candidate_count || 0), 0),
     vector_prompt_candidate_count: results.reduce((sum, item) => sum + Number(item.vector_prompt_candidate_count || 0), 0),
     l2_catalog_raw_candidate_count: results.reduce((sum, item) => sum + Number(item.l2_catalog_raw_candidate_count || 0), 0),
@@ -1534,6 +1934,7 @@ function perCardTsv(results = []) {
     "asset_id",
     "ok",
     "l1_ok",
+    "l1_job_status",
     "writer_ready",
     "preingestion_used",
     "preingestion_ok",
@@ -1552,7 +1953,14 @@ function perCardTsv(results = []) {
     "l2_ready",
     "writer_ready_ms",
     "queue_mode",
+    "batch_poll_mode",
+    "batch_id",
+    "preparation_ms",
+    "enqueue_ms",
+    "enqueue_persistence_mode",
     "worker_queue_wait_ms",
+    "paired_l1_wait_ms",
+    "scheduler_queue_wait_ms",
     "worker_processing_ms",
     "l1_policy_fair",
     "final_policy_fair",
@@ -1601,6 +2009,7 @@ function perCardTsv(results = []) {
     item.asset_id,
     item.ok,
     item.l1_ok,
+    item.l1_job_status,
     item.writer_ready,
     item.preingestion_used,
     item.preingestion_ok,
@@ -1619,7 +2028,14 @@ function perCardTsv(results = []) {
     item.l2_ready,
     item.time_to_writer_ready_ms,
     item.queue_mode,
+    item.batch_poll_mode,
+    item.batch_id,
+    item.preparation_latency_ms,
+    item.enqueue_latency_ms,
+    item.enqueue_persistence_mode,
     item.worker_queue_wait_ms,
+    item.paired_l1_wait_ms,
+    item.scheduler_queue_wait_ms,
     item.worker_processing_ms,
     item.l1_scoring?.policy_fair_token_recall,
     item.final_scoring?.policy_fair_token_recall,
@@ -1686,6 +2102,8 @@ export async function runV4EbaySmoke({
   thinkMs = 6000,
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
+  concurrency = 2,
+  batchPoll = true,
   outPath = "",
   progress = true
 } = {}) {
@@ -1694,47 +2112,82 @@ export async function runV4EbaySmoke({
   if (!username || !password) throw new Error("--username and --password are required");
   const items = (await readDataset(datasetPath)).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
   if (!items.length) throw new Error("dataset slice has no items");
-  const sealedLabels = await readSealedLabels(sealedLabelsPath);
   const cookie = await login({ baseUrl, username, password });
-  const results = [];
-  for (const [localIndex, item] of items.entries()) {
-    const index = offset + localIndex;
-    if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} preingestion=${usePreingestion} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
-    let row;
-    try {
-      row = await runOne({
+  const runStartedAt = Date.now();
+  let recognitionResults = [];
+  let batchPollMetrics = null;
+  let sharedBatchId = null;
+  if (queueMode && speculative && batchPoll) {
+    sharedBatchId = `smoke-v4-batch-${Date.now()}`;
+    const verificationCache = new Map();
+    const prepared = await mapWithConcurrency(items, Math.max(1, concurrency), async (item, localIndex) => {
+      const index = offset + localIndex;
+      if (progress) process.stderr.write(`v4 ebay smoke enqueue ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
+      const row = await enqueueSpeculativeItem({
         item,
         index,
-        sealedLabels,
+        batchId: sharedBatchId,
         baseUrl,
         cookie,
         prewarm,
         prewarmCacheOnly,
-        queueMode,
-        forceL2Direct,
         modelOverride,
         enableL1,
         usePreingestion,
-        speculative,
-        thinkMs,
-        l2WaitMs,
-        requestTimeoutMs
+        requestTimeoutMs,
+        verificationCache
       });
-    } catch (error) {
-      row = {
-        asset_id: candidateId(item, index),
-        ok: false,
-        writer_ready: false,
-        error: String(error?.message || error || "run_one_failed").slice(0, 240),
-        final_title: "",
-        final_scoring: scoreTitles(cleanText(item.corrected_title || item.canonical_title || ""), "")
-      };
-    }
-    results.push(row);
-    if (progress) {
-      process.stderr.write(`  ok=${row.ok} l1=${row.l1_wall_latency_ms}ms cache=${row.fast_scout_cache_status || "n/a"} final_policy=${row.final_scoring?.policy_fair_token_recall ?? "n/a"} title=${row.final_title}\n`);
-    }
+      if (progress) process.stderr.write(`  enqueued=${Boolean(row.job?.job_id)} prepare=${row.preparation_latency_ms}ms error=${row.error || "none"}\n`);
+      return row;
+    });
+    batchPollMetrics = await pollBatchJobs({
+      baseUrl,
+      cookie,
+      batchId: sharedBatchId,
+      expectedJobIds: prepared.map((row) => row.job?.job_id).filter(Boolean),
+      waitMs: l2WaitMs,
+      requestTimeoutMs
+    });
+    recognitionResults = prepared.map((row) => resultFromBatchJob(row, batchPollMetrics, thinkMs));
+  } else {
+    recognitionResults = await mapWithConcurrency(items, Math.max(1, concurrency), async (item, localIndex) => {
+      const index = offset + localIndex;
+      if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} preingestion=${usePreingestion} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
+      try {
+        const row = await runOne({
+          item,
+          index,
+          baseUrl,
+          cookie,
+          prewarm,
+          prewarmCacheOnly,
+          queueMode,
+          forceL2Direct,
+          modelOverride,
+          enableL1,
+          usePreingestion,
+          speculative,
+          thinkMs,
+          l2WaitMs,
+          requestTimeoutMs
+        });
+        if (progress) process.stderr.write(`  ok=${row.ok} l1=${row.l1_wall_latency_ms}ms cache=${row.fast_scout_cache_status || "n/a"} title=${row.final_title}\n`);
+        return row;
+      } catch (error) {
+        return {
+          asset_id: candidateId(item, index),
+          ok: false,
+          writer_ready: false,
+          error: String(error?.message || error || "run_one_failed").slice(0, 240),
+          final_title: "",
+          final_scoring: null
+        };
+      }
+    });
   }
+  const predictionsSha256 = predictionHash(recognitionResults);
+  const sealedLabels = await readSealedLabels(sealedLabelsPath);
+  const results = attachPostRecognitionScoring(recognitionResults, items, sealedLabels, offset);
   const report = {
     schema_version: "v4-ebay-smoke-v1",
     generated_at: new Date().toISOString(),
@@ -1743,6 +2196,19 @@ export async function runV4EbaySmoke({
     sealed_labels_path: sealedLabelsPath || null,
     limit,
     offset,
+    concurrency,
+    batch_poll_enabled: Boolean(queueMode && speculative && batchPoll),
+    shared_batch_id: sharedBatchId,
+    batch_poll_metrics: batchPollMetrics ? {
+      polls: batchPollMetrics.polls,
+      elapsed_ms: batchPollMetrics.elapsed_ms,
+      completed_count: batchPollMetrics.completed_count,
+      expected_count: batchPollMetrics.expected_count,
+      http_status_breakdown: batchPollMetrics.http_status_breakdown,
+      max_consecutive_errors: batchPollMetrics.max_consecutive_errors,
+      fatal_error: batchPollMetrics.fatal_error
+    } : null,
+    run_wall_ms: Date.now() - runStartedAt,
     prewarm_enabled: prewarm,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
@@ -1752,12 +2218,15 @@ export async function runV4EbaySmoke({
     l1_explicitly_enabled: enableL1,
     preingestion_enabled: usePreingestion,
     model_override: modelOverride || null,
+    predictions_sha256: predictionsSha256,
     blind_policy: {
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: true,
-      seller_title_is_ground_truth: false
+      seller_title_is_ground_truth: false,
+      recognition_phase_loaded_sealed_labels: false,
+      predictions_frozen_before_scoring: true
     },
-    summary: summarize(results),
+    summary: summarize(results, { runWallMs: Date.now() - runStartedAt }),
     results
   };
   if (outPath) {
@@ -1789,6 +2258,8 @@ export async function main(argv = process.argv, env = process.env) {
     modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
+    concurrency: Math.max(1, Math.trunc(numberArg(argv, "--concurrency", 2))),
+    batchPoll: !hasFlag(argv, "--per-card-poll"),
     outPath,
     progress: !hasFlag(argv, "--quiet")
   });

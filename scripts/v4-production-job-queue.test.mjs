@@ -120,7 +120,8 @@ const writes = [];
 const fetchForWrites = async (url, request = {}) => {
   writes.push({ url: String(url), request });
   if (request.method === "GET") return jsonResponse([]);
-  return jsonResponse([{ id: "v4job-test", recognition_session_id: "v4sess-test", status: "QUEUED" }]);
+  const body = JSON.parse(request.body);
+  return jsonResponse((Array.isArray(body) ? body : [body]).map((entry) => ({ ...entry })));
 };
 const enqueue = await enqueueV4RecognitionJobs({
   batchId: "batch-enqueue",
@@ -134,9 +135,38 @@ const enqueue = await enqueueV4RecognitionJobs({
 });
 assert.equal(enqueue.batchId, "batch-enqueue");
 assert.equal(enqueue.queued_count, 2);
-assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").length, 2);
-assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_jobs")).length, 2);
+assert.equal(enqueue.persistence_mode, "bulk");
+assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").length, 1);
+assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_jobs")).length, 1);
+assert.equal(JSON.parse(writes.find((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").request.body).length, 2);
+assert.equal(JSON.parse(writes.find((entry) => entry.url.includes("/v4_recognition_jobs")).request.body).length, 2);
 assert.ok(writes.find((entry) => entry.url.includes("/v4_recognition_jobs")).request.body.includes('"status":"QUEUED"'));
+
+let sessionBatchFailed = false;
+const fallbackWrites = [];
+const fallbackEnqueue = await enqueueV4RecognitionJobs({
+  batchId: "batch-fallback",
+  operatorId: "operator-fallback",
+  jobs: [
+    { asset_id: "asset-fallback-a", payload: { images: [] } },
+    { asset_id: "asset-fallback-b", payload: { images: [] } }
+  ],
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    fallbackWrites.push({ url: String(url), request });
+    if (request.method === "GET") return jsonResponse([]);
+    const body = JSON.parse(request.body);
+    if (String(url).includes("/v4_recognition_sessions") && Array.isArray(body) && !sessionBatchFailed) {
+      sessionBatchFailed = true;
+      return jsonResponse({ message: "temporary batch failure" }, { ok: false, status: 503 });
+    }
+    return jsonResponse((Array.isArray(body) ? body : [body]).map((entry) => ({ ...entry })));
+  }
+});
+assert.equal(fallbackEnqueue.queued_count, 2);
+assert.equal(fallbackEnqueue.persistence_mode, "bulk_with_row_fallback");
+assert.equal(fallbackWrites.filter((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").length, 3);
+assert.equal(fallbackWrites.filter((entry) => entry.url.includes("/v4_recognition_jobs") && entry.request.method === "POST").length, 1);
 
 const rpcCalls = [];
 const claim = await claimV4RecognitionJobs({

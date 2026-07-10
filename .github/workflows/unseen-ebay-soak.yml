@@ -1,0 +1,146 @@
+name: unseen-ebay-soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Maximum unseen eBay cards (1-100)"
+        default: "100"
+      model:
+        description: "Production model"
+        default: "gpt-5-mini"
+      think_ms:
+        description: "Simulated writer think time (ms)"
+        default: "5000"
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Warm production path
+        run: |
+          for i in 1 2 3; do
+            curl -s -o /dev/null --max-time 20 https://listing.lyncafei.team/api/health || true
+          done
+      - name: Validate production readiness
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+          EXPECTED_MODEL: ${{ inputs.model }}
+        run: |
+          curl -fsS --max-time 30 https://listing.lyncafei.team/api/v4/health -o /tmp/v4-health.json
+          curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
+            -H 'content-type: application/json' \
+            --data "$(node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))')" \
+            https://listing.lyncafei.team/api/login -o /tmp/login.json
+          curl -fsS --max-time 45 -b /tmp/lynca-cookies.txt \
+            https://listing.lyncafei.team/api/listing-provider-status -o /tmp/provider-status.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const health = JSON.parse(fs.readFileSync('/tmp/v4-health.json', 'utf8'));
+          const status = JSON.parse(fs.readFileSync('/tmp/provider-status.json', 'utf8'));
+          const components = new Map((status.workflow_readiness?.components || []).map(x => [x.id, x]));
+          const vector = components.get('vector_retrieval') || {};
+          const vision = components.get('vision_provider') || {};
+          const provider = (status.providers || []).find(x => x.selectable) || {};
+          const checks = {
+            v4_ready: health.ready === true,
+            queue_configured: health.production_queue?.configured === true,
+            worker_secret_configured: health.production_queue?.worker_secret_configured === true,
+            vector_index_ready: health.vector_index_ready === true && vector.details?.index_ready === true,
+            vector_worker_ready: vector.details?.worker_configured === true,
+            vector_request_override_supported: vector.details?.request_override_supported === true,
+            cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
+            provider_selectable: provider.selectable === true,
+            provider_model_matches: provider.model_id === process.env.EXPECTED_MODEL && vision.details?.model_id === process.env.EXPECTED_MODEL,
+            key_pool_ready: Number(status.execution_control?.provider_key_pool_size || 0) >= 1,
+            distributed_capacity_enabled: status.execution_control?.distributed_provider_capacity_enabled === true
+          };
+          console.log(JSON.stringify({checks, model_id:provider.model_id, vector_status:vector.status, execution_control:status.execution_control}, null, 2));
+          if (Object.values(checks).some(value => value !== true)) process.exit(1);
+          NODE
+      - name: Prepare unseen blind eBay sample
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          node scripts/prepare-dcsports87-blind-eval.mjs \
+            --base-url https://listing.lyncafei.team \
+            --out-dir /tmp/unseen-blind \
+            --run-id unseen-soak \
+            --limit "${{ inputs.limit }}" \
+            --image-limit 2 \
+            --include-non-sports \
+            --allow-partial \
+            --query "sports card|basketball card|baseball card|football card|soccer card|hockey card|Pokemon card|One Piece card|Yu-Gi-Oh card" \
+            --exclude-answer-keys data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl
+      - name: Upload image-only intake bundle
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          node scripts/build-ebay-image-intake-dataset.mjs \
+            --blind-dir /tmp/unseen-blind \
+            --run-ids unseen-soak \
+            --out /tmp/unseen-dataset.json \
+            --sealed-labels-out /tmp/unseen-sealed-labels.jsonl \
+            --base-url https://listing.lyncafei.team \
+            --upload-images --progress
+      - name: Verify novelty and anti-leakage
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const oldLabels = fs.readFileSync('data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl','utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+          const newLabels = fs.readFileSync('/tmp/unseen-sealed-labels.jsonl','utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+          const dataset = JSON.parse(fs.readFileSync('/tmp/unseen-dataset.json','utf8'));
+          const oldIds = new Set(oldLabels.map(x => x.item_id));
+          const overlap = newLabels.filter(x => oldIds.has(x.item_id)).map(x => x.item_id);
+          const leaked = (dataset.items || []).filter(x => x.canonical_title || Object.keys(x.source_titles || {}).length);
+          const report = {requested:Number('${{ inputs.limit }}'),new_item_count:newLabels.length,old_item_overlap_count:overlap.length,title_leak_count:leaked.length,overlap};
+          fs.writeFileSync('/tmp/novelty.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report));
+          if (!newLabels.length || overlap.length || leaked.length) process.exit(1);
+          NODE
+      - name: Run production-path soak
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          COUNT=$(node -e 'console.log(require("/tmp/unseen-dataset.json").item_count)')
+          node scripts/v4-ebay-smoke.mjs \
+            --dataset /tmp/unseen-dataset.json \
+            --sealed-labels /tmp/unseen-sealed-labels.jsonl \
+            --limit "$COUNT" \
+            --queue --speculative --use-preingestion --prewarm \
+            --concurrency 2 \
+            --model "${{ inputs.model }}" \
+            --think-ms "${{ inputs.think_ms }}" \
+            --l2-wait-ms 3600000 \
+            --request-timeout-ms 120000 \
+            --out /tmp/unseen-soak-report.json
+      - name: Enforce stability gate
+        run: |
+          node - <<'NODE'
+          const r = require('/tmp/unseen-soak-report.json');
+          const s = r.summary;
+          console.log(JSON.stringify({attempted:s.attempted_count,ok:s.ok_count,failures:s.final_failure_count,retries:s.retry_card_count,policy_avg:s.final_accuracy_proxy.policy_fair_token_recall_avg,pass72:s.final_accuracy_proxy.policy_fair_pass_at_0_72,writer_p50:s.writer_ready_p50_ms,writer_p95:s.writer_ready_p95_ms,writer_p99:s.writer_ready_p99_ms,cards_per_minute:s.completed_cards_per_minute,tokens:s.provider_diagnostics.total_tokens_total,key_slots:s.provider_diagnostics.key_slots_used}, null, 2));
+          if (s.ok_count !== s.attempted_count) process.exit(1);
+          NODE
+      - name: Upload detailed evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unseen-ebay-soak-report
+          path: |
+            /tmp/unseen-soak-report.json
+            /tmp/unseen-soak-report.tsv
+            /tmp/novelty.json
+            /tmp/unseen-blind/unseen-soak/manifest.json
+          retention-days: 14

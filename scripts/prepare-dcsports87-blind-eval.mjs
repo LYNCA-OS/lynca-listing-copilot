@@ -48,6 +48,7 @@ export async function main(argv = process.argv, env = process.env) {
       : !/^(?:0|false|no)$/i.test(String(env.BLIND_EVAL_SPORTS_ONLY || "true"));
   const query = argValue(argv, "--query", env.BLIND_EVAL_EBAY_QUERY || (sportsOnly ? defaultSportsQueries : "card"));
   const categoryIds = argValue(argv, "--category-ids", env.BLIND_EVAL_EBAY_CATEGORY_IDS || env.EBAY_BROWSE_CATEGORY_IDS || "");
+  const allowPartial = hasFlag(argv, "--allow-partial");
   const summary = await prepareBlindDataset({
     baseUrl,
     username,
@@ -59,6 +60,7 @@ export async function main(argv = process.argv, env = process.env) {
     excludeAnswerKeyPaths,
     query,
     sportsOnly,
+    allowPartial,
     categoryIds,
     env
   });
@@ -66,6 +68,8 @@ export async function main(argv = process.argv, env = process.env) {
   console.log("dcsports87 blind dataset prepared");
   console.log(`run_id=${summary.run_id}`);
   console.log(`listing_count=${summary.listing_count}`);
+  console.log(`requested_listing_count=${summary.requested_listing_count}`);
+  console.log(`partial_dataset=${summary.partial_dataset}`);
   console.log(`excluded_item_count=${summary.excluded_item_count}`);
   console.log(`sports_only=${summary.sports_only}`);
   console.log(`sports_filtered_count=${summary.sports_filtered_count}`);

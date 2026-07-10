@@ -264,10 +264,13 @@ await withTempDir(async (dir) => {
     password: "mtv",
     outDir: blindDir,
     runId: "run-a",
-    limit: 1,
+    limit: 2,
+    allowPartial: true,
     fetchImpl
   });
   assert.equal(result.listing_count, 1);
+  assert.equal(result.requested_listing_count, 2);
+  assert.equal(result.partial_dataset, true);
   assert.equal(result.layout_version, "strict_blind_eval_v2");
   assert.equal(result.ground_truth_policy.seller_titles_are_ground_truth, false);
   assert.equal(result.ground_truth_policy.reviewed_title_ground_truth_source, "supabase_listing_title_feedback_corrected_title_only");

@@ -2,7 +2,7 @@
 
 Generated 2026-07-10 by scripts/generate-env-flag-inventory.mjs — do not edit by hand.
 
-Total: 316 flags. Reaping rule: a kill switch that has stayed in one
+Total: 319 flags. Reaping rule: a kill switch that has stayed in one
 position for a quarter is not a switch, it is dead weight — inline its value
 and delete the flag.
 
@@ -289,6 +289,9 @@ and delete the flag.
 | `V4_QUEUE_GLOBAL_DRAIN_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_QUEUE_KICK_DEDUP_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_SUPABASE_PATCH_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
+| `V4_SUPABASE_READ_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
+| `V4_SUPABASE_RPC_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
+| `V4_SUPABASE_WRITE_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
 | `VECTOR_CACHE_ENABLED` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_CORRECTED_TITLE_AS_TEMPORARY_GT` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS` | lib/listing/pipeline/provider-options.mjs |
