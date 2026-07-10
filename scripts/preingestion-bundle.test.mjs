@@ -129,7 +129,7 @@ assert.equal(summary.initial_evidence_count, 1);
 // enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
-assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v4:")));
+assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v5:")));
 assert.ok(jobs.every((job) => ["serial_crop", "card_code_crop", "grade_label_crop"].includes(job.payload.crop.role)));
 assert.equal(
   new Set(jobs.map((job) => `${job.payload.crop.source_image_id}:${job.payload.crop.role}`)).size,
