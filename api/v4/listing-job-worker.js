@@ -260,8 +260,15 @@ export default async function handler(req, res) {
         timing: {
           worker_total_ms: result.latency_ms,
           response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null
-        }
+        },
+        previousError: job.error || null
       });
+      if (completion.saved !== true) {
+        throw Object.assign(new Error(`queue_completion_write_failed:${completion.error || "unknown_error"}`), {
+          code: "QUEUE_COMPLETION_WRITE_FAILED",
+          latency_ms: result.latency_ms
+        });
+      }
       const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
         ? await releasePairedV4FinalJob({ job, reason: "l1_ready" })
         : { saved: false, skipped: true };
@@ -276,11 +283,21 @@ export default async function handler(req, res) {
         recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
         latency_ms: result.latency_ms,
         saved: completion.saved,
+        completion_write_attempts: completion.write_attempts || 1,
         paired_final_released: pairedRelease.saved === true,
         paired_final_wake_triggered: pairedWake.triggered === true,
         error: completion.error || null
       };
     } catch (error) {
+      console.error("[v4_job_attempt_failed]", JSON.stringify({
+        job_id: job.id || null,
+        job_type: normalizedJobType(job),
+        lane: job.lane || null,
+        attempt_count: Number(job.attempt_count || 0),
+        code: error?.code || error?.status || null,
+        message: safeError(error),
+        latency_ms: error?.latency_ms || null
+      }));
       const failure = await failV4RecognitionJob({
         job,
         error: {

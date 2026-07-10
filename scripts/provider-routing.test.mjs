@@ -294,34 +294,26 @@ const gpt41ExpandedCapOverrideConfig = openAiEmergencyConfigFromEnv({
   OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14",
   OPENAI_GPT41_MAX_OUTPUT_TOKEN_CAP: "40960"
 });
-assert.equal(gpt41ExpandedCapOverrideConfig.maxOutputTokens, 40960);
-assert.equal(gpt41ExpandedCapOverrideConfig.truncationRetryMaxOutputTokens, 40960);
+assert.equal(gpt41ExpandedCapOverrideConfig.maxOutputTokens, 32768);
+assert.equal(gpt41ExpandedCapOverrideConfig.truncationRetryMaxOutputTokens, 32768);
 
-let gpt5OutputCapFallbackCalls = 0;
-const gpt5OutputCapFallbackCaps = [];
-const gpt5OutputCapFallbackResult = await analyzeCardEvidenceWithOpenAiEmergency({
+let gpt5HardCapCalls = 0;
+const gpt5HardCaps = [];
+const gpt5HardCapResult = await analyzeCardEvidenceWithOpenAiEmergency({
   images: dataUrlImages,
   prompt: "Return JSON.",
   env: {
     ...env,
     OPENAI_LISTING_MODEL: "gpt-5-mini",
-    // Force an out-of-spec request so the output-cap downgrade safety net
-    // still gets exercised now that defaults are within model spec.
+    // A stale deployment override must never push GPT-5 above its published
+    // model limit or spend a guaranteed 400 round trip before retrying.
     OPENAI_GPT5_MAX_OUTPUT_TOKEN_CAP: "1280000",
     OPENAI_GPT5_MAX_OUTPUT_TOKENS: "1280000"
   },
   fetchImpl: async (url, init) => {
-    gpt5OutputCapFallbackCalls += 1;
+    gpt5HardCapCalls += 1;
     const body = JSON.parse(init.body);
-    gpt5OutputCapFallbackCaps.push(body.max_output_tokens);
-    if (body.max_output_tokens > 128000) {
-      return {
-        ok: false,
-        status: 400,
-        headers: new Headers(),
-        text: async () => "max_output_tokens exceeds the maximum allowed output tokens for this model"
-      };
-    }
+    gpt5HardCaps.push(body.max_output_tokens);
     return {
       ok: true,
       status: 200,
@@ -339,14 +331,14 @@ const gpt5OutputCapFallbackResult = await analyzeCardEvidenceWithOpenAiEmergency
     };
   }
 });
-assert.equal(gpt5OutputCapFallbackCalls, 2);
-assert.deepEqual(gpt5OutputCapFallbackCaps, [1280000, 128000]);
-assert.equal(gpt5OutputCapFallbackResult.output_cap_downgrade_attempted, true);
-assert.equal(gpt5OutputCapFallbackResult.output_cap_downgrade_attempts, 1);
-assert.equal(gpt5OutputCapFallbackResult.token_diagnostics.requested_output_cap, 1280000);
-assert.equal(gpt5OutputCapFallbackResult.token_diagnostics.model_output_token_cap, 1280000);
-assert.equal(gpt5OutputCapFallbackResult.token_diagnostics.output_cap, 128000);
-assert.equal(gpt5OutputCapFallbackResult.parsed.fields.player, "Fallback");
+assert.equal(gpt5HardCapCalls, 1);
+assert.deepEqual(gpt5HardCaps, [128000]);
+assert.equal(gpt5HardCapResult.output_cap_downgrade_attempted, false);
+assert.equal(gpt5HardCapResult.output_cap_downgrade_attempts, 0);
+assert.equal(gpt5HardCapResult.token_diagnostics.requested_output_cap, 128000);
+assert.equal(gpt5HardCapResult.token_diagnostics.model_output_token_cap, 128000);
+assert.equal(gpt5HardCapResult.token_diagnostics.output_cap, 128000);
+assert.equal(gpt5HardCapResult.parsed.fields.player, "Fallback");
 
 const gpt5OverrideConfig = openAiEmergencyConfigFromEnv({
   ...env,

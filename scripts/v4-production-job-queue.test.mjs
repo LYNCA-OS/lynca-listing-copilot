@@ -159,6 +159,36 @@ assert.ok(patches[0].url.includes("/rest/v1/v4_recognition_jobs?id=eq.v4job-done
 assert.ok(patches[0].request.body.includes('"status":"L2_READY"'));
 assert.ok(patches[0].request.body.includes('"lease_owner":null'));
 
+const completionRetryPatches = [];
+const completionAfterRetry = await completeV4RecognitionJob({
+  jobId: "v4job-completion-retry",
+  result: { final_title: "Recovered completion" },
+  previousError: {
+    message: "first worker attempt failed",
+    attempt_history: [{ attempt: 1, message: "first worker attempt failed" }]
+  },
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    V4_JOB_COMPLETION_WRITE_ATTEMPTS: "3",
+    V4_JOB_COMPLETION_RETRY_BASE_MS: "1"
+  },
+  fetchImpl: async (url, request = {}) => {
+    completionRetryPatches.push({ url: String(url), request });
+    if (completionRetryPatches.length === 1) {
+      return jsonResponse({ message: "temporary postgrest error" }, { ok: false, status: 503 });
+    }
+    return jsonResponse([{ id: "v4job-completion-retry", status: "L2_READY" }]);
+  }
+});
+assert.equal(completionAfterRetry.saved, true);
+assert.equal(completionAfterRetry.write_attempts, 2);
+assert.equal(completionRetryPatches.length, 2);
+const completionRetryBody = JSON.parse(completionRetryPatches[1].request.body);
+assert.equal(completionRetryBody.timing.completion_write_attempts, 2);
+assert.equal(completionRetryBody.error.resolved, true);
+assert.equal(completionRetryBody.error.attempt_history[0].message, "first worker attempt failed");
+
 const l1Patches = [];
 await completeV4RecognitionJob({
   jobId: "v4job-l1-done",
@@ -211,13 +241,25 @@ assert.equal(multiReleasePatches.length, 1);
 assert.ok(multiReleasePatches[0].url.includes(`/v4_recognition_jobs?id=eq.${firstL2.id}`), "each L1 must release its own paired L2 immediately");
 assert.ok(!multiReleasePatches[0].url.includes(secondL2.id), "one completed L1 must not wait for or release other cards' L2 jobs");
 
+let retryPatchBody = null;
 const retry = await failV4RecognitionJob({
-  job: { id: "v4job-retry", attempt_count: 1, max_attempts: 2 },
+  job: {
+    id: "v4job-retry",
+    attempt_count: 1,
+    max_attempts: 2,
+    error: { attempt_history: [{ attempt: 0, message: "earlier failure" }] }
+  },
   error: { message: "provider timeout" },
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
-  fetchImpl: async () => jsonResponse([{ id: "v4job-retry", status: "RETRYING" }])
+  fetchImpl: async (url, request = {}) => {
+    retryPatchBody = JSON.parse(request.body);
+    return jsonResponse([{ id: "v4job-retry", status: "RETRYING" }]);
+  }
 });
 assert.equal(retry.saved, true);
+assert.equal(retryPatchBody.error.attempt_history.length, 2);
+assert.equal(retryPatchBody.error.attempt_history[0].message, "earlier failure");
+assert.equal(retryPatchBody.error.attempt_history[1].message, "provider timeout");
 
 const finalFail = await failV4RecognitionJob({
   job: { id: "v4job-fail", attempt_count: 2, max_attempts: 2 },

@@ -915,6 +915,8 @@ export default async function handler(req, res) {
     exact_anchor_scout_status: null,
     exact_anchor_scout_ms: null,
     exact_anchor_finalize_ms: null,
+    exact_anchor_finalize_reason: null,
+    exact_anchor_lookup_timing: null,
     exact_anchor_blocking_scout_allowed: null,
     v2_call_ms: null,
     persist_pipeline_ms: null,
@@ -951,7 +953,7 @@ export default async function handler(req, res) {
         scoutResult: fastScoutResult,
         env: process.env,
         fetchImpl: globalThis.fetch,
-        timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 1500)
+        timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 2000)
       }).catch(() => ({ finalized: false, reason: "finalize_error" }));
       const finalized = finalize?.finalized === true;
       const l1Result = {
@@ -1114,9 +1116,11 @@ export default async function handler(req, res) {
         scoutResult,
         env: process.env,
         fetchImpl: globalThis.fetch,
-        timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 1500)
+        timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 2000)
       });
       l2Timing.exact_anchor_finalize_ms = Date.now() - finalizeStartedAt;
+      l2Timing.exact_anchor_finalize_reason = finalize?.reason || null;
+      l2Timing.exact_anchor_lookup_timing = finalize?.lookup_timing || null;
       if (finalize?.finalized === true) {
         const finalizedResult = {
           ...scoutResult,

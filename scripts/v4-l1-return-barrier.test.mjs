@@ -54,6 +54,9 @@ assert.ok(fastScoutSource.includes("allowProviderCall = true"), "fast scout must
 assert.ok(fastScoutSource.includes("FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED"), "fast scout cache-only mode must fail closed before provider call.");
 assert.ok(fastScoutSource.includes("signed_url_ms"), "fast scout timing must expose signed_url_ms");
 assert.ok(fastScoutSource.includes("image_verify_ms"), "fast scout timing must expose image_verify_ms");
+assert.ok(fastScoutSource.includes("OPENAI_FAST_SCOUT_TIMEOUT_MS"), "fast scout provider calls must have a bounded timeout");
+assert.ok(!fastScoutSource.includes("gpt5FastScoutSafeOutputTokenCap * 10"), "fast scout must not advertise an output cap above the GPT-5 model limit");
+assert.ok(apiSource.includes("exact_anchor_finalize_reason"), "L2 timing must preserve the exact-anchor fallthrough reason");
 
 const originalPayload = {
   asset_id: "asset-l1-hint",
