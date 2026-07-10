@@ -28,6 +28,14 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Warm production path
+        # First requests after idle/deploy hit cold functions and connection
+        # setup; the first scored card repeatedly absorbed that cost as a
+        # request_timeout. Absorb it here instead.
+        run: |
+          for i in 1 2 3; do
+            curl -s -o /dev/null --max-time 20 https://listing.lyncafei.team/api/health || true
+          done
       - name: Run gate smoke
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
