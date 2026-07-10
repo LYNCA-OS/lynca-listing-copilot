@@ -531,6 +531,9 @@ function sessionL2Summary(statusPayload = {}) {
     vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
     ...vectorRuntime,
+    preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
+    preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
+    serial_numerator_verified: summary.serial_numerator_verified ?? null,
     provider_diagnostics: providerDiagnostics,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
@@ -589,6 +592,9 @@ function jobL2Summary(statusPayload = {}) {
     vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
     ...vectorRuntime,
+    preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
+    preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
+    serial_numerator_verified: summary.serial_numerator_verified ?? null,
     provider_diagnostics: providerDiagnostics,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
@@ -1274,6 +1280,18 @@ async function runOne({
           data.vector_activation_funnel || {},
           data
         ),
+        preingestion_ocr_rendezvous: data.provider_result?.preingestion_ocr_rendezvous
+          || data.provider_result_summary?.preingestion_ocr_rendezvous
+          || data.preingestion_ocr_rendezvous
+          || null,
+        preingestion_evidence_refresh: data.provider_result?.preingestion_evidence_refresh
+          || data.provider_result_summary?.preingestion_evidence_refresh
+          || data.preingestion_evidence_refresh
+          || null,
+        serial_numerator_verified: data.provider_result?.serial_numerator_verified
+          ?? data.provider_result_summary?.serial_numerator_verified
+          ?? data.serial_numerator_verified
+          ?? null,
         provider_diagnostics: l1ProviderDiagnostics,
         input_tokens: l1ProviderDiagnostics.input_tokens,
         output_tokens: l1ProviderDiagnostics.output_tokens,
@@ -1406,6 +1424,9 @@ async function runOne({
     vector_role_agnostic_fallback_reason: l2.summary?.vector_role_agnostic_fallback_reason ?? null,
     vector_returned_row_count: l2.summary?.vector_returned_row_count ?? null,
     vector_self_excluded_count: l2.summary?.vector_self_excluded_count ?? null,
+    preingestion_ocr_rendezvous: l2.summary?.preingestion_ocr_rendezvous || null,
+    preingestion_evidence_refresh: l2.summary?.preingestion_evidence_refresh || null,
+    serial_numerator_verified: l2.summary?.serial_numerator_verified ?? null,
     provider_diagnostics: finalProviderDiagnostics,
     l1_provider_diagnostics: l1ProviderDiagnostics,
     l2_provider_diagnostics: l2ProviderDiagnostics,
@@ -1734,6 +1755,9 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     vector_worker_reason: summary.vector_worker_reason ?? null,
     vector_worker_feature_count: summary.vector_worker_feature_count ?? null,
     vector_worker_latency_ms: summary.vector_worker_latency_ms ?? null,
+    preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
+    preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
+    serial_numerator_verified: summary.serial_numerator_verified ?? null,
     provider_diagnostics: providerDiagnostics,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
@@ -1885,6 +1909,23 @@ function summarize(results = [], { runWallMs = null } = {}) {
     vector_runtime_status_code_breakdown: countBy("vector_runtime_status_code"),
     vector_worker_status_breakdown: countBy("vector_worker_status"),
     vector_role_agnostic_fallback_count: results.filter((item) => item.vector_role_agnostic_fallback_used === true).length,
+    preingestion_ocr: {
+      status_breakdown: results.reduce((counts, item) => {
+        const key = cleanText(item.preingestion_ocr_rendezvous?.status || "missing") || "missing";
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }, {}),
+      terminal_count: results.filter((item) => item.preingestion_ocr_rendezvous?.terminal === true).length,
+      timeout_count: results.filter((item) => item.preingestion_ocr_rendezvous?.status === "TIMEOUT").length,
+      job_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.job_count || 0), 0),
+      patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.patch_count || 0), 0),
+      serial_patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.serial_patch_count || 0), 0),
+      wait_p50_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.5),
+      wait_p95_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.95),
+      evidence_refresh_added_patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_evidence_refresh?.added_patch_count || 0), 0),
+      serial_numerator_verified_count: results.filter((item) => item.serial_numerator_verified === true).length,
+      serial_numerator_rejected_count: results.filter((item) => item.serial_numerator_verified === false).length
+    },
     provider_diagnostics: {
       input_tokens_total: results.reduce((sum, item) => sum + Number(item.input_tokens || 0), 0),
       output_tokens_total: results.reduce((sum, item) => sum + Number(item.output_tokens || 0), 0),

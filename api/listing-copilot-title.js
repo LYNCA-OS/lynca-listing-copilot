@@ -174,6 +174,7 @@ import {
   readPreIngestionBundle,
   summarizePreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
+import { waitForPreingestionOcrEvidence } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -187,6 +188,28 @@ const defaultCatalogFastLaneBudgetMs = 120;
 
 function configuredMaxPayloadImages(env = process.env) {
   return Math.max(2, normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages);
+}
+
+function serialNumeratorVerificationFromPreingestion(payload = {}, rendezvous = null) {
+  const patches = Array.isArray(payload.preingestion_evidence_patches)
+    ? payload.preingestion_evidence_patches
+    : [];
+  const fullValues = new Set();
+  for (const patch of patches) {
+    if (!["print_run_number", "serial_number", "numerical_rarity"].includes(String(patch?.field || "").trim())) continue;
+    const expanded = expandPrintRunFields({ print_run_number: patch.value, serial_number: patch.value });
+    if (expanded.print_run_numerator && expanded.print_run_denominator) {
+      fullValues.add(`${expanded.print_run_numerator}/${expanded.print_run_denominator}`);
+    }
+  }
+  if (fullValues.size === 1) return true;
+  if (fullValues.size > 1) return false;
+  if (rendezvous?.job_count > 0) return false;
+  return null;
+}
+
+function serialNumeratorVerificationFromPayload(payload = {}) {
+  return payload.serial_numerator_verified ?? payload.serialNumeratorVerified ?? null;
 }
 
 function storedVisualFeatureLookupEnabled(env = process.env, options = {}) {
@@ -866,7 +889,8 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
   const presentation = renderListingPresentation({
     resolved,
     evidence: result.normalized_evidence || result.evidence || {},
-    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    serialNumeratorVerified: serialNumeratorVerificationFromPayload(payload)
   });
   const renderedTitle = presentation.rendered_title || "";
   if (!renderedTitle) return result;
@@ -1100,7 +1124,8 @@ function applyOpenSetAssistShadowPresentationGuard(result = {}, payload = {}) {
   const presentation = renderListingPresentation({
     resolved: guardedResolvedFields,
     evidence: result.evidence || result.normalized_evidence || {},
-    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    serialNumeratorVerified: serialNumeratorVerificationFromPayload(payload)
   });
   const renderedTitle = stripOpenSetUnsupportedTitleTerms(
     presentation.rendered_title || result.rendered_title || result.final_title || result.title || ""
@@ -1673,7 +1698,8 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
   const presentation = renderListingPresentation({
     resolved: evidenceDocument.resolved,
     evidence: evidenceDocument.evidence,
-    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    serialNumeratorVerified: serialNumeratorVerificationFromPayload(payload)
   });
   const renderedTitle = presentation.rendered_title || "";
   const finalTitle = renderedTitle || publicResult.title || "";
@@ -1776,7 +1802,8 @@ function withCompletedEvidencePresentation(result, completion, payload) {
   const presentation = renderListingPresentation({
     resolved,
     evidence,
-    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength,
+    serialNumeratorVerified: serialNumeratorVerificationFromPayload(payload)
   });
   const normalizedLegacyFields = resolvedFieldsToLegacyFields(resolved);
   const fields = {
@@ -4116,6 +4143,25 @@ async function createOpenAiTitle(payload, selection, {
   timingContext = null,
   visualFeatures = {}
 } = {}) {
+  const preingestionBundleId = payload.preingestion_bundle_id || payload.preingestionBundleId || "";
+  const preingestionOcrRendezvousPromise = preingestionBundleId
+    ? waitForPreingestionOcrEvidence({
+      assetId: payload.asset_id || payload.assetId || "",
+      bundleId: preingestionBundleId,
+      timeoutMs: positiveIntegerFromEnv(process.env, "PREINGESTION_OCR_RENDEZVOUS_TIMEOUT_MS", 30_000),
+      pollMs: positiveIntegerFromEnv(process.env, "PREINGESTION_OCR_RENDEZVOUS_POLL_MS", 400),
+      env: process.env,
+      fetchImpl: globalThis.fetch,
+      triggerSweep: true
+    }).catch((error) => ({
+      status: "ERROR",
+      terminal: false,
+      job_count: 0,
+      patch_count: 0,
+      serial_patch_count: 0,
+      reason: String(error?.message || "preingestion_ocr_rendezvous_failed").slice(0, 180)
+    }))
+    : Promise.resolve({ status: "NOT_REQUESTED", terminal: false, job_count: 0, patch_count: 0, serial_patch_count: 0 });
   const providerOptions = providerOptionsFromPayload(payload);
   const maxTitleLength = payload.maxTitleLength || maxFallbackTitleLength;
   const openSetContext = {
@@ -4373,6 +4419,9 @@ async function createOpenAiTitle(payload, selection, {
       timingContext
     });
   }
+  const rendezvousWaitStartedAt = nowMs();
+  const preingestionOcrRendezvous = await preingestionOcrRendezvousPromise;
+  addTiming(timingContext, "preingestion_ocr_rendezvous_wait_ms", nowMs() - rendezvousWaitStartedAt);
   const preingestionEvidenceRefresh = await refreshPreIngestionEvidencePatches(initialPayload, {
     timingContext,
     fetchImpl: globalThis.fetch
@@ -4382,8 +4431,12 @@ async function createOpenAiTitle(payload, selection, {
     patch_count: Array.isArray(initialPayload.preingestion_evidence_patches)
       ? initialPayload.preingestion_evidence_patches.length
       : 0,
-    added_patch_count: 0
+      added_patch_count: 0
   }));
+  initialPayload.serial_numerator_verified = serialNumeratorVerificationFromPreingestion(
+    initialPayload,
+    preingestionOcrRendezvous
+  );
   const mergedResult = withVisualFeatures(
     withVectorCandidateContext(
       withCatalogCandidateContext(
@@ -4394,7 +4447,9 @@ async function createOpenAiTitle(payload, selection, {
     ),
     vectorContext.visualFeatures
   );
+  mergedResult.preingestion_ocr_rendezvous = preingestionOcrRendezvous;
   mergedResult.preingestion_evidence_refresh = preingestionEvidenceRefresh;
+  mergedResult.serial_numerator_verified = initialPayload.serial_numerator_verified;
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return withOpenSetReadiness(fastPathResult, { ...openSetContext, catalogContext, vectorContext });
   if (assistShadowOnly) {

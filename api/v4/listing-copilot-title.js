@@ -345,6 +345,9 @@ function providerRuntimeSummary(result = {}) {
     vector_self_excluded_count: Number.isFinite(Number(vectorProviderMetadata.self_excluded_count))
       ? Number(vectorProviderMetadata.self_excluded_count)
       : null,
+    preingestion_ocr_rendezvous: result.preingestion_ocr_rendezvous || null,
+    preingestion_evidence_refresh: result.preingestion_evidence_refresh || null,
+    serial_numerator_verified: result.serial_numerator_verified ?? null,
     usage: result.usage || null
   };
 }

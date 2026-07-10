@@ -4,7 +4,9 @@ import {
   bundlePatchesFromOcrResult,
   claimQueuedPreingestionOcrJobs,
   ocrRequestForPreingestionJob,
-  processQueuedPreingestionOcrJobs
+  processQueuedPreingestionOcrJobs,
+  readPreingestionOcrState,
+  waitForPreingestionOcrEvidence
 } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 
 const env = {
@@ -47,6 +49,7 @@ const sampleJob = {
 const request = ocrRequestForPreingestionJob(sampleJob, { imageUrl: "https://signed.test/front.jpg" });
 assert.equal(request.request_id, "ocr:bundle-1:crop-1");
 assert.equal(request.crop_type, "serial_crop");
+assert.match(request.expected_pattern, /\\d/);
 assert.equal(request.image_url, "https://signed.test/front.jpg");
 assert.deepEqual(request.crop_box, { x: 1200, y: 1600, width: 700, height: 300 });
 assert.equal(request.metadata.crop_id, "crop-1");
@@ -98,6 +101,101 @@ assert.equal(serialPatch.provenance.job_key, "ocr:bundle-1:crop-1");
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].status, "running");
   assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
+}
+
+// --- serial crop falls back to full-image OCR only when the fixed crop has no numbering ---
+{
+  const calls = [];
+  const noSerialResult = {
+    raw_text: "ROOKIE PATCH",
+    confidence: 0.92,
+    evidence_patch: { evidence: {} },
+    text_candidates: []
+  };
+  const result = await processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = String(url);
+      if (!init.method && target.includes("preingestion_jobs")) return jsonResponse([{ ...sampleJob }]);
+      if (init.method === "PATCH" && target.includes("preingestion_jobs")) {
+        return jsonResponse([{ status: JSON.parse(init.body).status || "running", attempts: 1 }]);
+      }
+      if (!init.method && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", evidence_patches: [], updated_at: "2026-07-11T00:00:00.000Z" }]);
+      }
+      if (init.method === "PATCH" && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", updated_at: "2026-07-11T00:00:01.000Z" }]);
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    },
+    paddleClient: {
+      configured: true,
+      verifyCrop: async (input) => {
+        calls.push(input);
+        return calls.length === 1 ? noSerialResult : ocrResult;
+      }
+    },
+    signedReadUrlFor: async () => "https://signed.test/front.jpg"
+  });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].crop_box, sampleJob.payload.crop.crop_metadata.pixel_bounds);
+  assert.equal(calls[1].crop_box, null);
+  assert.match(calls[1].request_id, /full-image$/);
+  assert.equal(result.patches_appended, 2);
+  assert.equal(result.succeeded, 1);
+}
+
+// --- OCR state exposes terminal counts and hard-evidence availability ---
+{
+  const state = await readPreingestionOcrState({
+    bundleId: "bundle-1",
+    env,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("preingestion_jobs")) {
+        return jsonResponse([
+          { job_id: "a", status: "succeeded", attempts: 1, job_key: "ocr:a" },
+          { job_id: "b", status: "failed", attempts: 1, job_key: "ocr:b", last_error: "no text" }
+        ]);
+      }
+      return jsonResponse([{
+        bundle_id: "bundle-1",
+        evidence_patches: [{ field: "serial_number", value: "30/99" }]
+      }]);
+    }
+  });
+  assert.equal(state.terminal, true);
+  assert.equal(state.job_count, 2);
+  assert.equal(state.status_counts.succeeded, 1);
+  assert.equal(state.status_counts.failed, 1);
+  assert.equal(state.serial_patch_count, 1);
+}
+
+// --- rendezvous waits through a running state and returns the completed patch state ---
+{
+  let jobReads = 0;
+  const state = await waitForPreingestionOcrEvidence({
+    bundleId: "bundle-1",
+    timeoutMs: 1_000,
+    pollMs: 100,
+    triggerSweep: false,
+    env,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("preingestion_jobs")) {
+        jobReads += 1;
+        return jsonResponse([{ job_id: "a", status: jobReads === 1 ? "running" : "succeeded", attempts: 1, job_key: "ocr:a" }]);
+      }
+      return jsonResponse([{
+        bundle_id: "bundle-1",
+        evidence_patches: jobReads === 1 ? [] : [{ field: "serial_number", value: "30/99" }]
+      }]);
+    }
+  });
+  assert.equal(state.status, "TERMINAL");
+  assert.equal(state.serial_patch_count, 1);
+  assert.ok(state.state_reads >= 2);
 }
 
 // --- append dedupes against existing bundle patches ---

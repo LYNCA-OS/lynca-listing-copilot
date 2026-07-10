@@ -36,6 +36,29 @@ assert.match(direct.final_title, /31\/50/);
 assert.equal(direct.modules.numerical_rarity.label, "Numbered / Print Run / 数字限编");
 assert.equal(direct.modules.numerical_rarity.text, "31/50");
 
+const directAwaitingOcrVerification = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Prizm",
+    players: ["Test Player"],
+    print_run_number: "31/50",
+    serial_number: "31/50"
+  },
+  evidence: {
+    print_run_number: createEvidenceField({
+      value: "31/50",
+      status: "CONFIRMED",
+      confidence: 0.94,
+      sources: [createVisionSource({ sourceType: "CARD_FRONT", observedText: "31/50", region: "serial_number" })]
+    })
+  },
+  serialNumeratorVerified: false,
+  maxLength: 80
+});
+assert.match(directAwaitingOcrVerification.final_title, /#\/50/);
+assert.doesNotMatch(directAwaitingOcrVerification.final_title, /31\/50/);
+
 const denominatorOnly = renderListingPresentation({
   resolved: {
     year: "2024",
