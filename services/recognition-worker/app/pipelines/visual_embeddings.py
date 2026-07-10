@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import logging
+import time
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -141,6 +143,37 @@ def embed_images_with_siglip(image_loads: list[Any], config: Any) -> list[list[f
                 pooled = model.get_image_features(**inputs)
     vectors = pooled.detach().float().cpu().numpy()
     return [_l2_normalize(vector) for vector in vectors]
+
+
+def preload_visual_embedding_backend(config: Any) -> dict[str, Any]:
+    """Load the pinned model and run one inference before serving traffic."""
+    if not getattr(config, "enable_visual_embeddings", False):
+        return {"status": "DISABLED", "reason": "visual_embeddings_disabled"}
+
+    started = time.time()
+    try:
+        probe = SimpleNamespace(
+            array=np.zeros((384, 384, 3), dtype=np.uint8),
+            image_id="startup_probe",
+            role="front_global",
+        )
+        vectors = embed_images_with_siglip([probe], config)
+        dimensions = int(getattr(config, "visual_embedding_dimensions", 768))
+        if len(vectors) != 1 or len(vectors[0]) != dimensions:
+            raise VisualEmbeddingBackendUnavailable("visual_embedding_preload_dimension_mismatch")
+        return {
+            "status": "READY",
+            "model_id": getattr(config, "visual_embedding_model_id", ""),
+            "model_revision": getattr(config, "visual_embedding_model_revision", ""),
+            "latency_ms": int((time.time() - started) * 1000),
+        }
+    except Exception as error:  # pragma: no cover - depends on runtime model files.
+        logging.exception("visual embedding preload failed: %s", type(error).__name__)
+        return {
+            "status": "FAILED",
+            "reason": f"visual_embedding_preload_error:{type(error).__name__}",
+            "latency_ms": int((time.time() - started) * 1000),
+        }
 
 
 def extract_visual_embeddings(image_loads: list[Any], config: Any, embedder: Any | None = None) -> dict:

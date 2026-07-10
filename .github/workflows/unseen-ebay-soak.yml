@@ -56,6 +56,7 @@ jobs:
             worker_secret_configured: health.production_queue?.worker_secret_configured === true,
             vector_index_ready: health.vector_index_ready === true && vector.details?.index_ready === true,
             vector_worker_ready: vector.details?.worker_configured === true,
+            vector_runtime_ready: vector.details?.runtime_ready === true && vector.details?.preload_status === 'READY',
             vector_request_override_supported: vector.details?.request_override_supported === true,
             cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
             provider_selectable: provider.selectable === true,
@@ -130,7 +131,7 @@ jobs:
           node - <<'NODE'
           const r = require('/tmp/unseen-soak-report.json');
           const s = r.summary;
-          console.log(JSON.stringify({attempted:s.attempted_count,ok:s.ok_count,failures:s.final_failure_count,retries:s.retry_card_count,policy_avg:s.final_accuracy_proxy.policy_fair_token_recall_avg,pass72:s.final_accuracy_proxy.policy_fair_pass_at_0_72,writer_p50:s.writer_ready_p50_ms,writer_p95:s.writer_ready_p95_ms,writer_p99:s.writer_ready_p99_ms,cards_per_minute:s.completed_cards_per_minute,tokens:s.provider_diagnostics.total_tokens_total,key_slots:s.provider_diagnostics.key_slots_used}, null, 2));
+          console.log(JSON.stringify({attempted:s.attempted_count,ok:s.ok_count,technical_failures:s.technical_failure_count,policy_below_0_72:s.policy_below_0_72_count,retries:s.retry_card_count,policy_avg:s.final_accuracy_proxy.policy_fair_token_recall_avg,pass72:s.final_accuracy_proxy.policy_fair_pass_at_0_72,writer_p50:s.writer_ready_p50_ms,writer_p95:s.writer_ready_p95_ms,writer_p99:s.writer_ready_p99_ms,cards_per_minute:s.completed_cards_per_minute,tokens:s.provider_diagnostics.total_tokens_total,key_slots:s.provider_diagnostics.key_slots_used}, null, 2));
           if (s.ok_count !== s.attempted_count) process.exit(1);
           NODE
       - name: Upload detailed evidence

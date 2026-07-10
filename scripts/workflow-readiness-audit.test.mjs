@@ -17,6 +17,22 @@ function response({ ok = true, status = 200, body = "[]" } = {}) {
   };
 }
 
+async function readyFetch(url) {
+  if (String(url).endsWith("/readyz")) {
+    return response({
+      body: JSON.stringify({
+        status: "ready",
+        visual_embeddings_enabled: true,
+        visual_embedding_preload_enabled: true,
+        visual_embedding_preload_status: { status: "READY" },
+        visual_embedding_model_id: "google/siglip2-base-patch16-384",
+        visual_embedding_model_revision: "f775b65a79762255128c981547af89addcfe0f88"
+      })
+    });
+  }
+  return response();
+}
+
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lynca-workflow-readiness-"));
 fs.writeFileSync(path.join(tempDir, ".env.local"), [
   "OPENAI_API_KEY=file-openai-key",
@@ -66,7 +82,7 @@ const readyReport = await buildWorkflowReadinessAudit({
   argv: ["--no-env-file"],
   env: configuredEnv,
   cwd: tempDir,
-  fetchImpl: async () => response()
+  fetchImpl: readyFetch
 });
 assert.equal(readyReport.schema_version, workflowReadinessVersion);
 assert.equal(readyReport.ok, true);
@@ -76,6 +92,7 @@ assert.match(component(readyReport, "vision_provider").summary, /gpt-4\.1-mini/)
 assert.equal(component(readyReport, "image_storage").status, "READY");
 assert.equal(component(readyReport, "feedback_workflow_schema").status, "READY");
 assert.equal(component(readyReport, "vector_retrieval").status, "READY");
+assert.equal(component(readyReport, "vector_retrieval").details.runtime_ready, true);
 assert.equal(component(readyReport, "paddle_ocr").status, "READY");
 assert.equal(component(readyReport, "catalog_store").status, "READY");
 assert.equal(component(readyReport, "marketplace_reference").status, "READY");
@@ -107,13 +124,14 @@ const requestOptInVectorReport = await buildWorkflowReadinessAudit({
     VECTOR_INDEX_READY: "true"
   },
   cwd: tempDir,
-  fetchImpl: async () => response()
+  fetchImpl: readyFetch
 });
 assert.match(component(requestOptInVectorReport, "vision_provider").summary, /gpt-5-mini/);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").status, "READY");
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.default_enabled, false);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.index_ready, true);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.request_override_supported, true);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.runtime_ready, true);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.prompt_influence_by_default, false);
 
 const schemaBlockedReport = await buildWorkflowReadinessAudit({
@@ -127,6 +145,7 @@ const schemaBlockedReport = await buildWorkflowReadinessAudit({
   },
   cwd: tempDir,
   fetchImpl: async (url) => {
+    if (String(url).endsWith("/readyz")) return readyFetch(url);
     const endpoint = new URL(String(url));
     if (endpoint.searchParams.get("select") === "workflow_summary" && endpoint.pathname.endsWith("/listing_reviews")) {
       return response({

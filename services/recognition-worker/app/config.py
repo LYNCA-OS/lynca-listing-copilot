@@ -35,6 +35,7 @@ class WorkerConfig:
     enable_tesseract_ocr: bool
     enable_opencv_rectification: bool
     enable_visual_embeddings: bool
+    visual_embedding_preload: bool
     visual_embedding_model_id: str
     visual_embedding_model_revision: str
     visual_embedding_preprocessing_version: str
@@ -61,6 +62,7 @@ def load_config() -> WorkerConfig:
         enable_tesseract_ocr=os.getenv("ENABLE_TESSERACT_OCR", "false").lower() == "true",
         enable_opencv_rectification=os.getenv("ENABLE_OPENCV_RECTIFICATION", "false").lower() == "true",
         enable_visual_embeddings=os.getenv("ENABLE_VISUAL_EMBEDDINGS", "false").lower() == "true",
+        visual_embedding_preload=os.getenv("VISUAL_EMBEDDING_PRELOAD", "false").lower() == "true",
         visual_embedding_model_id=os.getenv("VISUAL_EMBEDDING_MODEL_ID", "google/siglip2-base-patch16-384") or "google/siglip2-base-patch16-384",
         visual_embedding_model_revision=os.getenv("VISUAL_EMBEDDING_MODEL_REVISION", "main") or "main",
         visual_embedding_preprocessing_version=os.getenv("VISUAL_EMBEDDING_PREPROCESSING_VERSION", "card-rectification-v1") or "card-rectification-v1",

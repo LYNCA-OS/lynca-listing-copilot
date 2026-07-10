@@ -39,6 +39,34 @@ jobs:
           for i in 1 2 3; do
             curl -s -o /dev/null --max-time 20 https://listing.lyncafei.team/api/health || true
           done
+      - name: Validate production runtime
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+          EXPECTED_MODEL: ${{ inputs.model }}
+        run: |
+          curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
+            -H 'content-type: application/json' \
+            --data "$(node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))')" \
+            https://listing.lyncafei.team/api/login -o /tmp/login.json
+          curl -fsS --max-time 45 -b /tmp/lynca-cookies.txt \
+            https://listing.lyncafei.team/api/listing-provider-status -o /tmp/provider-status.json
+          node - <<'NODE'
+          const status = require('/tmp/provider-status.json');
+          const components = new Map((status.workflow_readiness?.components || []).map(x => [x.id, x]));
+          const vector = components.get('vector_retrieval') || {};
+          const vision = components.get('vision_provider') || {};
+          const provider = (status.providers || []).find(x => x.selectable) || {};
+          const checks = {
+            cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
+            provider_model_matches: provider.model_id === process.env.EXPECTED_MODEL && vision.details?.model_id === process.env.EXPECTED_MODEL,
+            vector_index_ready: vector.details?.index_ready === true,
+            vector_runtime_ready: vector.details?.runtime_ready === true && vector.details?.preload_status === 'READY',
+            vector_request_override_supported: vector.details?.request_override_supported === true
+          };
+          console.log(JSON.stringify({checks, vector:vector.details, model_id:provider.model_id}, null, 2));
+          if (Object.values(checks).some(value => value !== true)) process.exit(1);
+          NODE
       - name: Run gate smoke
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}

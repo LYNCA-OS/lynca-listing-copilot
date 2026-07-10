@@ -1021,8 +1021,8 @@ async function prepareAssetInBackground(asset, runId) {
       ]);
 
       if (runId === state.backgroundPreparationRunId) {
-        // 证据包和缓存探针完成后，提交一对受全局容量控制的隐藏 L1 + 最终 L2。
-        // 每张卡的 L1 完成后只释放自己的 L2，写手始终只看到最终 L2。
+        // 证据包和无付费缓存探针完成后，立即提交最终 L2。隐藏 L1
+        // 没有给写手或 L2 提供稳定增益，不能再占用 provider capacity。
         void ensureSpeculativeRecognition(asset, runId);
       }
 
@@ -1089,11 +1089,11 @@ async function ensureSpeculativeRecognition(asset, runId) {
       if (runId !== state.backgroundPreparationRunId) return { stale: true, run_id: runId };
 
       const enqueueJobPayload = JSON.parse(requestBody);
-      enqueueJobPayload.force_l2_only = false;
-      enqueueJobPayload.create_l1_job = true;
+      enqueueJobPayload.force_l2_only = true;
+      enqueueJobPayload.create_l1_job = false;
       enqueueJobPayload.create_l2_job = true;
-      enqueueJobPayload.disable_fast_scout_l1 = false;
-      enqueueJobPayload.v4_force_l2_direct = false;
+      enqueueJobPayload.disable_fast_scout_l1 = true;
+      enqueueJobPayload.v4_force_l2_direct = true;
       enqueueJobPayload.client_speculative = true;
 
       const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
@@ -1107,8 +1107,8 @@ async function ensureSpeculativeRecognition(asset, runId) {
           priority: 100,
           jobs: [{
             asset_id: asset.id,
-            force_l2_only: false,
-            create_l1_job: true,
+            force_l2_only: true,
+            create_l1_job: false,
             create_l2_job: true,
             payload: enqueueJobPayload
           }]
@@ -2795,11 +2795,11 @@ async function processAssetViaQueue(asset, options = {}) {
   );
 
   const payload = JSON.parse(requestBody);
-  payload.force_l2_only = false;
-  payload.create_l1_job = true;
+  payload.force_l2_only = true;
+  payload.create_l1_job = false;
   payload.create_l2_job = true;
-  payload.disable_fast_scout_l1 = false;
-  payload.v4_force_l2_direct = false;
+  payload.disable_fast_scout_l1 = true;
+  payload.v4_force_l2_direct = true;
   payload.clientTiming = {
     ...(payload.clientTiming || {}),
     ...asset.clientTiming
@@ -2820,8 +2820,8 @@ async function processAssetViaQueue(asset, options = {}) {
       priority: 100,
       jobs: [{
         asset_id: asset.id,
-        force_l2_only: false,
-        create_l1_job: true,
+        force_l2_only: true,
+        create_l1_job: false,
         create_l2_job: true,
         payload
       }]

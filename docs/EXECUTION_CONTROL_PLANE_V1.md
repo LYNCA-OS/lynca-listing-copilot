@@ -21,11 +21,10 @@ The structural change is the execution contract around those components.
 ```text
 upload/storage verification
   -> preingestion bundle + cache-only scout probe (parallel)
-  -> one hidden L1 + paired final L2 job per card
-  -> global fair queue claims hidden L1
+  -> one final L2 job per card
+  -> global fair queue claims L2
   -> atomic provider-capacity lease + key assignment
-  -> L1 writes reusable same-image evidence, then releases only its paired L2
-  -> L2 reuses the evidence for exact-anchor finalize OR focused full recognition
+  -> exact-anchor/cache evidence is reused inside L2 OR focused full recognition runs
   -> writer-ready title persisted first
   -> non-critical evidence/catalog/learning writes in background
   -> one browser batch-status poll updates all pending cards
@@ -42,16 +41,17 @@ upload/storage verification
 5. Queue selection interleaves tenants/batches before taking a second job from
    the same tenant. Large batches cannot starve later batches.
 6. The browser's direct scout probe is cache-only. A cache miss creates no
-   uncontrolled model request; paid hidden L1 work enters the same globally
-   capacity-controlled queue as L2.
-7. L1 is never writer-visible. The writer receives one final L2 title.
+   uncontrolled model request. Hidden L1 remains an explicit evaluation-only
+   switch because the 2026-07-10 cold-start canary measured a 12.6s dependency
+   wait without reusable evidence or writer benefit.
+7. The writer receives one final L2 title. Production never spends a second
+   provider call on hidden L1 by default.
 8. Catalog/vector hard conflicts remain fail-closed.
 9. Provider capacity is released after the provider path ends; stale leases
    expire with the job lease after crashes.
 10. Status polling is aggregated by browser batch rather than one timer and one
     HTTP request per card.
-11. A failed hidden L1 is terminal and immediately hands off to its paired L2;
-    it cannot retry alongside L2 and duplicate provider work.
+11. Experimental hidden L1 jobs remain terminal and cannot retry alongside L2.
 12. Multi-card enqueue persists session stubs and jobs in bulk. If PostgREST
     rejects a bulk write, the queue degrades to bounded row writes instead of
     losing the whole batch.
@@ -70,11 +70,13 @@ upload/storage verification
 - Fairness: batch-first round robin (tenant fallback) prevents one large upload from monopolizing every worker, even when several writers share one production account.
 - Writer latency: a completed title is normally visible within 0.8-1.8 seconds,
   instead of waiting for the previous per-card 5.5-8 second poll interval.
-- Cold-start cards: hidden L1 starts during upload/preparation, before the
-  writer asks for the result, and focuses the later L2 when exact finalize is
-  unavailable.
-- Known or catalog-anchored cards: persistent scout evidence lets L2 finish
-  through the exact-anchor path without a second model call.
+- Cold-start cards: upload, preingestion, and cache probing begin before the
+  writer asks for the result; the only paid title call is L2.
+- Known or catalog-anchored cards: exact-anchor evidence lets L2 finish without
+  a redundant scout provider call.
+- OCR and vector inference run on separate Cloud Run services. The vector
+  service is single-process, preloads the pinned SigLIP2 revision, and scales
+  independently so OCR bursts cannot starve query embeddings.
 
 ## Migration Boundary
 
@@ -94,7 +96,7 @@ retries, leases, and exact status recovery with less migration risk.
 ## Required Metrics
 
 - queue wait p50/p95/p99
-- paired L1 dependency wait vs runnable scheduler wait
+- experimental L1 dependency wait vs runnable scheduler wait
 - provider-capacity utilization and lease age
 - per-key active concurrency
 - provider latency and rate-limit headers

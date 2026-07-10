@@ -604,10 +604,10 @@ function jobL2Summary(statusPayload = {}) {
   };
 }
 
-function summaryHasVisibleL2Title(summary = {}) {
-  return summary.session_status !== "FAILED"
+export function summaryHasVisibleL2Title(summary = {}) {
+  return Boolean(summary.session_status !== "FAILED"
     && summary.l2_status === "READY"
-    && cleanText(summary.title);
+    && cleanText(summary.title));
 }
 
 function activeJobStatus(status = "") {
@@ -924,11 +924,11 @@ async function runOne({
     const batchId = `smoke-v4-spec-${Date.now()}-${index}`;
     const queuedPayload = {
       ...payload,
-      force_l2_only: false,
-      create_l1_job: true,
+      force_l2_only: !enableL1,
+      create_l1_job: enableL1,
       create_l2_job: true,
-      disable_fast_scout_l1: false,
-      v4_force_l2_direct: false,
+      disable_fast_scout_l1: !enableL1,
+      v4_force_l2_direct: !enableL1,
       client_speculative: true
     };
     const t0 = Date.now();
@@ -942,8 +942,8 @@ async function runOne({
         priority: 100,
         jobs: [{
           asset_id: id,
-          force_l2_only: false,
-          create_l1_job: true,
+          force_l2_only: !enableL1,
+          create_l1_job: enableL1,
           create_l2_job: true,
           payload: queuedPayload
         }]
@@ -1498,11 +1498,11 @@ async function enqueueSpeculativeItem({
     const prewarmResult = await prewarmPromise;
     const queuedPayload = {
       ...payload,
-      force_l2_only: false,
-      create_l1_job: true,
+      force_l2_only: !enableL1,
+      create_l1_job: enableL1,
       create_l2_job: true,
-      disable_fast_scout_l1: false,
-      v4_force_l2_direct: false,
+      disable_fast_scout_l1: !enableL1,
+      v4_force_l2_direct: !enableL1,
       client_speculative: true
     };
     const enqueueStartedAt = Date.now();
@@ -1516,8 +1516,8 @@ async function enqueueSpeculativeItem({
         priority: 100,
         jobs: [{
           asset_id: id,
-          force_l2_only: false,
-          create_l1_job: true,
+          force_l2_only: !enableL1,
+          create_l1_job: enableL1,
           create_l2_job: true,
           payload: queuedPayload
         }]
@@ -1812,6 +1812,10 @@ function summarize(results = [], { runWallMs = null } = {}) {
   return {
     attempted_count: results.length,
     ok_count: results.filter((item) => item.ok).length,
+    technical_failure_count: results.filter((item) => item.ok !== true).length,
+    policy_below_0_72_count: results.filter((item) => Number(item.final_scoring?.policy_fair_token_recall || 0) < 0.72).length,
+    // Kept for existing report consumers; this is a technical completion
+    // failure count, not an accuracy-policy failure count.
     final_failure_count: results.filter((item) => item.ok !== true).length,
     retry_card_count: results.filter((item) => Number(item.attempt_count || 0) > 1).length,
     retry_attempt_count: results.reduce((sum, item) => sum + Math.max(0, Number(item.attempt_count || 0) - 1), 0),

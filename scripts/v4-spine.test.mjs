@@ -22,12 +22,15 @@ import {
   persistV4LearningEvent,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
-import { numberArg as smokeNumberArg } from "./v4-ebay-smoke.mjs";
+import { numberArg as smokeNumberArg, summaryHasVisibleL2Title } from "./v4-ebay-smoke.mjs";
 
 assert.equal(smokeNumberArg(["node", "smoke"], "--request-timeout-ms", 90_000), 90_000);
 assert.equal(smokeNumberArg(["node", "smoke", "--request-timeout-ms", ""], "--request-timeout-ms", 90_000), 90_000);
 assert.equal(smokeNumberArg(["node", "smoke", "--offset", "0"], "--offset", 12), 0);
 assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--limit", 10), 10);
+assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), true);
+assert.equal(typeof summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), "boolean");
+assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "" }), false);
 
 const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
 const fastScoutPrewarmApiSource = await readFile("api/v4/fast-scout-prewarm.js", "utf8");
@@ -39,11 +42,11 @@ const vercelConfigSource = await readFile("vercel.json", "utf8");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /scheduleV4Background\(persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must not block writer-ready L2 by default.");
-assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start hidden L1 prewarm independently.");
-assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish the parallel hidden scout before its single L2 enqueue.");
-assert.match(v4SmokeSource, /prewarmCacheOnly: !hasFlag\(argv, "--paid-prewarm"\)/, "direct smoke prewarm must stay cache-only; the paid hidden scout belongs to the paired production queue.");
-assert.match(v4SmokeSource, /create_l1_job: true/, "production smoke must exercise the capacity-controlled hidden L1 stage.");
-assert.match(v4SmokeSource, /create_l2_job: true/, "production smoke must poll the paired final L2 stage.");
+assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
+assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish its cache probe before final telemetry is assembled.");
+assert.match(v4SmokeSource, /prewarmCacheOnly: !hasFlag\(argv, "--paid-prewarm"\)/, "direct smoke prewarm must stay cache-only and avoid a duplicate provider call.");
+assert.match(v4SmokeSource, /create_l1_job: enableL1/, "hidden L1 must be explicit experiment-only work rather than a default paid stage.");
+assert.match(v4SmokeSource, /create_l2_job: true/, "production smoke must always poll the final L2 stage.");
 assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
 assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");

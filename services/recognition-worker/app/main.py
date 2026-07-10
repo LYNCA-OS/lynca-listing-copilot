@@ -22,11 +22,12 @@ from .pipelines.image_quality import measure_image_quality_from_array, quality_u
 from .pipelines.multi_card_detection import detect_multi_card_from_loaded_images, multi_card_detection_unavailable
 from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_field_from_loaded_image, ocr_unavailable, preload_paddleocr_engine
 from .pipelines.region_proposal import propose_regions_for_rectified_card
-from .pipelines.visual_embeddings import extract_visual_embeddings
+from .pipelines.visual_embeddings import extract_visual_embeddings, preload_visual_embedding_backend
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
 
 _EMBEDDING_CACHE: dict[str, list[float]] = {}
 _PADDLEOCR_PRELOAD_STATUS: dict[str, Any] = {"status": "NOT_RUN"}
+_VISUAL_EMBEDDING_PRELOAD_STATUS: dict[str, Any] = {"status": "NOT_RUN"}
 
 
 def _image_cache_hash(image: dict[str, Any], loaded: Any) -> str:
@@ -389,14 +390,16 @@ if FastAPI is not None:
     app = FastAPI(title="LYNCA Recognition Worker", version="0.1.0")
 
     @app.on_event("startup")
-    def preload_paddleocr_on_startup() -> None:
-        global _PADDLEOCR_PRELOAD_STATUS
+    def preload_models_on_startup() -> None:
+        global _PADDLEOCR_PRELOAD_STATUS, _VISUAL_EMBEDDING_PRELOAD_STATUS
         config = load_config()
         if config.enable_paddleocr and config.paddleocr_preload:
             _PADDLEOCR_PRELOAD_STATUS = preload_paddleocr_engine(
                 model_id=config.paddleocr_model_id,
                 model_revision=config.paddleocr_model_revision,
             )
+        if config.enable_visual_embeddings and config.visual_embedding_preload:
+            _VISUAL_EMBEDDING_PRELOAD_STATUS = preload_visual_embedding_backend(config)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -416,6 +419,8 @@ if FastAPI is not None:
             "tesseract_ocr_enabled": config.enable_tesseract_ocr,
             "opencv_rectification_enabled": config.enable_opencv_rectification,
             "visual_embeddings_enabled": config.enable_visual_embeddings,
+            "visual_embedding_preload_enabled": config.visual_embedding_preload,
+            "visual_embedding_preload_status": _VISUAL_EMBEDDING_PRELOAD_STATUS,
             "candidate_verification_enabled": config.enable_candidate_verification,
             "image_download_enabled": config.enable_image_download,
             "visual_embedding_model_id": config.visual_embedding_model_id,

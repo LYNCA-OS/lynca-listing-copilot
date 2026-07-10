@@ -124,6 +124,9 @@ function publicWorkflowReadiness(report = {}) {
       return {
         index_ready: details.index_ready === true,
         worker_configured: details.worker_configured === true,
+        runtime_ready: details.runtime_ready === true,
+        runtime_status: details.runtime_status || "UNKNOWN",
+        preload_status: details.preload_status || "UNKNOWN",
         default_enabled: details.default_enabled === true,
         default_mode: details.default_mode || details.mode || "off",
         request_override_supported: details.request_override_supported === true,

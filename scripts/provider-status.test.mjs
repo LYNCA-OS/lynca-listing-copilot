@@ -19,10 +19,19 @@ process.env.ENABLE_VECTOR_RETRIEVAL = "false";
 process.env.VECTOR_RETRIEVAL_MODE = "off";
 process.env.VECTOR_WORKER_URL = "https://vector.worker.test";
 process.env.VECTOR_WORKER_TOKEN = "test-vector-token";
-globalThis.fetch = async () => ({
+globalThis.fetch = async (url) => ({
   ok: true,
   status: 200,
-  text: async () => "[]"
+  text: async () => String(url).endsWith("/readyz")
+    ? JSON.stringify({
+      status: "ready",
+      visual_embeddings_enabled: true,
+      visual_embedding_preload_enabled: true,
+      visual_embedding_preload_status: { status: "READY" },
+      visual_embedding_model_id: "google/siglip2-base-patch16-384",
+      visual_embedding_model_revision: "f775b65a79762255128c981547af89addcfe0f88"
+    })
+    : "[]"
 });
 
 function sign(value) {
@@ -75,6 +84,8 @@ assert.equal(vectorReadiness.status, "READY");
 assert.equal(vectorReadiness.details.index_ready, true);
 assert.equal(vectorReadiness.details.default_enabled, false);
 assert.equal(vectorReadiness.details.request_override_supported, true);
+assert.equal(vectorReadiness.details.runtime_ready, true);
+assert.equal(vectorReadiness.details.preload_status, "READY");
 assert.equal(vectorReadiness.details.prompt_influence_by_default, false);
 assert.equal(response.body.execution_control.distributed_provider_capacity_enabled, true);
 assert.equal(response.body.execution_control.global_fair_drain_enabled, true);

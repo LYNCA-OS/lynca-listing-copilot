@@ -48,6 +48,7 @@ Optional:
 - `ENABLE_IMAGE_DOWNLOAD=false`
 - `ENABLE_OPENCV_RECTIFICATION=false`
 - `ENABLE_VISUAL_EMBEDDINGS=false`
+- `VISUAL_EMBEDDING_PRELOAD=false` (set `true` on the dedicated vector service)
 - `VISUAL_EMBEDDING_MODEL_ID=google/siglip2-base-patch16-384`
 - `VISUAL_EMBEDDING_MODEL_REVISION=f775b65a79762255128c981547af89addcfe0f88`
 - `VISUAL_EMBEDDING_PREPROCESSING_VERSION=card-rectification-v1`
@@ -84,6 +85,10 @@ docker run --rm -p 8080:8080 \
 For production, run this worker as a dedicated cloud service with enough memory
 for SigLIP2 model weights. Keep the Vercel listing API as the orchestration
 layer; do not load PyTorch/Transformers inside Vercel serverless functions.
+Do not colocate production OCR and embedding traffic: use
+`scripts/deploy-vector-worker-cloud-run.sh` for a preloaded, single-process
+SigLIP service and point `VECTOR_WORKER_URL` at its URL. The readiness API only
+marks request-level vector assist ready when the pinned model preload succeeds.
 For PaddleOCR throughput, prefer multiple single-process worker instances or
 container replicas and configure the Node app with `PADDLE_OCR_WORKER_URLS`.
 That keeps Paddle predictors isolated while still letting the orchestrator

@@ -61,11 +61,11 @@ assert.match(js, /const SESSION_STATUS_API_ENDPOINT = "\/api\/v4\/listing-sessio
 assert.match(js, /fetch\(JOB_ENQUEUE_API_ENDPOINT/, "default title requests should enter the V4 production queue");
 assert.match(js, /fetch\(`\$\{JOB_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\)\}`/, "frontend should poll production job status by durable job id");
 assert.match(js, /processAssetViaQueue\(asset, \{ batchId: recognitionBatchId \}\)/, "batch generation should use one shared production batch identity");
-assert.match(js, /create_l1_job:\s*true/, "frontend production jobs should enqueue a hidden L1 paired with the final L2");
+assert.match(js, /create_l1_job:\s*false/, "frontend production jobs should skip hidden L1 after it showed no stable L2 or writer benefit");
 assert.match(js, /create_l2_job:\s*true/, "frontend production jobs should always enqueue the writer-visible final L2");
-assert.match(js, /const \[bundle\] = await Promise\.all/, "hidden L1 and preingestion should run concurrently before the single L2 enqueue");
+assert.match(js, /const \[bundle\] = await Promise\.all/, "preingestion and the free cache probe should run concurrently before the single L2 enqueue");
 assert.match(js, /v4_fast_scout_cache_only:\s*true/, "the direct prewarm endpoint must remain cache-only because paid hidden L1 runs inside the capacity-controlled queue");
-assert.match(js, /fastScoutPrewarm/, "L2 should reuse a hidden scout cache hit instead of competing with it for provider capacity");
+assert.match(js, /fastScoutPrewarm/, "L2 should reuse the free cache probe without spending a second provider call");
 assert.doesNotMatch(js, /l1Body|l1Outcome|applySpeculativeL1ToPendingResult/, "writer flow must not issue or display a duplicate speculative L1 request");
 assert.match(js, /fetch\(FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend should call the asset-level fast scout prewarm endpoint");
 assert.match(js, /function pollV4QueuedJobsBatch/, "queued writer titles should use one batch status aggregator");
