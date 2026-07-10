@@ -143,7 +143,7 @@ async function auditProviderPolicy() {
     failures.push("provider registry still contains allowLegacyDefault");
   }
   if (!/const defaultId = envDefault \|\| visionProviderIds\.OPENAI_LEGACY/.test(registry.text)) {
-    failures.push("GPT-4.1 mini is not the implicit production default provider in selectVisionProvider");
+    failures.push("GPT is not the implicit production default provider in selectVisionProvider");
   }
   if (!/\[visionProviderIds\.OPENAI_LEGACY\]/.test(registry.text)) {
     failures.push("provider registry does not expose the GPT provider");
@@ -161,7 +161,7 @@ async function auditProviderPolicy() {
     failures.push("frontend hard-codes GPT instead of using the server default provider");
   }
   if (!/provider === "openai_legacy"/.test(appJs.text) || !/data-emergency-retry/.test(appJs.text)) {
-    failures.push("frontend does not preserve GPT-4.1 retry compatibility controls");
+    failures.push("frontend does not preserve GPT retry compatibility controls");
   }
 
   const details = {
@@ -180,7 +180,7 @@ async function auditProviderPolicy() {
 
   return failures.length
     ? blocked("provider_default_policy", "Provider default policy is not safe enough for commercial readiness.", details)
-    : passed("provider_default_policy", "GPT-4.1 mini is the only production vision provider; automatic mixed-model cascade is removed.", details);
+    : passed("provider_default_policy", "The configured GPT model is the only production vision provider; automatic mixed-model cascade is removed.", details);
 }
 
 function destinationIdsFromPublisherContract(source) {

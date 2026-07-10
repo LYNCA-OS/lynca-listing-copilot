@@ -49,7 +49,8 @@ assert.match(js, /provider_options:\s*{/, "title requests should include provide
 assert.match(js, /body\.explicitEmergency = Boolean/, "legacy explicit flag should remain backward-compatible");
 assert.match(js, /provider === "openai_legacy"/, "OpenAI provider path should remain explicit in request payloads");
 assert.match(js, /providerCascadeText/, "frontend should render concise provider role text");
-assert.match(js, /GPT-4\.1 mini/, "provider control should identify GPT provider labels");
+assert.match(js, /provider\.model_id \|\| provider\.display_name/, "provider role text should use the server-reported active model");
+assert.doesNotMatch(js, /GPT-4\.1 mini 生产主路径/, "provider role text must not hard-code a stale model");
 assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not expose mixed-model cascade controls");
 assert.match(js, /fetch\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs");
 assert.match(js, /const TITLE_API_ENDPOINT = "\/api\/v4\/listing-copilot-title"/, "frontend should retain the V4 one-line title endpoint for explicit retry fallback");

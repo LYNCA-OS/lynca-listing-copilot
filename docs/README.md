@@ -76,7 +76,7 @@ Baseline audit and evaluation scaffold added before the commercial-evidence migr
 
 ### `architecture/phase-1-provider-routing-2026-06-22.md`
 
-Backend provider routing history; current mainline uses the GPT-4.1-primary cascade with legacy vision provider as auxiliary focused verifier.
+Backend provider routing history; current mainline uses one configured GPT production model with catalog, vector, OCR, and retrieval as evidence layers.
 
 ### `architecture/phase-2-storage-image-quality-2026-06-22.md`
 

@@ -1298,7 +1298,8 @@ function providerSmokeText(provider) {
 function providerCascadeText(provider) {
   const roles = new Set(provider.roles || [provider.role].filter(Boolean));
   if (provider.id === "openai_legacy" || roles.has("primary")) {
-    return "GPT-4.1 mini 生产主路径，不参与自动混合";
+    const model = String(provider.model_id || provider.display_name || "GPT").trim();
+    return `${model} 生产主路径，不参与自动混合`;
   }
   if (roles.has("diagnostic")) {
     return "离线/管理员诊断";

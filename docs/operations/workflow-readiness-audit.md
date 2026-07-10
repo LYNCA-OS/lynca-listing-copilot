@@ -42,7 +42,7 @@ The API response is sanitized and cached briefly server-side. It must not expose
 
 The audit currently checks:
 
-- `vision_provider`: GPT-4.1 mini production provider configuration.
+- `vision_provider`: the configured GPT production model and provider configuration.
 - `image_storage`: Supabase Storage signed upload and signed URL flow.
 - `feedback_workflow_schema`: Supabase REST visibility for workflow context columns.
 - `catalog_store`: catalog staging, gap queue, and approved-reference store readiness.
