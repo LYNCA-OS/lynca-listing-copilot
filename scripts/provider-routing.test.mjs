@@ -488,6 +488,50 @@ assert.equal(rotatedOpenAiResult.transient_retry_attempted, true);
 assert.equal(rotatedOpenAiResult.transient_retry_attempts, 1);
 assert.equal(rotatedOpenAiResult.provider_request_diagnostics.provider_key_slot, rotatedOpenAiResult.provider_key_slot);
 
+let emptyResponseCalls = 0;
+const emptyResponseAuthorizations = [];
+const emptyResponseRecovered = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  shardKey: "asset-empty-response-rotation-test",
+  env: {
+    ...env,
+    OPENAI_LISTING_MODEL: "gpt-5-mini",
+    OPENAI_API_KEY: "",
+    OPENAI_API_KEY_POOL: "sk-empty-a,sk-empty-b",
+    OPENAI_LISTING_TRANSIENT_RETRY_DELAY_MS: "0"
+  },
+  fetchImpl: async (url, init) => {
+    emptyResponseCalls += 1;
+    emptyResponseAuthorizations.push(init.headers.authorization);
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => emptyResponseCalls === 1
+        ? {
+            id: "resp_empty_pool_test",
+            status: "completed",
+            output_text: "",
+            usage: { input_tokens: 8, output_tokens: 0, total_tokens: 8 }
+          }
+        : {
+            id: "resp_empty_pool_recovered",
+            status: "completed",
+            output_text: "{\"title\":\"OpenAI Empty Recovery\",\"fields\":{\"player\":\"Recovered Empty\"},\"unresolved\":[]}",
+            usage: { input_tokens: 8, output_tokens: 5, total_tokens: 13 }
+          }
+    };
+  }
+});
+assert.equal(emptyResponseCalls, 2);
+assert.equal(new Set(emptyResponseAuthorizations).size, 2, "HTTP 200 empty responses should rotate key slots before retrying");
+assert.equal(emptyResponseRecovered.parsed.fields.player, "Recovered Empty");
+assert.equal(emptyResponseRecovered.provider_key_rotation_attempted, true);
+assert.equal(emptyResponseRecovered.provider_key_rotation_attempts, 1);
+assert.equal(emptyResponseRecovered.transient_retry_attempted, true);
+assert.equal(emptyResponseRecovered.transient_retry_attempts, 1);
+
 let transientOpenAiCalls = 0;
 const transientOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
   images: dataUrlImages,
