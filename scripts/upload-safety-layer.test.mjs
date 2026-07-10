@@ -45,8 +45,8 @@ assert.match(js, /fileSignatureHex/, "storage uploads should read first-byte fil
 assert.match(js, /signatureHex/, "signed upload requests should include file signature metadata");
 assert.match(js, /listing-image-verify-upload/, "storage uploads should be server-verified after the direct PUT");
 assert.match(js, /Storage upload verification failed/, "storage verification failures should block provider requests");
-assert.match(js, /点击开始生成后才会开始识别/, "status copy should explain recognition does not start before the user clicks generate");
-assert.match(js, /提前准备云端图片/, "status copy should explain cloud image preparation may happen before recognition");
+assert.match(js, /点击生成标题后开始识别/, "status copy should explain recognition does not start before the user clicks generate");
+assert.match(js, /图片正在后台准备/, "status copy should explain cloud image preparation may happen before recognition");
 assert.match(js, /PREINGEST_API_ENDPOINT/, "background pre-ingestion endpoint should be wired for prepared assets");
 assert.match(js, /backgroundPreparationRunId/, "background preparation should be guarded against stale file batches");
 assert.match(js, /保留主图，缩减辅助局部图/, "oversized request fallback status should be visible without implying low-quality main-image recognition");

@@ -27,7 +27,8 @@ assert.doesNotMatch(js, /state\.selectedProvider \|\| state\.providerStatus\?\.f
 assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to two-image paired recognition");
 assert.match(html, /name="assetMode" value="pair" checked/, "two-image paired recognition should be the checked default control");
 assert.match(html, /两图配对/, "paired upload mode should be labeled without front/back judgment");
-assert.match(html, /不做正背面判断/, "paired upload copy should explicitly avoid front/back judgment");
+assert.match(html, /每两张图片组成一张卡/, "writer copy should explain pairing without asking for front/back labels");
+assert.doesNotMatch(html, /正面|背面/, "writer surface should not expose front/back labels or decisions");
 assert.doesNotMatch(js, /sideDecisionForAsset/, "frontend must not compute a front/back side decision");
 assert.doesNotMatch(js, /sideDecisionNotice\(asset, result\)/, "result cards must not show front/back decision panels");
 assert.doesNotMatch(js, /EVIDENCE_SWAPPED/, "frontend must not swap uploaded images based on side evidence");

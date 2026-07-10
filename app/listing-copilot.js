@@ -831,12 +831,12 @@ function preingestionImagesForAsset(asset) {
 
 function backgroundPreparationLabel(asset = {}) {
   return {
-    queued: "云端准备排队",
-    uploading: "云端图片准备中",
-    fast_scout_prewarming: "首屏识别预热中",
-    preingesting: "云端证据包准备中",
-    ready: "云端图片已准备",
-    failed: "后台准备未完成"
+    queued: "图片准备排队中",
+    uploading: "图片上传中",
+    fast_scout_prewarming: "识别准备中",
+    preingesting: "图片分析准备中",
+    ready: "图片已准备",
+    failed: "图片准备未完成"
   }[asset.backgroundPrepareStatus] || "";
 }
 
@@ -1397,7 +1397,7 @@ function setStatus(message, options = {}) {
 function setProcessButtonBusy(isBusy) {
   elements.processButton.classList.toggle("is-loading", Boolean(isBusy));
   elements.processButton.setAttribute("aria-busy", isBusy ? "true" : "false");
-  elements.processButton.textContent = isBusy ? "识别中" : "开始生成";
+  elements.processButton.textContent = isBusy ? "识别中" : "生成标题";
 }
 
 function clampNumber(value, min, max) {
@@ -1753,7 +1753,7 @@ function renderPreviews() {
   if (!state.assets.length) {
     closeImageModal();
     elements.previewSummary.textContent = "等待上传图片。";
-    elements.assetPreviewList.innerHTML = `<div class="empty-state">上传 10 张图片后，两图配对模式会预览为 5 个 card assets，每个资产右侧会出现一个标题输出框。</div>`;
+    elements.assetPreviewList.innerHTML = `<div class="empty-state">选择图片后，卡片会按上传顺序出现在这里。</div>`;
     return;
   }
 
@@ -1761,7 +1761,7 @@ function renderPreviews() {
     ? "最后 1 张图会作为单图资产处理。"
     : "";
 
-  elements.previewSummary.textContent = `${state.files.length} 张图片，${state.assets.length} 个 card asset。${orphanNote}`;
+  elements.previewSummary.textContent = `${state.files.length} 张图片，${state.assets.length} 张卡。${orphanNote}`;
   renderAssetRows();
 }
 
@@ -1816,13 +1816,13 @@ function renderBatchTitles() {
   updateExportWorkbookControls();
 
   if (!titleResults.length) {
-    elements.batchTitleList.innerHTML = `<li class="batch-empty">生成完成后，这里会按上传顺序汇总所有非空英文 eBay title。</li>`;
+    elements.batchTitleList.innerHTML = `<li class="batch-empty">生成后可在这里统一复制或导出。</li>`;
     return;
   }
 
   elements.batchTitleList.innerHTML = titleResults.map((result) => `
     <li>
-      <span>资产 ${result.index}</span>
+      <span>卡片 ${result.index}</span>
       <p>${escapeHtml(result.correctedTitle ?? result.title)}</p>
     </li>
   `).join("");
@@ -1852,12 +1852,12 @@ function renderAssetRows() {
   const groups = [
     {
       key: "quick",
-      label: "低触审核",
+      label: "优先检查",
       assets: state.assets.filter((asset) => modelQuickApprovalCandidate(resultForAsset(asset)))
     },
     {
       key: "review",
-      label: "标准审核",
+      label: "需要确认",
       assets: state.assets.filter((asset) => {
         const result = resultForAsset(asset);
         if (!result || modelQuickApprovalCandidate(result)) return false;
@@ -1867,7 +1867,7 @@ function renderAssetRows() {
     },
     {
       key: "manual",
-      label: "深度审核 / 补拍",
+      label: "需要处理",
       assets: state.assets.filter((asset) => {
         const result = resultForAsset(asset);
         if (!result) return true;
@@ -1903,7 +1903,7 @@ function assetRowHtml(asset) {
             `).join("")}
           </div>
           <div class="preview-meta">
-            <h3>资产 ${asset.index}</h3>
+            <h3>卡片 ${asset.index}</h3>
             <span>${assetCountLabel(asset.images.length)}</span>
             ${fieldCropStrip(asset)}
           </div>
@@ -1911,34 +1911,6 @@ function assetRowHtml(asset) {
         ${result ? resultBox(result, asset) : pendingBox(asset)}
       </article>
     `;
-}
-
-function pendingModuleSkeleton(progress = {}) {
-  const percent = Number(progress.percent || 0);
-  const modules = [
-    { label: "Year", threshold: 8 },
-    { label: "Product", threshold: 16 },
-    { label: "Subject", threshold: 24 },
-    { label: "Card Name", threshold: 34 },
-    { label: "Color", threshold: 46 },
-    { label: "Serial", threshold: 58 },
-    { label: "Grade", threshold: 70 }
-  ];
-  return `
-    <div class="pending-module-grid" aria-label="识别模块占位">
-      ${modules.map((module, index) => {
-        const active = percent >= module.threshold && percent < module.threshold + 12;
-        const done = percent >= module.threshold + 12;
-        const stateLabel = done ? "已读取" : active ? "读取中" : "等待";
-        return `
-        <span class="${done ? "module-done" : active ? "module-active" : "module-waiting"}" style="--module-delay:${index * 80}ms">
-          <b>${escapeHtml(module.label)}</b>
-          <em>${escapeHtml(stateLabel)}</em>
-          <i aria-hidden="true"></i>
-        </span>`;
-      }).join("")}
-    </div>
-  `;
 }
 
 function pendingBox(asset) {
@@ -1949,15 +1921,15 @@ function pendingBox(asset) {
   const progress = assetProgressSnapshot(asset);
   const backgroundLabel = !isWorking ? backgroundPreparationLabel(asset) : "";
   const message = isActive
-    ? "正在读取原图与关键局部区域；当前卡完成后会直接显示最终标题。"
+    ? "正在识别这张卡，完成后会直接显示最终标题。"
     : isQueued
-      ? "队列会自动处理这一张，不需要重复点击。"
-      : "点击开始生成后才会开始识别；当前只是图片已准备好。";
+      ? "已经进入队列，不需要重复点击。"
+      : "点击生成标题后开始识别。";
   return `
     <div class="title-output title-output-pending ${isWorking ? "is-working" : "is-idle"}">
       <div class="title-output-head">
         <span class="confidence-badge confidence-pending">${escapeHtml(label)}</span>
-        <span>资产 ${asset.index}</span>
+        <span>卡片 ${asset.index}</span>
         ${generationTimingBadge(asset.index)}
       </div>
       <div class="pending-state ${isWorking ? "pending-active" : "pending-idle"}" role="status" aria-live="polite">
@@ -1968,11 +1940,9 @@ function pendingBox(asset) {
         ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
         ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
         ${isWorking ? `<span class="pending-timing">${generationTimingBadge(asset.index)}</span>` : ""}
-        ${isActive ? pendingModuleSkeleton(progress) : ""}
         ${isWorking ? `<span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` : ""}
       </div>
       <textarea readonly placeholder="等待生成最终英文标题。"></textarea>
-      <p class="follow-up-advice">系统会生成 80 字符以内英文标题；黄色模块需要写手确认。</p>
     </div>
   `;
 }
@@ -2265,7 +2235,7 @@ function TitleCardComponent(result, asset = null) {
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
   const generatedTitle = result.generatedTitle || result.final_title || result.title || "";
   const correctedTitle = result.correctedTitle ?? generatedTitle;
-  const copyDisabled = titlePending || (!failed && !correctedTitle);
+  const copyDisabled = titlePending || !correctedTitle;
   const saveDisabled = titlePending || result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
   const retryProvider = emergencyProvider();
   const canEmergencyRetry = failed && retryProvider && result.provider !== "openai_legacy";
@@ -2276,7 +2246,11 @@ function TitleCardComponent(result, asset = null) {
     saving: "保存中…"
   }[result.feedbackStatus] || (titleEdited ? "保存编辑" : "接受");
   const rejectDisabled = titlePending || result.feedbackStatus === "saving";
-  const providerLabel = result.provider_label || providerById(result.provider)?.label || result.provider || "-";
+  const statusLabel = failed
+    ? "失败"
+    : ["MEDIUM", "LOW"].includes(confidence) || unresolved.length
+      ? "需确认"
+      : "已生成";
   const unavailableTitle = titlePending
     ? "正在生成一段式标题"
     : failed
@@ -2288,10 +2262,9 @@ function TitleCardComponent(result, asset = null) {
   return `
     <div class="title-output ${confidenceClass(confidence)}">
       <div class="title-output-head">
-        <span class="confidence-badge ${confidenceClass(confidence)}">${confidence}</span>
+        <span class="confidence-badge ${confidenceClass(confidence)}">${escapeHtml(statusLabel)}</span>
         <div class="title-actions">
           ${generationTimingBadge(result.index)}
-          <span>${escapeHtml(providerLabel)}</span>
           ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 单模型重试</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
@@ -2301,11 +2274,10 @@ function TitleCardComponent(result, asset = null) {
       ${assistedDraftNotice(result)}
       ${titlePending && pendingProgress ? progressMeter(pendingProgress.percent, pendingProgress.label || "云端生成中") : ""}
       ${titlePending && pendingProgress ? `<span class="progress-label">${escapeHtml(pendingProgress.label || "云端生成中")}</span>` : ""}
-      <textarea data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${titlePending ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
+      <textarea rows="1" maxlength="80" spellcheck="false" data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${titlePending ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
       ${titleOverrideNotice(result)}
-      ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(result.reason || "")}</p>` : ""}
+      ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(friendlyErrorSummary(result.reason || ""))}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
-      ${writerEvidenceDetails(result, asset, unresolved)}
     </div>
   `;
 }
@@ -2436,6 +2408,7 @@ function titleOverrideNotice(result) {
 function assistedDraftNotice(result = {}) {
   if (!isV4Result(result)) return "";
   const status = v4AssistedStatus(result);
+  if (status === "READY") return "";
   if (!status && result.full_assist_continued_after_l1 !== true) return "";
   const label = {
     READY: "一段式标题已生成",
@@ -2446,8 +2419,8 @@ function assistedDraftNotice(result = {}) {
   }[status || "PENDING"] || "一段式标题生成中";
   const detail = {
     READY: "现在可以直接检查或编辑这一条标题。",
-    RUNNING: "系统正在组合图片识别、目录和向量证据，生成最终标题。",
-    PENDING: "系统正在组合图片识别、目录和向量证据，生成最终标题。",
+    RUNNING: "正在生成最终标题。",
+    PENDING: "正在生成最终标题。",
     TIMEOUT: "当前标题仍可编辑，稍后可重试或保存人工修改。",
     FAILED: "当前标题仍可编辑，必要时使用单模型重试。"
   }[status || "PENDING"];
@@ -2593,8 +2566,8 @@ async function handleFiles(fileList) {
   } else {
     const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
     setStatus(previewOptimizedCount
-      ? `${images.length} 张图片已准备。点击开始生成后才会开始识别；系统会提前准备云端图片，本地预览已高质量优化。`
-      : `${images.length} 张图片已准备。点击开始生成后才会开始识别；系统会提前准备云端图片。`);
+      ? `${images.length} 张图片已准备。点击生成标题后开始识别；图片正在后台准备，本地预览已优化。`
+      : `${images.length} 张图片已准备。点击生成标题后开始识别；图片正在后台准备。`);
   }
 
   renderPreviews();
@@ -3787,6 +3760,21 @@ function bindEvents() {
     if (titleInput) {
       finalizeTitleOverride(titleInput);
       return;
+    }
+  });
+
+  elements.assetPreviewList.addEventListener("keydown", (event) => {
+    const titleInput = event.target.closest("[data-title-input]");
+    if (!titleInput || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    event.preventDefault();
+    finalizeTitleOverride(titleInput);
+    const saveButton = titleInput.closest(".title-output")?.querySelector("[data-save-title]");
+    const inputs = [...elements.assetPreviewList.querySelectorAll("[data-title-input]:not([disabled])")];
+    const nextInput = inputs[inputs.indexOf(titleInput) + 1] || null;
+    if (saveButton && !saveButton.disabled) {
+      void saveTitleFeedback(saveButton).then(() => nextInput?.focus());
+    } else {
+      nextInput?.focus();
     }
   });
 
