@@ -206,7 +206,9 @@ async function verify(client) {
 
 async function verifyExecutionControlBehavior(client) {
   const suffix = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const jobId = `migration_probe_job_${suffix}`;
+  const firstBatchFirstJobId = `migration_probe_a1_${suffix}`;
+  const firstBatchSecondJobId = `migration_probe_a2_${suffix}`;
+  const secondBatchJobId = `migration_probe_b1_${suffix}`;
   const tenantId = `migration_probe_tenant_${suffix}`;
   const workerId = `migration_probe_worker_${suffix}`;
   await client.query("begin");
@@ -214,32 +216,57 @@ async function verifyExecutionControlBehavior(client) {
     await client.query(`
       insert into public.v4_recognition_jobs(
         id, schema_version, batch_id, tenant_id, asset_id, job_type,
-        provider_id, status, priority, payload, max_attempts
-      ) values ($1, 'migration-probe-v1', $2, $2, $1, 'FINAL_ASSISTED_TITLE',
-        'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2)
-    `, [jobId, tenantId]);
+        provider_id, status, priority, payload, max_attempts, created_at
+      ) values
+        ($1, 'migration-probe-v1', $4, $6, $1, 'FINAL_ASSISTED_TITLE',
+          'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp() - interval '2 seconds'),
+        ($2, 'migration-probe-v1', $4, $6, $2, 'FINAL_ASSISTED_TITLE',
+          'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp() - interval '1 second'),
+        ($3, 'migration-probe-v1', $5, $6, $3, 'FINAL_ASSISTED_TITLE',
+          'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp())
+    `, [firstBatchFirstJobId, firstBatchSecondJobId, secondBatchJobId, `batch_a_${suffix}`, `batch_b_${suffix}`, tenantId]);
     const claim = await client.query(`
       select id, status, queue_tags
       from public.claim_v4_recognition_jobs_with_capacity(
-        1, $1, 60, 'background', $2, 'migration_probe', 1, 1
+        2, $1, 60, 'background', $2, 'migration_probe', 2, 1
       )
     `, [workerId, tenantId]);
-    const claimed = claim.rows[0] || {};
-    const release = await client.query(
-      "select public.release_v4_provider_capacity_for_job($1, $2) as released_count",
-      [jobId, workerId]
-    );
-    const kick = await client.query(
+    const claimedIds = new Set(claim.rows.map((row) => row.id));
+    const blockedByCapacity = await client.query(`
+      select id
+      from public.claim_v4_recognition_jobs_with_capacity(
+        1, $1, 60, 'background', $2, 'migration_probe', 2, 1
+      )
+    `, [`${workerId}_overflow`, tenantId]);
+    let releasedCount = 0;
+    for (const row of claim.rows) {
+      const release = await client.query(
+        "select public.release_v4_provider_capacity_for_job($1, $2) as released_count",
+        [row.id, workerId]
+      );
+      releasedCount += Number(release.rows[0]?.released_count || 0);
+    }
+    const kickScope = `migration_probe_scope_${suffix}`;
+    const firstKick = await client.query(
       "select public.try_acquire_v4_queue_kick($1, $2, 500) as acquired",
-      [`migration_probe_scope_${suffix}`, workerId]
+      [kickScope, workerId]
+    );
+    const duplicateKick = await client.query(
+      "select public.try_acquire_v4_queue_kick($1, $2, 500) as acquired",
+      [kickScope, `${workerId}_duplicate`]
     );
     return {
-      claim_ok: claimed.id === jobId
-        && claimed.status === "RUNNING"
-        && Number(claimed.queue_tags?.provider_capacity_slot || 0) === 1
-        && Number(claimed.queue_tags?.provider_key_slot || 0) === 1,
-      release_ok: Number(release.rows[0]?.released_count || 0) === 1,
-      kick_ok: kick.rows[0]?.acquired === true
+      claim_ok: claim.rows.length === 2
+        && claim.rows.every((row) => row.status === "RUNNING")
+        && claim.rows.every((row) => Number(row.queue_tags?.provider_capacity_slot || 0) > 0)
+        && claim.rows.every((row) => Number(row.queue_tags?.provider_key_slot || 0) > 0),
+      fair_batch_claim_ok: claimedIds.has(firstBatchFirstJobId)
+        && claimedIds.has(secondBatchJobId)
+        && !claimedIds.has(firstBatchSecondJobId),
+      capacity_bound_ok: blockedByCapacity.rows.length === 0,
+      release_ok: releasedCount === 2,
+      kick_ok: firstKick.rows[0]?.acquired === true,
+      kick_dedup_ok: duplicateKick.rows[0]?.acquired === false
     };
   } finally {
     await client.query("rollback");
@@ -299,8 +326,11 @@ export default async function handler(req, res) {
       && verification.capacity_release_rpc
       && verification.queue_kick_rpc
       && behavior.claim_ok
+      && behavior.fair_batch_claim_ok
+      && behavior.capacity_bound_ok
       && behavior.release_ok
       && behavior.kick_ok
+      && behavior.kick_dedup_ok
     );
     sendJson(res, ok ? 200 : 500, {
       ok,
