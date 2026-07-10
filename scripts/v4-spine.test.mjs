@@ -33,6 +33,7 @@ const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8
 const fastScoutPrewarmApiSource = await readFile("api/v4/fast-scout-prewarm.js", "utf8");
 const queueMigrationApiSource = await readFile("api/admin-apply-v4-production-job-queue-migration.js", "utf8");
 const queueStatusApiSource = await readFile("api/v4/listing-job-status.js", "utf8");
+const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
 const vercelConfigSource = await readFile("vercel.json", "utf8");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
@@ -61,6 +62,7 @@ assert.match(queueMigrationApiSource, /capacity_bound_ok/, "the migration probe 
 assert.match(queueMigrationApiSource, /kick_dedup_ok/, "the migration probe must prove duplicate pump kicks collapse.");
 assert.match(queueStatusApiSource, /paired_l1_wait_ms/, "queue metrics must separate intentional L1 dependency time from scheduler delay.");
 assert.match(queueStatusApiSource, /scheduler_queue_wait_ms/, "queue metrics must expose actual scheduler delay after a paired L2 becomes runnable.");
+assert.match(queueWorkerApiSource, /retryable: error\?\.retryable/, "queue workers must preserve provider retryability instead of retrying deterministic contract failures.");
 
 const route = planV4RecognitionRoute({
   preingestion_bundle_id: "bundle-1",
