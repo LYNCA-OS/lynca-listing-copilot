@@ -50,19 +50,18 @@ drift (golden prompt snapshot test before step 1).
 | 7 | (fields) | field-normalization (26 call sites; runtime tendril extractHighValueInsert caught+moved) | 5,859 |
 | 8a | (decor) | result-decoration quartet | 5,784 |
 | 8b-1 | (text) | text-match primitives + pipeline-module-lint guard | **5,644** |
+| 8b-2 | (calibration) | provider-neutral result-calibration + title-grammar | **4,633** |
 
-Every slice: copy-then-delegate, 97 offline suites, cloud smoke-gate
+Every slice: copy-then-delegate, 98 offline suites, cloud smoke-gate
 (GitHub Actions `smoke-gate` workflow — canonical since local egress proved
 flaky). Gate protocol update: dispatch the cloud smoke-gate >=7 minutes after the
 alias switch — first-minutes gates hit the propagation window even from
-runners. Next target (8b): normalizeAiResult + withEvidenceCompatibility +
-the calibration/sanitize thicket (calibrateConfidence, sanitizeResultText,
-moveLeadingGradeToEnd, repairOrphanAutoGradeSuffix,
-suppressReviewOnlyParallelFields, normalizeUnresolved) whose closure reaches
-into title-grammar helpers (applySportsTitleGrammar, serialLimitForTitle,
-stripBackgroundTerms, yearConflict...) — recon the full closure before
-cutting; likely lands as pipeline/result-calibration.mjs +
-pipeline/title-grammar.mjs in one coordinated slice.
+runners. Slice 8b-2 completed the coordinated calibration/title-grammar cut:
+the copied functions now live in `pipeline/result-calibration.mjs` and
+`pipeline/title-grammar.mjs`; the HTTP file only imports their public entry
+points. The golden prompt, pipeline lint, focused renderer/title tests, and
+the full offline suite remain green. Next target is the resolution + gate
+reconciliation stage described in extraction step 3 above.
 
 ## R4 — Catalog entity resolution
 
