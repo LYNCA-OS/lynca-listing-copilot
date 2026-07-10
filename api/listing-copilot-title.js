@@ -995,6 +995,24 @@ function withVerifiedPreingestionPrintRun(result = {}, payload = {}) {
     result.resolved_fields || result.resolved || result.fields || result.raw_provider_fields || {}
   );
   const evidenceResult = withRecognitionEvidence(result, null, payload);
+  const preingestionEvidence = preingestionEvidenceDocumentFromPayload(payload)?.evidence || {};
+  const lockedEvidenceFields = Object.fromEntries([
+    "print_run_number",
+    "numerical_rarity",
+    "serial_number",
+    "print_run_denominator",
+    "numbered_to",
+    "serial_denominator"
+  ].filter((fieldName) => preingestionEvidence[fieldName]).map((fieldName) => [
+    fieldName,
+    {
+      ...preingestionEvidence[fieldName],
+      status: "CONFIRMED",
+      conflicts: (Array.isArray(preingestionEvidence[fieldName].conflicts)
+        ? preingestionEvidence[fieldName].conflicts
+        : []).map((entry) => ({ ...entry, resolved: true }))
+    }
+  ]));
 
   const printRun = expandPrintRunFields({
     print_run_number: verification.value,
@@ -1029,6 +1047,10 @@ function withVerifiedPreingestionPrintRun(result = {}, payload = {}) {
     : {};
   const next = {
     ...evidenceResult,
+    evidence: { ...(evidenceResult.evidence || {}), ...lockedEvidenceFields },
+    normalized_evidence: evidenceResult.normalized_evidence
+      ? { ...evidenceResult.normalized_evidence, ...lockedEvidenceFields }
+      : evidenceResult.normalized_evidence,
     fields: { ...(evidenceResult.fields || {}), ...overlay },
     resolved: { ...(evidenceResult.resolved || {}), ...overlay },
     resolved_fields: { ...(evidenceResult.resolved_fields || evidenceResult.resolved || evidenceResult.fields || {}), ...overlay },

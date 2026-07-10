@@ -143,10 +143,20 @@ const lockedOcrTitle = __listingCopilotTitleTestHooks.withVerifiedPreingestionPr
     players: ["Justin Herbert"],
     serial_number: "06/09"
   },
-  evidence: {}
+  evidence: {
+    print_run_number: {
+      value: "66/99",
+      normalized_value: "66/99",
+      status: "CONFIRMED",
+      confidence: 0.99,
+      source_type: "CARD_FRONT_PRINTED_TEXT"
+    }
+  }
 }, verifiedOcrPayload);
 assert.match(lockedOcrTitle.final_title, /30\/99/);
 assert.doesNotMatch(lockedOcrTitle.final_title, /06\/9/);
+assert.doesNotMatch(lockedOcrTitle.final_title, /66\/99/);
+assert.equal(lockedOcrTitle.evidence.print_run_number.value, "30/99");
 assert.equal(lockedOcrTitle.serial_numerator_verified, true);
 assert.equal(lockedOcrTitle.conflict_map.at(-1).conflict_type, "OCR_CURRENT_IMAGE_OVERRIDE");
 assert.equal(serialNumeratorVerificationFromPreingestion({
