@@ -22,6 +22,12 @@ import {
   persistV4LearningEvent,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
+import { numberArg as smokeNumberArg } from "./v4-ebay-smoke.mjs";
+
+assert.equal(smokeNumberArg(["node", "smoke"], "--request-timeout-ms", 90_000), 90_000);
+assert.equal(smokeNumberArg(["node", "smoke", "--request-timeout-ms", ""], "--request-timeout-ms", 90_000), 90_000);
+assert.equal(smokeNumberArg(["node", "smoke", "--offset", "0"], "--offset", 12), 0);
+assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--limit", 10), 10);
 
 const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");

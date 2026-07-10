@@ -13,8 +13,10 @@ function argValue(argv, name, fallback = "") {
   return index === -1 ? fallback : argv[index + 1] || fallback;
 }
 
-function numberArg(argv, name, fallback) {
-  const value = Number(argValue(argv, name, ""));
+export function numberArg(argv, name, fallback) {
+  const rawValue = argValue(argv, name, null);
+  if (rawValue === null || String(rawValue).trim() === "") return fallback;
+  const value = Number(rawValue);
   return Number.isFinite(value) ? value : fallback;
 }
 
