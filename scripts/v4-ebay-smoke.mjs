@@ -895,11 +895,11 @@ async function runOne({
   const fallbackSealed = [...sealedLabels.values()].find((row) => row.key === sealedKey) || null;
   const label = sealed || fallbackSealed || {};
   const sellerTitle = cleanText(label.title || item.corrected_title || item.canonical_title || "");
-  let prewarmResult = queueMode && speculative ? null : await prewarmPromise;
+  const prewarmResult = await prewarmPromise;
 
   if (queueMode && speculative) {
     // 复刻新前端“识别前移”行为：图片/证据包就绪（=preingest 完成）的时刻 T0，
-    // L2 生产 job 立即入队；更早启动的隐藏 fast scout 继续并行，绝不阻塞 L2；
+    // preingest 与隐藏 fast scout 已并行完成，只发一次 L2 生产 job；
     // 模拟写手思考 thinkMs 后在 T1“点击”，此后测的才是写手感知延迟。
     const batchId = `smoke-v4-spec-${Date.now()}-${index}`;
     const queuedPayload = {
@@ -956,7 +956,6 @@ async function runOne({
     const finalProviderDiagnostics = objectOrNull(l2.summary?.provider_diagnostics)
       || providerDiagnosticsFromSummary(l2.summary || {});
     const writerReady = Boolean(l2.ready || finalTitle);
-    prewarmResult = await prewarmPromise;
     const fastLaneHit = l2.summary?.v4_l2_timing?.exact_anchor_scout_status === "CACHE_HIT"
       && Number(l2.summary?.v4_l2_timing?.exact_anchor_finalize_ms || 0) > 0
       && Number(l2.summary?.worker_processing_ms || 0) < 5000;

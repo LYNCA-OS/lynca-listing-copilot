@@ -62,8 +62,8 @@ assert.match(js, /fetch\(JOB_ENQUEUE_API_ENDPOINT/, "default title requests shou
 assert.match(js, /fetch\(`\$\{JOB_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\)\}`/, "frontend should poll production job status by durable job id");
 assert.match(js, /processAssetViaQueue\(asset\)/, "batch generation should use the production queue path by default");
 assert.match(js, /force_l2_only:\s*true/, "frontend queue jobs should start L2 directly unless an A/B explicitly opts into L1");
-assert.match(js, /void ensureFastScoutPrewarm\(asset\)/, "hidden L1 prewarm should run without blocking preingestion or L2 enqueue");
-assert.doesNotMatch(js, /const \[bundle\] = await Promise\.all/, "background preparation must not wait for hidden L1 before starting L2");
+assert.match(js, /const \[bundle\] = await Promise\.all/, "hidden L1 and preingestion should run concurrently before the single L2 enqueue");
+assert.match(js, /fastScoutPrewarm/, "L2 should reuse the completed hidden scout cache instead of competing with it for provider capacity");
 assert.doesNotMatch(js, /l1Body|l1Outcome|applySpeculativeL1ToPendingResult/, "writer flow must not issue or display a duplicate speculative L1 request");
 assert.match(js, /fetch\(FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend should call the asset-level fast scout prewarm endpoint");
 assert.match(js, /fetch\(`\$\{SESSION_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\)\}`/, "frontend should poll session status using the durable recognition_session_id");

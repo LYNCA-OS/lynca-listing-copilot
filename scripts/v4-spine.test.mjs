@@ -35,7 +35,7 @@ assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 mu
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /scheduleV4Background\(persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must not block writer-ready L2 by default.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start hidden L1 prewarm independently.");
-assert.match(v4SmokeSource, /let prewarmResult = queueMode && speculative \? null : await prewarmPromise/, "speculative smoke must not await hidden L1 before L2 enqueue.");
+assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish the parallel hidden scout before its single L2 enqueue.");
 assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
 assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");

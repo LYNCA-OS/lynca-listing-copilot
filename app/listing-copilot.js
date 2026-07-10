@@ -37,7 +37,7 @@ const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
-// L1 scout 只在后台为 L2 提供可选缓存证据，永不阻塞 L2，也不直接展示给写手。
+// L1 scout 与预处理并行，缓存就绪后只启动一次 L2；L1 永不直接展示给写手。
 // 点击“开始生成”变成“展示已就绪的结果”，而不是“从零启动识别”。
 const ENABLE_SPECULATIVE_RECOGNITION = true;
 const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
@@ -1005,15 +1005,18 @@ async function prepareAssetInBackground(asset, runId) {
       await ensureAssetImagesUploaded(asset);
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "fast_scout_prewarming";
-      void ensureFastScoutPrewarm(asset);
+      const fastScoutPrewarm = ensureFastScoutPrewarm(asset);
 
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
-      const bundle = await ensurePreingestionBundle(asset);
+      const [bundle] = await Promise.all([
+        ensurePreingestionBundle(asset),
+        fastScoutPrewarm
+      ]);
 
       if (runId === state.backgroundPreparationRunId) {
-        // 证据包 id 已经落在 asset 上，立即让 L2 入队。Fast scout 若先完成，
-        // L2 会复用同图缓存；若未完成，L2 直接继续，绝不为 L1 等待。
+        // 证据包和同图 scout 缓存都已就绪，只启动一次 L2。这样避免 L1/L2
+        // 同时争抢 provider 槽，也让精确锚定卡稳定走缓存快线。
         void ensureSpeculativeRecognition(asset, runId);
       }
 
