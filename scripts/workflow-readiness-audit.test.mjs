@@ -72,6 +72,7 @@ assert.equal(readyReport.schema_version, workflowReadinessVersion);
 assert.equal(readyReport.ok, true);
 assert.equal(readyReport.can_run_cloud_recognition, true);
 assert.equal(component(readyReport, "vision_provider").status, "READY");
+assert.match(component(readyReport, "vision_provider").summary, /gpt-4\.1-mini/);
 assert.equal(component(readyReport, "image_storage").status, "READY");
 assert.equal(component(readyReport, "feedback_workflow_schema").status, "READY");
 assert.equal(component(readyReport, "vector_retrieval").status, "READY");
@@ -95,6 +96,25 @@ assert.equal(component(missingReport, "feedback_workflow_schema").status, "FAIL_
 assert.equal(component(missingReport, "vector_retrieval").status, "DISABLED");
 assert.equal(component(missingReport, "paddle_ocr").status, "DISABLED");
 assert.equal(component(missingReport, "catalog_store").status, "FAIL_CLOSED");
+
+const requestOptInVectorReport = await buildWorkflowReadinessAudit({
+  argv: ["--no-env-file"],
+  env: {
+    ...configuredEnv,
+    OPENAI_LISTING_MODEL: "gpt-5-mini",
+    ENABLE_VECTOR_RETRIEVAL: "false",
+    VECTOR_RETRIEVAL_MODE: "off",
+    VECTOR_INDEX_READY: "true"
+  },
+  cwd: tempDir,
+  fetchImpl: async () => response()
+});
+assert.match(component(requestOptInVectorReport, "vision_provider").summary, /gpt-5-mini/);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").status, "READY");
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.default_enabled, false);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.index_ready, true);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.request_override_supported, true);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.prompt_influence_by_default, false);
 
 const schemaBlockedReport = await buildWorkflowReadinessAudit({
   argv: ["--no-env-file"],

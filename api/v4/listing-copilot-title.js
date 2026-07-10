@@ -1082,6 +1082,7 @@ export default async function handler(req, res) {
   });
 
   const forceL2Direct = payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true;
+  let l2ScoutResult = null;
 
   // L2-direct short-circuit: even when the fast-scout L1 response is skipped
   // (queue workers, forced L2), a unique strict-tier catalog hit lets us skip
@@ -1105,6 +1106,7 @@ export default async function handler(req, res) {
           titleStage: v4TitleStages.L1_INTERNAL_SCOUT
         })
       });
+      l2ScoutResult = scoutResult;
       l2Timing.exact_anchor_scout_ms = Date.now() - scoutStartedAt;
       l2Timing.exact_anchor_scout_status = scoutResult.fast_scout?.cache_hit ? "CACHE_HIT" : "PROVIDER_CALL";
       const finalizeStartedAt = Date.now();
@@ -1171,12 +1173,18 @@ export default async function handler(req, res) {
     }
   }
 
-  const modelRequiresFullL2Options = shouldSkipFastScoutForRequestedModel(payload, process.env);
+  // Queue workers normally skip the progressive L1 branch, but exact-anchor
+  // probing has already loaded the same-image scout from prewarm/cache. Carry
+  // that observation into full L2 so the primary model confirms and completes
+  // known fields instead of starting from zero. It remains a non-authoritative
+  // hint: the L2 prompt requires current-image evidence for every copied value.
+  const l2Payload = backgroundPayloadWithL1ResolvedHint(payload, l2ScoutResult);
+  const modelRequiresFullL2Options = shouldSkipFastScoutForRequestedModel(l2Payload, process.env);
   const progressiveProviderOptions = forceL2Direct || modelRequiresFullL2Options
-    ? providerOptionsForV4BackgroundL2({ payload, routePlan })
-    : providerOptionsForV4ProgressiveL1({ payload, routePlan });
+    ? providerOptionsForV4BackgroundL2({ payload: l2Payload, routePlan })
+    : providerOptionsForV4ProgressiveL1({ payload: l2Payload, routePlan });
   const v2Payload = v2PayloadFor({
-    payload,
+    payload: l2Payload,
     sessionId,
     routePlan,
     providerOptions: progressiveProviderOptions,

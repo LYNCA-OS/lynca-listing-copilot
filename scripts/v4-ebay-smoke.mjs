@@ -246,7 +246,7 @@ async function login({ baseUrl, username, password, fetchImpl = globalThis.fetch
 
 async function postJson({ baseUrl, path, cookie, payload, requestTimeoutMs, fetchImpl = globalThis.fetch }) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error("request_timeout")), requestTimeoutMs);
+  const timer = setTimeout(() => controller.abort(new Error(`request_timeout:${path}`)), requestTimeoutMs);
   const started = Date.now();
   try {
     const response = await fetchImpl(`${baseUrl}${path}`, {
@@ -275,7 +275,7 @@ async function postJson({ baseUrl, path, cookie, payload, requestTimeoutMs, fetc
 
 async function getJson({ baseUrl, path, cookie, requestTimeoutMs, fetchImpl = globalThis.fetch }) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error("request_timeout")), requestTimeoutMs);
+  const timer = setTimeout(() => controller.abort(new Error(`request_timeout:${path.split("?")[0]}`)), requestTimeoutMs);
   const started = Date.now();
   try {
     const response = await fetchImpl(`${baseUrl}${path}`, {

@@ -28,7 +28,7 @@ assert.ok(fastScoutBranch.includes("scheduleV4Background(createResultPromise.the
 assert.ok(!fastScoutBranch.includes("l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft"), "L2 must not wait for L1 persistence before starting");
 assert.ok(apiSource.includes("DISABLE_GPT5_FAST_SCOUT_L1"), "GPT-5 main-path requests must follow the same internal L1 path by default and only skip when explicitly disabled");
 assert.ok(apiSource.includes("isGpt5ResponsesModel(requestedListingModel)"), "GPT-5 model detection must guard the fast scout L1 branch");
-assert.ok(apiSource.includes("modelRequiresFullL2Options") && apiSource.includes("providerOptionsForV4BackgroundL2({ payload, routePlan })"), "GPT-5 model detection must also select full L2 provider options after skipping the L1 branch");
+assert.ok(apiSource.includes("modelRequiresFullL2Options") && apiSource.includes("providerOptionsForV4BackgroundL2({ payload: l2Payload, routePlan })"), "GPT-5 model detection must also select full L2 provider options after skipping the L1 branch");
 assert.ok(apiSource.includes("fast_scout_blocking_call_used: false") && apiSource.includes("fast_scout_skip_reason: \"model_requires_full_l2\""), "GPT-5 full-L2 responses must expose that fast scout was skipped");
 assert.ok(apiSource.includes("shouldRetryGpt5EmptyResult"), "GPT-5 full-L2 empty-title failures must have a dedicated retry guard");
 assert.ok(apiSource.includes("v4_gpt5_empty_result_retry_attempted: true"), "GPT-5 empty-title retry must be marked on the retry payload");
@@ -44,6 +44,9 @@ assert.ok(apiSource.includes("ENABLE_V4_L2_EXACT_ANCHOR_BLOCKING_SCOUT"), "L2 ex
 assert.ok(apiSource.includes("allowProviderCall: allowBlockingScout"), "L2 exact-anchor scout must not make a blocking provider call by default.");
 assert.ok(apiSource.includes("CACHE_MISS_PROVIDER_DISABLED"), "L2 exact-anchor cache miss must fall through to full L2 without waiting on a scout model call.");
 assert.ok(apiSource.includes("v4_l2_timing"), "V4 L2 must expose stage timings for worker latency diagnosis.");
+assert.ok(apiSource.includes("l2ScoutResult = scoutResult"), "L2-direct must retain the cached same-image scout observation.");
+assert.ok(apiSource.includes("backgroundPayloadWithL1ResolvedHint(payload, l2ScoutResult)"), "L2-direct must use the internal scout to focus full L2 without exposing L1 to writers.");
+assert.ok(apiSource.includes("providerOptionsForV4BackgroundL2({ payload: l2Payload, routePlan })"), "L2 provider options must receive the scout-enriched payload.");
 assert.ok(fastScoutSource.includes("readV4FastScoutCache"), "fast scout must read persistent cache");
 assert.ok(fastScoutSource.includes("persistV4FastScoutCache"), "fast scout must persist cache");
 assert.ok(fastScoutSource.includes("cacheWriteMode = \"background\""), "fast scout API path must default cache writes to background");
