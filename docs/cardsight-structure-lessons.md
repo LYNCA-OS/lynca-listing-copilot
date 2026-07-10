@@ -22,7 +22,7 @@ This research only uses public GitHub sources, README files, SDK surface, genera
 The current LYNCA Listing Copilot is already beyond a simple image-to-title demo:
 
 - `api/listing-copilot-title.js` is the main cloud API orchestration boundary.
-- GPT-4.1 mini is the production single-model vision provider; Gemini and Agnes are not the strategic path.
+- The provider contract defines one GPT production vision path; the currently configured model is read from deployment configuration rather than hard-coded in documentation.
 - Provider output is normalized into the Evidence First compatibility layer through `providerPayloadToEvidenceDocument`.
 - Recognition worker evidence, if present, is normalized through `recognitionResponseToEvidenceDocument`.
 - Retrieval is planned in `lib/listing/retrieval/query-planner.mjs` and executed in `lib/listing/retrieval/retrieval-engine.mjs`.

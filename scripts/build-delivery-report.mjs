@@ -3,6 +3,10 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluateGoldenDataset } from "../lib/listing/evaluation/golden-dataset.mjs";
+import {
+  defaultProviderModels,
+  visionProviderIds
+} from "../lib/listing/providers/provider-contract.mjs";
 import { createCommercialReadinessReport } from "./commercial-readiness-audit.mjs";
 
 const defaultDatasetPath = "data/golden-dataset.json";
@@ -168,6 +172,9 @@ export async function createDeliveryReport({
   const metrics = evaluation?.ok ? evaluation.held_out_commercial_evidence.commercial_metrics : {};
   const operational = evaluation?.ok ? evaluation.operational_metrics : {};
   const scripts = Object.keys(packageJson.scripts || {}).sort();
+  const productionVisionModel = String(
+    env.OPENAI_LISTING_MODEL || defaultProviderModels[visionProviderIds.OPENAI_LEGACY]
+  ).trim();
 
   const sections = [
     section(1, "Current Source Audit Result", bullet([
@@ -187,7 +194,7 @@ export async function createDeliveryReport({
     ])),
     section(2, "Implementation Summary", bullet([
       "Evidence First compatibility layer, provider routing, storage verification, image-quality gates, retrieval, completion orchestration, renderer, feedback-retention gate, publishing boundary, semantic title acceptance, eval, smoke, readiness audit, and delivery-report scaffolds are present.",
-      "GPT-4.1 mini is the only production vision provider; catalog, vector, registry, and retrieval are evidence layers, not extra vision models.",
+      `${productionVisionModel} is the configured production vision model; catalog, vector, registry, and retrieval are evidence layers, not extra vision models.`,
       "Commercial acceptance remains blocked until real held-out evidence, live external retrieval validation, and a real B-end adapter exist."
     ])),
     section(3, "Architecture Changes", bullet([
@@ -203,13 +210,13 @@ export async function createDeliveryReport({
     section(5, "GPT Vision Provider Status", bullet([
       `Smoke report: ${smokeSummary(smokeReports.openai)}`,
       `Provider policy: ${readiness.checks.find((check) => check.id === "provider_default_policy")?.status || "missing"}`,
-      "Only GPT-4.1 mini is exposed through the production provider registry.",
+      `The production provider registry exposes one GPT vision path, currently configured as ${productionVisionModel}.`,
       "Catalog and vector data may assist candidate selection, but they cannot copy serial, grade, cert, or unverified instance fields."
     ])),
-    section(6, "GPT-4.1 Primary Status", bullet([
+    section(6, "Production GPT Path Status", bullet([
       `Implicit default status: ${readiness.checks.find((check) => check.id === "provider_default_policy")?.details?.gpt_implicit_default || "unknown"}`,
-      "GPT-4.1 is the primary recognizer when enabled and configured.",
-      "The standalone GPT-4.1 retry action remains explicit and does not introduce another provider."
+      `Configured model: ${productionVisionModel}.`,
+      "The explicit model override used by controlled evaluation does not introduce another provider."
     ])),
     section(7, "Brave Search Status", bullet([
       `Smoke status: ${smokeStatusFromReadiness(readiness, "brave")}`,
@@ -278,7 +285,7 @@ export async function createDeliveryReport({
     section(18, "Writer UI Behavior", bullet([
       "Writer modules render compact editable sections rather than raw JSON.",
       "Module edits update corrected resolved fields and rerender deterministic titles.",
-      "Provider controls expose GPT-4.1 mini as the single production model without arbitrary endpoint/model inputs."
+      `Provider controls expose the single GPT production path (${productionVisionModel}) without arbitrary endpoint/model inputs.`
     ])),
     section(19, "Title Renderer Behavior", bullet([
       "Final title is rendered deterministically from resolved fields.",
@@ -346,7 +353,7 @@ export async function createDeliveryReport({
       "Real adapter work requires B-end API documentation and credentials."
     ])),
     section(27, "Single-Provider Operating Policy", bullet([
-      "Phase A: GPT-4.1 mini remains the only production vision model.",
+      `Phase A: ${productionVisionModel} is the configured model on the single production GPT vision path.`,
       "Phase B: catalog, vector, official checklist, and approved memory improve evidence recall without becoming truth by themselves.",
       "Phase C: risky fields route to writer review or targeted rescan instead of another automatic model.",
       "Phase D: any future provider must prove positive net benefit on held-out data before it is exposed."

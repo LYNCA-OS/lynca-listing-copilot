@@ -211,6 +211,7 @@ const report = await createDeliveryReport({
     SUPABASE_RECOGNITION_CANDIDATE_REPORT_PATH: supabaseCandidateReportPath,
     COMMERCIAL_REVIEW_PACKET_PATH: commercialReviewPacketPath,
     COMMERCIAL_REVIEW_WORKLIST_PATH: commercialReviewWorklistPath,
+    OPENAI_LISTING_MODEL: "gpt-5-mini",
     LISTING_IDENTITY_CACHE_READ_ENABLED: "true",
     LISTING_IDENTITY_CACHE_WRITE_ENABLED: "false",
     LISTING_IDENTITY_CACHE_WRITE_RESOLVED: "false",
@@ -254,7 +255,8 @@ assert.match(report, /Skipped smoke reports are explicit missing-validation evid
 assert.match(report, /label those candidates before accuracy evaluation/);
 assert.match(report, /This generated report does not execute test commands/);
 assert.match(report, /Single-Provider Operating Policy/);
-assert.match(report, /GPT-4\.1 mini remains the only production vision model/);
+assert.match(report, /gpt-5-mini is the configured model on the single production GPT vision path/);
+assert.doesNotMatch(report, /GPT-4\.1 mini is the only production vision provider/);
 assert.doesNotMatch(report, /A[g]nes/i);
 assert.doesNotMatch(report, /commercial acceptance passed/i);
 assert.doesNotMatch(report, /95% achieved/i);

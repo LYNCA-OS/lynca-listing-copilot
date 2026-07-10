@@ -10,6 +10,10 @@ import os from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import tls from "node:tls";
+import {
+  defaultProviderModels,
+  visionProviderIds
+} from "../lib/listing/providers/provider-contract.mjs";
 
 const datasetPath = "docs/v2/evaluation-dataset-001.md";
 const auditPath = "docs/v2/benchmark-image-access-audit-001.md";
@@ -44,7 +48,7 @@ const config = {
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   authSecret: process.env.METAVERSE_AUTH_SECRET || "",
   openAiConfigured: Boolean(process.env.OPENAI_API_KEY),
-  model: process.env.OPENAI_LISTING_MODEL || "gpt-4.1-mini",
+  model: process.env.OPENAI_LISTING_MODEL || defaultProviderModels[visionProviderIds.OPENAI_LEGACY],
   proxyMode,
   runMode,
   candidatePromptPatchPath: candidatePromptPatchPath || null
