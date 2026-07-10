@@ -58,6 +58,17 @@ timeouts while local runs failed 0/3 twice in the same hour. The
 Actions workflow is now the canonical gate; local smokes are for
 iteration only.
 
+## Infra weather: PostgREST transients (2026-07-10 ~02:00Z window)
+
+Gate diagnostics (exact_anchor_finalize reason on pending L1) attributed a
+run of fast-lane misses and first-card timeouts to transient PostgREST
+unavailability — pg_stat_activity showed a healthy database (0 locks,
+sub-second queries) during the same window. Mitigations landed: the finalize
+RPC retries once in a widened race window (verified recovering a hit
+mid-window), and the smoke-gate workflow warms the path before scoring.
+During such windows, gate verdicts follow the rerun protocol; consider a
+Supabase tier/pooler review if windows recur.
+
 ## Tracked baselines (C100 first-10 slice, policy-fair)
 
 | Date | Config | avg | pass@0.72 | perceived p50 | Notes |

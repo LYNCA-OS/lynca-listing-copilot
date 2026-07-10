@@ -48,7 +48,8 @@ drift (golden prompt snapshot test before step 1).
 | 5 | 6fe2dec | provider-options | 6,565 |
 | 6 | (prompt) | provider-prompt (bit-identical snapshot) | 6,160 |
 | 7 | (fields) | field-normalization (26 call sites; runtime tendril extractHighValueInsert caught+moved) | 5,859 |
-| 8a | (decor) | result-decoration quartet | **5,784** |
+| 8a | (decor) | result-decoration quartet | 5,784 |
+| 8b-1 | (text) | text-match primitives + pipeline-module-lint guard | **5,644** |
 
 Every slice: copy-then-delegate, 97 offline suites, cloud smoke-gate
 (GitHub Actions `smoke-gate` workflow — canonical since local egress proved
