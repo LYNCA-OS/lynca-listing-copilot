@@ -77,5 +77,19 @@ Supabase tier/pooler review if windows recur.
 | 2026-07-09 take1 | gpt-4.1-mini (accidental control) | 0.847* | — | 30.7s | *3 completed cards only |
 | 2026-07-09 take5 | gpt-5-mini, all fixes, speculative | **0.851** | **9/10** | **305ms** | fast-lane 4/10 hits at 0ms |
 
+## Production gate validations
+
+| Date | Run | Commit | Cards | Policy-fair avg | Writer-ready p50 / p95 | Perceived p50 / p95 | Verdict |
+|---|---|---|---|---|---|---|---|
+| 2026-07-10 | `29070448525` | `f6bf5f1` | 2/3 | 0.629630 | 5.283s / incomplete | 0ms / incomplete | Failed: one GPT-5 mini HTTP 200 empty response remained unrecovered across two queue attempts. |
+| 2026-07-10 | `29071181965` | `593529f` | **3/3** | **0.922078** | **5.636s / 24.353s** | **0ms / 19.350s** | Passed after provider-level empty-response retry/key-rotation hardening; 20,893 total tokens. |
+
+The passing run did not reproduce an empty response, so the live gate proves
+no regression and full completion, while the key-rotation behavior itself is
+locked by the provider-routing regression test. Compared with the prior same
+three-card passing gate (`29067775787`), policy-fair accuracy is unchanged at
+0.922078 while writer-ready p95 fell from 79.870s to 24.353s and perceived p95
+fell from 74.864s to 19.350s.
+
 Rules: one theme per change; accuracy changes need an A/B or smoke; speed
 changes need timing evidence; never claim uplift without a tracked row here.
