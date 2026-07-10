@@ -3,9 +3,11 @@ import {
   appendEvidencePatchesToBundle,
   bundlePatchesFromOcrResult,
   claimQueuedPreingestionOcrJobs,
+  ocrConfidenceForFieldValue,
   ocrRequestForPreingestionJob,
   processQueuedPreingestionOcrJobs,
   readPreingestionOcrState,
+  requeueRetryableFailedPreingestionOcrJobs,
   waitForPreingestionOcrEvidence
 } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 
@@ -83,6 +85,23 @@ assert.equal(serialPatch.crop_id, "crop-1");
 assert.equal(serialPatch.confidence, 0.94);
 assert.equal(serialPatch.provenance.job_key, "ocr:bundle-1:crop-1");
 
+const exactLineConfidence = ocrConfidenceForFieldValue({
+  confidence: 0.71,
+  text_candidates: [
+    { text: "TEST PLAYER 30/99 AUTO", confidence: 0.71 },
+    { text: "30/99", confidence: 0.96 }
+  ]
+}, "30/99");
+assert.equal(exactLineConfidence, 0.96);
+
+const lineWeightedPatches = bundlePatchesFromOcrResult({
+  ...ocrResult,
+  confidence: 0.71,
+  text_candidates: [{ text: "09/50", normalized_text: "09/50", confidence: 0.96 }],
+  evidence_patch: { ...ocrResult.evidence_patch, confidence: 0.71 }
+}, sampleJob);
+assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number")?.confidence, 0.96);
+
 // --- claim is conditional on status=queued (atomic per row) ---
 {
   const calls = [];
@@ -101,6 +120,29 @@ assert.equal(serialPatch.provenance.job_key, "ocr:bundle-1:crop-1");
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].status, "running");
   assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
+}
+
+// --- only current-version transient failures are recovered ---
+{
+  const updates = [];
+  const recovered = await requeueRetryableFailedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env: { ...env, PREINGESTION_OCR_MAX_ATTEMPTS: "3" },
+    fetchImpl: async (url, init = {}) => {
+      if (!init.method) {
+        return jsonResponse([
+          { job_id: "retry-current", job_key: "ocr:ocr-crop-v3:bundle-1:crop-1", attempts: 1, last_error: "PaddleOCR worker request timed out." },
+          { job_id: "old-version", job_key: "ocr:ocr-crop-v2:bundle-1:crop-1", attempts: 1, last_error: "PaddleOCR worker request timed out." },
+          { job_id: "permanent", job_key: "ocr:ocr-crop-v3:bundle-1:crop-2", attempts: 1, last_error: "crop source_object_path missing" }
+        ]);
+      }
+      updates.push(String(url));
+      return jsonResponse([{ job_id: "retry-current", status: "queued" }]);
+    }
+  });
+  assert.equal(recovered.requeued, 1);
+  assert.equal(updates.length, 1);
+  assert.match(updates[0], /retry-current/);
 }
 
 // --- serial crop falls back to full-image OCR only when the fixed crop has no numbering ---

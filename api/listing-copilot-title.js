@@ -199,8 +199,9 @@ export function serialNumeratorVerificationFromPreingestion(payload = {}, rendez
   for (const patch of patches) {
     if (!["print_run_number", "serial_number", "numerical_rarity"].includes(String(patch?.field || "").trim())) continue;
     if (String(patch?.source_type || "").trim().toUpperCase() !== "OCR") continue;
-    if (!Number.isFinite(Number(patch?.confidence)) || Number(patch.confidence) < confirmedOcrSerialConfidence) continue;
     const expanded = expandPrintRunFields({ print_run_number: patch.value, serial_number: patch.value });
+    const fieldConfidence = ocrPatchPrintRunConfidence(patch, expanded.print_run_number || "");
+    if (fieldConfidence < confirmedOcrSerialConfidence) continue;
     if (expanded.print_run_numerator && expanded.print_run_denominator) {
       fullValues.add(`${expanded.print_run_numerator}/${expanded.print_run_denominator}`);
     }
@@ -209,6 +210,19 @@ export function serialNumeratorVerificationFromPreingestion(payload = {}, rendez
   if (fullValues.size > 1) return false;
   if (rendezvous?.job_count > 0) return false;
   return null;
+}
+
+function ocrPatchPrintRunConfidence(patch = {}, expectedPrintRun = "") {
+  let confidence = Number.isFinite(Number(patch.confidence)) ? Number(patch.confidence) : 0;
+  if (!expectedPrintRun) return confidence;
+  for (const candidate of Array.isArray(patch.text_candidates) ? patch.text_candidates : []) {
+    const candidateValue = candidate?.value ?? candidate?.text ?? candidate?.normalized_text ?? "";
+    const parsed = expandPrintRunFields({ print_run_number: candidateValue, serial_number: candidateValue });
+    if (parsed.print_run_number !== expectedPrintRun) continue;
+    const candidateConfidence = Number(candidate?.confidence);
+    if (Number.isFinite(candidateConfidence)) confidence = Math.max(confidence, candidateConfidence);
+  }
+  return confidence;
 }
 
 function serialNumeratorVerificationFromPayload(payload = {}) {
@@ -893,7 +907,13 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
     resolved,
     evidence: result.normalized_evidence || result.evidence || {},
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
-    serialNumeratorVerified: serialNumeratorVerificationFromPayload(payload)
+    // The OCR rendezvous runs inside the provider pipeline, while this final
+    // render receives the outer request payload. Prefer the runtime decision
+    // carried by the result so a rejected numerator cannot be reintroduced at
+    // the response boundary by stale request state.
+    serialNumeratorVerified: result.serial_numerator_verified
+      ?? result.serialNumeratorVerified
+      ?? serialNumeratorVerificationFromPayload(payload)
   });
   const renderedTitle = presentation.rendered_title || "";
   if (!renderedTitle) return result;

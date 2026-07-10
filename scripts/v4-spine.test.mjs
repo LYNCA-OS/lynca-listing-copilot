@@ -177,7 +177,10 @@ const v2Result = {
     output_tokens: 500,
     provider_latency_ms: 12345,
     response_status: "completed"
-  }
+  },
+  preingestion_ocr_rendezvous: { status: "TERMINAL", job_count: 2, patch_count: 3 },
+  preingestion_evidence_refresh: { refreshed: true, added_patch_count: 2 },
+  serial_numerator_verified: true
 };
 
 const v4 = adaptV2ResultToV4({
@@ -207,6 +210,9 @@ assert.equal(v4.catalog_activation_funnel.prompt_candidate_count, 1);
 assert.equal(v4.provider_result.token_diagnostics.input_tokens, 1000);
 assert.equal(v4.provider_result.rate_limit_diagnostics["x-ratelimit-remaining-tokens"], "1998500");
 assert.equal(v4.provider_result.request_diagnostics.provider_latency_ms, 12345);
+assert.equal(v4.provider_result.preingestion_ocr_rendezvous.status, "TERMINAL");
+assert.equal(v4.provider_result.preingestion_evidence_refresh.added_patch_count, 2);
+assert.equal(v4.provider_result.serial_numerator_verified, true);
 
 const failedL2V4 = adaptV2ResultToV4({
   sessionId: "v4sess-failed-l2",

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { serialNumeratorVerificationFromPreingestion } from "../api/listing-copilot-title.js";
+import {
+  __listingCopilotTitleTestHooks,
+  serialNumeratorVerificationFromPreingestion
+} from "../api/listing-copilot-title.js";
 import {
   createEvidenceField,
   createVisionSource,
@@ -60,6 +63,29 @@ const directAwaitingOcrVerification = renderListingPresentation({
 assert.match(directAwaitingOcrVerification.final_title, /#\/50/);
 assert.doesNotMatch(directAwaitingOcrVerification.final_title, /31\/50/);
 
+const finalizedAfterRejectedOcr = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  confidence: "HIGH",
+  serial_numerator_verified: false,
+  resolved_fields: {
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Prizm",
+    players: ["Test Player"],
+    print_run_number: "31/50",
+    serial_number: "31/50"
+  },
+  evidence: {
+    print_run_number: createEvidenceField({
+      value: "31/50",
+      status: "CONFIRMED",
+      confidence: 0.94,
+      sources: [createVisionSource({ sourceType: "CARD_FRONT", observedText: "31/50", region: "serial_number" })]
+    })
+  }
+}, {});
+assert.match(finalizedAfterRejectedOcr.final_title, /#\/50/);
+assert.doesNotMatch(finalizedAfterRejectedOcr.final_title, /31\/50/);
+
 const ocrSerialPatch = (value, confidence) => ({
   field: "print_run_number",
   value,
@@ -72,6 +98,13 @@ assert.equal(serialNumeratorVerificationFromPreingestion({
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.72)]
 }, { job_count: 1 }), false);
+assert.equal(serialNumeratorVerificationFromPreingestion({
+  preingestion_evidence_patches: [{
+    ...ocrSerialPatch("31/50", 0.72),
+    raw_text: "TEST PLAYER 31/50 AUTO",
+    text_candidates: [{ value: "31/50", confidence: 0.95 }]
+  }]
+}, { job_count: 1 }), true, "an exact OCR line must keep its own confidence instead of the crop-wide average");
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.93), ocrSerialPatch("37/50", 0.94)]
 }, { job_count: 1 }), false);
