@@ -37,6 +37,23 @@ Risks: hidden order-dependencies inside the monolith (mitigate: extract by
 copy-then-delegate, never rewrite-in-place); prompt-adjacent code must not
 drift (golden prompt snapshot test before step 1).
 
+### R1 progress ledger
+
+| Slice | Landed | Modules | Monolith lines |
+|---|---|---|---|
+| 0 | c81c834 | golden prompt snapshot guard | 7,261 (start) |
+| 1-2 | c81c834 | timing, provider-result-metadata | 7,099 |
+| 3 | 666c6ad | flags, text, evidence-merge, provider-stage | 6,982 |
+| 4 | 6b02ccb | preingestion-evidence | 6,702 |
+| 5 | 6fe2dec | provider-options | 6,565 |
+| 6 | (prompt) | provider-prompt (bit-identical snapshot) | **6,160** |
+
+Every slice: copy-then-delegate, 97 offline suites, cloud smoke-gate
+(GitHub Actions `smoke-gate` workflow — canonical since local egress proved
+flaky). Next target: the result-shaping cluster (normalizeAiResult /
+withEvidenceCompatibility / withRequestMetadata + the normalizeFields
+family, 26 call sites — take the full closure in one slice).
+
 ## R4 — Catalog entity resolution
 
 Catalog matching is trigram/substring text matching; players are raw
