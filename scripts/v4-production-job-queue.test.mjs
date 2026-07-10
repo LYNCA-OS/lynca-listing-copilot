@@ -316,6 +316,20 @@ const finalFail = await failV4RecognitionJob({
 });
 assert.equal(finalFail.saved, true);
 
+let hiddenL1FailureBody = null;
+await failV4RecognitionJob({
+  job: { id: "v4job-l1-no-retry", attempt_count: 1, max_attempts: 2 },
+  error: { message: "hidden scout failed" },
+  forceFinalFailure: true,
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    hiddenL1FailureBody = JSON.parse(request.body);
+    return jsonResponse([{ id: "v4job-l1-no-retry", status: "FAILED" }]);
+  }
+});
+assert.equal(hiddenL1FailureBody.status, "FAILED", "a failed hidden L1 must hand off to L2 instead of re-entering the provider queue");
+assert.equal(hiddenL1FailureBody.completed_at !== null, true);
+
 const reads = [];
 await readV4RecognitionJobs({
   batchId: "batch-read",

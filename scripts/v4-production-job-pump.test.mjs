@@ -136,6 +136,7 @@ assert.match(workerSource, /callJsonHandler\(handler/);
 assert.match(workerSource, /releaseV4ProviderCapacityForJob/);
 assert.match(workerSource, /openai_preferred_key_slot/);
 assert.match(workerSource, /provider_capacity_released/);
+assert.match(workerSource, /forceFinalFailure: hiddenL1Job/, "a failed hidden L1 must release its final L2 without scheduling another paid L1 attempt");
 
 const pumpSource = readFileSync(new URL("../api/v4/listing-job-pump.js", import.meta.url), "utf8");
 assert.match(pumpSource, /triggerV4QueuePumpContinuation/);

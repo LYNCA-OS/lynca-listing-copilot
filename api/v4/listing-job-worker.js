@@ -319,6 +319,7 @@ export default async function handler(req, res) {
       };
     } catch (error) {
       capacityRelease = capacityRelease || await releaseProviderCapacity(job);
+      const hiddenL1Job = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT;
       console.error("[v4_job_attempt_failed]", JSON.stringify({
         job_id: job.id || null,
         job_type: normalizedJobType(job),
@@ -335,12 +336,13 @@ export default async function handler(req, res) {
           status: error?.status || null,
           body: error?.body ? { message: error.body.message || null, ok: error.body.ok || false } : null
         },
+        forceFinalFailure: hiddenL1Job,
         retryDelaySeconds: positiveInteger(payload.retry_delay_seconds, 15, { min: 1, max: 900 })
       });
-      const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
+      const pairedRelease = hiddenL1Job
         ? await releasePairedV4FinalJob({ job, reason: "l1_failed_release_final" })
         : { saved: false, skipped: true };
-      const pairedWake = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
+      const pairedWake = hiddenL1Job
         ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_failed_wake_l2" })
         : { triggered: false, reason: "not_l1_job" };
       return {
