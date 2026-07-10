@@ -12,6 +12,11 @@ process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 process.env.LISTING_IMAGE_BUCKET = "listing-card-images";
+process.env.VECTOR_INDEX_READY = "true";
+process.env.ENABLE_VECTOR_RETRIEVAL = "false";
+process.env.VECTOR_RETRIEVAL_MODE = "off";
+process.env.VECTOR_WORKER_URL = "https://vector.worker.test";
+process.env.VECTOR_WORKER_TOKEN = "test-vector-token";
 globalThis.fetch = async () => ({
   ok: true,
   status: 200,
@@ -61,7 +66,16 @@ assert.equal(response.body.storage.max_image_total_pixels, 50000000000);
 assert.doesNotMatch(JSON.stringify(response.body.storage), /test-service-role/);
 assert.equal(response.body.workflow_readiness.can_run_cloud_recognition, true);
 assert.equal(response.body.workflow_readiness.components.some((item) => item.id === "vision_provider"), true);
+const visionReadiness = response.body.workflow_readiness.components.find((item) => item.id === "vision_provider");
+assert.equal(visionReadiness.details.model_id, "gpt-4.1-mini-2025-04-14");
+const vectorReadiness = response.body.workflow_readiness.components.find((item) => item.id === "vector_retrieval");
+assert.equal(vectorReadiness.status, "READY");
+assert.equal(vectorReadiness.details.index_ready, true);
+assert.equal(vectorReadiness.details.default_enabled, false);
+assert.equal(vectorReadiness.details.request_override_supported, true);
+assert.equal(vectorReadiness.details.prompt_influence_by_default, false);
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-openai-key|test-service-role|example\.supabase/);
+assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-vector-token|vector\.worker\.test/);
 
 let openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
 assert.deepEqual(response.body.providers.map((provider) => provider.id), ["openai_legacy"]);

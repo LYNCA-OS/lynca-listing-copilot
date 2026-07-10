@@ -101,6 +101,32 @@ function workflowReadinessCacheKey(env = process.env) {
 }
 
 function publicWorkflowReadiness(report = {}) {
+  function publicComponentDetails(item = {}) {
+    const details = item.details || {};
+    if (item.id === "vision_provider") {
+      return {
+        provider_id: details.provider_id || null,
+        role: details.role || null,
+        model_id: details.model_id || null,
+        recommended_concurrency: details.recommended_concurrency || null
+      };
+    }
+    if (item.id === "vector_retrieval") {
+      return {
+        index_ready: details.index_ready === true,
+        worker_configured: details.worker_configured === true,
+        default_enabled: details.default_enabled === true,
+        default_mode: details.default_mode || details.mode || "off",
+        request_override_supported: details.request_override_supported === true,
+        prompt_influence_by_default: details.prompt_influence_by_default === true,
+        model_id: details.model_id || null,
+        model_revision: details.model_revision || null,
+        preprocessing_version: details.preprocessing_version || null
+      };
+    }
+    return undefined;
+  }
+
   return {
     schema_version: report.schema_version || "",
     checked_at: report.checked_at || "",
@@ -119,6 +145,7 @@ function publicWorkflowReadiness(report = {}) {
         fail_closed: Boolean(item.fail_closed),
         ready: Boolean(item.ready),
         summary: item.summary,
+        details: publicComponentDetails(item),
         next_action: item.next_action || null
       }))
       : []
