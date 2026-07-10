@@ -172,6 +172,35 @@ assert.equal(captured.url, "https://ocr.internal/v1/ocr-field");
 assert.equal(captured.headers.authorization, "Bearer secret-token");
 assert.equal(captured.body.image_url.includes("token=secret"), true);
 assert.equal(clientResult.evidence_patch.evidence.serial_number.value, "31/50");
+assert.equal(clientResult.worker_attempt_count, 1);
+
+let retryCalls = 0;
+const retryClient = createPaddleOcrClient({
+  env: {
+    ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+    PADDLE_OCR_WORKER_URL: "https://ocr-retry.internal",
+    PADDLE_OCR_REQUEST_MAX_ATTEMPTS: "2",
+    PADDLE_OCR_RETRY_BASE_MS: "1"
+  },
+  fetchImpl: async () => {
+    retryCalls += 1;
+    if (retryCalls === 1) {
+      return {
+        ok: false,
+        status: 503,
+        text: async () => "temporarily unavailable"
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ raw_text: "31/50", confidence: 0.94 })
+    };
+  }
+});
+const retryResult = await retryClient.verifyCrop(request);
+assert.equal(retryCalls, 2);
+assert.equal(retryResult.worker_attempt_count, 2);
 
 const roundRobinUrls = [];
 const roundRobinClient = createPaddleOcrClient({

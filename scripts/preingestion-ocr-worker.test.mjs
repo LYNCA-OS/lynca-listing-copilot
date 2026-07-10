@@ -242,6 +242,61 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(state.status, "EVIDENCE_READY");
   assert.equal(state.evidence_ready, true);
   assert.equal(state.serial_patch_count, 1);
+assert.ok(state.state_reads >= 2);
+}
+
+// --- a verified serial must not end rendezvous while authoritative slab text is still running ---
+{
+  let jobReads = 0;
+  const state = await waitForPreingestionOcrEvidence({
+    bundleId: "bundle-1",
+    timeoutMs: 1_000,
+    pollMs: 100,
+    triggerSweep: false,
+    env,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("preingestion_jobs")) {
+        jobReads += 1;
+        return jsonResponse([
+          {
+            job_id: "serial",
+            status: "succeeded",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+            payload: { crop: { role: "serial_crop" } }
+          },
+          {
+            job_id: "grade",
+            status: jobReads === 1 ? "running" : "succeeded",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:grade`,
+            payload: { crop: { role: "grade_label_crop" } }
+          }
+        ]);
+      }
+      return jsonResponse([{
+        bundle_id: "bundle-1",
+        evidence_patches: [
+          { field: "serial_number", value: "06/25", source_type: "OCR", confidence: 0.95 },
+          ...(jobReads > 1 ? [{
+            field: "grade",
+            value: "PSA 10",
+            source_type: "OCR",
+            source_image_id: "img-1",
+            crop_id: "grade-1",
+            confidence: 0.96,
+            raw_text: "2021 PANINI CONTENDERS OPTIC\nSPLTNG.IMG - BLACK SCOPE\nPSA 10",
+            provenance: { crop_type: "grade_label" }
+          }] : [])
+        ]
+      }]);
+    }
+  });
+  assert.equal(state.status, "EVIDENCE_READY");
+  assert.equal(state.verified_serial_ready, true);
+  assert.equal(state.verified_slab_parallel_ready, true);
+  assert.equal(state.verified_slab_parallel_value, "Black Scope");
   assert.ok(state.state_reads >= 2);
 }
 

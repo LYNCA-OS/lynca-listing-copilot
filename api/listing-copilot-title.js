@@ -110,6 +110,7 @@ import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from 
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { serialLimitText } from "../lib/listing/renderer/title-cleanup.mjs";
 import { expandPrintRunFields } from "../lib/listing/print-run/print-run-fields.mjs";
+import { extractDirectSlabLabelParallel } from "../lib/listing/preingestion/slab-label-evidence.mjs";
 import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
 import { createIdentityConvergenceRetriever } from "../lib/listing/orchestration/identity-convergence-retriever.mjs";
@@ -1072,6 +1073,126 @@ function withVerifiedPreingestionPrintRun(result = {}, payload = {}) {
         input: { provider_value: previous.print_run_number || null },
         output: { resolved_value: printRun.print_run_number },
         decision: conflict ? "override_provider_with_current_image_ocr" : "confirm_current_image_print_run"
+      }
+    ]
+  };
+  return finalizeDeterministicPresentation(next, payload);
+}
+
+function withVerifiedPreingestionSlabParallel(result = {}, payload = {}) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const verification = extractDirectSlabLabelParallel(payload.preingestion_evidence_patches);
+  if (!verification.verified || !verification.value) {
+    return {
+      ...result,
+      preingestion_slab_parallel_verification: verification
+    };
+  }
+
+  const evidenceResult = withRecognitionEvidence(result, null, payload);
+  const source = {
+    ...createVisionSource({
+      sourceType: "SLAB_LABEL",
+      imageId: verification.source_image_id,
+      sourceCropId: verification.crop_id,
+      captureRole: "grade_label",
+      region: "grade_label",
+      observedText: verification.value,
+      rawText: verification.raw_text,
+      sourceInferenceMethod: "paddle_ocr_direct_slab_label",
+      trustTier: 1
+    }),
+    direct_observation: true,
+    text_visible: true
+  };
+  const previous = normalizeStringOrNull(
+    evidenceResult.resolved_fields?.parallel_exact
+    || evidenceResult.resolved?.parallel_exact
+    || evidenceResult.fields?.parallel_exact
+    || evidenceResult.fields?.parallel
+  );
+  const conflict = previous && searchable(previous) !== searchable(verification.value)
+    ? {
+      field: "parallel_exact",
+      conflict_type: "SLAB_LABEL_CURRENT_IMAGE_OVERRIDE",
+      conflicting_values: [previous, verification.value],
+      severity: "HIGH",
+      resolved: true,
+      resolved_value: verification.value,
+      reason: "Direct slab-label text overrides visual parallel inference."
+    }
+    : null;
+  const parallelEvidence = createEvidenceField({
+    value: verification.value,
+    normalizedValue: verification.value,
+    status: "CONFIRMED",
+    confidence: verification.confidence,
+    candidates: [{
+      value: verification.value,
+      confidence: verification.confidence,
+      sources: [source]
+    }],
+    sources: [source],
+    conflicts: conflict ? [conflict] : []
+  });
+  const surfaceColorEvidence = verification.surface_color
+    ? createEvidenceField({
+      value: verification.surface_color,
+      normalizedValue: verification.surface_color,
+      status: "CONFIRMED",
+      confidence: verification.confidence,
+      candidates: [{
+        value: verification.surface_color,
+        confidence: verification.confidence,
+        sources: [source]
+      }],
+      sources: [source],
+      conflicts: []
+    })
+    : null;
+  const evidenceOverlay = {
+    parallel_exact: parallelEvidence,
+    ...(surfaceColorEvidence ? { surface_color: surfaceColorEvidence } : {})
+  };
+  const fieldOverlay = {
+    parallel_exact: verification.value,
+    parallel: verification.value,
+    ...(verification.surface_color ? { surface_color: verification.surface_color } : {})
+  };
+  const renderedFields = evidenceResult.rendered_fields && typeof evidenceResult.rendered_fields === "object"
+    ? evidenceResult.rendered_fields
+    : {};
+  const next = {
+    ...evidenceResult,
+    evidence: { ...(evidenceResult.evidence || {}), ...evidenceOverlay },
+    normalized_evidence: { ...(evidenceResult.normalized_evidence || evidenceResult.evidence || {}), ...evidenceOverlay },
+    fields: { ...(evidenceResult.fields || {}), ...fieldOverlay },
+    resolved: { ...(evidenceResult.resolved || {}), ...fieldOverlay },
+    resolved_fields: { ...(evidenceResult.resolved_fields || evidenceResult.resolved || evidenceResult.fields || {}), ...fieldOverlay },
+    rendered_fields: {
+      ...renderedFields,
+      ...fieldOverlay,
+      fields: { ...(renderedFields.fields || {}), ...fieldOverlay }
+    },
+    preingestion_slab_parallel_verification: verification,
+    conflict_map: conflict
+      ? [...(Array.isArray(evidenceResult.conflict_map) ? evidenceResult.conflict_map : []), conflict]
+      : evidenceResult.conflict_map,
+    open_set_presentation_guard: evidenceResult.open_set_presentation_guard
+      ? {
+        ...evidenceResult.open_set_presentation_guard,
+        direct_slab_label_override: true,
+        action: "restore_exact_parallel_from_direct_slab_label"
+      }
+      : evidenceResult.open_set_presentation_guard,
+    resolution_trace: [
+      ...(Array.isArray(evidenceResult.resolution_trace) ? evidenceResult.resolution_trace : []),
+      {
+        phase: "preingestion_ocr",
+        step: "lock_verified_slab_parallel",
+        input: { provider_value: previous || null, raw_text: verification.raw_text },
+        output: { resolved_value: verification.value },
+        decision: conflict ? "override_visual_parallel_with_slab_text" : "confirm_parallel_from_slab_text"
       }
     ]
   };
@@ -4608,8 +4729,11 @@ async function createOpenAiTitle(payload, selection, {
   mergedResult.preingestion_ocr_rendezvous = preingestionOcrRendezvous;
   mergedResult.preingestion_evidence_refresh = preingestionEvidenceRefresh;
   mergedResult.serial_numerator_verified = initialPayload.serial_numerator_verified;
-  const finalizeProviderResult = (result) => withVerifiedPreingestionPrintRun(
-    withOpenSetReadiness(result, { ...openSetContext, catalogContext, vectorContext }),
+  const finalizeProviderResult = (result) => withVerifiedPreingestionSlabParallel(
+    withVerifiedPreingestionPrintRun(
+      withOpenSetReadiness(result, { ...openSetContext, catalogContext, vectorContext }),
+      initialPayload
+    ),
     initialPayload
   );
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
@@ -4674,6 +4798,7 @@ export const __listingCopilotTitleTestHooks = {
   scaffoldTitleConflictsWithDirectEvidence,
   shouldDeferVectorUntilProviderObservation,
   shouldSkipVectorForCatalogContext,
+  withVerifiedPreingestionSlabParallel,
   withVerifiedPreingestionPrintRun,
   withRecognitionEvidence
 };

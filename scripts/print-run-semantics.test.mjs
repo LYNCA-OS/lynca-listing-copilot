@@ -64,6 +64,30 @@ const directAwaitingOcrVerification = renderListingPresentation({
 assert.match(directAwaitingOcrVerification.final_title, /#\/50/);
 assert.doesNotMatch(directAwaitingOcrVerification.final_title, /31\/50/);
 
+const unverifiedOneOfOne = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Prizm",
+    players: ["Test Player"],
+    print_run_number: "1/1",
+    serial_number: "1/1",
+    one_of_one: true
+  },
+  evidence: {
+    print_run_number: createEvidenceField({
+      value: "1/1",
+      status: "CONFIRMED",
+      confidence: 0.94,
+      sources: [createVisionSource({ sourceType: "CARD_FRONT", observedText: "1/1", region: "serial_number" })]
+    })
+  },
+  serialNumeratorVerified: false,
+  maxLength: 80
+});
+assert.doesNotMatch(unverifiedOneOfOne.final_title, /(?:1\/1|#\/1)/, "unverified 1/1 cannot degrade into an equivalent #/1 claim");
+assert.equal(unverifiedOneOfOne.modules.numerical_rarity.text, "");
+
 const finalizedAfterRejectedOcr = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
   confidence: "HIGH",
   serial_numerator_verified: false,
