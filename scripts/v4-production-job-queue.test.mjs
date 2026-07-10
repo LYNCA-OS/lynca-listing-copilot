@@ -249,7 +249,15 @@ assert.ok(l1Patches[0].request.body.includes('"stage_result"'));
 
 const releasePatches = [];
 const release = await releasePairedV4FinalJob({
-  job: optInStageJobs[0],
+  job: {
+    ...optInStageJobs[0],
+    queue_tags: {
+      ...optInStageJobs[0].queue_tags,
+      provider_capacity_slot: 1,
+      provider_key_slot: 1,
+      provider_capacity_lease_owner: "l1-worker"
+    }
+  },
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
     releasePatches.push({ url: String(url), request });
@@ -260,6 +268,8 @@ assert.equal(release.saved, true);
 assert.ok(releasePatches[0].url.includes(`/v4_recognition_jobs?id=eq.${optInStageJobs[1].id}`));
 assert.ok(releasePatches[0].request.body.includes('"not_before"'));
 assert.ok(releasePatches[0].request.body.includes('"released_by_parent_job_id"'));
+assert.ok(releasePatches[0].request.body.includes('"paired_l1_released_at"'));
+assert.ok(!releasePatches[0].request.body.includes('"provider_capacity_slot"'), "paired L2 must not inherit the completed L1 capacity lease");
 
 const multiStageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-no-l2-barrier",

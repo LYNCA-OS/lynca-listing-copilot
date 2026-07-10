@@ -76,6 +76,7 @@ Supabase tier/pooler review if windows recur.
 | 2026-07-08 | gpt-5-mini, pre-fix | 0.807 | 7/10 | ~30s+ | reasoning burn + out-of-spec caps |
 | 2026-07-09 take1 | gpt-4.1-mini (accidental control) | 0.847* | — | 30.7s | *3 completed cards only |
 | 2026-07-09 take5 | gpt-5-mini, all fixes, speculative | **0.851** | **9/10** | **305ms** | fast-lane 4/10 hits at 0ms |
+| 2026-07-10 paired queue gate | gpt-5-mini, hidden L1 + paired L2, global capacity control | **0.952381** | **3/3** | **8.279s** | Same fixed gate cards; all three finalized through the capacity-controlled exact-anchor path. |
 
 ## Production gate validations
 
@@ -83,6 +84,8 @@ Supabase tier/pooler review if windows recur.
 |---|---|---|---|---|---|---|---|
 | 2026-07-10 | `29070448525` | `f6bf5f1` | 2/3 | 0.629630 | 5.283s / incomplete | 0ms / incomplete | Failed: one GPT-5 mini HTTP 200 empty response remained unrecovered across two queue attempts. |
 | 2026-07-10 | `29071181965` | `593529f` | **3/3** | **0.922078** | **5.636s / 24.353s** | **0ms / 19.350s** | Passed after provider-level empty-response retry/key-rotation hardening; 20,893 total tokens. |
+| 2026-07-10 | `29074423252` | `f0352dd` | 2/3 | 0.541126 | 46.952s / 94.078s | 41.947s / 89.075s | Failed experiment: cache-only scout removed all 3 fast-lane hits; one GPT-5 semantic-empty result exhausted retries. This negative result was reverted. |
+| 2026-07-10 | `29076513466` | `f9200c9` | **3/3** | **0.952381** | **13.284s / 16.613s** | **8.279s / 11.611s** | Passed with hidden L1 + paired L2 under the distributed provider-capacity queue; 3/3 exact-anchor finalizations, 15,487 total tokens, zero runtime errors. |
 
 The passing run did not reproduce an empty response, so the live gate proves
 no regression and full completion, while the key-rotation behavior itself is
@@ -90,6 +93,14 @@ locked by the provider-routing regression test. Compared with the prior same
 three-card passing gate (`29067775787`), policy-fair accuracy is unchanged at
 0.922078 while writer-ready p95 fell from 79.870s to 24.353s and perceived p95
 fell from 74.864s to 19.350s.
+
+The paired-queue gate `29076513466` supersedes the cache-only experiment. It
+keeps direct browser prewarm cache-only, but runs paid hidden L1 inside the same
+global capacity lease system as L2. Compared with `29071181965`, policy-fair
+accuracy rose from 0.922078 to 0.952381, perceived p95 fell from 19.350s to
+11.611s, and total tokens fell from 20,893 to 15,487. The new timing includes
+the hidden L1 queue stage, so its p50 is a more honest upload-to-final measure
+than the earlier gate that completed paid prewarm before the timer origin.
 
 Rules: one theme per change; accuracy changes need an A/B or smoke; speed
 changes need timing evidence; never claim uplift without a tracked row here.

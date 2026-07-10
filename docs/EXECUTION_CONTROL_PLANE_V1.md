@@ -21,10 +21,11 @@ The structural change is the execution contract around those components.
 ```text
 upload/storage verification
   -> preingestion bundle + cache-only scout probe (parallel)
-  -> one durable L2 job per card
-  -> global fair queue claim
+  -> one hidden L1 + paired final L2 job per card
+  -> global fair queue claims hidden L1
   -> atomic provider-capacity lease + key assignment
-  -> exact-anchor finalize OR full L2
+  -> L1 writes reusable same-image evidence, then releases only its paired L2
+  -> L2 reuses the evidence for exact-anchor finalize OR focused full recognition
   -> writer-ready title persisted first
   -> non-critical evidence/catalog/learning writes in background
   -> one browser batch-status poll updates all pending cards
@@ -40,14 +41,17 @@ upload/storage verification
    bounded recovery path, while total active requests remain globally bounded.
 5. Queue selection interleaves tenants/batches before taking a second job from
    the same tenant. Large batches cannot starve later batches.
-6. Hidden scout work may use an existing cache, but a cache miss cannot put an
-   additional paid model request in front of L2.
+6. The browser's direct scout probe is cache-only. A cache miss creates no
+   uncontrolled model request; paid hidden L1 work enters the same globally
+   capacity-controlled queue as L2.
 7. L1 is never writer-visible. The writer receives one final L2 title.
 8. Catalog/vector hard conflicts remain fail-closed.
 9. Provider capacity is released after the provider path ends; stale leases
    expire with the job lease after crashes.
 10. Status polling is aggregated by browser batch rather than one timer and one
     HTTP request per card.
+11. A failed hidden L1 is terminal and immediately hands off to its paired L2;
+    it cannot retry alongside L2 and duplicate provider work.
 
 ## Expected Effects
 
@@ -57,9 +61,11 @@ upload/storage verification
 - Fairness: batch-first round robin (tenant fallback) prevents one large upload from monopolizing every worker, even when several writers share one production account.
 - Writer latency: a completed title is normally visible within 0.8-1.8 seconds,
   instead of waiting for the previous per-card 5.5-8 second poll interval.
-- Cold-start cards: no sequential hidden-scout model tax before full L2.
-- Known repeated images: persistent scout-cache hits and exact anchors still
-  preserve the fast lane.
+- Cold-start cards: hidden L1 starts during upload/preparation, before the
+  writer asks for the result, and focuses the later L2 when exact finalize is
+  unavailable.
+- Known or catalog-anchored cards: persistent scout evidence lets L2 finish
+  through the exact-anchor path without a second model call.
 
 ## Migration Boundary
 
@@ -79,6 +85,7 @@ retries, leases, and exact status recovery with less migration risk.
 ## Required Metrics
 
 - queue wait p50/p95/p99
+- paired L1 dependency wait vs runnable scheduler wait
 - provider-capacity utilization and lease age
 - per-key active concurrency
 - provider latency and rate-limit headers

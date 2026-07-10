@@ -214,6 +214,8 @@ export default async function handler(req, res) {
     jobs: result.rows.map((job) => {
       const session = sessions[job.recognition_session_id] || null;
       const display = displayStateForSession(session, job);
+      const pairedL1ReleasedAt = job.queue_tags?.paired_l1_released_at || null;
+      const schedulerReadyAt = pairedL1ReleasedAt || job.created_at;
       return {
         job_id: job.id,
         batch_id: job.batch_id,
@@ -244,7 +246,10 @@ export default async function handler(req, res) {
         timing: {
           time_to_l1_ready_ms: elapsedMs(job.created_at, session?.l1_ready_at),
           time_to_l2_ready_ms: elapsedMs(job.created_at, session?.l2_ready_at),
-          worker_queue_wait_ms: elapsedMs(job.created_at, job.started_at),
+          paired_l1_wait_ms: elapsedMs(job.created_at, pairedL1ReleasedAt),
+          scheduler_queue_wait_ms: elapsedMs(schedulerReadyAt, job.started_at),
+          worker_queue_wait_ms: elapsedMs(schedulerReadyAt, job.started_at),
+          total_created_to_worker_start_ms: elapsedMs(job.created_at, job.started_at),
           worker_processing_ms: elapsedMs(job.started_at, job.completed_at)
         },
         attempt_count: job.attempt_count,
@@ -256,7 +261,8 @@ export default async function handler(req, res) {
           provider_capacity: Number(job.queue_tags?.provider_capacity || 0) || null,
           provider_per_key_concurrency: Number(job.queue_tags?.provider_per_key_concurrency || 0) || null,
           provider_capacity_lease_owner: job.queue_tags?.provider_capacity_lease_owner || null,
-          provider_capacity_leased_at: job.queue_tags?.provider_capacity_leased_at || null
+          provider_capacity_leased_at: job.queue_tags?.provider_capacity_leased_at || null,
+          paired_l1_released_at: pairedL1ReleasedAt
         },
         created_at: job.created_at,
         updated_at: job.updated_at,
