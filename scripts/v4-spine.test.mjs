@@ -39,7 +39,9 @@ assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCritical
 assert.match(v4TitleApiSource, /scheduleV4Background\(persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must not block writer-ready L2 by default.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start hidden L1 prewarm independently.");
 assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish the parallel hidden scout before its single L2 enqueue.");
-assert.match(v4SmokeSource, /prewarmCacheOnly: hasFlag\(argv, "--cache-only-prewarm"\)/, "production smoke must mirror paid hidden scout pre-ingestion unless a cache-only A\/B is explicit.");
+assert.match(v4SmokeSource, /prewarmCacheOnly: !hasFlag\(argv, "--paid-prewarm"\)/, "direct smoke prewarm must stay cache-only; the paid hidden scout belongs to the paired production queue.");
+assert.match(v4SmokeSource, /create_l1_job: true/, "production smoke must exercise the capacity-controlled hidden L1 stage.");
+assert.match(v4SmokeSource, /create_l2_job: true/, "production smoke must poll the paired final L2 stage.");
 assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
 assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");

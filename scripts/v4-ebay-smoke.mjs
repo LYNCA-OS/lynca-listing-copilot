@@ -819,7 +819,7 @@ async function runOne({
   baseUrl,
   cookie,
   prewarm,
-  prewarmCacheOnly = false,
+  prewarmCacheOnly = true,
   queueMode = false,
   forceL2Direct = false,
   modelOverride = "",
@@ -903,16 +903,16 @@ async function runOne({
 
   if (queueMode && speculative) {
     // 复刻新前端“识别前移”行为：图片/证据包就绪（=preingest 完成）的时刻 T0，
-    // preingest 与隐藏 fast scout 已并行完成，只发一次 L2 生产 job；
+    // preingest 与缓存探针已并行完成，提交受全局容量控制的隐藏 L1 + 最终 L2；
     // 模拟写手思考 thinkMs 后在 T1“点击”，此后测的才是写手感知延迟。
     const batchId = `smoke-v4-spec-${Date.now()}-${index}`;
     const queuedPayload = {
       ...payload,
-      force_l2_only: true,
-      create_l1_job: false,
+      force_l2_only: false,
+      create_l1_job: true,
       create_l2_job: true,
-      disable_fast_scout_l1: true,
-      v4_force_l2_direct: true,
+      disable_fast_scout_l1: false,
+      v4_force_l2_direct: false,
       client_speculative: true
     };
     const t0 = Date.now();
@@ -926,8 +926,8 @@ async function runOne({
         priority: 100,
         jobs: [{
           asset_id: id,
-          force_l2_only: true,
-          create_l1_job: false,
+          force_l2_only: false,
+          create_l1_job: true,
           create_l2_job: true,
           payload: queuedPayload
         }]
@@ -1668,7 +1668,7 @@ export async function runV4EbaySmoke({
   limit = 10,
   offset = 0,
   prewarm = false,
-  prewarmCacheOnly = false,
+  prewarmCacheOnly = true,
   queueMode = false,
   forceL2Direct = false,
   modelOverride = "",
@@ -1771,7 +1771,7 @@ export async function main(argv = process.argv, env = process.env) {
     limit: Math.max(1, Math.trunc(numberArg(argv, "--limit", 10))),
     offset: Math.max(0, Math.trunc(numberArg(argv, "--offset", 0))),
     prewarm: hasFlag(argv, "--prewarm"),
-    prewarmCacheOnly: hasFlag(argv, "--cache-only-prewarm"),
+    prewarmCacheOnly: !hasFlag(argv, "--paid-prewarm"),
     queueMode: hasFlag(argv, "--queue"),
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),
