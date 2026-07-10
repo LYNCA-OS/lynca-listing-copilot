@@ -4246,6 +4246,7 @@ async function createOpenAiTitle(payload, selection, {
     images: initialPayload.images,
     prompt,
     shardKey: initialPayload.recognition_session_id || initialPayload.asset_id || initialPayload.assetId || "",
+    preferredKeySlot: initialPayload.openai_preferred_key_slot || initialPayload.provider_key_slot_hint || null,
     modelOverride: providerModelOverrideFromOptions(providerOptions),
     requestContext: openAiRequestContextFromPayload(initialPayload, {
       providerCallPurpose: "full_l2",

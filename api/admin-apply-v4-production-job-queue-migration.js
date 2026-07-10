@@ -6,7 +6,8 @@ import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
 const migrationPaths = [
   "supabase/migrations/20260707122154_v4_production_job_queue.sql",
   "supabase/migrations/20260707133128_v4_queue_interactive_background_lanes.sql",
-  "supabase/migrations/20260708043000_v4_queue_reclaim_expired_running_jobs.sql"
+  "supabase/migrations/20260708043000_v4_queue_reclaim_expired_running_jobs.sql",
+  "supabase/migrations/20260710055802_v4_execution_control_plane_v1.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `
@@ -168,8 +169,81 @@ async function verify(client) {
           and table_name = 'v4_recognition_sessions'
           and column_name = 'l1_title'
       ) as l1_session_column
+      ,
+      exists (
+        select 1
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = 'v4_provider_capacity_leases'
+      ) as provider_capacity_table,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'claim_v4_recognition_jobs_with_capacity'
+          and p.pronargs = 8
+      ) as capacity_claim_rpc,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'release_v4_provider_capacity_for_job'
+          and p.pronargs = 2
+      ) as capacity_release_rpc,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'try_acquire_v4_queue_kick'
+          and p.pronargs = 3
+      ) as queue_kick_rpc
   `);
   return result.rows[0] || {};
+}
+
+async function verifyExecutionControlBehavior(client) {
+  const suffix = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const jobId = `migration_probe_job_${suffix}`;
+  const tenantId = `migration_probe_tenant_${suffix}`;
+  const workerId = `migration_probe_worker_${suffix}`;
+  await client.query("begin");
+  try {
+    await client.query(`
+      insert into public.v4_recognition_jobs(
+        id, schema_version, batch_id, tenant_id, asset_id, job_type,
+        provider_id, status, priority, payload, max_attempts
+      ) values ($1, 'migration-probe-v1', $2, $2, $1, 'FINAL_ASSISTED_TITLE',
+        'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2)
+    `, [jobId, tenantId]);
+    const claim = await client.query(`
+      select id, status, queue_tags
+      from public.claim_v4_recognition_jobs_with_capacity(
+        1, $1, 60, 'background', $2, 'migration_probe', 1, 1
+      )
+    `, [workerId, tenantId]);
+    const claimed = claim.rows[0] || {};
+    const release = await client.query(
+      "select public.release_v4_provider_capacity_for_job($1, $2) as released_count",
+      [jobId, workerId]
+    );
+    const kick = await client.query(
+      "select public.try_acquire_v4_queue_kick($1, $2, 500) as acquired",
+      [`migration_probe_scope_${suffix}`, workerId]
+    );
+    return {
+      claim_ok: claimed.id === jobId
+        && claimed.status === "RUNNING"
+        && Number(claimed.queue_tags?.provider_capacity_slot || 0) === 1
+        && Number(claimed.queue_tags?.provider_key_slot || 0) === 1,
+      release_ok: Number(release.rows[0]?.released_count || 0) === 1,
+      kick_ok: kick.rows[0]?.acquired === true
+    };
+  } finally {
+    await client.query("rollback");
+  }
 }
 
 async function readMigrationSql() {
@@ -213,11 +287,25 @@ export default async function handler(req, res) {
     await client.connect();
     await client.query(sql);
     const verification = await verify(client);
-    const ok = Boolean(verification.jobs_table && verification.claim_rpc && verification.lane_column && verification.l1_session_column);
+    const behavior = await verifyExecutionControlBehavior(client);
+    const ok = Boolean(
+      verification.jobs_table
+      && verification.claim_rpc
+      && verification.lane_column
+      && verification.l1_session_column
+      && verification.provider_capacity_table
+      && verification.capacity_claim_rpc
+      && verification.capacity_release_rpc
+      && verification.queue_kick_rpc
+      && behavior.claim_ok
+      && behavior.release_ok
+      && behavior.kick_ok
+    );
     sendJson(res, ok ? 200 : 500, {
       ok,
       migration: "v4_production_job_queue_all",
-      verification
+      verification,
+      behavior
     });
   } catch (error) {
     sendJson(res, 500, {

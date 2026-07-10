@@ -4,6 +4,12 @@ Status ledger for the two large reforms. Small reforms (security rotation,
 CI, dead-job cleanup, OCR worker scaling, env inventory, eval registry,
 skeleton-field streaming) shipped 2026-07-09 and are not tracked here.
 
+The production execution framework is documented separately in
+`docs/EXECUTION_CONTROL_PLANE_V1.md`. Its first release keeps Vercel,
+Supabase, and Cloud Run, while adding database-enforced provider capacity,
+fair cross-batch queue claims, cache-only hidden scout probing, and aggregated
+writer status updates.
+
 ## R1 — Retire the v2 monolith
 
 `api/listing-copilot-title.js` (~7,300 lines) contains the entire recognition

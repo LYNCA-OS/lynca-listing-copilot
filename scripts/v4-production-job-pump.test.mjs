@@ -108,6 +108,10 @@ assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
 assert.match(enqueueSource, /V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER/);
 assert.match(enqueueSource, /V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS/);
 assert.match(enqueueSource, /V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS/);
+assert.match(enqueueSource, /tryAcquireV4QueueKick/);
+assert.match(enqueueSource, /v4QueueGlobalDrainEnabled/);
+assert.match(enqueueSource, /post_enqueue_deduplicated_kick_scheduled/);
+assert.match(enqueueSource, /kick_source_tenant_id/);
 assert.match(enqueueSource, /const stableConcurrency = v4WorkerProcessConcurrency\(process\.env\)/);
 assert.match(enqueueSource, /interactiveWorkers \* perWorkerLimit/);
 assert.match(enqueueSource, /backgroundWorkers \* perWorkerLimit/);
@@ -129,6 +133,9 @@ assert.match(workerSource, /lane: v4JobLanes\.BACKGROUND/);
 assert.match(workerSource, /V4_L2_WAKE_BACKGROUND_CONCURRENCY/);
 assert.match(workerSource, /v4WorkerProcessConcurrency\(process\.env\),\s*\{\s*min:\s*1,\s*max:\s*96\s*\}/);
 assert.match(workerSource, /callJsonHandler\(handler/);
+assert.match(workerSource, /releaseV4ProviderCapacityForJob/);
+assert.match(workerSource, /openai_preferred_key_slot/);
+assert.match(workerSource, /provider_capacity_released/);
 
 const pumpSource = readFileSync(new URL("../api/v4/listing-job-pump.js", import.meta.url), "utf8");
 assert.match(pumpSource, /triggerV4QueuePumpContinuation/);
@@ -139,6 +146,16 @@ assert.match(pumpSource, /lease_seconds: leaseSeconds/);
 const reclaimMigration = readFileSync(new URL("../supabase/migrations/20260708043000_v4_queue_reclaim_expired_running_jobs.sql", import.meta.url), "utf8");
 assert.match(reclaimMigration, /status = 'RUNNING' and lease_expires_at is not null and lease_expires_at < now\(\)/);
 assert.match(reclaimMigration, /where status in \('QUEUED', 'RETRYING', 'RUNNING'\)/);
+
+const executionControlMigration = readFileSync(new URL("../supabase/migrations/20260710055802_v4_execution_control_plane_v1.sql", import.meta.url), "utf8");
+assert.match(executionControlMigration, /create table if not exists public\.v4_provider_capacity_leases/);
+assert.match(executionControlMigration, /claim_v4_recognition_jobs_with_capacity/);
+assert.match(executionControlMigration, /row_number\(\) over/);
+assert.match(executionControlMigration, /partition by coalesce\(nullif\(jobs\.batch_id, ''\), nullif\(jobs\.tenant_id, ''\), jobs\.id\)/);
+assert.match(executionControlMigration, /provider_key_slot/);
+assert.match(executionControlMigration, /for update of jobs skip locked/);
+assert.match(executionControlMigration, /release_v4_provider_capacity_for_job/);
+assert.match(executionControlMigration, /try_acquire_v4_queue_kick/);
 
 const previousSecret = process.env.V4_JOB_WORKER_SECRET;
 try {

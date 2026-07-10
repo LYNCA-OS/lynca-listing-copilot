@@ -432,6 +432,34 @@ assert.match(pooledOpenAiRequest.init.headers.authorization, /^Bearer sk-pool-/)
 assert.equal(pooledOpenAiResult.provider_key_pool_size, 3);
 assert.ok(pooledOpenAiResult.provider_key_slot >= 1 && pooledOpenAiResult.provider_key_slot <= 3);
 
+let capacityLeasedAuthorization = "";
+const capacityLeasedOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  shardKey: "asset-capacity-lease-test",
+  preferredKeySlot: 2,
+  env: {
+    ...env,
+    OPENAI_API_KEY: "",
+    OPENAI_API_KEY_POOL: "sk-lease-a,sk-lease-b,sk-lease-c"
+  },
+  fetchImpl: async (url, init) => {
+    capacityLeasedAuthorization = init.headers.authorization;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "resp_capacity_lease_test",
+        output_text: "{\"title\":\"Capacity Lease Test\",\"fields\":{\"player\":\"Lease\"},\"unresolved\":[]}",
+        usage: { input_tokens: 5, output_tokens: 5, total_tokens: 10 }
+      })
+    };
+  }
+});
+assert.equal(capacityLeasedAuthorization, "Bearer sk-lease-b");
+assert.equal(capacityLeasedOpenAiResult.provider_key_slot, 2);
+assert.equal(capacityLeasedOpenAiResult.provider_key_source, "capacity_lease");
+
 let rotatedOpenAiCalls = 0;
 const rotatedAuthorizations = [];
 const rotatedOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({

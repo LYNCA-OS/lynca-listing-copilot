@@ -1,8 +1,8 @@
 # Environment Flag Inventory
 
-Generated 2026-07-09 by scripts/generate-env-flag-inventory.mjs — do not edit by hand.
+Generated 2026-07-10 by scripts/generate-env-flag-inventory.mjs — do not edit by hand.
 
-Total: 309 flags. Reaping rule: a kill switch that has stayed in one
+Total: 316 flags. Reaping rule: a kill switch that has stayed in one
 position for a quarter is not a switch, it is dead weight — inline its value
 and delete the flag.
 
@@ -196,6 +196,7 @@ and delete the flag.
 | `OPENAI_FAST_SCOUT_MAX_IMAGES` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `OPENAI_FAST_SCOUT_MAX_OUTPUT_TOKENS` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `OPENAI_FAST_SCOUT_MODEL` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
+| `OPENAI_FAST_SCOUT_TIMEOUT_MS` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `OPENAI_GPT5_FAST_SCOUT_MAX_OUTPUT_TOKENS` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `OPENAI_GPT5_FAST_SCOUT_SAFE_OUTPUT_TOKEN_CAP` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `OPENAI_GPT5_REASONING_EFFORT` | lib/listing/providers/openai-responses-request.mjs |
@@ -265,6 +266,8 @@ and delete the flag.
 | `SUPABASE_URL` | api/admin-visual-review-run.js<br>lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/cache/identity-result-cache.mjs<br>lib/listing/preingestion/preingestion-bundle.mjs<br>lib/listing/preingestion/preingestion-ocr-worker.mjs<br>lib/listing/publishing/publish-audit-store.mjs<br>lib/listing/recognition/supabase-recognition-source.mjs<br>lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs<br>lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-telemetry.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs<br>lib/listing/storage/storage-config.mjs<br>lib/listing/storage/storage-verification-store.mjs<br>lib/listing/v4/anchors/cert-lookup.mjs<br>lib/listing/v4/fast-scout/exact-anchor-finalize.mjs<br>lib/listing/v4/session/supabase-rest.mjs<br>lib/supabase-feedback.mjs |
 | `V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS` | api/v4/listing-copilot-title.js |
 | `V4_FAST_SCOUT_CACHE_READ_TIMEOUT_MS` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
+| `V4_JOB_COMPLETION_RETRY_BASE_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_JOB_COMPLETION_WRITE_ATTEMPTS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_LEASE_SECONDS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_PUMP_CRON_SECRET` | api/v4/listing-job-pump.js |
 | `V4_JOB_WORKER_DRAIN_LOOP_ENABLED` | api/v4/listing-job-worker.js |
@@ -276,22 +279,26 @@ and delete the flag.
 | `V4_L2_WAKE_BACKGROUND_CONCURRENCY` | api/v4/listing-job-worker.js |
 | `V4_OPENAI_MAX_TOTAL_CONCURRENCY` | lib/listing/providers/openai-key-pool.mjs |
 | `V4_OPENAI_PER_KEY_CONCURRENCY` | lib/listing/providers/openai-key-pool.mjs |
+| `V4_PROVIDER_CAPACITY_CONTROL_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_PUMP_BACKGROUND_CONCURRENCY` | api/v4/listing-job-enqueue.js |
 | `V4_PUMP_INTERACTIVE_CONCURRENCY` | api/v4/listing-job-enqueue.js |
 | `V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS` | api/v4/listing-job-enqueue.js |
 | `V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS` | api/v4/listing-job-enqueue.js |
 | `V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER` | api/v4/listing-job-enqueue.js |
 | `V4_QUEUE_DEFAULT_CREATE_L1` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_QUEUE_GLOBAL_DRAIN_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_QUEUE_KICK_DEDUP_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_SUPABASE_PATCH_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
 | `VECTOR_CACHE_ENABLED` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_CORRECTED_TITLE_AS_TEMPORARY_GT` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
-| `VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS` | api/listing-copilot-title.js |
+| `VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS` | lib/listing/pipeline/provider-options.mjs |
 | `VECTOR_EMBEDDING_MODEL` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_EMBEDDING_MODEL_REVISION` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
-| `VECTOR_EMBEDDING_POST_PROVIDER_WAIT_MS` | api/listing-copilot-title.js |
-| `VECTOR_EMBEDDING_WARMUP_TIMEOUT_MS` | api/listing-copilot-title.js |
+| `VECTOR_EMBEDDING_POST_PROVIDER_WAIT_MS` | lib/listing/pipeline/provider-options.mjs |
+| `VECTOR_EMBEDDING_WARMUP_TIMEOUT_MS` | lib/listing/pipeline/provider-options.mjs |
 | `VECTOR_EVAL_CORRECTED_TITLE_AS_GT` | lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_GPT_CANDIDATE_LIMIT` | lib/listing/retrieval/vector-feature-flags.mjs |
-| `VECTOR_INDEX_READY` | api/v4/health.js<br>lib/listing/evaluation/blind-eval.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/v4/prewarm.mjs<br>lib/listing/v4/route-planner/route-planner.mjs |
+| `VECTOR_INDEX_READY` | api/v4/health.js<br>lib/listing/evaluation/blind-eval.mjs<br>lib/listing/readiness/workflow-readiness-audit.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/v4/prewarm.mjs<br>lib/listing/v4/route-planner/route-planner.mjs |
 | `VECTOR_PREPROCESSING_VERSION` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_QUERY_LOG_ENABLED` | lib/listing/retrieval/vector-telemetry.mjs |
 | `VECTOR_QUERY_TIMEOUT_MS` | lib/listing/evaluation/blind-eval.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |

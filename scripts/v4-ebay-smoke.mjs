@@ -819,6 +819,7 @@ async function runOne({
   baseUrl,
   cookie,
   prewarm,
+  prewarmCacheOnly = true,
   queueMode = false,
   forceL2Direct = false,
   modelOverride = "",
@@ -846,7 +847,10 @@ async function runOne({
       baseUrl,
       path: "/api/v4/fast-scout-prewarm",
       cookie,
-      payload,
+      payload: {
+        ...payload,
+        v4_fast_scout_cache_only: prewarmCacheOnly
+      },
       requestTimeoutMs
     }).catch((error) => ({
       ok: false,
@@ -1664,6 +1668,7 @@ export async function runV4EbaySmoke({
   limit = 10,
   offset = 0,
   prewarm = false,
+  prewarmCacheOnly = true,
   queueMode = false,
   forceL2Direct = false,
   modelOverride = "",
@@ -1696,6 +1701,7 @@ export async function runV4EbaySmoke({
         baseUrl,
         cookie,
         prewarm,
+        prewarmCacheOnly,
         queueMode,
         forceL2Direct,
         modelOverride,
@@ -1730,6 +1736,7 @@ export async function runV4EbaySmoke({
     limit,
     offset,
     prewarm_enabled: prewarm,
+    prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
     speculative_mode: speculative,
     think_ms: speculative ? thinkMs : null,
@@ -1764,6 +1771,7 @@ export async function main(argv = process.argv, env = process.env) {
     limit: Math.max(1, Math.trunc(numberArg(argv, "--limit", 10))),
     offset: Math.max(0, Math.trunc(numberArg(argv, "--offset", 0))),
     prewarm: hasFlag(argv, "--prewarm"),
+    prewarmCacheOnly: !hasFlag(argv, "--paid-prewarm"),
     queueMode: hasFlag(argv, "--queue"),
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),

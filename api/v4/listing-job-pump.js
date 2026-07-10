@@ -114,6 +114,7 @@ export async function runV4QueuePump({
   }
 
   const started = now();
+  const pumpRunId = String(payload.pump_run_id || payload.pumpRunId || crypto.randomUUID()).slice(0, 96);
   const maxCycles = positiveInteger(payload.cycles ?? payload.max_cycles, 6, { min: 1, max: 30 });
   const limit = positiveInteger(payload.limit, v4WorkerProcessConcurrency(env), { min: 1, max: 96 });
   const processConcurrency = positiveInteger(
@@ -178,7 +179,7 @@ export async function runV4QueuePump({
         process_concurrency: laneProcessConcurrency,
         lease_seconds: leaseSeconds,
         retry_delay_seconds: retryDelaySeconds,
-        worker_id: `v4-pump-${lane}-${cycle + 1}`
+        worker_id: `v4-pump-${pumpRunId}-${lane}-${cycle + 1}`.slice(0, 120)
       };
       const response = await invokeWorker(workerPayload, { workerSecret, env });
       const body = response?.body || {};
@@ -220,6 +221,7 @@ export async function runV4QueuePump({
 
   return {
     ok: true,
+    pump_run_id: pumpRunId,
     tenant_id: tenantId,
     cycles_run: Math.max(0, ...laneSummaries.map((summary) => summary.cycles_run || 0)),
     lanes,

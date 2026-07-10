@@ -30,15 +30,20 @@ assert.equal(smokeNumberArg(["node", "smoke", "--offset", "0"], "--offset", 12),
 assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--limit", 10), 10);
 
 const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
+const fastScoutPrewarmApiSource = await readFile("api/v4/fast-scout-prewarm.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /scheduleV4Background\(persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must not block writer-ready L2 by default.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start hidden L1 prewarm independently.");
 assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish the parallel hidden scout before its single L2 enqueue.");
+assert.match(v4SmokeSource, /prewarmCacheOnly: !hasFlag\(argv, "--paid-prewarm"\)/, "production smoke must mirror cache-only hidden scout probing unless a paid L1 experiment is explicit.");
 assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
 assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");
+assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
+assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");
+assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-only misses must return a stable non-error response.");
 
 const route = planV4RecognitionRoute({
   preingestion_bundle_id: "bundle-1",

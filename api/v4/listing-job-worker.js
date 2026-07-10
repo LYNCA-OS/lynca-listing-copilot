@@ -5,6 +5,7 @@ import {
   claimV4RecognitionJobs,
   completeV4RecognitionJob,
   failV4RecognitionJob,
+  releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
   v4JobLanes,
   v4JobStatuses,
@@ -97,6 +98,7 @@ export function payloadForV4ProductionJob(job = {}) {
   const basePayload = job.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
     ? { ...job.payload }
     : {};
+  const leasedKeySlot = Number(job.queue_tags?.provider_key_slot || 0) || null;
   return {
     ...basePayload,
     recognition_session_id: job.recognition_session_id || basePayload.recognition_session_id,
@@ -107,6 +109,8 @@ export function payloadForV4ProductionJob(job = {}) {
     v4_queue_job_id: job.id || basePayload.v4_queue_job_id || basePayload.job_id || undefined,
     v4_queue_job_type: jobType,
     v4_queue_lane: job.lane || basePayload.lane || (fastScoutDraft ? v4JobLanes.INTERACTIVE : v4JobLanes.BACKGROUND),
+    openai_preferred_key_slot: leasedKeySlot || basePayload.openai_preferred_key_slot || null,
+    provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
     ...(fastScoutDraft
       ? {
         v4_worker_synchronous: false,
@@ -206,6 +210,21 @@ async function runJob(job, req) {
   };
 }
 
+async function releaseProviderCapacity(job = {}) {
+  const release = await releaseV4ProviderCapacityForJob({
+    jobId: job.id,
+    workerId: job.lease_owner || null
+  });
+  if (release.error) {
+    console.error("[v4_provider_capacity_release_failed]", JSON.stringify({
+      job_id: job.id || null,
+      worker_id: job.lease_owner || null,
+      error: release.error
+    }));
+  }
+  return release;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
@@ -241,8 +260,10 @@ export default async function handler(req, res) {
   const workerId = workerIdFrom(req, payload);
   const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 96 });
   const processBatch = async (rows = [], concurrency = 1) => mapWithConcurrency(rows, concurrency, async (job) => {
+    let capacityRelease = null;
     try {
       const result = await runJob(job, req);
+      capacityRelease = await releaseProviderCapacity(job);
       const jobStatus = completionStatusForJob(job);
       const completion = await completeV4RecognitionJob({
         jobId: job.id,
@@ -284,11 +305,15 @@ export default async function handler(req, res) {
         latency_ms: result.latency_ms,
         saved: completion.saved,
         completion_write_attempts: completion.write_attempts || 1,
+        provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
+        provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
+        provider_capacity_released: capacityRelease.released === true,
         paired_final_released: pairedRelease.saved === true,
         paired_final_wake_triggered: pairedWake.triggered === true,
         error: completion.error || null
       };
     } catch (error) {
+      capacityRelease = capacityRelease || await releaseProviderCapacity(job);
       console.error("[v4_job_attempt_failed]", JSON.stringify({
         job_id: job.id || null,
         job_type: normalizedJobType(job),
@@ -321,6 +346,9 @@ export default async function handler(req, res) {
         recognition_session_id: job.recognition_session_id,
         latency_ms: error?.latency_ms || null,
         saved: failure.saved,
+        provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
+        provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
+        provider_capacity_released: capacityRelease.released === true,
         paired_final_released: pairedRelease.saved === true,
         paired_final_wake_triggered: pairedWake.triggered === true,
         error: failure.error || safeError(error)

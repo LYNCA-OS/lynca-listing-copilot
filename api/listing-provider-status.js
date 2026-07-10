@@ -1,9 +1,15 @@
 import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
+import { openAiProviderPoolStatus } from "../lib/listing/providers/openai-key-pool.mjs";
 import { providerCatalog } from "../lib/listing/providers/provider-registry.mjs";
 import { buildWorkflowReadinessAudit } from "../lib/listing/readiness/workflow-readiness-audit.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
+import {
+  v4ProviderCapacityControlEnabled,
+  v4QueueGlobalDrainEnabled,
+  v4QueueKickDedupMs
+} from "../lib/listing/v4/jobs/production-job-queue.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const workflowReadinessCacheTtlMs = 60_000;
@@ -245,12 +251,21 @@ export default async function handler(req, res) {
     .map((provider) => providerStatus(provider, storage));
 
   const workflowReadiness = await loadWorkflowReadiness();
+  const providerPool = openAiProviderPoolStatus(process.env);
 
   sendJson(res, 200, {
     ok: true,
     default_provider: defaultProviderId(providers),
     fallback_available: false,
     workflow_readiness: workflowReadiness,
+    execution_control: {
+      distributed_provider_capacity_enabled: v4ProviderCapacityControlEnabled(process.env),
+      global_fair_drain_enabled: v4QueueGlobalDrainEnabled(process.env),
+      queue_kick_dedup_ms: v4QueueKickDedupMs(process.env),
+      provider_key_pool_size: providerPool.key_pool_size,
+      per_key_stable_concurrency: providerPool.per_key_stable_concurrency,
+      global_provider_concurrency: providerPool.global_concurrency
+    },
     storage,
     providers
   });

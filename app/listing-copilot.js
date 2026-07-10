@@ -35,6 +35,7 @@ const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const FAST_SCOUT_PREWARM_WAIT_MS = 1200;
 const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
+const QUEUED_STATUS_BATCH_SIZE = 100;
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
 // L1 scout 与预处理并行，缓存就绪后只启动一次 L2；L1 永不直接展示给写手。
@@ -77,10 +78,14 @@ const state = {
   assetGenerationTimings: new Map(),
   generationTimer: null,
   assistedDraftPollTimers: new Map(),
+  queuedBatchPollTimer: null,
+  queuedBatchPollInFlightGeneration: null,
+  queuedBatchPollGeneration: 0,
   completedAssetCount: 0,
   processingTotal: 0,
   exportingWorkbook: false,
-  backgroundPreparationRunId: 0
+  backgroundPreparationRunId: 0,
+  backgroundRecognitionBatchId: ""
 };
 
 const elements = {
@@ -914,6 +919,7 @@ async function ensureFastScoutPrewarm(asset) {
         },
         credentials: "same-origin",
         body: buildAssetRequestBody(asset, {
+          v4_fast_scout_cache_only: true,
           provider_options: {
             ...defaultProviderOptions,
             single_model_fast: true,
@@ -1090,7 +1096,7 @@ async function ensureSpeculativeRecognition(asset, runId) {
       enqueueJobPayload.v4_force_l2_direct = true;
       enqueueJobPayload.client_speculative = true;
 
-      const batchId = createClientBatchId();
+      const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
       const enqueuePayload = await fetch(JOB_ENQUEUE_API_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1165,6 +1171,7 @@ async function settleSpeculativeRecognition(asset, maxWaitMs = SPECULATIVE_SETTL
 function startBackgroundPreparation(reason = "file_ready") {
   if (!storageReady() || !state.assets.length) return false;
   const runId = ++state.backgroundPreparationRunId;
+  state.backgroundRecognitionBatchId = createClientBatchId();
   const assets = [...state.assets];
   assets.forEach((asset) => {
     if (!asset.preingestionBundleId && asset.backgroundPrepareStatus !== "ready") {
@@ -2546,6 +2553,7 @@ async function handleFiles(fileList) {
   if (!imageFiles.length) return;
 
   state.backgroundPreparationRunId += 1;
+  state.backgroundRecognitionBatchId = "";
   stopAllV4AssistedDraftPolling();
   void prewarmV4("file_selected");
   setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
@@ -2897,6 +2905,8 @@ async function processTitles() {
   setStatus("0% · 图片已准备，开始识别…", { busy: true });
 
   const queue = [...state.assets];
+  const recognitionBatchId = state.backgroundRecognitionBatchId || createClientBatchId();
+  state.backgroundRecognitionBatchId = recognitionBatchId;
   const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
   let completedCount = 0;
 
@@ -2909,7 +2919,7 @@ async function processTitles() {
       renderResults();
 
       try {
-        const result = await processAssetViaQueue(asset);
+        const result = await processAssetViaQueue(asset, { batchId: recognitionBatchId });
         if (!v4WriterTitlePending(result)) {
           markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });
           clearAssetProgress(asset.index);
@@ -3152,15 +3162,136 @@ function stopV4AssistedDraftPolling(resultIndex) {
   state.assistedDraftPollTimers.delete(resultIndex);
 }
 
+function stopV4QueuedBatchPolling() {
+  if (state.queuedBatchPollTimer) clearTimeout(state.queuedBatchPollTimer);
+  state.queuedBatchPollTimer = null;
+  state.queuedBatchPollGeneration += 1;
+}
+
 function stopAllV4AssistedDraftPolling() {
   for (const timer of state.assistedDraftPollTimers.values()) {
     clearTimeout(timer);
   }
   state.assistedDraftPollTimers = new Map();
+  stopV4QueuedBatchPolling();
 }
 
 function pendingAssistedDraftCount() {
   return state.results.filter(shouldPollV4AssistedDraft).length;
+}
+
+function pendingV4QueuedResults() {
+  return state.results.filter((result) => {
+    return result?.v4QueuedJob && result.v4_job_id && shouldPollV4AssistedDraft(result);
+  });
+}
+
+function chunksOf(items = [], size = QUEUED_STATUS_BATCH_SIZE) {
+  const chunks = [];
+  const safeSize = Math.max(1, Number(size) || QUEUED_STATUS_BATCH_SIZE);
+  for (let index = 0; index < items.length; index += safeSize) {
+    chunks.push(items.slice(index, index + safeSize));
+  }
+  return chunks;
+}
+
+function queuedStatusPollDelay(elapsedMs = 0) {
+  if (elapsedMs < 30_000) return 800;
+  if (elapsedMs < 90_000) return 1200;
+  return 1800;
+}
+
+function timeoutQueuedResult(result = {}) {
+  result.l2AssistedDraftStatus = "TIMEOUT";
+  result.assisted_draft_status = "TIMEOUT";
+  result.feedbackMessage = result.feedbackMessage || "一段式标题暂未完成，请稍后重试或使用单模型重试。";
+  markAssetFinished(result.index, { failed: true });
+  attachGenerationTimingToResult(result);
+  clearAssetProgress(result.index);
+}
+
+async function pollV4QueuedJobsBatch(generation) {
+  if (generation !== state.queuedBatchPollGeneration || state.queuedBatchPollInFlightGeneration === generation) return;
+  const pending = pendingV4QueuedResults();
+  if (!pending.length) {
+    state.queuedBatchPollTimer = null;
+    return;
+  }
+
+  const now = performance.now();
+  const active = [];
+  for (const result of pending) {
+    result.v4QueuedPollStartedAt = result.v4QueuedPollStartedAt || now;
+    if (now - result.v4QueuedPollStartedAt > ASSISTED_DRAFT_MAX_POLL_MS) {
+      timeoutQueuedResult(result);
+    } else {
+      active.push(result);
+    }
+  }
+  if (!active.length) {
+    renderResults();
+    setStatus("一段式标题生成已结束，超时项可重试。");
+    state.queuedBatchPollTimer = null;
+    return;
+  }
+
+  state.queuedBatchPollInFlightGeneration = generation;
+  try {
+    const resultByJobId = new Map(active.map((result) => [result.v4_job_id, result]));
+    const batches = chunksOf([...resultByJobId.keys()]);
+    const payloads = await Promise.all(batches.map(async (jobIds) => {
+      const params = new URLSearchParams({ job_ids: jobIds.join(","), limit: String(jobIds.length) });
+      const response = await fetch(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => ({}));
+      return response.ok && payload.ok !== false ? payload : null;
+    }));
+    if (generation !== state.queuedBatchPollGeneration) return;
+
+    let terminalCount = 0;
+    for (const payload of payloads.filter(Boolean)) {
+      for (const job of payload.jobs || []) {
+        const result = resultByJobId.get(job.job_id);
+        if (!result) continue;
+        const update = applyV4QueuedJobStatusUpdate(result, job);
+        if (update.terminal) terminalCount += 1;
+      }
+    }
+    renderResults();
+    const remaining = pendingAssistedDraftCount();
+    if (terminalCount > 0) {
+      setStatus(remaining
+        ? `一段式标题已生成，剩余 ${remaining} 张继续生成中…`
+        : "一段式标题已全部生成。", { busy: remaining > 0 });
+    }
+  } catch {
+    // A status read is observational. Keep the durable jobs running and poll again.
+  } finally {
+    if (state.queuedBatchPollInFlightGeneration === generation) {
+      state.queuedBatchPollInFlightGeneration = null;
+    }
+  }
+
+  if (generation !== state.queuedBatchPollGeneration) return;
+  const remaining = pendingV4QueuedResults();
+  if (!remaining.length) {
+    state.queuedBatchPollTimer = null;
+    return;
+  }
+  const earliestStart = Math.min(...remaining.map((result) => result.v4QueuedPollStartedAt || performance.now()));
+  state.queuedBatchPollTimer = setTimeout(() => {
+    state.queuedBatchPollTimer = null;
+    void pollV4QueuedJobsBatch(generation);
+  }, queuedStatusPollDelay(performance.now() - earliestStart));
+}
+
+function startV4QueuedBatchPolling() {
+  if (state.queuedBatchPollTimer || state.queuedBatchPollInFlightGeneration === state.queuedBatchPollGeneration) return;
+  const generation = state.queuedBatchPollGeneration;
+  void pollV4QueuedJobsBatch(generation);
 }
 
 function queuedJobFailureReason(job = {}) {
@@ -3219,66 +3350,8 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
   return { terminal: false, upgraded: false };
 }
 
-async function pollV4QueuedJob(resultIndex, startedAt = performance.now(), attempt = 0) {
-  const result = state.results.find((item) => item.index === resultIndex);
-  if (!result || !shouldPollV4AssistedDraft(result) || !result.v4_job_id) {
-    stopV4AssistedDraftPolling(resultIndex);
-    return;
-  }
-
-  if (performance.now() - startedAt > ASSISTED_DRAFT_MAX_POLL_MS) {
-    result.l2AssistedDraftStatus = "TIMEOUT";
-    result.assisted_draft_status = "TIMEOUT";
-    result.feedbackMessage = result.feedbackMessage || "一段式标题暂未完成，请稍后重试或使用单模型重试。";
-    markAssetFinished(result.index, { failed: true });
-    attachGenerationTimingToResult(result);
-    clearAssetProgress(result.index);
-    stopV4AssistedDraftPolling(resultIndex);
-    renderResults();
-    return;
-  }
-
-  try {
-    const params = new URLSearchParams({ job_ids: result.v4_job_id, limit: "1" });
-    const response = await fetch(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store"
-    });
-    const payload = await response.json().catch(() => ({}));
-    const job = response.ok && payload.ok !== false ? (payload.jobs || [])[0] : null;
-    if (job) {
-      const { terminal, upgraded } = applyV4QueuedJobStatusUpdate(result, job);
-      renderResults();
-      if (terminal) {
-        stopV4AssistedDraftPolling(resultIndex);
-        const remaining = pendingAssistedDraftCount();
-        setStatus(remaining
-          ? `一段式标题已生成，剩余 ${remaining} 张继续生成中…`
-          : upgraded
-            ? "一段式标题已全部生成。"
-            : "一段式标题生成已结束，失败项可重试。", { busy: remaining > 0 });
-        return;
-      }
-    }
-  } catch {
-    result.l2AssistedDraftStatus = result.l2AssistedDraftStatus || "PENDING";
-  }
-
-  const delay = ASSISTED_DRAFT_POLL_INTERVALS_MS[Math.min(attempt, ASSISTED_DRAFT_POLL_INTERVALS_MS.length - 1)];
-  const timer = setTimeout(() => {
-    state.assistedDraftPollTimers.delete(resultIndex);
-    void pollV4QueuedJob(resultIndex, startedAt, attempt + 1);
-  }, delay);
-  state.assistedDraftPollTimers.set(resultIndex, timer);
-}
-
 async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), attempt = 0) {
   const result = state.results.find((item) => item.index === resultIndex);
-  if (result?.v4QueuedJob && result.v4_job_id) {
-    await pollV4QueuedJob(resultIndex, startedAt, attempt);
-    return;
-  }
   if (!result || !shouldPollV4AssistedDraft(result)) {
     stopV4AssistedDraftPolling(resultIndex);
     return;
@@ -3336,6 +3409,14 @@ async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), a
 
 function startV4AssistedDraftPolling(result = {}) {
   if (!shouldPollV4AssistedDraft(result)) return;
+  if (result.v4QueuedJob && result.v4_job_id) {
+    result.v4QueuedPollStartedAt = result.v4QueuedPollStartedAt || performance.now();
+    result.l2AssistedDraftStatus = v4AssistedStatus(result) || "PENDING";
+    result.assisted_draft_status = result.l2AssistedDraftStatus;
+    startGenerationTicker();
+    startV4QueuedBatchPolling();
+    return;
+  }
   if (state.assistedDraftPollTimers.has(result.index)) return;
   result.l2AssistedDraftStatus = v4AssistedStatus(result) || "PENDING";
   result.assisted_draft_status = result.l2AssistedDraftStatus;
@@ -3599,6 +3680,7 @@ async function exportWriterWorkbook() {
 
 function resetTool() {
   state.backgroundPreparationRunId += 1;
+  state.backgroundRecognitionBatchId = "";
   stopAllV4AssistedDraftPolling();
   state.files = [];
   state.assets = [];
@@ -3627,6 +3709,7 @@ function bindEvents() {
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
     input.addEventListener("change", () => {
       state.backgroundPreparationRunId += 1;
+      state.backgroundRecognitionBatchId = "";
       stopAllV4AssistedDraftPolling();
       state.mode = input.value;
       state.results = [];

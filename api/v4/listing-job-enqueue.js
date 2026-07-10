@@ -5,6 +5,9 @@ import {
   createV4BatchId,
   enqueueV4RecognitionJobs,
   expandV4RecognitionStageJobs,
+  tryAcquireV4QueueKick,
+  v4QueueGlobalDrainEnabled,
+  v4QueueKickDedupMs,
   v4QueueConfigured,
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
@@ -65,7 +68,8 @@ function triggerV4QueuePumpAfterEnqueue(req, {
   const backgroundConcurrency = Math.min(stableConcurrency, backgroundLimit);
 
   const body = {
-    tenant_id: tenantId || batchId || null,
+    tenant_id: v4QueueGlobalDrainEnabled(process.env) ? null : tenantId || batchId || null,
+    kick_source_tenant_id: tenantId || batchId || null,
     limit: interactiveLimit,
     process_concurrency: interactiveConcurrency,
     interactive_limit: interactiveLimit,
@@ -84,17 +88,29 @@ function triggerV4QueuePumpAfterEnqueue(req, {
     max_continuation_depth: 20,
     reason: "post_enqueue"
   };
-  waitUntil(
-    fetch(`${origin}/api/v4/listing-job-pump`, {
+  const kickOwner = `enqueue-${String(batchId || tenantId || "batch").slice(0, 72)}-${Date.now().toString(36)}`;
+  waitUntil((async () => {
+    const kick = await tryAcquireV4QueueKick({
+      scope: "global",
+      owner: kickOwner,
+      leaseMs: v4QueueKickDedupMs(process.env)
+    });
+    if (kick.ok && !kick.acquired) return null;
+    return fetch(`${origin}/api/v4/listing-job-pump`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         [workerSecretHeader]: secret
       },
       body: JSON.stringify(body)
-    }).catch(() => null)
-  );
-  return { triggered: true, reason: "post_enqueue", tenant_id: body.tenant_id };
+    }).catch(() => null);
+  })());
+  return {
+    triggered: true,
+    reason: "post_enqueue_deduplicated_kick_scheduled",
+    tenant_id: body.tenant_id,
+    global_drain: body.tenant_id === null
+  };
 }
 
 export default async function handler(req, res) {
@@ -157,6 +173,7 @@ export default async function handler(req, res) {
     queued_count: result.queued_count,
     pump_triggered: pump.triggered,
     pump_reason: pump.reason,
+    pump_global_drain: pump.global_drain === true,
     jobs: result.jobs.map((entry) => ({
       ok: entry.saved,
       job_id: entry.row?.id || null,

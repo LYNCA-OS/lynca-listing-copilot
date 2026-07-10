@@ -36,7 +36,8 @@ export default async function handler(req, res) {
       payload,
       env: process.env,
       fetchImpl: globalThis.fetch,
-      cacheWriteMode: "await"
+      cacheWriteMode: "await",
+      allowProviderCall: payload.v4_fast_scout_cache_only !== true
     });
     const scout = result.fast_scout || {};
     sendJson(res, 200, withV4Version({
@@ -55,6 +56,19 @@ export default async function handler(req, res) {
       confidence: scout.confidence ?? result.confidence_score ?? null
     }));
   } catch (error) {
+    if (error?.code === "FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED") {
+      sendJson(res, 200, withV4Version({
+        ok: true,
+        prewarm_status: "CACHE_MISS",
+        fast_scout_cache_hit: false,
+        fast_scout_cache_status: "MISS_CACHE_ONLY",
+        fast_scout_prewarmer_used: false,
+        fast_scout_blocking_call_used: false,
+        provider_latency_ms: null,
+        cache_only: true
+      }));
+      return;
+    }
     sendJson(res, 502, withV4Version({
       ok: false,
       prewarm_status: "FAILED",

@@ -9,7 +9,9 @@ import {
   failV4RecognitionJob,
   normalizeV4JobInput,
   readV4RecognitionJobs,
+  releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
+  tryAcquireV4QueueKick,
   v4JobLanes,
   v4JobTypes,
   v4JobStatuses
@@ -103,6 +105,16 @@ assert.equal(l1Payload.disable_fast_scout_l1, false);
 const l2Payload = payloadForV4ProductionJob(optInStageJobs[1]);
 assert.equal(l2Payload.v4_force_l2_direct, true);
 assert.equal(l2Payload.disable_fast_scout_l1, true);
+const capacityLeasedPayload = payloadForV4ProductionJob({
+  ...optInStageJobs[1],
+  queue_tags: {
+    ...optInStageJobs[1].queue_tags,
+    provider_capacity_slot: 4,
+    provider_key_slot: 2
+  }
+});
+assert.equal(capacityLeasedPayload.openai_preferred_key_slot, 2);
+assert.equal(capacityLeasedPayload.provider_capacity_slot, 4);
 
 const writes = [];
 const fetchForWrites = async (url, request = {}) => {
@@ -140,9 +152,41 @@ const claim = await claimV4RecognitionJobs({
 });
 assert.equal(claim.ok, true);
 assert.equal(claim.rows[0].id, "v4job-claimed");
-assert.ok(rpcCalls[0].url.endsWith("/rest/v1/rpc/claim_v4_recognition_jobs"));
+assert.ok(rpcCalls[0].url.endsWith("/rest/v1/rpc/claim_v4_recognition_jobs_with_capacity"));
 assert.ok(rpcCalls[0].request.body.includes('"p_limit":3'));
 assert.ok(rpcCalls[0].request.body.includes('"p_lane":"interactive"'));
+assert.ok(rpcCalls[0].request.body.includes('"p_provider_capacity":2'));
+assert.ok(rpcCalls[0].request.body.includes('"p_per_key_concurrency":2'));
+
+const capacityRpcCalls = [];
+const releasedCapacity = await releaseV4ProviderCapacityForJob({
+  jobId: "v4job-claimed",
+  workerId: "worker-a",
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    capacityRpcCalls.push({ url: String(url), request });
+    return jsonResponse(1);
+  }
+});
+assert.equal(releasedCapacity.released, true);
+assert.equal(releasedCapacity.released_count, 1);
+assert.ok(capacityRpcCalls[0].url.endsWith("/rest/v1/rpc/release_v4_provider_capacity_for_job"));
+assert.ok(capacityRpcCalls[0].request.body.includes('"p_job_id":"v4job-claimed"'));
+
+const kickRpcCalls = [];
+const kick = await tryAcquireV4QueueKick({
+  scope: "global",
+  owner: "enqueue-batch",
+  leaseMs: 1200,
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    kickRpcCalls.push({ url: String(url), request });
+    return jsonResponse(true);
+  }
+});
+assert.equal(kick.ok, true);
+assert.equal(kick.acquired, true);
+assert.ok(kickRpcCalls[0].url.endsWith("/rest/v1/rpc/try_acquire_v4_queue_kick"));
 
 const patches = [];
 await completeV4RecognitionJob({

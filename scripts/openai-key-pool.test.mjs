@@ -49,4 +49,21 @@ assert.equal(missing.apiKey, "");
 assert.equal(missing.keySlot, null);
 assert.equal(missing.poolSize, 0);
 
+const leasedSelection = selectOpenAiApiKey({
+  env: pool,
+  shardKey: "asset-123",
+  preferredKeySlot: 3
+});
+assert.equal(leasedSelection.apiKey, "sk-c");
+assert.equal(leasedSelection.keySlot, 3);
+assert.equal(leasedSelection.source, "capacity_lease");
+
+const invalidLeaseFallsBack = selectOpenAiApiKey({
+  env: pool,
+  shardKey: "asset-123",
+  preferredKeySlot: 99
+});
+assert.equal(invalidLeaseFallsBack.apiKey, firstSelection.apiKey);
+assert.equal(invalidLeaseFallsBack.source, "pool");
+
 console.log("openai key pool tests passed");

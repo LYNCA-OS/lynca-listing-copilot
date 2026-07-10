@@ -248,6 +248,14 @@ export default async function handler(req, res) {
         attempt_count: job.attempt_count,
         max_attempts: job.max_attempts,
         priority: job.priority,
+        execution_control: {
+          provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
+          provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
+          provider_capacity: Number(job.queue_tags?.provider_capacity || 0) || null,
+          provider_per_key_concurrency: Number(job.queue_tags?.provider_per_key_concurrency || 0) || null,
+          provider_capacity_lease_owner: job.queue_tags?.provider_capacity_lease_owner || null,
+          provider_capacity_leased_at: job.queue_tags?.provider_capacity_leased_at || null
+        },
         created_at: job.created_at,
         updated_at: job.updated_at,
         started_at: job.started_at,
