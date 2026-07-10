@@ -139,6 +139,10 @@ function writerFinalizedL2ExactAnchorResponse(response = {}, result = {}, finali
 
 function writerPendingL1Response(response = {}, result = {}) {
   const scout = buildInternalScoutSummary(response, result);
+  // Diagnostic only: expose WHY exact-anchor finalize did not fire so gates
+  // can distinguish catalog/RPC transients from code regressions. The writer
+  // barrier still hides all title fields below.
+  const exactAnchorFinalize = result.exact_anchor_finalize || { used: false, reason: "not_attempted" };
   const legacy = hideTitleFields(response.legacy_v2_result || result || {});
   return withV4Version({
     ...response,
@@ -169,6 +173,7 @@ function writerPendingL1Response(response = {}, result = {}) {
       writer_visible_title_ready: false,
       internal_scout_ready: Boolean(scout.title || Object.keys(scout.resolved_fields || {}).length)
     },
+    exact_anchor_finalize: exactAnchorFinalize,
     l1_internal_scout: scout,
     legacy_v2_result: legacy
   });
