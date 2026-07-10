@@ -26,9 +26,12 @@ jobs:
         run: |
           npm install --global vercel@55 --no-audit --no-fund
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          # Build once on the runner. Uploading a prebuilt artifact avoids the
+          # Vercel remote-build path that can fail before user code starts.
+          vercel build --prod --token="$VERCEL_TOKEN"
           deployed=false
           for attempt in 1 2 3; do
-            if vercel deploy --prod --yes --token="$VERCEL_TOKEN"; then
+            if vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"; then
               deployed=true
               break
             fi
