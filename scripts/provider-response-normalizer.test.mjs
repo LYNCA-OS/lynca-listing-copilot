@@ -4,11 +4,20 @@ import {
   parseProviderMessagePayload,
   validateProviderEvidencePayload
 } from "../lib/listing/providers/provider-response-normalizer.mjs";
+import { openAiProviderResponseSchema } from "../lib/listing/providers/openai-emergency-provider.mjs";
+import { resolvedFieldNames } from "../lib/listing/evidence/evidence-schema.mjs";
 
 const schema = JSON.parse(await readFile("lib/listing/schemas/provider-evidence-response.schema.json", "utf8"));
 assert.equal(schema.title, "Listing ProviderEvidenceResponse");
 assert.ok(schema.anyOf.some((entry) => entry.required?.includes("evidence")));
 assert.ok(schema.properties.unresolved.items.type === "string");
+
+const structuredOutputFields = Object.keys(openAiProviderResponseSchema().properties.fields.properties);
+assert.deepEqual(
+  structuredOutputFields.filter((field) => !resolvedFieldNames.includes(field)),
+  [],
+  "Every model field must survive the shared resolved/evidence contract."
+);
 
 const legacyPayload = validateProviderEvidencePayload("openai_legacy", {
   title: "2024 Topps Chrome Tester",

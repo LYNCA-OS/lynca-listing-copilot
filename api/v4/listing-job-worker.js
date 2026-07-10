@@ -334,6 +334,8 @@ export default async function handler(req, res) {
         error: {
           message: safeError(error),
           status: error?.status || null,
+          code: error?.code || null,
+          retryable: error?.retryable,
           body: error?.body ? { message: error.body.message || null, ok: error.body.ok || false } : null
         },
         forceFinalFailure: hiddenL1Job,
