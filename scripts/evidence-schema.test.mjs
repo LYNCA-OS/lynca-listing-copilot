@@ -24,6 +24,7 @@ assert.ok(evidenceSchema.properties.sources.items.properties.source_type.enum.in
 assert.ok(resolvedSchema.properties.grade_type.enum.includes("CARD_AND_AUTO"));
 assert.equal(resolvedSchema.properties.multi_card.type, "boolean");
 assert.equal(resolvedSchema.properties.card_count.minimum, 1);
+assert.deepEqual(resolvedSchema.properties.cert_number.type, ["string", "null"]);
 
 const evidenceField = createEvidenceField({
   value: "31/50",
@@ -88,6 +89,7 @@ const resolved = legacyFieldsToResolvedFields({
   card_number: "UV-16",
   serial_number: "31/50",
   grade_company: "PSA",
+  cert_number: "0018492845",
   grade: "10",
   auto: true
 });
@@ -96,6 +98,7 @@ assert.deepEqual(resolved.players, ["Shohei Ohtani"]);
 assert.equal(resolved.checklist_code, "UV-16");
 assert.equal(resolved.serial_number, "31/50");
 assert.equal(resolved.card_grade, "10");
+assert.equal(resolved.cert_number, "0018492845");
 assert.equal(resolved.auto, true);
 assert.equal(validateResolvedFields(resolved).length, 0);
 
@@ -234,6 +237,7 @@ const structuredHighRiskFieldDocument = providerPayloadToEvidenceDocument({
     players: ["Test Player"],
     grade_company: "PSA",
     card_grade: "10",
+    cert_number: "0018492845",
     grade_type: "CARD_ONLY",
     rc: true,
     auto: true
@@ -253,6 +257,14 @@ const structuredHighRiskFieldDocument = providerPayloadToEvidenceDocument({
       support_type: "SLAB_LABEL",
       evidence_kind: "GRADE_LABEL",
       visible_text: "PSA GEM MT 10",
+      confidence: 0.96,
+      review_required: false
+    },
+    cert_number: {
+      value: "0018492845",
+      support_type: "SLAB_LABEL",
+      evidence_kind: "CERT_NUMBER",
+      visible_text: "0018492845",
       confidence: 0.96,
       review_required: false
     },
@@ -284,6 +296,8 @@ assert.equal(structuredHighRiskFieldDocument.evidence.year.status, "REVIEW");
 assert.equal(structuredHighRiskFieldDocument.evidence.year.sources[0].source_type, "VISION_MODEL");
 assert.equal(structuredHighRiskFieldDocument.evidence.grade_company.sources[0].source_type, "SLAB_LABEL");
 assert.equal(structuredHighRiskFieldDocument.evidence.card_grade.sources[0].source_type, "SLAB_LABEL");
+assert.equal(structuredHighRiskFieldDocument.resolved.cert_number, "0018492845");
+assert.equal(structuredHighRiskFieldDocument.evidence.cert_number.sources[0].source_type, "SLAB_LABEL");
 assert.equal(structuredHighRiskFieldDocument.evidence.rc.sources[0].source_type, "CARD_FRONT");
 assert.equal(structuredHighRiskFieldDocument.evidence.rc.sources[0].evidence_kind, "RC_LOGO");
 assert.equal(structuredHighRiskFieldDocument.evidence.auto.sources[0].source_type, "VISION_MODEL");

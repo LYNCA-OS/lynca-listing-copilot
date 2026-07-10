@@ -133,11 +133,26 @@ const arrayFieldEvidence = validateProviderEvidencePayload("openai_legacy", {
       directly_observed: true,
       confidence: 0.91,
       review_required: false
+    },
+    {
+      field: "cert_number",
+      value: "0018492845",
+      source_type: "SLAB_LABEL",
+      source_image_id: "slab",
+      source_region: "grade_label",
+      raw_text: "0018492845",
+      visible_text: "0018492845",
+      evidence_kind: "CERT_NUMBER",
+      direct_observation: true,
+      directly_observed: true,
+      confidence: 0.96,
+      review_required: false
     }
   ],
   unresolved: []
 });
 assert.equal(arrayFieldEvidence.field_evidence.serial_number.raw_text, "31/50");
+assert.equal(arrayFieldEvidence.field_evidence.cert_number.value, "0018492845");
 
 const parsedTool = parseProviderMessagePayload({
   tool_calls: [

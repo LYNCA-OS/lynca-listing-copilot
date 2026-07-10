@@ -75,6 +75,7 @@
     "grade_company": { "type": ["string", "null"] },
     "card_grade": { "type": ["string", "null"] },
     "auto_grade": { "type": ["string", "null"] },
+    "cert_number": { "type": ["string", "null"] },
     "grade_type": {
       "enum": ["CARD_ONLY", "AUTO_ONLY", "CARD_AND_AUTO", "AUTHENTIC", "ALTERED", "UNKNOWN"]
     }
