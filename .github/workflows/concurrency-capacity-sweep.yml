@@ -204,6 +204,13 @@ jobs:
               queue_tail_share:row.queue_tail_share,
               writer_tail_amplification:row.writer_tail_amplification,
               provider_p95_ms:row.provider_latency_p95_ms,
+              bottleneck_node:row.bottleneck_node_id,
+              bottleneck_p95_ms:row.bottleneck_node_p95_ms,
+              bottleneck_share:row.bottleneck_share_of_writer_p95,
+              request_headroom_min_ratio:row.request_headroom_min_ratio,
+              token_headroom_min_ratio:row.token_headroom_min_ratio,
+              provider_key_slot_distribution:row.provider_key_slot_distribution,
+              provider_key_slot_imbalance:row.provider_key_slot_imbalance,
               catalog_p95_ms:row.catalog_retrieval_p95_ms,
               vector_p95_ms:row.vector_retrieval_p95_ms,
               ocr_p95_ms:row.ocr_wait_p95_ms,
@@ -212,6 +219,8 @@ jobs:
               node_errors:row.node_error_count,
               tokens:row.total_tokens,
               tokens_per_card:row.tokens_per_completed_card,
+              input_tokens_per_card:row.input_tokens_per_completed_card,
+              output_tokens_per_card:row.output_tokens_per_completed_card,
               rejection_reasons:row.rejection_reasons,
               warning_reasons:row.warning_reasons
             }));

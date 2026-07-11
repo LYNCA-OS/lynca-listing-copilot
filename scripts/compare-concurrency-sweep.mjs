@@ -68,6 +68,55 @@ function nodeMetric(summary = {}, nodeId = "") {
     .find((node) => node.node_id === nodeId) || null;
 }
 
+const NON_CRITICAL_PATH_NODE_IDS = new Set([
+  "job_enqueue",
+  "scheduler_queue",
+  "worker_execution",
+  "writer_ready",
+  "production_observability_persistence",
+  "client_image_prepare",
+  "client_image_upload",
+  "client_request_prepare",
+  "client_preingestion_build",
+  "client_fast_scout_prewarm",
+  "client_speculative_recognition"
+]);
+
+function bottleneckNode(summary = {}) {
+  return (summary.pipeline_node_observability?.node_metrics || [])
+    .filter((node) => !NON_CRITICAL_PATH_NODE_IDS.has(node.node_id))
+    .filter((node) => numberOrNull(node.duration_p95_ms) !== null)
+    .sort((left, right) => numberOrZero(right.duration_p95_ms) - numberOrZero(left.duration_p95_ms))[0] || null;
+}
+
+function minimumHeadroomRatio(results = [], remainingKey = "", limitKey = "") {
+  const ratios = results.map((row) => {
+    const remaining = numberOrNull(row[remainingKey] ?? row.provider_diagnostics?.[remainingKey]);
+    const limit = numberOrNull(row[limitKey] ?? row.provider_diagnostics?.[limitKey]);
+    if (remaining === null || limit === null || limit <= 0) return null;
+    return Math.max(0, remaining / limit);
+  }).filter((value) => value !== null);
+  return ratios.length ? Number(Math.min(...ratios).toFixed(6)) : null;
+}
+
+function keySlotDistribution(results = []) {
+  const counts = new Map();
+  for (const row of results) {
+    const slot = numberOrNull(row.provider_key_slot ?? row.provider_diagnostics?.provider_key_slot);
+    if (slot === null) continue;
+    const key = String(slot);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return Object.fromEntries([...counts.entries()].sort(([left], [right]) => Number(left) - Number(right)));
+}
+
+function distributionImbalance(distribution = {}) {
+  const counts = Object.values(distribution).map(Number).filter((value) => Number.isFinite(value));
+  const total = counts.reduce((sum, value) => sum + value, 0);
+  if (counts.length < 2 || total <= 0) return null;
+  return Number(((Math.max(...counts) - Math.min(...counts)) / total).toFixed(6));
+}
+
 function resultErrorText(results = []) {
   return results.map((row) => [
     row.error,
@@ -112,6 +161,8 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
       ?? summary.attempted_cards_per_minute);
   const writerP50 = numberOrNull(summary.writer_ready_p50_ms ?? summary.per_card_latency_ms?.p50);
   const writerP95 = numberOrNull(summary.writer_ready_p95_ms ?? summary.per_card_latency_ms?.p95);
+  const bottleneck = bottleneckNode(summary);
+  const slotDistribution = keySlotDistribution(results);
   const row = {
     path,
     schema_version: normalizeText(report.schema_version) || null,
@@ -172,6 +223,20 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
     key_slots_used: Array.isArray(provider.key_slots_used) ? provider.key_slots_used : [],
     latest_remaining_requests: numberOrNull(provider.latest_remaining_requests),
     latest_remaining_tokens: numberOrNull(provider.latest_remaining_tokens),
+    request_headroom_min_ratio: minimumHeadroomRatio(
+      results,
+      "x-ratelimit-remaining-requests",
+      "x-ratelimit-limit-requests"
+    ),
+    token_headroom_min_ratio: minimumHeadroomRatio(
+      results,
+      "x-ratelimit-remaining-tokens",
+      "x-ratelimit-limit-tokens"
+    ),
+    provider_key_slot_distribution: slotDistribution,
+    provider_key_slot_imbalance: distributionImbalance(slotDistribution),
+    bottleneck_node_id: bottleneck?.node_id || null,
+    bottleneck_node_p95_ms: numberOrNull(bottleneck?.duration_p95_ms),
     node_ledger_present_count: numberOrZero(nodeSummary.ledger_present_count),
     node_ledger_missing_count: numberOrZero(nodeSummary.ledger_missing_count),
     node_error_count: numberOrZero(nodeSummary.error_count),
@@ -198,6 +263,17 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
   row.tokens_per_completed_card = row.total_tokens === null || row.ok_count <= 0
     ? null
     : Number((row.total_tokens / row.ok_count).toFixed(2));
+  row.input_tokens_per_completed_card = row.input_tokens === null || row.ok_count <= 0
+    ? null
+    : Number((row.input_tokens / row.ok_count).toFixed(2));
+  row.output_tokens_per_completed_card = row.output_tokens === null || row.ok_count <= 0
+    ? null
+    : Number((row.output_tokens / row.ok_count).toFixed(2));
+  row.bottleneck_share_of_writer_p95 = row.bottleneck_node_p95_ms === null
+      || row.writer_ready_p95_ms === null
+      || row.writer_ready_p95_ms <= 0
+    ? null
+    : Number((row.bottleneck_node_p95_ms / row.writer_ready_p95_ms).toFixed(6));
   return row;
 }
 
@@ -252,6 +328,15 @@ export function evaluateRow(row = {}, baseline = {}, { qualityTolerance = 0.03 }
   if (row.batch_status_transient_error_count > 0) warningReasons.push("RECOVERED_STATUS_CONTROL_PLANE_TRANSIENT");
   if (row.node_warning_count > 0) warningReasons.push("NODE_RECONCILIATION_WARNING");
   if (row.ocr_timeout_count > 0) warningReasons.push("OCR_TIMEOUT_PRESENT");
+  if (row.request_headroom_min_ratio !== null && row.request_headroom_min_ratio < 0.05) {
+    warningReasons.push("REQUEST_RATE_LIMIT_HEADROOM_BELOW_5_PERCENT");
+  }
+  if (row.token_headroom_min_ratio !== null && row.token_headroom_min_ratio < 0.05) {
+    warningReasons.push("TOKEN_RATE_LIMIT_HEADROOM_BELOW_5_PERCENT");
+  }
+  if (row.provider_key_slot_imbalance !== null && row.provider_key_slot_imbalance > 0.5) {
+    warningReasons.push("PROVIDER_KEY_SLOT_IMBALANCE_ABOVE_50_PERCENT");
+  }
   return {
     ...row,
     sample_comparison_mode: paired ? "PAIRED" : "UNPAIRED",
@@ -381,6 +466,10 @@ export async function main(argv = process.argv) {
       `queue_tail_share=${row.queue_tail_share ?? "n/a"}`,
       `tail_amplification=${row.writer_tail_amplification ?? "n/a"}`,
       `provider_p95=${row.provider_latency_p95_ms ?? "n/a"}ms`,
+      `bottleneck=${row.bottleneck_node_id ?? "n/a"}:${row.bottleneck_node_p95_ms ?? "n/a"}ms`,
+      `request_headroom=${row.request_headroom_min_ratio ?? "n/a"}`,
+      `token_headroom=${row.token_headroom_min_ratio ?? "n/a"}`,
+      `key_slots=${JSON.stringify(row.provider_key_slot_distribution)}`,
       `tokens_per_card=${row.tokens_per_completed_card ?? "n/a"}`,
       `reasons=${row.rejection_reasons.join("|") || "n/a"}`,
       `warnings=${row.warning_reasons.join("|") || "n/a"}`

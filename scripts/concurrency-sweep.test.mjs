@@ -111,8 +111,43 @@ assert.equal(baselineRow.node_ledger_present_count, 4);
 assert.equal(baselineRow.latest_remaining_requests, 4990);
 assert.equal(baselineRow.queue_tail_share, Number((1000 / 38000).toFixed(6)));
 assert.equal(baselineRow.tokens_per_completed_card, 11000);
+assert.equal(baselineRow.input_tokens_per_completed_card, 10000);
+assert.equal(baselineRow.output_tokens_per_completed_card, 1000);
+assert.equal(baselineRow.bottleneck_node_id, "vector_retrieval");
+assert.equal(baselineRow.bottleneck_node_p95_ms, 7000);
+assert.deepEqual(baselineRow.provider_key_slot_distribution, {});
 assert.deepEqual(baselineRow.retry_error_code_breakdown, {});
 assert.equal(baselineRow.completion_write_retry_count, 0);
+
+const telemetryInput = reportFor({ concurrency: 3, cardsPerMinute: 2.5, writerP95: 45000 });
+telemetryInput.summary.pipeline_node_observability.node_metrics.push(
+  { node_id: "provider", duration_p50_ms: 18000, duration_p95_ms: 28000 }
+);
+telemetryInput.results = [
+  {
+    ok: true,
+    provider_key_slot: 1,
+    "x-ratelimit-limit-requests": "5000",
+    "x-ratelimit-remaining-requests": "4990",
+    "x-ratelimit-limit-tokens": "2000000",
+    "x-ratelimit-remaining-tokens": "1500000"
+  },
+  {
+    ok: true,
+    provider_key_slot: 2,
+    "x-ratelimit-limit-requests": "5000",
+    "x-ratelimit-remaining-requests": "4980",
+    "x-ratelimit-limit-tokens": "2000000",
+    "x-ratelimit-remaining-tokens": "1000000"
+  }
+];
+const telemetryRow = metricRow(telemetryInput);
+assert.equal(telemetryRow.bottleneck_node_id, "provider");
+assert.equal(telemetryRow.bottleneck_node_p95_ms, 28000);
+assert.equal(telemetryRow.request_headroom_min_ratio, 0.996);
+assert.equal(telemetryRow.token_headroom_min_ratio, 0.5);
+assert.deepEqual(telemetryRow.provider_key_slot_distribution, { 1: 1, 2: 1 });
+assert.equal(telemetryRow.provider_key_slot_imbalance, 0);
 
 const stableBaseline = evaluateRow(baselineRow, baselineRow);
 assert.equal(stableBaseline.stable, true);

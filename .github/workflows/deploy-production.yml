@@ -64,9 +64,12 @@ jobs:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
           METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: |
+          # A migration can commit milliseconds before PostgREST exposes the
+          # new tables to a different Vercel region. Wait for the complete
+          # readiness contract, not only for the deployment SHA.
           for attempt in $(seq 1 18); do
             if curl -fsS --max-time 30 https://listing.lyncafei.team/api/v4/health -o /tmp/v4-health.json \
-              && node -e 'const h=require("/tmp/v4-health.json"); process.exit(h.deployment?.git_commit_sha === process.env.GITHUB_SHA ? 0 : 1)'; then
+              && node -e 'const h=require("/tmp/v4-health.json"); process.exit(h.ready === true && h.deployment?.git_commit_sha === process.env.GITHUB_SHA ? 0 : 1)'; then
               break
             fi
             rm -f /tmp/v4-health.json
