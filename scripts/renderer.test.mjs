@@ -1024,6 +1024,58 @@ const smartCollapsedProductHierarchy = renderListingPresentation({
 assert.match(smartCollapsedProductHierarchy.final_title, /Panini Prizm Black Test Player/);
 assert.doesNotMatch(smartCollapsedProductHierarchy.final_title, /Panini Panini|FOTL/);
 
+const manufacturerAlreadyInProductIsNotRepeated = renderListingPresentation({
+  resolved: {
+    year: "2020",
+    manufacturer: "Panini",
+    brand: "Panini P & P",
+    product: "2020 Panini Plates & Patches Football",
+    set: "Plates & Patches",
+    players: ["Justin Herbert"],
+    card_name: "Rookie Patch Autographs",
+    numerical_rarity: "30/99",
+    rc: true,
+    auto: true,
+    patch: true
+  }
+});
+assert.match(manufacturerAlreadyInProductIsNotRepeated.final_title, /Panini Plates & Patches/);
+assert.doesNotMatch(manufacturerAlreadyInProductIsNotRepeated.final_title, /Panini Panini/);
+
+const uncertainObservationDoesNotBecomePublishedIdentity = renderListingPresentation({
+  resolved: {
+    year: "2015-16",
+    manufacturer: "Panini",
+    product: "Panini Flawless Soccer",
+    set: "Flawless Soccer",
+    subset: "Perfect? (visible partial wording)",
+    players: ["Cristiano Ronaldo"],
+    card_name: "Patch Perfect? Signature",
+    numerical_rarity: "04/25",
+    auto: true,
+    patch: true
+  }
+});
+assert.match(uncertainObservationDoesNotBecomePublishedIdentity.final_title, /Patch Auto/);
+assert.doesNotMatch(uncertainObservationDoesNotBecomePublishedIdentity.final_title, /Perfect|\?/);
+
+const sapphireConfigurationIsComposedWithProduct = renderListingPresentation({
+  resolved: {
+    year: "2020-21",
+    manufacturer: "Topps",
+    brand: "Topps Chrome",
+    product: "2020-21 Topps Chrome UCL",
+    players: ["Jude Bellingham"],
+    parallel_exact: "Sapphire Ed - Green",
+    surface_color: "Green",
+    numerical_rarity: "27/75",
+    rc: true
+  }
+});
+assert.match(sapphireConfigurationIsComposedWithProduct.final_title, /Topps Chrome UCL Sapphire/);
+assert.match(sapphireConfigurationIsComposedWithProduct.final_title, /\bGreen\b/);
+assert.doesNotMatch(sapphireConfigurationIsComposedWithProduct.final_title, /Ed\s*-/);
+
 const bowmanOwnedByToppsButOutputAsBowman = renderListingPresentation({
   resolved: {
     year: "2024",

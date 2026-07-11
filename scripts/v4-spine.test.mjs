@@ -6,6 +6,7 @@ import {
 } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
+import { buildV4FieldStates } from "../lib/listing/v4/evidence/field-evidence.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
 import {
@@ -31,6 +32,26 @@ assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--lim
 assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), true);
 assert.equal(typeof summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), "boolean");
 assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "" }), false);
+
+const uncertainObservationStates = buildV4FieldStates({
+  resolved: {
+    players: ["Cristiano Ronaldo"],
+    card_name: "Patch Perfect? Signature"
+  }
+});
+assert.equal(
+  uncertainObservationStates.card_type.display_status,
+  "REVIEW",
+  "explicit model uncertainty must never be presented as a normal field"
+);
+const malformedDescriptorStates = buildV4FieldStates({
+  resolved: { parallel_exact: "Sapphire Ed - Green" }
+});
+assert.equal(
+  malformedDescriptorStates.parallel.display_status,
+  "REVIEW",
+  "a malformed edition descriptor may be normalized for output but must remain review-visible"
+);
 
 const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
 const fastScoutPrewarmApiSource = await readFile("api/v4/fast-scout-prewarm.js", "utf8");
