@@ -615,6 +615,11 @@ function jobL2Summary(statusPayload = {}) {
     route: session.l2_route || job.l2_route || null,
     job_status: job.status || null,
     attempt_count: job.attempt_count ?? null,
+    retry_attempt_history: Array.isArray(job.error?.attempt_history) ? job.error.attempt_history : [],
+    retry_error_codes: Array.isArray(job.error?.attempt_history)
+      ? job.error.attempt_history.map((entry) => cleanText(entry?.code)).filter(Boolean)
+      : [],
+    completion_payload_sanitized_nul_count: job.timing?.completion_payload_sanitized_nul_count ?? 0,
     job_id: job.job_id || null,
     recognition_session_id: job.recognition_session_id || null,
     paired_l1_wait_ms: job.timing?.paired_l1_wait_ms ?? null,
@@ -813,6 +818,15 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     recognition_session_id: row.recognition_session_id || summary.recognition_session_id || null,
     job_status: summary.job_status || row.job_status || null,
     attempt_count: summary.attempt_count ?? row.attempt_count ?? null,
+    retry_attempt_history: summary.retry_attempt_history?.length
+      ? summary.retry_attempt_history
+      : row.retry_attempt_history || [],
+    retry_error_codes: summary.retry_error_codes?.length
+      ? summary.retry_error_codes
+      : row.retry_error_codes || [],
+    completion_payload_sanitized_nul_count: summary.completion_payload_sanitized_nul_count
+      ?? row.completion_payload_sanitized_nul_count
+      ?? 0,
     worker_queue_wait_ms: summary.worker_queue_wait_ms ?? row.worker_queue_wait_ms ?? null,
     paired_l1_wait_ms: summary.paired_l1_wait_ms ?? row.paired_l1_wait_ms ?? null,
     scheduler_queue_wait_ms: summary.scheduler_queue_wait_ms ?? row.scheduler_queue_wait_ms ?? null,
@@ -928,7 +942,11 @@ export async function hydrateV4JobDiagnostics({
   let hydratedCount = 0;
   let failedCount = 0;
   const hydrated = await mapWithConcurrency(results, Math.max(1, concurrency), async (row) => {
-    if (!row.job_id || (row.pipeline_node_ledger && persistenceStatusIsTerminal(row.noncritical_persistence_status))) return row;
+    const retryHistoryMissing = Number(row.attempt_count || 0) > 1
+      && (!Array.isArray(row.retry_attempt_history) || row.retry_attempt_history.length === 0);
+    if (!row.job_id || (row.pipeline_node_ledger
+      && persistenceStatusIsTerminal(row.noncritical_persistence_status)
+      && !retryHistoryMissing)) return row;
     requestedCount += 1;
     const diagnostics = await readSettledJobDiagnostics({
       baseUrl,
@@ -1304,6 +1322,9 @@ async function runOne({
       noncritical_persistence_status: l2.summary?.noncritical_persistence_status || null,
       noncritical_persistence_summary: l2.summary?.noncritical_persistence_summary || null,
       attempt_count: l2.summary?.attempt_count ?? null,
+      retry_attempt_history: l2.summary?.retry_attempt_history || [],
+      retry_error_codes: l2.summary?.retry_error_codes || [],
+      completion_payload_sanitized_nul_count: l2.summary?.completion_payload_sanitized_nul_count ?? 0,
       job_status: l2.summary?.job_status || null,
       input_tokens: finalProviderDiagnostics.input_tokens,
       output_tokens: finalProviderDiagnostics.output_tokens,
@@ -2211,6 +2232,18 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     final_failure_count: results.filter((item) => item.ok !== true).length,
     retry_card_count: results.filter((item) => Number(item.attempt_count || 0) > 1).length,
     retry_attempt_count: results.reduce((sum, item) => sum + Math.max(0, Number(item.attempt_count || 0) - 1), 0),
+    retry_error_code_breakdown: results.reduce((counts, item) => {
+      for (const code of Array.isArray(item.retry_error_codes) ? item.retry_error_codes : []) {
+        const key = cleanText(code) || "UNKNOWN";
+        counts[key] = (counts[key] || 0) + 1;
+      }
+      return counts;
+    }, {}),
+    completion_write_retry_count: results.filter((item) =>
+      (item.retry_error_codes || []).some((code) => cleanText(code).toUpperCase() === "QUEUE_COMPLETION_WRITE_FAILED")
+    ).length,
+    completion_payload_sanitized_nul_count: results.reduce((sum, item) =>
+      sum + Number(item.completion_payload_sanitized_nul_count || 0), 0),
     run_wall_ms: runWallMs,
     completed_cards_per_minute: Number.isFinite(Number(runWallMs)) && Number(runWallMs) > 0
       ? Number((results.filter((item) => item.ok).length * 60000 / Number(runWallMs)).toFixed(3))

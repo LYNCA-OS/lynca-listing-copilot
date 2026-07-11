@@ -233,6 +233,29 @@ assert.ok(patches[0].url.includes("/rest/v1/v4_recognition_jobs?id=eq.v4job-done
 assert.ok(patches[0].request.body.includes('"status":"L2_READY"'));
 assert.ok(patches[0].request.body.includes('"lease_owner":null'));
 
+const nulCompletionPatches = [];
+const nulCompletion = await completeV4RecognitionJob({
+  jobId: "v4job-nul-safe",
+  result: {
+    final_title: "Safe Title",
+    raw_provider_fields: { product: "Topps\u0000 Chrome" }
+  },
+  timing: { worker_total_ms: 321 },
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    nulCompletionPatches.push({ url: String(url), request });
+    return jsonResponse([{ id: "v4job-nul-safe", status: "L2_READY" }]);
+  }
+});
+assert.equal(nulCompletion.saved, true);
+assert.equal(nulCompletion.write_attempts, 1, "an illegal Postgres NUL must be sanitized before the first completion write");
+assert.equal(nulCompletion.completion_payload_sanitized_nul_count, 2, "result and stage_result each contain the source value");
+assert.equal(nulCompletionPatches.length, 1);
+assert.equal(nulCompletionPatches[0].request.body.includes("\\u0000"), false);
+const nulCompletionBody = JSON.parse(nulCompletionPatches[0].request.body);
+assert.equal(nulCompletionBody.result.raw_provider_fields.product, "Topps Chrome");
+assert.equal(nulCompletionBody.timing.completion_payload_sanitized_nul_count, 2);
+
 const completionRetryPatches = [];
 const completionAfterRetry = await completeV4RecognitionJob({
   jobId: "v4job-completion-retry",

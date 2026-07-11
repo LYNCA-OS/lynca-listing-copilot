@@ -104,3 +104,39 @@ than the earlier gate that completed paid prewarm before the timer origin.
 
 Rules: one theme per change; accuracy changes need an A/B or smoke; speed
 changes need timing evidence; never claim uplift without a tracked row here.
+
+## Production concurrency capacity (2026-07-11)
+
+Objective: maximize correctly completed cards per minute while keeping technical
+completion at 100%, retries at zero, queue/provider tails bounded, node ledgers
+complete, and weak-label quality from regressing. Every stratum used fresh blind
+eBay card images, the same production deployment and GPT-5 mini path, catalog +
+vector + OCR enabled, and no seller title was exposed before predictions froze.
+Seller-title policy recall is a weak guardrail, not reviewed identity GT.
+
+| Run | Concurrency | Cards | Cards/min | Writer p50 / p95 | Queue p95 | Retries | Node errors / missing | Tokens/card | Weak policy pass@0.72 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `29156242983` | 1 | 4/4 | 1.956 | 25.7s / 36.2s | 1.16s | 0 | 0 / 0 | — | guardrail only |
+| `29156242983` | 2 | 4/4 | 2.034 | 30.3s / 81.6s | 34.15s | 0 | 0 / 0 | — | guardrail only |
+| `29156242983` | 3 | 4/4 | **3.473** | 37.3s / 41.7s | 0.47s | 0 | 0 / 0 | — | guardrail only |
+| `29156242983` | 4 | 4/4 | 2.969 | 38.9s / 78.2s | 41.60s | 0 | 0 / 0 | — | guardrail only |
+| `29158872635` | 2 | 6/6 | 1.962 | 34.4s / 106.9s | 1.49s | 1 | 0 / 1* | 10,115.50 | 4/6 |
+| `29158872635` | 3 | 6/6 | **3.130** | 49.4s / 64.3s | 1.51s | **0** | **0 / 0** | **9,759.83** | **5/6** |
+
+The first run exposed a lost post-enqueue wakeup when several browser requests
+collapsed into one short queue-kick lease. The follow-up wakeup fix reduced the
+2/3-concurrency queue p95 to approximately 1.5 seconds in the confirmation run.
+The remaining 2-concurrency tail was one completion-row write rejected by
+Postgres because provider text contained a NUL byte; recognition itself had
+already succeeded. The centralized Postgres JSON sanitizer now prevents that
+write fault and records `completion_payload_sanitized_nul_count`. Retry causes
+are retained in smoke reports. `*` The missing catalog node was the same retry
+dropping timing while retaining a complete catalog funnel; trace-backed
+execution is now reported as completed rather than falsely missing.
+
+**Decision:** production global/UI concurrency is 3, with two OpenAI keys and a
+per-key stable limit of 2. This is the measured knee: it won throughput in two
+independent rounds, used both key slots, and the confirmation run completed 6/6
+with zero retries, zero node errors, and lower tokens per card. Concurrency 4 is
+not enabled because its additional slot reduced throughput and amplified queue
+and writer tails in the first sweep.

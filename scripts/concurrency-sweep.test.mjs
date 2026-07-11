@@ -47,6 +47,9 @@ function reportFor({
       technical_failure_count: technicalFailures,
       retry_card_count: retries,
       retry_attempt_count: retries,
+      retry_error_code_breakdown: retries ? { QUEUE_COMPLETION_WRITE_FAILED: retries } : {},
+      completion_write_retry_count: retries,
+      completion_payload_sanitized_nul_count: 0,
       completed_cards_per_minute: cardsPerMinute,
       writer_ready_p50_ms: writerP95 - 5000,
       writer_ready_p95_ms: writerP95,
@@ -108,6 +111,8 @@ assert.equal(baselineRow.node_ledger_present_count, 4);
 assert.equal(baselineRow.latest_remaining_requests, 4990);
 assert.equal(baselineRow.queue_tail_share, Number((1000 / 38000).toFixed(6)));
 assert.equal(baselineRow.tokens_per_completed_card, 11000);
+assert.deepEqual(baselineRow.retry_error_code_breakdown, {});
+assert.equal(baselineRow.completion_write_retry_count, 0);
 
 const stableBaseline = evaluateRow(baselineRow, baselineRow);
 assert.equal(stableBaseline.stable, true);

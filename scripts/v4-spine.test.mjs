@@ -58,8 +58,16 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
   jobs: [{
     job_id: "job-hydrate",
     status: "L2_READY",
-    attempt_count: 1,
-    timing: { worker_queue_wait_ms: 125, worker_processing_ms: 22500 },
+    attempt_count: 2,
+    error: {
+      resolved: true,
+      attempt_history: [{ attempt: 1, code: "QUEUE_COMPLETION_WRITE_FAILED", message: "Postgres rejected NUL" }]
+    },
+    timing: {
+      worker_queue_wait_ms: 125,
+      worker_processing_ms: 22500,
+      completion_payload_sanitized_nul_count: 1
+    },
     end_to_end_node_ledger: { coverage: { missing_required_node_count: 0 }, nodes: [] },
     session: {
       status: "DRAFT_READY",
@@ -74,7 +82,10 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
   }]
 });
 assert.equal(hydratedDiagnostic.job_status, "L2_READY");
-assert.equal(hydratedDiagnostic.attempt_count, 1);
+assert.equal(hydratedDiagnostic.attempt_count, 2);
+assert.deepEqual(hydratedDiagnostic.retry_error_codes, ["QUEUE_COMPLETION_WRITE_FAILED"]);
+assert.equal(hydratedDiagnostic.retry_attempt_history[0].attempt, 1);
+assert.equal(hydratedDiagnostic.completion_payload_sanitized_nul_count, 1);
 assert.equal(hydratedDiagnostic.worker_processing_ms, 22500);
 assert.equal(hydratedDiagnostic.input_tokens, 99);
 assert.equal(hydratedDiagnostic.pipeline_node_ledger.coverage.missing_required_node_count, 0);

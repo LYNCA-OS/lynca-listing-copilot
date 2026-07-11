@@ -247,6 +247,7 @@ export default async function handler(req, res) {
       const pairedL1ReleasedAt = job.queue_tags?.paired_l1_released_at || null;
       const schedulerReadyAt = pairedL1ReleasedAt || job.created_at;
       const timing = {
+        ...(job.timing && typeof job.timing === "object" && !Array.isArray(job.timing) ? job.timing : {}),
         time_to_l1_ready_ms: elapsedMs(job.created_at, session?.l1_ready_at),
         time_to_l2_ready_ms: elapsedMs(job.created_at, session?.l2_ready_at),
         paired_l1_wait_ms: elapsedMs(job.created_at, pairedL1ReleasedAt),

@@ -111,6 +111,25 @@ assert.equal(
   "RETAINED_IN_PRESENTATION"
 );
 
+const catalogTraceWithoutTimingLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    timing: {},
+    catalog_activation_funnel: {
+      raw_candidate_count: 5,
+      approved_candidate_count: 5,
+      conflict_blocked_count: 5,
+      prompt_candidate_count: 0
+    }
+  },
+  payload: { asset_id: "asset-observability-retry-trace", images: [{}, {}] }
+});
+const catalogTraceNode = catalogTraceWithoutTimingLedger.nodes.find((node) => node.node_id === "catalog_retrieval");
+assert.equal(catalogTraceNode.status, "COMPLETED", "a persisted catalog trace proves execution even when retry timing was not retained");
+assert.equal(catalogTraceNode.metrics.trace_observed, true);
+assert.equal(catalogTraceNode.metrics.timing_observed, false);
+assert.equal(catalogTraceWithoutTimingLedger.coverage.missing_required_node_ids.includes("catalog_retrieval"), false);
+
 const brokenLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,
