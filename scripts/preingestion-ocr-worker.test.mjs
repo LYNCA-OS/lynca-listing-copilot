@@ -26,6 +26,20 @@ function jsonResponse(payload, { ok = true, status = 200 } = {}) {
   };
 }
 
+function currentOcrPatch(field, value, extra = {}) {
+  return {
+    field,
+    value,
+    source_type: "OCR",
+    confidence: 0.95,
+    ...extra,
+    provenance: {
+      ...(extra.provenance || {}),
+      job_key: extra.provenance?.job_key || `ocr:${preingestionOcrJobVersion}:bundle-1:${field}`
+    }
+  };
+}
+
 const sampleJob = {
   job_id: "job-1",
   job_key: "ocr:bundle-1:crop-1",
@@ -205,7 +219,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       }
       return jsonResponse([{
         bundle_id: "bundle-1",
-        evidence_patches: [{ field: "serial_number", value: "30/99", source_type: "OCR", confidence: 0.95 }]
+        evidence_patches: [currentOcrPatch("serial_number", "30/99")]
       }]);
     }
   });
@@ -235,7 +249,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       }
       return jsonResponse([{
         bundle_id: "bundle-1",
-        evidence_patches: jobReads === 1 ? [] : [{ field: "serial_number", value: "30/99", source_type: "OCR", confidence: 0.95 }]
+        evidence_patches: jobReads === 1 ? [] : [currentOcrPatch("serial_number", "30/99")]
       }]);
     }
   });
@@ -278,7 +292,7 @@ assert.ok(state.state_reads >= 2);
       return jsonResponse([{
         bundle_id: "bundle-1",
         evidence_patches: [
-          { field: "serial_number", value: "06/25", source_type: "OCR", confidence: 0.95 },
+          currentOcrPatch("serial_number", "06/25"),
           ...(jobReads > 1 ? [{
             field: "grade",
             value: "PSA 10",
@@ -287,7 +301,10 @@ assert.ok(state.state_reads >= 2);
             crop_id: "grade-1",
             confidence: 0.96,
             raw_text: "2021 PANINI CONTENDERS OPTIC\nSPLTNG.IMG - BLACK SCOPE\nPSA 10",
-            provenance: { crop_type: "grade_label" }
+            provenance: {
+              crop_type: "grade_label",
+              job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:grade`
+            }
           }] : [])
         ]
       }]);
@@ -298,6 +315,44 @@ assert.ok(state.state_reads >= 2);
   assert.equal(state.verified_slab_parallel_ready, true);
   assert.equal(state.verified_slab_parallel_value, "Black Scope");
   assert.ok(state.state_reads >= 2);
+}
+
+// --- stale OCR remains in the audit log but cannot satisfy current evidence readiness ---
+{
+  const state = await readPreingestionOcrState({
+    bundleId: "bundle-1",
+    env,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("preingestion_jobs")) {
+        return jsonResponse([{
+          job_id: "current-empty",
+          status: "succeeded",
+          attempts: 1,
+          job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`
+        }]);
+      }
+      return jsonResponse([{
+        bundle_id: "bundle-1",
+        evidence_patches: [
+          currentOcrPatch("serial_number", "2/250", {
+            provenance: { job_key: "ocr:ocr-crop-v4:bundle-1:serial" }
+          }),
+          {
+            field: "serial_number",
+            value: "09/50",
+            source_type: "CARD_FRONT_PRINTED_TEXT",
+            confidence: 0.96
+          }
+        ]
+      }]);
+    }
+  });
+  assert.equal(state.verified_serial_ready, false);
+  assert.equal(state.patch_count, 1, "non-OCR direct evidence stays available to the pipeline");
+  assert.equal(state.raw_patch_count, 2);
+  assert.equal(state.historical_patch_count, 1);
+  assert.equal(state.serial_patch_count, 1);
 }
 
 // --- append dedupes against existing bundle patches ---

@@ -4,6 +4,7 @@ import {
   buildPreingestionQualitySummary,
   buildPreingestionWorkerJobs,
   createPreIngestionBundle,
+  currentPreingestionEvidencePatches,
   imagesFromPreIngestionBundle,
   normalizeEvidencePatch,
   readPreIngestionBundle,
@@ -68,6 +69,36 @@ assert.equal(patch.field, "serial_number");
 assert.equal(patch.source_type, "CARD_FRONT_PRINTED_TEXT");
 assert.equal(patch.provenance.source_image_id, "front");
 assert.equal(normalizeEvidencePatch({ field: "serial_number", value: "2/3" }), null);
+
+const currentPatchSet = currentPreingestionEvidencePatches([
+  {
+    field: "serial_number",
+    value: "2/250",
+    source_type: "OCR",
+    provenance: { job_key: "ocr:ocr-crop-v4:bundle:serial" }
+  },
+  {
+    field: "serial_number",
+    value: "242/250",
+    source_type: "OCR",
+    provenance: { job_key: "ocr:ocr-crop-v5:bundle:serial" }
+  },
+  {
+    field: "serial_number",
+    value: "09/50",
+    source_type: "CARD_FRONT_PRINTED_TEXT"
+  }
+]);
+assert.deepEqual(
+  currentPatchSet.map((entry) => entry.value),
+  ["242/250", "09/50"],
+  "historical OCR must remain auditable without participating in the current decision"
+);
+assert.equal(
+  currentPreingestionEvidencePatches([{ field: "serial_number", value: "7/10", source_type: "OCR" }]).length,
+  0,
+  "unversioned OCR must fail closed"
+);
 
 const quality = buildPreingestionQualitySummary({
   images: [front, back, { ...front, id: "front-copy" }],
