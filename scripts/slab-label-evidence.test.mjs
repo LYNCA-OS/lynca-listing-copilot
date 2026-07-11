@@ -23,6 +23,17 @@ assert.equal(blackScope.verified, true);
 assert.equal(blackScope.value, "Black Scope");
 assert.equal(blackScope.surface_color, "Black");
 
+const flattenedBlackScope = extractDirectSlabLabelParallel([
+  slabPatch("2021 CONTENDERS OPTIC #8 AARON RODGERS GEM MT SPLTNG.IMG-BLACK SCOPE 10 PSA 65992325", 0.9648)
+]);
+assert.equal(flattenedBlackScope.verified, true, "real PaddleOCR output must retain the printed slab parallel");
+assert.equal(flattenedBlackScope.value, "Black Scope");
+assert.equal(flattenedBlackScope.surface_color, "Black");
+
+assert.equal(extractDirectSlabLabelParallel([
+  slabPatch("2023-24 TOPPS CHROME GOLD LABEL GEM MT 10 PSA 12345678")
+]).verified, false, "unmarked grade-label prose must not create parallel evidence");
+
 const orangeRefractor = extractDirectSlabLabelParallel([
   slabPatch("2022 BOWMAN CHROME\nCHR.PROS.AUTO - ORANGE REF.\nPSA 9")
 ]);
