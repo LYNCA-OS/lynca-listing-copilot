@@ -385,9 +385,41 @@ const openAiProviderPoolDiagnosticNames = Object.freeze([
   "provider_key_rotation_attempts"
 ]);
 
-function numberOrNull(value) {
+export function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+export function batchStatusResponseDisposition(response = {}) {
+  if (response.ok === true) return "ok";
+  const status = Number(response.http_status || 0);
+  const message = cleanText(response.data?.message || response.data?.error || response.data?.error_code).toLowerCase();
+  if (response.data?.retryable === true || status === 408 || status === 429 || status >= 500 || status === 0) {
+    return "retry";
+  }
+  // Compatibility with the previous deployment, which exposed transient
+  // PostgREST read failures as HTTP 400 before the API contract was corrected.
+  if (status === 400 && (message.includes("unable to read v4 jobs") || message.includes("postgrest"))) {
+    return "retry";
+  }
+  return "fatal";
+}
+
+function serializableError(value, fallback = "unknown_error") {
+  if (typeof value === "string") return cleanText(value) || fallback;
+  if (value instanceof Error) return cleanText(value.message || value.name) || fallback;
+  if (value && typeof value === "object") {
+    const direct = cleanText(value.message || value.error || value.error_code || value.code);
+    if (direct) return direct;
+    try {
+      const encoded = JSON.stringify(value);
+      if (encoded && encoded !== "{}") return encoded.slice(0, 500);
+    } catch {
+      // Fall through to the stable fallback.
+    }
+  }
+  return fallback;
 }
 
 function objectOrNull(value) {
@@ -1636,30 +1668,46 @@ async function pollBatchJobs({
   let polls = 0;
   let last = null;
   let fatalError = null;
+  let lastError = null;
+  let transientErrorCount = 0;
   let consecutiveErrors = 0;
   let maxConsecutiveErrors = 0;
   const httpStatusBreakdown = {};
   let writerReadyAt = null;
   while (Date.now() - startedAt <= waitMs) {
     polls += 1;
-    last = await getJson({
-      baseUrl,
-      path: `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`,
-      cookie,
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
-    });
+    try {
+      last = await getJson({
+        baseUrl,
+        path: `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`,
+        cookie,
+        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      });
+    } catch (error) {
+      lastError = serializableError(error, "batch_status_request_failed");
+      transientErrorCount += 1;
+      consecutiveErrors += 1;
+      maxConsecutiveErrors = Math.max(maxConsecutiveErrors, consecutiveErrors);
+      await delay(1500);
+      continue;
+    }
     const httpStatus = String(last.http_status ?? "unknown");
     httpStatusBreakdown[httpStatus] = (httpStatusBreakdown[httpStatus] || 0) + 1;
     if (!last.ok) {
       consecutiveErrors += 1;
       maxConsecutiveErrors = Math.max(maxConsecutiveErrors, consecutiveErrors);
-      const status = Number(last.http_status || 0);
-      if (status >= 400 && status < 500 && status !== 429) {
-        fatalError = `batch_status_http_${status}`;
+      lastError = serializableError(last.data, `batch_status_http_${last.http_status || "unknown"}`);
+      const disposition = batchStatusResponseDisposition(last);
+      if (disposition === "fatal") {
+        fatalError = `batch_status_http_${last.http_status || "unknown"}:${lastError}`;
         break;
       }
+      transientErrorCount += 1;
+      await delay(1500);
+      continue;
     } else {
       consecutiveErrors = 0;
+      lastError = null;
     }
     for (const job of last.data?.jobs || []) {
       if (job?.job_id) jobsById.set(job.job_id, job);
@@ -1685,9 +1733,41 @@ async function pollBatchJobs({
     expected_count: expected.size,
     http_status_breakdown: httpStatusBreakdown,
     max_consecutive_errors: maxConsecutiveErrors,
+    transient_error_count: transientErrorCount,
+    last_error: lastError,
     fatal_error: fatalError,
     last
   };
+}
+
+async function loadExistingBatchJobs({
+  baseUrl,
+  cookie,
+  batchId,
+  requestTimeoutMs,
+  attempts = 6
+}) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let response;
+    try {
+      response = await getJson({
+        baseUrl,
+        path: `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`,
+        cookie,
+        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      });
+    } catch (error) {
+      lastError = serializableError(error, "resume_batch_status_request_failed");
+      await delay(Math.min(3000, 500 * attempt));
+      continue;
+    }
+    if (response.ok) return response.data?.jobs || [];
+    lastError = serializableError(response.data, `resume_batch_status_http_${response.http_status || "unknown"}`);
+    if (batchStatusResponseDisposition(response) === "fatal") break;
+    await delay(Math.min(3000, 500 * attempt));
+  }
+  throw new Error(`resume_batch_unavailable:${lastError || batchId}`);
 }
 
 function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
@@ -1748,7 +1828,9 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     l1_job_id: prepared.l1_job?.job_id || null,
     l1_job_status: l1JobRow?.status || null,
     writer_ready: ready,
-    error: ready ? null : (jobRow?.error || batchPoll.fatal_error || summary.job_status || "batch_poll_timeout"),
+    error: ready
+      ? null
+      : serializableError(jobRow?.error || batchPoll.fatal_error || batchPoll.last_error || summary.job_status, "batch_poll_timeout"),
     preparation_latency_ms: prepared.preparation_latency_ms ?? null,
     enqueue_latency_ms: prepared.enqueue_latency_ms ?? null,
     enqueue_persistence_mode: prepared.enqueue?.data?.persistence_mode || null,
@@ -2279,6 +2361,7 @@ export async function runV4EbaySmoke({
   requestTimeoutMs = 90000,
   concurrency = 2,
   batchPoll = true,
+  resumeBatchId = "",
   outPath = "",
   progress = true
 } = {}) {
@@ -2293,28 +2376,61 @@ export async function runV4EbaySmoke({
   let batchPollMetrics = null;
   let sharedBatchId = null;
   if (queueMode && speculative && batchPoll) {
-    sharedBatchId = `smoke-v4-batch-${Date.now()}`;
-    const verificationCache = new Map();
-    const prepared = await mapWithConcurrency(items, Math.max(1, concurrency), async (item, localIndex) => {
-      const index = offset + localIndex;
-      if (progress) process.stderr.write(`v4 ebay smoke enqueue ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
-      const row = await enqueueSpeculativeItem({
-        item,
-        index,
-        batchId: sharedBatchId,
+    sharedBatchId = cleanText(resumeBatchId) || `smoke-v4-batch-${Date.now()}`;
+    let prepared;
+    if (resumeBatchId) {
+      const existingJobs = await loadExistingBatchJobs({
         baseUrl,
         cookie,
-        prewarm,
-        prewarmCacheOnly,
-        modelOverride,
-        enableL1,
-        usePreingestion,
-        requestTimeoutMs,
-        verificationCache
+        batchId: sharedBatchId,
+        requestTimeoutMs
       });
-      if (progress) process.stderr.write(`  enqueued=${Boolean(row.job?.job_id)} prepare=${row.preparation_latency_ms}ms error=${row.error || "none"}\n`);
-      return row;
-    });
+      const finalJobsByAsset = new Map(existingJobs
+        .filter((job) => job.job_type === "FINAL_ASSISTED_TITLE")
+        .map((job) => [job.asset_id, job]));
+      prepared = items.map((item, localIndex) => {
+        const index = offset + localIndex;
+        const assetId = candidateId(item, index);
+        const job = finalJobsByAsset.get(assetId) || null;
+        return {
+          asset_id: assetId,
+          index,
+          item,
+          batch_id: sharedBatchId,
+          job,
+          l1_job: null,
+          enqueue: null,
+          enqueue_latency_ms: null,
+          preparation_latency_ms: null,
+          preingestion: null,
+          prewarm: null,
+          error: job ? null : "resume_batch_job_missing"
+        };
+      });
+      if (progress) process.stderr.write(`v4 ebay smoke resume batch=${sharedBatchId} matched=${prepared.filter((row) => row.job).length}/${items.length}\n`);
+    } else {
+      const verificationCache = new Map();
+      prepared = await mapWithConcurrency(items, Math.max(1, concurrency), async (item, localIndex) => {
+        const index = offset + localIndex;
+        if (progress) process.stderr.write(`v4 ebay smoke enqueue ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
+        const row = await enqueueSpeculativeItem({
+          item,
+          index,
+          batchId: sharedBatchId,
+          baseUrl,
+          cookie,
+          prewarm,
+          prewarmCacheOnly,
+          modelOverride,
+          enableL1,
+          usePreingestion,
+          requestTimeoutMs,
+          verificationCache
+        });
+        if (progress) process.stderr.write(`  enqueued=${Boolean(row.job?.job_id)} prepare=${row.preparation_latency_ms}ms error=${row.error || "none"}\n`);
+        return row;
+      });
+    }
     batchPollMetrics = await pollBatchJobs({
       baseUrl,
       cookie,
@@ -2374,6 +2490,7 @@ export async function runV4EbaySmoke({
     concurrency,
     batch_poll_enabled: Boolean(queueMode && speculative && batchPoll),
     shared_batch_id: sharedBatchId,
+    resumed_batch_id: resumeBatchId || null,
     batch_poll_metrics: batchPollMetrics ? {
       polls: batchPollMetrics.polls,
       elapsed_ms: batchPollMetrics.elapsed_ms,
@@ -2381,6 +2498,8 @@ export async function runV4EbaySmoke({
       expected_count: batchPollMetrics.expected_count,
       http_status_breakdown: batchPollMetrics.http_status_breakdown,
       max_consecutive_errors: batchPollMetrics.max_consecutive_errors,
+      transient_error_count: batchPollMetrics.transient_error_count,
+      last_error: batchPollMetrics.last_error,
       fatal_error: batchPollMetrics.fatal_error
     } : null,
     run_wall_ms: Date.now() - runStartedAt,
@@ -2435,6 +2554,7 @@ export async function main(argv = process.argv, env = process.env) {
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
     concurrency: Math.max(1, Math.trunc(numberArg(argv, "--concurrency", 2))),
     batchPoll: !hasFlag(argv, "--per-card-poll"),
+    resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     outPath,
     progress: !hasFlag(argv, "--quiet")
   });

@@ -24,7 +24,12 @@ import {
   persistV4LearningEvent,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
-import { numberArg as smokeNumberArg, summaryHasVisibleL2Title } from "./v4-ebay-smoke.mjs";
+import {
+  batchStatusResponseDisposition,
+  numberArg as smokeNumberArg,
+  numberOrNull as smokeNumberOrNull,
+  summaryHasVisibleL2Title
+} from "./v4-ebay-smoke.mjs";
 
 assert.equal(smokeNumberArg(["node", "smoke"], "--request-timeout-ms", 90_000), 90_000);
 assert.equal(smokeNumberArg(["node", "smoke", "--request-timeout-ms", ""], "--request-timeout-ms", 90_000), 90_000);
@@ -33,6 +38,15 @@ assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--lim
 assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), true);
 assert.equal(typeof summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), "boolean");
 assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "" }), false);
+assert.equal(smokeNumberOrNull(null), null, "missing optional timings must not be forged as zero");
+assert.equal(smokeNumberOrNull(undefined), null, "missing optional token counts must stay missing");
+assert.equal(smokeNumberOrNull(""), null, "empty optional diagnostics must stay missing");
+assert.equal(smokeNumberOrNull(0), 0, "a real observed zero must remain zero");
+assert.equal(batchStatusResponseDisposition({ ok: true, http_status: 200 }), "ok");
+assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 503, data: { retryable: true } }), "retry");
+assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "Unable to read V4 jobs." } }), "retry");
+assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "batch_id required" } }), "fatal");
+assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 401 }), "fatal");
 
 for (const code of ["PA-ANT", "83T-6", "OP01-001", "CT14-EN001", "201/165", "PAU", "SV2A 201/165"]) {
   assert.equal(normalizePrintedCardCodeForFields(code), code, `${code} should remain a valid compact printed code`);
@@ -107,6 +121,11 @@ assert.match(queueStatusApiSource, /paired_l1_wait_ms/, "queue metrics must sepa
 assert.match(queueStatusApiSource, /scheduler_queue_wait_ms/, "queue metrics must expose actual scheduler delay after a paired L2 becomes runnable.");
 assert.match(queueStatusApiSource, /preingestion_ocr_rendezvous/, "queue status must expose OCR rendezvous diagnostics used by production smoke.");
 assert.match(queueStatusApiSource, /serial_numerator_verified/, "queue status must expose the final serial numerator verification decision.");
+assert.match(queueStatusApiSource, /V4_JOB_STATUS_QUERY_REQUIRED/, "missing status query identifiers must remain a non-retryable client error.");
+assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s\S]*V4_JOB_STATUS_BACKEND_UNAVAILABLE/, "transient queue-store reads must be reported as retryable service failures.");
+assert.match(v4SmokeSource, /transient_error_count/, "cloud smoke must report recovered status-read faults instead of hiding them.");
+assert.match(v4SmokeSource, /--resume-batch-id/, "cloud smoke must resume an existing paid batch after an observational polling failure.");
+assert.match(v4SmokeSource, /resume_batch_job_missing/, "batch recovery must fail closed when an expected card is absent.");
 assert.match(queueWorkerApiSource, /retryable: error\?\.retryable/, "queue workers must preserve provider retryability instead of retrying deterministic contract failures.");
 
 const route = planV4RecognitionRoute({

@@ -214,9 +214,26 @@ export default async function handler(req, res) {
 
   const batchId = queryParam(req, "batch_id") || queryParam(req, "batchId");
   const jobIds = splitIds(queryParam(req, "job_ids") || queryParam(req, "jobIds") || queryParam(req, "job_id"));
+  if (!batchId && !jobIds.length) {
+    sendJson(res, 400, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: "V4_JOB_STATUS_QUERY_REQUIRED",
+      message: "batch_id or job_ids is required."
+    }));
+    return;
+  }
   const result = await readV4RecognitionJobs({ batchId, jobIds, limit: Number(queryParam(req, "limit") || 200) });
   if (!result.ok) {
-    sendJson(res, 400, withV4Version({ ok: false, message: result.error || "Unable to read V4 jobs." }));
+    // A valid status query can fail when PostgREST or its connection pool has a
+    // transient read outage. Report service unavailability so every client can
+    // retry without mistaking an infrastructure fault for an invalid request.
+    sendJson(res, 503, withV4Version({
+      ok: false,
+      retryable: true,
+      error_code: "V4_JOB_STATUS_BACKEND_UNAVAILABLE",
+      message: result.error || "Unable to read V4 jobs."
+    }));
     return;
   }
   const sessions = await readSessionsForJobs(result.rows);
