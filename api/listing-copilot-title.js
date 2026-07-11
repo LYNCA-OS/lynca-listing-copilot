@@ -31,6 +31,7 @@ import {
 import { openAiRequestContextFromPayload, runTimedProviderCall } from "../lib/listing/pipeline/provider-stage.mjs";
 import {
   applyPreIngestionBundleToPayload,
+  confirmedPreingestionRetrievalFields,
   preingestionEvidenceDocumentFromPayload,
   refreshPreIngestionEvidencePatches
 } from "../lib/listing/pipeline/preingestion-evidence.mjs";
@@ -40,6 +41,7 @@ import {
   resolvedForRetrievalFromPayload,
   valuePresent,
   normalizePositiveIntegerOrNull,
+  postObservationCatalogVectorHedgeMs,
   positiveIntegerFromEnv,
   providerOptionsFromPayload,
   singleModelFastPathEnabled,
@@ -182,7 +184,8 @@ import { waitForPreingestionOcrEvidence } from "../lib/listing/preingestion/prei
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
 // Accept optional bounded derived crop images while keeping provider input capped.
-const defaultMaxPayloadImages = 14000;
+const defaultMaxPayloadImages = 14;
+const hardMaxPayloadImages = 24;
 const signedUrlConcurrency = 4;
 const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
@@ -191,7 +194,13 @@ const defaultCatalogFastLaneBudgetMs = 120;
 const confirmedOcrSerialConfidence = 0.86;
 
 function configuredMaxPayloadImages(env = process.env) {
-  return Math.max(2, normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages);
+  return Math.max(
+    2,
+    Math.min(
+      hardMaxPayloadImages,
+      normalizePositiveIntegerOrNull(env.LISTING_MAX_PAYLOAD_IMAGES) || defaultMaxPayloadImages
+    )
+  );
 }
 
 export function verifiedSerialNumeratorFromPreingestion(payload = {}) {
@@ -4608,13 +4617,113 @@ async function createOpenAiTitle(payload, selection, {
     provider_input_image_count: Array.isArray(initialPayload.images) ? initialPayload.images.length : 0,
     provider_image_detail: "high"
   }));
+  let preingestionRetrievalRefresh = null;
+  let preingestionRetrievalAnchorFields = [];
   if (deferVectorUntilProviderObservation) {
-    const providerResolvedForRetrieval = retrievalFieldsFromProviderObservation(providerResultWithEvidence, resolvedForRetrieval);
-    const lateCatalogContext = await prepareCatalogCandidateContext({
+    if (preingestionBundleId) {
+      preingestionRetrievalRefresh = await refreshPreIngestionEvidencePatches(initialPayload, {
+        timingContext,
+        fetchImpl: globalThis.fetch,
+        timingKey: "preingestion_retrieval_anchor_refresh_ms"
+      }).catch((error) => ({
+        refreshed: false,
+        reason: String(error?.message || "preingestion_retrieval_refresh_failed").slice(0, 160),
+        patch_count: Array.isArray(initialPayload.preingestion_evidence_patches)
+          ? initialPayload.preingestion_evidence_patches.length
+          : 0,
+        added_patch_count: 0
+      }));
+    }
+    const confirmedRetrievalFields = confirmedPreingestionRetrievalFields(initialPayload);
+    preingestionRetrievalAnchorFields = Object.keys(confirmedRetrievalFields);
+    const providerResolvedForRetrieval = mergeCurrentFieldsForTitleAssist(
+      retrievalFieldsFromProviderObservation(providerResultWithEvidence, resolvedForRetrieval),
+      confirmedRetrievalFields
+    );
+    const lateCatalogPromise = prepareCatalogCandidateContext({
       resolvedForRetrieval: providerResolvedForRetrieval,
       providerOptions,
       timingContext
     }).catch(() => null);
+    const loadOverlappedVectorFeatures = async () => {
+      let overlappedVectorFeatures = visualFeatures;
+      if (vectorEmbeddingWarmupPromise) {
+        const postProviderWaitMs = vectorEmbeddingPostProviderWaitMs(process.env, providerOptions);
+        const waitedVector = await waitForPromiseWithin(vectorEmbeddingWarmupPromise, postProviderWaitMs);
+        if (waitedVector.settled) {
+          overlappedVectorFeatures = waitedVector.value;
+        } else {
+          addTiming(timingContext, "vector_embedding_overlap_post_provider_timeout_ms", postProviderWaitMs);
+          overlappedVectorFeatures = {
+            status: "VECTOR_RETRIEVAL_TIMEOUT",
+            reason: "vector_embedding_overlap_timeout_after_provider",
+            features: []
+          };
+        }
+      }
+      return overlappedVectorFeatures;
+    };
+    const startLateVectorLookup = async () => {
+      try {
+        const overlappedVectorFeatures = await loadOverlappedVectorFeatures();
+        const context = await prepareVectorCandidateContext({
+          initialPayload: baseInitialPayload,
+          signedImages,
+          visualFeatures: hasUsableVisualFeatures(overlappedVectorFeatures) ? overlappedVectorFeatures : visualFeatures,
+          precomputedWorkerResult: overlappedVectorFeatures,
+          resolvedForRetrieval: providerResolvedForRetrieval,
+          providerOptions,
+          timingContext
+        });
+        return context ? { ...context, retrieval_phase: "provider_observation_vector_lookup" } : null;
+      } catch (error) {
+        const config = vectorRetrievalConfig(process.env, providerOptions);
+        const packet = vectorRetrievalUnavailablePacket(
+          "VECTOR_RETRIEVAL_ERROR",
+          "post_observation_vector_lookup_failed"
+        );
+        return {
+          mode: config.mode,
+          visualFeatures,
+          packet,
+          assistPacket: emptyVectorCandidatePacket("post_observation_vector_lookup_failed"),
+          retrieval: null,
+          promptPacket: false,
+          retrieval_phase: "provider_observation_vector_lookup",
+          worker: {
+            status: "VECTOR_RETRIEVAL_ERROR",
+            reason: String(error?.code || "post_observation_vector_lookup_failed").slice(0, 120),
+            features: []
+          }
+        };
+      }
+    };
+    const hedgeEnabled = optionFlag(
+      providerOptions,
+      "enable_post_observation_retrieval_hedge",
+      envFlag(process.env, "ENABLE_POST_OBSERVATION_RETRIEVAL_HEDGE", true)
+    ) === true;
+    const hedgeWaitStartedAt = nowMs();
+    const lateCatalogRace = hedgeEnabled
+      ? await waitForPromiseWithin(
+        lateCatalogPromise,
+        postObservationCatalogVectorHedgeMs(process.env, providerOptions)
+      )
+      : { settled: true, value: await lateCatalogPromise };
+    addTiming(
+      timingContext,
+      "post_observation_catalog_vector_hedge_wait_ms",
+      nowMs() - hedgeWaitStartedAt
+    );
+    let lateCatalogContext = lateCatalogRace.settled ? lateCatalogRace.value : null;
+    let hedgedVectorContext = null;
+    if (!lateCatalogRace.settled) {
+      [lateCatalogContext, hedgedVectorContext] = await timeAsync(
+        timingContext,
+        "post_observation_catalog_vector_overlap_ms",
+        () => Promise.all([lateCatalogPromise, startLateVectorLookup()])
+      );
+    }
     const lateStrongCatalogCandidate = lateCatalogContext
       ? catalogStrongCandidateForVectorLazy(lateCatalogContext, providerResolvedForRetrieval)
       : null;
@@ -4650,43 +4759,24 @@ async function createOpenAiTitle(payload, selection, {
         providerOptions,
         skip: lateLazyDecision
       });
-    } else {
-      let overlappedVectorFeatures = visualFeatures;
-      if (vectorEmbeddingWarmupPromise) {
-        const postProviderWaitMs = vectorEmbeddingPostProviderWaitMs(process.env, providerOptions);
-        const waitedVector = await waitForPromiseWithin(vectorEmbeddingWarmupPromise, postProviderWaitMs);
-        if (waitedVector.settled) {
-          overlappedVectorFeatures = waitedVector.value;
-        } else {
-          addTiming(timingContext, "vector_embedding_overlap_post_provider_timeout_ms", postProviderWaitMs);
-          overlappedVectorFeatures = {
-            status: "VECTOR_RETRIEVAL_TIMEOUT",
-            reason: "vector_embedding_overlap_timeout_after_provider",
-            features: []
-          };
-        }
+      if (hedgedVectorContext) {
+        vectorContext = {
+          ...vectorContext,
+          vector_lazy_skip: {
+            ...vectorContext.vector_lazy_skip,
+            hedge_started: true,
+            hedge_result_discarded_for_strong_catalog_anchor: true
+          }
+        };
       }
+    } else {
       catalogContext = lateCatalogContext
         ? {
           ...lateCatalogContext,
           retrieval_phase: "provider_observation_catalog_lookup"
         }
         : catalogContext || await catalogContextPromise.catch(() => null);
-      vectorContext = await prepareVectorCandidateContext({
-        initialPayload: baseInitialPayload,
-        signedImages,
-        visualFeatures: hasUsableVisualFeatures(overlappedVectorFeatures) ? overlappedVectorFeatures : visualFeatures,
-        precomputedWorkerResult: overlappedVectorFeatures,
-        resolvedForRetrieval: providerResolvedForRetrieval,
-        providerOptions,
-        timingContext
-      });
-      if (vectorContext) {
-        vectorContext = {
-          ...vectorContext,
-          retrieval_phase: "provider_observation_vector_lookup"
-        };
-      }
+      vectorContext = hedgedVectorContext || await startLateVectorLookup();
     }
   }
   if (!catalogContext) catalogContext = await catalogContextPromise.catch(() => null);
@@ -4754,6 +4844,8 @@ async function createOpenAiTitle(payload, selection, {
   );
   mergedResult.preingestion_ocr_rendezvous = preingestionOcrRendezvous;
   mergedResult.preingestion_evidence_refresh = preingestionEvidenceRefresh;
+  mergedResult.preingestion_retrieval_refresh = preingestionRetrievalRefresh;
+  mergedResult.preingestion_retrieval_anchor_fields = preingestionRetrievalAnchorFields;
   mergedResult.serial_numerator_verified = initialPayload.serial_numerator_verified;
   const finalizeProviderResult = (result) => withVerifiedPreingestionSlabParallel(
     withVerifiedPreingestionPrintRun(
@@ -4806,6 +4898,7 @@ export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
   buildInitialProviderPrompt,
   applyPreIngestionBundleToPayload,
+  confirmedPreingestionRetrievalFields,
   refreshPreIngestionEvidencePatches,
   applySafeRetrievalTitleAssist,
   boundedPayloadImagesFromImages,

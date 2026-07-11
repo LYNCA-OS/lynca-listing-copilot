@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
+from app.config import DEFAULT_VISUAL_EMBEDDING_REVISION
 
 
 class VisualEmbeddingBackendUnavailable(RuntimeError):
@@ -21,7 +22,7 @@ def _model_metadata(config: Any | None = None) -> dict:
     return {
         "primary": {
             "model_id": getattr(config, "visual_embedding_model_id", "google/siglip2-base-patch16-384"),
-            "model_revision": getattr(config, "visual_embedding_model_revision", "main"),
+            "model_revision": getattr(config, "visual_embedding_model_revision", DEFAULT_VISUAL_EMBEDDING_REVISION),
             "preprocessing_version": getattr(config, "visual_embedding_preprocessing_version", "card-rectification-v1"),
             "dimensions": getattr(config, "visual_embedding_dimensions", 768),
         }
@@ -94,7 +95,7 @@ def _pooled_image_embeddings(model_output: Any, model: Any) -> Any:
 
 def _load_siglip_backend(config: Any) -> dict[str, Any]:
     model_id = getattr(config, "visual_embedding_model_id", "google/siglip2-base-patch16-384")
-    revision = getattr(config, "visual_embedding_model_revision", "main")
+    revision = getattr(config, "visual_embedding_model_revision", DEFAULT_VISUAL_EMBEDDING_REVISION)
     cache_key = f"{model_id}@{revision}"
     if cache_key in _BACKEND:
         return _BACKEND[cache_key]
@@ -211,7 +212,7 @@ def extract_visual_embeddings(image_loads: list[Any], config: Any, embedder: Any
             "role": getattr(image_load, "role", ""),
             "embedding_role": embedding_role_for_image_role(getattr(image_load, "role", "")),
             "model_id": getattr(config, "visual_embedding_model_id", "google/siglip2-base-patch16-384"),
-            "model_revision": getattr(config, "visual_embedding_model_revision", "main"),
+            "model_revision": getattr(config, "visual_embedding_model_revision", DEFAULT_VISUAL_EMBEDDING_REVISION),
             "preprocessing_version": getattr(config, "visual_embedding_preprocessing_version", "card-rectification-v1"),
             "dimensions": expected_dimensions,
             "status": "OK",
@@ -236,7 +237,7 @@ def _features_unavailable_for_images(image_loads: list[Any], config: Any, reason
                 "role": getattr(image_load, "role", ""),
                 "embedding_role": embedding_role_for_image_role(getattr(image_load, "role", "")),
                 "model_id": getattr(config, "visual_embedding_model_id", "google/siglip2-base-patch16-384"),
-                "model_revision": getattr(config, "visual_embedding_model_revision", "main"),
+                "model_revision": getattr(config, "visual_embedding_model_revision", DEFAULT_VISUAL_EMBEDDING_REVISION),
                 "preprocessing_version": getattr(config, "visual_embedding_preprocessing_version", "card-rectification-v1"),
                 "dimensions": getattr(config, "visual_embedding_dimensions", 768),
                 "status": "UNAVAILABLE",

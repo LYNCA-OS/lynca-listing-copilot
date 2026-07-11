@@ -129,6 +129,23 @@ assert.equal(failedChecks.has("critical_field_flow_has_no_silent_drop"), true);
 assert.deepEqual(brokenLedger.field_flow.unexplained_resolution_drop_fields, ["collector_number"]);
 assert.equal(brokenLedger.nodes.find((node) => node.node_id === "preingestion_ocr")?.metrics.job_observability[0].error_code, "OCR_TIMEOUT");
 
+const reviewedArrayStateLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, collector_number: "PA-ANT" },
+    resolved_fields: fields,
+    rendered_fields: { fields },
+    field_states: [{ field_name: "card_number", display_status: "CONFLICT" }]
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-reviewed-array", images: [{}, {}] }
+});
+assert.equal(reviewedArrayStateLedger.field_flow.unexplained_resolution_drop_count, 0);
+assert.equal(
+  reviewedArrayStateLedger.field_flow.fields.find((row) => row.field_group === "collector_number")?.disposition,
+  "INTENTIONALLY_ROUTED_TO_REVIEW"
+);
+
 const endToEndLedger = buildEndToEndNodeLedger({
   session: {
     l2_status: "READY",
@@ -136,6 +153,7 @@ const endToEndLedger = buildEndToEndNodeLedger({
     l2_ready_at: "2026-07-11T00:00:02.900Z",
     provider_result_summary: {
       pipeline_node_ledger: healthyLedger,
+      title_render_source: "v4_csm_deterministic_renderer",
       noncritical_persistence_status: "COMPLETED",
       noncritical_persistence_summary: { saved_count: 4, failed_count: 0, artifact_count: 4 }
     }
@@ -164,6 +182,7 @@ const endToEndLedger = buildEndToEndNodeLedger({
 assert.equal(endToEndLedger.schema_version, "pipeline-end-to-end-node-ledger-v1");
 assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "scheduler_queue")?.duration_ms, 500);
 assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "writer_ready")?.status, "COMPLETED");
+assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "COMPLETED");
 assert.equal(endToEndLedger.reconciliation.error_count, 0);
 
 const deferredPersistenceLedger = buildEndToEndNodeLedger({
@@ -173,6 +192,7 @@ const deferredPersistenceLedger = buildEndToEndNodeLedger({
     l2_ready_at: "2026-07-11T00:00:02.900Z",
     provider_result_summary: {
       pipeline_node_ledger: healthyLedger,
+      title_render_source: "v4_csm_deterministic_renderer",
       noncritical_persistence_status: "DEFERRED"
     }
   },

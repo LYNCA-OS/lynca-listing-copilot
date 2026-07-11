@@ -785,7 +785,7 @@ const longTitle = renderResolvedTitle({
 });
 assert.ok(longTitle.rendered_title.length <= 80);
 assert.match(longTitle.rendered_title, /01\/25/);
-assert.doesNotMatch(longTitle.rendered_title, /PSA 10$/);
+assert.match(longTitle.rendered_title, /PSA 10$/, "SCG grading is highest priority and must survive 80-character compression");
 
 const longTitleEbayLimit = renderResolvedTitle({
   year: "2015-16",
@@ -1325,6 +1325,39 @@ const bowmanRefAbbreviationKeepsCardName = renderListingPresentation({
 assert.ok(bowmanRefAbbreviationKeepsCardName.final_title.length <= 80);
 assert.match(bowmanRefAbbreviationKeepsCardName.final_title, /Auto Orange Refractor/);
 assert.match(bowmanRefAbbreviationKeepsCardName.final_title, /PSA 9$/);
+
+const bowmanAtomicAutoCanonicalComposition = renderListingPresentation({
+  resolved: {
+    year: "2020",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "2020 Bowman Chrome",
+    players: ["Bobby Witt Jr."],
+    card_name: "Prospects Autograph - Atomic Ref.",
+    insert: "Prospects Autograph",
+    surface_color: "Silver",
+    print_run_number: "43/100",
+    print_run_numerator: "43",
+    print_run_denominator: "100",
+    collector_number: "164",
+    auto: true,
+    grade_company: "PSA",
+    card_grade: "9",
+    auto_grade: "9",
+    grade_type: "CARD_AND_AUTO",
+    team: "Kansas City Royals"
+  },
+  maxLength: 80
+});
+assert.equal(
+  bowmanAtomicAutoCanonicalComposition.final_title,
+  "2020 Bowman Chrome Bobby Witt Jr. Auto Atomic Refractor 43/100 PSA 9"
+);
+assert.doesNotMatch(bowmanAtomicAutoCanonicalComposition.final_title, /Prospects Auto.*Prospects Auto|[-–—]|\.$/);
+assert.deepEqual(
+  bowmanAtomicAutoCanonicalComposition.title_length_policy.retained_required_terms,
+  ["2020", "Bowman Chrome", "Bobby Witt Jr.", "Auto Atomic Refractor", "43/100", "PSA 9"]
+);
 
 const rookieSignaturesSurvivesCardNumberCompression = renderListingPresentation({
   resolved: {

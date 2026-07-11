@@ -172,13 +172,29 @@ await assert.rejects(
     fileName: "front.jpg",
     contentType: "image/jpeg",
     size: 1000,
-    width: 1200001,
+    width: 12001,
     height: 900,
     signatureHex: jpegSignatureHex,
     env,
     fetchImpl: async () => ({})
   }),
   /Image exceeds max dimension/
+);
+await assert.rejects(
+  () => createListingImageSignedUpload({
+    assetId: "asset-1",
+    imageId: "too-large",
+    role: "front_original",
+    fileName: "front.jpg",
+    contentType: "image/jpeg",
+    size: 25 * 1024 * 1024 + 1,
+    width: 1200,
+    height: 900,
+    signatureHex: jpegSignatureHex,
+    env,
+    fetchImpl: async () => ({})
+  }),
+  /Image exceeds max upload size/
 );
 await assert.rejects(
   () => createListingImageSignedUpload({

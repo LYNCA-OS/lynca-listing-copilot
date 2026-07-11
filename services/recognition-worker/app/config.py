@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+DEFAULT_VISUAL_EMBEDDING_REVISION = "f775b65a79762255128c981547af89addcfe0f88"
+
 
 def _int_env(name: str, fallback: int) -> int:
     value = os.getenv(name, "")
@@ -11,6 +13,17 @@ def _int_env(name: str, fallback: int) -> int:
         return parsed if parsed > 0 else fallback
     except ValueError:
         return fallback
+
+
+def _bounded_int_env(name: str, fallback: int, maximum: int) -> int:
+    return min(_int_env(name, fallback), maximum)
+
+
+def _immutable_revision_env(name: str, fallback: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value or value.lower() == "main":
+        return fallback
+    return value
 
 
 def _csv_env(name: str, fallback: list[str]) -> list[str]:
@@ -51,8 +64,8 @@ def load_config() -> WorkerConfig:
     return WorkerConfig(
         token=os.getenv("RECOGNITION_WORKER_TOKEN", ""),
         allowed_image_hosts=_csv_env("RECOGNITION_ALLOWED_IMAGE_HOSTS", ["localhost"]),
-        max_image_bytes=_int_env("RECOGNITION_MAX_IMAGE_BYTES", 250 * 1024 * 1024),
-        max_total_pixels=_int_env("RECOGNITION_MAX_TOTAL_PIXELS", 50_000_000),
+        max_image_bytes=_bounded_int_env("RECOGNITION_MAX_IMAGE_BYTES", 25 * 1024 * 1024, 100 * 1024 * 1024),
+        max_total_pixels=_bounded_int_env("RECOGNITION_MAX_TOTAL_PIXELS", 50_000_000, 100_000_000),
         request_timeout_seconds=_int_env("RECOGNITION_REQUEST_TIMEOUT_SECONDS", 30),
         enable_image_download=os.getenv("ENABLE_IMAGE_DOWNLOAD", "false").lower() == "true",
         enable_paddleocr=os.getenv("ENABLE_PADDLEOCR", "false").lower() == "true",
@@ -64,7 +77,10 @@ def load_config() -> WorkerConfig:
         enable_visual_embeddings=os.getenv("ENABLE_VISUAL_EMBEDDINGS", "false").lower() == "true",
         visual_embedding_preload=os.getenv("VISUAL_EMBEDDING_PRELOAD", "false").lower() == "true",
         visual_embedding_model_id=os.getenv("VISUAL_EMBEDDING_MODEL_ID", "google/siglip2-base-patch16-384") or "google/siglip2-base-patch16-384",
-        visual_embedding_model_revision=os.getenv("VISUAL_EMBEDDING_MODEL_REVISION", "main") or "main",
+        visual_embedding_model_revision=_immutable_revision_env(
+            "VISUAL_EMBEDDING_MODEL_REVISION",
+            DEFAULT_VISUAL_EMBEDDING_REVISION,
+        ),
         visual_embedding_preprocessing_version=os.getenv("VISUAL_EMBEDDING_PREPROCESSING_VERSION", "card-rectification-v1") or "card-rectification-v1",
         visual_embedding_dimensions=_int_env("VISUAL_EMBEDDING_DIMENSIONS", 768),
         enable_candidate_verification=os.getenv("ENABLE_CANDIDATE_VERIFICATION", "false").lower() == "true",

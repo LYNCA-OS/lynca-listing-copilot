@@ -17,11 +17,12 @@ const IMAGE_MIN_EDGE = 1400;
 const IMAGE_INITIAL_QUALITY = 0.9;
 const IMAGE_MIN_QUALITY = 0.78;
 const IMAGE_EMERGENCY_MIN_QUALITY = 0.64;
-const TARGET_IMAGE_DATA_URL_CHARS = 2_400_000_000;
-const MAX_ASSET_REQUEST_BYTES = 3_400_000_000;
-const REQUEST_IMAGE_BATCH_LIMIT = 1400;
+const TARGET_IMAGE_DATA_URL_CHARS = 2_400_000;
+const MAX_ASSET_REQUEST_BYTES = 3_400_000;
+const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
-const FIELD_MAX_CROPS_PER_ASSET = 600;
+const FIELD_MAX_CROPS_PER_IMAGE = 6;
+const FIELD_MAX_CROPS_PER_ASSET = 8;
 const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
 const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
 const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
@@ -240,30 +241,15 @@ function cropCanvasDataUrl(sourceCanvas, cropRegion, quality = TARGETED_CROP_QUA
   };
 }
 
-function inferredSourceSide(image = {}) {
-  const text = [
-    image.side,
-    image.role,
-    image.captureRole,
-    image.capture_profile,
-    image.storageRole,
-    image.name
-  ].filter(Boolean).join(" ").toLowerCase();
-
-  if (text.includes("back") || text.includes("reverse")) return "back";
-  if (text.includes("front") || text.includes("obverse")) return "front";
-  return "";
-}
-
 function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
   const cropPlans = planTargetedCrops({
     imageId: sourceImage.id,
     sourceObjectPath: sourceImage.objectPath || "",
-    sourceSide: inferredSourceSide(sourceImage),
+    sourceSide: "",
     sourceWidth: sourceCanvas.width,
     sourceHeight: sourceCanvas.height,
     imageQuality,
-    maxCrops: FIELD_MAX_CROPS_PER_ASSET
+    maxCrops: FIELD_MAX_CROPS_PER_IMAGE
   });
 
   return cropPlans.map((plan, index) => {
@@ -379,6 +365,7 @@ async function fileToAssetImage(file) {
     captureProfileId: defaultCaptureProfileId,
     imageQuality: compressed.imageQuality,
     sourceFile: file,
+    sourceBlob: dataUrlToBlob(compressed.dataUrl),
     contentSha256: "",
     objectPath: "",
     targetedCrops: compressed.targetedCrops
@@ -634,9 +621,16 @@ function storageReady() {
   return Boolean(state.providerStatus?.storage?.configured);
 }
 
-function storageSourceForImage(image) {
-  if (image.sourceFile) return image.sourceFile;
+function storageUploadLimitBytes() {
+  const configured = Number(state.providerStatus?.storage?.max_upload_bytes);
+  return Number.isFinite(configured) && configured > 0 ? configured : 25 * 1024 * 1024;
+}
+
+function storageSourceForImage(image, maxUploadBytes = storageUploadLimitBytes()) {
+  if (image.sourceFile && image.sourceFile.size <= maxUploadBytes) return image.sourceFile;
   if (image.sourceBlob) return image.sourceBlob;
+  if (image.dataUrl) return dataUrlToBlob(image.dataUrl);
+  if (image.sourceFile) return image.sourceFile;
   return null;
 }
 
@@ -646,8 +640,8 @@ function storageRoleForImage(image, imageIndex) {
   return `image_${imageIndex + 1}_original`;
 }
 
-function storageDimensionsForImage(image) {
-  if (image.sourceFile) {
+function storageDimensionsForImage(image, source) {
+  if (source && source === image.sourceFile) {
     return {
       width: image.originalWidth || image.width,
       height: image.originalHeight || image.height
@@ -686,11 +680,15 @@ async function contentSha256Hex(source) {
 async function uploadAssetImage(asset, image, imageIndex) {
   const source = storageSourceForImage(image);
   if (image.objectPath || !source) return false;
+  const usingOriginalSource = source === image.sourceFile;
+  const uploadContentType = usingOriginalSource
+    ? image.originalType || source.type || "image/jpeg"
+    : source.type || image.type || "image/jpeg";
   const storageRole = storageRoleForImage(image, imageIndex);
   image.storageRole = storageRole;
   const signatureHex = await fileSignatureHex(source);
   const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
-  const dimensions = storageDimensionsForImage(image);
+  const dimensions = storageDimensionsForImage(image, source);
   image.contentSha256 = contentSha256;
 
   const uploadResponse = await fetch("/api/listing-image-upload-url", {
@@ -704,7 +702,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
       imageId: image.id,
       role: storageRole,
       fileName: image.name,
-      contentType: image.originalType || source.type || "image/jpeg",
+      contentType: uploadContentType,
       size: source.size,
       width: dimensions.width,
       height: dimensions.height,
@@ -721,7 +719,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
   const storageResponse = await fetch(uploadPayload.upload.signed_upload_url, {
     method: "PUT",
     headers: {
-      "content-type": uploadPayload.upload.content_type || image.originalType || "application/octet-stream"
+      "content-type": uploadPayload.upload.content_type || uploadContentType
     },
     body: source
   });
@@ -1555,23 +1553,21 @@ function generationTimingView(assetIndex) {
   if (!snapshot.finishedAt) {
     return {
       label: "生成中",
-      value: formatGenerationElapsed(snapshot.active_ms),
+      value: formatGenerationElapsed(snapshot.active_ms + snapshot.queue_ms),
       status: "running"
     };
   }
   return {
-    label: snapshot.failed ? "失败耗时" : "生成耗时",
-    value: formatGenerationElapsed(snapshot.active_ms),
-    status: snapshot.failed ? "failed" : "done",
-    queueValue: snapshot.queue_ms >= 1000 ? formatGenerationElapsed(snapshot.queue_ms) : ""
+    label: snapshot.failed ? "失败总耗时" : "总耗时",
+    value: formatGenerationElapsed(snapshot.active_ms + snapshot.queue_ms),
+    status: snapshot.failed ? "failed" : "done"
   };
 }
 
 function generationTimingBadge(assetIndex) {
   const view = generationTimingView(assetIndex);
   if (!view) return "";
-  const queueSuffix = view.queueValue ? ` · 等待 ${view.queueValue}` : "";
-  return `<span class="generation-time-badge generation-time-${escapeHtml(view.status)}">${escapeHtml(view.label)} ${escapeHtml(view.value)}${escapeHtml(queueSuffix)}</span>`;
+  return `<span class="generation-time-badge generation-time-${escapeHtml(view.status)}">${escapeHtml(view.label)} ${escapeHtml(view.value)}</span>`;
 }
 
 function setAssetProgress(assetIndex, label, fraction) {
@@ -1605,6 +1601,10 @@ function progressStepForTarget(targetFraction) {
   return 0.0024;
 }
 
+function hasLiveAssetProgress() {
+  return state.processing || state.results.some((result) => v4WriterTitlePending(result));
+}
+
 function stopProgressTicker() {
   if (!state.progressTimer) return;
   clearInterval(state.progressTimer);
@@ -1612,9 +1612,9 @@ function stopProgressTicker() {
 }
 
 function startProgressTicker() {
-  if (state.progressTimer || !state.processing) return;
+  if (state.progressTimer || !hasLiveAssetProgress() || !state.assetProgress.size) return;
   state.progressTimer = setInterval(() => {
-    if (!state.processing || !state.assetProgress.size) {
+    if (!hasLiveAssetProgress() || !state.assetProgress.size) {
       stopProgressTicker();
       return;
     }
@@ -1675,19 +1675,28 @@ function assetCountLabel(count) {
 
 function imagesForProvider(assetImages) {
   const primaryImages = Array.isArray(assetImages) ? assetImages : [];
-  const targetedCrops = primaryImages
-    .flatMap((image, sourceIndex) => (Array.isArray(image.targetedCrops) ? image.targetedCrops : [])
-      .map((crop) => ({
-        crop,
-        sourceIndex,
-        priority: Number(crop.cropPlan?.priority || crop.crop_plan?.priority || 0)
-      })))
-    .sort((left, right) => {
-      if (right.priority !== left.priority) return right.priority - left.priority;
-      return left.sourceIndex - right.sourceIndex;
-    })
-    .slice(0, FIELD_MAX_CROPS_PER_ASSET)
-    .map((item) => item.crop);
+  const cropQueues = primaryImages.map((image) => (Array.isArray(image.targetedCrops) ? image.targetedCrops : [])
+    .map((crop, cropIndex) => ({
+      crop,
+      cropIndex,
+      priority: Number(crop.cropPlan?.priority || crop.crop_plan?.priority || 0)
+    }))
+    .sort((left, right) => right.priority - left.priority || left.cropIndex - right.cropIndex));
+  const targetedCrops = [];
+
+  // Image slots are deliberately neutral. Round-robin the best crops from each
+  // uploaded image so one unknown side cannot consume the whole evidence budget.
+  while (targetedCrops.length < FIELD_MAX_CROPS_PER_ASSET) {
+    let added = false;
+    for (const queue of cropQueues) {
+      const next = queue.shift();
+      if (!next) continue;
+      targetedCrops.push(next.crop);
+      added = true;
+      if (targetedCrops.length >= FIELD_MAX_CROPS_PER_ASSET) break;
+    }
+    if (!added) break;
+  }
 
   return [
     ...primaryImages,
@@ -1697,7 +1706,9 @@ function imagesForProvider(assetImages) {
 
 export const __listingCopilotAppTestHooks = {
   boundedProviderImagesForRequest,
-  imagesForProvider
+  imagesForProvider,
+  storageDimensionsForImage,
+  storageSourceForImage
 };
 
 function buildAssets() {
@@ -1919,7 +1930,6 @@ function pendingBox(asset) {
   const isWorking = isActive || isQueued;
   const label = isActive ? "识别中" : isQueued ? "排队中" : "等待中";
   const progress = assetProgressSnapshot(asset);
-  const backgroundLabel = !isWorking ? backgroundPreparationLabel(asset) : "";
   const message = isActive
     ? "正在识别这张卡，完成后会直接显示最终标题。"
     : isQueued
@@ -1936,7 +1946,6 @@ function pendingBox(asset) {
         ${isWorking ? `<span class="loading-spinner" aria-hidden="true"></span>` : `<span class="idle-dot" aria-hidden="true"></span>`}
         <strong>${escapeHtml(label)}</strong>
         <p>${escapeHtml(message)}</p>
-        ${backgroundLabel ? `<small class="background-prepare-note">${escapeHtml(backgroundLabel)}</small>` : ""}
         ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
         ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
         ${isWorking ? `<span class="pending-timing">${generationTimingBadge(asset.index)}</span>` : ""}
@@ -2266,7 +2275,7 @@ function TitleCardComponent(result, asset = null) {
         <span class="confidence-badge ${confidenceClass(confidence)}">${escapeHtml(statusLabel)}</span>
         <div class="title-actions">
           ${generationTimingBadge(result.index)}
-          ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">GPT‑4.1 单模型重试</button>` : ""}
+          ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">单模型重试</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
@@ -2937,8 +2946,12 @@ async function processTitles() {
   await Promise.all(Array.from({ length: workerCount }, worker));
   state.processing = false;
   state.activeAssetIndexes = new Set();
-  state.assetProgress = new Map();
-  stopProgressTicker();
+  for (const assetIndex of state.assetProgress.keys()) {
+    const result = state.results.find((item) => Number(item.index) === Number(assetIndex));
+    if (!result || !v4WriterTitlePending(result)) clearAssetProgress(assetIndex);
+  }
+  if (state.assetProgress.size) startProgressTicker();
+  else stopProgressTicker();
   state.completedAssetCount = 0;
   state.processingTotal = 0;
   renderResults();
@@ -2947,7 +2960,7 @@ async function processTitles() {
   setProcessButtonBusy(false);
   const pendingL2 = pendingAssistedDraftCount();
   if (pendingL2) startGenerationTicker();
-  setStatus(pendingL2 ? `${processingCompletionStatus()} 还有 ${pendingL2} 张最终标题生成中。` : processingCompletionStatus(), {
+  setStatus(pendingL2 ? `已提交全部 ${state.assets.length} 张，${pendingL2} 张最终标题生成中…` : processingCompletionStatus(), {
     busy: pendingL2 > 0
   });
 }
@@ -2960,7 +2973,7 @@ async function retryAssetWithEmergency(button) {
 
   button.disabled = true;
   button.textContent = "GPT 重试中";
-  setStatus(`资产 ${asset.index} 正在使用 GPT‑4.1 单模型重试...`, { busy: true });
+  setStatus(`卡片 ${asset.index} 正在进行单模型重试...`, { busy: true });
   state.assetGenerationTimings.delete(asset.index);
   markAssetQueued(asset, Date.now());
   markAssetStarted(asset);
@@ -2979,7 +2992,7 @@ async function retryAssetWithEmergency(button) {
     state.results.push(result);
     state.results.sort((a, b) => a.index - b.index);
     startV4AssistedDraftPolling(result);
-    setStatus(`资产 ${asset.index} GPT‑4.1 单模型重试完成。`);
+    setStatus(`卡片 ${asset.index} 单模型重试完成。`);
   } catch (error) {
     markAssetFinished(asset.index, { failed: true });
     state.results = state.results.filter((item) => item.index !== asset.index);
@@ -2990,7 +3003,7 @@ async function retryAssetWithEmergency(button) {
       explicit_emergency: true
     });
     state.results.sort((a, b) => a.index - b.index);
-    setStatus(`资产 ${asset.index} GPT‑4.1 单模型重试失败。`);
+    setStatus(`卡片 ${asset.index} 单模型重试失败。`);
   }
 
   renderResults();

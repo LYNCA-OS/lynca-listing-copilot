@@ -12,6 +12,7 @@ import {
 import { openAiResponsesModelControls, openAiResponsesTextOptions } from "../lib/listing/providers/openai-responses-request.mjs";
 import { parseProviderMessagePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
+import { postObservationCatalogVectorHedgeMs } from "../lib/listing/pipeline/provider-options.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
 const providerRegistrySource = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
@@ -136,6 +137,10 @@ const explicitVectorOnOptions = __listingCopilotTitleTestHooks.providerOptionsFr
 }, vectorDefaultEnv);
 assert.equal(explicitVectorOnOptions.enable_vector_retrieval, true, "explicit retrieval config can still force vector experiments");
 assert.equal(explicitVectorOnOptions.vector_retrieval_mode, "assist");
+assert.equal(postObservationCatalogVectorHedgeMs({}, {}), 900);
+assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 250 }), 250);
+assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 20 }), 100);
+assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 9000 }), 5000);
 
 const parsedContent = parseProviderMessagePayload({
   content: "```json\n{\"title\":\"Test\",\"fields\":{\"player\":\"A\"},\"unresolved\":[]}\n```"

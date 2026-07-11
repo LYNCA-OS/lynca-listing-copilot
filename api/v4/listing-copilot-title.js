@@ -349,9 +349,15 @@ function providerRuntimeSummary(result = {}) {
       : null,
     preingestion_ocr_rendezvous: result.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: result.preingestion_evidence_refresh || null,
+    preingestion_retrieval_refresh: result.preingestion_retrieval_refresh || null,
+    preingestion_retrieval_anchor_fields: Array.isArray(result.preingestion_retrieval_anchor_fields)
+      ? result.preingestion_retrieval_anchor_fields
+      : [],
     serial_numerator_verified: result.serial_numerator_verified ?? null,
     pipeline_node_ledger: result.pipeline_node_ledger || null,
     title_length_policy: result.title_length_policy || null,
+    title_render_source: result.title_render_source || null,
+    model_title_suggestion: result.model_title_suggestion || null,
     title_reconciled_from_v4_field_graph: result.title_reconciled_from_v4_field_graph === true,
     title_reconciliation_reasons: Array.isArray(result.title_reconciliation_reasons)
       ? result.title_reconciliation_reasons

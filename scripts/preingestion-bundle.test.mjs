@@ -307,6 +307,48 @@ assert.equal(lineConfidenceDocument.evidence.print_run_number.status, "CONFIRMED
 assert.equal(lineConfidenceDocument.evidence.print_run_number.confidence, 0.95);
 assert.equal(lineConfidenceDocument.evidence.card_grade, undefined, "cert-like long numbers must not become card grades");
 
+const confirmedRetrievalFields = __listingCopilotTitleTestHooks.confirmedPreingestionRetrievalFields({
+  preingestion_evidence_patches: [
+    {
+      field: "collector_number",
+      value: "PA-ANT",
+      raw_text: "No. PA-ANT",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.94
+    },
+    {
+      field: "serial_number",
+      value: "2/3",
+      raw_text: "2/3",
+      source_type: "OCR",
+      source_image_id: "front",
+      confidence: 0.95
+    },
+    {
+      field: "checklist_code",
+      value: "BLURRY-READ",
+      raw_text: "BLURRY-READ",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.61
+    },
+    {
+      field: "grade_label",
+      value: "BGS 8.5 AUTO 10",
+      raw_text: "BGS 8.5 AUTO 10",
+      source_type: "SLAB_LABEL",
+      source_image_id: "front",
+      confidence: 0.97
+    }
+  ]
+});
+assert.equal(confirmedRetrievalFields.collector_number, "PA-ANT");
+assert.equal(confirmedRetrievalFields.print_run_number, "2/3");
+assert.equal(confirmedRetrievalFields.serial_denominator, "3");
+assert.equal(confirmedRetrievalFields.checklist_code, undefined, "review-confidence OCR must not become a retrieval identity lock");
+assert.equal(confirmedRetrievalFields.grade_company, undefined, "grade evidence is not a catalog identity anchor");
+
 const staleGpt5Result = {
   title: "2018 Bowman Chrome Yordan Alvarez Auto Gold #CPA BGS 10/9.5",
   confidence: "HIGH",

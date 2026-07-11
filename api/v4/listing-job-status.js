@@ -97,8 +97,15 @@ function writerSafeSessionStatus(session = null, job = null) {
       gpt5_empty_result_retry_key_slot: Number(summary.gpt5_empty_result_retry_key_slot || 0) || null,
       preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
       preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
+      preingestion_retrieval_refresh: summary.preingestion_retrieval_refresh || null,
+      preingestion_retrieval_anchor_fields: Array.isArray(summary.preingestion_retrieval_anchor_fields)
+        ? summary.preingestion_retrieval_anchor_fields
+        : [],
       serial_numerator_verified: summary.serial_numerator_verified ?? null,
       pipeline_node_ledger: summary.pipeline_node_ledger || null,
+      title_length_policy: summary.title_length_policy || null,
+      title_render_source: summary.title_render_source || null,
+      title_reconciled_from_v4_field_graph: summary.title_reconciled_from_v4_field_graph === true,
       failure_reason: summary.failure_reason || null,
       noncritical_persistence_status: summary.noncritical_persistence_status || null,
       noncritical_persistence_summary: summary.noncritical_persistence_summary || null,

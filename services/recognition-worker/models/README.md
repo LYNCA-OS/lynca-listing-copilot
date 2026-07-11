@@ -13,7 +13,7 @@ Rules:
 
 - Purpose: visual candidate recall only, not final card identity resolution.
 - Model: `google/siglip2-base-patch16-384`
-- Revision: `main` by default; pin `VISUAL_EMBEDDING_MODEL_REVISION` in production once the artifact is approved.
+- Revision: `f775b65a79762255128c981547af89addcfe0f88` by default. Production must use this pinned revision or another explicitly reviewed immutable revision, never `main`.
 - Preprocessing version: `card-rectification-v1`
 - Dimensions: 768
 - Normalization: L2-normalized image vectors before pgvector storage.

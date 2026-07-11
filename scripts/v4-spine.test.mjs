@@ -9,6 +9,7 @@ import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/res
 import { buildV4FieldStates } from "../lib/listing/v4/evidence/field-evidence.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
+import { normalizePrintedCardCodeForFields } from "../lib/listing/pipeline/field-normalization.mjs";
 import {
   buildV4TitleStageState,
   providerOptionsForV4BackgroundL2,
@@ -32,6 +33,17 @@ assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--lim
 assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), true);
 assert.equal(typeof summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), "boolean");
 assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "" }), false);
+
+for (const code of ["PA-ANT", "83T-6", "OP01-001", "CT14-EN001", "201/165", "PAU", "SV2A 201/165"]) {
+  assert.equal(normalizePrintedCardCodeForFields(code), code, `${code} should remain a valid compact printed code`);
+}
+for (const text of [
+  "2026PANINI-PRIZMFIFAW0RLDCUP2026TMS0",
+  "2026 Panini Prizm FIFA World Cup",
+  "SIG GOLD BREAKAWAY"
+]) {
+  assert.equal(normalizePrintedCardCodeForFields(text), null, `${text} must not become a retrieval anchor`);
+}
 
 const uncertainObservationStates = buildV4FieldStates({
   resolved: {
@@ -59,6 +71,7 @@ const queueMigrationApiSource = await readFile("api/admin-apply-v4-production-jo
 const queueStatusApiSource = await readFile("api/v4/listing-job-status.js", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
+const freshEbaySmokeWorkflowSource = await readFile(".github/workflows/fresh-ebay-smoke.yml", "utf8");
 const vercelConfigSource = await readFile("vercel.json", "utf8");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
@@ -76,8 +89,12 @@ assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_token
 assert.match(v4SmokeSource, /recognition_phase_loaded_sealed_labels: false/, "blind smoke must not load sealed seller titles during recognition.");
 assert.match(v4SmokeSource, /predictions_frozen_before_scoring: true/, "blind smoke must freeze predictions before local weak-label scoring.");
 assert.match(v4SmokeSource, /pollBatchJobs/, "large production smoke must use one shared batch poller instead of one poll loop per card.");
+assert.match(v4SmokeSource, /pipeline_node_ledger:\s*summary\.pipeline_node_ledger/, "batch smoke results must retain the end-to-end node ledger.");
+assert.match(v4SmokeSource, /resolved_fields:\s*summary\.resolved_fields/, "batch smoke results must retain canonical resolved fields for per-card diagnosis.");
+assert.match(v4SmokeSource, /title_length_policy:\s*summary\.title_length_policy/, "batch smoke results must retain deterministic compression decisions.");
 assert.match(v4SmokeSource, /async function enqueueSpeculativeItem[\s\S]*const l1Job =[\s\S]*l1_job: l1Job/, "batch enqueue must retain the paired L1 job without referencing an out-of-scope variable.");
 assert.match(v4SmokeSource, /concurrency: Math\.max\(1, Math\.trunc\(numberArg\(argv, "--concurrency", 2\)\)\)/, "smoke preparation and enqueue must default to the validated concurrency of two.");
+assert.match(freshEbaySmokeWorkflowSource, /ledger_present_count[^\n]+attempted_count/, "fresh blind smoke must fail closed when node ledgers are missing.");
 assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
 assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");
 assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-only misses must return a stable non-error response.");
@@ -337,6 +354,48 @@ assert.deepEqual(reconciledSlabTitle.provider_result.title_reconciliation_reason
   value: "Black Scope",
   source: "verified_slab_label"
 }]);
+
+const deterministicCsmTitle = adaptV2ResultToV4({
+  sessionId: "v4sess-deterministic-csm",
+  result: {
+    confidence: "HIGH",
+    final_title: "2020 Bowman Chrome Bobby Witt Jr. Auto - Atomic Refractor. 43/100 1st Bowman",
+    fields: {
+      collector_number: "164",
+      surface_color: "Silver"
+    },
+    resolved_fields: {
+      year: "2020",
+      manufacturer: "Topps",
+      brand: "Bowman",
+      product: "2020 Bowman Chrome",
+      players: ["Bobby Witt Jr."],
+      card_name: "Prospects Autograph - Atomic Ref.",
+      insert: "Prospects Autograph",
+      auto: true,
+      print_run_number: "43/100",
+      print_run_numerator: "43",
+      print_run_denominator: "100",
+      grade_company: "PSA",
+      card_grade: "9",
+      auto_grade: "9",
+      grade_type: "CARD_AND_AUTO"
+    },
+    serial_numerator_verified: true,
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.equal(
+  deterministicCsmTitle.final_title,
+  "2020 Bowman Chrome Bobby Witt Jr. Auto Atomic Refractor 43/100 PSA 9"
+);
+assert.equal(deterministicCsmTitle.resolved_fields.collector_number, "164");
+assert.equal(deterministicCsmTitle.resolved_fields.surface_color, "Silver");
+assert.equal(deterministicCsmTitle.provider_result.title_reconciled_from_v4_field_graph, true);
+assert.equal(deterministicCsmTitle.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
+assert.match(deterministicCsmTitle.legacy_v2_result.model_title_suggestion, /1st Bowman/);
 
 const failedL2V4 = adaptV2ResultToV4({
   sessionId: "v4sess-failed-l2",

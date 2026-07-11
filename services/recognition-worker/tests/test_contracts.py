@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 
 from app.contracts import validate_embed_request, validate_ocr_field_request, validate_request
+from app.config import DEFAULT_VISUAL_EMBEDDING_REVISION, load_config
 from app.eval import evaluate_worker_items
 from app.main import embed_images_payload, analyze_payload, ocr_field_payload
 from app.pipelines.card_rectification import rectify_card_from_array
@@ -49,6 +50,18 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(validate_request(payload), [])
         self.assertTrue(validate_request({**payload, "images": []}))
 
+    def test_config_bounds_large_images_and_pins_embedding_revision(self):
+        with patch.dict(os.environ, {
+            "RECOGNITION_MAX_IMAGE_BYTES": "26214400000",
+            "RECOGNITION_MAX_TOTAL_PIXELS": "50000000000",
+            "VISUAL_EMBEDDING_MODEL_REVISION": "main",
+        }, clear=True):
+            config = load_config()
+
+        self.assertEqual(config.max_image_bytes, 100 * 1024 * 1024)
+        self.assertEqual(config.max_total_pixels, 100_000_000)
+        self.assertEqual(config.visual_embedding_model_revision, DEFAULT_VISUAL_EMBEDDING_REVISION)
+
     def test_ocr_field_contract_validation(self):
         payload = {
             "request_id": "ocr_1",
@@ -65,7 +78,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         payload = {
             "request_id": "req_1",
             "model_id": "google/siglip2-base-patch16-384",
-            "model_revision": "main",
+            "model_revision": DEFAULT_VISUAL_EMBEDDING_REVISION,
             "preprocessing_version": "card-rectification-v1",
             "images": [
                 {
@@ -204,7 +217,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         payload = {
             "request_id": "req_1",
             "model_id": "google/siglip2-base-patch16-384",
-            "model_revision": "main",
+            "model_revision": DEFAULT_VISUAL_EMBEDDING_REVISION,
             "preprocessing_version": "card-rectification-v1",
             "images": [
                 {
@@ -262,7 +275,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         payload = {
             "request_id": "req_unavailable",
             "model_id": "google/siglip2-base-patch16-384",
-            "model_revision": "main",
+            "model_revision": DEFAULT_VISUAL_EMBEDDING_REVISION,
             "preprocessing_version": "card-rectification-v1",
             "images": [
                 {

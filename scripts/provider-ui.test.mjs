@@ -30,6 +30,7 @@ assert.match(html, /两图配对/, "paired upload mode should be labeled without
 assert.match(html, /每两张图片组成一张卡/, "writer copy should explain pairing without asking for front/back labels");
 assert.doesNotMatch(html, /正面|背面/, "writer surface should not expose front/back labels or decisions");
 assert.doesNotMatch(js, /sideDecisionForAsset/, "frontend must not compute a front/back side decision");
+assert.doesNotMatch(js, /inferredSourceSide/, "frontend crop preparation must not infer front/back from filenames or upload order");
 assert.doesNotMatch(js, /sideDecisionNotice\(asset, result\)/, "result cards must not show front/back decision panels");
 assert.doesNotMatch(js, /EVIDENCE_SWAPPED/, "frontend must not swap uploaded images based on side evidence");
 assert.match(js, /body\.provider = provider/, "title requests should include the selected provider");
@@ -132,6 +133,8 @@ assert.match(apiWithOptions, /ENABLE_VECTOR_ASSIST_DEFAULT", true/, "title API s
 assert.match(apiWithOptions, /vector_retrieval_mode:\s*vectorAssistDefault \? "assist" : "off"/, "title API should default vector retrieval to assist mode when enabled");
 assert.match(apiWithOptions, /vector_query_timeout_ms:\s*20000/, "title API should give vector retrieval the production-ready overlap budget before degrading");
 assert.match(apiWithOptions, /vectorEmbeddingPostProviderWaitMs/, "L2 should cap post-provider vector waiting before it dominates writer-ready latency");
+assert.match(apiWithOptions, /postObservationCatalogVectorHedgeMs/, "post-observation catalog should get a bounded head start before vector retrieval overlaps it");
+assert.match(api, /post_observation_catalog_vector_overlap_ms/, "slow post-observation catalog and vector lookups should overlap instead of stacking their tail latency");
 assert.match(api, /vector_embedding_overlap_timeout_after_provider/, "slow vector warmup after provider should degrade to a timeout packet instead of blocking the title");
 assert.match(apiWithOptions, /Math\.max\(\s*20000,[\s\S]*VECTOR_QUERY_TIMEOUT_MS/, "vector warmup should get a longer overlapped window than the post-provider wait");
 assert.match(apiWithOptions, /VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS[\s\S]*\|\|\s*20000/, "vector warmup hard cap should default to the overlapped 20s budget");
@@ -228,10 +231,16 @@ assert.match(js, /activeAssetIndexes/, "frontend should track active assets for 
 assert.match(js, /targetFraction/, "asset progress should separate real stage targets from displayed progress");
 assert.match(js, /displayFraction/, "asset progress should smooth displayed percentages instead of jumping stages");
 assert.match(js, /startProgressTicker/, "progress should advance gradually while provider work is pending");
+assert.match(js, /function hasLiveAssetProgress\(\)[\s\S]*v4WriterTitlePending/, "progress should remain alive after queue submission while final L2 titles are pending");
+assert.doesNotMatch(js, /state\.assetProgress = new Map\(\);\n\s*stopProgressTicker\(\);\n\s*state\.completedAssetCount/, "queue submission must not erase per-card progress before final titles arrive");
+assert.match(js, /已提交全部 \$\{state\.assets\.length\} 张/, "queue submission copy must not claim the batch is complete while L2 titles are pending");
 assert.match(js, /progressStepForTarget/, "progress should move slowly and wait near later stages");
 assert.doesNotMatch(js, /moduleRevealCount/, "title-only UI should not stage module reveal state");
 assert.doesNotMatch(js, /revealResultModules/, "title-only UI should not animate structured module reveal");
 assert.match(js, /loading-spinner/, "pending cards should render an obvious waiting spinner");
+assert.doesNotMatch(js, /\$\{backgroundLabel \?/, "background preparation must stay invisible until the writer starts recognition");
+assert.match(js, /snapshot\.active_ms \+ snapshot\.queue_ms/, "writer-visible elapsed time must cover click-to-final queue and execution time");
+assert.doesNotMatch(js, /GPT‑4\.1 单模型重试/, "retry copy must follow the active server model instead of naming a stale provider model");
 assert.match(js, /assistedDraftNotice/, "title cards should visibly explain pending final one-line title generation");
 assert.match(js, /setStatus\(message,\s*options\s*=\s*\{\}\)/, "status updates should support explicit busy rendering");
 assert.match(js, /status-spinner/, "global status should render a spinner while busy");
@@ -365,6 +374,31 @@ globalThis.fetch = async (url) => {
 };
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
+const oversizedOriginal = new Blob([new Uint8Array(30)], { type: "image/png" });
+const compressedFallback = new Blob([new Uint8Array(10)], { type: "image/jpeg" });
+const uploadSourceImage = {
+  sourceFile: oversizedOriginal,
+  sourceBlob: compressedFallback,
+  originalWidth: 8000,
+  originalHeight: 6000,
+  width: 2200,
+  height: 1650
+};
+assert.equal(
+  __listingCopilotAppTestHooks.storageSourceForImage(uploadSourceImage, 20),
+  compressedFallback,
+  "oversized originals should degrade to the bounded high-quality JPEG instead of failing the card"
+);
+assert.deepEqual(
+  __listingCopilotAppTestHooks.storageDimensionsForImage(uploadSourceImage, compressedFallback),
+  { width: 2200, height: 1650 },
+  "compressed upload fallback must report its actual dimensions"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.storageSourceForImage(uploadSourceImage, 40),
+  oversizedOriginal,
+  "original image bytes should be preserved whenever they fit the production upload boundary"
+);
 const frontImage = {
   id: "front",
   targetedCrops: Array.from({ length: 6 }, (_, index) => ({
@@ -382,27 +416,23 @@ const backImage = {
   }))
 };
 const providerImages = __listingCopilotAppTestHooks.imagesForProvider([frontImage, backImage]);
-assert.equal(providerImages.length, 14, "pair mode provider payload should keep two original images plus expanded bounded crops");
+assert.equal(providerImages.length, 10, "pair mode provider payload should keep two originals plus a bounded balanced crop set");
 assert.equal(providerImages[0], frontImage, "first uploaded original should be preserved first");
 assert.equal(providerImages[1], backImage, "second uploaded original should be preserved second");
-assert.equal(providerImages.filter((image) => image.derived).length, 12, "field crops should be bounded across the whole card asset");
+assert.equal(providerImages.filter((image) => image.derived).length, 8, "field crops should be bounded across the whole card asset");
 assert.deepEqual(
   providerImages.slice(2).map((image) => image.id),
   [
     "front-crop-0",
-    "front-crop-1",
-    "front-crop-2",
-    "front-crop-3",
-    "front-crop-4",
-    "front-crop-5",
     "back-crop-0",
+    "front-crop-1",
     "back-crop-1",
+    "front-crop-2",
     "back-crop-2",
+    "front-crop-3",
     "back-crop-3",
-    "back-crop-4",
-    "back-crop-5"
   ],
-  "highest-priority crops should be retained deterministically"
+  "highest-priority crops should be retained symmetrically without front/back assumptions"
 );
 
 const boundedRequestImages = __listingCopilotAppTestHooks.boundedProviderImagesForRequest([
@@ -410,7 +440,7 @@ const boundedRequestImages = __listingCopilotAppTestHooks.boundedProviderImagesF
   { id: "back" },
   ...Array.from({ length: 20 }, (_, index) => ({ id: `crop-${index}`, derived: true }))
 ]);
-assert.equal(boundedRequestImages.length, 22, "expanded provider image batches should retain all evidence images when under the 10x cap");
+assert.equal(boundedRequestImages.length, 14, "provider image batches must retain a production-safe hard bound");
 assert.deepEqual(
   boundedRequestImages.slice(0, 2).map((image) => image.id),
   ["front", "back"],
@@ -418,8 +448,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   boundedRequestImages.slice(2).map((image) => image.id),
-  Array.from({ length: 20 }, (_, index) => `crop-${index}`),
-  "expanded request batches should retain lower-priority evidence images under the 10x cap"
+  Array.from({ length: 12 }, (_, index) => `crop-${index}`),
+  "bounded request batches should keep only the highest-priority derived evidence"
 );
 
 const explicitlyBoundedRequestImages = __listingCopilotAppTestHooks.boundedProviderImagesForRequest([
