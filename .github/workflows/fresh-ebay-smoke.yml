@@ -1,0 +1,131 @@
+name: fresh-ebay-smoke
+
+# Fetches cards that are absent from the fixed C100 set, seals seller titles,
+# uploads image-only inputs through production storage, and then evaluates the
+# production V4 path. Recognition never receives seller titles or item URLs.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Fresh cards to run"
+        default: "3"
+      model:
+        description: "Model override"
+        default: "gpt-5-mini"
+      think_ms:
+        description: "Simulated writer think time (ms)"
+        default: "5000"
+
+concurrency:
+  group: fresh-ebay-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      API_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      RUN_ID: fresh-ebay-${{ github.run_id }}
+      BLIND_DIR: /tmp/lynca-fresh-ebay
+      DATASET_PATH: /tmp/fresh-ebay-dataset.json
+      SEALED_LABELS_PATH: /tmp/fresh-ebay-sealed-labels.jsonl
+      REPORT_PATH: /tmp/fresh-ebay-report.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate production runtime
+        run: |
+          curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
+          node -e 'const h=require("/tmp/v4-health.json"); if(h.ready!==true) process.exit(1)'
+      - name: Prepare fresh sealed blind inputs
+        run: |
+          node scripts/prepare-dcsports87-blind-eval.mjs \
+            --base-url "$API_BASE_URL" \
+            --out-dir "$BLIND_DIR" \
+            --run-id "$RUN_ID" \
+            --limit "${{ inputs.limit }}" \
+            --image-limit 2 \
+            --include-non-sports \
+            --exclude-answer-keys data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl
+      - name: Upload image-only dataset
+        run: |
+          node scripts/build-ebay-image-intake-dataset.mjs \
+            --blind-dir "$BLIND_DIR" \
+            --run-ids "$RUN_ID" \
+            --out "$DATASET_PATH" \
+            --sealed-labels-out "$SEALED_LABELS_PATH" \
+            --limit "${{ inputs.limit }}" \
+            --upload-images \
+            --progress \
+            --base-url "$API_BASE_URL"
+      - name: Prove recognition inputs are blind
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const dataset = JSON.parse(fs.readFileSync(process.env.DATASET_PATH, 'utf8'));
+          const items = Array.isArray(dataset.items) ? dataset.items : [];
+          const checks = {
+            requested_count_present: dataset.item_count === Number('${{ inputs.limit }}'),
+            seller_titles_absent: items.every((item) => (
+              !String(item.canonical_title || '').trim()
+              && Object.keys(item.source_titles || {}).length === 0
+              && item.source_record?.seller_title_visible_to_model === false
+            )),
+            image_only_policy: dataset.intake_policy?.image_only === true,
+            titles_not_ground_truth: dataset.intake_policy?.seller_titles_are_ground_truth === false,
+            images_uploaded: dataset.items?.every((item) => item.images?.length > 0 && item.images.every((image) => image.bucket && image.object_path))
+          };
+          console.log(JSON.stringify(checks, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+      - name: Warm production path
+        run: |
+          for _ in 1 2 3; do
+            curl -s -o /dev/null --max-time 20 "$API_BASE_URL/api/health" || true
+          done
+      - name: Run fresh blind production smoke
+        run: |
+          node scripts/v4-ebay-smoke.mjs \
+            --dataset "$DATASET_PATH" \
+            --sealed-labels "$SEALED_LABELS_PATH" \
+            --limit "${{ inputs.limit }}" \
+            --concurrency 2 \
+            --queue --speculative --use-preingestion --prewarm \
+            --model "${{ inputs.model }}" \
+            --think-ms "${{ inputs.think_ms }}" \
+            --l2-wait-ms 120000 \
+            --out "$REPORT_PATH"
+      - name: Summarize
+        run: |
+          node - <<'NODE'
+          const report = require(process.env.REPORT_PATH);
+          const s = report.summary;
+          console.log(`ok=${s.ok_count}/${s.attempted_count} policy_avg=${s.final_accuracy_proxy.policy_fair_token_recall_avg} policy_pass72=${s.final_accuracy_proxy.policy_fair_pass_at_0_72}/${s.attempted_count}`);
+          console.log(`writer_p50=${s.writer_ready_p50_ms}ms writer_p95=${s.writer_ready_p95_ms}ms queue_p95=${s.scheduler_queue_wait_p95_ms}ms`);
+          console.log(`ocr_terminal=${s.preingestion_ocr?.terminal_count || 0} ocr_timeout=${s.preingestion_ocr?.timeout_count || 0} serial_exact=${s.serial_title_analysis?.exact_match_count || 0}`);
+          for (const row of report.results) {
+            console.log(`  ${row.asset_id.slice(-8)} ok=${row.ok} policy=${row.final_scoring?.policy_fair_token_recall ?? 'n/a'} writer=${row.time_to_writer_ready_ms ?? 'n/a'} err=${row.error ?? '-'}`);
+          }
+          if (s.ok_count !== s.attempted_count) process.exit(1);
+          NODE
+      - name: Upload sealed evaluation artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: fresh-ebay-smoke-report
+          retention-days: 30
+          path: |
+            /tmp/fresh-ebay-report.json
+            /tmp/fresh-ebay-dataset.json
+            /tmp/fresh-ebay-sealed-labels.jsonl
+            /tmp/lynca-fresh-ebay/${{ env.RUN_ID }}/blind_dataset_manifest.json
