@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import handler from "../api/login.js";
+import { readSignedSession } from "../lib/listing-session.mjs";
 
 function makeRequest(body) {
   const req = Readable.from([JSON.stringify(body)]);
@@ -46,6 +47,12 @@ async function login() {
   return { cookie, session };
 }
 
+async function loginWith(body) {
+  const res = makeResponse();
+  await handler(makeRequest(body), res);
+  return res;
+}
+
 const previousEnv = {
   METAVERSE_USERNAME: process.env.METAVERSE_USERNAME,
   METAVERSE_PASSWORD: process.env.METAVERSE_PASSWORD,
@@ -63,6 +70,12 @@ try {
   const second = await login();
   assert.notEqual(first.cookie, second.cookie);
   assert.notEqual(first.session.sid, second.session.sid);
+  const token = first.cookie.match(/lynca_metaverse_session=([^;]+)/)?.[1] || "";
+  assert.equal(readSignedSession(token, process.env.METAVERSE_AUTH_SECRET)?.user, "metaverse");
+  const tamperedToken = `${token.slice(0, -1)}${token.endsWith("0") ? "1" : "0"}`;
+  assert.equal(readSignedSession(tamperedToken, process.env.METAVERSE_AUTH_SECRET), null, "tampered signatures must fail closed");
+  const wrongPasswordCase = await loginWith({ username: "METAVERSE", password: "MTV" });
+  assert.equal(wrongPasswordCase.statusCode, 401, "username may be case-insensitive but passwords must remain case-sensitive");
   console.log("login session tests passed");
 } finally {
   for (const [key, value] of Object.entries(previousEnv)) {

@@ -126,6 +126,9 @@ const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8
 const fastScoutPrewarmApiSource = await readFile("api/v4/fast-scout-prewarm.js", "utf8");
 const queueMigrationApiSource = await readFile("api/admin-apply-v4-production-job-queue-migration.js", "utf8");
 const queueStatusApiSource = await readFile("api/v4/listing-job-status.js", "utf8");
+const sessionStatusApiSource = await readFile("api/v4/listing-session-status.js", "utf8");
+const feedbackApiSource = await readFile("api/v4/listing-feedback.js", "utf8");
+const writerExportApiSource = await readFile("api/v4/listing-export-workbook.js", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
 const freshEbaySmokeWorkflowSource = await readFile(".github/workflows/fresh-ebay-smoke.yml", "utf8");
@@ -166,6 +169,11 @@ assert.match(queueStatusApiSource, /preingestion_ocr_rendezvous/, "queue status 
 assert.match(queueStatusApiSource, /serial_numerator_verified/, "queue status must expose the final serial numerator verification decision.");
 assert.match(queueStatusApiSource, /V4_JOB_STATUS_QUERY_REQUIRED/, "missing status query identifiers must remain a non-retryable client error.");
 assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s\S]*V4_JOB_STATUS_BACKEND_UNAVAILABLE/, "transient queue-store reads must be reported as retryable service failures.");
+assert.match(queueStatusApiSource, /ownedJobs = result\.rows\.filter[\s\S]*operator_id/, "job status must not expose another operator's queued work.");
+assert.match(sessionStatusApiSource, /session\.operator_id[\s\S]*operatorIdFromRequest/, "session status must enforce operator ownership.");
+assert.match(feedbackApiSource, /readV4SessionStatus[\s\S]*session\.operator_id[\s\S]*operatorId/, "writer feedback must verify session ownership before learning writes.");
+assert.match(writerExportApiSource, /writerExportRowsBelongToOperator/, "writer exports must verify every referenced recognition session.");
+assert.doesNotMatch(writerExportApiSource, /new pg\.Client|client\.query\(sql\)/, "normal writer export requests must never mutate production schema.");
 assert.match(v4SmokeSource, /transient_error_count/, "cloud smoke must report recovered status-read faults instead of hiding them.");
 assert.match(v4SmokeSource, /--resume-batch-id/, "cloud smoke must resume an existing paid batch after an observational polling failure.");
 assert.match(v4SmokeSource, /resume_batch_job_missing/, "batch recovery must fail closed when an expected card is absent.");
@@ -755,6 +763,8 @@ assert.ok(writes.some((write) => write.table === "v4_field_evidence"));
 assert.ok(writes.some((write) => write.table === "v4_candidate_traces"));
 assert.ok(writes.some((write) => write.table === "v4_learning_events"));
 assert.ok(reads.includes("v4_production_quality_ledger"));
+assert.ok(reads.includes("v4_writer_export_batches"));
+assert.ok(reads.includes("v4_writer_export_items"));
 
 const prewarmCalls = [];
 const fakePrewarmFetch = async (url, init = {}) => {

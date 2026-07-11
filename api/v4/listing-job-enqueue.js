@@ -13,7 +13,7 @@ import {
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
-import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
 function jobsFromPayload(payload = {}) {
   if (Array.isArray(payload.jobs)) return payload.jobs;
@@ -204,8 +204,14 @@ export default async function handler(req, res) {
   let payload;
   try {
     payload = await readJsonPayload(req);
-  } catch {
-    sendJson(res, 400, withV4Version({ ok: false, message: "Invalid request." }));
+  } catch (error) {
+    const status = requestPayloadErrorStatus(error);
+    sendJson(res, status, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: status === 413 ? "V4_QUEUE_REQUEST_TOO_LARGE" : "V4_QUEUE_INVALID_REQUEST",
+      message: status === 413 ? "Queue request is too large. Split the batch into smaller requests." : "Invalid request."
+    }));
     return;
   }
 
@@ -213,6 +219,17 @@ export default async function handler(req, res) {
   const operatorId = operatorIdFromRequest(req);
   const tenantId = payload.tenant_id || payload.tenantId || batchId;
   const sourceJobs = jobsFromPayload(payload);
+  const maxJobsPerRequest = positiveInteger(process.env.V4_QUEUE_MAX_JOBS_PER_REQUEST, 50, { min: 1, max: 250 });
+  if (sourceJobs.length > maxJobsPerRequest) {
+    sendJson(res, 413, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: "V4_QUEUE_BATCH_TOO_LARGE",
+      message: `Queue request contains ${sourceJobs.length} jobs; split it into batches of at most ${maxJobsPerRequest}.`,
+      max_jobs_per_request: maxJobsPerRequest
+    }));
+    return;
+  }
   const stageJobs = expandV4RecognitionStageJobs({
     jobs: sourceJobs,
     batchId,

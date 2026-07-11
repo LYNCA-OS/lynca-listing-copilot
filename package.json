@@ -78,6 +78,8 @@
     "eval:golden": "node scripts/eval-golden.mjs",
     "commercial:heldout": "node scripts/build-held-out-commercial.mjs",
     "readiness:audit": "node scripts/commercial-readiness-audit.mjs",
+    "readiness:writer-production": "node scripts/writer-assisted-production-readiness.mjs --cloud --out data/readiness/writer-assisted-production-latest.json",
+    "readiness:autonomous-accuracy": "node scripts/commercial-readiness-audit.mjs",
     "readiness:workflow": "node scripts/workflow-readiness-audit.mjs",
     "delivery:report": "node scripts/build-delivery-report.mjs",
     "ebay:candidates": "node scripts/collect-ebay-image-candidates.mjs",
@@ -126,7 +128,7 @@
     "check:candidate-control-plane": "for f in lib/listing/candidates/*.mjs; do node --check \"$f\"; done && node --check scripts/analyze-candidate-activation-funnel.mjs && node --check scripts/candidate-control-plane.test.mjs",
     "test:candidate-control-plane": "node scripts/candidate-control-plane.test.mjs",
     "check:v4-spine": "for f in lib/listing/v4/**/*.mjs lib/listing/v4/*.mjs; do node --check \"$f\"; done && node --check lib/listing/pipeline/timing.mjs && node --check lib/listing/pipeline/node-observability.mjs && node --check api/v4/health.js && node --check api/v4/prewarm.js && node --check api/v4/fast-scout-prewarm.js && node --check api/v4/listing-preingest.js && node --check api/v4/listing-copilot-title.js && node --check api/v4/listing-feedback.js && node --check api/v4/listing-export-workbook.js && node --check api/v4/listing-session-status.js && node --check api/v4/listing-job-prewarm.js && node --check api/v4/listing-job-enqueue.js && node --check api/v4/listing-job-status.js && node --check api/v4/listing-job-worker.js && node --check api/v4/listing-job-pump.js && node --check api/admin-apply-v4-production-job-queue-migration.js && node --check api/admin-apply-v4-writer-export-migration.js && node --check api/admin-apply-sem-definition-migration.js && node --check scripts/v4-ebay-smoke.mjs && node --check scripts/hydrate-v4-smoke-report.mjs && node --check scripts/compare-v4-l1-benefit-smoke.mjs && node --check scripts/v4-spine.test.mjs && node --check scripts/pipeline-node-observability.test.mjs && node --check scripts/v4-l1-return-barrier.test.mjs && node --check scripts/v4-prewarm-fast-scout-for-batch.mjs && node --check scripts/v4-production-job-queue.test.mjs && node --check scripts/v4-production-job-pump.test.mjs && node --check scripts/v4-writer-export.test.mjs",
-    "test:v4-spine": "node scripts/v4-spine.test.mjs && node scripts/pipeline-node-observability.test.mjs && node scripts/v4-l1-return-barrier.test.mjs && node scripts/v4-production-job-queue.test.mjs && node scripts/v4-production-job-pump.test.mjs && node scripts/v4-writer-export.test.mjs",
+    "test:v4-spine": "node scripts/v4-spine.test.mjs && node scripts/pipeline-node-observability.test.mjs && node scripts/v4-l1-return-barrier.test.mjs && node scripts/v4-production-job-queue.test.mjs && node scripts/v4-production-job-pump.test.mjs && node scripts/v4-writer-export.test.mjs && node scripts/http-handler-utils.test.mjs",
     "check:advanced-retrieval": "node --check lib/listing/retrieval/hybrid-reranker.mjs && node --check lib/listing/retrieval/visual-fingerprint.mjs && node --check lib/listing/retrieval/postgres-hybrid-provider.mjs && node --check lib/listing/retrieval/advanced-retrieval-eval.mjs && node --check scripts/advanced-retrieval.test.mjs",
     "test:advanced-retrieval": "node scripts/advanced-retrieval.test.mjs"
   },
@@ -135,5 +137,8 @@
     "exceljs": "^4.4.0",
     "jsonrepair": "^3.14.0",
     "pg": "^8.13.1"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
   }
 }

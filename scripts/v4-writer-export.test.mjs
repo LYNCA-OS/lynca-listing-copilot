@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   buildWriterExportWorkbook,
   createWriterBatchExport,
   normalizeWriterExportRows
 } from "../lib/listing/v4/export/writer-batch-export.mjs";
+
+const exportApiSource = await readFile(new URL("../api/v4/listing-export-workbook.js", import.meta.url), "utf8");
+assert.doesNotMatch(exportApiSource, /new pg\.Client|client\.query\(sql\)/, "a writer export request must never apply database migrations at runtime");
+assert.match(exportApiSource, /const operatorId = operatorIdFromRequest\(req\)/, "export attribution must be derived from the authenticated server session");
+assert.match(exportApiSource, /exportedBy:\s*operatorId/, "the server-derived operator must be persisted on the export batch");
+assert.doesNotMatch(exportApiSource, /payload\.exported_by\s*\|\|/, "client-controlled exporter identity must be ignored");
+assert.match(exportApiSource, /WRITER_EXPORT_SCHEMA_UNAVAILABLE/, "missing export schema must fail closed with an explicit deployment error");
 
 const pngBytes = Buffer.from(
   "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082",

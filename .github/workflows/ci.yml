@@ -17,6 +17,8 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
       - name: Run offline test suites
         # Every scripts/**/*.test.mjs runs with no credentials; suites that
         # need runtime credentials are excluded explicitly below.
@@ -24,9 +26,6 @@ jobs:
           set -u
           pass=0; fail=0; failed_list=""
           for t in scripts/*.test.mjs scripts/data-loop/*.test.mjs; do
-            case "$t" in
-              *v4-writer-export*) continue;;  # needs runtime credentials
-            esac
             if node "$t" >/tmp/test-out.log 2>&1; then
               pass=$((pass+1))
             else

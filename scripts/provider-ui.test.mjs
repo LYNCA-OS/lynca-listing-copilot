@@ -60,7 +60,7 @@ assert.match(js, /const JOB_ENQUEUE_API_ENDPOINT = "\/api\/v4\/listing-job-enque
 assert.match(js, /const JOB_STATUS_API_ENDPOINT = "\/api\/v4\/listing-job-status"/, "frontend should poll production job status for writer-visible titles");
 assert.match(js, /const FAST_SCOUT_PREWARM_API_ENDPOINT = "\/api\/v4\/fast-scout-prewarm"/, "frontend should prewarm asset-level V4 fast scout cache after image verification");
 assert.match(js, /const SESSION_STATUS_API_ENDPOINT = "\/api\/v4\/listing-session-status"/, "frontend should poll the V4 session status endpoint for background assisted drafts");
-assert.match(js, /fetch\(JOB_ENQUEUE_API_ENDPOINT/, "default title requests should enter the V4 production queue");
+assert.match(js, /fetchWithTimeout\(JOB_ENQUEUE_API_ENDPOINT/, "default title requests should enter the V4 production queue with a bounded wait");
 assert.match(js, /fetch\(`\$\{JOB_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\)\}`/, "frontend should poll production job status by durable job id");
 assert.match(js, /processAssetViaQueue\(asset, \{ batchId: recognitionBatchId \}\)/, "batch generation should use one shared production batch identity");
 assert.match(js, /create_l1_job:\s*false/, "frontend production jobs should skip hidden L1 after it showed no stable L2 or writer benefit");
@@ -374,6 +374,38 @@ globalThis.fetch = async (url) => {
 };
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
+assert.equal(
+  __listingCopilotAppTestHooks.generationSubmissionAllowed({
+    assetCount: 10,
+    providerId: "openai_legacy",
+    workflowReady: true,
+    processing: false,
+    resultCount: 0
+  }),
+  true,
+  "a prepared batch with no prior submission should be allowed"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.generationSubmissionAllowed({
+    assetCount: 10,
+    providerId: "openai_legacy",
+    workflowReady: true,
+    processing: false,
+    resultCount: 1
+  }),
+  false,
+  "the batch submit button must stay locked after any durable job/result exists"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: true, pending: true }),
+  false,
+  "a timed-out speculative enqueue must never trigger a second paid enqueue"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: false }),
+  true,
+  "a fresh enqueue is allowed only when no speculative submission existed"
+);
 const oversizedOriginal = new Blob([new Uint8Array(30)], { type: "image/png" });
 const compressedFallback = new Blob([new Uint8Array(10)], { type: "image/jpeg" });
 const uploadSourceImage = {

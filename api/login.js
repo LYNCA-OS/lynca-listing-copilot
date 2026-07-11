@@ -1,19 +1,16 @@
 import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
+import {
+  cookieName,
+  createSignedSessionToken,
+  timingSafeStringEqual
+} from "../lib/listing-session.mjs";
 
-const cookieName = "lynca_metaverse_session";
 const maxAgeSeconds = 60 * 60 * 24 * 7;
+const maxLoginBodyBytes = 16 * 1024;
 
-function normalize(value) {
+function normalizeUsername(value) {
   return String(value || "").trim().toLowerCase();
-}
-
-function base64url(value) {
-  return Buffer.from(value).toString("base64url");
-}
-
-function sign(value, secret) {
-  return crypto.createHmac("sha256", secret).update(value).digest("hex");
 }
 
 function isHttps(req) {
@@ -30,7 +27,16 @@ function serializeCookie(name, value, req) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let bytes = 0;
     req.on("data", (chunk) => {
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > maxLoginBodyBytes) {
+        const error = new Error("login_request_too_large");
+        error.code = "REQUEST_BODY_TOO_LARGE";
+        reject(error);
+        req.destroy?.();
+        return;
+      }
       body += chunk;
     });
     req.on("end", () => resolve(body));
@@ -74,23 +80,22 @@ export default async function handler(req, res) {
     return;
   }
 
-  const username = normalize(credentials.username);
-  const password = normalize(credentials.password);
+  const username = normalizeUsername(credentials.username);
+  const password = String(credentials.password ?? "");
 
-  if (username !== normalize(expectedUser) || password !== normalize(expectedPassword)) {
+  if (username !== normalizeUsername(expectedUser) || !timingSafeStringEqual(password, expectedPassword)) {
     res.statusCode = 401;
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.end(JSON.stringify({ ok: false, message: "账号或密码不正确。" }));
     return;
   }
 
-  const payload = base64url(JSON.stringify({
-    user: normalize(expectedUser),
+  const token = createSignedSessionToken({
+    user: normalizeUsername(expectedUser),
     sid: crypto.randomUUID(),
     iat: Date.now(),
     exp: Date.now() + maxAgeSeconds * 1000
-  }));
-  const token = `${payload}.${sign(payload, authSecret)}`;
+  }, authSecret);
 
   res.statusCode = 200;
   res.setHeader("set-cookie", serializeCookie(cookieName, token, req));

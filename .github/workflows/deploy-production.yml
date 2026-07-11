@@ -10,7 +10,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    environment: production
     permissions:
       contents: read
     steps:
@@ -19,6 +20,12 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Install and verify release artifact
+        run: |
+          npm ci --no-audit --no-fund
+          npm audit --omit=dev --audit-level=moderate
+          npm run check:v4-spine
+          npm run test:v4-spine
       - name: Deploy current main to Vercel production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -41,6 +48,17 @@ jobs:
             fi
           done
           test "$deployed" = true
+      - name: Apply and verify production schema migrations
+        env:
+          V4_JOB_WORKER_SECRET: ${{ secrets.V4_JOB_WORKER_SECRET }}
+        run: |
+          test -n "$V4_JOB_WORKER_SECRET"
+          curl -fsS --max-time 45 \
+            -H "x-lynca-worker-secret: $V4_JOB_WORKER_SECRET" \
+            -X POST \
+            https://listing.lyncafei.team/api/admin-apply-v4-writer-export-migration \
+            -o /tmp/writer-export-migration.json
+          node -e 'const r=require("/tmp/writer-export-migration.json"); if(r.ok!==true) process.exit(1)'
       - name: Verify production alias and V4 runtime
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
@@ -80,3 +98,18 @@ jobs:
           console.log(JSON.stringify({ checks, deployment_sha: process.env.GITHUB_SHA }, null, 2));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
           NODE
+      - name: Enforce writer-assisted production readiness
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: node scripts/writer-assisted-production-readiness.mjs --cloud --out /tmp/writer-assisted-readiness.json
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: production-release-evidence
+          path: |
+            /tmp/v4-health.json
+            /tmp/provider-status.json
+            /tmp/writer-export-migration.json
+            /tmp/writer-assisted-readiness.json

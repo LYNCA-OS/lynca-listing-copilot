@@ -1,4 +1,4 @@
-import { getSessionFromRequest } from "../../lib/listing-session.mjs";
+import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readV4Rows, isV4SupabaseConfigured } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { readV4SessionStatus } from "../../lib/listing/v4/session/session-store.mjs";
@@ -41,6 +41,10 @@ export default async function handler(req, res) {
     return;
   }
   const status = await readV4SessionStatus({ sessionId });
+  if (status.ok && (!status.session || String(status.session.operator_id || "") !== operatorIdFromRequest(req))) {
+    sendJson(res, 404, withV4Version({ ok: false, message: "Recognition session not found." }));
+    return;
+  }
   const counts = {};
   if (isV4SupabaseConfigured(process.env)) {
     const tables = {

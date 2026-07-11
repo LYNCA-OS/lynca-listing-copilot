@@ -8,6 +8,7 @@ import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
   persistV4FeedbackEvent,
   persistV4LearningEvent,
+  readV4SessionStatus,
   updateV4RecognitionSession
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
@@ -42,13 +43,24 @@ export default async function handler(req, res) {
     return;
   }
 
+  const operatorId = operatorIdFromRequest(req);
+  const ownedSession = await readV4SessionStatus({ sessionId });
+  if (!ownedSession.ok) {
+    sendJson(res, 503, withV4Version({ ok: false, retryable: true, message: "Unable to verify recognition session ownership." }));
+    return;
+  }
+  if (!ownedSession.session || String(ownedSession.session.operator_id || "") !== operatorId) {
+    sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition session not found." }));
+    return;
+  }
+
   const artifacts = buildV4FeedbackArtifacts({
     sessionId,
     action: payload.action,
     aiTitle: payload.ai_generated_title || payload.generated_title || payload.ai_title,
     writerTitle: payload.writer_final_title || payload.corrected_title || payload.final_title,
     resultPayload: payload.result_payload || payload.v4_result || payload,
-    operatorId: operatorIdFromRequest(req)
+    operatorId
   });
   const feedback = await persistV4FeedbackEvent({ event: artifacts.feedbackEvent });
   const learning = await persistV4LearningEvent({ event: artifacts.learningEvent });

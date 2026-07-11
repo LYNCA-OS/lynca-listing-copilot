@@ -43,6 +43,7 @@ const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 点击“开始生成”变成“展示已就绪的结果”，而不是“从零启动识别”。
 const ENABLE_SPECULATIVE_RECOGNITION = true;
 const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
+const QUEUE_ENQUEUE_TIMEOUT_MS = 25000;
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
@@ -152,6 +153,21 @@ async function mapWithConcurrency(items, limit, worker) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = QUEUE_ENQUEUE_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || QUEUE_ENQUEUE_TIMEOUT_MS));
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("云端队列提交超时，系统已停止自动重复提交，请稍后检查任务状态再重试。");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function fileExtension(name) {
@@ -1095,7 +1111,7 @@ async function ensureSpeculativeRecognition(asset, runId) {
       enqueueJobPayload.client_speculative = true;
 
       const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
-      const enqueuePayload = await fetch(JOB_ENQUEUE_API_ENDPOINT, {
+      const enqueuePayload = await fetchWithTimeout(JOB_ENQUEUE_API_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
@@ -1156,10 +1172,18 @@ async function settleSpeculativeRecognition(asset, maxWaitMs = SPECULATIVE_SETTL
     asset.speculativePromise,
     wait(maxWaitMs).then(() => timedOut)
   ]).catch(() => null);
-  if (result === timedOut || !result || result.stale || result.run_id !== state.backgroundPreparationRunId) {
+  if (result === timedOut) {
+    return {
+      used: true,
+      pending: true,
+      timed_out: true,
+      wait_ms: Math.round(performance.now() - startedAt)
+    };
+  }
+  if (!result || result.stale || result.run_id !== state.backgroundPreparationRunId) {
     return {
       used: false,
-      timed_out: result === timedOut,
+      timed_out: false,
       wait_ms: Math.round(performance.now() - startedAt)
     };
   }
@@ -1338,7 +1362,33 @@ function selectProvider(providerId) {
 }
 
 function canGenerateTitles() {
-  return Boolean(state.assets.length && state.selectedProvider && workflowAllowsGeneration());
+  return generationSubmissionAllowed({
+    assetCount: state.assets.length,
+    providerId: state.selectedProvider,
+    workflowReady: workflowAllowsGeneration(),
+    processing: state.processing,
+    resultCount: state.results.length
+  });
+}
+
+function generationSubmissionAllowed({
+  assetCount = 0,
+  providerId = "",
+  workflowReady = false,
+  processing = false,
+  resultCount = 0
+} = {}) {
+  return Boolean(assetCount && providerId && workflowReady && !processing && Number(resultCount) === 0);
+}
+
+function speculativeNeedsFreshEnqueue(speculative = {}) {
+  return speculative.used !== true;
+}
+
+function syncProcessButtonState() {
+  const busy = state.processing || state.results.some((result) => v4WriterTitlePending(result));
+  elements.processButton.disabled = !canGenerateTitles();
+  setProcessButtonBusy(busy);
 }
 
 function selectedProviderConfig() {
@@ -1706,7 +1756,9 @@ function imagesForProvider(assetImages) {
 
 export const __listingCopilotAppTestHooks = {
   boundedProviderImagesForRequest,
+  generationSubmissionAllowed,
   imagesForProvider,
+  speculativeNeedsFreshEnqueue,
   storageDimensionsForImage,
   storageSourceForImage
 };
@@ -1780,6 +1832,7 @@ function renderResults() {
   updateStats();
   renderBatchTitles();
   renderAssetRows();
+  syncProcessButtonState();
 }
 
 function resultForAsset(asset) {
@@ -2754,7 +2807,16 @@ async function processAssetViaQueue(asset, options = {}) {
     client_fast_scout_prewarm_timed_out: fastScoutPrewarm.timed_out === true
   };
 
-  const speculative = await settleSpeculativeRecognition(asset);
+  let speculative = await settleSpeculativeRecognition(asset);
+  if (speculative.used && speculative.pending) {
+    setAssetProgress(asset.index, "等待已提交的预识别任务", 0.46);
+    const settled = await asset.speculativePromise;
+    speculative = {
+      used: true,
+      wait_ms: Math.round(Number(speculative.wait_ms || 0)),
+      ...settled
+    };
+  }
   if (speculative.used && speculative.job) {
     // 识别在图片就绪时已经开始：直接挂到已在跑的 L2 job 上。
     // L1 始终隐藏，只作为 L2 可选的同图证据缓存。
@@ -2773,6 +2835,9 @@ async function processAssetViaQueue(asset, options = {}) {
       client_total_ms: clientTotalMs
     });
     return pending;
+  }
+  if (!speculativeNeedsFreshEnqueue(speculative)) {
+    throw new Error(speculative.error || "预识别任务未返回可追踪 ID；为避免重复付费，系统没有自动提交第二个任务。请稍后重试。");
   }
 
   const requestPrepareStartedAt = performance.now();
@@ -2806,7 +2871,7 @@ async function processAssetViaQueue(asset, options = {}) {
   const batchId = options.batchId || createClientBatchId();
   const enqueueStartedAt = performance.now();
   setAssetProgress(asset.index, "提交云端生产队列", 0.42);
-  const response = await fetch(JOB_ENQUEUE_API_ENDPOINT, {
+  const response = await fetchWithTimeout(JOB_ENQUEUE_API_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -2956,8 +3021,7 @@ async function processTitles() {
   state.processingTotal = 0;
   renderResults();
 
-  elements.processButton.disabled = !canGenerateTitles();
-  setProcessButtonBusy(false);
+  syncProcessButtonState();
   const pendingL2 = pendingAssistedDraftCount();
   if (pendingL2) startGenerationTicker();
   setStatus(pendingL2 ? `已提交全部 ${state.assets.length} 张，${pendingL2} 张最终标题生成中…` : processingCompletionStatus(), {
@@ -3821,6 +3885,16 @@ function bindEvents() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeImageModal();
+  });
+
+  globalThis.window?.addEventListener("beforeunload", (event) => {
+    const pending = state.processing || state.results.some((result) => v4WriterTitlePending(result));
+    const unsaved = state.results.some((result) => {
+      return finalTitleForResult(result) && !["saved", "skipped"].includes(String(result.feedbackStatus || ""));
+    });
+    if (!pending && !unsaved) return;
+    event.preventDefault();
+    event.returnValue = "";
   });
 }
 

@@ -6,6 +6,21 @@ Machine SEM version: `linear-cos-10-23-v25`
 
 V4 is not commercially ready because title-level proxy recall looks good. It is ready only when field-level semantic quality and production workflow stability are both acceptable.
 
+Two release claims are intentionally separate:
+
+```text
+Writer-assisted production
+  = durable cloud recognition + one-line writer review + retained feedback/export
+
+Autonomous 95% accuracy claim
+  = reviewed held-out field truth + critical-risk gate + writer-assisted production
+```
+
+Run `npm run readiness:writer-production` for the supervised production workflow. Run
+`npm run readiness:autonomous-accuracy` for the stricter accuracy claim. A missing
+held-out field label must block the second claim without falsely declaring the
+writer-reviewed product unusable.
+
 ## 1. Field-Level Semantic Quality
 
 Evaluate CSM fields separately:

@@ -1,5 +1,5 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest } from "../../lib/listing-session.mjs";
+import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { readV4RecognitionJobs, v4JobStatuses } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { buildEndToEndNodeLedger } from "../../lib/listing/v4/jobs/end-to-end-node-observability.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
@@ -236,12 +236,14 @@ export default async function handler(req, res) {
     }));
     return;
   }
-  const sessions = await readSessionsForJobs(result.rows);
+  const operatorId = operatorIdFromRequest(req);
+  const ownedJobs = result.rows.filter((job) => String(job.operator_id || "") === operatorId);
+  const sessions = await readSessionsForJobs(ownedJobs);
   sendJson(res, 200, withV4Version({
     ok: true,
     batch_id: batchId || null,
-    job_count: result.rows.length,
-    jobs: result.rows.map((job) => {
+    job_count: ownedJobs.length,
+    jobs: ownedJobs.map((job) => {
       const session = sessions[job.recognition_session_id] || null;
       const display = displayStateForSession(session, job);
       const pairedL1ReleasedAt = job.queue_tags?.paired_l1_released_at || null;

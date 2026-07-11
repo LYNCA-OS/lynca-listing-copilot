@@ -16,21 +16,27 @@ function parseCookies(header) {
   );
 }
 
-function toHex(buffer) {
-  return Array.from(new Uint8Array(buffer))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+function fromHex(value) {
+  const hex = String(value || "");
+  if (!/^[0-9a-f]{64}$/i.test(hex)) return null;
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < hex.length; index += 2) {
+    bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16);
+  }
+  return bytes;
 }
 
-async function sign(value, secret) {
+async function verifySignature(value, signature, secret) {
+  const signatureBytes = fromHex(signature);
+  if (!signatureBytes) return false;
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["verify"]
   );
-  return toHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value)));
+  return crypto.subtle.verify("HMAC", key, signatureBytes, new TextEncoder().encode(value));
 }
 
 function decodePayload(payload) {
@@ -46,8 +52,7 @@ async function isValidSession(cookie) {
   const [payload, signature] = cookie.split(".");
   if (!payload || !signature) return false;
 
-  const expected = await sign(payload, secret);
-  if (signature !== expected) return false;
+  if (!(await verifySignature(payload, signature, secret))) return false;
 
   try {
     const session = decodePayload(payload);
