@@ -19,7 +19,8 @@ import {
   persistV4CatalogGap,
   persistV4FieldEvidence,
   persistV4QualityLedger,
-  updateV4RecognitionSession
+  updateV4RecognitionSession,
+  updateV4RecognitionSessionWithRetry
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
@@ -349,6 +350,7 @@ function providerRuntimeSummary(result = {}) {
     preingestion_ocr_rendezvous: result.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: result.preingestion_evidence_refresh || null,
     serial_numerator_verified: result.serial_numerator_verified ?? null,
+    pipeline_node_ledger: result.pipeline_node_ledger || null,
     title_length_policy: result.title_length_policy || null,
     title_reconciled_from_v4_field_graph: result.title_reconciled_from_v4_field_graph === true,
     title_reconciliation_reasons: Array.isArray(result.title_reconciliation_reasons)
@@ -373,6 +375,34 @@ function nonCriticalPersistenceDeferred(payload = {}, env = process.env) {
 
 function deferredArtifact(reason = "writer_ready_first") {
   return { saved: false, deferred: true, reason };
+}
+
+function summarizeNonCriticalPersistence(persistence = {}) {
+  const artifactNames = ["field_evidence", "candidate_trace", "catalog_gap", "quality_ledger"];
+  const artifacts = Object.fromEntries(artifactNames.map((name) => {
+    const value = persistence[name] || {};
+    const status = value.saved === true
+      ? "SAVED"
+      : value.skipped === true
+        ? "SKIPPED"
+        : value.deferred === true
+          ? "DEFERRED"
+          : "FAILED";
+    return [name, {
+      status,
+      reason: value.reason || (status === "FAILED" ? value.error || "persistence_failed" : null)
+    }];
+  }));
+  const failed = Object.values(artifacts).filter((item) => item.status === "FAILED").length;
+  const saved = Object.values(artifacts).filter((item) => item.status === "SAVED").length;
+  return {
+    status: failed > 0 ? "PARTIAL" : "COMPLETED",
+    saved_count: saved,
+    failed_count: failed,
+    artifact_count: artifactNames.length,
+    artifacts,
+    latency_ms: Number(persistence.noncritical_persistence_latency_ms || 0) || null
+  };
 }
 
 async function persistCatalogGapForRows({
@@ -694,7 +724,7 @@ async function persistPipelineResult({
       catalog_gap: deferredArtifact("writer_ready_first"),
       quality_ledger: deferredArtifact("writer_ready_first")
     };
-    scheduleV4Background(persistV4NonCriticalArtifacts({
+    const backgroundPersistence = persistV4NonCriticalArtifacts({
       sessionId,
       result,
       payload,
@@ -703,7 +733,44 @@ async function persistPipelineResult({
       rows,
       status,
       catalogPromptCount
-    }), "V4 non-critical persistence");
+    }).then(async (completedPersistence) => {
+      const persistenceSummary = summarizeNonCriticalPersistence(completedPersistence);
+      const terminalUpdate = await updateV4RecognitionSessionWithRetry({
+        sessionId,
+        patch: {
+          provider_result_summary: {
+            ...sessionPatch.provider_result_summary,
+            noncritical_persistence_status: persistenceSummary.status,
+            noncritical_persistence_summary: persistenceSummary
+          }
+        }
+      });
+      if (!terminalUpdate.saved) {
+        throw Object.assign(new Error(`noncritical_persistence_status_write_failed:${terminalUpdate.error || "unknown_error"}`), {
+          code: "NONCRITICAL_PERSISTENCE_STATUS_WRITE_FAILED"
+        });
+      }
+      return completedPersistence;
+    }).catch(async (error) => {
+      await updateV4RecognitionSessionWithRetry({
+        sessionId,
+        patch: {
+          provider_result_summary: {
+            ...sessionPatch.provider_result_summary,
+            noncritical_persistence_status: "FAILED",
+            noncritical_persistence_summary: {
+              status: "FAILED",
+              saved_count: 0,
+              failed_count: 4,
+              artifact_count: 4,
+              reason: String(error?.code || error?.name || "background_persistence_failed").slice(0, 120)
+            }
+          }
+        }
+      }).catch(() => {});
+      throw error;
+    });
+    scheduleV4Background(backgroundPersistence, "V4 non-critical persistence");
     return adaptV2ResultToV4({
       sessionId,
       result,
@@ -747,6 +814,24 @@ async function persistPipelineResult({
     }
   });
   const persistence = { ...partialPersistence, quality_ledger: ledger };
+  const persistenceSummary = summarizeNonCriticalPersistence(persistence);
+  const terminalUpdate = await updateV4RecognitionSessionWithRetry({
+    sessionId,
+    patch: {
+      provider_result_summary: {
+        ...sessionPatch.provider_result_summary,
+        noncritical_persistence_status: persistenceSummary.status,
+        noncritical_persistence_summary: persistenceSummary
+      }
+    }
+  });
+  if (!terminalUpdate.saved) {
+    persistence.terminal_status_write = {
+      saved: false,
+      error: terminalUpdate.error || "noncritical_persistence_status_write_failed",
+      write_attempts: terminalUpdate.write_attempts || 0
+    };
+  }
   return adaptV2ResultToV4({
     sessionId,
     result,

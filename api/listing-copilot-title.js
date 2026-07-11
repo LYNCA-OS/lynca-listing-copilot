@@ -10,9 +10,11 @@ import {
   createTimingContext,
   emptyTiming,
   nowMs,
+  recordNodeSpan,
   timeAsync,
   timeSync
 } from "../lib/listing/pipeline/timing.mjs";
+import { buildPipelineNodeLedger } from "../lib/listing/pipeline/node-observability.mjs";
 import {
   mergeUsage,
   safeProviderDiagnostics,
@@ -1209,14 +1211,25 @@ async function sendListingResult(res, statusCode, result, timingContext, payload
     bundle_status: payload.preingestion_bundle_status || null,
     preprocessing_summary: preingestionSummary
   }, timingContext);
-  const workflowResult = await attachWorkflowSidecarsToListingResult({
-    result: timedResult,
-    payload,
-    env: process.env,
-    fetchImpl: globalThis.fetch,
-    scheduler: typeof waitUntil === "function" ? waitUntil : null
+  const workflowResult = await timeAsync(timingContext, "workflow_sidecars_ms", () => (
+    attachWorkflowSidecarsToListingResult({
+      result: timedResult,
+      payload,
+      env: process.env,
+      fetchImpl: globalThis.fetch,
+      scheduler: typeof waitUntil === "function" ? waitUntil : null
+    })
+  ));
+  const finalResult = {
+    ...workflowResult,
+    timing: finalizeTiming(timingContext, workflowResult)
+  };
+  finalResult.pipeline_node_ledger = buildPipelineNodeLedger({
+    result: finalResult,
+    timingContext,
+    payload
   });
-  sendJson(res, statusCode, workflowResult);
+  sendJson(res, statusCode, finalResult);
 }
 
 
@@ -4700,7 +4713,20 @@ async function createOpenAiTitle(payload, selection, {
   }
   const rendezvousWaitStartedAt = nowMs();
   const preingestionOcrRendezvous = await preingestionOcrRendezvousPromise;
-  addTiming(timingContext, "preingestion_ocr_rendezvous_wait_ms", nowMs() - rendezvousWaitStartedAt);
+  const rendezvousWaitMs = nowMs() - rendezvousWaitStartedAt;
+  addTiming(timingContext, "preingestion_ocr_rendezvous_wait_ms", rendezvousWaitMs);
+  recordNodeSpan(timingContext, {
+    key: "preingestion_ocr_rendezvous_wait_ms",
+    startedAtMs: rendezvousWaitStartedAt,
+    durationMs: rendezvousWaitMs,
+    status: preingestionOcrRendezvous?.status === "TIMEOUT" ? "PARTIAL" : "COMPLETED",
+    inputCount: preingestionOcrRendezvous?.job_count ?? null,
+    outputCount: preingestionOcrRendezvous?.patch_count ?? null,
+    metrics: {
+      state_reads: preingestionOcrRendezvous?.state_reads ?? null,
+      critical_fields_settled: preingestionOcrRendezvous?.critical_fields_settled === true
+    }
+  });
   const preingestionEvidenceRefresh = await refreshPreIngestionEvidencePatches(initialPayload, {
     timingContext,
     fetchImpl: globalThis.fetch

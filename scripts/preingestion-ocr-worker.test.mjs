@@ -317,6 +317,51 @@ assert.ok(state.state_reads >= 2);
   assert.ok(state.state_reads >= 2);
 }
 
+// --- non-critical card-code OCR may finish in the background ---
+{
+  const state = await waitForPreingestionOcrEvidence({
+    bundleId: "bundle-1",
+    timeoutMs: 1_000,
+    pollMs: 100,
+    triggerSweep: false,
+    env,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("preingestion_jobs")) {
+        return jsonResponse([
+          {
+            job_id: "serial",
+            status: "succeeded",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+            payload: { crop: { role: "serial_crop" } }
+          },
+          {
+            job_id: "grade",
+            status: "succeeded",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:grade`,
+            payload: { crop: { role: "grade_label_crop" } }
+          },
+          {
+            job_id: "code",
+            status: "running",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:code`,
+            payload: { crop: { role: "card_code_crop" } }
+          }
+        ]);
+      }
+      return jsonResponse([{ bundle_id: "bundle-1", evidence_patches: [] }]);
+    }
+  });
+  assert.equal(state.status, "CRITICAL_FIELDS_SETTLED");
+  assert.equal(state.critical_evidence_settled, true);
+  assert.equal(state.critical_active_count, 0);
+  assert.equal(state.card_code_active_count, 1);
+  assert.equal(state.terminal, false);
+}
+
 // --- stale OCR remains in the audit log but cannot satisfy current evidence readiness ---
 {
   const state = await readPreingestionOcrState({
@@ -475,6 +520,93 @@ assert.ok(state.state_reads >= 2);
   assert.equal(result.failed, 1);
   assert.equal(result.succeeded, 0);
   assert.equal(jobStatusWrites.at(-1), "failed");
+}
+
+// --- completed fields persist before a slower sibling crop finishes ---
+{
+  const fastJob = {
+    ...sampleJob,
+    job_id: "fast-job",
+    job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:fast`,
+    payload: {
+      crop: {
+        ...sampleJob.payload.crop,
+        role: "card_code_crop",
+        crop_metadata: { ...sampleJob.payload.crop.crop_metadata, crop_id: "fast-crop" }
+      }
+    }
+  };
+  const slowJob = {
+    ...fastJob,
+    job_id: "slow-job",
+    job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:slow`,
+    payload: {
+      crop: {
+        ...fastJob.payload.crop,
+        crop_metadata: { ...fastJob.payload.crop.crop_metadata, crop_id: "slow-crop" }
+      }
+    }
+  };
+  let releaseSlow;
+  const slowGate = new Promise((resolve) => { releaseSlow = resolve; });
+  let bundlePatches = [];
+  let bundleRevision = 0;
+  const jobStatuses = new Map();
+  let processingFinished = false;
+
+  const processing = processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env: { ...env, PREINGESTION_OCR_CONCURRENCY: "2" },
+    fetchImpl: async (url, init = {}) => {
+      const target = new URL(String(url));
+      if (!init.method && target.pathname.endsWith("/preingestion_jobs")) {
+        return jsonResponse([fastJob, slowJob]);
+      }
+      if (init.method === "PATCH" && target.pathname.endsWith("/preingestion_jobs")) {
+        const jobId = String(target.searchParams.get("job_id") || "").replace(/^eq\./, "");
+        const body = JSON.parse(init.body);
+        if (body.status) jobStatuses.set(jobId, body.status);
+        return jsonResponse([{ job_id: jobId, status: body.status || "queued", attempts: body.attempts || 1 }]);
+      }
+      if (!init.method && target.pathname.endsWith("/preingestion_bundles")) {
+        return jsonResponse([{
+          bundle_id: "bundle-1",
+          evidence_patches: bundlePatches,
+          updated_at: `2026-07-11T00:00:0${bundleRevision}.000Z`
+        }]);
+      }
+      if (init.method === "PATCH" && target.pathname.endsWith("/preingestion_bundles")) {
+        const body = JSON.parse(init.body);
+        bundlePatches = body.evidence_patches;
+        bundleRevision += 1;
+        return jsonResponse([{ bundle_id: "bundle-1", updated_at: body.updated_at }]);
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    },
+    paddleClient: {
+      configured: true,
+      verifyCrop: async (input) => {
+        if (input.request_id.includes("slow")) await slowGate;
+        return ocrResult;
+      }
+    },
+    signedReadUrlFor: async () => "https://signed.test/front.jpg"
+  }).finally(() => { processingFinished = true; });
+
+  const deadline = Date.now() + 500;
+  while (jobStatuses.get("fast-job") !== "succeeded" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(jobStatuses.get("fast-job"), "succeeded");
+  assert.equal(jobStatuses.get("slow-job"), "running");
+  assert.equal(processingFinished, false);
+  assert.ok(bundlePatches.length > 0, "fast OCR evidence must be visible before the slow crop completes");
+
+  releaseSlow();
+  const result = await processing;
+  assert.equal(result.succeeded, 2);
+  assert.equal(result.failed, 0);
+  assert.equal(result.patches_appended, 4);
 }
 
 // --- all crop jobs are drained with bounded parallel OCR ---

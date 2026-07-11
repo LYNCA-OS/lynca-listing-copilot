@@ -535,6 +535,9 @@ function sessionL2Summary(statusPayload = {}) {
     preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
     serial_numerator_verified: summary.serial_numerator_verified ?? null,
+    pipeline_node_ledger: statusPayload.end_to_end_node_ledger || summary.pipeline_node_ledger || null,
+    noncritical_persistence_status: summary.noncritical_persistence_status || null,
+    noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
     provider_diagnostics: providerDiagnostics,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
@@ -596,6 +599,9 @@ function jobL2Summary(statusPayload = {}) {
     preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
     serial_numerator_verified: summary.serial_numerator_verified ?? null,
+    pipeline_node_ledger: job.end_to_end_node_ledger || summary.pipeline_node_ledger || null,
+    noncritical_persistence_status: summary.noncritical_persistence_status || null,
+    noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
     provider_diagnostics: providerDiagnostics,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
@@ -623,6 +629,12 @@ function activeJobStatus(status = "") {
 
 function terminalJobStatus(status = "") {
   return ["FAILED", "CANCELLED"].includes(String(status || "").toUpperCase());
+}
+
+function persistenceTerminalForJob(job = {}) {
+  if (terminalJobStatus(job.status)) return true;
+  const status = cleanText(job.session?.provider_result_summary?.noncritical_persistence_status).toUpperCase();
+  return ["COMPLETED", "PARTIAL", "FAILED"].includes(status);
 }
 
 function compactCandidateTrace(trace = {}) {
@@ -1431,6 +1443,9 @@ async function runOne({
     preingestion_ocr_rendezvous: l2.summary?.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: l2.summary?.preingestion_evidence_refresh || null,
     serial_numerator_verified: l2.summary?.serial_numerator_verified ?? null,
+    pipeline_node_ledger: l2.summary?.pipeline_node_ledger || null,
+    noncritical_persistence_status: l2.summary?.noncritical_persistence_status || null,
+    noncritical_persistence_summary: l2.summary?.noncritical_persistence_summary || null,
     provider_diagnostics: finalProviderDiagnostics,
     l1_provider_diagnostics: l1ProviderDiagnostics,
     l2_provider_diagnostics: l2ProviderDiagnostics,
@@ -1604,6 +1619,7 @@ async function pollBatchJobs({
   let consecutiveErrors = 0;
   let maxConsecutiveErrors = 0;
   const httpStatusBreakdown = {};
+  let writerReadyAt = null;
   while (Date.now() - startedAt <= waitMs) {
     polls += 1;
     last = await getJson({
@@ -1628,11 +1644,13 @@ async function pollBatchJobs({
     for (const job of last.data?.jobs || []) {
       if (job?.job_id) jobsById.set(job.job_id, job);
     }
-    const complete = [...expected].every((jobId) => {
+    const writerReadyComplete = [...expected].every((jobId) => {
       const job = jobsById.get(jobId);
       return job && (job.status === "L2_READY" || terminalJobStatus(job.status) || job.display_status === "FINAL_READY");
     });
-    if (complete) break;
+    if (writerReadyComplete && writerReadyAt === null) writerReadyAt = Date.now();
+    const persistenceComplete = writerReadyComplete && [...expected].every((jobId) => persistenceTerminalForJob(jobsById.get(jobId)));
+    if (persistenceComplete || (writerReadyAt !== null && Date.now() - writerReadyAt >= 8_000)) break;
     const elapsed = Date.now() - startedAt;
     await delay(elapsed < 30_000 ? 800 : elapsed < 180_000 ? 1500 : 2500);
   }
@@ -1826,6 +1844,67 @@ function attachPostRecognitionScoring(results = [], items = [], sealedLabels = n
   });
 }
 
+function summarizePipelineNodeLedgers(results = []) {
+  const rows = results.filter((item) => item.pipeline_node_ledger && typeof item.pipeline_node_ledger === "object");
+  const nodeMap = new Map();
+  for (const item of rows) {
+    for (const node of Array.isArray(item.pipeline_node_ledger.nodes) ? item.pipeline_node_ledger.nodes : []) {
+      const nodeId = cleanText(node.node_id) || "unknown";
+      const aggregate = nodeMap.get(nodeId) || {
+        node_id: nodeId,
+        card_count: 0,
+        expected_count: 0,
+        duration_values: [],
+        input_count_total: 0,
+        output_count_total: 0,
+        status_breakdown: {}
+      };
+      aggregate.card_count += 1;
+      if (node.expected === true) aggregate.expected_count += 1;
+      if (Number.isFinite(Number(node.duration_ms))) aggregate.duration_values.push(Number(node.duration_ms));
+      aggregate.input_count_total += Number(node.input_count || 0);
+      aggregate.output_count_total += Number(node.output_count || 0);
+      const status = cleanText(node.status).toUpperCase() || "UNKNOWN";
+      aggregate.status_breakdown[status] = (aggregate.status_breakdown[status] || 0) + 1;
+      nodeMap.set(nodeId, aggregate);
+    }
+  }
+  const nodeMetrics = [...nodeMap.values()].map((item) => ({
+    node_id: item.node_id,
+    card_count: item.card_count,
+    expected_count: item.expected_count,
+    duration_p50_ms: quantile(item.duration_values, 0.5),
+    duration_p95_ms: quantile(item.duration_values, 0.95),
+    input_count_total: item.input_count_total,
+    output_count_total: item.output_count_total,
+    status_breakdown: item.status_breakdown
+  }));
+  return {
+    schema_version: "pipeline-node-ledger-summary-v1",
+    ledger_present_count: rows.length,
+    ledger_missing_count: results.length - rows.length,
+    anomaly_card_count: rows.filter((item) => Number(item.pipeline_node_ledger.reconciliation?.anomaly_count || 0) > 0).length,
+    anomaly_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.reconciliation?.anomaly_count || 0), 0),
+    error_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.reconciliation?.error_count || 0), 0),
+    warning_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.reconciliation?.warning_count || 0), 0),
+    missing_required_node_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.coverage?.missing_required_node_count || 0), 0),
+    node_metrics: nodeMetrics,
+    anomaly_examples: rows
+      .filter((item) => Number(item.pipeline_node_ledger.reconciliation?.anomaly_count || 0) > 0)
+      .slice(0, 20)
+      .map((item) => ({
+        asset_id: item.asset_id || null,
+        anomalies: (item.pipeline_node_ledger.reconciliation?.anomalies || []).map((anomaly) => ({
+          check_id: anomaly.check_id || null,
+          severity: anomaly.severity || null,
+          expected: anomaly.expected ?? null,
+          actual: anomaly.actual ?? null,
+          detail: anomaly.detail || null
+        }))
+      }))
+  };
+}
+
 function summarize(results = [], { runWallMs = null } = {}) {
   const l1Raw = results.map((item) => item.l1_scoring?.raw_token_recall);
   const l1Fair = results.map((item) => item.l1_scoring?.fair_token_recall);
@@ -1933,6 +2012,7 @@ function summarize(results = [], { runWallMs = null } = {}) {
       serial_numerator_verified_count: results.filter((item) => item.serial_numerator_verified === true).length,
       serial_numerator_rejected_count: results.filter((item) => item.serial_numerator_verified === false).length
     },
+    pipeline_node_observability: summarizePipelineNodeLedgers(results),
     provider_diagnostics: {
       input_tokens_total: results.reduce((sum, item) => sum + Number(item.input_tokens || 0), 0),
       output_tokens_total: results.reduce((sum, item) => sum + Number(item.output_tokens || 0), 0),
@@ -2039,6 +2119,12 @@ function perCardTsv(results = []) {
     "vector_role_fallback_reason",
     "vector_returned_rows",
     "vector_self_excluded",
+    "node_ledger_present",
+    "node_anomaly_count",
+    "node_error_count",
+    "node_warning_count",
+    "missing_required_node_count",
+    "unexplained_field_drop_fields",
     "input_tokens",
     "output_tokens",
     "total_tokens",
@@ -2115,6 +2201,12 @@ function perCardTsv(results = []) {
     item.vector_role_agnostic_fallback_reason,
     item.vector_returned_row_count,
     item.vector_self_excluded_count,
+    Boolean(item.pipeline_node_ledger),
+    item.pipeline_node_ledger?.reconciliation?.anomaly_count ?? null,
+    item.pipeline_node_ledger?.reconciliation?.error_count ?? null,
+    item.pipeline_node_ledger?.reconciliation?.warning_count ?? null,
+    item.pipeline_node_ledger?.coverage?.missing_required_node_count ?? null,
+    item.pipeline_node_ledger?.field_flow?.unexplained_resolution_drop_fields || [],
     item.input_tokens,
     item.output_tokens,
     item.total_tokens,

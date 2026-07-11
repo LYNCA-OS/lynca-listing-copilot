@@ -56,7 +56,7 @@ jobs:
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
             --include-non-sports \
-            --exclude-answer-keys data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl
+            --exclude-answer-keys "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl"
       - name: Upload image-only dataset
         run: |
           node scripts/build-ebay-image-intake-dataset.mjs \

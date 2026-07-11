@@ -1,6 +1,7 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest } from "../../lib/listing-session.mjs";
 import { readV4RecognitionJobs, v4JobStatuses } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
+import { buildEndToEndNodeLedger } from "../../lib/listing/v4/jobs/end-to-end-node-observability.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
@@ -97,8 +98,10 @@ function writerSafeSessionStatus(session = null, job = null) {
       preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
       preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
       serial_numerator_verified: summary.serial_numerator_verified ?? null,
+      pipeline_node_ledger: summary.pipeline_node_ledger || null,
       failure_reason: summary.failure_reason || null,
       noncritical_persistence_status: summary.noncritical_persistence_status || null,
+      noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
       writer_ready_persistence_mode: summary.writer_ready_persistence_mode || null,
       v4_l2_timing: summary.v4_l2_timing || null
     },
@@ -219,6 +222,15 @@ export default async function handler(req, res) {
       const display = displayStateForSession(session, job);
       const pairedL1ReleasedAt = job.queue_tags?.paired_l1_released_at || null;
       const schedulerReadyAt = pairedL1ReleasedAt || job.created_at;
+      const timing = {
+        time_to_l1_ready_ms: elapsedMs(job.created_at, session?.l1_ready_at),
+        time_to_l2_ready_ms: elapsedMs(job.created_at, session?.l2_ready_at),
+        paired_l1_wait_ms: elapsedMs(job.created_at, pairedL1ReleasedAt),
+        scheduler_queue_wait_ms: elapsedMs(schedulerReadyAt, job.started_at),
+        worker_queue_wait_ms: elapsedMs(schedulerReadyAt, job.started_at),
+        total_created_to_worker_start_ms: elapsedMs(job.created_at, job.started_at),
+        worker_processing_ms: elapsedMs(job.started_at, job.completed_at)
+      };
       return {
         job_id: job.id,
         batch_id: job.batch_id,
@@ -246,15 +258,8 @@ export default async function handler(req, res) {
         l2_status: session?.l2_status || "PENDING",
         l2_title: session?.l2_status === "READY" ? (session?.l2_title || session?.final_title || "") : "",
         l2_ready_at: session?.l2_ready_at || null,
-        timing: {
-          time_to_l1_ready_ms: elapsedMs(job.created_at, session?.l1_ready_at),
-          time_to_l2_ready_ms: elapsedMs(job.created_at, session?.l2_ready_at),
-          paired_l1_wait_ms: elapsedMs(job.created_at, pairedL1ReleasedAt),
-          scheduler_queue_wait_ms: elapsedMs(schedulerReadyAt, job.started_at),
-          worker_queue_wait_ms: elapsedMs(schedulerReadyAt, job.started_at),
-          total_created_to_worker_start_ms: elapsedMs(job.created_at, job.started_at),
-          worker_processing_ms: elapsedMs(job.started_at, job.completed_at)
-        },
+        timing,
+        end_to_end_node_ledger: buildEndToEndNodeLedger({ session, job, timing, display }),
         attempt_count: job.attempt_count,
         max_attempts: job.max_attempts,
         priority: job.priority,
