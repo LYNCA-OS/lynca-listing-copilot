@@ -216,6 +216,104 @@ assert.equal(v4.provider_result.preingestion_ocr_rendezvous.status, "TERMINAL");
 assert.equal(v4.provider_result.preingestion_evidence_refresh.added_patch_count, 2);
 assert.equal(v4.provider_result.serial_numerator_verified, true);
 
+const reconciledSlabTitle = adaptV2ResultToV4({
+  sessionId: "v4sess-slab-reconcile",
+  result: {
+    final_title: "2021 Panini Contenders Optic Aaron Rodgers 06/25 #8 (Green Bay Packers) PSA 10",
+    confidence: "MEDIUM",
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+    fields: {
+      manufacturer: "Contenders Optic (brand)",
+      product: "2021 Contenders Optic Football",
+      card_name: "SPLTTNG.IMG - BLACK SCOPE"
+    },
+    resolved_fields: {
+      year: "2021",
+      manufacturer: "Contenders Optic (brand)",
+      product: "2021 Contenders Optic Football",
+      players: ["Aaron Rodgers"],
+      parallel_exact: "Black Scope",
+      print_run_number: "06/25",
+      collector_number: "8",
+      grade_company: "PSA",
+      card_grade: "10",
+      team: "Green Bay Packers"
+    },
+    rendered_fields: {
+      fields: {
+        year: "2021",
+        manufacturer: "Panini",
+        product: "Contenders Optic",
+        players: ["Aaron Rodgers"],
+        parallel_exact: "Black Scope",
+        surface_color: "Black",
+        print_run_number: "06/25",
+        collector_number: "8",
+        grade_company: "PSA",
+        card_grade: "10",
+        team: "Green Bay Packers"
+      }
+    },
+    evidence: {
+      parallel_exact: {
+        value: "Black Scope",
+        normalized_value: "Black Scope",
+        status: "CONFIRMED",
+        confidence: 0.9648,
+        sources: [{
+          source_type: "SLAB_LABEL",
+          region: "grade_label",
+          raw_text: "SPLTNG.IMG-BLACK SCOPE"
+        }]
+      },
+      surface_color: {
+        value: "Black",
+        normalized_value: "Black",
+        status: "CONFIRMED",
+        confidence: 0.9648,
+        sources: [{
+          source_type: "SLAB_LABEL",
+          region: "grade_label",
+          raw_text: "SPLTNG.IMG-BLACK SCOPE"
+        }]
+      },
+      print_run_number: {
+        value: "06/25",
+        normalized_value: "06/25",
+        status: "CONFIRMED",
+        confidence: 0.9943,
+        sources: [{
+          source_type: "OCR",
+          region: "serial_number",
+          raw_text: "06/25"
+        }]
+      }
+    },
+    preingestion_slab_parallel_verification: {
+      verified: true,
+      value: "Black Scope"
+    },
+    preingestion_serial_verification: {
+      verified: true,
+      value: "06/25"
+    },
+    serial_numerator_verified: true
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.match(reconciledSlabTitle.final_title, /Black Scope/);
+assert.match(reconciledSlabTitle.final_title, /06\/25/);
+assert.doesNotMatch(reconciledSlabTitle.final_title, /SPLTTNG\.IMG/);
+assert.equal(reconciledSlabTitle.resolved_fields.card_name, null);
+assert.equal(reconciledSlabTitle.resolved_fields.manufacturer, "Panini");
+assert.equal(reconciledSlabTitle.provider_result.title_reconciled_from_v4_field_graph, true);
+assert.deepEqual(reconciledSlabTitle.provider_result.title_reconciliation_reasons, [{
+  field: "parallel_exact",
+  value: "Black Scope",
+  source: "verified_slab_label"
+}]);
+
 const failedL2V4 = adaptV2ResultToV4({
   sessionId: "v4sess-failed-l2",
   result: {
