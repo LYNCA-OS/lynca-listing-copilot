@@ -17,7 +17,8 @@ MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-10}"
 # Paddle predictors are serialized inside each process. Cloud Run concurrency
 # therefore stays at one while replicas provide parallelism; five warm replicas
 # remove the model-init cold start from the writer path and ten 2-vCPU replicas
-# fit the current 20-vCPU regional quota.
+# fit the current 20-vCPU regional quota. Set both service-level and revision-
+# level scaling: a stale service cap silently overrides a larger revision cap.
 ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:-osrrujmpxxiefppjfgpd.supabase.co}"
 TOKEN_SECRET_NAME="${RECOGNITION_WORKER_TOKEN_SECRET_NAME:-lynca-recognition-worker-token}"
 ENABLE_PADDLEOCR="${ENABLE_PADDLEOCR:-true}"
@@ -72,6 +73,8 @@ gcloud run deploy "$SERVICE_NAME" \
   --cpu "$CPU" \
   --concurrency "$CONCURRENCY" \
   --timeout "$TIMEOUT" \
+  --min "$MIN_INSTANCES" \
+  --max "$MAX_INSTANCES" \
   --min-instances "$MIN_INSTANCES" \
   --max-instances "$MAX_INSTANCES" \
   --set-secrets "RECOGNITION_WORKER_TOKEN=${TOKEN_SECRET_NAME}:latest" \
