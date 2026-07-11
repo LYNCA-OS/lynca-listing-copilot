@@ -150,7 +150,7 @@ assert.match(v4SmokeSource, /pipeline_node_ledger:\s*summary\.pipeline_node_ledg
 assert.match(v4SmokeSource, /resolved_fields:\s*summary\.resolved_fields/, "batch smoke results must retain canonical resolved fields for per-card diagnosis.");
 assert.match(v4SmokeSource, /title_length_policy:\s*summary\.title_length_policy/, "batch smoke results must retain deterministic compression decisions.");
 assert.match(v4SmokeSource, /async function enqueueSpeculativeItem[\s\S]*const l1Job =[\s\S]*l1_job: l1Job/, "batch enqueue must retain the paired L1 job without referencing an out-of-scope variable.");
-assert.match(v4SmokeSource, /concurrency: Math\.max\(1, Math\.trunc\(numberArg\(argv, "--concurrency", 2\)\)\)/, "smoke preparation and enqueue must default to the validated concurrency of two.");
+assert.match(v4SmokeSource, /concurrency: Math\.max\(1, Math\.trunc\(numberArg\(argv, "--concurrency", 3\)\)\)/, "smoke preparation and enqueue must default to the measured production concurrency of three.");
 assert.match(freshEbaySmokeWorkflowSource, /ledger_present_count[^\n]+attempted_count/, "fresh blind smoke must fail closed when node ledgers are missing.");
 assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
 assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");

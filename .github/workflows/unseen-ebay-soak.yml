@@ -121,7 +121,7 @@ jobs:
             --sealed-labels /tmp/unseen-sealed-labels.jsonl \
             --limit "$COUNT" \
             --queue --speculative --use-preingestion --prewarm \
-            --concurrency 2 \
+            --concurrency 3 \
             --model "${{ inputs.model }}" \
             --think-ms "${{ inputs.think_ms }}" \
             --l2-wait-ms 3600000 \
