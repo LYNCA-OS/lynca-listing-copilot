@@ -99,6 +99,8 @@ const serialVisibleUncertainParallel = await callApi({
 assert.equal(serialVisibleUncertainParallel.confidence, "MEDIUM");
 assert.match(serialVisibleUncertainParallel.title, /\/175/);
 assert.doesNotMatch(serialVisibleUncertainParallel.title, /Purple|Wave/i);
+assert.ok(!serialVisibleUncertainParallel.fields.parallel);
+assert.ok(serialVisibleUncertainParallel.unresolved.includes("parallel_exact"));
 
 const explicitCurrentImageNumericalRarityPreserved = await callApi({
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto",

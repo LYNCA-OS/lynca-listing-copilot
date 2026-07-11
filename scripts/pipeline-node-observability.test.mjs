@@ -181,6 +181,23 @@ assert.equal(
   "INTENTIONALLY_ROUTED_TO_REVIEW"
 );
 
+const suppressedParallelReviewLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, parallel_exact: "Sapphire" },
+    resolved_fields: fields,
+    rendered_fields: { fields },
+    unresolved: ["parallel_exact"]
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-parallel-review", images: [{}, {}] }
+});
+assert.equal(suppressedParallelReviewLedger.field_flow.unexplained_resolution_drop_count, 0);
+assert.equal(
+  suppressedParallelReviewLedger.field_flow.fields.find((row) => row.field_group === "parallel_exact")?.disposition,
+  "INTENTIONALLY_ROUTED_TO_REVIEW"
+);
+
 const endToEndLedger = buildEndToEndNodeLedger({
   session: {
     l2_status: "READY",

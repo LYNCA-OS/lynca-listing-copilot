@@ -70,7 +70,8 @@ import {
   narrowSurfaceColorFromOpenSetParallel,
   normalizeUnresolved,
   resultHasDirectParallelSupport,
-  suppressReviewOnlyParallelFields
+  suppressReviewOnlyParallelFields,
+  unresolvedWithSuppressedParallelReview
 } from "../lib/listing/pipeline/result-calibration.mjs";
 import {
   moveLeadingGradeToEnd,
@@ -1939,6 +1940,11 @@ function normalizeAiResult(result, maxTitleLength, source = "openai") {
     unresolved: preTitleAudit.unresolved
   });
   const presentationFields = suppressReviewOnlyParallelFields(fields, calibrated.reason, calibrated.unresolved);
+  const presentationUnresolved = unresolvedWithSuppressedParallelReview(
+    fields,
+    presentationFields,
+    calibrated.unresolved
+  );
 
   return {
     title,
@@ -1946,7 +1952,7 @@ function normalizeAiResult(result, maxTitleLength, source = "openai") {
     confidence: calibrated.confidence,
     reason: calibrated.reason,
     fields: presentationFields,
-    unresolved: calibrated.unresolved,
+    unresolved: presentationUnresolved,
     vector_candidate_decision: result.vector_candidate_decision || null,
     source,
     _normalized_evidence_fields: fields,
