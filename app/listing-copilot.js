@@ -2258,6 +2258,7 @@ function TitleCardComponent(result, asset = null) {
     : "标题暂不可用";
   const textareaValue = titlePending || (failed && !correctedTitle) ? "" : (correctedTitle || unavailableTitle);
   const pendingProgress = titlePending ? assetProgressSnapshot(result.index) : null;
+  const omissionNotice = writerTitleOmissionNotice(result);
 
   return `
     <div class="title-output ${confidenceClass(confidence)}">
@@ -2275,6 +2276,7 @@ function TitleCardComponent(result, asset = null) {
       ${titlePending && pendingProgress ? progressMeter(pendingProgress.percent, pendingProgress.label || "云端生成中") : ""}
       ${titlePending && pendingProgress ? `<span class="progress-label">${escapeHtml(pendingProgress.label || "云端生成中")}</span>` : ""}
       <textarea rows="1" maxlength="80" spellcheck="false" data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${titlePending ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
+      ${omissionNotice ? `<p class="title-omission-notice">${escapeHtml(omissionNotice)}</p>` : ""}
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(friendlyErrorSummary(result.reason || ""))}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
@@ -2518,6 +2520,20 @@ function writerQualityWarning(result = {}) {
   if (quality.route && !/^clear$/i.test(String(quality.route))) parts.push(`质量路线：${quality.route}`);
   if (!parts.length) return "";
   return `${parts.join(" · ")}，小字、编号、评级分数需要写手重点核对。`;
+}
+
+function writerTitleOmissionNotice(result = {}) {
+  const policy = result.title_length_policy
+    || result.provider_result?.title_length_policy
+    || result.provider_result_summary?.title_length_policy
+    || {};
+  const removed = [...new Set((Array.isArray(policy.removed_terms) ? policy.removed_terms : [])
+    .map((value) => compactDisplayValue(value))
+    .filter(Boolean))];
+  if (!removed.length) return "";
+  const visible = removed.slice(0, 3);
+  const suffix = removed.length > visible.length ? ` 等 ${removed.length} 项` : "";
+  return `已识别但因 80 字符限制省略：${visible.join(" · ")}${suffix}`;
 }
 
 async function handleFiles(fileList) {

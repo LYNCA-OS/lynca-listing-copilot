@@ -308,6 +308,7 @@ assert.doesNotMatch(reconciledSlabTitle.final_title, /SPLTTNG\.IMG/);
 assert.equal(reconciledSlabTitle.resolved_fields.card_name, null);
 assert.equal(reconciledSlabTitle.resolved_fields.manufacturer, "Panini");
 assert.equal(reconciledSlabTitle.provider_result.title_reconciled_from_v4_field_graph, true);
+assert.ok(reconciledSlabTitle.provider_result.title_length_policy);
 assert.deepEqual(reconciledSlabTitle.provider_result.title_reconciliation_reasons, [{
   field: "parallel_exact",
   value: "Black Scope",

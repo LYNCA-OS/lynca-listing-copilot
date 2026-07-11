@@ -155,6 +155,8 @@ assert.match(api, /envFlag\(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false\)/
 assert.doesNotMatch(api, /runFocusedVisionImpl:\s*createGptCriticalVerifierRunner/, "automatic second-model focused vision should not be wired from the title API");
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /function TitleCardComponent\(result, asset = null\)/, "frontend should render the one-line title card product surface");
+assert.match(js, /writerTitleOmissionNotice/, "title-only UI should explain CSM fields omitted by the 80-character policy");
+assert.match(js, /已识别但因 80 字符限制省略/, "writer omission copy should be concrete and non-technical");
 assert.match(js, /data-title-input/, "title cards should expose a single editable title input");
 assert.match(js, /data-save-title/, "title cards should expose an accept action");
 assert.match(js, /data-reject-title/, "title cards should expose a reject action");
@@ -273,6 +275,7 @@ assert.match(css, /\.primary-button\.is-loading:disabled/, "busy generate button
 assert.match(css, /prefers-reduced-motion/, "loading animations should respect reduced motion preferences");
 assert.match(css, /\.publication-gate/, "partial writer draft gate should be visible");
 assert.match(css, /\.workflow-summary/, "workflow summary should have a compact writer-facing layout");
+assert.match(css, /\.title-omission-notice/, "CSM title compression notice should have a compact visual treatment");
 assert.match(css, /\.workflow-step-row/, "workflow summary should show integrated pipeline steps compactly");
 assert.match(css, /\.workflow-step\.workflow-warn/, "non-blocking workflow issues should be visible without exposing raw technical packets");
 assert.match(css, /\.workflow-action-list/, "workflow summary should show a compact next-action list");

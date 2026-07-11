@@ -1695,6 +1695,13 @@ summary {
   line-height: 1.45;
 }
 
+.title-omission-notice {
+  margin: 6px 0 0;
+  color: #c99a35;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .evidence-crop-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));

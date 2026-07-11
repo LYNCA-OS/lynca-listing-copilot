@@ -349,6 +349,11 @@ function providerRuntimeSummary(result = {}) {
     preingestion_ocr_rendezvous: result.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: result.preingestion_evidence_refresh || null,
     serial_numerator_verified: result.serial_numerator_verified ?? null,
+    title_length_policy: result.title_length_policy || null,
+    title_reconciled_from_v4_field_graph: result.title_reconciled_from_v4_field_graph === true,
+    title_reconciliation_reasons: Array.isArray(result.title_reconciliation_reasons)
+      ? result.title_reconciliation_reasons
+      : [],
     usage: result.usage || null
   };
 }

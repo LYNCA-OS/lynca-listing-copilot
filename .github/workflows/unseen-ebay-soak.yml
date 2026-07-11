@@ -137,7 +137,7 @@ jobs:
           NODE
       - name: Upload detailed evidence
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: unseen-ebay-soak-report
           path: |
