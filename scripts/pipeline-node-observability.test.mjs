@@ -95,6 +95,22 @@ assert.equal(healthyLedger.nodes.find((node) => node.node_id === "catalog_retrie
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "provider")?.metrics.total_tokens, 120);
 assert.equal(JSON.stringify(healthyLedger).includes("sk-secret-value"), false);
 
+const presentationRetainedLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, surface_color: "Red" },
+    resolved_fields: fields,
+    rendered_fields: { fields: { ...fields, surface_color: "Red" } }
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-presentation", images: [{}, {}] }
+});
+assert.equal(presentationRetainedLedger.field_flow.unexplained_resolution_drop_count, 0);
+assert.equal(
+  presentationRetainedLedger.field_flow.fields.find((row) => row.field_group === "surface_color")?.disposition,
+  "RETAINED_IN_PRESENTATION"
+);
+
 const brokenLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

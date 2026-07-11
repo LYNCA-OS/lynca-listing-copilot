@@ -49,6 +49,7 @@ export async function main(argv = process.argv, env = process.env) {
   const query = argValue(argv, "--query", env.BLIND_EVAL_EBAY_QUERY || (sportsOnly ? defaultSportsQueries : "card"));
   const categoryIds = argValue(argv, "--category-ids", env.BLIND_EVAL_EBAY_CATEGORY_IDS || env.EBAY_BROWSE_CATEGORY_IDS || "");
   const allowPartial = hasFlag(argv, "--allow-partial");
+  const excludeSealedProducts = hasFlag(argv, "--exclude-sealed-products");
   const summary = await prepareBlindDataset({
     baseUrl,
     username,
@@ -60,6 +61,7 @@ export async function main(argv = process.argv, env = process.env) {
     excludeAnswerKeyPaths,
     query,
     sportsOnly,
+    excludeSealedProducts,
     allowPartial,
     categoryIds,
     env
@@ -73,6 +75,7 @@ export async function main(argv = process.argv, env = process.env) {
   console.log(`excluded_item_count=${summary.excluded_item_count}`);
   console.log(`sports_only=${summary.sports_only}`);
   console.log(`sports_filtered_count=${summary.sports_filtered_count}`);
+  console.log(`sealed_product_discarded_count=${summary.sealed_product_discarded_count || 0}`);
   console.log(`ebay_query=${summary.ebay_query}`);
   console.log(`ebay_queries=${(summary.ebay_queries || []).join("|")}`);
   console.log(`ebay_category_ids=${summary.ebay_category_ids}`);

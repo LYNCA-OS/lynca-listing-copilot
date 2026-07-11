@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import pumpHandler, { runV4QueuePump } from "../api/v4/listing-job-pump.js";
+import { runPostEnqueueQueueKick } from "../api/v4/listing-job-enqueue.js";
 import { workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import { callJsonHandler } from "../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -102,6 +103,45 @@ const l2WaitingPump = await runV4QueuePump({
 assert.equal(l2WaitingPump.claimed_count, 2);
 assert.ok(waitForReleasedL2Calls.filter((call) => call.lane === "background").length >= 2, "background lane must wait for L1-released L2 work instead of exiting after one empty claim");
 
+const followupAcquisitions = [
+  { ok: true, acquired: false },
+  { ok: true, acquired: true }
+];
+const followupSleeps = [];
+const followupFetches = [];
+const delayedFollowup = await runPostEnqueueQueueKick({
+  origin: "https://listing.example.test",
+  secret: "secret",
+  body: { reason: "post_enqueue", limit: 4 },
+  kickOwner: "enqueue-batch",
+  leaseMs: 1200,
+  acquireKick: async () => followupAcquisitions.shift(),
+  sleep: async (ms) => followupSleeps.push(ms),
+  fetchImpl: async (url, init) => {
+    followupFetches.push({ url, body: JSON.parse(init.body) });
+    return { ok: true, status: 200 };
+  }
+});
+assert.equal(delayedFollowup.phase, "followup");
+assert.equal(delayedFollowup.acquired, true);
+assert.deepEqual(followupSleeps, [1300]);
+assert.equal(followupFetches.length, 1);
+assert.equal(followupFetches[0].body.reason, "post_enqueue_deduplicated_followup");
+
+let immediateSlept = false;
+const immediateKick = await runPostEnqueueQueueKick({
+  origin: "https://listing.example.test",
+  secret: "secret",
+  body: { reason: "post_enqueue" },
+  kickOwner: "enqueue-immediate",
+  leaseMs: 1200,
+  acquireKick: async () => ({ ok: true, acquired: true }),
+  sleep: async () => { immediateSlept = true; },
+  fetchImpl: async () => ({ ok: true, status: 200 })
+});
+assert.equal(immediateKick.phase, "initial");
+assert.equal(immediateSlept, false);
+
 const enqueueSource = readFileSync(new URL("../api/v4/listing-job-enqueue.js", import.meta.url), "utf8");
 assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY/);
 assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
@@ -111,6 +151,7 @@ assert.match(enqueueSource, /V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS/);
 assert.match(enqueueSource, /tryAcquireV4QueueKick/);
 assert.match(enqueueSource, /v4QueueGlobalDrainEnabled/);
 assert.match(enqueueSource, /post_enqueue_deduplicated_kick_scheduled/);
+assert.match(enqueueSource, /post_enqueue_deduplicated_followup/);
 assert.match(enqueueSource, /kick_source_tenant_id/);
 assert.match(enqueueSource, /const stableConcurrency = v4WorkerProcessConcurrency\(process\.env\)/);
 assert.match(enqueueSource, /interactiveWorkers \* perWorkerLimit/);

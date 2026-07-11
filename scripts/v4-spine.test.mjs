@@ -26,6 +26,7 @@ import {
 } from "../lib/listing/v4/session/session-store.mjs";
 import {
   batchStatusResponseDisposition,
+  mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
   summaryHasVisibleL2Title
@@ -47,6 +48,37 @@ assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 503, data:
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "Unable to read V4 jobs." } }), "retry");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "batch_id required" } }), "fatal");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 401 }), "fatal");
+
+const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
+  asset_id: "asset-hydrate",
+  job_id: "job-hydrate",
+  pipeline_node_ledger: null,
+  input_tokens: 10
+}, {
+  jobs: [{
+    job_id: "job-hydrate",
+    status: "L2_READY",
+    attempt_count: 1,
+    timing: { worker_queue_wait_ms: 125, worker_processing_ms: 22500 },
+    end_to_end_node_ledger: { coverage: { missing_required_node_count: 0 }, nodes: [] },
+    session: {
+      status: "DRAFT_READY",
+      l2_status: "READY",
+      provider_result_summary: {
+        final_title: "Hydrated title",
+        noncritical_persistence_status: "COMPLETED",
+        provider_token_diagnostics: { input_tokens: 99, output_tokens: 11, total_tokens: 110 },
+        preingestion_ocr_rendezvous: { status: "EVIDENCE_READY", job_count: 2 }
+      }
+    }
+  }]
+});
+assert.equal(hydratedDiagnostic.job_status, "L2_READY");
+assert.equal(hydratedDiagnostic.attempt_count, 1);
+assert.equal(hydratedDiagnostic.worker_processing_ms, 22500);
+assert.equal(hydratedDiagnostic.input_tokens, 99);
+assert.equal(hydratedDiagnostic.pipeline_node_ledger.coverage.missing_required_node_count, 0);
+assert.equal(hydratedDiagnostic.preingestion_ocr_rendezvous.status, "EVIDENCE_READY");
 
 for (const code of ["PA-ANT", "83T-6", "OP01-001", "CT14-EN001", "201/165", "PAU", "SV2A 201/165"]) {
   assert.equal(normalizePrintedCardCodeForFields(code), code, `${code} should remain a valid compact printed code`);
@@ -126,6 +158,8 @@ assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s
 assert.match(v4SmokeSource, /transient_error_count/, "cloud smoke must report recovered status-read faults instead of hiding them.");
 assert.match(v4SmokeSource, /--resume-batch-id/, "cloud smoke must resume an existing paid batch after an observational polling failure.");
 assert.match(v4SmokeSource, /resume_batch_job_missing/, "batch recovery must fail closed when an expected card is absent.");
+assert.match(v4SmokeSource, /excluded_from_recognition_wall_time:\s*true/, "post-title diagnostics hydration must never inflate writer latency or throughput timing.");
+assert.match(v4SmokeSource, /hydrateV4JobDiagnostics/, "per-card polling must hydrate final node, OCR, and persistence evidence after timing stops.");
 assert.match(queueWorkerApiSource, /retryable: error\?\.retryable/, "queue workers must preserve provider retryability instead of retrying deterministic contract failures.");
 
 const route = planV4RecognitionRoute({

@@ -7,6 +7,7 @@ import {
   assertBlindInputRow,
   assertOpaqueImageFilename,
   assertSellerListing,
+  isSealedProductListing,
   blindEvalRunPaths,
   comparePredictionToTitle,
   defaultBlindEvalDir,
@@ -19,6 +20,10 @@ import {
   titleWeakLabelFromTitle,
   writeJsonl
 } from "../lib/listing/evaluation/blind-eval.mjs";
+
+assert.equal(isSealedProductListing({ title: "2023-24 Topps Chrome Factory Sealed 5 Hobby Box Case" }), true);
+assert.equal(isSealedProductListing({ title: "2023 Panini Prizm Victor Wembanyama Case Hit SSP" }), false);
+assert.equal(isSealedProductListing({ title: "2024 Topps Chrome Shohei Ohtani Refractor PSA 10" }), false);
 
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",

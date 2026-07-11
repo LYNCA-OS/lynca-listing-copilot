@@ -47,6 +47,70 @@ function envFlag(env, key, fallback = true) {
   return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
 }
 
+function delay(ms) {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, Math.max(0, Number(ms) || 0)));
+}
+
+async function invokeQueuePump({
+  origin,
+  secret,
+  body,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  try {
+    const response = await fetchImpl(`${origin}/api/v4/listing-job-pump`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [workerSecretHeader]: secret
+      },
+      body: JSON.stringify(body)
+    });
+    return { invoked: true, ok: response?.ok === true, status: response?.status ?? null, error: null };
+  } catch (error) {
+    return { invoked: true, ok: false, status: null, error: error?.message || "queue_pump_fetch_failed" };
+  }
+}
+
+export async function runPostEnqueueQueueKick({
+  origin,
+  secret,
+  body,
+  kickOwner,
+  leaseMs,
+  acquireKick = tryAcquireV4QueueKick,
+  fetchImpl = globalThis.fetch,
+  sleep = delay
+} = {}) {
+  const acquire = (owner) => acquireKick({
+    scope: "global",
+    owner,
+    leaseMs
+  });
+  const initial = await acquire(kickOwner);
+  if (!initial.ok || initial.acquired) {
+    const invocation = await invokeQueuePump({ origin, secret, body, fetchImpl });
+    return { phase: "initial", acquired: initial.acquired === true, acquisition_ok: initial.ok === true, ...invocation };
+  }
+
+  // A running pump can claim only the jobs visible at its current cycle. When
+  // this enqueue loses the short dedup lease, schedule one coalesced follow-up
+  // instead of silently stranding new work until the long-running pump exits.
+  await sleep(Math.max(250, Number(leaseMs) || 0) + 100);
+  const followupOwner = `${kickOwner}-followup`;
+  const followup = await acquire(followupOwner);
+  if (followup.ok && !followup.acquired) {
+    return { phase: "followup", acquired: false, acquisition_ok: true, invoked: false, ok: true, status: null, error: null };
+  }
+  const invocation = await invokeQueuePump({
+    origin,
+    secret,
+    body: { ...body, reason: "post_enqueue_deduplicated_followup" },
+    fetchImpl
+  });
+  return { phase: "followup", acquired: followup.acquired === true, acquisition_ok: followup.ok === true, ...invocation };
+}
+
 function triggerV4QueuePumpAfterEnqueue(req, {
   tenantId,
   batchId,
@@ -89,22 +153,25 @@ function triggerV4QueuePumpAfterEnqueue(req, {
     reason: "post_enqueue"
   };
   const kickOwner = `enqueue-${String(batchId || tenantId || "batch").slice(0, 72)}-${Date.now().toString(36)}`;
-  waitUntil((async () => {
-    const kick = await tryAcquireV4QueueKick({
-      scope: "global",
-      owner: kickOwner,
-      leaseMs: v4QueueKickDedupMs(process.env)
-    });
-    if (kick.ok && !kick.acquired) return null;
-    return fetch(`${origin}/api/v4/listing-job-pump`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [workerSecretHeader]: secret
-      },
-      body: JSON.stringify(body)
-    }).catch(() => null);
-  })());
+  const leaseMs = v4QueueKickDedupMs(process.env);
+  waitUntil(runPostEnqueueQueueKick({
+    origin,
+    secret,
+    body,
+    kickOwner,
+    leaseMs
+  }).then((diagnostic) => {
+    console.log(JSON.stringify({
+      level: diagnostic.ok ? "info" : "warn",
+      message: "v4_queue_post_enqueue_kick",
+      batch_id: batchId || null,
+      tenant_id: tenantId || null,
+      queued_count: queuedCount,
+      lease_ms: leaseMs,
+      ...diagnostic
+    }));
+    return diagnostic;
+  }));
   return {
     triggered: true,
     reason: "post_enqueue_deduplicated_kick_scheduled",

@@ -233,7 +233,7 @@ async function readJsonResponse(response) {
   }
 }
 
-async function login({ baseUrl, username, password, fetchImpl = globalThis.fetch }) {
+export async function login({ baseUrl, username, password, fetchImpl = globalThis.fetch }) {
   const response = await fetchImpl(`${baseUrl}/api/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -614,6 +614,7 @@ function jobL2Summary(statusPayload = {}) {
     title_render_source: summary.title_render_source || null,
     route: session.l2_route || job.l2_route || null,
     job_status: job.status || null,
+    attempt_count: job.attempt_count ?? null,
     job_id: job.job_id || null,
     recognition_session_id: job.recognition_session_id || null,
     paired_l1_wait_ms: job.timing?.paired_l1_wait_ms ?? null,
@@ -795,6 +796,168 @@ async function pollJobStatus({
     candidateDebug: compactCandidateTrace(last?.data?.jobs?.[0]?.session?.candidate_control_plane_trace || {}),
     last,
     elapsed_ms: Date.now() - started
+  };
+}
+
+function persistenceStatusIsTerminal(value) {
+  return ["COMPLETED", "PARTIAL", "FAILED"].includes(cleanText(value).toUpperCase());
+}
+
+export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
+  const job = (statusPayload.jobs || [])[0] || {};
+  const summary = jobL2Summary(statusPayload);
+  const providerDiagnostics = objectOrNull(summary.provider_diagnostics)
+    || providerDiagnosticsFromSummary(summary);
+  return compactObject({
+    ...row,
+    recognition_session_id: row.recognition_session_id || summary.recognition_session_id || null,
+    job_status: summary.job_status || row.job_status || null,
+    attempt_count: summary.attempt_count ?? row.attempt_count ?? null,
+    worker_queue_wait_ms: summary.worker_queue_wait_ms ?? row.worker_queue_wait_ms ?? null,
+    paired_l1_wait_ms: summary.paired_l1_wait_ms ?? row.paired_l1_wait_ms ?? null,
+    scheduler_queue_wait_ms: summary.scheduler_queue_wait_ms ?? row.scheduler_queue_wait_ms ?? null,
+    worker_processing_ms: summary.worker_processing_ms ?? row.worker_processing_ms ?? null,
+    time_to_l2_ready_ms: summary.time_to_l2_ready_ms ?? row.time_to_l2_ready_ms ?? null,
+    resolved_fields: Object.keys(summary.resolved_fields || {}).length ? summary.resolved_fields : row.resolved_fields,
+    field_states: Object.keys(summary.field_states || {}).length ? summary.field_states : row.field_states,
+    title_length_policy: summary.title_length_policy || row.title_length_policy || null,
+    title_render_source: summary.title_render_source || row.title_render_source || null,
+    l2_catalog_raw_candidate_count: summary.catalog_raw_candidate_count ?? row.l2_catalog_raw_candidate_count ?? null,
+    l2_catalog_approved_candidate_count: summary.catalog_approved_candidate_count ?? row.l2_catalog_approved_candidate_count ?? null,
+    l2_catalog_conflict_blocked_count: summary.catalog_conflict_blocked_count ?? row.l2_catalog_conflict_blocked_count ?? null,
+    l2_catalog_prompt_candidate_count: summary.catalog_prompt_candidate_count ?? row.l2_catalog_prompt_candidate_count ?? null,
+    l2_catalog_evidence_support_field_count: summary.catalog_evidence_support_field_count ?? row.l2_catalog_evidence_support_field_count ?? null,
+    l2_catalog_participation_level: summary.catalog_participation_level || row.l2_catalog_participation_level || null,
+    l2_vector_raw_candidate_count: summary.vector_raw_candidate_count ?? row.l2_vector_raw_candidate_count ?? null,
+    l2_vector_approved_candidate_count: summary.vector_approved_candidate_count ?? row.l2_vector_approved_candidate_count ?? null,
+    l2_vector_conflict_blocked_count: summary.vector_conflict_blocked_count ?? row.l2_vector_conflict_blocked_count ?? null,
+    l2_vector_prompt_candidate_count: summary.vector_prompt_candidate_count ?? row.l2_vector_prompt_candidate_count ?? null,
+    l2_vector_evidence_support_field_count: summary.vector_evidence_support_field_count ?? row.l2_vector_evidence_support_field_count ?? null,
+    l2_vector_participation_level: summary.vector_participation_level || row.l2_vector_participation_level || null,
+    vector_runtime_status: summary.vector_runtime_status || row.vector_runtime_status || null,
+    vector_runtime_status_code: summary.vector_runtime_status_code ?? row.vector_runtime_status_code ?? null,
+    vector_runtime_unavailable_reasons: summary.vector_runtime_unavailable_reasons || row.vector_runtime_unavailable_reasons || null,
+    vector_worker_status: summary.vector_worker_status || row.vector_worker_status || null,
+    vector_worker_reason: summary.vector_worker_reason || row.vector_worker_reason || null,
+    vector_worker_feature_count: summary.vector_worker_feature_count ?? row.vector_worker_feature_count ?? null,
+    vector_worker_latency_ms: summary.vector_worker_latency_ms ?? row.vector_worker_latency_ms ?? null,
+    vector_worker_attempt_count: summary.vector_worker_attempt_count ?? row.vector_worker_attempt_count ?? null,
+    preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || row.preingestion_ocr_rendezvous || null,
+    preingestion_evidence_refresh: summary.preingestion_evidence_refresh || row.preingestion_evidence_refresh || null,
+    preingestion_retrieval_refresh: summary.preingestion_retrieval_refresh || row.preingestion_retrieval_refresh || null,
+    preingestion_retrieval_anchor_fields: summary.preingestion_retrieval_anchor_fields?.length
+      ? summary.preingestion_retrieval_anchor_fields
+      : row.preingestion_retrieval_anchor_fields,
+    serial_numerator_verified: summary.serial_numerator_verified ?? row.serial_numerator_verified ?? null,
+    pipeline_node_ledger: summary.pipeline_node_ledger || row.pipeline_node_ledger || null,
+    noncritical_persistence_status: summary.noncritical_persistence_status || row.noncritical_persistence_status || null,
+    noncritical_persistence_summary: summary.noncritical_persistence_summary || row.noncritical_persistence_summary || null,
+    provider_diagnostics: providerDiagnostics,
+    v4_l2_timing: summary.v4_l2_timing || row.v4_l2_timing || null,
+    input_tokens: providerDiagnostics.input_tokens ?? row.input_tokens ?? null,
+    output_tokens: providerDiagnostics.output_tokens ?? row.output_tokens ?? null,
+    total_tokens: providerDiagnostics.total_tokens ?? row.total_tokens ?? null,
+    provider_latency_ms: providerDiagnostics.provider_latency_ms ?? row.provider_latency_ms ?? null,
+    provider_key_pool_size: providerDiagnostics.provider_key_pool_size ?? row.provider_key_pool_size ?? null,
+    provider_key_slot: providerDiagnostics.provider_key_slot ?? row.provider_key_slot ?? null,
+    provider_key_source: providerDiagnostics.provider_key_source || row.provider_key_source || null,
+    provider_key_rotation_attempted: providerDiagnostics.provider_key_rotation_attempted ?? row.provider_key_rotation_attempted ?? null,
+    provider_key_rotation_attempts: providerDiagnostics.provider_key_rotation_attempts ?? row.provider_key_rotation_attempts ?? null,
+    response_status: providerDiagnostics.response_status || row.response_status || null,
+    "x-ratelimit-limit-requests": providerDiagnostics["x-ratelimit-limit-requests"] ?? row["x-ratelimit-limit-requests"] ?? null,
+    "x-ratelimit-remaining-requests": providerDiagnostics["x-ratelimit-remaining-requests"] ?? row["x-ratelimit-remaining-requests"] ?? null,
+    "x-ratelimit-limit-tokens": providerDiagnostics["x-ratelimit-limit-tokens"] ?? row["x-ratelimit-limit-tokens"] ?? null,
+    "x-ratelimit-remaining-tokens": providerDiagnostics["x-ratelimit-remaining-tokens"] ?? row["x-ratelimit-remaining-tokens"] ?? null,
+    "x-ratelimit-reset-requests": providerDiagnostics["x-ratelimit-reset-requests"] ?? row["x-ratelimit-reset-requests"] ?? null,
+    "x-ratelimit-reset-tokens": providerDiagnostics["x-ratelimit-reset-tokens"] ?? row["x-ratelimit-reset-tokens"] ?? null,
+    diagnostic_job_updated_at: job.updated_at || null
+  });
+}
+
+async function readSettledJobDiagnostics({
+  baseUrl,
+  cookie,
+  jobId,
+  requestTimeoutMs,
+  attempts = 8
+}) {
+  let last = null;
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      last = await getJson({
+        baseUrl,
+        path: `/api/v4/listing-job-status?job_ids=${encodeURIComponent(jobId)}&limit=1`,
+        cookie,
+        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      });
+    } catch (error) {
+      lastError = serializableError(error, "job_diagnostics_request_failed");
+      await delay(1000);
+      continue;
+    }
+    if (!last.ok) {
+      lastError = serializableError(last.data, `job_diagnostics_http_${last.http_status || "unknown"}`);
+      if (batchStatusResponseDisposition(last) === "fatal") break;
+      await delay(1000);
+      continue;
+    }
+    const summary = jobL2Summary(last.data || {});
+    if (summary.pipeline_node_ledger && persistenceStatusIsTerminal(summary.noncritical_persistence_status)) {
+      return { ok: true, response: last, attempts: attempt, error: null };
+    }
+    if (attempt < attempts) await delay(1000);
+  }
+  return {
+    ok: Boolean(last?.ok),
+    response: last,
+    attempts,
+    error: lastError || (last?.ok ? "job_diagnostics_not_settled" : "job_diagnostics_unavailable")
+  };
+}
+
+export async function hydrateV4JobDiagnostics({
+  results = [],
+  baseUrl,
+  cookie,
+  requestTimeoutMs = 90000,
+  concurrency = 4
+} = {}) {
+  const startedAt = Date.now();
+  let requestedCount = 0;
+  let hydratedCount = 0;
+  let failedCount = 0;
+  const hydrated = await mapWithConcurrency(results, Math.max(1, concurrency), async (row) => {
+    if (!row.job_id || (row.pipeline_node_ledger && persistenceStatusIsTerminal(row.noncritical_persistence_status))) return row;
+    requestedCount += 1;
+    const diagnostics = await readSettledJobDiagnostics({
+      baseUrl,
+      cookie,
+      jobId: row.job_id,
+      requestTimeoutMs
+    });
+    if (!diagnostics.response?.data) {
+      failedCount += 1;
+      return { ...row, diagnostic_hydration_error: diagnostics.error };
+    }
+    const next = mergeJobDiagnosticsIntoResult(row, diagnostics.response.data);
+    if (next.pipeline_node_ledger) hydratedCount += 1;
+    else failedCount += 1;
+    return {
+      ...next,
+      diagnostic_hydration_attempts: diagnostics.attempts,
+      diagnostic_hydration_error: diagnostics.error
+    };
+  });
+  return {
+    results: hydrated,
+    metrics: {
+      requested_count: requestedCount,
+      hydrated_count: hydratedCount,
+      failed_count: failedCount,
+      duration_ms: Date.now() - startedAt,
+      excluded_from_recognition_wall_time: true
+    }
   };
 }
 
@@ -1132,6 +1295,16 @@ async function runOne({
       vector_worker_feature_count: l2.summary?.vector_worker_feature_count ?? null,
       vector_worker_latency_ms: l2.summary?.vector_worker_latency_ms ?? null,
       vector_worker_attempt_count: l2.summary?.vector_worker_attempt_count ?? null,
+      preingestion_ocr_rendezvous: l2.summary?.preingestion_ocr_rendezvous || null,
+      preingestion_evidence_refresh: l2.summary?.preingestion_evidence_refresh || null,
+      preingestion_retrieval_refresh: l2.summary?.preingestion_retrieval_refresh || null,
+      preingestion_retrieval_anchor_fields: l2.summary?.preingestion_retrieval_anchor_fields || [],
+      serial_numerator_verified: l2.summary?.serial_numerator_verified ?? null,
+      pipeline_node_ledger: l2.summary?.pipeline_node_ledger || null,
+      noncritical_persistence_status: l2.summary?.noncritical_persistence_status || null,
+      noncritical_persistence_summary: l2.summary?.noncritical_persistence_summary || null,
+      attempt_count: l2.summary?.attempt_count ?? null,
+      job_status: l2.summary?.job_status || null,
       input_tokens: finalProviderDiagnostics.input_tokens,
       output_tokens: finalProviderDiagnostics.output_tokens,
       total_tokens: finalProviderDiagnostics.total_tokens,
@@ -2016,7 +2189,7 @@ function summarizePipelineNodeLedgers(results = []) {
   };
 }
 
-function summarize(results = [], { runWallMs = null } = {}) {
+export function summarize(results = [], { runWallMs = null } = {}) {
   const l1Raw = results.map((item) => item.l1_scoring?.raw_token_recall);
   const l1Fair = results.map((item) => item.l1_scoring?.fair_token_recall);
   const l1Policy = results.map((item) => item.l1_scoring?.policy_fair_token_recall);
@@ -2476,6 +2649,26 @@ export async function runV4EbaySmoke({
       }
     });
   }
+  const recognitionRunWallMs = Date.now() - runStartedAt;
+  const diagnosticHydration = queueMode
+    ? await hydrateV4JobDiagnostics({
+      results: recognitionResults,
+      baseUrl,
+      cookie,
+      requestTimeoutMs,
+      concurrency: Math.min(4, Math.max(1, concurrency))
+    })
+    : {
+      results: recognitionResults,
+      metrics: {
+        requested_count: 0,
+        hydrated_count: 0,
+        failed_count: 0,
+        duration_ms: 0,
+        excluded_from_recognition_wall_time: true
+      }
+    };
+  recognitionResults = diagnosticHydration.results;
   const predictionsSha256 = predictionHash(recognitionResults);
   const sealedLabels = await readSealedLabels(sealedLabelsPath);
   const results = attachPostRecognitionScoring(recognitionResults, items, sealedLabels, offset);
@@ -2502,7 +2695,8 @@ export async function runV4EbaySmoke({
       last_error: batchPollMetrics.last_error,
       fatal_error: batchPollMetrics.fatal_error
     } : null,
-    run_wall_ms: Date.now() - runStartedAt,
+    run_wall_ms: recognitionRunWallMs,
+    diagnostic_hydration: diagnosticHydration.metrics,
     prewarm_enabled: prewarm,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
@@ -2520,7 +2714,7 @@ export async function runV4EbaySmoke({
       recognition_phase_loaded_sealed_labels: false,
       predictions_frozen_before_scoring: true
     },
-    summary: summarize(results, { runWallMs: Date.now() - runStartedAt }),
+    summary: summarize(results, { runWallMs: recognitionRunWallMs }),
     results
   };
   if (outPath) {
@@ -2528,6 +2722,33 @@ export async function runV4EbaySmoke({
     await writeText(outPath.replace(/\.json$/i, ".tsv"), perCardTsv(results));
   }
   return report;
+}
+
+export async function hydrateV4SmokeReport({
+  report = {},
+  baseUrl,
+  username,
+  password,
+  requestTimeoutMs = 90000,
+  concurrency = 4
+} = {}) {
+  if (!baseUrl) throw new Error("baseUrl is required");
+  if (!username || !password) throw new Error("username and password are required");
+  const cookie = await login({ baseUrl, username, password });
+  const hydration = await hydrateV4JobDiagnostics({
+    results: Array.isArray(report.results) ? report.results : [],
+    baseUrl,
+    cookie,
+    requestTimeoutMs,
+    concurrency
+  });
+  return {
+    ...report,
+    generated_at: new Date().toISOString(),
+    diagnostic_hydration: hydration.metrics,
+    summary: summarize(hydration.results, { runWallMs: report.run_wall_ms ?? report.summary?.run_wall_ms ?? null }),
+    results: hydration.results
+  };
 }
 
 export async function main(argv = process.argv, env = process.env) {

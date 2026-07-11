@@ -7,6 +7,9 @@ name: concurrency-capacity-sweep
 on:
   workflow_dispatch:
     inputs:
+      levels:
+        description: "Comma-separated offered-load levels (full: 1,2,3,4; confirmation: 2,3)"
+        default: "1,2,3,4"
       cards_per_level:
         description: "Fresh blind cards per concurrency level (first pass: 4)"
         default: "4"
@@ -36,6 +39,7 @@ jobs:
       DATASET_PATH: /tmp/concurrency-all-dataset.json
       SEALED_LABELS_PATH: /tmp/concurrency-all-sealed-labels.jsonl
       COMPARISON_PATH: /tmp/concurrency-comparison.json
+      SWEEP_LEVELS: ${{ inputs.levels }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -58,21 +62,24 @@ jobs:
           const health = JSON.parse(fs.readFileSync('/tmp/v4-health.json', 'utf8'));
           const status = JSON.parse(fs.readFileSync('/tmp/provider-status.json', 'utf8'));
           const execution = status.execution_control || {};
+          const levels = String(process.env.SWEEP_LEVELS || '').split(',').map(Number).filter((value) => Number.isInteger(value) && value > 0);
+          const maximumLevel = Math.max(...levels);
           const checks = {
             v4_ready: health.ready === true,
             queue_ready: health.production_queue?.configured === true,
             distributed_capacity: execution.distributed_provider_capacity_enabled === true,
             model_matches: (status.providers || []).some((provider) => provider.selectable && provider.model_id === '${{ inputs.model }}'),
             key_pool_two_or_more: Number(execution.provider_key_pool_size || 0) >= 2,
-            production_global_capacity_four_or_more: Number(execution.global_provider_concurrency || 0) >= 4
+            production_global_capacity_covers_sweep: Number(execution.global_provider_concurrency || 0) >= maximumLevel
           };
-          fs.writeFileSync('/tmp/concurrency-readiness.json', JSON.stringify({ checks, execution }, null, 2));
-          console.log(JSON.stringify({ checks, execution }, null, 2));
+          fs.writeFileSync('/tmp/concurrency-readiness.json', JSON.stringify({ checks, execution, levels, maximum_level:maximumLevel }, null, 2));
+          console.log(JSON.stringify({ checks, execution, levels, maximum_level:maximumLevel }, null, 2));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
           NODE
       - name: Prepare fresh sealed blind sample
         run: |
-          TOTAL=$((4 * ${{ inputs.cards_per_level }}))
+          LEVEL_COUNT=$(node -e "const v=process.env.SWEEP_LEVELS.split(',').map(Number).filter(n=>Number.isInteger(n)&&n>0); if(!v.length||new Set(v).size!==v.length) process.exit(1); process.stdout.write(String(v.length))")
+          TOTAL=$((LEVEL_COUNT * ${{ inputs.cards_per_level }}))
           node scripts/prepare-dcsports87-blind-eval.mjs \
             --base-url "$API_BASE_URL" \
             --out-dir "$BLIND_DIR" \
@@ -80,12 +87,14 @@ jobs:
             --limit "$TOTAL" \
             --image-limit 2 \
             --include-non-sports \
+            --exclude-sealed-products \
             --allow-partial \
             --query "sports card|basketball card|baseball card|football card|soccer card|hockey card|Pokemon card|One Piece card|Yu-Gi-Oh card" \
             --exclude-answer-keys "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl"
       - name: Upload image-only intake bundle
         run: |
-          TOTAL=$((4 * ${{ inputs.cards_per_level }}))
+          LEVEL_COUNT=$(node -e "process.stdout.write(String(process.env.SWEEP_LEVELS.split(',').map(Number).filter(n=>Number.isInteger(n)&&n>0).length))")
+          TOTAL=$((LEVEL_COUNT * ${{ inputs.cards_per_level }}))
           node scripts/build-ebay-image-intake-dataset.mjs \
             --blind-dir "$BLIND_DIR" \
             --run-ids "$RUN_ID" \
@@ -101,16 +110,18 @@ jobs:
           const dataset = JSON.parse(fs.readFileSync(process.env.DATASET_PATH, 'utf8'));
           const labels = fs.readFileSync(process.env.SEALED_LABELS_PATH, 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
           const requestedCardsPerLevel = Number('${{ inputs.cards_per_level }}');
+          const levels = String(process.env.SWEEP_LEVELS || '').split(',').map(Number).filter((value) => Number.isInteger(value) && value > 0);
+          if (!levels.length || new Set(levels).size !== levels.length) throw new Error(`Invalid levels: ${process.env.SWEEP_LEVELS}`);
           const items = Array.isArray(dataset.items) ? dataset.items : [];
-          const cardsPerLevel = Math.min(requestedCardsPerLevel, Math.floor(items.length / 4));
-          const required = cardsPerLevel * 4;
-          if (cardsPerLevel < 2) throw new Error(`Only ${items.length} fresh cards were prepared; at least 8 are required.`);
+          const cardsPerLevel = Math.min(requestedCardsPerLevel, Math.floor(items.length / levels.length));
+          const required = cardsPerLevel * levels.length;
+          if (cardsPerLevel < 2) throw new Error(`Only ${items.length} fresh cards were prepared; at least ${levels.length * 2} are required.`);
           const labelByKey = new Map(labels.map((label) => [String(label.key || ''), label]));
           const seenAssets = new Set();
           const seenKeys = new Set();
-          const manifest = { schema_version:'concurrency-strata-v1', cards_per_level:cardsPerLevel, levels:{} };
-          for (let level = 1; level <= 4; level += 1) {
-            const group = items.filter((_, index) => index % 4 === level - 1).slice(0, cardsPerLevel);
+          const manifest = { schema_version:'concurrency-strata-v2', cards_per_level:cardsPerLevel, requested_levels:levels, levels:{} };
+          for (const [levelIndex, level] of levels.entries()) {
+            const group = items.filter((_, index) => index % levels.length === levelIndex).slice(0, cardsPerLevel);
             if (group.length !== cardsPerLevel) throw new Error(`c${level} has ${group.length}/${cardsPerLevel} cards.`);
             const groupLabels = group.map((item) => {
               const asset = String(item.asset_id || '');
@@ -151,7 +162,9 @@ jobs:
       - name: Run controlled offered-load sweep
         run: |
           set -euo pipefail
-          for LEVEL in 1 2 3 4; do
+          IFS=',' read -ra LEVELS <<< "$SWEEP_LEVELS"
+          for LEVEL in "${LEVELS[@]}"; do
+            LEVEL="$(echo "$LEVEL" | xargs)"
             echo "Running c${LEVEL} with at most ${LEVEL} cards in flight"
             node scripts/v4-ebay-smoke.mjs \
               --dataset "/tmp/concurrency-c${LEVEL}-dataset.json" \
@@ -168,12 +181,13 @@ jobs:
           done
       - name: Compare stability and throughput
         run: |
-          node scripts/compare-concurrency-sweep.mjs \
-            --report=1:/tmp/concurrency-c1-report.json \
-            --report=2:/tmp/concurrency-c2-report.json \
-            --report=3:/tmp/concurrency-c3-report.json \
-            --report=4:/tmp/concurrency-c4-report.json \
-            --out "$COMPARISON_PATH"
+          IFS=',' read -ra LEVELS <<< "$SWEEP_LEVELS"
+          REPORT_ARGS=()
+          for LEVEL in "${LEVELS[@]}"; do
+            LEVEL="$(echo "$LEVEL" | xargs)"
+            REPORT_ARGS+=("--report=${LEVEL}:/tmp/concurrency-c${LEVEL}-report.json")
+          done
+          node scripts/compare-concurrency-sweep.mjs "${REPORT_ARGS[@]}" --out "$COMPARISON_PATH"
           node - <<'NODE'
           const comparison = require(process.env.COMPARISON_PATH);
           for (const row of comparison.rows) {
@@ -187,6 +201,8 @@ jobs:
               writer_p50_ms:row.writer_ready_p50_ms,
               writer_p95_ms:row.writer_ready_p95_ms,
               queue_p95_ms:row.scheduler_queue_wait_p95_ms,
+              queue_tail_share:row.queue_tail_share,
+              writer_tail_amplification:row.writer_tail_amplification,
               provider_p95_ms:row.provider_latency_p95_ms,
               catalog_p95_ms:row.catalog_retrieval_p95_ms,
               vector_p95_ms:row.vector_retrieval_p95_ms,
@@ -195,6 +211,7 @@ jobs:
               errors:row.technical_failure_count,
               node_errors:row.node_error_count,
               tokens:row.total_tokens,
+              tokens_per_card:row.tokens_per_completed_card,
               rejection_reasons:row.rejection_reasons,
               warning_reasons:row.warning_reasons
             }));
@@ -207,7 +224,8 @@ jobs:
         run: |
           node - <<'NODE'
           const fs = require('fs');
-          for (let level = 1; level <= 4; level += 1) {
+          const levels = String(process.env.SWEEP_LEVELS || '').split(',').map(Number).filter((value) => Number.isInteger(value) && value > 0);
+          for (const level of levels) {
             const report = JSON.parse(fs.readFileSync(`/tmp/concurrency-c${level}-report.json`, 'utf8'));
             const summary = report.summary || {};
             const nodes = summary.pipeline_node_observability || {};

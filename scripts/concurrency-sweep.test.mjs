@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -105,6 +106,8 @@ assert.equal(baselineRow.provider_latency_p95_ms, 20000);
 assert.equal(baselineRow.catalog_retrieval_p95_ms, 1100);
 assert.equal(baselineRow.node_ledger_present_count, 4);
 assert.equal(baselineRow.latest_remaining_requests, 4990);
+assert.equal(baselineRow.queue_tail_share, Number((1000 / 38000).toFixed(6)));
+assert.equal(baselineRow.tokens_per_completed_card, 11000);
 
 const stableBaseline = evaluateRow(baselineRow, baselineRow);
 assert.equal(stableBaseline.stable, true);
@@ -163,5 +166,11 @@ const knee = chooseConcurrency([
 assert.equal(knee.recommended.concurrency, 3);
 assert.equal(knee.rawWinner.concurrency, 4);
 assert.equal(knee.trace.at(-1).decision, "STOP_AT_KNEE");
+
+const workflowSource = readFileSync(new URL("../.github/workflows/concurrency-capacity-sweep.yml", import.meta.url), "utf8");
+assert.match(workflowSource, /levels:\s*\n\s*description:/);
+assert.match(workflowSource, /SWEEP_LEVELS:/);
+assert.match(workflowSource, /--exclude-sealed-products/);
+assert.match(workflowSource, /REPORT_ARGS/);
 
 console.log("concurrency sweep tests passed");

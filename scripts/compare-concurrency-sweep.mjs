@@ -186,6 +186,15 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
   row.capacity_efficiency_cards_per_minute = row.completed_cards_per_minute === null || row.concurrency <= 0
     ? null
     : Number((row.completed_cards_per_minute / row.concurrency).toFixed(6));
+  row.queue_tail_share = row.scheduler_queue_wait_p95_ms === null || row.writer_ready_p95_ms === null || row.writer_ready_p95_ms <= 0
+    ? null
+    : Number((row.scheduler_queue_wait_p95_ms / row.writer_ready_p95_ms).toFixed(6));
+  row.writer_tail_amplification = row.writer_ready_p50_ms === null || row.writer_ready_p95_ms === null || row.writer_ready_p50_ms <= 0
+    ? null
+    : Number((row.writer_ready_p95_ms / row.writer_ready_p50_ms).toFixed(6));
+  row.tokens_per_completed_card = row.total_tokens === null || row.ok_count <= 0
+    ? null
+    : Number((row.total_tokens / row.ok_count).toFixed(2));
   return row;
 }
 
@@ -231,10 +240,10 @@ export function evaluateRow(row = {}, baseline = {}, { qualityTolerance = 0.03 }
   } else {
     warningReasons.push("UNPAIRED_SAMPLE_QUALITY_IS_GUARDRAIL_ONLY");
     if (row.policy_fair_title_token_recall_avg !== null && row.policy_fair_title_token_recall_avg < 0.72) {
-      rejectionReasons.push("WEAK_PROXY_QUALITY_BELOW_0_72");
+      warningReasons.push("WEAK_PROXY_QUALITY_BELOW_0_72");
     }
     if (row.pass_at_0_72_rate !== null && row.pass_at_0_72_rate < 0.5) {
-      rejectionReasons.push("WEAK_PROXY_PASS_RATE_BELOW_50_PERCENT");
+      warningReasons.push("WEAK_PROXY_PASS_RATE_BELOW_50_PERCENT");
     }
   }
   if (row.batch_status_transient_error_count > 0) warningReasons.push("RECOVERED_STATUS_CONTROL_PLANE_TRANSIENT");
@@ -366,7 +375,10 @@ export async function main(argv = process.argv) {
       `pass@0.72=${row.pass_at_0_72_count}/${row.attempted_count}`,
       `writer_p95=${row.writer_ready_p95_ms ?? "n/a"}ms`,
       `queue_p95=${row.scheduler_queue_wait_p95_ms ?? "n/a"}ms`,
+      `queue_tail_share=${row.queue_tail_share ?? "n/a"}`,
+      `tail_amplification=${row.writer_tail_amplification ?? "n/a"}`,
       `provider_p95=${row.provider_latency_p95_ms ?? "n/a"}ms`,
+      `tokens_per_card=${row.tokens_per_completed_card ?? "n/a"}`,
       `reasons=${row.rejection_reasons.join("|") || "n/a"}`,
       `warnings=${row.warning_reasons.join("|") || "n/a"}`
     ].join(" "))
