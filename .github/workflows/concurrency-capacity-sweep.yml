@@ -179,34 +179,9 @@ jobs:
               --request-timeout-ms 120000 \
               --out "/tmp/concurrency-c${LEVEL}-report.json"
             EXECUTED_LEVELS+=("$LEVEL")
-            if ! LEVEL="$LEVEL" node - <<'NODE'
-            const fs = require('fs');
-            const level = process.env.LEVEL;
-            const report = JSON.parse(fs.readFileSync(`/tmp/concurrency-c${level}-report.json`, 'utf8'));
-            const summary = report.summary || {};
-            const nodes = summary.pipeline_node_observability || {};
-            const results = Array.isArray(report.results) ? report.results : [];
-            const errorText = results.map((row) => [
-              row.error,
-              row.error_code,
-              row.provider_error_type,
-              row.provider_response_status,
-              row.job_status
-            ].filter(Boolean).join(' ')).join(' ').toLowerCase();
-            const stopReasons = [];
-            if (Number(summary.ok_count || 0) !== Number(summary.attempted_count || 0)) stopReasons.push('TECHNICAL_SUCCESS_NOT_100_PERCENT');
-            if (Number(summary.retry_card_count || summary.provider_error_retry_count || 0) > 0) stopReasons.push('PAID_RETRY_REQUIRED');
-            if (Number(summary.retry_attempt_count || 0) > 0) stopReasons.push('RETRY_ATTEMPT_REQUIRED');
-            if (Number(nodes.error_count || 0) > 0) stopReasons.push('NODE_RECONCILIATION_ERROR');
-            if (Number(nodes.missing_required_node_count || 0) > 0) stopReasons.push('REQUIRED_NODE_MISSING');
-            if (Number(nodes.ledger_present_count || 0) !== Number(summary.attempted_count || 0)) stopReasons.push('NODE_LEDGER_INCOMPLETE');
-            if (/(?:http\s*)?429|rate[_ -]?limit/.test(errorText)) stopReasons.push('RATE_LIMIT_429');
-            if (/time(?:d)?\s*out|timeout/.test(errorText)) stopReasons.push('TIMEOUT');
-            const decision = { level:Number(level), stop:stopReasons.length > 0, stop_reasons:stopReasons };
-            console.log(JSON.stringify(decision));
-            if (decision.stop) process.exit(1);
-            NODE
-            then
+            if ! node scripts/assert-concurrency-sweep-level.mjs \
+              --report "/tmp/concurrency-c${LEVEL}-report.json" \
+              --concurrency "$LEVEL"; then
               echo "Stopping sweep after unstable c${LEVEL}; higher load would only waste paid calls."
               break
             fi

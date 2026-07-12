@@ -12,6 +12,7 @@ import {
   metricRow,
   numberOrNull
 } from "./compare-concurrency-sweep.mjs";
+import { assessConcurrencySweepLevel } from "./assert-concurrency-sweep-level.mjs";
 
 assert.equal(numberOrNull(null), null);
 assert.equal(numberOrNull(undefined), null);
@@ -162,6 +163,16 @@ assert.equal(telemetryRow.provider_key_slot_imbalance, 0);
 const stableBaseline = evaluateRow(baselineRow, baselineRow);
 assert.equal(stableBaseline.stable, true);
 assert.equal(stableBaseline.sample_comparison_mode, "PAIRED");
+assert.equal(assessConcurrencySweepLevel(
+  reportFor({ concurrency: 1, cardsPerMinute: 1, writerP95: 38000 }),
+  1
+).stop, false);
+const failedLevel = assessConcurrencySweepLevel(
+  reportFor({ concurrency: 1, cardsPerMinute: 1, writerP95: 38000, technicalFailures: 1 }),
+  1
+);
+assert.equal(failedLevel.stop, true);
+assert.ok(failedLevel.stop_reasons.includes("TECHNICAL_SUCCESS_NOT_100_PERCENT"));
 
 const exhaustedHeadroom = evaluateRow({
   ...baselineRow,
@@ -231,5 +242,7 @@ assert.match(workflowSource, /--exclude-sealed-products/);
 assert.match(workflowSource, /REPORT_ARGS/);
 assert.match(workflowSource, /Stopping sweep after unstable/);
 assert.match(workflowSource, /EXECUTED_SWEEP_LEVELS/);
+assert.match(workflowSource, /assert-concurrency-sweep-level\.mjs/);
+assert.doesNotMatch(workflowSource, /LEVEL="\$LEVEL" node - <<'NODE'/);
 
 console.log("concurrency sweep tests passed");
