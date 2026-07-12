@@ -49,6 +49,7 @@ import {
   providerOptionsFromPayload,
   singleModelFastPathEnabled,
   ultraFastImageDetail,
+  ultraFastServiceTier,
   vectorEmbeddingPostProviderWaitMs,
   vectorEmbeddingWarmupOptions,
   vectorEmbeddingWarmupTimeoutMs
@@ -4743,6 +4744,7 @@ async function createOpenAiTitle(payload, selection, {
     responseProfile: ["v4_compact_l2", "v4_ultra_fast_l2"].includes(providerPromptMode) ? "compact_sparse_v1" : "standard",
     imageDetail: providerImageDetail,
     textVerbosity: ultraFastL2 ? "low" : null,
+    serviceTier: ultraFastL2 ? ultraFastServiceTier(providerOptions) : null,
     requestContext: openAiRequestContextFromPayload(initialPayload, {
       providerCallPurpose: "full_l2",
       titleStage: providerOptions.v4_title_stage_target || initialPayload.v4_title_stage_target || ""
@@ -4763,7 +4765,9 @@ async function createOpenAiTitle(payload, selection, {
     provider_prompt_chars: prompt.length,
     provider_input_image_count: Array.isArray(initialPayload.images) ? initialPayload.images.length : 0,
     provider_image_detail: providerResult.image_detail || "high",
-    provider_text_verbosity: providerResult.text_verbosity || null
+    provider_text_verbosity: providerResult.text_verbosity || null,
+    provider_requested_service_tier: providerResult.requested_service_tier || null,
+    provider_service_tier: providerResult.service_tier || null
   }));
   let preingestionRetrievalRefresh = null;
   let preingestionRetrievalAnchorFields = [];

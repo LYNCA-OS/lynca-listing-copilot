@@ -64,6 +64,11 @@ const healthyResult = {
   timing: context.timing,
   provider: "openai",
   model: "gpt-5-mini",
+  provider_response_profile: "compact_sparse_v1",
+  provider_image_detail: "low",
+  provider_text_verbosity: "low",
+  provider_requested_service_tier: "priority",
+  provider_service_tier: "priority",
   provider_token_diagnostics: { input_tokens: 100, output_tokens: 20, total_tokens: 120 },
   raw_provider_fields: fields,
   resolved_fields: fields,
@@ -93,6 +98,7 @@ assert.equal(healthyLedger.coverage.missing_required_node_count, 0);
 assert.equal(healthyLedger.field_flow.unexplained_resolution_drop_count, 0);
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "catalog_retrieval")?.output_count, 1);
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "provider")?.metrics.total_tokens, 120);
+assert.equal(healthyLedger.nodes.find((node) => node.node_id === "provider")?.metrics.service_tier, "priority");
 assert.equal(JSON.stringify(healthyLedger).includes("sk-secret-value"), false);
 
 const deadlineContext = createTimingContext({

@@ -16,7 +16,8 @@ import {
   postObservationCatalogVectorHedgeMs,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
-  ultraFastImageDetail
+  ultraFastImageDetail,
+  ultraFastServiceTier
 } from "../lib/listing/pipeline/provider-options.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
@@ -161,6 +162,10 @@ assert.equal(ultraFastImageDetail({}), "auto");
 assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "low" }), "low");
 assert.equal(ultraFastImageDetail({ v4UltraFastImageDetail: "HIGH" }), "high");
 assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "invalid" }), "auto");
+assert.equal(ultraFastServiceTier({}), null);
+assert.equal(ultraFastServiceTier({ v4_ultra_fast_service_tier: "priority" }), "priority");
+assert.equal(ultraFastServiceTier({ v4UltraFastServiceTier: "FLEX" }), "flex");
+assert.equal(ultraFastServiceTier({ v4_ultra_fast_service_tier: "invalid" }), null);
 
 assert.deepEqual(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision({
   preingestion_bundle_id: "bundle-1",
@@ -258,6 +263,7 @@ assert.equal(openAiRequest.url, "https://api.openai.com/v1/responses");
 assert.equal(openAiRequest.init.headers.authorization, "Bearer test-openai-key");
 const openAiBody = JSON.parse(openAiRequest.init.body);
 assert.equal(openAiBody.model, "gpt-4.1-mini-2025-04-14");
+assert.equal(openAiBody.store, false);
 assert.equal(openAiBody.temperature, 0);
 assert.equal(openAiBody.reasoning, undefined);
 assert.equal(openAiBody.text.verbosity, undefined);
@@ -347,6 +353,7 @@ const compactOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
   responseProfile: "compact_sparse_v1",
   imageDetail: "auto",
   textVerbosity: "low",
+  serviceTier: "priority",
   env: {
     ...env,
     OPENAI_LISTING_MODEL: "gpt-5-mini"
@@ -360,6 +367,7 @@ const compactOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
       json: async () => ({
         id: "resp_gpt5_compact_test",
         model: "gpt-5-mini",
+        service_tier: "priority",
         output_text: JSON.stringify({
           recognition_status: "CONFIRMED",
           field_values: {
@@ -400,12 +408,16 @@ const compactOpenAiBody = JSON.parse(compactOpenAiRequest.init.body);
 assert.equal(compactOpenAiBody.text.format.name, "listing_provider_evidence_compact");
 assert.equal(compactOpenAiBody.text.verbosity, "low");
 assert.equal(compactOpenAiBody.input[0].content[1].detail, "auto");
+assert.equal(compactOpenAiBody.store, false);
+assert.equal(compactOpenAiBody.service_tier, "priority");
 assert.equal(compactOpenAiBody.text.format.schema.properties.fields, undefined);
 assert.ok(compactOpenAiBody.text.format.schema.properties.field_values);
 assert.match(compactOpenAiBody.input[0].content[0].text, /compact sparse response note/i);
 assert.equal(compactOpenAiResult.response_profile, "compact_sparse_v1");
 assert.equal(compactOpenAiResult.image_detail, "auto");
 assert.equal(compactOpenAiResult.text_verbosity, "low");
+assert.equal(compactOpenAiResult.requested_service_tier, "priority");
+assert.equal(compactOpenAiResult.service_tier, "priority");
 assert.equal(compactOpenAiResult.parsed.fields.year, "2024-25");
 assert.equal(compactOpenAiResult.parsed.fields.print_run_number, "2/3");
 assert.deepEqual(compactOpenAiResult.parsed.fields.players, ["Lamine Yamal"]);

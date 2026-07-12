@@ -191,6 +191,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   compactL2 = false,
   ultraFastL2 = false,
   ultraFastImageDetail = "auto",
+  ultraFastServiceTier = "",
   disableIdentityCache = false
 } = {}) {
   const providerOptions = {
@@ -210,6 +211,9 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
     providerOptions.v4_ultra_fast_image_detail = ["low", "auto", "high"].includes(cleanText(ultraFastImageDetail).toLowerCase())
       ? cleanText(ultraFastImageDetail).toLowerCase()
       : "auto";
+    if (["auto", "default", "flex", "priority"].includes(cleanText(ultraFastServiceTier).toLowerCase())) {
+      providerOptions.v4_ultra_fast_service_tier = cleanText(ultraFastServiceTier).toLowerCase();
+    }
   }
   if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
   return {
@@ -603,6 +607,8 @@ function sessionL2Summary(statusPayload = {}) {
     provider_prompt_chars: providerDiagnostics.provider_prompt_chars ?? summary.provider_prompt_chars ?? null,
     provider_image_detail: summary.provider_image_detail || null,
     provider_text_verbosity: summary.provider_text_verbosity || null,
+    provider_requested_service_tier: summary.provider_requested_service_tier || null,
+    provider_service_tier: summary.provider_service_tier || null,
     identity_cache_hit: summary.identity_cache_hit === true,
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
@@ -689,6 +695,8 @@ function jobL2Summary(statusPayload = {}) {
     provider_prompt_chars: providerDiagnostics.provider_prompt_chars ?? summary.provider_prompt_chars ?? null,
     provider_image_detail: summary.provider_image_detail || null,
     provider_text_verbosity: summary.provider_text_verbosity || null,
+    provider_requested_service_tier: summary.provider_requested_service_tier || null,
+    provider_service_tier: summary.provider_service_tier || null,
     identity_cache_hit: summary.identity_cache_hit === true,
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
@@ -1127,6 +1135,7 @@ async function runOne({
   compactL2 = false,
   ultraFastL2 = false,
   ultraFastImageDetail = "auto",
+  ultraFastServiceTier = "",
   disableIdentityCache = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
@@ -1153,6 +1162,7 @@ async function runOne({
     compactL2,
     ultraFastL2,
     ultraFastImageDetail,
+    ultraFastServiceTier,
     disableIdentityCache
   });
   const prewarmPromise = prewarm
@@ -1781,6 +1791,7 @@ async function enqueueSpeculativeItem({
   compactL2,
   ultraFastL2,
   ultraFastImageDetail,
+  ultraFastServiceTier,
   disableIdentityCache,
   usePreingestion,
   preingestionSource,
@@ -1804,6 +1815,7 @@ async function enqueueSpeculativeItem({
       compactL2,
       ultraFastL2,
       ultraFastImageDetail,
+      ultraFastServiceTier,
       disableIdentityCache
     });
     const prewarmPromise = prewarm
@@ -2157,6 +2169,8 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     provider_prompt_chars: providerDiagnostics.provider_prompt_chars ?? summary.provider_prompt_chars ?? null,
     provider_image_detail: summary.provider_image_detail || null,
     provider_text_verbosity: summary.provider_text_verbosity || null,
+    provider_requested_service_tier: summary.provider_requested_service_tier || null,
+    provider_service_tier: summary.provider_service_tier || null,
     identity_cache_hit: summary.identity_cache_hit === true,
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
@@ -2429,6 +2443,16 @@ export function summarize(results = [], { runWallMs = null } = {}) {
         counts[key] = (counts[key] || 0) + 1;
         return counts;
       }, {}),
+      requested_service_tier_breakdown: results.reduce((counts, item) => {
+        const key = cleanText(item.provider_requested_service_tier || "missing") || "missing";
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }, {}),
+      service_tier_breakdown: results.reduce((counts, item) => {
+        const key = cleanText(item.provider_service_tier || "missing") || "missing";
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }, {}),
       prompt_chars_p50: quantile(results.map((item) => item.provider_prompt_chars), 0.5),
       prompt_chars_p95: quantile(results.map((item) => item.provider_prompt_chars), 0.95),
       key_pool_size_latest: [...results].reverse().find((item) => item.provider_key_pool_size)?.provider_key_pool_size || null,
@@ -2664,6 +2688,7 @@ export async function runV4EbaySmoke({
   compactL2 = false,
   ultraFastL2 = false,
   ultraFastImageDetail = "auto",
+  ultraFastServiceTier = "",
   disableIdentityCache = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
@@ -2738,6 +2763,7 @@ export async function runV4EbaySmoke({
           compactL2,
           ultraFastL2,
           ultraFastImageDetail,
+          ultraFastServiceTier,
           disableIdentityCache,
           usePreingestion,
           preingestionSource,
@@ -2776,6 +2802,7 @@ export async function runV4EbaySmoke({
           compactL2,
           ultraFastL2,
           ultraFastImageDetail,
+          ultraFastServiceTier,
           disableIdentityCache,
           usePreingestion,
           preingestionSource,
@@ -2850,6 +2877,7 @@ export async function runV4EbaySmoke({
     compact_l2_enabled: compactL2,
     ultra_fast_l2_enabled: ultraFastL2,
     ultra_fast_image_detail: ultraFastL2 ? ultraFastImageDetail : null,
+    ultra_fast_service_tier: ultraFastL2 ? ultraFastServiceTier || null : null,
     identity_cache_disabled: disableIdentityCache,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
@@ -2924,6 +2952,7 @@ export async function main(argv = process.argv, env = process.env) {
     compactL2: hasFlag(argv, "--compact-l2"),
     ultraFastL2: hasFlag(argv, "--ultra-fast-l2"),
     ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),
+    ultraFastServiceTier: cleanText(argValue(argv, "--ultra-service-tier", "")).toLowerCase(),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     preingestionSource: cleanText(argValue(argv, "--preingestion-source", "v4_ebay_smoke_preingestion")),

@@ -310,6 +310,8 @@ function providerRuntimeSummary(result = {}) {
     provider_prompt_mode: result.provider_prompt_mode || null,
     provider_prompt_chars: Number.isFinite(Number(result.provider_prompt_chars)) ? Number(result.provider_prompt_chars) : null,
     provider_text_verbosity: result.provider_text_verbosity || null,
+    provider_requested_service_tier: result.provider_requested_service_tier || null,
+    provider_service_tier: result.provider_service_tier || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,
     identity_cache_read_bypassed: result.identity_cache?.read_bypassed === true,
     identity_cache_write_reason: result.identity_cache?.write_reason || null,

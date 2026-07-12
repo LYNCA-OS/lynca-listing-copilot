@@ -27,6 +27,16 @@ on:
           - auto
           - low
           - high
+      ultra_service_tier:
+        description: "Ultra-fast OpenAI service tier"
+        type: choice
+        default: "unset"
+        options:
+          - unset
+          - priority
+          - default
+          - auto
+          - flex
 
 concurrency:
   group: provider-transport-ablation
@@ -115,6 +125,9 @@ jobs:
           EXTRA_FLAGS=(--compact-l2)
           if [[ "${{ inputs.transport_pair }}" == "compact_vs_ultra_fast" ]]; then
             EXTRA_FLAGS=(--ultra-fast-l2 --ultra-image-detail "${{ inputs.ultra_image_detail }}")
+            if [[ "${{ inputs.ultra_service_tier }}" != "unset" ]]; then
+              EXTRA_FLAGS+=(--ultra-service-tier "${{ inputs.ultra_service_tier }}")
+            fi
           fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
@@ -141,6 +154,7 @@ jobs:
           const expectedBaselineMode = pair === 'compact_vs_ultra_fast' ? 'v4_compact_l2' : 'fast_initial';
           const expectedCandidateMode = pair === 'compact_vs_ultra_fast' ? 'v4_ultra_fast_l2' : 'v4_compact_l2';
           const expectedCandidateDetail = pair === 'compact_vs_ultra_fast' ? '${{ inputs.ultra_image_detail }}' : 'high';
+          const expectedRequestedTier = pair === 'compact_vs_ultra_fast' ? '${{ inputs.ultra_service_tier }}' : 'unset';
           console.log(`paired=${comparison.complete_pair_count}/${comparison.paired_count}`);
           console.log(`writer_p50 standard=${comparison.baseline.writer_ready_p50_ms} compact=${comparison.compact.writer_ready_p50_ms} delta=${comparison.deltas.writer_ready_p50_fraction}`);
           console.log(`provider_p50 standard=${comparison.baseline.provider_latency_p50_ms} compact=${comparison.compact.provider_latency_p50_ms} delta=${comparison.deltas.provider_latency_p50_fraction}`);
@@ -154,6 +168,7 @@ jobs:
           if (Number(comparison.baseline.prompt_mode_breakdown?.[expectedBaselineMode] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
           if (Number(comparison.compact.prompt_mode_breakdown?.[expectedCandidateMode] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
           if (Number(comparison.compact.image_detail_breakdown?.[expectedCandidateDetail] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (expectedRequestedTier !== 'unset' && Number(comparison.compact.requested_service_tier_breakdown?.[expectedRequestedTier] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
           NODE
       - name: Upload sealed paired artifacts
         if: always()

@@ -82,6 +82,8 @@ function writerSafeSessionStatus(session = null, job = null) {
       provider_prompt_chars: Number.isFinite(Number(summary.provider_prompt_chars)) ? Number(summary.provider_prompt_chars) : null,
       provider_image_detail: summary.provider_image_detail || null,
       provider_text_verbosity: summary.provider_text_verbosity || null,
+      provider_requested_service_tier: summary.provider_requested_service_tier || null,
+      provider_service_tier: summary.provider_service_tier || null,
       identity_cache_hit: summary.identity_cache_hit === true,
       identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
       identity_cache_write_reason: summary.identity_cache_write_reason || null,

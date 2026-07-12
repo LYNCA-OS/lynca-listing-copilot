@@ -79,6 +79,8 @@ function transportSummary(report = {}, rows = []) {
     prompt_mode_breakdown: provider.prompt_mode_breakdown || {},
     image_detail_breakdown: provider.image_detail_breakdown || {},
     text_verbosity_breakdown: provider.text_verbosity_breakdown || {},
+    requested_service_tier_breakdown: provider.requested_service_tier_breakdown || {},
+    service_tier_breakdown: provider.service_tier_breakdown || {},
     prompt_chars_p50: provider.prompt_chars_p50 ?? null,
     prompt_chars_p95: provider.prompt_chars_p95 ?? null
   };
