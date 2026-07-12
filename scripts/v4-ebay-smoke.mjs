@@ -188,7 +188,8 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   forceL2Direct = false,
   modelOverride = "",
   enableL1 = false,
-  compactL2 = false
+  compactL2 = false,
+  disableIdentityCache = false
 } = {}) {
   const providerOptions = {
     enable_catalog_assist: true,
@@ -202,6 +203,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   };
   if (modelOverride) providerOptions.openai_listing_model_override = modelOverride;
   if (compactL2) providerOptions.v4_compact_l2_prompt = true;
+  if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
   return {
     asset_id: candidateId(item, index),
     source_feedback_id: item.source_feedback_id || item.source_record_id || null,
@@ -1101,6 +1103,7 @@ async function runOne({
   modelOverride = "",
   enableL1 = false,
   compactL2 = false,
+  disableIdentityCache = false,
   usePreingestion = false,
   speculative = false,
   thinkMs = 6000,
@@ -1118,7 +1121,13 @@ async function runOne({
     requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
     verificationCache
   });
-  const payload = payloadForItem(item, index, images, { forceL2Direct, modelOverride, enableL1, compactL2 });
+  const payload = payloadForItem(item, index, images, {
+    forceL2Direct,
+    modelOverride,
+    enableL1,
+    compactL2,
+    disableIdentityCache
+  });
   const prewarmPromise = prewarm
     ? postJson({
       baseUrl,
@@ -1705,6 +1714,9 @@ async function runOne({
     noncritical_persistence_status: l2.summary?.noncritical_persistence_status || null,
     noncritical_persistence_summary: l2.summary?.noncritical_persistence_summary || null,
     provider_diagnostics: finalProviderDiagnostics,
+    identity_cache_hit: l2.summary?.identity_cache_hit === true,
+    identity_cache_read_bypassed: l2.summary?.identity_cache_read_bypassed === true,
+    identity_cache_write_reason: l2.summary?.identity_cache_write_reason || null,
     l1_provider_diagnostics: l1ProviderDiagnostics,
     l2_provider_diagnostics: l2ProviderDiagnostics,
     v4_l2_timing: l2.summary?.v4_l2_timing || null,
@@ -1739,6 +1751,7 @@ async function enqueueSpeculativeItem({
   modelOverride,
   enableL1,
   compactL2,
+  disableIdentityCache,
   usePreingestion,
   requestTimeoutMs,
   verificationCache
@@ -1754,7 +1767,12 @@ async function enqueueSpeculativeItem({
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
       verificationCache
     });
-    const payload = payloadForItem(item, index, images, { modelOverride, enableL1, compactL2 });
+    const payload = payloadForItem(item, index, images, {
+      modelOverride,
+      enableL1,
+      compactL2,
+      disableIdentityCache
+    });
     const prewarmPromise = prewarm
       ? postJson({
         baseUrl,
@@ -2592,6 +2610,7 @@ export async function runV4EbaySmoke({
   modelOverride = "",
   enableL1 = false,
   compactL2 = false,
+  disableIdentityCache = false,
   usePreingestion = false,
   speculative = false,
   thinkMs = 6000,
@@ -2662,6 +2681,7 @@ export async function runV4EbaySmoke({
           modelOverride,
           enableL1,
           compactL2,
+          disableIdentityCache,
           usePreingestion,
           requestTimeoutMs,
           verificationCache
@@ -2696,6 +2716,7 @@ export async function runV4EbaySmoke({
           modelOverride,
           enableL1,
           compactL2,
+          disableIdentityCache,
           usePreingestion,
           speculative,
           thinkMs,
@@ -2766,6 +2787,7 @@ export async function runV4EbaySmoke({
     diagnostic_hydration: diagnosticHydration.metrics,
     prewarm_enabled: prewarm,
     compact_l2_enabled: compactL2,
+    identity_cache_disabled: disableIdentityCache,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
     speculative_mode: speculative,
@@ -2836,6 +2858,7 @@ export async function main(argv = process.argv, env = process.env) {
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),
     compactL2: hasFlag(argv, "--compact-l2"),
+    disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     speculative: hasFlag(argv, "--speculative"),
     thinkMs: Math.max(0, Math.trunc(numberArg(argv, "--think-ms", 6000))),

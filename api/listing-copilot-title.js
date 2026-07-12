@@ -1698,6 +1698,8 @@ async function createApprovedMemoryTitle(payload) {
 }
 
 async function createIdentityCacheTitle(payload) {
+  const providerOptions = providerOptionsFromPayload(payload);
+  if (optionFlag(providerOptions, "disable_identity_result_cache", false)) return null;
   if (!identityResultCacheReadEnabled() || !isSupabaseFeedbackConfigured()) return null;
 
   const startedAt = Date.now();
@@ -1724,6 +1726,20 @@ async function createIdentityCacheTitle(payload) {
 }
 
 async function withIdentityCacheWrite(result, payload) {
+  const providerOptions = providerOptionsFromPayload(payload);
+  if (optionFlag(providerOptions, "disable_identity_result_cache", false)) {
+    return {
+      ...result,
+      identity_cache: {
+        ...(result.identity_cache || {}),
+        cache_hit: false,
+        read_bypassed: true,
+        write_attempted: false,
+        write_saved: false,
+        write_reason: "identity_cache_bypassed_by_request"
+      }
+    };
+  }
   if (!identityResultCacheWriteEnabled() || !isSupabaseFeedbackConfigured()) {
     return {
       ...result,
@@ -1800,6 +1816,8 @@ async function withIdentityCacheWrite(result, payload) {
 }
 
 async function createIdentityInFlightKey(payload) {
+  const providerOptions = providerOptionsFromPayload(payload);
+  if (optionFlag(providerOptions, "disable_identity_result_cache", false)) return null;
   if (!identityInFlightCoalescingEnabled()) return null;
   if (!isSupabaseFeedbackConfigured()) return null;
 

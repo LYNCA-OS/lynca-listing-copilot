@@ -1,0 +1,136 @@
+name: provider-transport-ablation
+
+# Runs the same fresh, sealed, image-only cards through the standard and sparse
+# provider transports. Identity cache is disabled for both arms so the second
+# arm cannot inherit the first arm's answer.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Fresh paired cards"
+        default: "3"
+      model:
+        description: "Identical model for both arms"
+        default: "gpt-5-mini"
+
+concurrency:
+  group: provider-transport-ablation
+  cancel-in-progress: false
+
+jobs:
+  ablation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      API_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      RUN_ID: provider-transport-${{ github.run_id }}
+      BLIND_DIR: /tmp/lynca-provider-transport
+      DATASET_PATH: /tmp/provider-transport-dataset.json
+      SEALED_LABELS_PATH: /tmp/provider-transport-sealed-labels.jsonl
+      BASELINE_REPORT_PATH: /tmp/provider-transport-standard.json
+      COMPACT_REPORT_PATH: /tmp/provider-transport-compact.json
+      COMPARISON_REPORT_PATH: /tmp/provider-transport-comparison.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate production runtime
+        run: |
+          curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
+          node -e 'const h=require("/tmp/v4-health.json"); if(h.ready!==true) process.exit(1)'
+      - name: Prepare fresh sealed blind inputs once
+        run: |
+          node scripts/prepare-dcsports87-blind-eval.mjs \
+            --base-url "$API_BASE_URL" \
+            --out-dir "$BLIND_DIR" \
+            --run-id "$RUN_ID" \
+            --limit "${{ inputs.limit }}" \
+            --image-limit 2 \
+            --include-non-sports \
+            --exclude-answer-keys "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl"
+          node scripts/build-ebay-image-intake-dataset.mjs \
+            --blind-dir "$BLIND_DIR" \
+            --run-ids "$RUN_ID" \
+            --out "$DATASET_PATH" \
+            --sealed-labels-out "$SEALED_LABELS_PATH" \
+            --limit "${{ inputs.limit }}" \
+            --upload-images \
+            --progress \
+            --base-url "$API_BASE_URL"
+      - name: Prove both arms receive image-only inputs
+        run: |
+          node - <<'NODE'
+          const dataset = require(process.env.DATASET_PATH);
+          const items = Array.isArray(dataset.items) ? dataset.items : [];
+          const blind = items.length === Number('${{ inputs.limit }}')
+            && items.every((item) => !String(item.canonical_title || '').trim())
+            && items.every((item) => Object.keys(item.source_titles || {}).length === 0)
+            && items.every((item) => item.source_record?.seller_title_visible_to_model === false);
+          if (!blind) throw new Error('paired transport dataset is not blind');
+          NODE
+      - name: Run standard transport
+        run: |
+          node scripts/v4-ebay-smoke.mjs \
+            --dataset "$DATASET_PATH" \
+            --sealed-labels "$SEALED_LABELS_PATH" \
+            --limit "${{ inputs.limit }}" \
+            --concurrency 2 \
+            --queue --speculative --use-preingestion \
+            --disable-identity-cache \
+            --model "${{ inputs.model }}" \
+            --think-ms 0 \
+            --l2-wait-ms 120000 \
+            --out "$BASELINE_REPORT_PATH"
+      - name: Run compact sparse transport
+        run: |
+          node scripts/v4-ebay-smoke.mjs \
+            --dataset "$DATASET_PATH" \
+            --sealed-labels "$SEALED_LABELS_PATH" \
+            --limit "${{ inputs.limit }}" \
+            --concurrency 2 \
+            --queue --speculative --use-preingestion \
+            --disable-identity-cache --compact-l2 \
+            --model "${{ inputs.model }}" \
+            --think-ms 0 \
+            --l2-wait-ms 120000 \
+            --out "$COMPACT_REPORT_PATH"
+      - name: Compare paired outcomes
+        run: |
+          node scripts/compare-provider-transport-ablation.mjs \
+            --baseline "$BASELINE_REPORT_PATH" \
+            --compact "$COMPACT_REPORT_PATH" \
+            --out "$COMPARISON_REPORT_PATH"
+          node - <<'NODE'
+          const comparison = require(process.env.COMPARISON_REPORT_PATH);
+          console.log(`paired=${comparison.complete_pair_count}/${comparison.paired_count}`);
+          console.log(`writer_p50 standard=${comparison.baseline.writer_ready_p50_ms} compact=${comparison.compact.writer_ready_p50_ms} delta=${comparison.deltas.writer_ready_p50_fraction}`);
+          console.log(`provider_p50 standard=${comparison.baseline.provider_latency_p50_ms} compact=${comparison.compact.provider_latency_p50_ms} delta=${comparison.deltas.provider_latency_p50_fraction}`);
+          console.log(`tokens standard=${comparison.baseline.total_tokens_total} compact=${comparison.compact.total_tokens_total}`);
+          console.log(`weak_proxy recoveries=${comparison.recovery_count} regressions=${comparison.regression_count}`);
+          if (comparison.complete_pair_count !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (comparison.baseline.node_error_count !== 0 || comparison.compact.node_error_count !== 0) process.exit(1);
+          if (comparison.baseline.identity_cache_hit_count !== 0 || comparison.compact.identity_cache_hit_count !== 0) process.exit(1);
+          if (comparison.baseline.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (comparison.compact.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);
+          NODE
+      - name: Upload sealed paired artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: provider-transport-ablation
+          retention-days: 30
+          path: |
+            /tmp/provider-transport-dataset.json
+            /tmp/provider-transport-sealed-labels.jsonl
+            /tmp/provider-transport-standard.json
+            /tmp/provider-transport-compact.json
+            /tmp/provider-transport-comparison.json
+            /tmp/lynca-provider-transport/${{ env.RUN_ID }}/blind_dataset_manifest.json
