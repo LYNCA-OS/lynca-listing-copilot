@@ -122,6 +122,9 @@ Seller-title policy recall is a weak guardrail, not reviewed identity GT.
 | `29156242983` | 4 | 4/4 | 2.969 | 38.9s / 78.2s | 41.60s | 0 | 0 / 0 | — | guardrail only |
 | `29158872635` | 2 | 6/6 | 1.962 | 34.4s / 106.9s | 1.49s | 1 | 0 / 1* | 10,115.50 | 4/6 |
 | `29158872635` | 3 | 6/6 | **3.130** | 49.4s / 64.3s | 1.51s | **0** | **0 / 0** | **9,759.83** | **5/6** |
+| `29185731437` | 1 | 6/6 | 2.593 | 19.9s / 23.8s | 1.75s | 0 | 0 / 0 | 10,444.83 | 5/6 |
+| `29185731437` | **2** | **6/6** | **4.176** | 26.1s / 28.4s | **1.52s** | **0** | **0 / 0** | **10,073.17** | 5/6 |
+| `29185731437` | 3 | 5/6 | 3.802 | 15.5s / 34.1s | 1.80s | 0 | 1 / 1 | — | 2/6 |
 
 The first run exposed a lost post-enqueue wakeup when several browser requests
 collapsed into one short queue-kick lease. The follow-up wakeup fix reduced the
@@ -134,9 +137,16 @@ are retained in smoke reports. `*` The missing catalog node was the same retry
 dropping timing while retaining a complete catalog funnel; trace-backed
 execution is now reported as completed rather than falsely missing.
 
-**Decision:** production global/UI concurrency is 3, with two OpenAI keys and a
-per-key stable limit of 2. This is the measured knee: it won throughput in two
-independent rounds, used both key slots, and the confirmation run completed 6/6
-with zero retries, zero node errors, and lower tokens per card. Concurrency 4 is
-not enabled because its additional slot reduced throughput and amplified queue
-and writer tails in the first sweep.
+The 2026-07-12 sweep supersedes the earlier concurrency-3 decision. It ran on a
+new production commit with fresh, disjoint blind samples and full node-level
+instrumentation. Concurrency 2 increased correct technical throughput by 61.0%
+over concurrency 1 while remaining 6/6 complete. Concurrency 3 fell below the
+concurrency-2 throughput and produced one unrecovered structured-response
+failure. OpenAI request and token headroom remained above 99.8%, so the knee is
+an application/provider-tail stability limit, not an account rate-limit ceiling.
+
+**Current decision:** production global/UI/worker concurrency is **2**. Multiple
+API keys are a resilience and rotation pool; key count must not silently multiply
+global concurrency. The weak seller-title scores above are unpaired guardrails
+only and cannot be attributed causally to concurrency. A fresh 10-card
+concurrency-2 confirmation is required before the decision becomes final.

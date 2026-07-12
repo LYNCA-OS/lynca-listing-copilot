@@ -250,6 +250,46 @@ const mismatchedParallelNarrowingLedger = buildPipelineNodeLedger({
 });
 assert.deepEqual(mismatchedParallelNarrowingLedger.field_flow.unexplained_resolution_drop_fields, ["parallel_exact"]);
 
+const compositeParallelLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, parallel_exact: "Tie-Dye Prizm" },
+    resolved_fields: { ...fields, card_name: "Rookie Patch Auto Tie-Dye Prizm" },
+    rendered_fields: { fields: { ...fields, card_name: "Rookie Patch Auto Tie-Dye Prizm" } },
+    final_title: "2024 Panini Select Test Player Rookie Patch Auto Tie-Dye Prizm"
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-composite-parallel", images: [{}, {}] }
+});
+assert.equal(compositeParallelLedger.field_flow.unexplained_resolution_drop_count, 0);
+assert.equal(compositeParallelLedger.field_flow.composite_token_migration_count, 1);
+assert.equal(
+  compositeParallelLedger.field_flow.fields.find((row) => row.field_group === "parallel_exact")?.disposition,
+  "RETAINED_AS_COMPOSITE_TOKEN"
+);
+assert.equal(compositeParallelLedger.reconciliation.error_count, 0);
+assert.equal(
+  compositeParallelLedger.reconciliation.anomalies.find((item) => item.check_id === "field_flow_has_no_cross_bracket_composite_migration")?.severity,
+  "WARNING"
+);
+
+const titleOnlyParallelLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, parallel_exact: "Sapphire" },
+    resolved_fields: fields,
+    rendered_fields: { fields },
+    final_title: "2024 Topps Chrome Test Player Sapphire"
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-title-only-parallel", images: [{}, {}] }
+});
+assert.deepEqual(
+  titleOnlyParallelLedger.field_flow.unexplained_resolution_drop_fields,
+  ["parallel_exact"],
+  "a title token without a canonical composite destination must remain a real field-flow error"
+);
+
 const endToEndLedger = buildEndToEndNodeLedger({
   session: {
     l2_status: "READY",

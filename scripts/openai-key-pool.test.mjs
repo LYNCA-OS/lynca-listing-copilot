@@ -25,7 +25,7 @@ const pool = {
 assert.deepEqual(openAiApiKeyPool(pool), ["sk-a", "sk-b", "sk-c"]);
 assert.equal(openAiKeyPoolSize(pool), 3);
 assert.equal(openAiPerKeyStableConcurrency(pool), 2);
-assert.equal(openAiProviderGlobalConcurrency(pool), 6);
+assert.equal(openAiProviderGlobalConcurrency(pool), 2, "extra keys must add resilience without silently raising the measured global knee");
 assert.equal(openAiProviderGlobalConcurrency({ ...pool, OPENAI_PROVIDER_MAX_TOTAL_CONCURRENCY: "4" }), 4);
 assert.equal(openAiProviderGlobalConcurrency({ ...pool, OPENAI_PROVIDER_MAX_TOTAL_CONCURRENCY: "20" }), 6);
 

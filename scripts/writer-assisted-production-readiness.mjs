@@ -91,7 +91,7 @@ async function cloudChecks({ baseUrl, username, password }) {
     }),
     check("cloud_model_and_capacity", health.default_model === "gpt-5-mini"
       && Number(health.openai_pool?.key_pool_size || 0) >= 2
-      && Number(health.production_queue?.worker_claim_limit || 0) === 3, "Production uses GPT-5-mini with the measured three-job capacity knee.", {
+      && Number(health.production_queue?.worker_claim_limit || 0) === 2, "Production uses GPT-5-mini with the measured two-job throughput/stability knee.", {
       model: health.default_model || null,
       key_pool: health.openai_pool?.key_pool_size || 0,
       claim_limit: health.production_queue?.worker_claim_limit || null

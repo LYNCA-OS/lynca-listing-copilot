@@ -262,6 +262,7 @@ for (const failure of schemaFailures) {
     () => validateProviderEvidencePayload("openai_legacy", failure.payload),
     (error) => {
       assert.equal(error.code, "schema_validation_failed", failure.name);
+      assert.equal(error.retryable, true, `${failure.name}: a fresh provider response may recover once`);
       if (failure.expectedPath) {
         assert.equal(error.details.validation_errors[0].path, failure.expectedPath, failure.name);
       }

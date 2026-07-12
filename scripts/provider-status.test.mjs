@@ -93,7 +93,7 @@ assert.equal(response.body.execution_control.global_fair_drain_enabled, true);
 assert.equal(response.body.execution_control.queue_kick_dedup_ms, 1200);
 assert.equal(response.body.execution_control.provider_key_pool_size, 2);
 assert.equal(response.body.execution_control.per_key_stable_concurrency, 2);
-assert.equal(response.body.execution_control.global_provider_concurrency, 4);
+assert.equal(response.body.execution_control.global_provider_concurrency, 2, "multiple keys must not silently exceed the measured production knee");
 assert.doesNotMatch(JSON.stringify(response.body.execution_control), /test-openai-key/);
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-openai-key|test-service-role|example\.supabase/);
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-vector-token|vector\.worker\.test/);

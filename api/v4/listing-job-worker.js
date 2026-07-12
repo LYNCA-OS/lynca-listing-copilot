@@ -128,7 +128,7 @@ function laneProcessConcurrency(lane, payload = {}) {
     { min: 1, max: 96 }
   );
   const hardMax = positiveInteger(process.env.V4_JOB_WORKER_PROCESS_CONCURRENCY_MAX, 4, { min: 1, max: 96 });
-  return Math.min(requested, hardMax);
+  return Math.min(requested, hardMax, globalFallback);
 }
 
 function shouldDrainLoop(payload = {}) {

@@ -470,23 +470,23 @@ assert.equal(finalFail.saved, true);
 
 let schemaFailureBody = null;
 await failV4RecognitionJob({
-  job: { id: "v4job-schema-no-retry", attempt_count: 1, max_attempts: 2 },
+  job: { id: "v4job-schema-retry", attempt_count: 1, max_attempts: 2 },
   error: {
     message: "Provider response schema validation failed",
     code: "schema_validation_failed",
     http_status: 200,
-    retryable: false
+    retryable: true
   },
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
     schemaFailureBody = JSON.parse(request.body);
-    return jsonResponse([{ id: "v4job-schema-no-retry", status: "FAILED" }]);
+    return jsonResponse([{ id: "v4job-schema-retry", status: "RETRYING" }]);
   }
 });
-assert.equal(schemaFailureBody.status, "FAILED", "deterministic schema failures must not spend a second provider attempt");
-assert.equal(schemaFailureBody.error.retryable, false);
+assert.equal(schemaFailureBody.status, "RETRYING", "one fresh provider response may recover a malformed structured response");
+assert.equal(schemaFailureBody.error.retryable, true);
 assert.equal(schemaFailureBody.error.http_status, 200);
-assert.equal(schemaFailureBody.completed_at !== null, true);
+assert.equal(schemaFailureBody.completed_at, null);
 
 let hiddenL1FailureBody = null;
 await failV4RecognitionJob({

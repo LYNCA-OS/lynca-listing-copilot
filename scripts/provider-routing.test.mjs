@@ -647,7 +647,7 @@ assert.equal(providerServerConcurrencyLimit("openai_legacy", { OPENAI_PROVIDER_S
 assert.equal(providerServerConcurrencyLimit("openai_legacy", {
   OPENAI_API_KEY_POOL: "sk-a,sk-b,sk-c",
   OPENAI_PER_KEY_STABLE_CONCURRENCY: "2"
-}), 6);
+}), 2, "key-pool size must not silently raise production concurrency");
 assert.equal(providerServerConcurrencyLimit("unknown", { LISTING_PROVIDER_SERVER_CONCURRENCY: "3" }), 3);
 
 clearProviderConcurrencyForTests();
