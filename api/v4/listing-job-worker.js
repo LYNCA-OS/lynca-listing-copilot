@@ -33,6 +33,48 @@ function safeError(error) {
   return String(error?.message || error || "unknown_error").slice(0, 500);
 }
 
+function normalizedFailureToken(value) {
+  const token = String(value || "").trim();
+  if (!token || token.length > 80 || !/^[a-z0-9_.:-]+$/i.test(token)) return "";
+  return token.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toUpperCase();
+}
+
+export function v4JobFailureCode(response = {}) {
+  const body = response.body && typeof response.body === "object" ? response.body : {};
+  const providerResult = body.provider_result && typeof body.provider_result === "object"
+    ? body.provider_result
+    : {};
+  const explicitCode = [
+    body.error_code,
+    body.provider_error_code,
+    body.provider_error_type,
+    providerResult.error_code,
+    providerResult.provider_error_code,
+    providerResult.provider_error_type
+  ].map(normalizedFailureToken).find(Boolean);
+  if (explicitCode) return explicitCode;
+
+  const reason = [
+    body.message,
+    body.failure_reason,
+    providerResult.failure_reason,
+    providerResult.reason
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (reason.includes("schema validation")) return "SCHEMA_VALIDATION_FAILED";
+  if (reason.includes("response format") || reason.includes("invalid json") || reason.includes("json syntax")) {
+    return "RESPONSE_FORMAT_INVALID";
+  }
+  if (reason.includes("image input") && reason.includes("unsupported")) return "IMAGE_INPUT_UNSUPPORTED";
+  if (reason.includes("empty") || reason.includes("blocked")) return "EMPTY_OR_BLOCKED";
+  if (reason.includes("rate limit") || reason.includes("too many requests")) return "PROVIDER_RATE_LIMITED";
+  if (reason.includes("timeout") || reason.includes("timed out")) return "PROVIDER_TIMEOUT";
+  if (reason.includes("network")) return "PROVIDER_NETWORK_ERROR";
+
+  const httpStatus = Number(response.statusCode || 0);
+  if (httpStatus < 200 || httpStatus >= 300) return `HTTP_${httpStatus || "UNKNOWN"}`;
+  return "V4_RESULT_NOT_OK";
+}
+
 function headerValue(req, name) {
   const lower = String(name || "").toLowerCase();
   const value = req?.headers?.[lower] ?? req?.headers?.[name];
@@ -271,7 +313,8 @@ async function runJob(job, req) {
       || response.body?.provider_result?.provider_error_type
       || `v4_handler_failed_${response.statusCode}`;
     throw Object.assign(new Error(failureReason), {
-      status: response.statusCode,
+      code: v4JobFailureCode(response),
+      http_status: response.statusCode,
       body: response.body,
       latency_ms: latencyMs
     });
@@ -408,8 +451,8 @@ export default async function handler(req, res) {
             job,
             error: {
               message: safeError(error),
-              status: error?.status || null,
               code: error?.code || null,
+              http_status: error?.http_status || error?.status || null,
               retryable: error?.retryable,
               body: error?.body ? { message: error.body.message || null, ok: error.body.ok || false } : null
             },

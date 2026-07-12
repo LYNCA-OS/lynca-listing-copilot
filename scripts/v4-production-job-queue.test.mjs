@@ -19,7 +19,11 @@ import {
   v4JobTypes,
   v4JobStatuses
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
-import { payloadForV4ProductionJob, runWithV4JobLeaseHeartbeat } from "../api/v4/listing-job-worker.js";
+import {
+  payloadForV4ProductionJob,
+  runWithV4JobLeaseHeartbeat,
+  v4JobFailureCode
+} from "../api/v4/listing-job-worker.js";
 import { isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
@@ -254,6 +258,17 @@ const pulsesAfterCompletion = heartbeatPulses;
 await new Promise((resolve) => setTimeout(resolve, 12));
 assert.equal(heartbeatPulses, pulsesAfterCompletion, "heartbeat timer must stop when the job finishes");
 
+assert.equal(v4JobFailureCode({
+  statusCode: 200,
+  body: { ok: false, message: "Provider response schema validation failed: unknown field" }
+}), "SCHEMA_VALIDATION_FAILED", "a semantic failure returned over HTTP 200 must not be recorded as error code 200");
+assert.equal(v4JobFailureCode({
+  statusCode: 200,
+  body: { ok: false, provider_result: { provider_error_type: "response_format_invalid" } }
+}), "RESPONSE_FORMAT_INVALID");
+assert.equal(v4JobFailureCode({ statusCode: 429, body: { ok: false } }), "HTTP_429");
+assert.equal(v4JobFailureCode({ statusCode: 200, body: { ok: false } }), "V4_RESULT_NOT_OK");
+
 const kickRpcCalls = [];
 const kick = await tryAcquireV4QueueKick({
   scope: "global",
@@ -459,6 +474,7 @@ await failV4RecognitionJob({
   error: {
     message: "Provider response schema validation failed",
     code: "schema_validation_failed",
+    http_status: 200,
     retryable: false
   },
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
@@ -469,6 +485,7 @@ await failV4RecognitionJob({
 });
 assert.equal(schemaFailureBody.status, "FAILED", "deterministic schema failures must not spend a second provider attempt");
 assert.equal(schemaFailureBody.error.retryable, false);
+assert.equal(schemaFailureBody.error.http_status, 200);
 assert.equal(schemaFailureBody.completed_at !== null, true);
 
 let hiddenL1FailureBody = null;
