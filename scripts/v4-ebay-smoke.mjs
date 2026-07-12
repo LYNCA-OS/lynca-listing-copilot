@@ -189,6 +189,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   modelOverride = "",
   enableL1 = false,
   compactL2 = false,
+  ultraFastL2 = false,
   disableIdentityCache = false
 } = {}) {
   const providerOptions = {
@@ -203,6 +204,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   };
   if (modelOverride) providerOptions.openai_listing_model_override = modelOverride;
   if (compactL2) providerOptions.v4_compact_l2_prompt = true;
+  if (ultraFastL2) providerOptions.v4_ultra_fast_l2 = true;
   if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
   return {
     asset_id: candidateId(item, index),
@@ -589,9 +591,14 @@ function sessionL2Summary(statusPayload = {}) {
     noncritical_persistence_status: summary.noncritical_persistence_status || null,
     noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
     provider_diagnostics: providerDiagnostics,
-    provider_response_profile: providerDiagnostics.provider_response_profile || row.provider_response_profile || null,
-    provider_prompt_mode: providerDiagnostics.provider_prompt_mode || row.provider_prompt_mode || null,
-    provider_prompt_chars: providerDiagnostics.provider_prompt_chars ?? row.provider_prompt_chars ?? null,
+    provider_response_profile: providerDiagnostics.provider_response_profile || summary.provider_response_profile || null,
+    provider_prompt_mode: providerDiagnostics.provider_prompt_mode || summary.provider_prompt_mode || null,
+    provider_prompt_chars: providerDiagnostics.provider_prompt_chars ?? summary.provider_prompt_chars ?? null,
+    provider_image_detail: summary.provider_image_detail || null,
+    provider_text_verbosity: summary.provider_text_verbosity || null,
+    identity_cache_hit: summary.identity_cache_hit === true,
+    identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
+    identity_cache_write_reason: summary.identity_cache_write_reason || null,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
     output_tokens: providerDiagnostics.output_tokens,
@@ -670,6 +677,14 @@ function jobL2Summary(statusPayload = {}) {
     noncritical_persistence_status: summary.noncritical_persistence_status || null,
     noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
     provider_diagnostics: providerDiagnostics,
+    provider_response_profile: providerDiagnostics.provider_response_profile || summary.provider_response_profile || null,
+    provider_prompt_mode: providerDiagnostics.provider_prompt_mode || summary.provider_prompt_mode || null,
+    provider_prompt_chars: providerDiagnostics.provider_prompt_chars ?? summary.provider_prompt_chars ?? null,
+    provider_image_detail: summary.provider_image_detail || null,
+    provider_text_verbosity: summary.provider_text_verbosity || null,
+    identity_cache_hit: summary.identity_cache_hit === true,
+    identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
+    identity_cache_write_reason: summary.identity_cache_write_reason || null,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
     output_tokens: providerDiagnostics.output_tokens,
@@ -1103,6 +1118,7 @@ async function runOne({
   modelOverride = "",
   enableL1 = false,
   compactL2 = false,
+  ultraFastL2 = false,
   disableIdentityCache = false,
   usePreingestion = false,
   speculative = false,
@@ -1126,6 +1142,7 @@ async function runOne({
     modelOverride,
     enableL1,
     compactL2,
+    ultraFastL2,
     disableIdentityCache
   });
   const prewarmPromise = prewarm
@@ -1751,6 +1768,7 @@ async function enqueueSpeculativeItem({
   modelOverride,
   enableL1,
   compactL2,
+  ultraFastL2,
   disableIdentityCache,
   usePreingestion,
   requestTimeoutMs,
@@ -1771,6 +1789,7 @@ async function enqueueSpeculativeItem({
       modelOverride,
       enableL1,
       compactL2,
+      ultraFastL2,
       disableIdentityCache
     });
     const prewarmPromise = prewarm
@@ -2118,6 +2137,14 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     noncritical_persistence_status: summary.noncritical_persistence_status || null,
     noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
     provider_diagnostics: providerDiagnostics,
+    provider_response_profile: providerDiagnostics.provider_response_profile || summary.provider_response_profile || null,
+    provider_prompt_mode: providerDiagnostics.provider_prompt_mode || summary.provider_prompt_mode || null,
+    provider_prompt_chars: providerDiagnostics.provider_prompt_chars ?? summary.provider_prompt_chars ?? null,
+    provider_image_detail: summary.provider_image_detail || null,
+    provider_text_verbosity: summary.provider_text_verbosity || null,
+    identity_cache_hit: summary.identity_cache_hit === true,
+    identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
+    identity_cache_write_reason: summary.identity_cache_write_reason || null,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
     output_tokens: providerDiagnostics.output_tokens,
@@ -2377,6 +2404,16 @@ export function summarize(results = [], { runWallMs = null } = {}) {
         counts[key] = (counts[key] || 0) + 1;
         return counts;
       }, {}),
+      image_detail_breakdown: results.reduce((counts, item) => {
+        const key = cleanText(item.provider_image_detail || "missing") || "missing";
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }, {}),
+      text_verbosity_breakdown: results.reduce((counts, item) => {
+        const key = cleanText(item.provider_text_verbosity || "missing") || "missing";
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }, {}),
       prompt_chars_p50: quantile(results.map((item) => item.provider_prompt_chars), 0.5),
       prompt_chars_p95: quantile(results.map((item) => item.provider_prompt_chars), 0.95),
       key_pool_size_latest: [...results].reverse().find((item) => item.provider_key_pool_size)?.provider_key_pool_size || null,
@@ -2610,6 +2647,7 @@ export async function runV4EbaySmoke({
   modelOverride = "",
   enableL1 = false,
   compactL2 = false,
+  ultraFastL2 = false,
   disableIdentityCache = false,
   usePreingestion = false,
   speculative = false,
@@ -2681,6 +2719,7 @@ export async function runV4EbaySmoke({
           modelOverride,
           enableL1,
           compactL2,
+          ultraFastL2,
           disableIdentityCache,
           usePreingestion,
           requestTimeoutMs,
@@ -2716,6 +2755,7 @@ export async function runV4EbaySmoke({
           modelOverride,
           enableL1,
           compactL2,
+          ultraFastL2,
           disableIdentityCache,
           usePreingestion,
           speculative,
@@ -2787,6 +2827,7 @@ export async function runV4EbaySmoke({
     diagnostic_hydration: diagnosticHydration.metrics,
     prewarm_enabled: prewarm,
     compact_l2_enabled: compactL2,
+    ultra_fast_l2_enabled: ultraFastL2,
     identity_cache_disabled: disableIdentityCache,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
@@ -2858,6 +2899,7 @@ export async function main(argv = process.argv, env = process.env) {
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),
     compactL2: hasFlag(argv, "--compact-l2"),
+    ultraFastL2: hasFlag(argv, "--ultra-fast-l2"),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     speculative: hasFlag(argv, "--speculative"),

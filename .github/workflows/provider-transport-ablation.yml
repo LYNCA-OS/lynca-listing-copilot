@@ -12,6 +12,13 @@ on:
       model:
         description: "Identical model for both arms"
         default: "gpt-5-mini"
+      transport_pair:
+        description: "Paired transport profiles"
+        type: choice
+        default: "standard_vs_compact"
+        options:
+          - standard_vs_compact
+          - compact_vs_ultra_fast
 
 concurrency:
   group: provider-transport-ablation
@@ -76,8 +83,12 @@ jobs:
             && items.every((item) => item.source_record?.seller_title_visible_to_model === false);
           if (!blind) throw new Error('paired transport dataset is not blind');
           NODE
-      - name: Run standard transport
+      - name: Run baseline transport
         run: |
+          EXTRA_FLAGS=()
+          if [[ "${{ inputs.transport_pair }}" == "compact_vs_ultra_fast" ]]; then
+            EXTRA_FLAGS+=(--compact-l2)
+          fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
             --sealed-labels "$SEALED_LABELS_PATH" \
@@ -85,19 +96,25 @@ jobs:
             --concurrency 2 \
             --queue --speculative --use-preingestion \
             --disable-identity-cache \
+            "${EXTRA_FLAGS[@]}" \
             --model "${{ inputs.model }}" \
             --think-ms 0 \
             --l2-wait-ms 120000 \
             --out "$BASELINE_REPORT_PATH"
-      - name: Run compact sparse transport
+      - name: Run candidate transport
         run: |
+          EXTRA_FLAGS=(--compact-l2)
+          if [[ "${{ inputs.transport_pair }}" == "compact_vs_ultra_fast" ]]; then
+            EXTRA_FLAGS=(--ultra-fast-l2)
+          fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
             --sealed-labels "$SEALED_LABELS_PATH" \
             --limit "${{ inputs.limit }}" \
             --concurrency 2 \
             --queue --speculative --use-preingestion \
-            --disable-identity-cache --compact-l2 \
+            --disable-identity-cache \
+            "${EXTRA_FLAGS[@]}" \
             --model "${{ inputs.model }}" \
             --think-ms 0 \
             --l2-wait-ms 120000 \
@@ -110,6 +127,9 @@ jobs:
             --out "$COMPARISON_REPORT_PATH"
           node - <<'NODE'
           const comparison = require(process.env.COMPARISON_REPORT_PATH);
+          const pair = '${{ inputs.transport_pair }}';
+          const expectedBaselineMode = pair === 'compact_vs_ultra_fast' ? 'v4_compact_l2' : 'fast_initial';
+          const expectedCandidateMode = pair === 'compact_vs_ultra_fast' ? 'v4_ultra_fast_l2' : 'v4_compact_l2';
           console.log(`paired=${comparison.complete_pair_count}/${comparison.paired_count}`);
           console.log(`writer_p50 standard=${comparison.baseline.writer_ready_p50_ms} compact=${comparison.compact.writer_ready_p50_ms} delta=${comparison.deltas.writer_ready_p50_fraction}`);
           console.log(`provider_p50 standard=${comparison.baseline.provider_latency_p50_ms} compact=${comparison.compact.provider_latency_p50_ms} delta=${comparison.deltas.provider_latency_p50_fraction}`);
@@ -120,6 +140,8 @@ jobs:
           if (comparison.baseline.identity_cache_hit_count !== 0 || comparison.compact.identity_cache_hit_count !== 0) process.exit(1);
           if (comparison.baseline.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);
           if (comparison.compact.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (Number(comparison.baseline.prompt_mode_breakdown?.[expectedBaselineMode] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (Number(comparison.compact.prompt_mode_breakdown?.[expectedCandidateMode] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
           NODE
       - name: Upload sealed paired artifacts
         if: always()

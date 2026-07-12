@@ -80,6 +80,8 @@ function writerSafeSessionStatus(session = null, job = null) {
       provider_response_profile: summary.provider_response_profile || "standard",
       provider_prompt_mode: summary.provider_prompt_mode || null,
       provider_prompt_chars: Number.isFinite(Number(summary.provider_prompt_chars)) ? Number(summary.provider_prompt_chars) : null,
+      provider_image_detail: summary.provider_image_detail || null,
+      provider_text_verbosity: summary.provider_text_verbosity || null,
       identity_cache_hit: summary.identity_cache_hit === true,
       identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
       identity_cache_write_reason: summary.identity_cache_write_reason || null,

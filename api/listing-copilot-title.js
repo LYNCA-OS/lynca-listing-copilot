@@ -57,6 +57,7 @@ import {
   compactL2PromptEnabled,
   l1FastScoutHintPromptSection,
   providerMinimalOutputShape,
+  ultraFastL2Enabled,
   vectorCandidatePromptSection
 } from "../lib/listing/pipeline/provider-prompt.mjs";
 import {
@@ -258,6 +259,35 @@ export function serialNumeratorVerificationFromPreingestion(payload = {}, rendez
   if (verification.conflict) return false;
   if (rendezvous?.job_count > 0) return false;
   return null;
+}
+
+export function preingestionEvidenceRefreshDecision(payload = {}, rendezvous = null) {
+  const loadedPatchCount = Array.isArray(payload.preingestion_evidence_patches)
+    ? payload.preingestion_evidence_patches.length
+    : 0;
+  const bundleId = String(payload.preingestion_bundle_id || payload.preingestionBundleId || "").trim();
+  if (!bundleId) {
+    return {
+      skip: true,
+      reason: "preingestion_not_requested",
+      loaded_patch_count: loadedPatchCount,
+      rendezvous_patch_count: 0
+    };
+  }
+
+  const rendezvousPatchCount = Number.isFinite(Number(rendezvous?.patch_count))
+    ? Number(rendezvous.patch_count)
+    : 0;
+  const settledWithoutWorker = ["NOT_REQUESTED", "UNCONFIGURED"].includes(
+    String(rendezvous?.status || "").trim().toUpperCase()
+  );
+  const noPatchDelta = rendezvousPatchCount <= loadedPatchCount;
+  return {
+    skip: noPatchDelta && (rendezvous?.terminal === true || settledWithoutWorker),
+    reason: noPatchDelta ? "no_new_ocr_patches" : "new_ocr_patches_available",
+    loaded_patch_count: loadedPatchCount,
+    rendezvous_patch_count: rendezvousPatchCount
+  };
 }
 
 function ocrPatchPrintRunConfidence(patch = {}, expectedPrintRun = "") {
@@ -4693,18 +4723,23 @@ async function createOpenAiTitle(payload, selection, {
   };
   if (promptCandidatePacket) initialPayload.vectorCandidatePacket = promptCandidatePacket;
   const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
-  const providerPromptMode = compactL2PromptEnabled(initialPayload, process.env)
-    ? "v4_compact_l2"
-    : envFlag(process.env, "ENABLE_FAST_INITIAL_PROVIDER_PROMPT", true)
-      ? "fast_initial"
-      : "full_listing";
+  const ultraFastL2 = ultraFastL2Enabled(initialPayload, process.env);
+  const providerPromptMode = ultraFastL2
+    ? "v4_ultra_fast_l2"
+    : compactL2PromptEnabled(initialPayload, process.env)
+      ? "v4_compact_l2"
+      : envFlag(process.env, "ENABLE_FAST_INITIAL_PROVIDER_PROMPT", true)
+        ? "fast_initial"
+        : "full_listing";
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
     prompt,
     shardKey: initialPayload.recognition_session_id || initialPayload.asset_id || initialPayload.assetId || "",
     preferredKeySlot: initialPayload.openai_preferred_key_slot || initialPayload.provider_key_slot_hint || null,
     modelOverride: providerModelOverrideFromOptions(providerOptions),
-    responseProfile: providerPromptMode === "v4_compact_l2" ? "compact_sparse_v1" : "standard",
+    responseProfile: ["v4_compact_l2", "v4_ultra_fast_l2"].includes(providerPromptMode) ? "compact_sparse_v1" : "standard",
+    imageDetail: ultraFastL2 ? "auto" : "high",
+    textVerbosity: ultraFastL2 ? "low" : null,
     requestContext: openAiRequestContextFromPayload(initialPayload, {
       providerCallPurpose: "full_l2",
       titleStage: providerOptions.v4_title_stage_target || initialPayload.v4_title_stage_target || ""
@@ -4724,7 +4759,8 @@ async function createOpenAiTitle(payload, selection, {
     provider_prompt_mode: providerPromptMode,
     provider_prompt_chars: prompt.length,
     provider_input_image_count: Array.isArray(initialPayload.images) ? initialPayload.images.length : 0,
-    provider_image_detail: "high"
+    provider_image_detail: providerResult.image_detail || "high",
+    provider_text_verbosity: providerResult.text_verbosity || null
   }));
   let preingestionRetrievalRefresh = null;
   let preingestionRetrievalAnchorFields = [];
@@ -4990,17 +5026,27 @@ async function createOpenAiTitle(payload, selection, {
       critical_fields_settled: preingestionOcrRendezvous?.critical_fields_settled === true
     }
   });
-  const preingestionEvidenceRefresh = await refreshPreIngestionEvidencePatches(initialPayload, {
-    timingContext,
-    fetchImpl: globalThis.fetch
-  }).catch((error) => ({
-    refreshed: false,
-    reason: String(error?.message || "preingestion_evidence_refresh_failed").slice(0, 160),
-    patch_count: Array.isArray(initialPayload.preingestion_evidence_patches)
-      ? initialPayload.preingestion_evidence_patches.length
-      : 0,
+  const evidenceRefreshDecision = preingestionEvidenceRefreshDecision(
+    initialPayload,
+    preingestionOcrRendezvous
+  );
+  const preingestionEvidenceRefresh = evidenceRefreshDecision.skip
+    ? {
+      refreshed: false,
+      reason: evidenceRefreshDecision.reason,
+      patch_count: evidenceRefreshDecision.loaded_patch_count,
+      raw_patch_count: evidenceRefreshDecision.loaded_patch_count,
       added_patch_count: 0
-  }));
+    }
+    : await refreshPreIngestionEvidencePatches(initialPayload, {
+      timingContext,
+      fetchImpl: globalThis.fetch
+    }).catch((error) => ({
+      refreshed: false,
+      reason: String(error?.message || "preingestion_evidence_refresh_failed").slice(0, 160),
+      patch_count: evidenceRefreshDecision.loaded_patch_count,
+      added_patch_count: 0
+    }));
   initialPayload.serial_numerator_verified = serialNumeratorVerificationFromPreingestion(
     initialPayload,
     preingestionOcrRendezvous
@@ -5084,6 +5130,7 @@ export const __listingCopilotTitleTestHooks = {
   finalResolvedFieldsForPresentation,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
+  preingestionEvidenceRefreshDecision,
   preingestionEvidenceDocumentFromPayload,
   providerOptionsFromPayload,
   postObservationRetrievalCriticalPathBudgetMs,

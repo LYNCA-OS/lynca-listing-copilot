@@ -145,6 +145,8 @@ assert.equal(postObservationCatalogVectorHedgeMs({}, {}), 900);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 250 }), 250);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 20 }), 100);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 9000 }), 5000);
+assert.equal(postObservationCatalogVectorHedgeMs({}, { v4_ultra_fast_l2: true }), 100);
+assert.equal(postObservationCatalogVectorHedgeMs({ ENABLE_V4_ULTRA_FAST_L2: "true" }, {}), 100);
 assert.equal(postObservationRetrievalDeadlineEnabled({}, {}), true);
 assert.equal(postObservationRetrievalDeadlineEnabled({ ENABLE_POST_OBSERVATION_RETRIEVAL_DEADLINE: "false" }, {}), false);
 assert.equal(postObservationRetrievalDeadlineEnabled({}, { enable_post_observation_retrieval_deadline: false }), false);
@@ -152,6 +154,38 @@ assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, {}), 1800);
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation_retrieval_critical_path_budget_ms: 900 }), 900);
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation_retrieval_critical_path_budget_ms: 20 }), 250);
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation_retrieval_critical_path_budget_ms: 20000 }), 10000);
+assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { v4_ultra_fast_l2: true }), 250);
+assert.equal(postObservationRetrievalCriticalPathBudgetMs({ ENABLE_V4_ULTRA_FAST_L2: "true" }, {}), 250);
+
+assert.deepEqual(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision({
+  preingestion_bundle_id: "bundle-1",
+  preingestion_evidence_patches: [{ field: "serial_number" }]
+}, {
+  status: "TERMINAL",
+  terminal: true,
+  patch_count: 1
+}), {
+  skip: true,
+  reason: "no_new_ocr_patches",
+  loaded_patch_count: 1,
+  rendezvous_patch_count: 1
+});
+assert.equal(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision({
+  preingestion_bundle_id: "bundle-1",
+  preingestion_evidence_patches: [{ field: "serial_number" }]
+}, {
+  status: "TIMEOUT",
+  terminal: false,
+  patch_count: 1
+}).skip, false, "a timed-out OCR worker may still publish a late patch, so final refresh stays enabled");
+assert.equal(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision({
+  preingestion_bundle_id: "bundle-1",
+  preingestion_evidence_patches: []
+}, {
+  status: "TERMINAL",
+  terminal: true,
+  patch_count: 1
+}).skip, false, "a terminal worker with a new patch must still hydrate evidence");
 
 const deadlineProbeStartedAt = Date.now();
 const deadlineProbe = await __listingCopilotTitleTestHooks.collectPromiseEntriesWithinBudget([
@@ -306,6 +340,8 @@ const compactOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
   images: dataUrlImages,
   prompt: "Return compact sparse JSON.",
   responseProfile: "compact_sparse_v1",
+  imageDetail: "auto",
+  textVerbosity: "low",
   env: {
     ...env,
     OPENAI_LISTING_MODEL: "gpt-5-mini"
@@ -357,10 +393,14 @@ const compactOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
 });
 const compactOpenAiBody = JSON.parse(compactOpenAiRequest.init.body);
 assert.equal(compactOpenAiBody.text.format.name, "listing_provider_evidence_compact");
+assert.equal(compactOpenAiBody.text.verbosity, "low");
+assert.equal(compactOpenAiBody.input[0].content[1].detail, "auto");
 assert.equal(compactOpenAiBody.text.format.schema.properties.fields, undefined);
 assert.ok(compactOpenAiBody.text.format.schema.properties.field_values);
 assert.match(compactOpenAiBody.input[0].content[0].text, /compact sparse response note/i);
 assert.equal(compactOpenAiResult.response_profile, "compact_sparse_v1");
+assert.equal(compactOpenAiResult.image_detail, "auto");
+assert.equal(compactOpenAiResult.text_verbosity, "low");
 assert.equal(compactOpenAiResult.parsed.fields.year, "2024-25");
 assert.equal(compactOpenAiResult.parsed.fields.print_run_number, "2/3");
 assert.deepEqual(compactOpenAiResult.parsed.fields.players, ["Lamine Yamal"]);

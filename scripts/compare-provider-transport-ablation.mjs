@@ -77,6 +77,8 @@ function transportSummary(report = {}, rows = []) {
     identity_cache_bypassed_count: rows.filter((row) => row.identity_cache_read_bypassed === true).length,
     response_profile_breakdown: provider.response_profile_breakdown || {},
     prompt_mode_breakdown: provider.prompt_mode_breakdown || {},
+    image_detail_breakdown: provider.image_detail_breakdown || {},
+    text_verbosity_breakdown: provider.text_verbosity_breakdown || {},
     prompt_chars_p50: provider.prompt_chars_p50 ?? null,
     prompt_chars_p95: provider.prompt_chars_p95 ?? null
   };

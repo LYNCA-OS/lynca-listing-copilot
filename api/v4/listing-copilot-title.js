@@ -309,6 +309,7 @@ function providerRuntimeSummary(result = {}) {
     provider_response_profile: result.provider_response_profile || "standard",
     provider_prompt_mode: result.provider_prompt_mode || null,
     provider_prompt_chars: Number.isFinite(Number(result.provider_prompt_chars)) ? Number(result.provider_prompt_chars) : null,
+    provider_text_verbosity: result.provider_text_verbosity || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,
     identity_cache_read_bypassed: result.identity_cache?.read_bypassed === true,
     identity_cache_write_reason: result.identity_cache?.write_reason || null,
