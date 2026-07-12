@@ -304,7 +304,9 @@ export default async function handler(req, res) {
           provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
           provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
           provider_capacity: Number(job.queue_tags?.provider_capacity || 0) || null,
+          provider_key_count: Number(job.queue_tags?.provider_key_count || 0) || null,
           provider_per_key_concurrency: Number(job.queue_tags?.provider_per_key_concurrency || 0) || null,
+          provider_key_assignment: job.queue_tags?.provider_key_assignment || null,
           provider_capacity_lease_owner: job.queue_tags?.provider_capacity_lease_owner || null,
           provider_capacity_leased_at: job.queue_tags?.provider_capacity_leased_at || null,
           paired_l1_released_at: pairedL1ReleasedAt

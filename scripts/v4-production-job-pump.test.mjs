@@ -201,6 +201,15 @@ assert.match(executionControlMigration, /for update of jobs skip locked/);
 assert.match(executionControlMigration, /release_v4_provider_capacity_for_job/);
 assert.match(executionControlMigration, /try_acquire_v4_queue_kick/);
 
+const balancedCapacityMigration = readFileSync(new URL("../supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql", import.meta.url), "utf8");
+assert.match(balancedCapacityMigration, /claim_v4_recognition_jobs_with_balanced_capacity/);
+assert.match(balancedCapacityMigration, /p_provider_key_count integer default 1/);
+assert.match(balancedCapacityMigration, /\(\(slot_no - 1\) % provider_key_count\) \+ 1/);
+assert.match(balancedCapacityMigration, /least\([\s\S]*provider_key_count \* per_key_concurrency/);
+assert.match(balancedCapacityMigration, /'provider_key_assignment', 'balanced_round_robin_v1'/);
+assert.match(balancedCapacityMigration, /for update of jobs skip locked/);
+assert.match(balancedCapacityMigration, /revoke all on function public\.claim_v4_recognition_jobs_with_balanced_capacity/);
+
 const heartbeatSecurityMigration = readFileSync(new URL("../supabase/migrations/20260711194540_harden_public_function_security_and_queue_heartbeat.sql", import.meta.url), "utf8");
 assert.match(heartbeatSecurityMigration, /create or replace function public\.heartbeat_v4_recognition_job/);
 assert.match(heartbeatSecurityMigration, /jobs\.status = 'RUNNING'/);

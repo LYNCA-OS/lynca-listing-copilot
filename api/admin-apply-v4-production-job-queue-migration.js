@@ -7,7 +7,8 @@ const migrationPaths = [
   "supabase/migrations/20260707122154_v4_production_job_queue.sql",
   "supabase/migrations/20260707133128_v4_queue_interactive_background_lanes.sql",
   "supabase/migrations/20260708043000_v4_queue_reclaim_expired_running_jobs.sql",
-  "supabase/migrations/20260710055802_v4_execution_control_plane_v1.sql"
+  "supabase/migrations/20260710055802_v4_execution_control_plane_v1.sql",
+  "supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `
@@ -189,6 +190,14 @@ async function verify(client) {
         from pg_proc p
         join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'public'
+          and p.proname = 'claim_v4_recognition_jobs_with_balanced_capacity'
+          and p.pronargs = 9
+      ) as balanced_capacity_claim_rpc,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
           and p.proname = 'release_v4_provider_capacity_for_job'
           and p.pronargs = 2
       ) as capacity_release_rpc,
@@ -227,15 +236,15 @@ async function verifyExecutionControlBehavior(client) {
     `, [firstBatchFirstJobId, firstBatchSecondJobId, secondBatchJobId, `batch_a_${suffix}`, `batch_b_${suffix}`, tenantId]);
     const claim = await client.query(`
       select id, status, queue_tags
-      from public.claim_v4_recognition_jobs_with_capacity(
-        2, $1, 60, 'background', $2, 'migration_probe', 2, 1
+      from public.claim_v4_recognition_jobs_with_balanced_capacity(
+        2, $1, 60, 'background', $2, 'migration_probe', 2, 2, 2
       )
     `, [workerId, tenantId]);
     const claimedIds = new Set(claim.rows.map((row) => row.id));
     const blockedByCapacity = await client.query(`
       select id
-      from public.claim_v4_recognition_jobs_with_capacity(
-        1, $1, 60, 'background', $2, 'migration_probe', 2, 1
+      from public.claim_v4_recognition_jobs_with_balanced_capacity(
+        1, $1, 60, 'background', $2, 'migration_probe', 2, 2, 2
       )
     `, [`${workerId}_overflow`, tenantId]);
     let releasedCount = 0;
@@ -255,11 +264,18 @@ async function verifyExecutionControlBehavior(client) {
       "select public.try_acquire_v4_queue_kick($1, $2, 500) as acquired",
       [kickScope, `${workerId}_duplicate`]
     );
+    const assignedKeySlots = new Set(
+      claim.rows.map((row) => Number(row.queue_tags?.provider_key_slot || 0))
+    );
     return {
       claim_ok: claim.rows.length === 2
         && claim.rows.every((row) => row.status === "RUNNING")
         && claim.rows.every((row) => Number(row.queue_tags?.provider_capacity_slot || 0) > 0)
         && claim.rows.every((row) => Number(row.queue_tags?.provider_key_slot || 0) > 0),
+      balanced_key_assignment_ok: assignedKeySlots.size === 2
+        && assignedKeySlots.has(1)
+        && assignedKeySlots.has(2)
+        && claim.rows.every((row) => row.queue_tags?.provider_key_assignment === "balanced_round_robin_v1"),
       fair_batch_claim_ok: claimedIds.has(firstBatchFirstJobId)
         && claimedIds.has(secondBatchJobId)
         && !claimedIds.has(firstBatchSecondJobId),
@@ -323,9 +339,11 @@ export default async function handler(req, res) {
       && verification.l1_session_column
       && verification.provider_capacity_table
       && verification.capacity_claim_rpc
+      && verification.balanced_capacity_claim_rpc
       && verification.capacity_release_rpc
       && verification.queue_kick_rpc
       && behavior.claim_ok
+      && behavior.balanced_key_assignment_ok
       && behavior.fair_batch_claim_ok
       && behavior.capacity_bound_ok
       && behavior.release_ok

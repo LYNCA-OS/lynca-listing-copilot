@@ -31,6 +31,7 @@ import {
   mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
+  summarize as summarizeSmoke,
   summaryHasVisibleL2Title
 } from "./v4-ebay-smoke.mjs";
 
@@ -68,7 +69,17 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
     timing: {
       worker_queue_wait_ms: 125,
       worker_processing_ms: 22500,
-      completion_payload_sanitized_nul_count: 1
+      completion_payload_sanitized_nul_count: 1,
+      writer_ready_capacity_release: {
+        released: true,
+        release_boundary: "writer_ready_atomic"
+      }
+    },
+    execution_control: {
+      provider_capacity_slot: 1,
+      provider_capacity: 2,
+      provider_key_count: 2,
+      provider_key_assignment: "balanced_round_robin_v1"
     },
     end_to_end_node_ledger: { coverage: { missing_required_node_count: 0 }, nodes: [] },
     session: {
@@ -92,6 +103,33 @@ assert.equal(hydratedDiagnostic.worker_processing_ms, 22500);
 assert.equal(hydratedDiagnostic.input_tokens, 99);
 assert.equal(hydratedDiagnostic.pipeline_node_ledger.coverage.missing_required_node_count, 0);
 assert.equal(hydratedDiagnostic.preingestion_ocr_rendezvous.status, "EVIDENCE_READY");
+assert.equal(hydratedDiagnostic.writer_ready_capacity_release_mode, "writer_ready_atomic");
+assert.equal(hydratedDiagnostic.provider_key_count, 2);
+assert.equal(hydratedDiagnostic.provider_key_assignment, "balanced_round_robin_v1");
+
+const speedSmokeSummary = summarizeSmoke([{
+  ok: true,
+  writer_ready_capacity_release: { released: true },
+  writer_ready_capacity_release_mode: "writer_ready_atomic",
+  provider_key_assignment: "balanced_round_robin_v1",
+  pipeline_node_ledger: {
+    nodes: [],
+    coverage: { missing_required_node_count: 0 },
+    reconciliation: {
+      anomaly_count: 1,
+      error_count: 1,
+      warning_count: 0,
+      anomalies: [{
+        check_id: "critical_field_flow_has_no_silent_drop",
+        severity: "ERROR"
+      }]
+    }
+  }
+}]);
+assert.equal(speedSmokeSummary.pipeline_node_observability.transport_error_count, 0);
+assert.equal(speedSmokeSummary.pipeline_node_observability.field_quality_error_count, 1);
+assert.equal(speedSmokeSummary.writer_ready_capacity_atomic_count, 1);
+assert.equal(speedSmokeSummary.provider_key_assignment_breakdown.balanced_round_robin_v1, 1);
 
 for (const code of ["PA-ANT", "83T-6", "OP01-001", "CT14-EN001", "EN001", "201/165", "PAU", "SV2A 201/165"]) {
   assert.equal(normalizePrintedCardCodeForFields(code), code, `${code} should remain a valid compact printed code`);
@@ -165,6 +203,7 @@ const atomicNoncriticalMigrationSource = await readFile("supabase/migrations/202
 const atomicNoncriticalMigrationApiSource = await readFile("api/admin-apply-v4-noncritical-persistence-migration.js", "utf8");
 const writerReadyCapacityMigrationSource = await readFile("supabase/migrations/20260712153000_atomic_v4_writer_ready_capacity_release.sql", "utf8");
 const writerReadyCapacityMigrationApiSource = await readFile("api/admin-apply-v4-writer-ready-capacity-migration.js", "utf8");
+const balancedProviderKeyMigrationSource = await readFile("supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql", "utf8");
 const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-production.yml", "utf8");
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
@@ -198,6 +237,9 @@ assert.match(v4SmokeSource, /async function enqueueSpeculativeItem[\s\S]*const l
 assert.match(v4SmokeSource, /concurrency: Math\.max\(1, Math\.trunc\(numberArg\(argv, "--concurrency", 2\)\)\)/, "smoke preparation and enqueue must default to the measured production concurrency of two.");
 assert.match(v4SmokeSource, /compactL2: hasFlag\(argv, "--compact-l2"\)/, "smoke harness must expose the compact L2 request-level ablation flag.");
 assert.match(freshEbaySmokeWorkflowSource, /ledger_present_count[^\n]+attempted_count/, "fresh blind smoke must fail closed when node ledgers are missing.");
+assert.match(freshEbaySmokeWorkflowSource, /transport_error_count/, "speed smoke must fail on transport errors without treating field-quality findings as infrastructure failures.");
+assert.match(freshEbaySmokeWorkflowSource, /field_quality_error_count/, "speed smoke must still report deferred field-quality findings.");
+assert.match(freshEbaySmokeWorkflowSource, /writer_ready_capacity_atomic_count/, "speed smoke must prove writer-ready provider capacity release behavior.");
 assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
 assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");
 assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-only misses must return a stable non-error response.");
@@ -205,7 +247,9 @@ assert.match(vercelConfigSource, /admin-apply-v4-production-job-queue-migration\
 assert.match(vercelConfigSource, /supabase\/migrations\/\*\.sql/, "all required SQL migrations must ship with the admin migration function.");
 assert.match(queueMigrationApiSource, /fair_batch_claim_ok/, "the migration probe must exercise cross-batch fairness on the real database.");
 assert.match(queueMigrationApiSource, /capacity_bound_ok/, "the migration probe must prove capacity cannot be over-claimed.");
+assert.match(queueMigrationApiSource, /balanced_key_assignment_ok/, "the migration probe must prove concurrent slots are distributed across configured provider keys.");
 assert.match(queueMigrationApiSource, /kick_dedup_ok/, "the migration probe must prove duplicate pump kicks collapse.");
+assert.match(balancedProviderKeyMigrationSource, /provider_key_assignment', 'balanced_round_robin_v1'/, "provider capacity must expose its balanced key-slot assignment policy.");
 assert.match(queueStatusApiSource, /paired_l1_wait_ms/, "queue metrics must separate intentional L1 dependency time from scheduler delay.");
 assert.match(queueStatusApiSource, /scheduler_queue_wait_ms/, "queue metrics must expose actual scheduler delay after a paired L2 becomes runnable.");
 assert.match(queueStatusApiSource, /preingestion_ocr_rendezvous/, "queue status must expose OCR rendezvous diagnostics used by production smoke.");
@@ -305,6 +349,21 @@ const l2Options = providerOptionsForV4BackgroundL2({
 });
 assert.equal(l2Options.v4_title_stage_target, v4TitleStages.L2_ASSISTED_DRAFT);
 assert.equal(l2Options.v4_compact_l2_prompt, undefined, "compact L2 prompt must be explicit opt-in, not the default production path");
+assert.equal(l2Options.enable_post_observation_retrieval_deadline, true);
+assert.equal(l2Options.post_observation_catalog_vector_hedge_ms, 100);
+assert.equal(l2Options.post_observation_retrieval_critical_path_budget_ms, 250);
+
+const l2CustomRetrievalBudget = providerOptionsForV4BackgroundL2({
+  payload: {
+    provider_options: {
+      post_observation_catalog_vector_hedge_ms: 400,
+      post_observation_retrieval_critical_path_budget_ms: 800
+    }
+  },
+  routePlan: assistedRoute
+});
+assert.equal(l2CustomRetrievalBudget.post_observation_catalog_vector_hedge_ms, 400);
+assert.equal(l2CustomRetrievalBudget.post_observation_retrieval_critical_path_budget_ms, 800);
 
 const v2Result = {
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",

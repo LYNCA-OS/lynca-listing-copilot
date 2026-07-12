@@ -184,7 +184,12 @@ const claim = await claimV4RecognitionJobs({
   workerId: "worker-a",
   leaseSeconds: 120,
   lane: v4JobLanes.INTERACTIVE,
-  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    OPENAI_API_KEY_1: "key-one",
+    OPENAI_API_KEY_2: "key-two"
+  },
   fetchImpl: async (url, request = {}) => {
     rpcCalls.push({ url: String(url), request });
     return jsonResponse([{ id: "v4job-claimed", status: "RUNNING", attempt_count: 1 }]);
@@ -192,11 +197,12 @@ const claim = await claimV4RecognitionJobs({
 });
 assert.equal(claim.ok, true);
 assert.equal(claim.rows[0].id, "v4job-claimed");
-assert.ok(rpcCalls[0].url.endsWith("/rest/v1/rpc/claim_v4_recognition_jobs_with_capacity"));
+assert.ok(rpcCalls[0].url.endsWith("/rest/v1/rpc/claim_v4_recognition_jobs_with_balanced_capacity"));
 assert.ok(rpcCalls[0].request.body.includes('"p_limit":3'));
 assert.ok(rpcCalls[0].request.body.includes('"p_lane":"interactive"'));
 assert.ok(rpcCalls[0].request.body.includes('"p_provider_capacity":2'));
 assert.ok(rpcCalls[0].request.body.includes('"p_per_key_concurrency":2'));
+assert.ok(rpcCalls[0].request.body.includes('"p_provider_key_count":2'));
 
 const capacityRpcCalls = [];
 const releasedCapacity = await releaseV4ProviderCapacityForJob({

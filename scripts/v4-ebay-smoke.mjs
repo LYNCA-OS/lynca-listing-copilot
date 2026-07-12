@@ -660,6 +660,14 @@ function jobL2Summary(statusPayload = {}) {
     worker_queue_wait_ms: job.timing?.worker_queue_wait_ms ?? null,
     worker_processing_ms: job.timing?.worker_processing_ms ?? null,
     time_to_l2_ready_ms: job.timing?.time_to_l2_ready_ms ?? null,
+    writer_ready_capacity_release: job.timing?.writer_ready_capacity_release || null,
+    writer_ready_capacity_release_mode: job.timing?.writer_ready_capacity_release?.release_boundary
+      || summary.writer_ready_capacity_release_mode
+      || null,
+    provider_capacity_slot: job.execution_control?.provider_capacity_slot ?? null,
+    provider_capacity: job.execution_control?.provider_capacity ?? null,
+    provider_key_count: job.execution_control?.provider_key_count ?? null,
+    provider_key_assignment: job.execution_control?.provider_key_assignment || null,
     prompt_candidate_count: Number(catalogFunnel.prompt_candidate_count || 0)
       + Number(vectorFunnel.prompt_candidate_count || 0),
     catalog_raw_candidate_count: Number(catalogFunnel.raw_candidate_count || 0),
@@ -875,6 +883,12 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     scheduler_queue_wait_ms: summary.scheduler_queue_wait_ms ?? row.scheduler_queue_wait_ms ?? null,
     worker_processing_ms: summary.worker_processing_ms ?? row.worker_processing_ms ?? null,
     time_to_l2_ready_ms: summary.time_to_l2_ready_ms ?? row.time_to_l2_ready_ms ?? null,
+    writer_ready_capacity_release: summary.writer_ready_capacity_release || row.writer_ready_capacity_release || null,
+    writer_ready_capacity_release_mode: summary.writer_ready_capacity_release_mode || row.writer_ready_capacity_release_mode || null,
+    provider_capacity_slot: summary.provider_capacity_slot ?? row.provider_capacity_slot ?? null,
+    provider_capacity: summary.provider_capacity ?? row.provider_capacity ?? null,
+    provider_key_count: summary.provider_key_count ?? row.provider_key_count ?? null,
+    provider_key_assignment: summary.provider_key_assignment || row.provider_key_assignment || null,
     resolved_fields: Object.keys(summary.resolved_fields || {}).length ? summary.resolved_fields : row.resolved_fields,
     field_states: Object.keys(summary.field_states || {}).length ? summary.field_states : row.field_states,
     title_length_policy: summary.title_length_policy || row.title_length_policy || null,
@@ -2238,6 +2252,23 @@ function attachPostRecognitionScoring(results = [], items = [], sealedLabels = n
 
 function summarizePipelineNodeLedgers(results = []) {
   const rows = results.filter((item) => item.pipeline_node_ledger && typeof item.pipeline_node_ledger === "object");
+  const fieldQualityCheckIds = new Set([
+    "critical_field_flow_has_no_silent_drop",
+    "field_flow_has_no_cross_bracket_composite_migration"
+  ]);
+  const allAnomalies = rows.flatMap((item) => (
+    Array.isArray(item.pipeline_node_ledger.reconciliation?.anomalies)
+      ? item.pipeline_node_ledger.reconciliation.anomalies
+      : []
+  ));
+  const errorAnomalies = allAnomalies.filter((anomaly) => cleanText(anomaly?.severity).toUpperCase() === "ERROR");
+  const declaredErrorCount = rows.reduce(
+    (sum, item) => sum + Number(item.pipeline_node_ledger.reconciliation?.error_count || 0),
+    0
+  );
+  const unclassifiedErrorCount = Math.max(0, declaredErrorCount - errorAnomalies.length);
+  const fieldQualityErrorCount = errorAnomalies.filter((anomaly) => fieldQualityCheckIds.has(cleanText(anomaly?.check_id))).length;
+  const transportErrorCount = errorAnomalies.length - fieldQualityErrorCount + unclassifiedErrorCount;
   const nodeMap = new Map();
   for (const item of rows) {
     for (const node of Array.isArray(item.pipeline_node_ledger.nodes) ? item.pipeline_node_ledger.nodes : []) {
@@ -2277,7 +2308,9 @@ function summarizePipelineNodeLedgers(results = []) {
     ledger_missing_count: results.length - rows.length,
     anomaly_card_count: rows.filter((item) => Number(item.pipeline_node_ledger.reconciliation?.anomaly_count || 0) > 0).length,
     anomaly_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.reconciliation?.anomaly_count || 0), 0),
-    error_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.reconciliation?.error_count || 0), 0),
+    error_count: declaredErrorCount,
+    transport_error_count: transportErrorCount,
+    field_quality_error_count: fieldQualityErrorCount,
     warning_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.reconciliation?.warning_count || 0), 0),
     missing_required_node_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.coverage?.missing_required_node_count || 0), 0),
     node_metrics: nodeMetrics,
@@ -2378,6 +2411,16 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     worker_processing_p50_ms: quantile(results.map((item) => item.worker_processing_ms), 0.5),
     worker_processing_p95_ms: quantile(results.map((item) => item.worker_processing_ms), 0.95),
     worker_processing_p99_ms: quantile(results.map((item) => item.worker_processing_ms), 0.99),
+    writer_ready_capacity_atomic_count: results.filter((item) => (
+      item.writer_ready_capacity_release?.released === true
+      && item.writer_ready_capacity_release_mode === "writer_ready_atomic"
+    )).length,
+    writer_ready_capacity_fallback_count: results.filter((item) => (
+      item.writer_ready_capacity_release_mode === "worker_tail_fallback"
+      || item.writer_ready_capacity_release?.released === false
+    )).length,
+    writer_ready_capacity_release_missing_count: results.filter((item) => !item.writer_ready_capacity_release_mode).length,
+    provider_key_assignment_breakdown: countBy("provider_key_assignment"),
     job_status_breakdown: countBy("job_status"),
     l1_job_status_breakdown: countBy("l1_job_status"),
     enqueue_persistence_mode_breakdown: countBy("enqueue_persistence_mode"),

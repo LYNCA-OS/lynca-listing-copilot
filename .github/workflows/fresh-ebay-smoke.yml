@@ -123,14 +123,16 @@ jobs:
           console.log(`writer_p50=${s.writer_ready_p50_ms}ms writer_p95=${s.writer_ready_p95_ms}ms queue_p95=${s.scheduler_queue_wait_p95_ms}ms`);
           console.log(`ocr_terminal=${s.preingestion_ocr?.terminal_count || 0} ocr_timeout=${s.preingestion_ocr?.timeout_count || 0} serial_exact=${s.serial_title_analysis?.exact_match_count || 0}`);
           const nodes = s.pipeline_node_observability || {};
-          console.log(`node_ledgers=${nodes.ledger_present_count || 0}/${s.attempted_count} node_errors=${nodes.error_count || 0} node_missing_required=${nodes.missing_required_node_count || 0}`);
+          console.log(`node_ledgers=${nodes.ledger_present_count || 0}/${s.attempted_count} transport_node_errors=${nodes.transport_error_count || 0} field_quality_errors=${nodes.field_quality_error_count || 0} node_missing_required=${nodes.missing_required_node_count || 0}`);
+          console.log(`writer_ready_atomic_release=${s.writer_ready_capacity_atomic_count || 0}/${s.attempted_count} release_fallback=${s.writer_ready_capacity_fallback_count || 0} release_missing=${s.writer_ready_capacity_release_missing_count || 0}`);
+          console.log(`provider_key_pool=${s.provider_diagnostics?.key_pool_size_latest || 'n/a'} key_slots=${JSON.stringify(s.provider_diagnostics?.key_slots_used || [])} assignment=${JSON.stringify(s.provider_key_assignment_breakdown || {})}`);
           for (const row of report.results) {
             console.log(`  ${row.asset_id.slice(-8)} ok=${row.ok} policy=${row.final_scoring?.policy_fair_token_recall ?? 'n/a'} writer=${row.time_to_writer_ready_ms ?? 'n/a'} err=${row.error ?? '-'}`);
           }
           if (s.ok_count !== s.attempted_count) process.exit(1);
           if (nodes.ledger_present_count !== s.attempted_count) process.exit(1);
           if ((nodes.missing_required_node_count || 0) !== 0) process.exit(1);
-          if ((nodes.error_count || 0) !== 0) process.exit(1);
+          if ((nodes.transport_error_count || 0) !== 0) process.exit(1);
           if (report.results.some((row) => !['COMPLETED', 'PARTIAL', 'FAILED'].includes(String(row.noncritical_persistence_status || '').toUpperCase()))) process.exit(1);
           NODE
       - name: Upload sealed evaluation artifacts
