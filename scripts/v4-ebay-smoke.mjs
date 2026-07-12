@@ -736,7 +736,7 @@ async function pollSessionStatus({
     polls += 1;
     last = await getJson({
       baseUrl,
-      path: `/api/v4/listing-session-status?recognition_session_id=${encodeURIComponent(sessionId)}`,
+      path: `/api/v4/listing-session-status?recognition_session_id=${encodeURIComponent(sessionId)}&include_related_counts=true`,
       cookie,
       requestTimeoutMs
     });

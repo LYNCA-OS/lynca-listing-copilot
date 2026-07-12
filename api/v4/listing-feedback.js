@@ -6,10 +6,8 @@ import { normalizeGrader } from "../../lib/listing/v4/anchors/anchor-classifier.
 import { upsertCertRegistryEntry } from "../../lib/listing/v4/anchors/cert-lookup.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
-  persistV4FeedbackEvent,
-  persistV4LearningEvent,
+  persistV4WriterFeedbackTransaction,
   readV4SessionStatus,
-  updateV4RecognitionSession
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -62,24 +60,30 @@ export default async function handler(req, res) {
     resultPayload: payload.result_payload || payload.v4_result || payload,
     operatorId
   });
-  const feedback = await persistV4FeedbackEvent({ event: artifacts.feedbackEvent });
-  const learning = await persistV4LearningEvent({ event: artifacts.learningEvent });
-  const session = await updateV4RecognitionSession({
+  const transaction = await persistV4WriterFeedbackTransaction({
     sessionId,
-    patch: {
-      status: artifacts.status,
-      writer_final_title: artifacts.feedbackEvent.writer_final_title,
-      writer_feedback_event_id: artifacts.feedbackEvent.id,
-      learning_event_id: artifacts.learningEvent.id
-    }
+    operatorId,
+    status: artifacts.status,
+    feedbackEvent: artifacts.feedbackEvent,
+    learningEvent: artifacts.learningEvent
   });
+  if (!transaction.saved) {
+    sendJson(res, 503, withV4Version({
+      ok: false,
+      retryable: true,
+      message: "Unable to save writer feedback transaction.",
+      error: transaction.error || "feedback_transaction_not_saved"
+    }));
+    return;
+  }
 
   // Cert registry flywheel: a writer-confirmed recognition that carries a
   // grading cert number becomes an identity record, so the next time this
   // slab (or a relisting of it) appears, identity is a sub-second registry
   // lookup instead of a full model pass. Identity fields only; instance
   // fields of future copies still come from their own images.
-  const resolvedForCert = payload.result_payload?.resolved_fields
+  const resolvedForCert = artifacts.correctedResolved
+    || payload.result_payload?.resolved_fields
     || payload.result_payload?.resolved
     || payload.resolved_fields
     || {};
@@ -110,7 +114,14 @@ export default async function handler(req, res) {
       reviewStatus: "REVIEWED_INTERNAL",
       sessionId,
       metadata: { feedback_event_id: artifacts.feedbackEvent.id, action: payload.action || null }
-    }).catch(() => {}));
+    }).catch((error) => {
+      console.warn("[v4_writer_cert_registry_promotion_failed]", JSON.stringify({
+        recognition_session_id: sessionId,
+        feedback_event_id: artifacts.feedbackEvent.id,
+        grader,
+        error: String(error?.message || error || "cert_registry_promotion_failed").slice(0, 240)
+      }));
+    }));
   }
 
   sendJson(res, 200, withV4Version({
@@ -124,6 +135,6 @@ export default async function handler(req, res) {
     csm_normalization: artifacts.csmNormalization,
     title_diff: artifacts.feedbackEvent.title_diff,
     training_eligible: artifacts.learningEvent.training_eligible,
-    v4_persistence: { feedback, learning, session }
+    v4_persistence: { transaction }
   }));
 }

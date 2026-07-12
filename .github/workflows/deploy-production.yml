@@ -26,28 +26,34 @@ jobs:
           npm audit --omit=dev --audit-level=moderate
           npm run check:v4-spine
           npm run test:v4-spine
-      - name: Deploy current main to Vercel production
+      - name: Trigger current main through the Vercel Deploy Hook
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
         run: |
-          npm install --global vercel@55 --no-audit --no-fund
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          # Build once on the runner. Uploading a prebuilt artifact avoids the
-          # Vercel remote-build path that can fail before user code starts.
-          vercel build --prod --token="$VERCEL_TOKEN"
-          deployed=false
-          for attempt in 1 2 3; do
-            if vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"; then
-              deployed=true
+          test -n "$VERCEL_DEPLOY_HOOK_URL"
+          curl -fsS --max-time 30 -X POST "$VERCEL_DEPLOY_HOOK_URL" \
+            -o /tmp/vercel-deploy-hook.json
+          node - <<'NODE'
+          const response = require('/tmp/vercel-deploy-hook.json');
+          if (!response.job?.id || !['PENDING', 'RUNNING', 'BUILDING'].includes(response.job?.state)) {
+            console.error(JSON.stringify({ state: response.job?.state || null, has_job_id: Boolean(response.job?.id) }));
+            process.exit(1);
+          }
+          console.log(JSON.stringify({ deploy_hook_accepted: true, state: response.job.state }));
+          NODE
+      - name: Wait for the exact main commit to reach production
+        run: |
+          for _attempt in $(seq 1 60); do
+            if curl -fsS --max-time 30 https://listing.lyncafei.team/api/v4/health \
+              -o /tmp/v4-health-deployed.json \
+              && node -e 'const h=require("/tmp/v4-health-deployed.json"); process.exit(h.deployment?.git_commit_sha === process.env.GITHUB_SHA ? 0 : 1)'; then
               break
             fi
-            if [ "$attempt" -lt 3 ]; then
-              sleep "$((attempt * 10))"
-            fi
+            rm -f /tmp/v4-health-deployed.json
+            sleep 10
           done
-          test "$deployed" = true
+          test -s /tmp/v4-health-deployed.json
+          node -e 'const h=require("/tmp/v4-health-deployed.json"); if(h.deployment?.git_commit_sha !== process.env.GITHUB_SHA) process.exit(1)'
       - name: Apply and verify production schema migrations
         env:
           V4_JOB_WORKER_SECRET: ${{ secrets.V4_JOB_WORKER_SECRET }}
@@ -67,7 +73,7 @@ jobs:
           # A migration can commit milliseconds before PostgREST exposes the
           # new tables to a different Vercel region. Wait for the complete
           # readiness contract, not only for the deployment SHA.
-          for attempt in $(seq 1 18); do
+          for _attempt in $(seq 1 36); do
             if curl -fsS --max-time 30 https://listing.lyncafei.team/api/v4/health -o /tmp/v4-health.json \
               && node -e 'const h=require("/tmp/v4-health.json"); process.exit(h.ready === true && h.deployment?.git_commit_sha === process.env.GITHUB_SHA ? 0 : 1)'; then
               break
@@ -113,6 +119,8 @@ jobs:
           name: production-release-evidence
           path: |
             /tmp/v4-health.json
+            /tmp/v4-health-deployed.json
             /tmp/provider-status.json
+            /tmp/vercel-deploy-hook.json
             /tmp/writer-export-migration.json
             /tmp/writer-assisted-readiness.json

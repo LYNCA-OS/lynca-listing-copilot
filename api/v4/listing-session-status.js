@@ -1,3 +1,4 @@
+import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readV4Rows, isV4SupabaseConfigured } from "../../lib/listing/v4/session/supabase-rest.mjs";
@@ -34,6 +35,12 @@ export default async function handler(req, res) {
     sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
+  if (!enforceApiRateLimit(req, res, {
+    scope: "v4_listing_session_status",
+    limit: 2400,
+    windowMs: 60_000,
+    message: "Too many V4 session status requests. Please try again shortly."
+  })) return;
 
   const sessionId = queryParam(req, "recognition_session_id") || queryParam(req, "session_id");
   if (!sessionId) {
@@ -41,12 +48,23 @@ export default async function handler(req, res) {
     return;
   }
   const status = await readV4SessionStatus({ sessionId });
-  if (status.ok && (!status.session || String(status.session.operator_id || "") !== operatorIdFromRequest(req))) {
+  if (!status.ok) {
+    sendJson(res, 503, withV4Version({
+      ok: false,
+      retryable: true,
+      recognition_session_id: sessionId,
+      message: "Recognition session status is temporarily unavailable.",
+      error: status.error
+    }));
+    return;
+  }
+  if (!status.session || String(status.session.operator_id || "") !== operatorIdFromRequest(req)) {
     sendJson(res, 404, withV4Version({ ok: false, message: "Recognition session not found." }));
     return;
   }
   const counts = {};
-  if (isV4SupabaseConfigured(process.env)) {
+  const includeRelatedCounts = ["1", "true", "yes"].includes(queryParam(req, "include_related_counts").toLowerCase());
+  if (includeRelatedCounts && isV4SupabaseConfigured(process.env)) {
     const tables = {
       field_evidence: "v4_field_evidence",
       candidate_traces: "v4_candidate_traces",
@@ -54,20 +72,22 @@ export default async function handler(req, res) {
       learning_events: "v4_learning_events",
       quality_ledger: "v4_production_quality_ledger"
     };
-    for (const [key, table] of Object.entries(tables)) {
+    const results = await Promise.all(Object.entries(tables).map(async ([key, table]) => {
       const rows = await readV4Rows({
         table,
         select: "id",
         search: { recognition_session_id: `eq.${sessionId}` }
       });
-      counts[key] = rows.ok ? rows.rows.length : null;
-    }
+      return [key, rows.ok ? rows.rows.length : null];
+    }));
+    Object.assign(counts, Object.fromEntries(results));
   }
-  sendJson(res, status.ok ? 200 : 500, withV4Version({
-    ok: status.ok,
+  sendJson(res, 200, withV4Version({
+    ok: true,
     recognition_session_id: sessionId,
     session: writerSafeSession(status.session),
     related_counts: counts,
-    error: status.error
+    related_counts_included: includeRelatedCounts,
+    error: null
   }));
 }

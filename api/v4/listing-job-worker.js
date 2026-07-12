@@ -5,8 +5,11 @@ import {
   claimV4RecognitionJobs,
   completeV4RecognitionJob,
   failV4RecognitionJob,
+  heartbeatV4RecognitionJob,
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
+  v4JobLeaseHeartbeatEnabled,
+  v4JobLeaseHeartbeatIntervalMs,
   v4JobLanes,
   v4JobStatuses,
   v4JobTypes,
@@ -184,6 +187,70 @@ async function mapWithConcurrency(items = [], concurrency = 1, worker) {
   return results;
 }
 
+export async function runWithV4JobLeaseHeartbeat({
+  job = {},
+  leaseSeconds = 300,
+  task,
+  heartbeat = heartbeatV4RecognitionJob,
+  intervalMs = v4JobLeaseHeartbeatIntervalMs({ leaseSeconds, env: process.env }),
+  enabled = v4JobLeaseHeartbeatEnabled(process.env)
+} = {}) {
+  if (typeof task !== "function") throw new TypeError("task must be a function");
+  const stats = {
+    enabled: Boolean(enabled),
+    interval_ms: enabled ? intervalMs : null,
+    attempts: 0,
+    success_count: 0,
+    failure_count: 0,
+    lost_ownership_count: 0,
+    last_error: null
+  };
+  if (!enabled || !job.id || !job.lease_owner) {
+    return { value: await task(stats), heartbeat: stats };
+  }
+
+  let stopped = false;
+  let timer = null;
+  let inFlight = Promise.resolve();
+  const pulse = async () => {
+    stats.attempts += 1;
+    const result = await heartbeat({
+      jobId: job.id,
+      workerId: job.lease_owner,
+      leaseSeconds
+    });
+    if (result.extended) {
+      stats.success_count += 1;
+    } else if (!result.skipped && result.error) {
+      stats.failure_count += 1;
+      stats.last_error = safeError(result.error);
+    } else if (!result.skipped) {
+      stats.lost_ownership_count += 1;
+      stats.last_error = "lease_ownership_lost";
+    }
+  };
+  const schedule = () => {
+    if (stopped) return;
+    timer = setTimeout(() => {
+      inFlight = pulse()
+        .catch((error) => {
+          stats.failure_count += 1;
+          stats.last_error = safeError(error);
+        })
+        .finally(schedule);
+    }, intervalMs);
+    timer.unref?.();
+  };
+  schedule();
+  try {
+    return { value: await task(stats), heartbeat: stats };
+  } finally {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    await inFlight.catch(() => null);
+  }
+}
+
 async function runJob(job, req) {
   const started = Date.now();
   const payload = payloadForV4ProductionJob(job);
@@ -264,105 +331,128 @@ export default async function handler(req, res) {
   const tenantId = payload.tenant_id || payload.tenantId || null;
   const workerId = workerIdFrom(req, payload);
   const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 96 });
-  const processBatch = async (rows = [], concurrency = 1) => mapWithConcurrency(rows, concurrency, async (job) => {
-    let capacityRelease = null;
-    try {
-      const result = await runJob(job, req);
-      capacityRelease = await releaseProviderCapacity(job);
-      const jobStatus = completionStatusForJob(job);
-      const completion = await completeV4RecognitionJob({
-        jobId: job.id,
-        status: jobStatus,
-        result: {
-          ok: true,
-          lane: job.lane || null,
-          job_type: normalizedJobType(job),
-          recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
-          final_title: result.response.final_title || result.response.title || result.response.writer_safe_draft || null,
-          title_stage: result.response.title_stage || null,
-          assisted_draft_status: result.response.assisted_draft_status || null,
-          route: result.response.route || result.response.route_plan?.route || null
-        },
-        timing: {
-          worker_total_ms: result.latency_ms,
-          response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null
-        },
-        previousError: job.error || null
-      });
-      if (completion.saved !== true) {
-        throw Object.assign(new Error(`queue_completion_write_failed:${completion.error || "unknown_error"}`), {
-          code: "QUEUE_COMPLETION_WRITE_FAILED",
-          latency_ms: result.latency_ms
-        });
+  const processBatch = async (rows = [], concurrency = 1, leaseSeconds = 300) => mapWithConcurrency(rows, concurrency, async (job) => {
+    const wrapped = await runWithV4JobLeaseHeartbeat({
+      job,
+      leaseSeconds,
+      task: async (leaseHeartbeat) => {
+        let capacityRelease = null;
+        try {
+          const result = await runJob(job, req);
+          capacityRelease = await releaseProviderCapacity(job);
+          const jobStatus = completionStatusForJob(job);
+          const completion = await completeV4RecognitionJob({
+            jobId: job.id,
+            workerId: job.lease_owner || null,
+            status: jobStatus,
+            result: {
+              ok: true,
+              lane: job.lane || null,
+              job_type: normalizedJobType(job),
+              recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
+              final_title: result.response.final_title || result.response.title || result.response.writer_safe_draft || null,
+              title_stage: result.response.title_stage || null,
+              assisted_draft_status: result.response.assisted_draft_status || null,
+              route: result.response.route || result.response.route_plan?.route || null
+            },
+            timing: {
+              worker_total_ms: result.latency_ms,
+              response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null,
+              lease_heartbeat: { ...leaseHeartbeat }
+            },
+            previousError: job.error || null
+          });
+          if (completion.saved !== true) {
+            const leaseLost = completion.error === "row_not_matched";
+            throw Object.assign(new Error(`${leaseLost ? "queue_lease_lost" : "queue_completion_write_failed"}:${completion.error || "unknown_error"}`), {
+              code: leaseLost ? "QUEUE_LEASE_LOST" : "QUEUE_COMPLETION_WRITE_FAILED",
+              retryable: leaseLost ? false : undefined,
+              latency_ms: result.latency_ms
+            });
+          }
+          const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
+            ? await releasePairedV4FinalJob({ job, reason: "l1_ready" })
+            : { saved: false, skipped: true };
+          const pairedWake = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
+            ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_ready_wake_l2" })
+            : { triggered: false, reason: "not_l1_job" };
+          return {
+            job_id: job.id,
+            lane: job.lane || null,
+            job_type: normalizedJobType(job),
+            status: jobStatus,
+            recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
+            latency_ms: result.latency_ms,
+            saved: completion.saved,
+            completion_write_attempts: completion.write_attempts || 1,
+            provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
+            provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
+            provider_capacity_released: capacityRelease.released === true,
+            paired_final_released: pairedRelease.saved === true,
+            paired_final_wake_triggered: pairedWake.triggered === true,
+            error: completion.error || null
+          };
+        } catch (error) {
+          capacityRelease = capacityRelease || await releaseProviderCapacity(job);
+          const hiddenL1Job = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT;
+          console.error("[v4_job_attempt_failed]", JSON.stringify({
+            job_id: job.id || null,
+            job_type: normalizedJobType(job),
+            lane: job.lane || null,
+            attempt_count: Number(job.attempt_count || 0),
+            code: error?.code || error?.status || null,
+            message: safeError(error),
+            latency_ms: error?.latency_ms || null
+          }));
+          const failure = await failV4RecognitionJob({
+            job,
+            error: {
+              message: safeError(error),
+              status: error?.status || null,
+              code: error?.code || null,
+              retryable: error?.retryable,
+              body: error?.body ? { message: error.body.message || null, ok: error.body.ok || false } : null
+            },
+            forceFinalFailure: hiddenL1Job,
+            retryDelaySeconds: positiveInteger(payload.retry_delay_seconds, 15, { min: 1, max: 900 })
+          });
+          const pairedRelease = hiddenL1Job
+            ? await releasePairedV4FinalJob({ job, reason: "l1_failed_release_final" })
+            : { saved: false, skipped: true };
+          const pairedWake = hiddenL1Job
+            ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_failed_wake_l2" })
+            : { triggered: false, reason: "not_l1_job" };
+          const leaseLost = error?.code === "QUEUE_LEASE_LOST" || failure.error === "row_not_matched";
+          return {
+            job_id: job.id,
+            lane: job.lane || null,
+            job_type: normalizedJobType(job),
+            status: failure.row?.status || (leaseLost ? "LEASE_LOST" : "FAILED"),
+            recognition_session_id: job.recognition_session_id,
+            latency_ms: error?.latency_ms || null,
+            saved: failure.saved,
+            provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
+            provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
+            provider_capacity_released: capacityRelease.released === true,
+            paired_final_released: pairedRelease.saved === true,
+            paired_final_wake_triggered: pairedWake.triggered === true,
+            error: failure.error || safeError(error)
+          };
+        }
       }
-      const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
-        ? await releasePairedV4FinalJob({ job, reason: "l1_ready" })
-        : { saved: false, skipped: true };
-      const pairedWake = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
-        ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_ready_wake_l2" })
-        : { triggered: false, reason: "not_l1_job" };
-      return {
-        job_id: job.id,
-        lane: job.lane || null,
-        job_type: normalizedJobType(job),
-        status: jobStatus,
-        recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
-        latency_ms: result.latency_ms,
-        saved: completion.saved,
-        completion_write_attempts: completion.write_attempts || 1,
-        provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
-        provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
-        provider_capacity_released: capacityRelease.released === true,
-        paired_final_released: pairedRelease.saved === true,
-        paired_final_wake_triggered: pairedWake.triggered === true,
-        error: completion.error || null
-      };
-    } catch (error) {
-      capacityRelease = capacityRelease || await releaseProviderCapacity(job);
-      const hiddenL1Job = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT;
-      console.error("[v4_job_attempt_failed]", JSON.stringify({
+    });
+    const heartbeat = wrapped.heartbeat;
+    if (heartbeat.failure_count > 0 || heartbeat.lost_ownership_count > 0) {
+      console.warn("[v4_job_lease_heartbeat_degraded]", JSON.stringify({
         job_id: job.id || null,
-        job_type: normalizedJobType(job),
-        lane: job.lane || null,
-        attempt_count: Number(job.attempt_count || 0),
-        code: error?.code || error?.status || null,
-        message: safeError(error),
-        latency_ms: error?.latency_ms || null
+        worker_id: job.lease_owner || null,
+        ...heartbeat
       }));
-      const failure = await failV4RecognitionJob({
-        job,
-        error: {
-          message: safeError(error),
-          status: error?.status || null,
-          code: error?.code || null,
-          retryable: error?.retryable,
-          body: error?.body ? { message: error.body.message || null, ok: error.body.ok || false } : null
-        },
-        forceFinalFailure: hiddenL1Job,
-        retryDelaySeconds: positiveInteger(payload.retry_delay_seconds, 15, { min: 1, max: 900 })
-      });
-      const pairedRelease = hiddenL1Job
-        ? await releasePairedV4FinalJob({ job, reason: "l1_failed_release_final" })
-        : { saved: false, skipped: true };
-      const pairedWake = hiddenL1Job
-        ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_failed_wake_l2" })
-        : { triggered: false, reason: "not_l1_job" };
-      return {
-        job_id: job.id,
-        lane: job.lane || null,
-        job_type: normalizedJobType(job),
-        status: failure.row?.status || "FAILED",
-        recognition_session_id: job.recognition_session_id,
-        latency_ms: error?.latency_ms || null,
-        saved: failure.saved,
-        provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
-        provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
-        provider_capacity_released: capacityRelease.released === true,
-        paired_final_released: pairedRelease.saved === true,
-        paired_final_wake_triggered: pairedWake.triggered === true,
-        error: failure.error || safeError(error)
-      };
     }
+    return {
+      ...wrapped.value,
+      lease_heartbeat: heartbeat
+    };
   });
 
   const startedAt = Date.now();
@@ -390,7 +480,7 @@ export default async function handler(req, res) {
     }
     const concurrency = laneProcessConcurrency(lane, payload);
     const batchRows = Array.isArray(claim.rows) ? claim.rows : [];
-    const batchProcessed = await processBatch(batchRows, concurrency);
+    const batchProcessed = await processBatch(batchRows, concurrency, leaseSeconds);
     processed = processed.concat(batchProcessed);
     batches.push({
       batch_index: batchIndex + 1,

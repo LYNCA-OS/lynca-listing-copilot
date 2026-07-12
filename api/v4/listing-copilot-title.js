@@ -773,7 +773,13 @@ async function persistPipelineResult({
             }
           }
         }
-      }).catch(() => {});
+      }).catch((statusError) => {
+        console.error("[v4_noncritical_persistence_failure_status_write_failed]", JSON.stringify({
+          recognition_session_id: sessionId,
+          persistence_error: String(error?.code || error?.name || "background_persistence_failed").slice(0, 120),
+          status_write_error: String(statusError?.message || statusError || "status_write_failed").slice(0, 240)
+        }));
+      });
       throw error;
     });
     scheduleV4Background(backgroundPersistence, "V4 non-critical persistence");

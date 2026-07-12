@@ -175,6 +175,8 @@ assert.match(workerSource, /V4_L2_WAKE_BACKGROUND_CONCURRENCY/);
 assert.match(workerSource, /v4WorkerProcessConcurrency\(process\.env\),\s*\{\s*min:\s*1,\s*max:\s*96\s*\}/);
 assert.match(workerSource, /callJsonHandler\(handler/);
 assert.match(workerSource, /releaseV4ProviderCapacityForJob/);
+assert.match(workerSource, /runWithV4JobLeaseHeartbeat/);
+assert.match(workerSource, /v4_job_lease_heartbeat_degraded/);
 assert.match(workerSource, /openai_preferred_key_slot/);
 assert.match(workerSource, /provider_capacity_released/);
 assert.match(workerSource, /forceFinalFailure: hiddenL1Job/, "a failed hidden L1 must release its final L2 without scheduling another paid L1 attempt");
@@ -198,6 +200,16 @@ assert.match(executionControlMigration, /provider_key_slot/);
 assert.match(executionControlMigration, /for update of jobs skip locked/);
 assert.match(executionControlMigration, /release_v4_provider_capacity_for_job/);
 assert.match(executionControlMigration, /try_acquire_v4_queue_kick/);
+
+const heartbeatSecurityMigration = readFileSync(new URL("../supabase/migrations/20260711194540_harden_public_function_security_and_queue_heartbeat.sql", import.meta.url), "utf8");
+assert.match(heartbeatSecurityMigration, /create or replace function public\.heartbeat_v4_recognition_job/);
+assert.match(heartbeatSecurityMigration, /jobs\.status = 'RUNNING'/);
+assert.match(heartbeatSecurityMigration, /jobs\.lease_owner = p_worker_id/);
+assert.match(heartbeatSecurityMigration, /update public\.v4_provider_capacity_leases/);
+assert.match(heartbeatSecurityMigration, /revoke execute on all functions in schema public from public, anon, authenticated/);
+assert.match(heartbeatSecurityMigration, /alter default privileges in schema public revoke execute on functions from public/);
+assert.match(heartbeatSecurityMigration, /alter function %s set search_path = pg_catalog, public, extensions/);
+assert.match(heartbeatSecurityMigration, /drop index if exists public\.catalog_cards_players_gin_idx/);
 
 const previousSecret = process.env.V4_JOB_WORKER_SECRET;
 try {

@@ -6,7 +6,13 @@ import { visionProviderIds } from "../../lib/listing/providers/provider-contract
 import { openAiProviderPoolStatus } from "../../lib/listing/providers/openai-key-pool.mjs";
 import { providerCatalog } from "../../lib/listing/providers/provider-registry.mjs";
 import { vectorIndexReady, vectorRetrievalConfig } from "../../lib/listing/retrieval/vector-feature-flags.mjs";
-import { v4QueueConfigured, v4WorkerClaimLimit, v4WorkerLeaseSeconds } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
+import {
+  v4JobLeaseHeartbeatEnabled,
+  v4JobLeaseHeartbeatIntervalMs,
+  v4QueueConfigured,
+  v4WorkerClaimLimit,
+  v4WorkerLeaseSeconds
+} from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { isV4WorkerSecretConfigured } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 
 export default async function handler(req, res) {
@@ -23,6 +29,7 @@ export default async function handler(req, res) {
   const workerSecretConfigured = isV4WorkerSecretConfigured(process.env);
   const providerReady = provider.enabled === true && provider.configured === true;
   const queueReady = queueConfigured && workerSecretConfigured;
+  const queueLeaseSeconds = v4WorkerLeaseSeconds(process.env);
   const ready = allTablesOk && providerReady && queueReady;
   const notReadyReasons = [
     ...(!allTablesOk ? ["v4_tables_not_ready"] : []),
@@ -59,7 +66,9 @@ export default async function handler(req, res) {
       configured: queueConfigured,
       worker_secret_configured: workerSecretConfigured,
       worker_claim_limit: v4WorkerClaimLimit(process.env),
-      lease_seconds: v4WorkerLeaseSeconds(process.env)
+      lease_seconds: queueLeaseSeconds,
+      lease_heartbeat_enabled: v4JobLeaseHeartbeatEnabled(process.env),
+      lease_heartbeat_interval_ms: v4JobLeaseHeartbeatIntervalMs({ leaseSeconds: queueLeaseSeconds, env: process.env })
     },
     supabase: tables,
     observability: {

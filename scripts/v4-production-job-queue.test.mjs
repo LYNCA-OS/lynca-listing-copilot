@@ -7,16 +7,19 @@ import {
   enqueueV4RecognitionJobs,
   expandV4RecognitionStageJobs,
   failV4RecognitionJob,
+  heartbeatV4RecognitionJob,
   normalizeV4JobInput,
   readV4RecognitionJobs,
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
   tryAcquireV4QueueKick,
+  v4JobLeaseHeartbeatEnabled,
+  v4JobLeaseHeartbeatIntervalMs,
   v4JobLanes,
   v4JobTypes,
   v4JobStatuses
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
-import { payloadForV4ProductionJob } from "../api/v4/listing-job-worker.js";
+import { payloadForV4ProductionJob, runWithV4JobLeaseHeartbeat } from "../api/v4/listing-job-worker.js";
 import { isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
@@ -203,6 +206,54 @@ assert.equal(releasedCapacity.released_count, 1);
 assert.ok(capacityRpcCalls[0].url.endsWith("/rest/v1/rpc/release_v4_provider_capacity_for_job"));
 assert.ok(capacityRpcCalls[0].request.body.includes('"p_job_id":"v4job-claimed"'));
 
+assert.equal(v4JobLeaseHeartbeatEnabled({}), true);
+assert.equal(v4JobLeaseHeartbeatEnabled({ V4_JOB_LEASE_HEARTBEAT_ENABLED: "false" }), false);
+assert.equal(v4JobLeaseHeartbeatIntervalMs({ leaseSeconds: 120, env: {} }), 40_000);
+assert.equal(v4JobLeaseHeartbeatIntervalMs({ leaseSeconds: 300, env: {} }), 60_000);
+assert.equal(v4JobLeaseHeartbeatIntervalMs({
+  leaseSeconds: 30,
+  env: { V4_JOB_LEASE_HEARTBEAT_INTERVAL_MS: "120000" }
+}), 15_000, "a misconfigured heartbeat interval must remain below the active lease");
+
+const heartbeatRpcCalls = [];
+const heartbeat = await heartbeatV4RecognitionJob({
+  jobId: "v4job-claimed",
+  workerId: "worker-a",
+  leaseSeconds: 300,
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    heartbeatRpcCalls.push({ url: String(url), request });
+    return jsonResponse(true);
+  }
+});
+assert.equal(heartbeat.extended, true);
+assert.ok(heartbeatRpcCalls[0].url.endsWith("/rest/v1/rpc/heartbeat_v4_recognition_job"));
+assert.deepEqual(JSON.parse(heartbeatRpcCalls[0].request.body), {
+  p_job_id: "v4job-claimed",
+  p_worker_id: "worker-a",
+  p_lease_seconds: 300
+});
+
+let heartbeatPulses = 0;
+const heartbeatRun = await runWithV4JobLeaseHeartbeat({
+  job: { id: "v4job-long", lease_owner: "worker-long" },
+  leaseSeconds: 300,
+  intervalMs: 5,
+  heartbeat: async () => {
+    heartbeatPulses += 1;
+    return { extended: true, skipped: false, error: null };
+  },
+  task: async () => {
+    await new Promise((resolve) => setTimeout(resolve, 24));
+    return "done";
+  }
+});
+assert.equal(heartbeatRun.value, "done");
+assert.ok(heartbeatRun.heartbeat.success_count >= 2);
+const pulsesAfterCompletion = heartbeatPulses;
+await new Promise((resolve) => setTimeout(resolve, 12));
+assert.equal(heartbeatPulses, pulsesAfterCompletion, "heartbeat timer must stop when the job finishes");
+
 const kickRpcCalls = [];
 const kick = await tryAcquireV4QueueKick({
   scope: "global",
@@ -232,6 +283,29 @@ await completeV4RecognitionJob({
 assert.ok(patches[0].url.includes("/rest/v1/v4_recognition_jobs?id=eq.v4job-done"));
 assert.ok(patches[0].request.body.includes('"status":"L2_READY"'));
 assert.ok(patches[0].request.body.includes('"lease_owner":null'));
+
+const ownedCompletionCalls = [];
+const staleOwnedCompletion = await completeV4RecognitionJob({
+  jobId: "v4job-owned",
+  workerId: "worker-original",
+  result: { final_title: "Must not overwrite a reclaimed job" },
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    V4_JOB_COMPLETION_WRITE_ATTEMPTS: "3",
+    V4_JOB_COMPLETION_RETRY_BASE_MS: "1"
+  },
+  fetchImpl: async (url, request = {}) => {
+    ownedCompletionCalls.push({ url: String(url), request });
+    return jsonResponse([]);
+  }
+});
+const ownedCompletionUrl = new URL(ownedCompletionCalls[0].url);
+assert.equal(ownedCompletionUrl.searchParams.get("status"), "eq.RUNNING");
+assert.equal(ownedCompletionUrl.searchParams.get("lease_owner"), "eq.worker-original");
+assert.equal(ownedCompletionCalls.length, 1, "a lost lease cannot recover through blind completion retries");
+assert.equal(staleOwnedCompletion.saved, false);
+assert.equal(staleOwnedCompletion.error, "row_not_matched");
 
 const nulCompletionPatches = [];
 const nulCompletion = await completeV4RecognitionJob({

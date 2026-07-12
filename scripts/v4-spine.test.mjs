@@ -22,6 +22,7 @@ import {
   persistV4CandidateTrace,
   persistV4FieldEvidence,
   persistV4LearningEvent,
+  persistV4WriterFeedbackTransaction,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
 import {
@@ -129,6 +130,8 @@ const queueStatusApiSource = await readFile("api/v4/listing-job-status.js", "utf
 const sessionStatusApiSource = await readFile("api/v4/listing-session-status.js", "utf8");
 const feedbackApiSource = await readFile("api/v4/listing-feedback.js", "utf8");
 const writerExportApiSource = await readFile("api/v4/listing-export-workbook.js", "utf8");
+const atomicFeedbackMigrationSource = await readFile("supabase/migrations/20260711200533_atomic_v4_writer_feedback_transaction.sql", "utf8");
+const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
 const freshEbaySmokeWorkflowSource = await readFile(".github/workflows/fresh-ebay-smoke.yml", "utf8");
@@ -171,7 +174,19 @@ assert.match(queueStatusApiSource, /V4_JOB_STATUS_QUERY_REQUIRED/, "missing stat
 assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s\S]*V4_JOB_STATUS_BACKEND_UNAVAILABLE/, "transient queue-store reads must be reported as retryable service failures.");
 assert.match(queueStatusApiSource, /ownedJobs = result\.rows\.filter[\s\S]*operator_id/, "job status must not expose another operator's queued work.");
 assert.match(sessionStatusApiSource, /session\.operator_id[\s\S]*operatorIdFromRequest/, "session status must enforce operator ownership.");
+assert.match(sessionStatusApiSource, /include_related_counts/, "writer polling must not block on diagnostic table counts unless explicitly requested.");
+assert.match(sessionStatusApiSource, /Promise\.all\(Object\.entries\(tables\)/, "evaluation-only related counts should load in parallel.");
+assert.match(sessionStatusApiSource, /Recognition session status is temporarily unavailable/, "transient session reads must remain retryable instead of looking like a terminal failure.");
 assert.match(feedbackApiSource, /readV4SessionStatus[\s\S]*session\.operator_id[\s\S]*operatorId/, "writer feedback must verify session ownership before learning writes.");
+assert.match(feedbackApiSource, /persistV4WriterFeedbackTransaction/, "writer feedback, learning data, and the session terminal state must commit atomically.");
+assert.match(feedbackApiSource, /v4_writer_cert_registry_promotion_failed/, "non-blocking cert promotion failures must remain observable.");
+assert.match(v4TitleApiSource, /v4_noncritical_persistence_failure_status_write_failed/, "a failed background-persistence terminal write must not disappear silently.");
+assert.match(atomicFeedbackMigrationSource, /for update/, "the feedback transaction must lock the owned recognition session before writing learning artifacts.");
+assert.match(atomicFeedbackMigrationSource, /insert into public\.v4_writer_feedback_events[\s\S]*insert into public\.v4_learning_events[\s\S]*update public\.v4_recognition_sessions/, "one database transaction must persist all three writer-loop records.");
+assert.match(atomicFeedbackMigrationSource, /revoke execute on function public\.persist_v4_writer_feedback_transaction[\s\S]*from public, anon, authenticated/, "the writer transaction RPC must remain service-role only.");
+assert.match(writerLearningSupersessionMigrationSource, /before insert on public\.v4_learning_events/, "writer learning supersession must be enforced at the database boundary.");
+assert.match(writerLearningSupersessionMigrationSource, /SUPERSEDED_BY_LATEST_WRITER_FEEDBACK/, "older writer-derived training truth must be retained for audit but excluded from training.");
+assert.match(writerLearningSupersessionMigrationSource, /events\.id <> new\.id[\s\S]*events\.training_eligible = true/, "the latest writer event must only supersede older eligible events for the same session.");
 assert.match(writerExportApiSource, /writerExportRowsBelongToOperator/, "writer exports must verify every referenced recognition session.");
 assert.doesNotMatch(writerExportApiSource, /new pg\.Client|client\.query\(sql\)/, "normal writer export requests must never mutate production schema.");
 assert.match(v4SmokeSource, /transient_error_count/, "cloud smoke must report recovered status-read faults instead of hiding them.");
@@ -657,6 +672,7 @@ assert.ok(Array.isArray(artifacts.learningEvent.field_level_ground_truth));
 assert.ok(artifacts.learningEvent.field_level_ground_truth.some((row) => row.field === "player" && row.training_eligible === true));
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_diff));
 assert.equal(typeof artifacts.learningEvent.candidate_changes.candidate_count, "number");
+assert.equal(artifacts.correctedResolved.year, "2024-25");
 
 const csmOrderedFeedback = buildV4FeedbackArtifacts({
   sessionId: "v4sess-csm-order",
@@ -756,6 +772,33 @@ await persistV4LearningEvent({
   env,
   fetchImpl: fakeFetch
 });
+const feedbackTransactionCalls = [];
+const feedbackTransaction = await persistV4WriterFeedbackTransaction({
+  sessionId: "v4sess-test",
+  operatorId: "operator-test",
+  status: artifacts.status,
+  feedbackEvent: artifacts.feedbackEvent,
+  learningEvent: artifacts.learningEvent,
+  env,
+  fetchImpl: async (url, init = {}) => {
+    feedbackTransactionCalls.push({ url: String(url), body: JSON.parse(init.body) });
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        saved: true,
+        recognition_session_id: "v4sess-test",
+        feedback_event_id: artifacts.feedbackEvent.id,
+        learning_event_id: artifacts.learningEvent.id
+      })
+    };
+  }
+});
+assert.equal(feedbackTransaction.saved, true);
+assert.ok(feedbackTransactionCalls[0].url.endsWith("/rest/v1/rpc/persist_v4_writer_feedback_transaction"));
+assert.equal(feedbackTransactionCalls[0].body.p_session_id, "v4sess-test");
+assert.equal(feedbackTransactionCalls[0].body.p_feedback_event.schema_version, "v4-recognition-session-v1");
+assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, true);
 const health = await checkV4Tables({ env, fetchImpl: fakeFetch });
 assert.equal(health.configured, true);
 assert.ok(writes.some((write) => write.table === "v4_recognition_sessions"));

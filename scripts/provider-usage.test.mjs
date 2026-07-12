@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
+import { openAiProviderRequestDiagnostics } from "../lib/listing/providers/openai-request-diagnostics.mjs";
 import { normalizeProviderUsage } from "../lib/listing/providers/provider-usage.mjs";
 
 const openAiUsage = normalizeProviderUsage({
@@ -69,6 +70,35 @@ assert.equal(unpricedUsage.image_count, 0);
 assert.equal(unpricedUsage.total_tokens, null);
 assert.equal(unpricedUsage.cost_configured, false);
 assert.equal(unpricedUsage.estimated_cost_usd, 0);
+
+const explicitNullUsage = normalizeProviderUsage({
+  provider: visionProviderIds.OPENAI_LEGACY,
+  rawUsage: { input_tokens: null, output_tokens: null, total_tokens: null },
+  env: {}
+});
+assert.equal(explicitNullUsage.input_tokens, null);
+assert.equal(explicitNullUsage.output_tokens, null);
+assert.equal(explicitNullUsage.total_tokens, null);
+
+const missingRequestDiagnostics = openAiProviderRequestDiagnostics({
+  tokenDiagnostics: { input_tokens: null, output_tokens: undefined },
+  providerLatencyMs: null,
+  keySlot: null
+});
+assert.equal(missingRequestDiagnostics.input_tokens, null);
+assert.equal(missingRequestDiagnostics.output_tokens, null);
+assert.equal(missingRequestDiagnostics.provider_latency_ms, null);
+assert.equal(missingRequestDiagnostics.provider_key_slot, null);
+
+const realZeroRequestDiagnostics = openAiProviderRequestDiagnostics({
+  tokenDiagnostics: { input_tokens: 0, output_tokens: 0 },
+  providerLatencyMs: 0,
+  keySlot: 1
+});
+assert.equal(realZeroRequestDiagnostics.input_tokens, 0);
+assert.equal(realZeroRequestDiagnostics.output_tokens, 0);
+assert.equal(realZeroRequestDiagnostics.provider_latency_ms, 0);
+assert.equal(realZeroRequestDiagnostics.provider_key_slot, 1);
 
 assert.equal(JSON.stringify(openAiUsage).includes("sk-"), false);
 assert.equal(JSON.stringify(openAiAlternateUsage).includes("sk-"), false);

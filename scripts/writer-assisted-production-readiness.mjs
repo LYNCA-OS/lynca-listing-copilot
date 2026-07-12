@@ -44,14 +44,15 @@ function staticChecks() {
       && /runPostEnqueueQueueKick/.test(enqueue), "Recognition enters the durable production queue with bounded admission."),
     check("operator_isolation", /ownedJobs = result\.rows\.filter/.test(status)
       && /readV4SessionStatus/.test(feedback), "Status and feedback paths verify authenticated operator ownership."),
-    check("learning_loop", /persistV4FeedbackEvent/.test(feedback)
-      && /persistV4LearningEvent/.test(feedback), "Writer accept/edit/reject events persist both feedback and training artifacts."),
+    check("learning_loop", /persistV4WriterFeedbackTransaction/.test(feedback), "Writer accept/edit/reject events atomically persist feedback, training artifacts, and the terminal session state."),
     check("retained_workbook_export", /createWriterBatchExport/.test(exportApi)
       && /writerExportRowsBelongToOperator/.test(exportApi)
       && !/new pg\.Client|client\.query\(sql\)/.test(exportApi), "Final titles and image references are retained without runtime schema mutation."),
     check("release_gate", /npm audit --omit=dev --audit-level=moderate/.test(release)
       && /npm run test:v4-spine/.test(release)
-      && /admin-apply-v4-writer-export-migration/.test(release), "Production deploy verifies dependencies, V4 behavior, and schema before health checks.")
+      && /VERCEL_DEPLOY_HOOK_URL/.test(release)
+      && /git_commit_sha === process\.env\.GITHUB_SHA/.test(release)
+      && /admin-apply-v4-writer-export-migration/.test(release), "Production deploy verifies dependencies, the exact Git commit, V4 behavior, and schema before readiness checks.")
   ];
 }
 
