@@ -125,6 +125,7 @@ Seller-title policy recall is a weak guardrail, not reviewed identity GT.
 | `29185731437` | 1 | 6/6 | 2.593 | 19.9s / 23.8s | 1.75s | 0 | 0 / 0 | 10,444.83 | 5/6 |
 | `29185731437` | **2** | **6/6** | **4.176** | 26.1s / 28.4s | **1.52s** | **0** | **0 / 0** | **10,073.17** | 5/6 |
 | `29185731437` | 3 | 5/6 | 3.802 | 15.5s / 34.1s | 1.80s | 0 | 1 / 1 | — | 2/6 |
+| `29188554208` | **2** | **10/10** | **3.807** | **25.4s / 32.7s** | **1.90s** | **0** | **0 / 0** | **9,926.50** | **7/10** |
 
 The first run exposed a lost post-enqueue wakeup when several browser requests
 collapsed into one short queue-kick lease. The follow-up wakeup fix reduced the
@@ -145,8 +146,11 @@ concurrency-2 throughput and produced one unrecovered structured-response
 failure. OpenAI request and token headroom remained above 99.8%, so the knee is
 an application/provider-tail stability limit, not an account rate-limit ceiling.
 
-**Current decision:** production global/UI/worker concurrency is **2**. Multiple
+**Final current-architecture decision:** production global/UI/worker concurrency
+is **2**. The fresh 10-card confirmation completed 10/10 with zero retries,
+zero 429s, zero node errors and zero missing required nodes. Multiple
 API keys are a resilience and rotation pool; key count must not silently multiply
 global concurrency. The weak seller-title scores above are unpaired guardrails
-only and cannot be attributed causally to concurrency. A fresh 10-card
-concurrency-2 confirmation is required before the decision becomes final.
+only and cannot be attributed causally to concurrency. Re-run the capacity sweep
+after a provider/model, OCR rendezvous, queue architecture or rate-limit change;
+do not raise concurrency from key count alone.
