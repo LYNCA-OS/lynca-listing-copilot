@@ -245,6 +245,8 @@ assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED
 assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-only misses must return a stable non-error response.");
 assert.match(vercelConfigSource, /admin-apply-v4-production-job-queue-migration\.js/, "the production migration function must have an explicit Vercel bundle rule.");
 assert.match(vercelConfigSource, /supabase\/migrations\/\*\.sql/, "all required SQL migrations must ship with the admin migration function.");
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-production-job-queue-migration/, "production deployment must apply and verify the queue control-plane migration before declaring readiness.");
+assert.match(productionDeployWorkflowSource, /production-job-queue-migration\.json/, "queue migration evidence must be retained with every production release.");
 assert.match(queueMigrationApiSource, /fair_batch_claim_ok/, "the migration probe must exercise cross-batch fairness on the real database.");
 assert.match(queueMigrationApiSource, /capacity_bound_ok/, "the migration probe must prove capacity cannot be over-claimed.");
 assert.match(queueMigrationApiSource, /balanced_key_assignment_ok/, "the migration probe must prove concurrent slots are distributed across configured provider keys.");

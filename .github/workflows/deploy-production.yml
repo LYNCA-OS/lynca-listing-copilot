@@ -62,6 +62,12 @@ jobs:
           curl -fsS --max-time 45 \
             -H "x-lynca-worker-secret: $V4_JOB_WORKER_SECRET" \
             -X POST \
+            https://listing.lyncafei.team/api/admin-apply-v4-production-job-queue-migration \
+            -o /tmp/production-job-queue-migration.json
+          node -e 'const r=require("/tmp/production-job-queue-migration.json"); if(r.ok!==true) process.exit(1)'
+          curl -fsS --max-time 45 \
+            -H "x-lynca-worker-secret: $V4_JOB_WORKER_SECRET" \
+            -X POST \
             https://listing.lyncafei.team/api/admin-apply-v4-writer-export-migration \
             -o /tmp/writer-export-migration.json
           node -e 'const r=require("/tmp/writer-export-migration.json"); if(r.ok!==true) process.exit(1)'
@@ -134,6 +140,7 @@ jobs:
             /tmp/v4-health-deployed.json
             /tmp/provider-status.json
             /tmp/vercel-deploy-hook.json
+            /tmp/production-job-queue-migration.json
             /tmp/writer-export-migration.json
             /tmp/noncritical-persistence-migration.json
             /tmp/writer-ready-capacity-migration.json
