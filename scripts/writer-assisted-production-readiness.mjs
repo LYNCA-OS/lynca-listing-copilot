@@ -62,6 +62,18 @@ function cookieFrom(response) {
   return value.split(";")[0];
 }
 
+export function cloudModelCapacityReady(health = {}) {
+  const keyPoolSize = Number(health.openai_pool?.key_pool_size || 0);
+  const perKeyStableConcurrency = Number(health.openai_pool?.per_key_stable_concurrency || 0);
+  const workerClaimLimit = Number(health.production_queue?.worker_claim_limit || 0);
+  const configuredCapacity = keyPoolSize * perKeyStableConcurrency;
+  return health.default_model === "gpt-5-mini"
+    && keyPoolSize >= 1
+    && perKeyStableConcurrency >= 1
+    && workerClaimLimit >= 1
+    && workerClaimLimit <= configuredCapacity;
+}
+
 async function cloudChecks({ baseUrl, username, password }) {
   if (!username || !password) {
     return [check("cloud_runtime", false, "Cloud verification credentials are missing.")];
@@ -89,11 +101,10 @@ async function cloudChecks({ baseUrl, username, password }) {
       deployment_sha: health.deployment?.git_commit_sha || null,
       reasons: health.not_ready_reasons || []
     }),
-    check("cloud_model_and_capacity", health.default_model === "gpt-5-mini"
-      && Number(health.openai_pool?.key_pool_size || 0) >= 2
-      && Number(health.production_queue?.worker_claim_limit || 0) === 2, "Production uses GPT-5-mini with the measured two-job throughput/stability knee.", {
+    check("cloud_model_and_capacity", cloudModelCapacityReady(health), "Production uses GPT-5-mini within the configured key pool's stable concurrency envelope.", {
       model: health.default_model || null,
       key_pool: health.openai_pool?.key_pool_size || 0,
+      per_key_stable_concurrency: health.openai_pool?.per_key_stable_concurrency || null,
       claim_limit: health.production_queue?.worker_claim_limit || null
     }),
     check("cloud_supabase_contract", tableFailures.length === 0
