@@ -134,6 +134,9 @@ assert.match(apiWithOptions, /vector_retrieval_mode:\s*vectorAssistDefault \? "a
 assert.match(apiWithOptions, /vector_query_timeout_ms:\s*20000/, "title API should give vector retrieval the production-ready overlap budget before degrading");
 assert.match(apiWithOptions, /vectorEmbeddingPostProviderWaitMs/, "L2 should cap post-provider vector waiting before it dominates writer-ready latency");
 assert.match(apiWithOptions, /postObservationCatalogVectorHedgeMs/, "post-observation catalog should get a bounded head start before vector retrieval overlaps it");
+assert.match(apiWithOptions, /postObservationRetrievalCriticalPathBudgetMs/, "post-observation retrieval should have a bounded writer-critical-path budget");
+assert.match(api, /scheduleRetrievalWarmup/, "retrieval that misses the writer deadline should continue as background warmup");
+assert.match(api, /post_observation_retrieval_deferred_count/, "deadline-deferred retrieval should be observable");
 assert.match(api, /post_observation_catalog_vector_overlap_ms/, "slow post-observation catalog and vector lookups should overlap instead of stacking their tail latency");
 assert.match(api, /vector_embedding_overlap_timeout_after_provider/, "slow vector warmup after provider should degrade to a timeout packet instead of blocking the title");
 assert.match(apiWithOptions, /Math\.max\(\s*20000,[\s\S]*VECTOR_QUERY_TIMEOUT_MS/, "vector warmup should get a longer overlapped window than the post-provider wait");
@@ -158,6 +161,9 @@ assert.match(api, /envFlag\(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false\)/
 assert.doesNotMatch(api, /runFocusedVisionImpl:\s*createGptCriticalVerifierRunner/, "automatic second-model focused vision should not be wired from the title API");
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /function TitleCardComponent\(result, asset = null\)/, "frontend should render the one-line title card product surface");
+assert.match(js, /enqueue_embeddings:\s*false/, "frontend must not enqueue embedding jobs without a production consumer");
+assert.match(js, /enqueue_surface:\s*false/, "frontend must not enqueue surface jobs without a production consumer");
+assert.match(js, /enqueue_quality:\s*false/, "frontend must not enqueue quality jobs without a production consumer");
 assert.match(js, /writerTitleOmissionNotice/, "title-only UI should explain CSM fields omitted by the 80-character policy");
 assert.match(js, /已识别但因 80 字符限制省略/, "writer omission copy should be concrete and non-technical");
 assert.match(js, /data-title-input/, "title cards should expose a single editable title input");

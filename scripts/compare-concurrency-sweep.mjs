@@ -161,6 +161,7 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
       ?? summary.attempted_cards_per_minute);
   const writerP50 = numberOrNull(summary.writer_ready_p50_ms ?? summary.per_card_latency_ms?.p50);
   const writerP95 = numberOrNull(summary.writer_ready_p95_ms ?? summary.per_card_latency_ms?.p95);
+  const postObservationDeadlineNode = nodeMetric(summary, "post_observation_retrieval_deadline");
   const bottleneck = bottleneckNode(summary);
   const slotDistribution = keySlotDistribution(results);
   const row = {
@@ -213,6 +214,10 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
     catalog_retrieval_p95_ms: numberOrNull(nodeMetric(summary, "catalog_retrieval")?.duration_p95_ms),
     vector_retrieval_p50_ms: numberOrNull(nodeMetric(summary, "vector_retrieval")?.duration_p50_ms),
     vector_retrieval_p95_ms: numberOrNull(nodeMetric(summary, "vector_retrieval")?.duration_p95_ms),
+    post_observation_retrieval_deadline_p50_ms: numberOrNull(postObservationDeadlineNode?.duration_p50_ms),
+    post_observation_retrieval_deadline_p95_ms: numberOrNull(postObservationDeadlineNode?.duration_p95_ms),
+    post_observation_retrieval_deferred_card_count: numberOrZero(postObservationDeadlineNode?.status_breakdown?.PARTIAL),
+    post_observation_retrieval_completed_within_budget_count: numberOrZero(postObservationDeadlineNode?.output_count_total),
     ocr_wait_p50_ms: numberOrNull(summary.preingestion_ocr?.wait_p50_ms),
     ocr_wait_p95_ms: numberOrNull(summary.preingestion_ocr?.wait_p95_ms),
     ocr_timeout_count: numberOrZero(summary.preingestion_ocr?.timeout_count),
@@ -333,6 +338,15 @@ export function evaluateRow(row = {}, baseline = {}, { qualityTolerance = 0.03 }
   }
   if (row.token_headroom_min_ratio !== null && row.token_headroom_min_ratio < 0.05) {
     warningReasons.push("TOKEN_RATE_LIMIT_HEADROOM_BELOW_5_PERCENT");
+  }
+  if (row.request_headroom_min_ratio !== null && row.request_headroom_min_ratio < 0.01) {
+    rejectionReasons.push("REQUEST_RATE_LIMIT_HEADROOM_EXHAUSTED");
+  }
+  if (row.token_headroom_min_ratio !== null && row.token_headroom_min_ratio < 0.01) {
+    rejectionReasons.push("TOKEN_RATE_LIMIT_HEADROOM_EXHAUSTED");
+  }
+  if (row.queue_tail_share !== null && row.queue_tail_share > 0.25) {
+    warningReasons.push("QUEUE_EXCEEDS_25_PERCENT_OF_WRITER_P95");
   }
   if (row.provider_key_slot_imbalance !== null && row.provider_key_slot_imbalance > 0.5) {
     warningReasons.push("PROVIDER_KEY_SLOT_IMBALANCE_ABOVE_50_PERCENT");
@@ -466,6 +480,8 @@ export async function main(argv = process.argv) {
       `queue_tail_share=${row.queue_tail_share ?? "n/a"}`,
       `tail_amplification=${row.writer_tail_amplification ?? "n/a"}`,
       `provider_p95=${row.provider_latency_p95_ms ?? "n/a"}ms`,
+      `retrieval_deadline_p95=${row.post_observation_retrieval_deadline_p95_ms ?? "n/a"}ms`,
+      `retrieval_deferred=${row.post_observation_retrieval_deferred_card_count}/${row.attempted_count}`,
       `bottleneck=${row.bottleneck_node_id ?? "n/a"}:${row.bottleneck_node_p95_ms ?? "n/a"}ms`,
       `request_headroom=${row.request_headroom_min_ratio ?? "n/a"}`,
       `token_headroom=${row.token_headroom_min_ratio ?? "n/a"}`,

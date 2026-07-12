@@ -1,8 +1,8 @@
 # Environment Flag Inventory
 
-Generated 2026-07-10 by scripts/generate-env-flag-inventory.mjs — do not edit by hand.
+Generated 2026-07-12 by scripts/generate-env-flag-inventory.mjs — do not edit by hand.
 
-Total: 319 flags. Reaping rule: a kill switch that has stayed in one
+Total: 328 flags. Reaping rule: a kill switch that has stayed in one
 position for a quarter is not a switch, it is dead weight — inline its value
 and delete the flag.
 
@@ -181,7 +181,7 @@ and delete the flag.
 | `MAX_RESOLUTION_ROUNDS` | lib/listing/orchestration/resolution-budget.mjs |
 | `MAX_RESOLUTION_TIME_MS` | lib/listing/orchestration/resolution-budget.mjs |
 | `MAX_RETRIEVAL_TIME_MS` | lib/listing/orchestration/resolution-budget.mjs |
-| `METAVERSE_AUTH_SECRET` | api/admin-catalog-candidate-smoke.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>api/ebay-dcsports87-listings.js<br>api/listing-copilot-title.js<br>api/listing-image-upload-url.js<br>api/listing-image-verify-existing.js<br>api/listing-image-verify-upload.js<br>api/listing-preingest.js<br>api/listing-provider-status.js<br>api/listing-publish-draft.js<br>api/listing-render-title.js<br>api/login.js<br>api/session.js<br>api/v4/listing-preingest-worker.js<br>lib/api-rate-limit.mjs<br>lib/listing-session.mjs<br>lib/listing/storage/supabase-image-storage.mjs |
+| `METAVERSE_AUTH_SECRET` | api/admin-catalog-candidate-smoke.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>api/ebay-dcsports87-listings.js<br>api/listing-copilot-title.js<br>api/listing-image-upload-url.js<br>api/listing-image-verify-existing.js<br>api/listing-image-verify-upload.js<br>api/listing-preingest.js<br>api/listing-provider-status.js<br>api/listing-publish-draft.js<br>api/listing-render-title.js<br>api/login.js<br>api/v4/listing-preingest-worker.js<br>lib/api-rate-limit.mjs<br>lib/listing-session.mjs<br>lib/listing/storage/supabase-image-storage.mjs |
 | `METAVERSE_PASSWORD` | api/login.js |
 | `METAVERSE_USERNAME` | api/login.js |
 | `NEXT_PUBLIC_SUPABASE_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
@@ -227,8 +227,12 @@ and delete the flag.
 | `PHOENIX_ENDPOINT` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `POSTGRES_HYBRID_RETRIEVAL_TIMEOUT_MS` | lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs |
 | `POSTGRES_HYBRID_RETRIEVAL_TOP_N` | lib/listing/retrieval/postgres-hybrid-provider.mjs |
-| `POSTGRES_URL` | api/admin-apply-sem-definition-migration.js<br>api/admin-apply-v4-production-job-queue-migration.js<br>api/admin-apply-v4-writer-export-migration.js<br>api/v4/listing-export-workbook.js |
-| `POSTGRES_URL_NON_POOLING` | api/admin-apply-sem-definition-migration.js<br>api/admin-apply-v4-production-job-queue-migration.js<br>api/admin-apply-v4-writer-export-migration.js<br>api/v4/listing-export-workbook.js |
+| `POSTGRES_URL` | api/admin-apply-sem-definition-migration.js<br>api/admin-apply-v4-production-job-queue-migration.js<br>api/admin-apply-v4-writer-export-migration.js |
+| `POSTGRES_URL_NON_POOLING` | api/admin-apply-sem-definition-migration.js<br>api/admin-apply-v4-production-job-queue-migration.js<br>api/admin-apply-v4-writer-export-migration.js |
+| `POST_OBSERVATION_CATALOG_VECTOR_HEDGE_MS` | lib/listing/pipeline/provider-options.mjs |
+| `POST_OBSERVATION_RETRIEVAL_CRITICAL_PATH_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
+| `PREINGESTION_OCR_CONCURRENCY` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
+| `PREINGESTION_OCR_MAX_ATTEMPTS` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `PREWARM_CATALOG_RETRIEVAL` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_CATALOG_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_HYBRID_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |
@@ -268,6 +272,8 @@ and delete the flag.
 | `V4_FAST_SCOUT_CACHE_READ_TIMEOUT_MS` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `V4_JOB_COMPLETION_RETRY_BASE_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_COMPLETION_WRITE_ATTEMPTS` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_JOB_LEASE_HEARTBEAT_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_JOB_LEASE_HEARTBEAT_INTERVAL_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_LEASE_SECONDS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_PUMP_CRON_SECRET` | api/v4/listing-job-pump.js |
 | `V4_JOB_WORKER_DRAIN_LOOP_ENABLED` | api/v4/listing-job-worker.js |
@@ -288,6 +294,7 @@ and delete the flag.
 | `V4_QUEUE_DEFAULT_CREATE_L1` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_QUEUE_GLOBAL_DRAIN_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_QUEUE_KICK_DEDUP_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_QUEUE_MAX_JOBS_PER_REQUEST` | api/v4/listing-job-enqueue.js |
 | `V4_SUPABASE_PATCH_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
 | `V4_SUPABASE_READ_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
 | `V4_SUPABASE_RPC_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
@@ -301,7 +308,7 @@ and delete the flag.
 | `VECTOR_EMBEDDING_WARMUP_TIMEOUT_MS` | lib/listing/pipeline/provider-options.mjs |
 | `VECTOR_EVAL_CORRECTED_TITLE_AS_GT` | lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_GPT_CANDIDATE_LIMIT` | lib/listing/retrieval/vector-feature-flags.mjs |
-| `VECTOR_INDEX_READY` | api/v4/health.js<br>lib/listing/evaluation/blind-eval.mjs<br>lib/listing/readiness/workflow-readiness-audit.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/v4/prewarm.mjs<br>lib/listing/v4/route-planner/route-planner.mjs |
+| `VECTOR_INDEX_READY` | lib/listing/evaluation/blind-eval.mjs<br>lib/listing/readiness/workflow-readiness-audit.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/v4/prewarm.mjs<br>lib/listing/v4/route-planner/route-planner.mjs |
 | `VECTOR_PREPROCESSING_VERSION` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_QUERY_LOG_ENABLED` | lib/listing/retrieval/vector-telemetry.mjs |
 | `VECTOR_QUERY_TIMEOUT_MS` | lib/listing/evaluation/blind-eval.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
@@ -310,6 +317,8 @@ and delete the flag.
 | `VECTOR_RETRIEVAL_INTERNAL_TOP_N` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_RETRIEVAL_MODE` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_RETRIEVAL_TOP_K` | lib/listing/retrieval/vector-feature-flags.mjs |
+| `VECTOR_WORKER_MAX_ATTEMPTS` | lib/listing/retrieval/vector-feature-flags.mjs |
+| `VECTOR_WORKER_RETRY_BASE_MS` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_WORKER_TOKEN` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_WORKER_URL` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | api/admin-catalog-candidate-smoke.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>lib/data-loop/internal-sidecar-endpoints.mjs<br>lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/v4/jobs/worker-auth.mjs |

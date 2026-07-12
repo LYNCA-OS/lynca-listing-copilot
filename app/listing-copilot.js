@@ -890,9 +890,11 @@ async function ensurePreingestionBundle(asset) {
       source: "listing_copilot_background_prepare",
       enqueue_workers: true,
       enqueue_ocr: true,
-      enqueue_embeddings: true,
-      enqueue_surface: true,
-      enqueue_quality: true,
+      // Only OCR currently has a production consumer. Query embeddings still
+      // run concurrently inside recognition; do not create durable dead jobs.
+      enqueue_embeddings: false,
+      enqueue_surface: false,
+      enqueue_quality: false,
       verify_signed_read_urls: true
     })
   });

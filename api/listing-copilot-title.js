@@ -42,6 +42,8 @@ import {
   valuePresent,
   normalizePositiveIntegerOrNull,
   postObservationCatalogVectorHedgeMs,
+  postObservationRetrievalCriticalPathBudgetMs,
+  postObservationRetrievalDeadlineEnabled,
   positiveIntegerFromEnv,
   providerOptionsFromPayload,
   singleModelFastPathEnabled,
@@ -2870,6 +2872,53 @@ function skippedVectorCandidateContext({
   };
 }
 
+function deferredRetrievalCandidateContext({
+  kind = "vector",
+  reason = "post_observation_retrieval_deadline",
+  visualFeatures = {},
+  env = process.env,
+  providerOptions = {}
+} = {}) {
+  const packet = emptyVectorCandidatePacket(reason);
+  const eligibility = vectorCandidatePacketAssistEligibility(packet);
+  if (kind === "catalog") {
+    return {
+      retrieval: null,
+      packet,
+      assistPacket: packet,
+      catalog_assist_eligibility: eligibility,
+      promptPacket: false,
+      retrieval_phase: "provider_observation_catalog_deferred",
+      deferred: true,
+      deferred_reason: reason
+    };
+  }
+  return {
+    mode: vectorRetrievalConfig(env, providerOptions).mode,
+    visualFeatures,
+    packet,
+    assistPacket: packet,
+    retrieval: null,
+    worker: null,
+    telemetry: null,
+    vector_assist_eligibility: eligibility,
+    promptPacket: false,
+    retrieval_phase: "provider_observation_vector_deferred",
+    deferred: true,
+    deferred_reason: reason
+  };
+}
+
+function scheduleRetrievalWarmup(promise) {
+  const guarded = Promise.resolve(promise).catch(() => null);
+  try {
+    waitUntil(guarded);
+  } catch {
+    // Non-Vercel test/runtime environments may not expose a request context.
+  }
+  return guarded;
+}
+
 function waitForPromiseWithin(promise, timeoutMs) {
   if (timeoutMs <= 0) {
     return Promise.resolve({ settled: false, value: null });
@@ -2888,6 +2937,41 @@ function waitForPromiseWithin(promise, timeoutMs) {
   ]).finally(() => {
     if (timeout) clearTimeout(timeout);
   });
+}
+
+async function collectPromiseEntriesWithinBudget(entries = [], timeoutMs = 0) {
+  const states = entries.map((entry) => {
+    const state = {
+      key: String(entry?.key || ""),
+      settled: false,
+      value: null,
+      error: null,
+      promise: null
+    };
+    state.promise = Promise.resolve(entry?.promise).then(
+      (value) => {
+        state.settled = true;
+        state.value = value;
+        return value;
+      },
+      (error) => {
+        state.settled = true;
+        state.error = error;
+        return null;
+      }
+    );
+    return state;
+  });
+  if (states.length && timeoutMs > 0) {
+    await waitForPromiseWithin(Promise.all(states.map((state) => state.promise)), timeoutMs);
+  }
+  return {
+    settled: Object.fromEntries(states.filter((state) => state.settled).map((state) => [state.key, state.value])),
+    settled_keys: states.filter((state) => state.settled).map((state) => state.key),
+    pending_keys: states.filter((state) => !state.settled).map((state) => state.key),
+    pending_promises: states.filter((state) => !state.settled).map((state) => state.promise),
+    error_keys: states.filter((state) => state.error).map((state) => state.key)
+  };
 }
 
 async function prepareCatalogCandidateContext({
@@ -4709,11 +4793,18 @@ async function createOpenAiTitle(payload, selection, {
       "enable_post_observation_retrieval_hedge",
       envFlag(process.env, "ENABLE_POST_OBSERVATION_RETRIEVAL_HEDGE", true)
     ) === true;
+    const deadlineEnabled = postObservationRetrievalDeadlineEnabled(process.env, providerOptions);
+    const criticalPathBudgetMs = postObservationRetrievalCriticalPathBudgetMs(process.env, providerOptions);
+    const deadlineStartedAt = nowMs();
+    const remainingDeadlineMs = () => Math.max(0, criticalPathBudgetMs - (nowMs() - deadlineStartedAt));
     const hedgeWaitStartedAt = nowMs();
-    const lateCatalogRace = hedgeEnabled
+    const catalogHeadStartMs = deadlineEnabled
+      ? Math.min(postObservationCatalogVectorHedgeMs(process.env, providerOptions), criticalPathBudgetMs)
+      : postObservationCatalogVectorHedgeMs(process.env, providerOptions);
+    const lateCatalogRace = hedgeEnabled || deadlineEnabled
       ? await waitForPromiseWithin(
         lateCatalogPromise,
-        postObservationCatalogVectorHedgeMs(process.env, providerOptions)
+        catalogHeadStartMs
       )
       : { settled: true, value: await lateCatalogPromise };
     addTiming(
@@ -4723,12 +4814,60 @@ async function createOpenAiTitle(payload, selection, {
     );
     let lateCatalogContext = lateCatalogRace.settled ? lateCatalogRace.value : null;
     let hedgedVectorContext = null;
-    if (!lateCatalogRace.settled) {
+    let lateVectorPromise = null;
+    if (lateCatalogRace.settled) {
+      addTiming(timingContext, "post_observation_catalog_settled_within_budget_count", 1);
+    }
+    if (!lateCatalogRace.settled || !catalogStrongCandidateForVectorLazy(lateCatalogContext || {}, providerResolvedForRetrieval)) {
+      lateVectorPromise = startLateVectorLookup();
+    }
+    if (deadlineEnabled) {
+      const retrievalEntries = [];
+      if (!lateCatalogRace.settled) {
+        retrievalEntries.push({ key: "catalog", promise: lateCatalogPromise });
+      }
+      if (lateVectorPromise) {
+        retrievalEntries.push({ key: "vector", promise: lateVectorPromise });
+      }
+      let boundedRetrieval = {
+        settled: {},
+        settled_keys: [],
+        pending_keys: retrievalEntries.map((entry) => entry.key),
+        pending_promises: retrievalEntries.map((entry) => entry.promise)
+      };
+      if (retrievalEntries.length && remainingDeadlineMs() > 0) {
+        boundedRetrieval = await timeAsync(
+          timingContext,
+          "post_observation_catalog_vector_overlap_ms",
+          () => collectPromiseEntriesWithinBudget(retrievalEntries, remainingDeadlineMs())
+        );
+      }
+      if (boundedRetrieval.settled_keys.includes("catalog")) {
+        lateCatalogContext = boundedRetrieval.settled.catalog;
+        addTiming(timingContext, "post_observation_catalog_settled_within_budget_count", 1);
+      }
+      if (boundedRetrieval.settled_keys.includes("vector")) {
+        hedgedVectorContext = boundedRetrieval.settled.vector;
+        addTiming(timingContext, "post_observation_vector_settled_within_budget_count", 1);
+      }
+      const pendingPromises = boundedRetrieval.pending_promises || [];
+      if (pendingPromises.length) {
+        addTiming(timingContext, "post_observation_retrieval_deferred_count", pendingPromises.length);
+        scheduleRetrievalWarmup(Promise.allSettled(pendingPromises));
+      }
+      addTiming(
+        timingContext,
+        "post_observation_retrieval_deadline_ms",
+        Math.min(nowMs() - deadlineStartedAt, criticalPathBudgetMs)
+      );
+    } else if (!lateCatalogRace.settled) {
       [lateCatalogContext, hedgedVectorContext] = await timeAsync(
         timingContext,
         "post_observation_catalog_vector_overlap_ms",
-        () => Promise.all([lateCatalogPromise, startLateVectorLookup()])
+        () => Promise.all([lateCatalogPromise, lateVectorPromise || startLateVectorLookup()])
       );
+    } else if (lateVectorPromise) {
+      hedgedVectorContext = await lateVectorPromise;
     }
     const lateStrongCatalogCandidate = lateCatalogContext
       ? catalogStrongCandidateForVectorLazy(lateCatalogContext, providerResolvedForRetrieval)
@@ -4781,8 +4920,17 @@ async function createOpenAiTitle(payload, selection, {
           ...lateCatalogContext,
           retrieval_phase: "provider_observation_catalog_lookup"
         }
-        : catalogContext || await catalogContextPromise.catch(() => null);
-      vectorContext = hedgedVectorContext || await startLateVectorLookup();
+        : catalogContext || (deadlineEnabled
+          ? deferredRetrievalCandidateContext({ kind: "catalog" })
+          : await catalogContextPromise.catch(() => null));
+      vectorContext = hedgedVectorContext || (deadlineEnabled
+        ? deferredRetrievalCandidateContext({
+          kind: "vector",
+          visualFeatures,
+          env: process.env,
+          providerOptions
+        })
+        : await (lateVectorPromise || startLateVectorLookup()));
     }
   }
   if (!catalogContext) catalogContext = await catalogContextPromise.catch(() => null);
@@ -4911,6 +5059,7 @@ export const __listingCopilotTitleTestHooks = {
   buildExactAnchorFastLaneShadow,
   catalogCandidateHasStrongAnchor,
   catalogStrongCandidateForVectorLazy,
+  collectPromiseEntriesWithinBudget,
   configuredMaxPayloadImages,
   finalizeDeterministicPresentation,
   finalResolvedFieldsForPresentation,
@@ -4918,6 +5067,8 @@ export const __listingCopilotTitleTestHooks = {
   openSetAssistShadowGuardReason,
   preingestionEvidenceDocumentFromPayload,
   providerOptionsFromPayload,
+  postObservationRetrievalCriticalPathBudgetMs,
+  postObservationRetrievalDeadlineEnabled,
   retrievalAnchorSummary,
   retrievalFieldsHavePrePromptVectorAnchor,
   scaffoldTitleConflictsWithDirectEvidence,

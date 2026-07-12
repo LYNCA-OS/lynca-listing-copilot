@@ -90,7 +90,14 @@ function reportFor({
         missing_required_node_count: 0,
         node_metrics: [
           { node_id: "catalog_retrieval", duration_p50_ms: 600, duration_p95_ms: 1100 },
-          { node_id: "vector_retrieval", duration_p50_ms: 5000, duration_p95_ms: 7000 }
+          { node_id: "vector_retrieval", duration_p50_ms: 5000, duration_p95_ms: 7000 },
+          {
+            node_id: "post_observation_retrieval_deadline",
+            duration_p50_ms: 1800,
+            duration_p95_ms: 1802,
+            output_count_total: 1,
+            status_breakdown: { COMPLETED: 1, PARTIAL: 3 }
+          }
         ]
       }
     },
@@ -107,6 +114,9 @@ const baselineRow = metricRow(reportFor({ concurrency: 1, cardsPerMinute: 1, wri
 assert.equal(baselineRow.completed_cards_per_minute, 1);
 assert.equal(baselineRow.provider_latency_p95_ms, 20000);
 assert.equal(baselineRow.catalog_retrieval_p95_ms, 1100);
+assert.equal(baselineRow.post_observation_retrieval_deadline_p95_ms, 1802);
+assert.equal(baselineRow.post_observation_retrieval_deferred_card_count, 3);
+assert.equal(baselineRow.post_observation_retrieval_completed_within_budget_count, 1);
 assert.equal(baselineRow.node_ledger_present_count, 4);
 assert.equal(baselineRow.latest_remaining_requests, 4990);
 assert.equal(baselineRow.queue_tail_share, Number((1000 / 38000).toFixed(6)));
@@ -152,6 +162,13 @@ assert.equal(telemetryRow.provider_key_slot_imbalance, 0);
 const stableBaseline = evaluateRow(baselineRow, baselineRow);
 assert.equal(stableBaseline.stable, true);
 assert.equal(stableBaseline.sample_comparison_mode, "PAIRED");
+
+const exhaustedHeadroom = evaluateRow({
+  ...baselineRow,
+  request_headroom_min_ratio: 0.005
+}, baselineRow);
+assert.equal(exhaustedHeadroom.stable, false);
+assert.ok(exhaustedHeadroom.rejection_reasons.includes("REQUEST_RATE_LIMIT_HEADROOM_EXHAUSTED"));
 
 const resumedRow = metricRow({
   ...reportFor({ concurrency: 2, cardsPerMinute: 99, writerP95: 39000 }),
@@ -212,5 +229,7 @@ assert.match(workflowSource, /levels:\s*\n\s*description:/);
 assert.match(workflowSource, /SWEEP_LEVELS:/);
 assert.match(workflowSource, /--exclude-sealed-products/);
 assert.match(workflowSource, /REPORT_ARGS/);
+assert.match(workflowSource, /Stopping sweep after unstable/);
+assert.match(workflowSource, /EXECUTED_SWEEP_LEVELS/);
 
 console.log("concurrency sweep tests passed");

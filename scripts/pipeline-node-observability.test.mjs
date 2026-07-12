@@ -95,6 +95,25 @@ assert.equal(healthyLedger.nodes.find((node) => node.node_id === "catalog_retrie
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "provider")?.metrics.total_tokens, 120);
 assert.equal(JSON.stringify(healthyLedger).includes("sk-secret-value"), false);
 
+const deadlineContext = createTimingContext({
+  asset_id: "asset-observability-deadline",
+  images: [{}, {}]
+});
+deadlineContext.timing.post_observation_retrieval_deadline_ms = 1800;
+deadlineContext.timing.post_observation_retrieval_deferred_count = 2;
+deadlineContext.timing.post_observation_catalog_settled_within_budget_count = 0;
+deadlineContext.timing.post_observation_vector_settled_within_budget_count = 0;
+const deadlineLedger = buildPipelineNodeLedger({
+  result: { ...healthyResult, timing: deadlineContext.timing },
+  timingContext: deadlineContext,
+  payload: { asset_id: "asset-observability-deadline", images: [{}, {}] }
+});
+const deadlineNode = deadlineLedger.nodes.find((node) => node.node_id === "post_observation_retrieval_deadline");
+assert.equal(deadlineNode.status, "PARTIAL");
+assert.equal(deadlineNode.duration_ms, 1800);
+assert.equal(deadlineNode.output_count, 0);
+assert.equal(deadlineNode.metrics.deferred_count, 2);
+
 const presentationRetainedLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

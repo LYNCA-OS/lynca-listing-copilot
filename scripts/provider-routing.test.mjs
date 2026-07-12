@@ -12,7 +12,11 @@ import {
 import { openAiResponsesModelControls, openAiResponsesTextOptions } from "../lib/listing/providers/openai-responses-request.mjs";
 import { parseProviderMessagePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
-import { postObservationCatalogVectorHedgeMs } from "../lib/listing/pipeline/provider-options.mjs";
+import {
+  postObservationCatalogVectorHedgeMs,
+  postObservationRetrievalCriticalPathBudgetMs,
+  postObservationRetrievalDeadlineEnabled
+} from "../lib/listing/pipeline/provider-options.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
 const providerRegistrySource = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
@@ -141,6 +145,24 @@ assert.equal(postObservationCatalogVectorHedgeMs({}, {}), 900);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 250 }), 250);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 20 }), 100);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 9000 }), 5000);
+assert.equal(postObservationRetrievalDeadlineEnabled({}, {}), true);
+assert.equal(postObservationRetrievalDeadlineEnabled({ ENABLE_POST_OBSERVATION_RETRIEVAL_DEADLINE: "false" }, {}), false);
+assert.equal(postObservationRetrievalDeadlineEnabled({}, { enable_post_observation_retrieval_deadline: false }), false);
+assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, {}), 1800);
+assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation_retrieval_critical_path_budget_ms: 900 }), 900);
+assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation_retrieval_critical_path_budget_ms: 20 }), 250);
+assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation_retrieval_critical_path_budget_ms: 20000 }), 10000);
+
+const deadlineProbeStartedAt = Date.now();
+const deadlineProbe = await __listingCopilotTitleTestHooks.collectPromiseEntriesWithinBudget([
+  { key: "catalog", promise: Promise.resolve({ id: "catalog-ready" }) },
+  { key: "vector", promise: new Promise((resolve) => setTimeout(() => resolve({ id: "vector-late" }), 100)) }
+], 25);
+assert.deepEqual(deadlineProbe.settled.catalog, { id: "catalog-ready" });
+assert.deepEqual(deadlineProbe.settled_keys, ["catalog"]);
+assert.deepEqual(deadlineProbe.pending_keys, ["vector"]);
+assert.ok(Date.now() - deadlineProbeStartedAt < 90, "deadline collector must not wait for the slow retrieval");
+await Promise.all(deadlineProbe.pending_promises);
 
 const parsedContent = parseProviderMessagePayload({
   content: "```json\n{\"title\":\"Test\",\"fields\":{\"player\":\"A\"},\"unresolved\":[]}\n```"
