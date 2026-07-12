@@ -152,6 +152,7 @@ export function payloadForV4ProductionJob(job = {}) {
     provider_id: basePayload.provider_id || job.provider_id || "openai_legacy",
     vision_provider: basePayload.vision_provider || job.provider_id || "openai_legacy",
     v4_queue_job_id: job.id || basePayload.v4_queue_job_id || basePayload.job_id || undefined,
+    v4_queue_worker_id: job.lease_owner || basePayload.v4_queue_worker_id || undefined,
     v4_queue_job_type: jobType,
     v4_queue_lane: job.lane || basePayload.lane || (fastScoutDraft ? v4JobLanes.INTERACTIVE : v4JobLanes.BACKGROUND),
     openai_preferred_key_slot: leasedKeySlot || basePayload.openai_preferred_key_slot || null,
@@ -380,31 +381,63 @@ export default async function handler(req, res) {
       leaseSeconds,
       task: async (leaseHeartbeat) => {
         let capacityRelease = null;
+        let completion = null;
         try {
           const result = await runJob(job, req);
-          capacityRelease = await releaseProviderCapacity(job);
           const jobStatus = completionStatusForJob(job);
-          const completion = await completeV4RecognitionJob({
-            jobId: job.id,
-            workerId: job.lease_owner || null,
-            status: jobStatus,
-            result: {
-              ok: true,
-              lane: job.lane || null,
-              job_type: normalizedJobType(job),
-              recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
-              final_title: result.response.final_title || result.response.title || result.response.writer_safe_draft || null,
-              title_stage: result.response.title_stage || null,
-              assisted_draft_status: result.response.assisted_draft_status || null,
-              route: result.response.route || result.response.route_plan?.route || null
-            },
-            timing: {
-              worker_total_ms: result.latency_ms,
-              response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null,
-              lease_heartbeat: { ...leaseHeartbeat }
-            },
-            previousError: job.error || null
-          });
+          const writerReadyCapacityRelease = result.response.v4_persistence?.writer_ready_provider_capacity_release || null;
+          const tailStartedAt = Date.now();
+          let capacityReleaseMs = 0;
+          let completionWriteMs = 0;
+          const capacityReleasePromise = writerReadyCapacityRelease?.released === true
+            ? Promise.resolve({
+              ...writerReadyCapacityRelease,
+              released: true,
+              already_released_at_writer_ready: true
+            })
+            : (async () => {
+              const startedAt = Date.now();
+              const released = await releaseProviderCapacity(job);
+              capacityReleaseMs = Date.now() - startedAt;
+              return released;
+            })();
+          const completionPromise = (async () => {
+            const startedAt = Date.now();
+            const completed = await completeV4RecognitionJob({
+              jobId: job.id,
+              workerId: job.lease_owner || null,
+              status: jobStatus,
+              result: {
+                ok: true,
+                lane: job.lane || null,
+                job_type: normalizedJobType(job),
+                recognition_session_id: result.response.recognition_session_id || job.recognition_session_id,
+                final_title: result.response.final_title || result.response.title || result.response.writer_safe_draft || null,
+                title_stage: result.response.title_stage || null,
+                assisted_draft_status: result.response.assisted_draft_status || null,
+                route: result.response.route || result.response.route_plan?.route || null
+              },
+              timing: {
+                worker_total_ms: result.latency_ms,
+                response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null,
+                writer_ready_capacity_release: writerReadyCapacityRelease,
+                lease_heartbeat: { ...leaseHeartbeat }
+              },
+              previousError: job.error || null
+            });
+            completionWriteMs = Date.now() - startedAt;
+            return completed;
+          })();
+          [capacityRelease, completion] = await Promise.all([capacityReleasePromise, completionPromise]);
+          const postHandlerTailMs = Date.now() - tailStartedAt;
+          console.log("[v4_worker_post_handler_tail]", JSON.stringify({
+            job_id: job.id || null,
+            writer_ready_capacity_release_mode: writerReadyCapacityRelease?.release_boundary || "worker_tail",
+            provider_capacity_released_at_writer_ready: writerReadyCapacityRelease?.released === true,
+            capacity_release_ms: capacityReleaseMs,
+            completion_write_ms: completionWriteMs,
+            post_handler_tail_ms: postHandlerTailMs
+          }));
           if (completion.saved !== true) {
             const leaseLost = completion.error === "row_not_matched";
             throw Object.assign(new Error(`${leaseLost ? "queue_lease_lost" : "queue_completion_write_failed"}:${completion.error || "unknown_error"}`), {
@@ -428,6 +461,10 @@ export default async function handler(req, res) {
             latency_ms: result.latency_ms,
             saved: completion.saved,
             completion_write_attempts: completion.write_attempts || 1,
+            capacity_release_ms: capacityReleaseMs,
+            completion_write_ms: completionWriteMs,
+            post_handler_tail_ms: postHandlerTailMs,
+            provider_capacity_released_at_writer_ready: writerReadyCapacityRelease?.released === true,
             provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
             provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
             provider_capacity_released: capacityRelease.released === true,

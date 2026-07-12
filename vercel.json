@@ -56,6 +56,10 @@
       "maxDuration": 300,
       "includeFiles": "supabase/migrations/20260712072310_atomic_v4_noncritical_persistence.sql"
     },
+    "api/admin-apply-v4-writer-ready-capacity-migration.js": {
+      "maxDuration": 300,
+      "includeFiles": "supabase/migrations/20260712153000_atomic_v4_writer_ready_capacity_release.sql"
+    },
     "api/admin-import-writer-title-catalog-seed.js": {
       "maxDuration": 300,
       "includeFiles": "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx"

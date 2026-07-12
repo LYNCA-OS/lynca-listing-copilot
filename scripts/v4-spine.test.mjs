@@ -163,6 +163,8 @@ const writerExportApiSource = await readFile("api/v4/listing-export-workbook.js"
 const atomicFeedbackMigrationSource = await readFile("supabase/migrations/20260711200533_atomic_v4_writer_feedback_transaction.sql", "utf8");
 const atomicNoncriticalMigrationSource = await readFile("supabase/migrations/20260712072310_atomic_v4_noncritical_persistence.sql", "utf8");
 const atomicNoncriticalMigrationApiSource = await readFile("api/admin-apply-v4-noncritical-persistence-migration.js", "utf8");
+const writerReadyCapacityMigrationSource = await readFile("supabase/migrations/20260712153000_atomic_v4_writer_ready_capacity_release.sql", "utf8");
+const writerReadyCapacityMigrationApiSource = await readFile("api/admin-apply-v4-writer-ready-capacity-migration.js", "utf8");
 const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-production.yml", "utf8");
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
@@ -175,6 +177,8 @@ assert.match(v4TitleApiSource, /const backgroundPersistence = persistV4NonCritic
 assert.match(v4TitleApiSource, /persistV4NonCriticalArtifactsAtomic/, "post-title learning artifacts must prefer one atomic RPC over four concurrent PostgREST writes.");
 assert.match(v4TitleApiSource, /async function persistV4NonCriticalArtifacts\([\s\S]*l1Stage = false/, "L2 background persistence must default its catalog-gap stage guard instead of reading an undeclared variable.");
 assert.match(v4TitleApiSource, /scheduleV4Background\(backgroundPersistence/, "non-critical persistence and its self-observation must not block writer-ready L2 by default.");
+assert.match(v4TitleApiSource, /persistV4WriterReadyAndReleaseCapacity/, "writer-ready persistence must be able to release scarce provider capacity in the same transaction.");
+assert.match(v4TitleApiSource, /writer_ready_provider_capacity_release/, "the release boundary must remain observable in the V4 response.");
 assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSummary/, "background persistence must report its terminal artifact-level outcome.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
 assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish its cache probe before final telemetry is assembled.");
@@ -223,7 +227,11 @@ assert.match(atomicFeedbackMigrationSource, /revoke execute on function public\.
 assert.match(atomicNoncriticalMigrationSource, /insert into public\.v4_field_evidence[\s\S]*insert into public\.v4_candidate_traces[\s\S]*insert into public\.v4_catalog_gap_queue[\s\S]*insert into public\.v4_production_quality_ledger/, "post-title evidence artifacts must persist in one database transaction.");
 assert.match(atomicNoncriticalMigrationSource, /revoke all on function public\.persist_v4_noncritical_artifacts[\s\S]*from public, anon, authenticated/, "the non-critical persistence RPC must remain service-role only.");
 assert.match(atomicNoncriticalMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the production migration probe must verify the RPC privilege boundary.");
+assert.match(writerReadyCapacityMigrationSource, /update public\.v4_recognition_sessions[\s\S]*update public\.v4_provider_capacity_leases/, "writer-ready state and provider-capacity release must commit in one database transaction.");
+assert.match(writerReadyCapacityMigrationSource, /revoke all on function public\.persist_v4_writer_ready_and_release_capacity[\s\S]*from public, anon, authenticated/, "the writer-ready capacity RPC must remain service-role only.");
+assert.match(writerReadyCapacityMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the writer-ready capacity migration probe must verify the RPC privilege boundary.");
 assert.match(productionDeployWorkflowSource, /admin-apply-v4-noncritical-persistence-migration[\s\S]*noncritical-persistence-migration\.json/, "production deploys must apply and retain evidence for the atomic persistence migration.");
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-writer-ready-capacity-migration[\s\S]*writer-ready-capacity-migration\.json/, "production deploys must apply and retain evidence for the writer-ready capacity migration.");
 assert.match(writerLearningSupersessionMigrationSource, /before insert on public\.v4_learning_events/, "writer learning supersession must be enforced at the database boundary.");
 assert.match(writerLearningSupersessionMigrationSource, /SUPERSEDED_BY_LATEST_WRITER_FEEDBACK/, "older writer-derived training truth must be retained for audit but excluded from training.");
 assert.match(writerLearningSupersessionMigrationSource, /events\.id <> new\.id[\s\S]*events\.training_eligible = true/, "the latest writer event must only supersede older eligible events for the same session.");
@@ -235,6 +243,9 @@ assert.match(v4SmokeSource, /resume_batch_job_missing/, "batch recovery must fai
 assert.match(v4SmokeSource, /excluded_from_recognition_wall_time:\s*true/, "post-title diagnostics hydration must never inflate writer latency or throughput timing.");
 assert.match(v4SmokeSource, /hydrateV4JobDiagnostics/, "per-card polling must hydrate final node, OCR, and persistence evidence after timing stops.");
 assert.match(queueWorkerApiSource, /retryable: error\?\.retryable/, "queue workers must preserve provider retryability instead of retrying deterministic contract failures.");
+assert.match(queueWorkerApiSource, /Promise\.all\(\[capacityReleasePromise, completionPromise\]\)/, "capacity release and queue completion must not serialize the worker tail.");
+assert.match(queueWorkerApiSource, /provider_capacity_released_at_writer_ready/, "worker telemetry must expose whether the scarce slot was already released at writer readiness.");
+assert.match(vercelConfigSource, /admin-apply-v4-writer-ready-capacity-migration\.js/, "the writer-ready capacity migration must ship in the Vercel artifact.");
 
 const route = planV4RecognitionRoute({
   preingestion_bundle_id: "bundle-1",

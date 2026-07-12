@@ -25,6 +25,7 @@ import {
   v4JobFailureCode
 } from "../api/v4/listing-job-worker.js";
 import { isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
+import { persistV4WriterReadyAndReleaseCapacity } from "../lib/listing/v4/session/session-store.mjs";
 
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
 
@@ -114,6 +115,7 @@ assert.equal(l2Payload.v4_force_l2_direct, true);
 assert.equal(l2Payload.disable_fast_scout_l1, true);
 const capacityLeasedPayload = payloadForV4ProductionJob({
   ...optInStageJobs[1],
+  lease_owner: "worker-capacity-2",
   queue_tags: {
     ...optInStageJobs[1].queue_tags,
     provider_capacity_slot: 4,
@@ -122,6 +124,7 @@ const capacityLeasedPayload = payloadForV4ProductionJob({
 });
 assert.equal(capacityLeasedPayload.openai_preferred_key_slot, 2);
 assert.equal(capacityLeasedPayload.provider_capacity_slot, 4);
+assert.equal(capacityLeasedPayload.v4_queue_worker_id, "worker-capacity-2");
 
 const writes = [];
 const fetchForWrites = async (url, request = {}) => {
@@ -209,6 +212,44 @@ assert.equal(releasedCapacity.released, true);
 assert.equal(releasedCapacity.released_count, 1);
 assert.ok(capacityRpcCalls[0].url.endsWith("/rest/v1/rpc/release_v4_provider_capacity_for_job"));
 assert.ok(capacityRpcCalls[0].request.body.includes('"p_job_id":"v4job-claimed"'));
+
+const writerReadyCapacityCalls = [];
+const writerReadyCapacity = await persistV4WriterReadyAndReleaseCapacity({
+  sessionId: "v4sess-writer-ready",
+  patch: {
+    status: "DRAFT_READY",
+    l2_status: "READY",
+    l2_title: "Writer title",
+    provider_result_summary: { writer_ready_capacity_release_mode: "writer_ready_atomic" }
+  },
+  jobId: "v4job-writer-ready",
+  workerId: "worker-capacity-2",
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    writerReadyCapacityCalls.push({ url: String(url), request });
+    return jsonResponse({
+      session_saved: true,
+      provider_capacity_released: true,
+      provider_capacity_released_count: 1,
+      release_boundary: "writer_ready_atomic"
+    });
+  }
+});
+assert.equal(writerReadyCapacity.saved, true);
+assert.equal(writerReadyCapacity.released, true);
+assert.equal(writerReadyCapacity.released_count, 1);
+assert.ok(writerReadyCapacityCalls[0].url.endsWith("/rest/v1/rpc/persist_v4_writer_ready_and_release_capacity"));
+assert.deepEqual(JSON.parse(writerReadyCapacityCalls[0].request.body), {
+  p_session_id: "v4sess-writer-ready",
+  p_session_patch: {
+    status: "DRAFT_READY",
+    l2_status: "READY",
+    l2_title: "Writer title",
+    provider_result_summary: { writer_ready_capacity_release_mode: "writer_ready_atomic" }
+  },
+  p_job_id: "v4job-writer-ready",
+  p_worker_id: "worker-capacity-2"
+});
 
 assert.equal(v4JobLeaseHeartbeatEnabled({}), true);
 assert.equal(v4JobLeaseHeartbeatEnabled({ V4_JOB_LEASE_HEARTBEAT_ENABLED: "false" }), false);

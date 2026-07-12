@@ -20,6 +20,7 @@ import {
   persistV4FieldEvidence,
   persistV4NonCriticalArtifactsAtomic,
   persistV4QualityLedger,
+  persistV4WriterReadyAndReleaseCapacity,
   updateV4RecognitionSession,
   updateV4RecognitionSessionWithRetry
 } from "../../lib/listing/v4/session/session-store.mjs";
@@ -385,6 +386,12 @@ function scheduleV4Background(promise, label = "background task") {
 function nonCriticalPersistenceDeferred(payload = {}, env = process.env) {
   if (payload.v4_defer_noncritical_persistence === false || payload.defer_noncritical_persistence === false) return false;
   return String(env.ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE || "true").toLowerCase() !== "false";
+}
+
+function atomicWriterReadyCapacityReleaseEnabled(payload = {}, env = process.env) {
+  if (!payload.v4_queue_job_id) return false;
+  if (payload.v4_atomic_writer_ready_capacity_release === false) return false;
+  return String(env.ENABLE_V4_ATOMIC_WRITER_READY_CAPACITY_RELEASE || "true").toLowerCase() !== "false";
 }
 
 function deferredArtifact(reason = "writer_ready_first") {
@@ -815,14 +822,56 @@ async function persistPipelineResult({
   sessionPatch.l2_route = routePlan.route || null;
   sessionPatch.l2_timing = result.timing || result.timings || {};
   sessionPatch.resolved_fields = resolvedFromResult(result);
-  const sessionUpdate = await updateV4RecognitionSession({
-    sessionId,
-    patch: sessionPatch
-  });
+  const atomicCapacityReleaseEnabled = atomicWriterReadyCapacityReleaseEnabled(payload, process.env);
+  sessionPatch.provider_result_summary.writer_ready_capacity_release_mode = atomicCapacityReleaseEnabled
+    ? "writer_ready_atomic"
+    : "worker_tail";
+  let writerReadyCapacityRelease = atomicCapacityReleaseEnabled
+    ? await persistV4WriterReadyAndReleaseCapacity({
+      sessionId,
+      patch: sessionPatch,
+      jobId: payload.v4_queue_job_id,
+      workerId: payload.v4_queue_worker_id || null
+    })
+    : {
+      saved: false,
+      released: false,
+      skipped: true,
+      reason: payload.v4_queue_job_id ? "atomic_writer_ready_capacity_release_disabled" : "not_queue_job",
+      release_boundary: "worker_tail"
+    };
+  let sessionUpdate;
+  if (writerReadyCapacityRelease.saved === true) {
+    sessionUpdate = {
+      saved: true,
+      row: null,
+      error: null,
+      persistence_mode: "writer_ready_capacity_atomic_rpc",
+      sanitized_nul_byte_count: writerReadyCapacityRelease.sanitized_nul_byte_count || 0
+    };
+  } else {
+    if (atomicCapacityReleaseEnabled) {
+      sessionPatch.provider_result_summary.writer_ready_capacity_release_mode = "worker_tail_fallback";
+      sessionPatch.provider_result_summary.writer_ready_capacity_release_error = String(
+        writerReadyCapacityRelease.error || "atomic_writer_ready_capacity_release_failed"
+      ).slice(0, 160);
+    }
+    sessionUpdate = await updateV4RecognitionSession({
+      sessionId,
+      patch: sessionPatch
+    });
+    writerReadyCapacityRelease = {
+      ...writerReadyCapacityRelease,
+      released: false,
+      fallback_required: true,
+      release_boundary: "worker_tail_fallback"
+    };
+  }
   if (deferNonCriticalPersistence) {
     const persistence = {
       create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
       update_session: sessionUpdate,
+      writer_ready_provider_capacity_release: writerReadyCapacityRelease,
       field_evidence: deferredArtifact("writer_ready_first"),
       candidate_trace: deferredArtifact("writer_ready_first"),
       catalog_gap: deferredArtifact("writer_ready_first"),
@@ -902,6 +951,7 @@ async function persistPipelineResult({
   const partialPersistence = {
     create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
     update_session: sessionUpdate,
+    writer_ready_provider_capacity_release: writerReadyCapacityRelease,
     field_evidence: fieldEvidence,
     candidate_trace: candidateTrace,
     catalog_gap: catalogGap
