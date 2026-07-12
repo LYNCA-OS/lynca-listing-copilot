@@ -11,6 +11,7 @@ import {
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
+import { applyPreIngestionEvidencePatchesToPayload } from "../lib/listing/pipeline/preingestion-evidence.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
 const env = {
@@ -99,6 +100,18 @@ assert.equal(
   0,
   "unversioned OCR must fail closed"
 );
+
+const inMemoryPayload = {
+  preingestion_evidence_patches: [{ field: "grade_company", value: "BGS", source_type: "SLAB_LABEL" }]
+};
+const inMemoryPatchResult = applyPreIngestionEvidencePatchesToPayload(inMemoryPayload, [
+  currentPatchSet[0],
+  currentPatchSet[1]
+], { source: "ocr_rendezvous_snapshot" });
+assert.equal(inMemoryPatchResult.source, "ocr_rendezvous_snapshot");
+assert.equal(inMemoryPatchResult.patch_count, 2);
+assert.equal(inMemoryPatchResult.added_patch_count, 1);
+assert.deepEqual(inMemoryPayload.preingestion_evidence_patches.map((entry) => entry.value), ["242/250", "09/50"]);
 
 const quality = buildPreingestionQualitySummary({
   images: [front, back, { ...front, id: "front-copy" }],

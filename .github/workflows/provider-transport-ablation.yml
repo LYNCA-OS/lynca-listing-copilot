@@ -19,6 +19,14 @@ on:
         options:
           - standard_vs_compact
           - compact_vs_ultra_fast
+      ultra_image_detail:
+        description: "Ultra-fast GPT image detail"
+        type: choice
+        default: "auto"
+        options:
+          - auto
+          - low
+          - high
 
 concurrency:
   group: provider-transport-ablation
@@ -106,7 +114,7 @@ jobs:
         run: |
           EXTRA_FLAGS=(--compact-l2)
           if [[ "${{ inputs.transport_pair }}" == "compact_vs_ultra_fast" ]]; then
-            EXTRA_FLAGS=(--ultra-fast-l2)
+            EXTRA_FLAGS=(--ultra-fast-l2 --ultra-image-detail "${{ inputs.ultra_image_detail }}")
           fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
@@ -132,6 +140,7 @@ jobs:
           const pair = '${{ inputs.transport_pair }}';
           const expectedBaselineMode = pair === 'compact_vs_ultra_fast' ? 'v4_compact_l2' : 'fast_initial';
           const expectedCandidateMode = pair === 'compact_vs_ultra_fast' ? 'v4_ultra_fast_l2' : 'v4_compact_l2';
+          const expectedCandidateDetail = pair === 'compact_vs_ultra_fast' ? '${{ inputs.ultra_image_detail }}' : 'high';
           console.log(`paired=${comparison.complete_pair_count}/${comparison.paired_count}`);
           console.log(`writer_p50 standard=${comparison.baseline.writer_ready_p50_ms} compact=${comparison.compact.writer_ready_p50_ms} delta=${comparison.deltas.writer_ready_p50_fraction}`);
           console.log(`provider_p50 standard=${comparison.baseline.provider_latency_p50_ms} compact=${comparison.compact.provider_latency_p50_ms} delta=${comparison.deltas.provider_latency_p50_fraction}`);
@@ -144,6 +153,7 @@ jobs:
           if (comparison.compact.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);
           if (Number(comparison.baseline.prompt_mode_breakdown?.[expectedBaselineMode] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
           if (Number(comparison.compact.prompt_mode_breakdown?.[expectedCandidateMode] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (Number(comparison.compact.image_detail_breakdown?.[expectedCandidateDetail] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
           NODE
       - name: Upload sealed paired artifacts
         if: always()

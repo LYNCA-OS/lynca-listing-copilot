@@ -228,6 +228,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(state.status_counts.succeeded, 1);
   assert.equal(state.status_counts.failed, 1);
   assert.equal(state.serial_patch_count, 1);
+  assert.deepEqual(state.evidence_patches.map((patch) => patch.value), ["30/99"]);
   assert.equal(state.historical_job_count, 1);
   assert.equal(state.verified_serial_ready, true);
 }

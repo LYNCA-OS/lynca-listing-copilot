@@ -15,7 +15,8 @@ import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listi
 import {
   postObservationCatalogVectorHedgeMs,
   postObservationRetrievalCriticalPathBudgetMs,
-  postObservationRetrievalDeadlineEnabled
+  postObservationRetrievalDeadlineEnabled,
+  ultraFastImageDetail
 } from "../lib/listing/pipeline/provider-options.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
@@ -156,6 +157,10 @@ assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation_retrieval_critical_path_budget_ms: 20000 }), 10000);
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { v4_ultra_fast_l2: true }), 250);
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({ ENABLE_V4_ULTRA_FAST_L2: "true" }, {}), 250);
+assert.equal(ultraFastImageDetail({}), "auto");
+assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "low" }), "low");
+assert.equal(ultraFastImageDetail({ v4UltraFastImageDetail: "HIGH" }), "high");
+assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "invalid" }), "auto");
 
 assert.deepEqual(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision({
   preingestion_bundle_id: "bundle-1",

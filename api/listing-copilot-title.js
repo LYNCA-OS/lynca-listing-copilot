@@ -30,6 +30,7 @@ import {
 } from "../lib/listing/pipeline/evidence-merge.mjs";
 import { openAiRequestContextFromPayload, runTimedProviderCall } from "../lib/listing/pipeline/provider-stage.mjs";
 import {
+  applyPreIngestionEvidencePatchesToPayload,
   applyPreIngestionBundleToPayload,
   confirmedPreingestionRetrievalFields,
   preingestionEvidenceDocumentFromPayload,
@@ -47,6 +48,7 @@ import {
   positiveIntegerFromEnv,
   providerOptionsFromPayload,
   singleModelFastPathEnabled,
+  ultraFastImageDetail,
   vectorEmbeddingPostProviderWaitMs,
   vectorEmbeddingWarmupOptions,
   vectorEmbeddingWarmupTimeoutMs
@@ -4731,6 +4733,7 @@ async function createOpenAiTitle(payload, selection, {
       : envFlag(process.env, "ENABLE_FAST_INITIAL_PROVIDER_PROMPT", true)
         ? "fast_initial"
         : "full_listing";
+  const providerImageDetail = ultraFastL2 ? ultraFastImageDetail(providerOptions) : "high";
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
     prompt,
@@ -4738,7 +4741,7 @@ async function createOpenAiTitle(payload, selection, {
     preferredKeySlot: initialPayload.openai_preferred_key_slot || initialPayload.provider_key_slot_hint || null,
     modelOverride: providerModelOverrideFromOptions(providerOptions),
     responseProfile: ["v4_compact_l2", "v4_ultra_fast_l2"].includes(providerPromptMode) ? "compact_sparse_v1" : "standard",
-    imageDetail: ultraFastL2 ? "auto" : "high",
+    imageDetail: providerImageDetail,
     textVerbosity: ultraFastL2 ? "low" : null,
     requestContext: openAiRequestContextFromPayload(initialPayload, {
       providerCallPurpose: "full_l2",
@@ -5026,19 +5029,28 @@ async function createOpenAiTitle(payload, selection, {
       critical_fields_settled: preingestionOcrRendezvous?.critical_fields_settled === true
     }
   });
+  const rendezvousEvidencePatches = Array.isArray(preingestionOcrRendezvous?.evidence_patches)
+    ? preingestionOcrRendezvous.evidence_patches
+    : null;
   const evidenceRefreshDecision = preingestionEvidenceRefreshDecision(
     initialPayload,
     preingestionOcrRendezvous
   );
-  const preingestionEvidenceRefresh = evidenceRefreshDecision.skip
-    ? {
+  let preingestionEvidenceRefresh;
+  if (ultraFastL2 && rendezvousEvidencePatches) {
+    preingestionEvidenceRefresh = applyPreIngestionEvidencePatchesToPayload(initialPayload, rendezvousEvidencePatches, {
+      source: "ocr_rendezvous_snapshot"
+    });
+  } else if (evidenceRefreshDecision.skip) {
+    preingestionEvidenceRefresh = {
       refreshed: false,
       reason: evidenceRefreshDecision.reason,
       patch_count: evidenceRefreshDecision.loaded_patch_count,
       raw_patch_count: evidenceRefreshDecision.loaded_patch_count,
       added_patch_count: 0
-    }
-    : await refreshPreIngestionEvidencePatches(initialPayload, {
+    };
+  } else {
+    preingestionEvidenceRefresh = await refreshPreIngestionEvidencePatches(initialPayload, {
       timingContext,
       fetchImpl: globalThis.fetch
     }).catch((error) => ({
@@ -5047,6 +5059,7 @@ async function createOpenAiTitle(payload, selection, {
       patch_count: evidenceRefreshDecision.loaded_patch_count,
       added_patch_count: 0
     }));
+  }
   initialPayload.serial_numerator_verified = serialNumeratorVerificationFromPreingestion(
     initialPayload,
     preingestionOcrRendezvous
@@ -5061,7 +5074,8 @@ async function createOpenAiTitle(payload, selection, {
     ),
     vectorContext.visualFeatures
   );
-  mergedResult.preingestion_ocr_rendezvous = preingestionOcrRendezvous;
+  const { evidence_patches: _rendezvousEvidencePatches, ...preingestionOcrRendezvousDiagnostics } = preingestionOcrRendezvous || {};
+  mergedResult.preingestion_ocr_rendezvous = preingestionOcrRendezvousDiagnostics;
   mergedResult.preingestion_evidence_refresh = preingestionEvidenceRefresh;
   mergedResult.preingestion_retrieval_refresh = preingestionRetrievalRefresh;
   mergedResult.preingestion_retrieval_anchor_fields = preingestionRetrievalAnchorFields;

@@ -190,6 +190,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   enableL1 = false,
   compactL2 = false,
   ultraFastL2 = false,
+  ultraFastImageDetail = "auto",
   disableIdentityCache = false
 } = {}) {
   const providerOptions = {
@@ -204,7 +205,12 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   };
   if (modelOverride) providerOptions.openai_listing_model_override = modelOverride;
   if (compactL2) providerOptions.v4_compact_l2_prompt = true;
-  if (ultraFastL2) providerOptions.v4_ultra_fast_l2 = true;
+  if (ultraFastL2) {
+    providerOptions.v4_ultra_fast_l2 = true;
+    providerOptions.v4_ultra_fast_image_detail = ["low", "auto", "high"].includes(cleanText(ultraFastImageDetail).toLowerCase())
+      ? cleanText(ultraFastImageDetail).toLowerCase()
+      : "auto";
+  }
   if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
   return {
     asset_id: candidateId(item, index),
@@ -1120,6 +1126,7 @@ async function runOne({
   enableL1 = false,
   compactL2 = false,
   ultraFastL2 = false,
+  ultraFastImageDetail = "auto",
   disableIdentityCache = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
@@ -1145,6 +1152,7 @@ async function runOne({
     enableL1,
     compactL2,
     ultraFastL2,
+    ultraFastImageDetail,
     disableIdentityCache
   });
   const prewarmPromise = prewarm
@@ -1772,6 +1780,7 @@ async function enqueueSpeculativeItem({
   enableL1,
   compactL2,
   ultraFastL2,
+  ultraFastImageDetail,
   disableIdentityCache,
   usePreingestion,
   preingestionSource,
@@ -1794,6 +1803,7 @@ async function enqueueSpeculativeItem({
       enableL1,
       compactL2,
       ultraFastL2,
+      ultraFastImageDetail,
       disableIdentityCache
     });
     const prewarmPromise = prewarm
@@ -2653,6 +2663,7 @@ export async function runV4EbaySmoke({
   enableL1 = false,
   compactL2 = false,
   ultraFastL2 = false,
+  ultraFastImageDetail = "auto",
   disableIdentityCache = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
@@ -2726,6 +2737,7 @@ export async function runV4EbaySmoke({
           enableL1,
           compactL2,
           ultraFastL2,
+          ultraFastImageDetail,
           disableIdentityCache,
           usePreingestion,
           preingestionSource,
@@ -2763,6 +2775,7 @@ export async function runV4EbaySmoke({
           enableL1,
           compactL2,
           ultraFastL2,
+          ultraFastImageDetail,
           disableIdentityCache,
           usePreingestion,
           preingestionSource,
@@ -2836,6 +2849,7 @@ export async function runV4EbaySmoke({
     prewarm_enabled: prewarm,
     compact_l2_enabled: compactL2,
     ultra_fast_l2_enabled: ultraFastL2,
+    ultra_fast_image_detail: ultraFastL2 ? ultraFastImageDetail : null,
     identity_cache_disabled: disableIdentityCache,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
@@ -2909,6 +2923,7 @@ export async function main(argv = process.argv, env = process.env) {
     enableL1: hasFlag(argv, "--enable-l1"),
     compactL2: hasFlag(argv, "--compact-l2"),
     ultraFastL2: hasFlag(argv, "--ultra-fast-l2"),
+    ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     preingestionSource: cleanText(argValue(argv, "--preingestion-source", "v4_ebay_smoke_preingestion")),
