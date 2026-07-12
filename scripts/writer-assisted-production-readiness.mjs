@@ -52,7 +52,8 @@ function staticChecks() {
       && /npm run test:v4-spine/.test(release)
       && /VERCEL_DEPLOY_HOOK_URL/.test(release)
       && /git_commit_sha === process\.env\.GITHUB_SHA/.test(release)
-      && /admin-apply-v4-writer-export-migration/.test(release), "Production deploy verifies dependencies, the exact Git commit, V4 behavior, and schema before readiness checks.")
+      && /admin-apply-v4-writer-export-migration/.test(release)
+      && /admin-apply-v4-noncritical-persistence-migration/.test(release), "Production deploy verifies dependencies, the exact Git commit, V4 behavior, and every required schema contract before readiness checks.")
   ];
 }
 

@@ -150,6 +150,8 @@ const feedbackApiSource = await readFile("api/v4/listing-feedback.js", "utf8");
 const writerExportApiSource = await readFile("api/v4/listing-export-workbook.js", "utf8");
 const atomicFeedbackMigrationSource = await readFile("supabase/migrations/20260711200533_atomic_v4_writer_feedback_transaction.sql", "utf8");
 const atomicNoncriticalMigrationSource = await readFile("supabase/migrations/20260712072310_atomic_v4_noncritical_persistence.sql", "utf8");
+const atomicNoncriticalMigrationApiSource = await readFile("api/admin-apply-v4-noncritical-persistence-migration.js", "utf8");
+const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-production.yml", "utf8");
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
@@ -206,6 +208,8 @@ assert.match(atomicFeedbackMigrationSource, /insert into public\.v4_writer_feedb
 assert.match(atomicFeedbackMigrationSource, /revoke execute on function public\.persist_v4_writer_feedback_transaction[\s\S]*from public, anon, authenticated/, "the writer transaction RPC must remain service-role only.");
 assert.match(atomicNoncriticalMigrationSource, /insert into public\.v4_field_evidence[\s\S]*insert into public\.v4_candidate_traces[\s\S]*insert into public\.v4_catalog_gap_queue[\s\S]*insert into public\.v4_production_quality_ledger/, "post-title evidence artifacts must persist in one database transaction.");
 assert.match(atomicNoncriticalMigrationSource, /revoke all on function public\.persist_v4_noncritical_artifacts[\s\S]*from public, anon, authenticated/, "the non-critical persistence RPC must remain service-role only.");
+assert.match(atomicNoncriticalMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the production migration probe must verify the RPC privilege boundary.");
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-noncritical-persistence-migration[\s\S]*noncritical-persistence-migration\.json/, "production deploys must apply and retain evidence for the atomic persistence migration.");
 assert.match(writerLearningSupersessionMigrationSource, /before insert on public\.v4_learning_events/, "writer learning supersession must be enforced at the database boundary.");
 assert.match(writerLearningSupersessionMigrationSource, /SUPERSEDED_BY_LATEST_WRITER_FEEDBACK/, "older writer-derived training truth must be retained for audit but excluded from training.");
 assert.match(writerLearningSupersessionMigrationSource, /events\.id <> new\.id[\s\S]*events\.training_eligible = true/, "the latest writer event must only supersede older eligible events for the same session.");
