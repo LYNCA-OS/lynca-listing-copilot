@@ -95,6 +95,7 @@ jobs:
             --limit "${{ inputs.limit }}" \
             --concurrency 2 \
             --queue --speculative --use-preingestion \
+            --preingestion-source "$RUN_ID-baseline" \
             --disable-identity-cache \
             "${EXTRA_FLAGS[@]}" \
             --model "${{ inputs.model }}" \
@@ -113,6 +114,7 @@ jobs:
             --limit "${{ inputs.limit }}" \
             --concurrency 2 \
             --queue --speculative --use-preingestion \
+            --preingestion-source "$RUN_ID-candidate" \
             --disable-identity-cache \
             "${EXTRA_FLAGS[@]}" \
             --model "${{ inputs.model }}" \

@@ -310,6 +310,7 @@ async function preingestItem({
   cookie,
   assetId,
   images,
+  source = "v4_ebay_smoke_preingestion",
   requestTimeoutMs,
   fetchImpl = globalThis.fetch
 }) {
@@ -317,7 +318,7 @@ async function preingestItem({
     asset_id: assetId,
     assetId,
     images,
-    source: "v4_ebay_smoke_preingestion",
+    source: cleanText(source) || "v4_ebay_smoke_preingestion",
     requested_fields: [
       "serial_number",
       "collector_number",
@@ -1121,6 +1122,7 @@ async function runOne({
   ultraFastL2 = false,
   disableIdentityCache = false,
   usePreingestion = false,
+  preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
   thinkMs = 6000,
   l2WaitMs,
@@ -1174,6 +1176,7 @@ async function runOne({
         cookie,
         assetId: id,
         images,
+        source: preingestionSource,
         requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
       });
       if (preingestionResult.ok && preingestionResult.bundle_id) {
@@ -1771,6 +1774,7 @@ async function enqueueSpeculativeItem({
   ultraFastL2,
   disableIdentityCache,
   usePreingestion,
+  preingestionSource,
   requestTimeoutMs,
   verificationCache
 }) {
@@ -1815,6 +1819,7 @@ async function enqueueSpeculativeItem({
           cookie,
           assetId: id,
           images,
+          source: preingestionSource,
           requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
         });
         if (preingestionResult.ok && preingestionResult.bundle_id) {
@@ -2650,6 +2655,7 @@ export async function runV4EbaySmoke({
   ultraFastL2 = false,
   disableIdentityCache = false,
   usePreingestion = false,
+  preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
   thinkMs = 6000,
   l2WaitMs = 18000,
@@ -2722,6 +2728,7 @@ export async function runV4EbaySmoke({
           ultraFastL2,
           disableIdentityCache,
           usePreingestion,
+          preingestionSource,
           requestTimeoutMs,
           verificationCache
         });
@@ -2758,6 +2765,7 @@ export async function runV4EbaySmoke({
           ultraFastL2,
           disableIdentityCache,
           usePreingestion,
+          preingestionSource,
           speculative,
           thinkMs,
           l2WaitMs,
@@ -2836,6 +2844,7 @@ export async function runV4EbaySmoke({
     force_l2_direct: forceL2Direct,
     l1_explicitly_enabled: enableL1,
     preingestion_enabled: usePreingestion,
+    preingestion_source: usePreingestion ? preingestionSource : null,
     model_override: modelOverride || null,
     predictions_sha256: predictionsSha256,
     blind_policy: {
@@ -2902,6 +2911,7 @@ export async function main(argv = process.argv, env = process.env) {
     ultraFastL2: hasFlag(argv, "--ultra-fast-l2"),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
     usePreingestion: hasFlag(argv, "--use-preingestion"),
+    preingestionSource: cleanText(argValue(argv, "--preingestion-source", "v4_ebay_smoke_preingestion")),
     speculative: hasFlag(argv, "--speculative"),
     thinkMs: Math.max(0, Math.trunc(numberArg(argv, "--think-ms", 6000))),
     modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),
