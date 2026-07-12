@@ -6,7 +6,7 @@ import {
 } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
-import { buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
+import { buildV4FieldGraph, buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
 import { normalizePrintedCardCodeForFields } from "../lib/listing/pipeline/field-normalization.mjs";
@@ -120,6 +120,18 @@ const v4CodeSanitizedFields = buildV4ResolvedFields({
 assert.equal(v4CodeSanitizedFields.card_number, null);
 assert.equal(v4CodeSanitizedFields.collector_number, null);
 assert.equal(v4CodeSanitizedFields.checklist_code, null);
+const invalidDecimalCodeGraph = buildV4FieldGraph({
+  resolved_fields: {
+    players: ["Keldon Johnson"],
+    card_number: "4.8",
+    collector_number: "4.8"
+  }
+});
+assert.equal(invalidDecimalCodeGraph.card_number, null, "invalid decimal OCR noise must not survive in the V4 field graph");
+const invalidDecimalCodeState = buildV4FieldStates({
+  resolved_fields: { card_number: "4.8", collector_number: "4.8" }
+});
+assert.equal(invalidDecimalCodeState.card_number.value, null);
 
 const uncertainObservationStates = buildV4FieldStates({
   resolved: {
