@@ -238,6 +238,33 @@ const arrayFieldEvidence = validateProviderEvidencePayload("openai_legacy", {
 assert.equal(arrayFieldEvidence.field_evidence.serial_number.raw_text, "31/50");
 assert.equal(arrayFieldEvidence.field_evidence.cert_number.value, "0018492845");
 
+const unsupportedCodeReview = validateProviderEvidencePayload("openai_legacy", {
+  fields: { collector_number: "RS-TYG" },
+  field_evidence: [],
+  unresolved: []
+});
+assert.deepEqual(unsupportedCodeReview.unresolved, ["collector_number"], "a provider code without direct current-image evidence must be reviewable, never silently dropped");
+
+const directlySupportedCode = validateProviderEvidencePayload("openai_legacy", {
+  fields: { collector_number: "RS-TYG" },
+  field_evidence: [{
+    field: "collector_number",
+    value: "RS-TYG",
+    source_type: "CARD_BACK_PRINTED_TEXT",
+    source_image_id: "image-2",
+    source_region: "collector_number",
+    raw_text: "RS-TYG",
+    visible_text: "RS-TYG",
+    evidence_kind: "PRINTED_CARD_CODE",
+    confidence: null,
+    review_required: false,
+    directly_observed: true,
+    direct_observation: true
+  }],
+  unresolved: []
+});
+assert.deepEqual(directlySupportedCode.unresolved, [], "directly visible printed codes must remain eligible for resolution");
+
 const parsedTool = parseProviderMessagePayload({
   tool_calls: [
     {
