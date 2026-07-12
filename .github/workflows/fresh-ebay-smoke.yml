@@ -15,6 +15,10 @@ on:
       think_ms:
         description: "Simulated writer think time (ms)"
         default: "5000"
+      compact_l2:
+        description: "Use compact sparse L2 transport"
+        type: boolean
+        default: false
 
 concurrency:
   group: fresh-ebay-smoke
@@ -95,6 +99,10 @@ jobs:
           done
       - name: Run fresh blind production smoke
         run: |
+          COMPACT_ARGS=()
+          if [[ "${{ inputs.compact_l2 }}" == "true" ]]; then
+            COMPACT_ARGS+=(--compact-l2)
+          fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
             --sealed-labels "$SEALED_LABELS_PATH" \
@@ -102,6 +110,7 @@ jobs:
             --concurrency 2 \
             --queue --speculative --use-preingestion --prewarm \
             --model "${{ inputs.model }}" \
+            "${COMPACT_ARGS[@]}" \
             --think-ms "${{ inputs.think_ms }}" \
             --l2-wait-ms 120000 \
             --out "$REPORT_PATH"
