@@ -18,6 +18,7 @@ import {
   persistV4CandidateTrace,
   persistV4CatalogGap,
   persistV4FieldEvidence,
+  persistV4NonCriticalArtifactsAtomic,
   persistV4QualityLedger,
   updateV4RecognitionSession,
   updateV4RecognitionSessionWithRetry
@@ -396,7 +397,9 @@ function summarizeNonCriticalPersistence(persistence = {}) {
           : "FAILED";
     return [name, {
       status,
-      reason: value.reason || (status === "FAILED" ? value.error || "persistence_failed" : null)
+      reason: value.reason || (status === "FAILED" ? value.error || "persistence_failed" : null),
+      persistence_mode: value.persistence_mode || null,
+      write_attempts: Number(value.write_attempts || 0) || null
     }];
   }));
   const failed = Object.values(artifacts).filter((item) => item.status === "FAILED").length;
@@ -425,7 +428,6 @@ async function persistCatalogGapForRows({
   }
   return persistV4CatalogGap({
     gap: {
-      id: `${sessionId}_catalog_gap`,
       recognition_session_id: sessionId,
       asset_id: payload.asset_id || payload.assetId || null,
       gap_type: catalogGapTypeFromTrace(rows.candidateTrace),
@@ -453,6 +455,93 @@ async function persistV4NonCriticalArtifacts({
   catalogPromptCount = 0
 } = {}) {
   const startedAt = Date.now();
+  const catalogGapInput = l1Stage || Number(catalogPromptCount || 0) > 0
+    ? null
+    : {
+      recognition_session_id: sessionId,
+      asset_id: payload.asset_id || payload.assetId || null,
+      gap_type: catalogGapTypeFromTrace(rows.candidateTrace),
+      observed_fields: resolvedFromResult(result),
+      candidate_snapshot: {
+        candidate_activation_funnel: rows.candidateTrace.candidate_activation_funnel,
+        catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
+        vector_activation_funnel: rows.candidateTrace.vector_activation_funnel,
+        low_margin_safe_field_application: rows.candidateTrace.low_margin_safe_field_application || null,
+        selected_candidate_verifier: rows.candidateTrace.selected_candidate_verifier || null
+      },
+      draft_title: titleFromResult(result)
+    };
+  const atomicPersistencePlan = {
+    create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
+    update_session: deferredArtifact("already_updated_writer_ready_session"),
+    field_evidence: deferredArtifact("atomic_noncritical_rpc"),
+    candidate_trace: deferredArtifact("atomic_noncritical_rpc"),
+    catalog_gap: catalogGapInput
+      ? deferredArtifact("atomic_noncritical_rpc")
+      : { saved: false, skipped: true, reason: l1Stage ? "internal_scout_not_catalog_gap" : "catalog_prompt_candidate_available" },
+    quality_ledger: deferredArtifact("atomic_noncritical_rpc")
+  };
+  const atomicQualityLedger = {
+    ...adaptV2ResultToV4({
+      sessionId,
+      result,
+      payload,
+      routePlan,
+      persistence: atomicPersistencePlan
+    }).provider_result,
+    id: `${sessionId}_quality`,
+    recognition_session_id: sessionId,
+    route: routePlan.route,
+    status,
+    route_plan: routePlan,
+    persistence_summary: {
+      mode: "atomic_noncritical_rpc",
+      field_evidence_count: rows.fieldEvidenceRows.length,
+      catalog_gap_expected: Boolean(catalogGapInput)
+    }
+  };
+  const atomic = await persistV4NonCriticalArtifactsAtomic({
+    sessionId,
+    fieldEvidenceRows: rows.fieldEvidenceRows,
+    candidateTrace: rows.candidateTrace,
+    catalogGap: catalogGapInput,
+    qualityLedger: atomicQualityLedger
+  });
+  if (atomic.saved) {
+    return {
+      create_session: atomicPersistencePlan.create_session,
+      update_session: atomicPersistencePlan.update_session,
+      field_evidence: {
+        saved: true,
+        row_count: Number(atomic.transaction?.field_evidence_count || 0),
+        write_attempts: atomic.write_attempts,
+        persistence_mode: "atomic_noncritical_rpc"
+      },
+      candidate_trace: {
+        saved: atomic.transaction?.candidate_trace_saved === true,
+        write_attempts: atomic.write_attempts,
+        persistence_mode: "atomic_noncritical_rpc"
+      },
+      catalog_gap: catalogGapInput
+        ? {
+          saved: atomic.transaction?.catalog_gap_saved === true,
+          write_attempts: atomic.write_attempts,
+          persistence_mode: "atomic_noncritical_rpc"
+        }
+        : atomicPersistencePlan.catalog_gap,
+      quality_ledger: {
+        saved: atomic.transaction?.quality_ledger_saved === true,
+        write_attempts: atomic.write_attempts,
+        persistence_mode: "atomic_noncritical_rpc"
+      },
+      atomic_persistence: atomic,
+      noncritical_persistence_latency_ms: Date.now() - startedAt
+    };
+  }
+
+  // Compatibility fallback keeps the writer loop durable during a rolling
+  // deploy or a temporary RPC outage. The writes use return=minimal and the
+  // same deterministic ids, so replaying after an ambiguous timeout is safe.
   const [fieldEvidence, candidateTrace, catalogGap] = await Promise.all([
     persistV4FieldEvidence({ sessionId, rows: rows.fieldEvidenceRows }),
     persistV4CandidateTrace({ sessionId, trace: rows.candidateTrace }),
@@ -488,6 +577,7 @@ async function persistV4NonCriticalArtifacts({
   return {
     ...partialPersistence,
     quality_ledger: ledger,
+    atomic_persistence: atomic,
     noncritical_persistence_latency_ms: Date.now() - startedAt
   };
 }

@@ -22,6 +22,7 @@ import {
   persistV4CandidateTrace,
   persistV4FieldEvidence,
   persistV4LearningEvent,
+  persistV4NonCriticalArtifactsAtomic,
   persistV4WriterFeedbackTransaction,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
@@ -148,6 +149,7 @@ const sessionStatusApiSource = await readFile("api/v4/listing-session-status.js"
 const feedbackApiSource = await readFile("api/v4/listing-feedback.js", "utf8");
 const writerExportApiSource = await readFile("api/v4/listing-export-workbook.js", "utf8");
 const atomicFeedbackMigrationSource = await readFile("supabase/migrations/20260711200533_atomic_v4_writer_feedback_transaction.sql", "utf8");
+const atomicNoncriticalMigrationSource = await readFile("supabase/migrations/20260712072310_atomic_v4_noncritical_persistence.sql", "utf8");
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
@@ -156,6 +158,7 @@ const vercelConfigSource = await readFile("vercel.json", "utf8");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /const backgroundPersistence = persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must be assembled outside the writer-ready response.");
+assert.match(v4TitleApiSource, /persistV4NonCriticalArtifactsAtomic/, "post-title learning artifacts must prefer one atomic RPC over four concurrent PostgREST writes.");
 assert.match(v4TitleApiSource, /scheduleV4Background\(backgroundPersistence/, "non-critical persistence and its self-observation must not block writer-ready L2 by default.");
 assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSummary/, "background persistence must report its terminal artifact-level outcome.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
@@ -201,6 +204,8 @@ assert.match(v4TitleApiSource, /v4_noncritical_persistence_failure_status_write_
 assert.match(atomicFeedbackMigrationSource, /for update/, "the feedback transaction must lock the owned recognition session before writing learning artifacts.");
 assert.match(atomicFeedbackMigrationSource, /insert into public\.v4_writer_feedback_events[\s\S]*insert into public\.v4_learning_events[\s\S]*update public\.v4_recognition_sessions/, "one database transaction must persist all three writer-loop records.");
 assert.match(atomicFeedbackMigrationSource, /revoke execute on function public\.persist_v4_writer_feedback_transaction[\s\S]*from public, anon, authenticated/, "the writer transaction RPC must remain service-role only.");
+assert.match(atomicNoncriticalMigrationSource, /insert into public\.v4_field_evidence[\s\S]*insert into public\.v4_candidate_traces[\s\S]*insert into public\.v4_catalog_gap_queue[\s\S]*insert into public\.v4_production_quality_ledger/, "post-title evidence artifacts must persist in one database transaction.");
+assert.match(atomicNoncriticalMigrationSource, /revoke all on function public\.persist_v4_noncritical_artifacts[\s\S]*from public, anon, authenticated/, "the non-critical persistence RPC must remain service-role only.");
 assert.match(writerLearningSupersessionMigrationSource, /before insert on public\.v4_learning_events/, "writer learning supersession must be enforced at the database boundary.");
 assert.match(writerLearningSupersessionMigrationSource, /SUPERSEDED_BY_LATEST_WRITER_FEEDBACK/, "older writer-derived training truth must be retained for audit but excluded from training.");
 assert.match(writerLearningSupersessionMigrationSource, /events\.id <> new\.id[\s\S]*events\.training_eligible = true/, "the latest writer event must only supersede older eligible events for the same session.");
@@ -771,6 +776,7 @@ const fakeFetch = async (url, init = {}) => {
     writes.push({
       table: parsed.pathname.split("/").pop(),
       method: init.method,
+      prefer: init.headers?.prefer || null,
       body: JSON.parse(init.body)
     });
     return {
@@ -811,6 +817,47 @@ await persistV4CandidateTrace({
   env,
   fetchImpl: fakeFetch
 });
+const atomicPersistenceCalls = [];
+const atomicPersistence = await persistV4NonCriticalArtifactsAtomic({
+  sessionId: "v4sess-test",
+  fieldEvidenceRows: rows.fieldEvidenceRows,
+  candidateTrace: rows.candidateTrace,
+  catalogGap: {
+    asset_id: "asset-1",
+    gap_type: "CATALOG_IDENTITY_GAP",
+    observed_fields: { year: "2024" },
+    candidate_snapshot: {},
+    draft_title: "2024 Test Player"
+  },
+  qualityLedger: {
+    route: "FAST",
+    provider: "openai_legacy",
+    model: "gpt-5-mini",
+    status: "DRAFT_READY"
+  },
+  env,
+  fetchImpl: async (url, init = {}) => {
+    atomicPersistenceCalls.push({ url: String(url), body: JSON.parse(init.body) });
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        saved: true,
+        recognition_session_id: "v4sess-test",
+        field_evidence_count: rows.fieldEvidenceRows.length,
+        candidate_trace_saved: true,
+        catalog_gap_saved: true,
+        quality_ledger_saved: true
+      })
+    };
+  }
+});
+assert.equal(atomicPersistence.saved, true);
+assert.equal(atomicPersistence.write_attempts, 1);
+assert.ok(atomicPersistenceCalls[0].url.endsWith("/rest/v1/rpc/persist_v4_noncritical_artifacts"));
+assert.equal(atomicPersistenceCalls[0].body.p_session_id, "v4sess-test");
+assert.equal(atomicPersistenceCalls[0].body.p_field_evidence.length, rows.fieldEvidenceRows.length);
+assert.equal(atomicPersistenceCalls[0].body.p_catalog_gap.asset_id, "asset-1");
 await persistV4LearningEvent({
   event: artifacts.learningEvent,
   env,
@@ -848,6 +895,8 @@ assert.equal(health.configured, true);
 assert.ok(writes.some((write) => write.table === "v4_recognition_sessions"));
 assert.ok(writes.some((write) => write.table === "v4_field_evidence"));
 assert.ok(writes.some((write) => write.table === "v4_candidate_traces"));
+assert.ok(writes.find((write) => write.table === "v4_field_evidence")?.prefer?.includes("return=minimal"));
+assert.ok(writes.find((write) => write.table === "v4_candidate_traces")?.prefer?.includes("return=minimal"));
 assert.ok(writes.some((write) => write.table === "v4_learning_events"));
 assert.ok(reads.includes("v4_production_quality_ledger"));
 assert.ok(reads.includes("v4_writer_export_batches"));
