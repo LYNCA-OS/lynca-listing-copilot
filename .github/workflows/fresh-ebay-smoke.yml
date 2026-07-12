@@ -99,7 +99,7 @@ jobs:
             --dataset "$DATASET_PATH" \
             --sealed-labels "$SEALED_LABELS_PATH" \
             --limit "${{ inputs.limit }}" \
-            --concurrency 3 \
+            --concurrency 2 \
             --queue --speculative --use-preingestion --prewarm \
             --model "${{ inputs.model }}" \
             --think-ms "${{ inputs.think_ms }}" \

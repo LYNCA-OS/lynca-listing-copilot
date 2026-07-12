@@ -4,7 +4,11 @@ import {
   parseProviderMessagePayload,
   validateProviderEvidencePayload
 } from "../lib/listing/providers/provider-response-normalizer.mjs";
-import { openAiProviderResponseSchema } from "../lib/listing/providers/openai-emergency-provider.mjs";
+import {
+  expandOpenAiCompactProviderPayload,
+  openAiCompactProviderResponseSchema,
+  openAiProviderResponseSchema
+} from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { resolvedFieldNames } from "../lib/listing/evidence/evidence-schema.mjs";
 
 const schema = JSON.parse(await readFile("lib/listing/schemas/provider-evidence-response.schema.json", "utf8"));
@@ -18,6 +22,77 @@ assert.deepEqual(
   [],
   "Every model field must survive the shared resolved/evidence contract."
 );
+
+const compactSchema = openAiCompactProviderResponseSchema();
+assert.deepEqual(compactSchema.required, [
+  "recognition_status",
+  "field_values",
+  "field_evidence",
+  "unresolved",
+  "vector_candidate_decision"
+]);
+assert.equal(compactSchema.properties.fields, undefined, "compact transport must not serialize every empty canonical field");
+assert.deepEqual(compactSchema.properties.field_values.required, ["strings", "booleans", "numbers", "lists"]);
+
+const expandedCompactPayload = expandOpenAiCompactProviderPayload({
+  recognition_status: "RESOLVED",
+  field_values: {
+    strings: [
+      { field: "year", value: "2024-25" },
+      { field: "product", value: "Topps Chrome" },
+      { field: "print_run_number", value: "2/3" }
+    ],
+    booleans: [{ field: "auto", value: true }],
+    numbers: [{ field: "card_count", value: 1 }],
+    lists: [
+      { field: "players", values: ["Lamine Yamal"] },
+      { field: "observable_components", values: ["auto"] }
+    ]
+  },
+  field_evidence: [{
+    field: "print_run_number",
+    value: "2/3",
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    source_image_id: "image-1",
+    source_region: "print_run_number",
+    visible_text: "2/3",
+    review_required: false,
+    directly_observed: true
+  }],
+  unresolved: ["parallel_exact"],
+  vector_candidate_decision: {
+    selected_candidate_id: null,
+    decision: "NOT_AVAILABLE",
+    supported_fields: [],
+    rejected_fields: [],
+    conflicts: []
+  }
+});
+assert.equal(expandedCompactPayload.fields.year, "2024-25");
+assert.deepEqual(expandedCompactPayload.fields.players, ["Lamine Yamal"]);
+assert.equal(expandedCompactPayload.fields.auto, true);
+assert.equal(expandedCompactPayload.field_evidence[0].raw_text, "2/3");
+assert.equal(expandedCompactPayload.field_evidence[0].evidence_kind, "PRINTED_LIMITED_NUMBERING");
+assert.equal(expandedCompactPayload.field_evidence[0].direct_observation, true);
+assert.equal(validateProviderEvidencePayload("openai_legacy", expandedCompactPayload).fields.product, "Topps Chrome");
+assert.throws(() => expandOpenAiCompactProviderPayload({
+  recognition_status: "CONFIRMED",
+  field_values: {
+    strings: [{ field: "year", value: "2024" }, { field: "year", value: "2025" }],
+    booleans: [],
+    numbers: [],
+    lists: []
+  },
+  field_evidence: [],
+  unresolved: [],
+  vector_candidate_decision: {
+    selected_candidate_id: null,
+    decision: "NOT_AVAILABLE",
+    supported_fields: [],
+    rejected_fields: [],
+    conflicts: []
+  }
+}), /invalid or duplicate year/i);
 
 const legacyPayload = validateProviderEvidencePayload("openai_legacy", {
   title: "2024 Topps Chrome Tester",

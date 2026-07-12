@@ -201,6 +201,7 @@ and delete the flag.
 | `OPENAI_GPT5_FAST_SCOUT_SAFE_OUTPUT_TOKEN_CAP` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `OPENAI_GPT5_REASONING_EFFORT` | lib/listing/providers/openai-responses-request.mjs |
 | `OPENAI_GPT5_TEXT_VERBOSITY` | lib/listing/providers/openai-responses-request.mjs |
+| `ENABLE_V4_COMPACT_L2_PROMPT` | lib/listing/pipeline/provider-prompt.mjs |
 | `OPENAI_LISTING_MODEL` | api/v4/listing-copilot-title.js<br>lib/listing/providers/openai-emergency-provider.mjs<br>lib/listing/providers/provider-registry.mjs<br>lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `OPENAI_PER_KEY_STABLE_CONCURRENCY` | lib/listing/providers/openai-key-pool.mjs |
 | `OPENAI_PROVIDER_MAX_TOTAL_CONCURRENCY` | lib/listing/providers/openai-key-pool.mjs |

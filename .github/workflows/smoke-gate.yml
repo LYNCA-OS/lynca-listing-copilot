@@ -76,7 +76,7 @@ jobs:
           node scripts/v4-ebay-smoke.mjs \
             --limit "${{ inputs.limit }}" \
             --offset "${{ inputs.offset }}" \
-            --concurrency 3 \
+            --concurrency 2 \
             --queue --speculative --use-preingestion --prewarm \
             --model "${{ inputs.model }}" \
             --think-ms "${{ inputs.think_ms }}" \

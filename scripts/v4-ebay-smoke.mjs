@@ -187,7 +187,8 @@ async function verifiedItemImages({
 function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   forceL2Direct = false,
   modelOverride = "",
-  enableL1 = false
+  enableL1 = false,
+  compactL2 = false
 } = {}) {
   const providerOptions = {
     enable_catalog_assist: true,
@@ -200,6 +201,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
     send_corrected_title_hint_to_cloud: false
   };
   if (modelOverride) providerOptions.openai_listing_model_override = modelOverride;
+  if (compactL2) providerOptions.v4_compact_l2_prompt = true;
   return {
     asset_id: candidateId(item, index),
     source_feedback_id: item.source_feedback_id || item.source_record_id || null,
@@ -439,6 +441,9 @@ function providerDiagnosticsFromSummary(summary = {}) {
     || objectOrNull(source.rate_limit_diagnostics)
     || request;
   const output = {
+    provider_response_profile: source.provider_response_profile || request.provider_response_profile || null,
+    provider_prompt_mode: source.provider_prompt_mode || request.provider_prompt_mode || null,
+    provider_prompt_chars: numberOrNull(source.provider_prompt_chars ?? request.provider_prompt_chars),
     input_tokens: numberOrNull(token.input_tokens ?? request.input_tokens),
     output_tokens: numberOrNull(token.output_tokens ?? request.output_tokens),
     total_tokens: numberOrNull(token.total_tokens),
@@ -461,6 +466,9 @@ function providerDiagnosticsFromApiData(data = {}) {
   const providerResult = objectOrNull(data.provider_result) || {};
   return providerDiagnosticsFromSummary({
     provider_latency_ms: data.provider_latency_ms ?? providerResult.provider_latency_ms ?? providerResult.fast_scout?.latency_ms,
+    provider_response_profile: data.provider_response_profile || providerResult.provider_response_profile || null,
+    provider_prompt_mode: data.provider_prompt_mode || providerResult.provider_prompt_mode || null,
+    provider_prompt_chars: data.provider_prompt_chars ?? providerResult.provider_prompt_chars ?? null,
     provider_finish_reason: data.provider_finish_reason || providerResult.provider_finish_reason || null,
     provider_token_diagnostics: data.provider_token_diagnostics || providerResult.token_diagnostics || null,
     provider_rate_limit_diagnostics: data.provider_rate_limit_diagnostics || providerResult.rate_limit_diagnostics || null,
@@ -579,6 +587,9 @@ function sessionL2Summary(statusPayload = {}) {
     noncritical_persistence_status: summary.noncritical_persistence_status || null,
     noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
     provider_diagnostics: providerDiagnostics,
+    provider_response_profile: providerDiagnostics.provider_response_profile || row.provider_response_profile || null,
+    provider_prompt_mode: providerDiagnostics.provider_prompt_mode || row.provider_prompt_mode || null,
+    provider_prompt_chars: providerDiagnostics.provider_prompt_chars ?? row.provider_prompt_chars ?? null,
     v4_l2_timing: summary.v4_l2_timing || null,
     input_tokens: providerDiagnostics.input_tokens,
     output_tokens: providerDiagnostics.output_tokens,
@@ -1089,6 +1100,7 @@ async function runOne({
   forceL2Direct = false,
   modelOverride = "",
   enableL1 = false,
+  compactL2 = false,
   usePreingestion = false,
   speculative = false,
   thinkMs = 6000,
@@ -1106,7 +1118,7 @@ async function runOne({
     requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
     verificationCache
   });
-  const payload = payloadForItem(item, index, images, { forceL2Direct, modelOverride, enableL1 });
+  const payload = payloadForItem(item, index, images, { forceL2Direct, modelOverride, enableL1, compactL2 });
   const prewarmPromise = prewarm
     ? postJson({
       baseUrl,
@@ -1726,6 +1738,7 @@ async function enqueueSpeculativeItem({
   prewarmCacheOnly,
   modelOverride,
   enableL1,
+  compactL2,
   usePreingestion,
   requestTimeoutMs,
   verificationCache
@@ -1741,7 +1754,7 @@ async function enqueueSpeculativeItem({
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
       verificationCache
     });
-    const payload = payloadForItem(item, index, images, { modelOverride, enableL1 });
+    const payload = payloadForItem(item, index, images, { modelOverride, enableL1, compactL2 });
     const prewarmPromise = prewarm
       ? postJson({
         baseUrl,
@@ -2336,6 +2349,18 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       total_tokens_total: results.reduce((sum, item) => sum + Number(item.total_tokens || 0), 0),
       provider_latency_p50_ms: quantile(results.map((item) => item.provider_latency_ms), 0.5),
       provider_latency_p95_ms: quantile(results.map((item) => item.provider_latency_ms), 0.95),
+      response_profile_breakdown: results.reduce((counts, item) => {
+        const key = cleanText(item.provider_response_profile || "missing") || "missing";
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }, {}),
+      prompt_mode_breakdown: results.reduce((counts, item) => {
+        const key = cleanText(item.provider_prompt_mode || "missing") || "missing";
+        counts[key] = (counts[key] || 0) + 1;
+        return counts;
+      }, {}),
+      prompt_chars_p50: quantile(results.map((item) => item.provider_prompt_chars), 0.5),
+      prompt_chars_p95: quantile(results.map((item) => item.provider_prompt_chars), 0.95),
       key_pool_size_latest: [...results].reverse().find((item) => item.provider_key_pool_size)?.provider_key_pool_size || null,
       key_slots_used: [...new Set(results.map((item) => item.provider_key_slot).filter((value) => value !== null && value !== undefined && value !== ""))],
       key_rotation_attempt_count: results.reduce((sum, item) => sum + Number(item.provider_key_rotation_attempts || 0), 0),
@@ -2442,6 +2467,9 @@ function perCardTsv(results = []) {
     "node_warning_count",
     "missing_required_node_count",
     "unexplained_field_drop_fields",
+    "provider_response_profile",
+    "provider_prompt_mode",
+    "provider_prompt_chars",
     "input_tokens",
     "output_tokens",
     "total_tokens",
@@ -2524,6 +2552,9 @@ function perCardTsv(results = []) {
     item.pipeline_node_ledger?.reconciliation?.warning_count ?? null,
     item.pipeline_node_ledger?.coverage?.missing_required_node_count ?? null,
     item.pipeline_node_ledger?.field_flow?.unexplained_resolution_drop_fields || [],
+    item.provider_response_profile,
+    item.provider_prompt_mode,
+    item.provider_prompt_chars,
     item.input_tokens,
     item.output_tokens,
     item.total_tokens,
@@ -2560,12 +2591,13 @@ export async function runV4EbaySmoke({
   forceL2Direct = false,
   modelOverride = "",
   enableL1 = false,
+  compactL2 = false,
   usePreingestion = false,
   speculative = false,
   thinkMs = 6000,
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
-  concurrency = 3,
+  concurrency = 2,
   batchPoll = true,
   resumeBatchId = "",
   outPath = "",
@@ -2629,6 +2661,7 @@ export async function runV4EbaySmoke({
           prewarmCacheOnly,
           modelOverride,
           enableL1,
+          compactL2,
           usePreingestion,
           requestTimeoutMs,
           verificationCache
@@ -2662,6 +2695,7 @@ export async function runV4EbaySmoke({
           forceL2Direct,
           modelOverride,
           enableL1,
+          compactL2,
           usePreingestion,
           speculative,
           thinkMs,
@@ -2731,6 +2765,7 @@ export async function runV4EbaySmoke({
     run_wall_ms: recognitionRunWallMs,
     diagnostic_hydration: diagnosticHydration.metrics,
     prewarm_enabled: prewarm,
+    compact_l2_enabled: compactL2,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
     speculative_mode: speculative,
@@ -2800,13 +2835,14 @@ export async function main(argv = process.argv, env = process.env) {
     queueMode: hasFlag(argv, "--queue"),
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),
+    compactL2: hasFlag(argv, "--compact-l2"),
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     speculative: hasFlag(argv, "--speculative"),
     thinkMs: Math.max(0, Math.trunc(numberArg(argv, "--think-ms", 6000))),
     modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
-    concurrency: Math.max(1, Math.trunc(numberArg(argv, "--concurrency", 3))),
+    concurrency: Math.max(1, Math.trunc(numberArg(argv, "--concurrency", 2))),
     batchPoll: !hasFlag(argv, "--per-card-poll"),
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     outPath,
@@ -2822,6 +2858,7 @@ export async function main(argv = process.argv, env = process.env) {
     `l1_p50_ms: ${report.summary.l1_p50_ms}`,
     `l1_p95_ms: ${report.summary.l1_p95_ms}`,
     `preingestion_enabled: ${report.preingestion_enabled}`,
+    `compact_l2_enabled: ${report.compact_l2_enabled}`,
     `preingestion_ok: ${report.summary.preingestion_ok_count}/${report.summary.preingestion_used_count}`,
     `preingestion_p50_ms: ${report.summary.preingestion_p50_ms}`,
     `preingestion_p95_ms: ${report.summary.preingestion_p95_ms}`,

@@ -301,6 +301,71 @@ assert.match(gpt5Body.input[0].content[0].text, /GPT-5 mini main-path extraction
 assert.match(gpt5Body.input[0].content[0].text, /Never leave product, set, players, card_name, print_run_number/);
 assert.equal(gpt5OpenAiResult.parsed.fields.player, "Five");
 
+let compactOpenAiRequest;
+const compactOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return compact sparse JSON.",
+  responseProfile: "compact_sparse_v1",
+  env: {
+    ...env,
+    OPENAI_LISTING_MODEL: "gpt-5-mini"
+  },
+  fetchImpl: async (url, init) => {
+    compactOpenAiRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        id: "resp_gpt5_compact_test",
+        model: "gpt-5-mini",
+        output_text: JSON.stringify({
+          recognition_status: "CONFIRMED",
+          field_values: {
+            strings: [
+              { field: "year", value: "2024-25" },
+              { field: "product", value: "Topps Chrome" },
+              { field: "print_run_number", value: "2/3" }
+            ],
+            booleans: [{ field: "auto", value: true }],
+            numbers: [],
+            lists: [{ field: "players", values: ["Lamine Yamal"] }]
+          },
+          field_evidence: [{
+            field: "print_run_number",
+            value: "2/3",
+            source_type: "CARD_FRONT_PRINTED_TEXT",
+            source_image_id: "image-1",
+            source_region: "print_run_number",
+            visible_text: "2/3",
+            review_required: false,
+            directly_observed: true
+          }],
+          unresolved: [],
+          vector_candidate_decision: {
+            selected_candidate_id: null,
+            decision: "NOT_AVAILABLE",
+            supported_fields: [],
+            rejected_fields: [],
+            conflicts: []
+          }
+        }),
+        usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+      })
+    };
+  }
+});
+const compactOpenAiBody = JSON.parse(compactOpenAiRequest.init.body);
+assert.equal(compactOpenAiBody.text.format.name, "listing_provider_evidence_compact");
+assert.equal(compactOpenAiBody.text.format.schema.properties.fields, undefined);
+assert.ok(compactOpenAiBody.text.format.schema.properties.field_values);
+assert.match(compactOpenAiBody.input[0].content[0].text, /compact sparse response note/i);
+assert.equal(compactOpenAiResult.response_profile, "compact_sparse_v1");
+assert.equal(compactOpenAiResult.parsed.fields.year, "2024-25");
+assert.equal(compactOpenAiResult.parsed.fields.print_run_number, "2/3");
+assert.deepEqual(compactOpenAiResult.parsed.fields.players, ["Lamine Yamal"]);
+assert.equal(compactOpenAiResult.parsed.field_evidence.print_run_number.raw_text, "2/3");
+
 const gpt5DefaultConfig = openAiEmergencyConfigFromEnv({
   ...env,
   OPENAI_LISTING_MODEL: "gpt-5-mini"

@@ -306,6 +306,7 @@ function providerRuntimeSummary(result = {}) {
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
   return {
     provider_latency_ms: result.provider_latency_ms ?? null,
+    provider_response_profile: result.provider_response_profile || "standard",
     provider_prompt_mode: result.provider_prompt_mode || null,
     provider_prompt_chars: Number.isFinite(Number(result.provider_prompt_chars)) ? Number(result.provider_prompt_chars) : null,
     provider_input_image_count: Number.isFinite(Number(result.provider_input_image_count)) ? Number(result.provider_input_image_count) : null,
