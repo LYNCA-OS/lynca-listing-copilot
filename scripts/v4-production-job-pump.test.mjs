@@ -64,6 +64,18 @@ assert.equal(calls[1].payload.limit, 4);
 assert.equal(calls[1].payload.process_concurrency, 4);
 assert.equal(calls[0].workerSecret, "secret");
 
+const failedPump = await runV4QueuePump({
+  payload: { background_only: true, cycles: 1 },
+  env: { V4_JOB_WORKER_SECRET: "secret" },
+  invokeWorker: async () => ({
+    statusCode: 500,
+    body: { ok: false, message: "Unable to claim V4 jobs." }
+  })
+});
+assert.equal(failedPump.ok, false, "a failed worker call must make the pump fail instead of returning a false-green 200");
+assert.equal(failedPump.failed_call_count, 1);
+assert.equal(failedPump.failed_calls[0].message, "Unable to claim V4 jobs.");
+
 const interactiveOnlyCalls = [];
 await runV4QueuePump({
   payload: { interactive_only: true, cycles: 1 },
@@ -142,6 +154,31 @@ const immediateKick = await runPostEnqueueQueueKick({
 assert.equal(immediateKick.phase, "initial");
 assert.equal(immediateSlept, false);
 
+const failedKick = await runPostEnqueueQueueKick({
+  origin: "https://listing.example.test",
+  secret: "secret",
+  body: { reason: "post_enqueue" },
+  kickOwner: "enqueue-failed-pump",
+  leaseMs: 1200,
+  acquireKick: async () => ({ ok: true, acquired: true }),
+  fetchImpl: async () => ({
+    ok: false,
+    status: 503,
+    async json() {
+      return {
+        ok: false,
+        failed_call_count: 1,
+        claimed_count: 0,
+        processed_count: 0,
+        failed_calls: [{ message: "Unable to claim V4 jobs." }]
+      };
+    }
+  })
+});
+assert.equal(failedKick.ok, false);
+assert.equal(failedKick.error, "Unable to claim V4 jobs.");
+assert.equal(failedKick.pump_failed_call_count, 1);
+
 const enqueueSource = readFileSync(new URL("../api/v4/listing-job-enqueue.js", import.meta.url), "utf8");
 assert.match(enqueueSource, /V4_PUMP_INTERACTIVE_CONCURRENCY/);
 assert.match(enqueueSource, /V4_PUMP_BACKGROUND_CONCURRENCY/);
@@ -209,6 +246,10 @@ assert.match(balancedCapacityMigration, /least\([\s\S]*provider_key_count \* per
 assert.match(balancedCapacityMigration, /'provider_key_assignment', 'balanced_round_robin_v1'/);
 assert.match(balancedCapacityMigration, /for update of jobs skip locked/);
 assert.match(balancedCapacityMigration, /revoke all on function public\.claim_v4_recognition_jobs_with_balanced_capacity/);
+assert.match(balancedCapacityMigration, /notify pgrst, 'reload schema'/);
+
+const queueSchemaRefreshMigration = readFileSync(new URL("../supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql", import.meta.url), "utf8");
+assert.match(queueSchemaRefreshMigration, /notify pgrst, 'reload schema'/);
 
 const heartbeatSecurityMigration = readFileSync(new URL("../supabase/migrations/20260711194540_harden_public_function_security_and_queue_heartbeat.sql", import.meta.url), "utf8");
 assert.match(heartbeatSecurityMigration, /create or replace function public\.heartbeat_v4_recognition_job/);

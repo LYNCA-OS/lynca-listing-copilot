@@ -8,7 +8,8 @@ const migrationPaths = [
   "supabase/migrations/20260707133128_v4_queue_interactive_background_lanes.sql",
   "supabase/migrations/20260708043000_v4_queue_reclaim_expired_running_jobs.sql",
   "supabase/migrations/20260710055802_v4_execution_control_plane_v1.sql",
-  "supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql"
+  "supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql",
+  "supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `

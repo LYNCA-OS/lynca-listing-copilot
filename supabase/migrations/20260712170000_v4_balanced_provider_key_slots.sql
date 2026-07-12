@@ -163,3 +163,5 @@ revoke all on function public.claim_v4_recognition_jobs_with_balanced_capacity(
 grant execute on function public.claim_v4_recognition_jobs_with_balanced_capacity(
   integer, text, integer, text, text, text, integer, integer, integer
 ) to service_role;
+
+notify pgrst, 'reload schema';

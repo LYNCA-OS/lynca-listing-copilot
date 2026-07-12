@@ -219,8 +219,10 @@ export async function runV4QueuePump({
     }
   }
 
+  const failedCalls = calls.filter((call) => call.ok !== true);
+
   return {
-    ok: true,
+    ok: failedCalls.length === 0,
     pump_run_id: pumpRunId,
     tenant_id: tenantId,
     cycles_run: Math.max(0, ...laneSummaries.map((summary) => summary.cycles_run || 0)),
@@ -238,6 +240,8 @@ export async function runV4QueuePump({
     background_idle_cycles: backgroundIdleCycles,
     claimed_count: totalClaimed,
     processed_count: totalProcessed,
+    failed_call_count: failedCalls.length,
+    failed_calls: failedCalls.slice(0, 8),
     elapsed_ms: now() - started,
     lane_summaries: laneSummaries,
     calls
@@ -319,6 +323,15 @@ export default async function handler(req, res) {
   }
 
   const result = await runV4QueuePump({ payload, env: process.env });
+  if (!result.ok) {
+    console.error(JSON.stringify({
+      level: "error",
+      message: "v4_queue_pump_worker_failure",
+      pump_run_id: result.pump_run_id || null,
+      failed_call_count: result.failed_call_count || 0,
+      failed_calls: result.failed_calls || []
+    }));
+  }
   const continuation = result.ok
     ? triggerV4QueuePumpContinuation(req, payload, result, process.env)
     : { triggered: false, reason: "pump_failed" };

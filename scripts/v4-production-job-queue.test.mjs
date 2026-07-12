@@ -204,6 +204,50 @@ assert.ok(rpcCalls[0].request.body.includes('"p_provider_capacity":2'));
 assert.ok(rpcCalls[0].request.body.includes('"p_per_key_concurrency":2'));
 assert.ok(rpcCalls[0].request.body.includes('"p_provider_key_count":2'));
 
+const schemaFallbackCalls = [];
+const schemaFallbackClaim = await claimV4RecognitionJobs({
+  limit: 2,
+  workerId: "worker-schema-fallback",
+  lane: v4JobLanes.BACKGROUND,
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    OPENAI_API_KEY: "key-one"
+  },
+  fetchImpl: async (url, request = {}) => {
+    schemaFallbackCalls.push({ url: String(url), request });
+    if (String(url).endsWith("/claim_v4_recognition_jobs_with_balanced_capacity")) {
+      return jsonResponse({
+        code: "PGRST202",
+        message: "Could not find the function public.claim_v4_recognition_jobs_with_balanced_capacity in the schema cache"
+      }, { ok: false, status: 404 });
+    }
+    return jsonResponse([{ id: "v4job-schema-fallback", status: "RUNNING" }]);
+  }
+});
+assert.equal(schemaFallbackClaim.ok, true);
+assert.equal(schemaFallbackClaim.rpc_mode, "capacity_schema_cache_fallback");
+assert.equal(schemaFallbackClaim.fallback_reason, "balanced_capacity_rpc_not_visible");
+assert.equal(schemaFallbackCalls.length, 2);
+assert.ok(schemaFallbackCalls[1].url.endsWith("/rest/v1/rpc/claim_v4_recognition_jobs_with_capacity"));
+assert.ok(!schemaFallbackCalls[1].request.body.includes("p_provider_key_count"));
+
+const hardFailureCalls = [];
+const hardFailureClaim = await claimV4RecognitionJobs({
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    OPENAI_API_KEY: "key-one"
+  },
+  fetchImpl: async (url, request = {}) => {
+    hardFailureCalls.push({ url: String(url), request });
+    return jsonResponse({ message: "database unavailable" }, { ok: false, status: 503 });
+  }
+});
+assert.equal(hardFailureClaim.ok, false);
+assert.equal(hardFailureClaim.rpc_mode, "balanced_capacity");
+assert.equal(hardFailureCalls.length, 1, "arbitrary database failures must fail closed instead of bypassing capacity control");
+
 const capacityRpcCalls = [];
 const releasedCapacity = await releaseV4ProviderCapacityForJob({
   jobId: "v4job-claimed",

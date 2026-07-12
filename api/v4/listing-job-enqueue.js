@@ -66,7 +66,21 @@ async function invokeQueuePump({
       },
       body: JSON.stringify(body)
     });
-    return { invoked: true, ok: response?.ok === true, status: response?.status ?? null, error: null };
+    let responseBody = null;
+    try {
+      responseBody = typeof response?.json === "function" ? await response.json() : null;
+    } catch {
+      responseBody = null;
+    }
+    return {
+      invoked: true,
+      ok: response?.ok === true && responseBody?.ok !== false,
+      status: response?.status ?? null,
+      error: responseBody?.message || responseBody?.failed_calls?.[0]?.message || null,
+      pump_failed_call_count: Number(responseBody?.failed_call_count || 0),
+      pump_claimed_count: Number(responseBody?.claimed_count || 0),
+      pump_processed_count: Number(responseBody?.processed_count || 0)
+    };
   } catch (error) {
     return { invoked: true, ok: false, status: null, error: error?.message || "queue_pump_fetch_failed" };
   }
