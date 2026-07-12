@@ -161,6 +161,7 @@ assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 mu
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /const backgroundPersistence = persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must be assembled outside the writer-ready response.");
 assert.match(v4TitleApiSource, /persistV4NonCriticalArtifactsAtomic/, "post-title learning artifacts must prefer one atomic RPC over four concurrent PostgREST writes.");
+assert.match(v4TitleApiSource, /async function persistV4NonCriticalArtifacts\([\s\S]*l1Stage = false/, "L2 background persistence must default its catalog-gap stage guard instead of reading an undeclared variable.");
 assert.match(v4TitleApiSource, /scheduleV4Background\(backgroundPersistence/, "non-critical persistence and its self-observation must not block writer-ready L2 by default.");
 assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSummary/, "background persistence must report its terminal artifact-level outcome.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");

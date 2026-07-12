@@ -452,7 +452,8 @@ async function persistV4NonCriticalArtifacts({
   createResult = {},
   rows = {},
   status = v4SessionStatuses.DRAFT_READY,
-  catalogPromptCount = 0
+  catalogPromptCount = 0,
+  l1Stage = false
 } = {}) {
   const startedAt = Date.now();
   const catalogGapInput = l1Stage || Number(catalogPromptCount || 0) > 0
