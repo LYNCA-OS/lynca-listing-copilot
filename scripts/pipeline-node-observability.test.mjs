@@ -217,6 +217,39 @@ assert.equal(
   "INTENTIONALLY_ROUTED_TO_REVIEW"
 );
 
+const safelyNarrowedParallelLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, parallel_exact: "Silver Prizm", surface_color: "Silver" },
+    resolved_fields: { ...fields, surface_color: "Silver" },
+    rendered_fields: { fields: { ...fields, surface_color: "Silver" } },
+    open_set_presentation_guard: {
+      used: true,
+      action: "downgraded_exact_parallel_to_surface_color",
+      preserved_surface_color: "Silver"
+    }
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-parallel-narrowed", images: [{}, {}] }
+});
+assert.equal(safelyNarrowedParallelLedger.field_flow.unexplained_resolution_drop_count, 0);
+assert.equal(
+  safelyNarrowedParallelLedger.field_flow.fields.find((row) => row.field_group === "parallel_exact")?.disposition,
+  "NARROWED_TO_SUPPORTED_SURFACE_COLOR"
+);
+
+const mismatchedParallelNarrowingLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, parallel_exact: "Sapphire" },
+    resolved_fields: { ...fields, surface_color: "Red" },
+    rendered_fields: { fields: { ...fields, surface_color: "Red" } }
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-parallel-mismatch", images: [{}, {}] }
+});
+assert.deepEqual(mismatchedParallelNarrowingLedger.field_flow.unexplained_resolution_drop_fields, ["parallel_exact"]);
+
 const endToEndLedger = buildEndToEndNodeLedger({
   session: {
     l2_status: "READY",

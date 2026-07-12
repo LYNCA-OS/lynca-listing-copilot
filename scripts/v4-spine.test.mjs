@@ -6,7 +6,7 @@ import {
 } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
-import { buildV4FieldStates } from "../lib/listing/v4/evidence/field-evidence.mjs";
+import { buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
 import { normalizePrintedCardCodeForFields } from "../lib/listing/pipeline/field-normalization.mjs";
@@ -92,9 +92,14 @@ assert.equal(hydratedDiagnostic.input_tokens, 99);
 assert.equal(hydratedDiagnostic.pipeline_node_ledger.coverage.missing_required_node_count, 0);
 assert.equal(hydratedDiagnostic.preingestion_ocr_rendezvous.status, "EVIDENCE_READY");
 
-for (const code of ["PA-ANT", "83T-6", "OP01-001", "CT14-EN001", "201/165", "PAU", "SV2A 201/165"]) {
+for (const code of ["PA-ANT", "83T-6", "OP01-001", "CT14-EN001", "EN001", "201/165", "PAU", "SV2A 201/165"]) {
   assert.equal(normalizePrintedCardCodeForFields(code), code, `${code} should remain a valid compact printed code`);
 }
+assert.equal(
+  normalizePrintedCardCodeForFields("TRAEYOUNG", { players: ["Trae Young"] }),
+  null,
+  "a whitespace-free subject name must not become a printed card code"
+);
 for (const text of [
   "2026PANINI-PRIZMFIFAW0RLDCUP2026TMS0",
   "2026 Panini Prizm FIFA World Cup",
@@ -102,6 +107,18 @@ for (const text of [
 ]) {
   assert.equal(normalizePrintedCardCodeForFields(text), null, `${text} must not become a retrieval anchor`);
 }
+
+const v4CodeSanitizedFields = buildV4ResolvedFields({
+  resolved_fields: {
+    players: ["Trae Young"],
+    card_number: "TRAE YOUNG",
+    collector_number: "TRAE YOUNG",
+    checklist_code: "TRAE YOUNG"
+  }
+});
+assert.equal(v4CodeSanitizedFields.card_number, null);
+assert.equal(v4CodeSanitizedFields.collector_number, null);
+assert.equal(v4CodeSanitizedFields.checklist_code, null);
 
 const uncertainObservationStates = buildV4FieldStates({
   resolved: {
@@ -483,6 +500,33 @@ assert.equal(deterministicCsmTitle.resolved_fields.surface_color, "Silver");
 assert.equal(deterministicCsmTitle.provider_result.title_reconciled_from_v4_field_graph, true);
 assert.equal(deterministicCsmTitle.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
 assert.match(deterministicCsmTitle.legacy_v2_result.model_title_suggestion, /1st Bowman/);
+
+const deterministicTcgCardNameTitle = adaptV2ResultToV4({
+  sessionId: "v4sess-deterministic-tcg-card-name",
+  result: {
+    confidence: "HIGH",
+    final_title: "2023 Yu-Gi-Oh! Adidas Collaboration Dark Magician EN001 #/2500 PSA 10",
+    resolved_fields: {
+      year: "2023",
+      manufacturer: "Konami",
+      product: "Yu-Gi-Oh! Promo",
+      set: "Adidas Collaboration",
+      card_name: "Dark Magician",
+      card_number: "EN001",
+      collector_number: "EN001",
+      print_run_number: "#/2500",
+      grade_company: "PSA",
+      card_grade: "10"
+    },
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.equal(deterministicTcgCardNameTitle.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
+assert.match(deterministicTcgCardNameTitle.final_title, /Dark Magician/);
+assert.match(deterministicTcgCardNameTitle.final_title, /EN001/);
+assert.match(deterministicTcgCardNameTitle.final_title, /PSA 10/);
 
 const failedL2V4 = adaptV2ResultToV4({
   sessionId: "v4sess-failed-l2",
