@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { compareProviderTransportReports } from "./compare-provider-transport-ablation.mjs";
 
-function report({ compact = false } = {}) {
+function report({ compact = false, fieldQualityError = false, transportError = false } = {}) {
+  const anomalies = [
+    ...(fieldQualityError ? [{ check_id: "critical_field_flow_has_no_silent_drop", severity: "ERROR" }] : []),
+    ...(transportError ? [{ check_id: "provider_token_count_conservation", severity: "ERROR" }] : [])
+  ];
   return {
     identity_cache_disabled: true,
     summary: {
@@ -9,7 +13,10 @@ function report({ compact = false } = {}) {
         response_profile_breakdown: { [compact ? "compact_sparse_v1" : "standard"]: 1 },
         prompt_mode_breakdown: { [compact ? "v4_compact_l2" : "standard"]: 1 }
       },
-      pipeline_node_observability: { error_count: 0 }
+      pipeline_node_observability: {
+        error_count: anomalies.length,
+        anomaly_examples: anomalies.length ? [{ asset_id: "card-1", anomalies }] : []
+      }
     },
     results: [{
       asset_id: "card-1",
@@ -39,5 +46,13 @@ assert.equal(comparison.baseline.identity_cache_bypassed_count, 1);
 assert.equal(comparison.compact.identity_cache_bypassed_count, 1);
 assert.deepEqual(comparison.pairs[0].changed_fields, ["surface_color", "parallel"]);
 assert.equal(comparison.pairs[0].weak_proxy_outcome, "RECOVERY");
+
+const qualityOnly = compareProviderTransportReports(report(), report({ compact: true, fieldQualityError: true }));
+assert.equal(qualityOnly.compact.node_error_count, 1);
+assert.equal(qualityOnly.compact.field_quality_error_count, 1);
+assert.equal(qualityOnly.compact.transport_node_error_count, 0);
+
+const transportFailure = compareProviderTransportReports(report(), report({ compact: true, transportError: true }));
+assert.equal(transportFailure.compact.transport_node_error_count, 1);
 
 console.log("provider transport ablation tests passed");

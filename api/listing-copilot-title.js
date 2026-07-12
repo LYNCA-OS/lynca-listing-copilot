@@ -5042,9 +5042,13 @@ async function createOpenAiTitle(payload, selection, {
   );
   let preingestionEvidenceRefresh;
   if (ultraFastL2 && rendezvousEvidencePatches) {
-    preingestionEvidenceRefresh = applyPreIngestionEvidencePatchesToPayload(initialPayload, rendezvousEvidencePatches, {
-      source: "ocr_rendezvous_snapshot"
-    });
+    preingestionEvidenceRefresh = timeSync(
+      timingContext,
+      "preingestion_evidence_refresh_ms",
+      () => applyPreIngestionEvidencePatchesToPayload(initialPayload, rendezvousEvidencePatches, {
+        source: "ocr_rendezvous_snapshot"
+      })
+    );
   } else if (evidenceRefreshDecision.skip) {
     preingestionEvidenceRefresh = {
       refreshed: false,

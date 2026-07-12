@@ -161,7 +161,7 @@ jobs:
           console.log(`tokens standard=${comparison.baseline.total_tokens_total} compact=${comparison.compact.total_tokens_total}`);
           console.log(`weak_proxy recoveries=${comparison.recovery_count} regressions=${comparison.regression_count}`);
           if (comparison.complete_pair_count !== Number('${{ inputs.limit }}')) process.exit(1);
-          if (comparison.baseline.node_error_count !== 0 || comparison.compact.node_error_count !== 0) process.exit(1);
+          if (comparison.baseline.transport_node_error_count !== 0 || comparison.compact.transport_node_error_count !== 0) process.exit(1);
           if (comparison.baseline.identity_cache_hit_count !== 0 || comparison.compact.identity_cache_hit_count !== 0) process.exit(1);
           if (comparison.baseline.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);
           if (comparison.compact.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);

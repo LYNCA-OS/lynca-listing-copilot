@@ -57,6 +57,16 @@ function weakPolicyScore(row = {}) {
 
 function transportSummary(report = {}, rows = []) {
   const provider = report.summary?.provider_diagnostics || {};
+  const nodeObservability = report.summary?.pipeline_node_observability || {};
+  const fieldQualityCheckIds = new Set([
+    "critical_field_flow_has_no_silent_drop",
+    "field_flow_has_no_cross_bracket_composite_migration"
+  ]);
+  const observedAnomalies = (Array.isArray(nodeObservability.anomaly_examples)
+    ? nodeObservability.anomaly_examples
+    : []).flatMap((example) => Array.isArray(example.anomalies) ? example.anomalies : []);
+  const errorAnomalies = observedAnomalies.filter((anomaly) => anomaly?.severity === "ERROR");
+  const unclassifiedErrorCount = Math.max(0, Number(nodeObservability.error_count || 0) - errorAnomalies.length);
   return {
     attempted_count: rows.length,
     completed_count: rows.filter((row) => row.ok === true && row.l2_ready === true).length,
@@ -72,7 +82,9 @@ function transportSummary(report = {}, rows = []) {
       const values = rows.map(weakPolicyScore).filter((value) => value !== null);
       return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
     })(),
-    node_error_count: report.summary?.pipeline_node_observability?.error_count ?? null,
+    node_error_count: nodeObservability.error_count ?? null,
+    transport_node_error_count: errorAnomalies.filter((anomaly) => !fieldQualityCheckIds.has(anomaly.check_id)).length + unclassifiedErrorCount,
+    field_quality_error_count: errorAnomalies.filter((anomaly) => fieldQualityCheckIds.has(anomaly.check_id)).length,
     identity_cache_hit_count: rows.filter((row) => row.identity_cache_hit === true).length,
     identity_cache_bypassed_count: rows.filter((row) => row.identity_cache_read_bypassed === true).length,
     response_profile_breakdown: provider.response_profile_breakdown || {},
