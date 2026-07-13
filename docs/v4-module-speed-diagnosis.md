@@ -108,3 +108,31 @@ not allowed to redefine server capacity.
 OCR remains active and durable, but it must not hold the writer path until all
 crop jobs finish. Patches already available when GPT completes are consumed;
 late patches continue in the background for review, learning, and later reuse.
+
+## 2026-07-13 Provider Transport Ablation
+
+A paired cloud ablation used the same three blind cards, the same deployment,
+the same GPT-5-mini key, and concurrency 2. The only changed variables were the
+L2 prompt mode and OpenAI transport settings.
+
+| Mode | Provider p50 | Provider p95 | Writer p50 | Writer p95 | Tokens | Weak policy avg |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| compact L2 + high detail + default tier | 17.071s | 19.040s | 20.626s | 28.841s | 25,578 | 0.738889 |
+| ultra-fast L2 + high detail + priority tier | 9.770s | 10.074s | 12.091s | 25.213s | 24,862 | 0.827778 |
+
+Both arms completed 3/3 without transport or field errors. The candidate arm
+reduced provider p50 by 42.8%, provider p95 by 47.1%, and writer p50 by 41.4%.
+It also produced three weak-label recoveries and zero regressions. This is
+paired evidence for making the candidate mode the production default, subject
+to a fresh production smoke after deployment.
+
+Production configuration is centralized through:
+
+```text
+ENABLE_V4_ULTRA_FAST_L2=true
+V4_ULTRA_FAST_IMAGE_DETAIL=high
+V4_ULTRA_FAST_SERVICE_TIER=priority
+```
+
+Request payload options still override these defaults so controlled A/B and
+rollback tests remain possible without branching the production path.

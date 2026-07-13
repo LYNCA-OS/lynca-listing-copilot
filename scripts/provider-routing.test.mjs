@@ -143,6 +143,31 @@ const explicitVectorOnOptions = __listingCopilotTitleTestHooks.providerOptionsFr
 }, vectorDefaultEnv);
 assert.equal(explicitVectorOnOptions.enable_vector_retrieval, true, "explicit retrieval config can still force vector experiments");
 assert.equal(explicitVectorOnOptions.vector_retrieval_mode, "assist");
+const ultraFastEnvOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({}, {
+  ...env,
+  ENABLE_V4_ULTRA_FAST_L2: "true",
+  V4_ULTRA_FAST_IMAGE_DETAIL: "high",
+  V4_ULTRA_FAST_SERVICE_TIER: "priority"
+});
+assert.equal(ultraFastEnvOptions.v4_ultra_fast_l2, true);
+assert.equal(ultraFastImageDetail(ultraFastEnvOptions), "high");
+assert.equal(ultraFastServiceTier(ultraFastEnvOptions), "priority");
+
+const ultraFastPayloadOverrideOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
+  provider_options: {
+    v4_ultra_fast_l2: false,
+    v4_ultra_fast_image_detail: "auto",
+    v4_ultra_fast_service_tier: "default"
+  }
+}, {
+  ...env,
+  ENABLE_V4_ULTRA_FAST_L2: "true",
+  V4_ULTRA_FAST_IMAGE_DETAIL: "high",
+  V4_ULTRA_FAST_SERVICE_TIER: "priority"
+});
+assert.equal(ultraFastPayloadOverrideOptions.v4_ultra_fast_l2, false, "explicit eval payload must override the production default");
+assert.equal(ultraFastImageDetail(ultraFastPayloadOverrideOptions), "auto");
+assert.equal(ultraFastServiceTier(ultraFastPayloadOverrideOptions), "default");
 assert.equal(postObservationCatalogVectorHedgeMs({}, {}), 900);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 250 }), 250);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 20 }), 100);
