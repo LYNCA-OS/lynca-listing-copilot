@@ -222,6 +222,8 @@ export default async function handler(req, res) {
       ? buildPreingestionWorkerJobs({
         bundle: durableBundle,
         enableOcr: payload.enqueue_ocr !== false,
+        enableOcrDetail: payload.enqueue_ocr_detail === true
+          || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true",
         enableEmbeddings: payload.enqueue_embeddings === true,
         enableSurface: payload.enqueue_surface === true,
         enableQuality: payload.enqueue_quality === true

@@ -237,7 +237,12 @@ const client = createPaddleOcrClient({
         raw_text: "31/50",
         confidence: 0.94,
         model_id: "paddleocr",
-        model_revision: "ppocr-v5"
+        model_revision: "ppocr-v5",
+        inline_full_image_fallback_evaluated: true,
+        inline_full_image_fallback_used: true,
+        inline_full_image_fallback_target_found: true,
+        primary_ocr_latency_ms: 8,
+        fallback_ocr_latency_ms: 13
       })
     };
   }
@@ -248,6 +253,11 @@ assert.equal(captured.headers.authorization, "Bearer secret-token");
 assert.equal(captured.body.image_url.includes("token=secret"), true);
 assert.equal(clientResult.evidence_patch.evidence.serial_number.value, "31/50");
 assert.equal(clientResult.worker_attempt_count, 1);
+assert.equal(clientResult.inline_full_image_fallback_evaluated, true);
+assert.equal(clientResult.inline_full_image_fallback_used, true);
+assert.equal(clientResult.inline_full_image_fallback_target_found, true);
+assert.equal(clientResult.primary_ocr_latency_ms, 8);
+assert.equal(clientResult.fallback_ocr_latency_ms, 13);
 
 let retryCalls = 0;
 const retryClient = createPaddleOcrClient({

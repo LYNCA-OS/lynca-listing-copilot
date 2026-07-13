@@ -12,16 +12,16 @@ MEMORY="${RECOGNITION_WORKER_MEMORY:-4Gi}"
 CPU="${RECOGNITION_WORKER_CPU:-2}"
 CONCURRENCY="${RECOGNITION_WORKER_CONCURRENCY:-1}"
 TIMEOUT="${RECOGNITION_WORKER_TIMEOUT_SECONDS:-300}"
-MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-5}"
+MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-8}"
 MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-10}"
 STARTUP_PROBE_TIMEOUT_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_TIMEOUT_SECONDS:-240}"
 STARTUP_PROBE_PERIOD_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_PERIOD_SECONDS:-240}"
 STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRESHOLD:-2}"
 # Paddle predictors are serialized inside each process. Cloud Run concurrency
-# therefore stays at one while replicas provide parallelism; five warm replicas
-# remove the model-init cold start from the writer path and ten 2-vCPU replicas
-# fit the current 20-vCPU regional quota. The application reserves eight OCR
-# slots so two replicas remain as retry and rollout headroom. Model preload can
+# therefore stays at one while replicas provide parallelism; eight warm replicas
+# match the application OCR capacity and ten 2-vCPU replicas fit the current
+# 20-vCPU regional quota. Two replicas remain as retry and rollout headroom.
+# Model preload can
 # occasionally cross one 240-second probe window, so require two failed probes
 # before rejecting a healthy-but-slow revision. Set both service-level and
 # revision-level scaling: a stale service cap silently overrides a larger cap.

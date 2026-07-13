@@ -32,13 +32,18 @@ export default async function handler(req, res) {
   })) return;
 
   const payload = req.method === "POST" ? await readJsonPayload(req) : {};
+  const includeDetail = payload.include_detail === true || payload.includeDetail === true;
 
   try {
     const result = await processQueuedPreingestionOcrJobs({
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: payload.bundle_id || payload.bundleId || "",
       limit: payload.limit,
-      anchorOnly: payload.anchor_only === true || payload.anchorOnly === true,
+      // Scheduled recovery keeps the scarce OCR pool on serial, grade and
+      // printed card codes. Detail crops require an explicit maintenance call.
+      anchorOnly: includeDetail
+        ? false
+        : payload.anchor_only !== false && payload.anchorOnly !== false,
       env: process.env,
       fetchImpl: globalThis.fetch
     });

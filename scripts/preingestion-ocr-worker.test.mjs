@@ -99,6 +99,8 @@ assert.equal(request.image_url, "https://signed.test/front.jpg");
 assert.deepEqual(request.crop_box, { x: 1200, y: 1600, width: 700, height: 300 });
 assert.equal(request.metadata.crop_id, "crop-1");
 assert.equal(request.metadata.image_id, "img-front");
+assert.equal(request.metadata.inline_full_image_fallback, true);
+assert.equal(request.metadata.grade_source_looks_like_slab, false);
 
 // --- bundlePatchesFromOcrResult flattens the rich OCR patch to flat patches ---
 const ocrResult = {
@@ -308,6 +310,77 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.job_observability[0].full_image_fallback_used, true);
   assert.equal(result.job_observability[0].full_image_fallback_kind, "grade");
   assert.equal(result.execution_summary.full_image_fallback_count, 1);
+}
+
+// New Recognition Worker revisions perform the fallback against the already
+// downloaded image. The Node consumer must not issue a second network request.
+{
+  const calls = [];
+  const inlineGradeJob = {
+    ...sampleJob,
+    job_id: "job-grade-inline",
+    job_key: "ocr:bundle-1:grade-inline",
+    payload: {
+      crop: {
+        ...sampleJob.payload.crop,
+        source_region: "grade_label",
+        role: "grade_label_crop",
+        crop_metadata: {
+          ...sampleJob.payload.crop.crop_metadata,
+          crop_id: "grade-inline",
+          normalized_bounds: { x: 0, y: 0, width: 1, height: 0.22 },
+          pixel_bounds: { x: 0, y: 0, width: 1600, height: 218 }
+        }
+      }
+    }
+  };
+  const result = await processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = String(url);
+      if (!init.method && target.includes("preingestion_jobs")) return jsonResponse([{ ...inlineGradeJob }]);
+      if (init.method === "PATCH" && target.includes("preingestion_jobs")) {
+        return jsonResponse([{ status: JSON.parse(init.body).status || "running", attempts: 1 }]);
+      }
+      if (!init.method && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", evidence_patches: [], updated_at: "2026-07-11T00:00:00.000Z" }]);
+      }
+      if (init.method === "PATCH" && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", updated_at: "2026-07-11T00:00:01.000Z" }]);
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    },
+    paddleClient: {
+      configured: true,
+      verifyCrop: async (input) => {
+        calls.push(input);
+        return {
+          raw_text: "PSA GEM MT 10",
+          confidence: 0.97,
+          text_candidates: [{ text: "PSA GEM MT 10", confidence: 0.97 }],
+          inline_full_image_fallback_evaluated: true,
+          inline_full_image_fallback_used: true,
+          inline_full_image_fallback_target_found: true,
+          evidence_patch: {
+            evidence: {
+              grade_company: { value: "PSA" },
+              card_grade: { value: "10" }
+            }
+          }
+        };
+      }
+    },
+    signedReadUrlFor: async () => "https://signed.test/slab-inline.jpg"
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].metadata.inline_full_image_fallback, true);
+  assert.equal(calls[0].metadata.grade_source_looks_like_slab, true);
+  assert.equal(result.patches_appended, 2);
+  assert.equal(result.job_observability[0].full_image_fallback_used, true);
+  assert.equal(result.job_observability[0].full_image_fallback_inline_count, 1);
+  assert.equal(result.job_observability[0].full_image_fallback_network_request_count, 0);
+  assert.equal(result.job_observability[0].full_image_fallback_target_found, true);
 }
 
 // Marketplace slabs may omit source dimensions. A visible grading-company token

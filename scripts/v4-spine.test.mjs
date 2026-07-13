@@ -35,6 +35,7 @@ import {
   mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
+  perCardTsv,
   providerDoneHandoffOverride,
   summarize as summarizeSmoke,
   summarizePipelineNodeLedgers,
@@ -55,6 +56,27 @@ assert.equal(smokeNumberOrNull(null), null, "missing optional timings must not b
 assert.equal(smokeNumberOrNull(undefined), null, "missing optional token counts must stay missing");
 assert.equal(smokeNumberOrNull(""), null, "empty optional diagnostics must stay missing");
 assert.equal(smokeNumberOrNull(0), 0, "a real observed zero must remain zero");
+
+const smokeTsv = perCardTsv([{
+  asset_id: "asset-timing",
+  ok: true,
+  recognition_started_at: "2026-07-14T00:00:01.000Z",
+  recognition_start_source: "gpt_provider_request",
+  writer_visible_recognition_ms: 7_500,
+  pipeline_node_ledger: {
+    reconciliation: {},
+    coverage: {},
+    field_flow: {
+      unexplained_resolution_drop_fields: ["grade"],
+      unexplained_terminal_drop_fields: []
+    }
+  }
+}]).split("\n").slice(0, 2).map((line) => line.split("\t"));
+assert.equal(smokeTsv[0].length, smokeTsv[1].length, "per-card TSV columns must not silently shift");
+const smokeTsvRow = Object.fromEntries(smokeTsv[0].map((column, index) => [column, smokeTsv[1][index]]));
+assert.equal(smokeTsvRow.recognition_start_source, "gpt_provider_request");
+assert.equal(smokeTsvRow.writer_visible_recognition_ms, "7500");
+assert.equal(smokeTsvRow.unexplained_resolution_drop_fields, "grade");
 
 const pipelineLedgerSummary = summarizePipelineNodeLedgers([
   {

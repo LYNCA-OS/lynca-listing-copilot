@@ -83,7 +83,7 @@ const currentPatchSet = currentPreingestionEvidencePatches([
     field: "serial_number",
     value: "242/250",
     source_type: "OCR",
-    provenance: { job_key: "ocr:ocr-crop-v6:bundle:serial" }
+    provenance: { job_key: "ocr:ocr-crop-v7:bundle:serial" }
   },
   {
     field: "serial_number",
@@ -191,8 +191,9 @@ assert.deepEqual(summaryWithOcrExecution.ocr_stage_execution, {
 // enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
-assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v6:")));
-assert.ok(jobs.every((job) => ["serial_crop", "card_code_crop", "grade_label_crop", "year_product_crop", "subject_crop"].includes(job.payload.crop.role)));
+assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v7:")));
+assert.ok(jobs.every((job) => ["serial_crop", "card_code_crop", "grade_label_crop"].includes(job.payload.crop.role)));
+assert.ok(!jobs.some((job) => ["year_product_crop", "subject_crop"].includes(job.payload.crop.role)));
 assert.equal(
   new Set(jobs.map((job) => `${job.payload.crop.source_image_id}:${job.payload.crop.role}`)).size,
   jobs.length,
@@ -201,8 +202,10 @@ assert.equal(
 assert.ok(jobs.filter((job) => job.payload.crop.role === "card_code_crop").every((job) => job.priority === 10));
 assert.ok(jobs.filter((job) => job.payload.crop.role === "serial_crop").every((job) => job.priority === 12));
 assert.ok(jobs.filter((job) => job.payload.crop.role === "grade_label_crop").every((job) => job.priority === 14));
-assert.ok(jobs.filter((job) => job.payload.crop.role === "year_product_crop").every((job) => job.priority === 30));
-assert.ok(jobs.filter((job) => job.payload.crop.role === "subject_crop").every((job) => job.priority === 35));
+const detailJobs = buildPreingestionWorkerJobs({ bundle, enableOcrDetail: true });
+assert.ok(detailJobs.some((job) => job.payload.crop.role === "year_product_crop" && job.priority === 30));
+assert.ok(detailJobs.some((job) => job.payload.crop.role === "subject_crop" && job.priority === 35));
+assert.ok(detailJobs.length > jobs.length);
 const optInJobs = buildPreingestionWorkerJobs({ bundle, enableEmbeddings: true, enableQuality: true });
 assert.ok(optInJobs.some((job) => job.job_type === "visual_embedding"));
 assert.ok(optInJobs.some((job) => job.job_type === "image_quality_deep_analysis"));

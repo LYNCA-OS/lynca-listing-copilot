@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from typing import Any
 
@@ -28,6 +29,97 @@ from .security import SecurityError, UrlPolicy, validate_image_url, verify_beare
 _EMBEDDING_CACHE: dict[str, list[float]] = {}
 _PADDLEOCR_PRELOAD_STATUS: dict[str, Any] = {"status": "NOT_RUN"}
 _VISUAL_EMBEDDING_PRELOAD_STATUS: dict[str, Any] = {"status": "NOT_RUN"}
+
+_SERIAL_TEXT_PATTERN = re.compile(r"(?:\b\d{1,5}\s*/\s*\d{1,5}\b|\b1\s*/\s*1\b)")
+_GRADE_COMPANY_PATTERN = re.compile(r"\b(?:PSA(?:\s*/\s*DNA)?|BGS|BECKETT|CGC|CSG|SGC|TAG)\b", re.IGNORECASE)
+_GRADE_VALUE_PATTERN = re.compile(
+    r"\b(?:AUTH(?:ENTIC)?|ALTERED|10(?:\.0)?|[1-9](?:\.\d)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _ocr_response_text(response: dict[str, Any]) -> str:
+    values = [str(response.get("raw_text") or "")]
+    values.extend(
+        str(candidate.get("text") or candidate.get("value") or "")
+        for candidate in response.get("text_candidates", [])
+        if isinstance(candidate, dict)
+    )
+    return "\n".join(value.strip() for value in values if value.strip())
+
+
+def _ocr_response_has_target(response: dict[str, Any], crop_type: str) -> bool:
+    text = _ocr_response_text(response)
+    normalized_crop_type = str(crop_type or "").strip().lower()
+    if normalized_crop_type in {"serial_number", "serial_crop"}:
+        return bool(_SERIAL_TEXT_PATTERN.search(text))
+    if normalized_crop_type in {"grade_label", "grade_label_crop"}:
+        return bool(_GRADE_COMPANY_PATTERN.search(text) and _GRADE_VALUE_PATTERN.search(text))
+    return bool(text)
+
+
+def _merge_inline_ocr_results(
+    primary: dict[str, Any],
+    fallback: dict[str, Any],
+    *,
+    request_id: str,
+    crop_type: str,
+    total_latency_ms: int,
+) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for response in (primary, fallback):
+        for candidate in response.get("text_candidates", []):
+            if not isinstance(candidate, dict):
+                continue
+            key = "|".join([
+                str(candidate.get("text") or candidate.get("value") or "").strip().upper(),
+                repr(candidate.get("box") or candidate.get("bbox") or ""),
+            ])
+            if not key.strip("|") or key in seen:
+                continue
+            seen.add(key)
+            candidates.append(candidate)
+
+    raw_parts: list[str] = []
+    for response in (primary, fallback):
+        raw = str(response.get("raw_text") or "").strip()
+        if raw and raw not in raw_parts:
+            raw_parts.append(raw)
+
+    confidence = max(float(primary.get("confidence") or 0), float(fallback.get("confidence") or 0))
+    output = {
+        **primary,
+        "request_id": request_id,
+        "crop_type": crop_type,
+        "status": "OK" if candidates else (
+            "UNAVAILABLE"
+            if primary.get("status") == "UNAVAILABLE" and fallback.get("status") == "UNAVAILABLE"
+            else "NO_TEXT"
+        ),
+        "raw_text": "\n".join(raw_parts),
+        "text_candidates": candidates,
+        "boxes": [
+            {
+                "text": candidate.get("text"),
+                "confidence": candidate.get("confidence"),
+                "box": candidate.get("box"),
+            }
+            for candidate in candidates
+            if candidate.get("box") is not None
+        ],
+        "confidence": round(confidence, 4),
+        "latency_ms": total_latency_ms,
+        "primary_ocr_latency_ms": primary.get("latency_ms"),
+        "fallback_ocr_latency_ms": fallback.get("latency_ms"),
+        "inline_full_image_fallback_evaluated": True,
+        "inline_full_image_fallback_used": True,
+        "inline_full_image_fallback_target_found": _ocr_response_has_target(fallback, crop_type),
+        "inline_full_image_fallback_status": fallback.get("status"),
+    }
+    if output["status"] != "UNAVAILABLE":
+        output.pop("reason", None)
+    return output
 
 
 def _image_cache_hash(image: dict[str, Any], loaded: Any) -> str:
@@ -376,13 +468,58 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
             "model_revision": config.paddleocr_model_revision,
         }
 
-    return ocr_field_from_loaded_image(
+    primary = ocr_field_from_loaded_image(
         loaded,
         crop_type=crop_type,
         crop_box=payload.get("crop_box"),
         request_id=request_id,
         model_id=config.paddleocr_model_id,
         model_revision=config.paddleocr_model_revision,
+    )
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    primary_text = _ocr_response_text(primary)
+    inline_fallback_requested = metadata.get("inline_full_image_fallback") is True
+    grade_context = (
+        metadata.get("grade_source_looks_like_slab") is True
+        or bool(_GRADE_COMPANY_PATTERN.search(primary_text))
+    )
+    should_fallback = (
+        inline_fallback_requested
+        and payload.get("crop_box") is not None
+        and primary.get("status") != "UNAVAILABLE"
+        and not _ocr_response_has_target(primary, crop_type)
+        and (
+            str(crop_type).lower() in {"serial_number", "serial_crop"}
+            or (
+                str(crop_type).lower() in {"grade_label", "grade_label_crop"}
+                and grade_context
+            )
+        )
+    )
+    if not should_fallback:
+        return {
+            **primary,
+            "latency_ms": int((time.time() - started) * 1000),
+            "primary_ocr_latency_ms": primary.get("latency_ms"),
+            "inline_full_image_fallback_evaluated": False,
+            "inline_full_image_fallback_used": False,
+            "inline_full_image_fallback_target_found": False,
+        }
+
+    fallback = ocr_field_from_loaded_image(
+        loaded,
+        crop_type=crop_type,
+        crop_box=None,
+        request_id=f"{request_id}:full-image",
+        model_id=config.paddleocr_model_id,
+        model_revision=config.paddleocr_model_revision,
+    )
+    return _merge_inline_ocr_results(
+        primary,
+        fallback,
+        request_id=request_id,
+        crop_type=crop_type,
+        total_latency_ms=int((time.time() - started) * 1000),
     )
 
 

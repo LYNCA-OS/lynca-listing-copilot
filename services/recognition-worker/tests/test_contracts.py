@@ -191,6 +191,70 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["raw_text"], "31/50")
         self.assertNotIn("token=secret", str(result))
 
+    def test_ocr_field_payload_reuses_loaded_image_for_inline_serial_fallback(self):
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
+        os.environ["ENABLE_PADDLEOCR"] = "true"
+        loaded = LoadedImage(
+            image_id="serial",
+            role="serial_number",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/serial.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+        payload = {
+            "request_id": "ocr_inline",
+            "image_url": "https://example.supabase.co/storage/v1/object/sign/cards/serial.jpg?token=secret",
+            "crop_type": "serial_number",
+            "crop_box": {"x": 0, "y": 600, "width": 800, "height": 400},
+            "metadata": {
+                "image_id": "serial",
+                "inline_full_image_fallback": True,
+            },
+        }
+        primary = {
+            "request_id": "ocr_inline",
+            "crop_type": "serial_number",
+            "status": "NO_TEXT",
+            "raw_text": "",
+            "text_candidates": [],
+            "boxes": [],
+            "confidence": 0,
+            "latency_ms": 8,
+            "model_id": "paddleocr",
+            "model_revision": "",
+        }
+        fallback = {
+            "request_id": "ocr_inline:full-image",
+            "crop_type": "serial_number",
+            "status": "OK",
+            "raw_text": "31/50",
+            "text_candidates": [{"text": "31/50", "confidence": 0.94}],
+            "boxes": [],
+            "confidence": 0.94,
+            "latency_ms": 13,
+            "model_id": "paddleocr",
+            "model_revision": "",
+        }
+
+        with patch("app.main.load_signed_image", return_value=loaded) as load_mock:
+            with patch("app.main.ocr_field_from_loaded_image", side_effect=[primary, fallback]) as ocr_mock:
+                result = ocr_field_payload(payload, authorization="Bearer test-token")
+
+        load_mock.assert_called_once()
+        self.assertEqual(ocr_mock.call_count, 2)
+        self.assertEqual(ocr_mock.call_args_list[0].kwargs["crop_box"], payload["crop_box"])
+        self.assertIsNone(ocr_mock.call_args_list[1].kwargs["crop_box"])
+        self.assertEqual(result["raw_text"], "31/50")
+        self.assertTrue(result["inline_full_image_fallback_evaluated"])
+        self.assertTrue(result["inline_full_image_fallback_used"])
+        self.assertTrue(result["inline_full_image_fallback_target_found"])
+        self.assertEqual(result["primary_ocr_latency_ms"], 8)
+        self.assertEqual(result["fallback_ocr_latency_ms"], 13)
+        self.assertNotIn("token=secret", str(result))
+
     def test_embed_images_endpoint_returns_batch_embeddings_without_signed_urls(self):
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
         os.environ["ENABLE_VISUAL_EMBEDDINGS"] = "true"
