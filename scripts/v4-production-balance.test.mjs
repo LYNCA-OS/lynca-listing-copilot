@@ -97,6 +97,28 @@ function capacityReport() {
   };
 }
 
+function stabilityEnvelope() {
+  return {
+    schema_version: "v4-multi-tenant-soak-v1",
+    summary: stabilityReport().summary,
+    stability_envelope: {
+      schema_version: "v4-stability-envelope-v1",
+      pass: true,
+      aggregate: {
+        wave_count: 3,
+        attempted_count: 60,
+        tenant_count: 5,
+        technical_availability: 1,
+        tenant_completion_fairness: 1,
+        residual_backlog_count: 0,
+        writer_ready_p95_ms: 70_000
+      },
+      rejection_reasons: [],
+      warning_reasons: []
+    }
+  };
+}
+
 const weakSellerEvidence = accuracyEvidence({
   blind_policy: { seller_title_is_ground_truth: false },
   summary: { final_accuracy_proxy: { policy_fair_pass_at_0_72: 50 }, attempted_count: 50 }
@@ -130,6 +152,8 @@ assert.equal(integritySummary.production_integrity.duplicate_asset_id_count, 0);
 assert.equal(integritySummary.production_integrity.duplicate_job_id_count, 1);
 assert.equal(integritySummary.production_integrity.successful_nonterminal_job_count, 1);
 assert.equal(integritySummary.production_integrity.provider_capacity_refill_missing_count, 1);
+assert.equal(integritySummary.production_integrity.tenant_service[0].queue_wait_p95_ms, null);
+assert.equal(integritySummary.production_integrity.tenant_service[0].writer_ready_p95_ms, null);
 
 const reviewedTitleEvidence = accuracyEvidence(reviewedTitleAccuracy());
 assert.equal(reviewedTitleEvidence.eligible, true);
@@ -148,7 +172,8 @@ assert.equal(fieldExactEvidence.evidence_type, "REVIEWED_FIELD_CARD_EXACT");
 const stable = assessStabilityReport(stabilityReport(), {
   minimumCards: 50,
   maximumWriterP95Ms: 120_000,
-  requireVectorRuntime: true
+  requireVectorRuntime: true,
+  requireStabilityEnvelope: false
 });
 assert.equal(stable.pass, true);
 assert.equal(stable.ocr_stage_global_capacity, 8);
@@ -165,7 +190,7 @@ const duplicateJobs = stabilityReport({
     }
   }
 });
-const duplicateDecision = assessStabilityReport(duplicateJobs, { minimumCards: 50 });
+const duplicateDecision = assessStabilityReport(duplicateJobs, { minimumCards: 50, requireStabilityEnvelope: false });
 assert.equal(duplicateDecision.pass, false);
 assert.ok(duplicateDecision.rejection_reasons.includes("DUPLICATE_QUEUE_JOB"));
 
@@ -174,7 +199,8 @@ const vectorUnavailable = stabilityReport({
 });
 const vectorDecision = assessStabilityReport(vectorUnavailable, {
   minimumCards: 50,
-  requireVectorRuntime: true
+  requireVectorRuntime: true,
+  requireStabilityEnvelope: false
 });
 assert.equal(vectorDecision.pass, false);
 assert.ok(vectorDecision.rejection_reasons.includes("VECTOR_RUNTIME_REQUIRED_BUT_UNAVAILABLE"));
@@ -185,7 +211,7 @@ assert.equal(capacity.recommended_concurrency, 2);
 
 const balanced = assessProductionBalance({
   accuracyReport: reviewedTitleAccuracy(),
-  stabilityReport: stabilityReport(),
+  stabilityReport: stabilityEnvelope(),
   capacityReport: capacityReport(),
   requireVectorRuntime: true
 });
@@ -195,7 +221,7 @@ assert.equal(balanced.speed.pass, true);
 
 const inaccurate = assessProductionBalance({
   accuracyReport: reviewedTitleAccuracy({ pass: 42, total: 50 }),
-  stabilityReport: stabilityReport(),
+  stabilityReport: stabilityEnvelope(),
   capacityReport: capacityReport()
 });
 assert.equal(inaccurate.pass, false);
@@ -203,10 +229,18 @@ assert.ok(inaccurate.rejection_reasons.includes("ACCURACY_BELOW_TARGET"));
 
 const weakOnly = assessProductionBalance({
   accuracyReport: { blind_policy: { seller_title_is_ground_truth: false } },
-  stabilityReport: stabilityReport(),
+  stabilityReport: stabilityEnvelope(),
   capacityReport: capacityReport()
 });
 assert.equal(weakOnly.pass, false);
 assert.ok(weakOnly.rejection_reasons.includes("REVIEWED_ACCURACY_EVIDENCE_MISSING"));
+
+const legacySingleRun = assessProductionBalance({
+  accuracyReport: reviewedTitleAccuracy(),
+  stabilityReport: stabilityReport(),
+  capacityReport: capacityReport()
+});
+assert.equal(legacySingleRun.pass, false);
+assert.ok(legacySingleRun.rejection_reasons.includes("MULTI_WAVE_STABILITY_ENVELOPE_REQUIRED"));
 
 console.log("v4 production balance tests passed");

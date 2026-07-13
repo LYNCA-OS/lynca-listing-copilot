@@ -1,0 +1,207 @@
+-- Fair scheduling must be scoped by tenant first. A tenant can create many
+-- batches, but those batches must not multiply its share of scarce GPT slots.
+
+create or replace function public.claim_v4_recognition_jobs_with_balanced_capacity(
+  p_limit integer default 1,
+  p_worker_id text default 'worker',
+  p_lease_seconds integer default 120,
+  p_lane text default null,
+  p_tenant_id text default null,
+  p_provider_id text default 'openai_legacy',
+  p_provider_capacity integer default 2,
+  p_per_key_concurrency integer default 2,
+  p_provider_key_count integer default 1
+)
+returns setof public.v4_recognition_jobs
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  provider_name text := coalesce(nullif(p_provider_id, ''), 'openai_legacy');
+  worker_name text := coalesce(nullif(p_worker_id, ''), 'worker');
+  lease_seconds integer := greatest(30, least(coalesce(p_lease_seconds, 120), 900));
+  per_key_concurrency integer := greatest(1, least(coalesce(p_per_key_concurrency, 2), 8));
+  provider_key_count integer := greatest(1, least(coalesce(p_provider_key_count, 1), 50));
+  provider_capacity integer := greatest(
+    1,
+    least(coalesce(p_provider_capacity, 2), provider_key_count * per_key_concurrency, 96)
+  );
+  claim_limit integer := greatest(1, least(coalesce(p_limit, 1), 25));
+  slot_ids integer[] := array[]::integer[];
+  key_slots integer[] := array[]::integer[];
+  job_ids text[] := array[]::text[];
+  item_count integer := 0;
+  item_index integer;
+begin
+  insert into public.v4_provider_capacity_leases(provider_id, slot_no, key_slot, updated_at)
+  select
+    provider_name,
+    slot_no,
+    ((slot_no - 1) % provider_key_count) + 1,
+    clock_timestamp()
+  from generate_series(1, provider_capacity) as slot_no
+  on conflict (provider_id, slot_no) do update
+  set key_slot = excluded.key_slot,
+      updated_at = excluded.updated_at
+  where public.v4_provider_capacity_leases.job_id is null
+     or public.v4_provider_capacity_leases.lease_expires_at <= clock_timestamp();
+
+  select
+    coalesce(array_agg(available.slot_no order by available.slot_no), array[]::integer[]),
+    coalesce(array_agg(available.key_slot order by available.slot_no), array[]::integer[])
+  into slot_ids, key_slots
+  from (
+    select leases.slot_no, leases.key_slot
+    from public.v4_provider_capacity_leases leases
+    where leases.provider_id = provider_name
+      and leases.slot_no <= provider_capacity
+      and (leases.job_id is null or leases.lease_expires_at <= clock_timestamp())
+    order by leases.slot_no
+    limit claim_limit
+    for update skip locked
+  ) available;
+
+  if cardinality(slot_ids) = 0 then
+    return;
+  end if;
+
+  with ranked as materialized (
+    select
+      jobs.id,
+      jobs.lane,
+      jobs.priority,
+      jobs.created_at,
+      row_number() over (
+        partition by coalesce(nullif(jobs.tenant_id, ''), nullif(jobs.batch_id, ''), jobs.id)
+        order by jobs.priority asc, jobs.created_at asc
+      ) as tenant_rank
+    from public.v4_recognition_jobs jobs
+    where (
+        jobs.status in ('QUEUED', 'RETRYING')
+        or (jobs.status = 'RUNNING' and jobs.lease_expires_at is not null and jobs.lease_expires_at < clock_timestamp())
+      )
+      and jobs.not_before <= clock_timestamp()
+      and (jobs.lease_expires_at is null or jobs.lease_expires_at < clock_timestamp())
+      and (p_lane is null or jobs.lane = p_lane)
+      and (p_tenant_id is null or jobs.tenant_id = p_tenant_id)
+      and coalesce(nullif(jobs.provider_id, ''), 'openai_legacy') = provider_name
+  ), locked as (
+    select
+      jobs.id,
+      case when jobs.lane = 'interactive' then 0 else 1 end as lane_order,
+      ranked.tenant_rank,
+      jobs.priority,
+      jobs.created_at
+    from public.v4_recognition_jobs jobs
+    join ranked on ranked.id = jobs.id
+    order by
+      case when jobs.lane = 'interactive' then 0 else 1 end,
+      ranked.tenant_rank,
+      jobs.priority,
+      jobs.created_at
+    limit cardinality(slot_ids)
+    for update of jobs skip locked
+  )
+  select coalesce(
+    array_agg(locked.id order by locked.lane_order, locked.tenant_rank, locked.priority, locked.created_at),
+    array[]::text[]
+  )
+  into job_ids
+  from locked;
+
+  item_count := least(cardinality(slot_ids), cardinality(job_ids));
+  if item_count = 0 then
+    return;
+  end if;
+
+  for item_index in 1..item_count loop
+    update public.v4_provider_capacity_leases leases
+    set job_id = job_ids[item_index],
+        lease_owner = worker_name,
+        lease_expires_at = clock_timestamp() + make_interval(secs => lease_seconds),
+        acquired_at = clock_timestamp(),
+        updated_at = clock_timestamp()
+    where leases.provider_id = provider_name
+      and leases.slot_no = slot_ids[item_index];
+
+    update public.v4_recognition_jobs jobs
+    set status = 'RUNNING',
+        lease_owner = worker_name,
+        lease_expires_at = clock_timestamp() + make_interval(secs => lease_seconds),
+        started_at = coalesce(jobs.started_at, clock_timestamp()),
+        attempt_count = jobs.attempt_count + 1,
+        queue_tags = coalesce(jobs.queue_tags, '{}'::jsonb) || jsonb_build_object(
+          'provider_capacity_slot', slot_ids[item_index],
+          'provider_key_slot', key_slots[item_index],
+          'provider_capacity', provider_capacity,
+          'provider_key_count', provider_key_count,
+          'provider_per_key_concurrency', per_key_concurrency,
+          'provider_key_assignment', 'balanced_round_robin_v1',
+          'provider_capacity_lease_owner', worker_name,
+          'provider_capacity_leased_at', clock_timestamp(),
+          'scheduling_fairness_scope', case
+            when nullif(jobs.tenant_id, '') is not null then 'tenant'
+            when nullif(jobs.batch_id, '') is not null then 'batch'
+            else 'job'
+          end,
+          'scheduling_fairness_key', coalesce(nullif(jobs.tenant_id, ''), nullif(jobs.batch_id, ''), jobs.id)
+        ),
+        updated_at = clock_timestamp()
+    where jobs.id = job_ids[item_index];
+  end loop;
+
+  return query
+  select jobs.*
+  from public.v4_recognition_jobs jobs
+  where jobs.id = any(job_ids[1:item_count])
+  order by array_position(job_ids[1:item_count], jobs.id);
+end;
+$$;
+
+-- Preserve the schema-cache fallback while routing it through the same fair
+-- scheduler, so a PostgREST refresh delay cannot silently restore batch bias.
+create or replace function public.claim_v4_recognition_jobs_with_capacity(
+  p_limit integer default 1,
+  p_worker_id text default 'worker',
+  p_lease_seconds integer default 120,
+  p_lane text default null,
+  p_tenant_id text default null,
+  p_provider_id text default 'openai_legacy',
+  p_provider_capacity integer default 2,
+  p_per_key_concurrency integer default 2
+)
+returns setof public.v4_recognition_jobs
+language sql
+security invoker
+set search_path = pg_catalog, public
+as $$
+  select *
+  from public.claim_v4_recognition_jobs_with_balanced_capacity(
+    p_limit,
+    p_worker_id,
+    p_lease_seconds,
+    p_lane,
+    p_tenant_id,
+    p_provider_id,
+    p_provider_capacity,
+    p_per_key_concurrency,
+    greatest(1, ceil(greatest(1, p_provider_capacity)::numeric / greatest(1, p_per_key_concurrency)::numeric)::integer)
+  );
+$$;
+
+revoke all on function public.claim_v4_recognition_jobs_with_balanced_capacity(
+  integer, text, integer, text, text, text, integer, integer, integer
+) from public, anon, authenticated;
+grant execute on function public.claim_v4_recognition_jobs_with_balanced_capacity(
+  integer, text, integer, text, text, text, integer, integer, integer
+) to service_role;
+
+revoke all on function public.claim_v4_recognition_jobs_with_capacity(
+  integer, text, integer, text, text, text, integer, integer
+) from public, anon, authenticated;
+grant execute on function public.claim_v4_recognition_jobs_with_capacity(
+  integer, text, integer, text, text, text, integer, integer
+) to service_role;
+
+notify pgrst, 'reload schema';

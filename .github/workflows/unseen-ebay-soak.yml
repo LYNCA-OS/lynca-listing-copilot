@@ -12,6 +12,15 @@ on:
       think_ms:
         description: "Simulated writer think time (ms)"
         default: "5000"
+      wave_size:
+        description: "Cards per sustained-load wave"
+        default: "20"
+      tenant_count:
+        description: "Concurrent simulated service providers"
+        default: "5"
+      concurrency:
+        description: "Global GPT provider concurrency"
+        default: "2"
 
 jobs:
   soak:
@@ -38,7 +47,7 @@ jobs:
             --out /tmp/ebay-evaluation-history.jsonl
       - name: Warm production path
         run: |
-          for i in 1 2 3; do
+          for _attempt in 1 2 3; do
             curl -s -o /dev/null --max-time 20 https://listing.lyncafei.team/api/health || true
           done
       - name: Validate production readiness
@@ -134,30 +143,31 @@ jobs:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
           METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: |
-          COUNT=$(node -e 'console.log(require("/tmp/unseen-dataset.json").item_count)')
-          node scripts/v4-ebay-smoke.mjs \
+          COUNT=$(node -e 'const d=require("/tmp/unseen-dataset.json"); console.log(Number(d.item_count || (d.items || []).length || 0))')
+          test "$COUNT" -gt 0
+          node scripts/run-v4-multi-tenant-soak.mjs \
             --dataset /tmp/unseen-dataset.json \
             --sealed-labels /tmp/unseen-sealed-labels.jsonl \
             --limit "$COUNT" \
-            --queue --speculative --use-preingestion --prewarm --per-card-poll \
-            --disable-identity-cache \
-            --sample-mode fresh_generalization \
-            --concurrency 2 \
+            --wave-size "${{ inputs.wave_size }}" \
+            --tenant-count "${{ inputs.tenant_count }}" \
+            --concurrency "${{ inputs.concurrency }}" \
             --model "${{ inputs.model }}" \
             --think-ms "${{ inputs.think_ms }}" \
             --l2-wait-ms 3600000 \
             --request-timeout-ms 120000 \
+            --run-id unseen-soak \
+            --wave-out-dir /tmp/unseen-soak-waves \
+            --stability-out /tmp/unseen-soak-stability.json \
             --out /tmp/unseen-soak-report.json
       - name: Enforce stability gate
         run: |
-          node scripts/assert-concurrency-sweep-level.mjs \
-            --report /tmp/unseen-soak-report.json \
-            --concurrency 2
           node - <<'NODE'
           const r = require('/tmp/unseen-soak-report.json');
           const s = r.summary;
-          console.log(JSON.stringify({attempted:s.attempted_count,ok:s.ok_count,technical_failures:s.technical_failure_count,policy_below_0_72:s.policy_below_0_72_count,retries:s.retry_card_count,policy_avg:s.final_accuracy_proxy.policy_fair_token_recall_avg,pass72:s.final_accuracy_proxy.policy_fair_pass_at_0_72,writer_p50:s.writer_ready_p50_ms,writer_p95:s.writer_ready_p95_ms,writer_p99:s.writer_ready_p99_ms,cards_per_minute:s.completed_cards_per_minute,tokens:s.provider_diagnostics.total_tokens_total,key_slots:s.provider_diagnostics.key_slots_used}, null, 2));
-          if (s.ok_count !== s.attempted_count) process.exit(1);
+          const stability = r.stability_envelope;
+          console.log(JSON.stringify({attempted:s.attempted_count,ok:s.ok_count,technical_failures:s.technical_failure_count,policy_below_0_72:s.policy_below_0_72_count,retries:s.retry_card_count,policy_avg:s.final_accuracy_proxy.policy_fair_token_recall_avg,pass72:s.final_accuracy_proxy.policy_fair_pass_at_0_72,writer_p50:s.writer_ready_p50_ms,writer_p95:s.writer_ready_p95_ms,writer_p99:s.writer_ready_p99_ms,cards_per_minute:s.completed_cards_per_minute,tokens:s.provider_diagnostics.total_tokens_total,key_slots:s.provider_diagnostics.key_slots_used,stability_pass:stability.pass,stability_aggregate:stability.aggregate,stability_rejections:stability.rejection_reasons}, null, 2));
+          if (s.ok_count !== s.attempted_count || stability.pass !== true) process.exit(1);
           NODE
       - name: Upload detailed evidence
         if: always()
@@ -166,6 +176,9 @@ jobs:
           name: unseen-ebay-soak-report
           path: |
             /tmp/unseen-soak-report.json
+            /tmp/unseen-soak-stability.json
+            /tmp/unseen-soak-waves/*.json
+            /tmp/unseen-soak-waves/*.tsv
             /tmp/unseen-soak-report.tsv
             /tmp/novelty.json
             /tmp/unseen-sealed-labels.jsonl

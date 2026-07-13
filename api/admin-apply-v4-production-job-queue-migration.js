@@ -10,7 +10,8 @@ const migrationPaths = [
   "supabase/migrations/20260710055802_v4_execution_control_plane_v1.sql",
   "supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql",
   "supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql",
-  "supabase/migrations/20260713130000_v4_stage_capacity_control.sql"
+  "supabase/migrations/20260713130000_v4_stage_capacity_control.sql",
+  "supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `
@@ -226,7 +227,18 @@ async function verify(client) {
         where n.nspname = 'public'
           and p.proname = 'release_v4_stage_capacity'
           and p.pronargs = 3
-      ) as stage_capacity_release_rpc
+      ) as stage_capacity_release_rpc,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'claim_v4_recognition_jobs_with_balanced_capacity'
+          and p.pronargs = 9
+          and position('nullif(jobs.tenant_id' in pg_get_functiondef(p.oid)) > 0
+          and position('nullif(jobs.tenant_id' in pg_get_functiondef(p.oid))
+            < position('nullif(jobs.batch_id' in pg_get_functiondef(p.oid))
+      ) as tenant_fair_scheduler
   `);
   return result.rows[0] || {};
 }
@@ -236,7 +248,8 @@ async function verifyExecutionControlBehavior(client) {
   const firstBatchFirstJobId = `migration_probe_a1_${suffix}`;
   const firstBatchSecondJobId = `migration_probe_a2_${suffix}`;
   const secondBatchJobId = `migration_probe_b1_${suffix}`;
-  const tenantId = `migration_probe_tenant_${suffix}`;
+  const firstTenantId = `migration_probe_tenant_a_${suffix}`;
+  const secondTenantId = `migration_probe_tenant_b_${suffix}`;
   const workerId = `migration_probe_worker_${suffix}`;
   await client.query("begin");
   try {
@@ -249,22 +262,30 @@ async function verifyExecutionControlBehavior(client) {
           'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp() - interval '2 seconds'),
         ($2, 'migration-probe-v1', $4, $6, $2, 'FINAL_ASSISTED_TITLE',
           'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp() - interval '1 second'),
-        ($3, 'migration-probe-v1', $5, $6, $3, 'FINAL_ASSISTED_TITLE',
+        ($3, 'migration-probe-v1', $5, $7, $3, 'FINAL_ASSISTED_TITLE',
           'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp())
-    `, [firstBatchFirstJobId, firstBatchSecondJobId, secondBatchJobId, `batch_a_${suffix}`, `batch_b_${suffix}`, tenantId]);
+    `, [
+      firstBatchFirstJobId,
+      firstBatchSecondJobId,
+      secondBatchJobId,
+      `batch_a_${suffix}`,
+      `batch_b_${suffix}`,
+      firstTenantId,
+      secondTenantId
+    ]);
     const claim = await client.query(`
       select id, status, queue_tags
       from public.claim_v4_recognition_jobs_with_balanced_capacity(
-        2, $1, 60, 'background', $2, 'migration_probe', 2, 2, 2
+        2, $1, 60, 'background', null, 'migration_probe', 2, 2, 2
       )
-    `, [workerId, tenantId]);
+    `, [workerId]);
     const claimedIds = new Set(claim.rows.map((row) => row.id));
     const blockedByCapacity = await client.query(`
       select id
       from public.claim_v4_recognition_jobs_with_balanced_capacity(
-        1, $1, 60, 'background', $2, 'migration_probe', 2, 2, 2
+        1, $1, 60, 'background', null, 'migration_probe', 2, 2, 2
       )
-    `, [`${workerId}_overflow`, tenantId]);
+    `, [`${workerId}_overflow`]);
     let releasedCount = 0;
     for (const row of claim.rows) {
       const release = await client.query(
@@ -315,9 +336,11 @@ async function verifyExecutionControlBehavior(client) {
         && assignedKeySlots.has(1)
         && assignedKeySlots.has(2)
         && claim.rows.every((row) => row.queue_tags?.provider_key_assignment === "balanced_round_robin_v1"),
-      fair_batch_claim_ok: claimedIds.has(firstBatchFirstJobId)
+      tenant_fair_claim_ok: claimedIds.has(firstBatchFirstJobId)
         && claimedIds.has(secondBatchJobId)
-        && !claimedIds.has(firstBatchSecondJobId),
+        && !claimedIds.has(firstBatchSecondJobId)
+        && claim.rows.every((row) => row.queue_tags?.scheduling_fairness_scope === "tenant")
+        && new Set(claim.rows.map((row) => row.queue_tags?.scheduling_fairness_key)).size === 2,
       capacity_bound_ok: blockedByCapacity.rows.length === 0,
       release_ok: releasedCount === 2,
       kick_ok: firstKick.rows[0]?.acquired === true,
@@ -389,9 +412,10 @@ export default async function handler(req, res) {
       && verification.queue_kick_rpc
       && verification.stage_capacity_acquire_rpc
       && verification.stage_capacity_release_rpc
+      && verification.tenant_fair_scheduler
       && behavior.claim_ok
       && behavior.balanced_key_assignment_ok
-      && behavior.fair_batch_claim_ok
+      && behavior.tenant_fair_claim_ok
       && behavior.capacity_bound_ok
       && behavior.release_ok
       && behavior.kick_ok

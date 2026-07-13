@@ -286,6 +286,7 @@ export default async function handler(req, res) {
       paired_job_id: entry.row?.paired_job_id || null,
       recognition_session_id: entry.row?.recognition_session_id || null,
       asset_id: entry.row?.asset_id || null,
+      tenant_id: entry.row?.tenant_id || tenantId || null,
       status: entry.row?.status || null,
       deduplicated: entry.deduplicated === true,
       error: entry.error || null

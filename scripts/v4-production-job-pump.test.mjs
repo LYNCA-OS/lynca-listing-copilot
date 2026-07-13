@@ -248,6 +248,13 @@ assert.match(balancedCapacityMigration, /for update of jobs skip locked/);
 assert.match(balancedCapacityMigration, /revoke all on function public\.claim_v4_recognition_jobs_with_balanced_capacity/);
 assert.match(balancedCapacityMigration, /notify pgrst, 'reload schema'/);
 
+const tenantFairQueueMigration = readFileSync(new URL("../supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql", import.meta.url), "utf8");
+assert.match(tenantFairQueueMigration, /partition by coalesce\(nullif\(jobs\.tenant_id, ''\), nullif\(jobs\.batch_id, ''\), jobs\.id\)/);
+assert.match(tenantFairQueueMigration, /'scheduling_fairness_scope'/);
+assert.match(tenantFairQueueMigration, /'scheduling_fairness_key'/);
+assert.match(tenantFairQueueMigration, /claim_v4_recognition_jobs_with_capacity[\s\S]*claim_v4_recognition_jobs_with_balanced_capacity/);
+assert.match(tenantFairQueueMigration, /notify pgrst, 'reload schema'/);
+
 const queueSchemaRefreshMigration = readFileSync(new URL("../supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql", import.meta.url), "utf8");
 assert.match(queueSchemaRefreshMigration, /notify pgrst, 'reload schema'/);
 

@@ -296,6 +296,7 @@ export default async function handler(req, res) {
       return {
         job_id: job.id,
         batch_id: job.batch_id,
+        tenant_id: job.tenant_id || null,
         asset_id: job.asset_id,
         recognition_session_id: job.recognition_session_id,
         lane: job.lane || null,
@@ -337,6 +338,8 @@ export default async function handler(req, res) {
           provider_key_assignment: job.queue_tags?.provider_key_assignment || null,
           provider_capacity_lease_owner: job.queue_tags?.provider_capacity_lease_owner || null,
           provider_capacity_leased_at: job.queue_tags?.provider_capacity_leased_at || null,
+          scheduling_fairness_scope: job.queue_tags?.scheduling_fairness_scope || null,
+          scheduling_fairness_key: job.queue_tags?.scheduling_fairness_key || null,
           paired_l1_released_at: pairedL1ReleasedAt
         },
         created_at: job.created_at,

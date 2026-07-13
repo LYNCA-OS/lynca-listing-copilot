@@ -83,6 +83,13 @@ function candidateId(item = {}, index = 0) {
   return cleanText(item.asset_id || item.candidate_id || item.id || item.physical_card_id || `v4-ebay-smoke-${index + 1}`);
 }
 
+export function smokeTenantId({ batchId = "", tenantPrefix = "", tenantCount = 1, index = 0 } = {}) {
+  const count = Math.max(1, Math.trunc(Number(tenantCount) || 1));
+  const slot = (Math.max(0, Math.trunc(Number(index) || 0)) % count) + 1;
+  const prefix = cleanText(tenantPrefix) || cleanText(batchId) || "v4-smoke";
+  return count === 1 ? prefix : `${prefix}-tenant-${slot}`;
+}
+
 function itemImages(item = {}) {
   return (Array.isArray(item.images) ? item.images : [])
     .filter((image) => image?.bucket && image?.object_path)
@@ -1886,6 +1893,7 @@ async function enqueueSpeculativeItem({
   item,
   index,
   batchId,
+  tenantId,
   baseUrl,
   cookie,
   prewarm,
@@ -1983,7 +1991,7 @@ async function enqueueSpeculativeItem({
       cookie,
       payload: {
         batch_id: batchId,
-        tenant_id: batchId,
+        tenant_id: tenantId || batchId,
         priority: 100,
         jobs: [{
           asset_id: id,
@@ -2007,6 +2015,7 @@ async function enqueueSpeculativeItem({
       index,
       item,
       batch_id: batchId,
+      tenant_id: tenantId || batchId,
       job,
       l1_job: l1Job,
       enqueue,
@@ -2022,6 +2031,7 @@ async function enqueueSpeculativeItem({
       index,
       item,
       batch_id: batchId,
+      tenant_id: tenantId || batchId,
       job: null,
       enqueue: null,
       enqueue_latency_ms: null,
@@ -2203,6 +2213,7 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     speculative_mode: true,
     batch_poll_mode: true,
     batch_id: prepared.batch_id,
+    tenant_id: prepared.tenant_id || jobRow?.tenant_id || null,
     job_id: prepared.job.job_id,
     recognition_session_id: prepared.job.recognition_session_id || summary.recognition_session_id || null,
     job_created_at: summary.job_created_at || null,
@@ -2480,6 +2491,36 @@ export function summarize(results = [], { runWallMs = null } = {}) {
   const successfulNonterminalJobCount = successfulQueueResults.filter((item) => (
     cleanText(item.job_status).toUpperCase() !== "L2_READY"
   )).length;
+  const tenantRows = new Map();
+  for (const item of results) {
+    const tenantId = cleanText(item.tenant_id || item.batch_id) || "unknown";
+    const current = tenantRows.get(tenantId) || {
+      tenant_id: tenantId,
+      assigned_count: 0,
+      completed_count: 0,
+      queue_wait_values: [],
+      writer_ready_values: []
+    };
+    current.assigned_count += 1;
+    if (item.ok === true && item.writer_ready === true) current.completed_count += 1;
+    const queueWait = numberOrNull(item.scheduler_queue_wait_ms ?? item.worker_queue_wait_ms);
+    const writerReady = numberOrNull(item.time_to_writer_ready_ms);
+    if (queueWait !== null) current.queue_wait_values.push(queueWait);
+    if (writerReady !== null) current.writer_ready_values.push(writerReady);
+    tenantRows.set(tenantId, current);
+  }
+  const tenantService = [...tenantRows.values()].map((tenant) => ({
+    tenant_id: tenant.tenant_id,
+    assigned_count: tenant.assigned_count,
+    completed_count: tenant.completed_count,
+    completion_rate: tenant.assigned_count > 0
+      ? Number((tenant.completed_count / tenant.assigned_count).toFixed(6))
+      : null,
+    queue_wait_p50_ms: quantile(tenant.queue_wait_values, 0.5),
+    queue_wait_p95_ms: quantile(tenant.queue_wait_values, 0.95),
+    queue_wait_max_ms: quantile(tenant.queue_wait_values, 1),
+    writer_ready_p95_ms: quantile(tenant.writer_ready_values, 0.95)
+  })).sort((left, right) => left.tenant_id.localeCompare(right.tenant_id));
   return {
     attempted_count: results.length,
     ok_count: results.filter((item) => item.ok).length,
@@ -2507,7 +2548,9 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       provider_capacity_refill_missing_count: results.filter((item) => (
         item.writer_ready_capacity_release?.released === true
         && item.writer_ready_capacity_refill?.triggered !== true
-      )).length
+      )).length,
+      tenant_count: tenantService.length,
+      tenant_service: tenantService
     },
     retry_card_count: results.filter((item) => Number(item.attempt_count || 0) > 1).length,
     retry_attempt_count: results.reduce((sum, item) => sum + Math.max(0, Number(item.attempt_count || 0) - 1), 0),
@@ -2824,7 +2867,7 @@ function tsvEscape(value) {
   return String(value ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ");
 }
 
-function perCardTsv(results = []) {
+export function perCardTsv(results = []) {
   const columns = [
     "asset_id",
     "ok",
@@ -2850,6 +2893,7 @@ function perCardTsv(results = []) {
     "queue_mode",
     "batch_poll_mode",
     "batch_id",
+    "tenant_id",
     "preparation_ms",
     "enqueue_ms",
     "enqueue_persistence_mode",
@@ -2935,6 +2979,7 @@ function perCardTsv(results = []) {
     item.queue_mode,
     item.batch_poll_mode,
     item.batch_id,
+    item.tenant_id,
     item.preparation_latency_ms,
     item.enqueue_latency_ms,
     item.enqueue_persistence_mode,
@@ -3026,6 +3071,8 @@ export async function runV4EbaySmoke({
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
   concurrency = 2,
+  tenantCount = 1,
+  tenantPrefix = "",
   batchPoll = true,
   resumeBatchId = "",
   evaluationSampleMode = "UNSPECIFIED",
@@ -3046,6 +3093,7 @@ export async function runV4EbaySmoke({
   if (!allowedSampleModes.has(normalizedSampleMode)) {
     throw new Error(`Unsupported evaluation sample mode: ${evaluationSampleMode}`);
   }
+  const normalizedTenantCount = Math.max(1, Math.min(50, Math.trunc(Number(tenantCount) || 1)));
   const items = (await readDataset(datasetPath)).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
   if (!items.length) throw new Error("dataset slice has no items");
   const cookie = await login({ baseUrl, username, password });
@@ -3075,6 +3123,12 @@ export async function runV4EbaySmoke({
           index,
           item,
           batch_id: sharedBatchId,
+          tenant_id: job?.tenant_id || smokeTenantId({
+            batchId: sharedBatchId,
+            tenantPrefix,
+            tenantCount: normalizedTenantCount,
+            index: localIndex
+          }),
           job,
           l1_job: null,
           enqueue: null,
@@ -3095,6 +3149,12 @@ export async function runV4EbaySmoke({
           item,
           index,
           batchId: sharedBatchId,
+          tenantId: smokeTenantId({
+            batchId: sharedBatchId,
+            tenantPrefix,
+            tenantCount: normalizedTenantCount,
+            index: localIndex
+          }),
           baseUrl,
           cookie,
           prewarm,
@@ -3202,6 +3262,8 @@ export async function runV4EbaySmoke({
     limit,
     offset,
     concurrency,
+    tenant_count: normalizedTenantCount,
+    tenant_prefix: cleanText(tenantPrefix) || null,
     batch_poll_enabled: Boolean(queueMode && speculative && batchPoll),
     shared_batch_id: sharedBatchId,
     resumed_batch_id: resumeBatchId || null,
@@ -3317,6 +3379,8 @@ export async function main(argv = process.argv, env = process.env) {
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
     concurrency: Math.max(1, Math.trunc(numberArg(argv, "--concurrency", 2))),
+    tenantCount: Math.max(1, Math.trunc(numberArg(argv, "--tenant-count", 1))),
+    tenantPrefix: cleanText(argValue(argv, "--tenant-prefix", "")),
     batchPoll: !hasFlag(argv, "--per-card-poll"),
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),

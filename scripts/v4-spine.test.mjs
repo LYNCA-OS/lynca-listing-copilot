@@ -218,6 +218,7 @@ const atomicNoncriticalMigrationSource = await readFile("supabase/migrations/202
 const atomicNoncriticalMigrationApiSource = await readFile("api/admin-apply-v4-noncritical-persistence-migration.js", "utf8");
 const writerReadyCapacityMigrationSource = await readFile("supabase/migrations/20260712153000_atomic_v4_writer_ready_capacity_release.sql", "utf8");
 const stageCapacityMigrationSource = await readFile("supabase/migrations/20260713130000_v4_stage_capacity_control.sql", "utf8");
+const tenantFairQueueMigrationSource = await readFile("supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql", "utf8");
 const writerReadyCapacityMigrationApiSource = await readFile("api/admin-apply-v4-writer-ready-capacity-migration.js", "utf8");
 const balancedProviderKeyMigrationSource = await readFile("supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql", "utf8");
 const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-production.yml", "utf8");
@@ -274,11 +275,16 @@ assert.match(vercelConfigSource, /admin-apply-v4-production-job-queue-migration\
 assert.match(vercelConfigSource, /supabase\/migrations\/\*\.sql/, "all required SQL migrations must ship with the admin migration function.");
 assert.match(productionDeployWorkflowSource, /admin-apply-v4-production-job-queue-migration/, "production deployment must apply and verify the queue control-plane migration before declaring readiness.");
 assert.match(productionDeployWorkflowSource, /production-job-queue-migration\.json/, "queue migration evidence must be retained with every production release.");
-assert.match(queueMigrationApiSource, /fair_batch_claim_ok/, "the migration probe must exercise cross-batch fairness on the real database.");
+assert.match(queueMigrationApiSource, /20260713224500_v4_tenant_fair_provider_queue\.sql/, "production migration apply must include the tenant-fair scheduler.");
+assert.match(queueMigrationApiSource, /tenant_fair_scheduler/, "the migration probe must verify that tenant-first scheduling is installed.");
+assert.match(queueMigrationApiSource, /tenant_fair_claim_ok/, "the migration probe must prove that multiple batches cannot multiply one tenant's provider share.");
 assert.match(queueMigrationApiSource, /capacity_bound_ok/, "the migration probe must prove capacity cannot be over-claimed.");
 assert.match(queueMigrationApiSource, /balanced_key_assignment_ok/, "the migration probe must prove concurrent slots are distributed across configured provider keys.");
 assert.match(queueMigrationApiSource, /kick_dedup_ok/, "the migration probe must prove duplicate pump kicks collapse.");
 assert.match(balancedProviderKeyMigrationSource, /provider_key_assignment', 'balanced_round_robin_v1'/, "provider capacity must expose its balanced key-slot assignment policy.");
+assert.match(tenantFairQueueMigrationSource, /partition by coalesce\(nullif\(jobs\.tenant_id, ''\), nullif\(jobs\.batch_id, ''\), jobs\.id\)/, "scarce provider capacity must be fair by tenant before batch.");
+assert.match(tenantFairQueueMigrationSource, /scheduling_fairness_scope/, "claimed jobs must expose their scheduling fairness scope.");
+assert.match(tenantFairQueueMigrationSource, /claim_v4_recognition_jobs_with_capacity[\s\S]*claim_v4_recognition_jobs_with_balanced_capacity/, "the compatibility RPC must preserve tenant-first scheduling.");
 assert.match(queueStatusApiSource, /paired_l1_wait_ms/, "queue metrics must separate intentional L1 dependency time from scheduler delay.");
 assert.match(queueStatusApiSource, /scheduler_queue_wait_ms/, "queue metrics must expose actual scheduler delay after a paired L2 becomes runnable.");
 assert.match(queueStatusApiSource, /preingestion_ocr_rendezvous/, "queue status must expose OCR rendezvous diagnostics used by production smoke.");

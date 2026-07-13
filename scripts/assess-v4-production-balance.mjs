@@ -87,11 +87,54 @@ export function accuracyEvidence(report = {}) {
 export function assessStabilityReport(report = {}, {
   minimumCards = 50,
   maximumWriterP95Ms = 120_000,
-  requireVectorRuntime = false
+  requireVectorRuntime = false,
+  requireStabilityEnvelope = true
 } = {}) {
+  const envelope = report.schema_version === "v4-stability-envelope-v1"
+    ? report
+    : report.stability_envelope?.schema_version === "v4-stability-envelope-v1"
+      ? report.stability_envelope
+      : null;
+  if (envelope) {
+    const aggregate = envelope.aggregate || {};
+    const rejectionReasons = [...(Array.isArray(envelope.rejection_reasons) ? envelope.rejection_reasons : [])];
+    if (Number(aggregate.attempted_count || 0) < minimumCards) rejectionReasons.push("STABILITY_SAMPLE_TOO_SMALL");
+    if (numberOrNull(aggregate.writer_ready_p95_ms) === null) rejectionReasons.push("WRITER_P95_MISSING");
+    if (numberOrNull(aggregate.writer_ready_p95_ms) !== null && Number(aggregate.writer_ready_p95_ms) > maximumWriterP95Ms) {
+      rejectionReasons.push("WRITER_P95_ABOVE_BUDGET");
+    }
+    const vectorRuntimeUnavailableCount = Number(report.summary?.vector_runtime_status_breakdown?.UNAVAILABLE || 0);
+    if (requireVectorRuntime && vectorRuntimeUnavailableCount > 0) {
+      rejectionReasons.push("VECTOR_RUNTIME_REQUIRED_BUT_UNAVAILABLE");
+    }
+    return {
+      pass: rejectionReasons.length === 0 && envelope.pass === true,
+      evidence_type: "MULTI_WAVE_MULTI_TENANT_ENVELOPE",
+      attempted_count: Number(aggregate.attempted_count || 0),
+      minimum_cards: minimumCards,
+      wave_count: Number(aggregate.wave_count || 0),
+      tenant_count: Number(aggregate.tenant_count || 0),
+      technical_availability: numberOrNull(aggregate.technical_availability),
+      tenant_completion_fairness: numberOrNull(aggregate.tenant_completion_fairness),
+      residual_backlog_count: Number(aggregate.residual_backlog_count || 0),
+      completed_cards_per_minute: numberOrNull(report.summary?.completed_cards_per_minute),
+      writer_ready_p50_ms: numberOrNull(report.summary?.writer_ready_p50_ms),
+      writer_ready_p95_ms: numberOrNull(aggregate.writer_ready_p95_ms),
+      maximum_writer_p95_ms: maximumWriterP95Ms,
+      scheduler_queue_wait_p95_ms: numberOrNull(report.summary?.scheduler_queue_wait_p95_ms),
+      provider_latency_p95_ms: numberOrNull(report.summary?.provider_diagnostics?.provider_latency_p95_ms),
+      ocr_stage_global_capacity: numberOrNull(report.summary?.preingestion_ocr?.stage_global_capacity_latest),
+      ocr_stage_capacity_wait_p95_ms: numberOrNull(report.summary?.preingestion_ocr?.stage_capacity_wait_p95_ms),
+      ocr_worker_timeout_count: Number(report.summary?.preingestion_ocr?.worker_timeout_count || 0),
+      vector_runtime_unavailable_count: vectorRuntimeUnavailableCount,
+      rejection_reasons: [...new Set(rejectionReasons)],
+      warning_reasons: Array.isArray(envelope.warning_reasons) ? envelope.warning_reasons : []
+    };
+  }
   const row = metricRow(report, "", report.concurrency ?? report.configured_concurrency ?? 0);
   const evaluated = evaluateRow(row, row);
   const rejectionReasons = [...evaluated.rejection_reasons];
+  if (requireStabilityEnvelope) rejectionReasons.push("MULTI_WAVE_STABILITY_ENVELOPE_REQUIRED");
   if (row.attempted_count < minimumCards) rejectionReasons.push("STABILITY_SAMPLE_TOO_SMALL");
   if (row.writer_ready_p95_ms === null) rejectionReasons.push("WRITER_P95_MISSING");
   if (row.writer_ready_p95_ms !== null && row.writer_ready_p95_ms > maximumWriterP95Ms) {
@@ -102,6 +145,7 @@ export function assessStabilityReport(report = {}, {
   }
   return {
     pass: rejectionReasons.length === 0,
+    evidence_type: "SINGLE_RUN_LEGACY",
     attempted_count: row.attempted_count,
     minimum_cards: minimumCards,
     completed_cards_per_minute: row.completed_cards_per_minute,
@@ -144,7 +188,8 @@ export function assessProductionBalance({
   accuracyTarget = 0.87,
   minimumStabilityCards = 50,
   maximumWriterP95Ms = 120_000,
-  requireVectorRuntime = false
+  requireVectorRuntime = false,
+  requireStabilityEnvelope = true
 } = {}) {
   const accuracy = accuracyEvidence(accuracyReport);
   const accuracyPass = accuracy.eligible === true
@@ -153,7 +198,8 @@ export function assessProductionBalance({
   const stability = assessStabilityReport(stabilityReport, {
     minimumCards: minimumStabilityCards,
     maximumWriterP95Ms,
-    requireVectorRuntime
+    requireVectorRuntime,
+    requireStabilityEnvelope
   });
   const capacity = assessCapacityReport(capacityReport);
   const rejectionReasons = [
@@ -170,7 +216,8 @@ export function assessProductionBalance({
       accuracy: accuracyTarget,
       minimum_stability_cards: minimumStabilityCards,
       maximum_writer_p95_ms: maximumWriterP95Ms,
-      require_vector_runtime: requireVectorRuntime
+      require_vector_runtime: requireVectorRuntime,
+      require_stability_envelope: requireStabilityEnvelope
     },
     accuracy: {
       ...accuracy,
@@ -206,7 +253,8 @@ export async function main(argv = process.argv) {
     accuracyTarget: numberOrNull(argValue(argv, "--accuracy-target", "")) ?? 0.87,
     minimumStabilityCards: numberOrNull(argValue(argv, "--minimum-stability-cards", "")) ?? 50,
     maximumWriterP95Ms: numberOrNull(argValue(argv, "--maximum-writer-p95-ms", "")) ?? 120_000,
-    requireVectorRuntime: hasFlag(argv, "--require-vector-runtime")
+    requireVectorRuntime: hasFlag(argv, "--require-vector-runtime"),
+    requireStabilityEnvelope: !hasFlag(argv, "--allow-single-wave-stability")
   });
   if (outPath) await writeJson(outPath, assessment);
   console.log(JSON.stringify(assessment, null, 2));
