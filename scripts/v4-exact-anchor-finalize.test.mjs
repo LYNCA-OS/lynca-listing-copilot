@@ -56,6 +56,17 @@ assert.equal(queryFields.collector_number, "BS-4");
 assert.equal(queryFields.expected_serial_denominator, "5");
 assert.equal(scoutHasFinalizeAnchors(queryFields), true);
 assert.equal(scoutHasFinalizeAnchors(exactAnchorQueryFieldsFromScout({ players: ["X"], year: "2024" })), false);
+const sportsProductKey = exactAnchorQueryFieldsFromScout({
+  year: "2024",
+  product: "Topps Chrome",
+  collector_number: "54"
+});
+assert.equal(scoutHasFinalizeAnchors(sportsProductKey), false, "legacy scout path still requires a subject");
+assert.equal(
+  scoutHasFinalizeAnchors(sportsProductKey, { allowSportsProductKey: true }),
+  true,
+  "formal anchor router may use year + product + printed card number"
+);
 
 // Unique strict-tier hit -> finalized, catalog identity merged, instance
 // fields (serial from the current image) preserved and never overwritten.
@@ -112,6 +123,38 @@ const tcgFinalized = await maybeFinalizeL1FromExactAnchor({
 assert.equal(tcgFinalized.finalized, true, JSON.stringify(tcgFinalized));
 assert.equal(tcgFinalized.resolved_fields.players[0], "Shanks");
 assert.equal(tcgFinalized.resolved_fields.serial_number, undefined, "instance fields must never be copied from catalog");
+
+// Sports checklist natural key: year + product hierarchy + printed card
+// number can identify a unique approved row before the subject OCR settles.
+const sportsProductFinalized = await maybeFinalizeL1FromExactAnchor({
+  scoutResult: {
+    resolved_fields: {
+      year: "2024",
+      product: "Panini Contenders",
+      collector_number: "54"
+    }
+  },
+  env,
+  fetchImpl: fetchReturning([catalogRow({
+    canonical_title: "2024 Panini Contenders Jaren Jackson Rookie Ticket Auto #54",
+    fields: {
+      year: "2024",
+      manufacturer: "Panini",
+      product: "Panini Contenders",
+      players: ["Jaren Jackson"],
+      card_name: "Rookie Ticket Autograph",
+      collector_number: "54"
+    }
+  })]),
+  policy: {
+    allow_sports_product_key: true,
+    allow_catalog_finalize: true,
+    allow_cert_lane: false
+  }
+});
+assert.equal(sportsProductFinalized.finalized, true, JSON.stringify(sportsProductFinalized));
+assert.equal(sportsProductFinalized.resolved_fields.players[0], "Jaren Jackson");
+assert.equal(sportsProductFinalized.catalog_lookup_attempted, true);
 
 // Two strict-tier candidates -> ambiguous, no finalize.
 const ambiguous = await maybeFinalizeL1FromExactAnchor({

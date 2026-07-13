@@ -662,4 +662,114 @@ assert.ok(state.state_reads >= 2);
   assert.equal(peakActive, 3);
 }
 
+// --- stage capacity separates OCR from GPT while globally bounding replicas ---
+{
+  const roles = ["card_code_crop", "year_product_crop", "subject_crop", "grade_label_crop"];
+  const jobs = roles.map((role, index) => ({
+    ...sampleJob,
+    job_id: `stage-job-${index}`,
+    job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:stage-${index}`,
+    payload: {
+      crop: {
+        ...sampleJob.payload.crop,
+        role,
+        crop_metadata: {
+          ...sampleJob.payload.crop.crop_metadata,
+          crop_id: `stage-crop-${index}`
+        }
+      }
+    }
+  }));
+  const activeSlots = new Map();
+  let bundleUpdatedAt = "2026-07-13T00:00:00.000Z";
+  let bundleQualitySummary = {};
+  let nextSlot = 1;
+  let activeOcr = 0;
+  let peakActiveOcr = 0;
+  const result = await processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env: {
+      ...env,
+      PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED: "true",
+      PREINGESTION_OCR_GLOBAL_CAPACITY: "2",
+      PREINGESTION_OCR_ANCHOR_CONCURRENCY: "2",
+      PREINGESTION_OCR_DETAIL_CONCURRENCY: "1",
+      PREINGESTION_OCR_CAPACITY_WAIT_MS: "1000",
+      PREINGESTION_OCR_CAPACITY_POLL_MS: "5"
+    },
+    fetchImpl: async (url, init = {}) => {
+      const target = new URL(String(url));
+      if (target.pathname.endsWith("/rpc/acquire_v4_stage_capacity")) {
+        const body = JSON.parse(init.body);
+        if (activeSlots.has(body.p_job_id)) return jsonResponse(activeSlots.get(body.p_job_id));
+        if (activeSlots.size >= 2) return jsonResponse(null);
+        const used = new Set(activeSlots.values());
+        while (used.has(nextSlot)) nextSlot += 1;
+        const slot = nextSlot;
+        activeSlots.set(body.p_job_id, slot);
+        nextSlot = slot === 1 ? 2 : 1;
+        return jsonResponse(slot);
+      }
+      if (target.pathname.endsWith("/rpc/release_v4_stage_capacity")) {
+        const body = JSON.parse(init.body);
+        const released = activeSlots.delete(body.p_job_id) ? 1 : 0;
+        return jsonResponse(released);
+      }
+      if (!init.method && target.pathname.endsWith("/preingestion_jobs")) return jsonResponse(jobs);
+      if (init.method === "PATCH" && target.pathname.endsWith("/preingestion_jobs")) {
+        const body = JSON.parse(init.body);
+        return jsonResponse([{ status: body.status || "running", attempts: body.attempts || 1 }]);
+      }
+      if (!init.method && target.pathname.endsWith("/preingestion_bundles")) {
+        return jsonResponse([{
+          bundle_id: "bundle-1",
+          quality_summary: bundleQualitySummary,
+          updated_at: bundleUpdatedAt
+        }]);
+      }
+      if (init.method === "PATCH" && target.pathname.endsWith("/preingestion_bundles")) {
+        const body = JSON.parse(init.body);
+        bundleQualitySummary = body.quality_summary;
+        bundleUpdatedAt = body.updated_at;
+        return jsonResponse([{ bundle_id: "bundle-1", updated_at: bundleUpdatedAt }]);
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    },
+    paddleClient: {
+      configured: true,
+      verifyCrop: async () => {
+        activeOcr += 1;
+        peakActiveOcr = Math.max(peakActiveOcr, activeOcr);
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        activeOcr -= 1;
+        return {
+          raw_text: "",
+          confidence: 0,
+          text_candidates: [],
+          evidence_patch: { evidence: {} }
+        };
+      }
+    },
+    signedReadUrlFor: async () => "https://signed.test/front.jpg"
+  });
+  assert.equal(result.claimed, 4);
+  assert.equal(result.succeeded, 4);
+  assert.equal(result.failed, 0);
+  assert.equal(result.deferred, 0);
+  assert.equal(result.stage_capacity_control_enabled, true);
+  assert.equal(result.execution_summary_persisted, true);
+  assert.equal(result.stage_global_capacity, 2);
+  assert.equal(result.anchor_concurrency, 2);
+  assert.equal(result.detail_concurrency, 1);
+  assert.equal(result.peak_local_active, 2);
+  assert.equal(peakActiveOcr, 2);
+  assert.equal(activeSlots.size, 0);
+  assert.equal(result.job_observability.filter((row) => row.stage_lane === "anchor").length, 3);
+  assert.equal(result.job_observability.filter((row) => row.stage_lane === "detail").length, 1);
+  assert.ok(result.job_observability.every((row) => row.stage_capacity_released === true));
+  assert.equal(bundleQualitySummary.ocr_stage_execution.global_capacity, 2);
+  assert.equal(bundleQualitySummary.ocr_stage_execution.anchor_job_count, 3);
+  assert.equal(bundleQualitySummary.ocr_stage_execution.detail_job_count, 1);
+}
+
 console.log("preingestion-ocr-worker.test.mjs OK");

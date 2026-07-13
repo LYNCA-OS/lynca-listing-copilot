@@ -158,6 +158,12 @@ assert.equal(__listingCopilotTitleTestHooks.providerDoneCapacityHandoffEnabled({
 assert.equal(__listingCopilotTitleTestHooks.providerDoneCapacityHandoffEnabled({
   provider_options: { v4_provider_done_capacity_handoff: true }
 }, {}), true);
+assert.equal(__listingCopilotTitleTestHooks.canOverlapProviderCapacityHandoffAfterInitialCall({
+  assistShadowOnly: true
+}), true, "provider-terminal shadow work should overlap the next card's provider stage");
+assert.equal(__listingCopilotTitleTestHooks.canOverlapProviderCapacityHandoffAfterInitialCall({
+  assistShadowOnly: false
+}), false, "paths that may still invoke a focused verifier must retain their provider lease");
 
 const ultraFastPayloadOverrideOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
   provider_options: {

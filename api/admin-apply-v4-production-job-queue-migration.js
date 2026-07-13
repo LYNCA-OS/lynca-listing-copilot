@@ -9,7 +9,8 @@ const migrationPaths = [
   "supabase/migrations/20260708043000_v4_queue_reclaim_expired_running_jobs.sql",
   "supabase/migrations/20260710055802_v4_execution_control_plane_v1.sql",
   "supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql",
-  "supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql"
+  "supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql",
+  "supabase/migrations/20260713130000_v4_stage_capacity_control.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `
@@ -209,7 +210,23 @@ async function verify(client) {
         where n.nspname = 'public'
           and p.proname = 'try_acquire_v4_queue_kick'
           and p.pronargs = 3
-      ) as queue_kick_rpc
+      ) as queue_kick_rpc,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'acquire_v4_stage_capacity'
+          and p.pronargs = 5
+      ) as stage_capacity_acquire_rpc,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'release_v4_stage_capacity'
+          and p.pronargs = 3
+      ) as stage_capacity_release_rpc
   `);
   return result.rows[0] || {};
 }
@@ -265,6 +282,27 @@ async function verifyExecutionControlBehavior(client) {
       "select public.try_acquire_v4_queue_kick($1, $2, 500) as acquired",
       [kickScope, `${workerId}_duplicate`]
     );
+    const stageId = `migration_probe_stage_${suffix}`;
+    const firstStageSlot = await client.query(
+      "select public.acquire_v4_stage_capacity($1, $2, $3, 2, 60) as slot",
+      [stageId, `${firstBatchFirstJobId}_stage`, workerId]
+    );
+    const secondStageSlot = await client.query(
+      "select public.acquire_v4_stage_capacity($1, $2, $3, 2, 60) as slot",
+      [stageId, `${secondBatchJobId}_stage`, workerId]
+    );
+    const blockedStageSlot = await client.query(
+      "select public.acquire_v4_stage_capacity($1, $2, $3, 2, 60) as slot",
+      [stageId, `overflow_${suffix}`, workerId]
+    );
+    const releasedStageSlot = await client.query(
+      "select public.release_v4_stage_capacity($1, $2, $3) as released_count",
+      [stageId, `${firstBatchFirstJobId}_stage`, workerId]
+    );
+    const reusedStageSlot = await client.query(
+      "select public.acquire_v4_stage_capacity($1, $2, $3, 2, 60) as slot",
+      [stageId, `replacement_${suffix}`, workerId]
+    );
     const assignedKeySlots = new Set(
       claim.rows.map((row) => Number(row.queue_tags?.provider_key_slot || 0))
     );
@@ -283,7 +321,13 @@ async function verifyExecutionControlBehavior(client) {
       capacity_bound_ok: blockedByCapacity.rows.length === 0,
       release_ok: releasedCount === 2,
       kick_ok: firstKick.rows[0]?.acquired === true,
-      kick_dedup_ok: duplicateKick.rows[0]?.acquired === false
+      kick_dedup_ok: duplicateKick.rows[0]?.acquired === false,
+      stage_capacity_bound_ok: Number(firstStageSlot.rows[0]?.slot || 0) > 0
+        && Number(secondStageSlot.rows[0]?.slot || 0) > 0
+        && firstStageSlot.rows[0]?.slot !== secondStageSlot.rows[0]?.slot
+        && blockedStageSlot.rows[0]?.slot === null,
+      stage_capacity_release_ok: Number(releasedStageSlot.rows[0]?.released_count || 0) === 1
+        && Number(reusedStageSlot.rows[0]?.slot || 0) === Number(firstStageSlot.rows[0]?.slot || 0)
     };
   } finally {
     await client.query("rollback");
@@ -343,6 +387,8 @@ export default async function handler(req, res) {
       && verification.balanced_capacity_claim_rpc
       && verification.capacity_release_rpc
       && verification.queue_kick_rpc
+      && verification.stage_capacity_acquire_rpc
+      && verification.stage_capacity_release_rpc
       && behavior.claim_ok
       && behavior.balanced_key_assignment_ok
       && behavior.fair_batch_claim_ok
@@ -350,6 +396,8 @@ export default async function handler(req, res) {
       && behavior.release_ok
       && behavior.kick_ok
       && behavior.kick_dedup_ok
+      && behavior.stage_capacity_bound_ok
+      && behavior.stage_capacity_release_ok
     );
     sendJson(res, ok ? 200 : 500, {
       ok,

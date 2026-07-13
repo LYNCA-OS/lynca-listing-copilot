@@ -209,6 +209,7 @@ const atomicFeedbackMigrationSource = await readFile("supabase/migrations/202607
 const atomicNoncriticalMigrationSource = await readFile("supabase/migrations/20260712072310_atomic_v4_noncritical_persistence.sql", "utf8");
 const atomicNoncriticalMigrationApiSource = await readFile("api/admin-apply-v4-noncritical-persistence-migration.js", "utf8");
 const writerReadyCapacityMigrationSource = await readFile("supabase/migrations/20260712153000_atomic_v4_writer_ready_capacity_release.sql", "utf8");
+const stageCapacityMigrationSource = await readFile("supabase/migrations/20260713130000_v4_stage_capacity_control.sql", "utf8");
 const writerReadyCapacityMigrationApiSource = await readFile("api/admin-apply-v4-writer-ready-capacity-migration.js", "utf8");
 const balancedProviderKeyMigrationSource = await readFile("supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql", "utf8");
 const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-production.yml", "utf8");
@@ -281,6 +282,8 @@ assert.match(atomicNoncriticalMigrationSource, /insert into public\.v4_field_evi
 assert.match(atomicNoncriticalMigrationSource, /revoke all on function public\.persist_v4_noncritical_artifacts[\s\S]*from public, anon, authenticated/, "the non-critical persistence RPC must remain service-role only.");
 assert.match(atomicNoncriticalMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the production migration probe must verify the RPC privilege boundary.");
 assert.match(writerReadyCapacityMigrationSource, /update public\.v4_recognition_sessions[\s\S]*update public\.v4_provider_capacity_leases/, "writer-ready state and provider-capacity release must commit in one database transaction.");
+assert.match(stageCapacityMigrationSource, /acquire_v4_stage_capacity[\s\S]*for update skip locked/, "non-LLM stages must use a durable global capacity lease instead of multiplying per-request concurrency.");
+assert.match(stageCapacityMigrationSource, /release_v4_stage_capacity/, "non-LLM stage slots must be explicitly releasable.");
 assert.match(writerReadyCapacityMigrationSource, /revoke all on function public\.persist_v4_writer_ready_and_release_capacity[\s\S]*from public, anon, authenticated/, "the writer-ready capacity RPC must remain service-role only.");
 assert.match(writerReadyCapacityMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the writer-ready capacity migration probe must verify the RPC privilege boundary.");
 assert.match(productionDeployWorkflowSource, /admin-apply-v4-noncritical-persistence-migration[\s\S]*noncritical-persistence-migration\.json/, "production deploys must apply and retain evidence for the atomic persistence migration.");

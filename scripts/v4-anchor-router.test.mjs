@@ -108,4 +108,38 @@ assert.equal(probe.metrics.catalog_candidate_count, 1);
 assert.equal(probe.metrics.trusted_candidate_count, 1);
 assert.equal(probe.metrics.eligible_candidate_count, 1);
 
+const sportsProbe = await probePreL2Anchors({
+  payload: {
+    preingestion_evidence_patches: [
+      patch("collector_number", "54"),
+      patch("year", "2024", 0.96, "year_product_crop"),
+      patch("product", "Panini Contenders", 0.95, "year_product_crop")
+    ]
+  },
+  env,
+  fetchImpl: async () => ({
+    ok: true,
+    json: async () => [{
+      identity_id: "sports-identity-54",
+      canonical_title: "2024 Panini Contenders Jaren Jackson Rookie Ticket Auto #54",
+      retrieval_status: "reviewed",
+      source_type: "REVIEWED_INTERNAL",
+      normalized_score: 1,
+      supporting_fields: ["year", "product", "collector_number"],
+      fields: {
+        year: "2024",
+        manufacturer: "Panini",
+        product: "Panini Contenders",
+        players: ["Jaren Jackson"],
+        card_name: "Rookie Ticket Autograph",
+        collector_number: "54"
+      }
+    }]
+  })
+});
+assert.equal(sportsProbe.plan.route, anchorRoutes.SPORTS_COMPOSITE_LOOKUP);
+assert.equal(sportsProbe.finalized, true, JSON.stringify(sportsProbe));
+assert.equal(sportsProbe.metrics.lookup_attempted, true);
+assert.equal(sportsProbe.finalize.resolved_fields.players[0], "Jaren Jackson");
+
 console.log("v4-anchor-router.test.mjs OK");

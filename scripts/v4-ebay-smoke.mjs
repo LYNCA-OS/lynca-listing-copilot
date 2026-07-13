@@ -672,6 +672,7 @@ function jobL2Summary(statusPayload = {}) {
     writer_ready_capacity_release_mode: job.timing?.writer_ready_capacity_release?.release_boundary
       || summary.writer_ready_capacity_release_mode
       || null,
+    provider_capacity_stage_handoff: summary.provider_capacity_stage_handoff || null,
     provider_capacity_slot: job.execution_control?.provider_capacity_slot ?? null,
     provider_key_slot: job.execution_control?.provider_key_slot ?? null,
     provider_capacity: job.execution_control?.provider_capacity ?? null,
@@ -899,6 +900,7 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
       || row.writer_ready_capacity_release?.refill
       || null,
     writer_ready_capacity_release_mode: summary.writer_ready_capacity_release_mode || row.writer_ready_capacity_release_mode || null,
+    provider_capacity_stage_handoff: summary.provider_capacity_stage_handoff || row.provider_capacity_stage_handoff || null,
     provider_capacity_slot: summary.provider_capacity_slot ?? row.provider_capacity_slot ?? null,
     provider_key_slot: summary.provider_key_slot ?? row.provider_key_slot ?? null,
     provider_capacity: summary.provider_capacity ?? row.provider_capacity ?? null,
@@ -1121,21 +1123,27 @@ function scoreTitles(referenceTitle = "", predictionTitle = "") {
   };
 }
 
+function metricNumber(value) {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function quantile(values, q) {
-  const clean = values.filter((value) => Number.isFinite(Number(value))).map(Number).sort((a, b) => a - b);
+  const clean = values.map(metricNumber).filter((value) => value !== null).sort((a, b) => a - b);
   if (!clean.length) return null;
   const index = Math.min(clean.length - 1, Math.max(0, Math.ceil(clean.length * q) - 1));
   return clean[index];
 }
 
 function average(values) {
-  const clean = values.filter((value) => Number.isFinite(Number(value))).map(Number);
+  const clean = values.map(metricNumber).filter((value) => value !== null);
   if (!clean.length) return null;
   return Number((clean.reduce((sum, value) => sum + value, 0) / clean.length).toFixed(6));
 }
 
 function countPass(values, threshold) {
-  return values.filter((value) => Number.isFinite(Number(value)) && Number(value) >= threshold).length;
+  return values.map(metricNumber).filter((value) => value !== null && value >= threshold).length;
 }
 
 function compactObject(value = {}) {
@@ -2190,6 +2198,7 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
       || summary.writer_ready_capacity_release?.refill
       || null,
     writer_ready_capacity_release_mode: summary.writer_ready_capacity_release_mode || null,
+    provider_capacity_stage_handoff: summary.provider_capacity_stage_handoff || null,
     provider_capacity_slot: summary.provider_capacity_slot ?? null,
     provider_key_slot: summary.provider_key_slot ?? null,
     provider_capacity: summary.provider_capacity ?? null,
@@ -2523,6 +2532,25 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       || item.writer_ready_capacity_release?.released === false
     )).length,
     writer_ready_capacity_release_missing_count: results.filter((item) => !item.writer_ready_capacity_release_mode).length,
+    provider_capacity_handoff_overlap_count: results.filter((item) => (
+      item.provider_capacity_stage_handoff?.overlapped_after_initial_provider === true
+    )).length,
+    provider_capacity_handoff_overlap_window_p50_ms: quantile(
+      results.map((item) => item.provider_capacity_stage_handoff?.overlap_window_ms),
+      0.5
+    ),
+    provider_capacity_handoff_overlap_window_p95_ms: quantile(
+      results.map((item) => item.provider_capacity_stage_handoff?.overlap_window_ms),
+      0.95
+    ),
+    provider_capacity_handoff_join_wait_p50_ms: quantile(
+      results.map((item) => item.provider_capacity_stage_handoff?.join_wait_ms),
+      0.5
+    ),
+    provider_capacity_handoff_join_wait_p95_ms: quantile(
+      results.map((item) => item.provider_capacity_stage_handoff?.join_wait_ms),
+      0.95
+    ),
     writer_ready_capacity_refill_triggered_count: results.filter((item) => item.writer_ready_capacity_refill?.triggered === true).length,
     writer_ready_capacity_refill_missing_count: results.filter((item) => (
       item.writer_ready_capacity_release?.released === true
@@ -2565,6 +2593,51 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       elapsed_since_preingestion_p95_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.95),
       critical_path_wait_p50_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.post_provider_wait_ms ?? 0), 0.5),
       critical_path_wait_p95_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.post_provider_wait_ms ?? 0), 0.95),
+      stage_capacity_control_enabled_count: results.filter((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.capacity_control_enabled === true
+      )).length,
+      stage_global_capacity_latest: [...results].reverse().find((item) => (
+        Number.isFinite(Number(item.preingestion_ocr_rendezvous?.execution_summary?.global_capacity))
+      ))?.preingestion_ocr_rendezvous?.execution_summary?.global_capacity ?? null,
+      anchor_concurrency_latest: [...results].reverse().find((item) => (
+        Number.isFinite(Number(item.preingestion_ocr_rendezvous?.execution_summary?.anchor_concurrency))
+      ))?.preingestion_ocr_rendezvous?.execution_summary?.anchor_concurrency ?? null,
+      detail_concurrency_latest: [...results].reverse().find((item) => (
+        Number.isFinite(Number(item.preingestion_ocr_rendezvous?.execution_summary?.detail_concurrency))
+      ))?.preingestion_ocr_rendezvous?.execution_summary?.detail_concurrency ?? null,
+      anchor_job_count: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.anchor_job_count || 0)
+      ), 0),
+      detail_job_count: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.detail_job_count || 0)
+      ), 0),
+      stage_capacity_deferred_count: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.capacity_deferred_count || 0)
+      ), 0),
+      stage_capacity_acquire_attempt_count: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.capacity_acquire_attempt_count || 0)
+      ), 0),
+      peak_local_active_p50: quantile(results.map((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.peak_local_active
+      )), 0.5),
+      peak_local_active_p95: quantile(results.map((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.peak_local_active
+      )), 0.95),
+      stage_capacity_wait_p50_ms: quantile(results.map((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.capacity_wait_p50_ms
+      )), 0.5),
+      stage_capacity_wait_p95_ms: quantile(results.map((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.capacity_wait_p95_ms
+      )), 0.95),
+      worker_duration_p50_ms: quantile(results.map((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.duration_p50_ms
+      )), 0.5),
+      worker_duration_p95_ms: quantile(results.map((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.duration_p95_ms
+      )), 0.95),
+      worker_timeout_count: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.timeout_count || 0)
+      ), 0),
       evidence_refresh_added_patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_evidence_refresh?.added_patch_count || 0), 0),
       serial_numerator_verified_count: results.filter((item) => item.serial_numerator_verified === true).length,
       serial_numerator_rejected_count: results.filter((item) => item.serial_numerator_verified === false).length

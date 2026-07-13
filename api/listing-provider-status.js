@@ -10,6 +10,7 @@ import {
   v4QueueGlobalDrainEnabled,
   v4QueueKickDedupMs
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
+import { listingStageCapacityPlan } from "../lib/listing/v4/orchestration/stage-capacity.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const workflowReadinessCacheTtlMs = 60_000;
@@ -80,6 +81,10 @@ function workflowReadinessCacheKey(env = process.env) {
     "ENABLE_PADDLE_OCR_FIELD_VERIFIER",
     "PADDLE_OCR_WORKER_URL",
     "PADDLE_OCR_WORKER_TOKEN",
+    "PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED",
+    "PREINGESTION_OCR_GLOBAL_CAPACITY",
+    "PREINGESTION_OCR_ANCHOR_CONCURRENCY",
+    "PREINGESTION_OCR_DETAIL_CONCURRENCY",
     "DATA_LOOP_SIDECARS_ENABLED",
     "DATA_LOOP_PADDLE_OCR_DISPATCH_ENABLED",
     "DATA_LOOP_SPLINK_LOOKUP_ENABLED",
@@ -258,6 +263,7 @@ export default async function handler(req, res) {
 
   const workflowReadiness = await loadWorkflowReadiness();
   const providerPool = openAiProviderPoolStatus(process.env);
+  const stageCapacity = listingStageCapacityPlan(process.env);
 
   sendJson(res, 200, {
     ok: true,
@@ -270,7 +276,12 @@ export default async function handler(req, res) {
       queue_kick_dedup_ms: v4QueueKickDedupMs(process.env),
       provider_key_pool_size: providerPool.key_pool_size,
       per_key_stable_concurrency: providerPool.per_key_stable_concurrency,
-      global_provider_concurrency: providerPool.global_concurrency
+      global_provider_concurrency: providerPool.global_concurrency,
+      stage_capacity: {
+        paddle_ocr: stageCapacity.ocr,
+        catalog: stageCapacity.catalog,
+        vector: stageCapacity.vector
+      }
     },
     storage,
     providers

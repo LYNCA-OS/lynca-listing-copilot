@@ -2984,6 +2984,14 @@ function providerDoneCapacityHandoffEnabled(payload = {}, env = process.env) {
   );
 }
 
+function canOverlapProviderCapacityHandoffAfterInitialCall({ assistShadowOnly = false } = {}) {
+  // The assist-shadow branch is provider-terminal by construction: it may run
+  // retrieval, OCR fusion, resolution and rendering after the initial vision
+  // response, but it never performs another provider call. That makes it safe
+  // to return the scarce provider lease while this card finishes CPU/DB work.
+  return assistShadowOnly === true;
+}
+
 async function handoffProviderCapacityAfterStage(payload = {}, req = null, timingContext = null) {
   if (!providerDoneCapacityHandoffEnabled(payload, process.env)) {
     return { enabled: false, released: false, refill: { triggered: false, reason: "provider_done_handoff_disabled" } };
@@ -4874,6 +4882,18 @@ async function createOpenAiTitle(payload, selection, {
     provider_requested_service_tier: providerResult.requested_service_tier || null,
     provider_service_tier: providerResult.service_tier || null
   }));
+  let providerCapacityStageHandoffPromise = null;
+  let providerCapacityHandoffOverlapStartedAt = null;
+  if (canOverlapProviderCapacityHandoffAfterInitialCall({ assistShadowOnly })
+    && providerDoneCapacityHandoffEnabled(initialPayload, process.env)) {
+    providerCapacityHandoffOverlapStartedAt = nowMs();
+    addTiming(timingContext, "provider_capacity_handoff_overlap_started_count", 1);
+    providerCapacityStageHandoffPromise = handoffProviderCapacityAfterStage(
+      initialPayload,
+      requestContext,
+      timingContext
+    );
+  }
   let preingestionRetrievalRefresh = null;
   let preingestionRetrievalAnchorFields = [];
   if (deferVectorUntilProviderObservation) {
@@ -5213,24 +5233,43 @@ async function createOpenAiTitle(payload, selection, {
   mergedResult.preingestion_retrieval_refresh = preingestionRetrievalRefresh;
   mergedResult.preingestion_retrieval_anchor_fields = preingestionRetrievalAnchorFields;
   mergedResult.serial_numerator_verified = initialPayload.serial_numerator_verified;
-  const finalizeProviderResult = async (result) => ({
-    ...withVerifiedPreingestionSlabParallel(
-      withVerifiedPreingestionPrintRun(
-        withOpenSetReadiness(result, { ...openSetContext, catalogContext, vectorContext }),
-        initialPayload
-      ),
-      initialPayload
-    ),
-    // This is the real resource boundary: fast-path cards arrive here after
-    // the first provider call, while difficult cards arrive only after any
-    // focused verifier calls finish. Releasing earlier could exceed the
-    // global provider concurrency even though the queue lease count looks safe.
-    provider_capacity_stage_handoff: await handoffProviderCapacityAfterStage(
+  const finalizeProviderResult = async (result) => {
+    const handoffJoinStartedAt = nowMs();
+    const handoff = await (providerCapacityStageHandoffPromise || handoffProviderCapacityAfterStage(
       initialPayload,
       requestContext,
       timingContext
-    )
-  });
+    ));
+    const handoffJoinWaitMs = nowMs() - handoffJoinStartedAt;
+    if (providerCapacityStageHandoffPromise) {
+      addTiming(timingContext, "provider_capacity_handoff_join_wait_ms", handoffJoinWaitMs);
+      addTiming(
+        timingContext,
+        "provider_capacity_handoff_overlap_window_ms",
+        Math.max(0, nowMs() - providerCapacityHandoffOverlapStartedAt)
+      );
+    }
+    return {
+      ...withVerifiedPreingestionSlabParallel(
+        withVerifiedPreingestionPrintRun(
+          withOpenSetReadiness(result, { ...openSetContext, catalogContext, vectorContext }),
+          initialPayload
+        ),
+        initialPayload
+      ),
+      // Difficult paths keep the lease until every focused verifier finishes.
+      // Provider-terminal assist-shadow paths start this handoff immediately
+      // after the first response and overlap it with retrieval/OCR/resolution.
+      provider_capacity_stage_handoff: {
+        ...handoff,
+        overlapped_after_initial_provider: Boolean(providerCapacityStageHandoffPromise),
+        overlap_window_ms: providerCapacityHandoffOverlapStartedAt === null
+          ? 0
+          : Math.max(0, nowMs() - providerCapacityHandoffOverlapStartedAt),
+        join_wait_ms: handoffJoinWaitMs
+      }
+    };
+  };
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return finalizeProviderResult(fastPathResult);
   if (assistShadowOnly) {
@@ -5291,6 +5330,7 @@ export const __listingCopilotTitleTestHooks = {
   preingestionEvidenceRefreshDecision,
   preingestionEvidenceDocumentFromPayload,
   providerOptionsFromPayload,
+  canOverlapProviderCapacityHandoffAfterInitialCall,
   providerDoneCapacityHandoffEnabled,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
