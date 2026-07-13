@@ -14,11 +14,17 @@ CONCURRENCY="${RECOGNITION_WORKER_CONCURRENCY:-1}"
 TIMEOUT="${RECOGNITION_WORKER_TIMEOUT_SECONDS:-300}"
 MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-5}"
 MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-10}"
+STARTUP_PROBE_TIMEOUT_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_TIMEOUT_SECONDS:-240}"
+STARTUP_PROBE_PERIOD_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_PERIOD_SECONDS:-240}"
+STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRESHOLD:-2}"
 # Paddle predictors are serialized inside each process. Cloud Run concurrency
 # therefore stays at one while replicas provide parallelism; five warm replicas
 # remove the model-init cold start from the writer path and ten 2-vCPU replicas
-# fit the current 20-vCPU regional quota. Set both service-level and revision-
-# level scaling: a stale service cap silently overrides a larger revision cap.
+# fit the current 20-vCPU regional quota. The application reserves eight OCR
+# slots so two replicas remain as retry and rollout headroom. Model preload can
+# occasionally cross one 240-second probe window, so require two failed probes
+# before rejecting a healthy-but-slow revision. Set both service-level and
+# revision-level scaling: a stale service cap silently overrides a larger cap.
 ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:-osrrujmpxxiefppjfgpd.supabase.co}"
 TOKEN_SECRET_NAME="${RECOGNITION_WORKER_TOKEN_SECRET_NAME:-lynca-recognition-worker-token}"
 ENABLE_PADDLEOCR="${ENABLE_PADDLEOCR:-true}"
@@ -73,6 +79,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --cpu "$CPU" \
   --concurrency "$CONCURRENCY" \
   --timeout "$TIMEOUT" \
+  --startup-probe "tcpSocket.port=8080,initialDelaySeconds=0,timeoutSeconds=${STARTUP_PROBE_TIMEOUT_SECONDS},periodSeconds=${STARTUP_PROBE_PERIOD_SECONDS},failureThreshold=${STARTUP_PROBE_FAILURE_THRESHOLD}" \
   --min "$MIN_INSTANCES" \
   --max "$MAX_INSTANCES" \
   --min-instances "$MIN_INSTANCES" \
