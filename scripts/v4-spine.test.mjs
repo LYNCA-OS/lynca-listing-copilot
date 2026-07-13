@@ -77,6 +77,7 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
     },
     execution_control: {
       provider_capacity_slot: 1,
+      provider_key_slot: 1,
       provider_capacity: 2,
       provider_key_count: 2,
       provider_key_assignment: "balanced_round_robin_v1"
@@ -105,6 +106,7 @@ assert.equal(hydratedDiagnostic.pipeline_node_ledger.coverage.missing_required_n
 assert.equal(hydratedDiagnostic.preingestion_ocr_rendezvous.status, "EVIDENCE_READY");
 assert.equal(hydratedDiagnostic.writer_ready_capacity_release_mode, "writer_ready_atomic");
 assert.equal(hydratedDiagnostic.provider_key_count, 2);
+assert.equal(hydratedDiagnostic.provider_key_slot, 1);
 assert.equal(hydratedDiagnostic.provider_key_assignment, "balanced_round_robin_v1");
 
 const speedSmokeSummary = summarizeSmoke([{

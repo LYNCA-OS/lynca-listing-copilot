@@ -155,6 +155,25 @@ assert.equal(catalogTraceNode.metrics.trace_observed, true);
 assert.equal(catalogTraceNode.metrics.timing_observed, false);
 assert.equal(catalogTraceWithoutTimingLedger.coverage.missing_required_node_ids.includes("catalog_retrieval"), false);
 
+const preloadedOcrPatchLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    bundle_used: true,
+    preingestion_ocr_rendezvous: {
+      status: "CRITICAL_FIELDS_SETTLED",
+      terminal: true,
+      job_count: 2,
+      patch_count: 2
+    }
+  },
+  payload: { asset_id: "asset-preloaded-ocr-patches", images: [{}, {}] }
+});
+const preloadedRefreshNode = preloadedOcrPatchLedger.nodes.find((node) => node.node_id === "preingestion_evidence_refresh");
+assert.equal(preloadedRefreshNode.status, "SKIPPED");
+assert.equal(preloadedRefreshNode.expected, false);
+assert.equal(preloadedRefreshNode.skip_reason, "ocr_patches_already_available_or_no_refresh_needed");
+assert.equal(preloadedOcrPatchLedger.coverage.missing_required_node_ids.includes("preingestion_evidence_refresh"), false);
+
 const brokenLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

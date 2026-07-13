@@ -665,6 +665,7 @@ function jobL2Summary(statusPayload = {}) {
       || summary.writer_ready_capacity_release_mode
       || null,
     provider_capacity_slot: job.execution_control?.provider_capacity_slot ?? null,
+    provider_key_slot: job.execution_control?.provider_key_slot ?? null,
     provider_capacity: job.execution_control?.provider_capacity ?? null,
     provider_key_count: job.execution_control?.provider_key_count ?? null,
     provider_key_assignment: job.execution_control?.provider_key_assignment || null,
@@ -886,6 +887,7 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     writer_ready_capacity_release: summary.writer_ready_capacity_release || row.writer_ready_capacity_release || null,
     writer_ready_capacity_release_mode: summary.writer_ready_capacity_release_mode || row.writer_ready_capacity_release_mode || null,
     provider_capacity_slot: summary.provider_capacity_slot ?? row.provider_capacity_slot ?? null,
+    provider_key_slot: summary.provider_key_slot ?? row.provider_key_slot ?? null,
     provider_capacity: summary.provider_capacity ?? row.provider_capacity ?? null,
     provider_key_count: summary.provider_key_count ?? row.provider_key_count ?? null,
     provider_key_assignment: summary.provider_key_assignment || row.provider_key_assignment || null,
@@ -930,7 +932,7 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     total_tokens: providerDiagnostics.total_tokens ?? row.total_tokens ?? null,
     provider_latency_ms: providerDiagnostics.provider_latency_ms ?? row.provider_latency_ms ?? null,
     provider_key_pool_size: providerDiagnostics.provider_key_pool_size ?? row.provider_key_pool_size ?? null,
-    provider_key_slot: providerDiagnostics.provider_key_slot ?? row.provider_key_slot ?? null,
+    provider_key_slot: providerDiagnostics.provider_key_slot ?? summary.provider_key_slot ?? row.provider_key_slot ?? null,
     provider_key_source: providerDiagnostics.provider_key_source || row.provider_key_source || null,
     provider_key_rotation_attempted: providerDiagnostics.provider_key_rotation_attempted ?? row.provider_key_rotation_attempted ?? null,
     provider_key_rotation_attempts: providerDiagnostics.provider_key_rotation_attempts ?? row.provider_key_rotation_attempts ?? null,
@@ -974,7 +976,9 @@ async function readSettledJobDiagnostics({
       continue;
     }
     const summary = jobL2Summary(last.data || {});
-    if (summary.pipeline_node_ledger && persistenceStatusIsTerminal(summary.noncritical_persistence_status)) {
+    if (summary.pipeline_node_ledger
+      && persistenceStatusIsTerminal(summary.noncritical_persistence_status)
+      && !activeJobStatus(summary.job_status)) {
       return { ok: true, response: last, attempts: attempt, error: null };
     }
     if (attempt < attempts) await delay(1000);
@@ -1001,9 +1005,14 @@ export async function hydrateV4JobDiagnostics({
   const hydrated = await mapWithConcurrency(results, Math.max(1, concurrency), async (row) => {
     const retryHistoryMissing = Number(row.attempt_count || 0) > 1
       && (!Array.isArray(row.retry_attempt_history) || row.retry_attempt_history.length === 0);
+    const queueControlDiagnosticsMissing = !row.provider_capacity_slot
+      || !row.provider_key_slot
+      || !row.provider_key_assignment
+      || !row.writer_ready_capacity_release_mode;
     if (!row.job_id || (row.pipeline_node_ledger
       && persistenceStatusIsTerminal(row.noncritical_persistence_status)
-      && !retryHistoryMissing)) return row;
+      && !retryHistoryMissing
+      && !queueControlDiagnosticsMissing)) return row;
     requestedCount += 1;
     const diagnostics = await readSettledJobDiagnostics({
       baseUrl,
@@ -2131,6 +2140,13 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     scheduler_queue_wait_ms: summary.scheduler_queue_wait_ms ?? null,
     worker_processing_ms: summary.worker_processing_ms ?? null,
     time_to_l2_ready_ms: timeToReady,
+    writer_ready_capacity_release: summary.writer_ready_capacity_release || null,
+    writer_ready_capacity_release_mode: summary.writer_ready_capacity_release_mode || null,
+    provider_capacity_slot: summary.provider_capacity_slot ?? null,
+    provider_key_slot: summary.provider_key_slot ?? null,
+    provider_capacity: summary.provider_capacity ?? null,
+    provider_key_count: summary.provider_key_count ?? null,
+    provider_key_assignment: summary.provider_key_assignment || null,
     l2_status: summary,
     l2_candidate_debug: compactCandidateTrace(jobRow?.session?.candidate_control_plane_trace || {}),
     final_title: finalTitle,
