@@ -31,6 +31,7 @@ import {
   mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
+  providerDoneHandoffOverride,
   summarize as summarizeSmoke,
   summaryHasVisibleL2Title
 } from "./v4-ebay-smoke.mjs";
@@ -46,6 +47,13 @@ assert.equal(smokeNumberOrNull(null), null, "missing optional timings must not b
 assert.equal(smokeNumberOrNull(undefined), null, "missing optional token counts must stay missing");
 assert.equal(smokeNumberOrNull(""), null, "empty optional diagnostics must stay missing");
 assert.equal(smokeNumberOrNull(0), 0, "a real observed zero must remain zero");
+assert.equal(providerDoneHandoffOverride(["node", "smoke"]), null, "omitted handoff mode must inherit production configuration");
+assert.equal(providerDoneHandoffOverride(["node", "smoke", "--provider-done-handoff"]), true);
+assert.equal(providerDoneHandoffOverride(["node", "smoke", "--no-provider-done-handoff"]), false);
+assert.throws(
+  () => providerDoneHandoffOverride(["node", "smoke", "--provider-done-handoff", "--no-provider-done-handoff"]),
+  /mutually exclusive/
+);
 assert.equal(batchStatusResponseDisposition({ ok: true, http_status: 200 }), "ok");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 503, data: { retryable: true } }), "retry");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "Unable to read V4 jobs." } }), "retry");

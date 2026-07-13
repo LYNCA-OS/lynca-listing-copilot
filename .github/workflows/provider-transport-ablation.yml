@@ -121,6 +121,9 @@ jobs:
           elif [[ "${{ inputs.transport_pair }}" == ultra_high_vs_* || "${{ inputs.transport_pair }}" == "ultra_v1_vs_v2" || "${{ inputs.transport_pair }}" == "writer_ready_vs_provider_done_handoff" ]]; then
             EXTRA_FLAGS+=(--ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority)
           fi
+          if [[ "${{ inputs.transport_pair }}" == "writer_ready_vs_provider_done_handoff" ]]; then
+            EXTRA_FLAGS+=(--no-provider-done-handoff)
+          fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
             --sealed-labels "$SEALED_LABELS_PATH" \

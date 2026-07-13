@@ -25,6 +25,17 @@ function hasFlag(argv, name) {
   return argv.includes(name);
 }
 
+export function providerDoneHandoffOverride(argv = []) {
+  const enabled = hasFlag(argv, "--provider-done-handoff");
+  const disabled = hasFlag(argv, "--no-provider-done-handoff");
+  if (enabled && disabled) {
+    throw new Error("provider handoff flags are mutually exclusive");
+  }
+  if (enabled) return true;
+  if (disabled) return false;
+  return null;
+}
+
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
@@ -191,7 +202,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   compactL2 = false,
   ultraFastL2 = false,
   ultraSparseTransport = false,
-  providerDoneHandoff = false,
+  providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false
@@ -218,7 +229,9 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
       providerOptions.v4_ultra_fast_service_tier = cleanText(ultraFastServiceTier).toLowerCase();
     }
   }
-  if (providerDoneHandoff) providerOptions.v4_provider_done_capacity_handoff = true;
+  if (typeof providerDoneHandoff === "boolean") {
+    providerOptions.v4_provider_done_capacity_handoff = providerDoneHandoff;
+  }
   if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
   return {
     asset_id: candidateId(item, index),
@@ -1179,7 +1192,7 @@ async function runOne({
   compactL2 = false,
   ultraFastL2 = false,
   ultraSparseTransport = false,
-  providerDoneHandoff = false,
+  providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
@@ -2914,7 +2927,7 @@ export async function runV4EbaySmoke({
   compactL2 = false,
   ultraFastL2 = false,
   ultraSparseTransport = false,
-  providerDoneHandoff = false,
+  providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
@@ -3109,7 +3122,7 @@ export async function runV4EbaySmoke({
     compact_l2_enabled: compactL2,
     ultra_fast_l2_enabled: ultraFastL2,
     ultra_sparse_transport_enabled: ultraSparseTransport,
-    provider_done_capacity_handoff_enabled: providerDoneHandoff,
+    provider_done_capacity_handoff_override: providerDoneHandoff,
     ultra_fast_image_detail: ultraFastL2 ? ultraFastImageDetail : null,
     ultra_fast_service_tier: ultraFastL2 ? ultraFastServiceTier || null : null,
     identity_cache_disabled: disableIdentityCache,
@@ -3186,7 +3199,7 @@ export async function main(argv = process.argv, env = process.env) {
     compactL2: hasFlag(argv, "--compact-l2"),
     ultraFastL2: hasFlag(argv, "--ultra-fast-l2"),
     ultraSparseTransport: hasFlag(argv, "--ultra-sparse-v2"),
-    providerDoneHandoff: hasFlag(argv, "--provider-done-handoff"),
+    providerDoneHandoff: providerDoneHandoffOverride(argv),
     ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),
     ultraFastServiceTier: cleanText(argValue(argv, "--ultra-service-tier", "")).toLowerCase(),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
