@@ -174,6 +174,26 @@ assert.equal(preloadedRefreshNode.expected, false);
 assert.equal(preloadedRefreshNode.skip_reason, "ocr_patches_already_available_or_no_refresh_needed");
 assert.equal(preloadedOcrPatchLedger.coverage.missing_required_node_ids.includes("preingestion_evidence_refresh"), false);
 
+const v4PreloadedBundleLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    bundle_used: true,
+    preingestion_bundle_id: "bundle-loaded-by-v4"
+  },
+  timingContext: context,
+  payload: {
+    asset_id: "asset-v4-preloaded-bundle",
+    images: [{}, {}],
+    preingestion_bundle_used: true,
+    v4_pre_l2_bundle_loaded: true
+  }
+});
+const v4PreloadedBundleNode = v4PreloadedBundleLedger.nodes.find((node) => node.node_id === "preingestion_bundle_load");
+assert.equal(v4PreloadedBundleNode.status, "SKIPPED");
+assert.equal(v4PreloadedBundleNode.expected, false);
+assert.equal(v4PreloadedBundleNode.skip_reason, "bundle_already_loaded_by_v4_pre_l2");
+assert.equal(v4PreloadedBundleLedger.coverage.missing_required_node_ids.includes("preingestion_bundle_load"), false);
+
 const noNewPatchRefreshLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,
@@ -384,6 +404,14 @@ const preL2AnchorLedger = buildEndToEndNodeLedger({
         pre_l2_anchor_probe_ms: 340,
         pre_l2_anchor_route: "TCG_EXACT_LOOKUP",
         pre_l2_anchor_finalize_reason: "exact_anchor_catalog_finalized",
+        pre_l2_anchor_patch_count: 3,
+        pre_l2_anchor_candidate_count: 1,
+        pre_l2_anchor_direct_candidate_count: 1,
+        pre_l2_anchor_type_breakdown: { tcg_card_code: 1 },
+        pre_l2_anchor_lookup_attempted: true,
+        pre_l2_anchor_catalog_candidate_count: 1,
+        pre_l2_anchor_trusted_candidate_count: 1,
+        pre_l2_anchor_eligible_candidate_count: 1,
         pre_l2_full_l2_skipped: true
       },
       noncritical_persistence_status: "COMPLETED",
@@ -401,6 +429,8 @@ const preL2AnchorLedger = buildEndToEndNodeLedger({
 });
 assert.equal(preL2AnchorLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "COMPLETED");
 assert.equal(preL2AnchorLedger.nodes.find((node) => node.node_id === "pre_l2_anchor_extract_route_lookup")?.status, "COMPLETED");
+assert.equal(preL2AnchorLedger.nodes.find((node) => node.node_id === "pre_l2_anchor_extract_route_lookup")?.metrics.direct_anchor_count, 1);
+assert.equal(preL2AnchorLedger.nodes.find((node) => node.node_id === "pre_l2_anchor_extract_route_lookup")?.metrics.eligible_candidate_count, 1);
 assert.equal(preL2AnchorLedger.nodes.find((node) => node.node_id === "full_l2_provider_decision")?.status, "SKIPPED");
 assert.equal(preL2AnchorLedger.reconciliation.error_count, 0);
 

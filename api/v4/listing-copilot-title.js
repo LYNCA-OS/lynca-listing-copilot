@@ -1224,6 +1224,16 @@ export default async function handler(req, res) {
     pre_l2_anchor_probe_ms: null,
     pre_l2_anchor_route: null,
     pre_l2_anchor_finalize_reason: null,
+    pre_l2_anchor_patch_count: null,
+    pre_l2_anchor_candidate_count: null,
+    pre_l2_anchor_direct_candidate_count: null,
+    pre_l2_anchor_type_breakdown: null,
+    pre_l2_anchor_context_dimensions: null,
+    pre_l2_anchor_direct_context_dimensions: null,
+    pre_l2_anchor_lookup_attempted: false,
+    pre_l2_anchor_catalog_candidate_count: null,
+    pre_l2_anchor_trusted_candidate_count: null,
+    pre_l2_anchor_eligible_candidate_count: null,
     pre_l2_full_l2_skipped: false,
     exact_anchor_scout_attempted: false,
     exact_anchor_scout_status: null,
@@ -1246,10 +1256,11 @@ export default async function handler(req, res) {
     const timeoutMs = Math.max(100, Math.min(5000, Number(process.env.V4_PRE_L2_ANCHOR_BUNDLE_TIMEOUT_MS || 1200)));
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      await applyPreIngestionBundleToPayload(payload, {
+      const bundleApplication = await applyPreIngestionBundleToPayload(payload, {
         fetchImpl: globalThis.fetch,
         signal: controller.signal
       });
+      payload.v4_pre_l2_bundle_loaded = bundleApplication?.applied === true;
     } catch (error) {
       payload.pre_l2_anchor_bundle_error = String(error?.message || error || "bundle_load_failed").slice(0, 180);
     } finally {
@@ -1267,11 +1278,22 @@ export default async function handler(req, res) {
     l2Timing.pre_l2_anchor_probe_ms = Date.now() - probeStartedAt;
     l2Timing.pre_l2_anchor_route = preL2AnchorProbe?.plan?.route || null;
     l2Timing.pre_l2_anchor_finalize_reason = preL2AnchorProbe?.reason || null;
+    l2Timing.pre_l2_anchor_patch_count = preL2AnchorProbe?.metrics?.patch_count ?? null;
+    l2Timing.pre_l2_anchor_candidate_count = preL2AnchorProbe?.metrics?.anchor_count ?? null;
+    l2Timing.pre_l2_anchor_direct_candidate_count = preL2AnchorProbe?.metrics?.direct_anchor_count ?? null;
+    l2Timing.pre_l2_anchor_type_breakdown = preL2AnchorProbe?.metrics?.anchor_type_breakdown || {};
+    l2Timing.pre_l2_anchor_context_dimensions = preL2AnchorProbe?.metrics?.context_dimensions ?? null;
+    l2Timing.pre_l2_anchor_direct_context_dimensions = preL2AnchorProbe?.metrics?.direct_context_dimensions ?? null;
+    l2Timing.pre_l2_anchor_lookup_attempted = preL2AnchorProbe?.metrics?.lookup_attempted === true;
+    l2Timing.pre_l2_anchor_catalog_candidate_count = preL2AnchorProbe?.metrics?.catalog_candidate_count ?? null;
+    l2Timing.pre_l2_anchor_trusted_candidate_count = preL2AnchorProbe?.metrics?.trusted_candidate_count ?? null;
+    l2Timing.pre_l2_anchor_eligible_candidate_count = preL2AnchorProbe?.metrics?.eligible_candidate_count ?? null;
     payload.v4_anchor_probe = {
       schema_version: preL2AnchorProbe?.schema_version || null,
       plan: preL2AnchorProbe?.plan || null,
       dossier: preL2AnchorProbe?.dossier || null,
       timing: preL2AnchorProbe?.timing || null,
+      metrics: preL2AnchorProbe?.metrics || null,
       finalized: preL2AnchorProbe?.finalized === true,
       reason: preL2AnchorProbe?.reason || null
     };

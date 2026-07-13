@@ -100,5 +100,12 @@ const probe = await probePreL2Anchors({
 assert.equal(probe.finalized, true, JSON.stringify(probe));
 assert.equal(probe.plan.route, anchorRoutes.TCG_EXACT_LOOKUP);
 assert.equal(probe.finalize.resolved_fields.players[0], "Shanks");
+assert.equal(probe.metrics.anchor_count, 1);
+assert.equal(probe.metrics.direct_anchor_count, 1);
+assert.deepEqual(probe.metrics.anchor_type_breakdown, { tcg_card_code: 1 });
+assert.equal(probe.metrics.lookup_attempted, true);
+assert.equal(probe.metrics.catalog_candidate_count, 1);
+assert.equal(probe.metrics.trusted_candidate_count, 1);
+assert.equal(probe.metrics.eligible_candidate_count, 1);
 
 console.log("v4-anchor-router.test.mjs OK");

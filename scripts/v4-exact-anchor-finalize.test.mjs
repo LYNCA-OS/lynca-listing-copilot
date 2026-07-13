@@ -71,6 +71,10 @@ assert.match(finalized.title, /Jesus Made/i);
 assert.equal(finalized.resolved_fields.set, "Spotlights");
 assert.equal(finalized.resolved_fields.serial_number, "3/5");
 assert.equal(finalized.candidate.candidate_identity_id, "11111111-1111-1111-1111-111111111111");
+assert.equal(finalized.catalog_lookup_attempted, true);
+assert.equal(finalized.catalog_candidate_count, 1);
+assert.equal(finalized.trusted_candidate_count, 1);
+assert.equal(finalized.eligible_candidate_count, 1);
 
 // Candidate/review-required rows can support shadow analysis but can never
 // finalize a writer-visible title.
@@ -81,6 +85,9 @@ const untrusted = await maybeFinalizeL1FromExactAnchor({
 });
 assert.equal(untrusted.finalized, false);
 assert.equal(untrusted.reason, "no_exact_anchor_agreement");
+assert.equal(untrusted.catalog_candidate_count, 1);
+assert.equal(untrusted.trusted_candidate_count, 0);
+assert.equal(untrusted.eligible_candidate_count, 0);
 
 // A direct TCG natural key can identify one official/reviewed catalog row
 // without requiring subject/year to be read first.
@@ -117,6 +124,8 @@ const ambiguous = await maybeFinalizeL1FromExactAnchor({
 });
 assert.equal(ambiguous.finalized, false);
 assert.equal(ambiguous.reason, "ambiguous_exact_anchor_candidates");
+assert.equal(ambiguous.catalog_candidate_count, 2);
+assert.equal(ambiguous.eligible_candidate_count, 2);
 
 // Code mismatch -> hard conflict -> no finalize.
 const mismatch = await maybeFinalizeL1FromExactAnchor({
