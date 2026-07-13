@@ -73,7 +73,15 @@ jobs:
       - name: Validate production runtime
         run: |
           curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
-          node -e 'const h=require("/tmp/v4-health.json"); if(h.ready!==true) process.exit(1)'
+          node - <<'NODE'
+          const health = require('/tmp/v4-health.json');
+          const expectedSha = process.env.GITHUB_SHA;
+          const deployedSha = String(health.deployment?.git_commit_sha || '');
+          if (health.ready !== true) throw new Error('production V4 runtime is not ready');
+          if (!deployedSha || deployedSha !== expectedSha) {
+            throw new Error(`production deployment mismatch: expected ${expectedSha}, received ${deployedSha || 'missing'}`);
+          }
+          NODE
       - name: Prepare fresh sealed blind inputs once
         run: |
           node scripts/prepare-dcsports87-blind-eval.mjs \
