@@ -259,9 +259,35 @@ function testLowMarginCandidateOnlySupportsCurrentImageFields() {
   assert.ok(control.low_margin_safe_field_application.verifier_required_fields.includes("collector_number"));
 }
 
+function testTrustBlockedCountPropagatesToActivationFunnel() {
+  const control = buildCandidateSelectionPass({
+    result: {
+      catalog_candidate_packet: packet([], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 0,
+        trust_blocked_count: 1,
+        conflict_blocked_count: 0,
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: []
+      }),
+      vector_candidate_packet: packet([], {
+        raw_candidate_count: 2,
+        approved_candidate_count: 0,
+        trust_blocked_count: 2,
+        conflict_blocked_count: 0,
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: []
+      })
+    }
+  });
+  assert.equal(control.catalog_activation_funnel.trust_blocked_count, 1);
+  assert.equal(control.vector_activation_funnel.trust_blocked_count, 2);
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testFunnelAndEvidenceTraceFailClosedOnConflict();
 testLowMarginCandidateOnlySupportsCurrentImageFields();
+testTrustBlockedCountPropagatesToActivationFunnel();
 
 console.log("candidate-control-plane tests passed");

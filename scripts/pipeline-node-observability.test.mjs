@@ -222,6 +222,46 @@ assert.equal(catalogTraceNode.metrics.trace_observed, true);
 assert.equal(catalogTraceNode.metrics.timing_observed, false);
 assert.equal(catalogTraceWithoutTimingLedger.coverage.missing_required_node_ids.includes("catalog_retrieval"), false);
 
+const trustBlockedCatalogLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    catalog_activation_funnel: {
+      raw_candidate_count: 1,
+      approved_candidate_count: 0,
+      trust_blocked_count: 1,
+      conflict_blocked_count: 0,
+      prompt_candidate_count: 0
+    }
+  },
+  payload: { asset_id: "asset-catalog-trust-blocked", images: [{}, {}] }
+});
+const trustBlockedCatalogNode = trustBlockedCatalogLedger.nodes.find((node) => node.node_id === "catalog_retrieval");
+assert.equal(trustBlockedCatalogNode.metrics.trust_blocked_count, 1);
+assert.equal(
+  trustBlockedCatalogLedger.reconciliation.anomalies.some((item) => item.check_id === "catalog_candidate_drop_has_explanation"),
+  false,
+  "an unapproved shadow candidate is trust-blocked, not an unexplained drop"
+);
+
+const unclassifiedCatalogLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    catalog_activation_funnel: {
+      raw_candidate_count: 1,
+      approved_candidate_count: 0,
+      trust_blocked_count: 0,
+      conflict_blocked_count: 0,
+      prompt_candidate_count: 0
+    }
+  },
+  payload: { asset_id: "asset-catalog-unclassified", images: [{}, {}] }
+});
+assert.equal(
+  unclassifiedCatalogLedger.reconciliation.anomalies.some((item) => item.check_id === "catalog_candidate_drop_has_explanation"),
+  true,
+  "an explicitly unclassified raw candidate must remain observable"
+);
+
 const preloadedOcrPatchLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,
