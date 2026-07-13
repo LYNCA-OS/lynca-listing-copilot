@@ -87,12 +87,15 @@ upload/pre-ingestion
 -> provider capacity queue (single GPT-5-mini key, capacity 2)
 -> GPT-5-mini L2 observation
 -> catalog/vector post-observation deadline (250 ms)
--> OCR post-provider deadline (750 ms)
+-> consume only OCR evidence already settled (0 ms post-provider wait)
+-> release provider capacity after all provider calls for this card finish
 -> resolver + renderer
 -> one writer-visible title
 
 background:
 late catalog/vector/OCR completion, persistence, learning sidecars
+the next card may use the released provider slot while the prior card finishes
+local resolution, rendering, and persistence
 ```
 
 Measured capacity experiment:
@@ -136,3 +139,37 @@ V4_ULTRA_FAST_SERVICE_TIER=priority
 
 Request payload options still override these defaults so controlled A/B and
 rollback tests remain possible without branching the production path.
+
+## 2026-07-13 Provider-Stage Capacity Handoff
+
+The queue now separates the scarce provider stage from the rest of the card
+pipeline. A card releases its database-backed provider lease only after every
+provider call for that card has finished. Local evidence fusion, deterministic
+rendering, persistence, and learning sidecars may overlap the next card's
+provider stage. The global and per-key provider capacity remain 2.
+
+Safety properties:
+
+- the release RPC is idempotent;
+- focused verifier calls finish before release, so real provider concurrency
+  cannot exceed the lease count;
+- release or refill failure falls back to the worker-tail release and periodic
+  global drain;
+- OCR uses its own durable pre-ingestion queue and adds 0 ms post-provider wait;
+- writer output remains atomic and appears only after L2 is complete.
+
+Paired blind run `29222152996` used six identical cards in both arms, the same
+GPT-5-mini model, prompt, deployment, image detail, priority tier, catalog,
+vector, OCR, and concurrency 2.
+
+| Mode | Cards | Run wall | Cards/min | Writer p50 / p95 | Queue p50 / p95 | Tokens | Weak recovery / regression |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| writer-ready release | 6/6 | 94.173s | 3.82 | 63.841s / 86.121s | 16.667s / 63.399s | 45,904 | baseline |
+| provider-stage handoff | 6/6 | 57.739s | 6.23 | 16.696s / 43.867s | 5.786s / 32.004s | 45,872 | 1 / 0 |
+
+The candidate released and refilled 6/6 slots, had zero transport or field
+errors, and preserved the same token budget. Production confirmation run
+`29222510146` completed 3/3 in 29.420s with provider-stage release/refill 3/3,
+zero missing refills, writer p50/p95 15.786s/22.045s, and queue p95 6.895s.
+`V4_PROVIDER_DONE_CAPACITY_HANDOFF_ENABLED=true` is therefore the current
+production default; setting it to `false` rolls back to writer-ready release.

@@ -234,6 +234,7 @@ and delete the flag.
 | `POST_OBSERVATION_RETRIEVAL_CRITICAL_PATH_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
 | `PREINGESTION_OCR_CONCURRENCY` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `PREINGESTION_OCR_MAX_ATTEMPTS` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
+| `PREINGESTION_OCR_POST_PROVIDER_WAIT_MS` | api/listing-copilot-title.js |
 | `PREWARM_CATALOG_RETRIEVAL` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_CATALOG_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_HYBRID_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |
@@ -287,6 +288,7 @@ and delete the flag.
 | `V4_OPENAI_MAX_TOTAL_CONCURRENCY` | lib/listing/providers/openai-key-pool.mjs |
 | `V4_OPENAI_PER_KEY_CONCURRENCY` | lib/listing/providers/openai-key-pool.mjs |
 | `V4_PROVIDER_CAPACITY_CONTROL_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_PROVIDER_DONE_CAPACITY_HANDOFF_ENABLED` | api/listing-copilot-title.js |
 | `V4_PUMP_BACKGROUND_CONCURRENCY` | api/v4/listing-job-enqueue.js |
 | `V4_PUMP_INTERACTIVE_CONCURRENCY` | api/v4/listing-job-enqueue.js |
 | `V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS` | api/v4/listing-job-enqueue.js |
@@ -300,6 +302,7 @@ and delete the flag.
 | `V4_SUPABASE_READ_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
 | `V4_SUPABASE_RPC_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
 | `V4_SUPABASE_WRITE_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
+| `V4_WRITER_READY_CAPACITY_REFILL_ENABLED` | lib/listing/v4/jobs/writer-ready-capacity-refill.mjs |
 | `VECTOR_CACHE_ENABLED` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_CORRECTED_TITLE_AS_TEMPORARY_GT` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS` | lib/listing/pipeline/provider-options.mjs |

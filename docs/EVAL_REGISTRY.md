@@ -154,3 +154,18 @@ global concurrency. The weak seller-title scores above are unpaired guardrails
 only and cannot be attributed causally to concurrency. Re-run the capacity sweep
 after a provider/model, OCR rendezvous, queue architecture or rate-limit change;
 do not raise concurrency from key count alone.
+
+## Provider-stage capacity handoff (2026-07-13)
+
+| Run | Mode | Cards | Cards/min | Writer p50 / p95 | Queue p95 | Provider release/refill | Tokens | Weak recovery / regression |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `29222152996` | writer-ready release | 6/6 | 3.82 | 63.841s / 86.121s | 63.399s | 0 / 0 | 45,904 | baseline |
+| `29222152996` | provider-stage handoff | 6/6 | **6.23** | **16.696s / 43.867s** | **32.004s** | **6 / 6** | 45,872 | 1 / 0 |
+| `29222510146` | production confirmation | 3/3 | 6.12 | 15.786s / 22.045s | 6.895s | 3 / 3 | 24,834 | fresh blind guardrail |
+
+The handoff arm changed only the provider lease release boundary. It did not
+change the model, prompt, catalog/vector/OCR policy, renderer, or global
+concurrency. The 6-card paired run reduced wall time by 38.7% and increased
+technical throughput by 63.0%, with zero technical failures, zero candidate-arm
+transport/field errors, and no weak-label regression. Seller-title scores remain
+diagnostic weak labels, not reviewed identity ground truth.
