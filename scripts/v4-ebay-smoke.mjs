@@ -2450,10 +2450,11 @@ export function attachPostRecognitionScoring(results = [], items = [], sealedLab
   });
 }
 
-function summarizePipelineNodeLedgers(results = []) {
+export function summarizePipelineNodeLedgers(results = []) {
   const rows = results.filter((item) => item.pipeline_node_ledger && typeof item.pipeline_node_ledger === "object");
   const fieldQualityCheckIds = new Set([
     "critical_field_flow_has_no_silent_drop",
+    "terminal_critical_field_flow_has_no_silent_drop",
     "field_flow_has_no_cross_bracket_composite_migration",
     "v4_normal_field_state_has_canonical_value"
   ]);
@@ -2503,10 +2504,67 @@ function summarizePipelineNodeLedgers(results = []) {
     output_count_total: item.output_count_total,
     status_breakdown: item.status_breakdown
   }));
+  const fieldFlowRows = rows.filter((item) => (
+    item.pipeline_node_ledger.field_flow
+    && typeof item.pipeline_node_ledger.field_flow === "object"
+  ));
+  const terminalDropRows = fieldFlowRows.flatMap((item) => {
+    const fieldRows = Array.isArray(item.pipeline_node_ledger.field_flow?.fields)
+      ? item.pipeline_node_ledger.field_flow.fields
+      : [];
+    return fieldRows
+      .filter((field) => field.disposition === "UNEXPLAINED_TERMINAL_DROP")
+      .map((field) => ({
+        asset_id: item.asset_id || null,
+        field_group: cleanText(field.field_group) || "unknown",
+        raw_provider_present: field.raw_provider_present === true,
+        evidence_present: field.evidence_present === true,
+        resolved_present: field.resolved_present === true,
+        rendered_present: field.rendered_present === true,
+        terminal_resolved_present: field.terminal_resolved_present === true,
+        terminal_drop_reason: field.terminal_drop_reason || null
+      }));
+  });
+  const terminalDropFieldBreakdown = terminalDropRows.reduce((counts, item) => {
+    counts[item.field_group] = (counts[item.field_group] || 0) + 1;
+    return counts;
+  }, {});
+  const terminalDropCards = new Map();
+  for (const item of terminalDropRows) {
+    const key = item.asset_id || "unknown";
+    const fields = terminalDropCards.get(key) || [];
+    fields.push(item);
+    terminalDropCards.set(key, fields);
+  }
+  const terminalGradeRows = fieldFlowRows
+    .map((item) => item.pipeline_node_ledger.field_flow?.grade_atomic?.terminal)
+    .filter((item) => item && typeof item === "object");
+  const terminalGradeAtomic = {
+    observed_count: terminalGradeRows.length,
+    grade_company_present_count: terminalGradeRows.filter((item) => item.grade_company === true).length,
+    card_grade_present_count: terminalGradeRows.filter((item) => item.card_grade === true).length,
+    auto_grade_present_count: terminalGradeRows.filter((item) => item.auto_grade === true).length,
+    company_without_score_count: terminalGradeRows.filter((item) => (
+      item.grade_company === true && item.card_grade !== true && item.auto_grade !== true
+    )).length,
+    score_without_company_count: terminalGradeRows.filter((item) => (
+      item.grade_company !== true && (item.card_grade === true || item.auto_grade === true)
+    )).length
+  };
   return {
-    schema_version: "pipeline-node-ledger-summary-v1",
+    schema_version: "pipeline-node-ledger-summary-v2",
     ledger_present_count: rows.length,
     ledger_missing_count: results.length - rows.length,
+    field_flow_present_count: fieldFlowRows.length,
+    field_flow_missing_count: rows.length - fieldFlowRows.length,
+    unexplained_terminal_drop_count: terminalDropRows.length,
+    unexplained_terminal_drop_card_count: terminalDropCards.size,
+    unexplained_terminal_drop_field_breakdown: terminalDropFieldBreakdown,
+    unexplained_terminal_drop_examples: [...terminalDropCards.entries()].slice(0, 20).map(([assetId, fields]) => ({
+      asset_id: assetId === "unknown" ? null : assetId,
+      fields
+    })),
+    terminal_grade_atomic: terminalGradeAtomic,
     anomaly_card_count: rows.filter((item) => Number(item.pipeline_node_ledger.reconciliation?.anomaly_count || 0) > 0).length,
     anomaly_count: rows.reduce((sum, item) => sum + Number(item.pipeline_node_ledger.reconciliation?.anomaly_count || 0), 0),
     error_count: declaredErrorCount,
@@ -3220,6 +3278,7 @@ export function perCardTsv(results = []) {
     item.pipeline_node_ledger?.reconciliation?.warning_count ?? null,
     item.pipeline_node_ledger?.coverage?.missing_required_node_count ?? null,
     item.pipeline_node_ledger?.field_flow?.unexplained_resolution_drop_fields || [],
+    item.pipeline_node_ledger?.field_flow?.unexplained_terminal_drop_fields || [],
     item.provider_response_profile,
     item.provider_prompt_mode,
     item.provider_prompt_chars,
@@ -3506,6 +3565,9 @@ export async function runV4EbaySmoke({
       sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION", "CONCURRENCY_FRESH"].includes(normalizedSampleMode),
       generalization_claim_permitted: ["FRESH_GENERALIZATION", "CONCURRENCY_FRESH"].includes(normalizedSampleMode),
       same_sample_required: ["PAIRED_ABLATION", "CONCURRENCY_FRESH"].includes(normalizedSampleMode),
+      reuse_reason: datasetSamplePolicy?.reuse_reason || null,
+      reuse_scope_id: datasetSamplePolicy?.reuse_scope_id || null,
+      reuse_policy_complete: datasetSamplePolicy?.reuse_policy_complete === true,
       provenance_required: sampleProvenance.required,
       provenance_verified: sampleProvenance.verified,
       evaluated_item_count: items.length,

@@ -36,7 +36,9 @@ function currentOcrPatch(field, value, extra = {}) {
     ...extra,
     provenance: {
       ...(extra.provenance || {}),
-      job_key: extra.provenance?.job_key || `ocr:${preingestionOcrJobVersion}:bundle-1:${field}`
+      job_key: extra.provenance?.job_key || `ocr:${preingestionOcrJobVersion}:bundle-1:${field}`,
+      crop_type: extra.provenance?.crop_type || (["print_run_number", "serial_number", "numerical_rarity"].includes(field) ? "serial_number" : null),
+      source_region: extra.provenance?.source_region || (["print_run_number", "serial_number", "numerical_rarity"].includes(field) ? "serial_region" : null)
     }
   };
 }
@@ -288,6 +290,75 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.job_observability[0].full_image_fallback_used, true);
   assert.equal(result.job_observability[0].full_image_fallback_kind, "grade");
   assert.equal(result.execution_summary.full_image_fallback_count, 1);
+}
+
+// Marketplace slabs may omit source dimensions. A visible grading-company token
+// is enough to justify one full-image grade scan, while an empty raw-card crop is not.
+{
+  const calls = [];
+  const slabWithoutDimensionsJob = {
+    ...sampleJob,
+    job_id: "job-grade-slab-no-dimensions",
+    job_key: "ocr:bundle-1:grade-slab-no-dimensions",
+    payload: {
+      crop: {
+        ...sampleJob.payload.crop,
+        source_region: "grade_label",
+        role: "grade_label_crop",
+        crop_metadata: {
+          crop_id: "grade-slab-no-dimensions",
+          source_object_path: sampleJob.payload.crop.crop_metadata.source_object_path
+        }
+      }
+    }
+  };
+  const result = await processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = String(url);
+      if (!init.method && target.includes("preingestion_jobs")) return jsonResponse([{ ...slabWithoutDimensionsJob }]);
+      if (init.method === "PATCH" && target.includes("preingestion_jobs")) {
+        return jsonResponse([{ status: JSON.parse(init.body).status || "running", attempts: 1 }]);
+      }
+      if (!init.method && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", evidence_patches: [], updated_at: "2026-07-11T00:00:00.000Z" }]);
+      }
+      if (init.method === "PATCH" && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", updated_at: "2026-07-11T00:00:01.000Z" }]);
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    },
+    paddleClient: {
+      configured: true,
+      verifyCrop: async (input) => {
+        calls.push(input);
+        return calls.length === 1
+          ? {
+              raw_text: "PSA",
+              confidence: 0.93,
+              text_candidates: [{ text: "PSA", confidence: 0.93 }],
+              evidence_patch: { evidence: { grade_company: { value: "PSA" } } }
+            }
+          : {
+              raw_text: "PSA GEM MT 10",
+              confidence: 0.97,
+              text_candidates: [{ text: "PSA GEM MT 10", confidence: 0.97 }],
+              evidence_patch: {
+                evidence: {
+                  grade_company: { value: "PSA" },
+                  card_grade: { value: "10" }
+                }
+              }
+            };
+      }
+    },
+    signedReadUrlFor: async () => "https://signed.test/slab-no-dimensions.jpg"
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].crop_box, null);
+  assert.match(calls[1].request_id, /full-image-grade$/);
+  assert.equal(result.job_observability[0].full_image_fallback_used, true);
 }
 
 {

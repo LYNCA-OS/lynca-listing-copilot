@@ -37,6 +37,7 @@ import {
   numberOrNull as smokeNumberOrNull,
   providerDoneHandoffOverride,
   summarize as summarizeSmoke,
+  summarizePipelineNodeLedgers,
   summaryHasVisibleL2Title,
   summaryRequiresWriterReview
 } from "./v4-ebay-smoke.mjs";
@@ -54,6 +55,48 @@ assert.equal(smokeNumberOrNull(null), null, "missing optional timings must not b
 assert.equal(smokeNumberOrNull(undefined), null, "missing optional token counts must stay missing");
 assert.equal(smokeNumberOrNull(""), null, "empty optional diagnostics must stay missing");
 assert.equal(smokeNumberOrNull(0), 0, "a real observed zero must remain zero");
+
+const pipelineLedgerSummary = summarizePipelineNodeLedgers([
+  {
+    asset_id: "asset-terminal-drop",
+    pipeline_node_ledger: {
+      nodes: [],
+      coverage: { missing_required_node_count: 0 },
+      field_flow: {
+        unexplained_terminal_drop_count: 1,
+        fields: [{
+          field_group: "year",
+          raw_provider_present: true,
+          evidence_present: true,
+          resolved_present: true,
+          rendered_present: true,
+          terminal_resolved_present: false,
+          disposition: "UNEXPLAINED_TERMINAL_DROP",
+          terminal_drop_reason: "upstream_resolved_value_missing_from_v4_session"
+        }],
+        grade_atomic: {
+          terminal: { grade_company: true, card_grade: false, auto_grade: false }
+        }
+      },
+      reconciliation: {
+        anomaly_count: 1,
+        error_count: 1,
+        warning_count: 0,
+        anomalies: [{
+          check_id: "terminal_critical_field_flow_has_no_silent_drop",
+          severity: "ERROR"
+        }]
+      }
+    }
+  }
+]);
+assert.equal(pipelineLedgerSummary.schema_version, "pipeline-node-ledger-summary-v2");
+assert.equal(pipelineLedgerSummary.field_quality_error_count, 1);
+assert.equal(pipelineLedgerSummary.transport_error_count, 0);
+assert.equal(pipelineLedgerSummary.unexplained_terminal_drop_count, 1);
+assert.equal(pipelineLedgerSummary.unexplained_terminal_drop_card_count, 1);
+assert.deepEqual(pipelineLedgerSummary.unexplained_terminal_drop_field_breakdown, { year: 1 });
+assert.equal(pipelineLedgerSummary.terminal_grade_atomic.company_without_score_count, 1);
 assert.equal(providerDoneHandoffOverride(["node", "smoke"]), null, "omitted handoff mode must inherit production configuration");
 assert.equal(providerDoneHandoffOverride(["node", "smoke", "--provider-done-handoff"]), true);
 assert.equal(providerDoneHandoffOverride(["node", "smoke", "--no-provider-done-handoff"]), false);
@@ -226,6 +269,27 @@ const v4CodeSanitizedFields = buildV4ResolvedFields({
 assert.equal(v4CodeSanitizedFields.card_number, null);
 assert.equal(v4CodeSanitizedFields.collector_number, null);
 assert.equal(v4CodeSanitizedFields.checklist_code, null);
+const duplicatePrintRunCodeFields = buildV4ResolvedFields({
+  resolved_fields: {
+    print_run_number: "03/15",
+    serial_number: "03/15",
+    card_number: "03/15",
+    collector_number: "03/15",
+    checklist_code: "03/15"
+  }
+});
+assert.equal(duplicatePrintRunCodeFields.print_run_number, "03/15");
+assert.equal(duplicatePrintRunCodeFields.card_number, null);
+assert.equal(duplicatePrintRunCodeFields.collector_number, null);
+assert.equal(duplicatePrintRunCodeFields.checklist_code, null);
+const tcgSlashCardNumberRemainsIdentityCode = buildV4ResolvedFields({
+  resolved_fields: {
+    card_number: "201/165",
+    collector_number: "201/165"
+  }
+});
+assert.equal(tcgSlashCardNumberRemainsIdentityCode.card_number, "201/165");
+assert.equal(tcgSlashCardNumberRemainsIdentityCode.collector_number, "201/165");
 const invalidDecimalCodeGraph = buildV4FieldGraph({
   resolved_fields: {
     players: ["Keldon Johnson"],
@@ -291,6 +355,48 @@ const reviewStateRemainsVisible = buildV4FieldStates({
   field_states: [{ field_name: "year", display_status: "CONFLICT" }]
 });
 assert.equal(reviewStateRemainsVisible.year.display_status, "CONFLICT");
+
+const highlightedConflictRetainsWriterDraftValue = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2025-26",
+    product: "Topps Chrome",
+    players: ["Test Player"]
+  },
+  conflict_map: [{ field: "year", severity: "HIGH" }],
+  draft_gate: {
+    by_field: {
+      year: {
+        field: "year",
+        selected_value: "2025-26",
+        display_policy: "INCLUDE_HIGHLIGHTED"
+      }
+    }
+  }
+});
+assert.equal(
+  highlightedConflictRetainsWriterDraftValue.year,
+  "2025-26",
+  "an upstream gate-selected highlighted value must survive the V4 persistence boundary"
+);
+
+const nullRendererScaffoldDoesNotEraseResolvedValue = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Test Player"]
+  },
+  rendered_fields: {
+    fields: {
+      year: null,
+      product: "Topps Chrome"
+    }
+  }
+});
+assert.equal(
+  nullRendererScaffoldDoesNotEraseResolvedValue.year,
+  "2025",
+  "null renderer scaffolding must not erase a meaningful resolved value"
+);
 
 const uncertainObservationStates = buildV4FieldStates({
   resolved: {

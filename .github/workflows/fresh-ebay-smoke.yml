@@ -128,6 +128,9 @@ jobs:
             ...(dataset.evaluation_sample_policy || {}),
             mode: 'FIXED_REGRESSION',
             sample_reuse_permitted: true,
+            reuse_reason: 'fixed_defect_regression',
+            reuse_scope_id: `fresh-ebay-source-run-${process.env.REGRESSION_RUN_ID}`,
+            reuse_policy_complete: true,
             generalization_claim_permitted: false,
             same_sample_required: true,
             regression_source_run_id: process.env.REGRESSION_RUN_ID

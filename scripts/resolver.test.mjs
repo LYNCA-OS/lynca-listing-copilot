@@ -39,6 +39,19 @@ assert.equal(numberResult.resolved.collector_number, "257/208");
 assert.equal(numberResult.resolved.serial_number, "31/50");
 assert.ok(numberResult.notes.some((note) => note.field === "collector_number"));
 
+const ambiguousSlashCardNumber = resolveNumberFields({
+  resolved: {},
+  legacyFields: { card_number: "31/50" }
+});
+assert.equal(ambiguousSlashCardNumber.resolved.collector_number, "31/50");
+assert.equal(ambiguousSlashCardNumber.resolved.serial_number, undefined, "card_number must not manufacture Numerical Rarity without an explicit print-run source");
+const explicitlyPromotedPrintRun = resolveNumberFields({
+  resolved: {},
+  legacyFields: { card_number: "31/50" },
+  allowLegacyCardNumberAsPrintRun: true
+});
+assert.equal(explicitlyPromotedPrintRun.resolved.serial_number, "31/50");
+
 const psaDualGrade = resolveGradeFields({
   resolved: {},
   legacyFields: {
@@ -118,6 +131,8 @@ assert.deepEqual(gradeOcrRescueDecision({
 }), {
   needed: true,
   incomplete_grade: true,
+  grade_completely_missing: false,
+  slab_likely: false,
   incomplete_score_without_company: true,
   incomplete_company_without_score: false,
   grade_jobs_active: true,
@@ -137,6 +152,27 @@ assert.equal(gradeOcrRescueDecision({
   currentFields: { card_grade: "10" },
   latestOcrState: { grade_label_active_count: 0 }
 }).needed, false);
+assert.equal(gradeOcrRescueDecision({
+  currentFields: { year: "2024" },
+  latestOcrState: { grade_label_active_count: 1 },
+  slabLikely: true
+}).needed, true, "a slab with completely missing grade fields should wait for the active grade OCR job");
+assert.equal(gradeOcrRescueDecision({
+  currentFields: { year: "2024" },
+  latestOcrState: { grade_label_active_count: 1 },
+  slabLikely: false
+}).needed, false, "a raw card should not pay the completely-missing grade rescue wait");
+assert.equal(gradeOcrRescueDecision({
+  currentFields: { year: "2024" },
+  latestOcrState: {
+    grade_label_active_count: 1,
+    evidence_patches: [
+      { field: "grade_company", value: "PSA" },
+      { field: "card_grade", value: "10" }
+    ]
+  },
+  slabLikely: true
+}).needed, false, "completed OCR evidence should prevent a redundant grade rescue wait");
 
 const targetedSerialAndGradeWait = criticalOcrRendezvousDecision({
   currentFields: { print_run_number: "2/4", grade_company: "PSA" },

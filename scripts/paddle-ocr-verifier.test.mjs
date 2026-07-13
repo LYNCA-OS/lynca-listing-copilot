@@ -147,6 +147,29 @@ assert.equal(bgsDualGradeResult.normalized_fields.card_grade, "8.5");
 assert.equal(bgsDualGradeResult.normalized_fields.auto_grade, "10");
 assert.equal(bgsDualGradeResult.normalized_fields.grade_type, "CARD_AND_AUTO");
 
+const bgsDetachedMainGrade = normalizePaddleOcrResponse({
+  raw_text: "BECKETT\nCENTERING 9\nCORNERS 8\nEDGES 8.5\nSURFACE 9\nAUTOGRAPH 10",
+  confidence: 0.95,
+  boxes: [
+    { text: "BECKETT", confidence: 0.98, bbox: [0, 0, 180, 36] },
+    { text: "8.5", confidence: 0.97, bbox: [210, 0, 330, 100] },
+    { text: "CENTERING 9", confidence: 0.92, bbox: [0, 110, 150, 130] },
+    { text: "CORNERS 8", confidence: 0.91, bbox: [0, 135, 150, 155] },
+    { text: "EDGES 8.5", confidence: 0.92, bbox: [0, 160, 150, 180] },
+    { text: "SURFACE 9", confidence: 0.92, bbox: [0, 185, 150, 205] },
+    { text: "AUTOGRAPH", confidence: 0.96, bbox: [210, 110, 330, 135] },
+    { text: "10", confidence: 0.97, bbox: [210, 140, 330, 210] }
+  ]
+}, {
+  request_id: "ocr-grade-detached-main",
+  image_url: "https://storage.test/grade-detached.jpg",
+  crop_type: "grade_label"
+});
+assert.equal(bgsDetachedMainGrade.normalized_fields.grade_company, "BGS");
+assert.equal(bgsDetachedMainGrade.normalized_fields.card_grade, "8.5", "the largest detached score is the BGS card grade, not a subgrade");
+assert.equal(bgsDetachedMainGrade.normalized_fields.auto_grade, "10");
+assert.equal(bgsDetachedMainGrade.normalized_fields.grade_type, "CARD_AND_AUTO");
+
 const certCannotOverwriteGrade = normalizePaddleOcrResponse({
   raw_text: "PSA CERT 127928791",
   confidence: 0.96,

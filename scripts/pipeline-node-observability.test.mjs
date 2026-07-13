@@ -686,6 +686,46 @@ assert.equal(
   true
 );
 
+const reviewedTerminalDropLedger = buildEndToEndNodeLedger({
+  session: {
+    l2_status: "READY",
+    l2_title: "Topps Chrome Test Player",
+    l2_ready_at: "2026-07-11T00:00:02.900Z",
+    resolved_fields: {
+      manufacturer: "Topps",
+      product: "Chrome",
+      players: ["Test Player"]
+    },
+    provider_result_summary: {
+      pipeline_node_ledger: {
+        ...healthyLedger,
+        field_flow: {
+          ...healthyLedger.field_flow,
+          fields: healthyLedger.field_flow.fields.map((row) => (
+            row.field_group === "year"
+              ? { ...row, raw_provider_present: true, resolved_present: true, review_flagged: true }
+              : row
+          ))
+        }
+      },
+      title_render_source: "v4_csm_deterministic_renderer",
+      noncritical_persistence_status: "COMPLETED"
+    }
+  },
+  job: {
+    id: "job-observability-reviewed-terminal-drop",
+    status: "SUCCEEDED",
+    created_at: "2026-07-11T00:00:00.000Z",
+    started_at: "2026-07-11T00:00:00.500Z",
+    completed_at: "2026-07-11T00:00:03.000Z"
+  },
+  display: { can_writer_start: true }
+});
+assert.ok(
+  reviewedTerminalDropLedger.field_flow.unexplained_terminal_drop_fields.includes("year"),
+  "REVIEW metadata must not hide a value lost after upstream resolution"
+);
+
 const writerReviewLedger = buildEndToEndNodeLedger({
   session: {
     status: "WRITER_REVIEW",

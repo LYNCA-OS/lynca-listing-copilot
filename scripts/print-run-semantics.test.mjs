@@ -115,11 +115,16 @@ const ocrSerialPatch = (value, confidence) => ({
   field: "print_run_number",
   value,
   source_type: "OCR",
-  confidence
+  confidence,
+  provenance: {
+    job_key: `ocr:serial:${value}`,
+    crop_type: "serial_number",
+    source_region: "serial_region"
+  }
 });
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.93)]
-}, { job_count: 1 }), true);
+}, { job_count: 1 }), false, "one direct crop below the hard confidence threshold cannot lock a numerator");
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.72)]
 }, { job_count: 1 }), false);
@@ -130,6 +135,30 @@ assert.equal(serialNumeratorVerificationFromPreingestion({
     text_candidates: [{ value: "31/50", confidence: 0.95 }]
   }]
 }, { job_count: 1 }), true, "an exact OCR line must keep its own confidence instead of the crop-wide average");
+
+const fullImageOnlySerial = {
+  ...ocrSerialPatch("8/31", 0.99),
+  provenance: {
+    job_key: "ocr:serial:full-image",
+    crop_type: "serial_number",
+    source_region: "full_image_serial_scan"
+  }
+};
+assert.equal(verifiedSerialNumeratorFromPreingestion({
+  preingestion_evidence_patches: [fullImageOnlySerial]
+}).verified, false, "a single full-image OCR guess must not override the provider as exact Numerical Rarity");
+assert.equal(verifiedSerialNumeratorFromPreingestion({
+  preingestion_evidence_patches: [
+    fullImageOnlySerial,
+    {
+      ...fullImageOnlySerial,
+      provenance: {
+        ...fullImageOnlySerial.provenance,
+        job_key: "ocr:serial:independent-second-scan"
+      }
+    }
+  ]
+}).verified, true, "two independent OCR observations may confirm the same full print run");
 
 const verifiedOcrPayload = {
   images: [{ image_id: "img-current" }],

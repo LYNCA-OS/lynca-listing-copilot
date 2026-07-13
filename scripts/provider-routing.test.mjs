@@ -357,7 +357,11 @@ assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPrein
     value: "2/3",
     confidence: 0.99,
     source_type: "OCR",
-    source_image_id: "front"
+    source_image_id: "front",
+    provenance: {
+      crop_type: "serial_crop",
+      job_key: "front:serial_crop"
+    }
   }]
 }, {
   status: "DEFERRED_AFTER_PROVIDER",

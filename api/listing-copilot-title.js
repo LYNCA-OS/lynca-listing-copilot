@@ -224,6 +224,7 @@ const defaultPreingestionOcrPostProviderWaitMs = 0;
 const defaultPreingestionOcrGradeRescueWaitMs = 2_000;
 const defaultPreingestionOcrCriticalFieldWaitMs = 2_500;
 const confirmedOcrSerialConfidence = 0.86;
+const singleCropOcrSerialConfidence = 0.94;
 
 function configuredMaxPayloadImages(env = process.env) {
   return Math.max(
@@ -253,10 +254,34 @@ export function verifiedSerialNumeratorFromPreingestion(payload = {}) {
     if (fieldConfidence < confirmedOcrSerialConfidence) continue;
     if (expanded.print_run_numerator && expanded.print_run_denominator) {
       const value = `${expanded.print_run_numerator}/${expanded.print_run_denominator}`;
-      const current = fullValues.get(value) || { value, confidence: 0, patch_count: 0, source_image_ids: new Set() };
+      const provenance = patch?.provenance || {};
+      const observationKey = String(
+        provenance.job_key
+        || provenance.crop_id
+        || patch?.crop_id
+        || `${patchImageId || "unknown-image"}:${provenance.source_region || provenance.crop_type || "unknown-region"}`
+      ).trim();
+      const observationDescriptor = [
+        provenance.source_region,
+        provenance.crop_type,
+        provenance.job_key,
+        provenance.crop_id,
+        patch?.crop_id
+      ].filter(Boolean).join(" ").toLowerCase();
+      const directSerialCrop = /serial/.test(observationDescriptor) && !/full[_ -]?image/.test(observationDescriptor);
+      const current = fullValues.get(value) || {
+        value,
+        confidence: 0,
+        patch_count: 0,
+        source_image_ids: new Set(),
+        observation_keys: new Set(),
+        direct_crop_observation_keys: new Set()
+      };
       current.confidence = Math.max(current.confidence, fieldConfidence);
       current.patch_count += 1;
       if (patchImageId) current.source_image_ids.add(patchImageId);
+      if (observationKey) current.observation_keys.add(observationKey);
+      if (directSerialCrop && observationKey) current.direct_crop_observation_keys.add(observationKey);
       fullValues.set(value, current);
     }
   }
@@ -270,11 +295,35 @@ export function verifiedSerialNumeratorFromPreingestion(payload = {}) {
     };
   }
   const only = [...fullValues.values()][0];
+  const independentObservationCount = only.observation_keys.size;
+  const directCropObservationCount = only.direct_crop_observation_keys.size;
+  const verificationBasis = independentObservationCount >= 2
+    ? "independent_ocr_agreement"
+    : directCropObservationCount >= 1 && only.confidence >= singleCropOcrSerialConfidence
+      ? "high_confidence_direct_serial_crop"
+      : null;
+  if (!verificationBasis) {
+    return {
+      verified: false,
+      value: null,
+      confidence: only.confidence,
+      patch_count: only.patch_count,
+      independent_observation_count: independentObservationCount,
+      direct_crop_observation_count: directCropObservationCount,
+      verification_basis: null,
+      source_image_ids: [...only.source_image_ids],
+      conflict: false,
+      candidate_values: [only.value]
+    };
+  }
   return {
     verified: true,
     value: only.value,
     confidence: only.confidence,
     patch_count: only.patch_count,
+    independent_observation_count: independentObservationCount,
+    direct_crop_observation_count: directCropObservationCount,
+    verification_basis: verificationBasis,
     source_image_ids: [...only.source_image_ids],
     conflict: false,
     candidate_values: [only.value]
@@ -5638,19 +5687,21 @@ async function createOpenAiTitle(payload, selection, {
     providerResultWithEvidence.resolved,
     providerResultWithEvidence.resolved_fields
   );
+  const slabLikely = captureQualityLooksLikeSlab(
+    providerResultWithEvidence.capture_quality || captureQualityForPayload(payload),
+    payload.images || []
+  );
   const gradeOcrRescue = gradeOcrRescueDecision({
     currentFields: currentProviderFields,
-    latestOcrState: latestPreingestionOcrState
+    latestOcrState: latestPreingestionOcrState,
+    slabLikely
   });
   const configuredOcrPostProviderWaitMs = preingestionOcrPostProviderWaitMs(process.env, providerOptions);
   const criticalOcrWait = criticalOcrRendezvousDecision({
     currentFields: currentProviderFields,
     unresolved: providerResultWithEvidence.unresolved || providerResultWithEvidence.unresolved_fields || [],
     latestOcrState: latestPreingestionOcrState,
-    slabLikely: captureQualityLooksLikeSlab(
-      providerResultWithEvidence.capture_quality || captureQualityForPayload(payload),
-      payload.images || []
-    ),
+    slabLikely,
     configuredWaitMs: configuredOcrPostProviderWaitMs,
     criticalWaitMs: Math.max(
       preingestionOcrCriticalFieldWaitMs(process.env, providerOptions),
