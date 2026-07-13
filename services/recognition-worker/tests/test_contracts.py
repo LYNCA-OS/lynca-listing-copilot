@@ -1,6 +1,7 @@
 import os
 import unittest
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -49,6 +50,15 @@ class RecognitionWorkerTests(unittest.TestCase):
         }
         self.assertEqual(validate_request(payload), [])
         self.assertTrue(validate_request({**payload, "images": []}))
+
+    def test_ocr_runtime_does_not_ship_visual_embedding_stack(self):
+        service_root = Path(__file__).resolve().parents[1]
+        ocr_requirements = (service_root / "requirements.txt").read_text(encoding="utf-8")
+        vector_requirements = (service_root / "requirements-vector.txt").read_text(encoding="utf-8")
+
+        for dependency in ("torch==", "transformers==", "safetensors=="):
+            self.assertNotIn(dependency, ocr_requirements)
+        self.assertIn("transformers==", vector_requirements)
 
     def test_config_bounds_large_images_and_pins_embedding_revision(self):
         with patch.dict(os.environ, {
