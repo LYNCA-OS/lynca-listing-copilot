@@ -40,6 +40,11 @@ jobs:
       DATASET_PATH: /tmp/fresh-ebay-dataset.json
       SEALED_LABELS_PATH: /tmp/fresh-ebay-sealed-labels.jsonl
       REPORT_PATH: /tmp/fresh-ebay-report.json
+      # Rotate across sports and TCG query families before declaring the
+      # unseen-card pool exhausted. Seller titles remain sealed downstream.
+      BLIND_EVAL_LISTING_PAGES: "10"
+      BLIND_EVAL_EBAY_QUERY: >-
+        basketball card|baseball card|football card|soccer card|hockey card|Pokemon card|One Piece card|Yu-Gi-Oh card|trading card
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
