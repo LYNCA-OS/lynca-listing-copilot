@@ -119,6 +119,14 @@ import { providerPayloadToEvidenceDocument, resolvedFieldsToLegacyFields } from 
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { serialLimitText } from "../lib/listing/renderer/title-cleanup.mjs";
 import { expandPrintRunFields } from "../lib/listing/print-run/print-run-fields.mjs";
+import {
+  enforceAtomicGradeFields,
+  gradeAtomicCompleteness
+} from "../lib/listing/grade/grade-value.mjs";
+import {
+  gradeOcrRescueDecision,
+  guardGradeFieldStates
+} from "../lib/listing/pipeline/grade-atomic-policy.mjs";
 import { extractDirectSlabLabelParallel } from "../lib/listing/preingestion/slab-label-evidence.mjs";
 import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
@@ -206,6 +214,7 @@ const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
 const defaultCatalogFastLaneBudgetMs = 120;
 const defaultPreingestionOcrPostProviderWaitMs = 0;
+const defaultPreingestionOcrGradeRescueWaitMs = 2_000;
 const confirmedOcrSerialConfidence = 0.86;
 
 function configuredMaxPayloadImages(env = process.env) {
@@ -816,7 +825,7 @@ function finalizerEvidenceGradeFields(evidence = {}) {
   } else if (autoGrade) {
     output.grade_type = "AUTO_ONLY";
   }
-  return output;
+  return enforceAtomicGradeFields(output);
 }
 
 function applyEvidenceBackedPresentationOverrides(base = {}, evidence = {}) {
@@ -958,7 +967,9 @@ function finalizerMergeCurrentImageFields(base = {}, current = {}, supportFields
   return output;
 }
 
-function finalResolvedFieldsForPresentation(result = {}) {
+function finalResolvedFieldsForPresentation(result = {}, {
+  enforceAtomicGrade = true
+} = {}) {
   const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
     ? result.rendered_fields
     : {};
@@ -984,15 +995,72 @@ function finalResolvedFieldsForPresentation(result = {}) {
     withCandidateOverlay,
     result.normalized_evidence || result.evidence || {}
   );
-  return Object.keys(withEvidenceOverrides).length ? withEvidenceOverrides : null;
+  if (!Object.keys(withEvidenceOverrides).length) return null;
+  return enforceAtomicGrade
+    ? enforceAtomicGradeFields(withEvidenceOverrides)
+    : withEvidenceOverrides;
+}
+
+function applyGradeAtomicGuardToResult(result = {}, resolved = null, gradeAtomic = {}) {
+  if (gradeAtomic.incomplete_score_without_company !== true) return result;
+
+  const guardFields = (fields) => (
+    fields && typeof fields === "object" && !Array.isArray(fields)
+      ? enforceAtomicGradeFields(fields)
+      : fields
+  );
+  const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
+    ? result.rendered_fields
+    : null;
+  const trace = Array.isArray(result.resolution_trace) ? result.resolution_trace : [];
+  const hasGuardTrace = trace.some((entry) => entry?.step === "enforce_atomic_grade");
+
+  return {
+    ...result,
+    fields: guardFields(result.fields),
+    resolved: guardFields(result.resolved),
+    resolved_fields: resolved || guardFields(result.resolved_fields),
+    rendered_fields: renderedFields
+      ? {
+        ...guardFields(renderedFields),
+        fields: guardFields(renderedFields.fields)
+      }
+      : result.rendered_fields,
+    field_states: guardGradeFieldStates(result.field_states, true),
+    unresolved: uniqueValues([
+      ...(Array.isArray(result.unresolved) ? result.unresolved : []),
+      "grade requires grading company from current-image direct evidence"
+    ]),
+    grade_atomic_guard: {
+      applied: true,
+      reason: "score_without_company",
+      discarded_card_grade: gradeAtomic.card_grade || null,
+      discarded_auto_grade: gradeAtomic.auto_grade || null
+    },
+    resolution_trace: hasGuardTrace
+      ? trace
+      : [
+        ...trace,
+        {
+          phase: "presentation",
+          step: "enforce_atomic_grade",
+          decision: "discard_score_without_company",
+          output: { grade_company: null, card_grade: null, auto_grade: null, grade_type: "UNKNOWN" }
+        }
+      ]
+  };
 }
 
 function finalizeDeterministicPresentation(result = {}, payload = {}) {
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
   if (result.provider_error_code || result.provider_error_type) return result;
 
-  const resolved = finalResolvedFieldsForPresentation(result);
-  if (!resolved || typeof resolved !== "object" || Array.isArray(resolved) || !Object.keys(resolved).length) return result;
+  const unguardedResolved = finalResolvedFieldsForPresentation(result, { enforceAtomicGrade: false });
+  const gradeAtomic = gradeAtomicCompleteness(unguardedResolved || {});
+  const gradeAtomicGuardApplied = gradeAtomic.incomplete_score_without_company;
+  const resolved = unguardedResolved ? enforceAtomicGradeFields(unguardedResolved) : null;
+  const gradeGuardedResult = applyGradeAtomicGuardToResult(result, resolved, gradeAtomic);
+  if (!resolved || typeof resolved !== "object" || Array.isArray(resolved) || !Object.keys(resolved).length) return gradeGuardedResult;
 
   const presentation = renderListingPresentation({
     resolved,
@@ -1007,10 +1075,10 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
       ?? serialNumeratorVerificationFromPayload(payload)
   });
   const renderedTitle = presentation.rendered_title || "";
-  if (!renderedTitle) return result;
+  if (!renderedTitle) return gradeGuardedResult;
 
-  const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
-    ? result.rendered_fields
+  const renderedFields = gradeGuardedResult.rendered_fields && typeof gradeGuardedResult.rendered_fields === "object" && !Array.isArray(gradeGuardedResult.rendered_fields)
+    ? gradeGuardedResult.rendered_fields
     : {};
   const nextRenderedFields = {
     ...renderedFields,
@@ -1023,12 +1091,22 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
   };
 
   return {
-    ...result,
-    confidence: result.confidence === "FAILED" ? "LOW" : result.confidence,
-    title_recovered_from_structured_fields: result.confidence === "FAILED" || !result.final_title,
+    ...gradeGuardedResult,
+    confidence: gradeGuardedResult.confidence === "FAILED" ? "LOW" : gradeGuardedResult.confidence,
+    title_recovered_from_structured_fields: gradeGuardedResult.confidence === "FAILED" || !gradeGuardedResult.final_title,
     title: renderedTitle,
     final_title: renderedTitle,
     rendered_title: renderedTitle,
+    resolved: gradeGuardedResult.resolved,
+    resolved_fields: resolved,
+    grade_atomic_guard: gradeAtomicGuardApplied
+      ? gradeGuardedResult.grade_atomic_guard
+      : {
+        applied: false,
+        reason: "complete_or_absent",
+        discarded_card_grade: null,
+        discarded_auto_grade: null
+      },
     title_render_source: "deterministic_renderer_finalizer",
     renderer: presentation.renderer,
     renderer_version: presentation.renderer_version,
@@ -3089,6 +3167,15 @@ function preingestionOcrPostProviderWaitMs(env = process.env, providerOptions = 
     ?? env.PREINGESTION_OCR_POST_PROVIDER_WAIT_MS;
   const parsed = Number(configured);
   if (!Number.isFinite(parsed) || parsed < 0) return defaultPreingestionOcrPostProviderWaitMs;
+  return Math.min(10_000, Math.trunc(parsed));
+}
+
+function preingestionOcrGradeRescueWaitMs(env = process.env, providerOptions = {}) {
+  const configured = providerOptions.preingestion_ocr_grade_rescue_wait_ms
+    ?? providerOptions.preingestionOcrGradeRescueWaitMs
+    ?? env.PREINGESTION_OCR_GRADE_RESCUE_WAIT_MS;
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed) || parsed < 0) return defaultPreingestionOcrGradeRescueWaitMs;
   return Math.min(10_000, Math.trunc(parsed));
 }
 
@@ -5312,7 +5399,25 @@ async function createOpenAiTitle(payload, selection, {
     });
   }
   const rendezvousWaitStartedAt = nowMs();
-  const ocrPostProviderWaitMs = preingestionOcrPostProviderWaitMs(process.env, providerOptions);
+  const gradeOcrRescue = gradeOcrRescueDecision({
+    currentFields: mergeCurrentFieldsForTitleAssist(
+      providerResultWithEvidence.fields,
+      providerResultWithEvidence.raw_provider_fields,
+      providerResultWithEvidence.resolved,
+      providerResultWithEvidence.resolved_fields
+    ),
+    latestOcrState: latestPreingestionOcrState
+  });
+  const configuredOcrPostProviderWaitMs = preingestionOcrPostProviderWaitMs(process.env, providerOptions);
+  const ocrPostProviderWaitMs = gradeOcrRescue.needed
+    ? Math.max(
+      configuredOcrPostProviderWaitMs,
+      preingestionOcrGradeRescueWaitMs(process.env, providerOptions)
+    )
+    : configuredOcrPostProviderWaitMs;
+  if (gradeOcrRescue.needed) {
+    addTiming(timingContext, "preingestion_ocr_grade_rescue_count", 1);
+  }
   const boundedOcrRendezvous = await waitForPromiseWithin(
     preingestionOcrRendezvousPromise,
     ocrPostProviderWaitMs
@@ -5327,6 +5432,10 @@ async function createOpenAiTitle(payload, selection, {
   const rendezvousWaitMs = nowMs() - rendezvousWaitStartedAt;
   if (preingestionOcrRendezvous && typeof preingestionOcrRendezvous === "object") {
     preingestionOcrRendezvous.post_provider_wait_ms = rendezvousWaitMs;
+    preingestionOcrRendezvous.grade_rescue = {
+      ...gradeOcrRescue,
+      wait_budget_ms: ocrPostProviderWaitMs
+    };
   }
   if (preingestionOcrRendezvous?.status === "DEFERRED_AFTER_PROVIDER") {
     preingestionOcrRendezvous.waited_ms = rendezvousWaitMs;

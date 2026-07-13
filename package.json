@@ -19,7 +19,7 @@
     "test:data-loop": "node scripts/data-loop/workflow-sidecar-dispatcher.test.mjs && node scripts/data-loop/internal-sidecar-endpoints.test.mjs",
     "check:preingestion": "node --check lib/listing/preingestion/preingestion-bundle.mjs && node --check lib/listing/preingestion/preingestion-ocr-worker.mjs && node --check lib/listing/preingestion/slab-label-evidence.mjs && node --check api/listing-preingest.js && node --check scripts/preingestion-bundle.test.mjs && node --check scripts/preingestion-ocr-worker.test.mjs && node --check scripts/slab-label-evidence.test.mjs && node --check scripts/listing-preingest-api.test.mjs",
     "test:preingestion": "node scripts/preingestion-bundle.test.mjs && node scripts/preingestion-ocr-worker.test.mjs && node scripts/slab-label-evidence.test.mjs && node scripts/listing-preingest-api.test.mjs",
-    "check:ocr": "node --check lib/listing/grade/grade-value.mjs && node --check lib/listing/ocr/ocr-contract.mjs && node --check lib/listing/ocr/paddle-ocr-client.mjs && node --check scripts/evaluate-paddle-ocr-field-smoke.mjs && node --check scripts/paddle-ocr-verifier.test.mjs",
+    "check:ocr": "node --check lib/listing/grade/grade-value.mjs && node --check lib/listing/pipeline/grade-atomic-policy.mjs && node --check lib/listing/ocr/ocr-contract.mjs && node --check lib/listing/ocr/paddle-ocr-client.mjs && node --check scripts/evaluate-paddle-ocr-field-smoke.mjs && node --check scripts/paddle-ocr-verifier.test.mjs",
     "test:ocr": "node scripts/paddle-ocr-verifier.test.mjs",
     "check:print-run-semantics": "node --check lib/listing/print-run/print-run-fields.mjs && node --check scripts/print-run-semantics.test.mjs",
     "test:print-run-semantics": "node scripts/print-run-semantics.test.mjs",

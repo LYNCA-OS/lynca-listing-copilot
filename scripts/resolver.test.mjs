@@ -1,4 +1,12 @@
 import assert from "node:assert/strict";
+import {
+  enforceAtomicGradeFields,
+  gradeAtomicCompleteness
+} from "../lib/listing/grade/grade-value.mjs";
+import {
+  gradeOcrRescueDecision,
+  guardGradeFieldStates
+} from "../lib/listing/pipeline/grade-atomic-policy.mjs";
 import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { classifyNumberToken, resolveNumberFields, splitCardNumber } from "../lib/listing/resolver/number-resolver.mjs";
 import { resolveCardFields } from "../lib/listing/resolver/resolve-card.mjs";
@@ -82,6 +90,52 @@ const descriptorAutoGrade = resolveGradeFields({
 assert.equal(descriptorAutoGrade.resolved.card_grade, "10");
 assert.equal(descriptorAutoGrade.resolved.auto_grade, "9");
 assert.equal(descriptorAutoGrade.resolved.grade_type, "CARD_AND_AUTO");
+
+const incompleteGrade = resolveGradeFields({
+  resolved: { card_grade: "10", grade_type: "CARD_ONLY" },
+  legacyFields: {}
+});
+assert.equal(incompleteGrade.resolved.grade_company, undefined);
+assert.equal(incompleteGrade.resolved.card_grade, null);
+assert.equal(incompleteGrade.resolved.grade_type, "UNKNOWN");
+assert.ok(incompleteGrade.notes.some((note) => note.action === "discard_incomplete_grade_without_company"));
+
+assert.equal(gradeAtomicCompleteness({ card_grade: "10" }).incomplete_score_without_company, true);
+assert.deepEqual(
+  enforceAtomicGradeFields({ grade: "10", card_grade: "10", grade_type: "CARD_ONLY" }),
+  { grade: null, card_grade: null, grade_type: "UNKNOWN", auto_grade: null }
+);
+assert.equal(gradeAtomicCompleteness({ grade_company: "PSA", card_grade: "10" }).complete, true);
+
+assert.deepEqual(gradeOcrRescueDecision({
+  currentFields: { card_grade: "10", grade_type: "CARD_ONLY" },
+  latestOcrState: { grade_label_active_count: 2 }
+}), {
+  needed: true,
+  incomplete_grade: true,
+  grade_jobs_active: true,
+  card_grade: "10",
+  auto_grade: null
+});
+assert.equal(gradeOcrRescueDecision({
+  currentFields: { grade_company: "PSA", card_grade: "10" },
+  latestOcrState: { grade_label_active_count: 2 }
+}).needed, false);
+assert.equal(gradeOcrRescueDecision({
+  currentFields: { card_grade: "10" },
+  latestOcrState: { grade_label_active_count: 0 }
+}).needed, false);
+
+const guardedGradeState = guardGradeFieldStates([{
+  field_name: "grade",
+  field_value: "10",
+  display_status: "NORMAL",
+  confidence: 0.8,
+  provenance: {}
+}], true)[0];
+assert.equal(guardedGradeState.field_value, null);
+assert.equal(guardedGradeState.display_status, "REVIEW");
+assert.equal(guardedGradeState.provenance.atomic_grade_guard, "score_without_company");
 
 const resolvedCard = resolveCardFields({
   resolved: {

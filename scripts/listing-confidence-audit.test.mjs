@@ -1634,6 +1634,31 @@ assert.match(finalizerEvidenceBeatsStaleProviderScaffold.title, /09\/50/);
 assert.match(finalizerEvidenceBeatsStaleProviderScaffold.title, /BGS 9\.5\/10/);
 assert.doesNotMatch(finalizerEvidenceBeatsStaleProviderScaffold.title, /#CPA|BGS 10\/9\.5/);
 
+const incompleteGradeIsGuardedBeforeRendering = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  confidence: "LOW",
+  fields: {
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  resolved_fields: {
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  field_states: [{
+    field_name: "grade",
+    field_value: "10",
+    display_status: "NORMAL",
+    confidence: 0.8
+  }]
+}, { maxTitleLength: 80 });
+
+assert.equal(incompleteGradeIsGuardedBeforeRendering.title, undefined);
+assert.equal(incompleteGradeIsGuardedBeforeRendering.fields.card_grade, null);
+assert.equal(incompleteGradeIsGuardedBeforeRendering.resolved_fields.card_grade, null);
+assert.equal(incompleteGradeIsGuardedBeforeRendering.field_states[0].display_status, "REVIEW");
+assert.equal(incompleteGradeIsGuardedBeforeRendering.grade_atomic_guard.applied, true);
+assert.ok(incompleteGradeIsGuardedBeforeRendering.unresolved.includes("grade requires grading company from current-image direct evidence"));
+
 const finalizerMergesMoreCompletePublicFields = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
   title: "1994 Upper Deck Ken Griffey Jr. Auto BGS",
   confidence: "HIGH",

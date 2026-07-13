@@ -473,7 +473,9 @@ const gradePhraseCompanyDocument = providerPayloadToEvidenceDocument({
   unresolved: []
 });
 assert.equal(gradePhraseCompanyDocument.resolved.grade_company, null);
-assert.equal(gradePhraseCompanyDocument.resolved.card_grade, "10");
+assert.equal(gradePhraseCompanyDocument.resolved.card_grade, null);
+assert.equal(gradePhraseCompanyDocument.resolved.grade_type, "UNKNOWN");
+assert.equal(gradePhraseCompanyDocument.evidence.card_grade, undefined);
 assert.doesNotThrow(() => assertValidEvidenceDocument(gradePhraseCompanyDocument));
 
 const slabParallelDocument = providerPayloadToEvidenceDocument({
