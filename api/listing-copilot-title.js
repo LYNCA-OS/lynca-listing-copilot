@@ -2483,6 +2483,19 @@ function emptyVectorCandidatePacket(reason = "vector_retrieval_disabled") {
   };
 }
 
+function deferredRetrievalCandidatePacket(reason = "post_observation_retrieval_deadline", providerId = "visual_vector") {
+  return {
+    vector_retrieval: {
+      status: "DEFERRED_SHADOW",
+      status_code: "RETRIEVAL_DEFERRED_OFF_CRITICAL_PATH",
+      instruction: "Retrieval continues outside the writer-critical path and did not affect this title.",
+      candidates: [],
+      unavailable: [],
+      deferred: [{ provider_id: providerId, reason }]
+    }
+  };
+}
+
 function vectorRetrievalEnv(env = process.env, config = vectorRetrievalConfig(env)) {
   return {
     ...env,
@@ -2942,7 +2955,8 @@ function deferredRetrievalCandidateContext({
   env = process.env,
   providerOptions = {}
 } = {}) {
-  const packet = emptyVectorCandidatePacket(reason);
+  const providerId = kind === "catalog" ? "postgres_hybrid" : "visual_vector";
+  const packet = deferredRetrievalCandidatePacket(reason, providerId);
   const eligibility = vectorCandidatePacketAssistEligibility(packet);
   if (kind === "catalog") {
     return {

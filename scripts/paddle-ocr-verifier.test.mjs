@@ -44,6 +44,28 @@ assert.equal(ocrResult.normalized_fields.card_grade, undefined);
 assert.equal(ocrResult.normalized_fields.collector_number, undefined);
 assert.equal(ocrResult.latency_ms, 32);
 
+const seasonYearIsNotPrintRun = normalizePaddleOcrResponse({
+  raw_text: "2022-23 NBA SEASON NO. 23",
+  confidence: 0.94
+}, {
+  request_id: "ocr-serial-season-guard",
+  image_url: "https://storage.test/serial-season.jpg",
+  crop_type: "serial_crop"
+});
+assert.equal(seasonYearIsNotPrintRun.normalized_fields.serial_number, undefined);
+assert.equal(seasonYearIsNotPrintRun.normalized_fields.print_run_denominator, undefined);
+
+const isolatedHyphenPrintRun = normalizePaddleOcrResponse({
+  raw_text: "09-50",
+  confidence: 0.95
+}, {
+  request_id: "ocr-serial-hyphen",
+  image_url: "https://storage.test/serial-hyphen.jpg",
+  crop_type: "serial_crop"
+});
+assert.equal(isolatedHyphenPrintRun.normalized_fields.serial_number, "09/50");
+assert.equal(isolatedHyphenPrintRun.normalized_fields.print_run_denominator, "50");
+
 const patch = ocrResultToEvidencePatch(ocrResult, {
   imageId: "front",
   cropId: "crop-serial"

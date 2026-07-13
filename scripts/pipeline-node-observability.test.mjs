@@ -103,6 +103,56 @@ assert.equal(healthyLedger.nodes.find((node) => node.node_id === "catalog_stage_
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "vector_stage_capacity")?.status, "SKIPPED");
 assert.equal(JSON.stringify(healthyLedger).includes("sk-secret-value"), false);
 
+const droppedAtomicGradeLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, card_grade: "10" },
+    resolved_fields: { ...fields, card_grade: "10", grade_type: "CARD_ONLY" },
+    rendered_fields: { fields },
+    final_title: "2024 Topps Chrome Test Player Autograph"
+  },
+  payload: {
+    asset_id: "asset-observability-grade-drop",
+    images: [{}, {}],
+    preingestion_evidence_patches: [
+      { field: "grade_company", value: "PSA" },
+      { field: "card_grade", value: "10" }
+    ]
+  }
+});
+assert.equal(droppedAtomicGradeLedger.field_flow.grade_atomic.resolved.card_grade, true);
+assert.equal(droppedAtomicGradeLedger.field_flow.grade_atomic.resolved.grade_company, false);
+assert.equal(
+  droppedAtomicGradeLedger.reconciliation.anomalies.some((item) => item.check_id === "resolved_grade_score_has_company"),
+  true
+);
+assert.equal(
+  droppedAtomicGradeLedger.reconciliation.anomalies.some((item) => item.check_id === "direct_grade_company_reaches_resolution"),
+  true
+);
+
+const completeAtomicGradeLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, grade_company: "PSA", card_grade: "10" },
+    resolved_fields: { ...fields, grade_company: "PSA", card_grade: "10", grade_type: "CARD_ONLY" },
+    rendered_fields: { fields: { ...fields, grade_company: "PSA", card_grade: "10" } },
+    final_title: "2024 Topps Chrome Test Player Autograph PSA 10"
+  },
+  payload: {
+    asset_id: "asset-observability-grade-complete",
+    images: [{}, {}],
+    preingestion_evidence_patches: [
+      { field: "grade_company", value: "PSA" },
+      { field: "card_grade", value: "10" }
+    ]
+  }
+});
+assert.equal(
+  completeAtomicGradeLedger.reconciliation.anomalies.some((item) => item.check_id.startsWith("direct_grade") || item.check_id === "resolved_grade_is_rendered"),
+  false
+);
+
 const stageCapacityLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

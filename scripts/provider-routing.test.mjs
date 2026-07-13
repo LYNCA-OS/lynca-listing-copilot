@@ -294,6 +294,10 @@ const deferredVector = __listingCopilotTitleTestHooks.deferredRetrievalCandidate
   providerOptions: { enable_vector_retrieval: true, vector_retrieval_mode: "assist" }
 });
 assert.equal(deferredVector.worker.stage_capacity.slot, 3, "a retrieval deadline must not erase completed vector capacity facts");
+assert.equal(deferredVector.packet.vector_retrieval.status, "DEFERRED_SHADOW");
+assert.equal(deferredVector.packet.vector_retrieval.status_code, "RETRIEVAL_DEFERRED_OFF_CRITICAL_PATH");
+assert.equal(deferredVector.packet.vector_retrieval.unavailable.length, 0, "deadline deferral is not a provider outage");
+assert.equal(deferredVector.packet.vector_retrieval.deferred[0].reason, "post_observation_retrieval_deadline");
 
 const reboundVector = __listingCopilotTitleTestHooks.rebindVectorCandidateContextToFields({
   retrieval: {

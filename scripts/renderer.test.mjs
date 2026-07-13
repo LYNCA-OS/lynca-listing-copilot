@@ -1119,6 +1119,23 @@ assert.equal(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title, "20
 assert.equal(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title.length, 80);
 assert.doesNotMatch(bowmanOwnedByToppsWithoutBrandStillOutputsAsBowman.final_title, /Topps Bowman/);
 
+const productLikeManufacturerDoesNotDuplicateProductHierarchy = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Bowman Chrome",
+    brand: "Topps",
+    product: "Bowman Chrome",
+    set: "2024 Bowman Chrome",
+    players: ["Yoshinobu Yamamoto"],
+    card_name: "Rookie Auto Gold Refractor",
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  }
+});
+assert.match(productLikeManufacturerDoesNotDuplicateProductHierarchy.final_title, /^2024 Bowman Chrome Yoshinobu Yamamoto/);
+assert.doesNotMatch(productLikeManufacturerDoesNotDuplicateProductHierarchy.final_title, /Bowman Chrome Topps Bowman Chrome/);
+
 const smartComposedCardVariantFinish = renderListingPresentation({
   resolved: {
     year: "2024",

@@ -313,6 +313,81 @@ assert.equal(hardEvidenceDocument.evidence.print_run_number.value, "09/50");
 assert.equal(hardEvidenceDocument.evidence.card_grade.value, "9.5");
 assert.equal(hardEvidenceDocument.evidence.auto_grade.value, "10");
 
+const atomicGradeDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+  preingestion_evidence_patches: [
+    {
+      field: "grade_company",
+      value: "PSA",
+      raw_text: "PSA 98151458",
+      source_type: "SLAB_LABEL",
+      source_image_id: "slab",
+      confidence: 0.97
+    },
+    {
+      field: "card_grade",
+      value: "10",
+      raw_text: "GEM MT 10",
+      source_type: "SLAB_LABEL",
+      source_image_id: "slab",
+      confidence: 0.96
+    }
+  ]
+});
+assert.equal(atomicGradeDocument.evidence.grade_company.value, "PSA");
+assert.equal(atomicGradeDocument.evidence.card_grade.value, "10");
+assert.equal(atomicGradeDocument.evidence.grade_type.value, "CARD_ONLY");
+assert.equal(atomicGradeDocument.resolved.grade_company, "PSA");
+assert.equal(atomicGradeDocument.resolved.card_grade, "10");
+
+const beckettAtomicGradeDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+  preingestion_evidence_patches: [{
+    field: "grade_company",
+    value: "BECKETT",
+    raw_text: "BECKETT 9.5 AUTOGRAPH 9",
+    source_type: "SLAB_LABEL",
+    source_image_id: "slab",
+    confidence: 0.95
+  }]
+});
+assert.equal(beckettAtomicGradeDocument.evidence.grade_company.value, "BGS");
+
+const falseSeasonPrintRunDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+  preingestion_evidence_patches: [
+    {
+      field: "print_run_denominator",
+      value: "23",
+      raw_text: "2022-23 NBA SEASON",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.94,
+      provenance: { source_region: "full_image_serial_scan" }
+    },
+    {
+      field: "serial_number",
+      value: "#/19",
+      raw_text: "2018-19 PANINI NO. 19",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.93,
+      provenance: { source_region: "full_image_serial_scan" }
+    }
+  ]
+});
+assert.equal(falseSeasonPrintRunDocument, null, "season years and card numbers must not become numerical rarity");
+
+const directDenominatorDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+  preingestion_evidence_patches: [{
+    field: "print_run_denominator",
+    value: "5",
+    raw_text: "2023 PRIZM STEPHEN CURRY 2/5",
+    source_type: "OCR",
+    source_image_id: "front",
+    confidence: 0.96
+  }]
+});
+assert.equal(directDenominatorDocument.evidence.print_run_number.value, "#/5");
+assert.equal(directDenominatorDocument.evidence.print_run_denominator.value, "5");
+
 const lineConfidenceDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
   preingestion_evidence_patches: [
     {
