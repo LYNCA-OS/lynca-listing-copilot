@@ -71,10 +71,15 @@ function transportSummary(report = {}, rows = []) {
     : []).flatMap((example) => Array.isArray(example.anomalies) ? example.anomalies : []);
   const errorAnomalies = observedAnomalies.filter((anomaly) => anomaly?.severity === "ERROR");
   const unclassifiedErrorCount = Math.max(0, Number(nodeObservability.error_count || 0) - errorAnomalies.length);
+  const runWallMs = finiteNumber(report.summary?.run_wall_ms);
   return {
     attempted_count: rows.length,
     completed_count: rows.filter((row) => row.ok === true && row.l2_ready === true).length,
     technical_failure_count: rows.filter((row) => row.ok !== true || row.l2_ready !== true).length,
+    run_wall_ms: runWallMs,
+    completed_cards_per_minute: runWallMs && runWallMs > 0
+      ? (rows.filter((row) => row.ok === true && row.l2_ready === true).length * 60_000) / runWallMs
+      : null,
     writer_ready_p50_ms: percentile(rows.map((row) => row.time_to_writer_ready_ms), 0.5),
     writer_ready_p95_ms: percentile(rows.map((row) => row.time_to_writer_ready_ms), 0.95),
     scheduler_queue_wait_p50_ms: percentile(rows.map((row) => row.scheduler_queue_wait_ms), 0.5),
@@ -185,6 +190,7 @@ export function compareProviderTransportReports(baseline = {}, compact = {}) {
       writer_ready_p95_fraction: deltaPercent(baselineSummary.writer_ready_p95_ms, compactSummary.writer_ready_p95_ms),
       scheduler_queue_wait_p50_fraction: deltaPercent(baselineSummary.scheduler_queue_wait_p50_ms, compactSummary.scheduler_queue_wait_p50_ms),
       scheduler_queue_wait_p95_fraction: deltaPercent(baselineSummary.scheduler_queue_wait_p95_ms, compactSummary.scheduler_queue_wait_p95_ms),
+      completed_cards_per_minute_fraction: deltaPercent(baselineSummary.completed_cards_per_minute, compactSummary.completed_cards_per_minute),
       provider_latency_p50_fraction: deltaPercent(baselineSummary.provider_latency_p50_ms, compactSummary.provider_latency_p50_ms),
       provider_latency_p95_fraction: deltaPercent(baselineSummary.provider_latency_p95_ms, compactSummary.provider_latency_p95_ms),
       input_tokens_fraction: deltaPercent(baselineSummary.input_tokens_total, compactSummary.input_tokens_total),
