@@ -58,6 +58,7 @@ class RecognitionWorkerTests(unittest.TestCase):
 
         for dependency in ("torch==", "transformers==", "safetensors=="):
             self.assertNotIn(dependency, ocr_requirements)
+        self.assertIn("setuptools==", ocr_requirements)
         self.assertIn("transformers==", vector_requirements)
 
     def test_config_bounds_large_images_and_pins_embedding_revision(self):

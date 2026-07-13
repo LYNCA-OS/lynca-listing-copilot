@@ -6,6 +6,7 @@ opencv-python-headless==4.10.0.84
 Pillow==11.1.0
 pytest==8.3.4
 certifi==2025.1.31
+setuptools==83.0.0
 # Keep visual-embedding dependencies in requirements-vector.txt. The OCR
 # service runs on a separate Cloud Run pool and must not ship CUDA/Torch.
 paddlepaddle==3.0.0
