@@ -12,6 +12,7 @@ import {
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 import { applyPreIngestionEvidencePatchesToPayload } from "../lib/listing/pipeline/preingestion-evidence.mjs";
+import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
 const env = {
@@ -350,6 +351,91 @@ const beckettAtomicGradeDocument = __listingCopilotTitleTestHooks.preingestionEv
   }]
 });
 assert.equal(beckettAtomicGradeDocument.evidence.grade_company.value, "BGS");
+
+const noisyBgsPayload = {
+  maxTitleLength: 80,
+  preingestion_evidence_patches: [
+    {
+      field: "grade_company",
+      value: "BECKETT",
+      raw_text: "BECKETT 9.5 AUTOGRAPH 9 CERT 0011371970",
+      text_candidates: [
+        { value: "BECKETT", confidence: 0.97 },
+        { value: "9.5", confidence: 0.96 },
+        { value: "AUTOGRAPH 9", confidence: 0.94 },
+        { value: "0011371970", confidence: 0.93 }
+      ],
+      source_type: "OCR",
+      source_image_id: "slab",
+      crop_id: "grade-label",
+      confidence: 0.95,
+      provenance: { crop_type: "grade_label_crop", job_key: "ocr:ocr-crop-v6:grade-label" }
+    },
+    {
+      field: "card_grade",
+      value: "9.5",
+      raw_text: "BECKETT 9.5 AUTOGRAPH 9 CERT 0011371970",
+      text_candidates: [
+        { value: "BECKETT", confidence: 0.97 },
+        { value: "9.5", confidence: 0.96 },
+        { value: "AUTOGRAPH 9", confidence: 0.94 },
+        { value: "0011371970", confidence: 0.93 }
+      ],
+      source_type: "OCR",
+      source_image_id: "slab",
+      crop_id: "grade-label",
+      confidence: 0.95,
+      provenance: { crop_type: "grade_label_crop", job_key: "ocr:ocr-crop-v6:grade-label" }
+    }
+  ]
+};
+const noisyBgsDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload(noisyBgsPayload);
+assert.deepEqual(noisyBgsDocument.evidence.grade_company.candidates.map((candidate) => candidate.value), ["BGS"]);
+assert.deepEqual(noisyBgsDocument.evidence.card_grade.candidates.map((candidate) => candidate.value), ["9.5"]);
+assert.equal(noisyBgsDocument.evidence.grade_company.sources[0].source_type, "SLAB_LABEL");
+assert.equal(noisyBgsDocument.evidence.card_grade.sources[0].source_type, "SLAB_LABEL");
+
+const directEvidence = (value) => ({
+  value,
+  normalized_value: value,
+  status: "CONFIRMED",
+  confidence: 0.96,
+  candidates: [{
+    value,
+    confidence: 0.96,
+    sources: [{ source_type: "CARD_FRONT", observed_text: Array.isArray(value) ? value.join(" / ") : String(value) }]
+  }],
+  sources: [{ source_type: "CARD_FRONT", observed_text: Array.isArray(value) ? value.join(" / ") : String(value) }],
+  conflicts: []
+});
+const noisyBgsMerged = __listingCopilotTitleTestHooks.withRecognitionEvidence({
+  provider: "openai_legacy",
+  confidence: "HIGH",
+  resolved: {
+    year: "2018-19",
+    product: "Panini Encased",
+    players: ["Jaren Jackson Jr."],
+    card_name: "Rookie Patch Auto",
+    serial_number: "20/99",
+    card_grade: "9.5"
+  },
+  evidence: {
+    year: directEvidence("2018-19"),
+    product: directEvidence("Panini Encased"),
+    players: directEvidence(["Jaren Jackson Jr."]),
+    card_name: directEvidence("Rookie Patch Auto"),
+    serial_number: directEvidence("20/99"),
+    card_grade: directEvidence("9.5")
+  },
+  unresolved: []
+}, null, noisyBgsPayload);
+const noisyBgsResolved = applyIdentityResolutionGate(noisyBgsMerged, {
+  maxLength: 80,
+  providerId: "openai_legacy"
+});
+assert.equal(noisyBgsResolved.resolved.grade_company, "BGS");
+assert.equal(noisyBgsResolved.resolved.card_grade, "9.5");
+assert.match(noisyBgsResolved.final_title, /BGS 9\.5/);
 
 const falseSeasonPrintRunDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
   preingestion_evidence_patches: [
