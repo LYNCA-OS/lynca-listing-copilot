@@ -240,6 +240,48 @@ const conflictSuppressedFields = buildV4ResolvedFields({
 assert.equal(conflictSuppressedFields.year, null, "a conflicted year must remain internal evidence, never a rendered fact");
 assert.equal(conflictSuppressedFields.product, "Leaf Optichrome");
 
+const resolvedConflictRetainsCanonicalValue = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    print_run_number: "03/10",
+    print_run_numerator: "03",
+    print_run_denominator: "10"
+  },
+  conflict_map: [{
+    field: "serial_number",
+    severity: "HIGH",
+    resolved: true,
+    resolved_value: "03/10"
+  }]
+});
+assert.equal(resolvedConflictRetainsCanonicalValue.year, "2025");
+assert.equal(
+  resolvedConflictRetainsCanonicalValue.print_run_number,
+  "03/10",
+  "an OCR-resolved conflict must keep the current-image value at the V4 boundary"
+);
+
+const reviewStateDoesNotEraseDraftValue = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2026",
+    product: "Bowman Chrome",
+    players: ["Test Player"]
+  },
+  field_states: [{ field_name: "year", display_status: "CONFLICT" }]
+});
+assert.equal(
+  reviewStateDoesNotEraseDraftValue.year,
+  "2026",
+  "writer-review metadata must not silently delete an otherwise resolved draft value"
+);
+const reviewStateRemainsVisible = buildV4FieldStates({
+  resolved_fields: reviewStateDoesNotEraseDraftValue,
+  field_states: [{ field_name: "year", display_status: "CONFLICT" }]
+});
+assert.equal(reviewStateRemainsVisible.year.display_status, "CONFLICT");
+
 const uncertainObservationStates = buildV4FieldStates({
   resolved: {
     players: ["Cristiano Ronaldo"],
@@ -455,6 +497,42 @@ const l2CustomRetrievalBudget = providerOptionsForV4BackgroundL2({
 });
 assert.equal(l2CustomRetrievalBudget.post_observation_catalog_vector_hedge_ms, 400);
 assert.equal(l2CustomRetrievalBudget.post_observation_retrieval_critical_path_budget_ms, 800);
+
+const resolvedOcrOverridePresentation = adaptV2ResultToV4({
+  sessionId: "v4sess-resolved-ocr-override",
+  result: {
+    confidence: "HIGH",
+    final_title: "2025 Topps Chrome Test Player #/10 Auto",
+    resolved_fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      auto: true,
+      print_run_number: "03/10",
+      print_run_numerator: "03",
+      print_run_denominator: "10",
+      serial_number: "03/10"
+    },
+    serial_numerator_verified: true,
+    preingestion_serial_verification: {
+      verified: true,
+      value: "03/10"
+    },
+    conflict_map: [{
+      field: "serial_number",
+      conflict_type: "OCR_CURRENT_IMAGE_OVERRIDE",
+      severity: "HIGH",
+      resolved: true,
+      resolved_value: "03/10"
+    }],
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.match(resolvedOcrOverridePresentation.final_title, /03\/10/);
+assert.equal(resolvedOcrOverridePresentation.resolved_fields.print_run_number, "03/10");
 
 const v2Result = {
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",

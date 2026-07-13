@@ -44,6 +44,7 @@ import {
   normalizePositiveIntegerOrNull,
   postObservationCatalogVectorHedgeMs,
   postObservationExactAnchorCatalogBudgetMs,
+  postObservationStructuredAnchorCatalogBudgetMs,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
   positiveIntegerFromEnv,
@@ -5274,10 +5275,23 @@ async function createOpenAiTitle(payload, selection, {
     const exactAnchorCatalogBudgetMs = providerRetrievalAnchors.has_printed_code
       ? postObservationExactAnchorCatalogBudgetMs(process.env, providerOptions)
       : 0;
-    const criticalPathBudgetMs = Math.max(baseCriticalPathBudgetMs, exactAnchorCatalogBudgetMs);
+    const hasStructuredIdentityAnchor = providerRetrievalAnchors.anchors.includes("subject")
+      && providerRetrievalAnchors.anchors.includes("product");
+    const structuredAnchorCatalogBudgetMs = hasStructuredIdentityAnchor
+      ? postObservationStructuredAnchorCatalogBudgetMs(process.env, providerOptions)
+      : 0;
+    const criticalPathBudgetMs = Math.max(
+      baseCriticalPathBudgetMs,
+      exactAnchorCatalogBudgetMs,
+      structuredAnchorCatalogBudgetMs
+    );
     if (exactAnchorCatalogBudgetMs > baseCriticalPathBudgetMs) {
       addTiming(timingContext, "post_observation_exact_anchor_budget_used_count", 1);
       addTiming(timingContext, "post_observation_exact_anchor_budget_ms", exactAnchorCatalogBudgetMs);
+    }
+    if (structuredAnchorCatalogBudgetMs > baseCriticalPathBudgetMs) {
+      addTiming(timingContext, "post_observation_structured_anchor_budget_used_count", 1);
+      addTiming(timingContext, "post_observation_structured_anchor_budget_ms", structuredAnchorCatalogBudgetMs);
     }
     const deadlineStartedAt = nowMs();
     const remainingDeadlineMs = () => Math.max(0, criticalPathBudgetMs - (nowMs() - deadlineStartedAt));

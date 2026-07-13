@@ -15,6 +15,7 @@ import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listi
 import {
   postObservationCatalogVectorHedgeMs,
   postObservationExactAnchorCatalogBudgetMs,
+  postObservationStructuredAnchorCatalogBudgetMs,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
   ultraFastImageDetail,
@@ -221,6 +222,10 @@ assert.equal(postObservationExactAnchorCatalogBudgetMs({}, {}), 1800);
 assert.equal(postObservationExactAnchorCatalogBudgetMs({}, { v4_ultra_fast_l2: true }), 1200);
 assert.equal(postObservationExactAnchorCatalogBudgetMs({}, { post_observation_exact_anchor_catalog_budget_ms: 20 }), 250);
 assert.equal(postObservationExactAnchorCatalogBudgetMs({}, { post_observation_exact_anchor_catalog_budget_ms: 9000 }), 5000);
+assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, {}), 1800);
+assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { v4_ultra_fast_l2: true }), 1200);
+assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { post_observation_structured_anchor_catalog_budget_ms: 20 }), 250);
+assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { post_observation_structured_anchor_catalog_budget_ms: 9000 }), 5000);
 assert.equal(ultraFastImageDetail({}), "auto");
 assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "low" }), "low");
 assert.equal(ultraFastImageDetail({ v4UltraFastImageDetail: "HIGH" }), "high");

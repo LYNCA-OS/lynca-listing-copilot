@@ -232,6 +232,7 @@ and delete the flag.
 | `POSTGRES_URL_NON_POOLING` | api/admin-apply-sem-definition-migration.js<br>api/admin-apply-v4-production-job-queue-migration.js<br>api/admin-apply-v4-writer-export-migration.js |
 | `POST_OBSERVATION_CATALOG_VECTOR_HEDGE_MS` | lib/listing/pipeline/provider-options.mjs |
 | `POST_OBSERVATION_EXACT_ANCHOR_CATALOG_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
+| `POST_OBSERVATION_STRUCTURED_ANCHOR_CATALOG_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
 | `POST_OBSERVATION_RETRIEVAL_CRITICAL_PATH_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
 | `PREINGESTION_OCR_CONCURRENCY` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `PREINGESTION_OCR_MAX_ATTEMPTS` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
