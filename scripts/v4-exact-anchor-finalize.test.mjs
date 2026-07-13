@@ -87,6 +87,21 @@ assert.equal(finalized.catalog_candidate_count, 1);
 assert.equal(finalized.trusted_candidate_count, 1);
 assert.equal(finalized.eligible_candidate_count, 1);
 
+let secretKeyAuthorization = "";
+const secretKeyFinalized = await maybeFinalizeL1FromExactAnchor({
+  scoutResult,
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SECRET_KEY: "test-secret-key"
+  },
+  fetchImpl: async (_url, options = {}) => {
+    secretKeyAuthorization = options.headers?.authorization || "";
+    return { ok: true, json: async () => [catalogRow()] };
+  }
+});
+assert.equal(secretKeyFinalized.finalized, true, "modern Supabase secret keys should support the exact-anchor path");
+assert.equal(secretKeyAuthorization, "Bearer test-secret-key");
+
 // Candidate/review-required rows can support shadow analysis but can never
 // finalize a writer-visible title.
 const untrusted = await maybeFinalizeL1FromExactAnchor({

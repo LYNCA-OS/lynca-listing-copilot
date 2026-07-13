@@ -1289,7 +1289,6 @@ export default async function handler(req, res) {
     }
 
     const probeStartedAt = Date.now();
-    const probeStartedAtIso = new Date().toISOString();
     preL2AnchorProbe = await probePreL2Anchors({
       payload,
       env: process.env,
@@ -1310,7 +1309,10 @@ export default async function handler(req, res) {
     l2Timing.pre_l2_anchor_trusted_candidate_count = preL2AnchorProbe?.metrics?.trusted_candidate_count ?? null;
     l2Timing.pre_l2_anchor_eligible_candidate_count = preL2AnchorProbe?.metrics?.eligible_candidate_count ?? null;
     if (preL2AnchorProbe?.finalized === true) {
-      startRecognitionClock("deterministic_anchor_finalize", probeStartedAtIso);
+      // The writer-visible timer for a no-GPT path starts only after the
+      // router has proved that OCR/catalog evidence is sufficient. Queueing,
+      // bundle loading and speculative lookup are reported separately.
+      startRecognitionClock("deterministic_anchor_finalize");
     }
     payload.v4_anchor_probe = {
       schema_version: preL2AnchorProbe?.schema_version || null,
@@ -1599,7 +1601,9 @@ export default async function handler(req, res) {
       l2Timing.exact_anchor_finalize_reason = finalize?.reason || null;
       l2Timing.exact_anchor_lookup_timing = finalize?.lookup_timing || null;
       if (finalize?.finalized === true) {
-        startRecognitionClock("deterministic_anchor_finalize", scoutStartedAtIso);
+        // A cache-only scout is still speculative until the unique catalog
+        // anchor is confirmed. Start the no-GPT clock at that decision point.
+        startRecognitionClock("deterministic_anchor_finalize");
         const finalizedResult = {
           ...scoutResult,
           title: finalize.title,

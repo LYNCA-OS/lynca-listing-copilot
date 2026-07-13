@@ -148,6 +148,7 @@ assert.match(api, /DEFERRED_AFTER_PROVIDER/, "late OCR should be observable inst
 assert.match(api, /post_observation_catalog_vector_overlap_ms/, "slow post-observation catalog and vector lookups should overlap instead of stacking their tail latency");
 assert.match(api, /const vectorContextWarmupPromise = deferVectorUntilProviderObservation/, "full vector retrieval should start while the provider is running");
 assert.match(api, /deferVectorUntilProviderObservation\s*&&\s*!lazyDecision\.skip/, "an early catalog lazy hit must not consume vector capacity");
+assert.match(apiWithOptions, /enable_catalog_assist:\s*false,[\s\S]*enable_hybrid_retrieval:\s*false/, "vector overlap warmup must not couple catalog or hybrid latency into vector readiness");
 assert.match(api, /rebindVectorCandidateContextToFields/, "completed vector retrieval should be rebound to provider observations before admission");
 assert.match(api, /deferredRetrievalCandidateContext\([\s\S]*worker:/, "a writer deadline must preserve completed vector worker and capacity diagnostics");
 assert.match(apiWithOptions, /Math\.max\(\s*20000,[\s\S]*VECTOR_QUERY_TIMEOUT_MS/, "vector warmup should get a longer overlapped window than the post-provider wait");

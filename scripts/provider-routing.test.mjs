@@ -17,13 +17,26 @@ import {
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
   ultraFastImageDetail,
-  ultraFastServiceTier
+  ultraFastServiceTier,
+  vectorEmbeddingWarmupOptions
 } from "../lib/listing/pipeline/provider-options.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
 const providerRegistrySource = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
 const providerContractSource = await readFile("lib/listing/providers/provider-contract.mjs", "utf8");
 const titleApiSource = await readFile("api/listing-copilot-title.js", "utf8");
+
+const vectorOnlyWarmup = vectorEmbeddingWarmupOptions({
+  enable_catalog_assist: true,
+  enable_vector_assist: true,
+  enable_hybrid_retrieval: true,
+  enable_advanced_retrieval: true
+}, { VECTOR_QUERY_TIMEOUT_MS: "20000" });
+assert.equal(vectorOnlyWarmup.enable_catalog_assist, false);
+assert.equal(vectorOnlyWarmup.enable_vector_assist, true);
+assert.equal(vectorOnlyWarmup.enable_vector_retrieval, true);
+assert.equal(vectorOnlyWarmup.enable_hybrid_retrieval, false);
+assert.equal(vectorOnlyWarmup.enable_advanced_retrieval, false);
 
 assert.doesNotMatch(providerRegistrySource, /cascade_fast|ENABLE_FAST_CASCADE_PROVIDER/i, "provider registry must not expose cascade providers");
 assert.doesNotMatch(providerContractSource, /cascade_fast/i, "provider contract must only keep active providers");
