@@ -272,6 +272,37 @@ assert.equal(catalogTraceNode.metrics.trace_observed, true);
 assert.equal(catalogTraceNode.metrics.timing_observed, false);
 assert.equal(catalogTraceWithoutTimingLedger.coverage.missing_required_node_ids.includes("catalog_retrieval"), false);
 
+const storedVectorFeatureLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    timing: {
+      stored_visual_feature_lookup_ms: 180,
+      vector_retrieval_ms: 420
+    },
+    visual_feature_summary: {
+      source: "supabase_stored_visual_embedding",
+      feature_count: 2
+    },
+    vector_activation_funnel: {
+      raw_candidate_count: 5,
+      approved_candidate_count: 5,
+      conflict_blocked_count: 5,
+      prompt_candidate_count: 0
+    },
+    vector_runtime_status: "COMPLETED"
+  },
+  payload: { asset_id: "asset-stored-vector-features", images: [{}, {}] }
+});
+const storedFeatureNode = storedVectorFeatureLedger.nodes.find((node) => node.node_id === "stored_visual_feature_lookup");
+const onlineEmbeddingNode = storedVectorFeatureLedger.nodes.find((node) => node.node_id === "vector_embedding");
+assert.equal(storedFeatureNode.status, "COMPLETED");
+assert.equal(storedFeatureNode.expected, true);
+assert.equal(storedFeatureNode.output_count, 2);
+assert.equal(onlineEmbeddingNode.status, "SKIPPED");
+assert.equal(onlineEmbeddingNode.expected, false);
+assert.equal(onlineEmbeddingNode.skip_reason, "precomputed_visual_features_reused");
+assert.equal(storedVectorFeatureLedger.coverage.missing_required_node_ids.includes("vector_embedding"), false);
+
 const trustBlockedCatalogLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

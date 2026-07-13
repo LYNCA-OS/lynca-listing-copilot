@@ -52,7 +52,7 @@ http://localhost:3000
 
 If no vision provider is configured and no default provider is forced, the app uses filename fallback so upload, pairing, and copy flows can still be tested locally.
 
-Provider routing is intentionally single-model by default. GPT-4.1 mini is the production vision provider, and the listing recognition path has no secondary vision provider. The browser renders only server-whitelisted provider buttons and sends explicit provider metadata with each request. There is no automatic mixed-model cascade in the production path. Model IDs are allowlisted server-side: the OpenAI path accepts `gpt-4.1-mini-2025-04-14`, `gpt-4.1-mini`, or `gpt-4.1`.
+Provider routing is intentionally single-model by default. GPT-5 mini is the production vision provider, and the listing recognition path has no secondary vision provider or automatic mixed-model cascade. The browser renders only server-whitelisted provider controls and sends explicit provider metadata with each request. Historical GPT-4.1 model IDs remain allowlisted only for controlled regression experiments; production uses `OPENAI_LISTING_MODEL=gpt-5-mini` and one active OpenAI key pool entry.
 
 When Supabase Storage is configured, the browser asks the server for signed upload URLs, sends MIME, byte size, dimensions, first-byte file signature metadata, and a client-side SHA-256 for validation, uploads original images to the private bucket, then asks the server to verify the stored object prefix before the object path is used in the title request. Successful verification returns a server-signed storage verification token scoped to that object path and metadata. The title API can create short-lived signed read URLs for provider calls, but it does not persist those signed URLs.
 
@@ -110,13 +110,13 @@ LISTING_IDENTITY_INFLIGHT_DEDUP_ENABLED=true
 LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED=true
 LISTING_PUBLISH_RATE_LIMIT=60
 DEFAULT_VISION_PROVIDER=openai_legacy
-ENABLE_GPT41_EMERGENCY_PROVIDER=true
+ENABLE_OPENAI_PROVIDER=true
 SMOKE_PROVIDER_REPORT_PATH=
 OPENAI_API_KEY=
-OPENAI_LISTING_MODEL=gpt-4.1-mini-2025-04-14
+OPENAI_LISTING_MODEL=gpt-5-mini
 OPENAI_LISTING_TIMEOUT_MS=75000
-OPENAI_LISTING_MAX_OUTPUT_TOKENS=4096000
-OPENAI_LISTING_TRUNCATION_RETRY_MAX_OUTPUT_TOKENS=8192000
+OPENAI_LISTING_MAX_OUTPUT_TOKENS=128000
+OPENAI_LISTING_TRUNCATION_RETRY_MAX_OUTPUT_TOKENS=128000
 OPENAI_SMOKE_IMAGE_URL=
 OPENAI_SMOKE_IMAGE_DATA_URL=
 OPENAI_LISTING_INPUT_TOKEN_COST_PER_1M=
@@ -299,7 +299,7 @@ Run the commercial readiness audit:
 npm run readiness:audit
 ```
 
-The default result is expected to exit non-zero until real commercial evidence exists. The audit reports `held_out_commercial_assets`, `commercial_acceptance_gate`, provider default policy, mock-only publishing status, and external retrieval live-smoke evidence. GPT-4.1 mini is the default and only automatic listing vision provider.
+The default result is expected to exit non-zero until real commercial evidence exists. The audit reports `held_out_commercial_assets`, `commercial_acceptance_gate`, provider default policy, mock-only publishing status, and external retrieval live-smoke evidence. GPT-5 mini is the default and only automatic listing vision provider.
 
 The commercial evaluator uses `lib/listing/evaluation/title-acceptance-policy.mjs` for `final_title_required_fields` and `final_title_unsubstantiated_fields`. This lets held-out commercial rows accept non-standard but factually correct titles while still failing wrong names, wrong color/parallel, missing serials, wrong grades, and conflicting critical fields.
 

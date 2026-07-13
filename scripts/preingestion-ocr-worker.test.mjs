@@ -396,6 +396,49 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(state.terminal, false);
 }
 
+// --- field-aware rendezvous stops when only the requested hard field settles ---
+{
+  let jobReads = 0;
+  const state = await waitForPreingestionOcrEvidence({
+    bundleId: "bundle-1",
+    timeoutMs: 1_000,
+    pollMs: 100,
+    targetFields: ["serial_number"],
+    triggerSweep: false,
+    env,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("preingestion_jobs")) {
+        jobReads += 1;
+        return jsonResponse([
+          {
+            job_id: "serial",
+            status: jobReads === 1 ? "running" : "succeeded",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+            payload: { crop: { role: "serial_crop" } }
+          },
+          {
+            job_id: "grade",
+            status: "running",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:grade`,
+            payload: { crop: { role: "grade_label_crop" } }
+          }
+        ]);
+      }
+      return jsonResponse([{
+        bundle_id: "bundle-1",
+        evidence_patches: jobReads > 1 ? [currentOcrPatch("serial_number", "2/4")] : []
+      }]);
+    }
+  });
+  assert.equal(state.status, "TARGET_FIELDS_SETTLED");
+  assert.equal(state.target_fields_settled, true);
+  assert.deepEqual(state.target_fields, ["serial_number"]);
+  assert.equal(state.grade_label_active_count, 1, "unrequested grade OCR may continue after serial is ready");
+}
+
 // --- stale OCR remains in the audit log but cannot satisfy current evidence readiness ---
 {
   const state = await readPreingestionOcrState({
@@ -797,12 +840,12 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.peak_local_active, 2);
   assert.equal(peakActiveOcr, 2);
   assert.equal(activeSlots.size, 0);
-  assert.equal(result.job_observability.filter((row) => row.stage_lane === "anchor").length, 3);
-  assert.equal(result.job_observability.filter((row) => row.stage_lane === "detail").length, 1);
+  assert.equal(result.job_observability.filter((row) => row.stage_lane === "anchor").length, 2);
+  assert.equal(result.job_observability.filter((row) => row.stage_lane === "detail").length, 2);
   assert.ok(result.job_observability.every((row) => row.stage_capacity_released === true));
   assert.equal(bundleQualitySummary.ocr_stage_execution.global_capacity, 2);
-  assert.equal(bundleQualitySummary.ocr_stage_execution.anchor_job_count, 3);
-  assert.equal(bundleQualitySummary.ocr_stage_execution.detail_job_count, 1);
+  assert.equal(bundleQualitySummary.ocr_stage_execution.anchor_job_count, 2);
+  assert.equal(bundleQualitySummary.ocr_stage_execution.detail_job_count, 2);
 }
 
 console.log("preingestion-ocr-worker.test.mjs OK");

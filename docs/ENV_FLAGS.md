@@ -238,6 +238,7 @@ and delete the flag.
 | `PREINGESTION_OCR_GLOBAL_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_ANCHOR_CONCURRENCY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_DETAIL_CONCURRENCY` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `PREINGESTION_OCR_CRITICAL_FIELD_WAIT_MS` | api/listing-copilot-title.js |
 | `PREINGESTION_OCR_POST_PROVIDER_WAIT_MS` | api/listing-copilot-title.js |
 | `PREWARM_CATALOG_RETRIEVAL` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_CATALOG_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |

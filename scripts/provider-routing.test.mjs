@@ -48,8 +48,8 @@ const storedImages = [{ objectPath: "listing-assets/2026-06-22/asset/front_origi
 
 const env = {
   DEFAULT_VISION_PROVIDER: "",
-  ENABLE_GPT41_EMERGENCY_PROVIDER: "true",
-  ALLOW_EXPLICIT_GPT41_RETRY: "true",
+  ENABLE_OPENAI_PROVIDER: "true",
+  ALLOW_EXPLICIT_OPENAI_RETRY: "true",
   OPENAI_API_KEY: "test-openai-key",
   OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
 };
@@ -120,12 +120,17 @@ assert.deepEqual(listAvailableVisionProviders({
 }).map((provider) => provider.id), ["openai_legacy"]);
 assert.deepEqual(listAvailableVisionProviders({
   ...env,
-  ENABLE_GPT41_EMERGENCY_PROVIDER: "false"
+  ENABLE_OPENAI_PROVIDER: "false"
 }).map((provider) => provider.id), []);
 assert.deepEqual(listAvailableVisionProviders({
   ...env,
-  ALLOW_EXPLICIT_GPT41_RETRY: "false"
+  ALLOW_EXPLICIT_OPENAI_RETRY: "false"
 }).map((provider) => provider.id), ["openai_legacy"]);
+assert.deepEqual(listAvailableVisionProviders({
+  ...env,
+  ENABLE_OPENAI_PROVIDER: "",
+  ENABLE_GPT41_EMERGENCY_PROVIDER: "false"
+}).map((provider) => provider.id), [], "legacy enable flag remains a compatibility fallback");
 
 const vectorDefaultEnv = {
   ...env,

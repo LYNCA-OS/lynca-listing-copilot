@@ -208,6 +208,17 @@ const invalidDecimalCodeState = buildV4FieldStates({
 });
 assert.equal(invalidDecimalCodeState.card_number.value, null);
 
+const conflictSuppressedFields = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2013",
+    product: "Leaf Optichrome",
+    players: ["Garrett Nussmeier"]
+  },
+  conflict_map: [{ field: "year", severity: "HIGH" }]
+});
+assert.equal(conflictSuppressedFields.year, null, "a conflicted year must remain internal evidence, never a rendered fact");
+assert.equal(conflictSuppressedFields.product, "Leaf Optichrome");
+
 const uncertainObservationStates = buildV4FieldStates({
   resolved: {
     players: ["Cristiano Ronaldo"],
@@ -652,6 +663,26 @@ assert.equal(deterministicCsmTitle.resolved_fields.surface_color, "Silver");
 assert.equal(deterministicCsmTitle.provider_result.title_reconciled_from_v4_field_graph, true);
 assert.equal(deterministicCsmTitle.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
 assert.match(deterministicCsmTitle.legacy_v2_result.model_title_suggestion, /1st Bowman/);
+
+const conflictedYearNeverRenders = adaptV2ResultToV4({
+  sessionId: "v4sess-conflicted-year",
+  result: {
+    confidence: "LOW",
+    final_title: "2013 Leaf Optichrome Garrett Nussmeier",
+    resolved_fields: {
+      year: "2013",
+      product: "Leaf Optichrome",
+      players: ["Garrett Nussmeier"]
+    },
+    conflict_map: [{ field: "year", severity: "HIGH" }],
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.equal(conflictedYearNeverRenders.resolved_fields.year, null);
+assert.doesNotMatch(conflictedYearNeverRenders.final_title, /\b2013\b/);
+assert.equal(conflictedYearNeverRenders.field_states.year.display_status, "CONFLICT");
 
 const deterministicTcgCardNameTitle = adaptV2ResultToV4({
   sessionId: "v4sess-deterministic-tcg-card-name",

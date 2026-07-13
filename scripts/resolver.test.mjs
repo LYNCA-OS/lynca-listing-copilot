@@ -7,6 +7,7 @@ import {
   gradeOcrRescueDecision,
   guardGradeFieldStates
 } from "../lib/listing/pipeline/grade-atomic-policy.mjs";
+import { criticalOcrRendezvousDecision } from "../lib/listing/pipeline/ocr-rendezvous-policy.mjs";
 import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { classifyNumberToken, resolveNumberFields, splitCardNumber } from "../lib/listing/resolver/number-resolver.mjs";
 import { resolveCardFields } from "../lib/listing/resolver/resolve-card.mjs";
@@ -101,6 +102,7 @@ assert.equal(incompleteGrade.resolved.grade_type, "UNKNOWN");
 assert.ok(incompleteGrade.notes.some((note) => note.action === "discard_incomplete_grade_without_company"));
 
 assert.equal(gradeAtomicCompleteness({ card_grade: "10" }).incomplete_score_without_company, true);
+assert.equal(gradeAtomicCompleteness({ grade_company: "PSA" }).incomplete_company_without_score, true);
 assert.deepEqual(
   enforceAtomicGradeFields({ grade: "10", card_grade: "10", grade_type: "CARD_ONLY" }),
   { grade: null, card_grade: null, grade_type: "UNKNOWN", auto_grade: null }
@@ -113,10 +115,17 @@ assert.deepEqual(gradeOcrRescueDecision({
 }), {
   needed: true,
   incomplete_grade: true,
+  incomplete_score_without_company: true,
+  incomplete_company_without_score: false,
   grade_jobs_active: true,
+  grade_company: null,
   card_grade: "10",
   auto_grade: null
 });
+assert.equal(gradeOcrRescueDecision({
+  currentFields: { grade_company: "PSA" },
+  latestOcrState: { grade_label_active_count: 2 }
+}).needed, true, "a visible slab company without its score should wait briefly for grade OCR");
 assert.equal(gradeOcrRescueDecision({
   currentFields: { grade_company: "PSA", card_grade: "10" },
   latestOcrState: { grade_label_active_count: 2 }
@@ -125,6 +134,38 @@ assert.equal(gradeOcrRescueDecision({
   currentFields: { card_grade: "10" },
   latestOcrState: { grade_label_active_count: 0 }
 }).needed, false);
+
+const targetedSerialAndGradeWait = criticalOcrRendezvousDecision({
+  currentFields: { print_run_number: "2/4", grade_company: "PSA" },
+  unresolved: ["card_grade"],
+  latestOcrState: { configured: true, serial_active_count: 2, grade_label_active_count: 1 },
+  configuredWaitMs: 0,
+  criticalWaitMs: 2500
+});
+assert.deepEqual(targetedSerialAndGradeWait.target_fields, ["serial_number", "grade"]);
+assert.equal(targetedSerialAndGradeWait.wait_budget_ms, 2500);
+assert.equal(targetedSerialAndGradeWait.should_wait, true);
+
+const entirelyMissingGradeWait = criticalOcrRendezvousDecision({
+  currentFields: { year: "2024", players: ["Tester"] },
+  unresolved: ["grade_company", "card_grade"],
+  latestOcrState: { configured: true, serial_active_count: 0, grade_label_active_count: 2 },
+  configuredWaitMs: 0,
+  criticalWaitMs: 2500
+});
+assert.deepEqual(entirelyMissingGradeWait.target_fields, ["grade"]);
+assert.deepEqual(entirelyMissingGradeWait.reasons, ["provider_left_grade_unresolved"]);
+assert.equal(entirelyMissingGradeWait.grade_unresolved, true);
+assert.equal(entirelyMissingGradeWait.wait_budget_ms, 2500);
+
+const noHardFieldWait = criticalOcrRendezvousDecision({
+  currentFields: { year: "2024", players: ["Tester"] },
+  unresolved: ["parallel_exact"],
+  latestOcrState: { configured: true, serial_active_count: 2, grade_label_active_count: 2 },
+  configuredWaitMs: 0
+});
+assert.deepEqual(noHardFieldWait.target_fields, []);
+assert.equal(noHardFieldWait.should_wait, false, "non-hard uncertainty must not add OCR latency to every card");
 
 const guardedGradeState = guardGradeFieldStates([{
   field_name: "grade",
@@ -136,6 +177,17 @@ const guardedGradeState = guardGradeFieldStates([{
 assert.equal(guardedGradeState.field_value, null);
 assert.equal(guardedGradeState.display_status, "REVIEW");
 assert.equal(guardedGradeState.provenance.atomic_grade_guard, "score_without_company");
+
+const guardedCompanyOnlyState = guardGradeFieldStates([{
+  field_name: "grade",
+  field_value: "PSA",
+  display_status: "NORMAL",
+  confidence: 0.8,
+  provenance: {}
+}], true, "company_without_score")[0];
+assert.equal(guardedCompanyOnlyState.field_value, null);
+assert.equal(guardedCompanyOnlyState.display_status, "REVIEW");
+assert.equal(guardedCompanyOnlyState.provenance.atomic_grade_guard, "company_without_score");
 
 const resolvedCard = resolveCardFields({
   resolved: {

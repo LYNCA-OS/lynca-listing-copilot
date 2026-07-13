@@ -17,6 +17,8 @@ const plan = listingStageCapacityPlan({
   VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED: "true"
 });
 assert.equal(plan.ocr.global_capacity, 8);
+assert.equal(plan.ocr.anchor_concurrency, 6);
+assert.equal(plan.ocr.detail_concurrency, 2);
 assert.equal(plan.catalog.stage_id, listingStageIds.CATALOG_RETRIEVAL);
 assert.equal(plan.catalog.global_capacity, 4);
 assert.equal(plan.catalog.query_concurrency, 4);

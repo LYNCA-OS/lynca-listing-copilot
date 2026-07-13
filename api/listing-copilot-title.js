@@ -127,6 +127,7 @@ import {
   gradeOcrRescueDecision,
   guardGradeFieldStates
 } from "../lib/listing/pipeline/grade-atomic-policy.mjs";
+import { criticalOcrRendezvousDecision } from "../lib/listing/pipeline/ocr-rendezvous-policy.mjs";
 import { extractDirectSlabLabelParallel } from "../lib/listing/preingestion/slab-label-evidence.mjs";
 import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
@@ -215,6 +216,7 @@ const defaultCatalogCacheMaxEntries = 500;
 const defaultCatalogFastLaneBudgetMs = 120;
 const defaultPreingestionOcrPostProviderWaitMs = 0;
 const defaultPreingestionOcrGradeRescueWaitMs = 2_000;
+const defaultPreingestionOcrCriticalFieldWaitMs = 2_500;
 const confirmedOcrSerialConfidence = 0.86;
 
 function configuredMaxPayloadImages(env = process.env) {
@@ -1002,7 +1004,12 @@ function finalResolvedFieldsForPresentation(result = {}, {
 }
 
 function applyGradeAtomicGuardToResult(result = {}, resolved = null, gradeAtomic = {}) {
-  if (gradeAtomic.incomplete_score_without_company !== true) return result;
+  const guardReason = gradeAtomic.incomplete_score_without_company
+    ? "score_without_company"
+    : gradeAtomic.incomplete_company_without_score
+      ? "company_without_score"
+      : null;
+  if (!guardReason) return result;
 
   const guardFields = (fields) => (
     fields && typeof fields === "object" && !Array.isArray(fields)
@@ -1026,14 +1033,19 @@ function applyGradeAtomicGuardToResult(result = {}, resolved = null, gradeAtomic
         fields: guardFields(renderedFields.fields)
       }
       : result.rendered_fields,
-    field_states: guardGradeFieldStates(result.field_states, true),
+    field_states: guardGradeFieldStates(result.field_states, true, guardReason),
     unresolved: uniqueValues([
       ...(Array.isArray(result.unresolved) ? result.unresolved : []),
-      "grade requires grading company from current-image direct evidence"
+      guardReason === "score_without_company"
+        ? "grade requires grading company from current-image direct evidence"
+        : "grade requires score from current-image slab-label evidence"
     ]),
     grade_atomic_guard: {
       applied: true,
-      reason: "score_without_company",
+      reason: guardReason,
+      discarded_grade_company: gradeAtomic.incomplete_company_without_score
+        ? gradeAtomic.grade_company || null
+        : null,
       discarded_card_grade: gradeAtomic.card_grade || null,
       discarded_auto_grade: gradeAtomic.auto_grade || null
     },
@@ -1044,7 +1056,9 @@ function applyGradeAtomicGuardToResult(result = {}, resolved = null, gradeAtomic
         {
           phase: "presentation",
           step: "enforce_atomic_grade",
-          decision: "discard_score_without_company",
+          decision: guardReason === "score_without_company"
+            ? "discard_score_without_company"
+            : "suppress_company_without_score",
           output: { grade_company: null, card_grade: null, auto_grade: null, grade_type: "UNKNOWN" }
         }
       ]
@@ -1057,7 +1071,8 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
 
   const unguardedResolved = finalResolvedFieldsForPresentation(result, { enforceAtomicGrade: false });
   const gradeAtomic = gradeAtomicCompleteness(unguardedResolved || {});
-  const gradeAtomicGuardApplied = gradeAtomic.incomplete_score_without_company;
+  const gradeAtomicGuardApplied = gradeAtomic.incomplete_score_without_company
+    || gradeAtomic.incomplete_company_without_score;
   const resolved = unguardedResolved ? enforceAtomicGradeFields(unguardedResolved) : null;
   const gradeGuardedResult = applyGradeAtomicGuardToResult(result, resolved, gradeAtomic);
   if (!resolved || typeof resolved !== "object" || Array.isArray(resolved) || !Object.keys(resolved).length) return gradeGuardedResult;
@@ -3176,6 +3191,15 @@ function preingestionOcrGradeRescueWaitMs(env = process.env, providerOptions = {
     ?? env.PREINGESTION_OCR_GRADE_RESCUE_WAIT_MS;
   const parsed = Number(configured);
   if (!Number.isFinite(parsed) || parsed < 0) return defaultPreingestionOcrGradeRescueWaitMs;
+  return Math.min(10_000, Math.trunc(parsed));
+}
+
+function preingestionOcrCriticalFieldWaitMs(env = process.env, providerOptions = {}) {
+  const configured = providerOptions.preingestion_ocr_critical_field_wait_ms
+    ?? providerOptions.preingestionOcrCriticalFieldWaitMs
+    ?? env.PREINGESTION_OCR_CRITICAL_FIELD_WAIT_MS;
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed) || parsed < 0) return defaultPreingestionOcrCriticalFieldWaitMs;
   return Math.min(10_000, Math.trunc(parsed));
 }
 
@@ -5399,35 +5423,70 @@ async function createOpenAiTitle(payload, selection, {
     });
   }
   const rendezvousWaitStartedAt = nowMs();
+  const currentProviderFields = mergeCurrentFieldsForTitleAssist(
+    providerResultWithEvidence.fields,
+    providerResultWithEvidence.raw_provider_fields,
+    providerResultWithEvidence.resolved,
+    providerResultWithEvidence.resolved_fields
+  );
   const gradeOcrRescue = gradeOcrRescueDecision({
-    currentFields: mergeCurrentFieldsForTitleAssist(
-      providerResultWithEvidence.fields,
-      providerResultWithEvidence.raw_provider_fields,
-      providerResultWithEvidence.resolved,
-      providerResultWithEvidence.resolved_fields
-    ),
+    currentFields: currentProviderFields,
     latestOcrState: latestPreingestionOcrState
   });
   const configuredOcrPostProviderWaitMs = preingestionOcrPostProviderWaitMs(process.env, providerOptions);
-  const ocrPostProviderWaitMs = gradeOcrRescue.needed
-    ? Math.max(
-      configuredOcrPostProviderWaitMs,
-      preingestionOcrGradeRescueWaitMs(process.env, providerOptions)
+  const criticalOcrWait = criticalOcrRendezvousDecision({
+    currentFields: currentProviderFields,
+    unresolved: providerResultWithEvidence.unresolved || providerResultWithEvidence.unresolved_fields || [],
+    latestOcrState: latestPreingestionOcrState,
+    configuredWaitMs: configuredOcrPostProviderWaitMs,
+    criticalWaitMs: Math.max(
+      preingestionOcrCriticalFieldWaitMs(process.env, providerOptions),
+      gradeOcrRescue.needed ? preingestionOcrGradeRescueWaitMs(process.env, providerOptions) : 0
     )
-    : configuredOcrPostProviderWaitMs;
+  });
+  const ocrPostProviderWaitMs = criticalOcrWait.wait_budget_ms;
   if (gradeOcrRescue.needed) {
     addTiming(timingContext, "preingestion_ocr_grade_rescue_count", 1);
   }
+  if (criticalOcrWait.target_fields.length) {
+    addTiming(timingContext, "preingestion_ocr_targeted_wait_count", 1);
+    for (const field of criticalOcrWait.target_fields) {
+      addTiming(timingContext, `preingestion_ocr_targeted_${field}_wait_count`, 1);
+    }
+  }
+  const targetedOcrRendezvousPromise = criticalOcrWait.target_fields.length && preingestionBundleId
+    ? waitForPreingestionOcrEvidence({
+      assetId: payload.asset_id || payload.assetId || "",
+      bundleId: preingestionBundleId,
+      timeoutMs: Math.max(500, ocrPostProviderWaitMs),
+      pollMs: positiveIntegerFromEnv(process.env, "PREINGESTION_OCR_RENDEZVOUS_POLL_MS", 400),
+      targetFields: criticalOcrWait.target_fields,
+      env: process.env,
+      fetchImpl: globalThis.fetch,
+      triggerSweep: false,
+      onState: (state) => {
+        latestPreingestionOcrState = state;
+      }
+    }).catch((error) => ({
+      status: "ERROR",
+      terminal: false,
+      target_fields: criticalOcrWait.target_fields,
+      reason: String(error?.message || "targeted_preingestion_ocr_rendezvous_failed").slice(0, 180)
+    }))
+    : preingestionOcrRendezvousPromise;
   const boundedOcrRendezvous = await waitForPromiseWithin(
-    preingestionOcrRendezvousPromise,
-    ocrPostProviderWaitMs
+    targetedOcrRendezvousPromise,
+    ocrPostProviderWaitMs > 0 ? ocrPostProviderWaitMs + 250 : 0
   );
   const preingestionOcrRendezvous = boundedOcrRendezvous.settled
     ? boundedOcrRendezvous.value
     : deferredPreingestionOcrSnapshot(initialPayload, latestPreingestionOcrState);
+  if (targetedOcrRendezvousPromise !== preingestionOcrRendezvousPromise) {
+    scheduleBackgroundCompletion(preingestionOcrRendezvousPromise);
+  }
   if (!boundedOcrRendezvous.settled) {
     addTiming(timingContext, "preingestion_ocr_deferred_after_provider_count", 1);
-    scheduleBackgroundCompletion(preingestionOcrRendezvousPromise);
+    scheduleBackgroundCompletion(targetedOcrRendezvousPromise);
   }
   const rendezvousWaitMs = nowMs() - rendezvousWaitStartedAt;
   if (preingestionOcrRendezvous && typeof preingestionOcrRendezvous === "object") {
@@ -5436,6 +5495,7 @@ async function createOpenAiTitle(payload, selection, {
       ...gradeOcrRescue,
       wait_budget_ms: ocrPostProviderWaitMs
     };
+    preingestionOcrRendezvous.critical_field_wait = criticalOcrWait;
   }
   if (preingestionOcrRendezvous?.status === "DEFERRED_AFTER_PROVIDER") {
     preingestionOcrRendezvous.waited_ms = rendezvousWaitMs;
@@ -5453,7 +5513,10 @@ async function createOpenAiTitle(payload, selection, {
     outputCount: preingestionOcrRendezvous?.patch_count ?? null,
     metrics: {
       state_reads: preingestionOcrRendezvous?.state_reads ?? null,
-      critical_fields_settled: preingestionOcrRendezvous?.critical_fields_settled === true
+      critical_fields_settled: preingestionOcrRendezvous?.critical_fields_settled === true,
+      target_fields: criticalOcrWait.target_fields,
+      target_fields_settled: preingestionOcrRendezvous?.target_fields_settled === true,
+      wait_reasons: criticalOcrWait.reasons
     }
   });
   const rendezvousEvidencePatches = Array.isArray(preingestionOcrRendezvous?.evidence_patches)

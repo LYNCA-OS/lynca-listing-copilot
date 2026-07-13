@@ -199,7 +199,10 @@ assert.equal(
   "overlapping collector/checklist crops must collapse to one card-code OCR request per image"
 );
 assert.ok(jobs.filter((job) => job.payload.crop.role === "card_code_crop").every((job) => job.priority === 10));
-assert.ok(jobs.filter((job) => job.payload.crop.role === "serial_crop").every((job) => job.priority === 25));
+assert.ok(jobs.filter((job) => job.payload.crop.role === "serial_crop").every((job) => job.priority === 12));
+assert.ok(jobs.filter((job) => job.payload.crop.role === "grade_label_crop").every((job) => job.priority === 14));
+assert.ok(jobs.filter((job) => job.payload.crop.role === "year_product_crop").every((job) => job.priority === 30));
+assert.ok(jobs.filter((job) => job.payload.crop.role === "subject_crop").every((job) => job.priority === 35));
 const optInJobs = buildPreingestionWorkerJobs({ bundle, enableEmbeddings: true, enableQuality: true });
 assert.ok(optInJobs.some((job) => job.job_type === "visual_embedding"));
 assert.ok(optInJobs.some((job) => job.job_type === "image_quality_deep_analysis"));

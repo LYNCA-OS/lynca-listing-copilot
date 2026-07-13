@@ -278,7 +278,9 @@ const unsupportedCodeReview = validateProviderEvidencePayload("openai_legacy", {
   field_evidence: [],
   unresolved: []
 });
-assert.deepEqual(unsupportedCodeReview.unresolved, ["collector_number"], "a provider code without direct current-image evidence must be reviewable, never silently dropped");
+assert.deepEqual(unsupportedCodeReview.unresolved, ["collector_number"], "a provider code without direct current-image evidence must be reviewable");
+assert.equal(unsupportedCodeReview.fields.collector_number, null, "an unsupported printed code must not survive into title fields");
+assert.equal(unsupportedCodeReview.provider_field_rejections[0].reason, "printed_code_not_literally_supported_by_visible_text");
 
 const directlySupportedCode = validateProviderEvidencePayload("openai_legacy", {
   fields: { collector_number: "RS-TYG" },
@@ -299,6 +301,60 @@ const directlySupportedCode = validateProviderEvidencePayload("openai_legacy", {
   unresolved: []
 });
 assert.deepEqual(directlySupportedCode.unresolved, [], "directly visible printed codes must remain eligible for resolution");
+
+const prefixOnlyCodeIsRejected = validateProviderEvidencePayload("openai_legacy", {
+  fields: { collector_number: "CMP124" },
+  field_evidence: [{
+    field: "collector_number",
+    value: "CMP124",
+    source_type: "CARD_BACK_PRINTED_TEXT",
+    source_image_id: "image-2",
+    source_region: "collector_number",
+    raw_text: "CODE#CMP124820",
+    visible_text: "CODE#CMP124820",
+    evidence_kind: "PRINTED_CARD_CODE",
+    review_required: false,
+    directly_observed: true,
+    direct_observation: true
+  }],
+  unresolved: []
+});
+assert.equal(prefixOnlyCodeIsRejected.fields.collector_number, null, "a product-code prefix is not the printed collector number");
+assert.ok(prefixOnlyCodeIsRejected.unresolved.includes("collector_number"));
+
+const unsupportedSubjectCountLot = validateProviderEvidencePayload("openai_legacy", {
+  fields: {
+    players: ["Garrett Nussmeier", "Anderson", "Aaron Anderson"],
+    multi_card: true,
+    card_count: 3,
+    lot_type: "multi_card_lot"
+  },
+  field_evidence: [],
+  unresolved: []
+});
+assert.equal(unsupportedSubjectCountLot.fields.multi_card, false);
+assert.equal(unsupportedSubjectCountLot.fields.card_count, null);
+assert.equal(unsupportedSubjectCountLot.fields.lot_type, null);
+assert.ok(unsupportedSubjectCountLot.unresolved.includes("multi_card"));
+
+const directlyObservedLot = validateProviderEvidencePayload("openai_legacy", {
+  fields: { multi_card: true, card_count: 3, lot_type: "multi_card_lot" },
+  field_evidence: [{
+    field: "multi_card",
+    value: true,
+    source_type: "VISION_ONLY",
+    source_image_id: "image-1",
+    source_region: "multi_card_layout",
+    evidence_kind: "PHYSICAL_CARD_COUNT",
+    visible_text: "3 separate cards",
+    review_required: true,
+    directly_observed: true,
+    direct_observation: true
+  }],
+  unresolved: []
+});
+assert.equal(directlyObservedLot.fields.multi_card, true);
+assert.equal(directlyObservedLot.fields.card_count, 3);
 
 const parsedTool = parseProviderMessagePayload({
   tool_calls: [

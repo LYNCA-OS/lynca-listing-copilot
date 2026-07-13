@@ -6,8 +6,8 @@ import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
-process.env.ENABLE_GPT41_EMERGENCY_PROVIDER = "true";
-process.env.ALLOW_EXPLICIT_GPT41_RETRY = "true";
+process.env.ENABLE_OPENAI_PROVIDER = "true";
+process.env.ALLOW_EXPLICIT_OPENAI_RETRY = "true";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.ENABLE_OPENAI_WEB_SEARCH_FALLBACK = "false";
@@ -28,6 +28,17 @@ function sign(value) {
 function sessionCookie() {
   const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
   return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+}
+
+function directPrintedCodeEvidence(value, sourceType = "CARD_BACK_PRINTED_TEXT") {
+  return {
+    value,
+    source_type: sourceType,
+    visible_text: value,
+    directly_observed: true,
+    confidence: 0.96,
+    review_required: false
+  };
 }
 
 async function callApi(providerResult, options = {}) {
@@ -392,6 +403,16 @@ const localizedTrainerIllustrator = await callApi({
     card_number: "257/208",
     artist: "En Morikura"
   },
+  field_evidence: {
+    card_number: {
+      value: "257/208",
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      visible_text: "257/208",
+      directly_observed: true,
+      confidence: 0.96,
+      review_required: false
+    }
+  },
   unresolved: ["localized trainer identity requires operator review"]
 });
 
@@ -484,6 +505,9 @@ const ultravioletCodeResolved = await callApi({
     player: "Anthony Edwards",
     card_number: "UV-16"
   },
+  field_evidence: {
+    card_number: directPrintedCodeEvidence("UV-16")
+  },
   unresolved: []
 });
 
@@ -503,6 +527,9 @@ const imperialInkCodeResolved = await callApi({
     card_number: "IMP-OTI",
     auto: true
   },
+  field_evidence: {
+    card_number: directPrintedCodeEvidence("IMP-OTI")
+  },
   unresolved: []
 });
 
@@ -521,6 +548,9 @@ const rookieRefreshCodeResolved = await callApi({
     player: "Cooper Flagg",
     subset: "RC",
     card_number: "BRR-1"
+  },
+  field_evidence: {
+    card_number: directPrintedCodeEvidence("BRR-1")
   },
   unresolved: []
 });
@@ -783,6 +813,9 @@ const cooperFlaggChromeRookieAuto = await callApi({
     grade_company: "PSA",
     grade: "9",
     auto: true
+  },
+  field_evidence: {
+    card_number: directPrintedCodeEvidence("TCAR-CF", "SLAB_LABEL")
   },
   unresolved: []
 }, { maxTitleLength: 120 });
@@ -1409,7 +1442,7 @@ assert.doesNotMatch(duoLogomanAutographs.title, /\bOne\b/i);
 const durantStarSwatch = await callApi({
   title: "2015-16 Panini Flawless Kevin Durant Thunder Patch Auto 04/10",
   confidence: "HIGH",
-  reason: "Registry supports SR-KD as Star Swatch Signatures and checklist supports Platinum parallel.",
+  reason: "Card back visibly shows SR-KD; registry supports it as Star Swatch Signatures and checklist supports Platinum parallel.",
   fields: {
     year: "2015-16",
     brand: "Panini",
@@ -1421,6 +1454,9 @@ const durantStarSwatch = await callApi({
     numerical_rarity: "04/10",
     auto: true,
     patch: true
+  },
+  field_evidence: {
+    card_number: directPrintedCodeEvidence("SR-KD")
   },
   unresolved: []
 }, { maxTitleLength: 120 });
@@ -1482,7 +1518,20 @@ const gradeLikeChecklistNotPublished = await callApi({
     product: "Topps Chrome",
     player: "Test Player",
     checklist_code: "PSA-10",
-    grade_company: "PSA"
+    grade_company: "PSA",
+    grade: "PSA 10"
+  },
+  field_evidence: {
+    grade: {
+      value: "PSA 10",
+      grade_company: "PSA",
+      card_grade: "10",
+      source_type: "SLAB_LABEL",
+      visible_text: "PSA 10",
+      directly_observed: true,
+      confidence: 0.98,
+      review_required: false
+    }
   },
   unresolved: []
 }, { maxTitleLength: 120 });
