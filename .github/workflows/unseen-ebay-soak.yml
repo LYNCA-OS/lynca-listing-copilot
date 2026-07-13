@@ -51,8 +51,13 @@ jobs:
           const vector = components.get('vector_retrieval') || {};
           const vision = components.get('vision_provider') || {};
           const provider = (status.providers || []).find(x => x.selectable) || {};
+          const execution = status.execution_control || {};
+          const stageCapacity = execution.stage_capacity || {};
+          const expectedSha = process.env.GITHUB_SHA;
+          const deployedSha = String(health.deployment?.git_commit_sha || '');
           const checks = {
             v4_ready: health.ready === true,
+            deployed_revision_matches: Boolean(deployedSha) && deployedSha === expectedSha,
             queue_configured: health.production_queue?.configured === true,
             worker_secret_configured: health.production_queue?.worker_secret_configured === true,
             vector_index_ready: health.vector_index_ready === true && vector.details?.index_ready === true,
@@ -62,8 +67,11 @@ jobs:
             cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
             provider_selectable: provider.selectable === true,
             provider_model_matches: provider.model_id === process.env.EXPECTED_MODEL && vision.details?.model_id === process.env.EXPECTED_MODEL,
-            key_pool_ready: Number(status.execution_control?.provider_key_pool_size || 0) >= 1,
-            distributed_capacity_enabled: status.execution_control?.distributed_provider_capacity_enabled === true
+            key_pool_ready: Number(execution.provider_key_pool_size || 0) >= 1,
+            distributed_capacity_enabled: execution.distributed_provider_capacity_enabled === true,
+            ocr_stage_controlled: stageCapacity.paddle_ocr?.capacity_control_enabled === true,
+            catalog_stage_controlled: stageCapacity.catalog?.capacity_control_enabled === true,
+            vector_stage_controlled: stageCapacity.vector?.capacity_control_enabled === true
           };
           console.log(JSON.stringify({checks, model_id:provider.model_id, vector_status:vector.status, execution_control:status.execution_control}, null, 2));
           if (Object.values(checks).some(value => value !== true)) process.exit(1);
@@ -120,7 +128,8 @@ jobs:
             --dataset /tmp/unseen-dataset.json \
             --sealed-labels /tmp/unseen-sealed-labels.jsonl \
             --limit "$COUNT" \
-            --queue --speculative --use-preingestion --prewarm \
+            --queue --speculative --use-preingestion --prewarm --per-card-poll \
+            --disable-identity-cache \
             --concurrency 2 \
             --model "${{ inputs.model }}" \
             --think-ms "${{ inputs.think_ms }}" \
@@ -129,6 +138,9 @@ jobs:
             --out /tmp/unseen-soak-report.json
       - name: Enforce stability gate
         run: |
+          node scripts/assert-concurrency-sweep-level.mjs \
+            --report /tmp/unseen-soak-report.json \
+            --concurrency 2
           node - <<'NODE'
           const r = require('/tmp/unseen-soak-report.json');
           const s = r.summary;

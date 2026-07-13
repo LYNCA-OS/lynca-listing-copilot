@@ -1343,6 +1343,63 @@ assert.equal(worker.features[0].content_sha256, "a".repeat(64));
 assert.equal(workerCalls[0].body.images[0].role, "front_global");
 assert.doesNotMatch(JSON.stringify(worker), /token=secret|worker-token/);
 
+const vectorStageCalls = [];
+const coordinatedWorker = await embedImagesWithVectorWorker({
+  images: [{
+    image_id: "front",
+    role: "front_original",
+    signedUrl: "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret"
+  }],
+  requestId: "coordinated-vector-query",
+  env: {
+    ...baseVectorEnv,
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    VECTOR_WORKER_URL: "https://worker.test",
+    VECTOR_WORKER_TOKEN: "worker-token",
+    VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED: "true",
+    VECTOR_QUERY_GLOBAL_CAPACITY: "4"
+  },
+  fetchImpl: async (url, options = {}) => {
+    const target = new URL(String(url));
+    vectorStageCalls.push(target.pathname);
+    if (target.pathname.endsWith("/rpc/acquire_v4_stage_capacity")) {
+      const body = JSON.parse(options.body);
+      assert.equal(body.p_stage_id, "vector_embedding");
+      assert.equal(body.p_capacity, 4);
+      return new Response(JSON.stringify(1), { status: 200 });
+    }
+    if (target.pathname.endsWith("/rpc/release_v4_stage_capacity")) {
+      return new Response(JSON.stringify(1), { status: 200 });
+    }
+    if (target.pathname.endsWith("/v1/embed-images")) {
+      return new Response(JSON.stringify({
+        request_id: "coordinated-vector-query",
+        status: "completed",
+        model_id: "google/siglip2-base-patch16-384",
+        model_revision: defaultVisualEmbeddingModelRevision,
+        preprocessing_version: "card-rectification-v1",
+        latency_ms: 12,
+        embeddings: [{
+          image_id: "front",
+          role: "front_global",
+          embedding: [1, ...Array.from({ length: 767 }, () => 0)],
+          dimensions: 768
+        }]
+      }), { status: 200 });
+    }
+    throw new Error(`unexpected vector stage URL ${target}`);
+  }
+});
+assert.equal(coordinatedWorker.status, "OK");
+assert.equal(coordinatedWorker.stage_capacity.coordinated, true);
+assert.equal(coordinatedWorker.stage_capacity.released, true);
+assert.deepEqual(vectorStageCalls, [
+  "/rest/v1/rpc/acquire_v4_stage_capacity",
+  "/v1/embed-images",
+  "/rest/v1/rpc/release_v4_stage_capacity"
+]);
+
 let transientWorkerCalls = 0;
 const recoveredWorker = await embedImagesWithVectorWorker({
   images: [{

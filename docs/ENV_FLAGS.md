@@ -234,6 +234,10 @@ and delete the flag.
 | `POST_OBSERVATION_RETRIEVAL_CRITICAL_PATH_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
 | `PREINGESTION_OCR_CONCURRENCY` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `PREINGESTION_OCR_MAX_ATTEMPTS` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
+| `PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `PREINGESTION_OCR_GLOBAL_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `PREINGESTION_OCR_ANCHOR_CONCURRENCY` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `PREINGESTION_OCR_DETAIL_CONCURRENCY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_POST_PROVIDER_WAIT_MS` | api/listing-copilot-title.js |
 | `PREWARM_CATALOG_RETRIEVAL` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_CATALOG_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |
@@ -253,6 +257,11 @@ and delete the flag.
 | `RETRIEVAL_CACHE_TTL_MS` | lib/listing/retrieval/retrieval-cache.mjs |
 | `RETRIEVAL_GRADING_DOMAINS` | lib/listing/retrieval/source-policy.mjs |
 | `RETRIEVAL_INTERNAL_QUERY_CONCURRENCY` | lib/listing/retrieval/retrieval-engine.mjs |
+| `RETRIEVAL_CATALOG_STAGE_CAPACITY_CONTROL_ENABLED` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `RETRIEVAL_CATALOG_GLOBAL_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `RETRIEVAL_CATALOG_CAPACITY_WAIT_MS` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `RETRIEVAL_CATALOG_CAPACITY_POLL_MS` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `RETRIEVAL_CATALOG_CAPACITY_LEASE_SECONDS` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `RETRIEVAL_MARKETPLACE_DOMAINS` | lib/listing/retrieval/source-policy.mjs |
 | `RETRIEVAL_MODE` | api/listing-copilot-title.js<br>lib/listing/orchestration/identity-convergence-retriever.mjs |
 | `RETRIEVAL_OFFICIAL_DOMAINS` | lib/listing/retrieval/source-policy.mjs |
@@ -315,6 +324,11 @@ and delete the flag.
 | `VECTOR_INDEX_READY` | lib/listing/evaluation/blind-eval.mjs<br>lib/listing/readiness/workflow-readiness-audit.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/v4/prewarm.mjs<br>lib/listing/v4/route-planner/route-planner.mjs |
 | `VECTOR_PREPROCESSING_VERSION` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_QUERY_LOG_ENABLED` | lib/listing/retrieval/vector-telemetry.mjs |
+| `VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `VECTOR_QUERY_GLOBAL_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `VECTOR_QUERY_CAPACITY_WAIT_MS` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `VECTOR_QUERY_CAPACITY_POLL_MS` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `VECTOR_QUERY_CAPACITY_LEASE_SECONDS` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `VECTOR_QUERY_TIMEOUT_MS` | lib/listing/evaluation/blind-eval.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_REFERENCE_MIN_QUALITY_SCORE` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_REFERENCE_WRITE_ENABLED` | lib/listing/retrieval/vector-feature-flags.mjs |
@@ -334,6 +348,7 @@ and delete the flag.
 | `VISUAL_REVIEW_ADMIN_USERS` | api/admin-visual-review-run.js |
 | `VISUAL_VECTOR_DIMENSIONS` | lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VISUAL_VECTOR_INCLUDE_CANDIDATES` | lib/listing/retrieval/visual-vector-provider.mjs |
+| `VISUAL_VECTOR_INDEX_CONCURRENCY` | scripts/index-visual-vector-embeddings.mjs |
 | `VISUAL_VECTOR_MATCH_COUNT` | lib/listing/retrieval/visual-vector-provider.mjs |
 | `VISUAL_VECTOR_MATCH_THRESHOLD` | lib/listing/retrieval/visual-vector-provider.mjs |
 | `VISUAL_VECTOR_MODEL_ID` | lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |

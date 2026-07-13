@@ -608,6 +608,8 @@ function sessionL2Summary(statusPayload = {}) {
     vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
     ...vectorRuntime,
+    catalog_stage_capacity: summary.catalog_stage_capacity || null,
+    vector_stage_capacity: summary.vector_stage_capacity || null,
     preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
     preingestion_retrieval_refresh: summary.preingestion_retrieval_refresh || null,
@@ -713,6 +715,8 @@ function jobL2Summary(statusPayload = {}) {
     vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
     ...vectorRuntime,
+    catalog_stage_capacity: summary.catalog_stage_capacity || null,
+    vector_stage_capacity: summary.vector_stage_capacity || null,
     preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
     preingestion_retrieval_refresh: summary.preingestion_retrieval_refresh || null,
@@ -1162,6 +1166,16 @@ function countPass(values, threshold) {
   return values.map(metricNumber).filter((value) => value !== null && value >= threshold).length;
 }
 
+function identifierIntegrity(values = []) {
+  const normalized = values.map(cleanText).filter(Boolean);
+  const uniqueCount = new Set(normalized).size;
+  return {
+    present_count: normalized.length,
+    unique_count: uniqueCount,
+    duplicate_count: Math.max(0, normalized.length - uniqueCount)
+  };
+}
+
 function compactObject(value = {}) {
   return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
 }
@@ -1456,6 +1470,8 @@ async function runOne({
       vector_worker_feature_count: l2.summary?.vector_worker_feature_count ?? null,
       vector_worker_latency_ms: l2.summary?.vector_worker_latency_ms ?? null,
       vector_worker_attempt_count: l2.summary?.vector_worker_attempt_count ?? null,
+      catalog_stage_capacity: l2.summary?.catalog_stage_capacity || null,
+      vector_stage_capacity: l2.summary?.vector_stage_capacity || null,
       preingestion_ocr_rendezvous: l2.summary?.preingestion_ocr_rendezvous || null,
       preingestion_evidence_refresh: l2.summary?.preingestion_evidence_refresh || null,
       preingestion_retrieval_refresh: l2.summary?.preingestion_retrieval_refresh || null,
@@ -1611,6 +1627,8 @@ async function runOne({
       vector_worker_feature_count: l2.summary?.vector_worker_feature_count ?? null,
       vector_worker_latency_ms: l2.summary?.vector_worker_latency_ms ?? null,
       vector_worker_attempt_count: l2.summary?.vector_worker_attempt_count ?? null,
+      catalog_stage_capacity: l2.summary?.catalog_stage_capacity || null,
+      vector_stage_capacity: l2.summary?.vector_stage_capacity || null,
       vector_query_embedding_role: l2.summary?.vector_query_embedding_role ?? null,
       vector_role_agnostic_fallback_used: l2.summary?.vector_role_agnostic_fallback_used ?? null,
       vector_role_agnostic_fallback_reason: l2.summary?.vector_role_agnostic_fallback_reason ?? null,
@@ -1824,6 +1842,8 @@ async function runOne({
     vector_worker_feature_count: l2.summary?.vector_worker_feature_count ?? null,
     vector_worker_latency_ms: l2.summary?.vector_worker_latency_ms ?? null,
     vector_worker_attempt_count: l2.summary?.vector_worker_attempt_count ?? null,
+    catalog_stage_capacity: l2.summary?.catalog_stage_capacity || null,
+    vector_stage_capacity: l2.summary?.vector_stage_capacity || null,
     vector_query_embedding_role: l2.summary?.vector_query_embedding_role ?? null,
     vector_role_agnostic_fallback_used: l2.summary?.vector_role_agnostic_fallback_used ?? null,
     vector_role_agnostic_fallback_reason: l2.summary?.vector_role_agnostic_fallback_reason ?? null,
@@ -2277,6 +2297,8 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     vector_worker_feature_count: summary.vector_worker_feature_count ?? null,
     vector_worker_latency_ms: summary.vector_worker_latency_ms ?? null,
     vector_worker_attempt_count: summary.vector_worker_attempt_count ?? null,
+    catalog_stage_capacity: summary.catalog_stage_capacity || null,
+    vector_stage_capacity: summary.vector_stage_capacity || null,
     preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
     preingestion_retrieval_refresh: summary.preingestion_retrieval_refresh || null,
@@ -2451,6 +2473,13 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
+  const queueResults = results.filter((item) => item.queue_mode === true);
+  const assetIntegrity = identifierIntegrity(results.map((item) => item.asset_id));
+  const jobIntegrity = identifierIntegrity(queueResults.map((item) => item.job_id));
+  const successfulQueueResults = queueResults.filter((item) => item.ok === true);
+  const successfulNonterminalJobCount = successfulQueueResults.filter((item) => (
+    cleanText(item.job_status).toUpperCase() !== "L2_READY"
+  )).length;
   return {
     attempted_count: results.length,
     ok_count: results.filter((item) => item.ok).length,
@@ -2459,6 +2488,27 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     // Kept for existing report consumers; this is a technical completion
     // failure count, not an accuracy-policy failure count.
     final_failure_count: results.filter((item) => item.ok !== true).length,
+    production_integrity: {
+      asset_id_present_count: assetIntegrity.present_count,
+      asset_id_unique_count: assetIntegrity.unique_count,
+      duplicate_asset_id_count: assetIntegrity.duplicate_count,
+      queue_result_count: queueResults.length,
+      job_id_present_count: jobIntegrity.present_count,
+      job_id_unique_count: jobIntegrity.unique_count,
+      duplicate_job_id_count: jobIntegrity.duplicate_count,
+      missing_job_id_count: Math.max(0, queueResults.length - jobIntegrity.present_count),
+      successful_nonterminal_job_count: successfulNonterminalJobCount,
+      provider_capacity_release_count: results.filter((item) => (
+        item.writer_ready_capacity_release?.released === true
+      )).length,
+      provider_capacity_release_missing_count: results.filter((item) => (
+        item.queue_mode === true && item.ok === true && !item.writer_ready_capacity_release_mode
+      )).length,
+      provider_capacity_refill_missing_count: results.filter((item) => (
+        item.writer_ready_capacity_release?.released === true
+        && item.writer_ready_capacity_refill?.triggered !== true
+      )).length
+    },
     retry_card_count: results.filter((item) => Number(item.attempt_count || 0) > 1).length,
     retry_attempt_count: results.reduce((sum, item) => sum + Math.max(0, Number(item.attempt_count || 0) - 1), 0),
     retry_error_code_breakdown: results.reduce((counts, item) => {
@@ -2597,6 +2647,38 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     vector_worker_retry_card_count: results.filter((item) => Number(item.vector_worker_attempt_count || 0) > 1).length,
     vector_worker_attempt_count: results.reduce((sum, item) => sum + Number(item.vector_worker_attempt_count || 0), 0),
     vector_role_agnostic_fallback_count: results.filter((item) => item.vector_role_agnostic_fallback_used === true).length,
+    evidence_stage_capacity: {
+      catalog: {
+        controlled_count: results.filter((item) => item.catalog_stage_capacity?.coordinated === true).length,
+        acquired_count: results.filter((item) => item.catalog_stage_capacity?.acquired === true).length,
+        deferred_count: results.filter((item) => (
+          item.catalog_stage_capacity?.coordinated === true
+          && item.catalog_stage_capacity?.acquired !== true
+        )).length,
+        release_missing_count: results.filter((item) => (
+          item.catalog_stage_capacity?.coordinated === true
+          && item.catalog_stage_capacity?.acquired === true
+          && item.catalog_stage_capacity?.released !== true
+        )).length,
+        wait_p50_ms: quantile(results.map((item) => item.catalog_stage_capacity?.wait_ms), 0.5),
+        wait_p95_ms: quantile(results.map((item) => item.catalog_stage_capacity?.wait_ms), 0.95)
+      },
+      vector: {
+        controlled_count: results.filter((item) => item.vector_stage_capacity?.coordinated === true).length,
+        acquired_count: results.filter((item) => item.vector_stage_capacity?.acquired === true).length,
+        deferred_count: results.filter((item) => (
+          item.vector_stage_capacity?.coordinated === true
+          && item.vector_stage_capacity?.acquired !== true
+        )).length,
+        release_missing_count: results.filter((item) => (
+          item.vector_stage_capacity?.coordinated === true
+          && item.vector_stage_capacity?.acquired === true
+          && item.vector_stage_capacity?.released !== true
+        )).length,
+        wait_p50_ms: quantile(results.map((item) => item.vector_stage_capacity?.wait_ms), 0.5),
+        wait_p95_ms: quantile(results.map((item) => item.vector_stage_capacity?.wait_ms), 0.95)
+      }
+    },
     preingestion_ocr: {
       status_breakdown: results.reduce((counts, item) => {
         const key = cleanText(item.preingestion_ocr_rendezvous?.status || "missing") || "missing";

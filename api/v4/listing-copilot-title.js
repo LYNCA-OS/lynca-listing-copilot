@@ -352,6 +352,8 @@ function providerRuntimeSummary(result = {}) {
     vector_worker_feature_count: vectorContext.worker_feature_count ?? null,
     vector_worker_latency_ms: vectorContext.worker_latency_ms ?? null,
     vector_worker_attempt_count: vectorContext.worker_attempt_count ?? null,
+    catalog_stage_capacity: result.catalog_stage_capacity || null,
+    vector_stage_capacity: result.vector_worker?.stage_capacity || null,
     vector_query_embedding_role: vectorProviderMetadata.query_embedding_role || "",
     vector_role_agnostic_fallback_used: vectorProviderMetadata.role_agnostic_fallback_used === true,
     vector_role_agnostic_fallback_reason: vectorProviderMetadata.role_agnostic_fallback_reason || "",

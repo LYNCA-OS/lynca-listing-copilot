@@ -101,6 +101,18 @@ function writerSafeSessionStatus(session = null, job = null) {
       provider_key_rotation_attempts: Number(summary.provider_key_rotation_attempts || summary.key_rotation_attempts || 0),
       provider_truncation_retry_attempted: summary.provider_truncation_retry_attempted === true,
       provider_truncation_retry_attempts: Number(summary.provider_truncation_retry_attempts || 0),
+      vector_runtime_status: summary.vector_runtime_status || null,
+      vector_runtime_status_code: summary.vector_runtime_status_code ?? null,
+      vector_runtime_unavailable_reasons: Array.isArray(summary.vector_runtime_unavailable_reasons)
+        ? summary.vector_runtime_unavailable_reasons
+        : [],
+      vector_worker_status: summary.vector_worker_status || null,
+      vector_worker_reason: summary.vector_worker_reason || "",
+      vector_worker_feature_count: summary.vector_worker_feature_count ?? null,
+      vector_worker_latency_ms: summary.vector_worker_latency_ms ?? null,
+      vector_worker_attempt_count: summary.vector_worker_attempt_count ?? null,
+      catalog_stage_capacity: summary.catalog_stage_capacity || null,
+      vector_stage_capacity: summary.vector_stage_capacity || null,
       gpt5_empty_result_retry_attempted: summary.gpt5_empty_result_retry_attempted === true,
       gpt5_empty_result_retry_success: summary.gpt5_empty_result_retry_success === true,
       gpt5_empty_result_retry_status_code: summary.gpt5_empty_result_retry_status_code ?? null,

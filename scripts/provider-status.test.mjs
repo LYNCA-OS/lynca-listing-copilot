@@ -99,7 +99,11 @@ assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.capacity_
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.global_capacity, 8);
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.anchor_concurrency, 4);
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.detail_concurrency, 1);
+assert.equal(response.body.execution_control.stage_capacity.catalog.capacity_control_enabled, false);
+assert.equal(response.body.execution_control.stage_capacity.catalog.global_capacity, 4);
 assert.equal(response.body.execution_control.stage_capacity.catalog.query_concurrency, 4);
+assert.equal(response.body.execution_control.stage_capacity.vector.capacity_control_enabled, false);
+assert.equal(response.body.execution_control.stage_capacity.vector.global_capacity, 4);
 assert.equal(response.body.execution_control.stage_capacity.vector.index_concurrency, 2);
 assert.doesNotMatch(JSON.stringify(response.body.execution_control), /test-openai-key/);
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-openai-key|test-service-role|example\.supabase/);
@@ -121,6 +125,14 @@ process.env.PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED = "true";
 response = await callStatus();
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.capacity_control_enabled, true);
 delete process.env.PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED;
+
+process.env.RETRIEVAL_CATALOG_STAGE_CAPACITY_CONTROL_ENABLED = "true";
+process.env.VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED = "true";
+response = await callStatus();
+assert.equal(response.body.execution_control.stage_capacity.catalog.capacity_control_enabled, true);
+assert.equal(response.body.execution_control.stage_capacity.vector.capacity_control_enabled, true);
+delete process.env.RETRIEVAL_CATALOG_STAGE_CAPACITY_CONTROL_ENABLED;
+delete process.env.VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED;
 
 process.env.ENABLE_EXPERIMENTAL_PROVIDER_UI = "true";
 response = await callStatus();

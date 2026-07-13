@@ -63,6 +63,7 @@ jobs:
           const health = JSON.parse(fs.readFileSync('/tmp/v4-health.json', 'utf8'));
           const status = JSON.parse(fs.readFileSync('/tmp/provider-status.json', 'utf8'));
           const execution = status.execution_control || {};
+          const stageCapacity = execution.stage_capacity || {};
           const levels = String(process.env.SWEEP_LEVELS || '').split(',').map(Number).filter((value) => Number.isInteger(value) && value > 0);
           const maximumLevel = Math.max(...levels);
           const expectedSha = process.env.GITHUB_SHA;
@@ -74,7 +75,10 @@ jobs:
             distributed_capacity: execution.distributed_provider_capacity_enabled === true,
             model_matches: (status.providers || []).some((provider) => provider.selectable && provider.model_id === '${{ inputs.model }}'),
             provider_key_pool_available: Number(execution.provider_key_pool_size || 0) >= 1,
-            production_global_capacity_covers_sweep: Number(execution.global_provider_concurrency || 0) >= maximumLevel
+            provider_global_capacity_is_two: Number(execution.global_provider_concurrency || 0) === 2,
+            ocr_stage_controlled: stageCapacity.paddle_ocr?.capacity_control_enabled === true,
+            catalog_stage_controlled: stageCapacity.catalog?.capacity_control_enabled === true,
+            vector_stage_controlled: stageCapacity.vector?.capacity_control_enabled === true
           };
           fs.writeFileSync('/tmp/concurrency-readiness.json', JSON.stringify({ checks, execution, levels, maximum_level:maximumLevel }, null, 2));
           console.log(JSON.stringify({ checks, execution, levels, maximum_level:maximumLevel }, null, 2));
@@ -235,6 +239,11 @@ jobs:
               post_observation_retrieval_completed_within_budget_count:row.post_observation_retrieval_completed_within_budget_count,
               ocr_elapsed_p95_ms:row.ocr_elapsed_since_preingestion_p95_ms,
               ocr_critical_path_p95_ms:row.ocr_critical_path_wait_p95_ms,
+              ocr_stage_capacity_wait_p95_ms:row.ocr_stage_capacity_wait_p95_ms,
+              catalog_stage_capacity_wait_p95_ms:row.catalog_stage_capacity_wait_p95_ms,
+              vector_stage_capacity_wait_p95_ms:row.vector_stage_capacity_wait_p95_ms,
+              catalog_stage_capacity_deferred_count:row.catalog_stage_capacity_deferred_count,
+              vector_stage_capacity_deferred_count:row.vector_stage_capacity_deferred_count,
               retries:row.retry_card_count,
               errors:row.technical_failure_count,
               node_errors:row.node_error_count,

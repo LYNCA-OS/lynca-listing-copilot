@@ -141,6 +141,7 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
   const accuracy = summary.final_accuracy_proxy || {};
   const provider = summary.provider_diagnostics || summary.usage_totals || {};
   const nodeSummary = summary.pipeline_node_observability || {};
+  const integrity = summary.production_integrity || null;
   const attemptedCount = numberOrZero(summary.attempted_count);
   const okCount = numberOrZero(summary.ok_count ?? summary.provider_success_count);
   const policyPass72 = numberOrZero(accuracy.policy_fair_pass_at_0_72 ?? summary.pass_at_0_72_count);
@@ -179,6 +180,14 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
     provider_success_count: numberOrZero(summary.provider_success_count ?? okCount),
     provider_error_count: providerErrorCount,
     technical_failure_count: technicalFailureCount,
+    production_integrity_reported: Boolean(integrity),
+    duplicate_asset_id_count: numberOrZero(integrity?.duplicate_asset_id_count),
+    duplicate_job_id_count: numberOrZero(integrity?.duplicate_job_id_count),
+    missing_job_id_count: numberOrZero(integrity?.missing_job_id_count),
+    successful_nonterminal_job_count: numberOrZero(integrity?.successful_nonterminal_job_count),
+    provider_capacity_release_missing_count: numberOrZero(integrity?.provider_capacity_release_missing_count),
+    provider_capacity_refill_missing_count: numberOrZero(integrity?.provider_capacity_refill_missing_count),
+    provider_done_handoff_requested: report.provider_done_capacity_handoff_override === true,
     retry_card_count: retryCardCount,
     retry_attempt_count: retryAttemptCount,
     retry_error_code_breakdown: summary.retry_error_code_breakdown || {},
@@ -223,6 +232,25 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
     ocr_critical_path_wait_p50_ms: numberOrNull(summary.preingestion_ocr?.critical_path_wait_p50_ms),
     ocr_critical_path_wait_p95_ms: numberOrNull(summary.preingestion_ocr?.critical_path_wait_p95_ms),
     ocr_timeout_count: numberOrZero(summary.preingestion_ocr?.timeout_count),
+    ocr_worker_timeout_count: numberOrZero(summary.preingestion_ocr?.worker_timeout_count),
+    ocr_stage_capacity_control_observed_count: numberOrZero(summary.preingestion_ocr?.stage_capacity_control_enabled_count),
+    ocr_stage_global_capacity: numberOrNull(summary.preingestion_ocr?.stage_global_capacity_latest),
+    ocr_stage_capacity_wait_p50_ms: numberOrNull(summary.preingestion_ocr?.stage_capacity_wait_p50_ms),
+    ocr_stage_capacity_wait_p95_ms: numberOrNull(summary.preingestion_ocr?.stage_capacity_wait_p95_ms),
+    ocr_stage_capacity_deferred_count: numberOrZero(summary.preingestion_ocr?.stage_capacity_deferred_count),
+    ocr_peak_local_active_p95: numberOrNull(summary.preingestion_ocr?.peak_local_active_p95),
+    catalog_stage_capacity_control_observed_count: numberOrZero(summary.evidence_stage_capacity?.catalog?.controlled_count),
+    catalog_stage_capacity_acquired_count: numberOrZero(summary.evidence_stage_capacity?.catalog?.acquired_count),
+    catalog_stage_capacity_deferred_count: numberOrZero(summary.evidence_stage_capacity?.catalog?.deferred_count),
+    catalog_stage_capacity_release_missing_count: numberOrZero(summary.evidence_stage_capacity?.catalog?.release_missing_count),
+    catalog_stage_capacity_wait_p50_ms: numberOrNull(summary.evidence_stage_capacity?.catalog?.wait_p50_ms),
+    catalog_stage_capacity_wait_p95_ms: numberOrNull(summary.evidence_stage_capacity?.catalog?.wait_p95_ms),
+    vector_stage_capacity_control_observed_count: numberOrZero(summary.evidence_stage_capacity?.vector?.controlled_count),
+    vector_stage_capacity_acquired_count: numberOrZero(summary.evidence_stage_capacity?.vector?.acquired_count),
+    vector_stage_capacity_deferred_count: numberOrZero(summary.evidence_stage_capacity?.vector?.deferred_count),
+    vector_stage_capacity_release_missing_count: numberOrZero(summary.evidence_stage_capacity?.vector?.release_missing_count),
+    vector_stage_capacity_wait_p50_ms: numberOrNull(summary.evidence_stage_capacity?.vector?.wait_p50_ms),
+    vector_stage_capacity_wait_p95_ms: numberOrNull(summary.evidence_stage_capacity?.vector?.wait_p95_ms),
     input_tokens: numberOrNull(provider.input_tokens_total ?? provider.input_tokens),
     output_tokens: numberOrNull(provider.output_tokens_total ?? provider.output_tokens),
     total_tokens: numberOrNull(provider.total_tokens_total ?? provider.total_tokens),
@@ -255,6 +283,7 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
     catalog_prompt_candidate_count: numberOrZero(summary.l2_catalog_prompt_candidate_count ?? summary.catalog_prompt_candidate_count),
     vector_raw_candidate_count: numberOrZero(summary.l2_vector_raw_candidate_count),
     vector_prompt_candidate_count: numberOrZero(summary.l2_vector_prompt_candidate_count ?? summary.vector_prompt_candidate_count),
+    vector_runtime_unavailable_count: numberOrZero(summary.vector_runtime_status_breakdown?.UNAVAILABLE),
     copied_serial_grade_cert_from_reference_count: numberOrZero(summary.copied_serial_grade_cert_from_reference_count),
     base_pollution_count: numberOrZero(summary.base_without_catalog_support_count)
       + numberOrZero(summary.base_in_resolved_fields_count)
@@ -310,6 +339,17 @@ export function evaluateRow(row = {}, baseline = {}, { qualityTolerance = 0.03 }
   if (row.node_transport_error_count > 0) rejectionReasons.push("NODE_RECONCILIATION_ERROR");
   if (row.node_field_quality_error_count > 0) warningReasons.push("FIELD_QUALITY_ANOMALY_RECORDED");
   if (row.node_missing_required_count > 0) rejectionReasons.push("REQUIRED_NODE_MISSING");
+  if (row.production_integrity_reported) {
+    if (row.duplicate_asset_id_count > 0) rejectionReasons.push("DUPLICATE_ASSET_RESULT");
+    if (row.duplicate_job_id_count > 0) rejectionReasons.push("DUPLICATE_QUEUE_JOB");
+    if (row.missing_job_id_count > 0) rejectionReasons.push("QUEUE_JOB_ID_MISSING");
+    if (row.successful_nonterminal_job_count > 0) rejectionReasons.push("SUCCESSFUL_JOB_NOT_TERMINAL");
+    if (row.provider_capacity_release_missing_count > 0) rejectionReasons.push("PROVIDER_CAPACITY_RELEASE_MISSING");
+    if (row.provider_capacity_refill_missing_count > 0) rejectionReasons.push("PROVIDER_CAPACITY_REFILL_MISSING");
+  }
+  if (row.provider_done_handoff_requested && !row.production_integrity_reported) {
+    rejectionReasons.push("PRODUCTION_INTEGRITY_TELEMETRY_MISSING");
+  }
   if (row.copied_serial_grade_cert_from_reference_count > 0) rejectionReasons.push("COPIED_REFERENCE_INSTANCE_FIELD");
   if (row.base_pollution_count > 0) rejectionReasons.push("BASE_POLLUTION");
 
@@ -337,7 +377,13 @@ export function evaluateRow(row = {}, baseline = {}, { qualityTolerance = 0.03 }
   }
   if (row.batch_status_transient_error_count > 0) warningReasons.push("RECOVERED_STATUS_CONTROL_PLANE_TRANSIENT");
   if (row.node_warning_count > 0) warningReasons.push("NODE_RECONCILIATION_WARNING");
-  if (row.ocr_timeout_count > 0) warningReasons.push("OCR_TIMEOUT_PRESENT");
+  if (row.ocr_timeout_count > 0 || row.ocr_worker_timeout_count > 0) rejectionReasons.push("OCR_TIMEOUT_PRESENT");
+  if (row.ocr_stage_capacity_deferred_count > 0) warningReasons.push("OCR_STAGE_CAPACITY_DEFERRED_WORK");
+  if (row.catalog_stage_capacity_release_missing_count > 0) rejectionReasons.push("CATALOG_STAGE_CAPACITY_RELEASE_MISSING");
+  if (row.vector_stage_capacity_release_missing_count > 0) rejectionReasons.push("VECTOR_STAGE_CAPACITY_RELEASE_MISSING");
+  if (row.catalog_stage_capacity_deferred_count > 0) warningReasons.push("CATALOG_STAGE_CAPACITY_DEFERRED_WORK");
+  if (row.vector_stage_capacity_deferred_count > 0) warningReasons.push("VECTOR_STAGE_CAPACITY_DEFERRED_WORK");
+  if (row.vector_runtime_unavailable_count > 0) warningReasons.push("VECTOR_RUNTIME_UNAVAILABLE");
   if (row.request_headroom_min_ratio !== null && row.request_headroom_min_ratio < 0.05) {
     warningReasons.push("REQUEST_RATE_LIMIT_HEADROOM_BELOW_5_PERCENT");
   }

@@ -192,6 +192,10 @@ import {
   summarizePreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 import { waitForPreingestionOcrEvidence } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
+import {
+  listingStageCapacityPlan,
+  runWithListingStageCapacity
+} from "../lib/listing/v4/orchestration/stage-capacity.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
@@ -3134,6 +3138,8 @@ async function prepareCatalogCandidateContext({
   resolvedForRetrieval = {},
   providerOptions = {},
   timingContext = null,
+  stageRequestId = "",
+  stagePhase = "catalog_lookup",
   env = process.env
 } = {}) {
   if (optionFlag(providerOptions, "enable_catalog_assist", false) !== true) {
@@ -3158,20 +3164,65 @@ async function prepareCatalogCandidateContext({
       addTiming(timingContext, "catalog_cache_ms", Date.now() - cacheStartedAt);
       return {
         ...cached.context,
-        catalog_cache_hit: true
+        catalog_cache_hit: true,
+        catalog_stage_capacity: {
+          acquired: false,
+          coordinated: false,
+          cache_hit: true,
+          wait_ms: 0,
+          attempts: 0,
+          released: null
+        }
       };
     }
   }
 
   const allowedFamilies = catalogRetrievalFamilies();
-  const retrieval = await timeAsync(timingContext, "catalog_retrieval_ms", () => runRetrieval({
-    resolved: resolvedForRetrieval || {},
-    visualEmbeddings: [],
-    mode: retrievalModes.INTERNAL_ONLY,
-    allowedFamilies,
-    maxQueries: allowedFamilies.length,
-    env: catalogRetrievalEnv(env, providerOptions)
-  }));
+  const stagePlan = listingStageCapacityPlan(env).catalog;
+  const stageJobId = `${stageRequestId || crypto.randomUUID()}:${stagePhase}`;
+  const stageExecution = await runWithListingStageCapacity({
+    plan: stagePlan,
+    jobId: stageJobId,
+    owner: `catalog-query-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    env,
+    fetchImpl: globalThis.fetch,
+    task: () => timeAsync(timingContext, "catalog_retrieval_ms", () => runRetrieval({
+      resolved: resolvedForRetrieval || {},
+      visualEmbeddings: [],
+      mode: retrievalModes.INTERNAL_ONLY,
+      allowedFamilies,
+      maxQueries: allowedFamilies.length,
+      env: catalogRetrievalEnv(env, providerOptions)
+    }))
+  });
+  const stageCapacity = stageExecution.stage_capacity || null;
+  addTiming(timingContext, "catalog_stage_capacity_wait_ms", Number(stageCapacity?.wait_ms || 0));
+  if (stageCapacity?.coordinated) addTiming(timingContext, "catalog_stage_capacity_controlled_count", 1);
+  if (!stageExecution.executed) {
+    addTiming(timingContext, "catalog_stage_capacity_deferred_count", 1);
+    const reason = stageCapacity?.configured === false
+      ? "catalog_stage_capacity_unavailable"
+      : "catalog_stage_capacity_busy";
+    const packet = emptyVectorCandidatePacket(reason);
+    return {
+      retrieval: null,
+      packet,
+      assistPacket: packet,
+      catalog_assist_eligibility: vectorCandidatePacketAssistEligibility(packet),
+      catalog_anchor_plan: catalogAnchorPlanFromFields(resolvedForRetrieval || {}, {
+        phase: stagePhase,
+        eligibility: vectorCandidatePacketAssistEligibility(packet),
+        retrieval: null
+      }),
+      promptPacket: false,
+      catalog_cache_hit: false,
+      catalog_stage_capacity: stageCapacity
+    };
+  }
+  if (stageCapacity?.coordinated && stageCapacity.released !== true) {
+    addTiming(timingContext, "catalog_stage_capacity_release_missing_count", 1);
+  }
+  const retrieval = stageExecution.value;
   const packet = buildVectorCandidatePacket(retrieval, {
     limit: 5,
     queryFields: resolvedForRetrieval || {}
@@ -3179,7 +3230,7 @@ async function prepareCatalogCandidateContext({
   const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
   const assistPacket = buildVectorCandidateAssistPacket(packet);
   const catalogAnchorPlan = catalogAnchorPlanFromFields(resolvedForRetrieval || {}, {
-    phase: "catalog_lookup",
+    phase: stagePhase,
     eligibility: assistEligibility,
     retrieval
   });
@@ -3190,12 +3241,14 @@ async function prepareCatalogCandidateContext({
     catalog_assist_eligibility: assistEligibility,
     catalog_anchor_plan: catalogAnchorPlan,
     promptPacket: vectorCandidatePacketHasPromptContent(assistPacket),
-    catalog_cache_hit: false
+    catalog_cache_hit: false,
+    catalog_stage_capacity: stageCapacity
   };
   if (cacheEnabled && cacheKey) {
+    const { catalog_stage_capacity: _capacity, ...cacheableContext } = context;
     catalogCandidateContextCache.set(cacheKey, {
       expires_at_ms: Date.now() + catalogCacheTtlMs(env),
-      context
+      context: cacheableContext
     });
     pruneCatalogCandidateContextCache(catalogCacheMaxEntries(env));
   }
@@ -3264,6 +3317,17 @@ async function prepareVectorCandidateContext({
         activeVisualFeatures = workerResult;
       }
     }
+  }
+  const vectorStageCapacity = workerResult?.stage_capacity || null;
+  addTiming(timingContext, "vector_stage_capacity_wait_ms", Number(vectorStageCapacity?.wait_ms || 0));
+  if (vectorStageCapacity?.coordinated) addTiming(timingContext, "vector_stage_capacity_controlled_count", 1);
+  if (vectorStageCapacity?.coordinated && vectorStageCapacity.acquired !== true) {
+    addTiming(timingContext, "vector_stage_capacity_deferred_count", 1);
+  }
+  if (vectorStageCapacity?.coordinated
+    && vectorStageCapacity.acquired === true
+    && vectorStageCapacity.released !== true) {
+    addTiming(timingContext, "vector_stage_capacity_release_missing_count", 1);
   }
 
   if (!hasUsableVisualFeatures(activeVisualFeatures)) {
@@ -3353,7 +3417,8 @@ function withVectorCandidateContext(result = {}, context = {}) {
         reason: context.worker.reason || "",
         latency_ms: context.worker.latency_ms ?? null,
         attempt_count: context.worker.attempt_count ?? null,
-        feature_count: Array.isArray(context.worker.features) ? context.worker.features.length : 0
+        feature_count: Array.isArray(context.worker.features) ? context.worker.features.length : 0,
+        stage_capacity: context.worker.stage_capacity || null
       }
       : null
   };
@@ -3371,6 +3436,7 @@ function withCatalogCandidateContext(result = {}, context = {}) {
     catalog_assist_eligibility: context.catalog_assist_eligibility || null,
     catalog_anchor_plan: context.catalog_anchor_plan || null,
     catalog_cache_hit: context.catalog_cache_hit === true,
+    catalog_stage_capacity: context.catalog_stage_capacity || null,
     exact_anchor_fast_lane_shadow: exactAnchorFastLane,
     exact_anchor_fast_lane_eligible: exactAnchorFastLane?.exact_anchor_fast_lane_eligible === true,
     exact_anchor_candidate_id: exactAnchorFastLane?.exact_anchor_candidate_id || "",
@@ -4718,13 +4784,21 @@ async function createOpenAiTitle(payload, selection, {
     maxLength: maxTitleLength
   };
   const resolvedForRetrieval = resolvedForRetrievalFromPayload(payload, providerOptions, recognitionEvidenceDocument);
+  const catalogStageRequestId = payload.request_id
+    || payload.requestId
+    || payload.asset_id
+    || payload.assetId
+    || preingestionBundleId
+    || crypto.randomUUID();
   const signedImagesPromise = Array.isArray(reusableSignedImages) && reusableSignedImages.length
     ? reusableSignedImages
     : imagesWithSignedReadUrls(payload.images || [], timingContext);
   const catalogContextPromise = prepareCatalogCandidateContext({
     resolvedForRetrieval,
     providerOptions,
-    timingContext
+    timingContext,
+    stageRequestId: catalogStageRequestId,
+    stagePhase: "pre_provider"
   });
 
   let signedImages;
@@ -4923,7 +4997,9 @@ async function createOpenAiTitle(payload, selection, {
     const lateCatalogPromise = prepareCatalogCandidateContext({
       resolvedForRetrieval: providerResolvedForRetrieval,
       providerOptions,
-      timingContext
+      timingContext,
+      stageRequestId: catalogStageRequestId,
+      stagePhase: "post_provider"
     }).catch(() => null);
     const loadOverlappedVectorFeatures = async () => {
       let overlappedVectorFeatures = visualFeatures;

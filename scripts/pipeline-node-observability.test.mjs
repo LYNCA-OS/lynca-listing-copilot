@@ -99,7 +99,74 @@ assert.equal(healthyLedger.field_flow.unexplained_resolution_drop_count, 0);
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "catalog_retrieval")?.output_count, 1);
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "provider")?.metrics.total_tokens, 120);
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "provider")?.metrics.service_tier, "priority");
+assert.equal(healthyLedger.nodes.find((node) => node.node_id === "catalog_stage_capacity")?.status, "SKIPPED");
+assert.equal(healthyLedger.nodes.find((node) => node.node_id === "vector_stage_capacity")?.status, "SKIPPED");
 assert.equal(JSON.stringify(healthyLedger).includes("sk-secret-value"), false);
+
+const stageCapacityLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    timing: {
+      ...context.timing,
+      catalog_stage_capacity_wait_ms: 125,
+      catalog_stage_capacity_controlled_count: 1,
+      vector_stage_capacity_wait_ms: 240,
+      vector_stage_capacity_controlled_count: 1,
+      vector_stage_capacity_deferred_count: 1
+    },
+    catalog_stage_capacity: {
+      coordinated: true,
+      configured: true,
+      acquired: true,
+      released: true,
+      slot: 2,
+      attempts: 2,
+      wait_ms: 125
+    },
+    vector_stage_capacity: {
+      coordinated: true,
+      configured: true,
+      acquired: false,
+      released: null,
+      attempts: 4,
+      wait_ms: 240,
+      error: "stage_capacity_busy"
+    }
+  },
+  payload: { asset_id: "asset-stage-capacity", images: [{}, {}] }
+});
+const catalogCapacityNode = stageCapacityLedger.nodes.find((node) => node.node_id === "catalog_stage_capacity");
+const vectorCapacityNode = stageCapacityLedger.nodes.find((node) => node.node_id === "vector_stage_capacity");
+assert.equal(catalogCapacityNode.status, "COMPLETED");
+assert.equal(catalogCapacityNode.duration_ms, 125);
+assert.equal(catalogCapacityNode.metrics.released, true);
+assert.equal(vectorCapacityNode.status, "PARTIAL");
+assert.equal(vectorCapacityNode.duration_ms, 240);
+assert.equal(vectorCapacityNode.metrics.deferred_count, 1);
+
+const missingStageReleaseLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    timing: {
+      ...context.timing,
+      catalog_stage_capacity_controlled_count: 1,
+      catalog_stage_capacity_release_missing_count: 1
+    },
+    catalog_stage_capacity: {
+      coordinated: true,
+      configured: true,
+      acquired: true,
+      released: false,
+      release_error: "temporary_release_failure"
+    }
+  },
+  payload: { asset_id: "asset-stage-capacity-release-missing", images: [{}, {}] }
+});
+assert.equal(missingStageReleaseLedger.nodes.find((node) => node.node_id === "catalog_stage_capacity")?.status, "FAILED");
+assert.equal(
+  missingStageReleaseLedger.reconciliation.anomalies.some((item) => item.check_id === "catalog_stage_capacity_release_complete"),
+  true
+);
 
 const deadlineContext = createTimingContext({
   asset_id: "asset-observability-deadline",
