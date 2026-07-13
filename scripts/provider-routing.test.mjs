@@ -146,10 +146,12 @@ assert.equal(explicitVectorOnOptions.vector_retrieval_mode, "assist");
 const ultraFastEnvOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({}, {
   ...env,
   ENABLE_V4_ULTRA_FAST_L2: "true",
+  ENABLE_V4_ULTRA_SPARSE_TRANSPORT: "true",
   V4_ULTRA_FAST_IMAGE_DETAIL: "high",
   V4_ULTRA_FAST_SERVICE_TIER: "priority"
 });
 assert.equal(ultraFastEnvOptions.v4_ultra_fast_l2, true);
+assert.equal(ultraFastEnvOptions.v4_ultra_sparse_transport, true);
 assert.equal(ultraFastImageDetail(ultraFastEnvOptions), "high");
 assert.equal(ultraFastServiceTier(ultraFastEnvOptions), "priority");
 
@@ -496,6 +498,55 @@ assert.equal(compactOpenAiResult.parsed.fields.year, "2024-25");
 assert.equal(compactOpenAiResult.parsed.fields.print_run_number, "2/3");
 assert.deepEqual(compactOpenAiResult.parsed.fields.players, ["Lamine Yamal"]);
 assert.equal(compactOpenAiResult.parsed.field_evidence.print_run_number.raw_text, "2/3");
+
+let ultraCompactOpenAiRequest;
+const ultraCompactOpenAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return ultra sparse JSON.",
+  responseProfile: "compact_sparse_v2",
+  includeVectorDecision: false,
+  imageDetail: "high",
+  textVerbosity: "low",
+  serviceTier: "priority",
+  env: {
+    ...env,
+    OPENAI_LISTING_MODEL: "gpt-5-mini"
+  },
+  fetchImpl: async (url, init) => {
+    ultraCompactOpenAiRequest = { url, init };
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        id: "resp_gpt5_ultra_compact_test",
+        model: "gpt-5-mini",
+        service_tier: "priority",
+        output_text: JSON.stringify({
+          r: "CONFIRMED",
+          v: {
+            s: [{ f: "year", v: "2024-25" }, { f: "product", v: "Topps Chrome" }],
+            b: [{ f: "auto", v: true }],
+            n: [],
+            l: [{ f: "players", v: ["Lamine Yamal"] }]
+          },
+          e: [{ f: "year", v: "2024-25", s: "SLAB_LABEL", i: "image-1", t: "2024-25" }],
+          u: []
+        }),
+        usage: { input_tokens: 9, output_tokens: 4, total_tokens: 13 }
+      })
+    };
+  }
+});
+const ultraCompactOpenAiBody = JSON.parse(ultraCompactOpenAiRequest.init.body);
+assert.equal(ultraCompactOpenAiBody.text.format.name, "listing_provider_evidence_ultra_compact");
+assert.deepEqual(ultraCompactOpenAiBody.text.format.schema.required, ["r", "v", "e", "u"]);
+assert.equal(ultraCompactOpenAiBody.text.format.schema.properties.c, undefined);
+assert.match(ultraCompactOpenAiBody.input[0].content[0].text, /ultra-sparse response note/i);
+assert.equal(ultraCompactOpenAiResult.response_profile, "compact_sparse_v2");
+assert.equal(ultraCompactOpenAiResult.parsed.fields.product, "Topps Chrome");
+assert.equal(ultraCompactOpenAiResult.parsed.field_evidence.year.directly_observed, true);
+assert.equal(ultraCompactOpenAiResult.parsed.vector_candidate_decision.decision, "NOT_AVAILABLE");
 
 const gpt5DefaultConfig = openAiEmergencyConfigFromEnv({
   ...env,

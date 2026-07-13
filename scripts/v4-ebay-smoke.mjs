@@ -190,6 +190,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   enableL1 = false,
   compactL2 = false,
   ultraFastL2 = false,
+  ultraSparseTransport = false,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false
@@ -208,6 +209,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   if (compactL2) providerOptions.v4_compact_l2_prompt = true;
   if (ultraFastL2) {
     providerOptions.v4_ultra_fast_l2 = true;
+    if (ultraSparseTransport) providerOptions.v4_ultra_sparse_transport = true;
     providerOptions.v4_ultra_fast_image_detail = ["low", "auto", "high"].includes(cleanText(ultraFastImageDetail).toLowerCase())
       ? cleanText(ultraFastImageDetail).toLowerCase()
       : "auto";
@@ -1157,6 +1159,7 @@ async function runOne({
   enableL1 = false,
   compactL2 = false,
   ultraFastL2 = false,
+  ultraSparseTransport = false,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
@@ -1184,6 +1187,7 @@ async function runOne({
     enableL1,
     compactL2,
     ultraFastL2,
+    ultraSparseTransport,
     ultraFastImageDetail,
     ultraFastServiceTier,
     disableIdentityCache
@@ -1813,6 +1817,7 @@ async function enqueueSpeculativeItem({
   enableL1,
   compactL2,
   ultraFastL2,
+  ultraSparseTransport,
   ultraFastImageDetail,
   ultraFastServiceTier,
   disableIdentityCache,
@@ -1837,6 +1842,7 @@ async function enqueueSpeculativeItem({
       enableL1,
       compactL2,
       ultraFastL2,
+      ultraSparseTransport,
       ultraFastImageDetail,
       ultraFastServiceTier,
       disableIdentityCache
@@ -2747,6 +2753,7 @@ export async function runV4EbaySmoke({
   enableL1 = false,
   compactL2 = false,
   ultraFastL2 = false,
+  ultraSparseTransport = false,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
@@ -2822,6 +2829,7 @@ export async function runV4EbaySmoke({
           enableL1,
           compactL2,
           ultraFastL2,
+          ultraSparseTransport,
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
@@ -2861,6 +2869,7 @@ export async function runV4EbaySmoke({
           enableL1,
           compactL2,
           ultraFastL2,
+          ultraSparseTransport,
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
@@ -2936,6 +2945,7 @@ export async function runV4EbaySmoke({
     prewarm_enabled: prewarm,
     compact_l2_enabled: compactL2,
     ultra_fast_l2_enabled: ultraFastL2,
+    ultra_sparse_transport_enabled: ultraSparseTransport,
     ultra_fast_image_detail: ultraFastL2 ? ultraFastImageDetail : null,
     ultra_fast_service_tier: ultraFastL2 ? ultraFastServiceTier || null : null,
     identity_cache_disabled: disableIdentityCache,
@@ -3011,6 +3021,7 @@ export async function main(argv = process.argv, env = process.env) {
     enableL1: hasFlag(argv, "--enable-l1"),
     compactL2: hasFlag(argv, "--compact-l2"),
     ultraFastL2: hasFlag(argv, "--ultra-fast-l2"),
+    ultraSparseTransport: hasFlag(argv, "--ultra-sparse-v2"),
     ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),
     ultraFastServiceTier: cleanText(argValue(argv, "--ultra-service-tier", "")).toLowerCase(),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),

@@ -6,8 +6,10 @@ import {
 } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import {
   expandOpenAiCompactProviderPayload,
+  expandOpenAiUltraCompactProviderPayload,
   openAiCompactProviderResponseSchema,
-  openAiProviderResponseSchema
+  openAiProviderResponseSchema,
+  openAiUltraCompactProviderResponseSchema
 } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { resolvedFieldNames } from "../lib/listing/evidence/evidence-schema.mjs";
 
@@ -75,6 +77,39 @@ assert.equal(expandedCompactPayload.field_evidence[0].raw_text, "2/3");
 assert.equal(expandedCompactPayload.field_evidence[0].evidence_kind, "PRINTED_LIMITED_NUMBERING");
 assert.equal(expandedCompactPayload.field_evidence[0].direct_observation, true);
 assert.equal(validateProviderEvidencePayload("openai_legacy", expandedCompactPayload).fields.product, "Topps Chrome");
+
+const ultraCompactSchema = openAiUltraCompactProviderResponseSchema();
+assert.deepEqual(ultraCompactSchema.required, ["r", "v", "e", "u"]);
+assert.equal(ultraCompactSchema.properties.c, undefined, "cold-path transport must omit unused candidate scaffolding");
+const ultraCompactCandidateSchema = openAiUltraCompactProviderResponseSchema({ includeVectorDecision: true });
+assert.deepEqual(ultraCompactCandidateSchema.required, ["r", "v", "e", "u", "c"]);
+
+const expandedUltraCompactPayload = expandOpenAiUltraCompactProviderPayload({
+  r: "RESOLVED",
+  v: {
+    s: [
+      { f: "year", v: "2024-25" },
+      { f: "product", v: "Topps Chrome" },
+      { f: "print_run_number", v: "2/3" }
+    ],
+    b: [{ f: "auto", v: true }],
+    n: [],
+    l: [{ f: "players", v: ["Lamine Yamal"] }]
+  },
+  e: [{
+    f: "print_run_number",
+    v: "2/3",
+    s: "CARD_FRONT_PRINTED_TEXT",
+    i: "image-1",
+    t: "2/3"
+  }],
+  u: ["parallel_exact"]
+});
+assert.equal(expandedUltraCompactPayload.fields.product, "Topps Chrome");
+assert.equal(expandedUltraCompactPayload.field_evidence[0].source_region, "print_run_number");
+assert.equal(expandedUltraCompactPayload.field_evidence[0].directly_observed, true);
+assert.equal(expandedUltraCompactPayload.field_evidence[0].review_required, false);
+assert.equal(expandedUltraCompactPayload.vector_candidate_decision.decision, "NOT_AVAILABLE");
 assert.throws(() => expandOpenAiCompactProviderPayload({
   recognition_status: "CONFIRMED",
   field_values: {

@@ -4772,13 +4772,24 @@ async function createOpenAiTitle(payload, selection, {
         ? "fast_initial"
         : "full_listing";
   const providerImageDetail = ultraFastL2 ? ultraFastImageDetail(providerOptions) : "high";
+  const ultraSparseTransport = ultraFastL2 && optionFlag(
+    providerOptions,
+    "v4_ultra_sparse_transport",
+    envFlag(process.env, "ENABLE_V4_ULTRA_SPARSE_TRANSPORT", false)
+  );
+  const providerResponseProfile = ultraSparseTransport
+    ? "compact_sparse_v2"
+    : ["v4_compact_l2", "v4_ultra_fast_l2"].includes(providerPromptMode)
+      ? "compact_sparse_v1"
+      : "standard";
   const providerResult = await runTimedProviderCall(visionProviderIds.OPENAI_LEGACY, timingContext, () => analyzeCardEvidenceWithOpenAiEmergency({
     images: initialPayload.images,
     prompt,
     shardKey: initialPayload.recognition_session_id || initialPayload.asset_id || initialPayload.assetId || "",
     preferredKeySlot: initialPayload.openai_preferred_key_slot || initialPayload.provider_key_slot_hint || null,
     modelOverride: providerModelOverrideFromOptions(providerOptions),
-    responseProfile: ["v4_compact_l2", "v4_ultra_fast_l2"].includes(providerPromptMode) ? "compact_sparse_v1" : "standard",
+    responseProfile: providerResponseProfile,
+    includeVectorDecision: Boolean(promptCandidatePacket),
     imageDetail: providerImageDetail,
     textVerbosity: ultraFastL2 ? "low" : null,
     serviceTier: ultraFastL2 ? ultraFastServiceTier(providerOptions) : null,
