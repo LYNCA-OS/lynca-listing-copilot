@@ -3028,12 +3028,24 @@ export async function runV4EbaySmoke({
   concurrency = 2,
   batchPoll = true,
   resumeBatchId = "",
+  evaluationSampleMode = "UNSPECIFIED",
   outPath = "",
   progress = true
 } = {}) {
   if (!datasetPath) throw new Error("--dataset is required");
   if (!baseUrl) throw new Error("--base-url is required");
   if (!username || !password) throw new Error("--username and --password are required");
+  const normalizedSampleMode = cleanText(evaluationSampleMode || "UNSPECIFIED").toUpperCase();
+  const allowedSampleModes = new Set([
+    "UNSPECIFIED",
+    "FIXED_REGRESSION",
+    "FRESH_GENERALIZATION",
+    "PAIRED_ABLATION",
+    "CONCURRENCY_FRESH"
+  ]);
+  if (!allowedSampleModes.has(normalizedSampleMode)) {
+    throw new Error(`Unsupported evaluation sample mode: ${evaluationSampleMode}`);
+  }
   const items = (await readDataset(datasetPath)).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
   if (!items.length) throw new Error("dataset slice has no items");
   const cookie = await login({ baseUrl, username, password });
@@ -3224,6 +3236,12 @@ export async function runV4EbaySmoke({
     preingestion_source: usePreingestion ? preingestionSource : null,
     model_override: modelOverride || null,
     predictions_sha256: predictionsSha256,
+    evaluation_sample_policy: {
+      mode: normalizedSampleMode,
+      sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION"].includes(normalizedSampleMode),
+      generalization_claim_permitted: ["FRESH_GENERALIZATION", "CONCURRENCY_FRESH"].includes(normalizedSampleMode),
+      same_sample_required: normalizedSampleMode === "PAIRED_ABLATION"
+    },
     blind_policy: {
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: true,
@@ -3301,6 +3319,7 @@ export async function main(argv = process.argv, env = process.env) {
     concurrency: Math.max(1, Math.trunc(numberArg(argv, "--concurrency", 2))),
     batchPoll: !hasFlag(argv, "--per-card-poll"),
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
+    evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
     outPath,
     progress: !hasFlag(argv, "--quiet")
   });

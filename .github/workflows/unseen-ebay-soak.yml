@@ -17,6 +17,9 @@ jobs:
   soak:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -25,6 +28,14 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Collect recent evaluation sample history
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/collect-ebay-evaluation-history.mjs \
+            --github \
+            --seed "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl" \
+            --out /tmp/ebay-evaluation-history.jsonl
       - name: Warm production path
         run: |
           for i in 1 2 3; do
@@ -90,7 +101,7 @@ jobs:
             --include-non-sports \
             --allow-partial \
             --query "sports card|basketball card|baseball card|football card|soccer card|hockey card|Pokemon card|One Piece card|Yu-Gi-Oh card" \
-            --exclude-answer-keys data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl
+            --exclude-answer-keys /tmp/ebay-evaluation-history.jsonl
       - name: Upload image-only intake bundle
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
@@ -107,7 +118,7 @@ jobs:
         run: |
           node - <<'NODE'
           const fs = require('fs');
-          const oldLabels = fs.readFileSync('data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl','utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+          const oldLabels = fs.readFileSync('/tmp/ebay-evaluation-history.jsonl','utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
           const newLabels = fs.readFileSync('/tmp/unseen-sealed-labels.jsonl','utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
           const dataset = JSON.parse(fs.readFileSync('/tmp/unseen-dataset.json','utf8'));
           const oldIds = new Set(oldLabels.map(x => x.item_id));
@@ -130,6 +141,7 @@ jobs:
             --limit "$COUNT" \
             --queue --speculative --use-preingestion --prewarm --per-card-poll \
             --disable-identity-cache \
+            --sample-mode fresh_generalization \
             --concurrency 2 \
             --model "${{ inputs.model }}" \
             --think-ms "${{ inputs.think_ms }}" \
@@ -156,5 +168,7 @@ jobs:
             /tmp/unseen-soak-report.json
             /tmp/unseen-soak-report.tsv
             /tmp/novelty.json
+            /tmp/unseen-sealed-labels.jsonl
+            /tmp/ebay-evaluation-history.jsonl
             /tmp/unseen-blind/unseen-soak/manifest.json
           retention-days: 14

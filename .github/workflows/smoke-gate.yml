@@ -79,6 +79,7 @@ jobs:
             --concurrency 2 \
             --queue --speculative --use-preingestion --prewarm \
             --model "${{ inputs.model }}" \
+            --sample-mode fixed_regression \
             --think-ms "${{ inputs.think_ms }}" \
             --l2-wait-ms 120000 \
             --out /tmp/gate-report.json

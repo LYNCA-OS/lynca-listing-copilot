@@ -254,6 +254,8 @@ assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");
 assert.match(v4SmokeSource, /recognition_phase_loaded_sealed_labels: false/, "blind smoke must not load sealed seller titles during recognition.");
 assert.match(v4SmokeSource, /predictions_frozen_before_scoring: true/, "blind smoke must freeze predictions before local weak-label scoring.");
+assert.match(v4SmokeSource, /evaluation_sample_policy/, "smoke reports must state whether their sample supports regression, ablation, or generalization claims.");
+assert.match(freshEbaySmokeWorkflowSource, /--sample-mode fresh_generalization/, "fresh smoke must label rotated cards as a generalization sample.");
 assert.match(v4SmokeSource, /pollBatchJobs/, "large production smoke must use one shared batch poller instead of one poll loop per card.");
 assert.match(v4SmokeSource, /pipeline_node_ledger:\s*summary\.pipeline_node_ledger/, "batch smoke results must retain the end-to-end node ledger.");
 assert.match(v4SmokeSource, /resolved_fields:\s*summary\.resolved_fields/, "batch smoke results must retain canonical resolved fields for per-card diagnosis.");

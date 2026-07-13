@@ -30,6 +30,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
     env:
       API_BASE_URL: https://listing.lyncafei.team
       METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
@@ -47,6 +48,14 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Collect recent evaluation sample history
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/collect-ebay-evaluation-history.mjs \
+            --github \
+            --seed "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl" \
+            --out /tmp/ebay-evaluation-history.jsonl
       - name: Validate production runtime
         run: |
           curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
@@ -67,7 +76,7 @@ jobs:
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
             --include-non-sports \
-            --exclude-answer-keys "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl"
+            --exclude-answer-keys /tmp/ebay-evaluation-history.jsonl
       - name: Upload image-only dataset
         run: |
           node scripts/build-ebay-image-intake-dataset.mjs \
@@ -116,6 +125,7 @@ jobs:
             --limit "${{ inputs.limit }}" \
             --concurrency 2 \
             --queue --speculative --use-preingestion \
+            --sample-mode fresh_generalization \
             --model "${{ inputs.model }}" \
             "${COMPACT_ARGS[@]}" \
             --think-ms "${{ inputs.think_ms }}" \
@@ -152,4 +162,5 @@ jobs:
             /tmp/fresh-ebay-report.json
             /tmp/fresh-ebay-dataset.json
             /tmp/fresh-ebay-sealed-labels.jsonl
+            /tmp/ebay-evaluation-history.jsonl
             /tmp/lynca-fresh-ebay/${{ env.RUN_ID }}/blind_dataset_manifest.json

@@ -403,6 +403,57 @@ assert.equal(failedChecks.has("critical_field_flow_has_no_silent_drop"), true);
 assert.deepEqual(brokenLedger.field_flow.unexplained_resolution_drop_fields, ["collector_number"]);
 assert.equal(brokenLedger.nodes.find((node) => node.node_id === "preingestion_ocr")?.metrics.job_observability[0].error_code, "OCR_TIMEOUT");
 
+const safelyRejectedInitialsLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: {
+      ...fields,
+      player: "Shohei Ohtani",
+      collector_number: "SO"
+    },
+    resolved_fields: fields,
+    rendered_fields: { fields }
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-rejected-initials", images: [{}, {}] }
+});
+const safelyRejectedCollectorFlow = safelyRejectedInitialsLedger.field_flow.fields
+  .find((row) => row.field_group === "collector_number");
+assert.equal(safelyRejectedInitialsLedger.field_flow.unexplained_resolution_drop_count, 0);
+assert.equal(safelyRejectedInitialsLedger.field_flow.normalization_guard_rejection_count, 1);
+assert.deepEqual(safelyRejectedInitialsLedger.field_flow.normalization_guard_rejection_fields, ["collector_number"]);
+assert.equal(safelyRejectedCollectorFlow?.disposition, "INTENTIONALLY_REJECTED_BY_NORMALIZATION_GUARD");
+assert.equal(safelyRejectedCollectorFlow?.normalization_guard_rejected, true);
+assert.equal(safelyRejectedCollectorFlow?.normalization_guard_candidate_count, 1);
+assert.equal(safelyRejectedCollectorFlow?.normalization_guard_accepted_count, 0);
+assert.deepEqual(safelyRejectedCollectorFlow?.normalization_guard_source_fields, ["collector_number"]);
+assert.equal(
+  safelyRejectedInitialsLedger.reconciliation.anomalies
+    .some((item) => item.check_id === "critical_field_flow_has_no_silent_drop"),
+  false
+);
+
+const validCodeStillDroppedLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: {
+      ...fields,
+      player: "Shohei Ohtani",
+      collector_number: "RMS-SO"
+    },
+    resolved_fields: fields,
+    rendered_fields: { fields }
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-valid-code-drop", images: [{}, {}] }
+});
+const validCodeCollectorFlow = validCodeStillDroppedLedger.field_flow.fields
+  .find((row) => row.field_group === "collector_number");
+assert.deepEqual(validCodeStillDroppedLedger.field_flow.unexplained_resolution_drop_fields, ["collector_number"]);
+assert.equal(validCodeCollectorFlow?.disposition, "UNEXPLAINED_RESOLUTION_DROP");
+assert.equal(validCodeCollectorFlow?.normalization_guard_rejected, false);
+assert.equal(validCodeCollectorFlow?.normalization_guard_accepted_count, 1);
+
 const reviewedArrayStateLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

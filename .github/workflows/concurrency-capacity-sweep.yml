@@ -31,6 +31,7 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+      actions: read
     env:
       API_BASE_URL: https://listing.lyncafei.team
       METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
@@ -49,6 +50,14 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Collect recent evaluation sample history
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/collect-ebay-evaluation-history.mjs \
+            --github \
+            --seed "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl" \
+            --out /tmp/ebay-evaluation-history.jsonl
       - name: Validate production control plane
         run: |
           curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
@@ -98,7 +107,7 @@ jobs:
             --exclude-sealed-products \
             --allow-partial \
             --query "sports card|basketball card|baseball card|football card|soccer card|hockey card|Pokemon card|One Piece card|Yu-Gi-Oh card" \
-            --exclude-answer-keys "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl"
+            --exclude-answer-keys /tmp/ebay-evaluation-history.jsonl
       - name: Upload image-only intake bundle
         run: |
           LEVEL_COUNT=$(node -e "process.stdout.write(String(process.env.SWEEP_LEVELS.split(',').map(Number).filter(n=>Number.isInteger(n)&&n>0).length))")
@@ -183,6 +192,7 @@ jobs:
               --queue --speculative --use-preingestion --per-card-poll \
               --ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority \
               --disable-identity-cache \
+              --sample-mode concurrency_fresh \
               --model "${{ inputs.model }}" \
               --think-ms "${{ inputs.think_ms }}" \
               --l2-wait-ms 180000 \
@@ -291,4 +301,5 @@ jobs:
             /tmp/concurrency-c*-report.tsv
             /tmp/concurrency-c*-dataset.json
             /tmp/concurrency-c*-sealed-labels.jsonl
+            /tmp/ebay-evaluation-history.jsonl
             /tmp/lynca-concurrency-blind/${{ env.RUN_ID }}/blind_dataset_manifest.json
