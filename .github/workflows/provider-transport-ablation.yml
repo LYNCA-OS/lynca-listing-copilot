@@ -100,6 +100,7 @@ jobs:
             --run-id "$RUN_ID" \
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
+            --sample-mode paired_ablation \
             --include-non-sports \
             --exclude-answer-keys /tmp/ebay-evaluation-history.jsonl
           node scripts/build-ebay-image-intake-dataset.mjs \

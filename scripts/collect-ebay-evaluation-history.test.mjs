@@ -31,6 +31,19 @@ try {
   assert.deepEqual(persisted, result.rows);
   assert.equal(JSON.stringify(persisted).includes("must not copy"), false);
 
+  const reviewedSeed = join(root, "reviewed-seed.jsonl");
+  const reviewedOutput = join(root, "reviewed-history.jsonl");
+  await writeFile(reviewedSeed, `${JSON.stringify({ source_feedback_id: "feedback-1", reviewed_title: "must not copy" })}\n`);
+  const reviewed = await collectEbayEvaluationHistory({
+    seedPaths: [reviewedSeed],
+    outPath: reviewedOutput,
+    idFields: ["source_feedback_id"],
+    outputField: "source_feedback_id"
+  });
+  assert.equal(reviewed.unique_item_count, 1);
+  assert.equal(reviewed.rows[0].source_feedback_id, "feedback-1");
+  assert.equal(JSON.stringify(reviewed.rows).includes("must not copy"), false);
+
   const firstPage = Array.from({ length: 100 }, (_, index) => ({
     id: index + 1,
     name: index === 0 ? "fresh-ebay-smoke-report" : "unrelated",

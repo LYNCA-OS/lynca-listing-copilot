@@ -207,7 +207,7 @@ function historyJsonlName(path) {
   return /(?:sealed[-_]?labels?|answer[-_]?key).*\.jsonl$/i.test(basename(path));
 }
 
-async function itemIdsFromFile(path) {
+async function itemIdsFromFile(path, idFields = ["item_id"]) {
   const text = await readFile(path, "utf8");
   const ids = [];
   for (const [index, line] of text.split(/\r?\n/).entries()) {
@@ -218,7 +218,7 @@ async function itemIdsFromFile(path) {
     } catch (error) {
       throw new Error(`Invalid JSONL at ${path}:${index + 1}: ${error.message}`);
     }
-    const itemId = cleanText(row?.item_id);
+    const itemId = idFields.map((field) => cleanText(row?.[field])).find(Boolean) || "";
     if (itemId) ids.push(itemId);
   }
   return ids;
@@ -277,7 +277,10 @@ export async function collectEbayEvaluationHistory({
   token = process.env.GITHUB_TOKEN || "",
   outPath = "",
   fetchImpl = globalThis.fetch,
-  downloadConcurrency = defaultDownloadConcurrency
+  downloadConcurrency = defaultDownloadConcurrency,
+  artifactNames = defaultArtifactNames,
+  idFields = ["item_id"],
+  outputField = "item_id"
 } = {}) {
   const sources = [];
   for (const path of seedPaths.map((value) => resolve(value))) sources.push({ path, source: `seed:${basename(path)}` });
@@ -298,7 +301,7 @@ export async function collectEbayEvaluationHistory({
   try {
     if (github) {
       tempRoot = await mkdtemp(join(tmpdir(), "lynca-ebay-eval-history-"));
-      artifacts = await githubArtifacts({ repository, token, fetchImpl, diagnostics: networkDiagnostics });
+      artifacts = await githubArtifacts({ repository, token, artifactNames, fetchImpl, diagnostics: networkDiagnostics });
       const githubRoots = await mapConcurrent(artifacts, downloadConcurrency, async (artifact) => (
         await downloadArtifact({
           artifact,
@@ -322,15 +325,15 @@ export async function collectEbayEvaluationHistory({
 
     const history = new Map();
     for (const source of sources) {
-      for (const itemId of await itemIdsFromFile(source.path)) {
+      for (const itemId of await itemIdsFromFile(source.path, idFields)) {
         if (!history.has(itemId)) history.set(itemId, new Set());
         history.get(itemId).add(source.source);
       }
     }
     const rows = [...history.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([item_id, itemSources]) => ({
-        item_id,
+      .map(([itemId, itemSources]) => ({
+        [outputField]: itemId,
         source_count: itemSources.size,
         sources: [...itemSources].sort()
       }));
@@ -352,6 +355,7 @@ export async function collectEbayEvaluationHistory({
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  const artifactNames = new Set(listArg(argValue(argv, "--artifact-names", "")));
   const result = await collectEbayEvaluationHistory({
     seedPaths: listArg(argValue(argv, "--seed", "")),
     artifactRoots: listArg(argValue(argv, "--artifact-roots", "")),
@@ -359,7 +363,10 @@ export async function main(argv = process.argv.slice(2)) {
     repository: argValue(argv, "--repository", process.env.GITHUB_REPOSITORY || ""),
     token: process.env.GITHUB_TOKEN || "",
     outPath: argValue(argv, "--out", "/tmp/ebay-evaluation-history.jsonl"),
-    downloadConcurrency: positiveInteger(argValue(argv, "--download-concurrency", ""), defaultDownloadConcurrency)
+    downloadConcurrency: positiveInteger(argValue(argv, "--download-concurrency", ""), defaultDownloadConcurrency),
+    artifactNames: artifactNames.size ? artifactNames : defaultArtifactNames,
+    idFields: listArg(argValue(argv, "--id-fields", "item_id")),
+    outputField: cleanText(argValue(argv, "--output-field", "item_id")) || "item_id"
   });
   process.stdout.write(`${JSON.stringify({ ok: true, ...result, rows: undefined }, null, 2)}\n`);
 }

@@ -12,6 +12,10 @@ import {
   readJsonl,
   uploadLocalImageToCloud
 } from "../lib/listing/evaluation/blind-eval.mjs";
+import {
+  evaluationItemSetSha256,
+  normalizeEvaluationSampleMode
+} from "../lib/listing/evaluation/sample-policy.mjs";
 
 const defaultOutPath = "data/eval/ebay-reference/ebay-image-intake-dataset.json";
 const defaultSealedLabelsOutPath = "data/eval/ebay-reference/ebay-image-intake-sealed-labels.jsonl";
@@ -123,8 +127,33 @@ async function readRunRows({ outDir, runId }) {
   const paths = blindEvalRunPaths({ outDir, runId });
   const blindRows = await readJsonl(paths.blind_inputs_path);
   const answerRows = await readJsonl(paths.answer_key_path);
+  const manifest = JSON.parse(await readFile(paths.manifest_path, "utf8").catch(() => "{}"));
   const answerByCaseId = new Map(answerRows.map((answer) => [normalizeText(answer.case_id), answer]));
-  return { blindRows, answerRows, answerByCaseId };
+  return { blindRows, answerRows, answerByCaseId, manifest };
+}
+
+function aggregateEvaluationSamplePolicy(sourceRuns = [], selectedItemIds = []) {
+  const policies = sourceRuns.map((run) => run.evaluation_sample_policy).filter(Boolean);
+  const modes = [...new Set(policies.map((policy) => normalizeEvaluationSampleMode(policy.mode || "UNSPECIFIED")))];
+  const mode = modes.length === 1 ? modes[0] : "UNSPECIFIED";
+  const fresh = ["FRESH_GENERALIZATION", "CONCURRENCY_FRESH"].includes(mode);
+  const excludedHashes = policies.map((policy) => normalizeText(policy.excluded_item_ids_sha256)).filter(Boolean);
+  return {
+    mode,
+    sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION"].includes(mode),
+    generalization_claim_permitted: fresh,
+    same_sample_required: mode === "PAIRED_ABLATION",
+    cross_wave_overlap_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION"].includes(mode),
+    selected_item_count: selectedItemIds.length,
+    selected_item_ids_sha256: evaluationItemSetSha256(selectedItemIds),
+    excluded_item_count: policies.reduce((sum, policy) => sum + Math.max(0, Number(policy.excluded_item_count || 0)), 0),
+    excluded_item_ids_sha256: excludedHashes.length ? stableHash(excludedHashes.sort().join("\n")) : "",
+    exclusion_source_count: policies.reduce((sum, policy) => sum + Math.max(0, Number(policy.exclusion_source_count || 0)), 0),
+    prior_history_exclusion_present: policies.length > 0 && policies.every((policy) => policy.prior_history_exclusion_present === true),
+    prior_history_overlap_count: policies.reduce((sum, policy) => sum + Math.max(0, Number(policy.prior_history_overlap_count || 0)), 0),
+    novelty_verified: fresh && policies.length === sourceRuns.length && policies.every((policy) => policy.novelty_verified === true),
+    source_run_count: sourceRuns.length
+  };
 }
 
 async function writeText(path, text) {
@@ -172,8 +201,13 @@ export async function buildEbayImageIntakeDataset({
   const seenItemIds = new Set();
   const sourceRuns = [];
   for (const runId of runIds) {
-    const { blindRows, answerRows, answerByCaseId } = await readRunRows({ outDir, runId });
-    sourceRuns.push({ run_id: runId, blind_rows: blindRows.length, sealed_answer_rows: answerRows.length });
+    const { blindRows, answerRows, answerByCaseId, manifest } = await readRunRows({ outDir, runId });
+    sourceRuns.push({
+      run_id: runId,
+      blind_rows: blindRows.length,
+      sealed_answer_rows: answerRows.length,
+      evaluation_sample_policy: manifest.evaluation_sample_policy || null
+    });
     for (const blindRow of blindRows) {
       if (limit > 0 && items.length >= limit) break;
       const answer = answerByCaseId.get(normalizeText(blindRow.case_id));
@@ -251,6 +285,7 @@ export async function buildEbayImageIntakeDataset({
     item_count: items.length,
     image_count: items.reduce((sum, item) => sum + item.images.length, 0),
     unique_item_count: seenItemIds.size,
+    evaluation_sample_policy: aggregateEvaluationSamplePolicy(sourceRuns, [...seenItemIds]),
     upload_images: uploadImages,
     sealed_labels_path: relativePortablePath(sealedLabelsOutPath),
     intake_policy: {

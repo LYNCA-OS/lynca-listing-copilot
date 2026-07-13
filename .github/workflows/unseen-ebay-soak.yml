@@ -107,6 +107,7 @@ jobs:
             --run-id unseen-soak \
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
+            --sample-mode fresh_generalization \
             --include-non-sports \
             --allow-partial \
             --query "sports card|basketball card|baseball card|football card|soccer card|hockey card|Pokemon card|One Piece card|Yu-Gi-Oh card" \

@@ -4,6 +4,11 @@ import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { fairTokenRecall, policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
+import {
+  assertEvaluationSampleProvenance,
+  evaluationItemSetSha256,
+  normalizeEvaluationSampleMode
+} from "../lib/listing/evaluation/sample-policy.mjs";
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -58,8 +63,7 @@ function loadDatasetItems(dataset) {
 }
 
 async function readDataset(path) {
-  const dataset = JSON.parse(await readFile(resolve(path), "utf8"));
-  return loadDatasetItems(dataset);
+  return JSON.parse(await readFile(resolve(path), "utf8"));
 }
 
 async function readSealedLabels(path) {
@@ -2412,18 +2416,35 @@ function sealedLabelForItem(item = {}, index = 0, sealedLabels = new Map()) {
     || null;
 }
 
-function attachPostRecognitionScoring(results = [], items = [], sealedLabels = new Map(), offset = 0) {
+export function attachPostRecognitionScoring(results = [], items = [], sealedLabels = new Map(), offset = 0) {
   return results.map((row, localIndex) => {
     const item = items[localIndex] || {};
     const label = sealedLabelForItem(item, offset + localIndex, sealedLabels) || {};
     const sellerTitle = cleanText(label.title || "");
+    const reviewedTitle = cleanText(label.reviewed_title || label.corrected_title || "");
+    const reviewedTitleGroundTruth = Boolean(
+      reviewedTitle
+      && label.policy?.reviewed_title_is_ground_truth === true
+      && label.policy?.model_prompt_visible !== true
+    );
+    const referenceTitle = reviewedTitle || sellerTitle;
+    const referenceTitleType = reviewedTitleGroundTruth
+      ? "REVIEWED_INTERNAL_TITLE"
+      : sellerTitle
+        ? "MARKETPLACE_WEAK_LABEL"
+        : "NONE";
     return {
       ...row,
       sealed_label_key: item.sealed_eval_label_ref?.key || label.key || row.sealed_label_key || null,
       seller_title_used_for_local_eval_only: Boolean(sellerTitle),
       seller_title: sellerTitle,
-      l1_scoring: scoreTitles(sellerTitle, row.l1_title || ""),
-      final_scoring: scoreTitles(sellerTitle, row.final_title || ""),
+      reviewed_title_used_for_local_eval_only: Boolean(reviewedTitle),
+      reviewed_title: reviewedTitle,
+      reference_title: referenceTitle,
+      reference_title_type: referenceTitleType,
+      reference_title_is_reviewed_ground_truth: reviewedTitleGroundTruth,
+      l1_scoring: scoreTitles(referenceTitle, row.l1_title || ""),
+      final_scoring: scoreTitles(referenceTitle, row.final_title || ""),
       item_web_url: label.item_web_url || null
     };
   });
@@ -2893,6 +2914,25 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       policy_fair_pass_at_0_72: countPass(finalPolicy, 0.72),
       policy_fair_pass_at_0_80: countPass(finalPolicy, 0.8)
     },
+    accuracy_reference: {
+      reviewed_title_ground_truth_count: results.filter((item) => item.reference_title_is_reviewed_ground_truth === true).length,
+      marketplace_weak_label_count: results.filter((item) => item.reference_title_type === "MARKETPLACE_WEAK_LABEL").length,
+      missing_reference_count: results.filter((item) => !cleanText(item.reference_title)).length,
+      all_attempts_have_reviewed_title_ground_truth: results.length > 0
+        && results.every((item) => item.reference_title_is_reviewed_ground_truth === true)
+    },
+    reviewed_title_policy_acceptance: {
+      eligible: results.length > 0
+        && results.every((item) => item.reference_title_is_reviewed_ground_truth === true),
+      correct: countPass(finalPolicy, 0.72),
+      total: results.length,
+      rate: results.length > 0
+        && results.every((item) => item.reference_title_is_reviewed_ground_truth === true)
+        ? Number((countPass(finalPolicy, 0.72) / results.length).toFixed(6))
+        : null,
+      threshold: 0.72,
+      boundary: "reviewed title-level acceptance; not field-level card exact"
+    },
     serial_title_analysis: {
       reference_serial_cards: results.filter((item) => item.final_scoring?.serial_number_title_analysis?.reference_serial_count > 0).length,
       exact_match_count: results.reduce((sum, item) => sum + Number(item.final_scoring?.serial_number_title_analysis?.exact_match_count || 0), 0),
@@ -2993,6 +3033,9 @@ export function perCardTsv(results = []) {
     "x-ratelimit-reset-tokens",
     "l1_title",
     "final_title",
+    "reference_title_type",
+    "reference_title_is_reviewed_ground_truth",
+    "reference_title",
     "seller_title"
   ];
   const rows = results.map((item) => [
@@ -3080,6 +3123,9 @@ export function perCardTsv(results = []) {
     item["x-ratelimit-reset-tokens"],
     item.l1_title,
     item.final_title,
+    item.reference_title_type,
+    item.reference_title_is_reviewed_ground_truth,
+    item.reference_title,
     item.seller_title
   ].map(tsvEscape).join("\t"));
   return `${columns.join("\t")}\n${rows.join("\n")}\n`;
@@ -3124,19 +3170,15 @@ export async function runV4EbaySmoke({
   if (!datasetPath) throw new Error("--dataset is required");
   if (!baseUrl) throw new Error("--base-url is required");
   if (!username || !password) throw new Error("--username and --password are required");
-  const normalizedSampleMode = cleanText(evaluationSampleMode || "UNSPECIFIED").toUpperCase();
-  const allowedSampleModes = new Set([
-    "UNSPECIFIED",
-    "FIXED_REGRESSION",
-    "FRESH_GENERALIZATION",
-    "PAIRED_ABLATION",
-    "CONCURRENCY_FRESH"
-  ]);
-  if (!allowedSampleModes.has(normalizedSampleMode)) {
-    throw new Error(`Unsupported evaluation sample mode: ${evaluationSampleMode}`);
-  }
+  const normalizedSampleMode = normalizeEvaluationSampleMode(evaluationSampleMode);
   const normalizedTenantCount = Math.max(1, Math.min(50, Math.trunc(Number(tenantCount) || 1)));
-  const items = (await readDataset(datasetPath)).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
+  const dataset = await readDataset(datasetPath);
+  const datasetSamplePolicy = Array.isArray(dataset) ? null : dataset.evaluation_sample_policy || null;
+  const sampleProvenance = assertEvaluationSampleProvenance({
+    requestedMode: normalizedSampleMode,
+    datasetPolicy: datasetSamplePolicy
+  });
+  const items = loadDatasetItems(dataset).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
   if (!items.length) throw new Error("dataset slice has no items");
   const cookie = await login({ baseUrl, username, password });
   const runStartedAt = Date.now();
@@ -3295,6 +3337,8 @@ export async function runV4EbaySmoke({
   const predictionsSha256 = predictionHash(recognitionResults);
   const sealedLabels = await readSealedLabels(sealedLabelsPath);
   const results = attachPostRecognitionScoring(recognitionResults, items, sealedLabels, offset);
+  const allReviewedTitleGroundTruth = results.length > 0
+    && results.every((row) => row.reference_title_is_reviewed_ground_truth === true);
   const report = {
     schema_version: "v4-ebay-smoke-v1",
     generated_at: new Date().toISOString(),
@@ -3344,14 +3388,30 @@ export async function runV4EbaySmoke({
       mode: normalizedSampleMode,
       sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION"].includes(normalizedSampleMode),
       generalization_claim_permitted: ["FRESH_GENERALIZATION", "CONCURRENCY_FRESH"].includes(normalizedSampleMode),
-      same_sample_required: normalizedSampleMode === "PAIRED_ABLATION"
+      same_sample_required: normalizedSampleMode === "PAIRED_ABLATION",
+      provenance_required: sampleProvenance.required,
+      provenance_verified: sampleProvenance.verified,
+      evaluated_item_count: items.length,
+      evaluated_item_ids_sha256: evaluationItemSetSha256(items.map((item, index) => (
+        item.source_feedback_id || item.source_record?.sealed_eval_label_key || candidateId(item, offset + index)
+      ))),
+      dataset_provenance: datasetSamplePolicy
     },
     blind_policy: {
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: true,
       seller_title_is_ground_truth: false,
+      reviewed_title_visible_to_model: false,
       recognition_phase_loaded_sealed_labels: false,
       predictions_frozen_before_scoring: true
+    },
+    accuracy_policy: {
+      corrected_title_is_reviewed_title_ground_truth: allReviewedTitleGroundTruth,
+      corrected_title_as_reviewed_title_gt: allReviewedTitleGroundTruth,
+      reviewed_title_ground_truth_count: results.filter((row) => row.reference_title_is_reviewed_ground_truth === true).length,
+      marketplace_title_is_weak_label_only: results.some((row) => row.reference_title_type === "MARKETPLACE_WEAK_LABEL"),
+      field_ground_truth_available: false,
+      title_acceptance_threshold: 0.72
     },
     summary: summarize(results, { runWallMs: recognitionRunWallMs }),
     results

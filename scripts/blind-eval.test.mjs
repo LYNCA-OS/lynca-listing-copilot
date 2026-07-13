@@ -392,10 +392,14 @@ await withTempDir(async (dir) => {
     runId: "exclude-run",
     limit: 1,
     excludeAnswerKeyPaths: [priorAnswerKey],
+    evaluationSampleMode: "FRESH_GENERALIZATION",
     fetchImpl
   });
   const answers = await readJsonl(blindEvalRunPaths({ outDir: dir, runId: "exclude-run" }).answer_key_path);
   assert.equal(result.excluded_item_count, 1);
+  assert.equal(result.evaluation_sample_policy.mode, "FRESH_GENERALIZATION");
+  assert.equal(result.evaluation_sample_policy.novelty_verified, true);
+  assert.equal(result.evaluation_sample_policy.prior_history_overlap_count, 0);
   assert.equal(answers[0].item_id, "item-2");
 });
 

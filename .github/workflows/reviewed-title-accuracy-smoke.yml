@@ -1,0 +1,148 @@
+name: reviewed-title-accuracy-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Fresh writer-reviewed cards to run (1-30)"
+        default: "3"
+      model:
+        description: "Production model"
+        default: "gpt-5-mini"
+
+concurrency:
+  group: reviewed-title-accuracy-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+    env:
+      API_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      DATASET_PATH: /tmp/reviewed-title-blind.json
+      SEALED_LABELS_PATH: /tmp/reviewed-title-sealed-labels.jsonl
+      REPORT_PATH: /tmp/reviewed-title-accuracy-report.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate requested sample size
+        run: |
+          node -e 'const n=Number(process.argv[1]); if(!Number.isInteger(n)||n<1||n>30) throw new Error("limit must be 1-30")' "${{ inputs.limit }}"
+      - name: Collect prior reviewed-title evaluation history
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/collect-ebay-evaluation-history.mjs \
+            --github \
+            --artifact-names reviewed-title-accuracy-report \
+            --id-fields source_feedback_id \
+            --output-field source_feedback_id \
+            --out /tmp/reviewed-title-history.jsonl
+      - name: Build fresh sealed reviewed-title sample
+        run: |
+          node scripts/build-reviewed-title-blind-eval.mjs \
+            --source data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json \
+            --exclude "data/recognition/review/supabase-feedback-regression-30-field-review-packet.json,/tmp/reviewed-title-history.jsonl" \
+            --out "$DATASET_PATH" \
+            --sealed-labels-out "$SEALED_LABELS_PATH" \
+            --limit "${{ inputs.limit }}" \
+            --selection-seed "reviewed-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --sample-mode fresh_generalization
+      - name: Prove blind input and fresh-sample provenance
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const dataset = JSON.parse(fs.readFileSync(process.env.DATASET_PATH, 'utf8'));
+          const labels = fs.readFileSync(process.env.SEALED_LABELS_PATH, 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+          const datasetText = fs.readFileSync(process.env.DATASET_PATH, 'utf8');
+          const checks = {
+            exact_count: dataset.item_count === Number('${{ inputs.limit }}') && labels.length === Number('${{ inputs.limit }}'),
+            fresh_sample_provenance: dataset.evaluation_sample_policy?.mode === 'FRESH_GENERALIZATION' && dataset.evaluation_sample_policy?.novelty_verified === true,
+            reviewed_titles_absent: labels.every((label) => !datasetText.includes(String(label.reviewed_title || ''))),
+            image_only: dataset.intake_policy?.image_only === true && dataset.items.every((item) => item.images?.length > 0),
+            self_retrieval_exclusion: dataset.items.every((item) => item.source_feedback_id && item.source_record?.self_retrieval_exclusion_required === true)
+          };
+          console.log(JSON.stringify(checks, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+      - name: Validate production runtime
+        run: |
+          curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
+          node - <<'NODE'
+          const health = require('/tmp/v4-health.json');
+          const checks = {
+            ready: health.ready === true,
+            main_branch: health.deployment?.git_commit_ref === 'main',
+            queue_configured: health.production_queue?.configured === true,
+            worker_secret_configured: health.production_queue?.worker_secret_configured === true
+          };
+          console.log(JSON.stringify({ checks, deployment: health.deployment, model: health.provider?.model_id || null }, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+      - name: Run reviewed-title blind production smoke
+        run: |
+          node scripts/v4-ebay-smoke.mjs \
+            --dataset "$DATASET_PATH" \
+            --sealed-labels "$SEALED_LABELS_PATH" \
+            --base-url "$API_BASE_URL" \
+            --limit "${{ inputs.limit }}" \
+            --concurrency 2 \
+            --queue --speculative --use-preingestion --force-l2-direct \
+            --sample-mode fresh_generalization \
+            --model "${{ inputs.model }}" \
+            --think-ms 0 \
+            --l2-wait-ms 240000 \
+            --request-timeout-ms 120000 \
+            --out "$REPORT_PATH"
+      - name: Enforce technical and evaluation integrity
+        run: |
+          node - <<'NODE'
+          const report = require(process.env.REPORT_PATH);
+          const s = report.summary;
+          const nodes = s.pipeline_node_observability || {};
+          const checks = {
+            all_cards_complete: s.ok_count === s.attempted_count,
+            reviewed_gt_only: report.accuracy_policy?.corrected_title_is_reviewed_title_ground_truth === true,
+            reviewed_gt_count: s.accuracy_reference?.reviewed_title_ground_truth_count === s.attempted_count,
+            sample_provenance: report.evaluation_sample_policy?.provenance_verified === true,
+            pipeline_ledgers: nodes.ledger_present_count === s.attempted_count,
+            no_transport_errors: Number(nodes.transport_error_count || 0) === 0,
+            no_missing_required_nodes: Number(nodes.missing_required_node_count || 0) === 0
+          };
+          console.log(JSON.stringify({
+            checks,
+            attempted: s.attempted_count,
+            completed: s.ok_count,
+            reviewed_title_accuracy: s.reviewed_title_policy_acceptance,
+            policy_fair: s.final_accuracy_proxy,
+            writer_p50_ms: s.writer_ready_p50_ms,
+            writer_p95_ms: s.writer_ready_p95_ms,
+            queue_p95_ms: s.scheduler_queue_wait_p95_ms,
+            provider: s.provider_diagnostics,
+            catalog_prompt_candidates: s.l2_catalog_prompt_candidate_count,
+            vector_prompt_candidates: s.l2_vector_prompt_candidate_count
+          }, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+      - name: Upload detailed evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: reviewed-title-accuracy-report
+          retention-days: 30
+          path: |
+            /tmp/reviewed-title-accuracy-report.json
+            /tmp/reviewed-title-accuracy-report.tsv
+            /tmp/reviewed-title-sealed-labels.jsonl
+            /tmp/reviewed-title-history.jsonl

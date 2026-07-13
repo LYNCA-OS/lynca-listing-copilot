@@ -103,6 +103,7 @@ jobs:
             --run-id "$RUN_ID" \
             --limit "$TOTAL" \
             --image-limit 2 \
+            --sample-mode concurrency_fresh \
             --include-non-sports \
             --exclude-sealed-products \
             --allow-partial \
@@ -124,6 +125,7 @@ jobs:
         run: |
           node - <<'NODE'
           const fs = require('fs');
+          const crypto = require('crypto');
           const dataset = JSON.parse(fs.readFileSync(process.env.DATASET_PATH, 'utf8'));
           const labels = fs.readFileSync(process.env.SEALED_LABELS_PATH, 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
           const requestedCardsPerLevel = Number('${{ inputs.cards_per_level }}');
@@ -156,6 +158,11 @@ jobs:
               unique_item_count: group.length,
               sealed_labels_path: `/tmp/concurrency-c${level}-sealed-labels.jsonl`,
               concurrency_experiment: { level, offered_load_limit: level, stratum: level, cards_per_level: cardsPerLevel },
+              evaluation_sample_policy: {
+                ...(dataset.evaluation_sample_policy || {}),
+                selected_item_count: group.length,
+                selected_item_ids_sha256: crypto.createHash('sha256').update(groupLabels.map((label) => String(label.item_id || '')).filter(Boolean).sort().join('\n')).digest('hex')
+              },
               items: group
             };
             fs.writeFileSync(`/tmp/concurrency-c${level}-dataset.json`, JSON.stringify(output, null, 2));

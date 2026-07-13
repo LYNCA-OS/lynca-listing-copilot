@@ -75,6 +75,7 @@ jobs:
             --run-id "$RUN_ID" \
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
+            --sample-mode fresh_generalization \
             --include-non-sports \
             --exclude-answer-keys /tmp/ebay-evaluation-history.jsonl
       - name: Upload image-only dataset

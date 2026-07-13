@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { buildEbayImageIntakeDataset } from "./build-ebay-image-intake-dataset.mjs";
 import { buildCatalogGapQueueFromImageIntake } from "./build-catalog-gap-queue-from-image-intake.mjs";
+import { buildEvaluationSamplePolicy } from "../lib/listing/evaluation/sample-policy.mjs";
 
 const tmpDir = await mkdtemp(path.join(os.tmpdir(), "ebay-image-intake-"));
 try {
@@ -22,6 +23,17 @@ try {
   await writeFile(
     path.join(runRoot, "inference_bundle", "blind_inputs.jsonl"),
     `${JSON.stringify({ case_id: "case-1", image_paths: [frontPath, backPath] })}\n`
+  );
+  await writeFile(
+    path.join(runRoot, "blind_dataset_manifest.json"),
+    `${JSON.stringify({
+      evaluation_sample_policy: buildEvaluationSamplePolicy({
+        mode: "FRESH_GENERALIZATION",
+        excludedItemIds: ["prior-item"],
+        selectedItemIds: ["v1|secret-title|0"],
+        exclusionSourceCount: 1
+      })
+    })}\n`
   );
   await writeFile(
     path.join(answerDir, "answer_key.jsonl"),
@@ -50,6 +62,9 @@ try {
   assert.equal(dataset.schema_version, "ebay-image-intake-dataset-v1");
   assert.equal(dataset.item_count, 1);
   assert.equal(dataset.image_count, 2);
+  assert.equal(dataset.evaluation_sample_policy.mode, "FRESH_GENERALIZATION");
+  assert.equal(dataset.evaluation_sample_policy.novelty_verified, true);
+  assert.equal(dataset.evaluation_sample_policy.selected_item_count, 1);
   assert.equal(dataset.intake_policy.seller_titles_in_dataset, false);
   assert.deepEqual(dataset.items[0].source_titles, {});
   assert.equal(dataset.items[0].canonical_title, "");
