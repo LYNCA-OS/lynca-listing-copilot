@@ -43,6 +43,7 @@ import {
   valuePresent,
   normalizePositiveIntegerOrNull,
   postObservationCatalogVectorHedgeMs,
+  postObservationExactAnchorCatalogBudgetMs,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
   positiveIntegerFromEnv,
@@ -63,6 +64,7 @@ import {
 } from "../lib/listing/pipeline/provider-prompt.mjs";
 import {
   normalizeBoolean,
+  explicitlyUncertainIdentityFields,
   normalizeFields,
   normalizeGradeCompanyForFields,
   normalizeObservableComponents,
@@ -2077,8 +2079,12 @@ function normalizeAiResult(result, maxTitleLength, source = "openai") {
     FAILED: "FAILED"
   };
   const confidence = confidenceMap[String(result.confidence || "").toUpperCase()] || "MEDIUM";
+  const explicitlyUncertainFields = explicitlyUncertainIdentityFields(result.fields);
   const fields = normalizeFields(result.fields);
-  const unresolved = normalizeUnresolved(result.unresolved, result.fields);
+  const unresolved = normalizeUnresolved([
+    ...(Array.isArray(result.unresolved) ? result.unresolved : []),
+    ...explicitlyUncertainFields.map((field) => `${field} contains explicit uncertainty and requires review`)
+  ], result.fields);
   const sanitized = sanitizeResultText(result, fields, confidence, unresolved, maxTitleLength);
   const title = repairOrphanAutoGradeSuffix(moveLeadingGradeToEnd(sanitized.title, maxTitleLength), fields, maxTitleLength);
   const preTitleAudit = {
@@ -2110,6 +2116,10 @@ function normalizeAiResult(result, maxTitleLength, source = "openai") {
     fields: presentationFields,
     unresolved: presentationUnresolved,
     vector_candidate_decision: result.vector_candidate_decision || null,
+    field_normalization_guard: {
+      explicit_uncertainty_suppressed_count: explicitlyUncertainFields.length,
+      explicit_uncertainty_suppressed_fields: explicitlyUncertainFields
+    },
     source,
     _normalized_evidence_fields: fields,
     _pre_title_audit: preTitleAudit
@@ -5259,7 +5269,16 @@ async function createOpenAiTitle(payload, selection, {
       envFlag(process.env, "ENABLE_POST_OBSERVATION_RETRIEVAL_HEDGE", true)
     ) === true;
     const deadlineEnabled = postObservationRetrievalDeadlineEnabled(process.env, providerOptions);
-    const criticalPathBudgetMs = postObservationRetrievalCriticalPathBudgetMs(process.env, providerOptions);
+    const baseCriticalPathBudgetMs = postObservationRetrievalCriticalPathBudgetMs(process.env, providerOptions);
+    const providerRetrievalAnchors = retrievalAnchorSummary(providerResolvedForRetrieval);
+    const exactAnchorCatalogBudgetMs = providerRetrievalAnchors.has_printed_code
+      ? postObservationExactAnchorCatalogBudgetMs(process.env, providerOptions)
+      : 0;
+    const criticalPathBudgetMs = Math.max(baseCriticalPathBudgetMs, exactAnchorCatalogBudgetMs);
+    if (exactAnchorCatalogBudgetMs > baseCriticalPathBudgetMs) {
+      addTiming(timingContext, "post_observation_exact_anchor_budget_used_count", 1);
+      addTiming(timingContext, "post_observation_exact_anchor_budget_ms", exactAnchorCatalogBudgetMs);
+    }
     const deadlineStartedAt = nowMs();
     const remainingDeadlineMs = () => Math.max(0, criticalPathBudgetMs - (nowMs() - deadlineStartedAt));
     const hedgeWaitStartedAt = nowMs();
@@ -5516,7 +5535,9 @@ async function createOpenAiTitle(payload, selection, {
       critical_fields_settled: preingestionOcrRendezvous?.critical_fields_settled === true,
       target_fields: criticalOcrWait.target_fields,
       target_fields_settled: preingestionOcrRendezvous?.target_fields_settled === true,
-      wait_reasons: criticalOcrWait.reasons
+      wait_reasons: criticalOcrWait.reasons,
+      ocr_signal_fields: criticalOcrWait.ocr_signal_fields,
+      ocr_signal_conflicting_fields: criticalOcrWait.ocr_signal_conflicting_fields
     }
   });
   const rendezvousEvidencePatches = Array.isArray(preingestionOcrRendezvous?.evidence_patches)

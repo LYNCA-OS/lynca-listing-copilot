@@ -167,6 +167,43 @@ const noHardFieldWait = criticalOcrRendezvousDecision({
 assert.deepEqual(noHardFieldWait.target_fields, []);
 assert.equal(noHardFieldWait.should_wait, false, "non-hard uncertainty must not add OCR latency to every card");
 
+const ocrPartialGradeWait = criticalOcrRendezvousDecision({
+  currentFields: {},
+  latestOcrState: {
+    configured: true,
+    grade_label_active_count: 1,
+    evidence_patches: [{ field: "grade_company", value: "PSA" }]
+  },
+  criticalWaitMs: 2500
+});
+assert.equal(ocrPartialGradeWait.should_wait, true, "partial OCR grade evidence should wait for its active counterpart");
+assert.deepEqual(ocrPartialGradeWait.target_fields, ["grade"]);
+assert.deepEqual(ocrPartialGradeWait.ocr_signal_fields, ["grade_company"]);
+
+const ocrPartialSerialWait = criticalOcrRendezvousDecision({
+  currentFields: {},
+  latestOcrState: {
+    configured: true,
+    serial_active_count: 1,
+    evidence_patches: [{ field: "numerical_rarity", value: "2/3" }]
+  },
+  criticalWaitMs: 2500
+});
+assert.equal(ocrPartialSerialWait.should_wait, true, "direct OCR numbering should wait for active serial verification");
+assert.deepEqual(ocrPartialSerialWait.target_fields, ["serial_number"]);
+
+const unrelatedOcrPatchDoesNotWait = criticalOcrRendezvousDecision({
+  currentFields: {},
+  latestOcrState: {
+    configured: true,
+    serial_active_count: 1,
+    grade_label_active_count: 1,
+    evidence_patches: [{ field: "product", value: "Topps Chrome" }]
+  },
+  criticalWaitMs: 2500
+});
+assert.equal(unrelatedOcrPatchDoesNotWait.should_wait, false, "unrelated OCR evidence must not slow every card");
+
 const guardedGradeState = guardGradeFieldStates([{
   field_name: "grade",
   field_value: "10",

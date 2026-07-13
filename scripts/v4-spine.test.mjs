@@ -9,7 +9,11 @@ import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/res
 import { buildV4FieldGraph, buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
-import { normalizePrintedCardCodeForFields } from "../lib/listing/pipeline/field-normalization.mjs";
+import {
+  explicitlyUncertainIdentityFields,
+  normalizeFields,
+  normalizePrintedCardCodeForFields
+} from "../lib/listing/pipeline/field-normalization.mjs";
 import {
   buildV4TitleStageState,
   providerOptionsForV4BackgroundL2,
@@ -183,6 +187,23 @@ for (const text of [
 ]) {
   assert.equal(normalizePrintedCardCodeForFields(text), null, `${text} must not become a retrieval anchor`);
 }
+
+const explicitAlternativeFields = {
+  set: "Sword & Shield—Evolving Skies (or Darkness Ablaze?)",
+  product: "Pokemon TCG",
+  card_name: "What If...?",
+  players: ["Jalen Brunson"]
+};
+assert.deepEqual(
+  explicitlyUncertainIdentityFields(explicitAlternativeFields),
+  ["set"],
+  "only explicit identity alternatives should be routed to review"
+);
+const explicitAlternativeNormalized = normalizeFields(explicitAlternativeFields);
+assert.equal(explicitAlternativeNormalized.set, null);
+assert.equal(explicitAlternativeNormalized.product, "Pokemon TCG");
+assert.equal(explicitAlternativeNormalized.card_name, "What If...?", "legitimate question-mark card names must survive");
+assert.deepEqual(explicitAlternativeNormalized.players, ["Jalen Brunson"]);
 
 const v4CodeSanitizedFields = buildV4ResolvedFields({
   resolved_fields: {
