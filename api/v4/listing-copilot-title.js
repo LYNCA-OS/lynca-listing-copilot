@@ -27,6 +27,7 @@ import {
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { triggerWriterReadyCapacityRefill } from "../../lib/listing/v4/jobs/writer-ready-capacity-refill.mjs";
 import { providerModelOverrideFromOptions } from "../../lib/listing/providers/provider-contract.mjs";
 import { isGpt5ResponsesModel } from "../../lib/listing/providers/openai-responses-request.mjs";
 import { openAiKeyPoolSize } from "../../lib/listing/providers/openai-key-pool.mjs";
@@ -330,6 +331,7 @@ function providerRuntimeSummary(result = {}) {
     provider_key_source: result.provider_key_source || null,
     provider_key_rotation_attempted: result.provider_key_rotation_attempted === true,
     provider_key_rotation_attempts: Number(result.provider_key_rotation_attempts || 0),
+    provider_capacity_stage_handoff: result.provider_capacity_stage_handoff || null,
     provider_truncation_retry_attempted: result.provider_truncation_retry_attempted === true,
     provider_truncation_retry_attempts: Number(result.provider_truncation_retry_attempts || 0),
     gpt5_empty_result_retry_attempted: result.gpt5_empty_result_retry_attempted === true,
@@ -822,56 +824,84 @@ async function persistPipelineResult({
   sessionPatch.l2_route = routePlan.route || null;
   sessionPatch.l2_timing = result.timing || result.timings || {};
   sessionPatch.resolved_fields = resolvedFromResult(result);
-  const atomicCapacityReleaseEnabled = atomicWriterReadyCapacityReleaseEnabled(payload, process.env);
-  sessionPatch.provider_result_summary.writer_ready_capacity_release_mode = atomicCapacityReleaseEnabled
-    ? "writer_ready_atomic"
-    : "worker_tail";
-  let writerReadyCapacityRelease = atomicCapacityReleaseEnabled
-    ? await persistV4WriterReadyAndReleaseCapacity({
-      sessionId,
-      patch: sessionPatch,
-      jobId: payload.v4_queue_job_id,
-      workerId: payload.v4_queue_worker_id || null
-    })
-    : {
-      saved: false,
-      released: false,
-      skipped: true,
-      reason: payload.v4_queue_job_id ? "atomic_writer_ready_capacity_release_disabled" : "not_queue_job",
-      release_boundary: "worker_tail"
-    };
+  const providerStageHandoff = result.provider_capacity_stage_handoff || {};
+  const providerStageReleased = providerStageHandoff.released === true;
+  const atomicCapacityReleaseEnabled = !providerStageReleased
+    && atomicWriterReadyCapacityReleaseEnabled(payload, process.env);
+  sessionPatch.provider_result_summary.writer_ready_capacity_release_mode = providerStageReleased
+    ? "provider_done"
+    : atomicCapacityReleaseEnabled
+      ? "writer_ready_atomic"
+      : "worker_tail";
+  let writerReadyCapacityRelease;
+  let writerReadyCapacityRefill;
   let sessionUpdate;
-  if (writerReadyCapacityRelease.saved === true) {
-    sessionUpdate = {
-      saved: true,
-      row: null,
-      error: null,
-      persistence_mode: "writer_ready_capacity_atomic_rpc",
-      sanitized_nul_byte_count: writerReadyCapacityRelease.sanitized_nul_byte_count || 0
+  if (providerStageReleased) {
+    writerReadyCapacityRefill = providerStageHandoff.refill?.triggered === true
+      ? providerStageHandoff.refill
+      : triggerWriterReadyCapacityRefill(req, {
+        payload,
+        capacityRelease: providerStageHandoff
+      });
+    sessionPatch.provider_result_summary.writer_ready_capacity_refill = writerReadyCapacityRefill;
+    sessionUpdate = await updateV4RecognitionSessionWithRetry({ sessionId, patch: sessionPatch });
+    writerReadyCapacityRelease = {
+      ...providerStageHandoff,
+      saved: sessionUpdate.saved === true,
+      already_released_at_provider_done: true,
+      release_boundary: "provider_done",
+      persistence_mode: "provider_done_capacity_handoff"
     };
   } else {
-    if (atomicCapacityReleaseEnabled) {
-      sessionPatch.provider_result_summary.writer_ready_capacity_release_mode = "worker_tail_fallback";
-      sessionPatch.provider_result_summary.writer_ready_capacity_release_error = String(
-        writerReadyCapacityRelease.error || "atomic_writer_ready_capacity_release_failed"
-      ).slice(0, 160);
+    writerReadyCapacityRelease = atomicCapacityReleaseEnabled
+      ? await persistV4WriterReadyAndReleaseCapacity({
+        sessionId,
+        patch: sessionPatch,
+        jobId: payload.v4_queue_job_id,
+        workerId: payload.v4_queue_worker_id || null
+      })
+      : {
+        saved: false,
+        released: false,
+        skipped: true,
+        reason: payload.v4_queue_job_id ? "atomic_writer_ready_capacity_release_disabled" : "not_queue_job",
+        release_boundary: "worker_tail"
+      };
+    if (writerReadyCapacityRelease.saved === true) {
+      sessionUpdate = {
+        saved: true,
+        row: null,
+        error: null,
+        persistence_mode: "writer_ready_capacity_atomic_rpc",
+        sanitized_nul_byte_count: writerReadyCapacityRelease.sanitized_nul_byte_count || 0
+      };
+    } else {
+      if (atomicCapacityReleaseEnabled) {
+        sessionPatch.provider_result_summary.writer_ready_capacity_release_mode = "worker_tail_fallback";
+        sessionPatch.provider_result_summary.writer_ready_capacity_release_error = String(
+          writerReadyCapacityRelease.error || "atomic_writer_ready_capacity_release_failed"
+        ).slice(0, 160);
+      }
+      sessionUpdate = await updateV4RecognitionSession({ sessionId, patch: sessionPatch });
+      writerReadyCapacityRelease = {
+        ...writerReadyCapacityRelease,
+        released: false,
+        fallback_required: true,
+        release_boundary: "worker_tail_fallback"
+      };
     }
-    sessionUpdate = await updateV4RecognitionSession({
-      sessionId,
-      patch: sessionPatch
+    writerReadyCapacityRefill = triggerWriterReadyCapacityRefill(req, {
+      payload,
+      capacityRelease: writerReadyCapacityRelease
     });
-    writerReadyCapacityRelease = {
-      ...writerReadyCapacityRelease,
-      released: false,
-      fallback_required: true,
-      release_boundary: "worker_tail_fallback"
-    };
   }
+  sessionPatch.provider_result_summary.writer_ready_capacity_refill = writerReadyCapacityRefill;
   if (deferNonCriticalPersistence) {
     const persistence = {
       create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
       update_session: sessionUpdate,
       writer_ready_provider_capacity_release: writerReadyCapacityRelease,
+      writer_ready_provider_capacity_refill: writerReadyCapacityRefill,
       field_evidence: deferredArtifact("writer_ready_first"),
       candidate_trace: deferredArtifact("writer_ready_first"),
       catalog_gap: deferredArtifact("writer_ready_first"),
@@ -952,6 +982,7 @@ async function persistPipelineResult({
     create_session: createResult.persistence?.recognition_session || createResult.persistence || null,
     update_session: sessionUpdate,
     writer_ready_provider_capacity_release: writerReadyCapacityRelease,
+    writer_ready_provider_capacity_refill: writerReadyCapacityRefill,
     field_evidence: fieldEvidence,
     candidate_trace: candidateTrace,
     catalog_gap: catalogGap

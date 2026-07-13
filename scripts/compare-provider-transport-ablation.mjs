@@ -73,6 +73,8 @@ function transportSummary(report = {}, rows = []) {
     technical_failure_count: rows.filter((row) => row.ok !== true || row.l2_ready !== true).length,
     writer_ready_p50_ms: percentile(rows.map((row) => row.time_to_writer_ready_ms), 0.5),
     writer_ready_p95_ms: percentile(rows.map((row) => row.time_to_writer_ready_ms), 0.95),
+    scheduler_queue_wait_p50_ms: percentile(rows.map((row) => row.scheduler_queue_wait_ms), 0.5),
+    scheduler_queue_wait_p95_ms: percentile(rows.map((row) => row.scheduler_queue_wait_ms), 0.95),
     provider_latency_p50_ms: percentile(rows.map((row) => row.provider_latency_ms), 0.5),
     provider_latency_p95_ms: percentile(rows.map((row) => row.provider_latency_ms), 0.95),
     input_tokens_total: rows.reduce((sum, row) => sum + (finiteNumber(row.input_tokens) || 0), 0),
@@ -87,6 +89,19 @@ function transportSummary(report = {}, rows = []) {
     field_quality_error_count: errorAnomalies.filter((anomaly) => fieldQualityCheckIds.has(anomaly.check_id)).length,
     identity_cache_hit_count: rows.filter((row) => row.identity_cache_hit === true).length,
     identity_cache_bypassed_count: rows.filter((row) => row.identity_cache_read_bypassed === true).length,
+    provider_done_capacity_release_count: rows.filter((row) => (
+      row.writer_ready_capacity_release?.released === true
+      && row.writer_ready_capacity_release_mode === "provider_done"
+    )).length,
+    writer_ready_atomic_capacity_release_count: rows.filter((row) => (
+      row.writer_ready_capacity_release?.released === true
+      && row.writer_ready_capacity_release_mode === "writer_ready_atomic"
+    )).length,
+    capacity_refill_triggered_count: rows.filter((row) => row.writer_ready_capacity_refill?.triggered === true).length,
+    capacity_refill_missing_count: rows.filter((row) => (
+      row.writer_ready_capacity_release?.released === true
+      && row.writer_ready_capacity_refill?.triggered !== true
+    )).length,
     response_profile_breakdown: provider.response_profile_breakdown || {},
     prompt_mode_breakdown: provider.prompt_mode_breakdown || {},
     image_detail_breakdown: provider.image_detail_breakdown || {},
@@ -164,6 +179,8 @@ export function compareProviderTransportReports(baseline = {}, compact = {}) {
     deltas: {
       writer_ready_p50_fraction: deltaPercent(baselineSummary.writer_ready_p50_ms, compactSummary.writer_ready_p50_ms),
       writer_ready_p95_fraction: deltaPercent(baselineSummary.writer_ready_p95_ms, compactSummary.writer_ready_p95_ms),
+      scheduler_queue_wait_p50_fraction: deltaPercent(baselineSummary.scheduler_queue_wait_p50_ms, compactSummary.scheduler_queue_wait_p50_ms),
+      scheduler_queue_wait_p95_fraction: deltaPercent(baselineSummary.scheduler_queue_wait_p95_ms, compactSummary.scheduler_queue_wait_p95_ms),
       provider_latency_p50_fraction: deltaPercent(baselineSummary.provider_latency_p50_ms, compactSummary.provider_latency_p50_ms),
       provider_latency_p95_fraction: deltaPercent(baselineSummary.provider_latency_p95_ms, compactSummary.provider_latency_p95_ms),
       input_tokens_fraction: deltaPercent(baselineSummary.input_tokens_total, compactSummary.input_tokens_total),

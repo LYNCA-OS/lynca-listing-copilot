@@ -191,6 +191,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   compactL2 = false,
   ultraFastL2 = false,
   ultraSparseTransport = false,
+  providerDoneHandoff = false,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false
@@ -217,6 +218,7 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
       providerOptions.v4_ultra_fast_service_tier = cleanText(ultraFastServiceTier).toLowerCase();
     }
   }
+  if (providerDoneHandoff) providerOptions.v4_provider_done_capacity_handoff = true;
   if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
   return {
     asset_id: candidateId(item, index),
@@ -663,6 +665,9 @@ function jobL2Summary(statusPayload = {}) {
     worker_processing_ms: job.timing?.worker_processing_ms ?? null,
     time_to_l2_ready_ms: job.timing?.time_to_l2_ready_ms ?? null,
     writer_ready_capacity_release: job.timing?.writer_ready_capacity_release || null,
+    writer_ready_capacity_refill: job.timing?.writer_ready_capacity_refill
+      || summary.writer_ready_capacity_refill
+      || null,
     writer_ready_capacity_release_mode: job.timing?.writer_ready_capacity_release?.release_boundary
       || summary.writer_ready_capacity_release_mode
       || null,
@@ -887,6 +892,7 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     worker_processing_ms: summary.worker_processing_ms ?? row.worker_processing_ms ?? null,
     time_to_l2_ready_ms: summary.time_to_l2_ready_ms ?? row.time_to_l2_ready_ms ?? null,
     writer_ready_capacity_release: summary.writer_ready_capacity_release || row.writer_ready_capacity_release || null,
+    writer_ready_capacity_refill: summary.writer_ready_capacity_refill || row.writer_ready_capacity_refill || null,
     writer_ready_capacity_release_mode: summary.writer_ready_capacity_release_mode || row.writer_ready_capacity_release_mode || null,
     provider_capacity_slot: summary.provider_capacity_slot ?? row.provider_capacity_slot ?? null,
     provider_key_slot: summary.provider_key_slot ?? row.provider_key_slot ?? null,
@@ -1160,6 +1166,7 @@ async function runOne({
   compactL2 = false,
   ultraFastL2 = false,
   ultraSparseTransport = false,
+  providerDoneHandoff = false,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
@@ -1188,6 +1195,7 @@ async function runOne({
     compactL2,
     ultraFastL2,
     ultraSparseTransport,
+    providerDoneHandoff,
     ultraFastImageDetail,
     ultraFastServiceTier,
     disableIdentityCache
@@ -1818,6 +1826,7 @@ async function enqueueSpeculativeItem({
   compactL2,
   ultraFastL2,
   ultraSparseTransport,
+  providerDoneHandoff,
   ultraFastImageDetail,
   ultraFastServiceTier,
   disableIdentityCache,
@@ -1843,6 +1852,7 @@ async function enqueueSpeculativeItem({
       compactL2,
       ultraFastL2,
       ultraSparseTransport,
+      providerDoneHandoff,
       ultraFastImageDetail,
       ultraFastServiceTier,
       disableIdentityCache
@@ -2438,11 +2448,20 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       item.writer_ready_capacity_release?.released === true
       && item.writer_ready_capacity_release_mode === "writer_ready_atomic"
     )).length,
+    provider_done_capacity_release_count: results.filter((item) => (
+      item.writer_ready_capacity_release?.released === true
+      && item.writer_ready_capacity_release_mode === "provider_done"
+    )).length,
     writer_ready_capacity_fallback_count: results.filter((item) => (
       item.writer_ready_capacity_release_mode === "worker_tail_fallback"
       || item.writer_ready_capacity_release?.released === false
     )).length,
     writer_ready_capacity_release_missing_count: results.filter((item) => !item.writer_ready_capacity_release_mode).length,
+    writer_ready_capacity_refill_triggered_count: results.filter((item) => item.writer_ready_capacity_refill?.triggered === true).length,
+    writer_ready_capacity_refill_missing_count: results.filter((item) => (
+      item.writer_ready_capacity_release?.released === true
+      && item.writer_ready_capacity_refill?.triggered !== true
+    )).length,
     provider_key_assignment_breakdown: countBy("provider_key_assignment"),
     job_status_breakdown: countBy("job_status"),
     l1_job_status_breakdown: countBy("l1_job_status"),
@@ -2756,6 +2775,7 @@ export async function runV4EbaySmoke({
   compactL2 = false,
   ultraFastL2 = false,
   ultraSparseTransport = false,
+  providerDoneHandoff = false,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
@@ -2832,6 +2852,7 @@ export async function runV4EbaySmoke({
           compactL2,
           ultraFastL2,
           ultraSparseTransport,
+          providerDoneHandoff,
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
@@ -2872,6 +2893,7 @@ export async function runV4EbaySmoke({
           compactL2,
           ultraFastL2,
           ultraSparseTransport,
+          providerDoneHandoff,
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
@@ -2948,6 +2970,7 @@ export async function runV4EbaySmoke({
     compact_l2_enabled: compactL2,
     ultra_fast_l2_enabled: ultraFastL2,
     ultra_sparse_transport_enabled: ultraSparseTransport,
+    provider_done_capacity_handoff_enabled: providerDoneHandoff,
     ultra_fast_image_detail: ultraFastL2 ? ultraFastImageDetail : null,
     ultra_fast_service_tier: ultraFastL2 ? ultraFastServiceTier || null : null,
     identity_cache_disabled: disableIdentityCache,
@@ -3024,6 +3047,7 @@ export async function main(argv = process.argv, env = process.env) {
     compactL2: hasFlag(argv, "--compact-l2"),
     ultraFastL2: hasFlag(argv, "--ultra-fast-l2"),
     ultraSparseTransport: hasFlag(argv, "--ultra-sparse-v2"),
+    providerDoneHandoff: hasFlag(argv, "--provider-done-handoff"),
     ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),
     ultraFastServiceTier: cleanText(argValue(argv, "--ultra-service-tier", "")).toLowerCase(),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),

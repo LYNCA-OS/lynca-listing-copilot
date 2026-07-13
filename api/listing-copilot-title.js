@@ -181,6 +181,8 @@ import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
+import { releaseV4ProviderCapacityForJob } from "../lib/listing/v4/jobs/production-job-queue.mjs";
+import { triggerReleasedProviderCapacityRefill } from "../lib/listing/v4/jobs/writer-ready-capacity-refill.mjs";
 import {
   imagesFromPreIngestionBundle,
   readPreIngestionBundle,
@@ -2973,6 +2975,61 @@ function scheduleBackgroundCompletion(promise) {
   return guarded;
 }
 
+function providerDoneCapacityHandoffEnabled(payload = {}, env = process.env) {
+  const providerOptions = providerOptionsFromPayload(payload, env);
+  return optionFlag(
+    providerOptions,
+    "v4_provider_done_capacity_handoff",
+    envFlag(env, "V4_PROVIDER_DONE_CAPACITY_HANDOFF_ENABLED", false)
+  );
+}
+
+async function handoffProviderCapacityAfterStage(payload = {}, req = null, timingContext = null) {
+  if (!providerDoneCapacityHandoffEnabled(payload, process.env)) {
+    return { enabled: false, released: false, refill: { triggered: false, reason: "provider_done_handoff_disabled" } };
+  }
+  const jobId = payload.v4_queue_job_id || payload.job_id || null;
+  if (!jobId) {
+    return { enabled: true, released: false, refill: { triggered: false, reason: "not_queue_job" } };
+  }
+  const startedAt = nowMs();
+  const release = await releaseV4ProviderCapacityForJob({
+    jobId,
+    workerId: payload.v4_queue_worker_id || null,
+    env: process.env,
+    fetchImpl: globalThis.fetch
+  });
+  const refill = triggerReleasedProviderCapacityRefill(req, {
+    payload,
+    capacityRelease: release,
+    releaseBoundary: "provider_done"
+  });
+  const latencyMs = nowMs() - startedAt;
+  addTiming(timingContext, "provider_capacity_handoff_ms", latencyMs);
+  recordNodeSpan(timingContext, {
+    key: "provider_capacity_handoff_ms",
+    startedAtMs: startedAt,
+    durationMs: latencyMs,
+    status: release.released === true ? "COMPLETED" : "PARTIAL",
+    inputCount: 1,
+    outputCount: release.released === true ? 1 : 0,
+    metrics: {
+      release_boundary: "provider_done",
+      refill_triggered: refill.triggered === true,
+      release_error: release.error || null
+    }
+  });
+  return {
+    enabled: true,
+    release_boundary: "provider_done",
+    released: release.released === true,
+    released_count: Number(release.released_count || 0),
+    error: release.error || null,
+    latency_ms: latencyMs,
+    refill
+  };
+}
+
 function preingestionOcrPostProviderWaitMs(env = process.env, providerOptions = {}) {
   const configured = providerOptions.preingestion_ocr_post_provider_wait_ms
     ?? providerOptions.preingestionOcrPostProviderWaitMs
@@ -4616,7 +4673,8 @@ async function createOpenAiTitle(payload, selection, {
   recognitionEvidenceDocument = null,
   signedImages: reusableSignedImages = null,
   timingContext = null,
-  visualFeatures = {}
+  visualFeatures = {},
+  requestContext = null
 } = {}) {
   const preingestionBundleId = payload.preingestion_bundle_id || payload.preingestionBundleId || "";
   const preingestionOcrRendezvousPromise = preingestionBundleId
@@ -4798,7 +4856,6 @@ async function createOpenAiTitle(payload, selection, {
       titleStage: providerOptions.v4_title_stage_target || initialPayload.v4_title_stage_target || ""
     })
   }));
-
   const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => ({
     ...withProviderMetadata(
       withEvidenceCompatibility(
@@ -5156,13 +5213,24 @@ async function createOpenAiTitle(payload, selection, {
   mergedResult.preingestion_retrieval_refresh = preingestionRetrievalRefresh;
   mergedResult.preingestion_retrieval_anchor_fields = preingestionRetrievalAnchorFields;
   mergedResult.serial_numerator_verified = initialPayload.serial_numerator_verified;
-  const finalizeProviderResult = (result) => withVerifiedPreingestionSlabParallel(
-    withVerifiedPreingestionPrintRun(
-      withOpenSetReadiness(result, { ...openSetContext, catalogContext, vectorContext }),
+  const finalizeProviderResult = async (result) => ({
+    ...withVerifiedPreingestionSlabParallel(
+      withVerifiedPreingestionPrintRun(
+        withOpenSetReadiness(result, { ...openSetContext, catalogContext, vectorContext }),
+        initialPayload
+      ),
       initialPayload
     ),
-    initialPayload
-  );
+    // This is the real resource boundary: fast-path cards arrive here after
+    // the first provider call, while difficult cards arrive only after any
+    // focused verifier calls finish. Releasing earlier could exceed the
+    // global provider concurrency even though the queue lease count looks safe.
+    provider_capacity_stage_handoff: await handoffProviderCapacityAfterStage(
+      initialPayload,
+      requestContext,
+      timingContext
+    )
+  });
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return finalizeProviderResult(fastPathResult);
   if (assistShadowOnly) {
@@ -5223,6 +5291,7 @@ export const __listingCopilotTitleTestHooks = {
   preingestionEvidenceRefreshDecision,
   preingestionEvidenceDocumentFromPayload,
   providerOptionsFromPayload,
+  providerDoneCapacityHandoffEnabled,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
   preingestionOcrPostProviderWaitMs,
@@ -5242,7 +5311,8 @@ async function createProviderTitle(payload, {
   recognitionEvidenceDocument = null,
   signedImages = null,
   timingContext = null,
-  visualFeatures = {}
+  visualFeatures = {},
+  requestContext = null
 } = {}) {
   const requestedProvider = requestedProviderFromPayload(payload);
   const explicitEmergency = explicitEmergencyFromPayload(payload);
@@ -5258,7 +5328,13 @@ async function createProviderTitle(payload, {
     images: primaryImages
   });
 
-  return createOpenAiTitle(payload, selection, { recognitionEvidenceDocument, signedImages, timingContext, visualFeatures });
+  return createOpenAiTitle(payload, selection, {
+    recognitionEvidenceDocument,
+    signedImages,
+    timingContext,
+    visualFeatures,
+    requestContext
+  });
 }
 
 export default async function handler(req, res) {
@@ -5391,7 +5467,8 @@ export default async function handler(req, res) {
           recognitionEvidenceDocument: recognitionPreflight.evidenceDocument,
           signedImages: recognitionPreflight.signedImages,
           timingContext,
-          visualFeatures
+          visualFeatures,
+          requestContext: req
         });
 
         return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(providerResult, payload));

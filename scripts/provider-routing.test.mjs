@@ -154,6 +154,10 @@ assert.equal(ultraFastEnvOptions.v4_ultra_fast_l2, true);
 assert.equal(ultraFastEnvOptions.v4_ultra_sparse_transport, true);
 assert.equal(ultraFastImageDetail(ultraFastEnvOptions), "high");
 assert.equal(ultraFastServiceTier(ultraFastEnvOptions), "priority");
+assert.equal(__listingCopilotTitleTestHooks.providerDoneCapacityHandoffEnabled({}, {}), false);
+assert.equal(__listingCopilotTitleTestHooks.providerDoneCapacityHandoffEnabled({
+  provider_options: { v4_provider_done_capacity_handoff: true }
+}, {}), true);
 
 const ultraFastPayloadOverrideOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
   provider_options: {

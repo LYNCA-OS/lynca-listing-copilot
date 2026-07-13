@@ -22,6 +22,7 @@ on:
           - ultra_high_vs_auto
           - ultra_high_vs_low
           - ultra_v1_vs_v2
+          - writer_ready_vs_provider_done_handoff
       ultra_image_detail:
         description: "Ultra-fast GPT image detail"
         type: choice
@@ -117,7 +118,7 @@ jobs:
           EXTRA_FLAGS=()
           if [[ "${{ inputs.transport_pair }}" == "compact_vs_ultra_fast" ]]; then
             EXTRA_FLAGS+=(--compact-l2)
-          elif [[ "${{ inputs.transport_pair }}" == ultra_high_vs_* || "${{ inputs.transport_pair }}" == "ultra_v1_vs_v2" ]]; then
+          elif [[ "${{ inputs.transport_pair }}" == ultra_high_vs_* || "${{ inputs.transport_pair }}" == "ultra_v1_vs_v2" || "${{ inputs.transport_pair }}" == "writer_ready_vs_provider_done_handoff" ]]; then
             EXTRA_FLAGS+=(--ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority)
           fi
           node scripts/v4-ebay-smoke.mjs \
@@ -147,6 +148,8 @@ jobs:
             EXTRA_FLAGS=(--ultra-fast-l2 --ultra-image-detail low --ultra-service-tier priority)
           elif [[ "${{ inputs.transport_pair }}" == "ultra_v1_vs_v2" ]]; then
             EXTRA_FLAGS=(--ultra-fast-l2 --ultra-sparse-v2 --ultra-image-detail high --ultra-service-tier priority)
+          elif [[ "${{ inputs.transport_pair }}" == "writer_ready_vs_provider_done_handoff" ]]; then
+            EXTRA_FLAGS=(--ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority --provider-done-handoff)
           fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
@@ -172,8 +175,9 @@ jobs:
           const pair = '${{ inputs.transport_pair }}';
           const detailPair = pair.startsWith('ultra_high_vs_');
           const sparsePair = pair === 'ultra_v1_vs_v2';
-          const expectedBaselineMode = detailPair || sparsePair ? 'v4_ultra_fast_l2' : (pair === 'compact_vs_ultra_fast' ? 'v4_compact_l2' : 'fast_initial');
-          const expectedCandidateMode = detailPair || sparsePair || pair === 'compact_vs_ultra_fast' ? 'v4_ultra_fast_l2' : 'v4_compact_l2';
+          const handoffPair = pair === 'writer_ready_vs_provider_done_handoff';
+          const expectedBaselineMode = detailPair || sparsePair || handoffPair ? 'v4_ultra_fast_l2' : (pair === 'compact_vs_ultra_fast' ? 'v4_compact_l2' : 'fast_initial');
+          const expectedCandidateMode = detailPair || sparsePair || handoffPair || pair === 'compact_vs_ultra_fast' ? 'v4_ultra_fast_l2' : 'v4_compact_l2';
           const expectedBaselineDetail = detailPair ? 'high' : 'high';
           const expectedCandidateDetail = pair === 'ultra_high_vs_auto'
             ? 'auto'
@@ -182,10 +186,11 @@ jobs:
               : pair === 'compact_vs_ultra_fast'
                 ? '${{ inputs.ultra_image_detail }}'
                 : 'high';
-          const expectedRequestedTier = detailPair || sparsePair ? 'priority' : (pair === 'compact_vs_ultra_fast' ? '${{ inputs.ultra_service_tier }}' : 'unset');
+          const expectedRequestedTier = detailPair || sparsePair || handoffPair ? 'priority' : (pair === 'compact_vs_ultra_fast' ? '${{ inputs.ultra_service_tier }}' : 'unset');
           console.log(`paired=${comparison.complete_pair_count}/${comparison.paired_count}`);
           console.log(`writer_p50 standard=${comparison.baseline.writer_ready_p50_ms} compact=${comparison.compact.writer_ready_p50_ms} delta=${comparison.deltas.writer_ready_p50_fraction}`);
           console.log(`provider_p50 standard=${comparison.baseline.provider_latency_p50_ms} compact=${comparison.compact.provider_latency_p50_ms} delta=${comparison.deltas.provider_latency_p50_fraction}`);
+          console.log(`queue_p95 standard=${comparison.baseline.scheduler_queue_wait_p95_ms} compact=${comparison.compact.scheduler_queue_wait_p95_ms} delta=${comparison.deltas.scheduler_queue_wait_p95_fraction}`);
           console.log(`tokens standard=${comparison.baseline.total_tokens_total} compact=${comparison.compact.total_tokens_total}`);
           console.log(`weak_proxy recoveries=${comparison.recovery_count} regressions=${comparison.regression_count}`);
           if (comparison.complete_pair_count !== Number('${{ inputs.limit }}')) process.exit(1);
@@ -200,6 +205,10 @@ jobs:
           if (sparsePair && Number(comparison.baseline.response_profile_breakdown?.compact_sparse_v1 || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
           if (sparsePair && Number(comparison.compact.response_profile_breakdown?.compact_sparse_v2 || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
           if (expectedRequestedTier !== 'unset' && Number(comparison.compact.requested_service_tier_breakdown?.[expectedRequestedTier] || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (handoffPair && Number(comparison.baseline.provider_done_capacity_release_count || 0) !== 0) process.exit(1);
+          if (handoffPair && Number(comparison.compact.provider_done_capacity_release_count || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (handoffPair && Number(comparison.compact.capacity_refill_triggered_count || 0) !== Number('${{ inputs.limit }}')) process.exit(1);
+          if (handoffPair && Number(comparison.compact.capacity_refill_missing_count || 0) !== 0) process.exit(1);
           NODE
       - name: Upload sealed paired artifacts
         if: always()

@@ -301,6 +301,8 @@ async function runJob(job, req) {
     method: "POST",
     headers: {
       [workerSecretHeader]: req.headers[workerSecretHeader] || req.headers[workerSecretHeader.toLowerCase()] || "",
+      "x-forwarded-host": headerValue(req, "x-forwarded-host") || headerValue(req, "host"),
+      "x-forwarded-proto": headerValue(req, "x-forwarded-proto") || "https",
       "user-agent": "lynca-v4-production-worker",
       "x-forwarded-for": "v4-production-worker"
     },
@@ -386,6 +388,7 @@ export default async function handler(req, res) {
           const result = await runJob(job, req);
           const jobStatus = completionStatusForJob(job);
           const writerReadyCapacityRelease = result.response.v4_persistence?.writer_ready_provider_capacity_release || null;
+          const writerReadyCapacityRefill = result.response.v4_persistence?.writer_ready_provider_capacity_refill || null;
           const tailStartedAt = Date.now();
           let capacityReleaseMs = 0;
           let completionWriteMs = 0;
@@ -421,6 +424,7 @@ export default async function handler(req, res) {
                 worker_total_ms: result.latency_ms,
                 response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null,
                 writer_ready_capacity_release: writerReadyCapacityRelease,
+                writer_ready_capacity_refill: writerReadyCapacityRefill,
                 lease_heartbeat: { ...leaseHeartbeat }
               },
               previousError: job.error || null
@@ -434,6 +438,7 @@ export default async function handler(req, res) {
             job_id: job.id || null,
             writer_ready_capacity_release_mode: writerReadyCapacityRelease?.release_boundary || "worker_tail",
             provider_capacity_released_at_writer_ready: writerReadyCapacityRelease?.released === true,
+            writer_ready_capacity_refill_triggered: writerReadyCapacityRefill?.triggered === true,
             capacity_release_ms: capacityReleaseMs,
             completion_write_ms: completionWriteMs,
             post_handler_tail_ms: postHandlerTailMs

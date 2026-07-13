@@ -73,7 +73,8 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
       writer_ready_capacity_release: {
         released: true,
         release_boundary: "writer_ready_atomic"
-      }
+      },
+      writer_ready_capacity_refill: { triggered: true, lane: "background" }
     },
     execution_control: {
       provider_capacity_slot: 1,
@@ -89,6 +90,8 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
       provider_result_summary: {
         final_title: "Hydrated title",
         noncritical_persistence_status: "COMPLETED",
+        writer_ready_capacity_release_mode: "writer_ready_atomic",
+        writer_ready_capacity_refill: { triggered: true, lane: "background" },
         provider_token_diagnostics: { input_tokens: 99, output_tokens: 11, total_tokens: 110 },
         preingestion_ocr_rendezvous: { status: "EVIDENCE_READY", job_count: 2 }
       }
@@ -105,6 +108,7 @@ assert.equal(hydratedDiagnostic.input_tokens, 99);
 assert.equal(hydratedDiagnostic.pipeline_node_ledger.coverage.missing_required_node_count, 0);
 assert.equal(hydratedDiagnostic.preingestion_ocr_rendezvous.status, "EVIDENCE_READY");
 assert.equal(hydratedDiagnostic.writer_ready_capacity_release_mode, "writer_ready_atomic");
+assert.equal(hydratedDiagnostic.writer_ready_capacity_refill.triggered, true);
 assert.equal(hydratedDiagnostic.provider_key_count, 2);
 assert.equal(hydratedDiagnostic.provider_key_slot, 1);
 assert.equal(hydratedDiagnostic.provider_key_assignment, "balanced_round_robin_v1");
@@ -112,6 +116,7 @@ assert.equal(hydratedDiagnostic.provider_key_assignment, "balanced_round_robin_v
 const speedSmokeSummary = summarizeSmoke([{
   ok: true,
   writer_ready_capacity_release: { released: true },
+  writer_ready_capacity_refill: { triggered: true },
   writer_ready_capacity_release_mode: "writer_ready_atomic",
   provider_key_assignment: "balanced_round_robin_v1",
   pipeline_node_ledger: {
