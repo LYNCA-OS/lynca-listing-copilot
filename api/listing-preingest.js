@@ -73,9 +73,7 @@ function normalizeDerivedRows(rows = []) {
 }
 
 async function countSignedReadUrls(images, env, fetchImpl) {
-  let signedReadUrlCount = 0;
-  const errors = [];
-  for (const image of images) {
+  const results = await Promise.all(images.map(async (image) => {
     try {
       await createListingImageSignedReadUrl({
         objectPath: image.object_path,
@@ -83,14 +81,17 @@ async function countSignedReadUrls(images, env, fetchImpl) {
         env,
         fetchImpl
       });
-      signedReadUrlCount += 1;
+      return { ok: true };
     } catch (error) {
-      errors.push({
+      return {
+        ok: false,
         object_path: image.object_path,
         reason: String(error.message || "signed_url_failed").slice(0, 160)
-      });
+      };
     }
-  }
+  }));
+  const signedReadUrlCount = results.filter((result) => result.ok).length;
+  const errors = results.filter((result) => !result.ok);
   return { signedReadUrlCount, errors };
 }
 
@@ -129,16 +130,24 @@ export default async function handler(req, res) {
   }
 
   try {
-    const verificationRows = await readVerifiedImageRecordsByAssetId({
-      assetId,
-      env: process.env,
-      fetchImpl: globalThis.fetch
-    });
-    const derivedRows = await readDerivedImageAssetsByAssetId({
-      assetId,
-      env: process.env,
-      fetchImpl: globalThis.fetch
-    });
+    const [verificationRows, derivedRows, existingBundleId] = await Promise.all([
+      readVerifiedImageRecordsByAssetId({
+        assetId,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      }),
+      readDerivedImageAssetsByAssetId({
+        assetId,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      }),
+      readPreIngestionBundleIdByAsset({
+        assetId,
+        source: payload.source || "listing_preingest_api",
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      })
+    ]);
     const images = dedupePreingestionImages([
       ...normalizeVerificationRows(verificationRows, assetId),
       ...normalizePayloadImages(payload.images, assetId)
@@ -172,12 +181,6 @@ export default async function handler(req, res) {
       ? { signedReadUrlCount: 0, errors: [] }
       : await countSignedReadUrls(images, process.env, globalThis.fetch);
 
-    const existingBundleId = await readPreIngestionBundleIdByAsset({
-      assetId,
-      source: payload.source || "listing_preingest_api",
-      env: process.env,
-      fetchImpl: globalThis.fetch
-    });
     const existingBundle = existingBundleId
       ? await readPreIngestionBundle({
         bundleId: existingBundleId,

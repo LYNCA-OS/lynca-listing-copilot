@@ -188,6 +188,20 @@ assert.equal(secondResult.statusCode, 200);
 assert.equal(bundleWrite.evidence_patches.length, 1);
 assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
 
+const signedCallsBeforeFastPath = calls.filter((call) => call.path.includes("/storage/v1/object/sign/")).length;
+const fastPreingestResult = await callApi({
+  asset_id: "asset-pre",
+  requested_fields: ["serial_number"],
+  verify_signed_read_urls: false
+});
+assert.equal(fastPreingestResult.statusCode, 200);
+assert.equal(fastPreingestResult.body.signed_read_url_count, 0);
+assert.equal(
+  calls.filter((call) => call.path.includes("/storage/v1/object/sign/")).length,
+  signedCallsBeforeFastPath,
+  "verified uploads must be able to skip redundant pre-ingestion signing"
+);
+
 const missing = await callApi({ asset_id: "" });
 assert.equal(missing.statusCode, 400);
 assert.equal(missing.body.ok, false);

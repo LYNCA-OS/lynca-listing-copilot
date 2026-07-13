@@ -27,13 +27,11 @@ const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
 const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
 const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
 const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
-const FAST_SCOUT_PREWARM_API_ENDPOINT = "/api/v4/fast-scout-prewarm";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const EXPORT_WORKBOOK_API_ENDPOINT = "/api/v4/listing-export-workbook";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
-const FAST_SCOUT_PREWARM_WAIT_MS = 1200;
 const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_STATUS_BATCH_SIZE = 100;
@@ -895,7 +893,9 @@ async function ensurePreingestionBundle(asset) {
       enqueue_embeddings: false,
       enqueue_surface: false,
       enqueue_quality: false,
-      verify_signed_read_urls: true
+      // 上传端已经完成对象校验，Provider 读取时还会独立签名。这里重复
+      // 签名只增加 L2 起跑等待，不增加证据强度。
+      verify_signed_read_urls: false
     })
   });
 
@@ -914,103 +914,6 @@ async function ensurePreingestionBundle(asset) {
   };
 }
 
-async function ensureFastScoutPrewarm(asset) {
-  if (!storageReady()) return { skipped: true, reason: "storage_not_configured" };
-  if (asset.fastScoutPrewarmStatus === "ready" && asset.fastScoutPrewarmResult?.ok !== false) {
-    return asset.fastScoutPrewarmResult;
-  }
-  if (asset.fastScoutPrewarmPromise) return asset.fastScoutPrewarmPromise;
-
-  const images = preingestionImagesForAsset(asset);
-  if (!images.length) return { skipped: true, reason: "no_verified_storage_images" };
-
-  asset.fastScoutPrewarmStatus = "running";
-  asset.fastScoutPrewarmPromise = (async () => {
-    const startedAt = performance.now();
-    try {
-      const response = await fetch(FAST_SCOUT_PREWARM_API_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        credentials: "same-origin",
-        body: buildAssetRequestBody(asset, {
-          v4_fast_scout_cache_only: true,
-          provider_options: {
-            ...defaultProviderOptions,
-            single_model_fast: true,
-            enable_evidence_completion: false,
-            enable_catalog_assist: false,
-            enable_vector_assist: false,
-            enable_vector_retrieval: false,
-            vector_retrieval_mode: "off",
-            enable_advanced_retrieval: false,
-            enable_hybrid_retrieval: false
-          }
-        })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        throw new Error(payload.message || payload.error_type || `fast_scout_prewarm_failed_${response.status}`);
-      }
-      const result = {
-        ok: true,
-        wait_ms: Math.round(performance.now() - startedAt),
-        cache_status: payload.fast_scout_cache_status || "",
-        cache_hit: payload.fast_scout_cache_hit === true,
-        provider_latency_ms: payload.provider_latency_ms ?? null,
-        payload
-      };
-      asset.fastScoutPrewarmStatus = "ready";
-      asset.fastScoutPrewarmResult = result;
-      return result;
-    } catch (error) {
-      const result = {
-        ok: false,
-        wait_ms: Math.round(performance.now() - startedAt),
-        error: String(error.message || "fast_scout_prewarm_failed").slice(0, 180)
-      };
-      asset.fastScoutPrewarmStatus = "failed";
-      asset.fastScoutPrewarmError = result.error;
-      asset.fastScoutPrewarmResult = result;
-      return result;
-    } finally {
-      asset.fastScoutPrewarmPromise = null;
-      if (!state.processing) renderResults();
-    }
-  })();
-
-  return asset.fastScoutPrewarmPromise;
-}
-
-async function settleFastScoutPrewarm(asset, maxWaitMs = FAST_SCOUT_PREWARM_WAIT_MS) {
-  if (!asset?.fastScoutPrewarmPromise) {
-    return {
-      used: Boolean(asset?.fastScoutPrewarmResult),
-      wait_ms: 0,
-      ...(asset?.fastScoutPrewarmResult || {})
-    };
-  }
-  const startedAt = performance.now();
-  const timedOut = Symbol("fast_scout_prewarm_timeout");
-  const result = await Promise.race([
-    asset.fastScoutPrewarmPromise,
-    wait(maxWaitMs).then(() => timedOut)
-  ]);
-  if (result === timedOut) {
-    return {
-      used: true,
-      timed_out: true,
-      wait_ms: Math.round(performance.now() - startedAt)
-    };
-  }
-  return {
-    used: true,
-    wait_ms: Math.round(performance.now() - startedAt),
-    ...result
-  };
-}
-
 async function prepareAssetInBackground(asset, runId) {
   if (!asset) return null;
   if (asset.backgroundPreparationPromise && asset.backgroundPreparationRunId === runId) {
@@ -1026,19 +929,12 @@ async function prepareAssetInBackground(asset, runId) {
       asset.backgroundPrepareStatus = "uploading";
       await ensureAssetImagesUploaded(asset);
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
-      asset.backgroundPrepareStatus = "fast_scout_prewarming";
-      const fastScoutPrewarm = ensureFastScoutPrewarm(asset);
-
-      if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
-      const [bundle] = await Promise.all([
-        ensurePreingestionBundle(asset),
-        fastScoutPrewarm
-      ]);
+      const bundle = await ensurePreingestionBundle(asset);
 
       if (runId === state.backgroundPreparationRunId) {
-        // 证据包和无付费缓存探针完成后，立即提交最终 L2。隐藏 L1
-        // 没有给写手或 L2 提供稳定增益，不能再占用 provider capacity。
+        // 证据包持久化后立即提交最终 L2。Cache-only scout 连续无命中，
+        // 不再成为生产起跑门槛；L1 继续保持写手不可见。
         void ensureSpeculativeRecognition(asset, runId);
       }
 
@@ -2668,19 +2564,13 @@ async function processAsset(asset, options = {}) {
   const uploaded = await ensureAssetImagesUploaded(asset);
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
   setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
-  setAssetProgress(asset.index, "等待首屏缓存", 0.24);
-  const fastScoutPrewarm = await settleFastScoutPrewarm(asset, FAST_SCOUT_PREWARM_WAIT_MS);
 
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
     client_upload_ms: uploadMs,
     client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
     client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
-    client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId),
-    client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
-    client_fast_scout_prewarm_wait_ms: Math.round(Number(fastScoutPrewarm.wait_ms || 0)),
-    client_fast_scout_prewarm_cache_status: fastScoutPrewarm.cache_status || "",
-    client_fast_scout_prewarm_timed_out: fastScoutPrewarm.timed_out === true
+    client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId)
   };
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备识别请求", 0.3);

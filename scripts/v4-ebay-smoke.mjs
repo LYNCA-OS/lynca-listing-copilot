@@ -343,7 +343,7 @@ async function preingestItem({
     enqueue_embeddings: false,
     enqueue_surface: false,
     enqueue_quality: false,
-    verify_signed_read_urls: true
+    verify_signed_read_urls: false
   };
   const response = await postJson({
     baseUrl,
