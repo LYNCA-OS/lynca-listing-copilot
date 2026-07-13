@@ -390,9 +390,33 @@ const deferredPersistenceLedger = buildEndToEndNodeLedger({
     started_at: "2026-07-11T00:00:00.500Z",
     completed_at: "2026-07-11T00:00:03.000Z"
   },
-  display: { can_writer_start: true }
+  display: { can_writer_start: true },
+  observedAtMs: Date.parse("2026-07-11T00:00:10.000Z")
 });
-assert.equal(deferredPersistenceLedger.reconciliation.anomalies.some((item) => item.check_id === "production_observability_persistence_terminal"), true);
+assert.equal(deferredPersistenceLedger.reconciliation.anomalies.some((item) => item.check_id === "production_observability_persistence_terminal"), false);
+
+const staleDeferredPersistenceLedger = buildEndToEndNodeLedger({
+  session: {
+    l2_status: "READY",
+    l2_title: "2024 Topps Chrome Test Player Autograph",
+    l2_ready_at: "2026-07-11T00:00:02.900Z",
+    provider_result_summary: {
+      pipeline_node_ledger: healthyLedger,
+      title_render_source: "v4_csm_deterministic_renderer",
+      noncritical_persistence_status: "DEFERRED"
+    }
+  },
+  job: {
+    id: "job-observability-stale-deferred",
+    status: "L2_READY",
+    created_at: "2026-07-11T00:00:00.000Z",
+    started_at: "2026-07-11T00:00:00.500Z",
+    completed_at: "2026-07-11T00:00:03.000Z"
+  },
+  display: { can_writer_start: true },
+  observedAtMs: Date.parse("2026-07-11T00:01:04.000Z")
+});
+assert.equal(staleDeferredPersistenceLedger.reconciliation.anomalies.some((item) => item.check_id === "production_observability_persistence_terminal"), true);
 
 const qualityRow = normalizeV4QualityLedgerRow({
   id: "session-observability-1_quality",

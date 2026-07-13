@@ -666,6 +666,7 @@ function jobL2Summary(statusPayload = {}) {
     time_to_l2_ready_ms: job.timing?.time_to_l2_ready_ms ?? null,
     writer_ready_capacity_release: job.timing?.writer_ready_capacity_release || null,
     writer_ready_capacity_refill: job.timing?.writer_ready_capacity_refill
+      || job.timing?.writer_ready_capacity_release?.refill
       || summary.writer_ready_capacity_refill
       || null,
     writer_ready_capacity_release_mode: job.timing?.writer_ready_capacity_release?.release_boundary
@@ -892,7 +893,11 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     worker_processing_ms: summary.worker_processing_ms ?? row.worker_processing_ms ?? null,
     time_to_l2_ready_ms: summary.time_to_l2_ready_ms ?? row.time_to_l2_ready_ms ?? null,
     writer_ready_capacity_release: summary.writer_ready_capacity_release || row.writer_ready_capacity_release || null,
-    writer_ready_capacity_refill: summary.writer_ready_capacity_refill || row.writer_ready_capacity_refill || null,
+    writer_ready_capacity_refill: summary.writer_ready_capacity_refill
+      || summary.writer_ready_capacity_release?.refill
+      || row.writer_ready_capacity_refill
+      || row.writer_ready_capacity_release?.refill
+      || null,
     writer_ready_capacity_release_mode: summary.writer_ready_capacity_release_mode || row.writer_ready_capacity_release_mode || null,
     provider_capacity_slot: summary.provider_capacity_slot ?? row.provider_capacity_slot ?? null,
     provider_key_slot: summary.provider_key_slot ?? row.provider_key_slot ?? null,
@@ -2157,6 +2162,9 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     worker_processing_ms: summary.worker_processing_ms ?? null,
     time_to_l2_ready_ms: timeToReady,
     writer_ready_capacity_release: summary.writer_ready_capacity_release || null,
+    writer_ready_capacity_refill: summary.writer_ready_capacity_refill
+      || summary.writer_ready_capacity_release?.refill
+      || null,
     writer_ready_capacity_release_mode: summary.writer_ready_capacity_release_mode || null,
     provider_capacity_slot: summary.provider_capacity_slot ?? null,
     provider_key_slot: summary.provider_key_slot ?? null,

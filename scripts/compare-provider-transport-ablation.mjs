@@ -55,6 +55,10 @@ function weakPolicyScore(row = {}) {
   return finiteNumber(row.final_scoring?.policy_fair_token_recall);
 }
 
+function capacityRefillFromRow(row = {}) {
+  return row.writer_ready_capacity_refill || row.writer_ready_capacity_release?.refill || null;
+}
+
 function transportSummary(report = {}, rows = []) {
   const provider = report.summary?.provider_diagnostics || {};
   const nodeObservability = report.summary?.pipeline_node_observability || {};
@@ -97,10 +101,10 @@ function transportSummary(report = {}, rows = []) {
       row.writer_ready_capacity_release?.released === true
       && row.writer_ready_capacity_release_mode === "writer_ready_atomic"
     )).length,
-    capacity_refill_triggered_count: rows.filter((row) => row.writer_ready_capacity_refill?.triggered === true).length,
+    capacity_refill_triggered_count: rows.filter((row) => capacityRefillFromRow(row)?.triggered === true).length,
     capacity_refill_missing_count: rows.filter((row) => (
       row.writer_ready_capacity_release?.released === true
-      && row.writer_ready_capacity_refill?.triggered !== true
+      && capacityRefillFromRow(row)?.triggered !== true
     )).length,
     response_profile_breakdown: provider.response_profile_breakdown || {},
     prompt_mode_breakdown: provider.prompt_mode_breakdown || {},
