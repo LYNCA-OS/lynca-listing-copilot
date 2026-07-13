@@ -184,6 +184,7 @@ assert.match(js, /data-reject-title/, "title cards should expose a reject action
 assert.match(js, /rejectTitleFeedback/, "reject action should write a review record instead of becoming a dead UI button");
 assert.match(js, /const FEEDBACK_API_ENDPOINT = "\/api\/v4\/listing-feedback"/, "V4 reviews should use the V4 learning feedback endpoint");
 assert.match(js, /feedbackActionForResult/, "feedback saves should derive accept, edit, or reject actions from writer edits");
+assert.match(js, /!correctedTitle && !explicitReject/, "writer review without an AI draft must still save a writer-authored title or an explicit rejection");
 assert.doesNotMatch(js, /moduleSummary\(result\)/, "writer UI must not render structured module forms by default");
 assert.doesNotMatch(js, /\$\{workflowSummaryNotice\(result\)\}/, "writer UI must not expose technical workflow summaries by default");
 assert.match(js, /labelForCsmField/, "frontend should use the shared CSM field label contract");

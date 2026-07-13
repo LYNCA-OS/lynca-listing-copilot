@@ -12,17 +12,29 @@ function queryParam(req, name) {
 
 function writerSafeSession(session = null) {
   if (!session || typeof session !== "object") return session;
-  const l2Ready = session.status !== "FAILED" && session.l2_status === "READY" && (session.l2_title || session.final_title);
+  const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
+    ? session.provider_result_summary
+    : {};
+  const l2Ready = session.status !== "FAILED" && session.l2_status === "READY" && Boolean(session.l2_title || session.final_title);
+  const writerReviewRequired = session.status !== "FAILED"
+    && session.l2_status === "READY"
+    && (
+      session.status === "WRITER_REVIEW"
+      || summary.writer_review_required === true
+      || summary.assisted_draft_status === "REVIEW_REQUIRED"
+    );
   return {
     ...session,
     l1_title: "",
     final_title: l2Ready ? (session.final_title || session.l2_title || "") : "",
-    writer_status: l2Ready ? "ASSISTED_READY" : (session.failure_reason ? "FAILED" : "GENERATING"),
+    writer_status: l2Ready ? "ASSISTED_READY" : writerReviewRequired ? "REVIEW_REQUIRED" : (session.failure_reason ? "FAILED" : "GENERATING"),
     writer_display_title: l2Ready ? (session.l2_title || session.final_title || "") : null,
     current_best_title: l2Ready ? (session.l2_title || session.final_title || "") : "",
-    can_writer_start: Boolean(l2Ready),
-    is_final: Boolean(l2Ready),
-    title_stage: l2Ready ? "L2_ASSISTED_DRAFT" : "PENDING"
+    can_writer_start: Boolean(l2Ready || writerReviewRequired),
+    writer_review_required: writerReviewRequired,
+    writer_review_reason: writerReviewRequired ? summary.writer_review_reason || null : null,
+    is_final: Boolean(l2Ready || writerReviewRequired),
+    title_stage: l2Ready || writerReviewRequired ? "L2_ASSISTED_DRAFT" : "PENDING"
   };
 }
 

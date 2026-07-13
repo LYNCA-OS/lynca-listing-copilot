@@ -53,26 +53,37 @@ function writerSafeSessionStatus(session = null, job = null) {
   const trace = session.candidate_control_plane_trace && typeof session.candidate_control_plane_trace === "object"
     ? session.candidate_control_plane_trace
     : {};
-  const l2Ready = session.l2_status === "READY" && (session.final_title || session.l2_title);
-  const assistedDraftStatus = activeRetry && !l2Ready
+  const l2Ready = session.l2_status === "READY" && Boolean(session.final_title || session.l2_title);
+  const writerReviewRequired = !activeRetry
+    && session.l2_status === "READY"
+    && (
+      session.status === "WRITER_REVIEW"
+      || summary.writer_review_required === true
+      || summary.assisted_draft_status === "REVIEW_REQUIRED"
+    );
+  const l2Terminal = l2Ready || writerReviewRequired;
+  const assistedDraftStatus = activeRetry && !l2Terminal
     ? "RUNNING"
-    : summary.assisted_draft_status || (l2Ready ? "READY" : null);
+    : summary.assisted_draft_status || (l2Ready ? "READY" : writerReviewRequired ? "REVIEW_REQUIRED" : null);
   return {
     id: session.id || null,
-    status: activeRetry && !l2Ready ? "RUNNING" : session.status || null,
+    status: activeRetry && !l2Terminal ? "RUNNING" : session.status || null,
     final_title: l2Ready ? (session.final_title || session.l2_title || "") : "",
     l1_status: session.l1_status || "PENDING",
     l1_title: "",
     l1_ready_at: session.l1_ready_at || null,
     l1_route: session.l1_route || null,
     l1_timing: session.l1_timing || null,
-    l2_status: activeRetry && !l2Ready ? "PENDING" : session.l2_status || "PENDING",
+    l2_status: activeRetry && !l2Terminal ? "PENDING" : session.l2_status || "PENDING",
     l2_title: l2Ready ? (session.l2_title || session.final_title || "") : "",
     l2_ready_at: session.l2_ready_at || null,
     l2_route: session.l2_route || null,
     l2_timing: session.l2_timing || null,
     provider_result_summary: {
       assisted_draft_status: assistedDraftStatus,
+      outcome_type: summary.outcome_type || null,
+      writer_review_required: writerReviewRequired,
+      writer_review_reason: summary.writer_review_reason || null,
       provider: summary.provider || null,
       model: summary.model || summary.model_id || null,
       confidence: summary.confidence || null,
@@ -165,7 +176,17 @@ function displayStateForSession(session = null, job = null) {
       background_modules: ["final_assisted_title"]
     };
   }
-  const l2Ready = session.l2_status === "READY" && (session.l2_title || session.final_title);
+  const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
+    ? session.provider_result_summary
+    : {};
+  const l2Ready = session.l2_status === "READY" && Boolean(session.l2_title || session.final_title);
+  const writerReviewRequired = !activeRetry
+    && session.l2_status === "READY"
+    && (
+      session.status === "WRITER_REVIEW"
+      || summary.writer_review_required === true
+      || summary.assisted_draft_status === "REVIEW_REQUIRED"
+    );
   const l2Title = l2Ready
     ? (session.l2_title || session.final_title || "")
     : "";
@@ -178,6 +199,21 @@ function displayStateForSession(session = null, job = null) {
       writer_display_title: l2Title,
       title_stage: "L2_ASSISTED_DRAFT",
       current_best_title: l2Title,
+      is_final: true,
+      can_writer_start: true,
+      pending_modules: [],
+      background_modules: []
+    };
+  }
+  if (writerReviewRequired) {
+    return {
+      internal_status: session.status || "WRITER_REVIEW",
+      writer_status: "REVIEW_REQUIRED",
+      display_status: "WRITER_REVIEW",
+      display_title: "",
+      writer_display_title: null,
+      title_stage: "L2_ASSISTED_DRAFT",
+      current_best_title: "",
       is_final: true,
       can_writer_start: true,
       pending_modules: [],

@@ -77,6 +77,7 @@ assert.equal(smokeTenantId({ batchId: "batch", tenantPrefix: "client", tenantCou
 const healthyReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
 const healthy = analyzeV4StabilityEnvelope(healthyReports);
 assert.equal(healthy.pass, true);
+assert.equal(healthy.verdict, "PASS");
 assert.equal(healthy.aggregate.wave_count, 3);
 assert.equal(healthy.aggregate.attempted_count, 60);
 assert.equal(healthy.aggregate.tenant_count, 5);
@@ -90,7 +91,19 @@ const duplicate = analyzeV4StabilityEnvelope([
   healthyReports[2]
 ]);
 assert.equal(duplicate.pass, false);
+assert.equal(duplicate.verdict, "INCONCLUSIVE");
 assert.ok(duplicate.rejection_reasons.includes("CROSS_WAVE_SAMPLE_REUSE"));
+assert.ok(duplicate.evidence_shortfall_reasons.includes("CROSS_WAVE_SAMPLE_REUSE"));
+
+const evidenceLimited = analyzeV4StabilityEnvelope([
+  waveReport(0),
+  waveReport(1)
+]);
+assert.equal(evidenceLimited.pass, false);
+assert.equal(evidenceLimited.verdict, "INCONCLUSIVE");
+assert.deepEqual(evidenceLimited.runtime_rejection_reasons, []);
+assert.ok(evidenceLimited.evidence_shortfall_reasons.includes("STABILITY_WAVE_COUNT_TOO_SMALL"));
+assert.ok(evidenceLimited.evidence_shortfall_reasons.includes("STABILITY_SAMPLE_TOO_SMALL"));
 
 const starvedReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
 starvedReports[2].results[0].scheduler_queue_wait_ms = 240_000;
@@ -98,7 +111,9 @@ starvedReports[2].results[0].worker_queue_wait_ms = 240_000;
 starvedReports[2].summary = summarize(starvedReports[2].results, { runWallMs: 60_000 });
 const starved = analyzeV4StabilityEnvelope(starvedReports);
 assert.equal(starved.pass, false);
+assert.equal(starved.verdict, "FAIL");
 assert.ok(starved.rejection_reasons.includes("QUEUE_STARVATION_DETECTED"));
+assert.ok(starved.runtime_rejection_reasons.includes("QUEUE_STARVATION_DETECTED"));
 
 const tenantSpreadReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
 for (const report of tenantSpreadReports) {

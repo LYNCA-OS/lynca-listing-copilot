@@ -33,7 +33,8 @@ import {
   numberOrNull as smokeNumberOrNull,
   providerDoneHandoffOverride,
   summarize as summarizeSmoke,
-  summaryHasVisibleL2Title
+  summaryHasVisibleL2Title,
+  summaryRequiresWriterReview
 } from "./v4-ebay-smoke.mjs";
 
 assert.equal(smokeNumberArg(["node", "smoke"], "--request-timeout-ms", 90_000), 90_000);
@@ -43,6 +44,8 @@ assert.equal(smokeNumberArg(["node", "smoke", "--limit", "not-a-number"], "--lim
 assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), true);
 assert.equal(typeof summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "Final title" }), "boolean");
 assert.equal(summaryHasVisibleL2Title({ session_status: "DRAFT_READY", l2_status: "READY", title: "" }), false);
+assert.equal(summaryRequiresWriterReview({ session_status: "WRITER_REVIEW", l2_status: "READY", title: "" }), true);
+assert.equal(summaryRequiresWriterReview({ session_status: "FAILED", l2_status: "FAILED", title: "" }), false);
 assert.equal(smokeNumberOrNull(null), null, "missing optional timings must not be forged as zero");
 assert.equal(smokeNumberOrNull(undefined), null, "missing optional token counts must stay missing");
 assert.equal(smokeNumberOrNull(""), null, "empty optional diagnostics must stay missing");
@@ -59,6 +62,25 @@ assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 503, data:
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "Unable to read V4 jobs." } }), "retry");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "batch_id required" } }), "fatal");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 401 }), "fatal");
+
+const reviewAwareSmokeSummary = summarizeSmoke([{
+  asset_id: "asset-title-ready",
+  ok: true,
+  writer_ready: true,
+  l2_ready: true,
+  final_title: "2024 Topps Chrome Test Player"
+}, {
+  asset_id: "asset-writer-review",
+  ok: true,
+  writer_ready: true,
+  l2_ready: true,
+  writer_review_required: true,
+  final_title: ""
+}], { runWallMs: 10_000 });
+assert.equal(reviewAwareSmokeSummary.ok_count, 2);
+assert.equal(reviewAwareSmokeSummary.technical_failure_count, 0);
+assert.equal(reviewAwareSmokeSummary.title_ready_count, 1);
+assert.equal(reviewAwareSmokeSummary.writer_review_required_count, 1);
 
 const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
   asset_id: "asset-hydrate",
@@ -674,6 +696,30 @@ assert.equal(failedL2V4.status, "FAILED");
 assert.equal(failedL2V4.assisted_draft_status, "FAILED");
 assert.equal(failedL2V4.title_stage_readiness.writer_visible_title_ready, false);
 
+const semanticAbstainV4 = adaptV2ResultToV4({
+  sessionId: "v4sess-semantic-abstain",
+  result: {
+    confidence: "FAILED",
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+    identity_resolution_status: "ABSTAIN",
+    title_render_source: "identity_resolution_abstain",
+    route: "COLD_START_SAFE_DRAFT",
+    reason: "Grounded evidence did not converge."
+  },
+  payload: {},
+  routePlan: assistedRoute
+});
+assert.equal(semanticAbstainV4.ok, true);
+assert.equal(semanticAbstainV4.status, "WRITER_REVIEW");
+assert.equal(semanticAbstainV4.outcome_type, "WRITER_REVIEW_REQUIRED");
+assert.equal(semanticAbstainV4.writer_review_required, true);
+assert.equal(semanticAbstainV4.final_title, "");
+assert.equal(semanticAbstainV4.writer_draft.title, "");
+assert.equal(semanticAbstainV4.writer_draft.actions.includes("ACCEPT"), false);
+assert.equal(semanticAbstainV4.assisted_draft_status, "REVIEW_REQUIRED");
+assert.equal(semanticAbstainV4.title_stage_readiness.writer_can_start, true);
+assert.equal(semanticAbstainV4.failure_reason, null);
+
 const recoveredFailedL2V4 = adaptV2ResultToV4({
   sessionId: "v4sess-recovered-l2",
   result: {
@@ -847,6 +893,33 @@ assert.ok(artifacts.learningEvent.field_level_ground_truth.some((row) => row.fie
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_diff));
 assert.equal(typeof artifacts.learningEvent.candidate_changes.candidate_count, "number");
 assert.equal(artifacts.correctedResolved.year, "2024-25");
+
+const writerResolvedAbstain = buildV4FeedbackArtifacts({
+  sessionId: "v4sess-writer-resolved-abstain",
+  action: "EDIT",
+  aiTitle: "",
+  writerTitle: "2024 Topps Chrome Test Player Autograph PSA 10",
+  resultPayload: {
+    writer_review_required: true,
+    identity_resolution_status: "ABSTAIN",
+    resolved_fields: {}
+  }
+});
+assert.equal(writerResolvedAbstain.status, "EDITED");
+assert.equal(writerResolvedAbstain.feedbackEvent.generated_title, "");
+assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Auto PSA 10");
+assert.equal(writerResolvedAbstain.learningEvent.training_eligible, true);
+
+const writerRejectedAbstain = buildV4FeedbackArtifacts({
+  sessionId: "v4sess-writer-rejected-abstain",
+  action: "REJECT",
+  aiTitle: "",
+  writerTitle: "",
+  resultPayload: { writer_review_required: true, identity_resolution_status: "ABSTAIN" }
+});
+assert.equal(writerRejectedAbstain.status, "REJECTED");
+assert.equal(writerRejectedAbstain.feedbackEvent.writer_final_title, "");
+assert.equal(writerRejectedAbstain.learningEvent.training_eligible, false);
 
 const csmOrderedFeedback = buildV4FeedbackArtifacts({
   sessionId: "v4sess-csm-order",

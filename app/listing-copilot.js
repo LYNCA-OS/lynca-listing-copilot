@@ -2261,6 +2261,7 @@ function TitleCardComponent(result, asset = null) {
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
   const generatedTitle = result.generatedTitle || result.final_title || result.title || "";
   const correctedTitle = result.correctedTitle ?? generatedTitle;
+  const writerReviewWithoutDraft = result.writerReviewRequired === true && !String(correctedTitle || "").trim();
   const copyDisabled = titlePending || !correctedTitle;
   const saveDisabled = titlePending || result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
   const retryProvider = emergencyProvider();
@@ -2274,15 +2275,19 @@ function TitleCardComponent(result, asset = null) {
   const rejectDisabled = titlePending || result.feedbackStatus === "saving";
   const statusLabel = failed
     ? "失败"
+    : writerReviewWithoutDraft
+      ? "需人工输入"
     : ["MEDIUM", "LOW"].includes(confidence) || unresolved.length
       ? "需确认"
       : "已生成";
   const unavailableTitle = titlePending
     ? "正在生成一段式标题"
+    : writerReviewWithoutDraft
+    ? "证据不足，系统未猜测；请直接输入最终英文标题"
     : failed
     ? `标题暂不可用：${friendlyErrorSummary(result.reason)}`
     : "标题暂不可用";
-  const textareaValue = titlePending || (failed && !correctedTitle) ? "" : (correctedTitle || unavailableTitle);
+  const textareaValue = titlePending || writerReviewWithoutDraft || (failed && !correctedTitle) ? "" : (correctedTitle || unavailableTitle);
   const pendingProgress = titlePending ? assetProgressSnapshot(result.index) : null;
   const omissionNotice = writerTitleOmissionNotice(result);
 
@@ -2692,7 +2697,10 @@ async function processAsset(asset, options = {}) {
     || "");
   const resolvedFields = payload.resolved_fields || legacyResult.resolved_fields || legacyResult.resolved || legacyResult.fields || {};
   const providerResult = payload.provider_result || {};
-  const confidence = providerResult.confidence || legacyResult.confidence || payload.confidence || (finalTitle ? "MEDIUM" : "FAILED");
+  const writerReviewRequired = payload.writer_review_required === true
+    || payload.status === "WRITER_REVIEW"
+    || payload.assisted_draft_status === "REVIEW_REQUIRED";
+  const confidence = providerResult.confidence || legacyResult.confidence || payload.confidence || (finalTitle ? "MEDIUM" : writerReviewRequired ? "LOW" : "FAILED");
   const clientTotalMs = Math.round(performance.now() - processStartedAt);
   const timing = {
     ...(legacyResult.timing || {}),
@@ -2718,6 +2726,10 @@ async function processAsset(asset, options = {}) {
     generatedTitle: finalTitle,
     correctedTitle: finalTitle,
     writerTitlePending,
+    writerReviewRequired,
+    reason: writerReviewRequired
+      ? payload.writer_review_reason || legacyResult.reason || payload.reason || "现有证据不足以生成安全标题，请人工输入。"
+      : legacyResult.reason || payload.reason || null,
     confidence,
     provider: providerResult.provider || legacyResult.provider || payload.provider || state.selectedProvider || null,
     model_id: providerResult.model || legacyResult.model_id || payload.model_id || "",
@@ -3115,7 +3127,7 @@ function shouldPollV4AssistedDraft(result = {}) {
     if (["FAILED", "CANCELLED"].includes(jobStatus)) return false;
   }
   const status = v4AssistedStatus(result);
-  if (status === "READY" || status === "FAILED" || status === "TIMEOUT") return false;
+  if (status === "READY" || status === "REVIEW_REQUIRED" || status === "FAILED" || status === "TIMEOUT") return false;
   return result.full_assist_continued_after_l1 === true
     || result.l2_background_status === "SCHEDULED"
     || status === "PENDING"
@@ -3138,6 +3150,13 @@ function applyV4AssistedDraftUpdate(result = {}, session = {}) {
   const summary = session.provider_result_summary || {};
   const finalTitle = finalTitleFromV4Session(session);
   const l2Ready = session.l2_status === "READY" && Boolean(finalTitle);
+  const writerReviewRequired = session.l2_status === "READY"
+    && (
+      session.writer_review_required === true
+      || session.status === "WRITER_REVIEW"
+      || summary.writer_review_required === true
+      || summary.assisted_draft_status === "REVIEW_REQUIRED"
+    );
   const assistedStatus = String(summary.assisted_draft_status || (l2Ready ? "READY" : "")).toUpperCase();
   result.l2AssistedDraftStatus = assistedStatus || result.l2AssistedDraftStatus || "PENDING";
   result.assisted_draft_status = result.l2AssistedDraftStatus;
@@ -3145,6 +3164,22 @@ function applyV4AssistedDraftUpdate(result = {}, session = {}) {
     ...(result.provider_result_summary || {}),
     ...summary
   };
+
+  if (writerReviewRequired && !finalTitle) {
+    markAssetFinished(result.index);
+    attachGenerationTimingToResult(result);
+    result.title_stage = "L2_ASSISTED_DRAFT";
+    result.writerTitlePending = false;
+    result.writerReviewRequired = true;
+    result.confidence = "LOW";
+    result.reason = session.writer_review_reason
+      || summary.writer_review_reason
+      || "现有证据不足以生成安全标题，请人工输入。";
+    result.l2AssistedDraftStatus = "REVIEW_REQUIRED";
+    result.assisted_draft_status = "REVIEW_REQUIRED";
+    result.feedbackMessage = "识别已完成，但没有足够证据生成安全标题；可直接人工输入。";
+    return true;
+  }
 
   if ((assistedStatus !== "READY" && !l2Ready) || !finalTitle) return false;
 
@@ -3345,7 +3380,7 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
     setAssetProgress(result.index, "云端队列排队中", 0.56);
   } else if (jobStatus === "RUNNING") {
     setAssetProgress(result.index, "云端模型生成中", 0.68);
-  } else if (jobStatus === "L2_READY" || job.display_status === "FINAL_READY") {
+  } else if (jobStatus === "L2_READY" || job.display_status === "FINAL_READY" || job.display_status === "WRITER_REVIEW") {
     setAssetProgress(result.index, "接收最终标题", 0.94);
   }
 
@@ -3488,8 +3523,12 @@ async function saveFeedbackForResult(result, asset) {
     || (normalizeConfidence(result.confidence) === "FAILED" ? `FAILED: ${friendlyErrorSummary(result.reason)}` : "")
   ).trim();
   const correctedTitle = String(result.correctedTitle ?? result.final_title ?? result.rendered_title ?? result.title ?? "").trim();
+  const writerReviewRequired = result.writerReviewRequired === true
+    || result.writer_review_required === true
+    || result.assisted_draft_status === "REVIEW_REQUIRED";
+  const explicitReject = result.explicitReviewOutcome === "REJECTED";
 
-  if (!generatedTitle || !correctedTitle) return false;
+  if ((!correctedTitle && !explicitReject) || (!generatedTitle && !writerReviewRequired && !explicitReject)) return false;
 
   result.feedbackStatus = "saving";
   result.feedbackMessage = "正在保存审核记录…";

@@ -600,6 +600,47 @@ assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "writer_ready"
 assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "COMPLETED");
 assert.equal(endToEndLedger.reconciliation.error_count, 0);
 
+const writerReviewLedger = buildEndToEndNodeLedger({
+  session: {
+    status: "WRITER_REVIEW",
+    l2_status: "READY",
+    l2_title: "",
+    final_title: "",
+    l2_ready_at: "2026-07-11T00:00:02.900Z",
+    provider_result_summary: {
+      assisted_draft_status: "REVIEW_REQUIRED",
+      writer_review_required: true,
+      title_render_source: "identity_resolution_abstain",
+      noncritical_persistence_status: "COMPLETED",
+      noncritical_persistence_summary: { saved_count: 4, failed_count: 0, artifact_count: 4 }
+    }
+  },
+  job: {
+    id: "job-observability-writer-review",
+    batch_id: "batch-observability-writer-review",
+    lane: "interactive",
+    job_type: "final_assisted_title",
+    status: "L2_READY",
+    attempt_count: 1,
+    max_attempts: 3,
+    created_at: "2026-07-11T00:00:00.000Z",
+    started_at: "2026-07-11T00:00:00.500Z",
+    completed_at: "2026-07-11T00:00:03.000Z"
+  },
+  timing: {
+    scheduler_queue_wait_ms: 500,
+    worker_processing_ms: 2500,
+    time_to_l2_ready_ms: 2900
+  },
+  display: { can_writer_start: true, display_status: "WRITER_REVIEW", writer_status: "REVIEW_REQUIRED" }
+});
+assert.equal(writerReviewLedger.nodes.find((node) => node.node_id === "worker_execution")?.status, "COMPLETED");
+assert.equal(writerReviewLedger.nodes.find((node) => node.node_id === "full_l2_provider_decision")?.status, "COMPLETED");
+assert.equal(writerReviewLedger.nodes.find((node) => node.node_id === "writer_ready")?.status, "COMPLETED");
+assert.equal(writerReviewLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "SKIPPED");
+assert.equal(writerReviewLedger.nodes.some((node) => node.status === "RUNNING"), false);
+assert.equal(writerReviewLedger.reconciliation.error_count, 0);
+
 const preL2AnchorLedger = buildEndToEndNodeLedger({
   session: {
     l2_status: "READY",

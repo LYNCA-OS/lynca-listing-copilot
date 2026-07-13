@@ -8,6 +8,7 @@ import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-pr
 import { planV4RecognitionRoute } from "../../lib/listing/v4/route-planner/route-planner.mjs";
 import { applyPreIngestionBundleToPayload } from "../../lib/listing/pipeline/preingestion-evidence.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
+import { classifyV4ResultOutcome } from "../../lib/listing/v4/result-outcome.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
   providerOptionsForV4BackgroundL2,
@@ -39,7 +40,7 @@ function titleFromResult(result = {}) {
 }
 
 function isFailedResult(result = {}) {
-  return String(result.confidence || "").toUpperCase() === "FAILED" || !titleFromResult(result);
+  return classifyV4ResultOutcome(result).technical_failure;
 }
 
 function isRetrySuppressedProviderError(result = {}) {
@@ -801,11 +802,25 @@ async function persistPipelineResult({
     });
   }
   const l2Title = titleFromResult(result);
-  const failed = isFailedResult(result);
-  const status = failed ? v4SessionStatuses.FAILED : v4SessionStatuses.DRAFT_READY;
+  const outcome = classifyV4ResultOutcome(result);
+  const failed = outcome.technical_failure;
+  const writerReviewRequired = outcome.writer_review_required;
+  const status = failed
+    ? v4SessionStatuses.FAILED
+    : writerReviewRequired
+      ? v4SessionStatuses.WRITER_REVIEW
+      : v4SessionStatuses.DRAFT_READY;
+  const assistedDraftStatus = failed
+    ? "FAILED"
+    : writerReviewRequired
+      ? "REVIEW_REQUIRED"
+      : (result.assisted_draft_status || extraProviderSummary.assisted_draft_status || "READY");
   const deferNonCriticalPersistence = nonCriticalPersistenceDeferred(payload, process.env);
   const sessionPatch = {
     status,
+    failure_reason: failed
+      ? String(result.reason || result.provider_error_type || result.provider_error_code || "recognition_result_empty").slice(0, 500)
+      : null,
     field_states: rows.fieldEvidenceRows,
     route: routePlan.route,
     route_plan: routePlan,
@@ -814,7 +829,12 @@ async function persistPipelineResult({
       provider: result.provider || result.provider_id || null,
       confidence: result.confidence || null,
       title_stage: result.title_stage || null,
-      assisted_draft_status: failed ? "FAILED" : (result.assisted_draft_status || extraProviderSummary.assisted_draft_status || null),
+      assisted_draft_status: assistedDraftStatus,
+      outcome_type: outcome.outcome,
+      writer_review_required: writerReviewRequired,
+      writer_review_reason: writerReviewRequired
+        ? String(result.reason || "Identity could not be resolved from grounded evidence.").slice(0, 500)
+        : null,
       provider_error_type: result.provider_error_type || result.provider_error_code || null,
       noncritical_persistence_status: deferNonCriticalPersistence ? "DEFERRED" : "SYNC",
       writer_ready_persistence_mode: deferNonCriticalPersistence ? "minimal_session_first" : "synchronous_full_persistence",
@@ -1090,7 +1110,12 @@ async function runBackgroundAssistedDraft({
     l1_return_reason: "background_assisted_draft_ready",
     full_assist_continued_after_l1: false
   };
-  result.assisted_draft_status = isFailedResult(result) ? "FAILED" : "READY";
+  const outcome = classifyV4ResultOutcome(result);
+  result.assisted_draft_status = outcome.technical_failure
+    ? "FAILED"
+    : outcome.writer_review_required
+      ? "REVIEW_REQUIRED"
+      : "READY";
   return persistPipelineResult({
     sessionId,
     result,

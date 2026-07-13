@@ -590,6 +590,8 @@ function sessionL2Summary(statusPayload = {}) {
     session_status: session.status || null,
     l2_status: session.l2_status || null,
     assisted_draft_status: summary.assisted_draft_status || null,
+    writer_review_required: session.writer_review_required === true || summary.writer_review_required === true,
+    writer_review_reason: session.writer_review_reason || summary.writer_review_reason || null,
     title: session.final_title || summary.final_title || null,
     resolved_fields: session.resolved_fields && typeof session.resolved_fields === "object" ? session.resolved_fields : {},
     field_states: session.field_states && typeof session.field_states === "object" ? session.field_states : {},
@@ -666,6 +668,10 @@ function jobL2Summary(statusPayload = {}) {
     session_status: session.status || job.internal_status || null,
     l2_status: session.l2_status || job.l2_status || null,
     assisted_draft_status: summary.assisted_draft_status || null,
+    writer_review_required: session.writer_review_required === true
+      || summary.writer_review_required === true
+      || job.display_status === "WRITER_REVIEW",
+    writer_review_reason: session.writer_review_reason || summary.writer_review_reason || null,
     title: session.final_title || session.l2_title || job.display_title || job.writer_display_title || null,
     resolved_fields: session.resolved_fields && typeof session.resolved_fields === "object" ? session.resolved_fields : {},
     field_states: session.field_states && typeof session.field_states === "object" ? session.field_states : {},
@@ -765,6 +771,17 @@ export function summaryHasVisibleL2Title(summary = {}) {
     && cleanText(summary.title));
 }
 
+export function summaryRequiresWriterReview(summary = {}) {
+  return Boolean(
+    summary.l2_status === "READY"
+    && (
+      summary.session_status === "WRITER_REVIEW"
+      || summary.assisted_draft_status === "REVIEW_REQUIRED"
+      || summary.writer_review_required === true
+    )
+  );
+}
+
 function activeJobStatus(status = "") {
   return ["QUEUED", "RUNNING", "RETRYING"].includes(String(status || "").toUpperCase());
 }
@@ -833,6 +850,9 @@ async function pollSessionStatus({
     if (summaryHasVisibleL2Title(summary)) {
       return { polls, ready: true, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
+    if (summaryRequiresWriterReview(summary)) {
+      return { polls, ready: false, review_required: true, terminal: true, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
+    }
     if (summary.session_status === "FAILED" || summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT") {
       return { polls, ready: false, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
@@ -875,6 +895,9 @@ async function pollJobStatus({
     const candidateDebug = compactCandidateTrace(last.data?.jobs?.[0]?.session?.candidate_control_plane_trace || {});
     if (summaryHasVisibleL2Title(summary)) {
       return { polls, ready: true, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
+    }
+    if (summaryRequiresWriterReview(summary)) {
+      return { polls, ready: false, review_required: true, terminal: true, summary, candidateDebug, last, elapsed_ms: Date.now() - started };
     }
     if (terminalJobStatus(summary.job_status)
       || (!activeJobStatus(summary.job_status) && (summary.assisted_draft_status === "FAILED" || summary.assisted_draft_status === "TIMEOUT"))) {
@@ -1362,12 +1385,13 @@ async function runOne({
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
     });
     const l2ElapsedFromClickMs = Date.now() - clickAt;
-    const l2DoneBeforeClick = Boolean(l2.ready) && l2.polls <= 1;
+    const l2Terminal = Boolean(l2.ready || l2.review_required);
+    const l2DoneBeforeClick = l2Terminal && l2.polls <= 1;
     const finalTitle = cleanText(l2.summary?.title || "");
     const finalScore = scoreTitles(sellerTitle, finalTitle);
     const finalProviderDiagnostics = objectOrNull(l2.summary?.provider_diagnostics)
       || providerDiagnosticsFromSummary(l2.summary || {});
-    const writerReady = Boolean(l2.ready || finalTitle);
+    const writerReady = Boolean(l2Terminal || finalTitle);
     const preL2AnchorFastLaneHit = l2.summary?.v4_l2_timing?.pre_l2_full_l2_skipped === true;
     const exactScoutFastLaneHit = (
       l2.summary?.v4_l2_timing?.exact_anchor_scout_status === "CACHE_HIT"
@@ -1377,7 +1401,7 @@ async function runOne({
     const fastLaneHit = preL2AnchorFastLaneHit || exactScoutFastLaneHit;
     // 感知延迟：点击时若最终 L2 已可见则为 0；否则等到 L2 就绪为止。
     // 未就绪时置 undefined（而非 null），避免 quantile 把 Number(null)=0 计入。
-    const perceivedTitleMs = l2DoneBeforeClick ? 0 : (l2.ready ? l2ElapsedFromClickMs : undefined);
+    const perceivedTitleMs = l2DoneBeforeClick ? 0 : (l2Terminal ? l2ElapsedFromClickMs : undefined);
     return compactObject({
       asset_id: id,
       sealed_label_key: sealedKey || null,
@@ -1401,6 +1425,7 @@ async function runOne({
       ok: writerReady,
       l1_ok: prewarmResult?.data?.ok === true,
       writer_ready: writerReady,
+      writer_review_required: l2.review_required === true,
       error: enqueue.ok ? null : enqueue.data,
       l1_wall_latency_ms: prewarmResult?.latency_ms ?? null,
       speculative_setup_ms: speculativeSetupMs,
@@ -1421,10 +1446,10 @@ async function runOne({
           : "V4_QUEUE_L2",
       recognition_session_id: job.recognition_session_id || l2.summary?.recognition_session_id || null,
       l1_title: "",
-      l2_ready: Boolean(l2.ready),
+      l2_ready: l2Terminal,
       l2_poll_count: l2.polls,
       l2_poll_elapsed_ms: l2.elapsed_ms ?? null,
-      time_to_writer_ready_ms: l2.ready ? (Date.now() - t0) : null,
+      time_to_writer_ready_ms: l2Terminal ? (Date.now() - t0) : null,
       worker_queue_wait_ms: l2.summary?.worker_queue_wait_ms ?? null,
       paired_l1_wait_ms: l2.summary?.paired_l1_wait_ms ?? null,
       scheduler_queue_wait_ms: l2.summary?.scheduler_queue_wait_ms ?? l2.summary?.worker_queue_wait_ms ?? null,
@@ -1556,7 +1581,8 @@ async function runOne({
     const finalScore = scoreTitles(sellerTitle, finalTitle);
     const finalProviderDiagnostics = objectOrNull(l2.summary?.provider_diagnostics)
       || providerDiagnosticsFromSummary(l2.summary || {});
-    const writerReady = Boolean(l2.ready || finalTitle);
+    const l2Terminal = Boolean(l2.ready || l2.review_required);
+    const writerReady = Boolean(l2Terminal || finalTitle);
     return compactObject({
       asset_id: id,
       sealed_label_key: sealedKey || null,
@@ -1580,6 +1606,7 @@ async function runOne({
       ok: writerReady,
       l1_ok: Boolean(enqueue.ok && enqueue.data?.ok !== false),
       writer_ready: writerReady,
+      writer_review_required: l2.review_required === true,
       error: enqueue.ok ? null : enqueue.data,
       l1_wall_latency_ms: enqueue.latency_ms,
       l1_internal_scout_ms: null,
@@ -1588,10 +1615,10 @@ async function runOne({
       title_stage: "V4_QUEUE_L2",
       recognition_session_id: job.recognition_session_id || l2.summary?.recognition_session_id || null,
       l1_title: "",
-      l2_ready: Boolean(l2.ready),
+      l2_ready: l2Terminal,
       l2_poll_count: l2.polls,
       l2_poll_elapsed_ms: l2.elapsed_ms ?? null,
-      time_to_writer_ready_ms: l2.ready ? enqueue.latency_ms + Number(l2.elapsed_ms || 0) : null,
+      time_to_writer_ready_ms: l2Terminal ? enqueue.latency_ms + Number(l2.elapsed_ms || 0) : null,
       worker_queue_wait_ms: l2.summary?.worker_queue_wait_ms ?? null,
       worker_processing_ms: l2.summary?.worker_processing_ms ?? null,
       time_to_l2_ready_ms: l2.summary?.time_to_l2_ready_ms ?? null,
@@ -1681,10 +1708,16 @@ async function runOne({
   const l2 = forceL2Direct
     ? {
       polls: 0,
-      ready: Boolean(data.ok),
+      ready: Boolean(data.ok && data.writer_review_required !== true),
+      review_required: data.ok === true && data.writer_review_required === true,
+      terminal: Boolean(data.ok),
       elapsed_ms: 0,
       summary: {
         assisted_draft_status: data.assisted_draft_status || (data.ok ? "READY" : "FAILED"),
+        session_status: data.status || null,
+        l2_status: data.ok ? "READY" : "FAILED",
+        writer_review_required: data.writer_review_required === true,
+        writer_review_reason: data.writer_review_reason || null,
         title: resultTitle(data),
         route: data.route_plan?.route || data.route || null,
         catalog_raw_candidate_count: Number(data.catalog_activation_funnel?.raw_candidate_count || data.provider_result?.candidate_control_plane_trace?.catalog_activation_funnel?.raw_candidate_count || 0),
@@ -1758,7 +1791,8 @@ async function runOne({
       : (data.module_speed_metrics?.time_to_l1_internal_scout_ms || data.module_speed_metrics?.time_to_l1_safe_draft_ms || l1.latency_ms))
     : null;
   const l1Ok = Boolean(l1.ok && data.ok);
-  const writerReady = Boolean(l2.ready || cleanText(finalTitle));
+  const l2Terminal = Boolean(l2.ready || l2.review_required);
+  const writerReady = Boolean(l2Terminal || cleanText(finalTitle));
   return compactObject({
     asset_id: id,
     sealed_label_key: sealedKey || null,
@@ -1780,6 +1814,7 @@ async function runOne({
     ok: writerReady,
     l1_ok: l1Ok,
     writer_ready: writerReady,
+    writer_review_required: l2.review_required === true,
     error: l1.ok ? null : data,
     l1_wall_latency_ms: l1.latency_ms,
     l1_internal_scout_ms: l1InternalScoutMs,
@@ -1791,12 +1826,12 @@ async function runOne({
     title_stage: data.title_stage || null,
     recognition_session_id: sessionId,
     l1_title: l1Title,
-    l2_ready: Boolean(l2.ready),
+    l2_ready: l2Terminal,
     l2_poll_count: l2.polls,
     l2_poll_elapsed_ms: l2.elapsed_ms ?? null,
     time_to_writer_ready_ms: forceL2Direct
       ? l1.latency_ms
-      : (l2.ready ? l1.latency_ms + Number(l2.elapsed_ms || 0) : null),
+      : (l2Terminal ? l1.latency_ms + Number(l2.elapsed_ms || 0) : null),
     l2_status: l2.summary,
     l2_candidate_debug: l2.candidateDebug || {},
     final_title: finalTitle,
@@ -2183,7 +2218,9 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
   const providerDiagnostics = objectOrNull(summary.provider_diagnostics)
     || providerDiagnosticsFromSummary(summary);
   const finalTitle = cleanText(summary.title || "");
-  const ready = summaryHasVisibleL2Title(summary);
+  const titleReady = summaryHasVisibleL2Title(summary);
+  const writerReviewRequired = summaryRequiresWriterReview(summary);
+  const ready = titleReady || writerReviewRequired;
   const timeToReady = numberOrNull(summary.time_to_l2_ready_ms);
   const preL2AnchorFastLaneHit = summary.v4_l2_timing?.pre_l2_full_l2_skipped === true;
   const exactScoutFastLaneHit = (
@@ -2225,6 +2262,7 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     l1_job_id: prepared.l1_job?.job_id || null,
     l1_job_status: l1JobRow?.status || null,
     writer_ready: ready,
+    writer_review_required: writerReviewRequired,
     error: ready
       ? null
       : serializableError(jobRow?.error || batchPoll.fatal_error || batchPoll.last_error || summary.job_status, "batch_poll_timeout"),
@@ -2524,6 +2562,8 @@ export function summarize(results = [], { runWallMs = null } = {}) {
   return {
     attempted_count: results.length,
     ok_count: results.filter((item) => item.ok).length,
+    title_ready_count: results.filter((item) => item.ok === true && cleanText(item.final_title)).length,
+    writer_review_required_count: results.filter((item) => item.ok === true && item.writer_review_required === true).length,
     technical_failure_count: results.filter((item) => item.ok !== true).length,
     policy_below_0_72_count: results.filter((item) => Number(item.final_scoring?.policy_fair_token_recall || 0) < 0.72).length,
     // Kept for existing report consumers; this is a technical completion
@@ -2874,6 +2914,7 @@ export function perCardTsv(results = []) {
     "l1_ok",
     "l1_job_status",
     "writer_ready",
+    "writer_review_required",
     "preingestion_used",
     "preingestion_ok",
     "preingestion_http_status",
@@ -2960,6 +3001,7 @@ export function perCardTsv(results = []) {
     item.l1_ok,
     item.l1_job_status,
     item.writer_ready,
+    item.writer_review_required,
     item.preingestion_used,
     item.preingestion_ok,
     item.preingestion_http_status,
@@ -3393,6 +3435,8 @@ export async function main(argv = process.argv, env = process.env) {
     `report_tsv: ${resolve(outPath.replace(/\.json$/i, ".tsv"))}`,
     `attempted: ${report.summary.attempted_count}`,
     `ok: ${report.summary.ok_count}`,
+    `title_ready: ${report.summary.title_ready_count}`,
+    `writer_review_required: ${report.summary.writer_review_required_count}`,
     `l2_ready: ${report.summary.l2_ready_count}`,
     `l1_p50_ms: ${report.summary.l1_p50_ms}`,
     `l1_p95_ms: ${report.summary.l1_p95_ms}`,
