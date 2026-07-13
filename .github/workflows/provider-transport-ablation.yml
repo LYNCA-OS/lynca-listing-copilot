@@ -115,14 +115,17 @@ jobs:
           NODE
       - name: Run baseline transport
         run: |
+          PAIR="${{ inputs.transport_pair }}"
           EXTRA_FLAGS=()
-          if [[ "${{ inputs.transport_pair }}" == "compact_vs_ultra_fast" ]]; then
+          L2_WAIT_MS=120000
+          if [[ "$PAIR" == "compact_vs_ultra_fast" ]]; then
             EXTRA_FLAGS+=(--compact-l2)
-          elif [[ "${{ inputs.transport_pair }}" == ultra_high_vs_* || "${{ inputs.transport_pair }}" == "ultra_v1_vs_v2" || "${{ inputs.transport_pair }}" == "writer_ready_vs_provider_done_handoff" ]]; then
+          elif [[ "$PAIR" == ultra_high_vs_* || "$PAIR" == "ultra_v1_vs_v2" || "$PAIR" == "writer_ready_vs_provider_done_handoff" ]]; then
             EXTRA_FLAGS+=(--ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority)
           fi
-          if [[ "${{ inputs.transport_pair }}" == "writer_ready_vs_provider_done_handoff" ]]; then
+          if [[ "$PAIR" == "writer_ready_vs_provider_done_handoff" ]]; then
             EXTRA_FLAGS+=(--no-provider-done-handoff)
+            L2_WAIT_MS=600000
           fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
@@ -135,24 +138,34 @@ jobs:
             "${EXTRA_FLAGS[@]}" \
             --model "${{ inputs.model }}" \
             --think-ms 0 \
-            --l2-wait-ms 120000 \
+            --l2-wait-ms "$L2_WAIT_MS" \
             --out "$BASELINE_REPORT_PATH"
+          node - <<'NODE'
+          const report = require(process.env.BASELINE_REPORT_PATH);
+          const expected = Number('${{ inputs.limit }}');
+          if (report.summary?.ok_count !== expected || report.summary?.technical_failure_count !== 0) {
+            throw new Error(`baseline did not drain cleanly: ok=${report.summary?.ok_count}/${expected} technical=${report.summary?.technical_failure_count}`);
+          }
+          NODE
       - name: Run candidate transport
         run: |
+          PAIR="${{ inputs.transport_pair }}"
           EXTRA_FLAGS=(--compact-l2)
-          if [[ "${{ inputs.transport_pair }}" == "compact_vs_ultra_fast" ]]; then
+          L2_WAIT_MS=120000
+          if [[ "$PAIR" == "compact_vs_ultra_fast" ]]; then
             EXTRA_FLAGS=(--ultra-fast-l2 --ultra-image-detail "${{ inputs.ultra_image_detail }}")
             if [[ "${{ inputs.ultra_service_tier }}" != "unset" ]]; then
               EXTRA_FLAGS+=(--ultra-service-tier "${{ inputs.ultra_service_tier }}")
             fi
-          elif [[ "${{ inputs.transport_pair }}" == "ultra_high_vs_auto" ]]; then
+          elif [[ "$PAIR" == "ultra_high_vs_auto" ]]; then
             EXTRA_FLAGS=(--ultra-fast-l2 --ultra-image-detail auto --ultra-service-tier priority)
-          elif [[ "${{ inputs.transport_pair }}" == "ultra_high_vs_low" ]]; then
+          elif [[ "$PAIR" == "ultra_high_vs_low" ]]; then
             EXTRA_FLAGS=(--ultra-fast-l2 --ultra-image-detail low --ultra-service-tier priority)
-          elif [[ "${{ inputs.transport_pair }}" == "ultra_v1_vs_v2" ]]; then
+          elif [[ "$PAIR" == "ultra_v1_vs_v2" ]]; then
             EXTRA_FLAGS=(--ultra-fast-l2 --ultra-sparse-v2 --ultra-image-detail high --ultra-service-tier priority)
-          elif [[ "${{ inputs.transport_pair }}" == "writer_ready_vs_provider_done_handoff" ]]; then
+          elif [[ "$PAIR" == "writer_ready_vs_provider_done_handoff" ]]; then
             EXTRA_FLAGS=(--ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority --provider-done-handoff)
+            L2_WAIT_MS=600000
           fi
           node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
@@ -165,8 +178,15 @@ jobs:
             "${EXTRA_FLAGS[@]}" \
             --model "${{ inputs.model }}" \
             --think-ms 0 \
-            --l2-wait-ms 120000 \
+            --l2-wait-ms "$L2_WAIT_MS" \
             --out "$COMPACT_REPORT_PATH"
+          node - <<'NODE'
+          const report = require(process.env.COMPACT_REPORT_PATH);
+          const expected = Number('${{ inputs.limit }}');
+          if (report.summary?.ok_count !== expected || report.summary?.technical_failure_count !== 0) {
+            throw new Error(`candidate did not drain cleanly: ok=${report.summary?.ok_count}/${expected} technical=${report.summary?.technical_failure_count}`);
+          }
+          NODE
       - name: Compare paired outcomes
         run: |
           node scripts/compare-provider-transport-ablation.mjs \
@@ -198,8 +218,8 @@ jobs:
           console.log(`tokens standard=${comparison.baseline.total_tokens_total} compact=${comparison.compact.total_tokens_total}`);
           console.log(`weak_proxy recoveries=${comparison.recovery_count} regressions=${comparison.regression_count}`);
           if (comparison.complete_pair_count !== Number('${{ inputs.limit }}')) process.exit(1);
-          if (!handoffPair && (comparison.baseline.transport_node_error_count !== 0 || comparison.compact.transport_node_error_count !== 0)) process.exit(1);
-          if (handoffPair && comparison.compact.transport_node_error_count !== 0) process.exit(1);
+          if (comparison.baseline.technical_failure_count !== 0 || comparison.compact.technical_failure_count !== 0) process.exit(1);
+          if (comparison.baseline.transport_node_error_count !== 0 || comparison.compact.transport_node_error_count !== 0) process.exit(1);
           if (comparison.baseline.identity_cache_hit_count !== 0 || comparison.compact.identity_cache_hit_count !== 0) process.exit(1);
           if (comparison.baseline.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);
           if (comparison.compact.identity_cache_bypassed_count !== Number('${{ inputs.limit }}')) process.exit(1);

@@ -241,6 +241,7 @@ assert.match(v4SmokeSource, /prewarmCacheOnly: !hasFlag\(argv, "--paid-prewarm"\
 assert.match(v4SmokeSource, /create_l1_job: enableL1/, "hidden L1 must be explicit experiment-only work rather than a default paid stage.");
 assert.match(v4SmokeSource, /create_l2_job: true/, "production smoke must always poll the final L2 stage.");
 assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
+assert.match(queueStatusApiSource, /provider_capacity_stage_handoff: summary\.provider_capacity_stage_handoff \|\| null/, "job status must preserve provider-stage handoff telemetry for production capacity audits.");
 assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");
 assert.match(v4SmokeSource, /recognition_phase_loaded_sealed_labels: false/, "blind smoke must not load sealed seller titles during recognition.");

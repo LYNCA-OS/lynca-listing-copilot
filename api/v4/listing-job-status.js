@@ -120,6 +120,7 @@ function writerSafeSessionStatus(session = null, job = null) {
       noncritical_persistence_status: summary.noncritical_persistence_status || null,
       noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
       writer_ready_persistence_mode: summary.writer_ready_persistence_mode || null,
+      provider_capacity_stage_handoff: summary.provider_capacity_stage_handoff || null,
       v4_l2_timing: summary.v4_l2_timing || null
     },
     candidate_control_plane_trace: {
