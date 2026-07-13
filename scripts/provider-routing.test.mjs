@@ -166,6 +166,47 @@ assert.equal(ultraFastServiceTier({}), null);
 assert.equal(ultraFastServiceTier({ v4_ultra_fast_service_tier: "priority" }), "priority");
 assert.equal(ultraFastServiceTier({ v4UltraFastServiceTier: "FLEX" }), "flex");
 assert.equal(ultraFastServiceTier({ v4_ultra_fast_service_tier: "invalid" }), null);
+assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({}, {}), 750);
+assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({
+  PREINGESTION_OCR_POST_PROVIDER_WAIT_MS: "1200"
+}, {}), 1200);
+assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({}, {
+  preingestion_ocr_post_provider_wait_ms: 400
+}), 400);
+assert.deepEqual(__listingCopilotTitleTestHooks.deferredPreingestionOcrSnapshot({
+  preingestion_evidence_patches: [
+    { field: "serial_number", value: "2/3" },
+    { field: "grade_company", value: "BGS" }
+  ]
+}), {
+  status: "DEFERRED_AFTER_PROVIDER",
+  terminal: false,
+  job_count: null,
+  patch_count: 2,
+  serial_patch_count: 1,
+  evidence_patches: [
+    { field: "serial_number", value: "2/3" },
+    { field: "grade_company", value: "BGS" }
+  ],
+  reason: "ocr_continues_in_background_after_writer_budget"
+});
+assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({}, {
+  status: "DEFERRED_AFTER_PROVIDER",
+  job_count: null
+}), false, "deferred OCR must not make an unverified serial numerator publishable");
+assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({
+  images: [{ id: "front" }],
+  preingestion_evidence_patches: [{
+    field: "serial_number",
+    value: "2/3",
+    confidence: 0.99,
+    source_type: "OCR",
+    source_image_id: "front"
+  }]
+}, {
+  status: "DEFERRED_AFTER_PROVIDER",
+  job_count: null
+}), true, "an already verified current-image OCR numerator remains usable while other OCR jobs continue");
 
 assert.deepEqual(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision({
   preingestion_bundle_id: "bundle-1",

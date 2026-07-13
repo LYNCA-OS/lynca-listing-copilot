@@ -174,6 +174,23 @@ assert.equal(preloadedRefreshNode.expected, false);
 assert.equal(preloadedRefreshNode.skip_reason, "ocr_patches_already_available_or_no_refresh_needed");
 assert.equal(preloadedOcrPatchLedger.coverage.missing_required_node_ids.includes("preingestion_evidence_refresh"), false);
 
+const noNewPatchRefreshLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    preingestion_evidence_refresh: {
+      refreshed: false,
+      reason: "no_new_ocr_patches",
+      patch_count: 6,
+      added_patch_count: 0
+    }
+  },
+  payload: { asset_id: "asset-no-new-ocr-patches", images: [{}, {}] }
+});
+const noNewPatchRefreshNode = noNewPatchRefreshLedger.nodes.find((node) => node.node_id === "preingestion_evidence_refresh");
+assert.equal(noNewPatchRefreshNode.status, "SKIPPED");
+assert.equal(noNewPatchRefreshNode.expected, false);
+assert.equal(noNewPatchRefreshLedger.coverage.missing_required_node_ids.includes("preingestion_evidence_refresh"), false);
+
 const brokenLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

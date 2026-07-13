@@ -73,3 +73,38 @@ full assisted observation / catalog / vector / retrieval / sidecars
 
 For eBay blind or no approved catalog support, the route should normally be
 `COLD_START_SAFE_DRAFT`, not `ASSISTED_FULL`.
+
+## 2026-07-13 Production Decision
+
+The product no longer exposes L1. Writers receive one writer-ready title only;
+L1 remains an internal observation/cache primitive when it produces measurable
+L2 benefit.
+
+Current critical-path policy:
+
+```text
+upload/pre-ingestion
+-> provider capacity queue (single GPT-5-mini key, capacity 2)
+-> GPT-5-mini L2 observation
+-> catalog/vector post-observation deadline (250 ms)
+-> OCR post-provider deadline (750 ms)
+-> resolver + renderer
+-> one writer-visible title
+
+background:
+late catalog/vector/OCR completion, persistence, learning sidecars
+```
+
+Measured capacity experiment:
+
+- concurrency 2: provider p50 13.1s, provider p95 17.0s, about 4.0 completed cards/minute;
+- concurrency 3: provider p50 23.9s, provider p95 40.8s, 3.83 completed cards/minute;
+- concurrency 3 had no 429s, but single-key provider contention made both latency and throughput worse.
+
+Therefore production stays at concurrency 2 until another GPT-5-mini key or
+fresh provider-capacity evidence changes the constraint. Client concurrency is
+not allowed to redefine server capacity.
+
+OCR remains active and durable, but it must not hold the writer path until all
+crop jobs finish. Patches already available when GPT completes are consumed;
+late patches continue in the background for review, learning, and later reuse.

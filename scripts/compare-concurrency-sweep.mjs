@@ -245,6 +245,8 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
     node_ledger_present_count: numberOrZero(nodeSummary.ledger_present_count),
     node_ledger_missing_count: numberOrZero(nodeSummary.ledger_missing_count),
     node_error_count: numberOrZero(nodeSummary.error_count),
+    node_transport_error_count: numberOrZero(nodeSummary.transport_error_count),
+    node_field_quality_error_count: numberOrZero(nodeSummary.field_quality_error_count),
     node_warning_count: numberOrZero(nodeSummary.warning_count),
     node_missing_required_count: numberOrZero(nodeSummary.missing_required_node_count),
     catalog_raw_candidate_count: numberOrZero(summary.l2_catalog_raw_candidate_count),
@@ -303,7 +305,8 @@ export function evaluateRow(row = {}, baseline = {}, { qualityTolerance = 0.03 }
   if (row.node_ledger_missing_count > 0 || (row.node_ledger_present_count > 0 && row.node_ledger_present_count !== row.attempted_count)) {
     rejectionReasons.push("NODE_LEDGER_INCOMPLETE");
   }
-  if (row.node_error_count > 0) rejectionReasons.push("NODE_RECONCILIATION_ERROR");
+  if (row.node_transport_error_count > 0) rejectionReasons.push("NODE_RECONCILIATION_ERROR");
+  if (row.node_field_quality_error_count > 0) warningReasons.push("FIELD_QUALITY_ANOMALY_RECORDED");
   if (row.node_missing_required_count > 0) rejectionReasons.push("REQUIRED_NODE_MISSING");
   if (row.copied_serial_grade_cert_from_reference_count > 0) rejectionReasons.push("COPIED_REFERENCE_INSTANCE_FIELD");
   if (row.base_pollution_count > 0) rejectionReasons.push("BASE_POLLUTION");

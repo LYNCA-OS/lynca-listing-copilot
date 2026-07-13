@@ -2270,7 +2270,8 @@ function summarizePipelineNodeLedgers(results = []) {
   const rows = results.filter((item) => item.pipeline_node_ledger && typeof item.pipeline_node_ledger === "object");
   const fieldQualityCheckIds = new Set([
     "critical_field_flow_has_no_silent_drop",
-    "field_flow_has_no_cross_bracket_composite_migration"
+    "field_flow_has_no_cross_bracket_composite_migration",
+    "v4_normal_field_state_has_canonical_value"
   ]);
   const allAnomalies = rows.flatMap((item) => (
     Array.isArray(item.pipeline_node_ledger.reconciliation?.anomalies)

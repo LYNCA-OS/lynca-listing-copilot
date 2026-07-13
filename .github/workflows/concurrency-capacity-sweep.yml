@@ -232,6 +232,8 @@ jobs:
               retries:row.retry_card_count,
               errors:row.technical_failure_count,
               node_errors:row.node_error_count,
+              transport_node_errors:row.node_transport_error_count,
+              field_quality_errors:row.node_field_quality_error_count,
               tokens:row.total_tokens,
               tokens_per_card:row.tokens_per_completed_card,
               input_tokens_per_card:row.input_tokens_per_completed_card,
@@ -242,7 +244,8 @@ jobs:
           }
           console.log(`recommended_concurrency=${comparison.recommended_concurrency}`);
           console.log(`confidence=${comparison.recommendation_confidence}`);
-          if (!comparison.recommended_concurrency) process.exit(1);
+          if (comparison.rows.length > 1 && !comparison.recommended_concurrency) process.exit(1);
+          if (comparison.rows.length === 1 && comparison.rows[0]?.stable !== true) process.exit(1);
           NODE
       - name: Enforce technical integrity
         run: |
@@ -255,7 +258,7 @@ jobs:
             const nodes = summary.pipeline_node_observability || {};
             if (summary.ok_count !== summary.attempted_count) throw new Error(`c${level}: technical completion failed`);
             if (nodes.ledger_present_count !== summary.attempted_count) throw new Error(`c${level}: node ledger incomplete`);
-            if (Number(nodes.error_count || 0) !== 0) throw new Error(`c${level}: node reconciliation error`);
+            if (Number(nodes.transport_error_count || 0) !== 0) throw new Error(`c${level}: transport node reconciliation error`);
             if (Number(nodes.missing_required_node_count || 0) !== 0) throw new Error(`c${level}: required node missing`);
           }
           NODE

@@ -198,6 +198,7 @@ const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
 const defaultCatalogFastLaneBudgetMs = 120;
+const defaultPreingestionOcrPostProviderWaitMs = 750;
 const confirmedOcrSerialConfidence = 0.86;
 
 function configuredMaxPayloadImages(env = process.env) {
@@ -260,6 +261,7 @@ export function serialNumeratorVerificationFromPreingestion(payload = {}, rendez
   const verification = verifiedSerialNumeratorFromPreingestion(payload);
   if (verification.verified) return true;
   if (verification.conflict) return false;
+  if (rendezvous?.status === "DEFERRED_AFTER_PROVIDER") return false;
   if (rendezvous?.job_count > 0) return false;
   return null;
 }
@@ -2960,7 +2962,7 @@ function deferredRetrievalCandidateContext({
   };
 }
 
-function scheduleRetrievalWarmup(promise) {
+function scheduleBackgroundCompletion(promise) {
   const guarded = Promise.resolve(promise).catch(() => null);
   try {
     waitUntil(guarded);
@@ -2968,6 +2970,40 @@ function scheduleRetrievalWarmup(promise) {
     // Non-Vercel test/runtime environments may not expose a request context.
   }
   return guarded;
+}
+
+function preingestionOcrPostProviderWaitMs(env = process.env, providerOptions = {}) {
+  const optionValue = normalizePositiveIntegerOrNull(
+    providerOptions.preingestion_ocr_post_provider_wait_ms
+      ?? providerOptions.preingestionOcrPostProviderWaitMs
+  );
+  return Math.max(1, optionValue ?? positiveIntegerFromEnv(
+    env,
+    "PREINGESTION_OCR_POST_PROVIDER_WAIT_MS",
+    defaultPreingestionOcrPostProviderWaitMs
+  ));
+}
+
+function deferredPreingestionOcrSnapshot(payload = {}) {
+  const patches = Array.isArray(payload.preingestion_evidence_patches)
+    ? payload.preingestion_evidence_patches
+    : [];
+  const serialFields = new Set([
+    "print_run_number",
+    "print_run_denominator",
+    "serial_number",
+    "serial_denominator",
+    "numerical_rarity"
+  ]);
+  return {
+    status: "DEFERRED_AFTER_PROVIDER",
+    terminal: false,
+    job_count: null,
+    patch_count: patches.length,
+    serial_patch_count: patches.filter((patch) => serialFields.has(String(patch?.field || "").trim())).length,
+    evidence_patches: patches,
+    reason: "ocr_continues_in_background_after_writer_budget"
+  };
 }
 
 function waitForPromiseWithin(promise, timeoutMs) {
@@ -4915,7 +4951,7 @@ async function createOpenAiTitle(payload, selection, {
       const pendingPromises = boundedRetrieval.pending_promises || [];
       if (pendingPromises.length) {
         addTiming(timingContext, "post_observation_retrieval_deferred_count", pendingPromises.length);
-        scheduleRetrievalWarmup(Promise.allSettled(pendingPromises));
+        scheduleBackgroundCompletion(Promise.allSettled(pendingPromises));
       }
       addTiming(
         timingContext,
@@ -5018,14 +5054,28 @@ async function createOpenAiTitle(payload, selection, {
     });
   }
   const rendezvousWaitStartedAt = nowMs();
-  const preingestionOcrRendezvous = await preingestionOcrRendezvousPromise;
+  const ocrPostProviderWaitMs = preingestionOcrPostProviderWaitMs(process.env, providerOptions);
+  const boundedOcrRendezvous = await waitForPromiseWithin(
+    preingestionOcrRendezvousPromise,
+    ocrPostProviderWaitMs
+  );
+  const preingestionOcrRendezvous = boundedOcrRendezvous.settled
+    ? boundedOcrRendezvous.value
+    : deferredPreingestionOcrSnapshot(initialPayload);
+  if (!boundedOcrRendezvous.settled) {
+    addTiming(timingContext, "preingestion_ocr_deferred_after_provider_count", 1);
+    scheduleBackgroundCompletion(preingestionOcrRendezvousPromise);
+  }
   const rendezvousWaitMs = nowMs() - rendezvousWaitStartedAt;
   addTiming(timingContext, "preingestion_ocr_rendezvous_wait_ms", rendezvousWaitMs);
+  addTiming(timingContext, "preingestion_ocr_post_provider_budget_ms", ocrPostProviderWaitMs);
   recordNodeSpan(timingContext, {
     key: "preingestion_ocr_rendezvous_wait_ms",
     startedAtMs: rendezvousWaitStartedAt,
     durationMs: rendezvousWaitMs,
-    status: preingestionOcrRendezvous?.status === "TIMEOUT" ? "PARTIAL" : "COMPLETED",
+    status: ["TIMEOUT", "DEFERRED_AFTER_PROVIDER"].includes(preingestionOcrRendezvous?.status)
+      ? "PARTIAL"
+      : "COMPLETED",
     inputCount: preingestionOcrRendezvous?.job_count ?? null,
     outputCount: preingestionOcrRendezvous?.patch_count ?? null,
     metrics: {
@@ -5157,8 +5207,11 @@ export const __listingCopilotTitleTestHooks = {
   providerOptionsFromPayload,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
+  preingestionOcrPostProviderWaitMs,
+  deferredPreingestionOcrSnapshot,
   retrievalAnchorSummary,
   retrievalFieldsHavePrePromptVectorAnchor,
+  serialNumeratorVerificationFromPreingestion,
   scaffoldTitleConflictsWithDirectEvidence,
   shouldDeferVectorUntilProviderObservation,
   shouldSkipVectorForCatalogContext,

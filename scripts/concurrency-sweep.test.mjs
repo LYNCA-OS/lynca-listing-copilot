@@ -119,6 +119,8 @@ assert.equal(baselineRow.post_observation_retrieval_deadline_p95_ms, 1802);
 assert.equal(baselineRow.post_observation_retrieval_deferred_card_count, 3);
 assert.equal(baselineRow.post_observation_retrieval_completed_within_budget_count, 1);
 assert.equal(baselineRow.node_ledger_present_count, 4);
+assert.equal(baselineRow.node_transport_error_count, 0);
+assert.equal(baselineRow.node_field_quality_error_count, 0);
 assert.equal(baselineRow.latest_remaining_requests, 4990);
 assert.equal(baselineRow.queue_tail_share, Number((1000 / 38000).toFixed(6)));
 assert.equal(baselineRow.tokens_per_completed_card, 11000);
@@ -163,6 +165,21 @@ assert.equal(telemetryRow.provider_key_slot_imbalance, 0);
 const stableBaseline = evaluateRow(baselineRow, baselineRow);
 assert.equal(stableBaseline.stable, true);
 assert.equal(stableBaseline.sample_comparison_mode, "PAIRED");
+const fieldQualityWarning = evaluateRow({
+  ...baselineRow,
+  node_error_count: 1,
+  node_field_quality_error_count: 1
+}, baselineRow);
+assert.equal(fieldQualityWarning.stable, true);
+assert.ok(fieldQualityWarning.warning_reasons.includes("FIELD_QUALITY_ANOMALY_RECORDED"));
+assert.ok(!fieldQualityWarning.rejection_reasons.includes("NODE_RECONCILIATION_ERROR"));
+const transportFailure = evaluateRow({
+  ...baselineRow,
+  node_error_count: 1,
+  node_transport_error_count: 1
+}, baselineRow);
+assert.equal(transportFailure.stable, false);
+assert.ok(transportFailure.rejection_reasons.includes("NODE_RECONCILIATION_ERROR"));
 assert.equal(assessConcurrencySweepLevel(
   reportFor({ concurrency: 1, cardsPerMinute: 1, writerP95: 38000 }),
   1

@@ -135,8 +135,10 @@ assert.match(apiWithOptions, /vector_query_timeout_ms:\s*20000/, "title API shou
 assert.match(apiWithOptions, /vectorEmbeddingPostProviderWaitMs/, "L2 should cap post-provider vector waiting before it dominates writer-ready latency");
 assert.match(apiWithOptions, /postObservationCatalogVectorHedgeMs/, "post-observation catalog should get a bounded head start before vector retrieval overlaps it");
 assert.match(apiWithOptions, /postObservationRetrievalCriticalPathBudgetMs/, "post-observation retrieval should have a bounded writer-critical-path budget");
-assert.match(api, /scheduleRetrievalWarmup/, "retrieval that misses the writer deadline should continue as background warmup");
+assert.match(api, /scheduleBackgroundCompletion/, "work that misses the writer deadline should continue in the background");
 assert.match(api, /post_observation_retrieval_deferred_count/, "deadline-deferred retrieval should be observable");
+assert.match(api, /PREINGESTION_OCR_POST_PROVIDER_WAIT_MS/, "OCR should have a bounded post-provider writer wait");
+assert.match(api, /DEFERRED_AFTER_PROVIDER/, "late OCR should be observable instead of blocking the writer path");
 assert.match(api, /post_observation_catalog_vector_overlap_ms/, "slow post-observation catalog and vector lookups should overlap instead of stacking their tail latency");
 assert.match(api, /vector_embedding_overlap_timeout_after_provider/, "slow vector warmup after provider should degrade to a timeout packet instead of blocking the title");
 assert.match(apiWithOptions, /Math\.max\(\s*20000,[\s\S]*VECTOR_QUERY_TIMEOUT_MS/, "vector warmup should get a longer overlapped window than the post-provider wait");
