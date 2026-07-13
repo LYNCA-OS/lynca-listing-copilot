@@ -181,7 +181,10 @@ import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
-import { releaseV4ProviderCapacityForJob } from "../lib/listing/v4/jobs/production-job-queue.mjs";
+import {
+  releaseV4ProviderCapacityForJob,
+  v4ProviderDoneCapacityHandoffEnabled
+} from "../lib/listing/v4/jobs/production-job-queue.mjs";
 import { triggerReleasedProviderCapacityRefill } from "../lib/listing/v4/jobs/writer-ready-capacity-refill.mjs";
 import {
   imagesFromPreIngestionBundle,
@@ -2980,7 +2983,7 @@ function providerDoneCapacityHandoffEnabled(payload = {}, env = process.env) {
   return optionFlag(
     providerOptions,
     "v4_provider_done_capacity_handoff",
-    envFlag(env, "V4_PROVIDER_DONE_CAPACITY_HANDOFF_ENABLED", false)
+    v4ProviderDoneCapacityHandoffEnabled(env)
   );
 }
 

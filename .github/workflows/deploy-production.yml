@@ -122,6 +122,7 @@ jobs:
             model_ready: vision.details?.model_id === 'gpt-5-mini',
             vector_index_ready: vector.details?.index_ready === true,
             vector_runtime_ready: vector.details?.runtime_ready === true && vector.details?.preload_status === 'READY',
+            provider_done_capacity_handoff_enabled: status.execution_control?.provider_done_capacity_handoff_enabled === true,
             ocr_stage_capacity_enabled: ocrCapacity.capacity_control_enabled === true,
             ocr_stage_global_capacity: ocrCapacity.global_capacity === 8,
             ocr_anchor_concurrency: ocrCapacity.anchor_concurrency === 4,

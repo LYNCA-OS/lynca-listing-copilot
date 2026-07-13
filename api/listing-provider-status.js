@@ -6,6 +6,7 @@ import { providerCatalog } from "../lib/listing/providers/provider-registry.mjs"
 import { buildWorkflowReadinessAudit } from "../lib/listing/readiness/workflow-readiness-audit.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 import {
+  v4ProviderDoneCapacityHandoffEnabled,
   v4ProviderCapacityControlEnabled,
   v4QueueGlobalDrainEnabled,
   v4QueueKickDedupMs
@@ -272,6 +273,7 @@ export default async function handler(req, res) {
     workflow_readiness: workflowReadiness,
     execution_control: {
       distributed_provider_capacity_enabled: v4ProviderCapacityControlEnabled(process.env),
+      provider_done_capacity_handoff_enabled: v4ProviderDoneCapacityHandoffEnabled(process.env),
       global_fair_drain_enabled: v4QueueGlobalDrainEnabled(process.env),
       queue_kick_dedup_ms: v4QueueKickDedupMs(process.env),
       provider_key_pool_size: providerPool.key_pool_size,
