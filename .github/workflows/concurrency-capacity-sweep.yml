@@ -65,8 +65,11 @@ jobs:
           const execution = status.execution_control || {};
           const levels = String(process.env.SWEEP_LEVELS || '').split(',').map(Number).filter((value) => Number.isInteger(value) && value > 0);
           const maximumLevel = Math.max(...levels);
+          const expectedSha = process.env.GITHUB_SHA;
+          const deployedSha = String(health.deployment?.git_commit_sha || '');
           const checks = {
             v4_ready: health.ready === true,
+            deployed_revision_matches: Boolean(deployedSha) && deployedSha === expectedSha,
             queue_ready: health.production_queue?.configured === true,
             distributed_capacity: execution.distributed_provider_capacity_enabled === true,
             model_matches: (status.providers || []).some((provider) => provider.selectable && provider.model_id === '${{ inputs.model }}'),
@@ -173,7 +176,9 @@ jobs:
               --sealed-labels "/tmp/concurrency-c${LEVEL}-sealed-labels.jsonl" \
               --limit "$ACTUAL_CARDS_PER_LEVEL" \
               --concurrency "$LEVEL" \
-              --queue --speculative --use-preingestion --prewarm --per-card-poll \
+              --queue --speculative --use-preingestion --per-card-poll \
+              --ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority \
+              --disable-identity-cache \
               --model "${{ inputs.model }}" \
               --think-ms "${{ inputs.think_ms }}" \
               --l2-wait-ms 180000 \
