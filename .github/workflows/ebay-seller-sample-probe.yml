@@ -1,0 +1,82 @@
+name: ebay-seller-sample-probe
+
+# Zero-model-cost gate for finding fresh blind-evaluation sources. Seller titles
+# remain sealed locally in the runner and are never uploaded as artifacts.
+on:
+  workflow_dispatch:
+    inputs:
+      seller:
+        description: "Exact eBay seller username"
+        required: true
+      limit:
+        description: "Listings with downloadable images to verify"
+        default: "3"
+      query:
+        description: "Pipe-separated card queries"
+        default: "sports card|trading card|Pokemon card|One Piece card|Yu-Gi-Oh card"
+
+concurrency:
+  group: ebay-seller-sample-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      API_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      RUN_ID: seller-probe-${{ github.run_id }}
+      OUT_DIR: /tmp/lynca-seller-probe
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Verify seller-filtered image sample
+        env:
+          PROBE_SELLER: ${{ inputs.seller }}
+          PROBE_LIMIT: ${{ inputs.limit }}
+          PROBE_QUERY: ${{ inputs.query }}
+        run: |
+          node scripts/prepare-dcsports87-blind-eval.mjs \
+            --base-url "$API_BASE_URL" \
+            --out-dir "$OUT_DIR" \
+            --run-id "$RUN_ID" \
+            --seller "$PROBE_SELLER" \
+            --limit "$PROBE_LIMIT" \
+            --image-limit 2 \
+            --include-non-sports \
+            --allow-partial \
+            --query "$PROBE_QUERY"
+      - name: Publish safe probe summary
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = `${process.env.OUT_DIR}/${process.env.RUN_ID}/blind_dataset_manifest.json`;
+          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const safe = {
+            seller: manifest.seller,
+            listings_endpoint: manifest.listings_endpoint,
+            requested_listing_count: manifest.requested_listing_count,
+            listing_count: manifest.listing_count,
+            partial_dataset: manifest.partial_dataset,
+            listing_page_count: manifest.listing_page_count,
+            image_download_skipped_count: manifest.image_download_skipped_count,
+            downloaded_image_quality_summary: manifest.downloaded_image_quality_summary,
+            seller_titles_exposed_to_recognition: false,
+            paid_recognition_calls: 0
+          };
+          console.log(JSON.stringify(safe, null, 2));
+          fs.writeFileSync('/tmp/ebay-seller-probe-summary.json', `${JSON.stringify(safe, null, 2)}\n`);
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ebay-seller-probe-summary
+          path: /tmp/ebay-seller-probe-summary.json
+          retention-days: 7
