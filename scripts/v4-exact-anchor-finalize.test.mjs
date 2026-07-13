@@ -27,7 +27,7 @@ function catalogRow(overrides = {}) {
   return {
     identity_id: "11111111-1111-1111-1111-111111111111",
     canonical_title: "2025 Bowman Chrome Jesus Made Spotlights BS-4",
-    retrieval_status: "candidate",
+    retrieval_status: "reviewed",
     source_type: "STRUCTURED_DATABASE",
     supporting_fields: ["subject", "year", "product", "collector_number"],
     raw_score: 0.8,
@@ -71,6 +71,40 @@ assert.match(finalized.title, /Jesus Made/i);
 assert.equal(finalized.resolved_fields.set, "Spotlights");
 assert.equal(finalized.resolved_fields.serial_number, "3/5");
 assert.equal(finalized.candidate.candidate_identity_id, "11111111-1111-1111-1111-111111111111");
+
+// Candidate/review-required rows can support shadow analysis but can never
+// finalize a writer-visible title.
+const untrusted = await maybeFinalizeL1FromExactAnchor({
+  scoutResult,
+  env,
+  fetchImpl: fetchReturning([catalogRow({ retrieval_status: "candidate" })])
+});
+assert.equal(untrusted.finalized, false);
+assert.equal(untrusted.reason, "no_exact_anchor_agreement");
+
+// A direct TCG natural key can identify one official/reviewed catalog row
+// without requiring subject/year to be read first.
+const tcgFinalized = await maybeFinalizeL1FromExactAnchor({
+  scoutResult: { resolved_fields: { tcg_card_number: "OP01-120" } },
+  env,
+  fetchImpl: fetchReturning([catalogRow({
+    canonical_title: "2022 One Piece Romance Dawn Shanks OP01-120 SEC",
+    retrieval_status: "registry",
+    source_type: "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+    fields: {
+      year: "2022",
+      ip: "One Piece",
+      product: "Romance Dawn",
+      players: ["Shanks"],
+      collector_number: "OP01-120",
+      rarity: "SEC"
+    }
+  })]),
+  policy: { allow_tcg_code_only: true, allow_catalog_finalize: true, allow_cert_lane: false }
+});
+assert.equal(tcgFinalized.finalized, true, JSON.stringify(tcgFinalized));
+assert.equal(tcgFinalized.resolved_fields.players[0], "Shanks");
+assert.equal(tcgFinalized.resolved_fields.serial_number, undefined, "instance fields must never be copied from catalog");
 
 // Two strict-tier candidates -> ambiguous, no finalize.
 const ambiguous = await maybeFinalizeL1FromExactAnchor({

@@ -372,6 +372,38 @@ assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "writer_ready"
 assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "COMPLETED");
 assert.equal(endToEndLedger.reconciliation.error_count, 0);
 
+const preL2AnchorLedger = buildEndToEndNodeLedger({
+  session: {
+    l2_status: "READY",
+    l2_title: "2022 One Piece Romance Dawn Shanks OP01-120",
+    l2_ready_at: "2026-07-11T00:00:01.500Z",
+    provider_result_summary: {
+      title_render_source: "pre_l2_anchor_catalog_finalized",
+      v4_l2_timing: {
+        pre_l2_bundle_load_ms: 120,
+        pre_l2_anchor_probe_ms: 340,
+        pre_l2_anchor_route: "TCG_EXACT_LOOKUP",
+        pre_l2_anchor_finalize_reason: "exact_anchor_catalog_finalized",
+        pre_l2_full_l2_skipped: true
+      },
+      noncritical_persistence_status: "COMPLETED",
+      noncritical_persistence_summary: { saved_count: 4, failed_count: 0, artifact_count: 4 }
+    }
+  },
+  job: {
+    id: "job-observability-anchor",
+    status: "SUCCEEDED",
+    created_at: "2026-07-11T00:00:00.000Z",
+    started_at: "2026-07-11T00:00:00.200Z",
+    completed_at: "2026-07-11T00:00:01.700Z"
+  },
+  display: { can_writer_start: true }
+});
+assert.equal(preL2AnchorLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "COMPLETED");
+assert.equal(preL2AnchorLedger.nodes.find((node) => node.node_id === "pre_l2_anchor_extract_route_lookup")?.status, "COMPLETED");
+assert.equal(preL2AnchorLedger.nodes.find((node) => node.node_id === "full_l2_provider_decision")?.status, "SKIPPED");
+assert.equal(preL2AnchorLedger.reconciliation.error_count, 0);
+
 const deferredPersistenceLedger = buildEndToEndNodeLedger({
   session: {
     l2_status: "READY",

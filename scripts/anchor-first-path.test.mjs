@@ -4,7 +4,8 @@ import {
   classifyAnchorText,
   collectAnchors,
   normalizeGrader,
-  strongestIdentityAnchor
+  strongestIdentityAnchor,
+  strongestInstanceAnchor
 } from "../lib/listing/v4/anchors/anchor-classifier.mjs";
 import { lookupCertIdentity, upsertCertRegistryEntry } from "../lib/listing/v4/anchors/cert-lookup.mjs";
 import { certVisualVerification, maybeFinalizeL1FromExactAnchor } from "../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
@@ -27,6 +28,8 @@ assert.equal(classifyAnchorText("NB-TYG").anchor_type, "checklist_code");
 assert.equal(classifyAnchorText("NB-TYG").anchor_class, anchorClasses.CATALOG);
 assert.equal(classifyAnchorText("#136").anchor_type, "collector_number");
 assert.equal(normalizeGrader("bgs 9.5"), "BGS");
+assert.equal(classifyAnchorText("87654321").anchor_type, "barcode_candidate", "a bare long number must not become a cert");
+assert.equal(classifyAnchorText("012345678901", { fieldHint: "barcode" }).anchor_type, "product_code");
 
 // collectAnchors dedupes and keeps serial as commercial only
 const anchors = collectAnchors({
@@ -37,8 +40,15 @@ const anchors = collectAnchors({
     serial_number: "04/10"
   }
 });
-assert.equal(strongestIdentityAnchor(anchors).anchor_type, "cert_number");
+assert.equal(strongestIdentityAnchor(anchors), null, "cert is an instance anchor, not a card identity anchor");
+assert.equal(strongestInstanceAnchor(anchors).anchor_type, "cert_number");
 assert.ok(anchors.every((a) => a.anchor_type !== "numerical_rarity" || a.lookup_key === false));
+
+const mixedAnchors = collectAnchors({
+  resolved: { cert_number: "87654321", grade_company: "PSA", tcg_card_number: "OP01-120" }
+});
+assert.equal(strongestIdentityAnchor(mixedAnchors).anchor_type, "tcg_card_code");
+assert.equal(strongestInstanceAnchor(mixedAnchors).anchor_type, "cert_number");
 
 // --- cert visual verification: verify what is visible, conflict fails ---
 assert.equal(certVisualVerification(

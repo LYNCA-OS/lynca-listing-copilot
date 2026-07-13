@@ -1323,9 +1323,13 @@ async function runOne({
     const finalProviderDiagnostics = objectOrNull(l2.summary?.provider_diagnostics)
       || providerDiagnosticsFromSummary(l2.summary || {});
     const writerReady = Boolean(l2.ready || finalTitle);
-    const fastLaneHit = l2.summary?.v4_l2_timing?.exact_anchor_scout_status === "CACHE_HIT"
+    const preL2AnchorFastLaneHit = l2.summary?.v4_l2_timing?.pre_l2_full_l2_skipped === true;
+    const exactScoutFastLaneHit = (
+      l2.summary?.v4_l2_timing?.exact_anchor_scout_status === "CACHE_HIT"
       && Number(l2.summary?.v4_l2_timing?.exact_anchor_finalize_ms || 0) > 0
-      && Number(l2.summary?.worker_processing_ms || 0) < 5000;
+      && Number(l2.summary?.worker_processing_ms || 0) < 5000
+    );
+    const fastLaneHit = preL2AnchorFastLaneHit || exactScoutFastLaneHit;
     // 感知延迟：点击时若最终 L2 已可见则为 0；否则等到 L2 就绪为止。
     // 未就绪时置 undefined（而非 null），避免 quantile 把 Number(null)=0 计入。
     const perceivedTitleMs = l2DoneBeforeClick ? 0 : (l2.ready ? l2ElapsedFromClickMs : undefined);
@@ -1365,7 +1369,11 @@ async function runOne({
       l2_done_before_click: l2DoneBeforeClick,
       perceived_title_ms: perceivedTitleMs,
       route: l2.summary?.route || null,
-      title_stage: fastLaneHit ? "SPEC_L2_EXACT_ANCHOR" : "V4_QUEUE_L2",
+      title_stage: preL2AnchorFastLaneHit
+        ? "PRE_L2_ANCHOR_FINALIZED"
+        : exactScoutFastLaneHit
+          ? "SPEC_L2_EXACT_ANCHOR"
+          : "V4_QUEUE_L2",
       recognition_session_id: job.recognition_session_id || l2.summary?.recognition_session_id || null,
       l1_title: "",
       l2_ready: Boolean(l2.ready),
@@ -1382,7 +1390,11 @@ async function runOne({
       final_title: finalTitle,
       provider_diagnostics: finalProviderDiagnostics,
       v4_l2_timing: l2.summary?.v4_l2_timing || null,
-      fast_scout_cache_hit: fastLaneHit,
+      pre_l2_anchor_fast_lane_hit: preL2AnchorFastLaneHit,
+      pre_l2_anchor_route: l2.summary?.v4_l2_timing?.pre_l2_anchor_route || null,
+      pre_l2_anchor_finalize_reason: l2.summary?.v4_l2_timing?.pre_l2_anchor_finalize_reason || null,
+      pre_l2_anchor_probe_ms: l2.summary?.v4_l2_timing?.pre_l2_anchor_probe_ms ?? null,
+      fast_scout_cache_hit: exactScoutFastLaneHit,
       fast_scout_cache_status: l2.summary?.v4_l2_timing?.exact_anchor_scout_status || null,
       fast_scout_prewarmer_used: prewarmResult?.data?.ok === true,
       fast_scout_blocking_call_used: false,
@@ -2111,9 +2123,13 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
   const finalTitle = cleanText(summary.title || "");
   const ready = summaryHasVisibleL2Title(summary);
   const timeToReady = numberOrNull(summary.time_to_l2_ready_ms);
-  const fastLaneHit = summary.v4_l2_timing?.exact_anchor_scout_status === "CACHE_HIT"
+  const preL2AnchorFastLaneHit = summary.v4_l2_timing?.pre_l2_full_l2_skipped === true;
+  const exactScoutFastLaneHit = (
+    summary.v4_l2_timing?.exact_anchor_scout_status === "CACHE_HIT"
     && Number(summary.v4_l2_timing?.exact_anchor_finalize_ms || 0) > 0
-    && Number(summary.worker_processing_ms || 0) < 5000;
+    && Number(summary.worker_processing_ms || 0) < 5000
+  );
+  const fastLaneHit = preL2AnchorFastLaneHit || exactScoutFastLaneHit;
   const preingestion = prepared.preingestion || {};
   const prewarm = prepared.prewarm || {};
   return compactObject({
@@ -2178,11 +2194,19 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     field_states: summary.field_states || {},
     title_length_policy: summary.title_length_policy || null,
     title_render_source: summary.title_render_source || null,
+    pre_l2_anchor_fast_lane_hit: preL2AnchorFastLaneHit,
+    pre_l2_anchor_route: summary.v4_l2_timing?.pre_l2_anchor_route || null,
+    pre_l2_anchor_finalize_reason: summary.v4_l2_timing?.pre_l2_anchor_finalize_reason || null,
+    pre_l2_anchor_probe_ms: summary.v4_l2_timing?.pre_l2_anchor_probe_ms ?? null,
     l1_title: "",
     route: summary.route || null,
-    title_stage: fastLaneHit ? "SPEC_L2_EXACT_ANCHOR" : "V4_QUEUE_L2",
+    title_stage: preL2AnchorFastLaneHit
+      ? "PRE_L2_ANCHOR_FINALIZED"
+      : exactScoutFastLaneHit
+        ? "SPEC_L2_EXACT_ANCHOR"
+        : "V4_QUEUE_L2",
     speculative_l1_fast_lane_hit: fastLaneHit,
-    fast_scout_cache_hit: fastLaneHit,
+    fast_scout_cache_hit: exactScoutFastLaneHit,
     fast_scout_cache_status: summary.v4_l2_timing?.exact_anchor_scout_status || null,
     fast_scout_prewarmer_used: prewarm.data?.ok === true,
     fast_scout_blocking_call_used: false,
@@ -2432,6 +2456,11 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     queue_mode_count: results.filter((item) => item.queue_mode === true).length,
     speculative_count: results.filter((item) => item.speculative_mode === true).length,
     speculative_fast_lane_hit_count: results.filter((item) => item.speculative_l1_fast_lane_hit === true).length,
+    pre_l2_anchor_fast_lane_hit_count: results.filter((item) => item.pre_l2_anchor_fast_lane_hit === true).length,
+    pre_l2_anchor_route_breakdown: countBy("pre_l2_anchor_route"),
+    pre_l2_anchor_finalize_reason_breakdown: countBy("pre_l2_anchor_finalize_reason"),
+    pre_l2_anchor_probe_p50_ms: quantile(results.map((item) => item.pre_l2_anchor_probe_ms), 0.5),
+    pre_l2_anchor_probe_p95_ms: quantile(results.map((item) => item.pre_l2_anchor_probe_ms), 0.95),
     speculative_l2_done_before_click_count: results.filter((item) => item.l2_done_before_click === true).length,
     perceived_title_p50_ms: quantile(results.map((item) => item.perceived_title_ms), 0.5),
     perceived_title_p95_ms: quantile(results.map((item) => item.perceived_title_ms), 0.95),
@@ -3091,6 +3120,9 @@ export async function main(argv = process.argv, env = process.env) {
     `writer_ready_p95_ms: ${report.summary.writer_ready_p95_ms}`,
     `speculative: ${report.summary.speculative_count}`,
     `speculative_fast_lane_hits: ${report.summary.speculative_fast_lane_hit_count}`,
+    `pre_l2_anchor_fast_lane_hits: ${report.summary.pre_l2_anchor_fast_lane_hit_count}`,
+    `pre_l2_anchor_probe_p50_ms: ${report.summary.pre_l2_anchor_probe_p50_ms}`,
+    `pre_l2_anchor_probe_p95_ms: ${report.summary.pre_l2_anchor_probe_p95_ms}`,
     `speculative_l2_done_before_click: ${report.summary.speculative_l2_done_before_click_count}`,
     `perceived_title_p50_ms: ${report.summary.perceived_title_p50_ms}`,
     `perceived_title_p95_ms: ${report.summary.perceived_title_p95_ms}`,

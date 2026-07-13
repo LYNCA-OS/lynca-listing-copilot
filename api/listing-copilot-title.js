@@ -5369,7 +5369,7 @@ export default async function handler(req, res) {
 
   const timingContext = createTimingContext(payload);
 
-  if (payload.preingestion_bundle_id || payload.preingestionBundleId) {
+  if ((payload.preingestion_bundle_id || payload.preingestionBundleId) && payload.preingestion_bundle_used !== true) {
     try {
       await applyPreIngestionBundleToPayload(payload, {
         timingContext,

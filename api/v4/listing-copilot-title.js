@@ -4,7 +4,9 @@ import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
+import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
 import { planV4RecognitionRoute } from "../../lib/listing/v4/route-planner/route-planner.mjs";
+import { applyPreIngestionBundleToPayload } from "../../lib/listing/pipeline/preingestion-evidence.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
@@ -307,6 +309,7 @@ function providerRuntimeSummary(result = {}) {
   const vectorContext = result.candidate_context?.vector || {};
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
   return {
+    model: result.model || result.model_id || null,
     provider_latency_ms: result.provider_latency_ms ?? null,
     provider_response_profile: result.provider_response_profile || "standard",
     provider_prompt_mode: result.provider_prompt_mode || null,
@@ -1217,6 +1220,11 @@ export default async function handler(req, res) {
   const sessionId = payload.recognition_session_id || createV4SessionId();
   const handlerStartedAt = Date.now();
   const l2Timing = {
+    pre_l2_bundle_load_ms: null,
+    pre_l2_anchor_probe_ms: null,
+    pre_l2_anchor_route: null,
+    pre_l2_anchor_finalize_reason: null,
+    pre_l2_full_l2_skipped: false,
     exact_anchor_scout_attempted: false,
     exact_anchor_scout_status: null,
     exact_anchor_scout_ms: null,
@@ -1228,6 +1236,54 @@ export default async function handler(req, res) {
     persist_pipeline_ms: null,
     handler_total_ms: null
   };
+  const forceL2Direct = payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true;
+  let preL2AnchorProbe = null;
+  const preL2AnchorRouterEnabled = String(process.env.ENABLE_V4_PRE_L2_ANCHOR_ROUTER || "true").toLowerCase() !== "false";
+  const preingestionBundleId = payload.preingestion_bundle_id || payload.preingestionBundleId || "";
+  if (forceL2Direct && preL2AnchorRouterEnabled && preingestionBundleId) {
+    const bundleStartedAt = Date.now();
+    const controller = new AbortController();
+    const timeoutMs = Math.max(100, Math.min(5000, Number(process.env.V4_PRE_L2_ANCHOR_BUNDLE_TIMEOUT_MS || 1200)));
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      await applyPreIngestionBundleToPayload(payload, {
+        fetchImpl: globalThis.fetch,
+        signal: controller.signal
+      });
+    } catch (error) {
+      payload.pre_l2_anchor_bundle_error = String(error?.message || error || "bundle_load_failed").slice(0, 180);
+    } finally {
+      clearTimeout(timer);
+      l2Timing.pre_l2_bundle_load_ms = Date.now() - bundleStartedAt;
+    }
+
+    const probeStartedAt = Date.now();
+    preL2AnchorProbe = await probePreL2Anchors({
+      payload,
+      env: process.env,
+      fetchImpl: globalThis.fetch,
+      timeoutMs: Math.max(300, Math.min(3000, Number(process.env.V4_PRE_L2_ANCHOR_LOOKUP_TIMEOUT_MS || 1600)))
+    });
+    l2Timing.pre_l2_anchor_probe_ms = Date.now() - probeStartedAt;
+    l2Timing.pre_l2_anchor_route = preL2AnchorProbe?.plan?.route || null;
+    l2Timing.pre_l2_anchor_finalize_reason = preL2AnchorProbe?.reason || null;
+    payload.v4_anchor_probe = {
+      schema_version: preL2AnchorProbe?.schema_version || null,
+      plan: preL2AnchorProbe?.plan || null,
+      dossier: preL2AnchorProbe?.dossier || null,
+      timing: preL2AnchorProbe?.timing || null,
+      finalized: preL2AnchorProbe?.finalized === true,
+      reason: preL2AnchorProbe?.reason || null
+    };
+    if (preL2AnchorProbe?.resolved_hint && Object.keys(preL2AnchorProbe.resolved_hint).length) {
+      payload = backgroundPayloadWithL1ResolvedHint(payload, {
+        resolved_fields: preL2AnchorProbe.resolved_hint,
+        title: "",
+        unresolved: []
+      });
+      payload.l1_fast_scout_resolved_hint_source = "v4_pre_l2_anchor_extraction";
+    }
+  }
   const routePlan = planV4RecognitionRoute(payload, process.env);
   const createResultPromise = createV4RecognitionSession({
     sessionId,
@@ -1389,8 +1445,60 @@ export default async function handler(req, res) {
     patch: { status: v4SessionStatuses.OBSERVING }
   });
 
-  const forceL2Direct = payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true;
   let l2ScoutResult = null;
+
+  if (forceL2Direct && preL2AnchorProbe?.finalized === true) {
+    const finalize = preL2AnchorProbe.finalize;
+    l2Timing.pre_l2_full_l2_skipped = true;
+    const finalizedResult = {
+      title: finalize.title,
+      final_title: finalize.title,
+      rendered_title: finalize.title,
+      resolved: finalize.resolved_fields,
+      resolved_fields: finalize.resolved_fields,
+      fields: finalize.resolved_fields,
+      raw_provider_fields: finalize.resolved_fields,
+      confidence: "HIGH",
+      recognition_status: "CONFIRMED",
+      provider: "v4_anchor_router",
+      model: "deterministic_catalog_lookup",
+      title_render_source: "pre_l2_anchor_catalog_finalized",
+      exact_anchor_finalize: {
+        used: true,
+        candidate: finalize.candidate || null,
+        query_fields: finalize.query_fields || null
+      },
+      anchor_probe: payload.v4_anchor_probe,
+      title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+      assisted_draft_status: "READY",
+      l1_return_reason: "pre_l2_anchor_catalog_finalized",
+      full_assist_continued_after_l1: false,
+      module_speed_metrics: {
+        v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
+      }
+    };
+    const persistStartedAt = Date.now();
+    const finalizedResponse = await persistPipelineResult({
+      sessionId,
+      result: finalizedResult,
+      payload,
+      routePlan,
+      createResult,
+      extraProviderSummary: {
+        assisted_draft_status: "READY",
+        exact_anchor_finalized: true,
+        pre_l2_anchor_finalized: true,
+        v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
+      }
+    });
+    l2Timing.persist_pipeline_ms = Date.now() - persistStartedAt;
+    finalizedResponse.module_speed_metrics = {
+      ...(finalizedResponse.module_speed_metrics || {}),
+      v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
+    };
+    sendJson(res, 200, writerFinalizedL2ExactAnchorResponse(finalizedResponse, finalizedResult, finalize));
+    return;
+  }
 
   // L2-direct short-circuit: even when the fast-scout L1 response is skipped
   // (queue workers, forced L2), a unique strict-tier catalog hit lets us skip

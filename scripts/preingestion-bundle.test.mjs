@@ -82,7 +82,7 @@ const currentPatchSet = currentPreingestionEvidencePatches([
     field: "serial_number",
     value: "242/250",
     source_type: "OCR",
-    provenance: { job_key: "ocr:ocr-crop-v5:bundle:serial" }
+    provenance: { job_key: "ocr:ocr-crop-v6:bundle:serial" }
   },
   {
     field: "serial_number",
@@ -173,14 +173,15 @@ assert.equal(summary.initial_evidence_count, 1);
 // enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
-assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v5:")));
-assert.ok(jobs.every((job) => ["serial_crop", "card_code_crop", "grade_label_crop"].includes(job.payload.crop.role)));
+assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v6:")));
+assert.ok(jobs.every((job) => ["serial_crop", "card_code_crop", "grade_label_crop", "year_product_crop", "subject_crop"].includes(job.payload.crop.role)));
 assert.equal(
   new Set(jobs.map((job) => `${job.payload.crop.source_image_id}:${job.payload.crop.role}`)).size,
   jobs.length,
   "overlapping collector/checklist crops must collapse to one card-code OCR request per image"
 );
-assert.ok(jobs.filter((job) => job.payload.crop.role === "serial_crop").every((job) => job.priority === 10));
+assert.ok(jobs.filter((job) => job.payload.crop.role === "card_code_crop").every((job) => job.priority === 10));
+assert.ok(jobs.filter((job) => job.payload.crop.role === "serial_crop").every((job) => job.priority === 25));
 const optInJobs = buildPreingestionWorkerJobs({ bundle, enableEmbeddings: true, enableQuality: true });
 assert.ok(optInJobs.some((job) => job.job_type === "visual_embedding"));
 assert.ok(optInJobs.some((job) => job.job_type === "image_quality_deep_analysis"));
