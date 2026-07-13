@@ -108,7 +108,7 @@ jobs:
             --sealed-labels "$SEALED_LABELS_PATH" \
             --limit "${{ inputs.limit }}" \
             --concurrency 2 \
-            --queue --speculative --use-preingestion --prewarm \
+            --queue --speculative --use-preingestion \
             --model "${{ inputs.model }}" \
             "${COMPACT_ARGS[@]}" \
             --think-ms "${{ inputs.think_ms }}" \
