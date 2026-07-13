@@ -3,7 +3,8 @@ name: concurrency-capacity-sweep
 # Measures writer-visible production throughput under controlled offered load.
 # Each level uses a disjoint fresh blind sample and per-card polling so the
 # client never has more than cN cards in flight. The backend remains on its
-# production capacity controller (two keys, stable per-key limit) throughout.
+# production capacity controller throughout; the sweep works with one or more
+# keys and never infers safe capacity from the key count alone.
 on:
   workflow_dispatch:
     inputs:
@@ -69,7 +70,7 @@ jobs:
             queue_ready: health.production_queue?.configured === true,
             distributed_capacity: execution.distributed_provider_capacity_enabled === true,
             model_matches: (status.providers || []).some((provider) => provider.selectable && provider.model_id === '${{ inputs.model }}'),
-            key_pool_two_or_more: Number(execution.provider_key_pool_size || 0) >= 2,
+            provider_key_pool_available: Number(execution.provider_key_pool_size || 0) >= 1,
             production_global_capacity_covers_sweep: Number(execution.global_provider_concurrency || 0) >= maximumLevel
           };
           fs.writeFileSync('/tmp/concurrency-readiness.json', JSON.stringify({ checks, execution, levels, maximum_level:maximumLevel }, null, 2));

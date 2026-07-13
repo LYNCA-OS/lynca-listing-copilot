@@ -243,6 +243,8 @@ assert.match(workflowSource, /REPORT_ARGS/);
 assert.match(workflowSource, /Stopping sweep after unstable/);
 assert.match(workflowSource, /EXECUTED_SWEEP_LEVELS/);
 assert.match(workflowSource, /assert-concurrency-sweep-level\.mjs/);
+assert.match(workflowSource, /provider_key_pool_available:[^\n]*>= 1/);
+assert.doesNotMatch(workflowSource, /key_pool_two_or_more/);
 assert.doesNotMatch(workflowSource, /LEVEL="\$LEVEL" node - <<'NODE'/);
 
 console.log("concurrency sweep tests passed");
