@@ -353,7 +353,9 @@ function providerRuntimeSummary(result = {}) {
     vector_worker_latency_ms: vectorContext.worker_latency_ms ?? null,
     vector_worker_attempt_count: vectorContext.worker_attempt_count ?? null,
     catalog_stage_capacity: result.catalog_stage_capacity || null,
-    vector_stage_capacity: result.vector_worker?.stage_capacity || null,
+    vector_stage_capacity: result.vector_worker?.stage_capacity
+      || vectorContext.stage_capacity
+      || null,
     vector_query_embedding_role: vectorProviderMetadata.query_embedding_role || "",
     vector_role_agnostic_fallback_used: vectorProviderMetadata.role_agnostic_fallback_used === true,
     vector_role_agnostic_fallback_reason: vectorProviderMetadata.role_agnostic_fallback_reason || "",
@@ -736,7 +738,8 @@ async function persistPipelineResult({
   payload = {},
   routePlan = {},
   createResult = {},
-  extraProviderSummary = {}
+  extraProviderSummary = {},
+  requestContext = null
 } = {}) {
   result = prepareV4PresentationResult({ result, payload }).result;
   const l1Stage = result.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
@@ -844,7 +847,7 @@ async function persistPipelineResult({
   if (providerStageReleased) {
     writerReadyCapacityRefill = providerStageHandoff.refill?.triggered === true
       ? providerStageHandoff.refill
-      : triggerWriterReadyCapacityRefill(req, {
+      : triggerWriterReadyCapacityRefill(requestContext, {
         payload,
         capacityRelease: providerStageHandoff
       });
@@ -895,7 +898,7 @@ async function persistPipelineResult({
         release_boundary: "worker_tail_fallback"
       };
     }
-    writerReadyCapacityRefill = triggerWriterReadyCapacityRefill(req, {
+    writerReadyCapacityRefill = triggerWriterReadyCapacityRefill(requestContext, {
       payload,
       capacityRelease: writerReadyCapacityRelease
     });
@@ -1063,6 +1066,7 @@ async function runBackgroundAssistedDraft({
     providerOptions,
     titleStageTarget: v4TitleStages.L2_ASSISTED_DRAFT
   });
+  const recognitionClockStartedAt = new Date().toISOString();
   const v2Response = await callV2WithGpt5EmptyRetry({
     headers,
     payload: v2Payload
@@ -1093,7 +1097,12 @@ async function runBackgroundAssistedDraft({
     payload: v2Payload,
     routePlan,
     createResult,
-    extraProviderSummary: { assisted_draft_status: result.assisted_draft_status }
+    extraProviderSummary: {
+      assisted_draft_status: result.assisted_draft_status,
+      recognition_clock_started_at: recognitionClockStartedAt,
+      recognition_clock_source: "gpt_provider_request"
+    },
+    requestContext: { headers }
   });
 }
 
@@ -1221,6 +1230,15 @@ export default async function handler(req, res) {
 
   const sessionId = payload.recognition_session_id || createV4SessionId();
   const handlerStartedAt = Date.now();
+  let recognitionClockStartedAt = null;
+  let recognitionClockSource = null;
+  const startRecognitionClock = (source, startedAt = new Date().toISOString()) => {
+    if (!recognitionClockStartedAt) {
+      recognitionClockStartedAt = startedAt;
+      recognitionClockSource = source;
+    }
+    return recognitionClockStartedAt;
+  };
   const l2Timing = {
     pre_l2_bundle_load_ms: null,
     pre_l2_anchor_probe_ms: null,
@@ -1271,6 +1289,7 @@ export default async function handler(req, res) {
     }
 
     const probeStartedAt = Date.now();
+    const probeStartedAtIso = new Date().toISOString();
     preL2AnchorProbe = await probePreL2Anchors({
       payload,
       env: process.env,
@@ -1290,6 +1309,9 @@ export default async function handler(req, res) {
     l2Timing.pre_l2_anchor_catalog_candidate_count = preL2AnchorProbe?.metrics?.catalog_candidate_count ?? null;
     l2Timing.pre_l2_anchor_trusted_candidate_count = preL2AnchorProbe?.metrics?.trusted_candidate_count ?? null;
     l2Timing.pre_l2_anchor_eligible_candidate_count = preL2AnchorProbe?.metrics?.eligible_candidate_count ?? null;
+    if (preL2AnchorProbe?.finalized === true) {
+      startRecognitionClock("deterministic_anchor_finalize", probeStartedAtIso);
+    }
     payload.v4_anchor_probe = {
       schema_version: preL2AnchorProbe?.schema_version || null,
       plan: preL2AnchorProbe?.plan || null,
@@ -1323,6 +1345,7 @@ export default async function handler(req, res) {
 
   if (canReturnFastScoutL1(payload, process.env)) {
     try {
+      const fastScoutStartedAtIso = new Date().toISOString();
       const fastScoutPromise = runV4FastScoutObservation({
         payload,
         env: process.env,
@@ -1333,8 +1356,12 @@ export default async function handler(req, res) {
         })
       });
       const fastScoutResult = await fastScoutPromise;
+      if (fastScoutResult.fast_scout?.cache_hit !== true) {
+        startRecognitionClock("gpt_provider_request", fastScoutStartedAtIso);
+      }
       // Exact-anchor finalize: a unique strict-tier catalog hit lets L1 emit
       // the writer-visible title now (~2-3s); L2 stays on as verification.
+      const finalizeStartedAtIso = new Date().toISOString();
       const finalize = await maybeFinalizeL1FromExactAnchor({
         scoutResult: fastScoutResult,
         env: process.env,
@@ -1342,6 +1369,7 @@ export default async function handler(req, res) {
         timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 2000)
       }).catch(() => ({ finalized: false, reason: "finalize_error" }));
       const finalized = finalize?.finalized === true;
+      if (finalized) startRecognitionClock("deterministic_anchor_finalize", finalizeStartedAtIso);
       const l1Result = {
         ...fastScoutResult,
         ...(finalized ? {
@@ -1394,8 +1422,11 @@ export default async function handler(req, res) {
         createResult,
         extraProviderSummary: {
           assisted_draft_status: "PENDING",
-          l1_return_barrier_version: l1ReturnBarrierVersion
-        }
+          l1_return_barrier_version: l1ReturnBarrierVersion,
+          recognition_clock_started_at: recognitionClockStartedAt,
+          recognition_clock_source: recognitionClockSource
+        },
+        requestContext: req
       }));
       if (queueL1Only(payload)) {
         await l1PersistencePromise;
@@ -1473,6 +1504,7 @@ export default async function handler(req, res) {
 
   if (forceL2Direct && preL2AnchorProbe?.finalized === true) {
     const finalize = preL2AnchorProbe.finalize;
+    startRecognitionClock("deterministic_anchor_finalize");
     l2Timing.pre_l2_full_l2_skipped = true;
     const finalizedResult = {
       title: finalize.title,
@@ -1512,8 +1544,11 @@ export default async function handler(req, res) {
         assisted_draft_status: "READY",
         exact_anchor_finalized: true,
         pre_l2_anchor_finalized: true,
+        recognition_clock_started_at: recognitionClockStartedAt,
+        recognition_clock_source: recognitionClockSource,
         v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
-      }
+      },
+      requestContext: req
     });
     l2Timing.persist_pipeline_ms = Date.now() - persistStartedAt;
     finalizedResponse.module_speed_metrics = {
@@ -1535,6 +1570,7 @@ export default async function handler(req, res) {
     l2Timing.exact_anchor_scout_attempted = true;
     l2Timing.exact_anchor_blocking_scout_allowed = allowBlockingScout;
     const scoutStartedAt = Date.now();
+    const scoutStartedAtIso = new Date().toISOString();
     try {
       const scoutResult = await runV4FastScoutObservation({
         payload,
@@ -1547,6 +1583,9 @@ export default async function handler(req, res) {
         })
       });
       l2ScoutResult = scoutResult;
+      if (allowBlockingScout && scoutResult.fast_scout?.cache_hit !== true) {
+        startRecognitionClock("gpt_provider_request", scoutStartedAtIso);
+      }
       l2Timing.exact_anchor_scout_ms = Date.now() - scoutStartedAt;
       l2Timing.exact_anchor_scout_status = scoutResult.fast_scout?.cache_hit ? "CACHE_HIT" : "PROVIDER_CALL";
       const finalizeStartedAt = Date.now();
@@ -1560,6 +1599,7 @@ export default async function handler(req, res) {
       l2Timing.exact_anchor_finalize_reason = finalize?.reason || null;
       l2Timing.exact_anchor_lookup_timing = finalize?.lookup_timing || null;
       if (finalize?.finalized === true) {
+        startRecognitionClock("deterministic_anchor_finalize", scoutStartedAtIso);
         const finalizedResult = {
           ...scoutResult,
           title: finalize.title,
@@ -1593,8 +1633,11 @@ export default async function handler(req, res) {
           extraProviderSummary: {
             assisted_draft_status: "READY",
             exact_anchor_finalized: true,
+            recognition_clock_started_at: recognitionClockStartedAt,
+            recognition_clock_source: recognitionClockSource,
             v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
-          }
+          },
+          requestContext: req
         });
         l2Timing.persist_pipeline_ms = Date.now() - persistStartedAt;
         finalizedResponse.module_speed_metrics = {
@@ -1632,6 +1675,7 @@ export default async function handler(req, res) {
     providerOptions: progressiveProviderOptions,
     titleStageTarget: forceL2Direct || modelRequiresFullL2Options ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
+  startRecognitionClock("gpt_provider_request");
   const v2StartedAt = Date.now();
   const v2Response = await callV2WithGpt5EmptyRetry({
     headers: req.headers,
@@ -1664,8 +1708,11 @@ export default async function handler(req, res) {
     routePlan,
     createResult,
     extraProviderSummary: {
+      recognition_clock_started_at: recognitionClockStartedAt,
+      recognition_clock_source: recognitionClockSource,
       v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
-    }
+    },
+    requestContext: req
   });
   l2Timing.persist_pipeline_ms = Date.now() - persistStartedAt;
   v4Response.module_speed_metrics = {

@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   claimV4RecognitionJobs,
   completeV4RecognitionJob,
+  createV4DeterministicJobId,
+  createV4DeterministicSessionId,
   enqueueV4RecognitionJobs,
   expandV4RecognitionStageJobs,
   failV4RecognitionJob,
@@ -58,6 +60,19 @@ assert.equal(row.payload.recognition_session_id, row.recognition_session_id);
 assert.ok(row.id.startsWith("v4job_"));
 assert.ok(row.recognition_session_id.startsWith("v4sess_"));
 
+const repeatedRow = normalizeV4JobInput({
+  batchId: "batch-test",
+  operatorId: "operator-1",
+  job: {
+    asset_id: "asset-1",
+    payload: { images: [{ url: "https://example.test/front.jpg" }] }
+  }
+});
+assert.equal(repeatedRow.id, row.id, "same batch, asset and stage must reuse one paid job id");
+assert.equal(repeatedRow.recognition_session_id, row.recognition_session_id);
+assert.notEqual(createV4DeterministicJobId({ batchId: "other-batch", assetId: "asset-1" }), row.id);
+assert.notEqual(createV4DeterministicSessionId({ batchId: "other-batch", assetId: "asset-1" }), row.recognition_session_id);
+
 const stageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-staged",
   operatorId: "operator-stage",
@@ -81,6 +96,12 @@ assert.equal(optInStageJobs[0].recognition_session_id, optInStageJobs[1].recogni
 assert.equal(optInStageJobs[0].paired_job_id, optInStageJobs[1].id);
 assert.equal(optInStageJobs[1].parent_job_id, optInStageJobs[0].id);
 assert.ok(Date.parse(optInStageJobs[1].not_before) > Date.now() + 60_000, "paired L2 should wait for its L1 release when fast scout is explicitly enabled");
+const repeatedStageJobs = expandV4RecognitionStageJobs({
+  batchId: "batch-staged",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: "asset-stage", create_l1_job: true, payload: { images: [{ url: "https://example.test/a.jpg" }] } }]
+});
+assert.deepEqual(repeatedStageJobs.map((job) => job.id), optInStageJobs.map((job) => job.id));
 
 const l2OnlyJobs = expandV4RecognitionStageJobs({
   jobs: [{ payload: { force_l2_only: true, images: [] } }]
@@ -129,7 +150,7 @@ assert.equal(capacityLeasedPayload.v4_queue_worker_id, "worker-capacity-2");
 const writes = [];
 const fetchForWrites = async (url, request = {}) => {
   writes.push({ url: String(url), request });
-  if (request.method === "GET") return jsonResponse([]);
+  if (!request.method || request.method === "GET") return jsonResponse([]);
   const body = JSON.parse(request.body);
   return jsonResponse((Array.isArray(body) ? body : [body]).map((entry) => ({ ...entry })));
 };
@@ -147,10 +168,40 @@ assert.equal(enqueue.batchId, "batch-enqueue");
 assert.equal(enqueue.queued_count, 2);
 assert.equal(enqueue.persistence_mode, "bulk");
 assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").length, 1);
-assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_jobs")).length, 1);
+assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_jobs") && entry.request.method === "POST").length, 1);
 assert.equal(JSON.parse(writes.find((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").request.body).length, 2);
-assert.equal(JSON.parse(writes.find((entry) => entry.url.includes("/v4_recognition_jobs")).request.body).length, 2);
-assert.ok(writes.find((entry) => entry.url.includes("/v4_recognition_jobs")).request.body.includes('"status":"QUEUED"'));
+const jobWrite = writes.find((entry) => entry.url.includes("/v4_recognition_jobs") && entry.request.method === "POST");
+assert.equal(JSON.parse(jobWrite.request.body).length, 2);
+assert.ok(jobWrite.request.body.includes('"status":"QUEUED"'));
+assert.match(jobWrite.request.headers.prefer, /resolution=ignore-duplicates/);
+
+const existingQueuedJob = normalizeV4JobInput({
+  batchId: "batch-dedup",
+  operatorId: "operator-dedup",
+  job: { asset_id: "asset-dedup", payload: { images: [] } }
+});
+const dedupWrites = [];
+const dedupEnqueue = await enqueueV4RecognitionJobs({
+  batchId: "batch-dedup",
+  operatorId: "operator-dedup",
+  jobs: [{ asset_id: "asset-dedup", payload: { images: [] } }],
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    dedupWrites.push({ url: String(url), request });
+    if ((!request.method || request.method === "GET") && String(url).includes("/v4_recognition_jobs")) {
+      return jsonResponse([{ ...existingQueuedJob, status: v4JobStatuses.RUNNING }]);
+    }
+    if ((!request.method || request.method === "GET") && String(url).includes("/v4_recognition_sessions")) {
+      return jsonResponse([{ id: existingQueuedJob.recognition_session_id }]);
+    }
+    return jsonResponse([]);
+  }
+});
+assert.equal(dedupEnqueue.queued_count, 1);
+assert.equal(dedupEnqueue.inserted_count, 0);
+assert.equal(dedupEnqueue.deduplicated_count, 1);
+assert.equal(dedupEnqueue.jobs[0].row.status, v4JobStatuses.RUNNING, "duplicate enqueue must preserve the active job");
+assert.equal(dedupWrites.filter((entry) => entry.request.method === "POST").length, 0);
 
 let sessionBatchFailed = false;
 const fallbackWrites = [];
@@ -164,7 +215,7 @@ const fallbackEnqueue = await enqueueV4RecognitionJobs({
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
     fallbackWrites.push({ url: String(url), request });
-    if (request.method === "GET") return jsonResponse([]);
+    if (!request.method || request.method === "GET") return jsonResponse([]);
     const body = JSON.parse(request.body);
     if (String(url).includes("/v4_recognition_sessions") && Array.isArray(body) && !sessionBatchFailed) {
       sessionBatchFailed = true;

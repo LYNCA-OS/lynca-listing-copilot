@@ -233,6 +233,87 @@ assert.deepEqual(__listingCopilotTitleTestHooks.deferredPreingestionOcrSnapshot(
   ],
   reason: "ocr_continues_in_background_after_writer_budget"
 });
+const deferredOcrWithLiveState = __listingCopilotTitleTestHooks.deferredPreingestionOcrSnapshot({
+  preingestion_summary: {
+    ocr_stage_execution: {
+      capacity_control_enabled: true,
+      global_capacity: 8,
+      claimed: 6
+    }
+  },
+  preingestion_evidence_patches: [{ field: "grade_company", value: "BGS" }]
+}, {
+  configured: true,
+  terminal: false,
+  job_count: 6,
+  active_count: 2,
+  patch_count: 3,
+  serial_patch_count: 1,
+  evidence_patches: [
+    { field: "serial_number", value: "2/3" },
+    { field: "grade_company", value: "BGS" },
+    { field: "card_number", value: "PAU" }
+  ],
+  execution_summary: {
+    capacity_control_enabled: true,
+    global_capacity: 8,
+    claimed: 6
+  }
+});
+assert.equal(deferredOcrWithLiveState.status, "DEFERRED_AFTER_PROVIDER");
+assert.equal(deferredOcrWithLiveState.job_count, 6);
+assert.equal(deferredOcrWithLiveState.patch_count, 3);
+assert.equal(deferredOcrWithLiveState.execution_summary.global_capacity, 8);
+
+const vectorWorkerSnapshot = {
+  status: "OK",
+  features: [{ image_id: "front", embedding: [0.1, 0.2] }],
+  stage_capacity: {
+    coordinated: true,
+    acquired: true,
+    released: true,
+    slot: 3
+  }
+};
+const deferredVector = __listingCopilotTitleTestHooks.deferredRetrievalCandidateContext({
+  worker: vectorWorkerSnapshot,
+  visualFeatures: vectorWorkerSnapshot,
+  providerOptions: { enable_vector_retrieval: true, vector_retrieval_mode: "assist" }
+});
+assert.equal(deferredVector.worker.stage_capacity.slot, 3, "a retrieval deadline must not erase completed vector capacity facts");
+
+const reboundVector = __listingCopilotTitleTestHooks.rebindVectorCandidateContextToFields({
+  retrieval: {
+    sources: [{
+      candidate_id: "candidate-136",
+      candidate_identity_id: "identity-136",
+      source_type: "INTERNAL_APPROVED_HISTORY",
+      retrieval_status: "APPROVED",
+      match_score: 0.94,
+      fields: {
+        year: "2024",
+        product: "Topps Chrome",
+        players: ["Test Player"],
+        collector_number: "136"
+      }
+    }],
+    unavailable: []
+  },
+  worker: vectorWorkerSnapshot,
+  packet: {},
+  assistPacket: {}
+}, {
+  year: "2024",
+  product: "Topps Chrome",
+  players: ["Test Player"],
+  collector_number: "136"
+}, {
+  env: { ENABLE_VECTOR_RETRIEVAL: "true", VECTOR_RETRIEVAL_MODE: "assist" },
+  providerOptions: { enable_vector_retrieval: true, enable_vector_assist: true, vector_retrieval_mode: "assist" }
+});
+assert.equal(reboundVector.rebound_to_provider_observation, true);
+assert.equal(reboundVector.worker.stage_capacity.slot, 3);
+assert.equal(reboundVector.vector_assist_eligibility.prompt_candidate_count, 1);
 assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({}, {
   status: "DEFERRED_AFTER_PROVIDER",
   job_count: null

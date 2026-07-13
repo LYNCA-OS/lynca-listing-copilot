@@ -18,6 +18,13 @@ assert.match(html, /id="providerStatusText"/, "provider status text should exist
 assert.match(html, /rel="icon"[^>]+href="\/app\/favicon\.svg"/, "main app should provide a favicon to avoid browser 404 noise");
 assert.match(js, /fetch\("\/api\/listing-provider-status"/, "frontend should load provider status from the server");
 assert.match(js, /state\.selectedProvider/, "frontend should keep selected provider in state");
+assert.match(js, /recognitionClockFromServerPayload/, "per-card timer should use the authoritative server recognition clock");
+assert.match(js, /recognition_clock_started_at/, "frontend should read the provider-stage start timestamp");
+assert.match(js, /deterministic_anchor_finalize/, "frontend timer should understand the OCR/catalog no-GPT fast path");
+assert.match(js, /label:\s*snapshot\.failed \? "模型未启动" : "等待识别"/, "queued cards must not display queue time as model time");
+assert.match(js, /value:\s*formatGenerationElapsed\(snapshot\.active_ms\)/, "visible elapsed time should exclude queue wait");
+const processTitlesSource = js.slice(js.indexOf("async function processTitles"), js.indexOf("async function retryAssetWithEmergency"));
+assert.doesNotMatch(processTitlesSource, /markAssetStarted\(asset\)/, "batch workers must not start a card timer before provider capacity reaches it");
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
 assert.match(js, /workflowReadinessText/, "frontend should render server workflow readiness in the provider status area");
@@ -131,7 +138,7 @@ assert.match(apiWithOptions, /ENABLE_CATALOG_ASSIST_DEFAULT", true/, "title API 
 assert.match(apiWithOptions, /ENABLE_VECTOR_ASSIST_DEFAULT", true/, "title API should default vector assist on for the C path");
 assert.match(apiWithOptions, /vector_retrieval_mode:\s*vectorAssistDefault \? "assist" : "off"/, "title API should default vector retrieval to assist mode when enabled");
 assert.match(apiWithOptions, /vector_query_timeout_ms:\s*20000/, "title API should give vector retrieval the production-ready overlap budget before degrading");
-assert.match(apiWithOptions, /vectorEmbeddingPostProviderWaitMs/, "L2 should cap post-provider vector waiting before it dominates writer-ready latency");
+assert.doesNotMatch(apiWithOptions, /vectorEmbeddingPostProviderWaitMs/, "obsolete embedding-only post-provider waiting should not remain configurable");
 assert.match(apiWithOptions, /postObservationCatalogVectorHedgeMs/, "post-observation catalog should get a bounded head start before vector retrieval overlaps it");
 assert.match(apiWithOptions, /postObservationRetrievalCriticalPathBudgetMs/, "post-observation retrieval should have a bounded writer-critical-path budget");
 assert.match(api, /scheduleBackgroundCompletion/, "work that misses the writer deadline should continue in the background");
@@ -139,7 +146,10 @@ assert.match(api, /post_observation_retrieval_deferred_count/, "deadline-deferre
 assert.match(api, /PREINGESTION_OCR_POST_PROVIDER_WAIT_MS/, "OCR should have a bounded post-provider writer wait");
 assert.match(api, /DEFERRED_AFTER_PROVIDER/, "late OCR should be observable instead of blocking the writer path");
 assert.match(api, /post_observation_catalog_vector_overlap_ms/, "slow post-observation catalog and vector lookups should overlap instead of stacking their tail latency");
-assert.match(api, /vector_embedding_overlap_timeout_after_provider/, "slow vector warmup after provider should degrade to a timeout packet instead of blocking the title");
+assert.match(api, /const vectorContextWarmupPromise = deferVectorUntilProviderObservation/, "full vector retrieval should start while the provider is running");
+assert.match(api, /deferVectorUntilProviderObservation\s*&&\s*!lazyDecision\.skip/, "an early catalog lazy hit must not consume vector capacity");
+assert.match(api, /rebindVectorCandidateContextToFields/, "completed vector retrieval should be rebound to provider observations before admission");
+assert.match(api, /deferredRetrievalCandidateContext\([\s\S]*worker:/, "a writer deadline must preserve completed vector worker and capacity diagnostics");
 assert.match(apiWithOptions, /Math\.max\(\s*20000,[\s\S]*VECTOR_QUERY_TIMEOUT_MS/, "vector warmup should get a longer overlapped window than the post-provider wait");
 assert.match(apiWithOptions, /VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS[\s\S]*\|\|\s*20000/, "vector warmup hard cap should default to the overlapped 20s budget");
 assert.match(api, /singleModelDraftPath/, "single-model provider requests should be able to skip Evidence Completion");
@@ -246,7 +256,7 @@ assert.doesNotMatch(js, /moduleRevealCount/, "title-only UI should not stage mod
 assert.doesNotMatch(js, /revealResultModules/, "title-only UI should not animate structured module reveal");
 assert.match(js, /loading-spinner/, "pending cards should render an obvious waiting spinner");
 assert.doesNotMatch(js, /\$\{backgroundLabel \?/, "background preparation must stay invisible until the writer starts recognition");
-assert.match(js, /snapshot\.active_ms \+ snapshot\.queue_ms/, "writer-visible elapsed time must cover click-to-final queue and execution time");
+assert.doesNotMatch(js, /value:\s*formatGenerationElapsed\(snapshot\.active_ms \+ snapshot\.queue_ms\)/, "writer-visible elapsed time must exclude queue wait");
 assert.doesNotMatch(js, /GPT‑4\.1 单模型重试/, "retry copy must follow the active server model instead of naming a stale provider model");
 assert.match(js, /assistedDraftNotice/, "title cards should visibly explain pending final one-line title generation");
 assert.match(js, /setStatus\(message,\s*options\s*=\s*\{\}\)/, "status updates should support explicit busy rendering");

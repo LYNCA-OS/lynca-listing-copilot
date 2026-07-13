@@ -226,6 +226,14 @@ const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
 const freshEbaySmokeWorkflowSource = await readFile(".github/workflows/fresh-ebay-smoke.yml", "utf8");
 const vercelConfigSource = await readFile("vercel.json", "utf8");
+const persistPipelineStart = v4TitleApiSource.indexOf("async function persistPipelineResult");
+const persistPipelineEnd = v4TitleApiSource.indexOf("async function runBackgroundAssistedDraft", persistPipelineStart);
+const persistPipelineSource = v4TitleApiSource.slice(persistPipelineStart, persistPipelineEnd);
+assert.ok(persistPipelineStart >= 0 && persistPipelineEnd > persistPipelineStart);
+assert.doesNotMatch(persistPipelineSource, /\breq\b/, "persistence helpers must not capture an undefined request object");
+assert.match(persistPipelineSource, /requestContext/, "request context must be passed explicitly to capacity refill");
+assert.match(v4TitleApiSource, /recognition_clock_source:\s*"gpt_provider_request"/, "GPT requests must persist the per-card recognition clock source");
+assert.match(v4TitleApiSource, /deterministic_anchor_finalize/, "no-GPT exact-anchor titles must persist their own clock source");
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /const backgroundPersistence = persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must be assembled outside the writer-ready response.");

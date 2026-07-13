@@ -269,6 +269,8 @@ export default async function handler(req, res) {
     batch_id: result.batchId,
     tenant_id: tenantId,
     queued_count: result.queued_count,
+    inserted_count: result.inserted_count,
+    deduplicated_count: result.deduplicated_count,
     persistence_mode: result.persistence_mode,
     session_rows_written: result.session_rows_written,
     job_rows_written: result.job_rows_written,
@@ -285,6 +287,7 @@ export default async function handler(req, res) {
       recognition_session_id: entry.row?.recognition_session_id || null,
       asset_id: entry.row?.asset_id || null,
       status: entry.row?.status || null,
+      deduplicated: entry.deduplicated === true,
       error: entry.error || null
     }))
   }));

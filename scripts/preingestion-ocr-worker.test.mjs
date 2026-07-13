@@ -236,11 +236,13 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 // --- rendezvous waits through a running state and returns the completed patch state ---
 {
   let jobReads = 0;
+  const observedStates = [];
   const state = await waitForPreingestionOcrEvidence({
     bundleId: "bundle-1",
     timeoutMs: 1_000,
     pollMs: 100,
     triggerSweep: false,
+    onState: (snapshot) => observedStates.push(snapshot.status_counts),
     env,
     fetchImpl: async (url) => {
       const target = String(url);
@@ -257,7 +259,38 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(state.status, "EVIDENCE_READY");
   assert.equal(state.evidence_ready, true);
   assert.equal(state.serial_patch_count, 1);
-assert.ok(state.state_reads >= 2);
+  assert.ok(state.state_reads >= 2);
+  assert.ok(observedStates.length >= 2, "each OCR state transition must be observable without another database read");
+}
+
+// --- a broken observer must not change OCR completion semantics ---
+{
+  const state = await waitForPreingestionOcrEvidence({
+    bundleId: "bundle-1",
+    timeoutMs: 500,
+    pollMs: 100,
+    triggerSweep: false,
+    onState: () => {
+      throw new Error("observer failure");
+    },
+    env,
+    fetchImpl: async (url) => {
+      if (String(url).includes("preingestion_jobs")) {
+        return jsonResponse([{
+          job_id: "serial",
+          status: "succeeded",
+          attempts: 1,
+          job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+          payload: { crop: { role: "serial_crop" } }
+        }]);
+      }
+      return jsonResponse([{
+        bundle_id: "bundle-1",
+        evidence_patches: [currentOcrPatch("serial_number", "30/99")]
+      }]);
+    }
+  });
+  assert.equal(state.status, "EVIDENCE_READY");
 }
 
 // --- a verified serial must not end rendezvous while authoritative slab text is still running ---

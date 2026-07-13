@@ -133,6 +133,8 @@ function writerSafeSessionStatus(session = null, job = null) {
       noncritical_persistence_summary: summary.noncritical_persistence_summary || null,
       writer_ready_persistence_mode: summary.writer_ready_persistence_mode || null,
       provider_capacity_stage_handoff: summary.provider_capacity_stage_handoff || null,
+      recognition_clock_started_at: summary.recognition_clock_started_at || null,
+      recognition_clock_source: summary.recognition_clock_source || null,
       v4_l2_timing: summary.v4_l2_timing || null
     },
     candidate_control_plane_trace: {
@@ -269,8 +271,17 @@ export default async function handler(req, res) {
     jobs: ownedJobs.map((job) => {
       const session = sessions[job.recognition_session_id] || null;
       const display = displayStateForSession(session, job);
+      const providerSummary = session?.provider_result_summary && typeof session.provider_result_summary === "object"
+        ? session.provider_result_summary
+        : {};
       const pairedL1ReleasedAt = job.queue_tags?.paired_l1_released_at || null;
       const schedulerReadyAt = pairedL1ReleasedAt || job.created_at;
+      const recognitionStartedAt = providerSummary.recognition_clock_started_at
+        || job.queue_tags?.provider_capacity_leased_at
+        || null;
+      const recognitionStartSource = providerSummary.recognition_clock_source
+        || (job.queue_tags?.provider_capacity_leased_at ? "provider_capacity_lease" : null);
+      const recognitionCompletedAt = session?.l2_ready_at || job.completed_at || null;
       const timing = {
         ...(job.timing && typeof job.timing === "object" && !Array.isArray(job.timing) ? job.timing : {}),
         time_to_l1_ready_ms: elapsedMs(job.created_at, session?.l1_ready_at),
@@ -279,7 +290,8 @@ export default async function handler(req, res) {
         scheduler_queue_wait_ms: elapsedMs(schedulerReadyAt, job.started_at),
         worker_queue_wait_ms: elapsedMs(schedulerReadyAt, job.started_at),
         total_created_to_worker_start_ms: elapsedMs(job.created_at, job.started_at),
-        worker_processing_ms: elapsedMs(job.started_at, job.completed_at)
+        worker_processing_ms: elapsedMs(job.started_at, job.completed_at),
+        writer_visible_recognition_ms: elapsedMs(recognitionStartedAt, recognitionCompletedAt)
       };
       return {
         job_id: job.id,
@@ -308,6 +320,9 @@ export default async function handler(req, res) {
         l2_status: session?.l2_status || "PENDING",
         l2_title: session?.l2_status === "READY" ? (session?.l2_title || session?.final_title || "") : "",
         l2_ready_at: session?.l2_ready_at || null,
+        recognition_started_at: recognitionStartedAt,
+        recognition_start_source: recognitionStartSource,
+        recognition_completed_at: recognitionCompletedAt,
         timing,
         end_to_end_node_ledger: buildEndToEndNodeLedger({ session, job, timing, display }),
         attempt_count: job.attempt_count,

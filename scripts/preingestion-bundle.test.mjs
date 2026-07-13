@@ -168,6 +168,23 @@ const summary = summarizePreIngestionBundle(bundle);
 assert.equal(summary.image_count, 2);
 assert.equal(summary.derived_image_count, 1);
 assert.equal(summary.initial_evidence_count, 1);
+assert.equal(summary.ocr_stage_execution, null);
+const summaryWithOcrExecution = summarizePreIngestionBundle({
+  ...bundle,
+  quality_summary: {
+    ...bundle.quality_summary,
+    ocr_stage_execution: {
+      capacity_control_enabled: true,
+      global_capacity: 8,
+      claimed: 5
+    }
+  }
+});
+assert.deepEqual(summaryWithOcrExecution.ocr_stage_execution, {
+  capacity_control_enabled: true,
+  global_capacity: 8,
+  claimed: 5
+});
 
 // Consumerless job types default OFF: only OCR (which has a consumer) is
 // enqueued unless a type is explicitly enabled.

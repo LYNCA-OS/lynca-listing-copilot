@@ -112,6 +112,36 @@ assert.equal(gradeResult.normalized_fields.grade_company, "PSA");
 assert.equal(gradeResult.normalized_fields.card_grade, "10");
 assert.equal(gradeResult.normalized_fields.cert_number, "123456789");
 
+const bgsDualGradeResult = normalizePaddleOcrResponse({
+  raw_text: "BGS 8.5 AUTOGRAPH 10 CERT 0020299654",
+  confidence: 0.97
+}, {
+  request_id: "ocr-grade-dual",
+  image_url: "https://storage.test/grade-dual.jpg",
+  crop_type: "grade_label"
+});
+assert.equal(bgsDualGradeResult.normalized_fields.grade_company, "BGS");
+assert.equal(bgsDualGradeResult.normalized_fields.card_grade, "8.5");
+assert.equal(bgsDualGradeResult.normalized_fields.auto_grade, "10");
+assert.equal(bgsDualGradeResult.normalized_fields.grade_type, "CARD_AND_AUTO");
+
+const certCannotOverwriteGrade = normalizePaddleOcrResponse({
+  raw_text: "PSA CERT 127928791",
+  confidence: 0.96,
+  normalized_fields: {
+    grade_company: "PSA",
+    card_grade: "127928791",
+    cert_number: "127928791"
+  }
+}, {
+  request_id: "ocr-grade-cert-guard",
+  image_url: "https://storage.test/grade-cert.jpg",
+  crop_type: "grade_label"
+});
+assert.equal(certCannotOverwriteGrade.normalized_fields.card_grade, null);
+assert.equal(certCannotOverwriteGrade.normalized_fields.cert_number, "127928791");
+assert.equal(certCannotOverwriteGrade.normalized_fields.grade_type, "UNKNOWN");
+
 const tcgResult = normalizePaddleOcrResponse({
   raw_text: "OP01-001 Luffy SR",
   confidence: 0.91

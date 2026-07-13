@@ -50,9 +50,7 @@ import {
   singleModelFastPathEnabled,
   ultraFastImageDetail,
   ultraFastServiceTier,
-  vectorEmbeddingPostProviderWaitMs,
-  vectorEmbeddingWarmupOptions,
-  vectorEmbeddingWarmupTimeoutMs
+  vectorEmbeddingWarmupOptions
 } from "../lib/listing/pipeline/provider-options.mjs";
 import {
   buildInitialProviderPrompt,
@@ -2908,6 +2906,7 @@ function shouldSkipVectorForCatalogContext({
 function skippedVectorCandidateContext({
   reason = "vector_lazy_catalog_anchor",
   visualFeatures = {},
+  worker = null,
   env = process.env,
   providerOptions = {},
   skip = {}
@@ -2920,7 +2919,7 @@ function skippedVectorCandidateContext({
     packet,
     assistPacket: packet,
     retrieval: null,
-    worker: null,
+    worker,
     telemetry: null,
     vector_assist_eligibility: vectorCandidatePacketAssistEligibility(packet),
     promptPacket: false,
@@ -2939,6 +2938,7 @@ function deferredRetrievalCandidateContext({
   kind = "vector",
   reason = "post_observation_retrieval_deadline",
   visualFeatures = {},
+  worker = null,
   env = process.env,
   providerOptions = {}
 } = {}) {
@@ -2962,13 +2962,37 @@ function deferredRetrievalCandidateContext({
     packet,
     assistPacket: packet,
     retrieval: null,
-    worker: null,
+    worker,
     telemetry: null,
     vector_assist_eligibility: eligibility,
     promptPacket: false,
     retrieval_phase: "provider_observation_vector_deferred",
     deferred: true,
     deferred_reason: reason
+  };
+}
+
+function rebindVectorCandidateContextToFields(context = null, queryFields = {}, {
+  env = process.env,
+  providerOptions = {}
+} = {}) {
+  if (!context || typeof context !== "object" || !context.retrieval) return context;
+  const config = vectorRetrievalConfig(env, providerOptions);
+  const packet = buildVectorCandidatePacket(context.retrieval, {
+    limit: config.gptCandidateLimit,
+    queryFields: queryFields || {}
+  });
+  const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
+  const assistPacket = buildVectorCandidateAssistPacket(packet);
+  return {
+    ...context,
+    packet,
+    assistPacket,
+    vector_assist_eligibility: assistEligibility,
+    promptPacket: config.mode === vectorRetrievalModes.ASSIST
+      && vectorCandidatePacketHasPromptContent(assistPacket),
+    retrieval_phase: "provider_observation_vector_lookup",
+    rebound_to_provider_observation: true
   };
 }
 
@@ -3054,10 +3078,17 @@ function preingestionOcrPostProviderWaitMs(env = process.env, providerOptions = 
   return Math.min(10_000, Math.trunc(parsed));
 }
 
-function deferredPreingestionOcrSnapshot(payload = {}) {
-  const patches = Array.isArray(payload.preingestion_evidence_patches)
-    ? payload.preingestion_evidence_patches
-    : [];
+function deferredPreingestionOcrSnapshot(payload = {}, latestState = null) {
+  const state = latestState && typeof latestState === "object" ? latestState : {};
+  const patches = Array.isArray(state.evidence_patches)
+    ? state.evidence_patches
+    : Array.isArray(payload.preingestion_evidence_patches)
+      ? payload.preingestion_evidence_patches
+      : [];
+  const executionSummary = state.execution_summary
+    || payload.preingestion_summary?.ocr_stage_execution
+    || payload.preingestion_bundle?.quality_summary?.ocr_stage_execution
+    || null;
   const serialFields = new Set([
     "print_run_number",
     "print_run_denominator",
@@ -3065,13 +3096,26 @@ function deferredPreingestionOcrSnapshot(payload = {}) {
     "serial_denominator",
     "numerical_rarity"
   ]);
+  const serialPatchCount = patches.filter((patch) => serialFields.has(String(patch?.field || "").trim())).length;
+  if (state.terminal === true) {
+    return {
+      ...state,
+      status: state.status_counts?.failed ? "TERMINAL_WITH_FAILURES" : "TERMINAL",
+      evidence_patches: patches,
+      patch_count: state.patch_count ?? patches.length,
+      serial_patch_count: state.serial_patch_count ?? serialPatchCount,
+      ...(executionSummary ? { execution_summary: executionSummary } : {})
+    };
+  }
   return {
+    ...state,
     status: "DEFERRED_AFTER_PROVIDER",
     terminal: false,
-    job_count: null,
-    patch_count: patches.length,
-    serial_patch_count: patches.filter((patch) => serialFields.has(String(patch?.field || "").trim())).length,
+    job_count: state.job_count ?? executionSummary?.claimed ?? null,
+    patch_count: state.patch_count ?? patches.length,
+    serial_patch_count: state.serial_patch_count ?? serialPatchCount,
     evidence_patches: patches,
+    ...(executionSummary ? { execution_summary: executionSummary } : {}),
     reason: "ocr_continues_in_background_after_writer_budget"
   };
 }
@@ -3273,6 +3317,7 @@ async function prepareVectorCandidateContext({
   resolvedForRetrieval = {},
   providerOptions = {},
   timingContext = null,
+  onWorkerResult = null,
   env = process.env
 } = {}) {
   const config = vectorRetrievalConfig(env, providerOptions);
@@ -3319,6 +3364,13 @@ async function prepareVectorCandidateContext({
     }
   }
   const vectorStageCapacity = workerResult?.stage_capacity || null;
+  if (typeof onWorkerResult === "function" && workerResult) {
+    try {
+      onWorkerResult(workerResult);
+    } catch {
+      // Observation hooks must never change retrieval behavior.
+    }
+  }
   addTiming(timingContext, "vector_stage_capacity_wait_ms", Number(vectorStageCapacity?.wait_ms || 0));
   if (vectorStageCapacity?.coordinated) addTiming(timingContext, "vector_stage_capacity_controlled_count", 1);
   if (vectorStageCapacity?.coordinated && vectorStageCapacity.acquired !== true) {
@@ -4754,6 +4806,7 @@ async function createOpenAiTitle(payload, selection, {
   requestContext = null
 } = {}) {
   const preingestionBundleId = payload.preingestion_bundle_id || payload.preingestionBundleId || "";
+  let latestPreingestionOcrState = null;
   const preingestionOcrRendezvousPromise = preingestionBundleId
     ? waitForPreingestionOcrEvidence({
       assetId: payload.asset_id || payload.assetId || "",
@@ -4766,7 +4819,10 @@ async function createOpenAiTitle(payload, selection, {
       pollMs: positiveIntegerFromEnv(process.env, "PREINGESTION_OCR_RENDEZVOUS_POLL_MS", 400),
       env: process.env,
       fetchImpl: globalThis.fetch,
-      triggerSweep: true
+      triggerSweep: true,
+      onState: (state) => {
+        latestPreingestionOcrState = state;
+      }
     }).catch((error) => ({
       status: "ERROR",
       terminal: false,
@@ -4845,21 +4901,49 @@ async function createOpenAiTitle(payload, selection, {
     providerOptions,
     env: process.env
   });
-  const vectorEmbeddingWarmupPromise = deferVectorUntilProviderObservation
-    ? (
-      hasUsableVisualFeatures(visualFeatures)
-        ? Promise.resolve(visualFeatures)
-        : timeAsync(timingContext, "vector_embedding_overlap_ms", () => embedImagesWithVectorWorker({
-          images: signedImages || baseInitialPayload.images || [],
-          requestId: `${baseInitialPayload.assetId || baseInitialPayload.asset_id || "asset"}_vector_query_overlap`,
-          env: process.env,
-          options: vectorEmbeddingWarmupOptions(providerOptions, process.env)
-        })).catch(() => ({
+  let vectorWarmContextSnapshot = null;
+  let vectorWarmWorkerSnapshot = null;
+  const vectorContextWarmupPromise = deferVectorUntilProviderObservation && !lazyDecision.skip
+    ? timeAsync(
+      timingContext,
+      "vector_retrieval_overlap_ms",
+      () => prepareVectorCandidateContext({
+        initialPayload: baseInitialPayload,
+        signedImages,
+        visualFeatures,
+        resolvedForRetrieval,
+        providerOptions: vectorEmbeddingWarmupOptions(providerOptions, process.env),
+        timingContext,
+        onWorkerResult: (workerResult) => {
+          vectorWarmWorkerSnapshot = workerResult;
+        }
+      })
+    ).then((context) => {
+      vectorWarmContextSnapshot = context;
+      vectorWarmWorkerSnapshot = context?.worker || vectorWarmWorkerSnapshot;
+      return context;
+    }).catch((error) => {
+      const config = vectorRetrievalConfig(process.env, providerOptions);
+      const packet = vectorRetrievalUnavailablePacket(
+        "VECTOR_RETRIEVAL_ERROR",
+        "vector_retrieval_overlap_error"
+      );
+      const context = {
+        mode: config.mode,
+        visualFeatures,
+        packet,
+        assistPacket: emptyVectorCandidatePacket("vector_retrieval_overlap_error"),
+        retrieval: null,
+        promptPacket: false,
+        worker: vectorWarmWorkerSnapshot || {
           status: "VECTOR_RETRIEVAL_ERROR",
-          reason: "vector_embedding_overlap_error",
+          reason: String(error?.code || "vector_retrieval_overlap_error").slice(0, 120),
           features: []
-        }))
-    )
+        }
+      };
+      vectorWarmContextSnapshot = context;
+      return context;
+    })
     : null;
   const vectorContextPromise = lazyDecision.skip
     ? Promise.resolve(skippedVectorCandidateContext({
@@ -5001,32 +5085,22 @@ async function createOpenAiTitle(payload, selection, {
       stageRequestId: catalogStageRequestId,
       stagePhase: "post_provider"
     }).catch(() => null);
-    const loadOverlappedVectorFeatures = async () => {
-      let overlappedVectorFeatures = visualFeatures;
-      if (vectorEmbeddingWarmupPromise) {
-        const postProviderWaitMs = vectorEmbeddingPostProviderWaitMs(process.env, providerOptions);
-        const waitedVector = await waitForPromiseWithin(vectorEmbeddingWarmupPromise, postProviderWaitMs);
-        if (waitedVector.settled) {
-          overlappedVectorFeatures = waitedVector.value;
-        } else {
-          addTiming(timingContext, "vector_embedding_overlap_post_provider_timeout_ms", postProviderWaitMs);
-          overlappedVectorFeatures = {
-            status: "VECTOR_RETRIEVAL_TIMEOUT",
-            reason: "vector_embedding_overlap_timeout_after_provider",
-            features: []
-          };
-        }
-      }
-      return overlappedVectorFeatures;
-    };
     const startLateVectorLookup = async () => {
       try {
-        const overlappedVectorFeatures = await loadOverlappedVectorFeatures();
+        const warmedContext = vectorContextWarmupPromise
+          ? await vectorContextWarmupPromise
+          : null;
+        if (warmedContext) {
+          return rebindVectorCandidateContextToFields(
+            warmedContext,
+            providerResolvedForRetrieval,
+            { env: process.env, providerOptions }
+          );
+        }
         const context = await prepareVectorCandidateContext({
           initialPayload: baseInitialPayload,
           signedImages,
-          visualFeatures: hasUsableVisualFeatures(overlappedVectorFeatures) ? overlappedVectorFeatures : visualFeatures,
-          precomputedWorkerResult: overlappedVectorFeatures,
+          visualFeatures,
           resolvedForRetrieval: providerResolvedForRetrieval,
           providerOptions,
           timingContext
@@ -5165,7 +5239,8 @@ async function createOpenAiTitle(payload, selection, {
       };
       vectorContext = skippedVectorCandidateContext({
         reason: "vector_lazy_provider_catalog_anchor",
-        visualFeatures,
+        visualFeatures: vectorWarmContextSnapshot?.visualFeatures || visualFeatures,
+        worker: vectorWarmContextSnapshot?.worker || vectorWarmWorkerSnapshot,
         env: process.env,
         providerOptions,
         skip: lateLazyDecision
@@ -5192,7 +5267,8 @@ async function createOpenAiTitle(payload, selection, {
       vectorContext = hedgedVectorContext || (deadlineEnabled
         ? deferredRetrievalCandidateContext({
           kind: "vector",
-          visualFeatures,
+          visualFeatures: vectorWarmContextSnapshot?.visualFeatures || visualFeatures,
+          worker: vectorWarmContextSnapshot?.worker || vectorWarmWorkerSnapshot,
           env: process.env,
           providerOptions
         })
@@ -5229,7 +5305,7 @@ async function createOpenAiTitle(payload, selection, {
   );
   const preingestionOcrRendezvous = boundedOcrRendezvous.settled
     ? boundedOcrRendezvous.value
-    : deferredPreingestionOcrSnapshot(initialPayload);
+    : deferredPreingestionOcrSnapshot(initialPayload, latestPreingestionOcrState);
   if (!boundedOcrRendezvous.settled) {
     addTiming(timingContext, "preingestion_ocr_deferred_after_provider_count", 1);
     scheduleBackgroundCompletion(preingestionOcrRendezvousPromise);
@@ -5415,6 +5491,8 @@ export const __listingCopilotTitleTestHooks = {
   postObservationRetrievalDeadlineEnabled,
   preingestionOcrPostProviderWaitMs,
   deferredPreingestionOcrSnapshot,
+  deferredRetrievalCandidateContext,
+  rebindVectorCandidateContextToFields,
   retrievalAnchorSummary,
   retrievalFieldsHavePrePromptVectorAnchor,
   serialNumeratorVerificationFromPreingestion,

@@ -317,7 +317,6 @@ and delete the flag.
 | `VECTOR_EMBEDDING_MAX_BLOCKING_TIMEOUT_MS` | lib/listing/pipeline/provider-options.mjs |
 | `VECTOR_EMBEDDING_MODEL` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_EMBEDDING_MODEL_REVISION` | lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
-| `VECTOR_EMBEDDING_POST_PROVIDER_WAIT_MS` | lib/listing/pipeline/provider-options.mjs |
 | `VECTOR_EMBEDDING_WARMUP_TIMEOUT_MS` | lib/listing/pipeline/provider-options.mjs |
 | `VECTOR_EVAL_CORRECTED_TITLE_AS_GT` | lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VECTOR_GPT_CANDIDATE_LIMIT` | lib/listing/retrieval/vector-feature-flags.mjs |

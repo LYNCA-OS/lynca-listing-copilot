@@ -1415,7 +1415,8 @@ function ensureGenerationTiming(assetIndex, queuedAt = Date.now()) {
     queuedAt,
     startedAt: null,
     finishedAt: null,
-    failed: false
+    failed: false,
+    startSource: null
   };
   state.assetGenerationTimings.set(index, timing);
   return timing;
@@ -1424,13 +1425,13 @@ function ensureGenerationTiming(assetIndex, queuedAt = Date.now()) {
 function markAssetQueued(asset, queuedAt = Date.now()) {
   const timing = ensureGenerationTiming(asset.index, queuedAt);
   if (timing && !timing.queuedAt) timing.queuedAt = queuedAt;
-  startGenerationTicker();
 }
 
-function markAssetStarted(asset, startedAt = Date.now()) {
+function markAssetStarted(asset, startedAt = Date.now(), startSource = "client_direct_request") {
   const timing = ensureGenerationTiming(asset.index, startedAt);
   if (!timing) return null;
   if (!timing.startedAt) timing.startedAt = startedAt;
+  if (!timing.startSource) timing.startSource = startSource;
   timing.finishedAt = null;
   timing.failed = false;
   startGenerationTicker();
@@ -1440,9 +1441,69 @@ function markAssetStarted(asset, startedAt = Date.now()) {
 function markAssetFinished(assetIndex, options = {}) {
   const timing = ensureGenerationTiming(assetIndex);
   if (!timing) return null;
-  if (!timing.startedAt) timing.startedAt = timing.queuedAt || Date.now();
   timing.finishedAt = timing.finishedAt || Date.now();
   timing.failed = Boolean(options.failed);
+  return timing;
+}
+
+function parseGenerationTimestamp(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function recognitionClockFromServerPayload(payload = {}) {
+  const session = payload.session && typeof payload.session === "object" ? payload.session : payload;
+  const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
+    ? session.provider_result_summary
+    : payload.provider_result_summary && typeof payload.provider_result_summary === "object"
+      ? payload.provider_result_summary
+      : {};
+  const startedAt = parseGenerationTimestamp(
+    payload.recognition_started_at
+      || summary.recognition_clock_started_at
+      || payload.execution_control?.provider_capacity_leased_at
+  );
+  const completedAt = parseGenerationTimestamp(
+    payload.recognition_completed_at
+      || session.l2_ready_at
+      || payload.completed_at
+  );
+  const startSource = String(
+    payload.recognition_start_source
+      || summary.recognition_clock_source
+      || (payload.execution_control?.provider_capacity_leased_at ? "provider_capacity_lease" : "")
+  ).trim() || null;
+  return {
+    startedAt,
+    completedAt,
+    startSource
+  };
+}
+
+function recognitionClockSourcePriority(source) {
+  if (["gpt_provider_request", "deterministic_anchor_finalize"].includes(source)) return 3;
+  if (source === "provider_capacity_lease") return 2;
+  if (source === "worker_start_fallback") return 1;
+  return 0;
+}
+
+function syncAssetGenerationTimingFromServer(assetIndex, payload = {}) {
+  const timing = ensureGenerationTiming(assetIndex);
+  if (!timing) return null;
+  const clock = recognitionClockFromServerPayload(payload);
+  if (clock.startedAt) {
+    const shouldReplaceStart = !timing.startedAt
+      || recognitionClockSourcePriority(clock.startSource) > recognitionClockSourcePriority(timing.startSource);
+    if (shouldReplaceStart) {
+      timing.startedAt = clock.startedAt;
+      timing.startSource = clock.startSource;
+    }
+    timing.failed = false;
+    startGenerationTicker();
+  }
+  if (clock.completedAt) timing.finishedAt = clock.completedAt;
   return timing;
 }
 
@@ -1471,6 +1532,7 @@ function generationTimingSnapshot(assetIndex) {
     startedAt,
     finishedAt,
     failed: Boolean(timing.failed),
+    start_source: timing.startSource || null,
     active_ms: activeMs,
     queue_ms: queueMs,
     waiting_ms: waitingMs
@@ -1493,21 +1555,21 @@ function generationTimingView(assetIndex) {
   if (!snapshot) return null;
   if (!snapshot.startedAt) {
     return {
-      label: "排队",
-      value: formatGenerationElapsed(snapshot.waiting_ms),
+      label: snapshot.failed ? "模型未启动" : "等待识别",
+      value: "",
       status: "queued"
     };
   }
   if (!snapshot.finishedAt) {
     return {
-      label: "生成中",
-      value: formatGenerationElapsed(snapshot.active_ms + snapshot.queue_ms),
+      label: "识别中",
+      value: formatGenerationElapsed(snapshot.active_ms),
       status: "running"
     };
   }
   return {
-    label: snapshot.failed ? "失败总耗时" : "总耗时",
-    value: formatGenerationElapsed(snapshot.active_ms + snapshot.queue_ms),
+    label: snapshot.failed ? "失败前识别耗时" : "识别耗时",
+    value: formatGenerationElapsed(snapshot.active_ms),
     status: snapshot.failed ? "failed" : "done"
   };
 }
@@ -1515,7 +1577,8 @@ function generationTimingView(assetIndex) {
 function generationTimingBadge(assetIndex) {
   const view = generationTimingView(assetIndex);
   if (!view) return "";
-  return `<span class="generation-time-badge generation-time-${escapeHtml(view.status)}">${escapeHtml(view.label)} ${escapeHtml(view.value)}</span>`;
+  const value = view.value ? ` ${escapeHtml(view.value)}` : "";
+  return `<span class="generation-time-badge generation-time-${escapeHtml(view.status)}">${escapeHtml(view.label)}${value}</span>`;
 }
 
 function setAssetProgress(assetIndex, label, fraction) {
@@ -1654,11 +1717,14 @@ function imagesForProvider(assetImages) {
 
 export const __listingCopilotAppTestHooks = {
   boundedProviderImagesForRequest,
+  generationTimingView,
   generationSubmissionAllowed,
   imagesForProvider,
+  recognitionClockFromServerPayload,
   speculativeNeedsFreshEnqueue,
   storageDimensionsForImage,
-  storageSourceForImage
+  storageSourceForImage,
+  syncAssetGenerationTimingFromServer
 };
 
 function buildAssets() {
@@ -2869,7 +2935,6 @@ async function processTitles() {
     while (queue.length) {
       const asset = queue.shift();
       state.activeAssetIndexes.add(asset.index);
-      markAssetStarted(asset);
       setAssetProgress(asset.index, "进入识别队列", 0.03);
       renderResults();
 
@@ -3069,6 +3134,7 @@ function finalTitleFromV4Session(session = {}) {
 }
 
 function applyV4AssistedDraftUpdate(result = {}, session = {}) {
+  syncAssetGenerationTimingFromServer(result.index, session);
   const summary = session.provider_result_summary || {};
   const finalTitle = finalTitleFromV4Session(session);
   const l2Ready = session.l2_status === "READY" && Boolean(finalTitle);
@@ -3263,6 +3329,7 @@ function queuedJobFailureReason(job = {}) {
 }
 
 function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
+  syncAssetGenerationTimingFromServer(result.index, job);
   result.v4_job_status = job.status || result.v4_job_status || "QUEUED";
   result.v4_job_timing = job.timing || result.v4_job_timing || {};
   result.timing = {

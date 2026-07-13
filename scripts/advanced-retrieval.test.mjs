@@ -395,7 +395,13 @@ const candidateContext = buildCandidateContextSummary({
       status: "OK",
       latency_ms: 12,
       attempt_count: 2,
-      features: [{ image_id: "front" }]
+      features: [{ image_id: "front" }],
+      stage_capacity: {
+        coordinated: true,
+        acquired: true,
+        released: true,
+        slot: 2
+      }
     },
     promptPacket: false
   },
@@ -413,6 +419,7 @@ assert.equal(candidateContext.vector.raw_candidate_count, 2);
 assert.equal(candidateContext.vector.prompt_candidate_count, 0);
 assert.equal(candidateContext.vector.conflict_blocked_count, 2);
 assert.equal(candidateContext.vector.worker_attempt_count, 2);
+assert.equal(candidateContext.vector.stage_capacity.slot, 2);
 assert.equal(candidateContext.invariants.raw_vector_candidates_are_shadow_until_prompt_safe, true);
 
 console.log("advanced retrieval tests passed");

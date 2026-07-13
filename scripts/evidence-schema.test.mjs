@@ -635,6 +635,40 @@ assert.equal(multiCardDocument.evidence.multi_card.status, "CONFIRMED");
 assert.equal(multiCardDocument.evidence.card_count.value, "3");
 assert.doesNotThrow(() => assertValidEvidenceDocument(multiCardDocument));
 
+const certNumberCannotBecomeCardGrade = normalizeResolvedFields({
+  grade_company: "PSA",
+  card_grade: "127928791",
+  cert_number: "127928791"
+});
+assert.equal(certNumberCannotBecomeCardGrade.card_grade, null);
+assert.equal(certNumberCannotBecomeCardGrade.cert_number, "127928791");
+assert.equal(certNumberCannotBecomeCardGrade.grade_type, "UNKNOWN");
+
+const structuredCertCannotBecomeGradeEvidence = providerPayloadToEvidenceDocument({
+  title: "PSA slab requires review",
+  fields: { grade_company: "PSA", cert_number: "127928791" },
+  field_evidence: {
+    card_grade: {
+      value: "127928791",
+      visible_text: "CERT 127928791",
+      source_type: "SLAB_LABEL",
+      source_image_id: "image-1",
+      confidence: 0.98
+    }
+  }
+});
+assert.equal(structuredCertCannotBecomeGradeEvidence.resolved.card_grade, null);
+assert.equal(structuredCertCannotBecomeGradeEvidence.evidence.card_grade, undefined);
+
+const autographGradeCannotBecomeCardGrade = normalizeResolvedFields({
+  grade_company: "BGS",
+  card_grade: "AUTOGRAPH 10",
+  auto_grade: "AUTOGRAPH 10"
+});
+assert.equal(autographGradeCannotBecomeCardGrade.card_grade, null);
+assert.equal(autographGradeCannotBecomeCardGrade.auto_grade, "10");
+assert.equal(autographGradeCannotBecomeCardGrade.grade_type, "AUTO_ONLY");
+
 assert.throws(
   () => assertValidEvidenceDocument({
     evidence: {
