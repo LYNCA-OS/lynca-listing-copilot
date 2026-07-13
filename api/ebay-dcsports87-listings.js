@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { ebayBrowseProvider } from "../lib/listing/retrieval/ebay-browse-provider.mjs";
+import {
+  ebayBrowseProvider,
+  normalizeEbaySellerUsername
+} from "../lib/listing/retrieval/ebay-browse-provider.mjs";
 import {
   filterSportsCardListings,
   sportsCardFilterVersion
@@ -89,9 +92,9 @@ function queryBoolean(value) {
   return /^(?:1|true|yes)$/i.test(String(value || ""));
 }
 
-function sellerFilterMatchesExpected(env = {}, expectedSeller = defaultSeller) {
-  const filter = normalizeSeller(env.EBAY_BROWSE_FILTER || "");
-  return filter.includes("sellers:") && filter.includes(normalizeSeller(expectedSeller));
+function providerSellerFilterMatchesExpected(result = {}, expectedSeller = defaultSeller) {
+  return result.seller_filter_applied === true
+    && normalizeSeller(result.seller_filter_seller) === normalizeSeller(expectedSeller);
 }
 
 function imageUrlsFromCandidate(candidate = {}) {
@@ -223,9 +226,11 @@ function publicProviderError(error) {
   };
 }
 
-export function createEbayDcsports87ListingsHandler({
+export function createEbaySellerListingsHandler({
   providerFactory = ebayBrowseProvider,
-  env = process.env
+  env = process.env,
+  allowSellerOverride = false,
+  requireSeller = false
 } = {}) {
   return async function handler(req, res) {
     if (req.method !== "GET") {
@@ -242,7 +247,7 @@ export function createEbayDcsports87ListingsHandler({
     }
 
     if (!enforceApiRateLimit(req, res, {
-      scope: "ebay_dcsports87_listings",
+      scope: "ebay_seller_listings",
       limit: 60,
       windowMs: 60_000,
       message: "Too many eBay listing smoke requests. Please try again shortly."
@@ -256,8 +261,20 @@ export function createEbayDcsports87ListingsHandler({
     const query = String(firstQueryValue(url.searchParams.get("q")) || env.EBAY_BROWSE_SMOKE_QUERY || "card").trim() || "card";
     const categoryIds = normalizeCategoryIds(firstQueryValue(url.searchParams.get("category_ids")) || env.EBAY_BROWSE_CATEGORY_IDS || "");
     const providerLimit = boundedProviderLimit(sportsOnly ? Math.max(limit * 3, limit + 20) : limit);
-    const expectedSeller = normalizeSeller(env.EBAY_SELLER_USERNAME || defaultSeller);
-    const filterMatchesExpected = sellerFilterMatchesExpected(env, expectedSeller);
+    const requestedSeller = allowSellerOverride
+      ? String(firstQueryValue(url.searchParams.get("seller")) || "").trim()
+      : "";
+    if (requireSeller && !requestedSeller) {
+      sendJson(res, 400, { ok: false, message: "seller is required" });
+      return;
+    }
+    const configuredSeller = requestedSeller || env.EBAY_SELLER_USERNAME || defaultSeller;
+    const validSeller = normalizeEbaySellerUsername(configuredSeller);
+    if (!validSeller) {
+      sendJson(res, 400, { ok: false, message: "Invalid eBay seller username" });
+      return;
+    }
+    const expectedSeller = normalizeSeller(validSeller);
     const provider = providerFactory({ env });
 
     try {
@@ -267,7 +284,8 @@ export function createEbayDcsports87ListingsHandler({
           query,
           offset,
           limit: providerLimit,
-          category_ids: categoryIds
+          category_ids: categoryIds,
+          seller_username: validSeller
         }
       });
 
@@ -281,6 +299,7 @@ export function createEbayDcsports87ListingsHandler({
       }
 
       const rawCandidates = Array.isArray(result.candidates) ? result.candidates : [];
+      const filterMatchesExpected = providerSellerFilterMatchesExpected(result, expectedSeller);
       const detailResult = await detailEnrichedListings(provider, rawCandidates);
       const enrichedListings = detailResult.listings;
       const sellerListings = enrichedListings
@@ -319,7 +338,7 @@ export function createEbayDcsports87ListingsHandler({
         category_ids: categoryIds,
         sports_only: sportsOnly,
         sports_filter_version: sportsCardFilterVersion,
-        seller_filter_configured: Boolean(env.EBAY_BROWSE_FILTER),
+        seller_filter_configured: filterMatchesExpected,
         seller_filter_matches_expected: filterMatchesExpected,
         requested_limit: limit,
         provider_requested_limit: providerLimit,
@@ -353,4 +372,6 @@ export function createEbayDcsports87ListingsHandler({
   };
 }
 
-export default createEbayDcsports87ListingsHandler();
+export const createEbayDcsports87ListingsHandler = createEbaySellerListingsHandler;
+
+export default createEbaySellerListingsHandler();

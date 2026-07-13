@@ -1064,6 +1064,8 @@ const ebay = ebayBrowseProvider({
     assert.equal(requestUrl.pathname, "/buy/browse/v1/item_summary/search");
     assert.equal(requestUrl.searchParams.get("q"), "\"TCAR-CF\" \"Cooper Flagg\"");
     assert.equal(requestUrl.searchParams.get("limit"), "2");
+    assert.equal(requestUrl.searchParams.get("category_ids"), "212");
+    assert.equal(requestUrl.searchParams.get("filter"), "sellers:{The-Poke-Store}");
     assert.equal(options.headers.authorization, "Bearer test-access-token");
     assert.equal(options.headers["x-ebay-c-marketplace-id"], "EBAY_US");
     return jsonResponse({
@@ -1072,6 +1074,10 @@ const ebay = ebayBrowseProvider({
       itemSummaries: [
         {
           itemId: "v1|123|0",
+          seller: {
+            username: "The-Poke-Store",
+            userId: "immutable-seller-id"
+          },
           title: "2025 Topps Chrome Cooper Flagg TCAR-CF Market Reference",
           itemWebUrl: "https://www.ebay.com/itm/123",
           image: {
@@ -1104,7 +1110,9 @@ const ebay = ebayBrowseProvider({
 const ebayResult = await ebay.search({
   query: {
     query_id: "ebay_unit_1",
-    query: "\"TCAR-CF\" \"Cooper Flagg\""
+    query: "\"TCAR-CF\" \"Cooper Flagg\"",
+    seller_username: "The-Poke-Store",
+    category_ids: "212"
   }
 });
 assert.equal(ebayResult.provider_id, retrievalProviderIds.EBAY_BROWSE);
@@ -1113,6 +1121,10 @@ assert.equal(ebayResult.more_results_available, true);
 assert.equal(ebayResult.candidates[0].source_type, "MARKETPLACE");
 assert.equal(ebayResult.candidates[0].trust_tier, 8);
 assert.equal(ebayResult.candidates[0].fields.marketplace_id, "EBAY_US");
+assert.equal(ebayResult.seller_filter_applied, true);
+assert.equal(ebayResult.seller_filter_seller, "the-poke-store");
+assert.equal(ebayResult.candidates[0].fields.marketplace_seller_username, "The-Poke-Store");
+assert.equal(ebayResult.candidates[0].fields.marketplace_seller_user_id, "immutable-seller-id");
 assert.equal(ebayResult.candidates[0].fields.marketplace_image_url, "https://i.ebayimg.com/images/g/front.jpg");
 assert.deepEqual(ebayResult.candidates[0].fields.marketplace_image_urls, [
   "https://i.ebayimg.com/images/g/front.jpg",
@@ -1121,11 +1133,24 @@ assert.deepEqual(ebayResult.candidates[0].fields.marketplace_image_urls, [
 await ebay.search({
   query: {
     query_id: "ebay_unit_2",
-    query: "\"TCAR-CF\" \"Cooper Flagg\""
+    query: "\"TCAR-CF\" \"Cooper Flagg\"",
+    seller_username: "The-Poke-Store",
+    category_ids: "212"
   }
 });
 assert.equal(ebayTokenCalls, 1);
 assert.equal(ebayBrowseCalls, 2);
+
+await assert.rejects(
+  () => ebay.search({
+    query: {
+      query_id: "ebay_invalid_seller",
+      query: "card",
+      seller_username: "seller},price:[0..1]"
+    }
+  }),
+  (error) => error.code === "ebay_invalid_seller"
+);
 
 const ebayMissingCredentials = await ebayBrowseProvider({
   env: {},

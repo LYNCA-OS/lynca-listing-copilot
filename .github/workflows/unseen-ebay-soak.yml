@@ -6,6 +6,9 @@ on:
       limit:
         description: "Maximum unseen eBay cards (1-100)"
         default: "100"
+      seller:
+        description: "Strictly filtered eBay seller username"
+        default: "dcsports87"
       model:
         description: "Production model"
         default: "gpt-5-mini"
@@ -105,6 +108,7 @@ jobs:
             --base-url https://listing.lyncafei.team \
             --out-dir /tmp/unseen-blind \
             --run-id unseen-soak \
+            --seller "${{ inputs.seller }}" \
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
             --sample-mode fresh_generalization \

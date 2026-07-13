@@ -9,6 +9,9 @@ on:
       limit:
         description: "Fresh cards to run"
         default: "3"
+      seller:
+        description: "Strictly filtered eBay seller username (rotate for fresh generalization)"
+        default: "dcsports87"
       model:
         description: "Model override"
         default: "gpt-5-mini"
@@ -83,6 +86,7 @@ jobs:
             --base-url "$API_BASE_URL" \
             --out-dir "$BLIND_DIR" \
             --run-id "$RUN_ID" \
+            --seller "${{ inputs.seller }}" \
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
             --sample-mode fresh_generalization \

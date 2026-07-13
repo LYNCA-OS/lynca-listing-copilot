@@ -185,6 +185,8 @@ const detailFallbackHandler = createEbayDcsports87ListingsHandler({
     search: async () => ({
       provider_id: "ebay_browse",
       marketplace_id: "EBAY_US",
+      seller_filter_applied: true,
+      seller_filter_seller: "dcsports87",
       total: 1,
       candidates: [{
         source_url: "https://www.ebay.com/itm/detail",
@@ -239,6 +241,8 @@ const maskedSellerHandler = createEbayDcsports87ListingsHandler({
     search: async () => ({
       provider_id: "ebay_browse",
       marketplace_id: "EBAY_US",
+      seller_filter_applied: true,
+      seller_filter_seller: "dcsports87",
       total: 1,
       candidates: [{
         source_url: "https://www.ebay.com/itm/masked",
@@ -276,6 +280,8 @@ const sellerFilterMissingSellerHandler = createEbayDcsports87ListingsHandler({
     search: async () => ({
       provider_id: "ebay_browse",
       marketplace_id: "EBAY_US",
+      seller_filter_applied: true,
+      seller_filter_seller: "dcsports87",
       total: 1,
       candidates: [{
         source_url: "https://www.ebay.com/itm/filter-only",
@@ -299,6 +305,64 @@ assert.equal(response.body.returned_count, 1);
 assert.equal(response.body.listings[0].seller, "dcsports87");
 assert.equal(response.body.listings[0].seller_verification, "EBAY_SELLER_FILTER");
 assert.equal(response.body.listings[0].marketplace_seller_alias, "");
+const dcsportsPayload = response.body;
+
+let dynamicSellerQuery = null;
+const dynamicSellerHandler = createEbayDcsports87ListingsHandler({
+  env: {
+    METAVERSE_AUTH_SECRET: secret,
+    EBAY_MARKETPLACE_ID: "EBAY_US"
+  },
+  allowSellerOverride: true,
+  requireSeller: true,
+  providerFactory: () => ({
+    search: async ({ query }) => {
+      dynamicSellerQuery = query;
+      return {
+        provider_id: "ebay_browse",
+        marketplace_id: "EBAY_US",
+        seller_filter_applied: true,
+        seller_filter_seller: "the-poke-store",
+        total: 1,
+        candidates: [{
+          source_url: "https://www.ebay.com/itm/dynamic",
+          title: "Dynamic Seller Card",
+          fields: {
+            marketplace_item_id: "v1|dynamic|0",
+            marketplace_id: "EBAY_US",
+            marketplace_image_urls: ["https://i.ebayimg.com/images/dynamic.jpg"]
+          }
+        }]
+      };
+    }
+  })
+});
+response = await call(dynamicSellerHandler, {
+  method: "GET",
+  headers: { cookie: sessionCookie(secret), host: "example.test" },
+  url: "/api/ebay-seller-listings?limit=1&seller=The-Poke-Store"
+});
+assert.equal(response.statusCode, 200);
+assert.equal(response.body.returned_count, 1);
+assert.equal(response.body.seller, "the-poke-store");
+assert.equal(response.body.listings[0].seller_verification, "EBAY_SELLER_FILTER");
+assert.equal(dynamicSellerQuery.seller_username, "The-Poke-Store");
+
+response = await call(dynamicSellerHandler, {
+  method: "GET",
+  headers: { cookie: sessionCookie(secret), host: "example.test" },
+  url: "/api/ebay-seller-listings?limit=1"
+});
+assert.equal(response.statusCode, 400);
+assert.match(response.body.message, /seller is required/);
+
+response = await call(dynamicSellerHandler, {
+  method: "GET",
+  headers: { cookie: sessionCookie(secret), host: "example.test" },
+  url: "/api/ebay-seller-listings?limit=1&seller=bad%7D%2Cprice%3A%5B0..1%5D"
+});
+assert.equal(response.statusCode, 400);
+assert.match(response.body.message, /Invalid eBay seller/);
 
 assert.equal(normalizeBaseUrl("https://example.com/"), "https://example.com");
 assert.throws(() => normalizeBaseUrl(""), /API_BASE_URL/);
@@ -310,7 +374,7 @@ assert.deepEqual(optionalProtectionHeaders({
   authorization: "Bearer token"
 });
 
-const summary = validateListingsPayload(response.body);
+const summary = validateListingsPayload(dcsportsPayload);
 assert.equal(summary.listing_count, 1);
 assert.equal(summary.seller, "dcsports87");
 assert.throws(() => validateListingsPayload({

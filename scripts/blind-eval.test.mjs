@@ -287,6 +287,51 @@ await withTempDir(async (dir) => {
 
 await withTempDir(async (dir) => {
   let listingsRequest = null;
+  const fetchImpl = async (url) => {
+    const parsed = /^https?:/i.test(url) ? new URL(url) : null;
+    const path = parsed ? parsed.pathname : url;
+    if (path === "/api/login") {
+      return jsonResponse(200, { ok: true }, { "set-cookie": "lynca_metaverse_session=test; Path=/" });
+    }
+    if (path === "/api/ebay-seller-listings") {
+      listingsRequest = parsed;
+      return jsonResponse(200, {
+        ok: true,
+        seller: "the-poke-store",
+        marketplace_id: "EBAY_US",
+        listings: [{
+          seller: "the-poke-store",
+          item_id: "alternate-seller-item",
+          item_web_url: "https://www.ebay.com/itm/alternate-seller-item",
+          title: "Pokemon Pikachu Holo PSA 10",
+          image_urls: ["https://i.ebayimg.test/alternate.jpg"]
+        }]
+      });
+    }
+    if (url === "https://i.ebayimg.test/alternate.jpg") {
+      return bytesResponse(200, tinyPng, { "content-type": "image/png" });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const result = await prepareBlindDataset({
+    baseUrl: "https://listing.test",
+    username: "metaverse",
+    password: "mtv",
+    outDir: dir,
+    runId: "alternate-seller-run",
+    expectedSeller: "The-Poke-Store",
+    limit: 1,
+    fetchImpl
+  });
+  assert.equal(result.seller, "the-poke-store");
+  assert.equal(result.listings_endpoint, "/api/ebay-seller-listings");
+  assert.equal(listingsRequest.searchParams.get("seller"), "the-poke-store");
+  const answers = await readJsonl(blindEvalRunPaths({ outDir: dir, runId: "alternate-seller-run" }).answer_key_path);
+  assert.equal(answers[0].seller, "the-poke-store");
+});
+
+await withTempDir(async (dir) => {
+  let listingsRequest = null;
   const fetchImpl = async (url, init = {}) => {
     const parsed = /^https?:/i.test(url) ? new URL(url) : null;
     const path = parsed ? parsed.pathname : url;
