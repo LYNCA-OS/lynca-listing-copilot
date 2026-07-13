@@ -189,6 +189,7 @@ const noNewPatchRefreshLedger = buildPipelineNodeLedger({
 const noNewPatchRefreshNode = noNewPatchRefreshLedger.nodes.find((node) => node.node_id === "preingestion_evidence_refresh");
 assert.equal(noNewPatchRefreshNode.status, "SKIPPED");
 assert.equal(noNewPatchRefreshNode.expected, false);
+assert.equal(noNewPatchRefreshNode.skip_reason, "no_new_ocr_patches");
 assert.equal(noNewPatchRefreshLedger.coverage.missing_required_node_ids.includes("preingestion_evidence_refresh"), false);
 
 const brokenLedger = buildPipelineNodeLedger({

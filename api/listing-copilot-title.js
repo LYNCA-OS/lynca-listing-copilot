@@ -286,9 +286,10 @@ export function preingestionEvidenceRefreshDecision(payload = {}, rendezvous = n
   const settledWithoutWorker = ["NOT_REQUESTED", "UNCONFIGURED"].includes(
     String(rendezvous?.status || "").trim().toUpperCase()
   );
+  const deferredAfterProvider = String(rendezvous?.status || "").trim().toUpperCase() === "DEFERRED_AFTER_PROVIDER";
   const noPatchDelta = rendezvousPatchCount <= loadedPatchCount;
   return {
-    skip: noPatchDelta && (rendezvous?.terminal === true || settledWithoutWorker),
+    skip: noPatchDelta && (rendezvous?.terminal === true || settledWithoutWorker || deferredAfterProvider),
     reason: noPatchDelta ? "no_new_ocr_patches" : "new_ocr_patches_available",
     loaded_patch_count: loadedPatchCount,
     rendezvous_patch_count: rendezvousPatchCount
@@ -5067,6 +5068,10 @@ async function createOpenAiTitle(payload, selection, {
     scheduleBackgroundCompletion(preingestionOcrRendezvousPromise);
   }
   const rendezvousWaitMs = nowMs() - rendezvousWaitStartedAt;
+  if (preingestionOcrRendezvous?.status === "DEFERRED_AFTER_PROVIDER") {
+    preingestionOcrRendezvous.waited_ms = rendezvousWaitMs;
+    preingestionOcrRendezvous.post_provider_wait_ms = rendezvousWaitMs;
+  }
   addTiming(timingContext, "preingestion_ocr_rendezvous_wait_ms", rendezvousWaitMs);
   addTiming(timingContext, "preingestion_ocr_post_provider_budget_ms", ocrPostProviderWaitMs);
   recordNodeSpan(timingContext, {

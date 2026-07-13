@@ -231,6 +231,14 @@ assert.equal(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision(
 }).skip, false, "a timed-out OCR worker may still publish a late patch, so final refresh stays enabled");
 assert.equal(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision({
   preingestion_bundle_id: "bundle-1",
+  preingestion_evidence_patches: [{ field: "serial_number" }]
+}, {
+  status: "DEFERRED_AFTER_PROVIDER",
+  terminal: false,
+  patch_count: 1
+}).skip, true, "writer-deferred OCR must use the current patch snapshot without a second blocking bundle read");
+assert.equal(__listingCopilotTitleTestHooks.preingestionEvidenceRefreshDecision({
+  preingestion_bundle_id: "bundle-1",
   preingestion_evidence_patches: []
 }, {
   status: "TERMINAL",
