@@ -534,6 +534,46 @@ const resolvedOcrOverridePresentation = adaptV2ResultToV4({
 assert.match(resolvedOcrOverridePresentation.final_title, /03\/10/);
 assert.equal(resolvedOcrOverridePresentation.resolved_fields.print_run_number, "03/10");
 
+const verifiedOcrMustBeatDenominatorOnlyEvidence = adaptV2ResultToV4({
+  sessionId: "v4sess-verified-ocr-beats-denominator",
+  result: {
+    confidence: "HIGH",
+    final_title: "2018 Topps Test Player #/5 Auto",
+    resolved_fields: {
+      year: "2018",
+      manufacturer: "Topps",
+      players: ["Test Player"],
+      auto: true,
+      print_run_number: "1/5",
+      print_run_numerator: "1",
+      print_run_denominator: "5",
+      serial_number: "1/5"
+    },
+    normalized_evidence: {
+      print_run_number: {
+        status: "CONFIRMED",
+        normalized_value: "#/5",
+        sources: [{ source_type: "OCR", direct_observation: true }]
+      }
+    },
+    serial_numerator_verified: true,
+    preingestion_serial_verification: {
+      verified: true,
+      value: "1/5",
+      confidence: 0.96
+    },
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.match(
+  verifiedOcrMustBeatDenominatorOnlyEvidence.final_title,
+  /1\/5/,
+  "verified current-image OCR numerator must not regress to denominator-only evidence"
+);
+assert.equal(verifiedOcrMustBeatDenominatorOnlyEvidence.resolved_fields.print_run_number, "1/5");
+
 const v2Result = {
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",
   final_title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",

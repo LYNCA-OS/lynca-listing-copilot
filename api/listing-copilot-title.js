@@ -866,6 +866,25 @@ function applyEvidenceBackedPresentationOverrides(base = {}, evidence = {}) {
   return output;
 }
 
+function applyVerifiedCurrentImagePrintRunOverride(base = {}, result = {}) {
+  if (!base || typeof base !== "object" || Array.isArray(base)) return base;
+  const verification = result.preingestion_serial_verification;
+  if (verification?.verified !== true || !verification.value) return base;
+
+  const verified = expandPrintRunFields({
+    print_run_number: verification.value,
+    serial_number: verification.value
+  });
+  if (!verified.print_run_numerator || !verified.print_run_denominator) return base;
+
+  return {
+    ...base,
+    ...verified,
+    numerical_rarity: verified.print_run_number,
+    serial_number: verified.print_run_number
+  };
+}
+
 function lowMarginSafeFieldOverlay(result = {}) {
   const application = result.low_margin_safe_field_application && typeof result.low_margin_safe_field_application === "object"
     ? result.low_margin_safe_field_application
@@ -1000,10 +1019,17 @@ function finalResolvedFieldsForPresentation(result = {}, {
     withCandidateOverlay,
     result.normalized_evidence || result.evidence || {}
   );
-  if (!Object.keys(withEvidenceOverrides).length) return null;
+  // Evidence normalization may retain a safe denominator-only reading even
+  // after current-image OCR proves the full numerator. Re-apply only the
+  // explicit verified OCR value so `1/5` cannot regress to `#/5` at render.
+  const withVerifiedPrintRun = applyVerifiedCurrentImagePrintRunOverride(
+    withEvidenceOverrides,
+    result
+  );
+  if (!Object.keys(withVerifiedPrintRun).length) return null;
   return enforceAtomicGrade
-    ? enforceAtomicGradeFields(withEvidenceOverrides)
-    : withEvidenceOverrides;
+    ? enforceAtomicGradeFields(withVerifiedPrintRun)
+    : withVerifiedPrintRun;
 }
 
 function applyGradeAtomicGuardToResult(result = {}, resolved = null, gradeAtomic = {}) {
