@@ -26,7 +26,7 @@ import {
   runWithV4JobLeaseHeartbeat,
   v4JobFailureCode
 } from "../api/v4/listing-job-worker.js";
-import { isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
+import { isV4CronRequest, isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import { persistV4WriterReadyAndReleaseCapacity } from "../lib/listing/v4/session/session-store.mjs";
 
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
@@ -658,5 +658,7 @@ assert.ok(reads[0].includes("batch_id=eq.batch-read"));
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "secret" } }, { V4_JOB_WORKER_SECRET: "secret" }), true);
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "wrong" } }, { V4_JOB_WORKER_SECRET: "secret" }), false);
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "secret" } }, {}), false);
+assert.equal(isV4CronRequest({ headers: { authorization: "Bearer cron-secret" } }, { CRON_SECRET: "cron-secret" }), true);
+assert.equal(isV4CronRequest({ headers: { authorization: "Bearer wrong" } }, { CRON_SECRET: "cron-secret" }), false);
 
 console.log("v4 production job queue tests passed");

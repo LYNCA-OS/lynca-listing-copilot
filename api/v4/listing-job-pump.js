@@ -8,6 +8,7 @@ import {
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import {
   configuredWorkerSecret,
+  isV4CronRequest,
   isV4WorkerRequest,
   workerSecretHeader
 } from "../../lib/listing/v4/jobs/worker-auth.mjs";
@@ -25,23 +26,6 @@ function headerValue(req, name) {
   const value = req?.headers?.[lower] ?? req?.headers?.[name];
   if (Array.isArray(value)) return String(value[0] || "").trim();
   return String(value || "").trim();
-}
-
-function constantTimeEquals(left, right) {
-  const a = Buffer.from(String(left || ""));
-  const b = Buffer.from(String(right || ""));
-  if (!a.length || a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
-}
-
-function cronSecret(env = process.env) {
-  return String(env.CRON_SECRET || env.V4_JOB_PUMP_CRON_SECRET || "").trim();
-}
-
-function isCronRequest(req, env = process.env) {
-  const secret = cronSecret(env);
-  if (!secret) return false;
-  return constantTimeEquals(headerValue(req, "authorization"), `Bearer ${secret}`);
 }
 
 function urlFromRequest(req) {
@@ -300,7 +284,7 @@ export default async function handler(req, res) {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  if (!isV4WorkerRequest(req, process.env) && !isCronRequest(req, process.env)) {
+  if (!isV4WorkerRequest(req, process.env) && !isV4CronRequest(req, process.env)) {
     sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized pump" }));
     return;
   }

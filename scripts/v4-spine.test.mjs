@@ -379,6 +379,41 @@ assert.equal(
   "an upstream gate-selected highlighted value must survive the V4 persistence boundary"
 );
 
+const pipelineRetainedConflictSurvivesV4Boundary = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2025-26",
+    product: "Topps Chrome",
+    players: ["Test Player"]
+  },
+  conflict_map: [{ field: "year", severity: "HIGH" }],
+  pipeline_node_ledger: {
+    field_flow: {
+      fields: [{
+        field_group: "year",
+        raw_provider_present: true,
+        resolved_present: true,
+        rendered_present: true,
+        review_flagged: true,
+        disposition: "RETAINED_IN_RESOLUTION"
+      }]
+    }
+  }
+});
+assert.equal(
+  pipelineRetainedConflictSurvivesV4Boundary.year,
+  "2025-26",
+  "V4 must not re-adjudicate a conflict after the upstream resolver retained and rendered it"
+);
+const pipelineRetainedConflictState = buildV4FieldStates({
+  resolved_fields: pipelineRetainedConflictSurvivesV4Boundary,
+  conflict_map: [{ field: "year", severity: "HIGH" }]
+});
+assert.equal(
+  pipelineRetainedConflictState.year.display_status,
+  "CONFLICT",
+  "a retained value remains highlighted for writer review instead of being silently erased"
+);
+
 const nullRendererScaffoldDoesNotEraseResolvedValue = buildV4ResolvedFields({
   resolved_fields: {
     year: "2025",

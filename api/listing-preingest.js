@@ -243,7 +243,10 @@ export default async function handler(req, res) {
       waitUntil(processQueuedPreingestionOcrJobs({
         assetId,
         bundleId: durableBundle.bundle_id,
-        limit: 32,
+        // Writer-critical hard text gets the first wave. Context crops are
+        // durable background work and must not occupy serial/grade capacity.
+        limit: 6,
+        anchorOnly: true,
         env: process.env,
         fetchImpl: globalThis.fetch
       }).catch(() => {}));

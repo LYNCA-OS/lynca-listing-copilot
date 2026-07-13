@@ -97,6 +97,7 @@ assert.equal(response.body.execution_control.per_key_stable_concurrency, 2);
 assert.equal(response.body.execution_control.global_provider_concurrency, 2, "multiple keys must not silently exceed the measured production knee");
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.capacity_control_enabled, false);
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.global_capacity, 8);
+assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.per_asset_capacity, 2);
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.anchor_concurrency, 6);
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.detail_concurrency, 2);
 assert.equal(response.body.execution_control.stage_capacity.catalog.capacity_control_enabled, false);

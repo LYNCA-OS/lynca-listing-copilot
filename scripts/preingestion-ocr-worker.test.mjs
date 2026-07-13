@@ -4,6 +4,7 @@ import {
   bundlePatchesFromOcrResult,
   claimQueuedPreingestionOcrJobs,
   fairOcrAnchorJobOrder,
+  fairOcrClaimOrder,
   ocrConfidenceForFieldValue,
   ocrRequestForPreingestionJob,
   processQueuedPreingestionOcrJobs,
@@ -75,6 +76,20 @@ const fairAnchorOrder = fairOcrAnchorJobOrder([
 ]);
 assert.deepEqual(fairAnchorOrder.slice(0, 3).map((job) => job.job_id), ["serial-1", "grade-1", "code-1"]);
 
+const fairClaimOrder = fairOcrClaimOrder([
+  { job_id: "a-code", asset_id: "asset-a", priority: 10, payload: { crop: { role: "card_code_crop" } } },
+  { job_id: "a-serial", asset_id: "asset-a", priority: 12, payload: { crop: { role: "serial_crop" } } },
+  { job_id: "a-grade", asset_id: "asset-a", priority: 14, payload: { crop: { role: "grade_label_crop" } } },
+  { job_id: "b-code", asset_id: "asset-b", priority: 10, payload: { crop: { role: "card_code_crop" } } },
+  { job_id: "b-serial", asset_id: "asset-b", priority: 12, payload: { crop: { role: "serial_crop" } } },
+  { job_id: "b-grade", asset_id: "asset-b", priority: 14, payload: { crop: { role: "grade_label_crop" } } }
+], { limit: 4, jobsPerAsset: 2 });
+assert.deepEqual(
+  fairClaimOrder.map((job) => job.job_id),
+  ["a-serial", "a-grade", "b-serial", "b-grade"],
+  "global OCR claims must give each card serial and grade work before consuming extra code jobs"
+);
+
 // --- ocrRequestForPreingestionJob maps crop plan into the OCR contract ---
 const request = ocrRequestForPreingestionJob(sampleJob, { imageUrl: "https://signed.test/front.jpg" });
 assert.equal(request.request_id, "ocr:bundle-1:crop-1");
@@ -135,6 +150,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const calls = [];
   const jobs = await claimQueuedPreingestionOcrJobs({
     bundleId: "bundle-1",
+    anchorOnly: true,
     env,
     fetchImpl: async (url, init = {}) => {
       calls.push({ url: String(url), method: init.method || "GET" });
@@ -147,6 +163,8 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   });
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].status, "running");
+  assert.match(calls[0].url, /priority=lte\.14/, "writer-path claims must reserve the first wave for OCR anchors");
+  assert.match(calls[0].url, /limit=32/, "asset-scoped claims must not overfetch global queue rows");
   assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
 }
 

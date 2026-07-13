@@ -356,6 +356,26 @@ const directlyObservedLot = validateProviderEvidencePayload("openai_legacy", {
 assert.equal(directlyObservedLot.fields.multi_card, true);
 assert.equal(directlyObservedLot.fields.card_count, 3);
 
+const pairedViewsAreNotALot = validateProviderEvidencePayload("openai_legacy", {
+  fields: { multi_card: true, card_count: 2, lot_type: "multi_card_lot" },
+  field_evidence: [{
+    field: "multi_card",
+    value: true,
+    source_type: "VISION_ONLY",
+    source_image_id: "image-1",
+    source_region: "card_layout",
+    evidence_kind: "PHYSICAL_CARD_COUNT",
+    visible_text: "1 card in a slab",
+    review_required: true,
+    directly_observed: true,
+    direct_observation: true
+  }],
+  unresolved: []
+});
+assert.equal(pairedViewsAreNotALot.fields.multi_card, false, "two uploaded views of one card must not become Lot x2");
+assert.equal(pairedViewsAreNotALot.fields.card_count, null);
+assert.ok(pairedViewsAreNotALot.unresolved.includes("multi_card"));
+
 const parsedTool = parseProviderMessagePayload({
   tool_calls: [
     {

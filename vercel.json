@@ -71,6 +71,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/v4/listing-preingest-worker",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/listing-storage-retention-cleanup",
       "schedule": "0 9 * * *"
     }

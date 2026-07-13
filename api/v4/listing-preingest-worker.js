@@ -1,7 +1,7 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { cookieName, parseCookies, readSignedSession } from "../../lib/listing-session.mjs";
 import { processQueuedPreingestionOcrJobs } from "../../lib/listing/preingestion/preingestion-ocr-worker.mjs";
-import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { isV4CronRequest, isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -17,7 +17,9 @@ export default async function handler(req, res) {
 
   const cookies = parseCookies(req.headers.cookie);
   const sessionAuthorized = Boolean(readSignedSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET));
-  if (!sessionAuthorized && !isV4WorkerRequest(req, process.env)) {
+  if (!sessionAuthorized
+    && !isV4WorkerRequest(req, process.env)
+    && !isV4CronRequest(req, process.env)) {
     sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
@@ -36,6 +38,7 @@ export default async function handler(req, res) {
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: payload.bundle_id || payload.bundleId || "",
       limit: payload.limit,
+      anchorOnly: payload.anchor_only === true || payload.anchorOnly === true,
       env: process.env,
       fetchImpl: globalThis.fetch
     });
