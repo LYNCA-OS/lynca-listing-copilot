@@ -461,6 +461,7 @@ async function persistCatalogGapForRows({
         catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
         vector_activation_funnel: rows.candidateTrace.vector_activation_funnel,
         low_margin_safe_field_application: rows.candidateTrace.low_margin_safe_field_application || null,
+        selected_candidate_safe_field_application: rows.candidateTrace.selected_candidate_safe_field_application || null,
         selected_candidate_verifier: rows.candidateTrace.selected_candidate_verifier || null
       },
       draft_title: titleFromResult(result)
@@ -492,6 +493,7 @@ async function persistV4NonCriticalArtifacts({
         catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
         vector_activation_funnel: rows.candidateTrace.vector_activation_funnel,
         low_margin_safe_field_application: rows.candidateTrace.low_margin_safe_field_application || null,
+        selected_candidate_safe_field_application: rows.candidateTrace.selected_candidate_safe_field_application || null,
         selected_candidate_verifier: rows.candidateTrace.selected_candidate_verifier || null
       },
       draft_title: titleFromResult(result)

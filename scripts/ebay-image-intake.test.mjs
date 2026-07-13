@@ -82,6 +82,32 @@ try {
   assert.match(sealedText, /Tiger Stripe/);
   assert.match(sealedText, /use_after_prediction_for_eval_only/);
 
+  await writeFile(
+    path.join(runRoot, "blind_dataset_manifest.json"),
+    `${JSON.stringify({
+      evaluation_sample_policy: buildEvaluationSamplePolicy({
+        mode: "CONCURRENCY_FRESH",
+        excludedItemIds: ["prior-item"],
+        selectedItemIds: ["v1|secret-title|0"],
+        exclusionSourceCount: 1
+      })
+    })}\n`
+  );
+  const pairedBuild = await buildEbayImageIntakeDataset({
+    argv: [
+      "--blind-dir", tmpDir,
+      "--run-ids", runId,
+      "--out", path.join(tmpDir, "paired-image-intake.json"),
+      "--sealed-labels-out", path.join(tmpDir, "paired-sealed-labels.jsonl")
+    ],
+    now: new Date("2026-07-01T00:00:30.000Z")
+  });
+  assert.equal(pairedBuild.dataset.evaluation_sample_policy.mode, "CONCURRENCY_FRESH");
+  assert.equal(pairedBuild.dataset.evaluation_sample_policy.novelty_verified, true);
+  assert.equal(pairedBuild.dataset.evaluation_sample_policy.sample_reuse_permitted, true);
+  assert.equal(pairedBuild.dataset.evaluation_sample_policy.same_sample_required, true);
+  assert.equal(pairedBuild.dataset.evaluation_sample_policy.cross_wave_overlap_permitted, true);
+
   const gapPath = path.join(tmpDir, "gap-queue.json");
   const gapReport = await buildCatalogGapQueueFromImageIntake({
     argv: ["--dataset", datasetPath, "--out", gapPath],

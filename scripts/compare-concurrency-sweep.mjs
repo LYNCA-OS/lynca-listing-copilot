@@ -128,6 +128,8 @@ function resultErrorText(results = []) {
 }
 
 function sampleSignature(report = {}, attemptedCount = 0) {
+  const evaluatedHash = normalizeText(report.evaluation_sample_policy?.evaluated_item_ids_sha256);
+  if (evaluatedHash) return `${evaluatedHash}|${Number(report.limit || attemptedCount || 0)}`;
   return [
     normalizeText(report.dataset_path),
     Number(report.offset || 0),
@@ -142,6 +144,10 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
   const provider = summary.provider_diagnostics || summary.usage_totals || {};
   const nodeSummary = summary.pipeline_node_observability || {};
   const integrity = summary.production_integrity || null;
+  const positionFairness = summary.batch_position_fairness || {};
+  const frontHalf = positionFairness.front_half || {};
+  const backHalf = positionFairness.back_half || {};
+  const positionDelta = positionFairness.back_minus_front || {};
   const attemptedCount = numberOrZero(summary.attempted_count);
   const okCount = numberOrZero(summary.ok_count ?? summary.provider_success_count);
   const policyPass72 = numberOrZero(accuracy.policy_fair_pass_at_0_72 ?? summary.pass_at_0_72_count);
@@ -172,6 +178,8 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
     resumed_batch: resumedBatch,
     throughput_measurement_valid: !resumedBatch,
     sample_signature: sampleSignature(report, attemptedCount),
+    evaluation_sample_mode: normalizeText(report.evaluation_sample_policy?.mode).toUpperCase() || null,
+    evaluated_item_ids_sha256: normalizeText(report.evaluation_sample_policy?.evaluated_item_ids_sha256) || null,
     dataset_path: normalizeText(report.dataset_path) || null,
     offset: numberOrZero(report.offset),
     limit: numberOrZero(report.limit || attemptedCount),
@@ -239,6 +247,27 @@ export function metricRow(report = {}, path = "", concurrencyOverride = null) {
     ocr_stage_capacity_wait_p95_ms: numberOrNull(summary.preingestion_ocr?.stage_capacity_wait_p95_ms),
     ocr_stage_capacity_deferred_count: numberOrZero(summary.preingestion_ocr?.stage_capacity_deferred_count),
     ocr_peak_local_active_p95: numberOrNull(summary.preingestion_ocr?.peak_local_active_p95),
+    front_half_card_count: numberOrZero(frontHalf.attempted_count),
+    back_half_card_count: numberOrZero(backHalf.attempted_count),
+    front_half_technical_success_rate: numberOrNull(frontHalf.technical_success_rate),
+    back_half_technical_success_rate: numberOrNull(backHalf.technical_success_rate),
+    back_minus_front_technical_success_rate: numberOrNull(positionDelta.technical_success_rate),
+    front_half_ocr_attempted_count: numberOrZero(frontHalf.ocr_attempted_count),
+    back_half_ocr_attempted_count: numberOrZero(backHalf.ocr_attempted_count),
+    front_half_ocr_terminal_rate: numberOrNull(frontHalf.ocr_terminal_rate),
+    back_half_ocr_terminal_rate: numberOrNull(backHalf.ocr_terminal_rate),
+    back_minus_front_ocr_terminal_rate: numberOrNull(positionDelta.ocr_terminal_rate),
+    front_half_grade_ocr_card_count: numberOrZero(frontHalf.grade_ocr_card_count),
+    back_half_grade_ocr_card_count: numberOrZero(backHalf.grade_ocr_card_count),
+    front_half_grade_ocr_succeeded_rate: numberOrNull(frontHalf.grade_ocr_succeeded_rate),
+    back_half_grade_ocr_succeeded_rate: numberOrNull(backHalf.grade_ocr_succeeded_rate),
+    back_minus_front_grade_ocr_succeeded_rate: numberOrNull(positionDelta.grade_ocr_succeeded_rate),
+    front_half_grade_reference_expected_count: numberOrZero(frontHalf.grade_reference_expected_count),
+    back_half_grade_reference_expected_count: numberOrZero(backHalf.grade_reference_expected_count),
+    front_half_grade_reference_preservation_rate: numberOrNull(frontHalf.grade_reference_preservation_rate),
+    back_half_grade_reference_preservation_rate: numberOrNull(backHalf.grade_reference_preservation_rate),
+    back_minus_front_grade_reference_preservation_rate: numberOrNull(positionDelta.grade_reference_preservation_rate),
+    grade_reference_omission_count: numberOrZero(summary.preingestion_ocr?.grade_reference_omission_count),
     catalog_stage_capacity_control_observed_count: numberOrZero(summary.evidence_stage_capacity?.catalog?.controlled_count),
     catalog_stage_capacity_acquired_count: numberOrZero(summary.evidence_stage_capacity?.catalog?.acquired_count),
     catalog_stage_capacity_deferred_count: numberOrZero(summary.evidence_stage_capacity?.catalog?.deferred_count),
@@ -319,10 +348,19 @@ function samplesArePaired(row = {}, baseline = {}) {
   return Boolean(row.sample_signature && row.sample_signature === baseline.sample_signature);
 }
 
-export function evaluateRow(row = {}, baseline = {}, { qualityTolerance = 0.03 } = {}) {
+export function evaluateRow(row = {}, baseline = {}, {
+  qualityTolerance = 0.03,
+  minimumPositionCohortCards = 2,
+  maximumBackHalfOcrTerminalDrop = 0.15,
+  maximumBackHalfGradeOcrDrop = 0.15,
+  maximumBackHalfGradePreservationDrop = 0.2
+} = {}) {
   const rejectionReasons = [];
   const warningReasons = [];
   const paired = samplesArePaired(row, baseline);
+  if (row.evaluation_sample_mode === "CONCURRENCY_FRESH" && !paired) {
+    rejectionReasons.push("UNPAIRED_CONCURRENCY_SAMPLE");
+  }
   if (row.attempted_count <= 0) rejectionReasons.push("NO_ATTEMPTED_CARDS");
   if (row.throughput_measurement_valid !== true) rejectionReasons.push("RESUMED_BATCH_NOT_CAPACITY_MEASUREMENT");
   if (row.ok_count !== row.attempted_count) rejectionReasons.push("TECHNICAL_SUCCESS_NOT_100_PERCENT");
@@ -379,6 +417,31 @@ export function evaluateRow(row = {}, baseline = {}, { qualityTolerance = 0.03 }
   if (row.node_warning_count > 0) warningReasons.push("NODE_RECONCILIATION_WARNING");
   if (row.ocr_timeout_count > 0 || row.ocr_worker_timeout_count > 0) rejectionReasons.push("OCR_TIMEOUT_PRESENT");
   if (row.ocr_stage_capacity_deferred_count > 0) warningReasons.push("OCR_STAGE_CAPACITY_DEFERRED_WORK");
+  if (row.front_half_card_count >= minimumPositionCohortCards
+    && row.back_half_card_count >= minimumPositionCohortCards
+    && row.back_minus_front_technical_success_rate !== null
+    && row.back_minus_front_technical_success_rate < 0) {
+    rejectionReasons.push("BACK_HALF_TECHNICAL_SUCCESS_REGRESSION");
+  }
+  if (row.front_half_ocr_attempted_count >= minimumPositionCohortCards
+    && row.back_half_ocr_attempted_count >= minimumPositionCohortCards
+    && row.back_minus_front_ocr_terminal_rate !== null
+    && row.back_minus_front_ocr_terminal_rate < -maximumBackHalfOcrTerminalDrop) {
+    rejectionReasons.push("BACK_HALF_OCR_TERMINAL_REGRESSION");
+  }
+  if (row.front_half_grade_ocr_card_count >= minimumPositionCohortCards
+    && row.back_half_grade_ocr_card_count >= minimumPositionCohortCards
+    && row.back_minus_front_grade_ocr_succeeded_rate !== null
+    && row.back_minus_front_grade_ocr_succeeded_rate < -maximumBackHalfGradeOcrDrop) {
+    rejectionReasons.push("BACK_HALF_GRADE_OCR_REGRESSION");
+  }
+  if (row.front_half_grade_reference_expected_count >= minimumPositionCohortCards
+    && row.back_half_grade_reference_expected_count >= minimumPositionCohortCards
+    && row.back_minus_front_grade_reference_preservation_rate !== null
+    && row.back_minus_front_grade_reference_preservation_rate < -maximumBackHalfGradePreservationDrop) {
+    rejectionReasons.push("BACK_HALF_GRADE_PRESERVATION_REGRESSION");
+  }
+  if (row.grade_reference_omission_count > 0) warningReasons.push("GRADE_REFERENCE_OMISSION_OBSERVED");
   if (row.catalog_stage_capacity_release_missing_count > 0) rejectionReasons.push("CATALOG_STAGE_CAPACITY_RELEASE_MISSING");
   if (row.vector_stage_capacity_release_missing_count > 0) rejectionReasons.push("VECTOR_STAGE_CAPACITY_RELEASE_MISSING");
   if (row.catalog_stage_capacity_deferred_count > 0) warningReasons.push("CATALOG_STAGE_CAPACITY_DEFERRED_WORK");
@@ -496,7 +559,11 @@ export async function compareConcurrencySweep({
       technical_success_required: 1,
       retries_allowed: 0,
       node_reconciliation_errors_allowed: 0,
-      missing_required_nodes_allowed: 0
+      missing_required_nodes_allowed: 0,
+      back_half_technical_success_regression_allowed: 0,
+      maximum_back_half_ocr_terminal_drop: 0.15,
+      maximum_back_half_grade_ocr_drop: 0.15,
+      maximum_back_half_grade_preservation_drop: 0.2
     },
     selection_trace: selection.trace,
     rows: evaluated
@@ -533,6 +600,11 @@ export async function main(argv = process.argv) {
       `provider_p95=${row.provider_latency_p95_ms ?? "n/a"}ms`,
       `retrieval_deadline_p95=${row.post_observation_retrieval_deadline_p95_ms ?? "n/a"}ms`,
       `retrieval_deferred=${row.post_observation_retrieval_deferred_card_count}/${row.attempted_count}`,
+      `back_half_technical_delta=${row.back_minus_front_technical_success_rate ?? "n/a"}`,
+      `back_half_ocr_terminal_delta=${row.back_minus_front_ocr_terminal_rate ?? "n/a"}`,
+      `back_half_grade_ocr_delta=${row.back_minus_front_grade_ocr_succeeded_rate ?? "n/a"}`,
+      `back_half_grade_preservation_delta=${row.back_minus_front_grade_reference_preservation_rate ?? "n/a"}`,
+      `grade_omissions=${row.grade_reference_omission_count}`,
       `bottleneck=${row.bottleneck_node_id ?? "n/a"}:${row.bottleneck_node_p95_ms ?? "n/a"}ms`,
       `request_headroom=${row.request_headroom_min_ratio ?? "n/a"}`,
       `token_headroom=${row.token_headroom_min_ratio ?? "n/a"}`,

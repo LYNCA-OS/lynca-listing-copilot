@@ -2531,6 +2531,114 @@ function summarizePipelineNodeLedgers(results = []) {
   };
 }
 
+const evaluationGradeCompanyPattern = "PSA|BGS|BECKETT|CGC|SGC|TAG|CCIC|GTBC|BGN";
+
+function referenceGradeExpectation(item = {}) {
+  const reference = cleanText(item.reference_title || item.reviewed_title || item.seller_title);
+  if (!reference) return null;
+  const match = reference.match(new RegExp(
+    `\\b(${evaluationGradeCompanyPattern})\\s+(?:(?:GEM|MINT|PRISTINE|NM-MT|NM|MT)\\s+)*(\\d{1,2}(?:\\.\\d)?|AUTH(?:ENTIC)?)\\b`,
+    "i"
+  ));
+  if (!match) return null;
+  return {
+    company: cleanText(match[1]).toUpperCase() === "BECKETT" ? "BGS" : cleanText(match[1]).toUpperCase(),
+    grade: cleanText(match[2]).toUpperCase().replace(/^AUTHENTIC$/, "AUTH")
+  };
+}
+
+function gradeExpectationPreserved(item = {}, expectation = null) {
+  if (!expectation) return null;
+  const fields = item.resolved_fields && typeof item.resolved_fields === "object"
+    ? item.resolved_fields
+    : {};
+  const fieldCompanyRaw = cleanText(fields.grade_company).toUpperCase();
+  const fieldCompany = fieldCompanyRaw === "BECKETT" ? "BGS" : fieldCompanyRaw;
+  const fieldGrade = cleanText(fields.card_grade || fields.grade).toUpperCase().replace(/^AUTHENTIC$/, "AUTH");
+  if (fieldCompany === expectation.company && fieldGrade === expectation.grade) return true;
+  const title = cleanText(item.final_title).toUpperCase().replace(/BECKETT/g, "BGS");
+  if (!title) return false;
+  const escapedGrade = expectation.grade.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${expectation.company}\\s+(?:(?:GEM|MINT|PRISTINE|NM-MT|NM|MT)\\s+)*${escapedGrade}\\b`, "i")
+    .test(title);
+}
+
+function positionCohortMetrics(rows = []) {
+  const ocrRows = rows.filter((item) => Number(item.preingestion_ocr_rendezvous?.job_count || 0) > 0);
+  const gradeOcrRows = rows.filter((item) => Number(item.preingestion_ocr_rendezvous?.grade_label_job_count || 0) > 0);
+  const gradeReferenceRows = rows
+    .map((item) => ({ item, expectation: referenceGradeExpectation(item) }))
+    .filter((entry) => entry.expectation);
+  const gradePreservedCount = gradeReferenceRows.filter(({ item, expectation }) => (
+    gradeExpectationPreserved(item, expectation) === true
+  )).length;
+  return {
+    attempted_count: rows.length,
+    technical_success_count: rows.filter((item) => item.ok === true).length,
+    technical_success_rate: rows.length
+      ? Number((rows.filter((item) => item.ok === true).length / rows.length).toFixed(6))
+      : null,
+    writer_ready_count: rows.filter((item) => item.writer_ready === true).length,
+    writer_ready_p95_ms: quantile(rows.map((item) => item.time_to_writer_ready_ms), 0.95),
+    scheduler_queue_wait_p95_ms: quantile(rows.map((item) => item.scheduler_queue_wait_ms ?? item.worker_queue_wait_ms), 0.95),
+    ocr_attempted_count: ocrRows.length,
+    ocr_terminal_count: ocrRows.filter((item) => item.preingestion_ocr_rendezvous?.terminal === true).length,
+    ocr_terminal_rate: ocrRows.length
+      ? Number((ocrRows.filter((item) => item.preingestion_ocr_rendezvous?.terminal === true).length / ocrRows.length).toFixed(6))
+      : null,
+    ocr_capacity_wait_p95_ms: quantile(rows.map((item) => (
+      item.preingestion_ocr_rendezvous?.execution_summary?.capacity_wait_p95_ms
+    )), 0.95),
+    grade_ocr_card_count: gradeOcrRows.length,
+    grade_ocr_succeeded_card_count: gradeOcrRows.filter((item) => (
+      Number(item.preingestion_ocr_rendezvous?.grade_label_succeeded_count || 0) > 0
+    )).length,
+    grade_ocr_succeeded_rate: gradeOcrRows.length
+      ? Number((gradeOcrRows.filter((item) => (
+        Number(item.preingestion_ocr_rendezvous?.grade_label_succeeded_count || 0) > 0
+      )).length / gradeOcrRows.length).toFixed(6))
+      : null,
+    grade_reference_expected_count: gradeReferenceRows.length,
+    grade_reference_preserved_count: gradePreservedCount,
+    grade_reference_omission_count: Math.max(0, gradeReferenceRows.length - gradePreservedCount),
+    grade_reference_preservation_rate: gradeReferenceRows.length
+      ? Number((gradePreservedCount / gradeReferenceRows.length).toFixed(6))
+      : null
+  };
+}
+
+function nullableDelta(next, previous) {
+  const nextValue = numberOrNull(next);
+  const previousValue = numberOrNull(previous);
+  return nextValue === null || previousValue === null
+    ? null
+    : Number((nextValue - previousValue).toFixed(6));
+}
+
+export function summarizeBatchPositionFairness(results = []) {
+  const splitIndex = Math.ceil(results.length / 2);
+  const frontHalf = positionCohortMetrics(results.slice(0, splitIndex));
+  const backHalf = positionCohortMetrics(results.slice(splitIndex));
+  return {
+    schema_version: "batch-position-fairness-v1",
+    split_index: splitIndex,
+    front_half: frontHalf,
+    back_half: backHalf,
+    back_minus_front: {
+      technical_success_rate: nullableDelta(backHalf.technical_success_rate, frontHalf.technical_success_rate),
+      writer_ready_p95_ms: nullableDelta(backHalf.writer_ready_p95_ms, frontHalf.writer_ready_p95_ms),
+      scheduler_queue_wait_p95_ms: nullableDelta(backHalf.scheduler_queue_wait_p95_ms, frontHalf.scheduler_queue_wait_p95_ms),
+      ocr_terminal_rate: nullableDelta(backHalf.ocr_terminal_rate, frontHalf.ocr_terminal_rate),
+      ocr_capacity_wait_p95_ms: nullableDelta(backHalf.ocr_capacity_wait_p95_ms, frontHalf.ocr_capacity_wait_p95_ms),
+      grade_ocr_succeeded_rate: nullableDelta(backHalf.grade_ocr_succeeded_rate, frontHalf.grade_ocr_succeeded_rate),
+      grade_reference_preservation_rate: nullableDelta(
+        backHalf.grade_reference_preservation_rate,
+        frontHalf.grade_reference_preservation_rate
+      )
+    }
+  };
+}
+
 export function summarize(results = [], { runWallMs = null } = {}) {
   const l1Raw = results.map((item) => item.l1_scoring?.raw_token_recall);
   const l1Fair = results.map((item) => item.l1_scoring?.fair_token_recall);
@@ -2550,6 +2658,8 @@ export function summarize(results = [], { runWallMs = null } = {}) {
   const successfulNonterminalJobCount = successfulQueueResults.filter((item) => (
     cleanText(item.job_status).toUpperCase() !== "L2_READY"
   )).length;
+  const batchPositionFairness = summarizeBatchPositionFairness(results);
+  const allPositionMetrics = positionCohortMetrics(results);
   const tenantRows = new Map();
   for (const item of results) {
     const tenantId = cleanText(item.tenant_id || item.batch_id) || "unknown";
@@ -2613,6 +2723,7 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       tenant_count: tenantService.length,
       tenant_service: tenantService
     },
+    batch_position_fairness: batchPositionFairness,
     retry_card_count: results.filter((item) => Number(item.attempt_count || 0) > 1).length,
     retry_attempt_count: results.reduce((sum, item) => sum + Math.max(0, Number(item.attempt_count || 0) - 1), 0),
     retry_error_code_breakdown: results.reduce((counts, item) => {
@@ -2794,6 +2905,12 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       job_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.job_count || 0), 0),
       patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.patch_count || 0), 0),
       serial_patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.serial_patch_count || 0), 0),
+      grade_label_job_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.grade_label_job_count || 0), 0),
+      grade_label_succeeded_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.grade_label_succeeded_count || 0), 0),
+      grade_reference_expected_count: allPositionMetrics.grade_reference_expected_count,
+      grade_reference_preserved_count: allPositionMetrics.grade_reference_preserved_count,
+      grade_reference_omission_count: allPositionMetrics.grade_reference_omission_count,
+      grade_reference_preservation_rate: allPositionMetrics.grade_reference_preservation_rate,
       elapsed_since_preingestion_p50_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.5),
       elapsed_since_preingestion_p95_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.95),
       critical_path_wait_p50_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.post_provider_wait_ms ?? 0), 0.5),
@@ -3386,15 +3503,19 @@ export async function runV4EbaySmoke({
     predictions_sha256: predictionsSha256,
     evaluation_sample_policy: {
       mode: normalizedSampleMode,
-      sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION"].includes(normalizedSampleMode),
+      sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION", "CONCURRENCY_FRESH"].includes(normalizedSampleMode),
       generalization_claim_permitted: ["FRESH_GENERALIZATION", "CONCURRENCY_FRESH"].includes(normalizedSampleMode),
-      same_sample_required: normalizedSampleMode === "PAIRED_ABLATION",
+      same_sample_required: ["PAIRED_ABLATION", "CONCURRENCY_FRESH"].includes(normalizedSampleMode),
       provenance_required: sampleProvenance.required,
       provenance_verified: sampleProvenance.verified,
       evaluated_item_count: items.length,
-      evaluated_item_ids_sha256: evaluationItemSetSha256(items.map((item, index) => (
-        item.source_feedback_id || item.source_record?.sealed_eval_label_key || candidateId(item, offset + index)
-      ))),
+      evaluated_item_ids_sha256: evaluationItemSetSha256(items.map((item, index) => {
+        const sealedLabel = sealedLabelForItem(item, offset + index, sealedLabels);
+        return sealedLabel?.item_id
+          || item.source_feedback_id
+          || item.source_record?.sealed_eval_label_key
+          || candidateId(item, offset + index);
+      })),
       dataset_provenance: datasetSamplePolicy
     },
     blind_policy: {

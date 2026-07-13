@@ -140,10 +140,10 @@ function aggregateEvaluationSamplePolicy(sourceRuns = [], selectedItemIds = []) 
   const excludedHashes = policies.map((policy) => normalizeText(policy.excluded_item_ids_sha256)).filter(Boolean);
   return {
     mode,
-    sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION"].includes(mode),
+    sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION", "CONCURRENCY_FRESH"].includes(mode),
     generalization_claim_permitted: fresh,
-    same_sample_required: mode === "PAIRED_ABLATION",
-    cross_wave_overlap_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION"].includes(mode),
+    same_sample_required: ["PAIRED_ABLATION", "CONCURRENCY_FRESH"].includes(mode),
+    cross_wave_overlap_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION", "CONCURRENCY_FRESH"].includes(mode),
     selected_item_count: selectedItemIds.length,
     selected_item_ids_sha256: evaluationItemSetSha256(selectedItemIds),
     excluded_item_count: policies.reduce((sum, policy) => sum + Math.max(0, Number(policy.excluded_item_count || 0)), 0),

@@ -77,9 +77,16 @@ function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
     },
     fields: {
       year: "2024",
+      manufacturer: "Bowman",
       product: "Bowman Chrome",
       players: ["Jesus Made"],
-      collector_number: "BS-4"
+      card_name: "Spotlights",
+      collector_number: "BS-4",
+      parallel_exact: "Red Refractor",
+      serial_number: "12/50",
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "12345678"
     }
   };
   const lookalikeVectorCandidate = {
@@ -121,6 +128,13 @@ function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
   assert.equal(control.selected_candidate_decision.match_level, "EXACT_CARD_MATCH");
   assert.equal(control.catalog_activation_funnel.prompt_candidate_count, 1);
   assert.equal(control.vector_activation_funnel.prompt_candidate_count, 0);
+  assert.equal(control.selected_candidate_safe_field_application.status, "ready_fill_missing");
+  assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("manufacturer"));
+  assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("card_name"));
+  assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("parallel_exact"), false);
+  assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("serial_number"), false);
+  assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("grade_company"), false);
+  assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("cert_number"), false);
 }
 
 function testFunnelAndEvidenceTraceFailClosedOnConflict() {

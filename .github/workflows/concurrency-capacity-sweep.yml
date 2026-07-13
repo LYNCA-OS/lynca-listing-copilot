@@ -1,10 +1,10 @@
 name: concurrency-capacity-sweep
 
 # Measures writer-visible production throughput under controlled offered load.
-# Each level uses a disjoint fresh blind sample and per-card polling so the
-# client never has more than cN cards in flight. The backend remains on its
-# production capacity controller throughout; the sweep works with one or more
-# keys and never infers safe capacity from the key count alone.
+# The sweep first selects one sample that is fresh relative to all prior runs,
+# then reuses that exact blind sample at every offered-load level. This keeps
+# card difficulty fixed while per-card polling limits the client to cN cards in
+# flight. The backend stays on its production capacity controller throughout.
 on:
   workflow_dispatch:
     inputs:
@@ -40,6 +40,8 @@ jobs:
       BLIND_DIR: /tmp/lynca-concurrency-blind
       DATASET_PATH: /tmp/concurrency-all-dataset.json
       SEALED_LABELS_PATH: /tmp/concurrency-all-sealed-labels.jsonl
+      PAIRED_DATASET_PATH: /tmp/concurrency-paired-dataset.json
+      PAIRED_LABELS_PATH: /tmp/concurrency-paired-sealed-labels.jsonl
       COMPARISON_PATH: /tmp/concurrency-comparison.json
       SWEEP_LEVELS: ${{ inputs.levels }}
     steps:
@@ -95,13 +97,11 @@ jobs:
           NODE
       - name: Prepare fresh sealed blind sample
         run: |
-          LEVEL_COUNT=$(node -e "const v=process.env.SWEEP_LEVELS.split(',').map(Number).filter(n=>Number.isInteger(n)&&n>0); if(!v.length||new Set(v).size!==v.length) process.exit(1); process.stdout.write(String(v.length))")
-          TOTAL=$((LEVEL_COUNT * ${{ inputs.cards_per_level }}))
           node scripts/prepare-dcsports87-blind-eval.mjs \
             --base-url "$API_BASE_URL" \
             --out-dir "$BLIND_DIR" \
             --run-id "$RUN_ID" \
-            --limit "$TOTAL" \
+            --limit "${{ inputs.cards_per_level }}" \
             --image-limit 2 \
             --sample-mode concurrency_fresh \
             --include-non-sports \
@@ -111,17 +111,15 @@ jobs:
             --exclude-answer-keys /tmp/ebay-evaluation-history.jsonl
       - name: Upload image-only intake bundle
         run: |
-          LEVEL_COUNT=$(node -e "process.stdout.write(String(process.env.SWEEP_LEVELS.split(',').map(Number).filter(n=>Number.isInteger(n)&&n>0).length))")
-          TOTAL=$((LEVEL_COUNT * ${{ inputs.cards_per_level }}))
           node scripts/build-ebay-image-intake-dataset.mjs \
             --blind-dir "$BLIND_DIR" \
             --run-ids "$RUN_ID" \
             --out "$DATASET_PATH" \
             --sealed-labels-out "$SEALED_LABELS_PATH" \
-            --limit "$TOTAL" \
+            --limit "${{ inputs.cards_per_level }}" \
             --upload-images --progress \
             --base-url "$API_BASE_URL"
-      - name: Build balanced disjoint concurrency strata
+      - name: Verify one fresh paired concurrency sample
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -132,51 +130,57 @@ jobs:
           const levels = String(process.env.SWEEP_LEVELS || '').split(',').map(Number).filter((value) => Number.isInteger(value) && value > 0);
           if (!levels.length || new Set(levels).size !== levels.length) throw new Error(`Invalid levels: ${process.env.SWEEP_LEVELS}`);
           const items = Array.isArray(dataset.items) ? dataset.items : [];
-          const cardsPerLevel = Math.min(requestedCardsPerLevel, Math.floor(items.length / levels.length));
-          const required = cardsPerLevel * levels.length;
-          if (cardsPerLevel < 2) throw new Error(`Only ${items.length} fresh cards were prepared; at least ${levels.length * 2} are required.`);
+          const cardsPerLevel = Math.min(requestedCardsPerLevel, items.length, labels.length);
+          if (cardsPerLevel < 2) throw new Error(`Only ${cardsPerLevel} fresh cards were prepared; at least 2 are required.`);
+          const selectedItems = items.slice(0, cardsPerLevel);
           const labelByKey = new Map(labels.map((label) => [String(label.key || ''), label]));
-          const seenAssets = new Set();
-          const seenKeys = new Set();
-          const manifest = { schema_version:'concurrency-strata-v2', cards_per_level:cardsPerLevel, requested_levels:levels, levels:{} };
-          for (const [levelIndex, level] of levels.entries()) {
-            const group = items.filter((_, index) => index % levels.length === levelIndex).slice(0, cardsPerLevel);
-            if (group.length !== cardsPerLevel) throw new Error(`c${level} has ${group.length}/${cardsPerLevel} cards.`);
-            const groupLabels = group.map((item) => {
-              const asset = String(item.asset_id || '');
-              const key = String(item.sealed_eval_label_ref?.key || item.source_record?.sealed_eval_label_key || '');
-              if (!asset || seenAssets.has(asset)) throw new Error(`Duplicate or missing asset in c${level}: ${asset}`);
-              if (!key || seenKeys.has(key) || !labelByKey.has(key)) throw new Error(`Duplicate or missing sealed key in c${level}: ${key}`);
-              seenAssets.add(asset);
-              seenKeys.add(key);
-              return labelByKey.get(key);
-            });
-            const output = {
-              ...dataset,
-              generated_at: new Date().toISOString(),
-              item_count: group.length,
-              unique_item_count: group.length,
-              sealed_labels_path: `/tmp/concurrency-c${level}-sealed-labels.jsonl`,
-              concurrency_experiment: { level, offered_load_limit: level, stratum: level, cards_per_level: cardsPerLevel },
-              evaluation_sample_policy: {
-                ...(dataset.evaluation_sample_policy || {}),
-                selected_item_count: group.length,
-                selected_item_ids_sha256: crypto.createHash('sha256').update(groupLabels.map((label) => String(label.item_id || '')).filter(Boolean).sort().join('\n')).digest('hex')
-              },
-              items: group
-            };
-            fs.writeFileSync(`/tmp/concurrency-c${level}-dataset.json`, JSON.stringify(output, null, 2));
-            fs.writeFileSync(`/tmp/concurrency-c${level}-sealed-labels.jsonl`, groupLabels.map((row) => JSON.stringify(row)).join('\n') + '\n');
-            manifest.levels[`c${level}`] = { assets: group.map((item) => item.asset_id), sealed_keys: groupLabels.map((label) => label.key) };
-          }
-          manifest.total_unique_assets = seenAssets.size;
-          manifest.total_unique_labels = seenKeys.size;
-          manifest.requested_cards_per_level = requestedCardsPerLevel;
-          manifest.blind_inputs_verified = items.slice(0, required).every((item) => !String(item.canonical_title || '').trim() && Object.keys(item.source_titles || {}).length === 0 && item.source_record?.seller_title_visible_to_model === false);
+          const selectedLabels = selectedItems.map((item) => {
+            const key = String(item.sealed_eval_label_ref?.key || item.source_record?.sealed_eval_label_key || '');
+            const label = labelByKey.get(key);
+            if (!key || !label) throw new Error(`Missing sealed label for ${item.asset_id || 'unknown asset'}: ${key}`);
+            return label;
+          });
+          const selectedItemIds = selectedLabels.map((label) => String(label.item_id || label.key || '')).filter(Boolean);
+          if (new Set(selectedItemIds).size !== cardsPerLevel) throw new Error('Paired sample item ids must be present and unique.');
+          const evaluatedItemIdsHash = crypto.createHash('sha256')
+            .update([...selectedItemIds].sort().join('\n'))
+            .digest('hex');
+          const selectedDataset = {
+            ...dataset,
+            schema_version:'ebay-image-intake-dataset-v1',
+            item_count:selectedItems.length,
+            image_count:selectedItems.reduce((sum, item) => sum + (Array.isArray(item.images) ? item.images.length : 0), 0),
+            unique_item_count:selectedItemIds.length,
+            sealed_labels_path:process.env.PAIRED_LABELS_PATH,
+            evaluation_sample_policy:{
+              ...(dataset.evaluation_sample_policy || {}),
+              mode:'CONCURRENCY_FRESH',
+              sample_reuse_permitted:true,
+              same_sample_required:true,
+              cross_wave_overlap_permitted:true,
+              selected_item_count:selectedItemIds.length,
+              selected_item_ids_sha256:evaluatedItemIdsHash
+            },
+            items:selectedItems
+          };
+          fs.writeFileSync(process.env.PAIRED_DATASET_PATH, `${JSON.stringify(selectedDataset, null, 2)}\n`);
+          fs.writeFileSync(process.env.PAIRED_LABELS_PATH, `${selectedLabels.map((label) => JSON.stringify(label)).join('\n')}\n`);
+          const manifest = {
+            schema_version:'concurrency-paired-sample-v3',
+            cards_per_level:cardsPerLevel,
+            requested_levels:levels,
+            same_sample_required:true,
+            selected_item_ids_sha256:evaluatedItemIdsHash,
+            prior_history_overlap_count:Number(dataset.evaluation_sample_policy?.prior_history_overlap_count || 0),
+            novelty_verified:dataset.evaluation_sample_policy?.novelty_verified === true,
+            assets:selectedItems.map((item) => item.asset_id),
+            sealed_keys:selectedLabels.map((label) => label.key),
+            blind_inputs_verified:selectedItems.every((item) => !String(item.canonical_title || '').trim() && Object.keys(item.source_titles || {}).length === 0 && item.source_record?.seller_title_visible_to_model === false)
+          };
           fs.writeFileSync('/tmp/concurrency-strata.json', JSON.stringify(manifest, null, 2));
           fs.appendFileSync(process.env.GITHUB_ENV, `ACTUAL_CARDS_PER_LEVEL=${cardsPerLevel}\n`);
           console.log(JSON.stringify(manifest, null, 2));
-          if (!manifest.blind_inputs_verified || seenAssets.size !== required || seenKeys.size !== required) process.exit(1);
+          if (!manifest.blind_inputs_verified || !manifest.novelty_verified || manifest.prior_history_overlap_count !== 0) process.exit(1);
           NODE
       - name: Warm production path
         run: |
@@ -192,13 +196,14 @@ jobs:
             LEVEL="$(echo "$LEVEL" | xargs)"
             echo "Running c${LEVEL} with at most ${LEVEL} cards in flight"
             node scripts/v4-ebay-smoke.mjs \
-              --dataset "/tmp/concurrency-c${LEVEL}-dataset.json" \
-              --sealed-labels "/tmp/concurrency-c${LEVEL}-sealed-labels.jsonl" \
+              --dataset "$PAIRED_DATASET_PATH" \
+              --sealed-labels "$PAIRED_LABELS_PATH" \
               --limit "$ACTUAL_CARDS_PER_LEVEL" \
               --concurrency "$LEVEL" \
               --queue --speculative --use-preingestion --per-card-poll \
               --ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority \
               --disable-identity-cache \
+              --preingestion-source "$RUN_ID-c${LEVEL}" \
               --sample-mode concurrency_fresh \
               --model "${{ inputs.model }}" \
               --think-ms "${{ inputs.think_ms }}" \

@@ -1813,4 +1813,58 @@ assert.equal(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes
 assert.equal(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("grade_company"), false);
 assert.equal(lowMarginSafeOverlay.candidate_safe_overlay_applied_fields.includes("cert_number"), false);
 
+const selectedCandidateSafeOverlayResult = {
+  title: "2024 Bowman Chrome Jesus Made",
+  final_title: "2024 Bowman Chrome Jesus Made",
+  confidence: "HIGH",
+  resolved_fields: {
+    players: ["Jesus Made"]
+  },
+  selected_candidate_safe_field_application: {
+    status: "ready_fill_missing",
+    candidate_id: "catalog-exact-safe",
+    eligible_fields: ["year", "manufacturer", "product", "card_name", "parallel_exact", "serial_number", "grade_company", "cert_number"],
+    field_reasons: {
+      year: "trusted_exact_code_identity_fill",
+      manufacturer: "trusted_exact_code_identity_fill",
+      product: "trusted_exact_code_identity_fill",
+      card_name: "trusted_exact_code_identity_fill"
+    },
+    renderer_application_allowed: true
+  },
+  candidate_field_evidence: [
+    { candidate_id: "catalog-exact-safe", field_name: "year", value: "2024", permission: "can_apply" },
+    { candidate_id: "catalog-exact-safe", field_name: "manufacturer", value: "Bowman", permission: "can_apply" },
+    { candidate_id: "catalog-exact-safe", field_name: "product", value: "Bowman Chrome", permission: "can_apply" },
+    { candidate_id: "catalog-exact-safe", field_name: "card_name", value: "Spotlights", permission: "can_apply" },
+    { candidate_id: "catalog-exact-safe", field_name: "parallel_exact", value: "Red Refractor", permission: "can_apply" },
+    { candidate_id: "catalog-exact-safe", field_name: "serial_number", value: "12/50", permission: "can_apply" },
+    { candidate_id: "catalog-exact-safe", field_name: "grade_company", value: "PSA", permission: "can_apply" },
+    { candidate_id: "catalog-exact-safe", field_name: "cert_number", value: "12345678", permission: "can_apply" }
+  ],
+  candidate_application_trace: [{
+    candidate_id: "catalog-exact-safe",
+    participation_level: "LEVEL_2_EVIDENCE_SUPPORT",
+    applied_fields: [],
+    reason_per_field: {}
+  }],
+  candidate_activation_funnel: { selected_candidate_id: "catalog-exact-safe", applied_field_count: 0, applied_fields: [] },
+  catalog_activation_funnel: { selected_candidate_id: "catalog-exact-safe", applied_field_count: 0, applied_fields: [] }
+};
+const selectedCandidateSafeOverlay = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation(
+  selectedCandidateSafeOverlayResult,
+  { maxTitleLength: 80 }
+);
+assert.match(selectedCandidateSafeOverlay.title, /2024/);
+assert.match(selectedCandidateSafeOverlay.title, /Bowman Chrome/);
+assert.match(selectedCandidateSafeOverlay.title, /Spotlights/);
+assert.doesNotMatch(selectedCandidateSafeOverlay.title, /Red Refractor|12\/50|PSA|12345678/);
+assert.deepEqual(
+  selectedCandidateSafeOverlay.selected_candidate_safe_field_application.renderer_applied_fields.sort(),
+  ["card_name", "manufacturer", "product", "year"]
+);
+assert.equal(selectedCandidateSafeOverlay.candidate_activation_funnel.applied_field_count, 4);
+assert.equal(selectedCandidateSafeOverlay.catalog_activation_funnel.participation_level, "LEVEL_3_FIELD_APPLICATION");
+assert.equal(selectedCandidateSafeOverlay.candidate_application_trace[0].participation_level, "LEVEL_3_FIELD_APPLICATION");
+
 console.log("listing confidence audit mock tests passed");

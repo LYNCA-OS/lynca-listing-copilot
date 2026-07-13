@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { analyzeV4StabilityEnvelope } from "../lib/listing/v4/jobs/stability-envelope.mjs";
 import { numberArg as stabilityNumberArg } from "./analyze-v4-stability-soak.mjs";
 import { buildV4SoakWavePlan, numberArg as soakNumberArg } from "./run-v4-multi-tenant-soak.mjs";
-import { smokeTenantId, summarize } from "./v4-ebay-smoke.mjs";
+import { smokeTenantId, summarize, summarizeBatchPositionFairness } from "./v4-ebay-smoke.mjs";
 
 function waveReport(waveIndex, {
   tenants = 5,
@@ -74,6 +74,46 @@ assert.equal(stabilityNumberArg(["node", "script", "--minimum-cards=75"], "--min
 assert.equal(smokeTenantId({ batchId: "batch", tenantPrefix: "client", tenantCount: 3, index: 0 }), "client-tenant-1");
 assert.equal(smokeTenantId({ batchId: "batch", tenantPrefix: "client", tenantCount: 3, index: 4 }), "client-tenant-2");
 
+const positionFairness = summarizeBatchPositionFairness([
+  {
+    ok: true,
+    writer_ready: true,
+    final_title: "2024 Test Card PSA 10",
+    reference_title: "2024 Test Card PSA 10",
+    resolved_fields: { grade_company: "PSA", card_grade: "10" },
+    preingestion_ocr_rendezvous: { job_count: 3, terminal: true, grade_label_job_count: 1, grade_label_succeeded_count: 1 }
+  },
+  {
+    ok: true,
+    writer_ready: true,
+    final_title: "2024 Test Card BGS 9.5",
+    reference_title: "2024 Test Card BGS 9.5",
+    resolved_fields: { grade_company: "BGS", card_grade: "9.5" },
+    preingestion_ocr_rendezvous: { job_count: 3, terminal: true, grade_label_job_count: 1, grade_label_succeeded_count: 1 }
+  },
+  {
+    ok: true,
+    writer_ready: true,
+    final_title: "2024 Test Card",
+    reference_title: "2024 Test Card PSA 10",
+    resolved_fields: {},
+    preingestion_ocr_rendezvous: { job_count: 3, terminal: false, grade_label_job_count: 1, grade_label_succeeded_count: 0 }
+  },
+  {
+    ok: false,
+    writer_ready: false,
+    final_title: "",
+    reference_title: "2024 Test Card BGS 9.5",
+    resolved_fields: {},
+    preingestion_ocr_rendezvous: { job_count: 3, terminal: false, grade_label_job_count: 1, grade_label_succeeded_count: 0 }
+  }
+]);
+assert.equal(positionFairness.front_half.technical_success_rate, 1);
+assert.equal(positionFairness.back_half.technical_success_rate, 0.5);
+assert.equal(positionFairness.back_minus_front.ocr_terminal_rate, -1);
+assert.equal(positionFairness.back_minus_front.grade_ocr_succeeded_rate, -1);
+assert.equal(positionFairness.back_minus_front.grade_reference_preservation_rate, -1);
+
 const healthyReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
 const healthy = analyzeV4StabilityEnvelope(healthyReports);
 assert.equal(healthy.pass, true);
@@ -126,6 +166,24 @@ for (const report of tenantSpreadReports) {
 const tenantSpread = analyzeV4StabilityEnvelope(tenantSpreadReports);
 assert.equal(tenantSpread.pass, false);
 assert.ok(tenantSpread.rejection_reasons.includes("TENANT_QUEUE_WAIT_SPREAD_ABOVE_TARGET"));
+
+const backHalfOcrStarvationReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
+for (const report of backHalfOcrStarvationReports) {
+  const split = Math.ceil(report.results.length / 2);
+  report.results.forEach((row, index) => {
+    row.preingestion_ocr_rendezvous = {
+      job_count: 3,
+      terminal: index < split,
+      grade_label_job_count: 1,
+      grade_label_succeeded_count: index < split ? 1 : 0
+    };
+  });
+  report.summary = summarize(report.results, { runWallMs: 60_000 });
+}
+const backHalfOcrStarvation = analyzeV4StabilityEnvelope(backHalfOcrStarvationReports);
+assert.equal(backHalfOcrStarvation.pass, false);
+assert.ok(backHalfOcrStarvation.rejection_reasons.includes("BACK_HALF_OCR_TERMINAL_REGRESSION"));
+assert.ok(backHalfOcrStarvation.rejection_reasons.includes("BACK_HALF_GRADE_OCR_REGRESSION"));
 
 const unfair = analyzeV4StabilityEnvelope([
   waveReport(0, { failTenant: "client-5" }),

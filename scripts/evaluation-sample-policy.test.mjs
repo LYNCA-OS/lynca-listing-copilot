@@ -32,6 +32,8 @@ const overlap = buildEvaluationSamplePolicy({
 });
 assert.equal(overlap.novelty_verified, false);
 assert.equal(overlap.prior_history_overlap_count, 1);
+assert.equal(overlap.same_sample_required, true);
+assert.equal(overlap.sample_reuse_permitted, true);
 assert.throws(() => assertEvaluationSampleProvenance({
   requestedMode: "CONCURRENCY_FRESH",
   datasetPolicy: overlap

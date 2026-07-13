@@ -28,7 +28,8 @@ function reportFor({
   pass72 = 4,
   retries = 0,
   technicalFailures = 0,
-  datasetPath = `/tmp/fresh-c${concurrency}.json`
+  datasetPath = `/tmp/fresh-c${concurrency}.json`,
+  sampleHash = "paired-fresh-sample"
 }) {
   const attempted = 4;
   return {
@@ -37,6 +38,10 @@ function reportFor({
     offset: 0,
     limit: attempted,
     concurrency,
+    evaluation_sample_policy: {
+      mode: "CONCURRENCY_FRESH",
+      evaluated_item_ids_sha256: sampleHash
+    },
     run_wall_ms: Math.round(attempted * 60000 / cardsPerMinute),
     batch_poll_metrics: {
       transient_error_count: 0,
@@ -85,6 +90,34 @@ function reportFor({
         critical_path_wait_p50_ms: 0,
         critical_path_wait_p95_ms: 750
       },
+      batch_position_fairness: {
+        front_half: {
+          attempted_count: 2,
+          technical_success_rate: 1,
+          ocr_attempted_count: 2,
+          ocr_terminal_rate: 1,
+          grade_ocr_card_count: 2,
+          grade_ocr_succeeded_rate: 1,
+          grade_reference_expected_count: 2,
+          grade_reference_preservation_rate: 1
+        },
+        back_half: {
+          attempted_count: 2,
+          technical_success_rate: 1,
+          ocr_attempted_count: 2,
+          ocr_terminal_rate: 1,
+          grade_ocr_card_count: 2,
+          grade_ocr_succeeded_rate: 1,
+          grade_reference_expected_count: 2,
+          grade_reference_preservation_rate: 1
+        },
+        back_minus_front: {
+          technical_success_rate: 0,
+          ocr_terminal_rate: 0,
+          grade_ocr_succeeded_rate: 0,
+          grade_reference_preservation_rate: 0
+        }
+      },
       pipeline_node_observability: {
         ledger_present_count: attempted,
         ledger_missing_count: 0,
@@ -122,6 +155,9 @@ assert.equal(baselineRow.post_observation_retrieval_deferred_card_count, 3);
 assert.equal(baselineRow.post_observation_retrieval_completed_within_budget_count, 1);
 assert.equal(baselineRow.ocr_elapsed_since_preingestion_p95_ms, 15000);
 assert.equal(baselineRow.ocr_critical_path_wait_p95_ms, 750);
+assert.equal(baselineRow.front_half_ocr_terminal_rate, 1);
+assert.equal(baselineRow.back_half_ocr_terminal_rate, 1);
+assert.equal(baselineRow.back_minus_front_ocr_terminal_rate, 0);
 assert.equal(baselineRow.node_ledger_present_count, 4);
 assert.equal(baselineRow.node_transport_error_count, 0);
 assert.equal(baselineRow.node_field_quality_error_count, 0);
@@ -184,6 +220,18 @@ const transportFailure = evaluateRow({
 }, baselineRow);
 assert.equal(transportFailure.stable, false);
 assert.ok(transportFailure.rejection_reasons.includes("NODE_RECONCILIATION_ERROR"));
+const backHalfOcrRegression = evaluateRow({
+  ...baselineRow,
+  back_minus_front_ocr_terminal_rate: -0.5,
+  back_minus_front_grade_ocr_succeeded_rate: -0.5,
+  back_minus_front_grade_reference_preservation_rate: -0.5,
+  grade_reference_omission_count: 2
+}, baselineRow);
+assert.equal(backHalfOcrRegression.stable, false);
+assert.ok(backHalfOcrRegression.rejection_reasons.includes("BACK_HALF_OCR_TERMINAL_REGRESSION"));
+assert.ok(backHalfOcrRegression.rejection_reasons.includes("BACK_HALF_GRADE_OCR_REGRESSION"));
+assert.ok(backHalfOcrRegression.rejection_reasons.includes("BACK_HALF_GRADE_PRESERVATION_REGRESSION"));
+assert.ok(backHalfOcrRegression.warning_reasons.includes("GRADE_REFERENCE_OMISSION_OBSERVED"));
 assert.equal(assessConcurrencySweepLevel(
   reportFor({ concurrency: 1, cardsPerMinute: 1, writerP95: 38000 }),
   1
@@ -222,6 +270,16 @@ const pairedEvaluation = evaluateRow(pairedRegression, baselineRow);
 assert.equal(pairedEvaluation.stable, false);
 assert.ok(pairedEvaluation.rejection_reasons.includes("PAIRED_PASS_0_72_REGRESSION"));
 
+const unpairedConcurrency = metricRow(reportFor({
+  concurrency: 2,
+  cardsPerMinute: 1.9,
+  writerP95: 40000,
+  sampleHash: "different-fresh-sample"
+}));
+const unpairedConcurrencyEvaluation = evaluateRow(unpairedConcurrency, baselineRow);
+assert.equal(unpairedConcurrencyEvaluation.stable, false);
+assert.ok(unpairedConcurrencyEvaluation.rejection_reasons.includes("UNPAIRED_CONCURRENCY_SAMPLE"));
+
 const directory = await mkdtemp(join(tmpdir(), "lynca-concurrency-sweep-"));
 const inputs = [
   reportFor({ concurrency: 1, cardsPerMinute: 1, writerP95: 38000 }),
@@ -238,13 +296,11 @@ for (const [index, input] of inputs.entries()) {
 const comparison = await compareConcurrencySweep({ reports });
 assert.equal(comparison.recommended_concurrency, 3);
 assert.equal(comparison.raw_throughput_winner_concurrency, 3);
-assert.equal(comparison.recommendation_confidence, "PROVISIONAL_REQUIRES_TOP_TWO_CONFIRMATION");
+assert.equal(comparison.recommendation_confidence, "PAIRED_CONFIRMED");
 assert.equal(comparison.rows.find((row) => row.concurrency === 4).stable, false);
 assert.ok(comparison.rows.find((row) => row.concurrency === 4).rejection_reasons.includes("RETRY_REQUIRED"));
 assert.equal(comparison.rows.find((row) => row.concurrency === 1).sample_comparison_mode, "PAIRED");
-assert.ok(comparison.rows
-  .filter((row) => row.concurrency > 1)
-  .every((row) => row.warning_reasons.includes("UNPAIRED_SAMPLE_QUALITY_IS_GUARDRAIL_ONLY")));
+assert.ok(comparison.rows.every((row) => row.sample_comparison_mode === "PAIRED"));
 
 const knee = chooseConcurrency([
   { ...stableBaseline, concurrency: 1, completed_cards_per_minute: 1, writer_ready_p95_ms: 38000 },
@@ -267,5 +323,13 @@ assert.match(workflowSource, /assert-concurrency-sweep-level\.mjs/);
 assert.match(workflowSource, /provider_key_pool_available:[^\n]*>= 1/);
 assert.doesNotMatch(workflowSource, /key_pool_two_or_more/);
 assert.doesNotMatch(workflowSource, /LEVEL="\$LEVEL" node - <<'NODE'/);
+assert.match(workflowSource, /same_sample_required:true/);
+assert.match(workflowSource, /PAIRED_DATASET_PATH/);
+assert.match(workflowSource, /PAIRED_LABELS_PATH/);
+assert.match(workflowSource, /selected_item_ids_sha256:evaluatedItemIdsHash/);
+assert.match(workflowSource, /--dataset "\$PAIRED_DATASET_PATH"/);
+assert.match(workflowSource, /--sealed-labels "\$PAIRED_LABELS_PATH"/);
+assert.match(workflowSource, /--preingestion-source "\$RUN_ID-c\$\{LEVEL\}"/);
+assert.doesNotMatch(workflowSource, /balanced disjoint concurrency strata/i);
 
 console.log("concurrency sweep tests passed");

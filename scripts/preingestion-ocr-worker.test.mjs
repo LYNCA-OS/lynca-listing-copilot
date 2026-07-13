@@ -3,6 +3,7 @@ import {
   appendEvidencePatchesToBundle,
   bundlePatchesFromOcrResult,
   claimQueuedPreingestionOcrJobs,
+  fairOcrAnchorJobOrder,
   ocrConfidenceForFieldValue,
   ocrRequestForPreingestionJob,
   processQueuedPreingestionOcrJobs,
@@ -61,6 +62,16 @@ const sampleJob = {
     }
   }
 };
+
+const fairAnchorOrder = fairOcrAnchorJobOrder([
+  { job_id: "code-1", payload: { crop: { role: "card_code_crop" } } },
+  { job_id: "code-2", payload: { crop: { role: "card_code_crop" } } },
+  { job_id: "serial-1", payload: { crop: { role: "serial_crop" } } },
+  { job_id: "serial-2", payload: { crop: { role: "serial_crop" } } },
+  { job_id: "grade-1", payload: { crop: { role: "grade_label_crop" } } },
+  { job_id: "grade-2", payload: { crop: { role: "grade_label_crop" } } }
+]);
+assert.deepEqual(fairAnchorOrder.slice(0, 3).map((job) => job.job_id), ["serial-1", "grade-1", "code-1"]);
 
 // --- ocrRequestForPreingestionJob maps crop plan into the OCR contract ---
 const request = ocrRequestForPreingestionJob(sampleJob, { imageUrl: "https://signed.test/front.jpg" });
@@ -835,7 +846,8 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.stage_capacity_control_enabled, true);
   assert.equal(result.execution_summary_persisted, true);
   assert.equal(result.stage_global_capacity, 2);
-  assert.equal(result.anchor_concurrency, 2);
+  assert.equal(result.per_asset_capacity, 2);
+  assert.equal(result.anchor_concurrency, 1);
   assert.equal(result.detail_concurrency, 1);
   assert.equal(result.peak_local_active, 2);
   assert.equal(peakActiveOcr, 2);
@@ -844,6 +856,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.job_observability.filter((row) => row.stage_lane === "detail").length, 2);
   assert.ok(result.job_observability.every((row) => row.stage_capacity_released === true));
   assert.equal(bundleQualitySummary.ocr_stage_execution.global_capacity, 2);
+  assert.equal(bundleQualitySummary.ocr_stage_execution.per_asset_capacity, 2);
   assert.equal(bundleQualitySummary.ocr_stage_execution.anchor_job_count, 2);
   assert.equal(bundleQualitySummary.ocr_stage_execution.detail_job_count, 2);
 }

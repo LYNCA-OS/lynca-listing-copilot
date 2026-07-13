@@ -158,6 +158,29 @@ assert.deepEqual(entirelyMissingGradeWait.reasons, ["provider_left_grade_unresol
 assert.equal(entirelyMissingGradeWait.grade_unresolved, true);
 assert.equal(entirelyMissingGradeWait.wait_budget_ms, 2500);
 
+const slabMissingGradeWait = criticalOcrRendezvousDecision({
+  currentFields: { year: "2003-04", players: ["LeBron James"] },
+  unresolved: [],
+  latestOcrState: { configured: true, serial_active_count: 0, grade_label_active_count: 2 },
+  slabLikely: true,
+  configuredWaitMs: 0,
+  criticalWaitMs: 2500
+});
+assert.deepEqual(slabMissingGradeWait.target_fields, ["grade"]);
+assert.deepEqual(slabMissingGradeWait.reasons, ["slab_capture_grade_completely_missing"]);
+assert.equal(slabMissingGradeWait.grade_completely_missing, true);
+assert.equal(slabMissingGradeWait.slab_likely, true);
+
+const rawCardMissingGradeDoesNotWait = criticalOcrRendezvousDecision({
+  currentFields: { year: "2024", players: ["Tester"] },
+  unresolved: [],
+  latestOcrState: { configured: true, serial_active_count: 0, grade_label_active_count: 2 },
+  slabLikely: false,
+  configuredWaitMs: 0
+});
+assert.deepEqual(rawCardMissingGradeDoesNotWait.target_fields, []);
+assert.equal(rawCardMissingGradeDoesNotWait.should_wait, false, "raw cards must not pay a blanket grade wait");
+
 const noHardFieldWait = criticalOcrRendezvousDecision({
   currentFields: { year: "2024", players: ["Tester"] },
   unresolved: ["parallel_exact"],

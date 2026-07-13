@@ -607,6 +607,56 @@ const lowMarginOverlayAllowedFields = new Set([
   "expected_serial_denominator"
 ]);
 
+const selectedCandidateOverlayAllowedFields = new Set([
+  "year",
+  "manufacturer",
+  "brand",
+  "product",
+  "release",
+  "set",
+  "subset",
+  "insert",
+  "language",
+  "rarity",
+  "card_name",
+  "players",
+  "player",
+  "character",
+  "collector_number",
+  "card_number",
+  "checklist_code",
+  "tcg_card_number",
+  "official_card_type"
+]);
+
+const selectedCandidateEmbeddedForbiddenFields = new Set([
+  "parallel",
+  "parallel_family",
+  "parallel_exact",
+  "variation",
+  "print_finish",
+  "product_finish",
+  "print_run_number",
+  "print_run_numerator",
+  "serial_number",
+  "grade",
+  "grade_company",
+  "card_grade",
+  "auto_grade",
+  "grade_type",
+  "cert_number",
+  "condition"
+]);
+
+function selectedCandidateValueContainsForbiddenReferenceValue(value, forbiddenValues = []) {
+  const comparable = normalizeStringOrNull(value)?.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!comparable) return false;
+  return forbiddenValues.some((forbiddenValue) => {
+    const forbidden = normalizeStringOrNull(forbiddenValue)?.toLowerCase().replace(/\s+/g, " ").trim();
+    return Boolean(forbidden && forbidden.length >= 3 && comparable.includes(forbidden));
+  });
+}
+
 function finalizerFieldSupportSet(result = {}) {
   const fields = new Set();
   [
@@ -885,6 +935,15 @@ function applyVerifiedCurrentImagePrintRunOverride(base = {}, result = {}) {
   };
 }
 
+function captureQualityLooksLikeSlab(captureQuality = {}) {
+  const surface = normalizeStringOrNull(captureQuality.capture_surface_type)?.toUpperCase();
+  if (surface === "SLAB") return true;
+  return Array.isArray(captureQuality.images)
+    && captureQuality.images.some((quality) => (
+      normalizeStringOrNull(quality?.capture_surface_type)?.toUpperCase() === "SLAB"
+    ));
+}
+
 function lowMarginSafeFieldOverlay(result = {}) {
   const application = result.low_margin_safe_field_application && typeof result.low_margin_safe_field_application === "object"
     ? result.low_margin_safe_field_application
@@ -931,6 +990,101 @@ function applyLowMarginSafeFieldOverlay(base = {}, result = {}) {
       renderer_application_policy: "fill_missing_fields_only_when_candidate_value_matches_current_image_evidence"
     };
     result.candidate_safe_overlay_applied_fields = applied;
+  }
+  return output;
+}
+
+function selectedCandidateSafeFieldOverlay(result = {}) {
+  const application = result.selected_candidate_safe_field_application
+    && typeof result.selected_candidate_safe_field_application === "object"
+    ? result.selected_candidate_safe_field_application
+    : {};
+  if (application.status !== "ready_fill_missing" || application.renderer_application_allowed !== true) return {};
+  const candidateId = normalizeStringOrNull(application.candidate_id);
+  if (!candidateId) return {};
+  const eligible = new Set((Array.isArray(application.eligible_fields) ? application.eligible_fields : [])
+    .map(normalizeStringOrNull)
+    .filter(Boolean));
+  if (!eligible.size) return {};
+  const evidenceRows = Array.isArray(result.candidate_field_evidence) ? result.candidate_field_evidence : [];
+  const forbiddenReferenceValues = evidenceRows
+    .filter((row) => (
+      row
+      && typeof row === "object"
+      && normalizeStringOrNull(row.candidate_id) === candidateId
+      && selectedCandidateEmbeddedForbiddenFields.has(normalizeStringOrNull(row.field_name))
+      && finalizerValuePresent(row.value)
+    ))
+    .map((row) => row.value);
+  const overlay = {};
+  for (const row of evidenceRows) {
+    if (!row || typeof row !== "object") continue;
+    if (normalizeStringOrNull(row.candidate_id) !== candidateId) continue;
+    const field = normalizeStringOrNull(row.field_name);
+    if (!field || !eligible.has(field)) continue;
+    if (!selectedCandidateOverlayAllowedFields.has(field) || lowMarginOverlayForbiddenFields.has(field)) continue;
+    if (row.permission !== "can_apply" || !finalizerValuePresent(row.value)) continue;
+    if (selectedCandidateValueContainsForbiddenReferenceValue(row.value, forbiddenReferenceValues)) continue;
+    overlay[field] = row.value;
+  }
+  const normalized = normalizeFields(overlay);
+  return Object.fromEntries(Object.keys(overlay).map((field) => [
+    field,
+    finalizerValuePresent(normalized[field]) ? normalized[field] : overlay[field]
+  ]));
+}
+
+function applySelectedCandidateSafeFieldOverlay(base = {}, result = {}) {
+  const overlay = selectedCandidateSafeFieldOverlay(result);
+  if (!Object.keys(overlay).length) return base;
+  const output = { ...(base || {}) };
+  const applied = [];
+  for (const [field, value] of Object.entries(overlay)) {
+    if (!finalizerValuePresent(value) || finalizerValuePresent(output[field])) continue;
+    output[field] = value;
+    applied.push(field);
+  }
+  if (!applied.length) return output;
+
+  const application = result.selected_candidate_safe_field_application || {};
+  result.selected_candidate_safe_field_application = {
+    ...application,
+    renderer_applied_fields: applied,
+    renderer_application_policy: "fill_missing_identity_fields_only"
+  };
+  const selectedId = normalizeStringOrNull(application.candidate_id);
+  if (Array.isArray(result.candidate_application_trace)) {
+    result.candidate_application_trace = result.candidate_application_trace.map((trace) => (
+      normalizeStringOrNull(trace?.candidate_id) === selectedId
+        ? {
+          ...trace,
+          participation_level: "LEVEL_3_FIELD_APPLICATION",
+          applied_fields: [...new Set([...(trace.applied_fields || []), ...applied])],
+          reason_per_field: {
+            ...(trace.reason_per_field || {}),
+            ...Object.fromEntries(applied.map((field) => [
+              field,
+              application.field_reasons?.[field] || "selected_trusted_candidate_fill_missing"
+            ]))
+          }
+        }
+        : trace
+    ));
+  }
+  result.participation_level = "LEVEL_3_FIELD_APPLICATION";
+  result.candidate_safe_overlay_applied_fields = [
+    ...new Set([...(result.candidate_safe_overlay_applied_fields || []), ...applied])
+  ];
+  for (const funnelName of ["candidate_activation_funnel", "catalog_activation_funnel", "vector_activation_funnel"]) {
+    const funnel = result[funnelName];
+    if (!funnel || typeof funnel !== "object") continue;
+    if (funnelName !== "candidate_activation_funnel" && normalizeStringOrNull(funnel.selected_candidate_id) !== selectedId) continue;
+    result[funnelName] = {
+      ...funnel,
+      participation_level: "LEVEL_3_FIELD_APPLICATION",
+      applied_field_count: applied.length,
+      applied_fields: applied
+    };
   }
   return output;
 }
@@ -1014,7 +1168,8 @@ function finalResolvedFieldsForPresentation(result = {}, {
       allowExactCodePromotion: fields !== result.raw_provider_fields
     })
   ), { ...base });
-  const withCandidateOverlay = applyLowMarginSafeFieldOverlay(merged, result);
+  const withSelectedCandidateOverlay = applySelectedCandidateSafeFieldOverlay(merged, result);
+  const withCandidateOverlay = applyLowMarginSafeFieldOverlay(withSelectedCandidateOverlay, result);
   const withEvidenceOverrides = applyEvidenceBackedPresentationOverrides(
     withCandidateOverlay,
     result.normalized_evidence || result.evidence || {}
@@ -3820,6 +3975,7 @@ function withOpenSetReadiness(result = {}, context = {}) {
     post_observation_selected_candidate_id: candidateControl.post_observation_selected_candidate_id,
     retrieval_used_observation_fields: candidateControl.retrieval_used_observation_fields,
     low_margin_safe_field_application: candidateControl.low_margin_safe_field_application,
+    selected_candidate_safe_field_application: candidateControl.selected_candidate_safe_field_application,
     selected_candidate_verifier: candidateControl.selected_candidate_verifier
   }, {
     providerOptions: context.providerOptions || {},
@@ -5497,6 +5653,9 @@ async function createOpenAiTitle(payload, selection, {
     currentFields: currentProviderFields,
     unresolved: providerResultWithEvidence.unresolved || providerResultWithEvidence.unresolved_fields || [],
     latestOcrState: latestPreingestionOcrState,
+    slabLikely: captureQualityLooksLikeSlab(
+      providerResultWithEvidence.capture_quality || captureQualityForPayload(payload)
+    ),
     configuredWaitMs: configuredOcrPostProviderWaitMs,
     criticalWaitMs: Math.max(
       preingestionOcrCriticalFieldWaitMs(process.env, providerOptions),
