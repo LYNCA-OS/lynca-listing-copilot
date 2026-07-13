@@ -7,7 +7,10 @@ import {
   gradeOcrRescueDecision,
   guardGradeFieldStates
 } from "../lib/listing/pipeline/grade-atomic-policy.mjs";
-import { criticalOcrRendezvousDecision } from "../lib/listing/pipeline/ocr-rendezvous-policy.mjs";
+import {
+  captureQualityLooksLikeSlab,
+  criticalOcrRendezvousDecision
+} from "../lib/listing/pipeline/ocr-rendezvous-policy.mjs";
 import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { classifyNumberToken, resolveNumberFields, splitCardNumber } from "../lib/listing/resolver/number-resolver.mjs";
 import { resolveCardFields } from "../lib/listing/resolver/resolve-card.mjs";
@@ -170,6 +173,18 @@ assert.deepEqual(slabMissingGradeWait.target_fields, ["grade"]);
 assert.deepEqual(slabMissingGradeWait.reasons, ["slab_capture_grade_completely_missing"]);
 assert.equal(slabMissingGradeWait.grade_completely_missing, true);
 assert.equal(slabMissingGradeWait.slab_likely, true);
+
+assert.equal(captureQualityLooksLikeSlab({ capture_surface_type: "SLAB" }), true);
+assert.equal(
+  captureQualityLooksLikeSlab({}, [{ width: 1600, height: 988 }]),
+  true,
+  "marketplace slab framing should selectively enable the grade rendezvous"
+);
+assert.equal(
+  captureQualityLooksLikeSlab({}, [{ width: 1200, height: 1680 }]),
+  false,
+  "standard raw-card geometry must not pay the slab OCR wait"
+);
 
 const rawCardMissingGradeDoesNotWait = criticalOcrRendezvousDecision({
   currentFields: { year: "2024", players: ["Tester"] },

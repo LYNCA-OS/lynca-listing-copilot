@@ -106,6 +106,8 @@ assert.equal(riskPlans[0].crop_metadata.crop_id, "asset-1__image-front__serial_n
 assert.equal(riskPlans[0].crop_metadata.asset_id, "asset-1");
 assert.equal(riskPlans[0].crop_metadata.source_object_path, "listing-assets/source.jpg");
 assert.equal(riskPlans[0].crop_metadata.source_side, "front");
+assert.equal(riskPlans[0].crop_metadata.source_width, 1400);
+assert.equal(riskPlans[0].crop_metadata.source_height, 2000);
 assert.equal(riskPlans[0].crop_metadata.crop_role, "serial_crop");
 assert.deepEqual(Object.keys(riskPlans[0].crop_metadata.pixel_bounds), ["left", "top", "width", "height"]);
 

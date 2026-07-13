@@ -130,7 +130,10 @@ import {
   gradeOcrRescueDecision,
   guardGradeFieldStates
 } from "../lib/listing/pipeline/grade-atomic-policy.mjs";
-import { criticalOcrRendezvousDecision } from "../lib/listing/pipeline/ocr-rendezvous-policy.mjs";
+import {
+  captureQualityLooksLikeSlab,
+  criticalOcrRendezvousDecision
+} from "../lib/listing/pipeline/ocr-rendezvous-policy.mjs";
 import { extractDirectSlabLabelParallel } from "../lib/listing/preingestion/slab-label-evidence.mjs";
 import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { completeEvidence } from "../lib/listing/orchestration/evidence-completion-orchestrator.mjs";
@@ -933,15 +936,6 @@ function applyVerifiedCurrentImagePrintRunOverride(base = {}, result = {}) {
     numerical_rarity: verified.print_run_number,
     serial_number: verified.print_run_number
   };
-}
-
-function captureQualityLooksLikeSlab(captureQuality = {}) {
-  const surface = normalizeStringOrNull(captureQuality.capture_surface_type)?.toUpperCase();
-  if (surface === "SLAB") return true;
-  return Array.isArray(captureQuality.images)
-    && captureQuality.images.some((quality) => (
-      normalizeStringOrNull(quality?.capture_surface_type)?.toUpperCase() === "SLAB"
-    ));
 }
 
 function lowMarginSafeFieldOverlay(result = {}) {
@@ -5654,7 +5648,8 @@ async function createOpenAiTitle(payload, selection, {
     unresolved: providerResultWithEvidence.unresolved || providerResultWithEvidence.unresolved_fields || [],
     latestOcrState: latestPreingestionOcrState,
     slabLikely: captureQualityLooksLikeSlab(
-      providerResultWithEvidence.capture_quality || captureQualityForPayload(payload)
+      providerResultWithEvidence.capture_quality || captureQualityForPayload(payload),
+      payload.images || []
     ),
     configuredWaitMs: configuredOcrPostProviderWaitMs,
     criticalWaitMs: Math.max(

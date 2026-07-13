@@ -214,6 +214,133 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.succeeded, 1);
 }
 
+// --- slab-like grade crops fall back to full-image OCR; raw cards do not ---
+{
+  const calls = [];
+  const slabGradeJob = {
+    ...sampleJob,
+    job_id: "job-grade-slab",
+    job_key: "ocr:bundle-1:grade-slab",
+    payload: {
+      crop: {
+        ...sampleJob.payload.crop,
+        source_region: "grade_label",
+        role: "grade_label_crop",
+        crop_metadata: {
+          ...sampleJob.payload.crop.crop_metadata,
+          crop_id: "grade-slab",
+          normalized_bounds: { x: 0, y: 0, width: 1, height: 0.22 },
+          pixel_bounds: { x: 0, y: 0, width: 1600, height: 218 }
+        }
+      }
+    }
+  };
+  const gradeResult = {
+    raw_text: "PSA 10",
+    confidence: 0.96,
+    text_candidates: [{ text: "PSA 10", confidence: 0.96 }],
+    evidence_patch: {
+      crop_type: "grade_label",
+      raw_text: "PSA 10",
+      evidence: {
+        grade_company: { value: "PSA" },
+        card_grade: { value: "10" }
+      }
+    }
+  };
+  const result = await processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = String(url);
+      if (!init.method && target.includes("preingestion_jobs")) return jsonResponse([{ ...slabGradeJob }]);
+      if (init.method === "PATCH" && target.includes("preingestion_jobs")) {
+        return jsonResponse([{ status: JSON.parse(init.body).status || "running", attempts: 1 }]);
+      }
+      if (!init.method && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", evidence_patches: [], updated_at: "2026-07-11T00:00:00.000Z" }]);
+      }
+      if (init.method === "PATCH" && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", updated_at: "2026-07-11T00:00:01.000Z" }]);
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    },
+    paddleClient: {
+      configured: true,
+      verifyCrop: async (input) => {
+        calls.push(input);
+        return calls.length === 1
+          ? {
+              raw_text: "PSA",
+              confidence: 0.9,
+              text_candidates: [{ text: "PSA", confidence: 0.9 }],
+              evidence_patch: { evidence: { grade_company: { value: "PSA" } } }
+            }
+          : gradeResult;
+      }
+    },
+    signedReadUrlFor: async () => "https://signed.test/slab.jpg"
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].crop_box, null);
+  assert.match(calls[1].request_id, /full-image-grade$/);
+  assert.equal(result.patches_appended, 2);
+  assert.equal(result.job_observability[0].full_image_fallback_used, true);
+  assert.equal(result.job_observability[0].full_image_fallback_kind, "grade");
+  assert.equal(result.execution_summary.full_image_fallback_count, 1);
+}
+
+{
+  const calls = [];
+  const rawCardGradeJob = {
+    ...sampleJob,
+    job_id: "job-grade-raw",
+    job_key: "ocr:bundle-1:grade-raw",
+    payload: {
+      crop: {
+        ...sampleJob.payload.crop,
+        source_region: "grade_label",
+        role: "grade_label_crop",
+        crop_metadata: {
+          ...sampleJob.payload.crop.crop_metadata,
+          crop_id: "grade-raw",
+          normalized_bounds: { x: 0, y: 0, width: 1, height: 0.2 },
+          pixel_bounds: { x: 0, y: 0, width: 1200, height: 336 }
+        }
+      }
+    }
+  };
+  const result = await processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-1",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = String(url);
+      if (!init.method && target.includes("preingestion_jobs")) return jsonResponse([{ ...rawCardGradeJob }]);
+      if (init.method === "PATCH" && target.includes("preingestion_jobs")) {
+        return jsonResponse([{ status: JSON.parse(init.body).status || "running", attempts: 1 }]);
+      }
+      if (!init.method && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", quality_summary: {}, updated_at: "2026-07-11T00:00:00.000Z" }]);
+      }
+      if (init.method === "PATCH" && target.includes("preingestion_bundles")) {
+        return jsonResponse([{ bundle_id: "bundle-1", updated_at: "2026-07-11T00:00:01.000Z" }]);
+      }
+      throw new Error(`unexpected fetch: ${target}`);
+    },
+    paddleClient: {
+      configured: true,
+      verifyCrop: async (input) => {
+        calls.push(input);
+        return { raw_text: "", confidence: 0, text_candidates: [], evidence_patch: { evidence: {} } };
+      }
+    },
+    signedReadUrlFor: async () => "https://signed.test/raw-card.jpg"
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(result.patches_appended, 0);
+  assert.equal(result.job_observability[0].full_image_fallback_used, false);
+}
+
 // --- OCR state exposes terminal counts and hard-evidence availability ---
 {
   const state = await readPreingestionOcrState({

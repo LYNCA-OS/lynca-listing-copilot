@@ -631,6 +631,39 @@ assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "writer_ready"
 assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "COMPLETED");
 assert.equal(endToEndLedger.reconciliation.error_count, 0);
 
+const terminalDropLedger = buildEndToEndNodeLedger({
+  session: {
+    l2_status: "READY",
+    l2_title: "Topps Chrome Autograph",
+    l2_ready_at: "2026-07-11T00:00:02.900Z",
+    resolved_fields: {
+      manufacturer: "Topps",
+      product: "Chrome",
+      card_name: "Autograph"
+    },
+    provider_result_summary: {
+      pipeline_node_ledger: healthyLedger,
+      title_render_source: "v4_csm_deterministic_renderer",
+      noncritical_persistence_status: "COMPLETED",
+      noncritical_persistence_summary: { saved_count: 4, failed_count: 0, artifact_count: 4 }
+    }
+  },
+  job: {
+    id: "job-observability-terminal-drop",
+    status: "SUCCEEDED",
+    created_at: "2026-07-11T00:00:00.000Z",
+    started_at: "2026-07-11T00:00:00.500Z",
+    completed_at: "2026-07-11T00:00:03.000Z"
+  },
+  display: { can_writer_start: true }
+});
+assert.equal(terminalDropLedger.field_flow.unexplained_terminal_drop_count, 2);
+assert.deepEqual(terminalDropLedger.field_flow.unexplained_terminal_drop_fields, ["year", "subject"]);
+assert.equal(
+  terminalDropLedger.reconciliation.anomalies.some((item) => item.check_id === "terminal_critical_field_flow_has_no_silent_drop"),
+  true
+);
+
 const writerReviewLedger = buildEndToEndNodeLedger({
   session: {
     status: "WRITER_REVIEW",

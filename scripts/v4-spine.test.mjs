@@ -205,6 +205,16 @@ assert.equal(explicitAlternativeNormalized.product, "Pokemon TCG");
 assert.equal(explicitAlternativeNormalized.card_name, "What If...?", "legitimate question-mark card names must survive");
 assert.deepEqual(explicitAlternativeNormalized.players, ["Jalen Brunson"]);
 
+const nonSportSubjectAlias = normalizeFields({
+  subject: "Wolverine",
+  card_name: "Wolverine"
+});
+assert.deepEqual(nonSportSubjectAlias.players, ["Wolverine"]);
+assert.equal(nonSportSubjectAlias.player, "Wolverine");
+
+const subjectArrayAlias = normalizeFields({ subjects: ["Wolverine", "Deadpool"] });
+assert.deepEqual(subjectArrayAlias.players, ["Wolverine", "Deadpool"]);
+
 const v4CodeSanitizedFields = buildV4ResolvedFields({
   resolved_fields: {
     players: ["Trae Young"],
