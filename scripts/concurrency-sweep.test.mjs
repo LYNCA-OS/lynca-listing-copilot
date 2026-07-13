@@ -80,8 +80,10 @@ function reportFor({
       },
       preingestion_ocr: {
         timeout_count: 0,
-        wait_p50_ms: 8000,
-        wait_p95_ms: 15000
+        elapsed_since_preingestion_p50_ms: 8000,
+        elapsed_since_preingestion_p95_ms: 15000,
+        critical_path_wait_p50_ms: 0,
+        critical_path_wait_p95_ms: 750
       },
       pipeline_node_observability: {
         ledger_present_count: attempted,
@@ -118,6 +120,8 @@ assert.equal(baselineRow.catalog_retrieval_p95_ms, 1100);
 assert.equal(baselineRow.post_observation_retrieval_deadline_p95_ms, 1802);
 assert.equal(baselineRow.post_observation_retrieval_deferred_card_count, 3);
 assert.equal(baselineRow.post_observation_retrieval_completed_within_budget_count, 1);
+assert.equal(baselineRow.ocr_elapsed_since_preingestion_p95_ms, 15000);
+assert.equal(baselineRow.ocr_critical_path_wait_p95_ms, 750);
 assert.equal(baselineRow.node_ledger_present_count, 4);
 assert.equal(baselineRow.node_transport_error_count, 0);
 assert.equal(baselineRow.node_field_quality_error_count, 0);

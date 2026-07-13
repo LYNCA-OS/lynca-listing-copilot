@@ -193,10 +193,13 @@ assert.equal(ultraFastServiceTier({}), null);
 assert.equal(ultraFastServiceTier({ v4_ultra_fast_service_tier: "priority" }), "priority");
 assert.equal(ultraFastServiceTier({ v4UltraFastServiceTier: "FLEX" }), "flex");
 assert.equal(ultraFastServiceTier({ v4_ultra_fast_service_tier: "invalid" }), null);
-assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({}, {}), 750);
+assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({}, {}), 0);
 assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({
   PREINGESTION_OCR_POST_PROVIDER_WAIT_MS: "1200"
 }, {}), 1200);
+assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({
+  PREINGESTION_OCR_POST_PROVIDER_WAIT_MS: "0"
+}, {}), 0);
 assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({}, {
   preingestion_ocr_post_provider_wait_ms: 400
 }), 400);

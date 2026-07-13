@@ -2476,8 +2476,10 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       job_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.job_count || 0), 0),
       patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.patch_count || 0), 0),
       serial_patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_ocr_rendezvous?.serial_patch_count || 0), 0),
-      wait_p50_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.5),
-      wait_p95_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.95),
+      elapsed_since_preingestion_p50_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.5),
+      elapsed_since_preingestion_p95_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.waited_ms), 0.95),
+      critical_path_wait_p50_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.post_provider_wait_ms ?? 0), 0.5),
+      critical_path_wait_p95_ms: quantile(results.map((item) => item.preingestion_ocr_rendezvous?.post_provider_wait_ms ?? 0), 0.95),
       evidence_refresh_added_patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_evidence_refresh?.added_patch_count || 0), 0),
       serial_numerator_verified_count: results.filter((item) => item.serial_numerator_verified === true).length,
       serial_numerator_rejected_count: results.filter((item) => item.serial_numerator_verified === false).length

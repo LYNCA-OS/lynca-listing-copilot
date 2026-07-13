@@ -198,7 +198,7 @@ const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
 const defaultCatalogFastLaneBudgetMs = 120;
-const defaultPreingestionOcrPostProviderWaitMs = 750;
+const defaultPreingestionOcrPostProviderWaitMs = 0;
 const confirmedOcrSerialConfidence = 0.86;
 
 function configuredMaxPayloadImages(env = process.env) {
@@ -2974,15 +2974,12 @@ function scheduleBackgroundCompletion(promise) {
 }
 
 function preingestionOcrPostProviderWaitMs(env = process.env, providerOptions = {}) {
-  const optionValue = normalizePositiveIntegerOrNull(
-    providerOptions.preingestion_ocr_post_provider_wait_ms
-      ?? providerOptions.preingestionOcrPostProviderWaitMs
-  );
-  return Math.max(1, optionValue ?? positiveIntegerFromEnv(
-    env,
-    "PREINGESTION_OCR_POST_PROVIDER_WAIT_MS",
-    defaultPreingestionOcrPostProviderWaitMs
-  ));
+  const configured = providerOptions.preingestion_ocr_post_provider_wait_ms
+    ?? providerOptions.preingestionOcrPostProviderWaitMs
+    ?? env.PREINGESTION_OCR_POST_PROVIDER_WAIT_MS;
+  const parsed = Number(configured);
+  if (!Number.isFinite(parsed) || parsed < 0) return defaultPreingestionOcrPostProviderWaitMs;
+  return Math.min(10_000, Math.trunc(parsed));
 }
 
 function deferredPreingestionOcrSnapshot(payload = {}) {
@@ -3009,7 +3006,10 @@ function deferredPreingestionOcrSnapshot(payload = {}) {
 
 function waitForPromiseWithin(promise, timeoutMs) {
   if (timeoutMs <= 0) {
-    return Promise.resolve({ settled: false, value: null });
+    return Promise.race([
+      Promise.resolve(promise).then((value) => ({ settled: true, value })),
+      Promise.resolve().then(() => ({ settled: false, value: null }))
+    ]);
   }
   let timeout;
   return Promise.race([
@@ -5079,9 +5079,11 @@ async function createOpenAiTitle(payload, selection, {
     scheduleBackgroundCompletion(preingestionOcrRendezvousPromise);
   }
   const rendezvousWaitMs = nowMs() - rendezvousWaitStartedAt;
+  if (preingestionOcrRendezvous && typeof preingestionOcrRendezvous === "object") {
+    preingestionOcrRendezvous.post_provider_wait_ms = rendezvousWaitMs;
+  }
   if (preingestionOcrRendezvous?.status === "DEFERRED_AFTER_PROVIDER") {
     preingestionOcrRendezvous.waited_ms = rendezvousWaitMs;
-    preingestionOcrRendezvous.post_provider_wait_ms = rendezvousWaitMs;
   }
   addTiming(timingContext, "preingestion_ocr_rendezvous_wait_ms", rendezvousWaitMs);
   addTiming(timingContext, "preingestion_ocr_post_provider_budget_ms", ocrPostProviderWaitMs);
