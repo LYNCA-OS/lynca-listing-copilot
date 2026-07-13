@@ -220,6 +220,20 @@ const transportFailure = evaluateRow({
 }, baselineRow);
 assert.equal(transportFailure.stable, false);
 assert.ok(transportFailure.rejection_reasons.includes("NODE_RECONCILIATION_ERROR"));
+const boundedOcrRendezvous = evaluateRow({
+  ...baselineRow,
+  ocr_timeout_count: 3,
+  ocr_worker_timeout_count: 0
+}, baselineRow);
+assert.equal(boundedOcrRendezvous.stable, true);
+assert.ok(boundedOcrRendezvous.warning_reasons.includes("OCR_RENDEZVOUS_BUDGET_EXPIRED"));
+const ocrWorkerTimeout = evaluateRow({
+  ...baselineRow,
+  ocr_timeout_count: 0,
+  ocr_worker_timeout_count: 1
+}, baselineRow);
+assert.equal(ocrWorkerTimeout.stable, false);
+assert.ok(ocrWorkerTimeout.rejection_reasons.includes("OCR_WORKER_TIMEOUT_PRESENT"));
 const backHalfOcrRegression = evaluateRow({
   ...baselineRow,
   back_minus_front_ocr_terminal_rate: -0.5,

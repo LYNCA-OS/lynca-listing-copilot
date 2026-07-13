@@ -71,6 +71,8 @@ const handler = createEbayDcsports87ListingsHandler({
           marketplace_item_id: "v1|1|0",
           marketplace_seller_username: "dcsports87",
           marketplace_id: "EBAY_US",
+          marketplace_item_group_href: "https://api.ebay.com/item-group/1",
+          marketplace_item_group_type: "SELLER_DEFINED_VARIATIONS",
           marketplace_image_urls: ["https://i.ebayimg.com/images/1.jpg"]
         }
       }, {
@@ -113,6 +115,8 @@ assert.equal(response.body.returned_count, 1);
 assert.equal(response.body.discarded_count, 2);
 assert.equal(response.body.listings[0].seller, "dcsports87");
 assert.equal(response.body.listings[0].item_id, "v1|1|0");
+assert.equal(response.body.listings[0].item_group_type, "SELLER_DEFINED_VARIATIONS");
+assert.match(response.body.listings[0].item_group_href, /item-group/);
 
 let sportsSearchQuery = null;
 const sportsOnlyHandler = createEbayDcsports87ListingsHandler({

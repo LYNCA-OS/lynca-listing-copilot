@@ -415,7 +415,8 @@ export function evaluateRow(row = {}, baseline = {}, {
   }
   if (row.batch_status_transient_error_count > 0) warningReasons.push("RECOVERED_STATUS_CONTROL_PLANE_TRANSIENT");
   if (row.node_warning_count > 0) warningReasons.push("NODE_RECONCILIATION_WARNING");
-  if (row.ocr_timeout_count > 0 || row.ocr_worker_timeout_count > 0) rejectionReasons.push("OCR_TIMEOUT_PRESENT");
+  if (row.ocr_worker_timeout_count > 0) rejectionReasons.push("OCR_WORKER_TIMEOUT_PRESENT");
+  if (row.ocr_timeout_count > 0) warningReasons.push("OCR_RENDEZVOUS_BUDGET_EXPIRED");
   if (row.ocr_stage_capacity_deferred_count > 0) warningReasons.push("OCR_STAGE_CAPACITY_DEFERRED_WORK");
   if (row.front_half_card_count >= minimumPositionCohortCards
     && row.back_half_card_count >= minimumPositionCohortCards

@@ -119,7 +119,9 @@ function normalizedListing(candidate = {}) {
     image_urls: imageUrls,
     marketplace_id: String(fields.marketplace_id || "").trim(),
     condition: String(fields.marketplace_condition || "").trim(),
-    price: String(fields.marketplace_price || "").trim()
+    price: String(fields.marketplace_price || "").trim(),
+    item_group_href: String(fields.marketplace_item_group_href || "").trim(),
+    item_group_type: String(fields.marketplace_item_group_type || "").trim()
   };
 }
 

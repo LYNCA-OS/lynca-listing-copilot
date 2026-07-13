@@ -1078,6 +1078,8 @@ const ebay = ebayBrowseProvider({
             username: "The-Poke-Store",
             userId: "immutable-seller-id"
           },
+          itemGroupHref: "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group",
+          itemGroupType: "SELLER_DEFINED_VARIATIONS",
           title: "2025 Topps Chrome Cooper Flagg TCAR-CF Market Reference",
           itemWebUrl: "https://www.ebay.com/itm/123",
           image: {
@@ -1125,6 +1127,8 @@ assert.equal(ebayResult.seller_filter_applied, true);
 assert.equal(ebayResult.seller_filter_seller, "the-poke-store");
 assert.equal(ebayResult.candidates[0].fields.marketplace_seller_username, "The-Poke-Store");
 assert.equal(ebayResult.candidates[0].fields.marketplace_seller_user_id, "immutable-seller-id");
+assert.equal(ebayResult.candidates[0].fields.marketplace_item_group_type, "SELLER_DEFINED_VARIATIONS");
+assert.match(ebayResult.candidates[0].fields.marketplace_item_group_href, /item_group/);
 assert.equal(ebayResult.candidates[0].fields.marketplace_image_url, "https://i.ebayimg.com/images/g/front.jpg");
 assert.deepEqual(ebayResult.candidates[0].fields.marketplace_image_urls, [
   "https://i.ebayimg.com/images/g/front.jpg",

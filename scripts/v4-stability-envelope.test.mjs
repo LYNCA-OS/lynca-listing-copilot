@@ -125,6 +125,28 @@ assert.equal(healthy.aggregate.tenant_completion_fairness, 1);
 assert.equal(healthy.aggregate.duplicate_asset_count, 0);
 assert.deepEqual(healthy.rejection_reasons, []);
 
+const boundedOcrRendezvousReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
+for (const report of boundedOcrRendezvousReports) {
+  report.summary.preingestion_ocr = {
+    ...(report.summary.preingestion_ocr || {}),
+    timeout_count: 2,
+    worker_timeout_count: 0
+  };
+}
+const boundedOcrRendezvous = analyzeV4StabilityEnvelope(boundedOcrRendezvousReports);
+assert.equal(boundedOcrRendezvous.pass, true);
+assert.ok(boundedOcrRendezvous.warning_reasons.includes("OCR_RENDEZVOUS_BUDGET_EXPIRED"));
+
+const ocrWorkerTimeoutReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
+ocrWorkerTimeoutReports[1].summary.preingestion_ocr = {
+  ...(ocrWorkerTimeoutReports[1].summary.preingestion_ocr || {}),
+  timeout_count: 0,
+  worker_timeout_count: 1
+};
+const ocrWorkerTimeout = analyzeV4StabilityEnvelope(ocrWorkerTimeoutReports);
+assert.equal(ocrWorkerTimeout.pass, false);
+assert.ok(ocrWorkerTimeout.rejection_reasons.includes("OCR_WORKER_TIMEOUT_PRESENT"));
+
 const duplicate = analyzeV4StabilityEnvelope([
   healthyReports[0],
   waveReport(1, { duplicateAssetId: healthyReports[0].results[0].asset_id }),

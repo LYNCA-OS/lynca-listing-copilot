@@ -7,6 +7,8 @@ import {
   assertBlindInputRow,
   assertOpaqueImageFilename,
   assertSellerListing,
+  classifyBlindEvaluationListing,
+  filterBlindEvaluationListings,
   isSealedProductListing,
   blindEvalRunPaths,
   comparePredictionToTitle,
@@ -24,6 +26,25 @@ import {
 assert.equal(isSealedProductListing({ title: "2023-24 Topps Chrome Factory Sealed 5 Hobby Box Case" }), true);
 assert.equal(isSealedProductListing({ title: "2023 Panini Prizm Victor Wembanyama Case Hit SSP" }), false);
 assert.equal(isSealedProductListing({ title: "2024 Topps Chrome Shohei Ohtani Refractor PSA 10" }), false);
+assert.deepEqual(
+  classifyBlindEvaluationListing({ title: "2025 Topps Chrome Football Pick Your Base #1-200 - Buy More & Save" }),
+  { eligible: false, reason: "buyer_choice_listing" }
+);
+assert.deepEqual(
+  classifyBlindEvaluationListing({ title: "2024 Topps Chrome Shohei Ohtani Refractor PSA 10" }),
+  { eligible: true, reason: "specific_card_listing" }
+);
+assert.equal(classifyBlindEvaluationListing({
+  title: "2024 Pokemon Pikachu Holo",
+  item_group_href: "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group"
+}).reason, "variation_group_listing");
+const evaluationListingFilter = filterBlindEvaluationListings([
+  { item_id: "pick", title: "2026 Panini FIFA Stickers - YOU PICK - #ARG1 - #PAN20" },
+  { item_id: "supply", title: "(30) TALL Sports Card Dividers with NBA Teams Labels" },
+  { item_id: "card", title: "2024 Topps Chrome Shohei Ohtani Refractor PSA 10" }
+]);
+assert.deepEqual(evaluationListingFilter.listings.map((listing) => listing.item_id), ["card"]);
+assert.equal(evaluationListingFilter.discarded_count, 2);
 
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",

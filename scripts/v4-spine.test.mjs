@@ -860,6 +860,27 @@ assert.match(deterministicTcgCardNameTitle.final_title, /Dark Magician/);
 assert.match(deterministicTcgCardNameTitle.final_title, /EN001/);
 assert.match(deterministicTcgCardNameTitle.final_title, /PSA 10/);
 
+const sparseIdentityStillUsesCsm = adaptV2ResultToV4({
+  sessionId: "v4sess-sparse-csm",
+  result: {
+    confidence: "LOW",
+    final_title: "Model prose Michael Jordan wording must remain internal",
+    resolved_fields: {
+      year: "2006",
+      product: "Fleer",
+      set: "20th Anniversary Rookie Reprint",
+      collector_number: "23"
+    },
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.equal(sparseIdentityStillUsesCsm.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
+assert.equal(sparseIdentityStillUsesCsm.final_title, "2006 Fleer 20th Anniversary Rookie Reprint #23");
+assert.match(sparseIdentityStillUsesCsm.legacy_v2_result.model_title_suggestion, /Michael Jordan/);
+assert.doesNotMatch(sparseIdentityStillUsesCsm.final_title, /Model prose/);
+
 const failedL2V4 = adaptV2ResultToV4({
   sessionId: "v4sess-failed-l2",
   result: {

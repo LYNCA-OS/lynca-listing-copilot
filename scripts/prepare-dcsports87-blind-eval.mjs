@@ -84,6 +84,9 @@ export async function main(argv = process.argv, env = process.env) {
   console.log(`sports_only=${summary.sports_only}`);
   console.log(`sports_filtered_count=${summary.sports_filtered_count}`);
   console.log(`sealed_product_discarded_count=${summary.sealed_product_discarded_count || 0}`);
+  console.log(`specific_card_listing_required=${summary.specific_card_listing_required === true}`);
+  console.log(`unsuitable_listing_discarded_count=${summary.unsuitable_listing_discarded_count || 0}`);
+  console.log(`unsuitable_listing_discard_reasons=${JSON.stringify(summary.unsuitable_listing_discard_reasons || {})}`);
   console.log(`ebay_query=${summary.ebay_query}`);
   console.log(`ebay_queries=${(summary.ebay_queries || []).join("|")}`);
   console.log(`ebay_category_ids=${summary.ebay_category_ids}`);
