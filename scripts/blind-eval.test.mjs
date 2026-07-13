@@ -38,6 +38,14 @@ assert.equal(classifyBlindEvaluationListing({
   title: "2024 Pokemon Pikachu Holo",
   item_group_href: "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group"
 }).reason, "variation_group_listing");
+for (const title of [
+  "NBA Basketball Pack - 10 Cards - 1 Guaranteed Auto or #'d Card in Every Pack!",
+  "NBA Mystery Pack",
+  "PANINI 2026 FIFA World Cup Stickers Set de 14 Stickers",
+  "10 Cards Diamond Pack With 3 Numbered or Autos"
+]) {
+  assert.equal(classifyBlindEvaluationListing({ title }).eligible, false, title);
+}
 const evaluationListingFilter = filterBlindEvaluationListings([
   { item_id: "pick", title: "2026 Panini FIFA Stickers - YOU PICK - #ARG1 - #PAN20" },
   { item_id: "supply", title: "(30) TALL Sports Card Dividers with NBA Teams Labels" },

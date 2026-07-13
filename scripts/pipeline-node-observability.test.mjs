@@ -631,6 +631,28 @@ assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "writer_ready"
 assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "COMPLETED");
 assert.equal(endToEndLedger.reconciliation.error_count, 0);
 
+const finalizerLedger = buildEndToEndNodeLedger({
+  session: {
+    ...endToEndLedger.session,
+    l2_status: "READY",
+    l2_title: "2024 Topps Chrome Test Player Autograph",
+    provider_result_summary: {
+      pipeline_node_ledger: healthyLedger,
+      title_render_source: "deterministic_renderer_finalizer",
+      noncritical_persistence_status: "COMPLETED"
+    }
+  },
+  job: {
+    id: "job-observability-finalizer",
+    status: "SUCCEEDED",
+    created_at: "2026-07-11T00:00:00.000Z",
+    started_at: "2026-07-11T00:00:00.500Z",
+    completed_at: "2026-07-11T00:00:03.000Z"
+  },
+  display: { can_writer_start: true }
+});
+assert.equal(finalizerLedger.reconciliation.error_count, 0);
+
 const terminalDropLedger = buildEndToEndNodeLedger({
   session: {
     l2_status: "READY",
