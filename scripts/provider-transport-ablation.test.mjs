@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { compareProviderTransportReports } from "./compare-provider-transport-ablation.mjs";
 
-function report({ compact = false, fieldQualityError = false, transportError = false } = {}) {
+function report({
+  compact = false,
+  fieldQualityError = false,
+  canonicalFieldError = false,
+  transportError = false
+} = {}) {
   const anomalies = [
     ...(fieldQualityError ? [{ check_id: "critical_field_flow_has_no_silent_drop", severity: "ERROR" }] : []),
+    ...(canonicalFieldError ? [{ check_id: "v4_normal_field_state_has_canonical_value", severity: "ERROR" }] : []),
     ...(transportError ? [{ check_id: "provider_token_count_conservation", severity: "ERROR" }] : [])
   ];
   return {
@@ -51,6 +57,11 @@ const qualityOnly = compareProviderTransportReports(report(), report({ compact: 
 assert.equal(qualityOnly.compact.node_error_count, 1);
 assert.equal(qualityOnly.compact.field_quality_error_count, 1);
 assert.equal(qualityOnly.compact.transport_node_error_count, 0);
+
+const canonicalQualityOnly = compareProviderTransportReports(report(), report({ compact: true, canonicalFieldError: true }));
+assert.equal(canonicalQualityOnly.compact.node_error_count, 1);
+assert.equal(canonicalQualityOnly.compact.field_quality_error_count, 1);
+assert.equal(canonicalQualityOnly.compact.transport_node_error_count, 0);
 
 const transportFailure = compareProviderTransportReports(report(), report({ compact: true, transportError: true }));
 assert.equal(transportFailure.compact.transport_node_error_count, 1);

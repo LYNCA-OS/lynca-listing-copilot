@@ -64,7 +64,8 @@ function transportSummary(report = {}, rows = []) {
   const nodeObservability = report.summary?.pipeline_node_observability || {};
   const fieldQualityCheckIds = new Set([
     "critical_field_flow_has_no_silent_drop",
-    "field_flow_has_no_cross_bracket_composite_migration"
+    "field_flow_has_no_cross_bracket_composite_migration",
+    "v4_normal_field_state_has_canonical_value"
   ]);
   const observedAnomalies = (Array.isArray(nodeObservability.anomaly_examples)
     ? nodeObservability.anomaly_examples
