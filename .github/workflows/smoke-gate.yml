@@ -73,13 +73,17 @@ jobs:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
           METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: |
+          # This is a production transport/stability gate, not a reviewed
+          # accuracy release set. The legacy eBay C100 fixture has weak seller
+          # labels and no frozen reviewed-GT provenance, so it must not claim
+          # FIXED_REGRESSION status.
           node scripts/v4-ebay-smoke.mjs \
             --limit "${{ inputs.limit }}" \
             --offset "${{ inputs.offset }}" \
             --concurrency 2 \
             --queue --speculative --use-preingestion --prewarm \
             --model "${{ inputs.model }}" \
-            --sample-mode fixed_regression \
+            --sample-mode unspecified \
             --think-ms "${{ inputs.think_ms }}" \
             --l2-wait-ms 120000 \
             --out /tmp/gate-report.json
