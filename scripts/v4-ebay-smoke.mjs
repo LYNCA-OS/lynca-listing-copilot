@@ -41,6 +41,28 @@ export function providerDoneHandoffOverride(argv = []) {
   return null;
 }
 
+export function ultraFastL2Override(argv = []) {
+  const enabled = hasFlag(argv, "--ultra-fast-l2");
+  const disabled = hasFlag(argv, "--no-ultra-fast-l2");
+  if (enabled && disabled) {
+    throw new Error("ultra-fast L2 flags are mutually exclusive");
+  }
+  if (enabled) return true;
+  if (disabled) return false;
+  return null;
+}
+
+export function fastInitialPromptOverride(argv = []) {
+  const enabled = hasFlag(argv, "--fast-initial-prompt");
+  const disabled = hasFlag(argv, "--full-listing-prompt");
+  if (enabled && disabled) {
+    throw new Error("provider prompt mode flags are mutually exclusive");
+  }
+  if (enabled) return true;
+  if (disabled) return false;
+  return null;
+}
+
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
@@ -206,12 +228,13 @@ async function verifiedItemImages({
   return verified;
 }
 
-function payloadForItem(item = {}, index = 0, images = itemImages(item), {
+export function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   forceL2Direct = false,
   modelOverride = "",
   enableL1 = false,
   compactL2 = false,
-  ultraFastL2 = false,
+  ultraFastL2 = null,
+  fastInitialPrompt = null,
   ultraSparseTransport = false,
   providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
@@ -230,8 +253,13 @@ function payloadForItem(item = {}, index = 0, images = itemImages(item), {
   };
   if (modelOverride) providerOptions.openai_listing_model_override = modelOverride;
   if (compactL2) providerOptions.v4_compact_l2_prompt = true;
-  if (ultraFastL2) {
-    providerOptions.v4_ultra_fast_l2 = true;
+  if (typeof ultraFastL2 === "boolean") {
+    providerOptions.v4_ultra_fast_l2 = ultraFastL2;
+  }
+  if (typeof fastInitialPrompt === "boolean") {
+    providerOptions.enable_fast_initial_provider_prompt = fastInitialPrompt;
+  }
+  if (ultraFastL2 === true) {
     if (ultraSparseTransport) providerOptions.v4_ultra_sparse_transport = true;
     providerOptions.v4_ultra_fast_image_detail = ["low", "auto", "high"].includes(cleanText(ultraFastImageDetail).toLowerCase())
       ? cleanText(ultraFastImageDetail).toLowerCase()
@@ -1290,7 +1318,8 @@ async function runOne({
   modelOverride = "",
   enableL1 = false,
   compactL2 = false,
-  ultraFastL2 = false,
+  ultraFastL2 = null,
+  fastInitialPrompt = null,
   ultraSparseTransport = false,
   providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
@@ -1320,6 +1349,7 @@ async function runOne({
     enableL1,
     compactL2,
     ultraFastL2,
+    fastInitialPrompt,
     ultraSparseTransport,
     providerDoneHandoff,
     ultraFastImageDetail,
@@ -1993,6 +2023,7 @@ async function enqueueSpeculativeItem({
   enableL1,
   compactL2,
   ultraFastL2,
+  fastInitialPrompt,
   ultraSparseTransport,
   providerDoneHandoff,
   ultraFastImageDetail,
@@ -2019,6 +2050,7 @@ async function enqueueSpeculativeItem({
       enableL1,
       compactL2,
       ultraFastL2,
+      fastInitialPrompt,
       ultraSparseTransport,
       providerDoneHandoff,
       ultraFastImageDetail,
@@ -3511,7 +3543,8 @@ export async function runV4EbaySmoke({
   modelOverride = "",
   enableL1 = false,
   compactL2 = false,
-  ultraFastL2 = false,
+  ultraFastL2 = null,
+  fastInitialPrompt = null,
   ultraSparseTransport = false,
   providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
@@ -3650,6 +3683,7 @@ export async function runV4EbaySmoke({
           enableL1,
           compactL2,
           ultraFastL2,
+          fastInitialPrompt,
           ultraSparseTransport,
           providerDoneHandoff,
           ultraFastImageDetail,
@@ -3691,6 +3725,7 @@ export async function runV4EbaySmoke({
           enableL1,
           compactL2,
           ultraFastL2,
+          fastInitialPrompt,
           ultraSparseTransport,
           providerDoneHandoff,
           ultraFastImageDetail,
@@ -3742,6 +3777,7 @@ export async function runV4EbaySmoke({
   const results = attachPostRecognitionScoring(recognitionResults, items, sealedLabels, offset);
   const allReviewedTitleGroundTruth = results.length > 0
     && results.every((row) => row.reference_title_is_reviewed_ground_truth === true);
+  const observedUltraFastL2Count = results.filter((item) => item.provider_prompt_mode === "v4_ultra_fast_l2").length;
   const report = {
     schema_version: "v4-ebay-smoke-v1",
     generated_at: new Date().toISOString(),
@@ -3779,11 +3815,23 @@ export async function runV4EbaySmoke({
     diagnostic_hydration: diagnosticHydration.metrics,
     prewarm_enabled: prewarm,
     compact_l2_enabled: compactL2,
-    ultra_fast_l2_enabled: ultraFastL2,
+    ultra_fast_l2_override: ultraFastL2,
+    fast_initial_prompt_override: fastInitialPrompt,
+    ultra_fast_l2_observed_count: observedUltraFastL2Count,
+    ultra_fast_l2_effective: observedUltraFastL2Count === results.length
+      ? true
+      : observedUltraFastL2Count === 0
+        ? false
+        : "mixed",
+    ultra_fast_l2_enabled: observedUltraFastL2Count === results.length
+      ? true
+      : observedUltraFastL2Count === 0
+        ? false
+        : null,
     ultra_sparse_transport_enabled: ultraSparseTransport,
     provider_done_capacity_handoff_override: providerDoneHandoff,
-    ultra_fast_image_detail: ultraFastL2 ? ultraFastImageDetail : null,
-    ultra_fast_service_tier: ultraFastL2 ? ultraFastServiceTier || null : null,
+    ultra_fast_image_detail: ultraFastL2 === true ? ultraFastImageDetail : null,
+    ultra_fast_service_tier: ultraFastL2 === true ? ultraFastServiceTier || null : null,
     identity_cache_disabled: disableIdentityCache,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
@@ -3885,7 +3933,8 @@ export async function main(argv = process.argv, env = process.env) {
     forceL2Direct: hasFlag(argv, "--force-l2-direct"),
     enableL1: hasFlag(argv, "--enable-l1"),
     compactL2: hasFlag(argv, "--compact-l2"),
-    ultraFastL2: hasFlag(argv, "--ultra-fast-l2"),
+    ultraFastL2: ultraFastL2Override(argv),
+    fastInitialPrompt: fastInitialPromptOverride(argv),
     ultraSparseTransport: hasFlag(argv, "--ultra-sparse-v2"),
     providerDoneHandoff: providerDoneHandoffOverride(argv),
     ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),

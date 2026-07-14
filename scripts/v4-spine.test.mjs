@@ -27,6 +27,7 @@ import {
   providerOptionsForV4ProgressiveL1,
   v4TitleStages
 } from "../lib/listing/v4/stages/title-stages.mjs";
+import { fastInitialProviderPromptEnabled } from "../lib/listing/pipeline/provider-prompt.mjs";
 import {
   checkV4Tables,
   createV4RecognitionSession,
@@ -43,8 +44,11 @@ import {
   mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
+  payloadForItem as smokePayloadForItem,
+  fastInitialPromptOverride,
   perCardTsv,
   providerDoneHandoffOverride,
+  ultraFastL2Override,
   summarize as summarizeSmoke,
   summarizePipelineNodeLedgers,
   summarizeV4PipelineContracts,
@@ -173,6 +177,29 @@ assert.throws(
   () => providerDoneHandoffOverride(["node", "smoke", "--provider-done-handoff", "--no-provider-done-handoff"]),
   /mutually exclusive/
 );
+assert.equal(ultraFastL2Override(["node", "smoke"]), null, "omitted ultra-fast mode must inherit production configuration");
+assert.equal(ultraFastL2Override(["node", "smoke", "--ultra-fast-l2"]), true);
+assert.equal(ultraFastL2Override(["node", "smoke", "--no-ultra-fast-l2"]), false);
+assert.throws(
+  () => ultraFastL2Override(["node", "smoke", "--ultra-fast-l2", "--no-ultra-fast-l2"]),
+  /mutually exclusive/
+);
+const inheritedQualityPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: null });
+assert.equal("v4_ultra_fast_l2" in inheritedQualityPayload.provider_options, false);
+const disabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: false });
+assert.equal(disabledUltraFastPayload.provider_options.v4_ultra_fast_l2, false);
+const enabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: true });
+assert.equal(enabledUltraFastPayload.provider_options.v4_ultra_fast_l2, true);
+assert.equal(fastInitialPromptOverride(["node", "smoke"]), null);
+assert.equal(fastInitialPromptOverride(["node", "smoke", "--fast-initial-prompt"]), true);
+assert.equal(fastInitialPromptOverride(["node", "smoke", "--full-listing-prompt"]), false);
+assert.throws(
+  () => fastInitialPromptOverride(["node", "smoke", "--fast-initial-prompt", "--full-listing-prompt"]),
+  /mutually exclusive/
+);
+const fullPromptPayload = smokePayloadForItem({}, 0, [], { fastInitialPrompt: false });
+assert.equal(fullPromptPayload.provider_options.enable_fast_initial_provider_prompt, false);
+assert.equal(fastInitialProviderPromptEnabled(fullPromptPayload, { ENABLE_FAST_INITIAL_PROVIDER_PROMPT: "true" }), false);
 assert.equal(batchStatusResponseDisposition({ ok: true, http_status: 200 }), "ok");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 503, data: { retryable: true } }), "retry");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "Unable to read V4 jobs." } }), "retry");

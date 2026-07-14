@@ -59,6 +59,7 @@ import {
   buildInitialProviderPrompt,
   captureQualityForPayload,
   compactL2PromptEnabled,
+  fastInitialProviderPromptEnabled,
   l1FastScoutHintPromptSection,
   providerMinimalOutputShape,
   ultraFastL2Enabled,
@@ -5120,7 +5121,7 @@ async function createOpenAiTitle(payload, selection, {
     ? "v4_ultra_fast_l2"
     : compactL2PromptEnabled(initialPayload, process.env)
       ? "v4_compact_l2"
-      : envFlag(process.env, "ENABLE_FAST_INITIAL_PROVIDER_PROMPT", true)
+      : fastInitialProviderPromptEnabled(initialPayload, process.env)
         ? "fast_initial"
         : "full_listing";
   const providerImageDetail = ultraFastL2 ? ultraFastImageDetail(providerOptions) : "high";
