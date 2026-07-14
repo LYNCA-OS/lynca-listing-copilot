@@ -12,6 +12,7 @@ import {
   openAiUltraCompactProviderResponseSchema
 } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { resolvedFieldNames } from "../lib/listing/evidence/evidence-schema.mjs";
+import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 
 const schema = JSON.parse(await readFile("lib/listing/schemas/provider-evidence-response.schema.json", "utf8"));
 assert.equal(schema.title, "Listing ProviderEvidenceResponse");
@@ -379,23 +380,59 @@ assert.ok(unsupportedSubjectCountLot.unresolved.includes("multi_card"));
 
 const directlyObservedLot = validateProviderEvidencePayload("openai_legacy", {
   fields: { multi_card: true, card_count: 3, lot_type: "multi_card_lot" },
-  field_evidence: [{
-    field: "multi_card",
-    value: true,
-    source_type: "VISION_ONLY",
-    source_image_id: "image-1",
-    source_region: "multi_card_layout",
-    evidence_kind: "PHYSICAL_CARD_COUNT",
-    visible_text: "3 separate cards",
-    review_required: true,
-    directly_observed: true,
-    direct_observation: true
-  }],
+  field_evidence: [
+    {
+      field: "multi_card",
+      value: true,
+      source_type: "VISION_ONLY",
+      source_image_id: "image-1",
+      source_region: "multi_card_layout",
+      evidence_kind: "PHYSICAL_CARD_COUNT",
+      visible_text: "3 separate cards",
+      review_required: true,
+      directly_observed: true,
+      direct_observation: true
+    },
+    {
+      field: "card_count",
+      value: 3,
+      source_type: "VISION_ONLY",
+      source_image_id: "image-1",
+      source_region: "multi_card_layout",
+      evidence_kind: "PHYSICAL_CARD_COUNT",
+      visible_text: "3 separate cards",
+      review_required: true,
+      directly_observed: true,
+      direct_observation: true
+    },
+    {
+      field: "lot_type",
+      value: "multi_card_lot",
+      source_type: "VISION_ONLY",
+      source_image_id: "image-1",
+      source_region: "multi_card_layout",
+      evidence_kind: "PHYSICAL_CARD_COUNT",
+      visible_text: "3 separate cards",
+      review_required: true,
+      directly_observed: true,
+      direct_observation: true
+    }
+  ],
   unresolved: []
 });
 assert.equal(directlyObservedLot.fields.multi_card, false, "provider-only visual lot claims must fail closed");
 assert.equal(directlyObservedLot.fields.card_count, null);
 assert.ok(directlyObservedLot.unresolved.includes("multi_card"));
+assert.equal(directlyObservedLot.field_evidence.multi_card, undefined);
+assert.equal(directlyObservedLot.field_evidence.card_count, undefined);
+assert.equal(directlyObservedLot.field_evidence.lot_type, undefined);
+assert.deepEqual(
+  directlyObservedLot.provider_field_rejections.at(-1).rejected_evidence_fields,
+  ["multi_card", "card_count", "lot_type"]
+);
+const directlyObservedLotDocument = providerPayloadToEvidenceDocument(directlyObservedLot);
+assert.equal(directlyObservedLotDocument.resolved.multi_card, false, "rejected lot evidence must not be reconstructed downstream");
+assert.equal(directlyObservedLotDocument.resolved.card_count, null);
 
 const operatorConfirmedLot = validateProviderEvidencePayload("openai_legacy", {
   fields: { multi_card: true, card_count: 3, lot_type: "multi_card_lot" },

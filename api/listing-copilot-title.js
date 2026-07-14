@@ -193,6 +193,7 @@ import { vectorIndexReady, vectorRetrievalActive, vectorRetrievalConfig, vectorR
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
 import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-telemetry.mjs";
 import { buildCandidateContextSummary } from "../lib/listing/retrieval/candidate-context-summary.mjs";
+import { mergeCatalogCandidateContexts } from "../lib/listing/retrieval/catalog-context-merge.mjs";
 import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
@@ -5449,6 +5450,15 @@ async function createOpenAiTitle(payload, selection, {
         : await (lateVectorPromise || startLateVectorLookup()));
     }
   }
+  const preProviderCatalogRace = await waitForPromiseWithin(catalogContextPromise, 250);
+  if (!preProviderCatalogRace.settled) {
+    addTiming(timingContext, "catalog_pre_provider_merge_deferred_count", 1);
+    scheduleBackgroundCompletion(catalogContextPromise);
+  }
+  catalogContext = mergeCatalogCandidateContexts(
+    preProviderCatalogRace.settled ? preProviderCatalogRace.value : null,
+    catalogContext
+  );
   if (!catalogContext) catalogContext = await catalogContextPromise.catch(() => null);
   if (!providerResolvedForRetrieval) {
     providerResolvedForRetrieval = mergeCurrentFieldsForTitleAssist(
@@ -5749,6 +5759,7 @@ export const __listingCopilotTitleTestHooks = {
   preingestionOcrPostProviderWaitMs,
   deferredPreingestionOcrSnapshot,
   deferredRetrievalCandidateContext,
+  mergeCatalogCandidateContexts,
   rebindCatalogCandidateContextToFields,
   rebindVectorCandidateContextToFields,
   retrievalAnchorSummary,

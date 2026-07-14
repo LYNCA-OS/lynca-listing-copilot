@@ -392,6 +392,45 @@ const reboundCatalogConflict = __listingCopilotTitleTestHooks.rebindCatalogCandi
   collector_number: "999"
 });
 assert.equal(reboundCatalogConflict.catalog_assist_eligibility.prompt_candidate_count, 0);
+const mergedCatalogContext = __listingCopilotTitleTestHooks.mergeCatalogCandidateContexts(
+  {
+    retrieval_phase: "pre_provider",
+    retrieval: reboundCatalog.retrieval
+  },
+  {
+    retrieval_phase: "post_provider",
+    retrieval: {
+      sources: [],
+      providers_used: ["postgres_hybrid"],
+      queries: [{ query_id: "post-provider-empty" }],
+      trace: [],
+      conflicts: [],
+      unavailable: []
+    }
+  }
+);
+assert.equal(mergedCatalogContext.retrieval.sources.length, 1, "an empty post-provider lookup must not erase a valid pre-provider candidate");
+assert.equal(mergedCatalogContext.catalog_context_merge.phase_count, 2);
+const mergedCatalogRebound = __listingCopilotTitleTestHooks.rebindCatalogCandidateContextToFields(
+  mergedCatalogContext,
+  {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    collector_number: "136"
+  }
+);
+assert.equal(mergedCatalogRebound.catalog_assist_eligibility.prompt_candidate_count, 1);
+const mergedCatalogConflict = __listingCopilotTitleTestHooks.rebindCatalogCandidateContextToFields(
+  mergedCatalogContext,
+  {
+    year: "2025",
+    product: "Panini Prizm",
+    players: ["Different Player"],
+    collector_number: "999"
+  }
+);
+assert.equal(mergedCatalogConflict.catalog_assist_eligibility.prompt_candidate_count, 0, "merged candidates must still fail closed against current evidence");
 assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({}, {
   status: "DEFERRED_AFTER_PROVIDER",
   job_count: null

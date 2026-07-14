@@ -102,6 +102,25 @@ assert.equal(resolved.cert_number, "0018492845");
 assert.equal(resolved.auto, true);
 assert.equal(validateResolvedFields(resolved).length, 0);
 
+const middleNameAliasPlayers = normalizeResolvedFields({
+  players: ["Jackson Bryan Chourio", "Jackson Chourio", "JACKSON CHOURIO"]
+});
+assert.deepEqual(
+  middleNameAliasPlayers.players,
+  ["Jackson Chourio"],
+  "a middle-name expansion of the same person must not create a multi-subject identity"
+);
+assert.deepEqual(
+  normalizeResolvedFields({ players: ["Ken Griffey", "Ken Griffey Jr."] }).players,
+  ["Ken Griffey", "Ken Griffey Jr."],
+  "generational suffixes must remain distinct subjects"
+);
+assert.deepEqual(
+  normalizeResolvedFields({ players: ["Michael Jordan", "LeBron James"] }).players,
+  ["Michael Jordan", "LeBron James"],
+  "real multi-subject cards must remain multi-subject"
+);
+
 const descriptorResolved = legacyFieldsToResolvedFields({
   year: "2025",
   manufacturer: "Topps",
