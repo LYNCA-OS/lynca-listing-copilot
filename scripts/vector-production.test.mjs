@@ -432,6 +432,39 @@ assert.deepEqual(catalogCardNumberSoftConflictPacket.vector_retrieval.candidates
 assert.deepEqual(catalogCardNumberSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, []);
 assert.equal(vectorCandidatePacketAssistEligibility(catalogCardNumberSoftConflictPacket).prompt_candidate_count, 0);
 
+// Product hierarchy is component-aware: a provider's parent product plus a
+// parenthetical visual description is compatible with the reviewed child
+// product. The noisy set string must not hide a valid approved identity.
+const catalogParentChildProductPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-parent-child-product",
+    candidate_identity_id: "identity-parent-child-product",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["subjects", "year", "product"],
+    matched_fields: ["subjects", "year", "product"],
+    fields: {
+      year: "2024",
+      product: "Topps Heritage High Number",
+      set: "Topps Heritage High Number",
+      players: ["Jackson Chourio"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2024",
+    product: "Topps Heritage",
+    set: "Topps Heritage (retro design)",
+    players: ["Jackson Chourio"]
+  }
+});
+assert.deepEqual(catalogParentChildProductPacket.vector_retrieval.candidates[0].conflicting_fields, []);
+assert.equal(catalogParentChildProductPacket.vector_retrieval.candidates[0].anchor_agreement.prompt_hard_filter_pass, true);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogParentChildProductPacket).prompt_candidate_count, 1);
+
 // Anchor hard filter: a similar card from the same product line (subject
 // agrees, year and serial denominator contradict) must stay shadow-only.
 const catalogSimilarCardPacket = buildVectorCandidatePacket({

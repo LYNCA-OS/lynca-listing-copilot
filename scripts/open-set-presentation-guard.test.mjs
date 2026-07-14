@@ -99,7 +99,7 @@ assert.equal(shouldDeferVectorUntilProviderObservation({
     players: ["Jaren Jackson Jr."]
   },
   env: {}
-}), false, "forced vector may run pre-prompt only when field anchors can filter the query");
+}), true, "non-final pre-prompt anchors must be rebound after provider observation");
 assert.equal(retrievalFieldsHavePrePromptVectorAnchor({ collector_number: "202" }), true);
 
 assert.equal(shouldDeferVectorUntilProviderObservation({
@@ -125,9 +125,20 @@ assert.equal(shouldDeferVectorUntilProviderObservation({
 }), true, "field-support-only catalog packets must not block post-observation vector retrieval");
 assert.equal(shouldDeferVectorUntilProviderObservation({
   catalogContext: strongCatalogContext,
+  lazyDecision: { skip: true, reason: "strong_catalog_anchor" },
   providerOptions: { enable_vector_assist: true, enable_vector_lazy_mode: true },
   env: {}
-}), false, "a prompt-safe identity candidate may satisfy vector lazy mode");
+}), false, "only a vetted strong catalog anchor may satisfy vector lazy mode");
+assert.equal(shouldDeferVectorUntilProviderObservation({
+  catalogContext: strongCatalogContext,
+  lazyDecision: { skip: false },
+  providerOptions: { enable_vector_assist: true, enable_vector_lazy_mode: true },
+  env: {}
+}), true, "an unvetted prompt candidate must not suppress post-observation convergence");
+assert.equal(shouldDeferVectorUntilProviderObservation({
+  providerOptions: { enable_catalog_assist: true, enable_vector_assist: false },
+  env: {}
+}), true, "catalog-only mode still needs a post-observation identity lookup");
 
 const oversizedPayloadBatch = boundedPayloadImagesFromImages([
   { id: "front" },

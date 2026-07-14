@@ -302,6 +302,46 @@ const directlySupportedCode = validateProviderEvidencePayload("openai_legacy", {
 });
 assert.deepEqual(directlySupportedCode.unresolved, [], "directly visible printed codes must remain eligible for resolution");
 
+const unsupportedAutoReview = validateProviderEvidencePayload("openai_legacy", {
+  fields: {
+    auto: true,
+    observable_components: ["auto", "patch"],
+    tags: ["Auto", "RC"]
+  },
+  resolved: {
+    auto: true,
+    observable_components: ["auto", "patch"],
+    attributes: ["Auto", "RC"]
+  },
+  field_evidence: [],
+  unresolved: []
+});
+assert.equal(unsupportedAutoReview.fields.auto, false, "model-only auto claims must fail closed");
+assert.deepEqual(unsupportedAutoReview.fields.observable_components, ["patch"]);
+assert.deepEqual(unsupportedAutoReview.fields.tags, ["RC"]);
+assert.equal(unsupportedAutoReview.resolved.auto, false);
+assert.ok(unsupportedAutoReview.unresolved.includes("auto"));
+assert.equal(unsupportedAutoReview.provider_field_rejections.at(-1).reason, "auto_not_directly_supported_by_current_image");
+
+const directlySupportedAuto = validateProviderEvidencePayload("openai_legacy", {
+  fields: { auto: true, observable_components: ["auto"] },
+  field_evidence: [{
+    field: "auto",
+    value: true,
+    source_type: "VISIBLE_SIGNATURE",
+    source_image_id: "image-1",
+    source_region: "signature",
+    evidence_kind: "SIGNATURE",
+    visible_text: "",
+    directly_observed: true,
+    direct_observation: true,
+    review_required: false
+  }],
+  unresolved: []
+});
+assert.equal(directlySupportedAuto.fields.auto, true, "a directly visible signature may support Auto");
+assert.deepEqual(directlySupportedAuto.unresolved, []);
+
 const prefixOnlyCodeIsRejected = validateProviderEvidencePayload("openai_legacy", {
   fields: { collector_number: "CMP124" },
   field_evidence: [{

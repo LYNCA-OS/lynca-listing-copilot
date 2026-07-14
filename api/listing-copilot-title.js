@@ -4849,33 +4849,20 @@ async function createRecognitionIdentityPreflight(payload, {
 }
 
 function shouldDeferVectorUntilProviderObservation({
-  catalogContext = null,
   lazyDecision = {},
-  resolvedForRetrieval = {},
   providerOptions = {},
   env = process.env
 } = {}) {
-  if (optionFlag(providerOptions, "enable_vector_assist", false) !== true) return false;
-  if (optionFlag(providerOptions, "force_vector_assist", false) === true) {
-    return !retrievalFieldsHavePrePromptVectorAnchor(resolvedForRetrieval);
-  }
-  if (optionFlag(providerOptions, "enable_vector_lazy_mode", envFlag(env, "ENABLE_VECTOR_LAZY_MODE", true)) !== true) return false;
-  if (lazyDecision.skip === true) return false;
-  return !contextHasPromptSafeIdentityCandidate(catalogContext);
-}
+  const catalogAssistEnabled = optionFlag(providerOptions, "enable_catalog_assist", false) === true;
+  const vectorAssistEnabled = optionFlag(providerOptions, "enable_vector_assist", false) === true;
+  if (!catalogAssistEnabled && !vectorAssistEnabled) return false;
 
-function contextHasPromptSafeIdentityCandidate(context = null) {
-  if (!context || typeof context !== "object") return false;
-  const eligibility = context.catalog_assist_eligibility
-    || context.vector_assist_eligibility
-    || context.assistPacket?.vector_retrieval?.assist_filter
-    || context.assistPacket?.assist_filter
-    || {};
-  if (Number(eligibility.prompt_candidate_count || 0) > 0) return true;
-  const candidates = context.assistPacket?.vector_retrieval?.candidates
-    || context.assistPacket?.candidates
-    || [];
-  return Array.isArray(candidates) && candidates.length > 0;
+  // A prompt-safe candidate is still only a hypothesis until it survives the
+  // current provider observation. Re-query/rebind after observation unless the
+  // exact-anchor lazy gate has already proved a unique strong identity. This
+  // keeps stale pre-provider Top-K results from suppressing convergence.
+  if (lazyDecision.skip === true) return false;
+  return true;
 }
 
 function fieldHasValueForRetrieval(value) {

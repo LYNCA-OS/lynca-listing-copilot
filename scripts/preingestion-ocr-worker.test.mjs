@@ -503,8 +503,8 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.execution_summary.grade_component_fallback_latency_ms, 7);
 }
 
-// Marketplace slabs may omit source dimensions. A visible grading-company token
-// is enough to justify one full-image grade scan, while an empty raw-card crop is not.
+// Marketplace slabs may omit source dimensions. A missing complete grade earns
+// exactly one full-image scan because ingestion hints are not always preserved.
 {
   const calls = [];
   const slabWithoutDimensionsJob = {
@@ -618,9 +618,11 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     },
     signedReadUrlFor: async () => "https://signed.test/raw-card.jpg"
   });
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].crop_box, null);
+  assert.match(calls[1].request_id, /full-image-grade$/);
   assert.equal(result.patches_appended, 0);
-  assert.equal(result.job_observability[0].full_image_fallback_used, false);
+  assert.equal(result.job_observability[0].full_image_fallback_used, true);
 }
 
 // --- OCR state exposes terminal counts and hard-evidence availability ---

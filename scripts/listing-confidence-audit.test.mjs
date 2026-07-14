@@ -41,6 +41,42 @@ function directPrintedCodeEvidence(value, sourceType = "CARD_BACK_PRINTED_TEXT")
   };
 }
 
+function withDirectAutoEvidenceForPresentationTest(providerResult = {}) {
+  if (providerResult.fields?.auto !== true) return providerResult;
+  const directAutoEvidence = {
+    value: true,
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    source_image_id: "image-1",
+    source_region: "card_text",
+    visible_text: "AUTOGRAPH",
+    directly_observed: true,
+    direct_observation: true,
+    review_required: false
+  };
+  if (providerResult.field_evidence && !Array.isArray(providerResult.field_evidence)) {
+    if (providerResult.field_evidence.auto) return providerResult;
+    return {
+      ...providerResult,
+      field_evidence: {
+        ...providerResult.field_evidence,
+        auto: directAutoEvidence
+      }
+    };
+  }
+  const entries = Array.isArray(providerResult.field_evidence) ? providerResult.field_evidence : [];
+  if (entries.some((entry) => entry?.field === "auto")) return providerResult;
+  return {
+    ...providerResult,
+    field_evidence: [
+      ...entries,
+      {
+        field: "auto",
+        ...directAutoEvidence
+      }
+    ]
+  };
+}
+
 async function callApi(providerResult, options = {}) {
   globalThis.fetch = async () => ({
     ok: true,
@@ -48,7 +84,7 @@ async function callApi(providerResult, options = {}) {
     json: async () => ({
       id: "resp_listing_confidence_test",
       model: "gpt-4.1-mini-2025-04-14",
-      output_text: JSON.stringify(providerResult),
+      output_text: JSON.stringify(withDirectAutoEvidenceForPresentationTest(providerResult)),
       usage: {
         input_tokens: 10,
         output_tokens: 8,
@@ -361,6 +397,17 @@ const visuallyGuessedParallel = await callApi({
     serial_number: "137/199",
     numerical_rarity: "137/199"
   },
+  field_evidence: [{
+    field: "auto",
+    value: true,
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    source_image_id: "image-1",
+    source_region: "card_text",
+    visible_text: "AUTOGRAPH",
+    directly_observed: true,
+    direct_observation: true,
+    review_required: false
+  }],
   unresolved: []
 });
 
@@ -382,6 +429,17 @@ const numericalRarityRecovered = await callApi({
     serial_number: "137/199",
     numerical_rarity: "137/199"
   },
+  field_evidence: [{
+    field: "auto",
+    value: true,
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    source_image_id: "image-1",
+    source_region: "card_text",
+    visible_text: "AUTOGRAPH",
+    directly_observed: true,
+    direct_observation: true,
+    review_required: false
+  }],
   unresolved: []
 });
 
