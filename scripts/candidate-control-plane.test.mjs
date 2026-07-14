@@ -473,6 +473,63 @@ function testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData() 
   assert.equal(appliedTrace.participation_level, "LEVEL_3_FIELD_APPLICATION");
 }
 
+function testSanitizedReferenceInstanceDoesNotRejectCleanIdentityCandidate() {
+  const candidate = {
+    candidate_id: "catalog-reference-instance-sanitized",
+    candidate_identity_id: "identity-reference-instance-sanitized",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    reference_print_run_numerator_copy_violation_count: 1,
+    catalog_full_print_run_copy_violation_count: 1,
+    fields: {
+      year: "2024-25",
+      manufacturer: "Topps",
+      product: "Topps Finest Basketball",
+      players: ["Josh Hart"],
+      card_name: "Common Geometric Refractor",
+      serial_number: "17/50",
+      print_run_numerator: "17",
+      print_run_denominator: "50",
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "12345678"
+    }
+  };
+  const result = {
+    resolved_fields: {
+      year: "2024-25",
+      manufacturer: "Topps",
+      product: "Finest",
+      players: ["Josh Hart"]
+    },
+    catalog_candidate_packet: packet([candidate], {
+      raw_candidate_count: 1,
+      approved_candidate_count: 1,
+      prompt_candidate_count: 1,
+      prompt_candidate_ids: ["catalog-reference-instance-sanitized"]
+    })
+  };
+  const selection = buildCandidateSelectionPass({ result });
+  const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: result.resolved_fields });
+
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "catalog-reference-instance-sanitized");
+  assert.ok(selection.selected_candidate_decision.selected_reason_codes.includes("reference_instance_fields_sanitized"));
+  assert.equal(
+    selection.selected_candidate_decision.rejected_candidate_reasons[0].reasons.includes("reference_print_run_numerator_forbidden"),
+    false
+  );
+  const trace = selection.candidate_application_trace[0];
+  assert.deepEqual(trace.reference_instance_fields_sanitized, ["serial_number", "print_run_numerator"]);
+  assert.ok(trace.blocked_fields.includes("serial_number"));
+  assert.ok(trace.blocked_fields.includes("print_run_numerator"));
+  assert.equal(decision.resolved_after.product, "Topps Finest Basketball");
+  assert.ok(decision.resolved_after.serial_number == null);
+  assert.ok(decision.resolved_after.print_run_numerator == null);
+  assert.ok(decision.resolved_after.grade_company == null);
+  assert.ok(decision.resolved_after.card_grade == null);
+  assert.ok(decision.resolved_after.cert_number == null);
+}
+
 function testLowMarginDecisionOnlyAppliesCurrentImageSupportedFields() {
   const candidateA = {
     candidate_id: "low-margin-a",
@@ -886,6 +943,7 @@ testFunnelAndEvidenceTraceFailClosedOnConflict();
 testLowMarginCandidateOnlySupportsCurrentImageFields();
 testTrustBlockedCountPropagatesToActivationFunnel();
 testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData();
+testSanitizedReferenceInstanceDoesNotRejectCleanIdentityCandidate();
 testLowMarginDecisionOnlyAppliesCurrentImageSupportedFields();
 testShadowRerankerCannotChangeProductionDecision();
 testAtomicDecisionNeverMixesDifferentCandidateIds();
