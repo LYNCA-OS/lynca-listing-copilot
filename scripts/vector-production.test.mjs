@@ -240,7 +240,7 @@ assert.deepEqual(catalogHierarchySoftConflictPacket.vector_retrieval.candidates[
 assert.equal(vectorCandidatePacketAssistEligibility(catalogHierarchySoftConflictPacket).prompt_candidate_count, 1, "duplicate same identity should count as one prompt candidate");
 assert.equal(buildVectorCandidateAssistPacket(catalogHierarchySoftConflictPacket).vector_retrieval.candidates.length, 1);
 
-const catalogSeasonYearSoftPacket = buildVectorCandidatePacket({
+const catalogDenominatorCannotSoftenYearPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "catalog-season-year-soft",
     candidate_identity_id: "identity-catalog-season-year-soft",
@@ -269,9 +269,9 @@ const catalogSeasonYearSoftPacket = buildVectorCandidatePacket({
     serial_number: "17/50"
   }
 });
-assert.deepEqual(catalogSeasonYearSoftPacket.vector_retrieval.candidates[0].conflicting_fields, []);
-assert.deepEqual(catalogSeasonYearSoftPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["year"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogSeasonYearSoftPacket).prompt_candidate_count, 0);
+assert.deepEqual(catalogDenominatorCannotSoftenYearPacket.vector_retrieval.candidates[0].conflicting_fields, ["year"]);
+assert.deepEqual(catalogDenominatorCannotSoftenYearPacket.vector_retrieval.candidates[0].soft_conflicting_fields, []);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogDenominatorCannotSoftenYearPacket).prompt_candidate_count, 0);
 
 const catalogWeakYearConflictPacket = buildVectorCandidatePacket({
   sources: [{

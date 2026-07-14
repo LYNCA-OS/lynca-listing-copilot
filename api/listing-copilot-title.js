@@ -3779,6 +3779,10 @@ function withOpenSetReadiness(result = {}, context = {}) {
     open_set_readiness: openSetReadiness,
     candidate_context: candidateContext,
     participation_level: candidateControl.participation_level,
+    decision_eligible_candidate_count: candidateControl.decision_eligible_candidate_count,
+    decision_eligible_candidate_ids: candidateControl.decision_eligible_candidate_ids,
+    shadow_only_candidate_count: candidateControl.shadow_only_candidate_count,
+    shadow_only_candidate_ids: candidateControl.shadow_only_candidate_ids,
     selected_candidate_decision: candidateControl.selected_candidate_decision,
     candidate_application_trace: candidateControl.candidate_application_trace,
     candidate_field_evidence: candidateControl.candidate_field_evidence,
@@ -5499,7 +5503,11 @@ async function createOpenAiTitle(payload, selection, {
       targetFields: criticalOcrWait.target_fields,
       env: process.env,
       fetchImpl: globalThis.fetch,
-      triggerSweep: false,
+      // The first pre-ingestion wave may have spent this asset's single OCR
+      // slot on serial/card-code work. Once provider evidence proves a slab
+      // grade is missing, start that exact queued verifier instead of polling
+      // an idle grade job until the rescue budget expires.
+      triggerSweep: true,
       onState: (state) => {
         latestPreingestionOcrState = state;
       }

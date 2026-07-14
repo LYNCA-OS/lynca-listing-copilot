@@ -249,6 +249,36 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   );
 }
 
+// --- a provider-triggered rescue must claim the missing field, not poll an idle job ---
+{
+  const listedJobs = [
+    { ...sampleJob, job_id: "rescue-serial", priority: 12, payload: { crop: { role: "serial_crop" } } },
+    {
+      ...sampleJob,
+      job_id: "rescue-grade",
+      priority: 14,
+      payload: { crop: { role: "grade_label_crop", crop_metadata: { source_width: 1200, source_height: 1200 } } }
+    },
+    { ...sampleJob, job_id: "rescue-code", priority: 10, payload: { crop: { role: "card_code_crop" } } }
+  ];
+  const jobs = await claimQueuedPreingestionOcrJobs({
+    bundleId: "bundle-targeted-grade-rescue",
+    limit: 1,
+    targetFields: ["grade"],
+    env,
+    fetchImpl: async (url, init = {}) => {
+      if (!init.method) return jsonResponse(listedJobs);
+      const jobId = new URL(String(url)).searchParams.get("job_id")?.replace(/^eq\./, "");
+      return jsonResponse([{ status: "running", attempts: 1, job_id: jobId }]);
+    }
+  });
+  assert.deepEqual(
+    jobs.map((job) => job.job_id),
+    ["rescue-grade"],
+    "targeted grade rescue must start the queued grade verifier even when serial/card-code have lower priority"
+  );
+}
+
 // --- only current-version transient failures are recovered ---
 {
   const updates = [];

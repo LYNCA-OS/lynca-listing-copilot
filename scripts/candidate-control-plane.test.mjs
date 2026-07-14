@@ -604,6 +604,141 @@ function testAtomicDecisionNeverMixesDifferentCandidateIds() {
   assert.ok(decision.field_application.blocked_fields.includes("candidate_id_mismatch"));
 }
 
+function testFinalObservationRebindsStaleEarlyAnchorAndCorrectsYear() {
+  const candidate = {
+    candidate_id: "catalog-final-observation",
+    candidate_identity_id: "identity-final-observation",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "APPROVED_REFERENCE",
+    anchor_agreement: {
+      exact_code_match: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["collector_number"],
+      contradicted: [],
+      query_anchor_dimensions: 1
+    },
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      set: "Topps Chrome Basketball",
+      players: ["Victor Wembanyama"],
+      collector_number: "221",
+      serial_number: "17/50",
+      grade_company: "PSA",
+      card_grade: "10"
+    }
+  };
+  const result = {
+    resolved_fields: {
+      year: "2024-25",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      set: "Chrome",
+      players: ["Victor Wembanyama"],
+      collector_number: "221"
+    },
+    catalog_candidate_packet: packet([candidate], {
+      raw_candidate_count: 1,
+      approved_candidate_count: 1,
+      prompt_candidate_count: 1,
+      prompt_candidate_ids: ["catalog-final-observation"]
+    })
+  };
+  const selection = buildCandidateSelectionPass({ result });
+  const trace = selection.candidate_application_trace[0];
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "catalog-final-observation");
+  assert.ok(trace.anchor_agreement.agreed.includes("subjects"));
+  assert.ok(trace.anchor_agreement.agreed.includes("product_hierarchy"));
+  assert.deepEqual(trace.anchor_agreement.authoritative_overrides, ["year"]);
+  assert.equal(trace.anchor_agreement.contradicted.includes("year"), false);
+
+  const decision = applyCandidateDecisionStage({
+    result: selection,
+    resolvedBefore: result.resolved_fields
+  });
+  assert.equal(decision.resolved_after.year, "2025-26");
+  assert.equal(decision.resolved_after.set, "Topps Chrome Basketball");
+  assert.ok(decision.field_application.applied_fields.includes("year"));
+  assert.ok(decision.field_application.applied_fields.includes("set"));
+  assert.ok(decision.resolved_after.serial_number == null);
+  assert.ok(decision.resolved_after.grade_company == null);
+  assert.ok(decision.resolved_after.card_grade == null);
+}
+
+function testDenominatorAloneCannotOverrideConflictingYear() {
+  const candidate = {
+    candidate_id: "catalog-denominator-only",
+    candidate_identity_id: "identity-denominator-only",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2025-26",
+      product: "Topps Chrome",
+      players: ["Victor Wembanyama"],
+      expected_serial_denominator: "50"
+    }
+  };
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        year: "2024-25",
+        product: "Topps Chrome",
+        players: ["Victor Wembanyama"],
+        expected_serial_denominator: "50"
+      },
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["catalog-denominator-only"]
+      })
+    }
+  });
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "");
+  assert.ok(selection.candidate_application_trace[0].anchor_agreement.contradicted.includes("year"));
+}
+
+function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
+  const candidate = {
+    candidate_id: "catalog-product-specificity",
+    candidate_identity_id: "identity-product-specificity",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Heritage High Number",
+      set: "Topps Heritage High Number",
+      players: ["Jackson Chourio"],
+      card_name: "Dark Blue Bordered"
+    }
+  };
+  const result = {
+    resolved_fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Heritage",
+      set: "Topps Heritage",
+      players: ["Jackson Chourio"],
+      card_name: "Base Card"
+    },
+    catalog_candidate_packet: packet([candidate], {
+      raw_candidate_count: 1,
+      approved_candidate_count: 1,
+      prompt_candidate_count: 1,
+      prompt_candidate_ids: ["catalog-product-specificity"]
+    })
+  };
+  const selection = buildCandidateSelectionPass({ result });
+  const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: result.resolved_fields });
+  assert.equal(decision.resolved_after.product, "Topps Heritage High Number");
+  assert.equal(decision.resolved_after.set, "Topps Heritage High Number");
+  assert.equal(decision.resolved_after.card_name, "Base Card", "card name needs exact code or direct image evidence");
+  assert.ok(decision.field_application.applied_fields.includes("product"));
+  assert.ok(decision.field_application.applied_fields.includes("set"));
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -615,5 +750,8 @@ testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData();
 testLowMarginDecisionOnlyAppliesCurrentImageSupportedFields();
 testShadowRerankerCannotChangeProductionDecision();
 testAtomicDecisionNeverMixesDifferentCandidateIds();
+testFinalObservationRebindsStaleEarlyAnchorAndCorrectsYear();
+testDenominatorAloneCannotOverrideConflictingYear();
+testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
 
 console.log("candidate-control-plane tests passed");

@@ -808,13 +808,30 @@ function persistenceTerminalForJob(job = {}) {
 function compactCandidateTrace(trace = {}) {
   const rows = Array.isArray(trace.candidate_application_trace)
     ? trace.candidate_application_trace
-    : [];
+    : Array.isArray(trace.candidate_application_trace_rows)
+      ? trace.candidate_application_trace_rows
+      : [];
   return {
+    schema_version: trace.schema_version || null,
     participation_level: trace.participation_level || null,
+    decision_eligible_candidate_count: Number(trace.decision_eligible_candidate_count || 0),
+    decision_eligible_candidate_ids: Array.isArray(trace.decision_eligible_candidate_ids)
+      ? trace.decision_eligible_candidate_ids
+      : [],
+    shadow_only_candidate_count: Number(trace.shadow_only_candidate_count || 0),
+    shadow_only_candidate_ids: Array.isArray(trace.shadow_only_candidate_ids)
+      ? trace.shadow_only_candidate_ids
+      : [],
     selected_candidate_id: trace.selected_candidate_decision?.selected_candidate_id || trace.selected_candidate_id || "",
     selection_margin: trace.selected_candidate_decision?.selection_margin ?? null,
     selected_reason_codes: trace.selected_candidate_decision?.selected_reason_codes || [],
     rejected_candidate_reasons: trace.selected_candidate_decision?.rejected_candidate_reasons || [],
+    selected_candidate_safe_field_application: trace.selected_candidate_safe_field_application || null,
+    low_margin_safe_field_application: trace.low_margin_safe_field_application || null,
+    applied_field_count: Number(trace.applied_field_count || 0),
+    applied_fields: Array.isArray(trace.applied_fields) ? trace.applied_fields : [],
+    blocked_field_count: Number(trace.blocked_field_count || 0),
+    blocked_fields: Array.isArray(trace.blocked_fields) ? trace.blocked_fields : [],
     catalog_activation_funnel: trace.catalog_activation_funnel || {},
     vector_activation_funnel: trace.vector_activation_funnel || {},
     candidate_application_trace: rows.map((row) => ({
@@ -825,6 +842,9 @@ function compactCandidateTrace(trace = {}) {
       source_type: row.source_type || "",
       source_trust: row.source_trust || "",
       participation_level: row.participation_level || "",
+      prompt_eligible: row.prompt_eligible === true,
+      decision_eligible: row.decision_eligible === true,
+      shadow_only_reason: row.shadow_only_reason || "",
       match_level: row.match_level || "",
       blocked_fields: row.blocked_fields || [],
       support_only_fields: row.support_only_fields || [],
@@ -931,6 +951,7 @@ function persistenceStatusIsTerminal(value) {
 export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
   const job = (statusPayload.jobs || [])[0] || {};
   const summary = jobL2Summary(statusPayload);
+  const candidateDebug = compactCandidateTrace(job.session?.candidate_control_plane_trace || {});
   const providerDiagnostics = objectOrNull(summary.provider_diagnostics)
     || providerDiagnosticsFromSummary(summary);
   return compactObject({
@@ -984,6 +1005,7 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     l2_vector_prompt_candidate_count: summary.vector_prompt_candidate_count ?? row.l2_vector_prompt_candidate_count ?? null,
     l2_vector_evidence_support_field_count: summary.vector_evidence_support_field_count ?? row.l2_vector_evidence_support_field_count ?? null,
     l2_vector_participation_level: summary.vector_participation_level || row.l2_vector_participation_level || null,
+    l2_candidate_debug: candidateDebug,
     vector_runtime_status: summary.vector_runtime_status || row.vector_runtime_status || null,
     vector_runtime_status_code: summary.vector_runtime_status_code ?? row.vector_runtime_status_code ?? null,
     vector_runtime_unavailable_reasons: summary.vector_runtime_unavailable_reasons || row.vector_runtime_unavailable_reasons || null,
@@ -1087,10 +1109,13 @@ export async function hydrateV4JobDiagnostics({
       || !row.provider_key_slot
       || !row.provider_key_assignment
       || !row.writer_ready_capacity_release_mode;
+    const candidateDiagnosticsMissing = row.l2_candidate_debug?.decision_eligible_candidate_count === undefined
+      || !Array.isArray(row.l2_candidate_debug?.candidate_application_trace);
     if (!row.job_id || (row.pipeline_node_ledger
       && persistenceStatusIsTerminal(row.noncritical_persistence_status)
       && !retryHistoryMissing
-      && !queueControlDiagnosticsMissing)) return row;
+      && !queueControlDiagnosticsMissing
+      && !candidateDiagnosticsMissing)) return row;
     requestedCount += 1;
     const diagnostics = await readSettledJobDiagnostics({
       baseUrl,
