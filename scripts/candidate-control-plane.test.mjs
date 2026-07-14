@@ -930,7 +930,7 @@ function testPacketRebindPreservesPlayersAsSubjectAnchor() {
   };
   const observed = {
     manufacturer: "Topps",
-    product: "Heritage",
+    brand: "Topps Heritage",
     players: ["Jackson Chourio"],
     collector_number: "632"
   };
