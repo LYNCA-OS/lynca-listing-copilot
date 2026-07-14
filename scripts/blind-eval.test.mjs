@@ -30,6 +30,19 @@ assert.equal(maximumBlindEvalListings, 1000);
 assert.equal(normalizeBlindEvalLimit(1000), 1000);
 assert.equal(normalizeBlindEvalLimit(5000), 1000);
 assert.equal(normalizeBlindEvalLimit(0, 7), 7);
+assert.doesNotThrow(() => assertSellerListing({
+  seller: "verified-marketplace-seller",
+  item_id: "global-1",
+  title: "2025 Topps Chrome Test Card",
+  item_web_url: "https://www.ebay.com/itm/global-1",
+  image_urls: ["https://i.ebayimg.com/images/global-1.jpg"]
+}, ""));
+assert.throws(() => assertSellerListing({
+  item_id: "global-missing-seller",
+  title: "2025 Topps Chrome Test Card",
+  item_web_url: "https://www.ebay.com/itm/global-missing-seller",
+  image_urls: ["https://i.ebayimg.com/images/global-missing-seller.jpg"]
+}, ""), /verifiable seller/);
 
 assert.equal(isSealedProductListing({ title: "2023-24 Topps Chrome Factory Sealed 5 Hobby Box Case" }), true);
 assert.equal(isSealedProductListing({ title: "2023 Panini Prizm Victor Wembanyama Case Hit SSP" }), false);
@@ -365,6 +378,52 @@ await withTempDir(async (dir) => {
   assert.equal(listingsRequest.searchParams.get("seller"), "the-poke-store");
   const answers = await readJsonl(blindEvalRunPaths({ outDir: dir, runId: "alternate-seller-run" }).answer_key_path);
   assert.equal(answers[0].seller, "the-poke-store");
+});
+
+await withTempDir(async (dir) => {
+  let listingsRequest = null;
+  const fetchImpl = async (url) => {
+    const parsed = /^https?:/i.test(url) ? new URL(url) : null;
+    const path = parsed ? parsed.pathname : url;
+    if (path === "/api/login") {
+      return jsonResponse(200, { ok: true }, { "set-cookie": "lynca_metaverse_session=test; Path=/" });
+    }
+    if (path === "/api/ebay-card-listings") {
+      listingsRequest = parsed;
+      return jsonResponse(200, {
+        ok: true,
+        seller: null,
+        marketplace_id: "EBAY_US",
+        listings: [{
+          seller: "verified-marketplace-seller",
+          item_id: "global-marketplace-item",
+          item_web_url: "https://www.ebay.com/itm/global-marketplace-item",
+          title: "2025 Topps Chrome Global Test Card PSA 10",
+          image_urls: ["https://i.ebayimg.test/global-marketplace-item.jpg"]
+        }]
+      });
+    }
+    if (url === "https://i.ebayimg.test/global-marketplace-item.jpg") {
+      return bytesResponse(200, tinyPng, { "content-type": "image/png" });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const result = await prepareBlindDataset({
+    baseUrl: "https://listing.test",
+    username: "metaverse",
+    password: "mtv",
+    outDir: dir,
+    runId: "global-seller-run",
+    expectedSeller: "",
+    limit: 1,
+    fetchImpl
+  });
+  assert.equal(result.seller, null);
+  assert.equal(result.listings_endpoint, "/api/ebay-card-listings");
+  assert.equal(listingsRequest.searchParams.get("seller"), null);
+  assert.equal(listingsRequest.searchParams.get("limit"), "21");
+  const answers = await readJsonl(blindEvalRunPaths({ outDir: dir, runId: "global-seller-run" }).answer_key_path);
+  assert.equal(answers[0].seller, "verified-marketplace-seller");
 });
 
 await withTempDir(async (dir) => {

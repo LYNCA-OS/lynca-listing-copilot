@@ -110,7 +110,7 @@ jobs:
             --base-url "$BASE_URL" \
             --out-dir /tmp/launch-blind \
             --run-id launch-1000 \
-            --seller "${{ inputs.seller }}" \
+            --all-sellers \
             --limit "$SAMPLE_COUNT" \
             --image-limit 2 \
             --sample-mode random_blind \

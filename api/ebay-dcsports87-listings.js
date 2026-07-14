@@ -48,10 +48,10 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function boundedLimit(value) {
+function boundedLimit(value, maximum = 50) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 5;
-  return Math.max(1, Math.min(50, Math.trunc(number)));
+  return Math.max(1, Math.min(maximum, Math.trunc(number)));
 }
 
 function boundedProviderLimit(value) {
@@ -137,11 +137,18 @@ function listingComplete(listing = {}, expectedSeller = defaultSeller, filterMat
 }
 
 function sellerVerified(listing = {}, expectedSeller = defaultSeller, filterMatchesExpected = false) {
+  if (!normalizeSeller(expectedSeller)) return Boolean(normalizeSeller(listing.seller));
   if (normalizeSeller(listing.seller) === expectedSeller) return true;
   return Boolean(filterMatchesExpected);
 }
 
 function publicListing(listing = {}, expectedSeller = defaultSeller, filterMatchesExpected = false) {
+  if (!normalizeSeller(expectedSeller)) {
+    return {
+      ...listing,
+      seller_verification: normalizeSeller(listing.seller) ? "RESPONSE_PRESENT" : "MISSING"
+    };
+  }
   if (normalizeSeller(listing.seller) === expectedSeller) {
     return {
       ...listing,
@@ -176,7 +183,7 @@ function mergeListing(primary = {}, fallback = {}) {
   };
 }
 
-async function detailEnrichedListings(provider, candidates = []) {
+async function detailEnrichedListings(provider, candidates = [], expectedSeller = defaultSeller, filterMatchesExpected = false) {
   const normalized = candidates.map(normalizedListing);
   if (typeof provider.item !== "function") {
     return {
@@ -189,7 +196,10 @@ async function detailEnrichedListings(provider, candidates = []) {
   let detailAttemptedCount = 0;
   let detailSuccessCount = 0;
   const listings = await Promise.all(normalized.map(async (listing) => {
-    if (!listing.item_id || (!listingMissingVerifiableSeller(listing) && listingComplete(listing))) {
+    if (!listing.item_id || (
+      !listingMissingVerifiableSeller(listing)
+      && listingComplete(listing, expectedSeller, filterMatchesExpected)
+    )) {
       return listing;
     }
     try {
@@ -232,7 +242,10 @@ export function createEbaySellerListingsHandler({
   providerFactory = ebayBrowseProvider,
   env = process.env,
   allowSellerOverride = false,
-  requireSeller = false
+  requireSeller = false,
+  allowGlobalSearch = false,
+  maximumLimit = 50,
+  requestRateLimit = 60
 } = {}) {
   return async function handler(req, res) {
     if (req.method !== "GET") {
@@ -249,14 +262,14 @@ export function createEbaySellerListingsHandler({
     }
 
     if (!enforceApiRateLimit(req, res, {
-      scope: "ebay_seller_listings",
-      limit: 60,
+      scope: allowGlobalSearch ? "ebay_card_listings" : "ebay_seller_listings",
+      limit: requestRateLimit,
       windowMs: 60_000,
       message: "Too many eBay listing smoke requests. Please try again shortly."
     })) return;
 
     const url = requestUrl(req);
-    const limit = boundedLimit(firstQueryValue(url.searchParams.get("limit")));
+    const limit = boundedLimit(firstQueryValue(url.searchParams.get("limit")), maximumLimit);
     const offset = boundedOffset(firstQueryValue(url.searchParams.get("offset")));
     const diagnostics = queryBoolean(firstQueryValue(url.searchParams.get("diagnostics")));
     const sportsOnly = queryBoolean(firstQueryValue(url.searchParams.get("sports_only")));
@@ -270,9 +283,9 @@ export function createEbaySellerListingsHandler({
       sendJson(res, 400, { ok: false, message: "seller is required" });
       return;
     }
-    const configuredSeller = requestedSeller || env.EBAY_SELLER_USERNAME || defaultSeller;
-    const validSeller = normalizeEbaySellerUsername(configuredSeller);
-    if (!validSeller) {
+    const configuredSeller = requestedSeller || (allowGlobalSearch ? "" : env.EBAY_SELLER_USERNAME || defaultSeller);
+    const validSeller = configuredSeller ? normalizeEbaySellerUsername(configuredSeller) : "";
+    if (configuredSeller && !validSeller) {
       sendJson(res, 400, { ok: false, message: "Invalid eBay seller username" });
       return;
     }
@@ -282,12 +295,12 @@ export function createEbaySellerListingsHandler({
     try {
       const result = await provider.search({
         query: {
-          query_id: "cloud_ebay_dcsports87_listings",
+          query_id: allowGlobalSearch ? "cloud_ebay_card_listings" : "cloud_ebay_dcsports87_listings",
           query,
           offset,
           limit: providerLimit,
           category_ids: categoryIds,
-          seller_username: validSeller
+          ...(validSeller ? { seller_username: validSeller } : {})
         }
       });
 
@@ -302,7 +315,12 @@ export function createEbaySellerListingsHandler({
 
       const rawCandidates = Array.isArray(result.candidates) ? result.candidates : [];
       const filterMatchesExpected = providerSellerFilterMatchesExpected(result, expectedSeller);
-      const detailResult = await detailEnrichedListings(provider, rawCandidates);
+      const detailResult = await detailEnrichedListings(
+        provider,
+        rawCandidates,
+        expectedSeller,
+        filterMatchesExpected
+      );
       const enrichedListings = detailResult.listings;
       const sellerListings = enrichedListings
         .filter((listing) => sellerVerified(listing, expectedSeller, filterMatchesExpected))
@@ -334,7 +352,7 @@ export function createEbaySellerListingsHandler({
         ok: true,
         provider_id: result.provider_id || "ebay_browse",
         marketplace_id: result.marketplace_id || env.EBAY_MARKETPLACE_ID || "EBAY_US",
-        seller: expectedSeller,
+        seller: expectedSeller || null,
         query,
         offset,
         category_ids: categoryIds,

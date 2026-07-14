@@ -38,7 +38,9 @@ export async function main(argv = process.argv, env = process.env) {
   const password = argValue(argv, "--password", envValue(env, "API_PASSWORD", "METAVERSE_PASSWORD"));
   const outDir = argValue(argv, "--out-dir", env.BLIND_EVAL_DIR || defaultBlindEvalDir);
   const runId = argValue(argv, "--run-id", env.BLIND_EVAL_RUN_ID || "");
-  const expectedSeller = argValue(argv, "--seller", env.BLIND_EVAL_EBAY_SELLER || env.EBAY_SELLER_USERNAME || "dcsports87");
+  const expectedSeller = hasFlag(argv, "--all-sellers")
+    ? ""
+    : argValue(argv, "--seller", env.BLIND_EVAL_EBAY_SELLER || env.EBAY_SELLER_USERNAME || "dcsports87");
   const limit = integerArg(argv, "--limit", Number(env.BLIND_EVAL_LIMIT || 2));
   const imageLimit = integerArg(argv, "--image-limit", Number(env.BLIND_EVAL_IMAGE_LIMIT || 2));
   const excludeAnswerKeyPaths = listArg(argValue(argv, "--exclude-answer-keys", env.BLIND_EVAL_EXCLUDE_ANSWER_KEYS || ""));
@@ -75,7 +77,7 @@ export async function main(argv = process.argv, env = process.env) {
   const paths = blindEvalRunPaths({ outDir, runId });
   console.log("eBay seller blind dataset prepared");
   console.log(`run_id=${summary.run_id}`);
-  console.log(`seller=${summary.seller}`);
+  console.log(`seller=${summary.seller || "ANY_VERIFIED_SELLER"}`);
   console.log(`listings_endpoint=${summary.listings_endpoint}`);
   console.log(`listing_count=${summary.listing_count}`);
   console.log(`requested_listing_count=${summary.requested_listing_count}`);

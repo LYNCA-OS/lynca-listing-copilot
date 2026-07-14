@@ -368,6 +368,48 @@ response = await call(dynamicSellerHandler, {
 assert.equal(response.statusCode, 400);
 assert.match(response.body.message, /Invalid eBay seller/);
 
+let globalQuery = null;
+const globalListingsHandler = createEbayDcsports87ListingsHandler({
+  env: {
+    METAVERSE_AUTH_SECRET: secret,
+    EBAY_MARKETPLACE_ID: "EBAY_US"
+  },
+  allowGlobalSearch: true,
+  maximumLimit: 200,
+  providerFactory: () => ({
+    search: async ({ query }) => {
+      globalQuery = query;
+      return {
+        provider_id: "ebay_browse",
+        marketplace_id: "EBAY_US",
+        seller_filter_applied: false,
+        total: 2,
+        candidates: ["seller-a", "seller-b"].map((seller, index) => ({
+          source_url: `https://www.ebay.com/itm/global-${index + 1}`,
+          title: `Global Card ${index + 1}`,
+          fields: {
+            marketplace_item_id: `v1|global-${index + 1}|0`,
+            marketplace_seller_username: seller,
+            marketplace_id: "EBAY_US",
+            marketplace_image_urls: [`https://i.ebayimg.com/images/global-${index + 1}.jpg`]
+          }
+        }))
+      };
+    }
+  })
+});
+response = await call(globalListingsHandler, {
+  method: "GET",
+  headers: { cookie: sessionCookie(secret), host: "example.test" },
+  url: "/api/ebay-card-listings?limit=500&q=trading%20card"
+});
+assert.equal(response.statusCode, 200);
+assert.equal(response.body.seller, null);
+assert.equal(response.body.returned_count, 2);
+assert.equal(response.body.listings[0].seller_verification, "RESPONSE_PRESENT");
+assert.equal(globalQuery.limit, 200);
+assert.equal("seller_username" in globalQuery, false);
+
 assert.equal(normalizeBaseUrl("https://example.com/"), "https://example.com");
 assert.throws(() => normalizeBaseUrl(""), /API_BASE_URL/);
 assert.deepEqual(optionalProtectionHeaders({

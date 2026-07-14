@@ -112,7 +112,7 @@
     "smoke:brave": "node scripts/smoke-provider.mjs brave",
     "smoke:ebay": "node scripts/smoke-provider.mjs ebay",
     "smoke:deployed-ebay": "node scripts/smoke-deployed-ebay-api.mjs",
-    "check:deployed-ebay": "node --check api/health.js && node --check api/ebay-dcsports87-listings.js && node --check api/ebay-seller-listings.js && node --check scripts/smoke-deployed-ebay-api.mjs && node --check scripts/ebay-deployed-api.test.mjs",
+    "check:deployed-ebay": "node --check api/health.js && node --check api/ebay-dcsports87-listings.js && node --check api/ebay-seller-listings.js && node --check api/ebay-card-listings.js && node --check scripts/smoke-deployed-ebay-api.mjs && node --check scripts/ebay-deployed-api.test.mjs",
     "test:deployed-ebay": "node scripts/ebay-deployed-api.test.mjs",
     "prepare:dcsports87-blind": "node scripts/prepare-dcsports87-blind-eval.mjs",
     "prepare:reviewed-title-blind": "node scripts/build-reviewed-title-blind-eval.mjs",
