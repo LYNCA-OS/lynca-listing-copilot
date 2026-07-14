@@ -636,6 +636,8 @@ function sessionL2Summary(statusPayload = {}) {
     catalog_approved_candidate_count: Number(catalogFunnel.approved_candidate_count || 0),
     catalog_conflict_blocked_count: Number(catalogFunnel.conflict_blocked_count || 0),
     catalog_prompt_candidate_count: Number(catalogFunnel.prompt_candidate_count || 0),
+    catalog_provider_prompt_candidate_count: Number(catalogFunnel.provider_prompt_candidate_count || 0),
+    catalog_post_observation_blocked_count: Number(catalogFunnel.post_observation_blocked_count || 0),
     catalog_evidence_support_field_count: Number(catalogFunnel.evidence_support_field_count || 0),
     catalog_participation_level: catalogFunnel.participation_level || null,
     catalog_pre_observation_query_attempted: catalogFunnel.pre_observation_query_attempted ?? null,
@@ -644,6 +646,8 @@ function sessionL2Summary(statusPayload = {}) {
     vector_approved_candidate_count: Number(vectorFunnel.approved_candidate_count || 0),
     vector_conflict_blocked_count: Number(vectorFunnel.conflict_blocked_count || 0),
     vector_prompt_candidate_count: Number(vectorFunnel.prompt_candidate_count || 0),
+    vector_provider_prompt_candidate_count: Number(vectorFunnel.provider_prompt_candidate_count || 0),
+    vector_post_observation_blocked_count: Number(vectorFunnel.post_observation_blocked_count || 0),
     vector_evidence_support_field_count: Number(vectorFunnel.evidence_support_field_count || 0),
     vector_participation_level: vectorFunnel.participation_level || null,
     vector_pre_observation_query_attempted: vectorFunnel.pre_observation_query_attempted ?? null,
@@ -705,7 +709,13 @@ function jobL2Summary(statusPayload = {}) {
       || summary.writer_review_required === true
       || job.display_status === "WRITER_REVIEW",
     writer_review_reason: session.writer_review_reason || summary.writer_review_reason || null,
-    title: session.final_title || session.l2_title || job.display_title || job.writer_display_title || null,
+    title: session.final_title
+      || session.l2_title
+      || summary.final_title
+      || summary.writer_safe_draft
+      || job.display_title
+      || job.writer_display_title
+      || null,
     resolved_fields: session.resolved_fields && typeof session.resolved_fields === "object" ? session.resolved_fields : {},
     field_states: session.field_states && typeof session.field_states === "object" ? session.field_states : {},
     title_length_policy: summary.title_length_policy || null,
@@ -871,6 +881,9 @@ function compactCandidateTrace(trace = {}) {
       source_type: row.source_type || "",
       source_trust: row.source_trust || "",
       participation_level: row.participation_level || "",
+      provider_prompt_eligible: row.provider_prompt_eligible === true,
+      live_anchor_eligible: row.live_anchor_eligible === true,
+      live_evidence_eligible: row.live_evidence_eligible === true,
       prompt_eligible: row.prompt_eligible === true,
       decision_eligible: row.decision_eligible === true,
       shadow_only_reason: row.shadow_only_reason || "",
@@ -997,8 +1010,21 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
   const candidateDebug = compactCandidateTrace(job.session?.candidate_control_plane_trace || {});
   const providerDiagnostics = objectOrNull(summary.provider_diagnostics)
     || providerDiagnosticsFromSummary(summary);
+  const terminalTitleReady = summaryHasVisibleL2Title(summary);
+  const terminalWriterReview = summaryRequiresWriterReview(summary);
+  const terminalWriterReady = terminalTitleReady || terminalWriterReview;
   return compactObject({
     ...row,
+    ok: terminalWriterReady ? true : row.ok,
+    writer_ready: terminalWriterReady ? true : row.writer_ready,
+    l2_ready: terminalWriterReady ? true : row.l2_ready,
+    writer_review_required: terminalWriterReview ? true : row.writer_review_required,
+    final_title: terminalTitleReady ? cleanText(summary.title) : row.final_title,
+    error: terminalWriterReady ? null : row.error,
+    session_status: summary.session_status || row.session_status || null,
+    l2_status: summary.l2_status || row.l2_status || null,
+    assisted_draft_status: summary.assisted_draft_status || row.assisted_draft_status || null,
+    l2_route: summary.route || row.l2_route || null,
     recognition_session_id: row.recognition_session_id || summary.recognition_session_id || null,
     job_status: summary.job_status || row.job_status || null,
     attempt_count: summary.attempt_count ?? row.attempt_count ?? null,
@@ -1040,12 +1066,24 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     l2_catalog_approved_candidate_count: summary.catalog_approved_candidate_count ?? row.l2_catalog_approved_candidate_count ?? null,
     l2_catalog_conflict_blocked_count: summary.catalog_conflict_blocked_count ?? row.l2_catalog_conflict_blocked_count ?? null,
     l2_catalog_prompt_candidate_count: summary.catalog_prompt_candidate_count ?? row.l2_catalog_prompt_candidate_count ?? null,
+    l2_catalog_provider_prompt_candidate_count: summary.catalog_provider_prompt_candidate_count
+      ?? row.l2_catalog_provider_prompt_candidate_count
+      ?? null,
+    l2_catalog_post_observation_blocked_count: summary.catalog_post_observation_blocked_count
+      ?? row.l2_catalog_post_observation_blocked_count
+      ?? null,
     l2_catalog_evidence_support_field_count: summary.catalog_evidence_support_field_count ?? row.l2_catalog_evidence_support_field_count ?? null,
     l2_catalog_participation_level: summary.catalog_participation_level || row.l2_catalog_participation_level || null,
     l2_vector_raw_candidate_count: summary.vector_raw_candidate_count ?? row.l2_vector_raw_candidate_count ?? null,
     l2_vector_approved_candidate_count: summary.vector_approved_candidate_count ?? row.l2_vector_approved_candidate_count ?? null,
     l2_vector_conflict_blocked_count: summary.vector_conflict_blocked_count ?? row.l2_vector_conflict_blocked_count ?? null,
     l2_vector_prompt_candidate_count: summary.vector_prompt_candidate_count ?? row.l2_vector_prompt_candidate_count ?? null,
+    l2_vector_provider_prompt_candidate_count: summary.vector_provider_prompt_candidate_count
+      ?? row.l2_vector_provider_prompt_candidate_count
+      ?? null,
+    l2_vector_post_observation_blocked_count: summary.vector_post_observation_blocked_count
+      ?? row.l2_vector_post_observation_blocked_count
+      ?? null,
     l2_vector_evidence_support_field_count: summary.vector_evidence_support_field_count ?? row.l2_vector_evidence_support_field_count ?? null,
     l2_vector_participation_level: summary.vector_participation_level || row.l2_vector_participation_level || null,
     l2_candidate_debug: candidateDebug,
@@ -1333,6 +1371,11 @@ async function runOne({
   requestTimeoutMs
 }) {
   const id = candidateId(item, index);
+  const effectiveL2WaitMs = batchPollWaitBudgetMs({
+    requestedWaitMs: l2WaitMs,
+    itemCount: 1,
+    providerConcurrency: 1
+  });
   const verificationCache = runOne.verificationCache || new Map();
   runOne.verificationCache = verificationCache;
   const images = await verifiedItemImages({
@@ -1464,7 +1507,7 @@ async function runOne({
       baseUrl,
       cookie,
       jobId: job.job_id,
-      waitMs: l2WaitMs,
+      waitMs: effectiveL2WaitMs,
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
     });
     const l2ElapsedFromClickMs = Date.now() - clickAt;
@@ -1658,7 +1701,7 @@ async function runOne({
       baseUrl,
       cookie,
       jobId: job.job_id,
-      waitMs: l2WaitMs,
+      waitMs: effectiveL2WaitMs,
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
     });
     const finalTitle = cleanText(l2.summary?.title || "");
@@ -1853,7 +1896,7 @@ async function runOne({
       baseUrl,
       cookie,
       sessionId,
-      waitMs: l2WaitMs,
+      waitMs: effectiveL2WaitMs,
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
     });
   const l1Title = resultTitle(data);

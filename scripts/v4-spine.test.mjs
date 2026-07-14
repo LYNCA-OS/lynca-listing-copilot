@@ -72,6 +72,7 @@ assert.equal(smokeNumberOrNull(0), 0, "a real observed zero must remain zero");
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 10, providerConcurrency: 2 }), 255_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 300_000, itemCount: 10, providerConcurrency: 2 }), 300_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 0, providerConcurrency: 2 }), 18_000);
+assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 1, providerConcurrency: 1 }), 75_000);
 
 const smokeTsv = perCardTsv([{
   asset_id: "asset-timing",
@@ -300,6 +301,11 @@ assert.equal(hydratedDiagnostic.provider_key_slot, 1);
 assert.equal(hydratedDiagnostic.provider_key_assignment, "balanced_round_robin_v1");
 assert.equal(hydratedDiagnostic.v4_pipeline_contract.contract_status, "PASSED");
 assert.equal(hydratedDiagnostic.v4_pipeline_contract.bridged_stage_count, 3);
+assert.equal(hydratedDiagnostic.ok, true);
+assert.equal(hydratedDiagnostic.writer_ready, true);
+assert.equal(hydratedDiagnostic.l2_ready, true);
+assert.equal(hydratedDiagnostic.final_title, "Hydrated title");
+assert.equal(hydratedDiagnostic.error, null);
 
 const speedSmokeSummary = summarizeSmoke([{
   ok: true,

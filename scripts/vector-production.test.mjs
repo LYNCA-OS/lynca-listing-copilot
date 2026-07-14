@@ -400,6 +400,37 @@ assert.equal(weakAnchorEligibility.approved_candidate_count, 1);
 assert.equal(weakAnchorEligibility.prompt_candidate_count, 0);
 assert.equal(buildVectorCandidateAssistPacket(catalogWeakAnchorApprovedPacket).vector_retrieval.candidates.length, 0);
 
+const catalogYearSubjectWithoutProductPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-year-subject-only",
+    candidate_identity_id: "identity-year-subject-only",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    fields: {
+      year: "2025",
+      product: "Panini Prizm",
+      players: ["Victor Wembanyama"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025",
+    players: ["Victor Wembanyama"]
+  }
+});
+assert.deepEqual(
+  new Set(catalogYearSubjectWithoutProductPacket.vector_retrieval.candidates[0].anchor_agreement.agreed),
+  new Set(["year", "subjects"])
+);
+assert.equal(
+  vectorCandidatePacketAssistEligibility(catalogYearSubjectWithoutProductPacket).prompt_candidate_count,
+  0,
+  "same player and year without a product anchor must remain shadow-only"
+);
+
 const catalogCollectorSoftConflictPacket = buildVectorCandidatePacket({
   sources: [{
     candidate_id: "catalog-collector-soft-conflict",

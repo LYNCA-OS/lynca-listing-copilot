@@ -393,8 +393,27 @@ const directlyObservedLot = validateProviderEvidencePayload("openai_legacy", {
   }],
   unresolved: []
 });
-assert.equal(directlyObservedLot.fields.multi_card, true);
-assert.equal(directlyObservedLot.fields.card_count, 3);
+assert.equal(directlyObservedLot.fields.multi_card, false, "provider-only visual lot claims must fail closed");
+assert.equal(directlyObservedLot.fields.card_count, null);
+assert.ok(directlyObservedLot.unresolved.includes("multi_card"));
+
+const operatorConfirmedLot = validateProviderEvidencePayload("openai_legacy", {
+  fields: { multi_card: true, card_count: 3, lot_type: "multi_card_lot" },
+  field_evidence: [{
+    field: "multi_card",
+    value: true,
+    source_type: "OPERATOR",
+    source_image_id: "image-1",
+    source_region: "multi_card_layout",
+    evidence_kind: "PHYSICAL_CARD_COUNT",
+    visible_text: "3 separate cards",
+    directly_observed: true,
+    direct_observation: true
+  }],
+  unresolved: []
+});
+assert.equal(operatorConfirmedLot.fields.multi_card, true);
+assert.equal(operatorConfirmedLot.fields.card_count, 3);
 
 const pairedViewsAreNotALot = validateProviderEvidencePayload("openai_legacy", {
   fields: { multi_card: true, card_count: 2, lot_type: "multi_card_lot" },

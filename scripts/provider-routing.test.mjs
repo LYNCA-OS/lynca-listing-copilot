@@ -355,6 +355,43 @@ const reboundVector = __listingCopilotTitleTestHooks.rebindVectorCandidateContex
 assert.equal(reboundVector.rebound_to_provider_observation, true);
 assert.equal(reboundVector.worker.stage_capacity.slot, 3);
 assert.equal(reboundVector.vector_assist_eligibility.prompt_candidate_count, 1);
+const reboundCatalog = __listingCopilotTitleTestHooks.rebindCatalogCandidateContextToFields({
+  retrieval: {
+    sources: [{
+      candidate_id: "catalog-136",
+      candidate_identity_id: "catalog-identity-136",
+      provider_id: "catalog",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "APPROVED_REFERENCE",
+      reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+      fields: {
+        year: "2024",
+        product: "Topps Chrome",
+        players: ["Test Player"],
+        collector_number: "136"
+      }
+    }],
+    unavailable: []
+  }
+}, {
+  year: "2024",
+  product: "Topps Chrome",
+  players: ["Test Player"],
+  collector_number: "136"
+});
+assert.equal(reboundCatalog.rebound_to_provider_observation, true);
+assert.equal(reboundCatalog.catalog_assist_eligibility.prompt_candidate_count, 1);
+assert.equal(reboundCatalog.retrieval_phase, "provider_observation_catalog_rebind");
+
+const reboundCatalogConflict = __listingCopilotTitleTestHooks.rebindCatalogCandidateContextToFields({
+  retrieval: reboundCatalog.retrieval
+}, {
+  year: "2025",
+  product: "Panini Prizm",
+  players: ["Different Player"],
+  collector_number: "999"
+});
+assert.equal(reboundCatalogConflict.catalog_assist_eligibility.prompt_candidate_count, 0);
 assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({}, {
   status: "DEFERRED_AFTER_PROVIDER",
   job_count: null

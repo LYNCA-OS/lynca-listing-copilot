@@ -3111,6 +3111,31 @@ function rebindVectorCandidateContextToFields(context = null, queryFields = {}, 
   };
 }
 
+function rebindCatalogCandidateContextToFields(context = null, queryFields = {}) {
+  if (!context || typeof context !== "object" || !context.retrieval) return context;
+  const packet = buildVectorCandidatePacket(context.retrieval, {
+    limit: 5,
+    queryFields: queryFields || {}
+  });
+  const assistEligibility = vectorCandidatePacketAssistEligibility(packet);
+  const assistPacket = buildVectorCandidateAssistPacket(packet);
+  return {
+    ...context,
+    packet,
+    assistPacket,
+    catalog_assist_eligibility: assistEligibility,
+    catalog_anchor_plan: catalogAnchorPlanFromFields(queryFields || {}, {
+      phase: "provider_observation_catalog_rebind",
+      eligibility: assistEligibility,
+      retrieval: context.retrieval
+    }),
+    exact_anchor_fast_lane_shadow: null,
+    promptPacket: vectorCandidatePacketHasPromptContent(assistPacket),
+    retrieval_phase: "provider_observation_catalog_rebind",
+    rebound_to_provider_observation: true
+  };
+}
+
 function scheduleBackgroundCompletion(promise) {
   const guarded = Promise.resolve(promise).catch(() => null);
   try {
@@ -5183,6 +5208,7 @@ async function createOpenAiTitle(payload, selection, {
   }
   let preingestionRetrievalRefresh = null;
   let preingestionRetrievalAnchorFields = [];
+  let providerResolvedForRetrieval = null;
   if (deferVectorUntilProviderObservation) {
     if (preingestionBundleId) {
       preingestionRetrievalRefresh = await refreshPreIngestionEvidencePatches(initialPayload, {
@@ -5200,7 +5226,7 @@ async function createOpenAiTitle(payload, selection, {
     }
     const confirmedRetrievalFields = confirmedPreingestionRetrievalFields(initialPayload);
     preingestionRetrievalAnchorFields = Object.keys(confirmedRetrievalFields);
-    const providerResolvedForRetrieval = mergeCurrentFieldsForTitleAssist(
+    providerResolvedForRetrieval = mergeCurrentFieldsForTitleAssist(
       retrievalFieldsFromProviderObservation(providerResultWithEvidence, resolvedForRetrieval),
       confirmedRetrievalFields
     );
@@ -5424,12 +5450,22 @@ async function createOpenAiTitle(payload, selection, {
     }
   }
   if (!catalogContext) catalogContext = await catalogContextPromise.catch(() => null);
+  if (!providerResolvedForRetrieval) {
+    providerResolvedForRetrieval = mergeCurrentFieldsForTitleAssist(
+      retrievalFieldsFromProviderObservation(providerResultWithEvidence, resolvedForRetrieval),
+      confirmedPreingestionRetrievalFields(initialPayload)
+    );
+  }
+  catalogContext = rebindCatalogCandidateContextToFields(
+    catalogContext,
+    providerResolvedForRetrieval
+  );
   if (catalogContext && !catalogContext.exact_anchor_fast_lane_shadow) {
     catalogContext = {
       ...catalogContext,
       exact_anchor_fast_lane_shadow: buildExactAnchorFastLaneShadow({
         catalogContext,
-        resolvedForRetrieval,
+        resolvedForRetrieval: providerResolvedForRetrieval,
         providerOptions,
         env: process.env
       })
@@ -5713,6 +5749,7 @@ export const __listingCopilotTitleTestHooks = {
   preingestionOcrPostProviderWaitMs,
   deferredPreingestionOcrSnapshot,
   deferredRetrievalCandidateContext,
+  rebindCatalogCandidateContextToFields,
   rebindVectorCandidateContextToFields,
   retrievalAnchorSummary,
   retrievalFieldsHavePrePromptVectorAnchor,

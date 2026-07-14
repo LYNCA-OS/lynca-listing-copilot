@@ -754,7 +754,14 @@ function testDenominatorAloneCannotOverrideConflictingYear() {
     }
   });
   assert.equal(selection.selected_candidate_decision.selected_candidate_id, "");
-  assert.ok(selection.candidate_application_trace[0].anchor_agreement.contradicted.includes("year"));
+  const trace = selection.candidate_application_trace[0];
+  assert.ok(trace.anchor_agreement.contradicted.includes("year"));
+  assert.equal(trace.provider_prompt_eligible, true, "the candidate was present in the earlier provider packet");
+  assert.equal(trace.prompt_eligible, false, "live observation must revoke stale prompt eligibility");
+  assert.equal(trace.shadow_only_reason, "post_observation_anchor_filter_blocked");
+  assert.equal(selection.catalog_activation_funnel.provider_prompt_candidate_count, 1);
+  assert.equal(selection.catalog_activation_funnel.prompt_candidate_count, 0);
+  assert.equal(selection.catalog_activation_funnel.post_observation_blocked_count, 1);
 }
 
 function testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars() {
