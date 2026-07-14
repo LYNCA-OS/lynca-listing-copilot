@@ -25,6 +25,7 @@ const FIELD_MAX_CROPS_PER_IMAGE = 6;
 const FIELD_MAX_CROPS_PER_ASSET = 8;
 const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
 const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
+const JOB_RETRY_API_ENDPOINT = "/api/v4/listing-job-retry";
 const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
 const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
@@ -1129,10 +1130,6 @@ function escapeHtml(value) {
 
 function providerById(providerId) {
   return (state.providerStatus?.providers || []).find((provider) => provider.id === providerId) || null;
-}
-
-function emergencyProvider() {
-  return (state.providerStatus?.providers || []).find((provider) => provider.id === "openai_legacy" && provider.selectable) || null;
 }
 
 function providerDisabledText(provider) {
@@ -2279,8 +2276,11 @@ function TitleCardComponent(result, asset = null) {
   const writerReviewWithoutDraft = result.writerReviewRequired === true && !String(correctedTitle || "").trim();
   const copyDisabled = titlePending || !correctedTitle;
   const saveDisabled = titlePending || result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
-  const retryProvider = emergencyProvider();
-  const canEmergencyRetry = failed && retryProvider && result.provider !== "openai_legacy";
+  const retrySubmitting = result.queueRetryStatus === "submitting";
+  const retryableFailure = failed
+    || ["FAILED", "TIMEOUT"].includes(v4AssistedStatus(result))
+    || ["FAILED", "CANCELLED"].includes(String(result.v4_job_status || "").toUpperCase());
+  const canPriorityRetry = retryableFailure && !titlePending;
   const titleEdited = String(correctedTitle || "").trim() && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
     saved: "已保存",
@@ -2312,7 +2312,7 @@ function TitleCardComponent(result, asset = null) {
         <span class="confidence-badge ${confidenceClass(confidence)}">${escapeHtml(statusLabel)}</span>
         <div class="title-actions">
           ${generationTimingBadge(result.index)}
-          ${canEmergencyRetry ? `<button class="copy-button" type="button" data-emergency-retry="${result.index}">单模型重试</button>` : ""}
+          ${canPriorityRetry ? `<button class="copy-button retry-priority-button" type="button" data-priority-retry="${result.index}" ${retrySubmitting ? "disabled" : ""}>${retrySubmitting ? "正在重排…" : "优先重试"}</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
@@ -2792,7 +2792,9 @@ async function processAssetViaQueue(asset, options = {}) {
     client_fast_scout_prewarm_timed_out: fastScoutPrewarm.timed_out === true
   };
 
-  let speculative = await settleSpeculativeRecognition(asset);
+  let speculative = options.skipSpeculative === true
+    ? { used: false }
+    : await settleSpeculativeRecognition(asset);
   if (speculative.used && speculative.pending) {
     setAssetProgress(asset.index, "等待已提交的预识别任务", 0.46);
     const settled = await asset.speculativePromise;
@@ -2865,7 +2867,7 @@ async function processAssetViaQueue(asset, options = {}) {
     body: JSON.stringify({
       batch_id: batchId,
       tenant_id: batchId,
-      priority: 100,
+      priority: Math.max(0, Math.min(10_000, Number(options.priority ?? 100) || 0)),
       jobs: [{
         asset_id: asset.id,
         force_l2_only: true,
@@ -2904,6 +2906,7 @@ async function processAssetViaQueue(asset, options = {}) {
 function failedResult(asset, error) {
   return attachGenerationTimingToResult({
     index: asset.index,
+    asset_id: asset.id,
     thumbnail: asset.images[0].dataUrl,
     title: "",
     generatedTitle: "",
@@ -3015,45 +3018,80 @@ async function processTitles() {
   });
 }
 
-async function retryAssetWithEmergency(button) {
-  const assetIndex = Number(button.dataset.emergencyRetry);
+async function retryFailedAssetInPriorityQueue(button) {
+  const assetIndex = Number(button.dataset.priorityRetry);
   const asset = state.assets.find((item) => item.index === assetIndex);
-  const retryProvider = emergencyProvider();
-  if (!asset || !retryProvider) return;
+  const current = state.results.find((item) => item.index === assetIndex);
+  if (!asset || !current || current.queueRetryStatus === "submitting") return;
 
-  button.disabled = true;
-  button.textContent = "GPT 重试中";
-  setStatus(`卡片 ${asset.index} 正在进行单模型重试...`, { busy: true });
+  const writerEditedTitle = String(current.correctedTitle || "").trim();
+  current.queueRetryStatus = "submitting";
+  current.feedbackMessage = "正在提交优先重试…";
+  setStatus(`卡片 ${asset.index} 正在插入优先队列…`, { busy: true });
   state.assetGenerationTimings.delete(asset.index);
   markAssetQueued(asset, Date.now());
-  markAssetStarted(asset);
+  setAssetProgress(asset.index, "提交优先重试", 0.08);
   renderResults();
 
   try {
-    const result = await processAsset(asset, {
-      provider: retryProvider.id,
-      explicitEmergency: true
-    });
-    if (!v4WriterTitlePending(result)) {
-      markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });
+    let result = current;
+    if (current.v4_job_id) {
+      const response = await fetchWithTimeout(JOB_RETRY_API_ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ job_id: current.v4_job_id })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.message || payload.error || `优先重试失败：${response.status}`);
+      }
+      const retriedJob = payload.job || {};
+      result.confidence = "MEDIUM";
+      result.reason = "";
+      result.writerTitlePending = !writerEditedTitle;
+      result.title_stage = "PENDING";
+      result.assisted_draft_status = "PENDING";
+      result.l2AssistedDraftStatus = "PENDING";
+      result.full_assist_continued_after_l1 = true;
+      result.v4QueuedJob = true;
+      result.v4_job_status = retriedJob.status || "RETRYING";
+      result.v4_batch_id = retriedJob.batch_id || result.v4_batch_id || "";
+      result.recognition_session_id = retriedJob.recognition_session_id || result.recognition_session_id || "";
+      result.queueRetryStatus = "";
+      result.feedbackStatus = "";
+      result.feedbackMessage = payload.already_active
+        ? "任务仍在运行，已恢复状态跟踪。"
+        : "已进入优先队列；当前正在运行的任务完成后优先处理。";
+      setAssetProgress(asset.index, payload.already_active ? "恢复任务跟踪" : "已进入优先队列", 0.54);
+    } else {
+      result = await processAssetViaQueue(asset, {
+        batchId: createClientBatchId(),
+        priority: 0,
+        skipSpeculative: true,
+        manualRetry: true
+      });
+      if (writerEditedTitle) {
+        result.correctedTitle = writerEditedTitle;
+        result.title_override = {
+          source: "writer_edit_before_retry",
+          value: writerEditedTitle
+        };
+      }
+      result.queueRetryStatus = "";
+      result.feedbackMessage = "已进入优先队列；当前正在运行的任务完成后优先处理。";
+      state.results = state.results.filter((item) => item.index !== asset.index);
+      state.results.push(result);
+      state.results.sort((a, b) => a.index - b.index);
     }
-    attachGenerationTimingToResult(result);
-    state.results = state.results.filter((item) => item.index !== asset.index);
-    state.results.push(result);
-    state.results.sort((a, b) => a.index - b.index);
     startV4AssistedDraftPolling(result);
-    setStatus(`卡片 ${asset.index} 单模型重试完成。`);
+    setStatus(`卡片 ${asset.index} 已进入优先队列。`, { busy: true });
   } catch (error) {
     markAssetFinished(asset.index, { failed: true });
-    state.results = state.results.filter((item) => item.index !== asset.index);
-    state.results.push({
-      ...failedResult(asset, error),
-      provider: retryProvider.id,
-      provider_label: retryProvider.label,
-      explicit_emergency: true
-    });
-    state.results.sort((a, b) => a.index - b.index);
-    setStatus(`卡片 ${asset.index} 单模型重试失败。`);
+    clearAssetProgress(asset.index);
+    current.queueRetryStatus = "";
+    current.feedbackMessage = `优先重试提交失败：${error.message || "请再次重试"}`;
+    setStatus(`卡片 ${asset.index} 优先重试提交失败。`);
   }
 
   renderResults();
@@ -3854,8 +3892,8 @@ function bindEvents() {
       return;
     }
 
-    const emergencyRetryButton = event.target.closest("[data-emergency-retry]");
-    if (emergencyRetryButton) retryAssetWithEmergency(emergencyRetryButton);
+    const priorityRetryButton = event.target.closest("[data-priority-retry]");
+    if (priorityRetryButton) retryFailedAssetInPriorityQueue(priorityRetryButton);
   });
 
   elements.assetPreviewList.addEventListener("input", (event) => {

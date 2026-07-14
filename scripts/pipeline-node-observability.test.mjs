@@ -726,6 +726,65 @@ assert.ok(
   "REVIEW metadata must not hide a value lost after upstream resolution"
 );
 
+const printRunMigrationBase = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    raw_provider_fields: { ...fields, card_number: "03/10" },
+    resolved_fields: {
+      ...fields,
+      card_number: "03/10",
+      serial_number: "03/10",
+      print_run_number: "03/10"
+    },
+    rendered_fields: {
+      fields: {
+        ...fields,
+        card_number: "03/10",
+        print_run_number: "03/10"
+      }
+    },
+    final_title: "2024 Topps Chrome Test Player Autograph 03/10"
+  },
+  timingContext: context,
+  payload: { asset_id: "asset-observability-print-run-migration", images: [{}, {}] }
+});
+const printRunMigrationLedger = buildEndToEndNodeLedger({
+  session: {
+    l2_status: "READY",
+    l2_title: "2024 Topps Chrome Test Player Autograph 03/10",
+    l2_ready_at: "2026-07-11T00:00:02.900Z",
+    resolved_fields: {
+      ...fields,
+      serial_number: "03/10",
+      print_run_number: "03/10",
+      numerical_rarity: "03/10"
+    },
+    provider_result_summary: {
+      pipeline_node_ledger: printRunMigrationBase,
+      title_render_source: "v4_csm_deterministic_renderer",
+      noncritical_persistence_status: "COMPLETED"
+    }
+  },
+  job: {
+    id: "job-observability-print-run-migration",
+    status: "SUCCEEDED",
+    created_at: "2026-07-11T00:00:00.000Z",
+    started_at: "2026-07-11T00:00:00.500Z",
+    completed_at: "2026-07-11T00:00:03.000Z"
+  },
+  display: { can_writer_start: true }
+});
+const migratedCollectorFlow = printRunMigrationLedger.field_flow.fields
+  .find((row) => row.field_group === "collector_number");
+assert.equal(migratedCollectorFlow?.disposition, "MIGRATED_TO_NUMERICAL_RARITY");
+assert.equal(migratedCollectorFlow?.terminal_semantic_migration, true);
+assert.equal(printRunMigrationLedger.field_flow.unexplained_terminal_drop_count, 0);
+assert.equal(
+  printRunMigrationLedger.reconciliation.anomalies
+    .some((item) => item.check_id === "terminal_critical_field_flow_has_no_silent_drop"),
+  false
+);
+
 const writerReviewLedger = buildEndToEndNodeLedger({
   session: {
     status: "WRITER_REVIEW",

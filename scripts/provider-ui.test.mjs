@@ -23,7 +23,7 @@ assert.match(js, /recognition_clock_started_at/, "frontend should read the provi
 assert.match(js, /deterministic_anchor_finalize/, "frontend timer should understand the OCR/catalog no-GPT fast path");
 assert.match(js, /label:\s*snapshot\.failed \? "模型未启动" : "等待识别"/, "queued cards must not display queue time as model time");
 assert.match(js, /value:\s*formatGenerationElapsed\(snapshot\.active_ms\)/, "visible elapsed time should exclude queue wait");
-const processTitlesSource = js.slice(js.indexOf("async function processTitles"), js.indexOf("async function retryAssetWithEmergency"));
+const processTitlesSource = js.slice(js.indexOf("async function processTitles"), js.indexOf("async function retryFailedAssetInPriorityQueue"));
 assert.doesNotMatch(processTitlesSource, /markAssetStarted\(asset\)/, "batch workers must not start a card timer before provider capacity reaches it");
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
@@ -64,6 +64,7 @@ assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not ex
 assert.match(js, /fetch\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs");
 assert.match(js, /const TITLE_API_ENDPOINT = "\/api\/v4\/listing-copilot-title"/, "frontend should retain the V4 one-line title endpoint for explicit retry fallback");
 assert.match(js, /const JOB_ENQUEUE_API_ENDPOINT = "\/api\/v4\/listing-job-enqueue"/, "frontend should enqueue default production recognition jobs");
+assert.match(js, /const JOB_RETRY_API_ENDPOINT = "\/api\/v4\/listing-job-retry"/, "failed cards should retry through the durable production queue");
 assert.match(js, /const JOB_STATUS_API_ENDPOINT = "\/api\/v4\/listing-job-status"/, "frontend should poll production job status for writer-visible titles");
 assert.doesNotMatch(js, /FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend must not probe the discarded L1 scout cache before L2");
 assert.match(js, /const SESSION_STATUS_API_ENDPOINT = "\/api\/v4\/listing-session-status"/, "frontend should poll the V4 session status endpoint for background assisted drafts");
@@ -144,6 +145,8 @@ assert.match(apiWithOptions, /postObservationRetrievalCriticalPathBudgetMs/, "po
 assert.match(api, /scheduleBackgroundCompletion/, "work that misses the writer deadline should continue in the background");
 assert.match(api, /post_observation_retrieval_deferred_count/, "deadline-deferred retrieval should be observable");
 assert.match(api, /PREINGESTION_OCR_POST_PROVIDER_WAIT_MS/, "OCR should have a bounded post-provider writer wait");
+assert.match(api, /const defaultPreingestionOcrGradeRescueWaitMs = 10_000/, "missing slab grades should receive an accuracy-first targeted OCR rescue window");
+assert.match(api, /return Math\.min\(20_000, Math\.trunc\(parsed\)\)/, "grade rescue configuration should allow a bounded extension without changing ordinary-card waits");
 assert.match(api, /DEFERRED_AFTER_PROVIDER/, "late OCR should be observable instead of blocking the writer path");
 assert.match(api, /post_observation_catalog_vector_overlap_ms/, "slow post-observation catalog and vector lookups should overlap instead of stacking their tail latency");
 assert.match(api, /const vectorContextWarmupPromise = deferVectorUntilProviderObservation/, "full vector retrieval should start while the provider is running");
@@ -240,8 +243,10 @@ assert.doesNotMatch(js, /fetch\("\/api\/listing-publish-draft"/, "V4 writer UI s
 assert.doesNotMatch(js, /data-publish-draft/, "approved reviews should not expose a publish action in the title-only surface");
 assert.doesNotMatch(js, /destination: "mock_b_end"/, "V4 writer UI should not target a mock B-end adapter");
 assert.doesNotMatch(js, /dry_run: true/, "publish dry-run settings should not live in the title review UI");
-assert.match(js, /data-emergency-retry/, "failed assets should expose explicit GPT single-provider retry control");
-assert.match(js, /retryAssetWithEmergency/, "GPT single-provider retry should be a separate action");
+assert.match(js, /data-priority-retry/, "failed assets should expose a writer-controlled priority retry action");
+assert.match(js, /retryFailedAssetInPriorityQueue/, "failed assets should re-enter the durable queue instead of bypassing capacity controls");
+assert.match(js, /priority:\s*0/, "writer retries without an existing job id should enter the highest interactive priority");
+assert.doesNotMatch(js, /data-emergency-retry/, "the obsolete direct long-request retry path must be removed");
 assert.match(js, /renderProviderControl/, "provider controls should be rendered from server status");
 assert.match(js, /function renderProviderControl\(\)[\s\S]*elements\.processButton\.disabled = !canGenerateTitles\(\)/, "provider status rendering should refresh the generate button state");
 assert.match(js, /processingCompletionStatus/, "batch completion should summarize success and failure counts");

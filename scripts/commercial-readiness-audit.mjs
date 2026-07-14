@@ -160,8 +160,8 @@ async function auditProviderPolicy() {
   if (/state\.selectedProvider\s*=\s*["']openai_legacy["']/.test(appJs.text)) {
     failures.push("frontend hard-codes GPT instead of using the server default provider");
   }
-  if (!/provider === "openai_legacy"/.test(appJs.text) || !/data-emergency-retry/.test(appJs.text)) {
-    failures.push("frontend does not preserve GPT retry compatibility controls");
+  if (!/provider === "openai_legacy"/.test(appJs.text) || !/data-priority-retry/.test(appJs.text)) {
+    failures.push("frontend does not preserve durable GPT retry controls");
   }
 
   const details = {
@@ -173,7 +173,7 @@ async function auditProviderPolicy() {
     gpt_implicit_default: failures.length === 0 ? "production_primary" : "unknown",
     standalone_gpt_default: failures.length === 0 ? "server_default" : "unknown",
     gpt_visible_button: /provider === "openai_legacy"/.test(appJs.text),
-    gpt_emergency_retry_action: /data-emergency-retry/.test(appJs.text),
+    gpt_emergency_retry_action: /data-priority-retry/.test(appJs.text),
     checked_files: [registry.path, statusApi.path, appJs.path],
     failures
   };

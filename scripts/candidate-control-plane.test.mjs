@@ -133,6 +133,13 @@ function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
   assert.equal(control.selected_candidate_decision.match_level, "EXACT_CARD_MATCH");
   assert.equal(control.catalog_activation_funnel.prompt_candidate_count, 1);
   assert.equal(control.vector_activation_funnel.prompt_candidate_count, 0);
+  assert.equal(control.decision_eligible_candidate_count, 1);
+  assert.equal(control.shadow_only_candidate_count, 1);
+  assert.deepEqual(control.shadow_only_candidate_ids, ["vector-lookalike"]);
+  assert.equal(
+    control.candidate_application_trace.find((row) => row.candidate_id === "vector-lookalike")?.participation_level,
+    "LEVEL_0_SHADOW"
+  );
   assert.equal(control.selected_candidate_safe_field_application.status, "ready_fill_missing");
   assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("manufacturer"));
   assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("card_name"));
@@ -140,6 +147,100 @@ function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
   assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("serial_number"), false);
   assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("grade_company"), false);
   assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("cert_number"), false);
+}
+
+function testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin() {
+  const catalogCandidate = {
+    candidate_id: "catalog-same-identity",
+    candidate_identity_id: "identity-shared",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "REVIEWED_INTERNAL",
+    match_score: 0.72,
+    anchor_agreement: {
+      exact_code_match: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["collector_number", "subjects", "product_hierarchy", "year"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      card_name: "Autograph",
+      collector_number: "CPA-TP"
+    }
+  };
+  const vectorCandidate = {
+    ...catalogCandidate,
+    candidate_id: "vector-same-identity",
+    source_type: "VISUAL_VECTOR",
+    source_trust: "APPROVED_REFERENCE",
+    similarity: 0.99
+  };
+  const control = buildCandidateSelectionPass({
+    result: {
+      catalog_candidate_packet: packet([catalogCandidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["identity-shared"]
+      }),
+      vector_candidate_packet: packet([vectorCandidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["identity-shared"]
+      })
+    }
+  });
+
+  assert.equal(control.decision_eligible_candidate_count, 2);
+  assert.equal(control.selected_candidate_decision.viable_identity_group_count, 1);
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, "catalog-same-identity");
+  assert.deepEqual(
+    new Set(control.selected_candidate_decision.selected_candidate_group_ids),
+    new Set(["catalog-same-identity", "vector-same-identity"])
+  );
+  assert.equal(control.selected_candidate_decision.low_margin_candidate_id, "");
+}
+
+function testCandidateOnlyPacketCannotEnterProductionDecision() {
+  const candidate = {
+    candidate_id: "candidate-only",
+    candidate_identity_id: "identity-candidate-only",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "REFERENCE_CANDIDATE",
+    match_score: 1,
+    anchor_agreement: {
+      exact_code_match: true,
+      prompt_hard_filter_pass: false,
+      agreed: ["collector_number", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      collector_number: "CPA-TP"
+    }
+  };
+  const control = buildCandidateSelectionPass({
+    result: {
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 0,
+        trust_blocked_count: 1,
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: []
+      })
+    }
+  });
+
+  assert.equal(control.decision_eligible_candidate_count, 0);
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
+  assert.equal(control.candidate_field_evidence.length, 0);
+  assert.equal(control.candidate_application_trace[0].participation_level, "LEVEL_0_SHADOW");
 }
 
 function testFunnelAndEvidenceTraceFailClosedOnConflict() {
@@ -505,6 +606,8 @@ function testAtomicDecisionNeverMixesDifferentCandidateIds() {
 
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
+testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
+testCandidateOnlyPacketCannotEnterProductionDecision();
 testFunnelAndEvidenceTraceFailClosedOnConflict();
 testLowMarginCandidateOnlySupportsCurrentImageFields();
 testTrustBlockedCountPropagatesToActivationFunnel();

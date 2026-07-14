@@ -2059,7 +2059,8 @@ async function enqueueSpeculativeItem({
       || {};
     const l1Job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FAST_SCOUT_DRAFT") || null;
     if (!enqueue.ok || !job.job_id) {
-      throw new Error(`queue_enqueue_failed:${enqueue.http_status}:${cleanText(enqueue.data?.message || enqueue.data?.error).slice(0, 160)}`);
+      const queueEntryError = (enqueue.data?.jobs || []).find((entry) => entry?.error)?.error || "";
+      throw new Error(`queue_enqueue_failed:${enqueue.http_status}:${cleanText(enqueue.data?.message || enqueue.data?.error || queueEntryError).slice(0, 160)}`);
     }
     return {
       asset_id: id,

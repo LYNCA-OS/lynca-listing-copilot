@@ -223,7 +223,7 @@ const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
 const defaultCatalogFastLaneBudgetMs = 120;
 const defaultPreingestionOcrPostProviderWaitMs = 0;
-const defaultPreingestionOcrGradeRescueWaitMs = 2_000;
+const defaultPreingestionOcrGradeRescueWaitMs = 10_000;
 const defaultPreingestionOcrCriticalFieldWaitMs = 2_500;
 const confirmedOcrSerialConfidence = 0.86;
 const singleCropOcrSerialConfidence = 0.94;
@@ -3198,7 +3198,7 @@ function preingestionOcrGradeRescueWaitMs(env = process.env, providerOptions = {
     ?? env.PREINGESTION_OCR_GRADE_RESCUE_WAIT_MS;
   const parsed = Number(configured);
   if (!Number.isFinite(parsed) || parsed < 0) return defaultPreingestionOcrGradeRescueWaitMs;
-  return Math.min(10_000, Math.trunc(parsed));
+  return Math.min(20_000, Math.trunc(parsed));
 }
 
 function preingestionOcrCriticalFieldWaitMs(env = process.env, providerOptions = {}) {

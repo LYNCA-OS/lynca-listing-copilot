@@ -14,6 +14,7 @@ import {
   readV4RecognitionJobs,
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
+  retryV4RecognitionJob,
   tryAcquireV4QueueKick,
   v4JobLeaseHeartbeatEnabled,
   v4JobLeaseHeartbeatIntervalMs,
@@ -245,6 +246,80 @@ assert.equal(fallbackEnqueue.queued_count, 2);
 assert.equal(fallbackEnqueue.persistence_mode, "bulk_with_row_fallback");
 assert.equal(fallbackWrites.filter((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").length, 3);
 assert.equal(fallbackWrites.filter((entry) => entry.url.includes("/v4_recognition_jobs") && entry.request.method === "POST").length, 1);
+
+const failedRetryJob = {
+  ...normalizeV4JobInput({
+    batchId: "batch-manual-retry",
+    operatorId: "operator-manual-retry",
+    tenantId: "tenant-manual-retry",
+    job: { asset_id: "asset-manual-retry", payload: { images: [] } }
+  }),
+  status: v4JobStatuses.FAILED,
+  attempt_count: 2,
+  max_attempts: 2,
+  started_at: "2026-07-14T01:00:00.000Z",
+  completed_at: "2026-07-14T01:00:10.000Z",
+  queue_tags: {
+    idempotency_mode: "batch_asset_job_type",
+    provider_capacity_slot: 1,
+    provider_key_slot: 1,
+    provider_capacity_lease_owner: "old-worker",
+    provider_capacity_leased_at: "2026-07-14T01:00:00.000Z"
+  },
+  error: {
+    message: "provider_timeout",
+    attempt_history: [{ attempt: 2, message: "provider_timeout" }]
+  },
+  timing: { worker_processing_ms: 10_000 }
+};
+const retryRequests = [];
+const manualRetry = await retryV4RecognitionJob({
+  jobId: failedRetryJob.id,
+  operatorId: failedRetryJob.operator_id,
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    retryRequests.push({ url: String(url), request });
+    if (!request.method || request.method === "GET") return jsonResponse([failedRetryJob]);
+    const patch = JSON.parse(request.body);
+    return jsonResponse([{ ...failedRetryJob, ...patch }]);
+  }
+});
+assert.equal(manualRetry.saved, true);
+assert.equal(manualRetry.already_active, false);
+assert.equal(manualRetry.row.status, v4JobStatuses.RETRYING);
+assert.equal(manualRetry.row.lane, v4JobLanes.INTERACTIVE);
+assert.equal(manualRetry.row.priority, 0);
+assert.equal(manualRetry.row.max_attempts, 4, "a writer retry should receive two fresh execution attempts");
+assert.equal(manualRetry.row.started_at, null, "retry timing must start only when provider capacity reaches the card");
+assert.equal(manualRetry.row.completed_at, null);
+assert.equal(manualRetry.row.queue_tags.provider_capacity_slot, undefined, "stale capacity leases must not survive a retry");
+assert.equal(manualRetry.row.queue_tags.provider_key_slot, undefined);
+assert.equal(manualRetry.row.queue_tags.manual_retry_queue_policy, "interactive_priority_zero");
+assert.match(retryRequests[1].url, /operator_id=eq\.operator-manual-retry/);
+assert.match(retryRequests[1].url, /status=eq\.FAILED/);
+
+let activeRetryWriteAttempted = false;
+const activeRetry = await retryV4RecognitionJob({
+  jobId: failedRetryJob.id,
+  operatorId: failedRetryJob.operator_id,
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (_url, request = {}) => {
+    if (request.method === "PATCH") activeRetryWriteAttempted = true;
+    return jsonResponse([{ ...failedRetryJob, status: v4JobStatuses.RUNNING }]);
+  }
+});
+assert.equal(activeRetry.saved, true);
+assert.equal(activeRetry.already_active, true, "a repeated click must reconnect instead of enqueueing duplicate paid work");
+assert.equal(activeRetryWriteAttempted, false);
+
+const foreignRetry = await retryV4RecognitionJob({
+  jobId: failedRetryJob.id,
+  operatorId: "another-operator",
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async () => jsonResponse([failedRetryJob])
+});
+assert.equal(foreignRetry.saved, false);
+assert.equal(foreignRetry.error_code, "V4_JOB_RETRY_NOT_FOUND", "job ownership failures must not reveal another writer's work");
 
 const rpcCalls = [];
 const claim = await claimV4RecognitionJobs({

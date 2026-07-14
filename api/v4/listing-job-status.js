@@ -150,6 +150,27 @@ function writerSafeSessionStatus(session = null, job = null) {
       v4_pipeline_contract: summary.v4_pipeline_contract || null
     },
     candidate_control_plane_trace: {
+      schema_version: trace.schema_version || null,
+      participation_level: trace.participation_level || null,
+      decision_eligible_candidate_count: Number(trace.decision_eligible_candidate_count || 0),
+      decision_eligible_candidate_ids: Array.isArray(trace.decision_eligible_candidate_ids)
+        ? trace.decision_eligible_candidate_ids
+        : [],
+      shadow_only_candidate_count: Number(trace.shadow_only_candidate_count || 0),
+      shadow_only_candidate_ids: Array.isArray(trace.shadow_only_candidate_ids)
+        ? trace.shadow_only_candidate_ids
+        : [],
+      selected_candidate_decision: trace.selected_candidate_decision || null,
+      candidate_decision_stage: trace.candidate_decision_stage || null,
+      selected_candidate_safe_field_application: trace.selected_candidate_safe_field_application || null,
+      low_margin_safe_field_application: trace.low_margin_safe_field_application || null,
+      applied_field_count: Number(trace.applied_field_count || 0),
+      applied_fields: Array.isArray(trace.applied_fields) ? trace.applied_fields : [],
+      blocked_field_count: Number(trace.blocked_field_count || 0),
+      blocked_fields: Array.isArray(trace.blocked_fields) ? trace.blocked_fields : [],
+      candidate_application_trace_rows: Array.isArray(trace.candidate_application_trace_rows)
+        ? trace.candidate_application_trace_rows.slice(0, 20)
+        : [],
       catalog_activation_funnel: trace.catalog_activation_funnel || {},
       vector_activation_funnel: trace.vector_activation_funnel || {}
     },

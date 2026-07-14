@@ -125,7 +125,7 @@ export async function runPostEnqueueQueueKick({
   return { phase: "followup", acquired: followup.acquired === true, acquisition_ok: followup.ok === true, ...invocation };
 }
 
-function triggerV4QueuePumpAfterEnqueue(req, {
+export function triggerV4QueuePumpAfterEnqueue(req, {
   tenantId,
   batchId,
   queuedCount
@@ -264,8 +264,22 @@ export default async function handler(req, res) {
     queuedCount: result.queued_count
   });
 
-  sendJson(res, 200, withV4Version({
+  const failedEntries = result.jobs.filter((entry) => !entry.saved);
+  const noJobsQueued = stageJobs.length > 0 && result.queued_count === 0;
+  const responseStatus = noJobsQueued ? 503 : 200;
+  const failureMessage = failedEntries
+    .map((entry) => String(entry.error || "queue_job_persistence_failed").trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join("; ");
+
+  sendJson(res, responseStatus, withV4Version({
     ok: result.queued_count > 0,
+    retryable: noJobsQueued,
+    error_code: noJobsQueued ? "V4_QUEUE_PERSISTENCE_FAILED" : null,
+    message: noJobsQueued
+      ? failureMessage || "The recognition job was not persisted. Retry is safe because queue IDs are idempotent."
+      : null,
     batch_id: result.batchId,
     tenant_id: tenantId,
     queued_count: result.queued_count,
