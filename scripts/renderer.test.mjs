@@ -996,6 +996,20 @@ assert.equal(printFinishTokens.find((token) => token.text === "Gold").requires_r
 assert.equal(printFinishTokens.find((token) => token.text === "Sparkle").requires_review, true);
 assert.doesNotMatch(colorWithReviewDescriptor.final_title, /17\/50|#\/50/);
 
+const compoundSurfaceColorPreserved = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    brand: "Topps",
+    product: "Heritage High Number",
+    players: ["Jackson Chourio"],
+    surface_color: "Dark Blue",
+    parallel_family: "Bordered",
+    rc: true
+  }
+});
+assert.equal(compoundSurfaceColorPreserved.modules.print_finish.text, "Dark Blue Bordered");
+assert.match(compoundSurfaceColorPreserved.final_title, /Dark Blue Bordered/);
+
 const explicitNumericalRarity = renderListingPresentation({
   resolved: {
     year: "2024-25",

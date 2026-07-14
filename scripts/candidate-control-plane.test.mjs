@@ -991,6 +991,86 @@ function testNumericYearMayBeOmittedButCannotHideDifferentProductBranch() {
   assert.ok(chromeRebound.conflicting_fields.includes("product"));
 }
 
+function testDifferentProductFamiliesCannotShareAChromeAnchor() {
+  const rebound = rebindCandidateToObservedFields({
+    candidate_id: "bowman-sapphire-wemby",
+    candidate_identity_id: "bowman-sapphire-wemby-identity",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Bowman Chrome Sapphire",
+      players: ["Victor Wembanyama"],
+      serial_denominator: "50"
+    }
+  }, {
+    year: "2025-26",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    serial_denominator: "50"
+  });
+
+  assert.ok(rebound.anchor_agreement.contradicted.includes("product_hierarchy"));
+  assert.equal(rebound.anchor_agreement.prompt_hard_filter_pass, false);
+  assert.ok(rebound.conflicting_fields.includes("product"));
+}
+
+function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData() {
+  const observed = {
+    year: "2025-26",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Victor Wembanyama"],
+    surface_color: "Green",
+    serial_number: "17/50",
+    serial_denominator: "50"
+  };
+  const candidate = {
+    candidate_id: "reviewed-wemby-gold",
+    candidate_identity_id: "reviewed-wemby-gold-identity",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: {
+      corrected_title_is_reviewed_title_ground_truth: true
+    },
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      players: ["Victor Wembanyama"],
+      surface_color: "Gold",
+      parallel_family: "Refractor",
+      serial_number: "31/50",
+      serial_denominator: "50",
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "12345678"
+    }
+  };
+  const catalogPacket = buildVectorCandidatePacket({ sources: [candidate] }, {
+    limit: 5,
+    queryFields: observed
+  });
+  const catalogEligibility = vectorCandidatePacketAssistEligibility(catalogPacket);
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: observed,
+      catalog_candidate_packet: catalogPacket,
+      catalog_assist_eligibility: catalogEligibility
+    }
+  });
+  const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: observed });
+
+  assert.equal(decision.resolved_after.surface_color, "Gold");
+  assert.equal(decision.resolved_after.parallel_family, "Refractor");
+  assert.equal(decision.resolved_after.serial_number, "17/50");
+  assert.equal(decision.resolved_after.grade_company ?? null, null);
+  assert.equal(decision.resolved_after.cert_number ?? null, null);
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -1010,5 +1090,7 @@ testEvidenceScalarOnlyFillsMissingObservedField();
 testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
 testPacketRebindPreservesPlayersAsSubjectAnchor();
 testNumericYearMayBeOmittedButCannotHideDifferentProductBranch();
+testDifferentProductFamiliesCannotShareAChromeAnchor();
+testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData();
 
 console.log("candidate-control-plane tests passed");

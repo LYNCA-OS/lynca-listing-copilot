@@ -86,9 +86,17 @@ assert.equal(parsedPaniniDonruss.official_card_type, "The Beautiful Game");
 
 const parsedGreenLava = parseReviewedTitleFields("2025 Topps Chrome Jordan James RC Auto Green Lava Refractor");
 assert.deepEqual(parsedGreenLava.players, ["Jordan James"]);
+assert.equal(parsedGreenLava.surface_color, "Green");
+assert.equal(parsedGreenLava.parallel_family, "Lava Refractor");
 
 const parsedJoshHartCommon = parseReviewedTitleFields("2025-26 Topps Finest Josh Hart Common Geometric Refractor");
 assert.deepEqual(parsedJoshHartCommon.players, ["Josh Hart"], "parallel-tier words must not leak into the subject anchor");
+assert.equal(parsedJoshHartCommon.parallel_family, "Common Geometric Refractor");
+
+const parsedDarkBlueBordered = parseReviewedTitleFields("2024 Topps Heritage High Number Jackson Chourio RC Dark Blue Bordered");
+assert.equal(parsedDarkBlueBordered.surface_color, "Dark Blue");
+assert.equal(parsedDarkBlueBordered.parallel_family, "Bordered");
+assert.equal(parsedDarkBlueBordered.official_card_type, null, "a print finish must not be stored as Card Name");
 
 const parsedLotPlayers = parseReviewedTitleFields("2025 Topps Chrome Riley Leonard Jordan James Pearce Jr RC Refractor Lotx16");
 assert.equal(parsedLotPlayers.players.some((player) => /lotx/i.test(player)), false);
@@ -286,6 +294,7 @@ assert.equal(legacyCardNameAsSetResult.candidates[0].fields.product, "Topps Heri
 assert.equal(legacyCardNameAsSetResult.candidates[0].fields.set, null, "legacy card-name aliases must not survive as set evidence");
 assert.equal(legacyCardNameAsSetResult.candidates[0].fields.insert, null, "legacy card-name aliases must not survive as insert evidence");
 assert.equal(legacyCardNameAsSetResult.candidates[0].fields.card_name, "Dark Blue Bordered");
+assert.equal(legacyCardNameAsSetResult.candidates[0].fields.parallel_family, "Bordered");
 
 let productVocabularyRpcBody = null;
 const productVocabularyProvider = catalogProvider({
