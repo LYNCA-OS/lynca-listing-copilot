@@ -75,7 +75,7 @@ const statusCatalog = correctedTitleRecordToCatalogStaging({
 });
 assert.equal(statusCatalog.staging.identity_fields.product, "Panini Status");
 assert.equal(statusCatalog.staging.identity_fields.card_name, "New Breed");
-assert.equal(statusCatalog.staging.identity_fields.set_or_insert, "New Breed");
+assert.equal(statusCatalog.staging.identity_fields.set_or_insert, null, "card name must not be duplicated into set_or_insert");
 assert.deepEqual(statusCatalog.staging.identity_fields.players, ["Trae Young"]);
 
 const parsedPaniniDonruss = parseReviewedTitleFields("2024-25 Panini Donruss Brad Friedel The Beautiful Game Green Dragon auto 16/99");
@@ -86,6 +86,9 @@ assert.equal(parsedPaniniDonruss.official_card_type, "The Beautiful Game");
 
 const parsedGreenLava = parseReviewedTitleFields("2025 Topps Chrome Jordan James RC Auto Green Lava Refractor");
 assert.deepEqual(parsedGreenLava.players, ["Jordan James"]);
+
+const parsedJoshHartCommon = parseReviewedTitleFields("2025-26 Topps Finest Josh Hart Common Geometric Refractor");
+assert.deepEqual(parsedJoshHartCommon.players, ["Josh Hart"], "parallel-tier words must not leak into the subject anchor");
 
 const parsedLotPlayers = parseReviewedTitleFields("2025 Topps Chrome Riley Leonard Jordan James Pearce Jr RC Refractor Lotx16");
 assert.equal(parsedLotPlayers.players.some((player) => /lotx/i.test(player)), false);
@@ -239,6 +242,50 @@ assert.equal(
   "Panini Status",
   "internal writer-title catalog rows should repair legacy generic product fields from the canonical title"
 );
+
+const legacyCardNameAsSetProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([
+    {
+      identity_id: "55555555-5555-5555-5555-555555555555",
+      canonical_title: "2024 Topps Heritage High Number Jackson Chourio RC Dark Blue Bordered",
+      identity_key: "sports:2024:topps:heritage-high-number:jackson-chourio",
+      fields: {
+        category: "baseball",
+        manufacturer: "Topps",
+        product: "Topps Heritage High Number",
+        set: "Dark Blue Bordered",
+        set_or_insert: "Dark Blue Bordered",
+        players: ["Jackson Chourio"],
+        card_name: "Dark Blue Bordered",
+        official_card_type: "Dark Blue Bordered",
+        surface_color: "Dark Blue"
+      },
+      retrieval_status: "candidate",
+      source_type: "INTERNAL_CORRECTED_TITLE",
+      source_status: "VERIFIED_CANONICAL_TITLE",
+      supporting_fields: ["year", "players", "product"],
+      raw_score: 0.8,
+      normalized_score: 0.8
+    }
+  ]), { status: 200 })
+});
+const legacyCardNameAsSetResult = await legacyCardNameAsSetProvider.search({
+  query: {
+    exact_year: "2024",
+    exact_subject: "Jackson Chourio",
+    exact_product: "Topps Heritage High Number",
+    search_text: "2024 Topps Heritage High Number Jackson Chourio"
+  }
+});
+assert.equal(legacyCardNameAsSetResult.candidates[0].fields.product, "Topps Heritage High Number");
+assert.equal(legacyCardNameAsSetResult.candidates[0].fields.set, null, "legacy card-name aliases must not survive as set evidence");
+assert.equal(legacyCardNameAsSetResult.candidates[0].fields.insert, null, "legacy card-name aliases must not survive as insert evidence");
+assert.equal(legacyCardNameAsSetResult.candidates[0].fields.card_name, "Dark Blue Bordered");
 
 let productVocabularyRpcBody = null;
 const productVocabularyProvider = catalogProvider({

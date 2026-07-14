@@ -324,7 +324,7 @@ assert.equal(unsupportedAutoReview.resolved.auto, false);
 assert.ok(unsupportedAutoReview.unresolved.includes("auto"));
 assert.equal(unsupportedAutoReview.provider_field_rejections.at(-1).reason, "auto_not_directly_supported_by_current_image");
 
-const directlySupportedAuto = validateProviderEvidencePayload("openai_legacy", {
+const genericVisibleSignatureIsNotEnough = validateProviderEvidencePayload("openai_legacy", {
   fields: { auto: true, observable_components: ["auto"] },
   field_evidence: [{
     field: "auto",
@@ -340,8 +340,47 @@ const directlySupportedAuto = validateProviderEvidencePayload("openai_legacy", {
   }],
   unresolved: []
 });
-assert.equal(directlySupportedAuto.fields.auto, true, "a directly visible signature may support Auto");
-assert.deepEqual(directlySupportedAuto.unresolved, []);
+assert.equal(genericVisibleSignatureIsNotEnough.fields.auto, false, "a generic signature graphic may be a printed facsimile and must fail closed");
+assert.ok(genericVisibleSignatureIsNotEnough.unresolved.includes("auto"));
+
+const directlySupportedInkAuto = validateProviderEvidencePayload("openai_legacy", {
+  fields: { auto: true, observable_components: ["auto"] },
+  field_evidence: [{
+    field: "auto",
+    value: true,
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    source_image_id: "image-1",
+    source_region: "signature",
+    evidence_kind: "HANDWRITTEN_INK_SIGNATURE",
+    visible_text: "",
+    signature_visible: true,
+    directly_observed: true,
+    direct_observation: true,
+    review_required: false
+  }],
+  unresolved: []
+});
+assert.equal(directlySupportedInkAuto.fields.auto, true, "directly visible handwritten ink may support Auto");
+assert.deepEqual(directlySupportedInkAuto.unresolved, []);
+
+const directlySupportedPrintedAuto = validateProviderEvidencePayload("openai_legacy", {
+  fields: { auto: true, observable_components: ["auto"] },
+  field_evidence: [{
+    field: "auto",
+    value: true,
+    source_type: "CARD_BACK_PRINTED_TEXT",
+    source_image_id: "image-2",
+    source_region: "autograph_label",
+    evidence_kind: "PRINTED_CARD_TEXT",
+    visible_text: "TOPPS CERTIFIED AUTOGRAPH ISSUE",
+    directly_observed: true,
+    direct_observation: true,
+    review_required: false
+  }],
+  unresolved: []
+});
+assert.equal(directlySupportedPrintedAuto.fields.auto, true, "directly printed autograph wording may support Auto");
+assert.deepEqual(directlySupportedPrintedAuto.unresolved, []);
 
 const prefixOnlyCodeIsRejected = validateProviderEvidencePayload("openai_legacy", {
   fields: { collector_number: "CMP124" },

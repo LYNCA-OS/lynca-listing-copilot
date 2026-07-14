@@ -69,7 +69,8 @@ const messiCatalog = correctedTitleRecordToCatalogStaging({
 });
 assert.equal(messiCatalog.staging.identity_fields.sport, "soccer");
 assert.equal(messiCatalog.staging.identity_fields.product, "Panini Prizm FIFA Soccer");
-assert.equal(messiCatalog.staging.identity_fields.set_or_insert, "Club Legends");
+assert.equal(messiCatalog.staging.identity_fields.set_or_insert, null);
+assert.equal(messiCatalog.staging.identity_fields.card_name, "Club Legends");
 assert.deepEqual(messiCatalog.staging.identity_fields.players, ["Lionel Messi"]);
 assert.equal(messiCatalog.staging.identity_fields.card_number, "CL-LM");
 assert.equal(messiCatalog.staging.identity_fields.serial_denominator, "199");
