@@ -230,6 +230,57 @@ const tcgResult = normalizePaddleOcrResponse({
 assert.equal(tcgResult.normalized_fields.tcg_card_number, "OP01-001");
 assert.equal(tcgResult.normalized_fields.rarity, "SR");
 
+const statsTableNumberIsNotCollectorNumber = normalizePaddleOcrResponse({
+  raw_text: "COLLEGE PASSING RECORD YR TEAM ATT COMP 99 MICHIGAN 341 214",
+  confidence: 0.97
+}, {
+  request_id: "ocr-card-number-stats-guard",
+  image_url: "https://storage.test/card-back.jpg",
+  crop_type: "collector_number"
+});
+assert.equal(statsTableNumberIsNotCollectorNumber.normalized_fields.collector_number, undefined);
+
+const websiteCodeIsNotCollectorNumber = normalizePaddleOcrResponse({
+  raw_text: "WWW.TOPPS.COM CODE#CMP127171",
+  confidence: 0.96
+}, {
+  request_id: "ocr-card-number-website-guard",
+  image_url: "https://storage.test/card-back-code.jpg",
+  crop_type: "collector_number"
+});
+assert.equal(websiteCodeIsNotCollectorNumber.normalized_fields.collector_number, undefined);
+assert.equal(websiteCodeIsNotCollectorNumber.normalized_fields.checklist_code, undefined);
+
+const alphaCollectorNumber = normalizePaddleOcrResponse({
+  raw_text: "No. PAU-AED",
+  confidence: 0.96
+}, {
+  request_id: "ocr-card-number-alpha",
+  image_url: "https://storage.test/card-back-number.jpg",
+  crop_type: "collector_number"
+});
+assert.equal(alphaCollectorNumber.normalized_fields.collector_number, "PAU-AED");
+
+const numericCollectorNumber = normalizePaddleOcrResponse({
+  raw_text: "Card #381",
+  confidence: 0.96
+}, {
+  request_id: "ocr-card-number-numeric",
+  image_url: "https://storage.test/card-back-number-381.jpg",
+  crop_type: "collector_number"
+});
+assert.equal(numericCollectorNumber.normalized_fields.collector_number, "381");
+
+const validNumberSurvivesUnrelatedWebsiteText = normalizePaddleOcrResponse({
+  raw_text: "CARD #381\nWWW.TOPPS.COM",
+  confidence: 0.96
+}, {
+  request_id: "ocr-card-number-with-website",
+  image_url: "https://storage.test/card-back-number-with-website.jpg",
+  crop_type: "collector_number"
+});
+assert.equal(validNumberSurvivesUnrelatedWebsiteText.normalized_fields.collector_number, "381");
+
 const disabledConfig = paddleOcrConfig({
   ENABLE_PADDLE_OCR_FIELD_VERIFIER: "false"
 });

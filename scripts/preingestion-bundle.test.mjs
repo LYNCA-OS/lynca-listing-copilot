@@ -547,6 +547,28 @@ assert.equal(confirmedRetrievalFields.serial_denominator, "3");
 assert.equal(confirmedRetrievalFields.checklist_code, undefined, "review-confidence OCR must not become a retrieval identity lock");
 assert.equal(confirmedRetrievalFields.grade_company, undefined, "grade evidence is not a catalog identity anchor");
 
+const falsePrintedCodeRetrievalFields = __listingCopilotTitleTestHooks.confirmedPreingestionRetrievalFields({
+  preingestion_evidence_patches: [
+    {
+      field: "collector_number",
+      value: "99",
+      raw_text: "COLLEGE PASSING RECORD YR TEAM ATT COMP 99 MICHIGAN 341 214",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.97
+    },
+    {
+      field: "collector_number",
+      value: "CMP1271",
+      raw_text: "WWW.TOPPS.COM CODE#CMP127171",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.96
+    }
+  ]
+});
+assert.deepEqual(falsePrintedCodeRetrievalFields, {}, "OCR boilerplate and stat-table numbers must stay out of retrieval anchors");
+
 const staleGpt5Result = {
   title: "2018 Bowman Chrome Yordan Alvarez Auto Gold #CPA BGS 10/9.5",
   confidence: "HIGH",

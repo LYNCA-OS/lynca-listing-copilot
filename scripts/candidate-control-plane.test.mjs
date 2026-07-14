@@ -8,6 +8,7 @@ import {
   candidateDecisionHeuristicVersion
 } from "../lib/listing/candidates/candidate-decision-stage.mjs";
 import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import { rebindCandidateToObservedFields } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { buildV4CandidateControlPlaneTrace } from "../lib/listing/v4/candidates/control-plane-adapter.mjs";
 
 function packet(candidates = [], assistFilter = {}) {
@@ -841,6 +842,42 @@ function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
   assert.ok(decision.field_application.applied_fields.includes("set"));
 }
 
+function testNumericYearMayBeOmittedButCannotHideDifferentProductBranch() {
+  const baseCandidate = {
+    candidate_id: "bowman-base",
+    candidate_identity_id: "bowman-base-identity",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2000",
+      product: "Bowman",
+      players: ["Tom Brady"]
+    }
+  };
+  const chromeCandidate = {
+    ...baseCandidate,
+    candidate_id: "bowman-chrome",
+    candidate_identity_id: "bowman-chrome-identity",
+    fields: {
+      ...baseCandidate.fields,
+      product: "Bowman Chrome"
+    }
+  };
+  const observed = {
+    year: "2000",
+    product: "2000 Bowman",
+    players: ["Tom Brady"]
+  };
+
+  const baseRebound = rebindCandidateToObservedFields(baseCandidate, observed);
+  const chromeRebound = rebindCandidateToObservedFields(chromeCandidate, observed);
+
+  assert.ok(baseRebound.anchor_agreement.agreed.includes("product_hierarchy"));
+  assert.equal(baseRebound.anchor_agreement.contradicted.includes("product"), false);
+  assert.ok(chromeRebound.anchor_agreement.contradicted.includes("product_hierarchy"));
+  assert.ok(chromeRebound.conflicting_fields.includes("product"));
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -857,5 +894,6 @@ testDenominatorAloneCannotOverrideConflictingYear();
 testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars();
 testEvidenceScalarOnlyFillsMissingObservedField();
 testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
+testNumericYearMayBeOmittedButCannotHideDifferentProductBranch();
 
 console.log("candidate-control-plane tests passed");
