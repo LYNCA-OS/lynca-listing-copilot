@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { analyzeV4StabilityEnvelope } from "../lib/listing/v4/jobs/stability-envelope.mjs";
+import { normalizeEvaluationSampleMode } from "../lib/listing/evaluation/sample-policy.mjs";
 import { perCardTsv, runV4EbaySmoke, summarize } from "./v4-ebay-smoke.mjs";
 
 function argValue(argv, name, fallback = "") {
@@ -37,9 +38,24 @@ async function writeText(path, value) {
   await writeFile(output, value);
 }
 
-function datasetItems(dataset = {}) {
+export function datasetItems(dataset = {}) {
   if (Array.isArray(dataset)) return dataset;
   return dataset.items || dataset.records || dataset.results || dataset.cards || [];
+}
+
+export function soakSamplePolicy(dataset = {}) {
+  const source = !Array.isArray(dataset) && dataset.evaluation_sample_policy
+    ? dataset.evaluation_sample_policy
+    : {};
+  const mode = normalizeEvaluationSampleMode(source.mode || "UNSPECIFIED");
+  return {
+    ...source,
+    mode,
+    sample_reuse_permitted: source.sample_reuse_permitted === true,
+    generalization_claim_permitted: source.generalization_claim_permitted === true,
+    same_sample_required: source.same_sample_required === true,
+    cross_wave_overlap_permitted: false
+  };
 }
 
 export function buildV4SoakWavePlan({ totalItems = 0, limit = 100, waveSize = 20 } = {}) {
@@ -82,6 +98,7 @@ export async function runV4MultiTenantSoak({
 } = {}) {
   if (!datasetPath) throw new Error("--dataset is required");
   const dataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
+  const datasetPolicy = soakSamplePolicy(dataset);
   const plan = buildV4SoakWavePlan({
     totalItems: datasetItems(dataset).length,
     limit,
@@ -120,15 +137,22 @@ export async function runV4MultiTenantSoak({
       tenantCount,
       tenantPrefix: `${runId}-client`,
       batchPoll: true,
-      evaluationSampleMode: "FRESH_GENERALIZATION",
+      evaluationSampleMode: datasetPolicy.mode,
       progress
     });
+    const soakElapsedMs = Date.now() - startedAt;
+    const cumulativeAttemptedCount = reports.reduce(
+      (sum, prior) => sum + Number(prior.summary?.attempted_count || prior.results?.length || 0),
+      0
+    ) + Number(report.summary?.attempted_count || report.results?.length || 0);
     const waveReport = {
       ...report,
       wave_id: wave.wave_id,
       soak_run_id: runId,
       wave_index: wave.wave_index,
-      wave_plan: wave
+      wave_plan: wave,
+      soak_elapsed_ms: soakElapsedMs,
+      cumulative_attempted_count: cumulativeAttemptedCount
     };
     reports.push(waveReport);
     await writeJson(`${outputDirectory}/${wave.wave_id}.json`, waveReport);
@@ -140,7 +164,7 @@ export async function runV4MultiTenantSoak({
     minimumWaves: 3,
     minimumCards: 50,
     minimumTenants: 3,
-    requireFreshSamples: true
+    requireFreshSamples: ["FRESH_GENERALIZATION", "CONCURRENCY_FRESH"].includes(datasetPolicy.mode)
   });
   const aggregate = {
     schema_version: "v4-multi-tenant-soak-v1",
@@ -157,11 +181,8 @@ export async function runV4MultiTenantSoak({
     wave_count: reports.length,
     run_wall_ms: totalWallMs,
     evaluation_sample_policy: {
-      mode: "FRESH_GENERALIZATION",
-      sample_reuse_permitted: false,
-      generalization_claim_permitted: true,
-      same_sample_required: false,
-      cross_wave_overlap_permitted: false
+      ...datasetPolicy,
+      evaluated_item_count: allResults.length
     },
     blind_policy: {
       seller_title_visible_to_model: false,
@@ -175,6 +196,8 @@ export async function runV4MultiTenantSoak({
       limit: report.limit,
       shared_batch_id: report.shared_batch_id,
       run_wall_ms: report.run_wall_ms,
+      soak_elapsed_ms: report.soak_elapsed_ms,
+      cumulative_attempted_count: report.cumulative_attempted_count,
       attempted_count: report.summary?.attempted_count,
       ok_count: report.summary?.ok_count,
       report_path: `${outputDirectory}/${report.wave_id}.json`

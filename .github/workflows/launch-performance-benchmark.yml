@@ -1,0 +1,229 @@
+name: launch-performance-benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_only:
+        description: "Collect and validate 1000 random blind cards without paid recognition"
+        required: true
+        type: boolean
+        default: true
+      seller:
+        description: "Strict eBay seller username"
+        required: true
+        default: "dcsports87"
+      model:
+        description: "Production model"
+        required: true
+        default: "gpt-5-mini"
+      concurrency:
+        description: "Global GPT provider concurrency"
+        required: true
+        default: "2"
+      tenant_count:
+        description: "Simulated production tenants"
+        required: true
+        default: "5"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
+    env:
+      BASE_URL: https://listing.lyncafei.team
+      SAMPLE_COUNT: "1000"
+      WAVE_SIZE: "50"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Capture and validate production runtime
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+          EXPECTED_MODEL: ${{ inputs.model }}
+          EXPECTED_CONCURRENCY: ${{ inputs.concurrency }}
+        run: |
+          curl -fsS --max-time 30 "$BASE_URL/api/v4/health" -o /tmp/runtime-start.json
+          curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
+            -H 'content-type: application/json' \
+            --data "$(node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))')" \
+            "$BASE_URL/api/login" -o /tmp/login.json
+          curl -fsS --max-time 45 -b /tmp/lynca-cookies.txt \
+            "$BASE_URL/api/listing-provider-status" -o /tmp/provider-start.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const health = JSON.parse(fs.readFileSync('/tmp/runtime-start.json', 'utf8'));
+          const status = JSON.parse(fs.readFileSync('/tmp/provider-start.json', 'utf8'));
+          const provider = (status.providers || []).find(x => x.selectable) || {};
+          const execution = status.execution_control || {};
+          const components = new Map((status.workflow_readiness?.components || []).map(x => [x.id, x]));
+          const vector = components.get('vector_retrieval') || {};
+          const checks = {
+            v4_ready: health.ready === true,
+            queue_configured: health.production_queue?.configured === true,
+            worker_secret_configured: health.production_queue?.worker_secret_configured === true,
+            model_matches: provider.model_id === process.env.EXPECTED_MODEL,
+            cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
+            key_pool_ready: Number(execution.provider_key_pool_size || 0) >= 1,
+            provider_concurrency_matches: Number(execution.global_provider_concurrency) === Number(process.env.EXPECTED_CONCURRENCY),
+            vector_index_ready: health.vector_index_ready === true && vector.details?.index_ready === true,
+            vector_lazy_override_supported: vector.details?.request_override_supported === true
+          };
+          const snapshot = {
+            deployment_sha: String(health.deployment?.git_commit_sha || ''),
+            model_id: provider.model_id || null,
+            checks,
+            execution_control: execution,
+            vector: vector.details || null
+          };
+          fs.writeFileSync('/tmp/runtime-snapshot.json', JSON.stringify(snapshot, null, 2));
+          console.log(JSON.stringify(snapshot, null, 2));
+          if (!snapshot.deployment_sha || Object.values(checks).some(value => value !== true)) process.exit(1);
+          NODE
+
+      - name: Collect prior evaluation history
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/collect-ebay-evaluation-history.mjs \
+            --github \
+            --seed "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl" \
+            --out /tmp/ebay-evaluation-history.jsonl
+
+      - name: Prepare exactly 1000 random blind eBay cards
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+          BLIND_EVAL_LISTING_PAGES: "50"
+          BLIND_EVAL_IMAGE_DOWNLOAD_CONCURRENCY: "8"
+        run: |
+          node scripts/prepare-dcsports87-blind-eval.mjs \
+            --base-url "$BASE_URL" \
+            --out-dir /tmp/launch-blind \
+            --run-id launch-1000 \
+            --seller "${{ inputs.seller }}" \
+            --limit "$SAMPLE_COUNT" \
+            --image-limit 2 \
+            --sample-mode random_blind \
+            --include-non-sports \
+            --query "sports card|basketball card|baseball card|football card|soccer card|hockey card|Pokemon card|One Piece card|Yu-Gi-Oh card|trading card|card"
+
+      - name: Build cloud image-only intake bundle
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          node scripts/build-ebay-image-intake-dataset.mjs \
+            --blind-dir /tmp/launch-blind \
+            --run-ids launch-1000 \
+            --out /tmp/launch-dataset.json \
+            --sealed-labels-out /tmp/launch-sealed-labels.jsonl \
+            --base-url "$BASE_URL" \
+            --upload-images \
+            --upload-concurrency 8 \
+            --progress
+
+      - name: Enforce sample capacity and anti-leakage
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { assertLaunchDatasetCapacity } from './scripts/run-launch-throughput-benchmark.mjs';
+          const prior = fs.readFileSync('/tmp/ebay-evaluation-history.jsonl', 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+          const labels = fs.readFileSync('/tmp/launch-sealed-labels.jsonl', 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+          const dataset = JSON.parse(fs.readFileSync('/tmp/launch-dataset.json', 'utf8'));
+          const priorIds = new Set(prior.map(row => String(row.item_id || '')));
+          const overlap = labels.filter(row => priorIds.has(String(row.item_id || ''))).map(row => row.item_id);
+          const leaked = (dataset.items || []).filter(item => item.canonical_title || Object.keys(item.source_titles || {}).length);
+          const capacity = assertLaunchDatasetCapacity(dataset, [100, 500, 1000]);
+          const report = {
+            ...capacity,
+            sealed_label_count: labels.length,
+            prior_history_overlap_count: overlap.length,
+            title_leak_count: leaked.length,
+            upload_failure_count: Number(dataset.upload_failure_count || 0),
+            sample_mode: dataset.evaluation_sample_policy?.mode || null,
+            randomized_selection: dataset.evaluation_sample_policy?.randomized_selection === true,
+            randomization_verified: dataset.evaluation_sample_policy?.randomization_verified === true
+          };
+          fs.writeFileSync('/tmp/sample-probe.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report, null, 2));
+          if (labels.length !== 1000 || leaked.length || report.upload_failure_count || report.sample_mode !== 'RANDOM_BLIND' || !report.randomized_selection || !report.randomization_verified) process.exit(1);
+          NODE
+
+      - name: Run one sustained 1000-card production benchmark
+        if: ${{ inputs.probe_only == false }}
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          node scripts/run-launch-throughput-benchmark.mjs \
+            --dataset /tmp/launch-dataset.json \
+            --sealed-labels /tmp/launch-sealed-labels.jsonl \
+            --levels 100,500,1000 \
+            --wave-size "$WAVE_SIZE" \
+            --tenant-count "${{ inputs.tenant_count }}" \
+            --concurrency "${{ inputs.concurrency }}" \
+            --model "${{ inputs.model }}" \
+            --think-ms 0 \
+            --l2-wait-ms 3600000 \
+            --request-timeout-ms 120000 \
+            --out-dir /tmp/launch-benchmark
+
+      - name: Enforce throughput and reliability launch gates
+        if: ${{ inputs.probe_only == false }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { assessLaunchReliability, assessLaunchThroughput } from './lib/listing/evaluation/launch-benchmark.mjs';
+          const throughput = [100, 500, 1000].map(level => JSON.parse(fs.readFileSync(`/tmp/launch-benchmark/throughput-${level}.json`, 'utf8')));
+          const reliability = JSON.parse(fs.readFileSync('/tmp/launch-benchmark/reliability-1000.json', 'utf8'));
+          const result = {
+            throughput: assessLaunchThroughput(throughput),
+            reliability: assessLaunchReliability(reliability)
+          };
+          fs.writeFileSync('/tmp/launch-performance-gate.json', JSON.stringify(result, null, 2));
+          console.log(JSON.stringify(result, null, 2));
+          if (result.throughput.verdict !== 'PASS' || result.reliability.verdict !== 'PASS') process.exit(1);
+          NODE
+
+      - name: Verify production revision did not drift
+        if: always()
+        run: |
+          curl -fsS --max-time 30 "$BASE_URL/api/v4/health" -o /tmp/runtime-end.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const start = JSON.parse(fs.readFileSync('/tmp/runtime-snapshot.json', 'utf8'));
+          const end = JSON.parse(fs.readFileSync('/tmp/runtime-end.json', 'utf8'));
+          const endSha = String(end.deployment?.git_commit_sha || '');
+          const report = {start_sha:start.deployment_sha,end_sha:endSha,unchanged:Boolean(endSha) && endSha === start.deployment_sha};
+          fs.writeFileSync('/tmp/runtime-drift.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report, null, 2));
+          if (!report.unchanged) process.exit(1);
+          NODE
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: launch-performance-benchmark-${{ inputs.probe_only && 'probe' || 'full' }}
+          path: |
+            /tmp/runtime-snapshot.json
+            /tmp/runtime-drift.json
+            /tmp/sample-probe.json
+            /tmp/launch-blind/launch-1000/manifest.json
+            /tmp/launch-benchmark/*.json
+            /tmp/launch-benchmark/*.tsv
+            /tmp/launch-benchmark/reliability-1000-waves/*.json
+            /tmp/launch-benchmark/reliability-1000-waves/*.tsv
+            /tmp/launch-performance-gate.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -5,6 +5,11 @@ import {
   assessLaunchReliability,
   assessLaunchThroughput
 } from "../lib/listing/evaluation/launch-benchmark.mjs";
+import {
+  assertCheckpointWaveAlignment,
+  assertLaunchDatasetCapacity,
+  deriveLaunchThroughputCheckpoint
+} from "./run-launch-throughput-benchmark.mjs";
 
 function accuracyReport(rate = 0.888889) {
   return {
@@ -86,6 +91,38 @@ function reliabilityReport({
     }
   };
 }
+
+assert.throws(
+  () => assertLaunchDatasetCapacity({ items: Array.from({ length: 100 }, (_, index) => ({ asset_id: `card-${index}` })) }),
+  /requires 1000 real items/
+);
+assert.throws(
+  () => assertLaunchDatasetCapacity({ items: Array.from({ length: 1000 }, () => ({ asset_id: "duplicate" })) }),
+  /uniquely identified/
+);
+assert.equal(
+  assertLaunchDatasetCapacity({ items: Array.from({ length: 1000 }, (_, index) => ({ asset_id: `card-${index}` })) }).uniquely_identified_item_count,
+  1000
+);
+assert.equal(assertCheckpointWaveAlignment([100, 500, 1000], 50), 50);
+assert.throws(() => assertCheckpointWaveAlignment([100, 550], 100), /must align/);
+
+const checkpoint = deriveLaunchThroughputCheckpoint({
+  soak_run_id: "soak-1",
+  evaluation_sample_policy: { mode: "FRESH_GENERALIZATION" },
+  wave_reports: [{ wave_id: "wave-2", cumulative_attempted_count: 100, soak_elapsed_ms: 100_000 }],
+  results: Array.from({ length: 1000 }, (_, index) => ({
+    asset_id: `card-${index}`,
+    ok: true,
+    writer_ready: true,
+    l2_ready: true,
+    job_status: "L2_READY"
+  }))
+}, 100);
+assert.equal(checkpoint.benchmark_level, 100);
+assert.equal(checkpoint.summary.attempted_count, 100);
+assert.equal(checkpoint.summary.ok_count, 100);
+assert.equal(checkpoint.summary.completed_cards_per_minute, 60);
 
 const accurate = assessLaunchAccuracy(accuracyReport());
 assert.equal(accurate.verdict, "PASS");

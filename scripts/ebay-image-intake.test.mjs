@@ -2,9 +2,22 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { buildEbayImageIntakeDataset } from "./build-ebay-image-intake-dataset.mjs";
+import {
+  buildEbayImageIntakeDataset,
+  mapWithStableConcurrency,
+  normalizeUploadConcurrency
+} from "./build-ebay-image-intake-dataset.mjs";
 import { buildCatalogGapQueueFromImageIntake } from "./build-catalog-gap-queue-from-image-intake.mjs";
 import { buildEvaluationSamplePolicy } from "../lib/listing/evaluation/sample-policy.mjs";
+
+assert.equal(normalizeUploadConcurrency(0), 6);
+assert.equal(normalizeUploadConcurrency(20), 16);
+assert.equal(normalizeUploadConcurrency(4), 4);
+const stableOrder = await mapWithStableConcurrency([30, 5, 15], 3, async (delay) => {
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, delay));
+  return delay;
+});
+assert.deepEqual(stableOrder, [30, 5, 15]);
 
 const tmpDir = await mkdtemp(path.join(os.tmpdir(), "ebay-image-intake-"));
 try {
@@ -62,6 +75,8 @@ try {
   assert.equal(dataset.schema_version, "ebay-image-intake-dataset-v1");
   assert.equal(dataset.item_count, 1);
   assert.equal(dataset.image_count, 2);
+  assert.equal(dataset.upload_concurrency, 6);
+  assert.equal(dataset.upload_failure_count, 0);
   assert.equal(dataset.evaluation_sample_policy.mode, "FRESH_GENERALIZATION");
   assert.equal(dataset.evaluation_sample_policy.novelty_verified, true);
   assert.equal(dataset.evaluation_sample_policy.selected_item_count, 1);

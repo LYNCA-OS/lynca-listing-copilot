@@ -34,6 +34,24 @@ function numberArg(argv, name, fallback) {
   return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : fallback;
 }
 
+export function normalizeUploadConcurrency(value, fallback = 6) {
+  return Math.max(1, Math.min(16, Math.trunc(Number(value) || fallback)));
+}
+
+export async function mapWithStableConcurrency(items = [], concurrency = 1, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(items.length, normalizeUploadConcurrency(concurrency, 1));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }));
+  return results;
+}
+
 function listArg(value = "") {
   return String(value || "")
     .split(/[,\n;]/)
@@ -194,6 +212,10 @@ export async function buildEbayImageIntakeDataset({
   const username = argValue(argv, "--username", envValue(env, "API_USERNAME", "METAVERSE_USERNAME"));
   const password = argValue(argv, "--password", envValue(env, "API_PASSWORD", "METAVERSE_PASSWORD"));
   const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", Number(env.EBAY_IMAGE_INTAKE_UPLOAD_TIMEOUT_MS || 240000));
+  const uploadConcurrency = normalizeUploadConcurrency(
+    numberArg(argv, "--upload-concurrency", Number(env.EBAY_IMAGE_INTAKE_UPLOAD_CONCURRENCY || 6)),
+    6
+  );
   const uploadContext = uploadImages
     ? {
       baseUrl,
@@ -204,13 +226,14 @@ export async function buildEbayImageIntakeDataset({
     }
     : null;
   if (progress) {
-    process.stderr.write(`[image-intake] upload_images=${uploadImages} run_ids=${runIds.join(",")} limit=${limit || "all"}\n`);
+    process.stderr.write(`[image-intake] upload_images=${uploadImages} upload_concurrency=${uploadConcurrency} run_ids=${runIds.join(",")} limit=${limit || "all"}\n`);
   }
 
   const items = [];
   const sealedLabels = [];
   const seenItemIds = new Set();
   const sourceRuns = [];
+  const tasks = [];
   for (const runId of runIds) {
     const { blindRows, answerRows, answerByCaseId, manifest } = await readRunRows({ outDir, runId });
     sourceRuns.push({
@@ -220,18 +243,23 @@ export async function buildEbayImageIntakeDataset({
       evaluation_sample_policy: manifest.evaluation_sample_policy || null
     });
     for (const blindRow of blindRows) {
-      if (limit > 0 && items.length >= limit) break;
+      if (limit > 0 && tasks.length >= limit) break;
       const answer = answerByCaseId.get(normalizeText(blindRow.case_id));
       if (!answer) throw new Error(`Missing sealed answer row for case_id=${blindRow.case_id} in run ${runId}.`);
       const itemId = normalizeText(answer.item_id || answer.case_id);
       if (!itemId || seenItemIds.has(itemId)) continue;
       seenItemIds.add(itemId);
+      tasks.push({ answer, blindRow, itemId, runId });
+    }
+  }
 
+  const processed = await mapWithStableConcurrency(tasks, uploadConcurrency, async ({ answer, blindRow, itemId, runId }, taskIndex) => {
+    try {
       const labelKey = sealedLabelKey(answer);
       const images = [];
       for (const [imageIndex, blindImagePath] of (blindRow.image_paths || []).entries()) {
         if (progress) {
-          process.stderr.write(`[image-intake] item ${items.length + 1}${limit ? `/${limit}` : ""} ${blindRow.case_id} image ${imageIndex + 1}/${blindRow.image_paths.length}\n`);
+          process.stderr.write(`[image-intake] item ${taskIndex + 1}${limit ? `/${limit}` : `/${tasks.length}`} ${blindRow.case_id} image ${imageIndex + 1}/${blindRow.image_paths.length}\n`);
         }
         images.push(await imageRecord({
           blindImagePath,
@@ -241,52 +269,74 @@ export async function buildEbayImageIntakeDataset({
           uploadContext
         }));
       }
-
-      items.push({
-        asset_id: `ebay_image_only_${safeId(blindRow.case_id)}`,
-        source_feedback_id: itemSourceFeedbackId(answer),
-        physical_card_id: `ebay_image_only_${safeId(blindRow.case_id)}`,
-        identity_key: itemIdentityKey(answer),
-        category: "collectible_card",
-        category_source: "image_only_default",
-        reference_capture_source: "ebay_blind_image_only",
-        source_provider: "ebay_browse",
-        source_manifest: `blind_eval/${runId}`,
-        review_status: "NEEDS_WRITER_REVIEW",
-        canonical_title: "",
-        source_titles: {},
-        sealed_eval_label_ref: {
-          path: relativePortablePath(sealedLabelsOutPath),
-          key: labelKey
-        },
-        source_record: {
-          source_type: "IMAGE_ONLY_MARKETPLACE_CAPTURE",
+      return {
+        itemId,
+        item: {
+          asset_id: `ebay_image_only_${safeId(blindRow.case_id)}`,
+          source_feedback_id: itemSourceFeedbackId(answer),
+          physical_card_id: `ebay_image_only_${safeId(blindRow.case_id)}`,
+          identity_key: itemIdentityKey(answer),
+          category: "collectible_card",
+          category_source: "image_only_default",
+          reference_capture_source: "ebay_blind_image_only",
           source_provider: "ebay_browse",
-          sealed_eval_label_key: labelKey,
-          source_listing_key_hash: sourceListingKeyHash(answer),
-          ebay_answer_key_is_reviewed_ground_truth: false,
-          seller_title_visible_to_model: false,
-          title_derived_fields_are_ground_truth: false
+          source_manifest: `blind_eval/${runId}`,
+          review_status: "NEEDS_WRITER_REVIEW",
+          canonical_title: "",
+          source_titles: {},
+          sealed_eval_label_ref: {
+            path: relativePortablePath(sealedLabelsOutPath),
+            key: labelKey
+          },
+          source_record: {
+            source_type: "IMAGE_ONLY_MARKETPLACE_CAPTURE",
+            source_provider: "ebay_browse",
+            sealed_eval_label_key: labelKey,
+            source_listing_key_hash: sourceListingKeyHash(answer),
+            ebay_answer_key_is_reviewed_ground_truth: false,
+            seller_title_visible_to_model: false,
+            title_derived_fields_are_ground_truth: false
+          },
+          images
         },
-        images
-      });
-
-      sealedLabels.push({
-        key: labelKey,
-        case_id: answer.case_id,
-        seller: answer.seller || "",
-        item_id: answer.item_id || "",
-        item_web_url: answer.item_web_url || "",
-        title: answer.title || "",
-        raw_listing_metadata: answer.raw_listing_metadata || {},
-        policy: {
-          seller_title_is_ground_truth: false,
-          model_prompt_visible: false,
-          catalog_import_allowed: false,
-          use_after_prediction_for_eval_only: true
+        sealedLabel: {
+          key: labelKey,
+          case_id: answer.case_id,
+          seller: answer.seller || "",
+          item_id: answer.item_id || "",
+          item_web_url: answer.item_web_url || "",
+          title: answer.title || "",
+          raw_listing_metadata: answer.raw_listing_metadata || {},
+          policy: {
+            seller_title_is_ground_truth: false,
+            model_prompt_visible: false,
+            catalog_import_allowed: false,
+            use_after_prediction_for_eval_only: true
+          }
         }
-      });
+      };
+    } catch (error) {
+      return {
+        itemId,
+        failure: {
+          case_id: blindRow.case_id,
+          item_id: itemId,
+          run_id: runId,
+          error: normalizeText(error?.message || error || "image_intake_failed").slice(0, 300)
+        }
+      };
     }
+  });
+  const uploadFailures = [];
+  const successfulItemIds = [];
+  for (const result of processed) {
+    if (result.failure) {
+      uploadFailures.push(result.failure);
+      continue;
+    }
+    items.push(result.item);
+    sealedLabels.push(result.sealedLabel);
+    successfulItemIds.push(result.itemId);
   }
 
   const dataset = {
@@ -295,9 +345,12 @@ export async function buildEbayImageIntakeDataset({
     source_runs: sourceRuns,
     item_count: items.length,
     image_count: items.reduce((sum, item) => sum + item.images.length, 0),
-    unique_item_count: seenItemIds.size,
-    evaluation_sample_policy: aggregateEvaluationSamplePolicy(sourceRuns, [...seenItemIds]),
+    unique_item_count: successfulItemIds.length,
+    evaluation_sample_policy: aggregateEvaluationSamplePolicy(sourceRuns, successfulItemIds),
     upload_images: uploadImages,
+    upload_concurrency: uploadConcurrency,
+    upload_failure_count: uploadFailures.length,
+    upload_failures: uploadFailures,
     sealed_labels_path: relativePortablePath(sealedLabelsOutPath),
     intake_policy: {
       image_only: true,
@@ -328,6 +381,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       sealed_label_count: sealedLabels.length,
       seller_titles_in_dataset: dataset.intake_policy.seller_titles_in_dataset,
       upload_images: dataset.upload_images,
+      upload_concurrency: dataset.upload_concurrency,
+      upload_failure_count: dataset.upload_failure_count,
       source_runs: dataset.source_runs
     }, null, 2)}\n`);
   }).catch((error) => {

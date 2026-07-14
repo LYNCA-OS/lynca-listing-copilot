@@ -15,6 +15,8 @@ import {
   defaultBlindEvalDir,
   deterministicHashShuffle,
   imageDescriptorFromBytes,
+  maximumBlindEvalListings,
+  normalizeBlindEvalLimit,
   prepareBlindDataset,
   readJsonl,
   recognitionOutputFromCloudData,
@@ -23,6 +25,11 @@ import {
   titleWeakLabelFromTitle,
   writeJsonl
 } from "../lib/listing/evaluation/blind-eval.mjs";
+
+assert.equal(maximumBlindEvalListings, 1000);
+assert.equal(normalizeBlindEvalLimit(1000), 1000);
+assert.equal(normalizeBlindEvalLimit(5000), 1000);
+assert.equal(normalizeBlindEvalLimit(0, 7), 7);
 
 assert.equal(isSealedProductListing({ title: "2023-24 Topps Chrome Factory Sealed 5 Hobby Box Case" }), true);
 assert.equal(isSealedProductListing({ title: "2023 Panini Prizm Victor Wembanyama Case Hit SSP" }), false);

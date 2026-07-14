@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { analyzeV4StabilityEnvelope } from "../lib/listing/v4/jobs/stability-envelope.mjs";
 import { numberArg as stabilityNumberArg } from "./analyze-v4-stability-soak.mjs";
-import { buildV4SoakWavePlan, numberArg as soakNumberArg } from "./run-v4-multi-tenant-soak.mjs";
+import {
+  buildV4SoakWavePlan,
+  numberArg as soakNumberArg,
+  soakSamplePolicy
+} from "./run-v4-multi-tenant-soak.mjs";
 import { smokeTenantId, summarize, summarizeBatchPositionFairness } from "./v4-ebay-smoke.mjs";
 
 function waveReport(waveIndex, {
@@ -72,6 +76,22 @@ assert.deepEqual(buildV4SoakWavePlan({ totalItems: 53, limit: 50, waveSize: 20 }
 ]);
 assert.equal(soakNumberArg(["node", "script"], "--limit", 100), 100);
 assert.equal(soakNumberArg(["node", "script", "--limit", "50"], "--limit", 100), 50);
+assert.deepEqual(soakSamplePolicy({
+  evaluation_sample_policy: {
+    mode: "RANDOM_BLIND",
+    randomized_selection: true,
+    randomization_verified: true
+  }
+}), {
+  mode: "RANDOM_BLIND",
+  randomized_selection: true,
+  randomization_verified: true,
+  sample_reuse_permitted: false,
+  generalization_claim_permitted: false,
+  same_sample_required: false,
+  cross_wave_overlap_permitted: false
+});
+assert.equal(soakSamplePolicy({}).mode, "UNSPECIFIED");
 assert.equal(stabilityNumberArg(["node", "script"], "--minimum-cards", 50), 50);
 assert.equal(stabilityNumberArg(["node", "script", "--minimum-cards=75"], "--minimum-cards", 50), 75);
 assert.equal(smokeTenantId({ batchId: "batch", tenantPrefix: "client", tenantCount: 3, index: 0 }), "client-tenant-1");
