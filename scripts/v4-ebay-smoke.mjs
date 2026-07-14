@@ -645,6 +645,7 @@ function sessionL2Summary(statusPayload = {}) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
     v4_l2_timing: summary.v4_l2_timing || null,
+    v4_pipeline_contract: summary.v4_pipeline_contract || null,
     input_tokens: providerDiagnostics.input_tokens,
     output_tokens: providerDiagnostics.output_tokens,
     total_tokens: providerDiagnostics.total_tokens,
@@ -759,6 +760,7 @@ function jobL2Summary(statusPayload = {}) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
     v4_l2_timing: summary.v4_l2_timing || null,
+    v4_pipeline_contract: summary.v4_pipeline_contract || null,
     input_tokens: providerDiagnostics.input_tokens,
     output_tokens: providerDiagnostics.output_tokens,
     total_tokens: providerDiagnostics.total_tokens,
@@ -1002,6 +1004,7 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     noncritical_persistence_summary: summary.noncritical_persistence_summary || row.noncritical_persistence_summary || null,
     provider_diagnostics: providerDiagnostics,
     v4_l2_timing: summary.v4_l2_timing || row.v4_l2_timing || null,
+    v4_pipeline_contract: summary.v4_pipeline_contract || row.v4_pipeline_contract || null,
     input_tokens: providerDiagnostics.input_tokens ?? row.input_tokens ?? null,
     output_tokens: providerDiagnostics.output_tokens ?? row.output_tokens ?? null,
     total_tokens: providerDiagnostics.total_tokens ?? row.total_tokens ?? null,
@@ -1470,6 +1473,7 @@ async function runOne({
       final_title: finalTitle,
       provider_diagnostics: finalProviderDiagnostics,
       v4_l2_timing: l2.summary?.v4_l2_timing || null,
+      v4_pipeline_contract: l2.summary?.v4_pipeline_contract || null,
       pre_l2_anchor_fast_lane_hit: preL2AnchorFastLaneHit,
       pre_l2_anchor_route: l2.summary?.v4_l2_timing?.pre_l2_anchor_route || null,
       pre_l2_anchor_finalize_reason: l2.summary?.v4_l2_timing?.pre_l2_anchor_finalize_reason || null,
@@ -1680,6 +1684,7 @@ async function runOne({
       vector_self_excluded_count: l2.summary?.vector_self_excluded_count ?? null,
       provider_diagnostics: finalProviderDiagnostics,
       v4_l2_timing: l2.summary?.v4_l2_timing || null,
+      v4_pipeline_contract: l2.summary?.v4_pipeline_contract || null,
       input_tokens: finalProviderDiagnostics.input_tokens,
       output_tokens: finalProviderDiagnostics.output_tokens,
       total_tokens: finalProviderDiagnostics.total_tokens,
@@ -1914,6 +1919,7 @@ async function runOne({
     l1_provider_diagnostics: l1ProviderDiagnostics,
     l2_provider_diagnostics: l2ProviderDiagnostics,
     v4_l2_timing: l2.summary?.v4_l2_timing || null,
+    v4_pipeline_contract: l2.summary?.v4_pipeline_contract || null,
     input_tokens: finalProviderDiagnostics.input_tokens,
     output_tokens: finalProviderDiagnostics.output_tokens,
     total_tokens: finalProviderDiagnostics.total_tokens,
@@ -2383,6 +2389,7 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
     v4_l2_timing: summary.v4_l2_timing || null,
+    v4_pipeline_contract: summary.v4_pipeline_contract || null,
     input_tokens: providerDiagnostics.input_tokens,
     output_tokens: providerDiagnostics.output_tokens,
     total_tokens: providerDiagnostics.total_tokens,
@@ -2601,6 +2608,52 @@ export function summarizePipelineNodeLedgers(results = []) {
           detail: anomaly.detail || null
         }))
       }))
+  };
+}
+
+export function summarizeV4PipelineContracts(results = []) {
+  const rows = results.filter((item) => (
+    item.v4_pipeline_contract
+    && typeof item.v4_pipeline_contract === "object"
+  ));
+  const countValues = (values = []) => values.reduce((counts, value) => {
+    const key = cleanText(value) || "missing";
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+  const bridgedStageBreakdown = {};
+  const violationCodeBreakdown = {};
+  let bridgedStageCount = 0;
+  let violationCount = 0;
+  for (const item of rows) {
+    const contract = item.v4_pipeline_contract;
+    const bridgedStages = Array.isArray(contract.bridged_stages) ? contract.bridged_stages : [];
+    bridgedStageCount += bridgedStages.length;
+    for (const stageId of bridgedStages) {
+      const key = cleanText(stageId) || "unknown";
+      bridgedStageBreakdown[key] = (bridgedStageBreakdown[key] || 0) + 1;
+    }
+    const violations = Array.isArray(contract.violations) ? contract.violations : [];
+    violationCount += violations.length;
+    for (const violation of violations) {
+      const key = cleanText(violation?.code) || "UNKNOWN";
+      violationCodeBreakdown[key] = (violationCodeBreakdown[key] || 0) + 1;
+    }
+  }
+  return {
+    schema_version: "v4-pipeline-contract-summary-v1",
+    contract_present_count: rows.length,
+    contract_missing_count: Math.max(0, results.length - rows.length),
+    measurement_rate: results.length ? Number((rows.length / results.length).toFixed(6)) : null,
+    contract_status_breakdown: countValues(rows.map((item) => item.v4_pipeline_contract.contract_status)),
+    heuristic_version_breakdown: countValues(rows.map((item) => item.v4_pipeline_contract.candidate_heuristic_version)),
+    migration_complete_count: rows.filter((item) => item.v4_pipeline_contract.migration_complete === true).length,
+    bridged_stage_card_count: rows.filter((item) => Number(item.v4_pipeline_contract.bridged_stage_count || 0) > 0).length,
+    bridged_stage_count: bridgedStageCount,
+    bridged_stage_breakdown: bridgedStageBreakdown,
+    violation_card_count: rows.filter((item) => (item.v4_pipeline_contract.violations || []).length > 0).length,
+    violation_count: violationCount,
+    violation_code_breakdown: violationCodeBreakdown
   };
 }
 
@@ -3080,6 +3133,7 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       serial_numerator_rejected_count: results.filter((item) => item.serial_numerator_verified === false).length
     },
     pipeline_node_observability: summarizePipelineNodeLedgers(results),
+    v4_pipeline_contract_observability: summarizeV4PipelineContracts(results),
     provider_diagnostics: {
       input_tokens_total: results.reduce((sum, item) => sum + Number(item.input_tokens || 0), 0),
       output_tokens_total: results.reduce((sum, item) => sum + Number(item.output_tokens || 0), 0),
@@ -3249,6 +3303,12 @@ export function perCardTsv(results = []) {
     "missing_required_node_count",
     "unexplained_resolution_drop_fields",
     "unexplained_terminal_drop_fields",
+    "v4_pipeline_contract_present",
+    "v4_pipeline_contract_status",
+    "v4_pipeline_bridged_stage_count",
+    "v4_pipeline_bridged_stages",
+    "v4_pipeline_violation_count",
+    "v4_pipeline_migration_complete",
     "provider_response_profile",
     "provider_prompt_mode",
     "provider_prompt_chars",
@@ -3343,6 +3403,12 @@ export function perCardTsv(results = []) {
     item.pipeline_node_ledger?.coverage?.missing_required_node_count ?? null,
     item.pipeline_node_ledger?.field_flow?.unexplained_resolution_drop_fields || [],
     item.pipeline_node_ledger?.field_flow?.unexplained_terminal_drop_fields || [],
+    Boolean(item.v4_pipeline_contract),
+    item.v4_pipeline_contract?.contract_status ?? null,
+    item.v4_pipeline_contract?.bridged_stage_count ?? null,
+    item.v4_pipeline_contract?.bridged_stages || [],
+    item.v4_pipeline_contract?.violations?.length ?? null,
+    item.v4_pipeline_contract?.migration_complete ?? null,
     item.provider_response_profile,
     item.provider_prompt_mode,
     item.provider_prompt_chars,

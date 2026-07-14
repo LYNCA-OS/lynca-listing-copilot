@@ -146,7 +146,8 @@ function writerSafeSessionStatus(session = null, job = null) {
       provider_capacity_stage_handoff: summary.provider_capacity_stage_handoff || null,
       recognition_clock_started_at: summary.recognition_clock_started_at || null,
       recognition_clock_source: summary.recognition_clock_source || null,
-      v4_l2_timing: summary.v4_l2_timing || null
+      v4_l2_timing: summary.v4_l2_timing || null,
+      v4_pipeline_contract: summary.v4_pipeline_contract || null
     },
     candidate_control_plane_trace: {
       catalog_activation_funnel: trace.catalog_activation_funnel || {},

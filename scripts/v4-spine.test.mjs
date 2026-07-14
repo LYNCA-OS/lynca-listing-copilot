@@ -46,6 +46,7 @@ import {
   providerDoneHandoffOverride,
   summarize as summarizeSmoke,
   summarizePipelineNodeLedgers,
+  summarizeV4PipelineContracts,
   summaryHasVisibleL2Title,
   summaryRequiresWriterReview
 } from "./v4-ebay-smoke.mjs";
@@ -77,6 +78,13 @@ const smokeTsv = perCardTsv([{
       unexplained_resolution_drop_fields: ["grade"],
       unexplained_terminal_drop_fields: []
     }
+  },
+  v4_pipeline_contract: {
+    contract_status: "PASSED",
+    bridged_stage_count: 2,
+    bridged_stages: ["observation", "field_resolution"],
+    violations: [],
+    migration_complete: false
   }
 }]).split("\n").slice(0, 2).map((line) => line.split("\t"));
 assert.equal(smokeTsv[0].length, smokeTsv[1].length, "per-card TSV columns must not silently shift");
@@ -84,6 +92,8 @@ const smokeTsvRow = Object.fromEntries(smokeTsv[0].map((column, index) => [colum
 assert.equal(smokeTsvRow.recognition_start_source, "gpt_provider_request");
 assert.equal(smokeTsvRow.writer_visible_recognition_ms, "7500");
 assert.equal(smokeTsvRow.unexplained_resolution_drop_fields, "grade");
+assert.equal(smokeTsvRow.v4_pipeline_contract_status, "PASSED");
+assert.equal(smokeTsvRow.v4_pipeline_bridged_stage_count, "2");
 
 const pipelineLedgerSummary = summarizePipelineNodeLedgers([
   {
@@ -126,6 +136,32 @@ assert.equal(pipelineLedgerSummary.unexplained_terminal_drop_count, 1);
 assert.equal(pipelineLedgerSummary.unexplained_terminal_drop_card_count, 1);
 assert.deepEqual(pipelineLedgerSummary.unexplained_terminal_drop_field_breakdown, { year: 1 });
 assert.equal(pipelineLedgerSummary.terminal_grade_atomic.company_without_score_count, 1);
+
+const pipelineContractSummary = summarizeV4PipelineContracts([{
+  v4_pipeline_contract: {
+    contract_status: "PASSED",
+    candidate_heuristic_version: "candidate-selection-heuristic-v1",
+    bridged_stage_count: 2,
+    bridged_stages: ["observation", "field_resolution"],
+    violations: [],
+    migration_complete: false
+  }
+}, {
+  v4_pipeline_contract: {
+    contract_status: "FAILED",
+    candidate_heuristic_version: "candidate-selection-heuristic-v1",
+    bridged_stage_count: 1,
+    bridged_stages: ["observation"],
+    violations: [{ code: "EXACT_ROUTE_WITHOUT_TYPED_ANCHOR" }],
+    migration_complete: false
+  }
+}, {}]);
+assert.equal(pipelineContractSummary.contract_present_count, 2);
+assert.equal(pipelineContractSummary.contract_missing_count, 1);
+assert.equal(pipelineContractSummary.bridged_stage_count, 3);
+assert.deepEqual(pipelineContractSummary.bridged_stage_breakdown, { observation: 2, field_resolution: 1 });
+assert.equal(pipelineContractSummary.violation_count, 1);
+assert.equal(pipelineContractSummary.violation_code_breakdown.EXACT_ROUTE_WITHOUT_TYPED_ANCHOR, 1);
 assert.equal(providerDoneHandoffOverride(["node", "smoke"]), null, "omitted handoff mode must inherit production configuration");
 assert.equal(providerDoneHandoffOverride(["node", "smoke", "--provider-done-handoff"]), true);
 assert.equal(providerDoneHandoffOverride(["node", "smoke", "--no-provider-done-handoff"]), false);
@@ -202,7 +238,14 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
         writer_ready_capacity_release_mode: "writer_ready_atomic",
         writer_ready_capacity_refill: { triggered: true, lane: "background" },
         provider_token_diagnostics: { input_tokens: 99, output_tokens: 11, total_tokens: 110 },
-        preingestion_ocr_rendezvous: { status: "EVIDENCE_READY", job_count: 2 }
+        preingestion_ocr_rendezvous: { status: "EVIDENCE_READY", job_count: 2 },
+        v4_pipeline_contract: {
+          schema_version: "v4-native-pipeline-contract-v1",
+          contract_status: "PASSED",
+          bridged_stage_count: 3,
+          migration_complete: false,
+          violations: []
+        }
       }
     }
   }]
@@ -224,6 +267,8 @@ assert.equal(hydratedDiagnostic.writer_ready_capacity_refill.triggered, true);
 assert.equal(hydratedDiagnostic.provider_key_count, 2);
 assert.equal(hydratedDiagnostic.provider_key_slot, 1);
 assert.equal(hydratedDiagnostic.provider_key_assignment, "balanced_round_robin_v1");
+assert.equal(hydratedDiagnostic.v4_pipeline_contract.contract_status, "PASSED");
+assert.equal(hydratedDiagnostic.v4_pipeline_contract.bridged_stage_count, 3);
 
 const speedSmokeSummary = summarizeSmoke([{
   ok: true,
@@ -681,6 +726,7 @@ assert.match(v4SmokeSource, /create_l1_job: enableL1/, "hidden L1 must be explic
 assert.match(v4SmokeSource, /create_l2_job: true/, "production smoke must always poll the final L2 stage.");
 assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
 assert.match(queueStatusApiSource, /provider_capacity_stage_handoff: summary\.provider_capacity_stage_handoff \|\| null/, "job status must preserve provider-stage handoff telemetry for production capacity audits.");
+assert.match(queueStatusApiSource, /v4_pipeline_contract: summary\.v4_pipeline_contract \|\| null/, "job status must expose the V4 convergence contract to production audits.");
 assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");
 assert.match(v4SmokeSource, /recognition_phase_loaded_sealed_labels: false/, "blind smoke must not load sealed seller titles during recognition.");
