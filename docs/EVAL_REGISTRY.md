@@ -6,14 +6,34 @@ baseline or a dataset version changes.
 
 ## Ground-truth policy
 
-- **Writer-corrected titles** (351 feedback records) are internal GT.
+- **Writer-corrected titles** (351 feedback records) are title-level internal
+  GT. They are parser inputs and review aids, not field-level SEM GT until a
+  reviewer confirms the parsed fields and evidence.
 - **Sealed seller labels** are local-eval-only reference: never sent to the
   model (`blind_policy` in every smoke report asserts this), not ground truth
   for identity — a human-written title used for fair token-recall scoring and
   as the human half of dual-agreement catalog promotion.
 - Scoring: `policy_fair_token_recall` (raw recall + synonym/diacritic/noise
   forgiveness + policy-invariant handling of serial style). Pass thresholds
-  tracked at 0.72 and 0.80.
+  tracked at 0.72 and 0.80. These are regression diagnostics, not launch
+  accuracy.
+
+## Authoritative launch gate
+
+The only launch verdict is produced by
+`lib/listing/evaluation/launch-benchmark.mjs` and
+`scripts/assess-launch-gate.mjs`. It requires all three dimensions:
+
+| Dimension | Threshold | Required evidence |
+|---|---:|---|
+| Golden SEM Card-Exact | >= 0.87 | Frozen reviewed holdout, at least 45 cards |
+| Throughput | >= 6 cards/min | Separate 100, 500, and 1000-card cloud runs |
+| Reliability | >= 0.999 | 1000-card, at least 3-tenant soak with full isolation accounting |
+
+Missing evidence is `INCONCLUSIVE`; it never passes. Legacy
+`assess-v4-production-balance` output and eBay seller-title recall remain useful
+diagnostics but have no authority to declare launch readiness. The full
+procedure is in `docs/LAUNCH_ENGINEERING_LOOP.md`.
 
 ## Datasets
 
@@ -37,10 +57,11 @@ Release claims now require manifests validated by
 | `COLD_START_HOLDOUT` | Unknown-card and open-set behavior | Same rules, plus remove the query identity from catalog candidates |
 | `PRODUCTION_REPLAY` | Stable replay of reviewed writer workflow | Never train, index query images, or promote rows |
 
-Only five metrics decide whether a release improved: writer first-pass accept
-rate, critical identity error rate, core-field exact accuracy, active recognition
-p95, and cost per accepted title. Missing token, timing, cost, or reviewed-field
-data remains null; it is never converted to a successful zero.
+Writer first-pass acceptance, critical identity error, field-level exactness,
+active recognition latency, and cost remain required diagnostic metrics. The
+three hard launch dimensions above determine the final release verdict. Missing
+token, timing, cost, or reviewed-field data remains null; it is never converted
+to a successful zero.
 
 `data/eval/` is gitignored; canonical copies live in the team storage and the
 Documents clone. If a file is missing locally, copy it from

@@ -133,6 +133,10 @@ const integritySummary = summarize([
     job_status: "L2_READY",
     queue_mode: true,
     ok: true,
+    expected_tenant_id: "client-1",
+    observed_tenant_id: "client-1",
+    tenant_isolation_measured: true,
+    tenant_isolation_valid: true,
     writer_ready_capacity_release_mode: "provider_done",
     writer_ready_capacity_release: { released: true },
     writer_ready_capacity_refill: { triggered: true }
@@ -143,6 +147,10 @@ const integritySummary = summarize([
     job_status: "RUNNING",
     queue_mode: true,
     ok: true,
+    expected_tenant_id: "client-2",
+    observed_tenant_id: "client-other",
+    tenant_isolation_measured: true,
+    tenant_isolation_valid: false,
     writer_ready_capacity_release_mode: "provider_done",
     writer_ready_capacity_release: { released: true },
     writer_ready_capacity_refill: { triggered: false }
@@ -152,6 +160,9 @@ assert.equal(integritySummary.production_integrity.duplicate_asset_id_count, 0);
 assert.equal(integritySummary.production_integrity.duplicate_job_id_count, 1);
 assert.equal(integritySummary.production_integrity.successful_nonterminal_job_count, 1);
 assert.equal(integritySummary.production_integrity.provider_capacity_refill_missing_count, 1);
+assert.equal(integritySummary.production_integrity.tenant_isolation_measured_count, 2);
+assert.equal(integritySummary.production_integrity.tenant_isolation_measurement_rate, 1);
+assert.equal(integritySummary.production_integrity.tenant_isolation_violation_count, 1);
 assert.equal(integritySummary.production_integrity.tenant_service[0].queue_wait_p95_ms, null);
 assert.equal(integritySummary.production_integrity.tenant_service[0].writer_ready_p95_ms, null);
 

@@ -2214,6 +2214,10 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
   if (prepared.error || !prepared.job?.job_id) {
     return {
       asset_id: prepared.asset_id,
+      expected_tenant_id: prepared.tenant_id || null,
+      observed_tenant_id: null,
+      tenant_isolation_measured: false,
+      tenant_isolation_valid: null,
       ok: false,
       writer_ready: false,
       error: prepared.error || "missing_final_job",
@@ -2231,6 +2235,9 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     ? batchPoll.jobsById.get(prepared.l1_job.job_id) || null
     : null;
   const summary = jobL2Summary({ jobs: jobRow ? [jobRow] : [] });
+  const expectedTenantId = cleanText(prepared.tenant_id);
+  const observedTenantId = cleanText(jobRow?.tenant_id);
+  const tenantIsolationMeasured = Boolean(expectedTenantId && observedTenantId);
   const providerDiagnostics = objectOrNull(summary.provider_diagnostics)
     || providerDiagnosticsFromSummary(summary);
   const finalTitle = cleanText(summary.title || "");
@@ -2267,6 +2274,10 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     batch_poll_mode: true,
     batch_id: prepared.batch_id,
     tenant_id: prepared.tenant_id || jobRow?.tenant_id || null,
+    expected_tenant_id: expectedTenantId || null,
+    observed_tenant_id: observedTenantId || null,
+    tenant_isolation_measured: tenantIsolationMeasured,
+    tenant_isolation_valid: tenantIsolationMeasured ? expectedTenantId === observedTenantId : null,
     job_id: prepared.job.job_id,
     recognition_session_id: prepared.job.recognition_session_id || summary.recognition_session_id || null,
     job_created_at: summary.job_created_at || null,
@@ -2797,6 +2808,8 @@ export function summarize(results = [], { runWallMs = null } = {}) {
   )).length;
   const batchPositionFairness = summarizeBatchPositionFairness(results);
   const allPositionMetrics = positionCohortMetrics(results);
+  const tenantIsolationMeasured = results.filter((item) => item.tenant_isolation_measured === true);
+  const tenantIsolationViolationCount = tenantIsolationMeasured.filter((item) => item.tenant_isolation_valid !== true).length;
   const tenantRows = new Map();
   for (const item of results) {
     const tenantId = cleanText(item.tenant_id || item.batch_id) || "unknown";
@@ -2857,6 +2870,11 @@ export function summarize(results = [], { runWallMs = null } = {}) {
         item.writer_ready_capacity_release?.released === true
         && item.writer_ready_capacity_refill?.triggered !== true
       )).length,
+      tenant_isolation_measured_count: tenantIsolationMeasured.length,
+      tenant_isolation_measurement_rate: results.length
+        ? Number((tenantIsolationMeasured.length / results.length).toFixed(6))
+        : null,
+      tenant_isolation_violation_count: tenantIsolationViolationCount,
       tenant_count: tenantService.length,
       tenant_service: tenantService
     },

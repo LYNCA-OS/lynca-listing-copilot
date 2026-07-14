@@ -26,6 +26,8 @@ jobs:
           npm audit --omit=dev --audit-level=moderate
           npm run check:v4-spine
           npm run test:v4-spine
+          npm run check:launch-benchmark
+          npm run test:launch-benchmark
       - name: Trigger current main through the Vercel Deploy Hook
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}

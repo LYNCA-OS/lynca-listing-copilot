@@ -42,3 +42,7 @@ jobs:
           for f in api/*.js api/v4/*.js app/*.js; do
             node --check "$f"
           done
+      - name: Validate launch benchmark contracts
+        run: |
+          npm run check:launch-benchmark
+          npm run test:launch-benchmark
