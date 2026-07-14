@@ -1017,6 +1017,75 @@ function testDifferentProductFamiliesCannotShareAChromeAnchor() {
   assert.ok(rebound.conflicting_fields.includes("product"));
 }
 
+function testObservedSubjectBlocksSubjectlessSameProductCandidate() {
+  const observed = {
+    year: "2025-26",
+    manufacturer: "Topps",
+    product: "Topps Finest",
+    players: ["Josh Hart"]
+  };
+  const candidate = {
+    candidate_id: "subjectless-joelinton",
+    candidate_identity_id: "subjectless-joelinton-identity",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Topps Finest",
+      surface_color: "Purple",
+      parallel_family: "Geometric Refractor"
+    }
+  };
+
+  const packet = buildVectorCandidatePacket({ sources: [candidate] }, {
+    limit: 5,
+    queryFields: observed
+  });
+  const rebound = packet.vector_retrieval.candidates[0];
+  const eligibility = vectorCandidatePacketAssistEligibility(packet);
+
+  assert.equal(rebound.anchor_agreement.subject_coverage_required, true);
+  assert.equal(rebound.anchor_agreement.subject_coverage_pass, false);
+  assert.equal(rebound.anchor_agreement.prompt_hard_filter_pass, false);
+  assert.equal(eligibility.prompt_candidate_count, 0);
+}
+
+function testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate() {
+  const observed = {
+    year: "2025-26",
+    manufacturer: "Topps",
+    product: "Topps Finest",
+    players: ["Josh Hart"],
+    collector_number: "GEO-JH"
+  };
+  const candidate = {
+    candidate_id: "sparse-official-checklist-row",
+    candidate_identity_id: "sparse-official-checklist-identity",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Topps Finest",
+      collector_number: "GEO-JH"
+    }
+  };
+
+  const packet = buildVectorCandidatePacket({ sources: [candidate] }, {
+    limit: 5,
+    queryFields: observed
+  });
+  const rebound = packet.vector_retrieval.candidates[0];
+  const eligibility = vectorCandidatePacketAssistEligibility(packet);
+
+  assert.equal(rebound.anchor_agreement.exact_code_match, true);
+  assert.equal(rebound.anchor_agreement.subject_coverage_required, true);
+  assert.equal(rebound.anchor_agreement.subject_coverage_pass, true);
+  assert.equal(rebound.anchor_agreement.prompt_hard_filter_pass, true);
+  assert.equal(eligibility.prompt_candidate_count, 1);
+}
+
 function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData() {
   const observed = {
     year: "2025-26",
@@ -1091,6 +1160,8 @@ testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
 testPacketRebindPreservesPlayersAsSubjectAnchor();
 testNumericYearMayBeOmittedButCannotHideDifferentProductBranch();
 testDifferentProductFamiliesCannotShareAChromeAnchor();
+testObservedSubjectBlocksSubjectlessSameProductCandidate();
+testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate();
 testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData();
 
 console.log("candidate-control-plane tests passed");
