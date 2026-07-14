@@ -478,6 +478,63 @@ await withTempDir(async (dir) => {
 });
 
 await withTempDir(async (dir) => {
+  const requestedQueries = [];
+  const fetchImpl = async (url) => {
+    const parsed = /^https?:/i.test(url) ? new URL(url) : null;
+    const path = parsed ? parsed.pathname : url;
+    if (path === "/api/login") {
+      return jsonResponse(200, { ok: true }, { "set-cookie": "lynca_metaverse_session=test; Path=/" });
+    }
+    if (path === "/api/ebay-dcsports87-listings") {
+      const query = parsed.searchParams.get("q");
+      requestedQueries.push(query);
+      if (query !== "card") {
+        return jsonResponse(200, {
+          ok: true,
+          seller: "dcsports87",
+          marketplace_id: "EBAY_US",
+          returned_count: 0,
+          more_results_available: false,
+          listings: []
+        });
+      }
+      return jsonResponse(200, {
+        ok: true,
+        seller: "dcsports87",
+        marketplace_id: "EBAY_US",
+        returned_count: 1,
+        more_results_available: false,
+        listings: [{
+          seller: "dcsports87",
+          item_id: "broad-fallback-item",
+          item_web_url: "https://www.ebay.com/itm/broad-fallback-item",
+          title: "2025 Topps Chrome Test Player Gold 12/50 PSA 10",
+          image_urls: ["https://i.ebayimg.test/broad-fallback.jpg"]
+        }]
+      });
+    }
+    if (url === "https://i.ebayimg.test/broad-fallback.jpg") {
+      return bytesResponse(200, tinyPng, { "content-type": "image/png" });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const result = await prepareBlindDataset({
+    baseUrl: "https://listing.test",
+    username: "metaverse",
+    password: "mtv",
+    outDir: dir,
+    runId: "broad-fallback-run",
+    limit: 1,
+    query: "basketball card|Pokemon card",
+    fetchImpl
+  });
+  assert.deepEqual(requestedQueries, ["basketball card", "Pokemon card", "card"]);
+  assert.deepEqual(result.ebay_queries, ["basketball card", "Pokemon card", "card"]);
+  const answers = await readJsonl(blindEvalRunPaths({ outDir: dir, runId: "broad-fallback-run" }).answer_key_path);
+  assert.equal(answers[0].item_id, "broad-fallback-item");
+});
+
+await withTempDir(async (dir) => {
   const fetchImpl = async (url, init = {}) => {
     const path = /^https?:/i.test(url) ? new URL(url).pathname : url;
     if (path === "/api/login") {
