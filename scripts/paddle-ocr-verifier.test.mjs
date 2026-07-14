@@ -187,6 +187,38 @@ assert.equal(certCannotOverwriteGrade.normalized_fields.card_grade, null);
 assert.equal(certCannotOverwriteGrade.normalized_fields.cert_number, "127928791");
 assert.equal(certCannotOverwriteGrade.normalized_fields.grade_type, "UNKNOWN");
 
+const unrelatedCardTextNumberCannotBecomeGrade = normalizePaddleOcrResponse({
+  raw_text: "PSA CERT 127928791\nPLAYER DATA\n4",
+  confidence: 0.95,
+  boxes: [
+    { text: "PSA CERT 127928791", confidence: 0.98, bbox: [0, 0, 220, 28] },
+    { text: "PLAYER DATA", confidence: 0.93, bbox: [0, 80, 160, 105] },
+    { text: "4", confidence: 0.97, bbox: [180, 80, 210, 105] }
+  ]
+}, {
+  request_id: "ocr-grade-unrelated-number-guard",
+  image_url: "https://storage.test/grade-unrelated-number.jpg",
+  crop_type: "grade_label"
+});
+assert.equal(unrelatedCardTextNumberCannotBecomeGrade.normalized_fields.grade_company, "PSA");
+assert.equal(unrelatedCardTextNumberCannotBecomeGrade.normalized_fields.card_grade, undefined);
+
+const detachedPsaGradeWithLocalMarker = normalizePaddleOcrResponse({
+  raw_text: "PSA\nGEM MT\n10",
+  confidence: 0.97,
+  boxes: [
+    { text: "PSA", confidence: 0.98, bbox: [0, 0, 80, 25] },
+    { text: "GEM MT", confidence: 0.96, bbox: [0, 30, 100, 55] },
+    { text: "10", confidence: 0.97, bbox: [110, 30, 160, 70] }
+  ]
+}, {
+  request_id: "ocr-grade-detached-psa",
+  image_url: "https://storage.test/grade-detached-psa.jpg",
+  crop_type: "grade_label"
+});
+assert.equal(detachedPsaGradeWithLocalMarker.normalized_fields.grade_company, "PSA");
+assert.equal(detachedPsaGradeWithLocalMarker.normalized_fields.card_grade, "10");
+
 const tcgResult = normalizePaddleOcrResponse({
   raw_text: "OP01-001 Luffy SR",
   confidence: 0.91

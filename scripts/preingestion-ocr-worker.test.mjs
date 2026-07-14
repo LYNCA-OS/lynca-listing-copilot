@@ -86,8 +86,31 @@ const fairClaimOrder = fairOcrClaimOrder([
 ], { limit: 4, jobsPerAsset: 2 });
 assert.deepEqual(
   fairClaimOrder.map((job) => job.job_id),
-  ["a-serial", "a-grade", "b-serial", "b-grade"],
-  "global OCR claims must give each card serial and grade work before consuming extra code jobs"
+  ["a-serial", "a-code", "b-serial", "b-code"],
+  "raw-card OCR claims must prioritize serial and exact card code without spending first-wave capacity on grade"
+);
+
+const slabClaimOrder = fairOcrClaimOrder([
+  { job_id: "slab-serial-1", asset_id: "slab-a", priority: 12, payload: { crop: { role: "serial_crop" } } },
+  { job_id: "slab-serial-2", asset_id: "slab-a", priority: 12, payload: { crop: { role: "serial_crop" } } },
+  {
+    job_id: "slab-grade-1",
+    asset_id: "slab-a",
+    priority: 14,
+    payload: { crop: { role: "grade_label_crop", crop_metadata: { source_width: 800, source_height: 1400 } } }
+  },
+  {
+    job_id: "slab-grade-2",
+    asset_id: "slab-a",
+    priority: 14,
+    payload: { crop: { role: "grade_label_crop", crop_metadata: { source_width: 800, source_height: 1400 } } }
+  },
+  { job_id: "slab-code-1", asset_id: "slab-a", priority: 10, payload: { crop: { role: "card_code_crop" } } }
+], { limit: 2, jobsPerAsset: 2 });
+assert.deepEqual(
+  slabClaimOrder.map((job) => job.job_id),
+  ["slab-grade-1", "slab-serial-1"],
+  "slab OCR claims must make grade and serial the first value-aware wave"
 );
 
 // --- ocrRequestForPreingestionJob maps crop plan into the OCR contract ---
@@ -168,6 +191,40 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.match(calls[0].url, /priority=lte\.14/, "writer-path claims must reserve the first wave for OCR anchors");
   assert.match(calls[0].url, /limit=32/, "asset-scoped claims must not overfetch global queue rows");
   assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
+}
+
+// --- a small claim limit still inspects enough rows to choose the best slab wave ---
+{
+  const listedJobs = [
+    { ...sampleJob, job_id: "slab-code", priority: 10, payload: { crop: { role: "card_code_crop" } } },
+    { ...sampleJob, job_id: "slab-serial", priority: 12, payload: { crop: { role: "serial_crop" } } },
+    {
+      ...sampleJob,
+      job_id: "slab-grade",
+      priority: 14,
+      payload: { crop: { role: "grade_label_crop", crop_metadata: { source_width: 800, source_height: 1400 } } }
+    }
+  ];
+  let listUrl = "";
+  const jobs = await claimQueuedPreingestionOcrJobs({
+    bundleId: "bundle-slab-window",
+    limit: 2,
+    env,
+    fetchImpl: async (url, init = {}) => {
+      if (!init.method) {
+        listUrl = String(url);
+        return jsonResponse(listedJobs);
+      }
+      const jobId = new URL(String(url)).searchParams.get("job_id")?.replace(/^eq\./, "");
+      return jsonResponse([{ status: "running", attempts: 1, job_id: jobId }]);
+    }
+  });
+  assert.match(listUrl, /limit=8/, "claim limit and candidate inspection window must remain separate");
+  assert.deepEqual(
+    jobs.map((job) => job.job_id),
+    ["slab-grade", "slab-serial"],
+    "slab first-wave selection must see grade work even when database priority lists card code first"
+  );
 }
 
 // --- only current-version transient failures are recovered ---
@@ -1040,7 +1097,30 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 
 // --- stage capacity separates OCR from GPT while globally bounding replicas ---
 {
-  const roles = ["card_code_crop", "year_product_crop", "subject_crop", "grade_label_crop"];
+  let bundleRequests = 0;
+  const result = await processQueuedPreingestionOcrJobs({
+    bundleId: "bundle-empty",
+    env: {
+      ...env,
+      PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED: "true"
+    },
+    fetchImpl: async (url) => {
+      const target = new URL(String(url));
+      if (target.pathname.endsWith("/preingestion_jobs")) return jsonResponse([]);
+      if (target.pathname.endsWith("/preingestion_bundles")) bundleRequests += 1;
+      return jsonResponse([]);
+    },
+    paddleClient: { configured: true, verifyCrop: async () => ({}) }
+  });
+  assert.equal(result.claimed, 0);
+  assert.equal(result.execution_summary_persisted, false);
+  assert.equal(result.execution_summary_persistence_reason, "no_claimed_jobs");
+  assert.equal(bundleRequests, 0, "an empty sweep must not overwrite the last real OCR execution summary");
+}
+
+// --- stage capacity separates OCR from GPT while globally bounding replicas ---
+{
+  const roles = ["serial_crop", "year_product_crop"];
   const jobs = roles.map((role, index) => ({
     ...sampleJob,
     job_id: `stage-job-${index}`,
@@ -1059,7 +1139,6 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const activeSlots = new Map();
   let bundleUpdatedAt = "2026-07-13T00:00:00.000Z";
   let bundleQualitySummary = {};
-  let nextSlot = 1;
   let activeOcr = 0;
   let peakActiveOcr = 0;
   const result = await processQueuedPreingestionOcrJobs({
@@ -1077,18 +1156,18 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       const target = new URL(String(url));
       if (target.pathname.endsWith("/rpc/acquire_v4_stage_capacity")) {
         const body = JSON.parse(init.body);
-        if (activeSlots.has(body.p_job_id)) return jsonResponse(activeSlots.get(body.p_job_id));
-        if (activeSlots.size >= 2) return jsonResponse(null);
-        const used = new Set(activeSlots.values());
-        while (used.has(nextSlot)) nextSlot += 1;
-        const slot = nextSlot;
-        activeSlots.set(body.p_job_id, slot);
-        nextSlot = slot === 1 ? 2 : 1;
+        const key = JSON.stringify([body.p_stage_id, body.p_job_id]);
+        if (activeSlots.has(key)) return jsonResponse(activeSlots.get(key).slot);
+        const stageEntries = [...activeSlots.values()].filter((entry) => entry.stage_id === body.p_stage_id);
+        if (stageEntries.length >= body.p_capacity) return jsonResponse(null);
+        const used = new Set(stageEntries.map((entry) => entry.slot));
+        const slot = Array.from({ length: body.p_capacity }, (_, index) => index + 1).find((value) => !used.has(value));
+        activeSlots.set(key, { stage_id: body.p_stage_id, slot });
         return jsonResponse(slot);
       }
       if (target.pathname.endsWith("/rpc/release_v4_stage_capacity")) {
         const body = JSON.parse(init.body);
-        const released = activeSlots.delete(body.p_job_id) ? 1 : 0;
+        const released = activeSlots.delete(JSON.stringify([body.p_stage_id, body.p_job_id])) ? 1 : 0;
         return jsonResponse(released);
       }
       if (!init.method && target.pathname.endsWith("/preingestion_jobs")) return jsonResponse(jobs);
@@ -1128,26 +1207,29 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     },
     signedReadUrlFor: async () => "https://signed.test/front.jpg"
   });
-  assert.equal(result.claimed, 4);
-  assert.equal(result.succeeded, 4);
+  assert.equal(result.claimed, 2);
+  assert.equal(result.succeeded, 2);
   assert.equal(result.failed, 0);
   assert.equal(result.deferred, 0);
   assert.equal(result.stage_capacity_control_enabled, true);
   assert.equal(result.execution_summary_persisted, true);
   assert.equal(result.stage_global_capacity, 2);
   assert.equal(result.per_asset_capacity, 2);
+  assert.equal(result.requested_job_limit, 32);
+  assert.equal(result.effective_claim_limit, 2);
   assert.equal(result.anchor_concurrency, 1);
   assert.equal(result.detail_concurrency, 1);
   assert.equal(result.peak_local_active, 2);
   assert.equal(peakActiveOcr, 2);
   assert.equal(activeSlots.size, 0);
-  assert.equal(result.job_observability.filter((row) => row.stage_lane === "anchor").length, 2);
-  assert.equal(result.job_observability.filter((row) => row.stage_lane === "detail").length, 2);
+  assert.equal(result.job_observability.filter((row) => row.stage_lane === "anchor").length, 1);
+  assert.equal(result.job_observability.filter((row) => row.stage_lane === "detail").length, 1);
   assert.ok(result.job_observability.every((row) => row.stage_capacity_released === true));
+  assert.ok(result.job_observability.every((row) => row.asset_stage_capacity === 2));
   assert.equal(bundleQualitySummary.ocr_stage_execution.global_capacity, 2);
   assert.equal(bundleQualitySummary.ocr_stage_execution.per_asset_capacity, 2);
-  assert.equal(bundleQualitySummary.ocr_stage_execution.anchor_job_count, 2);
-  assert.equal(bundleQualitySummary.ocr_stage_execution.detail_job_count, 2);
+  assert.equal(bundleQualitySummary.ocr_stage_execution.anchor_job_count, 1);
+  assert.equal(bundleQualitySummary.ocr_stage_execution.detail_job_count, 1);
 }
 
 console.log("preingestion-ocr-worker.test.mjs OK");
