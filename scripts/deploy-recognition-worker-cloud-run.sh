@@ -22,9 +22,10 @@ STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRE
 # therefore stays at one while replicas provide parallelism. Deploy with five
 # warm replicas first so the old and new revisions fit the 20-vCPU regional
 # quota during a zero-downtime rollout. Once traffic has moved and the old
-# revision releases capacity, raise the service-level floor to eight. Revision-
-# level min/max values are deliberately removed so they cannot deadlock a
-# rollout or conflict with the service-level limits.
+# revision releases capacity, raise the service-level floor to eight. The
+# revision-level minimum is removed so it cannot deadlock a rollout; the
+# revision-level maximum remains aligned with the service cap because Cloud Run
+# may otherwise restore a lower platform default.
 # Model preload can
 # occasionally cross one 240-second probe window, so require two failed probes
 # before rejecting a healthy-but-slow revision. Set both service-level and
@@ -92,7 +93,7 @@ DEPLOYED_URL="$(gcloud run deploy "$SERVICE_NAME" \
   --min "$ROLLOUT_MIN_INSTANCES" \
   --max "$MAX_INSTANCES" \
   --min-instances default \
-  --max-instances default \
+  --max-instances "$MAX_INSTANCES" \
   --set-secrets "RECOGNITION_WORKER_TOKEN=${TOKEN_SECRET_NAME}:latest" \
   --set-env-vars "RECOGNITION_ALLOWED_IMAGE_HOSTS=${ALLOWED_HOSTS},RECOGNITION_MAX_IMAGE_BYTES=26214400,RECOGNITION_MAX_TOTAL_PIXELS=50000000,ENABLE_IMAGE_DOWNLOAD=true,ENABLE_TESSERACT_OCR=false,ENABLE_OPENCV_RECTIFICATION=true,ENABLE_VISUAL_EMBEDDINGS=false,VISUAL_EMBEDDING_PRELOAD=false,VISUAL_EMBEDDING_MODEL_ID=google/siglip2-base-patch16-384,VISUAL_EMBEDDING_MODEL_REVISION=f775b65a79762255128c981547af89addcfe0f88,VISUAL_EMBEDDING_PREPROCESSING_VERSION=card-rectification-v1,VISUAL_EMBEDDING_DIMENSIONS=768,ENABLE_CANDIDATE_VERIFICATION=false,ENABLE_PADDLEOCR=${ENABLE_PADDLEOCR},PADDLEOCR_PRELOAD=${PADDLEOCR_PRELOAD},PADDLEOCR_WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},PADDLEOCR_MODEL_ID=${PADDLEOCR_MODEL_ID},PADDLEOCR_MODEL_REVISION=${PADDLEOCR_MODEL_REVISION},RECOGNITION_REQUEST_TIMEOUT_SECONDS=${TIMEOUT}" \
   --format='value(status.url)')"

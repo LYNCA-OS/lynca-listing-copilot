@@ -68,6 +68,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertIn('ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-5}"', deploy_script)
         self.assertIn('--min "$ROLLOUT_MIN_INSTANCES"', deploy_script)
         self.assertIn('--min-instances default', deploy_script)
+        self.assertIn('--max-instances "$MAX_INSTANCES"', deploy_script)
         self.assertIn('gcloud run services update "$SERVICE_NAME"', deploy_script)
         self.assertIn('--min "$MIN_INSTANCES"', deploy_script)
 
