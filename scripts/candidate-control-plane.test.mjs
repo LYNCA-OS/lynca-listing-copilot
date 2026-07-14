@@ -8,7 +8,11 @@ import {
   candidateDecisionHeuristicVersion
 } from "../lib/listing/candidates/candidate-decision-stage.mjs";
 import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
-import { rebindCandidateToObservedFields } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
+import {
+  buildVectorCandidatePacket,
+  rebindCandidateToObservedFields,
+  vectorCandidatePacketAssistEligibility
+} from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { buildV4CandidateControlPlaneTrace } from "../lib/listing/v4/candidates/control-plane-adapter.mjs";
 
 function packet(candidates = [], assistFilter = {}) {
@@ -906,6 +910,51 @@ function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
   assert.ok(decision.field_application.applied_fields.includes("set"));
 }
 
+function testPacketRebindPreservesPlayersAsSubjectAnchor() {
+  const candidate = {
+    candidate_id: "catalog-chourio-packet-rebind",
+    candidate_identity_id: "identity-chourio-packet-rebind",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    normalized_score: 0.48,
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Heritage High Number",
+      set: "Dark Blue Bordered",
+      players: ["Jackson Chourio"],
+      card_name: "Dark Blue Bordered",
+      surface_color: "Dark Blue"
+    }
+  };
+  const observed = {
+    manufacturer: "Topps",
+    product: "Heritage",
+    players: ["Jackson Chourio"],
+    collector_number: "632"
+  };
+  const catalogPacket = buildVectorCandidatePacket({ sources: [candidate] }, {
+    limit: 5,
+    queryFields: observed
+  });
+  const catalogEligibility = vectorCandidatePacketAssistEligibility(catalogPacket);
+
+  assert.equal(catalogEligibility.prompt_candidate_count, 1, "the approved candidate should enter the provider-safe packet");
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: observed,
+      catalog_candidate_packet: catalogPacket,
+      catalog_assist_eligibility: catalogEligibility
+    }
+  });
+
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "catalog-chourio-packet-rebind");
+  assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("subjects"));
+  assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("product_hierarchy"));
+  assert.equal(selection.candidate_application_trace[0].prompt_eligible, true);
+}
+
 function testNumericYearMayBeOmittedButCannotHideDifferentProductBranch() {
   const baseCandidate = {
     candidate_id: "bowman-base",
@@ -959,6 +1008,7 @@ testDenominatorAloneCannotOverrideConflictingYear();
 testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars();
 testEvidenceScalarOnlyFillsMissingObservedField();
 testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
+testPacketRebindPreservesPlayersAsSubjectAnchor();
 testNumericYearMayBeOmittedButCannotHideDifferentProductBranch();
 
 console.log("candidate-control-plane tests passed");
