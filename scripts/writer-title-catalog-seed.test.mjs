@@ -164,7 +164,7 @@ const provider = catalogProvider({
     CATALOG_CORRECTED_TITLE_AS_TEMPORARY_GT: "false"
   },
   fetchImpl: async (url, options) => {
-    assert.equal(String(url), "https://supabase.test/rest/v1/rpc/search_catalog_candidates");
+    assert.equal(String(url), "https://supabase.test/rest/v1/rpc/search_catalog_candidates_with_source");
     rpcBody = JSON.parse(options.body);
     return new Response(JSON.stringify([
       {

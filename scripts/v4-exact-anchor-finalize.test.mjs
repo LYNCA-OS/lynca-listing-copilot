@@ -87,6 +87,25 @@ assert.equal(finalized.catalog_candidate_count, 1);
 assert.equal(finalized.trusted_candidate_count, 1);
 assert.equal(finalized.eligible_candidate_count, 1);
 
+const selfExcluded = await maybeFinalizeL1FromExactAnchor({
+  scoutResult,
+  excludeSourceFeedbackIds: ["feedback-current-card"],
+  env,
+  fetchImpl: fetchReturning([
+    catalogRow({ source_feedback_id: "feedback-current-card" }),
+    catalogRow({
+      identity_id: "44444444-4444-4444-4444-444444444444",
+      source_feedback_id: "feedback-other-card"
+    })
+  ])
+});
+assert.equal(selfExcluded.finalized, true);
+assert.equal(
+  selfExcluded.candidate.candidate_identity_id,
+  "44444444-4444-4444-4444-444444444444",
+  "exact-anchor finalize must exclude the current feedback row but retain other references"
+);
+
 let secretKeyAuthorization = "";
 const secretKeyFinalized = await maybeFinalizeL1FromExactAnchor({
   scoutResult,

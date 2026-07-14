@@ -2716,7 +2716,12 @@ function catalogFastLaneBudgetMs(env = process.env, providerOptions = {}) {
   return Math.max(0, optionValue ?? positiveIntegerFromEnv(env, "CATALOG_FAST_LANE_BUDGET_MS", defaultCatalogFastLaneBudgetMs));
 }
 
-function catalogCandidateContextCacheKey({ resolvedForRetrieval = {}, providerOptions = {}, env = process.env } = {}) {
+function catalogCandidateContextCacheKey({
+  resolvedForRetrieval = {},
+  providerOptions = {},
+  excludeSourceFeedbackIds = [],
+  env = process.env
+} = {}) {
   const normalized = normalizeFields(resolvedForRetrieval || {});
   const serialDenominator = normalizeSerialText(normalized.serial_number || "").match(/\/\s*0*(\d{1,4})\b/)?.[1] || "";
   const players = Array.isArray(normalized.players)
@@ -2744,7 +2749,10 @@ function catalogCandidateContextCacheKey({ resolvedForRetrieval = {}, providerOp
       enable_catalog_assist: optionFlag(providerOptions, "enable_catalog_assist", false),
       cloud_eval_blind_to_corrected_title_hint: optionFlag(providerOptions, "cloud_eval_blind_to_corrected_title_hint", true),
       provider_mode: providerOptions.provider_mode || providerOptions.providerMode || providerOptions.eval_mode || providerOptions.evalMode || ""
-    }
+    },
+    exclude_source_feedback_ids: [...new Set((Array.isArray(excludeSourceFeedbackIds) ? excludeSourceFeedbackIds : [])
+      .map((value) => normalizeText(value))
+      .filter(Boolean))].sort()
   };
   return crypto.createHash("sha256").update(stableJson(keyPayload)).digest("hex");
 }
@@ -3340,6 +3348,7 @@ async function collectPromiseEntriesWithinBudget(entries = [], timeoutMs = 0) {
 async function prepareCatalogCandidateContext({
   resolvedForRetrieval = {},
   providerOptions = {},
+  excludeSourceFeedbackIds = [],
   timingContext = null,
   stageRequestId = "",
   stagePhase = "catalog_lookup",
@@ -3358,7 +3367,7 @@ async function prepareCatalogCandidateContext({
 
   const cacheEnabled = catalogCacheEnabled(env, providerOptions);
   const cacheKey = cacheEnabled
-    ? catalogCandidateContextCacheKey({ resolvedForRetrieval, providerOptions, env })
+    ? catalogCandidateContextCacheKey({ resolvedForRetrieval, providerOptions, excludeSourceFeedbackIds, env })
     : "";
   const cacheStartedAt = Date.now();
   if (cacheEnabled && cacheKey) {
@@ -3395,6 +3404,7 @@ async function prepareCatalogCandidateContext({
       mode: retrievalModes.INTERNAL_ONLY,
       allowedFamilies,
       maxQueries: allowedFamilies.length,
+      excludeSourceFeedbackIds,
       env: catalogRetrievalEnv(env, providerOptions)
     }))
   });
@@ -5004,6 +5014,7 @@ async function createOpenAiTitle(payload, selection, {
   const catalogContextPromise = prepareCatalogCandidateContext({
     resolvedForRetrieval,
     providerOptions,
+    excludeSourceFeedbackIds: [payload.source_feedback_id || payload.sourceFeedbackId].filter(Boolean),
     timingContext,
     stageRequestId: catalogStageRequestId,
     stagePhase: "pre_provider"
@@ -5234,6 +5245,7 @@ async function createOpenAiTitle(payload, selection, {
     const lateCatalogPromise = prepareCatalogCandidateContext({
       resolvedForRetrieval: providerResolvedForRetrieval,
       providerOptions,
+      excludeSourceFeedbackIds: [payload.source_feedback_id || payload.sourceFeedbackId].filter(Boolean),
       timingContext,
       stageRequestId: catalogStageRequestId,
       stagePhase: "post_provider"

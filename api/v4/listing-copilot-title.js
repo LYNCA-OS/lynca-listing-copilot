@@ -1398,6 +1398,7 @@ export default async function handler(req, res) {
       const finalizeStartedAtIso = new Date().toISOString();
       const finalize = await maybeFinalizeL1FromExactAnchor({
         scoutResult: fastScoutResult,
+        excludeSourceFeedbackIds: [payload.source_feedback_id || payload.sourceFeedbackId].filter(Boolean),
         env: process.env,
         fetchImpl: globalThis.fetch,
         timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 2000)
@@ -1625,6 +1626,7 @@ export default async function handler(req, res) {
       const finalizeStartedAt = Date.now();
       const finalize = await maybeFinalizeL1FromExactAnchor({
         scoutResult,
+        excludeSourceFeedbackIds: [payload.source_feedback_id || payload.sourceFeedbackId].filter(Boolean),
         env: process.env,
         fetchImpl: globalThis.fetch,
         timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 2000)

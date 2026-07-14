@@ -118,7 +118,10 @@ export default async function handler(req, res) {
   const planned = planRetrievalQueries({
     resolved: fields,
     includeExternal: false,
-    includeHybrid: false
+    includeHybrid: false,
+    excludeSourceFeedbackIds: Array.isArray(body.exclude_source_feedback_ids)
+      ? body.exclude_source_feedback_ids
+      : []
   }).filter((query) => query.provider_id === retrievalProviderIds.CATALOG);
   if (!planned.length) {
     sendJson(res, 200, {

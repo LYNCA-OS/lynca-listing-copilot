@@ -66,6 +66,10 @@
     },
     "api/admin-import-corrected-title-catalog.js": {
       "maxDuration": 300
+    },
+    "api/admin-apply-catalog-self-exclusion-migration.js": {
+      "maxDuration": 300,
+      "includeFiles": "supabase/migrations/20260714174210_expose_catalog_source_feedback_for_self_exclusion.sql"
     }
   },
   "crons": [

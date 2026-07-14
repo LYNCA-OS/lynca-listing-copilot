@@ -369,7 +369,7 @@ const provider = catalogProvider({
     ENABLE_BASKETBALL_CATALOG_RETRIEVAL: "true"
   },
   fetchImpl: async (url, options) => {
-    assert.equal(String(url), "https://supabase.test/rest/v1/rpc/search_catalog_candidates");
+    assert.equal(String(url), "https://supabase.test/rest/v1/rpc/search_catalog_candidates_with_source");
     catalogRpcBody = JSON.parse(options.body);
     return new Response(JSON.stringify([
       {
@@ -394,6 +394,23 @@ const provider = catalogProvider({
         raw_score: 0.84,
         normalized_score: 0.84,
         expected_serial_denominator: "50"
+      },
+      {
+        identity_id: "33333333-3333-3333-3333-333333333333",
+        canonical_title: "2025 Topps Chrome Basketball Cooper Flagg Gold #136",
+        fields: {
+          year: "2025",
+          product: "Topps Chrome Basketball",
+          players: ["Cooper Flagg"],
+          collector_number: "136"
+        },
+        retrieval_status: "reviewed",
+        source_type: "INTERNAL_CORRECTED_TITLE",
+        source_status: "REVIEWED_INTERNAL",
+        supporting_fields: ["collector_number", "players", "year", "product"],
+        raw_score: 1,
+        normalized_score: 1,
+        source_feedback_id: "feedback-current-card"
       }
     ]), { status: 200 });
   }
@@ -404,7 +421,8 @@ const providerResult = await provider.search({
     exact_subject: "Cooper Flagg",
     exact_year: "2025",
     exact_product: "Topps Chrome Basketball",
-    exact_serial_denominator: "/50"
+    exact_serial_denominator: "/50",
+    exclude_source_feedback_ids: ["feedback-current-card"]
   },
   resolved: {
     category: "basketball",
@@ -421,6 +439,53 @@ assert.equal(providerResult.candidates.length, 1);
 assert.equal(providerResult.candidates[0].provider_id, retrievalProviderIds.CATALOG);
 assert.equal(providerResult.candidates[0].fields.serial_number, "#/50");
 assert.equal(providerResult.candidates[0].reference_metadata.expected_serial_denominator, "50");
+
+const fallbackUrls = [];
+const preMigrationProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async (url) => {
+    fallbackUrls.push(String(url));
+    if (String(url).endsWith("/search_catalog_candidates_with_source")) {
+      return new Response(JSON.stringify({ code: "PGRST202", message: "Could not find the function" }), { status: 404 });
+    }
+    return new Response(JSON.stringify([]), { status: 200 });
+  }
+});
+const preMigrationResult = await preMigrationProvider.search({
+  query: { exact_subject: "Cooper Flagg" }
+});
+assert.equal(preMigrationResult.unavailable, undefined);
+assert.deepEqual(fallbackUrls, [
+  "https://supabase.test/rest/v1/rpc/search_catalog_candidates_with_source",
+  "https://supabase.test/rest/v1/rpc/search_catalog_candidates"
+]);
+
+const failClosedUrls = [];
+const failClosedPreMigrationProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async (url) => {
+    failClosedUrls.push(String(url));
+    return new Response(JSON.stringify({ code: "PGRST202", message: "Could not find the function" }), { status: 404 });
+  }
+});
+const failClosedPreMigrationResult = await failClosedPreMigrationProvider.search({
+  query: {
+    exact_subject: "Cooper Flagg",
+    exclude_source_feedback_ids: ["feedback-current-card"]
+  }
+});
+assert.equal(failClosedPreMigrationResult.unavailable, true);
+assert.deepEqual(failClosedUrls, [
+  "https://supabase.test/rest/v1/rpc/search_catalog_candidates_with_source"
+]);
 
 const officialProvider = catalogProvider({
   env: {
@@ -491,12 +556,18 @@ const planned = planRetrievalQueries({
     }
   ],
   includeExternal: true,
-  includeHybrid: true
+  includeHybrid: true,
+  excludeSourceFeedbackIds: ["feedback-current-card"]
 });
 const firstCatalogIndex = planned.findIndex((query) => query.provider_id === retrievalProviderIds.CATALOG);
 const visualIndex = planned.findIndex((query) => query.family === retrievalQueryFamilies.VISUAL_VECTOR);
 assert.ok(firstCatalogIndex >= 0);
 assert.ok(visualIndex > firstCatalogIndex);
 assert.equal(planned.some((query) => /paniniamerica\.net/i.test(query.query)), false);
+assert.ok(
+  planned.filter((query) => query.provider_id === retrievalProviderIds.CATALOG)
+    .every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card"),
+  "catalog queries must carry current-record self-exclusion"
+);
 
 console.log("catalog v0 tests passed");
