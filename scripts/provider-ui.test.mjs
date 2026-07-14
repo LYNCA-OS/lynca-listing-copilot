@@ -440,8 +440,8 @@ assert.equal(
     executionControl: {},
     maxWorkers: 6
   }),
-  4,
-  "missing control-plane guidance should derive a conservative 2x submission pool"
+  2,
+  "missing control-plane guidance should preserve the measured provider-safe submission pool"
 );
 assert.equal(
   __listingCopilotAppTestHooks.queueSubmissionConcurrencyLimit({

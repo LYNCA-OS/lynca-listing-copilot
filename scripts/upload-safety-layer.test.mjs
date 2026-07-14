@@ -57,7 +57,7 @@ assert.match(js, /setStatus\("0% · 图片已准备，开始识别…",\s*\{\s*b
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /const MAX_BACKGROUND_PREP_WORKERS\s*=\s*4/, "background preparation should use its own bounded worker pool");
-assert.match(js, /Math\.min\(\s*queueSubmissionConcurrencyLimit\(\),\s*MAX_BACKGROUND_PREP_WORKERS\s*\)/, "background preparation must remain bounded independently of provider capacity");
+assert.match(js, /const backgroundWorkerCount\s*=\s*MAX_BACKGROUND_PREP_WORKERS/, "background preparation must remain bounded independently of provider capacity");
 assert.match(js, /const MAX_CONCURRENT_WORKERS\s*=\s*6/, "queue submission workers must have a browser-side safety cap");
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");
 assert.match(js, /results\[index\]\s*=\s*await worker\(source\[index\], index\)/, "concurrent preprocessing should preserve input order in results");

@@ -1102,10 +1102,10 @@ function startBackgroundPreparation(reason = "file_ready") {
   if (!state.processing) {
     renderResults();
   }
-  const backgroundWorkerCount = Math.min(
-    queueSubmissionConcurrencyLimit(),
-    MAX_BACKGROUND_PREP_WORKERS
-  );
+  // Image upload, pre-ingestion, and OCR run ahead of the GPT queue. Keeping
+  // this pool independent lets deterministic evidence finish while the
+  // provider remains at its measured stable concurrency.
+  const backgroundWorkerCount = MAX_BACKGROUND_PREP_WORKERS;
   void mapWithConcurrency(assets, backgroundWorkerCount, async (asset) => {
     if (runId !== state.backgroundPreparationRunId) return null;
     return prepareAssetInBackground(asset, runId);
@@ -1310,8 +1310,8 @@ function queueSubmissionConcurrencyLimit({
 
   const providerConcurrency = Number(providerConfig?.recommended_concurrency);
   const derived = Number.isFinite(providerConcurrency) && providerConcurrency > 0
-    ? Math.max(2, Math.trunc(providerConcurrency) * 2)
-    : 4;
+    ? Math.trunc(providerConcurrency)
+    : 2;
   return Math.max(1, Math.min(derived, boundedMax));
 }
 

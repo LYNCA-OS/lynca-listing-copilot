@@ -33,6 +33,11 @@ import { persistV4WriterReadyAndReleaseCapacity } from "../lib/listing/v4/sessio
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
 
 assert.equal(
+  v4QueueSubmissionConcurrency({}),
+  2,
+  "queue submission should default to the measured stable provider capacity"
+);
+assert.equal(
   v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "6" }),
   6,
   "queue submission capacity must be independently configurable"
