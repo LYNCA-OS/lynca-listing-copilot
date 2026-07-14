@@ -117,6 +117,46 @@ assert.equal(positionFairness.back_minus_front.ocr_terminal_rate, -1);
 assert.equal(positionFairness.back_minus_front.grade_ocr_succeeded_rate, -1);
 assert.equal(positionFairness.back_minus_front.grade_reference_preservation_rate, -1);
 
+const ocrTelemetrySummary = summarize([{
+  asset_id: "ocr-card-1",
+  ok: true,
+  writer_ready: true,
+  final_title: "2024 Test Card PSA 10",
+  reference_title: "2024 Test Card PSA 10",
+  resolved_fields: { grade_company: "PSA", card_grade: "10" },
+  preingestion_ocr_rendezvous: {
+    status: "TERMINAL",
+    terminal: true,
+    job_count: 3,
+    grade_label_job_count: 1,
+    grade_label_succeeded_count: 1,
+    execution_summary: {
+      global_capacity: 10,
+      per_asset_capacity: 1,
+      per_asset_batch_size: 3,
+      anchor_concurrency: 1,
+      detail_concurrency: 0,
+      claimed_asset_count: 1,
+      max_claimed_jobs_per_asset: 3,
+      first_wave_fairness_satisfied: true,
+      lane_capacity_unused: 0,
+      lane_allocation_within_global_capacity: true,
+      grade_component_fallback_count: 1,
+      grade_component_fallback_target_found_count: 1,
+      grade_component_fallback_latency_ms: 7
+    }
+  }
+}], { runWallMs: 1_000 });
+assert.equal(ocrTelemetrySummary.preingestion_ocr.stage_global_capacity_latest, 10);
+assert.equal(ocrTelemetrySummary.preingestion_ocr.per_asset_capacity_latest, 1);
+assert.equal(ocrTelemetrySummary.preingestion_ocr.per_asset_batch_size_latest, 3);
+assert.equal(ocrTelemetrySummary.preingestion_ocr.first_wave_fairness_satisfied_count, 1);
+assert.equal(ocrTelemetrySummary.preingestion_ocr.first_wave_fairness_violation_count, 0);
+assert.equal(ocrTelemetrySummary.preingestion_ocr.lane_allocation_violation_count, 0);
+assert.equal(ocrTelemetrySummary.preingestion_ocr.grade_component_fallback_count, 1);
+assert.equal(ocrTelemetrySummary.preingestion_ocr.grade_component_fallback_target_found_count, 1);
+assert.equal(ocrTelemetrySummary.preingestion_ocr.grade_component_fallback_latency_ms, 7);
+
 const healthyReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
 const healthy = analyzeV4StabilityEnvelope(healthyReports);
 assert.equal(healthy.pass, true);

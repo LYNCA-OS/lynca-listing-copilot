@@ -52,6 +52,7 @@ export async function main(argv = process.argv, env = process.env) {
   const allowPartial = hasFlag(argv, "--allow-partial");
   const excludeSealedProducts = hasFlag(argv, "--exclude-sealed-products");
   const evaluationSampleMode = argValue(argv, "--sample-mode", env.EVALUATION_SAMPLE_MODE || "UNSPECIFIED");
+  const sampleSeed = argValue(argv, "--sample-seed", env.EVALUATION_SAMPLE_SEED || runId);
   const summary = await prepareBlindDataset({
     baseUrl,
     username,
@@ -68,6 +69,7 @@ export async function main(argv = process.argv, env = process.env) {
     allowPartial,
     categoryIds,
     evaluationSampleMode,
+    sampleSeed,
     env
   });
   const paths = blindEvalRunPaths({ outDir, runId });
@@ -80,6 +82,9 @@ export async function main(argv = process.argv, env = process.env) {
   console.log(`partial_dataset=${summary.partial_dataset}`);
   console.log(`excluded_item_count=${summary.excluded_item_count}`);
   console.log(`evaluation_sample_mode=${summary.evaluation_sample_policy?.mode || "UNSPECIFIED"}`);
+  console.log(`sample_randomized=${summary.sample_selection?.randomized === true}`);
+  console.log(`sample_candidate_pool=${summary.sample_selection?.eligible_candidate_count || 0}`);
+  console.log(`sample_seed=${summary.sample_selection?.seed || "n/a"}`);
   console.log(`novelty_verified=${summary.evaluation_sample_policy?.novelty_verified === true}`);
   console.log(`sports_only=${summary.sports_only}`);
   console.log(`sports_filtered_count=${summary.sports_filtered_count}`);

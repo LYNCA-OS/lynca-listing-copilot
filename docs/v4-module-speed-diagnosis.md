@@ -140,6 +140,36 @@ V4_ULTRA_FAST_SERVICE_TIER=priority
 Request payload options still override these defaults so controlled A/B and
 rollback tests remain possible without branching the production path.
 
+Image detail and text verbosity are separate controls. OpenAI image input uses
+`low`, `auto`, or `high`; there is no `middle` image tier. Text serialization
+uses `low`, `medium`, or `high`. Production keeps `high` image detail while a
+seeded, same-image blind ablation compares `high` against `auto` and the known
+lower-bound `low`. The experiment records field presence, slab-grade
+preservation, input/output tokens, provider latency, weak-label recovery and
+regression. A faster image tier is eligible only when critical-field quality
+does not regress.
+
+Routine eBay smoke uses a seeded random blind card group. Historical novelty is
+not required unless the explicit `fresh_generalization` mode is selected.
+Paired A/B and defect regression still reuse the same sealed images by design.
+
+## 2026-07-14 OCR First-Wave Fairness
+
+GPT capacity remains globally bounded at 2. PaddleOCR has an independent pool:
+10 global slots, one concurrent slot per card, and a three-job per-card batch.
+This lets ten cards begin one hard-text read each before any card consumes a
+second OCR slot. Within a card, serial, slab grade, and printed card code run
+sequentially in the same background dispatch. Unused anchor/detail lane slots
+may be borrowed, but their combined concurrency cannot exceed the shared OCR
+capacity.
+
+The OCR execution ledger records claimed-card count, maximum claimed jobs per
+card, first-wave distinct-card count, lane allocation, capacity waits, partial
+slab-label fallback use, and target recovery. A partial slab label is never
+rendered as a grade: the worker may re-read the missing company or score from a
+narrow component crop, but the atomic `company + grade` publication rule stays
+unchanged.
+
 ## 2026-07-13 Provider-Stage Capacity Handoff
 
 The queue now separates the scarce provider stage from the rest of the card

@@ -277,6 +277,74 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["fallback_ocr_latency_ms"], 13)
         self.assertNotIn("token=secret", str(result))
 
+    def test_ocr_field_payload_focuses_missing_grade_company_before_full_image(self):
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
+        os.environ["ENABLE_PADDLEOCR"] = "true"
+        loaded = LoadedImage(
+            image_id="slab",
+            role="grade_label",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/slab.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=1000,
+            height=1600,
+            array=np.zeros((1600, 1000, 3), dtype=np.uint8),
+        )
+        crop_box = {"x": 30, "y": 0, "width": 940, "height": 320}
+        payload = {
+            "request_id": "ocr_grade_component",
+            "image_url": loaded.url,
+            "crop_type": "grade_label",
+            "crop_box": crop_box,
+            "metadata": {
+                "image_id": "slab",
+                "inline_full_image_fallback": True,
+                "grade_source_looks_like_slab": True,
+            },
+        }
+        score_only = {
+            "request_id": payload["request_id"],
+            "crop_type": "grade_label",
+            "status": "OK",
+            "raw_text": "GEM MT 10",
+            "text_candidates": [{"text": "GEM MT 10", "confidence": 0.94}],
+            "boxes": [],
+            "confidence": 0.94,
+            "latency_ms": 9,
+            "model_id": "paddleocr",
+            "model_revision": "",
+        }
+        company = {
+            "request_id": f'{payload["request_id"]}:grade-company',
+            "crop_type": "grade_label",
+            "status": "OK",
+            "raw_text": "PSA",
+            "text_candidates": [{"text": "PSA", "confidence": 0.97}],
+            "boxes": [],
+            "confidence": 0.97,
+            "latency_ms": 7,
+            "model_id": "paddleocr",
+            "model_revision": "",
+        }
+
+        with patch("app.main.load_signed_image", return_value=loaded):
+            with patch("app.main.ocr_field_from_loaded_image", side_effect=[score_only, company]) as ocr_mock:
+                result = ocr_field_payload(payload, authorization="Bearer test-token")
+
+        self.assertEqual(ocr_mock.call_count, 2, "a focused label half should replace an expensive full-image retry")
+        self.assertEqual(ocr_mock.call_args_list[0].kwargs["crop_box"], crop_box)
+        self.assertEqual(
+            ocr_mock.call_args_list[1].kwargs["crop_box"],
+            {"x": 30.0, "y": 0.0, "width": 658.0, "height": 320.0},
+        )
+        self.assertIn("GEM MT 10", result["raw_text"])
+        self.assertIn("PSA", result["raw_text"])
+        self.assertTrue(result["inline_grade_component_fallback_used"])
+        self.assertEqual(result["inline_grade_component_fallback_kind"], "company")
+        self.assertTrue(result["inline_grade_component_fallback_target_found"])
+        self.assertFalse(result["inline_full_image_fallback_used"])
+        self.assertNotIn("token=secret", str(result))
+
     def test_embed_images_endpoint_returns_batch_embeddings_without_signed_urls(self):
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
         os.environ["ENABLE_VISUAL_EMBEDDINGS"] = "true"

@@ -113,6 +113,28 @@ assert.deepEqual(
   "slab OCR claims must make grade and serial the first value-aware wave"
 );
 
+const tenCardFirstWave = fairOcrClaimOrder(Array.from({ length: 10 }, (_, index) => ([
+  {
+    job_id: `asset-${index}-serial`,
+    asset_id: `asset-${index}`,
+    priority: 12,
+    created_at: "2026-07-14T00:00:00.000Z",
+    payload: { crop: { role: "serial_crop" } }
+  },
+  {
+    job_id: `asset-${index}-code`,
+    asset_id: `asset-${index}`,
+    priority: 10,
+    created_at: "2026-07-14T00:00:00.001Z",
+    payload: { crop: { role: "card_code_crop" } }
+  }
+])).flat(), { limit: 10, jobsPerAsset: 1 });
+assert.equal(new Set(tenCardFirstWave.map((job) => job.asset_id)).size, 10);
+assert.ok(
+  tenCardFirstWave.every((job) => job.job_id.endsWith("-serial")),
+  "the first ten OCR slots must reach ten different cards before any second-wave crop starts"
+);
+
 // --- ocrRequestForPreingestionJob maps crop plan into the OCR contract ---
 const request = ocrRequestForPreingestionJob(sampleJob, { imageUrl: "https://signed.test/front.jpg" });
 assert.equal(request.request_id, "ocr:bundle-1:crop-1");
@@ -419,6 +441,10 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
           inline_full_image_fallback_evaluated: true,
           inline_full_image_fallback_used: true,
           inline_full_image_fallback_target_found: true,
+          inline_grade_component_fallback_used: true,
+          inline_grade_component_fallback_kind: "company",
+          inline_grade_component_fallback_target_found: true,
+          inline_grade_component_fallback_latency_ms: 7,
           evidence_patch: {
             evidence: {
               grade_company: { value: "PSA" },
@@ -438,6 +464,13 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.job_observability[0].full_image_fallback_inline_count, 1);
   assert.equal(result.job_observability[0].full_image_fallback_network_request_count, 0);
   assert.equal(result.job_observability[0].full_image_fallback_target_found, true);
+  assert.equal(result.job_observability[0].grade_component_fallback_used, true);
+  assert.equal(result.job_observability[0].grade_component_fallback_kind, "company");
+  assert.equal(result.job_observability[0].grade_component_fallback_target_found, true);
+  assert.equal(result.job_observability[0].grade_component_fallback_latency_ms, 7);
+  assert.equal(result.execution_summary.grade_component_fallback_count, 1);
+  assert.equal(result.execution_summary.grade_component_fallback_target_found_count, 1);
+  assert.equal(result.execution_summary.grade_component_fallback_latency_ms, 7);
 }
 
 // Marketplace slabs may omit source dimensions. A visible grading-company token
@@ -1147,6 +1180,8 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       ...env,
       PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED: "true",
       PREINGESTION_OCR_GLOBAL_CAPACITY: "2",
+      PREINGESTION_OCR_PER_ASSET_CAPACITY: "2",
+      PREINGESTION_OCR_PER_ASSET_BATCH_SIZE: "2",
       PREINGESTION_OCR_ANCHOR_CONCURRENCY: "2",
       PREINGESTION_OCR_DETAIL_CONCURRENCY: "1",
       PREINGESTION_OCR_CAPACITY_WAIT_MS: "1000",
@@ -1219,6 +1254,15 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.effective_claim_limit, 2);
   assert.equal(result.anchor_concurrency, 1);
   assert.equal(result.detail_concurrency, 1);
+  assert.equal(result.execution_summary.lane_capacity, 2);
+  assert.equal(result.execution_summary.lane_capacity_unused, 0);
+  assert.equal(result.execution_summary.lane_allocation_within_global_capacity, true);
+  assert.equal(result.execution_summary.claimed_asset_count, 1);
+  assert.equal(result.execution_summary.max_claimed_jobs_per_asset, 2);
+  assert.equal(result.execution_summary.first_wave_job_count, 2);
+  assert.equal(result.execution_summary.first_wave_distinct_asset_count, 1);
+  assert.equal(result.execution_summary.first_wave_expected_distinct_asset_count, 1);
+  assert.equal(result.execution_summary.first_wave_fairness_satisfied, true);
   assert.equal(result.peak_local_active, 2);
   assert.equal(peakActiveOcr, 2);
   assert.equal(activeSlots.size, 0);

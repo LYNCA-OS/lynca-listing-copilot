@@ -72,7 +72,9 @@ Before paid cloud recognition or a large eBay/Supabase batch:
 1. Run `npm run readiness:workflow -- --json`.
 2. Do not start a paid run if `can_run_cloud_recognition=false`.
 3. Do not claim vector/catalog/OCR contribution when that component is `FAIL_CLOSED`, `DISABLED`, or `DEGRADED`.
-4. Treat marketplace data as reference-only even when eBay is `READY`.
-5. If feedback retention is enabled, `feedback_workflow_schema` must be `READY`.
+4. Treat vector `index_ready`, worker `runtime_ready`, and `online_retrieval_default_enabled` as separate facts. A ready index may remain opt-in per request.
+5. Vision readiness must expose the actual model, image detail, text verbosity, and service tier. `medium` is text verbosity; image detail is only `low`, `auto`, or `high`.
+6. Treat marketplace data as reference-only even when eBay is `READY`.
+7. If feedback retention is enabled, `feedback_workflow_schema` must be `READY`.
 
 This keeps the system tight: expensive tests only run when the required path is configured, and optional subsystems cannot silently pretend to be helping.

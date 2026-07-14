@@ -273,6 +273,10 @@ const client = createPaddleOcrClient({
         inline_full_image_fallback_evaluated: true,
         inline_full_image_fallback_used: true,
         inline_full_image_fallback_target_found: true,
+        inline_grade_component_fallback_used: true,
+        inline_grade_component_fallback_kind: "company",
+        inline_grade_component_fallback_target_found: true,
+        inline_grade_component_fallback_latency_ms: 5,
         primary_ocr_latency_ms: 8,
         fallback_ocr_latency_ms: 13
       })
@@ -288,8 +292,28 @@ assert.equal(clientResult.worker_attempt_count, 1);
 assert.equal(clientResult.inline_full_image_fallback_evaluated, true);
 assert.equal(clientResult.inline_full_image_fallback_used, true);
 assert.equal(clientResult.inline_full_image_fallback_target_found, true);
+assert.equal(clientResult.inline_grade_component_fallback_used, true);
+assert.equal(clientResult.inline_grade_component_fallback_kind, "company");
+assert.equal(clientResult.inline_grade_component_fallback_target_found, true);
+assert.equal(clientResult.inline_grade_component_fallback_latency_ms, 5);
 assert.equal(clientResult.primary_ocr_latency_ms, 8);
 assert.equal(clientResult.fallback_ocr_latency_ms, 13);
+
+const missingLatencyClient = createPaddleOcrClient({
+  env: {
+    ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+    PADDLE_OCR_WORKER_URL: "https://ocr-no-latency.internal"
+  },
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ raw_text: "31/50", confidence: 0.94 })
+  })
+});
+const missingLatencyResult = await missingLatencyClient.verifyCrop(request);
+assert.equal(missingLatencyResult.primary_ocr_latency_ms, null);
+assert.equal(missingLatencyResult.fallback_ocr_latency_ms, null);
+assert.equal(missingLatencyResult.inline_grade_component_fallback_latency_ms, null);
 
 let retryCalls = 0;
 const retryClient = createPaddleOcrClient({

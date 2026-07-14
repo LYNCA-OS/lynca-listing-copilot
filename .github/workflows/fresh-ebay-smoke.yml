@@ -1,17 +1,28 @@
 name: fresh-ebay-smoke
 
-# Fetches cards that are absent from the fixed C100 set, seals seller titles,
-# uploads image-only inputs through production storage, and then evaluates the
-# production V4 path. Recognition never receives seller titles or item URLs.
+# Builds a seeded random blind sample by default, seals seller titles, uploads
+# image-only inputs through production storage, and evaluates the production V4
+# path. Recognition never receives seller titles or item URLs. Historical
+# novelty exclusion remains available as an explicit generalization mode.
 on:
   workflow_dispatch:
     inputs:
       limit:
-        description: "Fresh cards to run"
+        description: "Blind cards to run"
         default: "3"
       seller:
-        description: "Strictly filtered eBay seller username (rotate for fresh generalization)"
+        description: "Strictly filtered eBay seller username"
         default: "dcsports87"
+      sample_mode:
+        description: "Random blind smoke or history-excluded generalization"
+        type: choice
+        options:
+          - random_blind
+          - fresh_generalization
+        default: random_blind
+      sample_seed:
+        description: "Optional reproducible random seed (defaults to workflow run id)"
+        default: ""
       model:
         description: "Model override"
         default: "gpt-5-mini"
@@ -60,7 +71,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Collect recent evaluation sample history
-        if: inputs.regression_run_id == ''
+        if: inputs.regression_run_id == '' && inputs.sample_mode == 'fresh_generalization'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -81,7 +92,17 @@ jobs:
           NODE
       - name: Prepare fresh sealed blind inputs
         if: inputs.regression_run_id == ''
+        env:
+          EVALUATION_SAMPLE_MODE: ${{ inputs.sample_mode }}
+          EVALUATION_SAMPLE_SEED: ${{ inputs.sample_seed || github.run_id }}
         run: |
+          SAMPLE_ARGS=(
+            --sample-mode "$EVALUATION_SAMPLE_MODE"
+            --sample-seed "$EVALUATION_SAMPLE_SEED"
+          )
+          if [[ "$EVALUATION_SAMPLE_MODE" == "fresh_generalization" ]]; then
+            SAMPLE_ARGS+=(--exclude-answer-keys /tmp/ebay-evaluation-history.jsonl)
+          fi
           node scripts/prepare-dcsports87-blind-eval.mjs \
             --base-url "$API_BASE_URL" \
             --out-dir "$BLIND_DIR" \
@@ -89,9 +110,8 @@ jobs:
             --seller "${{ inputs.seller }}" \
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
-            --sample-mode fresh_generalization \
             --include-non-sports \
-            --exclude-answer-keys /tmp/ebay-evaluation-history.jsonl
+            "${SAMPLE_ARGS[@]}"
       - name: Upload image-only dataset
         if: inputs.regression_run_id == ''
         run: |
@@ -170,7 +190,7 @@ jobs:
           if [[ "${{ inputs.compact_l2 }}" == "true" ]]; then
             COMPACT_ARGS+=(--compact-l2)
           fi
-          SAMPLE_MODE=fresh_generalization
+          SAMPLE_MODE="${{ inputs.sample_mode }}"
           if [[ -n "$REGRESSION_RUN_ID" ]]; then
             SAMPLE_MODE=fixed_regression
           fi

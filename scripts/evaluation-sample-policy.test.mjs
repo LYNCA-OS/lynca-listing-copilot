@@ -77,6 +77,30 @@ assert.throws(() => assertEvaluationSampleProvenance({
   datasetPolicy: buildEvaluationSamplePolicy({ mode: "FIXED_REGRESSION", selectedItemIds: ["old-1"] })
 }), /reuse_reason and reuse_scope_id/);
 assert.equal(normalizeEvaluationSampleMode("paired_ablation"), "PAIRED_ABLATION");
+const randomBlind = buildEvaluationSamplePolicy({
+  mode: "RANDOM_BLIND",
+  selectedItemIds: ["random-2", "random-1"],
+  sampleSeed: "run-42",
+  selectionStrategy: "deterministic_hash_shuffle"
+});
+assert.equal(randomBlind.novelty_verified, false);
+assert.equal(randomBlind.sample_reuse_permitted, false);
+assert.equal(randomBlind.randomized_selection, true);
+assert.match(randomBlind.sample_seed_sha256, /^[a-f0-9]{64}$/);
+assert.deepEqual(assertEvaluationSampleProvenance({
+  requestedMode: "RANDOM_BLIND",
+  datasetPolicy: randomBlind
+}), {
+  mode: "RANDOM_BLIND",
+  verified: true,
+  required: true,
+  reuse_verified: false,
+  randomization_verified: true
+});
+assert.throws(() => assertEvaluationSampleProvenance({
+  requestedMode: "RANDOM_BLIND",
+  datasetPolicy: buildEvaluationSamplePolicy({ mode: "RANDOM_BLIND", selectedItemIds: ["random-1"] })
+}), /verified seeded random selection policy/);
 assert.throws(() => normalizeEvaluationSampleMode("fresh-ish"), /Unsupported evaluation sample mode/);
 
 console.log("evaluation sample policy tests passed");

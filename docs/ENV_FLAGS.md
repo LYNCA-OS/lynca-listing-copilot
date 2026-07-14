@@ -238,6 +238,8 @@ and delete the flag.
 | `PREINGESTION_OCR_MAX_ATTEMPTS` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_GLOBAL_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `PREINGESTION_OCR_PER_ASSET_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
+| `PREINGESTION_OCR_PER_ASSET_BATCH_SIZE` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_ANCHOR_CONCURRENCY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_DETAIL_CONCURRENCY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_CRITICAL_FIELD_WAIT_MS` | api/listing-copilot-title.js |
@@ -246,6 +248,9 @@ and delete the flag.
 | `PREWARM_CATALOG_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_HYBRID_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_POSTGRES_HYBRID` | lib/listing/v4/prewarm.mjs |
+| `V4_ULTRA_FAST_IMAGE_DETAIL` | lib/listing/pipeline/provider-options.mjs |
+| `V4_ULTRA_FAST_TEXT_VERBOSITY` | lib/listing/pipeline/provider-options.mjs |
+| `V4_ULTRA_FAST_SERVICE_TIER` | lib/listing/pipeline/provider-options.mjs |
 | `PROVIDER_MAX_FIELD_CROPS` | api/listing-copilot-title.js |
 | `PUBLISH_MAX_ATTEMPTS` | lib/listing/publishing/publish-listing-draft.mjs |
 | `RECOGNITION_WORKER_TOKEN` | lib/listing/ocr/paddle-ocr-client.mjs<br>lib/listing/recognition/recognition-feature-flags.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs |

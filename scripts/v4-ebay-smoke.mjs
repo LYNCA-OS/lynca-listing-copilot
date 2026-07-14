@@ -2688,6 +2688,14 @@ function nullableDelta(next, previous) {
     : Number((nextValue - previousValue).toFixed(6));
 }
 
+function latestOcrExecutionNumber(results = [], field = "") {
+  for (let index = results.length - 1; index >= 0; index -= 1) {
+    const value = numberOrNull(results[index]?.preingestion_ocr_rendezvous?.execution_summary?.[field]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
 export function summarizeBatchPositionFairness(results = []) {
   const splitIndex = Math.ceil(results.length / 2);
   const frontHalf = positionCohortMetrics(results.slice(0, splitIndex));
@@ -3002,15 +3010,29 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       stage_capacity_control_enabled_count: results.filter((item) => (
         item.preingestion_ocr_rendezvous?.execution_summary?.capacity_control_enabled === true
       )).length,
-      stage_global_capacity_latest: [...results].reverse().find((item) => (
-        Number.isFinite(Number(item.preingestion_ocr_rendezvous?.execution_summary?.global_capacity))
-      ))?.preingestion_ocr_rendezvous?.execution_summary?.global_capacity ?? null,
-      anchor_concurrency_latest: [...results].reverse().find((item) => (
-        Number.isFinite(Number(item.preingestion_ocr_rendezvous?.execution_summary?.anchor_concurrency))
-      ))?.preingestion_ocr_rendezvous?.execution_summary?.anchor_concurrency ?? null,
-      detail_concurrency_latest: [...results].reverse().find((item) => (
-        Number.isFinite(Number(item.preingestion_ocr_rendezvous?.execution_summary?.detail_concurrency))
-      ))?.preingestion_ocr_rendezvous?.execution_summary?.detail_concurrency ?? null,
+      stage_global_capacity_latest: latestOcrExecutionNumber(results, "global_capacity"),
+      per_asset_capacity_latest: latestOcrExecutionNumber(results, "per_asset_capacity"),
+      per_asset_batch_size_latest: latestOcrExecutionNumber(results, "per_asset_batch_size"),
+      anchor_concurrency_latest: latestOcrExecutionNumber(results, "anchor_concurrency"),
+      detail_concurrency_latest: latestOcrExecutionNumber(results, "detail_concurrency"),
+      claimed_asset_count: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.claimed_asset_count || 0)
+      ), 0),
+      max_claimed_jobs_per_asset: Math.max(0, ...results.map((item) => (
+        Number(item.preingestion_ocr_rendezvous?.execution_summary?.max_claimed_jobs_per_asset || 0)
+      ))),
+      first_wave_fairness_satisfied_count: results.filter((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.first_wave_fairness_satisfied === true
+      )).length,
+      first_wave_fairness_violation_count: results.filter((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.first_wave_fairness_satisfied === false
+      )).length,
+      lane_capacity_unused: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.lane_capacity_unused || 0)
+      ), 0),
+      lane_allocation_violation_count: results.filter((item) => (
+        item.preingestion_ocr_rendezvous?.execution_summary?.lane_allocation_within_global_capacity === false
+      )).length,
       anchor_job_count: results.reduce((sum, item) => (
         sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.anchor_job_count || 0)
       ), 0),
@@ -3043,6 +3065,15 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       )), 0.95),
       worker_timeout_count: results.reduce((sum, item) => (
         sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.timeout_count || 0)
+      ), 0),
+      grade_component_fallback_count: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.grade_component_fallback_count || 0)
+      ), 0),
+      grade_component_fallback_target_found_count: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.grade_component_fallback_target_found_count || 0)
+      ), 0),
+      grade_component_fallback_latency_ms: results.reduce((sum, item) => (
+        sum + Number(item.preingestion_ocr_rendezvous?.execution_summary?.grade_component_fallback_latency_ms || 0)
       ), 0),
       evidence_refresh_added_patch_count: results.reduce((sum, item) => sum + Number(item.preingestion_evidence_refresh?.added_patch_count || 0), 0),
       serial_numerator_verified_count: results.filter((item) => item.serial_numerator_verified === true).length,

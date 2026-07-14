@@ -51,8 +51,11 @@ assert.deepEqual(loaded.loaded_env_files, [".env.local"]);
 
 const configuredEnv = {
   OPENAI_API_KEY: "test-openai-key",
-  OPENAI_LISTING_MODEL: "gpt-4.1-mini",
+  OPENAI_LISTING_MODEL: "gpt-5-mini",
   OPENAI_PROVIDER_UI_CONCURRENCY: "2",
+  V4_ULTRA_FAST_IMAGE_DETAIL: "high",
+  V4_ULTRA_FAST_TEXT_VERBOSITY: "medium",
+  V4_ULTRA_FAST_SERVICE_TIER: "priority",
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "test-supabase-key",
   LISTING_IMAGE_BUCKET: "listing-card-images",
@@ -88,7 +91,10 @@ assert.equal(readyReport.schema_version, workflowReadinessVersion);
 assert.equal(readyReport.ok, true);
 assert.equal(readyReport.can_run_cloud_recognition, true);
 assert.equal(component(readyReport, "vision_provider").status, "READY");
-assert.match(component(readyReport, "vision_provider").summary, /gpt-4\.1-mini/);
+assert.match(component(readyReport, "vision_provider").summary, /gpt-5-mini/);
+assert.equal(component(readyReport, "vision_provider").details.image_detail, "high");
+assert.equal(component(readyReport, "vision_provider").details.text_verbosity, "medium");
+assert.equal(component(readyReport, "vision_provider").details.service_tier, "priority");
 assert.equal(component(readyReport, "image_storage").status, "READY");
 assert.equal(component(readyReport, "feedback_workflow_schema").status, "READY");
 assert.equal(component(readyReport, "vector_retrieval").status, "READY");
@@ -129,7 +135,9 @@ const requestOptInVectorReport = await buildWorkflowReadinessAudit({
 assert.match(component(requestOptInVectorReport, "vision_provider").summary, /gpt-5-mini/);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").status, "READY");
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.default_enabled, false);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.online_retrieval_default_enabled, false);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.index_ready, true);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.index_state, "READY");
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.request_override_supported, true);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.runtime_ready, true);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.prompt_influence_by_default, false);

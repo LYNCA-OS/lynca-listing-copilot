@@ -137,7 +137,10 @@ function aggregateEvaluationSamplePolicy(sourceRuns = [], selectedItemIds = []) 
   const modes = [...new Set(policies.map((policy) => normalizeEvaluationSampleMode(policy.mode || "UNSPECIFIED")))];
   const mode = modes.length === 1 ? modes[0] : "UNSPECIFIED";
   const fresh = ["FRESH_GENERALIZATION", "CONCURRENCY_FRESH"].includes(mode);
+  const random = mode === "RANDOM_BLIND";
   const excludedHashes = policies.map((policy) => normalizeText(policy.excluded_item_ids_sha256)).filter(Boolean);
+  const seedHashes = [...new Set(policies.map((policy) => normalizeText(policy.sample_seed_sha256)).filter(Boolean))];
+  const selectionStrategies = [...new Set(policies.map((policy) => normalizeText(policy.selection_strategy)).filter(Boolean))];
   return {
     mode,
     sample_reuse_permitted: ["FIXED_REGRESSION", "PAIRED_ABLATION", "CONCURRENCY_FRESH"].includes(mode),
@@ -152,6 +155,14 @@ function aggregateEvaluationSamplePolicy(sourceRuns = [], selectedItemIds = []) 
     prior_history_exclusion_present: policies.length > 0 && policies.every((policy) => policy.prior_history_exclusion_present === true),
     prior_history_overlap_count: policies.reduce((sum, policy) => sum + Math.max(0, Number(policy.prior_history_overlap_count || 0)), 0),
     novelty_verified: fresh && policies.length === sourceRuns.length && policies.every((policy) => policy.novelty_verified === true),
+    randomized_selection: random,
+    selection_strategy: random && selectionStrategies.length === 1 ? selectionStrategies[0] : null,
+    sample_seed_sha256: random && seedHashes.length
+      ? (seedHashes.length === 1 ? seedHashes[0] : stableHash(seedHashes.sort().join("\n")))
+      : null,
+    randomization_verified: random
+      && policies.length === sourceRuns.length
+      && policies.every((policy) => policy.randomization_verified === true),
     source_run_count: sourceRuns.length
   };
 }

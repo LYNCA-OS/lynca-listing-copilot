@@ -13,6 +13,7 @@ import {
   blindEvalRunPaths,
   comparePredictionToTitle,
   defaultBlindEvalDir,
+  deterministicHashShuffle,
   imageDescriptorFromBytes,
   prepareBlindDataset,
   readJsonl,
@@ -357,6 +358,61 @@ await withTempDir(async (dir) => {
   assert.equal(listingsRequest.searchParams.get("seller"), "the-poke-store");
   const answers = await readJsonl(blindEvalRunPaths({ outDir: dir, runId: "alternate-seller-run" }).answer_key_path);
   assert.equal(answers[0].seller, "the-poke-store");
+});
+
+await withTempDir(async (dir) => {
+  const listings = Array.from({ length: 5 }, (_, index) => ({
+    seller: "dcsports87",
+    item_id: `random-item-${index + 1}`,
+    item_web_url: `https://www.ebay.com/itm/random-item-${index + 1}`,
+    title: `2025 Topps Chrome Test Subject ${index + 1} PSA 10`,
+    image_urls: [`https://i.ebayimg.test/random-${index + 1}.jpg`]
+  }));
+  const fetchImpl = async (url) => {
+    const parsed = /^https?:/i.test(url) ? new URL(url) : null;
+    const path = parsed ? parsed.pathname : url;
+    if (path === "/api/login") {
+      return jsonResponse(200, { ok: true }, { "set-cookie": "lynca_metaverse_session=test; Path=/" });
+    }
+    if (path === "/api/ebay-dcsports87-listings") {
+      return jsonResponse(200, {
+        ok: true,
+        seller: "dcsports87",
+        marketplace_id: "EBAY_US",
+        returned_count: listings.length,
+        more_results_available: false,
+        listings
+      });
+    }
+    if (/^https:\/\/i\.ebayimg\.test\/random-\d+\.jpg$/.test(url)) {
+      return bytesResponse(200, tinyPng, { "content-type": "image/png" });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const result = await prepareBlindDataset({
+    baseUrl: "https://listing.test",
+    username: "metaverse",
+    password: "mtv",
+    outDir: dir,
+    runId: "random-blind-run",
+    limit: 2,
+    evaluationSampleMode: "RANDOM_BLIND",
+    sampleSeed: "seed-42",
+    fetchImpl
+  });
+  const expectedIds = deterministicHashShuffle(
+    listings,
+    "seed-42:listings",
+    (listing) => listing.item_id
+  ).slice(0, 2).map((listing) => listing.item_id);
+  const answers = await readJsonl(blindEvalRunPaths({ outDir: dir, runId: "random-blind-run" }).answer_key_path);
+  assert.deepEqual(answers.map((answer) => answer.item_id), expectedIds);
+  assert.equal(result.evaluation_sample_policy.mode, "RANDOM_BLIND");
+  assert.equal(result.evaluation_sample_policy.novelty_verified, false);
+  assert.equal(result.evaluation_sample_policy.randomization_verified, true);
+  assert.equal(result.sample_selection.randomized, true);
+  assert.equal(result.sample_selection.eligible_candidate_count, 5);
+  assert.equal(result.sample_selection.seed, "seed-42");
 });
 
 await withTempDir(async (dir) => {

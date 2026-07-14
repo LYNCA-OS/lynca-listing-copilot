@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   listingStageCapacityPlan,
   listingStageIds,
+  ocrGlobalConcurrencyPlan,
   ocrPerAssetConcurrencyPlan,
   runWithListingStageCapacity
 } from "../lib/listing/v4/orchestration/stage-capacity.mjs";
@@ -17,22 +18,35 @@ const plan = listingStageCapacityPlan({
   RETRIEVAL_CATALOG_STAGE_CAPACITY_CONTROL_ENABLED: "true",
   VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED: "true"
 });
-assert.equal(plan.ocr.global_capacity, 8);
-assert.equal(plan.ocr.per_asset_capacity, 2);
-assert.equal(plan.ocr.anchor_concurrency, 6);
+assert.equal(plan.ocr.global_capacity, 10);
+assert.equal(plan.ocr.per_asset_capacity, 1);
+assert.equal(plan.ocr.per_asset_batch_size, 3);
+assert.equal(plan.ocr.anchor_concurrency, 8);
 assert.equal(plan.ocr.detail_concurrency, 2);
-assert.equal(plan.ocr.local_concurrency, 2);
+assert.equal(plan.ocr.local_concurrency, 1);
 assert.deepEqual(ocrPerAssetConcurrencyPlan(plan.ocr, { anchorJobCount: 6, detailJobCount: 4 }), {
-  per_asset_capacity: 2,
+  per_asset_capacity: 1,
   anchor_concurrency: 1,
-  detail_concurrency: 1,
-  local_concurrency: 2
+  detail_concurrency: 0,
+  local_concurrency: 1
 });
 assert.deepEqual(ocrPerAssetConcurrencyPlan(plan.ocr, { anchorJobCount: 6, detailJobCount: 0 }), {
-  per_asset_capacity: 2,
-  anchor_concurrency: 2,
+  per_asset_capacity: 1,
+  anchor_concurrency: 1,
   detail_concurrency: 0,
-  local_concurrency: 2
+  local_concurrency: 1
+});
+assert.deepEqual(ocrGlobalConcurrencyPlan(plan.ocr, { anchorJobCount: 8, detailJobCount: 4 }), {
+  global_capacity: 10,
+  anchor_concurrency: 8,
+  detail_concurrency: 2,
+  local_concurrency: 10
+});
+assert.deepEqual(ocrGlobalConcurrencyPlan(plan.ocr, { anchorJobCount: 10, detailJobCount: 0 }), {
+  global_capacity: 10,
+  anchor_concurrency: 10,
+  detail_concurrency: 0,
+  local_concurrency: 10
 });
 assert.equal(plan.catalog.stage_id, listingStageIds.CATALOG_RETRIEVAL);
 assert.equal(plan.catalog.global_capacity, 4);

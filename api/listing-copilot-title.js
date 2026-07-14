@@ -51,6 +51,7 @@ import {
   providerOptionsFromPayload,
   singleModelFastPathEnabled,
   ultraFastImageDetail,
+  ultraFastTextVerbosity,
   ultraFastServiceTier,
   vectorEmbeddingWarmupOptions
 } from "../lib/listing/pipeline/provider-options.mjs";
@@ -5379,7 +5380,7 @@ async function createOpenAiTitle(payload, selection, {
     responseProfile: providerResponseProfile,
     includeVectorDecision: Boolean(promptCandidatePacket),
     imageDetail: providerImageDetail,
-    textVerbosity: ultraFastL2 ? "low" : null,
+    textVerbosity: ultraFastL2 ? ultraFastTextVerbosity(providerOptions) : null,
     serviceTier: ultraFastL2 ? ultraFastServiceTier(providerOptions) : null,
     requestContext: openAiRequestContextFromPayload(initialPayload, {
       providerCallPurpose: "full_l2",

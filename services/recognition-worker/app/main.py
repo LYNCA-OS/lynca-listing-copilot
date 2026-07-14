@@ -58,6 +58,25 @@ def _ocr_response_has_target(response: dict[str, Any], crop_type: str) -> bool:
     return bool(text)
 
 
+def _grade_component_crop_box(crop_box: dict[str, Any], component: str) -> dict[str, Any] | None:
+    if not isinstance(crop_box, dict):
+        return None
+    try:
+        x = float(crop_box.get("x", crop_box.get("left", 0)))
+        y = float(crop_box.get("y", crop_box.get("top", 0)))
+        width = float(crop_box.get("width", crop_box.get("w", 0)))
+        height = float(crop_box.get("height", crop_box.get("h", 0)))
+    except (TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    if component == "company":
+        return {"x": x, "y": y, "width": width * 0.70, "height": height}
+    if component == "score":
+        return {"x": x + width * 0.52, "y": y, "width": width * 0.48, "height": height}
+    return None
+
+
 def _merge_inline_ocr_results(
     primary: dict[str, Any],
     fallback: dict[str, Any],
@@ -477,8 +496,44 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         model_revision=config.paddleocr_model_revision,
     )
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-    primary_text = _ocr_response_text(primary)
+    normalized_crop_type = str(crop_type).lower()
     inline_fallback_requested = metadata.get("inline_full_image_fallback") is True
+    primary_text = _ocr_response_text(primary)
+    grade_component_fallback: dict[str, Any] | None = None
+    if (
+        inline_fallback_requested
+        and payload.get("crop_box") is not None
+        and primary.get("status") != "UNAVAILABLE"
+        and normalized_crop_type in {"grade_label", "grade_label_crop"}
+    ):
+        has_company = bool(_GRADE_COMPANY_PATTERN.search(primary_text))
+        has_score = bool(_GRADE_VALUE_PATTERN.search(primary_text))
+        missing_component = "company" if has_score and not has_company else "score" if has_company and not has_score else ""
+        component_box = _grade_component_crop_box(payload.get("crop_box"), missing_component)
+        if component_box is not None:
+            component = ocr_field_from_loaded_image(
+                loaded,
+                crop_type=crop_type,
+                crop_box=component_box,
+                request_id=f"{request_id}:grade-{missing_component}",
+                model_id=config.paddleocr_model_id,
+                model_revision=config.paddleocr_model_revision,
+            )
+            primary = _merge_inline_ocr_results(
+                primary,
+                component,
+                request_id=request_id,
+                crop_type=crop_type,
+                total_latency_ms=int((time.time() - started) * 1000),
+            )
+            grade_component_fallback = {
+                "inline_grade_component_fallback_used": True,
+                "inline_grade_component_fallback_kind": missing_component,
+                "inline_grade_component_fallback_target_found": _ocr_response_has_target(primary, crop_type),
+                "inline_grade_component_fallback_latency_ms": component.get("latency_ms"),
+            }
+            primary_text = _ocr_response_text(primary)
+
     grade_context = (
         metadata.get("grade_source_looks_like_slab") is True
         or bool(_GRADE_COMPANY_PATTERN.search(primary_text))
@@ -489,9 +544,9 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         and primary.get("status") != "UNAVAILABLE"
         and not _ocr_response_has_target(primary, crop_type)
         and (
-            str(crop_type).lower() in {"serial_number", "serial_crop"}
+            normalized_crop_type in {"serial_number", "serial_crop"}
             or (
-                str(crop_type).lower() in {"grade_label", "grade_label_crop"}
+                normalized_crop_type in {"grade_label", "grade_label_crop"}
                 and grade_context
             )
         )
@@ -504,6 +559,7 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
             "inline_full_image_fallback_evaluated": False,
             "inline_full_image_fallback_used": False,
             "inline_full_image_fallback_target_found": False,
+            **(grade_component_fallback or {}),
         }
 
     fallback = ocr_field_from_loaded_image(
@@ -514,13 +570,14 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         model_id=config.paddleocr_model_id,
         model_revision=config.paddleocr_model_revision,
     )
-    return _merge_inline_ocr_results(
+    merged = _merge_inline_ocr_results(
         primary,
         fallback,
         request_id=request_id,
         crop_type=crop_type,
         total_latency_ms=int((time.time() - started) * 1000),
     )
+    return {**merged, **(grade_component_fallback or {})}
 
 
 if FastAPI is not None:

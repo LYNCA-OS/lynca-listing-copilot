@@ -55,6 +55,11 @@ function weakPolicyScore(row = {}) {
   return finiteNumber(row.final_scoring?.policy_fair_token_recall);
 }
 
+function resolvedFieldPresent(row = {}, field = "") {
+  const value = row.resolved_fields?.[field];
+  return Array.isArray(value) ? value.some((entry) => cleanText(entry)) : Boolean(cleanText(value));
+}
+
 function capacityRefillFromRow(row = {}) {
   return row.writer_ready_capacity_refill || row.writer_ready_capacity_release?.refill || null;
 }
@@ -73,6 +78,14 @@ function transportSummary(report = {}, rows = []) {
   const errorAnomalies = observedAnomalies.filter((anomaly) => anomaly?.severity === "ERROR");
   const unclassifiedErrorCount = Math.max(0, Number(nodeObservability.error_count || 0) - errorAnomalies.length);
   const runWallMs = finiteNumber(report.summary?.run_wall_ms);
+  const resolvedFieldPresence = Object.fromEntries(comparedFieldNames.map((field) => {
+    const count = rows.filter((row) => resolvedFieldPresent(row, field)).length;
+    return [field, {
+      count,
+      rate: rows.length ? Number((count / rows.length).toFixed(6)) : null
+    }];
+  }));
+  const ocr = report.summary?.preingestion_ocr || {};
   return {
     attempted_count: rows.length,
     completed_count: rows.filter((row) => row.ok === true && row.l2_ready === true).length,
@@ -94,6 +107,11 @@ function transportSummary(report = {}, rows = []) {
       const values = rows.map(weakPolicyScore).filter((value) => value !== null);
       return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
     })(),
+    resolved_field_presence: resolvedFieldPresence,
+    grade_reference_expected_count: finiteNumber(ocr.grade_reference_expected_count),
+    grade_reference_preserved_count: finiteNumber(ocr.grade_reference_preserved_count),
+    grade_reference_omission_count: finiteNumber(ocr.grade_reference_omission_count),
+    grade_reference_preservation_rate: finiteNumber(ocr.grade_reference_preservation_rate),
     node_error_count: nodeObservability.error_count ?? null,
     transport_node_error_count: errorAnomalies.filter((anomaly) => !fieldQualityCheckIds.has(anomaly.check_id)).length + unclassifiedErrorCount,
     field_quality_error_count: errorAnomalies.filter((anomaly) => fieldQualityCheckIds.has(anomaly.check_id)).length,

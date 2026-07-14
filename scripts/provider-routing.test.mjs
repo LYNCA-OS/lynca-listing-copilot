@@ -19,6 +19,7 @@ import {
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
   ultraFastImageDetail,
+  ultraFastTextVerbosity,
   ultraFastServiceTier,
   vectorEmbeddingWarmupOptions
 } from "../lib/listing/pipeline/provider-options.mjs";
@@ -168,11 +169,13 @@ const ultraFastEnvOptions = __listingCopilotTitleTestHooks.providerOptionsFromPa
   ENABLE_V4_ULTRA_FAST_L2: "true",
   ENABLE_V4_ULTRA_SPARSE_TRANSPORT: "true",
   V4_ULTRA_FAST_IMAGE_DETAIL: "high",
+  V4_ULTRA_FAST_TEXT_VERBOSITY: "medium",
   V4_ULTRA_FAST_SERVICE_TIER: "priority"
 });
 assert.equal(ultraFastEnvOptions.v4_ultra_fast_l2, true);
 assert.equal(ultraFastEnvOptions.v4_ultra_sparse_transport, true);
 assert.equal(ultraFastImageDetail(ultraFastEnvOptions), "high");
+assert.equal(ultraFastTextVerbosity(ultraFastEnvOptions), "medium");
 assert.equal(ultraFastServiceTier(ultraFastEnvOptions), "priority");
 assert.equal(__listingCopilotTitleTestHooks.providerDoneCapacityHandoffEnabled({}, {}), true);
 assert.equal(__listingCopilotTitleTestHooks.providerDoneCapacityHandoffEnabled({
@@ -192,6 +195,7 @@ const ultraFastPayloadOverrideOptions = __listingCopilotTitleTestHooks.providerO
   provider_options: {
     v4_ultra_fast_l2: false,
     v4_ultra_fast_image_detail: "auto",
+    v4_ultra_fast_text_verbosity: "low",
     v4_ultra_fast_service_tier: "default"
   }
 }, {
@@ -202,6 +206,7 @@ const ultraFastPayloadOverrideOptions = __listingCopilotTitleTestHooks.providerO
 });
 assert.equal(ultraFastPayloadOverrideOptions.v4_ultra_fast_l2, false, "explicit eval payload must override the production default");
 assert.equal(ultraFastImageDetail(ultraFastPayloadOverrideOptions), "auto");
+assert.equal(ultraFastTextVerbosity(ultraFastPayloadOverrideOptions), "low");
 assert.equal(ultraFastServiceTier(ultraFastPayloadOverrideOptions), "default");
 assert.equal(postObservationCatalogVectorHedgeMs({}, {}), 900);
 assert.equal(postObservationCatalogVectorHedgeMs({}, { post_observation_catalog_vector_hedge_ms: 250 }), 250);
@@ -230,6 +235,10 @@ assert.equal(ultraFastImageDetail({}), "auto");
 assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "low" }), "low");
 assert.equal(ultraFastImageDetail({ v4UltraFastImageDetail: "HIGH" }), "high");
 assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "invalid" }), "auto");
+assert.equal(ultraFastTextVerbosity({}), "medium");
+assert.equal(ultraFastTextVerbosity({ v4_ultra_fast_text_verbosity: "low" }), "low");
+assert.equal(ultraFastTextVerbosity({ v4UltraFastTextVerbosity: "HIGH" }), "high");
+assert.equal(ultraFastTextVerbosity({ v4_ultra_fast_text_verbosity: "invalid" }), "medium");
 assert.equal(ultraFastServiceTier({}), null);
 assert.equal(ultraFastServiceTier({ v4_ultra_fast_service_tier: "priority" }), "priority");
 assert.equal(ultraFastServiceTier({ v4UltraFastServiceTier: "FLEX" }), "flex");

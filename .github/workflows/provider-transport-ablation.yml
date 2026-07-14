@@ -1,8 +1,8 @@
 name: provider-transport-ablation
 
-# Runs the same fresh, sealed, image-only cards through the standard and sparse
-# provider transports. Identity cache is disabled for both arms so the second
-# arm cannot inherit the first arm's answer.
+# Runs the same seeded-random, sealed, image-only cards through both provider
+# transports. Identity cache is disabled for both arms so the second arm cannot
+# inherit the first arm's answer.
 on:
   workflow_dispatch:
     inputs:
@@ -12,6 +12,9 @@ on:
       seller:
         description: "Strictly filtered eBay seller username"
         default: "dcsports87"
+      sample_seed:
+        description: "Reproducible random blind sample seed (defaults to workflow run id)"
+        default: ""
       model:
         description: "Identical model for both arms"
         default: "gpt-5-mini"
@@ -75,14 +78,6 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Collect recent evaluation sample history
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/collect-ebay-evaluation-history.mjs \
-            --github \
-            --seed "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl,data/eval/ebay-reference/ebay-fresh-smoke-exclusions.jsonl" \
-            --out /tmp/ebay-evaluation-history.jsonl
       - name: Validate production runtime
         run: |
           curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
@@ -96,6 +91,8 @@ jobs:
           }
           NODE
       - name: Prepare fresh sealed blind inputs once
+        env:
+          EVALUATION_SAMPLE_SEED: ${{ inputs.sample_seed || github.run_id }}
         run: |
           node scripts/prepare-dcsports87-blind-eval.mjs \
             --base-url "$API_BASE_URL" \
@@ -104,9 +101,9 @@ jobs:
             --seller "${{ inputs.seller }}" \
             --limit "${{ inputs.limit }}" \
             --image-limit 2 \
-            --sample-mode paired_ablation \
-            --include-non-sports \
-            --exclude-answer-keys /tmp/ebay-evaluation-history.jsonl
+            --sample-mode random_blind \
+            --sample-seed "$EVALUATION_SAMPLE_SEED" \
+            --include-non-sports
           node scripts/build-ebay-image-intake-dataset.mjs \
             --blind-dir "$BLIND_DIR" \
             --run-ids "$RUN_ID" \
@@ -148,7 +145,7 @@ jobs:
             --concurrency 2 \
             --queue --speculative --use-preingestion \
             --preingestion-source "$RUN_ID-baseline" \
-            --sample-mode paired_ablation \
+            --sample-mode random_blind \
             --disable-identity-cache \
             "${EXTRA_FLAGS[@]}" \
             --model "${{ inputs.model }}" \
@@ -189,7 +186,7 @@ jobs:
             --concurrency 2 \
             --queue --speculative --use-preingestion \
             --preingestion-source "$RUN_ID-candidate" \
-            --sample-mode paired_ablation \
+            --sample-mode random_blind \
             --disable-identity-cache \
             "${EXTRA_FLAGS[@]}" \
             --model "${{ inputs.model }}" \
@@ -266,5 +263,4 @@ jobs:
             /tmp/provider-transport-standard.json
             /tmp/provider-transport-compact.json
             /tmp/provider-transport-comparison.json
-            /tmp/ebay-evaluation-history.jsonl
             /tmp/lynca-provider-transport/${{ env.RUN_ID }}/blind_dataset_manifest.json

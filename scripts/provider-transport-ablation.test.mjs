@@ -22,6 +22,12 @@ function report({
       pipeline_node_observability: {
         error_count: anomalies.length,
         anomaly_examples: anomalies.length ? [{ asset_id: "card-1", anomalies }] : []
+      },
+      preingestion_ocr: {
+        grade_reference_expected_count: 1,
+        grade_reference_preserved_count: compact ? 1 : 0,
+        grade_reference_omission_count: compact ? 0 : 1,
+        grade_reference_preservation_rate: compact ? 1 : 0
       }
     },
     results: [{
@@ -50,6 +56,10 @@ assert.equal(comparison.regression_count, 0);
 assert.equal(comparison.deltas.writer_ready_p50_fraction, -0.5);
 assert.equal(comparison.baseline.identity_cache_bypassed_count, 1);
 assert.equal(comparison.compact.identity_cache_bypassed_count, 1);
+assert.equal(comparison.baseline.resolved_field_presence.parallel.count, 1);
+assert.equal(comparison.compact.resolved_field_presence.surface_color.count, 1);
+assert.equal(comparison.baseline.grade_reference_preservation_rate, 0);
+assert.equal(comparison.compact.grade_reference_preservation_rate, 1);
 assert.deepEqual(comparison.pairs[0].changed_fields, ["surface_color", "parallel"]);
 assert.equal(comparison.pairs[0].weak_proxy_outcome, "RECOVERY");
 

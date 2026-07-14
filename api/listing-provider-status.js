@@ -88,6 +88,7 @@ function workflowReadinessCacheKey(env = process.env) {
     "PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED",
     "PREINGESTION_OCR_GLOBAL_CAPACITY",
     "PREINGESTION_OCR_PER_ASSET_CAPACITY",
+    "PREINGESTION_OCR_PER_ASSET_BATCH_SIZE",
     "PREINGESTION_OCR_ANCHOR_CONCURRENCY",
     "PREINGESTION_OCR_DETAIL_CONCURRENCY",
     "PREINGESTION_OCR_POST_PROVIDER_WAIT_MS",
@@ -97,6 +98,9 @@ function workflowReadinessCacheKey(env = process.env) {
     "RETRIEVAL_INTERNAL_QUERY_CONCURRENCY",
     "VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED",
     "VECTOR_QUERY_GLOBAL_CAPACITY",
+    "V4_ULTRA_FAST_IMAGE_DETAIL",
+    "V4_ULTRA_FAST_TEXT_VERBOSITY",
+    "V4_ULTRA_FAST_SERVICE_TIER",
     "V4_QUEUE_SUBMISSION_CONCURRENCY",
     "VISUAL_VECTOR_INDEX_CONCURRENCY",
     "DATA_LOOP_SIDECARS_ENABLED",
@@ -136,17 +140,22 @@ function publicWorkflowReadiness(report = {}) {
         provider_id: details.provider_id || null,
         role: details.role || null,
         model_id: details.model_id || null,
-        recommended_concurrency: details.recommended_concurrency || null
+        recommended_concurrency: details.recommended_concurrency || null,
+        image_detail: details.image_detail || null,
+        text_verbosity: details.text_verbosity || null,
+        service_tier: details.service_tier || null
       };
     }
     if (item.id === "vector_retrieval") {
       return {
         index_ready: details.index_ready === true,
+        index_state: details.index_state || (details.index_ready === true ? "READY" : "NOT_READY"),
         worker_configured: details.worker_configured === true,
         runtime_ready: details.runtime_ready === true,
         runtime_status: details.runtime_status || "UNKNOWN",
         preload_status: details.preload_status || "UNKNOWN",
         default_enabled: details.default_enabled === true,
+        online_retrieval_default_enabled: details.online_retrieval_default_enabled === true,
         default_mode: details.default_mode || details.mode || "off",
         request_override_supported: details.request_override_supported === true,
         prompt_influence_by_default: details.prompt_influence_by_default === true,
