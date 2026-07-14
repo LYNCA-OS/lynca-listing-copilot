@@ -394,6 +394,44 @@ assert.doesNotMatch(
   "product hierarchy query should not duplicate the manufacturer when product already contains it"
 );
 
+const compoundBrandQueries = planRetrievalQueries({
+  resolved: {
+    year: "2025-26",
+    manufacturer: "Topps",
+    brand: "Topps Finest",
+    players: ["Josh Hart"],
+    collector_number: "28"
+  },
+  includeExternal: false
+});
+const compoundBrandIdentityQuery = compoundBrandQueries.find((query) => query.family === "SEARCH_CATALOG_YEAR_PRODUCT_SUBJECT");
+assert.ok(compoundBrandIdentityQuery, "compound brand should recover a missing product-family anchor");
+assert.equal(compoundBrandIdentityQuery.exact_product, "Topps Finest");
+assert.equal(
+  compoundBrandQueries.find((query) => query.family === "SEARCH_CATALOG_EXACT_CODE")?.exact_product,
+  "Topps Finest"
+);
+
+const bareManufacturerBrandQueries = planRetrievalQueries({
+  resolved: {
+    year: "2025",
+    manufacturer: "Topps",
+    brand: "Topps",
+    players: ["Unknown Player"],
+    collector_number: "28"
+  },
+  includeExternal: false
+});
+assert.equal(
+  bareManufacturerBrandQueries.some((query) => query.family === "SEARCH_CATALOG_YEAR_PRODUCT_SUBJECT"),
+  false,
+  "a bare manufacturer must not be promoted into a product identity anchor"
+);
+assert.equal(
+  bareManufacturerBrandQueries.find((query) => query.family === "SEARCH_CATALOG_EXACT_CODE")?.exact_product,
+  ""
+);
+
 const unknownFallback = correctedTitleRecordToCatalogStaging({
   id: "writer-row-unknown",
   corrected_title: "2025 Mystery Publisher Handmade Artist Card Blue #ABC"

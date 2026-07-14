@@ -123,25 +123,48 @@ function sourceFeedbackId(row = {}) {
 }
 
 async function existingCatalogState({ env, fetchImpl } = {}) {
-  const [sources, cards] = await Promise.all([
-    supabaseRequest({
-      env,
-      path: "/rest/v1/catalog_sources?select=id,source_metadata&source_type=eq.INTERNAL_CORRECTED_TITLE&limit=10000",
-      fetchImpl
-    }),
-    supabaseRequest({
-      env,
-      path: "/rest/v1/catalog_cards?select=id,source_id&limit=10000",
-      fetchImpl
-    })
-  ]);
+  const sources = await supabaseRequest({
+    env,
+    path: "/rest/v1/catalog_sources?select=id,source_metadata&source_type=eq.INTERNAL_CORRECTED_TITLE&limit=10000",
+    fetchImpl
+  });
   const sourceByFeedbackId = new Map();
   for (const source of Array.isArray(sources) ? sources : []) {
     const id = normalizeText(source?.source_metadata?.source_feedback_id);
     if (id) sourceByFeedbackId.set(id, source.id);
   }
-  const cardSourceIds = new Set((Array.isArray(cards) ? cards : []).map((card) => normalizeText(card.source_id)).filter(Boolean));
-  return { sourceByFeedbackId, cardSourceIds };
+
+  const sourceIds = [...new Set([...sourceByFeedbackId.values()].map(normalizeText).filter(Boolean))];
+  const chunks = [];
+  for (let index = 0; index < sourceIds.length; index += 100) chunks.push(sourceIds.slice(index, index + 100));
+  const relatedRows = await Promise.all(chunks.map(async (chunk) => {
+    const filter = `source_id=in.(${chunk.join(",")})`;
+    const [cards, products, sets] = await Promise.all([
+      supabaseRequest({ env, path: `/rest/v1/catalog_cards?select=id,source_id&${filter}&limit=10000`, fetchImpl }),
+      supabaseRequest({ env, path: `/rest/v1/catalog_products?select=id,source_id&${filter}&limit=10000`, fetchImpl }),
+      supabaseRequest({ env, path: `/rest/v1/catalog_sets?select=id,source_id,product_id&${filter}&limit=10000`, fetchImpl })
+    ]);
+    return { cards, products, sets };
+  }));
+
+  const cardSourceIds = new Set();
+  const productBySourceId = new Map();
+  const setBySourceId = new Map();
+  for (const rows of relatedRows) {
+    for (const card of Array.isArray(rows.cards) ? rows.cards : []) {
+      const sourceId = normalizeText(card.source_id);
+      if (sourceId) cardSourceIds.add(sourceId);
+    }
+    for (const product of Array.isArray(rows.products) ? rows.products : []) {
+      const sourceId = normalizeText(product.source_id);
+      if (sourceId && !productBySourceId.has(sourceId)) productBySourceId.set(sourceId, product);
+    }
+    for (const set of Array.isArray(rows.sets) ? rows.sets : []) {
+      const sourceId = normalizeText(set.source_id);
+      if (sourceId && !setBySourceId.has(sourceId)) setBySourceId.set(sourceId, set);
+    }
+  }
+  return { sourceByFeedbackId, cardSourceIds, productBySourceId, setBySourceId };
 }
 
 async function insertReturning({ env, table, row, fetchImpl } = {}) {
@@ -176,11 +199,9 @@ function productRow(sourceId, fields = {}) {
     brand: fields.brand || fields.manufacturer,
     product: fields.product,
     source_id: sourceId,
-    source_status: "AUTO_PARSED_FROM_VERIFIED_TITLE",
-    review_status: "REVIEW_REQUIRED",
-    metadata: {
-      import_source: "corrected_title_catalog_v0"
-    }
+    source_status: "REVIEWED_INTERNAL",
+    review_status: "REVIEWED_INTERNAL",
+    metadata: reviewedInternalMetadata()
   });
 }
 
@@ -192,12 +213,21 @@ function setRow(sourceId, productId, fields = {}) {
     subset: fields.subset,
     official_card_type: fields.official_card_type,
     source_id: sourceId,
-    source_status: "AUTO_PARSED_FROM_VERIFIED_TITLE",
-    review_status: "REVIEW_REQUIRED",
-    metadata: {
-      import_source: "corrected_title_catalog_v0"
-    }
+    source_status: "REVIEWED_INTERNAL",
+    review_status: "REVIEWED_INTERNAL",
+    metadata: reviewedInternalMetadata()
   });
+}
+
+function reviewedInternalMetadata() {
+  return {
+    import_source: "corrected_title_catalog_v0",
+    prompt_safe_internal_writer_title: true,
+    corrected_title_is_ground_truth: true,
+    corrected_title_is_reviewed_title_ground_truth: true,
+    title_ground_truth_scope: "writer_reviewed_marketplace_title",
+    title_derived_fields_are_ground_truth: false
+  };
 }
 
 function cardRow(sourceId, productId, setId, fields = {}, title = "") {
@@ -222,11 +252,9 @@ function cardRow(sourceId, productId, setId, fields = {}, title = "") {
     serial_denominator: fields.serial_denominator,
     canonical_title: title,
     source_id: sourceId,
-    source_status: "AUTO_PARSED_FROM_VERIFIED_TITLE",
-    review_status: "REVIEW_REQUIRED",
-    metadata: {
-      import_source: "corrected_title_catalog_v0"
-    }
+    source_status: "REVIEWED_INTERNAL",
+    review_status: "REVIEWED_INTERNAL",
+    metadata: reviewedInternalMetadata()
   });
 }
 
@@ -255,7 +283,12 @@ export async function importCorrectedTitleCatalogV0({
 
   const rows = feedback.rows.filter((row) => normalizeText(row.corrected_title));
   const existing = dryRun
-    ? { sourceByFeedbackId: new Map(), cardSourceIds: new Set() }
+    ? {
+      sourceByFeedbackId: new Map(),
+      cardSourceIds: new Set(),
+      productBySourceId: new Map(),
+      setBySourceId: new Map()
+    }
     : await existingCatalogState({ env: runtimeEnv, fetchImpl });
 
   const summary = {
@@ -270,8 +303,11 @@ export async function importCorrectedTitleCatalogV0({
     inserted_source_count: 0,
     inserted_staging_count: 0,
     inserted_product_count: 0,
+    reused_product_count: 0,
     inserted_set_count: 0,
+    reused_set_count: 0,
     inserted_card_count: 0,
+    backfilled_existing_source_card_count: 0,
     skipped_existing_card_count: 0,
     skipped_missing_product_count: 0
   };
@@ -285,7 +321,8 @@ export async function importCorrectedTitleCatalogV0({
     summary.parsed_rows += 1;
     const feedbackId = sourceFeedbackId(row);
     let sourceId = existing.sourceByFeedbackId.get(feedbackId);
-    if (sourceId) {
+    const sourceAlreadyExisted = Boolean(sourceId);
+    if (sourceAlreadyExisted) {
       summary.existing_source_count += 1;
     } else if (!dryRun) {
       const insertedSource = await insertReturning({
@@ -305,6 +342,15 @@ export async function importCorrectedTitleCatalogV0({
     }
 
     const identityFields = staged.staging.identity_fields || {};
+    if (!identityFields.product) {
+      summary.skipped_missing_product_count += 1;
+      continue;
+    }
+    if (existing.cardSourceIds.has(sourceId)) {
+      summary.skipped_existing_card_count += 1;
+      continue;
+    }
+
     if (!dryRun && sourceId) {
       await insertStaging({
         env: runtimeEnv,
@@ -317,15 +363,6 @@ export async function importCorrectedTitleCatalogV0({
     }
     summary.inserted_staging_count += sourceId ? 1 : 0;
 
-    if (!identityFields.product) {
-      summary.skipped_missing_product_count += 1;
-      continue;
-    }
-    if (existing.cardSourceIds.has(sourceId)) {
-      summary.skipped_existing_card_count += 1;
-      continue;
-    }
-
     if (dryRun) {
       summary.inserted_product_count += 1;
       if (identityFields.set_or_insert || identityFields.subset || identityFields.official_card_type) summary.inserted_set_count += 1;
@@ -333,28 +370,42 @@ export async function importCorrectedTitleCatalogV0({
       continue;
     }
 
-    const product = await insertReturning({
-      env: runtimeEnv,
-      table: "catalog_products",
-      row: productRow(sourceId, identityFields),
-      fetchImpl
-    });
+    let product = existing.productBySourceId.get(sourceId);
+    const productAlreadyExisted = Boolean(product?.id);
+    if (productAlreadyExisted) {
+      summary.reused_product_count += 1;
+    } else {
+      product = await insertReturning({
+        env: runtimeEnv,
+        table: "catalog_products",
+        row: productRow(sourceId, identityFields),
+        fetchImpl
+      });
+      if (product?.id) {
+        existing.productBySourceId.set(sourceId, product);
+        summary.inserted_product_count += 1;
+      }
+    }
     if (!product?.id) {
       summary.skipped_missing_product_count += 1;
       continue;
     }
-    summary.inserted_product_count += 1;
-
     const preparedSet = setRow(sourceId, product.id, identityFields);
-    const insertedSet = preparedSet
-      ? await insertReturning({
+    let insertedSet = preparedSet ? existing.setBySourceId.get(sourceId) : null;
+    if (insertedSet?.id) {
+      summary.reused_set_count += 1;
+    } else if (preparedSet) {
+      insertedSet = await insertReturning({
         env: runtimeEnv,
         table: "catalog_sets",
         row: preparedSet,
         fetchImpl
-      })
-      : null;
-    if (insertedSet?.id) summary.inserted_set_count += 1;
+      });
+      if (insertedSet?.id) {
+        existing.setBySourceId.set(sourceId, insertedSet);
+        summary.inserted_set_count += 1;
+      }
+    }
 
     const card = await insertReturning({
       env: runtimeEnv,
@@ -365,6 +416,9 @@ export async function importCorrectedTitleCatalogV0({
     if (card?.id) {
       existing.cardSourceIds.add(sourceId);
       summary.inserted_card_count += 1;
+      if (sourceAlreadyExisted) {
+        summary.backfilled_existing_source_card_count += 1;
+      }
     }
   }
 

@@ -53,6 +53,9 @@ const parsedCatalog = correctedTitleRecordToCatalogStaging({
 });
 assert.equal(parsedCatalog.source.source_type, "INTERNAL_CORRECTED_TITLE");
 assert.equal(parsedCatalog.source.source_status, "VERIFIED_CANONICAL_TITLE");
+assert.equal(parsedCatalog.source.source_metadata.import_source, "corrected_title_catalog_v0");
+assert.equal(parsedCatalog.source.source_metadata.prompt_safe_internal_writer_title, true);
+assert.equal(parsedCatalog.source.source_metadata.title_derived_fields_are_ground_truth, false);
 assert.equal(parsedCatalog.staging.identity_fields.surface_color, "Gold");
 assert.equal(parsedCatalog.staging.identity_fields.serial_denominator, "50");
 assert.equal(parsedCatalog.staging.identity_fields.serial_number, undefined);
