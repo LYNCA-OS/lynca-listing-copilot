@@ -8,7 +8,8 @@ import {
 import {
   assertCheckpointWaveAlignment,
   assertLaunchDatasetCapacity,
-  deriveLaunchThroughputCheckpoint
+  deriveLaunchThroughputCheckpoint,
+  inventoryCheckpointLevels
 } from "./run-launch-throughput-benchmark.mjs";
 
 function accuracyReport(rate = 0.888889) {
@@ -106,6 +107,19 @@ assert.equal(
 );
 assert.equal(assertCheckpointWaveAlignment([100, 500, 1000], 50), 50);
 assert.throws(() => assertCheckpointWaveAlignment([100, 550], 100), /must align/);
+assert.equal(assertCheckpointWaveAlignment([100, 255], 25, { allowFinalPartial: true }), 25);
+assert.deepEqual(inventoryCheckpointLevels(255), [100, 255]);
+assert.deepEqual(inventoryCheckpointLevels(1_250), [100, 500, 1000, 1250]);
+assert.equal(assertLaunchDatasetCapacity(
+  { items: Array.from({ length: 255 }, (_, index) => ({ asset_id: `inventory-${index}` })) },
+  [100, 255],
+  { requireAllItems: true }
+).inventory_coverage_rate, 1);
+assert.throws(() => assertLaunchDatasetCapacity(
+  { items: Array.from({ length: 255 }, (_, index) => ({ asset_id: `inventory-${index}` })) },
+  [100],
+  { requireAllItems: true }
+), /complete dataset size 255/);
 
 const checkpoint = deriveLaunchThroughputCheckpoint({
   soak_run_id: "soak-1",

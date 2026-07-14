@@ -96,6 +96,20 @@ try {
     selectionSeed: "test-seed",
     evaluationSampleMode: "FRESH_GENERALIZATION"
   }), /Only 1 eligible reviewed-title image records remain; requested 2/);
+
+  const fullInventory = await buildReviewedTitleBlindEval({
+    sourcePath,
+    outPath: join(root, "full-inventory.json"),
+    labelsOutPath: join(root, "full-inventory-labels.jsonl"),
+    allItems: true,
+    selectionSeed: "inventory-seed",
+    evaluationSampleMode: "FIXED_REGRESSION"
+  });
+  assert.equal(fullInventory.dataset.item_count, 2);
+  assert.equal(fullInventory.dataset.evaluation_sample_policy.inventory_exhaustive, true);
+  assert.equal(fullInventory.dataset.evaluation_sample_policy.inventory_coverage_rate, 1);
+  assert.equal(fullInventory.dataset.evaluation_sample_policy.reuse_policy_complete, true);
+  assert.equal(fullInventory.labels.length, 2);
 } finally {
   await rm(root, { recursive: true, force: true });
 }

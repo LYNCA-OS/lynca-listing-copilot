@@ -99,6 +99,8 @@ export async function runV4MultiTenantSoak({
   if (!datasetPath) throw new Error("--dataset is required");
   const dataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
   const datasetPolicy = soakSamplePolicy(dataset);
+  const reviewedTitleGroundTruth = !Array.isArray(dataset)
+    && dataset.accuracy_policy?.corrected_title_is_reviewed_title_ground_truth === true;
   const plan = buildV4SoakWavePlan({
     totalItems: datasetItems(dataset).length,
     limit,
@@ -186,8 +188,12 @@ export async function runV4MultiTenantSoak({
     },
     blind_policy: {
       seller_title_visible_to_model: false,
-      seller_title_used_for_local_eval_only: true,
+      seller_title_used_for_local_eval_only: !reviewedTitleGroundTruth,
       seller_title_is_ground_truth: false,
+      reviewed_title_visible_to_model: false,
+      reviewed_title_used_for_local_eval_only: reviewedTitleGroundTruth,
+      reviewed_title_is_title_ground_truth: reviewedTitleGroundTruth,
+      reviewed_title_is_field_ground_truth: false,
       predictions_frozen_before_scoring: true
     },
     wave_reports: reports.map((report) => ({

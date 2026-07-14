@@ -112,9 +112,12 @@ export async function buildReviewedTitleBlindEval({
   outPath = defaultOut,
   labelsOutPath = defaultLabelsOut,
   limit = 30,
+  allItems = false,
   allowPartial = false,
   selectionSeed = "reviewed-title-blind-v1",
   evaluationSampleMode = "FRESH_GENERALIZATION",
+  reuseReason = "",
+  reuseScopeId = "",
   now = new Date()
 } = {}) {
   const source = await readStructuredFile(sourcePath);
@@ -124,12 +127,13 @@ export async function buildReviewedTitleBlindEval({
   }
   const mode = normalizeEvaluationSampleMode(evaluationSampleMode);
   const candidates = loadItems(source).filter(eligibleItem).filter((item) => !excludedIds.has(cleanText(item.source_feedback_id)));
+  const requestedCount = allItems ? candidates.length : Math.max(1, limit);
   const selected = candidates
     .sort((left, right) => selectionOrder(selectionSeed, left).localeCompare(selectionOrder(selectionSeed, right)))
-    .slice(0, Math.max(1, limit));
+    .slice(0, requestedCount);
   if (!selected.length) throw new Error("No eligible reviewed-title image records remain after exclusions.");
-  if (!allowPartial && selected.length < Math.max(1, limit)) {
-    throw new Error(`Only ${selected.length} eligible reviewed-title image records remain; requested ${Math.max(1, limit)}.`);
+  if (!allItems && !allowPartial && selected.length < requestedCount) {
+    throw new Error(`Only ${selected.length} eligible reviewed-title image records remain; requested ${requestedCount}.`);
   }
 
   const items = [];
@@ -176,7 +180,9 @@ export async function buildReviewedTitleBlindEval({
     mode,
     excludedItemIds: [...excludedIds],
     selectedItemIds: selected.map((item) => item.source_feedback_id),
-    exclusionSourceCount: excludePaths.length
+    exclusionSourceCount: excludePaths.length,
+    reuseReason: reuseReason || (allItems ? "Exhaustive replay of every image-backed reviewed card currently in the internal library." : ""),
+    reuseScopeId: reuseScopeId || (allItems ? "supabase-reviewed-image-inventory" : "")
   });
   const dataset = {
     schema_version: "reviewed-title-blind-eval-v1",
@@ -185,7 +191,15 @@ export async function buildReviewedTitleBlindEval({
     selection_seed: selectionSeed,
     item_count: items.length,
     eligible_source_count: candidates.length,
-    evaluation_sample_policy: evaluationSamplePolicy,
+    evaluation_sample_policy: {
+      ...evaluationSamplePolicy,
+      inventory_exhaustive: allItems,
+      eligible_inventory_count: candidates.length,
+      selected_inventory_count: selected.length,
+      inventory_coverage_rate: candidates.length
+        ? Number((selected.length / candidates.length).toFixed(6))
+        : null
+    },
     accuracy_policy: {
       corrected_title_is_reviewed_title_ground_truth: true,
       corrected_title_is_field_ground_truth: false,
@@ -194,6 +208,7 @@ export async function buildReviewedTitleBlindEval({
     },
     intake_policy: {
       image_only: true,
+      inventory_exhaustive: allItems,
       reviewed_titles_in_dataset: false,
       source_feedback_id_used_for_self_exclusion_only: true
     },
@@ -212,9 +227,12 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     outPath: argValue(argv, "--out", env.REVIEWED_TITLE_BLIND_OUT || defaultOut),
     labelsOutPath: argValue(argv, "--sealed-labels-out", env.REVIEWED_TITLE_LABELS_OUT || defaultLabelsOut),
     limit: numberArg(argv, "--limit", Number(env.REVIEWED_TITLE_BLIND_LIMIT || 30)),
+    allItems: argv.includes("--all-items"),
     allowPartial: argv.includes("--allow-partial"),
     selectionSeed: argValue(argv, "--selection-seed", env.REVIEWED_TITLE_SELECTION_SEED || `reviewed-${Date.now()}`),
-    evaluationSampleMode: argValue(argv, "--sample-mode", env.EVALUATION_SAMPLE_MODE || "FRESH_GENERALIZATION")
+    evaluationSampleMode: argValue(argv, "--sample-mode", env.EVALUATION_SAMPLE_MODE || "FRESH_GENERALIZATION"),
+    reuseReason: argValue(argv, "--reuse-reason", env.EVALUATION_REUSE_REASON || ""),
+    reuseScopeId: argValue(argv, "--reuse-scope-id", env.EVALUATION_REUSE_SCOPE_ID || "")
   });
   process.stdout.write(`${JSON.stringify({
     ok: true,
@@ -222,6 +240,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     eligible_source_count: result.dataset.eligible_source_count,
     sample_mode: result.dataset.evaluation_sample_policy.mode,
     novelty_verified: result.dataset.evaluation_sample_policy.novelty_verified,
+    inventory_exhaustive: result.dataset.evaluation_sample_policy.inventory_exhaustive,
+    inventory_coverage_rate: result.dataset.evaluation_sample_policy.inventory_coverage_rate,
     out: resolve(argValue(argv, "--out", env.REVIEWED_TITLE_BLIND_OUT || defaultOut)),
     sealed_labels_out: resolve(argValue(argv, "--sealed-labels-out", env.REVIEWED_TITLE_LABELS_OUT || defaultLabelsOut))
   }, null, 2)}\n`);

@@ -1,0 +1,234 @@
+name: launch-inventory-benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_only:
+        description: "Validate the complete reviewed image inventory without paid recognition"
+        required: true
+        type: boolean
+        default: true
+      model:
+        description: "Production model"
+        required: true
+        default: "gpt-5-mini"
+      concurrency:
+        description: "Global GPT provider concurrency"
+        required: true
+        default: "2"
+      tenant_count:
+        description: "Simulated production tenants"
+        required: true
+        default: "5"
+      wave_size:
+        description: "Cards per non-overlapping wave"
+        required: true
+        default: "25"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      actions: read
+    env:
+      BASE_URL: https://listing.lyncafei.team
+      SOURCE_DATASET: data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Capture and validate production runtime
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+          EXPECTED_MODEL: ${{ inputs.model }}
+          EXPECTED_CONCURRENCY: ${{ inputs.concurrency }}
+        run: |
+          curl -fsS --max-time 30 "$BASE_URL/api/v4/health" -o /tmp/runtime-start.json
+          curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
+            -H 'content-type: application/json' \
+            --data "$(node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))')" \
+            "$BASE_URL/api/login" -o /tmp/login.json
+          curl -fsS --max-time 45 -b /tmp/lynca-cookies.txt \
+            "$BASE_URL/api/listing-provider-status" -o /tmp/provider-start.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const health = JSON.parse(fs.readFileSync('/tmp/runtime-start.json', 'utf8'));
+          const status = JSON.parse(fs.readFileSync('/tmp/provider-start.json', 'utf8'));
+          const provider = (status.providers || []).find(x => x.selectable) || {};
+          const execution = status.execution_control || {};
+          const components = new Map((status.workflow_readiness?.components || []).map(x => [x.id, x]));
+          const vector = components.get('vector_retrieval') || {};
+          const checks = {
+            v4_ready: health.ready === true,
+            queue_configured: health.production_queue?.configured === true,
+            worker_secret_configured: health.production_queue?.worker_secret_configured === true,
+            model_matches: provider.model_id === process.env.EXPECTED_MODEL,
+            cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
+            key_pool_ready: Number(execution.provider_key_pool_size || 0) >= 1,
+            provider_concurrency_matches: Number(execution.global_provider_concurrency) === Number(process.env.EXPECTED_CONCURRENCY),
+            vector_index_ready: health.vector_index_ready === true && vector.details?.index_ready === true,
+            vector_lazy_override_supported: vector.details?.request_override_supported === true
+          };
+          const snapshot = {
+            deployment_sha: String(health.deployment?.git_commit_sha || ''),
+            model_id: provider.model_id || null,
+            checks,
+            execution_control: execution,
+            vector: vector.details || null
+          };
+          fs.writeFileSync('/tmp/runtime-snapshot.json', JSON.stringify(snapshot, null, 2));
+          console.log(JSON.stringify(snapshot, null, 2));
+          if (!snapshot.deployment_sha || Object.values(checks).some(value => value !== true)) process.exit(1);
+          NODE
+
+      - name: Build complete image-only reviewed inventory
+        run: |
+          node scripts/build-reviewed-title-blind-eval.mjs \
+            --source "$SOURCE_DATASET" \
+            --out /tmp/inventory-dataset.json \
+            --sealed-labels-out /tmp/inventory-sealed-labels.jsonl \
+            --all-items \
+            --sample-mode FIXED_REGRESSION \
+            --selection-seed launch-reviewed-inventory-v1
+
+      - name: Enforce inventory completeness and anti-leakage
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { assertLaunchDatasetCapacity, inventoryCheckpointLevels } from './scripts/run-launch-throughput-benchmark.mjs';
+          const source = JSON.parse(fs.readFileSync(process.env.SOURCE_DATASET, 'utf8'));
+          const dataset = JSON.parse(fs.readFileSync('/tmp/inventory-dataset.json', 'utf8'));
+          const labels = fs.readFileSync('/tmp/inventory-sealed-labels.jsonl', 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+          const items = dataset.items || [];
+          const levels = inventoryCheckpointLevels(items.length);
+          const capacity = assertLaunchDatasetCapacity(dataset, levels, { requireAllItems: true });
+          const leaked = items.filter(item => item.canonical_title || Object.keys(item.source_titles || {}).length);
+          const sourceEligible = (source.items || []).filter(item => (
+            item.source_record?.reviewed_ground_truth === true
+            && item.source_titles?.corrected_title
+            && (item.images || []).some(image => image?.bucket && image?.object_path)
+          ));
+          const imageCount = items.reduce((sum, item) => sum + (item.images || []).length, 0);
+          const report = {
+            ...capacity,
+            source_declared_item_count: Number(source.item_count || 0),
+            source_eligible_item_count: sourceEligible.length,
+            sealed_label_count: labels.length,
+            image_object_count: imageCount,
+            title_leak_count: leaked.length,
+            sample_mode: dataset.evaluation_sample_policy?.mode || null,
+            reuse_policy_complete: dataset.evaluation_sample_policy?.reuse_policy_complete === true,
+            inventory_exhaustive: dataset.evaluation_sample_policy?.inventory_exhaustive === true,
+            inventory_coverage_rate: dataset.evaluation_sample_policy?.inventory_coverage_rate,
+            checkpoints: levels
+          };
+          fs.writeFileSync('/tmp/inventory-probe.json', JSON.stringify(report, null, 2));
+          fs.appendFileSync(process.env.GITHUB_ENV, `INVENTORY_COUNT=${items.length}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `INVENTORY_LEVELS=${levels.join(',')}\n`);
+          console.log(JSON.stringify(report, null, 2));
+          if (!items.length
+            || items.length !== sourceEligible.length
+            || labels.length !== items.length
+            || leaked.length
+            || !report.reuse_policy_complete
+            || !report.inventory_exhaustive
+            || report.inventory_coverage_rate !== 1) process.exit(1);
+          NODE
+
+      - name: Run one sustained complete-inventory benchmark
+        if: ${{ inputs.probe_only == false }}
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          node scripts/run-launch-throughput-benchmark.mjs \
+            --dataset /tmp/inventory-dataset.json \
+            --sealed-labels /tmp/inventory-sealed-labels.jsonl \
+            --all-items \
+            --wave-size "${{ inputs.wave_size }}" \
+            --tenant-count "${{ inputs.tenant_count }}" \
+            --concurrency "${{ inputs.concurrency }}" \
+            --model "${{ inputs.model }}" \
+            --think-ms 0 \
+            --l2-wait-ms 3600000 \
+            --request-timeout-ms 120000 \
+            --out-dir /tmp/inventory-benchmark
+
+      - name: Assess current-inventory performance and evidence boundary
+        if: ${{ inputs.probe_only == false }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { assessLaunchReliability, assessLaunchThroughput, launchGateThresholds } from './lib/listing/evaluation/launch-benchmark.mjs';
+          const index = JSON.parse(fs.readFileSync('/tmp/inventory-benchmark/index.json', 'utf8'));
+          const levels = index.levels || [];
+          const inventoryCount = Number(index.inventory_item_count || 0);
+          const throughput = levels.map(level => JSON.parse(fs.readFileSync(`/tmp/inventory-benchmark/throughput-${level}.json`, 'utf8')));
+          const reliabilityReport = JSON.parse(fs.readFileSync(`/tmp/inventory-benchmark/reliability-${inventoryCount}.json`, 'utf8'));
+          const thresholds = {
+            ...launchGateThresholds,
+            throughput_levels: levels,
+            minimum_reliability_cards: inventoryCount
+          };
+          const result = {
+            schema_version: 'current-inventory-launch-evidence-v1',
+            scope: 'CURRENT_REVIEWED_IMAGE_INVENTORY',
+            inventory_item_count: inventoryCount,
+            inventory_exhaustive: index.execution_policy?.inventory_exhaustive === true,
+            proves_1000_card_scale: inventoryCount >= 1000,
+            evidence_boundary: inventoryCount >= 1000
+              ? 'FULL_1000_CARD_SCALE_MEASURED'
+              : 'COMPLETE_CURRENT_INVENTORY_MEASURED_BUT_1000_CARD_SCALE_NOT_PROVEN',
+            reviewed_title_accuracy: reliabilityReport.summary?.reviewed_title_policy_acceptance || null,
+            accuracy_proxies: reliabilityReport.summary?.final_accuracy_proxy || null,
+            formal_sem_accuracy: {
+              status: 'NOT_MEASURED',
+              reason: 'WRITER_REVIEWED_TITLES_ARE_TITLE_GROUND_TRUTH_NOT_FIELD_LEVEL_GOLDEN_SEM'
+            },
+            throughput: assessLaunchThroughput(throughput, thresholds),
+            reliability: assessLaunchReliability(reliabilityReport, thresholds)
+          };
+          fs.writeFileSync('/tmp/inventory-performance-gate.json', JSON.stringify(result, null, 2));
+          console.log(JSON.stringify(result, null, 2));
+          if (result.throughput.verdict !== 'PASS' || result.reliability.verdict !== 'PASS') process.exit(1);
+          NODE
+
+      - name: Verify production revision did not drift
+        if: always()
+        run: |
+          curl -fsS --max-time 30 "$BASE_URL/api/v4/health" -o /tmp/runtime-end.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const start = JSON.parse(fs.readFileSync('/tmp/runtime-snapshot.json', 'utf8'));
+          const end = JSON.parse(fs.readFileSync('/tmp/runtime-end.json', 'utf8'));
+          const endSha = String(end.deployment?.git_commit_sha || '');
+          const report = {start_sha:start.deployment_sha,end_sha:endSha,unchanged:Boolean(endSha) && endSha === start.deployment_sha};
+          fs.writeFileSync('/tmp/runtime-drift.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report, null, 2));
+          if (!report.unchanged) process.exit(1);
+          NODE
+
+      - name: Upload complete-inventory benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: launch-inventory-benchmark-${{ inputs.probe_only && 'probe' || 'full' }}
+          path: |
+            /tmp/runtime-snapshot.json
+            /tmp/runtime-drift.json
+            /tmp/inventory-probe.json
+            /tmp/inventory-benchmark/*.json
+            /tmp/inventory-benchmark/*.tsv
+            /tmp/inventory-benchmark/reliability-*-waves/*.json
+            /tmp/inventory-benchmark/reliability-*-waves/*.tsv
+            /tmp/inventory-performance-gate.json
+          if-no-files-found: warn
+          retention-days: 14

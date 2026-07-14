@@ -29,6 +29,13 @@ export function levelsArg(argv) {
   return [...new Set(levels)].sort((left, right) => left - right);
 }
 
+export function inventoryCheckpointLevels(itemCount) {
+  const total = Math.max(0, Math.trunc(Number(itemCount) || 0));
+  if (!total) return [];
+  return [...new Set([100, 500, 1000].filter((level) => level < total).concat(total))]
+    .sort((left, right) => left - right);
+}
+
 async function writeJson(path, value) {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
 }
@@ -47,7 +54,9 @@ function datasetItemId(item = {}) {
   );
 }
 
-export function assertLaunchDatasetCapacity(dataset = {}, levels = launchGateThresholds.throughput_levels) {
+export function assertLaunchDatasetCapacity(dataset = {}, levels = launchGateThresholds.throughput_levels, {
+  requireAllItems = false
+} = {}) {
   const items = datasetItems(dataset);
   const required = Math.max(...levels);
   const ids = items.map(datasetItemId).filter(Boolean);
@@ -58,16 +67,27 @@ export function assertLaunchDatasetCapacity(dataset = {}, levels = launchGateThr
   if (ids.length < required || uniqueIds.size < required) {
     throw new Error(`Launch benchmark requires ${required} uniquely identified items; found ${uniqueIds.size}.`);
   }
+  if (requireAllItems && required !== items.length) {
+    throw new Error(`Inventory benchmark must end at the complete dataset size ${items.length}; configured maximum is ${required}.`);
+  }
+  if (requireAllItems && uniqueIds.size !== items.length) {
+    throw new Error(`Inventory benchmark requires every dataset item to have a unique identity; found ${uniqueIds.size}/${items.length}.`);
+  }
   return {
     required_item_count: required,
     dataset_item_count: items.length,
-    uniquely_identified_item_count: uniqueIds.size
+    uniquely_identified_item_count: uniqueIds.size,
+    inventory_exhaustive: requireAllItems,
+    inventory_coverage_rate: requireAllItems ? 1 : Number((required / items.length).toFixed(6))
   };
 }
 
-export function assertCheckpointWaveAlignment(levels = [], waveSize = 50) {
+export function assertCheckpointWaveAlignment(levels = [], waveSize = 50, {
+  allowFinalPartial = false
+} = {}) {
   const size = Math.max(1, Math.trunc(Number(waveSize) || 1));
-  const misaligned = levels.filter((level) => level % size !== 0);
+  const finalLevel = Math.max(...levels);
+  const misaligned = levels.filter((level) => level % size !== 0 && !(allowFinalPartial && level === finalLevel));
   if (misaligned.length) {
     throw new Error(`Throughput checkpoints ${misaligned.join(",")} must align to wave size ${size}.`);
   }
@@ -114,14 +134,16 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   const requestTimeoutMs = numberArg(argv, "--request-timeout-ms", 120_000);
   const modelOverride = argValue(argv, "--model", "gpt-5-mini");
   const outDir = resolve(argValue(argv, "--out-dir", `data/eval/launch-benchmark/throughput-${Date.now()}`));
-  const levels = levelsArg(argv);
+  const allItems = argv.includes("--all-items");
   if (!datasetPath) throw new Error("--dataset is required");
-  if (!levels.length || Math.max(...levels) < 1000) {
+  const dataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
+  const levels = allItems ? inventoryCheckpointLevels(datasetItems(dataset).length) : levelsArg(argv);
+  if (!allItems && (!levels.length || Math.max(...levels) < 1000)) {
     throw new Error("launch throughput benchmark must include the 1000-card level");
   }
-  assertCheckpointWaveAlignment(levels, waveSize);
-  const dataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
-  const datasetCapacity = assertLaunchDatasetCapacity(dataset, levels);
+  if (!levels.length) throw new Error("benchmark dataset has no inventory items");
+  assertCheckpointWaveAlignment(levels, waveSize, { allowFinalPartial: allItems });
+  const datasetCapacity = assertLaunchDatasetCapacity(dataset, levels, { requireAllItems: allItems });
   await mkdir(outDir, { recursive: true });
 
   const maximumLevel = Math.max(...levels);
@@ -157,7 +179,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     await writeJson(join(outDir, `throughput-${report.benchmark_level}.json`), report);
   }
   const index = {
-    schema_version: "launch-throughput-benchmark-v2",
+    schema_version: "launch-throughput-benchmark-v3",
     generated_at: new Date().toISOString(),
     dataset_path: datasetPath,
     dataset_capacity: datasetCapacity,
@@ -166,10 +188,15 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     tenant_count: tenantCount,
     wave_size: waveSize,
     levels,
+    benchmark_scope: allItems ? "CURRENT_REVIEWED_IMAGE_INVENTORY" : "FIXED_LAUNCH_SCALE",
+    inventory_item_count: allItems ? maximumLevel : null,
+    proves_1000_card_scale: maximumLevel >= 1000,
     execution_policy: {
       one_sustained_run: true,
       checkpoints_derived_from_same_run: true,
-      repeated_model_calls_for_smaller_levels: false
+      repeated_model_calls_for_smaller_levels: false,
+      inventory_exhaustive: allItems,
+      repeated_items_used_to_reach_scale: false
     },
     reliability_report_path: reliabilityPath,
     reports: reports.map((report) => ({
