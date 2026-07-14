@@ -1145,6 +1145,30 @@ await ebay.search({
 assert.equal(ebayTokenCalls, 1);
 assert.equal(ebayBrowseCalls, 2);
 
+let globalBrowseFilter = "not-called";
+await ebayBrowseProvider({
+  env: {
+    EBAY_CLIENT_ID: "test-client-id",
+    EBAY_CLIENT_SECRET: "test-client-secret",
+    EBAY_BROWSE_FILTER: "sellers:{dcsports87}"
+  },
+  fetchImpl: async (url) => {
+    const requestUrl = new URL(String(url));
+    if (requestUrl.pathname === "/identity/v1/oauth2/token") {
+      return jsonResponse({ access_token: "global-test-access-token", expires_in: 3600 });
+    }
+    globalBrowseFilter = requestUrl.searchParams.get("filter");
+    return jsonResponse({ total: 0, itemSummaries: [] });
+  }
+}).search({
+  query: {
+    query_id: "ebay_global_filter_bypass",
+    query: "trading card",
+    disable_env_filter: true
+  }
+});
+assert.equal(globalBrowseFilter, null);
+
 await assert.rejects(
   () => ebay.search({
     query: {

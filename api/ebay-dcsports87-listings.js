@@ -300,6 +300,7 @@ export function createEbaySellerListingsHandler({
           offset,
           limit: providerLimit,
           category_ids: categoryIds,
+          disable_env_filter: allowGlobalSearch && !validSeller,
           ...(validSeller ? { seller_username: validSeller } : {})
         }
       });

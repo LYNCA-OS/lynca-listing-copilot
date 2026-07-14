@@ -409,6 +409,7 @@ assert.equal(response.body.returned_count, 2);
 assert.equal(response.body.listings[0].seller_verification, "RESPONSE_PRESENT");
 assert.equal(globalQuery.limit, 200);
 assert.equal("seller_username" in globalQuery, false);
+assert.equal(globalQuery.disable_env_filter, true);
 
 assert.equal(normalizeBaseUrl("https://example.com/"), "https://example.com");
 assert.throws(() => normalizeBaseUrl(""), /API_BASE_URL/);
