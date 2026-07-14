@@ -168,6 +168,7 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
     timing: {
       worker_queue_wait_ms: 125,
       worker_processing_ms: 22500,
+      writer_visible_recognition_ms: 7800,
       completion_payload_sanitized_nul_count: 1,
       writer_ready_capacity_release: {
         released: true,
@@ -182,6 +183,8 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
       provider_key_count: 2,
       provider_key_assignment: "balanced_round_robin_v1"
     },
+    recognition_started_at: "2026-07-14T00:00:01.000Z",
+    recognition_start_source: "gpt_provider_request",
     end_to_end_node_ledger: { coverage: { missing_required_node_count: 0 }, nodes: [] },
     session: {
       status: "DRAFT_READY",
@@ -203,6 +206,9 @@ assert.deepEqual(hydratedDiagnostic.retry_error_codes, ["QUEUE_COMPLETION_WRITE_
 assert.equal(hydratedDiagnostic.retry_attempt_history[0].attempt, 1);
 assert.equal(hydratedDiagnostic.completion_payload_sanitized_nul_count, 1);
 assert.equal(hydratedDiagnostic.worker_processing_ms, 22500);
+assert.equal(hydratedDiagnostic.recognition_started_at, "2026-07-14T00:00:01.000Z");
+assert.equal(hydratedDiagnostic.recognition_start_source, "gpt_provider_request");
+assert.equal(hydratedDiagnostic.writer_visible_recognition_ms, 7800);
 assert.equal(hydratedDiagnostic.input_tokens, 99);
 assert.equal(hydratedDiagnostic.pipeline_node_ledger.coverage.missing_required_node_count, 0);
 assert.equal(hydratedDiagnostic.preingestion_ocr_rendezvous.status, "EVIDENCE_READY");
@@ -236,6 +242,25 @@ assert.equal(speedSmokeSummary.pipeline_node_observability.transport_error_count
 assert.equal(speedSmokeSummary.pipeline_node_observability.field_quality_error_count, 1);
 assert.equal(speedSmokeSummary.writer_ready_capacity_atomic_count, 1);
 assert.equal(speedSmokeSummary.provider_key_assignment_breakdown.balanced_round_robin_v1, 1);
+
+const gradeQualitySummary = summarizePipelineNodeLedgers([{
+  asset_id: "asset-grade-rendering",
+  pipeline_node_ledger: {
+    nodes: [],
+    coverage: { missing_required_node_count: 0 },
+    reconciliation: {
+      anomaly_count: 1,
+      error_count: 1,
+      warning_count: 0,
+      anomalies: [{
+        check_id: "resolved_grade_is_rendered",
+        severity: "ERROR"
+      }]
+    }
+  }
+}]);
+assert.equal(gradeQualitySummary.field_quality_error_count, 1);
+assert.equal(gradeQualitySummary.transport_error_count, 0, "grade rendering loss is a field-quality error, not a cloud transport failure");
 
 for (const code of ["PA-ANT", "83T-6", "OP01-001", "CT14-EN001", "EN001", "201/165", "PAU", "SV2A 201/165"]) {
   assert.equal(normalizePrintedCardCodeForFields(code), code, `${code} should remain a valid compact printed code`);

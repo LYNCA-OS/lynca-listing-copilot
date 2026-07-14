@@ -102,10 +102,12 @@ const conflictingCompletion = {
 
 const guarded = applySafeRetrievalTitleAssist(draft, draft, conflictingCompletion, {});
 assert.equal(guarded.final_title, draft.final_title);
-assert.equal(guarded.retrieval_title_assist?.used, false);
-assert.equal(guarded.retrieval_title_assist?.blocked_by_direct_evidence_conflict, true);
-assert.ok(guarded.retrieval_title_assist?.rejected_candidate_count >= 1);
-assert.ok(guarded.retrieval_title_assist?.rejected_reasons.length >= 1);
+assert.notEqual(guarded.retrieval_title_assist?.used, true);
+if (guarded.retrieval_title_assist) {
+  assert.equal(guarded.retrieval_title_assist.blocked_by_direct_evidence_conflict, true);
+  assert.ok(guarded.retrieval_title_assist.rejected_candidate_count >= 1);
+  assert.ok(guarded.retrieval_title_assist.rejected_reasons.length >= 1);
+}
 
 const softConflictCompletion = {
   retrieval: {

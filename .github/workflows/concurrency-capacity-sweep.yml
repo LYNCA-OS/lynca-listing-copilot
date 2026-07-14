@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
     inputs:
       levels:
-        description: "Comma-separated offered-load levels (current production: 1,2,3; confirmation: 2,3)"
-        default: "1,2,3"
+        description: "Comma-separated queue-submission levels; GPT provider capacity remains fixed at 2"
+        default: "2,4,6"
       cards_per_level:
         description: "Fresh blind cards per concurrency level"
         default: "6"
@@ -201,12 +201,13 @@ jobs:
           EXECUTED_LEVELS=()
           for LEVEL in "${LEVELS[@]}"; do
             LEVEL="$(echo "$LEVEL" | xargs)"
-            echo "Running c${LEVEL} with at most ${LEVEL} cards in flight"
+            echo "Running submission c${LEVEL}; GPT provider capacity remains fixed at 2"
             node scripts/v4-ebay-smoke.mjs \
               --dataset "$PAIRED_DATASET_PATH" \
               --sealed-labels "$PAIRED_LABELS_PATH" \
               --limit "$ACTUAL_CARDS_PER_LEVEL" \
-              --concurrency "$LEVEL" \
+              --concurrency 2 \
+              --submission-concurrency "$LEVEL" \
               --queue --speculative --use-preingestion --per-card-poll \
               --ultra-fast-l2 --ultra-image-detail high --ultra-service-tier priority \
               --disable-identity-cache \
@@ -243,6 +244,8 @@ jobs:
           for (const row of comparison.rows) {
             console.log(JSON.stringify({
               concurrency:row.concurrency,
+              submission_concurrency:row.submission_concurrency,
+              provider_concurrency:row.provider_concurrency,
               stable:row.stable,
               cards_per_minute:row.completed_cards_per_minute,
               policy_adjusted_cards_per_minute:row.policy_adjusted_cards_per_minute,
@@ -250,6 +253,9 @@ jobs:
               pass72:`${row.pass_at_0_72_count}/${row.attempted_count}`,
               writer_p50_ms:row.writer_ready_p50_ms,
               writer_p95_ms:row.writer_ready_p95_ms,
+              active_recognition_p95_ms:row.writer_visible_recognition_p95_ms,
+              active_recognition_measurement_rate:row.writer_visible_recognition_measurement_rate,
+              recognition_start_sources:row.recognition_start_source_breakdown,
               queue_p95_ms:row.scheduler_queue_wait_p95_ms,
               queue_tail_share:row.queue_tail_share,
               writer_tail_amplification:row.writer_tail_amplification,
@@ -300,7 +306,12 @@ jobs:
             const report = JSON.parse(fs.readFileSync(`/tmp/concurrency-c${level}-report.json`, 'utf8'));
             const summary = report.summary || {};
             const nodes = summary.pipeline_node_observability || {};
+            if (Number(report.provider_concurrency) !== 2) throw new Error(`c${level}: provider concurrency drifted from 2`);
+            if (Number(report.submission_concurrency) !== level) throw new Error(`c${level}: submission concurrency was not applied`);
             if (summary.ok_count !== summary.attempted_count) throw new Error(`c${level}: technical completion failed`);
+            if (Number(summary.writer_visible_recognition_measured_count || 0) !== Number(summary.ok_count || 0)) {
+              throw new Error(`c${level}: active recognition timing is incomplete`);
+            }
             if (nodes.ledger_present_count !== summary.attempted_count) throw new Error(`c${level}: node ledger incomplete`);
             if (Number(nodes.transport_error_count || 0) !== 0) throw new Error(`c${level}: transport node reconciliation error`);
             if (Number(nodes.missing_required_node_count || 0) !== 0) throw new Error(`c${level}: required node missing`);

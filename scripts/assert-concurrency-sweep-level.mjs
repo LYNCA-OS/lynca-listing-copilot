@@ -22,7 +22,11 @@ export function assessConcurrencySweepLevel(report = {}, concurrency = 0) {
     attempted_count: row.attempted_count,
     ok_count: row.ok_count,
     completed_cards_per_minute: row.completed_cards_per_minute,
+    submission_concurrency: row.submission_concurrency,
+    provider_concurrency: row.provider_concurrency,
     writer_ready_p95_ms: row.writer_ready_p95_ms,
+    writer_visible_recognition_p95_ms: row.writer_visible_recognition_p95_ms,
+    writer_visible_recognition_measurement_rate: row.writer_visible_recognition_measurement_rate,
     scheduler_queue_wait_p95_ms: row.scheduler_queue_wait_p95_ms
   };
 }

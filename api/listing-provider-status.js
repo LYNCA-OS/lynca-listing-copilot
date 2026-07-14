@@ -8,6 +8,7 @@ import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mj
 import {
   v4ProviderDoneCapacityHandoffEnabled,
   v4ProviderCapacityControlEnabled,
+  v4QueueSubmissionConcurrency,
   v4QueueGlobalDrainEnabled,
   v4QueueKickDedupMs
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
@@ -96,6 +97,7 @@ function workflowReadinessCacheKey(env = process.env) {
     "RETRIEVAL_INTERNAL_QUERY_CONCURRENCY",
     "VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED",
     "VECTOR_QUERY_GLOBAL_CAPACITY",
+    "V4_QUEUE_SUBMISSION_CONCURRENCY",
     "VISUAL_VECTOR_INDEX_CONCURRENCY",
     "DATA_LOOP_SIDECARS_ENABLED",
     "DATA_LOOP_PADDLE_OCR_DISPATCH_ENABLED",
@@ -290,6 +292,7 @@ export default async function handler(req, res) {
       provider_key_pool_size: providerPool.key_pool_size,
       per_key_stable_concurrency: providerPool.per_key_stable_concurrency,
       global_provider_concurrency: providerPool.global_concurrency,
+      queue_submission_concurrency: v4QueueSubmissionConcurrency(process.env),
       stage_capacity: {
         paddle_ocr: stageCapacity.ocr,
         catalog: stageCapacity.catalog,

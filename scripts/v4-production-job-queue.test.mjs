@@ -19,7 +19,8 @@ import {
   v4JobLeaseHeartbeatIntervalMs,
   v4JobLanes,
   v4JobTypes,
-  v4JobStatuses
+  v4JobStatuses,
+  v4QueueSubmissionConcurrency
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
 import {
   payloadForV4ProductionJob,
@@ -30,6 +31,17 @@ import { isV4CronRequest, isV4WorkerRequest, workerSecretHeader } from "../lib/l
 import { persistV4WriterReadyAndReleaseCapacity } from "../lib/listing/v4/session/session-store.mjs";
 
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
+
+assert.equal(
+  v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "6" }),
+  6,
+  "queue submission capacity must be independently configurable"
+);
+assert.equal(
+  v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "99" }),
+  12,
+  "queue submission capacity must remain bounded"
+);
 
 function jsonResponse(body, init = {}) {
   return {

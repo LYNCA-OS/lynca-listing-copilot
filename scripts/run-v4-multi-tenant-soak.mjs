@@ -69,6 +69,7 @@ export async function runV4MultiTenantSoak({
   waveSize = 20,
   tenantCount = 5,
   concurrency = 2,
+  submissionConcurrency = null,
   modelOverride = "gpt-5-mini",
   thinkMs = 5000,
   l2WaitMs = 3_600_000,
@@ -115,6 +116,7 @@ export async function runV4MultiTenantSoak({
       l2WaitMs,
       requestTimeoutMs,
       concurrency,
+      submissionConcurrency,
       tenantCount,
       tenantPrefix: `${runId}-client`,
       batchPoll: true,
@@ -149,6 +151,7 @@ export async function runV4MultiTenantSoak({
     sealed_labels_path: sealedLabelsPath || null,
     model_override: modelOverride || null,
     configured_concurrency: concurrency,
+    configured_submission_concurrency: submissionConcurrency ?? concurrency,
     tenant_count: tenantCount,
     wave_size: waveSize,
     wave_count: reports.length,
@@ -200,6 +203,9 @@ export async function main(argv = process.argv, env = process.env) {
     waveSize: numberArg(argv, "--wave-size", 20),
     tenantCount: numberArg(argv, "--tenant-count", 5),
     concurrency: numberArg(argv, "--concurrency", 2),
+    submissionConcurrency: argv.some((argument) => argument === "--submission-concurrency" || argument.startsWith("--submission-concurrency="))
+      ? numberArg(argv, "--submission-concurrency", 2)
+      : null,
     modelOverride: cleanText(argValue(argv, "--model", "gpt-5-mini")),
     thinkMs: numberArg(argv, "--think-ms", 5000),
     l2WaitMs: numberArg(argv, "--l2-wait-ms", 3_600_000),

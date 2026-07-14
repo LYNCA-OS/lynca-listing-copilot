@@ -425,6 +425,33 @@ assert.equal(
   true,
   "a fresh enqueue is allowed only when no speculative submission existed"
 );
+assert.equal(
+  __listingCopilotAppTestHooks.queueSubmissionConcurrencyLimit({
+    providerConfig: { recommended_concurrency: 2 },
+    executionControl: { queue_submission_concurrency: 4 },
+    maxWorkers: 6
+  }),
+  4,
+  "client queue submission capacity must be independent from provider concurrency"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.queueSubmissionConcurrencyLimit({
+    providerConfig: { recommended_concurrency: 2 },
+    executionControl: {},
+    maxWorkers: 6
+  }),
+  4,
+  "missing control-plane guidance should derive a conservative 2x submission pool"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.queueSubmissionConcurrencyLimit({
+    providerConfig: { recommended_concurrency: 4 },
+    executionControl: { queue_submission_concurrency: 20 },
+    maxWorkers: 6
+  }),
+  6,
+  "browser submission workers must stay locally bounded"
+);
 const oversizedOriginal = new Blob([new Uint8Array(30)], { type: "image/png" });
 const compressedFallback = new Blob([new Uint8Array(10)], { type: "image/jpeg" });
 const uploadSourceImage = {

@@ -699,6 +699,9 @@ function jobL2Summary(statusPayload = {}) {
     worker_queue_wait_ms: job.timing?.worker_queue_wait_ms ?? null,
     worker_processing_ms: job.timing?.worker_processing_ms ?? null,
     time_to_l2_ready_ms: job.timing?.time_to_l2_ready_ms ?? null,
+    recognition_started_at: job.recognition_started_at || null,
+    recognition_start_source: job.recognition_start_source || null,
+    writer_visible_recognition_ms: job.timing?.writer_visible_recognition_ms ?? null,
     writer_ready_capacity_release: job.timing?.writer_ready_capacity_release || null,
     writer_ready_capacity_refill: job.timing?.writer_ready_capacity_refill
       || job.timing?.writer_ready_capacity_release?.refill
@@ -947,6 +950,9 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     scheduler_queue_wait_ms: summary.scheduler_queue_wait_ms ?? row.scheduler_queue_wait_ms ?? null,
     worker_processing_ms: summary.worker_processing_ms ?? row.worker_processing_ms ?? null,
     time_to_l2_ready_ms: summary.time_to_l2_ready_ms ?? row.time_to_l2_ready_ms ?? null,
+    recognition_started_at: summary.recognition_started_at || row.recognition_started_at || null,
+    recognition_start_source: summary.recognition_start_source || row.recognition_start_source || null,
+    writer_visible_recognition_ms: summary.writer_visible_recognition_ms ?? row.writer_visible_recognition_ms ?? null,
     writer_ready_capacity_release: summary.writer_ready_capacity_release || row.writer_ready_capacity_release || null,
     writer_ready_capacity_refill: summary.writer_ready_capacity_refill
       || summary.writer_ready_capacity_release?.refill
@@ -2461,7 +2467,11 @@ export function summarizePipelineNodeLedgers(results = []) {
     "critical_field_flow_has_no_silent_drop",
     "terminal_critical_field_flow_has_no_silent_drop",
     "field_flow_has_no_cross_bracket_composite_migration",
-    "v4_normal_field_state_has_canonical_value"
+    "v4_normal_field_state_has_canonical_value",
+    "resolved_grade_score_has_company",
+    "direct_grade_company_reaches_resolution",
+    "direct_card_grade_reaches_resolution",
+    "resolved_grade_is_rendered"
   ]);
   const allAnomalies = rows.flatMap((item) => (
     Array.isArray(item.pipeline_node_ledger.reconciliation?.anomalies)
@@ -2721,6 +2731,9 @@ export function summarize(results = [], { runWallMs = null } = {}) {
   const successfulNonterminalJobCount = successfulQueueResults.filter((item) => (
     cleanText(item.job_status).toUpperCase() !== "L2_READY"
   )).length;
+  const writerVisibleRecognitionMeasuredCount = results.filter((item) => (
+    numberOrNull(item.writer_visible_recognition_ms) !== null
+  )).length;
   const batchPositionFairness = summarizeBatchPositionFairness(results);
   const allPositionMetrics = positionCohortMetrics(results);
   const tenantRows = new Map();
@@ -2866,6 +2879,10 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     writer_visible_recognition_p50_ms: quantile(results.map((item) => item.writer_visible_recognition_ms), 0.5),
     writer_visible_recognition_p95_ms: quantile(results.map((item) => item.writer_visible_recognition_ms), 0.95),
     writer_visible_recognition_p99_ms: quantile(results.map((item) => item.writer_visible_recognition_ms), 0.99),
+    writer_visible_recognition_measured_count: writerVisibleRecognitionMeasuredCount,
+    writer_visible_recognition_measurement_rate: results.length
+      ? Number((writerVisibleRecognitionMeasuredCount / results.length).toFixed(6))
+      : null,
     recognition_start_source_breakdown: countBy("recognition_start_source"),
     worker_processing_p50_ms: quantile(results.map((item) => item.worker_processing_ms), 0.5),
     worker_processing_p95_ms: quantile(results.map((item) => item.worker_processing_ms), 0.95),
@@ -3351,6 +3368,7 @@ export async function runV4EbaySmoke({
   l2WaitMs = 18000,
   requestTimeoutMs = 90000,
   concurrency = 2,
+  submissionConcurrency = null,
   tenantCount = 1,
   tenantPrefix = "",
   batchPoll = true,
@@ -3364,6 +3382,10 @@ export async function runV4EbaySmoke({
   if (!username || !password) throw new Error("--username and --password are required");
   const normalizedSampleMode = normalizeEvaluationSampleMode(evaluationSampleMode);
   const normalizedTenantCount = Math.max(1, Math.min(50, Math.trunc(Number(tenantCount) || 1)));
+  const normalizedSubmissionConcurrency = Math.max(
+    1,
+    Math.min(24, Math.trunc(Number(submissionConcurrency ?? concurrency) || 1))
+  );
   const dataset = await readDataset(datasetPath);
   const datasetSamplePolicy = Array.isArray(dataset) ? null : dataset.evaluation_sample_policy || null;
   const sampleProvenance = assertEvaluationSampleProvenance({
@@ -3373,6 +3395,30 @@ export async function runV4EbaySmoke({
   const items = loadDatasetItems(dataset).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
   if (!items.length) throw new Error("dataset slice has no items");
   const cookie = await login({ baseUrl, username, password });
+  let executionControlSnapshot = null;
+  let executionControlError = null;
+  try {
+    const statusResponse = await getJson({
+      baseUrl,
+      path: "/api/listing-provider-status",
+      cookie,
+      requestTimeoutMs: Math.min(requestTimeoutMs, 30_000)
+    });
+    if (statusResponse.ok && statusResponse.data?.execution_control) {
+      const control = statusResponse.data.execution_control;
+      executionControlSnapshot = {
+        provider_key_pool_size: control.provider_key_pool_size ?? null,
+        per_key_stable_concurrency: control.per_key_stable_concurrency ?? null,
+        global_provider_concurrency: control.global_provider_concurrency ?? null,
+        queue_submission_concurrency: control.queue_submission_concurrency ?? null,
+        stage_capacity: control.stage_capacity || null
+      };
+    } else {
+      executionControlError = `provider_status_http_${statusResponse.http_status || "unknown"}`;
+    }
+  } catch (error) {
+    executionControlError = cleanText(error?.message || error).slice(0, 200) || "provider_status_unavailable";
+  }
   const runStartedAt = Date.now();
   let recognitionResults = [];
   let batchPollMetrics = null;
@@ -3418,7 +3464,7 @@ export async function runV4EbaySmoke({
       if (progress) process.stderr.write(`v4 ebay smoke resume batch=${sharedBatchId} matched=${prepared.filter((row) => row.job).length}/${items.length}\n`);
     } else {
       const verificationCache = new Map();
-      prepared = await mapWithConcurrency(items, Math.max(1, concurrency), async (item, localIndex) => {
+      prepared = await mapWithConcurrency(items, normalizedSubmissionConcurrency, async (item, localIndex) => {
         const index = offset + localIndex;
         if (progress) process.stderr.write(`v4 ebay smoke enqueue ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
         const row = await enqueueSpeculativeItem({
@@ -3463,7 +3509,7 @@ export async function runV4EbaySmoke({
     });
     recognitionResults = prepared.map((row) => resultFromBatchJob(row, batchPollMetrics, thinkMs));
   } else {
-    recognitionResults = await mapWithConcurrency(items, Math.max(1, concurrency), async (item, localIndex) => {
+    recognitionResults = await mapWithConcurrency(items, normalizedSubmissionConcurrency, async (item, localIndex) => {
       const index = offset + localIndex;
       if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} preingestion=${usePreingestion} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
       try {
@@ -3513,7 +3559,7 @@ export async function runV4EbaySmoke({
       baseUrl,
       cookie,
       requestTimeoutMs,
-      concurrency: Math.min(4, Math.max(1, concurrency))
+      concurrency: Math.min(4, normalizedSubmissionConcurrency)
     })
     : {
       results: recognitionResults,
@@ -3540,6 +3586,10 @@ export async function runV4EbaySmoke({
     limit,
     offset,
     concurrency,
+    submission_concurrency: normalizedSubmissionConcurrency,
+    provider_concurrency: numberOrNull(executionControlSnapshot?.global_provider_concurrency),
+    execution_control_snapshot: executionControlSnapshot,
+    execution_control_error: executionControlError,
     tenant_count: normalizedTenantCount,
     tenant_prefix: cleanText(tenantPrefix) || null,
     batch_poll_enabled: Boolean(queueMode && speculative && batchPoll),
@@ -3680,6 +3730,9 @@ export async function main(argv = process.argv, env = process.env) {
     l2WaitMs: Math.max(0, Math.trunc(numberArg(argv, "--l2-wait-ms", 18000))),
     requestTimeoutMs: Math.max(10000, Math.trunc(numberArg(argv, "--request-timeout-ms", 90000))),
     concurrency: Math.max(1, Math.trunc(numberArg(argv, "--concurrency", 2))),
+    submissionConcurrency: argv.some((arg) => arg === "--submission-concurrency" || arg.startsWith("--submission-concurrency="))
+      ? Math.max(1, Math.trunc(numberArg(argv, "--submission-concurrency", 2)))
+      : null,
     tenantCount: Math.max(1, Math.trunc(numberArg(argv, "--tenant-count", 1))),
     tenantPrefix: cleanText(argValue(argv, "--tenant-prefix", "")),
     batchPoll: !hasFlag(argv, "--per-card-poll"),
@@ -3700,6 +3753,8 @@ export async function main(argv = process.argv, env = process.env) {
     `l1_p50_ms: ${report.summary.l1_p50_ms}`,
     `l1_p95_ms: ${report.summary.l1_p95_ms}`,
     `preingestion_enabled: ${report.preingestion_enabled}`,
+    `submission_concurrency: ${report.submission_concurrency}`,
+    `provider_concurrency: ${report.provider_concurrency ?? "unknown"}`,
     `compact_l2_enabled: ${report.compact_l2_enabled}`,
     `preingestion_ok: ${report.summary.preingestion_ok_count}/${report.summary.preingestion_used_count}`,
     `preingestion_p50_ms: ${report.summary.preingestion_p50_ms}`,

@@ -9,9 +9,9 @@ import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
 const MAX_CONCURRENT_WORKERS = 6;
+const MAX_BACKGROUND_PREP_WORKERS = 4;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
-const BACKGROUND_PREP_CONCURRENCY = 2;
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
 const IMAGE_INITIAL_QUALITY = 0.9;
@@ -1102,7 +1102,11 @@ function startBackgroundPreparation(reason = "file_ready") {
   if (!state.processing) {
     renderResults();
   }
-  void mapWithConcurrency(assets, BACKGROUND_PREP_CONCURRENCY, async (asset) => {
+  const backgroundWorkerCount = Math.min(
+    queueSubmissionConcurrencyLimit(),
+    MAX_BACKGROUND_PREP_WORKERS
+  );
+  void mapWithConcurrency(assets, backgroundWorkerCount, async (asset) => {
     if (runId !== state.backgroundPreparationRunId) return null;
     return prepareAssetInBackground(asset, runId);
   });
@@ -1293,12 +1297,22 @@ function selectedProviderConfig() {
   return (state.providerStatus?.providers || []).find((provider) => provider.id === state.selectedProvider) || null;
 }
 
-function processingConcurrencyLimit() {
-  const configured = Number(selectedProviderConfig()?.recommended_concurrency);
-  if (Number.isFinite(configured) && configured > 0) {
-    return Math.max(1, Math.min(configured, MAX_CONCURRENT_WORKERS));
+function queueSubmissionConcurrencyLimit({
+  providerConfig = selectedProviderConfig(),
+  executionControl = state.providerStatus?.execution_control,
+  maxWorkers = MAX_CONCURRENT_WORKERS
+} = {}) {
+  const boundedMax = Math.max(1, Math.trunc(Number(maxWorkers) || MAX_CONCURRENT_WORKERS));
+  const explicitSubmission = Number(executionControl?.queue_submission_concurrency);
+  if (Number.isFinite(explicitSubmission) && explicitSubmission > 0) {
+    return Math.max(1, Math.min(Math.trunc(explicitSubmission), boundedMax));
   }
-  return Math.min(3, MAX_CONCURRENT_WORKERS);
+
+  const providerConcurrency = Number(providerConfig?.recommended_concurrency);
+  const derived = Number.isFinite(providerConcurrency) && providerConcurrency > 0
+    ? Math.max(2, Math.trunc(providerConcurrency) * 2)
+    : 4;
+  return Math.max(1, Math.min(derived, boundedMax));
 }
 
 function confidenceClass(confidence) {
@@ -1720,6 +1734,7 @@ export const __listingCopilotAppTestHooks = {
   generationTimingView,
   generationSubmissionAllowed,
   imagesForProvider,
+  queueSubmissionConcurrencyLimit,
   recognitionClockFromServerPayload,
   speculativeNeedsFreshEnqueue,
   storageDimensionsForImage,
@@ -2940,7 +2955,9 @@ async function processTitles() {
   const queue = [...state.assets];
   const recognitionBatchId = state.backgroundRecognitionBatchId || createClientBatchId();
   state.backgroundRecognitionBatchId = recognitionBatchId;
-  const workerCount = Math.min(processingConcurrencyLimit(), queue.length);
+  // This pool only prepares and enqueues durable jobs. Provider concurrency is
+  // enforced independently by the server-side capacity lease.
+  const workerCount = Math.min(queueSubmissionConcurrencyLimit(), queue.length);
   let completedCount = 0;
 
   async function worker() {

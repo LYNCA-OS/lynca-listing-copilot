@@ -38,6 +38,8 @@ function reportFor({
     offset: 0,
     limit: attempted,
     concurrency,
+    submission_concurrency: concurrency,
+    provider_concurrency: 2,
     evaluation_sample_policy: {
       mode: "CONCURRENCY_FRESH",
       evaluated_item_ids_sha256: sampleHash
@@ -60,6 +62,10 @@ function reportFor({
       writer_ready_p50_ms: writerP95 - 5000,
       writer_ready_p95_ms: writerP95,
       writer_ready_p99_ms: writerP95 + 1000,
+      writer_visible_recognition_p50_ms: 16000,
+      writer_visible_recognition_p95_ms: 19000,
+      writer_visible_recognition_measurement_rate: 1,
+      recognition_start_source_breakdown: { provider_request_started: attempted },
       scheduler_queue_wait_p50_ms: 500,
       scheduler_queue_wait_p95_ms: 1000 * concurrency,
       worker_processing_p50_ms: 30000,
@@ -148,6 +154,10 @@ function reportFor({
 
 const baselineRow = metricRow(reportFor({ concurrency: 1, cardsPerMinute: 1, writerP95: 38000 }));
 assert.equal(baselineRow.completed_cards_per_minute, 1);
+assert.equal(baselineRow.submission_concurrency, 1);
+assert.equal(baselineRow.provider_concurrency, 2);
+assert.equal(baselineRow.writer_visible_recognition_p95_ms, 19000);
+assert.equal(baselineRow.writer_visible_recognition_measurement_rate, 1);
 assert.equal(baselineRow.provider_latency_p95_ms, 20000);
 assert.equal(baselineRow.catalog_retrieval_p95_ms, 1100);
 assert.equal(baselineRow.post_observation_retrieval_deadline_p95_ms, 1802);

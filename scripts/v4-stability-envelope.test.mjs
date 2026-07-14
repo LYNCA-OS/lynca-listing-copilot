@@ -35,6 +35,9 @@ function waveReport(waveIndex, {
         scheduler_queue_wait_ms: queueBaseMs + tenantIndex * 100 + cardIndex * 25,
         worker_queue_wait_ms: queueBaseMs + tenantIndex * 100 + cardIndex * 25,
         time_to_writer_ready_ms: writerBaseMs + tenantIndex * 150 + cardIndex * 50,
+        recognition_started_at: `2026-07-14T00:00:${String(cardIndex + 1).padStart(2, "0")}.000Z`,
+        recognition_start_source: "gpt_provider_request",
+        writer_visible_recognition_ms: 8_000 + tenantIndex * 100 + cardIndex * 25,
         pipeline_node_ledger: {
           coverage: { missing_required_node_count: 0 },
           reconciliation: { anomaly_count: 0, error_count: 0, warning_count: 0, anomalies: [] },
@@ -123,7 +126,22 @@ assert.equal(healthy.aggregate.attempted_count, 60);
 assert.equal(healthy.aggregate.tenant_count, 5);
 assert.equal(healthy.aggregate.tenant_completion_fairness, 1);
 assert.equal(healthy.aggregate.duplicate_asset_count, 0);
+assert.equal(healthy.aggregate.active_recognition_measured_count, 60);
+assert.equal(healthy.aggregate.active_recognition_measurement_rate, 1);
+assert.ok(healthy.aggregate.writer_visible_recognition_p50_ms >= 8_000);
+assert.ok(healthy.aggregate.writer_visible_recognition_p95_ms >= healthy.aggregate.writer_visible_recognition_p50_ms);
+assert.equal(healthy.waves[0].recognition_start_source_breakdown.gpt_provider_request, 20);
+assert.equal(healthy.tenants[0].active_recognition_measurement_rate, 1);
 assert.deepEqual(healthy.rejection_reasons, []);
+
+const missingRecognitionClockReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
+delete missingRecognitionClockReports[0].results[0].writer_visible_recognition_ms;
+missingRecognitionClockReports[0].summary = summarize(missingRecognitionClockReports[0].results, { runWallMs: 60_000 });
+const missingRecognitionClock = analyzeV4StabilityEnvelope(missingRecognitionClockReports);
+assert.equal(missingRecognitionClock.aggregate.active_recognition_measured_count, 59);
+assert.equal(missingRecognitionClock.aggregate.active_recognition_measurement_rate, Number((59 / 60).toFixed(6)));
+assert.equal(missingRecognitionClock.pass, false);
+assert.ok(missingRecognitionClock.runtime_rejection_reasons.includes("ACTIVE_RECOGNITION_TIMING_INCOMPLETE"));
 
 const boundedOcrRendezvousReports = [0, 1, 2].map((waveIndex) => waveReport(waveIndex));
 for (const report of boundedOcrRendezvousReports) {
