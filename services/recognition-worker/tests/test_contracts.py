@@ -61,6 +61,16 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertIn("setuptools==", ocr_requirements)
         self.assertIn("transformers==", vector_requirements)
 
+    def test_cloud_run_rollout_uses_quota_safe_two_phase_scaling(self):
+        repo_root = Path(__file__).resolve().parents[3]
+        deploy_script = (repo_root / "scripts" / "deploy-recognition-worker-cloud-run.sh").read_text(encoding="utf-8")
+
+        self.assertIn('ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-5}"', deploy_script)
+        self.assertIn('--min "$ROLLOUT_MIN_INSTANCES"', deploy_script)
+        self.assertIn('--min-instances default', deploy_script)
+        self.assertIn('gcloud run services update "$SERVICE_NAME"', deploy_script)
+        self.assertIn('--min "$MIN_INSTANCES"', deploy_script)
+
     def test_config_bounds_large_images_and_pins_embedding_revision(self):
         with patch.dict(os.environ, {
             "RECOGNITION_MAX_IMAGE_BYTES": "26214400000",

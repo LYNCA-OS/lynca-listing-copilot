@@ -14,13 +14,17 @@ CONCURRENCY="${RECOGNITION_WORKER_CONCURRENCY:-1}"
 TIMEOUT="${RECOGNITION_WORKER_TIMEOUT_SECONDS:-300}"
 MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-8}"
 MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-10}"
+ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-5}"
 STARTUP_PROBE_TIMEOUT_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_TIMEOUT_SECONDS:-240}"
 STARTUP_PROBE_PERIOD_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_PERIOD_SECONDS:-240}"
 STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRESHOLD:-2}"
 # Paddle predictors are serialized inside each process. Cloud Run concurrency
-# therefore stays at one while replicas provide parallelism; eight warm replicas
-# match the application OCR capacity and ten 2-vCPU replicas fit the current
-# 20-vCPU regional quota. Two replicas remain as retry and rollout headroom.
+# therefore stays at one while replicas provide parallelism. Deploy with five
+# warm replicas first so the old and new revisions fit the 20-vCPU regional
+# quota during a zero-downtime rollout. Once traffic has moved and the old
+# revision releases capacity, raise the service-level floor to eight. Revision-
+# level min/max values are deliberately removed so they cannot deadlock a
+# rollout or conflict with the service-level limits.
 # Model preload can
 # occasionally cross one 240-second probe window, so require two failed probes
 # before rejecting a healthy-but-slow revision. Set both service-level and
@@ -40,6 +44,11 @@ fi
 
 if [ ! -f "$SERVICE_DIR/Dockerfile" ]; then
   echo "Recognition worker Dockerfile not found at $SERVICE_DIR/Dockerfile" >&2
+  exit 1
+fi
+
+if [ "$ROLLOUT_MIN_INSTANCES" -gt "$MIN_INSTANCES" ]; then
+  echo "RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES cannot exceed RECOGNITION_WORKER_MIN_INSTANCES." >&2
   exit 1
 fi
 
@@ -68,7 +77,7 @@ gcloud secrets add-iam-policy-binding "$TOKEN_SECRET_NAME" \
   --role roles/secretmanager.secretAccessor \
   --project "$GCP_PROJECT_ID" >/dev/null
 
-gcloud run deploy "$SERVICE_NAME" \
+DEPLOYED_URL="$(gcloud run deploy "$SERVICE_NAME" \
   --source "$SERVICE_DIR" \
   --project "$GCP_PROJECT_ID" \
   --region "$GCP_REGION" \
@@ -80,10 +89,19 @@ gcloud run deploy "$SERVICE_NAME" \
   --concurrency "$CONCURRENCY" \
   --timeout "$TIMEOUT" \
   --startup-probe "tcpSocket.port=8080,initialDelaySeconds=0,timeoutSeconds=${STARTUP_PROBE_TIMEOUT_SECONDS},periodSeconds=${STARTUP_PROBE_PERIOD_SECONDS},failureThreshold=${STARTUP_PROBE_FAILURE_THRESHOLD}" \
-  --min "$MIN_INSTANCES" \
+  --min "$ROLLOUT_MIN_INSTANCES" \
   --max "$MAX_INSTANCES" \
-  --min-instances "$MIN_INSTANCES" \
-  --max-instances "$MAX_INSTANCES" \
+  --min-instances default \
+  --max-instances default \
   --set-secrets "RECOGNITION_WORKER_TOKEN=${TOKEN_SECRET_NAME}:latest" \
   --set-env-vars "RECOGNITION_ALLOWED_IMAGE_HOSTS=${ALLOWED_HOSTS},RECOGNITION_MAX_IMAGE_BYTES=26214400,RECOGNITION_MAX_TOTAL_PIXELS=50000000,ENABLE_IMAGE_DOWNLOAD=true,ENABLE_TESSERACT_OCR=false,ENABLE_OPENCV_RECTIFICATION=true,ENABLE_VISUAL_EMBEDDINGS=false,VISUAL_EMBEDDING_PRELOAD=false,VISUAL_EMBEDDING_MODEL_ID=google/siglip2-base-patch16-384,VISUAL_EMBEDDING_MODEL_REVISION=f775b65a79762255128c981547af89addcfe0f88,VISUAL_EMBEDDING_PREPROCESSING_VERSION=card-rectification-v1,VISUAL_EMBEDDING_DIMENSIONS=768,ENABLE_CANDIDATE_VERIFICATION=false,ENABLE_PADDLEOCR=${ENABLE_PADDLEOCR},PADDLEOCR_PRELOAD=${PADDLEOCR_PRELOAD},PADDLEOCR_WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},PADDLEOCR_MODEL_ID=${PADDLEOCR_MODEL_ID},PADDLEOCR_MODEL_REVISION=${PADDLEOCR_MODEL_REVISION},RECOGNITION_REQUEST_TIMEOUT_SECONDS=${TIMEOUT}" \
-  --format='value(status.url)'
+  --format='value(status.url)')"
+
+gcloud run services update "$SERVICE_NAME" \
+  --project "$GCP_PROJECT_ID" \
+  --region "$GCP_REGION" \
+  --min "$MIN_INSTANCES" \
+  --max "$MAX_INSTANCES" \
+  --format='none'
+
+printf '%s\n' "$DEPLOYED_URL"
