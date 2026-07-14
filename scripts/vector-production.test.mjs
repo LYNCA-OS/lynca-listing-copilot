@@ -326,9 +326,41 @@ const catalogTemporaryGtPacket = buildVectorCandidatePacket({
       collector_number: "24"
     }
   }]
-}, { limit: 5 });
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Temporary Player"],
+    collector_number: "24"
+  }
+});
 assert.equal(catalogTemporaryGtPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
 assert.equal(vectorCandidatePacketAssistEligibility(catalogTemporaryGtPacket).prompt_candidate_count, 1);
+
+const catalogPreObservationWithoutQueryAnchorsPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-approved-pre-observation",
+    candidate_identity_id: "identity-catalog-approved-pre-observation",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    supporting_fields: ["subjects", "year", "product", "collector_number"],
+    matched_fields: ["subjects", "year", "product", "collector_number"],
+    fields: {
+      year: "2025",
+      product: "Topps Chrome",
+      players: ["Similar Player"],
+      collector_number: "221"
+    }
+  }]
+}, { limit: 5 });
+const catalogPreObservationEligibility = vectorCandidatePacketAssistEligibility(catalogPreObservationWithoutQueryAnchorsPacket);
+assert.equal(catalogPreObservationWithoutQueryAnchorsPacket.vector_retrieval.candidates.length, 1, "raw packet must retain pre-observation candidates for shadow diagnostics");
+assert.equal(catalogPreObservationEligibility.reason, "approved_identity_candidate_missing_identity_anchor");
+assert.equal(catalogPreObservationEligibility.prompt_candidate_count, 0);
+assert.equal(buildVectorCandidateAssistPacket(catalogPreObservationWithoutQueryAnchorsPacket).vector_retrieval.candidates.length, 0);
 
 const catalogCandidateOnlyPacket = buildVectorCandidatePacket({
   sources: [{
