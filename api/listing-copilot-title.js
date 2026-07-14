@@ -3785,6 +3785,7 @@ function withOpenSetReadiness(result = {}, context = {}) {
     shadow_only_candidate_ids: candidateControl.shadow_only_candidate_ids,
     selected_candidate_decision: candidateControl.selected_candidate_decision,
     candidate_application_trace: candidateControl.candidate_application_trace,
+    candidate_observation_snapshot: candidateControl.candidate_observation_snapshot,
     candidate_field_evidence: candidateControl.candidate_field_evidence,
     candidate_activation_funnel: candidateControl.candidate_activation_funnel,
     catalog_activation_funnel: candidateControl.catalog_activation_funnel,

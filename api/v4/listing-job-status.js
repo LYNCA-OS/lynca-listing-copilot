@@ -151,6 +151,7 @@ function writerSafeSessionStatus(session = null, job = null) {
     },
     candidate_control_plane_trace: {
       schema_version: trace.schema_version || null,
+      candidate_observation_snapshot: trace.candidate_observation_snapshot || {},
       participation_level: trace.participation_level || null,
       decision_eligible_candidate_count: Number(trace.decision_eligible_candidate_count || 0),
       decision_eligible_candidate_ids: Array.isArray(trace.decision_eligible_candidate_ids)

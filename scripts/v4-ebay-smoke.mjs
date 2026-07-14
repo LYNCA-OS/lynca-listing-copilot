@@ -813,6 +813,7 @@ function compactCandidateTrace(trace = {}) {
       : [];
   return {
     schema_version: trace.schema_version || null,
+    candidate_observation_snapshot: trace.candidate_observation_snapshot || {},
     participation_level: trace.participation_level || null,
     decision_eligible_candidate_count: Number(trace.decision_eligible_candidate_count || 0),
     decision_eligible_candidate_ids: Array.isArray(trace.decision_eligible_candidate_ids)
@@ -852,6 +853,20 @@ function compactCandidateTrace(trace = {}) {
       anchor_agreement: row.anchor_agreement || null
     }))
   };
+}
+
+export function batchPollWaitBudgetMs({
+  requestedWaitMs = 18_000,
+  itemCount = 0,
+  providerConcurrency = 1
+} = {}) {
+  const requested = Math.max(0, Math.trunc(Number(requestedWaitMs) || 0));
+  const count = Math.max(0, Math.trunc(Number(itemCount) || 0));
+  const capacity = Math.max(1, Math.trunc(Number(providerConcurrency) || 1));
+  if (!count) return requested;
+  const waves = Math.max(1, Math.ceil(count / capacity));
+  const estimated = 30_000 + waves * 45_000;
+  return Math.max(requested, Math.min(30 * 60_000, estimated));
 }
 
 async function pollSessionStatus({
@@ -3564,6 +3579,15 @@ export async function runV4EbaySmoke({
   let recognitionResults = [];
   let batchPollMetrics = null;
   let sharedBatchId = null;
+  const batchPollProviderConcurrency = Math.max(
+    1,
+    Math.trunc(Number(executionControlSnapshot?.global_provider_concurrency) || Number(concurrency) || 1)
+  );
+  const effectiveBatchPollWaitMs = batchPollWaitBudgetMs({
+    requestedWaitMs: l2WaitMs,
+    itemCount: items.length,
+    providerConcurrency: batchPollProviderConcurrency
+  });
   if (queueMode && speculative && batchPoll) {
     sharedBatchId = cleanText(resumeBatchId) || `smoke-v4-batch-${Date.now()}`;
     let prepared;
@@ -3645,7 +3669,7 @@ export async function runV4EbaySmoke({
       cookie,
       batchId: sharedBatchId,
       expectedJobIds: prepared.map((row) => row.job?.job_id).filter(Boolean),
-      waitMs: l2WaitMs,
+      waitMs: effectiveBatchPollWaitMs,
       requestTimeoutMs
     });
     recognitionResults = prepared.map((row) => resultFromBatchJob(row, batchPollMetrics, thinkMs));
@@ -3737,6 +3761,10 @@ export async function runV4EbaySmoke({
     shared_batch_id: sharedBatchId,
     resumed_batch_id: resumeBatchId || null,
     batch_poll_metrics: batchPollMetrics ? {
+      requested_wait_ms: l2WaitMs,
+      effective_wait_ms: effectiveBatchPollWaitMs,
+      provider_concurrency: batchPollProviderConcurrency,
+      estimated_provider_waves: Math.ceil(items.length / batchPollProviderConcurrency),
       polls: batchPollMetrics.polls,
       elapsed_ms: batchPollMetrics.elapsed_ms,
       completed_count: batchPollMetrics.completed_count,

@@ -39,6 +39,7 @@ import {
 } from "../lib/listing/v4/session/session-store.mjs";
 import {
   batchStatusResponseDisposition,
+  batchPollWaitBudgetMs,
   mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
@@ -64,6 +65,9 @@ assert.equal(smokeNumberOrNull(null), null, "missing optional timings must not b
 assert.equal(smokeNumberOrNull(undefined), null, "missing optional token counts must stay missing");
 assert.equal(smokeNumberOrNull(""), null, "empty optional diagnostics must stay missing");
 assert.equal(smokeNumberOrNull(0), 0, "a real observed zero must remain zero");
+assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 10, providerConcurrency: 2 }), 255_000);
+assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 300_000, itemCount: 10, providerConcurrency: 2 }), 300_000);
+assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 0, providerConcurrency: 2 }), 18_000);
 
 const smokeTsv = perCardTsv([{
   asset_id: "asset-timing",
@@ -730,6 +734,7 @@ assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "p
 assert.match(queueStatusApiSource, /provider_capacity_stage_handoff: summary\.provider_capacity_stage_handoff \|\| null/, "job status must preserve provider-stage handoff telemetry for production capacity audits.");
 assert.match(queueStatusApiSource, /v4_pipeline_contract: summary\.v4_pipeline_contract \|\| null/, "job status must expose the V4 convergence contract to production audits.");
 assert.match(queueStatusApiSource, /selected_candidate_decision: trace\.selected_candidate_decision \|\| null/, "job status must expose the production candidate decision instead of only aggregate funnels.");
+assert.match(queueStatusApiSource, /candidate_observation_snapshot: trace\.candidate_observation_snapshot \|\| \{\}/, "job status must expose the exact current-image fields used by candidate decisions.");
 assert.match(queueStatusApiSource, /candidate_application_trace_rows:[\s\S]*slice\(0, 20\)/, "job status must expose bounded per-candidate application traces for field-level audits.");
 assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");

@@ -699,6 +699,108 @@ function testDenominatorAloneCannotOverrideConflictingYear() {
   assert.ok(selection.candidate_application_trace[0].anchor_agreement.contradicted.includes("year"));
 }
 
+function testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars() {
+  const candidate = {
+    candidate_id: "catalog-evidence-object-guard",
+    candidate_identity_id: "identity-evidence-object-guard",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Heritage High Number",
+      set: "Topps Heritage High Number",
+      players: ["Jackson Chourio"],
+      collector_number: "632"
+    }
+  };
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        year: "2024",
+        manufacturer: "Topps",
+        product: "Topps Heritage High Number",
+        set: "Topps Heritage High Number",
+        players: ["Jackson Chourio"],
+        collector_number: "632"
+      },
+      normalized_evidence: {
+        year: {
+          value: "2023",
+          normalized_value: "2023",
+          status: "REVIEW",
+          sources: [{ source_type: "VISION_MODEL" }]
+        },
+        product: {
+          value: "Topps Heritage",
+          status: "REVIEW",
+          sources: [{ source_type: "VISION_MODEL" }]
+        }
+      },
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["catalog-evidence-object-guard"]
+      })
+    }
+  });
+
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "catalog-evidence-object-guard");
+  assert.deepEqual(selection.candidate_observation_snapshot, {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Topps Heritage High Number",
+    set: "Topps Heritage High Number",
+    players: ["Jackson Chourio"],
+    collector_number: "632"
+  });
+  assert.deepEqual(selection.candidate_application_trace[0].anchor_agreement.contradicted, []);
+  assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("year"));
+  assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("product_hierarchy"));
+}
+
+function testEvidenceScalarOnlyFillsMissingObservedField() {
+  const candidate = {
+    candidate_id: "catalog-evidence-gap-fill",
+    candidate_identity_id: "identity-evidence-gap-fill",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2025",
+      product: "Topps Chrome",
+      players: ["Tyler Booker"],
+      collector_number: "381"
+    }
+  };
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        product: "Topps Chrome",
+        players: ["Tyler Booker"],
+        collector_number: "381"
+      },
+      normalized_evidence: {
+        year: {
+          value: "2025",
+          normalized_value: "2025",
+          status: "CONFIRMED",
+          sources: [{ source_type: "CARD_BACK_PRINTED_TEXT" }]
+        }
+      },
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["catalog-evidence-gap-fill"]
+      })
+    }
+  });
+
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "catalog-evidence-gap-fill");
+  assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("year"));
+}
+
 function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
   const candidate = {
     candidate_id: "catalog-product-specificity",
@@ -752,6 +854,8 @@ testShadowRerankerCannotChangeProductionDecision();
 testAtomicDecisionNeverMixesDifferentCandidateIds();
 testFinalObservationRebindsStaleEarlyAnchorAndCorrectsYear();
 testDenominatorAloneCannotOverrideConflictingYear();
+testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars();
+testEvidenceScalarOnlyFillsMissingObservedField();
 testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
 
 console.log("candidate-control-plane tests passed");
