@@ -36,7 +36,11 @@ assert.ok(apiSource.includes("fast_scout_blocking_call_used: false") && apiSourc
 assert.ok(apiSource.includes("shouldRetryGpt5EmptyResult"), "GPT-5 full-L2 empty-title failures must have a dedicated retry guard");
 assert.ok(apiSource.includes("v4_gpt5_empty_result_retry_attempted: true"), "GPT-5 empty-title retry must be marked on the retry payload");
 assert.ok(apiSource.includes("prepareV4PresentationResult({ result: retryResponse.body"), "GPT-5 retry must only replace the first response when the retry can render a title");
-assert.ok(apiSource.includes("callV2WithGpt5EmptyRetry") && apiSource.includes("const v2Response = await callV2WithGpt5EmptyRetry"), "GPT-5 empty-title retry must be shared by direct and background L2 calls");
+assert.ok(
+  apiSource.includes("callRecognitionCoreWithGpt5EmptyRetry")
+    && apiSource.includes("const recognitionResponse = await callRecognitionCoreWithGpt5EmptyRetry"),
+  "GPT-5 empty-title retry must be shared by direct and background recognition-core calls"
+);
 assert.ok(apiSource.includes("gpt5_empty_result_retry_success"), "GPT-5 retry outcome must be exposed in provider diagnostics");
 assert.ok(apiSource.includes("alternateOpenAiKeySlot"), "GPT-5 semantic-empty recovery must choose a different configured key when available");
 assert.ok(apiSource.includes("retryPayload.openai_preferred_key_slot = retryKeySlot"), "GPT-5 semantic-empty recovery must pass the alternate key slot into the shared provider path");

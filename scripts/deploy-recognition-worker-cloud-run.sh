@@ -37,6 +37,11 @@ PADDLEOCR_PRELOAD="${PADDLEOCR_PRELOAD:-true}"
 PADDLEOCR_WORKER_PROCESSES="${PADDLEOCR_WORKER_PROCESSES:-1}"
 PADDLEOCR_MODEL_ID="${PADDLEOCR_MODEL_ID:-paddleocr}"
 PADDLEOCR_MODEL_REVISION="${PADDLEOCR_MODEL_REVISION:-ppocr-v5}"
+BUILD_TIMEOUT="${RECOGNITION_WORKER_BUILD_TIMEOUT:-2700s}"
+IMAGE_TAG="${RECOGNITION_WORKER_IMAGE_TAG:-$(date -u +%Y%m%d%H%M%S)}"
+ARTIFACT_REPOSITORY="${RECOGNITION_WORKER_ARTIFACT_REPOSITORY:-cloud-run-source-deploy}"
+IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/${SERVICE_NAME}:${IMAGE_TAG}"
+CACHE_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/${SERVICE_NAME}:build-cache"
 
 if ! command -v gcloud >/dev/null 2>&1; then
   echo "gcloud CLI is required. Install and authenticate with: gcloud auth login" >&2
@@ -54,7 +59,17 @@ if [ "$ROLLOUT_MIN_INSTANCES" -gt "$MIN_INSTANCES" ]; then
 fi
 
 gcloud config set project "$GCP_PROJECT_ID" >/dev/null
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com --project "$GCP_PROJECT_ID" >/dev/null
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com --project "$GCP_PROJECT_ID" >/dev/null
+
+if ! gcloud artifacts repositories describe "$ARTIFACT_REPOSITORY" \
+  --project "$GCP_PROJECT_ID" \
+  --location "$GCP_REGION" >/dev/null 2>&1; then
+  gcloud artifacts repositories create "$ARTIFACT_REPOSITORY" \
+    --project "$GCP_PROJECT_ID" \
+    --location "$GCP_REGION" \
+    --repository-format docker \
+    --description "LYNCA worker images" >/dev/null
+fi
 
 if [ -n "${RECOGNITION_WORKER_TOKEN:-}" ]; then
   if gcloud secrets describe "$TOKEN_SECRET_NAME" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
@@ -78,8 +93,17 @@ gcloud secrets add-iam-policy-binding "$TOKEN_SECRET_NAME" \
   --role roles/secretmanager.secretAccessor \
   --project "$GCP_PROJECT_ID" >/dev/null
 
+gcloud builds submit "$SERVICE_DIR" \
+  --project "$GCP_PROJECT_ID" \
+  --region "$GCP_REGION" \
+  --config "$SERVICE_DIR/cloudbuild-ocr.yaml" \
+  --timeout "$BUILD_TIMEOUT" \
+  --substitutions "_IMAGE_URI=${IMAGE_URI},_CACHE_IMAGE=${CACHE_IMAGE}"
+
+# Deployment only starts after a complete image exists. A build/download
+# failure therefore leaves the serving revision and its traffic untouched.
 DEPLOYED_URL="$(gcloud run deploy "$SERVICE_NAME" \
-  --source "$SERVICE_DIR" \
+  --image "$IMAGE_URI" \
   --project "$GCP_PROJECT_ID" \
   --region "$GCP_REGION" \
   --allow-unauthenticated \

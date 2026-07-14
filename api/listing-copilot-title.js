@@ -111,6 +111,7 @@ import {
 import { openAiKeyPoolSize } from "../lib/listing/providers/openai-key-pool.mjs";
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
+import { applyCandidateDecisionStage } from "../lib/listing/candidates/candidate-decision-stage.mjs";
 import {
   createListingImageSignedReadUrl,
   verifyListingImageVerificationToken
@@ -611,105 +612,6 @@ const finalizerNeverPromoteFromRawFields = Object.freeze([
   "checklist_code"
 ]);
 
-const lowMarginOverlayForbiddenFields = new Set([
-  "print_run_number",
-  "print_run_numerator",
-  "serial_number",
-  "grade",
-  "grade_company",
-  "card_grade",
-  "auto_grade",
-  "grade_type",
-  "cert_number",
-  "condition",
-  "current_physical_defects",
-  "physical_defects"
-]);
-
-const lowMarginOverlayAllowedFields = new Set([
-  "year",
-  "manufacturer",
-  "brand",
-  "product",
-  "release",
-  "set",
-  "subset",
-  "insert",
-  "language",
-  "rarity",
-  "card_name",
-  "players",
-  "player",
-  "character",
-  "team",
-  "card_type",
-  "official_card_type",
-  "observable_components",
-  "surface_color",
-  "parallel",
-  "parallel_family",
-  "parallel_exact",
-  "variation",
-  "collector_number",
-  "card_number",
-  "checklist_code",
-  "tcg_card_number",
-  "numbered_to",
-  "print_run_denominator",
-  "serial_denominator",
-  "expected_serial_denominator"
-]);
-
-const selectedCandidateOverlayAllowedFields = new Set([
-  "year",
-  "manufacturer",
-  "brand",
-  "product",
-  "release",
-  "set",
-  "subset",
-  "insert",
-  "language",
-  "rarity",
-  "card_name",
-  "players",
-  "player",
-  "character",
-  "collector_number",
-  "card_number",
-  "checklist_code",
-  "tcg_card_number",
-  "official_card_type"
-]);
-
-const selectedCandidateEmbeddedForbiddenFields = new Set([
-  "parallel",
-  "parallel_family",
-  "parallel_exact",
-  "variation",
-  "print_finish",
-  "product_finish",
-  "print_run_number",
-  "print_run_numerator",
-  "serial_number",
-  "grade",
-  "grade_company",
-  "card_grade",
-  "auto_grade",
-  "grade_type",
-  "cert_number",
-  "condition"
-]);
-
-function selectedCandidateValueContainsForbiddenReferenceValue(value, forbiddenValues = []) {
-  const comparable = normalizeStringOrNull(value)?.toLowerCase().replace(/\s+/g, " ").trim();
-  if (!comparable) return false;
-  return forbiddenValues.some((forbiddenValue) => {
-    const forbidden = normalizeStringOrNull(forbiddenValue)?.toLowerCase().replace(/\s+/g, " ").trim();
-    return Boolean(forbidden && forbidden.length >= 3 && comparable.includes(forbidden));
-  });
-}
-
 function finalizerFieldSupportSet(result = {}) {
   const fields = new Set();
   [
@@ -988,151 +890,6 @@ function applyVerifiedCurrentImagePrintRunOverride(base = {}, result = {}) {
   };
 }
 
-function lowMarginSafeFieldOverlay(result = {}) {
-  const application = result.low_margin_safe_field_application && typeof result.low_margin_safe_field_application === "object"
-    ? result.low_margin_safe_field_application
-    : {};
-  if (application.status !== "evidence_support_only") return {};
-  const candidateId = normalizeStringOrNull(application.candidate_id);
-  if (!candidateId) return {};
-  const supported = new Set((Array.isArray(application.supported_fields) ? application.supported_fields : [])
-    .map(normalizeStringOrNull)
-    .filter(Boolean));
-  if (!supported.size) return {};
-  const evidenceRows = Array.isArray(result.candidate_field_evidence) ? result.candidate_field_evidence : [];
-  const overlay = {};
-  for (const row of evidenceRows) {
-    if (!row || typeof row !== "object") continue;
-    if (normalizeStringOrNull(row.candidate_id) !== candidateId) continue;
-    const field = normalizeStringOrNull(row.field_name);
-    if (!field || !supported.has(field)) continue;
-    if (!lowMarginOverlayAllowedFields.has(field) || lowMarginOverlayForbiddenFields.has(field)) continue;
-    if (row.permission === "forbidden" || row.permission === "suggest_only") continue;
-    if (!finalizerValuePresent(row.value)) continue;
-    overlay[field] = row.value;
-  }
-  return normalizeFields(overlay);
-}
-
-function applyLowMarginSafeFieldOverlay(base = {}, result = {}) {
-  const overlay = lowMarginSafeFieldOverlay(result);
-  if (!Object.keys(overlay).length) return base;
-  const output = { ...(base || {}) };
-  const applied = [];
-  for (const [field, value] of Object.entries(overlay)) {
-    if (!finalizerValuePresent(value)) continue;
-    if (lowMarginOverlayForbiddenFields.has(field)) continue;
-    if (finalizerValuePresent(output[field])) continue;
-    output[field] = value;
-    applied.push(field);
-  }
-  if (applied.length) {
-    result.low_margin_safe_field_application = {
-      ...(result.low_margin_safe_field_application || {}),
-      renderer_application_allowed: true,
-      renderer_applied_fields: applied,
-      renderer_application_policy: "fill_missing_fields_only_when_candidate_value_matches_current_image_evidence"
-    };
-    result.candidate_safe_overlay_applied_fields = applied;
-  }
-  return output;
-}
-
-function selectedCandidateSafeFieldOverlay(result = {}) {
-  const application = result.selected_candidate_safe_field_application
-    && typeof result.selected_candidate_safe_field_application === "object"
-    ? result.selected_candidate_safe_field_application
-    : {};
-  if (application.status !== "ready_fill_missing" || application.renderer_application_allowed !== true) return {};
-  const candidateId = normalizeStringOrNull(application.candidate_id);
-  if (!candidateId) return {};
-  const eligible = new Set((Array.isArray(application.eligible_fields) ? application.eligible_fields : [])
-    .map(normalizeStringOrNull)
-    .filter(Boolean));
-  if (!eligible.size) return {};
-  const evidenceRows = Array.isArray(result.candidate_field_evidence) ? result.candidate_field_evidence : [];
-  const forbiddenReferenceValues = evidenceRows
-    .filter((row) => (
-      row
-      && typeof row === "object"
-      && normalizeStringOrNull(row.candidate_id) === candidateId
-      && selectedCandidateEmbeddedForbiddenFields.has(normalizeStringOrNull(row.field_name))
-      && finalizerValuePresent(row.value)
-    ))
-    .map((row) => row.value);
-  const overlay = {};
-  for (const row of evidenceRows) {
-    if (!row || typeof row !== "object") continue;
-    if (normalizeStringOrNull(row.candidate_id) !== candidateId) continue;
-    const field = normalizeStringOrNull(row.field_name);
-    if (!field || !eligible.has(field)) continue;
-    if (!selectedCandidateOverlayAllowedFields.has(field) || lowMarginOverlayForbiddenFields.has(field)) continue;
-    if (row.permission !== "can_apply" || !finalizerValuePresent(row.value)) continue;
-    if (selectedCandidateValueContainsForbiddenReferenceValue(row.value, forbiddenReferenceValues)) continue;
-    overlay[field] = row.value;
-  }
-  const normalized = normalizeFields(overlay);
-  return Object.fromEntries(Object.keys(overlay).map((field) => [
-    field,
-    finalizerValuePresent(normalized[field]) ? normalized[field] : overlay[field]
-  ]));
-}
-
-function applySelectedCandidateSafeFieldOverlay(base = {}, result = {}) {
-  const overlay = selectedCandidateSafeFieldOverlay(result);
-  if (!Object.keys(overlay).length) return base;
-  const output = { ...(base || {}) };
-  const applied = [];
-  for (const [field, value] of Object.entries(overlay)) {
-    if (!finalizerValuePresent(value) || finalizerValuePresent(output[field])) continue;
-    output[field] = value;
-    applied.push(field);
-  }
-  if (!applied.length) return output;
-
-  const application = result.selected_candidate_safe_field_application || {};
-  result.selected_candidate_safe_field_application = {
-    ...application,
-    renderer_applied_fields: applied,
-    renderer_application_policy: "fill_missing_identity_fields_only"
-  };
-  const selectedId = normalizeStringOrNull(application.candidate_id);
-  if (Array.isArray(result.candidate_application_trace)) {
-    result.candidate_application_trace = result.candidate_application_trace.map((trace) => (
-      normalizeStringOrNull(trace?.candidate_id) === selectedId
-        ? {
-          ...trace,
-          participation_level: "LEVEL_3_FIELD_APPLICATION",
-          applied_fields: [...new Set([...(trace.applied_fields || []), ...applied])],
-          reason_per_field: {
-            ...(trace.reason_per_field || {}),
-            ...Object.fromEntries(applied.map((field) => [
-              field,
-              application.field_reasons?.[field] || "selected_trusted_candidate_fill_missing"
-            ]))
-          }
-        }
-        : trace
-    ));
-  }
-  result.participation_level = "LEVEL_3_FIELD_APPLICATION";
-  result.candidate_safe_overlay_applied_fields = [
-    ...new Set([...(result.candidate_safe_overlay_applied_fields || []), ...applied])
-  ];
-  for (const funnelName of ["candidate_activation_funnel", "catalog_activation_funnel", "vector_activation_funnel"]) {
-    const funnel = result[funnelName];
-    if (!funnel || typeof funnel !== "object") continue;
-    if (funnelName !== "candidate_activation_funnel" && normalizeStringOrNull(funnel.selected_candidate_id) !== selectedId) continue;
-    result[funnelName] = {
-      ...funnel,
-      participation_level: "LEVEL_3_FIELD_APPLICATION",
-      applied_field_count: applied.length,
-      applied_fields: applied
-    };
-  }
-  return output;
-}
-
 function finalizerTextLooksMoreSpecific(existing, incoming) {
   const current = normalizeStringOrNull(existing);
   const next = normalizeStringOrNull(incoming);
@@ -1190,7 +947,8 @@ function finalizerMergeCurrentImageFields(base = {}, current = {}, supportFields
 }
 
 function finalResolvedFieldsForPresentation(result = {}, {
-  enforceAtomicGrade = true
+  enforceAtomicGrade = true,
+  maxLength = maxFallbackTitleLength
 } = {}) {
   const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
     ? result.rendered_fields
@@ -1212,8 +970,13 @@ function finalResolvedFieldsForPresentation(result = {}, {
       allowExactCodePromotion: fields !== result.raw_provider_fields
     })
   ), { ...base });
-  const withSelectedCandidateOverlay = applySelectedCandidateSafeFieldOverlay(merged, result);
-  const withCandidateOverlay = applyLowMarginSafeFieldOverlay(withSelectedCandidateOverlay, result);
+  const candidateDecision = applyCandidateDecisionStage({
+    result,
+    resolvedBefore: merged,
+    maxLength
+  });
+  Object.assign(result, candidateDecision.result_patch);
+  const withCandidateOverlay = candidateDecision.resolved_after;
   const withEvidenceOverrides = applyEvidenceBackedPresentationOverrides(
     withCandidateOverlay,
     result.normalized_evidence || result.evidence || {}
@@ -1297,7 +1060,10 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
   if (result.provider_error_code || result.provider_error_type) return result;
 
-  const unguardedResolved = finalResolvedFieldsForPresentation(result, { enforceAtomicGrade: false });
+  const unguardedResolved = finalResolvedFieldsForPresentation(result, {
+    enforceAtomicGrade: false,
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  });
   const gradeAtomic = gradeAtomicCompleteness(unguardedResolved || {});
   const gradeAtomicGuardApplied = gradeAtomic.incomplete_score_without_company
     || gradeAtomic.incomplete_company_without_score;
@@ -1577,7 +1343,7 @@ function withVerifiedPreingestionSlabParallel(result = {}, payload = {}) {
   return finalizeDeterministicPresentation(next, payload);
 }
 
-async function sendListingResult(res, statusCode, result, timingContext, payload = {}) {
+async function buildListingResult(statusCode, result, timingContext, payload = {}) {
   const finalizedResult = finalizeDeterministicPresentation(result, payload);
   const preingestionSummary = payload.preingestion_summary || null;
   const timedResult = withTiming({
@@ -1605,7 +1371,12 @@ async function sendListingResult(res, statusCode, result, timingContext, payload
     timingContext,
     payload
   });
-  sendJson(res, statusCode, finalResult);
+  return { statusCode, body: finalResult };
+}
+
+async function sendListingResult(res, statusCode, result, timingContext, payload = {}) {
+  const response = await buildListingResult(statusCode, result, timingContext, payload);
+  sendJson(res, response.statusCode, response.body);
 }
 
 
@@ -5987,36 +5758,16 @@ async function createProviderTitle(payload, {
   });
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    sendJson(res, 405, { ok: false, message: "Method not allowed" });
-    return;
-  }
-
-  const cookies = parseCookies(req.headers.cookie);
-  const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
-  const workerAuthorized = isV4WorkerRequest(req, process.env);
-
-  if (!authenticated && !workerAuthorized) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
-    return;
-  }
-
-  if (!workerAuthorized && !enforceApiRateLimit(req, res, {
-    scope: "listing_title",
-    limit: 120,
-    windowMs: 60_000,
-    message: "Too many title generation requests. Please try again shortly."
-  })) return;
-
-  let payload;
-  try {
-    payload = JSON.parse(await readBody(req));
-  } catch {
-    sendJson(res, 400, { ok: false, message: "Invalid request." });
-    return;
-  }
-
+// The recognition core owns the production data path. HTTP endpoints are
+// adapters only: V2 and V4 call this function directly instead of nesting one
+// endpoint inside another and paying a second parse/serialization/error layer.
+export async function runListingRecognitionCore({
+  payload: inputPayload = {},
+  requestContext = null
+} = {}) {
+  const payload = inputPayload && typeof inputPayload === "object" && !Array.isArray(inputPayload)
+    ? inputPayload
+    : {};
   const timingContext = createTimingContext(payload);
 
   if ((payload.preingestion_bundle_id || payload.preingestionBundleId) && payload.preingestion_bundle_used !== true) {
@@ -6034,12 +5785,14 @@ export default async function handler(req, res) {
         reason: String(error.message || "bundle_load_error").slice(0, 180)
       };
       if (!Array.isArray(payload.images) || payload.images.length === 0) {
-        sendJson(res, 400, {
-          ok: false,
-          code: "preingestion_bundle_load_failed",
-          message: payload.preingestion_summary.reason
-        });
-        return;
+        return {
+          statusCode: 400,
+          body: {
+            ok: false,
+            code: "preingestion_bundle_load_failed",
+            message: payload.preingestion_summary.reason
+          }
+        };
       }
     }
   }
@@ -6048,12 +5801,14 @@ export default async function handler(req, res) {
   const maxPayloadImages = configuredMaxPayloadImages(process.env);
   const imageBatch = boundedPayloadImagesFromImages(payloadImages, { maxImages: maxPayloadImages });
   if (!imageBatch.ok) {
-    sendJson(res, 400, {
-      ok: false,
-      code: "invalid_image_payload",
-      message: "系统没有读到可用于识别的卡片原图，请重新上传卡片图片或两图配对图片。"
-    });
-    return;
+    return {
+      statusCode: 400,
+      body: {
+        ok: false,
+        code: "invalid_image_payload",
+        message: "系统没有读到可用于识别的卡片原图，请重新上传卡片图片或两图配对图片。"
+      }
+    };
   }
   payload.images = imageBatch.images;
   if (imageBatch.deferred_image_count > 0) {
@@ -6071,20 +5826,9 @@ export default async function handler(req, res) {
       timeAsync(timingContext, "identity_cache_lookup_ms", () => createIdentityCacheTitle(payload))
     ]);
 
-    if (approvedMemoryResult) {
-      await sendListingResult(res, 200, approvedMemoryResult, timingContext, payload);
-      return;
-    }
-
-    if (identityCacheResult) {
-      await sendListingResult(res, 200, identityCacheResult, timingContext, payload);
-      return;
-    }
-
-    if (preProviderRescanResult) {
-      await sendListingResult(res, 200, preProviderRescanResult, timingContext, payload);
-      return;
-    }
+    if (approvedMemoryResult) return buildListingResult(200, approvedMemoryResult, timingContext, payload);
+    if (identityCacheResult) return buildListingResult(200, identityCacheResult, timingContext, payload);
+    if (preProviderRescanResult) return buildListingResult(200, preProviderRescanResult, timingContext, payload);
 
     const inFlightCacheKey = await createIdentityInFlightKey(payload);
     const result = await runWithInFlightIdentityRequest({
@@ -6118,18 +5862,18 @@ export default async function handler(req, res) {
           signedImages: recognitionPreflight.signedImages,
           timingContext,
           visualFeatures,
-          requestContext: req
+          requestContext
         });
 
         return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(providerResult, payload));
       }
     });
 
-    await sendListingResult(res, 200, result, timingContext, payload);
+    return buildListingResult(200, result, timingContext, payload);
   } catch (error) {
     const message = safeProviderErrorMessage(error);
 
-    await sendListingResult(res, 200, {
+    return buildListingResult(200, {
       title: "",
       confidence: "FAILED",
       reason: message,
@@ -6150,4 +5894,38 @@ export default async function handler(req, res) {
       provider_truncation_retry_attempts: Number(error.details?.truncation_retry_attempts || 0)
     }, timingContext, payload);
   }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { ok: false, message: "Method not allowed" });
+    return;
+  }
+
+  const cookies = parseCookies(req.headers.cookie);
+  const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
+  const workerAuthorized = isV4WorkerRequest(req, process.env);
+
+  if (!authenticated && !workerAuthorized) {
+    sendJson(res, 401, { ok: false, message: "Unauthorized" });
+    return;
+  }
+
+  if (!workerAuthorized && !enforceApiRateLimit(req, res, {
+    scope: "listing_title",
+    limit: 120,
+    windowMs: 60_000,
+    message: "Too many title generation requests. Please try again shortly."
+  })) return;
+
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req));
+  } catch {
+    sendJson(res, 400, { ok: false, message: "Invalid request." });
+    return;
+  }
+
+  const response = await runListingRecognitionCore({ payload, requestContext: req });
+  sendJson(res, response.statusCode, response.body);
 }

@@ -9,6 +9,13 @@ import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/res
 import { buildV4FieldGraph, buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
+import { buildV4QualityLedger } from "../lib/listing/v4/quality-ledger/quality-ledger.mjs";
+import {
+  buildV4PipelineContract,
+  v4DecisionOwners,
+  v4PipelineStages
+} from "../lib/listing/v4/pipeline/pipeline-contract.mjs";
+import { candidateSelectionHeuristicVersion } from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import {
   explicitlyUncertainIdentityFields,
   normalizeFields,
@@ -500,6 +507,132 @@ assert.equal(
   "a malformed edition descriptor may be normalized for output but must remain review-visible"
 );
 
+const nativeExactAnchorContract = buildV4PipelineContract({
+  payload: {
+    images: [{ id: "image-1" }, { id: "image-2" }],
+    v4_anchor_probe: { plan: { route: "TCG_EXACT_LOOKUP" } }
+  },
+  routePlan: { route: "EXACT_ANCHOR_FAST_LANE" },
+  result: {
+    provider: "v4_anchor_router",
+    exact_anchor_finalize: {
+      used: true,
+      candidate: { candidate_id: "official-card-1" }
+    },
+    candidate_decision_stage: {
+      schema_version: "candidate-decision-stage-v1",
+      heuristic_version: candidateSelectionHeuristicVersion,
+      selected_candidate_id: null,
+      field_application: { applied_fields: [], blocked_fields: [] }
+    },
+    resolved_fields: {
+      year: "2023",
+      product: "Pokemon 151",
+      players: ["Charizard ex"],
+      collector_number: "201/165"
+    },
+    final_title: "2023 Pokemon 151 Charizard ex 201/165",
+    title_render_source: "pre_l2_anchor_catalog_finalized"
+  },
+  persistence: { recognition_session: { saved: true } }
+});
+assert.equal(nativeExactAnchorContract.contract_status, "PASSED");
+assert.equal(nativeExactAnchorContract.migration_complete, true);
+assert.deepEqual(nativeExactAnchorContract.bridged_stages, []);
+assert.equal(
+  nativeExactAnchorContract.owners[v4PipelineStages.CANDIDATE_DECISION],
+  v4DecisionOwners[v4PipelineStages.CANDIDATE_DECISION]
+);
+assert.ok(nativeExactAnchorContract.native_exact_anchor_stage_count >= 3);
+assert.equal(
+  nativeExactAnchorContract.stages.find((stage) => stage.stage_id === v4PipelineStages.CANDIDATE_DECISION)?.execution_mode,
+  "NATIVE_V4_EXACT_ANCHOR"
+);
+
+const transitionalL2Contract = buildV4PipelineContract({
+  payload: { images: [{ id: "image-1" }, { id: "image-2" }] },
+  routePlan: { route: "ASSISTED_FULL" },
+  result: {
+    provider: "openai",
+    model: "gpt-5-mini",
+    selected_candidate_decision: {
+      selected_candidate_id: "catalog-card-1",
+      heuristic_version: candidateSelectionHeuristicVersion
+    },
+    candidate_decision_stage: {
+      schema_version: "candidate-decision-stage-v1",
+      heuristic_version: candidateSelectionHeuristicVersion,
+      selected_candidate_id: "catalog-card-1",
+      field_application: { applied_fields: ["product"], blocked_fields: ["grade"] }
+    },
+    catalog_activation_funnel: { raw_candidate_count: 1 },
+    resolved_fields: { year: "2024", product: "Topps Chrome", players: ["Test Player"] },
+    final_title: "2024 Topps Chrome Test Player",
+    title_render_source: "v4_csm_deterministic_renderer"
+  }
+});
+assert.equal(transitionalL2Contract.contract_status, "PASSED");
+assert.ok(transitionalL2Contract.bridged_stages.includes(v4PipelineStages.OBSERVATION));
+assert.ok(transitionalL2Contract.bridged_stages.includes(v4PipelineStages.RETRIEVAL));
+assert.ok(transitionalL2Contract.bridged_stages.includes(v4PipelineStages.FIELD_RESOLUTION));
+assert.equal(
+  transitionalL2Contract.stages.find((stage) => stage.stage_id === v4PipelineStages.CANDIDATE_DECISION)?.execution_mode,
+  "EXTRACTED_SHARED_MODULE"
+);
+
+const untypedExactRouteContract = buildV4PipelineContract({
+  payload: { images: [{ id: "image-1" }] },
+  routePlan: { route: "EXACT_ANCHOR_FAST_LANE" },
+  result: { provider: "v4_anchor_router", resolved_fields: { year: "2024" }, final_title: "2024 Test" }
+});
+assert.equal(untypedExactRouteContract.contract_status, "FAILED");
+assert.ok(untypedExactRouteContract.violations.some((violation) => violation.code === "EXACT_ROUTE_WITHOUT_TYPED_ANCHOR"));
+
+const scatteredCandidateApplicationContract = buildV4PipelineContract({
+  routePlan: { route: "ASSISTED_FULL" },
+  result: {
+    provider: "openai",
+    candidate_safe_overlay_applied_fields: ["product"],
+    resolved_fields: { product: "Topps Chrome" },
+    final_title: "Topps Chrome"
+  }
+});
+assert.equal(scatteredCandidateApplicationContract.contract_status, "FAILED");
+assert.ok(scatteredCandidateApplicationContract.violations.some(
+  (violation) => violation.code === "CANDIDATE_FIELDS_APPLIED_OUTSIDE_ATOMIC_STAGE"
+));
+
+const missingQualityMetrics = buildV4QualityLedger({
+  sessionId: "v4-quality-missing",
+  result: {
+    provider_token_diagnostics: { input_tokens: null, output_tokens: undefined, total_tokens: "" },
+    timing: { total_ms: null }
+  }
+});
+assert.equal(missingQualityMetrics.latency_ms, null);
+assert.equal(missingQualityMetrics.input_tokens, null);
+assert.equal(missingQualityMetrics.output_tokens, null);
+assert.equal(missingQualityMetrics.total_tokens, null);
+
+const zeroQualityMetrics = buildV4QualityLedger({
+  sessionId: "v4-quality-zero",
+  result: {
+    provider_token_diagnostics: {
+      input_tokens: 0,
+      prompt_tokens: 99,
+      output_tokens: 0,
+      completion_tokens: 88,
+      total_tokens: 0
+    },
+    timing: { total_ms: 0 },
+    total_ms: 77
+  }
+});
+assert.equal(zeroQualityMetrics.latency_ms, 0);
+assert.equal(zeroQualityMetrics.input_tokens, 0);
+assert.equal(zeroQualityMetrics.output_tokens, 0);
+assert.equal(zeroQualityMetrics.total_tokens, 0);
+
 const v4TitleApiSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
 const fastScoutPrewarmApiSource = await readFile("api/v4/fast-scout-prewarm.js", "utf8");
 const queueMigrationApiSource = await readFile("api/admin-apply-v4-production-job-queue-migration.js", "utf8");
@@ -525,6 +658,9 @@ const persistPipelineStart = v4TitleApiSource.indexOf("async function persistPip
 const persistPipelineEnd = v4TitleApiSource.indexOf("async function runBackgroundAssistedDraft", persistPipelineStart);
 const persistPipelineSource = v4TitleApiSource.slice(persistPipelineStart, persistPipelineEnd);
 assert.ok(persistPipelineStart >= 0 && persistPipelineEnd > persistPipelineStart);
+assert.doesNotMatch(v4TitleApiSource, /\bv2ListingHandler\b/, "native V4 must not invoke the V2 HTTP handler");
+assert.doesNotMatch(v4TitleApiSource, /\bcallJsonHandler\b/, "native V4 must not emulate an internal HTTP request");
+assert.match(v4TitleApiSource, /runListingRecognitionCore/, "the transitional recognition bridge must be explicit until its remaining stages are extracted");
 assert.doesNotMatch(persistPipelineSource, /\breq\b/, "persistence helpers must not capture an undefined request object");
 assert.match(persistPipelineSource, /requestContext/, "request context must be passed explicitly to capacity refill");
 assert.match(v4TitleApiSource, /recognition_clock_source:\s*"gpt_provider_request"/, "GPT requests must persist the per-card recognition clock source");
@@ -627,8 +763,9 @@ assert.match(vercelConfigSource, /admin-apply-v4-writer-ready-capacity-migration
 const route = planV4RecognitionRoute({
   preingestion_bundle_id: "bundle-1",
   approved_candidate_count: 1,
-  initial_evidence: {
-    collector_number: "PAU"
+  v4_anchor_probe: {
+    plan: { route: "SPORTS_COMPOSITE_LOOKUP" },
+    finalized: true
   },
   images: [{ role: "image_1" }, { role: "image_2" }]
 }, {
@@ -640,6 +777,19 @@ assert.ok(route.blocking_modules.includes("deterministic_renderer"));
 assert.ok(route.background_modules.includes("full_assisted_observation"));
 assert.ok(route.background_modules.includes("post_observation_catalog_lookup"));
 assert.ok(route.skipped_modules.includes("visual_vector_retrieval"));
+
+const commercialNumberMustNotRouteAsExact = planV4RecognitionRoute({
+  preingestion_bundle_id: "bundle-commercial-number",
+  approved_candidate_count: 1,
+  initial_evidence: {
+    serial_number: "2/3",
+    print_run_number: "2/3"
+  },
+  images: [{ role: "image_1" }, { role: "image_2" }]
+}, {
+  VECTOR_INDEX_READY: "true"
+});
+assert.notEqual(commercialNumberMustNotRouteAsExact.route, "EXACT_ANCHOR_FAST_LANE");
 
 const exactFastLaneOptions = providerOptionsForV4ProgressiveL1({
   payload: { provider_options: { enable_catalog_assist: true, force_vector_assist: true } },

@@ -93,3 +93,10 @@ For PaddleOCR throughput, prefer multiple single-process worker instances or
 container replicas and configure the Node app with `PADDLE_OCR_WORKER_URLS`.
 That keeps Paddle predictors isolated while still letting the orchestrator
 round-robin field verification requests.
+
+Production OCR deploys use `scripts/deploy-recognition-worker-cloud-run.sh`.
+The script builds an immutable image through `cloudbuild-ocr.yaml` before it
+touches Cloud Run traffic. PP-OCRv5 mobile weights are baked into the image,
+the prior image is used as a Docker layer cache, and the explicit build budget
+is 45 minutes (`RECOGNITION_WORKER_BUILD_TIMEOUT` can override it). If the
+build or model download fails, the currently serving revision remains intact.

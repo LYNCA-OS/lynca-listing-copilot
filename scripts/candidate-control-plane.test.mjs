@@ -3,7 +3,12 @@ import {
   candidateFieldPermissions,
   fieldPermissions
 } from "../lib/listing/candidates/candidate-application-policy.mjs";
+import {
+  applyCandidateDecisionStage,
+  candidateDecisionHeuristicVersion
+} from "../lib/listing/candidates/candidate-decision-stage.mjs";
 import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import { buildV4CandidateControlPlaneTrace } from "../lib/listing/v4/candidates/control-plane-adapter.mjs";
 
 function packet(candidates = [], assistFilter = {}) {
   return {
@@ -298,10 +303,214 @@ function testTrustBlockedCountPropagatesToActivationFunnel() {
   assert.equal(control.vector_activation_funnel.trust_blocked_count, 2);
 }
 
+function testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData() {
+  const candidate = {
+    candidate_id: "catalog-atomic",
+    candidate_identity_id: "identity-atomic",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "REVIEWED_INTERNAL",
+    anchor_agreement: {
+      exact_code_match: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["collector_number", "subjects", "product_hierarchy", "year"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      manufacturer: "Bowman",
+      product: "Bowman Chrome",
+      players: ["Jesus Made"],
+      card_name: "Spotlights",
+      collector_number: "BS-4",
+      serial_number: "12/50",
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "12345678"
+    }
+  };
+  const selection = buildCandidateSelectionPass({
+    result: {
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["catalog-atomic"]
+      })
+    }
+  });
+  const decision = applyCandidateDecisionStage({
+    result: selection,
+    resolvedBefore: {
+      year: "2024",
+      players: ["Jesus Made"],
+      collector_number: "BS-4"
+    }
+  });
+
+  assert.equal(decision.heuristic_version, candidateDecisionHeuristicVersion);
+  assert.equal(decision.selected_candidate_id, "catalog-atomic");
+  assert.ok(decision.field_application.applied_fields.includes("manufacturer"));
+  assert.ok(decision.field_application.applied_fields.includes("product"));
+  assert.ok(decision.field_application.applied_fields.includes("card_name"));
+  assert.equal(decision.resolved_after.manufacturer, "Bowman");
+  assert.equal(decision.resolved_after.product, "Bowman Chrome");
+  assert.equal(decision.resolved_after.card_name, "Spotlights");
+  assert.ok(decision.resolved_after.print_run_numerator == null);
+  assert.ok(decision.resolved_after.grade_company == null);
+  assert.ok(decision.resolved_after.card_grade == null);
+  assert.ok(decision.resolved_after.cert_number == null);
+  assert.notEqual(decision.title_after, decision.title_before);
+  assert.equal(
+    decision.result_patch.candidate_activation_funnel.applied_field_count,
+    decision.field_application.applied_fields.length
+  );
+  assert.ok(decision.field_application.applied_fields.length >= 3);
+  assert.equal(decision.result_patch.candidate_activation_funnel.title_changed, true);
+  const appliedTrace = decision.result_patch.candidate_application_trace
+    .find((row) => row.candidate_id === "catalog-atomic");
+  assert.equal(appliedTrace.participation_level, "LEVEL_3_FIELD_APPLICATION");
+}
+
+function testLowMarginDecisionOnlyAppliesCurrentImageSupportedFields() {
+  const candidateA = {
+    candidate_id: "low-margin-a",
+    candidate_identity_id: "identity-low-margin-a",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "REVIEWED_INTERNAL",
+    match_score: 0.8,
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025",
+      product: "Bowman Chrome",
+      players: ["Jesus Made"],
+      surface_color: "Gold",
+      parallel_exact: "Gold Refractor"
+    }
+  };
+  const candidateB = {
+    ...candidateA,
+    candidate_id: "low-margin-b",
+    candidate_identity_id: "identity-low-margin-b",
+    fields: {
+      ...candidateA.fields,
+      parallel_exact: "Gold Wave Refractor"
+    }
+  };
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        year: "2025",
+        product: "Bowman Chrome",
+        players: ["Jesus Made"]
+      },
+      evidence: {
+        surface_color: "Gold"
+      },
+      catalog_candidate_packet: packet([candidateA, candidateB], {
+        raw_candidate_count: 2,
+        approved_candidate_count: 2,
+        prompt_candidate_count: 2,
+        prompt_candidate_ids: ["low-margin-a", "low-margin-b"]
+      })
+    }
+  });
+  const decision = applyCandidateDecisionStage({
+    result: {
+      ...selection,
+      evidence: { surface_color: "Gold" }
+    },
+    resolvedBefore: {
+      year: "2025",
+      product: "Bowman Chrome",
+      players: ["Jesus Made"]
+    }
+  });
+
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "");
+  assert.deepEqual(decision.field_application.low_margin_supported_fields, ["surface_color"]);
+  assert.equal(decision.resolved_after.surface_color, "Gold");
+  assert.ok(decision.resolved_after.parallel_exact == null);
+  assert.ok(decision.field_application.blocked_fields.includes("parallel_exact"));
+}
+
+function testShadowRerankerCannotChangeProductionDecision() {
+  const trace = buildV4CandidateControlPlaneTrace({
+    selected_candidate_decision: {
+      selected_candidate_id: "heuristic-winner",
+      heuristic_version: candidateDecisionHeuristicVersion,
+      participation_level: "LEVEL_2_EVIDENCE_SUPPORT"
+    },
+    workflow_sidecars: {
+      lightgbm: {
+        status: "COMPLETED",
+        mode: "lightgbm-reranker-v0",
+        selected_candidate_id: "shadow-challenger",
+        shadow_score: 0.87,
+        candidate_count: 4,
+        reason: "shadow_reranker_completed"
+      }
+    }
+  });
+
+  assert.equal(trace.heuristic_baseline.selected_candidate_id, "heuristic-winner");
+  assert.equal(trace.shadow_reranker.shadow_only, true);
+  assert.equal(trace.shadow_reranker.selected_candidate_id, "shadow-challenger");
+  assert.equal(trace.shadow_reranker.would_change_candidate, true);
+  assert.equal(trace.shadow_reranker.production_decision_affected, false);
+  assert.equal(trace.selected_candidate_decision.selected_candidate_id, "heuristic-winner");
+}
+
+function testAtomicDecisionNeverMixesDifferentCandidateIds() {
+  const decision = applyCandidateDecisionStage({
+    resolvedBefore: {},
+    result: {
+      selected_candidate_safe_field_application: {
+        status: "ready_fill_missing",
+        renderer_application_allowed: true,
+        candidate_id: "catalog-approved",
+        eligible_fields: ["product"]
+      },
+      low_margin_safe_field_application: {
+        status: "evidence_support_only",
+        candidate_id: "vector-other",
+        supported_fields: ["surface_color"]
+      },
+      candidate_field_evidence: [
+        {
+          candidate_id: "catalog-approved",
+          field_name: "product",
+          value: "Topps Chrome",
+          permission: "can_apply"
+        },
+        {
+          candidate_id: "vector-other",
+          field_name: "surface_color",
+          value: "Gold",
+          permission: "can_apply"
+        }
+      ]
+    }
+  });
+
+  assert.equal(decision.resolved_after.product, "Topps Chrome");
+  assert.ok(decision.resolved_after.surface_color == null);
+  assert.equal(decision.field_application.candidate_id_mismatch_blocked, true);
+  assert.ok(decision.field_application.blocked_fields.includes("candidate_id_mismatch"));
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testFunnelAndEvidenceTraceFailClosedOnConflict();
 testLowMarginCandidateOnlySupportsCurrentImageFields();
 testTrustBlockedCountPropagatesToActivationFunnel();
+testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData();
+testLowMarginDecisionOnlyAppliesCurrentImageSupportedFields();
+testShadowRerankerCannotChangeProductionDecision();
+testAtomicDecisionNeverMixesDifferentCandidateIds();
 
 console.log("candidate-control-plane tests passed");

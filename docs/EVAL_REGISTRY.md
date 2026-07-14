@@ -22,6 +22,26 @@ baseline or a dataset version changes.
 | C100 eBay blind | `data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json` | 100 | image-only; sealed labels in sibling `.jsonl` |
 | C50 eBay blind (legacy) | `data/eval/ebay-reference/ebay-c50-*-20260702.json` | 50 | superseded by C100 |
 
+The eBay C100 is a blind weak-label stress set, not a reviewed release holdout.
+Its seller-title policy score can detect large regressions but cannot prove card
+identity accuracy.
+
+## Frozen release sets
+
+Release claims now require manifests validated by
+`lib/listing/evaluation/release-set-contract.mjs`:
+
+| Set | Purpose | Leakage rule |
+|---|---|---|
+| `CORE_HOLDOUT` | Fixed reviewed in-scope identity quality | Never train, index query images, or promote rows |
+| `COLD_START_HOLDOUT` | Unknown-card and open-set behavior | Same rules, plus remove the query identity from catalog candidates |
+| `PRODUCTION_REPLAY` | Stable replay of reviewed writer workflow | Never train, index query images, or promote rows |
+
+Only five metrics decide whether a release improved: writer first-pass accept
+rate, critical identity error rate, core-field exact accuracy, active recognition
+p95, and cost per accepted title. Missing token, timing, cost, or reviewed-field
+data remains null; it is never converted to a successful zero.
+
 `data/eval/` is gitignored; canonical copies live in the team storage and the
 Documents clone. If a file is missing locally, copy it from
 `~/Documents/lynca-listing-copilot.v2_pai/data/eval/`.

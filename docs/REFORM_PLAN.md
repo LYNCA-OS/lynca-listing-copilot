@@ -12,8 +12,21 @@ writer status updates.
 
 ## R1 — Retire the v2 monolith
 
-`api/listing-copilot-title.js` (~7,300 lines) contains the entire recognition
-pipeline; `api/v4/*` reaches it only through adapters (`v2PayloadFor`,
+### 2026-07-14 convergence checkpoint
+
+V4 no longer imports or invokes the V2 HTTP handler. The endpoint calls an
+explicit `runListingRecognitionCore` bridge, so request parsing, authentication,
+rate limiting, and response emulation are no longer nested. Candidate selection
+and safe field application now execute through one atomic decision stage, and a
+versioned pipeline contract exposes every remaining transitional bridge.
+
+This is not the end of R1: `api/listing-copilot-title.js` is currently 5,931
+lines and still owns bridged observation, retrieval, and resolution work. The
+next extraction must remove those owners from the core rather than add another
+wrapper. See `docs/architecture/V4-CONVERGENCE-20260714.md`.
+
+Historically, `api/listing-copilot-title.js` (~7,300 lines) contained the entire recognition
+pipeline; `api/v4/*` reaches it only through adapters (`recognitionPayloadFor`,
 `adaptV2ResultToV4`, `hideTitleFields`, `legacy_v2_result`). Every feature
 lands as a patch to one file, and the `resolved_fields || resolved || fields`
 triple-naming (18 sites) is seam leakage.

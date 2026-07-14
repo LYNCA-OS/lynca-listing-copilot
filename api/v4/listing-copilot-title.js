@@ -1,5 +1,6 @@
 import { waitUntil } from "@vercel/functions";
-import v2ListingHandler from "../listing-copilot-title.js";
+import { runListingRecognitionCore } from "../listing-copilot-title.js";
+import { buildV4PipelineContract } from "../../lib/listing/v4/pipeline/pipeline-contract.mjs";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
@@ -28,7 +29,7 @@ import {
   updateV4RecognitionSessionWithRetry
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
-import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { triggerWriterReadyCapacityRefill } from "../../lib/listing/v4/jobs/writer-ready-capacity-refill.mjs";
 import { providerModelOverrideFromOptions } from "../../lib/listing/providers/provider-contract.mjs";
@@ -374,6 +375,7 @@ function providerRuntimeSummary(result = {}) {
       : [],
     serial_numerator_verified: result.serial_numerator_verified ?? null,
     pipeline_node_ledger: result.pipeline_node_ledger || null,
+    v4_pipeline_contract: result.v4_pipeline_contract || null,
     title_length_policy: result.title_length_policy || null,
     title_render_source: result.title_render_source || null,
     model_title_suggestion: result.model_title_suggestion || null,
@@ -714,7 +716,7 @@ function openAiRequestContextFromV4Payload(payload = {}, {
   };
 }
 
-function v2PayloadFor({
+function recognitionPayloadFor({
   payload = {},
   sessionId,
   routePlan,
@@ -745,6 +747,11 @@ async function persistPipelineResult({
   requestContext = null
 } = {}) {
   result = prepareV4PresentationResult({ result, payload }).result;
+  result.v4_pipeline_contract = buildV4PipelineContract({
+    payload,
+    routePlan,
+    result
+  });
   const l1Stage = result.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
   const rows = buildV4PersistenceRows({ sessionId, result, payload });
   const catalogPromptCount = catalogPromptCountFromTrace(rows.candidateTrace);
@@ -1081,7 +1088,7 @@ async function runBackgroundAssistedDraft({
   });
   const l2Payload = backgroundPayloadWithL1ResolvedHint(payload, l1Result);
   const providerOptions = providerOptionsForV4BackgroundL2({ payload: l2Payload, routePlan });
-  const v2Payload = v2PayloadFor({
+  const recognitionPayload = recognitionPayloadFor({
     payload: l2Payload,
     sessionId,
     routePlan,
@@ -1089,17 +1096,17 @@ async function runBackgroundAssistedDraft({
     titleStageTarget: v4TitleStages.L2_ASSISTED_DRAFT
   });
   const recognitionClockStartedAt = new Date().toISOString();
-  const v2Response = await callV2WithGpt5EmptyRetry({
+  const recognitionResponse = await callRecognitionCoreWithGpt5EmptyRetry({
     headers,
-    payload: v2Payload
+    payload: recognitionPayload
   });
-  if (v2Response.statusCode < 200 || v2Response.statusCode >= 300 || !v2Response.body) {
+  if (recognitionResponse.statusCode < 200 || recognitionResponse.statusCode >= 300 || !recognitionResponse.body) {
     await updateV4RecognitionSession({
       sessionId,
       patch: {
         provider_result_summary: {
           assisted_draft_status: "FAILED",
-          failure_reason: `v2_handler_failed_${v2Response.statusCode}`,
+          failure_reason: `recognition_core_failed_${recognitionResponse.statusCode}`,
           l1_already_returned: true
         }
       }
@@ -1107,7 +1114,7 @@ async function runBackgroundAssistedDraft({
     return null;
   }
   const result = {
-    ...v2Response.body,
+    ...recognitionResponse.body,
     title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
     l1_return_reason: "background_assisted_draft_ready",
     full_assist_continued_after_l1: false
@@ -1121,7 +1128,7 @@ async function runBackgroundAssistedDraft({
   return persistPipelineResult({
     sessionId,
     result,
-    payload: v2Payload,
+    payload: recognitionPayload,
     routePlan,
     createResult,
     extraProviderSummary: {
@@ -1133,19 +1140,18 @@ async function runBackgroundAssistedDraft({
   });
 }
 
-async function callV2WithGpt5EmptyRetry({
+async function callRecognitionCoreWithGpt5EmptyRetry({
   headers = {},
   payload = {}
 } = {}) {
-  let v2Response = await callJsonHandler(v2ListingHandler, {
-    method: "POST",
-    headers,
-    payload
+  let coreResponse = await runListingRecognitionCore({
+    payload,
+    requestContext: { headers }
   });
 
-  if (v2Response.statusCode < 200 || v2Response.statusCode >= 300 || !v2Response.body
-    || !shouldRetryGpt5EmptyResult({ payload, result: v2Response.body, env: process.env })) {
-    return v2Response;
+  if (coreResponse.statusCode < 200 || coreResponse.statusCode >= 300 || !coreResponse.body
+    || !shouldRetryGpt5EmptyResult({ payload, result: coreResponse.body, env: process.env })) {
+    return coreResponse;
   }
 
   const retryPayload = {
@@ -1165,10 +1171,9 @@ async function callV2WithGpt5EmptyRetry({
     retryPayload.openai_preferred_key_slot = retryKeySlot;
     retryPayload.provider_key_slot_hint = retryKeySlot;
   }
-  const retryResponse = await callJsonHandler(v2ListingHandler, {
-    method: "POST",
-    headers,
-    payload: retryPayload
+  const retryResponse = await runListingRecognitionCore({
+    payload: retryPayload,
+    requestContext: { headers }
   });
   const retryPrepared = retryResponse.statusCode >= 200 && retryResponse.statusCode < 300 && retryResponse.body
     ? prepareV4PresentationResult({ result: retryResponse.body, payload: retryPayload })
@@ -1187,8 +1192,8 @@ async function callV2WithGpt5EmptyRetry({
   }
 
   return {
-    ...v2Response,
-    body: withGpt5EmptyRetryMetadata(v2Response.body, {
+    ...coreResponse,
+    body: withGpt5EmptyRetryMetadata(coreResponse.body, {
       attempted: true,
       success: false,
       retryStatusCode: retryResponse.statusCode || null,
@@ -1289,7 +1294,7 @@ export default async function handler(req, res) {
     exact_anchor_finalize_reason: null,
     exact_anchor_lookup_timing: null,
     exact_anchor_blocking_scout_allowed: null,
-    v2_call_ms: null,
+    recognition_core_ms: null,
     persist_pipeline_ms: null,
     handler_total_ms: null
   };
@@ -1423,7 +1428,7 @@ export default async function handler(req, res) {
         full_assist_continued_after_l1: true,
         l1_return_barrier_version: l1ReturnBarrierVersion
       };
-      const l1Payload = v2PayloadFor({
+      const l1Payload = recognitionPayloadFor({
         payload,
         sessionId,
         routePlan,
@@ -1699,7 +1704,7 @@ export default async function handler(req, res) {
   const progressiveProviderOptions = forceL2Direct || modelRequiresFullL2Options
     ? providerOptionsForV4BackgroundL2({ payload: l2Payload, routePlan })
     : providerOptionsForV4ProgressiveL1({ payload: l2Payload, routePlan });
-  const v2Payload = v2PayloadFor({
+  const recognitionPayload = recognitionPayloadFor({
     payload: l2Payload,
     sessionId,
     routePlan,
@@ -1707,25 +1712,25 @@ export default async function handler(req, res) {
     titleStageTarget: forceL2Direct || modelRequiresFullL2Options ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
   startRecognitionClock("gpt_provider_request");
-  const v2StartedAt = Date.now();
-  const v2Response = await callV2WithGpt5EmptyRetry({
+  const recognitionCoreStartedAt = Date.now();
+  const recognitionResponse = await callRecognitionCoreWithGpt5EmptyRetry({
     headers: req.headers,
-    payload: v2Payload
+    payload: recognitionPayload
   });
-  l2Timing.v2_call_ms = Date.now() - v2StartedAt;
+  l2Timing.recognition_core_ms = Date.now() - recognitionCoreStartedAt;
 
-  if (v2Response.statusCode < 200 || v2Response.statusCode >= 300 || !v2Response.body) {
+  if (recognitionResponse.statusCode < 200 || recognitionResponse.statusCode >= 300 || !recognitionResponse.body) {
     await updateV4RecognitionSession({
       sessionId,
       patch: {
         status: v4SessionStatuses.FAILED,
-        failure_reason: `v2_handler_failed_${v2Response.statusCode}`
+        failure_reason: `recognition_core_failed_${recognitionResponse.statusCode}`
       }
     });
-    sendJson(res, v2Response.statusCode || 500, withV4Version({
+    sendJson(res, recognitionResponse.statusCode || 500, withV4Version({
       ok: false,
       recognition_session_id: sessionId,
-      message: v2Response.body?.message || "V4 recognition failed before provider result.",
+      message: recognitionResponse.body?.message || "V4 recognition failed before provider result.",
       v4_persistence: { create_session: createResult.persistence.recognition_session }
     }));
     return;
@@ -1734,8 +1739,8 @@ export default async function handler(req, res) {
   const persistStartedAt = Date.now();
   const v4Response = await persistPipelineResult({
     sessionId,
-    result: v2Response.body,
-    payload: v2Payload,
+    result: recognitionResponse.body,
+    payload: recognitionPayload,
     routePlan,
     createResult,
     extraProviderSummary: {
