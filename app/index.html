@@ -26,6 +26,14 @@
           <p class="subtitle">上传图片，检查并确认一段式英文标题。</p>
         </section>
 
+        <section class="workspace-mode-switcher" aria-label="工作模式">
+          <div class="workspace-mode-tabs" role="tablist" aria-label="工作模式">
+            <button class="workspace-mode-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="assetPreviewList" data-workspace-mode="standard">卡片模式</button>
+            <button class="workspace-mode-tab" type="button" role="tab" aria-selected="false" aria-controls="assetPreviewList" tabindex="-1" data-workspace-mode="writer">写手模式</button>
+          </div>
+          <p id="workspaceModeHint">查看全部卡片，逐张检查和编辑。</p>
+        </section>
+
         <section class="runtime-contract" hidden aria-hidden="true">
           <p id="providerStatusText">正在读取服务端配置。</p>
           <div id="providerControl"></div>
@@ -62,11 +70,11 @@
           <div class="asset-board">
             <div class="section-head">
               <div>
-                <h2>标题</h2>
+                <h2 id="assetBoardTitle">标题</h2>
                 <p id="previewSummary">等待上传图片。</p>
               </div>
             </div>
-            <div class="asset-preview-list" id="assetPreviewList">
+            <div class="asset-preview-list" id="assetPreviewList" role="region" aria-label="卡片工作区">
               <div class="empty-state">选择图片后，卡片会按上传顺序出现在这里。</div>
             </div>
           </div>
