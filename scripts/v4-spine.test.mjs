@@ -769,6 +769,8 @@ assert.match(queueStatusApiSource, /v4_pipeline_contract: summary\.v4_pipeline_c
 assert.match(queueStatusApiSource, /selected_candidate_decision: trace\.selected_candidate_decision \|\| null/, "job status must expose the production candidate decision instead of only aggregate funnels.");
 assert.match(queueStatusApiSource, /candidate_observation_snapshot: trace\.candidate_observation_snapshot \|\| \{\}/, "job status must expose the exact current-image fields used by candidate decisions.");
 assert.match(queueStatusApiSource, /candidate_application_trace_rows:[\s\S]*slice\(0, 20\)/, "job status must expose bounded per-candidate application traces for field-level audits.");
+assert.match(queueStatusApiSource, /buildRetrievalParticipationSummary/, "job status must derive retrieval contribution from the actual candidate funnels.");
+assert.match(queueStatusApiSource, /retrieval_participation: retrievalParticipation/, "job status must expose retrieval participation separately from candidate availability.");
 assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke must retain catalog funnel diagnostics.");
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");
 assert.match(v4SmokeSource, /recognition_phase_loaded_sealed_labels: false/, "blind smoke must not load sealed seller titles during recognition.");

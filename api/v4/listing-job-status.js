@@ -5,6 +5,7 @@ import { buildEndToEndNodeLedger } from "../../lib/listing/v4/jobs/end-to-end-no
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { buildRetrievalParticipationSummary } from "../../lib/listing/retrieval/retrieval-participation.mjs";
 
 function queryParam(req, name) {
   const url = new URL(req.url || "/", "https://local.test");
@@ -65,6 +66,17 @@ function writerSafeSessionStatus(session = null, job = null) {
   const assistedDraftStatus = activeRetry && !l2Terminal
     ? "RUNNING"
     : summary.assisted_draft_status || (l2Ready ? "READY" : writerReviewRequired ? "REVIEW_REQUIRED" : null);
+  const retrievalParticipation = buildRetrievalParticipationSummary({
+    catalogFunnel: trace.catalog_activation_funnel || {},
+    vectorFunnel: trace.vector_activation_funnel || {},
+    candidateApplicationTrace: Array.isArray(trace.candidate_application_trace_rows)
+      ? trace.candidate_application_trace_rows
+      : [],
+    candidateDecisionStage: trace.candidate_decision_stage || {},
+    exactAnchorIdentityDecision: summary.pre_l2_anchor_fast_lane_hit === true
+      || summary.v4_l2_timing?.pre_l2_anchor_fast_lane_hit === true
+      || summary.v4_l2_timing?.exact_anchor_finalize_reason === "exact_anchor_catalog_finalized"
+  });
   return {
     id: session.id || null,
     status: activeRetry && !l2Terminal ? "RUNNING" : session.status || null,
@@ -173,7 +185,8 @@ function writerSafeSessionStatus(session = null, job = null) {
         ? trace.candidate_application_trace_rows.slice(0, 20)
         : [],
       catalog_activation_funnel: trace.catalog_activation_funnel || {},
-      vector_activation_funnel: trace.vector_activation_funnel || {}
+      vector_activation_funnel: trace.vector_activation_funnel || {},
+      retrieval_participation: retrievalParticipation
     },
     resolved_fields: session.resolved_fields && typeof session.resolved_fields === "object" ? session.resolved_fields : {},
     field_states: session.field_states && typeof session.field_states === "object" ? session.field_states : {},
