@@ -282,12 +282,41 @@ function runtimeIsolation(offReport = {}, onReport = {}) {
   const onExternalRows = onRows.filter((row) => row.external_retrieval_used === true);
   const offTechnicalFailureIds = technicalFailureIds(offRows);
   const onTechnicalFailureIds = technicalFailureIds(onRows);
+  const executionTraceValid = (row = {}, expectedArm = "") => {
+    const trace = row.retrieval_ablation_execution;
+    if (!trace || trace.contract_id !== "retrieval-application-ablation-v1" || trace.arm !== expectedArm) return false;
+    if (expectedArm === "OFF") {
+      return trace.evidence_completion_enabled === false
+        && trace.catalog_enabled === false
+        && trace.vector_enabled === false
+        && trace.retrieval_application_enabled === false
+        && trace.force_retrieval_application_resolution === false
+        && trace.retrieval_application_present === false;
+    }
+    return trace.terminal_path === "evidence_completion"
+      && trace.evidence_completion_enabled === true
+      && trace.catalog_enabled === true
+      && trace.vector_enabled === true
+      && trace.retrieval_application_enabled === true
+      && trace.force_retrieval_application_resolution === true
+      && trace.retrieval_application_present === true
+      && trace.retrieval_application_owns_candidate_application === true;
+  };
+  const offExecutionMismatchRows = offRows.filter((row) => !executionTraceValid(row, "OFF"));
+  const onExecutionMismatchRows = onRows.filter((row) => !executionTraceValid(row, "ON"));
+  const onApplicationBypassRows = onRows.filter((row) => {
+    if (numeric(row.decision_eligible_candidate_count) < 1) return false;
+    return applicationDecisions(retrievalApplication(row)).length < 1;
+  });
   return {
     valid: offRetrievalLeakRows.length === 0
       && offExternalRows.length === 0
       && onExternalRows.length === 0
       && offTechnicalFailureIds.length === 0
-      && onTechnicalFailureIds.length === 0,
+      && onTechnicalFailureIds.length === 0
+      && offExecutionMismatchRows.length === 0
+      && onExecutionMismatchRows.length === 0
+      && onApplicationBypassRows.length === 0,
     retrieval_off_leak_count: offRetrievalLeakRows.length,
     retrieval_off_leak_item_ids: offRetrievalLeakRows.map(rowId).filter(Boolean),
     retrieval_off_external_retrieval_count: offExternalRows.length,
@@ -295,7 +324,13 @@ function runtimeIsolation(offReport = {}, onReport = {}) {
     retrieval_off_technical_failure_count: offTechnicalFailureIds.length,
     retrieval_on_technical_failure_count: onTechnicalFailureIds.length,
     retrieval_off_technical_failure_item_ids: offTechnicalFailureIds,
-    retrieval_on_technical_failure_item_ids: onTechnicalFailureIds
+    retrieval_on_technical_failure_item_ids: onTechnicalFailureIds,
+    retrieval_off_execution_mismatch_count: offExecutionMismatchRows.length,
+    retrieval_on_execution_mismatch_count: onExecutionMismatchRows.length,
+    retrieval_off_execution_mismatch_item_ids: offExecutionMismatchRows.map(rowId).filter(Boolean),
+    retrieval_on_execution_mismatch_item_ids: onExecutionMismatchRows.map(rowId).filter(Boolean),
+    retrieval_on_application_bypass_count: onApplicationBypassRows.length,
+    retrieval_on_application_bypass_item_ids: onApplicationBypassRows.map(rowId).filter(Boolean)
   };
 }
 

@@ -5017,6 +5017,20 @@ function forceRetrievalApplicationResolutionEnabled(providerOptions = {}) {
   return optionFlag(providerOptions, "force_retrieval_application_resolution", false);
 }
 
+function retrievalApplicationAblationArm(providerOptions = {}) {
+  if (String(providerOptions.evaluation_profile || "").trim() !== "retrieval_application_ablation_v1") {
+    return "";
+  }
+  return forceRetrievalApplicationResolutionEnabled(providerOptions) ? "ON" : "OFF";
+}
+
+function shouldReturnAssistShadowSingleModelDraft({
+  assistShadowOnly = false,
+  forceRetrievalApplicationResolution = false
+} = {}) {
+  return assistShadowOnly === true && forceRetrievalApplicationResolution !== true;
+}
+
 async function createOpenAiTitle(payload, selection, {
   recognitionEvidenceDocument = null,
   signedImages: reusableSignedImages = null,
@@ -5724,7 +5738,7 @@ async function createOpenAiTitle(payload, selection, {
   mergedResult.preingestion_retrieval_refresh = preingestionRetrievalRefresh;
   mergedResult.preingestion_retrieval_anchor_fields = preingestionRetrievalAnchorFields;
   mergedResult.serial_numerator_verified = initialPayload.serial_numerator_verified;
-  const finalizeProviderResult = async (result) => {
+  const finalizeProviderResult = async (result, terminalPath = "unknown") => {
     const handoffJoinStartedAt = nowMs();
     const handoff = await (providerCapacityStageHandoffPromise || handoffProviderCapacityAfterStage(
       initialPayload,
@@ -5740,7 +5754,7 @@ async function createOpenAiTitle(payload, selection, {
         Math.max(0, nowMs() - providerCapacityHandoffOverlapStartedAt)
       );
     }
-    return {
+    const finalized = {
       ...withVerifiedPreingestionSlabParallel(
         withVerifiedPreingestionPrintRun(
           withOpenSetReadiness(result, { ...openSetContext, catalogContext, vectorContext }),
@@ -5760,9 +5774,26 @@ async function createOpenAiTitle(payload, selection, {
         join_wait_ms: handoffJoinWaitMs
       }
     };
+    const ablationArm = retrievalApplicationAblationArm(providerOptions);
+    if (!ablationArm) return finalized;
+    return {
+      ...finalized,
+      retrieval_ablation_execution: {
+        contract_id: "retrieval-application-ablation-v1",
+        arm: ablationArm,
+        terminal_path: terminalPath,
+        evidence_completion_enabled: evidenceCompletionEnabled(process.env, providerOptions),
+        catalog_enabled: optionFlag(providerOptions, "enable_catalog_assist", false),
+        vector_enabled: optionFlag(providerOptions, "enable_vector_assist", false),
+        retrieval_application_enabled: retrievalApplicationEnabled(process.env, providerOptions),
+        force_retrieval_application_resolution: forceRetrievalApplicationResolutionEnabled(providerOptions),
+        retrieval_application_present: finalized.retrieval_application != null,
+        retrieval_application_owns_candidate_application: finalized.retrieval_application?.owns_candidate_application === true
+      }
+    };
   };
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
-  if (fastPathResult) return finalizeProviderResult(fastPathResult);
+  if (fastPathResult) return finalizeProviderResult(fastPathResult, "provider_fast_path");
   const forceRetrievalApplicationResolution = forceRetrievalApplicationResolutionEnabled(providerOptions);
   if (assistShadowOnly && !forceRetrievalApplicationResolution) {
     const shadowProviderOptions = vectorContext.vector_lazy_skip?.skipped === true
@@ -5774,21 +5805,25 @@ async function createOpenAiTitle(payload, selection, {
       providerOptions: shadowProviderOptions,
       providerId: visionProviderIds.OPENAI_LEGACY
     });
-    return finalizeProviderResult(shadowResult);
+    return finalizeProviderResult(shadowResult, "assist_shadow");
   }
+  const allowAssistShadowSingleModelDraft = shouldReturnAssistShadowSingleModelDraft({
+    assistShadowOnly,
+    forceRetrievalApplicationResolution
+  });
   const singleModelResult = timeSync(timingContext, "resolver_ms", () => singleModelDraftPath(
     mergedResult,
     initialPayload,
     visionProviderIds.OPENAI_LEGACY,
     {
-      reason: assistShadowOnly
+      reason: allowAssistShadowSingleModelDraft
         ? "assist_shadow_no_prompt_safe_candidates"
         : "single_model_fast_path",
-      allowWhenEvidenceCompletion: assistShadowOnly,
-      assistShadowOnly
+      allowWhenEvidenceCompletion: allowAssistShadowSingleModelDraft,
+      assistShadowOnly: allowAssistShadowSingleModelDraft
     }
   ));
-  if (singleModelResult) return finalizeProviderResult(singleModelResult);
+  if (singleModelResult) return finalizeProviderResult(singleModelResult, "single_model_draft");
 
   const completedResult = await withEvidenceCompletion(mergedResult, initialPayload, {
     timingContext,
@@ -5797,7 +5832,7 @@ async function createOpenAiTitle(payload, selection, {
     catalogContext,
     vectorContext
   });
-  return finalizeProviderResult(completedResult);
+  return finalizeProviderResult(completedResult, "evidence_completion");
 }
 
 function requestedProviderFromPayload(payload = {}) {
@@ -5825,6 +5860,8 @@ export const __listingCopilotTitleTestHooks = {
   finalizeDeterministicPresentation,
   finalResolvedFieldsForPresentation,
   forceRetrievalApplicationResolutionEnabled,
+  retrievalApplicationAblationArm,
+  shouldReturnAssistShadowSingleModelDraft,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
   preingestionEvidenceRefreshDecision,

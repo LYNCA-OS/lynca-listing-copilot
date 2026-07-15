@@ -19,6 +19,32 @@ const confirmedStatuses = {
   grading_info: "UNKNOWN"
 };
 
+const offExecution = {
+  contract_id: "retrieval-application-ablation-v1",
+  arm: "OFF",
+  terminal_path: "single_model_draft",
+  evidence_completion_enabled: false,
+  catalog_enabled: false,
+  vector_enabled: false,
+  retrieval_application_enabled: false,
+  force_retrieval_application_resolution: false,
+  retrieval_application_present: false,
+  retrieval_application_owns_candidate_application: false
+};
+
+const onExecution = {
+  contract_id: "retrieval-application-ablation-v1",
+  arm: "ON",
+  terminal_path: "evidence_completion",
+  evidence_completion_enabled: true,
+  catalog_enabled: true,
+  vector_enabled: true,
+  retrieval_application_enabled: true,
+  force_retrieval_application_resolution: true,
+  retrieval_application_present: true,
+  retrieval_application_owns_candidate_application: true
+};
+
 const dataset = {
   schema_version: "golden-sem-partition-v1",
   dataset_id: "retrieval-ablation-fixture",
@@ -79,6 +105,7 @@ const off = {
     {
       item_id: "card-1",
       model_id: "gpt-5-mini",
+      retrieval_ablation_execution: offExecution,
       final_title: "2024 Test Player",
       resolved_fields: {
         year: "2024",
@@ -90,6 +117,7 @@ const off = {
     {
       item_id: "card-2",
       model_id: "gpt-5-mini",
+      retrieval_ablation_execution: offExecution,
       final_title: "2023 Panini Prizm Second Player Base",
       resolved_fields: {
         year: "2023",
@@ -129,6 +157,7 @@ const on = {
     {
       item_id: "card-1",
       model_id: "gpt-5-mini",
+      retrieval_ablation_execution: onExecution,
       catalog_candidate_count: 2,
       vector_raw_candidate_count: 3,
       decision_eligible_candidate_count: 1,
@@ -170,6 +199,7 @@ const on = {
     {
       item_id: "card-2",
       model_id: "gpt-5-mini",
+      retrieval_ablation_execution: onExecution,
       catalog_candidate_count: 1,
       vector_raw_candidate_count: 1,
       decision_eligible_candidate_count: 1,
@@ -251,5 +281,21 @@ const leakedReport = evaluateRetrievalApplicationAblation({
 assert.equal(leakedReport.validity.experiment.runtime_isolation.valid, false);
 assert.equal(leakedReport.validity.experiment.runtime_isolation.retrieval_off_leak_count, 1);
 assert.equal(leakedReport.validity.causal_comparison_valid, false);
+
+const shortCircuitedOn = structuredClone(on);
+shortCircuitedOn.results[0].retrieval_ablation_execution = {
+  ...shortCircuitedOn.results[0].retrieval_ablation_execution,
+  terminal_path: "single_model_draft",
+  retrieval_application_present: false,
+  retrieval_application_owns_candidate_application: false
+};
+const shortCircuitedReport = evaluateRetrievalApplicationAblation({
+  dataset,
+  retrievalDisabledReport: off,
+  retrievalEnabledReport: shortCircuitedOn
+});
+assert.equal(shortCircuitedReport.validity.experiment.runtime_isolation.valid, false);
+assert.equal(shortCircuitedReport.validity.experiment.runtime_isolation.retrieval_on_execution_mismatch_count, 1);
+assert.equal(shortCircuitedReport.validity.causal_comparison_valid, false);
 
 console.log("retrieval application ablation tests passed");

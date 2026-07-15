@@ -167,6 +167,36 @@ assert.equal(
   false,
   "production behavior must remain unchanged unless the ablation explicitly forces application resolution"
 );
+assert.equal(
+  __listingCopilotTitleTestHooks.shouldReturnAssistShadowSingleModelDraft({
+    assistShadowOnly: true,
+    forceRetrievalApplicationResolution: true
+  }),
+  false,
+  "retrieval ON must not terminate in the assist-shadow single-model draft"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.shouldReturnAssistShadowSingleModelDraft({
+    assistShadowOnly: true,
+    forceRetrievalApplicationResolution: false
+  }),
+  true,
+  "production assist-shadow behavior stays unchanged without the ablation force flag"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.retrievalApplicationAblationArm({
+    evaluation_profile: "retrieval_application_ablation_v1",
+    force_retrieval_application_resolution: true
+  }),
+  "ON"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.retrievalApplicationAblationArm({
+    evaluation_profile: "retrieval_application_ablation_v1",
+    force_retrieval_application_resolution: false
+  }),
+  "OFF"
+);
 
 const explicitVectorOnOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
   provider_options: {

@@ -130,7 +130,7 @@ assert.doesNotMatch(providerRegistry, /ENABLE_FAST_CASCADE_PROVIDER|cascade_fast
 assert.match(api, /const signedImages = await imagesWithSignedReadUrls\(payload\.images \|\| \[\], timingContext\)/, "OpenAI fallback should use signed storage read URLs instead of requiring Base64 JSON");
 assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider calls should reuse signed URLs created during recognition preflight");
 assert.doesNotMatch(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade fast path should not exist");
-assert.match(api, /if \(fastPathResult\) return finalizeProviderResult\(fastPathResult\)/, "cascade fast path should skip slow completion while preserving open-set diagnostics and verified OCR locks");
+assert.match(api, /if \(fastPathResult\) return finalizeProviderResult\(fastPathResult, "provider_fast_path"\)/, "provider fast path should skip slow completion while preserving open-set diagnostics and verified OCR locks");
 assert.match(api, /open_set_readiness/, "title API should expose known-catalog versus catalog-gap diagnostics");
 assert.match(apiWithOptions, /singleModelFastPathEnabled/, "title API should expose a single-model fast path switch");
 assert.match(apiWithOptions, /envFlag\(env, "ENABLE_SINGLE_MODEL_FAST_PATH", false\)/, "pipeline should default to model plus evidence completion");
@@ -160,7 +160,7 @@ assert.match(api, /singleModelDraftPath/, "single-model provider requests should
 assert.match(api, /skipped_evidence_completion: true/, "single-model fast drafts should record skipped Evidence Completion");
 assert.match(api, /assist_shadow_no_prompt_safe_candidates/, "assist-enabled requests with no prompt-safe candidates should stay in shadow-only mode");
 assert.match(api, /assist_shadow_only: assistShadowOnly/, "assist shadow-only drafts should be distinguishable from provider fast path");
-assert.match(api, /allowWhenEvidenceCompletion: assistShadowOnly/, "assist shadow-only drafts should skip Evidence Completion without enabling unsafe candidate assist");
+assert.match(api, /shouldReturnAssistShadowSingleModelDraft/, "assist shadow-only drafts should skip Evidence Completion only when retrieval application is not explicitly forced");
 assert.match(api, /assist_shadow_retrieval_failed/, "assist shadow telemetry failures should not fail the GPT draft");
 assert.match(api, /safe_retrieval_title_assist/, "trusted selected retrieval evidence should have a bounded title scaffold path");
 assert.doesNotMatch(api, /if\s*\(\s*source\.selected\s*===\s*true\s*\|\|\s*source\.__title_assist_selected_candidate\s*===\s*true\s*\)\s*return\s+true/, "selected retrieval candidates must still pass title-assist safety checks");

@@ -121,6 +121,7 @@ jobs:
               --off /tmp/retrieval-off.json \
               --on /tmp/retrieval-on.json \
               --out /tmp/retrieval-application-ablation.json
+            jq -e '.validity.causal_comparison_valid == true' /tmp/retrieval-application-ablation.json >/dev/null
           fi
 
       - name: Upload complete evidence
