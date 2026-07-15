@@ -83,6 +83,50 @@ assert.equal(identityDecision.participation_level, retrievalParticipationLevels.
 assert.equal(identityDecision.retrieval_applied, true);
 assert.deepEqual(identityDecision.applied_fields, ["year", "product"]);
 
+const rejectedApplicationDoesNotBecomeEvidence = classifyRetrievalParticipation({
+  source: "catalog",
+  funnel: {
+    raw_candidate_count: 1,
+    prompt_candidate_count: 1,
+    evidence_support_field_count: 4
+  },
+  retrievalApplication: {
+    schema_version: "retrieval-application-v1",
+    selected_candidate_id: "catalog-rejected",
+    decisions: [{
+      candidate_id: "catalog-rejected",
+      candidate_lane: "catalog",
+      field: "product",
+      decision: "REJECT",
+      applied_to_final: false,
+      supported_final: false
+    }]
+  }
+});
+assert.equal(rejectedApplicationDoesNotBecomeEvidence.participation_level, retrievalParticipationLevels.CANDIDATE_RANKING);
+assert.equal(rejectedApplicationDoesNotBecomeEvidence.evidence_support_field_count, 0);
+assert.deepEqual(rejectedApplicationDoesNotBecomeEvidence.supported_fields, []);
+
+const appliedApplicationBecomesIdentityDecision = classifyRetrievalParticipation({
+  source: "catalog",
+  funnel: { raw_candidate_count: 1, prompt_candidate_count: 1 },
+  retrievalApplication: {
+    schema_version: "retrieval-application-v1",
+    selected_candidate_id: "catalog-applied",
+    decisions: [{
+      candidate_id: "catalog-applied",
+      candidate_lane: "catalog",
+      field: "product",
+      resolver_field: "product",
+      decision: "APPLY",
+      applied_to_final: true,
+      supported_final: false
+    }]
+  }
+});
+assert.equal(appliedApplicationBecomesIdentityDecision.participation_level, retrievalParticipationLevels.IDENTITY_DECISION);
+assert.deepEqual(appliedApplicationBecomesIdentityDecision.applied_fields, ["product"]);
+
 const exactAnchor = buildRetrievalParticipationSummary({
   catalogFunnel: { raw_candidate_count: 1 },
   vectorFunnel: {},

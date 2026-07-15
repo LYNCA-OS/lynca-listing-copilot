@@ -399,6 +399,7 @@ function providerOptionsForMode(providerMode, {
     enable_evidence_completion: catalogAssist || vectorAssist,
     enable_catalog_assist: catalogAssist,
     enable_vector_assist: vectorAssist,
+    enable_retrieval_application: catalogAssist || vectorAssist,
     enable_stored_visual_features: vectorAssist,
     enable_query_visual_embeddings: vectorAssist,
     enable_vector_retrieval: vectorAssist,
@@ -418,6 +419,7 @@ function providerOptionsForMode(providerMode, {
     eval_flags: {
       ENABLE_CATALOG_ASSIST: catalogAssist,
       ENABLE_VECTOR_ASSIST: vectorAssist,
+      ENABLE_RETRIEVAL_APPLICATION: catalogAssist || vectorAssist,
       ENABLE_VECTOR_LAZY_MODE: vectorAssist ? forceVector !== true && disableVectorLazyMode !== true : false,
       FORCE_VECTOR_ASSIST: forceVector,
       CORRECTED_TITLE_AS_TEMPORARY_GT: temporaryGt,
@@ -1510,6 +1512,16 @@ function compactWorkflowSidecars(workflowSidecars = null) {
   }));
 }
 
+function compactRetrievalApplication(application = null) {
+  if (!application || typeof application !== "object" || Array.isArray(application)) return null;
+  const decisions = Array.isArray(application.decisions) ? application.decisions : [];
+  return {
+    ...application,
+    decision_count_total: decisions.length,
+    decisions: decisions.slice(0, 120)
+  };
+}
+
 function compactComparableValue(value) {
   if (Array.isArray(value)) return value.map(compactComparableValue).filter(Boolean).sort().join("|");
   return normalizeText(value).toLowerCase().replace(/^0+(?=\d)/g, "");
@@ -1712,6 +1724,7 @@ function perCardDecisionTrace(results = []) {
     selected_candidate_decision: item.selected_candidate_decision || null,
     candidate_application_trace: item.candidate_application_trace || [],
     candidate_field_evidence: item.candidate_field_evidence || [],
+    retrieval_application: compactRetrievalApplication(item.retrieval_application),
     candidate_activation_funnel: item.candidate_activation_funnel || null,
     catalog_activation_funnel: item.catalog_activation_funnel || null,
     vector_activation_funnel: item.vector_activation_funnel || null,
@@ -2276,6 +2289,7 @@ function evaluatedResultFromData({
     selected_candidate_decision: data.selected_candidate_decision || null,
     candidate_application_trace: Array.isArray(data.candidate_application_trace) ? data.candidate_application_trace : [],
     candidate_field_evidence: Array.isArray(data.candidate_field_evidence) ? data.candidate_field_evidence : [],
+    retrieval_application: compactRetrievalApplication(data.retrieval_application),
     candidate_activation_funnel: data.candidate_activation_funnel || null,
     catalog_activation_funnel: data.catalog_activation_funnel || null,
     vector_activation_funnel: data.vector_activation_funnel || null,
@@ -2398,6 +2412,7 @@ function technicalFailureResult({
     selected_candidate_decision: null,
     candidate_application_trace: [],
     candidate_field_evidence: [],
+    retrieval_application: null,
     candidate_activation_funnel: null,
     catalog_activation_funnel: null,
     vector_activation_funnel: null,

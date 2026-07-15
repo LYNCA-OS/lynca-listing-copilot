@@ -73,6 +73,7 @@ function writerSafeSessionStatus(session = null, job = null) {
       ? trace.candidate_application_trace_rows
       : [],
     candidateDecisionStage: trace.candidate_decision_stage || {},
+    retrievalApplication: trace.retrieval_application || {},
     exactAnchorIdentityDecision: summary.pre_l2_anchor_fast_lane_hit === true
       || summary.v4_l2_timing?.pre_l2_anchor_fast_lane_hit === true
       || summary.v4_l2_timing?.exact_anchor_finalize_reason === "exact_anchor_catalog_finalized"
@@ -175,6 +176,14 @@ function writerSafeSessionStatus(session = null, job = null) {
         : [],
       selected_candidate_decision: trace.selected_candidate_decision || null,
       candidate_decision_stage: trace.candidate_decision_stage || null,
+      retrieval_application: trace.retrieval_application
+        ? {
+          ...trace.retrieval_application,
+          decisions: Array.isArray(trace.retrieval_application.decisions)
+            ? trace.retrieval_application.decisions.slice(0, 80)
+            : []
+        }
+        : null,
       selected_candidate_safe_field_application: trace.selected_candidate_safe_field_application || null,
       low_margin_safe_field_application: trace.low_margin_safe_field_application || null,
       applied_field_count: Number(trace.applied_field_count || 0),

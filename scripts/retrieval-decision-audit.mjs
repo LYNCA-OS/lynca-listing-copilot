@@ -49,6 +49,14 @@ function candidateDecisionStageFromItem(item = {}) {
     || {};
 }
 
+function retrievalApplicationFromItem(item = {}) {
+  return item.l2_candidate_debug?.retrieval_application
+    || item.candidate_control_plane_trace?.retrieval_application
+    || item.l2_status?.candidate_control_plane_trace?.retrieval_application
+    || item.retrieval_application
+    || {};
+}
+
 function funnelFromItem(item = {}, source = "catalog") {
   const nested = item.l2_candidate_debug?.[`${source}_activation_funnel`]
     || item.candidate_control_plane_trace?.[`${source}_activation_funnel`]
@@ -130,6 +138,7 @@ export function buildRetrievalDecisionAudit(report = {}, {
       vectorFunnel: funnelFromItem(item, "vector"),
       candidateApplicationTrace: candidateTraceFromItem(item),
       candidateDecisionStage: candidateDecisionStageFromItem(item),
+      retrievalApplication: retrievalApplicationFromItem(item),
       exactAnchorIdentityDecision: exactAnchorIdentityDecisionFromItem(item)
     });
     const outcome = explicitRetrievalOutcome(item, participation);

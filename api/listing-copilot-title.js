@@ -49,6 +49,7 @@ import {
   postObservationRetrievalDeadlineEnabled,
   positiveIntegerFromEnv,
   providerOptionsFromPayload,
+  retrievalApplicationEnabled,
   singleModelFastPathEnabled,
   ultraFastImageDetail,
   ultraFastTextVerbosity,
@@ -195,6 +196,7 @@ import { recordVectorRetrievalTelemetry } from "../lib/listing/retrieval/vector-
 import { buildCandidateContextSummary } from "../lib/listing/retrieval/candidate-context-summary.mjs";
 import { mergeCatalogCandidateContexts } from "../lib/listing/retrieval/catalog-context-merge.mjs";
 import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import { buildRetrievalApplicationLayer } from "../lib/listing/candidates/retrieval-application-layer.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
 import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
@@ -972,13 +974,17 @@ function finalResolvedFieldsForPresentation(result = {}, {
       allowExactCodePromotion: fields !== result.raw_provider_fields
     })
   ), { ...base });
-  const candidateDecision = applyCandidateDecisionStage({
-    result,
-    resolvedBefore: merged,
-    maxLength
-  });
-  Object.assign(result, candidateDecision.result_patch);
-  const withCandidateOverlay = candidateDecision.resolved_after;
+  const retrievalApplicationOwnsCandidateFields = result.retrieval_application?.owns_candidate_application === true;
+  let withCandidateOverlay = merged;
+  if (!retrievalApplicationOwnsCandidateFields) {
+    const candidateDecision = applyCandidateDecisionStage({
+      result,
+      resolvedBefore: merged,
+      maxLength
+    });
+    Object.assign(result, candidateDecision.result_patch);
+    withCandidateOverlay = candidateDecision.resolved_after;
+  }
   const withEvidenceOverrides = applyEvidenceBackedPresentationOverrides(
     withCandidateOverlay,
     result.normalized_evidence || result.evidence || {}
@@ -3796,26 +3802,9 @@ function buildOpenSetReadiness(result = {}, {
   };
 }
 
-function withOpenSetReadiness(result = {}, context = {}) {
-  if (!result || typeof result !== "object") return result;
-  const openSetReadiness = buildOpenSetReadiness(result, context);
-  const candidateControl = buildCandidateSelectionPass({
-    result,
-    catalogContext: context.catalogContext || {},
-    vectorContext: context.vectorContext || {}
-  });
-  const candidateContext = buildCandidateContextSummary({
-    result,
-    openSetReadiness,
-    catalogContext: context.catalogContext || {},
-    vectorContext: context.vectorContext || {},
-    providerOptions: context.providerOptions || {},
-    env: process.env
-  });
-  return applyColdStartSafeDraftPolicy({
-    ...result,
-    open_set_readiness: openSetReadiness,
-    candidate_context: candidateContext,
+function candidateControlResultPatch(candidateControl = {}) {
+  return {
+    candidate_control_ready: true,
     participation_level: candidateControl.participation_level,
     decision_eligible_candidate_count: candidateControl.decision_eligible_candidate_count,
     decision_eligible_candidate_ids: candidateControl.decision_eligible_candidate_ids,
@@ -3824,6 +3813,7 @@ function withOpenSetReadiness(result = {}, context = {}) {
     selected_candidate_decision: candidateControl.selected_candidate_decision,
     candidate_application_trace: candidateControl.candidate_application_trace,
     candidate_observation_snapshot: candidateControl.candidate_observation_snapshot,
+    candidate_field_inventory: candidateControl.candidate_field_inventory,
     candidate_field_evidence: candidateControl.candidate_field_evidence,
     candidate_activation_funnel: candidateControl.candidate_activation_funnel,
     catalog_activation_funnel: candidateControl.catalog_activation_funnel,
@@ -3835,6 +3825,56 @@ function withOpenSetReadiness(result = {}, context = {}) {
     low_margin_safe_field_application: candidateControl.low_margin_safe_field_application,
     selected_candidate_safe_field_application: candidateControl.selected_candidate_safe_field_application,
     selected_candidate_verifier: candidateControl.selected_candidate_verifier
+  };
+}
+
+function withCandidateControl(result = {}, context = {}, {
+  includeRetrievalApplication = false
+} = {}) {
+  if (!result || typeof result !== "object") return result;
+  if (result.candidate_control_ready === true
+    && (!includeRetrievalApplication || result.retrieval_application?.owns_candidate_application === true)) {
+    return result;
+  }
+  const candidateControl = buildCandidateSelectionPass({
+    result,
+    catalogContext: context.catalogContext || {},
+    vectorContext: context.vectorContext || {}
+  });
+  const controlled = {
+    ...result,
+    ...candidateControlResultPatch(candidateControl)
+  };
+  if (!includeRetrievalApplication) return controlled;
+  const providerOptions = context.providerOptions || {};
+  const enabled = retrievalApplicationEnabled(context.env || process.env, providerOptions);
+  return {
+    ...controlled,
+    retrieval_application: buildRetrievalApplicationLayer({
+      result: controlled,
+      candidateControl,
+      enabled,
+      maxLength: context.maxLength || maxFallbackTitleLength
+    })
+  };
+}
+
+function withOpenSetReadiness(result = {}, context = {}) {
+  if (!result || typeof result !== "object") return result;
+  const controlledResult = withCandidateControl(result, context);
+  const openSetReadiness = buildOpenSetReadiness(controlledResult, context);
+  const candidateContext = buildCandidateContextSummary({
+    result: controlledResult,
+    openSetReadiness,
+    catalogContext: context.catalogContext || {},
+    vectorContext: context.vectorContext || {},
+    providerOptions: context.providerOptions || {},
+    env: process.env
+  });
+  return applyColdStartSafeDraftPolicy({
+    ...controlledResult,
+    open_set_readiness: openSetReadiness,
+    candidate_context: candidateContext
   }, {
     providerOptions: context.providerOptions || {},
     mode: context.mode || result.provider_eval_mode || "",
@@ -3848,7 +3888,9 @@ async function withEvidenceCompletion(result, payload, {
   env = process.env,
   timingContext = null,
   visualFeatures = {},
-  providerOptions = {}
+  providerOptions = {},
+  catalogContext = {},
+  vectorContext = {}
 } = {}) {
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
   const retrievalEnv = retrievalEnvForProviderOptions(env, providerOptions);
@@ -3874,7 +3916,7 @@ async function withEvidenceCompletion(result, payload, {
   ];
   const completedResult = withCompletedEvidencePresentation(result, completion, payload);
   const route = completion.route || completedResult.route || completedResult.resolved?.route;
-  const output = {
+  const output = withCandidateControl({
     ...completedResult,
     route,
     route_reason: completion.route_reason,
@@ -3885,7 +3927,15 @@ async function withEvidenceCompletion(result, payload, {
     usage: mergeUsage(result.usage, completion.usage, {
       providerCalls: result.provider ? 1 : 0
     })
-  };
+  }, {
+    catalogContext,
+    vectorContext,
+    providerOptions,
+    env,
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  }, {
+    includeRetrievalApplication: true
+  });
 
   return timeAsync(timingContext, "resolver_ms", () => applyIdentityResolutionGateWithConvergence(output, {
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
@@ -5733,7 +5783,13 @@ async function createOpenAiTitle(payload, selection, {
   ));
   if (singleModelResult) return finalizeProviderResult(singleModelResult);
 
-  const completedResult = await withEvidenceCompletion(mergedResult, initialPayload, { timingContext, visualFeatures: vectorContext.visualFeatures, providerOptions });
+  const completedResult = await withEvidenceCompletion(mergedResult, initialPayload, {
+    timingContext,
+    visualFeatures: vectorContext.visualFeatures,
+    providerOptions,
+    catalogContext,
+    vectorContext
+  });
   return finalizeProviderResult(completedResult);
 }
 
