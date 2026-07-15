@@ -400,6 +400,54 @@ assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, f
 assert.equal(openai.titlePayload.catalog_observation_hint, null);
 
 {
+  const retrievalOff = await runProvider("retrieval_off", {
+    evaluateOptions: {
+      correctedTitleAsTemporaryGt: true,
+      sendCorrectedTitleHintToCloud: true
+    }
+  });
+  const retrievalOn = await runProvider("retrieval_on", {
+    evaluateOptions: {
+      correctedTitleAsTemporaryGt: true,
+      sendCorrectedTitleHintToCloud: true
+    }
+  });
+  const off = retrievalOff.titlePayload.provider_options;
+  const on = retrievalOn.titlePayload.provider_options;
+
+  assert.equal(retrievalOff.report.provider, "retrieval_off");
+  assert.equal(retrievalOn.report.provider, "retrieval_on");
+  assert.equal(retrievalOff.report.experiment_contract.arm, "OFF");
+  assert.equal(retrievalOn.report.experiment_contract.arm, "ON");
+  for (const options of [off, on]) {
+    assert.equal(options.evaluation_profile, "retrieval_application_ablation_v1");
+    assert.equal(options.single_model_fast, false);
+    assert.equal(options.enable_evidence_completion, true);
+    assert.equal(options.enable_ephemeral_external_retrieval, false);
+    assert.equal(options.disable_identity_result_cache, true);
+    assert.equal(options.disable_approved_identity_memory, true);
+    assert.equal(options.corrected_title_as_temporary_gt, false);
+    assert.equal(options.send_corrected_title_hint_to_cloud, false);
+  }
+  assert.equal(off.enable_catalog_assist, false);
+  assert.equal(off.enable_vector_assist, false);
+  assert.equal(off.enable_retrieval_application, false);
+  assert.equal(off.enable_stored_visual_features, false);
+  assert.equal(off.enable_vector_retrieval, false);
+  assert.equal(off.enable_advanced_retrieval, false);
+  assert.equal(off.enable_hybrid_retrieval, false);
+  assert.equal(on.enable_catalog_assist, true);
+  assert.equal(on.enable_vector_assist, true);
+  assert.equal(on.enable_retrieval_application, true);
+  assert.equal(on.enable_stored_visual_features, true);
+  assert.equal(on.enable_vector_retrieval, true);
+  assert.equal(on.enable_advanced_retrieval, true);
+  assert.equal(on.enable_hybrid_retrieval, true);
+  assert.equal(retrievalOff.titlePayload.catalog_observation_hint, null);
+  assert.equal(retrievalOn.titlePayload.catalog_observation_hint, null);
+}
+
+{
   const coldStart = await runProvider("ebay_cold_start_blind", {
     titleResponder({ body }) {
       return {

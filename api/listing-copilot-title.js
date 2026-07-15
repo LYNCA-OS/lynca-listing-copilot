@@ -1806,6 +1806,8 @@ async function verifyApprovedMemoryImages({ payload = {} } = {}) {
 }
 
 async function createApprovedMemoryTitle(payload) {
+  const providerOptions = providerOptionsFromPayload(payload);
+  if (optionFlag(providerOptions, "disable_approved_identity_memory", false)) return null;
   if (!listingApprovedMemoryEnabled() || !isSupabaseFeedbackConfigured()) return null;
 
   const startedAt = Date.now();

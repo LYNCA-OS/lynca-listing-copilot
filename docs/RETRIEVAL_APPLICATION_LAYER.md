@@ -69,8 +69,24 @@ prevents raw-candidate fallback.
 
 ## Paired ablation
 
-Run the same reviewed cohort through retrieval-disabled and retrieval-enabled
-cloud modes, then compare the reports:
+The dedicated modes keep full L2, OCR/evidence completion, provider, image
+settings, and prompt core unchanged. They also disable Approved Memory,
+identity-result cache, external retrieval, and corrected-title hints so the
+only treatment is Catalog + Vector + Retrieval Application:
+
+```bash
+npm run eval:retrieval-off -- \
+  --dataset data/eval/golden-sem.json \
+  --out data/eval/retrieval-off.json \
+  --limit 100 --concurrency 2 --progress
+
+npm run eval:retrieval-on -- \
+  --dataset data/eval/golden-sem.json \
+  --out data/eval/retrieval-on.json \
+  --limit 100 --concurrency 2 --progress
+```
+
+Then compare the paired reports:
 
 ```bash
 npm run eval:retrieval-application-ablation -- \
@@ -80,7 +96,11 @@ npm run eval:retrieval-application-ablation -- \
   --out data/eval/retrieval-application-ablation.json
 ```
 
-The report includes SEM field accuracy, critical-field accuracy, candidate
-application count, title-change count, recovery, regression, and per-card
-decisions. A causal comparison is valid only when card cohort, deployment,
-model, and prompt core are identical.
+The report includes SEM card/field accuracy, the launch-critical fields
+(`subject`, `product`, `set`, `card_number`, `print_finish`,
+`numerical_rarity`, `grading_info`), candidate application rate, the full
+retrieval-to-title funnel, recovery/regression, and per-card `retrieval_delta`.
+A causal comparison is valid only when card cohort, deployment, model, and
+prompt core are identical; the evaluator checks the declared contract and
+runtime leakage. Provider success, p50/p95 latency, throughput, and token
+totals remain in the same report as operational guardrails.

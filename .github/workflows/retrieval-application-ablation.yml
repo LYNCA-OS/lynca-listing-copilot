@@ -1,0 +1,143 @@
+name: retrieval-application-ablation
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Paired reviewed-image cards"
+        required: true
+        default: "100"
+      concurrency:
+        description: "Stable GPT provider concurrency"
+        required: true
+        default: "2"
+      selection_seed:
+        description: "Deterministic cohort seed"
+        required: true
+        default: "retrieval-application-ablation-v1"
+
+jobs:
+  ablation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    env:
+      BASE_URL: https://listing.lyncafei.team
+      SOURCE_DATASET: data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build one sealed image-only cohort
+        run: |
+          node scripts/build-reviewed-title-blind-eval.mjs \
+            --source "$SOURCE_DATASET" \
+            --out /tmp/retrieval-ablation-dataset.json \
+            --sealed-labels-out /tmp/retrieval-ablation-labels.jsonl \
+            --limit "${{ inputs.limit }}" \
+            --sample-mode FIXED_REGRESSION \
+            --selection-seed "${{ inputs.selection_seed }}" \
+            --reuse-reason "Paired retrieval ON/OFF causal ablation on one deterministic cohort." \
+            --reuse-scope-id "retrieval-application-ablation-v1"
+          node scripts/build-reviewed-title-sem-proxy.mjs \
+            --dataset /tmp/retrieval-ablation-dataset.json \
+            --sealed-labels /tmp/retrieval-ablation-labels.jsonl \
+            --dataset-id "retrieval-application-ablation-${{ inputs.selection_seed }}" \
+            --out /tmp/retrieval-ablation-sem-proxy.json
+
+      - name: Capture fixed production revision
+        run: |
+          curl -fsS --max-time 30 "$BASE_URL/api/v4/health" -o /tmp/health-start.json
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          const health = JSON.parse(fs.readFileSync('/tmp/health-start.json', 'utf8'));
+          const sha = String(health.deployment?.git_commit_sha || '');
+          if (!health.ready || !sha) throw new Error('Production V4 health or deployment SHA is unavailable.');
+          fs.writeFileSync('/tmp/deployment-sha.txt', `${sha}\n`);
+          console.log(JSON.stringify({ready: health.ready, deployment_sha: sha, vector_index_ready: health.vector_index_ready}, null, 2));
+          NODE
+
+      - name: Retrieval OFF
+        run: |
+          node scripts/evaluate-cloud-listing-api.mjs \
+            --dataset /tmp/retrieval-ablation-dataset.json \
+            --out /tmp/retrieval-off.json \
+            --base-url "$BASE_URL" \
+            --provider retrieval_off \
+            --limit "${{ inputs.limit }}" \
+            --concurrency "${{ inputs.concurrency }}" \
+            --request-timeout-ms 360000 \
+            --provider-error-retries 2 \
+            --provider-error-retry-delay-ms 2500 \
+            --no-corrected-title-as-temporary-gt \
+            --fail-on-provider-error \
+            --progress \
+            --checkpoint-path /tmp/retrieval-off.checkpoint.json
+
+      - name: Retrieval ON
+        run: |
+          node scripts/evaluate-cloud-listing-api.mjs \
+            --dataset /tmp/retrieval-ablation-dataset.json \
+            --out /tmp/retrieval-on.json \
+            --base-url "$BASE_URL" \
+            --provider retrieval_on \
+            --limit "${{ inputs.limit }}" \
+            --concurrency "${{ inputs.concurrency }}" \
+            --request-timeout-ms 360000 \
+            --provider-error-retries 2 \
+            --provider-error-retry-delay-ms 2500 \
+            --no-corrected-title-as-temporary-gt \
+            --vector-index-ready \
+            --fail-on-provider-error \
+            --progress \
+            --checkpoint-path /tmp/retrieval-on.checkpoint.json
+
+      - name: Verify revision and evaluate paired delta
+        if: always()
+        run: |
+          curl -fsS --max-time 30 "$BASE_URL/api/v4/health" -o /tmp/health-end.json
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          const expected = fs.readFileSync('/tmp/deployment-sha.txt', 'utf8').trim();
+          const health = JSON.parse(fs.readFileSync('/tmp/health-end.json', 'utf8'));
+          const actual = String(health.deployment?.git_commit_sha || '');
+          const report = {expected_sha: expected, actual_sha: actual, unchanged: Boolean(actual) && actual === expected};
+          fs.writeFileSync('/tmp/deployment-drift.json', JSON.stringify(report, null, 2));
+          console.log(JSON.stringify(report, null, 2));
+          if (!report.unchanged) process.exit(1);
+          NODE
+          if [ -f /tmp/retrieval-off.json ] && [ -f /tmp/retrieval-on.json ]; then
+            node scripts/evaluate-retrieval-application-ablation.mjs \
+              --dataset /tmp/retrieval-ablation-sem-proxy.json \
+              --off /tmp/retrieval-off.json \
+              --on /tmp/retrieval-on.json \
+              --out /tmp/retrieval-application-ablation.json
+          fi
+
+      - name: Upload complete evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: retrieval-application-ablation-${{ inputs.limit }}
+          path: |
+            /tmp/health-start.json
+            /tmp/health-end.json
+            /tmp/deployment-drift.json
+            /tmp/retrieval-ablation-dataset.json
+            /tmp/retrieval-ablation-sem-proxy.json
+            /tmp/retrieval-off.json
+            /tmp/retrieval-on.json
+            /tmp/retrieval-off.checkpoint.json
+            /tmp/retrieval-on.checkpoint.json
+            /tmp/retrieval-application-ablation.json
+          if-no-files-found: warn
+          retention-days: 30

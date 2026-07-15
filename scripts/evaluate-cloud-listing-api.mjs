@@ -21,6 +21,8 @@ const providerModes = Object.freeze({
   OPENAI_BASELINE: "openai_baseline",
   OPENAI_CATALOG: "openai_catalog",
   OPENAI_VECTOR: "openai_vector",
+  RETRIEVAL_OFF: "retrieval_off",
+  RETRIEVAL_ON: "retrieval_on",
   EBAY_COLD_START_BLIND: "ebay_cold_start_blind"
 });
 
@@ -356,10 +358,16 @@ function normalizeProviderMode(value = "") {
     return providerModes.OPENAI_CATALOG;
   }
   if (["c", "d", "openai-vector", "openai_vector", "gpt-vector", "gpt_vector"].includes(raw)) return providerModes.OPENAI_VECTOR;
+  if (["retrieval-off", "retrieval_off", "retrieval-disabled", "retrieval_disabled"].includes(raw)) {
+    return providerModes.RETRIEVAL_OFF;
+  }
+  if (["retrieval-on", "retrieval_on", "retrieval-enabled", "retrieval_enabled"].includes(raw)) {
+    return providerModes.RETRIEVAL_ON;
+  }
   if (["cold-start", "cold_start", "cold-start-blind", "cold_start_blind", "ebay-cold-start-blind", "ebay_cold_start_blind"].includes(raw)) {
     return providerModes.EBAY_COLD_START_BLIND;
   }
-  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_baseline, openai_catalog, openai_vector, or ebay_cold_start_blind.`);
+  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_baseline, openai_catalog, openai_vector, retrieval_off, retrieval_on, or ebay_cold_start_blind.`);
 }
 
 function cloudProviderForMode(providerMode) {
@@ -375,12 +383,18 @@ function providerOptionsForMode(providerMode, {
   coldStartBlind = false,
   env = process.env
 } = {}) {
+  const retrievalAblation = providerMode === providerModes.RETRIEVAL_OFF
+    || providerMode === providerModes.RETRIEVAL_ON;
+  const retrievalEnabled = providerMode === providerModes.RETRIEVAL_ON;
   const coldStartMode = coldStartBlind === true || providerMode === providerModes.EBAY_COLD_START_BLIND;
-  const catalogAssist = providerMode === providerModes.OPENAI_CATALOG
+  const catalogAssist = retrievalEnabled
+    || providerMode === providerModes.OPENAI_CATALOG
     || providerMode === providerModes.OPENAI_VECTOR
     || coldStartMode;
-  const vectorAssist = providerMode === providerModes.OPENAI_VECTOR || coldStartMode;
-  const temporaryGt = catalogAssist && correctedTitleAsTemporaryGt === true && coldStartMode !== true;
+  const vectorAssist = retrievalEnabled || providerMode === providerModes.OPENAI_VECTOR || coldStartMode;
+  const temporaryGt = retrievalAblation
+    ? false
+    : catalogAssist && correctedTitleAsTemporaryGt === true && coldStartMode !== true;
   const sendHintToCloud = temporaryGt && sendCorrectedTitleHintToCloud === true;
   const forceVector = vectorAssist && forceVectorAssist === true;
   const vectorQueryTimeoutMs = positiveInteger(
@@ -390,13 +404,15 @@ function providerOptionsForMode(providerMode, {
   return {
     provider_mode: providerMode,
     provider_eval_mode: providerMode,
-    single_model_fast: !catalogAssist && !vectorAssist,
+    evaluation_profile: retrievalAblation ? "retrieval_application_ablation_v1" : "legacy_cloud_eval",
+    retrieval_ablation_arm: retrievalAblation ? (retrievalEnabled ? "ON" : "OFF") : null,
+    single_model_fast: retrievalAblation ? false : !catalogAssist && !vectorAssist,
     corrected_title_as_temporary_gt: temporaryGt,
     corrected_title_as_reviewed_title_gt: temporaryGt,
     corrected_title_is_reviewed_title_ground_truth: temporaryGt,
     send_corrected_title_hint_to_cloud: sendHintToCloud,
     cloud_eval_blind_to_corrected_title_hint: !sendHintToCloud,
-    enable_evidence_completion: catalogAssist || vectorAssist,
+    enable_evidence_completion: retrievalAblation ? true : catalogAssist || vectorAssist,
     enable_catalog_assist: catalogAssist,
     enable_vector_assist: vectorAssist,
     enable_retrieval_application: catalogAssist || vectorAssist,
@@ -414,8 +430,10 @@ function providerOptionsForMode(providerMode, {
     enable_hybrid_retrieval: vectorAssist,
     cold_start_blind: coldStartMode,
     enable_cold_start_blind: coldStartMode,
-    enable_ephemeral_external_retrieval: coldStartMode,
-    external_retrieval_weak_only: coldStartMode,
+    enable_ephemeral_external_retrieval: retrievalAblation ? false : coldStartMode,
+    external_retrieval_weak_only: retrievalAblation ? false : coldStartMode,
+    disable_identity_result_cache: retrievalAblation,
+    disable_approved_identity_memory: retrievalAblation,
     eval_flags: {
       ENABLE_CATALOG_ASSIST: catalogAssist,
       ENABLE_VECTOR_ASSIST: vectorAssist,
@@ -427,7 +445,10 @@ function providerOptionsForMode(providerMode, {
       SEND_CORRECTED_TITLE_HINT_TO_CLOUD: sendHintToCloud,
       BLIND_TO_CORRECTED_TITLE_HINT: !sendHintToCloud,
       COLD_START_BLIND: coldStartMode,
-      EPHEMERAL_EXTERNAL_RETRIEVAL: coldStartMode
+      EPHEMERAL_EXTERNAL_RETRIEVAL: retrievalAblation ? false : coldStartMode,
+      RETRIEVAL_ABLATION_ARM: retrievalAblation ? (retrievalEnabled ? "ON" : "OFF") : null,
+      DISABLE_IDENTITY_RESULT_CACHE: retrievalAblation,
+      DISABLE_APPROVED_IDENTITY_MEMORY: retrievalAblation
     },
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
@@ -1681,9 +1702,13 @@ function perCardDecisionTrace(results = []) {
   return results.map((item) => ({
     candidate_id: item.candidate_id,
     provider: item.provider,
-    gpt_only_title: item.provider === providerModes.OPENAI_BASELINE ? item.final_evaluated_title || item.title || "" : null,
+    gpt_only_title: [providerModes.OPENAI_BASELINE, providerModes.RETRIEVAL_OFF].includes(item.provider)
+      ? item.final_evaluated_title || item.title || ""
+      : null,
     catalog_only_title: item.provider === providerModes.OPENAI_CATALOG ? item.final_evaluated_title || item.scored_title || item.title || "" : null,
-    catalog_vector_title: item.provider === providerModes.OPENAI_VECTOR ? item.final_evaluated_title || item.scored_title || item.title || "" : null,
+    catalog_vector_title: [providerModes.OPENAI_VECTOR, providerModes.RETRIEVAL_ON].includes(item.provider)
+      ? item.final_evaluated_title || item.scored_title || item.title || ""
+      : null,
     cold_start_title: item.provider === providerModes.EBAY_COLD_START_BLIND ? item.final_evaluated_title || item.scored_title || item.title || "" : null,
     raw_model_title: item.title || "",
     candidate_guided_title: item.candidate_proxy_decision?.selected === true ? item.candidate_proxy_decision.selected_title : "",
@@ -1952,7 +1977,10 @@ async function preflightCloudApi({
     provider_count: Array.isArray(data.providers || data.available_providers)
       ? (data.providers || data.available_providers).length
       : null,
-    default_provider: data.default_provider || data.defaultProvider || null
+    default_provider: data.default_provider || data.defaultProvider || null,
+    default_model: (Array.isArray(data.providers) ? data.providers : [])
+      .find((provider) => provider.id === (data.default_provider || data.defaultProvider))?.model_id || null,
+    deployment: data.deployment && typeof data.deployment === "object" ? data.deployment : null
   };
 }
 
@@ -2086,6 +2114,15 @@ async function callListingApi({
     provider_id: provider,
     provider_eval_mode: providerMode,
     provider_options: providerOptions,
+    // Keep routing and provider execution on the same experiment arm. The
+    // legacy endpoint reads provider_options; V4 route planning also accepts
+    // top-level flags. Sending both prevents a future endpoint migration from
+    // silently re-enabling retrieval in the OFF arm.
+    enable_catalog_assist: providerOptions.enable_catalog_assist === true,
+    catalog_assist: providerOptions.enable_catalog_assist === true,
+    enable_vector_assist: providerOptions.enable_vector_assist === true,
+    vector_assist: providerOptions.enable_vector_assist === true,
+    enable_ephemeral_external_retrieval: providerOptions.enable_ephemeral_external_retrieval === true,
     explicitEmergency: provider === "openai_legacy",
     explicit_emergency: provider === "openai_legacy",
     maxTitleLength,
@@ -2286,6 +2323,11 @@ function evaluatedResultFromData({
     open_set_readiness: openSetReadiness,
     open_set_status: openSetReadiness?.status || null,
     participation_level: data.participation_level || null,
+    decision_eligible_candidate_count: Number(data.decision_eligible_candidate_count || 0),
+    decision_eligible_candidate_ids: Array.isArray(data.decision_eligible_candidate_ids)
+      ? data.decision_eligible_candidate_ids
+      : [],
+    shadow_only_candidate_count: Number(data.shadow_only_candidate_count || 0),
     selected_candidate_decision: data.selected_candidate_decision || null,
     candidate_application_trace: Array.isArray(data.candidate_application_trace) ? data.candidate_application_trace : [],
     candidate_field_evidence: Array.isArray(data.candidate_field_evidence) ? data.candidate_field_evidence : [],
@@ -3029,6 +3071,7 @@ export async function evaluateCloudListingApi({
     vectorIndexReady,
     env: runtimeEnv
   };
+  const experimentProviderOptions = providerOptionsForMode(providerMode, evalOptions);
 
   const limitCount = Math.max(0, Math.trunc(Number(limit) || 0));
   const selected = (Array.isArray(dataset?.items) ? dataset.items : [])
@@ -3060,6 +3103,22 @@ export async function evaluateCloudListingApi({
       target_count: selected.length,
       configured_concurrency: workerCount,
       configured_provider_error_retries: Math.max(0, Math.trunc(Number(providerErrorRetries) || 0)),
+      experiment_contract: experimentProviderOptions.evaluation_profile === "retrieval_application_ablation_v1"
+        ? {
+          contract_id: "retrieval-application-ablation-v1",
+          arm: experimentProviderOptions.retrieval_ablation_arm,
+          provider_id: cloudProviderForMode(providerMode),
+          single_model_fast: experimentProviderOptions.single_model_fast,
+          evidence_completion_enabled: experimentProviderOptions.enable_evidence_completion,
+          catalog_enabled: experimentProviderOptions.enable_catalog_assist,
+          vector_enabled: experimentProviderOptions.enable_vector_assist,
+          retrieval_application_enabled: experimentProviderOptions.enable_retrieval_application,
+          external_retrieval_enabled: experimentProviderOptions.enable_ephemeral_external_retrieval,
+          identity_result_cache_disabled: experimentProviderOptions.disable_identity_result_cache,
+          approved_identity_memory_disabled: experimentProviderOptions.disable_approved_identity_memory,
+          corrected_title_hint_sent_to_cloud: experimentProviderOptions.send_corrected_title_hint_to_cloud
+        }
+        : null,
       cloud_preflight: cloudPreflight,
       ...summarize(activeResults(), Date.now() - startedAt),
       results: activeResults()

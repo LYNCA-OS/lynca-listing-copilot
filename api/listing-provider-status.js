@@ -13,6 +13,7 @@ import {
   v4QueueKickDedupMs
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
 import { listingStageCapacityPlan } from "../lib/listing/v4/orchestration/stage-capacity.mjs";
+import { v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const workflowReadinessCacheTtlMs = 60_000;
@@ -291,6 +292,7 @@ export default async function handler(req, res) {
 
   sendJson(res, 200, {
     ok: true,
+    deployment: v4DeploymentInfo(),
     default_provider: defaultProviderId(providers),
     fallback_available: false,
     workflow_readiness: workflowReadiness,
