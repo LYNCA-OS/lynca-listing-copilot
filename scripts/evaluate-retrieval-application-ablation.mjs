@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { evaluateGoldenSemAccuracy } from "../lib/listing/evaluation/golden-sem-accuracy.mjs";
+import {
+  evaluateGoldenSemAccuracy,
+  normalizeGoldenSemValue
+} from "../lib/listing/evaluation/golden-sem-accuracy.mjs";
 import { goldenSemLaunchFields } from "../lib/listing/evaluation/golden-sem-release.mjs";
 
 export const retrievalAblationCriticalFields = Object.freeze([
@@ -115,6 +118,76 @@ function sourceLane(row = {}) {
   return /vector/i.test(cleanText(row.source || row.source_type)) ? "vector" : "catalog";
 }
 
+function candidateValueForSemDecision(row = {}, semField = "", accuracyField = {}) {
+  const field = cleanText(row.resolver_field || row.field).toLowerCase();
+  const value = row.resolver_value ?? row.candidate_value;
+  if (semField !== "grading_info") return value;
+  const groundTruth = accuracyField.ground_truth;
+  if (!groundTruth || typeof groundTruth !== "object" || Array.isArray(groundTruth)) return value;
+  const gradeFieldMap = {
+    grade_company: "company",
+    card_grade: "card_grade",
+    grade: "card_grade",
+    auto_grade: "auto_grade",
+    grade_type: "grade_type"
+  };
+  const targetField = gradeFieldMap[field];
+  return targetField ? { [targetField]: value } : value;
+}
+
+function expectedValueForSemDecision(row = {}, semField = "", accuracyField = {}) {
+  if (semField !== "grading_info") return accuracyField.ground_truth;
+  const field = cleanText(row.resolver_field || row.field).toLowerCase();
+  const groundTruth = accuracyField.ground_truth;
+  if (!groundTruth || typeof groundTruth !== "object" || Array.isArray(groundTruth)) return groundTruth;
+  const gradeFieldMap = {
+    grade_company: "company",
+    card_grade: "card_grade",
+    grade: "card_grade",
+    auto_grade: "auto_grade",
+    grade_type: "grade_type"
+  };
+  const targetField = gradeFieldMap[field];
+  return targetField ? { [targetField]: groundTruth[targetField] } : groundTruth;
+}
+
+function fieldDecisionAudit(application = {}, accuracyCard = {}) {
+  return applicationDecisions(application).map((row) => {
+    const semField = semFieldForDecision(row);
+    const accuracyField = semField ? accuracyCard?.fields?.[semField] || {} : {};
+    const excluded = !semField || accuracyField.excluded_from_denominator === true;
+    const candidateValue = excluded ? null : candidateValueForSemDecision(row, semField, accuracyField);
+    const expectedValue = excluded ? null : expectedValueForSemDecision(row, semField, accuracyField);
+    const normalizedCandidate = excluded ? null : normalizeGoldenSemValue(semField, candidateValue);
+    const normalizedExpected = excluded ? null : normalizeGoldenSemValue(semField, expectedValue);
+    const candidateCorrect = excluded ? null : normalizedCandidate === normalizedExpected;
+    const applied = row.applied_to_final === true;
+    const supported = row.supported_final === true;
+    const eligibleForApplication = row.decision !== "REJECT";
+    return {
+      candidate_id: row.candidate_id || null,
+      candidate_lane: sourceLane(row),
+      field: row.field || null,
+      resolver_field: row.resolver_field || row.field || null,
+      sem_field: semField,
+      candidate_value: row.candidate_value ?? null,
+      resolver_value: row.resolver_value ?? null,
+      ground_truth: excluded ? null : accuracyField.ground_truth,
+      candidate_correct: candidateCorrect,
+      decision: row.decision || null,
+      reason: row.reason || "unspecified",
+      applied_to_final: applied,
+      supported_final: supported,
+      candidate_correct_but_not_applied: candidateCorrect === true
+        && eligibleForApplication
+        && !applied
+        && !supported
+        && accuracyField.is_correct !== true,
+      candidate_wrong_but_applied: candidateCorrect === false && applied
+    };
+  });
+}
+
 function fieldDelta(offCard = {}, onCard = {}, application = {}) {
   const improvedFields = [];
   const regressedFields = [];
@@ -209,6 +282,8 @@ function applicationFunnel(perCard = []) {
     const applyDecisions = decisions.filter((decision) => decision.decision === "APPLY").length;
     const supportDecisions = decisions.filter((decision) => decision.decision === "SUPPORT").length;
     const actualApplied = numeric(application.actual_application_count, row.candidate_application_count);
+    const isolation = row.retrieval_evidence_isolation || {};
+    const auditRows = Array.isArray(row.field_decision_audit) ? row.field_decision_audit : [];
     summary.retrieved_candidate_count += retrieved;
     summary.eligible_candidate_count += eligible;
     summary.field_decision_row_count += fieldRows;
@@ -216,6 +291,9 @@ function applicationFunnel(perCard = []) {
     summary.apply_decision_count += applyDecisions;
     summary.support_decision_count += supportDecisions;
     summary.actual_applied_field_count += actualApplied;
+    summary.blocked_raw_candidate_evidence_count += numeric(isolation.blocked_raw_candidate_evidence_count);
+    summary.candidate_correct_but_not_applied += auditRows.filter((item) => item.candidate_correct_but_not_applied).length;
+    summary.candidate_wrong_but_applied += auditRows.filter((item) => item.candidate_wrong_but_applied).length;
     if (retrieved > 0) summary.cards_with_retrieval += 1;
     if (eligible > 0) summary.cards_with_eligible_candidates += 1;
     if (fieldRows > 0) summary.cards_with_field_decisions += 1;
@@ -239,6 +317,32 @@ function applicationFunnel(perCard = []) {
       }
       summary.field_decision_counts[field][action] = numeric(summary.field_decision_counts[field][action]) + 1;
       summary.decision_reason_counts[reason] = numeric(summary.decision_reason_counts[reason]) + 1;
+      if (action === "BLOCK") {
+        summary.blocked_by_reason[reason] = numeric(summary.blocked_by_reason[reason]) + 1;
+      } else if (action === "REJECT") {
+        summary.rejected_by_reason[reason] = numeric(summary.rejected_by_reason[reason]) + 1;
+      }
+    }
+    for (const audit of auditRows) {
+      const field = cleanText(audit.sem_field || audit.resolver_field || audit.field).toLowerCase() || "unknown";
+      summary.field_accuracy_decision_audit[field] ||= {
+        candidate_correct_but_not_applied: 0,
+        candidate_wrong_but_applied: 0,
+        correct_candidate_supported_final: 0,
+        correct_candidate_applied: 0
+      };
+      if (audit.candidate_correct_but_not_applied) {
+        summary.field_accuracy_decision_audit[field].candidate_correct_but_not_applied += 1;
+      }
+      if (audit.candidate_wrong_but_applied) {
+        summary.field_accuracy_decision_audit[field].candidate_wrong_but_applied += 1;
+      }
+      if (audit.candidate_correct === true && audit.supported_final === true) {
+        summary.field_accuracy_decision_audit[field].correct_candidate_supported_final += 1;
+      }
+      if (audit.candidate_correct === true && audit.applied_to_final === true) {
+        summary.field_accuracy_decision_audit[field].correct_candidate_applied += 1;
+      }
     }
     return summary;
   }, {
@@ -250,6 +354,9 @@ function applicationFunnel(perCard = []) {
     apply_decision_count: 0,
     support_decision_count: 0,
     actual_applied_field_count: 0,
+    blocked_raw_candidate_evidence_count: 0,
+    candidate_correct_but_not_applied: 0,
+    candidate_wrong_but_applied: 0,
     cards_with_retrieval: 0,
     cards_with_eligible_candidates: 0,
     cards_with_field_decisions: 0,
@@ -262,7 +369,10 @@ function applicationFunnel(perCard = []) {
     cards_with_application_title_change: 0,
     applied_fields_by_source: {},
     field_decision_counts: {},
-    decision_reason_counts: {}
+    decision_reason_counts: {},
+    blocked_by_reason: {},
+    rejected_by_reason: {},
+    field_accuracy_decision_audit: {}
   });
   return {
     ...totals,
@@ -341,6 +451,10 @@ function runtimeIsolation(offReport = {}, onReport = {}) {
     if (numeric(row.decision_eligible_candidate_count) < 1) return false;
     return applicationDecisions(retrievalApplication(row)).length < 1;
   });
+  const onEvidenceIsolationMismatchRows = onRows.filter((row) => {
+    if (row.retrieval_application?.owns_candidate_application !== true) return false;
+    return row.retrieval_evidence_isolation?.enabled !== true;
+  });
   return {
     valid: offRetrievalLeakRows.length === 0
       && offExternalRows.length === 0
@@ -349,7 +463,8 @@ function runtimeIsolation(offReport = {}, onReport = {}) {
       && onTechnicalFailureIds.length === 0
       && offExecutionMismatchRows.length === 0
       && onExecutionMismatchRows.length === 0
-      && onApplicationBypassRows.length === 0,
+      && onApplicationBypassRows.length === 0
+      && onEvidenceIsolationMismatchRows.length === 0,
     retrieval_off_leak_count: offRetrievalLeakRows.length,
     retrieval_off_leak_item_ids: offRetrievalLeakRows.map(rowId).filter(Boolean),
     retrieval_off_external_retrieval_count: offExternalRows.length,
@@ -363,7 +478,9 @@ function runtimeIsolation(offReport = {}, onReport = {}) {
     retrieval_off_execution_mismatch_item_ids: offExecutionMismatchRows.map(rowId).filter(Boolean),
     retrieval_on_execution_mismatch_item_ids: onExecutionMismatchRows.map(rowId).filter(Boolean),
     retrieval_on_application_bypass_count: onApplicationBypassRows.length,
-    retrieval_on_application_bypass_item_ids: onApplicationBypassRows.map(rowId).filter(Boolean)
+    retrieval_on_application_bypass_item_ids: onApplicationBypassRows.map(rowId).filter(Boolean),
+    retrieval_on_evidence_isolation_mismatch_count: onEvidenceIsolationMismatchRows.length,
+    retrieval_on_evidence_isolation_mismatch_item_ids: onEvidenceIsolationMismatchRows.map(rowId).filter(Boolean)
   };
 }
 
@@ -479,6 +596,7 @@ export function evaluateRetrievalApplicationAblation({
     const offCardExact = offExact.get(id) ?? null;
     const onCardExact = onExact.get(id) ?? null;
     const retrievalDelta = fieldDelta(offCards.get(id), onCards.get(id), application);
+    const decisionAudit = fieldDecisionAudit(application, onCards.get(id));
     const armTitleChanged = finalTitle(off) !== finalTitle(on);
     const applicationTitleChanged = application?.title_changed === true;
     return {
@@ -496,6 +614,8 @@ export function evaluateRetrievalApplicationAblation({
       retrieved_candidate_count: rawRetrievedCandidateCount(on),
       eligible_candidate_count: decisionEligibleCandidateCount(on, application),
       retrieval_application: application,
+      retrieval_evidence_isolation: on.retrieval_evidence_isolation || null,
+      field_decision_audit: decisionAudit,
       retrieval_delta: retrievalDelta,
       sem_card_exact_off: offCardExact,
       sem_card_exact_on: onCardExact,

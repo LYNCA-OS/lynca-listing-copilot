@@ -169,6 +169,7 @@ const on = {
         card_name: "Autograph"
       },
       retrieval_application: {
+        owns_candidate_application: true,
         selected_candidate_id: "catalog-1",
         low_margin_candidate_id: "",
         candidate_count: 5,
@@ -184,21 +185,31 @@ const on = {
           candidate_id: "catalog-1",
           candidate_lane: "catalog",
           resolver_field: "product",
+          candidate_value: "Topps Chrome",
+          resolver_value: "Topps Chrome",
           decision: "APPLY",
           applied_to_final: true
         }, {
           candidate_id: "catalog-1",
           candidate_lane: "catalog",
           resolver_field: "year",
+          candidate_value: "2024",
+          resolver_value: "2024",
           decision: "SUPPORT",
           supported_final: true
         }, {
           candidate_id: "catalog-1",
           candidate_lane: "catalog",
           resolver_field: "players",
+          candidate_value: ["Test Player"],
+          resolver_value: ["Test Player"],
           decision: "SUPPORT",
           supported_final: true
         }]
+      },
+      retrieval_evidence_isolation: {
+        enabled: true,
+        blocked_raw_candidate_evidence_count: 2
       }
     },
     {
@@ -216,6 +227,7 @@ const on = {
         card_name: "Base"
       },
       retrieval_application: {
+        owns_candidate_application: true,
         selected_candidate_id: "catalog-2",
         low_margin_candidate_id: "",
         candidate_count: 2,
@@ -228,21 +240,31 @@ const on = {
           candidate_id: "catalog-2",
           candidate_lane: "catalog",
           resolver_field: "product",
+          candidate_value: "Panini Prizm",
+          resolver_value: "Panini Prizm",
           decision: "SUPPORT",
           supported_final: true
         }, {
           candidate_id: "catalog-2",
           candidate_lane: "catalog",
           resolver_field: "year",
+          candidate_value: "2023",
+          resolver_value: "2023",
           decision: "SUPPORT",
           supported_final: true
         }, {
           candidate_id: "catalog-2",
           candidate_lane: "catalog",
           resolver_field: "players",
+          candidate_value: ["Second Player"],
+          resolver_value: ["Second Player"],
           decision: "SUPPORT",
           supported_final: true
         }]
+      },
+      retrieval_evidence_isolation: {
+        enabled: true,
+        blocked_raw_candidate_evidence_count: 1
       }
     }
   ]
@@ -281,10 +303,39 @@ assert.equal(report.metrics.retrieval_enabled.application_funnel.candidate_appli
 assert.equal(report.metrics.retrieval_enabled.application_funnel.field_decision_counts.product.APPLY, 1);
 assert.equal(report.metrics.retrieval_enabled.application_funnel.field_decision_counts.year.SUPPORT, 2);
 assert.equal(report.metrics.retrieval_enabled.application_funnel.decision_reason_counts.unspecified, 6);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.blocked_raw_candidate_evidence_count, 3);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.candidate_correct_but_not_applied, 0);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.candidate_wrong_but_applied, 0);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.field_accuracy_decision_audit.product.correct_candidate_applied, 1);
 assert.equal(report.metrics.retrieval_disabled.operations.per_card_latency_ms.p50, 15000);
 assert.equal(report.metrics.retrieval_enabled.operations.usage_totals.output_tokens, 520);
 assert.equal(report.validity.experiment.runtime_isolation.valid, true);
 assert.equal(report.validity.causal_comparison_valid, true);
+
+const wrongAppliedOn = structuredClone(on);
+wrongAppliedOn.results[0].retrieval_application.decisions[0].candidate_value = "Panini Select";
+wrongAppliedOn.results[0].retrieval_application.decisions[0].resolver_value = "Panini Select";
+const wrongAppliedReport = evaluateRetrievalApplicationAblation({
+  dataset,
+  retrievalDisabledReport: off,
+  retrievalEnabledReport: wrongAppliedOn
+});
+assert.equal(wrongAppliedReport.metrics.retrieval_enabled.application_funnel.candidate_wrong_but_applied, 1);
+
+const correctBlockedOn = structuredClone(on);
+correctBlockedOn.results[0].resolved_fields.product = "Topps";
+correctBlockedOn.results[0].retrieval_application.decisions[0].decision = "BLOCK";
+correctBlockedOn.results[0].retrieval_application.decisions[0].reason = "field_not_in_safe_application_plan";
+correctBlockedOn.results[0].retrieval_application.decisions[0].applied_to_final = false;
+correctBlockedOn.results[0].retrieval_application.actual_application_count = 0;
+correctBlockedOn.results[0].retrieval_application.actual_applied_fields = [];
+const correctBlockedReport = evaluateRetrievalApplicationAblation({
+  dataset,
+  retrievalDisabledReport: off,
+  retrievalEnabledReport: correctBlockedOn
+});
+assert.equal(correctBlockedReport.metrics.retrieval_enabled.application_funnel.candidate_correct_but_not_applied, 1);
+assert.equal(correctBlockedReport.metrics.retrieval_enabled.application_funnel.blocked_by_reason.field_not_in_safe_application_plan, 1);
 
 const leakedOff = structuredClone(off);
 leakedOff.results[0].catalog_candidate_count = 1;

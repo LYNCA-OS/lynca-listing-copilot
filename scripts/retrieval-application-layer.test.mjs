@@ -235,6 +235,74 @@ function testIdentityResolutionConsumesRetrievalFieldEvidence() {
     ?.applied_fields.includes("product"));
 }
 
+function testRawRetrievalEvidenceCannotBypassApplicationOwner() {
+  const selected = trustedCatalogCandidate({
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Topps Chrome Sapphire",
+      players: ["Shohei Ohtani"]
+    }
+  });
+  const result = resultWithCandidate(selected);
+  result.resolved_fields = {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Sapphire",
+    players: ["Shohei Ohtani"]
+  };
+  const { control, application } = buildLayer(result);
+  assert.equal(application.decisions.find((row) => row.field === "product")?.decision, "APPLY");
+
+  const directSource = {
+    source_type: "SLAB_LABEL",
+    observed_text: "2025 TOPPS SAPPHIRE",
+    raw_text: "2025 TOPPS SAPPHIRE",
+    evidence_kind: "PRODUCT_TEXT",
+    direct_observation: true,
+    trust_tier: 1
+  };
+  const leakedCandidateSource = {
+    source_type: "STRUCTURED_DATABASE",
+    source_url: "supabase://catalog-cards/unselected-platinum",
+    domain: "supabase-catalog",
+    title: "2025 Topps Chrome Platinum Shohei Ohtani",
+    evidence_kind: "catalog_identity_field_lock",
+    trust_tier: 4
+  };
+  const gated = applyIdentityResolutionGate({
+    ...result,
+    ...control,
+    retrieval_application: application,
+    resolved: result.resolved_fields,
+    evidence: {
+      product: {
+        value: "Topps Sapphire",
+        status: "CONFLICT",
+        confidence: 0.5,
+        candidates: [
+          { value: "Topps Sapphire", confidence: 0.95, sources: [directSource] },
+          { value: "Topps Chrome Platinum", confidence: 0.86 },
+          { value: "Topps Chrome Platinum", confidence: 0.86 }
+        ],
+        sources: [directSource, leakedCandidateSource, leakedCandidateSource],
+        conflicts: [{
+          field: "product",
+          existing_value: "Topps Sapphire",
+          candidate_value: "Topps Chrome Platinum",
+          reason: "independent trusted retrieval candidates disagree"
+        }]
+      }
+    }
+  });
+
+  assert.notEqual(gated.identity_resolution?.identity?.product, "Topps Chrome Platinum");
+  assert.equal(gated.identity_resolution?.identity?.product, "Topps Chrome Sapphire");
+  assert.equal(gated.retrieval_evidence_isolation?.enabled, true);
+  assert.ok(gated.retrieval_evidence_isolation?.blocked_raw_candidate_evidence_count >= 1);
+  assert.ok(gated.retrieval_application?.actual_applied_fields.includes("product"));
+}
+
 function testResolvedRetrievalOutcomeOwnsRenderedFieldContainer() {
   const result = {
     ...resultWithCandidate(),
@@ -327,6 +395,7 @@ testCandidateFieldShapesMergeWithoutDroppingEvidence();
 testEveryCandidateProducesAuditableDecisionRows();
 testDisabledLayerRejectsAllCandidateFieldsAndBlocksRawBypass();
 testIdentityResolutionConsumesRetrievalFieldEvidence();
+testRawRetrievalEvidenceCannotBypassApplicationOwner();
 testResolvedRetrievalOutcomeOwnsRenderedFieldContainer();
 testCandidateCannotOverrideContradictingCurrentImageIdentity();
 testOutcomeRecordsResolverBlockInsteadOfPretendingApplication();
