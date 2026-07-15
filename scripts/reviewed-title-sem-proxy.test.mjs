@@ -50,5 +50,44 @@ assert.equal(accuracy.scope.formal_golden_sem, false);
 assert.equal(accuracy.scope.launch_gate_eligible, false);
 assert.equal(accuracy.scope.writer_title_used_as_field_ground_truth, true);
 assert.equal(accuracy.source.field_ground_truth_class, "REVIEWED_TITLE_DERIVED_SEM_PROXY");
+assert.equal(accuracy.cards[0].fields.product.is_correct, true);
+
+const proxyCompatibleAccuracy = evaluateGoldenSemAccuracy({
+  dataset: proxy,
+  predictions: {
+    results: [{
+      asset_id: "card-1",
+      resolved_fields: {
+        year: "2024",
+        product: "2024 Topps Chrome Basketball",
+        players: ["Test Player"]
+      }
+    }]
+  }
+});
+assert.equal(proxyCompatibleAccuracy.cards[0].fields.product.comparison_policy, "TITLE_PROXY_PRODUCT_HIERARCHY");
+assert.equal(proxyCompatibleAccuracy.cards[0].fields.product.is_correct, true);
+
+const formalDataset = structuredClone(proxy);
+formalDataset.partition = "development";
+formalDataset.evaluation_truth_policy = {
+  field_ground_truth_class: "HUMAN_REVIEWED_FIELD_GROUND_TRUTH",
+  launch_gate_eligible: true
+};
+const strictAccuracy = evaluateGoldenSemAccuracy({
+  dataset: formalDataset,
+  predictions: {
+    results: [{
+      asset_id: "card-1",
+      resolved_fields: {
+        year: "2024",
+        product: "2024 Topps Chrome Basketball",
+        players: ["Test Player"]
+      }
+    }]
+  }
+});
+assert.equal(strictAccuracy.cards[0].fields.product.comparison_policy, "STRICT_SEM_FIELD");
+assert.equal(strictAccuracy.cards[0].fields.product.is_correct, false);
 
 console.log("reviewed-title SEM proxy tests passed");

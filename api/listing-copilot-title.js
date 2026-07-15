@@ -3821,6 +3821,8 @@ function candidateControlResultPatch(candidateControl = {}) {
     participation_level: candidateControl.participation_level,
     decision_eligible_candidate_count: candidateControl.decision_eligible_candidate_count,
     decision_eligible_candidate_ids: candidateControl.decision_eligible_candidate_ids,
+    field_evidence_eligible_candidate_count: candidateControl.field_evidence_eligible_candidate_count,
+    field_evidence_eligible_candidate_ids: candidateControl.field_evidence_eligible_candidate_ids,
     shadow_only_candidate_count: candidateControl.shadow_only_candidate_count,
     shadow_only_candidate_ids: candidateControl.shadow_only_candidate_ids,
     selected_candidate_decision: candidateControl.selected_candidate_decision,

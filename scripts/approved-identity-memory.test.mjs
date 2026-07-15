@@ -245,6 +245,12 @@ assert.equal(parsedBeckett.card_grade, "8.5");
 assert.equal(parsedBeckett.auto, true);
 assert.equal(parsedBeckett.relic, false);
 
+const parsedSpGameUsedEdition = parseReviewedTitleFields("2001 SP Game Used Edition Michael Jordan #23");
+assert.equal(parsedSpGameUsedEdition.product, "SP Game Used Edition");
+
+const parsedSportSpecificProduct = parseReviewedTitleFields("2025 Topps Finest Basketball Cooper Flagg Masters");
+assert.equal(parsedSportSpecificProduct.product, "Topps Finest Basketball");
+
 const memoryRecord = reviewedTitleRecordToMemoryRecord({
   id: "feedback-title-row",
   corrected_title: "2016 Bowman Chrome Juan Soto 1st Bowman Prospect Auto PSA 10"

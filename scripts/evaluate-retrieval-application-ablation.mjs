@@ -6,6 +6,7 @@ import {
   normalizeGoldenSemValue
 } from "../lib/listing/evaluation/golden-sem-accuracy.mjs";
 import { goldenSemLaunchFields } from "../lib/listing/evaluation/golden-sem-release.mjs";
+import { productProxyComparisonKey } from "../lib/listing/csm/product-semantics.mjs";
 
 export const retrievalAblationCriticalFields = Object.freeze([
   "subject",
@@ -158,8 +159,12 @@ function fieldDecisionAudit(application = {}, accuracyCard = {}) {
     const excluded = !semField || accuracyField.excluded_from_denominator === true;
     const candidateValue = excluded ? null : candidateValueForSemDecision(row, semField, accuracyField);
     const expectedValue = excluded ? null : expectedValueForSemDecision(row, semField, accuracyField);
-    const normalizedCandidate = excluded ? null : normalizeGoldenSemValue(semField, candidateValue);
-    const normalizedExpected = excluded ? null : normalizeGoldenSemValue(semField, expectedValue);
+    const normalizeForAudit = accuracyField.comparison_policy === "TITLE_PROXY_PRODUCT_HIERARCHY"
+      && semField === "product"
+      ? productProxyComparisonKey
+      : (value) => normalizeGoldenSemValue(semField, value);
+    const normalizedCandidate = excluded ? null : normalizeForAudit(candidateValue);
+    const normalizedExpected = excluded ? null : normalizeForAudit(expectedValue);
     const candidateCorrect = excluded ? null : normalizedCandidate === normalizedExpected;
     const applied = row.applied_to_final === true;
     const supported = row.supported_final === true;

@@ -350,6 +350,209 @@ function testCandidateCannotOverrideContradictingCurrentImageIdentity() {
   assert.equal(gated.identity_resolution?.identity?.product, "Panini Prizm");
 }
 
+function testProductSemanticWrappersSupportWithoutReplacement() {
+  const candidate = trustedCatalogCandidate({
+    reference_metadata: {
+      corrected_title_is_reviewed_title_ground_truth: true
+    },
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy", "serial_denominator"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      players: ["Test Player"]
+    }
+  });
+  const result = resultWithCandidate(candidate);
+  result.resolved_fields = {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "2024 Topps Chrome Basketball",
+    players: ["Test Player"]
+  };
+  const { application } = buildLayer(result);
+  const product = application.decisions.find((row) => row.field === "product");
+  assert.equal(product.decision, "SUPPORT");
+  assert.equal(product.reason, "selected_identity_matches_current_field");
+}
+
+function testReviewedProductCanonicalizationCanReplaceOnlyProduct() {
+  const candidate = trustedCatalogCandidate({
+    reference_metadata: {
+      corrected_title_is_reviewed_title_ground_truth: true
+    },
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "manufacturer", "product_hierarchy", "serial_denominator"],
+      contradicted: []
+    },
+    fields: {
+      year: "2023",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      players: ["Disney Anna"],
+      serial_denominator: "100",
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "12345678"
+    }
+  });
+  const result = resultWithCandidate(candidate);
+  result.resolved_fields = {
+    year: "2023",
+    manufacturer: "Topps",
+    product: "Disney100 Chrome",
+    players: ["Disney Anna"],
+    serial_denominator: "100"
+  };
+  const { application } = buildLayer(result);
+  const product = application.decisions.find((row) => row.field === "product");
+  assert.equal(product.decision, "APPLY");
+  assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), true);
+  assert.equal(application.identity_evidence_items.some((item) => item.field === "card_grade"), false);
+  assert.equal(application.identity_evidence_items.some((item) => item.field === "cert_number"), false);
+}
+
+function testUnselectedConflictingCandidateSupportsOnlyMatchingFields() {
+  const candidate = trustedCatalogCandidate({
+    candidate_id: "reviewed-field-support-only",
+    candidate_identity_id: "identity-reviewed-field-support-only",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    conflicting_fields: ["surface_color"],
+    direct_evidence_conflicts: ["surface_color"],
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_applicable: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      surface_color: "Red"
+    }
+  });
+  const result = {
+    resolved_fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      surface_color: "Blue"
+    },
+    catalog_candidate_packet: packet([candidate], [])
+  };
+  const { control, application } = buildLayer(result);
+  const trace = control.candidate_application_trace[0];
+  const product = application.decisions.find((row) => row.field === "product");
+  const color = application.decisions.find((row) => row.field === "surface_color");
+
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
+  assert.equal(trace.identity_decision_eligible, false);
+  assert.equal(trace.field_evidence_eligible, true);
+  assert.equal(product.decision, "SUPPORT");
+  assert.equal(product.reason, "unselected_trusted_candidate_matches_current_field");
+  assert.equal(color.decision, "BLOCK");
+  assert.equal(color.reason, "candidate_or_field_conflict");
+  assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), true);
+  assert.equal(application.identity_evidence_items.some((item) => item.field === "surface_color"), false);
+}
+
+function testUnselectedFieldEvidenceCannotFillMissingProduct() {
+  const candidate = trustedCatalogCandidate({
+    candidate_id: "reviewed-no-missing-fill",
+    candidate_identity_id: "identity-reviewed-no-missing-fill",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    conflicting_fields: ["surface_color"],
+    direct_evidence_conflicts: ["surface_color"],
+    anchor_agreement: {
+      exact_code_match: true,
+      prompt_hard_filter_applicable: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "collector_number"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      collector_number: "CPA-TP",
+      surface_color: "Red"
+    }
+  });
+  const result = {
+    resolved_fields: {
+      year: "2024",
+      players: ["Test Player"],
+      collector_number: "CPA-TP",
+      surface_color: "Blue"
+    },
+    catalog_candidate_packet: packet([candidate], [])
+  };
+  const { application } = buildLayer(result);
+  const product = application.decisions.find((row) => row.field === "product");
+
+  assert.equal(product.decision, "REJECT");
+  assert.equal(product.reason, "candidate_not_selected");
+  assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), false);
+}
+
+function testUnselectedFieldEvidenceCanSupportRawCurrentImageObservation() {
+  const candidate = trustedCatalogCandidate({
+    candidate_id: "reviewed-raw-observation-support",
+    candidate_identity_id: "identity-reviewed-raw-observation-support",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    conflicting_fields: ["surface_color"],
+    direct_evidence_conflicts: ["surface_color"],
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_applicable: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      surface_color: "Red"
+    }
+  });
+  const result = {
+    resolved_fields: {
+      year: "2024",
+      players: ["Test Player"]
+    },
+    raw_provider_fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      surface_color: "Blue"
+    },
+    catalog_candidate_packet: packet([candidate], [])
+  };
+  const { control, application } = buildLayer(result);
+  const product = application.decisions.find((row) => row.field === "product");
+
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
+  assert.equal(control.candidate_observation_snapshot.product, "Topps Chrome");
+  assert.equal(product.old_value ?? null, null);
+  assert.equal(product.observed_value, "Topps Chrome");
+  assert.equal(product.decision, "SUPPORT");
+  assert.equal(product.reason, "unselected_trusted_candidate_matches_current_field");
+  assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), true);
+}
+
 function testOutcomeRecordsResolverBlockInsteadOfPretendingApplication() {
   const result = resultWithCandidate();
   const { application } = buildLayer(result);
@@ -398,6 +601,11 @@ testIdentityResolutionConsumesRetrievalFieldEvidence();
 testRawRetrievalEvidenceCannotBypassApplicationOwner();
 testResolvedRetrievalOutcomeOwnsRenderedFieldContainer();
 testCandidateCannotOverrideContradictingCurrentImageIdentity();
+testProductSemanticWrappersSupportWithoutReplacement();
+testReviewedProductCanonicalizationCanReplaceOnlyProduct();
+testUnselectedConflictingCandidateSupportsOnlyMatchingFields();
+testUnselectedFieldEvidenceCannotFillMissingProduct();
+testUnselectedFieldEvidenceCanSupportRawCurrentImageObservation();
 testOutcomeRecordsResolverBlockInsteadOfPretendingApplication();
 await testConvergenceCannotReinjectRawCandidates();
 

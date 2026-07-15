@@ -138,12 +138,16 @@ function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
   assert.equal(control.selected_candidate_decision.match_level, "EXACT_CARD_MATCH");
   assert.equal(control.catalog_activation_funnel.prompt_candidate_count, 1);
   assert.equal(control.vector_activation_funnel.prompt_candidate_count, 0);
-  assert.equal(control.decision_eligible_candidate_count, 1);
-  assert.equal(control.shadow_only_candidate_count, 1);
-  assert.deepEqual(control.shadow_only_candidate_ids, ["vector-lookalike"]);
+  assert.equal(control.decision_eligible_candidate_count, 2);
+  assert.equal(control.shadow_only_candidate_count, 0);
+  assert.deepEqual(control.shadow_only_candidate_ids, []);
   assert.equal(
     control.candidate_application_trace.find((row) => row.candidate_id === "vector-lookalike")?.participation_level,
-    "LEVEL_0_SHADOW"
+    "LEVEL_2_EVIDENCE_SUPPORT"
+  );
+  assert.equal(
+    control.candidate_application_trace.find((row) => row.candidate_id === "vector-lookalike")?.decision_path,
+    "post_observation_resolver_only"
   );
   assert.equal(control.selected_candidate_safe_field_application.status, "ready_fill_missing");
   assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("manufacturer"));
@@ -246,6 +250,156 @@ function testCandidateOnlyPacketCannotEnterProductionDecision() {
   assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
   assert.equal(control.candidate_field_evidence.length, 0);
   assert.equal(control.candidate_application_trace[0].participation_level, "LEVEL_0_SHADOW");
+}
+
+function testReviewedPostObservationCandidateCanReachResolverWithoutEnteringPrompt() {
+  const candidate = {
+    candidate_id: "reviewed-post-observation",
+    candidate_identity_id: "identity-reviewed-post-observation",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    match_score: 0.82,
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_applicable: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025",
+      manufacturer: "Bowman",
+      product: "Bowman Chrome",
+      players: ["Test Player"]
+    }
+  };
+  const control = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        year: "2025",
+        manufacturer: "Bowman",
+        product: "Bowman Chrome",
+        players: ["Test Player"]
+      },
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: []
+      })
+    }
+  });
+
+  const trace = control.candidate_application_trace[0];
+  assert.equal(trace.provider_prompt_eligible, false);
+  assert.equal(trace.prompt_eligible, false);
+  assert.equal(trace.decision_eligible, true);
+  assert.equal(trace.decision_path, "post_observation_resolver_only");
+  assert.equal(control.decision_eligible_candidate_count, 1);
+  assert.equal(control.candidate_field_evidence.some((row) => row.field_name === "product"), true);
+}
+
+function testReviewedLotCandidateOnlyContributesSharedHierarchy() {
+  const candidate = {
+    candidate_id: "reviewed-lot",
+    candidate_identity_id: "identity-reviewed-lot",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    match_score: 0.9,
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_applicable: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      lot_type: "LOT",
+      card_count: 3,
+      year: "2025",
+      manufacturer: "Bowman",
+      product: "Bowman Chrome",
+      players: ["Player One", "Player Two", "Player Three"],
+      surface_color: "Red",
+      collector_number: "LOT-1"
+    }
+  };
+  const control = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        year: "2025",
+        product: "Bowman Chrome",
+        players: ["Player One", "Player Two", "Player Three"]
+      },
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: []
+      })
+    }
+  });
+
+  const trace = control.candidate_application_trace[0];
+  assert.equal(trace.decision_eligible, true);
+  assert.equal(trace.field_permissions.product, "can_apply");
+  assert.equal(trace.field_permissions.players, "suggest_only");
+  assert.equal(trace.field_permissions.surface_color, "suggest_only");
+  assert.equal(trace.field_permissions.collector_number, "suggest_only");
+  assert.equal(control.candidate_field_evidence.some((row) => row.field_name === "product"), true);
+  assert.equal(control.candidate_field_evidence.some((row) => row.field_name === "players"), false);
+}
+
+function testFieldConflictBlocksOnlyThatFieldWithoutSelectingIdentity() {
+  const candidate = {
+    candidate_id: "reviewed-partial-support",
+    candidate_identity_id: "identity-reviewed-partial-support",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    conflicting_fields: ["surface_color"],
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_applicable: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025",
+      product: "Bowman Chrome",
+      players: ["Test Player"],
+      surface_color: "Red"
+    }
+  };
+  const control = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        year: "2025",
+        product: "Bowman Chrome",
+        players: ["Test Player"],
+        surface_color: "Blue"
+      },
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        conflict_blocked_count: 1,
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: []
+      })
+    }
+  });
+
+  const trace = control.candidate_application_trace[0];
+  assert.equal(trace.identity_decision_eligible, false);
+  assert.equal(trace.field_evidence_eligible, true);
+  assert.equal(trace.decision_eligible, false);
+  assert.equal(trace.decision_path, "post_observation_field_evidence_only");
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
+  assert.equal(control.decision_eligible_candidate_count, 0);
+  assert.equal(control.field_evidence_eligible_candidate_count, 1);
+  assert.equal(control.shadow_only_candidate_count, 0);
+  assert.equal(control.candidate_field_evidence.some((row) => row.field_name === "product"), true);
+  assert.equal(control.candidate_field_evidence.some((row) => row.field_name === "surface_color"), false);
 }
 
 function testFunnelAndEvidenceTraceFailClosedOnConflict() {
@@ -1144,6 +1298,9 @@ testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
 testCandidateOnlyPacketCannotEnterProductionDecision();
+testReviewedPostObservationCandidateCanReachResolverWithoutEnteringPrompt();
+testReviewedLotCandidateOnlyContributesSharedHierarchy();
+testFieldConflictBlocksOnlyThatFieldWithoutSelectingIdentity();
 testFunnelAndEvidenceTraceFailClosedOnConflict();
 testLowMarginCandidateOnlySupportsCurrentImageFields();
 testTrustBlockedCountPropagatesToActivationFunnel();

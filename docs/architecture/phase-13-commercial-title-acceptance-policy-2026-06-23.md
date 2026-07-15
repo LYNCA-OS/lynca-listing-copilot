@@ -12,7 +12,7 @@ This phase adds a semantic title acceptance policy so the commercial evaluator d
 
 - `lib/listing/evaluation/title-acceptance-policy.mjs` evaluates final title quality from the title text, reviewer ground-truth fields, model predicted fields, and the dataset critical-field list.
 - `lib/listing/evaluation/golden-dataset.mjs` now computes `final_title_required_fields` and `final_title_unsubstantiated_fields` through this policy instead of trusting model-provided booleans.
-- `lib/listing/resolver/trusted-name-candidate-resolver.mjs` supports trusted structured-name correction for near misses from internal, official, grading, registry, or public structured card databases.
+- Candidate name support now flows through the Candidate Control Plane and field-level evidence application; the standalone fuzzy-name auto-correction prototype has been retired.
 - `scripts/evaluate-legacy-vision-provider-public-card-images.mjs` now reports both raw strict card-name exact rate and trusted structured-name exact-or-corrected rate.
 
 ## Acceptance Rules
@@ -21,7 +21,7 @@ Accepted examples:
 
 - `23-24 Prizm Wembanyama Silver PSA 10` can pass for a reviewed `2023-24 Panini Prizm Victor Wembanyama Silver Prizm PSA 10` asset because season shorthand, last-name shorthand, and omitted brand are tolerable when the critical facts are still present.
 - A title containing `Black Gold` can pass when `Black Gold` is the reviewed set or product descriptor, because the color words are supported by trusted fields.
-- legacy vision provider spelling near misses can be corrected only when a high-similarity, high-margin trusted structured candidate exists.
+- spelling near misses may be supported only through a trusted candidate that passes the active field-evidence and identity-resolution policies.
 
 Rejected examples:
 

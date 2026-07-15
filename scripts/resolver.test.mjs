@@ -14,7 +14,6 @@ import {
 import { resolveGradeFields } from "../lib/listing/resolver/grade-resolver.mjs";
 import { classifyNumberToken, resolveNumberFields, splitCardNumber } from "../lib/listing/resolver/number-resolver.mjs";
 import { resolveCardFields } from "../lib/listing/resolver/resolve-card.mjs";
-import { resolveTrustedNameCandidate, trustedNameSimilarity } from "../lib/listing/resolver/trusted-name-candidate-resolver.mjs";
 
 assert.equal(classifyNumberToken("31/50"), "serial_number");
 assert.equal(classifyNumberToken("130/175"), "serial_number");
@@ -317,69 +316,5 @@ assert.equal(resolvedCard.resolved.card_grade, "9");
 assert.equal(resolvedCard.resolved.auto_grade, "10");
 assert.equal(resolvedCard.resolved.grade_type, "CARD_AND_AUTO");
 assert.ok(resolvedCard.resolution_trace.length >= 3);
-
-const publicNameCandidates = [
-  "Cinccino ex",
-  "Tyrantrum",
-  "Eelektrik",
-  "Larry's Dudunsparce ex",
-  "Xerneas"
-].map((name) => ({
-  name,
-  source_type: "PUBLIC_STRUCTURED_CARD_DATABASE",
-  trust_tier: 5
-}));
-
-for (const [observedName, expectedName] of [
-  ["Cincino ex", "Cinccino ex"],
-  ["Tyranttrum", "Tyrantrum"],
-  ["Eleektrik", "Eelektrik"],
-  ["Larry's Dudunce ex", "Larry's Dudunsparce ex"]
-]) {
-  const result = resolveTrustedNameCandidate({
-    observedName,
-    candidates: publicNameCandidates
-  });
-  assert.equal(result.status, "TRUSTED_CORRECTION");
-  assert.equal(result.resolved_name, expectedName);
-  assert.ok(result.confidence >= 0.8);
-}
-
-assert.equal(trustedNameSimilarity("Cinccino ex", "Cinccino ex"), 1);
-assert.ok(trustedNameSimilarity("Cincino ex", "Cinccino ex") > trustedNameSimilarity("Cincino ex", "Xerneas"));
-
-const duplicateNameCandidates = resolveTrustedNameCandidate({
-  observedName: "Cincino ex",
-  candidates: [
-    {
-      name: "Cinccino ex",
-      source_type: "PUBLIC_STRUCTURED_CARD_DATABASE"
-    },
-    {
-      name: "Cinccino ex",
-      source_type: "PUBLIC_STRUCTURED_CARD_DATABASE"
-    },
-    {
-      name: "Xerneas",
-      source_type: "PUBLIC_STRUCTURED_CARD_DATABASE"
-    }
-  ]
-});
-assert.equal(duplicateNameCandidates.status, "TRUSTED_CORRECTION");
-assert.equal(duplicateNameCandidates.resolved_name, "Cinccino ex");
-assert.ok(duplicateNameCandidates.candidate_margin > 0);
-
-const marketplaceOnlyCorrection = resolveTrustedNameCandidate({
-  observedName: "Cincino ex",
-  candidates: [
-    {
-      name: "Cinccino ex",
-      source_type: "MARKETPLACE",
-      trust_tier: 8
-    }
-  ]
-});
-assert.equal(marketplaceOnlyCorrection.status, "UNRESOLVED");
-assert.equal(marketplaceOnlyCorrection.reason, "no_trusted_candidates");
 
 console.log("resolver tests passed");

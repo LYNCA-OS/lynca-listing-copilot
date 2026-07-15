@@ -857,6 +857,10 @@ function compactCandidateTrace(trace = {}) {
     decision_eligible_candidate_ids: Array.isArray(trace.decision_eligible_candidate_ids)
       ? trace.decision_eligible_candidate_ids
       : [],
+    field_evidence_eligible_candidate_count: Number(trace.field_evidence_eligible_candidate_count || 0),
+    field_evidence_eligible_candidate_ids: Array.isArray(trace.field_evidence_eligible_candidate_ids)
+      ? trace.field_evidence_eligible_candidate_ids
+      : [],
     shadow_only_candidate_count: Number(trace.shadow_only_candidate_count || 0),
     shadow_only_candidate_ids: Array.isArray(trace.shadow_only_candidate_ids)
       ? trace.shadow_only_candidate_ids

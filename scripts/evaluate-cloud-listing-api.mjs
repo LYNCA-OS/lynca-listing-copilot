@@ -2334,6 +2334,10 @@ function evaluatedResultFromData({
     decision_eligible_candidate_ids: Array.isArray(data.decision_eligible_candidate_ids)
       ? data.decision_eligible_candidate_ids
       : [],
+    field_evidence_eligible_candidate_count: Number(data.field_evidence_eligible_candidate_count || 0),
+    field_evidence_eligible_candidate_ids: Array.isArray(data.field_evidence_eligible_candidate_ids)
+      ? data.field_evidence_eligible_candidate_ids
+      : [],
     shadow_only_candidate_count: Number(data.shadow_only_candidate_count || 0),
     selected_candidate_decision: data.selected_candidate_decision || null,
     candidate_application_trace: Array.isArray(data.candidate_application_trace) ? data.candidate_application_trace : [],
@@ -2564,6 +2568,16 @@ function summarize(results = [], elapsedMs = 0) {
     return counts;
   }, {});
   const candidateApplicationTraceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_application_trace) ? item.candidate_application_trace.length : 0), 0);
+  const fieldEvidenceEligibleCandidateCount = results.reduce((sum, item) => (
+    sum + Number(item.field_evidence_eligible_candidate_count || 0)
+  ), 0);
+  const fieldEvidenceOnlyCandidateCount = results.reduce((sum, item) => (
+    sum + (Array.isArray(item.candidate_application_trace)
+      ? item.candidate_application_trace.filter((trace) => (
+        trace?.field_evidence_eligible === true && trace?.identity_decision_eligible !== true
+      )).length
+      : 0)
+  ), 0);
   const candidateFieldEvidenceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_field_evidence) ? item.candidate_field_evidence.length : 0), 0);
   const candidateCanApplyEvidenceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_field_evidence)
     ? item.candidate_field_evidence.filter((row) => row?.permission === "can_apply").length
@@ -2888,6 +2902,8 @@ function summarize(results = [], elapsedMs = 0) {
       selected_candidate_decision_count: selectedCandidateDecisionCount,
       selected_candidate_match_level_counts: selectedCandidateMatchLevelCounts,
       candidate_application_trace_count: candidateApplicationTraceCount,
+      field_evidence_eligible_candidate_count: fieldEvidenceEligibleCandidateCount,
+      field_evidence_only_candidate_count: fieldEvidenceOnlyCandidateCount,
       candidate_field_evidence_count: candidateFieldEvidenceCount,
       candidate_can_apply_evidence_count: candidateCanApplyEvidenceCount,
       candidate_support_only_evidence_count: candidateSupportOnlyEvidenceCount,
@@ -2906,6 +2922,8 @@ function summarize(results = [], elapsedMs = 0) {
     selected_candidate_decision_count: selectedCandidateDecisionCount,
     selected_candidate_match_level_counts: selectedCandidateMatchLevelCounts,
     candidate_application_trace_count: candidateApplicationTraceCount,
+    field_evidence_eligible_candidate_count: fieldEvidenceEligibleCandidateCount,
+    field_evidence_only_candidate_count: fieldEvidenceOnlyCandidateCount,
     candidate_field_evidence_count: candidateFieldEvidenceCount,
     candidate_can_apply_evidence_count: candidateCanApplyEvidenceCount,
     candidate_support_only_evidence_count: candidateSupportOnlyEvidenceCount,
@@ -3356,6 +3374,8 @@ export async function main(argv = process.argv, env = process.env) {
     `selected_candidate_decision_count: ${report.selected_candidate_decision_count ?? "n/a"}`,
     `selected_candidate_match_level_counts: ${JSON.stringify(report.selected_candidate_match_level_counts || {})}`,
     `candidate_application_trace_count: ${report.candidate_application_trace_count ?? "n/a"}`,
+    `field_evidence_eligible_candidate_count: ${report.field_evidence_eligible_candidate_count ?? "n/a"}`,
+    `field_evidence_only_candidate_count: ${report.field_evidence_only_candidate_count ?? "n/a"}`,
     `candidate_field_evidence_count: ${report.candidate_field_evidence_count ?? "n/a"}`,
     `candidate_can_apply_evidence_count: ${report.candidate_can_apply_evidence_count ?? "n/a"}`,
     `candidate_support_only_evidence_count: ${report.candidate_support_only_evidence_count ?? "n/a"}`,
