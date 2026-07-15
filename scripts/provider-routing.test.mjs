@@ -274,10 +274,15 @@ assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, {}), 1800);
 assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { v4_ultra_fast_l2: true }), 5000);
 assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { post_observation_structured_anchor_catalog_budget_ms: 20 }), 250);
 assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { post_observation_structured_anchor_catalog_budget_ms: 9000 }), 5000);
-assert.equal(ultraFastImageDetail({}), "auto");
+assert.equal(ultraFastImageDetail({}), "high");
 assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "low" }), "low");
 assert.equal(ultraFastImageDetail({ v4UltraFastImageDetail: "HIGH" }), "high");
-assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "invalid" }), "auto");
+assert.equal(ultraFastImageDetail({ v4_ultra_fast_image_detail: "invalid" }), "high");
+assert.equal(
+  ultraFastImageDetail(__listingCopilotTitleTestHooks.providerOptionsFromPayload({}, {})),
+  "high",
+  "production defaults must preserve card text detail when the env flag is absent"
+);
 assert.equal(ultraFastTextVerbosity({}), "medium");
 assert.equal(ultraFastTextVerbosity({ v4_ultra_fast_text_verbosity: "low" }), "low");
 assert.equal(ultraFastTextVerbosity({ v4UltraFastTextVerbosity: "HIGH" }), "high");

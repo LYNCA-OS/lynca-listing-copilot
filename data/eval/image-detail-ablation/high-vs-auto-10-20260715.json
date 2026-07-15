@@ -1,0 +1,575 @@
+{
+  "schema_version": "provider-transport-ablation-v1",
+  "generated_at": "2026-07-15T09:58:45.197Z",
+  "comparison_policy": {
+    "same_images": true,
+    "same_model_required": true,
+    "identity_cache_disabled_required": true,
+    "seller_title_visible_to_model": false,
+    "seller_title_is_ground_truth": false,
+    "weak_policy_score_is_diagnostic_only": true
+  },
+  "paired_count": 10,
+  "complete_pair_count": 10,
+  "baseline": {
+    "attempted_count": 10,
+    "completed_count": 10,
+    "technical_failure_count": 0,
+    "run_wall_ms": 59539,
+    "completed_cards_per_minute": 10.077428240313072,
+    "writer_ready_p50_ms": 28349,
+    "writer_ready_p95_ms": 48170,
+    "scheduler_queue_wait_p50_ms": 14837,
+    "scheduler_queue_wait_p95_ms": 33780,
+    "provider_latency_p50_ms": 7526,
+    "provider_latency_p95_ms": 11587,
+    "input_tokens_total": 64176,
+    "output_tokens_total": 8235,
+    "total_tokens_total": 72411,
+    "weak_policy_score_avg": 0.7358709000000001,
+    "resolved_field_presence": {
+      "year": {
+        "count": 9,
+        "rate": 0.9
+      },
+      "manufacturer": {
+        "count": 9,
+        "rate": 0.9
+      },
+      "product": {
+        "count": 10,
+        "rate": 1
+      },
+      "set": {
+        "count": 10,
+        "rate": 1
+      },
+      "players": {
+        "count": 10,
+        "rate": 1
+      },
+      "card_name": {
+        "count": 8,
+        "rate": 0.8
+      },
+      "release_variant": {
+        "count": 0,
+        "rate": 0
+      },
+      "surface_color": {
+        "count": 4,
+        "rate": 0.4
+      },
+      "parallel": {
+        "count": 0,
+        "rate": 0
+      },
+      "collector_number": {
+        "count": 3,
+        "rate": 0.3
+      },
+      "checklist_code": {
+        "count": 1,
+        "rate": 0.1
+      },
+      "card_number": {
+        "count": 4,
+        "rate": 0.4
+      },
+      "tcg_card_number": {
+        "count": 0,
+        "rate": 0
+      },
+      "print_run_number": {
+        "count": 5,
+        "rate": 0.5
+      },
+      "print_run_denominator": {
+        "count": 5,
+        "rate": 0.5
+      },
+      "grade_company": {
+        "count": 3,
+        "rate": 0.3
+      },
+      "card_grade": {
+        "count": 3,
+        "rate": 0.3
+      },
+      "auto_grade": {
+        "count": 2,
+        "rate": 0.2
+      }
+    },
+    "grade_reference_expected_count": 5,
+    "grade_reference_preserved_count": 3,
+    "grade_reference_omission_count": 2,
+    "grade_reference_preservation_rate": 0.6,
+    "node_error_count": 0,
+    "transport_node_error_count": 0,
+    "field_quality_error_count": 0,
+    "identity_cache_hit_count": 0,
+    "identity_cache_bypassed_count": 10,
+    "provider_done_capacity_release_count": 10,
+    "writer_ready_atomic_capacity_release_count": 0,
+    "capacity_refill_triggered_count": 10,
+    "capacity_refill_missing_count": 0,
+    "response_profile_breakdown": {
+      "compact_sparse_v1": 10
+    },
+    "prompt_mode_breakdown": {
+      "v4_ultra_fast_l2": 10
+    },
+    "image_detail_breakdown": {
+      "high": 10
+    },
+    "text_verbosity_breakdown": {
+      "medium": 10
+    },
+    "requested_service_tier_breakdown": {
+      "priority": 10
+    },
+    "service_tier_breakdown": {
+      "priority": 10
+    },
+    "prompt_chars_p50": 6601,
+    "prompt_chars_p95": 7264
+  },
+  "compact": {
+    "attempted_count": 10,
+    "completed_count": 10,
+    "technical_failure_count": 0,
+    "run_wall_ms": 78999,
+    "completed_cards_per_minute": 7.59503284851707,
+    "writer_ready_p50_ms": 19020,
+    "writer_ready_p95_ms": 65772,
+    "scheduler_queue_wait_p50_ms": 10049,
+    "scheduler_queue_wait_p95_ms": 51990,
+    "provider_latency_p50_ms": 6858,
+    "provider_latency_p95_ms": 35199,
+    "input_tokens_total": 71688,
+    "output_tokens_total": 8098,
+    "total_tokens_total": 79786,
+    "weak_policy_score_avg": 0.643371,
+    "resolved_field_presence": {
+      "year": {
+        "count": 8,
+        "rate": 0.8
+      },
+      "manufacturer": {
+        "count": 7,
+        "rate": 0.7
+      },
+      "product": {
+        "count": 9,
+        "rate": 0.9
+      },
+      "set": {
+        "count": 10,
+        "rate": 1
+      },
+      "players": {
+        "count": 8,
+        "rate": 0.8
+      },
+      "card_name": {
+        "count": 9,
+        "rate": 0.9
+      },
+      "release_variant": {
+        "count": 0,
+        "rate": 0
+      },
+      "surface_color": {
+        "count": 0,
+        "rate": 0
+      },
+      "parallel": {
+        "count": 1,
+        "rate": 0.1
+      },
+      "collector_number": {
+        "count": 6,
+        "rate": 0.6
+      },
+      "checklist_code": {
+        "count": 0,
+        "rate": 0
+      },
+      "card_number": {
+        "count": 6,
+        "rate": 0.6
+      },
+      "tcg_card_number": {
+        "count": 0,
+        "rate": 0
+      },
+      "print_run_number": {
+        "count": 4,
+        "rate": 0.4
+      },
+      "print_run_denominator": {
+        "count": 4,
+        "rate": 0.4
+      },
+      "grade_company": {
+        "count": 4,
+        "rate": 0.4
+      },
+      "card_grade": {
+        "count": 3,
+        "rate": 0.3
+      },
+      "auto_grade": {
+        "count": 1,
+        "rate": 0.1
+      }
+    },
+    "grade_reference_expected_count": 5,
+    "grade_reference_preserved_count": 2,
+    "grade_reference_omission_count": 3,
+    "grade_reference_preservation_rate": 0.4,
+    "node_error_count": 1,
+    "transport_node_error_count": 0,
+    "field_quality_error_count": 1,
+    "identity_cache_hit_count": 0,
+    "identity_cache_bypassed_count": 10,
+    "provider_done_capacity_release_count": 10,
+    "writer_ready_atomic_capacity_release_count": 0,
+    "capacity_refill_triggered_count": 10,
+    "capacity_refill_missing_count": 0,
+    "response_profile_breakdown": {
+      "compact_sparse_v1": 10
+    },
+    "prompt_mode_breakdown": {
+      "v4_ultra_fast_l2": 10
+    },
+    "image_detail_breakdown": {
+      "auto": 10
+    },
+    "text_verbosity_breakdown": {
+      "medium": 10
+    },
+    "requested_service_tier_breakdown": {
+      "priority": 10
+    },
+    "service_tier_breakdown": {
+      "priority": 10
+    },
+    "prompt_chars_p50": 6601,
+    "prompt_chars_p95": 22293
+  },
+  "deltas": {
+    "writer_ready_p50_fraction": -0.3290768633814244,
+    "writer_ready_p95_fraction": 0.36541415818974465,
+    "scheduler_queue_wait_p50_fraction": -0.32270674664689625,
+    "scheduler_queue_wait_p95_fraction": 0.5390763765541741,
+    "completed_cards_per_minute_fraction": -0.2463322320535703,
+    "provider_latency_p50_fraction": -0.08875896890778634,
+    "provider_latency_p95_fraction": 2.037800983861224,
+    "input_tokens_fraction": 0.11705310396409872,
+    "output_tokens_fraction": -0.01663630843958713,
+    "weak_policy_score": -0.09249990000000008
+  },
+  "title_exact_match_count": 2,
+  "recovery_count": 1,
+  "regression_count": 5,
+  "no_change_count": 4,
+  "pairs": [
+    {
+      "asset_id": "ebay_image_only_785ecdc2-10a9-4388-8864-cf658c6c60b6",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2023 Panini Flawless Collegiate Rashee Rice Patch Auto Green (SMU Mustangs)",
+      "compact_title": "2023 Panini Flawless Collegiate Rashee Rice Patch Auto",
+      "title_exact_match": false,
+      "changed_fields": [
+        "surface_color"
+      ],
+      "baseline_writer_ready_ms": 16882,
+      "compact_writer_ready_ms": 9942,
+      "baseline_provider_latency_ms": 11587,
+      "compact_provider_latency_ms": 6436,
+      "baseline_input_tokens": 4670,
+      "compact_input_tokens": 4670,
+      "baseline_output_tokens": 498,
+      "compact_output_tokens": 724,
+      "baseline_weak_policy_score": 0.545455,
+      "compact_weak_policy_score": 0.545455,
+      "weak_policy_score_delta": 0,
+      "weak_proxy_outcome": "NO_CHANGE",
+      "seller_title_weak_label": "2023 Flawless Collegiate Rashee Rice Emerald Rookie Jersey Patch Relic RC #2/5",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_06f02c49-c746-4f0e-83eb-b67ec6d550f3",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2011 Yu-Gi-Oh! Champ. Series - Ultra Rare Blood Mefist EN004",
+      "compact_title": "2011 Yu-Gi-Oh! CHAMP.SERIES - ULTRA RARE Blood Mefist EN004",
+      "title_exact_match": false,
+      "changed_fields": [
+        "manufacturer",
+        "set"
+      ],
+      "baseline_writer_ready_ms": 20944,
+      "compact_writer_ready_ms": 19020,
+      "baseline_provider_latency_ms": 7526,
+      "compact_provider_latency_ms": 6858,
+      "baseline_input_tokens": 4460,
+      "compact_input_tokens": 4460,
+      "baseline_output_tokens": 702,
+      "compact_output_tokens": 828,
+      "baseline_weak_policy_score": 0.583333,
+      "compact_weak_policy_score": 0.583333,
+      "weak_policy_score_delta": 0,
+      "weak_proxy_outcome": "NO_CHANGE",
+      "seller_title_weak_label": "Yu-Gi-Oh! YCS Prize Card ULTRA RARE YCSW-EN004 BLOOD MEFIST PSA AUTHENTIC LP",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_5c48e24b-d465-4c3c-a4c1-988a8a691db1",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2024 Panini Eminence Patrick Mahomes II Luxury Platinum Insert Silver",
+      "compact_title": "2024 Panini Eminence Luxury Patrick Mahomes II Auto (Kansas City Chiefs)",
+      "title_exact_match": false,
+      "changed_fields": [
+        "card_name",
+        "surface_color"
+      ],
+      "baseline_writer_ready_ms": 17220,
+      "compact_writer_ready_ms": 18363,
+      "baseline_provider_latency_ms": 7768,
+      "compact_provider_latency_ms": 8191,
+      "baseline_input_tokens": 7732,
+      "compact_input_tokens": 7732,
+      "baseline_output_tokens": 761,
+      "compact_output_tokens": 914,
+      "baseline_weak_policy_score": 0.75,
+      "compact_weak_policy_score": 0.625,
+      "weak_policy_score_delta": -0.125,
+      "weak_proxy_outcome": "REGRESSION",
+      "seller_title_weak_label": "2024 Eminence Patrick Mahomes Luxury Platinum Bar #1/1 Chiefs",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_3d6bcb86-31c0-43b7-ac29-7720f3a172ac",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "One Piece English Version 1st Anniversary Set",
+      "compact_title": "One Piece English Version 1st Anniversary Set",
+      "title_exact_match": true,
+      "changed_fields": [
+        "manufacturer",
+        "players"
+      ],
+      "baseline_writer_ready_ms": 18695,
+      "compact_writer_ready_ms": 12616,
+      "baseline_provider_latency_ms": 4980,
+      "compact_provider_latency_ms": 6040,
+      "baseline_input_tokens": 8091,
+      "compact_input_tokens": 8091,
+      "baseline_output_tokens": 397,
+      "compact_output_tokens": 421,
+      "baseline_weak_policy_score": 0.545455,
+      "compact_weak_policy_score": 0.545455,
+      "weak_policy_score_delta": 0,
+      "weak_proxy_outcome": "NO_CHANGE",
+      "seller_title_weak_label": "2024 One Piece Card Game English Version 1st Anniversary Set Factory Sealed Box",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_baa4d1b2-8293-4fc0-8739-e88e077c9095",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2023 Panini Flawless Amen Thompson Patch Auto Gold #HPA (Rockets) PSA 9/10",
+      "compact_title": "2023 Panini Flawless Amen Thompson Patch Auto #HPAA (Rockets) PSA/DNA 9/10",
+      "title_exact_match": false,
+      "changed_fields": [
+        "surface_color",
+        "collector_number",
+        "checklist_code",
+        "card_number",
+        "print_run_number",
+        "print_run_denominator",
+        "grade_company"
+      ],
+      "baseline_writer_ready_ms": 28349,
+      "compact_writer_ready_ms": 17376,
+      "baseline_provider_latency_ms": 9418,
+      "compact_provider_latency_ms": 6140,
+      "baseline_input_tokens": 7250,
+      "compact_input_tokens": 7396,
+      "baseline_output_tokens": 1196,
+      "compact_output_tokens": 606,
+      "baseline_weak_policy_score": 0.857143,
+      "compact_weak_policy_score": 0.571429,
+      "weak_policy_score_delta": -0.285714,
+      "weak_proxy_outcome": "REGRESSION",
+      "seller_title_weak_label": "2023-24 Panini Flawless Amen Thompson Patch Auto Gold RC #5/10 PSA 9 10",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_016daf78-1ade-4117-b0a6-2cee84ab813d",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2018-19 Panini Court Kings Trae Young Heir Apparent Autographs #20 BGS 10/10",
+      "compact_title": "2018-19 Panini Court Kings Sapphire Trae Young Patch Auto Sapphire #20",
+      "title_exact_match": false,
+      "changed_fields": [
+        "manufacturer",
+        "product",
+        "card_name",
+        "parallel",
+        "print_run_number",
+        "print_run_denominator",
+        "grade_company",
+        "card_grade",
+        "auto_grade"
+      ],
+      "baseline_writer_ready_ms": 37009,
+      "compact_writer_ready_ms": 21205,
+      "baseline_provider_latency_ms": 11113,
+      "compact_provider_latency_ms": 8099,
+      "baseline_input_tokens": 7487,
+      "compact_input_tokens": 7487,
+      "baseline_output_tokens": 1573,
+      "compact_output_tokens": 989,
+      "baseline_weak_policy_score": 0.785714,
+      "compact_weak_policy_score": 0.571429,
+      "weak_policy_score_delta": -0.21428500000000006,
+      "weak_proxy_outcome": "REGRESSION",
+      "seller_title_weak_label": "2018-19 Court Kings Trae Young Heir Apparent Sapphire RC Auto #/25 BGS 10/10",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_7f33e254-f2e1-4094-882e-bcdc556a3da8",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2018 Panini Select Prizm Premier Level Nick Chubb Gold 10/10 RC (Browns)",
+      "compact_title": "Panini Select Premier Level Prizm Nick Chubb 10/10 #152 RC (Browns)",
+      "title_exact_match": false,
+      "changed_fields": [
+        "year",
+        "product",
+        "set",
+        "card_name",
+        "surface_color",
+        "collector_number",
+        "card_number"
+      ],
+      "baseline_writer_ready_ms": 30845,
+      "compact_writer_ready_ms": 63513,
+      "baseline_provider_latency_ms": 6648,
+      "compact_provider_latency_ms": 35199,
+      "baseline_input_tokens": 6579,
+      "compact_input_tokens": 10341,
+      "baseline_output_tokens": 623,
+      "compact_output_tokens": 575,
+      "baseline_weak_policy_score": 0.818182,
+      "compact_weak_policy_score": 0.636364,
+      "weak_policy_score_delta": -0.18181799999999992,
+      "weak_proxy_outcome": "REGRESSION",
+      "seller_title_weak_label": "2018 Select Nick Chubb Die-Cut Gold Prizm Rookie RC Premier #10/10 Browns",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_b3a7bcb9-6914-4133-a2ed-a8dd4390c1af",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2023 Yu-Gi-Oh! Adidas Collaboration Dark Magician EN001",
+      "compact_title": "2023 Yu-Gi-Oh! Adidas Collaboration Dark Magician ADC1-EN001 PSA 10",
+      "title_exact_match": false,
+      "changed_fields": [
+        "manufacturer",
+        "collector_number",
+        "card_number",
+        "grade_company",
+        "card_grade"
+      ],
+      "baseline_writer_ready_ms": 42780,
+      "compact_writer_ready_ms": 23641,
+      "baseline_provider_latency_ms": 6155,
+      "compact_provider_latency_ms": 7889,
+      "baseline_input_tokens": 7397,
+      "compact_input_tokens": 7250,
+      "baseline_output_tokens": 538,
+      "compact_output_tokens": 889,
+      "baseline_weak_policy_score": 0.727273,
+      "compact_weak_policy_score": 0.909091,
+      "weak_policy_score_delta": 0.18181800000000004,
+      "weak_proxy_outcome": "RECOVERY",
+      "seller_title_weak_label": "2023 Yu-Gi-Oh Adidas Collaboration Dark Magician Promo #ADC1-EN001 PSA 10",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_369ddce2-5a3d-4c24-90ec-d8e507ddb703",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2025 Topps Inception Grail Chasing Signature Camo Parallel LeBron James Auto",
+      "compact_title": "2025 Topps Grail Chasing Signature Camo Parallel Redemption 7/31 #GCS-LJ",
+      "title_exact_match": false,
+      "changed_fields": [
+        "product",
+        "players",
+        "card_name",
+        "collector_number",
+        "card_number",
+        "print_run_number",
+        "print_run_denominator",
+        "grade_company"
+      ],
+      "baseline_writer_ready_ms": 37725,
+      "compact_writer_ready_ms": 50914,
+      "baseline_provider_latency_ms": 7498,
+      "compact_provider_latency_ms": 6761,
+      "baseline_input_tokens": 6081,
+      "compact_input_tokens": 9832,
+      "baseline_output_tokens": 749,
+      "compact_output_tokens": 714,
+      "baseline_weak_policy_score": 0.9,
+      "compact_weak_policy_score": 0.6,
+      "weak_policy_score_delta": -0.30000000000000004,
+      "weak_proxy_outcome": "REGRESSION",
+      "seller_title_weak_label": "2025 Topps Inception LeBron James Grail Chasing Camo Auto Autograph #/10",
+      "baseline_error": null,
+      "compact_error": null
+    },
+    {
+      "asset_id": "ebay_image_only_e92db2dd-e96d-484a-8236-985e0d52fbc1",
+      "baseline_completed": true,
+      "compact_completed": true,
+      "baseline_title": "2024 Topps Chrome Update S/E Jackson Chourio Auto Black RC PSA 10",
+      "compact_title": "2024 Topps Chrome Update S/E Jackson Chourio Auto Black RC PSA 10",
+      "title_exact_match": true,
+      "changed_fields": [
+        "manufacturer",
+        "set"
+      ],
+      "baseline_writer_ready_ms": 48170,
+      "compact_writer_ready_ms": 65772,
+      "baseline_provider_latency_ms": 9457,
+      "compact_provider_latency_ms": 10409,
+      "baseline_input_tokens": 4429,
+      "compact_input_tokens": 4429,
+      "baseline_output_tokens": 1198,
+      "compact_output_tokens": 1438,
+      "baseline_weak_policy_score": 0.846154,
+      "compact_weak_policy_score": 0.846154,
+      "weak_policy_score_delta": 0,
+      "weak_proxy_outcome": "NO_CHANGE",
+      "seller_title_weak_label": "2024 Topps Chrome Update Sapphire Jackson Chourio Black Rookie Auto #3/10 PSA 10",
+      "baseline_error": null,
+      "compact_error": null
+    }
+  ]
+}
