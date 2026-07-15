@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getSessionFromRequest } from "../lib/listing-session.mjs";
+import { isPlatformAdminRequest } from "../lib/platform-admin-auth.mjs";
 
 const reportFilename = "visual-review-report-001b.md";
 const maxCandidates = 5;
@@ -332,7 +333,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (!isAdminSession(req)) {
+  if (!isPlatformAdminRequest(req)) {
     sendJson(res, 403, { ok: false, message: "Admin visual review access is not configured or this session is not allowed." });
     return;
   }

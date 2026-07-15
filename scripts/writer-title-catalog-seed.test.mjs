@@ -459,13 +459,13 @@ const importResponse = {
     this.body = value;
   }
 };
-const previousImportToken = process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN;
-process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = "import-token";
+const previousImportToken = process.env.LYNCA_PLATFORM_ADMIN_SECRET;
+process.env.LYNCA_PLATFORM_ADMIN_SECRET = "import-token";
 await adminImportHandler({
   method: "POST",
-  headers: { authorization: "Bearer import-token" },
+  headers: { "x-lynca-platform-admin-secret": "import-token" },
   body: {
-    input_path: input,
+    input_path: "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx",
     batch_id: "writer-title-api-test",
     offset: 0,
     limit: 1,
@@ -473,15 +473,15 @@ await adminImportHandler({
   }
 }, importResponse);
 if (previousImportToken === undefined) {
-  delete process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN;
+  delete process.env.LYNCA_PLATFORM_ADMIN_SECRET;
 } else {
-  process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = previousImportToken;
+  process.env.LYNCA_PLATFORM_ADMIN_SECRET = previousImportToken;
 }
 assert.equal(importResponse.statusCode, 200);
 const importPayload = JSON.parse(importResponse.body);
 assert.equal(importPayload.ok, true);
 assert.equal(importPayload.mode, "dry_run");
-assert.equal(importPayload.auth_mode, "internal_token");
+assert.equal(importPayload.auth_mode, "platform_admin_secret");
 assert.equal(importPayload.selected_chunk.count, 1);
 assert.equal(importPayload.apply.reason, "dry_run_apply_false");
 
@@ -496,11 +496,11 @@ const inlineImportResponse = {
     this.body = value;
   }
 };
-const previousInlineImportToken = process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN;
-process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = "import-token";
+const previousInlineImportToken = process.env.LYNCA_PLATFORM_ADMIN_SECRET;
+process.env.LYNCA_PLATFORM_ADMIN_SECRET = "import-token";
 await adminImportHandler({
   method: "POST",
-  headers: { authorization: "Bearer import-token" },
+  headers: { "x-lynca-platform-admin-secret": "import-token" },
   body: {
     staged_rows: built.stagedRows.slice(0, 1),
     total_rows: built.stagedRows.length,
@@ -511,16 +511,40 @@ await adminImportHandler({
   }
 }, inlineImportResponse);
 if (previousInlineImportToken === undefined) {
-  delete process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN;
+  delete process.env.LYNCA_PLATFORM_ADMIN_SECRET;
 } else {
-  process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = previousInlineImportToken;
+  process.env.LYNCA_PLATFORM_ADMIN_SECRET = previousInlineImportToken;
 }
 assert.equal(inlineImportResponse.statusCode, 200);
 const inlineImportPayload = JSON.parse(inlineImportResponse.body);
 assert.equal(inlineImportPayload.ok, true);
 assert.equal(inlineImportPayload.mode, "dry_run_inline");
 assert.equal(inlineImportPayload.selected_chunk.count, 1);
-assert.equal(inlineImportPayload.sample_rows[0].source_row_key, built.stagedRows[0].staging.source_row_key);
+assert.equal(Object.hasOwn(inlineImportPayload, "sample_rows"), false, "admin responses must not echo parsed seed content");
+
+const rejectedPathResponse = {
+  statusCode: 0,
+  headers: {},
+  body: "",
+  setHeader(key, value) {
+    this.headers[key.toLowerCase()] = value;
+  },
+  end(value) {
+    this.body = value;
+  }
+};
+const previousRejectedPathToken = process.env.LYNCA_PLATFORM_ADMIN_SECRET;
+process.env.LYNCA_PLATFORM_ADMIN_SECRET = "import-token";
+await adminImportHandler({
+  method: "POST",
+  headers: { "x-lynca-platform-admin-secret": "import-token" },
+  body: { input_path: "/etc/hosts", apply: false }
+}, rejectedPathResponse);
+if (previousRejectedPathToken === undefined) delete process.env.LYNCA_PLATFORM_ADMIN_SECRET;
+else process.env.LYNCA_PLATFORM_ADMIN_SECRET = previousRejectedPathToken;
+assert.equal(rejectedPathResponse.statusCode, 400);
+assert.equal(JSON.parse(rejectedPathResponse.body).error, "input_path_not_allowed");
+assert.doesNotMatch(rejectedPathResponse.body, /localhost|127\.0\.0\.1/);
 
 const smokeResponse = {
   statusCode: 0,
@@ -534,12 +558,12 @@ const smokeResponse = {
   }
 };
 const previousSmokeEnv = {
-  DATA_LOOP_INTERNAL_SIDECAR_TOKEN: process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN,
+  LYNCA_PLATFORM_ADMIN_SECRET: process.env.LYNCA_PLATFORM_ADMIN_SECRET,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY
 };
 const previousFetch = globalThis.fetch;
-process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = "import-token";
+process.env.LYNCA_PLATFORM_ADMIN_SECRET = "import-token";
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 globalThis.fetch = async (url, options = {}) => {
@@ -565,7 +589,7 @@ globalThis.fetch = async (url, options = {}) => {
 };
 await adminCatalogSmokeHandler({
   method: "POST",
-  headers: { authorization: "Bearer import-token" },
+  headers: { "x-lynca-platform-admin-secret": "import-token" },
   body: {
     fields: {
       product: "Magic: The Gathering Final Fantasy",

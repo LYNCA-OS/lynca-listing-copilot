@@ -9,9 +9,11 @@ const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
 };
+const tenantId = "tenant_legacy";
 
 const verification = {
-  object_path: "listing-assets/2026-06-22/asset-1/front_original-front.png",
+  tenant_id: tenantId,
+  object_path: "tenants/tenant_legacy/listing-assets/2026-06-22/asset-1/front_original-front.png",
   bucket: "listing-card-images",
   content_type: "image/png",
   size: 2048,
@@ -32,6 +34,7 @@ const row = listingImageVerificationRecordFromResult({
   now: new Date("2026-06-22T12:01:00.000Z")
 });
 assert.deepEqual(row, {
+  tenant_id: tenantId,
   object_path: verification.object_path,
   bucket: verification.bucket,
   asset_id: "asset-1",
@@ -97,12 +100,17 @@ const saveResult = await saveListingImageVerificationRecord({
 });
 assert.equal(saveResult.saved, true);
 assert.equal(saveResult.durable, true);
-assert.equal(calls[0].path, "/rest/v1/listing_image_verifications");
-assert.equal(calls[0].search.on_conflict, "object_path");
-assert.equal(calls[0].headers.authorization, "Bearer test-service-role");
-assert.equal(calls[0].body.object_path, verification.object_path);
+assert.equal(calls[0].path, "/rest/v1/listing_assets");
+assert.equal(calls[0].search.on_conflict, "tenant_id,id");
+assert.equal(calls[0].body.tenant_id, tenantId);
+assert.equal(calls[0].body.id, "asset-1");
+assert.equal(calls[1].path, "/rest/v1/listing_image_verifications");
+assert.equal(calls[1].search.on_conflict, "tenant_id,object_path");
+assert.equal(calls[1].headers.authorization, "Bearer test-service-role");
+assert.equal(calls[1].body.object_path, verification.object_path);
 
 const readResult = await readListingImageVerificationRecord({
+  tenantId,
   objectPath: verification.object_path,
   bucket: verification.bucket,
   contentType: verification.content_type,
@@ -114,10 +122,12 @@ const readResult = await readListingImageVerificationRecord({
 });
 assert.equal(readResult.verified, true);
 assert.equal(readResult.durable, true);
-assert.equal(calls[1].search.object_path, `eq.${verification.object_path}`);
-assert.equal(calls[1].search.limit, "1");
+assert.equal(calls[2].search.object_path, `eq.${verification.object_path}`);
+assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
+assert.equal(calls[2].search.limit, "1");
 
 const mismatch = await readListingImageVerificationRecord({
+  tenantId,
   objectPath: verification.object_path,
   bucket: verification.bucket,
   contentType: verification.content_type,
@@ -129,9 +139,24 @@ const mismatch = await readListingImageVerificationRecord({
 });
 assert.equal(mismatch.verified, false);
 assert.equal(mismatch.reason, "verification_record_mismatch");
+await assert.rejects(
+  () => readListingImageVerificationRecord({
+    tenantId: "tenant_other",
+    objectPath: verification.object_path,
+    bucket: verification.bucket,
+    contentType: verification.content_type,
+    size: verification.size,
+    width: verification.width,
+    height: verification.height,
+    env,
+    fetchImpl
+  }),
+  /Invalid tenant for listing image verification record/
+);
 
 const missing = await readListingImageVerificationRecord({
-  objectPath: "listing-assets/2026-06-22/missing/front.jpg",
+  tenantId,
+  objectPath: "tenants/tenant_legacy/listing-assets/2026-06-22/missing/front.jpg",
   bucket: verification.bucket,
   contentType: verification.content_type,
   size: verification.size,

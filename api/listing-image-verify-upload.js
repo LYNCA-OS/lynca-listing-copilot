@@ -1,42 +1,11 @@
-import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import {
   deleteListingImageObject,
   verifyListingImageUploadedObject
 } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { saveListingImageVerificationRecord } from "../lib/listing/storage/storage-verification-store.mjs";
-
-const cookieName = "lynca_metaverse_session";
-
-function parseCookies(header) {
-  return Object.fromEntries(
-    String(header || "")
-      .split(";")
-      .map((part) => {
-        const index = part.indexOf("=");
-        if (index === -1) return ["", ""];
-        return [part.slice(0, index).trim(), part.slice(index + 1).trim()];
-      })
-      .filter(([key, value]) => key && value)
-  );
-}
-
-function sign(value, secret) {
-  return crypto.createHmac("sha256", secret).update(value).digest("hex");
-}
-
-function isValidSession(cookie, secret) {
-  if (!cookie || !secret) return false;
-  const [payload, signature] = cookie.split(".");
-  if (!payload || !signature || signature !== sign(payload, secret)) return false;
-
-  try {
-    const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return Number(session.exp) > Date.now();
-  } catch {
-    return false;
-  }
-}
+import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -55,12 +24,12 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-async function cleanupFailedUpload(payload) {
+async function cleanupFailedUpload(payload, tenantId) {
   const objectPath = payload?.objectPath || payload?.object_path;
   if (!objectPath) return { attempted: false };
 
   try {
-    const cleanup = await deleteListingImageObject({ objectPath });
+    const cleanup = await deleteListingImageObject({ objectPath, tenantId });
     return {
       attempted: true,
       deleted: Boolean(cleanup.deleted),
@@ -77,16 +46,19 @@ async function cleanupFailedUpload(payload) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/listing-image-verify-upload" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  const cookies = parseCookies(req.headers.cookie);
-  const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
-
-  if (!authenticated) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
+  let context;
+  try {
+    context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    const status = isTenantAuthError(error) ? error.statusCode : 503;
+    sendJson(res, status, publicTenantAuthError(error));
     return;
   }
 
@@ -107,6 +79,7 @@ export default async function handler(req, res) {
 
   try {
     const verification = await verifyListingImageUploadedObject({
+      tenantId: context.tenantId,
       objectPath: payload.objectPath || payload.object_path,
       contentType: payload.contentType || payload.content_type,
       size: payload.size,
@@ -124,6 +97,7 @@ export default async function handler(req, res) {
     try {
       verificationRecord = await saveListingImageVerificationRecord({
         verification,
+        tenantId: context.tenantId,
         assetId: payload.assetId || payload.asset_id || null,
         imageId: payload.imageId || payload.image_id || null,
         role: payload.role || payload.storageRole || payload.storage_role || null
@@ -146,7 +120,7 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
-    const cleanup = await cleanupFailedUpload(payload);
+    const cleanup = await cleanupFailedUpload(payload, context.tenantId);
     sendJson(res, 400, {
       ok: false,
       message: String(error.message || "Unable to verify uploaded image.").slice(0, 240),

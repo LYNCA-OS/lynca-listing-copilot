@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LYNCA Production Ops</title>
+    <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
+    <link rel="stylesheet" href="/app/ops.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">LYNCA <span>Production Ops</span></a>
+      <div class="topbar-actions">
+        <span id="tenantLabel">正在读取租户…</span>
+        <label>
+          <span class="sr-only">统计窗口</span>
+          <select id="windowSelect">
+            <option value="24">过去 24 小时</option>
+            <option value="168">过去 7 天</option>
+            <option value="720">过去 30 天</option>
+          </select>
+        </label>
+        <button id="refreshButton" type="button">刷新</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Production Engineering</p>
+          <h1>系统是否正在稳定地替客户工作？</h1>
+          <p id="snapshotTime">等待第一份快照。</p>
+        </div>
+        <div class="health" id="healthBadge" data-state="loading">读取中</div>
+      </section>
+
+      <p class="notice" id="notice" role="status" aria-live="polite"></p>
+
+      <section aria-labelledby="systemHeading">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">System</p>
+            <h2 id="systemHeading">队列与延迟</h2>
+          </div>
+        </div>
+        <div class="metric-grid">
+          <article><span>当前队列</span><strong id="queueCount">—</strong><small id="queueLanes">interactive — · background —</small></article>
+          <article><span>处理中</span><strong id="runningCount">—</strong><small>持有有效 lease</small></article>
+          <article><span>最终失败</span><strong id="failedCount">—</strong><small>窗口内 FAILED_FINAL</small></article>
+          <article><span>平均等待</span><strong id="avgWait">—</strong><small>eligible → started</small></article>
+          <article><span>p95 等待</span><strong id="p95Wait">—</strong><small>队列尾部</small></article>
+          <article><span>p95 可见延迟</span><strong id="p95Latency">—</strong><small>created → writer ready</small></article>
+        </div>
+      </section>
+
+      <section aria-labelledby="aiHeading">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">AI & Writer</p>
+            <h2 id="aiHeading">识别质量与反馈</h2>
+          </div>
+          <span class="coverage" id="feedbackCoverage">反馈覆盖率 —</span>
+        </div>
+        <div class="metric-grid compact">
+          <article><span>识别量</span><strong id="recognitionCount">—</strong></article>
+          <article><span>成功率</span><strong id="successRate">—</strong></article>
+          <article><span>Accept</span><strong id="acceptRate">—</strong></article>
+          <article><span>Edit</span><strong id="editRate">—</strong></article>
+          <article><span>Reject</span><strong id="rejectRate">—</strong></article>
+        </div>
+      </section>
+
+      <section aria-labelledby="costHeading">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Cost</p>
+            <h2 id="costHeading">调用与单位经济</h2>
+          </div>
+          <span class="coverage" id="pricingCoverage">费率覆盖 —</span>
+        </div>
+        <div class="metric-grid compact" id="costGrid">
+          <article><span>GPT 调用</span><strong id="providerCalls">—</strong></article>
+          <article><span>Tokens</span><strong id="tokenCount">—</strong></article>
+          <article><span>总成本</span><strong id="totalCost">—</strong></article>
+          <article><span>平均成本 / 卡</span><strong id="costPerCard">—</strong></article>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app/ops.js" type="module"></script>
+  </body>
+</html>

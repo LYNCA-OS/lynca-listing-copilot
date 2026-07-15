@@ -1,4 +1,5 @@
 import { getSessionFromRequest } from "../lib/listing-session.mjs";
+import { isPlatformAdminRequest } from "../lib/platform-admin-auth.mjs";
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -12,11 +13,10 @@ export default function handler(req, res) {
     return;
   }
 
-  const session = getSessionFromRequest(req);
-  const user = String(session?.user || "").trim();
+  const authenticated = isPlatformAdminRequest(req);
 
   sendJson(res, 200, {
-    authenticated: Boolean(user),
-    visual_review_session_user: user || null
+    authenticated,
+    visual_review_session_user: authenticated ? "platform_admin" : null
   });
 }

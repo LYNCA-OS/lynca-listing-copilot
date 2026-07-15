@@ -1,9 +1,8 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import {
   createV4BatchId,
-  createV4SessionId,
   enqueueV4RecognitionJobs,
   expandV4RecognitionStageJobs,
   readV4RecognitionJobs,
@@ -12,9 +11,18 @@ import {
   v4QueueConfigured,
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
+import { createV4SessionId } from "../../lib/listing/v4/session/session-store.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import {
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
+import { ensureTenantListingAssets, normalizeListingAssetId } from "../../lib/tenant/assets.mjs";
 
 function clean(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -54,27 +62,18 @@ function terminalOrActive(status = "") {
   ].includes(String(status || "").toUpperCase());
 }
 
-function headerValue(req, name) {
-  const lower = String(name || "").toLowerCase();
-  const value = req?.headers?.[lower] ?? req?.headers?.[name];
-  if (Array.isArray(value)) return String(value[0] || "").trim();
-  return String(value || "").trim();
-}
-
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
-}
-
-function triggerPump(req, payload = {}) {
-  const secret = configuredWorkerSecret(process.env);
-  const origin = requestOrigin(req);
-  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "request_origin_missing" };
-  const stableConcurrency = v4WorkerProcessConcurrency(process.env);
+export function triggerPump(_req, {
+  tenantId = "",
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil
+} = {}) {
+  const secret = configuredWorkerSecret(env);
+  const origin = trustedInternalServiceOrigin(env);
+  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "internal_origin_missing" };
+  const stableConcurrency = v4WorkerProcessConcurrency(env);
   const body = {
-    tenant_id: payload.tenant_id || payload.tenantId || payload.batch_id || null,
+    tenant_id: tenantId,
     limit: stableConcurrency,
     process_concurrency: stableConcurrency,
     interactive_limit: stableConcurrency,
@@ -91,7 +90,7 @@ function triggerPump(req, payload = {}) {
     max_continuation_depth: 20,
     reason: "prewarm"
   };
-  waitUntil(fetch(`${origin}/api/v4/listing-job-pump`, {
+  defer(fetchImpl(`${origin}/api/v4/listing-job-pump`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -103,12 +102,18 @@ function triggerPump(req, payload = {}) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-prewarm" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  if (!getSessionFromRequest(req)) {
-    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+    requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -132,16 +137,34 @@ export default async function handler(req, res) {
 
   const startedAt = Date.now();
   const batchId = payload.batch_id || payload.batchId || createV4BatchId("v4prewarm");
-  const tenantId = payload.tenant_id || payload.tenantId || batchId;
+  const tenantId = context.tenantId;
   const createL2Jobs = payload.create_l2_jobs !== false && payload.createL2Jobs !== false;
-  const operatorId = operatorIdFromRequest(req);
+  const operatorId = context.userId;
   const assets = assetsFromPayload(payload).slice(0, 200);
+  if (!assets.length) {
+    sendJson(res, 400, withV4Version({ ok: false, retryable: false, message: "At least one asset is required." }));
+    return;
+  }
+  let assetIds;
+  try {
+    assetIds = assets.map((asset) => normalizeListingAssetId(
+      asset.asset_id || asset.assetId || asset.source_record_id || asset.sourceRecordId
+    ));
+    await ensureTenantListingAssets({ tenantId, assetIds });
+  } catch {
+    sendJson(res, 409, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: "V4_PREWARM_ASSET_SCOPE_CONFLICT",
+      message: "One or more assets are unavailable in this tenant."
+    }));
+    return;
+  }
   const staged = [];
   const sessionByAsset = new Map();
 
-  for (const asset of assets) {
-    const assetId = clean(asset.asset_id || asset.assetId || asset.source_record_id || asset.sourceRecordId);
-    if (!assetId) continue;
+  for (const [assetIndex, asset] of assets.entries()) {
+    const assetId = assetIds[assetIndex];
     const hash = imageHash(asset.images || asset.payload?.images || []);
     const sessionId = asset.recognition_session_id || createV4SessionId("v4sess_prewarm");
     const baseJobId = stableId(tenantId, assetId, hash || "nohash");
@@ -151,14 +174,17 @@ export default async function handler(req, res) {
         l1_job_id: `v4job_prewarm_l1_${baseJobId}`,
         l2_job_id: `v4job_prewarm_l2_${baseJobId}`,
         asset_id: assetId,
-        tenant_id: asset.tenant_id || tenantId,
+        tenant_id: tenantId,
         create_l1_job: true,
         create_l2_job: createL2Jobs,
         priority: asset.priority || payload.priority || 100,
         payload: {
           ...(asset.payload && typeof asset.payload === "object" ? asset.payload : asset),
           asset_id: assetId,
-          tenant_id: asset.tenant_id || tenantId,
+          tenant_id: tenantId,
+          operator_id: operatorId,
+          created_by_user_id: operatorId,
+          assigned_to_user_id: operatorId,
           recognition_session_id: sessionId,
           create_l1_job: true,
           create_l2_job: createL2Jobs,
@@ -177,8 +203,21 @@ export default async function handler(req, res) {
   }
 
   const existing = staged.length
-    ? await readV4RecognitionJobs({ jobIds: staged.map((job) => job.id), limit: staged.length })
+    ? await readV4RecognitionJobs({
+      jobIds: staged.map((job) => job.id),
+      tenantId,
+      limit: staged.length
+    })
     : { ok: true, rows: [] };
+  if (!existing.ok) {
+    sendJson(res, 503, withV4Version({
+      ok: false,
+      retryable: true,
+      error_code: "V4_PREWARM_JOB_READ_FAILED",
+      message: "Existing prewarm jobs could not be verified."
+    }));
+    return;
+  }
   const existingById = new Map((existing.rows || []).map((row) => [row.id, row]));
   const jobsToQueue = staged.filter((job) => !terminalOrActive(existingById.get(job.id)?.status));
   const result = jobsToQueue.length
@@ -191,12 +230,30 @@ export default async function handler(req, res) {
     })
     : { batchId, jobs: [], queued_count: 0 };
 
-  if (result.queued_count > 0 && payload.autokick_workers !== false && payload.autokickWorkers !== false) {
-    triggerPump(req, {
+  const persistedById = new Map((existing.rows || []).map((row) => [row.id, row]));
+  for (const entry of result.jobs || []) {
+    if (entry.saved === true && entry.row?.id) persistedById.set(entry.row.id, entry.row);
+  }
+  const reusedCount = staged.length - jobsToQueue.length;
+  const persistenceFailed = jobsToQueue.length > 0 && Number(result.queued_count || 0) === 0;
+
+  if (persistenceFailed) {
+    sendJson(res, 503, withV4Version({
+      ok: false,
+      retryable: true,
+      error_code: "V4_PREWARM_PERSISTENCE_FAILED",
+      message: "No prewarm job was persisted; retry is safe because job ids are idempotent.",
+      prewarm_batch_id: batchId,
       batch_id: batchId,
       tenant_id: tenantId,
-      jobs: []
-    });
+      queued_count: 0,
+      reused_count: reusedCount
+    }));
+    return;
+  }
+
+  if (result.queued_count > 0 && payload.autokick_workers !== false && payload.autokickWorkers !== false) {
+    triggerPump(req, { tenantId });
   }
 
   sendJson(res, 200, withV4Version({
@@ -205,12 +262,15 @@ export default async function handler(req, res) {
     batch_id: batchId,
     tenant_id: tenantId,
     queued_count: result.queued_count,
-    reused_count: staged.length - jobsToQueue.length,
+    reused_count: reusedCount,
     prewarm_ack_ms: Date.now() - startedAt,
     sessions: [...sessionByAsset.values()].map((session) => ({
       ...session,
-      l1_status: existingById.get(session.job_ids.find((id) => id.includes("_l1_")))?.status || "QUEUED",
-      l2_status: existingById.get(session.job_ids.find((id) => id.includes("_l2_")))?.status || (createL2Jobs ? "QUEUED" : "SKIPPED")
+      persisted: session.job_ids.every((id) => persistedById.has(id)),
+      l1_status: persistedById.get(session.job_ids.find((id) => id.includes("_l1_")))?.status || "NOT_PERSISTED",
+      l2_status: createL2Jobs
+        ? persistedById.get(session.job_ids.find((id) => id.includes("_l2_")))?.status || "NOT_PERSISTED"
+        : "SKIPPED"
     }))
   }));
 }

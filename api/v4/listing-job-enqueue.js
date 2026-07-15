@@ -1,6 +1,6 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest, persistProductionEvents } from "../../lib/observability/production-events.mjs";
 import {
   createV4BatchId,
   enqueueV4RecognitionJobs,
@@ -12,8 +12,16 @@ import {
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import {
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
+import { ensureTenantListingAssets, normalizeListingAssetId } from "../../lib/tenant/assets.mjs";
 
 function jobsFromPayload(payload = {}) {
   if (Array.isArray(payload.jobs)) return payload.jobs;
@@ -21,18 +29,27 @@ function jobsFromPayload(payload = {}) {
   return [payload];
 }
 
-function headerValue(req, name) {
-  const lower = String(name || "").toLowerCase();
-  const value = req?.headers?.[lower] ?? req?.headers?.[name];
-  if (Array.isArray(value)) return String(value[0] || "").trim();
-  return String(value || "").trim();
-}
-
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
+function trustedJobsFromPayload(payload, context) {
+  return jobsFromPayload(payload).map((input) => {
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const sourcePayload = source.payload && typeof source.payload === "object" && !Array.isArray(source.payload)
+      ? source.payload
+      : source;
+    return {
+      ...source,
+      tenant_id: context.tenantId,
+      operator_id: context.userId,
+      created_by_user_id: context.userId,
+      assigned_to_user_id: context.userId,
+      payload: {
+        ...sourcePayload,
+        tenant_id: context.tenantId,
+        operator_id: context.userId,
+        created_by_user_id: context.userId,
+        assigned_to_user_id: context.userId
+      }
+    };
+  });
 }
 
 function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
@@ -125,28 +142,33 @@ export async function runPostEnqueueQueueKick({
   return { phase: "followup", acquired: followup.acquired === true, acquisition_ok: followup.ok === true, ...invocation };
 }
 
-export function triggerV4QueuePumpAfterEnqueue(req, {
+export function triggerV4QueuePumpAfterEnqueue(_req, {
   tenantId,
   batchId,
-  queuedCount
+  queuedCount,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil,
+  acquireKick = tryAcquireV4QueueKick,
+  sleep = delay
 } = {}) {
   if (!queuedCount) return { triggered: false, reason: "no_jobs_queued" };
-  if (!envFlag(process.env, "V4_QUEUE_AUTOKICK_ENABLED", true)) return { triggered: false, reason: "autokick_disabled" };
-  const secret = configuredWorkerSecret(process.env);
+  if (!envFlag(env, "V4_QUEUE_AUTOKICK_ENABLED", true)) return { triggered: false, reason: "autokick_disabled" };
+  const secret = configuredWorkerSecret(env);
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
-  const origin = requestOrigin(req);
-  if (!origin) return { triggered: false, reason: "request_origin_missing" };
-  const stableConcurrency = v4WorkerProcessConcurrency(process.env);
-  const perWorkerLimit = positiveInteger(process.env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
-  const interactiveWorkers = positiveInteger(process.env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });
-  const backgroundWorkers = positiveInteger(process.env.V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS, 2, { min: 1, max: 32 });
-  const interactiveLimit = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, interactiveWorkers * perWorkerLimit, { min: 1, max: 96 });
-  const backgroundLimit = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, backgroundWorkers * perWorkerLimit, { min: 1, max: 96 });
+  const origin = trustedInternalServiceOrigin(env);
+  if (!origin) return { triggered: false, reason: "internal_origin_missing" };
+  const stableConcurrency = v4WorkerProcessConcurrency(env);
+  const perWorkerLimit = positiveInteger(env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
+  const interactiveWorkers = positiveInteger(env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });
+  const backgroundWorkers = positiveInteger(env.V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS, 2, { min: 1, max: 32 });
+  const interactiveLimit = positiveInteger(env.V4_PUMP_INTERACTIVE_CONCURRENCY, interactiveWorkers * perWorkerLimit, { min: 1, max: 96 });
+  const backgroundLimit = positiveInteger(env.V4_PUMP_BACKGROUND_CONCURRENCY, backgroundWorkers * perWorkerLimit, { min: 1, max: 96 });
   const interactiveConcurrency = Math.min(stableConcurrency, interactiveLimit);
   const backgroundConcurrency = Math.min(stableConcurrency, backgroundLimit);
 
   const body = {
-    tenant_id: v4QueueGlobalDrainEnabled(process.env) ? null : tenantId || batchId || null,
+    tenant_id: v4QueueGlobalDrainEnabled(env) ? null : tenantId || batchId || null,
     kick_source_tenant_id: tenantId || batchId || null,
     limit: interactiveLimit,
     process_concurrency: interactiveConcurrency,
@@ -167,13 +189,16 @@ export function triggerV4QueuePumpAfterEnqueue(req, {
     reason: "post_enqueue"
   };
   const kickOwner = `enqueue-${String(batchId || tenantId || "batch").slice(0, 72)}-${Date.now().toString(36)}`;
-  const leaseMs = v4QueueKickDedupMs(process.env);
-  waitUntil(runPostEnqueueQueueKick({
+  const leaseMs = v4QueueKickDedupMs(env);
+  defer(runPostEnqueueQueueKick({
     origin,
     secret,
     body,
     kickOwner,
-    leaseMs
+    leaseMs,
+    acquireKick,
+    fetchImpl,
+    sleep
   }).then((diagnostic) => {
     console.log(JSON.stringify({
       level: diagnostic.ok ? "info" : "warn",
@@ -195,12 +220,18 @@ export function triggerV4QueuePumpAfterEnqueue(req, {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-enqueue" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  if (!getSessionFromRequest(req)) {
-    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+    requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -230,9 +261,12 @@ export default async function handler(req, res) {
   }
 
   const batchId = payload.batch_id || payload.batchId || createV4BatchId("v4batch");
-  const operatorId = operatorIdFromRequest(req);
-  const tenantId = payload.tenant_id || payload.tenantId || batchId;
-  const sourceJobs = jobsFromPayload(payload);
+  // Tenant and actor identity are derived exclusively from the verified
+  // membership. Client tenant/operator fields remain compatibility inputs but
+  // can never select the service-role query or write scope.
+  const operatorId = context.userId;
+  const tenantId = context.tenantId;
+  const sourceJobs = trustedJobsFromPayload(payload, context);
   const maxJobsPerRequest = positiveInteger(process.env.V4_QUEUE_MAX_JOBS_PER_REQUEST, 50, { min: 1, max: 250 });
   if (sourceJobs.length > maxJobsPerRequest) {
     sendJson(res, 413, withV4Version({
@@ -241,6 +275,31 @@ export default async function handler(req, res) {
       error_code: "V4_QUEUE_BATCH_TOO_LARGE",
       message: `Queue request contains ${sourceJobs.length} jobs; split it into batches of at most ${maxJobsPerRequest}.`,
       max_jobs_per_request: maxJobsPerRequest
+    }));
+    return;
+  }
+  let assetIds;
+  try {
+    assetIds = sourceJobs.map((job) => normalizeListingAssetId(
+      job.asset_id || job.assetId || job.payload?.asset_id || job.payload?.assetId
+    ));
+  } catch {
+    sendJson(res, 400, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: "V4_QUEUE_INVALID_ASSET",
+      message: "Every recognition job requires a valid asset_id."
+    }));
+    return;
+  }
+  try {
+    await ensureTenantListingAssets({ tenantId, assetIds });
+  } catch {
+    sendJson(res, 409, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: "V4_QUEUE_ASSET_SCOPE_CONFLICT",
+      message: "One or more assets are unavailable in this tenant."
     }));
     return;
   }
@@ -272,6 +331,22 @@ export default async function handler(req, res) {
     .filter(Boolean)
     .slice(0, 3)
     .join("; ");
+
+  await persistProductionEvents(result.jobs
+    .filter((entry) => entry.saved && entry.deduplicated !== true)
+    .map((entry) => ({
+      eventType: "job_created",
+      requestId: context.requestId,
+      context,
+      batchId: result.batchId,
+      jobId: entry.row?.id || null,
+      sessionId: entry.row?.recognition_session_id || null,
+      success: true,
+      metadata: {
+        lane: entry.row?.lane || null,
+        job_type: entry.row?.job_type || null
+      }
+    })));
 
   sendJson(res, responseStatus, withV4Version({
     ok: result.queued_count > 0,

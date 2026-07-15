@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
-import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
+import { isPlatformAdminRequest } from "../lib/platform-admin-auth.mjs";
 
 const migrationPath = join(process.cwd(), "supabase/migrations/20260708100324_sem_definition_canonical_v25.sql");
 
@@ -13,17 +13,6 @@ function sendJson(res, statusCode, payload) {
 
 function dbUrl(env = process.env) {
   return String(env.POSTGRES_URL_NON_POOLING || env.POSTGRES_URL || "").trim();
-}
-
-function connectionStringForPg(rawUrl) {
-  try {
-    const parsed = new URL(rawUrl);
-    parsed.searchParams.delete("sslmode");
-    parsed.searchParams.delete("ssl");
-    return parsed.toString();
-  } catch {
-    return rawUrl;
-  }
 }
 
 async function verify(client) {
@@ -72,7 +61,7 @@ export default async function handler(req, res) {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
-  if (!isV4WorkerRequest(req, process.env)) {
+  if (!isPlatformAdminRequest(req, process.env)) {
     sendJson(res, 401, { ok: false, message: "Unauthorized" });
     return;
   }
@@ -82,10 +71,9 @@ export default async function handler(req, res) {
     return;
   }
 
-  const client = new pg.Client({
-    connectionString: connectionStringForPg(connectionString),
-    ssl: { rejectUnauthorized: false }
-  });
+  // Preserve sslmode/ssl parameters from the operator-managed URL. Never
+  // downgrade certificate verification inside an HTTP migration endpoint.
+  const client = new pg.Client({ connectionString });
   try {
     const sql = await readFile(migrationPath, "utf8");
     await client.connect();

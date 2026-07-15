@@ -20,6 +20,14 @@
     {
       "source": "/login.html",
       "destination": "/app/login"
+    },
+    {
+      "source": "/ops",
+      "destination": "/app/ops"
+    },
+    {
+      "source": "/ops.html",
+      "destination": "/app/ops"
     }
   ],
   "functions": {
@@ -40,6 +48,9 @@
     },
     "api/v4/listing-job-pump.js": {
       "maxDuration": 300
+    },
+    "api/v4/listing-job-assign.js": {
+      "maxDuration": 60
     },
     "api/v4/fast-scout-prewarm.js": {
       "maxDuration": 300

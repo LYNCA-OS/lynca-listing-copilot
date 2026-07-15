@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import listingJobWorkerHandler from "./listing-job-worker.js";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import {
   v4JobLanes,
   v4WorkerProcessConcurrency
@@ -12,6 +13,7 @@ import {
   isV4WorkerRequest,
   workerSecretHeader
 } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -60,13 +62,6 @@ function lanePlanFromPayload(payload = {}) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
-}
-
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
 }
 
 async function defaultInvokeWorker(payload, { workerSecret }) {
@@ -232,7 +227,14 @@ export async function runV4QueuePump({
   };
 }
 
-function triggerV4QueuePumpContinuation(req, payload = {}, result = {}, env = process.env) {
+export function triggerV4QueuePumpContinuation(
+  _req,
+  payload = {},
+  result = {},
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil
+) {
   if (falseFlag(payload.enable_continuation ?? payload.enableContinuation ?? "true")) {
     return { triggered: false, reason: "disabled" };
   }
@@ -246,8 +248,8 @@ function triggerV4QueuePumpContinuation(req, payload = {}, result = {}, env = pr
   }
   const secret = configuredWorkerSecret(env);
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
-  const origin = requestOrigin(req);
-  if (!origin) return { triggered: false, reason: "request_origin_missing" };
+  const origin = trustedInternalServiceOrigin(env);
+  if (!origin) return { triggered: false, reason: "internal_origin_missing" };
 
   const body = {
     ...payload,
@@ -264,8 +266,8 @@ function triggerV4QueuePumpContinuation(req, payload = {}, result = {}, env = pr
     max_continuation_depth: maxDepth,
     reason: "pump_continuation"
   };
-  waitUntil(
-    fetch(`${origin}/api/v4/listing-job-pump`, {
+  defer(
+    fetchImpl(`${origin}/api/v4/listing-job-pump`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -280,6 +282,7 @@ function triggerV4QueuePumpContinuation(req, payload = {}, result = {}, env = pr
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-pump" });
   if (req.method !== "GET" && req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
@@ -304,6 +307,9 @@ export default async function handler(req, res) {
       sendJson(res, 400, withV4Version({ ok: false, message: "Invalid request." }));
       return;
     }
+  }
+  if (payload.tenant_id || payload.tenantId) {
+    bindProductionRequestContext(res, { tenantId: payload.tenant_id || payload.tenantId, actorType: "WORKER" });
   }
 
   const result = await runV4QueuePump({ payload, env: process.env });
