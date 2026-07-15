@@ -2,7 +2,12 @@ import { waitUntil } from "@vercel/functions";
 import { runListingRecognitionCore } from "../listing-copilot-title.js";
 import { buildV4PipelineContract } from "../../lib/listing/v4/pipeline/pipeline-contract.mjs";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import {
+  getSessionFromRequest,
+  operatorIdFromRequest,
+  tenantIdFromRequest,
+  userIdFromRequest
+} from "../../lib/listing-session.mjs";
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
@@ -312,6 +317,7 @@ function providerRuntimeSummary(result = {}) {
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
   return {
     model: result.model || result.model_id || null,
+    prompt_version: result.prompt_version || null,
     provider_latency_ms: result.provider_latency_ms ?? null,
     provider_response_profile: result.provider_response_profile || "standard",
     provider_prompt_mode: result.provider_prompt_mode || null,
@@ -780,6 +786,9 @@ async function persistPipelineResult({
         route: routePlan.route,
         route_plan: routePlan,
         candidate_control_plane_trace: rows.candidateTrace,
+        model_version: result.model || result.model_id || null,
+        prompt_version: result.prompt_version || null,
+        prompt_mode: result.provider_prompt_mode || null,
         provider_result_summary: {
           provider: result.provider || result.provider_id || null,
           confidence: result.confidence || null,
@@ -834,6 +843,10 @@ async function persistPipelineResult({
     route: routePlan.route,
     route_plan: routePlan,
     candidate_control_plane_trace: rows.candidateTrace,
+    model_version: result.model || result.model_id || null,
+    prompt_version: result.prompt_version || null,
+    prompt_mode: result.provider_prompt_mode || null,
+    generation_completed_at: new Date().toISOString(),
     provider_result_summary: {
       provider: result.provider || result.provider_id || null,
       confidence: result.confidence || null,
@@ -1261,6 +1274,13 @@ export default async function handler(req, res) {
   }
 
   const sessionId = payload.recognition_session_id || createV4SessionId();
+  const originOperatorId = workerAuthorized
+    ? String(payload.v4_origin_operator_id || "").trim() || "v4-production-worker"
+    : operatorIdFromRequest(req);
+  const originTenantId = workerAuthorized
+    ? String(payload.v4_origin_tenant_id || payload.tenant_id || "").trim() || originOperatorId
+    : tenantIdFromRequest(req);
+  const originUserId = workerAuthorized ? originOperatorId : userIdFromRequest(req);
   const handlerStartedAt = Date.now();
   let recognitionClockStartedAt = null;
   let recognitionClockSource = null;
@@ -1369,7 +1389,9 @@ export default async function handler(req, res) {
     sessionId,
     payload,
     routePlan,
-    operatorId: workerAuthorized ? "v4-production-worker" : operatorIdFromRequest(req)
+    operatorId: originOperatorId,
+    tenantId: originTenantId,
+    userId: originUserId
   });
   scheduleV4Background(createResultPromise, "recognition session create");
   const deferredCreateResult = {

@@ -1,6 +1,6 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { getSessionFromRequest, operatorIdFromRequest, tenantIdFromRequest } from "../../lib/listing-session.mjs";
 import {
   createV4BatchId,
   createV4SessionId,
@@ -132,7 +132,7 @@ export default async function handler(req, res) {
 
   const startedAt = Date.now();
   const batchId = payload.batch_id || payload.batchId || createV4BatchId("v4prewarm");
-  const tenantId = payload.tenant_id || payload.tenantId || batchId;
+  const tenantId = tenantIdFromRequest(req);
   const createL2Jobs = payload.create_l2_jobs !== false && payload.createL2Jobs !== false;
   const operatorId = operatorIdFromRequest(req);
   const assets = assetsFromPayload(payload).slice(0, 200);

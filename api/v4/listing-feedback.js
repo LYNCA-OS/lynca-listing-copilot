@@ -1,6 +1,11 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { getSessionFromRequest, operatorIdFromRequest, tenantIdFromRequest } from "../../lib/listing-session.mjs";
+import {
+  buildAuthoritativeRecognitionResult,
+  createFeedbackSubmissionId,
+  normalizeFeedbackSubmissionId
+} from "../../lib/listing/feedback/feedback-capture.mjs";
 import { buildV4FeedbackArtifacts } from "../../lib/listing/v4/feedback/feedback-loop.mjs";
 import { normalizeGrader } from "../../lib/listing/v4/anchors/anchor-classifier.mjs";
 import { upsertCertRegistryEntry } from "../../lib/listing/v4/anchors/cert-lookup.mjs";
@@ -42,24 +47,78 @@ export default async function handler(req, res) {
   }
 
   const operatorId = operatorIdFromRequest(req);
+  const tenantId = tenantIdFromRequest(req);
   const ownedSession = await readV4SessionStatus({ sessionId });
   if (!ownedSession.ok) {
     sendJson(res, 503, withV4Version({ ok: false, retryable: true, message: "Unable to verify recognition session ownership." }));
     return;
   }
-  if (!ownedSession.session || String(ownedSession.session.operator_id || "") !== operatorId) {
+  const ownedTenantId = String(ownedSession.session?.tenant_id || "").trim();
+  if (!ownedSession.session
+      || String(ownedSession.session.operator_id || "") !== operatorId
+      || (ownedTenantId && ownedTenantId !== tenantId)) {
     sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition session not found." }));
     return;
   }
 
-  const artifacts = buildV4FeedbackArtifacts({
-    sessionId,
-    action: payload.action,
-    aiTitle: payload.ai_generated_title || payload.generated_title || payload.ai_title,
-    writerTitle: payload.writer_final_title || payload.corrected_title || payload.final_title,
-    resultPayload: payload.result_payload || payload.v4_result || payload,
-    operatorId
-  });
+  const action = String(payload.action || "").trim().toUpperCase();
+  if (!["ACCEPT", "EDIT", "REJECT"].includes(action)) {
+    sendJson(res, 400, withV4Version({ ok: false, message: "action must be ACCEPT, EDIT, or REJECT." }));
+    return;
+  }
+
+  let submissionId;
+  try {
+    const requestedSubmissionId = payload.feedback_submission_id
+      || payload.submission_id
+      || req.headers?.["idempotency-key"]
+      || req.headers?.["x-feedback-submission-id"];
+    submissionId = normalizeFeedbackSubmissionId(requestedSubmissionId) || createFeedbackSubmissionId();
+  } catch {
+    sendJson(res, 400, withV4Version({ ok: false, message: "feedback_submission_id is invalid." }));
+    return;
+  }
+
+  const recognitionResult = buildAuthoritativeRecognitionResult(ownedSession.session);
+  const providerSummary = ownedSession.session.provider_result_summary || {};
+  const authoritativeResultPayload = {
+    final_title: recognitionResult.ai_title || "",
+    title: recognitionResult.ai_title || "",
+    resolved_fields: recognitionResult.ai_sem || {},
+    fields: recognitionResult.ai_sem || {},
+    field_states: ownedSession.session.field_states || {},
+    candidate_control_plane_trace: ownedSession.session.candidate_control_plane_trace || {},
+    retrieval_trace: ownedSession.session.candidate_control_plane_trace || {},
+    provider_result: providerSummary,
+    model_version: recognitionResult.model_version,
+    title_length_policy: providerSummary.title_length_policy || {},
+    max_title_length: providerSummary.title_length_policy?.max_length || null
+  };
+
+  let artifacts;
+  try {
+    artifacts = buildV4FeedbackArtifacts({
+      sessionId,
+      action,
+      aiTitle: recognitionResult.ai_title,
+      writerTitle: payload.writer_final_title || payload.corrected_title || payload.final_title,
+      resultPayload: authoritativeResultPayload,
+      recognitionResult,
+      operatorId,
+      submissionId,
+      clientOccurredAt: payload.client_occurred_at || payload.occurred_at || null,
+      // Public writer feedback is commercial feedback. Field-level semantic
+      // truth requires a separate reviewed admin workflow.
+      reviewedSemanticFields: false
+    });
+  } catch (error) {
+    sendJson(res, 400, withV4Version({
+      ok: false,
+      message: "Writer feedback payload is invalid.",
+      error: String(error?.message || error || "invalid_feedback_payload")
+    }));
+    return;
+  }
   const transaction = await persistV4WriterFeedbackTransaction({
     sessionId,
     operatorId,
@@ -68,6 +127,15 @@ export default async function handler(req, res) {
     learningEvent: artifacts.learningEvent
   });
   if (!transaction.saved) {
+    if (transaction.transaction?.conflict === true) {
+      sendJson(res, 409, withV4Version({
+        ok: false,
+        retryable: false,
+        message: "feedback_submission_id was already used with a different payload.",
+        feedback_submission_id: submissionId
+      }));
+      return;
+    }
     sendJson(res, 503, withV4Version({
       ok: false,
       retryable: true,
@@ -90,7 +158,10 @@ export default async function handler(req, res) {
   const certNumber = String(resolvedForCert.cert_number || "").trim();
   const grader = normalizeGrader(resolvedForCert.grade_company || "");
   const confirmedTitle = String(artifacts.feedbackEvent.writer_final_title || "").trim();
-  if (certNumber && grader && confirmedTitle && artifacts.status !== "REJECTED") {
+  const reviewedPromotionEnabled = String(process.env.ENABLE_REVIEWED_WRITER_FEEDBACK_CERT_PROMOTION || "false").toLowerCase() === "true"
+    && artifacts.learningEvent.semantic_truth === true
+    && artifacts.learningEvent.training_eligible === true;
+  if (reviewedPromotionEnabled && certNumber && grader && confirmedTitle && artifacts.status !== "REJECTED") {
     waitUntil(upsertCertRegistryEntry({
       grader,
       certNumber,
@@ -128,6 +199,7 @@ export default async function handler(req, res) {
     ok: true,
     recognition_session_id: sessionId,
     status: artifacts.status,
+    feedback_submission_id: submissionId,
     feedback_event_id: artifacts.feedbackEvent.id,
     learning_event_id: artifacts.learningEvent.id,
     writer_final_title: artifacts.feedbackEvent.writer_final_title,
@@ -135,6 +207,9 @@ export default async function handler(req, res) {
     csm_normalization: artifacts.csmNormalization,
     title_diff: artifacts.feedbackEvent.title_diff,
     training_eligible: artifacts.learningEvent.training_eligible,
+    dataset_disposition: artifacts.learningEvent.dataset_disposition,
+    sem_extraction_status: artifacts.semExtraction.status,
+    production_promotion_eligible: reviewedPromotionEnabled,
     v4_persistence: { transaction }
   }));
 }

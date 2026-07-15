@@ -1,6 +1,6 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { getSessionFromRequest, operatorIdFromRequest, tenantIdFromRequest } from "../../lib/listing-session.mjs";
 import {
   createV4BatchId,
   enqueueV4RecognitionJobs,
@@ -231,7 +231,9 @@ export default async function handler(req, res) {
 
   const batchId = payload.batch_id || payload.batchId || createV4BatchId("v4batch");
   const operatorId = operatorIdFromRequest(req);
-  const tenantId = payload.tenant_id || payload.tenantId || batchId;
+  // Scheduling and data ownership use the signed principal. The browser's
+  // batch id remains a batch id and cannot impersonate another tenant.
+  const tenantId = tenantIdFromRequest(req);
   const sourceJobs = jobsFromPayload(payload);
   const maxJobsPerRequest = positiveInteger(process.env.V4_QUEUE_MAX_JOBS_PER_REQUEST, 50, { min: 1, max: 250 });
   if (sourceJobs.length > maxJobsPerRequest) {

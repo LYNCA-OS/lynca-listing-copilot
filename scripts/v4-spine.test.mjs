@@ -1522,10 +1522,10 @@ assert.equal(artifacts.feedbackEvent.correction_type, "EDIT");
 assert.equal(artifacts.rawWriterTitle, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
 assert.equal(artifacts.csmNormalization.applied, true);
 assert.equal(artifacts.feedbackEvent.title_diff.raw_writer_title, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
-assert.equal(artifacts.learningEvent.training_eligible, true);
+assert.equal(artifacts.learningEvent.training_eligible, false);
 assert.equal(artifacts.learningEvent.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_ground_truth));
-assert.ok(artifacts.learningEvent.field_level_ground_truth.some((row) => row.field === "player" && row.training_eligible === true));
+assert.equal(artifacts.learningEvent.field_level_ground_truth.length, 0);
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_diff));
 assert.equal(typeof artifacts.learningEvent.candidate_changes.candidate_count, "number");
 assert.equal(artifacts.correctedResolved.year, "2024-25");
@@ -1543,8 +1543,8 @@ const writerResolvedAbstain = buildV4FeedbackArtifacts({
 });
 assert.equal(writerResolvedAbstain.status, "EDITED");
 assert.equal(writerResolvedAbstain.feedbackEvent.generated_title, "");
-assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Auto PSA 10");
-assert.equal(writerResolvedAbstain.learningEvent.training_eligible, true);
+assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Autograph PSA 10");
+assert.equal(writerResolvedAbstain.learningEvent.training_eligible, false);
 
 const writerRejectedAbstain = buildV4FeedbackArtifacts({
   sessionId: "v4sess-writer-rejected-abstain",
@@ -1573,11 +1573,11 @@ const csmOrderedFeedback = buildV4FeedbackArtifacts({
     }
   }
 });
-assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(csmOrderedFeedback.rawWriterTitle, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(csmOrderedFeedback.csmNormalization.applied, true);
 assert.equal(csmOrderedFeedback.feedbackEvent.title_diff.raw_writer_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
-assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(
   csmOrderedFeedback.learningEvent.feedback_training_event.writer_raw_title,
   "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best"
@@ -1598,7 +1598,8 @@ const rejectedFeedback = buildV4FeedbackArtifacts({
     }
   }
 });
-assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "wrong loose title");
+assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "");
+assert.equal(rejectedFeedback.feedbackEvent.writer_raw_title, "wrong loose title");
 assert.equal(rejectedFeedback.csmNormalization.skipped_reason, "REJECTED_FEEDBACK");
 assert.equal(rejectedFeedback.learningEvent.training_eligible, false);
 
@@ -1723,7 +1724,7 @@ assert.equal(feedbackTransaction.saved, true);
 assert.ok(feedbackTransactionCalls[0].url.endsWith("/rest/v1/rpc/persist_v4_writer_feedback_transaction"));
 assert.equal(feedbackTransactionCalls[0].body.p_session_id, "v4sess-test");
 assert.equal(feedbackTransactionCalls[0].body.p_feedback_event.schema_version, "v4-recognition-session-v1");
-assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, true);
+assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, false);
 const health = await checkV4Tables({ env, fetchImpl: fakeFetch });
 assert.equal(health.configured, true);
 assert.ok(writes.some((write) => write.table === "v4_recognition_sessions"));

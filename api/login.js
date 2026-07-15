@@ -92,6 +92,7 @@ export default async function handler(req, res) {
 
   const token = createSignedSessionToken({
     user: normalizeUsername(expectedUser),
+    tenant_id: String(process.env.METAVERSE_TENANT_ID || expectedUser).trim().toLowerCase(),
     sid: crypto.randomUUID(),
     iat: Date.now(),
     exp: Date.now() + maxAgeSeconds * 1000
