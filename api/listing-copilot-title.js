@@ -2724,9 +2724,10 @@ function catalogCandidateContextCacheKey({
 } = {}) {
   const normalized = normalizeFields(resolvedForRetrieval || {});
   const serialDenominator = normalizeSerialText(normalized.serial_number || "").match(/\/\s*0*(\d{1,4})\b/)?.[1] || "";
-  const players = Array.isArray(normalized.players)
+  const playerValues = Array.isArray(normalized.players)
     ? normalized.players
-    : [normalized.player, normalized.subject].map((value) => normalizeText(value)).filter(Boolean);
+    : [normalized.player, normalized.subject];
+  const players = playerValues.map(normalizeStringOrNull).filter(Boolean);
   const keyPayload = {
     revision: env.CATALOG_LOOKUP_CACHE_REVISION || "v2",
     source_trust_policy_version: env.CATALOG_SOURCE_TRUST_POLICY_VERSION || "approved-reference-v1",
@@ -2751,7 +2752,7 @@ function catalogCandidateContextCacheKey({
       provider_mode: providerOptions.provider_mode || providerOptions.providerMode || providerOptions.eval_mode || providerOptions.evalMode || ""
     },
     exclude_source_feedback_ids: [...new Set((Array.isArray(excludeSourceFeedbackIds) ? excludeSourceFeedbackIds : [])
-      .map((value) => normalizeText(value))
+      .map(normalizeStringOrNull)
       .filter(Boolean))].sort()
   };
   return crypto.createHash("sha256").update(stableJson(keyPayload)).digest("hex");
@@ -5753,6 +5754,7 @@ export const __listingCopilotTitleTestHooks = {
   applySafeRetrievalTitleAssist,
   boundedPayloadImagesFromImages,
   buildExactAnchorFastLaneShadow,
+  catalogCandidateContextCacheKey,
   catalogCandidateHasStrongAnchor,
   catalogStrongCandidateForVectorLazy,
   collectPromiseEntriesWithinBudget,

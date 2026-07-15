@@ -12,6 +12,25 @@ process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.ENABLE_OPENAI_WEB_SEARCH_FALLBACK = "false";
 
+const catalogCacheKeyWithSingleSubject = __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
+  resolvedForRetrieval: {
+    year: "2025-26",
+    product: "Topps Finest",
+    subject: "  Josh   Hart  "
+  },
+  excludeSourceFeedbackIds: [" feedback-current-card "]
+});
+const catalogCacheKeyWithNormalizedSubject = __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
+  resolvedForRetrieval: {
+    year: "2025-26",
+    product: "Topps Finest",
+    subject: "Josh Hart"
+  },
+  excludeSourceFeedbackIds: ["feedback-current-card"]
+});
+assert.match(catalogCacheKeyWithSingleSubject, /^[a-f0-9]{64}$/);
+assert.equal(catalogCacheKeyWithSingleSubject, catalogCacheKeyWithNormalizedSubject);
+
 assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");
 assert.equal(resolveKnowledgeEntry("2010/11 Season"), null);
 assert.equal(resolveKnowledgeEntry("Kaboom!")?.label, "Kaboom");
