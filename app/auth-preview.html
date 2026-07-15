@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LYNCA Listing Copilot · 注册登录产品预览</title>
+    <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
+    <link rel="stylesheet" href="/app/listing-copilot.css">
+    <link rel="stylesheet" href="/app/auth-preview.css">
+  </head>
+  <body class="auth-product-preview">
+    <main class="auth-product-shell">
+      <section class="auth-story" aria-labelledby="authProductTitle">
+        <div class="auth-brand">
+          <span class="brand-mark" aria-hidden="true">LYN</span>
+          <span>
+            <strong>LYNCA Listing Copilot</strong>
+            <small>卡牌上架工作台</small>
+          </span>
+        </div>
+
+        <div class="auth-story-copy">
+          <p class="eyebrow">写手工作流</p>
+          <h1 id="authProductTitle">从卡片图片到可发布标题，一次完成。</h1>
+          <p>批量识别、写手确认、持久化和 Excel 导出，保持在一个连续工作台里。</p>
+        </div>
+
+        <ol class="auth-flow-summary" aria-label="主要工作流程">
+          <li><span>01</span><strong>上传图片</strong></li>
+          <li><span>02</span><strong>生成标题</strong></li>
+          <li><span>03</span><strong>Enter 入库</strong></li>
+          <li><span>04</span><strong>导出 Excel</strong></li>
+        </ol>
+      </section>
+
+      <section class="auth-entry-card" aria-labelledby="authEntryTitle">
+        <div class="auth-preview-label" role="note">产品设计预览 · 不发送真实验证码</div>
+
+        <div class="auth-entry-heading">
+          <p class="eyebrow">邀请制访问</p>
+          <h2 id="authEntryTitle">登录 Listing Copilot</h2>
+          <p>使用获邀邮箱接收 6 位验证码。首次验证成功会自动创建账号。</p>
+        </div>
+
+        <section id="otpRequestPanel" aria-labelledby="authEntryTitle">
+          <form class="auth-form" id="otpRequestForm" novalidate>
+            <label for="authEmail">邮箱</label>
+            <input
+              class="auth-input"
+              id="authEmail"
+              name="email"
+              type="email"
+              autocomplete="email"
+              inputmode="email"
+              placeholder="name@company.com"
+              aria-describedby="authRequestHelp authHumanStatus authRequestStatus"
+              required
+              autofocus
+            >
+            <p class="auth-field-help" id="authRequestHelp">如果邮箱已获邀请，验证码会在几分钟内送达。</p>
+            <div class="auth-human-check" id="authHumanCheck" data-state="idle" role="group" aria-labelledby="authHumanTitle">
+              <span>
+                <strong id="authHumanTitle">真人与环境验证</strong>
+                <small>拦截脚本重复调用；正式版使用托管挑战，不做侵入式设备指纹。</small>
+              </span>
+              <button class="auth-human-button" id="authHumanButton" type="button">验证当前环境</button>
+            </div>
+            <p class="auth-status auth-human-status" id="authHumanStatus" role="status" aria-live="polite"></p>
+            <p class="auth-status" id="authRequestStatus" role="status" aria-live="polite"></p>
+            <button class="auth-primary-button" type="submit">获取验证码</button>
+          </form>
+        </section>
+
+        <section id="otpVerifyPanel" aria-labelledby="otpVerifyTitle" hidden>
+          <button class="auth-text-button" id="editDestinationButton" type="button">修改邮箱</button>
+          <div class="auth-code-heading">
+            <h2 id="otpVerifyTitle">输入验证码</h2>
+            <p>验证码已发送至 <strong id="maskedDestination"></strong></p>
+          </div>
+          <form class="auth-form" id="otpVerifyForm" novalidate>
+            <label for="authOtp">6 位验证码</label>
+            <input
+              class="auth-input auth-code-input"
+              id="authOtp"
+              name="otp"
+              type="text"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              pattern="[0-9]{6}"
+              maxlength="6"
+              aria-describedby="authVerifyHelp authVerifyStatus"
+              required
+            >
+            <p class="auth-field-help" id="authVerifyHelp">设计预览验证码：123456</p>
+            <p class="auth-status" id="authVerifyStatus" role="status" aria-live="polite"></p>
+            <button class="auth-primary-button" id="verifyOtpButton" type="submit">验证并进入</button>
+            <button class="auth-secondary-button" id="resendOtpButton" type="button" disabled>60 秒后重新发送</button>
+          </form>
+        </section>
+
+        <div class="auth-divider"><span>内部访问</span></div>
+
+        <button
+          class="auth-admin-toggle"
+          id="adminPreviewToggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="adminPreviewPanel"
+        >
+          <span>
+            <strong>管理员预览</strong>
+            <small>进入隔离的预览工作区</small>
+          </span>
+          <span aria-hidden="true">展开</span>
+        </button>
+
+        <section class="auth-admin-panel" id="adminPreviewPanel" aria-labelledby="adminPreviewTitle" hidden>
+          <div class="auth-admin-heading">
+            <h2 id="adminPreviewTitle">管理员预览账号</h2>
+            <p>保留现有内部账号，仅用于预览和验收，不进入真实写手统计或训练反馈。</p>
+          </div>
+          <form class="auth-form" id="adminPreviewForm" autocomplete="on" novalidate>
+            <label for="adminUsername">管理员账号</label>
+            <input class="auth-input" id="adminUsername" name="username" type="text" autocomplete="username" required>
+            <label for="adminPassword">密码</label>
+            <input class="auth-input" id="adminPassword" name="password" type="password" autocomplete="current-password" required>
+            <p class="auth-status" id="adminPreviewStatus" role="status" aria-live="polite"></p>
+            <button class="auth-secondary-button" type="submit">进入管理员预览</button>
+          </form>
+        </section>
+
+        <p class="auth-phone-note">手机验证码会在短信服务、费用上限和防滥用配置完成后开放。</p>
+      </section>
+    </main>
+    <script type="module" src="/app/auth-preview.js"></script>
+  </body>
+</html>
