@@ -235,6 +235,33 @@ function testIdentityResolutionConsumesRetrievalFieldEvidence() {
     ?.applied_fields.includes("product"));
 }
 
+function testResolvedRetrievalOutcomeOwnsRenderedFieldContainer() {
+  const result = {
+    ...resultWithCandidate(),
+    rendered_fields: {
+      title: "2024 Test Player",
+      fields: {
+        year: "2024",
+        players: ["Test Player"],
+        collector_number: "CPA-TP"
+      }
+    }
+  };
+  const { control, application } = buildLayer(result);
+  const gated = applyIdentityResolutionGate({
+    ...result,
+    ...control,
+    retrieval_application: application,
+    resolved: result.resolved_fields,
+    evidence: {}
+  });
+
+  assert.equal(gated.resolved_fields.product, "Topps Chrome");
+  assert.equal(gated.rendered_fields.fields.product, "Topps Chrome");
+  assert.equal(gated.rendered_fields.fields.card_name, "Autograph");
+  assert.match(gated.rendered_fields.rendered_title, /Topps Chrome/);
+}
+
 function testCandidateCannotOverrideContradictingCurrentImageIdentity() {
   const result = resultWithCandidate();
   result.resolved_fields = {
@@ -300,6 +327,7 @@ testCandidateFieldShapesMergeWithoutDroppingEvidence();
 testEveryCandidateProducesAuditableDecisionRows();
 testDisabledLayerRejectsAllCandidateFieldsAndBlocksRawBypass();
 testIdentityResolutionConsumesRetrievalFieldEvidence();
+testResolvedRetrievalOutcomeOwnsRenderedFieldContainer();
 testCandidateCannotOverrideContradictingCurrentImageIdentity();
 testOutcomeRecordsResolverBlockInsteadOfPretendingApplication();
 await testConvergenceCannotReinjectRawCandidates();

@@ -96,6 +96,10 @@ assert.equal(parsedJoshHartCommon.parallel_family, "Common Geometric Refractor")
 const parsedDarkBlueBordered = parseReviewedTitleFields("2024 Topps Heritage High Number Jackson Chourio RC Dark Blue Bordered");
 assert.equal(parsedDarkBlueBordered.surface_color, "Dark Blue");
 assert.equal(parsedDarkBlueBordered.parallel_family, "Bordered");
+
+const parsedXFractor = parseReviewedTitleFields("2003-04 Topps Chrome Kobe Bryant Refractor XFractor 038/220 PSA 9");
+assert.deepEqual(parsedXFractor.players, ["Kobe Bryant"]);
+assert.equal(parsedXFractor.parallel_family, "Refractor X-Fractor");
 assert.equal(parsedDarkBlueBordered.official_card_type, null, "a print finish must not be stored as Card Name");
 
 const parsedLotPlayers = parseReviewedTitleFields("2025 Topps Chrome Riley Leonard Jordan James Pearce Jr RC Refractor Lotx16");

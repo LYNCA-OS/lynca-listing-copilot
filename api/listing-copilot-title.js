@@ -961,20 +961,31 @@ function finalResolvedFieldsForPresentation(result = {}, {
     ? renderedFields.fields
     : null;
   const supportFields = finalizerFieldSupportSet(result);
-  const fieldSources = [
-    renderedFieldContainer,
-    result.resolved_fields,
-    result.resolved,
-    result.fields,
-    result.raw_provider_fields
-  ].filter((fields) => fields && typeof fields === "object" && !Array.isArray(fields));
+  const retrievalApplicationOwnsCandidateFields = result.retrieval_application?.owns_candidate_application === true;
+  const retrievalResolutionIsCanonical = retrievalApplicationOwnsCandidateFields
+    && result.retrieval_application?.resolver_consumed === true
+    && result.resolved_fields
+    && typeof result.resolved_fields === "object"
+    && !Array.isArray(result.resolved_fields);
+  // Once Identity Resolution consumes retrieval evidence, its resolved_fields
+  // are the sole final-field owner. Re-reading a stale pre-resolution render
+  // container here would silently undo applied catalog evidence.
+  const fieldSources = (retrievalResolutionIsCanonical
+    ? [result.resolved_fields]
+    : [
+        renderedFieldContainer,
+        result.resolved_fields,
+        result.resolved,
+        result.fields,
+        result.raw_provider_fields
+      ])
+    .filter((fields) => fields && typeof fields === "object" && !Array.isArray(fields));
   const [base = {}, ...rest] = fieldSources;
   const merged = rest.reduce((current, fields) => (
     finalizerMergeCurrentImageFields(current, fields, supportFields, {
       allowExactCodePromotion: fields !== result.raw_provider_fields
     })
   ), { ...base });
-  const retrievalApplicationOwnsCandidateFields = result.retrieval_application?.owns_candidate_application === true;
   let withCandidateOverlay = merged;
   if (!retrievalApplicationOwnsCandidateFields) {
     const candidateDecision = applyCandidateDecisionStage({

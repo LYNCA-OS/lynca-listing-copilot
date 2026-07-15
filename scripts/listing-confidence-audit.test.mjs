@@ -1944,4 +1944,32 @@ assert.equal(selectedCandidateSafeOverlay.candidate_activation_funnel.applied_fi
 assert.equal(selectedCandidateSafeOverlay.catalog_activation_funnel.participation_level, "LEVEL_3_FIELD_APPLICATION");
 assert.equal(selectedCandidateSafeOverlay.candidate_application_trace[0].participation_level, "LEVEL_3_FIELD_APPLICATION");
 
+const retrievalResolvedFieldsRemainCanonical = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  title: "2024 Panini Prizm Test Player",
+  final_title: "2024 Panini Prizm Test Player",
+  resolved_fields: {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    card_name: "Autograph"
+  },
+  rendered_fields: {
+    title: "2024 Panini Prizm Test Player",
+    fields: {
+      year: "2024",
+      manufacturer: "Panini",
+      product: "Panini Prizm",
+      players: ["Test Player"]
+    }
+  },
+  retrieval_application: {
+    owns_candidate_application: true,
+    resolver_consumed: true
+  }
+}, { maxTitleLength: 80 });
+assert.equal(retrievalResolvedFieldsRemainCanonical.resolved_fields.product, "Topps Chrome");
+assert.match(retrievalResolvedFieldsRemainCanonical.title, /Topps Chrome/);
+assert.doesNotMatch(retrievalResolvedFieldsRemainCanonical.title, /Panini Prizm/);
+
 console.log("listing confidence audit mock tests passed");

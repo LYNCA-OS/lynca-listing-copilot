@@ -143,8 +143,13 @@ function fieldDelta(offCard = {}, onCard = {}, application = {}) {
     const semField = semFieldForDecision(row);
     return Boolean(semField && changedFields.includes(semField));
   });
-  const sources = [...new Set(relevantDecisions.map(sourceLane).filter(Boolean))];
-  const candidateIds = [...new Set(relevantDecisions.map((row) => cleanText(row.candidate_id)).filter(Boolean))];
+  const appliedDecisions = relevantDecisions.filter((row) => row.applied_to_final === true);
+  const supportingDecisions = relevantDecisions.filter((row) => row.supported_final === true);
+  const contextDecisions = relevantDecisions.filter((row) => row.decision !== "REJECT");
+  const sources = [...new Set(appliedDecisions.map(sourceLane).filter(Boolean))];
+  const supportingSources = [...new Set(supportingDecisions.map(sourceLane).filter(Boolean))];
+  const contextSources = [...new Set(contextDecisions.map(sourceLane).filter(Boolean))];
+  const candidateIds = [...new Set(appliedDecisions.map((row) => cleanText(row.candidate_id)).filter(Boolean))];
   const outcome = improvedFields.length && regressedFields.length
     ? "MIXED"
     : improvedFields.length
@@ -158,7 +163,14 @@ function fieldDelta(offCard = {}, onCard = {}, application = {}) {
     regressed_fields: regressedFields,
     changed_fields: changedFields,
     source: sources,
+    supporting_source: supportingSources,
+    candidate_context_source: contextSources,
     candidate_ids: candidateIds,
+    attribution: appliedDecisions.length
+      ? "FIELD_APPLICATION"
+      : changedFields.length && contextDecisions.length
+        ? "RETRIEVAL_CONTEXT_OR_MODEL_VARIANCE"
+        : "NONE",
     field_comparisons: fieldComparisons
   };
 }
@@ -208,12 +220,25 @@ function applicationFunnel(perCard = []) {
     if (eligible > 0) summary.cards_with_eligible_candidates += 1;
     if (fieldRows > 0) summary.cards_with_field_decisions += 1;
     if (resolverEvidence > 0) summary.cards_with_resolver_evidence += 1;
+    if (cleanText(application.selected_candidate_id)) summary.cards_with_selected_candidate += 1;
+    if (cleanText(application.low_margin_candidate_id)) summary.cards_with_low_margin_candidate += 1;
     if (applyDecisions > 0) summary.cards_with_apply_decision += 1;
     if (actualApplied > 0) summary.cards_with_resolved_change += 1;
-    if (row.title_changed) summary.cards_with_title_change += 1;
+    if (row.arm_title_changed) summary.cards_with_arm_title_delta += 1;
+    if (row.application_title_changed) summary.cards_with_application_title_change += 1;
     for (const decision of decisions.filter((item) => item.applied_to_final === true)) {
       const lane = sourceLane(decision);
       summary.applied_fields_by_source[lane] = numeric(summary.applied_fields_by_source[lane]) + 1;
+    }
+    for (const decision of decisions) {
+      const field = cleanText(decision.resolver_field || decision.field).toLowerCase() || "unknown";
+      const action = cleanText(decision.decision).toUpperCase() || "UNKNOWN";
+      const reason = cleanText(decision.reason) || "unspecified";
+      if (!summary.field_decision_counts[field]) {
+        summary.field_decision_counts[field] = { APPLY: 0, SUPPORT: 0, BLOCK: 0, REJECT: 0, UNKNOWN: 0 };
+      }
+      summary.field_decision_counts[field][action] = numeric(summary.field_decision_counts[field][action]) + 1;
+      summary.decision_reason_counts[reason] = numeric(summary.decision_reason_counts[reason]) + 1;
     }
     return summary;
   }, {
@@ -229,20 +254,28 @@ function applicationFunnel(perCard = []) {
     cards_with_eligible_candidates: 0,
     cards_with_field_decisions: 0,
     cards_with_resolver_evidence: 0,
+    cards_with_selected_candidate: 0,
+    cards_with_low_margin_candidate: 0,
     cards_with_apply_decision: 0,
     cards_with_resolved_change: 0,
-    cards_with_title_change: 0,
-    applied_fields_by_source: {}
+    cards_with_arm_title_delta: 0,
+    cards_with_application_title_change: 0,
+    applied_fields_by_source: {},
+    field_decision_counts: {},
+    decision_reason_counts: {}
   });
   return {
     ...totals,
     retrieval_card_rate: rate(totals.cards_with_retrieval, totals.card_count),
     eligible_from_retrieved_rate: rate(totals.eligible_candidate_count, totals.retrieved_candidate_count),
     resolver_evidence_from_eligible_rate: rate(totals.resolver_evidence_row_count, totals.field_decision_row_count),
+    selected_candidate_card_rate: rate(totals.cards_with_selected_candidate, totals.card_count),
+    low_margin_candidate_card_rate: rate(totals.cards_with_low_margin_candidate, totals.card_count),
     candidate_application_rate: rate(totals.cards_with_resolved_change, totals.cards_with_eligible_candidates),
     apply_realization_rate: rate(totals.actual_applied_field_count, totals.apply_decision_count),
     resolved_change_card_rate: rate(totals.cards_with_resolved_change, totals.card_count),
-    title_change_card_rate: rate(totals.cards_with_title_change, totals.card_count)
+    arm_title_delta_card_rate: rate(totals.cards_with_arm_title_delta, totals.card_count),
+    application_title_change_card_rate: rate(totals.cards_with_application_title_change, totals.card_count)
   };
 }
 
@@ -446,11 +479,17 @@ export function evaluateRetrievalApplicationAblation({
     const offCardExact = offExact.get(id) ?? null;
     const onCardExact = onExact.get(id) ?? null;
     const retrievalDelta = fieldDelta(offCards.get(id), onCards.get(id), application);
+    const armTitleChanged = finalTitle(off) !== finalTitle(on);
+    const applicationTitleChanged = application?.title_changed === true;
     return {
       item_id: id,
       retrieval_disabled_title: finalTitle(off),
       retrieval_enabled_title: finalTitle(on),
-      title_changed: finalTitle(off) !== finalTitle(on),
+      title_changed: armTitleChanged,
+      arm_title_changed: armTitleChanged,
+      application_title_changed: applicationTitleChanged,
+      application_title_before: cleanText(application?.title_before),
+      application_title_after: cleanText(application?.title_after),
       candidate_application_count: Number(application?.actual_application_count || appliedFields.length || 0),
       applied_fields: appliedFields,
       field_decision_counts: application?.decision_counts || {},
@@ -468,7 +507,8 @@ export function evaluateRetrievalApplicationAblation({
     };
   });
   const candidateApplicationCount = perCard.reduce((sum, row) => sum + row.candidate_application_count, 0);
-  const titleChangeCount = perCard.filter((row) => row.title_changed).length;
+  const armTitleDeltaCount = perCard.filter((row) => row.arm_title_changed).length;
+  const applicationTitleChangeCount = perCard.filter((row) => row.application_title_changed).length;
   const recoveryCount = perCard.filter((row) => row.outcome === "RECOVERY").length;
   const regressionCount = perCard.filter((row) => row.outcome === "REGRESSION").length;
   const offSemField = offAccuracy.metrics?.sem_field_exact_accuracy || {};
@@ -517,7 +557,9 @@ export function evaluateRetrievalApplicationAblation({
         per_field_exact_accuracy: onAccuracy.metrics?.per_field_exact_accuracy || {},
         operations: operationalMetrics(retrievalEnabledReport),
         candidate_application_count: candidateApplicationCount,
-        title_change_count: titleChangeCount,
+        title_change_count: armTitleDeltaCount,
+        arm_title_delta_count: armTitleDeltaCount,
+        application_title_change_count: applicationTitleChangeCount,
         application_funnel: funnel
       },
       delta: {

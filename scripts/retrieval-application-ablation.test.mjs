@@ -169,11 +169,16 @@ const on = {
         card_name: "Autograph"
       },
       retrieval_application: {
+        selected_candidate_id: "catalog-1",
+        low_margin_candidate_id: "",
         candidate_count: 5,
         field_evidence_count: 3,
         identity_evidence_count: 3,
         actual_application_count: 1,
         actual_applied_fields: ["product"],
+        title_changed: true,
+        title_before: "2024 Topps Test Player Autograph",
+        title_after: "2024 Topps Chrome Test Player Autograph",
         decision_counts: { APPLY: 1, SUPPORT: 2, BLOCK: 0, REJECT: 0 },
         decisions: [{
           candidate_id: "catalog-1",
@@ -211,6 +216,8 @@ const on = {
         card_name: "Base"
       },
       retrieval_application: {
+        selected_candidate_id: "catalog-2",
+        low_margin_candidate_id: "",
         candidate_count: 2,
         field_evidence_count: 3,
         identity_evidence_count: 3,
@@ -250,6 +257,8 @@ const report = evaluateRetrievalApplicationAblation({
 assert.equal(report.cohort.same_card_cohort_complete, true);
 assert.equal(report.metrics.retrieval_enabled.candidate_application_count, 1);
 assert.equal(report.metrics.retrieval_enabled.title_change_count, 1);
+assert.equal(report.metrics.retrieval_enabled.arm_title_delta_count, 1);
+assert.equal(report.metrics.retrieval_enabled.application_title_change_count, 1);
 assert.ok(report.metrics.delta.sem_field_accuracy > 0);
 assert.ok(report.metrics.delta.critical_field_accuracy > 0);
 assert.equal(report.metrics.delta.retrieval_recovery_count, 1);
@@ -258,13 +267,20 @@ assert.equal(report.metrics.delta.net_benefit, 1);
 assert.equal(report.per_card.find((row) => row.item_id === "card-1")?.outcome, "RECOVERY");
 assert.deepEqual(report.per_card.find((row) => row.item_id === "card-1")?.retrieval_delta.improved_fields, ["product"]);
 assert.deepEqual(report.per_card.find((row) => row.item_id === "card-1")?.retrieval_delta.source, ["catalog"]);
+assert.equal(report.per_card.find((row) => row.item_id === "card-1")?.retrieval_delta.attribution, "FIELD_APPLICATION");
 assert.equal(report.metrics.retrieval_enabled.application_funnel.retrieved_candidate_count, 7);
 assert.equal(report.metrics.retrieval_enabled.application_funnel.eligible_candidate_count, 2);
 assert.equal(report.metrics.retrieval_enabled.application_funnel.apply_decision_count, 1);
 assert.equal(report.metrics.retrieval_enabled.application_funnel.actual_applied_field_count, 1);
 assert.equal(report.metrics.retrieval_enabled.application_funnel.cards_with_resolved_change, 1);
-assert.equal(report.metrics.retrieval_enabled.application_funnel.cards_with_title_change, 1);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.cards_with_selected_candidate, 2);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.cards_with_low_margin_candidate, 0);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.cards_with_arm_title_delta, 1);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.cards_with_application_title_change, 1);
 assert.equal(report.metrics.retrieval_enabled.application_funnel.candidate_application_rate, 0.5);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.field_decision_counts.product.APPLY, 1);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.field_decision_counts.year.SUPPORT, 2);
+assert.equal(report.metrics.retrieval_enabled.application_funnel.decision_reason_counts.unspecified, 6);
 assert.equal(report.metrics.retrieval_disabled.operations.per_card_latency_ms.p50, 15000);
 assert.equal(report.metrics.retrieval_enabled.operations.usage_totals.output_tokens, 520);
 assert.equal(report.validity.experiment.runtime_isolation.valid, true);

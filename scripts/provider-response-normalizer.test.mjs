@@ -239,6 +239,52 @@ const structuredFieldEvidence = validateProviderEvidencePayload("openai_legacy",
 assert.equal(structuredFieldEvidence.field_evidence.grade.grade_company, "PSA");
 assert.equal(structuredFieldEvidence.field_evidence.card_name.value, "Best Performance");
 
+const aliasedSubjectEvidence = validateProviderEvidencePayload("openai_legacy", {
+  fields: {
+    players: ["Lamine Yamal"]
+  },
+  field_evidence: {
+    players_name_on_card: {
+      value: ["Lamine Yamal"],
+      source_type: "CARD_BACK_PRINTED_TEXT",
+      visible_text: "LAMINE YAMAL",
+      directly_observed: true,
+      confidence: 0.98,
+      review_required: false
+    }
+  },
+  unresolved: []
+});
+assert.deepEqual(aliasedSubjectEvidence.field_evidence.players.value, ["Lamine Yamal"]);
+assert.equal(aliasedSubjectEvidence.field_evidence.players_name_on_card, undefined);
+
+const canonicalSubjectEvidenceWinsAlias = validateProviderEvidencePayload("openai_legacy", {
+  fields: {
+    players: ["Lamine Yamal"]
+  },
+  field_evidence: {
+    players: {
+      value: ["Lamine Yamal"],
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      visible_text: "LAMINE YAMAL",
+      directly_observed: true,
+      confidence: 0.99,
+      review_required: false
+    },
+    players_name_on_card: {
+      value: ["Wrong Alias Value"],
+      source_type: "VISUAL_GUESS",
+      visible_text: "",
+      directly_observed: false,
+      confidence: 0.2,
+      review_required: true
+    }
+  },
+  unresolved: []
+});
+assert.deepEqual(canonicalSubjectEvidenceWinsAlias.field_evidence.players.value, ["Lamine Yamal"]);
+assert.equal(canonicalSubjectEvidenceWinsAlias.field_evidence.players.confidence, 0.99);
+
 const arrayFieldEvidence = validateProviderEvidencePayload("openai_legacy", {
   field_evidence: [
     {
