@@ -22,6 +22,7 @@ const humanStatus = document.querySelector("#authHumanStatus");
 const maskedDestination = document.querySelector("#maskedDestination");
 const editDestinationButton = document.querySelector("#editDestinationButton");
 const resendButton = document.querySelector("#resendOtpButton");
+const requestButton = document.querySelector("#requestOtpButton");
 const verifyButton = document.querySelector("#verifyOtpButton");
 const adminToggle = document.querySelector("#adminPreviewToggle");
 const adminPanel = document.querySelector("#adminPreviewPanel");
@@ -32,6 +33,8 @@ let destination = "";
 let sentAt = 0;
 let countdownTimer = null;
 let humanVerified = false;
+let requestPending = false;
+let requestSequence = 0;
 
 function setStatus(element, message = "", tone = "") {
   element.textContent = message;
@@ -69,11 +72,15 @@ function resetHumanCheck(message = "") {
 }
 
 function showRequestStep() {
+  requestSequence += 1;
   verifyPanel.hidden = true;
   requestPanel.hidden = false;
   setStatus(verifyStatus);
   otpInput.value = "";
   setInputError(otpInput, false);
+  requestPending = false;
+  requestButton.disabled = false;
+  requestButton.textContent = "获取验证码";
   verifyButton.disabled = false;
   resetHumanCheck();
   requestAnimationFrame(() => emailInput.focus());
@@ -89,6 +96,7 @@ function showVerifyStep() {
 
 requestForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  if (requestPending) return;
   destination = normalizeAuthDestination(emailInput.value, AUTH_CHANNELS.EMAIL);
   const valid = authDestinationValid(destination, AUTH_CHANNELS.EMAIL);
   setInputError(emailInput, !valid);
@@ -104,14 +112,40 @@ requestForm.addEventListener("submit", (event) => {
     return;
   }
 
-  setStatus(requestStatus);
-  showVerifyStep();
-  setStatus(verifyStatus, "设计预览已发送验证码。正式版本会使用统一提示保护账号隐私。", "success");
+  requestPending = true;
+  requestButton.disabled = true;
+  requestButton.textContent = "正在请求…";
+  setStatus(requestStatus, "正在请求设计预览验证码，请勿重复提交。");
+  const requestedDestination = destination;
+  const requestId = ++requestSequence;
+
+  window.setTimeout(() => {
+    if (
+      requestId !== requestSequence ||
+      !humanVerified ||
+      normalizeAuthDestination(emailInput.value, AUTH_CHANNELS.EMAIL) !== requestedDestination
+    ) {
+      requestPending = false;
+      requestButton.disabled = false;
+      requestButton.textContent = "获取验证码";
+      resetHumanCheck("邮箱已修改，请重新验证当前环境。");
+      return;
+    }
+    requestPending = false;
+    showVerifyStep();
+    setStatus(verifyStatus, "设计预览已发送验证码。正式版本会使用统一提示保护账号隐私。", "success");
+  }, 350);
 });
 
 emailInput.addEventListener("input", () => {
   setInputError(emailInput, false);
   setStatus(requestStatus);
+  if (requestPending) {
+    requestSequence += 1;
+    requestPending = false;
+    requestButton.disabled = false;
+    requestButton.textContent = "获取验证码";
+  }
   if (humanVerified) resetHumanCheck("邮箱已修改，请重新验证当前环境。");
 });
 
@@ -150,7 +184,7 @@ otpInput.addEventListener("input", () => {
 
 verifyForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const code = normalizeOtp(otpInput.value);
+  const code = otpInput.value;
   if (!otpReady(code)) {
     setInputError(otpInput, true);
     setStatus(verifyStatus, "请输入完整的 6 位验证码。", "error");

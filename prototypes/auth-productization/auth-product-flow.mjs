@@ -51,7 +51,7 @@ export function normalizeOtp(value) {
 }
 
 export function otpReady(value) {
-  return normalizeOtp(value).length === 6;
+  return /^[0-9]{6}$/.test(String(value ?? ""));
 }
 
 export function resendSecondsRemaining({ sentAt, now = Date.now(), cooldownMs = 60_000 } = {}) {

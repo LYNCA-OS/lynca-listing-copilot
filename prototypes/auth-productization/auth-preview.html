@@ -6,7 +6,7 @@
     <title>LYNCA Listing Copilot · 注册登录产品预览</title>
     <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
     <link rel="stylesheet" href="/app/listing-copilot.css">
-    <link rel="stylesheet" href="/app/auth-preview.css">
+    <link rel="stylesheet" href="./auth-preview.css">
   </head>
   <body class="auth-product-preview">
     <main class="auth-product-shell">
@@ -39,7 +39,7 @@
         <div class="auth-entry-heading">
           <p class="eyebrow">邀请制访问</p>
           <h2 id="authEntryTitle">登录 Listing Copilot</h2>
-          <p>使用获邀邮箱接收 6 位验证码。首次验证成功会自动创建账号。</p>
+          <p>使用获邀邮箱接收 6 位验证码。首次验证成功会接受邀请并开通工作区。</p>
         </div>
 
         <section id="otpRequestPanel" aria-labelledby="authEntryTitle">
@@ -67,7 +67,7 @@
             </div>
             <p class="auth-status auth-human-status" id="authHumanStatus" role="status" aria-live="polite"></p>
             <p class="auth-status" id="authRequestStatus" role="status" aria-live="polite"></p>
-            <button class="auth-primary-button" type="submit">获取验证码</button>
+            <button class="auth-primary-button" id="requestOtpButton" type="submit">获取验证码</button>
           </form>
         </section>
 
@@ -117,7 +117,7 @@
         <section class="auth-admin-panel" id="adminPreviewPanel" aria-labelledby="adminPreviewTitle" hidden>
           <div class="auth-admin-heading">
             <h2 id="adminPreviewTitle">管理员预览账号</h2>
-            <p>保留现有内部账号，仅用于预览和验收，不进入真实写手统计或训练反馈。</p>
+            <p>预览租户 Owner · 无平台运维权限。仅用于预览和验收，不进入真实写手统计或训练反馈。</p>
           </div>
           <form class="auth-form" id="adminPreviewForm" autocomplete="on" novalidate>
             <label for="adminUsername">管理员账号</label>
@@ -132,6 +132,6 @@
         <p class="auth-phone-note">手机验证码会在短信服务、费用上限和防滥用配置完成后开放。</p>
       </section>
     </main>
-    <script type="module" src="/app/auth-preview.js"></script>
+    <script type="module" src="./auth-preview.js"></script>
   </body>
 </html>
