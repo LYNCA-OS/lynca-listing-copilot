@@ -5013,6 +5013,10 @@ function withoutAutomaticVectorAssist(providerOptions = {}) {
   };
 }
 
+function forceRetrievalApplicationResolutionEnabled(providerOptions = {}) {
+  return optionFlag(providerOptions, "force_retrieval_application_resolution", false);
+}
+
 async function createOpenAiTitle(payload, selection, {
   recognitionEvidenceDocument = null,
   signedImages: reusableSignedImages = null,
@@ -5759,7 +5763,8 @@ async function createOpenAiTitle(payload, selection, {
   };
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return finalizeProviderResult(fastPathResult);
-  if (assistShadowOnly) {
+  const forceRetrievalApplicationResolution = forceRetrievalApplicationResolutionEnabled(providerOptions);
+  if (assistShadowOnly && !forceRetrievalApplicationResolution) {
     const shadowProviderOptions = vectorContext.vector_lazy_skip?.skipped === true
       ? withoutAutomaticVectorAssist(providerOptions)
       : providerOptions;
@@ -5819,6 +5824,7 @@ export const __listingCopilotTitleTestHooks = {
   configuredMaxPayloadImages,
   finalizeDeterministicPresentation,
   finalResolvedFieldsForPresentation,
+  forceRetrievalApplicationResolutionEnabled,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
   preingestionEvidenceRefreshDecision,

@@ -314,7 +314,7 @@ function experimentValidity(offReport = {}, onReport = {}) {
     shared_pipeline_valid: off.provider_id === on.provider_id
       && off.single_model_fast === false
       && on.single_model_fast === false
-      && off.evidence_completion_enabled === true
+      && off.evidence_completion_enabled === false
       && on.evidence_completion_enabled === true
       && off.external_retrieval_enabled === false
       && on.external_retrieval_enabled === false
@@ -327,9 +327,11 @@ function experimentValidity(offReport = {}, onReport = {}) {
     retrieval_axis_valid: off.catalog_enabled === false
       && off.vector_enabled === false
       && off.retrieval_application_enabled === false
+      && off.retrieval_application_resolution_forced !== true
       && on.catalog_enabled === true
       && on.vector_enabled === true
-      && on.retrieval_application_enabled === true,
+      && on.retrieval_application_enabled === true
+      && on.retrieval_application_resolution_forced === true,
     same_base_url: cleanText(offReport.base_url) === cleanText(onReport.base_url),
     same_model_ids: offModels.length > 0 && JSON.stringify(offModels) === JSON.stringify(onModels),
     retrieval_off_model_ids: offModels,

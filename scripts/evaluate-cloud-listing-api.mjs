@@ -412,10 +412,15 @@ function providerOptionsForMode(providerMode, {
     corrected_title_is_reviewed_title_ground_truth: temporaryGt,
     send_corrected_title_hint_to_cloud: sendHintToCloud,
     cloud_eval_blind_to_corrected_title_hint: !sendHintToCloud,
-    enable_evidence_completion: retrievalAblation ? true : catalogAssist || vectorAssist,
+    // OFF is the strict image + OCR + primary-model baseline. Generic evidence
+    // completion plans retrieval actions even when catalog/vector assist is
+    // disabled, so it must stay off in that arm. ON deliberately runs the full
+    // application + resolver path.
+    enable_evidence_completion: retrievalAblation ? retrievalEnabled : catalogAssist || vectorAssist,
     enable_catalog_assist: catalogAssist,
     enable_vector_assist: vectorAssist,
     enable_retrieval_application: catalogAssist || vectorAssist,
+    force_retrieval_application_resolution: retrievalEnabled,
     enable_stored_visual_features: vectorAssist,
     enable_query_visual_embeddings: vectorAssist,
     enable_vector_retrieval: vectorAssist,
@@ -3113,6 +3118,7 @@ export async function evaluateCloudListingApi({
           catalog_enabled: experimentProviderOptions.enable_catalog_assist,
           vector_enabled: experimentProviderOptions.enable_vector_assist,
           retrieval_application_enabled: experimentProviderOptions.enable_retrieval_application,
+          retrieval_application_resolution_forced: experimentProviderOptions.force_retrieval_application_resolution,
           external_retrieval_enabled: experimentProviderOptions.enable_ephemeral_external_retrieval,
           identity_result_cache_disabled: experimentProviderOptions.disable_identity_result_cache,
           approved_identity_memory_disabled: experimentProviderOptions.disable_approved_identity_memory,

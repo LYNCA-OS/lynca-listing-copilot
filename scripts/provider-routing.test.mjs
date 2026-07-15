@@ -155,6 +155,19 @@ assert.equal(explicitVectorOffOptions.enable_vector_retrieval, false, "explicit 
 assert.equal(explicitVectorOffOptions.enable_stored_visual_features, false);
 assert.equal(explicitVectorOffOptions.enable_query_visual_embeddings, false);
 
+assert.equal(
+  __listingCopilotTitleTestHooks.forceRetrievalApplicationResolutionEnabled({
+    force_retrieval_application_resolution: true
+  }),
+  true,
+  "retrieval ablation ON must bypass the assist-shadow early return and reach the application resolver"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.forceRetrievalApplicationResolutionEnabled({}),
+  false,
+  "production behavior must remain unchanged unless the ablation explicitly forces application resolution"
+);
+
 const explicitVectorOnOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
   provider_options: {
     enable_vector_assist: false,

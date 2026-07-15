@@ -422,7 +422,6 @@ assert.equal(openai.titlePayload.catalog_observation_hint, null);
   for (const options of [off, on]) {
     assert.equal(options.evaluation_profile, "retrieval_application_ablation_v1");
     assert.equal(options.single_model_fast, false);
-    assert.equal(options.enable_evidence_completion, true);
     assert.equal(options.enable_ephemeral_external_retrieval, false);
     assert.equal(options.disable_identity_result_cache, true);
     assert.equal(options.disable_approved_identity_memory, true);
@@ -430,15 +429,19 @@ assert.equal(openai.titlePayload.catalog_observation_hint, null);
     assert.equal(options.send_corrected_title_hint_to_cloud, false);
   }
   assert.equal(off.enable_catalog_assist, false);
+  assert.equal(off.enable_evidence_completion, false);
   assert.equal(off.enable_vector_assist, false);
   assert.equal(off.enable_retrieval_application, false);
+  assert.equal(off.force_retrieval_application_resolution, false);
   assert.equal(off.enable_stored_visual_features, false);
   assert.equal(off.enable_vector_retrieval, false);
   assert.equal(off.enable_advanced_retrieval, false);
   assert.equal(off.enable_hybrid_retrieval, false);
   assert.equal(on.enable_catalog_assist, true);
+  assert.equal(on.enable_evidence_completion, true);
   assert.equal(on.enable_vector_assist, true);
   assert.equal(on.enable_retrieval_application, true);
+  assert.equal(on.force_retrieval_application_resolution, true);
   assert.equal(on.enable_stored_visual_features, true);
   assert.equal(on.enable_vector_retrieval, true);
   assert.equal(on.enable_advanced_retrieval, true);
