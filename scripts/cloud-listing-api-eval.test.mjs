@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { evaluateCloudListingApi, fairTokenRecall, policyFairTokenRecall, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
+import {
+  evaluateCloudListingApi,
+  fairTokenRecall,
+  policyFairTokenRecall,
+  rebuildCloudListingEvalReport,
+  validateProtectionBypassSecret
+} from "./evaluate-cloud-listing-api.mjs";
 import { compareCloudEvalAblation } from "./compare-cloud-eval-ablation.mjs";
 
 function jsonResponse(status, body, headers = {}) {
@@ -1214,6 +1220,54 @@ assert.throws(
     env: {}
   }),
   /looks like a Supabase secret key/i
+);
+
+const rebuiltReport = rebuildCloudListingEvalReport({
+  schema_version: "cloud-listing-api-eval-v1",
+  provider: "retrieval_on",
+  elapsed_ms: 60_000,
+  experiment_contract: { arm: "on" },
+  results: [
+    {
+      candidate_id: "kept-card",
+      status: "evaluated",
+      confidence: "HIGH",
+      technical_failure: false,
+      provider_success: true,
+      elapsed_ms: 10_000,
+      usage: { provider_calls: 1, input_tokens: 100, output_tokens: 20, total_tokens: 120 }
+    },
+    {
+      candidate_id: "retried-card",
+      technical_failure: true,
+      provider_success: false,
+      elapsed_ms: 30_000,
+      provider_error_attempts: [{ attempt: 1 }, { attempt: 2 }]
+    }
+  ]
+}, [{
+  provider: "retrieval_on",
+  elapsed_ms: 12_000,
+  experiment_contract: { arm: "on" },
+  results: [{
+    candidate_id: "retried-card",
+    status: "evaluated",
+    confidence: "HIGH",
+    technical_failure: false,
+    provider_success: true,
+    elapsed_ms: 8_000,
+    usage: { provider_calls: 1, input_tokens: 80, output_tokens: 10, total_tokens: 90 }
+  }]
+}]);
+assert.equal(rebuiltReport.provider_success_count, 2);
+assert.equal(rebuiltReport.technical_failure_count, 0);
+assert.equal(rebuiltReport.elapsed_ms, 72_000);
+assert.equal(rebuiltReport.usage_totals.total_tokens, 210);
+assert.deepEqual(rebuiltReport.retry_recovery.replaced_candidate_ids, ["retried-card"]);
+assert.equal(rebuiltReport.retry_recovery.original_failed_attempt_count, 2);
+assert.throws(
+  () => rebuildCloudListingEvalReport({ provider: "retrieval_on", results: [] }, [{ provider: "retrieval_off", results: [] }]),
+  /does not match base provider/
 );
 
 assert.throws(

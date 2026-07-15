@@ -3062,6 +3062,79 @@ function summarize(results = [], elapsedMs = 0) {
   };
 }
 
+export function rebuildCloudListingEvalReport(baseReport, retryReports = []) {
+  if (!baseReport || typeof baseReport !== "object" || Array.isArray(baseReport)) {
+    throw new Error("Base cloud eval report must be an object.");
+  }
+  if (!Array.isArray(baseReport.results)) {
+    throw new Error("Base cloud eval report must include results[].");
+  }
+  if (!Array.isArray(retryReports)) {
+    throw new Error("Retry cloud eval reports must be an array.");
+  }
+
+  const baseById = new Map(baseReport.results.map((result) => [candidateId(result), result]));
+  const replacements = new Map();
+  let retryElapsedMs = 0;
+  let originalFailedAttemptCount = 0;
+
+  for (const retryReport of retryReports) {
+    if (!retryReport || typeof retryReport !== "object" || Array.isArray(retryReport)) {
+      throw new Error("Retry cloud eval report must be an object.");
+    }
+    if (retryReport.provider !== baseReport.provider) {
+      throw new Error(`Retry provider ${retryReport.provider || "unknown"} does not match base provider ${baseReport.provider || "unknown"}.`);
+    }
+    const baseArm = baseReport.experiment_contract?.arm || null;
+    const retryArm = retryReport.experiment_contract?.arm || null;
+    if (baseArm && retryArm && baseArm !== retryArm) {
+      throw new Error(`Retry experiment arm ${retryArm} does not match base arm ${baseArm}.`);
+    }
+    if (!Array.isArray(retryReport.results)) {
+      throw new Error("Retry cloud eval report must include results[].");
+    }
+
+    retryElapsedMs += Math.max(0, Number(retryReport.elapsed_ms) || 0);
+    for (const replacement of retryReport.results) {
+      const id = candidateId(replacement);
+      if (!id) throw new Error("Retry result is missing candidate_id.");
+      if (replacements.has(id)) throw new Error(`Duplicate retry result for ${id}.`);
+      const original = baseById.get(id);
+      if (!original) throw new Error(`Retry result ${id} is not present in the base report.`);
+      if (original.technical_failure !== true) {
+        throw new Error(`Retry result ${id} would replace a successful base result.`);
+      }
+      if (replacement.technical_failure === true) {
+        throw new Error(`Retry result ${id} is still a technical failure.`);
+      }
+      originalFailedAttemptCount += Array.isArray(original.provider_error_attempts)
+        ? original.provider_error_attempts.length
+        : 0;
+      replacements.set(id, replacement);
+    }
+  }
+
+  const mergedResults = baseReport.results.map((result) => replacements.get(candidateId(result)) || result);
+  const baseElapsedMs = Math.max(0, Number(baseReport.elapsed_ms) || 0);
+  const effectiveElapsedMs = baseElapsedMs + retryElapsedMs;
+  return {
+    ...baseReport,
+    status: "completed",
+    generated_at: new Date().toISOString(),
+    ...summarize(mergedResults, effectiveElapsedMs),
+    retry_recovery: {
+      replacement_count: replacements.size,
+      replaced_candidate_ids: [...replacements.keys()],
+      original_failed_attempt_count: originalFailedAttemptCount,
+      base_elapsed_ms: baseElapsedMs,
+      retry_elapsed_ms: retryElapsedMs,
+      effective_elapsed_ms: effectiveElapsedMs,
+      token_accounting_note: "Metered totals include successful retry responses; failed schema responses did not expose token usage and remain unmetered."
+    },
+    results: mergedResults
+  };
+}
+
 export async function evaluateCloudListingApi({
   dataset,
   baseUrl,

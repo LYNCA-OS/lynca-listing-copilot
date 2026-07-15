@@ -285,6 +285,34 @@ const canonicalSubjectEvidenceWinsAlias = validateProviderEvidencePayload("opena
 assert.deepEqual(canonicalSubjectEvidenceWinsAlias.field_evidence.players.value, ["Lamine Yamal"]);
 assert.equal(canonicalSubjectEvidenceWinsAlias.field_evidence.players.confidence, 0.99);
 
+const unknownFieldEvidenceIsQuarantined = validateProviderEvidencePayload("openai_legacy", {
+  fields: {
+    year: "2024",
+    product: "Topps Chrome"
+  },
+  field_evidence: {
+    year: {
+      value: "2024",
+      source_type: "CARD_BACK_PRINTED_TEXT",
+      visible_text: "2024",
+      directly_observed: true
+    },
+    product_set: {
+      value: "Topps Chrome",
+      source_type: "CARD_BACK_PRINTED_TEXT",
+      visible_text: "TOPPS CHROME"
+    }
+  },
+  unresolved: []
+});
+assert.equal(unknownFieldEvidenceIsQuarantined.field_evidence.product_set, undefined);
+assert.equal(unknownFieldEvidenceIsQuarantined.field_evidence.year.value, "2024");
+assert.deepEqual(unknownFieldEvidenceIsQuarantined.provider_field_rejections.at(-1), {
+  field: "product_set",
+  value: "Topps Chrome",
+  reason: "unknown_provider_field_evidence_key"
+});
+
 const arrayFieldEvidence = validateProviderEvidencePayload("openai_legacy", {
   field_evidence: [
     {
@@ -634,11 +662,6 @@ const schemaFailures = [
       unresolved: []
     },
     expectedPath: "resolved.card_count"
-  },
-  {
-    name: "bad field evidence key",
-    payload: { field_evidence: { fake_field: { value: "Tester" } }, unresolved: [] },
-    expectedPath: "field_evidence.fake_field"
   },
   {
     name: "bad image quality",
