@@ -450,7 +450,13 @@ export default async function handler(req, res) {
   const canViewAll = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_ALL_WORK);
   const ownedJobs = result.rows.filter((job) => {
     if (canViewAll) return true;
+    const operatorId = String(job.operator_id || "").trim();
+    const createdByUserId = String(job.created_by_user_id || "").trim();
+    const assignedToUserId = String(job.assigned_to_user_id || "").trim();
+    if ([operatorId, createdByUserId, assignedToUserId].includes(context.userId)) return true;
     const session = sessions[job.recognition_session_id] || null;
+    if (String(session?.operator_id || "").trim() === context.userId
+        || String(session?.created_by_user_id || "").trim() === context.userId) return true;
     try {
       requirePermission(context, TENANT_PERMISSIONS.VIEW_ASSIGNED_TASK, {
         assignedUserId: session?.assigned_to_user_id

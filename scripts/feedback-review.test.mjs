@@ -367,12 +367,14 @@ assert.equal(unchangedRecords.analysisRun.field_graph.player, "Cooper Flagg");
 assert.equal(unchangedRecords.review.workflow_summary.status, "LOW_TOUCH_REVIEW");
 assert.equal(unchangedRecords.review.field_graph.product, "Topps Chrome");
 assert.equal(unchangedRecords.review.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
-assert.equal(unchangedRecords.review.feedback_training_event.training_ready, true);
+assert.equal(unchangedRecords.review.feedback_training_event.training_ready, false);
+assert.equal(unchangedRecords.review.feedback_training_event.semantic_truth, false);
+assert.equal(unchangedRecords.review.feedback_training_event.semantic_learning_status, "OBSERVE_ONLY_WRITER_TITLE_CANDIDATE");
 assert.equal(unchangedRecords.review.candidate_reranker_dataset.length, 1);
 assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].candidate_id, "cat-cooper-flagg-1");
 assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].selected_by_system, true);
 assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].selected_by_writer, true);
-assert.equal(unchangedRecords.review.field_level_ground_truth.find((row) => row.field === "player").value, "Cooper Flagg");
+assert.deepEqual(unchangedRecords.review.field_level_ground_truth, []);
 assert.equal(unchangedRecords.review.hard_negative_samples.length, 0);
 assert.equal(unchangedRecords.legacyFeedback, null);
 
@@ -468,7 +470,7 @@ assert.equal(unchangedSave.calls[2].body.asset_fingerprint, unchangedSave.calls[
 assert.deepEqual(unchangedSave.calls[2].body.field_changes, []);
 assert.equal(unchangedSave.calls[1].body.field_graph.product, "Topps Chrome");
 assert.equal(unchangedSave.calls[2].body.feedback_training_event.datasets.candidate_reranker_dataset[0].candidate_id, "cat-accepted");
-assert.equal(unchangedSave.calls[2].body.field_level_ground_truth.find((row) => row.field === "year").value, "2025");
+assert.deepEqual(unchangedSave.calls[2].body.field_level_ground_truth, []);
 
 const schemaLagCalls = [];
 let failedAnalysisOnce = false;
@@ -639,7 +641,7 @@ assert.deepEqual(correctedReview.field_changes, [
 assert.equal(correctedReview.feedback_training_event.correction_type, reviewOutcomes.CORRECTED_FIELDS);
 assert.equal(correctedReview.candidate_reranker_dataset[0].candidate_id, "cat-wrong-serial");
 assert.deepEqual(correctedReview.hard_negative_samples[0].conflicting_fields, ["serial_number"]);
-assert.equal(correctedReview.field_level_ground_truth.find((row) => row.field === "serial").value, "31/50");
+assert.deepEqual(correctedReview.field_level_ground_truth, []);
 assert.equal(correctedFieldsSave.calls.some((call) => call.table === "listing_title_feedback"), false);
 const correctedAsset = correctedFieldsSave.calls.find((call) => call.table === "listing_assets").body;
 assert.equal(correctedAsset.additional_image_paths[0].role, "serial_crop");

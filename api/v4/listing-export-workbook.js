@@ -6,6 +6,7 @@ import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
   LEGACY_TENANT_ID,
+  hasTenantPermission,
   publicTenantAuthError,
   requirePermission,
   requireTenantAccess,
@@ -37,14 +38,15 @@ async function writerExportSchemaReadiness(tenantId, env = process.env) {
   };
 }
 
-async function writerExportRowsBelongToTenant(rows, tenantId, env = process.env) {
+async function writerExportRowsBelongToOperator(rows, context, env = process.env) {
   const sessionIds = [...new Set((Array.isArray(rows) ? rows : [])
     .map((row) => String(row?.recognition_session_id || row?.session_id || row?.recognitionSessionId || "").trim())
     .filter(Boolean))];
   if (!sessionIds.length) return { allowed: true, checked_session_count: 0, error: null };
+  const tenantId = context.tenantId;
   const sessions = await readV4Rows({
     table: "v4_recognition_sessions",
-    select: "id,tenant_id",
+    select: "id,tenant_id,operator_id,created_by_user_id,assigned_to_user_id",
     search: {
       tenant_id: `eq.${tenantId}`,
       id: `in.(${sessionIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",")})`,
@@ -53,7 +55,13 @@ async function writerExportRowsBelongToTenant(rows, tenantId, env = process.env)
     env
   });
   if (!sessions.ok) return { allowed: false, unavailable: true, checked_session_count: 0, error: sessions.error };
-  const owned = new Set(sessions.rows.map((row) => String(row.id)));
+  const canViewAll = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_ALL_WORK);
+  const owned = new Set(sessions.rows
+    .filter((row) => canViewAll
+      || String(row.operator_id || "").trim() === context.userId
+      || String(row.created_by_user_id || "").trim() === context.userId
+      || String(row.assigned_to_user_id || "").trim() === context.userId)
+    .map((row) => String(row.id)));
   return {
     allowed: sessionIds.every((id) => owned.has(id)),
     unavailable: false,
@@ -134,7 +142,7 @@ export default async function handler(req, res) {
       }));
       return;
     }
-    const ownership = await writerExportRowsBelongToTenant(rows, context.tenantId, process.env);
+    const ownership = await writerExportRowsBelongToOperator(rows, context, process.env);
     if (!ownership.allowed) {
       sendJson(res, ownership.unavailable ? 503 : 403, withV4Version({
         ok: false,

@@ -30,7 +30,7 @@ assert.ok(
 assert.ok(fastScoutBranch.includes("if (queueL1Only(payload))"), "queue-backed L1 must take the explicit L1-only path");
 assert.ok(fastScoutBranch.includes("await l1PersistencePromise"), "queue-backed L1 must persist before job completion/status polling");
 assert.ok(fastScoutBranch.includes("scheduleV4Background(l1PersistencePromise"), "L1 persistence must be scheduled after response construction");
-assert.ok(fastScoutBranch.includes("scheduleV4Background(runBackgroundAssistedDraft({"), "L2 must be scheduled directly after the durable session exists, not chained after L1 persistence");
+assert.ok(fastScoutBranch.includes("scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft({"), "L2 must be scheduled directly after the durable session exists, not chained after L1 persistence");
 assert.ok(!fastScoutBranch.includes("l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft"), "L2 must not wait for L1 persistence before starting");
 assert.ok(apiSource.includes("DISABLE_GPT5_FAST_SCOUT_L1"), "GPT-5 main-path requests must follow the same internal L1 path by default and only skip when explicitly disabled");
 assert.ok(apiSource.includes("isGpt5ResponsesModel(requestedListingModel)"), "GPT-5 model detection must guard the fast scout L1 branch");

@@ -4024,33 +4024,34 @@ function feedbackActionForResult(result, generatedTitle, correctedTitle) {
   return String(generatedTitle || "").trim() === String(correctedTitle || "").trim() ? "ACCEPT" : "EDIT";
 }
 
-function v4FeedbackResultPayload(result = {}) {
-  const {
-    thumbnail,
-    correctedTitle,
-    generatedTitle,
-    feedbackMessage,
-    feedbackStatus,
-    persistenceStatus,
-    feedbackSubmissionId,
-    feedbackSubmissionFingerprint,
-    feedbackClientOccurredAt,
-    reviewStartedAt,
-    ...safeResult
-  } = result || {};
+function clientFeedbackSubmissionId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `web_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function pendingV4FeedbackSubmission(result, { action, writerTitle } = {}) {
+  const signature = JSON.stringify([
+    String(result?.recognition_session_id || "").trim(),
+    String(action || "").trim(),
+    String(writerTitle || "").trim()
+  ]);
+  if (!result.pendingFeedbackSubmissionId || result.pendingFeedbackSubmissionSignature !== signature) {
+    result.pendingFeedbackSubmissionId = clientFeedbackSubmissionId();
+    result.pendingFeedbackSubmissionSignature = signature;
+    result.pendingFeedbackOccurredAt = new Date().toISOString();
+  }
   return {
-    ...safeResult,
-    final_title: generatedTitle || result.final_title || result.title || "",
-    resolved_fields: result.resolved_fields || result.resolved || result.fields || {},
-    fields: result.resolved_fields || result.resolved || result.fields || {},
-    field_states: result.field_states || {},
-    internal_field_graph: result.internal_field_graph || {},
-    candidate_control_plane_trace: result.candidate_control_plane_trace || {},
-    retrieval_trace: result.retrieval_trace || result.retrieval || {},
-    open_set_readiness: result.open_set_readiness || {},
-    workflow_sidecars: result.workflow_sidecars || {},
-    provider_result: result.provider_result || {}
+    id: result.pendingFeedbackSubmissionId,
+    occurredAt: result.pendingFeedbackOccurredAt,
+    signature
   };
+}
+
+function clearPendingV4FeedbackSubmission(result, submission = {}) {
+  if (!result || result.pendingFeedbackSubmissionId !== submission.id) return;
+  delete result.pendingFeedbackSubmissionId;
+  delete result.pendingFeedbackSubmissionSignature;
+  delete result.pendingFeedbackOccurredAt;
 }
 
 async function saveFeedbackForResult(result, asset) {
@@ -4070,9 +4071,9 @@ async function saveFeedbackForResult(result, asset) {
   if ((!correctedTitle && !explicitReject) || (!generatedTitle && !writerReviewRequired && !explicitReject)) return false;
 
   const useV4Feedback = isV4Result(result);
-  const feedbackAction = feedbackActionForResult(result, generatedTitle, correctedTitle);
-  const feedbackSubmission = useV4Feedback
-    ? ensureFeedbackSubmissionIdentity(result, { action: feedbackAction, generatedTitle, correctedTitle })
+  const v4Action = useV4Feedback ? feedbackActionForResult(result, generatedTitle, correctedTitle) : "";
+  const v4Submission = useV4Feedback
+    ? pendingV4FeedbackSubmission(result, { action: v4Action, writerTitle: correctedTitle })
     : null;
 
   result.feedbackStatus = "saving";
@@ -4085,17 +4086,16 @@ async function saveFeedbackForResult(result, asset) {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...(feedbackSubmission ? { "x-feedback-submission-id": feedbackSubmission.id } : {})
+        ...(v4Submission ? { "x-feedback-submission-id": v4Submission.id } : {})
       },
       credentials: "same-origin",
       body: JSON.stringify(useV4Feedback ? {
         recognition_session_id: result.recognition_session_id,
-        action: feedbackAction,
-        feedback_submission_id: feedbackSubmission.id,
-        client_occurred_at: feedbackSubmission.clientOccurredAt,
+        feedback_submission_id: v4Submission.id,
+        client_occurred_at: v4Submission.occurredAt,
+        action: v4Action,
         ai_generated_title: generatedTitle,
         writer_final_title: correctedTitle,
-        result_payload: v4FeedbackResultPayload(result)
       } : {
         asset_id: result.asset_id || canonicalAssetId(asset),
         client_asset_ref: asset?.clientAssetRef || asset?.id || `asset-${result.index}`,
@@ -4145,6 +4145,7 @@ async function saveFeedbackForResult(result, asset) {
       if (payload.v4_persistence?.transaction?.saved !== true) {
         throw new Error("V4 审核事务尚未确认入库，请重试。");
       }
+      clearPendingV4FeedbackSubmission(result, v4Submission);
       const canonicalWriterTitle = String(payload.writer_final_title || "").trim();
       if (canonicalWriterTitle) {
         result.correctedTitle = canonicalWriterTitle;
@@ -4154,11 +4155,11 @@ async function saveFeedbackForResult(result, asset) {
         result.title_override = null;
       }
       result.csmNormalization = payload.csm_normalization || null;
-      const rejected = feedbackAction === "REJECT" || String(payload.status || "").toUpperCase() === "REJECTED";
+      const rejected = v4Action === "REJECT" || String(payload.status || "").toUpperCase() === "REJECTED";
       result.feedbackStatus = rejected ? "skipped" : "saved";
       result.persistenceStatus = "persisted";
       result.trainingEligibility = payload.training_eligible === true ? "eligible" : "ineligible";
-      result.feedbackSubmissionId = payload.feedback_submission_id || feedbackSubmission.id;
+      result.feedbackSubmissionId = payload.feedback_submission_id || v4Submission.id;
       result.review_id = payload.feedback_event_id || "";
       result.approved_at = "";
       result.approved_by = "";

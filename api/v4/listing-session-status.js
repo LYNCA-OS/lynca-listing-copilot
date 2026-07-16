@@ -127,6 +127,13 @@ export default async function handler(req, res) {
     return;
   }
   if (!hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_ALL_WORK)) {
+    const ownsSession = String(status.session.operator_id || "").trim() === context.userId
+      || String(status.session.created_by_user_id || "").trim() === context.userId;
+    if (ownsSession) {
+      // Owner can inspect their own session even if assignment metadata is not
+      // populated yet; cross-operator sessions still fall through to assigned
+      // task permission below.
+    } else {
     try {
       requirePermission(context, TENANT_PERMISSIONS.VIEW_ASSIGNED_TASK, {
         assignedUserId: status.session.assigned_to_user_id
@@ -135,6 +142,7 @@ export default async function handler(req, res) {
       // Do not reveal whether an unassigned/cross-assignment session exists.
       sendJson(res, 404, withV4Version({ ok: false, message: "Recognition session not found." }));
       return;
+    }
     }
   }
   const counts = {};
