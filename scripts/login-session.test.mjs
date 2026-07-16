@@ -9,6 +9,10 @@ import {
   readSignedSession,
   timingSafeStringEqual
 } from "../lib/listing-session.mjs";
+import {
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../lib/tenant/index.mjs";
 
 function makeRequest(body, { headers = {} } = {}) {
   const req = Readable.from([JSON.stringify(body)]);
@@ -75,7 +79,14 @@ const previousEnv = {
   METAVERSE_AUTH_SECRET: process.env.METAVERSE_AUTH_SECRET,
   API_RATE_LIMIT_DISABLED: process.env.API_RATE_LIMIT_DISABLED,
   SUPABASE_URL: process.env.SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY,
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_RECOGNITION_FEEDBACK_TABLE: process.env.SUPABASE_RECOGNITION_FEEDBACK_TABLE,
   VERCEL: process.env.VERCEL,
   VERCEL_ENV: process.env.VERCEL_ENV,
   LYNCA_TRUST_PROXY_PROTO: process.env.LYNCA_TRUST_PROXY_PROTO
@@ -278,6 +289,106 @@ try {
   }, lanLogout);
   assert.equal(lanLogout.statusCode, 200);
   assert.doesNotMatch(String(lanLogout.headers["set-cookie"] || ""), /; Secure/);
+
+  const membershipFetch = globalThis.fetch;
+  delete process.env.SUPABASE_URL;
+  delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_SECRET_KEY;
+  delete process.env.SUPABASE_ANON_KEY;
+  delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;
+  delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  process.env.SUPABASE_RECOGNITION_FEEDBACK_TABLE = "recognition_feedback_test";
+  globalThis.fetch = async () => {
+    throw new Error("standalone legacy access must not call Supabase");
+  };
+
+  const standaloneLogin = await loginWith({ username: "metaverse", password: "mtv" }, {
+    headers: {
+      host: "127.0.0.1:3000",
+      origin: "http://127.0.0.1:3000",
+      "sec-fetch-site": "same-origin",
+      "x-forwarded-proto": null
+    }
+  });
+  assert.equal(standaloneLogin.statusCode, 200);
+  assert.doesNotMatch(String(standaloneLogin.headers["set-cookie"] || ""), /; Secure/);
+  const standaloneCookie = String(standaloneLogin.headers["set-cookie"] || "").split(";")[0];
+  for (let poll = 0; poll < 2; poll += 1) {
+    const response = makeResponse();
+    await sessionHandler({ method: "GET", headers: { cookie: standaloneCookie } }, response);
+    assert.equal(response.statusCode, 200);
+    const body = JSON.parse(response.body);
+    assert.equal(body.authenticated, true, "standalone session poll " + (poll + 1) + " must stay authenticated");
+    assert.equal(body.tenant_id, "tenant_legacy");
+    assert.equal(body.user_id, "user_legacy");
+    assert.equal(body.role, "OWNER");
+  }
+  assert.equal(
+    process.env.SUPABASE_RECOGNITION_FEEDBACK_TABLE,
+    "recognition_feedback_test",
+    "a Supabase table-name setting must not disable standalone legacy mode"
+  );
+
+  const standaloneContext = await requireTenantAccess({ headers: { cookie: standaloneCookie } }, {
+    permission: TENANT_PERMISSIONS.MANAGE_TENANT,
+    resourceTenantId: "tenant_legacy"
+  });
+  assert.equal(standaloneContext.tenantId, "tenant_legacy");
+  assert.equal(standaloneContext.userId, "user_legacy");
+  await assert.rejects(
+    () => requireTenantAccess({ headers: { cookie: standaloneCookie } }, {
+      resourceTenantId: "tenant_other"
+    }),
+    (error) => error?.code === "ACCESS_DENIED",
+    "standalone legacy auth must not authorize a non-legacy tenant resource"
+  );
+
+  const nowForForeignSession = Date.now();
+  const foreignToken = createSignedSessionToken({
+    user_id: "user_other",
+    tenant_id: "tenant_other",
+    email: "other@example.test",
+    session_version: 1,
+    sid: crypto.randomUUID(),
+    iat: nowForForeignSession,
+    exp: nowForForeignSession + 60_000
+  }, process.env.METAVERSE_AUTH_SECRET);
+  await assert.rejects(
+    () => requireTenantAccess({
+      headers: { cookie: "lynca_metaverse_session=" + foreignToken }
+    }),
+    (error) => error?.code === "AUTH_CONFIGURATION_ERROR",
+    "a signed non-legacy principal must not inherit standalone legacy access"
+  );
+
+  process.env.SUPABASE_URL = "https://supabase.test";
+  await assert.rejects(
+    () => requireTenantAccess({ headers: { cookie: standaloneCookie } }),
+    (error) => error?.code === "AUTH_CONFIGURATION_ERROR",
+    "partial Supabase configuration must fail closed instead of downgrading to legacy access"
+  );
+  delete process.env.SUPABASE_URL;
+
+  process.env.SUPABASE_ANON_KEY = "test-anon-key";
+  await assert.rejects(
+    () => requireTenantAccess({ headers: { cookie: standaloneCookie } }),
+    (error) => error?.code === "AUTH_CONFIGURATION_ERROR",
+    "an anon-only Supabase declaration must fail closed instead of enabling standalone legacy access"
+  );
+  delete process.env.SUPABASE_ANON_KEY;
+
+  const standalonePassword = process.env.METAVERSE_PASSWORD;
+  delete process.env.METAVERSE_PASSWORD;
+  await assert.rejects(
+    () => requireTenantAccess({ headers: { cookie: standaloneCookie } }),
+    (error) => error?.code === "AUTH_CONFIGURATION_ERROR",
+    "incomplete legacy credentials must fail closed"
+  );
+  process.env.METAVERSE_PASSWORD = standalonePassword;
+  delete process.env.SUPABASE_RECOGNITION_FEEDBACK_TABLE;
+  globalThis.fetch = membershipFetch;
 
   process.env.LYNCA_TRUST_PROXY_PROTO = "true";
   const trustedProxyLogin = await loginWith({ username: "metaverse", password: "mtv" }, {

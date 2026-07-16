@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { EventEmitter } from "node:events";
+import { Readable } from "node:stream";
 import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 import sessionStatusHandler from "../api/v4/listing-session-status.js";
 import enqueueHandler from "../api/v4/listing-job-enqueue.js";
-import exportHandler from "../api/v4/listing-export-workbook.js";
+import exportHandler, { writerExportFailureResponse } from "../api/v4/listing-export-workbook.js";
+import feedbackHandler from "../api/v4/listing-feedback.js";
 import recognitionHandler from "../api/v4/listing-copilot-title.js";
 
 const apiPaths = [
@@ -69,6 +70,22 @@ assert.match(exportSource, /TENANT_PERMISSIONS\.EXPORT_DATA/);
 assert.match(exportSource, /tenant_id: `eq\.\$\{tenantId\}`/);
 assert.match(exportSource, /tenantId: context\.tenantId,[\s\S]*exportedBy: context\.userId/);
 assert.match(exportSource, /objectPath\.startsWith\(prefix\)/);
+const exportLimitFailure = writerExportFailureResponse(Object.assign(new Error("export image budget exceeded"), {
+  code: "WRITER_EXPORT_IMAGE_BUDGET_EXCEEDED",
+  statusCode: 413,
+  retryable: false
+}));
+assert.equal(exportLimitFailure.status, 413);
+assert.equal(exportLimitFailure.body.error_type, "WRITER_EXPORT_IMAGE_BUDGET_EXCEEDED");
+assert.equal(exportLimitFailure.body.retryable, false);
+const exportTimeoutFailure = writerExportFailureResponse(Object.assign(new Error("export image download timed out"), {
+  code: "WRITER_EXPORT_IMAGE_DOWNLOAD_TIMEOUT",
+  statusCode: 504,
+  retryable: true
+}));
+assert.equal(exportTimeoutFailure.status, 504);
+assert.equal(exportTimeoutFailure.body.error_type, "WRITER_EXPORT_IMAGE_DOWNLOAD_TIMEOUT");
+assert.equal(exportTimeoutFailure.body.retryable, true);
 
 const prewarmSource = sources["api/v4/listing-job-prewarm.js"];
 assert.match(prewarmSource, /TENANT_PERMISSIONS\.CREATE_JOB/);
@@ -172,21 +189,22 @@ async function callGet(handler, { url, headers }) {
 }
 
 async function callPost(handler, { headers, payload = {} }) {
-  const req = new EventEmitter();
+  const req = Readable.from([JSON.stringify(payload)]);
   req.method = "POST";
   req.url = "/";
   req.headers = headers;
   const res = responseRecorder();
-  const running = handler(req, res);
-  queueMicrotask(() => {
-    req.emit("data", JSON.stringify(payload));
-    req.emit("end");
-  });
-  await running;
+  await handler(req, res);
   return { statusCode: res.statusCode, body: JSON.parse(res.body || "null") };
 }
 
-function mockTenantFetch({ role, userId, assignedUserId = userId, observedDataUrls = [] }) {
+function mockTenantFetch({
+  role,
+  userId,
+  assignedUserId = userId,
+  observedDataUrls = [],
+  observedPersistenceCalls = []
+}) {
   return async (input, init = {}) => {
     const url = new URL(String(input));
     if (url.pathname === "/rest/v1/tenant_members") {
@@ -198,6 +216,21 @@ function mockTenantFetch({ role, userId, assignedUserId = userId, observedDataUr
       const body = init.body ? JSON.parse(init.body) : {};
       assert.equal(body.tenant_id, "tenant_a", "operational telemetry must inherit trusted tenant context");
       return jsonResponse([], 201);
+    }
+    if (url.pathname === "/rest/v1/rpc/persist_v4_writer_feedback_transaction") {
+      const body = JSON.parse(init.body || "{}");
+      observedPersistenceCalls.push(body);
+      assert.equal(body.p_tenant_id, "tenant_a");
+      assert.equal(body.p_operator_id, userId);
+      assert.equal(body.p_feedback_event.tenant_id, "tenant_a");
+      assert.equal(body.p_learning_event.tenant_id, "tenant_a");
+      return jsonResponse([{
+        saved: true,
+        status: body.p_session_status,
+        feedback_event_id: body.p_feedback_event.id,
+        learning_event_id: body.p_learning_event.id,
+        writer_final_title: body.p_feedback_event.writer_final_title
+      }]);
     }
     observedDataUrls.push(url);
     assert.equal(url.searchParams.get("tenant_id"), "eq.tenant_a", "every service-role data read must carry tenant scope");
@@ -212,7 +245,9 @@ function mockTenantFetch({ role, userId, assignedUserId = userId, observedDataUr
         l2_status: "READY",
         l2_title: "Tenant-safe title",
         final_title: "Tenant-safe title",
-        provider_result_summary: {}
+        provider_result_summary: {
+          title_length_policy: { max_length: 80 }
+        }
       }]);
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
@@ -235,6 +270,52 @@ try {
   assert.equal(assigned.statusCode, 200);
   assert.equal("tenant_id" in assigned.body.session, false, "Writer DTO must not echo internal tenant columns");
   assert.ok(observedDataUrls.every((url) => url.searchParams.get("tenant_id") === "eq.tenant_a"));
+
+  const oversizedFeedbackUrls = [];
+  const oversizedPersistenceCalls = [];
+  globalThis.fetch = mockTenantFetch({
+    role: "WRITER",
+    userId: "user_writer",
+    assignedUserId: "user_writer",
+    observedDataUrls: oversizedFeedbackUrls,
+    observedPersistenceCalls: oversizedPersistenceCalls
+  });
+  const oversizedFeedback = await callPost(feedbackHandler, {
+    headers: { cookie: sessionCookie({ userId: "user_writer" }), "x-request-id": "req-oversized-feedback" },
+    payload: {
+      recognition_session_id: "session_target",
+      action: "EDIT",
+      writer_final_title: "X".repeat(81)
+    }
+  });
+  assert.equal(oversizedFeedback.statusCode, 400, "oversized listing titles must use the existing invalid-payload response");
+  assert.equal(oversizedFeedback.body.error, "feedback_writer_title_exceeds_80_characters");
+  assert.equal(oversizedPersistenceCalls.length, 0, "oversized feedback must be rejected before any persistence call");
+  assert.equal(oversizedFeedbackUrls.some((url) => /feedback|learning/.test(url.pathname)), false);
+
+  const validPersistenceCalls = [];
+  globalThis.fetch = mockTenantFetch({
+    role: "WRITER",
+    userId: "user_writer",
+    assignedUserId: "user_writer",
+    observedPersistenceCalls: validPersistenceCalls
+  });
+  const validFeedback = await callPost(feedbackHandler, {
+    headers: { cookie: sessionCookie({ userId: "user_writer" }), "x-request-id": "req-valid-feedback" },
+    payload: {
+      recognition_session_id: "session_target",
+      feedback_submission_id: "submission-valid-title-0001",
+      action: "EDIT",
+      writer_final_title: "Writer safe title"
+    }
+  });
+  assert.equal(validFeedback.statusCode, 200);
+  assert.equal(validFeedback.body.ok, true);
+  assert.equal(validFeedback.body.writer_final_title, "Writer safe title");
+  assert.deepEqual(validFeedback.body.title_diff.added, ["Writer", "safe"]);
+  assert.deepEqual(validFeedback.body.title_diff.removed, ["Tenant-safe"]);
+  assert.equal(validPersistenceCalls.length, 1, "valid feedback must retain its single atomic persistence call");
+  assert.equal(validPersistenceCalls[0].p_feedback_event.writer_final_title, "Writer safe title");
 
   globalThis.fetch = mockTenantFetch({
     role: "WRITER",

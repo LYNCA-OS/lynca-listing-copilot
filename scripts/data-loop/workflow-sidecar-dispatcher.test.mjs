@@ -492,6 +492,38 @@ await dispatchWorkflowSidecars({
 });
 assert.deepEqual(hostileSidecarCalls, [], "an unallowlisted sidecar origin must receive neither a request nor a global secret");
 
+for (const redirectStatus of [307, 308]) {
+  const initialUrl = "https://redirector.internal/v1/traces";
+  const redirectLocation = "http://127.0.0.1:54321/private-sidecar-target";
+  const redirectCalls = [];
+  const redirectBlocked = await dispatchWorkflowSidecars({
+    event,
+    env: {
+      DATA_LOOP_SIDECARS_ENABLED: "true",
+      DATA_LOOP_SIDECAR_ALLOWED_ORIGINS: "https://redirector.internal",
+      PHOENIX_COLLECTOR_ENDPOINT: initialUrl
+    },
+    fetchImpl: async function simulatedRedirectFetch(url, init = {}) {
+      const requestUrl = String(url);
+      redirectCalls.push({ url: requestUrl, redirect: init.redirect || "follow" });
+      if (requestUrl === initialUrl) {
+        if (init.redirect !== "manual") {
+          return simulatedRedirectFetch(redirectLocation, init);
+        }
+        return {
+          ...jsonResponse(redirectStatus, {}),
+          headers: new Headers({ location: redirectLocation })
+        };
+      }
+      return jsonResponse(200, { reached_private_target: true });
+    }
+  });
+
+  assert.equal(redirectBlocked.phoenix.status, workflowSidecarStatuses.FAILED);
+  assert.equal(redirectBlocked.phoenix.reason, `HTTP ${redirectStatus} redirect_not_allowed`);
+  assert.deepEqual(redirectCalls, [{ url: initialUrl, redirect: "manual" }], `${redirectStatus} redirects must not reach Location`);
+}
+
 const failureSafe = await attachWorkflowSidecarsToListingResult({
   result,
   payload,

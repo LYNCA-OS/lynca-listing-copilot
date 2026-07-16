@@ -23,6 +23,34 @@ assert.equal(oversized.code, "REQUEST_BODY_TOO_LARGE");
 assert.equal(requestPayloadErrorStatus(oversized), 413);
 assert.equal(requestPayloadErrorStatus(new SyntaxError("bad json")), 400);
 
+let releaseAuth;
+const authGate = new Promise((resolve) => {
+  releaseAuth = resolve;
+});
+const delayedBodyCall = callJsonHandler(async (req, res) => {
+  // Production handlers authenticate before they subscribe to the body.
+  await authGate;
+  const payload = await readJsonPayload(req);
+  res.statusCode = 200;
+  res.end(JSON.stringify(payload));
+}, {
+  payload: { after_auth: true }
+});
+// Let callJsonHandler finish constructing the delegated request before auth
+// completes. The body must stay buffered until the handler starts reading it.
+await Promise.resolve();
+releaseAuth();
+let bodyTimeout;
+const delayedBodyResponse = await Promise.race([
+  delayedBodyCall,
+  new Promise((_, reject) => {
+    bodyTimeout = setTimeout(() => reject(new Error("delegated request body was lost")), 1000);
+  })
+]);
+clearTimeout(bodyTimeout);
+assert.equal(delayedBodyResponse.statusCode, 200);
+assert.deepEqual(delayedBodyResponse.body, { after_auth: true });
+
 const controller = new AbortController();
 let observedSignal = null;
 const abortableHandlerCall = callJsonHandler(async (req, res) => {

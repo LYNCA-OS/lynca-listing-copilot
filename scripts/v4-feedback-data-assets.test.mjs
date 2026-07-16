@@ -15,7 +15,11 @@ import {
 import { buildGoldenTitleRelease } from "../lib/listing/evaluation/golden-title-release.mjs";
 import { buildDataIdentitySnapshot } from "../lib/listing/feedback/data-identity.mjs";
 import { buildAuthoritativeRecognitionResult } from "../lib/listing/feedback/feedback-capture.mjs";
-import { buildTitleDiff } from "../lib/listing/feedback/title-diff.mjs";
+import {
+  TITLE_DIFF_MAX_INPUT_CHARACTERS,
+  TITLE_DIFF_MAX_TOKENS,
+  buildTitleDiff
+} from "../lib/listing/feedback/title-diff.mjs";
 import { buildDailyLearningExport, writeDailyLearningExport } from "../lib/listing/learning/daily-learning-export.mjs";
 import { loadSupabaseDailyLearningBundle } from "../lib/listing/learning/supabase-daily-learning-source.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
@@ -27,6 +31,27 @@ const diff = buildTitleDiff(aiTitle, writerTitle);
 assert.deepEqual(diff.added, ["Lionel", "Refractor", "/50", "PSA10"]);
 assert.deepEqual(diff.removed, [], "Messi is retained and must not be reported as lexically removed");
 assert.deepEqual(buildTitleDiff("Messi Messi Auto", "Messi Auto").removed, ["Messi"]);
+
+const hardLimitTitle = "A".repeat(TITLE_DIFF_MAX_INPUT_CHARACTERS);
+assert.equal(
+  buildTitleDiff(hardLimitTitle, hardLimitTitle).operations[0].before[0].token,
+  hardLimitTitle,
+  "the hard character boundary remains a valid one-token title"
+);
+assert.throws(
+  () => buildTitleDiff(`${hardLimitTitle}A`, "safe title"),
+  (error) => error?.code === "TITLE_DIFF_CHARACTER_LIMIT_EXCEEDED"
+    && error?.actual === TITLE_DIFF_MAX_INPUT_CHARACTERS + 1,
+  "title diff must reject oversized text before token materialization or matrix allocation"
+);
+const excessiveTokenTitle = Array.from({ length: TITLE_DIFF_MAX_TOKENS + 1 }, () => "x").join(" ");
+assert.ok(excessiveTokenTitle.length <= TITLE_DIFF_MAX_INPUT_CHARACTERS);
+assert.throws(
+  () => buildTitleDiff(excessiveTokenTitle, "safe title"),
+  (error) => error?.code === "TITLE_DIFF_TOKEN_LIMIT_EXCEEDED"
+    && error?.actual === TITLE_DIFF_MAX_TOKENS + 1,
+  "title diff must reject excessive token cardinality before matrix allocation"
+);
 
 const semExtraction = buildWriterTitleSemCandidate(`2024 Topps Chrome ${writerTitle}`);
 assert.equal(semExtraction.validation_status, "PENDING");

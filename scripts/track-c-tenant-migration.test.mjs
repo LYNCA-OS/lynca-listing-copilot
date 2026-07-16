@@ -108,6 +108,8 @@ for (const signature of [
 assert.match(preflightSource, /serviceOnlyFactTables/);
 assert.match(preflightSource, /serviceOnlyFunctions/);
 assert.match(preflightSource, /requiredTriggers/);
+assert.match(preflightSource, /v4_preingestion_bundles_tenant_id_uidx/);
+assert.match(preflightSource, /track_c_v4_recognition_sessions_tenant_preingestion_bundle_id_f/);
 assert.match(preflightSource, /validated_sem_without_supported_evidence/);
 assert.match(preflightSource, /browser_denied_service_insert_only/);
 assert.match(preflightSource, /service_role_execute_only/);
@@ -219,6 +221,11 @@ assertColumns(batches, [
 assert.match(sql, /v4_recognition_jobs_tenant_batch_fkey/);
 assert.match(sql, /v4_recognition_sessions_tenant_id_id_uidx/);
 assert.match(sql, /on public\.v4_recognition_sessions\(tenant_id, id\)/);
+assert.match(
+  sql,
+  /\('v4_recognition_sessions', 'preingestion_bundle_id', 'v4_preingestion_bundles', 'id', 'SET NULL'\)/,
+  "V4 session-to-preingestion lineage must have a tenant-bound composite FK"
+);
 assert.match(sql, /v4_recognition_jobs_tenant_id_id_uidx/);
 assert.match(sql, /on public\.v4_recognition_jobs\(tenant_id, id\)/);
 assert.match(sql, /preingestion_bundles_tenant_asset_source_version_uidx/);

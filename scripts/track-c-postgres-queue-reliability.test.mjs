@@ -3,6 +3,12 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import pg from "pg";
+import {
+  assertTrackCTestConnectedDatabase,
+  assertTrackCTestDatabaseTarget,
+  destructiveConfirmationEnv,
+  destructiveConfirmationValue
+} from "./track-c-postgres-target-guard.mjs";
 
 const { Pool } = pg;
 const databaseUrl = String(process.env.TRACK_C_TEST_DATABASE_URL || "").trim();
@@ -17,9 +23,27 @@ if (!databaseUrl) {
   process.exit(0);
 }
 
+let databaseTarget;
+try {
+  databaseTarget = assertTrackCTestDatabaseTarget(databaseUrl, process.env);
+} catch (error) {
+  console.error(JSON.stringify({
+    ok: false,
+    skipped: false,
+    scope: "postgres_queue_reliability",
+    code: error?.code || "track_c_test_database_target_rejected",
+    reason: "Refusing to run the destructive PostgreSQL reliability test against this target.",
+    ...(error?.code === "track_c_test_database_confirmation_required"
+      ? { destructive_confirmation: `${destructiveConfirmationEnv}=${destructiveConfirmationValue}` }
+      : {})
+  }, null, 2));
+  process.exit(1);
+}
+
 const runSuffix = `${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`;
 const tenantId = `tenant_tcpg_${runSuffix}`;
 const idPrefix = `tcpg_${runSuffix}`;
+const recognitionSessionId = `${idPrefix}_session`;
 const mainBatchId = `batch_${idPrefix}_main`;
 const leaseBatchId = `batch_${idPrefix}_lease`;
 const retryBatchId = `batch_${idPrefix}_retry`;
@@ -48,9 +72,12 @@ function count(value) {
 }
 
 async function preflight() {
+  const identity = await pool.query("select pg_catalog.current_database() as database_name");
+  assertTrackCTestConnectedDatabase(databaseTarget, identity.rows[0]?.database_name);
   const objects = await pool.query(`
     select
       pg_catalog.to_regclass('public.tenants') as tenants_table,
+      pg_catalog.to_regclass('public.v4_recognition_sessions') as sessions_table,
       pg_catalog.to_regclass('public.v4_recognition_batches') as batches_table,
       pg_catalog.to_regclass('public.v4_recognition_jobs') as jobs_table,
       pg_catalog.to_regclass('public.job_attempt_events') as attempts_table,
@@ -70,8 +97,11 @@ async function preflight() {
     assert.ok(value, `Track C PostgreSQL preflight failed: missing ${name}`);
   }
 
-  const requiredColumns = new Set([
+  const requiredJobColumns = new Set([
     "tenant_id",
+    "operator_id",
+    "asset_id",
+    "recognition_session_id",
     "lane",
     "stage_result",
     "attempt_count",
@@ -92,12 +122,49 @@ async function preflight() {
       and table_name = 'v4_recognition_jobs'
   `);
   const availableColumns = new Set(columns.rows.map((row) => row.column_name));
-  const missingColumns = [...requiredColumns].filter((column) => !availableColumns.has(column));
+  const missingColumns = [...requiredJobColumns].filter((column) => !availableColumns.has(column));
   assert.deepEqual(
     missingColumns,
     [],
     `Track C PostgreSQL preflight failed: missing queue columns ${missingColumns.join(", ")}`
   );
+
+  const sessionColumns = await pool.query(`
+    select column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'v4_recognition_sessions'
+  `);
+  const availableSessionColumns = new Set(sessionColumns.rows.map((row) => row.column_name));
+  const missingSessionColumns = ["id", "tenant_id", "operator_id", "asset_id"]
+    .filter((column) => !availableSessionColumns.has(column));
+  assert.deepEqual(
+    missingSessionColumns,
+    [],
+    `Track C PostgreSQL preflight failed: missing session identity columns ${missingSessionColumns.join(", ")}`
+  );
+}
+
+async function createRecognitionSession() {
+  await pool.query(`
+    insert into public.v4_recognition_sessions (
+      id,
+      schema_version,
+      status,
+      tenant_id,
+      request_summary
+    ) values (
+      $1,
+      'v4-recognition-session-v1',
+      'QUEUED',
+      $2,
+      pg_catalog.jsonb_build_object(
+        'integration_test', true,
+        'purpose', 'postgres_queue_reliability',
+        'run_suffix', $3::text
+      )
+    )
+  `, [recognitionSessionId, tenantId, runSuffix]);
 }
 
 async function createBatch(batchId, itemCount, purpose) {
@@ -123,6 +190,7 @@ async function insertJob({ id, batchId, priority = 100, lane = "background" }) {
       schema_version,
       batch_id,
       tenant_id,
+      recognition_session_id,
       job_type,
       provider_id,
       status,
@@ -138,18 +206,23 @@ async function insertJob({ id, batchId, priority = 100, lane = "background" }) {
       'v4-recognition-session-v1',
       $2,
       $3,
+      $4,
       'FINAL_ASSISTED_TITLE',
       'openai_legacy',
       'QUEUED',
-      $4,
       $5,
-      pg_catalog.jsonb_build_object('integration_test', true, 'run_suffix', $6::text),
+      $6,
+      pg_catalog.jsonb_build_object(
+        'integration_test', true,
+        'run_suffix', $7::text,
+        'recognition_session_id', $4::text
+      ),
       4,
       pg_catalog.clock_timestamp() - interval '1 second',
       pg_catalog.clock_timestamp(),
       pg_catalog.clock_timestamp()
     )
-  `, [id, batchId, tenantId, priority, lane, runSuffix]);
+  `, [id, batchId, tenantId, recognitionSessionId, priority, lane, runSuffix]);
 }
 
 async function claimJobs({ limit = 25, workerId, leaseSeconds = 300, lane = null }) {
@@ -256,6 +329,11 @@ async function cleanup() {
       where tenant_id = $1
     `, [tenantId]);
     await pool.query(`
+      delete from public.v4_recognition_sessions
+      where tenant_id = $1
+        and id = $2
+    `, [tenantId, recognitionSessionId]);
+    await pool.query(`
       delete from public.tenants
       where id = $1
     `, [tenantId]);
@@ -278,6 +356,7 @@ try {
     values ($1, $2, 'pilot', 'ACTIVE')
   `, [tenantId, `Track C PostgreSQL reliability ${runSuffix}`]);
   createdTenant = true;
+  await createRecognitionSession();
 
   await createBatch(mainBatchId, 1_000, "one_thousand_job_claim_and_completion");
   const inserted = await pool.query(`
@@ -286,6 +365,7 @@ try {
       schema_version,
       batch_id,
       tenant_id,
+      recognition_session_id,
       job_type,
       provider_id,
       status,
@@ -302,6 +382,7 @@ try {
       'v4-recognition-session-v1',
       $2,
       $3,
+      $4,
       'FINAL_ASSISTED_TITLE',
       'openai_legacy',
       'QUEUED',
@@ -310,7 +391,8 @@ try {
       pg_catalog.jsonb_build_object(
         'integration_test', true,
         'ordinal', series.job_no,
-        'run_suffix', $4::text
+        'run_suffix', $5::text,
+        'recognition_session_id', $4::text
       ),
       4,
       pg_catalog.clock_timestamp() - interval '1 second',
@@ -318,21 +400,26 @@ try {
       pg_catalog.clock_timestamp()
     from pg_catalog.generate_series(1, 1000) as series(job_no)
     returning id
-  `, [idPrefix, mainBatchId, tenantId, runSuffix]);
+  `, [idPrefix, mainBatchId, tenantId, recognitionSessionId, runSuffix]);
   assert.equal(inserted.rows.length, 1_000, "all 1000 jobs must be durably inserted");
 
   const persisted = await pool.query(`
     select
       count(*) as job_count,
       count(*) filter (where status = 'QUEUED') as queued_count,
-      count(distinct id) as distinct_job_count
+      count(distinct id) as distinct_job_count,
+      count(*) filter (
+        where recognition_session_id = $3
+          and payload ->> 'recognition_session_id' = $3
+      ) as session_identity_count
     from public.v4_recognition_jobs
     where tenant_id = $1
       and batch_id = $2
-  `, [tenantId, mainBatchId]);
+  `, [tenantId, mainBatchId, recognitionSessionId]);
   assert.equal(count(persisted.rows[0].job_count), 1_000);
   assert.equal(count(persisted.rows[0].queued_count), 1_000);
   assert.equal(count(persisted.rows[0].distinct_job_count), 1_000);
+  assert.equal(count(persisted.rows[0].session_identity_count), 1_000);
 
   const claimedIds = [];
   let claimWave = 0;

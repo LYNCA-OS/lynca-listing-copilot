@@ -5,6 +5,16 @@ import { persistV4PreingestionBundle } from "../../lib/listing/v4/session/sessio
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../../lib/tenant/index.mjs";
 
+export function v4PreingestionResponseStatus(statusCode, v4Saved) {
+  const normalizedStatus = Number(statusCode);
+  const delegatedStatus = Number.isInteger(normalizedStatus) && normalizedStatus >= 100
+    ? normalizedStatus
+    : 500;
+  return delegatedStatus >= 200 && delegatedStatus < 300 && v4Saved !== true
+    ? 503
+    : delegatedStatus;
+}
+
 export default async function handler(req, res) {
   instrumentProductionRequest(req, res, { api: "/api/v4/listing-preingest" });
   if (req.method !== "POST") {
@@ -40,21 +50,42 @@ export default async function handler(req, res) {
     }
   });
   const body = v2Response.body || {};
-  const bundleId = body.bundle_id || payload.preingestion_bundle_id || payload.preingestionBundleId || "";
-  const v4Persistence = bundleId
+  const delegatedStatusCode = Number(v2Response.statusCode);
+  const statusCode = Number.isInteger(delegatedStatusCode) && delegatedStatusCode >= 100
+    ? delegatedStatusCode
+    : 500;
+  const serverBundleId = typeof body.bundle_id === "string" ? body.bundle_id.trim() : "";
+  const delegatedSaved = statusCode >= 200
+    && statusCode < 300
+    && body.ok !== false
+    && body.saved === true
+    && Boolean(serverBundleId);
+  const v4Persistence = delegatedSaved
     ? await persistV4PreingestionBundle({
-      bundleId,
+      bundleId: serverBundleId,
       tenantId: context.tenantId,
       assetId: payload.asset_id || payload.assetId || null,
       bundle: body,
       summary: body.preprocessing_summary || {}
     })
-    : { saved: false, error: "missing_bundle_id" };
+    : {
+        saved: false,
+        error: statusCode < 200 || statusCode >= 300 || body.ok === false
+          ? "delegated_preingestion_failed"
+          : body.saved !== true
+            ? "delegated_preingestion_not_saved"
+            : "missing_server_bundle_id"
+      };
+  const v4Saved = delegatedSaved && v4Persistence.saved === true;
+  // A 2xx delegated response without both durable layers is not a successful
+  // V4 contract. In standalone mode V2 can legitimately report saved=false,
+  // which must not be exposed as an HTTP success by the V4 API.
+  const responseStatusCode = v4PreingestionResponseStatus(statusCode, v4Saved);
 
-  sendJson(res, v2Response.statusCode || 200, withV4Version({
+  sendJson(res, responseStatusCode, withV4Version({
     ...body,
-    ok: body.ok !== false && v2Response.statusCode >= 200 && v2Response.statusCode < 300,
-    v4_preingestion_bundle_id: bundleId || null,
+    ok: v4Saved,
+    v4_preingestion_bundle_id: v4Saved ? serverBundleId : null,
     v4_persistence: { preingestion_bundle: v4Persistence }
   }));
 }

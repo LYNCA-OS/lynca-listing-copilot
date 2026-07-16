@@ -1467,6 +1467,7 @@ begin
       ('listing_publish_jobs', 'review_id', 'listing_reviews', 'id', 'CASCADE'),
       ('preingestion_jobs', 'bundle_id', 'preingestion_bundles', 'bundle_id', 'CASCADE'),
       ('preingestion_evidence_patches', 'bundle_id', 'preingestion_bundles', 'bundle_id', 'CASCADE'),
+      ('v4_recognition_sessions', 'preingestion_bundle_id', 'v4_preingestion_bundles', 'id', 'SET NULL'),
       ('v4_field_evidence', 'recognition_session_id', 'v4_recognition_sessions', 'id', 'CASCADE'),
       ('v4_candidate_traces', 'recognition_session_id', 'v4_recognition_sessions', 'id', 'CASCADE'),
       ('v4_writer_feedback_events', 'recognition_session_id', 'v4_recognition_sessions', 'id', 'CASCADE'),

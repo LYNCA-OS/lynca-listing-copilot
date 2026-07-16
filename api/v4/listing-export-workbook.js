@@ -17,6 +17,32 @@ function safeError(error) {
   return String(error?.message || error || "unknown_error").slice(0, 280);
 }
 
+export function writerExportFailureResponse(error) {
+  const message = safeError(error);
+  const explicitStatus = Number(error?.statusCode);
+  if ([413, 504].includes(explicitStatus)) {
+    return {
+      status: explicitStatus,
+      body: withV4Version({
+        ok: false,
+        retryable: error?.retryable === true,
+        message,
+        error_type: String(error?.code || "WRITER_EXPORT_FAILED")
+      })
+    };
+  }
+  const clientError = /missing|invalid|limited|no completed/i.test(message);
+  return {
+    status: clientError ? 400 : 503,
+    body: withV4Version({
+      ok: false,
+      retryable: !clientError,
+      message,
+      error_type: "WRITER_EXPORT_FAILED"
+    })
+  };
+}
+
 async function writerExportSchemaReadiness(tenantId, env = process.env) {
   const [batches, items] = await Promise.all([
     readV4Rows({
@@ -168,13 +194,7 @@ export default async function handler(req, res) {
     });
     sendJson(res, 200, withV4Version(result));
   } catch (error) {
-    const message = safeError(error);
-    const clientError = /missing|invalid|limited|no completed/i.test(message);
-    sendJson(res, clientError ? 400 : 503, withV4Version({
-      ok: false,
-      retryable: !clientError,
-      message,
-      error_type: "WRITER_EXPORT_FAILED"
-    }));
+    const failure = writerExportFailureResponse(error);
+    sendJson(res, failure.status, failure.body);
   }
 }

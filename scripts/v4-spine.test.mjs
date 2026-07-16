@@ -32,10 +32,12 @@ import {
   checkV4Tables,
   createV4RecognitionSession,
   persistV4CandidateTrace,
+  persistV4FastScoutCache,
   persistV4FieldEvidence,
   persistV4LearningEvent,
   persistV4NonCriticalArtifactsAtomic,
   persistV4WriterFeedbackTransaction,
+  readV4FastScoutCache,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
 import {
@@ -1629,6 +1631,106 @@ const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role"
 };
+
+const fastScoutWriteCalls = [];
+const fastScoutWrite = await persistV4FastScoutCache({
+  cache: {
+    id: "fast-scout-tenant-a",
+    tenant_id: "tenant-a",
+    asset_id: "asset-1",
+    scout_fields: { serial_number: "2/3" }
+  },
+  env,
+  fetchImpl: async (url, init = {}) => {
+    fastScoutWriteCalls.push({ url: new URL(String(url)), body: JSON.parse(init.body) });
+    return {
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify([JSON.parse(init.body)])
+    };
+  }
+});
+assert.equal(fastScoutWrite.saved, true);
+assert.equal(fastScoutWrite.cache_backend, "v4_fast_scout_cache");
+assert.equal(fastScoutWriteCalls[0].body.tenant_id, "tenant-a");
+assert.equal(fastScoutWriteCalls[0].url.searchParams.get("on_conflict"), "id");
+
+const fastScoutFallbackCalls = [];
+const fastScoutFallback = await persistV4FastScoutCache({
+  cache: {
+    id: "fast-scout-fallback-tenant-a",
+    tenant_id: "tenant-a",
+    asset_id: "asset-1",
+    scout_fields: { grade: "PSA 10" }
+  },
+  env,
+  fetchImpl: async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    fastScoutFallbackCalls.push({ url: parsed, body: JSON.parse(init.body) });
+    if (parsed.pathname.endsWith("/v4_fast_scout_cache")) {
+      return { ok: false, status: 404, text: async () => "missing table" };
+    }
+    return {
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify([JSON.parse(init.body)])
+    };
+  }
+});
+assert.equal(fastScoutFallback.saved, true);
+assert.equal(fastScoutFallback.cache_backend, "v4_preingestion_bundles");
+assert.equal(fastScoutFallbackCalls[1].body.tenant_id, "tenant-a");
+assert.equal(fastScoutFallbackCalls[1].body.bundle.cache.tenant_id, "tenant-a");
+assert.equal(fastScoutFallbackCalls[1].url.searchParams.get("on_conflict"), "tenant_id,id");
+
+const fastScoutReadCalls = [];
+const fastScoutRead = await readV4FastScoutCache({
+  cacheId: "fast-scout-fallback-tenant-a",
+  tenantId: "tenant-a",
+  env,
+  fetchImpl: async (url) => {
+    const parsed = new URL(String(url));
+    fastScoutReadCalls.push(parsed);
+    const payload = parsed.pathname.endsWith("/v4_fast_scout_cache")
+      ? []
+      : [{
+          id: "fast-scout-fallback-tenant-a",
+          bundle: { cache: { id: "fast-scout-fallback-tenant-a", tenant_id: "tenant-a" } },
+          status: "FAST_SCOUT_CACHE"
+        }];
+    return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+  }
+});
+assert.equal(fastScoutRead.ok, true);
+assert.equal(fastScoutRead.row.tenant_id, "tenant-a");
+assert.equal(fastScoutReadCalls.length, 2);
+assert.ok(fastScoutReadCalls.every((url) => url.searchParams.get("tenant_id") === "eq.tenant-a"));
+
+let tenantlessFastScoutFetches = 0;
+assert.deepEqual(
+  await persistV4FastScoutCache({
+    cache: { id: "tenantless-cache" },
+    env,
+    fetchImpl: async () => {
+      tenantlessFastScoutFetches += 1;
+      throw new Error("tenantless write must not reach Supabase");
+    }
+  }),
+  { saved: false, error: "missing_tenant_id" }
+);
+assert.deepEqual(
+  await readV4FastScoutCache({
+    cacheId: "tenantless-cache",
+    env,
+    fetchImpl: async () => {
+      tenantlessFastScoutFetches += 1;
+      throw new Error("tenantless read must not reach Supabase");
+    }
+  }),
+  { ok: false, row: null, error: "missing_tenant_id" }
+);
+assert.equal(tenantlessFastScoutFetches, 0);
+
 await createV4RecognitionSession({
   sessionId: "v4sess-test",
   payload: { asset_id: "asset-1" },

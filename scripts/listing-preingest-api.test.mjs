@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-preingest.js";
+import v4Handler, { v4PreingestionResponseStatus } from "../api/v4/listing-preingest.js";
 import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
@@ -9,6 +10,13 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
 process.env.LISTING_IMAGE_BUCKET = "listing-card-images";
 process.env.LISTING_IMAGE_SIGNED_URL_TTL_SECONDS = "600";
 const assetId = "asset_22222222-2222-4222-8222-222222222222";
+const missingAssetId = "asset_33333333-3333-4333-8333-333333333333";
+
+assert.equal(v4PreingestionResponseStatus(200, false), 503);
+assert.equal(v4PreingestionResponseStatus(201, false), 503);
+assert.equal(v4PreingestionResponseStatus(200, true), 200);
+assert.equal(v4PreingestionResponseStatus(404, false), 404);
+assert.equal(v4PreingestionResponseStatus(undefined, false), 500);
 
 function sessionCookie() {
   const token = createListingSessionToken({
@@ -28,7 +36,7 @@ function jsonResponse(payload, status = 200) {
   };
 }
 
-async function callApi(payload) {
+async function callApi(payload, targetHandler = handler) {
   const req = new EventEmitter();
   req.method = "POST";
   req.headers = { cookie: sessionCookie() };
@@ -43,7 +51,7 @@ async function callApi(payload) {
       this.body = value;
     }
   };
-  const promise = handler(req, res);
+  const promise = targetHandler(req, res);
   setTimeout(() => {
     req.emit("data", JSON.stringify(payload));
     req.emit("end");
@@ -95,6 +103,8 @@ const verificationRows = [
 ];
 
 const calls = [];
+const v4BundleWrites = [];
+let failV4BundleWrite = false;
 let bundleWrite = null;
 let jobsWrite = null;
 globalThis.fetch = async (url, init = {}) => {
@@ -127,8 +137,10 @@ globalThis.fetch = async (url, init = {}) => {
   if (parsed.pathname.endsWith("/listing_assets")) {
     assert.equal(init.method, undefined);
     assert.equal(parsed.searchParams.get("tenant_id"), "eq.tenant_a");
-    assert.equal(parsed.searchParams.get("id"), `eq.${assetId}`);
-    return jsonResponse([{ tenant_id: "tenant_a", id: assetId }]);
+    const requestedAssetId = parsed.searchParams.get("id")?.slice(3) || "";
+    return jsonResponse(requestedAssetId === assetId
+      ? [{ tenant_id: "tenant_a", id: assetId }]
+      : []);
   }
 
   if (parsed.pathname.endsWith("/image_derived_assets")) {
@@ -139,6 +151,16 @@ globalThis.fetch = async (url, init = {}) => {
     return jsonResponse({
       signedURL: "/object/sign/listing-card-images/read-token"
     });
+  }
+
+  if (parsed.pathname.endsWith("/v4_preingestion_bundles")) {
+    const row = JSON.parse(init.body);
+    v4BundleWrites.push({
+      row,
+      onConflict: parsed.searchParams.get("on_conflict")
+    });
+    if (failV4BundleWrite) return jsonResponse({ message: "temporary V4 write failure" }, 503);
+    return jsonResponse([row], 201);
   }
 
   if (parsed.pathname.endsWith("/preingestion_bundles")) {
@@ -227,6 +249,54 @@ assert.equal(
   signedCallsBeforeFastPath,
   "verified uploads must be able to skip redundant pre-ingestion signing"
 );
+
+// A failed delegated v2 request must never turn a client-supplied id into a
+// cross-tenant V4 shadow write.
+const v4WritesBeforeFailure = v4BundleWrites.length;
+const failedV4Result = await callApi({
+  asset_id: missingAssetId,
+  preingestion_bundle_id: "tenant_b_private_bundle"
+}, v4Handler);
+assert.equal(failedV4Result.statusCode, 404);
+assert.equal(failedV4Result.body.ok, false);
+assert.equal(failedV4Result.body.code, "listing_asset_not_found");
+assert.equal(failedV4Result.body.v4_preingestion_bundle_id, null);
+assert.equal(v4BundleWrites.length, v4WritesBeforeFailure);
+
+// Positive control: a durable server bundle is shadowed only after v2 reports
+// a successful save, and the tenant is part of the conflict target.
+const successfulV4Result = await callApi({
+  asset_id: assetId,
+  preingestion_bundle_id: "tenant_b_private_bundle",
+  requested_fields: ["serial_number"],
+  verify_signed_read_urls: false
+}, v4Handler);
+assert.equal(successfulV4Result.statusCode, 200);
+assert.equal(successfulV4Result.body.ok, true);
+assert.equal(successfulV4Result.body.saved, true);
+assert.notEqual(successfulV4Result.body.bundle_id, "tenant_b_private_bundle");
+assert.equal(successfulV4Result.body.v4_preingestion_bundle_id, successfulV4Result.body.bundle_id);
+assert.equal(v4BundleWrites.length, v4WritesBeforeFailure + 1);
+assert.equal(v4BundleWrites.at(-1).row.id, successfulV4Result.body.bundle_id);
+assert.equal(v4BundleWrites.at(-1).row.tenant_id, "tenant_a");
+assert.equal(v4BundleWrites.at(-1).onConflict, "tenant_id,id");
+
+// A successful v2 save is not a successful V4 contract until its durable
+// shadow exists. Preserve the server bundle evidence but return a retryable
+// failure and do not advertise a usable V4 bundle id.
+failV4BundleWrite = true;
+const failedV4Persistence = await callApi({
+  asset_id: assetId,
+  requested_fields: ["serial_number"],
+  verify_signed_read_urls: false
+}, v4Handler);
+failV4BundleWrite = false;
+assert.equal(failedV4Persistence.statusCode, 503);
+assert.equal(failedV4Persistence.body.ok, false);
+assert.equal(failedV4Persistence.body.saved, true);
+assert.equal(failedV4Persistence.body.bundle_id, bundleWrite.bundle_id);
+assert.equal(failedV4Persistence.body.v4_preingestion_bundle_id, null);
+assert.equal(failedV4Persistence.body.v4_persistence.preingestion_bundle.saved, false);
 
 const missing = await callApi({ asset_id: "" });
 assert.equal(missing.statusCode, 400);
