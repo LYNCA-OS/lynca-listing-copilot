@@ -1,8 +1,7 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
-import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { processQueuedPreingestionOcrJobs } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 import {
   buildPreingestionCropPlan,
@@ -73,12 +72,11 @@ function normalizeDerivedRows(rows = []) {
     .filter((image) => image.object_path);
 }
 
-async function countSignedReadUrls(images, tenantId, env, fetchImpl) {
+async function countSignedReadUrls(images, env, fetchImpl) {
   const results = await Promise.all(images.map(async (image) => {
     try {
       await createListingImageSignedReadUrl({
         objectPath: image.object_path,
-        tenantId,
         bucket: image.bucket,
         env,
         fetchImpl
@@ -98,19 +96,15 @@ async function countSignedReadUrls(images, tenantId, env, fetchImpl) {
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/listing-preingest" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  let context;
-  try {
-    context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
-    bindProductionRequestContext(res, context);
-  } catch (error) {
-    const status = isTenantAuthError(error) ? error.statusCode : 503;
-    sendJson(res, status, publicTenantAuthError(error));
+  const cookies = parseCookies(req.headers.cookie);
+  const authenticated = readSignedSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
+  if (!authenticated) {
+    sendJson(res, 401, { ok: false, message: "Unauthorized" });
     return;
   }
 
@@ -139,19 +133,16 @@ export default async function handler(req, res) {
     const [verificationRows, derivedRows, existingBundleId] = await Promise.all([
       readVerifiedImageRecordsByAssetId({
         assetId,
-        tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
       }),
       readDerivedImageAssetsByAssetId({
         assetId,
-        tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
       }),
       readPreIngestionBundleIdByAsset({
         assetId,
-        tenantId: context.tenantId,
         source: payload.source || "listing_preingest_api",
         env: process.env,
         fetchImpl: globalThis.fetch
@@ -188,12 +179,11 @@ export default async function handler(req, res) {
 
     const signed = payload.verify_signed_read_urls === false
       ? { signedReadUrlCount: 0, errors: [] }
-      : await countSignedReadUrls(images, context.tenantId, process.env, globalThis.fetch);
+      : await countSignedReadUrls(images, process.env, globalThis.fetch);
 
     const existingBundle = existingBundleId
       ? await readPreIngestionBundle({
         bundleId: existingBundleId,
-        tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
       }).then((result) => result.bundle || null).catch(() => null)
@@ -201,7 +191,6 @@ export default async function handler(req, res) {
     const incomingInitialEvidence = payload.initial_evidence || payload.initialEvidence || {};
     const incomingEvidencePatches = payload.evidence_patches || payload.evidencePatches || [];
     const bundle = createPreIngestionBundle({
-      tenantId: context.tenantId,
       assetId,
       bundleId: existingBundleId,
       source: payload.source || "listing_preingest_api",
@@ -254,7 +243,6 @@ export default async function handler(req, res) {
       // worker fails closed (jobs stay queued) when PaddleOCR is unconfigured;
       // /api/v4/listing-preingest-worker re-sweeps anything left behind.
       waitUntil(processQueuedPreingestionOcrJobs({
-        tenantId: context.tenantId,
         assetId,
         bundleId: durableBundle.bundle_id,
         // Writer-critical hard text gets the first wave. Context crops are
@@ -268,7 +256,6 @@ export default async function handler(req, res) {
 
     sendJson(res, 200, {
       ok: true,
-      tenant_id: context.tenantId,
       bundle_id: durableBundle.bundle_id,
       bundle_status: durableBundle.status,
       saved: Boolean(writeResult.saved),

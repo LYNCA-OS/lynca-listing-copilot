@@ -1,5 +1,4 @@
 import { importCorrectedTitleCatalogV0 } from "../scripts/import-corrected-title-catalog-v0.mjs";
-import { platformAdminAuth } from "../lib/platform-admin-auth.mjs";
 import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
 
 export const config = {
@@ -53,7 +52,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const auth = platformAdminAuth(req);
+  const auth = adminAuth(req);
   if (!auth.ok) {
     sendJson(res, 401, { ok: false, error: "unauthorized" });
     return;

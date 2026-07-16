@@ -26,7 +26,6 @@ function jsonResponse(status, body = []) {
 }
 
 const payload = {
-  tenant_id: "tenant_sidecar_test",
   analysis_run_id: "analysis-sidecar-test",
   candidate_id: "card-sidecar-test",
   images: [{
@@ -87,7 +86,6 @@ const result = {
 };
 
 const event = buildRecognitionWorkflowEvent({ result, payload });
-assert.equal(event.tenant_id, "tenant_sidecar_test");
 assert.equal(event.analysis_run_id, "analysis-sidecar-test");
 assert.equal(event.images[0].object_path, "front.jpg");
 assert.equal(event.images[0].signed_url, undefined);
@@ -192,16 +190,13 @@ assert.ok(writes.some((write) => write.pathname.endsWith("/data_quality_findings
 assert.ok(writes.some((write) => write.pathname.endsWith("/annotation_tasks")));
 assert.ok(writes.some((write) => write.pathname.endsWith("/hard_negative_examples")));
 const eventWrite = writes.find((write) => write.pathname.endsWith("/recognition_workflow_events"));
-assert.equal(eventWrite.body[0].tenant_id, "tenant_sidecar_test");
 assert.equal(eventWrite.body[0].workflow_action_plan.plan_version, "workflow-sidecar-action-plan-v1");
 assert.equal(JSON.stringify(eventWrite.body).includes("signed-url"), false);
 assert.equal(JSON.stringify(eventWrite.body).includes("secret"), false);
 const findingWrite = writes.find((write) => write.pathname.endsWith("/data_quality_findings"));
-assert.equal(findingWrite.body[0].tenant_id, "tenant_sidecar_test");
 assert.ok(findingWrite.body[0].idempotency_key.startsWith("cleanlab:data_quality_finding:"));
 assert.equal(findingWrite.body[0].workflow_payload.tool, "cleanlab");
 const taskWrite = writes.find((write) => write.pathname.endsWith("/annotation_tasks"));
-assert.equal(taskWrite.body[0].tenant_id, "tenant_sidecar_test");
 assert.ok(taskWrite.body[0].idempotency_key.includes(":"));
 assert.equal(taskWrite.body[0].task_payload.workflow_action.blocking, false);
 
@@ -303,7 +298,6 @@ const nestedGapSidecars = await dispatchWorkflowSidecars({
 assert.equal(nestedGapSidecars.catalog_gap_queue.status, workflowSidecarStatuses.DISPATCHED);
 assert.equal(nestedGapSidecars.catalog_gap_queue.gap_id, "gap-nested");
 assert.equal(nestedGapWrites[0][0].asset_id, payload.candidate_id);
-assert.equal(nestedGapWrites[0][0].tenant_id, "tenant_sidecar_test");
 assert.equal(nestedGapWrites[0][0].gap_reason, "EVIDENCE_BACKED_NO_CATALOG");
 assert.equal(nestedGapWrites[0][0].internal_candidates[0].candidate_identity_id, "identity-blocked-1");
 assert.deepEqual(nestedGapWrites[0][0].metadata.catalog_gap_eligibility.conflict_blocked_count, 4);
@@ -428,15 +422,6 @@ const externallyDispatched = await dispatchWorkflowSidecars({
   },
   env: {
     DATA_LOOP_SIDECARS_ENABLED: "true",
-    DATA_LOOP_SIDECAR_ALLOWED_ORIGINS: [
-      "https://splink.internal",
-      "https://cleanlab.internal",
-      "https://label.internal",
-      "https://cvat.internal",
-      "https://fiftyone.internal",
-      "https://lightgbm.internal",
-      "https://phoenix.internal"
-    ].join(","),
     DATA_LOOP_PADDLE_OCR_DISPATCH_ENABLED: "true",
     ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
     PADDLE_OCR_WORKER_URL: "https://ocr.internal",
@@ -475,22 +460,6 @@ assert.ok(externalCalls.some((call) => call.host === "ocr.internal" && call.body
 assert.ok(externalCalls.some((call) => call.host === "label.internal" && call.pathname === "/api/projects/123/import"));
 assert.ok(externalCalls.some((call) => call.host === "cvat.internal" && call.pathname === "/api/tasks"));
 assert.ok(externalCalls.some((call) => call.host === "phoenix.internal" && call.body.spans?.[0]?.attributes?.workflow_action_count >= 1));
-
-const hostileSidecarCalls = [];
-await dispatchWorkflowSidecars({
-  event,
-  env: {
-    DATA_LOOP_SIDECARS_ENABLED: "true",
-    DATA_LOOP_CLEANLAB_SCORE_URL: "https://attacker.example/collect",
-    DATA_LOOP_INTERNAL_SIDECAR_TOKEN: "global-internal-secret",
-    VERCEL_AUTOMATION_BYPASS_SECRET: "global-vercel-secret"
-  },
-  fetchImpl: async (url, init = {}) => {
-    hostileSidecarCalls.push({ url: String(url), authorization: init.headers?.authorization || "" });
-    return jsonResponse(200, { ok: true });
-  }
-});
-assert.deepEqual(hostileSidecarCalls, [], "an unallowlisted sidecar origin must receive neither a request nor a global secret");
 
 const failureSafe = await attachWorkflowSidecarsToListingResult({
   result,

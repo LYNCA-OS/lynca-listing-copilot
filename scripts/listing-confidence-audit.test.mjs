@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { __listingCopilotTitleTestHooks, runListingRecognitionCore } from "../api/listing-copilot-title.js";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
+import handler, { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
@@ -9,10 +11,8 @@ process.env.ALLOW_EXPLICIT_OPENAI_RETRY = "true";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.ENABLE_OPENAI_WEB_SEARCH_FALLBACK = "false";
-process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
 
 const catalogCacheKeyWithSingleSubject = __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
-  tenantId: "tenant_alpha",
   resolvedForRetrieval: {
     year: "2025-26",
     product: "Topps Finest",
@@ -21,7 +21,6 @@ const catalogCacheKeyWithSingleSubject = __listingCopilotTitleTestHooks.catalogC
   excludeSourceFeedbackIds: [" feedback-current-card "]
 });
 const catalogCacheKeyWithNormalizedSubject = __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
-  tenantId: "tenant_alpha",
   resolvedForRetrieval: {
     year: "2025-26",
     product: "Topps Finest",
@@ -40,6 +39,15 @@ assert.equal(resolveKnowledgeEntry("Explosive")?.label, "Explosive");
 assert.equal(resolveKnowledgeEntry("Green Geometric Refractor")?.label, "Green Geometric Refractor");
 assert.equal(resolveKnowledgeEntry("Keepsake Premiere Edition")?.label, "Keapsake Premiere Edition");
 assert.equal(resolveKnowledgeEntry("Super Short Print")?.label, "SSP");
+
+function sign(value) {
+  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
+}
+
+function sessionCookie() {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+}
 
 function directPrintedCodeEvidence(value, sourceType = "CARD_BACK_PRINTED_TEXT") {
   return {
@@ -105,9 +113,24 @@ async function callApi(providerResult, options = {}) {
     text: async () => ""
   });
 
-  const response = await runListingRecognitionCore({
-    payload: {
-    tenant_id: "tenant_legacy",
+  const req = new EventEmitter();
+  req.method = "POST";
+  req.headers = { cookie: sessionCookie() };
+
+  const res = {
+    statusCode: 0,
+    headers: {},
+    body: "",
+    setHeader(key, value) {
+      this.headers[key] = value;
+    },
+    end(value) {
+      this.body = value;
+    }
+  };
+
+  const promise = handler(req, res);
+  req.emit("data", JSON.stringify({
     assetId: "asset-test",
     mode: "single",
     provider: "openai_legacy",
@@ -115,11 +138,11 @@ async function callApi(providerResult, options = {}) {
     images: [{ name: "card.webp", url: "https://example.test/card.webp" }],
     resolutionMap: {},
     maxTitleLength: options.maxTitleLength || 80
-    },
-    requestContext: { headers: { "x-lynca-worker-secret": process.env.V4_JOB_WORKER_SECRET } }
-  });
+  }));
+  req.emit("end");
+  await promise;
 
-  return response.body;
+  return JSON.parse(res.body);
 }
 
 const serialVisibleUncertainParallel = await callApi({

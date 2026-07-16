@@ -1,19 +1,17 @@
+import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import {
   cookieName,
-  createListingSessionToken
+  createSignedSessionToken,
+  timingSafeStringEqual
 } from "../lib/listing-session.mjs";
-import {
-  authenticatePassword,
-  isTenantAuthError,
-  listTenantChoicesForAuthUser,
-  publicTenantAuthError,
-  resolveTenantIdentityForAuthUser
-} from "../lib/tenant/index.mjs";
 
 const maxAgeSeconds = 60 * 60 * 24 * 7;
 const maxLoginBodyBytes = 16 * 1024;
+
+function normalizeUsername(value) {
+  return String(value || "").trim().toLowerCase();
+}
 
 function isHttps(req) {
   const host = String(req.headers.host || "");
@@ -47,7 +45,6 @@ function readBody(req) {
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/login" });
   if (req.method !== "POST") {
     res.statusCode = 405;
     res.setHeader("content-type", "application/json; charset=utf-8");
@@ -62,9 +59,11 @@ export default async function handler(req, res) {
     message: "Too many login attempts. Please wait before trying again."
   })) return;
 
+  const expectedUser = process.env.METAVERSE_USERNAME;
+  const expectedPassword = process.env.METAVERSE_PASSWORD;
   const authSecret = process.env.METAVERSE_AUTH_SECRET;
 
-  if (!authSecret) {
+  if (!expectedUser || !expectedPassword || !authSecret) {
     res.statusCode = 500;
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.end(JSON.stringify({ ok: false, message: "Listing auth is not configured." }));
@@ -81,55 +80,26 @@ export default async function handler(req, res) {
     return;
   }
 
-  let authenticated = null;
-  try {
-    authenticated = await authenticatePassword({
-      email: credentials.email || credentials.username,
-      username: credentials.username,
-      password: credentials.password
-    });
-    const identity = authenticated.provider === "legacy"
-      ? authenticated
-      : await resolveTenantIdentityForAuthUser({
-        authUserId: authenticated.authUserId,
-        tenantId: credentials.tenant_id || credentials.tenantId
-      });
-    const token = createListingSessionToken(identity, authSecret, {
-      maxAgeMs: maxAgeSeconds * 1000
-    });
-    bindProductionRequestContext(res, identity);
+  const username = normalizeUsername(credentials.username);
+  const password = String(credentials.password ?? "");
 
-    res.statusCode = 200;
-    res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
+  if (username !== normalizeUsername(expectedUser) || !timingSafeStringEqual(password, expectedPassword)) {
+    res.statusCode = 401;
     res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({
-      ok: true,
-      tenant_id: identity.tenantId,
-      role: identity.role
-    }));
-  } catch (error) {
-    let tenantChoices = [];
-    if (isTenantAuthError(error) && error.code === "TENANT_SELECTION_REQUIRED") {
-      try {
-        if (authenticated?.authUserId) {
-          tenantChoices = await listTenantChoicesForAuthUser({ authUserId: authenticated.authUserId });
-        }
-      } catch {
-        tenantChoices = [];
-      }
-    }
-    const statusCode = isTenantAuthError(error) ? error.statusCode : 503;
-    const payload = publicTenantAuthError(error);
-    res.statusCode = statusCode;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({
-      ...payload,
-      message: error?.code === "INVALID_CREDENTIALS"
-        ? "账号或密码不正确。"
-        : error?.code === "TENANT_SELECTION_REQUIRED"
-          ? "请选择要进入的客户空间。"
-          : payload.message,
-      tenants: tenantChoices
-    }));
+    res.end(JSON.stringify({ ok: false, message: "账号或密码不正确。" }));
+    return;
   }
+
+  const token = createSignedSessionToken({
+    user: normalizeUsername(expectedUser),
+    tenant_id: String(process.env.METAVERSE_TENANT_ID || expectedUser).trim().toLowerCase(),
+    sid: crypto.randomUUID(),
+    iat: Date.now(),
+    exp: Date.now() + maxAgeSeconds * 1000
+  }, authSecret);
+
+  res.statusCode = 200;
+  res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify({ ok: true }));
 }

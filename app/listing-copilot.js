@@ -3544,29 +3544,34 @@ function feedbackActionForResult(result, generatedTitle, correctedTitle) {
   return String(generatedTitle || "").trim() === String(correctedTitle || "").trim() ? "ACCEPT" : "EDIT";
 }
 
-function v4FeedbackResultPayload(result = {}) {
-  const {
-    thumbnail,
-    correctedTitle,
-    generatedTitle,
-    feedbackMessage,
-    feedbackStatus,
-    reviewStartedAt,
-    ...safeResult
-  } = result || {};
+function clientFeedbackSubmissionId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `web_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function pendingV4FeedbackSubmission(result, { action, writerTitle } = {}) {
+  const signature = JSON.stringify([
+    String(result?.recognition_session_id || "").trim(),
+    String(action || "").trim(),
+    String(writerTitle || "").trim()
+  ]);
+  if (!result.pendingFeedbackSubmissionId || result.pendingFeedbackSubmissionSignature !== signature) {
+    result.pendingFeedbackSubmissionId = clientFeedbackSubmissionId();
+    result.pendingFeedbackSubmissionSignature = signature;
+    result.pendingFeedbackOccurredAt = new Date().toISOString();
+  }
   return {
-    ...safeResult,
-    final_title: generatedTitle || result.final_title || result.title || "",
-    resolved_fields: result.resolved_fields || result.resolved || result.fields || {},
-    fields: result.resolved_fields || result.resolved || result.fields || {},
-    field_states: result.field_states || {},
-    internal_field_graph: result.internal_field_graph || {},
-    candidate_control_plane_trace: result.candidate_control_plane_trace || {},
-    retrieval_trace: result.retrieval_trace || result.retrieval || {},
-    open_set_readiness: result.open_set_readiness || {},
-    workflow_sidecars: result.workflow_sidecars || {},
-    provider_result: result.provider_result || {}
+    id: result.pendingFeedbackSubmissionId,
+    occurredAt: result.pendingFeedbackOccurredAt,
+    signature
   };
+}
+
+function clearPendingV4FeedbackSubmission(result, submission = {}) {
+  if (!result || result.pendingFeedbackSubmissionId !== submission.id) return;
+  delete result.pendingFeedbackSubmissionId;
+  delete result.pendingFeedbackSubmissionSignature;
+  delete result.pendingFeedbackOccurredAt;
 }
 
 async function saveFeedbackForResult(result, asset) {
@@ -3585,12 +3590,17 @@ async function saveFeedbackForResult(result, asset) {
 
   if ((!correctedTitle && !explicitReject) || (!generatedTitle && !writerReviewRequired && !explicitReject)) return false;
 
+  const useV4Feedback = isV4Result(result);
+  const v4Action = useV4Feedback ? feedbackActionForResult(result, generatedTitle, correctedTitle) : "";
+  const v4Submission = useV4Feedback
+    ? pendingV4FeedbackSubmission(result, { action: v4Action, writerTitle: correctedTitle })
+    : null;
+
   result.feedbackStatus = "saving";
   result.feedbackMessage = "正在保存审核记录…";
   renderResults();
 
   try {
-    const useV4Feedback = isV4Result(result);
     const response = await fetch(useV4Feedback ? FEEDBACK_API_ENDPOINT : LEGACY_FEEDBACK_API_ENDPOINT, {
       method: "POST",
       headers: {
@@ -3599,10 +3609,10 @@ async function saveFeedbackForResult(result, asset) {
       credentials: "same-origin",
       body: JSON.stringify(useV4Feedback ? {
         recognition_session_id: result.recognition_session_id,
-        action: feedbackActionForResult(result, generatedTitle, correctedTitle),
-        ai_generated_title: generatedTitle,
+        feedback_submission_id: v4Submission.id,
+        client_occurred_at: v4Submission.occurredAt,
+        action: v4Action,
         writer_final_title: correctedTitle,
-        result_payload: v4FeedbackResultPayload(result)
       } : {
         asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
         analysis_run_id: result.analysis_run_id || result.provider_response_id || "",
@@ -3648,6 +3658,7 @@ async function saveFeedbackForResult(result, asset) {
     }
 
     if (useV4Feedback) {
+      clearPendingV4FeedbackSubmission(result, v4Submission);
       const canonicalWriterTitle = String(payload.writer_final_title || "").trim();
       if (canonicalWriterTitle) {
         result.correctedTitle = canonicalWriterTitle;
@@ -3657,17 +3668,17 @@ async function saveFeedbackForResult(result, asset) {
         result.title_override = null;
       }
       result.csmNormalization = payload.csm_normalization || null;
-      result.feedbackStatus = payload.training_eligible === false ? "skipped" : "saved";
+      result.feedbackStatus = "saved";
       result.review_id = payload.feedback_event_id || "";
       result.approved_at = "";
       result.approved_by = "";
       result.review_outcome = payload.status || "";
       result.feedbackMessage = payload.training_eligible === false
-        ? "V4 已记录拒绝/不可训练反馈，不进入正样本训练。"
+        ? "V4 写手反馈已保存为数据资产；当前仅积累，不进入训练。"
         : payload.csm_normalization?.applied === true
           ? `V4 已保存写手反馈，标题已按 CSM 标准顺序整理：${payload.learning_event_id || "已写入"}。`
         : `V4 已保存写手反馈，并生成学习事件：${payload.learning_event_id || "已写入"}。`;
-      return result.feedbackStatus === "saved";
+      return true;
     }
 
     const retentionSkipped = payload.retention_skipped === true || payload.retention_enabled === false;

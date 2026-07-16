@@ -27,7 +27,7 @@ function mockRes() {
   };
 }
 
-process.env.LYNCA_PLATFORM_ADMIN_SECRET = "test-admin-token";
+process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = "test-admin-token";
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 process.env.LISTING_IMAGE_BUCKET = "listing-feedback-images";
@@ -36,7 +36,7 @@ process.env.RECOGNITION_WORKER_TOKEN = "recognition-token";
 process.env.VECTOR_QUERY_TIMEOUT_MS = "1000";
 
 const unauthorizedReq = mockReq({
-  headers: { "x-lynca-platform-admin-secret": "wrong" }
+  headers: { authorization: "Bearer wrong" }
 });
 const unauthorizedRes = mockRes();
 await adminIndexHandler(unauthorizedReq, unauthorizedRes);
@@ -81,7 +81,7 @@ globalThis.fetch = async (url, options = {}) => {
 };
 
 const authorizedReq = mockReq({
-  headers: { "x-lynca-platform-admin-secret": "test-admin-token" },
+  headers: { authorization: "Bearer test-admin-token" },
   body: {
     dry_run: true,
     offset: 2,
@@ -98,7 +98,7 @@ try {
 assert.equal(authorizedRes.statusCode, 200);
 const data = JSON.parse(authorizedRes.body);
 assert.equal(data.ok, true);
-assert.equal(data.auth_mode, "platform_admin_secret");
+assert.equal(data.auth_mode, "internal_token");
 assert.equal(data.dry_run, true);
 assert.equal(data.retrieval_status, "approved");
 assert.equal(data.retrieval_enabled, true);

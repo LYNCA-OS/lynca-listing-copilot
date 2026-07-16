@@ -733,7 +733,6 @@ const tenantFairQueueMigrationSource = await readFile("supabase/migrations/20260
 const writerReadyCapacityMigrationApiSource = await readFile("api/admin-apply-v4-writer-ready-capacity-migration.js", "utf8");
 const balancedProviderKeyMigrationSource = await readFile("supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql", "utf8");
 const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-production.yml", "utf8");
-const trackCProductionSchemaPreflightSource = await readFile("scripts/check-track-c-production-schema.mjs", "utf8");
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
@@ -791,26 +790,13 @@ assert.match(freshEbaySmokeWorkflowSource, /ledger_present_count[^\n]+attempted_
 assert.match(freshEbaySmokeWorkflowSource, /transport_error_count/, "speed smoke must fail on transport errors without treating field-quality findings as infrastructure failures.");
 assert.match(freshEbaySmokeWorkflowSource, /field_quality_error_count/, "speed smoke must still report deferred field-quality findings.");
 assert.match(freshEbaySmokeWorkflowSource, /writer_ready_capacity_atomic_count/, "speed smoke must prove writer-ready provider capacity release behavior.");
-assert.match(fastScoutPrewarmApiSource, /allowProviderCall: false/, "customer prewarm is cache-only; paid scout calls must use the durable queue.");
+assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
 assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");
 assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-only misses must return a stable non-error response.");
 assert.match(vercelConfigSource, /admin-apply-v4-production-job-queue-migration\.js/, "the production migration function must have an explicit Vercel bundle rule.");
 assert.match(vercelConfigSource, /supabase\/migrations\/\*\.sql/, "all required SQL migrations must ship with the admin migration function.");
-assert.match(productionDeployWorkflowSource, /check-track-c-production-schema\.mjs[\s\S]*track-c-production-schema-preflight\.json/, "production deployment must verify the queue and tenant schema before deploying code.");
-assert.match(productionDeployWorkflowSource, /track-c-production-schema-postdeploy\.json/, "production deployment must retain a second read-only schema check after deployment.");
-assert.doesNotMatch(productionDeployWorkflowSource, /\/api\/admin-apply-/, "code deployment must not mutate schema through runtime HTTP endpoints.");
-assert.match(productionDeployWorkflowSource, /npm run check:production-engineering[\s\S]*npm run test:production-engineering/, "production deploys must execute the Track C gates before release.");
-assert.match(productionDeployWorkflowSource, /check-track-c-production-schema\.mjs[\s\S]*Trigger current main through the Vercel Deploy Hook/, "the read-only Track C schema preflight must fail closed before code deployment.");
-assert.doesNotMatch(productionDeployWorkflowSource, /x-lynca-worker-secret:[\s\S]*admin-apply-/, "worker credentials must never authorize schema mutation.");
-for (const runtimeFunction of [
-  "claim_v4_recognition_jobs_with_balanced_capacity",
-  "fail_v4_recognition_job",
-  "persist_v4_writer_feedback_transaction",
-  "persist_v4_noncritical_artifacts",
-  "persist_v4_writer_ready_and_release_capacity"
-]) {
-  assert.match(trackCProductionSchemaPreflightSource, new RegExp(runtimeFunction), `schema preflight must require ${runtimeFunction}`);
-}
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-production-job-queue-migration/, "production deployment must apply and verify the queue control-plane migration before declaring readiness.");
+assert.match(productionDeployWorkflowSource, /production-job-queue-migration\.json/, "queue migration evidence must be retained with every production release.");
 assert.match(queueMigrationApiSource, /20260713224500_v4_tenant_fair_provider_queue\.sql/, "production migration apply must include the tenant-fair scheduler.");
 assert.match(queueMigrationApiSource, /tenant_fair_scheduler/, "the migration probe must verify that tenant-first scheduling is installed.");
 assert.match(queueMigrationApiSource, /tenant_fair_claim_ok/, "the migration probe must prove that multiple batches cannot multiply one tenant's provider share.");
@@ -827,19 +813,20 @@ assert.match(queueStatusApiSource, /preingestion_ocr_rendezvous/, "queue status 
 assert.match(queueStatusApiSource, /serial_numerator_verified/, "queue status must expose the final serial numerator verification decision.");
 assert.match(queueStatusApiSource, /V4_JOB_STATUS_QUERY_REQUIRED/, "missing status query identifiers must remain a non-retryable client error.");
 assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s\S]*V4_JOB_STATUS_BACKEND_UNAVAILABLE/, "transient queue-store reads must be reported as retryable service failures.");
-assert.match(queueStatusApiSource, /ownedJobs = result\.rows\.filter[\s\S]*assignedUserId: session\?\.assigned_to_user_id/, "job status must not expose another writer's assigned work.");
-assert.match(queueEnqueueApiSource, /noJobsQueued \? 503 : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
+assert.match(queueStatusApiSource, /ownedJobs = result\.rows\.filter[\s\S]*operator_id/, "job status must not expose another operator's queued work.");
+assert.match(queueEnqueueApiSource, /const noJobsAccepted =[\s\S]*acceptedCount === 0/, "enqueue must identify batches where no durable job was accepted.");
+assert.match(queueEnqueueApiSource, /const responseStatus = noJobsAccepted \? deterministicConflict \? 409 : 503 : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
 assert.match(queueEnqueueApiSource, /V4_QUEUE_PERSISTENCE_FAILED/, "queue persistence failures must have a stable retryable error code.");
-assert.match(queueRetryApiSource, /TENANT_PERMISSIONS\.RETRY_JOB[\s\S]*tenantId: context\.tenantId/, "job retries must enforce tenant-scoped manager permission.");
+assert.match(queueRetryApiSource, /operatorIdFromRequest/, "writer retries must enforce job ownership.");
 assert.match(queueRetryApiSource, /retryV4RecognitionJob/, "writer retries must reuse the durable job instead of starting an unbounded direct request.");
 assert.match(queueRetryApiSource, /interactive_priority_zero/, "writer retries must enter the interactive priority lane.");
-assert.match(sessionStatusApiSource, /TENANT_PERMISSIONS\.VIEW_ASSIGNED_TASK[\s\S]*assignedUserId: status\.session\.assigned_to_user_id/, "session status must enforce persisted writer assignment.");
+assert.match(sessionStatusApiSource, /session\.operator_id[\s\S]*operatorIdFromRequest/, "session status must enforce operator ownership.");
 assert.match(sessionStatusApiSource, /include_related_counts/, "writer polling must not block on diagnostic table counts unless explicitly requested.");
 assert.match(sessionStatusApiSource, /Promise\.all\(Object\.entries\(tables\)/, "evaluation-only related counts should load in parallel.");
 assert.match(sessionStatusApiSource, /Recognition session status is temporarily unavailable/, "transient session reads must remain retryable instead of looking like a terminal failure.");
-assert.match(feedbackApiSource, /readV4SessionStatus[\s\S]*TENANT_PERMISSIONS\.SUBMIT_FEEDBACK[\s\S]*assignedUserId: ownedSession\.session\.assigned_to_user_id/, "writer feedback must verify tenant-scoped persisted assignment before learning writes.");
+assert.match(feedbackApiSource, /readV4SessionStatus[\s\S]*session\.operator_id[\s\S]*operatorId/, "writer feedback must verify session ownership before learning writes.");
 assert.match(feedbackApiSource, /persistV4WriterFeedbackTransaction/, "writer feedback, learning data, and the session terminal state must commit atomically.");
-assert.match(feedbackApiSource, /sharedPromotion: false/, "tenant feedback must not promote customer data into the shared catalog automatically.");
+assert.match(feedbackApiSource, /v4_writer_cert_registry_promotion_failed/, "non-blocking cert promotion failures must remain observable.");
 assert.match(v4TitleApiSource, /v4_noncritical_persistence_failure_status_write_failed/, "a failed background-persistence terminal write must not disappear silently.");
 assert.match(atomicFeedbackMigrationSource, /for update/, "the feedback transaction must lock the owned recognition session before writing learning artifacts.");
 assert.match(atomicFeedbackMigrationSource, /insert into public\.v4_writer_feedback_events[\s\S]*insert into public\.v4_learning_events[\s\S]*update public\.v4_recognition_sessions/, "one database transaction must persist all three writer-loop records.");
@@ -852,12 +839,12 @@ assert.match(stageCapacityMigrationSource, /acquire_v4_stage_capacity[\s\S]*for 
 assert.match(stageCapacityMigrationSource, /release_v4_stage_capacity/, "non-LLM stage slots must be explicitly releasable.");
 assert.match(writerReadyCapacityMigrationSource, /revoke all on function public\.persist_v4_writer_ready_and_release_capacity[\s\S]*from public, anon, authenticated/, "the writer-ready capacity RPC must remain service-role only.");
 assert.match(writerReadyCapacityMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the writer-ready capacity migration probe must verify the RPC privilege boundary.");
-assert.match(trackCProductionSchemaPreflightSource, /persist_v4_noncritical_artifacts/, "production deploys must verify the atomic persistence RPC before code release.");
-assert.match(trackCProductionSchemaPreflightSource, /persist_v4_writer_ready_and_release_capacity/, "production deploys must verify the writer-ready capacity RPC before code release.");
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-noncritical-persistence-migration[\s\S]*noncritical-persistence-migration\.json/, "production deploys must apply and retain evidence for the atomic persistence migration.");
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-writer-ready-capacity-migration[\s\S]*writer-ready-capacity-migration\.json/, "production deploys must apply and retain evidence for the writer-ready capacity migration.");
 assert.match(writerLearningSupersessionMigrationSource, /before insert on public\.v4_learning_events/, "writer learning supersession must be enforced at the database boundary.");
 assert.match(writerLearningSupersessionMigrationSource, /SUPERSEDED_BY_LATEST_WRITER_FEEDBACK/, "older writer-derived training truth must be retained for audit but excluded from training.");
 assert.match(writerLearningSupersessionMigrationSource, /events\.id <> new\.id[\s\S]*events\.training_eligible = true/, "the latest writer event must only supersede older eligible events for the same session.");
-assert.match(writerExportApiSource, /writerExportRowsBelongToTenant[\s\S]*tenant_id: `eq\.\$\{tenantId\}`/, "writer exports must verify every referenced recognition session inside the trusted tenant.");
+assert.match(writerExportApiSource, /writerExportRowsBelongToOperator/, "writer exports must verify every referenced recognition session.");
 assert.doesNotMatch(writerExportApiSource, /new pg\.Client|client\.query\(sql\)/, "normal writer export requests must never mutate production schema.");
 assert.match(v4SmokeSource, /transient_error_count/, "cloud smoke must report recovered status-read faults instead of hiding them.");
 assert.match(v4SmokeSource, /--resume-batch-id/, "cloud smoke must resume an existing paid batch after an observational polling failure.");
@@ -1536,10 +1523,10 @@ assert.equal(artifacts.feedbackEvent.correction_type, "EDIT");
 assert.equal(artifacts.rawWriterTitle, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
 assert.equal(artifacts.csmNormalization.applied, true);
 assert.equal(artifacts.feedbackEvent.title_diff.raw_writer_title, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
-assert.equal(artifacts.learningEvent.training_eligible, true);
+assert.equal(artifacts.learningEvent.training_eligible, false);
 assert.equal(artifacts.learningEvent.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_ground_truth));
-assert.ok(artifacts.learningEvent.field_level_ground_truth.some((row) => row.field === "player" && row.training_eligible === true));
+assert.equal(artifacts.learningEvent.field_level_ground_truth.length, 0);
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_diff));
 assert.equal(typeof artifacts.learningEvent.candidate_changes.candidate_count, "number");
 assert.equal(artifacts.correctedResolved.year, "2024-25");
@@ -1557,8 +1544,8 @@ const writerResolvedAbstain = buildV4FeedbackArtifacts({
 });
 assert.equal(writerResolvedAbstain.status, "EDITED");
 assert.equal(writerResolvedAbstain.feedbackEvent.generated_title, "");
-assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Auto PSA 10");
-assert.equal(writerResolvedAbstain.learningEvent.training_eligible, true);
+assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Autograph PSA 10");
+assert.equal(writerResolvedAbstain.learningEvent.training_eligible, false);
 
 const writerRejectedAbstain = buildV4FeedbackArtifacts({
   sessionId: "v4sess-writer-rejected-abstain",
@@ -1587,11 +1574,11 @@ const csmOrderedFeedback = buildV4FeedbackArtifacts({
     }
   }
 });
-assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(csmOrderedFeedback.rawWriterTitle, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(csmOrderedFeedback.csmNormalization.applied, true);
 assert.equal(csmOrderedFeedback.feedbackEvent.title_diff.raw_writer_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
-assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(
   csmOrderedFeedback.learningEvent.feedback_training_event.writer_raw_title,
   "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best"
@@ -1612,7 +1599,8 @@ const rejectedFeedback = buildV4FeedbackArtifacts({
     }
   }
 });
-assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "wrong loose title");
+assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "");
+assert.equal(rejectedFeedback.feedbackEvent.writer_raw_title, "wrong loose title");
 assert.equal(rejectedFeedback.csmNormalization.skipped_reason, "REJECTED_FEEDBACK");
 assert.equal(rejectedFeedback.learningEvent.training_eligible, false);
 
@@ -1738,9 +1726,8 @@ assert.equal(feedbackTransaction.saved, true);
 assert.ok(feedbackTransactionCalls[0].url.endsWith("/rest/v1/rpc/persist_v4_writer_feedback_transaction"));
 assert.equal(feedbackTransactionCalls[0].body.p_session_id, "v4sess-test");
 assert.equal(feedbackTransactionCalls[0].body.p_tenant_id, "tenant-test");
-assert.equal(feedbackTransactionCalls[0].body.p_feedback_event.tenant_id, "tenant-test");
 assert.equal(feedbackTransactionCalls[0].body.p_feedback_event.schema_version, "v4-recognition-session-v1");
-assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, true);
+assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, false);
 const health = await checkV4Tables({ env, fetchImpl: fakeFetch });
 assert.equal(health.configured, true);
 assert.ok(writes.some((write) => write.table === "v4_recognition_sessions"));

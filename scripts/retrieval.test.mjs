@@ -1467,7 +1467,6 @@ assert.equal(invalidOwsModelFetchCalled, false);
 
 let approvedHistoryCalls = 0;
 const approvedHistoryRegistry = createRetrievalProviderRegistry({
-  tenantId: "tenant_alpha",
   env: {
     SUPABASE_URL: "https://supabase.test",
     SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
@@ -1478,7 +1477,6 @@ const approvedHistoryRegistry = createRetrievalProviderRegistry({
     approvedHistoryCalls += 1;
     const requestUrl = new URL(String(url));
     assert.equal(requestUrl.href.includes("/rest/v1/listing_reviews"), true);
-    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     assert.match(requestUrl.searchParams.get("select") || "", /corrected_resolved_fields/);
     assert.equal(requestUrl.searchParams.get("review_outcome"), "in.(ACCEPTED_UNCHANGED,CORRECTED_FIELDS,TITLE_ONLY_OVERRIDE,TARGETED_RESCAN_RECOVERED)");
     assert.equal(requestUrl.searchParams.get("approved_at"), "not.is.null");
@@ -1521,7 +1519,6 @@ assert.equal(approvedHistoryRun.sources[0].fields.checklist_code, "TCAR-CF");
 
 let disabledApprovedHistoryCalls = 0;
 const disabledApprovedHistoryRegistry = createRetrievalProviderRegistry({
-  tenantId: "tenant_beta",
   env: {
     SUPABASE_URL: "https://supabase.test",
     SUPABASE_SERVICE_ROLE_KEY: "test-service-role"

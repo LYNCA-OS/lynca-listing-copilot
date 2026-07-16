@@ -90,7 +90,7 @@ if (!batchPath || !baseUrl) {
 
 const raw = JSON.parse(await fs.readFile(path.resolve(batchPath), "utf8"));
 const records = pickArray(raw).slice(0, limit);
-const endpoint = `${baseUrl.replace(/\/$/, "")}/api/v4/listing-job-prewarm`;
+const endpoint = `${baseUrl.replace(/\/$/, "")}/api/v4/fast-scout-prewarm`;
 const headers = {};
 if (bypassSecret) headers["x-vercel-protection-bypass"] = bypassSecret;
 if (sessionToken) headers.authorization = `Bearer ${sessionToken}`;
@@ -102,21 +102,18 @@ const results = await runPool(records, concurrency, async (record, index) => {
     return { index, ok: false, status: 0, error: "missing_images", asset_id: payload.asset_id };
   }
   const itemStartedAt = Date.now();
-  const response = await postJson(endpoint, {
-    assets: [payload],
-    create_l2_jobs: false,
-    autokick_workers: true
-  }, headers);
+  const response = await postJson(endpoint, payload, headers);
   return {
     index,
     asset_id: payload.asset_id,
     ok: response.ok && response.body?.ok !== false,
     status: response.status,
     latency_ms: Date.now() - itemStartedAt,
-    queued_count: Number(response.body?.queued_count || 0),
-    reused_count: Number(response.body?.reused_count || 0),
-    prewarm_batch_id: response.body?.prewarm_batch_id || null,
-    recognition_session_id: response.body?.sessions?.[0]?.recognition_session_id || null,
+    cache_id: response.body?.cache_id || null,
+    cache_status: response.body?.fast_scout_cache_status || null,
+    cache_hit: Boolean(response.body?.fast_scout_cache_hit),
+    blocking_call_used: response.body?.fast_scout_blocking_call_used !== false,
+    provider_latency_ms: response.body?.provider_latency_ms || null,
     input_image_count: response.body?.input_image_count || payload.images.length,
     error: response.body?.message || response.body?.error_type || null
   };
@@ -131,8 +128,8 @@ const report = {
   prewarm_count: records.length,
   prewarm_success_count: success,
   prewarm_error_count: results.length - success,
-  queued_count: results.reduce((sum, entry) => sum + entry.queued_count, 0),
-  reused_count: results.reduce((sum, entry) => sum + entry.reused_count, 0),
+  cache_hit_count: results.filter((entry) => entry.cache_hit).length,
+  blocking_call_count: results.filter((entry) => entry.blocking_call_used).length,
   average_prewarmer_latency: results.length
     ? Math.round(results.reduce((sum, entry) => sum + Number(entry.latency_ms || 0), 0) / results.length)
     : null,

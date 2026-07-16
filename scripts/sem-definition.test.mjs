@@ -139,7 +139,8 @@ const commercialFeedback = classifyWriterFeedbackForSemanticLearning({
 });
 assert.equal(commercialFeedback.feedback_layer, SEM_FEEDBACK_LAYER.COMMERCIAL_FEEDBACK);
 assert.equal(commercialFeedback.semantic_truth, false);
-assert.equal(commercialFeedback.training_eligible, true);
+assert.equal(commercialFeedback.semantic_learning_status, "OBSERVE_ONLY_WRITER_TITLE_CANDIDATE");
+assert.equal(commercialFeedback.training_eligible, false);
 
 const semanticTruth = classifyWriterFeedbackForSemanticLearning({
   action: "EDIT",
@@ -148,5 +149,6 @@ const semanticTruth = classifyWriterFeedbackForSemanticLearning({
 });
 assert.equal(semanticTruth.feedback_layer, SEM_FEEDBACK_LAYER.REVIEWED_SEMANTIC_TRUTH);
 assert.equal(semanticTruth.semantic_truth, true);
+assert.equal(semanticTruth.training_eligible, false);
 
 console.log("sem-definition tests passed");

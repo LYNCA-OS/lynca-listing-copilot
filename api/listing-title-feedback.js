@@ -1,6 +1,5 @@
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
-import { publicTenantAuthError, requireTenantAccess } from "../lib/tenant/index.mjs";
+import { getSessionFromRequest, operatorIdFromRequest } from "../lib/listing-session.mjs";
 import { normalizeTitle } from "../lib/listing/feedback/review-records.mjs";
 import {
   createListingReviewRecord,
@@ -25,7 +24,6 @@ function sendJson(res, statusCode, payload) {
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/listing-title-feedback" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
@@ -38,20 +36,10 @@ export default async function handler(req, res) {
     message: "Too many feedback requests. Please try again shortly."
   })) return;
 
-  try {
-    const context = await requireTenantAccess(req);
-    bindProductionRequestContext(res, context);
-  } catch (error) {
-    sendJson(res, Number(error?.statusCode || 503), publicTenantAuthError(error));
+  if (!getSessionFromRequest(req)) {
+    sendJson(res, 401, { ok: false, message: "Unauthorized" });
     return;
   }
-
-  sendJson(res, 410, {
-    ok: false,
-    code: "tenant_feedback_route_required",
-    message: "Use /api/v4/listing-feedback for tenant-scoped feedback."
-  });
-  return;
 
   let payload;
   try {
@@ -76,7 +64,7 @@ export default async function handler(req, res) {
         generated_title: generatedTitle,
         corrected_title: correctedTitle
       },
-      operatorId: null
+      operatorId: operatorIdFromRequest(req)
     });
 
     sendJson(res, 200, {

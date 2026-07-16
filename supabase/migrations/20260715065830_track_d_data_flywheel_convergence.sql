@@ -5,20 +5,14 @@
 -- 20260715065752 Track D migration is immutable history; upgrade and clean
 -- installs converge here on the same tenant-aware, append-only contract.
 
-begin;
-set local lock_timeout = '5s';
-set local statement_timeout = '15min';
-
 -- The historical LIKE expression treated "_" as a wildcard. Re-assert the
 -- writer-only safety state with a literal underscore for all current rows.
--- The published Track D migration already protects these facts with BEFORE
--- UPDATE triggers. Remove them only for the deterministic maintenance
--- rewrites; PostgreSQL migration transactions restore them automatically if
--- any later statement fails, and both are recreated before commit.
+-- The published Track D migration already protects these facts with a BEFORE
+-- UPDATE trigger. Remove that trigger only for this deterministic maintenance
+-- rewrite; PostgreSQL migration transactions restore it automatically if any
+-- later statement fails, and we recreate it immediately below.
 drop trigger if exists prevent_v4_writer_learning_event_mutation
   on public.v4_learning_events;
-drop trigger if exists prevent_v4_sem_validation_mutation
-  on public.v4_sem_validation_events;
 
 update public.v4_learning_events
 set training_eligible = false,
@@ -176,40 +170,16 @@ create unique index if not exists v4_learning_feedback_event_uidx
   on public.v4_learning_events(feedback_event_id)
   where feedback_event_id is not null;
 
--- Track C temporarily grants generic service-role mutation rights and generic
--- authenticated policies while it establishes tenant lineage. These three
--- immutable fact tables return to a service-only append contract here.
+-- Track C re-grants generic service-role mutation rights. Immutable feedback
+-- and SEM review facts remain insert-only outside controlled migrations.
 revoke update, delete on table public.v4_writer_feedback_events from service_role;
-revoke update, delete on table public.v4_learning_events from service_role;
 revoke update, delete on table public.v4_sem_validation_events from service_role;
 grant select, insert on table public.v4_writer_feedback_events to service_role;
-grant select, insert on table public.v4_learning_events to service_role;
 grant select, insert on table public.v4_sem_validation_events to service_role;
-
-do $$
-declare
-  fact_table text;
-  policy_name text;
-begin
-  foreach fact_table in array array[
-    'v4_writer_feedback_events',
-    'v4_learning_events',
-    'v4_sem_validation_events'
-  ] loop
-    foreach policy_name in array array[
-      'track_c_tenant_select',
-      'track_c_tenant_insert',
-      'track_c_tenant_update',
-      'track_c_tenant_delete',
-      'track_c_writer_feedback_select',
-      'track_c_writer_feedback_insert',
-      'track_c_writer_feedback_update'
-    ] loop
-      execute format('drop policy if exists %I on public.%I', policy_name, fact_table);
-    end loop;
-  end loop;
-end;
-$$;
+drop policy if exists track_c_writer_feedback_insert
+  on public.v4_writer_feedback_events;
+drop policy if exists track_c_writer_feedback_update
+  on public.v4_writer_feedback_events;
 
 create or replace function public.prevent_v4_session_identity_reassignment()
 returns trigger
@@ -380,7 +350,8 @@ begin
        feedback_asset_id
   from public.v4_writer_feedback_events events
   where events.id = new.feedback_event_id
-    and events.recognition_session_id = new.recognition_session_id;
+    and events.recognition_session_id = new.recognition_session_id
+  for share;
 
   if not found
      or feedback_tenant_id is distinct from expected_tenant_id
@@ -406,7 +377,8 @@ begin
        expected_parser_version,
        expected_sem_standard_version
   from public.v4_learning_events events
-  where events.id = new.learning_event_id;
+  where events.id = new.learning_event_id
+  for share;
 
   if not found
      or expected_session_id is distinct from new.recognition_session_id
@@ -1413,12 +1385,11 @@ set search_path = ''
 as $$
 declare
   heartbeat_applied boolean := false;
-  heartbeat_at timestamptz := pg_catalog.clock_timestamp();
   lease_seconds integer := greatest(
     30,
     least(coalesce(p_lease_seconds, 300), 900)
   );
-  next_expiry timestamptz := heartbeat_at
+  next_expiry timestamptz := pg_catalog.clock_timestamp()
     + pg_catalog.make_interval(secs => lease_seconds);
 begin
   if nullif(pg_catalog.btrim(p_job_id), '') is null
@@ -1428,18 +1399,17 @@ begin
 
   update public.v4_recognition_jobs jobs
   set lease_expires_at = next_expiry,
-      updated_at = heartbeat_at
+      updated_at = pg_catalog.clock_timestamp()
   where jobs.id = p_job_id
     and jobs.status = 'RUNNING'
     and jobs.lease_owner = p_worker_id
-    and jobs.lease_expires_at is not null
-    and jobs.lease_expires_at > heartbeat_at
+    and jobs.lease_expires_at > pg_catalog.clock_timestamp()
   returning true into heartbeat_applied;
 
   if coalesce(heartbeat_applied, false) then
     update public.v4_provider_capacity_leases leases
     set lease_expires_at = next_expiry,
-        updated_at = heartbeat_at
+        updated_at = pg_catalog.clock_timestamp()
     where leases.job_id = p_job_id
       and leases.lease_owner = p_worker_id;
   end if;
@@ -1577,7 +1547,3 @@ comment on column public.v4_learning_events.dataset_disposition is
   'OBSERVE_ONLY writer events cannot train or promote production state before field-level review.';
 comment on table public.v4_sem_validation_events is
   'Append-only field-level SEM review decisions. VALIDATED rows may enter Golden SEM but remain OBSERVE_ONLY until a separate release gate.';
-
-notify pgrst, 'reload schema';
-
-commit;

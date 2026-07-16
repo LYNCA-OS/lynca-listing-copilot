@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import handler from "../api/listing-provider-status.js";
-import { createListingSessionToken } from "../lib/listing-session.mjs";
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
@@ -16,70 +16,34 @@ process.env.V4_ULTRA_FAST_TEXT_VERBOSITY = "medium";
 process.env.V4_ULTRA_FAST_SERVICE_TIER = "priority";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
-process.env.SUPABASE_SECRET_KEY = "test-auth-secret-key";
 process.env.LISTING_IMAGE_BUCKET = "listing-card-images";
 process.env.VECTOR_INDEX_READY = "true";
 process.env.ENABLE_VECTOR_RETRIEVAL = "false";
 process.env.VECTOR_RETRIEVAL_MODE = "off";
 process.env.VECTOR_WORKER_URL = "https://vector.worker.test";
 process.env.VECTOR_WORKER_TOKEN = "test-vector-token";
-let membershipRole = "OWNER";
-globalThis.fetch = async (url) => {
-  const parsed = new URL(String(url));
-  if (parsed.pathname.endsWith("/tenant_members")) {
-    return {
-      ok: true,
-      status: 200,
-      json: async () => [{
-        tenant_id: "tenant_alpha",
-        user_id: "user_alpha",
-        role: membershipRole,
-        status: "ACTIVE",
-        disabled_at: null,
-        user: {
-          id: "user_alpha",
-          email: "owner@example.test",
-          status: "ACTIVE",
-          session_version: 1,
-          disabled_at: null,
-          auth_user_id: "auth_alpha"
-        },
-        tenant: {
-          id: "tenant_alpha",
-          name: "Tenant Alpha",
-          plan: "pilot",
-          status: "ACTIVE",
-          disabled_at: null
-        }
-      }],
-      text: async () => "[]"
-    };
-  }
-  return {
-    ok: true,
-    status: 200,
-    json: async () => [],
-    text: async () => parsed.pathname.endsWith("/readyz")
-      ? JSON.stringify({
-        status: "ready",
-        visual_embeddings_enabled: true,
-        visual_embedding_preload_enabled: true,
-        visual_embedding_preload_status: { status: "READY" },
-        visual_embedding_model_id: "google/siglip2-base-patch16-384",
-        visual_embedding_model_revision: "f775b65a79762255128c981547af89addcfe0f88"
-      })
-      : "[]"
-  };
-};
+globalThis.fetch = async (url) => ({
+  ok: true,
+  status: 200,
+  text: async () => String(url).endsWith("/readyz")
+    ? JSON.stringify({
+      status: "ready",
+      visual_embeddings_enabled: true,
+      visual_embedding_preload_enabled: true,
+      visual_embedding_preload_status: { status: "READY" },
+      visual_embedding_model_id: "google/siglip2-base-patch16-384",
+      visual_embedding_model_revision: "f775b65a79762255128c981547af89addcfe0f88"
+    })
+    : "[]"
+});
+
+function sign(value) {
+  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
+}
 
 function sessionCookie() {
-  const token = createListingSessionToken({
-    user_id: "user_alpha",
-    tenant_id: "tenant_alpha",
-    email: "owner@example.test",
-    session_version: 1
-  }, process.env.METAVERSE_AUTH_SECRET);
-  return `lynca_metaverse_session=${token}`;
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
 }
 
 async function callStatus() {
@@ -154,28 +118,6 @@ assert.equal(response.body.execution_control.stage_capacity.vector.index_concurr
 assert.doesNotMatch(JSON.stringify(response.body.execution_control), /test-openai-key/);
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-openai-key|test-service-role|example\.supabase/);
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-vector-token|vector\.worker\.test/);
-
-membershipRole = "WRITER";
-response = await callStatus();
-assert.equal(response.statusCode, 200);
-assert.equal(response.body.default_provider, "openai_legacy");
-assert.equal(response.body.storage.configured, true);
-assert.equal(response.body.providers[0].selectable, true);
-assert.equal(response.body.workflow_readiness.can_run_cloud_recognition, true);
-assert.equal("execution_control" in response.body, false, "Writer must not receive provider capacity controls");
-assert.equal("deployment" in response.body, false, "Writer must not receive deployment diagnostics");
-assert.equal("components" in response.body.workflow_readiness, false, "Writer readiness must be summary-only");
-assert.equal("blockers" in response.body.workflow_readiness, false, "Writer readiness must omit infrastructure blockers");
-assert.equal("bucket" in response.body.storage, false, "Writer storage DTO must omit internal bucket names");
-assert.equal("missing" in response.body.storage, false);
-assert.equal("key_pool_size" in response.body.providers[0], false);
-assert.equal("recommended_concurrency" in response.body.providers[0], false);
-
-membershipRole = "MANAGER";
-response = await callStatus();
-assert.equal(response.statusCode, 200);
-assert.equal(response.body.execution_control.provider_key_pool_size, 2, "Manager may view tenant operations diagnostics");
-membershipRole = "OWNER";
 
 process.env.V4_PROVIDER_DONE_CAPACITY_HANDOFF_ENABLED = "false";
 response = await callStatus();

@@ -1,35 +1,18 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest, persistProductionEvent } from "../../lib/observability/production-events.mjs";
+import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { createWriterBatchExport } from "../../lib/listing/v4/export/writer-batch-export.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
-import {
-  LEGACY_TENANT_ID,
-  publicTenantAuthError,
-  requirePermission,
-  requireTenantAccess,
-  TENANT_PERMISSIONS
-} from "../../lib/tenant/index.mjs";
 
 function safeError(error) {
   return String(error?.message || error || "unknown_error").slice(0, 280);
 }
 
-async function writerExportSchemaReadiness(tenantId, env = process.env) {
+async function writerExportSchemaReadiness(env = process.env) {
   const [batches, items] = await Promise.all([
-    readV4Rows({
-      table: "v4_writer_export_batches",
-      select: "id",
-      search: { tenant_id: `eq.${tenantId}`, limit: "1" },
-      env
-    }),
-    readV4Rows({
-      table: "v4_writer_export_items",
-      select: "id",
-      search: { tenant_id: `eq.${tenantId}`, limit: "1" },
-      env
-    })
+    readV4Rows({ table: "v4_writer_export_batches", select: "id", search: { limit: "1" }, env }),
+    readV4Rows({ table: "v4_writer_export_items", select: "id", search: { limit: "1" }, env })
   ]);
   return {
     ready: batches.ok && items.ok,
@@ -37,23 +20,24 @@ async function writerExportSchemaReadiness(tenantId, env = process.env) {
   };
 }
 
-async function writerExportRowsBelongToTenant(rows, tenantId, env = process.env) {
+async function writerExportRowsBelongToOperator(rows, operatorId, env = process.env) {
   const sessionIds = [...new Set((Array.isArray(rows) ? rows : [])
     .map((row) => String(row?.recognition_session_id || row?.session_id || row?.recognitionSessionId || "").trim())
     .filter(Boolean))];
   if (!sessionIds.length) return { allowed: true, checked_session_count: 0, error: null };
   const sessions = await readV4Rows({
     table: "v4_recognition_sessions",
-    select: "id,tenant_id",
+    select: "id,operator_id",
     search: {
-      tenant_id: `eq.${tenantId}`,
       id: `in.(${sessionIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",")})`,
       limit: String(sessionIds.length)
     },
     env
   });
   if (!sessions.ok) return { allowed: false, unavailable: true, checked_session_count: 0, error: sessions.error };
-  const owned = new Set(sessions.rows.map((row) => String(row.id)));
+  const owned = new Set(sessions.rows
+    .filter((row) => String(row.operator_id || "") === operatorId)
+    .map((row) => String(row.id)));
   return {
     allowed: sessionIds.every((id) => owned.has(id)),
     unavailable: false,
@@ -62,33 +46,14 @@ async function writerExportRowsBelongToTenant(rows, tenantId, env = process.env)
   };
 }
 
-function writerExportRowsUseTenantStorage(rows, tenantId) {
-  const prefix = `tenants/${tenantId}/`;
-  return (Array.isArray(rows) ? rows : []).every((row) => {
-    return (Array.isArray(row?.images) ? row.images : []).every((image) => {
-      const objectPath = String(image?.object_path || image?.objectPath || "").trim();
-      if (!objectPath || objectPath.startsWith(prefix)) return true;
-      // Existing legacy objects predate tenant prefixes. They remain readable
-      // only inside tenant_legacy; a path already under `tenants/` can never be
-      // borrowed from another customer.
-      return tenantId === LEGACY_TENANT_ID && !objectPath.startsWith("tenants/");
-    });
-  });
-}
-
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/v4/listing-export-workbook" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  let context;
-  try {
-    context = await requireTenantAccess(req);
-    bindProductionRequestContext(res, context);
-    requirePermission(context, TENANT_PERMISSIONS.EXPORT_DATA);
-  } catch (error) {
-    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
+  const authenticatedSession = getSessionFromRequest(req);
+  if (!authenticatedSession) {
+    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -113,7 +78,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const schema = await writerExportSchemaReadiness(context.tenantId, process.env);
+    const schema = await writerExportSchemaReadiness(process.env);
     if (!schema.ready) {
       sendJson(res, 503, withV4Version({
         ok: false,
@@ -125,16 +90,8 @@ export default async function handler(req, res) {
       return;
     }
     const rows = payload.rows || payload.items || [];
-    if (!writerExportRowsUseTenantStorage(rows, context.tenantId)) {
-      sendJson(res, 403, withV4Version({
-        ok: false,
-        retryable: false,
-        message: "One or more export images are outside this tenant.",
-        error_type: "WRITER_EXPORT_STORAGE_FORBIDDEN"
-      }));
-      return;
-    }
-    const ownership = await writerExportRowsBelongToTenant(rows, context.tenantId, process.env);
+    const operatorId = operatorIdFromRequest(req);
+    const ownership = await writerExportRowsBelongToOperator(rows, operatorId, process.env);
     if (!ownership.allowed) {
       sendJson(res, ownership.unavailable ? 503 : 403, withV4Version({
         ok: false,
@@ -146,17 +103,8 @@ export default async function handler(req, res) {
     }
     const result = await createWriterBatchExport({
       rows,
-      tenantId: context.tenantId,
-      exportedBy: context.userId,
+      exportedBy: operatorId,
       env: process.env
-    });
-    await persistProductionEvent({
-      eventType: "export_generated",
-      requestId: context.requestId,
-      context,
-      batchId: result.batch_id,
-      success: true,
-      metadata: { asset_count: result.asset_count, item_count: result.item_count }
     });
     sendJson(res, 200, withV4Version(result));
   } catch (error) {

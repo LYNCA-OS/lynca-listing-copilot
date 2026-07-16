@@ -1,6 +1,5 @@
+import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
-import { publicTenantAuthError, requireTenantAccess } from "../lib/tenant/index.mjs";
 import {
   ebayBrowseProvider,
   normalizeEbaySellerUsername
@@ -10,7 +9,38 @@ import {
   sportsCardFilterVersion
 } from "../lib/listing/retrieval/sports-card-filter.mjs";
 
+const cookieName = "lynca_metaverse_session";
 const defaultSeller = "dcsports87";
+
+function parseCookies(header) {
+  return Object.fromEntries(
+    String(header || "")
+      .split(";")
+      .map((part) => {
+        const index = part.indexOf("=");
+        if (index === -1) return ["", ""];
+        return [part.slice(0, index).trim(), part.slice(index + 1).trim()];
+      })
+      .filter(([key, value]) => key && value)
+  );
+}
+
+function sign(value, secret) {
+  return crypto.createHmac("sha256", secret).update(value).digest("hex");
+}
+
+function isValidSession(cookie, secret) {
+  if (!cookie || !secret) return false;
+  const [payload, signature] = cookie.split(".");
+  if (!payload || !signature || signature !== sign(payload, secret)) return false;
+
+  try {
+    const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return Number(session.exp) > Date.now();
+  } catch {
+    return false;
+  }
+}
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -218,17 +248,16 @@ export function createEbaySellerListingsHandler({
   requestRateLimit = 60
 } = {}) {
   return async function handler(req, res) {
-    instrumentProductionRequest(req, res, { api: "/api/ebay-seller-listings" });
     if (req.method !== "GET") {
       sendJson(res, 405, { ok: false, message: "Method not allowed" });
       return;
     }
 
-    try {
-      const context = await requireTenantAccess(req, { env });
-      bindProductionRequestContext(res, context);
-    } catch (error) {
-      sendJson(res, Number(error?.statusCode || 503), publicTenantAuthError(error));
+    const cookies = parseCookies(req.headers.cookie);
+    const authenticated = isValidSession(cookies[cookieName], env.METAVERSE_AUTH_SECRET);
+
+    if (!authenticated) {
+      sendJson(res, 401, { ok: false, message: "Unauthorized" });
       return;
     }
 

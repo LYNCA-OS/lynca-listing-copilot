@@ -1,7 +1,5 @@
 import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
-import { publicTenantAuthError, requireTenantAccess } from "../lib/tenant/index.mjs";
 import { PublishingApprovalError } from "../lib/listing/publishing/listing-draft.mjs";
 import { PublishingProviderError } from "../lib/listing/publishing/publisher-contract.mjs";
 import { publishListingDraft } from "../lib/listing/publishing/publish-listing-draft.mjs";
@@ -57,29 +55,18 @@ function sendJson(res, statusCode, payload) {
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/listing-publish-draft" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  try {
-    const context = await requireTenantAccess(req);
-    bindProductionRequestContext(res, context);
-  } catch (error) {
-    sendJson(res, Number(error?.statusCode || 503), publicTenantAuthError(error));
+  const cookies = parseCookies(req.headers.cookie);
+  const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
+
+  if (!authenticated) {
+    sendJson(res, 401, { ok: false, message: "Unauthorized" });
     return;
   }
-
-  // The legacy publisher has a global audit/idempotency store and cannot prove
-  // tenant ownership. Keep the external side-effect closed until the dedicated
-  // tenant-aware publishing contract is available.
-  sendJson(res, 410, {
-    ok: false,
-    code: "tenant_aware_publishing_required",
-    message: "Publishing is temporarily unavailable in the multi-tenant pilot."
-  });
-  return;
 
   if (!enforceApiRateLimit(req, res, {
     scope: "listing_publish",

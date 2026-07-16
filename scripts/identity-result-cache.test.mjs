@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
-import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
+import handler from "../api/listing-copilot-title.js";
 import {
   buildIdentityResultCacheKey,
   identityResultCacheRecordToListingResult,
@@ -19,7 +21,15 @@ process.env.LISTING_IDENTITY_CACHE_WRITE_ENABLED = "false";
 process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
-process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
+
+function sign(value) {
+  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
+}
+
+function sessionCookie() {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+}
 
 function makeImage({
   id,
@@ -50,30 +60,48 @@ function jsonResponse(payload, status = 200) {
 }
 
 async function callTitleApi(payload) {
-  return runListingRecognitionCore({
-    payload,
-    requestContext: {
-      headers: { "x-lynca-worker-secret": process.env.V4_JOB_WORKER_SECRET }
+  const req = new EventEmitter();
+  req.method = "POST";
+  req.headers = { cookie: sessionCookie() };
+
+  const res = {
+    statusCode: 0,
+    headers: {},
+    body: "",
+    setHeader(key, value) {
+      this.headers[key] = value;
+    },
+    end(value) {
+      this.body = value;
     }
-  });
+  };
+
+  const promise = handler(req, res);
+  req.emit("data", JSON.stringify(payload));
+  req.emit("end");
+  await promise;
+
+  return {
+    statusCode: res.statusCode,
+    body: JSON.parse(res.body)
+  };
 }
 
 const images = [
   makeImage({
     id: "front",
     role: "front_original",
-    objectPath: "tenants/tenant_alpha/listing-assets/2026-06-23/asset-cache/front.jpg",
+    objectPath: "listing-assets/2026-06-23/asset-cache/front.jpg",
     contentSha256: "c".repeat(64)
   }),
   makeImage({
     id: "back",
     role: "back_original",
-    objectPath: "tenants/tenant_alpha/listing-assets/2026-06-23/asset-cache/back.jpg",
+    objectPath: "listing-assets/2026-06-23/asset-cache/back.jpg",
     contentSha256: "d".repeat(64)
   })
 ];
 const payload = {
-  tenant_id: "tenant_alpha",
   assetId: "asset-cache",
   mode: "single",
   images,
@@ -85,7 +113,6 @@ assert.equal(key.ok, true);
 assert.match(key.cache_key, /^[0-9a-f]{64}$/);
 
 const noHashKey = buildIdentityResultCacheKey({
-  tenant_id: "tenant_alpha",
   images: [{ ...images[0], contentSha256: "" }]
 });
 assert.equal(noHashKey.ok, false);
@@ -181,13 +208,11 @@ globalThis.fetch = async (url, options = {}) => {
   });
 
   if (table === "listing_image_verifications") {
-    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     const objectPath = requestUrl.searchParams.get("object_path")?.replace(/^eq\./, "");
     const image = images.find((item) => item.objectPath === objectPath);
     assert.ok(image, `unexpected verification object path ${objectPath}`);
     return jsonResponse([
       {
-        tenant_id: "tenant_alpha",
         object_path: image.objectPath,
         bucket: image.bucket,
         content_type: image.originalType,
@@ -209,7 +234,6 @@ globalThis.fetch = async (url, options = {}) => {
       return jsonResponse([{ ...options.body, cache_key: key.cache_key }]);
     }
     assert.equal(requestUrl.searchParams.get("cache_key"), `eq.${key.cache_key}`);
-    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     assert.equal(requestUrl.searchParams.get("cache_status"), "eq.active");
     return jsonResponse([built.row]);
   }
@@ -217,7 +241,7 @@ globalThis.fetch = async (url, options = {}) => {
   throw new Error(`Unexpected remote call: ${requestUrl.href}`);
 };
 
-const read = await readIdentityResultCacheRecord({ cacheKey: key.cache_key, tenantId: "tenant_alpha" });
+const read = await readIdentityResultCacheRecord({ cacheKey: key.cache_key });
 assert.equal(read.hit, true);
 assert.equal(read.record.cache_key, key.cache_key);
 
@@ -243,9 +267,7 @@ assert.equal(response.body.identity_cache.cache_key, key.cache_key);
 assert.equal(response.body.usage.provider_calls, 0);
 assert.equal(response.body.usage.recognition_worker_calls, 0);
 assert.match(response.body.final_title, /2025 Topps Chrome Cooper Flagg/);
-assert.deepEqual(fetchCalls
-  .filter((call) => !["request_logs", "production_events", "error_logs"].includes(call.table))
-  .map((call) => call.table), [
+assert.deepEqual(fetchCalls.map((call) => call.table), [
   "listing_image_verifications",
   "listing_image_verifications",
   "listing_identity_resolution_cache"
