@@ -764,6 +764,65 @@ assert.match(observedMultiSubjectWriterDraft.final_title, /Hank Aaron/);
 assert.match(observedMultiSubjectWriterDraft.final_title, /Ken Griffey Jr/);
 assert.match(observedMultiSubjectWriterDraft.final_title, /Mike Trout/);
 
+const fullyDroppedMultiSubjectWriterDraft = applyIdentityResolutionGate({
+  title: "",
+  model_title_suggestion: "",
+  confidence: "HIGH",
+  reason: "Provider directly observed three subjects, but resolution dropped the full set.",
+  provider: "cascade_fast",
+  raw_provider_fields: {
+    player: "Johnny Bench; Barry Larkin; Elly De La Cruz"
+  },
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    product: "Topps Chrome",
+    card_name: "Star Clusters",
+    collector_number: "TSC-4"
+  }),
+  evidence: {
+    year: visionOnlyEvidence("2025"),
+    product: groundedEvidence("Topps Chrome"),
+    card_name: groundedEvidence("Star Clusters"),
+    collector_number: groundedEvidence("TSC-4")
+  },
+  unresolved: []
+}, {
+  maxLength: 140,
+  providerId: "primary_fast_vision"
+});
+assert.deepEqual(
+  fullyDroppedMultiSubjectWriterDraft.resolved.players,
+  ["Johnny Bench", "Barry Larkin", "Elly De La Cruz"]
+);
+assert.match(fullyDroppedMultiSubjectWriterDraft.final_title, /Johnny Bench/);
+assert.match(fullyDroppedMultiSubjectWriterDraft.final_title, /Barry Larkin/);
+assert.match(fullyDroppedMultiSubjectWriterDraft.final_title, /Elly De La Cruz/);
+
+const retrievalSubjectsCannotRecoverEmptyIdentity = applyIdentityResolutionGate({
+  title: "",
+  model_title_suggestion: "",
+  confidence: "HIGH",
+  reason: "Only a retrieval-shaped legacy field contains multiple subjects.",
+  provider: "cascade_fast",
+  fields: {
+    players: ["Wrong Candidate One", "Wrong Candidate Two"]
+  },
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    product: "Topps Chrome"
+  }),
+  evidence: {
+    year: visionOnlyEvidence("2025"),
+    product: groundedEvidence("Topps Chrome")
+  },
+  unresolved: []
+}, {
+  maxLength: 140,
+  providerId: "primary_fast_vision"
+});
+assert.deepEqual(retrievalSubjectsCannotRecoverEmptyIdentity.resolved.players, []);
+assert.doesNotMatch(retrievalSubjectsCannotRecoverEmptyIdentity.final_title, /Wrong Candidate/);
+
 const compatibleProductConflictDraft = applyIdentityResolutionGate({
   title: "",
   model_title_suggestion: "",
