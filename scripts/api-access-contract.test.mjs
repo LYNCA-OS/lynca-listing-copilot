@@ -42,10 +42,6 @@ const internalSecretRoutes = Object.freeze([
   "api/admin-import-corrected-title-catalog.js",
   "api/admin-import-writer-title-catalog-seed.js",
   "api/admin-index-visual-vector-seed.js",
-  "api/admin-visual-review-run.js",
-  "api/admin-visual-review-session.js",
-  "api/admin/visual-review/run.js",
-  "api/admin/visual-review/session.js",
   "api/listing-storage-retention-cleanup.js",
   "api/v4/listing-job-pump.js",
   "api/v4/listing-job-worker.js",
@@ -108,9 +104,7 @@ assert.deepEqual(
 
 const delegatedAccessSource = Object.freeze({
   "api/ebay-card-listings.js": "api/ebay-dcsports87-listings.js",
-  "api/ebay-seller-listings.js": "api/ebay-dcsports87-listings.js",
-  "api/admin/visual-review/run.js": "api/admin-visual-review-run.js",
-  "api/admin/visual-review/session.js": "api/admin-visual-review-session.js"
+  "api/ebay-seller-listings.js": "api/ebay-dcsports87-listings.js"
 });
 for (const file of tenantAuthRoutes) {
   assert.match(source(delegatedAccessSource[file] || file), /\brequireTenantAccess\s*\(/, `${file} must call requireTenantAccess()`);
@@ -129,8 +123,8 @@ for (const file of internalSecretRoutes) {
       ? /\bisV4WorkerRequest\s*\(/
       : file.startsWith("api/workflow-sidecar-")
       ? /\bhandleInternalSidecar\s*\(/
-      : file.startsWith("api/admin-visual-review") || file.startsWith("api/admin/visual-review")
-        ? /\bisPlatformAdminRequest\s*\(/
+      : file.startsWith("api/admin-apply-")
+        ? /\bruntimeMigrationAuth\s*\(/
         : file.startsWith("api/admin-")
           ? /\b(?:platformAdminAuth|isPlatformAdminRequest)\s*\(/
           : /\bisV4WorkerRequest\s*\(/);
@@ -158,9 +152,9 @@ for (const file of publicRoutes) {
   assert.doesNotMatch(source(file), /\brequireTenantAccess\s*\(/, `${file} is no longer public; reclassify it`);
 }
 
-assert.equal(actualApiFiles.length, 55);
+assert.equal(actualApiFiles.length, 51);
 assert.equal(publicRoutes.length, 4);
-assert.equal(internalSecretRoutes.length, 23);
+assert.equal(internalSecretRoutes.length, 19);
 assert.equal(tenantAuthRoutes.length, 28);
 
 console.log(JSON.stringify({

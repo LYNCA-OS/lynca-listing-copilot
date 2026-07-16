@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
-import { platformAdminAuth } from "../lib/platform-admin-auth.mjs";
+import { runtimeMigrationAuth } from "../lib/platform-admin-auth.mjs";
 
 export const config = {
   maxDuration: 300
@@ -56,9 +56,9 @@ export default async function handler(req, res) {
     return;
   }
 
-  const auth = platformAdminAuth(req);
+  const auth = runtimeMigrationAuth(req);
   if (!auth.ok) {
-    sendJson(res, 401, { ok: false, error: "unauthorized" });
+    sendJson(res, auth.statusCode, { ok: false, error: auth.error });
     return;
   }
 

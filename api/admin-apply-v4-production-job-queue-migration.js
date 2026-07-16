@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
-import { isPlatformAdminRequest } from "../lib/platform-admin-auth.mjs";
+import { runtimeMigrationAuth } from "../lib/platform-admin-auth.mjs";
 
 const migrationPaths = [
   "supabase/migrations/20260707122154_v4_production_job_queue.sql",
@@ -369,8 +369,9 @@ export default async function handler(req, res) {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
-  if (!isPlatformAdminRequest(req, process.env)) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
+  const auth = runtimeMigrationAuth(req, process.env);
+  if (!auth.ok) {
+    sendJson(res, auth.statusCode, { ok: false, message: auth.error });
     return;
   }
   const connectionString = dbUrl(process.env);

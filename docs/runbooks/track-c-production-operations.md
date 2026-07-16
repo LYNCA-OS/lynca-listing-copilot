@@ -6,6 +6,7 @@ Status: rollout procedure only. Preview and production are unchanged; see the li
 
 - Production and preview must use different Supabase databases/projects or isolated Supabase branches, including separate service-role credentials and storage configuration. A preview deployment must never inherit the production Supabase URL, database URL, service-role key, or storage namespace.
 - The production deploy workflow does **not** apply schema migrations. Schema maintenance is a separate, approved maintenance-window operation; the workflow only performs read-only schema preflights and fails closed when the schema is not ready.
+- Legacy runtime migration handlers are disabled by default and cannot be enabled in a production runtime. `LYNCA_RUNTIME_MIGRATIONS_ENABLED=true` is only for an isolated non-production rehearsal with separate credentials; it is not a production break-glass path.
 - Never run `supabase db reset`, an unscoped migration push, or a destructive down migration against production.
 - Use the direct `POSTGRES_URL_NON_POOLING` connection only from the approved ephemeral maintenance runner. Reference the environment variable in commands; never paste or print its literal value, or copy it into an artifact.
 

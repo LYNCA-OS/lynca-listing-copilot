@@ -34,7 +34,7 @@ AuthContext { requestId, tenantId, userId, role }
 4. RLS is defense in depth. The server currently uses `service_role`, which bypasses RLS, so every service-role query must also carry a tenant predicate enforced by the application context.
 5. Compatibility is deliberate. The initial rollout uses expand/backfill/contract, keeps existing physical job states, and isolates historical data inside a bounded `tenant_legacy` tenant.
 6. Paid recognition is durable-first. A customer request may enqueue work, but only a worker reconstructing identity from a persisted tenant-scoped job may invoke the recognition core. Immediately before any session/provider side effect, an atomic heartbeat must prove the job is still `RUNNING`, owned by that worker, and unexpired. Lease loss aborts the in-flight provider signal. The retired legacy title/render endpoints cannot use a worker secret to select an arbitrary tenant.
-7. Deployment is code-only. Database migrations run in a separate approved maintenance window; the production workflow performs read-only schema preflights before and after deployment and never calls runtime migration APIs.
+7. Deployment is code-only. Database migrations run in a separate approved maintenance window; the production workflow performs read-only schema preflights before and after deployment and never calls runtime migration APIs. Legacy HTTP migration handlers are default-disabled and hard-disabled when the runtime is production.
 
 ## Roles and permissions
 

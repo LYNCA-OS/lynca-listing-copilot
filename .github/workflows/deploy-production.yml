@@ -16,6 +16,17 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+      - name: Fail closed unless this dispatch targets the current main commit
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          test "$DEFAULT_BRANCH" = "main"
+          test "$DISPATCH_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -39,6 +50,12 @@ jobs:
           # deploy workflow never mutates the database.
           node scripts/check-track-c-production-schema.mjs \
             --out /tmp/track-c-production-schema-preflight.json
+      - name: Re-confirm the exact main commit before the deploy hook
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - name: Trigger current main through the Vercel Deploy Hook
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
