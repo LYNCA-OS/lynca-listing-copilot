@@ -1,9 +1,22 @@
-import { instrumentProductionRequest } from "../lib/observability/production-events.mjs";
-import {
-  cookieName,
-  listingSessionCookieIsSecure,
-  sameOriginBrowserRequest
-} from "../lib/listing-session.mjs";
+import { cookieName } from "../lib/listing-session.mjs";
+
+function isHttps(req) {
+  const host = String(req.headers.host || "");
+  return req.headers["x-forwarded-proto"] === "https" ||
+    (!host.startsWith("localhost") && !host.startsWith("127.0.0.1"));
+}
+
+function sameOriginRequest(req) {
+  const origin = String(req.headers.origin || "").trim();
+  const fetchSite = String(req.headers["sec-fetch-site"] || "").trim().toLowerCase();
+  const host = String(req.headers.host || "").split(",")[0].trim();
+  if (!origin || fetchSite !== "same-origin") return false;
+  try {
+    return Boolean(host) && new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -14,19 +27,18 @@ function sendJson(res, statusCode, payload) {
 }
 
 export default function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/logout" });
   if (req.method !== "POST") {
     res.setHeader("allow", "POST");
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  if (!sameOriginBrowserRequest(req)) {
+  if (!sameOriginRequest(req)) {
     sendJson(res, 403, { ok: false, message: "Forbidden" });
     return;
   }
 
-  const secure = listingSessionCookieIsSecure(req) ? "; Secure" : "";
+  const secure = isHttps(req) ? "; Secure" : "";
 
   res.setHeader("set-cookie", `${cookieName}=; HttpOnly; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${secure}`);
   sendJson(res, 200, { ok: true });

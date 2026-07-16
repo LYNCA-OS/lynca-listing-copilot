@@ -12,7 +12,7 @@ This phase starts the Evidence First data layer without removing the legacy titl
 - `lib/listing/schemas/resolved-fields.schema.json`
 - `lib/listing/evidence/evidence-schema.mjs`
 - `lib/listing/evidence/provider-evidence-normalizer.mjs`
-- `lib/identity-resolution/types.mjs`
+- `lib/listing/resolver/evidence-priority.mjs`
 - `lib/listing/resolver/number-resolver.mjs`
 - `lib/listing/resolver/grade-resolver.mjs`
 - `lib/listing/resolver/resolve-card.mjs`
@@ -33,9 +33,6 @@ The resolver bridge now handles the two highest-risk legacy semantic fields:
 
 - Number resolver separates `serial_number`, `collector_number`, and `checklist_code`.
 - Grade resolver separates `card_grade`, `auto_grade`, and `grade_type`.
-
-> 2026-07-15: the standalone Phase 3 evidence-priority prototype was retired.
-> Production source ordering is owned only by `lib/identity-resolution/types.mjs`.
 
 ## EvidenceField Contract
 

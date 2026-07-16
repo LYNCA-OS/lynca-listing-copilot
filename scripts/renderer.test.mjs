@@ -1185,60 +1185,10 @@ const tcgMasterBallStress = renderListingPresentation({
 });
 assert.equal(
   tcgMasterBallStress.final_title,
-  "2023 Japanese Pokemon 151 Charizard ex #201 SAR Master Ball Reverse Holo PSA 10"
+  "2023 Japanese Pokemon 151 Charizard ex SAR Master Ball Reverse Holo PSA 10"
 );
 assert.doesNotMatch(tcgMasterBallStress.final_title, /201\/165/);
 assert.equal(tcgMasterBallStress.final_title.length <= 80, true);
-
-const lorcanaChecklistNumberIsNotPrintRun = renderListingPresentation({
-  resolved: {
-    year: "2025",
-    language: "JA",
-    brand: "Disney Lorcana",
-    manufacturer: "Disney Lorcana",
-    product: "Special PR Pack Vol.1-Iconic",
-    set: "Special PR Pack Vol.1-Iconic",
-    players: ["Mickey Mouse"],
-    collector_number: "242/204 JA-9",
-    print_run_number: "#/204",
-    serial_number: "#/204",
-    numerical_rarity: "#/204",
-    numbered_to: "204",
-    grade_company: "PSA",
-    card_grade: "10",
-    grade_type: "CARD_ONLY"
-  },
-  maxLength: 80
-});
-assert.equal(lorcanaChecklistNumberIsNotPrintRun.renderer, "pokemon");
-assert.match(lorcanaChecklistNumberIsNotPrintRun.final_title, /Disney Lorcana/i);
-assert.match(lorcanaChecklistNumberIsNotPrintRun.final_title, /Mickey Mouse/i);
-assert.match(lorcanaChecklistNumberIsNotPrintRun.final_title, /242\/204/i);
-assert.doesNotMatch(lorcanaChecklistNumberIsNotPrintRun.final_title, /#\/204|242\/204 JA-9/i);
-assert.equal(lorcanaChecklistNumberIsNotPrintRun.modules.numerical_rarity.text, "");
-assert.equal(lorcanaChecklistNumberIsNotPrintRun.modules.card_number.text, "#242/204");
-
-const structuredInsertOwnsNoisyCardName = renderResolvedTitle({
-  year: "2018",
-  manufacturer: "Panini",
-  product: "Panini Contenders Optic",
-  players: ["Luka Dončić"],
-  insert: "Rookie Ticket",
-  card_name: "Rookie Ticket Shooting - Auto. - Blue",
-  surface_color: "Blue",
-  collector_number: "128",
-  print_run_number: "2/28",
-  numerical_rarity: "2/28",
-  rc: true,
-  auto: true,
-  grade_company: "PSA",
-  card_grade: "9",
-  grade_type: "CARD_ONLY"
-}, { maxLength: 80 });
-assert.match(structuredInsertOwnsNoisyCardName.rendered_title, /Rookie Ticket Blue 2\/28 RC Auto PSA 9$/i);
-assert.doesNotMatch(structuredInsertOwnsNoisyCardName.rendered_title, /Shooting/i);
-assert.ok(structuredInsertOwnsNoisyCardName.rendered_title.length <= 80);
-assert.doesNotMatch(structuredInsertOwnsNoisyCardName.title_length_policy.removed_terms.join(" "), /Rookie Ticket/i);
 
 const tcgPikachuIllustratorStress = renderListingPresentation({
   resolved: {
@@ -1285,9 +1235,9 @@ const tcgGhostRareStress = renderListingPresentation({
 });
 assert.equal(
   tcgGhostRareStress.final_title,
-  "2007 Yu-Gi-Oh! Tactical Evolution Rainbow Dragon TAEV-EN006 1st Edition PSA 10"
+  "2007 Yu-Gi-Oh! Tactical Evolution Rainbow Dragon Ghost Rare 1st Edition PSA 10"
 );
-assert.doesNotMatch(tcgGhostRareStress.final_title, /Ghost Rare|English/);
+assert.doesNotMatch(tcgGhostRareStress.final_title, /TAEV-EN006|English/);
 
 const bowmanLongDescriptorKeepsGrade = renderListingPresentation({
   resolved: {

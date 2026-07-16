@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { __listingCopilotTitleTestHooks, runListingRecognitionCore } from "../api/listing-copilot-title.js";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
+import handler, { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
@@ -7,12 +9,10 @@ process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.ENABLE_OPENAI_PROVIDER = "true";
 process.env.ALLOW_EXPLICIT_OPENAI_RETRY = "true";
 process.env.OPENAI_API_KEY = "test-openai-key";
-process.env.OPENAI_LISTING_MODEL = "gpt-5-mini";
+process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.ENABLE_OPENAI_WEB_SEARCH_FALLBACK = "false";
-process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
 
 const catalogCacheKeyWithSingleSubject = __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
-  tenantId: "tenant_alpha",
   resolvedForRetrieval: {
     year: "2025-26",
     product: "Topps Finest",
@@ -21,7 +21,6 @@ const catalogCacheKeyWithSingleSubject = __listingCopilotTitleTestHooks.catalogC
   excludeSourceFeedbackIds: [" feedback-current-card "]
 });
 const catalogCacheKeyWithNormalizedSubject = __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
-  tenantId: "tenant_alpha",
   resolvedForRetrieval: {
     year: "2025-26",
     product: "Topps Finest",
@@ -40,6 +39,15 @@ assert.equal(resolveKnowledgeEntry("Explosive")?.label, "Explosive");
 assert.equal(resolveKnowledgeEntry("Green Geometric Refractor")?.label, "Green Geometric Refractor");
 assert.equal(resolveKnowledgeEntry("Keepsake Premiere Edition")?.label, "Keapsake Premiere Edition");
 assert.equal(resolveKnowledgeEntry("Super Short Print")?.label, "SSP");
+
+function sign(value) {
+  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
+}
+
+function sessionCookie() {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+}
 
 function directPrintedCodeEvidence(value, sourceType = "CARD_BACK_PRINTED_TEXT") {
   return {
@@ -94,7 +102,7 @@ async function callApi(providerResult, options = {}) {
     status: 200,
     json: async () => ({
       id: "resp_listing_confidence_test",
-      model: "gpt-5-mini",
+      model: "gpt-4.1-mini-2025-04-14",
       output_text: JSON.stringify(withDirectAutoEvidenceForPresentationTest(providerResult)),
       usage: {
         input_tokens: 10,
@@ -105,9 +113,24 @@ async function callApi(providerResult, options = {}) {
     text: async () => ""
   });
 
-  const response = await runListingRecognitionCore({
-    payload: {
-    tenant_id: "tenant_legacy",
+  const req = new EventEmitter();
+  req.method = "POST";
+  req.headers = { cookie: sessionCookie() };
+
+  const res = {
+    statusCode: 0,
+    headers: {},
+    body: "",
+    setHeader(key, value) {
+      this.headers[key] = value;
+    },
+    end(value) {
+      this.body = value;
+    }
+  };
+
+  const promise = handler(req, res);
+  req.emit("data", JSON.stringify({
     assetId: "asset-test",
     mode: "single",
     provider: "openai_legacy",
@@ -115,11 +138,11 @@ async function callApi(providerResult, options = {}) {
     images: [{ name: "card.webp", url: "https://example.test/card.webp" }],
     resolutionMap: {},
     maxTitleLength: options.maxTitleLength || 80
-    },
-    requestContext: { headers: { "x-lynca-worker-secret": process.env.V4_JOB_WORKER_SECRET } }
-  });
+  }));
+  req.emit("end");
+  await promise;
 
-  return response.body;
+  return JSON.parse(res.body);
 }
 
 const serialVisibleUncertainParallel = await callApi({
@@ -234,7 +257,7 @@ assert.match(providerFieldEvidenceArrayPreservesInstanceFields.title, /09\/50/);
 assert.match(providerFieldEvidenceArrayPreservesInstanceFields.title, /BGS 9\.5\/10/);
 assert.doesNotMatch(providerFieldEvidenceArrayPreservesInstanceFields.title, /#CPA|BGS 10\/9\.5/);
 
-const serialNumberOnlyPublishesPresentationNumericalRarity = await callApi({
+const serialNumberOnlyDoesNotBackfillNumericalRarity = await callApi({
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto",
   confidence: "HIGH",
   reason: "The current card image shows a physical serial read, but the provider did not classify it as the title print-limit module.",
@@ -253,14 +276,14 @@ const serialNumberOnlyPublishesPresentationNumericalRarity = await callApi({
   unresolved: ["numerical_rarity"]
 });
 
-assert.equal(serialNumberOnlyPublishesPresentationNumericalRarity.resolved.serial_number, "2/3");
-assert.equal(serialNumberOnlyPublishesPresentationNumericalRarity.resolved.numerical_rarity, "2/3");
-// Directly read current-image serial backfills the print run in the renderer,
-// and public fields are rebuilt from that immutable presentation snapshot.
-// Catalog/reference candidates still cannot contribute the numerator.
-assert.match(serialNumberOnlyPublishesPresentationNumericalRarity.title, /2\/3/);
-assert.doesNotMatch(serialNumberOnlyPublishesPresentationNumericalRarity.title, /#\/3/);
-assert.match(serialNumberOnlyPublishesPresentationNumericalRarity.title, /BGS 8\.5\/10/);
+assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.serial_number, "2/3");
+assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.numerical_rarity, null);
+// Directly read current-image serial backfills the print run in the TITLE
+// (presentation only; resolved.numerical_rarity stays null). Catalog/reference
+// candidates still cannot contribute the numerator.
+assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /2\/3/);
+assert.doesNotMatch(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /#\/3/);
+assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /BGS 8\.5\/10/);
 
 const structuredEvidenceArrayBackfillsCriticalFields = await callApi({
   title: "",

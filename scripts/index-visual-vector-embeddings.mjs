@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
 import { embedImagesWithVectorWorker } from "../lib/listing/retrieval/vector-worker-client.mjs";
-import { contractedConcurrency } from "../lib/listing/v4/orchestration/concurrency-contract.mjs";
 import {
   defaultVisualEmbeddingDimensions,
   defaultVisualEmbeddingModelId,
@@ -413,13 +412,6 @@ async function indexItem({
   const visualFeatures = response.visual_features || {};
   const features = Array.isArray(visualFeatures.features) ? visualFeatures.features : [];
   const usableFeatures = features.filter((feature) => validFeature(feature, config.dimensions));
-  const workerLatencyMs = Number.isFinite(Number(visualFeatures.latency_ms))
-    ? Number(visualFeatures.latency_ms)
-    : null;
-  const workerAttemptCount = Number.isFinite(Number(visualFeatures.attempt_count))
-    ? Number(visualFeatures.attempt_count)
-    : null;
-  const cacheHitCount = usableFeatures.filter((feature) => feature.cache_hit === true).length;
 
   if (visualFeatures.status !== "OK" || usableFeatures.length === 0) {
     throw new Error(`visual_embedding_unavailable:${visualFeatures.reason || visualFeatures.status || "unknown"}`);
@@ -430,9 +422,6 @@ async function indexItem({
       identity_key: identityKey,
       signed_image_count: signedImages.length,
       embedding_count: usableFeatures.length,
-      worker_latency_ms: workerLatencyMs,
-      worker_attempt_count: workerAttemptCount,
-      cache_hit_count: cacheHitCount,
       dry_run: true
     };
   }
@@ -548,22 +537,8 @@ async function indexItem({
     identity_key: identityKey,
     signed_image_count: signedImages.length,
     embedding_count: embeddingCount,
-    worker_latency_ms: workerLatencyMs,
-    worker_attempt_count: workerAttemptCount,
-    cache_hit_count: cacheHitCount,
     visual_status: visualFeatures.status
   };
-}
-
-function quantile(values = [], percentile = 0.5) {
-  const sorted = values
-    .filter((value) => value !== null && value !== undefined && value !== "")
-    .map(Number)
-    .filter(Number.isFinite)
-    .sort((left, right) => left - right);
-  if (!sorted.length) return null;
-  const index = Math.max(0, Math.min(sorted.length - 1, Math.ceil(percentile * sorted.length) - 1));
-  return sorted[index];
 }
 
 async function runPool(items, worker, concurrency = 2) {
@@ -671,11 +646,7 @@ export async function indexVisualVectorDataset({
       requested_items: items.length,
       indexed_items: itemResults.filter((result) => result.ok).length,
       failed_items: itemResults.filter((result) => !result.ok).length,
-      embeddings_written: itemResults.reduce((sum, result) => sum + (Number(result.embedding_count) || 0), 0),
-      worker_cache_hit_count: itemResults.reduce((sum, result) => sum + (Number(result.cache_hit_count) || 0), 0),
-      worker_attempt_count: itemResults.reduce((sum, result) => sum + (Number(result.worker_attempt_count) || 0), 0),
-      worker_latency_p50_ms: quantile(itemResults.map((result) => result.worker_latency_ms), 0.5),
-      worker_latency_p95_ms: quantile(itemResults.map((result) => result.worker_latency_ms), 0.95)
+      embeddings_written: itemResults.reduce((sum, result) => sum + (Number(result.embedding_count) || 0), 0)
     },
     items: itemResults
   };
@@ -707,10 +678,7 @@ async function main() {
     outPath: argValue(argv, "--out", env.VISUAL_VECTOR_INDEX_OUT || defaultOutPath),
     limit: numberArg(argv, "--limit", Number(env.VISUAL_VECTOR_INDEX_LIMIT || 0)),
     offset: numberArg(argv, "--offset", Number(env.VISUAL_VECTOR_INDEX_OFFSET || 0)),
-    concurrency: contractedConcurrency(
-      "vector_index",
-      Math.max(1, numberArg(argv, "--concurrency", Number(env.VISUAL_VECTOR_INDEX_CONCURRENCY || 2)))
-    ),
+    concurrency: Math.max(1, numberArg(argv, "--concurrency", Number(env.VISUAL_VECTOR_INDEX_CONCURRENCY || 2))),
     env,
     dryRun: hasFlag(argv, "--dry-run"),
     schemaCheckOnly: hasFlag(argv, "--schema-check-only"),

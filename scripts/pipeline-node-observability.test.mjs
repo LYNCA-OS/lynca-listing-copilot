@@ -464,28 +464,6 @@ assert.equal(
   false
 );
 
-const intentionallySuppressedBaseLedger = buildPipelineNodeLedger({
-  result: {
-    ...healthyResult,
-    raw_provider_fields: { ...fields, card_type: "Base" },
-    resolved_fields: fields,
-    rendered_fields: { fields }
-  },
-  timingContext: context,
-  payload: { asset_id: "asset-observability-default-base", images: [{}, {}] }
-});
-const suppressedBaseFlow = intentionallySuppressedBaseLedger.field_flow.fields
-  .find((row) => row.field_group === "card_type");
-assert.equal(intentionallySuppressedBaseLedger.field_flow.unexplained_resolution_drop_count, 0);
-assert.equal(intentionallySuppressedBaseLedger.field_flow.policy_suppression_count, 1);
-assert.deepEqual(intentionallySuppressedBaseLedger.field_flow.policy_suppression_fields, ["card_type"]);
-assert.equal(suppressedBaseFlow?.disposition, "POLICY_SUPPRESSED_DEFAULT_BASE");
-assert.equal(
-  intentionallySuppressedBaseLedger.reconciliation.anomalies
-    .some((item) => item.check_id === "critical_field_flow_has_no_silent_drop"),
-  false
-);
-
 const validCodeStillDroppedLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

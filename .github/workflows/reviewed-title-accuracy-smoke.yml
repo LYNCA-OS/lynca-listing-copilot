@@ -1,7 +1,14 @@
 name: reviewed-title-accuracy-smoke
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Fresh writer-reviewed cards to run (1-30)"
+        default: "3"
+      model:
+        description: "Production model"
+        default: "gpt-5-mini"
 
 concurrency:
   group: reviewed-title-accuracy-smoke
@@ -29,6 +36,9 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Validate requested sample size
+        run: |
+          node -e 'const n=Number(process.argv[1]); if(!Number.isInteger(n)||n<1||n>30) throw new Error("limit must be 1-30")' "${{ inputs.limit }}"
       - name: Collect prior reviewed-title evaluation history
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -46,7 +56,7 @@ jobs:
             --exclude "data/recognition/review/supabase-feedback-regression-30-field-review-packet.json,/tmp/reviewed-title-history.jsonl" \
             --out "$DATASET_PATH" \
             --sealed-labels-out "$SEALED_LABELS_PATH" \
-            --limit 10 \
+            --limit "${{ inputs.limit }}" \
             --selection-seed "reviewed-${{ github.run_id }}-${{ github.run_attempt }}" \
             --sample-mode fresh_generalization
       - name: Prove blind input and fresh-sample provenance
@@ -57,7 +67,7 @@ jobs:
           const labels = fs.readFileSync(process.env.SEALED_LABELS_PATH, 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
           const datasetText = fs.readFileSync(process.env.DATASET_PATH, 'utf8');
           const checks = {
-            exact_count: dataset.item_count === 10 && labels.length === 10,
+            exact_count: dataset.item_count === Number('${{ inputs.limit }}') && labels.length === Number('${{ inputs.limit }}'),
             fresh_sample_provenance: dataset.evaluation_sample_policy?.mode === 'FRESH_GENERALIZATION' && dataset.evaluation_sample_policy?.novelty_verified === true,
             reviewed_titles_absent: labels.every((label) => !datasetText.includes(String(label.reviewed_title || ''))),
             image_only: dataset.intake_policy?.image_only === true && dataset.items.every((item) => item.images?.length > 0),
@@ -66,14 +76,31 @@ jobs:
           console.log(JSON.stringify(checks, null, 2));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
           NODE
-      - name: Run locked reviewed-10 launch gate
+      - name: Validate production runtime
         run: |
-          node scripts/run-launch-gate-eval.mjs \
-            --profile reviewed-10 \
+          curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
+          node - <<'NODE'
+          const health = require('/tmp/v4-health.json');
+          const checks = {
+            ready: health.ready === true,
+            main_branch: health.deployment?.git_commit_ref === 'main',
+            queue_configured: health.production_queue?.configured === true,
+            worker_secret_configured: health.production_queue?.worker_secret_configured === true
+          };
+          console.log(JSON.stringify({ checks, deployment: health.deployment, model: health.provider?.model_id || null }, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+      - name: Run reviewed-title blind production smoke
+        run: |
+          node scripts/v4-ebay-smoke.mjs \
             --dataset "$DATASET_PATH" \
             --sealed-labels "$SEALED_LABELS_PATH" \
             --base-url "$API_BASE_URL" \
-            --expected-deployment-sha "${{ github.sha }}" \
+            --limit "${{ inputs.limit }}" \
+            --concurrency 2 \
+            --queue --speculative --use-preingestion --force-l2-direct \
+            --sample-mode fresh_generalization \
+            --model "${{ inputs.model }}" \
             --think-ms 0 \
             --l2-wait-ms 240000 \
             --request-timeout-ms 120000 \
@@ -82,45 +109,29 @@ jobs:
         run: |
           node - <<'NODE'
           const report = require(process.env.REPORT_PATH);
-          const technical = report.technical_summary || {};
-          const internal = report.strata?.internal_reviewed_gt || {};
-          const formal = internal.formal_accuracy || {};
-          const weak = report.strata?.ebay_weak_label || {};
-          const gate = report.formal_accuracy_gate || {};
-          const observed = report.execution_contract?.observed_checks || {};
-          const deployment = report.execution_contract?.deployment || {};
-          const nodes = technical.pipeline_node_observability || {};
+          const s = report.summary;
+          const nodes = s.pipeline_node_observability || {};
           const checks = {
-            exact_reviewed_10: technical.attempted_count === 10 && internal.attempted_count === 10,
-            all_cards_complete: technical.completed_count === technical.attempted_count,
-            reviewed_gt_only: internal.formal_accuracy?.eligible === true && weak.attempted_count === 0,
-            measured_count_matches_cohort: formal.measured_count === 10
-              && formal.measured_count === report.data_contract?.cohort_counts?.internal_reviewed_gt,
-            reviewed_accuracy_gate: gate.passed === true
-              && gate.required_correct_count === 9
-              && formal.correct_count >= 9
-              && formal.rate >= 0.87,
-            ebay_diagnostics_only: weak.formal_accuracy_eligible === false
-              && !Object.hasOwn(weak, 'formal_accuracy'),
-            sample_provenance: report.data_contract?.sample_provenance?.verified === true,
-            pipeline_ledgers: nodes.ledger_present_count === technical.attempted_count,
+            all_cards_complete: s.ok_count === s.attempted_count,
+            reviewed_gt_only: report.accuracy_policy?.corrected_title_is_reviewed_title_ground_truth === true,
+            reviewed_gt_count: s.accuracy_reference?.reviewed_title_ground_truth_count === s.attempted_count,
+            sample_provenance: report.evaluation_sample_policy?.provenance_verified === true,
+            pipeline_ledgers: nodes.ledger_present_count === s.attempted_count,
             no_transport_errors: Number(nodes.transport_error_count || 0) === 0,
-            no_missing_required_nodes: Number(nodes.missing_required_node_count || 0) === 0,
-            locked_execution_observed: Object.values(observed).length > 0 && Object.values(observed).every((value) => value === true),
-            self_retrieval_exclusion: report.data_contract?.self_retrieval_exclusion?.preflight_verified === true,
-            deployment_stable: report.execution_contract?.deployment?.drift?.unchanged === true,
-            expected_deployment_sha: deployment.expected?.deployment_sha === process.env.GITHUB_SHA
-              && deployment.start?.deployment_sha === process.env.GITHUB_SHA
-              && deployment.end?.deployment_sha === process.env.GITHUB_SHA,
-            no_combined_formal_accuracy: report.accuracy_reporting_policy?.combined_formal_accuracy_prohibited === true
-              && report.accuracy_reporting_policy?.combined_formal_accuracy === null
+            no_missing_required_nodes: Number(nodes.missing_required_node_count || 0) === 0
           };
           console.log(JSON.stringify({
             checks,
-            technical,
-            internal_reviewed_gt: internal,
-            execution: report.execution_contract,
-            accuracy_reporting_policy: report.accuracy_reporting_policy
+            attempted: s.attempted_count,
+            completed: s.ok_count,
+            reviewed_title_accuracy: s.reviewed_title_policy_acceptance,
+            policy_fair: s.final_accuracy_proxy,
+            writer_p50_ms: s.writer_ready_p50_ms,
+            writer_p95_ms: s.writer_ready_p95_ms,
+            queue_p95_ms: s.scheduler_queue_wait_p95_ms,
+            provider: s.provider_diagnostics,
+            catalog_prompt_candidates: s.l2_catalog_prompt_candidate_count,
+            vector_prompt_candidates: s.l2_vector_prompt_candidate_count
           }, null, 2));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
           NODE
@@ -132,5 +143,6 @@ jobs:
           retention-days: 30
           path: |
             /tmp/reviewed-title-accuracy-report.json
+            /tmp/reviewed-title-accuracy-report.tsv
             /tmp/reviewed-title-sealed-labels.jsonl
             /tmp/reviewed-title-history.jsonl

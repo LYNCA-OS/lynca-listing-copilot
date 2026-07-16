@@ -1,29 +1,17 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
+import { getSessionFromRequest } from "../../lib/listing-session.mjs";
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
-import {
-  publicTenantAuthError,
-  requirePermission,
-  requireTenantAccess,
-  TENANT_PERMISSIONS
-} from "../../lib/tenant/index.mjs";
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/v4/fast-scout-prewarm" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
 
-  let context;
-  try {
-    context = await requireTenantAccess(req);
-    bindProductionRequestContext(res, context);
-    requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
-  } catch (error) {
-    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
+  if (!getSessionFromRequest(req)) {
+    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
 
@@ -44,34 +32,16 @@ export default async function handler(req, res) {
 
   try {
     const startedAt = Date.now();
-    const trustedPayload = {
-      ...payload,
-      tenant_id: context.tenantId,
-      tenantId: context.tenantId,
-      operator_id: context.userId,
-      operatorId: context.userId,
-      created_by_user_id: context.userId,
-      assigned_to_user_id: context.userId
-    };
     const result = await runV4FastScoutObservation({
-      payload: trustedPayload,
+      payload,
       env: process.env,
       fetchImpl: globalThis.fetch,
       cacheWriteMode: "await",
-      requestContext: {
-        request_id: context.requestId,
-        tenant_id: context.tenantId,
-        user_id: context.userId
-      },
-      // Commercial requests may inspect an existing prewarm cache only. Any
-      // paid scout must be a durable FAST_SCOUT_DRAFT queue job so provider
-      // capacity, retries, cost and production events share one state machine.
-      allowProviderCall: false
+      allowProviderCall: payload.v4_fast_scout_cache_only !== true
     });
     const scout = result.fast_scout || {};
     sendJson(res, 200, withV4Version({
       ok: true,
-      tenant_id: context.tenantId,
       prewarm_status: scout.status || "READY",
       fast_scout_cache_hit: Boolean(scout.cache_hit),
       fast_scout_cache_status: scout.cache_status || (scout.cache_hit ? "HIT" : "MISS"),
@@ -89,7 +59,6 @@ export default async function handler(req, res) {
     if (error?.code === "FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED") {
       sendJson(res, 200, withV4Version({
         ok: true,
-        tenant_id: context.tenantId,
         prewarm_status: "CACHE_MISS",
         fast_scout_cache_hit: false,
         fast_scout_cache_status: "MISS_CACHE_ONLY",

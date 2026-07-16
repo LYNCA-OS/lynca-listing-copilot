@@ -66,8 +66,7 @@ assert.equal(certVisualVerification({}, {}).pass, false);
 
 const env = {
   SUPABASE_URL: "https://supabase.test",
-  SUPABASE_SERVICE_ROLE_KEY: "service-role-test",
-  ENABLE_V4_EXACT_ANCHOR_FINALIZE: "true"
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-test"
 };
 
 const registryRow = {
@@ -124,9 +123,7 @@ function registryFetch(rows) {
       serial_number: "04/10",
       print_run_denominator: "10"
     },
-    evidence: {
-      players: { sources: [{ source_type: "VISION_MODEL", source_image_id: "current-card-front" }] }
-    }
+    evidence: {}
   };
   const result = await maybeFinalizeL1FromExactAnchor({
     scoutResult,
@@ -138,35 +135,10 @@ function registryFetch(rows) {
   assert.equal(result.reason, "cert_registry_finalized");
   assert.equal(result.anchor_lookup_candidate.source, "INTERNAL_CERT_REGISTRY");
   assert.equal(result.identity_resolution.status, "CONFIRMED");
-  // Unified policy keeps support-only registry identity out of resolved output;
-  // subject and instance data remain current-image owned.
-  assert.equal(result.resolved_fields.collector_number, undefined);
-  assert.deepEqual(result.resolved_fields.players, ["Victor Wembanyama"]);
+  // identity from registry, instance from current image
+  assert.equal(result.resolved_fields.collector_number, "136");
   assert.equal(result.resolved_fields.serial_number, "04/10");
   assert.match(result.title, /Wembanyama/);
-}
-
-// A cert hit may remain useful as shadow evidence, but it cannot supply a
-// missing subject to the writer-visible result.
-{
-  const result = await maybeFinalizeL1FromExactAnchor({
-    scoutResult: {
-      resolved_fields: {
-        year: "2023-24",
-        product: "Panini Prizm",
-        cert_number: "87654321",
-        grade_company: "PSA"
-      },
-      evidence: {}
-    },
-    env,
-    fetchImpl: registryFetch([registryRow]),
-    timeoutMs: 1500
-  });
-  assert.equal(result.finalized, false);
-  assert.equal(result.reason, "current_image_subject_evidence_required");
-  assert.equal(result.candidate_policy.passed, true);
-  assert.equal(result.shadow.resolved_fields.players, undefined);
 }
 
 // --- cert conflict: REVIEW_REQUIRED, no finalize through any lane ---

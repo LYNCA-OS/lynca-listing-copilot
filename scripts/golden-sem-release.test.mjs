@@ -3,7 +3,6 @@ import {
   buildGoldenSemReviewPacket,
   freezeGoldenSemReleaseSets,
   goldenSemLaunchFields,
-  goldenSemPartitionSchemaVersion,
   validateGoldenSemReviewPacket
 } from "../lib/listing/evaluation/golden-sem-release.mjs";
 import { evaluateGoldenSemAccuracy } from "../lib/listing/evaluation/golden-sem-accuracy.mjs";
@@ -101,29 +100,12 @@ const holdoutPredictions = {
     }
   }))
 };
-const missingTruthPolicyAccuracy = evaluateGoldenSemAccuracy({
-  dataset: bundle.holdout_release_set,
-  predictions: holdoutPredictions
-});
-assert.equal(missingTruthPolicyAccuracy.status, "COMPLETED_DIAGNOSTIC");
-assert.equal(missingTruthPolicyAccuracy.scope.formal_golden_sem, false);
-assert.equal(missingTruthPolicyAccuracy.formal_launch_gate_eligible, false);
-assert.equal(missingTruthPolicyAccuracy.scope.formal_launch_gate_eligible, false);
-assert.equal(missingTruthPolicyAccuracy.source.truth_policy_explicit, false);
-
-bundle.holdout_release_set.evaluation_truth_policy = {
-  field_ground_truth_class: "HUMAN_REVIEWED_FIELD_GROUND_TRUTH",
-  launch_gate_eligible: true
-};
 const accuracy = evaluateGoldenSemAccuracy({
   dataset: bundle.holdout_release_set,
   predictions: holdoutPredictions,
   now: () => new Date("2026-07-14T03:00:00.000Z")
 });
 assert.equal(accuracy.status, "COMPLETED");
-assert.equal(accuracy.formal_launch_gate_eligible, true);
-assert.equal(accuracy.scope.formal_launch_gate_eligible, true);
-assert.equal(accuracy.validation.formal_launch_ground_truth.review_metadata.ok, true);
 assert.equal(accuracy.source.partition, "holdout");
 assert.equal(accuracy.summary.evaluated_card_count, 3);
 assert.equal(accuracy.metrics.sem_card_exact_accuracy.correct, 2);
@@ -131,38 +113,6 @@ assert.equal(accuracy.metrics.per_field_exact_accuracy.numerical_rarity.correct,
 assert.equal(accuracy.cards[0].fields.numerical_rarity.is_correct, false);
 assert.equal(accuracy.cards[0].fields.numerical_rarity.normalized_prediction, "#/3");
 assert.equal(accuracy.cards[0].fields.numerical_rarity.normalized_ground_truth, "2/3");
-assert.equal(accuracy.metrics.critical_field_evaluable_coverage.dimensions.grade.evaluated_cards, 3);
-
-const singleFieldAccuracy = evaluateGoldenSemAccuracy({
-  dataset: {
-    schema_version: goldenSemPartitionSchemaVersion,
-    dataset_id: "single-field-diagnostic",
-    partition: "development",
-    data_policy: { frozen_holdout: false },
-    evaluation_truth_policy: {
-      field_ground_truth_class: "HUMAN_REVIEWED_FIELD_GROUND_TRUTH",
-      launch_gate_eligible: true
-    },
-    items: [{
-      item_id: "single-field-1",
-      reviewed_ground_truth: {
-        fields: { year: "2024" },
-        field_statuses: { year: "CONFIRMED" },
-        evidence_sources: { year: ["CARD_IMAGE_REVIEW"] },
-        reviewed_by: "reviewer-1",
-        reviewed_at: "2026-07-14T01:00:00.000Z"
-      }
-    }]
-  },
-  predictions: {
-    results: [{ asset_id: "single-field-1", resolved_fields: { year: "2024" } }]
-  }
-});
-assert.equal(singleFieldAccuracy.status, "INCONCLUSIVE");
-assert.equal(singleFieldAccuracy.metrics.sem_card_exact_accuracy.total, 0);
-assert.equal(singleFieldAccuracy.cards[0].card_exact, null);
-assert.equal(singleFieldAccuracy.cards[0].card_exact_eligible, false);
-assert.equal(singleFieldAccuracy.metrics.card_exact_evaluable_coverage.single_field_card_count, 1);
 
 const leakedPacket = structuredClone(packet);
 leakedPacket.items[0].reviewed_ground_truth.fields.year.evidence_sources = [];

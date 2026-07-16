@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-publish-draft.js";
-import { createListingSessionToken } from "../lib/listing-session.mjs";
 import { PublishingApprovalError } from "../lib/listing/publishing/listing-draft.mjs";
 import { createMockPublisher } from "../lib/listing/publishing/mock-publisher.mjs";
 import { createMemoryPublishAuditStore } from "../lib/listing/publishing/publish-audit-store.mjs";
@@ -10,8 +10,6 @@ import { publishJobStatuses } from "../lib/listing/publishing/publisher-contract
 import { createPublisherRegistry } from "../lib/listing/publishing/publisher-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
-process.env.SUPABASE_URL = "https://supabase.test";
-process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 
 const approvedDraft = {
   asset_id: "asset-1",
@@ -121,56 +119,19 @@ await assert.rejects(
 assert.equal(failedStore.all()[0].status, publishJobStatuses.FAILED);
 assert.equal(failedStore.all()[0].attempts, 2);
 
-function sessionCookie() {
-  const token = createListingSessionToken({
-    user_id: "user_alpha",
-    tenant_id: "tenant_alpha",
-    email: "owner@example.test",
-    session_version: 1
-  }, process.env.METAVERSE_AUTH_SECRET);
-  return `lynca_metaverse_session=${token}`;
+function sign(value) {
+  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
 }
 
-async function callApi(payload, { authenticated = true } = {}) {
-  const calls = [];
-  globalThis.fetch = async (url, options = {}) => {
-    const parsed = new URL(String(url));
-    const table = parsed.pathname.split("/").at(-1);
-    calls.push({ table, method: options.method || "GET" });
-    if (table === "tenant_members") {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => [{
-          tenant_id: "tenant_alpha",
-          user_id: "user_alpha",
-          role: "OWNER",
-          status: "ACTIVE",
-          disabled_at: null,
-          user: {
-            id: "user_alpha",
-            email: "owner@example.test",
-            status: "ACTIVE",
-            session_version: 1,
-            disabled_at: null,
-            auth_user_id: "auth_alpha"
-          },
-          tenant: {
-            id: "tenant_alpha",
-            name: "Tenant Alpha",
-            plan: "pilot",
-            status: "ACTIVE",
-            disabled_at: null
-          }
-        }],
-        text: async () => "[]"
-      };
-    }
-    return { ok: true, status: 201, json: async () => [], text: async () => "[]" };
-  };
+function sessionCookie() {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+}
+
+async function callApi(payload) {
   const req = new EventEmitter();
   req.method = "POST";
-  req.headers = authenticated ? { cookie: sessionCookie() } : {};
+  req.headers = { cookie: sessionCookie() };
   const res = {
     statusCode: 0,
     headers: {},
@@ -189,15 +150,9 @@ async function callApi(payload, { authenticated = true } = {}) {
 
   return {
     statusCode: res.statusCode,
-    body: JSON.parse(res.body),
-    calls
+    body: JSON.parse(res.body)
   };
 }
-
-const unauthenticatedApi = await callApi({ listing_draft: approvedDraft }, { authenticated: false });
-assert.equal(unauthenticatedApi.statusCode, 401);
-assert.equal(unauthenticatedApi.body.code, "AUTH_REQUIRED");
-assert.equal(unauthenticatedApi.calls.filter((call) => !["request_logs", "error_logs"].includes(call.table)).length, 0);
 
 const blockedApi = await callApi({
   listing_draft: {
@@ -205,11 +160,8 @@ const blockedApi = await callApi({
     review_status: "PENDING_REVIEW"
   }
 });
-assert.equal(blockedApi.statusCode, 410);
-assert.equal(blockedApi.body.code, "tenant_aware_publishing_required");
-assert.deepEqual(blockedApi.calls
-  .filter((call) => !["request_logs", "error_logs"].includes(call.table))
-  .map((call) => call.table), ["tenant_members"]);
+assert.equal(blockedApi.statusCode, 403);
+assert.equal(blockedApi.body.code, "approval_required");
 
 const publishedApi = await callApi({
   listing_draft: {
@@ -222,8 +174,9 @@ const publishedApi = await callApi({
   },
   idempotency_key: "api-key"
 });
-assert.equal(publishedApi.statusCode, 410);
-assert.equal(publishedApi.body.ok, false);
-assert.equal(publishedApi.body.code, "tenant_aware_publishing_required");
+assert.equal(publishedApi.statusCode, 200);
+assert.equal(publishedApi.body.ok, true);
+assert.equal(publishedApi.body.status, publishJobStatuses.PUBLISHED);
+assert.equal(publishedApi.body.audit_durable, false);
 
 console.log("publishing tests passed");

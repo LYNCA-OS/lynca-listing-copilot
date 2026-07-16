@@ -1,12 +1,7 @@
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
 import { verifyExistingListingImageObject } from "../lib/listing/storage/supabase-image-storage.mjs";
-import {
-  assertTenantListingAssetObjectPath,
-  saveListingImageVerificationRecord
-} from "../lib/listing/storage/storage-verification-store.mjs";
-import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
-import { normalizeDurableListingAssetId } from "../lib/tenant/assets.mjs";
+import { saveListingImageVerificationRecord } from "../lib/listing/storage/storage-verification-store.mjs";
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -26,19 +21,16 @@ function sendJson(res, statusCode, payload) {
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/listing-image-verify-existing" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  let context;
-  try {
-    context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
-    bindProductionRequestContext(res, context);
-  } catch (error) {
-    const status = isTenantAuthError(error) ? error.statusCode : 503;
-    sendJson(res, status, publicTenantAuthError(error));
+  const cookies = parseCookies(req.headers.cookie);
+  const authenticated = readSignedSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
+
+  if (!authenticated) {
+    sendJson(res, 401, { ok: false, message: "Unauthorized" });
     return;
   }
 
@@ -57,28 +49,9 @@ export default async function handler(req, res) {
     return;
   }
 
-  const objectPath = payload.objectPath || payload.object_path;
-  const assetId = payload.assetId || payload.asset_id;
-  try {
-    if (!assetId) throw new Error("asset_id is required.");
-    normalizeDurableListingAssetId(assetId);
-    assertTenantListingAssetObjectPath({
-      tenantId: context.tenantId,
-      assetId,
-      objectPath
-    });
-  } catch (error) {
-    sendJson(res, 400, {
-      ok: false,
-      message: String(error.message || "Invalid listing image object path.").slice(0, 240)
-    });
-    return;
-  }
-
   try {
     const verification = await verifyExistingListingImageObject({
-      tenantId: context.tenantId,
-      objectPath,
+      objectPath: payload.objectPath || payload.object_path,
       bucket: payload.bucket || payload.storage_bucket
     });
     let verificationRecord = {
@@ -89,23 +62,16 @@ export default async function handler(req, res) {
     try {
       verificationRecord = await saveListingImageVerificationRecord({
         verification,
-        tenantId: context.tenantId,
-        assetId,
-        requireDurableAssetId: true,
+        assetId: payload.assetId || payload.asset_id || null,
         imageId: payload.imageId || payload.image_id || null,
         role: payload.role || payload.storageRole || payload.storage_role || null
       });
-      if (!verificationRecord.saved || !verificationRecord.durable) {
-        throw new Error(verificationRecord.reason || "verification_record_write_failed");
-      }
     } catch {
-      sendJson(res, 503, {
-        ok: false,
-        retryable: true,
-        code: "verification_record_write_failed",
-        message: "Image verification could not be persisted."
-      });
-      return;
+      verificationRecord = {
+        saved: false,
+        durable: true,
+        reason: "verification_record_write_failed"
+      };
     }
 
     sendJson(res, 200, {

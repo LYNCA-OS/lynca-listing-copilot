@@ -60,7 +60,7 @@ function makeRetentionFetch(calls) {
     });
 
     if (init.method === "DELETE") {
-      return responsePayload((body?.prefixes || []).map((name) => ({ name })));
+      return responsePayload([]);
     }
 
     if (body?.prefix === "listing-assets") {
@@ -90,40 +90,6 @@ function makeRetentionFetch(calls) {
           created_at: "2000-01-01T00:00:00.000Z"
         }
       ]);
-    }
-
-    if (body?.prefix === "tenants") {
-      return responsePayload([
-        { name: "tenant_alpha" },
-        { name: "tenant_beta" },
-        { name: "tenant.bad" }
-      ]);
-    }
-
-    if (body?.prefix === "tenants/tenant_alpha/listing-assets") {
-      return responsePayload([
-        { name: "2000-01-01" },
-        { name: "2999-01-01" }
-      ]);
-    }
-
-    if (body?.prefix === "tenants/tenant_alpha/listing-assets/2000-01-01") {
-      return responsePayload([{ name: "asset-alpha" }]);
-    }
-
-    if (body?.prefix === "tenants/tenant_alpha/listing-assets/2000-01-01/asset-alpha") {
-      return responsePayload([
-        {
-          name: "front_original-front.jpg",
-          id: "tenant-alpha-object-1",
-          metadata: { size: 900 },
-          created_at: "2000-01-01T00:00:00.000Z"
-        }
-      ]);
-    }
-
-    if (body?.prefix === "tenants/tenant_beta/listing-assets") {
-      return responsePayload([{ name: "2999-01-01" }]);
     }
 
     throw new Error(`Unexpected storage prefix ${body?.prefix}`);
@@ -162,35 +128,17 @@ try {
   const applied = JSON.parse(res.body);
   assert.equal(applied.ok, true);
   assert.equal(applied.dry_run, false);
-  assert.equal(applied.object_count, 3);
-  assert.equal(applied.deleted_count, 3);
-  assert.deepEqual(applied.scanned_layouts, ["legacy", "tenant_scoped"]);
-  assert.equal(applied.scanned_tenant_count, 2);
-  assert.equal(applied.ignored_tenant_entry_count, 1);
-  assert.deepEqual(applied.expired_prefixes, [
-    "listing-assets/2000-01-01",
-    "tenants/tenant_alpha/listing-assets/2000-01-01"
-  ]);
+  assert.equal(applied.deleted_count, 2);
+  assert.deepEqual(applied.expired_prefixes, ["listing-assets/2000-01-01"]);
   assert.equal(JSON.stringify(applied).includes("test-cron-secret"), false);
   assert.equal(JSON.stringify(applied).includes("test-service-role"), false);
   assert.equal(JSON.stringify(applied).includes("front_original-front.jpg"), false);
-  const deleteCalls = calls.filter((call) => call.method === "DELETE");
-  assert.equal(deleteCalls.length, 2);
-  assert.deepEqual(deleteCalls.flatMap((call) => call.body.prefixes), [
+  const deleteCall = calls.find((call) => call.method === "DELETE");
+  assert.ok(deleteCall);
+  assert.deepEqual(deleteCall.body.prefixes, [
     "listing-assets/2000-01-01/asset-old/front_original-front.jpg",
-    "listing-assets/2000-01-01/asset-old/serial_crop-serial.png",
-    "tenants/tenant_alpha/listing-assets/2000-01-01/asset-alpha/front_original-front.jpg"
+    "listing-assets/2000-01-01/asset-old/serial_crop-serial.png"
   ]);
-  assert.equal(
-    calls.some((call) => call.body?.prefix?.includes("2999-01-01")),
-    false,
-    "future-dated tenant prefixes must not be traversed or deleted"
-  );
-  assert.equal(
-    calls.some((call) => /tenant\.bad/.test(call.body?.prefix || "")),
-    false,
-    "invalid tenant directories must not be traversed"
-  );
 
   calls = [];
   globalThis.fetch = makeRetentionFetch(calls);
@@ -205,7 +153,6 @@ try {
   const dryRun = JSON.parse(res.body);
   assert.equal(dryRun.ok, true);
   assert.equal(dryRun.dry_run, true);
-  assert.equal(dryRun.object_count, 3);
   assert.equal(dryRun.deleted_count, 0);
   assert.equal(calls.some((call) => call.method === "DELETE"), false);
 

@@ -1,21 +1,20 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import healthHandler from "../api/health.js";
 import { createEbayDcsports87ListingsHandler } from "../api/ebay-dcsports87-listings.js";
-import { createListingSessionToken } from "../lib/listing-session.mjs";
 import {
   normalizeBaseUrl,
   optionalProtectionHeaders,
   validateListingsPayload
 } from "./smoke-deployed-ebay-api.mjs";
 
+function sign(value, secret) {
+  return crypto.createHmac("sha256", secret).update(value).digest("hex");
+}
+
 function sessionCookie(secret) {
-  const token = createListingSessionToken({
-    user_id: "user_alpha",
-    tenant_id: "tenant_alpha",
-    email: "manager@example.test",
-    session_version: 1
-  }, secret);
-  return `lynca_metaverse_session=${token}`;
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60_000 })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload, secret)}`;
 }
 
 function mockRes() {
@@ -52,47 +51,9 @@ assert.equal(response.body.ok, true);
 assert.equal(response.body.service, "lynca-listing-copilot");
 
 const secret = "test-auth-secret";
-const tenantEnv = {
-  METAVERSE_AUTH_SECRET: secret,
-  SUPABASE_URL: "https://supabase.test",
-  SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
-};
-globalThis.fetch = async (url) => {
-  const parsed = new URL(String(url));
-  if (parsed.pathname.endsWith("/tenant_members")) {
-    return {
-      ok: true,
-      status: 200,
-      json: async () => [{
-        tenant_id: "tenant_alpha",
-        user_id: "user_alpha",
-        role: "MANAGER",
-        status: "ACTIVE",
-        disabled_at: null,
-        user: {
-          id: "user_alpha",
-          email: "manager@example.test",
-          status: "ACTIVE",
-          session_version: 1,
-          disabled_at: null,
-          auth_user_id: "auth_alpha"
-        },
-        tenant: {
-          id: "tenant_alpha",
-          name: "Tenant Alpha",
-          plan: "pilot",
-          status: "ACTIVE",
-          disabled_at: null
-        }
-      }],
-      text: async () => "[]"
-    };
-  }
-  return { ok: true, status: 201, json: async () => [], text: async () => "[]" };
-};
 const handler = createEbayDcsports87ListingsHandler({
   env: {
-    ...tenantEnv,
+    METAVERSE_AUTH_SECRET: secret,
     EBAY_SELLER_USERNAME: "dcsports87",
     EBAY_MARKETPLACE_ID: "EBAY_US"
   },
@@ -160,7 +121,7 @@ assert.match(response.body.listings[0].item_group_href, /item-group/);
 let sportsSearchQuery = null;
 const sportsOnlyHandler = createEbayDcsports87ListingsHandler({
   env: {
-    ...tenantEnv,
+    METAVERSE_AUTH_SECRET: secret,
     EBAY_SELLER_USERNAME: "dcsports87",
     EBAY_MARKETPLACE_ID: "EBAY_US"
   },
@@ -220,7 +181,7 @@ assert.equal(sportsSearchQuery.limit, 22);
 let itemDetailCalls = 0;
 const detailFallbackHandler = createEbayDcsports87ListingsHandler({
   env: {
-    ...tenantEnv,
+    METAVERSE_AUTH_SECRET: secret,
     EBAY_SELLER_USERNAME: "dcsports87",
     EBAY_MARKETPLACE_ID: "EBAY_US"
   },
@@ -275,7 +236,7 @@ assert.equal(response.body.detail_success_count, 1);
 
 const maskedSellerHandler = createEbayDcsports87ListingsHandler({
   env: {
-    ...tenantEnv,
+    METAVERSE_AUTH_SECRET: secret,
     EBAY_SELLER_USERNAME: "dcsports87",
     EBAY_BROWSE_FILTER: "sellers:{dcsports87}",
     EBAY_MARKETPLACE_ID: "EBAY_US"
@@ -314,7 +275,7 @@ assert.equal(response.body.listings[0].marketplace_seller_alias, "masked_seller_
 
 const sellerFilterMissingSellerHandler = createEbayDcsports87ListingsHandler({
   env: {
-    ...tenantEnv,
+    METAVERSE_AUTH_SECRET: secret,
     EBAY_SELLER_USERNAME: "dcsports87",
     EBAY_BROWSE_FILTER: "sellers:{dcsports87}",
     EBAY_MARKETPLACE_ID: "EBAY_US"
@@ -353,7 +314,7 @@ const dcsportsPayload = response.body;
 let dynamicSellerQuery = null;
 const dynamicSellerHandler = createEbayDcsports87ListingsHandler({
   env: {
-    ...tenantEnv,
+    METAVERSE_AUTH_SECRET: secret,
     EBAY_MARKETPLACE_ID: "EBAY_US"
   },
   allowSellerOverride: true,
@@ -410,7 +371,7 @@ assert.match(response.body.message, /Invalid eBay seller/);
 let globalQuery = null;
 const globalListingsHandler = createEbayDcsports87ListingsHandler({
   env: {
-    ...tenantEnv,
+    METAVERSE_AUTH_SECRET: secret,
     EBAY_MARKETPLACE_ID: "EBAY_US"
   },
   allowGlobalSearch: true,

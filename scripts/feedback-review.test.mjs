@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-title-feedback.js";
-import { createListingSessionToken } from "../lib/listing-session.mjs";
 import {
   buildListingReviewRecords,
   buildAssetFingerprint,
@@ -12,10 +12,6 @@ import {
   sanitizeStorageObjectPath
 } from "../lib/listing/feedback/review-records.mjs";
 import { summarizeReviewMetrics } from "../lib/listing/feedback/review-metrics.mjs";
-import {
-  createListingReviewRecord,
-  listingFeedbackRetentionEnabled
-} from "../lib/supabase-feedback.mjs";
 
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
@@ -37,22 +33,27 @@ function makeResponse() {
   };
 }
 
-function sessionCookie() {
-  const token = createListingSessionToken({
-    user_id: "user_alpha",
-    tenant_id: "tenant_alpha",
-    email: "operator-a@example.test",
-    session_version: 1
-  }, process.env.METAVERSE_AUTH_SECRET);
-  return `lynca_metaverse_session=${token}`;
+function sign(value) {
+  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
+}
+
+function sessionCookie({ user = "operator-a" } = {}) {
+  const now = Date.now();
+  const payload = Buffer.from(JSON.stringify({
+    user,
+    sid: crypto.randomUUID(),
+    iat: now,
+    exp: now + 60000
+  })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
 }
 
 async function callFeedbackApi(payload, {
+  authenticated = true,
   fetchImpl = null
 } = {}) {
   const calls = [];
-  const lookupCalls = [];
-  const mutationFetch = fetchImpl || (async (url, options = {}) => {
+  globalThis.fetch = fetchImpl || (async (url, options = {}) => {
     const parsed = new URL(String(url));
     const table = parsed.pathname.split("/").at(-1);
     const body = JSON.parse(options.body || "{}");
@@ -69,93 +70,6 @@ async function callFeedbackApi(payload, {
       text: async () => JSON.stringify([{ ...body, id: body.id || `${table}_row` }])
     };
   });
-  globalThis.fetch = async (url, options = {}) => {
-    const parsed = new URL(String(url));
-    const table = parsed.pathname.split("/").at(-1);
-    if (table === "listing_assets" && (options.method || "GET") === "GET") {
-      const assetId = String(parsed.searchParams.get("id") || "").replace(/^eq\./, "");
-      lookupCalls.push({
-        table,
-        method: "GET",
-        tenant_id: parsed.searchParams.get("tenant_id"),
-        asset_id: parsed.searchParams.get("id")
-      });
-      return {
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify([{ tenant_id: "tenant_alpha", id: assetId }])
-      };
-    }
-    return mutationFetch(url, options);
-  };
-
-  const record = await createListingReviewRecord({
-    payload,
-    tenantId: "tenant_alpha",
-    userId: "user_alpha",
-    operatorId: "user_alpha",
-    env: process.env,
-    fetchImpl: globalThis.fetch
-  });
-
-  return {
-    statusCode: 200,
-    body: {
-      ok: true,
-      record,
-      review_outcome: record.review?.review_outcome,
-      retention_enabled: listingFeedbackRetentionEnabled(),
-      retention_skipped: record.retained === false,
-      retention_reason: record.reason || null,
-      legacy_feedback_saved: Boolean(record.legacy_feedback && record.retained !== false)
-    },
-    calls,
-    lookupCalls
-  };
-}
-
-async function callLegacyFeedbackApi(payload, { authenticated = true } = {}) {
-  const calls = [];
-  globalThis.fetch = async (url, options = {}) => {
-    const parsed = new URL(String(url));
-    const table = parsed.pathname.split("/").at(-1);
-    calls.push({ table, method: options.method || "GET" });
-    if (table === "tenant_members") {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => [{
-          tenant_id: "tenant_alpha",
-          user_id: "user_alpha",
-          role: "WRITER",
-          status: "ACTIVE",
-          disabled_at: null,
-          user: {
-            id: "user_alpha",
-            email: "operator-a@example.test",
-            status: "ACTIVE",
-            session_version: 1,
-            disabled_at: null,
-            auth_user_id: "auth_alpha"
-          },
-          tenant: {
-            id: "tenant_alpha",
-            name: "Tenant Alpha",
-            plan: "pilot",
-            status: "ACTIVE",
-            disabled_at: null
-          }
-        }],
-        text: async () => "[]"
-      };
-    }
-    return {
-      ok: true,
-      status: 201,
-      json: async () => [],
-      text: async () => "[]"
-    };
-  };
 
   const req = new EventEmitter();
   req.method = "POST";
@@ -165,27 +79,21 @@ async function callLegacyFeedbackApi(payload, { authenticated = true } = {}) {
   req.emit("data", JSON.stringify(payload));
   req.emit("end");
   await promise;
-  return { statusCode: res.statusCode, body: JSON.parse(res.body), calls };
+
+  return {
+    statusCode: res.statusCode,
+    body: JSON.parse(res.body),
+    calls
+  };
 }
 
-const unauthenticatedSave = await callLegacyFeedbackApi({
+const unauthenticatedSave = await callFeedbackApi({
   generated_title: "2025 Topps Chrome Cooper Flagg",
   corrected_title: "2025 Topps Chrome Cooper Flagg"
 }, { authenticated: false });
 assert.equal(unauthenticatedSave.statusCode, 401);
-assert.equal(unauthenticatedSave.body.code, "AUTH_REQUIRED");
-assert.equal(unauthenticatedSave.body.message, "Authentication required.");
-assert.equal(unauthenticatedSave.calls.filter((call) => !["request_logs", "error_logs"].includes(call.table)).length, 0);
-
-const closedLegacySave = await callLegacyFeedbackApi({
-  generated_title: "2025 Topps Chrome Cooper Flagg",
-  corrected_title: "2025 Topps Chrome Cooper Flagg"
-});
-assert.equal(closedLegacySave.statusCode, 410);
-assert.equal(closedLegacySave.body.code, "tenant_feedback_route_required");
-assert.deepEqual(closedLegacySave.calls
-  .filter((call) => !["request_logs", "error_logs"].includes(call.table))
-  .map((call) => call.table), ["tenant_members"]);
+assert.equal(unauthenticatedSave.body.message, "Unauthorized");
+assert.equal(unauthenticatedSave.calls.length, 0);
 
 const retentionDisabledSave = await callFeedbackApi({
   asset_id: "asset-retention-disabled",
@@ -367,14 +275,12 @@ assert.equal(unchangedRecords.analysisRun.field_graph.player, "Cooper Flagg");
 assert.equal(unchangedRecords.review.workflow_summary.status, "LOW_TOUCH_REVIEW");
 assert.equal(unchangedRecords.review.field_graph.product, "Topps Chrome");
 assert.equal(unchangedRecords.review.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
-assert.equal(unchangedRecords.review.feedback_training_event.training_ready, false);
-assert.equal(unchangedRecords.review.feedback_training_event.semantic_truth, false);
-assert.equal(unchangedRecords.review.feedback_training_event.semantic_learning_status, "OBSERVE_ONLY_WRITER_TITLE_CANDIDATE");
+assert.equal(unchangedRecords.review.feedback_training_event.training_ready, true);
 assert.equal(unchangedRecords.review.candidate_reranker_dataset.length, 1);
 assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].candidate_id, "cat-cooper-flagg-1");
 assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].selected_by_system, true);
 assert.equal(unchangedRecords.review.candidate_reranker_dataset[0].selected_by_writer, true);
-assert.deepEqual(unchangedRecords.review.field_level_ground_truth, []);
+assert.equal(unchangedRecords.review.field_level_ground_truth.find((row) => row.field === "player").value, "Cooper Flagg");
 assert.equal(unchangedRecords.review.hard_negative_samples.length, 0);
 assert.equal(unchangedRecords.legacyFeedback, null);
 
@@ -432,7 +338,7 @@ const unchangedSave = await callFeedbackApi({
     {
       id: "front",
       storageRole: "front_original",
-      objectPath: "tenants/tenant_alpha/listing-assets/2026-06-22/asset-accepted/front.jpg",
+      objectPath: "listing-card-images/asset-accepted/front.jpg",
       contentSha256: frontSha
     }
   ],
@@ -459,7 +365,7 @@ assert.deepEqual(unchangedSave.calls.map((call) => call.table), [
   "listing_analysis_runs",
   "listing_reviews"
 ]);
-assert.equal(unchangedSave.calls[0].body.front_object_path, "tenants/tenant_alpha/listing-assets/2026-06-22/asset-accepted/front.jpg");
+assert.equal(unchangedSave.calls[0].body.front_object_path, "listing-card-images/asset-accepted/front.jpg");
 assert.equal(unchangedSave.calls[0].body.front_content_sha256, frontSha);
 assert.match(unchangedSave.calls[0].body.asset_fingerprint, /^[0-9a-f]{64}$/);
 assert.equal(unchangedSave.calls[2].body.review_duration_ms, 1234);
@@ -470,7 +376,7 @@ assert.equal(unchangedSave.calls[2].body.asset_fingerprint, unchangedSave.calls[
 assert.deepEqual(unchangedSave.calls[2].body.field_changes, []);
 assert.equal(unchangedSave.calls[1].body.field_graph.product, "Topps Chrome");
 assert.equal(unchangedSave.calls[2].body.feedback_training_event.datasets.candidate_reranker_dataset[0].candidate_id, "cat-accepted");
-assert.deepEqual(unchangedSave.calls[2].body.field_level_ground_truth, []);
+assert.equal(unchangedSave.calls[2].body.field_level_ground_truth.find((row) => row.field === "year").value, "2025");
 
 const schemaLagCalls = [];
 let failedAnalysisOnce = false;
@@ -540,33 +446,33 @@ const hardenedPathSave = await callFeedbackApi({
     players: ["Cooper Flagg"]
   },
   front_object_path: "https://storage.test/object/sign/listing-assets/front.jpg?token=secret",
-  back_object_path: "tenants/tenant_alpha/listing-assets/2026-06-22/asset-path-hardening/back.jpg",
+  back_object_path: "listing-assets/2026-06-22/asset-path-hardening/back.jpg",
   additional_image_paths: [
-    "tenants/tenant_alpha/listing-assets/2026-06-22/asset-path-hardening/direct-extra.jpg",
+    "listing-assets/2026-06-22/asset-path-hardening/direct-extra.jpg",
     "https://storage.test/object/sign/listing-assets/direct-extra.jpg?token=secret"
   ],
   images: [
     {
       id: "front",
       storageRole: "front_original",
-      objectPath: "tenants/tenant_alpha/listing-assets/2026-06-22/asset-path-hardening/front.jpg",
+      objectPath: "listing-assets/2026-06-22/asset-path-hardening/front.jpg",
       signedUrl: "https://storage.test/object/sign/listing-assets/front.jpg?token=secret"
     },
     {
       id: "grade",
       storageRole: "grade_crop",
-      objectPath: "tenants/tenant_alpha/listing-assets/2026-06-22/asset-path-hardening/grade.jpg"
+      objectPath: "listing-assets/2026-06-22/asset-path-hardening/grade.jpg"
     }
   ]
 });
 const hardenedAsset = hardenedPathSave.calls.find((call) => call.table === "listing_assets").body;
-assert.equal(hardenedAsset.front_object_path, "tenants/tenant_alpha/listing-assets/2026-06-22/asset-path-hardening/front.jpg");
-assert.equal(hardenedAsset.back_object_path, "tenants/tenant_alpha/listing-assets/2026-06-22/asset-path-hardening/back.jpg");
+assert.equal(hardenedAsset.front_object_path, "listing-assets/2026-06-22/asset-path-hardening/front.jpg");
+assert.equal(hardenedAsset.back_object_path, "listing-assets/2026-06-22/asset-path-hardening/back.jpg");
 assert.deepEqual(
   hardenedAsset.additional_image_paths.map((image) => image.object_path),
   [
-    "tenants/tenant_alpha/listing-assets/2026-06-22/asset-path-hardening/direct-extra.jpg",
-    "tenants/tenant_alpha/listing-assets/2026-06-22/asset-path-hardening/grade.jpg"
+    "listing-assets/2026-06-22/asset-path-hardening/direct-extra.jpg",
+    "listing-assets/2026-06-22/asset-path-hardening/grade.jpg"
   ]
 );
 assert.doesNotMatch(JSON.stringify(hardenedAsset), /storage\.test|token=secret|signedUrl/);
@@ -613,12 +519,12 @@ const correctedFieldsSave = await callFeedbackApi({
     {
       id: "front",
       storageRole: "front_original",
-      objectPath: "tenants/tenant_alpha/listing-assets/2026-06-22/asset-corrected/front.jpg"
+      objectPath: "listing-card-images/asset-corrected/front.jpg"
     },
     {
       id: "serial",
       storageRole: "serial_crop",
-      objectPath: "tenants/tenant_alpha/listing-assets/2026-06-22/asset-corrected/serial.jpg",
+      objectPath: "listing-card-images/asset-corrected/serial.jpg",
       derived: true,
       sourceRegion: "serial_number"
     }
@@ -641,11 +547,11 @@ assert.deepEqual(correctedReview.field_changes, [
 assert.equal(correctedReview.feedback_training_event.correction_type, reviewOutcomes.CORRECTED_FIELDS);
 assert.equal(correctedReview.candidate_reranker_dataset[0].candidate_id, "cat-wrong-serial");
 assert.deepEqual(correctedReview.hard_negative_samples[0].conflicting_fields, ["serial_number"]);
-assert.deepEqual(correctedReview.field_level_ground_truth, []);
-assert.equal(correctedFieldsSave.calls.some((call) => call.table === "listing_title_feedback"), false);
+assert.equal(correctedReview.field_level_ground_truth.find((row) => row.field === "serial").value, "31/50");
+assert.equal(correctedFieldsSave.calls.some((call) => call.table === "listing_title_feedback"), true);
 const correctedAsset = correctedFieldsSave.calls.find((call) => call.table === "listing_assets").body;
 assert.equal(correctedAsset.additional_image_paths[0].role, "serial_crop");
-assert.equal(correctedAsset.additional_image_paths[0].object_path, "tenants/tenant_alpha/listing-assets/2026-06-22/asset-corrected/serial.jpg");
+assert.equal(correctedAsset.additional_image_paths[0].object_path, "listing-card-images/asset-corrected/serial.jpg");
 
 const titleOverrideSave = await callFeedbackApi({
   asset_id: "asset-title-only",

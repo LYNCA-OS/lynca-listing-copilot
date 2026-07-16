@@ -12,7 +12,6 @@ import {
 } from "../lib/listing-route-access.mjs";
 import {
   cookieName,
-  createListingSessionToken,
   createSignedSessionToken
 } from "../lib/listing-session.mjs";
 import middleware, { config as middlewareConfig } from "../middleware.js";
@@ -58,18 +57,6 @@ try {
   }));
   assert.equal(authenticated.status, 200);
   assert.equal(authenticated.headers.get("x-middleware-next"), "1");
-
-  const tenantToken = createListingSessionToken({
-    userId: "user_writer_1",
-    tenantId: "tenant_customer_1",
-    email: "writer@example.test",
-    sessionVersion: 1
-  }, process.env.METAVERSE_AUTH_SECRET, { now });
-  const tenantAuthenticated = await middleware(new Request(`${origin}/app`, {
-    headers: { cookie: `${cookieName}=${tenantToken}` }
-  }));
-  assert.equal(tenantAuthenticated.status, 200, "tenant sessions accepted by the API must also pass Edge middleware");
-  assert.equal(tenantAuthenticated.headers.get("x-middleware-next"), "1");
 
   const malformed = await middleware(new Request(`${origin}/app`, {
     headers: { cookie: `${cookieName}=${token}.extra` }

@@ -2,8 +2,7 @@ import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { waitUntil } from "@vercel/functions";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
-import { publicTenantAuthError, requireTenantAccess } from "../lib/tenant/index.mjs";
+import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import {
@@ -31,11 +30,9 @@ import {
 } from "../lib/listing/pipeline/evidence-merge.mjs";
 import { openAiRequestContextFromPayload, runTimedProviderCall } from "../lib/listing/pipeline/provider-stage.mjs";
 import {
-  applyPreingestionSerialConfusionGuard,
   applyPreIngestionEvidencePatchesToPayload,
   applyPreIngestionBundleToPayload,
   confirmedPreingestionRetrievalFields,
-  normalizePreingestionEvidenceFieldName,
   preingestionEvidenceDocumentFromPayload,
   refreshPreIngestionEvidencePatches
 } from "../lib/listing/pipeline/preingestion-evidence.mjs";
@@ -53,7 +50,6 @@ import {
   positiveIntegerFromEnv,
   providerOptionsFromPayload,
   retrievalApplicationEnabled,
-  retrievalPromptContextEnabled,
   singleModelFastPathEnabled,
   ultraFastImageDetail,
   ultraFastTextVerbosity,
@@ -118,7 +114,6 @@ import { openAiKeyPoolSize } from "../lib/listing/providers/openai-key-pool.mjs"
 import { safeProviderErrorMessage } from "../lib/listing/providers/provider-errors.mjs";
 import { selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 import { applyCandidateDecisionStage } from "../lib/listing/candidates/candidate-decision-stage.mjs";
-import { buildRetrievalApplicationReplay } from "../lib/listing/evaluation/retrieval-application-replay.mjs";
 import {
   createListingImageSignedReadUrl,
   verifyListingImageVerificationToken
@@ -204,6 +199,7 @@ import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate
 import { buildRetrievalApplicationLayer } from "../lib/listing/candidates/retrieval-application-layer.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
+import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import {
   releaseV4ProviderCapacityForJob,
   v4ProviderDoneCapacityHandoffEnabled
@@ -219,17 +215,13 @@ import {
   listingStageCapacityPlan,
   runWithListingStageCapacity
 } from "../lib/listing/v4/orchestration/stage-capacity.mjs";
-import { contractedConcurrency } from "../lib/listing/v4/orchestration/concurrency-contract.mjs";
 
 const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
 // Accept optional bounded derived crop images while keeping provider input capped.
 const defaultMaxPayloadImages = 14;
 const hardMaxPayloadImages = 24;
-const signedUrlConcurrency = contractedConcurrency(
-  "signed_url_preparation",
-  process.env.LISTING_SIGNED_URL_CONCURRENCY || 4
-);
+const signedUrlConcurrency = 4;
 const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
@@ -239,11 +231,6 @@ const defaultPreingestionOcrGradeRescueWaitMs = 10_000;
 const defaultPreingestionOcrCriticalFieldWaitMs = 2_500;
 const confirmedOcrSerialConfidence = 0.86;
 const singleCropOcrSerialConfidence = 0.94;
-const serialNumeratorEvidenceFields = new Set([
-  "print_run_number",
-  "serial_number",
-  "numerical_rarity"
-]);
 
 function configuredMaxPayloadImages(env = process.env) {
   return Math.max(
@@ -264,17 +251,11 @@ export function verifiedSerialNumeratorFromPreingestion(payload = {}) {
     .filter(Boolean));
   const fullValues = new Map();
   for (const patch of patches) {
-    const fieldName = normalizePreingestionEvidenceFieldName(patch?.field || patch?.evidence_field);
-    if (!serialNumeratorEvidenceFields.has(fieldName)) continue;
-    if (String(patch?.source_type || patch?.sourceType || "").trim().toUpperCase() !== "OCR") continue;
+    if (!["print_run_number", "serial_number", "numerical_rarity"].includes(String(patch?.field || "").trim())) continue;
+    if (String(patch?.source_type || "").trim().toUpperCase() !== "OCR") continue;
     const patchImageId = String(patch?.source_image_id || patch?.sourceImageId || "").trim();
     if (patchImageId && currentImageIds.size > 0 && !currentImageIds.has(patchImageId)) continue;
-    const patchValue = patch?.value
-      ?? patch?.normalized_value
-      ?? patch?.normalizedValue
-      ?? patch?.raw_text
-      ?? patch?.rawText;
-    const expanded = expandPrintRunFields({ [fieldName]: patchValue });
+    const expanded = expandPrintRunFields({ print_run_number: patch.value, serial_number: patch.value });
     const fieldConfidence = ocrPatchPrintRunConfidence(patch, expanded.print_run_number || "");
     if (fieldConfidence < confirmedOcrSerialConfidence) continue;
     if (expanded.print_run_numerator && expanded.print_run_denominator) {
@@ -359,9 +340,8 @@ export function serialNumeratorVerificationFromPreingestion(payload = {}, rendez
   const verification = verifiedSerialNumeratorFromPreingestion(payload);
   if (verification.verified) return true;
   if (verification.conflict) return false;
-  // Pending, deferred, or inconclusive OCR is not negative evidence. Only a
-  // real conflicting OCR reading may veto otherwise direct current-image
-  // print-run evidence.
+  if (rendezvous?.status === "DEFERRED_AFTER_PROVIDER") return false;
+  if (rendezvous?.job_count > 0) return false;
   return null;
 }
 
@@ -398,172 +378,18 @@ export function preingestionEvidenceRefreshDecision(payload = {}, rendezvous = n
 function ocrPatchPrintRunConfidence(patch = {}, expectedPrintRun = "") {
   let confidence = Number.isFinite(Number(patch.confidence)) ? Number(patch.confidence) : 0;
   if (!expectedPrintRun) return confidence;
-  const textCandidates = Array.isArray(patch.text_candidates)
-    ? patch.text_candidates
-    : Array.isArray(patch.textCandidates)
-      ? patch.textCandidates
-      : [];
-  for (const candidate of textCandidates) {
-    const candidateValue = candidate && typeof candidate === "object"
-      ? candidate.value
-        ?? candidate.text
-        ?? candidate.normalized_text
-        ?? candidate.normalizedText
-        ?? ""
-      : candidate;
+  for (const candidate of Array.isArray(patch.text_candidates) ? patch.text_candidates : []) {
+    const candidateValue = candidate?.value ?? candidate?.text ?? candidate?.normalized_text ?? "";
     const parsed = expandPrintRunFields({ print_run_number: candidateValue, serial_number: candidateValue });
     if (parsed.print_run_number !== expectedPrintRun) continue;
-    const candidateConfidence = Number(candidate && typeof candidate === "object" ? candidate.confidence : null);
+    const candidateConfidence = Number(candidate?.confidence);
     if (Number.isFinite(candidateConfidence)) confidence = Math.max(confidence, candidateConfidence);
   }
   return confidence;
 }
 
-function serialNumeratorVerificationAliasState(source = {}) {
-  const hasCanonical = Object.prototype.hasOwnProperty.call(source, "serial_numerator_verified");
-  const hasLegacyAlias = Object.prototype.hasOwnProperty.call(source, "serialNumeratorVerified");
-  if (!hasCanonical && !hasLegacyAlias) return { present: false, value: null };
-
-  const value = hasCanonical
-    ? source.serial_numerator_verified
-    : source.serialNumeratorVerified;
-  return {
-    present: true,
-    value: value === true ? true : value === false ? false : null
-  };
-}
-
 function serialNumeratorVerificationFromPayload(payload = {}) {
-  return serialNumeratorVerificationAliasState(payload).value;
-}
-
-function serialNumeratorVerificationForPresentation(result = {}, payload = {}) {
-  const resultState = serialNumeratorVerificationAliasState(result);
-  return resultState.present
-    ? resultState.value
-    : serialNumeratorVerificationFromPayload(payload);
-}
-
-const presentationSerialFieldNames = new Set([
-  "serial",
-  "serial_number",
-  "serial_numerator",
-  "serial_denominator",
-  "print_run_number",
-  "print_run_numerator",
-  "print_run_denominator",
-  "numbered_to",
-  "numerical_rarity",
-  "expected_serial_denominator"
-]);
-
-const presentationSerialValueKeys = new Set([
-  "value",
-  "normalized_value",
-  "normalizedValue",
-  "resolved_value",
-  "selected_value",
-  "display_value"
-]);
-
-function presentationSerialStateValue(fieldName, resolved = {}) {
-  if (/numerator/i.test(fieldName)) return null;
-  if (/denominator|numbered_to/i.test(fieldName)) return resolved.print_run_denominator || null;
-  return resolved.print_run_number || resolved.serial_number || resolved.numerical_rarity || null;
-}
-
-function redactSerialNumeratorText(value) {
-  return String(value).replace(/(^|[^\d#])\d{1,4}\s*\/\s*(\d{1,4})(?=$|[^\d])/g, "$1#/$2");
-}
-
-function guardPresentationSerialStateNode(value, fieldName, resolved, key = "") {
-  if (/numerator/i.test(key)) return null;
-  if (presentationSerialValueKeys.has(key)) return presentationSerialStateValue(fieldName, resolved);
-  if (Array.isArray(value)) {
-    return value.map((entry) => guardPresentationSerialStateNode(entry, fieldName, resolved));
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([entryKey, entry]) => [
-      entryKey,
-      guardPresentationSerialStateNode(entry, fieldName, resolved, entryKey)
-    ]));
-  }
-  return typeof value === "string" ? redactSerialNumeratorText(value) : value;
-}
-
-function guardPresentationFieldStates(fieldStates, resolved = {}, serialNumeratorVerified = null) {
-  if (serialNumeratorVerified !== false || !fieldStates) return fieldStates;
-  const guardState = (state, fallbackField = "") => {
-    if (!state || typeof state !== "object" || Array.isArray(state)) return state;
-    const fieldName = String(state.field || state.field_name || state.name || fallbackField).trim().toLowerCase();
-    if (!presentationSerialFieldNames.has(fieldName)) return state;
-    return guardPresentationSerialStateNode(state, fieldName, resolved);
-  };
-  if (Array.isArray(fieldStates)) return fieldStates.map((state) => guardState(state));
-  if (fieldStates.field || fieldStates.field_name || fieldStates.name) return guardState(fieldStates);
-  return Object.fromEntries(Object.entries(fieldStates).map(([field, state]) => [field, guardState(state, field)]));
-}
-
-function legacyFieldsFromPresentationSnapshot(resolved = {}) {
-  return {
-    ...resolvedFieldsToLegacyFields(resolved),
-    print_run_number: resolved.print_run_number ?? null,
-    print_run_numerator: resolved.print_run_numerator ?? null,
-    print_run_denominator: resolved.print_run_denominator ?? null,
-    numbered_to: resolved.numbered_to ?? null,
-    serial_number: resolved.serial_number ?? null,
-    serial_numerator: resolved.print_run_numerator ?? null,
-    serial_denominator: resolved.serial_denominator ?? null,
-    numerical_rarity: resolved.numerical_rarity ?? null,
-    expected_serial_denominator: resolved.expected_serial_denominator ?? null
-  };
-}
-
-function resultHasPresentationSerialNumerator(result = {}) {
-  const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
-    ? result.rendered_fields
-    : {};
-  const sources = [
-    result.resolved_fields,
-    result.resolved,
-    result.fields,
-    renderedFields.fields,
-    renderedFields
-  ];
-  return sources.some((fields) => (
-    fields
-    && typeof fields === "object"
-    && !Array.isArray(fields)
-    && Boolean(expandPrintRunFields(fields).print_run_numerator)
-  ));
-}
-
-function withPresentationResolvedFields(result = {}, presentation = {}, serialNumeratorVerified = null) {
-  const resolved = presentation.presentation_resolved_fields;
-  if (!resolved || typeof resolved !== "object" || Array.isArray(resolved)) return result;
-  const shouldGuardSerialFieldStates = serialNumeratorVerified === false
-    || (!resolved.print_run_numerator && resultHasPresentationSerialNumerator(result));
-  const fields = legacyFieldsFromPresentationSnapshot(resolved);
-  const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
-    ? result.rendered_fields
-    : {};
-  return {
-    ...result,
-    fields,
-    resolved,
-    resolved_fields: resolved,
-    presentation_resolved_fields: resolved,
-    rendered_fields: {
-      ...renderedFields,
-      ...fields,
-      fields: resolved
-    },
-    field_states: guardPresentationFieldStates(
-      result.field_states,
-      resolved,
-      shouldGuardSerialFieldStates ? false : serialNumeratorVerified
-    )
-  };
+  return payload.serial_numerator_verified ?? payload.serialNumeratorVerified ?? null;
 }
 
 function storedVisualFeatureLookupEnabled(env = process.env, options = {}) {
@@ -844,34 +670,26 @@ function finalizerEvidenceStatusIsConfirmed(field = {}) {
   return finalizerConfirmedEvidenceStatuses.has(status.toUpperCase());
 }
 
-function finalizerEvidenceSourceEntries(field = {}) {
+function finalizerEvidenceSources(field = {}) {
   const sources = Array.isArray(field.sources) ? field.sources : [];
+  const sourceTypes = sources
+    .map((source) => normalizeStringOrNull(source?.source_type || source?.sourceType || source?.type))
+    .filter(Boolean);
   const direct = normalizeStringOrNull(field.source_type || field.sourceType || field.support_type || field.supportType);
-  const inheritedSources = sources.map((source) => ({
-    provenance_scope: field.provenance_scope,
-    scope: field.scope,
-    physical_instance_match: field.physical_instance_match,
-    ...source
-  }));
-  return direct ? [...inheritedSources, field] : inheritedSources;
-}
-
-function finalizerEvidenceSourceAllowed(source = {}, allowedSources = new Set()) {
-  const sourceType = normalizeStringOrNull(source.source_type || source.sourceType || source.type)?.toUpperCase();
-  if (!sourceType || !allowedSources.has(sourceType)) return false;
-  if (sourceType !== "OFFICIAL_GRADING_DATA" || allowedSources !== finalizerCurrentInstancePrintRunSources) return true;
-  const scope = normalizeStringOrNull(
-    source.provenance_scope || source.provenanceScope || source.scope || source.source_scope || source.sourceScope
-  )?.toUpperCase();
-  return source.physical_instance_match === true && scope !== "REFERENCE";
+  if (direct) sourceTypes.push(direct);
+  return sourceTypes.map((sourceType) => sourceType.toUpperCase());
 }
 
 function finalizerEvidenceHasSource(field = {}, allowedSources = new Set()) {
-  return finalizerEvidenceSourceEntries(field).some((source) => finalizerEvidenceSourceAllowed(source, allowedSources));
+  return finalizerEvidenceSources(field).some((sourceType) => allowedSources.has(sourceType));
 }
 
 function finalizerCandidateHasSource(candidate = {}, allowedSources = new Set()) {
-  return finalizerEvidenceSourceEntries(candidate).some((source) => finalizerEvidenceSourceAllowed(source, allowedSources));
+  const sources = Array.isArray(candidate.sources) ? candidate.sources : [];
+  return sources
+    .map((source) => normalizeStringOrNull(source?.source_type || source?.sourceType || source?.type))
+    .filter(Boolean)
+    .some((sourceType) => allowedSources.has(sourceType.toUpperCase()));
 }
 
 function finalizerDirectEvidenceEntry(field = {}, allowedSources = new Set()) {
@@ -1110,14 +928,12 @@ function finalizerArrayLooksMoreComplete(existing, incoming) {
 }
 
 function finalizerMergeCurrentImageFields(base = {}, current = {}, supportFields = new Set(), {
-  allowExactCodePromotion = false,
-  protectedFields = new Set()
+  allowExactCodePromotion = false
 } = {}) {
   const normalizedCurrent = normalizeFields(current || {});
   const output = { ...(base || {}) };
 
   finalizerCurrentImageFieldAllowList.forEach((field) => {
-    if (protectedFields.has(field)) return;
     if (!allowExactCodePromotion && finalizerNeverPromoteFromRawFields.includes(field)) return;
     const incoming = normalizedCurrent[field];
     if (!finalizerValuePresent(incoming)) return;
@@ -1151,22 +967,11 @@ function finalResolvedFieldsForPresentation(result = {}, {
     && result.resolved_fields
     && typeof result.resolved_fields === "object"
     && !Array.isArray(result.resolved_fields);
-  const candidateAppliedFields = new Set([
-    ...(Array.isArray(result.retrieval_application?.actual_applied_fields)
-      ? result.retrieval_application.actual_applied_fields
-      : []),
-    ...(Array.isArray(result.retrieval_application?.decisions)
-      ? result.retrieval_application.decisions
-        .filter((decision) => decision?.applied_to_final === true)
-        .map((decision) => decision.resolver_field || decision.field)
-      : [])
-  ].map((field) => normalizeStringOrNull(field)).filter(Boolean));
-  // Candidate-owned APPLY fields stay canonical. Missing fields remain owned by
-  // the current image, so an ABSTAIN writer projection cannot erase facts the
-  // provider already read. Raw exact codes and exact parallels remain excluded
-  // by finalizerNeverPromoteFromRawFields.
+  // Once Identity Resolution consumes retrieval evidence, its resolved_fields
+  // are the sole final-field owner. Re-reading a stale pre-resolution render
+  // container here would silently undo applied catalog evidence.
   const fieldSources = (retrievalResolutionIsCanonical
-    ? [result.resolved_fields, result.raw_provider_fields]
+    ? [result.resolved_fields]
     : [
         renderedFieldContainer,
         result.resolved_fields,
@@ -1178,8 +983,7 @@ function finalResolvedFieldsForPresentation(result = {}, {
   const [base = {}, ...rest] = fieldSources;
   const merged = rest.reduce((current, fields) => (
     finalizerMergeCurrentImageFields(current, fields, supportFields, {
-      allowExactCodePromotion: fields !== result.raw_provider_fields,
-      protectedFields: retrievalResolutionIsCanonical ? candidateAppliedFields : new Set()
+      allowExactCodePromotion: fields !== result.raw_provider_fields
     })
   ), { ...base });
   let withCandidateOverlay = merged;
@@ -1273,29 +1077,7 @@ function applyGradeAtomicGuardToResult(result = {}, resolved = null, gradeAtomic
 
 function finalizeDeterministicPresentation(result = {}, payload = {}) {
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
-  if (result.provider_error_code || result.provider_error_type) {
-    const renderedFields = result.rendered_fields && typeof result.rendered_fields === "object" && !Array.isArray(result.rendered_fields)
-      ? result.rendered_fields
-      : {};
-    const resolved = [
-      result.presentation_resolved_fields,
-      result.resolved_fields,
-      result.resolved,
-      result.fields,
-      renderedFields.fields,
-      renderedFields
-    ].find((fields) => fields && typeof fields === "object" && !Array.isArray(fields) && Object.keys(fields).length);
-    if (!resolved) return result;
-
-    const serialNumeratorVerified = serialNumeratorVerificationForPresentation(result, payload);
-    const presentation = renderListingPresentation({
-      resolved,
-      evidence: result.normalized_evidence || result.evidence || {},
-      maxLength: payload.maxTitleLength || maxFallbackTitleLength,
-      serialNumeratorVerified
-    });
-    return withPresentationResolvedFields(result, presentation, serialNumeratorVerified);
-  }
+  if (result.provider_error_code || result.provider_error_type) return result;
 
   const unguardedResolved = finalResolvedFieldsForPresentation(result, {
     enforceAtomicGrade: false,
@@ -1308,7 +1090,6 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
   const gradeGuardedResult = applyGradeAtomicGuardToResult(result, resolved, gradeAtomic);
   if (!resolved || typeof resolved !== "object" || Array.isArray(resolved) || !Object.keys(resolved).length) return gradeGuardedResult;
 
-  const serialNumeratorVerified = serialNumeratorVerificationForPresentation(result, payload);
   const presentation = renderListingPresentation({
     resolved,
     evidence: result.normalized_evidence || result.evidence || {},
@@ -1317,18 +1098,15 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
     // render receives the outer request payload. Prefer the runtime decision
     // carried by the result so a rejected numerator cannot be reintroduced at
     // the response boundary by stale request state.
-    serialNumeratorVerified
+    serialNumeratorVerified: result.serial_numerator_verified
+      ?? result.serialNumeratorVerified
+      ?? serialNumeratorVerificationFromPayload(payload)
   });
   const renderedTitle = presentation.rendered_title || "";
-  const presentationResult = withPresentationResolvedFields(
-    gradeGuardedResult,
-    presentation,
-    serialNumeratorVerified
-  );
-  if (!renderedTitle) return presentationResult;
+  if (!renderedTitle) return gradeGuardedResult;
 
-  const renderedFields = presentationResult.rendered_fields && typeof presentationResult.rendered_fields === "object" && !Array.isArray(presentationResult.rendered_fields)
-    ? presentationResult.rendered_fields
+  const renderedFields = gradeGuardedResult.rendered_fields && typeof gradeGuardedResult.rendered_fields === "object" && !Array.isArray(gradeGuardedResult.rendered_fields)
+    ? gradeGuardedResult.rendered_fields
     : {};
   const nextRenderedFields = {
     ...renderedFields,
@@ -1337,21 +1115,20 @@ function finalizeDeterministicPresentation(result = {}, payload = {}) {
     modules: presentation.modules,
     module_order: presentation.module_order,
     title_render_source: "deterministic_renderer_finalizer",
-    fields: presentationResult.resolved_fields || resolved
+    fields: resolved
   };
 
   return {
-    ...presentationResult,
-    confidence: presentationResult.confidence === "FAILED" ? "LOW" : presentationResult.confidence,
-    title_recovered_from_structured_fields: presentationResult.confidence === "FAILED" || !presentationResult.final_title,
+    ...gradeGuardedResult,
+    confidence: gradeGuardedResult.confidence === "FAILED" ? "LOW" : gradeGuardedResult.confidence,
+    title_recovered_from_structured_fields: gradeGuardedResult.confidence === "FAILED" || !gradeGuardedResult.final_title,
     title: renderedTitle,
     final_title: renderedTitle,
     rendered_title: renderedTitle,
-    resolved: presentationResult.resolved,
-    resolved_fields: presentationResult.resolved_fields,
-    presentation_resolved_fields: presentation.presentation_resolved_fields,
+    resolved: gradeGuardedResult.resolved,
+    resolved_fields: resolved,
     grade_atomic_guard: gradeAtomicGuardApplied
-      ? presentationResult.grade_atomic_guard
+      ? gradeGuardedResult.grade_atomic_guard
       : {
         applied: false,
         reason: "complete_or_absent",
@@ -2029,12 +1806,11 @@ function boundedPayloadImagesFromImages(images = [], {
 async function verifyApprovedMemoryImages({ payload = {} } = {}) {
   const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
   if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
-  const tenantId = payload.tenant_id || payload.tenantId || "";
 
   for (const image of primaryImages) {
     const metadata = storageMetadataForImage(image);
     if (!metadata.objectPath) return { ok: false, reason: "verified_storage_path_required" };
-    await assertVerifiedStorageImage(image, tenantId);
+    await assertVerifiedStorageImage(image);
   }
 
   return { ok: true };
@@ -2053,8 +1829,7 @@ async function createApprovedMemoryTitle(payload) {
       enabled: true,
       loadApprovedRecords: ({ assetFingerprint, limit }) => listApprovedHistoryRecords({
         assetFingerprint,
-        limit,
-        tenantId: payload.tenant_id || payload.tenantId || ""
+        limit
       }),
       verifyImages: verifyApprovedMemoryImages
     });
@@ -2092,8 +1867,7 @@ async function createIdentityCacheTitle(payload) {
     if (!verified.ok) return null;
 
     const lookup = await readIdentityResultCacheRecord({
-      cacheKey: key.cache_key,
-      tenantId: payload.tenant_id || payload.tenantId || ""
+      cacheKey: key.cache_key
     });
     if (!lookup.hit) return null;
 
@@ -2228,9 +2002,7 @@ function primaryPayloadForProvider(payload = {}) {
 }
 
 function storageMetadataForImage(image = {}) {
-  const cropMetadata = image.cropMetadata || image.crop_metadata || {};
   return {
-    assetId: image.assetId || image.asset_id || cropMetadata.asset_id,
     objectPath: image.objectPath || image.object_path || image.storagePath || image.storage_path,
     bucket: image.bucket || image.storage_bucket,
     contentType: image.originalType || image.original_type || image.contentType || image.content_type || image.type,
@@ -2244,18 +2016,9 @@ function storageMetadataForImage(image = {}) {
   };
 }
 
-async function assertVerifiedStorageImage(image = {}, tenantId = "") {
+async function assertVerifiedStorageImage(image = {}) {
   const metadata = storageMetadataForImage(image);
-  const normalizedTenantId = String(tenantId || "").trim();
-  if (!metadata.objectPath) {
-    if (normalizedTenantId && normalizedTenantId !== "tenant_legacy") {
-      throw new Error("Tenant listing images must use a verified storage object path.");
-    }
-    return null;
-  }
-  if (!normalizedTenantId) {
-    throw new Error("Tenant context is required for listing image verification.");
-  }
+  if (!metadata.objectPath) return null;
 
   if (!(image.storageVerified === true || image.storage_verified === true)) {
     throw new Error("Listing image storage reference has not been verified.");
@@ -2265,7 +2028,6 @@ async function assertVerifiedStorageImage(image = {}, tenantId = "") {
     try {
       verifyListingImageVerificationToken({
         token: metadata.token,
-        tenantId,
         objectPath: metadata.objectPath,
         bucket: metadata.bucket,
         contentType: metadata.contentType,
@@ -2282,8 +2044,6 @@ async function assertVerifiedStorageImage(image = {}, tenantId = "") {
   }
 
   const durableRecord = await readListingImageVerificationRecord({
-    tenantId,
-    assetId: metadata.assetId || null,
     objectPath: metadata.objectPath,
     bucket: metadata.bucket,
     contentType: metadata.contentType,
@@ -2301,8 +2061,6 @@ async function assertVerifiedStorageImage(image = {}, tenantId = "") {
 async function verifyIdentityCacheImages(payload = {}) {
   const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
   if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
-  const tenantId = payload.tenant_id || payload.tenantId || "";
-  if (!String(tenantId).trim()) return { ok: false, reason: "tenant_context_required" };
 
   for (const image of primaryImages) {
     const metadata = storageMetadataForImage(image);
@@ -2313,8 +2071,6 @@ async function verifyIdentityCacheImages(payload = {}) {
     }
 
     const durableRecord = await readListingImageVerificationRecord({
-      tenantId,
-      assetId: metadata.assetId || null,
       objectPath: metadata.objectPath,
       bucket: metadata.bucket,
       contentType: metadata.contentType,
@@ -2694,9 +2450,6 @@ function providerSignalFastPathEligible(result = {}) {
 function tryProviderFastPath(result, payload, providerId) {
   if (!envFlag(process.env, "ENABLE_LISTING_FAST_PATH", true)) return null;
   const providerOptions = providerOptionsFromPayload(payload);
-  if (String(providerOptions.evaluation_profile || "").trim() === "retrieval_application_ablation_v1") {
-    return null;
-  }
   if (evidenceCompletionEnabled(process.env, providerOptions)
     && (optionFlag(providerOptions, "enable_catalog_assist", false) === true
       || optionFlag(providerOptions, "enable_vector_assist", false) === true)) {
@@ -2986,7 +2739,6 @@ function catalogCandidateContextCacheKey({
   resolvedForRetrieval = {},
   providerOptions = {},
   excludeSourceFeedbackIds = [],
-  tenantId = "",
   env = process.env
 } = {}) {
   const normalized = normalizeFields(resolvedForRetrieval || {});
@@ -2997,7 +2749,6 @@ function catalogCandidateContextCacheKey({
   const players = playerValues.map(normalizeStringOrNull).filter(Boolean);
   const keyPayload = {
     revision: env.CATALOG_LOOKUP_CACHE_REVISION || "v2",
-    tenant_id: String(tenantId || "").trim(),
     source_trust_policy_version: env.CATALOG_SOURCE_TRUST_POLICY_VERSION || "approved-reference-v1",
     fields: {
       year: normalized.year || "",
@@ -3621,7 +3372,6 @@ async function prepareCatalogCandidateContext({
   timingContext = null,
   stageRequestId = "",
   stagePhase = "catalog_lookup",
-  tenantId = "",
   env = process.env
 } = {}) {
   if (optionFlag(providerOptions, "enable_catalog_assist", false) !== true) {
@@ -3637,7 +3387,7 @@ async function prepareCatalogCandidateContext({
 
   const cacheEnabled = catalogCacheEnabled(env, providerOptions);
   const cacheKey = cacheEnabled
-    ? catalogCandidateContextCacheKey({ resolvedForRetrieval, providerOptions, excludeSourceFeedbackIds, tenantId, env })
+    ? catalogCandidateContextCacheKey({ resolvedForRetrieval, providerOptions, excludeSourceFeedbackIds, env })
     : "";
   const cacheStartedAt = Date.now();
   if (cacheEnabled && cacheKey) {
@@ -3675,7 +3425,6 @@ async function prepareCatalogCandidateContext({
       allowedFamilies,
       maxQueries: allowedFamilies.length,
       excludeSourceFeedbackIds,
-      tenantId,
       env: catalogRetrievalEnv(env, providerOptions)
     }))
   });
@@ -3741,7 +3490,6 @@ async function prepareCatalogCandidateContext({
 
 function vectorTelemetryContext(payload = {}) {
   return {
-    tenantId: payload.tenant_id || payload.tenantId || null,
     analysisRunId: payload.analysisRunId || payload.analysis_run_id || null,
     assetId: payload.assetId || payload.asset_id || null,
     sourceFeedbackId: payload.sourceFeedbackId || payload.source_feedback_id || null,
@@ -3762,10 +3510,6 @@ async function prepareVectorCandidateContext({
   env = process.env
 } = {}) {
   const config = vectorRetrievalConfig(env, providerOptions);
-  const excludeSourceFeedbackIds = [
-    initialPayload?.source_feedback_id,
-    initialPayload?.sourceFeedbackId
-  ].map(normalizeStringOrNull).filter(Boolean);
   if (!config.enabled) {
     return {
       mode: vectorRetrievalModes.OFF,
@@ -3866,9 +3610,7 @@ async function prepareVectorCandidateContext({
     mode: retrievalModes.INTERNAL_ONLY,
     allowedFamilies,
     maxQueries: config.hybridRetrievalEnabled ? Math.max(4, allowedFamilies.length + 2) : 2,
-    excludeSourceFeedbackIds,
-    env: vectorRetrievalEnv(env, config),
-    tenantId: initialPayload.tenant_id || initialPayload.tenantId || ""
+    env: vectorRetrievalEnv(env, config)
   }));
   const packet = buildVectorCandidatePacket(retrieval, {
     limit: config.gptCandidateLimit,
@@ -3893,34 +3635,20 @@ async function prepareVectorCandidateContext({
     retrieval,
     worker: workerResult,
     telemetry,
-    self_retrieval_exclusion: {
-      requested_source_feedback_id_count: excludeSourceFeedbackIds.length,
-      query_planner_filter_active: excludeSourceFeedbackIds.length > 0,
-      source_feedback_ids_sha256: excludeSourceFeedbackIds.length
-        ? crypto.createHash("sha256").update(excludeSourceFeedbackIds.slice().sort().join("\n")).digest("hex")
-        : null
-    },
     vector_assist_eligibility: assistEligibility,
     promptPacket: config.mode === vectorRetrievalModes.ASSIST && vectorCandidatePacketHasPromptContent(assistPacket)
   };
 }
 
-function withVectorCandidateContext(result = {}, context = {}, {
-  providerPromptUsed = false
-} = {}) {
+function withVectorCandidateContext(result = {}, context = {}) {
   if (!context || !context.packet) return result;
-  const eligibility = context.vector_assist_eligibility || {};
   return {
     ...result,
     vector_retrieval_mode: context.mode || null,
     vector_retrieval: context.retrieval || null,
     vector_candidate_packet: context.packet,
     vector_assist_packet: context.assistPacket || null,
-    vector_prompt_assist_used: providerPromptUsed === true,
-    vector_candidate_context_available: context.promptPacket === true,
-    vector_provider_prompt_candidate_count: providerPromptUsed === true
-      ? numericEligibilityValue(eligibility, "prompt_candidate_count")
-      : 0,
+    vector_prompt_assist_used: context.promptPacket === true,
     vector_assist_eligibility: context.vector_assist_eligibility || null,
     vector_lazy_skip: context.vector_lazy_skip || null,
     vector_telemetry: context.telemetry || null,
@@ -3937,22 +3665,15 @@ function withVectorCandidateContext(result = {}, context = {}, {
   };
 }
 
-function withCatalogCandidateContext(result = {}, context = {}, {
-  providerPromptUsed = false
-} = {}) {
+function withCatalogCandidateContext(result = {}, context = {}) {
   if (!context || !context.packet) return result;
   const exactAnchorFastLane = context.exact_anchor_fast_lane_shadow || null;
-  const eligibility = context.catalog_assist_eligibility || {};
   return {
     ...result,
     catalog_retrieval: context.retrieval || null,
     catalog_candidate_packet: context.packet,
     catalog_assist_packet: context.assistPacket || null,
-    catalog_prompt_assist_used: providerPromptUsed === true,
-    catalog_candidate_context_available: context.promptPacket === true,
-    catalog_provider_prompt_candidate_count: providerPromptUsed === true
-      ? numericEligibilityValue(eligibility, "prompt_candidate_count")
-      : 0,
+    catalog_prompt_assist_used: context.promptPacket === true,
     catalog_assist_eligibility: context.catalog_assist_eligibility || null,
     catalog_anchor_plan: context.catalog_anchor_plan || null,
     catalog_cache_hit: context.catalog_cache_hit === true,
@@ -4100,8 +3821,6 @@ function candidateControlResultPatch(candidateControl = {}) {
     participation_level: candidateControl.participation_level,
     decision_eligible_candidate_count: candidateControl.decision_eligible_candidate_count,
     decision_eligible_candidate_ids: candidateControl.decision_eligible_candidate_ids,
-    field_evidence_eligible_candidate_count: candidateControl.field_evidence_eligible_candidate_count,
-    field_evidence_eligible_candidate_ids: candidateControl.field_evidence_eligible_candidate_ids,
     shadow_only_candidate_count: candidateControl.shadow_only_candidate_count,
     shadow_only_candidate_ids: candidateControl.shadow_only_candidate_ids,
     selected_candidate_decision: candidateControl.selected_candidate_decision,
@@ -4189,26 +3908,6 @@ async function withEvidenceCompletion(result, payload, {
   const retrievalMode = payload.retrievalMode || payload.retrieval_mode || process.env.RETRIEVAL_MODE;
   const retrievalEnv = retrievalEnvForProviderOptions(env, providerOptions);
   const allowedFamilies = retrievalFamiliesForProviderOptions(env, providerOptions);
-  const retrievalDisabledForAblation = optionFlag(
-    providerOptions,
-    "disable_evidence_completion_retrieval",
-    false
-  );
-  const runRetrievalImpl = retrievalDisabledForAblation
-    ? async ({ mode = retrievalMode } = {}) => ({
-      mode,
-      providers_used: [],
-      queries: [],
-      sources: [],
-      selected_candidate: null,
-      candidate_margin: 0,
-      candidate_selection_threshold: null,
-      low_margin_conflict: null,
-      conflicts: [],
-      unavailable: [],
-      trace: []
-    })
-    : undefined;
   const completion = await timeAsync(timingContext, "evidence_completion_ms", () => completeEvidence({
     resolved: result.resolved,
     evidence: result.evidence,
@@ -4221,8 +3920,7 @@ async function withEvidenceCompletion(result, payload, {
     allowedFamilies: allowedFamilies || undefined,
     maxQueries: allowedFamilies ? Math.max(4, allowedFamilies.length) : undefined,
     env: retrievalEnv,
-    runFocusedVisionImpl,
-    runRetrievalImpl
+    runFocusedVisionImpl
   }));
   addTiming(timingContext, "retrieval_ms", Number(completion.retrieval?.latency_ms || completion.retrieval?.retrieval_time_ms || 0));
   const resolutionTrace = [
@@ -5126,17 +4824,16 @@ async function withEvidenceCompletionShadow(result, payload, {
   };
 }
 
-async function imagesWithSignedReadUrls(images = [], timingContext = null, tenantId = "") {
+async function imagesWithSignedReadUrls(images = [], timingContext = null) {
   return timeAsync(timingContext, "signed_url_ms", () => mapWithConcurrency(images, signedUrlConcurrency, async (image) => {
-    const metadata = await assertVerifiedStorageImage(image, tenantId);
+    const metadata = await assertVerifiedStorageImage(image);
     if (!metadata?.objectPath) return image;
 
     return {
       ...image,
       signedUrl: await createListingImageSignedReadUrl({
         objectPath: metadata.objectPath,
-        bucket: metadata.bucket,
-        tenantId
+        bucket: metadata.bucket
       }),
       signed_url: undefined
     };
@@ -5176,11 +4873,7 @@ async function createRecognitionIdentityPreflight(payload, {
   }
 
   try {
-    const signedImages = await imagesWithSignedReadUrls(
-      payload.images || [],
-      timingContext,
-      payload.tenant_id || payload.tenantId || ""
-    );
+    const signedImages = await imagesWithSignedReadUrls(payload.images || [], timingContext);
     const signedPrimaryImages = primaryImagesFromImages(signedImages);
     const response = await timeAsync(timingContext, "recognition_preflight_ms", () => analyzeCardImagesWithRecognitionWorker({
       assetId: payload.assetId || payload.asset_id || `asset_${crypto.randomUUID()}`,
@@ -5342,11 +5035,6 @@ function retrievalApplicationAblationArm(providerOptions = {}) {
   return forceRetrievalApplicationResolutionEnabled(providerOptions) ? "ON" : "OFF";
 }
 
-function retrievalApplicationSingleObservationReplayEnabled(providerOptions = {}) {
-  return String(providerOptions.evaluation_profile || "").trim()
-    === "retrieval_application_single_observation_replay_v1";
-}
-
 function shouldReturnAssistShadowSingleModelDraft({
   assistShadowOnly = false,
   forceRetrievalApplicationResolution = false
@@ -5365,7 +5053,6 @@ async function createOpenAiTitle(payload, selection, {
   let latestPreingestionOcrState = null;
   const preingestionOcrRendezvousPromise = preingestionBundleId
     ? waitForPreingestionOcrEvidence({
-      tenantId: payload.tenant_id || payload.tenantId || "",
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: preingestionBundleId,
       // OCR starts during pre-ingestion and runs in parallel with the provider.
@@ -5405,19 +5092,14 @@ async function createOpenAiTitle(payload, selection, {
     || crypto.randomUUID();
   const signedImagesPromise = Array.isArray(reusableSignedImages) && reusableSignedImages.length
     ? reusableSignedImages
-    : imagesWithSignedReadUrls(
-      payload.images || [],
-      timingContext,
-      payload.tenant_id || payload.tenantId || ""
-    );
+    : imagesWithSignedReadUrls(payload.images || [], timingContext);
   const catalogContextPromise = prepareCatalogCandidateContext({
     resolvedForRetrieval,
     providerOptions,
     excludeSourceFeedbackIds: [payload.source_feedback_id || payload.sourceFeedbackId].filter(Boolean),
     timingContext,
     stageRequestId: catalogStageRequestId,
-    stagePhase: "pre_provider",
-    tenantId: payload.tenant_id || payload.tenantId || ""
+    stagePhase: "pre_provider"
   });
 
   let signedImages;
@@ -5538,35 +5220,20 @@ async function createOpenAiTitle(payload, selection, {
     vectorContext = earlyVectorContext;
   }
   const strongCatalogCandidate = catalogStrongCandidateForVectorLazy(catalogContext || {}, resolvedForRetrieval);
-  const internalPromptCandidateSource = strongCatalogCandidate && catalogContext.promptPacket
-    ? "catalog"
+  const promptCandidatePacket = strongCatalogCandidate && catalogContext.promptPacket
+    ? catalogContext.assistPacket
     : vectorContext?.promptPacket
-      ? "vector"
+      ? vectorContext.assistPacket
       : catalogContext?.promptPacket
-        ? "catalog"
+        ? catalogContext.assistPacket
         : null;
-  const internalPromptCandidatePacket = internalPromptCandidateSource === "catalog"
-    ? catalogContext?.assistPacket || null
-    : internalPromptCandidateSource === "vector"
-      ? vectorContext?.assistPacket || null
-      : null;
-  const providerPromptContextEnabled = retrievalPromptContextEnabled(process.env, providerOptions);
-  const providerPromptCandidatePacket = providerPromptContextEnabled
-    ? internalPromptCandidatePacket
-    : null;
   const assistEnabled = optionFlag(providerOptions, "enable_catalog_assist", false) === true
     || optionFlag(providerOptions, "enable_vector_assist", false) === true;
-  // Internal candidate availability still controls the post-provider path.
-  // It is deliberately independent from whether candidates are shown to GPT.
-  const assistShadowOnly = assistEnabled && !internalPromptCandidatePacket;
+  const assistShadowOnly = assistEnabled && !promptCandidatePacket;
   const initialPayload = {
     ...baseInitialPayload
   };
-  // Never trust caller-supplied candidate packets. Only a server-built packet
-  // may enter the provider prompt, and production defaults to no such packet.
-  delete initialPayload.vectorCandidatePacket;
-  delete initialPayload.vector_candidate_packet;
-  if (providerPromptCandidatePacket) initialPayload.vectorCandidatePacket = providerPromptCandidatePacket;
+  if (promptCandidatePacket) initialPayload.vectorCandidatePacket = promptCandidatePacket;
   const prompt = await buildInitialProviderPrompt(initialPayload, maxTitleLength);
   const ultraFastL2 = ultraFastL2Enabled(initialPayload, process.env);
   const providerPromptMode = ultraFastL2
@@ -5594,11 +5261,10 @@ async function createOpenAiTitle(payload, selection, {
     preferredKeySlot: initialPayload.openai_preferred_key_slot || initialPayload.provider_key_slot_hint || null,
     modelOverride: providerModelOverrideFromOptions(providerOptions),
     responseProfile: providerResponseProfile,
-    includeVectorDecision: Boolean(providerPromptCandidatePacket),
+    includeVectorDecision: Boolean(promptCandidatePacket),
     imageDetail: providerImageDetail,
     textVerbosity: ultraFastL2 ? ultraFastTextVerbosity(providerOptions) : null,
     serviceTier: ultraFastL2 ? ultraFastServiceTier(providerOptions) : null,
-    signal: requestContext?.signal || null,
     requestContext: openAiRequestContextFromPayload(initialPayload, {
       providerCallPurpose: "full_l2",
       titleStage: providerOptions.v4_title_stage_target || initialPayload.v4_title_stage_target || ""
@@ -5616,9 +5282,6 @@ async function createOpenAiTitle(payload, selection, {
     ),
     provider_prompt_mode: providerPromptMode,
     provider_prompt_chars: prompt.length,
-    retrieval_prompt_context_enabled: providerPromptContextEnabled,
-    retrieval_prompt_context_used: Boolean(providerPromptCandidatePacket),
-    retrieval_prompt_context_source: providerPromptCandidatePacket ? internalPromptCandidateSource : null,
     provider_input_image_count: Array.isArray(initialPayload.images) ? initialPayload.images.length : 0,
     provider_image_detail: providerResult.image_detail || "high",
     provider_text_verbosity: providerResult.text_verbosity || null,
@@ -5667,8 +5330,7 @@ async function createOpenAiTitle(payload, selection, {
       excludeSourceFeedbackIds: [payload.source_feedback_id || payload.sourceFeedbackId].filter(Boolean),
       timingContext,
       stageRequestId: catalogStageRequestId,
-      stagePhase: "post_provider",
-      tenantId: payload.tenant_id || payload.tenantId || ""
+      stagePhase: "post_provider"
     }).catch(() => null);
     const startLateVectorLookup = async () => {
       try {
@@ -5963,7 +5625,6 @@ async function createOpenAiTitle(payload, selection, {
   }
   const targetedOcrRendezvousPromise = criticalOcrWait.target_fields.length && preingestionBundleId
     ? waitForPreingestionOcrEvidence({
-      tenantId: payload.tenant_id || payload.tenantId || "",
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: preingestionBundleId,
       timeoutMs: Math.max(500, ocrPostProviderWaitMs),
@@ -6068,14 +5729,6 @@ async function createOpenAiTitle(payload, selection, {
       added_patch_count: 0
     }));
   }
-  const preingestionSerialConfusionGuard = applyPreingestionSerialConfusionGuard(
-    initialPayload,
-    currentProviderFields
-  );
-  preingestionEvidenceRefresh.serial_confusion_guard = preingestionSerialConfusionGuard;
-  if (preingestionOcrRendezvous && typeof preingestionOcrRendezvous === "object") {
-    preingestionOcrRendezvous.serial_confusion_guard = preingestionSerialConfusionGuard;
-  }
   initialPayload.serial_numerator_verified = serialNumeratorVerificationFromPreingestion(
     initialPayload,
     preingestionOcrRendezvous
@@ -6084,11 +5737,9 @@ async function createOpenAiTitle(payload, selection, {
     withVectorCandidateContext(
       withCatalogCandidateContext(
         withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
-        catalogContext,
-        { providerPromptUsed: internalPromptCandidateSource === "catalog" && Boolean(providerPromptCandidatePacket) }
+        catalogContext
       ),
-      vectorContext,
-      { providerPromptUsed: internalPromptCandidateSource === "vector" && Boolean(providerPromptCandidatePacket) }
+      vectorContext
     ),
     vectorContext.visualFeatures
   );
@@ -6098,14 +5749,6 @@ async function createOpenAiTitle(payload, selection, {
   mergedResult.preingestion_retrieval_refresh = preingestionRetrievalRefresh;
   mergedResult.preingestion_retrieval_anchor_fields = preingestionRetrievalAnchorFields;
   mergedResult.serial_numerator_verified = initialPayload.serial_numerator_verified;
-  const retrievalApplicationReplay = retrievalApplicationSingleObservationReplayEnabled(providerOptions)
-    ? await timeAsync(timingContext, "retrieval_application_replay_ms", () => buildRetrievalApplicationReplay({
-      result: mergedResult,
-      catalogContext,
-      vectorContext,
-      maxLength: initialPayload.maxTitleLength || maxFallbackTitleLength
-    }))
-    : null;
   const finalizeProviderResult = async (result, terminalPath = "unknown") => {
     const handoffJoinStartedAt = nowMs();
     const handoff = await (providerCapacityStageHandoffPromise || handoffProviderCapacityAfterStage(
@@ -6151,11 +5794,6 @@ async function createOpenAiTitle(payload, selection, {
         arm: ablationArm,
         terminal_path: terminalPath,
         evidence_completion_enabled: evidenceCompletionEnabled(process.env, providerOptions),
-        evidence_completion_retrieval_disabled: optionFlag(
-          providerOptions,
-          "disable_evidence_completion_retrieval",
-          false
-        ),
         catalog_enabled: optionFlag(providerOptions, "enable_catalog_assist", false),
         vector_enabled: optionFlag(providerOptions, "enable_vector_assist", false),
         retrieval_application_enabled: retrievalApplicationEnabled(process.env, providerOptions),
@@ -6165,12 +5803,6 @@ async function createOpenAiTitle(payload, selection, {
       }
     };
   };
-  if (retrievalApplicationReplay) {
-    return finalizeProviderResult({
-      ...mergedResult,
-      retrieval_application_replay: retrievalApplicationReplay
-    }, "single_observation_replay");
-  }
   const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
   if (fastPathResult) return finalizeProviderResult(fastPathResult, "provider_fast_path");
   const forceRetrievalApplicationResolution = forceRetrievalApplicationResolutionEnabled(providerOptions);
@@ -6240,9 +5872,7 @@ export const __listingCopilotTitleTestHooks = {
   finalResolvedFieldsForPresentation,
   forceRetrievalApplicationResolutionEnabled,
   retrievalApplicationAblationArm,
-  retrievalPromptContextEnabled,
   shouldReturnAssistShadowSingleModelDraft,
-  retrievalApplicationSingleObservationReplayEnabled,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
   preingestionEvidenceRefreshDecision,
@@ -6438,26 +6068,35 @@ export async function runListingRecognitionCore({
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/listing-copilot-title" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  try {
-    const context = await requireTenantAccess(req);
-    bindProductionRequestContext(res, context);
-  } catch (error) {
-    sendJson(res, Number(error?.statusCode || 503), publicTenantAuthError(error));
+  const cookies = parseCookies(req.headers.cookie);
+  const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
+  const workerAuthorized = isV4WorkerRequest(req, process.env);
+
+  if (!authenticated && !workerAuthorized) {
+    sendJson(res, 401, { ok: false, message: "Unauthorized" });
     return;
   }
-  // The V4 route is the only executable HTTP boundary. It reconstructs tenant
-  // context from a current membership or a persisted queue job before calling
-  // runListingRecognitionCore in-process. A worker secret alone is never a
-  // license to supply an arbitrary tenant payload to this legacy endpoint.
-  sendJson(res, 410, {
-    ok: false,
-    code: "v4_tenant_route_required",
-    message: "Use /api/v4/listing-copilot-title for tenant-scoped recognition."
-  });
+
+  if (!workerAuthorized && !enforceApiRateLimit(req, res, {
+    scope: "listing_title",
+    limit: 120,
+    windowMs: 60_000,
+    message: "Too many title generation requests. Please try again shortly."
+  })) return;
+
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req));
+  } catch {
+    sendJson(res, 400, { ok: false, message: "Invalid request." });
+    return;
+  }
+
+  const response = await runListingRecognitionCore({ payload, requestContext: req });
+  sendJson(res, response.statusCode, response.body);
 }

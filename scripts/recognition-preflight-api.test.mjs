@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
+import handler from "../api/listing-copilot-title.js";
 import {
   recognitionResponseToEvidenceDocument
 } from "../lib/listing/recognition/recognition-evidence-normalizer.mjs";
@@ -16,7 +18,15 @@ process.env.RECOGNITION_WORKER_TOKEN = "worker-token";
 process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
-process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
+
+function sign(value) {
+  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
+}
+
+function sessionCookie() {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
+  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+}
 
 function makeImage({
   id,
@@ -47,12 +57,33 @@ function jsonResponse(payload, status = 200) {
 }
 
 async function callTitleApi(payload) {
-  return runListingRecognitionCore({
-    payload,
-    requestContext: {
-      headers: { "x-lynca-worker-secret": process.env.V4_JOB_WORKER_SECRET }
+  const req = new EventEmitter();
+  req.method = "POST";
+  req.headers = { cookie: sessionCookie() };
+
+  const res = {
+    statusCode: 0,
+    headers: {},
+    body: "",
+    setHeader(key, value) {
+      this.headers[key] = value;
+    },
+    end(value) {
+      this.body = value;
     }
+  };
+
+  const promise = handler(req, res);
+  queueMicrotask(() => {
+    req.emit("data", JSON.stringify(payload));
+    req.emit("end");
   });
+  await promise;
+
+  return {
+    statusCode: res.statusCode,
+    body: JSON.parse(res.body)
+  };
 }
 
 const frontSha = "c".repeat(64);
@@ -61,13 +92,13 @@ const images = [
   makeImage({
     id: "front",
     role: "front_original",
-    objectPath: "tenants/tenant_alpha/listing-assets/2026-06-23/asset-recognition/front.jpg",
+    objectPath: "listing-assets/2026-06-23/asset-recognition/front.jpg",
     contentSha256: frontSha
   }),
   makeImage({
     id: "back",
     role: "back_original",
-    objectPath: "tenants/tenant_alpha/listing-assets/2026-06-23/asset-recognition/back.jpg",
+    objectPath: "listing-assets/2026-06-23/asset-recognition/back.jpg",
     contentSha256: backSha
   })
 ];
@@ -193,13 +224,11 @@ globalThis.fetch = async (url, options = {}) => {
   });
 
   if (requestUrl.host === "supabase.test" && requestUrl.pathname.endsWith("/listing_image_verifications")) {
-    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     const objectPath = requestUrl.searchParams.get("object_path")?.replace(/^eq\./, "");
     const image = images.find((item) => item.objectPath === objectPath);
     assert.ok(image, `unexpected verification object path ${objectPath}`);
     return jsonResponse([
       {
-        tenant_id: "tenant_alpha",
         object_path: image.objectPath,
         bucket: image.bucket,
         content_type: image.originalType,
@@ -238,7 +267,6 @@ globalThis.fetch = async (url, options = {}) => {
 };
 
 const response = await callTitleApi({
-  tenant_id: "tenant_alpha",
   assetId: "asset-recognition",
   mode: "single",
   images,
@@ -264,9 +292,7 @@ assert.equal(response.body.resolved.serial_number, "31/50");
 assert.match(response.body.final_title, /PSA 10/);
 assert.ok(response.body.field_states.find((field) => field.field === "serial_number").supporting_sources.some((source) => source.source === "CARD_FRONT_PRINTED_TEXT"));
 assert.ok(!fetchCalls.some((call) => call.host.includes("legacy-removed-provider.example")));
-assert.deepEqual(fetchCalls
-  .filter((call) => !["/rest/v1/request_logs", "/rest/v1/production_events", "/rest/v1/error_logs"].includes(call.pathname))
-  .map((call) => call.host), [
+assert.deepEqual(fetchCalls.map((call) => call.host), [
   "supabase.test",
   "supabase.test",
   "supabase.test",

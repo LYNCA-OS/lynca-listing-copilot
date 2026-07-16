@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
 import {
   analyzeColdStartDraft,
   externalRetrievalTraceFromResult,
@@ -22,7 +23,6 @@ const providerModes = Object.freeze({
   OPENAI_VECTOR: "openai_vector",
   RETRIEVAL_OFF: "retrieval_off",
   RETRIEVAL_ON: "retrieval_on",
-  RETRIEVAL_REPLAY: "retrieval_replay",
   EBAY_COLD_START_BLIND: "ebay_cold_start_blind"
 });
 
@@ -278,39 +278,6 @@ function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function cleanIdentifier(value) {
-  if (!["string", "number", "bigint"].includes(typeof value)) return "";
-  return String(value).trim();
-}
-
-function objectRecord(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function firstText(...values) {
-  for (const value of values) {
-    const text = cleanIdentifier(value);
-    if (text) return text;
-  }
-  return "";
-}
-
-function sourceRecordForItem(item = {}) {
-  return objectRecord(item.source_record || item.sourceRecord);
-}
-
-function sourceFeedbackIdForItem(item = {}) {
-  const sourceRecord = sourceRecordForItem(item);
-  return firstText(
-    item.source_feedback_id,
-    sourceRecord.source_feedback_id,
-    item.feedback_id,
-    sourceRecord.feedback_id,
-    item.source_record_id,
-    sourceRecord.source_record_id
-  );
-}
-
 function providerFailureCode(data = {}, httpStatus = 200) {
   if (data?.provider_error_code) return String(data.provider_error_code);
   if (data?.provider_error_type) return String(data.provider_error_type);
@@ -331,16 +298,7 @@ function providerFailureReason(data = {}, fallback = "") {
 }
 
 function candidateId(item = {}) {
-  const sourceRecord = sourceRecordForItem(item);
-  return firstText(
-    item.candidate_id,
-    item.id,
-    item.asset_id,
-    sourceRecord.asset_id,
-    sourceFeedbackIdForItem(item),
-    item.physical_card_id,
-    sourceRecord.physical_card_id
-  );
+  return item.candidate_id || item.id || item.asset_id || item.source_feedback_id || item.physical_card_id || "";
 }
 
 function correctedTitle(item = {}) {
@@ -350,6 +308,45 @@ function correctedTitle(item = {}) {
     || item.ground_truth?.title
     || item.source_titles?.corrected_title
   );
+}
+
+function compactObject(value = {}) {
+  return Object.fromEntries(Object.entries(value || {}).filter(([, fieldValue]) => {
+    if (Array.isArray(fieldValue)) return fieldValue.length > 0;
+    if (typeof fieldValue === "boolean") return fieldValue === true;
+    return fieldValue !== null && fieldValue !== undefined && normalizeText(fieldValue) !== "" && fieldValue !== "UNKNOWN";
+  }));
+}
+
+function catalogObservationHint(item = {}) {
+  const title = correctedTitle(item);
+  if (!title) return null;
+  const parsed = parseReviewedTitleFields(title);
+  const hint = compactObject({
+    category: parsed.category,
+    year: parsed.year,
+    manufacturer: parsed.manufacturer,
+    brand: parsed.brand,
+    product: parsed.product,
+    set: parsed.set,
+    insert: parsed.insert || parsed.official_card_type,
+    players: parsed.players,
+    character: parsed.character,
+    collector_number: parsed.collector_number,
+    checklist_code: parsed.checklist_code,
+    serial_number: parsed.serial_number,
+    observable_components: parsed.observable_components,
+    surface_color: parsed.surface_color,
+    official_card_type: parsed.official_card_type,
+    auto: parsed.auto,
+    rc: parsed.rc,
+    patch: parsed.patch,
+    relic: parsed.relic,
+    jersey: parsed.jersey,
+    sketch: parsed.sketch,
+    redemption: parsed.redemption
+  });
+  return Object.keys(hint).length ? hint : null;
 }
 
 function normalizeProviderMode(value = "") {
@@ -367,13 +364,10 @@ function normalizeProviderMode(value = "") {
   if (["retrieval-on", "retrieval_on", "retrieval-enabled", "retrieval_enabled"].includes(raw)) {
     return providerModes.RETRIEVAL_ON;
   }
-  if (["retrieval-replay", "retrieval_replay"].includes(raw)) {
-    return providerModes.RETRIEVAL_REPLAY;
-  }
   if (["cold-start", "cold_start", "cold-start-blind", "cold_start_blind", "ebay-cold-start-blind", "ebay_cold_start_blind"].includes(raw)) {
     return providerModes.EBAY_COLD_START_BLIND;
   }
-  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_baseline, openai_catalog, openai_vector, retrieval_off, retrieval_on, retrieval_replay, or ebay_cold_start_blind.`);
+  throw new Error(`Unsupported cloud eval provider: ${value}. Use openai_baseline, openai_catalog, openai_vector, retrieval_off, retrieval_on, or ebay_cold_start_blind.`);
 }
 
 function cloudProviderForMode(providerMode) {
@@ -382,6 +376,7 @@ function cloudProviderForMode(providerMode) {
 
 function providerOptionsForMode(providerMode, {
   correctedTitleAsTemporaryGt = true,
+  sendCorrectedTitleHintToCloud = false,
   disableVectorLazyMode = false,
   forceVectorAssist = false,
   vectorIndexReady = false,
@@ -391,21 +386,16 @@ function providerOptionsForMode(providerMode, {
   const retrievalAblation = providerMode === providerModes.RETRIEVAL_OFF
     || providerMode === providerModes.RETRIEVAL_ON;
   const retrievalEnabled = providerMode === providerModes.RETRIEVAL_ON;
-  const retrievalReplay = providerMode === providerModes.RETRIEVAL_REPLAY;
-  const retrievalCausalEval = retrievalAblation || retrievalReplay;
-  const retrievalSourcesEnabled = retrievalEnabled || retrievalReplay;
   const coldStartMode = coldStartBlind === true || providerMode === providerModes.EBAY_COLD_START_BLIND;
-  const catalogAssist = retrievalSourcesEnabled
+  const catalogAssist = retrievalEnabled
     || providerMode === providerModes.OPENAI_CATALOG
     || providerMode === providerModes.OPENAI_VECTOR
     || coldStartMode;
-  const vectorAssist = retrievalSourcesEnabled || providerMode === providerModes.OPENAI_VECTOR || coldStartMode;
-  const temporaryGt = retrievalAblation || retrievalReplay
+  const vectorAssist = retrievalEnabled || providerMode === providerModes.OPENAI_VECTOR || coldStartMode;
+  const temporaryGt = retrievalAblation
     ? false
     : catalogAssist && correctedTitleAsTemporaryGt === true && coldStartMode !== true;
-  // Cloud eval is always blind. The reviewed title is loaded only after the
-  // prediction returns and must never be serialized into the request.
-  const sendHintToCloud = false;
+  const sendHintToCloud = temporaryGt && sendCorrectedTitleHintToCloud === true;
   const forceVector = vectorAssist && forceVectorAssist === true;
   const vectorQueryTimeoutMs = positiveInteger(
     env.CLOUD_LISTING_API_VECTOR_QUERY_TIMEOUT_MS || env.VECTOR_QUERY_TIMEOUT_MS,
@@ -414,11 +404,7 @@ function providerOptionsForMode(providerMode, {
   return {
     provider_mode: providerMode,
     provider_eval_mode: providerMode,
-    evaluation_profile: retrievalReplay
-      ? "retrieval_application_single_observation_replay_v1"
-      : retrievalAblation
-        ? "retrieval_application_ablation_v1"
-        : "legacy_cloud_eval",
+    evaluation_profile: retrievalAblation ? "retrieval_application_ablation_v1" : "legacy_cloud_eval",
     retrieval_ablation_arm: retrievalAblation ? (retrievalEnabled ? "ON" : "OFF") : null,
     single_model_fast: retrievalAblation ? false : !catalogAssist && !vectorAssist,
     corrected_title_as_temporary_gt: temporaryGt,
@@ -426,24 +412,21 @@ function providerOptionsForMode(providerMode, {
     corrected_title_is_reviewed_title_ground_truth: temporaryGt,
     send_corrected_title_hint_to_cloud: sendHintToCloud,
     cloud_eval_blind_to_corrected_title_hint: !sendHintToCloud,
-    // Both ablation arms must traverse the same completion/resolver skeleton.
-    // OFF replaces retrieval with an empty deterministic source; ON is the
-    // only arm that may contribute candidate field evidence.
-    enable_evidence_completion: retrievalAblation ? true : catalogAssist || vectorAssist,
-    disable_evidence_completion_retrieval: retrievalAblation && !retrievalEnabled,
+    // OFF is the strict image + OCR + primary-model baseline. Generic evidence
+    // completion plans retrieval actions even when catalog/vector assist is
+    // disabled, so it must stay off in that arm. ON deliberately runs the full
+    // application + resolver path.
+    enable_evidence_completion: retrievalAblation ? retrievalEnabled : catalogAssist || vectorAssist,
     enable_catalog_assist: catalogAssist,
     enable_vector_assist: vectorAssist,
     enable_retrieval_application: catalogAssist || vectorAssist,
-    enable_retrieval_prompt_context: retrievalCausalEval ? false : undefined,
     force_retrieval_application_resolution: retrievalEnabled,
     enable_stored_visual_features: vectorAssist,
     enable_query_visual_embeddings: vectorAssist,
     enable_vector_retrieval: vectorAssist,
     vector_retrieval_mode: vectorAssist ? "assist" : "off",
-    enable_vector_lazy_mode: vectorAssist
-      ? retrievalReplay ? false : forceVector !== true && disableVectorLazyMode !== true
-      : false,
-    force_vector_assist: retrievalReplay ? true : forceVector,
+    enable_vector_lazy_mode: vectorAssist ? forceVector !== true && disableVectorLazyMode !== true : false,
+    force_vector_assist: forceVector,
     vector_index_ready: vectorAssist && vectorIndexReady === true ? true : undefined,
     vector_corrected_title_as_temporary_gt: vectorAssist && temporaryGt,
     vector_query_timeout_ms: vectorAssist ? vectorQueryTimeoutMs : undefined,
@@ -454,17 +437,14 @@ function providerOptionsForMode(providerMode, {
     enable_cold_start_blind: coldStartMode,
     enable_ephemeral_external_retrieval: retrievalAblation ? false : coldStartMode,
     external_retrieval_weak_only: retrievalAblation ? false : coldStartMode,
-    disable_identity_result_cache: retrievalAblation || retrievalReplay,
-    disable_approved_identity_memory: retrievalAblation || retrievalReplay,
+    disable_identity_result_cache: retrievalAblation,
+    disable_approved_identity_memory: retrievalAblation,
     eval_flags: {
       ENABLE_CATALOG_ASSIST: catalogAssist,
       ENABLE_VECTOR_ASSIST: vectorAssist,
       ENABLE_RETRIEVAL_APPLICATION: catalogAssist || vectorAssist,
-      ENABLE_RETRIEVAL_PROMPT_CONTEXT: retrievalCausalEval ? false : undefined,
-      ENABLE_VECTOR_LAZY_MODE: vectorAssist
-        ? retrievalReplay ? false : forceVector !== true && disableVectorLazyMode !== true
-        : false,
-      FORCE_VECTOR_ASSIST: retrievalReplay ? true : forceVector,
+      ENABLE_VECTOR_LAZY_MODE: vectorAssist ? forceVector !== true && disableVectorLazyMode !== true : false,
+      FORCE_VECTOR_ASSIST: forceVector,
       CORRECTED_TITLE_AS_TEMPORARY_GT: temporaryGt,
       CORRECTED_TITLE_AS_REVIEWED_TITLE_GT: temporaryGt,
       SEND_CORRECTED_TITLE_HINT_TO_CLOUD: sendHintToCloud,
@@ -472,8 +452,8 @@ function providerOptionsForMode(providerMode, {
       COLD_START_BLIND: coldStartMode,
       EPHEMERAL_EXTERNAL_RETRIEVAL: retrievalAblation ? false : coldStartMode,
       RETRIEVAL_ABLATION_ARM: retrievalAblation ? (retrievalEnabled ? "ON" : "OFF") : null,
-      DISABLE_IDENTITY_RESULT_CACHE: retrievalAblation || retrievalReplay,
-      DISABLE_APPROVED_IDENTITY_MEMORY: retrievalAblation || retrievalReplay
+      DISABLE_IDENTITY_RESULT_CACHE: retrievalAblation,
+      DISABLE_APPROVED_IDENTITY_MEMORY: retrievalAblation
     },
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
@@ -526,133 +506,19 @@ function titleReferencePolicyForItem(item = {}, referenceTitle = "", providerOpt
   };
 }
 
-function indexedRecordValue(record = {}, keys = [], index = 0) {
-  for (const key of keys) {
-    const value = record?.[key];
-    const candidate = Array.isArray(value) ? value[index] : index === 0 ? value : null;
-    if (cleanIdentifier(candidate)) return candidate;
-  }
-  return null;
-}
-
-function sourceImagesForItem(item = {}) {
-  const sourceRecord = sourceRecordForItem(item);
-  const itemImages = Array.isArray(item.images) ? item.images : [];
-  const recordImages = Array.isArray(sourceRecord.images) ? sourceRecord.images : [];
-  if (itemImages.length) {
-    return itemImages.map((image, index) => ({
-      ...objectRecord(recordImages[index]),
-      ...objectRecord(image)
-    }));
-  }
-  if (recordImages.length) return recordImages;
-  if (firstText(item.object_path, item.objectPath, item.storage_object_path) && firstText(item.bucket, item.storage_bucket)) {
-    return [item];
-  }
-  if (firstText(sourceRecord.object_path, sourceRecord.objectPath, sourceRecord.storage_object_path)
-    && firstText(sourceRecord.bucket, sourceRecord.storage_bucket)) {
-    return [sourceRecord];
-  }
-  return [];
-}
-
 function imageInputs(item = {}) {
-  const sourceRecord = sourceRecordForItem(item);
-  return sourceImagesForItem(item)
-    .map((image, index) => {
-      const imageId = firstText(
-        image.image_id,
-        image.imageId,
-        image.id,
-        image.asset_image_id,
-        indexedRecordValue(item, ["image_ids", "query_image_ids", "image_id", "imageId"], index),
-        indexedRecordValue(sourceRecord, ["image_ids", "query_image_ids", "image_id", "imageId"], index),
-        `${candidateId(item)}_${index + 1}`
-      );
-      const bucket = firstText(
-        image.bucket,
-        image.storage_bucket,
-        image.storageBucket,
-        indexedRecordValue(item, ["image_buckets", "buckets", "bucket", "storage_bucket"], index),
-        indexedRecordValue(sourceRecord, ["image_buckets", "buckets", "bucket", "storage_bucket"], index)
-      );
-      const objectPath = firstText(
-        image.object_path,
-        image.objectPath,
-        image.storage_object_path,
-        image.storageObjectPath,
-        indexedRecordValue(item, ["object_paths", "image_object_paths", "object_path", "objectPath", "storage_object_path"], index),
-        indexedRecordValue(sourceRecord, ["object_paths", "image_object_paths", "object_path", "objectPath", "storage_object_path"], index)
-      );
-      const contentSha256 = firstText(
-        image.content_sha256,
-        image.contentSha256,
-        image.sha256,
-        indexedRecordValue(item, ["content_sha256", "content_sha256s", "image_content_sha256"], index),
-        indexedRecordValue(sourceRecord, ["content_sha256", "content_sha256s", "image_content_sha256"], index)
-      ).toLowerCase();
-      return {
-        id: imageId,
-        image_id: imageId,
-        name: `${image.role || `image_${index + 1}`}:${candidateId(item)}`,
-        bucket,
-        object_path: objectPath,
-        role: image.role || `image_${index + 1}_original`,
-        capture_angle: image.capture_angle || image.captureAngle || `image_${index + 1}`,
-        ...(contentSha256 ? { content_sha256: contentSha256 } : {})
-      };
-    })
-    .filter((image) => image.bucket && image.object_path)
-    .slice(0, 2);
-}
-
-function uniqueTexts(values = []) {
-  return [...new Set(values.map(cleanIdentifier).filter(Boolean))];
-}
-
-function selfExclusionRequestForItem(item = {}, images = imageInputs(item)) {
-  const sourceRecord = sourceRecordForItem(item);
-  const sourceFeedbackId = sourceFeedbackIdForItem(item);
-  const assetId = firstText(item.asset_id, sourceRecord.asset_id, item.candidate_id, item.id);
-  const physicalCardId = firstText(item.physical_card_id, sourceRecord.physical_card_id);
-  const physicalInstanceGroupId = firstText(
-    item.physical_instance_group_id,
-    sourceRecord.physical_instance_group_id
-  );
-  const imageIds = uniqueTexts(images.map((image) => image.image_id || image.id));
-  const objectPaths = uniqueTexts(images.map((image) => image.object_path || image.objectPath));
-  const contentSha256 = uniqueTexts(images.map((image) => image.content_sha256 || image.contentSha256))
-    .map((value) => value.toLowerCase());
-  const requested = Boolean(
-    sourceFeedbackId
-    || assetId
-    || physicalCardId
-    || physicalInstanceGroupId
-    || imageIds.length
-    || objectPaths.length
-    || contentSha256.length
-  );
-  return {
-    requested,
-    source_feedback_id: sourceFeedbackId || null,
-    asset_id: assetId || null,
-    physical_card_id: physicalCardId || null,
-    physical_instance_group_id: physicalInstanceGroupId || null,
-    image_ids: imageIds,
-    object_paths: objectPaths,
-    content_sha256: contentSha256
-  };
-}
-
-function payloadIdentifierFields(exclusionRequest = {}) {
-  return {
-    ...(exclusionRequest.source_feedback_id ? { source_feedback_id: exclusionRequest.source_feedback_id } : {}),
-    ...(exclusionRequest.asset_id ? { asset_id: exclusionRequest.asset_id } : {}),
-    ...(exclusionRequest.physical_card_id ? { physical_card_id: exclusionRequest.physical_card_id } : {}),
-    ...(exclusionRequest.physical_instance_group_id
-      ? { physical_instance_group_id: exclusionRequest.physical_instance_group_id }
-      : {})
-  };
+  return (Array.isArray(item.images) ? item.images : [])
+    .filter((image) => image?.bucket && image?.object_path)
+    .slice(0, 2)
+    .map((image, index) => ({
+      id: image.image_id || `${candidateId(item)}_${index + 1}`,
+      image_id: image.image_id || `${candidateId(item)}_${index + 1}`,
+      name: `${image.role || `image_${index + 1}`}:${candidateId(item)}`,
+      bucket: image.bucket,
+      object_path: image.object_path,
+      role: image.role || `image_${index + 1}_original`,
+      capture_angle: image.capture_angle || `image_${index + 1}`
+    }));
 }
 
 function verificationCacheKey(image = {}) {
@@ -683,12 +549,7 @@ const fairTitleTokenSynonyms = Object.freeze({
   prizms: "prizm",
   beckett: "bgs",
   certified: "cert",
-  authentic: "cert",
-  ja: "japanese",
-  jp: "japanese",
-  cn: "chinese",
-  zh: "chinese",
-  kr: "korean"
+  authentic: "cert"
 });
 
 // Marketplace/seller-hype tokens that never describe card identity and are
@@ -787,11 +648,7 @@ function foldFairTitleText(value) {
   return normalizeText(value)
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    // Marketplace titles interchange "Vol.1", "Vol 1", and "Volume 1".
-    // Canonicalize the phrase before tokenization so a formatting choice does
-    // not count as an identity error.
-    .replace(/\bvol(?:ume)?\.?\s*(\d+)\b/g, "volume $1");
+    .toLowerCase();
 }
 
 function fairTitleToken(token) {
@@ -1466,251 +1323,6 @@ function catalogCandidatesForProxy(data = {}) {
   ], "catalog_proxy");
 }
 
-function normalizedValues(value) {
-  return uniqueTexts(Array.isArray(value) ? value : [value]);
-}
-
-function valuesForKeys(records = [], keys = []) {
-  return uniqueTexts(records.flatMap((record) => keys.flatMap((key) => normalizedValues(record?.[key]))));
-}
-
-function intersects(left = [], right = []) {
-  const rightValues = new Set(normalizedValues(right));
-  return normalizedValues(left).some((value) => rightValues.has(value));
-}
-
-function retrievalQueries(data = {}) {
-  const seen = new Set();
-  return retrievalSummaries(data)
-    .flatMap((summary) => Array.isArray(summary.queries) ? summary.queries : [])
-    .filter((query) => {
-      const key = JSON.stringify(query || {});
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function catalogQuery(query = {}) {
-  const provider = normalizeText(query.provider_id || query.provider).toLowerCase();
-  const family = normalizeText(query.family).toUpperCase();
-  return provider === "catalog" || family.includes("CATALOG");
-}
-
-function vectorQuery(query = {}) {
-  const provider = normalizeText(query.provider_id || query.provider).toLowerCase();
-  const family = normalizeText(query.family).toUpperCase();
-  return provider === "visual_vector" || family.includes("VISUAL_VECTOR");
-}
-
-function queryHasRequestedValue(query = {}, keys = [], requestedValues = []) {
-  return intersects(keys.flatMap((key) => normalizedValues(query[key])), requestedValues);
-}
-
-function candidateMatchesExclusion(candidate = {}, request = {}) {
-  const records = [
-    candidate,
-    objectRecord(candidate.reference_metadata),
-    objectRecord(candidate.embedding_metadata),
-    objectRecord(candidate.metadata),
-    objectRecord(candidate.fields),
-    objectRecord(candidate.source_record)
-  ];
-  return (
-    request.source_feedback_id
-      && intersects(valuesForKeys(records, ["source_feedback_id", "feedback_id"]), [request.source_feedback_id])
-  ) || (
-    request.asset_id
-      && intersects(valuesForKeys(records, ["asset_id"]), [request.asset_id])
-  ) || (
-    request.physical_card_id
-      && intersects(valuesForKeys(records, ["physical_card_id"]), [request.physical_card_id])
-  ) || (
-    request.physical_instance_group_id
-      && intersects(valuesForKeys(records, ["physical_instance_group_id"]), [request.physical_instance_group_id])
-  ) || intersects(valuesForKeys(records, ["image_id", "reference_image_id"]), request.image_ids) || intersects(
-    valuesForKeys(records, ["object_path", "storage_object_path"]),
-    request.object_paths
-  ) || intersects(
-    valuesForKeys(records, ["content_sha256", "content_hash"]),
-    request.content_sha256
-  );
-}
-
-function explicitBoolean(...values) {
-  return values.find((value) => typeof value === "boolean");
-}
-
-function vectorSelfExcludedCount(data = {}) {
-  const traceCounts = retrievalSummaries(data)
-    .flatMap((summary) => Array.isArray(summary.trace) ? summary.trace : [])
-    .filter((trace) => vectorQuery(trace?.query || {}) || normalizeText(trace?.provider_id).toLowerCase() === "visual_vector")
-    .map((trace) => Number(trace?.metadata?.self_excluded_count))
-    .filter(Number.isFinite);
-  const directCounts = [
-    data.vector_self_excluded_count,
-    data.vector_retrieval?.self_excluded_count,
-    data.vector_retrieval?.metadata?.self_excluded_count
-  ].map(Number).filter(Number.isFinite);
-  return Math.max(0, ...traceCounts, ...directCounts);
-}
-
-function vectorExecutionSkipped(data = {}) {
-  if (data.vector_lazy_skip?.skipped === true) return true;
-  const statuses = [
-    data.vector_candidate_packet?.vector_retrieval?.status,
-    data.vector_assist_packet?.vector_retrieval?.status,
-    data.vector_retrieval?.status
-  ].map((value) => normalizeText(value).toUpperCase()).filter(Boolean);
-  return statuses.some((status) => ["DISABLED", "SKIPPED", "UNAVAILABLE"].includes(status));
-}
-
-function selfExclusionObservation({
-  request = {},
-  data = {},
-  providerOptions = {},
-  providerFailure = false
-} = {}) {
-  const queries = retrievalQueries(data);
-  const catalogQueries = queries.filter(catalogQuery);
-  const vectorQueries = queries.filter(vectorQuery);
-  const catalogQueryEchoCount = catalogQueries.filter((query) => queryHasRequestedValue(
-    query,
-    ["source_feedback_id", "exclude_source_feedback_ids"],
-    [request.source_feedback_id]
-  )).length;
-  const vectorQueryEchoCount = vectorQueries.filter((query) => (
-    queryHasRequestedValue(query, ["source_feedback_id", "exclude_source_feedback_ids"], [request.source_feedback_id])
-    || queryHasRequestedValue(query, ["asset_id", "exclude_asset_ids"], [request.asset_id])
-    || queryHasRequestedValue(query, ["physical_card_id", "exclude_physical_card_ids"], [request.physical_card_id])
-    || queryHasRequestedValue(
-      query,
-      ["physical_instance_group_id", "exclude_physical_instance_group_ids"],
-      [request.physical_instance_group_id]
-    )
-    || queryHasRequestedValue(query, ["reference_image_id", "exclude_reference_image_ids"], request.image_ids)
-    || queryHasRequestedValue(query, ["content_sha256", "exclude_content_sha256"], request.content_sha256)
-    || queryHasRequestedValue(query, ["object_path", "exclude_object_paths"], request.object_paths)
-  )).length;
-  const catalogSelfCandidateCount = catalogCandidates(data)
-    .filter((candidate) => candidateMatchesExclusion(candidate, request)).length;
-  const vectorSelfCandidateCount = vectorCandidatesForTrace(data)
-    .filter((candidate) => candidateMatchesExclusion(candidate, request)).length;
-  const returnedSelfCandidateCount = catalogSelfCandidateCount + vectorSelfCandidateCount;
-  const catalogEnabled = providerOptions.enable_catalog_assist === true;
-  const vectorEnabled = providerOptions.enable_vector_assist === true;
-  const catalogRequested = catalogEnabled && Boolean(request.source_feedback_id);
-  const vectorRequested = vectorEnabled && Boolean(
-    request.source_feedback_id
-    || request.asset_id
-    || request.physical_card_id
-    || request.physical_instance_group_id
-    || request.image_ids?.length
-    || request.object_paths?.length
-    || request.content_sha256?.length
-  );
-  const explicitCatalogConfirmed = explicitBoolean(
-    data.catalog_exclusion_confirmed,
-    data.self_exclusion?.catalog?.confirmed
-  );
-  const explicitVectorConfirmed = explicitBoolean(
-    data.vector_exclusion_confirmed,
-    data.self_exclusion?.vector?.confirmed
-  );
-  const catalogConfirmed = !catalogEnabled
-    ? null
-    : catalogSelfCandidateCount > 0 || !catalogRequested
-      ? false
-      : explicitCatalogConfirmed ?? catalogQueryEchoCount > 0;
-  const vectorExcludedCount = vectorSelfExcludedCount(data);
-  const vectorSkipped = vectorExecutionSkipped(data);
-  const vectorConfirmed = !vectorEnabled
-    ? null
-    : vectorSelfCandidateCount > 0 || !vectorRequested
-      ? false
-      : explicitVectorConfirmed ?? (vectorQueryEchoCount > 0 || vectorExcludedCount > 0 || vectorSkipped);
-  const explicitConfirmed = explicitBoolean(
-    data.exclusion_confirmed,
-    data.self_exclusion_confirmed,
-    data.self_exclusion?.confirmed
-  );
-  let confirmed = null;
-  if (request.requested) {
-    const channelConfirmations = [catalogConfirmed, vectorConfirmed].filter((value) => value !== null);
-    if (providerFailure || returnedSelfCandidateCount > 0) confirmed = false;
-    else if (channelConfirmations.some((value) => value !== true)) confirmed = false;
-    else if (explicitConfirmed !== undefined) confirmed = explicitConfirmed;
-    else confirmed = true;
-  }
-  const requestedIdentifiers = {
-    source_feedback_id: request.source_feedback_id || null,
-    asset_id: request.asset_id || null,
-    physical_card_id: request.physical_card_id || null,
-    physical_instance_group_id: request.physical_instance_group_id || null,
-    image_ids: request.image_ids || [],
-    object_paths: request.object_paths || [],
-    content_sha256: request.content_sha256 || []
-  };
-  const requestedIdentifierCount = [
-    requestedIdentifiers.source_feedback_id,
-    requestedIdentifiers.asset_id,
-    requestedIdentifiers.physical_card_id,
-    requestedIdentifiers.physical_instance_group_id,
-    ...requestedIdentifiers.image_ids,
-    ...requestedIdentifiers.object_paths,
-    ...requestedIdentifiers.content_sha256
-  ].filter(Boolean).length;
-  const channelEvidence = [{
-    channel: "catalog",
-    enabled: catalogEnabled,
-    requested: catalogRequested,
-    confirmed: catalogConfirmed
-  }, {
-    channel: "vector",
-    enabled: vectorEnabled,
-    requested: vectorRequested,
-    confirmed: vectorConfirmed
-  }].filter((channel) => channel.enabled);
-  const sameCardExclusionEvidencePresent = request.requested === true
-    && requestedIdentifierCount > 0
-    && channelEvidence.length > 0
-    && channelEvidence.every((channel) => (
-      channel.requested === true && typeof channel.confirmed === "boolean"
-    ));
-  return {
-    exclusion_requested: request.requested === true,
-    exclusion_confirmed: confirmed,
-    requested_identifiers: requestedIdentifiers,
-    catalog: {
-      enabled: catalogEnabled,
-      requested: catalogRequested,
-      confirmed: catalogConfirmed,
-      query_echo_count: catalogQueryEchoCount,
-      returned_self_candidate_count: catalogSelfCandidateCount
-    },
-    vector: {
-      enabled: vectorEnabled,
-      requested: vectorRequested,
-      confirmed: vectorConfirmed,
-      query_echo_count: vectorQueryEchoCount,
-      self_excluded_count: vectorExcludedCount,
-      execution_skipped: vectorSkipped,
-      returned_self_candidate_count: vectorSelfCandidateCount
-    },
-    returned_self_candidate_count: returnedSelfCandidateCount,
-    same_card_exclusion_evidence_present: sameCardExclusionEvidencePresent,
-    same_card_exclusion_evidence: {
-      present: sameCardExclusionEvidencePresent,
-      requested_identifier_count: requestedIdentifierCount,
-      enabled_channels: channelEvidence.map((channel) => channel.channel),
-      observed_channels: channelEvidence
-        .filter((channel) => channel.requested === true && typeof channel.confirmed === "boolean")
-        .map((channel) => channel.channel)
-    },
-    corrected_title_or_ground_truth_sent_to_cloud: false
-  };
-}
-
 function metricFromRetrievalSummaries(data = {}, key = "") {
   const values = retrievalSummaries(data).flatMap((summary) => [
     summary?.catalog_retrieval_metrics?.[key],
@@ -2106,9 +1718,6 @@ function perCardDecisionTrace(results = []) {
     raw_model_title: item.title || "",
     candidate_guided_title: item.candidate_proxy_decision?.selected === true ? item.candidate_proxy_decision.selected_title : "",
     final_title: item.final_evaluated_title || item.scored_title || item.title || "",
-    exclusion_requested: item.exclusion_requested === true,
-    exclusion_confirmed: item.exclusion_confirmed ?? null,
-    exclusion_observation: item.exclusion_observation || null,
     corrected_title: item.corrected_title_reference || "",
     corrected_title_token_recall: item.corrected_title_comparison?.token_recall ?? null,
     raw_corrected_title_token_recall: item.raw_corrected_title_comparison?.token_recall ?? null,
@@ -2434,11 +2043,6 @@ async function verifyExistingImage({
   }
 
   const verification = data.verification;
-  const contentSha256 = firstText(
-    verification.content_sha256,
-    image.content_sha256,
-    image.contentSha256
-  ).toLowerCase();
   const verifiedImage = {
     ...image,
     objectPath: verification.object_path,
@@ -2461,8 +2065,8 @@ async function verifyExistingImage({
     height: verification.height,
     originalHeight: verification.height,
     original_height: verification.height,
-    contentSha256,
-    content_sha256: contentSha256
+    contentSha256: verification.content_sha256 || "",
+    content_sha256: verification.content_sha256 || ""
   };
   verificationCache?.set(cacheKey, verifiedImage);
   return verifiedImage;
@@ -2512,9 +2116,7 @@ async function callListingApi({
     verificationCache,
     fetchImpl
   });
-  const exclusionRequest = selfExclusionRequestForItem(item, images);
   const payload = {
-    ...payloadIdentifierFields(exclusionRequest),
     provider,
     provider_id: provider,
     provider_eval_mode: providerMode,
@@ -2528,15 +2130,14 @@ async function callListingApi({
     enable_vector_assist: providerOptions.enable_vector_assist === true,
     vector_assist: providerOptions.enable_vector_assist === true,
     enable_ephemeral_external_retrieval: providerOptions.enable_ephemeral_external_retrieval === true,
-    ...(typeof providerOptions.enable_retrieval_prompt_context === "boolean"
-      ? { enable_retrieval_prompt_context: providerOptions.enable_retrieval_prompt_context }
-      : {}),
     explicitEmergency: provider === "openai_legacy",
     explicit_emergency: provider === "openai_legacy",
     maxTitleLength,
     captureProfileId: "cloud_eval",
     category: item.category || "",
-    catalog_observation_hint: null,
+    catalog_observation_hint: providerOptions.send_corrected_title_hint_to_cloud === true
+      ? catalogObservationHint(item)
+      : null,
     images
   };
   const response = await fetchWithTimeout(fetchImpl, `${baseUrl}/api/listing-copilot-title`, {
@@ -2561,8 +2162,7 @@ async function callListingApi({
   }
   return {
     http_status: response.status,
-    data,
-    exclusion_request: exclusionRequest
+    data
   };
 }
 
@@ -2642,13 +2242,6 @@ function evaluatedResultFromData({
     externalRetrievalTrace
   });
   const focusedCropMetrics = providerFailure ? focusedCropMetricsFromResult({}) : focusedCropMetricsFromResult(data);
-  const exclusionRequest = response?.exclusion_request || selfExclusionRequestForItem(item);
-  const exclusionObservation = selfExclusionObservation({
-    request: exclusionRequest,
-    data,
-    providerOptions,
-    providerFailure
-  });
   return {
     candidate_id: candidateId(item),
     provider: providerMode,
@@ -2663,11 +2256,6 @@ function evaluatedResultFromData({
     reference_title_policy: titleReferencePolicy,
     corrected_title_field_ground_truth: false,
     corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
-    exclusion_requested: exclusionObservation.exclusion_requested,
-    exclusion_confirmed: exclusionObservation.exclusion_confirmed,
-    exclusion_observation: exclusionObservation,
-    returned_self_candidate_count: exclusionObservation.returned_self_candidate_count,
-    same_card_exclusion_evidence_present: exclusionObservation.same_card_exclusion_evidence_present,
     provider_error_recovered: providerErrorAttempts.length > 0 && !providerFailure,
     provider_error_attempts: providerErrorAttempts,
     provider_error_retry_count: providerErrorAttempts.length,
@@ -2680,9 +2268,6 @@ function evaluatedResultFromData({
     confidence: data.confidence || (providerFailure ? "FAILED" : ""),
     provider_id: data.provider || data.source || null,
     model_id: data.model_id || data.provider_model_id || null,
-    retrieval_prompt_context_enabled: explicitBoolean(data.retrieval_prompt_context_enabled) ?? null,
-    retrieval_prompt_context_used: explicitBoolean(data.retrieval_prompt_context_used) ?? null,
-    retrieval_prompt_context_source: data.retrieval_prompt_context_source || null,
     fallback_provider_id: data.fallback_provider_id || null,
     fallback_reason: data.fallback_reason || null,
     format_error_type: data.format_error_type || null,
@@ -2749,15 +2334,10 @@ function evaluatedResultFromData({
     decision_eligible_candidate_ids: Array.isArray(data.decision_eligible_candidate_ids)
       ? data.decision_eligible_candidate_ids
       : [],
-    field_evidence_eligible_candidate_count: Number(data.field_evidence_eligible_candidate_count || 0),
-    field_evidence_eligible_candidate_ids: Array.isArray(data.field_evidence_eligible_candidate_ids)
-      ? data.field_evidence_eligible_candidate_ids
-      : [],
     shadow_only_candidate_count: Number(data.shadow_only_candidate_count || 0),
     selected_candidate_decision: data.selected_candidate_decision || null,
     candidate_application_trace: Array.isArray(data.candidate_application_trace) ? data.candidate_application_trace : [],
     candidate_field_evidence: Array.isArray(data.candidate_field_evidence) ? data.candidate_field_evidence : [],
-    retrieval_application_replay: data.retrieval_application_replay || null,
     retrieval_application: compactRetrievalApplication(data.retrieval_application),
     retrieval_evidence_isolation: data.retrieval_evidence_isolation || null,
     retrieval_ablation_execution: data.retrieval_ablation_execution || null,
@@ -2854,12 +2434,6 @@ function technicalFailureResult({
   const code = error?.code || "cloud_eval_error";
   const providerOptions = providerOptionsForMode(providerMode, evalOptions);
   const titleReferencePolicy = titleReferencePolicyForItem(item, referenceTitle, providerOptions);
-  const exclusionRequest = selfExclusionRequestForItem(item);
-  const exclusionObservation = selfExclusionObservation({
-    request: exclusionRequest,
-    providerOptions,
-    providerFailure: true
-  });
   return {
     candidate_id: candidateId(item),
     provider: providerMode,
@@ -2875,20 +2449,12 @@ function technicalFailureResult({
     reference_title_policy: titleReferencePolicy,
     corrected_title_field_ground_truth: false,
     corrected_title_hint_sent_to_cloud: providerOptions.send_corrected_title_hint_to_cloud === true,
-    exclusion_requested: exclusionObservation.exclusion_requested,
-    exclusion_confirmed: exclusionObservation.exclusion_confirmed,
-    exclusion_observation: exclusionObservation,
-    returned_self_candidate_count: exclusionObservation.returned_self_candidate_count,
-    same_card_exclusion_evidence_present: exclusionObservation.same_card_exclusion_evidence_present,
     provider_error_attempts: providerErrorAttempts.length
       ? providerErrorAttempts
       : [providerFailureAttempt({ error, attempt: 1, elapsedMs: Date.now() - started })],
     provider_error_retry_count: providerErrorAttempts.length,
     confidence: "FAILED",
     provider_error_code: code,
-    retrieval_prompt_context_enabled: null,
-    retrieval_prompt_context_used: null,
-    retrieval_prompt_context_source: null,
     reason: normalizeText(error?.message || "").slice(0, 240),
     title: "",
     open_set_readiness: technicalOpenSetReadiness(code),
@@ -2897,7 +2463,6 @@ function technicalFailureResult({
     selected_candidate_decision: null,
     candidate_application_trace: [],
     candidate_field_evidence: [],
-    retrieval_application_replay: null,
     retrieval_application: null,
     candidate_activation_funnel: null,
     catalog_activation_funnel: null,
@@ -2937,24 +2502,6 @@ function summarize(results = [], elapsedMs = 0) {
   }, {});
   const marketplaceWeakLabelCount = results.filter((item) => item.reference_title_label_type === "marketplace_weak_label").length;
   const correctedTitleHintSentCount = results.filter((item) => item.corrected_title_hint_sent_to_cloud === true).length;
-  const exclusionRequestedCount = results.filter((item) => item.exclusion_requested === true).length;
-  const exclusionConfirmedCount = results.filter((item) => item.exclusion_requested === true && item.exclusion_confirmed === true).length;
-  const exclusionUnconfirmedCount = Math.max(0, exclusionRequestedCount - exclusionConfirmedCount);
-  const returnedSelfCandidateCount = results.reduce((sum, item) => (
-    sum + Number(item.exclusion_observation?.returned_self_candidate_count || 0)
-  ), 0);
-  const sameCardExclusionEvidenceCount = results.filter((item) => (
-    item.same_card_exclusion_evidence_present === true
-  )).length;
-  const retrievalPromptContextExplicitlyDisabledCount = results.filter((item) => (
-    item.retrieval_prompt_context_enabled === false
-  )).length;
-  const retrievalPromptContextNotExplicitlyDisabledCount = results.filter((item) => (
-    item.retrieval_prompt_context_enabled !== false
-  )).length;
-  const retrievalPromptContextUsedCount = results.filter((item) => (
-    item.retrieval_prompt_context_used === true
-  )).length;
   const providerErrors = results.filter((item) => item.status === "provider_error").length;
   const evaluated = results.filter((item) => item.status === "evaluated").length;
   const technicalFailures = results.filter((item) => item.technical_failure === true).length;
@@ -3017,16 +2564,6 @@ function summarize(results = [], elapsedMs = 0) {
     return counts;
   }, {});
   const candidateApplicationTraceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_application_trace) ? item.candidate_application_trace.length : 0), 0);
-  const fieldEvidenceEligibleCandidateCount = results.reduce((sum, item) => (
-    sum + Number(item.field_evidence_eligible_candidate_count || 0)
-  ), 0);
-  const fieldEvidenceOnlyCandidateCount = results.reduce((sum, item) => (
-    sum + (Array.isArray(item.candidate_application_trace)
-      ? item.candidate_application_trace.filter((trace) => (
-        trace?.field_evidence_eligible === true && trace?.identity_decision_eligible !== true
-      )).length
-      : 0)
-  ), 0);
   const candidateFieldEvidenceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_field_evidence) ? item.candidate_field_evidence.length : 0), 0);
   const candidateCanApplyEvidenceCount = results.reduce((sum, item) => sum + (Array.isArray(item.candidate_field_evidence)
     ? item.candidate_field_evidence.filter((row) => row?.permission === "can_apply").length
@@ -3277,38 +2814,8 @@ function summarize(results = [], elapsedMs = 0) {
       default_cloud_eval_mode: correctedTitleHintSentCount > 0
         ? "answer_hint_enabled_not_blind"
         : "blind_to_corrected_title_hint",
-      corrected_title_or_ground_truth_sent_to_cloud: false,
       reviewed_ground_truth_required_for_ai_card_exact: true
     },
-    exclusion_requested: exclusionRequestedCount > 0,
-    exclusion_confirmed: exclusionRequestedCount > 0
-      ? exclusionConfirmedCount === exclusionRequestedCount
-      : null,
-    exclusion_requested_count: exclusionRequestedCount,
-    exclusion_confirmed_count: exclusionConfirmedCount,
-    exclusion_unconfirmed_count: exclusionUnconfirmedCount,
-    returned_self_candidate_count: returnedSelfCandidateCount,
-    same_card_exclusion_evidence_count: sameCardExclusionEvidenceCount,
-    same_card_exclusion_evidence_complete: attempted > 0
-      ? sameCardExclusionEvidenceCount === attempted
-      : null,
-    exclusion_observation: {
-      requested: exclusionRequestedCount > 0,
-      confirmed: exclusionRequestedCount > 0
-        ? exclusionConfirmedCount === exclusionRequestedCount
-        : null,
-      requested_count: exclusionRequestedCount,
-      confirmed_count: exclusionConfirmedCount,
-      unconfirmed_count: exclusionUnconfirmedCount,
-      returned_self_candidate_count: returnedSelfCandidateCount,
-      same_card_exclusion_evidence_count: sameCardExclusionEvidenceCount
-    },
-    retrieval_prompt_context_explicitly_disabled: attempted > 0
-      ? retrievalPromptContextExplicitlyDisabledCount === attempted
-      : null,
-    retrieval_prompt_context_explicitly_disabled_count: retrievalPromptContextExplicitlyDisabledCount,
-    retrieval_prompt_context_not_explicitly_disabled_count: retrievalPromptContextNotExplicitlyDisabledCount,
-    retrieval_prompt_context_used_count: retrievalPromptContextUsedCount,
     provider_error_count: providerErrors,
     technical_failure_count: technicalFailures,
     provider_error_recovered_count: recoveredProviderErrors,
@@ -3381,8 +2888,6 @@ function summarize(results = [], elapsedMs = 0) {
       selected_candidate_decision_count: selectedCandidateDecisionCount,
       selected_candidate_match_level_counts: selectedCandidateMatchLevelCounts,
       candidate_application_trace_count: candidateApplicationTraceCount,
-      field_evidence_eligible_candidate_count: fieldEvidenceEligibleCandidateCount,
-      field_evidence_only_candidate_count: fieldEvidenceOnlyCandidateCount,
       candidate_field_evidence_count: candidateFieldEvidenceCount,
       candidate_can_apply_evidence_count: candidateCanApplyEvidenceCount,
       candidate_support_only_evidence_count: candidateSupportOnlyEvidenceCount,
@@ -3401,8 +2906,6 @@ function summarize(results = [], elapsedMs = 0) {
     selected_candidate_decision_count: selectedCandidateDecisionCount,
     selected_candidate_match_level_counts: selectedCandidateMatchLevelCounts,
     candidate_application_trace_count: candidateApplicationTraceCount,
-    field_evidence_eligible_candidate_count: fieldEvidenceEligibleCandidateCount,
-    field_evidence_only_candidate_count: fieldEvidenceOnlyCandidateCount,
     candidate_field_evidence_count: candidateFieldEvidenceCount,
     candidate_can_apply_evidence_count: candidateCanApplyEvidenceCount,
     candidate_support_only_evidence_count: candidateSupportOnlyEvidenceCount,
@@ -3541,79 +3044,6 @@ function summarize(results = [], elapsedMs = 0) {
   };
 }
 
-export function rebuildCloudListingEvalReport(baseReport, retryReports = []) {
-  if (!baseReport || typeof baseReport !== "object" || Array.isArray(baseReport)) {
-    throw new Error("Base cloud eval report must be an object.");
-  }
-  if (!Array.isArray(baseReport.results)) {
-    throw new Error("Base cloud eval report must include results[].");
-  }
-  if (!Array.isArray(retryReports)) {
-    throw new Error("Retry cloud eval reports must be an array.");
-  }
-
-  const baseById = new Map(baseReport.results.map((result) => [candidateId(result), result]));
-  const replacements = new Map();
-  let retryElapsedMs = 0;
-  let originalFailedAttemptCount = 0;
-
-  for (const retryReport of retryReports) {
-    if (!retryReport || typeof retryReport !== "object" || Array.isArray(retryReport)) {
-      throw new Error("Retry cloud eval report must be an object.");
-    }
-    if (retryReport.provider !== baseReport.provider) {
-      throw new Error(`Retry provider ${retryReport.provider || "unknown"} does not match base provider ${baseReport.provider || "unknown"}.`);
-    }
-    const baseArm = baseReport.experiment_contract?.arm || null;
-    const retryArm = retryReport.experiment_contract?.arm || null;
-    if (baseArm && retryArm && baseArm !== retryArm) {
-      throw new Error(`Retry experiment arm ${retryArm} does not match base arm ${baseArm}.`);
-    }
-    if (!Array.isArray(retryReport.results)) {
-      throw new Error("Retry cloud eval report must include results[].");
-    }
-
-    retryElapsedMs += Math.max(0, Number(retryReport.elapsed_ms) || 0);
-    for (const replacement of retryReport.results) {
-      const id = candidateId(replacement);
-      if (!id) throw new Error("Retry result is missing candidate_id.");
-      if (replacements.has(id)) throw new Error(`Duplicate retry result for ${id}.`);
-      const original = baseById.get(id);
-      if (!original) throw new Error(`Retry result ${id} is not present in the base report.`);
-      if (original.technical_failure !== true) {
-        throw new Error(`Retry result ${id} would replace a successful base result.`);
-      }
-      if (replacement.technical_failure === true) {
-        throw new Error(`Retry result ${id} is still a technical failure.`);
-      }
-      originalFailedAttemptCount += Array.isArray(original.provider_error_attempts)
-        ? original.provider_error_attempts.length
-        : 0;
-      replacements.set(id, replacement);
-    }
-  }
-
-  const mergedResults = baseReport.results.map((result) => replacements.get(candidateId(result)) || result);
-  const baseElapsedMs = Math.max(0, Number(baseReport.elapsed_ms) || 0);
-  const effectiveElapsedMs = baseElapsedMs + retryElapsedMs;
-  return {
-    ...baseReport,
-    status: "completed",
-    generated_at: new Date().toISOString(),
-    ...summarize(mergedResults, effectiveElapsedMs),
-    retry_recovery: {
-      replacement_count: replacements.size,
-      replaced_candidate_ids: [...replacements.keys()],
-      original_failed_attempt_count: originalFailedAttemptCount,
-      base_elapsed_ms: baseElapsedMs,
-      retry_elapsed_ms: retryElapsedMs,
-      effective_elapsed_ms: effectiveElapsedMs,
-      token_accounting_note: "Metered totals include successful retry responses; failed schema responses did not expose token usage and remain unmetered."
-    },
-    results: mergedResults
-  };
-}
-
 export async function evaluateCloudListingApi({
   dataset,
   baseUrl,
@@ -3689,11 +3119,9 @@ export async function evaluateCloudListingApi({
           provider_id: cloudProviderForMode(providerMode),
           single_model_fast: experimentProviderOptions.single_model_fast,
           evidence_completion_enabled: experimentProviderOptions.enable_evidence_completion,
-          evidence_completion_retrieval_disabled: experimentProviderOptions.disable_evidence_completion_retrieval === true,
           catalog_enabled: experimentProviderOptions.enable_catalog_assist,
           vector_enabled: experimentProviderOptions.enable_vector_assist,
           retrieval_application_enabled: experimentProviderOptions.enable_retrieval_application,
-          retrieval_prompt_context_enabled: experimentProviderOptions.enable_retrieval_prompt_context,
           retrieval_application_resolution_forced: experimentProviderOptions.force_retrieval_application_resolution,
           external_retrieval_enabled: experimentProviderOptions.enable_ephemeral_external_retrieval,
           identity_result_cache_disabled: experimentProviderOptions.disable_identity_result_cache,
@@ -3884,17 +3312,6 @@ export async function main(argv = process.argv, env = process.env) {
     `corrected_title_field_ground_truth: ${report.accuracy_policy?.corrected_title_field_ground_truth ?? "n/a"}`,
     `corrected_title_hint_sent_to_cloud: ${report.accuracy_policy?.corrected_title_hint_sent_to_cloud ?? "n/a"}`,
     `corrected_title_hint_sent_to_cloud_count: ${report.accuracy_policy?.corrected_title_hint_sent_to_cloud_count ?? "n/a"}`,
-    `exclusion_requested: ${report.exclusion_requested ?? "n/a"}`,
-    `exclusion_confirmed: ${report.exclusion_confirmed ?? "n/a"}`,
-    `exclusion_requested_count: ${report.exclusion_requested_count ?? "n/a"}`,
-    `exclusion_confirmed_count: ${report.exclusion_confirmed_count ?? "n/a"}`,
-    `exclusion_unconfirmed_count: ${report.exclusion_unconfirmed_count ?? "n/a"}`,
-    `returned_self_candidate_count: ${report.returned_self_candidate_count ?? "n/a"}`,
-    `same_card_exclusion_evidence_complete: ${report.same_card_exclusion_evidence_complete ?? "n/a"}`,
-    `same_card_exclusion_evidence_count: ${report.same_card_exclusion_evidence_count ?? "n/a"}`,
-    `retrieval_prompt_context_explicitly_disabled: ${report.retrieval_prompt_context_explicitly_disabled ?? "n/a"}`,
-    `retrieval_prompt_context_not_explicitly_disabled_count: ${report.retrieval_prompt_context_not_explicitly_disabled_count ?? "n/a"}`,
-    `retrieval_prompt_context_used_count: ${report.retrieval_prompt_context_used_count ?? "n/a"}`,
     `visual_vector_used_count: ${report.visual_vector_used_count ?? "n/a"}`,
     `visual_vector_candidate_count: ${report.visual_vector_candidate_count ?? "n/a"}`,
     `visual_vector_selected_count: ${report.visual_vector_selected_count ?? "n/a"}`,
@@ -3939,8 +3356,6 @@ export async function main(argv = process.argv, env = process.env) {
     `selected_candidate_decision_count: ${report.selected_candidate_decision_count ?? "n/a"}`,
     `selected_candidate_match_level_counts: ${JSON.stringify(report.selected_candidate_match_level_counts || {})}`,
     `candidate_application_trace_count: ${report.candidate_application_trace_count ?? "n/a"}`,
-    `field_evidence_eligible_candidate_count: ${report.field_evidence_eligible_candidate_count ?? "n/a"}`,
-    `field_evidence_only_candidate_count: ${report.field_evidence_only_candidate_count ?? "n/a"}`,
     `candidate_field_evidence_count: ${report.candidate_field_evidence_count ?? "n/a"}`,
     `candidate_can_apply_evidence_count: ${report.candidate_can_apply_evidence_count ?? "n/a"}`,
     `candidate_support_only_evidence_count: ${report.candidate_support_only_evidence_count ?? "n/a"}`,

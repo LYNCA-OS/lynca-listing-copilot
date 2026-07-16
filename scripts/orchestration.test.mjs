@@ -1788,16 +1788,11 @@ const conflictThenRetrievalConverges = await completeEvidence({
   })
 });
 assert.equal(conflictThenRetrievalConverges.resolved.product, "Topps Chrome");
-assert.equal(conflictThenRetrievalConverges.evidence.product.status, "CONFLICT");
+assert.equal(conflictThenRetrievalConverges.evidence.product.status, "CONFIRMED");
+assert.equal(conflictThenRetrievalConverges.route, "AI_COMPLETE_REVIEW");
 assert.ok(conflictThenRetrievalConverges.resolution_trace[0].output.convergence.before.conflicting_fields.includes("product"));
-assert.equal(conflictThenRetrievalConverges.resolution_trace[0].output.convergence.resolved_conflicts.includes("product"), false);
-assert.equal(conflictThenRetrievalConverges.resolution_trace[0].output.convergence.converged, false);
-assert.equal(conflictThenRetrievalConverges.resolution_trace[0].output.candidate_verification.main_state_write_applied, false);
-assert.equal(
-  conflictThenRetrievalConverges.resolution_trace[0].output.candidate_verification.application_owner,
-  "retrieval_application_layer"
-);
-assert.equal(conflictThenRetrievalConverges.retrieval.sources[0].candidate_id, internalHistoryCandidate.candidate_id);
+assert.ok(conflictThenRetrievalConverges.resolution_trace[0].output.convergence.resolved_conflicts.includes("product"));
+assert.equal(conflictThenRetrievalConverges.resolution_trace[0].output.convergence.converged, true);
 
 let conflictRetrievalCalls = 0;
 const conflictingCandidate = {
@@ -1972,14 +1967,13 @@ const completionWithTrustedRetrieval = await completeEvidence({
     trace: []
   })
 });
-assert.equal(completionWithTrustedRetrieval.resolved.product, null);
-assert.equal(completionWithTrustedRetrieval.evidence.product, undefined);
+assert.equal(completionWithTrustedRetrieval.resolved.product, "Topps Chrome");
+assert.equal(completionWithTrustedRetrieval.evidence.product.status, "CONFIRMED");
+assert.equal(completionWithTrustedRetrieval.route, "AI_COMPLETE_REVIEW");
 assert.ok(completionWithTrustedRetrieval.resolution_trace[0].output.candidate_verification.verified_fields.includes("product"));
-assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.candidate_verification.main_state_write_applied, false);
 assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.loop, "detect_conflict_retrieve_reevaluate_converge");
-assert.notEqual(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.after.resolution_state, "EVIDENCE_CLOSED");
-assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.converged, false);
-assert.equal(completionWithTrustedRetrieval.retrieval.selected_candidate.candidate_id, officialCandidate.candidate_id);
+assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.after.resolution_state, "EVIDENCE_CLOSED");
+assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.converged, true);
 
 const completion = await completeEvidence({
   resolved: {

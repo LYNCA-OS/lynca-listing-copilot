@@ -37,7 +37,6 @@ const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
 const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
-const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const EXPORT_WORKBOOK_API_ENDPOINT = "/api/v4/listing-export-workbook";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
@@ -51,7 +50,6 @@ const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 const ENABLE_SPECULATIVE_RECOGNITION = true;
 const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
 const QUEUE_ENQUEUE_TIMEOUT_MS = 25000;
-const PREINGEST_REQUEST_TIMEOUT_MS = 20000;
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
@@ -432,43 +430,6 @@ function imageHasVerifiedStorageReference(image = {}) {
   return Boolean(image.objectPath && image.storageVerified);
 }
 
-function canonicalAssetId(asset = {}) {
-  const assetId = String(asset.durableAssetId || "").trim();
-  if (!/^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) {
-    throw new Error("canonical_asset_id_missing");
-  }
-  return assetId;
-}
-
-async function ensureDurableAssetIdentity(asset) {
-  if (asset.durableAssetId) return canonicalAssetId(asset);
-  if (asset.durableAssetPromise) return asset.durableAssetPromise;
-  asset.durableAssetPromise = (async () => {
-    const response = await fetch(ASSET_CREATE_API_ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        client_asset_ref: asset.clientAssetRef || asset.id,
-        capture_profile_id: defaultCaptureProfileId
-      })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.message || `listing_asset_create_failed_${response.status}`);
-    }
-    asset.durableAssetId = payload.asset_id;
-    asset.clientAssetRef = payload.client_asset_ref || asset.clientAssetRef || asset.id;
-    return canonicalAssetId(asset);
-  })();
-  try {
-    return await asset.durableAssetPromise;
-  } catch (error) {
-    asset.durableAssetPromise = null;
-    throw error;
-  }
-}
-
 function serializableAssetImage(image, assetId = "") {
   const useStorageReference = imageHasVerifiedStorageReference(image);
   const cropMetadata = image.cropMetadata || image.crop_metadata || null;
@@ -572,14 +533,11 @@ function buildAssetRequestBody(asset, options = {}) {
   const allProviderImages = asset.providerImages || asset.images || [];
   const providerImages = boundedProviderImagesForRequest(allProviderImages);
   const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
-  const assetId = canonicalAssetId(asset);
   const body = {
-    assetId,
-    asset_id: assetId,
-    client_asset_ref: asset.clientAssetRef || asset.id,
+    assetId: asset.id,
     mode: state.mode,
     maxTitleLength,
-    images: providerImages.map((image) => serializableAssetImage(image, assetId)),
+    images: providerImages.map((image) => serializableAssetImage(image, asset.id)),
     deferredImageCount,
     deferred_image_count: deferredImageCount,
     captureProfileId: defaultCaptureProfileId,
@@ -682,8 +640,7 @@ function queuedPendingResult(asset, enqueuePayload = {}, job = {}, timing = {}) 
   const providerId = state.selectedProvider || null;
   return attachGenerationTimingToResult({
     index: asset.index,
-    asset_id: canonicalAssetId(asset),
-    client_asset_ref: asset.clientAssetRef || asset.id,
+    asset_id: asset.id,
     thumbnail: asset.images[0]?.dataUrl || "",
     title: "",
     final_title: "",
@@ -791,7 +748,6 @@ async function uploadAssetImage(asset, image, imageIndex) {
   const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
   const dimensions = storageDimensionsForImage(image, source);
   image.contentSha256 = contentSha256;
-  const assetId = canonicalAssetId(asset);
 
   const uploadResponse = await fetch("/api/listing-image-upload-url", {
     method: "POST",
@@ -800,8 +756,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
     },
     credentials: "same-origin",
     body: JSON.stringify({
-      assetId,
-      clientAssetRef: asset.clientAssetRef || asset.id,
+      assetId: asset.id,
       imageId: image.id,
       role: storageRole,
       fileName: image.name,
@@ -817,9 +772,6 @@ async function uploadAssetImage(asset, image, imageIndex) {
   const uploadPayload = await uploadResponse.json();
   if (!uploadResponse.ok || !uploadPayload.ok) {
     throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
-  }
-  if (uploadPayload.asset_id !== assetId) {
-    throw new Error("Storage upload asset identity mismatch.");
   }
 
   const storageResponse = await fetch(uploadPayload.upload.signed_upload_url, {
@@ -841,7 +793,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
     },
     credentials: "same-origin",
     body: JSON.stringify({
-      assetId,
+      assetId: asset.id,
       imageId: image.id,
       role: storageRole,
       objectPath: uploadPayload.upload.object_path,
@@ -869,7 +821,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
       ...(image.cropMetadata || image.crop_metadata || {}),
       derived_object_path: image.objectPath,
       source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
-      asset_id: assetId
+      asset_id: (image.cropMetadata || image.crop_metadata || {}).asset_id || asset.id || ""
     };
     image.cropMetadata = metadata;
     image.crop_metadata = metadata;
@@ -884,8 +836,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
 }
 
 async function ensureAssetImagesUploaded(asset) {
-  await ensureDurableAssetIdentity(asset);
-  if (!storageReady()) throw new Error("listing_storage_not_ready");
+  if (!storageReady()) return false;
   if (asset.storageUploadPromise) return asset.storageUploadPromise;
 
   asset.storageUploadPromise = (async () => {
@@ -905,7 +856,7 @@ async function ensureAssetImagesUploaded(asset) {
         ...metadata,
         source_object_path: sourceObjectPath,
         derived_object_path: metadata.derived_object_path || image.objectPath || "",
-        asset_id: canonicalAssetId(asset)
+        asset_id: metadata.asset_id || asset.id || ""
       };
       image.cropMetadata = updatedMetadata;
       image.crop_metadata = updatedMetadata;
@@ -929,10 +880,9 @@ async function ensureAssetImagesUploaded(asset) {
 }
 
 function preingestionImagesForAsset(asset) {
-  const assetId = canonicalAssetId(asset);
   return boundedProviderImagesForRequest(asset.providerImages || asset.images)
     .filter(imageHasVerifiedStorageReference)
-    .map((image) => serializableAssetImage(image, assetId));
+    .map((image) => serializableAssetImage(image, asset.id));
 }
 
 function backgroundPreparationLabel(asset = {}) {
@@ -953,73 +903,59 @@ async function ensurePreingestionBundle(asset) {
       reused: true
     };
   }
-  if (asset.preingestionPromise) return asset.preingestionPromise;
 
   const images = preingestionImagesForAsset(asset);
   if (!images.length) {
     throw new Error("no_verified_storage_images");
   }
 
-  asset.preingestionPromise = (async () => {
-    const startedAt = performance.now();
-    const assetId = canonicalAssetId(asset);
-    const response = await fetchWithTimeout(PREINGEST_API_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        asset_id: assetId,
-        assetId,
-        client_asset_ref: asset.clientAssetRef || asset.id,
-        images,
-        captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
-        requested_fields: [
-          "serial_number",
-          "collector_number",
-          "checklist_code",
-          "grade_label",
-          "year_product",
-          "subject",
-          "surface"
-        ],
-        source: "listing_copilot_background_prepare",
-        enqueue_workers: true,
-        enqueue_ocr: true,
-        // Only OCR currently has a production consumer. Query embeddings still
-        // run concurrently inside recognition; do not create durable dead jobs.
-        enqueue_embeddings: false,
-        enqueue_surface: false,
-        enqueue_quality: false,
-        // 上传端已经完成对象校验，Provider 读取时还会独立签名。这里重复
-        // 签名只增加 L2 起跑等待，不增加证据强度。
-        verify_signed_read_urls: false
-      })
-    }, PREINGEST_REQUEST_TIMEOUT_MS);
+  const response = await fetch(PREINGEST_API_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      asset_id: asset.id,
+      assetId: asset.id,
+      images,
+      captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
+      requested_fields: [
+        "serial_number",
+        "collector_number",
+        "checklist_code",
+        "grade_label",
+        "year_product",
+        "subject",
+        "surface"
+      ],
+      source: "listing_copilot_background_prepare",
+      enqueue_workers: true,
+      enqueue_ocr: true,
+      // Only OCR currently has a production consumer. Query embeddings still
+      // run concurrently inside recognition; do not create durable dead jobs.
+      enqueue_embeddings: false,
+      enqueue_surface: false,
+      enqueue_quality: false,
+      // 上传端已经完成对象校验，Provider 读取时还会独立签名。这里重复
+      // 签名只增加 L2 起跑等待，不增加证据强度。
+      verify_signed_read_urls: false
+    })
+  });
 
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.message || payload.code || `preingestion_failed_${response.status}`);
-    }
-
-    asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
-    asset.preingestionBundleStatus = payload.bundle_status || "";
-    asset.preingestionSummary = payload.preprocessing_summary || null;
-    asset.preingestionMs = Math.round(performance.now() - startedAt);
-    return {
-      bundleId: asset.preingestionBundleId,
-      status: asset.preingestionBundleStatus,
-      summary: asset.preingestionSummary
-    };
-  })();
-
-  try {
-    return await asset.preingestionPromise;
-  } catch (error) {
-    asset.preingestionPromise = null;
-    throw error;
+  const payload = await response.json();
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.message || payload.code || `preingestion_failed_${response.status}`);
   }
+
+  asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
+  asset.preingestionBundleStatus = payload.bundle_status || "";
+  asset.preingestionSummary = payload.preprocessing_summary || null;
+  return {
+    bundleId: asset.preingestionBundleId,
+    status: asset.preingestionBundleStatus,
+    summary: asset.preingestionSummary
+  };
 }
 
 async function prepareAssetInBackground(asset, runId) {
@@ -1035,9 +971,7 @@ async function prepareAssetInBackground(asset, runId) {
     try {
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "uploading";
-      const uploadStartedAt = performance.now();
       await ensureAssetImagesUploaded(asset);
-      asset.backgroundUploadMs = Math.round(performance.now() - uploadStartedAt);
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
       const bundle = await ensurePreingestionBundle(asset);
@@ -1098,32 +1032,6 @@ async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
   }
 }
 
-async function settleRequiredPreingestion(asset) {
-  if (!asset) return { used: false, wait_ms: 0 };
-  if (asset.preingestionBundleId) {
-    return { used: true, ok: true, reused: true, wait_ms: 0 };
-  }
-  const startedAt = performance.now();
-  try {
-    const bundle = await ensurePreingestionBundle(asset);
-    return {
-      used: true,
-      ok: Boolean(bundle?.bundleId),
-      reused: false,
-      wait_ms: Math.round(performance.now() - startedAt),
-      ...bundle
-    };
-  } catch (error) {
-    return {
-      used: true,
-      ok: false,
-      reused: false,
-      wait_ms: Math.round(performance.now() - startedAt),
-      error: String(error?.message || "preingestion_failed").slice(0, 160)
-    };
-  }
-}
-
 async function ensureSpeculativeRecognition(asset, runId) {
   if (!ENABLE_SPECULATIVE_RECOGNITION || !asset) return null;
   if (asset.speculativeRunId === runId && asset.speculativePromise) return asset.speculativePromise;
@@ -1151,9 +1059,10 @@ async function ensureSpeculativeRecognition(asset, runId) {
         credentials: "same-origin",
         body: JSON.stringify({
           batch_id: batchId,
+          tenant_id: batchId,
           priority: 100,
           jobs: [{
-            asset_id: canonicalAssetId(asset),
+            asset_id: asset.id,
             force_l2_only: true,
             create_l1_job: false,
             create_l2_job: true,
@@ -1885,8 +1794,6 @@ function buildAssets() {
     state.files.forEach((image, index) => {
       assets.push({
         id: `asset-${index + 1}`,
-        clientAssetRef: `asset-${index + 1}`,
-        durableAssetId: "",
         index: index + 1,
         images: [image],
         providerImages: imagesForProvider([image])
@@ -1897,8 +1804,6 @@ function buildAssets() {
       const images = state.files.slice(index, index + 2);
       assets.push({
         id: `asset-${Math.floor(index / 2) + 1}`,
-        clientAssetRef: `asset-${Math.floor(index / 2) + 1}`,
-        durableAssetId: "",
         index: Math.floor(index / 2) + 1,
         images,
         providerImages: imagesForProvider(images)
@@ -3274,17 +3179,6 @@ async function processAssetViaQueue(asset, options = {}) {
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
   setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
 
-  // Accuracy-first rendezvous: a quick click must not bypass the in-flight
-  // evidence bundle or launch a second paid path for the same card.
-  setAssetProgress(asset.index, "等待证据包就绪", 0.24);
-  const requiredPreingestion = await settleRequiredPreingestion(asset);
-  if (asset.preingestionBundleId && ENABLE_SPECULATIVE_RECOGNITION) {
-    void ensureSpeculativeRecognition(
-      asset,
-      asset.backgroundPreparationRunId || state.backgroundPreparationRunId
-    );
-  }
-
   const fastScoutPrewarm = asset.fastScoutPrewarmResult || {
     used: Boolean(asset.fastScoutPrewarmStatus),
     wait_ms: 0,
@@ -3294,15 +3188,8 @@ async function processAssetViaQueue(asset, options = {}) {
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
     client_upload_ms: uploadMs,
-    client_background_prepare_wait_ms: Math.round(
-      Number(backgroundPrepareResult.wait_ms || 0) + Number(requiredPreingestion.wait_ms || 0)
-    ),
+    client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
     client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
-    client_background_upload_ms: Math.round(Number(asset.backgroundUploadMs || 0)),
-    client_preingestion_ms: Math.round(Number(asset.preingestionMs || 0)),
-    client_required_preingestion_wait_ms: Math.round(Number(requiredPreingestion.wait_ms || 0)),
-    client_required_preingestion_ok: requiredPreingestion.ok === true,
-    client_required_preingestion_error: requiredPreingestion.error || "",
     client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId),
     client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
     client_fast_scout_prewarm_wait_ms: Math.round(Number(fastScoutPrewarm.wait_ms || 0)),
@@ -3331,7 +3218,9 @@ async function processAssetViaQueue(asset, options = {}) {
     setAssetProgress(asset.index, "复用预识别结果", 0.5);
     const clientTotalMs = Math.round(performance.now() - processStartedAt);
     const pending = queuedPendingResult(asset, speculative.enqueue_payload || {}, speculative.job, {
-      ...asset.clientTiming,
+      client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
+      client_upload_ms: uploadMs,
+      client_background_prepare_wait_ms: asset.clientTiming.client_background_prepare_wait_ms,
       client_speculative_used: true,
       client_speculative_ms: asset.clientTiming.client_speculative_ms,
       client_speculative_wait_ms: asset.clientTiming.client_speculative_wait_ms,
@@ -3382,9 +3271,10 @@ async function processAssetViaQueue(asset, options = {}) {
     credentials: "same-origin",
     body: JSON.stringify({
       batch_id: batchId,
+      tenant_id: batchId,
       priority: Math.max(0, Math.min(10_000, Number(options.priority ?? 100) || 0)),
       jobs: [{
-        asset_id: canonicalAssetId(asset),
+        asset_id: asset.id,
         force_l2_only: true,
         create_l1_job: false,
         create_l2_job: true,
@@ -3409,8 +3299,10 @@ async function processAssetViaQueue(asset, options = {}) {
   setAssetProgress(asset.index, "队列已提交，等待云端生成", 0.5);
   const clientTotalMs = Math.round(performance.now() - processStartedAt);
   return queuedPendingResult(asset, enqueuePayload, job, {
-    ...asset.clientTiming,
+    client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
+    client_upload_ms: uploadMs,
     client_request_prepare_ms: requestPrepareMs,
+    client_background_prepare_wait_ms: asset.clientTiming.client_background_prepare_wait_ms,
     client_enqueue_roundtrip_ms: enqueueRoundtripMs,
     client_total_ms: clientTotalMs
   });
@@ -3419,8 +3311,7 @@ async function processAssetViaQueue(asset, options = {}) {
 function failedResult(asset, error) {
   return attachGenerationTimingToResult({
     index: asset.index,
-    asset_id: asset.durableAssetId || "",
-    client_asset_ref: asset.clientAssetRef || asset.id,
+    asset_id: asset.id,
     thumbnail: asset.images[0].dataUrl,
     title: "",
     generatedTitle: "",
@@ -4080,34 +3971,33 @@ function feedbackActionForResult(result, generatedTitle, correctedTitle) {
   return String(generatedTitle || "").trim() === String(correctedTitle || "").trim() ? "ACCEPT" : "EDIT";
 }
 
-function clientFeedbackSubmissionId() {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `web_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
-}
-
-function pendingV4FeedbackSubmission(result, { action, writerTitle } = {}) {
-  const signature = JSON.stringify([
-    String(result?.recognition_session_id || "").trim(),
-    String(action || "").trim(),
-    String(writerTitle || "").trim()
-  ]);
-  if (!result.pendingFeedbackSubmissionId || result.pendingFeedbackSubmissionSignature !== signature) {
-    result.pendingFeedbackSubmissionId = clientFeedbackSubmissionId();
-    result.pendingFeedbackSubmissionSignature = signature;
-    result.pendingFeedbackOccurredAt = new Date().toISOString();
-  }
+function v4FeedbackResultPayload(result = {}) {
+  const {
+    thumbnail,
+    correctedTitle,
+    generatedTitle,
+    feedbackMessage,
+    feedbackStatus,
+    persistenceStatus,
+    feedbackSubmissionId,
+    feedbackSubmissionFingerprint,
+    feedbackClientOccurredAt,
+    reviewStartedAt,
+    ...safeResult
+  } = result || {};
   return {
-    id: result.pendingFeedbackSubmissionId,
-    occurredAt: result.pendingFeedbackOccurredAt,
-    signature
+    ...safeResult,
+    final_title: generatedTitle || result.final_title || result.title || "",
+    resolved_fields: result.resolved_fields || result.resolved || result.fields || {},
+    fields: result.resolved_fields || result.resolved || result.fields || {},
+    field_states: result.field_states || {},
+    internal_field_graph: result.internal_field_graph || {},
+    candidate_control_plane_trace: result.candidate_control_plane_trace || {},
+    retrieval_trace: result.retrieval_trace || result.retrieval || {},
+    open_set_readiness: result.open_set_readiness || {},
+    workflow_sidecars: result.workflow_sidecars || {},
+    provider_result: result.provider_result || {}
   };
-}
-
-function clearPendingV4FeedbackSubmission(result, submission = {}) {
-  if (!result || result.pendingFeedbackSubmissionId !== submission.id) return;
-  delete result.pendingFeedbackSubmissionId;
-  delete result.pendingFeedbackSubmissionSignature;
-  delete result.pendingFeedbackOccurredAt;
 }
 
 async function saveFeedbackForResult(result, asset) {
@@ -4127,9 +4017,9 @@ async function saveFeedbackForResult(result, asset) {
   if ((!correctedTitle && !explicitReject) || (!generatedTitle && !writerReviewRequired && !explicitReject)) return false;
 
   const useV4Feedback = isV4Result(result);
-  const v4Action = useV4Feedback ? feedbackActionForResult(result, generatedTitle, correctedTitle) : "";
-  const v4Submission = useV4Feedback
-    ? pendingV4FeedbackSubmission(result, { action: v4Action, writerTitle: correctedTitle })
+  const feedbackAction = feedbackActionForResult(result, generatedTitle, correctedTitle);
+  const feedbackSubmission = useV4Feedback
+    ? ensureFeedbackSubmissionIdentity(result, { action: feedbackAction, generatedTitle, correctedTitle })
     : null;
 
   result.feedbackStatus = "saving";
@@ -4142,19 +4032,19 @@ async function saveFeedbackForResult(result, asset) {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...(v4Submission ? { "x-feedback-submission-id": v4Submission.id } : {})
+        ...(feedbackSubmission ? { "x-feedback-submission-id": feedbackSubmission.id } : {})
       },
       credentials: "same-origin",
       body: JSON.stringify(useV4Feedback ? {
         recognition_session_id: result.recognition_session_id,
-        feedback_submission_id: v4Submission.id,
-        client_occurred_at: v4Submission.occurredAt,
-        action: v4Action,
+        action: feedbackAction,
+        feedback_submission_id: feedbackSubmission.id,
+        client_occurred_at: feedbackSubmission.clientOccurredAt,
         ai_generated_title: generatedTitle,
         writer_final_title: correctedTitle,
+        result_payload: v4FeedbackResultPayload(result)
       } : {
-        asset_id: result.asset_id || canonicalAssetId(asset),
-        client_asset_ref: asset?.clientAssetRef || asset?.id || `asset-${result.index}`,
+        asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
         analysis_run_id: result.analysis_run_id || result.provider_response_id || "",
         generated_title: generatedTitle,
         corrected_title: correctedTitle,
@@ -4201,7 +4091,6 @@ async function saveFeedbackForResult(result, asset) {
       if (payload.v4_persistence?.transaction?.saved !== true) {
         throw new Error("V4 审核事务尚未确认入库，请重试。");
       }
-      clearPendingV4FeedbackSubmission(result, v4Submission);
       const canonicalWriterTitle = String(payload.writer_final_title || "").trim();
       if (canonicalWriterTitle) {
         result.correctedTitle = canonicalWriterTitle;
@@ -4211,11 +4100,11 @@ async function saveFeedbackForResult(result, asset) {
         result.title_override = null;
       }
       result.csmNormalization = payload.csm_normalization || null;
-      const rejected = v4Action === "REJECT" || String(payload.status || "").toUpperCase() === "REJECTED";
+      const rejected = feedbackAction === "REJECT" || String(payload.status || "").toUpperCase() === "REJECTED";
       result.feedbackStatus = rejected ? "skipped" : "saved";
       result.persistenceStatus = "persisted";
       result.trainingEligibility = payload.training_eligible === true ? "eligible" : "ineligible";
-      result.feedbackSubmissionId = payload.feedback_submission_id || v4Submission.id;
+      result.feedbackSubmissionId = payload.feedback_submission_id || feedbackSubmission.id;
       result.review_id = payload.feedback_event_id || "";
       result.approved_at = "";
       result.approved_by = "";
@@ -4404,8 +4293,7 @@ function buildWriterExportRows(
     });
     if (!images.length) throw new Error(`资产 ${asset.index} 缺少可导出的图片。`);
     return {
-      asset_id: canonicalAssetId(asset),
-      client_asset_ref: asset.clientAssetRef || asset.id,
+      asset_id: asset.id,
       asset_index: asset.index,
       recognition_session_id: result.recognition_session_id || "",
       final_title: finalTitle,

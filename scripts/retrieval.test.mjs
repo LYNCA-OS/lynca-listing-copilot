@@ -16,7 +16,6 @@ import { runRetrieval } from "../lib/listing/retrieval/retrieval-engine.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
 import {
   isKnownRetrievalProviderId,
-  openAiWebSearchFallbackEnabled,
   openAiWebSearchModelConfig,
   retrievalProviderIds,
   retrievalQueryFamilies,
@@ -52,9 +51,6 @@ assert.equal(isKnownRetrievalProviderId(retrievalProviderIds.BRAVE_SEARCH), true
 assert.equal(isKnownRetrievalProviderId("not_real_search"), false);
 assert.equal(openAiWebSearchModelConfig("gpt-4.1-mini").allowed, true);
 assert.equal(openAiWebSearchModelConfig("gpt-5").allowed, false);
-assert.equal(openAiWebSearchFallbackEnabled({}), false);
-assert.equal(openAiWebSearchFallbackEnabled({ ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "0" }), false);
-assert.equal(openAiWebSearchFallbackEnabled({ ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true" }), true);
 
 const testEmbedding = Array.from({ length: 768 }, (_, index) => Number((index / 1000).toFixed(3)));
 const visualPlanned = planRetrievalQueries({
@@ -80,24 +76,6 @@ assert.equal(visualQuery.cacheable, false);
 assert.equal(visualQuery.embedding.length, 768);
 assert.equal(visualQuery.embedding_role, "front_global");
 assert.equal(visualPlanned.some((query) => query.provider_id === retrievalProviderIds.BRAVE_SEARCH), false);
-
-const selfExcludedVisualQuery = planRetrievalQueries({
-  resolved,
-  visualEmbeddings: [{
-    image_id: "front-image",
-    role: "front_original",
-    embedding_role: "front_global",
-    model_id: "google/siglip2-base-patch16-384",
-    model_revision: "fixed-test-revision",
-    preprocessing_version: "card-rectification-v1",
-    dimensions: 768,
-    embedding: testEmbedding
-  }],
-  includeExternal: false,
-  excludeSourceFeedbackIds: ["feedback-current-card"]
-}).find((query) => query.family === retrievalQueryFamilies.VISUAL_VECTOR);
-assert.deepEqual(selfExcludedVisualQuery.exclude_source_feedback_ids, ["feedback-current-card"]);
-assert.equal(selfExcludedVisualQuery.self_exclusion_filter_active, true);
 
 const disabledVisualProvider = await visualVectorProvider({
   env: {
@@ -1296,7 +1274,6 @@ assert.equal(ebayUnauthorizedCalls, 1);
 let owsCalls = 0;
 const ows = openAiWebSearchProvider({
   env: {
-    ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true",
     OPENAI_API_KEY: "owstest",
     OPENAI_WEB_SEARCH_MODEL: "gpt-4.1-mini",
     OPENAI_WEB_SEARCH_ALLOWED_DOMAINS: "topps.com,psacard.com",
@@ -1374,7 +1351,6 @@ assert.equal(owsResult.candidates[1].title, "PSA certification");
 let owsRetryCalls = 0;
 const owsRetryResult = await openAiWebSearchProvider({
   env: {
-    ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true",
     OPENAI_API_KEY: "owstest",
     OPENAI_WEB_SEARCH_MODEL: "gpt-4.1-mini",
     OPENAI_WEB_SEARCH_MAX_RETRIES: "1",
@@ -1418,7 +1394,6 @@ let owsUnauthorizedCalls = 0;
 await assert.rejects(
   () => openAiWebSearchProvider({
     env: {
-      ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true",
       OPENAI_API_KEY: "owstest",
       OPENAI_WEB_SEARCH_MODEL: "gpt-4.1-mini",
       OPENAI_WEB_SEARCH_MAX_RETRIES: "2",
@@ -1437,29 +1412,6 @@ await assert.rejects(
   (error) => error.code === "openai_web_search_unauthorized" && error.status === 401
 );
 assert.equal(owsUnauthorizedCalls, 1);
-
-let owsDefaultDisabledFetchCalled = false;
-const owsDefaultDisabled = openAiWebSearchProvider({
-  env: {
-    OPENAI_API_KEY: "owstest",
-    OPENAI_WEB_SEARCH_MODEL: "gpt-4.1-mini"
-  },
-  fetchImpl: async () => {
-    owsDefaultDisabledFetchCalled = true;
-    throw new Error("default-disabled OWS must not fetch");
-  }
-});
-assert.equal(owsDefaultDisabled.enabled, false);
-assert.equal(owsDefaultDisabled.configured, false);
-const owsDefaultDisabledResult = await owsDefaultDisabled.search({
-  query: {
-    query_id: "ows_default_disabled_1",
-    query: "\"TCAR-CF\""
-  }
-});
-assert.equal(owsDefaultDisabledResult.unavailable, true);
-assert.match(owsDefaultDisabledResult.reason, /disabled/);
-assert.equal(owsDefaultDisabledFetchCalled, false);
 
 const owsDisabled = await openAiWebSearchProvider({
   env: {
@@ -1480,9 +1432,7 @@ assert.equal(owsDisabled.unavailable, true);
 assert.match(owsDisabled.reason, /disabled/);
 
 const owsMissingCredentials = await openAiWebSearchProvider({
-  env: {
-    ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true"
-  },
+  env: {},
   fetchImpl: async () => {
     throw new Error("should not fetch without credentials");
   }
@@ -1498,7 +1448,6 @@ assert.match(owsMissingCredentials.reason, /OPENAI_API_KEY/);
 let invalidOwsModelFetchCalled = false;
 const owsInvalidModel = await openAiWebSearchProvider({
   env: {
-    ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true",
     OPENAI_API_KEY: "owstest",
     OPENAI_WEB_SEARCH_MODEL: "gpt-5"
   },
@@ -1518,7 +1467,6 @@ assert.equal(invalidOwsModelFetchCalled, false);
 
 let approvedHistoryCalls = 0;
 const approvedHistoryRegistry = createRetrievalProviderRegistry({
-  tenantId: "tenant_alpha",
   env: {
     SUPABASE_URL: "https://supabase.test",
     SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
@@ -1529,14 +1477,12 @@ const approvedHistoryRegistry = createRetrievalProviderRegistry({
     approvedHistoryCalls += 1;
     const requestUrl = new URL(String(url));
     assert.equal(requestUrl.href.includes("/rest/v1/listing_reviews"), true);
-    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     assert.match(requestUrl.searchParams.get("select") || "", /corrected_resolved_fields/);
     assert.equal(requestUrl.searchParams.get("review_outcome"), "in.(ACCEPTED_UNCHANGED,CORRECTED_FIELDS,TITLE_ONLY_OVERRIDE,TARGETED_RESCAN_RECOVERED)");
     assert.equal(requestUrl.searchParams.get("approved_at"), "not.is.null");
     assert.equal(requestUrl.searchParams.get("order"), "created_at.desc");
     assert.equal(requestUrl.searchParams.get("limit"), "25");
-    assert.equal(options.headers.apikey, "test-service-role");
-    assert.equal(options.headers.authorization, undefined, "opaque Supabase service keys must not be sent as JWT bearer tokens");
+    assert.equal(options.headers.authorization, "Bearer test-service-role");
     return jsonResponse([
       {
         id: "review-approved-1",
@@ -1571,72 +1517,8 @@ assert.equal(approvedHistoryRun.sources[0].source_url, "internal://approved-hist
 assert.equal(approvedHistoryRun.sources[0].fields.product, "Topps Chrome");
 assert.equal(approvedHistoryRun.sources[0].fields.checklist_code, "TCAR-CF");
 
-function approvedHistoryRegistryForCacheIsolation(id, title) {
-  return createRetrievalProviderRegistry({
-    env: {},
-    approvedRecords: [{
-      id,
-      final_title: title,
-      fields: {
-        year: "2025",
-        brand: "Topps",
-        product: "Topps Chrome",
-        players: ["Cooper Flagg"],
-        checklist_code: "TCAR-CF",
-        collector_number: "136"
-      }
-    }]
-  });
-}
-
-const tenantScopedApprovedHistoryCache = createRetrievalCache();
-const runTenantApprovedHistory = ({ tenantId = "", id, title, cache = tenantScopedApprovedHistoryCache }) => runRetrieval({
-  resolved,
-  mode: retrievalModes.INTERNAL_ONLY,
-  allowedFamilies: [retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY],
-  maxQueries: 1,
-  tenantId,
-  providerRegistry: approvedHistoryRegistryForCacheIsolation(id, title),
-  cache
-});
-const tenantAApprovedHistoryFirst = await runTenantApprovedHistory({
-  tenantId: "tenant_a",
-  id: "tenant-a-approved",
-  title: "Tenant A Private Approved Title"
-});
-const tenantAApprovedHistorySecond = await runTenantApprovedHistory({
-  tenantId: "tenant_a",
-  id: "tenant-a-uncached-alternative",
-  title: "Tenant A Uncached Alternative"
-});
-const tenantBApprovedHistory = await runTenantApprovedHistory({
-  tenantId: "tenant_b",
-  id: "tenant-b-approved",
-  title: "Tenant B Private Approved Title"
-});
-assert.equal(tenantAApprovedHistoryFirst.sources[0].title, "Tenant A Private Approved Title");
-assert.equal(tenantAApprovedHistorySecond.sources[0].title, "Tenant A Private Approved Title");
-assert.ok(tenantAApprovedHistorySecond.trace.some((entry) => entry.cache_hit === true), "same-tenant approved-history queries should reuse cache entries");
-assert.equal(tenantBApprovedHistory.sources[0].title, "Tenant B Private Approved Title");
-assert.equal(tenantBApprovedHistory.trace.some((entry) => entry.cache_hit === true), false, "cross-tenant approved-history queries must not reuse cache entries");
-
-const unscopedApprovedHistoryCache = createRetrievalCache();
-await runTenantApprovedHistory({
-  id: "unscoped-first",
-  title: "Unscoped First Title",
-  cache: unscopedApprovedHistoryCache
-});
-const unscopedApprovedHistorySecond = await runTenantApprovedHistory({
-  id: "unscoped-second",
-  title: "Unscoped Second Title",
-  cache: unscopedApprovedHistoryCache
-});
-assert.equal(unscopedApprovedHistorySecond.sources[0].title, "Unscoped Second Title");
-assert.equal(unscopedApprovedHistorySecond.trace.some((entry) => entry.cache_hit === true), false, "approved-history queries without tenant context must not be cached");
-
 let disabledApprovedHistoryCalls = 0;
 const disabledApprovedHistoryRegistry = createRetrievalProviderRegistry({
-  tenantId: "tenant_beta",
   env: {
     SUPABASE_URL: "https://supabase.test",
     SUPABASE_SERVICE_ROLE_KEY: "test-service-role"

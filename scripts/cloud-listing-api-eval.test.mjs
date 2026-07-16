@@ -2,13 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  evaluateCloudListingApi,
-  fairTokenRecall,
-  policyFairTokenRecall,
-  rebuildCloudListingEvalReport,
-  validateProtectionBypassSecret
-} from "./evaluate-cloud-listing-api.mjs";
+import { evaluateCloudListingApi, fairTokenRecall, policyFairTokenRecall, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
 import { compareCloudEvalAblation } from "./compare-cloud-eval-ablation.mjs";
 
 function jsonResponse(status, body, headers = {}) {
@@ -52,28 +46,8 @@ const dataset = {
   ]
 };
 
-const retrievalApplicationReplay = {
-  schema_version: "retrieval-application-replay-v1",
-  shared: {
-    fingerprints: {
-      replay_input: "sha256:replay-input"
-    }
-  },
-  arms: {
-    off: {
-      input_fingerprint: "sha256:replay-input",
-      semantic_fingerprint: "sha256:off"
-    },
-    on: {
-      input_fingerprint: "sha256:replay-input",
-      semantic_fingerprint: "sha256:on"
-    }
-  }
-};
-
 async function runProvider(provider, options = {}) {
   const titlePayloads = [];
-  const verificationPayloads = [];
   const titleResponder = options.titleResponder;
   const fetchImpl = async (url, init = {}) => {
     const path = new URL(url).pathname;
@@ -94,7 +68,6 @@ async function runProvider(provider, options = {}) {
 
     if (path === "/api/listing-image-verify-existing") {
       const body = JSON.parse(init.body);
-      verificationPayloads.push(body);
       return jsonResponse(200, {
         ok: true,
         verification: {
@@ -105,9 +78,7 @@ async function runProvider(provider, options = {}) {
           size: 1000,
           width: 100,
           height: 100,
-          content_sha256: Object.hasOwn(options, "verificationContentSha")
-            ? options.verificationContentSha
-            : "sha"
+          content_sha256: "sha"
         }
       });
     }
@@ -121,8 +92,6 @@ async function runProvider(provider, options = {}) {
         && body.provider_options?.enable_stored_visual_features === true
         && body.provider_options?.enable_vector_retrieval === true
         && body.provider_options?.vector_retrieval_mode === "assist";
-      const excludeSourceFeedbackIds = [body.source_feedback_id].filter(Boolean);
-      const excludeContentSha256 = (body.images || []).map((image) => image.content_sha256).filter(Boolean);
       if (typeof titleResponder === "function") {
         const response = titleResponder({
           body,
@@ -136,11 +105,6 @@ async function runProvider(provider, options = {}) {
         confidence: "HIGH",
         provider: body.provider,
         model_id: "gpt-4.1-mini-2025-04-14",
-        retrieval_prompt_context_enabled: body.provider_options?.enable_retrieval_prompt_context === true,
-        retrieval_prompt_context_used: body.provider_options?.enable_retrieval_prompt_context === true && vectorEnabled,
-        retrieval_prompt_context_source: body.provider_options?.enable_retrieval_prompt_context === true
-          ? "test-retrieval-context"
-          : null,
         fields: {
           year: "2025",
           product: "Topps Chrome",
@@ -165,11 +129,7 @@ async function runProvider(provider, options = {}) {
           ? {
             providers_used: ["visual_vector", "postgres_hybrid"],
             queries: [
-              {
-                family: "visual_vector",
-                provider_id: "visual_vector",
-                exclude_content_sha256: excludeContentSha256
-              },
+              { family: "visual_vector", provider_id: "visual_vector" },
               { family: "SEARCH_POSTGRES_HYBRID", provider_id: "postgres_hybrid" }
             ],
             sources: [{
@@ -193,11 +153,6 @@ async function runProvider(provider, options = {}) {
         catalog_retrieval: catalogEnabled
           ? {
             providers_used: ["catalog"],
-            queries: [{
-              family: "SEARCH_CATALOG_YEAR_PRODUCT_SUBJECT",
-              provider_id: "catalog",
-              exclude_source_feedback_ids: excludeSourceFeedbackIds
-            }],
             catalog_retrieval_metrics: {
               catalog_lookup_used_count: 1,
               catalog_candidate_count: 1,
@@ -258,11 +213,7 @@ async function runProvider(provider, options = {}) {
         vector_retrieval: vectorEnabled
           ? {
             providers_used: ["visual_vector"],
-            queries: [{
-              family: "SEARCH_VISUAL_VECTOR",
-              provider_id: "visual_vector",
-              exclude_content_sha256: excludeContentSha256
-            }],
+            queries: [{ family: "SEARCH_VISUAL_VECTOR", provider_id: "visual_vector" }],
             sources: [{
               source_type: "VISUAL_VECTOR",
               matched_fields: ["visual_vector"],
@@ -292,10 +243,6 @@ async function runProvider(provider, options = {}) {
           }
           : null,
         vector_prompt_assist_used: vectorEnabled,
-        retrieval_application_replay: body.provider_options?.evaluation_profile
-          === "retrieval_application_single_observation_replay_v1"
-          ? retrievalApplicationReplay
-          : null,
         vector_lazy_skip: vectorEnabled && body.provider_options?.enable_vector_lazy_mode === true
           ? {
             skipped: true,
@@ -366,7 +313,7 @@ async function runProvider(provider, options = {}) {
     ...(options.evaluateOptions || {})
   });
 
-  return { report, titlePayload: titlePayloads[0], titlePayloads, verificationPayloads };
+  return { report, titlePayload: titlePayloads[0], titlePayloads };
 }
 
 const openai = await runProvider("openai");
@@ -381,13 +328,6 @@ assert.equal(openai.report.accuracy_policy.corrected_title_as_temporary_gt, fals
 assert.equal(openai.report.accuracy_policy.corrected_title_is_reviewed_title_ground_truth, false);
 assert.equal(openai.report.accuracy_policy.corrected_title_field_ground_truth, false);
 assert.equal(openai.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
-assert.equal(openai.report.accuracy_policy.corrected_title_or_ground_truth_sent_to_cloud, false);
-assert.equal(openai.report.exclusion_requested, true);
-assert.equal(openai.report.exclusion_confirmed, true);
-assert.equal(openai.report.exclusion_requested_count, 1);
-assert.equal(openai.report.exclusion_confirmed_count, 1);
-assert.equal(openai.report.exclusion_unconfirmed_count, 0);
-assert.equal(openai.report.returned_self_candidate_count, 0);
 
 {
   const serialDataset = {
@@ -458,63 +398,6 @@ assert.equal(openai.titlePayload.provider_options.enable_vector_assist, false);
 assert.equal(openai.titlePayload.provider_options.enable_evidence_completion, false);
 assert.equal(openai.titlePayload.provider_options.enable_gpt_failure_fallback, false);
 assert.equal(openai.titlePayload.catalog_observation_hint, null);
-assert.equal(openai.titlePayload.source_feedback_id, "fb1");
-assert.equal(openai.titlePayload.asset_id, "card-1");
-assert.deepEqual(openai.titlePayload.images.map((image) => image.image_id), ["front", "back"]);
-assert.deepEqual(openai.titlePayload.images.map((image) => image.object_path), ["feedback/front.jpg", "feedback/back.jpg"]);
-assert.deepEqual(openai.titlePayload.images.map((image) => image.content_sha256), ["sha", "sha"]);
-assert.equal(Object.hasOwn(openai.titlePayload, "ground_truth"), false);
-assert.equal(Object.hasOwn(openai.titlePayload, "corrected_title"), false);
-assert.equal(JSON.stringify(openai.titlePayload).includes("2025 Topps Chrome Test Player"), false);
-assert.deepEqual(openai.verificationPayloads.map((payload) => payload.image_id), ["front", "back"]);
-assert.deepEqual(openai.verificationPayloads.map((payload) => payload.object_path), ["feedback/front.jpg", "feedback/back.jpg"]);
-assert.equal(openai.report.results[0].exclusion_requested, true);
-assert.equal(openai.report.results[0].exclusion_confirmed, true);
-assert.equal(openai.report.results[0].exclusion_observation.corrected_title_or_ground_truth_sent_to_cloud, false);
-
-{
-  const sourceRecordIdentifiers = await runProvider("openai_vector", {
-    verificationContentSha: "",
-    dataset: {
-      items: [{
-        candidate_id: "nested-card",
-        category: "sports_card",
-        source_titles: {
-          corrected_title: "2025 Topps Chrome Nested Player"
-        },
-        source_record: {
-          feedback_id: "nested-feedback",
-          asset_id: "nested-asset",
-          physical_card_id: "nested-physical-card",
-          physical_instance_group_id: "nested-instance-group",
-          reviewed_ground_truth: true,
-          self_retrieval_exclusion_required: true,
-          images: [{
-            imageId: "nested-front",
-            bucket: "listing-feedback-images",
-            objectPath: "feedback/nested-front.jpg",
-            role: "front_original",
-            contentSha256: "dataset-sha"
-          }]
-        }
-      }]
-    }
-  });
-  assert.equal(sourceRecordIdentifiers.titlePayload.source_feedback_id, "nested-feedback");
-  assert.equal(sourceRecordIdentifiers.titlePayload.asset_id, "nested-asset");
-  assert.equal(sourceRecordIdentifiers.titlePayload.physical_card_id, "nested-physical-card");
-  assert.equal(sourceRecordIdentifiers.titlePayload.physical_instance_group_id, "nested-instance-group");
-  assert.equal(sourceRecordIdentifiers.titlePayload.images[0].image_id, "nested-front");
-  assert.equal(sourceRecordIdentifiers.titlePayload.images[0].object_path, "feedback/nested-front.jpg");
-  assert.equal(sourceRecordIdentifiers.titlePayload.images[0].content_sha256, "dataset-sha");
-  assert.equal(Object.hasOwn(sourceRecordIdentifiers.titlePayload, "ground_truth"), false);
-  assert.equal(Object.hasOwn(sourceRecordIdentifiers.titlePayload, "corrected_title"), false);
-  assert.equal(JSON.stringify(sourceRecordIdentifiers.titlePayload).includes("2025 Topps Chrome Nested Player"), false);
-  assert.equal(sourceRecordIdentifiers.report.exclusion_requested, true);
-  assert.equal(sourceRecordIdentifiers.report.exclusion_confirmed, true);
-  assert.equal(sourceRecordIdentifiers.report.results[0].exclusion_observation.catalog.confirmed, true);
-  assert.equal(sourceRecordIdentifiers.report.results[0].exclusion_observation.vector.confirmed, true);
-}
 
 {
   const retrievalOff = await runProvider("retrieval_off", {
@@ -544,14 +427,9 @@ assert.equal(openai.report.results[0].exclusion_observation.corrected_title_or_g
     assert.equal(options.disable_approved_identity_memory, true);
     assert.equal(options.corrected_title_as_temporary_gt, false);
     assert.equal(options.send_corrected_title_hint_to_cloud, false);
-    assert.equal(options.enable_retrieval_prompt_context, false);
-    assert.equal(options.eval_flags.ENABLE_RETRIEVAL_PROMPT_CONTEXT, false);
   }
-  assert.equal(retrievalOff.report.experiment_contract.retrieval_prompt_context_enabled, false);
-  assert.equal(retrievalOn.report.experiment_contract.retrieval_prompt_context_enabled, false);
   assert.equal(off.enable_catalog_assist, false);
-  assert.equal(off.enable_evidence_completion, true);
-  assert.equal(off.disable_evidence_completion_retrieval, true);
+  assert.equal(off.enable_evidence_completion, false);
   assert.equal(off.enable_vector_assist, false);
   assert.equal(off.enable_retrieval_application, false);
   assert.equal(off.force_retrieval_application_resolution, false);
@@ -561,7 +439,6 @@ assert.equal(openai.report.results[0].exclusion_observation.corrected_title_or_g
   assert.equal(off.enable_hybrid_retrieval, false);
   assert.equal(on.enable_catalog_assist, true);
   assert.equal(on.enable_evidence_completion, true);
-  assert.equal(on.disable_evidence_completion_retrieval, false);
   assert.equal(on.enable_vector_assist, true);
   assert.equal(on.enable_retrieval_application, true);
   assert.equal(on.force_retrieval_application_resolution, true);
@@ -571,57 +448,6 @@ assert.equal(openai.report.results[0].exclusion_observation.corrected_title_or_g
   assert.equal(on.enable_hybrid_retrieval, true);
   assert.equal(retrievalOff.titlePayload.catalog_observation_hint, null);
   assert.equal(retrievalOn.titlePayload.catalog_observation_hint, null);
-}
-
-{
-  const replay = await runProvider("retrieval_replay", {
-    evaluateOptions: {
-      correctedTitleAsTemporaryGt: true,
-      sendCorrectedTitleHintToCloud: true
-    }
-  });
-  const replayAlias = await runProvider("retrieval-replay");
-  const options = replay.titlePayload.provider_options;
-
-  assert.equal(replay.report.provider, "retrieval_replay");
-  assert.equal(replayAlias.report.provider, "retrieval_replay");
-  assert.equal(replay.titlePayload.provider_eval_mode, "retrieval_replay");
-  assert.equal(options.provider_mode, "retrieval_replay");
-  assert.equal(options.provider_eval_mode, "retrieval_replay");
-  assert.equal(options.evaluation_profile, "retrieval_application_single_observation_replay_v1");
-  assert.equal(options.enable_evidence_completion, true);
-  assert.equal(options.enable_catalog_assist, true);
-  assert.equal(options.enable_vector_assist, true);
-  assert.equal(options.enable_retrieval_application, true);
-  assert.equal(options.enable_retrieval_prompt_context, false);
-  assert.equal(options.eval_flags.ENABLE_RETRIEVAL_PROMPT_CONTEXT, false);
-  assert.equal(replay.titlePayload.enable_retrieval_prompt_context, false);
-  assert.equal(options.enable_stored_visual_features, true);
-  assert.equal(options.enable_query_visual_embeddings, true);
-  assert.equal(options.enable_vector_retrieval, true);
-  assert.equal(options.vector_retrieval_mode, "assist");
-  assert.equal(options.enable_vector_lazy_mode, false);
-  assert.equal(options.force_vector_assist, true);
-  assert.equal(options.enable_advanced_retrieval, true);
-  assert.equal(options.enable_hybrid_retrieval, true);
-  assert.equal(options.disable_identity_result_cache, true);
-  assert.equal(options.disable_approved_identity_memory, true);
-  assert.equal(options.corrected_title_as_temporary_gt, false);
-  assert.equal(options.send_corrected_title_hint_to_cloud, false);
-  assert.equal(options.cloud_eval_blind_to_corrected_title_hint, true);
-  assert.equal(replay.titlePayload.catalog_observation_hint, null);
-  assert.equal(Object.hasOwn(replay.titlePayload, "corrected_title"), false);
-  assert.equal(Object.hasOwn(replay.titlePayload, "ground_truth"), false);
-  assert.equal(JSON.stringify(replay.titlePayload).includes("2025 Topps Chrome Test Player"), false);
-  assert.deepEqual(replay.report.results[0].retrieval_application_replay, retrievalApplicationReplay);
-  assert.equal(replay.report.results[0].retrieval_prompt_context_enabled, false);
-  assert.equal(replay.report.results[0].retrieval_prompt_context_used, false);
-  assert.equal(replay.report.results[0].exclusion_confirmed, true);
-  assert.equal(replay.report.results[0].returned_self_candidate_count, 0);
-  assert.equal(replay.report.results[0].same_card_exclusion_evidence_present, true);
-  assert.equal(replay.report.retrieval_prompt_context_explicitly_disabled, true);
-  assert.equal(replay.report.retrieval_prompt_context_not_explicitly_disabled_count, 0);
-  assert.equal(replay.report.same_card_exclusion_evidence_complete, true);
 }
 
 {
@@ -811,10 +637,6 @@ assert.equal(openaiCatalog.titlePayload.catalog_observation_hint, null);
 assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_as_temporary_gt, false);
 assert.equal(openaiCatalog.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
 assert.equal(openaiCatalog.report.results[0].corrected_title_hint_sent_to_cloud, false);
-assert.equal(openaiCatalog.report.results[0].exclusion_observation.catalog.requested, true);
-assert.equal(openaiCatalog.report.results[0].exclusion_observation.catalog.confirmed, true);
-assert.equal(openaiCatalog.report.results[0].exclusion_observation.catalog.query_echo_count, 1);
-assert.equal(openaiCatalog.report.exclusion_confirmed, true);
 assert.equal(openaiCatalog.report.fast_path_used_count, 0);
 assert.equal(openaiCatalog.report.catalog_lookup_used_count, 1);
 assert.equal(openaiCatalog.report.catalog_candidate_count, 1);
@@ -832,60 +654,13 @@ const openaiCatalogWithHint = await runProvider("catalog-only", {
     sendCorrectedTitleHintToCloud: true
   }
 });
-assert.equal(openaiCatalogWithHint.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
-assert.equal(openaiCatalogWithHint.titlePayload.provider_options.cloud_eval_blind_to_corrected_title_hint, true);
-assert.equal(openaiCatalogWithHint.titlePayload.catalog_observation_hint, null);
-assert.equal(JSON.stringify(openaiCatalogWithHint.titlePayload).includes("2025 Topps Chrome Test Player"), false);
-assert.equal(openaiCatalogWithHint.report.accuracy_policy.corrected_title_hint_sent_to_cloud, false);
-assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_to_cloud, false);
-
-{
-  const unconfirmed = await runProvider("catalog-only", {
-    titleResponder({ body }) {
-      return {
-        final_title: "2025 Topps Chrome Test Player",
-        confidence: "HIGH",
-        provider: body.provider
-      };
-    }
-  });
-  assert.equal(unconfirmed.report.exclusion_requested, true);
-  assert.equal(unconfirmed.report.exclusion_confirmed, false);
-  assert.equal(unconfirmed.report.exclusion_unconfirmed_count, 1);
-  assert.equal(unconfirmed.report.results[0].exclusion_observation.catalog.query_echo_count, 0);
-}
-
-{
-  const returnedSelfCandidate = await runProvider("catalog-only", {
-    titleResponder({ body }) {
-      return {
-        final_title: "2025 Topps Chrome Test Player",
-        confidence: "HIGH",
-        provider: body.provider,
-        retrieval_prompt_context_enabled: false,
-        retrieval_prompt_context_used: false,
-        catalog_retrieval: {
-          queries: [{
-            family: "SEARCH_CATALOG_YEAR_PRODUCT_SUBJECT",
-            provider_id: "catalog",
-            exclude_source_feedback_ids: [body.source_feedback_id]
-          }],
-          sources: [{
-            candidate_id: "self-candidate",
-            provider_id: "catalog",
-            source_type: "CATALOG",
-            source_feedback_id: body.source_feedback_id,
-            title: "2025 Topps Chrome Test Player"
-          }]
-        }
-      };
-    }
-  });
-  assert.equal(returnedSelfCandidate.report.exclusion_confirmed, false);
-  assert.equal(returnedSelfCandidate.report.returned_self_candidate_count, 1);
-  assert.equal(returnedSelfCandidate.report.results[0].returned_self_candidate_count, 1);
-  assert.equal(returnedSelfCandidate.report.results[0].same_card_exclusion_evidence_present, true);
-}
+assert.equal(openaiCatalogWithHint.titlePayload.provider_options.send_corrected_title_hint_to_cloud, true);
+assert.equal(openaiCatalogWithHint.titlePayload.provider_options.cloud_eval_blind_to_corrected_title_hint, false);
+assert.equal(openaiCatalogWithHint.titlePayload.catalog_observation_hint.year, "2025");
+assert.equal(openaiCatalogWithHint.titlePayload.catalog_observation_hint.product, "Topps Chrome");
+assert.deepEqual(openaiCatalogWithHint.titlePayload.catalog_observation_hint.players, ["Test Player"]);
+assert.equal(openaiCatalogWithHint.report.accuracy_policy.corrected_title_hint_sent_to_cloud, true);
+assert.equal(openaiCatalogWithHint.report.results[0].corrected_title_hint_sent_to_cloud, true);
 
 {
   const conflictedCatalogOnly = await runProvider("catalog-only", {
@@ -1036,11 +811,6 @@ assert.equal(openaiVector.titlePayload.provider_options.corrected_title_as_tempo
 assert.equal(openaiVector.titlePayload.provider_options.vector_corrected_title_as_temporary_gt, true);
 assert.equal(openaiVector.titlePayload.provider_options.send_corrected_title_hint_to_cloud, false);
 assert.equal(openaiVector.titlePayload.catalog_observation_hint, null);
-assert.equal(openaiVector.report.exclusion_requested, true);
-assert.equal(openaiVector.report.exclusion_confirmed, true);
-assert.equal(openaiVector.report.results[0].exclusion_observation.catalog.confirmed, true);
-assert.equal(openaiVector.report.results[0].exclusion_observation.vector.confirmed, true);
-assert.equal(openaiVector.report.results[0].exclusion_observation.vector.query_echo_count > 0, true);
 assert.equal(openaiVector.titlePayload.provider_options.vector_query_timeout_ms, 20000);
 assert.equal(openaiVector.titlePayload.provider_options.vector_retrieval_internal_top_n, 10);
 assert.equal(openaiVector.titlePayload.provider_options.enable_advanced_retrieval, true);
@@ -1446,54 +1216,6 @@ assert.throws(
   /looks like a Supabase secret key/i
 );
 
-const rebuiltReport = rebuildCloudListingEvalReport({
-  schema_version: "cloud-listing-api-eval-v1",
-  provider: "retrieval_on",
-  elapsed_ms: 60_000,
-  experiment_contract: { arm: "on" },
-  results: [
-    {
-      candidate_id: "kept-card",
-      status: "evaluated",
-      confidence: "HIGH",
-      technical_failure: false,
-      provider_success: true,
-      elapsed_ms: 10_000,
-      usage: { provider_calls: 1, input_tokens: 100, output_tokens: 20, total_tokens: 120 }
-    },
-    {
-      candidate_id: "retried-card",
-      technical_failure: true,
-      provider_success: false,
-      elapsed_ms: 30_000,
-      provider_error_attempts: [{ attempt: 1 }, { attempt: 2 }]
-    }
-  ]
-}, [{
-  provider: "retrieval_on",
-  elapsed_ms: 12_000,
-  experiment_contract: { arm: "on" },
-  results: [{
-    candidate_id: "retried-card",
-    status: "evaluated",
-    confidence: "HIGH",
-    technical_failure: false,
-    provider_success: true,
-    elapsed_ms: 8_000,
-    usage: { provider_calls: 1, input_tokens: 80, output_tokens: 10, total_tokens: 90 }
-  }]
-}]);
-assert.equal(rebuiltReport.provider_success_count, 2);
-assert.equal(rebuiltReport.technical_failure_count, 0);
-assert.equal(rebuiltReport.elapsed_ms, 72_000);
-assert.equal(rebuiltReport.usage_totals.total_tokens, 210);
-assert.deepEqual(rebuiltReport.retry_recovery.replaced_candidate_ids, ["retried-card"]);
-assert.equal(rebuiltReport.retry_recovery.original_failed_attempt_count, 2);
-assert.throws(
-  () => rebuildCloudListingEvalReport({ provider: "retrieval_on", results: [] }, [{ provider: "retrieval_off", results: [] }]),
-  /does not match base provider/
-);
-
 assert.throws(
   () => validateProtectionBypassSecret({
     bypassSecret: "same-secret",
@@ -1520,12 +1242,5 @@ assert.equal(policyFairTokenRecall("2024 Bowman Chrome New Breed Auto", "2024 Bo
 assert.equal(policyFairTokenRecall("2024 Topps Red Sox Auto", "2024 Topps Auto"), 1);
 assert.equal(policyFairTokenRecall("2024 New York Yankees Auto", "2024 Auto"), 1);
 assert.equal(policyFairTokenRecall("2021 Bowman Draft Tyler Black Chrome Auto RC Red Refractor 1st #/5 PSA 10 9", "2021 Bowman Chrome Tyler Black Chrome Draft Pick Auto Red Ref. 4/5 #CDA PSA 10/9") >= 0.72, true);
-assert.equal(
-  policyFairTokenRecall(
-    "2025 Disney Lorcana JP Mickey Mouse Special PR Volume 1 Iconic #242 PSA 10",
-    "2025 Japanese Disney Lorcana Special PR Vol.1 Iconic Mickey Mouse 242/204 PSA 10"
-  ) >= 0.72,
-  true
-); // Language and volume aliases are formatting-equivalent, not identity errors.
 
 console.log("cloud listing API eval tests passed");

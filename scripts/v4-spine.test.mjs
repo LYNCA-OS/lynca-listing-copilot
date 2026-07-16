@@ -4,11 +4,6 @@ import {
   buildFastScoutListingResult,
   selectFastScoutImages
 } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
-import {
-  __listingCopilotTitleTestHooks,
-  serialNumeratorVerificationFromPreingestion,
-  verifiedSerialNumeratorFromPreingestion
-} from "../api/listing-copilot-title.js";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
 import { buildV4FieldGraph, buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
@@ -37,18 +32,15 @@ import {
   checkV4Tables,
   createV4RecognitionSession,
   persistV4CandidateTrace,
-  persistV4FastScoutCache,
   persistV4FieldEvidence,
   persistV4LearningEvent,
   persistV4NonCriticalArtifactsAtomic,
   persistV4WriterFeedbackTransaction,
-  readV4FastScoutCache,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
 import {
   batchStatusResponseDisposition,
   batchPollWaitBudgetMs,
-  imageVerificationTimeoutMs,
   mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
@@ -81,8 +73,6 @@ assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 10, pro
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 300_000, itemCount: 10, providerConcurrency: 2 }), 300_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 0, providerConcurrency: 2 }), 18_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 1, providerConcurrency: 1 }), 75_000);
-assert.equal(imageVerificationTimeoutMs(2_000), 15_000, "image verification must not inherit an unsafe two-second caller budget");
-assert.equal(imageVerificationTimeoutMs(120_000), 45_000, "image verification must remain bounded independently of model requests");
 
 const smokeTsv = perCardTsv([{
   asset_id: "asset-timing",
@@ -201,22 +191,6 @@ const disabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: f
 assert.equal(disabledUltraFastPayload.provider_options.v4_ultra_fast_l2, false);
 const enabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: true });
 assert.equal(enabledUltraFastPayload.provider_options.v4_ultra_fast_l2, true);
-const defaultColdStartPayload = smokePayloadForItem({}, 0, []);
-assert.equal(defaultColdStartPayload.provider_options.cold_start_blind, false);
-const coldStartPayload = smokePayloadForItem({
-  seller_title: "SEALED SELLER TITLE MUST NOT LEAK",
-  reviewed_title: "REVIEWED TITLE MUST NOT LEAK",
-  corrected_title: "CORRECTED TITLE MUST NOT LEAK",
-  source_record: {
-    seller_title: "NESTED SELLER TITLE MUST NOT LEAK",
-    reviewed_title: "NESTED REVIEWED TITLE MUST NOT LEAK"
-  }
-}, 0, [], { coldStartBlind: true });
-assert.equal(coldStartPayload.provider_options.cold_start_blind, true);
-assert.equal(Object.hasOwn(coldStartPayload, "seller_title"), false);
-assert.equal(Object.hasOwn(coldStartPayload, "reviewed_title"), false);
-assert.equal(Object.hasOwn(coldStartPayload, "corrected_title"), false);
-assert.doesNotMatch(JSON.stringify(coldStartPayload), /MUST NOT LEAK/);
 assert.equal(fastInitialPromptOverride(["node", "smoke"]), null);
 assert.equal(fastInitialPromptOverride(["node", "smoke", "--fast-initial-prompt"]), true);
 assert.equal(fastInitialPromptOverride(["node", "smoke", "--full-listing-prompt"]), false);
@@ -762,7 +736,6 @@ const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
-const v4SoakSource = await readFile("scripts/run-v4-multi-tenant-soak.mjs", "utf8");
 const freshEbaySmokeWorkflowSource = await readFile(".github/workflows/fresh-ebay-smoke.yml", "utf8");
 const vercelConfigSource = await readFile("vercel.json", "utf8");
 const persistPipelineStart = v4TitleApiSource.indexOf("async function persistPipelineResult");
@@ -776,11 +749,6 @@ assert.doesNotMatch(persistPipelineSource, /\breq\b/, "persistence helpers must 
 assert.match(persistPipelineSource, /requestContext/, "request context must be passed explicitly to capacity refill");
 assert.match(v4TitleApiSource, /recognition_clock_source:\s*"gpt_provider_request"/, "GPT requests must persist the per-card recognition clock source");
 assert.match(v4TitleApiSource, /deterministic_anchor_finalize/, "no-GPT exact-anchor titles must persist their own clock source");
-assert.match(
-  v4SmokeSource,
-  /if \(expected\.size === 0\)[\s\S]*fatal_error:\s*"no_jobs_enqueued"/,
-  "paid eval must fail fast when preflight/enqueue produced no jobs"
-);
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /const backgroundPersistence = persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must be assembled outside the writer-ready response.");
@@ -807,15 +775,6 @@ assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");
 assert.match(v4SmokeSource, /recognition_phase_loaded_sealed_labels: false/, "blind smoke must not load sealed seller titles during recognition.");
 assert.match(v4SmokeSource, /predictions_frozen_before_scoring: true/, "blind smoke must freeze predictions before local weak-label scoring.");
-assert.match(v4SmokeSource, /coldStartBlind:\s*hasFlag\(argv, "--cold-start-blind"\)/, "smoke CLI must expose the explicit cold-start blind switch.");
-assert.match(v4SmokeSource, /async function runOne\([\s\S]*?coldStartBlind[\s\S]*?payloadForItem\([\s\S]*?coldStartBlind/, "direct, queue, and per-card speculative requests must pass the cold-start marker into provider options.");
-assert.match(v4SmokeSource, /async function enqueueSpeculativeItem\([\s\S]*?coldStartBlind[\s\S]*?payloadForItem\([\s\S]*?coldStartBlind/, "shared-batch speculative enqueue must pass the cold-start marker into provider options.");
-assert.match(v4SmokeSource, /evaluation_sample_policy:\s*\{[\s\S]*?cold_start_blind: normalizedColdStartBlind/, "smoke evaluation metadata must record the cold-start policy.");
-assert.match(v4SmokeSource, /blind_policy:\s*\{[\s\S]*?cold_start_blind: normalizedColdStartBlind/, "smoke blind policy must record the cold-start policy.");
-assert.match(v4SoakSource, /coldStartBlind:\s*argv\.includes\("--cold-start-blind"\)/, "soak CLI must expose the explicit cold-start blind switch.");
-assert.match(v4SoakSource, /runV4EbaySmoke\(\{[\s\S]*?coldStartBlind: normalizedColdStartBlind/, "every soak wave must pass the cold-start marker to the smoke runner.");
-assert.match(v4SoakSource, /evaluation_sample_policy:\s*\{[\s\S]*?cold_start_blind: normalizedColdStartBlind/, "soak evaluation metadata must record the cold-start policy.");
-assert.match(v4SoakSource, /blind_policy:\s*\{[\s\S]*?cold_start_blind: normalizedColdStartBlind/, "soak blind policy must record the cold-start policy.");
 assert.match(v4SmokeSource, /evaluation_sample_policy/, "smoke reports must state whether their sample supports regression, ablation, or generalization claims.");
 assert.match(freshEbaySmokeWorkflowSource, /default:\s*random_blind/, "routine eBay smoke must default to a seeded random blind sample.");
 assert.match(freshEbaySmokeWorkflowSource, /fresh_generalization/, "fresh smoke must retain an explicit history-excluded generalization mode.");
@@ -831,13 +790,13 @@ assert.match(freshEbaySmokeWorkflowSource, /ledger_present_count[^\n]+attempted_
 assert.match(freshEbaySmokeWorkflowSource, /transport_error_count/, "speed smoke must fail on transport errors without treating field-quality findings as infrastructure failures.");
 assert.match(freshEbaySmokeWorkflowSource, /field_quality_error_count/, "speed smoke must still report deferred field-quality findings.");
 assert.match(freshEbaySmokeWorkflowSource, /writer_ready_capacity_atomic_count/, "speed smoke must prove writer-ready provider capacity release behavior.");
-assert.match(fastScoutPrewarmApiSource, /allowProviderCall: false/, "production fast-scout prewarm must remain cache-only; paid scout work belongs to durable queue jobs.");
+assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
 assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");
 assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-only misses must return a stable non-error response.");
 assert.match(vercelConfigSource, /admin-apply-v4-production-job-queue-migration\.js/, "the production migration function must have an explicit Vercel bundle rule.");
 assert.match(vercelConfigSource, /supabase\/migrations\/\*\.sql/, "all required SQL migrations must ship with the admin migration function.");
-assert.match(productionDeployWorkflowSource, /check-track-c-production-schema\.mjs/, "production deployment must fail closed on a read-only production schema preflight.");
-assert.match(productionDeployWorkflowSource, /track-c-production-schema-postdeploy\.json/, "production deployment must retain postdeploy schema verification evidence.");
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-production-job-queue-migration/, "production deployment must apply and verify the queue control-plane migration before declaring readiness.");
+assert.match(productionDeployWorkflowSource, /production-job-queue-migration\.json/, "queue migration evidence must be retained with every production release.");
 assert.match(queueMigrationApiSource, /20260713224500_v4_tenant_fair_provider_queue\.sql/, "production migration apply must include the tenant-fair scheduler.");
 assert.match(queueMigrationApiSource, /tenant_fair_scheduler/, "the migration probe must verify that tenant-first scheduling is installed.");
 assert.match(queueMigrationApiSource, /tenant_fair_claim_ok/, "the migration probe must prove that multiple batches cannot multiply one tenant's provider share.");
@@ -855,18 +814,16 @@ assert.match(queueStatusApiSource, /serial_numerator_verified/, "queue status mu
 assert.match(queueStatusApiSource, /V4_JOB_STATUS_QUERY_REQUIRED/, "missing status query identifiers must remain a non-retryable client error.");
 assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s\S]*V4_JOB_STATUS_BACKEND_UNAVAILABLE/, "transient queue-store reads must be reported as retryable service failures.");
 assert.match(queueStatusApiSource, /ownedJobs = result\.rows\.filter[\s\S]*operator_id/, "job status must not expose another operator's queued work.");
-assert.match(queueEnqueueApiSource, /const noJobsAccepted =[\s\S]*acceptedCount === 0/, "enqueue must identify batches where no durable job was accepted.");
-assert.match(queueEnqueueApiSource, /const responseStatus = noJobsAccepted \? deterministicConflict \? 409 : 503 : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
+assert.match(queueEnqueueApiSource, /noJobsQueued \? 503 : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
 assert.match(queueEnqueueApiSource, /V4_QUEUE_PERSISTENCE_FAILED/, "queue persistence failures must have a stable retryable error code.");
-assert.match(queueRetryApiSource, /operatorId:\s*context\.userId/, "writer retries must enforce job ownership from the signed tenant context.");
+assert.match(queueRetryApiSource, /operatorIdFromRequest/, "writer retries must enforce job ownership.");
 assert.match(queueRetryApiSource, /retryV4RecognitionJob/, "writer retries must reuse the durable job instead of starting an unbounded direct request.");
 assert.match(queueRetryApiSource, /interactive_priority_zero/, "writer retries must enter the interactive priority lane.");
-assert.match(sessionStatusApiSource, /session\.operator_id[\s\S]*context\.userId/, "session status must enforce operator ownership from the signed tenant context.");
+assert.match(sessionStatusApiSource, /session\.operator_id[\s\S]*operatorIdFromRequest/, "session status must enforce operator ownership.");
 assert.match(sessionStatusApiSource, /include_related_counts/, "writer polling must not block on diagnostic table counts unless explicitly requested.");
 assert.match(sessionStatusApiSource, /Promise\.all\(Object\.entries\(tables\)/, "evaluation-only related counts should load in parallel.");
 assert.match(sessionStatusApiSource, /Recognition session status is temporarily unavailable/, "transient session reads must remain retryable instead of looking like a terminal failure.");
-assert.match(feedbackApiSource, /readV4SessionStatus\(\{ sessionId, tenantId \}\)/, "writer feedback must bind the session read to the signed tenant before learning writes.");
-assert.match(feedbackApiSource, /TENANT_PERMISSIONS\.SUBMIT_FEEDBACK[\s\S]*assignedUserId: ownedSession\.session\.assigned_to_user_id/, "writer feedback must authorize the persisted assignee while preserving tenant-wide Owner access.");
+assert.match(feedbackApiSource, /readV4SessionStatus[\s\S]*session\.operator_id[\s\S]*operatorId/, "writer feedback must verify session ownership before learning writes.");
 assert.match(feedbackApiSource, /persistV4WriterFeedbackTransaction/, "writer feedback, learning data, and the session terminal state must commit atomically.");
 assert.match(feedbackApiSource, /v4_writer_cert_registry_promotion_failed/, "non-blocking cert promotion failures must remain observable.");
 assert.match(v4TitleApiSource, /v4_noncritical_persistence_failure_status_write_failed/, "a failed background-persistence terminal write must not disappear silently.");
@@ -881,8 +838,8 @@ assert.match(stageCapacityMigrationSource, /acquire_v4_stage_capacity[\s\S]*for 
 assert.match(stageCapacityMigrationSource, /release_v4_stage_capacity/, "non-LLM stage slots must be explicitly releasable.");
 assert.match(writerReadyCapacityMigrationSource, /revoke all on function public\.persist_v4_writer_ready_and_release_capacity[\s\S]*from public, anon, authenticated/, "the writer-ready capacity RPC must remain service-role only.");
 assert.match(writerReadyCapacityMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the writer-ready capacity migration probe must verify the RPC privilege boundary.");
-assert.match(productionDeployWorkflowSource, /track-c-production-schema-preflight\.json[\s\S]*track-c-production-schema-postdeploy\.json/, "production deploys must retain read-only schema evidence for atomic persistence and writer-ready capacity readiness.");
-assert.doesNotMatch(productionDeployWorkflowSource, /admin-apply-v4-(noncritical-persistence|writer-ready-capacity)-migration/, "production deploys must not mutate Supabase schema from the code deploy workflow.");
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-noncritical-persistence-migration[\s\S]*noncritical-persistence-migration\.json/, "production deploys must apply and retain evidence for the atomic persistence migration.");
+assert.match(productionDeployWorkflowSource, /admin-apply-v4-writer-ready-capacity-migration[\s\S]*writer-ready-capacity-migration\.json/, "production deploys must apply and retain evidence for the writer-ready capacity migration.");
 assert.match(writerLearningSupersessionMigrationSource, /before insert on public\.v4_learning_events/, "writer learning supersession must be enforced at the database boundary.");
 assert.match(writerLearningSupersessionMigrationSource, /SUPERSEDED_BY_LATEST_WRITER_FEEDBACK/, "older writer-derived training truth must be retained for audit but excluded from training.");
 assert.match(writerLearningSupersessionMigrationSource, /events\.id <> new\.id[\s\S]*events\.training_eligible = true/, "the latest writer event must only supersede older eligible events for the same session.");
@@ -986,127 +943,6 @@ const l2CustomRetrievalBudget = providerOptionsForV4BackgroundL2({
 assert.equal(l2CustomRetrievalBudget.post_observation_catalog_vector_hedge_ms, 400);
 assert.equal(l2CustomRetrievalBudget.post_observation_retrieval_critical_path_budget_ms, 800);
 
-const canonicalGradeTuple = {
-  grade_company: "BGS",
-  card_grade: "9",
-  auto_grade: "10",
-  cert_number: "22222222",
-  grade_type: "CARD_AND_AUTO"
-};
-for (const conflictField of ["grade_company", "card_grade", "auto_grade", "cert_number"]) {
-  const resultWithGradeTupleConflict = {
-    resolved_fields: canonicalGradeTuple,
-    normalized_evidence: {
-      [conflictField]: {
-        value: canonicalGradeTuple[conflictField],
-        normalized_value: canonicalGradeTuple[conflictField],
-        status: "CONFLICT",
-        confidence: 0.5,
-        candidates: [],
-        sources: [],
-        conflicts: [{ field: conflictField, reason: "test_grade_tuple_conflict" }],
-        unresolved_reason: "test_grade_tuple_conflict"
-      }
-    }
-  };
-  const resolvedConflictTuple = buildV4ResolvedFields(resultWithGradeTupleConflict);
-  for (const tupleField of ["grade_company", "card_grade", "auto_grade", "cert_number", "grade_type"]) {
-    assert.equal(
-      resolvedConflictTuple[tupleField],
-      null,
-      `${conflictField} CONFLICT must atomically block ${tupleField}`
-    );
-  }
-  assert.equal(buildV4FieldStates(resultWithGradeTupleConflict).grade.display_status, "CONFLICT");
-}
-
-const certConflictRequiresWriterReview = adaptV2ResultToV4({
-  sessionId: "v4sess-cert-conflict-review",
-  result: {
-    confidence: "HIGH",
-    final_title: "2024 Topps Chrome Test Player BGS 9/10",
-    resolved_fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      ...canonicalGradeTuple
-    },
-    evidence: {
-      cert_number: {
-        value: canonicalGradeTuple.cert_number,
-        normalized_value: canonicalGradeTuple.cert_number,
-        status: "CONFLICT",
-        confidence: 0.5,
-        candidates: [],
-        sources: [],
-        conflicts: [{ field: "cert_number", reason: "test_cert_conflict" }],
-        unresolved_reason: "test_cert_conflict"
-      }
-    },
-    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
-  },
-  payload: { maxTitleLength: 80 },
-  routePlan: assistedRoute
-});
-assert.equal(certConflictRequiresWriterReview.status, "WRITER_REVIEW");
-assert.equal(certConflictRequiresWriterReview.outcome_type, "WRITER_REVIEW_REQUIRED");
-assert.equal(certConflictRequiresWriterReview.writer_review_required, true);
-assert.ok(certConflictRequiresWriterReview.review_required_fields.includes("grade"));
-assert.ok(certConflictRequiresWriterReview.review_required_fields.includes("cert_number"));
-assert.equal(certConflictRequiresWriterReview.field_states.grade.display_status, "CONFLICT");
-assert.equal(certConflictRequiresWriterReview.writer_draft.actions.includes("ACCEPT"), false);
-assert.equal(certConflictRequiresWriterReview.writer_draft.title, "");
-assert.equal(certConflictRequiresWriterReview.title_stage_readiness.writer_visible_title_ready, false);
-
-const aliasOcrPatch = (value, confidence, jobKey) => ({
-  evidence_field: "print_run_candidate",
-  normalizedValue: value,
-  sourceType: "OCR",
-  confidence,
-  provenance: {
-    job_key: jobKey,
-    crop_type: "serial_number",
-    source_region: "serial_region"
-  }
-});
-const aliasedSerialVerification = verifiedSerialNumeratorFromPreingestion({
-  preingestion_evidence_patches: [aliasOcrPatch("07/25", 0.95, "ocr:serial:alias")]
-});
-assert.equal(aliasedSerialVerification.verified, true);
-assert.equal(aliasedSerialVerification.value, "07/25");
-assert.equal(serialNumeratorVerificationFromPreingestion({
-  preingestion_evidence_patches: [aliasOcrPatch("07/25", 0.93, "ocr:serial:pending")]
-}, { status: "DEFERRED_AFTER_PROVIDER", job_count: 1 }), null);
-assert.equal(serialNumeratorVerificationFromPreingestion({
-  preingestion_evidence_patches: [
-    aliasOcrPatch("07/25", 0.95, "ocr:serial:conflict-a"),
-    aliasOcrPatch("09/25", 0.95, "ocr:serial:conflict-b")
-  ]
-}), false);
-const canonicalUnknownAtApiBoundary = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
-  confidence: "HIGH",
-  serial_numerator_verified: null,
-  serialNumeratorVerified: false,
-  resolved_fields: {
-    year: "2024",
-    manufacturer: "Panini",
-    product: "Prizm",
-    players: ["Test Player"],
-    print_run_number: "07/25",
-    serial_number: "07/25"
-  },
-  normalized_evidence: {
-    print_run_number: {
-      value: "07/25",
-      normalized_value: "07/25",
-      status: "CONFIRMED",
-      sources: [{ source_type: "CARD_FRONT", observed_text: "07/25", direct_observation: true }]
-    }
-  }
-}, { maxTitleLength: 80 });
-assert.equal(canonicalUnknownAtApiBoundary.serial_numerator_verified, null);
-assert.match(canonicalUnknownAtApiBoundary.final_title, /07\/25/);
-
 const resolvedOcrOverridePresentation = adaptV2ResultToV4({
   sessionId: "v4sess-resolved-ocr-override",
   result: {
@@ -1122,15 +958,6 @@ const resolvedOcrOverridePresentation = adaptV2ResultToV4({
       print_run_numerator: "03",
       print_run_denominator: "10",
       serial_number: "03/10"
-    },
-    normalized_evidence: {
-      print_run_number: {
-        value: "03/10",
-        normalized_value: "03/10",
-        status: "CONFIRMED",
-        confidence: 0.96,
-        sources: [{ source_type: "OCR", observed_text: "03/10", direct_observation: true }]
-      }
     },
     serial_numerator_verified: true,
     preingestion_serial_verification: {
@@ -1172,13 +999,6 @@ const verifiedOcrMustBeatDenominatorOnlyEvidence = adaptV2ResultToV4({
         status: "CONFIRMED",
         normalized_value: "#/5",
         sources: [{ source_type: "OCR", direct_observation: true }]
-      },
-      serial_number: {
-        value: "1/5",
-        normalized_value: "1/5",
-        status: "CONFIRMED",
-        confidence: 0.96,
-        sources: [{ source_type: "OCR", observed_text: "1/5", direct_observation: true }]
       }
     },
     serial_numerator_verified: true,
@@ -1199,190 +1019,6 @@ assert.match(
 );
 assert.equal(verifiedOcrMustBeatDenominatorOnlyEvidence.resolved_fields.print_run_number, "1/5");
 
-function adaptTriStateSerialResult(serialNumeratorVerified, legacyAlias) {
-  return adaptV2ResultToV4({
-    sessionId: `v4sess-tristate-${String(serialNumeratorVerified)}`,
-    result: {
-      confidence: "HIGH",
-      final_title: "2024 Panini Prizm Test Player 31/50",
-      resolved_fields: {
-        year: "2024",
-        manufacturer: "Panini",
-        product: "Prizm",
-        players: ["Test Player"],
-        print_run_number: "31/50",
-        serial_number: "31/50"
-      },
-      normalized_evidence: {
-        print_run_number: {
-          value: "31/50",
-          normalized_value: "31/50",
-          status: "CONFIRMED",
-          sources: [{ source_type: "CARD_FRONT", observed_text: "31/50", direct_observation: true }]
-        }
-      },
-      serial_numerator_verified: serialNumeratorVerified,
-      ...(legacyAlias === undefined ? {} : { serialNumeratorVerified: legacyAlias }),
-      title_stage: v4TitleStages.L2_ASSISTED_DRAFT
-    },
-    payload: { maxTitleLength: 80 },
-    routePlan: assistedRoute
-  });
-}
-
-const unknownOcrV4Result = adaptTriStateSerialResult(null, false);
-assert.equal(unknownOcrV4Result.provider_result.serial_numerator_verified, null);
-assert.match(unknownOcrV4Result.final_title, /31\/50/);
-const conflictingOcrV4Result = adaptTriStateSerialResult(false, true);
-assert.equal(conflictingOcrV4Result.provider_result.serial_numerator_verified, false);
-assert.match(conflictingOcrV4Result.final_title, /#\/50/);
-assert.doesNotMatch(conflictingOcrV4Result.final_title, /31\/50/);
-
-const stalePublicPresentationFields = {
-  year: "2023",
-  manufacturer: "Panini",
-  product: "Prizm",
-  players: ["Stale Player"]
-};
-const canonicalPublicPresentationFields = {
-  year: "2024",
-  manufacturer: "Topps",
-  product: "Topps Chrome",
-  players: ["Test Player"],
-  card_name: "Autograph"
-};
-const apiPublicPresentationSnapshotResult = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
-  confidence: "HIGH",
-  serial_numerator_verified: null,
-  fields: { ...stalePublicPresentationFields },
-  resolved: { ...stalePublicPresentationFields },
-  resolved_fields: { ...canonicalPublicPresentationFields },
-  rendered_fields: {
-    ...stalePublicPresentationFields,
-    fields: { ...stalePublicPresentationFields }
-  },
-  retrieval_application: {
-    owns_candidate_application: true,
-    resolver_consumed: true
-  }
-}, { maxTitleLength: 80 });
-assert.ok(Object.isFrozen(apiPublicPresentationSnapshotResult.presentation_resolved_fields));
-assert.strictEqual(
-  apiPublicPresentationSnapshotResult.resolved,
-  apiPublicPresentationSnapshotResult.presentation_resolved_fields
-);
-assert.strictEqual(
-  apiPublicPresentationSnapshotResult.resolved_fields,
-  apiPublicPresentationSnapshotResult.presentation_resolved_fields
-);
-assert.strictEqual(
-  apiPublicPresentationSnapshotResult.rendered_fields.fields,
-  apiPublicPresentationSnapshotResult.presentation_resolved_fields
-);
-assert.equal(apiPublicPresentationSnapshotResult.fields.year, "2024");
-assert.equal(apiPublicPresentationSnapshotResult.fields.product, "Topps Chrome");
-assert.deepEqual(apiPublicPresentationSnapshotResult.fields.players, ["Test Player"]);
-assert.equal(apiPublicPresentationSnapshotResult.rendered_fields.year, "2024");
-assert.equal(apiPublicPresentationSnapshotResult.rendered_fields.product, "Topps Chrome");
-assert.deepEqual(apiPublicPresentationSnapshotResult.rendered_fields.players, ["Test Player"]);
-
-const unsafeSerialAliases = {
-  year: "2024",
-  manufacturer: "Panini",
-  product: "Prizm",
-  players: ["Test Player"],
-  print_run_number: "31/50",
-  print_run_numerator: "31",
-  print_run_denominator: "50",
-  numbered_to: "50",
-  serial_number: "31/50",
-  serial_denominator: "50",
-  numerical_rarity: "31/50",
-  expected_serial_denominator: "50"
-};
-const apiFailClosedSerialResult = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
-  confidence: "HIGH",
-  serial_numerator_verified: false,
-  serialNumeratorVerified: true,
-  fields: { ...unsafeSerialAliases },
-  resolved: { ...unsafeSerialAliases },
-  resolved_fields: { ...unsafeSerialAliases },
-  rendered_fields: {
-    ...unsafeSerialAliases,
-    serial_numerator: "31",
-    fields: { ...unsafeSerialAliases }
-  },
-  field_states: [{
-    field: "serial_number",
-    resolved_value: "31/50",
-    candidates: [{ value: "31/50", normalized_value: "31/50" }],
-    supporting_sources: [{ observed_text: "31/50" }]
-  }, {
-    field: "print_run_numerator",
-    resolved_value: "31",
-    candidates: [{ value: "31" }]
-  }],
-  normalized_evidence: {
-    print_run_number: {
-      value: "31/50",
-      normalized_value: "31/50",
-      status: "CONFIRMED",
-      confidence: 0.99,
-      sources: [{ source_type: "CARD_FRONT", observed_text: "31/50", direct_observation: true }]
-    }
-  },
-  title_stage: v4TitleStages.L2_ASSISTED_DRAFT
-}, { maxTitleLength: 80 });
-const assertFailClosedSerialFields = (fields, label) => {
-  assert.equal(fields.print_run_number, "#/50", `${label} print_run_number`);
-  assert.equal(fields.print_run_numerator, null, `${label} print_run_numerator`);
-  assert.equal(fields.print_run_denominator, "50", `${label} print_run_denominator`);
-  assert.equal(fields.serial_number, "#/50", `${label} serial_number`);
-  assert.equal(fields.numerical_rarity, "#/50", `${label} numerical_rarity`);
-};
-assertFailClosedSerialFields(apiFailClosedSerialResult.presentation_resolved_fields, "API presentation snapshot");
-assertFailClosedSerialFields(apiFailClosedSerialResult.resolved, "API resolved");
-assertFailClosedSerialFields(apiFailClosedSerialResult.resolved_fields, "API resolved_fields");
-assertFailClosedSerialFields(apiFailClosedSerialResult.fields, "API fields");
-assertFailClosedSerialFields(apiFailClosedSerialResult.rendered_fields, "API rendered_fields");
-assert.strictEqual(apiFailClosedSerialResult.resolved, apiFailClosedSerialResult.presentation_resolved_fields);
-assert.strictEqual(apiFailClosedSerialResult.resolved_fields, apiFailClosedSerialResult.presentation_resolved_fields);
-assert.strictEqual(apiFailClosedSerialResult.rendered_fields.fields, apiFailClosedSerialResult.presentation_resolved_fields);
-assert.equal(apiFailClosedSerialResult.field_states[0].resolved_value, "#/50");
-assert.equal(apiFailClosedSerialResult.field_states[0].candidates[0].value, "#/50");
-assert.equal(apiFailClosedSerialResult.field_states[0].supporting_sources[0].observed_text, "#/50");
-assert.equal(apiFailClosedSerialResult.field_states[1].resolved_value, null);
-assert.equal(apiFailClosedSerialResult.field_states[1].candidates[0].value, null);
-
-const apiToV4FailClosedSerialResult = adaptV2ResultToV4({
-  sessionId: "v4sess-api-fail-closed-serial",
-  result: apiFailClosedSerialResult,
-  payload: { maxTitleLength: 80 },
-  routePlan: assistedRoute
-});
-assert.match(apiToV4FailClosedSerialResult.final_title, /#\/50/);
-assert.doesNotMatch(apiToV4FailClosedSerialResult.final_title, /31\/50/);
-assert.match(apiToV4FailClosedSerialResult.writer_draft.title, /#\/50/);
-assert.doesNotMatch(apiToV4FailClosedSerialResult.writer_draft.title, /31\/50/);
-assertFailClosedSerialFields(apiToV4FailClosedSerialResult.presentation_resolved_fields, "V4 presentation snapshot");
-assertFailClosedSerialFields(apiToV4FailClosedSerialResult.resolved_fields, "V4 resolved_fields");
-assertFailClosedSerialFields(apiToV4FailClosedSerialResult.legacy_v2_result.resolved_fields, "V4 legacy resolved_fields");
-assert.strictEqual(apiToV4FailClosedSerialResult.resolved_fields, apiToV4FailClosedSerialResult.presentation_resolved_fields);
-assert.strictEqual(
-  apiToV4FailClosedSerialResult.legacy_v2_result.presentation_resolved_fields,
-  apiToV4FailClosedSerialResult.presentation_resolved_fields
-);
-assert.equal(apiToV4FailClosedSerialResult.field_states.serial.value, "#/50");
-
-const apiToV4FailClosedPersistence = buildV4PersistenceRows({
-  sessionId: "v4sess-api-fail-closed-serial",
-  result: apiFailClosedSerialResult,
-  payload: { maxTitleLength: 80 }
-});
-const persistedSerialState = apiToV4FailClosedPersistence.fieldEvidenceRows.find((row) => row.field_name === "serial");
-assert.equal(persistedSerialState.field_value, "#/50");
-assert.doesNotMatch(JSON.stringify(apiToV4FailClosedPersistence.fieldEvidenceRows), /31\/50/);
-
 const v2Result = {
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",
   final_title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",
@@ -1398,15 +1034,6 @@ const v2Result = {
     serial_number: "2/3",
     grade_company: "BGS",
     card_grade: "8.5"
-  },
-  normalized_evidence: {
-    print_run_number: {
-      value: "2/3",
-      normalized_value: "2/3",
-      status: "CONFIRMED",
-      confidence: 0.96,
-      sources: [{ source_type: "OCR", observed_text: "2/3", direct_observation: true }]
-    }
   },
   candidate_application_trace: {
     applied_field_count: 3,
@@ -1605,7 +1232,7 @@ const deterministicCsmTitle = adaptV2ResultToV4({
       auto_grade: "9",
       grade_type: "CARD_AND_AUTO"
     },
-    serial_numerator_verified: null,
+    serial_numerator_verified: true,
     title_stage: v4TitleStages.L2_ASSISTED_DRAFT
   },
   payload: { maxTitleLength: 80 },
@@ -1617,7 +1244,6 @@ assert.equal(
 );
 assert.equal(deterministicCsmTitle.resolved_fields.collector_number, "164");
 assert.equal(deterministicCsmTitle.resolved_fields.surface_color, "Silver");
-assert.equal(deterministicCsmTitle.provider_result.serial_numerator_verified, null);
 assert.equal(deterministicCsmTitle.provider_result.title_reconciled_from_v4_field_graph, true);
 assert.equal(deterministicCsmTitle.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
 assert.match(deterministicCsmTitle.legacy_v2_result.model_title_suggestion, /1st Bowman/);
@@ -1896,10 +1522,10 @@ assert.equal(artifacts.feedbackEvent.correction_type, "EDIT");
 assert.equal(artifacts.rawWriterTitle, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
 assert.equal(artifacts.csmNormalization.applied, true);
 assert.equal(artifacts.feedbackEvent.title_diff.raw_writer_title, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
-assert.equal(artifacts.learningEvent.training_eligible, false);
+assert.equal(artifacts.learningEvent.training_eligible, true);
 assert.equal(artifacts.learningEvent.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_ground_truth));
-assert.equal(artifacts.learningEvent.field_level_ground_truth.length, 0);
+assert.ok(artifacts.learningEvent.field_level_ground_truth.some((row) => row.field === "player" && row.training_eligible === true));
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_diff));
 assert.equal(typeof artifacts.learningEvent.candidate_changes.candidate_count, "number");
 assert.equal(artifacts.correctedResolved.year, "2024-25");
@@ -1917,8 +1543,8 @@ const writerResolvedAbstain = buildV4FeedbackArtifacts({
 });
 assert.equal(writerResolvedAbstain.status, "EDITED");
 assert.equal(writerResolvedAbstain.feedbackEvent.generated_title, "");
-assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Autograph PSA 10");
-assert.equal(writerResolvedAbstain.learningEvent.training_eligible, false);
+assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Auto PSA 10");
+assert.equal(writerResolvedAbstain.learningEvent.training_eligible, true);
 
 const writerRejectedAbstain = buildV4FeedbackArtifacts({
   sessionId: "v4sess-writer-rejected-abstain",
@@ -1947,11 +1573,11 @@ const csmOrderedFeedback = buildV4FeedbackArtifacts({
     }
   }
 });
-assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
+assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
 assert.equal(csmOrderedFeedback.rawWriterTitle, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(csmOrderedFeedback.csmNormalization.applied, true);
 assert.equal(csmOrderedFeedback.feedbackEvent.title_diff.raw_writer_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
-assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
+assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
 assert.equal(
   csmOrderedFeedback.learningEvent.feedback_training_event.writer_raw_title,
   "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best"
@@ -1972,8 +1598,7 @@ const rejectedFeedback = buildV4FeedbackArtifacts({
     }
   }
 });
-assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "");
-assert.equal(rejectedFeedback.feedbackEvent.writer_raw_title, "wrong loose title");
+assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "wrong loose title");
 assert.equal(rejectedFeedback.csmNormalization.skipped_reason, "REJECTED_FEEDBACK");
 assert.equal(rejectedFeedback.learningEvent.training_eligible, false);
 
@@ -2001,106 +1626,6 @@ const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role"
 };
-
-const fastScoutWriteCalls = [];
-const fastScoutWrite = await persistV4FastScoutCache({
-  cache: {
-    id: "fast-scout-tenant-a",
-    tenant_id: "tenant-a",
-    asset_id: "asset-1",
-    scout_fields: { serial_number: "2/3" }
-  },
-  env,
-  fetchImpl: async (url, init = {}) => {
-    fastScoutWriteCalls.push({ url: new URL(String(url)), body: JSON.parse(init.body) });
-    return {
-      ok: true,
-      status: 201,
-      text: async () => JSON.stringify([JSON.parse(init.body)])
-    };
-  }
-});
-assert.equal(fastScoutWrite.saved, true);
-assert.equal(fastScoutWrite.cache_backend, "v4_fast_scout_cache");
-assert.equal(fastScoutWriteCalls[0].body.tenant_id, "tenant-a");
-assert.equal(fastScoutWriteCalls[0].url.searchParams.get("on_conflict"), "id");
-
-const fastScoutFallbackCalls = [];
-const fastScoutFallback = await persistV4FastScoutCache({
-  cache: {
-    id: "fast-scout-fallback-tenant-a",
-    tenant_id: "tenant-a",
-    asset_id: "asset-1",
-    scout_fields: { grade: "PSA 10" }
-  },
-  env,
-  fetchImpl: async (url, init = {}) => {
-    const parsed = new URL(String(url));
-    fastScoutFallbackCalls.push({ url: parsed, body: JSON.parse(init.body) });
-    if (parsed.pathname.endsWith("/v4_fast_scout_cache")) {
-      return { ok: false, status: 404, text: async () => "missing table" };
-    }
-    return {
-      ok: true,
-      status: 201,
-      text: async () => JSON.stringify([JSON.parse(init.body)])
-    };
-  }
-});
-assert.equal(fastScoutFallback.saved, true);
-assert.equal(fastScoutFallback.cache_backend, "v4_preingestion_bundles");
-assert.equal(fastScoutFallbackCalls[1].body.tenant_id, "tenant-a");
-assert.equal(fastScoutFallbackCalls[1].body.bundle.cache.tenant_id, "tenant-a");
-assert.equal(fastScoutFallbackCalls[1].url.searchParams.get("on_conflict"), "tenant_id,id");
-
-const fastScoutReadCalls = [];
-const fastScoutRead = await readV4FastScoutCache({
-  cacheId: "fast-scout-fallback-tenant-a",
-  tenantId: "tenant-a",
-  env,
-  fetchImpl: async (url) => {
-    const parsed = new URL(String(url));
-    fastScoutReadCalls.push(parsed);
-    const payload = parsed.pathname.endsWith("/v4_fast_scout_cache")
-      ? []
-      : [{
-          id: "fast-scout-fallback-tenant-a",
-          bundle: { cache: { id: "fast-scout-fallback-tenant-a", tenant_id: "tenant-a" } },
-          status: "FAST_SCOUT_CACHE"
-        }];
-    return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
-  }
-});
-assert.equal(fastScoutRead.ok, true);
-assert.equal(fastScoutRead.row.tenant_id, "tenant-a");
-assert.equal(fastScoutReadCalls.length, 2);
-assert.ok(fastScoutReadCalls.every((url) => url.searchParams.get("tenant_id") === "eq.tenant-a"));
-
-let tenantlessFastScoutFetches = 0;
-assert.deepEqual(
-  await persistV4FastScoutCache({
-    cache: { id: "tenantless-cache" },
-    env,
-    fetchImpl: async () => {
-      tenantlessFastScoutFetches += 1;
-      throw new Error("tenantless write must not reach Supabase");
-    }
-  }),
-  { saved: false, error: "missing_tenant_id" }
-);
-assert.deepEqual(
-  await readV4FastScoutCache({
-    cacheId: "tenantless-cache",
-    env,
-    fetchImpl: async () => {
-      tenantlessFastScoutFetches += 1;
-      throw new Error("tenantless read must not reach Supabase");
-    }
-  }),
-  { ok: false, row: null, error: "missing_tenant_id" }
-);
-assert.equal(tenantlessFastScoutFetches, 0);
-
 await createV4RecognitionSession({
   sessionId: "v4sess-test",
   payload: { asset_id: "asset-1" },
@@ -2175,7 +1700,6 @@ await persistV4LearningEvent({
 const feedbackTransactionCalls = [];
 const feedbackTransaction = await persistV4WriterFeedbackTransaction({
   sessionId: "v4sess-test",
-  tenantId: "tenant-test",
   operatorId: "operator-test",
   status: artifacts.status,
   feedbackEvent: artifacts.feedbackEvent,
@@ -2198,9 +1722,8 @@ const feedbackTransaction = await persistV4WriterFeedbackTransaction({
 assert.equal(feedbackTransaction.saved, true);
 assert.ok(feedbackTransactionCalls[0].url.endsWith("/rest/v1/rpc/persist_v4_writer_feedback_transaction"));
 assert.equal(feedbackTransactionCalls[0].body.p_session_id, "v4sess-test");
-assert.equal(feedbackTransactionCalls[0].body.p_tenant_id, "tenant-test");
 assert.equal(feedbackTransactionCalls[0].body.p_feedback_event.schema_version, "v4-recognition-session-v1");
-assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, false);
+assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, true);
 const health = await checkV4Tables({ env, fetchImpl: fakeFetch });
 assert.equal(health.configured, true);
 assert.ok(writes.some((write) => write.table === "v4_recognition_sessions"));

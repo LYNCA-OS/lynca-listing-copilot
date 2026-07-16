@@ -1,19 +1,10 @@
+import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import {
   cookieName,
-  createListingSessionToken,
-  listingSessionCookieIsSecure,
-  requestHasJsonContentType,
-  sameOriginBrowserRequest
+  createSignedSessionToken,
+  timingSafeStringEqual
 } from "../lib/listing-session.mjs";
-import {
-  authenticatePassword,
-  isTenantAuthError,
-  listTenantChoicesForAuthUser,
-  publicTenantAuthError,
-  resolveTenantIdentityForAuthUser
-} from "../lib/tenant/index.mjs";
 
 const maxAgeSeconds = 60 * 60 * 24 * 7;
 const maxLoginBodyBytes = 16 * 1024;
@@ -26,8 +17,18 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function normalizeUsername(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isHttps(req) {
+  const host = String(req.headers.host || "");
+  return req.headers["x-forwarded-proto"] === "https" ||
+    (!host.startsWith("localhost") && !host.startsWith("127.0.0.1"));
+}
+
 function serializeCookie(name, value, req) {
-  const secure = listingSessionCookieIsSecure(req) ? "; Secure" : "";
+  const secure = isHttps(req) ? "; Secure" : "";
   return `${name}=${value}; HttpOnly; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secure}`;
 }
 
@@ -52,20 +53,9 @@ function readBody(req) {
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/login" });
   if (req.method !== "POST") {
     res.setHeader("allow", "POST");
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
-    return;
-  }
-
-  if (!sameOriginBrowserRequest(req, { allowMissingBrowserContext: true })) {
-    sendJson(res, 403, { ok: false, message: "Forbidden" });
-    return;
-  }
-
-  if (!requestHasJsonContentType(req)) {
-    sendJson(res, 415, { ok: false, message: "Content-Type must be application/json." });
     return;
   }
 
@@ -76,9 +66,11 @@ export default async function handler(req, res) {
     message: "Too many login attempts. Please wait before trying again."
   })) return;
 
+  const expectedUser = process.env.METAVERSE_USERNAME;
+  const expectedPassword = process.env.METAVERSE_PASSWORD;
   const authSecret = process.env.METAVERSE_AUTH_SECRET;
 
-  if (!authSecret) {
+  if (!expectedUser || !expectedPassword || !authSecret) {
     sendJson(res, 500, { ok: false, message: "Listing auth is not configured." });
     return;
   }
@@ -95,51 +87,23 @@ export default async function handler(req, res) {
     return;
   }
 
-  let authenticated = null;
-  try {
-    authenticated = await authenticatePassword({
-      email: credentials.email || credentials.username,
-      username: credentials.username,
-      password: credentials.password
-    });
-    const identity = authenticated.provider === "legacy"
-      ? authenticated
-      : await resolveTenantIdentityForAuthUser({
-        authUserId: authenticated.authUserId,
-        tenantId: credentials.tenant_id || credentials.tenantId
-      });
-    const token = createListingSessionToken(identity, authSecret, {
-      maxAgeMs: maxAgeSeconds * 1000
-    });
-    bindProductionRequestContext(res, identity);
+  const username = normalizeUsername(credentials.username);
+  const password = String(credentials.password ?? "");
 
-    res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
-    sendJson(res, 200, {
-      ok: true,
-      tenant_id: identity.tenantId,
-      role: identity.role
-    });
-  } catch (error) {
-    let tenantChoices = [];
-    if (isTenantAuthError(error) && error.code === "TENANT_SELECTION_REQUIRED") {
-      try {
-        if (authenticated?.authUserId) {
-          tenantChoices = await listTenantChoicesForAuthUser({ authUserId: authenticated.authUserId });
-        }
-      } catch {
-        tenantChoices = [];
-      }
-    }
-    const statusCode = isTenantAuthError(error) ? error.statusCode : 503;
-    const payload = publicTenantAuthError(error);
-    sendJson(res, statusCode, {
-      ...payload,
-      message: error?.code === "INVALID_CREDENTIALS"
-        ? "账号或密码不正确。"
-        : error?.code === "TENANT_SELECTION_REQUIRED"
-          ? "请选择要进入的客户空间。"
-          : payload.message,
-      tenants: tenantChoices
-    });
+  const usernameMatches = timingSafeStringEqual(username, normalizeUsername(expectedUser));
+  const passwordMatches = timingSafeStringEqual(password, expectedPassword);
+  if (!usernameMatches || !passwordMatches) {
+    sendJson(res, 401, { ok: false, message: "账号或密码不正确。" });
+    return;
   }
+
+  const token = createSignedSessionToken({
+    user: normalizeUsername(expectedUser),
+    sid: crypto.randomUUID(),
+    iat: Date.now(),
+    exp: Date.now() + maxAgeSeconds * 1000
+  }, authSecret);
+
+  res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
+  sendJson(res, 200, { ok: true });
 }

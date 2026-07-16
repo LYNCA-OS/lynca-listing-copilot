@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
-import { runtimeMigrationAuth } from "../lib/platform-admin-auth.mjs";
+import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
 
 export const config = {
   maxDuration: 300
@@ -21,8 +21,37 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function bearerToken(req) {
+  return cleanText(req.headers?.authorization || req.headers?.Authorization)
+    .replace(/^Bearer\s+/i, "")
+    .trim();
+}
+
+function adminAuth(req, env = process.env) {
+  const expected = cleanText(env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN || env.VERCEL_AUTOMATION_BYPASS_SECRET);
+  const token = bearerToken(req);
+  if (expected && token && token === expected) return { ok: true, mode: "internal_token" };
+
+  const cookies = parseCookies(req.headers?.cookie);
+  if (readSignedSession(cookies[cookieName], env.METAVERSE_AUTH_SECRET)) {
+    return { ok: true, mode: "session" };
+  }
+  return { ok: false, mode: "" };
+}
+
 function dbUrl(env = process.env) {
   return cleanText(env.POSTGRES_URL_NON_POOLING || env.POSTGRES_URL);
+}
+
+function connectionStringForPg(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.searchParams.delete("sslmode");
+    parsed.searchParams.delete("ssl");
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
 }
 
 async function verify(client) {
@@ -56,9 +85,9 @@ export default async function handler(req, res) {
     return;
   }
 
-  const auth = runtimeMigrationAuth(req);
+  const auth = adminAuth(req);
   if (!auth.ok) {
-    sendJson(res, auth.statusCode, { ok: false, error: auth.error });
+    sendJson(res, 401, { ok: false, error: "unauthorized" });
     return;
   }
 
@@ -68,7 +97,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const client = new pg.Client({ connectionString });
+  const client = new pg.Client({
+    connectionString: connectionStringForPg(connectionString),
+    ssl: { rejectUnauthorized: false }
+  });
   try {
     const sql = await readFile(migrationPath, "utf8");
     await client.connect();

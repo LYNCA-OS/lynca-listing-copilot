@@ -5,13 +5,9 @@ import {
   scoutHasFinalizeAnchors
 } from "../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 
-const baseEnv = {
+const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
-};
-const env = {
-  ...baseEnv,
-  ENABLE_V4_EXACT_ANCHOR_FINALIZE: "true"
 };
 
 const scoutResult = {
@@ -24,11 +20,6 @@ const scoutResult = {
     print_run_denominator: "5",
     serial_number: "3/5",
     surface_color: "Red"
-  },
-  evidence: {
-    players: {
-      sources: [{ source_type: "VISION_MODEL", source_image_id: "current-card-front" }]
-    }
   }
 };
 
@@ -77,9 +68,8 @@ assert.equal(
   "formal anchor router may use year + product + printed card number"
 );
 
-// Unique strict-tier hit -> finalized only after explicit writer enablement
-// and unified policy admission. Subject and instance fields remain owned by
-// the current-image scout; support-only catalog fields do not become output.
+// Unique strict-tier hit -> finalized, catalog identity merged, instance
+// fields (serial from the current image) preserved and never overwritten.
 const finalized = await maybeFinalizeL1FromExactAnchor({
   scoutResult,
   env,
@@ -89,35 +79,13 @@ assert.equal(finalized.finalized, true);
 assert.equal(finalized.reason, "exact_anchor_catalog_finalized");
 assert.match(finalized.title, /Bowman Chrome/i);
 assert.match(finalized.title, /Jesus Made/i);
-assert.equal(finalized.resolved_fields.set, undefined);
-assert.deepEqual(finalized.resolved_fields.players, ["Jesus Made"]);
+assert.equal(finalized.resolved_fields.set, "Spotlights");
 assert.equal(finalized.resolved_fields.serial_number, "3/5");
-assert.equal(finalized.candidate_policy.passed, true);
-assert.equal(finalized.candidate_policy.current_image_subject_evidence, true);
-assert.ok(finalized.candidate_policy.can_apply_fields.includes("product"));
-assert.ok(finalized.candidate_policy.support_only_fields.includes("set"));
-assert.ok(finalized.candidate_policy.forbidden_fields.includes("players"));
 assert.equal(finalized.candidate.candidate_identity_id, "11111111-1111-1111-1111-111111111111");
 assert.equal(finalized.catalog_lookup_attempted, true);
 assert.equal(finalized.catalog_candidate_count, 1);
 assert.equal(finalized.trusted_candidate_count, 1);
 assert.equal(finalized.eligible_candidate_count, 1);
-
-// With no explicit writer enablement, the same candidate remains measurable
-// in shadow but cannot populate writer-visible title/resolved fields.
-const defaultShadow = await maybeFinalizeL1FromExactAnchor({
-  scoutResult,
-  env: baseEnv,
-  fetchImpl: fetchReturning([catalogRow()])
-});
-assert.equal(defaultShadow.finalized, false);
-assert.equal(defaultShadow.reason, "writer_fast_lane_shadow_only");
-assert.equal(defaultShadow.writer_fast_lane_mode, "SHADOW_ONLY");
-assert.equal(defaultShadow.candidate_policy.passed, true);
-assert.equal(defaultShadow.shadow.eligible, true);
-assert.match(defaultShadow.shadow.proposed_title, /Jesus Made/i);
-assert.equal(defaultShadow.title, undefined);
-assert.equal(defaultShadow.resolved_fields, undefined);
 
 const selfExcluded = await maybeFinalizeL1FromExactAnchor({
   scoutResult,
@@ -143,8 +111,7 @@ const secretKeyFinalized = await maybeFinalizeL1FromExactAnchor({
   scoutResult,
   env: {
     SUPABASE_URL: "https://supabase.test",
-    SUPABASE_SECRET_KEY: "test-secret-key",
-    ENABLE_V4_EXACT_ANCHOR_FINALIZE: "true"
+    SUPABASE_SECRET_KEY: "test-secret-key"
   },
   fetchImpl: async (_url, options = {}) => {
     secretKeyAuthorization = options.headers?.authorization || "";
@@ -167,13 +134,10 @@ assert.equal(untrusted.catalog_candidate_count, 1);
 assert.equal(untrusted.trusted_candidate_count, 0);
 assert.equal(untrusted.eligible_candidate_count, 0);
 
-// A direct TCG natural key may finalize only when the current image also
-// supplies subject evidence. The reference subject remains forbidden output.
+// A direct TCG natural key can identify one official/reviewed catalog row
+// without requiring subject/year to be read first.
 const tcgFinalized = await maybeFinalizeL1FromExactAnchor({
-  scoutResult: {
-    resolved_fields: { tcg_card_number: "OP01-120", players: ["Shanks"] },
-    evidence: { players: { sources: [{ source_type: "VISION_MODEL" }] } }
-  },
+  scoutResult: { resolved_fields: { tcg_card_number: "OP01-120" } },
   env,
   fetchImpl: fetchReturning([catalogRow({
     canonical_title: "2022 One Piece Romance Dawn Shanks OP01-120 SEC",
@@ -192,44 +156,17 @@ const tcgFinalized = await maybeFinalizeL1FromExactAnchor({
 });
 assert.equal(tcgFinalized.finalized, true, JSON.stringify(tcgFinalized));
 assert.equal(tcgFinalized.resolved_fields.players[0], "Shanks");
-assert.ok(tcgFinalized.candidate_policy.forbidden_fields.includes("players"));
 assert.equal(tcgFinalized.resolved_fields.serial_number, undefined, "instance fields must never be copied from catalog");
 
-const tcgSubjectMissing = await maybeFinalizeL1FromExactAnchor({
-  scoutResult: { resolved_fields: { tcg_card_number: "OP01-120" } },
-  env,
-  fetchImpl: fetchReturning([catalogRow({
-    canonical_title: "2022 One Piece Romance Dawn Shanks OP01-120 SEC",
-    retrieval_status: "registry",
-    source_type: "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
-    fields: {
-      year: "2022",
-      ip: "One Piece",
-      product: "Romance Dawn",
-      players: ["Shanks"],
-      collector_number: "OP01-120",
-      rarity: "SEC"
-    }
-  })]),
-  policy: { allow_tcg_code_only: true, allow_catalog_finalize: true, allow_cert_lane: false }
-});
-assert.equal(tcgSubjectMissing.finalized, false);
-assert.equal(tcgSubjectMissing.reason, "current_image_subject_evidence_required");
-assert.equal(tcgSubjectMissing.candidate_policy.passed, true);
-assert.equal(tcgSubjectMissing.shadow.resolved_fields.players, undefined);
-
-// A non-direct subject hint is not current-image proof. Sports checklist
-// natural keys remain useful for shadow validation, but cannot populate a
-// writer title until the dossier records direct subject evidence.
+// Sports checklist natural key: year + product hierarchy + printed card
+// number can identify a unique approved row before the subject OCR settles.
 const sportsProductFinalized = await maybeFinalizeL1FromExactAnchor({
   scoutResult: {
     resolved_fields: {
       year: "2024",
       product: "Panini Contenders",
-      collector_number: "54",
-      players: ["Jaren Jackson"]
-    },
-    anchor_dossier: { context: { subject_direct: false } }
+      collector_number: "54"
+    }
   },
   env,
   fetchImpl: fetchReturning([catalogRow({
@@ -249,30 +186,9 @@ const sportsProductFinalized = await maybeFinalizeL1FromExactAnchor({
     allow_cert_lane: false
   }
 });
-assert.equal(sportsProductFinalized.finalized, false, JSON.stringify(sportsProductFinalized));
-assert.equal(sportsProductFinalized.reason, "current_image_subject_evidence_required");
-assert.deepEqual(sportsProductFinalized.shadow.resolved_fields.players, ["Jaren Jackson"]);
+assert.equal(sportsProductFinalized.finalized, true, JSON.stringify(sportsProductFinalized));
+assert.equal(sportsProductFinalized.resolved_fields.players[0], "Jaren Jackson");
 assert.equal(sportsProductFinalized.catalog_lookup_attempted, true);
-
-// Any reference instance-copy signal blocks the entire writer fast lane even
-// though the packet sanitizer can remove the unsafe value for other lanes.
-const instanceCopyViolation = await maybeFinalizeL1FromExactAnchor({
-  scoutResult,
-  env,
-  fetchImpl: fetchReturning([catalogRow({
-    canonical_title: "2025 Bowman Chrome Jesus Made Spotlights BS-4 2/5",
-    fields: {
-      ...catalogRow().fields,
-      serial_number: "2/5",
-      print_run_numerator: "2"
-    }
-  })])
-});
-assert.equal(instanceCopyViolation.finalized, false);
-assert.equal(instanceCopyViolation.reason, "reference_instance_copy_violation");
-assert.ok(instanceCopyViolation.candidate_policy.reference_instance_copy_violation_count > 0);
-assert.ok(instanceCopyViolation.candidate_policy.reference_instance_copy_violation_fields.includes("serial_number"));
-assert.equal(instanceCopyViolation.shadow.eligible, false);
 
 // Two strict-tier candidates -> ambiguous, no finalize.
 const ambiguous = await maybeFinalizeL1FromExactAnchor({

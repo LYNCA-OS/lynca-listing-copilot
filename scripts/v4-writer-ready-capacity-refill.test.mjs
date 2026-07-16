@@ -8,13 +8,11 @@ import {
 
 const env = {
   V4_JOB_WORKER_SECRET: "worker-secret",
-  V4_WRITER_READY_CAPACITY_REFILL_ENABLED: "true",
-  V4_INTERNAL_BASE_URL: "https://listing.example.test"
+  V4_WRITER_READY_CAPACITY_REFILL_ENABLED: "true"
 };
 const req = {
   headers: {
-    host: "attacker.example",
-    "x-forwarded-host": "attacker.example",
+    "x-forwarded-host": "listing.example.test",
     "x-forwarded-proto": "https"
   }
 };
@@ -41,8 +39,6 @@ const triggered = triggerWriterReadyCapacityRefill(req, {
 });
 assert.equal(triggered.triggered, true);
 assert.equal(request.url, "https://listing.example.test/api/v4/listing-job-worker");
-assert.doesNotMatch(request.url, /attacker\.example/);
-assert.equal(request.init.headers["x-lynca-worker-secret"], env.V4_JOB_WORKER_SECRET);
 assert.deepEqual(JSON.parse(request.init.body), {
   lane: "background",
   tenant_id: null,
@@ -92,14 +88,5 @@ assert.deepEqual(triggerWriterReadyCapacityRefill(req, {
   capacityRelease: { released: true },
   env: { ...env, V4_WRITER_READY_CAPACITY_REFILL_ENABLED: "false" }
 }), { triggered: false, reason: "capacity_refill_disabled" });
-
-assert.deepEqual(triggerWriterReadyCapacityRefill(req, {
-  payload: { v4_queue_job_id: "job-4" },
-  capacityRelease: { released: true },
-  env: {
-    V4_JOB_WORKER_SECRET: "worker-secret",
-    V4_WRITER_READY_CAPACITY_REFILL_ENABLED: "true"
-  }
-}), { triggered: false, reason: "trusted_internal_origin_missing" });
 
 console.log("v4 writer-ready capacity refill tests passed");

@@ -118,7 +118,6 @@ export async function buildReviewedTitleBlindEval({
   evaluationSampleMode = "FRESH_GENERALIZATION",
   reuseReason = "",
   reuseScopeId = "",
-  writeOutputs = true,
   now = new Date()
 } = {}) {
   const source = await readStructuredFile(sourcePath);
@@ -183,9 +182,7 @@ export async function buildReviewedTitleBlindEval({
     selectedItemIds: selected.map((item) => item.source_feedback_id),
     exclusionSourceCount: excludePaths.length,
     reuseReason: reuseReason || (allItems ? "Exhaustive replay of every image-backed reviewed card currently in the internal library." : ""),
-    reuseScopeId: reuseScopeId || (allItems ? "supabase-reviewed-image-inventory" : ""),
-    sampleSeed: selectionSeed,
-    selectionStrategy: "seeded_sha256_source_feedback_id"
+    reuseScopeId: reuseScopeId || (allItems ? "supabase-reviewed-image-inventory" : "")
   });
   const dataset = {
     schema_version: "reviewed-title-blind-eval-v1",
@@ -218,10 +215,8 @@ export async function buildReviewedTitleBlindEval({
     sealed_labels_path: labelsOutPath,
     items
   };
-  if (writeOutputs) {
-    await writeJson(outPath, dataset);
-    await writeJsonl(labelsOutPath, labels);
-  }
+  await writeJson(outPath, dataset);
+  await writeJsonl(labelsOutPath, labels);
   return { dataset, labels };
 }
 

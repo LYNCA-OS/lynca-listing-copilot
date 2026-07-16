@@ -1,8 +1,4 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "git": {
-    "deploymentEnabled": false
-  },
   "cleanUrls": true,
   "trailingSlash": false,
   "regions": [
@@ -24,14 +20,6 @@
     {
       "source": "/login.html",
       "destination": "/app/login"
-    },
-    {
-      "source": "/ops",
-      "destination": "/app/ops"
-    },
-    {
-      "source": "/ops.html",
-      "destination": "/app/ops"
     }
   ],
   "headers": [
@@ -83,9 +71,6 @@
     },
     "api/v4/listing-job-pump.js": {
       "maxDuration": 300
-    },
-    "api/v4/listing-job-assign.js": {
-      "maxDuration": 60
     },
     "api/v4/fast-scout-prewarm.js": {
       "maxDuration": 300

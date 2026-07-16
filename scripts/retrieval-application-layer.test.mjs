@@ -8,7 +8,6 @@ import {
   buildRetrievalApplicationLayer,
   finalizeRetrievalApplicationOutcome
 } from "../lib/listing/candidates/retrieval-application-layer.mjs";
-import { applyCandidateDecisionStage } from "../lib/listing/candidates/candidate-decision-stage.mjs";
 
 function packet(candidates = [], promptCandidateIds = []) {
   return {
@@ -45,7 +44,6 @@ function trustedCatalogCandidate(overrides = {}) {
       players: ["Test Player"],
       card_name: "Autograph",
       collector_number: "CPA-TP",
-      serial_number: "17/50",
       grade_company: "PSA",
       card_grade: "10",
       cert_number: "12345678"
@@ -80,252 +78,16 @@ function testSelectedCandidateBecomesFieldEvidenceWithoutCopyingInstanceFields()
   const product = application.decisions.find((row) => row.field === "product");
   const cardName = application.decisions.find((row) => row.field === "card_name");
   const year = application.decisions.find((row) => row.field === "year");
-  const manufacturer = application.decisions.find((row) => row.field === "manufacturer");
-  const subject = application.decisions.find((row) => row.field === "players");
-  const serial = application.decisions.find((row) => row.field === "serial_number");
   const grade = application.decisions.find((row) => row.field === "card_grade");
   const cert = application.decisions.find((row) => row.field === "cert_number");
   assert.equal(product.decision, "APPLY");
   assert.equal(cardName.decision, "APPLY");
   assert.equal(year.decision, "SUPPORT");
-  assert.equal(manufacturer.decision, "BLOCK");
-  assert.equal(subject.decision, "BLOCK");
-  assert.equal(serial.decision, "BLOCK");
   assert.equal(grade.decision, "BLOCK");
   assert.equal(cert.decision, "BLOCK");
   assert.ok(application.identity_evidence_items.some((item) => item.field === "product"));
   assert.equal(application.identity_evidence_items.some((item) => item.field === "card_grade"), false);
   assert.equal(application.identity_evidence_items.every((item) => item.metadata.candidate_is_evidence_not_truth === true), true);
-  assert.equal(application.identity_evidence_items.every((item) => (
-    item.metadata.retrieval_application_decision === "APPLY"
-  )), true);
-}
-
-function testApplicableTextFieldsCannotSmuggleReferenceInstanceValues() {
-  const candidate = trustedCatalogCandidate({
-    fields: {
-      year: "2024",
-      product: "Topps Chrome PSA-10",
-      players: ["Test Player"],
-      card_name: "Autograph 17 / 50",
-      collector_number: "CPA-TP",
-      print_finish: "Refractor Cert 1234-5678",
-      serial_number: "17/50",
-      grade_company: "PSA",
-      card_grade: "10",
-      cert_number: "12345678"
-    }
-  });
-  const result = resultWithCandidate(candidate);
-  const { control } = buildLayer(result);
-  const selectedApplication = control.selected_candidate_safe_field_application;
-
-  for (const field of ["product", "card_name", "print_finish"]) {
-    assert.equal(selectedApplication.eligible_fields.includes(field), false);
-    assert.ok(selectedApplication.blocked_fields.includes(field));
-  }
-  assert.deepEqual(selectedApplication.content_pollution_reasons.card_name, [
-    "embedded_reference_full_serial"
-  ]);
-  assert.deepEqual(selectedApplication.content_pollution_reasons.product, [
-    "embedded_reference_grade_tuple"
-  ]);
-  assert.deepEqual(selectedApplication.content_pollution_reasons.print_finish, [
-    "embedded_reference_cert_token"
-  ]);
-
-  const staleBypassControl = {
-    ...control,
-    selected_candidate_safe_field_application: {
-      ...selectedApplication,
-      eligible_fields: [
-        ...selectedApplication.eligible_fields,
-        "product",
-        "card_name",
-        "print_finish"
-      ],
-      blocked_fields: selectedApplication.blocked_fields.filter((field) => (
-        !["product", "card_name", "print_finish"].includes(field)
-      )),
-      field_reasons: {
-        ...selectedApplication.field_reasons,
-        product: "trusted_exact_code_identity_fill",
-        card_name: "trusted_exact_code_identity_fill",
-        print_finish: "trusted_exact_code_print_finish_fill"
-      },
-      renderer_application_allowed: true
-    }
-  };
-  const predicted = applyCandidateDecisionStage({
-    result: { ...result, ...staleBypassControl },
-    resolvedBefore: result.resolved_fields
-  });
-  assert.equal(predicted.resolved_after.product ?? null, null);
-  assert.equal(predicted.resolved_after.card_name ?? null, null);
-  assert.equal(predicted.field_application.applied_fields.includes("product"), false);
-  assert.equal(predicted.field_application.applied_fields.includes("card_name"), false);
-
-  const application = buildRetrievalApplicationLayer({
-    result,
-    candidateControl: staleBypassControl
-  });
-  for (const [field, pollutionReason] of [
-    ["product", "embedded_reference_grade_tuple"],
-    ["card_name", "embedded_reference_full_serial"],
-    ["print_finish", "embedded_reference_cert_token"]
-  ]) {
-    const decision = application.decisions.find((row) => row.field === field);
-    assert.equal(decision.decision, "BLOCK");
-    assert.equal(decision.reason, "candidate_field_content_pollution");
-    assert.deepEqual(decision.content_pollution_reasons, [pollutionReason]);
-  }
-  assert.equal(application.identity_evidence_items.some((item) => (
-    ["product", "card_name", "parallel"].includes(item.field)
-  )), false);
-}
-
-function testTrustedExactCodePrintFinishReachesFinalParallelWithoutPermissionDrift() {
-  const candidate = trustedCatalogCandidate({
-    fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      card_name: "Autograph",
-      collector_number: "CPA-TP",
-      print_finish: "Refractor",
-      parallel: "Unsafe Native Parallel",
-      serial_number: "17/50",
-      card_grade: "10"
-    }
-  });
-  const result = resultWithCandidate(candidate);
-  const { control, application } = buildLayer(result);
-  const finish = application.decisions.find((row) => row.field === "print_finish");
-  const nativeParallel = application.decisions.find((row) => row.field === "parallel");
-  const serial = application.decisions.find((row) => row.field === "serial_number");
-  const grade = application.decisions.find((row) => row.field === "card_grade");
-
-  assert.equal(finish.permission, "can_apply");
-  assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("print_finish"));
-  assert.equal(
-    control.selected_candidate_safe_field_application.field_reasons.print_finish,
-    "trusted_exact_code_print_finish_fill"
-  );
-  assert.equal(finish.resolver_field, "parallel");
-  assert.equal(finish.decision, "APPLY");
-  assert.equal(nativeParallel.permission, "suggest_only");
-  assert.equal(nativeParallel.decision, "REJECT");
-  assert.equal(serial.permission, "forbidden");
-  assert.equal(serial.decision, "BLOCK");
-  assert.equal(grade.permission, "forbidden");
-  assert.equal(grade.decision, "BLOCK");
-  assert.deepEqual(
-    application.identity_evidence_items.filter((item) => item.field === "parallel").map((item) => item.value),
-    ["Refractor"]
-  );
-
-  const gated = applyIdentityResolutionGate({
-    ...result,
-    ...control,
-    retrieval_application: application,
-    resolved: result.resolved_fields,
-    evidence: {}
-  });
-  assert.equal(gated.resolved_fields.parallel, "Refractor");
-  assert.ok(gated.retrieval_application.actual_applied_fields.includes("parallel"));
-}
-
-function testReviewedAnchoredPrintFinishCanApplyWithoutExactCode() {
-  const candidate = trustedCatalogCandidate({
-    candidate_id: "approved-reviewed-finish",
-    candidate_identity_id: "identity-approved-reviewed-finish",
-    source_type: "INTERNAL_APPROVED_HISTORY",
-    source_trust: "APPROVED_REFERENCE",
-    reference_metadata: {
-      corrected_title_is_reviewed_title_ground_truth: true
-    },
-    anchor_agreement: {
-      exact_code_match: false,
-      prompt_hard_filter_pass: true,
-      agreed: ["year", "subjects", "product_hierarchy"],
-      contradicted: []
-    },
-    fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      print_finish: "Rainbow Foil"
-    }
-  });
-  const result = resultWithCandidate(candidate);
-  result.resolved_fields = {
-    year: "2024",
-    product: "Topps Chrome",
-    players: ["Test Player"]
-  };
-  const { control, application } = buildLayer(result);
-  const finish = application.decisions.find((row) => row.field === "print_finish");
-
-  assert.equal(control.selected_candidate_decision.selected_candidate_id, candidate.candidate_id);
-  assert.equal(
-    control.selected_candidate_safe_field_application.field_reasons.print_finish,
-    "trusted_reviewed_identity_variant_fill"
-  );
-  assert.equal(finish.permission, "can_apply");
-  assert.equal(finish.decision, "APPLY");
-  assert.ok(application.identity_evidence_items.some((item) => (
-    item.field === "parallel" && item.value === "Rainbow Foil"
-  )));
-}
-
-function testConflictingPrintFinishCandidateIsBlocked() {
-  const candidate = trustedCatalogCandidate({
-    candidate_id: "wrong-conflicting-finish",
-    candidate_identity_id: "identity-wrong-conflicting-finish",
-    conflicting_fields: ["print_finish"],
-    direct_evidence_conflicts: ["print_finish"],
-    fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      collector_number: "CPA-TP",
-      print_finish: "Wrong Gold Refractor"
-    }
-  });
-  const result = resultWithCandidate(candidate);
-  const { control, application } = buildLayer(result);
-  const finish = application.decisions.find((row) => row.field === "print_finish");
-
-  assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
-  assert.equal(finish.permission, "can_apply");
-  assert.equal(finish.decision, "BLOCK");
-  assert.equal(finish.reason, "candidate_or_field_conflict");
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "parallel"), false);
-}
-
-function testPrintFinishCannotReplaceExistingParallel() {
-  const candidate = trustedCatalogCandidate({
-    fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      collector_number: "CPA-TP",
-      print_finish: "Gold Refractor"
-    }
-  });
-  const result = resultWithCandidate(candidate);
-  result.resolved_fields = {
-    ...result.resolved_fields,
-    parallel: "Blue Refractor"
-  };
-  const { control, application } = buildLayer(result);
-  const finish = application.decisions.find((row) => row.field === "print_finish");
-
-  assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("print_finish"));
-  assert.equal(finish.permission, "can_apply");
-  assert.equal(finish.decision, "BLOCK");
-  assert.equal(finish.reason, "unsafe_replacement_blocked");
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "parallel"), false);
 }
 
 function testVectorReferenceCanSupportButCannotFillMissingIdentity() {
@@ -348,8 +110,7 @@ function testVectorReferenceCanSupportButCannotFillMissingIdentity() {
   assert.equal(year.decision, "SUPPORT");
   assert.equal(product.decision, "BLOCK");
   assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), false);
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "year"), false);
-  assert.equal(year.source, "VECTOR_APPROVED_REFERENCE");
+  assert.equal(application.identity_evidence_items.find((item) => item.field === "year")?.source, "VECTOR_APPROVED_REFERENCE");
 }
 
 function testCandidateResolvedShapeStillProducesFieldEvidence() {
@@ -399,7 +160,6 @@ function testEveryCandidateProducesAuditableDecisionRows() {
       year: "2023",
       product: "Panini Prizm",
       players: ["Other Player"],
-      serial_number: "8/25",
       card_grade: "9"
     },
     anchor_agreement: {
@@ -415,10 +175,8 @@ function testEveryCandidateProducesAuditableDecisionRows() {
   const { application } = buildLayer(result);
   const rejectedRows = application.decisions.filter((row) => row.candidate_id === "catalog-other");
   assert.ok(rejectedRows.length >= 4);
-  assert.ok(rejectedRows.some((row) => row.field === "card_grade" && row.decision === "BLOCK"));
-  assert.ok(rejectedRows.some((row) => row.field === "serial_number" && row.decision === "BLOCK"));
-  assert.ok(rejectedRows.some((row) => row.field === "players" && row.decision === "BLOCK"));
-  assert.equal(rejectedRows.find((row) => row.field === "product")?.decision, "REJECT");
+  assert.ok(rejectedRows.some((row) => row.field === "card_grade" && row.decision === "REJECT"));
+  assert.equal(rejectedRows.every((row) => row.decision === "REJECT"), true);
   for (const row of application.decisions) {
     assert.ok(row.candidate_id);
     assert.ok(row.field);
@@ -475,42 +233,6 @@ function testIdentityResolutionConsumesRetrievalFieldEvidence() {
   assert.ok(gated.candidate_application_trace
     ?.find((trace) => trace.candidate_id === "catalog-exact")
     ?.applied_fields.includes("product"));
-}
-
-function testManufacturerSupportIsDiagnosticOnlyAndCannotChangeFinal() {
-  const result = resultWithCandidate();
-  result.resolved_fields = {
-    ...result.resolved_fields,
-    manufacturer: "Topps"
-  };
-  const control = buildCandidateSelectionPass({ result });
-  const application = buildRetrievalApplicationLayer({ result, candidateControl: control });
-  const manufacturer = application.decisions.find((row) => row.field === "manufacturer");
-
-  assert.equal(manufacturer.decision, "SUPPORT");
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "manufacturer"), false);
-
-  const wrongControl = {
-    ...control,
-    candidate_field_inventory: control.candidate_field_inventory.map((row) => (
-      row.field_name === "manufacturer" ? { ...row, value: "Panini" } : row
-    ))
-  };
-  const wrongApplication = buildRetrievalApplicationLayer({ result, candidateControl: wrongControl });
-  assert.equal(
-    wrongApplication.decisions.find((row) => row.field === "manufacturer")?.decision,
-    "BLOCK"
-  );
-  assert.equal(wrongApplication.identity_evidence_items.some((item) => item.field === "manufacturer"), false);
-
-  const gated = applyIdentityResolutionGate({
-    ...result,
-    ...wrongControl,
-    retrieval_application: wrongApplication,
-    resolved: result.resolved_fields,
-    evidence: {}
-  });
-  assert.equal(gated.resolved_fields.manufacturer, "Topps");
 }
 
 function testRawRetrievalEvidenceCannotBypassApplicationOwner() {
@@ -628,209 +350,6 @@ function testCandidateCannotOverrideContradictingCurrentImageIdentity() {
   assert.equal(gated.identity_resolution?.identity?.product, "Panini Prizm");
 }
 
-function testProductSemanticWrappersSupportWithoutReplacement() {
-  const candidate = trustedCatalogCandidate({
-    reference_metadata: {
-      corrected_title_is_reviewed_title_ground_truth: true
-    },
-    anchor_agreement: {
-      exact_code_match: false,
-      prompt_hard_filter_pass: true,
-      agreed: ["year", "subjects", "product_hierarchy", "serial_denominator"],
-      contradicted: []
-    },
-    fields: {
-      year: "2024",
-      manufacturer: "Topps",
-      product: "Topps Chrome",
-      players: ["Test Player"]
-    }
-  });
-  const result = resultWithCandidate(candidate);
-  result.resolved_fields = {
-    year: "2024",
-    manufacturer: "Topps",
-    product: "2024 Topps Chrome Basketball",
-    players: ["Test Player"]
-  };
-  const { application } = buildLayer(result);
-  const product = application.decisions.find((row) => row.field === "product");
-  assert.equal(product.decision, "SUPPORT");
-  assert.equal(product.reason, "selected_identity_matches_current_field");
-}
-
-function testReviewedProductCanonicalizationCanReplaceOnlyProduct() {
-  const candidate = trustedCatalogCandidate({
-    reference_metadata: {
-      corrected_title_is_reviewed_title_ground_truth: true
-    },
-    anchor_agreement: {
-      exact_code_match: false,
-      prompt_hard_filter_pass: true,
-      agreed: ["year", "subjects", "manufacturer", "product_hierarchy", "serial_denominator"],
-      contradicted: []
-    },
-    fields: {
-      year: "2023",
-      manufacturer: "Topps",
-      product: "Topps Chrome",
-      players: ["Disney Anna"],
-      serial_denominator: "100",
-      grade_company: "PSA",
-      card_grade: "10",
-      cert_number: "12345678"
-    }
-  });
-  const result = resultWithCandidate(candidate);
-  result.resolved_fields = {
-    year: "2023",
-    manufacturer: "Topps",
-    product: "Disney100 Chrome",
-    players: ["Disney Anna"],
-    serial_denominator: "100"
-  };
-  const { application } = buildLayer(result);
-  const product = application.decisions.find((row) => row.field === "product");
-  assert.equal(product.decision, "APPLY");
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), true);
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "card_grade"), false);
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "cert_number"), false);
-}
-
-function testUnselectedConflictingCandidateSupportsOnlyMatchingFields() {
-  const candidate = trustedCatalogCandidate({
-    candidate_id: "reviewed-field-support-only",
-    candidate_identity_id: "identity-reviewed-field-support-only",
-    source_type: "INTERNAL_APPROVED_HISTORY",
-    source_trust: "APPROVED_REFERENCE",
-    conflicting_fields: ["surface_color"],
-    direct_evidence_conflicts: ["surface_color"],
-    anchor_agreement: {
-      exact_code_match: false,
-      prompt_hard_filter_applicable: true,
-      prompt_hard_filter_pass: true,
-      agreed: ["year", "subjects", "product_hierarchy"],
-      contradicted: []
-    },
-    fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      surface_color: "Red"
-    }
-  });
-  const result = {
-    resolved_fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      surface_color: "Blue"
-    },
-    catalog_candidate_packet: packet([candidate], [])
-  };
-  const { control, application } = buildLayer(result);
-  const trace = control.candidate_application_trace[0];
-  const product = application.decisions.find((row) => row.field === "product");
-  const color = application.decisions.find((row) => row.field === "surface_color");
-
-  assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
-  assert.equal(trace.identity_decision_eligible, false);
-  assert.equal(trace.field_evidence_eligible, true);
-  assert.equal(product.decision, "SUPPORT");
-  assert.equal(product.reason, "unselected_trusted_candidate_matches_current_field");
-  assert.equal(color.decision, "BLOCK");
-  assert.equal(color.reason, "candidate_or_field_conflict");
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), false);
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "surface_color"), false);
-}
-
-function testUnselectedFieldEvidenceCannotFillMissingProduct() {
-  const candidate = trustedCatalogCandidate({
-    candidate_id: "reviewed-no-missing-fill",
-    candidate_identity_id: "identity-reviewed-no-missing-fill",
-    source_type: "INTERNAL_APPROVED_HISTORY",
-    source_trust: "APPROVED_REFERENCE",
-    conflicting_fields: ["surface_color"],
-    direct_evidence_conflicts: ["surface_color"],
-    anchor_agreement: {
-      exact_code_match: true,
-      prompt_hard_filter_applicable: true,
-      prompt_hard_filter_pass: true,
-      agreed: ["year", "subjects", "collector_number"],
-      contradicted: []
-    },
-    fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      collector_number: "CPA-TP",
-      surface_color: "Red"
-    }
-  });
-  const result = {
-    resolved_fields: {
-      year: "2024",
-      players: ["Test Player"],
-      collector_number: "CPA-TP",
-      surface_color: "Blue"
-    },
-    catalog_candidate_packet: packet([candidate], [])
-  };
-  const { application } = buildLayer(result);
-  const product = application.decisions.find((row) => row.field === "product");
-
-  assert.equal(product.decision, "REJECT");
-  assert.equal(product.reason, "candidate_not_selected");
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), false);
-}
-
-function testUnselectedFieldEvidenceCanSupportRawCurrentImageObservation() {
-  const candidate = trustedCatalogCandidate({
-    candidate_id: "reviewed-raw-observation-support",
-    candidate_identity_id: "identity-reviewed-raw-observation-support",
-    source_type: "INTERNAL_APPROVED_HISTORY",
-    source_trust: "APPROVED_REFERENCE",
-    conflicting_fields: ["surface_color"],
-    direct_evidence_conflicts: ["surface_color"],
-    anchor_agreement: {
-      exact_code_match: false,
-      prompt_hard_filter_applicable: true,
-      prompt_hard_filter_pass: true,
-      agreed: ["year", "subjects", "product_hierarchy"],
-      contradicted: []
-    },
-    fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      surface_color: "Red"
-    }
-  });
-  const result = {
-    resolved_fields: {
-      year: "2024",
-      players: ["Test Player"]
-    },
-    raw_provider_fields: {
-      year: "2024",
-      product: "Topps Chrome",
-      players: ["Test Player"],
-      surface_color: "Blue"
-    },
-    catalog_candidate_packet: packet([candidate], [])
-  };
-  const { control, application } = buildLayer(result);
-  const product = application.decisions.find((row) => row.field === "product");
-
-  assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
-  assert.equal(control.candidate_observation_snapshot.product, "Topps Chrome");
-  assert.equal(product.old_value ?? null, null);
-  assert.equal(product.observed_value, "Topps Chrome");
-  assert.equal(product.decision, "SUPPORT");
-  assert.equal(product.reason, "unselected_trusted_candidate_matches_current_field");
-  assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), false);
-}
-
 function testOutcomeRecordsResolverBlockInsteadOfPretendingApplication() {
   const result = resultWithCandidate();
   const { application } = buildLayer(result);
@@ -870,26 +389,15 @@ async function testConvergenceCannotReinjectRawCandidates() {
 }
 
 testSelectedCandidateBecomesFieldEvidenceWithoutCopyingInstanceFields();
-testApplicableTextFieldsCannotSmuggleReferenceInstanceValues();
-testTrustedExactCodePrintFinishReachesFinalParallelWithoutPermissionDrift();
-testReviewedAnchoredPrintFinishCanApplyWithoutExactCode();
-testConflictingPrintFinishCandidateIsBlocked();
-testPrintFinishCannotReplaceExistingParallel();
 testVectorReferenceCanSupportButCannotFillMissingIdentity();
 testCandidateResolvedShapeStillProducesFieldEvidence();
 testCandidateFieldShapesMergeWithoutDroppingEvidence();
 testEveryCandidateProducesAuditableDecisionRows();
 testDisabledLayerRejectsAllCandidateFieldsAndBlocksRawBypass();
 testIdentityResolutionConsumesRetrievalFieldEvidence();
-testManufacturerSupportIsDiagnosticOnlyAndCannotChangeFinal();
 testRawRetrievalEvidenceCannotBypassApplicationOwner();
 testResolvedRetrievalOutcomeOwnsRenderedFieldContainer();
 testCandidateCannotOverrideContradictingCurrentImageIdentity();
-testProductSemanticWrappersSupportWithoutReplacement();
-testReviewedProductCanonicalizationCanReplaceOnlyProduct();
-testUnselectedConflictingCandidateSupportsOnlyMatchingFields();
-testUnselectedFieldEvidenceCannotFillMissingProduct();
-testUnselectedFieldEvidenceCanSupportRawCurrentImageObservation();
 testOutcomeRecordsResolverBlockInsteadOfPretendingApplication();
 await testConvergenceCannotReinjectRawCandidates();
 

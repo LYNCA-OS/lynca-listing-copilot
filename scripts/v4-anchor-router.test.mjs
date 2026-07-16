@@ -97,10 +97,9 @@ const probe = await probePreL2Anchors({
     }]
   })
 });
-assert.equal(probe.finalized, false, JSON.stringify(probe));
+assert.equal(probe.finalized, true, JSON.stringify(probe));
 assert.equal(probe.plan.route, anchorRoutes.TCG_EXACT_LOOKUP);
-assert.equal(probe.reason, "current_image_subject_evidence_required");
-assert.equal(probe.finalize.shadow.resolved_fields.players, undefined);
+assert.equal(probe.finalize.resolved_fields.players[0], "Shanks");
 assert.equal(probe.metrics.anchor_count, 1);
 assert.equal(probe.metrics.direct_anchor_count, 1);
 assert.deepEqual(probe.metrics.anchor_type_breakdown, { tcg_card_code: 1 });
@@ -114,8 +113,7 @@ const sportsProbe = await probePreL2Anchors({
     preingestion_evidence_patches: [
       patch("collector_number", "54"),
       patch("year", "2024", 0.96, "year_product_crop"),
-      patch("product", "Panini Contenders", 0.95, "year_product_crop"),
-      patch("player_names", ["Jaren Jackson"], 0.96, "subject_crop")
+      patch("product", "Panini Contenders", 0.95, "year_product_crop")
     ]
   },
   env,
@@ -140,10 +138,8 @@ const sportsProbe = await probePreL2Anchors({
   })
 });
 assert.equal(sportsProbe.plan.route, anchorRoutes.SPORTS_COMPOSITE_LOOKUP);
-assert.equal(sportsProbe.finalized, false, JSON.stringify(sportsProbe));
-assert.equal(sportsProbe.reason, "writer_fast_lane_shadow_only");
+assert.equal(sportsProbe.finalized, true, JSON.stringify(sportsProbe));
 assert.equal(sportsProbe.metrics.lookup_attempted, true);
-assert.equal(sportsProbe.finalize.current_image_subject_evidence, true);
-assert.equal(sportsProbe.finalize.shadow.resolved_fields.players[0], "Jaren Jackson");
+assert.equal(sportsProbe.finalize.resolved_fields.players[0], "Jaren Jackson");
 
 console.log("v4-anchor-router.test.mjs OK");

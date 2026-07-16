@@ -1,8 +1,6 @@
 import { createRequire } from "node:module";
 import { indexVisualVectorDataset } from "../scripts/index-visual-vector-embeddings.mjs";
 import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
-import { platformAdminAuth } from "../lib/platform-admin-auth.mjs";
-import { contractedConcurrency } from "../lib/listing/v4/orchestration/concurrency-contract.mjs";
 
 export const config = {
   maxDuration: 300,
@@ -17,12 +15,6 @@ const defaultSeedDataset = require("../data/catalog/vector-seed/feedback-writer-
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function finiteNumberOrNull(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
 }
 
 function boundedInteger(value, { min = 0, max = 100_000, fallback = 0 } = {}) {
@@ -90,10 +82,6 @@ function publicIndexReport(report = {}, { authMode = "" } = {}) {
       indexed_items: Number(summary.indexed_items || 0),
       failed_items: Number(summary.failed_items || 0),
       embeddings_written: Number(summary.embeddings_written || 0),
-      worker_cache_hit_count: Number(summary.worker_cache_hit_count || 0),
-      worker_attempt_count: Number(summary.worker_attempt_count || 0),
-      worker_latency_p50_ms: finiteNumberOrNull(summary.worker_latency_p50_ms),
-      worker_latency_p95_ms: finiteNumberOrNull(summary.worker_latency_p95_ms),
       next_offset: Number(summary.offset || report.offset || 0) + Number(summary.requested_items || 0),
       done: Number(summary.offset || report.offset || 0) + Number(summary.requested_items || 0) >= Number(summary.image_backed_items || 0)
     },
@@ -113,7 +101,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const auth = platformAdminAuth(req);
+  const auth = adminAuth(req);
   if (!auth.ok) {
     sendJson(res, 401, { ok: false, error: "unauthorized" });
     return;
@@ -129,13 +117,10 @@ export default async function handler(req, res) {
 
   const offset = boundedInteger(body.offset, { min: 0, max: 100_000, fallback: 0 });
   const limit = boundedInteger(body.limit, { min: 1, max: 50, fallback: 10 });
-  const requestedConcurrency = boundedInteger(body.concurrency, { min: 1, max: 4, fallback: 2 });
+  const concurrency = boundedInteger(body.concurrency, { min: 1, max: 4, fallback: 2 });
   const retrievalStatus = cleanText(body.retrieval_status || "approved");
   const retrievalEnabled = body.retrieval_enabled !== false;
   const dryRun = body.dry_run === true;
-  const concurrency = dryRun && body.capacity_sweep === true
-    ? requestedConcurrency
-    : contractedConcurrency("vector_index", requestedConcurrency);
 
   if (!["approved", "reviewed", "registry", "candidate", "disabled"].includes(retrievalStatus)) {
     sendJson(res, 400, { ok: false, error: "invalid_retrieval_status" });

@@ -1,28 +1,20 @@
-import crypto from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
+import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import {
   createV4BatchId,
+  createV4SessionId,
   enqueueV4RecognitionJobs,
   expandV4RecognitionStageJobs,
   readV4RecognitionJobs,
-  v4JobIdentityMatches,
   v4JobStatuses,
   v4JobTypes,
   v4QueueConfigured,
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
-import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
-import {
-  publicTenantAuthError,
-  requirePermission,
-  requireTenantAccess,
-  TENANT_PERMISSIONS
-} from "../../lib/tenant/index.mjs";
 
 function clean(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -36,24 +28,20 @@ function assetsFromPayload(payload = {}) {
 }
 
 function imageHash(images = []) {
-  const canonical = (Array.isArray(images) ? images : [])
-    .map((image = {}) => ({
-      role: clean(image.role || image.image_role),
-      bucket: clean(image.bucket),
-      object_path: clean(image.object_path || image.objectPath),
-      content_sha256: clean(image.content_sha256 || image.contentSha256).toLowerCase(),
-      image_id: clean(image.image_id || image.id)
-    }))
-    .filter((image) => Object.values(image).some(Boolean))
-    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
-  return canonical.length
-    ? crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex")
-    : "";
+  return (Array.isArray(images) ? images : [])
+    .map((image) => image.content_sha256 || image.contentSha256 || image.object_path || image.objectPath || image.image_id || image.id || image.url)
+    .filter(Boolean)
+    .join("|")
+    .slice(0, 500);
 }
 
 function stableId(...parts) {
   const source = parts.map(clean).filter(Boolean).join("|");
-  return crypto.createHash("sha256").update(source).digest("hex").slice(0, 32);
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = Math.imul(31, hash) + source.charCodeAt(index) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function terminalOrActive(status = "") {
@@ -66,31 +54,27 @@ function terminalOrActive(status = "") {
   ].includes(String(status || "").toUpperCase());
 }
 
-function withoutUntrustedBundleIdentity(payload = {}) {
-  const sanitized = payload && typeof payload === "object" && !Array.isArray(payload)
-    ? { ...payload }
-    : {};
-  for (const key of [
-    "preingestion_bundle_id", "preingestionBundleId", "preingestion_bundle",
-    "preingestion_bundle_used", "preingestion_bundle_status",
-    "preingestion_summary", "preingestion_initial_evidence",
-    "preingestion_evidence_patches"
-  ]) delete sanitized[key];
-  return sanitized;
+function headerValue(req, name) {
+  const lower = String(name || "").toLowerCase();
+  const value = req?.headers?.[lower] ?? req?.headers?.[name];
+  if (Array.isArray(value)) return String(value[0] || "").trim();
+  return String(value || "").trim();
 }
 
-export function triggerPump(_req, {
-  tenantId = "",
-  env = process.env,
-  fetchImpl = globalThis.fetch,
-  defer = waitUntil
-} = {}) {
-  const secret = configuredWorkerSecret(env);
-  const origin = trustedInternalServiceOrigin(env);
-  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "internal_origin_missing" };
-  const stableConcurrency = v4WorkerProcessConcurrency(env);
+function requestOrigin(req) {
+  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
+  if (!host) return "";
+  const proto = headerValue(req, "x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
+}
+
+function triggerPump(req, payload = {}) {
+  const secret = configuredWorkerSecret(process.env);
+  const origin = requestOrigin(req);
+  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "request_origin_missing" };
+  const stableConcurrency = v4WorkerProcessConcurrency(process.env);
   const body = {
-    tenant_id: tenantId,
+    tenant_id: payload.tenant_id || payload.tenantId || payload.batch_id || null,
     limit: stableConcurrency,
     process_concurrency: stableConcurrency,
     interactive_limit: stableConcurrency,
@@ -107,7 +91,7 @@ export function triggerPump(_req, {
     max_continuation_depth: 20,
     reason: "prewarm"
   };
-  defer(fetchImpl(`${origin}/api/v4/listing-job-pump`, {
+  waitUntil(fetch(`${origin}/api/v4/listing-job-pump`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -119,18 +103,12 @@ export function triggerPump(_req, {
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-prewarm" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  let context;
-  try {
-    context = await requireTenantAccess(req);
-    bindProductionRequestContext(res, context);
-    requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
-  } catch (error) {
-    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
+  if (!getSessionFromRequest(req)) {
+    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -153,10 +131,10 @@ export default async function handler(req, res) {
   }
 
   const startedAt = Date.now();
-  const batchId = createV4BatchId("v4prewarm");
-  const operatorId = context.userId;
-  const tenantId = context.tenantId;
+  const batchId = payload.batch_id || payload.batchId || createV4BatchId("v4prewarm");
+  const tenantId = payload.tenant_id || payload.tenantId || batchId;
   const createL2Jobs = payload.create_l2_jobs !== false && payload.createL2Jobs !== false;
+  const operatorId = operatorIdFromRequest(req);
   const assets = assetsFromPayload(payload).slice(0, 200);
   const staged = [];
   const sessionByAsset = new Map();
@@ -165,24 +143,22 @@ export default async function handler(req, res) {
     const assetId = clean(asset.asset_id || asset.assetId || asset.source_record_id || asset.sourceRecordId);
     if (!assetId) continue;
     const hash = imageHash(asset.images || asset.payload?.images || []);
-    const baseJobId = stableId(tenantId, operatorId, assetId, hash || "nohash");
-    const sessionId = `v4sess_prewarm_${baseJobId}`;
+    const sessionId = asset.recognition_session_id || createV4SessionId("v4sess_prewarm");
+    const baseJobId = stableId(tenantId, assetId, hash || "nohash");
     const jobs = expandV4RecognitionStageJobs({
       jobs: [{
         id: `v4job_prewarm_l1_${baseJobId}`,
         l1_job_id: `v4job_prewarm_l1_${baseJobId}`,
         l2_job_id: `v4job_prewarm_l2_${baseJobId}`,
         asset_id: assetId,
-        tenant_id: tenantId,
+        tenant_id: asset.tenant_id || tenantId,
         create_l1_job: true,
         create_l2_job: createL2Jobs,
         priority: asset.priority || payload.priority || 100,
         payload: {
-          ...withoutUntrustedBundleIdentity(
-            asset.payload && typeof asset.payload === "object" ? asset.payload : asset
-          ),
+          ...(asset.payload && typeof asset.payload === "object" ? asset.payload : asset),
           asset_id: assetId,
-          tenant_id: tenantId,
+          tenant_id: asset.tenant_id || tenantId,
           recognition_session_id: sessionId,
           create_l1_job: true,
           create_l2_job: createL2Jobs,
@@ -197,64 +173,14 @@ export default async function handler(req, res) {
       priority: payload.priority || 100
     });
     staged.push(...jobs);
-    sessionByAsset.set(baseJobId, {
-      asset_id: assetId,
-      image_identity_sha256: hash || null,
-      recognition_session_id: sessionId,
-      job_ids: jobs.map((job) => job.id)
-    });
+    sessionByAsset.set(assetId, { asset_id: assetId, recognition_session_id: sessionId, job_ids: jobs.map((job) => job.id) });
   }
 
   const existing = staged.length
-    ? await readV4RecognitionJobs({
-      jobIds: staged.map((job) => job.id),
-      tenantId,
-      limit: staged.length
-    })
+    ? await readV4RecognitionJobs({ jobIds: staged.map((job) => job.id), limit: staged.length })
     : { ok: true, rows: [] };
-  if (!existing.ok) {
-    sendJson(res, 503, withV4Version({
-      ok: false,
-      retryable: true,
-      error_code: "V4_PREWARM_IDENTITY_READ_FAILED",
-      message: "Unable to verify existing prewarm job identity."
-    }));
-    return;
-  }
   const existingById = new Map((existing.rows || []).map((row) => [row.id, row]));
-  const identityConflicts = staged.filter((job) => {
-    const existingJob = existingById.get(job.id);
-    return existingJob && !v4JobIdentityMatches(existingJob, job);
-  });
-  if (identityConflicts.length) {
-    sendJson(res, 409, withV4Version({
-      ok: false,
-      retryable: false,
-      error_code: "V4_PREWARM_JOB_IDENTITY_CONFLICT",
-      message: "A prewarm idempotency identity is already bound to a different tenant, operator, or canonical payload."
-    }));
-    return;
-  }
-  const terminalFailures = staged.filter((job) => {
-    const status = String(existingById.get(job.id)?.status || "").toUpperCase();
-    return [v4JobStatuses.FAILED, v4JobStatuses.CANCELLED].includes(status);
-  });
-  if (terminalFailures.length) {
-    sendJson(res, 409, withV4Version({
-      ok: false,
-      retryable: false,
-      error_code: "V4_PREWARM_RETRY_REQUIRED",
-      message: "A matching prewarm job is terminal; use the controlled retry workflow."
-    }));
-    return;
-  }
   const jobsToQueue = staged.filter((job) => !terminalOrActive(existingById.get(job.id)?.status));
-  for (const session of sessionByAsset.values()) {
-    const existingJob = session.job_ids.map((id) => existingById.get(id)).find(Boolean);
-    if (existingJob?.recognition_session_id) {
-      session.recognition_session_id = existingJob.recognition_session_id;
-    }
-  }
   const result = jobsToQueue.length
     ? await enqueueV4RecognitionJobs({
       jobs: jobsToQueue,
@@ -264,25 +190,13 @@ export default async function handler(req, res) {
       priority: payload.priority || 100
     })
     : { batchId, jobs: [], queued_count: 0 };
-  const enqueueFailures = (result.jobs || []).filter((entry) => !entry.saved);
-  if (jobsToQueue.length && Number(result.accepted_count || 0) === 0) {
-    const conflict = enqueueFailures.some((entry) => (
-      /identity_conflict|terminal_retry_required/.test(String(entry.error || ""))
-    ));
-    sendJson(res, conflict ? 409 : 503, withV4Version({
-      ok: false,
-      retryable: !conflict,
-      error_code: conflict
-        ? "V4_PREWARM_ENQUEUE_IDENTITY_CONFLICT"
-        : "V4_PREWARM_ENQUEUE_FAILED",
-      message: enqueueFailures.map((entry) => entry.error).filter(Boolean).slice(0, 3).join("; ")
-        || "Unable to persist prewarm jobs."
-    }));
-    return;
-  }
 
   if (result.queued_count > 0 && payload.autokick_workers !== false && payload.autokickWorkers !== false) {
-    triggerPump(req, { tenantId });
+    triggerPump(req, {
+      batch_id: batchId,
+      tenant_id: tenantId,
+      jobs: []
+    });
   }
 
   sendJson(res, 200, withV4Version({

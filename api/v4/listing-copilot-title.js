@@ -1,12 +1,8 @@
 import { waitUntil } from "@vercel/functions";
 import { runListingRecognitionCore } from "../listing-copilot-title.js";
 import { buildV4PipelineContract } from "../../lib/listing/v4/pipeline/pipeline-contract.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
-import {
-  publicTenantAuthError,
-  requireTenantAccess,
-  TENANT_PERMISSIONS
-} from "../../lib/tenant/index.mjs";
+import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
+import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
@@ -29,16 +25,9 @@ import {
   persistV4NonCriticalArtifactsAtomic,
   persistV4QualityLedger,
   persistV4WriterReadyAndReleaseCapacity,
-  readV4SessionStatus,
   updateV4RecognitionSession,
   updateV4RecognitionSessionWithRetry
 } from "../../lib/listing/v4/session/session-store.mjs";
-import {
-  resolveV4WorkerSessionIdentity,
-  scopeV4RecognitionPayloadFromFencedJob,
-  sessionIdForV4Request
-} from "../../lib/listing/v4/session/trusted-session-identity.mjs";
-import { fenceV4RecognitionJobExecution } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
@@ -46,26 +35,6 @@ import { triggerWriterReadyCapacityRefill } from "../../lib/listing/v4/jobs/writ
 import { providerModelOverrideFromOptions } from "../../lib/listing/providers/provider-contract.mjs";
 import { isGpt5ResponsesModel } from "../../lib/listing/providers/openai-responses-request.mjs";
 import { openAiKeyPoolSize } from "../../lib/listing/providers/openai-key-pool.mjs";
-
-const durableListingAssetIdPattern = /^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function recognitionAssetIdentity(payload = {}) {
-  const snakeAssetId = String(payload.asset_id || "").trim();
-  const camelAssetId = String(payload.assetId || "").trim();
-  const snakeClientRef = String(payload.client_asset_ref || "").trim();
-  const camelClientRef = String(payload.clientAssetRef || "").trim();
-  const assetId = snakeAssetId || camelAssetId;
-  const clientAssetRef = snakeClientRef || camelClientRef;
-  if ((snakeAssetId && camelAssetId && snakeAssetId !== camelAssetId)
-      || (snakeClientRef && camelClientRef && snakeClientRef !== camelClientRef)
-      || !durableListingAssetIdPattern.test(assetId)
-      || !clientAssetRef
-      || clientAssetRef.length > 160
-      || /[\u0000-\u001f\u007f]/.test(clientAssetRef)) {
-    return null;
-  }
-  return { assetId, clientAssetRef };
-}
 
 function titleFromResult(result = {}) {
   return result.final_title || result.rendered_title || result.title || null;
@@ -79,23 +48,6 @@ function isRetrySuppressedProviderError(result = {}) {
   const code = String(result.provider_error_code || result.provider_error_type || "").toLowerCase();
   if (!code) return false;
   return /auth|permission|quota|rate|unsupported|bad_request|invalid_request|input/.test(code);
-}
-
-function rejectAbortedWorkerExecution(req, res, workerAuthorized) {
-  if (!workerAuthorized || req?.signal?.aborted !== true) return false;
-  const reason = req.signal.reason;
-  const retryable = reason?.retryable === true;
-  sendJson(res, retryable ? 503 : 409, withV4Version({
-    ok: false,
-    retryable,
-    error_code: reason?.code === "QUEUE_LEASE_RENEWAL_FAILED"
-      ? "QUEUE_LEASE_RENEWAL_FAILED"
-      : "QUEUE_LEASE_LOST",
-    message: retryable
-      ? "Queue lease renewal failed; execution was stopped before further work."
-      : "Queue lease ownership was lost; execution was stopped."
-  }));
-  return true;
 }
 
 function shouldRetryGpt5EmptyResult({
@@ -360,7 +312,6 @@ function providerRuntimeSummary(result = {}) {
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
   return {
     model: result.model || result.model_id || null,
-    prompt_version: result.prompt_version || null,
     provider_latency_ms: result.provider_latency_ms ?? null,
     provider_response_profile: result.provider_response_profile || "standard",
     provider_prompt_mode: result.provider_prompt_mode || null,
@@ -416,14 +367,6 @@ function providerRuntimeSummary(result = {}) {
     vector_self_excluded_count: Number.isFinite(Number(vectorProviderMetadata.self_excluded_count))
       ? Number(vectorProviderMetadata.self_excluded_count)
       : null,
-    vector_self_exclusion_query_attempted: vectorContext.self_exclusion_query_attempted === true,
-    vector_self_exclusion_filter_active: vectorContext.self_exclusion_filter_active === true,
-    vector_self_exclusion_requested_source_count: Number.isFinite(Number(
-      vectorContext.self_exclusion_requested_source_count
-    ))
-      ? Number(vectorContext.self_exclusion_requested_source_count)
-      : null,
-    vector_self_exclusion_source_ids_sha256: vectorContext.self_exclusion_source_ids_sha256 || null,
     preingestion_ocr_rendezvous: result.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: result.preingestion_evidence_refresh || null,
     preingestion_retrieval_refresh: result.preingestion_retrieval_refresh || null,
@@ -837,9 +780,6 @@ async function persistPipelineResult({
         route: routePlan.route,
         route_plan: routePlan,
         candidate_control_plane_trace: rows.candidateTrace,
-        model_version: result.model || result.model_id || null,
-        prompt_version: result.prompt_version || null,
-        prompt_mode: result.provider_prompt_mode || null,
         provider_result_summary: {
           provider: result.provider || result.provider_id || null,
           confidence: result.confidence || null,
@@ -894,10 +834,6 @@ async function persistPipelineResult({
     route: routePlan.route,
     route_plan: routePlan,
     candidate_control_plane_trace: rows.candidateTrace,
-    model_version: result.model || result.model_id || null,
-    prompt_version: result.prompt_version || null,
-    prompt_mode: result.provider_prompt_mode || null,
-    generation_completed_at: new Date().toISOString(),
     provider_result_summary: {
       provider: result.provider || result.provider_id || null,
       confidence: result.confidence || null,
@@ -1204,32 +1140,18 @@ async function runBackgroundAssistedDraft({
   });
 }
 
-export async function callRecognitionCoreWithGpt5EmptyRetry({
+async function callRecognitionCoreWithGpt5EmptyRetry({
   headers = {},
-  payload = {},
-  signal = null,
-  coreRunner = runListingRecognitionCore
+  payload = {}
 } = {}) {
-  let coreResponse = await coreRunner({
+  let coreResponse = await runListingRecognitionCore({
     payload,
-    requestContext: { headers, signal }
+    requestContext: { headers }
   });
 
   if (coreResponse.statusCode < 200 || coreResponse.statusCode >= 300 || !coreResponse.body
     || !shouldRetryGpt5EmptyResult({ payload, result: coreResponse.body, env: process.env })) {
     return coreResponse;
-  }
-
-  if (signal?.aborted) {
-    return {
-      statusCode: signal.reason?.retryable === true ? 503 : 409,
-      body: {
-        ok: false,
-        retryable: signal.reason?.retryable === true,
-        error_code: signal.reason?.code || "QUEUE_LEASE_LOST",
-        message: "Queue lease no longer permits a provider retry."
-      }
-    };
   }
 
   const retryPayload = {
@@ -1249,9 +1171,9 @@ export async function callRecognitionCoreWithGpt5EmptyRetry({
     retryPayload.openai_preferred_key_slot = retryKeySlot;
     retryPayload.provider_key_slot_hint = retryKeySlot;
   }
-  const retryResponse = await coreRunner({
+  const retryResponse = await runListingRecognitionCore({
     payload: retryPayload,
-    requestContext: { headers, signal }
+    requestContext: { headers }
   });
   const retryPrepared = retryResponse.statusCode >= 200 && retryResponse.statusCode < 300 && retryResponse.body
     ? prepareV4PresentationResult({ result: retryResponse.body, payload: retryPayload })
@@ -1312,29 +1234,23 @@ function buildFastScoutPendingFailureResponse({
 }
 
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/v4/listing-copilot-title" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
 
   const workerAuthorized = isV4WorkerRequest(req, process.env);
-  if (!workerAuthorized) {
-    try {
-      const context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.CREATE_JOB });
-      bindProductionRequestContext(res, context);
-    } catch (error) {
-      sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
-      return;
-    }
-    sendJson(res, 409, withV4Version({
-      ok: false,
-      retryable: false,
-      error_code: "V4_DURABLE_ENQUEUE_REQUIRED",
-      message: "Create recognition work through /api/v4/listing-job-enqueue."
-    }));
+  if (!getSessionFromRequest(req) && !workerAuthorized) {
+    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
+
+  if (!workerAuthorized && !enforceApiRateLimit(req, res, {
+    scope: "v4_listing_title",
+    limit: 120,
+    windowMs: 60_000,
+    message: "Too many V4 title generation requests. Please try again shortly."
+  })) return;
 
   let payload;
   try {
@@ -1343,94 +1259,8 @@ export default async function handler(req, res) {
     sendJson(res, 400, withV4Version({ ok: false, message: "Invalid request." }));
     return;
   }
-  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
 
-  if (workerAuthorized) {
-    const fenced = await fenceV4RecognitionJobExecution({
-      jobId: payload.v4_queue_job_id,
-      workerId: payload.v4_queue_worker_id,
-      leaseSeconds: Number(process.env.V4_JOB_PROVIDER_FENCE_LEASE_SECONDS || 300)
-    });
-    if (!fenced.fenced) {
-      sendJson(res, fenced.error && fenced.error !== "job_lease_not_live" ? 503 : 409, withV4Version({
-        ok: false,
-        retryable: Boolean(fenced.error && fenced.error !== "job_lease_not_live"),
-        message: "Worker execution lease is not live.",
-        error_code: "V4_WORKER_JOB_LEASE_FENCE_FAILED"
-      }));
-      return;
-    }
-    if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
-    try {
-      payload = scopeV4RecognitionPayloadFromFencedJob(fenced.job);
-    } catch {
-      sendJson(res, 409, withV4Version({
-        ok: false,
-        retryable: false,
-        message: "Persisted worker job identity is invalid.",
-        error_code: "V4_WORKER_FENCED_JOB_IDENTITY_INVALID"
-      }));
-      return;
-    }
-  }
-
-  let sessionId;
-  try {
-    sessionId = sessionIdForV4Request({
-      workerAuthorized,
-      requestedSessionId: payload.recognition_session_id,
-      createSessionId: createV4SessionId
-    });
-  } catch (error) {
-    sendJson(res, 400, withV4Version({
-      ok: false,
-      retryable: false,
-      message: "A persisted recognition session is required for worker execution.",
-      error_code: String(error?.code || "V4_SESSION_ID_INVALID").toUpperCase()
-    }));
-    return;
-  }
-
-  let originOperatorId;
-  let originTenantId;
-  let originUserId;
-  try {
-    const identity = await resolveV4WorkerSessionIdentity({
-      sessionId,
-      claimedTenantId: payload.v4_origin_tenant_id,
-      claimedOperatorId: payload.v4_origin_operator_id,
-      readSession: readV4SessionStatus
-    });
-    originOperatorId = identity.operatorId;
-    originTenantId = identity.tenantId;
-    originUserId = identity.userId;
-  } catch (error) {
-    const unavailable = error?.code === "v4_worker_session_identity_unavailable";
-    sendJson(res, unavailable ? 503 : 409, withV4Version({
-      ok: false,
-      retryable: unavailable,
-      message: unavailable
-        ? "Unable to verify the persisted worker session identity."
-        : "Worker identity does not match the persisted recognition session.",
-      error_code: String(error?.code || "V4_WORKER_SESSION_IDENTITY_INVALID").toUpperCase()
-    }));
-    return;
-  }
-  const requestAssetIdentity = recognitionAssetIdentity(payload);
-  if (!requestAssetIdentity) {
-    sendJson(res, workerAuthorized ? 409 : 400, withV4Version({
-      ok: false,
-      retryable: false,
-      message: "A server-created durable asset_id and its client_asset_ref are required.",
-      error_code: "V4_CANONICAL_ASSET_IDENTITY_REQUIRED"
-    }));
-    return;
-  }
-  payload = {
-    ...payload,
-    asset_id: requestAssetIdentity.assetId,
-    client_asset_ref: requestAssetIdentity.clientAssetRef
-  };
+  const sessionId = payload.recognition_session_id || createV4SessionId();
   const handlerStartedAt = Date.now();
   let recognitionClockStartedAt = null;
   let recognitionClockSource = null;
@@ -1535,57 +1365,17 @@ export default async function handler(req, res) {
     }
   }
   const routePlan = planV4RecognitionRoute(payload, process.env);
-  const createResultPromise = workerAuthorized
-    ? Promise.resolve({
-      sessionId,
-      persistence: {
-        recognition_session: {
-          saved: true,
-          existing: true,
-          verified_after_write: true,
-          persistence_mode: "worker_fenced_existing_session"
-        }
-      }
-    })
-    : createV4RecognitionSession({
-      sessionId,
-      payload,
-      routePlan,
-      operatorId: originOperatorId,
-      tenantId: originTenantId,
-      userId: originUserId
-    });
-  let initialCreateResult = null;
-  if (!workerAuthorized) {
-    initialCreateResult = await createResultPromise;
-    if (initialCreateResult.persistence?.recognition_session?.saved !== true
-        || initialCreateResult.persistence?.recognition_session?.verified_after_write !== true) {
-      sendJson(res, 503, withV4Version({
-        ok: false,
-        retryable: true,
-        message: "Recognition session could not be durably bound to the canonical listing asset.",
-        error_code: "V4_RECOGNITION_SESSION_PERSISTENCE_REQUIRED"
-      }));
-      return;
-    }
-  }
-  const deferredCreateResult = initialCreateResult || await createResultPromise;
-  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
-  const observingUpdate = await updateV4RecognitionSessionWithRetry({
+  const createResultPromise = createV4RecognitionSession({
     sessionId,
-    patch: { status: v4SessionStatuses.OBSERVING }
+    payload,
+    routePlan,
+    operatorId: workerAuthorized ? "v4-production-worker" : operatorIdFromRequest(req)
   });
-  if (observingUpdate.saved !== true) {
-    sendJson(res, 503, withV4Version({
-      ok: false,
-      retryable: true,
-      error_code: "V4_SESSION_STATE_PERSISTENCE_FAILED",
-      recognition_session_id: sessionId,
-      message: "Recognition session state was not persisted; the durable job can be retried safely."
-    }));
-    return;
-  }
-  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
+  scheduleV4Background(createResultPromise, "recognition session create");
+  const deferredCreateResult = {
+    sessionId,
+    persistence: { recognition_session: { saved: false, deferred: true } }
+  };
 
   if (canReturnFastScoutL1(payload, process.env)) {
     try {
@@ -1594,7 +1384,6 @@ export default async function handler(req, res) {
         payload,
         env: process.env,
         fetchImpl: globalThis.fetch,
-        signal: req.signal || null,
         requestContext: openAiRequestContextFromV4Payload(payload, {
           providerCallPurpose: "fast_scout",
           titleStage: v4TitleStages.L1_INTERNAL_SCOUT
@@ -1657,7 +1446,7 @@ export default async function handler(req, res) {
           l1_persistence: { saved: false, deferred: true }
         }
       }), l1Result.fast_scout || {});
-      let writerResponse = finalized && exactAnchorWriterFastLaneEnabled()
+      const writerResponse = finalized && exactAnchorWriterFastLaneEnabled()
         ? writerFinalizedL1Response(v4Response, l1Result)
         : writerPendingL1Response(v4Response, l1Result);
       const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({
@@ -1675,16 +1464,7 @@ export default async function handler(req, res) {
         requestContext: req
       }));
       if (queueL1Only(payload)) {
-        const persistedL1Response = await l1PersistencePromise;
-        if (persistedL1Response?.v4_persistence?.update_session?.saved !== true) {
-          writerResponse = {
-            ...writerResponse,
-            ok: false,
-            retryable: true,
-            error_code: "V4_L1_PERSISTENCE_FAILED",
-            message: "L1 scout result was not durably persisted."
-          };
-        }
+        await l1PersistencePromise;
       } else {
         scheduleV4Background(l1PersistencePromise, "L1 persistence");
         scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft({
@@ -1696,7 +1476,7 @@ export default async function handler(req, res) {
           createResult
         })), "background L2 assisted draft");
       }
-      sendJson(res, writerResponse.ok === false ? 503 : 200, writerResponse);
+      sendJson(res, 200, writerResponse);
       return;
     } catch (error) {
       if (queueL1Only(payload)) {
@@ -1750,6 +1530,10 @@ export default async function handler(req, res) {
   }
 
   const createResult = await createResultPromise;
+  await updateV4RecognitionSession({
+    sessionId,
+    patch: { status: v4SessionStatuses.OBSERVING }
+  });
 
   let l2ScoutResult = null;
 
@@ -1827,7 +1611,6 @@ export default async function handler(req, res) {
         payload,
         env: process.env,
         fetchImpl: globalThis.fetch,
-        signal: req.signal || null,
         allowProviderCall: allowBlockingScout,
         requestContext: openAiRequestContextFromV4Payload(payload, {
           providerCallPurpose: "l2_direct_exact_anchor_scout",
@@ -1903,7 +1686,6 @@ export default async function handler(req, res) {
         return;
       }
     } catch (error) {
-      if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
       l2Timing.exact_anchor_scout_ms = Date.now() - scoutStartedAt;
       l2Timing.exact_anchor_scout_status = error?.code === "FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED"
         ? "CACHE_MISS_PROVIDER_DISABLED"
@@ -1932,15 +1714,12 @@ export default async function handler(req, res) {
     titleStageTarget: forceL2Direct || modelRequiresFullL2Options ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
   startRecognitionClock("gpt_provider_request");
-  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
   const recognitionCoreStartedAt = Date.now();
   const recognitionResponse = await callRecognitionCoreWithGpt5EmptyRetry({
     headers: req.headers,
-    payload: recognitionPayload,
-    signal: req.signal || null
+    payload: recognitionPayload
   });
   l2Timing.recognition_core_ms = Date.now() - recognitionCoreStartedAt;
-  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
 
   if (recognitionResponse.statusCode < 200 || recognitionResponse.statusCode >= 300 || !recognitionResponse.body) {
     await updateV4RecognitionSession({

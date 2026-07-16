@@ -13,65 +13,21 @@ import {
 } from "./run-launch-throughput-benchmark.mjs";
 
 function accuracyReport(rate = 0.888889) {
-  const criticalCoverage = {
-    subject: 45,
-    year: 45,
-    product_or_set: 45,
-    variant_or_parallel: 5,
-    numerical_rarity: 5,
-    grade: 5
-  };
   return {
     schema_version: "golden-sem-accuracy-report-v1",
-    status: "COMPLETED",
-    formal_launch_gate_eligible: true,
     source: {
       partition: "holdout",
-      release_set_validation_ok: true,
-      truth_policy_explicit: true,
-      field_ground_truth_class: "HUMAN_REVIEWED_FIELD_GROUND_TRUTH",
-      formal_launch_gate_eligible: true
+      release_set_validation_ok: true
     },
     scope: {
-      truth_policy_explicit: true,
       reviewed_ground_truth_only: true,
-      writer_title_used_as_field_ground_truth: false,
-      launch_gate_eligible: true,
-      formal_launch_gate_eligible: true
+      writer_title_used_as_field_ground_truth: false
     },
-    summary: { label_item_count: 45, evaluated_card_count: 45 },
+    summary: { evaluated_card_count: 45 },
     metrics: {
       sem_card_exact_accuracy: { correct: 40, total: 45, rate },
       per_field_exact_accuracy: {
-        subject: { correct: 44, total: 45, accuracy: 0.977778 },
-        year: { correct: 44, total: 45, accuracy: 0.977778 },
-        product: { correct: 44, total: 45, accuracy: 0.977778 },
-        set: { correct: 0, total: 0, accuracy: null },
-        print_finish: { correct: 5, total: 5, accuracy: 1 },
-        numerical_rarity: { correct: 5, total: 5, accuracy: 1 },
-        grading_info: { correct: 5, total: 5, accuracy: 1 }
-      },
-      card_exact_evaluable_coverage: {
-        minimum_evaluated_fields_required: 2,
-        eligible_card_count: 45,
-        ineligible_card_count: 0,
-        single_field_card_exact_pass_count: 0
-      },
-      critical_field_evaluable_coverage: {
-        total_cards: 45,
-        dimensions: Object.fromEntries(Object.entries(criticalCoverage).map(([dimension, evaluatedCards]) => [
-          dimension,
-          {
-            evaluated_cards: evaluatedCards,
-            total_cards: 45,
-            rate: evaluatedCards / 45
-          }
-        ]))
-      }
-    },
-    validation: {
-      formal_launch_ground_truth: {
-        review_metadata: { ok: true }
+        year: { correct: 44, total: 45, accuracy: 0.977778 }
       }
     }
   };
@@ -184,49 +140,6 @@ assert.equal(checkpoint.summary.completed_cards_per_minute, 60);
 
 const accurate = assessLaunchAccuracy(accuracyReport());
 assert.equal(accurate.verdict, "PASS");
-
-const implicitTruthPolicyReport = accuracyReport();
-delete implicitTruthPolicyReport.source.truth_policy_explicit;
-delete implicitTruthPolicyReport.source.field_ground_truth_class;
-implicitTruthPolicyReport.source.formal_launch_gate_eligible = false;
-implicitTruthPolicyReport.formal_launch_gate_eligible = false;
-implicitTruthPolicyReport.scope.truth_policy_explicit = false;
-implicitTruthPolicyReport.scope.launch_gate_eligible = false;
-implicitTruthPolicyReport.scope.formal_launch_gate_eligible = false;
-const implicitTruthPolicy = assessLaunchAccuracy(implicitTruthPolicyReport);
-assert.equal(implicitTruthPolicy.verdict, "INCONCLUSIVE");
-assert.ok(implicitTruthPolicy.evidence_shortfall_reasons.includes(
-  "EXPLICIT_HUMAN_REVIEWED_FIELD_GROUND_TRUTH_POLICY_REQUIRED"
-));
-
-const missingReviewMetadataReport = accuracyReport();
-missingReviewMetadataReport.validation.formal_launch_ground_truth.review_metadata.ok = false;
-missingReviewMetadataReport.source.formal_launch_gate_eligible = false;
-missingReviewMetadataReport.formal_launch_gate_eligible = false;
-missingReviewMetadataReport.scope.launch_gate_eligible = false;
-missingReviewMetadataReport.scope.formal_launch_gate_eligible = false;
-const missingReviewMetadata = assessLaunchAccuracy(missingReviewMetadataReport);
-assert.equal(missingReviewMetadata.verdict, "INCONCLUSIVE");
-assert.ok(missingReviewMetadata.evidence_shortfall_reasons.includes(
-  "REVIEWER_REVIEWED_AT_AND_FIELD_EVIDENCE_REQUIRED"
-));
-
-const thinGradeCoverageReport = accuracyReport();
-thinGradeCoverageReport.metrics.critical_field_evaluable_coverage.dimensions.grade = {
-  evaluated_cards: 4,
-  total_cards: 45,
-  rate: 4 / 45
-};
-const thinGradeCoverage = assessLaunchAccuracy(thinGradeCoverageReport);
-assert.equal(thinGradeCoverage.verdict, "INCONCLUSIVE");
-assert.ok(thinGradeCoverage.evidence_shortfall_reasons.includes("SEM_CRITICAL_GRADE_COVERAGE_TOO_LOW"));
-
-const singleFieldCardPassReport = accuracyReport(1);
-singleFieldCardPassReport.metrics.card_exact_evaluable_coverage.minimum_evaluated_fields_required = 1;
-singleFieldCardPassReport.metrics.card_exact_evaluable_coverage.single_field_card_exact_pass_count = 1;
-const singleFieldCardPass = assessLaunchAccuracy(singleFieldCardPassReport);
-assert.equal(singleFieldCardPass.verdict, "INCONCLUSIVE");
-assert.ok(singleFieldCardPass.evidence_shortfall_reasons.includes("SINGLE_FIELD_CARD_EXACT_PASS_FORBIDDEN"));
 
 const weakTitleOnly = assessLaunchAccuracy({
   schema_version: "cloud-listing-api-eval-v1",

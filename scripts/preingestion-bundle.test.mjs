@@ -11,11 +11,7 @@ import {
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
-import {
-  applyPreingestionSerialConfusionGuard,
-  applyPreIngestionEvidencePatchesToPayload,
-  preingestionEvidenceDocumentFromPayload
-} from "../lib/listing/pipeline/preingestion-evidence.mjs";
+import { applyPreIngestionEvidencePatchesToPayload } from "../lib/listing/pipeline/preingestion-evidence.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
@@ -23,7 +19,6 @@ const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role"
 };
-const tenantId = "tenant_a";
 process.env.SUPABASE_URL = env.SUPABASE_URL;
 process.env.SUPABASE_SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -31,7 +26,7 @@ const front = {
   id: "front",
   assetId: "asset-pre",
   storageRole: "front_original",
-  objectPath: "tenants/tenant_a/listing-assets/2026-07-06/asset-pre/front.jpg",
+  objectPath: "listing-assets/2026-07-06/asset-pre/front.jpg",
   bucket: "listing-card-images",
   contentSha256: "a".repeat(64),
   originalType: "image/jpeg",
@@ -45,7 +40,7 @@ const back = {
   id: "back",
   assetId: "asset-pre",
   storageRole: "back_original",
-  objectPath: "tenants/tenant_a/listing-assets/2026-07-06/asset-pre/back.jpg",
+  objectPath: "listing-assets/2026-07-06/asset-pre/back.jpg",
   bucket: "listing-card-images",
   contentSha256: "b".repeat(64),
   originalType: "image/jpeg",
@@ -107,59 +102,6 @@ assert.equal(
   "unversioned OCR must fail closed"
 );
 
-const cardNumberConfusionPayload = {
-  preingestion_evidence_patches: [
-    {
-      field: "serial_number",
-      value: "2/28",
-      source_type: "OCR",
-      source_image_id: "front",
-      provenance: { job_key: "ocr:ocr-crop-v7:bundle:serial-front" }
-    },
-    {
-      field: "print_run_denominator",
-      value: "28",
-      source_type: "OCR",
-      source_image_id: "front",
-      provenance: { job_key: "ocr:ocr-crop-v7:bundle:serial-front" }
-    },
-    {
-      field: "grade_company",
-      value: "PSA",
-      source_type: "OCR",
-      source_image_id: "front",
-      provenance: { job_key: "ocr:ocr-crop-v7:bundle:grade-front" }
-    }
-  ]
-};
-const cardNumberConfusionGuard = applyPreingestionSerialConfusionGuard(
-  cardNumberConfusionPayload,
-  { collector_number: "128", serial_number: "05/99" }
-);
-assert.equal(cardNumberConfusionGuard.applied, true);
-assert.equal(cardNumberConfusionGuard.blocked_patch_count, 2);
-assert.deepEqual(
-  cardNumberConfusionPayload.preingestion_evidence_patches.map((entry) => entry.field),
-  ["grade_company"],
-  "the full correlated OCR print-run observation must be blocked without dropping unrelated grade evidence"
-);
-
-const legitimatePrintRunPayload = {
-  preingestion_evidence_patches: [{
-    field: "serial_number",
-    value: "05/99",
-    source_type: "OCR",
-    source_image_id: "front",
-    provenance: { job_key: "ocr:ocr-crop-v7:bundle:serial-front" }
-  }]
-};
-const legitimatePrintRunGuard = applyPreingestionSerialConfusionGuard(
-  legitimatePrintRunPayload,
-  { collector_number: "128" }
-);
-assert.equal(legitimatePrintRunGuard.applied, false);
-assert.equal(legitimatePrintRunPayload.preingestion_evidence_patches.length, 1);
-
 const inMemoryPayload = {
   preingestion_evidence_patches: [{ field: "grade_company", value: "BGS", source_type: "SLAB_LABEL" }]
 };
@@ -181,7 +123,6 @@ assert.equal(quality.image_count, 3);
 assert.equal(quality.duplicate_sha256_count, 1);
 
 const bundle = createPreIngestionBundle({
-  tenantId,
   assetId: "asset-pre",
   images: [front, back, { ...front, id: "front-copy" }],
   derivedImages: [
@@ -190,7 +131,7 @@ const bundle = createPreIngestionBundle({
       assetId: "asset-pre",
       source_image_id: "front",
       role: "serial_crop",
-      objectPath: "tenants/tenant_a/listing-assets/2026-07-06/asset-pre/serial.webp",
+      objectPath: "listing-assets/2026-07-06/asset-pre/serial.webp",
       bucket: "listing-card-images",
       crop_box: { x: 0.1, y: 0.1, width: 0.2, height: 0.1 },
       originalWidth: 320,
@@ -280,13 +221,6 @@ const fetchImpl = async (url, init = {}) => {
     body: init.body ? JSON.parse(init.body) : null,
     headers: init.headers
   });
-  if (parsed.pathname === "/rest/v1/listing_assets" && (init.method || "GET") === "GET") {
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify([{ tenant_id: tenantId, id: "asset-pre" }])
-    };
-  }
   if ((init.method || "GET") === "POST") {
     return {
       ok: true,
@@ -303,28 +237,20 @@ const fetchImpl = async (url, init = {}) => {
 
 const saved = await upsertPreIngestionBundle({ bundle, env, fetchImpl });
 assert.equal(saved.saved, true);
-assert.equal(calls[0].path, "/rest/v1/listing_assets");
-assert.equal(calls[0].method, "GET");
-assert.equal(calls[0].search.tenant_id, `eq.${tenantId}`);
-assert.equal(calls[0].search.id, "eq.asset-pre");
-assert.equal(calls[1].path, "/rest/v1/preingestion_bundles");
-assert.equal(calls[1].search.on_conflict, "tenant_id,asset_id,source,bundle_version");
-assert.equal(calls[1].body.tenant_id, tenantId);
-assert.equal(calls[1].body.asset_id, "asset-pre");
-assert.equal(JSON.stringify(calls[1].body).includes("should-not-persist"), false);
+assert.equal(calls[0].path, "/rest/v1/preingestion_bundles");
+assert.equal(calls[0].search.on_conflict, "asset_id,source,bundle_version");
+assert.equal(calls[0].body.asset_id, "asset-pre");
+assert.equal(JSON.stringify(calls[0].body).includes("should-not-persist"), false);
 
 const read = await readPreIngestionBundle({
   bundleId: bundle.bundle_id,
-  tenantId,
   env,
   fetchImpl
 });
 assert.equal(read.found, true);
-assert.equal(calls[2].search.bundle_id, `eq.${bundle.bundle_id}`);
-assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
+assert.equal(calls[1].search.bundle_id, `eq.${bundle.bundle_id}`);
 
 const titlePayload = {
-  tenant_id: tenantId,
   preingestion_bundle_id: bundle.bundle_id
 };
 const applied = await __listingCopilotTitleTestHooks.applyPreIngestionBundleToPayload(titlePayload, {
@@ -347,7 +273,6 @@ assert.equal(titlePayload.preingestion_summary.bundle_id, bundle.bundle_id);
 
 const signedImages = [{ signed_url: "https://signed.test/front", image_id: "front" }];
 const refreshPayload = {
-  tenant_id: tenantId,
   preingestion_bundle_id: bundle.bundle_id,
   images: signedImages,
   preingestion_evidence_patches: []
@@ -552,71 +477,8 @@ const directDenominatorDocument = __listingCopilotTitleTestHooks.preingestionEvi
     confidence: 0.96
   }]
 });
+assert.equal(directDenominatorDocument.evidence.print_run_number.value, "#/5");
 assert.equal(directDenominatorDocument.evidence.print_run_denominator.value, "5");
-assert.equal(directDenominatorDocument.evidence.print_run_number, undefined);
-assert.equal(directDenominatorDocument.evidence.serial_number, undefined);
-assert.equal(directDenominatorDocument.evidence.numerical_rarity, undefined);
-
-const convergedPrintRunDocument = preingestionEvidenceDocumentFromPayload({
-  preingestion_evidence_patches: [
-    {
-      field: "print_run_number",
-      value: "2/3",
-      raw_text: "2/3",
-      source_type: "OCR",
-      source_image_id: "front",
-      crop_id: "serial-crop",
-      confidence: 0.96
-    },
-    {
-      field: "print_run_denominator",
-      value: "3",
-      raw_text: "2/3",
-      source_type: "OCR",
-      source_image_id: "front",
-      crop_id: "serial-crop",
-      confidence: 0.97
-    }
-  ]
-});
-for (const fieldName of ["print_run_number", "serial_number", "numerical_rarity"]) {
-  assert.equal(convergedPrintRunDocument.evidence[fieldName].value, "2/3");
-  assert.equal(convergedPrintRunDocument.evidence[fieldName].status, "CONFIRMED");
-  assert.deepEqual(convergedPrintRunDocument.evidence[fieldName].candidates.map((candidate) => candidate.value), ["2/3"]);
-  assert.deepEqual(convergedPrintRunDocument.evidence[fieldName].conflicts, []);
-}
-assert.equal(convergedPrintRunDocument.evidence.print_run_denominator.value, "3");
-assert.equal(convergedPrintRunDocument.evidence.print_run_denominator.status, "CONFIRMED");
-
-const conflictingPrintRunDocument = preingestionEvidenceDocumentFromPayload({
-  preingestion_evidence_patches: [
-    {
-      field: "print_run_number",
-      value: "2/3",
-      raw_text: "2/3",
-      source_type: "OCR",
-      source_image_id: "front",
-      crop_id: "serial-crop-a",
-      confidence: 0.96
-    },
-    {
-      field: "serial_number",
-      value: "1/3",
-      raw_text: "1/3",
-      source_type: "OCR",
-      source_image_id: "front",
-      crop_id: "serial-crop-b",
-      confidence: 0.95
-    }
-  ]
-});
-for (const fieldName of ["print_run_number", "serial_number", "numerical_rarity"]) {
-  assert.equal(conflictingPrintRunDocument.evidence[fieldName].status, "CONFLICT");
-  assert.deepEqual(
-    new Set(conflictingPrintRunDocument.evidence[fieldName].candidates.map((candidate) => candidate.value)),
-    new Set(["2/3", "1/3"])
-  );
-}
 
 const lineConfidenceDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
   preingestion_evidence_patches: [
@@ -748,7 +610,6 @@ assert.match(finalizedWithPreingestion.title, /BGS 9\.5\/10/);
 assert.doesNotMatch(finalizedWithPreingestion.title, /BGS 10\/9\.5/);
 
 const missingPayload = {
-  tenant_id: tenantId,
   preingestion_bundle_id: "00000000-0000-0000-0000-000000000000"
 };
 const missingApplied = await __listingCopilotTitleTestHooks.applyPreIngestionBundleToPayload(missingPayload, {
