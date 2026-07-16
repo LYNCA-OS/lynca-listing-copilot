@@ -58,6 +58,10 @@ assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocess
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /const MAX_BACKGROUND_PREP_WORKERS\s*=\s*4/, "background preparation should use its own bounded worker pool");
 assert.match(js, /const backgroundWorkerCount\s*=\s*MAX_BACKGROUND_PREP_WORKERS/, "background preparation must remain bounded independently of provider capacity");
+assert.match(js, /if \(asset\.preingestionPromise\) return asset\.preingestionPromise/, "pre-ingestion must deduplicate concurrent background and click-path preparation");
+assert.match(js, /const PREINGEST_REQUEST_TIMEOUT_MS\s*=\s*20000/, "pre-ingestion must have a bounded timeout instead of hanging the card indefinitely");
+assert.match(js, /settleRequiredPreingestion\(asset\)/, "queue submission must rendezvous with the existing evidence bundle before paid recognition");
+assert.match(js, /client_required_preingestion_wait_ms/, "pre-ingestion rendezvous latency must be observable per card");
 assert.match(js, /const MAX_CONCURRENT_WORKERS\s*=\s*6/, "queue submission workers must have a browser-side safety cap");
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");
 assert.match(js, /results\[index\]\s*=\s*await worker\(source\[index\], index\)/, "concurrent preprocessing should preserve input order in results");

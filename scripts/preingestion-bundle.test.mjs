@@ -11,7 +11,11 @@ import {
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
-import { applyPreIngestionEvidencePatchesToPayload } from "../lib/listing/pipeline/preingestion-evidence.mjs";
+import {
+  applyPreingestionSerialConfusionGuard,
+  applyPreIngestionEvidencePatchesToPayload,
+  preingestionEvidenceDocumentFromPayload
+} from "../lib/listing/pipeline/preingestion-evidence.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
@@ -101,6 +105,59 @@ assert.equal(
   0,
   "unversioned OCR must fail closed"
 );
+
+const cardNumberConfusionPayload = {
+  preingestion_evidence_patches: [
+    {
+      field: "serial_number",
+      value: "2/28",
+      source_type: "OCR",
+      source_image_id: "front",
+      provenance: { job_key: "ocr:ocr-crop-v7:bundle:serial-front" }
+    },
+    {
+      field: "print_run_denominator",
+      value: "28",
+      source_type: "OCR",
+      source_image_id: "front",
+      provenance: { job_key: "ocr:ocr-crop-v7:bundle:serial-front" }
+    },
+    {
+      field: "grade_company",
+      value: "PSA",
+      source_type: "OCR",
+      source_image_id: "front",
+      provenance: { job_key: "ocr:ocr-crop-v7:bundle:grade-front" }
+    }
+  ]
+};
+const cardNumberConfusionGuard = applyPreingestionSerialConfusionGuard(
+  cardNumberConfusionPayload,
+  { collector_number: "128", serial_number: "05/99" }
+);
+assert.equal(cardNumberConfusionGuard.applied, true);
+assert.equal(cardNumberConfusionGuard.blocked_patch_count, 2);
+assert.deepEqual(
+  cardNumberConfusionPayload.preingestion_evidence_patches.map((entry) => entry.field),
+  ["grade_company"],
+  "the full correlated OCR print-run observation must be blocked without dropping unrelated grade evidence"
+);
+
+const legitimatePrintRunPayload = {
+  preingestion_evidence_patches: [{
+    field: "serial_number",
+    value: "05/99",
+    source_type: "OCR",
+    source_image_id: "front",
+    provenance: { job_key: "ocr:ocr-crop-v7:bundle:serial-front" }
+  }]
+};
+const legitimatePrintRunGuard = applyPreingestionSerialConfusionGuard(
+  legitimatePrintRunPayload,
+  { collector_number: "128" }
+);
+assert.equal(legitimatePrintRunGuard.applied, false);
+assert.equal(legitimatePrintRunPayload.preingestion_evidence_patches.length, 1);
 
 const inMemoryPayload = {
   preingestion_evidence_patches: [{ field: "grade_company", value: "BGS", source_type: "SLAB_LABEL" }]
@@ -477,8 +534,71 @@ const directDenominatorDocument = __listingCopilotTitleTestHooks.preingestionEvi
     confidence: 0.96
   }]
 });
-assert.equal(directDenominatorDocument.evidence.print_run_number.value, "#/5");
 assert.equal(directDenominatorDocument.evidence.print_run_denominator.value, "5");
+assert.equal(directDenominatorDocument.evidence.print_run_number, undefined);
+assert.equal(directDenominatorDocument.evidence.serial_number, undefined);
+assert.equal(directDenominatorDocument.evidence.numerical_rarity, undefined);
+
+const convergedPrintRunDocument = preingestionEvidenceDocumentFromPayload({
+  preingestion_evidence_patches: [
+    {
+      field: "print_run_number",
+      value: "2/3",
+      raw_text: "2/3",
+      source_type: "OCR",
+      source_image_id: "front",
+      crop_id: "serial-crop",
+      confidence: 0.96
+    },
+    {
+      field: "print_run_denominator",
+      value: "3",
+      raw_text: "2/3",
+      source_type: "OCR",
+      source_image_id: "front",
+      crop_id: "serial-crop",
+      confidence: 0.97
+    }
+  ]
+});
+for (const fieldName of ["print_run_number", "serial_number", "numerical_rarity"]) {
+  assert.equal(convergedPrintRunDocument.evidence[fieldName].value, "2/3");
+  assert.equal(convergedPrintRunDocument.evidence[fieldName].status, "CONFIRMED");
+  assert.deepEqual(convergedPrintRunDocument.evidence[fieldName].candidates.map((candidate) => candidate.value), ["2/3"]);
+  assert.deepEqual(convergedPrintRunDocument.evidence[fieldName].conflicts, []);
+}
+assert.equal(convergedPrintRunDocument.evidence.print_run_denominator.value, "3");
+assert.equal(convergedPrintRunDocument.evidence.print_run_denominator.status, "CONFIRMED");
+
+const conflictingPrintRunDocument = preingestionEvidenceDocumentFromPayload({
+  preingestion_evidence_patches: [
+    {
+      field: "print_run_number",
+      value: "2/3",
+      raw_text: "2/3",
+      source_type: "OCR",
+      source_image_id: "front",
+      crop_id: "serial-crop-a",
+      confidence: 0.96
+    },
+    {
+      field: "serial_number",
+      value: "1/3",
+      raw_text: "1/3",
+      source_type: "OCR",
+      source_image_id: "front",
+      crop_id: "serial-crop-b",
+      confidence: 0.95
+    }
+  ]
+});
+for (const fieldName of ["print_run_number", "serial_number", "numerical_rarity"]) {
+  assert.equal(conflictingPrintRunDocument.evidence[fieldName].status, "CONFLICT");
+  assert.deepEqual(
+    new Set(conflictingPrintRunDocument.evidence[fieldName].candidates.map((candidate) => candidate.value)),
+    new Set(["2/3", "1/3"])
+  );
+}
 
 const lineConfidenceDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
   preingestion_evidence_patches: [

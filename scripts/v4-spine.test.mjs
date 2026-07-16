@@ -4,6 +4,11 @@ import {
   buildFastScoutListingResult,
   selectFastScoutImages
 } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
+import {
+  __listingCopilotTitleTestHooks,
+  serialNumeratorVerificationFromPreingestion,
+  verifiedSerialNumeratorFromPreingestion
+} from "../api/listing-copilot-title.js";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
 import { buildV4FieldGraph, buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
@@ -41,6 +46,7 @@ import {
 import {
   batchStatusResponseDisposition,
   batchPollWaitBudgetMs,
+  imageVerificationTimeoutMs,
   mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
@@ -73,6 +79,8 @@ assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 10, pro
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 300_000, itemCount: 10, providerConcurrency: 2 }), 300_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 0, providerConcurrency: 2 }), 18_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 1, providerConcurrency: 1 }), 75_000);
+assert.equal(imageVerificationTimeoutMs(2_000), 15_000, "image verification must not inherit an unsafe two-second caller budget");
+assert.equal(imageVerificationTimeoutMs(120_000), 45_000, "image verification must remain bounded independently of model requests");
 
 const smokeTsv = perCardTsv([{
   asset_id: "asset-timing",
@@ -191,6 +199,22 @@ const disabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: f
 assert.equal(disabledUltraFastPayload.provider_options.v4_ultra_fast_l2, false);
 const enabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: true });
 assert.equal(enabledUltraFastPayload.provider_options.v4_ultra_fast_l2, true);
+const defaultColdStartPayload = smokePayloadForItem({}, 0, []);
+assert.equal(defaultColdStartPayload.provider_options.cold_start_blind, false);
+const coldStartPayload = smokePayloadForItem({
+  seller_title: "SEALED SELLER TITLE MUST NOT LEAK",
+  reviewed_title: "REVIEWED TITLE MUST NOT LEAK",
+  corrected_title: "CORRECTED TITLE MUST NOT LEAK",
+  source_record: {
+    seller_title: "NESTED SELLER TITLE MUST NOT LEAK",
+    reviewed_title: "NESTED REVIEWED TITLE MUST NOT LEAK"
+  }
+}, 0, [], { coldStartBlind: true });
+assert.equal(coldStartPayload.provider_options.cold_start_blind, true);
+assert.equal(Object.hasOwn(coldStartPayload, "seller_title"), false);
+assert.equal(Object.hasOwn(coldStartPayload, "reviewed_title"), false);
+assert.equal(Object.hasOwn(coldStartPayload, "corrected_title"), false);
+assert.doesNotMatch(JSON.stringify(coldStartPayload), /MUST NOT LEAK/);
 assert.equal(fastInitialPromptOverride(["node", "smoke"]), null);
 assert.equal(fastInitialPromptOverride(["node", "smoke", "--fast-initial-prompt"]), true);
 assert.equal(fastInitialPromptOverride(["node", "smoke", "--full-listing-prompt"]), false);
@@ -736,6 +760,7 @@ const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
+const v4SoakSource = await readFile("scripts/run-v4-multi-tenant-soak.mjs", "utf8");
 const freshEbaySmokeWorkflowSource = await readFile(".github/workflows/fresh-ebay-smoke.yml", "utf8");
 const vercelConfigSource = await readFile("vercel.json", "utf8");
 const persistPipelineStart = v4TitleApiSource.indexOf("async function persistPipelineResult");
@@ -749,6 +774,11 @@ assert.doesNotMatch(persistPipelineSource, /\breq\b/, "persistence helpers must 
 assert.match(persistPipelineSource, /requestContext/, "request context must be passed explicitly to capacity refill");
 assert.match(v4TitleApiSource, /recognition_clock_source:\s*"gpt_provider_request"/, "GPT requests must persist the per-card recognition clock source");
 assert.match(v4TitleApiSource, /deterministic_anchor_finalize/, "no-GPT exact-anchor titles must persist their own clock source");
+assert.match(
+  v4SmokeSource,
+  /if \(expected\.size === 0\)[\s\S]*fatal_error:\s*"no_jobs_enqueued"/,
+  "paid eval must fail fast when preflight/enqueue produced no jobs"
+);
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /const backgroundPersistence = persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must be assembled outside the writer-ready response.");
@@ -775,6 +805,15 @@ assert.match(v4SmokeSource, /l2_catalog_raw_candidate_count/, "speculative smoke
 assert.match(v4SmokeSource, /input_tokens: finalProviderDiagnostics\.input_tokens/, "speculative smoke must retain provider token diagnostics.");
 assert.match(v4SmokeSource, /recognition_phase_loaded_sealed_labels: false/, "blind smoke must not load sealed seller titles during recognition.");
 assert.match(v4SmokeSource, /predictions_frozen_before_scoring: true/, "blind smoke must freeze predictions before local weak-label scoring.");
+assert.match(v4SmokeSource, /coldStartBlind:\s*hasFlag\(argv, "--cold-start-blind"\)/, "smoke CLI must expose the explicit cold-start blind switch.");
+assert.match(v4SmokeSource, /async function runOne\([\s\S]*?coldStartBlind[\s\S]*?payloadForItem\([\s\S]*?coldStartBlind/, "direct, queue, and per-card speculative requests must pass the cold-start marker into provider options.");
+assert.match(v4SmokeSource, /async function enqueueSpeculativeItem\([\s\S]*?coldStartBlind[\s\S]*?payloadForItem\([\s\S]*?coldStartBlind/, "shared-batch speculative enqueue must pass the cold-start marker into provider options.");
+assert.match(v4SmokeSource, /evaluation_sample_policy:\s*\{[\s\S]*?cold_start_blind: normalizedColdStartBlind/, "smoke evaluation metadata must record the cold-start policy.");
+assert.match(v4SmokeSource, /blind_policy:\s*\{[\s\S]*?cold_start_blind: normalizedColdStartBlind/, "smoke blind policy must record the cold-start policy.");
+assert.match(v4SoakSource, /coldStartBlind:\s*argv\.includes\("--cold-start-blind"\)/, "soak CLI must expose the explicit cold-start blind switch.");
+assert.match(v4SoakSource, /runV4EbaySmoke\(\{[\s\S]*?coldStartBlind: normalizedColdStartBlind/, "every soak wave must pass the cold-start marker to the smoke runner.");
+assert.match(v4SoakSource, /evaluation_sample_policy:\s*\{[\s\S]*?cold_start_blind: normalizedColdStartBlind/, "soak evaluation metadata must record the cold-start policy.");
+assert.match(v4SoakSource, /blind_policy:\s*\{[\s\S]*?cold_start_blind: normalizedColdStartBlind/, "soak blind policy must record the cold-start policy.");
 assert.match(v4SmokeSource, /evaluation_sample_policy/, "smoke reports must state whether their sample supports regression, ablation, or generalization claims.");
 assert.match(freshEbaySmokeWorkflowSource, /default:\s*random_blind/, "routine eBay smoke must default to a seeded random blind sample.");
 assert.match(freshEbaySmokeWorkflowSource, /fresh_generalization/, "fresh smoke must retain an explicit history-excluded generalization mode.");
@@ -943,6 +982,127 @@ const l2CustomRetrievalBudget = providerOptionsForV4BackgroundL2({
 assert.equal(l2CustomRetrievalBudget.post_observation_catalog_vector_hedge_ms, 400);
 assert.equal(l2CustomRetrievalBudget.post_observation_retrieval_critical_path_budget_ms, 800);
 
+const canonicalGradeTuple = {
+  grade_company: "BGS",
+  card_grade: "9",
+  auto_grade: "10",
+  cert_number: "22222222",
+  grade_type: "CARD_AND_AUTO"
+};
+for (const conflictField of ["grade_company", "card_grade", "auto_grade", "cert_number"]) {
+  const resultWithGradeTupleConflict = {
+    resolved_fields: canonicalGradeTuple,
+    normalized_evidence: {
+      [conflictField]: {
+        value: canonicalGradeTuple[conflictField],
+        normalized_value: canonicalGradeTuple[conflictField],
+        status: "CONFLICT",
+        confidence: 0.5,
+        candidates: [],
+        sources: [],
+        conflicts: [{ field: conflictField, reason: "test_grade_tuple_conflict" }],
+        unresolved_reason: "test_grade_tuple_conflict"
+      }
+    }
+  };
+  const resolvedConflictTuple = buildV4ResolvedFields(resultWithGradeTupleConflict);
+  for (const tupleField of ["grade_company", "card_grade", "auto_grade", "cert_number", "grade_type"]) {
+    assert.equal(
+      resolvedConflictTuple[tupleField],
+      null,
+      `${conflictField} CONFLICT must atomically block ${tupleField}`
+    );
+  }
+  assert.equal(buildV4FieldStates(resultWithGradeTupleConflict).grade.display_status, "CONFLICT");
+}
+
+const certConflictRequiresWriterReview = adaptV2ResultToV4({
+  sessionId: "v4sess-cert-conflict-review",
+  result: {
+    confidence: "HIGH",
+    final_title: "2024 Topps Chrome Test Player BGS 9/10",
+    resolved_fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Test Player"],
+      ...canonicalGradeTuple
+    },
+    evidence: {
+      cert_number: {
+        value: canonicalGradeTuple.cert_number,
+        normalized_value: canonicalGradeTuple.cert_number,
+        status: "CONFLICT",
+        confidence: 0.5,
+        candidates: [],
+        sources: [],
+        conflicts: [{ field: "cert_number", reason: "test_cert_conflict" }],
+        unresolved_reason: "test_cert_conflict"
+      }
+    },
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.equal(certConflictRequiresWriterReview.status, "WRITER_REVIEW");
+assert.equal(certConflictRequiresWriterReview.outcome_type, "WRITER_REVIEW_REQUIRED");
+assert.equal(certConflictRequiresWriterReview.writer_review_required, true);
+assert.ok(certConflictRequiresWriterReview.review_required_fields.includes("grade"));
+assert.ok(certConflictRequiresWriterReview.review_required_fields.includes("cert_number"));
+assert.equal(certConflictRequiresWriterReview.field_states.grade.display_status, "CONFLICT");
+assert.equal(certConflictRequiresWriterReview.writer_draft.actions.includes("ACCEPT"), false);
+assert.equal(certConflictRequiresWriterReview.writer_draft.title, "");
+assert.equal(certConflictRequiresWriterReview.title_stage_readiness.writer_visible_title_ready, false);
+
+const aliasOcrPatch = (value, confidence, jobKey) => ({
+  evidence_field: "print_run_candidate",
+  normalizedValue: value,
+  sourceType: "OCR",
+  confidence,
+  provenance: {
+    job_key: jobKey,
+    crop_type: "serial_number",
+    source_region: "serial_region"
+  }
+});
+const aliasedSerialVerification = verifiedSerialNumeratorFromPreingestion({
+  preingestion_evidence_patches: [aliasOcrPatch("07/25", 0.95, "ocr:serial:alias")]
+});
+assert.equal(aliasedSerialVerification.verified, true);
+assert.equal(aliasedSerialVerification.value, "07/25");
+assert.equal(serialNumeratorVerificationFromPreingestion({
+  preingestion_evidence_patches: [aliasOcrPatch("07/25", 0.93, "ocr:serial:pending")]
+}, { status: "DEFERRED_AFTER_PROVIDER", job_count: 1 }), null);
+assert.equal(serialNumeratorVerificationFromPreingestion({
+  preingestion_evidence_patches: [
+    aliasOcrPatch("07/25", 0.95, "ocr:serial:conflict-a"),
+    aliasOcrPatch("09/25", 0.95, "ocr:serial:conflict-b")
+  ]
+}), false);
+const canonicalUnknownAtApiBoundary = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  confidence: "HIGH",
+  serial_numerator_verified: null,
+  serialNumeratorVerified: false,
+  resolved_fields: {
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Prizm",
+    players: ["Test Player"],
+    print_run_number: "07/25",
+    serial_number: "07/25"
+  },
+  normalized_evidence: {
+    print_run_number: {
+      value: "07/25",
+      normalized_value: "07/25",
+      status: "CONFIRMED",
+      sources: [{ source_type: "CARD_FRONT", observed_text: "07/25", direct_observation: true }]
+    }
+  }
+}, { maxTitleLength: 80 });
+assert.equal(canonicalUnknownAtApiBoundary.serial_numerator_verified, null);
+assert.match(canonicalUnknownAtApiBoundary.final_title, /07\/25/);
+
 const resolvedOcrOverridePresentation = adaptV2ResultToV4({
   sessionId: "v4sess-resolved-ocr-override",
   result: {
@@ -958,6 +1118,15 @@ const resolvedOcrOverridePresentation = adaptV2ResultToV4({
       print_run_numerator: "03",
       print_run_denominator: "10",
       serial_number: "03/10"
+    },
+    normalized_evidence: {
+      print_run_number: {
+        value: "03/10",
+        normalized_value: "03/10",
+        status: "CONFIRMED",
+        confidence: 0.96,
+        sources: [{ source_type: "OCR", observed_text: "03/10", direct_observation: true }]
+      }
     },
     serial_numerator_verified: true,
     preingestion_serial_verification: {
@@ -999,6 +1168,13 @@ const verifiedOcrMustBeatDenominatorOnlyEvidence = adaptV2ResultToV4({
         status: "CONFIRMED",
         normalized_value: "#/5",
         sources: [{ source_type: "OCR", direct_observation: true }]
+      },
+      serial_number: {
+        value: "1/5",
+        normalized_value: "1/5",
+        status: "CONFIRMED",
+        confidence: 0.96,
+        sources: [{ source_type: "OCR", observed_text: "1/5", direct_observation: true }]
       }
     },
     serial_numerator_verified: true,
@@ -1019,6 +1195,190 @@ assert.match(
 );
 assert.equal(verifiedOcrMustBeatDenominatorOnlyEvidence.resolved_fields.print_run_number, "1/5");
 
+function adaptTriStateSerialResult(serialNumeratorVerified, legacyAlias) {
+  return adaptV2ResultToV4({
+    sessionId: `v4sess-tristate-${String(serialNumeratorVerified)}`,
+    result: {
+      confidence: "HIGH",
+      final_title: "2024 Panini Prizm Test Player 31/50",
+      resolved_fields: {
+        year: "2024",
+        manufacturer: "Panini",
+        product: "Prizm",
+        players: ["Test Player"],
+        print_run_number: "31/50",
+        serial_number: "31/50"
+      },
+      normalized_evidence: {
+        print_run_number: {
+          value: "31/50",
+          normalized_value: "31/50",
+          status: "CONFIRMED",
+          sources: [{ source_type: "CARD_FRONT", observed_text: "31/50", direct_observation: true }]
+        }
+      },
+      serial_numerator_verified: serialNumeratorVerified,
+      ...(legacyAlias === undefined ? {} : { serialNumeratorVerified: legacyAlias }),
+      title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+    },
+    payload: { maxTitleLength: 80 },
+    routePlan: assistedRoute
+  });
+}
+
+const unknownOcrV4Result = adaptTriStateSerialResult(null, false);
+assert.equal(unknownOcrV4Result.provider_result.serial_numerator_verified, null);
+assert.match(unknownOcrV4Result.final_title, /31\/50/);
+const conflictingOcrV4Result = adaptTriStateSerialResult(false, true);
+assert.equal(conflictingOcrV4Result.provider_result.serial_numerator_verified, false);
+assert.match(conflictingOcrV4Result.final_title, /#\/50/);
+assert.doesNotMatch(conflictingOcrV4Result.final_title, /31\/50/);
+
+const stalePublicPresentationFields = {
+  year: "2023",
+  manufacturer: "Panini",
+  product: "Prizm",
+  players: ["Stale Player"]
+};
+const canonicalPublicPresentationFields = {
+  year: "2024",
+  manufacturer: "Topps",
+  product: "Topps Chrome",
+  players: ["Test Player"],
+  card_name: "Autograph"
+};
+const apiPublicPresentationSnapshotResult = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  confidence: "HIGH",
+  serial_numerator_verified: null,
+  fields: { ...stalePublicPresentationFields },
+  resolved: { ...stalePublicPresentationFields },
+  resolved_fields: { ...canonicalPublicPresentationFields },
+  rendered_fields: {
+    ...stalePublicPresentationFields,
+    fields: { ...stalePublicPresentationFields }
+  },
+  retrieval_application: {
+    owns_candidate_application: true,
+    resolver_consumed: true
+  }
+}, { maxTitleLength: 80 });
+assert.ok(Object.isFrozen(apiPublicPresentationSnapshotResult.presentation_resolved_fields));
+assert.strictEqual(
+  apiPublicPresentationSnapshotResult.resolved,
+  apiPublicPresentationSnapshotResult.presentation_resolved_fields
+);
+assert.strictEqual(
+  apiPublicPresentationSnapshotResult.resolved_fields,
+  apiPublicPresentationSnapshotResult.presentation_resolved_fields
+);
+assert.strictEqual(
+  apiPublicPresentationSnapshotResult.rendered_fields.fields,
+  apiPublicPresentationSnapshotResult.presentation_resolved_fields
+);
+assert.equal(apiPublicPresentationSnapshotResult.fields.year, "2024");
+assert.equal(apiPublicPresentationSnapshotResult.fields.product, "Topps Chrome");
+assert.deepEqual(apiPublicPresentationSnapshotResult.fields.players, ["Test Player"]);
+assert.equal(apiPublicPresentationSnapshotResult.rendered_fields.year, "2024");
+assert.equal(apiPublicPresentationSnapshotResult.rendered_fields.product, "Topps Chrome");
+assert.deepEqual(apiPublicPresentationSnapshotResult.rendered_fields.players, ["Test Player"]);
+
+const unsafeSerialAliases = {
+  year: "2024",
+  manufacturer: "Panini",
+  product: "Prizm",
+  players: ["Test Player"],
+  print_run_number: "31/50",
+  print_run_numerator: "31",
+  print_run_denominator: "50",
+  numbered_to: "50",
+  serial_number: "31/50",
+  serial_denominator: "50",
+  numerical_rarity: "31/50",
+  expected_serial_denominator: "50"
+};
+const apiFailClosedSerialResult = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  confidence: "HIGH",
+  serial_numerator_verified: false,
+  serialNumeratorVerified: true,
+  fields: { ...unsafeSerialAliases },
+  resolved: { ...unsafeSerialAliases },
+  resolved_fields: { ...unsafeSerialAliases },
+  rendered_fields: {
+    ...unsafeSerialAliases,
+    serial_numerator: "31",
+    fields: { ...unsafeSerialAliases }
+  },
+  field_states: [{
+    field: "serial_number",
+    resolved_value: "31/50",
+    candidates: [{ value: "31/50", normalized_value: "31/50" }],
+    supporting_sources: [{ observed_text: "31/50" }]
+  }, {
+    field: "print_run_numerator",
+    resolved_value: "31",
+    candidates: [{ value: "31" }]
+  }],
+  normalized_evidence: {
+    print_run_number: {
+      value: "31/50",
+      normalized_value: "31/50",
+      status: "CONFIRMED",
+      confidence: 0.99,
+      sources: [{ source_type: "CARD_FRONT", observed_text: "31/50", direct_observation: true }]
+    }
+  },
+  title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+}, { maxTitleLength: 80 });
+const assertFailClosedSerialFields = (fields, label) => {
+  assert.equal(fields.print_run_number, "#/50", `${label} print_run_number`);
+  assert.equal(fields.print_run_numerator, null, `${label} print_run_numerator`);
+  assert.equal(fields.print_run_denominator, "50", `${label} print_run_denominator`);
+  assert.equal(fields.serial_number, "#/50", `${label} serial_number`);
+  assert.equal(fields.numerical_rarity, "#/50", `${label} numerical_rarity`);
+};
+assertFailClosedSerialFields(apiFailClosedSerialResult.presentation_resolved_fields, "API presentation snapshot");
+assertFailClosedSerialFields(apiFailClosedSerialResult.resolved, "API resolved");
+assertFailClosedSerialFields(apiFailClosedSerialResult.resolved_fields, "API resolved_fields");
+assertFailClosedSerialFields(apiFailClosedSerialResult.fields, "API fields");
+assertFailClosedSerialFields(apiFailClosedSerialResult.rendered_fields, "API rendered_fields");
+assert.strictEqual(apiFailClosedSerialResult.resolved, apiFailClosedSerialResult.presentation_resolved_fields);
+assert.strictEqual(apiFailClosedSerialResult.resolved_fields, apiFailClosedSerialResult.presentation_resolved_fields);
+assert.strictEqual(apiFailClosedSerialResult.rendered_fields.fields, apiFailClosedSerialResult.presentation_resolved_fields);
+assert.equal(apiFailClosedSerialResult.field_states[0].resolved_value, "#/50");
+assert.equal(apiFailClosedSerialResult.field_states[0].candidates[0].value, "#/50");
+assert.equal(apiFailClosedSerialResult.field_states[0].supporting_sources[0].observed_text, "#/50");
+assert.equal(apiFailClosedSerialResult.field_states[1].resolved_value, null);
+assert.equal(apiFailClosedSerialResult.field_states[1].candidates[0].value, null);
+
+const apiToV4FailClosedSerialResult = adaptV2ResultToV4({
+  sessionId: "v4sess-api-fail-closed-serial",
+  result: apiFailClosedSerialResult,
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.match(apiToV4FailClosedSerialResult.final_title, /#\/50/);
+assert.doesNotMatch(apiToV4FailClosedSerialResult.final_title, /31\/50/);
+assert.match(apiToV4FailClosedSerialResult.writer_draft.title, /#\/50/);
+assert.doesNotMatch(apiToV4FailClosedSerialResult.writer_draft.title, /31\/50/);
+assertFailClosedSerialFields(apiToV4FailClosedSerialResult.presentation_resolved_fields, "V4 presentation snapshot");
+assertFailClosedSerialFields(apiToV4FailClosedSerialResult.resolved_fields, "V4 resolved_fields");
+assertFailClosedSerialFields(apiToV4FailClosedSerialResult.legacy_v2_result.resolved_fields, "V4 legacy resolved_fields");
+assert.strictEqual(apiToV4FailClosedSerialResult.resolved_fields, apiToV4FailClosedSerialResult.presentation_resolved_fields);
+assert.strictEqual(
+  apiToV4FailClosedSerialResult.legacy_v2_result.presentation_resolved_fields,
+  apiToV4FailClosedSerialResult.presentation_resolved_fields
+);
+assert.equal(apiToV4FailClosedSerialResult.field_states.serial.value, "#/50");
+
+const apiToV4FailClosedPersistence = buildV4PersistenceRows({
+  sessionId: "v4sess-api-fail-closed-serial",
+  result: apiFailClosedSerialResult,
+  payload: { maxTitleLength: 80 }
+});
+const persistedSerialState = apiToV4FailClosedPersistence.fieldEvidenceRows.find((row) => row.field_name === "serial");
+assert.equal(persistedSerialState.field_value, "#/50");
+assert.doesNotMatch(JSON.stringify(apiToV4FailClosedPersistence.fieldEvidenceRows), /31\/50/);
+
 const v2Result = {
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",
   final_title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5",
@@ -1034,6 +1394,15 @@ const v2Result = {
     serial_number: "2/3",
     grade_company: "BGS",
     card_grade: "8.5"
+  },
+  normalized_evidence: {
+    print_run_number: {
+      value: "2/3",
+      normalized_value: "2/3",
+      status: "CONFIRMED",
+      confidence: 0.96,
+      sources: [{ source_type: "OCR", observed_text: "2/3", direct_observation: true }]
+    }
   },
   candidate_application_trace: {
     applied_field_count: 3,
@@ -1232,7 +1601,7 @@ const deterministicCsmTitle = adaptV2ResultToV4({
       auto_grade: "9",
       grade_type: "CARD_AND_AUTO"
     },
-    serial_numerator_verified: true,
+    serial_numerator_verified: null,
     title_stage: v4TitleStages.L2_ASSISTED_DRAFT
   },
   payload: { maxTitleLength: 80 },
@@ -1244,6 +1613,7 @@ assert.equal(
 );
 assert.equal(deterministicCsmTitle.resolved_fields.collector_number, "164");
 assert.equal(deterministicCsmTitle.resolved_fields.surface_color, "Silver");
+assert.equal(deterministicCsmTitle.provider_result.serial_numerator_verified, null);
 assert.equal(deterministicCsmTitle.provider_result.title_reconciled_from_v4_field_graph, true);
 assert.equal(deterministicCsmTitle.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
 assert.match(deterministicCsmTitle.legacy_v2_result.model_title_suggestion, /1st Bowman/);

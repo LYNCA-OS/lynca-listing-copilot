@@ -43,6 +43,7 @@ const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 const ENABLE_SPECULATIVE_RECOGNITION = true;
 const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
 const QUEUE_ENQUEUE_TIMEOUT_MS = 25000;
+const PREINGEST_REQUEST_TIMEOUT_MS = 20000;
 const defaultProviderOptions = Object.freeze({
   single_model_fast: false,
   enable_evidence_completion: true,
@@ -860,59 +861,71 @@ async function ensurePreingestionBundle(asset) {
       reused: true
     };
   }
+  if (asset.preingestionPromise) return asset.preingestionPromise;
 
   const images = preingestionImagesForAsset(asset);
   if (!images.length) {
     throw new Error("no_verified_storage_images");
   }
 
-  const response = await fetch(PREINGEST_API_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    credentials: "same-origin",
-    body: JSON.stringify({
-      asset_id: asset.id,
-      assetId: asset.id,
-      images,
-      captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
-      requested_fields: [
-        "serial_number",
-        "collector_number",
-        "checklist_code",
-        "grade_label",
-        "year_product",
-        "subject",
-        "surface"
-      ],
-      source: "listing_copilot_background_prepare",
-      enqueue_workers: true,
-      enqueue_ocr: true,
-      // Only OCR currently has a production consumer. Query embeddings still
-      // run concurrently inside recognition; do not create durable dead jobs.
-      enqueue_embeddings: false,
-      enqueue_surface: false,
-      enqueue_quality: false,
-      // 上传端已经完成对象校验，Provider 读取时还会独立签名。这里重复
-      // 签名只增加 L2 起跑等待，不增加证据强度。
-      verify_signed_read_urls: false
-    })
-  });
+  asset.preingestionPromise = (async () => {
+    const startedAt = performance.now();
+    const response = await fetchWithTimeout(PREINGEST_API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        asset_id: asset.id,
+        assetId: asset.id,
+        images,
+        captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
+        requested_fields: [
+          "serial_number",
+          "collector_number",
+          "checklist_code",
+          "grade_label",
+          "year_product",
+          "subject",
+          "surface"
+        ],
+        source: "listing_copilot_background_prepare",
+        enqueue_workers: true,
+        enqueue_ocr: true,
+        // Only OCR currently has a production consumer. Query embeddings still
+        // run concurrently inside recognition; do not create durable dead jobs.
+        enqueue_embeddings: false,
+        enqueue_surface: false,
+        enqueue_quality: false,
+        // 上传端已经完成对象校验，Provider 读取时还会独立签名。这里重复
+        // 签名只增加 L2 起跑等待，不增加证据强度。
+        verify_signed_read_urls: false
+      })
+    }, PREINGEST_REQUEST_TIMEOUT_MS);
 
-  const payload = await response.json();
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.message || payload.code || `preingestion_failed_${response.status}`);
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || payload.code || `preingestion_failed_${response.status}`);
+    }
+
+    asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
+    asset.preingestionBundleStatus = payload.bundle_status || "";
+    asset.preingestionSummary = payload.preprocessing_summary || null;
+    asset.preingestionMs = Math.round(performance.now() - startedAt);
+    return {
+      bundleId: asset.preingestionBundleId,
+      status: asset.preingestionBundleStatus,
+      summary: asset.preingestionSummary
+    };
+  })();
+
+  try {
+    return await asset.preingestionPromise;
+  } catch (error) {
+    asset.preingestionPromise = null;
+    throw error;
   }
-
-  asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
-  asset.preingestionBundleStatus = payload.bundle_status || "";
-  asset.preingestionSummary = payload.preprocessing_summary || null;
-  return {
-    bundleId: asset.preingestionBundleId,
-    status: asset.preingestionBundleStatus,
-    summary: asset.preingestionSummary
-  };
 }
 
 async function prepareAssetInBackground(asset, runId) {
@@ -928,7 +941,9 @@ async function prepareAssetInBackground(asset, runId) {
     try {
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "uploading";
+      const uploadStartedAt = performance.now();
       await ensureAssetImagesUploaded(asset);
+      asset.backgroundUploadMs = Math.round(performance.now() - uploadStartedAt);
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
       const bundle = await ensurePreingestionBundle(asset);
@@ -985,6 +1000,32 @@ async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
       ok: false,
       wait_ms: Math.round(performance.now() - startedAt),
       error: String(error.message || "background_prepare_failed").slice(0, 160)
+    };
+  }
+}
+
+async function settleRequiredPreingestion(asset) {
+  if (!asset) return { used: false, wait_ms: 0 };
+  if (asset.preingestionBundleId) {
+    return { used: true, ok: true, reused: true, wait_ms: 0 };
+  }
+  const startedAt = performance.now();
+  try {
+    const bundle = await ensurePreingestionBundle(asset);
+    return {
+      used: true,
+      ok: Boolean(bundle?.bundleId),
+      reused: false,
+      wait_ms: Math.round(performance.now() - startedAt),
+      ...bundle
+    };
+  } catch (error) {
+    return {
+      used: true,
+      ok: false,
+      reused: false,
+      wait_ms: Math.round(performance.now() - startedAt),
+      error: String(error?.message || "preingestion_failed").slice(0, 160)
     };
   }
 }
@@ -2774,6 +2815,17 @@ async function processAssetViaQueue(asset, options = {}) {
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
   setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
 
+  // Accuracy-first rendezvous: a quick click must not bypass the in-flight
+  // evidence bundle or launch a second paid path for the same card.
+  setAssetProgress(asset.index, "等待证据包就绪", 0.24);
+  const requiredPreingestion = await settleRequiredPreingestion(asset);
+  if (asset.preingestionBundleId && ENABLE_SPECULATIVE_RECOGNITION) {
+    void ensureSpeculativeRecognition(
+      asset,
+      asset.backgroundPreparationRunId || state.backgroundPreparationRunId
+    );
+  }
+
   const fastScoutPrewarm = asset.fastScoutPrewarmResult || {
     used: Boolean(asset.fastScoutPrewarmStatus),
     wait_ms: 0,
@@ -2783,8 +2835,15 @@ async function processAssetViaQueue(asset, options = {}) {
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
     client_upload_ms: uploadMs,
-    client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
+    client_background_prepare_wait_ms: Math.round(
+      Number(backgroundPrepareResult.wait_ms || 0) + Number(requiredPreingestion.wait_ms || 0)
+    ),
     client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
+    client_background_upload_ms: Math.round(Number(asset.backgroundUploadMs || 0)),
+    client_preingestion_ms: Math.round(Number(asset.preingestionMs || 0)),
+    client_required_preingestion_wait_ms: Math.round(Number(requiredPreingestion.wait_ms || 0)),
+    client_required_preingestion_ok: requiredPreingestion.ok === true,
+    client_required_preingestion_error: requiredPreingestion.error || "",
     client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId),
     client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
     client_fast_scout_prewarm_wait_ms: Math.round(Number(fastScoutPrewarm.wait_ms || 0)),
@@ -2813,9 +2872,7 @@ async function processAssetViaQueue(asset, options = {}) {
     setAssetProgress(asset.index, "复用预识别结果", 0.5);
     const clientTotalMs = Math.round(performance.now() - processStartedAt);
     const pending = queuedPendingResult(asset, speculative.enqueue_payload || {}, speculative.job, {
-      client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
-      client_upload_ms: uploadMs,
-      client_background_prepare_wait_ms: asset.clientTiming.client_background_prepare_wait_ms,
+      ...asset.clientTiming,
       client_speculative_used: true,
       client_speculative_ms: asset.clientTiming.client_speculative_ms,
       client_speculative_wait_ms: asset.clientTiming.client_speculative_wait_ms,
@@ -2894,10 +2951,8 @@ async function processAssetViaQueue(asset, options = {}) {
   setAssetProgress(asset.index, "队列已提交，等待云端生成", 0.5);
   const clientTotalMs = Math.round(performance.now() - processStartedAt);
   return queuedPendingResult(asset, enqueuePayload, job, {
-    client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
-    client_upload_ms: uploadMs,
+    ...asset.clientTiming,
     client_request_prepare_ms: requestPrepareMs,
-    client_background_prepare_wait_ms: asset.clientTiming.client_background_prepare_wait_ms,
     client_enqueue_roundtrip_ms: enqueueRoundtripMs,
     client_total_ms: clientTotalMs
   });

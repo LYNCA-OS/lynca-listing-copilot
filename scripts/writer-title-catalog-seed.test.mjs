@@ -567,6 +567,7 @@ await adminCatalogSmokeHandler({
   method: "POST",
   headers: { authorization: "Bearer import-token" },
   body: {
+    query_concurrency: 2,
     fields: {
       product: "Magic: The Gathering Final Fantasy",
       players: ["Prompto Argentum"],
@@ -583,6 +584,7 @@ for (const [key, value] of Object.entries(previousSmokeEnv)) {
 assert.equal(smokeResponse.statusCode, 200);
 const smokePayload = JSON.parse(smokeResponse.body);
 assert.equal(smokePayload.ok, true);
+assert.equal(smokePayload.query_concurrency, 2);
 assert.equal(smokePayload.raw_candidate_count, 1);
 assert.equal(smokePayload.prompt_candidate_count, 1);
 assert.equal(smokePayload.prompt_candidate_ids[0], "identity-mtg-prompto");

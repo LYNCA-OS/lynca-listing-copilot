@@ -13,6 +13,7 @@ import {
   v4QueueKickDedupMs
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
 import { listingStageCapacityPlan } from "../lib/listing/v4/orchestration/stage-capacity.mjs";
+import { concurrencyContractSnapshot } from "../lib/listing/v4/orchestration/concurrency-contract.mjs";
 import { v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 
 const cookieName = "lynca_metaverse_session";
@@ -305,6 +306,7 @@ export default async function handler(req, res) {
       per_key_stable_concurrency: providerPool.per_key_stable_concurrency,
       global_provider_concurrency: providerPool.global_concurrency,
       queue_submission_concurrency: v4QueueSubmissionConcurrency(process.env),
+      concurrency_contract: concurrencyContractSnapshot(),
       stage_capacity: {
         paddle_ocr: stageCapacity.ocr,
         catalog: stageCapacity.catalog,

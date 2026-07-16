@@ -63,6 +63,75 @@ assert.equal(psaDualGrade.resolved.card_grade, "9");
 assert.equal(psaDualGrade.resolved.auto_grade, "10");
 assert.equal(psaDualGrade.resolved.grade_type, "CARD_AND_AUTO");
 
+const bgsDualGrade = resolveGradeFields({
+  resolved: {},
+  legacyFields: {
+    grade_company: "BGS",
+    grade: "8.5/10"
+  }
+});
+assert.equal(bgsDualGrade.resolved.card_grade, "8.5");
+assert.equal(bgsDualGrade.resolved.auto_grade, "10");
+assert.equal(bgsDualGrade.resolved.grade_type, "CARD_AND_AUTO");
+
+const copiedSingleCardGrade = resolveGradeFields({
+  resolved: {
+    grade_company: "PSA",
+    card_grade: "7",
+    auto_grade: "7",
+    grade_type: "CARD_AND_AUTO"
+  },
+  legacyFields: {
+    grade_company: "PSA",
+    grade: "7",
+    card_grade: "7",
+    auto_grade: "",
+    grade_type: "CARD_ONLY"
+  }
+});
+assert.equal(copiedSingleCardGrade.resolved.card_grade, "7");
+assert.equal(copiedSingleCardGrade.resolved.auto_grade, null);
+assert.equal(copiedSingleCardGrade.resolved.grade_type, "CARD_ONLY");
+assert.ok(copiedSingleCardGrade.notes.some((note) => note.action === "discard_unsupported_auto_grade"));
+
+const declaredCardAndAutoGrade = resolveGradeFields({
+  resolved: {},
+  legacyFields: {
+    grade_company: "BGS",
+    card_grade: "8.5",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  }
+});
+assert.equal(declaredCardAndAutoGrade.resolved.card_grade, "8.5");
+assert.equal(declaredCardAndAutoGrade.resolved.auto_grade, "10");
+assert.equal(declaredCardAndAutoGrade.resolved.grade_type, "CARD_AND_AUTO");
+
+const inferredCardAndAutoGrade = resolveGradeFields({
+  resolved: {},
+  legacyFields: {
+    grade_company: "BGS",
+    card_grade: "9",
+    auto_grade: "10"
+  }
+});
+assert.equal(inferredCardAndAutoGrade.resolved.card_grade, "9");
+assert.equal(inferredCardAndAutoGrade.resolved.auto_grade, "10");
+assert.equal(inferredCardAndAutoGrade.resolved.grade_type, "CARD_AND_AUTO");
+
+const declaredCardOnlyGradeRejectsAuto = resolveGradeFields({
+  resolved: {},
+  legacyFields: {
+    grade_company: "BGS",
+    card_grade: "9",
+    auto_grade: "10",
+    grade_type: "CARD_ONLY"
+  }
+});
+assert.equal(declaredCardOnlyGradeRejectsAuto.resolved.card_grade, "9");
+assert.equal(declaredCardOnlyGradeRejectsAuto.resolved.auto_grade, null);
+assert.equal(declaredCardOnlyGradeRejectsAuto.resolved.grade_type, "CARD_ONLY");
+
 const autoOnly = resolveGradeFields({
   resolved: {},
   legacyFields: {

@@ -14,6 +14,10 @@ import {
   resolvedFieldsToLegacyFields,
   splitLegacyCardNumber
 } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
+import {
+  issueTrustedOperatorEvidenceEnvelope,
+  validateProviderEvidencePayload
+} from "../lib/listing/providers/provider-response-normalizer.mjs";
 
 const evidenceSchema = JSON.parse(await readFile("lib/listing/schemas/evidence-field.schema.json", "utf8"));
 const resolvedSchema = JSON.parse(await readFile("lib/listing/schemas/resolved-fields.schema.json", "utf8"));
@@ -154,6 +158,21 @@ assert.equal(normalized.grade_type, "CARD_AND_AUTO");
 assert.equal(normalized.one_of_one, true);
 assert.equal(normalized.multi_card, true);
 assert.equal(normalized.card_count, 3);
+
+const lorcanaChecklistBoundary = normalizeResolvedFields({
+  language: "JA",
+  brand: "Disney Lorcana",
+  collector_number: "242/204 JA-9",
+  print_run_number: "#/204",
+  serial_number: "#/204",
+  numerical_rarity: "#/204",
+  numbered_to: "204"
+});
+assert.equal(lorcanaChecklistBoundary.tcg_card_number, "242/204");
+assert.equal(lorcanaChecklistBoundary.card_number, "242/204");
+assert.equal(lorcanaChecklistBoundary.print_run_number, null);
+assert.equal(lorcanaChecklistBoundary.serial_number, null);
+assert.equal(lorcanaChecklistBoundary.numerical_rarity, null);
 
 const multiCardResolved = legacyFieldsToResolvedFields({
   multi_card: true,
@@ -322,6 +341,147 @@ assert.equal(structuredHighRiskFieldDocument.evidence.rc.sources[0].evidence_kin
 assert.equal(structuredHighRiskFieldDocument.evidence.auto.sources[0].source_type, "VISION_MODEL");
 assert.equal(structuredHighRiskFieldDocument.evidence.auto.sources[0].signature_visible, true);
 assert.doesNotThrow(() => assertValidEvidenceDocument(structuredHighRiskFieldDocument));
+
+const sparseCertEvidenceDocument = providerPayloadToEvidenceDocument({
+  confidence: "HIGH",
+  fields: {
+    grade_company: "PSA",
+    card_grade: "10",
+    cert_number: "12345678",
+    grade_type: "CARD_ONLY"
+  },
+  field_evidence: {
+    cert_number: {
+      value: "12345678",
+      source_type: "SLAB_LABEL",
+      source_image_id: "slab-cert",
+      visible_text: "CERT 12345678",
+      directly_observed: true,
+      confidence: 0.99,
+      review_required: false
+    }
+  },
+  unresolved: []
+});
+assert.equal(sparseCertEvidenceDocument.resolved.grade_company, "PSA");
+assert.equal(sparseCertEvidenceDocument.resolved.card_grade, "10");
+assert.equal(sparseCertEvidenceDocument.resolved.auto_grade, null);
+assert.equal(sparseCertEvidenceDocument.resolved.cert_number, "12345678");
+assert.equal(sparseCertEvidenceDocument.resolved.grade_type, "CARD_ONLY");
+assert.equal(sparseCertEvidenceDocument.evidence.cert_number.sources[0].source_type, "SLAB_LABEL");
+assert.doesNotThrow(() => assertValidEvidenceDocument(sparseCertEvidenceDocument));
+
+const inferredBgsDualGradeEvidenceDocument = providerPayloadToEvidenceDocument({
+  confidence: "HIGH",
+  fields: {
+    grade_company: "BGS",
+    card_grade: "9",
+    auto_grade: "10"
+  },
+  field_evidence: {
+    grade_company: {
+      value: "BGS",
+      source_type: "SLAB_LABEL",
+      source_image_id: "slab-bgs",
+      visible_text: "BGS 9 AUTO 10",
+      directly_observed: true,
+      confidence: 0.99,
+      review_required: false
+    },
+    card_grade: {
+      value: "9",
+      source_type: "SLAB_LABEL",
+      source_image_id: "slab-bgs",
+      visible_text: "BGS 9 AUTO 10",
+      directly_observed: true,
+      confidence: 0.99,
+      review_required: false
+    },
+    auto_grade: {
+      value: "10",
+      source_type: "SLAB_LABEL",
+      source_image_id: "slab-bgs",
+      evidence_kind: "AUTO_GRADE",
+      visible_text: "AUTO 10",
+      directly_observed: true,
+      confidence: 0.99,
+      review_required: false
+    }
+  },
+  unresolved: []
+});
+assert.equal(inferredBgsDualGradeEvidenceDocument.resolved.grade_company, "BGS");
+assert.equal(inferredBgsDualGradeEvidenceDocument.resolved.card_grade, "9");
+assert.equal(inferredBgsDualGradeEvidenceDocument.resolved.auto_grade, "10");
+assert.equal(inferredBgsDualGradeEvidenceDocument.resolved.grade_type, "CARD_AND_AUTO");
+assert.equal(inferredBgsDualGradeEvidenceDocument.evidence.auto_grade.value, "10");
+assert.equal(inferredBgsDualGradeEvidenceDocument.evidence.auto_grade.sources[0].source_type, "SLAB_LABEL");
+assert.doesNotThrow(() => assertValidEvidenceDocument(inferredBgsDualGradeEvidenceDocument));
+
+const singleCardGradeEvidenceDocument = providerPayloadToEvidenceDocument({
+  title: "2024 Topps Chrome Test Player Auto PSA 7",
+  confidence: "HIGH",
+  fields: {
+    year: "2024",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    grade_company: "PSA",
+    card_grade: "7",
+    auto_grade: "",
+    grade_type: "CARD_ONLY",
+    auto: true
+  },
+  field_evidence: {
+    grade: {
+      value: "7",
+      grade_company: "PSA",
+      card_grade: "7",
+      auto_grade: "",
+      grade_type: "CARD_ONLY",
+      source_type: "SLAB_LABEL",
+      visible_text: "PSA NM 7",
+      confidence: 0.98,
+      review_required: false
+    }
+  },
+  unresolved: []
+});
+assert.equal(singleCardGradeEvidenceDocument.resolved.card_grade, "7");
+assert.equal(singleCardGradeEvidenceDocument.resolved.auto_grade, null);
+assert.equal(singleCardGradeEvidenceDocument.resolved.grade_type, "CARD_ONLY");
+assert.equal(singleCardGradeEvidenceDocument.evidence.auto_grade, undefined);
+assert.equal(singleCardGradeEvidenceDocument.evidence.grade_type.value, "CARD_ONLY");
+assert.doesNotThrow(() => assertValidEvidenceDocument(singleCardGradeEvidenceDocument));
+
+const explicitBgsDualGradeEvidenceDocument = providerPayloadToEvidenceDocument({
+  title: "2024 Panini Test Player BGS 8.5/10",
+  confidence: "HIGH",
+  fields: {
+    grade_company: "BGS",
+    card_grade: "8.5",
+    auto_grade: "",
+    grade_type: "CARD_ONLY"
+  },
+  field_evidence: {
+    grade: {
+      value: "BGS 8.5/10",
+      grade_company: "BGS",
+      card_grade: "8.5",
+      auto_grade: "",
+      grade_type: "CARD_ONLY",
+      source_type: "SLAB_LABEL",
+      visible_text: "BGS 8.5/10",
+      confidence: 0.98,
+      review_required: false
+    }
+  },
+  unresolved: []
+});
+assert.equal(explicitBgsDualGradeEvidenceDocument.resolved.card_grade, "8.5");
+assert.equal(explicitBgsDualGradeEvidenceDocument.resolved.auto_grade, "10");
+assert.equal(explicitBgsDualGradeEvidenceDocument.resolved.grade_type, "CARD_AND_AUTO");
+assert.equal(explicitBgsDualGradeEvidenceDocument.evidence.auto_grade.value, "10");
+assert.doesNotThrow(() => assertValidEvidenceDocument(explicitBgsDualGradeEvidenceDocument));
 
 const contextualBackYearDocument = providerPayloadToEvidenceDocument({
   title: "",
@@ -689,6 +849,335 @@ const autographGradeCannotBecomeCardGrade = normalizeResolvedFields({
 assert.equal(autographGradeCannotBecomeCardGrade.card_grade, null);
 assert.equal(autographGradeCannotBecomeCardGrade.auto_grade, "10");
 assert.equal(autographGradeCannotBecomeCardGrade.grade_type, "AUTO_ONLY");
+
+for (const confidence of [null, "   "]) {
+  const fallbackConfidenceDocument = providerPayloadToEvidenceDocument({
+    confidence: "HIGH",
+    field_evidence: {
+      serial_number: {
+        value: "31/50",
+        source_type: "CARD_FRONT_PRINTED_TEXT",
+        visible_text: "31/50",
+        directly_observed: true,
+        confidence,
+        review_required: false
+      }
+    },
+    unresolved: []
+  });
+  assert.equal(fallbackConfidenceDocument.evidence.serial_number.confidence, 0.9);
+  assert.equal(fallbackConfidenceDocument.evidence.serial_number.status, "CONFIRMED");
+}
+
+const directDenominatorEvidence = {
+  field: "numerical_rarity",
+  value: "#/50",
+  source_type: "CARD_FRONT_PRINTED_TEXT",
+  visible_text: "/50",
+  directly_observed: true,
+  direct_observation: true,
+  confidence: null,
+  review_required: false
+};
+const referenceNumeratorEvidence = {
+  field: "numerical_rarity",
+  value: "44/50",
+  source_type: "STRUCTURED_DATABASE",
+  directly_observed: true,
+  direct_observation: true,
+  confidence: 0.99,
+  review_required: false
+};
+const directFirstNumericalRarity = validateProviderEvidencePayload("test", {
+  confidence: "HIGH",
+  field_evidence: [directDenominatorEvidence, referenceNumeratorEvidence],
+  unresolved: []
+});
+const directLastNumericalRarity = validateProviderEvidencePayload("test", {
+  confidence: "HIGH",
+  field_evidence: [referenceNumeratorEvidence, directDenominatorEvidence],
+  unresolved: []
+});
+assert.deepEqual(directFirstNumericalRarity.field_evidence, directLastNumericalRarity.field_evidence);
+assert.equal(directFirstNumericalRarity.field_evidence.numerical_rarity.value, "#/50");
+assert.equal(directFirstNumericalRarity.field_evidence.numerical_rarity.source_type, "CARD_FRONT_PRINTED_TEXT");
+const referenceNumeratorGuardDocument = providerPayloadToEvidenceDocument(directFirstNumericalRarity);
+assert.equal(referenceNumeratorGuardDocument.resolved.numerical_rarity, "#/50");
+assert.equal(referenceNumeratorGuardDocument.resolved.print_run_numerator, null);
+assert.equal(referenceNumeratorGuardDocument.evidence.numerical_rarity.confidence, 0.9);
+
+const currentNumeratorBeatsApprovedHistory = validateProviderEvidencePayload("test", {
+  confidence: "HIGH",
+  field_evidence: [
+    {
+      field: "serial_number",
+      value: "31/50",
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      visible_text: "31/50",
+      directly_observed: true,
+      confidence: 0.92,
+      review_required: false
+    },
+    {
+      field: "serial_number",
+      value: "44/50",
+      source_type: "INTERNAL_APPROVED_HISTORY",
+      confidence: 1,
+      review_required: false
+    }
+  ],
+  unresolved: []
+});
+assert.equal(currentNumeratorBeatsApprovedHistory.field_evidence.serial_number.value, "31/50");
+assert.notEqual(currentNumeratorBeatsApprovedHistory.field_evidence.serial_number.status, "CONFLICT");
+assert.deepEqual(currentNumeratorBeatsApprovedHistory.field_evidence.serial_number.conflicts || [], []);
+
+for (const field of ["numerical_rarity", "serial_number"]) {
+  const firstFullObservation = {
+    field,
+    value: "31/50",
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    visible_text: "31/50",
+    directly_observed: true,
+    direct_observation: true,
+    confidence: 0.91,
+    review_required: false
+  };
+  const secondFullObservation = {
+    ...firstFullObservation,
+    value: "32/50",
+    visible_text: "32/50"
+  };
+  const conflictForward = validateProviderEvidencePayload("test", {
+    confidence: "HIGH",
+    field_evidence: [firstFullObservation, secondFullObservation],
+    unresolved: []
+  });
+  const conflictReverse = validateProviderEvidencePayload("test", {
+    confidence: "HIGH",
+    field_evidence: [secondFullObservation, firstFullObservation],
+    unresolved: []
+  });
+  assert.deepEqual(conflictForward.field_evidence, conflictReverse.field_evidence);
+  assert.equal(conflictForward.field_evidence[field].status, "CONFLICT");
+  assert.equal(conflictForward.field_evidence[field].review_required, true);
+  assert.deepEqual(conflictForward.field_evidence[field].conflicts.at(-1), {
+    field,
+    reason: "provider_full_serial_numerator_conflict",
+    values: ["31/50", "32/50"]
+  });
+  const repeatedWinner = validateProviderEvidencePayload("test", {
+    confidence: "HIGH",
+    field_evidence: [{ field, ...conflictForward.field_evidence[field] }, firstFullObservation],
+    unresolved: []
+  });
+  assert.equal(repeatedWinner.field_evidence[field].status, "CONFLICT");
+  const conflictDocument = providerPayloadToEvidenceDocument(conflictForward);
+  assert.equal(conflictDocument.evidence[field].status, "CONFLICT");
+  assert.deepEqual(conflictDocument.evidence[field].conflicts, conflictForward.field_evidence[field].conflicts);
+}
+
+const trustedOperatorGradePayload = issueTrustedOperatorEvidenceEnvelope({
+  confidence: "LOW",
+  fields: {
+    grade_company: "PSA",
+    card_grade: "10",
+    cert_number: "99999999",
+    grade_type: "CARD_ONLY"
+  },
+  field_evidence: {
+    grade: {
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "99999999",
+      grade_type: "CARD_ONLY",
+      source_type: "OPERATOR",
+      operator_action_id: "operator-grade-action",
+      confidence: 0.2,
+      review_required: true
+    }
+  },
+  unresolved: []
+}, { operatorActionId: "operator-grade-action" });
+const operatorGradeDocument = providerPayloadToEvidenceDocument(trustedOperatorGradePayload);
+for (const field of ["grade_company", "card_grade", "cert_number"]) {
+  assert.equal(operatorGradeDocument.evidence[field].status, "MANUAL_CONFIRMED");
+  assert.equal(operatorGradeDocument.evidence[field].sources[0].source_type, "OPERATOR");
+  assert.equal(operatorGradeDocument.evidence[field].sources[0].operator_action_id, "operator-grade-action");
+  assert.equal(operatorGradeDocument.evidence[field].sources[0].direct_observation, true);
+  assert.equal(operatorGradeDocument.evidence[field].sources[0].provenance_scope, "CURRENT_INSTANCE");
+  assert.equal(operatorGradeDocument.evidence[field].unresolved_reason, null);
+}
+assert.equal(operatorGradeDocument.resolved.grade_company, "PSA");
+assert.equal(operatorGradeDocument.resolved.card_grade, "10");
+assert.equal(operatorGradeDocument.resolved.cert_number, "99999999");
+
+const spoofedOperatorGradeDocument = providerPayloadToEvidenceDocument(
+  JSON.parse(JSON.stringify(trustedOperatorGradePayload))
+);
+for (const field of ["grade_company", "card_grade", "cert_number"]) {
+  assert.equal(spoofedOperatorGradeDocument.evidence[field].status, "REVIEW");
+  assert.equal(spoofedOperatorGradeDocument.evidence[field].sources[0].source_type, "VISION_MODEL");
+  assert.equal(spoofedOperatorGradeDocument.evidence[field].sources[0].direct_observation, false);
+  assert.equal(spoofedOperatorGradeDocument.evidence[field].sources[0].provenance_scope, "UNBOUND");
+  assert.equal(
+    spoofedOperatorGradeDocument.evidence[field].unresolved_reason,
+    "operator_source_not_server_trusted"
+  );
+}
+
+const unboundOfficialGradingDocument = providerPayloadToEvidenceDocument({
+  confidence: "HIGH",
+  fields: {
+    serial_number: "44/50",
+    numerical_rarity: "44/50",
+    grade_company: "PSA",
+    card_grade: "10",
+    cert_number: "88888888",
+    grade_type: "CARD_ONLY"
+  },
+  field_evidence: {
+    serial_number: {
+      value: "44/50",
+      source_type: "OFFICIAL_GRADING_DATA",
+      visible_text: "44/50",
+      directly_observed: true,
+      direct_observation: true,
+      confidence: 1,
+      review_required: false
+    },
+    grade: {
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "88888888",
+      grade_type: "CARD_ONLY",
+      source_type: "OFFICIAL_GRADING_DATA",
+      visible_text: "PSA 10 CERT 88888888",
+      directly_observed: true,
+      direct_observation: true,
+      confidence: 1,
+      review_required: false
+    }
+  },
+  unresolved: []
+});
+assert.equal(unboundOfficialGradingDocument.resolved.serial_number, "#/50");
+assert.equal(unboundOfficialGradingDocument.resolved.numerical_rarity, "#/50");
+assert.equal(unboundOfficialGradingDocument.resolved.print_run_numerator, null);
+assert.equal(unboundOfficialGradingDocument.resolved.print_run_denominator, "50");
+assert.equal(unboundOfficialGradingDocument.resolved.grade_company, null);
+assert.equal(unboundOfficialGradingDocument.resolved.card_grade, null);
+assert.equal(unboundOfficialGradingDocument.resolved.cert_number, null);
+for (const field of ["serial_number", "grade_company", "card_grade", "cert_number"]) {
+  assert.equal(unboundOfficialGradingDocument.evidence[field].status, "REVIEW");
+  assert.equal(unboundOfficialGradingDocument.evidence[field].sources[0].source_type, "OFFICIAL_GRADING_DATA");
+  assert.equal(unboundOfficialGradingDocument.evidence[field].sources[0].direct_observation, false);
+  assert.equal(unboundOfficialGradingDocument.evidence[field].sources[0].provenance_scope, "REFERENCE");
+  assert.equal(
+    unboundOfficialGradingDocument.evidence[field].unresolved_reason,
+    "official_grading_data_not_bound_to_current_instance"
+  );
+}
+assert.equal(unboundOfficialGradingDocument.evidence.serial_number.value, "44/50");
+assert.doesNotThrow(() => assertValidEvidenceDocument(unboundOfficialGradingDocument));
+
+const boundOfficialGradingDocument = providerPayloadToEvidenceDocument({
+  confidence: "HIGH",
+  field_evidence: {
+    grade: {
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "77777777",
+      grade_type: "CARD_ONLY",
+      source_type: "OFFICIAL_GRADING_DATA",
+      physical_instance_match: true,
+      confidence: 0.99,
+      review_required: false
+    }
+  },
+  unresolved: []
+});
+assert.equal(boundOfficialGradingDocument.resolved.grade_company, "PSA");
+assert.equal(boundOfficialGradingDocument.resolved.card_grade, "10");
+assert.equal(boundOfficialGradingDocument.resolved.cert_number, "77777777");
+assert.equal(boundOfficialGradingDocument.evidence.cert_number.status, "CONFIRMED");
+assert.equal(boundOfficialGradingDocument.evidence.cert_number.sources[0].direct_observation, true);
+assert.equal(boundOfficialGradingDocument.evidence.cert_number.sources[0].provenance_scope, "CURRENT_INSTANCE");
+
+const currentGradeTupleA = {
+  field: "grade",
+  grade_company: "PSA",
+  card_grade: "10",
+  auto_grade: "9",
+  cert_number: "11111111",
+  grade_type: "CARD_AND_AUTO",
+  source_type: "SLAB_LABEL",
+  source_image_id: "slab-a",
+  visible_text: "PSA 10 AUTO 9 CERT 11111111",
+  directly_observed: true,
+  direct_observation: true,
+  confidence: 0.8,
+  review_required: false
+};
+const currentGradeTupleB = {
+  field: "grade",
+  grade_company: "BGS",
+  card_grade: "9",
+  auto_grade: "10",
+  cert_number: "22222222",
+  grade_type: "CARD_AND_AUTO",
+  source_type: "SLAB_LABEL",
+  source_image_id: "slab-b",
+  visible_text: "BGS 9 AUTO 10 CERT 22222222",
+  directly_observed: true,
+  direct_observation: true,
+  confidence: 0.9,
+  review_required: false
+};
+const normalizedGradeTupleForward = validateProviderEvidencePayload("test", {
+  confidence: "HIGH",
+  title: "PSA 10 AUTO 10",
+  fields: {
+    grade_company: "PSA",
+    card_grade: "10",
+    auto_grade: "10",
+    cert_number: "33333333",
+    grade_type: "CARD_AND_AUTO"
+  },
+  field_evidence: [currentGradeTupleA, currentGradeTupleB],
+  unresolved: []
+});
+const normalizedGradeTupleReverse = validateProviderEvidencePayload("test", {
+  confidence: "HIGH",
+  title: "PSA 10 AUTO 10",
+  fields: {
+    grade_company: "PSA",
+    card_grade: "10",
+    auto_grade: "10",
+    cert_number: "33333333",
+    grade_type: "CARD_AND_AUTO"
+  },
+  field_evidence: [currentGradeTupleB, currentGradeTupleA],
+  unresolved: []
+});
+assert.deepEqual(normalizedGradeTupleForward.field_evidence, normalizedGradeTupleReverse.field_evidence);
+const gradeTupleDocumentForward = providerPayloadToEvidenceDocument(normalizedGradeTupleForward);
+const gradeTupleDocumentReverse = providerPayloadToEvidenceDocument(normalizedGradeTupleReverse);
+assert.deepEqual(gradeTupleDocumentForward, gradeTupleDocumentReverse);
+assert.equal(gradeTupleDocumentForward.resolved.grade_company, null);
+assert.equal(gradeTupleDocumentForward.resolved.card_grade, null);
+assert.equal(gradeTupleDocumentForward.resolved.auto_grade, null);
+assert.equal(gradeTupleDocumentForward.resolved.cert_number, null);
+for (const field of ["grade_company", "card_grade", "auto_grade", "cert_number"]) {
+  assert.equal(gradeTupleDocumentForward.evidence[field].status, "CONFLICT");
+  assert.equal(gradeTupleDocumentForward.evidence[field].sources[0].image_id, "slab-b");
+  assert.equal(gradeTupleDocumentForward.evidence[field].unresolved_reason, "conflicting_current_instance_grade_tuple");
+  assert.deepEqual(
+    new Set(gradeTupleDocumentForward.evidence[field].conflicts.map((conflict) => conflict.field)),
+    new Set(["grade_company", "card_grade", "auto_grade", "cert_number"])
+  );
+}
+assert.doesNotThrow(() => assertValidEvidenceDocument(gradeTupleDocumentForward));
 
 assert.throws(
   () => assertValidEvidenceDocument({

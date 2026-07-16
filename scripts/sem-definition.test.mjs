@@ -10,6 +10,8 @@ import {
   classifySemNumberBoundary,
   classifySemTerm,
   classifyWriterFeedbackForSemanticLearning,
+  inferSemGrammar,
+  normalizeSemNumberBoundaries,
   semCanonicalEditableFields,
   semCatalogTrustVerdict,
   semDefinition,
@@ -77,6 +79,41 @@ assert.deepEqual(classifySemNumberBoundary("139/205", {
   csm_field: "card_number",
   reason: "tcg_checklist_number_context"
 });
+assert.equal(inferSemGrammar({ brand: "Disney Lorcana" }), "TCG");
+assert.equal(inferSemGrammar({ product: "Panini Prizm Basketball" }), "STANDARD");
+assert.deepEqual(normalizeSemNumberBoundaries({
+  brand: "Disney Lorcana",
+  collector_number: "242/204 JA-9",
+  print_run_number: "#/204",
+  serial_number: "#/204",
+  numerical_rarity: "#/204",
+  numbered_to: "204"
+}), {
+  brand: "Disney Lorcana",
+  collector_number: "242/204 JA-9",
+  tcg_card_number: "242/204",
+  card_number: "242/204",
+  print_run_number: null,
+  print_run_numerator: null,
+  print_run_denominator: null,
+  numbered_to: null,
+  serial_number: null,
+  serial_denominator: null,
+  numerical_rarity: null,
+  expected_serial_denominator: null,
+  one_of_one: false,
+  suspicious_print_run: false,
+  print_run_review_required: false
+});
+const distinctTcgPrintRun = normalizeSemNumberBoundaries({
+  brand: "Pokemon TCG",
+  collector_number: "201/165",
+  serial_number: "5/25",
+  print_run_number: "5/25",
+  print_run_denominator: "25"
+});
+assert.equal(distinctTcgPrintRun.tcg_card_number, "201/165");
+assert.equal(distinctTcgPrintRun.print_run_number, "5/25");
 
 assert.deepEqual(classifySemTerm("serial_number"), {
   term: "serial_number",

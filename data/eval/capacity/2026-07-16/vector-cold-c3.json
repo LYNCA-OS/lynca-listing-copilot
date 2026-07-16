@@ -1,0 +1,67 @@
+{
+  "schema_version": "listing-stage-capacity-sweep-v1",
+  "generated_at": "2026-07-16T09:56:46.983Z",
+  "base_url": "https://listing.lyncafei.team",
+  "stage": "vector",
+  "reports": [
+    {
+      "stage": "vector_query",
+      "sample_count": 8,
+      "repetitions": 1,
+      "offset": 120,
+      "rows": [
+        {
+          "stage": "vector_query",
+          "concurrency": 3,
+          "task_count": 8,
+          "success_count": 8,
+          "timeout_count": 0,
+          "result_consistency_rate": 1,
+          "wall_ms": 19200,
+          "throughput_per_second": 0.4166666666666667,
+          "p50_ms": 19200,
+          "p95_ms": 19200,
+          "worker_p50_ms": 5169,
+          "worker_p95_ms": 6728,
+          "cache_hit_count": 0,
+          "embedding_count": 16,
+          "cache_hit_rate": 0,
+          "transport_attempt_count": 1,
+          "error_count": 0,
+          "errors": []
+        }
+      ],
+      "selection": {
+        "recommended_concurrency": 3,
+        "reason": "LOWEST_P95_ARM_MEETING_REQUIRED_THROUGHPUT",
+        "minimum_required_throughput_per_second": 0.2,
+        "recommended_throughput_per_second": 0.4166666666666667,
+        "recommended_p95_ms": 19200,
+        "rows": [
+          {
+            "stage": "vector_query",
+            "concurrency": 3,
+            "task_count": 8,
+            "success_count": 8,
+            "timeout_count": 0,
+            "result_consistency_rate": 1,
+            "wall_ms": 19200,
+            "throughput_per_second": 0.4166666666666667,
+            "p50_ms": 19200,
+            "p95_ms": 19200,
+            "worker_p50_ms": 5169,
+            "worker_p95_ms": 6728,
+            "cache_hit_count": 0,
+            "embedding_count": 16,
+            "cache_hit_rate": 0,
+            "transport_attempt_count": 1,
+            "error_count": 0,
+            "errors": [],
+            "stable": true,
+            "rejection_reasons": []
+          }
+        ]
+      }
+    }
+  ]
+}

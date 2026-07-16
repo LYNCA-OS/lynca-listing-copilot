@@ -9,7 +9,7 @@ process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.ENABLE_OPENAI_PROVIDER = "true";
 process.env.ALLOW_EXPLICIT_OPENAI_RETRY = "true";
 process.env.OPENAI_API_KEY = "test-openai-key";
-process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
+process.env.OPENAI_LISTING_MODEL = "gpt-5-mini";
 process.env.ENABLE_OPENAI_WEB_SEARCH_FALLBACK = "false";
 
 const catalogCacheKeyWithSingleSubject = __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
@@ -102,7 +102,7 @@ async function callApi(providerResult, options = {}) {
     status: 200,
     json: async () => ({
       id: "resp_listing_confidence_test",
-      model: "gpt-4.1-mini-2025-04-14",
+      model: "gpt-5-mini",
       output_text: JSON.stringify(withDirectAutoEvidenceForPresentationTest(providerResult)),
       usage: {
         input_tokens: 10,
@@ -257,7 +257,7 @@ assert.match(providerFieldEvidenceArrayPreservesInstanceFields.title, /09\/50/);
 assert.match(providerFieldEvidenceArrayPreservesInstanceFields.title, /BGS 9\.5\/10/);
 assert.doesNotMatch(providerFieldEvidenceArrayPreservesInstanceFields.title, /#CPA|BGS 10\/9\.5/);
 
-const serialNumberOnlyDoesNotBackfillNumericalRarity = await callApi({
+const serialNumberOnlyPublishesPresentationNumericalRarity = await callApi({
   title: "2024-25 Panini Immaculate Anthony Edwards Patch Auto",
   confidence: "HIGH",
   reason: "The current card image shows a physical serial read, but the provider did not classify it as the title print-limit module.",
@@ -276,14 +276,14 @@ const serialNumberOnlyDoesNotBackfillNumericalRarity = await callApi({
   unresolved: ["numerical_rarity"]
 });
 
-assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.serial_number, "2/3");
-assert.equal(serialNumberOnlyDoesNotBackfillNumericalRarity.resolved.numerical_rarity, null);
-// Directly read current-image serial backfills the print run in the TITLE
-// (presentation only; resolved.numerical_rarity stays null). Catalog/reference
-// candidates still cannot contribute the numerator.
-assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /2\/3/);
-assert.doesNotMatch(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /#\/3/);
-assert.match(serialNumberOnlyDoesNotBackfillNumericalRarity.title, /BGS 8\.5\/10/);
+assert.equal(serialNumberOnlyPublishesPresentationNumericalRarity.resolved.serial_number, "2/3");
+assert.equal(serialNumberOnlyPublishesPresentationNumericalRarity.resolved.numerical_rarity, "2/3");
+// Directly read current-image serial backfills the print run in the renderer,
+// and public fields are rebuilt from that immutable presentation snapshot.
+// Catalog/reference candidates still cannot contribute the numerator.
+assert.match(serialNumberOnlyPublishesPresentationNumericalRarity.title, /2\/3/);
+assert.doesNotMatch(serialNumberOnlyPublishesPresentationNumericalRarity.title, /#\/3/);
+assert.match(serialNumberOnlyPublishesPresentationNumericalRarity.title, /BGS 8\.5\/10/);
 
 const structuredEvidenceArrayBackfillsCriticalFields = await callApi({
   title: "",

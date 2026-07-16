@@ -5,6 +5,13 @@ import {
   openAiEmergencyConfigFromEnv
 } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import {
+  allowedProviderModels,
+  providerModelConfig,
+  providerModelOverrideFromOptions,
+  sanitizeProviderModelOverrides,
+  visionProviderIds
+} from "../lib/listing/providers/provider-contract.mjs";
+import {
   clearProviderConcurrencyForTests,
   providerServerConcurrencyLimit,
   runWithProviderConcurrency
@@ -13,11 +20,16 @@ import { openAiResponsesModelControls, openAiResponsesTextOptions } from "../lib
 import { parseProviderMessagePayload } from "../lib/listing/providers/provider-response-normalizer.mjs";
 import { listAvailableVisionProviders, selectVisionProvider } from "../lib/listing/providers/provider-registry.mjs";
 import {
+  providerOptionsForV4BackgroundL2,
+  providerOptionsForV4ProgressiveL1
+} from "../lib/listing/v4/stages/title-stages.mjs";
+import {
   postObservationCatalogVectorHedgeMs,
   postObservationExactAnchorCatalogBudgetMs,
   postObservationStructuredAnchorCatalogBudgetMs,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
+  retrievalPromptContextEnabled,
   ultraFastImageDetail,
   ultraFastTextVerbosity,
   ultraFastServiceTier,
@@ -43,7 +55,81 @@ assert.equal(vectorOnlyWarmup.enable_advanced_retrieval, false);
 
 assert.doesNotMatch(providerRegistrySource, /cascade_fast|ENABLE_FAST_CASCADE_PROVIDER/i, "provider registry must not expose cascade providers");
 assert.doesNotMatch(providerContractSource, /cascade_fast/i, "provider contract must only keep active providers");
+assert.doesNotMatch(providerContractSource, /gpt-4\.1/i, "production provider contract must not retain a GPT-4.1 execution route");
 assert.doesNotMatch(titleApiSource, /createCascadeFastTitle|model_to_model/i, "title API must not retain automatic mixed-model provider paths");
+
+assert.deepEqual(allowedProviderModels[visionProviderIds.OPENAI_LEGACY], [
+  "gpt-5-mini"
+]);
+assert.equal(providerModelConfig(visionProviderIds.OPENAI_LEGACY, "gpt-4.1-mini-2025-04-14").allowed, false);
+assert.equal(
+  providerModelOverrideFromOptions({ model_override: "gpt-5-mini" }),
+  "",
+  "request options cannot authorize their own model override"
+);
+assert.equal(
+  providerModelOverrideFromOptions({ model_override: "gpt-5-mini" }, { trustedServerEval: true }),
+  "gpt-5-mini"
+);
+assert.throws(
+  () => providerModelOverrideFromOptions({ model_override: "gpt-4.1" }, { trustedServerEval: true }),
+  /must use GPT-5-mini/i
+);
+assert.throws(
+  () => providerModelOverrideFromOptions({
+    model_override: "gpt-5-mini",
+    openai_listing_model_override: "gpt-4.1"
+  }, { trustedServerEval: true }),
+  /must provide one GPT-5-mini/i
+);
+assert.deepEqual(
+  sanitizeProviderModelOverrides({ model_override: "gpt-5-mini", keep: "value" }),
+  { keep: "value" }
+);
+assert.deepEqual(
+  sanitizeProviderModelOverrides(
+    { modelOverride: "gpt-5-mini", keep: "value" },
+    { trustedServerEval: true }
+  ),
+  { keep: "value", openai_listing_model_override: "gpt-5-mini" }
+);
+
+const modelOverrideKeys = [
+  "openai_listing_model_override",
+  "openaiListingModelOverride",
+  "openai_model_override",
+  "openAiModelOverride",
+  "model_override",
+  "modelOverride"
+];
+const publicV4Options = providerOptionsForV4ProgressiveL1({
+  payload: {
+    trustedServerEval: true,
+    provider_options: Object.fromEntries(modelOverrideKeys.map((key) => [key, "gpt-4.1-mini"]))
+  }
+});
+for (const key of modelOverrideKeys) {
+  assert.equal(Object.hasOwn(publicV4Options, key), false, `public V4 options must strip ${key}`);
+}
+
+const trustedEvalV4Options = providerOptionsForV4BackgroundL2({
+  payload: {
+    provider_options: {
+      modelOverride: "gpt-5-mini",
+      enable_catalog_assist: true
+    }
+  },
+  trustedServerEval: true
+});
+assert.equal(trustedEvalV4Options.openai_listing_model_override, "gpt-5-mini");
+assert.equal(Object.hasOwn(trustedEvalV4Options, "modelOverride"), false);
+assert.throws(
+  () => providerOptionsForV4BackgroundL2({
+    payload: { provider_options: { model_override: "gpt-4.1" } },
+    trustedServerEval: true
+  }),
+  /must use GPT-5-mini/i
+);
 
 const remoteImages = [{ url: "https://example.com/front.jpg" }];
 const dataUrlImages = [{ dataUrl: "data:image/jpeg;base64,AAAA" }];
@@ -54,7 +140,7 @@ const env = {
   ENABLE_OPENAI_PROVIDER: "true",
   ALLOW_EXPLICIT_OPENAI_RETRY: "true",
   OPENAI_API_KEY: "test-openai-key",
-  OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
+  OPENAI_LISTING_MODEL: "gpt-5-mini"
 };
 
 assert.equal(selectVisionProvider({ images: remoteImages, env }).provider_id, "openai_legacy");
@@ -84,7 +170,7 @@ const emergencySelection = selectVisionProvider({
   env
 });
 assert.equal(emergencySelection.provider_id, "openai_legacy");
-assert.equal(emergencySelection.model_id, "gpt-4.1-mini-2025-04-14");
+assert.equal(emergencySelection.model_id, "gpt-5-mini");
 assert.equal(emergencySelection.provider.role, "primary");
 
 assert.equal(selectVisionProvider({
@@ -154,6 +240,21 @@ const explicitVectorOffOptions = __listingCopilotTitleTestHooks.providerOptionsF
 assert.equal(explicitVectorOffOptions.enable_vector_retrieval, false, "explicit vector assist off must also disable query embedding");
 assert.equal(explicitVectorOffOptions.enable_stored_visual_features, false);
 assert.equal(explicitVectorOffOptions.enable_query_visual_embeddings, false);
+assert.equal(retrievalPromptContextEnabled({}, {}), false, "retrieval candidates stay out of the provider prompt by default");
+assert.equal(retrievalPromptContextEnabled({ ENABLE_RETRIEVAL_PROMPT_CONTEXT: "true" }, {}), true);
+assert.equal(
+  retrievalPromptContextEnabled({}, { enable_retrieval_prompt_context: true }),
+  false,
+  "request options cannot bypass the deployment master switch"
+);
+assert.equal(
+  retrievalPromptContextEnabled(
+    { ENABLE_RETRIEVAL_PROMPT_CONTEXT: "true" },
+    { enable_retrieval_prompt_context: false }
+  ),
+  false,
+  "an enabled deployment still permits an explicit request-level opt-out"
+);
 
 assert.equal(
   __listingCopilotTitleTestHooks.forceRetrievalApplicationResolutionEnabled({
@@ -196,6 +297,50 @@ assert.equal(
     force_retrieval_application_resolution: false
   }),
   "OFF"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.retrievalApplicationSingleObservationReplayEnabled({
+    evaluation_profile: "retrieval_application_single_observation_replay_v1"
+  }),
+  true,
+  "single-observation replay must be explicit and eval-only"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.retrievalApplicationSingleObservationReplayEnabled({
+    evaluation_profile: "legacy_cloud_eval"
+  }),
+  false,
+  "normal production requests must never enter the replay terminal path"
+);
+
+const candidateOwnedPresentationFields = __listingCopilotTitleTestHooks.finalResolvedFieldsForPresentation({
+  resolved_fields: {
+    product: "Bowman Chrome"
+  },
+  raw_provider_fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    collector_number: "CPA-SO"
+  },
+  retrieval_application: {
+    owns_candidate_application: true,
+    resolver_consumed: true,
+    actual_applied_fields: ["product"],
+    decisions: [{
+      field: "product",
+      resolver_field: "product",
+      applied_to_final: true
+    }]
+  }
+}, { enforceAtomicGrade: false });
+assert.equal(candidateOwnedPresentationFields.product, "Bowman Chrome", "candidate APPLY field stays canonical");
+assert.equal(candidateOwnedPresentationFields.year, "2025", "current-image facts fill an ABSTAIN projection gap");
+assert.deepEqual(candidateOwnedPresentationFields.players, ["Shohei Ohtani"]);
+assert.equal(
+  candidateOwnedPresentationFields.collector_number ?? null,
+  null,
+  "raw exact card codes still require verified evidence and cannot be promoted by the presentation finalizer"
 );
 
 const explicitVectorOnOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
@@ -482,7 +627,7 @@ assert.equal(mergedCatalogConflict.catalog_assist_eligibility.prompt_candidate_c
 assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({}, {
   status: "DEFERRED_AFTER_PROVIDER",
   job_count: null
-}), false, "deferred OCR must not make an unverified serial numerator publishable");
+}), null, "deferred OCR is inconclusive and must not veto independent current-image evidence");
 assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({
   images: [{ id: "front" }],
   preingestion_evidence_patches: [{
@@ -604,11 +749,11 @@ const openAiResult = await analyzeCardEvidenceWithOpenAiEmergency({
 assert.equal(openAiRequest.url, "https://api.openai.com/v1/responses");
 assert.equal(openAiRequest.init.headers.authorization, "Bearer test-openai-key");
 const openAiBody = JSON.parse(openAiRequest.init.body);
-assert.equal(openAiBody.model, "gpt-4.1-mini-2025-04-14");
+assert.equal(openAiBody.model, "gpt-5-mini");
 assert.equal(openAiBody.store, false);
-assert.equal(openAiBody.temperature, 0);
-assert.equal(openAiBody.reasoning, undefined);
-assert.equal(openAiBody.text.verbosity, undefined);
+assert.equal(openAiBody.temperature, undefined);
+assert.deepEqual(openAiBody.reasoning, { effort: "minimal" });
+assert.equal(openAiBody.text.verbosity, "medium");
 assert.equal(openAiBody.text.format.type, "json_schema");
 assert.equal(openAiBody.text.format.strict, true);
 assert.equal(openAiBody.input[0].content[1].type, "input_image");
@@ -822,20 +967,26 @@ assert.equal(gpt5DefaultConfig.requestedMaxOutputTokens, 128000);
 assert.equal(gpt5DefaultConfig.maxOutputTokens, 128000);
 assert.equal(gpt5DefaultConfig.truncationRetryMaxOutputTokens, 128000);
 
-const gpt41DefaultExpandedConfig = openAiEmergencyConfigFromEnv({
+const blockedGpt41Config = openAiEmergencyConfigFromEnv({
   ...env,
   OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14"
 });
-assert.equal(gpt41DefaultExpandedConfig.maxOutputTokens, 32768);
-assert.equal(gpt41DefaultExpandedConfig.truncationRetryMaxOutputTokens, 32768);
-
-const gpt41ExpandedCapOverrideConfig = openAiEmergencyConfigFromEnv({
-  ...env,
-  OPENAI_LISTING_MODEL: "gpt-4.1-mini-2025-04-14",
-  OPENAI_GPT41_MAX_OUTPUT_TOKEN_CAP: "40960"
-});
-assert.equal(gpt41ExpandedCapOverrideConfig.maxOutputTokens, 32768);
-assert.equal(gpt41ExpandedCapOverrideConfig.truncationRetryMaxOutputTokens, 32768);
+assert.equal(blockedGpt41Config.modelAllowed, false);
+let blockedGpt41FetchCalled = false;
+await assert.rejects(
+  () => analyzeCardEvidenceWithOpenAiEmergency({
+    images: dataUrlImages,
+    prompt: "Return JSON.",
+    modelOverride: "gpt-4.1-mini-2025-04-14",
+    env,
+    fetchImpl: async () => {
+      blockedGpt41FetchCalled = true;
+      throw new Error("GPT-4.1 must be rejected before transport");
+    }
+  }),
+  /model override is not in the provider model whitelist/i
+);
+assert.equal(blockedGpt41FetchCalled, false);
 
 let gpt5HardCapCalls = 0;
 const gpt5HardCaps = [];

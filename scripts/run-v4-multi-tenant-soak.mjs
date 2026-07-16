@@ -90,6 +90,7 @@ export async function runV4MultiTenantSoak({
   thinkMs = 5000,
   l2WaitMs = 3_600_000,
   requestTimeoutMs = 120_000,
+  coldStartBlind = false,
   outPath = "",
   stabilityOutPath = "",
   waveOutDir = "",
@@ -97,6 +98,7 @@ export async function runV4MultiTenantSoak({
   progress = true
 } = {}) {
   if (!datasetPath) throw new Error("--dataset is required");
+  const normalizedColdStartBlind = coldStartBlind === true;
   const dataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
   const datasetPolicy = soakSamplePolicy(dataset);
   const reviewedTitleGroundTruth = !Array.isArray(dataset)
@@ -128,6 +130,7 @@ export async function runV4MultiTenantSoak({
       modelOverride,
       enableL1: false,
       disableIdentityCache: true,
+      coldStartBlind: normalizedColdStartBlind,
       usePreingestion: true,
       preingestionSource: "v4_multi_tenant_stability_soak",
       speculative: true,
@@ -178,15 +181,18 @@ export async function runV4MultiTenantSoak({
     model_override: modelOverride || null,
     configured_concurrency: concurrency,
     configured_submission_concurrency: submissionConcurrency ?? concurrency,
+    cold_start_blind: normalizedColdStartBlind,
     tenant_count: tenantCount,
     wave_size: waveSize,
     wave_count: reports.length,
     run_wall_ms: totalWallMs,
     evaluation_sample_policy: {
       ...datasetPolicy,
+      cold_start_blind: normalizedColdStartBlind,
       evaluated_item_count: allResults.length
     },
     blind_policy: {
+      cold_start_blind: normalizedColdStartBlind,
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: !reviewedTitleGroundTruth,
       seller_title_is_ground_truth: false,
@@ -239,6 +245,7 @@ export async function main(argv = process.argv, env = process.env) {
     thinkMs: numberArg(argv, "--think-ms", 5000),
     l2WaitMs: numberArg(argv, "--l2-wait-ms", 3_600_000),
     requestTimeoutMs: numberArg(argv, "--request-timeout-ms", 120_000),
+    coldStartBlind: argv.includes("--cold-start-blind"),
     outPath,
     stabilityOutPath: argValue(argv, "--stability-out", outPath.replace(/\.json$/i, "-stability.json")),
     waveOutDir: argValue(argv, "--wave-out-dir", ""),
@@ -251,6 +258,7 @@ export async function main(argv = process.argv, env = process.env) {
     completed: report.summary.ok_count,
     waves: report.wave_count,
     tenants: report.tenant_count,
+    cold_start_blind: report.cold_start_blind,
     cards_per_minute: report.summary.completed_cards_per_minute,
     writer_p95_ms: report.summary.writer_ready_p95_ms,
     stability_pass: report.stability_envelope.pass,

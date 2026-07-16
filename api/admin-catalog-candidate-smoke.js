@@ -16,6 +16,27 @@ function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function boundedInteger(value, { min = 1, max = 8, fallback = 1 } = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(number)));
+}
+
+async function mapWithConcurrency(items = [], concurrency = 1, worker) {
+  const source = Array.from(items || []);
+  const results = new Array(source.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(source.length || 1, Math.max(1, concurrency)) }, async () => {
+    while (cursor < source.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(source[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.setHeader("content-type", "application/json; charset=utf-8");
@@ -115,6 +136,11 @@ export default async function handler(req, res) {
   }
 
   const fields = body.fields && typeof body.fields === "object" ? body.fields : {};
+  const queryConcurrency = boundedInteger(body.query_concurrency, {
+    min: 1,
+    max: 8,
+    fallback: boundedInteger(process.env.RETRIEVAL_INTERNAL_QUERY_CONCURRENCY, { min: 1, max: 8, fallback: 4 })
+  });
   const planned = planRetrievalQueries({
     resolved: fields,
     includeExternal: false,
@@ -139,17 +165,19 @@ export default async function handler(req, res) {
   }
 
   const provider = catalogProvider({ env: process.env, fetchImpl: globalThis.fetch });
-  const results = [];
-  for (const query of planned) {
+  const startedAt = Date.now();
+  const results = await mapWithConcurrency(planned, queryConcurrency, async (query) => {
+    const queryStartedAt = Date.now();
     const result = await provider.search({ query, resolved: fields });
-    results.push({
+    return {
       query_id: query.query_id,
       family: query.family,
       query: query.query,
+      latency_ms: Date.now() - queryStartedAt,
       unavailable: result.unavailable ? result.reason || "unavailable" : "",
       candidates: Array.isArray(result.candidates) ? result.candidates : []
-    });
-  }
+    };
+  });
 
   const candidates = dedupeCandidates(results.flatMap((result) => result.candidates));
   const packet = buildVectorCandidatePacket({
@@ -173,11 +201,13 @@ export default async function handler(req, res) {
     ok: true,
     auth_mode: auth.mode,
     query_count: planned.length,
+    query_concurrency: queryConcurrency,
     raw_candidate_count: candidates.length,
     approved_candidate_count: eligibility.approved_candidate_count || 0,
     conflict_blocked_count: eligibility.conflict_blocked_count || 0,
     prompt_candidate_count: eligibility.prompt_candidate_count || 0,
     prompt_candidate_ids: Array.isArray(eligibility.prompt_candidate_ids) ? eligibility.prompt_candidate_ids : [],
+    latency_ms: Date.now() - startedAt,
     field_support_count: fieldSupport.length,
     field_support_fields: [...new Set(fieldSupport.map((row) => cleanText(row.field)).filter(Boolean))],
     field_support: fieldSupport.slice(0, 20).map((row) => ({
@@ -196,6 +226,7 @@ export default async function handler(req, res) {
       query_id: result.query_id,
       family: result.family,
       query: result.query,
+      latency_ms: result.latency_ms,
       unavailable: result.unavailable,
       candidate_count: result.candidates.length,
       top_candidates: result.candidates.slice(0, 8).map(compactCandidate)
