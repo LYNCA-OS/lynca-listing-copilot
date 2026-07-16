@@ -734,6 +734,23 @@ begin
       continue;
     end if;
 
+    if v_table = 'v4_recognition_sessions' then
+      -- Track D can precede Track C in an ordered upgrade and installs an
+      -- identity trigger before Track C normalizes legacy tenant identifiers.
+      -- Temporarily remove only that trigger for the controlled backfill below;
+      -- it is restored after Track C's tenant constraints are in place.
+      execute 'drop trigger if exists prevent_v4_session_identity_reassignment on public.v4_recognition_sessions';
+    end if;
+    if v_table = 'v4_writer_feedback_events' then
+      -- Track D's capture tables are append-only after migration. Track C still
+      -- needs one controlled tenant backfill for pre-tenant rows in ordered
+      -- upgrades, so remove and restore the append-only trigger in this block.
+      execute 'drop trigger if exists prevent_v4_writer_feedback_mutation on public.v4_writer_feedback_events';
+    end if;
+    if v_table = 'v4_learning_events' then
+      execute 'drop trigger if exists prevent_v4_writer_learning_event_mutation on public.v4_learning_events';
+    end if;
+
     execute format(
       'alter table public.%I add column if not exists tenant_id text',
       v_table
@@ -812,6 +829,19 @@ begin
       'create trigger track_c_tenant_id_immutable before update of tenant_id on public.%I for each row execute function private.prevent_tenant_change()',
       v_table
     );
+
+    if v_table = 'v4_recognition_sessions'
+       and pg_catalog.to_regprocedure('public.prevent_v4_session_identity_reassignment()') is not null then
+      execute 'create trigger prevent_v4_session_identity_reassignment before update on public.v4_recognition_sessions for each row execute function public.prevent_v4_session_identity_reassignment()';
+    end if;
+    if v_table = 'v4_writer_feedback_events'
+       and pg_catalog.to_regprocedure('public.prevent_v4_writer_feedback_mutation()') is not null then
+      execute 'create trigger prevent_v4_writer_feedback_mutation before update or delete on public.v4_writer_feedback_events for each row execute function public.prevent_v4_writer_feedback_mutation()';
+    end if;
+    if v_table = 'v4_learning_events'
+       and pg_catalog.to_regprocedure('public.prevent_v4_writer_learning_event_mutation()') is not null then
+      execute 'create trigger prevent_v4_writer_learning_event_mutation before update or delete on public.v4_learning_events for each row execute function public.prevent_v4_writer_learning_event_mutation()';
+    end if;
 
     execute format('drop policy if exists track_c_tenant_select on public.%I', v_table);
     execute format(
