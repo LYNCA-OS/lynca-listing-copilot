@@ -57,8 +57,10 @@ function argValue(argv, name, fallback = "") {
   return index >= 0 ? argv[index + 1] || fallback : fallback;
 }
 
-function numberArg(argv, name, fallback) {
-  const parsed = Number(argValue(argv, name, ""));
+export function numberArg(argv, name, fallback) {
+  const rawValue = argValue(argv, name, null);
+  if (rawValue === null || String(rawValue).trim() === "") return fallback;
+  const parsed = Number(rawValue);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
