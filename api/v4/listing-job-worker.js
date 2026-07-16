@@ -349,6 +349,35 @@ export function triggerV4BackgroundWorkerAfterL1Release(req, {
   return { triggered: true, reason };
 }
 
+export async function handlePairedV4FinalAfterL1Failure(req, {
+  job = {},
+  failure = {},
+  error = null,
+  releasePaired = releasePairedV4FinalJob,
+  wakePaired = triggerV4BackgroundWorkerAfterL1Release
+} = {}) {
+  const hiddenL1Job = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT;
+  const leaseLost = error?.code === "QUEUE_LEASE_LOST" || failure?.error === "row_not_matched";
+  if (!hiddenL1Job) {
+    return {
+      pairedRelease: { saved: false, skipped: true },
+      pairedWake: { triggered: false, reason: "not_l1_job" },
+      leaseLost
+    };
+  }
+  if (failure?.saved !== true || leaseLost) {
+    const reason = leaseLost ? "parent_lease_lost" : "parent_failure_not_saved";
+    return {
+      pairedRelease: { saved: false, skipped: true, error: reason },
+      pairedWake: { triggered: false, reason },
+      leaseLost
+    };
+  }
+  const pairedRelease = await releasePaired({ job, reason: "l1_failed_release_final" });
+  const pairedWake = wakePaired(req, { job, pairedRelease, reason: "l1_failed_wake_l2" });
+  return { pairedRelease, pairedWake, leaseLost };
+}
+
 async function mapWithConcurrency(items = [], concurrency = 1, worker) {
   const results = new Array(items.length);
   let cursor = 0;
@@ -723,13 +752,11 @@ export default async function handler(req, res) {
             sessionId: job.recognition_session_id || null,
             jobId: job.id || null
           });
-          const pairedRelease = hiddenL1Job
-            ? await releasePairedV4FinalJob({ job, reason: "l1_failed_release_final" })
-            : { saved: false, skipped: true };
-          const pairedWake = hiddenL1Job
-            ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_failed_wake_l2" })
-            : { triggered: false, reason: "not_l1_job" };
-          const leaseLost = error?.code === "QUEUE_LEASE_LOST" || failure.error === "row_not_matched";
+          const { pairedRelease, pairedWake, leaseLost } = await handlePairedV4FinalAfterL1Failure(req, {
+            job,
+            failure,
+            error
+          });
           return {
             job_id: job.id,
             lane: job.lane || null,

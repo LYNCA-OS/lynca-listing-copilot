@@ -1,6 +1,6 @@
 import { next } from "@vercel/functions";
 import { isProtectedAppPath } from "./lib/listing-route-access.mjs";
-import { validLegacySessionClaims } from "./lib/listing-session-claims.mjs";
+import { validListingSessionClaims } from "./lib/listing-session-claims.mjs";
 
 const cookieName = "lynca_metaverse_session";
 
@@ -61,7 +61,7 @@ async function isValidSession(cookie) {
 
   try {
     const session = decodePayload(payload);
-    return validLegacySessionClaims(session);
+    return validListingSessionClaims(session);
   } catch {
     return false;
   }

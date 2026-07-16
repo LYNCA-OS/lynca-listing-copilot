@@ -10,14 +10,18 @@ import {
   timingSafeStringEqual
 } from "../lib/listing-session.mjs";
 
-function makeRequest(body) {
+function makeRequest(body, { headers = {} } = {}) {
   const req = Readable.from([JSON.stringify(body)]);
   req.method = "POST";
   req.headers = {
     host: "example.test",
     "x-forwarded-proto": "https",
-    "content-type": "application/json"
+    "content-type": "application/json",
+    ...headers
   };
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value === null || value === undefined) delete req.headers[key];
+  }
   return req;
 }
 
@@ -58,9 +62,9 @@ async function login() {
   return { cookie, session };
 }
 
-async function loginWith(body) {
+async function loginWith(body, requestOptions) {
   const res = makeResponse();
-  await loginHandler(makeRequest(body), res);
+  await loginHandler(makeRequest(body, requestOptions), res);
   return res;
 }
 
@@ -71,7 +75,10 @@ const previousEnv = {
   METAVERSE_AUTH_SECRET: process.env.METAVERSE_AUTH_SECRET,
   API_RATE_LIMIT_DISABLED: process.env.API_RATE_LIMIT_DISABLED,
   SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  VERCEL: process.env.VERCEL,
+  VERCEL_ENV: process.env.VERCEL_ENV,
+  LYNCA_TRUST_PROXY_PROTO: process.env.LYNCA_TRUST_PROXY_PROTO
 };
 const previousFetch = globalThis.fetch;
 
@@ -82,6 +89,9 @@ process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.API_RATE_LIMIT_DISABLED = "1";
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
+process.env.VERCEL = "1";
+process.env.VERCEL_ENV = "production";
+delete process.env.LYNCA_TRUST_PROXY_PROTO;
 
 globalThis.fetch = async (input) => {
   const url = new URL(String(input));
@@ -143,6 +153,35 @@ try {
   assert.equal(readSignedSession(overlongClaims, process.env.METAVERSE_AUTH_SECRET), null, "legacy sessions must remain bounded to one week");
   assert.equal(timingSafeStringEqual("same", "same"), true);
   assert.equal(timingSafeStringEqual("short", "different-length"), false);
+
+  const sameOriginLogin = await loginWith({ username: "metaverse", password: "mtv" }, {
+    headers: {
+      origin: "https://example.test",
+      "sec-fetch-site": "same-origin"
+    }
+  });
+  assert.equal(sameOriginLogin.statusCode, 200);
+
+  const crossSiteLogin = await loginWith({ username: "metaverse", password: "mtv" }, {
+    headers: {
+      origin: "https://evil.example",
+      "sec-fetch-site": "cross-site",
+      "content-type": "text/plain"
+    }
+  });
+  assert.equal(crossSiteLogin.statusCode, 403, "browser login CSRF must fail closed");
+  assert.equal(crossSiteLogin.headers["set-cookie"], undefined);
+
+  const nonJsonLogin = await loginWith({ username: "metaverse", password: "mtv" }, {
+    headers: {
+      origin: "https://example.test",
+      "sec-fetch-site": "same-origin",
+      "content-type": "text/plain"
+    }
+  });
+  assert.equal(nonJsonLogin.statusCode, 415, "simple cross-site form content types must not reach authentication");
+  assert.equal(nonJsonLogin.headers["set-cookie"], undefined);
+
   const wrongPasswordCase = await loginWith({ username: "METAVERSE", password: "MTV" });
   assert.equal(wrongPasswordCase.statusCode, 401, "username may be case-insensitive but passwords must remain case-sensitive");
 
@@ -199,6 +238,56 @@ try {
   logoutHandler({ method: "GET", headers: { host: "example.test" } }, invalidLogoutMethod);
   assert.equal(invalidLogoutMethod.statusCode, 405);
   assert.equal(invalidLogoutMethod.headers.allow, "POST");
+
+  const productionDowngradeAttempt = await loginWith({ username: "metaverse", password: "mtv" }, {
+    headers: {
+      host: "listing.lyncafei.team",
+      "x-forwarded-proto": "http"
+    }
+  });
+  assert.equal(productionDowngradeAttempt.statusCode, 200);
+  assert.match(
+    String(productionDowngradeAttempt.headers["set-cookie"] || ""),
+    /; Secure/,
+    "Vercel production cookies must not be downgraded by a forwarding header"
+  );
+
+  delete process.env.VERCEL;
+  delete process.env.VERCEL_ENV;
+  const lanLogin = await loginWith({ username: "metaverse", password: "mtv" }, {
+    headers: {
+      host: "192.168.1.20:3000",
+      "x-forwarded-proto": null
+    }
+  });
+  assert.equal(lanLogin.statusCode, 200);
+  assert.doesNotMatch(
+    String(lanLogin.headers["set-cookie"] || ""),
+    /; Secure/,
+    "plain HTTP Docker/LAN hosts must not receive an unusable Secure cookie"
+  );
+
+  const lanLogout = makeResponse();
+  logoutHandler({
+    method: "POST",
+    headers: {
+      host: "192.168.1.20:3000",
+      origin: "http://192.168.1.20:3000",
+      "sec-fetch-site": "same-origin"
+    }
+  }, lanLogout);
+  assert.equal(lanLogout.statusCode, 200);
+  assert.doesNotMatch(String(lanLogout.headers["set-cookie"] || ""), /; Secure/);
+
+  process.env.LYNCA_TRUST_PROXY_PROTO = "true";
+  const trustedProxyLogin = await loginWith({ username: "metaverse", password: "mtv" }, {
+    headers: {
+      host: "docker.example.test",
+      "x-forwarded-proto": "https"
+    }
+  });
+  assert.equal(trustedProxyLogin.statusCode, 200);
+  assert.match(String(trustedProxyLogin.headers["set-cookie"] || ""), /; Secure/);
   console.log("login session tests passed");
 } finally {
   globalThis.fetch = previousFetch;

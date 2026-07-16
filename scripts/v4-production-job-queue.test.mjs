@@ -24,6 +24,7 @@ import {
   v4QueueSubmissionConcurrency
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
 import {
+  handlePairedV4FinalAfterL1Failure,
   payloadForV4ProductionJob,
   runWithV4JobLeaseHeartbeat,
   v4JobFailureCode
@@ -537,6 +538,72 @@ assert.ok(heartbeatRun.heartbeat.success_count >= 2);
 const pulsesAfterCompletion = heartbeatPulses;
 await new Promise((resolve) => setTimeout(resolve, 12));
 assert.equal(heartbeatPulses, pulsesAfterCompletion, "heartbeat timer must stop when the job finishes");
+
+{
+  const failedL1Job = {
+    id: "v4job-l1-stale-worker",
+    job_type: v4JobTypes.FAST_SCOUT_DRAFT,
+    paired_job_id: "v4job-l2-paired"
+  };
+  const blockedScenarios = [
+    {
+      label: "a worker that lost its queue lease",
+      failure: { saved: true },
+      error: { code: "QUEUE_LEASE_LOST" }
+    },
+    {
+      label: "an unsaved parent failure",
+      failure: { saved: false, error: "database_unavailable" },
+      error: { code: "PROVIDER_TIMEOUT" }
+    },
+    {
+      label: "the stale-worker row-not-matched result",
+      failure: { saved: false, error: "row_not_matched" },
+      error: { code: "QUEUE_LEASE_LOST" }
+    }
+  ];
+  for (const scenario of blockedScenarios) {
+    let releaseCalls = 0;
+    let wakeCalls = 0;
+    const result = await handlePairedV4FinalAfterL1Failure({}, {
+      job: failedL1Job,
+      failure: scenario.failure,
+      error: scenario.error,
+      releasePaired: async () => {
+        releaseCalls += 1;
+        return { saved: true };
+      },
+      wakePaired: () => {
+        wakeCalls += 1;
+        return { triggered: true };
+      }
+    });
+    assert.equal(releaseCalls, 0, `${scenario.label} must not release the paired L2 job`);
+    assert.equal(wakeCalls, 0, `${scenario.label} must not wake the paired L2 job`);
+    assert.equal(result.pairedRelease.skipped, true);
+    assert.equal(result.pairedWake.triggered, false);
+  }
+
+  let releaseCalls = 0;
+  let wakeCalls = 0;
+  const recoverableFailure = await handlePairedV4FinalAfterL1Failure({}, {
+    job: failedL1Job,
+    failure: { saved: true, row: { status: v4JobStatuses.FAILED } },
+    error: { code: "PROVIDER_TIMEOUT" },
+    releasePaired: async () => {
+      releaseCalls += 1;
+      return { saved: true };
+    },
+    wakePaired: () => {
+      wakeCalls += 1;
+      return { triggered: true };
+    }
+  });
+  assert.equal(releaseCalls, 1, "a persisted L1 provider failure should still release its paired L2 job");
+  assert.equal(wakeCalls, 1, "a persisted L1 provider failure should still wake its paired L2 job");
+  assert.equal(recoverableFailure.pairedRelease.saved, true);
+  assert.equal(recoverableFailure.pairedWake.triggered, true);
+}
 
 assert.equal(v4JobFailureCode({
   statusCode: 200,

@@ -2,7 +2,10 @@ import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import {
   cookieName,
-  createListingSessionToken
+  createListingSessionToken,
+  listingSessionCookieIsSecure,
+  requestHasJsonContentType,
+  sameOriginBrowserRequest
 } from "../lib/listing-session.mjs";
 import {
   authenticatePassword,
@@ -23,14 +26,8 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function isHttps(req) {
-  const host = String(req.headers.host || "");
-  return req.headers["x-forwarded-proto"] === "https" ||
-    (!host.startsWith("localhost") && !host.startsWith("127.0.0.1"));
-}
-
 function serializeCookie(name, value, req) {
-  const secure = isHttps(req) ? "; Secure" : "";
+  const secure = listingSessionCookieIsSecure(req) ? "; Secure" : "";
   return `${name}=${value}; HttpOnly; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secure}`;
 }
 
@@ -59,6 +56,16 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("allow", "POST");
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
+    return;
+  }
+
+  if (!sameOriginBrowserRequest(req, { allowMissingBrowserContext: true })) {
+    sendJson(res, 403, { ok: false, message: "Forbidden" });
+    return;
+  }
+
+  if (!requestHasJsonContentType(req)) {
+    sendJson(res, 415, { ok: false, message: "Content-Type must be application/json." });
     return;
   }
 
