@@ -7,6 +7,7 @@ import {
   vectorCandidatePacketAssistEligibility
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
+import { platformAdminAuth } from "../lib/platform-admin-auth.mjs";
 
 export const config = {
   maxDuration: 60
@@ -121,7 +122,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const auth = smokeAuth(req);
+  const auth = platformAdminAuth(req);
   if (!auth.ok) {
     sendJson(res, 401, { ok: false, error: "unauthorized" });
     return;

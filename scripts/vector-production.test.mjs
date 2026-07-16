@@ -1766,6 +1766,7 @@ const telemetry = await recordVectorRetrievalTelemetry({
     internalTopN: 30
   },
   context: {
+    tenantId: "tenant_alpha",
     analysisRunId: "analysis-1",
     assetId: "asset-1"
   },
@@ -1776,6 +1777,7 @@ const telemetry = await recordVectorRetrievalTelemetry({
     const body = JSON.parse(options.body);
     telemetryCalls.push({ table, body, headers: options.headers });
     if (table === "vector_query_logs") {
+      assert.equal(body[0].tenant_id, "tenant_alpha");
       assert.equal(body[0].searchable, false);
       assert.equal(body[0].status, "QUERY_ONLY");
       assert.equal(body[0].image_role, "front_global");
@@ -1784,12 +1786,14 @@ const telemetry = await recordVectorRetrievalTelemetry({
       return new Response(JSON.stringify([{ query_log_id: "22222222-2222-4222-8222-222222222222" }]), { status: 201 });
     }
     if (table === "vector_retrieval_runs") {
+      assert.equal(body[0].tenant_id, "tenant_alpha");
       assert.equal(body[0].query_log_id, "22222222-2222-4222-8222-222222222222");
       assert.equal(body[0].status, "VECTOR_RETRIEVAL_COMPLETED");
       assert.equal(body[0].mode, "assist");
       return new Response(JSON.stringify([{ retrieval_run_id: "33333333-3333-4333-8333-333333333333" }]), { status: 201 });
     }
     if (table === "vector_retrieval_candidates") {
+      assert.equal(body[0].tenant_id, "tenant_alpha");
       assert.equal(body[0].retrieval_run_id, "33333333-3333-4333-8333-333333333333");
       assert.equal(body[0].candidate_identity_id, "11111111-1111-4111-8111-111111111111");
       assert.equal(body[0].candidate_fields.year, "2024");
@@ -1821,6 +1825,7 @@ const telemetryFailure = await recordVectorRetrievalTelemetry({
   packet,
   mode: "shadow",
   retrievalConfig: {},
+  context: { tenantId: "tenant_alpha" },
   env: baseVectorEnv,
   fetchImpl: async () => new Response(JSON.stringify({ message: "missing table" }), { status: 404 })
 });

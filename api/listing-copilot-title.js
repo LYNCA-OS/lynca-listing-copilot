@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { waitUntil } from "@vercel/functions";
-import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+import { publicTenantAuthError, requireTenantAccess } from "../lib/tenant/index.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import {
@@ -203,7 +204,6 @@ import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate
 import { buildRetrievalApplicationLayer } from "../lib/listing/candidates/retrieval-application-layer.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
-import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import {
   releaseV4ProviderCapacityForJob,
   v4ProviderDoneCapacityHandoffEnabled
@@ -2029,11 +2029,12 @@ function boundedPayloadImagesFromImages(images = [], {
 async function verifyApprovedMemoryImages({ payload = {} } = {}) {
   const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
   if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
+  const tenantId = payload.tenant_id || payload.tenantId || "";
 
   for (const image of primaryImages) {
     const metadata = storageMetadataForImage(image);
     if (!metadata.objectPath) return { ok: false, reason: "verified_storage_path_required" };
-    await assertVerifiedStorageImage(image);
+    await assertVerifiedStorageImage(image, tenantId);
   }
 
   return { ok: true };
@@ -2052,7 +2053,8 @@ async function createApprovedMemoryTitle(payload) {
       enabled: true,
       loadApprovedRecords: ({ assetFingerprint, limit }) => listApprovedHistoryRecords({
         assetFingerprint,
-        limit
+        limit,
+        tenantId: payload.tenant_id || payload.tenantId || ""
       }),
       verifyImages: verifyApprovedMemoryImages
     });
@@ -2090,7 +2092,8 @@ async function createIdentityCacheTitle(payload) {
     if (!verified.ok) return null;
 
     const lookup = await readIdentityResultCacheRecord({
-      cacheKey: key.cache_key
+      cacheKey: key.cache_key,
+      tenantId: payload.tenant_id || payload.tenantId || ""
     });
     if (!lookup.hit) return null;
 
@@ -2225,7 +2228,9 @@ function primaryPayloadForProvider(payload = {}) {
 }
 
 function storageMetadataForImage(image = {}) {
+  const cropMetadata = image.cropMetadata || image.crop_metadata || {};
   return {
+    assetId: image.assetId || image.asset_id || cropMetadata.asset_id,
     objectPath: image.objectPath || image.object_path || image.storagePath || image.storage_path,
     bucket: image.bucket || image.storage_bucket,
     contentType: image.originalType || image.original_type || image.contentType || image.content_type || image.type,
@@ -2239,9 +2244,18 @@ function storageMetadataForImage(image = {}) {
   };
 }
 
-async function assertVerifiedStorageImage(image = {}) {
+async function assertVerifiedStorageImage(image = {}, tenantId = "") {
   const metadata = storageMetadataForImage(image);
-  if (!metadata.objectPath) return null;
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!metadata.objectPath) {
+    if (normalizedTenantId && normalizedTenantId !== "tenant_legacy") {
+      throw new Error("Tenant listing images must use a verified storage object path.");
+    }
+    return null;
+  }
+  if (!normalizedTenantId) {
+    throw new Error("Tenant context is required for listing image verification.");
+  }
 
   if (!(image.storageVerified === true || image.storage_verified === true)) {
     throw new Error("Listing image storage reference has not been verified.");
@@ -2251,6 +2265,7 @@ async function assertVerifiedStorageImage(image = {}) {
     try {
       verifyListingImageVerificationToken({
         token: metadata.token,
+        tenantId,
         objectPath: metadata.objectPath,
         bucket: metadata.bucket,
         contentType: metadata.contentType,
@@ -2267,6 +2282,8 @@ async function assertVerifiedStorageImage(image = {}) {
   }
 
   const durableRecord = await readListingImageVerificationRecord({
+    tenantId,
+    assetId: metadata.assetId || null,
     objectPath: metadata.objectPath,
     bucket: metadata.bucket,
     contentType: metadata.contentType,
@@ -2284,6 +2301,8 @@ async function assertVerifiedStorageImage(image = {}) {
 async function verifyIdentityCacheImages(payload = {}) {
   const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
   if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
+  const tenantId = payload.tenant_id || payload.tenantId || "";
+  if (!String(tenantId).trim()) return { ok: false, reason: "tenant_context_required" };
 
   for (const image of primaryImages) {
     const metadata = storageMetadataForImage(image);
@@ -2294,6 +2313,8 @@ async function verifyIdentityCacheImages(payload = {}) {
     }
 
     const durableRecord = await readListingImageVerificationRecord({
+      tenantId,
+      assetId: metadata.assetId || null,
       objectPath: metadata.objectPath,
       bucket: metadata.bucket,
       contentType: metadata.contentType,
@@ -2965,6 +2986,7 @@ function catalogCandidateContextCacheKey({
   resolvedForRetrieval = {},
   providerOptions = {},
   excludeSourceFeedbackIds = [],
+  tenantId = "",
   env = process.env
 } = {}) {
   const normalized = normalizeFields(resolvedForRetrieval || {});
@@ -2975,6 +2997,7 @@ function catalogCandidateContextCacheKey({
   const players = playerValues.map(normalizeStringOrNull).filter(Boolean);
   const keyPayload = {
     revision: env.CATALOG_LOOKUP_CACHE_REVISION || "v2",
+    tenant_id: String(tenantId || "").trim(),
     source_trust_policy_version: env.CATALOG_SOURCE_TRUST_POLICY_VERSION || "approved-reference-v1",
     fields: {
       year: normalized.year || "",
@@ -3598,6 +3621,7 @@ async function prepareCatalogCandidateContext({
   timingContext = null,
   stageRequestId = "",
   stagePhase = "catalog_lookup",
+  tenantId = "",
   env = process.env
 } = {}) {
   if (optionFlag(providerOptions, "enable_catalog_assist", false) !== true) {
@@ -3613,7 +3637,7 @@ async function prepareCatalogCandidateContext({
 
   const cacheEnabled = catalogCacheEnabled(env, providerOptions);
   const cacheKey = cacheEnabled
-    ? catalogCandidateContextCacheKey({ resolvedForRetrieval, providerOptions, excludeSourceFeedbackIds, env })
+    ? catalogCandidateContextCacheKey({ resolvedForRetrieval, providerOptions, excludeSourceFeedbackIds, tenantId, env })
     : "";
   const cacheStartedAt = Date.now();
   if (cacheEnabled && cacheKey) {
@@ -3651,6 +3675,7 @@ async function prepareCatalogCandidateContext({
       allowedFamilies,
       maxQueries: allowedFamilies.length,
       excludeSourceFeedbackIds,
+      tenantId,
       env: catalogRetrievalEnv(env, providerOptions)
     }))
   });
@@ -3716,6 +3741,7 @@ async function prepareCatalogCandidateContext({
 
 function vectorTelemetryContext(payload = {}) {
   return {
+    tenantId: payload.tenant_id || payload.tenantId || null,
     analysisRunId: payload.analysisRunId || payload.analysis_run_id || null,
     assetId: payload.assetId || payload.asset_id || null,
     sourceFeedbackId: payload.sourceFeedbackId || payload.source_feedback_id || null,
@@ -3841,7 +3867,8 @@ async function prepareVectorCandidateContext({
     allowedFamilies,
     maxQueries: config.hybridRetrievalEnabled ? Math.max(4, allowedFamilies.length + 2) : 2,
     excludeSourceFeedbackIds,
-    env: vectorRetrievalEnv(env, config)
+    env: vectorRetrievalEnv(env, config),
+    tenantId: initialPayload.tenant_id || initialPayload.tenantId || ""
   }));
   const packet = buildVectorCandidatePacket(retrieval, {
     limit: config.gptCandidateLimit,
@@ -5099,16 +5126,17 @@ async function withEvidenceCompletionShadow(result, payload, {
   };
 }
 
-async function imagesWithSignedReadUrls(images = [], timingContext = null) {
+async function imagesWithSignedReadUrls(images = [], timingContext = null, tenantId = "") {
   return timeAsync(timingContext, "signed_url_ms", () => mapWithConcurrency(images, signedUrlConcurrency, async (image) => {
-    const metadata = await assertVerifiedStorageImage(image);
+    const metadata = await assertVerifiedStorageImage(image, tenantId);
     if (!metadata?.objectPath) return image;
 
     return {
       ...image,
       signedUrl: await createListingImageSignedReadUrl({
         objectPath: metadata.objectPath,
-        bucket: metadata.bucket
+        bucket: metadata.bucket,
+        tenantId
       }),
       signed_url: undefined
     };
@@ -5148,7 +5176,11 @@ async function createRecognitionIdentityPreflight(payload, {
   }
 
   try {
-    const signedImages = await imagesWithSignedReadUrls(payload.images || [], timingContext);
+    const signedImages = await imagesWithSignedReadUrls(
+      payload.images || [],
+      timingContext,
+      payload.tenant_id || payload.tenantId || ""
+    );
     const signedPrimaryImages = primaryImagesFromImages(signedImages);
     const response = await timeAsync(timingContext, "recognition_preflight_ms", () => analyzeCardImagesWithRecognitionWorker({
       assetId: payload.assetId || payload.asset_id || `asset_${crypto.randomUUID()}`,
@@ -5333,6 +5365,7 @@ async function createOpenAiTitle(payload, selection, {
   let latestPreingestionOcrState = null;
   const preingestionOcrRendezvousPromise = preingestionBundleId
     ? waitForPreingestionOcrEvidence({
+      tenantId: payload.tenant_id || payload.tenantId || "",
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: preingestionBundleId,
       // OCR starts during pre-ingestion and runs in parallel with the provider.
@@ -5372,14 +5405,19 @@ async function createOpenAiTitle(payload, selection, {
     || crypto.randomUUID();
   const signedImagesPromise = Array.isArray(reusableSignedImages) && reusableSignedImages.length
     ? reusableSignedImages
-    : imagesWithSignedReadUrls(payload.images || [], timingContext);
+    : imagesWithSignedReadUrls(
+      payload.images || [],
+      timingContext,
+      payload.tenant_id || payload.tenantId || ""
+    );
   const catalogContextPromise = prepareCatalogCandidateContext({
     resolvedForRetrieval,
     providerOptions,
     excludeSourceFeedbackIds: [payload.source_feedback_id || payload.sourceFeedbackId].filter(Boolean),
     timingContext,
     stageRequestId: catalogStageRequestId,
-    stagePhase: "pre_provider"
+    stagePhase: "pre_provider",
+    tenantId: payload.tenant_id || payload.tenantId || ""
   });
 
   let signedImages;
@@ -5560,6 +5598,7 @@ async function createOpenAiTitle(payload, selection, {
     imageDetail: providerImageDetail,
     textVerbosity: ultraFastL2 ? ultraFastTextVerbosity(providerOptions) : null,
     serviceTier: ultraFastL2 ? ultraFastServiceTier(providerOptions) : null,
+    signal: requestContext?.signal || null,
     requestContext: openAiRequestContextFromPayload(initialPayload, {
       providerCallPurpose: "full_l2",
       titleStage: providerOptions.v4_title_stage_target || initialPayload.v4_title_stage_target || ""
@@ -5628,7 +5667,8 @@ async function createOpenAiTitle(payload, selection, {
       excludeSourceFeedbackIds: [payload.source_feedback_id || payload.sourceFeedbackId].filter(Boolean),
       timingContext,
       stageRequestId: catalogStageRequestId,
-      stagePhase: "post_provider"
+      stagePhase: "post_provider",
+      tenantId: payload.tenant_id || payload.tenantId || ""
     }).catch(() => null);
     const startLateVectorLookup = async () => {
       try {
@@ -5923,6 +5963,7 @@ async function createOpenAiTitle(payload, selection, {
   }
   const targetedOcrRendezvousPromise = criticalOcrWait.target_fields.length && preingestionBundleId
     ? waitForPreingestionOcrEvidence({
+      tenantId: payload.tenant_id || payload.tenantId || "",
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: preingestionBundleId,
       timeoutMs: Math.max(500, ocrPostProviderWaitMs),
@@ -6397,35 +6438,26 @@ export async function runListingRecognitionCore({
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/listing-copilot-title" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  const cookies = parseCookies(req.headers.cookie);
-  const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
-  const workerAuthorized = isV4WorkerRequest(req, process.env);
-
-  if (!authenticated && !workerAuthorized) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
-    return;
-  }
-
-  if (!workerAuthorized && !enforceApiRateLimit(req, res, {
-    scope: "listing_title",
-    limit: 120,
-    windowMs: 60_000,
-    message: "Too many title generation requests. Please try again shortly."
-  })) return;
-
-  let payload;
   try {
-    payload = JSON.parse(await readBody(req));
-  } catch {
-    sendJson(res, 400, { ok: false, message: "Invalid request." });
+    const context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), publicTenantAuthError(error));
     return;
   }
-
-  const response = await runListingRecognitionCore({ payload, requestContext: req });
-  sendJson(res, response.statusCode, response.body);
+  // The V4 route is the only executable HTTP boundary. It reconstructs tenant
+  // context from a current membership or a persisted queue job before calling
+  // runListingRecognitionCore in-process. A worker secret alone is never a
+  // license to supply an arbitrary tenant payload to this legacy endpoint.
+  sendJson(res, 410, {
+    ok: false,
+    code: "v4_tenant_route_required",
+    message: "Use /api/v4/listing-copilot-title for tenant-scoped recognition."
+  });
 }

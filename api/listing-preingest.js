@@ -1,7 +1,10 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
+import { assertTenantListingAssetObjectPath } from "../lib/listing/storage/storage-verification-store.mjs";
+import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
+import { requireTenantListingAsset } from "../lib/tenant/assets.mjs";
 import { processQueuedPreingestionOcrJobs } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 import {
   buildPreingestionCropPlan,
@@ -42,41 +45,63 @@ function safeString(value) {
   return String(value || "").trim();
 }
 
-function normalizePayloadImages(images = [], assetId = "") {
+function normalizePayloadImages(images = [], assetId = "", tenantId = "", verifiedObjectPaths = new Set()) {
   return (Array.isArray(images) ? images : [])
     .map((image, index) => normalizePreingestionImageRecord(image, {
       fallbackAssetId: assetId,
       index
     }))
+    .filter((image) => {
+      if (!image.object_path || !image.object_verified || image.asset_id !== assetId) return false;
+      if (!verifiedObjectPaths.has(image.object_path)) return false;
+      try {
+        assertTenantListingAssetObjectPath({ tenantId, assetId, objectPath: image.object_path });
+        return true;
+      } catch {
+        return false;
+      }
+    });
+}
+
+function normalizeVerificationRows(rows = [], assetId = "", tenantId = "") {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row, index) => {
+      if (safeString(row.tenant_id) !== tenantId || safeString(row.asset_id) !== assetId) {
+        throw new Error("Verified image row does not match the signed tenant and asset.");
+      }
+      assertTenantListingAssetObjectPath({ tenantId, assetId, objectPath: row.object_path });
+      return normalizePreingestionImageRecord({
+        ...row,
+        source_table: "listing_image_verifications"
+      }, {
+        fallbackAssetId: assetId,
+        index
+      });
+    })
     .filter((image) => image.object_path && image.object_verified);
 }
 
-function normalizeVerificationRows(rows = [], assetId = "") {
+function normalizeDerivedRows(rows = [], assetId = "", tenantId = "") {
   return (Array.isArray(rows) ? rows : [])
-    .map((row, index) => normalizePreingestionImageRecord({
-      ...row,
-      source_table: "listing_image_verifications"
-    }, {
-      fallbackAssetId: assetId,
-      index
-    }))
-    .filter((image) => image.object_path && image.object_verified);
-}
-
-function normalizeDerivedRows(rows = []) {
-  return (Array.isArray(rows) ? rows : [])
-    .map((row, index) => normalizeDerivedImageRecord({
-      ...row,
-      source_table: "image_derived_assets"
-    }, { index }))
+    .map((row, index) => {
+      if (safeString(row.tenant_id) !== tenantId || safeString(row.asset_id) !== assetId) {
+        throw new Error("Derived image row does not match the signed tenant and asset.");
+      }
+      assertTenantListingAssetObjectPath({ tenantId, assetId, objectPath: row.object_path });
+      return normalizeDerivedImageRecord({
+        ...row,
+        source_table: "image_derived_assets"
+      }, { index });
+    })
     .filter((image) => image.object_path);
 }
 
-async function countSignedReadUrls(images, env, fetchImpl) {
+async function countSignedReadUrls(images, tenantId, env, fetchImpl) {
   const results = await Promise.all(images.map(async (image) => {
     try {
       await createListingImageSignedReadUrl({
         objectPath: image.object_path,
+        tenantId,
         bucket: image.bucket,
         env,
         fetchImpl
@@ -96,15 +121,19 @@ async function countSignedReadUrls(images, env, fetchImpl) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/listing-preingest" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  const cookies = parseCookies(req.headers.cookie);
-  const authenticated = readSignedSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
-  if (!authenticated) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
+  let context;
+  try {
+    context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    const status = isTenantAuthError(error) ? error.statusCode : 503;
+    sendJson(res, status, publicTenantAuthError(error));
     return;
   }
 
@@ -130,29 +159,74 @@ export default async function handler(req, res) {
   }
 
   try {
+    await requireTenantListingAsset({
+      tenantId: context.tenantId,
+      assetId,
+      requireDurable: true,
+      env: process.env,
+      fetchImpl: globalThis.fetch
+    });
+  } catch (error) {
+    const code = String(error?.message || "");
+    const statusCode = code === "listing_asset_not_found"
+      ? 404
+      : code === "invalid_durable_listing_asset_id"
+        ? 400
+        : 503;
+    sendJson(res, statusCode, {
+      ok: false,
+      code: statusCode === 404
+        ? "listing_asset_not_found"
+        : statusCode === 400
+          ? "invalid_durable_listing_asset_id"
+          : "listing_asset_lookup_failed",
+      message: statusCode === 404
+        ? "Listing asset was not found for the signed tenant."
+        : statusCode === 400
+          ? "asset_id must be a server-created durable listing asset id."
+          : "Listing asset lookup is temporarily unavailable."
+    });
+    return;
+  }
+
+  try {
     const [verificationRows, derivedRows, existingBundleId] = await Promise.all([
       readVerifiedImageRecordsByAssetId({
         assetId,
+        tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
       }),
       readDerivedImageAssetsByAssetId({
         assetId,
+        tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
       }),
       readPreIngestionBundleIdByAsset({
         assetId,
+        tenantId: context.tenantId,
         source: payload.source || "listing_preingest_api",
         env: process.env,
         fetchImpl: globalThis.fetch
       })
     ]);
+    const verifiedImages = normalizeVerificationRows(
+      verificationRows,
+      assetId,
+      context.tenantId
+    );
+    const verifiedObjectPaths = new Set(verifiedImages.map((image) => image.object_path));
     const images = dedupePreingestionImages([
-      ...normalizeVerificationRows(verificationRows, assetId),
-      ...normalizePayloadImages(payload.images, assetId)
+      ...verifiedImages,
+      ...normalizePayloadImages(
+        payload.images,
+        assetId,
+        context.tenantId,
+        verifiedObjectPaths
+      )
     ]);
-    const derivedImages = normalizeDerivedRows(derivedRows);
+    const derivedImages = normalizeDerivedRows(derivedRows, assetId, context.tenantId);
 
     if (!images.length) {
       sendJson(res, 400, {
@@ -179,18 +253,20 @@ export default async function handler(req, res) {
 
     const signed = payload.verify_signed_read_urls === false
       ? { signedReadUrlCount: 0, errors: [] }
-      : await countSignedReadUrls(images, process.env, globalThis.fetch);
+      : await countSignedReadUrls(images, context.tenantId, process.env, globalThis.fetch);
 
     const existingBundle = existingBundleId
       ? await readPreIngestionBundle({
         bundleId: existingBundleId,
+        tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
-      }).then((result) => result.bundle || null).catch(() => null)
+      }).then((result) => result.bundle || null)
       : null;
     const incomingInitialEvidence = payload.initial_evidence || payload.initialEvidence || {};
     const incomingEvidencePatches = payload.evidence_patches || payload.evidencePatches || [];
     const bundle = createPreIngestionBundle({
+      tenantId: context.tenantId,
       assetId,
       bundleId: existingBundleId,
       source: payload.source || "listing_preingest_api",
@@ -243,6 +319,7 @@ export default async function handler(req, res) {
       // worker fails closed (jobs stay queued) when PaddleOCR is unconfigured;
       // /api/v4/listing-preingest-worker re-sweeps anything left behind.
       waitUntil(processQueuedPreingestionOcrJobs({
+        tenantId: context.tenantId,
         assetId,
         bundleId: durableBundle.bundle_id,
         // Writer-critical hard text gets the first wave. Context crops are
@@ -256,6 +333,7 @@ export default async function handler(req, res) {
 
     sendJson(res, 200, {
       ok: true,
+      tenant_id: context.tenantId,
       bundle_id: durableBundle.bundle_id,
       bundle_status: durableBundle.status,
       saved: Boolean(writeResult.saved),

@@ -1,8 +1,9 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import {
   createV4BatchId,
+  createV4DeterministicBatchId,
   enqueueV4RecognitionJobs,
   expandV4RecognitionStageJobs,
   tryAcquireV4QueueKick,
@@ -12,8 +13,15 @@ import {
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import {
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
 
 function jobsFromPayload(payload = {}) {
   if (Array.isArray(payload.jobs)) return payload.jobs;
@@ -21,18 +29,34 @@ function jobsFromPayload(payload = {}) {
   return [payload];
 }
 
-function headerValue(req, name) {
-  const lower = String(name || "").toLowerCase();
-  const value = req?.headers?.[lower] ?? req?.headers?.[name];
-  if (Array.isArray(value)) return String(value[0] || "").trim();
-  return String(value || "").trim();
-}
-
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
+function withoutClientSessionIdentity(job = {}) {
+  const serverOwnedKeys = [
+    "id",
+    "job_id", "jobId",
+    "l1_job_id", "l1JobId",
+    "l2_job_id", "l2JobId",
+    "parent_job_id", "parentJobId",
+    "paired_job_id", "pairedJobId",
+    "recognition_session_id", "recognitionSessionId",
+    "session_id", "sessionId",
+    "batch_id", "batchId",
+    "tenant_id", "tenantId",
+    "operator_id", "operatorId",
+    "created_by_user_id", "assigned_to_user_id",
+    "lease_owner", "lease_expires_at",
+    "queue_tags", "status",
+    "preingestion_bundle_id", "preingestionBundleId", "preingestion_bundle",
+    "preingestion_bundle_used", "preingestion_bundle_status",
+    "preingestion_summary", "preingestion_initial_evidence",
+    "preingestion_evidence_patches"
+  ];
+  const scoped = { ...job };
+  for (const key of serverOwnedKeys) delete scoped[key];
+  if (scoped.payload && typeof scoped.payload === "object" && !Array.isArray(scoped.payload)) {
+    scoped.payload = { ...scoped.payload };
+    for (const key of serverOwnedKeys) delete scoped.payload[key];
+  }
+  return scoped;
 }
 
 function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
@@ -125,28 +149,33 @@ export async function runPostEnqueueQueueKick({
   return { phase: "followup", acquired: followup.acquired === true, acquisition_ok: followup.ok === true, ...invocation };
 }
 
-export function triggerV4QueuePumpAfterEnqueue(req, {
+export function triggerV4QueuePumpAfterEnqueue(_req, {
   tenantId,
   batchId,
-  queuedCount
+  queuedCount,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil,
+  acquireKick = tryAcquireV4QueueKick,
+  sleep = delay
 } = {}) {
   if (!queuedCount) return { triggered: false, reason: "no_jobs_queued" };
-  if (!envFlag(process.env, "V4_QUEUE_AUTOKICK_ENABLED", true)) return { triggered: false, reason: "autokick_disabled" };
-  const secret = configuredWorkerSecret(process.env);
+  if (!envFlag(env, "V4_QUEUE_AUTOKICK_ENABLED", true)) return { triggered: false, reason: "autokick_disabled" };
+  const secret = configuredWorkerSecret(env);
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
-  const origin = requestOrigin(req);
-  if (!origin) return { triggered: false, reason: "request_origin_missing" };
-  const stableConcurrency = v4WorkerProcessConcurrency(process.env);
-  const perWorkerLimit = positiveInteger(process.env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
-  const interactiveWorkers = positiveInteger(process.env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });
-  const backgroundWorkers = positiveInteger(process.env.V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS, 2, { min: 1, max: 32 });
-  const interactiveLimit = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, interactiveWorkers * perWorkerLimit, { min: 1, max: 96 });
-  const backgroundLimit = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, backgroundWorkers * perWorkerLimit, { min: 1, max: 96 });
+  const origin = trustedInternalServiceOrigin(env);
+  if (!origin) return { triggered: false, reason: "internal_origin_missing" };
+  const stableConcurrency = v4WorkerProcessConcurrency(env);
+  const perWorkerLimit = positiveInteger(env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
+  const interactiveWorkers = positiveInteger(env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });
+  const backgroundWorkers = positiveInteger(env.V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS, 2, { min: 1, max: 32 });
+  const interactiveLimit = positiveInteger(env.V4_PUMP_INTERACTIVE_CONCURRENCY, interactiveWorkers * perWorkerLimit, { min: 1, max: 96 });
+  const backgroundLimit = positiveInteger(env.V4_PUMP_BACKGROUND_CONCURRENCY, backgroundWorkers * perWorkerLimit, { min: 1, max: 96 });
   const interactiveConcurrency = Math.min(stableConcurrency, interactiveLimit);
   const backgroundConcurrency = Math.min(stableConcurrency, backgroundLimit);
 
   const body = {
-    tenant_id: v4QueueGlobalDrainEnabled(process.env) ? null : tenantId || batchId || null,
+    tenant_id: v4QueueGlobalDrainEnabled(env) ? null : tenantId || batchId || null,
     kick_source_tenant_id: tenantId || batchId || null,
     limit: interactiveLimit,
     process_concurrency: interactiveConcurrency,
@@ -167,13 +196,16 @@ export function triggerV4QueuePumpAfterEnqueue(req, {
     reason: "post_enqueue"
   };
   const kickOwner = `enqueue-${String(batchId || tenantId || "batch").slice(0, 72)}-${Date.now().toString(36)}`;
-  const leaseMs = v4QueueKickDedupMs(process.env);
-  waitUntil(runPostEnqueueQueueKick({
+  const leaseMs = v4QueueKickDedupMs(env);
+  defer(runPostEnqueueQueueKick({
     origin,
     secret,
     body,
     kickOwner,
-    leaseMs
+    leaseMs,
+    acquireKick,
+    fetchImpl,
+    sleep
   }).then((diagnostic) => {
     console.log(JSON.stringify({
       level: diagnostic.ok ? "info" : "warn",
@@ -195,12 +227,18 @@ export function triggerV4QueuePumpAfterEnqueue(req, {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-enqueue" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  if (!getSessionFromRequest(req)) {
-    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+    requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -229,10 +267,28 @@ export default async function handler(req, res) {
     return;
   }
 
-  const batchId = payload.batch_id || payload.batchId || createV4BatchId("v4batch");
-  const operatorId = operatorIdFromRequest(req);
-  const tenantId = payload.tenant_id || payload.tenantId || batchId;
-  const sourceJobs = jobsFromPayload(payload);
+  const operatorId = context.userId;
+  const tenantId = context.tenantId;
+  // Scheduling and data ownership use the signed principal. The browser's
+  // batch id remains a batch id and cannot impersonate another tenant.
+  const clientBatchToken = String(payload.batch_id || payload.batchId || "").trim();
+  if (clientBatchToken && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/.test(clientBatchToken)) {
+    sendJson(res, 400, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: "V4_QUEUE_BATCH_TOKEN_INVALID",
+      message: "batch_id must be an opaque 1-120 character token."
+    }));
+    return;
+  }
+  const batchId = createV4DeterministicBatchId({
+    tenantId,
+    operatorId,
+    idempotencyKey: clientBatchToken
+  }) || createV4BatchId("v4batch");
+  // Session IDs are ownership-bearing server identifiers. A browser may
+  // provide an idempotency key, but it cannot select an existing session.
+  const sourceJobs = jobsFromPayload(payload).map(withoutClientSessionIdentity);
   const maxJobsPerRequest = positiveInteger(process.env.V4_QUEUE_MAX_JOBS_PER_REQUEST, 50, { min: 1, max: 250 });
   if (sourceJobs.length > maxJobsPerRequest) {
     sendJson(res, 413, withV4Version({
@@ -265,8 +321,12 @@ export default async function handler(req, res) {
   });
 
   const failedEntries = result.jobs.filter((entry) => !entry.saved);
-  const noJobsQueued = stageJobs.length > 0 && result.queued_count === 0;
-  const responseStatus = noJobsQueued ? 503 : 200;
+  const acceptedCount = Number(result.accepted_count ?? result.jobs.filter((entry) => entry.saved).length);
+  const noJobsAccepted = stageJobs.length > 0 && acceptedCount === 0;
+  const deterministicConflict = failedEntries.some((entry) => (
+    /identity_conflict|terminal_retry_required/.test(String(entry.error || ""))
+  ));
+  const responseStatus = noJobsAccepted ? deterministicConflict ? 409 : 503 : 200;
   const failureMessage = failedEntries
     .map((entry) => String(entry.error || "queue_job_persistence_failed").trim())
     .filter(Boolean)
@@ -274,14 +334,17 @@ export default async function handler(req, res) {
     .join("; ");
 
   sendJson(res, responseStatus, withV4Version({
-    ok: result.queued_count > 0,
-    retryable: noJobsQueued,
-    error_code: noJobsQueued ? "V4_QUEUE_PERSISTENCE_FAILED" : null,
-    message: noJobsQueued
+    ok: acceptedCount > 0,
+    retryable: noJobsAccepted && !deterministicConflict,
+    error_code: noJobsAccepted
+      ? deterministicConflict ? "V4_QUEUE_IDENTITY_CONFLICT" : "V4_QUEUE_PERSISTENCE_FAILED"
+      : null,
+    message: noJobsAccepted
       ? failureMessage || "The recognition job was not persisted. Retry is safe because queue IDs are idempotent."
       : null,
     batch_id: result.batchId,
     tenant_id: tenantId,
+    accepted_count: acceptedCount,
     queued_count: result.queued_count,
     inserted_count: result.inserted_count,
     deduplicated_count: result.deduplicated_count,

@@ -16,6 +16,17 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+      - name: Fail closed unless this dispatch targets the current main commit
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          test "$DEFAULT_BRANCH" = "main"
+          test "$DISPATCH_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -28,6 +39,25 @@ jobs:
           npm run test:v4-spine
           npm run check:launch-benchmark
           npm run test:launch-benchmark
+          npm run check:production-engineering
+          npm run test:production-engineering
+          npm run check:data-flywheel
+          npm run test:data-flywheel
+      - name: Fail closed unless the Track C production schema is ready
+        env:
+          POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+        run: |
+          # This is a catalog-only, READ ONLY preflight. All schema migrations
+          # are deliberately applied in a separate maintenance window; this
+          # deploy workflow never mutates the database.
+          node scripts/check-track-c-production-schema.mjs \
+            --out /tmp/track-c-production-schema-preflight.json
+      - name: Re-confirm the exact main commit before the deploy hook
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - name: Trigger current main through the Vercel Deploy Hook
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
@@ -56,35 +86,14 @@ jobs:
           done
           test -s /tmp/v4-health-deployed.json
           node -e 'const h=require("/tmp/v4-health-deployed.json"); if(h.deployment?.git_commit_sha !== process.env.GITHUB_SHA) process.exit(1)'
-      - name: Apply and verify production schema migrations
+      - name: Re-verify the production schema after deployment
         env:
-          V4_JOB_WORKER_SECRET: ${{ secrets.V4_JOB_WORKER_SECRET }}
+          POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
         run: |
-          test -n "$V4_JOB_WORKER_SECRET"
-          curl -fsS --max-time 45 \
-            -H "x-lynca-worker-secret: $V4_JOB_WORKER_SECRET" \
-            -X POST \
-            https://listing.lyncafei.team/api/admin-apply-v4-production-job-queue-migration \
-            -o /tmp/production-job-queue-migration.json
-          node -e 'const r=require("/tmp/production-job-queue-migration.json"); if(r.ok!==true) process.exit(1)'
-          curl -fsS --max-time 45 \
-            -H "x-lynca-worker-secret: $V4_JOB_WORKER_SECRET" \
-            -X POST \
-            https://listing.lyncafei.team/api/admin-apply-v4-writer-export-migration \
-            -o /tmp/writer-export-migration.json
-          node -e 'const r=require("/tmp/writer-export-migration.json"); if(r.ok!==true) process.exit(1)'
-          curl -fsS --max-time 45 \
-            -H "x-lynca-worker-secret: $V4_JOB_WORKER_SECRET" \
-            -X POST \
-            https://listing.lyncafei.team/api/admin-apply-v4-noncritical-persistence-migration \
-            -o /tmp/noncritical-persistence-migration.json
-          node -e 'const r=require("/tmp/noncritical-persistence-migration.json"); if(r.ok!==true) process.exit(1)'
-          curl -fsS --max-time 45 \
-            -H "x-lynca-worker-secret: $V4_JOB_WORKER_SECRET" \
-            -X POST \
-            https://listing.lyncafei.team/api/admin-apply-v4-writer-ready-capacity-migration \
-            -o /tmp/writer-ready-capacity-migration.json
-          node -e 'const r=require("/tmp/writer-ready-capacity-migration.json"); if(r.ok!==true) process.exit(1)'
+          # Deployments are code-only. Re-running older migration files here
+          # could overwrite the newer Track C queue/retry RPCs.
+          node scripts/check-track-c-production-schema.mjs \
+            --out /tmp/track-c-production-schema-postdeploy.json
       - name: Verify production alias and V4 runtime
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
@@ -154,12 +163,10 @@ jobs:
         with:
           name: production-release-evidence
           path: |
+            /tmp/track-c-production-schema-preflight.json
+            /tmp/track-c-production-schema-postdeploy.json
             /tmp/v4-health.json
             /tmp/v4-health-deployed.json
             /tmp/provider-status.json
             /tmp/vercel-deploy-hook.json
-            /tmp/production-job-queue-migration.json
-            /tmp/writer-export-migration.json
-            /tmp/noncritical-persistence-migration.json
-            /tmp/writer-ready-capacity-migration.json
             /tmp/writer-assisted-readiness.json

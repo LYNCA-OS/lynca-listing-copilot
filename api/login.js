@@ -1,26 +1,33 @@
-import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import {
   cookieName,
-  createSignedSessionToken,
-  timingSafeStringEqual
+  createListingSessionToken,
+  listingSessionCookieIsSecure,
+  requestHasJsonContentType,
+  sameOriginBrowserRequest
 } from "../lib/listing-session.mjs";
+import {
+  authenticatePassword,
+  isTenantAuthError,
+  listTenantChoicesForAuthUser,
+  publicTenantAuthError,
+  resolveTenantIdentityForAuthUser
+} from "../lib/tenant/index.mjs";
 
 const maxAgeSeconds = 60 * 60 * 24 * 7;
 const maxLoginBodyBytes = 16 * 1024;
 
-function normalizeUsername(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function isHttps(req) {
-  const host = String(req.headers.host || "");
-  return req.headers["x-forwarded-proto"] === "https" ||
-    (!host.startsWith("localhost") && !host.startsWith("127.0.0.1"));
+function sendJson(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("pragma", "no-cache");
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(payload));
 }
 
 function serializeCookie(name, value, req) {
-  const secure = isHttps(req) ? "; Secure" : "";
+  const secure = listingSessionCookieIsSecure(req) ? "; Secure" : "";
   return `${name}=${value}; HttpOnly; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secure}`;
 }
 
@@ -45,10 +52,20 @@ function readBody(req) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/login" });
   if (req.method !== "POST") {
-    res.statusCode = 405;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Method not allowed" }));
+    res.setHeader("allow", "POST");
+    sendJson(res, 405, { ok: false, message: "Method not allowed" });
+    return;
+  }
+
+  if (!sameOriginBrowserRequest(req, { allowMissingBrowserContext: true })) {
+    sendJson(res, 403, { ok: false, message: "Forbidden" });
+    return;
+  }
+
+  if (!requestHasJsonContentType(req)) {
+    sendJson(res, 415, { ok: false, message: "Content-Type must be application/json." });
     return;
   }
 
@@ -59,46 +76,70 @@ export default async function handler(req, res) {
     message: "Too many login attempts. Please wait before trying again."
   })) return;
 
-  const expectedUser = process.env.METAVERSE_USERNAME;
-  const expectedPassword = process.env.METAVERSE_PASSWORD;
   const authSecret = process.env.METAVERSE_AUTH_SECRET;
 
-  if (!expectedUser || !expectedPassword || !authSecret) {
-    res.statusCode = 500;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Listing auth is not configured." }));
+  if (!authSecret) {
+    sendJson(res, 500, { ok: false, message: "Listing auth is not configured." });
     return;
   }
 
   let credentials;
   try {
     credentials = JSON.parse(await readBody(req));
-  } catch {
-    res.statusCode = 400;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Invalid request." }));
+  } catch (error) {
+    const tooLarge = error?.code === "REQUEST_BODY_TOO_LARGE";
+    sendJson(res, tooLarge ? 413 : 400, {
+      ok: false,
+      message: tooLarge ? "Request is too large." : "Invalid request."
+    });
     return;
   }
 
-  const username = normalizeUsername(credentials.username);
-  const password = String(credentials.password ?? "");
+  let authenticated = null;
+  try {
+    authenticated = await authenticatePassword({
+      email: credentials.email || credentials.username,
+      username: credentials.username,
+      password: credentials.password
+    });
+    const identity = authenticated.provider === "legacy"
+      ? authenticated
+      : await resolveTenantIdentityForAuthUser({
+        authUserId: authenticated.authUserId,
+        tenantId: credentials.tenant_id || credentials.tenantId
+      });
+    const token = createListingSessionToken(identity, authSecret, {
+      maxAgeMs: maxAgeSeconds * 1000
+    });
+    bindProductionRequestContext(res, identity);
 
-  if (username !== normalizeUsername(expectedUser) || !timingSafeStringEqual(password, expectedPassword)) {
-    res.statusCode = 401;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "账号或密码不正确。" }));
-    return;
+    res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
+    sendJson(res, 200, {
+      ok: true,
+      tenant_id: identity.tenantId,
+      role: identity.role
+    });
+  } catch (error) {
+    let tenantChoices = [];
+    if (isTenantAuthError(error) && error.code === "TENANT_SELECTION_REQUIRED") {
+      try {
+        if (authenticated?.authUserId) {
+          tenantChoices = await listTenantChoicesForAuthUser({ authUserId: authenticated.authUserId });
+        }
+      } catch {
+        tenantChoices = [];
+      }
+    }
+    const statusCode = isTenantAuthError(error) ? error.statusCode : 503;
+    const payload = publicTenantAuthError(error);
+    sendJson(res, statusCode, {
+      ...payload,
+      message: error?.code === "INVALID_CREDENTIALS"
+        ? "账号或密码不正确。"
+        : error?.code === "TENANT_SELECTION_REQUIRED"
+          ? "请选择要进入的客户空间。"
+          : payload.message,
+      tenants: tenantChoices
+    });
   }
-
-  const token = createSignedSessionToken({
-    user: normalizeUsername(expectedUser),
-    sid: crypto.randomUUID(),
-    iat: Date.now(),
-    exp: Date.now() + maxAgeSeconds * 1000
-  }, authSecret);
-
-  res.statusCode = 200;
-  res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.end(JSON.stringify({ ok: true }));
 }

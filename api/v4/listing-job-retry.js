@@ -1,8 +1,14 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import { retryV4RecognitionJob } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import {
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
 import { triggerV4QueuePumpAfterEnqueue } from "./listing-job-enqueue.js";
 
 function statusForRetryFailure(result = {}) {
@@ -10,17 +16,27 @@ function statusForRetryFailure(result = {}) {
   if (result.error_code === "V4_JOB_RETRY_NOT_ALLOWED") return 409;
   if (result.error_code === "V4_JOB_RETRY_STATE_CHANGED") return 409;
   if (result.error_code === "V4_JOB_RETRY_JOB_ID_REQUIRED") return 400;
+  if (result.error_code === "V4_JOB_RETRY_TENANT_REQUIRED") return 400;
   if (result.error_code === "V4_JOB_RETRY_OPERATOR_REQUIRED") return 401;
   return 503;
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-retry" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, retryable: false, message: "Method not allowed" }));
     return;
   }
-  if (!getSessionFromRequest(req)) {
-    sendJson(res, 401, withV4Version({ ok: false, retryable: false, message: "Unauthorized" }));
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+    requirePermission(context, TENANT_PERMISSIONS.RETRY_JOB);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version({
+      ...publicTenantAuthError(error),
+      retryable: false
+    }));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -56,7 +72,8 @@ export default async function handler(req, res) {
 
   const result = await retryV4RecognitionJob({
     jobId,
-    operatorId: operatorIdFromRequest(req)
+    operatorId: context.userId,
+    tenantId: context.tenantId
   });
   if (!result.saved) {
     sendJson(res, statusForRetryFailure(result), withV4Version({
@@ -70,7 +87,7 @@ export default async function handler(req, res) {
 
   const row = result.row || {};
   const pump = triggerV4QueuePumpAfterEnqueue(req, {
-    tenantId: row.tenant_id || null,
+    tenantId: context.tenantId,
     batchId: row.batch_id || null,
     // Re-kick even when a repeated writer click finds the job already queued.
     // The kick lease coalesces duplicates, while a transiently missed pump can
@@ -86,7 +103,7 @@ export default async function handler(req, res) {
     job: {
       job_id: row.id || jobId,
       batch_id: row.batch_id || null,
-      tenant_id: row.tenant_id || null,
+      tenant_id: context.tenantId,
       asset_id: row.asset_id || null,
       recognition_session_id: row.recognition_session_id || null,
       status: row.status || "RETRYING",

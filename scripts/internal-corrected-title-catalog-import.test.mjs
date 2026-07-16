@@ -132,12 +132,12 @@ assert.equal(unauthorizedRes.statusCode, 401);
 assert.equal(JSON.parse(unauthorizedRes.body).error, "unauthorized");
 
 const previousEnv = {
-  DATA_LOOP_INTERNAL_SIDECAR_TOKEN: process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN,
+  LYNCA_PLATFORM_ADMIN_SECRET: process.env.LYNCA_PLATFORM_ADMIN_SECRET,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY
 };
 const previousFetch = globalThis.fetch;
-process.env.DATA_LOOP_INTERNAL_SIDECAR_TOKEN = "test-import-token";
+process.env.LYNCA_PLATFORM_ADMIN_SECRET = "test-import-token";
 process.env.SUPABASE_URL = env.SUPABASE_URL;
 process.env.SUPABASE_SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
 globalThis.fetch = async (url) => {
@@ -148,7 +148,7 @@ const dryRunRes = mockRes();
 try {
   await adminImportHandler({
     method: "POST",
-    headers: { authorization: "Bearer test-import-token" },
+    headers: { "x-lynca-platform-admin-secret": "test-import-token" },
     body: { apply: false, limit: 10, offset: 0 }
   }, dryRunRes);
 } finally {
@@ -161,7 +161,7 @@ try {
 assert.equal(dryRunRes.statusCode, 200);
 const dryRunPayload = JSON.parse(dryRunRes.body);
 assert.equal(dryRunPayload.ok, true);
-assert.equal(dryRunPayload.auth_mode, "internal_token");
+assert.equal(dryRunPayload.auth_mode, "platform_admin_secret");
 assert.equal(dryRunPayload.apply, false);
 assert.equal(dryRunPayload.report.dry_run, true);
 assert.equal(dryRunPayload.report.inserted_card_count, 1);

@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { indexVisualVectorDataset } from "../scripts/index-visual-vector-embeddings.mjs";
 import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
+import { platformAdminAuth } from "../lib/platform-admin-auth.mjs";
 import { contractedConcurrency } from "../lib/listing/v4/orchestration/concurrency-contract.mjs";
 
 export const config = {
@@ -112,7 +113,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const auth = adminAuth(req);
+  const auth = platformAdminAuth(req);
   if (!auth.ok) {
     sendJson(res, 401, { ok: false, error: "unauthorized" });
     return;

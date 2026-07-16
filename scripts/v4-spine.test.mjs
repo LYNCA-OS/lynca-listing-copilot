@@ -37,10 +37,12 @@ import {
   checkV4Tables,
   createV4RecognitionSession,
   persistV4CandidateTrace,
+  persistV4FastScoutCache,
   persistV4FieldEvidence,
   persistV4LearningEvent,
   persistV4NonCriticalArtifactsAtomic,
   persistV4WriterFeedbackTransaction,
+  readV4FastScoutCache,
   updateV4RecognitionSession
 } from "../lib/listing/v4/session/session-store.mjs";
 import {
@@ -829,13 +831,13 @@ assert.match(freshEbaySmokeWorkflowSource, /ledger_present_count[^\n]+attempted_
 assert.match(freshEbaySmokeWorkflowSource, /transport_error_count/, "speed smoke must fail on transport errors without treating field-quality findings as infrastructure failures.");
 assert.match(freshEbaySmokeWorkflowSource, /field_quality_error_count/, "speed smoke must still report deferred field-quality findings.");
 assert.match(freshEbaySmokeWorkflowSource, /writer_ready_capacity_atomic_count/, "speed smoke must prove writer-ready provider capacity release behavior.");
-assert.match(fastScoutPrewarmApiSource, /allowProviderCall: payload\.v4_fast_scout_cache_only !== true/, "production can probe the scout cache without putting another model call before L2.");
+assert.match(fastScoutPrewarmApiSource, /allowProviderCall: false/, "production fast-scout prewarm must remain cache-only; paid scout work belongs to durable queue jobs.");
 assert.match(fastScoutPrewarmApiSource, /FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED/, "a cache-only miss must be an expected route signal rather than a provider failure.");
 assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-only misses must return a stable non-error response.");
 assert.match(vercelConfigSource, /admin-apply-v4-production-job-queue-migration\.js/, "the production migration function must have an explicit Vercel bundle rule.");
 assert.match(vercelConfigSource, /supabase\/migrations\/\*\.sql/, "all required SQL migrations must ship with the admin migration function.");
-assert.match(productionDeployWorkflowSource, /admin-apply-v4-production-job-queue-migration/, "production deployment must apply and verify the queue control-plane migration before declaring readiness.");
-assert.match(productionDeployWorkflowSource, /production-job-queue-migration\.json/, "queue migration evidence must be retained with every production release.");
+assert.match(productionDeployWorkflowSource, /check-track-c-production-schema\.mjs/, "production deployment must fail closed on a read-only production schema preflight.");
+assert.match(productionDeployWorkflowSource, /track-c-production-schema-postdeploy\.json/, "production deployment must retain postdeploy schema verification evidence.");
 assert.match(queueMigrationApiSource, /20260713224500_v4_tenant_fair_provider_queue\.sql/, "production migration apply must include the tenant-fair scheduler.");
 assert.match(queueMigrationApiSource, /tenant_fair_scheduler/, "the migration probe must verify that tenant-first scheduling is installed.");
 assert.match(queueMigrationApiSource, /tenant_fair_claim_ok/, "the migration probe must prove that multiple batches cannot multiply one tenant's provider share.");
@@ -853,16 +855,18 @@ assert.match(queueStatusApiSource, /serial_numerator_verified/, "queue status mu
 assert.match(queueStatusApiSource, /V4_JOB_STATUS_QUERY_REQUIRED/, "missing status query identifiers must remain a non-retryable client error.");
 assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s\S]*V4_JOB_STATUS_BACKEND_UNAVAILABLE/, "transient queue-store reads must be reported as retryable service failures.");
 assert.match(queueStatusApiSource, /ownedJobs = result\.rows\.filter[\s\S]*operator_id/, "job status must not expose another operator's queued work.");
-assert.match(queueEnqueueApiSource, /noJobsQueued \? 503 : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
+assert.match(queueEnqueueApiSource, /const noJobsAccepted =[\s\S]*acceptedCount === 0/, "enqueue must identify batches where no durable job was accepted.");
+assert.match(queueEnqueueApiSource, /const responseStatus = noJobsAccepted \? deterministicConflict \? 409 : 503 : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
 assert.match(queueEnqueueApiSource, /V4_QUEUE_PERSISTENCE_FAILED/, "queue persistence failures must have a stable retryable error code.");
-assert.match(queueRetryApiSource, /operatorIdFromRequest/, "writer retries must enforce job ownership.");
+assert.match(queueRetryApiSource, /operatorId:\s*context\.userId/, "writer retries must enforce job ownership from the signed tenant context.");
 assert.match(queueRetryApiSource, /retryV4RecognitionJob/, "writer retries must reuse the durable job instead of starting an unbounded direct request.");
 assert.match(queueRetryApiSource, /interactive_priority_zero/, "writer retries must enter the interactive priority lane.");
-assert.match(sessionStatusApiSource, /session\.operator_id[\s\S]*operatorIdFromRequest/, "session status must enforce operator ownership.");
+assert.match(sessionStatusApiSource, /session\.operator_id[\s\S]*context\.userId/, "session status must enforce operator ownership from the signed tenant context.");
 assert.match(sessionStatusApiSource, /include_related_counts/, "writer polling must not block on diagnostic table counts unless explicitly requested.");
 assert.match(sessionStatusApiSource, /Promise\.all\(Object\.entries\(tables\)/, "evaluation-only related counts should load in parallel.");
 assert.match(sessionStatusApiSource, /Recognition session status is temporarily unavailable/, "transient session reads must remain retryable instead of looking like a terminal failure.");
-assert.match(feedbackApiSource, /readV4SessionStatus[\s\S]*session\.operator_id[\s\S]*operatorId/, "writer feedback must verify session ownership before learning writes.");
+assert.match(feedbackApiSource, /readV4SessionStatus\(\{ sessionId, tenantId \}\)/, "writer feedback must bind the session read to the signed tenant before learning writes.");
+assert.match(feedbackApiSource, /TENANT_PERMISSIONS\.SUBMIT_FEEDBACK[\s\S]*assignedUserId: ownedSession\.session\.assigned_to_user_id/, "writer feedback must authorize the persisted assignee while preserving tenant-wide Owner access.");
 assert.match(feedbackApiSource, /persistV4WriterFeedbackTransaction/, "writer feedback, learning data, and the session terminal state must commit atomically.");
 assert.match(feedbackApiSource, /v4_writer_cert_registry_promotion_failed/, "non-blocking cert promotion failures must remain observable.");
 assert.match(v4TitleApiSource, /v4_noncritical_persistence_failure_status_write_failed/, "a failed background-persistence terminal write must not disappear silently.");
@@ -877,8 +881,8 @@ assert.match(stageCapacityMigrationSource, /acquire_v4_stage_capacity[\s\S]*for 
 assert.match(stageCapacityMigrationSource, /release_v4_stage_capacity/, "non-LLM stage slots must be explicitly releasable.");
 assert.match(writerReadyCapacityMigrationSource, /revoke all on function public\.persist_v4_writer_ready_and_release_capacity[\s\S]*from public, anon, authenticated/, "the writer-ready capacity RPC must remain service-role only.");
 assert.match(writerReadyCapacityMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the writer-ready capacity migration probe must verify the RPC privilege boundary.");
-assert.match(productionDeployWorkflowSource, /admin-apply-v4-noncritical-persistence-migration[\s\S]*noncritical-persistence-migration\.json/, "production deploys must apply and retain evidence for the atomic persistence migration.");
-assert.match(productionDeployWorkflowSource, /admin-apply-v4-writer-ready-capacity-migration[\s\S]*writer-ready-capacity-migration\.json/, "production deploys must apply and retain evidence for the writer-ready capacity migration.");
+assert.match(productionDeployWorkflowSource, /track-c-production-schema-preflight\.json[\s\S]*track-c-production-schema-postdeploy\.json/, "production deploys must retain read-only schema evidence for atomic persistence and writer-ready capacity readiness.");
+assert.doesNotMatch(productionDeployWorkflowSource, /admin-apply-v4-(noncritical-persistence|writer-ready-capacity)-migration/, "production deploys must not mutate Supabase schema from the code deploy workflow.");
 assert.match(writerLearningSupersessionMigrationSource, /before insert on public\.v4_learning_events/, "writer learning supersession must be enforced at the database boundary.");
 assert.match(writerLearningSupersessionMigrationSource, /SUPERSEDED_BY_LATEST_WRITER_FEEDBACK/, "older writer-derived training truth must be retained for audit but excluded from training.");
 assert.match(writerLearningSupersessionMigrationSource, /events\.id <> new\.id[\s\S]*events\.training_eligible = true/, "the latest writer event must only supersede older eligible events for the same session.");
@@ -1892,10 +1896,10 @@ assert.equal(artifacts.feedbackEvent.correction_type, "EDIT");
 assert.equal(artifacts.rawWriterTitle, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
 assert.equal(artifacts.csmNormalization.applied, true);
 assert.equal(artifacts.feedbackEvent.title_diff.raw_writer_title, "2024-25 Panini Immaculate Anthony Edwards Patch Auto 2/3 BGS 8.5 Timberwolves");
-assert.equal(artifacts.learningEvent.training_eligible, true);
+assert.equal(artifacts.learningEvent.training_eligible, false);
 assert.equal(artifacts.learningEvent.feedback_training_event.schema_version, "listing-feedback-loop-training-v1");
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_ground_truth));
-assert.ok(artifacts.learningEvent.field_level_ground_truth.some((row) => row.field === "player" && row.training_eligible === true));
+assert.equal(artifacts.learningEvent.field_level_ground_truth.length, 0);
 assert.ok(Array.isArray(artifacts.learningEvent.field_level_diff));
 assert.equal(typeof artifacts.learningEvent.candidate_changes.candidate_count, "number");
 assert.equal(artifacts.correctedResolved.year, "2024-25");
@@ -1913,8 +1917,8 @@ const writerResolvedAbstain = buildV4FeedbackArtifacts({
 });
 assert.equal(writerResolvedAbstain.status, "EDITED");
 assert.equal(writerResolvedAbstain.feedbackEvent.generated_title, "");
-assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Auto PSA 10");
-assert.equal(writerResolvedAbstain.learningEvent.training_eligible, true);
+assert.equal(writerResolvedAbstain.feedbackEvent.writer_final_title, "2024 Topps Chrome Test Player Autograph PSA 10");
+assert.equal(writerResolvedAbstain.learningEvent.training_eligible, false);
 
 const writerRejectedAbstain = buildV4FeedbackArtifacts({
   sessionId: "v4sess-writer-rejected-abstain",
@@ -1943,11 +1947,11 @@ const csmOrderedFeedback = buildV4FeedbackArtifacts({
     }
   }
 });
-assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(csmOrderedFeedback.feedbackEvent.writer_final_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(csmOrderedFeedback.rawWriterTitle, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(csmOrderedFeedback.csmNormalization.applied, true);
 assert.equal(csmOrderedFeedback.feedbackEvent.title_diff.raw_writer_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
-assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(csmOrderedFeedback.learningEvent.feedback_training_event.writer_final_title, "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best");
 assert.equal(
   csmOrderedFeedback.learningEvent.feedback_training_event.writer_raw_title,
   "Michael Jordan Chicago Bulls Best Performance 1997-98 Bowman's Best"
@@ -1968,7 +1972,8 @@ const rejectedFeedback = buildV4FeedbackArtifacts({
     }
   }
 });
-assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "wrong loose title");
+assert.equal(rejectedFeedback.feedbackEvent.writer_final_title, "");
+assert.equal(rejectedFeedback.feedbackEvent.writer_raw_title, "wrong loose title");
 assert.equal(rejectedFeedback.csmNormalization.skipped_reason, "REJECTED_FEEDBACK");
 assert.equal(rejectedFeedback.learningEvent.training_eligible, false);
 
@@ -1996,6 +2001,106 @@ const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role"
 };
+
+const fastScoutWriteCalls = [];
+const fastScoutWrite = await persistV4FastScoutCache({
+  cache: {
+    id: "fast-scout-tenant-a",
+    tenant_id: "tenant-a",
+    asset_id: "asset-1",
+    scout_fields: { serial_number: "2/3" }
+  },
+  env,
+  fetchImpl: async (url, init = {}) => {
+    fastScoutWriteCalls.push({ url: new URL(String(url)), body: JSON.parse(init.body) });
+    return {
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify([JSON.parse(init.body)])
+    };
+  }
+});
+assert.equal(fastScoutWrite.saved, true);
+assert.equal(fastScoutWrite.cache_backend, "v4_fast_scout_cache");
+assert.equal(fastScoutWriteCalls[0].body.tenant_id, "tenant-a");
+assert.equal(fastScoutWriteCalls[0].url.searchParams.get("on_conflict"), "id");
+
+const fastScoutFallbackCalls = [];
+const fastScoutFallback = await persistV4FastScoutCache({
+  cache: {
+    id: "fast-scout-fallback-tenant-a",
+    tenant_id: "tenant-a",
+    asset_id: "asset-1",
+    scout_fields: { grade: "PSA 10" }
+  },
+  env,
+  fetchImpl: async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    fastScoutFallbackCalls.push({ url: parsed, body: JSON.parse(init.body) });
+    if (parsed.pathname.endsWith("/v4_fast_scout_cache")) {
+      return { ok: false, status: 404, text: async () => "missing table" };
+    }
+    return {
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify([JSON.parse(init.body)])
+    };
+  }
+});
+assert.equal(fastScoutFallback.saved, true);
+assert.equal(fastScoutFallback.cache_backend, "v4_preingestion_bundles");
+assert.equal(fastScoutFallbackCalls[1].body.tenant_id, "tenant-a");
+assert.equal(fastScoutFallbackCalls[1].body.bundle.cache.tenant_id, "tenant-a");
+assert.equal(fastScoutFallbackCalls[1].url.searchParams.get("on_conflict"), "tenant_id,id");
+
+const fastScoutReadCalls = [];
+const fastScoutRead = await readV4FastScoutCache({
+  cacheId: "fast-scout-fallback-tenant-a",
+  tenantId: "tenant-a",
+  env,
+  fetchImpl: async (url) => {
+    const parsed = new URL(String(url));
+    fastScoutReadCalls.push(parsed);
+    const payload = parsed.pathname.endsWith("/v4_fast_scout_cache")
+      ? []
+      : [{
+          id: "fast-scout-fallback-tenant-a",
+          bundle: { cache: { id: "fast-scout-fallback-tenant-a", tenant_id: "tenant-a" } },
+          status: "FAST_SCOUT_CACHE"
+        }];
+    return { ok: true, status: 200, text: async () => JSON.stringify(payload) };
+  }
+});
+assert.equal(fastScoutRead.ok, true);
+assert.equal(fastScoutRead.row.tenant_id, "tenant-a");
+assert.equal(fastScoutReadCalls.length, 2);
+assert.ok(fastScoutReadCalls.every((url) => url.searchParams.get("tenant_id") === "eq.tenant-a"));
+
+let tenantlessFastScoutFetches = 0;
+assert.deepEqual(
+  await persistV4FastScoutCache({
+    cache: { id: "tenantless-cache" },
+    env,
+    fetchImpl: async () => {
+      tenantlessFastScoutFetches += 1;
+      throw new Error("tenantless write must not reach Supabase");
+    }
+  }),
+  { saved: false, error: "missing_tenant_id" }
+);
+assert.deepEqual(
+  await readV4FastScoutCache({
+    cacheId: "tenantless-cache",
+    env,
+    fetchImpl: async () => {
+      tenantlessFastScoutFetches += 1;
+      throw new Error("tenantless read must not reach Supabase");
+    }
+  }),
+  { ok: false, row: null, error: "missing_tenant_id" }
+);
+assert.equal(tenantlessFastScoutFetches, 0);
+
 await createV4RecognitionSession({
   sessionId: "v4sess-test",
   payload: { asset_id: "asset-1" },
@@ -2070,6 +2175,7 @@ await persistV4LearningEvent({
 const feedbackTransactionCalls = [];
 const feedbackTransaction = await persistV4WriterFeedbackTransaction({
   sessionId: "v4sess-test",
+  tenantId: "tenant-test",
   operatorId: "operator-test",
   status: artifacts.status,
   feedbackEvent: artifacts.feedbackEvent,
@@ -2092,8 +2198,9 @@ const feedbackTransaction = await persistV4WriterFeedbackTransaction({
 assert.equal(feedbackTransaction.saved, true);
 assert.ok(feedbackTransactionCalls[0].url.endsWith("/rest/v1/rpc/persist_v4_writer_feedback_transaction"));
 assert.equal(feedbackTransactionCalls[0].body.p_session_id, "v4sess-test");
+assert.equal(feedbackTransactionCalls[0].body.p_tenant_id, "tenant-test");
 assert.equal(feedbackTransactionCalls[0].body.p_feedback_event.schema_version, "v4-recognition-session-v1");
-assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, true);
+assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, false);
 const health = await checkV4Tables({ env, fetchImpl: fakeFetch });
 assert.equal(health.configured, true);
 assert.ok(writes.some((write) => write.table === "v4_recognition_sessions"));

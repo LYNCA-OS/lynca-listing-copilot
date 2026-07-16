@@ -1,4 +1,8 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": false
+  },
   "cleanUrls": true,
   "trailingSlash": false,
   "regions": [
@@ -20,6 +24,45 @@
     {
       "source": "/login.html",
       "destination": "/app/login"
+    },
+    {
+      "source": "/ops",
+      "destination": "/app/ops"
+    },
+    {
+      "source": "/ops.html",
+      "destination": "/app/ops"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; base-uri 'self'; connect-src 'self' https://*.supabase.co; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "same-origin"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), geolocation=(), microphone=()"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000"
+        }
+      ]
     }
   ],
   "functions": {
@@ -40,6 +83,9 @@
     },
     "api/v4/listing-job-pump.js": {
       "maxDuration": 300
+    },
+    "api/v4/listing-job-assign.js": {
+      "maxDuration": 60
     },
     "api/v4/fast-scout-prewarm.js": {
       "maxDuration": 300

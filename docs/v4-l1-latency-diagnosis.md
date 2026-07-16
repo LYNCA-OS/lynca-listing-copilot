@@ -96,9 +96,13 @@ L1 must not block on:
 
 ## Prewarm Path
 
-New endpoint:
+Durable endpoint:
 
-`POST /api/v4/fast-scout-prewarm`
+`POST /api/v4/listing-job-prewarm`
+
+`POST /api/v4/fast-scout-prewarm` is now a cache-only probe. It never calls a
+paid provider. Actual prewarm work is persisted as a `FAST_SCOUT_DRAFT` queue
+job first, then runs through the normal capacity, retry, cost and event path.
 
 New batch command:
 
@@ -110,7 +114,9 @@ node scripts/v4-prewarm-fast-scout-for-batch.mjs \
   --concurrency=1
 ```
 
-The prewarm path runs fast scout only and does not generate a final listing title or promote catalog data. It writes `v4_fast_scout_cache` when that table exists; otherwise it fails open to the existing `v4_preingestion_bundles` table with `status = FAST_SCOUT_CACHE`, so cloud deployments do not block on a migration before cache can be useful.
+The batch command enqueues durable L1-only jobs and reports queued/reused counts.
+It does not claim that cache creation succeeded until the worker completes the
+persisted job. No final listing title or catalog promotion is created.
 
 ## Expected Validation
 

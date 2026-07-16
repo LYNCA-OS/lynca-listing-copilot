@@ -1518,6 +1518,7 @@ assert.equal(invalidOwsModelFetchCalled, false);
 
 let approvedHistoryCalls = 0;
 const approvedHistoryRegistry = createRetrievalProviderRegistry({
+  tenantId: "tenant_alpha",
   env: {
     SUPABASE_URL: "https://supabase.test",
     SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
@@ -1528,12 +1529,14 @@ const approvedHistoryRegistry = createRetrievalProviderRegistry({
     approvedHistoryCalls += 1;
     const requestUrl = new URL(String(url));
     assert.equal(requestUrl.href.includes("/rest/v1/listing_reviews"), true);
+    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     assert.match(requestUrl.searchParams.get("select") || "", /corrected_resolved_fields/);
     assert.equal(requestUrl.searchParams.get("review_outcome"), "in.(ACCEPTED_UNCHANGED,CORRECTED_FIELDS,TITLE_ONLY_OVERRIDE,TARGETED_RESCAN_RECOVERED)");
     assert.equal(requestUrl.searchParams.get("approved_at"), "not.is.null");
     assert.equal(requestUrl.searchParams.get("order"), "created_at.desc");
     assert.equal(requestUrl.searchParams.get("limit"), "25");
-    assert.equal(options.headers.authorization, "Bearer test-service-role");
+    assert.equal(options.headers.apikey, "test-service-role");
+    assert.equal(options.headers.authorization, undefined, "opaque Supabase service keys must not be sent as JWT bearer tokens");
     return jsonResponse([
       {
         id: "review-approved-1",
@@ -1568,8 +1571,72 @@ assert.equal(approvedHistoryRun.sources[0].source_url, "internal://approved-hist
 assert.equal(approvedHistoryRun.sources[0].fields.product, "Topps Chrome");
 assert.equal(approvedHistoryRun.sources[0].fields.checklist_code, "TCAR-CF");
 
+function approvedHistoryRegistryForCacheIsolation(id, title) {
+  return createRetrievalProviderRegistry({
+    env: {},
+    approvedRecords: [{
+      id,
+      final_title: title,
+      fields: {
+        year: "2025",
+        brand: "Topps",
+        product: "Topps Chrome",
+        players: ["Cooper Flagg"],
+        checklist_code: "TCAR-CF",
+        collector_number: "136"
+      }
+    }]
+  });
+}
+
+const tenantScopedApprovedHistoryCache = createRetrievalCache();
+const runTenantApprovedHistory = ({ tenantId = "", id, title, cache = tenantScopedApprovedHistoryCache }) => runRetrieval({
+  resolved,
+  mode: retrievalModes.INTERNAL_ONLY,
+  allowedFamilies: [retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY],
+  maxQueries: 1,
+  tenantId,
+  providerRegistry: approvedHistoryRegistryForCacheIsolation(id, title),
+  cache
+});
+const tenantAApprovedHistoryFirst = await runTenantApprovedHistory({
+  tenantId: "tenant_a",
+  id: "tenant-a-approved",
+  title: "Tenant A Private Approved Title"
+});
+const tenantAApprovedHistorySecond = await runTenantApprovedHistory({
+  tenantId: "tenant_a",
+  id: "tenant-a-uncached-alternative",
+  title: "Tenant A Uncached Alternative"
+});
+const tenantBApprovedHistory = await runTenantApprovedHistory({
+  tenantId: "tenant_b",
+  id: "tenant-b-approved",
+  title: "Tenant B Private Approved Title"
+});
+assert.equal(tenantAApprovedHistoryFirst.sources[0].title, "Tenant A Private Approved Title");
+assert.equal(tenantAApprovedHistorySecond.sources[0].title, "Tenant A Private Approved Title");
+assert.ok(tenantAApprovedHistorySecond.trace.some((entry) => entry.cache_hit === true), "same-tenant approved-history queries should reuse cache entries");
+assert.equal(tenantBApprovedHistory.sources[0].title, "Tenant B Private Approved Title");
+assert.equal(tenantBApprovedHistory.trace.some((entry) => entry.cache_hit === true), false, "cross-tenant approved-history queries must not reuse cache entries");
+
+const unscopedApprovedHistoryCache = createRetrievalCache();
+await runTenantApprovedHistory({
+  id: "unscoped-first",
+  title: "Unscoped First Title",
+  cache: unscopedApprovedHistoryCache
+});
+const unscopedApprovedHistorySecond = await runTenantApprovedHistory({
+  id: "unscoped-second",
+  title: "Unscoped Second Title",
+  cache: unscopedApprovedHistoryCache
+});
+assert.equal(unscopedApprovedHistorySecond.sources[0].title, "Unscoped Second Title");
+assert.equal(unscopedApprovedHistorySecond.trace.some((entry) => entry.cache_hit === true), false, "approved-history queries without tenant context must not be cached");
+
 let disabledApprovedHistoryCalls = 0;
 const disabledApprovedHistoryRegistry = createRetrievalProviderRegistry({
+  tenantId: "tenant_beta",
   env: {
     SUPABASE_URL: "https://supabase.test",
     SUPABASE_SERVICE_ROLE_KEY: "test-service-role"

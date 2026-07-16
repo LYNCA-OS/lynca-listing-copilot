@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
-import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
+import { runtimeMigrationAuth } from "../lib/platform-admin-auth.mjs";
 
 const migrationPaths = [
   "supabase/migrations/20260707122154_v4_production_job_queue.sql",
@@ -128,17 +128,6 @@ function sendJson(res, statusCode, payload) {
 
 function dbUrl(env = process.env) {
   return String(env.POSTGRES_URL_NON_POOLING || env.POSTGRES_URL || "").trim();
-}
-
-function connectionStringForPg(rawUrl) {
-  try {
-    const parsed = new URL(rawUrl);
-    parsed.searchParams.delete("sslmode");
-    parsed.searchParams.delete("ssl");
-    return parsed.toString();
-  } catch {
-    return rawUrl;
-  }
 }
 
 async function verify(client) {
@@ -380,8 +369,9 @@ export default async function handler(req, res) {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
-  if (!isV4WorkerRequest(req, process.env)) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
+  const auth = runtimeMigrationAuth(req, process.env);
+  if (!auth.ok) {
+    sendJson(res, auth.statusCode, { ok: false, message: auth.error });
     return;
   }
   const connectionString = dbUrl(process.env);
@@ -390,10 +380,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const client = new pg.Client({
-    connectionString: connectionStringForPg(connectionString),
-    ssl: { rejectUnauthorized: false }
-  });
+  const client = new pg.Client({ connectionString });
   try {
     const sql = await readMigrationSql();
     await client.connect();

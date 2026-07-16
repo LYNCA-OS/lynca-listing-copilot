@@ -1,8 +1,8 @@
 # Environment Flag Inventory
 
-Generated 2026-07-15 by scripts/generate-env-flag-inventory.mjs — do not edit by hand.
+Generated 2026-07-16 by scripts/generate-env-flag-inventory.mjs — do not edit by hand.
 
-Total: 367 flags. Reaping rule: a kill switch that has stayed in one
+Total: 393 flags. Reaping rule: a kill switch that has stayed in one
 position for a quarter is not a switch, it is dead weight — inline its value
 and delete the flag.
 
@@ -72,7 +72,7 @@ and delete the flag.
 | `DATA_LOOP_FIFTYONE_SYNC_TOKEN` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_FIFTYONE_SYNC_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_INTERNAL_ANNOTATION_QUEUE_ENABLED` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
-| `DATA_LOOP_INTERNAL_SIDECAR_TOKEN` | api/admin-apply-catalog-self-exclusion-migration.js<br>api/admin-catalog-candidate-smoke.js<br>api/admin-import-corrected-title-catalog.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>lib/data-loop/internal-sidecar-endpoints.mjs<br>lib/data-loop/workflow-sidecar-dispatcher.mjs |
+| `DATA_LOOP_INTERNAL_SIDECAR_TOKEN` | api/admin-catalog-candidate-smoke.js<br>api/admin-import-corrected-title-catalog.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>lib/data-loop/internal-sidecar-endpoints.mjs<br>lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_LABEL_STUDIO_PROJECT_ID` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_LIGHTGBM_RERANKER_TOKEN` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_LIGHTGBM_RERANKER_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
@@ -81,6 +81,7 @@ and delete the flag.
 | `DATA_LOOP_PHOENIX_API_KEY` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_PHOENIX_ENDPOINT` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_SIDECARS_ENABLED` | lib/data-loop/workflow-events.mjs |
+| `DATA_LOOP_SIDECAR_ALLOWED_ORIGINS` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_SIDECAR_AWAIT_DISPATCH` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `DATA_LOOP_SPLINK_BATCH_ENABLED` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/readiness/workflow-readiness-audit.mjs |
 | `DATA_LOOP_SPLINK_BATCH_TOKEN` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
@@ -117,13 +118,14 @@ and delete the flag.
 | `ENABLE_LISTING_APPROVED_MEMORY` | lib/supabase-feedback.mjs |
 | `ENABLE_LISTING_FEEDBACK_RETENTION` | lib/listing/readiness/workflow-readiness-audit.mjs<br>lib/supabase-feedback.mjs |
 | `ENABLE_LIVE_CURATED_CATALOG_FALLBACK` | lib/listing/retrieval/catalog-provider.mjs |
-| `ENABLE_OPENAI_WEB_SEARCH_FALLBACK` | lib/listing/retrieval/openai-web-search-provider.mjs<br>lib/listing/retrieval/retrieval-engine.mjs |
+| `ENABLE_OPENAI_WEB_SEARCH_FALLBACK` | lib/listing/retrieval/retrieval-contract.mjs<br>lib/listing/retrieval/retrieval-engine.mjs |
 | `ENABLE_PADDLE_OCR_GRADE_FULL_IMAGE_FALLBACK` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `ENABLE_PARALLEL_FOCUSED_REREADS` | lib/listing/orchestration/evidence-completion-orchestrator.mjs |
 | `ENABLE_POSTGRES_HYBRID_RETRIEVAL` | lib/listing/orchestration/evidence-completion-orchestrator.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs |
 | `ENABLE_PROACTIVE_FOCUSED_REREADS` | lib/listing/orchestration/evidence-completion-orchestrator.mjs |
 | `ENABLE_PROACTIVE_SERIAL_ONLY` | lib/listing/orchestration/evidence-completion-orchestrator.mjs |
 | `ENABLE_RETRIEVAL_OFFICIAL_FOLLOWUP` | lib/listing/retrieval/retrieval-engine.mjs |
+| `ENABLE_REVIEWED_WRITER_FEEDBACK_CERT_PROMOTION` | api/v4/listing-feedback.js |
 | `ENABLE_STRICT_ACCURACY_GOVERNOR` | lib/identity-resolution/listing-resolution-gate.mjs |
 | `ENABLE_V4_ATOMIC_WRITER_READY_CAPACITY_RELEASE` | api/v4/listing-copilot-title.js |
 | `ENABLE_V4_CERT_LOOKUP_LANE` | lib/listing/v4/fast-scout/exact-anchor-finalize.mjs |
@@ -169,15 +171,22 @@ and delete the flag.
 | `LISTING_IMAGE_RETENTION_DAYS` | lib/listing/storage/storage-retention.mjs |
 | `LISTING_IMAGE_RETENTION_DELETE_BATCH_SIZE` | lib/listing/storage/storage-retention.mjs |
 | `LISTING_IMAGE_RETENTION_LIST_PAGE_SIZE` | lib/listing/storage/storage-retention.mjs |
+| `LISTING_IMAGE_RETENTION_TENANT_SCAN_CONCURRENCY` | lib/listing/storage/storage-retention.mjs |
 | `LISTING_IMAGE_VERIFICATION_SECRET` | lib/listing/storage/supabase-image-storage.mjs |
 | `LISTING_IMAGE_VERIFICATION_TOKEN_TTL_SECONDS` | lib/listing/storage/supabase-image-storage.mjs |
 | `LISTING_MAX_PAYLOAD_IMAGES` | api/listing-copilot-title.js |
 | `LISTING_PREPROVIDER_RESCAN_GATE_ENABLED` | lib/listing/image-quality/pre-provider-rescan-gate.mjs |
 | `LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED` | lib/listing/image-quality/pre-provider-rescan-gate.mjs |
 | `LISTING_PROVIDER_SERVER_CONCURRENCY` | lib/listing/providers/provider-concurrency.mjs |
+| `LISTING_SIGNED_URL_CONCURRENCY` | api/listing-copilot-title.js |
 | `LISTING_STORAGE_RETENTION_CRON_SECRET` | api/listing-storage-retention-cleanup.js |
 | `LYNCA_FUNCTION_REGION` | lib/listing/retrieval/candidate-context-summary.mjs |
+| `LYNCA_INTERNAL_BASE_URL` | lib/listing/v4/jobs/internal-service-origin.mjs |
+| `LYNCA_PLATFORM_ADMIN_SECRET` | lib/platform-admin-auth.mjs |
+| `LYNCA_RUNTIME_MIGRATIONS_ENABLED` | lib/platform-admin-auth.mjs |
 | `LYNCA_SUPABASE_REGION` | lib/listing/retrieval/candidate-context-summary.mjs |
+| `LYNCA_TENANT_ID` | lib/listing/evaluation/blind-eval.mjs |
+| `LYNCA_TRUST_PROXY_PROTO` | lib/listing-session.mjs |
 | `LYNCA_WORKER_SECRET` | lib/listing/v4/jobs/worker-auth.mjs |
 | `MAX_EXTERNAL_QUERIES` | lib/listing/orchestration/resolution-budget.mjs |
 | `MAX_PARALLEL_FOCUSED_REREADS` | lib/listing/orchestration/evidence-completion-orchestrator.mjs |
@@ -185,10 +194,16 @@ and delete the flag.
 | `MAX_RESOLUTION_ROUNDS` | lib/listing/orchestration/resolution-budget.mjs |
 | `MAX_RESOLUTION_TIME_MS` | lib/listing/orchestration/resolution-budget.mjs |
 | `MAX_RETRIEVAL_TIME_MS` | lib/listing/orchestration/resolution-budget.mjs |
-| `METAVERSE_AUTH_SECRET` | api/admin-apply-catalog-self-exclusion-migration.js<br>api/admin-catalog-candidate-smoke.js<br>api/admin-import-corrected-title-catalog.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>api/ebay-dcsports87-listings.js<br>api/listing-copilot-title.js<br>api/listing-image-upload-url.js<br>api/listing-image-verify-existing.js<br>api/listing-image-verify-upload.js<br>api/listing-preingest.js<br>api/listing-provider-status.js<br>api/listing-publish-draft.js<br>api/listing-render-title.js<br>api/login.js<br>api/v4/listing-preingest-worker.js<br>lib/api-rate-limit.mjs<br>lib/listing-session.mjs<br>lib/listing/storage/supabase-image-storage.mjs |
-| `METAVERSE_PASSWORD` | api/login.js |
-| `METAVERSE_USERNAME` | api/login.js |
-| `NEXT_PUBLIC_SUPABASE_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
+| `METAVERSE_AUTH_SECRET` | api/admin-catalog-candidate-smoke.js<br>api/admin-import-corrected-title-catalog.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>api/login.js<br>lib/api-rate-limit.mjs<br>lib/listing-session.mjs<br>lib/listing/storage/supabase-image-storage.mjs<br>lib/tenant/access.mjs |
+| `METAVERSE_EMAIL` | lib/listing-session.mjs<br>lib/tenant/access.mjs<br>lib/tenant/auth.mjs |
+| `METAVERSE_PASSWORD` | lib/tenant/access.mjs<br>lib/tenant/auth.mjs |
+| `METAVERSE_TENANT_NAME` | lib/tenant/access.mjs |
+| `METAVERSE_TENANT_PLAN` | lib/tenant/access.mjs |
+| `METAVERSE_USERNAME` | lib/listing-session.mjs<br>lib/tenant/access.mjs<br>lib/tenant/auth.mjs |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | lib/tenant/auth.mjs |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | lib/tenant/auth.mjs |
+| `NEXT_PUBLIC_SUPABASE_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/tenant/access.mjs<br>lib/tenant/auth.mjs<br>lib/tenant/members.mjs |
+| `NODE_ENV` | lib/platform-admin-auth.mjs |
 | `OCR_WORKER_API_KEY` | lib/listing/ocr/paddle-ocr-client.mjs |
 | `OCR_WORKER_TOKEN` | lib/listing/ocr/paddle-ocr-client.mjs |
 | `OCR_WORKER_URL` | lib/listing/ocr/paddle-ocr-client.mjs |
@@ -228,6 +243,7 @@ and delete the flag.
 | `PHOENIX_API_KEY` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `PHOENIX_COLLECTOR_ENDPOINT` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `PHOENIX_ENDPOINT` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
+| `PORT` | lib/listing/v4/jobs/internal-service-origin.mjs |
 | `POSTGRES_HYBRID_RETRIEVAL_TIMEOUT_MS` | lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs |
 | `POSTGRES_HYBRID_RETRIEVAL_TOP_N` | lib/listing/retrieval/postgres-hybrid-provider.mjs |
 | `POSTGRES_URL` | api/admin-apply-catalog-self-exclusion-migration.js<br>api/admin-apply-sem-definition-migration.js<br>api/admin-apply-v4-noncritical-persistence-migration.js<br>api/admin-apply-v4-production-job-queue-migration.js<br>api/admin-apply-v4-writer-export-migration.js<br>api/admin-apply-v4-writer-ready-capacity-migration.js |
@@ -246,6 +262,7 @@ and delete the flag.
 | `PREINGESTION_OCR_DETAIL_JOBS_ENABLED` | api/listing-preingest.js |
 | `PREINGESTION_OCR_GLOBAL_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_GRADE_RESCUE_WAIT_MS` | api/listing-copilot-title.js |
+| `PREINGESTION_OCR_LEASE_SECONDS` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `PREINGESTION_OCR_MAX_ATTEMPTS` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `PREINGESTION_OCR_PER_ASSET_BATCH_SIZE` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_PER_ASSET_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
@@ -256,7 +273,6 @@ and delete the flag.
 | `PREWARM_HYBRID_TIMEOUT_MS` | lib/listing/v4/prewarm.mjs |
 | `PREWARM_POSTGRES_HYBRID` | lib/listing/v4/prewarm.mjs |
 | `PROVIDER_MAX_FIELD_CROPS` | api/listing-copilot-title.js |
-| `PUBLIC_APP_URL` | lib/listing/v4/jobs/writer-ready-capacity-refill.mjs |
 | `PUBLISH_MAX_ATTEMPTS` | lib/listing/publishing/publish-listing-draft.mjs |
 | `RECOGNITION_WORKER_TOKEN` | lib/listing/ocr/paddle-ocr-client.mjs<br>lib/listing/recognition/recognition-feature-flags.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs |
 | `RECOGNITION_WORKER_URL` | lib/listing/ocr/paddle-ocr-client.mjs<br>lib/listing/recognition/recognition-feature-flags.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs |
@@ -274,7 +290,7 @@ and delete the flag.
 | `RETRIEVAL_CATALOG_GLOBAL_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `RETRIEVAL_CATALOG_STAGE_CAPACITY_CONTROL_ENABLED` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `RETRIEVAL_GRADING_DOMAINS` | lib/listing/retrieval/source-policy.mjs |
-| `RETRIEVAL_INTERNAL_QUERY_CONCURRENCY` | lib/listing/retrieval/retrieval-engine.mjs<br>lib/listing/v4/orchestration/stage-capacity.mjs |
+| `RETRIEVAL_INTERNAL_QUERY_CONCURRENCY` | api/admin-catalog-candidate-smoke.js<br>lib/listing/retrieval/retrieval-engine.mjs<br>lib/listing/v4/orchestration/stage-capacity.mjs |
 | `RETRIEVAL_MARKETPLACE_DOMAINS` | lib/listing/retrieval/source-policy.mjs |
 | `RETRIEVAL_MODE` | api/listing-copilot-title.js<br>lib/listing/orchestration/identity-convergence-retriever.mjs |
 | `RETRIEVAL_OFFICIAL_DOMAINS` | lib/listing/retrieval/source-policy.mjs |
@@ -288,17 +304,21 @@ and delete the flag.
 | `SPLINK_BATCH_TOKEN` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `SPLINK_BATCH_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `STORED_VISUAL_FEATURE_LOOKUP_TIMEOUT_MS` | lib/listing/retrieval/stored-visual-features.mjs |
+| `SUPABASE_ANON_KEY` | lib/tenant/auth.mjs |
+| `SUPABASE_PUBLISHABLE_KEY` | lib/tenant/auth.mjs |
 | `SUPABASE_REGION` | lib/listing/retrieval/candidate-context-summary.mjs |
-| `SUPABASE_SECRET_KEY` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/vector-telemetry.mjs<br>lib/listing/v4/export/writer-batch-export.mjs<br>lib/listing/v4/fast-scout/exact-anchor-finalize.mjs<br>lib/listing/v4/session/supabase-rest.mjs |
-| `SUPABASE_SERVICE_ROLE_KEY` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/cache/identity-result-cache.mjs<br>lib/listing/preingestion/preingestion-bundle.mjs<br>lib/listing/preingestion/preingestion-ocr-worker.mjs<br>lib/listing/publishing/publish-audit-store.mjs<br>lib/listing/recognition/supabase-recognition-source.mjs<br>lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs<br>lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-telemetry.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs<br>lib/listing/storage/storage-config.mjs<br>lib/listing/storage/storage-verification-store.mjs<br>lib/listing/storage/supabase-image-storage.mjs<br>lib/listing/v4/anchors/cert-lookup.mjs<br>lib/listing/v4/export/writer-batch-export.mjs<br>lib/listing/v4/fast-scout/exact-anchor-finalize.mjs<br>lib/listing/v4/session/supabase-rest.mjs<br>lib/supabase-feedback.mjs |
-| `SUPABASE_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/cache/identity-result-cache.mjs<br>lib/listing/preingestion/preingestion-bundle.mjs<br>lib/listing/preingestion/preingestion-ocr-worker.mjs<br>lib/listing/publishing/publish-audit-store.mjs<br>lib/listing/recognition/supabase-recognition-source.mjs<br>lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs<br>lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-telemetry.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs<br>lib/listing/storage/storage-config.mjs<br>lib/listing/storage/storage-verification-store.mjs<br>lib/listing/v4/anchors/cert-lookup.mjs<br>lib/listing/v4/fast-scout/exact-anchor-finalize.mjs<br>lib/listing/v4/session/supabase-rest.mjs<br>lib/supabase-feedback.mjs |
+| `SUPABASE_SECRET_KEY` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/vector-telemetry.mjs<br>lib/listing/v4/export/writer-batch-export.mjs<br>lib/listing/v4/fast-scout/exact-anchor-finalize.mjs<br>lib/listing/v4/session/supabase-rest.mjs<br>lib/tenant/access.mjs<br>lib/tenant/auth.mjs<br>lib/tenant/members.mjs |
+| `SUPABASE_SERVICE_ROLE_KEY` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/cache/identity-result-cache.mjs<br>lib/listing/preingestion/preingestion-bundle.mjs<br>lib/listing/preingestion/preingestion-ocr-worker.mjs<br>lib/listing/publishing/publish-audit-store.mjs<br>lib/listing/recognition/supabase-recognition-source.mjs<br>lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs<br>lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-telemetry.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs<br>lib/listing/storage/storage-config.mjs<br>lib/listing/storage/storage-verification-store.mjs<br>lib/listing/storage/supabase-image-storage.mjs<br>lib/listing/v4/anchors/cert-lookup.mjs<br>lib/listing/v4/export/writer-batch-export.mjs<br>lib/listing/v4/fast-scout/exact-anchor-finalize.mjs<br>lib/listing/v4/session/supabase-rest.mjs<br>lib/supabase-feedback.mjs<br>lib/tenant/access.mjs<br>lib/tenant/auth.mjs<br>lib/tenant/members.mjs |
+| `SUPABASE_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/cache/identity-result-cache.mjs<br>lib/listing/preingestion/preingestion-bundle.mjs<br>lib/listing/preingestion/preingestion-ocr-worker.mjs<br>lib/listing/publishing/publish-audit-store.mjs<br>lib/listing/recognition/supabase-recognition-source.mjs<br>lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs<br>lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-telemetry.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs<br>lib/listing/storage/storage-config.mjs<br>lib/listing/storage/storage-verification-store.mjs<br>lib/listing/v4/anchors/cert-lookup.mjs<br>lib/listing/v4/fast-scout/exact-anchor-finalize.mjs<br>lib/listing/v4/session/supabase-rest.mjs<br>lib/supabase-feedback.mjs<br>lib/tenant/access.mjs<br>lib/tenant/auth.mjs<br>lib/tenant/members.mjs |
 | `V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS` | api/v4/listing-copilot-title.js |
 | `V4_FAST_SCOUT_CACHE_READ_TIMEOUT_MS` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
+| `V4_INTERNAL_BASE_URL` | lib/listing/v4/jobs/internal-service-origin.mjs |
 | `V4_JOB_COMPLETION_RETRY_BASE_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_COMPLETION_WRITE_ATTEMPTS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_LEASE_HEARTBEAT_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_LEASE_HEARTBEAT_INTERVAL_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_LEASE_SECONDS` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_JOB_PROVIDER_FENCE_LEASE_SECONDS` | api/v4/listing-copilot-title.js |
 | `V4_JOB_PUMP_CRON_SECRET` | lib/listing/v4/jobs/worker-auth.mjs |
 | `V4_JOB_WORKER_DRAIN_LOOP_ENABLED` | api/v4/listing-job-worker.js |
 | `V4_JOB_WORKER_EMPTY_CLAIM_STOP` | api/v4/listing-job-worker.js |
@@ -357,11 +377,12 @@ and delete the flag.
 | `VECTOR_WORKER_RETRY_BASE_MS` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_WORKER_TOKEN` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_WORKER_URL` | lib/listing/retrieval/vector-feature-flags.mjs |
-| `VERCEL_AUTOMATION_BYPASS_SECRET` | api/admin-apply-catalog-self-exclusion-migration.js<br>api/admin-catalog-candidate-smoke.js<br>api/admin-import-corrected-title-catalog.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>lib/data-loop/internal-sidecar-endpoints.mjs<br>lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/v4/jobs/worker-auth.mjs |
-| `VERCEL_BRANCH_URL` | lib/listing/v4/jobs/writer-ready-capacity-refill.mjs |
-| `VERCEL_PROJECT_PRODUCTION_URL` | lib/listing/v4/jobs/writer-ready-capacity-refill.mjs |
+| `VERCEL` | lib/listing-session.mjs |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | api/admin-catalog-candidate-smoke.js<br>api/admin-import-corrected-title-catalog.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>lib/data-loop/internal-sidecar-endpoints.mjs<br>lib/listing/v4/jobs/worker-auth.mjs |
+| `VERCEL_ENV` | lib/listing-session.mjs<br>lib/platform-admin-auth.mjs |
+| `VERCEL_PROJECT_PRODUCTION_URL` | lib/listing/v4/jobs/internal-service-origin.mjs |
 | `VERCEL_REGION` | lib/listing/retrieval/candidate-context-summary.mjs |
-| `VERCEL_URL` | lib/listing/v4/jobs/writer-ready-capacity-refill.mjs |
+| `VERCEL_URL` | lib/listing/v4/jobs/internal-service-origin.mjs |
 | `VISUAL_EMBEDDING_DIMENSIONS` | lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VISUAL_EMBEDDING_MODEL_ID` | lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VISUAL_EMBEDDING_MODEL_REVISION` | lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
@@ -375,3 +396,8 @@ and delete the flag.
 | `VISUAL_VECTOR_MODEL_REVISION` | lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VISUAL_VECTOR_PREPROCESSING_VERSION` | lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
 | `VISUAL_VECTOR_RETRIEVAL_TIMEOUT_MS` | lib/listing/retrieval/stored-visual-features.mjs<br>lib/listing/retrieval/vector-feature-flags.mjs<br>lib/listing/retrieval/visual-vector-provider.mjs |
+| `WRITER_EXPORT_IMAGE_DOWNLOAD_CONCURRENCY` | lib/listing/v4/export/writer-batch-export.mjs |
+| `WRITER_EXPORT_IMAGE_DOWNLOAD_TIMEOUT_MS` | lib/listing/v4/export/writer-batch-export.mjs |
+| `WRITER_EXPORT_MAX_IMAGE_BYTES` | lib/listing/v4/export/writer-batch-export.mjs |
+| `WRITER_EXPORT_MAX_TOTAL_UNIQUE_IMAGE_BYTES` | lib/listing/v4/export/writer-batch-export.mjs |
+| `WRITER_EXPORT_MAX_UNIQUE_IMAGES` | lib/listing/v4/export/writer-batch-export.mjs |

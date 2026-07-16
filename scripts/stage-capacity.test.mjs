@@ -77,7 +77,10 @@ let acquireCalls = 0;
 const coordinated = await runWithListingStageCapacity({
   plan: {
     ...plan.catalog,
-    capacity_wait_ms: 100,
+    // Keep the production retry budget. On a cold Node process, constructing
+    // the first Web Response can exceed 100 ms before the busy lease result is
+    // observed; this test owns retry semantics, not runtime warm-up latency.
+    capacity_wait_ms: plan.catalog.capacity_wait_ms,
     capacity_poll_ms: 1
   },
   jobId: "catalog-1",
