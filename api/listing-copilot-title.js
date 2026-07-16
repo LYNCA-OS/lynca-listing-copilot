@@ -2005,7 +2005,9 @@ function primaryPayloadForProvider(payload = {}) {
 }
 
 function storageMetadataForImage(image = {}) {
+  const cropMetadata = image.cropMetadata || image.crop_metadata || {};
   return {
+    assetId: image.assetId || image.asset_id || cropMetadata.asset_id,
     objectPath: image.objectPath || image.object_path || image.storagePath || image.storage_path,
     bucket: image.bucket || image.storage_bucket,
     contentType: image.originalType || image.original_type || image.contentType || image.content_type || image.type,
@@ -2058,6 +2060,7 @@ async function assertVerifiedStorageImage(image = {}, tenantId = "") {
 
   const durableRecord = await readListingImageVerificationRecord({
     tenantId,
+    assetId: metadata.assetId || null,
     objectPath: metadata.objectPath,
     bucket: metadata.bucket,
     contentType: metadata.contentType,
@@ -2088,6 +2091,7 @@ async function verifyIdentityCacheImages(payload = {}) {
 
     const durableRecord = await readListingImageVerificationRecord({
       tenantId,
+      assetId: metadata.assetId || null,
       objectPath: metadata.objectPath,
       bucket: metadata.bucket,
       contentType: metadata.contentType,

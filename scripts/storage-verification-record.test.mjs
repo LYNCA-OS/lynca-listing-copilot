@@ -60,20 +60,46 @@ assert.throws(
   }),
   /Invalid listing image object path/
 );
+assert.throws(
+  () => listingImageVerificationRecordFromResult({
+    verification: {
+      ...verification,
+      object_path: "listing-assets/2026-06-22/asset-1/front.png"
+    },
+    assetId: "asset-1"
+  }),
+  /must belong to the signed tenant/
+);
+assert.throws(
+  () => listingImageVerificationRecordFromResult({
+    verification,
+    assetId: "asset-other"
+  }),
+  /does not match asset_id/
+);
 
 const calls = [];
 let storedRow = null;
 const fetchImpl = async (url, init = {}) => {
   const parsed = new URL(String(url));
+  const method = init.method || "GET";
   calls.push({
     path: parsed.pathname,
     search: Object.fromEntries(parsed.searchParams.entries()),
-    method: init.method || "GET",
+    method,
     headers: init.headers,
     body: init.body ? JSON.parse(init.body) : null
   });
 
-  if ((init.method || "GET") === "POST") {
+  if (parsed.pathname === "/rest/v1/listing_assets" && method === "GET") {
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify([{ tenant_id: tenantId, id: "asset-1" }])
+    };
+  }
+
+  if (method === "POST") {
     storedRow = JSON.parse(init.body);
     return {
       ok: true,
@@ -101,16 +127,19 @@ const saveResult = await saveListingImageVerificationRecord({
 assert.equal(saveResult.saved, true);
 assert.equal(saveResult.durable, true);
 assert.equal(calls[0].path, "/rest/v1/listing_assets");
-assert.equal(calls[0].search.on_conflict, "tenant_id,id");
-assert.equal(calls[0].body.tenant_id, tenantId);
-assert.equal(calls[0].body.id, "asset-1");
+assert.equal(calls[0].method, "GET");
+assert.equal(calls[0].search.tenant_id, `eq.${tenantId}`);
+assert.equal(calls[0].search.id, "eq.asset-1");
+assert.equal(calls[0].search.limit, "2");
 assert.equal(calls[1].path, "/rest/v1/listing_image_verifications");
 assert.equal(calls[1].search.on_conflict, "tenant_id,object_path");
-assert.equal(calls[1].headers.authorization, "Bearer test-service-role");
+assert.equal(calls[1].headers.apikey, "test-service-role");
+assert.equal(calls[1].headers.authorization, undefined);
 assert.equal(calls[1].body.object_path, verification.object_path);
 
 const readResult = await readListingImageVerificationRecord({
   tenantId,
+  assetId: "asset-1",
   objectPath: verification.object_path,
   bucket: verification.bucket,
   contentType: verification.content_type,
@@ -124,10 +153,12 @@ assert.equal(readResult.verified, true);
 assert.equal(readResult.durable, true);
 assert.equal(calls[2].search.object_path, `eq.${verification.object_path}`);
 assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
+assert.equal(calls[2].search.asset_id, "eq.asset-1");
 assert.equal(calls[2].search.limit, "1");
 
 const mismatch = await readListingImageVerificationRecord({
   tenantId,
+  assetId: "asset-1",
   objectPath: verification.object_path,
   bucket: verification.bucket,
   contentType: verification.content_type,
@@ -151,7 +182,7 @@ await assert.rejects(
     env,
     fetchImpl
   }),
-  /Invalid tenant for listing image verification record/
+  /must belong to the signed tenant/
 );
 
 const missing = await readListingImageVerificationRecord({

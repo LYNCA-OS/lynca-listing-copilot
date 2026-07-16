@@ -8,6 +8,7 @@ process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
 process.env.LISTING_IMAGE_BUCKET = "listing-card-images";
 process.env.LISTING_IMAGE_SIGNED_URL_TTL_SECONDS = "600";
+const assetId = "asset_22222222-2222-4222-8222-222222222222";
 
 function sessionCookie() {
   const token = createListingSessionToken({
@@ -57,9 +58,9 @@ async function callApi(payload) {
 const verificationRows = [
   {
     tenant_id: "tenant_a",
-    object_path: "tenants/tenant_a/listing-assets/2026-07-06/asset-pre/front.jpg",
+    object_path: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/front.jpg`,
     bucket: "listing-card-images",
-    asset_id: "asset-pre",
+    asset_id: assetId,
     image_id: "front",
     storage_role: "front_original",
     content_type: "image/jpeg",
@@ -75,9 +76,9 @@ const verificationRows = [
   },
   {
     tenant_id: "tenant_a",
-    object_path: "tenants/tenant_a/listing-assets/2026-07-06/asset-pre/back.jpg",
+    object_path: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/back.jpg`,
     bucket: "listing-card-images",
-    asset_id: "asset-pre",
+    asset_id: assetId,
     image_id: "back",
     storage_role: "back_original",
     content_type: "image/jpeg",
@@ -118,9 +119,16 @@ globalThis.fetch = async (url, init = {}) => {
   }
 
   if (parsed.pathname.endsWith("/listing_image_verifications")) {
-    assert.equal(parsed.searchParams.get("asset_id"), "eq.asset-pre");
+    assert.equal(parsed.searchParams.get("asset_id"), `eq.${assetId}`);
     assert.equal(parsed.searchParams.get("tenant_id"), "eq.tenant_a");
     return jsonResponse(verificationRows);
+  }
+
+  if (parsed.pathname.endsWith("/listing_assets")) {
+    assert.equal(init.method, undefined);
+    assert.equal(parsed.searchParams.get("tenant_id"), "eq.tenant_a");
+    assert.equal(parsed.searchParams.get("id"), `eq.${assetId}`);
+    return jsonResponse([{ tenant_id: "tenant_a", id: assetId }]);
   }
 
   if (parsed.pathname.endsWith("/image_derived_assets")) {
@@ -157,7 +165,7 @@ globalThis.fetch = async (url, init = {}) => {
 };
 
 const result = await callApi({
-  asset_id: "asset-pre",
+  asset_id: assetId,
   requested_fields: ["serial_number", "grade_label"],
   initial_evidence: {
     print_run_candidate: {
@@ -185,7 +193,7 @@ assert.equal(result.body.saved, true);
 assert.equal(result.body.preprocessing_summary.image_count, 2);
 assert.equal(result.body.signed_read_url_count, 2);
 assert.ok(result.body.worker_jobs_enqueued >= 2);
-assert.equal(bundleWrite.asset_id, "asset-pre");
+assert.equal(bundleWrite.asset_id, assetId);
 assert.equal(bundleWrite.tenant_id, "tenant_a");
 assert.equal(bundleWrite.images.length, 2);
 assert.equal(bundleWrite.initial_evidence.print_run_candidate.value, "#/3");
@@ -199,7 +207,7 @@ assert.equal(new Set(jobsWrite.map((job) => job.job_key)).size, jobsWrite.length
 
 // Re-ingestion refreshes crops and images but must retain computed OCR evidence.
 const secondResult = await callApi({
-  asset_id: "asset-pre",
+  asset_id: assetId,
   requested_fields: ["serial_number", "grade_label"]
 });
 assert.equal(secondResult.statusCode, 200);
@@ -208,7 +216,7 @@ assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
 
 const signedCallsBeforeFastPath = calls.filter((call) => call.path.includes("/storage/v1/object/sign/")).length;
 const fastPreingestResult = await callApi({
-  asset_id: "asset-pre",
+  asset_id: assetId,
   requested_fields: ["serial_number"],
   verify_signed_read_urls: false
 });
@@ -223,5 +231,9 @@ assert.equal(
 const missing = await callApi({ asset_id: "" });
 assert.equal(missing.statusCode, 400);
 assert.equal(missing.body.ok, false);
+
+const nonDurable = await callApi({ asset_id: "asset-1" });
+assert.equal(nonDurable.statusCode, 400);
+assert.equal(nonDurable.body.code, "invalid_durable_listing_asset_id");
 
 console.log("listing preingest api tests passed");

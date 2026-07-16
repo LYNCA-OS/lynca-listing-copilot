@@ -4,8 +4,12 @@ import {
   deleteListingImageObject,
   verifyListingImageUploadedObject
 } from "../lib/listing/storage/supabase-image-storage.mjs";
-import { saveListingImageVerificationRecord } from "../lib/listing/storage/storage-verification-store.mjs";
+import {
+  assertTenantListingAssetObjectPath,
+  saveListingImageVerificationRecord
+} from "../lib/listing/storage/storage-verification-store.mjs";
 import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
+import { normalizeDurableListingAssetId } from "../lib/tenant/assets.mjs";
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -77,10 +81,28 @@ export default async function handler(req, res) {
     return;
   }
 
+  const objectPath = payload.objectPath || payload.object_path;
+  const assetId = payload.assetId || payload.asset_id;
+  try {
+    if (!assetId) throw new Error("asset_id is required.");
+    normalizeDurableListingAssetId(assetId);
+    assertTenantListingAssetObjectPath({
+      tenantId: context.tenantId,
+      assetId,
+      objectPath
+    });
+  } catch (error) {
+    sendJson(res, 400, {
+      ok: false,
+      message: String(error.message || "Invalid listing image object path.").slice(0, 240)
+    });
+    return;
+  }
+
   try {
     const verification = await verifyListingImageUploadedObject({
       tenantId: context.tenantId,
-      objectPath: payload.objectPath || payload.object_path,
+      objectPath,
       contentType: payload.contentType || payload.content_type,
       size: payload.size,
       width: payload.width || payload.imageWidth,
@@ -98,16 +120,24 @@ export default async function handler(req, res) {
       verificationRecord = await saveListingImageVerificationRecord({
         verification,
         tenantId: context.tenantId,
-        assetId: payload.assetId || payload.asset_id || null,
+        assetId,
+        requireDurableAssetId: true,
         imageId: payload.imageId || payload.image_id || null,
         role: payload.role || payload.storageRole || payload.storage_role || null
       });
+      if (!verificationRecord.saved || !verificationRecord.durable) {
+        throw new Error(verificationRecord.reason || "verification_record_write_failed");
+      }
     } catch {
-      verificationRecord = {
-        saved: false,
-        durable: true,
-        reason: "verification_record_write_failed"
-      };
+      const cleanup = await cleanupFailedUpload(payload, context.tenantId);
+      sendJson(res, 503, {
+        ok: false,
+        retryable: true,
+        code: "verification_record_write_failed",
+        message: "Image verification could not be persisted.",
+        cleanup
+      });
+      return;
     }
 
     sendJson(res, 200, {

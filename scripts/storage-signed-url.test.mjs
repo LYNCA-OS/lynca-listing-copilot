@@ -15,6 +15,7 @@ import {
   verifyListingImageVerificationToken,
   verifyListingImageUploadedObject
 } from "../lib/listing/storage/supabase-image-storage.mjs";
+import { supabaseServiceHeaders } from "../lib/supabase-service-headers.mjs";
 
 const env = {
   SUPABASE_URL: "https://example.supabase.co",
@@ -35,8 +36,9 @@ const pngVerificationBytes = Buffer.concat([
 const jpegUploadSha256 = "a".repeat(64);
 const pngVerificationSha256 = crypto.createHash("sha256").update(pngVerificationBytes).digest("hex");
 const tenantId = "tenant_legacy";
+const durableAssetId = "asset_11111111-1111-4111-8111-111111111111";
 
-function tenantAwareFetch(storageFetch) {
+function tenantAwareFetch(storageFetch, { verificationFetch = null } = {}) {
   return async (input, init = {}) => {
     const url = new URL(String(input));
     if (url.pathname === "/rest/v1/tenant_members") {
@@ -66,7 +68,15 @@ function tenantAwareFetch(storageFetch) {
     if (["/rest/v1/production_events", "/rest/v1/request_logs"].includes(url.pathname)) {
       return new Response("", { status: 201 });
     }
+    if (url.pathname === "/rest/v1/listing_assets") {
+      const assetId = String(url.searchParams.get("id") || "").replace(/^eq\./, "");
+      return new Response(JSON.stringify(assetId ? [{
+        tenant_id: tenantId,
+        id: assetId
+      }] : []), { status: 200, headers: { "content-type": "application/json" } });
+    }
     if (url.pathname === "/rest/v1/listing_image_verifications") {
+      if (typeof verificationFetch === "function") return verificationFetch(input, init);
       const body = init.body ? JSON.parse(init.body) : {};
       return new Response(JSON.stringify([body]), { status: 201, headers: { "content-type": "application/json" } });
     }
@@ -202,7 +212,12 @@ const upload = await createListingImageSignedUpload({
 
 assert.match(uploadRequest.url, /\/storage\/v1\/object\/upload\/sign\/listing-card-images\//);
 assert.equal(uploadRequest.init.method, "POST");
-assert.equal(uploadRequest.init.headers.authorization, "Bearer test-service-role");
+assert.equal(uploadRequest.init.headers.apikey, "test-service-role");
+assert.equal(uploadRequest.init.headers.authorization, undefined);
+assert.equal(
+  supabaseServiceHeaders("eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.signature").authorization,
+  "Bearer eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.signature"
+);
 assert.equal(upload.tenant_id, tenantId);
 assert.equal(upload.object_path, "tenants/tenant_legacy/listing-assets/2026-06-22/asset-1/front_original-front-1.jpg");
 assert.equal(upload.width, 1200);
@@ -316,7 +331,8 @@ const verification = await verifyListingImageUploadedObject({
 });
 assert.match(verifyRequest.url, /\/storage\/v1\/object\/listing-card-images\//);
 assert.equal(verifyRequest.init.method, "GET");
-assert.equal(verifyRequest.init.headers.authorization, "Bearer test-service-role");
+assert.equal(verifyRequest.init.headers.apikey, "test-service-role");
+assert.equal(verifyRequest.init.headers.authorization, undefined);
 assert.equal(verifyRequest.init.headers.range, "bytes=0-65535");
 assert.equal(verification.object_verified, true);
 assert.equal(verification.dimension_source, "object_bytes");
@@ -437,7 +453,8 @@ const deleteResult = await deleteListingImageObject({
 });
 assert.match(deleteRequest.url, /\/storage\/v1\/object\/listing-card-images\//);
 assert.equal(deleteRequest.init.method, "DELETE");
-assert.equal(deleteRequest.init.headers.authorization, "Bearer test-service-role");
+assert.equal(deleteRequest.init.headers.apikey, "test-service-role");
+assert.equal(deleteRequest.init.headers.authorization, undefined);
 assert.equal(deleteResult.deleted, true);
 await assert.rejects(
   () => deleteListingImageObject({
@@ -455,7 +472,7 @@ globalThis.fetch = tenantAwareFetch(async () => ({
   ok: true,
   status: 200,
   text: async () => JSON.stringify({
-    url: "/object/upload/sign/listing-card-images/tenants/tenant_legacy/listing-assets/2026-06-22/asset-api/front_original-front-api.jpg?token=signed"
+    url: `/object/upload/sign/listing-card-images/tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/front_original-front-api.jpg?token=signed`
   })
 }));
 
@@ -524,7 +541,7 @@ async function callVerifyApi(body) {
 }
 
 const apiResponse = await callUploadApi({
-  assetId: "asset-api",
+  assetId: durableAssetId,
   imageId: "front-api",
   role: "front_original",
   fileName: "front.jpg",
@@ -537,13 +554,13 @@ const apiResponse = await callUploadApi({
 });
 assert.equal(apiResponse.statusCode, 200);
 assert.equal(apiResponse.body.ok, true);
-assert.match(apiResponse.body.upload.object_path, /^tenants\/tenant_legacy\/listing-assets\/\d{4}-\d{2}-\d{2}\/asset-api\//);
+assert.match(apiResponse.body.upload.object_path, new RegExp(`^tenants/tenant_legacy/listing-assets/\\d{4}-\\d{2}-\\d{2}/${durableAssetId}/`));
 assert.equal(apiResponse.body.upload.content_sha256, jpegUploadSha256);
 assert.doesNotMatch(JSON.stringify(apiResponse.body), /test-service-role/);
 assert.doesNotMatch(JSON.stringify(apiResponse.body), new RegExp(jpegSignatureHex));
 
 const rejectedApiResponse = await callUploadApi({
-  assetId: "asset-api",
+  assetId: durableAssetId,
   imageId: "front-api",
   role: "front_original",
   fileName: "front.jpg",
@@ -560,7 +577,10 @@ globalThis.fetch = tenantAwareFetch(async () => objectResponse(pngVerificationBy
   "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
 }));
 const verifyApiResponse = await callVerifyApi({
-  objectPath: "tenants/tenant_legacy/listing-assets/2026-06-22/asset-api/front_original-front-api.png",
+  assetId: durableAssetId,
+  imageId: "front-api",
+  role: "front_original",
+  objectPath: `tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/front_original-front-api.png`,
   contentType: "image/png",
   size: pngVerificationBytes.length,
   width: 1200,
@@ -576,6 +596,67 @@ assert.equal(verifyApiResponse.body.verification.content_sha256, pngVerification
 assert.equal(verifyApiResponse.body.verification.content_hash_verified, true);
 assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), /test-service-role/);
 assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), new RegExp(pngSignatureHex));
+
+const crossAssetStorageCalls = [];
+globalThis.fetch = tenantAwareFetch(async (url, init = {}) => {
+  crossAssetStorageCalls.push({ url: String(url), method: init.method || "GET" });
+  return objectResponse(pngVerificationBytes, {
+    "content-type": "image/png",
+    "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+  });
+});
+const crossAssetVerifyResponse = await callVerifyApi({
+  assetId: durableAssetId,
+  imageId: "front-api",
+  role: "front_original",
+  objectPath: "tenants/tenant_legacy/listing-assets/2026-06-22/asset-other/front_original-front-api.png",
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  contentSha256: pngVerificationSha256
+});
+assert.equal(crossAssetVerifyResponse.statusCode, 400);
+assert.match(crossAssetVerifyResponse.body.message, /does not match asset_id/);
+assert.equal(crossAssetStorageCalls.length, 0, "cross-asset paths must fail before object reads or deletion");
+
+const durableFailureStorageCalls = [];
+globalThis.fetch = tenantAwareFetch(async (url, init = {}) => {
+  durableFailureStorageCalls.push({ url: String(url), method: init.method || "GET" });
+  if (init.method === "DELETE") {
+    return {
+      ok: true,
+      status: 200,
+      text: async () => ""
+    };
+  }
+  return objectResponse(pngVerificationBytes, {
+    "content-type": "image/png",
+    "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+  });
+}, {
+  verificationFetch: async () => new Response("verification store unavailable", { status: 503 })
+});
+const durableFailureVerifyResponse = await callVerifyApi({
+  assetId: durableAssetId,
+  imageId: "front-api",
+  role: "front_original",
+  objectPath: `tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/front_original-front-api.png`,
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  contentSha256: pngVerificationSha256
+});
+assert.equal(durableFailureVerifyResponse.statusCode, 503);
+assert.equal(durableFailureVerifyResponse.body.ok, false);
+assert.equal(durableFailureVerifyResponse.body.retryable, true);
+assert.equal(durableFailureVerifyResponse.body.code, "verification_record_write_failed");
+assert.equal(durableFailureVerifyResponse.body.cleanup.attempted, true);
+assert.equal(durableFailureVerifyResponse.body.cleanup.deleted, true);
+assert.equal(durableFailureStorageCalls.some((call) => call.method === "DELETE"), true);
 
 const cleanupCalls = [];
 globalThis.fetch = tenantAwareFetch(async (url, init) => {
@@ -594,7 +675,10 @@ globalThis.fetch = tenantAwareFetch(async (url, init) => {
   });
 });
 const rejectedVerifyApiResponse = await callVerifyApi({
-  objectPath: "tenants/tenant_legacy/listing-assets/2026-06-22/asset-api/front_original-front-api.png",
+  assetId: durableAssetId,
+  imageId: "front-api",
+  role: "front_original",
+  objectPath: `tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/front_original-front-api.png`,
   contentType: "image/png",
   size: pngVerificationBytes.length + 1,
   width: 1200,

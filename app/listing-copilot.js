@@ -37,6 +37,7 @@ const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
 const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
+const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const EXPORT_WORKBOOK_API_ENDPOINT = "/api/v4/listing-export-workbook";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
@@ -430,6 +431,43 @@ function imageHasVerifiedStorageReference(image = {}) {
   return Boolean(image.objectPath && image.storageVerified);
 }
 
+function canonicalAssetId(asset = {}) {
+  const assetId = String(asset.durableAssetId || "").trim();
+  if (!/^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) {
+    throw new Error("canonical_asset_id_missing");
+  }
+  return assetId;
+}
+
+async function ensureDurableAssetIdentity(asset) {
+  if (asset.durableAssetId) return canonicalAssetId(asset);
+  if (asset.durableAssetPromise) return asset.durableAssetPromise;
+  asset.durableAssetPromise = (async () => {
+    const response = await fetch(ASSET_CREATE_API_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        client_asset_ref: asset.clientAssetRef || asset.id,
+        capture_profile_id: defaultCaptureProfileId
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || `listing_asset_create_failed_${response.status}`);
+    }
+    asset.durableAssetId = payload.asset_id;
+    asset.clientAssetRef = payload.client_asset_ref || asset.clientAssetRef || asset.id;
+    return canonicalAssetId(asset);
+  })();
+  try {
+    return await asset.durableAssetPromise;
+  } catch (error) {
+    asset.durableAssetPromise = null;
+    throw error;
+  }
+}
+
 function serializableAssetImage(image, assetId = "") {
   const useStorageReference = imageHasVerifiedStorageReference(image);
   const cropMetadata = image.cropMetadata || image.crop_metadata || null;
@@ -533,11 +571,14 @@ function buildAssetRequestBody(asset, options = {}) {
   const allProviderImages = asset.providerImages || asset.images || [];
   const providerImages = boundedProviderImagesForRequest(allProviderImages);
   const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
+  const assetId = canonicalAssetId(asset);
   const body = {
-    assetId: asset.id,
+    assetId,
+    asset_id: assetId,
+    client_asset_ref: asset.clientAssetRef || asset.id,
     mode: state.mode,
     maxTitleLength,
-    images: providerImages.map((image) => serializableAssetImage(image, asset.id)),
+    images: providerImages.map((image) => serializableAssetImage(image, assetId)),
     deferredImageCount,
     deferred_image_count: deferredImageCount,
     captureProfileId: defaultCaptureProfileId,
@@ -640,7 +681,8 @@ function queuedPendingResult(asset, enqueuePayload = {}, job = {}, timing = {}) 
   const providerId = state.selectedProvider || null;
   return attachGenerationTimingToResult({
     index: asset.index,
-    asset_id: asset.id,
+    asset_id: canonicalAssetId(asset),
+    client_asset_ref: asset.clientAssetRef || asset.id,
     thumbnail: asset.images[0]?.dataUrl || "",
     title: "",
     final_title: "",
@@ -748,6 +790,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
   const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
   const dimensions = storageDimensionsForImage(image, source);
   image.contentSha256 = contentSha256;
+  const assetId = canonicalAssetId(asset);
 
   const uploadResponse = await fetch("/api/listing-image-upload-url", {
     method: "POST",
@@ -756,7 +799,8 @@ async function uploadAssetImage(asset, image, imageIndex) {
     },
     credentials: "same-origin",
     body: JSON.stringify({
-      assetId: asset.id,
+      assetId,
+      clientAssetRef: asset.clientAssetRef || asset.id,
       imageId: image.id,
       role: storageRole,
       fileName: image.name,
@@ -772,6 +816,9 @@ async function uploadAssetImage(asset, image, imageIndex) {
   const uploadPayload = await uploadResponse.json();
   if (!uploadResponse.ok || !uploadPayload.ok) {
     throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
+  }
+  if (uploadPayload.asset_id !== assetId) {
+    throw new Error("Storage upload asset identity mismatch.");
   }
 
   const storageResponse = await fetch(uploadPayload.upload.signed_upload_url, {
@@ -793,7 +840,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
     },
     credentials: "same-origin",
     body: JSON.stringify({
-      assetId: asset.id,
+      assetId,
       imageId: image.id,
       role: storageRole,
       objectPath: uploadPayload.upload.object_path,
@@ -821,7 +868,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
       ...(image.cropMetadata || image.crop_metadata || {}),
       derived_object_path: image.objectPath,
       source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
-      asset_id: (image.cropMetadata || image.crop_metadata || {}).asset_id || asset.id || ""
+      asset_id: assetId
     };
     image.cropMetadata = metadata;
     image.crop_metadata = metadata;
@@ -836,7 +883,8 @@ async function uploadAssetImage(asset, image, imageIndex) {
 }
 
 async function ensureAssetImagesUploaded(asset) {
-  if (!storageReady()) return false;
+  await ensureDurableAssetIdentity(asset);
+  if (!storageReady()) throw new Error("listing_storage_not_ready");
   if (asset.storageUploadPromise) return asset.storageUploadPromise;
 
   asset.storageUploadPromise = (async () => {
@@ -856,7 +904,7 @@ async function ensureAssetImagesUploaded(asset) {
         ...metadata,
         source_object_path: sourceObjectPath,
         derived_object_path: metadata.derived_object_path || image.objectPath || "",
-        asset_id: metadata.asset_id || asset.id || ""
+        asset_id: canonicalAssetId(asset)
       };
       image.cropMetadata = updatedMetadata;
       image.crop_metadata = updatedMetadata;
@@ -880,9 +928,10 @@ async function ensureAssetImagesUploaded(asset) {
 }
 
 function preingestionImagesForAsset(asset) {
+  const assetId = canonicalAssetId(asset);
   return boundedProviderImagesForRequest(asset.providerImages || asset.images)
     .filter(imageHasVerifiedStorageReference)
-    .map((image) => serializableAssetImage(image, asset.id));
+    .map((image) => serializableAssetImage(image, assetId));
 }
 
 function backgroundPreparationLabel(asset = {}) {
@@ -916,8 +965,9 @@ async function ensurePreingestionBundle(asset) {
     },
     credentials: "same-origin",
     body: JSON.stringify({
-      asset_id: asset.id,
-      assetId: asset.id,
+      asset_id: canonicalAssetId(asset),
+      assetId: canonicalAssetId(asset),
+      client_asset_ref: asset.clientAssetRef || asset.id,
       images,
       captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
       requested_fields: [
@@ -1059,10 +1109,9 @@ async function ensureSpeculativeRecognition(asset, runId) {
         credentials: "same-origin",
         body: JSON.stringify({
           batch_id: batchId,
-          tenant_id: batchId,
           priority: 100,
           jobs: [{
-            asset_id: asset.id,
+            asset_id: canonicalAssetId(asset),
             force_l2_only: true,
             create_l1_job: false,
             create_l2_job: true,
@@ -1794,6 +1843,8 @@ function buildAssets() {
     state.files.forEach((image, index) => {
       assets.push({
         id: `asset-${index + 1}`,
+        clientAssetRef: `asset-${index + 1}`,
+        durableAssetId: "",
         index: index + 1,
         images: [image],
         providerImages: imagesForProvider([image])
@@ -1804,6 +1855,8 @@ function buildAssets() {
       const images = state.files.slice(index, index + 2);
       assets.push({
         id: `asset-${Math.floor(index / 2) + 1}`,
+        clientAssetRef: `asset-${Math.floor(index / 2) + 1}`,
+        durableAssetId: "",
         index: Math.floor(index / 2) + 1,
         images,
         providerImages: imagesForProvider(images)
@@ -3271,10 +3324,9 @@ async function processAssetViaQueue(asset, options = {}) {
     credentials: "same-origin",
     body: JSON.stringify({
       batch_id: batchId,
-      tenant_id: batchId,
       priority: Math.max(0, Math.min(10_000, Number(options.priority ?? 100) || 0)),
       jobs: [{
-        asset_id: asset.id,
+        asset_id: canonicalAssetId(asset),
         force_l2_only: true,
         create_l1_job: false,
         create_l2_job: true,
@@ -3311,7 +3363,8 @@ async function processAssetViaQueue(asset, options = {}) {
 function failedResult(asset, error) {
   return attachGenerationTimingToResult({
     index: asset.index,
-    asset_id: asset.id,
+    asset_id: asset.durableAssetId || "",
+    client_asset_ref: asset.clientAssetRef || asset.id,
     thumbnail: asset.images[0].dataUrl,
     title: "",
     generatedTitle: "",
@@ -4044,7 +4097,8 @@ async function saveFeedbackForResult(result, asset) {
         writer_final_title: correctedTitle,
         result_payload: v4FeedbackResultPayload(result)
       } : {
-        asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
+        asset_id: result.asset_id || canonicalAssetId(asset),
+        client_asset_ref: asset?.clientAssetRef || asset?.id || `asset-${result.index}`,
         analysis_run_id: result.analysis_run_id || result.provider_response_id || "",
         generated_title: generatedTitle,
         corrected_title: correctedTitle,
@@ -4293,7 +4347,8 @@ function buildWriterExportRows(
     });
     if (!images.length) throw new Error(`资产 ${asset.index} 缺少可导出的图片。`);
     return {
-      asset_id: asset.id,
+      asset_id: canonicalAssetId(asset),
+      client_asset_ref: asset.clientAssetRef || asset.id,
       asset_index: asset.index,
       recognition_session_id: result.recognition_session_id || "",
       final_title: finalTitle,
