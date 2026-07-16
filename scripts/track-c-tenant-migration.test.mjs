@@ -98,6 +98,11 @@ assert.match(sql, /create trigger track_c_preserve_last_active_tenant_owner[\s\S
 assert.match(sql, /rename column tenant_id to legacy_scheduler_scope_id/i);
 assert.match(sql, /set tenant_id = %L where tenant_id is null or btrim\(tenant_id\) = %L/i);
 assert.match(sql, /v_table,[\s\S]*?'tenant_legacy',[\s\S]*?''/);
+assert.match(
+  sql,
+  /not exists \(select 1 from public\.tenants tenant_row where tenant_row\.id = btrim\(scoped\.tenant_id\)\)/,
+  "unknown legacy tenant identifiers must converge before tenant foreign keys are validated"
+);
 assert.match(sql, /alter column tenant_id set not null/i);
 assert.match(sql, /references public\.tenants\(id\)/i);
 assert.match(sql, /alter column tenant_id drop default/i, "live tenant writes must fail closed when tenant_id is omitted");

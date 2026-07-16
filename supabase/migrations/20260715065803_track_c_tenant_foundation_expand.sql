@@ -743,6 +743,17 @@ begin
       v_table,
       'tenant_legacy'
     );
+    -- Track D can run immediately before this migration and backfill its new
+    -- tenant_id columns from legacy operator identifiers. Those identifiers
+    -- are audit principals, not tenant records. Normalize only tenant ids that
+    -- do not already resolve to a real tenant before adding and validating the
+    -- foreign key; this also keeps partial/rehearsal reruns safe.
+    execute format(
+      'update public.%I scoped set tenant_id = %L where tenant_id is not null and btrim(tenant_id) <> %L and not exists (select 1 from public.tenants tenant_row where tenant_row.id = btrim(scoped.tenant_id))',
+      v_table,
+      'tenant_legacy',
+      ''
+    );
     execute format(
       'update public.%I set tenant_id = %L where tenant_id is null or btrim(tenant_id) = %L',
       v_table,
