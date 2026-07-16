@@ -15,6 +15,14 @@ import {
 const maxAgeSeconds = 60 * 60 * 24 * 7;
 const maxLoginBodyBytes = 16 * 1024;
 
+function sendJson(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("pragma", "no-cache");
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(payload));
+}
+
 function isHttps(req) {
   const host = String(req.headers.host || "");
   return req.headers["x-forwarded-proto"] === "https" ||
@@ -49,9 +57,8 @@ function readBody(req) {
 export default async function handler(req, res) {
   instrumentProductionRequest(req, res, { api: "/api/login" });
   if (req.method !== "POST") {
-    res.statusCode = 405;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Method not allowed" }));
+    res.setHeader("allow", "POST");
+    sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
@@ -65,19 +72,19 @@ export default async function handler(req, res) {
   const authSecret = process.env.METAVERSE_AUTH_SECRET;
 
   if (!authSecret) {
-    res.statusCode = 500;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Listing auth is not configured." }));
+    sendJson(res, 500, { ok: false, message: "Listing auth is not configured." });
     return;
   }
 
   let credentials;
   try {
     credentials = JSON.parse(await readBody(req));
-  } catch {
-    res.statusCode = 400;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Invalid request." }));
+  } catch (error) {
+    const tooLarge = error?.code === "REQUEST_BODY_TOO_LARGE";
+    sendJson(res, tooLarge ? 413 : 400, {
+      ok: false,
+      message: tooLarge ? "Request is too large." : "Invalid request."
+    });
     return;
   }
 
@@ -99,14 +106,12 @@ export default async function handler(req, res) {
     });
     bindProductionRequestContext(res, identity);
 
-    res.statusCode = 200;
     res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({
+    sendJson(res, 200, {
       ok: true,
       tenant_id: identity.tenantId,
       role: identity.role
-    }));
+    });
   } catch (error) {
     let tenantChoices = [];
     if (isTenantAuthError(error) && error.code === "TENANT_SELECTION_REQUIRED") {
@@ -120,9 +125,7 @@ export default async function handler(req, res) {
     }
     const statusCode = isTenantAuthError(error) ? error.statusCode : 503;
     const payload = publicTenantAuthError(error);
-    res.statusCode = statusCode;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({
+    sendJson(res, statusCode, {
       ...payload,
       message: error?.code === "INVALID_CREDENTIALS"
         ? "账号或密码不正确。"
@@ -130,6 +133,6 @@ export default async function handler(req, res) {
           ? "请选择要进入的客户空间。"
           : payload.message,
       tenants: tenantChoices
-    }));
+    });
   }
 }

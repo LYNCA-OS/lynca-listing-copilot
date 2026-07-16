@@ -86,7 +86,8 @@ assert.match(js, /startV4AssistedDraftPolling\(result\)/, "frontend should start
 assert.match(js, /applyV4AssistedDraftUpdate/, "frontend should place the first writer-visible one-line title when L2 is ready");
 assert.match(js, /v4WriterTitlePending/, "frontend should keep internal L1 scout output out of the writer title box");
 assert.match(js, /if \(result\.title_stage === "L1_INTERNAL_SCOUT"\) return true;/, "L1 must stay pending and writer-invisible until L2 is ready");
-assert.match(js, /titlePending \? "disabled" : ""/, "the title editor must stay disabled while only L1 exists");
+assert.match(js, /const editorDisabled = titlePending \|\| interactionLocked \|\| retrySubmitting \|\| result\.feedbackStatus === "saving"/, "the title editor must stay disabled while L1 is pending or a workspace mutation is in flight");
+assert.match(js, /editorDisabled \? "disabled" : ""/, "the title editor should render the shared pending-or-saving lock");
 assert.match(js, /titleWasEditedByWriter/, "L2 assisted drafts must not overwrite writer-edited titles");
 assert.match(js, /stopAllV4AssistedDraftPolling/, "frontend should clear stale L2 polling when files or mode change");
 assert.doesNotMatch(v4JobStatusApi, /select: "[^"]*l1_title/, "writer-facing job status API must not fetch L1 internal titles");
@@ -400,6 +401,33 @@ globalThis.fetch = async (url) => {
 };
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
+const feedbackIdentityResult = {};
+const firstFeedbackIdentity = __listingCopilotAppTestHooks.ensureFeedbackSubmissionIdentity(feedbackIdentityResult, {
+  action: "EDIT",
+  generatedTitle: "Generated title",
+  correctedTitle: "Corrected title"
+});
+const retryFeedbackIdentity = __listingCopilotAppTestHooks.ensureFeedbackSubmissionIdentity(feedbackIdentityResult, {
+  action: "EDIT",
+  generatedTitle: "Generated title",
+  correctedTitle: "Corrected title"
+});
+assert.deepEqual(
+  retryFeedbackIdentity,
+  firstFeedbackIdentity,
+  "an uncertain feedback retry must reuse both its submission id and client timestamp"
+);
+const revisedFeedbackIdentity = __listingCopilotAppTestHooks.ensureFeedbackSubmissionIdentity(feedbackIdentityResult, {
+  action: "EDIT",
+  generatedTitle: "Generated title",
+  correctedTitle: "Revised title"
+});
+assert.notEqual(
+  revisedFeedbackIdentity.id,
+  firstFeedbackIdentity.id,
+  "a new title revision must receive a new feedback submission identity"
+);
+assert.match(revisedFeedbackIdentity.id, /^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/, "feedback submission ids must satisfy the V4 idempotency contract");
 assert.equal(
   __listingCopilotAppTestHooks.generationSubmissionAllowed({
     assetCount: 10,
@@ -543,5 +571,7 @@ const explicitlyBoundedRequestImages = __listingCopilotAppTestHooks.boundedProvi
   ...Array.from({ length: 20 }, (_, index) => ({ id: `crop-${index}`, derived: true }))
 ], 14);
 assert.equal(explicitlyBoundedRequestImages.length, 14, "explicit request bounds should still cap evidence images when needed");
+
+await import("./writer-wheel-mode.test.mjs");
 
 console.log("provider UI tests passed");

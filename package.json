@@ -153,7 +153,7 @@
     "posttest": "npm run test:launch-benchmark && npm run test:production-engineering"
   },
   "dependencies": {
-    "@vercel/functions": "latest",
+    "@vercel/functions": "3.7.3",
     "exceljs": "^4.4.0",
     "jsonrepair": "^3.14.0",
     "pg": "^8.13.1"
