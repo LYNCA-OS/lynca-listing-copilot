@@ -1,7 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { buildGoldenTitleRelease } from "../lib/listing/evaluation/golden-title-release.mjs";
-import { fetchSupabaseFeedbackRows } from "../lib/listing/recognition/supabase-recognition-source.mjs";
+import { readV4Rows } from "../lib/listing/v4/session/supabase-rest.mjs";
 
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
@@ -18,6 +18,142 @@ function recordsFromPayload(payload = {}) {
 async function writeJsonl(filePath, rows = []) {
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, rows.map((row) => JSON.stringify(row)).join("\n") + (rows.length ? "\n" : ""));
+}
+
+function safeTableName(value) {
+  const table = String(value || "").trim();
+  if (!/^[a-z_][a-z0-9_]*$/i.test(table)) throw new Error("Invalid Supabase feedback table name.");
+  return table;
+}
+
+function normalizedCutoff(value) {
+  const cutoff = String(value || "").trim();
+  const parsed = new Date(cutoff);
+  if (!cutoff || Number.isNaN(parsed.getTime()) || parsed.getTime() > Date.now() + 60_000) {
+    throw new Error("--cutoff must be a valid, non-future ISO timestamp for a reproducible Supabase release.");
+  }
+  return parsed.toISOString();
+}
+
+function quotedPostgrestValue(value) {
+  return '"' + String(value || "").replaceAll("\\", "\\\\").replaceAll('"', '\\"') + '"';
+}
+
+export async function readGoldenRowsAtCutoff({
+  table,
+  select,
+  cutoff,
+  pageSize,
+  readRows
+}) {
+  const boundedPageSize = Math.max(1, Math.min(1000, Number(pageSize) || 500));
+  const baseSearch = {
+    created_at: "lte." + cutoff,
+    order: "created_at.asc,id.asc"
+  };
+  const countResult = await readRows({
+    table,
+    select: "id",
+    count: "exact",
+    search: { ...baseSearch, limit: "1" }
+  });
+  if (!countResult.ok || !Number.isSafeInteger(countResult.count) || countResult.count < 0) {
+    throw new Error("golden_title_snapshot_count_unavailable");
+  }
+  const expectedCount = countResult.count;
+  const rows = [];
+  const seenIds = new Set();
+  let cursorCreatedAt = "";
+  let cursorId = "";
+
+  for (let page = 0; rows.length < expectedCount && page < 100_000; page += 1) {
+    const search = {
+      ...baseSearch,
+      limit: String(boundedPageSize)
+    };
+    if (cursorCreatedAt) {
+      search.or = [
+        "(created_at.gt.",
+        cursorCreatedAt,
+        ",and(created_at.eq.",
+        cursorCreatedAt,
+        ",id.gt.",
+        quotedPostgrestValue(cursorId),
+        "))"
+      ].join("");
+    }
+    const result = await readRows({ table, select, search });
+    if (!result.ok) {
+      throw new Error("golden_title_snapshot_page_read_failed:" + (result.error || "unknown_error"));
+    }
+    const pageRows = Array.isArray(result.rows) ? result.rows : [];
+    if (!pageRows.length) break;
+    for (const row of pageRows) {
+      const id = String(row?.id || "").trim();
+      const createdAt = String(row?.created_at || "").trim();
+      if (!id || !createdAt || Number.isNaN(Date.parse(createdAt))) {
+        throw new Error("golden_title_snapshot_watermark_required");
+      }
+      if (seenIds.has(id)) throw new Error("golden_title_snapshot_duplicate_id:" + id);
+      seenIds.add(id);
+      rows.push(row);
+      cursorCreatedAt = new Date(createdAt).toISOString();
+      cursorId = id;
+    }
+    if (pageRows.length < boundedPageSize) break;
+  }
+
+  const finalCount = await readRows({
+    table,
+    select: "id",
+    count: "exact",
+    search: { ...baseSearch, limit: "1" }
+  });
+  if (!finalCount.ok
+      || finalCount.count !== expectedCount
+      || rows.length !== expectedCount) {
+    throw new Error(
+      "golden_title_snapshot_changed_during_export:"
+      + rows.length + "/" + expectedCount + "/" + String(finalCount.count)
+    );
+  }
+
+  return {
+    rows,
+    snapshot: {
+      mode: "CUTOFF_KEYSET_V1",
+      cutoff_created_at: cutoff,
+      expected_count: expectedCount,
+      exported_count: rows.length,
+      watermark_created_at: cursorCreatedAt || null,
+      watermark_id: cursorId || null,
+      order: "created_at.asc,id.asc"
+    }
+  };
+}
+
+async function writeReleaseAtomically({ output, manifestOutput, release }) {
+  if (output === manifestOutput) throw new Error("Golden Title data and manifest paths must be different.");
+  await mkdir(dirname(output), { recursive: true });
+  await mkdir(dirname(manifestOutput), { recursive: true });
+  const suffix = `.tmp-${process.pid}-${Date.now()}`;
+  const temporaryOutput = `${output}${suffix}`;
+  const temporaryManifest = `${manifestOutput}${suffix}`;
+  try {
+    await writeJsonl(temporaryOutput, release.items);
+    await writeFile(
+      temporaryManifest,
+      `${JSON.stringify({ ...release, items: undefined }, null, 2)}\n`
+    );
+    // The manifest is the commit marker. Remove the old marker before
+    // replacing data so consumers never accept a mixed release.
+    await rm(manifestOutput, { force: true });
+    await rename(temporaryOutput, output);
+    await rename(temporaryManifest, manifestOutput);
+  } finally {
+    await rm(temporaryOutput, { force: true });
+    await rm(temporaryManifest, { force: true });
+  }
 }
 
 export async function runBuildGoldenTitleV1({
@@ -37,24 +173,39 @@ export async function runBuildGoldenTitleV1({
     fromSupabase ? "WRITER_VERIFIED_SUPABASE" : ""
   ).trim().toUpperCase();
   let records;
+  let sourceSnapshot = null;
   if (fromSupabase) {
-    const result = await fetchSupabaseFeedbackRows({
-      env,
-      fetchImpl,
-      table: argValue(argv, "--table", env.SUPABASE_RECOGNITION_FEEDBACK_TABLE || "listing_title_feedback"),
-      limit: Number(argValue(argv, "--limit", "1000")) || 1000,
-      offset: Number(argValue(argv, "--offset", "0")) || 0
+    if (Number(argValue(argv, "--offset", "0")) !== 0) {
+      throw new Error("Golden Title releases cannot start from a non-zero offset.");
+    }
+    const table = safeTableName(argValue(
+      argv,
+      "--table",
+      env.SUPABASE_RECOGNITION_FEEDBACK_TABLE || "listing_title_feedback"
+    ));
+    const cutoff = normalizedCutoff(argValue(argv, "--cutoff"));
+    const snapshot = await readGoldenRowsAtCutoff({
+      table,
+      select: "id,generated_title,corrected_title,front_image_url,back_image_url,operator_id,created_at",
+      pageSize: Math.max(1, Math.min(1000, Number(argValue(argv, "--limit", "500")) || 500)),
+      cutoff,
+      readRows: (options) => readV4Rows({ ...options, env, fetchImpl })
     });
-    if (!result.ok) throw new Error(`Supabase Golden Title export failed: ${result.reason}`);
-    records = result.rows;
+    records = snapshot.rows;
+    sourceSnapshot = {
+      ...snapshot.snapshot,
+      table
+    };
   } else {
     records = recordsFromPayload(JSON.parse(await readFile(input, "utf8")));
   }
-  const release = buildGoldenTitleRelease(records, { sourcePolicy, releaseId });
+  const release = buildGoldenTitleRelease(records, {
+    sourcePolicy,
+    releaseId,
+    sourceSnapshot
+  });
   if (!release.item_count) throw new Error("No writer-verified Golden Title rows passed source policy.");
-  await writeJsonl(output, release.items);
-  await mkdir(dirname(manifestOutput), { recursive: true });
-  await writeFile(manifestOutput, `${JSON.stringify({ ...release, items: undefined }, null, 2)}\n`);
+  await writeReleaseAtomically({ output, manifestOutput, release });
   return release;
 }
 

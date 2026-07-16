@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +22,7 @@ import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-lo
 
 const aiTitle = "Messi Gold Auto";
 const writerTitle = "Lionel Messi Gold Refractor Auto /50 PSA10";
+const durableAssetId = "asset_11111111-1111-4111-8111-111111111111";
 const diff = buildTitleDiff(aiTitle, writerTitle);
 assert.deepEqual(diff.added, ["Lionel", "Refractor", "/50", "PSA10"]);
 assert.deepEqual(diff.removed, [], "Messi is retained and must not be reported as lexically removed");
@@ -51,8 +53,14 @@ assert.deepEqual(Object.keys(semExtraction.validation.validation_sources), [
 
 const identity = buildDataIdentitySnapshot({
   payload: {
-    asset_id: "asset-1",
-    images: [{ role: "front_original", object_path: "feedback/front.jpg", content_sha256: "a".repeat(64) }]
+    asset_id: durableAssetId,
+    client_asset_ref: "asset-1",
+    images: [{
+      role: "front_original",
+      bucket: "cards",
+      object_path: "feedback/front.jpg",
+      content_sha256: "a".repeat(64)
+    }]
   },
   tenantId: "pilot-tenant",
   userId: "writer-1",
@@ -60,26 +68,45 @@ const identity = buildDataIdentitySnapshot({
 });
 assert.equal(identity.tenant_id, "pilot-tenant");
 assert.equal(identity.user_id, "writer-1");
-assert.match(identity.asset_id, /^asset_content_sha256_[0-9a-f]{64}$/);
+assert.equal(identity.asset_id, durableAssetId);
+assert.match(identity.stable_asset_id, /^asset_content_sha256_[0-9a-f]{64}$/);
 assert.equal(identity.client_asset_ref, "asset-1");
 assert.equal(identity.asset_identity_status, "CONTENT_ADDRESSED");
+assert.equal(identity.image_references[0].bucket, "cards");
 
 const referenceIdentity = buildDataIdentitySnapshot({
   payload: {
-    asset_id: "asset-2",
+    asset_id: "asset_22222222-2222-4222-8222-222222222222",
+    client_asset_ref: "asset-2",
     images: [{ role: "front_original", object_path: "feedback/reference-only.jpg" }]
   },
   tenantId: "pilot-tenant",
   userId: "writer-1",
   operatorId: "writer-1"
 });
-assert.match(referenceIdentity.asset_id, /^asset_reference_sha256_[0-9a-f]{64}$/);
+assert.equal(referenceIdentity.asset_id, "asset_22222222-2222-4222-8222-222222222222");
+assert.match(referenceIdentity.stable_asset_id, /^asset_reference_sha256_[0-9a-f]{64}$/);
 assert.equal(referenceIdentity.asset_identity_status, "REFERENCE_FINGERPRINTED");
+const samePathDifferentBucket = buildDataIdentitySnapshot({
+  payload: {
+    asset_id: "asset_33333333-3333-4333-8333-333333333333",
+    client_asset_ref: "asset-2",
+    images: [{ role: "front_original", bucket: "other-cards", object_path: "feedback/reference-only.jpg" }]
+  },
+  tenantId: "pilot-tenant",
+  userId: "writer-1",
+  operatorId: "writer-1"
+});
+assert.notEqual(
+  samePathDifferentBucket.asset_fingerprint,
+  referenceIdentity.asset_fingerprint,
+  "bucket is part of reference identity when content hash is unavailable"
+);
 
 const recognitionResult = buildAuthoritativeRecognitionResult({
   id: "session-1",
   schema_version: "v4-test",
-  asset_id: "asset-1",
+  asset_id: durableAssetId,
   stable_asset_id: identity.stable_asset_id,
   client_asset_ref: identity.client_asset_ref,
   asset_fingerprint: identity.asset_fingerprint,
@@ -94,7 +121,7 @@ const recognitionResult = buildAuthoritativeRecognitionResult({
   provider_result_summary: { provider: "openai_legacy", model: "gpt-test-1" }
 });
 assert.equal(recognitionResult.tenant_id, "pilot-tenant");
-assert.equal(recognitionResult.asset_id, identity.stable_asset_id);
+assert.equal(recognitionResult.asset_id, durableAssetId);
 assert.equal(recognitionResult.model_version, "gpt-test-1");
 assert.equal(recognitionResult.prompt_version, "listing-intelligence-v1");
 assert.match(recognitionResult.result_sha256, /^[0-9a-f]{64}$/);
@@ -129,7 +156,7 @@ assert.notEqual(first.feedbackEvent.id, laterEdit.feedbackEvent.id);
 assert.equal(first.feedbackEvent.writer_raw_title, writerTitle);
 assert.equal(first.feedbackEvent.tenant_id, "pilot-tenant");
 assert.equal(first.feedbackEvent.user_id, "writer-1");
-assert.equal(first.feedbackEvent.asset_id, identity.stable_asset_id);
+assert.equal(first.feedbackEvent.asset_id, identity.asset_id);
 assert.equal(first.feedbackEvent.dataset_disposition, "OBSERVE_ONLY");
 assert.equal(first.learningEvent.training_eligible, false);
 assert.equal(first.learningEvent.semantic_truth, false);
@@ -149,7 +176,13 @@ const goldenTitle = buildGoldenTitleCandidate({
     bucket: "cards",
     object_path: "feedback/front.jpg",
     content_sha256: "b".repeat(64),
-    image_role: "front"
+    image_role: "front",
+    object_verified: true,
+    content_hash_verified: true,
+    verified_at: "2026-07-15T11:00:00.000Z",
+    storage_verification_source: "listing_image_verifications",
+    storage_verification_record_key: "pilot-tenant\u001fcards\u001ffeedback/front.jpg",
+    storage_verification_record_sha256: "c".repeat(64)
   }]
 });
 assert.equal(goldenTitle.source, "writer_verified");
@@ -167,17 +200,33 @@ const referenceOnlyGoldenTitle = buildGoldenTitleCandidate({
 assert.equal(referenceOnlyGoldenTitle.image_reference_available, true);
 assert.equal(referenceOnlyGoldenTitle.image_content_pinned, false);
 assert.equal(referenceOnlyGoldenTitle.freeze_eligible, false);
-assert.deepEqual(referenceOnlyGoldenTitle.freeze_blockers, ["IMAGE_CONTENT_SHA256_REQUIRED"]);
+assert.deepEqual(referenceOnlyGoldenTitle.freeze_blockers, ["IMAGE_STORAGE_VERIFICATION_REQUIRED"]);
 
 assert.throws(() => buildSemValidationEvent({
   learningEventId: first.learningEvent.id,
   feedbackEventId: first.feedbackEvent.id,
   recognitionSessionId: "session-1",
+  identityGroupId: "physical-card-1",
+  extraction: first.semExtraction,
+  validatedSem: first.semExtraction.candidate_sem,
   validationStatus: "VALIDATED",
-  validatedSem: semExtraction.candidate_sem,
   reviewedBy: "reviewer-1",
   reviewedAt: "2026-07-15T12:00:00.000Z"
 }), /supporting_validation_source_required/);
+assert.throws(() => buildSemValidationEvent({
+  learningEventId: first.learningEvent.id,
+  feedbackEventId: first.feedbackEvent.id,
+  recognitionSessionId: "session-1",
+  identityGroupId: "physical-card-1",
+  extraction: { ...first.semExtraction, parser_version: "stale-parser-v0" },
+  validatedSem: first.semExtraction.candidate_sem,
+  validationStatus: "VALIDATED",
+  validationSources: {
+    HUMAN_CONFIRMATION: { status: "SUPPORTED", evidence_refs: ["review:stale"] }
+  },
+  reviewedBy: "reviewer-1",
+  reviewedAt: "2026-07-15T12:00:00.000Z"
+}), /validated_sem_parser_version_mismatch/);
 const validatedSemEvent = buildSemValidationEvent({
   validationId: "sem-validation-0001",
   learningEventId: first.learningEvent.id,
@@ -185,7 +234,7 @@ const validatedSemEvent = buildSemValidationEvent({
   recognitionSessionId: "session-1",
   tenantId: "pilot-tenant",
   userId: "writer-1",
-  assetId: identity.stable_asset_id,
+  assetId: identity.asset_id,
   identityGroupId: "physical-card-1",
   extraction: first.semExtraction,
   validatedSem: first.semExtraction.candidate_sem,
@@ -274,7 +323,7 @@ const daily = buildDailyLearningExport({
   learning_events: [first.learningEvent],
   sem_validation_events: [validatedSemEvent],
   images_by_asset: {
-    [identity.stable_asset_id]: [{
+    [identity.asset_id]: [{
       bucket: "cards",
       object_path: "feedback/front.jpg",
       content_sha256: "b".repeat(64),
@@ -286,15 +335,47 @@ assert.deepEqual(daily.manifest.counts, {
   feedback: 1,
   semantic: 1,
   errors: 1,
-  golden: 2,
+  golden: 1,
   golden_title: 1,
-  golden_sem: 1,
-  sem_validation_events: 1
+  golden_sem: 0,
+  sem_validation_events: 1,
+  recognition_sessions: 0
 });
 assert.equal(daily.manifest.dataset_disposition, "OBSERVE_ONLY");
+assert.equal(daily.manifest.source_trust.storage_verification_proof, "UNTRUSTED_CALLER_INPUT");
+assert.equal(daily.datasets.golden[0].freeze_eligible, false);
 assert.equal(JSON.stringify(daily).includes("token=secret"), false);
 
 const dependencyReadCalls = [];
+const currentSession = {
+  id: "session-1",
+  tenant_id: "pilot-tenant",
+  operator_id: "writer-1",
+  asset_id: identity.asset_id,
+  stable_asset_id: identity.stable_asset_id,
+  client_asset_ref: identity.client_asset_ref,
+  asset_fingerprint: identity.asset_fingerprint,
+  writer_feedback_event_id: first.feedbackEvent.id,
+  learning_event_id: first.learningEvent.id
+};
+const durableImageVerification = {
+  tenant_id: "pilot-tenant",
+  bucket: "cards",
+  object_path: "feedback/front.jpg",
+  asset_id: identity.asset_id,
+  image_id: "image-front-1",
+  storage_role: "front_original",
+  content_type: "image/jpeg",
+  size: 1024,
+  width: 1000,
+  height: 1400,
+  content_sha256: "a".repeat(64),
+  object_verified: true,
+  content_hash_verified: true,
+  dimension_source: "server_decode",
+  verified_at: "2026-07-15T11:00:00.000Z",
+  updated_at: "2026-07-15T11:00:00.000Z"
+};
 const lateValidationBundle = await loadSupabaseDailyLearningBundle({
   date: "2026-07-16",
   readRows: async ({ table, search }) => {
@@ -305,6 +386,8 @@ const lateValidationBundle = await loadSupabaseDailyLearningBundle({
     }
     if (table === "v4_learning_events") return { ok: true, rows: [first.learningEvent], count: 1 };
     if (table === "v4_writer_feedback_events") return { ok: true, rows: [first.feedbackEvent], count: 1 };
+    if (table === "v4_recognition_sessions") return { ok: true, rows: [currentSession], count: 1 };
+    if (table === "listing_image_verifications") return { ok: true, rows: [durableImageVerification], count: 1 };
     return { ok: false, rows: [], error: "unexpected_table" };
   }
 });
@@ -316,15 +399,23 @@ assert.deepEqual(lateValidationBundle.dependency_closure, {
   daily_learning_events: 0,
   daily_sem_validation_events: 1,
   parent_feedback_events_loaded: 1,
-  parent_learning_events_loaded: 1
+  parent_learning_events_loaded: 1,
+  current_feedback_events_loaded: 0,
+  current_learning_events_loaded: 0,
+  recognition_sessions_loaded: 1,
+  storage_verification_rows_loaded: 1
 });
-assert.equal(dependencyReadCalls.filter((call) => !call.search.and).length, 2);
+assert.ok(dependencyReadCalls.some((call) => call.table === "v4_recognition_sessions"));
+assert.ok(dependencyReadCalls.some((call) => call.table === "listing_image_verifications"));
 const lateValidationDaily = buildDailyLearningExport(lateValidationBundle, {
   date: "2026-07-16",
   generatedAt: "2026-07-16T23:59:59.000Z"
 });
 assert.equal(lateValidationDaily.manifest.counts.semantic, 1);
 assert.equal(lateValidationDaily.datasets.semantic[0].validation_status, "VALIDATED");
+assert.equal(lateValidationDaily.manifest.source_trust.supabase_loader_verified, true);
+assert.equal(lateValidationDaily.manifest.counts.golden_sem, 1);
+assert.equal(lateValidationDaily.datasets.golden.every((row) => row.freeze_eligible), true);
 
 const paginationOffsets = [];
 const pagedFeedback = [first.feedbackEvent, laterEdit.feedbackEvent];
@@ -333,6 +424,9 @@ const pagedBundle = await loadSupabaseDailyLearningBundle({
   pageSize: 1,
   requireExactCount: true,
   readRows: async ({ table, search }) => {
+    if (table === "v4_recognition_sessions") return { ok: true, rows: [
+      { ...currentSession, writer_feedback_event_id: laterEdit.feedbackEvent.id, learning_event_id: null }
+    ], count: 1 };
     if (table !== "v4_writer_feedback_events") return { ok: true, rows: [], count: 0 };
     const offset = Number(search.offset || 0);
     paginationOffsets.push(offset);
@@ -355,7 +449,7 @@ try {
       learning_events: [first.learningEvent],
       sem_validation_events: [validatedSemEvent],
       images_by_asset: {
-        [identity.stable_asset_id]: [{
+        [identity.asset_id]: [{
           bucket: "cards",
           object_path: "feedback/front.jpg",
           content_sha256: "b".repeat(64)
@@ -369,7 +463,7 @@ try {
   for (const dataset of ["feedback", "semantic", "errors", "golden"]) {
     await readFile(written.files[dataset], "utf8");
   }
-  assert.equal(JSON.parse(await readFile(written.manifest_path, "utf8")).counts.golden_sem, 1);
+  assert.equal(JSON.parse(await readFile(written.manifest_path, "utf8")).counts.golden_sem, 0);
 } finally {
   await rm(exportRoot, { recursive: true, force: true });
 }

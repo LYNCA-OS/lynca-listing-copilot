@@ -2,12 +2,7 @@ import { waitUntil } from "@vercel/functions";
 import { runListingRecognitionCore } from "../listing-copilot-title.js";
 import { buildV4PipelineContract } from "../../lib/listing/v4/pipeline/pipeline-contract.mjs";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import {
-  getSessionFromRequest,
-  operatorIdFromRequest,
-  tenantIdFromRequest,
-  userIdFromRequest
-} from "../../lib/listing-session.mjs";
+import { getSessionFromRequest } from "../../lib/listing-session.mjs";
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
@@ -30,9 +25,17 @@ import {
   persistV4NonCriticalArtifactsAtomic,
   persistV4QualityLedger,
   persistV4WriterReadyAndReleaseCapacity,
+  readV4SessionStatus,
   updateV4RecognitionSession,
   updateV4RecognitionSessionWithRetry
 } from "../../lib/listing/v4/session/session-store.mjs";
+import {
+  resolveSignedPublicV4Principal,
+  resolveV4WorkerSessionIdentity,
+  scopeV4RecognitionPayloadFromFencedJob,
+  sessionIdForV4Request
+} from "../../lib/listing/v4/session/trusted-session-identity.mjs";
+import { fenceV4RecognitionJobExecution } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
@@ -40,6 +43,26 @@ import { triggerWriterReadyCapacityRefill } from "../../lib/listing/v4/jobs/writ
 import { providerModelOverrideFromOptions } from "../../lib/listing/providers/provider-contract.mjs";
 import { isGpt5ResponsesModel } from "../../lib/listing/providers/openai-responses-request.mjs";
 import { openAiKeyPoolSize } from "../../lib/listing/providers/openai-key-pool.mjs";
+
+const durableListingAssetIdPattern = /^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function recognitionAssetIdentity(payload = {}) {
+  const snakeAssetId = String(payload.asset_id || "").trim();
+  const camelAssetId = String(payload.assetId || "").trim();
+  const snakeClientRef = String(payload.client_asset_ref || "").trim();
+  const camelClientRef = String(payload.clientAssetRef || "").trim();
+  const assetId = snakeAssetId || camelAssetId;
+  const clientAssetRef = snakeClientRef || camelClientRef;
+  if ((snakeAssetId && camelAssetId && snakeAssetId !== camelAssetId)
+      || (snakeClientRef && camelClientRef && snakeClientRef !== camelClientRef)
+      || !durableListingAssetIdPattern.test(assetId)
+      || !clientAssetRef
+      || clientAssetRef.length > 160
+      || /[\u0000-\u001f\u007f]/.test(clientAssetRef)) {
+    return null;
+  }
+  return { assetId, clientAssetRef };
+}
 
 function titleFromResult(result = {}) {
   return result.final_title || result.rendered_title || result.title || null;
@@ -1253,7 +1276,8 @@ export default async function handler(req, res) {
   }
 
   const workerAuthorized = isV4WorkerRequest(req, process.env);
-  if (!getSessionFromRequest(req) && !workerAuthorized) {
+  const signedSession = workerAuthorized ? null : getSessionFromRequest(req);
+  if (!signedSession && !workerAuthorized) {
     sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
@@ -1273,14 +1297,122 @@ export default async function handler(req, res) {
     return;
   }
 
-  const sessionId = payload.recognition_session_id || createV4SessionId();
-  const originOperatorId = workerAuthorized
-    ? String(payload.v4_origin_operator_id || "").trim() || "v4-production-worker"
-    : operatorIdFromRequest(req);
-  const originTenantId = workerAuthorized
-    ? String(payload.v4_origin_tenant_id || payload.tenant_id || "").trim() || originOperatorId
-    : tenantIdFromRequest(req);
-  const originUserId = workerAuthorized ? originOperatorId : userIdFromRequest(req);
+  if (!workerAuthorized && (
+    payload.preingestion_bundle_id
+    || payload.preingestionBundleId
+    || payload.preingestion_bundle
+  )) {
+    sendJson(res, 400, withV4Version({
+      ok: false,
+      retryable: false,
+      message: "Client-selected pre-ingestion bundles are disabled until tenant ownership is bound in storage.",
+      error_code: "V4_PREINGESTION_BUNDLE_ID_FORBIDDEN"
+    }));
+    return;
+  }
+
+  if (workerAuthorized) {
+    const fenced = await fenceV4RecognitionJobExecution({
+      jobId: payload.v4_queue_job_id,
+      workerId: payload.v4_queue_worker_id,
+      leaseSeconds: Number(process.env.V4_JOB_PROVIDER_FENCE_LEASE_SECONDS || 300)
+    });
+    if (!fenced.fenced) {
+      sendJson(res, fenced.error && fenced.error !== "job_lease_not_live" ? 503 : 409, withV4Version({
+        ok: false,
+        retryable: Boolean(fenced.error && fenced.error !== "job_lease_not_live"),
+        message: "Worker execution lease is not live.",
+        error_code: "V4_WORKER_JOB_LEASE_FENCE_FAILED"
+      }));
+      return;
+    }
+    try {
+      payload = scopeV4RecognitionPayloadFromFencedJob(fenced.job);
+    } catch {
+      sendJson(res, 409, withV4Version({
+        ok: false,
+        retryable: false,
+        message: "Persisted worker job identity is invalid.",
+        error_code: "V4_WORKER_FENCED_JOB_IDENTITY_INVALID"
+      }));
+      return;
+    }
+  }
+
+  let sessionId;
+  try {
+    sessionId = sessionIdForV4Request({
+      workerAuthorized,
+      requestedSessionId: payload.recognition_session_id,
+      createSessionId: createV4SessionId
+    });
+  } catch (error) {
+    sendJson(res, 400, withV4Version({
+      ok: false,
+      retryable: false,
+      message: "A persisted recognition session is required for worker execution.",
+      error_code: String(error?.code || "V4_SESSION_ID_INVALID").toUpperCase()
+    }));
+    return;
+  }
+
+  let originOperatorId;
+  let originTenantId;
+  let originUserId;
+  if (workerAuthorized) {
+    try {
+      const identity = await resolveV4WorkerSessionIdentity({
+        sessionId,
+        claimedTenantId: payload.v4_origin_tenant_id,
+        claimedOperatorId: payload.v4_origin_operator_id,
+        readSession: readV4SessionStatus
+      });
+      originOperatorId = identity.operatorId;
+      originTenantId = identity.tenantId;
+      originUserId = identity.userId;
+    } catch (error) {
+      const unavailable = error?.code === "v4_worker_session_identity_unavailable";
+      sendJson(res, unavailable ? 503 : 409, withV4Version({
+        ok: false,
+        retryable: unavailable,
+        message: unavailable
+          ? "Unable to verify the persisted worker session identity."
+          : "Worker identity does not match the persisted recognition session.",
+        error_code: String(error?.code || "V4_WORKER_SESSION_IDENTITY_INVALID").toUpperCase()
+      }));
+      return;
+    }
+  } else {
+    try {
+      const principal = resolveSignedPublicV4Principal(signedSession);
+      originOperatorId = principal.operatorId;
+      originTenantId = principal.tenantId;
+      originUserId = principal.userId;
+    } catch (error) {
+      sendJson(res, 403, withV4Version({
+        ok: false,
+        retryable: false,
+        message: "A canonical signed tenant and user identity is required.",
+        error_code: String(error?.code || "V4_SIGNED_PRINCIPAL_INCOMPLETE").toUpperCase()
+      }));
+      return;
+    }
+  }
+  const requestAssetIdentity = recognitionAssetIdentity(payload);
+  if (!requestAssetIdentity) {
+    sendJson(res, workerAuthorized ? 409 : 400, withV4Version({
+      ok: false,
+      retryable: false,
+      message: "A server-created durable asset_id and its client_asset_ref are required.",
+      error_code: "V4_CANONICAL_ASSET_IDENTITY_REQUIRED"
+    }));
+    return;
+  }
+  payload = {
+    ...payload,
+    asset_id: requestAssetIdentity.assetId,
+    client_asset_ref: requestAssetIdentity.clientAssetRef
+  };
   const handlerStartedAt = Date.now();
   let recognitionClockStartedAt = null;
   let recognitionClockSource = null;
@@ -1385,19 +1517,41 @@ export default async function handler(req, res) {
     }
   }
   const routePlan = planV4RecognitionRoute(payload, process.env);
-  const createResultPromise = createV4RecognitionSession({
-    sessionId,
-    payload,
-    routePlan,
-    operatorId: originOperatorId,
-    tenantId: originTenantId,
-    userId: originUserId
-  });
-  scheduleV4Background(createResultPromise, "recognition session create");
-  const deferredCreateResult = {
-    sessionId,
-    persistence: { recognition_session: { saved: false, deferred: true } }
-  };
+  const createResultPromise = workerAuthorized
+    ? Promise.resolve({
+      sessionId,
+      persistence: {
+        recognition_session: {
+          saved: true,
+          existing: true,
+          verified_after_write: true,
+          persistence_mode: "worker_fenced_existing_session"
+        }
+      }
+    })
+    : createV4RecognitionSession({
+      sessionId,
+      payload,
+      routePlan,
+      operatorId: originOperatorId,
+      tenantId: originTenantId,
+      userId: originUserId
+    });
+  let initialCreateResult = null;
+  if (!workerAuthorized) {
+    initialCreateResult = await createResultPromise;
+    if (initialCreateResult.persistence?.recognition_session?.saved !== true
+        || initialCreateResult.persistence?.recognition_session?.verified_after_write !== true) {
+      sendJson(res, 503, withV4Version({
+        ok: false,
+        retryable: true,
+        message: "Recognition session could not be durably bound to the canonical listing asset.",
+        error_code: "V4_RECOGNITION_SESSION_PERSISTENCE_REQUIRED"
+      }));
+      return;
+    }
+  }
+  const deferredCreateResult = initialCreateResult || await createResultPromise;
 
   if (canReturnFastScoutL1(payload, process.env)) {
     try {

@@ -1,6 +1,8 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest, tenantIdFromRequest } from "../../lib/listing-session.mjs";
+import {
+  getSessionFromRequest
+} from "../../lib/listing-session.mjs";
 import {
   buildAuthoritativeRecognitionResult,
   createFeedbackSubmissionId,
@@ -15,13 +17,15 @@ import {
   readV4SessionStatus,
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { resolveSignedPublicV4Principal } from "../../lib/listing/v4/session/trusted-session-identity.mjs";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  if (!getSessionFromRequest(req)) {
+  const signedSession = getSessionFromRequest(req);
+  if (!signedSession) {
     sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
@@ -46,17 +50,30 @@ export default async function handler(req, res) {
     return;
   }
 
-  const operatorId = operatorIdFromRequest(req);
-  const tenantId = tenantIdFromRequest(req);
-  const ownedSession = await readV4SessionStatus({ sessionId });
+  let principal;
+  try {
+    principal = resolveSignedPublicV4Principal(signedSession);
+  } catch (error) {
+    sendJson(res, 403, withV4Version({
+      ok: false,
+      retryable: false,
+      message: "A canonical signed tenant and user identity is required.",
+      error_code: String(error?.code || "V4_SIGNED_PRINCIPAL_INCOMPLETE").toUpperCase()
+    }));
+    return;
+  }
+  const { operatorId, tenantId } = principal;
+  const ownedSession = await readV4SessionStatus({ sessionId, tenantId });
   if (!ownedSession.ok) {
     sendJson(res, 503, withV4Version({ ok: false, retryable: true, message: "Unable to verify recognition session ownership." }));
     return;
   }
-  const ownedTenantId = String(ownedSession.session?.tenant_id || "").trim();
   if (!ownedSession.session
-      || String(ownedSession.session.operator_id || "") !== operatorId
-      || (ownedTenantId && ownedTenantId !== tenantId)) {
+      || String(ownedSession.session.tenant_id || "") !== tenantId
+      || (
+        String(ownedSession.session.user_id || ownedSession.session.operator_id || "").trim() !== operatorId
+        && String(ownedSession.session.operator_id || "").trim() !== operatorId
+      )) {
     sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition session not found." }));
     return;
   }
@@ -121,6 +138,7 @@ export default async function handler(req, res) {
   }
   const transaction = await persistV4WriterFeedbackTransaction({
     sessionId,
+    tenantId,
     operatorId,
     status: artifacts.status,
     feedbackEvent: artifacts.feedbackEvent,
@@ -136,6 +154,14 @@ export default async function handler(req, res) {
       }));
       return;
     }
+    if (transaction.transaction?.reason === "not_found_or_not_owned") {
+      sendJson(res, 404, withV4Version({
+        ok: false,
+        retryable: false,
+        message: "Recognition session not found."
+      }));
+      return;
+    }
     sendJson(res, 503, withV4Version({
       ok: false,
       retryable: true,
@@ -144,6 +170,8 @@ export default async function handler(req, res) {
     }));
     return;
   }
+  const committed = transaction.transaction || {};
+  const supersededRetry = committed.superseded_retry === true;
 
   // Cert registry flywheel: a writer-confirmed recognition that carries a
   // grading cert number becomes an identity record, so the next time this
@@ -198,17 +226,19 @@ export default async function handler(req, res) {
   sendJson(res, 200, withV4Version({
     ok: true,
     recognition_session_id: sessionId,
-    status: artifacts.status,
+    status: committed.status || artifacts.status,
     feedback_submission_id: submissionId,
-    feedback_event_id: artifacts.feedbackEvent.id,
-    learning_event_id: artifacts.learningEvent.id,
-    writer_final_title: artifacts.feedbackEvent.writer_final_title,
-    writer_raw_title: artifacts.rawWriterTitle,
-    csm_normalization: artifacts.csmNormalization,
-    title_diff: artifacts.feedbackEvent.title_diff,
-    training_eligible: artifacts.learningEvent.training_eligible,
+    feedback_event_id: committed.feedback_event_id || artifacts.feedbackEvent.id,
+    learning_event_id: committed.learning_event_id || artifacts.learningEvent.id,
+    feedback_revision: committed.feedback_revision || null,
+    writer_final_title: committed.writer_final_title ?? artifacts.feedbackEvent.writer_final_title,
+    writer_raw_title: supersededRetry ? null : artifacts.rawWriterTitle,
+    csm_normalization: supersededRetry ? null : artifacts.csmNormalization,
+    title_diff: supersededRetry ? null : artifacts.feedbackEvent.title_diff,
+    training_eligible: false,
     dataset_disposition: artifacts.learningEvent.dataset_disposition,
-    sem_extraction_status: artifacts.semExtraction.status,
+    sem_extraction_status: supersededRetry ? "CURRENT_STATE_UNCHANGED" : artifacts.semExtraction.status,
+    superseded_retry: supersededRetry,
     production_promotion_eligible: reviewedPromotionEnabled,
     v4_persistence: { transaction }
   }));

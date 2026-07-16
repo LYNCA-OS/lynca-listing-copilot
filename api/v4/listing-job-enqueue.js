@@ -1,8 +1,9 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest, tenantIdFromRequest } from "../../lib/listing-session.mjs";
+import { getSessionFromRequest } from "../../lib/listing-session.mjs";
 import {
   createV4BatchId,
+  createV4DeterministicBatchId,
   enqueueV4RecognitionJobs,
   expandV4RecognitionStageJobs,
   tryAcquireV4QueueKick,
@@ -14,11 +15,42 @@ import {
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { resolveSignedPublicV4Principal } from "../../lib/listing/v4/session/trusted-session-identity.mjs";
 
 function jobsFromPayload(payload = {}) {
   if (Array.isArray(payload.jobs)) return payload.jobs;
   if (payload.payload && typeof payload.payload === "object") return [{ payload: payload.payload }];
   return [payload];
+}
+
+function withoutClientSessionIdentity(job = {}) {
+  const serverOwnedKeys = [
+    "id",
+    "job_id", "jobId",
+    "l1_job_id", "l1JobId",
+    "l2_job_id", "l2JobId",
+    "parent_job_id", "parentJobId",
+    "paired_job_id", "pairedJobId",
+    "recognition_session_id", "recognitionSessionId",
+    "session_id", "sessionId",
+    "batch_id", "batchId",
+    "tenant_id", "tenantId",
+    "operator_id", "operatorId",
+    "created_by_user_id", "assigned_to_user_id",
+    "lease_owner", "lease_expires_at",
+    "queue_tags", "status",
+    "preingestion_bundle_id", "preingestionBundleId", "preingestion_bundle",
+    "preingestion_bundle_used", "preingestion_bundle_status",
+    "preingestion_summary", "preingestion_initial_evidence",
+    "preingestion_evidence_patches"
+  ];
+  const scoped = { ...job };
+  for (const key of serverOwnedKeys) delete scoped[key];
+  if (scoped.payload && typeof scoped.payload === "object" && !Array.isArray(scoped.payload)) {
+    scoped.payload = { ...scoped.payload };
+    for (const key of serverOwnedKeys) delete scoped.payload[key];
+  }
+  return scoped;
 }
 
 function headerValue(req, name) {
@@ -199,7 +231,8 @@ export default async function handler(req, res) {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  if (!getSessionFromRequest(req)) {
+  const signedSession = getSessionFromRequest(req);
+  if (!signedSession) {
     sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
     return;
   }
@@ -229,12 +262,39 @@ export default async function handler(req, res) {
     return;
   }
 
-  const batchId = payload.batch_id || payload.batchId || createV4BatchId("v4batch");
-  const operatorId = operatorIdFromRequest(req);
+  let principal;
+  try {
+    principal = resolveSignedPublicV4Principal(signedSession);
+  } catch (error) {
+    sendJson(res, 403, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: String(error?.code || "V4_SIGNED_PRINCIPAL_INCOMPLETE").toUpperCase(),
+      message: "A canonical signed tenant and user identity is required."
+    }));
+    return;
+  }
+  const { operatorId, tenantId } = principal;
   // Scheduling and data ownership use the signed principal. The browser's
   // batch id remains a batch id and cannot impersonate another tenant.
-  const tenantId = tenantIdFromRequest(req);
-  const sourceJobs = jobsFromPayload(payload);
+  const clientBatchToken = String(payload.batch_id || payload.batchId || "").trim();
+  if (clientBatchToken && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/.test(clientBatchToken)) {
+    sendJson(res, 400, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: "V4_QUEUE_BATCH_TOKEN_INVALID",
+      message: "batch_id must be an opaque 1-120 character token."
+    }));
+    return;
+  }
+  const batchId = createV4DeterministicBatchId({
+    tenantId,
+    operatorId,
+    idempotencyKey: clientBatchToken
+  }) || createV4BatchId("v4batch");
+  // Session IDs are ownership-bearing server identifiers. A browser may
+  // provide an idempotency key, but it cannot select an existing session.
+  const sourceJobs = jobsFromPayload(payload).map(withoutClientSessionIdentity);
   const maxJobsPerRequest = positiveInteger(process.env.V4_QUEUE_MAX_JOBS_PER_REQUEST, 50, { min: 1, max: 250 });
   if (sourceJobs.length > maxJobsPerRequest) {
     sendJson(res, 413, withV4Version({
@@ -267,8 +327,12 @@ export default async function handler(req, res) {
   });
 
   const failedEntries = result.jobs.filter((entry) => !entry.saved);
-  const noJobsQueued = stageJobs.length > 0 && result.queued_count === 0;
-  const responseStatus = noJobsQueued ? 503 : 200;
+  const acceptedCount = Number(result.accepted_count ?? result.jobs.filter((entry) => entry.saved).length);
+  const noJobsAccepted = stageJobs.length > 0 && acceptedCount === 0;
+  const deterministicConflict = failedEntries.some((entry) => (
+    /identity_conflict|terminal_retry_required/.test(String(entry.error || ""))
+  ));
+  const responseStatus = noJobsAccepted ? deterministicConflict ? 409 : 503 : 200;
   const failureMessage = failedEntries
     .map((entry) => String(entry.error || "queue_job_persistence_failed").trim())
     .filter(Boolean)
@@ -276,14 +340,17 @@ export default async function handler(req, res) {
     .join("; ");
 
   sendJson(res, responseStatus, withV4Version({
-    ok: result.queued_count > 0,
-    retryable: noJobsQueued,
-    error_code: noJobsQueued ? "V4_QUEUE_PERSISTENCE_FAILED" : null,
-    message: noJobsQueued
+    ok: acceptedCount > 0,
+    retryable: noJobsAccepted && !deterministicConflict,
+    error_code: noJobsAccepted
+      ? deterministicConflict ? "V4_QUEUE_IDENTITY_CONFLICT" : "V4_QUEUE_PERSISTENCE_FAILED"
+      : null,
+    message: noJobsAccepted
       ? failureMessage || "The recognition job was not persisted. Retry is safe because queue IDs are idempotent."
       : null,
     batch_id: result.batchId,
     tenant_id: tenantId,
+    accepted_count: acceptedCount,
     queued_count: result.queued_count,
     inserted_count: result.inserted_count,
     deduplicated_count: result.deduplicated_count,

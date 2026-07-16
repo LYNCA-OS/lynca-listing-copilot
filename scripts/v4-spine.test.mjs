@@ -814,7 +814,8 @@ assert.match(queueStatusApiSource, /serial_numerator_verified/, "queue status mu
 assert.match(queueStatusApiSource, /V4_JOB_STATUS_QUERY_REQUIRED/, "missing status query identifiers must remain a non-retryable client error.");
 assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s\S]*V4_JOB_STATUS_BACKEND_UNAVAILABLE/, "transient queue-store reads must be reported as retryable service failures.");
 assert.match(queueStatusApiSource, /ownedJobs = result\.rows\.filter[\s\S]*operator_id/, "job status must not expose another operator's queued work.");
-assert.match(queueEnqueueApiSource, /noJobsQueued \? 503 : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
+assert.match(queueEnqueueApiSource, /const noJobsAccepted =[\s\S]*acceptedCount === 0/, "enqueue must identify batches where no durable job was accepted.");
+assert.match(queueEnqueueApiSource, /const responseStatus = noJobsAccepted \? deterministicConflict \? 409 : 503 : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
 assert.match(queueEnqueueApiSource, /V4_QUEUE_PERSISTENCE_FAILED/, "queue persistence failures must have a stable retryable error code.");
 assert.match(queueRetryApiSource, /operatorIdFromRequest/, "writer retries must enforce job ownership.");
 assert.match(queueRetryApiSource, /retryV4RecognitionJob/, "writer retries must reuse the durable job instead of starting an unbounded direct request.");
@@ -1701,6 +1702,7 @@ await persistV4LearningEvent({
 const feedbackTransactionCalls = [];
 const feedbackTransaction = await persistV4WriterFeedbackTransaction({
   sessionId: "v4sess-test",
+  tenantId: "tenant-test",
   operatorId: "operator-test",
   status: artifacts.status,
   feedbackEvent: artifacts.feedbackEvent,
@@ -1723,6 +1725,7 @@ const feedbackTransaction = await persistV4WriterFeedbackTransaction({
 assert.equal(feedbackTransaction.saved, true);
 assert.ok(feedbackTransactionCalls[0].url.endsWith("/rest/v1/rpc/persist_v4_writer_feedback_transaction"));
 assert.equal(feedbackTransactionCalls[0].body.p_session_id, "v4sess-test");
+assert.equal(feedbackTransactionCalls[0].body.p_tenant_id, "tenant-test");
 assert.equal(feedbackTransactionCalls[0].body.p_feedback_event.schema_version, "v4-recognition-session-v1");
 assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, false);
 const health = await checkV4Tables({ env, fetchImpl: fakeFetch });

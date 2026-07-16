@@ -166,86 +166,128 @@ assert.equal(capacityLeasedPayload.provider_capacity_slot, 4);
 assert.equal(capacityLeasedPayload.v4_queue_worker_id, "worker-capacity-2");
 
 const writes = [];
+function atomicEnqueueResponse(request = {}, overrides = {}) {
+  const body = JSON.parse(request.body || "{}");
+  const jobs = Array.isArray(body.p_jobs) ? body.p_jobs : [];
+  return {
+    saved: true,
+    batch_id: body.p_batch?.id,
+    jobs: jobs.map((job) => ({
+      saved: true,
+      row: { ...job },
+      error: null,
+      deduplicated: false,
+      ...overrides.job
+    })),
+    accepted_count: jobs.length,
+    queued_count: jobs.length,
+    inserted_count: jobs.length,
+    deduplicated_count: 0,
+    session_rows_written: Array.isArray(body.p_sessions) ? body.p_sessions.length : 0,
+    job_rows_written: jobs.length,
+    ...overrides.transaction
+  };
+}
 const fetchForWrites = async (url, request = {}) => {
   writes.push({ url: String(url), request });
-  if (!request.method || request.method === "GET") return jsonResponse([]);
-  const body = JSON.parse(request.body);
-  return jsonResponse((Array.isArray(body) ? body : [body]).map((entry) => ({ ...entry })));
+  if (String(url).includes("/rest/v1/rpc/enqueue_v4_recognition_batch_atomic")) {
+    return jsonResponse(atomicEnqueueResponse(request));
+  }
+  return jsonResponse({ message: "unexpected call" }, { ok: false, status: 500 });
 };
 const enqueue = await enqueueV4RecognitionJobs({
   batchId: "batch-enqueue",
   operatorId: "operator-2",
+  tenantId: "tenant-2",
   jobs: [
-    { asset_id: "asset-a", payload: { images: [] } },
-    { asset_id: "asset-b", payload: { images: [] } }
+    {
+      asset_id: "asset_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      payload: { client_asset_ref: "asset-a", images: [] }
+    },
+    {
+      asset_id: "asset_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      payload: { client_asset_ref: "asset-b", images: [] }
+    }
   ],
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: fetchForWrites
 });
 assert.equal(enqueue.batchId, "batch-enqueue");
 assert.equal(enqueue.queued_count, 2);
-assert.equal(enqueue.persistence_mode, "bulk");
-assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").length, 1);
-assert.equal(writes.filter((entry) => entry.url.includes("/v4_recognition_jobs") && entry.request.method === "POST").length, 1);
-assert.equal(JSON.parse(writes.find((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").request.body).length, 2);
-const jobWrite = writes.find((entry) => entry.url.includes("/v4_recognition_jobs") && entry.request.method === "POST");
-assert.equal(JSON.parse(jobWrite.request.body).length, 2);
-assert.ok(jobWrite.request.body.includes('"status":"QUEUED"'));
-assert.match(jobWrite.request.headers.prefer, /resolution=ignore-duplicates/);
+assert.equal(enqueue.persistence_mode, "atomic_rpc");
+assert.equal(writes.length, 1);
+assert.ok(writes[0].url.endsWith("/rest/v1/rpc/enqueue_v4_recognition_batch_atomic"));
+const atomicBody = JSON.parse(writes[0].request.body);
+assert.equal(atomicBody.p_tenant_id, "tenant-2");
+assert.equal(atomicBody.p_operator_id, "operator-2");
+assert.equal(atomicBody.p_sessions.length, 2);
+assert.equal(atomicBody.p_jobs.length, 2);
+assert.equal(atomicBody.p_jobs[0].payload.client_asset_ref, "asset-a");
 
 const existingQueuedJob = normalizeV4JobInput({
   batchId: "batch-dedup",
   operatorId: "operator-dedup",
-  job: { asset_id: "asset-dedup", payload: { images: [] } }
+  tenantId: "tenant-dedup",
+  job: {
+    asset_id: "asset_dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    payload: { client_asset_ref: "asset-dedup", images: [] }
+  }
 });
 const dedupWrites = [];
 const dedupEnqueue = await enqueueV4RecognitionJobs({
   batchId: "batch-dedup",
   operatorId: "operator-dedup",
-  jobs: [{ asset_id: "asset-dedup", payload: { images: [] } }],
+  tenantId: "tenant-dedup",
+  jobs: [{
+    asset_id: "asset_dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    payload: { client_asset_ref: "asset-dedup", images: [] }
+  }],
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
     dedupWrites.push({ url: String(url), request });
-    if ((!request.method || request.method === "GET") && String(url).includes("/v4_recognition_jobs")) {
-      return jsonResponse([{ ...existingQueuedJob, status: v4JobStatuses.RUNNING }]);
+    if (String(url).includes("/rest/v1/rpc/enqueue_v4_recognition_batch_atomic")) {
+      return jsonResponse(atomicEnqueueResponse(request, {
+        transaction: {
+          inserted_count: 0,
+          deduplicated_count: 1,
+          session_rows_written: 0,
+          job_rows_written: 0
+        },
+        job: {
+          row: { ...existingQueuedJob, status: v4JobStatuses.RUNNING },
+          deduplicated: true
+        }
+      }));
     }
-    if ((!request.method || request.method === "GET") && String(url).includes("/v4_recognition_sessions")) {
-      return jsonResponse([{ id: existingQueuedJob.recognition_session_id }]);
-    }
-    return jsonResponse([]);
+    return jsonResponse({ message: "unexpected call" }, { ok: false, status: 500 });
   }
 });
 assert.equal(dedupEnqueue.queued_count, 1);
 assert.equal(dedupEnqueue.inserted_count, 0);
 assert.equal(dedupEnqueue.deduplicated_count, 1);
 assert.equal(dedupEnqueue.jobs[0].row.status, v4JobStatuses.RUNNING, "duplicate enqueue must preserve the active job");
-assert.equal(dedupWrites.filter((entry) => entry.request.method === "POST").length, 0);
+assert.equal(dedupWrites.filter((entry) => entry.url.includes("/rest/v1/rpc/enqueue_v4_recognition_batch_atomic")).length, 1);
 
-let sessionBatchFailed = false;
-const fallbackWrites = [];
-const fallbackEnqueue = await enqueueV4RecognitionJobs({
-  batchId: "batch-fallback",
-  operatorId: "operator-fallback",
-  jobs: [
-    { asset_id: "asset-fallback-a", payload: { images: [] } },
-    { asset_id: "asset-fallback-b", payload: { images: [] } }
-  ],
+const rejectedEnqueue = await enqueueV4RecognitionJobs({
+  batchId: "batch-rejected",
+  operatorId: "operator-rejected",
+  tenantId: "tenant-rejected",
+  jobs: [{
+    asset_id: "asset_cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    payload: { client_asset_ref: "asset-rejected", images: [] }
+  }],
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
-  fetchImpl: async (url, request = {}) => {
-    fallbackWrites.push({ url: String(url), request });
-    if (!request.method || request.method === "GET") return jsonResponse([]);
-    const body = JSON.parse(request.body);
-    if (String(url).includes("/v4_recognition_sessions") && Array.isArray(body) && !sessionBatchFailed) {
-      sessionBatchFailed = true;
-      return jsonResponse({ message: "temporary batch failure" }, { ok: false, status: 503 });
+  fetchImpl: async (_url, request = {}) => jsonResponse(atomicEnqueueResponse(request, {
+    transaction: {
+      saved: false,
+      reason: "root_listing_asset_not_found",
+      jobs: []
     }
-    return jsonResponse((Array.isArray(body) ? body : [body]).map((entry) => ({ ...entry })));
-  }
+  }))
 });
-assert.equal(fallbackEnqueue.queued_count, 2);
-assert.equal(fallbackEnqueue.persistence_mode, "bulk_with_row_fallback");
-assert.equal(fallbackWrites.filter((entry) => entry.url.includes("/v4_recognition_sessions") && entry.request.method === "POST").length, 3);
-assert.equal(fallbackWrites.filter((entry) => entry.url.includes("/v4_recognition_jobs") && entry.request.method === "POST").length, 1);
+assert.equal(rejectedEnqueue.queued_count, 0);
+assert.equal(rejectedEnqueue.persistence_mode, "atomic_rpc_rejected");
+assert.match(rejectedEnqueue.jobs[0].error, /root_listing_asset_not_found/);
 
 const failedRetryJob = {
   ...normalizeV4JobInput({
