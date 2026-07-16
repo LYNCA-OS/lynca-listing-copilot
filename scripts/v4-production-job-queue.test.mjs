@@ -41,13 +41,13 @@ assert.equal(
 );
 assert.equal(
   v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "6" }),
-  6,
-  "queue submission capacity must be independently configurable"
+  2,
+  "queue submission must not exceed the measured frozen capacity"
 );
 assert.equal(
-  v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "99" }),
-  12,
-  "queue submission capacity must remain bounded"
+  v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "1" }),
+  1,
+  "an incident circuit breaker may lower queue submission capacity"
 );
 
 function jsonResponse(body, init = {}) {
@@ -520,16 +520,24 @@ assert.deepEqual(JSON.parse(heartbeatRpcCalls[0].request.body), {
 });
 
 let heartbeatPulses = 0;
+let releaseSecondHeartbeat;
+const secondHeartbeat = new Promise((resolve) => {
+  releaseSecondHeartbeat = resolve;
+});
 const heartbeatRun = await runWithV4JobLeaseHeartbeat({
   job: { id: "v4job-long", lease_owner: "worker-long" },
   leaseSeconds: 300,
   intervalMs: 5,
   heartbeat: async () => {
     heartbeatPulses += 1;
+    if (heartbeatPulses >= 2) releaseSecondHeartbeat();
     return { extended: true, skipped: false, error: null };
   },
   task: async () => {
-    await new Promise((resolve) => setTimeout(resolve, 24));
+    await Promise.race([
+      secondHeartbeat,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("heartbeat test timed out")), 250))
+    ]);
     return "done";
   }
 });

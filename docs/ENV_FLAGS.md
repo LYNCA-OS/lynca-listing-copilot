@@ -2,7 +2,7 @@
 
 Generated 2026-07-16 by scripts/generate-env-flag-inventory.mjs — do not edit by hand.
 
-Total: 392 flags. Reaping rule: a kill switch that has stayed in one
+Total: 393 flags. Reaping rule: a kill switch that has stayed in one
 position for a quarter is not a switch, it is dead weight — inline its value
 and delete the flag.
 
@@ -118,7 +118,7 @@ and delete the flag.
 | `ENABLE_LISTING_APPROVED_MEMORY` | lib/supabase-feedback.mjs |
 | `ENABLE_LISTING_FEEDBACK_RETENTION` | lib/listing/readiness/workflow-readiness-audit.mjs<br>lib/supabase-feedback.mjs |
 | `ENABLE_LIVE_CURATED_CATALOG_FALLBACK` | lib/listing/retrieval/catalog-provider.mjs |
-| `ENABLE_OPENAI_WEB_SEARCH_FALLBACK` | lib/listing/retrieval/openai-web-search-provider.mjs<br>lib/listing/retrieval/retrieval-engine.mjs |
+| `ENABLE_OPENAI_WEB_SEARCH_FALLBACK` | lib/listing/retrieval/retrieval-contract.mjs<br>lib/listing/retrieval/retrieval-engine.mjs |
 | `ENABLE_PADDLE_OCR_GRADE_FULL_IMAGE_FALLBACK` | lib/listing/preingestion/preingestion-ocr-worker.mjs |
 | `ENABLE_PARALLEL_FOCUSED_REREADS` | lib/listing/orchestration/evidence-completion-orchestrator.mjs |
 | `ENABLE_POSTGRES_HYBRID_RETRIEVAL` | lib/listing/orchestration/evidence-completion-orchestrator.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs |
@@ -178,6 +178,7 @@ and delete the flag.
 | `LISTING_PREPROVIDER_RESCAN_GATE_ENABLED` | lib/listing/image-quality/pre-provider-rescan-gate.mjs |
 | `LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED` | lib/listing/image-quality/pre-provider-rescan-gate.mjs |
 | `LISTING_PROVIDER_SERVER_CONCURRENCY` | lib/listing/providers/provider-concurrency.mjs |
+| `LISTING_SIGNED_URL_CONCURRENCY` | api/listing-copilot-title.js |
 | `LISTING_STORAGE_RETENTION_CRON_SECRET` | api/listing-storage-retention-cleanup.js |
 | `LYNCA_FUNCTION_REGION` | lib/listing/retrieval/candidate-context-summary.mjs |
 | `LYNCA_INTERNAL_BASE_URL` | lib/listing/v4/jobs/internal-service-origin.mjs |
@@ -289,7 +290,7 @@ and delete the flag.
 | `RETRIEVAL_CATALOG_GLOBAL_CAPACITY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `RETRIEVAL_CATALOG_STAGE_CAPACITY_CONTROL_ENABLED` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `RETRIEVAL_GRADING_DOMAINS` | lib/listing/retrieval/source-policy.mjs |
-| `RETRIEVAL_INTERNAL_QUERY_CONCURRENCY` | lib/listing/retrieval/retrieval-engine.mjs<br>lib/listing/v4/orchestration/stage-capacity.mjs |
+| `RETRIEVAL_INTERNAL_QUERY_CONCURRENCY` | api/admin-catalog-candidate-smoke.js<br>lib/listing/retrieval/retrieval-engine.mjs<br>lib/listing/v4/orchestration/stage-capacity.mjs |
 | `RETRIEVAL_MARKETPLACE_DOMAINS` | lib/listing/retrieval/source-policy.mjs |
 | `RETRIEVAL_MODE` | api/listing-copilot-title.js<br>lib/listing/orchestration/identity-convergence-retriever.mjs |
 | `RETRIEVAL_OFFICIAL_DOMAINS` | lib/listing/retrieval/source-policy.mjs |

@@ -156,8 +156,8 @@ Paired A/B and defect regression still reuse the same sealed images by design.
 ## 2026-07-14 OCR First-Wave Fairness
 
 GPT capacity remains globally bounded at 2. PaddleOCR has an independent pool:
-10 global slots, one concurrent slot per card, and a three-job per-card batch.
-This lets ten cards begin one hard-text read each before any card consumes a
+8 global slots, one concurrent slot per card, and a three-job per-card batch.
+This lets eight cards begin one hard-text read each before any card consumes a
 second OCR slot. Within a card, serial, slab grade, and printed card code run
 sequentially in the same background dispatch. Unused anchor/detail lane slots
 may be borrowed, but their combined concurrency cannot exceed the shared OCR

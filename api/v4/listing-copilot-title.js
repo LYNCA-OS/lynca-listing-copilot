@@ -416,6 +416,14 @@ function providerRuntimeSummary(result = {}) {
     vector_self_excluded_count: Number.isFinite(Number(vectorProviderMetadata.self_excluded_count))
       ? Number(vectorProviderMetadata.self_excluded_count)
       : null,
+    vector_self_exclusion_query_attempted: vectorContext.self_exclusion_query_attempted === true,
+    vector_self_exclusion_filter_active: vectorContext.self_exclusion_filter_active === true,
+    vector_self_exclusion_requested_source_count: Number.isFinite(Number(
+      vectorContext.self_exclusion_requested_source_count
+    ))
+      ? Number(vectorContext.self_exclusion_requested_source_count)
+      : null,
+    vector_self_exclusion_source_ids_sha256: vectorContext.self_exclusion_source_ids_sha256 || null,
     preingestion_ocr_rendezvous: result.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: result.preingestion_evidence_refresh || null,
     preingestion_retrieval_refresh: result.preingestion_retrieval_refresh || null,

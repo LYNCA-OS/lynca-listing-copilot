@@ -840,7 +840,8 @@ assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field
 assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field.product.display_policy, "INCLUDE_NORMAL");
 assert.equal(compatibleProductConflictDraft.publication_gate.draft_gate.by_field.serial_number.selected_value, "05/50");
 assert.match(compatibleProductConflictDraft.final_title, /Topps Sapphire/i);
-assert.match(compatibleProductConflictDraft.final_title, /05\/50/);
+assert.equal(compatibleProductConflictDraft.serial_numerator_verified, null);
+assert.doesNotMatch(compatibleProductConflictDraft.final_title, /05\/50/);
 
 const directProductEvidenceBeatsSetFallback = applyIdentityResolutionGate({
   title: "",
@@ -1060,6 +1061,8 @@ const missingYear = applyIdentityResolutionGate({
   confidence: "HIGH",
   reason: "Year is not visible.",
   provider: "openai_legacy",
+  serial_numerator_verified: null,
+  serialNumeratorVerified: false,
   resolved: normalizeResolvedFields({
     product: "Topps Chrome",
     players: ["Shohei Ohtani"],
@@ -1074,9 +1077,38 @@ const missingYear = applyIdentityResolutionGate({
 });
 assert.equal(missingYear.identity_resolution_status, "ABSTAIN");
 assert.equal(missingYear.final_title, "Topps Chrome Shohei Ohtani 31/50");
+assert.equal(missingYear.serial_numerator_verified, null);
 assert.equal(missingYear.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(missingYear.writer_required_fields, ["year"]);
 assert.ok(missingYear.unresolved.some((item) => /identity year/i.test(item)));
+
+const conflictingOcrWriterDraft = applyIdentityResolutionGate({
+  title: "Topps Chrome Shohei Ohtani 31/50",
+  confidence: "HIGH",
+  reason: "Current-image OCR produced conflicting serial readings.",
+  provider: "openai_legacy",
+  serial_numerator_verified: false,
+  serialNumeratorVerified: true,
+  preingestion_serial_verification: {
+    verified: false,
+    conflict: true,
+    candidate_values: ["31/50", "37/50"]
+  },
+  resolved: normalizeResolvedFields({
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    serial_number: "31/50"
+  }),
+  evidence: {
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"]),
+    serial_number: groundedEvidence("31/50")
+  },
+  unresolved: []
+});
+assert.equal(conflictingOcrWriterDraft.serial_numerator_verified, false);
+assert.match(conflictingOcrWriterDraft.final_title, /#\/50/);
+assert.doesNotMatch(conflictingOcrWriterDraft.final_title, /31\/50/);
 
 const serialFocusedFailure = applyIdentityResolutionGate({
   title: "2022 Panini Gold Standard Hunter Renfrow 196/299",
@@ -1104,6 +1136,7 @@ const serialFocusedFailure = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialFocusedFailure.identity_resolution_status, "ABSTAIN");
+assert.equal(serialFocusedFailure.serial_numerator_verified, null);
 assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow");
 assert.equal(serialFocusedFailure.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialFocusedFailure.writer_required_fields, ["serial_number"]);
@@ -1220,6 +1253,7 @@ const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
   ]
 });
 assert.notEqual(serialFocusedVisionConfirmed.identity_resolution_status, "ABSTAIN");
+assert.equal(serialFocusedVisionConfirmed.serial_numerator_verified, true);
 assert.match(serialFocusedVisionConfirmed.final_title, /196\/299/);
 assert.ok(!serialFocusedVisionConfirmed.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 

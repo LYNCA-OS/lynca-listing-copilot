@@ -125,6 +125,8 @@ jobs:
           const vector = components.get('vector_retrieval') || {};
           const vision = components.get('vision_provider') || {};
           const ocrCapacity = status.execution_control?.stage_capacity?.paddle_ocr || {};
+          const catalogCapacity = status.execution_control?.stage_capacity?.catalog || {};
+          const vectorCapacity = status.execution_control?.stage_capacity?.vector || {};
           const checks = {
             v4_ready: health.ready === true,
             deployed_commit_matches: health.deployment?.git_commit_sha === process.env.GITHUB_SHA,
@@ -135,11 +137,17 @@ jobs:
             vector_runtime_ready: vector.details?.runtime_ready === true && vector.details?.preload_status === 'READY',
             provider_done_capacity_handoff_enabled: status.execution_control?.provider_done_capacity_handoff_enabled === true,
             ocr_stage_capacity_enabled: ocrCapacity.capacity_control_enabled === true,
-            ocr_stage_global_capacity: ocrCapacity.global_capacity === 10,
+            ocr_stage_global_capacity: ocrCapacity.global_capacity === 8,
             ocr_per_asset_capacity: ocrCapacity.per_asset_capacity === 1,
             ocr_per_asset_batch_size: ocrCapacity.per_asset_batch_size === 3,
             ocr_anchor_concurrency: ocrCapacity.anchor_concurrency === 8,
-            ocr_detail_concurrency: ocrCapacity.detail_concurrency === 2
+            ocr_detail_concurrency: ocrCapacity.detail_concurrency === 2,
+            catalog_stage_capacity_enabled: catalogCapacity.capacity_control_enabled === true,
+            catalog_stage_global_capacity: catalogCapacity.global_capacity === 1,
+            catalog_internal_query_concurrency: catalogCapacity.query_concurrency === 4,
+            vector_stage_capacity_enabled: vectorCapacity.capacity_control_enabled === true,
+            vector_stage_global_capacity: vectorCapacity.global_capacity === 3,
+            vector_index_concurrency: vectorCapacity.index_concurrency === 2
           };
           console.log(JSON.stringify({ checks, deployment_sha: process.env.GITHUB_SHA }, null, 2));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);

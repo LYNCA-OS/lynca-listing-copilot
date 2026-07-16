@@ -72,6 +72,77 @@ function testVectorOnlyCannotApplyIdentityOrInstanceFields() {
   assert.equal(permissions.cert_number, fieldPermissions.FORBIDDEN);
 }
 
+function testTrustedCandidateFieldPermissionsMatchApplicationOwnership() {
+  const permissions = candidateFieldPermissions({
+    candidate_id: "trusted-policy",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "REVIEWED_INTERNAL",
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      brand: "Topps",
+      product: "Topps Chrome",
+      set: "Chrome Update",
+      subset: "Autographs",
+      insert: "Future Stars",
+      release_variant: "Image Variation",
+      language: "English",
+      players: ["Wrong Subject"],
+      character: "Wrong Character",
+      card_name: "Autograph",
+      team: "Dodgers",
+      collector_number: "CPA-TP",
+      official_card_type: "Autograph",
+      surface_color: "Gold",
+      print_finish: "Refractor",
+      parallel_exact: "Gold Refractor",
+      print_run_denominator: "50",
+      serial_number: "17/50",
+      rc: true,
+      auto: true,
+      grade_company: "PSA",
+      card_grade: "10",
+      cert_number: "12345678",
+      condition: "Mint",
+      physical_defects: ["corner wear"]
+    }
+  });
+
+  for (const field of ["year", "product", "card_name", "surface_color", "print_finish"]) {
+    assert.equal(permissions[field], fieldPermissions.CAN_APPLY, `${field} should be APPLY-capable`);
+  }
+  for (const field of [
+    "manufacturer",
+    "brand",
+    "set",
+    "subset",
+    "insert",
+    "release_variant",
+    "language",
+    "team",
+    "collector_number",
+    "official_card_type",
+    "print_run_denominator",
+    "rc",
+    "auto"
+  ]) {
+    assert.equal(permissions[field], fieldPermissions.SUPPORT_ONLY, `${field} should be SUPPORT-only`);
+  }
+  for (const field of [
+    "players",
+    "character",
+    "serial_number",
+    "grade_company",
+    "card_grade",
+    "cert_number",
+    "condition",
+    "physical_defects"
+  ]) {
+    assert.equal(permissions[field], fieldPermissions.FORBIDDEN, `${field} should always be BLOCKED`);
+  }
+  assert.equal(permissions.parallel_exact, fieldPermissions.SUGGEST_ONLY);
+}
+
 function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
   const exactCatalogCandidate = {
     candidate_id: "catalog-exact",
@@ -150,7 +221,7 @@ function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
     "post_observation_resolver_only"
   );
   assert.equal(control.selected_candidate_safe_field_application.status, "ready_fill_missing");
-  assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("manufacturer"));
+  assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("manufacturer"), false);
   assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("card_name"));
   assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("parallel_exact"), false);
   assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("serial_number"), false);
@@ -343,7 +414,7 @@ function testReviewedLotCandidateOnlyContributesSharedHierarchy() {
   const trace = control.candidate_application_trace[0];
   assert.equal(trace.decision_eligible, true);
   assert.equal(trace.field_permissions.product, "can_apply");
-  assert.equal(trace.field_permissions.players, "suggest_only");
+  assert.equal(trace.field_permissions.players, "forbidden");
   assert.equal(trace.field_permissions.surface_color, "suggest_only");
   assert.equal(trace.field_permissions.collector_number, "suggest_only");
   assert.equal(control.candidate_field_evidence.some((row) => row.field_name === "product"), true);
@@ -609,10 +680,10 @@ function testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData() 
 
   assert.equal(decision.heuristic_version, candidateDecisionHeuristicVersion);
   assert.equal(decision.selected_candidate_id, "catalog-atomic");
-  assert.ok(decision.field_application.applied_fields.includes("manufacturer"));
+  assert.equal(decision.field_application.applied_fields.includes("manufacturer"), false);
   assert.ok(decision.field_application.applied_fields.includes("product"));
   assert.ok(decision.field_application.applied_fields.includes("card_name"));
-  assert.equal(decision.resolved_after.manufacturer, "Bowman");
+  assert.equal(decision.resolved_after.manufacturer, null);
   assert.equal(decision.resolved_after.product, "Bowman Chrome");
   assert.equal(decision.resolved_after.card_name, "Spotlights");
   assert.ok(decision.resolved_after.print_run_numerator == null);
@@ -624,7 +695,7 @@ function testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData() 
     decision.result_patch.candidate_activation_funnel.applied_field_count,
     decision.field_application.applied_fields.length
   );
-  assert.ok(decision.field_application.applied_fields.length >= 3);
+  assert.equal(decision.field_application.applied_fields.length, 2);
   assert.equal(decision.result_patch.candidate_activation_funnel.title_changed, true);
   const appliedTrace = decision.result_patch.candidate_application_trace
     .find((row) => row.candidate_id === "catalog-atomic");
@@ -874,9 +945,9 @@ function testFinalObservationRebindsStaleEarlyAnchorAndCorrectsYear() {
     resolvedBefore: result.resolved_fields
   });
   assert.equal(decision.resolved_after.year, "2025-26");
-  assert.equal(decision.resolved_after.set, "Topps Chrome Basketball");
+  assert.equal(decision.resolved_after.set, "Chrome");
   assert.ok(decision.field_application.applied_fields.includes("year"));
-  assert.ok(decision.field_application.applied_fields.includes("set"));
+  assert.equal(decision.field_application.applied_fields.includes("set"), false);
   assert.ok(decision.resolved_after.serial_number == null);
   assert.ok(decision.resolved_after.grade_company == null);
   assert.ok(decision.resolved_after.card_grade == null);
@@ -1058,10 +1129,10 @@ function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
   const selection = buildCandidateSelectionPass({ result });
   const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: result.resolved_fields });
   assert.equal(decision.resolved_after.product, "Topps Heritage High Number");
-  assert.equal(decision.resolved_after.set, "Topps Heritage High Number");
+  assert.equal(decision.resolved_after.set, "Topps Heritage");
   assert.equal(decision.resolved_after.card_name, "Base Card", "card name needs exact code or direct image evidence");
   assert.ok(decision.field_application.applied_fields.includes("product"));
-  assert.ok(decision.field_application.applied_fields.includes("set"));
+  assert.equal(decision.field_application.applied_fields.includes("set"), false);
 }
 
 function testPacketRebindPreservesPlayersAsSubjectAnchor() {
@@ -1288,13 +1359,14 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
   const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: observed });
 
   assert.equal(decision.resolved_after.surface_color, "Gold");
-  assert.equal(decision.resolved_after.parallel_family, "Refractor");
+  assert.equal(decision.resolved_after.parallel_family, null);
   assert.equal(decision.resolved_after.serial_number, "17/50");
   assert.equal(decision.resolved_after.grade_company ?? null, null);
   assert.equal(decision.resolved_after.cert_number ?? null, null);
 }
 
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
+testTrustedCandidateFieldPermissionsMatchApplicationOwnership();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
 testCandidateOnlyPacketCannotEnterProductionDecision();

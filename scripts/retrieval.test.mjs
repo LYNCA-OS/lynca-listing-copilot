@@ -16,6 +16,7 @@ import { runRetrieval } from "../lib/listing/retrieval/retrieval-engine.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
 import {
   isKnownRetrievalProviderId,
+  openAiWebSearchFallbackEnabled,
   openAiWebSearchModelConfig,
   retrievalProviderIds,
   retrievalQueryFamilies,
@@ -51,6 +52,9 @@ assert.equal(isKnownRetrievalProviderId(retrievalProviderIds.BRAVE_SEARCH), true
 assert.equal(isKnownRetrievalProviderId("not_real_search"), false);
 assert.equal(openAiWebSearchModelConfig("gpt-4.1-mini").allowed, true);
 assert.equal(openAiWebSearchModelConfig("gpt-5").allowed, false);
+assert.equal(openAiWebSearchFallbackEnabled({}), false);
+assert.equal(openAiWebSearchFallbackEnabled({ ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "0" }), false);
+assert.equal(openAiWebSearchFallbackEnabled({ ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true" }), true);
 
 const testEmbedding = Array.from({ length: 768 }, (_, index) => Number((index / 1000).toFixed(3)));
 const visualPlanned = planRetrievalQueries({
@@ -76,6 +80,24 @@ assert.equal(visualQuery.cacheable, false);
 assert.equal(visualQuery.embedding.length, 768);
 assert.equal(visualQuery.embedding_role, "front_global");
 assert.equal(visualPlanned.some((query) => query.provider_id === retrievalProviderIds.BRAVE_SEARCH), false);
+
+const selfExcludedVisualQuery = planRetrievalQueries({
+  resolved,
+  visualEmbeddings: [{
+    image_id: "front-image",
+    role: "front_original",
+    embedding_role: "front_global",
+    model_id: "google/siglip2-base-patch16-384",
+    model_revision: "fixed-test-revision",
+    preprocessing_version: "card-rectification-v1",
+    dimensions: 768,
+    embedding: testEmbedding
+  }],
+  includeExternal: false,
+  excludeSourceFeedbackIds: ["feedback-current-card"]
+}).find((query) => query.family === retrievalQueryFamilies.VISUAL_VECTOR);
+assert.deepEqual(selfExcludedVisualQuery.exclude_source_feedback_ids, ["feedback-current-card"]);
+assert.equal(selfExcludedVisualQuery.self_exclusion_filter_active, true);
 
 const disabledVisualProvider = await visualVectorProvider({
   env: {
@@ -1274,6 +1296,7 @@ assert.equal(ebayUnauthorizedCalls, 1);
 let owsCalls = 0;
 const ows = openAiWebSearchProvider({
   env: {
+    ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true",
     OPENAI_API_KEY: "owstest",
     OPENAI_WEB_SEARCH_MODEL: "gpt-4.1-mini",
     OPENAI_WEB_SEARCH_ALLOWED_DOMAINS: "topps.com,psacard.com",
@@ -1351,6 +1374,7 @@ assert.equal(owsResult.candidates[1].title, "PSA certification");
 let owsRetryCalls = 0;
 const owsRetryResult = await openAiWebSearchProvider({
   env: {
+    ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true",
     OPENAI_API_KEY: "owstest",
     OPENAI_WEB_SEARCH_MODEL: "gpt-4.1-mini",
     OPENAI_WEB_SEARCH_MAX_RETRIES: "1",
@@ -1394,6 +1418,7 @@ let owsUnauthorizedCalls = 0;
 await assert.rejects(
   () => openAiWebSearchProvider({
     env: {
+      ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true",
       OPENAI_API_KEY: "owstest",
       OPENAI_WEB_SEARCH_MODEL: "gpt-4.1-mini",
       OPENAI_WEB_SEARCH_MAX_RETRIES: "2",
@@ -1412,6 +1437,29 @@ await assert.rejects(
   (error) => error.code === "openai_web_search_unauthorized" && error.status === 401
 );
 assert.equal(owsUnauthorizedCalls, 1);
+
+let owsDefaultDisabledFetchCalled = false;
+const owsDefaultDisabled = openAiWebSearchProvider({
+  env: {
+    OPENAI_API_KEY: "owstest",
+    OPENAI_WEB_SEARCH_MODEL: "gpt-4.1-mini"
+  },
+  fetchImpl: async () => {
+    owsDefaultDisabledFetchCalled = true;
+    throw new Error("default-disabled OWS must not fetch");
+  }
+});
+assert.equal(owsDefaultDisabled.enabled, false);
+assert.equal(owsDefaultDisabled.configured, false);
+const owsDefaultDisabledResult = await owsDefaultDisabled.search({
+  query: {
+    query_id: "ows_default_disabled_1",
+    query: "\"TCAR-CF\""
+  }
+});
+assert.equal(owsDefaultDisabledResult.unavailable, true);
+assert.match(owsDefaultDisabledResult.reason, /disabled/);
+assert.equal(owsDefaultDisabledFetchCalled, false);
 
 const owsDisabled = await openAiWebSearchProvider({
   env: {
@@ -1432,7 +1480,9 @@ assert.equal(owsDisabled.unavailable, true);
 assert.match(owsDisabled.reason, /disabled/);
 
 const owsMissingCredentials = await openAiWebSearchProvider({
-  env: {},
+  env: {
+    ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true"
+  },
   fetchImpl: async () => {
     throw new Error("should not fetch without credentials");
   }
@@ -1448,6 +1498,7 @@ assert.match(owsMissingCredentials.reason, /OPENAI_API_KEY/);
 let invalidOwsModelFetchCalled = false;
 const owsInvalidModel = await openAiWebSearchProvider({
   env: {
+    ENABLE_OPENAI_WEB_SEARCH_FALLBACK: "true",
     OPENAI_API_KEY: "owstest",
     OPENAI_WEB_SEARCH_MODEL: "gpt-5"
   },
