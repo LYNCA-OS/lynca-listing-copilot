@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
-import { EventEmitter } from "node:events";
-import handler from "../api/listing-copilot-title.js";
+import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import {
   approvedHistoryRecordToEvidenceDocument,
   payloadAssetFingerprint
@@ -22,15 +20,7 @@ process.env.LISTING_APPROVED_MEMORY_ENABLED = "true";
 process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
-
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
-}
+process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
 
 function makeImage({
   id,
@@ -61,31 +51,12 @@ function jsonResponse(payload, status = 200) {
 }
 
 async function callTitleApi(payload) {
-  const req = new EventEmitter();
-  req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
-
-  const res = {
-    statusCode: 0,
-    headers: {},
-    body: "",
-    setHeader(key, value) {
-      this.headers[key] = value;
-    },
-    end(value) {
-      this.body = value;
+  return runListingRecognitionCore({
+    payload,
+    requestContext: {
+      headers: { "x-lynca-worker-secret": process.env.V4_JOB_WORKER_SECRET }
     }
-  };
-
-  const promise = handler(req, res);
-  req.emit("data", JSON.stringify(payload));
-  req.emit("end");
-  await promise;
-
-  return {
-    statusCode: res.statusCode,
-    body: JSON.parse(res.body)
-  };
+  });
 }
 
 const frontSha = "a".repeat(64);
@@ -94,17 +65,18 @@ const images = [
   makeImage({
     id: "front",
     role: "front_original",
-    objectPath: "listing-assets/2026-06-23/asset-approved/front.jpg",
+    objectPath: "tenants/tenant_alpha/listing-assets/2026-06-23/asset-approved/front.jpg",
     contentSha256: frontSha
   }),
   makeImage({
     id: "back",
     role: "back_original",
-    objectPath: "listing-assets/2026-06-23/asset-approved/back.jpg",
+    objectPath: "tenants/tenant_alpha/listing-assets/2026-06-23/asset-approved/back.jpg",
     contentSha256: backSha
   })
 ];
 const payload = {
+  tenant_id: "tenant_alpha",
   assetId: "asset-approved",
   mode: "single",
   images,
@@ -154,11 +126,13 @@ globalThis.fetch = async (url, options = {}) => {
   });
 
   if (table === "listing_image_verifications") {
+    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     const objectPath = requestUrl.searchParams.get("object_path")?.replace(/^eq\./, "");
     const image = images.find((item) => item.objectPath === objectPath);
     assert.ok(image, `unexpected verification object path ${objectPath}`);
     return jsonResponse([
       {
+        tenant_id: "tenant_alpha",
         object_path: image.objectPath,
         bucket: image.bucket,
         content_type: image.originalType,
@@ -176,6 +150,7 @@ globalThis.fetch = async (url, options = {}) => {
   }
 
   if (table === "listing_reviews") {
+    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     assert.equal(requestUrl.searchParams.get("asset_fingerprint"), `eq.${assetFingerprint}`);
     assert.equal(requestUrl.searchParams.get("limit"), "3");
     return jsonResponse([
@@ -201,7 +176,7 @@ globalThis.fetch = async (url, options = {}) => {
 
 const response = await callTitleApi(payload);
 assert.equal(response.statusCode, 200);
-assert.equal(response.body.source, "internal_approved_history");
+assert.equal(response.body.source, "internal_approved_history", JSON.stringify(response.body));
 assert.equal(response.body.provider, "internal_approved_history");
 assert.equal(response.body.identity_memory.cache_hit, true);
 assert.equal(response.body.identity_memory.asset_fingerprint, assetFingerprint);
@@ -217,7 +192,9 @@ assert.equal(response.body.resolved.serial_number, "31/50");
 assert.match(response.body.final_title, /PSA 10/);
 assert.equal(response.body.evidence.players.sources[0].source_type, "INTERNAL_APPROVED_HISTORY");
 assert.equal(response.body.field_states.find((field) => field.field === "players").source_summary[0].source, "INTERNAL_APPROVED_HISTORY");
-assert.deepEqual(fetchCalls.map((call) => call.table), [
+assert.deepEqual(fetchCalls
+  .filter((call) => !["request_logs", "production_events", "error_logs"].includes(call.table))
+  .map((call) => call.table), [
   "listing_image_verifications",
   "listing_image_verifications",
   "listing_reviews"
@@ -289,7 +266,8 @@ const fallbackFetch = async (url) => {
 const fallbackRecords = await listApprovedHistoryRecords({
   env: process.env,
   fetchImpl: fallbackFetch,
-  limit: 20
+  limit: 20,
+  tenantId: "tenant_legacy"
 });
 assert.deepEqual(fallbackFetchCalls.map((call) => call.table), [
   "listing_reviews",
@@ -308,7 +286,8 @@ assert.equal(fallbackRecords[0].fields.card_grade, "9");
 const legacyOnlyRecords = await listLegacyApprovedTitleFeedbackRecords({
   env: process.env,
   fetchImpl: fallbackFetch,
-  limit: 2
+  limit: 2,
+  tenantId: "tenant_legacy"
 });
 assert.equal(legacyOnlyRecords.length, 1);
 assert.equal(legacyOnlyRecords[0].training_status, "legacy_feedback_title_parsed_local");

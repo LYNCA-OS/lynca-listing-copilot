@@ -1,6 +1,4 @@
 begin;
-set local lock_timeout = '5s';
-set local statement_timeout = '15min';
 
 alter table public.tenants
   add column if not exists settings jsonb not null default '{}'::jsonb;

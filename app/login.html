@@ -3,36 +3,39 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LYNCA Listing Copilot · 管理员预览</title>
+    <title>元宇宙 Listing Copilot 登录</title>
     <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
     <link rel="stylesheet" href="/app/listing-copilot.css">
   </head>
   <body class="login-page">
     <main class="login-stage">
-      <section class="login-card" aria-label="LYNCA Listing Copilot 管理员预览登录">
+      <section class="login-card" aria-label="Metaverse Listing Copilot 登录">
         <div class="login-identity">
           <span class="brand-mark">LYN</span>
           <span>
-            <strong>LYNCA Listing Copilot</strong>
-            <small>隔离预览工作区</small>
+            <strong>Metaverse Listing Copilot</strong>
+            <small>内部上架工作流</small>
           </span>
         </div>
         <div class="login-copy">
-          <p class="eyebrow">内部兼容入口</p>
-          <h1>MTV 管理员预览</h1>
-          <p class="subtitle" id="legacyLoginHelp">此入口仅进入隔离的预览租户，不代表平台管理员权限。邀请制邮箱登录将在 Track C 租户与会话权限接入后开放。</p>
+          <p class="eyebrow">内部上架工具</p>
+          <h1>元宇宙卡牌标题生成助手</h1>
         </div>
         <form class="listing-login-form" id="listingLoginForm" autocomplete="on">
           <label>
             <span>账号</span>
-            <input id="username" name="username" type="text" autocomplete="username" aria-describedby="legacyLoginHelp loginError" required autofocus>
+            <input id="username" name="username" type="text" autocomplete="username" required autofocus>
           </label>
           <label>
             <span>密码</span>
-            <input id="password" name="password" type="password" autocomplete="current-password" aria-describedby="legacyLoginHelp loginError" required>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <label hidden>
+            <span>客户空间</span>
+            <select id="tenant_id" name="tenant_id"></select>
           </label>
           <p class="form-error" id="loginError" role="alert" aria-live="polite"></p>
-          <button class="primary-button" id="loginButton" type="submit" aria-busy="false">进入管理员预览</button>
+          <button class="primary-button" type="submit">登录</button>
         </form>
       </section>
     </main>

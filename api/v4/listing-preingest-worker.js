@@ -1,27 +1,32 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { cookieName, parseCookies, readSignedSession } from "../../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import { processQueuedPreingestionOcrJobs } from "../../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 import { isV4CronRequest, isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../../lib/tenant/index.mjs";
 
 // Sweep endpoint for queued `ocr_crop_verification` preingestion jobs.
 // The primary consumer is the in-process waitUntil dispatch inside
 // api/listing-preingest.js; this endpoint exists to re-sweep jobs that
 // survived a cold start or a failed dispatch.
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-preingest-worker" });
   if (req.method !== "POST" && req.method !== "GET") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
 
-  const cookies = parseCookies(req.headers.cookie);
-  const sessionAuthorized = Boolean(readSignedSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET));
-  if (!sessionAuthorized
-    && !isV4WorkerRequest(req, process.env)
-    && !isV4CronRequest(req, process.env)) {
-    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
-    return;
+  const internalAuthorized = isV4WorkerRequest(req, process.env) || isV4CronRequest(req, process.env);
+  let context = null;
+  if (!internalAuthorized) {
+    try {
+      context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
+      bindProductionRequestContext(res, context);
+    } catch (error) {
+      sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
+      return;
+    }
   }
 
   if (!enforceApiRateLimit(req, res, {
@@ -36,6 +41,7 @@ export default async function handler(req, res) {
 
   try {
     const result = await processQueuedPreingestionOcrJobs({
+      tenantId: context?.tenantId || payload.tenant_id || payload.tenantId || "",
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: payload.bundle_id || payload.bundleId || "",
       limit: payload.limit,

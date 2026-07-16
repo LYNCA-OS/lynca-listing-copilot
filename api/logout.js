@@ -1,4 +1,6 @@
-import { cookieName } from "../lib/listing-session.mjs";
+import { instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+
+const cookieName = "lynca_metaverse_session";
 
 function isHttps(req) {
   const host = String(req.headers.host || "");
@@ -6,40 +8,12 @@ function isHttps(req) {
     (!host.startsWith("localhost") && !host.startsWith("127.0.0.1"));
 }
 
-function sameOriginRequest(req) {
-  const origin = String(req.headers.origin || "").trim();
-  const fetchSite = String(req.headers["sec-fetch-site"] || "").trim().toLowerCase();
-  const host = String(req.headers.host || "").split(",")[0].trim();
-  if (!origin || fetchSite !== "same-origin") return false;
-  try {
-    return Boolean(host) && new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
-
-function sendJson(res, statusCode, payload) {
-  res.statusCode = statusCode;
-  res.setHeader("cache-control", "no-store");
-  res.setHeader("pragma", "no-cache");
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.end(JSON.stringify(payload));
-}
-
 export default function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("allow", "POST");
-    sendJson(res, 405, { ok: false, message: "Method not allowed" });
-    return;
-  }
-
-  if (!sameOriginRequest(req)) {
-    sendJson(res, 403, { ok: false, message: "Forbidden" });
-    return;
-  }
-
+  instrumentProductionRequest(req, res, { api: "/api/logout" });
   const secure = isHttps(req) ? "; Secure" : "";
 
-  res.setHeader("set-cookie", `${cookieName}=; HttpOnly; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${secure}`);
-  sendJson(res, 200, { ok: true });
+  res.statusCode = 200;
+  res.setHeader("set-cookie", `${cookieName}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${secure}`);
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify({ ok: true }));
 }

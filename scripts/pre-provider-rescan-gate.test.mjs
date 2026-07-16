@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
-import { EventEmitter } from "node:events";
-import handler from "../api/listing-copilot-title.js";
+import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import { glareRoutes } from "../lib/listing/image-quality/quality-gate.mjs";
 import { evaluatePreProviderRescanGate } from "../lib/listing/image-quality/pre-provider-rescan-gate.mjs";
 
@@ -16,44 +14,15 @@ process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED = "true";
-
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
-}
+process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
 
 async function callTitleApi(payload) {
-  const req = new EventEmitter();
-  req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
-
-  const res = {
-    statusCode: 0,
-    headers: {},
-    body: "",
-    setHeader(key, value) {
-      this.headers[key] = value;
-    },
-    end(value) {
-      this.body = value;
+  return runListingRecognitionCore({
+    payload,
+    requestContext: {
+      headers: { "x-lynca-worker-secret": process.env.V4_JOB_WORKER_SECRET }
     }
-  };
-
-  const promise = handler(req, res);
-  queueMicrotask(() => {
-    req.emit("data", JSON.stringify(payload));
-    req.emit("end");
   });
-  await promise;
-
-  return {
-    statusCode: res.statusCode,
-    body: JSON.parse(res.body)
-  };
 }
 
 function occludedQuality(region, extra = {}) {
@@ -106,6 +75,7 @@ globalThis.fetch = async (url, options = {}) => {
 };
 
 const response = await callTitleApi({
+  tenant_id: "tenant_alpha",
   assetId: "asset-quality-rescan",
   mode: "single",
   maxTitleLength: 80,

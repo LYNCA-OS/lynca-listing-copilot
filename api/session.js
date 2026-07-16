@@ -1,29 +1,43 @@
-import { getSessionFromRequest } from "../lib/listing-session.mjs";
+import {
+  isTenantAuthError,
+  PERMISSION_SCOPES,
+  permissionScopeFor,
+  publicTenantAuthError,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../lib/tenant/index.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 
-export default function handler(req, res) {
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    res.statusCode = 405;
-    res.setHeader("allow", "GET, HEAD");
-    res.setHeader("cache-control", "no-store");
+export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/session" });
+  try {
+    const context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+    const permissionScopes = Object.fromEntries(
+      Object.values(TENANT_PERMISSIONS)
+        .map((permission) => [permission, permissionScopeFor(context.role, permission)])
+        .filter(([, scope]) => scope !== PERMISSION_SCOPES.NONE)
+    );
+    res.statusCode = 200;
+    res.setHeader("x-request-id", context.requestId);
     res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ authenticated: false, message: "Method not allowed" }));
-    return;
+    res.end(JSON.stringify({
+      authenticated: true,
+      user: context.email,
+      user_id: context.userId,
+      email: context.email,
+      tenant_id: context.tenantId,
+      tenant_name: context.tenant.name,
+      plan: context.tenant.plan,
+      role: context.role,
+      permission_scopes: permissionScopes
+    }));
+  } catch (error) {
+    const unauthenticated = isTenantAuthError(error) && ["AUTH_REQUIRED", "ACCESS_DENIED"].includes(error.code);
+    const payload = publicTenantAuthError(error);
+    res.statusCode = unauthenticated ? 200 : (error?.statusCode || 503);
+    if (payload.request_id) res.setHeader("x-request-id", payload.request_id);
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    res.end(JSON.stringify({ authenticated: false, ...(unauthenticated ? {} : payload) }));
   }
-
-  const session = getSessionFromRequest(req);
-  const authenticated = Boolean(session);
-
-  res.statusCode = 200;
-  res.setHeader("cache-control", "no-store");
-  res.setHeader("pragma", "no-cache");
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  if (req.method === "HEAD") {
-    res.end();
-    return;
-  }
-  res.end(JSON.stringify({
-    authenticated,
-    user: session?.user || null,
-    expires_at: session?.exp || null
-  }));
 }

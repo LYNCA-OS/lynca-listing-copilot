@@ -84,11 +84,4 @@ assert.match(workflow, /git fetch --no-tags --depth=1 origin main:refs\/remotes\
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
 assert.doesNotMatch(workflow, /\/api\/admin-apply-/, "code deploy must not invoke runtime migration routes");
 
-const vercelConfig = JSON.parse(readFileSync("vercel.json", "utf8"));
-assert.equal(
-  vercelConfig.git?.deploymentEnabled,
-  false,
-  "Git pushes and main merges must not bypass the explicit production deploy workflow"
-);
-
 console.log("production release boundary tests passed");

@@ -2,10 +2,6 @@
 -- making the commercial contract explicit: one initial attempt plus at most
 -- three automatic retries at 10s, 30s, and 120s.
 
-begin;
-set local lock_timeout = '5s';
-set local statement_timeout = '15min';
-
 alter table public.v4_recognition_jobs
   alter column max_attempts set default 4;
 
@@ -781,5 +777,3 @@ revoke all on table public.job_attempt_events from public, anon, authenticated;
 grant select, insert on table public.job_attempt_events to service_role;
 
 notify pgrst, 'reload schema';
-
-commit;

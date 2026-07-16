@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-title-feedback.js";
+import { createListingSessionToken } from "../lib/listing-session.mjs";
 import {
   buildListingReviewRecords,
   buildAssetFingerprint,
@@ -12,6 +12,10 @@ import {
   sanitizeStorageObjectPath
 } from "../lib/listing/feedback/review-records.mjs";
 import { summarizeReviewMetrics } from "../lib/listing/feedback/review-metrics.mjs";
+import {
+  createListingReviewRecord,
+  listingFeedbackRetentionEnabled
+} from "../lib/supabase-feedback.mjs";
 
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
@@ -33,23 +37,17 @@ function makeResponse() {
   };
 }
 
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie({ user = "operator-a" } = {}) {
-  const now = Date.now();
-  const payload = Buffer.from(JSON.stringify({
-    user,
-    sid: crypto.randomUUID(),
-    iat: now,
-    exp: now + 60000
-  })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+function sessionCookie() {
+  const token = createListingSessionToken({
+    user_id: "user_alpha",
+    tenant_id: "tenant_alpha",
+    email: "operator-a@example.test",
+    session_version: 1
+  }, process.env.METAVERSE_AUTH_SECRET);
+  return `lynca_metaverse_session=${token}`;
 }
 
 async function callFeedbackApi(payload, {
-  authenticated = true,
   fetchImpl = null
 } = {}) {
   const calls = [];
@@ -71,6 +69,71 @@ async function callFeedbackApi(payload, {
     };
   });
 
+  const record = await createListingReviewRecord({
+    payload,
+    operatorId: "user_alpha",
+    env: process.env,
+    fetchImpl: globalThis.fetch
+  });
+
+  return {
+    statusCode: 200,
+    body: {
+      ok: true,
+      record,
+      review_outcome: record.review?.review_outcome,
+      retention_enabled: listingFeedbackRetentionEnabled(),
+      retention_skipped: record.retained === false,
+      retention_reason: record.reason || null,
+      legacy_feedback_saved: Boolean(record.legacy_feedback && record.retained !== false)
+    },
+    calls
+  };
+}
+
+async function callLegacyFeedbackApi(payload, { authenticated = true } = {}) {
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const parsed = new URL(String(url));
+    const table = parsed.pathname.split("/").at(-1);
+    calls.push({ table, method: options.method || "GET" });
+    if (table === "tenant_members") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{
+          tenant_id: "tenant_alpha",
+          user_id: "user_alpha",
+          role: "WRITER",
+          status: "ACTIVE",
+          disabled_at: null,
+          user: {
+            id: "user_alpha",
+            email: "operator-a@example.test",
+            status: "ACTIVE",
+            session_version: 1,
+            disabled_at: null,
+            auth_user_id: "auth_alpha"
+          },
+          tenant: {
+            id: "tenant_alpha",
+            name: "Tenant Alpha",
+            plan: "pilot",
+            status: "ACTIVE",
+            disabled_at: null
+          }
+        }],
+        text: async () => "[]"
+      };
+    }
+    return {
+      ok: true,
+      status: 201,
+      json: async () => [],
+      text: async () => "[]"
+    };
+  };
+
   const req = new EventEmitter();
   req.method = "POST";
   req.headers = authenticated ? { cookie: sessionCookie() } : {};
@@ -79,21 +142,27 @@ async function callFeedbackApi(payload, {
   req.emit("data", JSON.stringify(payload));
   req.emit("end");
   await promise;
-
-  return {
-    statusCode: res.statusCode,
-    body: JSON.parse(res.body),
-    calls
-  };
+  return { statusCode: res.statusCode, body: JSON.parse(res.body), calls };
 }
 
-const unauthenticatedSave = await callFeedbackApi({
+const unauthenticatedSave = await callLegacyFeedbackApi({
   generated_title: "2025 Topps Chrome Cooper Flagg",
   corrected_title: "2025 Topps Chrome Cooper Flagg"
 }, { authenticated: false });
 assert.equal(unauthenticatedSave.statusCode, 401);
-assert.equal(unauthenticatedSave.body.message, "Unauthorized");
-assert.equal(unauthenticatedSave.calls.length, 0);
+assert.equal(unauthenticatedSave.body.code, "AUTH_REQUIRED");
+assert.equal(unauthenticatedSave.body.message, "Authentication required.");
+assert.equal(unauthenticatedSave.calls.filter((call) => !["request_logs", "error_logs"].includes(call.table)).length, 0);
+
+const closedLegacySave = await callLegacyFeedbackApi({
+  generated_title: "2025 Topps Chrome Cooper Flagg",
+  corrected_title: "2025 Topps Chrome Cooper Flagg"
+});
+assert.equal(closedLegacySave.statusCode, 410);
+assert.equal(closedLegacySave.body.code, "tenant_feedback_route_required");
+assert.deepEqual(closedLegacySave.calls
+  .filter((call) => !["request_logs", "error_logs"].includes(call.table))
+  .map((call) => call.table), ["tenant_members"]);
 
 const retentionDisabledSave = await callFeedbackApi({
   asset_id: "asset-retention-disabled",

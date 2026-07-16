@@ -11,10 +11,6 @@ data/smoke/
 data/smoke/**
 data/catalog/writer-title-seed/*.jsonl
 
-# Local-only product design prototypes
-prototypes/
-prototypes/**
-
 node_modules/
 node_modules/**
 .git/

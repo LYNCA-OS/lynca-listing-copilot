@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-preingest.js";
+import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.SUPABASE_URL = "https://supabase.test";
@@ -9,19 +9,14 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
 process.env.LISTING_IMAGE_BUCKET = "listing-card-images";
 process.env.LISTING_IMAGE_SIGNED_URL_TTL_SECONDS = "600";
 
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
 function sessionCookie() {
-  const now = Date.now();
-  const payload = Buffer.from(JSON.stringify({
-    user: "tester",
-    sid: crypto.randomUUID(),
-    iat: now,
-    exp: now + 60000
-  })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+  const token = createListingSessionToken({
+    tenantId: "tenant_a",
+    userId: "user_manager",
+    email: "manager@example.test",
+    sessionVersion: 1
+  }, process.env.METAVERSE_AUTH_SECRET);
+  return `${cookieName}=${token}`;
 }
 
 function jsonResponse(payload, status = 200) {
@@ -48,7 +43,7 @@ async function callApi(payload) {
     }
   };
   const promise = handler(req, res);
-  queueMicrotask(() => {
+  setTimeout(() => {
     req.emit("data", JSON.stringify(payload));
     req.emit("end");
   });
@@ -61,7 +56,8 @@ async function callApi(payload) {
 
 const verificationRows = [
   {
-    object_path: "listing-assets/2026-07-06/asset-pre/front.jpg",
+    tenant_id: "tenant_a",
+    object_path: "tenants/tenant_a/listing-assets/2026-07-06/asset-pre/front.jpg",
     bucket: "listing-card-images",
     asset_id: "asset-pre",
     image_id: "front",
@@ -78,7 +74,8 @@ const verificationRows = [
     updated_at: "2026-07-06T00:00:00.000Z"
   },
   {
-    object_path: "listing-assets/2026-07-06/asset-pre/back.jpg",
+    tenant_id: "tenant_a",
+    object_path: "tenants/tenant_a/listing-assets/2026-07-06/asset-pre/back.jpg",
     bucket: "listing-card-images",
     asset_id: "asset-pre",
     image_id: "back",
@@ -108,8 +105,21 @@ globalThis.fetch = async (url, init = {}) => {
     body: init.body ? JSON.parse(init.body) : null
   });
 
+  if (parsed.pathname.endsWith("/tenant_members")) {
+    return new Response(JSON.stringify([{
+      tenant_id: "tenant_a",
+      user_id: "user_manager",
+      role: "MANAGER",
+      status: "ACTIVE",
+      disabled_at: null,
+      user: { id: "user_manager", email: "manager@example.test", status: "ACTIVE", session_version: 1, disabled_at: null },
+      tenant: { id: "tenant_a", name: "Tenant A", plan: "pilot", status: "ACTIVE", disabled_at: null }
+    }]), { status: 200, headers: { "content-type": "application/json" } });
+  }
+
   if (parsed.pathname.endsWith("/listing_image_verifications")) {
     assert.equal(parsed.searchParams.get("asset_id"), "eq.asset-pre");
+    assert.equal(parsed.searchParams.get("tenant_id"), "eq.tenant_a");
     return jsonResponse(verificationRows);
   }
 
@@ -176,6 +186,7 @@ assert.equal(result.body.preprocessing_summary.image_count, 2);
 assert.equal(result.body.signed_read_url_count, 2);
 assert.ok(result.body.worker_jobs_enqueued >= 2);
 assert.equal(bundleWrite.asset_id, "asset-pre");
+assert.equal(bundleWrite.tenant_id, "tenant_a");
 assert.equal(bundleWrite.images.length, 2);
 assert.equal(bundleWrite.initial_evidence.print_run_candidate.value, "#/3");
 assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
@@ -183,6 +194,7 @@ assert.equal(JSON.stringify(bundleWrite).includes("read-token"), false, "signed 
 assert.ok(Array.isArray(jobsWrite));
 // Consumerless job types default OFF; only OCR crop jobs are enqueued.
 assert.ok(jobsWrite.every((job) => job.job_type === "ocr_crop_verification"));
+assert.ok(jobsWrite.every((job) => job.tenant_id === "tenant_a"));
 assert.equal(new Set(jobsWrite.map((job) => job.job_key)).size, jobsWrite.length);
 
 // Re-ingestion refreshes crops and images but must retain computed OCR evidence.
