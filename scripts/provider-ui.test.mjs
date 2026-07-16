@@ -91,10 +91,12 @@ assert.match(js, /titleWasEditedByWriter/, "L2 assisted drafts must not overwrit
 assert.match(js, /stopAllV4AssistedDraftPolling/, "frontend should clear stale L2 polling when files or mode change");
 assert.doesNotMatch(v4JobStatusApi, /select: "[^"]*l1_title/, "writer-facing job status API must not fetch L1 internal titles");
 assert.match(v4JobStatusApi, /l1_title: ""/, "writer-facing job status API should expose an empty L1 title");
-assert.match(v4JobStatusApi, /writerSafeSessionStatus/, "job status API should return a sanitized session object");
-assert.match(v4JobStatusApi, /provider_token_diagnostics/, "job status API should expose provider token diagnostics for production debugging");
-assert.match(v4JobStatusApi, /provider_rate_limit_diagnostics/, "job status API should expose provider rate-limit diagnostics for production debugging");
-assert.match(v4JobStatusApi, /provider_request_diagnostics/, "job status API should expose provider request diagnostics for production debugging");
+assert.match(v4JobStatusApi, /writerSessionStatus/, "job status API should return a minimal Writer session object");
+assert.match(v4JobStatusApi, /writerJobStatus/, "job status API should return a minimal Writer job object");
+assert.match(v4JobStatusApi, /return canViewOperations[\s\S]*operationalStatus[\s\S]*writerJobStatus/, "operational diagnostics must require team-view permission");
+assert.match(v4JobStatusApi, /provider_token_diagnostics/, "operational job status should retain provider token diagnostics for production debugging");
+assert.match(v4JobStatusApi, /provider_rate_limit_diagnostics/, "operational job status should retain provider rate-limit diagnostics for production debugging");
+assert.match(v4JobStatusApi, /provider_request_diagnostics/, "operational job status should retain provider request diagnostics for production debugging");
 assert.match(js, /signed_upload_url/, "frontend should upload through signed URLs");
 assert.match(js, /signatureHex/, "frontend should send first-byte signatures before receiving signed upload URLs");
 assert.match(js, /width: dimensions\.width/, "frontend should send image width before receiving signed upload URLs");
@@ -127,7 +129,7 @@ assert.match(api, /readListingImageVerificationRecord/, "title API should allow 
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
 assert.doesNotMatch(api, /createGptCriticalVerifierRunner|createCascadeFastTitle|model_to_model/, "title API should not wire automatic mixed-model paths");
 assert.doesNotMatch(providerRegistry, /ENABLE_FAST_CASCADE_PROVIDER|cascade_fast/i, "provider registry should only expose the active GPT provider");
-assert.match(api, /const signedImages = await imagesWithSignedReadUrls\(payload\.images \|\| \[\], timingContext\)/, "OpenAI fallback should use signed storage read URLs instead of requiring Base64 JSON");
+assert.match(api, /const signedImages = await imagesWithSignedReadUrls\([\s\S]*?payload\.images \|\| \[\],[\s\S]*?timingContext,[\s\S]*?payload\.tenant_id \|\| payload\.tenantId \|\| ""[\s\S]*?\)/, "OpenAI fallback should use tenant-scoped signed storage read URLs instead of requiring Base64 JSON");
 assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider calls should reuse signed URLs created during recognition preflight");
 assert.doesNotMatch(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade fast path should not exist");
 assert.match(api, /if \(fastPathResult\) return finalizeProviderResult\(fastPathResult, "provider_fast_path"\)/, "provider fast path should skip slow completion while preserving open-set diagnostics and verified OCR locks");
@@ -279,7 +281,7 @@ assert.doesNotMatch(js, /imageSideLabel|imagePreviewLabel/, "writer UI should no
 assert.doesNotMatch(js, /<span>\$\{imageSideLabel/, "thumbnail cards should show bare images without image slot badges");
 assert.doesNotMatch(js, /flushActiveModuleEditForResult/, "saving should no longer depend on hidden module edit flushing");
 assert.doesNotMatch(js, /moduleInput\.dataset\.dirty = "true"/, "title-only UI should not keep module dirty state");
-assert.match(api, /scope: "listing_title"[\s\S]*limit: 120/, "title generation API should default to a multi-tab friendly rate limit");
+assert.match(api, /code: "v4_tenant_route_required"/, "legacy title generation must stay retired behind the tenant-scoped V4 route");
 assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.title-output/, "title card output should keep a stable card layout");

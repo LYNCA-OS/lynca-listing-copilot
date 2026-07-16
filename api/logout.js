@@ -1,3 +1,5 @@
+import { instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+
 const cookieName = "lynca_metaverse_session";
 
 function isHttps(req) {
@@ -7,6 +9,7 @@ function isHttps(req) {
 }
 
 export default function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/logout" });
   const secure = isHttps(req) ? "; Secure" : "";
 
   res.statusCode = 200;

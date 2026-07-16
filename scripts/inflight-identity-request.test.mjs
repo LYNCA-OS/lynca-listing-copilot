@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
-import { EventEmitter } from "node:events";
-import handler from "../api/listing-copilot-title.js";
+import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import {
   clearInFlightIdentityRequestsForTests,
   inFlightIdentityRequestStats
@@ -20,17 +18,9 @@ process.env.RECOGNITION_WORKER_TOKEN = "worker-token";
 process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
+process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
 
 clearInFlightIdentityRequestsForTests();
-
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
-}
 
 function makeImage({ id, role, objectPath, contentSha256 }) {
   return {
@@ -60,46 +50,25 @@ async function delay(ms) {
 }
 
 async function callTitleApi(payload) {
-  const req = new EventEmitter();
-  req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
-
-  const res = {
-    statusCode: 0,
-    headers: {},
-    body: "",
-    setHeader(key, value) {
-      this.headers[key] = value;
-    },
-    end(value) {
-      this.body = value;
+  return runListingRecognitionCore({
+    payload,
+    requestContext: {
+      headers: { "x-lynca-worker-secret": process.env.V4_JOB_WORKER_SECRET }
     }
-  };
-
-  const promise = handler(req, res);
-  queueMicrotask(() => {
-    req.emit("data", JSON.stringify(payload));
-    req.emit("end");
   });
-  await promise;
-
-  return {
-    statusCode: res.statusCode,
-    body: JSON.parse(res.body)
-  };
 }
 
 const images = [
   makeImage({
     id: "front",
     role: "front_original",
-    objectPath: "listing-assets/2026-06-23/asset-inflight/front.jpg",
+    objectPath: "tenants/tenant_alpha/listing-assets/2026-06-23/asset-inflight/front.jpg",
     contentSha256: "e".repeat(64)
   }),
   makeImage({
     id: "back",
     role: "back_original",
-    objectPath: "listing-assets/2026-06-23/asset-inflight/back.jpg",
+    objectPath: "tenants/tenant_alpha/listing-assets/2026-06-23/asset-inflight/back.jpg",
     contentSha256: "f".repeat(64)
   })
 ];
@@ -146,12 +115,14 @@ globalThis.fetch = async (url, options = {}) => {
   const requestUrl = new URL(String(url));
 
   if (requestUrl.host === "supabase.test" && requestUrl.pathname.endsWith("/listing_image_verifications")) {
+    assert.equal(requestUrl.searchParams.get("tenant_id"), "eq.tenant_alpha");
     verificationCalls += 1;
     const objectPath = requestUrl.searchParams.get("object_path")?.replace(/^eq\./, "");
     const image = images.find((item) => item.objectPath === objectPath);
     assert.ok(image, `unexpected verification object path ${objectPath}`);
     return jsonResponse([
       {
+        tenant_id: "tenant_alpha",
         object_path: image.objectPath,
         bucket: image.bucket,
         content_type: image.originalType,
@@ -187,6 +158,7 @@ globalThis.fetch = async (url, options = {}) => {
 };
 
 const payload = {
+  tenant_id: "tenant_alpha",
   assetId: "asset-inflight",
   mode: "single",
   images,

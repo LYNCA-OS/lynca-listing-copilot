@@ -31,18 +31,29 @@ form.addEventListener("submit", async (event) => {
   error.textContent = "";
 
   const username = normalize(form.username.value);
-  const password = normalize(form.password.value);
+  const password = form.password.value;
+  const tenantId = form.tenant_id?.value || "";
 
   try {
     const response = await fetch("/api/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, tenant_id: tenantId || undefined })
     });
     const result = await response.json();
 
     if (!response.ok || !result.ok) {
+      if (result.code === "TENANT_SELECTION_REQUIRED" && Array.isArray(result.tenants) && result.tenants.length) {
+        const select = form.tenant_id;
+        select.replaceChildren(...result.tenants.map((tenant) => {
+          const option = document.createElement("option");
+          option.value = tenant.tenantId;
+          option.textContent = `${tenant.name} · ${tenant.role}`;
+          return option;
+        }));
+        select.closest("label").hidden = false;
+      }
       error.textContent = result.message || "账号或密码不正确。";
       return;
     }

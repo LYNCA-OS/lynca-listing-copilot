@@ -1,6 +1,8 @@
-import { resolve } from "node:path";
+import { realpath } from "node:fs/promises";
+import { isAbsolute, resolve, sep } from "node:path";
 import { applyCatalogSeed, buildWriterTitleCatalogSeed } from "../scripts/import-writer-title-catalog-seed.mjs";
 import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
+import { platformAdminAuth } from "../lib/platform-admin-auth.mjs";
 
 export const config = {
   maxDuration: 300,
@@ -10,6 +12,8 @@ export const config = {
 };
 
 const defaultInputPath = "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx";
+const seedRoot = resolve("data/catalog/writer-title-seed");
+const allowedSeedPaths = new Set([resolve(defaultInputPath)]);
 const defaultLimit = 500;
 
 function cleanText(value) {
@@ -20,6 +24,18 @@ function boundedInteger(value, { min = 0, max = 100_000, fallback = 0 } = {}) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(number)));
+}
+
+async function approvedSeedInputPath(value) {
+  const requested = cleanText(value) || defaultInputPath;
+  if (isAbsolute(requested)) throw new Error("input_path_not_allowed");
+  const candidate = resolve(requested);
+  if (!allowedSeedPaths.has(candidate)) throw new Error("input_path_not_allowed");
+  const [realRoot, realCandidate] = await Promise.all([realpath(seedRoot), realpath(candidate)]);
+  if (realCandidate !== realRoot && !realCandidate.startsWith(`${realRoot}${sep}`)) {
+    throw new Error("input_path_not_allowed");
+  }
+  return realCandidate;
 }
 
 function sendJson(res, statusCode, payload) {
@@ -79,13 +95,7 @@ function publicReport(report = {}, { offset = 0, limit = 0, selectedRows = [], t
     category_breakdown: report.category_breakdown,
     top_products: report.top_products,
     field_coverage: report.field_coverage,
-    policy: report.policy,
-    sample_rows: selectedRows.slice(0, 5).map((row) => ({
-      source_row_key: row.staging?.source_row_key || null,
-      title: row.staging?.canonical_title || "",
-      identity_fields: row.staging?.identity_fields || {},
-      review_required_fields: row.staging?.review_required_fields || []
-    }))
+    policy: report.policy
   };
 }
 
@@ -95,7 +105,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const auth = importAuth(req);
+  const auth = platformAdminAuth(req);
   if (!auth.ok) {
     sendJson(res, 401, { ok: false, error: "unauthorized" });
     return;
@@ -113,7 +123,6 @@ export default async function handler(req, res) {
   const limit = boundedInteger(body.limit, { min: 1, max: 1000, fallback: defaultLimit });
   const batchSize = boundedInteger(body.batch_size, { min: 1, max: 500, fallback: 250 });
   const apply = body.apply !== false;
-  const inputPath = resolve(cleanText(body.input_path) || defaultInputPath);
   const batchId = cleanText(body.batch_id || "writer_ebay_upload_20260703");
   const inlineStagedRows = Array.isArray(body.staged_rows) ? body.staged_rows : null;
 
@@ -150,6 +159,7 @@ export default async function handler(req, res) {
         done: body.done
       });
     } else {
+      const inputPath = await approvedSeedInputPath(body.input_path);
       const built = await buildWriterTitleCatalogSeed({ inputPath, batchId });
       selectedRows = built.stagedRows.slice(offset, offset + limit);
       report = publicReport(built.report, { offset, limit, selectedRows });
@@ -180,10 +190,13 @@ export default async function handler(req, res) {
       apply: applyReport
     });
   } catch (error) {
-    sendJson(res, 500, {
+    const inputPathRejected = cleanText(error?.message || error) === "input_path_not_allowed";
+    sendJson(res, inputPathRejected ? 400 : 500, {
       ok: false,
-      error: "writer_title_catalog_import_failed",
-      message: cleanText(error?.message || error).slice(0, 500)
+      error: inputPathRejected ? "input_path_not_allowed" : "writer_title_catalog_import_failed",
+      message: inputPathRejected
+        ? "Only the packaged writer-title seed is allowed."
+        : cleanText(error?.message || error).slice(0, 500)
     });
   }
 }

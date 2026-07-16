@@ -1,18 +1,55 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-render-title.js";
+import { createListingSessionToken } from "../lib/listing-session.mjs";
 import { applyWriterModuleEdit } from "../lib/listing/writer/module-edit.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
+process.env.SUPABASE_URL = "https://supabase.test";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
 
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
+globalThis.fetch = async (url) => {
+  const parsed = new URL(String(url));
+  if (parsed.pathname.endsWith("/tenant_members")) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => [{
+        tenant_id: "tenant_alpha",
+        user_id: "user_alpha",
+        role: "WRITER",
+        status: "ACTIVE",
+        disabled_at: null,
+        user: {
+          id: "user_alpha",
+          email: "writer@example.test",
+          status: "ACTIVE",
+          session_version: 1,
+          disabled_at: null,
+          auth_user_id: "auth_alpha"
+        },
+        tenant: {
+          id: "tenant_alpha",
+          name: "Tenant Alpha",
+          plan: "pilot",
+          status: "ACTIVE",
+          disabled_at: null
+        }
+      }],
+      text: async () => "[]"
+    };
+  }
+  return { ok: true, status: 201, json: async () => [], text: async () => "[]" };
+};
 
 function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+  const token = createListingSessionToken({
+    user_id: "user_alpha",
+    tenant_id: "tenant_alpha",
+    email: "writer@example.test",
+    session_version: 1
+  }, process.env.METAVERSE_AUTH_SECRET);
+  return `lynca_metaverse_session=${token}`;
 }
 
 async function callRenderApi(body) {
@@ -33,8 +70,10 @@ async function callRenderApi(body) {
   };
 
   const promise = handler(req, res);
-  req.emit("data", JSON.stringify(body));
-  req.emit("end");
+  setImmediate(() => {
+    req.emit("data", JSON.stringify(body));
+    req.emit("end");
+  });
   await promise;
 
   return {
@@ -226,11 +265,9 @@ const apiEdit = await callRenderApi({
     module_text: "31/50"
   }
 });
-assert.equal(apiEdit.statusCode, 200);
-assert.equal(apiEdit.body.ok, true);
-assert.equal(apiEdit.body.corrected_resolved.serial_number, "31/50");
-assert.match(apiEdit.body.final_title, /31\/50/);
-assert.doesNotMatch(apiEdit.body.final_title, /#\/50/);
+assert.equal(apiEdit.statusCode, 410);
+assert.equal(apiEdit.body.ok, false);
+assert.equal(apiEdit.body.code, "tenant_title_route_required");
 
 const apiOverrideOnly = await callRenderApi({
   resolved: {
@@ -241,10 +278,7 @@ const apiOverrideOnly = await callRenderApi({
   },
   title_override: "Custom human title"
 });
-assert.equal(apiOverrideOnly.statusCode, 200);
-assert.equal(apiOverrideOnly.body.ok, true);
-assert.equal(apiOverrideOnly.body.title_override, "Custom human title");
-assert.doesNotMatch(apiOverrideOnly.body.final_title, /\/50/);
-assert.notEqual(apiOverrideOnly.body.final_title, "Custom human title");
+assert.equal(apiOverrideOnly.statusCode, 410);
+assert.equal(apiOverrideOnly.body.code, "tenant_title_route_required");
 
 console.log("writer module edit tests passed");

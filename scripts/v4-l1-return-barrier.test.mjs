@@ -23,11 +23,14 @@ assert.ok(fastScoutBranch.includes("writerPendingL1Response(v4Response, l1Result
 assert.ok(!apiSource.includes("writerVisibleL1Response"), "V4 must not expose an L1 writer-visible response path");
 assert.ok(!apiSource.includes("v4_return_l1_writer_safe_draft === true"), "V4 must ignore legacy L1 writer-safe draft flags");
 assert.ok(!apiSource.includes("L1_WRITER_SAFE_DRAFT"), "V4 title stages must not include a writer-visible L1 draft stage");
-assert.ok(fastScoutBranch.includes("sendJson(res, 200, writerResponse);"), "fast scout L1 must send a writer-pending response in the branch");
+assert.ok(
+  fastScoutBranch.includes("sendJson(res, writerResponse.ok === false ? 503 : 200, writerResponse);"),
+  "fast scout L1 must send the writer-pending response and fail closed when critical persistence fails"
+);
 assert.ok(fastScoutBranch.includes("if (queueL1Only(payload))"), "queue-backed L1 must take the explicit L1-only path");
 assert.ok(fastScoutBranch.includes("await l1PersistencePromise"), "queue-backed L1 must persist before job completion/status polling");
 assert.ok(fastScoutBranch.includes("scheduleV4Background(l1PersistencePromise"), "L1 persistence must be scheduled after response construction");
-assert.ok(fastScoutBranch.includes("scheduleV4Background(createResultPromise.then((createResult) => runBackgroundAssistedDraft"), "L2 must be scheduled from session creation, not chained after L1 persistence");
+assert.ok(fastScoutBranch.includes("scheduleV4Background(runBackgroundAssistedDraft({"), "L2 must be scheduled directly after the durable session exists, not chained after L1 persistence");
 assert.ok(!fastScoutBranch.includes("l1PersistencePromise.catch(() => null).then(() => runBackgroundAssistedDraft"), "L2 must not wait for L1 persistence before starting");
 assert.ok(apiSource.includes("DISABLE_GPT5_FAST_SCOUT_L1"), "GPT-5 main-path requests must follow the same internal L1 path by default and only skip when explicitly disabled");
 assert.ok(apiSource.includes("isGpt5ResponsesModel(requestedListingModel)"), "GPT-5 model detection must guard the fast scout L1 branch");
