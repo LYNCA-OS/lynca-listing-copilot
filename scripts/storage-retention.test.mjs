@@ -148,7 +148,8 @@ assert.deepEqual(deleteCall.body.prefixes, [
   "listing-assets/2026-05-20/asset-old/front_original-front.jpg",
   "listing-assets/2026-05-20/asset-old/serial_crop-serial.png"
 ]);
-assert.equal(deleteCall.headers.authorization, "Bearer test-service-role");
+assert.equal(deleteCall.headers.apikey, "test-service-role");
+assert.equal(deleteCall.headers.authorization, undefined, "opaque Supabase service keys must not be sent as JWT bearer tokens");
 
 const summary = summarizeListingImageRetentionCleanup(applied);
 assert.deepEqual(summary, {

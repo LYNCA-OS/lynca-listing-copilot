@@ -13,6 +13,7 @@ import {
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import {
@@ -56,20 +57,6 @@ function withoutClientSessionIdentity(job = {}) {
     for (const key of serverOwnedKeys) delete scoped.payload[key];
   }
   return scoped;
-}
-
-function headerValue(req, name) {
-  const lower = String(name || "").toLowerCase();
-  const value = req?.headers?.[lower] ?? req?.headers?.[name];
-  if (Array.isArray(value)) return String(value[0] || "").trim();
-  return String(value || "").trim();
-}
-
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
 }
 
 function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
@@ -162,7 +149,7 @@ export async function runPostEnqueueQueueKick({
   return { phase: "followup", acquired: followup.acquired === true, acquisition_ok: followup.ok === true, ...invocation };
 }
 
-export function triggerV4QueuePumpAfterEnqueue(req, {
+export function triggerV4QueuePumpAfterEnqueue(_req, {
   tenantId,
   batchId,
   queuedCount,
@@ -176,8 +163,8 @@ export function triggerV4QueuePumpAfterEnqueue(req, {
   if (!envFlag(env, "V4_QUEUE_AUTOKICK_ENABLED", true)) return { triggered: false, reason: "autokick_disabled" };
   const secret = configuredWorkerSecret(env);
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
-  const origin = requestOrigin(req);
-  if (!origin) return { triggered: false, reason: "request_origin_missing" };
+  const origin = trustedInternalServiceOrigin(env);
+  if (!origin) return { triggered: false, reason: "internal_origin_missing" };
   const stableConcurrency = v4WorkerProcessConcurrency(env);
   const perWorkerLimit = positiveInteger(env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
   const interactiveWorkers = positiveInteger(env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });

@@ -81,6 +81,23 @@ function isRetrySuppressedProviderError(result = {}) {
   return /auth|permission|quota|rate|unsupported|bad_request|invalid_request|input/.test(code);
 }
 
+function rejectAbortedWorkerExecution(req, res, workerAuthorized) {
+  if (!workerAuthorized || req?.signal?.aborted !== true) return false;
+  const reason = req.signal.reason;
+  const retryable = reason?.retryable === true;
+  sendJson(res, retryable ? 503 : 409, withV4Version({
+    ok: false,
+    retryable,
+    error_code: reason?.code === "QUEUE_LEASE_RENEWAL_FAILED"
+      ? "QUEUE_LEASE_RENEWAL_FAILED"
+      : "QUEUE_LEASE_LOST",
+    message: retryable
+      ? "Queue lease renewal failed; execution was stopped before further work."
+      : "Queue lease ownership was lost; execution was stopped."
+  }));
+  return true;
+}
+
 function shouldRetryGpt5EmptyResult({
   payload = {},
   result = {},
@@ -1179,18 +1196,32 @@ async function runBackgroundAssistedDraft({
   });
 }
 
-async function callRecognitionCoreWithGpt5EmptyRetry({
+export async function callRecognitionCoreWithGpt5EmptyRetry({
   headers = {},
-  payload = {}
+  payload = {},
+  signal = null,
+  coreRunner = runListingRecognitionCore
 } = {}) {
-  let coreResponse = await runListingRecognitionCore({
+  let coreResponse = await coreRunner({
     payload,
-    requestContext: { headers }
+    requestContext: { headers, signal }
   });
 
   if (coreResponse.statusCode < 200 || coreResponse.statusCode >= 300 || !coreResponse.body
     || !shouldRetryGpt5EmptyResult({ payload, result: coreResponse.body, env: process.env })) {
     return coreResponse;
+  }
+
+  if (signal?.aborted) {
+    return {
+      statusCode: signal.reason?.retryable === true ? 503 : 409,
+      body: {
+        ok: false,
+        retryable: signal.reason?.retryable === true,
+        error_code: signal.reason?.code || "QUEUE_LEASE_LOST",
+        message: "Queue lease no longer permits a provider retry."
+      }
+    };
   }
 
   const retryPayload = {
@@ -1210,9 +1241,9 @@ async function callRecognitionCoreWithGpt5EmptyRetry({
     retryPayload.openai_preferred_key_slot = retryKeySlot;
     retryPayload.provider_key_slot_hint = retryKeySlot;
   }
-  const retryResponse = await runListingRecognitionCore({
+  const retryResponse = await coreRunner({
     payload: retryPayload,
-    requestContext: { headers }
+    requestContext: { headers, signal }
   });
   const retryPrepared = retryResponse.statusCode >= 200 && retryResponse.statusCode < 300 && retryResponse.body
     ? prepareV4PresentationResult({ result: retryResponse.body, payload: retryPayload })
@@ -1304,6 +1335,7 @@ export default async function handler(req, res) {
     sendJson(res, 400, withV4Version({ ok: false, message: "Invalid request." }));
     return;
   }
+  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
 
   if (workerAuthorized) {
     const fenced = await fenceV4RecognitionJobExecution({
@@ -1320,6 +1352,7 @@ export default async function handler(req, res) {
       }));
       return;
     }
+    if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
     try {
       payload = scopeV4RecognitionPayloadFromFencedJob(fenced.job);
     } catch {
@@ -1529,6 +1562,22 @@ export default async function handler(req, res) {
     }
   }
   const deferredCreateResult = initialCreateResult || await createResultPromise;
+  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
+  const observingUpdate = await updateV4RecognitionSessionWithRetry({
+    sessionId,
+    patch: { status: v4SessionStatuses.OBSERVING }
+  });
+  if (observingUpdate.saved !== true) {
+    sendJson(res, 503, withV4Version({
+      ok: false,
+      retryable: true,
+      error_code: "V4_SESSION_STATE_PERSISTENCE_FAILED",
+      recognition_session_id: sessionId,
+      message: "Recognition session state was not persisted; the durable job can be retried safely."
+    }));
+    return;
+  }
+  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
 
   if (canReturnFastScoutL1(payload, process.env)) {
     try {
@@ -1537,6 +1586,7 @@ export default async function handler(req, res) {
         payload,
         env: process.env,
         fetchImpl: globalThis.fetch,
+        signal: req.signal || null,
         requestContext: openAiRequestContextFromV4Payload(payload, {
           providerCallPurpose: "fast_scout",
           titleStage: v4TitleStages.L1_INTERNAL_SCOUT
@@ -1692,10 +1742,6 @@ export default async function handler(req, res) {
   }
 
   const createResult = await createResultPromise;
-  await updateV4RecognitionSession({
-    sessionId,
-    patch: { status: v4SessionStatuses.OBSERVING }
-  });
 
   let l2ScoutResult = null;
 
@@ -1773,6 +1819,7 @@ export default async function handler(req, res) {
         payload,
         env: process.env,
         fetchImpl: globalThis.fetch,
+        signal: req.signal || null,
         allowProviderCall: allowBlockingScout,
         requestContext: openAiRequestContextFromV4Payload(payload, {
           providerCallPurpose: "l2_direct_exact_anchor_scout",
@@ -1848,6 +1895,7 @@ export default async function handler(req, res) {
         return;
       }
     } catch (error) {
+      if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
       l2Timing.exact_anchor_scout_ms = Date.now() - scoutStartedAt;
       l2Timing.exact_anchor_scout_status = error?.code === "FAST_SCOUT_CACHE_MISS_PROVIDER_DISABLED"
         ? "CACHE_MISS_PROVIDER_DISABLED"
@@ -1876,12 +1924,15 @@ export default async function handler(req, res) {
     titleStageTarget: forceL2Direct || modelRequiresFullL2Options ? v4TitleStages.L2_ASSISTED_DRAFT : progressiveProviderOptions.v4_title_stage_target
   });
   startRecognitionClock("gpt_provider_request");
+  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
   const recognitionCoreStartedAt = Date.now();
   const recognitionResponse = await callRecognitionCoreWithGpt5EmptyRetry({
     headers: req.headers,
-    payload: recognitionPayload
+    payload: recognitionPayload,
+    signal: req.signal || null
   });
   l2Timing.recognition_core_ms = Date.now() - recognitionCoreStartedAt;
+  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
 
   if (recognitionResponse.statusCode < 200 || recognitionResponse.statusCode >= 300 || !recognitionResponse.body) {
     await updateV4RecognitionSession({

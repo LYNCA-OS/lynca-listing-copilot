@@ -2,6 +2,10 @@
 -- Raw writer decisions are immutable facts. SEM, error labels, and training
 -- eligibility remain derived, review-gated projections.
 
+begin;
+set local lock_timeout = '5s';
+set local statement_timeout = '15min';
+
 alter table if exists public.v4_recognition_sessions
   add column if not exists tenant_id text,
   add column if not exists user_id text,
@@ -797,3 +801,7 @@ comment on column public.v4_learning_events.dataset_disposition is
   'OBSERVE_ONLY writer events cannot train or promote production state before field-level review.';
 comment on table public.v4_sem_validation_events is
   'Append-only field-level SEM review decisions. VALIDATED rows may enter Golden SEM but remain OBSERVE_ONLY until a separate release gate.';
+
+notify pgrst, 'reload schema';
+
+commit;

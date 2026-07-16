@@ -65,11 +65,7 @@ export default async function handler(req, res) {
     return;
   }
   if (!ownedSession.session
-      || String(ownedSession.session.tenant_id || "") !== tenantId
-      || (
-        String(ownedSession.session.user_id || ownedSession.session.operator_id || "").trim() !== operatorId
-        && String(ownedSession.session.operator_id || "").trim() !== operatorId
-      )) {
+      || String(ownedSession.session.tenant_id || "") !== tenantId) {
     sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition session not found." }));
     return;
   }
@@ -78,7 +74,9 @@ export default async function handler(req, res) {
       assignedUserId: ownedSession.session.assigned_to_user_id
     });
   } catch {
-    sendJson(res, 403, withV4Version({ ok: false, retryable: false, message: "Feedback permission denied." }));
+    // Assignment is persisted server-side. Keep authorization failures
+    // non-enumerating so callers cannot probe another writer's work queue.
+    sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition session not found." }));
     return;
   }
 

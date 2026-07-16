@@ -21,6 +21,8 @@ const requiredTables = Object.freeze([
   "v4_provider_capacity_leases",
   "v4_queue_kick_leases",
   "v4_writer_feedback_events",
+  "v4_learning_events",
+  "v4_sem_validation_events",
   "v4_writer_export_batches",
   "v4_writer_export_items",
   "request_logs",
@@ -37,9 +39,21 @@ const tenantScopedTables = Object.freeze([
   "v4_recognition_sessions",
   "v4_recognition_jobs",
   "v4_writer_feedback_events",
+  "v4_learning_events",
+  "v4_sem_validation_events",
   "v4_writer_export_batches",
   "v4_writer_export_items"
 ]);
+
+const serviceOnlyFactTables = Object.freeze([
+  "v4_writer_feedback_events",
+  "v4_learning_events",
+  "v4_sem_validation_events"
+]);
+
+const tenantPolicyTables = Object.freeze(
+  tenantScopedTables.filter((table) => !serviceOnlyFactTables.includes(table))
+);
 
 const requiredFunctions = Object.freeze([
   "assign_v4_recognition_job(text,text,text)",
@@ -52,10 +66,23 @@ const requiredFunctions = Object.freeze([
   "acquire_v4_stage_capacity(text,text,text,integer,integer)",
   "release_v4_stage_capacity(text,text,text)",
   "persist_v4_writer_feedback_transaction(text,text,text,text,jsonb,jsonb)",
+  "enqueue_v4_recognition_batch_atomic(text,text,jsonb,jsonb,jsonb)",
+  "fence_v4_recognition_job_execution(text,text,integer)",
   "persist_v4_noncritical_artifacts(text,jsonb,jsonb,jsonb,jsonb)",
   "persist_v4_writer_ready_and_release_capacity(text,jsonb,text,text)",
   "track_c_ops_snapshot(text,timestamp with time zone)",
   "fail_v4_recognition_job(text,text,jsonb,boolean,boolean)"
+]);
+
+const forbiddenFunctions = Object.freeze([
+  "persist_v4_writer_feedback_transaction(text,text,text,jsonb,jsonb)"
+]);
+
+const serviceOnlyFunctions = Object.freeze([
+  "heartbeat_v4_recognition_job(text,text,integer)",
+  "persist_v4_writer_feedback_transaction(text,text,text,text,jsonb,jsonb)",
+  "enqueue_v4_recognition_batch_atomic(text,text,jsonb,jsonb,jsonb)",
+  "fence_v4_recognition_job_execution(text,text,integer)"
 ]);
 
 const requiredPolicies = Object.freeze([
@@ -67,7 +94,7 @@ const requiredPolicies = Object.freeze([
   ["tenant_members", "track_c_tenant_members_insert"],
   ["tenant_members", "track_c_tenant_members_update"],
   ["tenant_members", "track_c_tenant_members_delete"],
-  ...tenantScopedTables.flatMap((table) => [
+  ...tenantPolicyTables.flatMap((table) => [
     [table, "track_c_tenant_select"],
     [table, "track_c_tenant_insert"],
     [table, "track_c_tenant_update"],
@@ -85,11 +112,41 @@ const requiredConstraints = Object.freeze([
   ["preingestion_jobs", "preingestion_jobs_max_attempts_chk"],
   ["preingestion_jobs", "preingestion_jobs_lease_pair_chk"],
   ["v4_recognition_jobs", "v4_recognition_jobs_tenant_id_fkey"],
-  ["v4_recognition_jobs", "v4_recognition_jobs_tenant_batch_fkey"]
+  ["v4_recognition_jobs", "v4_recognition_jobs_tenant_batch_fkey"],
+  ["v4_writer_feedback_events", "v4_writer_feedback_events_tenant_id_fkey"],
+  ["v4_learning_events", "v4_learning_events_tenant_id_fkey"],
+  ["v4_sem_validation_events", "v4_sem_validation_events_tenant_id_fkey"],
+  ["v4_sem_validation_events", "v4_sem_validation_identity_group_check"],
+  ["v4_sem_validation_events", "v4_sem_validation_current_version_check"],
+  ["v4_sem_validation_events", "v4_sem_validation_sources_object_check"],
+  ["v4_sem_validation_events", "v4_sem_validation_disposition_check"]
+]);
+
+// These checks deliberately remain NOT VALID for pre-Track-D legacy rows.
+// PostgreSQL still enforces them for every new feedback fact. Treating every
+// unvalidated constraint as a deployment failure would make the reviewed
+// compatibility boundary impossible to deploy.
+const requiredNotValidConstraints = Object.freeze([
+  ["v4_writer_feedback_events", "v4_writer_feedback_action_title_check"],
+  ["v4_writer_feedback_events", "v4_writer_feedback_projection_check"]
 ]);
 
 const requiredIndexes = Object.freeze([
-  ["preingestion_jobs", "preingestion_jobs_ocr_stale_lease_idx"]
+  ["preingestion_jobs", "preingestion_jobs_ocr_stale_lease_idx"],
+  ["v4_writer_feedback_events", "v4_writer_feedback_submission_uidx"],
+  ["v4_writer_feedback_events", "v4_writer_feedback_revision_uidx"],
+  ["v4_learning_events", "v4_learning_feedback_event_uidx"],
+  ["v4_sem_validation_events", "v4_sem_validation_status_idx"]
+]);
+
+const requiredTriggers = Object.freeze([
+  ...tenantScopedTables.map((table) => [table, "track_c_tenant_id_immutable"]),
+  ["v4_recognition_sessions", "prevent_v4_session_identity_reassignment"],
+  ["v4_recognition_jobs", "validate_v4_recognition_job_session_identity"],
+  ["v4_writer_feedback_events", "prevent_v4_writer_feedback_mutation"],
+  ["v4_learning_events", "prevent_v4_writer_learning_event_mutation"],
+  ["v4_sem_validation_events", "prevent_v4_sem_validation_mutation"],
+  ["v4_sem_validation_events", "validate_v4_sem_validation_identity"]
 ]);
 
 function cleanText(value) {
@@ -325,7 +382,23 @@ async function readSchema(client) {
     [requiredFunctions]
   );
 
-  const policyTables = [...new Set(requiredPolicies.map(([table]) => table))];
+  const forbiddenFunctionResult = await client.query(
+    `
+      select
+        forbidden.signature,
+        pg_catalog.to_regprocedure(forbidden.signature)::text as resolved_signature
+      from unnest($1::text[]) as forbidden(signature)
+      order by forbidden.signature
+    `,
+    [forbiddenFunctions]
+  );
+
+  const policyTables = [
+    ...new Set([
+      ...requiredPolicies.map(([table]) => table),
+      ...serviceOnlyFactTables
+    ])
+  ];
   const policyResult = await client.query(
     `
       select tablename, policyname
@@ -338,16 +411,22 @@ async function readSchema(client) {
 
   const triggerResult = await client.query(
     `
-      select relation.relname as table_name, trigger.tgenabled
+      select
+        relation.relname as table_name,
+        trigger.tgname as trigger_name,
+        trigger.tgenabled
       from pg_catalog.pg_trigger trigger
       join pg_catalog.pg_class relation on relation.oid = trigger.tgrelid
       join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
       where namespace.nspname = 'public'
         and relation.relname = any($1::text[])
-        and trigger.tgname = 'track_c_tenant_id_immutable'
+        and trigger.tgname = any($2::text[])
         and not trigger.tgisinternal
     `,
-    [tenantScopedTables]
+    [
+      [...new Set(requiredTriggers.map(([table]) => table))],
+      [...new Set(requiredTriggers.map(([, trigger]) => trigger))]
+    ]
   );
 
   const constraintResult = await client.query(
@@ -392,6 +471,100 @@ async function readSchema(client) {
        current_setting('server_version_num') as server_version_num`
   );
 
+  const factAclResult = await client.query(
+    `
+      select
+        fact.table_name,
+        pg_catalog.has_table_privilege('anon', pg_catalog.format('public.%I', fact.table_name), 'SELECT') as anon_select,
+        pg_catalog.has_table_privilege('anon', pg_catalog.format('public.%I', fact.table_name), 'INSERT') as anon_insert,
+        pg_catalog.has_table_privilege('anon', pg_catalog.format('public.%I', fact.table_name), 'UPDATE') as anon_update,
+        pg_catalog.has_table_privilege('anon', pg_catalog.format('public.%I', fact.table_name), 'DELETE') as anon_delete,
+        pg_catalog.has_table_privilege('authenticated', pg_catalog.format('public.%I', fact.table_name), 'SELECT') as authenticated_select,
+        pg_catalog.has_table_privilege('authenticated', pg_catalog.format('public.%I', fact.table_name), 'INSERT') as authenticated_insert,
+        pg_catalog.has_table_privilege('authenticated', pg_catalog.format('public.%I', fact.table_name), 'UPDATE') as authenticated_update,
+        pg_catalog.has_table_privilege('authenticated', pg_catalog.format('public.%I', fact.table_name), 'DELETE') as authenticated_delete,
+        pg_catalog.has_table_privilege('service_role', pg_catalog.format('public.%I', fact.table_name), 'SELECT') as service_select,
+        pg_catalog.has_table_privilege('service_role', pg_catalog.format('public.%I', fact.table_name), 'INSERT') as service_insert,
+        pg_catalog.has_table_privilege('service_role', pg_catalog.format('public.%I', fact.table_name), 'UPDATE') as service_update,
+        pg_catalog.has_table_privilege('service_role', pg_catalog.format('public.%I', fact.table_name), 'DELETE') as service_delete
+      from unnest($1::text[]) as fact(table_name)
+      order by fact.table_name
+    `,
+    [serviceOnlyFactTables]
+  );
+
+  const functionAclResult = await client.query(
+    `
+      select
+        service_function.signature,
+        pg_catalog.to_regprocedure(service_function.signature)::text as resolved_signature,
+        case when pg_catalog.to_regprocedure(service_function.signature) is null then false else
+          pg_catalog.has_function_privilege(
+            'anon',
+            pg_catalog.to_regprocedure(service_function.signature),
+            'EXECUTE'
+          )
+        end as anon_execute,
+        case when pg_catalog.to_regprocedure(service_function.signature) is null then false else
+          pg_catalog.has_function_privilege(
+            'authenticated',
+            pg_catalog.to_regprocedure(service_function.signature),
+            'EXECUTE'
+          )
+        end as authenticated_execute,
+        case when pg_catalog.to_regprocedure(service_function.signature) is null then false else
+          pg_catalog.has_function_privilege(
+            'service_role',
+            pg_catalog.to_regprocedure(service_function.signature),
+            'EXECUTE'
+          )
+        end as service_execute
+      from unnest($1::text[]) as service_function(signature)
+      order by service_function.signature
+    `,
+    [serviceOnlyFunctions]
+  );
+
+  const dataInvariantResult = await client.query(
+    `
+      select
+        (
+          select count(*)::bigint
+          from (
+            select learning.feedback_event_id
+            from public.v4_learning_events learning
+            where learning.feedback_event_id is not null
+            group by learning.feedback_event_id
+            having count(*) > 1
+          ) duplicates
+        ) as duplicate_learning_feedback_links,
+        (
+          select count(*)::bigint
+          from public.v4_sem_validation_events validation
+          where nullif(validation.parser_version, '') is null
+             or nullif(validation.sem_standard_version, '') is null
+        ) as sem_validation_missing_provenance,
+        (
+          select count(*)::bigint
+          from public.v4_sem_validation_events validation
+          where validation.validation_status = 'VALIDATED'
+            and (
+              pg_catalog.jsonb_typeof(validation.validation_sources) is distinct from 'object'
+              or not exists (
+                select 1
+                from pg_catalog.jsonb_each(validation.validation_sources) sources
+                where pg_catalog.upper(coalesce(sources.value ->> 'status', '')) = 'SUPPORTED'
+                  and case
+                    when pg_catalog.jsonb_typeof(sources.value -> 'evidence_refs') = 'array'
+                      then pg_catalog.jsonb_array_length(sources.value -> 'evidence_refs') > 0
+                    else false
+                  end
+              )
+            )
+        ) as validated_sem_without_supported_evidence
+    `
+  );
+
   const executionBoundaryResult = await client.query(
     `
       select
@@ -414,7 +587,10 @@ async function readSchema(client) {
         ) as service_heartbeat_execute,
         pg_catalog.pg_get_functiondef(
           'public.heartbeat_v4_recognition_job(text,text,integer)'::pg_catalog.regprocedure
-        ) as heartbeat_definition
+        ) as heartbeat_definition,
+        pg_catalog.pg_get_functiondef(
+          'public.fence_v4_recognition_job_execution(text,text,integer)'::pg_catalog.regprocedure
+        ) as execution_fence_definition
     `
   );
 
@@ -422,10 +598,14 @@ async function readSchema(client) {
     tables: tableResult.rows,
     columns: columnResult.rows,
     functions: functionResult.rows,
+    forbiddenFunctions: forbiddenFunctionResult.rows,
     policies: policyResult.rows,
     triggers: triggerResult.rows,
     constraints: constraintResult.rows,
     indexes: indexResult.rows,
+    factAcls: factAclResult.rows,
+    functionAcls: functionAclResult.rows,
+    dataInvariants: dataInvariantResult.rows[0],
     server: serverResult.rows[0],
     executionBoundary: executionBoundaryResult.rows[0]
   };
@@ -451,6 +631,12 @@ function evaluateSchema(snapshot) {
     ok: Boolean(row.resolved_signature),
     resolved_signature: row.resolved_signature || null
   }));
+  const forbiddenFunctionChecks = snapshot.forbiddenFunctions.map((row) => ({
+    signature: row.signature,
+    requirement: "absent",
+    ok: !row.resolved_signature,
+    resolved_signature: row.resolved_signature || null
+  }));
 
   const policySet = new Set(snapshot.policies.map((row) => `${row.tablename}.${row.policyname}`));
   const policyChecks = requiredPolicies.map(([table, policy]) => ({
@@ -458,16 +644,28 @@ function evaluateSchema(snapshot) {
     policy,
     ok: policySet.has(`${table}.${policy}`)
   }));
+  const serviceOnlyPolicyChecks = serviceOnlyFactTables.map((table) => {
+    const policies = snapshot.policies
+      .filter((row) => row.tablename === table)
+      .map((row) => row.policyname)
+      .sort();
+    return {
+      table,
+      requirement: "no_authenticated_rls_policies",
+      ok: policies.length === 0,
+      policies
+    };
+  });
 
   const enabledTriggers = new Set(
     snapshot.triggers
       .filter((row) => ["O", "A"].includes(row.tgenabled))
-      .map((row) => row.table_name)
+      .map((row) => `${row.table_name}.${row.trigger_name}`)
   );
-  const triggerChecks = tenantScopedTables.map((table) => ({
+  const triggerChecks = requiredTriggers.map(([table, trigger]) => ({
     table,
-    trigger: "track_c_tenant_id_immutable",
-    ok: enabledTriggers.has(table)
+    trigger,
+    ok: enabledTriggers.has(`${table}.${trigger}`)
   }));
 
   const constraintMap = new Map(
@@ -483,8 +681,25 @@ function evaluateSchema(snapshot) {
       validated: row?.convalidated === true
     };
   });
+  const requiredNotValidConstraintChecks = requiredNotValidConstraints.map(([table, constraint]) => {
+    const row = constraintMap.get(`${table}.${constraint}`);
+    return {
+      table,
+      constraint,
+      ok: Boolean(row && row.convalidated === false),
+      present: Boolean(row),
+      validated: row?.convalidated === true,
+      expected_state: "NOT VALID (enforced for new rows)"
+    };
+  });
+  const allowedNotValidConstraintKeys = new Set(
+    requiredNotValidConstraints.map(([table, constraint]) => `${table}.${constraint}`)
+  );
   const invalidConstraints = snapshot.constraints
-    .filter((row) => row.convalidated !== true)
+    .filter((row) => (
+      row.convalidated !== true
+      && !allowedNotValidConstraintKeys.has(`${row.table_name}.${row.constraint_name}`)
+    ))
     .map((row) => ({ table: row.table_name, constraint: row.constraint_name, type: row.contype }));
 
   const indexMap = new Map(
@@ -504,6 +719,7 @@ function evaluateSchema(snapshot) {
 
   const executionBoundary = snapshot.executionBoundary || {};
   const heartbeatDefinition = cleanText(executionBoundary.heartbeat_definition);
+  const executionFenceDefinition = cleanText(executionBoundary.execution_fence_definition);
   const executionBoundaryChecks = [
     {
       boundary: "browser_storage_acl",
@@ -545,18 +761,112 @@ function evaluateSchema(snapshot) {
         owner_guard: /jobs\.lease_owner\s*=\s*p_worker_id/i.test(heartbeatDefinition),
         unexpired_guard: /jobs\.lease_expires_at\s*>\s*heartbeat_at/i.test(heartbeatDefinition)
       }
+    },
+    {
+      boundary: "provider_side_effect_fence",
+      requirement: "service_only_running_owner_unexpired_persisted_identity",
+      ok: Boolean(
+        /jobs\.status\s*=\s*'RUNNING'/i.test(executionFenceDefinition)
+        && /jobs\.lease_owner\s*=\s*p_worker_id/i.test(executionFenceDefinition)
+        && /jobs\.lease_expires_at\s*>\s*pg_catalog\.clock_timestamp\(\)/i.test(executionFenceDefinition)
+        && /'tenant_id',\s*fenced_job\.tenant_id/i.test(executionFenceDefinition)
+        && /'recognition_session_id',\s*fenced_job\.recognition_session_id/i.test(executionFenceDefinition)
+        && /'asset_id',\s*fenced_job\.asset_id/i.test(executionFenceDefinition)
+      ),
+      actual: {
+        running_guard: /jobs\.status\s*=\s*'RUNNING'/i.test(executionFenceDefinition),
+        owner_guard: /jobs\.lease_owner\s*=\s*p_worker_id/i.test(executionFenceDefinition),
+        unexpired_guard: /jobs\.lease_expires_at\s*>\s*pg_catalog\.clock_timestamp\(\)/i.test(executionFenceDefinition),
+        returns_persisted_identity: /'tenant_id',\s*fenced_job\.tenant_id/i.test(executionFenceDefinition)
+          && /'recognition_session_id',\s*fenced_job\.recognition_session_id/i.test(executionFenceDefinition)
+          && /'asset_id',\s*fenced_job\.asset_id/i.test(executionFenceDefinition)
+      }
     }
   ];
+
+  const factAclChecks = snapshot.factAcls.map((row) => ({
+    table: row.table_name,
+    requirement: "browser_denied_service_insert_only",
+    ok: Boolean(
+      row.anon_select === false
+      && row.anon_insert === false
+      && row.anon_update === false
+      && row.anon_delete === false
+      && row.authenticated_select === false
+      && row.authenticated_insert === false
+      && row.authenticated_update === false
+      && row.authenticated_delete === false
+      && row.service_select === true
+      && row.service_insert === true
+      && row.service_update === false
+      && row.service_delete === false
+    ),
+    actual: {
+      anon: {
+        select: row.anon_select === true,
+        insert: row.anon_insert === true,
+        update: row.anon_update === true,
+        delete: row.anon_delete === true
+      },
+      authenticated: {
+        select: row.authenticated_select === true,
+        insert: row.authenticated_insert === true,
+        update: row.authenticated_update === true,
+        delete: row.authenticated_delete === true
+      },
+      service_role: {
+        select: row.service_select === true,
+        insert: row.service_insert === true,
+        update: row.service_update === true,
+        delete: row.service_delete === true
+      }
+    }
+  }));
+
+  const functionAclChecks = snapshot.functionAcls.map((row) => ({
+    signature: row.signature,
+    requirement: "service_role_execute_only",
+    ok: Boolean(
+      row.resolved_signature
+      && row.anon_execute === false
+      && row.authenticated_execute === false
+      && row.service_execute === true
+    ),
+    actual: {
+      resolved_signature: row.resolved_signature || null,
+      anon_execute: row.anon_execute === true,
+      authenticated_execute: row.authenticated_execute === true,
+      service_execute: row.service_execute === true
+    }
+  }));
+
+  const dataInvariants = snapshot.dataInvariants || {};
+  const dataInvariantChecks = [
+    ["duplicate_learning_feedback_links", dataInvariants.duplicate_learning_feedback_links],
+    ["sem_validation_missing_provenance", dataInvariants.sem_validation_missing_provenance],
+    ["validated_sem_without_supported_evidence", dataInvariants.validated_sem_without_supported_evidence]
+  ].map(([invariant, value]) => ({
+    invariant,
+    requirement: "zero_rows",
+    ok: Number(value) === 0,
+    violating_row_count: Number(value || 0)
+  }));
 
   const sections = {
     tables: tableChecks,
     row_level_security: rlsChecks,
     columns: columnChecks,
     functions: functionChecks,
+    forbidden_functions: forbiddenFunctionChecks,
     policies: policyChecks,
-    tenant_immutability_triggers: triggerChecks,
+    service_only_fact_policies: serviceOnlyPolicyChecks,
+    required_triggers: triggerChecks,
     expected_constraints: expectedConstraintChecks,
+    intentional_not_valid_constraints: requiredNotValidConstraintChecks,
     indexes: indexChecks,
+    service_only_fact_acls: factAclChecks,
+    service_only_function_acls: functionAclChecks,
+    data_invariants: dataInvariantChecks,
     execution_boundaries: executionBoundaryChecks,
     invalid_constraints: {
       ok: invalidConstraints.length === 0,
@@ -574,7 +884,7 @@ function evaluateSchema(snapshot) {
 export async function checkTrackCProductionSchema({ connectionString, checkedAt = new Date() } = {}) {
   const databaseUrl = cleanText(connectionString);
   const baseReport = {
-    contract: "track_c_production_schema_preflight_v1",
+    contract: "track_c_d_production_schema_preflight_v2",
     checked_at: checkedAt.toISOString(),
     configured: Boolean(databaseUrl),
     read_only_requested: true,

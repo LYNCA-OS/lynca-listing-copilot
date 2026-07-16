@@ -1484,7 +1484,8 @@ const approvedHistoryRegistry = createRetrievalProviderRegistry({
     assert.equal(requestUrl.searchParams.get("approved_at"), "not.is.null");
     assert.equal(requestUrl.searchParams.get("order"), "created_at.desc");
     assert.equal(requestUrl.searchParams.get("limit"), "25");
-    assert.equal(options.headers.authorization, "Bearer test-service-role");
+    assert.equal(options.headers.apikey, "test-service-role");
+    assert.equal(options.headers.authorization, undefined, "opaque Supabase service keys must not be sent as JWT bearer tokens");
     return jsonResponse([
       {
         id: "review-approved-1",

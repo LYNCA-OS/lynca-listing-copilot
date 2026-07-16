@@ -12,6 +12,10 @@
 -- Do not apply this file directly to production from a workstation. It is
 -- committed migration source and must pass the normal preview/rollout gate.
 
+begin;
+set local lock_timeout = '5s';
+set local statement_timeout = '15min';
+
 create schema if not exists private;
 
 revoke all on schema private from public, anon;
@@ -710,6 +714,7 @@ declare
     'v4_candidate_traces',
     'v4_writer_feedback_events',
     'v4_learning_events',
+    'v4_sem_validation_events',
     'v4_production_quality_ledger',
     'v4_catalog_gap_queue',
     'v4_recognition_jobs',
@@ -749,6 +754,9 @@ begin
     end if;
     if v_table = 'v4_learning_events' then
       execute 'drop trigger if exists prevent_v4_writer_learning_event_mutation on public.v4_learning_events';
+    end if;
+    if v_table = 'v4_sem_validation_events' then
+      execute 'drop trigger if exists prevent_v4_sem_validation_mutation on public.v4_sem_validation_events';
     end if;
 
     execute format(
@@ -841,6 +849,10 @@ begin
     if v_table = 'v4_learning_events'
        and pg_catalog.to_regprocedure('public.prevent_v4_writer_learning_event_mutation()') is not null then
       execute 'create trigger prevent_v4_writer_learning_event_mutation before update or delete on public.v4_learning_events for each row execute function public.prevent_v4_writer_learning_event_mutation()';
+    end if;
+    if v_table = 'v4_sem_validation_events'
+       and pg_catalog.to_regprocedure('public.prevent_v4_writer_feedback_mutation()') is not null then
+      execute 'create trigger prevent_v4_sem_validation_mutation before update or delete on public.v4_sem_validation_events for each row execute function public.prevent_v4_writer_feedback_mutation()';
     end if;
 
     execute format('drop policy if exists track_c_tenant_select on public.%I', v_table);
@@ -2707,3 +2719,5 @@ end;
 $$;
 
 notify pgrst, 'reload schema';
+
+commit;

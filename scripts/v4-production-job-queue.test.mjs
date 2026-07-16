@@ -318,6 +318,7 @@ const retryRequests = [];
 const manualRetry = await retryV4RecognitionJob({
   jobId: failedRetryJob.id,
   operatorId: failedRetryJob.operator_id,
+  tenantId: failedRetryJob.tenant_id,
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
     retryRequests.push({ url: String(url), request });
@@ -337,13 +338,15 @@ assert.equal(manualRetry.row.completed_at, null);
 assert.equal(manualRetry.row.queue_tags.provider_capacity_slot, undefined, "stale capacity leases must not survive a retry");
 assert.equal(manualRetry.row.queue_tags.provider_key_slot, undefined);
 assert.equal(manualRetry.row.queue_tags.manual_retry_queue_policy, "interactive_priority_zero");
-assert.match(retryRequests[1].url, /operator_id=eq\.operator-manual-retry/);
+assert.doesNotMatch(retryRequests[1].url, /operator_id=/);
+assert.match(retryRequests[1].url, /tenant_id=eq\.tenant-manual-retry/);
 assert.match(retryRequests[1].url, /status=eq\.FAILED/);
 
 let activeRetryWriteAttempted = false;
 const activeRetry = await retryV4RecognitionJob({
   jobId: failedRetryJob.id,
   operatorId: failedRetryJob.operator_id,
+  tenantId: failedRetryJob.tenant_id,
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (_url, request = {}) => {
     if (request.method === "PATCH") activeRetryWriteAttempted = true;
@@ -354,14 +357,15 @@ assert.equal(activeRetry.saved, true);
 assert.equal(activeRetry.already_active, true, "a repeated click must reconnect instead of enqueueing duplicate paid work");
 assert.equal(activeRetryWriteAttempted, false);
 
-const foreignRetry = await retryV4RecognitionJob({
+const crossTenantRetry = await retryV4RecognitionJob({
   jobId: failedRetryJob.id,
   operatorId: "another-operator",
+  tenantId: "another-tenant",
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async () => jsonResponse([failedRetryJob])
 });
-assert.equal(foreignRetry.saved, false);
-assert.equal(foreignRetry.error_code, "V4_JOB_RETRY_NOT_FOUND", "job ownership failures must not reveal another writer's work");
+assert.equal(crossTenantRetry.saved, false);
+assert.equal(crossTenantRetry.error_code, "V4_JOB_RETRY_NOT_FOUND", "cross-tenant failures must not reveal another tenant's work");
 
 const rpcCalls = [];
 const claim = await claimV4RecognitionJobs({
@@ -781,6 +785,7 @@ assert.equal(hiddenL1FailureBody.completed_at !== null, true);
 const reads = [];
 await readV4RecognitionJobs({
   batchId: "batch-read",
+  tenantId: "tenant-read",
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url) => {
     reads.push(String(url));
@@ -788,6 +793,20 @@ await readV4RecognitionJobs({
   }
 });
 assert.ok(reads[0].includes("batch_id=eq.batch-read"));
+assert.ok(reads[0].includes("tenant_id=eq.tenant-read"));
+
+let unscopedReadCalled = false;
+const unscopedRead = await readV4RecognitionJobs({
+  batchId: "batch-read",
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async () => {
+    unscopedReadCalled = true;
+    return jsonResponse([]);
+  }
+});
+assert.equal(unscopedRead.ok, false);
+assert.equal(unscopedRead.error, "tenant_id_required");
+assert.equal(unscopedReadCalled, false, "service-role job reads must fail closed before an unscoped request");
 
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "secret" } }, { V4_JOB_WORKER_SECRET: "secret" }), true);
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "wrong" } }, { V4_JOB_WORKER_SECRET: "secret" }), false);

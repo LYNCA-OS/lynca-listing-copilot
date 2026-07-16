@@ -19,6 +19,36 @@ const retryMigrationPath = path.resolve(
   "../supabase/migrations/20260715065808_track_c_retry_state_machine_hardening.sql"
 );
 const retrySql = fs.readFileSync(retryMigrationPath, "utf8");
+const feedbackCaptureSql = fs.readFileSync(path.resolve(
+  here,
+  "../supabase/migrations/20260715065752_track_d_feedback_capture_v1.sql"
+), "utf8");
+const ocrLeaseSql = fs.readFileSync(path.resolve(
+  here,
+  "../supabase/migrations/20260715065820_track_c_preingestion_ocr_durable_leases.sql"
+), "utf8");
+const convergenceSql = fs.readFileSync(path.resolve(
+  here,
+  "../supabase/migrations/20260715065830_track_d_data_flywheel_convergence.sql"
+), "utf8");
+const preflightSource = fs.readFileSync(path.resolve(
+  here,
+  "./check-track-c-production-schema.mjs"
+), "utf8");
+
+for (const [name, migration] of [
+  ["track_d_feedback_capture", feedbackCaptureSql],
+  ["track_c_tenant_foundation", sql],
+  ["track_c_retry_hardening", retrySql],
+  ["track_c_tenant_settings", settingsSql],
+  ["track_c_ocr_leases", ocrLeaseSql],
+  ["track_d_convergence", convergenceSql]
+]) {
+  assert.match(migration, /^\s*(?:--[^\n]*\n)*\s*begin;/i, `${name} must be explicitly atomic`);
+  assert.match(migration, /set local lock_timeout = '5s'/i, `${name} must fail fast on lock contention`);
+  assert.match(migration, /set local statement_timeout = '15min'/i, `${name} must have a bounded runtime`);
+  assert.match(migration, /commit;\s*$/i, `${name} must commit only after the complete migration`);
+}
 
 function tableBody(tableName) {
   const marker = `create table if not exists public.${tableName} (`;
@@ -53,6 +83,67 @@ assert.match(retrySql, /jobs\.status = 'RUNNING'/);
 assert.match(retrySql, /jobs\.lease_owner = p_worker_id/);
 assert.match(retrySql, /jobs\.lease_expires_at is not null/);
 assert.match(retrySql, /jobs\.lease_expires_at > heartbeat_at/);
+assert.match(convergenceSql, /heartbeat_at timestamptz := pg_catalog\.clock_timestamp\(\)/);
+assert.match(convergenceSql, /drop trigger if exists prevent_v4_sem_validation_mutation\s+on public\.v4_sem_validation_events/);
+assert.match(convergenceSql, /jobs\.lease_expires_at is not null/);
+assert.match(convergenceSql, /jobs\.lease_expires_at > heartbeat_at/);
+assert.match(convergenceSql, /notify pgrst, 'reload schema';\s*\n\s*commit;/i);
+assert.match(preflightSource, /requiredNotValidConstraints/);
+assert.match(preflightSource, /v4_writer_feedback_action_title_check/);
+assert.match(preflightSource, /v4_writer_feedback_projection_check/);
+for (const table of [
+  "v4_writer_feedback_events",
+  "v4_learning_events",
+  "v4_sem_validation_events"
+]) {
+  assert.match(preflightSource, new RegExp(`"${table}"`));
+}
+for (const signature of [
+  "enqueue_v4_recognition_batch_atomic\\(text,text,jsonb,jsonb,jsonb\\)",
+  "fence_v4_recognition_job_execution\\(text,text,integer\\)",
+  "persist_v4_writer_feedback_transaction\\(text,text,text,jsonb,jsonb\\)"
+]) {
+  assert.match(preflightSource, new RegExp(signature));
+}
+assert.match(preflightSource, /serviceOnlyFactTables/);
+assert.match(preflightSource, /serviceOnlyFunctions/);
+assert.match(preflightSource, /requiredTriggers/);
+assert.match(preflightSource, /validated_sem_without_supported_evidence/);
+assert.match(preflightSource, /browser_denied_service_insert_only/);
+assert.match(preflightSource, /service_role_execute_only/);
+assert.match(sql, /'v4_sem_validation_events'/);
+assert.match(sql, /drop trigger if exists prevent_v4_sem_validation_mutation on public\.v4_sem_validation_events/);
+assert.match(sql, /create trigger prevent_v4_sem_validation_mutation before update or delete on public\.v4_sem_validation_events/);
+assert.match(convergenceSql, /revoke update, delete on table public\.v4_learning_events from service_role/);
+const semValidationIdentityStart = convergenceSql.indexOf(
+  "create or replace function public.validate_v4_sem_validation_identity()"
+);
+const semValidationIdentityEnd = convergenceSql.indexOf("\n$$;", semValidationIdentityStart);
+assert.notEqual(semValidationIdentityStart, -1, "missing final SEM validation identity trigger function");
+assert.notEqual(semValidationIdentityEnd, -1, "unterminated final SEM validation identity trigger function");
+const semValidationIdentityBody = convergenceSql.slice(
+  semValidationIdentityStart,
+  semValidationIdentityEnd
+);
+assert.match(semValidationIdentityBody, /from public\.v4_recognition_sessions sessions[\s\S]*for share/);
+assert.doesNotMatch(
+  semValidationIdentityBody,
+  /from public\.v4_writer_feedback_events events[\s\S]*for share/,
+  "append-only feedback identity checks must not require UPDATE privilege"
+);
+assert.doesNotMatch(
+  semValidationIdentityBody,
+  /from public\.v4_learning_events events[\s\S]*for share/,
+  "append-only learning identity checks must not require UPDATE privilege"
+);
+for (const policy of [
+  "track_c_tenant_select",
+  "track_c_tenant_insert",
+  "track_c_tenant_update",
+  "track_c_tenant_delete"
+]) {
+  assert.match(convergenceSql, new RegExp(`'${policy}'`));
+}
 
 const tenants = tableBody("tenants");
 assertColumns(tenants, ["id", "name", "plan", "status", "disabled_at", "created_at", "updated_at"]);
@@ -156,6 +247,7 @@ for (const table of [
   "v4_recognition_jobs",
   "v4_writer_feedback_events",
   "v4_learning_events",
+  "v4_sem_validation_events",
   "v4_production_quality_ledger",
   "v4_writer_export_batches",
   "v4_writer_export_items",

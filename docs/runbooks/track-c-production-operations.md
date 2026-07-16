@@ -13,20 +13,22 @@ Status: rollout procedure only. Preview and production are unchanged; see the li
 ## 1. Prepare and rehearse
 
 1. Choose the exact reviewed `main` commit and record its SHA.
-2. Rehearse the migrations and application against an isolated clone of the verified existing-staging baseline on the same PostgreSQL major version. Its schema and Supabase migration history must match the recorded baseline through `20260714174210`; do not start from an empty database while the clean-bootstrap blockers in the readiness report remain open. Confirm the preview environment does not reference production Supabase before starting.
+2. Rehearse the migrations and application against an isolated clone of the verified existing-staging baseline on the same PostgreSQL major version. Its schema must match the recorded pre-Track-C semantic baseline, including `search_catalog_candidates_with_source(...)`; record the hosted migration-history fingerprint separately because older reconciliation timestamps do not map one-to-one to local filenames. Do not start from an empty database while the clean-bootstrap blockers in the readiness report remain open. Confirm the preview environment does not reference production Supabase before starting.
 3. Schedule a write maintenance window. Drain uploads/enqueues and allow current jobs to finish; do not rewrite `RUNNING` jobs by hand.
-4. Create and verify a provider-managed recovery point/PITR checkpoint immediately before migration. Record its timestamp and restore instructions. Treat any logical dump as customer data: encrypt it, restrict access, and set a deletion date.
+4. Create and verify a provider-managed recovery point/PITR checkpoint immediately before migration. Record its timestamp and restore instructions. If the current Supabase plan does not provide a restorable checkpoint, create an encrypted logical backup from the direct connection and verify it with `pg_restore --list`; an in-database snapshot is useful migration evidence but is not disaster recovery. If neither restorable option is available, the public-production rollout is blocked. Treat every backup as customer data: encrypt it, restrict access, and set a deletion date.
 5. Record migration checksums:
 
 ```bash
 shasum -a 256 \
+  supabase/migrations/20260715065752_track_d_feedback_capture_v1.sql \
   supabase/migrations/20260715065803_track_c_tenant_foundation_expand.sql \
   supabase/migrations/20260715065808_track_c_retry_state_machine_hardening.sql \
   supabase/migrations/20260715065812_track_c_tenant_settings.sql \
-  supabase/migrations/20260715065820_track_c_preingestion_ocr_durable_leases.sql
+  supabase/migrations/20260715065820_track_c_preingestion_ocr_durable_leases.sql \
+  supabase/migrations/20260715065830_track_d_data_flywheel_convergence.sql
 ```
 
-The foundation migration performs backfills, constraints, indexes, triggers, grants, and RLS changes. The OCR durable-lease migration updates running OCR rows, validates new constraints, and creates a partial claim index. Both can wait for or take table locks. Before proceeding, inspect active transactions and the largest affected tables:
+The Track D capture/convergence migrations and the Track C foundation migration perform backfills, constraints, indexes, triggers, grants, RLS changes, and RPC replacement. The foundation loops over the complete customer-data allowlist, not only the tables shown below. Retry hardening adds stored generated columns to `v4_recognition_jobs`, and the OCR durable-lease migration updates running OCR rows, validates new constraints, and creates a partial claim index. These operations can rewrite rows, generate WAL, and wait for or take table locks. `statement_timeout=15min` limits each statement, not the total window. Before proceeding, inspect active transactions, free disk, and the largest affected tables:
 
 ```bash
 psql "$POSTGRES_URL_NON_POOLING" -X -v ON_ERROR_STOP=1 <<'SQL'
@@ -47,6 +49,7 @@ where relnamespace = 'public'::regnamespace
   and relname in (
     'listing_assets', 'listing_reviews', 'v4_recognition_sessions',
     'v4_recognition_jobs', 'v4_writer_feedback_events',
+    'v4_learning_events', 'v4_sem_validation_events',
     'v4_writer_export_batches', 'v4_writer_export_items',
     'preingestion_jobs'
   )
@@ -55,32 +58,58 @@ rollback;
 SQL
 ```
 
-Do not start while an unexplained long transaction is open. Set a short lock timeout so maintenance fails instead of blocking production indefinitely; investigate a timeout before retrying.
+Record rehearsal and production duration, database-size delta, WAL delta, and remaining disk headroom. Do not start while an unexplained long transaction is open, while a recognition lease is `RUNNING`, or while an OCR lease is still being renewed. The short lock timeout makes maintenance fail instead of blocking production indefinitely; investigate a timeout before retrying.
+
+Before any write, also verify that the three Track D convergence stop conditions are zero on the live snapshot. `v4_sem_validation_events` may not exist on an older baseline; in that case the two SEM counts are zero by construction and the first Track D migration creates the empty table. If it exists, check it explicitly. Repeat all three checks after migration as part of the schema preflight:
+
+```sql
+select count(*) as duplicate_learning_feedback_links
+from (
+  select feedback_event_id
+  from public.v4_learning_events
+  where feedback_event_id is not null
+  group by feedback_event_id
+  having count(*) > 1
+) duplicates;
+
+-- Run these two statements only when
+-- to_regclass('public.v4_sem_validation_events') is not null.
+select count(*) as sem_validation_missing_provenance
+from public.v4_sem_validation_events
+where nullif(parser_version, '') is null
+   or nullif(sem_standard_version, '') is null;
+
+select count(*) as validated_sem_without_supported_evidence
+from public.v4_sem_validation_events validation
+where validation_status = 'VALIDATED'
+  and (
+    jsonb_typeof(validation_sources) is distinct from 'object'
+    or not exists (
+      select 1
+      from jsonb_each(validation_sources) source
+      where upper(coalesce(source.value ->> 'status', '')) = 'SUPPORTED'
+        and jsonb_typeof(source.value -> 'evidence_refs') = 'array'
+        and jsonb_array_length(source.value -> 'evidence_refs') > 0
+    )
+  );
+```
 
 ## 2. Apply schema maintenance in order
 
-Use the approved, migration-history-aware Supabase release runner. Before any write, `supabase migration list` must show that remote history matches the verified baseline through `20260714174210` and that the only pending files are the four reviewed Track C migrations in the order below. Any missing, duplicate, or unexpected migration blocks the release.
+The repository contains historical rollback files and duplicate version keys under `supabase/migrations`, while the hosted project's older migration history uses reconciliation timestamps that differ from several local filenames. Therefore **never** run an unscoped `supabase db push`, `migration up`, or `--include-all` from this checkout. Use the authenticated Supabase migration API/MCP (or an equivalent allowlist-capable release runner) to apply exactly these reviewed files, one atomic migration at a time, in this order:
 
-The `65803` and `65808` files do not contain their own `BEGIN`/`COMMIT` wrappers. The selected release runner must have demonstrated in the isolated rehearsal that a statement failure rolls back the whole migration while keeping `supabase_migrations.schema_migrations` consistent. If that atomicity evidence is absent, stop; do not fall back to bare `psql`, do not use `--include-all`, and do not manufacture history with `migration repair`.
+1. `20260715065752_track_d_feedback_capture_v1.sql`
+2. `20260715065803_track_c_tenant_foundation_expand.sql`
+3. `20260715065808_track_c_retry_state_machine_hardening.sql`
+4. `20260715065812_track_c_tenant_settings.sql`
+5. `20260715065820_track_c_preingestion_ocr_durable_leases.sql`
+6. `20260715065830_track_d_data_flywheel_convergence.sql`
 
-Run from the approved ephemeral maintenance runner. `POSTGRES_URL_NON_POOLING` must be a percent-encoded direct connection URL supplied by the secret store. Preserve the command result as restricted release evidence without printing the URL.
-
-```bash
-export PGOPTIONS='-c lock_timeout=5s -c statement_timeout=15min'
-
-supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"
-# Human approval gate: baseline matches and only 65803, 65808, 65812, 65820 are pending.
-supabase migration up --db-url "$POSTGRES_URL_NON_POOLING"
-supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"
-
-unset PGOPTIONS
-```
-
-The second list must show all four versions in remote history. Stop on the first error. Do not deploy application code over a partially applied schema, do not skip ahead in the sequence, and do not attempt an ad-hoc repair during the same window.
+All six files carry explicit transactions plus `lock_timeout=5s` and `statement_timeout=15min`; the release runner must preserve that atomic boundary and write migration history only after success. Before the first write, verify the live schema baseline semantically (including `search_catalog_candidates_with_source(...)`), record the current migration list, and confirm none of the six migration names is already present. After each application, confirm the new history entry before continuing. Stop on the first error. Do not deploy application code over a partially applied schema, skip ahead, or repair history ad hoc during the same window.
 
 ## 3. Run the read-only schema preflight
 
-The preflight opens `BEGIN READ ONLY` and checks the tenant/RBAC foundation, tenant-scoped core tables, RLS policies, immutable-tenant triggers, retry projection, settings, OCR durable lease columns/index, key RPCs, and validated constraints. It also fails closed unless browser roles have no direct `storage.objects` ACL and the paid-execution heartbeat is service-only with `RUNNING` + owner + unexpired guards.
+The preflight opens `BEGIN READ ONLY` and checks the tenant/RBAC foundation, tenant-scoped core tables, RLS policies, immutable-tenant and append-only triggers, retry projection, settings, OCR durable lease columns/index, Track D feedback/learning/SEM constraints, and key RPCs. It fails closed unless immutable fact tables are browser-denied and service-role insert-only, the obsolete feedback RPC is absent, atomic enqueue plus the provider execution fence are service-only, all data invariants are zero, browser roles have no direct `storage.objects` ACL, and the paid-execution lease guards are intact.
 
 ```bash
 node scripts/check-track-c-production-schema.mjs \

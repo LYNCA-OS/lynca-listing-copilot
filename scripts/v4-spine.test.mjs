@@ -824,7 +824,8 @@ assert.match(sessionStatusApiSource, /session\.operator_id[\s\S]*context\.userId
 assert.match(sessionStatusApiSource, /include_related_counts/, "writer polling must not block on diagnostic table counts unless explicitly requested.");
 assert.match(sessionStatusApiSource, /Promise\.all\(Object\.entries\(tables\)/, "evaluation-only related counts should load in parallel.");
 assert.match(sessionStatusApiSource, /Recognition session status is temporarily unavailable/, "transient session reads must remain retryable instead of looking like a terminal failure.");
-assert.match(feedbackApiSource, /readV4SessionStatus[\s\S]*session\.operator_id[\s\S]*operatorId/, "writer feedback must verify session ownership before learning writes.");
+assert.match(feedbackApiSource, /readV4SessionStatus\(\{ sessionId, tenantId \}\)/, "writer feedback must bind the session read to the signed tenant before learning writes.");
+assert.match(feedbackApiSource, /TENANT_PERMISSIONS\.SUBMIT_FEEDBACK[\s\S]*assignedUserId: ownedSession\.session\.assigned_to_user_id/, "writer feedback must authorize the persisted assignee while preserving tenant-wide Owner access.");
 assert.match(feedbackApiSource, /persistV4WriterFeedbackTransaction/, "writer feedback, learning data, and the session terminal state must commit atomically.");
 assert.match(feedbackApiSource, /v4_writer_cert_registry_promotion_failed/, "non-blocking cert promotion failures must remain observable.");
 assert.match(v4TitleApiSource, /v4_noncritical_persistence_failure_status_write_failed/, "a failed background-persistence terminal write must not disappear silently.");

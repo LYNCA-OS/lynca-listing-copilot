@@ -31,7 +31,10 @@ const enqueueSource = sources["api/v4/listing-job-enqueue.js"];
 assert.match(enqueueSource, /requirePermission\(context, TENANT_PERMISSIONS\.CREATE_JOB\)/);
 assert.match(enqueueSource, /tenantId = context\.tenantId/);
 assert.match(enqueueSource, /operatorId = context\.userId/);
-assert.match(enqueueSource, /trustedJobsFromPayload[\s\S]*tenant_id: context\.tenantId[\s\S]*operator_id: context\.userId/);
+assert.match(enqueueSource, /function withoutClientSessionIdentity\(job = \{\}\)/);
+assert.match(enqueueSource, /"tenant_id", "tenantId",[\s\S]*"operator_id", "operatorId",/);
+assert.match(enqueueSource, /jobsFromPayload\(payload\)\.map\(withoutClientSessionIdentity\)/);
+assert.match(enqueueSource, /expandV4RecognitionStageJobs\(\{[\s\S]*jobs: sourceJobs,[\s\S]*operatorId,[\s\S]*tenantId,/);
 assert.doesNotMatch(enqueueSource, /const tenantId = payload\.(?:tenant_id|tenantId)/);
 
 const jobStatusSource = sources["api/v4/listing-job-status.js"];
@@ -54,9 +57,12 @@ assert.match(sessionStatusSource, /tenant_id: `eq\.\$\{context\.tenantId\}`/);
 
 const feedbackSource = sources["api/v4/listing-feedback.js"];
 assert.match(feedbackSource, /TENANT_PERMISSIONS\.SUBMIT_FEEDBACK/);
-assert.match(feedbackSource, /tenantId: context\.tenantId/);
-assert.match(feedbackSource, /sharedPromotion: false/);
-assert.doesNotMatch(feedbackSource, /upsertCertRegistryEntry|waitUntil\(/, "tenant feedback must not auto-promote shared catalog data");
+assert.match(feedbackSource, /const tenantId = context\.tenantId/);
+assert.match(feedbackSource, /readV4SessionStatus\(\{ sessionId, tenantId \}\)/);
+assert.match(feedbackSource, /reviewedSemanticFields: false/);
+assert.match(feedbackSource, /training_eligible: false/);
+assert.match(feedbackSource, /ENABLE_REVIEWED_WRITER_FEEDBACK_CERT_PROMOTION/);
+assert.match(feedbackSource, /artifacts\.learningEvent\.semantic_truth === true[\s\S]*artifacts\.learningEvent\.training_eligible === true/);
 
 const exportSource = sources["api/v4/listing-export-workbook.js"];
 assert.match(exportSource, /TENANT_PERMISSIONS\.EXPORT_DATA/);
@@ -82,14 +88,13 @@ assert.match(tenantSettingsSource, /table: "tenants",[\s\S]*id: context\.tenantI
 assert.doesNotMatch(tenantSettingsSource, /payload\.(?:tenant_id|tenantId|plan)/);
 
 const recognitionCoreBridgeSource = await readFile("api/v4/listing-copilot-title.js", "utf8");
-assert.match(recognitionCoreBridgeSource, /scopeV4RecognitionPayload\(\{[\s\S]*context: authContext,[\s\S]*persistedJob,[\s\S]*workerAuthorized/);
-assert.match(recognitionCoreBridgeSource, /scoped\.tenant_id = tenantId/);
-assert.match(recognitionCoreBridgeSource, /scoped\.operator_id = userId/);
-assert.match(recognitionCoreBridgeSource, /scoped\.asset_id = persistedJob\.asset_id/);
-assert.match(recognitionCoreBridgeSource, /delete scoped\.recognition_session_id/);
+assert.match(recognitionCoreBridgeSource, /fenceV4RecognitionJobExecution\(\{/);
+assert.match(recognitionCoreBridgeSource, /scopeV4RecognitionPayloadFromFencedJob\(fenced\.job\)/);
+assert.match(recognitionCoreBridgeSource, /resolveV4WorkerSessionIdentity\(\{/);
 assert.match(recognitionCoreBridgeSource, /V4_DURABLE_ENQUEUE_REQUIRED/);
-assert.match(recognitionCoreBridgeSource, /V4_SESSION_PERSISTENCE_FAILED/);
-assert.match(recognitionCoreBridgeSource, /V4_CRITICAL_PERSISTENCE_FAILED/);
+assert.match(recognitionCoreBridgeSource, /V4_WORKER_JOB_LEASE_FENCE_FAILED/);
+assert.match(recognitionCoreBridgeSource, /V4_SESSION_STATE_PERSISTENCE_FAILED/);
+assert.match(recognitionCoreBridgeSource, /callRecognitionCoreWithGpt5EmptyRetry\(\{[\s\S]*signal: req\.signal/);
 
 const originalEnv = {
   METAVERSE_AUTH_SECRET: process.env.METAVERSE_AUTH_SECRET,

@@ -14,6 +14,7 @@ import {
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import {
@@ -78,27 +79,18 @@ function withoutUntrustedBundleIdentity(payload = {}) {
   return sanitized;
 }
 
-function headerValue(req, name) {
-  const lower = String(name || "").toLowerCase();
-  const value = req?.headers?.[lower] ?? req?.headers?.[name];
-  if (Array.isArray(value)) return String(value[0] || "").trim();
-  return String(value || "").trim();
-}
-
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
-}
-
-function triggerPump(req, payload = {}) {
-  const secret = configuredWorkerSecret(process.env);
-  const origin = requestOrigin(req);
-  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "request_origin_missing" };
-  const stableConcurrency = v4WorkerProcessConcurrency(process.env);
+export function triggerPump(_req, {
+  tenantId = "",
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil
+} = {}) {
+  const secret = configuredWorkerSecret(env);
+  const origin = trustedInternalServiceOrigin(env);
+  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "internal_origin_missing" };
+  const stableConcurrency = v4WorkerProcessConcurrency(env);
   const body = {
-    tenant_id: payload.tenant_id || payload.tenantId || payload.batch_id || null,
+    tenant_id: tenantId,
     limit: stableConcurrency,
     process_concurrency: stableConcurrency,
     interactive_limit: stableConcurrency,
@@ -115,7 +107,7 @@ function triggerPump(req, payload = {}) {
     max_continuation_depth: 20,
     reason: "prewarm"
   };
-  waitUntil(fetch(`${origin}/api/v4/listing-job-pump`, {
+  defer(fetchImpl(`${origin}/api/v4/listing-job-pump`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -214,7 +206,11 @@ export default async function handler(req, res) {
   }
 
   const existing = staged.length
-    ? await readV4RecognitionJobs({ jobIds: staged.map((job) => job.id), limit: staged.length })
+    ? await readV4RecognitionJobs({
+      jobIds: staged.map((job) => job.id),
+      tenantId,
+      limit: staged.length
+    })
     : { ok: true, rows: [] };
   if (!existing.ok) {
     sendJson(res, 503, withV4Version({
@@ -286,11 +282,7 @@ export default async function handler(req, res) {
   }
 
   if (result.queued_count > 0 && payload.autokick_workers !== false && payload.autokickWorkers !== false) {
-    triggerPump(req, {
-      batch_id: batchId,
-      tenant_id: tenantId,
-      jobs: []
-    });
+    triggerPump(req, { tenantId });
   }
 
   sendJson(res, 200, withV4Version({

@@ -16,6 +16,7 @@ function statusForRetryFailure(result = {}) {
   if (result.error_code === "V4_JOB_RETRY_NOT_ALLOWED") return 409;
   if (result.error_code === "V4_JOB_RETRY_STATE_CHANGED") return 409;
   if (result.error_code === "V4_JOB_RETRY_JOB_ID_REQUIRED") return 400;
+  if (result.error_code === "V4_JOB_RETRY_TENANT_REQUIRED") return 400;
   if (result.error_code === "V4_JOB_RETRY_OPERATOR_REQUIRED") return 401;
   return 503;
 }

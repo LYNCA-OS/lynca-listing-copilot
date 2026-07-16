@@ -208,7 +208,11 @@ function scenarioFetch({
         operator_id: "user_manager",
         created_by_user_id: "user_manager",
         assigned_to_user_id: sessionAssignee,
-        status: "WRITER_REVIEW"
+        status: "WRITER_REVIEW",
+        l2_status: "READY",
+        l2_title: "2025 Example Card",
+        final_title: "2025 Example Card",
+        provider_result_summary: {}
       }]);
     }
     if (url.pathname === "/rest/v1/rpc/persist_v4_writer_feedback_transaction") {

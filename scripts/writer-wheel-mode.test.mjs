@@ -31,9 +31,9 @@ assert.match(js, /aria-label="卡片 \$\{result\.index\} 最终英文标题"/, "
 assert.match(js, /payload\.v4_persistence\?\.transaction\?\.saved !== true/, "writer advance must require an explicit V4 transaction acknowledgement");
 assert.match(js, /titleSnapshotByIndex/, "writer export must freeze persisted title values before asynchronous uploads");
 assert.match(js, /requireSaved: exportingWriterRows/, "writer export must revalidate persistence before building workbook rows");
-assert.match(js, /feedback_submission_id: feedbackSubmission\.id/, "V4 feedback must carry a client-owned idempotency key");
-assert.match(js, /client_occurred_at: feedbackSubmission\.clientOccurredAt/, "V4 feedback retries must reuse the original client timestamp");
-assert.match(js, /const rejected = feedbackAction === "REJECT"/, "feedback persistence and training eligibility must remain separate states");
+assert.match(js, /feedback_submission_id: v4Submission\.id/, "V4 feedback must carry a client-owned idempotency key");
+assert.match(js, /client_occurred_at: v4Submission\.occurredAt/, "V4 feedback retries must reuse the original client timestamp");
+assert.match(js, /const rejected = v4Action === "REJECT" \|\| String\(payload\.status \|\| ""\)\.toUpperCase\(\) === "REJECTED"/, "feedback persistence and training eligibility must remain separate states");
 assert.doesNotMatch(js, /feedbackStatus = payload\.training_eligible/, "training eligibility must never decide whether an accepted title is treated as stored");
 assert.match(js, /filePreparationRunId/, "asynchronous file preparation must own a stale-run guard");
 assert.match(js, /state\.priorityRetryInFlight/, "priority retry must share the workspace mutation lock");

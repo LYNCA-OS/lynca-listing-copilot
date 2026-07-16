@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
-import {
-  callRecognitionCoreWithGpt5EmptyRetry,
-  scopeV4RecognitionPayload,
-  validateV4PreingestionBundle
-} from "../api/v4/listing-copilot-title.js";
+import { callRecognitionCoreWithGpt5EmptyRetry } from "../api/v4/listing-copilot-title.js";
+import { scopeV4RecognitionPayloadFromFencedJob } from "../lib/listing/v4/session/trusted-session-identity.mjs";
 import { createListingImageVerificationToken } from "../lib/listing/storage/supabase-image-storage.mjs";
 
 const originalFetch = globalThis.fetch;
@@ -41,7 +38,19 @@ try {
     env: process.env
   });
 
-  const scoped = scopeV4RecognitionPayload({
+  const scoped = scopeV4RecognitionPayloadFromFencedJob({
+    id: "job_tenant_image_isolation",
+    tenant_id: "tenant_a",
+    operator_id: "user_a",
+    created_by_user_id: "user_creator_a",
+    assigned_to_user_id: "user_writer_a",
+    recognition_session_id: "session_a_persisted",
+    asset_id: "asset_11111111-1111-4111-8111-111111111111",
+    status: "RUNNING",
+    lease_owner: "worker_track_c",
+    lease_expires_at: "2099-01-01T00:00:00.000Z",
+    job_type: "FINAL_ASSISTED_TITLE",
+    lane: "background",
     payload: {
       tenant_id: "tenant_b",
       tenantId: "tenant_b",
@@ -51,8 +60,10 @@ try {
       assigned_to_user_id: "user_b",
       recognition_session_id: "session_b",
       recognitionSessionId: "session_b_camel",
-      asset_id: "asset_a",
+      asset_id: "asset_22222222-2222-4222-8222-222222222222",
       assetId: "asset_b_forged",
+      client_asset_ref: "client-asset-a",
+      preingestion_bundle_id: "bundle_b_forged",
       provider: "openai_legacy",
       provider_options: {
         disable_approved_identity_memory: true,
@@ -75,20 +86,19 @@ try {
         storage_verified: true,
         storage_verification_token: tenantBToken
       }]
-    },
-    context: { tenantId: "tenant_a", userId: "user_a" },
-    workerAuthorized: false
+    }
   });
 
   assert.equal(scoped.tenant_id, "tenant_a");
   assert.equal(scoped.operator_id, "user_a");
-  assert.equal(scoped.created_by_user_id, "user_a");
-  assert.equal(scoped.assigned_to_user_id, "user_a");
-  assert.equal(scoped.asset_id, "asset_a");
+  assert.equal(scoped.created_by_user_id, "user_creator_a");
+  assert.equal(scoped.assigned_to_user_id, "user_writer_a");
+  assert.equal(scoped.asset_id, "asset_11111111-1111-4111-8111-111111111111");
+  assert.equal(scoped.recognition_session_id, "session_a_persisted");
   assert.equal(Object.hasOwn(scoped, "tenantId"), false);
   assert.equal(Object.hasOwn(scoped, "assetId"), false);
-  assert.equal(Object.hasOwn(scoped, "recognition_session_id"), false);
   assert.equal(Object.hasOwn(scoped, "recognitionSessionId"), false);
+  assert.equal(Object.hasOwn(scoped, "preingestion_bundle_id"), false);
 
   const externalCalls = [];
   globalThis.fetch = async (input) => {
@@ -105,51 +115,33 @@ try {
   assert.match(response.body.reason, /different tenant|does not match image metadata/i);
   assert.deepEqual(externalCalls, [], "V4-to-core bridge must reject the foreign image before storage/provider access");
 
-  const workerScoped = scopeV4RecognitionPayload({
-    payload: {
-      tenant_id: "tenant_b",
-      asset_id: "asset_b_forged",
-      recognition_session_id: "session_b_forged"
-    },
-    context: { tenantId: "tenant_a", userId: "worker_track_c" },
-    persistedJob: {
-      tenant_id: "tenant_a",
-      asset_id: "asset_a_persisted",
-      recognition_session_id: "session_a_persisted",
-      created_by_user_id: "user_creator_a",
-      assigned_to_user_id: "user_writer_a"
-    },
-    workerAuthorized: true
-  });
-  assert.equal(workerScoped.tenant_id, "tenant_a");
-  assert.equal(workerScoped.asset_id, "asset_a_persisted");
-  assert.equal(workerScoped.recognition_session_id, "session_a_persisted");
-  assert.equal(workerScoped.created_by_user_id, "user_creator_a");
-  assert.equal(workerScoped.assigned_to_user_id, "user_writer_a");
-
-  process.env.SUPABASE_URL = "https://supabase.test";
-  process.env.SUPABASE_SERVICE_ROLE_KEY = "track-c-service-role";
-  const bundleCalls = [];
-  const leakedBundlePayload = {
-    tenant_id: "tenant_a",
-    asset_id: "shared_asset_id",
-    preingestion_bundle_id: "bundle_b_leaked"
-  };
-  const bundleValidation = await validateV4PreingestionBundle({
-    payload: leakedBundlePayload,
-    fetchImpl: async (input) => {
-      const url = new URL(String(input));
-      bundleCalls.push(url);
-      assert.equal(url.pathname, "/rest/v1/preingestion_bundles");
-      assert.equal(url.searchParams.get("tenant_id"), "eq.tenant_a");
-      assert.equal(url.searchParams.get("bundle_id"), "eq.bundle_b_leaked");
-      return { ok: true, status: 200, text: async () => "[]" };
+  const forwardedSignal = new AbortController().signal;
+  let observedSignal = null;
+  const injected = await callRecognitionCoreWithGpt5EmptyRetry({
+    payload: { model: "gpt-5-mini" },
+    signal: forwardedSignal,
+    coreRunner: async ({ requestContext }) => {
+      observedSignal = requestContext.signal;
+      return { statusCode: 200, body: { title: "Injected result" } };
     }
   });
-  assert.equal(bundleValidation.ok, false);
-  assert.equal(bundleValidation.statusCode, 404);
-  assert.equal(bundleValidation.code, "PREINGESTION_BUNDLE_NOT_FOUND");
-  assert.equal(bundleCalls.length, 1);
+  assert.equal(injected.body.title, "Injected result");
+  assert.equal(observedSignal, forwardedSignal, "the worker lease signal must reach the recognition core");
+
+  const retryAbort = new AbortController();
+  let runnerCalls = 0;
+  const abortedRetry = await callRecognitionCoreWithGpt5EmptyRetry({
+    payload: { model: "gpt-5-mini" },
+    signal: retryAbort.signal,
+    coreRunner: async () => {
+      runnerCalls += 1;
+      retryAbort.abort({ code: "QUEUE_LEASE_LOST", retryable: false });
+      return { statusCode: 200, body: { confidence: "FAILED" } };
+    }
+  });
+  assert.equal(runnerCalls, 1, "an aborted lease must suppress the paid empty-result retry");
+  assert.equal(abortedRetry.statusCode, 409);
+  assert.equal(abortedRetry.body.error_code, "QUEUE_LEASE_LOST");
 } finally {
   globalThis.fetch = originalFetch;
   for (const [key, value] of Object.entries(originalEnv)) {

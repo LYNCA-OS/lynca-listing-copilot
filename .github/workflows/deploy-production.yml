@@ -41,6 +41,8 @@ jobs:
           npm run test:launch-benchmark
           npm run check:production-engineering
           npm run test:production-engineering
+          npm run check:data-flywheel
+          npm run test:data-flywheel
       - name: Fail closed unless the Track C production schema is ready
         env:
           POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}

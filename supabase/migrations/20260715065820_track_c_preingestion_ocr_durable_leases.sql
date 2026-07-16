@@ -5,6 +5,8 @@
 -- treats an unleased RUNNING row as stale only after its configured timeout.
 
 begin;
+set local lock_timeout = '5s';
+set local statement_timeout = '15min';
 
 alter table public.preingestion_jobs
   add column if not exists max_attempts integer not null default 3,
