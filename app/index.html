@@ -15,7 +15,12 @@
           <span>LYNCA Listing Copilot</span>
         </a>
         <div class="header-actions">
+          <div class="session-account" aria-label="当前会话">
+            <span id="sessionUserLabel" role="status" aria-live="polite">正在确认会话…</span>
+            <button class="ghost-button" type="button" id="logoutButton" aria-busy="false" disabled>退出</button>
+          </div>
           <button class="ghost-button" type="button" id="resetButton">清空</button>
+          <p class="session-control-status" id="sessionControlStatus" role="status" aria-live="polite"></p>
         </div>
       </header>
 
@@ -100,7 +105,7 @@
       </main>
     </div>
 
-    <div class="image-modal" id="imageModal" aria-hidden="true">
+    <div class="image-modal" id="imageModal" aria-hidden="true" inert>
       <div class="image-modal-backdrop" data-modal-close></div>
       <section class="image-modal-panel" role="dialog" aria-modal="true" aria-labelledby="imageModalTitle">
         <header class="image-modal-header">
@@ -120,6 +125,7 @@
       </section>
     </div>
 
+    <script src="/app/session-controls.js" type="module"></script>
     <script src="/app/listing-copilot.js" type="module"></script>
   </body>
 </html>

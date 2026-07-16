@@ -14,7 +14,13 @@ function sign(value) {
 }
 
 function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000, user: "tester" })).toString("base64url");
+  const now = Date.now();
+  const payload = Buffer.from(JSON.stringify({
+    user: "tester",
+    sid: crypto.randomUUID(),
+    iat: now,
+    exp: now + 60000
+  })).toString("base64url");
   return `lynca_metaverse_session=${payload}.${sign(payload)}`;
 }
 

@@ -149,7 +149,7 @@
     "test:advanced-retrieval": "node scripts/advanced-retrieval.test.mjs"
   },
   "dependencies": {
-    "@vercel/functions": "latest",
+    "@vercel/functions": "3.7.3",
     "exceljs": "^4.4.0",
     "jsonrepair": "^3.14.0",
     "pg": "^8.13.1"

@@ -76,6 +76,7 @@ const state = {
   assets: [],
   results: [],
   modal: null,
+  modalReturnFocus: null,
   resolutionMap: {},
   providerStatus: null,
   selectedProvider: "",
@@ -2862,7 +2863,6 @@ function renderImageModal() {
     return;
   }
 
-  const result = resultForAsset(asset);
   const modalImages = modalImagesForAsset(asset);
   const imageIndex = Math.min(state.modal.imageIndex, modalImages.length - 1);
   const image = modalImages[imageIndex];
@@ -2872,15 +2872,17 @@ function renderImageModal() {
   elements.imageModalTitle.textContent = `资产 ${asset.index}`;
   elements.imageModalFileName.textContent = image.name;
   elements.imageModalSwitcher.innerHTML = modalImages.map((assetImage, index) => `
-    <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}" aria-label="切换卡片图片">
+    <button class="modal-side-button ${index === imageIndex ? "active" : ""}" type="button" data-modal-image="${index}" aria-label="切换到第 ${index + 1} 张卡片图片" aria-pressed="${index === imageIndex ? "true" : "false"}">
       <span class="sr-only">切换卡片图片</span>
     </button>
   `).join("");
 }
 
 function openImageModal(assetIndex, imageIndex) {
+  state.modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.modal = { assetIndex, imageIndex };
   renderImageModal();
+  elements.imageModal.removeAttribute("inert");
   elements.imageModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
   elements.imageModalClose.focus();
@@ -2888,10 +2890,14 @@ function openImageModal(assetIndex, imageIndex) {
 
 function closeImageModal() {
   if (!state.modal) return;
+  const returnFocus = state.modalReturnFocus;
   state.modal = null;
+  state.modalReturnFocus = null;
   elements.imageModal.setAttribute("aria-hidden", "true");
+  elements.imageModal.setAttribute("inert", "");
   elements.imageModalImage.removeAttribute("src");
   document.body.classList.remove("modal-open");
+  if (returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus());
 }
 
 function switchModalImage(imageIndex) {
@@ -4620,10 +4626,32 @@ function bindEvents() {
   elements.imageModalClose.addEventListener("click", closeImageModal);
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeImageModal();
+    if (!state.modal) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeImageModal();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...elements.imageModal.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])")]
+      .filter((element) => !element.hidden && element.getClientRects().length > 0);
+    if (!focusable.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
 
   globalThis.window?.addEventListener("beforeunload", (event) => {
+    if (globalThis.__LYNCA_CONFIRMED_NAVIGATION__ === true) return;
     const pending = state.processing || state.results.some((result) => v4WriterTitlePending(result));
     const unsaved = state.results.some((result) => {
       return finalTitleForResult(result) && !writerFeedbackPersisted(result);

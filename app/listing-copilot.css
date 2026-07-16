@@ -88,6 +88,30 @@ a {
   backdrop-filter: blur(18px);
 }
 
+.session-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-account > span {
+  max-width: 240px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-control-status {
+  max-width: 300px;
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -113,6 +137,7 @@ a {
 }
 
 .header-actions {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 12px;
@@ -2398,6 +2423,19 @@ body {
 
   .brand span:last-child {
     display: none;
+  }
+
+  .session-account > span {
+    display: none;
+  }
+
+  .session-control-status {
+    position: absolute;
+    top: 62px;
+    right: 14px;
+    left: 14px;
+    max-width: none;
+    text-align: right;
   }
 
   .workspace-intro h1 {

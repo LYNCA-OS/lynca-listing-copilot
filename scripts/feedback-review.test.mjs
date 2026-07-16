@@ -38,9 +38,12 @@ function sign(value) {
 }
 
 function sessionCookie({ user = "operator-a" } = {}) {
+  const now = Date.now();
   const payload = Buffer.from(JSON.stringify({
     user,
-    exp: Date.now() + 60000
+    sid: crypto.randomUUID(),
+    iat: now,
+    exp: now + 60000
   })).toString("base64url");
   return `lynca_metaverse_session=${payload}.${sign(payload)}`;
 }
