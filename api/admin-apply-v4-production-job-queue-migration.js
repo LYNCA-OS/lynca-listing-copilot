@@ -266,20 +266,21 @@ async function verifyExecutionControlBehavior(client) {
   const secondBatchJobId = `migration_probe_b1_${suffix}`;
   const firstTenantId = `migration_probe_tenant_a_${suffix}`;
   const secondTenantId = `migration_probe_tenant_b_${suffix}`;
+  const firstOperatorId = `migration_probe_operator_a_${suffix}`;
+  const secondOperatorId = `migration_probe_operator_b_${suffix}`;
   const workerId = `migration_probe_worker_${suffix}`;
+  const firstBatchFirstSessionId = `migration_probe_session_a1_${suffix}`;
+  const firstBatchSecondSessionId = `migration_probe_session_a2_${suffix}`;
+  const secondBatchSessionId = `migration_probe_session_b1_${suffix}`;
   await client.query("begin");
   try {
     await client.query(`
-      insert into public.v4_recognition_jobs(
-        id, schema_version, batch_id, tenant_id, asset_id, job_type,
-        provider_id, status, priority, payload, max_attempts, created_at
+      insert into public.v4_recognition_sessions (
+        id, schema_version, status, tenant_id, operator_id, asset_id
       ) values
-        ($1, 'migration-probe-v1', $4, $6, $1, 'FINAL_ASSISTED_TITLE',
-          'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp() - interval '2 seconds'),
-        ($2, 'migration-probe-v1', $4, $6, $2, 'FINAL_ASSISTED_TITLE',
-          'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp() - interval '1 second'),
-        ($3, 'migration-probe-v1', $5, $7, $3, 'FINAL_ASSISTED_TITLE',
-          'migration_probe', 'QUEUED', 0, '{}'::jsonb, 2, clock_timestamp())
+        ($8, 'migration-probe-v1', 'CREATED', $6, $11, null),
+        ($9, 'migration-probe-v1', 'CREATED', $6, $11, null),
+        ($10, 'migration-probe-v1', 'CREATED', $7, $12, null)
     `, [
       firstBatchFirstJobId,
       firstBatchSecondJobId,
@@ -287,7 +288,50 @@ async function verifyExecutionControlBehavior(client) {
       `batch_a_${suffix}`,
       `batch_b_${suffix}`,
       firstTenantId,
-      secondTenantId
+      secondTenantId,
+      firstBatchFirstSessionId,
+      firstBatchSecondSessionId,
+      secondBatchSessionId,
+      firstOperatorId,
+      secondOperatorId
+    ]);
+    await client.query(`
+      insert into public.v4_recognition_jobs(
+        id, schema_version, batch_id, tenant_id, asset_id, job_type,
+        operator_id, recognition_session_id, provider_id, status, priority, payload,
+        max_attempts, created_at
+      ) values
+        ($1, 'migration-probe-v1', $4, $6, null, 'FINAL_ASSISTED_TITLE',
+          $11, $8, 'migration_probe', 'QUEUED', 0,
+          jsonb_build_object(
+            'recognition_session_id', $8,
+            'asset_id', null
+          ), 2, clock_timestamp() - interval '2 seconds'),
+        ($2, 'migration-probe-v1', $4, $6, null, 'FINAL_ASSISTED_TITLE',
+          $11, $9, 'migration_probe', 'QUEUED', 0,
+          jsonb_build_object(
+            'recognition_session_id', $9,
+            'asset_id', null
+          ), 2, clock_timestamp() - interval '1 second'),
+        ($3, 'migration-probe-v1', $5, $7, null, 'FINAL_ASSISTED_TITLE',
+          $12, $10, 'migration_probe', 'QUEUED', 0,
+          jsonb_build_object(
+            'recognition_session_id', $10,
+            'asset_id', null
+          ), 2, clock_timestamp())
+    `, [
+      firstBatchFirstJobId,
+      firstBatchSecondJobId,
+      secondBatchJobId,
+      `batch_a_${suffix}`,
+      `batch_b_${suffix}`,
+      firstTenantId,
+      secondTenantId,
+      firstBatchFirstSessionId,
+      firstBatchSecondSessionId,
+      secondBatchSessionId,
+      firstOperatorId,
+      secondOperatorId
     ]);
     const claim = await client.query(`
       select id, status, queue_tags
