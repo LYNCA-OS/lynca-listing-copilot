@@ -428,7 +428,7 @@ function delay(ms) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, Math.max(0, Number(ms) || 0)));
 }
 
-async function mapWithConcurrency(items = [], concurrency = 1, worker) {
+export async function mapWithConcurrency(items = [], concurrency = 1, worker) {
   const results = new Array(items.length);
   let cursor = 0;
   const runners = Array.from({ length: Math.min(items.length, Math.max(1, concurrency)) }, async () => {

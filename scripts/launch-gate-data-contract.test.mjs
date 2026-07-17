@@ -22,7 +22,7 @@ import {
   runLaunchGateEvaluation,
   runtimeSnapshot
 } from "./run-launch-gate-eval.mjs";
-import { attachPostRecognitionScoring, createConcurrencyGate } from "./v4-ebay-smoke.mjs";
+import { attachPostRecognitionScoring, mapWithConcurrency } from "./v4-ebay-smoke.mjs";
 
 assert.equal(launchGateNumberArg([], "--request-timeout-ms", 120_000), 120_000);
 assert.equal(launchGateNumberArg(["--request-timeout-ms", ""], "--request-timeout-ms", 120_000), 120_000);
@@ -30,16 +30,15 @@ assert.equal(launchGateNumberArg(["--think-ms", "0"], "--think-ms", 6_000), 0);
 assert.equal(launchGateNumberArg(["--l2-wait-ms", "240000"], "--l2-wait-ms", 18_000), 240_000);
 
 {
-  const gate = createConcurrencyGate(2);
   let active = 0;
   let peak = 0;
-  await Promise.all(Array.from({ length: 6 }, (_, index) => gate(async () => {
+  await mapWithConcurrency(Array.from({ length: 6 }, (_, index) => index), 2, async (index) => {
     active += 1;
     peak = Math.max(peak, active);
     await new Promise((resolve) => setTimeout(resolve, 2 + (index % 2)));
     active -= 1;
-  })));
-  assert.equal(peak, 2, "enqueue gate must remain independent from the wider preparation pool");
+  });
+  assert.equal(peak, 2, "submission concurrency must remain capped at the configured limit");
 }
 
 function reviewedSourceItem(index) {

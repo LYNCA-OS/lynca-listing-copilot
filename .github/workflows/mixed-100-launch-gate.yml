@@ -1,0 +1,139 @@
+name: mixed-100-launch-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_deployment_id:
+        description: "Locked production deployment id"
+        required: true
+      expected_deployment_sha:
+        description: "Locked production git sha"
+        required: true
+      selection_seed:
+        description: "Optional deterministic random seed"
+        required: false
+        default: ""
+
+concurrency:
+  group: mixed-100-launch-gate
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    env:
+      API_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      DATASET_PATH: /tmp/mixed-100-manifest.json
+      SEALED_LABELS_PATH: /tmp/mixed-100-sealed-labels.jsonl
+      REPORT_PATH: /tmp/mixed-100-report.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Warm and lock production runtime
+        env:
+          EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
+          EXPECTED_DEPLOYMENT_SHA: ${{ inputs.expected_deployment_sha }}
+        run: |
+          for _attempt in 1 2 3; do
+            curl -s -o /dev/null --max-time 20 "$API_BASE_URL/api/health" || true
+          done
+          curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/runtime-start.json
+          node - <<'NODE'
+          const fs = require('fs');
+          const health = JSON.parse(fs.readFileSync('/tmp/runtime-start.json', 'utf8'));
+          const checks = {
+            ready: health.ready === true,
+            deployment_id: health.deployment?.deployment_id === process.env.EXPECTED_DEPLOYMENT_ID,
+            deployment_sha: health.deployment?.git_commit_sha === process.env.EXPECTED_DEPLOYMENT_SHA,
+            model: health.default_model === 'gpt-5-mini',
+            provider_concurrency: health.openai_pool?.global_concurrency === 2,
+            vector_index_ready: health.vector_index_ready === true
+          };
+          console.log(JSON.stringify({ checks, deployment: health.deployment }, null, 2));
+          if (Object.values(checks).some(value => value !== true)) process.exit(1);
+          NODE
+      - name: Build balanced blind sample
+        run: |
+          SEED="${{ inputs.selection_seed }}"
+          if [ -z "$SEED" ]; then SEED="mixed-${{ github.run_id }}-${{ github.run_attempt }}"; fi
+          node scripts/build-launch-gate-mixed-manifest.mjs \
+            --per-cohort 50 \
+            --selection-seed "$SEED" \
+            --out "$DATASET_PATH" \
+            --sealed-labels-out "$SEALED_LABELS_PATH"
+      - name: Run locked mixed-100 launch gate
+        id: launch_gate
+        continue-on-error: true
+        run: |
+          node scripts/run-launch-gate-eval.mjs \
+            --profile mixed-100 \
+            --dataset "$DATASET_PATH" \
+            --sealed-labels "$SEALED_LABELS_PATH" \
+            --base-url "$API_BASE_URL" \
+            --expected-deployment-id "${{ inputs.expected_deployment_id }}" \
+            --expected-deployment-sha "${{ inputs.expected_deployment_sha }}" \
+            --think-ms 0 \
+            --l2-wait-ms 240000 \
+            --request-timeout-ms 120000 \
+            --out "$REPORT_PATH"
+      - name: Summarize and enforce launch gate
+        if: always()
+        run: |
+          test -f "$REPORT_PATH"
+          node - <<'NODE'
+          const report = require(process.env.REPORT_PATH);
+          const technical = report.technical_summary || {};
+          const internal = report.strata?.internal_reviewed_gt || {};
+          const ebay = report.strata?.ebay_weak_label || {};
+          const gate = report.formal_accuracy_gate || {};
+          const nodes = technical.pipeline_node_observability || {};
+          const summary = {
+            attempted: technical.attempted_count,
+            completed: technical.completed_count,
+            failed: technical.failed_count,
+            cards_per_minute: technical.run_wall_ms > 0
+              ? Number((technical.completed_count / (technical.run_wall_ms / 60000)).toFixed(3))
+              : null,
+            internal_reviewed_accuracy: internal.formal_accuracy || null,
+            ebay_cold_start_diagnostics: ebay,
+            formal_gate: gate,
+            transport_errors: nodes.transport_error_count,
+            field_quality_errors: nodes.field_quality_error_count,
+            missing_required_nodes: nodes.missing_required_node_count
+          };
+          console.log(JSON.stringify(summary, null, 2));
+          const checks = {
+            all_100_attempted: technical.attempted_count === 100,
+            all_100_completed: technical.completed_count === 100 && technical.failed_count === 0,
+            balanced_cohorts: internal.attempted_count === 50 && ebay.attempted_count === 50,
+            reviewed_accuracy_passed: gate.passed === true,
+            no_transport_errors: Number(nodes.transport_error_count || 0) === 0,
+            no_missing_required_nodes: Number(nodes.missing_required_node_count || 0) === 0,
+            deployment_stable: report.integrity_checks?.deployment_stable === true
+          };
+          console.log(JSON.stringify({ checks }, null, 2));
+          if (Object.values(checks).some(value => value !== true)) process.exit(1);
+          NODE
+      - name: Upload detailed evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: mixed-100-launch-gate-report
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            /tmp/mixed-100-report.json
+            /tmp/mixed-100-manifest.json
+            /tmp/mixed-100-sealed-labels.jsonl
+            /tmp/runtime-start.json
