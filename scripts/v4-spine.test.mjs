@@ -1812,8 +1812,22 @@ assert.deepEqual(v4DeploymentInfo({}).git_commit_sha, "");
 assert.deepEqual(v4DeploymentInfo({
   LYNCA_RELEASE_GIT_SHA: "release-sha",
   LYNCA_RELEASE_GIT_REF: "main",
-  VERCEL_GIT_COMMIT_SHA: "stale-vercel-sha",
-  VERCEL_GIT_COMMIT_REF: "stale-vercel-ref"
+  GIT_COMMIT_SHA: "stale-project-sha",
+  GIT_BRANCH: "stale-project-ref",
+  VERCEL_GIT_COMMIT_SHA: "deployed-vercel-sha",
+  VERCEL_GIT_COMMIT_REF: "deployed-vercel-ref"
+}), {
+  git_commit_sha: "deployed-vercel-sha",
+  git_commit_ref: "deployed-vercel-ref",
+  vercel_env: "",
+  vercel_region: "",
+  deployment_id: ""
+});
+assert.deepEqual(v4DeploymentInfo({
+  LYNCA_RELEASE_GIT_SHA: "release-sha",
+  LYNCA_RELEASE_GIT_REF: "main",
+  GIT_COMMIT_SHA: "stale-project-sha",
+  GIT_BRANCH: "stale-project-ref"
 }), {
   git_commit_sha: "release-sha",
   git_commit_ref: "main",
