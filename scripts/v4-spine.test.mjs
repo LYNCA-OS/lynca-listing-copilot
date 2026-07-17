@@ -1809,4 +1809,17 @@ assert.ok(prewarmCalls.some((call) => call.path.includes("/rpc/search_catalog_ca
 assert.ok(prewarmCalls.some((call) => call.path.includes("/rpc/search_card_identities_hybrid")));
 assert.deepEqual(v4DeploymentInfo({}).git_commit_sha, "");
 
+assert.deepEqual(v4DeploymentInfo({
+  LYNCA_RELEASE_GIT_SHA: "release-sha",
+  LYNCA_RELEASE_GIT_REF: "main",
+  VERCEL_GIT_COMMIT_SHA: "stale-vercel-sha",
+  VERCEL_GIT_COMMIT_REF: "stale-vercel-ref"
+}), {
+  git_commit_sha: "release-sha",
+  git_commit_ref: "main",
+  vercel_env: "",
+  vercel_region: "",
+  deployment_id: ""
+});
+
 console.log("v4 spine tests passed");
