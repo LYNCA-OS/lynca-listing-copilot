@@ -3,31 +3,69 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#160F23">
     <title>LYNCA Listing Copilot</title>
     <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
+    <script src="/app/theme-controller.js"></script>
     <link rel="stylesheet" href="/app/listing-copilot.css">
+    <link rel="stylesheet" href="/app/commercial-ui.css">
   </head>
-  <body>
+  <body class="commercial-workbench">
     <div class="page-shell">
       <header class="app-header">
-        <a class="brand" href="/" aria-label="LYNCA Listing Copilot">
-          <span class="brand-mark">LYN</span>
-          <span>LYNCA Listing Copilot</span>
+        <a class="brand" href="/" aria-label="LYNCA Listing Copilot 工作台">
+          <span class="brand-mark" aria-hidden="true">LYN</span>
+          <span class="brand-copy">
+            <strong>Listing Copilot</strong>
+            <small>AI listing production</small>
+          </span>
         </a>
+        <div class="header-context" aria-hidden="true">
+          <span class="header-context-dot"></span>
+          <span>批次工作台</span>
+        </div>
         <div class="header-actions">
-          <span class="session-user-label" id="sessionUserLabel">正在确认会话…</span>
-          <button class="ghost-button" type="button" id="resetButton">清空</button>
-          <button class="ghost-button" type="button" id="logoutButton" disabled>退出</button>
+          <button class="theme-cycle-button" type="button" data-theme-cycle>
+            <span class="theme-cycle-swatch" aria-hidden="true"></span>
+            <span class="theme-cycle-copy">
+              <small>换肤</small>
+              <strong data-theme-label>深紫科技</strong>
+            </span>
+          </button>
+          <p class="sr-only" data-theme-status role="status" aria-live="polite"></p>
+          <div class="session-account" aria-label="当前会话">
+            <span id="sessionUserLabel" role="status" aria-live="polite">正在确认会话…</span>
+            <a class="ghost-button" id="memberManagementLink" href="/register" hidden>成员</a>
+            <button class="ghost-button" type="button" id="logoutButton" aria-busy="false" disabled>退出</button>
+          </div>
+          <button class="ghost-button reset-button" type="button" id="resetButton">清空批次</button>
+          <p class="session-control-status" id="sessionControlStatus" role="status" aria-live="polite"></p>
         </div>
       </header>
 
-      <p class="session-control-status" id="sessionControlStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+      <main class="workspace" data-workspace-mode="standard" data-batch-state="empty">
+        <section class="workspace-intro" aria-labelledby="workbenchTitle">
+          <div>
+            <p class="eyebrow">卡片标题工作台</p>
+            <h1 id="workbenchTitle">从卡片图片到可发布标题</h1>
+          </div>
+          <p class="subtitle">批量识别、写手确认、持久化和 Excel 导出，保持在同一个工作流里。</p>
+        </section>
 
-      <main class="workspace">
-        <section class="workspace-intro">
-          <p class="eyebrow">写手工作台</p>
-          <h1>卡牌标题生成</h1>
-          <p class="subtitle">上传图片，检查并确认一段式英文标题。</p>
+        <section class="workspace-toolbar" aria-label="工作台控制">
+          <div class="workspace-mode-switcher">
+            <div class="workspace-mode-tabs" role="group" aria-label="工作模式">
+              <button class="workspace-mode-tab is-active" type="button" aria-pressed="true" aria-controls="assetPreviewList" data-workspace-mode="standard">
+                <span>默认模式</span>
+                <small>卡片纵列</small>
+              </button>
+              <button class="workspace-mode-tab" type="button" aria-pressed="false" aria-controls="assetPreviewList" data-workspace-mode="writer">
+                <span>写手模式</span>
+                <small>键盘连续录入</small>
+              </button>
+            </div>
+            <p id="workspaceModeHint">查看全部卡片，逐张检查和编辑。</p>
+          </div>
         </section>
 
         <section class="runtime-contract" hidden aria-hidden="true">
@@ -36,42 +74,63 @@
           <label><input type="radio" name="assetMode" value="pair" checked>两图配对</label>
         </section>
 
-        <section class="control-panel">
-          <label class="drop-zone" for="imageInput" id="dropZone">
-            <input id="imageInput" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
-            <strong>拖入卡片图片</strong>
-            <span id="statusText" role="status" aria-live="polite">每两张图片组成一张卡；最后一张会单独处理。</span>
-          </label>
-          <div class="primary-actions">
-            <label class="secondary-button" for="imageInput">选择图片</label>
-            <button class="primary-button" type="button" id="processButton" disabled>生成标题</button>
+        <section class="intake-grid" aria-label="新批次">
+          <div class="control-panel">
+            <label class="drop-zone" for="imageInput" id="dropZone">
+              <input id="imageInput" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
+              <span class="drop-zone-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 16V4m0 0 4.5 4.5M12 4 7.5 8.5M5 14v3.5A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5V14"/>
+                </svg>
+              </span>
+              <span class="drop-zone-copy">
+                <strong>拖入卡片图片</strong>
+                <span id="statusText" role="status" aria-live="polite">每两张图片组成一张卡；最后一张会单独处理。</span>
+              </span>
+            </label>
+            <div class="primary-actions">
+              <label class="secondary-button" for="imageInput">选择图片</label>
+              <button class="primary-button" type="button" id="processButton" disabled>生成标题</button>
+            </div>
           </div>
-        </section>
 
-        <section class="batch-summary" aria-label="处理进度">
-          <span>图片 <strong id="statImages">0</strong></span>
-          <span>卡片 <strong id="statAssets">0</strong></span>
-          <span>完成 <strong id="statProcessed">0</strong></span>
-          <span>失败 <strong id="statFailed">0</strong></span>
-          <div hidden aria-hidden="true">
-            <strong id="statHigh">0</strong>
-            <strong id="statMedium">0</strong>
-            <strong id="statLow">0</strong>
-            <strong id="statRequests">0</strong>
-            <strong id="statCost">$0.000</strong>
-          </div>
+          <section class="batch-summary" aria-label="处理进度">
+            <div class="batch-summary-heading">
+                <p class="eyebrow">当前批次</p>
+              <strong>批次状态</strong>
+            </div>
+            <dl>
+              <div><dt>图片</dt><dd id="statImages">0</dd></div>
+              <div><dt>卡片</dt><dd id="statAssets">0</dd></div>
+              <div><dt>完成</dt><dd id="statProcessed">0</dd></div>
+              <div><dt>失败</dt><dd id="statFailed">0</dd></div>
+            </dl>
+            <div hidden aria-hidden="true">
+              <strong id="statHigh">0</strong>
+              <strong id="statMedium">0</strong>
+              <strong id="statLow">0</strong>
+              <strong id="statRequests">0</strong>
+              <strong id="statCost">$0.000</strong>
+            </div>
+          </section>
         </section>
 
         <section class="asset-workbench">
           <div class="asset-board">
             <div class="section-head">
               <div>
-                <h2>标题</h2>
+                <p class="section-kicker">审核队列</p>
+                <h2 id="assetBoardTitle">标题工作区</h2>
                 <p id="previewSummary">等待上传图片。</p>
               </div>
+              <span class="section-state" aria-hidden="true">01 / 审核</span>
             </div>
-            <div class="asset-preview-list" id="assetPreviewList">
-              <div class="empty-state">选择图片后，卡片会按上传顺序出现在这里。</div>
+            <div class="asset-preview-list" id="assetPreviewList" role="region" aria-label="卡片工作区">
+              <div class="empty-state">
+                <span aria-hidden="true">01</span>
+                <strong>从一个批次开始</strong>
+                <p>选择图片后，卡片会按上传顺序出现在这里。</p>
+              </div>
             </div>
           </div>
         </section>
@@ -80,23 +139,24 @@
           <div class="batch-titles-board">
             <div class="section-head">
               <div>
+                <p class="section-kicker">已入库标题</p>
                 <h2>全部标题</h2>
               </div>
               <div class="batch-actions">
                 <button class="copy-button" type="button" id="copyAllButton" disabled>复制全部</button>
-                <button class="copy-button" type="button" id="exportWorkbookButton" disabled>导出 Excel</button>
+                <button class="primary-button compact-button" type="button" id="exportWorkbookButton" disabled>导出 Excel</button>
               </div>
             </div>
             <p class="export-workbook-status" id="exportWorkbookStatus" role="status" aria-live="polite"></p>
             <ol class="batch-title-list" id="batchTitleList">
-              <li class="batch-empty">生成后可在这里统一复制或导出。</li>
+              <li class="batch-empty">确认并入库的标题会汇总在这里。</li>
             </ol>
           </div>
         </section>
       </main>
     </div>
 
-    <div class="image-modal" id="imageModal" aria-hidden="true">
+    <div class="image-modal" id="imageModal" aria-hidden="true" inert>
       <div class="image-modal-backdrop" data-modal-close></div>
       <section class="image-modal-panel" role="dialog" aria-modal="true" aria-labelledby="imageModalTitle">
         <header class="image-modal-header">

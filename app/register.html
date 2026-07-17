@@ -3,76 +3,98 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LYNCA Listing Copilot 注册</title>
+    <meta name="theme-color" content="#160F23">
+    <title>成员邀请 · LYNCA Listing Copilot</title>
     <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
+    <script src="/app/theme-controller.js"></script>
     <link rel="stylesheet" href="/app/listing-copilot.css">
+    <link rel="stylesheet" href="/app/login.css">
+    <link rel="stylesheet" href="/app/commercial-ui.css">
   </head>
-  <body class="login-page login-shell">
-    <main class="login-stage">
-      <section class="login-card" aria-label="LYNCA Listing Copilot 注册">
-        <div class="login-identity">
-          <span class="brand-mark">LYN</span>
-          <span>
-            <strong>LYNCA Listing Copilot</strong>
-            <small>数据资产工程生产前端</small>
-          </span>
+  <body class="auth-login-page commercial-auth commercial-register">
+    <main class="auth-product-shell">
+      <section class="auth-story" aria-labelledby="inviteStoryTitle">
+        <div class="auth-story-head">
+          <div class="auth-brand">
+            <span class="brand-mark" aria-hidden="true">LYN</span>
+            <span><strong>Listing Copilot</strong><small>工作区权限</small></span>
+          </div>
+          <button class="theme-cycle-button" type="button" data-theme-cycle>
+            <span class="theme-cycle-swatch" aria-hidden="true"></span>
+            <span class="theme-cycle-copy"><small>换肤</small><strong data-theme-label>深紫科技</strong></span>
+          </button>
+          <p class="sr-only" data-theme-status role="status" aria-live="polite"></p>
         </div>
-        <div class="login-copy">
-          <p class="eyebrow">注册入口</p>
-          <h1>邀请成员加入</h1>
-          <p class="subtitle" id="registerHelp">登录管理员账号后可在本页面为同一个 Workspace 生成邀请链接，支持设置邀请码有效期。</p>
-          <p id="inviteLoginHint" hidden>检测到邀请链接，点击下方按钮进入登录并自动绑定该 Workspace。</p>
+        <div class="auth-story-copy">
+          <p class="eyebrow">租户权限</p>
+          <h1 id="inviteStoryTitle">把成员邀请到正确的工作区。</h1>
+          <p>邀请绑定租户与角色；成员只能访问自己所属工作区的数据和操作。</p>
         </div>
-        <form class="listing-login-form" id="tenantInviteForm" autocomplete="on">
-          <label>
-            <span>受邀邮箱</span>
-            <input id="invitee_email" name="invitee_email" type="email" autocomplete="email" required>
+        <dl class="invite-boundary-list">
+          <div><dt>Writer</dt><dd>处理卡片、确认标题并导出工作批次</dd></div>
+          <div><dt>Manager</dt><dd>管理写手与工作流设置</dd></div>
+          <div><dt>Owner</dt><dd>管理工作区成员与关键配置</dd></div>
+        </dl>
+        <a class="auth-back-link" href="/login">← 返回登录</a>
+      </section>
+
+      <section class="auth-entry-card invite-entry-card" aria-labelledby="inviteEntryTitle">
+        <div class="auth-entry-heading">
+          <p class="eyebrow">成员管理</p>
+          <h2 id="inviteEntryTitle">邀请成员</h2>
+          <p id="registerHelp">当前工作区 Owner 可生成邀请链接，并设置角色与有效期。</p>
+          <p id="inviteLoginHint" hidden>检测到邀请链接，请先使用受邀账号登录完成权限绑定。</p>
+        </div>
+
+        <form class="auth-form listing-login-form" id="tenantInviteForm" autocomplete="on">
+          <label for="invitee_email">受邀邮箱</label>
+          <input class="auth-input" id="invitee_email" name="invitee_email" type="email" autocomplete="email" placeholder="writer@company.com" required>
+          <div class="invite-form-grid">
+            <label class="invite-field" for="inviteRole">
+              <span>默认角色</span>
+              <select class="auth-input" id="inviteRole" name="inviteRole" required>
+                <option value="WRITER">写手 · Writer</option>
+                <option value="MANAGER">经理 · Manager</option>
+                <option value="OWNER">所有者 · Owner</option>
+              </select>
+            </label>
+            <label class="invite-field" for="inviteDuration">
+              <span>邀请有效期</span>
+              <select class="auth-input" id="inviteDuration" name="inviteDuration" required>
+                <option value="1m">1 个月</option>
+                <option value="3m">3 个月</option>
+                <option value="6m">6 个月</option>
+                <option value="1y">1 年</option>
+                <option value="permanent">永久</option>
+              </select>
+            </label>
+          </div>
+          <label class="auth-check-row" for="inviteResend">
+            <input id="inviteResend" name="inviteResend" type="checkbox">
+            <span>已有未激活邀请时重新发送，并保留历史记录</span>
           </label>
-          <label>
-            <span>默认角色</span>
-            <select id="inviteRole" name="inviteRole" required>
-              <option value="WRITER">WRITER</option>
-              <option value="MANAGER">MANAGER</option>
-              <option value="OWNER">OWNER</option>
-            </select>
-          </label>
-          <label>
-            <span>链接有效期</span>
-            <select id="inviteDuration" name="inviteDuration" required>
-              <option value="1m">1个月</option>
-              <option value="3m">3个月</option>
-              <option value="6m">6个月</option>
-              <option value="1y">1年</option>
-              <option value="permanent">永久</option>
-            </select>
-          </label>
-          <label>
-            <span>
-              <input id="inviteResend" name="inviteResend" type="checkbox">
-              如该邮箱已存在未激活邀请，直接重发（不清除历史记录）
-            </span>
-          </label>
-          <p class="form-error" id="inviteError" role="alert" aria-live="polite"></p>
-          <button class="primary-button" id="inviteButton" type="submit" aria-busy="false">生成邀请链接</button>
+          <p class="form-error auth-status" id="inviteError" role="alert" aria-live="polite" hidden></p>
+          <button class="auth-primary-button" id="inviteButton" type="submit" aria-busy="false">生成邀请链接</button>
         </form>
+
         <section id="inviteLoginSection" hidden>
-          <p><a href="#" id="inviteLoginLink" class="primary-button auth-link">立即登录并启用邀请权限</a></p>
+          <a href="#" id="inviteLoginLink" class="auth-primary-button auth-link-button">立即登录并启用邀请权限</a>
         </section>
-        <section id="inviteResultSection" hidden>
-          <p><strong>邀请链接</strong></p>
-          <p>
-            <input id="inviteUrl" class="input-token" readonly aria-label="邀请链接">
-          </p>
-          <p>
-            <button class="primary-button" id="copyInviteButton" type="button">复制链接</button>
-          </p>
-          <p>链接失效机制：到期后将自动失效，请按需重新发送以恢复访问权限，旧数据不会被删除。</p>
-          <p><a href="/login" class="primary-button auth-link">回到登录</a></p>
+
+        <section class="invite-result-panel" id="inviteResultSection" hidden>
+          <div><p class="eyebrow">邀请已生成</p><strong>复制链接发送给成员</strong></div>
+          <label for="inviteUrl">邀请链接</label>
+          <input class="auth-input input-token" id="inviteUrl" readonly aria-label="邀请链接">
+          <div class="invite-result-actions">
+            <button class="auth-primary-button" id="copyInviteButton" type="button">复制链接</button>
+            <a href="/login" class="auth-secondary-button auth-link-button">回到登录</a>
+          </div>
+          <p class="auth-field-help">链接到期后失效；重新发送不会删除历史邀请或已有数据。</p>
         </section>
-        <section id="inviteStatusSection" hidden>
-          <p><strong>邀请状态</strong></p>
-          <p id="inviteStatus">--</p>
-          <p id="inviteStatusTip"></p>
+
+        <section class="invite-status-panel" id="inviteStatusSection" hidden>
+          <span class="auth-human-indicator" aria-hidden="true"></span>
+          <div><strong id="inviteStatus">--</strong><p id="inviteStatusTip"></p></div>
         </section>
       </section>
     </main>

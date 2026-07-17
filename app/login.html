@@ -3,44 +3,65 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LYNCA Listing Copilot 登录</title>
+    <meta name="theme-color" content="#160F23">
+    <title>登录 · LYNCA Listing Copilot</title>
     <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
+    <script src="/app/theme-controller.js"></script>
     <link rel="stylesheet" href="/app/listing-copilot.css">
+    <link rel="stylesheet" href="/app/login.css">
+    <link rel="stylesheet" href="/app/commercial-ui.css">
   </head>
-  <body class="login-page login-shell">
-    <main class="login-stage">
-      <section class="login-card" aria-label="LYNCA Listing Copilot 登录">
-        <div class="login-identity">
-          <span class="brand-mark">LYN</span>
-          <span>
-            <strong>LYNCA Listing Copilot</strong>
-            <small>隔离预览工作区</small>
-          </span>
+  <body class="auth-login-page commercial-auth">
+    <main class="auth-product-shell">
+      <section class="auth-story" aria-labelledby="authProductTitle">
+        <div class="auth-story-head">
+          <div class="auth-brand">
+            <span class="brand-mark" aria-hidden="true">LYN</span>
+            <span><strong>Listing Copilot</strong><small>AI 卡片标题工作台</small></span>
+          </div>
+          <button class="theme-cycle-button" type="button" data-theme-cycle>
+            <span class="theme-cycle-swatch" aria-hidden="true"></span>
+            <span class="theme-cycle-copy"><small>换肤</small><strong data-theme-label>深紫科技</strong></span>
+          </button>
+          <p class="sr-only" data-theme-status role="status" aria-live="polite"></p>
         </div>
-        <div class="login-copy">
+        <div class="auth-story-copy">
+          <p class="eyebrow">写手生产流程</p>
+          <h1 id="authProductTitle">让写手只专注于最后一行标题。</h1>
+          <p>识别、证据、入库和导出由同一条工作流承接；每一次确认都有明确的持久化状态。</p>
+        </div>
+        <ol class="auth-flow-summary" aria-label="主要工作流程">
+          <li><span>01</span><div><strong>上传批次</strong><small>图片进入租户隔离的处理队列</small></div></li>
+          <li><span>02</span><div><strong>生成草稿</strong><small>AI 聚合证据并生成一段式标题</small></div></li>
+          <li><span>03</span><div><strong>人工确认</strong><small>服务端确认事务后才进入导出</small></div></li>
+          <li><span>04</span><div><strong>导出 Excel</strong><small>只导出已持久化的接受项</small></div></li>
+        </ol>
+        <p class="auth-story-footnote">生产环境 · 租户隔离 · 人工复核</p>
+      </section>
+
+      <section class="auth-entry-card" aria-labelledby="authEntryTitle">
+        <div class="auth-entry-heading">
           <p class="eyebrow">正式环境入口</p>
-          <h1>登录</h1>
-          <p class="subtitle" id="legacyLoginHelp">请输入你的账号与密码进行登录，或前往注册链接创建新账号。</p>
+          <h2 id="authEntryTitle">进入工作台</h2>
+          <p id="legacyLoginHelp">使用你的工作账号登录；租户与角色权限由服务端会话确认。</p>
         </div>
-        <form class="listing-login-form" id="listingLoginForm" autocomplete="on">
-          <label>
-            <span>账号</span>
-            <input id="username" name="username" type="text" autocomplete="username" aria-describedby="legacyLoginHelp loginError" required autofocus>
+        <form class="auth-form listing-login-form" id="listingLoginForm" autocomplete="on" novalidate>
+          <label for="username">工作账号</label>
+          <input class="auth-input" id="username" name="username" type="text" autocomplete="username" aria-describedby="legacyLoginHelp loginError" required autofocus>
+          <label for="password">密码</label>
+          <input class="auth-input" id="password" name="password" type="password" autocomplete="current-password" aria-describedby="legacyLoginHelp loginError" required>
+          <label for="tenant_id" hidden>
+            <span>工作区</span>
+            <select class="auth-input" id="tenant_id" name="tenant_id"></select>
           </label>
-          <label>
-            <span>密码</span>
-            <input id="password" name="password" type="password" autocomplete="current-password" aria-describedby="legacyLoginHelp loginError" required>
-          </label>
-          <label hidden>
-            <span>客户空间</span>
-            <select id="tenant_id" name="tenant_id"></select>
-          </label>
-          <p class="form-error" id="loginError" role="alert" aria-live="polite"></p>
-          <button class="primary-button" id="loginButton" type="submit" aria-busy="false">登录</button>
-          <p class="auth-note"><a href="/register" class="primary-button auth-link">没有账号？去注册</a></p>
+          <p class="auth-status form-error" id="loginError" role="alert" aria-live="polite"></p>
+          <button class="auth-primary-button" id="loginButton" type="submit" aria-busy="false">登录</button>
         </form>
+        <div class="auth-divider"><span>成员入口</span></div>
+        <p class="auth-phone-note">需要加入新的工作区？请让 Owner 在成员管理中生成邀请。</p>
+        <a class="auth-secondary-button auth-link-button" href="/register">成员邀请与管理</a>
       </section>
     </main>
-    <script src="/app/login.js" type="module"></script>
+    <script type="module" src="/app/login.js"></script>
   </body>
 </html>

@@ -108,7 +108,8 @@ assert.match(js, /startV4AssistedDraftPolling\(result\)/, "frontend should start
 assert.match(js, /applyV4AssistedDraftUpdate/, "frontend should place the first writer-visible one-line title when L2 is ready");
 assert.match(js, /v4WriterTitlePending/, "frontend should keep internal L1 scout output out of the writer title box");
 assert.match(js, /if \(result\.title_stage === "L1_INTERNAL_SCOUT"\) return true;/, "L1 must stay pending and writer-invisible until L2 is ready");
-assert.match(js, /titlePending \? "disabled" : ""/, "the title editor must stay disabled while only L1 exists");
+assert.match(js, /const editorDisabled = titlePending \|\| interactionLocked \|\| retrySubmitting \|\| result\.feedbackStatus === "saving"/, "the title editor must stay disabled while only L1 exists or persistence is in flight");
+assert.match(js, /\$\{editorDisabled \? "disabled" : ""\}/, "the title editor must consume the production interaction lock");
 assert.match(js, /titleWasEditedByWriter/, "L2 assisted drafts must not overwrite writer-edited titles");
 assert.match(js, /stopAllV4AssistedDraftPolling/, "frontend should clear stale L2 polling when files or mode change");
 assert.doesNotMatch(v4JobStatusApi, /select: "[^"]*l1_title/, "writer-facing job status API must not fetch L1 internal titles");
