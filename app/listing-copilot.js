@@ -32,7 +32,8 @@ const MAX_BACKGROUND_PREP_WORKERS = 4;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
 const STORAGE_OBJECT_UPLOAD_TIMEOUT_MS = 30000;
-const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750]);
+const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750, 1500]);
+const PROVIDER_STATUS_RECOVERY_DELAYS_MS = Object.freeze([2000, 5000, 10000, 30000]);
 const PREINGEST_REQUEST_TIMEOUT_MS = 25000;
 const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
 const EXPORT_REQUEST_TIMEOUT_MS = 90000;
@@ -135,6 +136,8 @@ const state = {
   assetLifecycleGeneration: 0
 };
 let providerStatusReadyPromise = null;
+let providerStatusRecoveryTimer = null;
+let providerStatusRecoveryAttempt = 0;
 
 const elements = {
   workspace: document.querySelector(".workspace"),
@@ -224,22 +227,34 @@ function wait(ms) {
 function retryableStorageApiResponse(response, payload = {}) {
   const status = Number(response?.status || 0);
   const code = String(payload?.code || "").trim().toUpperCase();
-  if (code === "VERIFICATION_RECORD_WRITE_FAILED") return false;
+  if (payload?.retryable === true) return [408, 425, 429, 500, 502, 503, 504].includes(status);
+  if (["VERIFICATION_RECORD_WRITE_FAILED", "STORAGE_UPLOAD_IDENTITY_MISMATCH"].includes(code)) return false;
   if (code && !["AUTH_UNAVAILABLE", "AUTH_RATE_LIMITED"].includes(code)) return false;
-  return [429, 502, 503, 504].includes(status);
+  return [408, 425, 429, 500, 502, 503, 504].includes(status);
 }
 
 async function fetchStorageApiJson(url, options = {}) {
   let lastError = null;
   for (let attempt = 0; attempt <= STORAGE_API_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      const response = await fetch(url, options);
+      const request = await fetchWithBoundedRetry(url, options, {
+        timeoutMs: STORAGE_OBJECT_UPLOAD_TIMEOUT_MS,
+        maxAttempts: 1,
+        retryNetworkErrors: true
+      });
+      const response = request.response;
       const payload = await response.json().catch(() => ({}));
       if (
         attempt === STORAGE_API_RETRY_DELAYS_MS.length
         || !retryableStorageApiResponse(response, payload)
       ) {
-        return { response, payload, retryCount: attempt };
+        return {
+          response,
+          payload,
+          retryCount: attempt,
+          attempts: attempt + 1,
+          elapsed_ms: request.elapsed_ms
+        };
       }
     } catch (error) {
       lastError = error;
@@ -703,7 +718,7 @@ async function ensureDurableAssetIdentity(asset) {
   if (asset.durableAssetPromise) return asset.durableAssetPromise;
   asset.durableAssetPromise = (async () => {
     const clientAssetRef = String(asset.clientAssetRef || asset.id || "").trim();
-    const response = await fetch(ASSET_CREATE_API_ENDPOINT, {
+    const request = await fetchJsonWithRetry(ASSET_CREATE_API_ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
@@ -712,10 +727,17 @@ async function ensureDurableAssetIdentity(asset) {
         capture_profile_id: defaultCaptureProfileId,
         expected_original_count: Math.max(1, Math.min(2, Array.isArray(asset.images) ? asset.images.length : 1))
       })
+    }, {
+      timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS,
+      maxAttempts: 3,
+      retryNetworkErrors: true,
+      asset,
+      stage: "asset_create"
     });
-    const payload = await response.json().catch(() => ({}));
+    const response = request.response;
+    const payload = request.payload;
     assertCurrentAssetLifecycle(asset);
-    if (!response.ok || !payload.ok) {
+    if (request.error) {
       throw new Error(payload.message || `listing_asset_create_failed_${response.status}`);
     }
     if (String(payload.client_asset_ref || "") !== clientAssetRef) {
@@ -1542,33 +1564,47 @@ async function prepareAssetInBackground(asset, runId) {
   asset.backgroundPrepareStatus = "queued";
   asset.backgroundPreparationPromise = (async () => {
     const startedAt = performance.now();
+    let lastError = null;
+    let attempt = 0;
     try {
-      if (runId !== state.backgroundPreparationRunId) return { stale: true };
-      asset.backgroundPrepareStatus = "uploading";
-      syncBackgroundPreparationStatus();
-      await ensureAssetOriginalImagesUploaded(asset);
-      if (runId !== state.backgroundPreparationRunId) return { stale: true };
-      asset.backgroundPrepareStatus = "preingesting";
-      syncBackgroundPreparationStatus();
-      const bundle = await ensurePreingestionBundle(asset);
+      for (attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          if (runId !== state.backgroundPreparationRunId) return { stale: true };
+          asset.backgroundPrepareAttemptCount = attempt;
+          asset.backgroundPrepareStatus = "uploading";
+          syncBackgroundPreparationStatus();
+          await ensureAssetOriginalImagesUploaded(asset);
+          if (runId !== state.backgroundPreparationRunId) return { stale: true };
+          asset.backgroundPrepareStatus = "preingesting";
+          syncBackgroundPreparationStatus();
+          const bundle = await ensurePreingestionBundle(asset);
 
-      if (runId === state.backgroundPreparationRunId) {
-        // 证据包持久化后立即提交最终 L2。Cache-only scout 连续无命中，
-        // 不再成为生产起跑门槛；L1 继续保持写手不可见。
-        void ensureSpeculativeRecognition(asset, runId);
+          if (runId === state.backgroundPreparationRunId) {
+            // 证据包持久化后立即提交最终 L2。L1 继续保持写手不可见。
+            void ensureSpeculativeRecognition(asset, runId);
+          }
+
+          asset.backgroundPrepareStatus = "ready";
+          asset.backgroundPrepareError = "";
+          asset.backgroundPrepareRecoveredByRetry = attempt > 1;
+          asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+          syncBackgroundPreparationStatus();
+          return { ok: true, attempt_count: attempt, ...bundle };
+        } catch (error) {
+          lastError = error;
+          if (runId !== state.backgroundPreparationRunId) return { stale: true };
+          if (attempt >= 3) break;
+          asset.backgroundPrepareStatus = "queued";
+          asset.backgroundPrepareError = String(error?.message || "background_prepare_retrying").slice(0, 160);
+          syncBackgroundPreparationStatus();
+          await wait(350 * attempt);
+        }
       }
-
-      asset.backgroundPrepareStatus = "ready";
-      asset.backgroundPrepareError = "";
-      asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
-      syncBackgroundPreparationStatus();
-      return { ok: true, ...bundle };
-    } catch (error) {
       asset.backgroundPrepareStatus = "failed";
-      asset.backgroundPrepareError = String(error.message || "background_prepare_failed").slice(0, 160);
+      asset.backgroundPrepareError = String(lastError?.message || "background_prepare_failed").slice(0, 160);
       asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
       syncBackgroundPreparationStatus();
-      return { ok: false, error: asset.backgroundPrepareError };
+      return { ok: false, attempt_count: attempt, error: asset.backgroundPrepareError };
     } finally {
       if (!state.processing && runId === state.backgroundPreparationRunId) {
         renderResultControls();
@@ -1834,9 +1870,11 @@ function renderProviderControl() {
 
   if (!providers.length) {
     elements.providerControl.innerHTML = "";
-    elements.providerStatusText.textContent = state.providerStatus?.fallback_available
-      ? "未配置服务端 Provider，当前使用本地 fallback。"
-      : readinessText || "未读取到可用 Provider。";
+    elements.providerStatusText.textContent = state.providerStatus?.provider_status_recovering
+      ? "云端状态正在自动恢复；图片仍会保留，恢复后自动开始识别。"
+      : state.providerStatus?.fallback_available
+        ? "未配置服务端 Provider，当前使用本地 fallback。"
+        : readinessText || "未读取到可用 Provider。";
     elements.processButton.disabled = !canGenerateTitles();
     return;
   }
@@ -1904,7 +1942,12 @@ function generationSubmissionAllowed({
 }
 
 function speculativeNeedsFreshEnqueue(speculative = {}) {
-  return speculative.used !== true;
+  if (speculative.pending === true) return false;
+  if (speculative.job?.job_id && speculative.job?.recognition_session_id) return false;
+  // The speculative POST uses the same deterministic batch/asset identity as
+  // the fallback enqueue. Replaying a request that returned no trackable job
+  // is therefore idempotent and must not strand the card permanently.
+  return true;
 }
 
 function syncProcessButtonState() {
@@ -4102,11 +4145,14 @@ async function retryFailedAssetInPriorityQueue(button) {
   if (!asset || !current || current.queueRetryStatus === "submitting") return;
   const lifecycleGeneration = state.assetLifecycleGeneration;
   const retryOfJobId = String(current.v4_job_id || current.job_id || "").trim();
+  const retryOfJobStatus = String(current.v4_job_status || "").trim().toUpperCase();
   // A status-orphaned result never proved that the old durable job reached
   // FAILED. Requiring a failed-job claim would make this retry button fail
   // forever, so it creates a fresh priority-zero task after both status paths
   // have exhausted their recovery window.
-  const retriesFailedDurableJob = Boolean(retryOfJobId) && current.v4StatusOrphaned !== true;
+  const retriesFailedDurableJob = Boolean(retryOfJobId)
+    && ["FAILED", "CANCELLED"].includes(retryOfJobStatus)
+    && current.v4StatusOrphaned !== true;
 
   const writerEditedTitle = String(current.correctedTitle || "").trim();
   state.priorityRetryInFlight = true;
@@ -5531,7 +5577,20 @@ async function loadResolutionMap() {
   }
 }
 
+function scheduleProviderStatusRecovery() {
+  if (providerStatusRecoveryTimer) return;
+  const delayMs = PROVIDER_STATUS_RECOVERY_DELAYS_MS[
+    Math.min(providerStatusRecoveryAttempt, PROVIDER_STATUS_RECOVERY_DELAYS_MS.length - 1)
+  ];
+  providerStatusRecoveryAttempt += 1;
+  providerStatusRecoveryTimer = setTimeout(() => {
+    providerStatusRecoveryTimer = null;
+    providerStatusReadyPromise = loadProviderStatus();
+  }, delayMs);
+}
+
 async function loadProviderStatus() {
+  let loaded = false;
   try {
     const request = await fetchWithBoundedRetry("/api/listing-provider-status", {
       credentials: "same-origin"
@@ -5547,12 +5606,20 @@ async function loadProviderStatus() {
     const payload = await response.json();
     state.providerStatus = payload;
     state.selectedProvider = payload.default_provider || "";
+    loaded = Boolean(state.selectedProvider);
+    providerStatusRecoveryAttempt = 0;
+    if (providerStatusRecoveryTimer) clearTimeout(providerStatusRecoveryTimer);
+    providerStatusRecoveryTimer = null;
   } catch {
-    state.providerStatus = {
-      fallback_available: true,
-      providers: []
-    };
-    state.selectedProvider = "";
+    if (!(state.providerStatus?.providers || []).length) {
+      state.providerStatus = {
+        fallback_available: false,
+        provider_status_recovering: true,
+        providers: []
+      };
+      state.selectedProvider = "";
+    }
+    scheduleProviderStatusRecovery();
   }
 
   renderProviderControl();
@@ -5566,6 +5633,7 @@ async function loadProviderStatus() {
   ) {
     startBackgroundPreparation("provider_status_ready");
   }
+  return loaded;
 }
 
 bindEvents();

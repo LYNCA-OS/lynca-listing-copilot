@@ -191,7 +191,8 @@ async function createDurableSmokeAsset({
       expected_original_count: sources.length
     },
     requestTimeoutMs,
-    fetchImpl
+    fetchImpl,
+    maxAttempts: 3
   });
   if (!response.ok || response.data?.ok !== true || !cleanText(response.data?.asset_id)) {
     throw new Error(`smoke_asset_create_failed:${response.http_status}:${cleanText(response.data?.message).slice(0, 180)}`);
@@ -204,7 +205,9 @@ async function createDurableSmokeAsset({
     tenant_id: response.data.tenant_id,
     image_generation_id: response.data.image_generation_id || response.data.asset_id,
     client_asset_ref: clientAssetRef,
-    sources
+    sources,
+    smoke_asset_create_attempts: response.attempts,
+    smoke_asset_create_recovered_by_retry: response.retried === true
   };
 }
 
@@ -244,7 +247,8 @@ async function uploadDurableSmokeImage({
       contentSha256
     },
     requestTimeoutMs,
-    fetchImpl
+    fetchImpl,
+    maxAttempts: 3
   });
   const upload = signed.data?.upload || {};
   if (!signed.ok || signed.data?.ok !== true || !cleanText(upload.signed_upload_url)) {
@@ -290,7 +294,8 @@ async function uploadDurableSmokeImage({
       contentSha256
     },
     requestTimeoutMs,
-    fetchImpl
+    fetchImpl,
+    maxAttempts: 3
   });
   const verified = verification.data?.verification || {};
   if (!verification.ok || verification.data?.ok !== true || !cleanText(verified.verification_token)) {
@@ -334,7 +339,10 @@ async function uploadDurableSmokeImage({
     storageAssetId: asset.asset_id,
     storage_asset_id: asset.asset_id,
     storageTenantId: asset.tenant_id,
-    storage_tenant_id: asset.tenant_id
+    storage_tenant_id: asset.tenant_id,
+    smoke_upload_sign_attempts: signed.attempts,
+    smoke_upload_verify_attempts: verification.attempts,
+    smoke_upload_recovered_by_retry: signed.retried === true || verification.retried === true
   };
 }
 
@@ -373,7 +381,14 @@ export async function prepareDurableSmokeItem({
       asset_id: asset.asset_id,
       source_feedback_id: item.source_feedback_id || sourceAssetId
     },
-    images: verified
+    images: verified,
+    preparation_diagnostics: {
+      asset_create_attempts: Number(asset.smoke_asset_create_attempts || 1),
+      upload_sign_attempts: verified.reduce((sum, image) => sum + Number(image.smoke_upload_sign_attempts || 1), 0),
+      upload_verify_attempts: verified.reduce((sum, image) => sum + Number(image.smoke_upload_verify_attempts || 1), 0),
+      recovered_by_retry: asset.smoke_asset_create_recovered_by_retry === true
+        || verified.some((image) => image.smoke_upload_recovered_by_retry === true)
+    }
   };
 }
 
@@ -388,7 +403,8 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
-  disableIdentityCache = false
+  disableIdentityCache = false,
+  coldStartBlind = false
 } = {}) {
   const providerOptions = {
     enable_catalog_assist: true,
@@ -421,6 +437,10 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
     providerOptions.v4_provider_done_capacity_handoff = providerDoneHandoff;
   }
   if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
+  if (coldStartBlind) {
+    providerOptions.cold_start_blind = true;
+    providerOptions.enable_cold_start_blind = true;
+  }
   return {
     asset_id: candidateId(item, index),
     source_feedback_id: item.source_feedback_id || item.source_record_id || null,
@@ -469,12 +489,18 @@ export async function login({ baseUrl, username, password, fetchImpl = globalThi
   return cookie;
 }
 
-async function postJson({ baseUrl, path, cookie, payload, requestTimeoutMs, fetchImpl = globalThis.fetch }) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error(`request_timeout:${path}`)), requestTimeoutMs);
+async function postJson({
+  baseUrl,
+  path,
+  cookie,
+  payload,
+  requestTimeoutMs,
+  fetchImpl = globalThis.fetch,
+  maxAttempts = 1
+}) {
   const started = Date.now();
   try {
-    const response = await fetchImpl(`${baseUrl}${path}`, {
+    const request = await fetchWithBoundedRetry(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -483,18 +509,29 @@ async function postJson({ baseUrl, path, cookie, payload, requestTimeoutMs, fetc
         connection: "close",
         cookie
       },
-      body: JSON.stringify(payload),
-      signal: controller.signal
+      body: JSON.stringify(payload)
+    }, {
+      fetchImpl,
+      timeoutMs: requestTimeoutMs,
+      maxAttempts,
+      retryNetworkErrors: true,
+      maxDelayMs: 2000
     });
+    const response = request.response;
     const data = await readJsonResponse(response);
     return {
       ok: response.ok,
       http_status: response.status,
       latency_ms: Date.now() - started,
+      attempts: request.attempts,
+      retried: request.retried === true,
       data
     };
-  } finally {
-    clearTimeout(timer);
+  } catch (error) {
+    if (error?.code === "CLIENT_FETCH_TIMEOUT") {
+      error.message = `request_timeout:${path}`;
+    }
+    throw error;
   }
 }
 
@@ -556,7 +593,8 @@ async function preingestItem({
     cookie,
     payload,
     requestTimeoutMs,
-    fetchImpl
+    fetchImpl,
+    maxAttempts: 3
   });
   const bundleId = response.data?.bundle_id || response.data?.v4_preingestion_bundle_id || null;
   return {
@@ -589,6 +627,26 @@ export async function mapWithConcurrency(items = [], concurrency = 1, worker) {
   });
   await Promise.all(runners);
   return results;
+}
+
+export function createConcurrencyGate(limit = 1) {
+  const capacity = Math.max(1, Math.trunc(Number(limit) || 1));
+  let active = 0;
+  const waiters = [];
+  const release = () => {
+    active = Math.max(0, active - 1);
+    const next = waiters.shift();
+    if (next) next();
+  };
+  return async (task) => {
+    if (active >= capacity) await new Promise((resolveWaiter) => waiters.push(resolveWaiter));
+    active += 1;
+    try {
+      return await task();
+    } finally {
+      release();
+    }
+  };
 }
 
 const openAiRateLimitHeaderNames = Object.freeze([
@@ -1512,6 +1570,7 @@ async function runOne({
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
+  coldStartBlind = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
@@ -1546,7 +1605,8 @@ async function runOne({
     providerDoneHandoff,
     ultraFastImageDetail,
     ultraFastServiceTier,
-    disableIdentityCache
+    disableIdentityCache,
+    coldStartBlind
   });
   const prewarmPromise = prewarm
     ? postJson({
@@ -1638,7 +1698,8 @@ async function runOne({
           payload: queuedPayload
         }]
       },
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
+      maxAttempts: 3
     });
     const speculativeSetupMs = Date.now() - t0;
 
@@ -1842,7 +1903,8 @@ async function runOne({
           payload: queuedPayload
         }]
       },
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
+      maxAttempts: 3
     });
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
       || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
@@ -2223,10 +2285,12 @@ async function enqueueSpeculativeItem({
   ultraFastImageDetail,
   ultraFastServiceTier,
   disableIdentityCache,
+  coldStartBlind,
   usePreingestion,
   preingestionSource,
   requestTimeoutMs,
-  verificationCache
+  verificationCache,
+  enqueueGate = async (task) => task()
 }) {
   const sourceAssetId = candidateId(item, index);
   let id = sourceAssetId;
@@ -2252,7 +2316,8 @@ async function enqueueSpeculativeItem({
       providerDoneHandoff,
       ultraFastImageDetail,
       ultraFastServiceTier,
-      disableIdentityCache
+      disableIdentityCache,
+      coldStartBlind
     });
     const prewarmPromise = prewarm
       ? postJson({
@@ -2305,7 +2370,7 @@ async function enqueueSpeculativeItem({
       client_speculative: true
     };
     const enqueueStartedAt = Date.now();
-    const enqueue = await postJson({
+    const enqueue = await enqueueGate(() => postJson({
       baseUrl,
       path: "/api/v4/listing-job-enqueue",
       cookie,
@@ -2321,8 +2386,9 @@ async function enqueueSpeculativeItem({
           payload: queuedPayload
         }]
       },
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
-    });
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
+      maxAttempts: 3
+    }));
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
       || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
       || {};
@@ -2346,6 +2412,9 @@ async function enqueueSpeculativeItem({
       enqueue,
       enqueue_latency_ms: Date.now() - enqueueStartedAt,
       preparation_latency_ms: Date.now() - startedAt,
+      preparation_diagnostics: preparedItem.preparation_diagnostics || null,
+      enqueue_attempts: Number(enqueue.attempts || 1),
+      enqueue_recovered_by_retry: enqueue.retried === true,
       preingestion: preingestionResult,
       prewarm: prewarmResult,
       error: null
@@ -2362,6 +2431,9 @@ async function enqueueSpeculativeItem({
       enqueue: null,
       enqueue_latency_ms: null,
       preparation_latency_ms: Date.now() - startedAt,
+      preparation_diagnostics: null,
+      enqueue_attempts: null,
+      enqueue_recovered_by_retry: false,
       preingestion: null,
       prewarm: null,
       error: cleanText(error?.message || error || "batch_enqueue_failed").slice(0, 240)
@@ -2516,7 +2588,10 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
       speculative_mode: true,
       batch_poll_mode: true,
       preparation_latency_ms: prepared.preparation_latency_ms ?? null,
-      enqueue_latency_ms: prepared.enqueue_latency_ms ?? null
+      enqueue_latency_ms: prepared.enqueue_latency_ms ?? null,
+      preparation_diagnostics: prepared.preparation_diagnostics || null,
+      enqueue_attempts: prepared.enqueue_attempts ?? null,
+      enqueue_recovered_by_retry: prepared.enqueue_recovered_by_retry === true
     };
   }
   const jobRow = batchPoll.jobsById.get(prepared.job.job_id) || null;
@@ -2584,6 +2659,10 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
       : serializableError(jobRow?.error || batchPoll.fatal_error || batchPoll.last_error || summary.job_status, "batch_poll_timeout"),
     preparation_latency_ms: prepared.preparation_latency_ms ?? null,
     enqueue_latency_ms: prepared.enqueue_latency_ms ?? null,
+    preparation_diagnostics: prepared.preparation_diagnostics || null,
+    preparation_recovered_by_retry: prepared.preparation_diagnostics?.recovered_by_retry === true,
+    enqueue_attempts: prepared.enqueue_attempts ?? null,
+    enqueue_recovered_by_retry: prepared.enqueue_recovered_by_retry === true,
     enqueue_persistence_mode: prepared.enqueue?.data?.persistence_mode || null,
     l1_wall_latency_ms: prewarm.latency_ms ?? null,
     l2_ready: ready,
@@ -3233,8 +3312,20 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     perceived_title_p99_ms: quantile(results.map((item) => item.perceived_title_ms), 0.99),
     preparation_p50_ms: quantile(results.map((item) => item.preparation_latency_ms), 0.5),
     preparation_p95_ms: quantile(results.map((item) => item.preparation_latency_ms), 0.95),
+    preparation_recovered_by_retry_count: results.filter((item) => item.preparation_recovered_by_retry === true).length,
+    preparation_retry_attempt_count: results.reduce((sum, item) => {
+      const diagnostics = item.preparation_diagnostics || {};
+      return sum
+        + Math.max(0, Number(diagnostics.asset_create_attempts || 1) - 1)
+        + Math.max(0, Number(diagnostics.upload_sign_attempts || 0) - Number(item.image_count || 0))
+        + Math.max(0, Number(diagnostics.upload_verify_attempts || 0) - Number(item.image_count || 0));
+    }, 0),
     enqueue_p50_ms: quantile(results.map((item) => item.enqueue_latency_ms), 0.5),
     enqueue_p95_ms: quantile(results.map((item) => item.enqueue_latency_ms), 0.95),
+    enqueue_recovered_by_retry_count: results.filter((item) => item.enqueue_recovered_by_retry === true).length,
+    enqueue_retry_attempt_count: results.reduce((sum, item) => (
+      sum + Math.max(0, Number(item.enqueue_attempts || 1) - 1)
+    ), 0),
     speculative_setup_p50_ms: quantile(results.map((item) => item.speculative_setup_ms), 0.5),
     worker_queue_wait_p50_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.5),
     worker_queue_wait_p95_ms: quantile(results.map((item) => item.worker_queue_wait_ms), 0.95),
@@ -3774,11 +3865,13 @@ export async function runV4EbaySmoke({
   requestTimeoutMs = 90000,
   concurrency = 2,
   submissionConcurrency = null,
+  preparationConcurrency = null,
   tenantCount = 1,
   tenantPrefix = "",
   batchPoll = true,
   resumeBatchId = "",
   evaluationSampleMode = "UNSPECIFIED",
+  coldStartBlind = false,
   outPath = "",
   progress = true
 } = {}) {
@@ -3790,6 +3883,10 @@ export async function runV4EbaySmoke({
   const normalizedSubmissionConcurrency = Math.max(
     1,
     Math.min(24, Math.trunc(Number(submissionConcurrency ?? concurrency) || 1))
+  );
+  const normalizedPreparationConcurrency = Math.max(
+    1,
+    Math.min(24, Math.trunc(Number(preparationConcurrency ?? 4) || 1))
   );
   const dataset = await readDataset(datasetPath);
   const datasetSamplePolicy = Array.isArray(dataset) ? null : dataset.evaluation_sample_policy || null;
@@ -3878,7 +3975,8 @@ export async function runV4EbaySmoke({
       if (progress) process.stderr.write(`v4 ebay smoke resume batch=${sharedBatchId} matched=${prepared.filter((row) => row.job).length}/${items.length}\n`);
     } else {
       const verificationCache = new Map();
-      prepared = await mapWithConcurrency(items, normalizedSubmissionConcurrency, async (item, localIndex) => {
+      const enqueueGate = createConcurrencyGate(normalizedSubmissionConcurrency);
+      prepared = await mapWithConcurrency(items, normalizedPreparationConcurrency, async (item, localIndex) => {
         const index = offset + localIndex;
         if (progress) process.stderr.write(`v4 ebay smoke enqueue ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
         const row = await enqueueSpeculativeItem({
@@ -3905,10 +4003,12 @@ export async function runV4EbaySmoke({
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
+          coldStartBlind,
           usePreingestion,
           preingestionSource,
           requestTimeoutMs,
-          verificationCache
+          verificationCache,
+          enqueueGate
         });
         if (progress) process.stderr.write(`  enqueued=${Boolean(row.job?.job_id)} prepare=${row.preparation_latency_ms}ms error=${row.error || "none"}\n`);
         return row;
@@ -3948,6 +4048,7 @@ export async function runV4EbaySmoke({
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
+          coldStartBlind,
           usePreingestion,
           preingestionSource,
           speculative,
@@ -4005,6 +4106,7 @@ export async function runV4EbaySmoke({
     offset,
     concurrency,
     submission_concurrency: normalizedSubmissionConcurrency,
+    preparation_concurrency: normalizedPreparationConcurrency,
     provider_concurrency: numberOrNull(executionControlSnapshot?.global_provider_concurrency),
     execution_control_snapshot: executionControlSnapshot,
     execution_control_error: executionControlError,
@@ -4059,6 +4161,7 @@ export async function runV4EbaySmoke({
     preingestion_enabled: usePreingestion,
     preingestion_source: usePreingestion ? preingestionSource : null,
     model_override: modelOverride || null,
+    cold_start_blind: coldStartBlind === true,
     predictions_sha256: predictionsSha256,
     evaluation_sample_policy: {
       mode: normalizedSampleMode,
@@ -4168,11 +4271,13 @@ export async function main(argv = process.argv, env = process.env) {
     submissionConcurrency: argv.some((arg) => arg === "--submission-concurrency" || arg.startsWith("--submission-concurrency="))
       ? Math.max(1, Math.trunc(numberArg(argv, "--submission-concurrency", 2)))
       : null,
+    preparationConcurrency: Math.max(1, Math.trunc(numberArg(argv, "--preparation-concurrency", 4))),
     tenantCount: Math.max(1, Math.trunc(numberArg(argv, "--tenant-count", 1))),
     tenantPrefix: cleanText(argValue(argv, "--tenant-prefix", "")),
     batchPoll: !hasFlag(argv, "--per-card-poll"),
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
+    coldStartBlind: hasFlag(argv, "--cold-start-blind"),
     outPath,
     progress: !hasFlag(argv, "--quiet")
   });
@@ -4189,6 +4294,7 @@ export async function main(argv = process.argv, env = process.env) {
     `l1_p95_ms: ${report.summary.l1_p95_ms}`,
     `preingestion_enabled: ${report.preingestion_enabled}`,
     `submission_concurrency: ${report.submission_concurrency}`,
+    `preparation_concurrency: ${report.preparation_concurrency}`,
     `provider_concurrency: ${report.provider_concurrency ?? "unknown"}`,
     `compact_l2_enabled: ${report.compact_l2_enabled}`,
     `preingestion_ok: ${report.summary.preingestion_ok_count}/${report.summary.preingestion_used_count}`,

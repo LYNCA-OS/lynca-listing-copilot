@@ -38,6 +38,8 @@ assert.match(
   /startBackgroundPreparation\("provider_status_ready"\)/,
   "a file selected before provider bootstrap completes must resume cloud preparation once Storage is known ready"
 );
+assert.match(js, /scheduleProviderStatusRecovery/, "a transient provider bootstrap failure must heal without reloading the page");
+assert.match(js, /PROVIDER_STATUS_RECOVERY_DELAYS_MS/, "provider bootstrap recovery must use bounded backoff");
 assert.doesNotMatch(js, /state\.selectedProvider \|\| state\.providerStatus\?\.fallback_available/, "frontend must not allow local fallback to bypass cloud readiness");
 assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to two-image paired recognition");
 assert.match(html, /name="assetMode" value="pair" checked/, "two-image paired recognition should be the checked default control");
@@ -83,6 +85,7 @@ assert.match(js, /const JOB_STATUS_API_ENDPOINT = "\/api\/v4\/listing-job-status
 assert.doesNotMatch(js, /FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend must not probe the discarded L1 scout cache before L2");
 assert.match(js, /const SESSION_STATUS_API_ENDPOINT = "\/api\/v4\/listing-session-status"/, "frontend should poll the V4 session status endpoint for background assisted drafts");
 assert.match(js, /fetchJsonWithRetry\(JOB_ENQUEUE_API_ENDPOINT/, "default title requests should enter the V4 production queue with bounded idempotent retries");
+assert.match(js, /fetchJsonWithRetry\(ASSET_CREATE_API_ENDPOINT/, "durable asset creation must recover from transient API failures");
 assert.match(js, /fetchJsonWithTimeout\(`\$\{JOB_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\)\}`/, "frontend should poll production job status by durable job id with a bounded network and JSON wait");
 assert.match(js, /view:\s*"writer"/, "writer polling should use the compact status projection instead of repeatedly loading full queue payloads");
 assert.match(js, /mapWithConcurrency\(\s*batches,\s*QUEUED_STATUS_READ_CONCURRENCY/, "large status batches should use a bounded read pool");
@@ -302,6 +305,7 @@ assert.match(js, /data-priority-retry/, "failed assets should expose a writer-co
 assert.match(js, /retryFailedAssetInPriorityQueue/, "failed assets should re-enter the durable queue instead of bypassing capacity controls");
 assert.match(js, /priority:\s*0/, "writer retries without an existing job id should enter the highest interactive priority");
 assert.match(js, /manualRetry:\s*retriesFailedDurableJob/, "only retries of durable failed jobs should request server-side retry authorization");
+assert.match(priorityRetrySource, /\["FAILED",\s*"CANCELLED"\]\.includes\(retryOfJobStatus\)/, "a nonterminal or orphaned job must retry as a fresh idempotent priority task");
 assert.match(js, /retryOfJobId:\s*retryOfJobId \|\| null/, "pre-enqueue failures should submit a fresh priority-zero job without a forged retry reference");
 assert.match(js, /manual_retry:\s*options\.manualRetry === true/, "the queue job must carry the manual retry intent to stage expansion");
 assert.match(js, /retry_of_job_id:\s*options\.retryOfJobId \|\| null/, "priority scheduling must be bound to a verifiable failed job");
@@ -587,7 +591,20 @@ assert.equal(
 assert.equal(
   __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: true, pending: true }),
   false,
-  "a timed-out speculative enqueue must never trigger a second paid enqueue"
+  "an in-flight speculative enqueue must not be duplicated"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({
+    used: true,
+    job: { job_id: "job-1", recognition_session_id: "session-1" }
+  }),
+  false,
+  "a trackable speculative job must be reused"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: true, ok: false, job: null }),
+  true,
+  "a completed speculative request without a trackable job must be idempotently re-enqueued"
 );
 assert.equal(
   __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: false }),

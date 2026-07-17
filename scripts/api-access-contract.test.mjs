@@ -71,6 +71,7 @@ const tenantAuthRoutes = Object.freeze([
   "api/listing-title-feedback.js",
   "api/session.js",
   "api/v4/fast-scout-prewarm.js",
+  "api/v4/launch-gate-source-images.js",
   "api/v4/listing-copilot-title.js",
   "api/v4/listing-export-workbook.js",
   "api/v4/listing-feedback.js",
@@ -154,10 +155,10 @@ for (const file of publicRoutes) {
   assert.doesNotMatch(source(file), /\brequireTenantAccess\s*\(/, `${file} is no longer public; reclassify it`);
 }
 
-assert.equal(actualApiFiles.length, 53);
+assert.equal(actualApiFiles.length, 54);
 assert.equal(publicRoutes.length, 4);
 assert.equal(internalSecretRoutes.length, 19);
-assert.equal(tenantAuthRoutes.length, 30);
+assert.equal(tenantAuthRoutes.length, 31);
 
 console.log(JSON.stringify({
   ok: true,

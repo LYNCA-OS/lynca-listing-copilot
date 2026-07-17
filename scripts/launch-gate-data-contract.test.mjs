@@ -19,10 +19,11 @@ import {
   launchGateExecutionContract,
   main as runLaunchGateMain,
   numberArg as launchGateNumberArg,
+  observedExecutionContractChecks,
   runLaunchGateEvaluation,
   runtimeSnapshot
 } from "./run-launch-gate-eval.mjs";
-import { attachPostRecognitionScoring, mapWithConcurrency } from "./v4-ebay-smoke.mjs";
+import { attachPostRecognitionScoring, createConcurrencyGate, mapWithConcurrency } from "./v4-ebay-smoke.mjs";
 
 assert.equal(launchGateNumberArg([], "--request-timeout-ms", 120_000), 120_000);
 assert.equal(launchGateNumberArg(["--request-timeout-ms", ""], "--request-timeout-ms", 120_000), 120_000);
@@ -39,6 +40,19 @@ assert.equal(launchGateNumberArg(["--l2-wait-ms", "240000"], "--l2-wait-ms", 18_
     active -= 1;
   });
   assert.equal(peak, 2, "submission concurrency must remain capped at the configured limit");
+}
+
+{
+  let active = 0;
+  let peak = 0;
+  const gate = createConcurrencyGate(2);
+  await Promise.all(Array.from({ length: 8 }, () => gate(async () => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, 3));
+    active -= 1;
+  })));
+  assert.equal(peak, 2, "queue submission gate must remain independent from preparation concurrency");
 }
 
 function reviewedSourceItem(index) {
@@ -402,6 +416,21 @@ try {
     }
   ];
   const observedChecks = assertObservedExecutionContract(mixedRunReports);
+  const preparationFailureChecks = observedExecutionContractChecks([{
+    cohort: "INTERNAL_REVIEWED_GT",
+    cold_start_blind: false,
+    report: rawRunReport([
+      scoredResult({ assetId: "provider-observed", reviewed: true, score: 1 }),
+      {
+        asset_id: "preparation-failed",
+        ok: false,
+        error: "upload_verify_failed",
+        identity_cache_hit: false
+      }
+    ])
+  }]);
+  assert.equal(preparationFailureChecks.identity_cache_read_bypassed, true);
+  assert.equal(preparationFailureChecks.image_detail_high, true);
   const stratifiedReport = buildLaunchGateReport({
     profile: "mixed-100",
     dataset: built.manifest,
@@ -596,6 +625,32 @@ try {
   const belowThresholdReport = JSON.parse(await readFile(belowThresholdReportPath, "utf8"));
   assert.equal(belowThresholdReport.formal_accuracy_gate.actual_correct_count, 8);
   assert.equal(belowThresholdReport.formal_accuracy_gate.passed, false);
+
+  const observedFailureReportPath = join(root, "reviewed-10-observed-contract-failure-report.json");
+  await assert.rejects(() => runLaunchGateEvaluation({
+    profile: "reviewed-10",
+    datasetPath: reviewedDatasetPath,
+    sealedLabelsPath: reviewedSealedPath,
+    baseUrl: "https://offline.invalid",
+    username: "offline-user",
+    password: "offline-password",
+    expectedDeploymentSha: "abc123",
+    outPath: observedFailureReportPath,
+    fetchImpl,
+    imageMaterializer,
+    smokeRunner: async (options) => ({
+      ...rawRunReport(Array.from({ length: 10 }, (_, index) => scoredResult({
+        assetId: `reviewed-${index + 1}`,
+        reviewed: true,
+        finalTitle: `2026 Reviewed Offline ${index + 1} PSA 10`
+      })), { coldStartBlind: options.coldStartBlind }),
+      preparation_concurrency: 3
+    }),
+    progress: false
+  }), /Observed launch-gate contract failed: preparation_concurrency_locked/);
+  const observedFailureReport = JSON.parse(await readFile(observedFailureReportPath, "utf8"));
+  assert.equal(observedFailureReport.execution_contract.observed_checks.preparation_concurrency_locked, false);
+  assert.equal(observedFailureReport.formal_accuracy_gate.passed, true);
 
   let mismatchSmokeCallCount = 0;
   await assert.rejects(() => runLaunchGateEvaluation({

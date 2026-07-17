@@ -18,6 +18,10 @@ function cleanText(value) {
   return String(value || "").trim();
 }
 
+function requireLaunchGateTenantAccess(req, options) {
+  return requireTenantAccess(req, options);
+}
+
 async function mapWithConcurrency(items, concurrency, worker) {
   const output = new Array(items.length);
   let cursor = 0;
@@ -33,7 +37,7 @@ async function mapWithConcurrency(items, concurrency, worker) {
 }
 
 export function createLaunchGateSourceImagesHandler({
-  requireAccess = requireTenantAccess,
+  requireAccess = requireLaunchGateTenantAccess,
   resolveSources = resolveLaunchGateImageSources,
   signImage = createListingImageSignedReadUrl
 } = {}) {

@@ -453,9 +453,16 @@ export function assertLaunchGateFormalAccuracy(report = {}) {
   return gate.checks;
 }
 
-export function assertObservedExecutionContract(runReports = []) {
+export function observedExecutionContractChecks(runReports = []) {
   const reports = runReports.map((entry) => entry.report || entry);
   const results = reports.flatMap((report) => report.results || []);
+  const cacheBypassObservations = results.filter((result) => (
+    Object.hasOwn(result, "identity_cache_read_bypassed")
+    && result.identity_cache_read_bypassed !== null
+  ));
+  const providerImageDetailObservations = results.filter((result) => (
+    Boolean(cleanText(result.provider_image_detail))
+  ));
   const internalResults = runReports
     .filter((entry) => cleanText(entry.cohort).toUpperCase() === "INTERNAL_REVIEWED_GT")
     .flatMap((entry) => (entry.report || entry).results || []);
@@ -471,8 +478,12 @@ export function assertObservedExecutionContract(runReports = []) {
     provider_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.provider_concurrency) === 2),
     identity_cache_disabled: reports.length > 0 && reports.every((report) => report.identity_cache_disabled === true),
     identity_cache_never_hit: results.length > 0 && results.every((result) => result.identity_cache_hit !== true),
-    identity_cache_read_bypassed: results.length > 0 && results.every((result) => result.identity_cache_read_bypassed === true),
-    image_detail_high: results.length > 0 && results.every((result) => cleanText(result.provider_image_detail).toLowerCase() === "high"),
+    // Preparation failures and exact-anchor finalizations never enter the
+    // provider stage, so they cannot truthfully emit provider-only fields.
+    identity_cache_read_bypassed: cacheBypassObservations.every((result) => result.identity_cache_read_bypassed === true),
+    image_detail_high: providerImageDetailObservations.every((result) => (
+      cleanText(result.provider_image_detail).toLowerCase() === "high"
+    )),
     predictions_frozen_before_scoring: reports.length > 0 && reports.every((report) => Boolean(cleanText(report.predictions_sha256))),
     vector_self_retrieval_exclusion_enforced: vectorSelfExclusionAttempts.every((result) => (
       result.vector_self_exclusion_filter_active === true
@@ -483,6 +494,11 @@ export function assertObservedExecutionContract(runReports = []) {
       entry.report?.cold_start_blind === entry.cold_start_blind
     ))
   };
+  return checks;
+}
+
+export function assertObservedExecutionContract(runReports = []) {
+  const checks = observedExecutionContractChecks(runReports);
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([key]) => key);
   if (failed.length) throw new Error(`Observed launch-gate contract failed: ${failed.join(", ")}`);
   return checks;
@@ -769,7 +785,7 @@ export async function runLaunchGateEvaluation({
     expectedDeploymentId: expectedDeployment.deployment_id,
     expectedDeploymentSha: expectedDeployment.deployment_sha
   });
-  const observedChecks = assertObservedExecutionContract(runReports);
+  const observedChecks = observedExecutionContractChecks(runReports);
   const report = buildLaunchGateReport({
     profile,
     dataset,
@@ -785,6 +801,12 @@ export async function runLaunchGateEvaluation({
     now: now()
   });
   await writeJson(outPath, report);
+  const failedObservedChecks = Object.entries(observedChecks)
+    .filter(([, value]) => value !== true)
+    .map(([key]) => key);
+  if (failedObservedChecks.length) {
+    throw new Error(`Observed launch-gate contract failed: ${failedObservedChecks.join(", ")}`);
+  }
   if (!report.integrity_checks.deployment_stable) {
     throw new Error("Production deployment id/sha drifted during the launch-gate run.");
   }
