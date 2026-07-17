@@ -56,12 +56,15 @@ const configuredEnv = {
   V4_ULTRA_FAST_IMAGE_DETAIL: "high",
   V4_ULTRA_FAST_TEXT_VERBOSITY: "medium",
   V4_ULTRA_FAST_SERVICE_TIER: "priority",
+  V4_JOB_WORKER_SECRET: "test-worker-secret",
+  V4_INTERNAL_BASE_URL: "https://listing.internal.test",
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "test-supabase-key",
   LISTING_IMAGE_BUCKET: "listing-card-images",
   LISTING_FEEDBACK_RETENTION_ENABLED: "true",
   ENABLE_VECTOR_RETRIEVAL: "true",
   VECTOR_RETRIEVAL_MODE: "assist",
+  VECTOR_INDEX_READY: "true",
   VECTOR_WORKER_URL: "https://vector.worker.test",
   VECTOR_WORKER_TOKEN: "test-vector-token",
   ENABLE_ADVANCED_RETRIEVAL: "true",
@@ -96,6 +99,10 @@ assert.equal(component(readyReport, "vision_provider").details.image_detail, "hi
 assert.equal(component(readyReport, "vision_provider").details.text_verbosity, "medium");
 assert.equal(component(readyReport, "vision_provider").details.service_tier, "priority");
 assert.equal(component(readyReport, "image_storage").status, "READY");
+assert.equal(component(readyReport, "production_queue").status, "READY");
+assert.equal(component(readyReport, "production_queue").details.provider_process_concurrency, 2);
+assert.equal(component(readyReport, "production_queue").details.retry_max_attempts, 4);
+assert.deepEqual(component(readyReport, "production_queue").details.retry_backoff_seconds, [10, 30, 120]);
 assert.equal(component(readyReport, "feedback_workflow_schema").status, "READY");
 assert.equal(component(readyReport, "vector_retrieval").status, "READY");
 assert.equal(component(readyReport, "vector_retrieval").details.runtime_ready, true);
@@ -114,9 +121,12 @@ const missingReport = await buildWorkflowReadinessAudit({
 });
 assert.equal(missingReport.ok, false);
 assert.equal(missingReport.can_run_cloud_recognition, false);
-assert.deepEqual(missingReport.blockers.sort(), ["image_storage", "vision_provider"]);
+assert.deepEqual(missingReport.blockers.sort(), ["image_storage", "production_queue", "vision_provider"]);
+assert.equal(component(missingReport, "production_queue").status, "NOT_CONFIGURED");
 assert.equal(component(missingReport, "feedback_workflow_schema").status, "FAIL_CLOSED");
-assert.equal(component(missingReport, "vector_retrieval").status, "DISABLED");
+assert.equal(component(missingReport, "vector_retrieval").status, "FAIL_CLOSED");
+assert.equal(component(missingReport, "vector_retrieval").details.production_request_enabled, true);
+assert.equal(component(missingReport, "vector_retrieval").details.index_ready, false);
 assert.equal(component(missingReport, "paddle_ocr").status, "DISABLED");
 assert.equal(component(missingReport, "catalog_store").status, "FAIL_CLOSED");
 
@@ -134,13 +144,17 @@ const requestOptInVectorReport = await buildWorkflowReadinessAudit({
 });
 assert.match(component(requestOptInVectorReport, "vision_provider").summary, /gpt-5-mini/);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").status, "READY");
-assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.default_enabled, false);
-assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.online_retrieval_default_enabled, false);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.environment_default_enabled, false);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.production_request_enabled, true);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.default_enabled, true);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.online_retrieval_default_enabled, true);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.index_ready, true);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.index_state, "READY");
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.request_override_supported, true);
 assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.runtime_ready, true);
-assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.prompt_influence_by_default, false);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.prompt_influence_by_default, true);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.assist_ready, true);
+assert.equal(component(requestOptInVectorReport, "vector_retrieval").details.participation_state, "ASSIST_ACTIVE");
 
 const schemaBlockedReport = await buildWorkflowReadinessAudit({
   argv: ["--no-env-file"],

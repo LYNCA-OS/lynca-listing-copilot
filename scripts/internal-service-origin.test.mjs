@@ -115,7 +115,10 @@ function assertSecretStayedOnTrustedOrigin(calls, expectedPath) {
   });
   assert.equal(result.triggered, true);
   await recorded.settle();
-  assertSecretStayedOnTrustedOrigin(recorded.calls, "/api/v4/listing-job-worker");
+  assertSecretStayedOnTrustedOrigin(recorded.calls, "/api/v4/listing-job-pump");
+  const wakePayload = JSON.parse(recorded.calls.at(-1).init.body);
+  assert.equal(wakePayload.background_only, true);
+  assert.equal(wakePayload.detached, true);
 }
 
 console.log("trusted internal service origin tests passed");

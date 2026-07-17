@@ -134,6 +134,14 @@ export function alternateOpenAiKeySlot(payload = {}, env = process.env) {
   return (Math.trunc(currentSlot) % poolSize) + 1;
 }
 
+export function shouldPersistV4ObservingTransition({ workerAuthorized = false } = {}) {
+  // Queue workers have already completed an atomic claim plus a lease fence,
+  // which proves both durable job ownership and database write availability.
+  // Repeating a session PATCH here adds one network round trip before every
+  // deterministic-anchor or provider path without strengthening the fence.
+  return workerAuthorized !== true;
+}
+
 function isInternalScoutResult(result = {}) {
   return result?.title_stage === v4TitleStages.L1_INTERNAL_SCOUT;
 }
@@ -1391,6 +1399,22 @@ export default async function handler(req, res) {
     return;
   }
 
+  const requestAssetIdentity = recognitionAssetIdentity(payload);
+  if (!requestAssetIdentity) {
+    sendJson(res, workerAuthorized ? 409 : 400, withV4Version({
+      ok: false,
+      retryable: false,
+      message: "A server-created durable asset_id and its client_asset_ref are required.",
+      error_code: "V4_CANONICAL_ASSET_IDENTITY_REQUIRED"
+    }));
+    return;
+  }
+  payload = {
+    ...payload,
+    asset_id: requestAssetIdentity.assetId,
+    client_asset_ref: requestAssetIdentity.clientAssetRef
+  };
+
   let originOperatorId;
   let originTenantId;
   let originUserId;
@@ -1416,21 +1440,6 @@ export default async function handler(req, res) {
     }));
     return;
   }
-  const requestAssetIdentity = recognitionAssetIdentity(payload);
-  if (!requestAssetIdentity) {
-    sendJson(res, workerAuthorized ? 409 : 400, withV4Version({
-      ok: false,
-      retryable: false,
-      message: "A server-created durable asset_id and its client_asset_ref are required.",
-      error_code: "V4_CANONICAL_ASSET_IDENTITY_REQUIRED"
-    }));
-    return;
-  }
-  payload = {
-    ...payload,
-    asset_id: requestAssetIdentity.assetId,
-    client_asset_ref: requestAssetIdentity.clientAssetRef
-  };
   const handlerStartedAt = Date.now();
   let recognitionClockStartedAt = null;
   let recognitionClockSource = null;
@@ -1750,6 +1759,21 @@ export default async function handler(req, res) {
   }
 
   const createResult = await createResultPromise;
+  if (shouldPersistV4ObservingTransition({ workerAuthorized })) {
+    const observingUpdate = await updateV4RecognitionSession({
+      sessionId,
+      patch: { status: v4SessionStatuses.OBSERVING }
+    });
+    if (observingUpdate.saved !== true) {
+      sendJson(res, 503, withV4Version({
+        ok: false,
+        retryable: true,
+        message: "Recognition session state could not be persisted before execution.",
+        error_code: "V4_SESSION_STATE_PERSISTENCE_FAILED"
+      }));
+      return;
+    }
+  }
 
   let l2ScoutResult = null;
 

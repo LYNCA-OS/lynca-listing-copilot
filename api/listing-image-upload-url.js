@@ -49,7 +49,9 @@ export default async function handler(req, res) {
 
   if (!enforceApiRateLimit(req, res, {
     scope: "listing_image_upload",
-    limit: 120,
+    // One card can legitimately contain two originals plus eight evidence crops.
+    // The old demo limit rejected the tail of 20-100 card writer batches.
+    limit: 1200,
     windowMs: 60_000,
     message: "Too many image upload URL requests. Please try again shortly."
   })) return;
@@ -107,8 +109,10 @@ export default async function handler(req, res) {
       upload
     });
   } catch (error) {
-    sendJson(res, 400, {
+    sendJson(res, error.retryable === true ? 503 : 400, {
       ok: false,
+      code: error.code || (error.retryable === true ? "storage_signing_temporarily_unavailable" : "storage_signing_failed"),
+      retryable: error.retryable === true,
       message: String(error.message || "Unable to create image upload URL.").slice(0, 240)
     });
   }

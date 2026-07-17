@@ -228,6 +228,36 @@ assert.equal(
   upload.signed_upload_url,
   "https://example.supabase.co/storage/v1/object/upload/sign/listing-card-images/tenants/tenant_legacy/listing-assets/2026-06-22/asset-1/front_original-front-1.jpg?token=signed"
 );
+let transientUploadCalls = 0;
+const transientUpload = await createListingImageSignedUpload({
+  tenantId,
+  assetId: "asset-transient",
+  imageId: "front-transient",
+  role: "front_original",
+  fileName: "front.jpg",
+  contentType: "image/jpeg",
+  size: 1000,
+  width: 1200,
+  height: 900,
+  signatureHex: jpegSignatureHex,
+  env,
+  now: new Date("2026-06-22T08:00:00Z"),
+  fetchImpl: async () => {
+    transientUploadCalls += 1;
+    if (transientUploadCalls === 1) {
+      return { ok: false, status: 503, text: async () => "temporarily unavailable" };
+    }
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        url: "/object/upload/sign/listing-card-images/tenants/tenant_legacy/listing-assets/2026-06-22/asset-transient/front_original-front-transient.jpg?token=signed"
+      })
+    };
+  }
+});
+assert.equal(transientUploadCalls, 2);
+assert.match(transientUpload.signed_upload_url, /token=signed/);
 await assert.rejects(
   () => createListingImageSignedUpload({
     tenantId,
@@ -340,6 +370,29 @@ assert.equal(verification.width, 1200);
 assert.equal(verification.height, 900);
 assert.equal(verification.content_sha256, pngVerificationSha256);
 assert.equal(verification.content_hash_verified, true);
+let transientVerificationCalls = 0;
+const transientVerification = await verifyListingImageUploadedObject({
+  tenantId,
+  objectPath: "tenants/tenant_legacy/listing-assets/2026-06-22/asset-1/front_original-front-1.png",
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  env,
+  fetchImpl: async () => {
+    transientVerificationCalls += 1;
+    if (transientVerificationCalls === 1) {
+      return { ok: false, status: 503, headers: { get: () => "" }, arrayBuffer: async () => new ArrayBuffer(0) };
+    }
+    return objectResponse(pngVerificationBytes, {
+      "content-type": "image/png",
+      "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+    });
+  }
+});
+assert.equal(transientVerificationCalls, 2);
+assert.equal(transientVerification.object_verified, true);
 assert.equal(typeof verification.verification_token, "string");
 assert.ok(verification.verification_token.length > 40);
 const verifiedTokenPayload = verifyListingImageVerificationToken({
@@ -692,6 +745,38 @@ assert.equal(rejectedVerifyApiResponse.body.cleanup.deleted, true);
 assert.equal(cleanupCalls.some((call) => call.init.method === "DELETE"), true);
 assert.doesNotMatch(JSON.stringify(rejectedVerifyApiResponse.body), /test-service-role/);
 assert.doesNotMatch(JSON.stringify(rejectedVerifyApiResponse.body), new RegExp(pngSignatureHex));
+
+const transientApiCalls = [];
+globalThis.fetch = tenantAwareFetch(async (url, init = {}) => {
+  transientApiCalls.push({ url: String(url), method: init.method || "GET" });
+  return {
+    ok: false,
+    status: 503,
+    headers: { get: () => "" },
+    arrayBuffer: async () => new ArrayBuffer(0),
+    text: async () => "temporarily unavailable"
+  };
+});
+const retryableVerifyApiResponse = await callVerifyApi({
+  assetId: durableAssetId,
+  imageId: "front-api",
+  role: "front_original",
+  objectPath: `tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/front_original-front-api.png`,
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex
+});
+assert.equal(
+  transientApiCalls.filter((call) => call.method === "GET" && call.url.includes("/storage/v1/object/")).length,
+  2,
+  "storage verification should retry once server-side"
+);
+assert.equal(retryableVerifyApiResponse.statusCode, 503);
+assert.equal(retryableVerifyApiResponse.body.retryable, true);
+assert.equal(retryableVerifyApiResponse.body.cleanup.attempted, false);
+assert.equal(retryableVerifyApiResponse.body.cleanup.preserved_for_retry, true);
 
 Object.keys(process.env).forEach((key) => {
   if (!(key in originalEnv)) delete process.env[key];

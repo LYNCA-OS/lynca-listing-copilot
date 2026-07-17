@@ -26,8 +26,9 @@ import {
   v4QueueConfigured,
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
-import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
+import { invokeTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
+import { configuredWorkerSecret } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
@@ -307,7 +308,6 @@ export async function canonicalizeQueueJobs({
     };
   }));
 }
-
 function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed)) return fallback;
@@ -328,35 +328,18 @@ async function invokeQueuePump({
   origin,
   secret,
   body,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  env = process.env
 } = {}) {
-  try {
-    const response = await fetchImpl(`${origin}/api/v4/listing-job-pump`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [workerSecretHeader]: secret
-      },
-      body: JSON.stringify(body)
-    });
-    let responseBody = null;
-    try {
-      responseBody = typeof response?.json === "function" ? await response.json() : null;
-    } catch {
-      responseBody = null;
-    }
-    return {
-      invoked: true,
-      ok: response?.ok === true && responseBody?.ok !== false,
-      status: response?.status ?? null,
-      error: responseBody?.message || responseBody?.failed_calls?.[0]?.message || null,
-      pump_failed_call_count: Number(responseBody?.failed_call_count || 0),
-      pump_claimed_count: Number(responseBody?.claimed_count || 0),
-      pump_processed_count: Number(responseBody?.processed_count || 0)
-    };
-  } catch (error) {
-    return { invoked: true, ok: false, status: null, error: error?.message || "queue_pump_fetch_failed" };
-  }
+  return invokeTrustedV4QueuePump({
+    payload: body,
+    env: {
+      ...env,
+      V4_INTERNAL_BASE_URL: origin,
+      V4_JOB_WORKER_SECRET: secret
+    },
+    fetchImpl
+  });
 }
 
 export async function runPostEnqueueQueueKick({
@@ -367,16 +350,19 @@ export async function runPostEnqueueQueueKick({
   leaseMs,
   acquireKick = tryAcquireV4QueueKick,
   fetchImpl = globalThis.fetch,
-  sleep = delay
+  sleep = delay,
+  env = process.env
 } = {}) {
   const acquire = (owner) => acquireKick({
     scope: "global",
     owner,
-    leaseMs
+    leaseMs,
+    env,
+    fetchImpl
   });
   const initial = await acquire(kickOwner);
   if (!initial.ok || initial.acquired) {
-    const invocation = await invokeQueuePump({ origin, secret, body, fetchImpl });
+    const invocation = await invokeQueuePump({ origin, secret, body, fetchImpl, env });
     return { phase: "initial", acquired: initial.acquired === true, acquisition_ok: initial.ok === true, ...invocation };
   }
 
@@ -393,7 +379,8 @@ export async function runPostEnqueueQueueKick({
     origin,
     secret,
     body: { ...body, reason: "post_enqueue_deduplicated_followup" },
-    fetchImpl
+    fetchImpl,
+    env
   });
   return { phase: "followup", acquired: followup.acquired === true, acquisition_ok: followup.ok === true, ...invocation };
 }
@@ -413,7 +400,7 @@ export function triggerV4QueuePumpAfterEnqueue(_req, {
   const secret = configuredWorkerSecret(env);
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
   const origin = trustedInternalServiceOrigin(env);
-  if (!origin) return { triggered: false, reason: "internal_origin_missing" };
+  if (!origin) return { triggered: false, reason: "trusted_internal_origin_missing" };
   const stableConcurrency = v4WorkerProcessConcurrency(env);
   const perWorkerLimit = positiveInteger(env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
   const interactiveWorkers = positiveInteger(env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });
@@ -435,7 +422,6 @@ export function triggerV4QueuePumpAfterEnqueue(_req, {
     cycles: 2,
     max_runtime_ms: 240_000,
     lease_seconds: 240,
-    retry_delay_seconds: 8,
     parallel_lanes: true,
     idle_delay_ms: 0,
     idle_cycles_before_stop: 1,
@@ -454,7 +440,8 @@ export function triggerV4QueuePumpAfterEnqueue(_req, {
     leaseMs,
     acquireKick,
     fetchImpl,
-    sleep
+    sleep,
+    env
   }).then((diagnostic) => {
     console.log(JSON.stringify({
       level: diagnostic.ok ? "info" : "warn",

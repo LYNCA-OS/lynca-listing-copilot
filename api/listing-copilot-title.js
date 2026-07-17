@@ -223,7 +223,9 @@ const defaultMaxPayloadImages = 14;
 const hardMaxPayloadImages = 24;
 const signedUrlConcurrency = contractedConcurrency(
   "signed_url_preparation",
-  process.env.LISTING_SIGNED_URL_CONCURRENCY || 4
+  process.env.LISTING_SIGNED_URL_PREPARATION_CONCURRENCY
+    || process.env.LISTING_SIGNED_URL_CONCURRENCY,
+  { fallback: 4 }
 );
 const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;

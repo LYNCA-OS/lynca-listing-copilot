@@ -49,9 +49,30 @@ assert.match(stageCapacitySource, /contractedConcurrency\(\s*"paddle_ocr"/);
 
 assert.equal(listingStageCapacityPlan({
   PREINGESTION_OCR_GLOBAL_CAPACITY: "10",
+  PREINGESTION_OCR_PER_ASSET_CAPACITY: "8",
+  PREINGESTION_OCR_PER_ASSET_BATCH_SIZE: "9",
   PREINGESTION_OCR_ANCHOR_CONCURRENCY: "8",
-  PREINGESTION_OCR_DETAIL_CONCURRENCY: "2"
+  PREINGESTION_OCR_DETAIL_CONCURRENCY: "8"
 }).ocr.global_capacity, 8, "an env edit must not raise OCR above the frozen measured knee");
+assert.deepEqual(
+  listingStageCapacityPlan({
+    PREINGESTION_OCR_GLOBAL_CAPACITY: "10",
+    PREINGESTION_OCR_PER_ASSET_CAPACITY: "8",
+    PREINGESTION_OCR_PER_ASSET_BATCH_SIZE: "9",
+    PREINGESTION_OCR_ANCHOR_CONCURRENCY: "12",
+    PREINGESTION_OCR_DETAIL_CONCURRENCY: "8"
+  }).ocr,
+  {
+    ...listingStageCapacityPlan({}).ocr,
+    global_capacity: 8,
+    per_asset_capacity: 1,
+    per_asset_batch_size: 3,
+    anchor_concurrency: 8,
+    detail_concurrency: 2,
+    local_concurrency: 1
+  },
+  "all measured OCR sub-limits must be frozen; env edits may only lower them"
+);
 assert.deepEqual(
   {
     anchor: listingStageCapacityPlan({

@@ -7,7 +7,8 @@ import { labelForCsmField } from "../lib/listing/csm/field-labels.mjs";
 import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
 import {
   groupClientResultsByJobId,
-  observeClientJobPoll
+  observeClientJobPoll,
+  queuedStatusPollDelay
 } from "../lib/listing/v4/jobs/client-poll-policy.mjs";
 import {
   nextWriterOutstandingIndex,
@@ -16,6 +17,7 @@ import {
   writerExportWithinLimit,
   writerFeedbackPersisted
 } from "./writer-wheel-mode.mjs";
+import { fetchWithBoundedRetry } from "../lib/listing/client/bounded-fetch.mjs";
 
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
@@ -24,6 +26,12 @@ const MAX_BACKGROUND_PREP_WORKERS = 4;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
 const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750]);
+const PREINGEST_REQUEST_TIMEOUT_MS = 25000;
+const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
+const EXPORT_REQUEST_TIMEOUT_MS = 90000;
+const RESOLUTION_MAP_TIMEOUT_MS = 5000;
+const PROVIDER_STATUS_TIMEOUT_MS = 10000;
+const PREWARM_TIMEOUT_MS = 8000;
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
 const IMAGE_INITIAL_QUALITY = 0.9;
@@ -47,6 +55,7 @@ const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const ASSISTED_DRAFT_DELAY_WARNING_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_STATUS_BATCH_SIZE = 100;
+const QUEUED_STATUS_READ_CONCURRENCY = 3;
 const STATUS_POLL_TIMEOUT_MS = 15000;
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
@@ -183,6 +192,22 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
+function recordClientNetworkStage(asset, stage, result = {}) {
+  if (!asset || !stage) return;
+  const timing = asset.clientTiming || (asset.clientTiming = {});
+  const prefix = `client_${stage}`;
+  const elapsedMs = Math.max(0, Math.round(Number(result.elapsed_ms ?? result.elapsedMs ?? 0) || 0));
+  const attempts = Math.max(0, Math.round(Number(result.attempts || 0) || 0));
+  timing[`${prefix}_ms`] = Math.max(0, Number(timing[`${prefix}_ms`] || 0)) + elapsedMs;
+  timing[`${prefix}_attempts`] = Math.max(0, Number(timing[`${prefix}_attempts`] || 0)) + attempts;
+  timing.client_network_retry_count = Math.max(0, Number(timing.client_network_retry_count || 0))
+    + Math.max(0, attempts - 1);
+  if (result.error) {
+    timing.client_network_error_stage = stage;
+    timing.client_network_error_code = String(result.error.code || result.error.name || "CLIENT_NETWORK_ERROR").slice(0, 80);
+  }
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -216,44 +241,66 @@ async function fetchStorageApiJson(url, options = {}) {
   throw lastError || new Error("Storage API request failed.");
 }
 
-async function fetchWithTimeout(
-  url,
-  options = {},
-  timeoutMs = QUEUE_ENQUEUE_TIMEOUT_MS,
-  timeoutMessage = "云端队列提交超时，系统已停止自动重复提交，请稍后检查任务状态再重试。"
-) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || QUEUE_ENQUEUE_TIMEOUT_MS));
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new Error(timeoutMessage);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function fetchJsonWithTimeout(
   url,
   options = {},
   timeoutMs = STATUS_POLL_TIMEOUT_MS,
   timeoutMessage = "云端状态查询超时，系统会自动继续查询。"
 ) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || STATUS_POLL_TIMEOUT_MS));
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
+    const request = await fetchWithBoundedRetry(url, options, {
+      timeoutMs: Math.max(1000, Number(timeoutMs) || STATUS_POLL_TIMEOUT_MS),
+      maxAttempts: 2,
+      retryNetworkErrors: true,
+      maxDelayMs: 1500
+    });
+    const response = request.response;
     const payload = await response.json().catch(() => ({}));
-    return { response, payload };
+    return { ...request, response, payload };
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error(timeoutMessage);
+    if (error?.code === "CLIENT_FETCH_TIMEOUT") {
+      const timeoutError = new Error(timeoutMessage);
+      timeoutError.code = error.code;
+      timeoutError.attempts = error.attempts;
+      timeoutError.elapsed_ms = error.elapsed_ms;
+      throw timeoutError;
+    }
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
+}
+
+async function fetchJsonWithRetry(url, options = {}, {
+  timeoutMs = QUEUE_ENQUEUE_TIMEOUT_MS,
+  maxAttempts = 3,
+  retryNetworkErrors = true,
+  asset = null,
+  stage = "queue_enqueue"
+} = {}) {
+  let request;
+  try {
+    request = await fetchWithBoundedRetry(url, options, {
+      timeoutMs,
+      maxAttempts,
+      retryNetworkErrors
+    });
+  } catch (error) {
+    recordClientNetworkStage(asset, stage, {
+      elapsed_ms: error.elapsed_ms,
+      attempts: error.attempts,
+      error
+    });
+    throw error;
+  }
+
+  const payload = await request.response.json().catch(() => ({}));
+  const requestError = request.response.ok && payload.ok !== false
+    ? null
+    : Object.assign(
+      new Error(payload.message || payload.error || `request_failed_${request.response.status}`),
+      { http_status: request.response.status }
+    );
+  recordClientNetworkStage(asset, stage, { ...request, error: requestError });
+  return { ...request, payload, error: requestError };
 }
 
 function fileExtension(name) {
@@ -316,6 +363,37 @@ function dataUrlToBlob(dataUrl) {
   }
 
   return new Blob([bytes], { type: contentType });
+}
+
+function createImagePreviewUrl(blob) {
+  if (!blob || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return "";
+  try {
+    return URL.createObjectURL(blob);
+  } catch {
+    return "";
+  }
+}
+
+function imagePreviewUrl(image = {}) {
+  return image.previewUrl || image.dataUrl || "";
+}
+
+function releaseImagePreviewUrls(images = []) {
+  const visited = new Set();
+  const release = (image) => {
+    if (!image || visited.has(image)) return;
+    visited.add(image);
+    if (
+      String(image.previewUrl || "").startsWith("blob:")
+      && typeof URL !== "undefined"
+      && typeof URL.revokeObjectURL === "function"
+    ) {
+      URL.revokeObjectURL(image.previewUrl);
+    }
+    image.previewUrl = "";
+    (image.targetedCrops || []).forEach(release);
+  };
+  images.forEach(release);
 }
 
 function stringByteLength(value) {
@@ -452,6 +530,11 @@ async function fileToAssetImage(file) {
     });
   }
 
+  const sourceBlob = dataUrlToBlob(compressed.dataUrl);
+  compressed.targetedCrops.forEach((crop) => {
+    crop.previewUrl = createImagePreviewUrl(crop.sourceBlob);
+  });
+
   return {
     id,
     name: file.name,
@@ -464,10 +547,11 @@ async function fileToAssetImage(file) {
     width: compressed.width,
     height: compressed.height,
     dataUrl: compressed.dataUrl,
+    previewUrl: createImagePreviewUrl(sourceBlob),
     captureProfileId: defaultCaptureProfileId,
     imageQuality: compressed.imageQuality,
     sourceFile: file,
-    sourceBlob: dataUrlToBlob(compressed.dataUrl),
+    sourceBlob,
     contentSha256: "",
     objectPath: "",
     targetedCrops: compressed.targetedCrops
@@ -810,7 +894,7 @@ function queuedPendingResult(asset, enqueuePayload = {}, job = {}, timing = {}) 
     lifecycleGeneration: asset.lifecycleGeneration,
     asset_id: canonicalAssetId(asset),
     client_asset_ref: asset.clientAssetRef || asset.id,
-    thumbnail: asset.images[0]?.dataUrl || "",
+    thumbnail: imagePreviewUrl(asset.images[0]),
     title: "",
     final_title: "",
     rendered_title: "",
@@ -1248,7 +1332,7 @@ async function ensurePreingestionBundle(asset) {
     throw new Error("no_verified_storage_images");
   }
 
-  const response = await fetch(PREINGEST_API_ENDPOINT, {
+  const request = await fetchJsonWithRetry(PREINGEST_API_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -1281,11 +1365,17 @@ async function ensurePreingestionBundle(asset) {
       // 签名只增加 L2 起跑等待，不增加证据强度。
       verify_signed_read_urls: false
     })
+  }, {
+    timeoutMs: PREINGEST_REQUEST_TIMEOUT_MS,
+    maxAttempts: 3,
+    retryNetworkErrors: true,
+    asset,
+    stage: "preingestion_request"
   });
 
-  const payload = await response.json();
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.message || payload.code || `preingestion_failed_${response.status}`);
+  const payload = request.payload;
+  if (request.error) {
+    throw new Error(payload.message || payload.code || `preingestion_failed_${request.response.status}`);
   }
 
   asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
@@ -1337,7 +1427,8 @@ async function prepareAssetInBackground(asset, runId) {
       return { ok: false, error: asset.backgroundPrepareError };
     } finally {
       if (!state.processing && runId === state.backgroundPreparationRunId) {
-        renderResults();
+        renderResultControls();
+        if (!writerModeActive()) renderAssetRowInPlace(asset);
         syncBackgroundPreparationStatus();
       }
     }
@@ -1398,7 +1489,7 @@ async function ensureSpeculativeRecognition(asset, runId) {
       enqueueJobPayload.client_speculative = true;
 
       const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
-      const enqueuePayload = await fetchWithTimeout(JOB_ENQUEUE_API_ENDPOINT, {
+      const enqueueRequest = await fetchJsonWithRetry(JOB_ENQUEUE_API_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
@@ -1413,13 +1504,15 @@ async function ensureSpeculativeRecognition(asset, runId) {
             payload: enqueueJobPayload
           }]
         })
-      }).then(async (response) => {
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.ok === false) {
-          throw new Error(payload.message || `speculative enqueue ${response.status}`);
-        }
-        return payload;
+      }, {
+        timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS,
+        maxAttempts: 3,
+        retryNetworkErrors: true,
+        asset,
+        stage: "speculative_enqueue"
       });
+      if (enqueueRequest.error) throw enqueueRequest.error;
+      const enqueuePayload = enqueueRequest.payload;
       const job = enqueuePayload
         ? ((enqueuePayload.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
           || (enqueuePayload.jobs || []).find((entry) => entry?.ok)
@@ -2475,14 +2568,26 @@ function renderResults({ forceWriterRender = false } = {}) {
     && !workspaceInteractionLocked()
     && document.activeElement?.matches?.("[data-title-input]")
     && elements.assetPreviewList.contains(document.activeElement);
+  renderResultControls();
+  if (!preserveFocusedTitleInput) renderAssetRows();
+  if (writerModeActive() && state.writerFocusPending && !preserveFocusedTitleInput) scheduleWriterInputFocus();
+  if (writerModeActive() && state.writerCompletionFocusPending && !preserveFocusedTitleInput) scheduleWriterCompletionFocus();
+}
+
+function renderResultControls() {
   updateStats();
   updateWorkspaceModeUi();
   renderBatchTitles();
-  if (!preserveFocusedTitleInput) renderAssetRows();
   syncProcessButtonState();
   updatePreviewSummary();
-  if (writerModeActive() && state.writerFocusPending && !preserveFocusedTitleInput) scheduleWriterInputFocus();
-  if (writerModeActive() && state.writerCompletionFocusPending && !preserveFocusedTitleInput) scheduleWriterCompletionFocus();
+}
+
+function renderAssetRowInPlace(asset) {
+  if (writerModeActive()) return false;
+  const current = elements.assetPreviewList.querySelector(`[data-asset-row="${Number(asset.index)}"]`);
+  if (!current) return false;
+  current.outerHTML = assetRowHtml(asset);
+  return true;
 }
 
 function resultForAsset(asset) {
@@ -2597,7 +2702,7 @@ function writerPeekHtml(asset, position) {
   const relativeLabel = position === "previous" ? "上一张" : position === "next-depth-2" ? "下两张" : "下一张";
   return `
     <button class="writer-wheel-peek writer-wheel-peek-${position}" type="button" data-writer-go="${asset.index}" data-writer-direction="${position === "previous" ? "backward" : "forward"}" data-card-transition-index="${asset.index}" aria-label="${relativeLabel}，卡片 ${asset.index}，${escapeHtml(status)}">
-      ${image ? `<img src="${image.dataUrl}" alt="">` : ""}
+      ${image ? `<img src="${escapeHtml(imagePreviewUrl(image))}" alt="">` : ""}
       <span>卡片 ${asset.index}</span>
       <small>${escapeHtml(status)}</small>
     </button>
@@ -2613,12 +2718,12 @@ function writerCurrentCardHtml(asset) {
         <div><span>当前卡片</span><strong>卡片 ${asset.index}</strong></div>
         <small>${escapeHtml(status)}</small>
       </header>
-      <div class="asset-row-card writer-wheel-current-card" data-asset-index="${asset.index}">
+      <div class="asset-row-card writer-wheel-current-card" data-asset-index="${asset.index}" data-asset-row="${asset.index}">
         <div class="asset-source">
           <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
             ${asset.images.map((image, imageIndex) => `
               <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开卡片图片预览">
-                <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
+                <img class="thumb" src="${escapeHtml(imagePreviewUrl(image))}" alt="${escapeHtml(image.name)}" loading="lazy" decoding="async">
               </button>
             `).join("")}
           </div>
@@ -2754,12 +2859,12 @@ function assetRowHtml(asset) {
     const result = resultForAsset(asset);
 
     return `
-      <article class="asset-row-card" data-asset-index="${asset.index}" data-card-transition-index="${asset.index}">
+      <article class="asset-row-card" data-asset-index="${asset.index}" data-asset-row="${asset.index}" data-card-transition-index="${asset.index}">
         <div class="asset-source">
           <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
             ${asset.images.map((image, imageIndex) => `
               <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开卡片图片预览">
-                <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
+                <img class="thumb" src="${escapeHtml(imagePreviewUrl(image))}" alt="${escapeHtml(image.name)}" loading="lazy" decoding="async">
               </button>
             `).join("")}
           </div>
@@ -3081,7 +3186,7 @@ function evidenceCropStrip(asset = null) {
         const label = cropRegionLabel(image.sourceRegion || image.source_region || image.cropPlan?.role || image.storageRole || "");
         return `
           <figure>
-            <img src="${image.dataUrl}" alt="${escapeHtml(label)}">
+            <img src="${escapeHtml(imagePreviewUrl(image))}" alt="${escapeHtml(label)}" loading="lazy" decoding="async">
             <figcaption>${escapeHtml(label)}</figcaption>
           </figure>
         `;
@@ -3356,7 +3461,7 @@ function renderImageModal() {
   const modalImages = modalImagesForAsset(asset);
   const imageIndex = Math.min(state.modal.imageIndex, modalImages.length - 1);
   const image = modalImages[imageIndex];
-  elements.imageModalImage.src = image.dataUrl;
+  elements.imageModalImage.src = imagePreviewUrl(image);
   elements.imageModalImage.alt = image.name;
   elements.imageModalSide.textContent = "预览";
   elements.imageModalTitle.textContent = `资产 ${asset.index}`;
@@ -3487,22 +3592,25 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
         return { failure: `${file.name}: ${error.message}` };
       }
     });
-    if (
-      lifecycleGeneration !== state.assetLifecycleGeneration
-      || state.filePreparationRunId !== filePreparationRunId
-    ) return;
-
     const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
     const settledImages = [];
     prepared.forEach((item) => {
       if (item.image) settledImages.push(item.image);
       if (item.failure) failures.push(item.failure);
     });
+    if (
+      lifecycleGeneration !== state.assetLifecycleGeneration
+      || state.filePreparationRunId !== filePreparationRunId
+    ) {
+      releaseImagePreviewUrls(settledImages);
+      return;
+    }
     const ignoredFiles = candidates
       .filter((file) => !isSupportedImageFile(file))
       .map((file) => `${file.name}: 不支持的图片格式`);
     const images = settledImages;
 
+    releaseImagePreviewUrls(state.files);
     state.files = images;
     state.results = [];
     if (batchWasEmpty && images.length > 0) state.workspaceMode = "writer";
@@ -3663,7 +3771,7 @@ async function processAssetViaQueue(asset, options = {}) {
   const batchId = options.batchId || createClientBatchId();
   const enqueueStartedAt = performance.now();
   setAssetProgress(asset.index, "提交云端生产队列", 0.42);
-  const response = await fetchWithTimeout(JOB_ENQUEUE_API_ENDPOINT, {
+  const enqueueRequest = await fetchJsonWithRetry(JOB_ENQUEUE_API_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -3686,11 +3794,18 @@ async function processAssetViaQueue(asset, options = {}) {
         }
       }]
     })
+  }, {
+    timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS,
+    maxAttempts: 3,
+    retryNetworkErrors: true,
+    asset,
+    stage: "queue_enqueue"
   });
   const enqueueRoundtripMs = Math.round(performance.now() - enqueueStartedAt);
-  const enqueuePayload = await response.json().catch(() => ({}));
+  const response = enqueueRequest.response;
+  const enqueuePayload = enqueueRequest.payload;
   assertCurrentAssetLifecycle(asset);
-  if (!response.ok || enqueuePayload.ok === false) {
+  if (enqueueRequest.error) {
     const detail = enqueuePayload.message || enqueuePayload.error || enqueuePayload.jobs?.find((entry) => entry?.error)?.error || "";
     throw new Error(detail ? `队列提交失败：${response.status}，${detail}` : `队列提交失败：${response.status}`);
   }
@@ -3720,7 +3835,7 @@ function failedResult(asset, error) {
     lifecycleGeneration: asset.lifecycleGeneration,
     asset_id: asset.durableAssetId || "",
     client_asset_ref: asset.clientAssetRef || asset.id,
-    thumbnail: asset.images[0].dataUrl,
+    thumbnail: imagePreviewUrl(asset.images[0]),
     title: "",
     generatedTitle: "",
     correctedTitle: "",
@@ -3782,7 +3897,6 @@ async function processTitles() {
       const asset = queue.shift();
       state.activeAssetIndexes.add(asset.index);
       setAssetProgress(asset.index, "进入识别队列", 0.03);
-      renderResults();
 
       try {
         const result = await processAssetViaQueue(asset, { batchId: recognitionBatchId });
@@ -3808,7 +3922,8 @@ async function processTitles() {
       completedCount += 1;
       state.completedAssetCount = completedCount;
       state.results.sort((a, b) => a.index - b.index);
-      renderResults();
+      renderResultControls();
+      if (!renderAssetRowInPlace(asset)) renderResults();
       setStatus(processingProgressStatus(completedCount), { busy: completedCount < state.assets.length });
     }
   }
@@ -4118,12 +4233,6 @@ function chunksOf(items = [], size = QUEUED_STATUS_BATCH_SIZE) {
   return chunks;
 }
 
-function queuedStatusPollDelay(elapsedMs = 0) {
-  if (elapsedMs < 30_000) return 800;
-  if (elapsedMs < 90_000) return 1200;
-  return 1800;
-}
-
 function syncQueuedPollObservation(result = {}, status = result.v4_job_status || "QUEUED", now = performance.now()) {
   result.v4QueuedPollStartedAt = result.v4QueuedPollStartedAt || now;
   const observation = observeClientJobPoll({
@@ -4168,22 +4277,34 @@ async function pollV4QueuedJobsBatch(generation) {
   try {
     const resultsByJobId = groupClientResultsByJobId(active);
     const batches = chunksOf([...resultsByJobId.keys()]);
-    const batchReads = await Promise.allSettled(batches.map(async (jobIds) => {
-      const params = new URLSearchParams({ job_ids: jobIds.join(","), limit: String(jobIds.length) });
-      const { response, payload } = await fetchJsonWithTimeout(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store"
-      }, STATUS_POLL_TIMEOUT_MS, "云端任务状态查询超时，系统会自动继续查询。");
-      if (!response.ok || payload.ok === false) {
-        throw new Error(payload.message || `status_poll_http_${response.status}`);
+    const batchReads = await mapWithConcurrency(
+      batches,
+      QUEUED_STATUS_READ_CONCURRENCY,
+      async (jobIds) => {
+        try {
+          const params = new URLSearchParams({
+            job_ids: jobIds.join(","),
+            limit: String(jobIds.length),
+            view: "writer"
+          });
+          const { response, payload } = await fetchJsonWithTimeout(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
+            method: "GET",
+            credentials: "same-origin",
+            cache: "no-store"
+          }, STATUS_POLL_TIMEOUT_MS, "云端任务状态查询超时，系统会自动继续查询。");
+          if (!response.ok || payload.ok === false) {
+            throw new Error(payload.message || `status_poll_http_${response.status}`);
+          }
+          return { status: "fulfilled", value: { jobIds, payload } };
+        } catch (reason) {
+          return { status: "rejected", reason };
+        }
       }
-      return { jobIds, payload };
-    }));
+    );
     if (generation !== state.queuedBatchPollGeneration) return;
 
     let terminalCount = 0;
-    let shouldRender = false;
+    const changedAssetIndexes = new Set();
     for (let batchIndex = 0; batchIndex < batchReads.length; batchIndex += 1) {
       const batchRead = batchReads[batchIndex];
       if (batchRead.status === "rejected") {
@@ -4208,12 +4329,19 @@ async function pollV4QueuedJobsBatch(generation) {
           const update = applyV4QueuedJobStatusUpdate(result, job);
           if (update.terminal) {
             terminalCount += 1;
-            shouldRender = true;
+            changedAssetIndexes.add(Number(result.index));
           }
         }
       }
     }
-    if (shouldRender) renderResults();
+    if (changedAssetIndexes.size) {
+      renderResultControls();
+      const renderedInPlace = [...changedAssetIndexes].every((assetIndex) => {
+        const asset = state.assets.find((item) => Number(item.index) === assetIndex);
+        return asset ? renderAssetRowInPlace(asset) : false;
+      });
+      if (!renderedInPlace) renderResults();
+    }
     const remaining = pendingAssistedDraftCount();
     if (terminalCount > 0) {
       setStatus(remaining
@@ -4238,7 +4366,7 @@ async function pollV4QueuedJobsBatch(generation) {
   state.queuedBatchPollTimer = setTimeout(() => {
     state.queuedBatchPollTimer = null;
     void pollV4QueuedJobsBatch(generation);
-  }, queuedStatusPollDelay(performance.now() - earliestStart));
+  }, queuedStatusPollDelay(performance.now() - earliestStart, remaining.length));
 }
 
 function startV4QueuedBatchPolling() {
@@ -4471,7 +4599,7 @@ async function saveFeedbackForResult(result, asset) {
   renderResults();
 
   try {
-    const response = await fetch(useV4Feedback ? FEEDBACK_API_ENDPOINT : LEGACY_FEEDBACK_API_ENDPOINT, {
+    const feedbackRequest = await fetchJsonWithRetry(useV4Feedback ? FEEDBACK_API_ENDPOINT : LEGACY_FEEDBACK_API_ENDPOINT, {
       method: "POST",
       headers: {
         "content-type": "application/json"
@@ -4521,10 +4649,17 @@ async function saveFeedbackForResult(result, asset) {
         field_changes: result.field_changes || [],
         images: (asset?.providerImages || asset?.images || []).map(reviewImageReference)
       })
+    }, {
+      timeoutMs: FEEDBACK_REQUEST_TIMEOUT_MS,
+      maxAttempts: useV4Feedback ? 3 : 1,
+      retryNetworkErrors: useV4Feedback,
+      asset,
+      stage: "feedback_save"
     });
 
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
+    const response = feedbackRequest.response;
+    const payload = feedbackRequest.payload;
+    if (feedbackRequest.error) {
       throw new Error(payload.message || `保存失败：${response.status}`);
     }
 
@@ -4766,16 +4901,22 @@ async function exportWriterWorkbook() {
       requireSaved: exportingWriterRows,
       titleSnapshotByIndex
     });
-    const response = await fetch(EXPORT_WORKBOOK_API_ENDPOINT, {
+    const exportRequest = await fetchJsonWithRetry(EXPORT_WORKBOOK_API_ENDPOINT, {
       method: "POST",
       headers: {
         "content-type": "application/json"
       },
       credentials: "same-origin",
       body: JSON.stringify({ rows })
+    }, {
+      timeoutMs: EXPORT_REQUEST_TIMEOUT_MS,
+      maxAttempts: 1,
+      retryNetworkErrors: false,
+      stage: "workbook_export"
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) {
+    const response = exportRequest.response;
+    const payload = exportRequest.payload;
+    if (exportRequest.error) {
       throw new Error(payload.message || `导出失败：${response.status}`);
     }
 
@@ -4826,6 +4967,7 @@ function resetTool() {
   state.backgroundPreparationRunId += 1;
   state.backgroundRecognitionBatchId = "";
   stopAllV4AssistedDraftPolling();
+  releaseImagePreviewUrls(state.files);
   state.files = [];
   state.assets = [];
   state.results = [];
@@ -5107,7 +5249,17 @@ function bindEvents() {
 
 async function loadResolutionMap() {
   try {
-    const response = await fetch("/app/resolution.json");
+    const request = await fetchWithBoundedRetry("/app/resolution.json", {
+      credentials: "same-origin",
+      cache: "no-store"
+    }, {
+      timeoutMs: RESOLUTION_MAP_TIMEOUT_MS,
+      maxAttempts: 2,
+      retryNetworkErrors: true,
+      maxDelayMs: 750
+    });
+    const response = request.response;
+    if (!response.ok) throw new Error(`Resolution map failed: ${response.status}`);
     state.resolutionMap = await response.json();
   } catch {
     state.resolutionMap = {};
@@ -5116,9 +5268,15 @@ async function loadResolutionMap() {
 
 async function loadProviderStatus() {
   try {
-    const response = await fetch("/api/listing-provider-status", {
+    const request = await fetchWithBoundedRetry("/api/listing-provider-status", {
       credentials: "same-origin"
+    }, {
+      timeoutMs: PROVIDER_STATUS_TIMEOUT_MS,
+      maxAttempts: 3,
+      retryNetworkErrors: true,
+      maxDelayMs: 1500
     });
+    const response = request.response;
     if (!response.ok) throw new Error(`Provider status failed: ${response.status}`);
 
     const payload = await response.json();
@@ -5139,22 +5297,27 @@ async function prewarmV4(reason = "page_load") {
   if (!state.selectedProvider) return;
   try {
     const params = new URLSearchParams({ reason });
-    await fetch(`${PREWARM_API_ENDPOINT}?${params.toString()}`, {
+    await fetchWithBoundedRetry(`${PREWARM_API_ENDPOINT}?${params.toString()}`, {
       method: "GET",
       credentials: "same-origin",
       cache: "no-store",
       keepalive: true
+    }, {
+      timeoutMs: PREWARM_TIMEOUT_MS,
+      maxAttempts: 2,
+      retryNetworkErrors: true,
+      maxDelayMs: 1000
     });
   } catch {
     // Prewarm is opportunistic. Formal recognition must remain the source of truth.
   }
 }
 
-void prewarmV4("page_load");
-await Promise.all([
-  loadResolutionMap(),
-  loadProviderStatus()
-]);
 bindEvents();
 renderPreviews();
 renderResults();
+
+void Promise.all([
+  loadResolutionMap(),
+  loadProviderStatus()
+]).then(() => prewarmV4("page_load"));

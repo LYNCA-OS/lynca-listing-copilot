@@ -7,11 +7,14 @@ import {
   completePreingestionOcrJob,
   fairOcrAnchorJobOrder,
   fairOcrClaimOrder,
+  heartbeatPreingestionOcrJob,
   ocrConfidenceForFieldValue,
   ocrRequestForPreingestionJob,
+  preingestionOcrJobLeasePlan,
   processQueuedPreingestionOcrJobs,
   readPreingestionOcrState,
   recoverStalePreingestionOcrJobs,
+  retryableOcrFailure,
   requeuePreingestionOcrJob,
   requeueRetryableFailedPreingestionOcrJobs,
   waitForPreingestionOcrEvidence
@@ -63,6 +66,14 @@ function currentOcrPatch(field, value, extra = {}) {
     }
   };
 }
+
+// Unknown technical failures get one of the bounded retry slots, while
+// proven bad inputs fail immediately instead of occupying OCR capacity.
+assert.equal(retryableOcrFailure(new Error("worker runtime exited unexpectedly")), true);
+assert.equal(retryableOcrFailure(new Error("worker http 503")), true);
+assert.equal(retryableOcrFailure(new Error("crop source_object_path missing")), false);
+assert.equal(retryableOcrFailure(new Error("worker http 400 invalid payload")), false);
+assert.equal(retryableOcrFailure({ message: "temporary", retryable: false }), false);
 
 const sampleJob = {
   tenant_id: "tenant_a",
@@ -216,6 +227,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 // --- claim is conditional on status=queued (atomic per row) ---
 {
   const calls = [];
+  let claimBody = null;
   const jobs = await claimQueuedPreingestionOcrJobs({
     tenantId: "tenant_a",
     bundleId: "bundle-1",
@@ -238,6 +250,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       assert.equal(body.lease_owner, "lease-owner-a");
       assert.equal(body.max_attempts, 3);
       assert.ok(Date.parse(body.lease_expires_at) > Date.now());
+      claimBody = body;
       return jsonResponse([{ ...body, status: "running", attempts: 1 }]);
     }
   });
@@ -247,6 +260,191 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.match(calls[0].url, /priority=lte\.14/, "writer-path claims must reserve the first wave for OCR anchors");
   assert.match(calls[0].url, /limit=32/, "asset-scoped claims must not overfetch global queue rows");
   assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
+  assert.equal(claimBody.lease_owner, "lease-owner-a");
+  assert.ok(Date.parse(claimBody.lease_expires_at) > Date.now());
+  assert.equal(jobs[0].durable_lease_supported, true);
+  assert.equal(jobs[0].lease_owner, "lease-owner-a");
+}
+
+// --- rolling deployments fail closed to the legacy claim shape when lease columns are unavailable ---
+{
+  let durableListAttempted = false;
+  let legacyListAttempted = false;
+  let claimBody = null;
+  const jobs = await claimQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
+    bundleId: "bundle-legacy",
+    leaseOwner: "worker-legacy",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = new URL(String(url));
+      if (!init.method) {
+        if (String(target.searchParams.get("select") || "").includes("max_attempts")) {
+          durableListAttempted = true;
+          return jsonResponse({ message: "column preingestion_jobs.max_attempts does not exist" }, { ok: false, status: 400 });
+        }
+        legacyListAttempted = true;
+        return jsonResponse([{ ...sampleJob, bundle_id: "bundle-legacy" }]);
+      }
+      claimBody = JSON.parse(init.body);
+      return jsonResponse([{ status: "running", attempts: 1 }]);
+    }
+  });
+  assert.equal(durableListAttempted, true);
+  assert.equal(legacyListAttempted, true);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].durable_lease_supported, false);
+  assert.equal(Object.hasOwn(claimBody, "lease_owner"), false);
+  assert.equal(Object.hasOwn(claimBody, "lease_expires_at"), false);
+}
+
+// --- a committed claim with a lost response is reconciled by lease owner ---
+{
+  let patchAttempt = 0;
+  const jobs = await claimQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
+    bundleId: "bundle-ambiguous-claim",
+    leaseOwner: "worker-ambiguous",
+    env: { ...env, V4_SUPABASE_WRITE_RETRY_ATTEMPTS: "2" },
+    fetchImpl: async (url, init = {}) => {
+      const target = new URL(String(url));
+      if (!init.method && target.searchParams.has("job_id")) {
+        return jsonResponse([{
+          ...sampleJob,
+          bundle_id: "bundle-ambiguous-claim",
+          status: "running",
+          attempts: 1,
+          max_attempts: 3,
+          lease_owner: "worker-ambiguous",
+          lease_expires_at: "2026-07-17T10:00:00.000Z"
+        }]);
+      }
+      if (!init.method) return jsonResponse([{
+        ...sampleJob,
+        bundle_id: "bundle-ambiguous-claim"
+      }]);
+      patchAttempt += 1;
+      if (patchAttempt === 1) {
+        return jsonResponse({ message: "upstream response lost" }, { ok: false, status: 503 });
+      }
+      return jsonResponse([]);
+    }
+  });
+  assert.equal(patchAttempt, 2);
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].lease_owner, "worker-ambiguous");
+  assert.equal(jobs[0].status, "running");
+}
+
+// --- expired OCR leases are recovered, while exhausted work is finalized ---
+{
+  const staleRows = [
+    {
+      ...sampleJob,
+      job_id: "stale-retry",
+      status: "running",
+      attempts: 1,
+      max_attempts: 3,
+      lease_owner: "dead-worker-a",
+      lease_expires_at: "2026-07-01T00:00:00.000Z"
+    },
+    {
+      ...sampleJob,
+      job_id: "stale-final",
+      status: "running",
+      attempts: 3,
+      max_attempts: 3,
+      lease_owner: "dead-worker-b",
+      lease_expires_at: "2026-07-01T00:00:00.000Z"
+    }
+  ];
+  const transitions = [];
+  const recovered = await recoverStalePreingestionOcrJobs({
+    now: Date.parse("2026-07-02T00:00:00.000Z"),
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = new URL(String(url));
+      if (!init.method) return jsonResponse(staleRows);
+      transitions.push({
+        job_id: String(target.searchParams.get("job_id") || "").replace(/^eq\./, ""),
+        lease_owner: target.searchParams.get("lease_owner"),
+        body: JSON.parse(init.body)
+      });
+      return jsonResponse([{ job_id: target.searchParams.get("job_id"), status: JSON.parse(init.body).status }]);
+    }
+  });
+  assert.equal(recovered.inspected, 2);
+  assert.equal(recovered.requeued, 1);
+  assert.equal(recovered.finalized, 1);
+  assert.equal(transitions.find((row) => row.job_id === "stale-retry").body.status, "queued");
+  assert.equal(transitions.find((row) => row.job_id === "stale-final").body.status, "failed");
+  assert.match(transitions[0].lease_owner, /^eq\.dead-worker-/);
+}
+
+// --- completion and heartbeat are fenced by the current lease owner ---
+{
+  const leasePlan = preingestionOcrJobLeasePlan({
+    ...env,
+    PREINGESTION_OCR_JOB_LEASE_SECONDS: "180",
+    PREINGESTION_OCR_JOB_HEARTBEAT_MS: "45000"
+  });
+  assert.equal(leasePlan.lease_seconds, 180);
+  assert.equal(leasePlan.heartbeat_ms, 45000);
+
+  const heartbeat = await heartbeatPreingestionOcrJob({
+    tenantId: "tenant_a",
+    jobId: "leased-job",
+    leaseOwner: "worker-current",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      assert.match(String(url), /status=eq\.running/);
+      assert.match(String(url), /lease_owner=eq\.worker-current/);
+      assert.ok(Date.parse(JSON.parse(init.body).lease_expires_at) > Date.now());
+      return jsonResponse([{ job_id: "leased-job" }]);
+    }
+  });
+  assert.equal(heartbeat.renewed, true);
+
+  const wrongOwnerCompletion = await completePreingestionOcrJob({
+    tenantId: "tenant_a",
+    jobId: "leased-job",
+    leaseOwner: "worker-stale",
+    env,
+    fetchImpl: async () => jsonResponse([])
+  });
+  assert.equal(wrongOwnerCompletion, false, "a stale worker must not complete another owner's OCR job");
+
+  const wrongOwnerRequeue = await requeuePreingestionOcrJob({
+    tenantId: "tenant_a",
+    jobId: "leased-job",
+    leaseOwner: "worker-stale",
+    env,
+    fetchImpl: async () => jsonResponse([])
+  });
+  assert.equal(wrongOwnerRequeue, false, "a stale worker must not requeue another owner's OCR job");
+
+  let completionPatchAttempts = 0;
+  const ambiguousCompletion = await completePreingestionOcrJob({
+    tenantId: "tenant_a",
+    jobId: "leased-job-ambiguous-completion",
+    leaseOwner: "worker-current",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      if (init.method === "PATCH") {
+        completionPatchAttempts += 1;
+        if (completionPatchAttempts === 1) {
+          return jsonResponse({ message: "upstream response lost" }, { ok: false, status: 503 });
+        }
+        return jsonResponse([]);
+      }
+      return jsonResponse([{
+        tenant_id: "tenant_a",
+        job_id: "leased-job-ambiguous-completion",
+        status: "succeeded"
+      }]);
+    }
+  });
+  assert.equal(ambiguousCompletion, true, "a committed terminal write must survive a lost HTTP response");
 }
 
 // --- a small claim limit still inspects enough rows to choose the best slab wave ---
@@ -260,7 +458,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       priority: 14,
       payload: { crop: { role: "grade_label_crop", crop_metadata: { source_width: 800, source_height: 1400 } } }
     }
-  ];
+  ].map((job) => ({ ...job, bundle_id: "bundle-slab-window" }));
   let listUrl = "";
   const jobs = await claimQueuedPreingestionOcrJobs({
     tenantId: "tenant_a",
@@ -374,10 +572,13 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 
   assert.deepEqual(recovery, {
     configured: true,
+    supported: true,
     inspected: 5,
-    recovered: 2,
-    failed_final: 1,
-    skipped: 1
+    requeued: 2,
+    finalized: 1,
+    race_lost: 0,
+    skipped: 1,
+    fresh_ignored: 1
   });
   assert.equal(updates.length, 3, "fresh and foreign running jobs must never be reclaimed");
   for (const { target, body } of updates) {
@@ -406,6 +607,14 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const writes = [];
   const ownerCasFetch = async (url, init = {}) => {
     const target = new URL(String(url));
+    if (!init.method) {
+      return jsonResponse([{
+        tenant_id: "tenant_a",
+        job_id: "job-lease-cas",
+        status: "running",
+        lease_owner: "current-owner"
+      }]);
+    }
     const body = JSON.parse(init.body);
     writes.push({ target, body });
     const owner = target.searchParams.get("lease_owner");
@@ -466,7 +675,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       payload: { crop: { role: "grade_label_crop", crop_metadata: { source_width: 1200, source_height: 1200 } } }
     },
     { ...sampleJob, job_id: "rescue-code", priority: 10, payload: { crop: { role: "card_code_crop" } } }
-  ];
+  ].map((job) => ({ ...job, bundle_id: "bundle-targeted-grade-rescue" }));
   const jobs = await claimQueuedPreingestionOcrJobs({
     tenantId: "tenant_a",
     bundleId: "bundle-targeted-grade-rescue",
@@ -1217,7 +1426,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(completion.body.status, "succeeded");
 }
 
-// --- OCR failure marks the job failed, not succeeded ---
+// --- retryable OCR failures immediately return to the queue ---
 {
   const jobStatusWrites = [];
   const result = await processQueuedPreingestionOcrJobs({
@@ -1244,9 +1453,10 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     },
     signedReadUrlFor: async () => "https://signed.test/front.jpg"
   });
-  assert.equal(result.failed, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(result.requeued, 1);
   assert.equal(result.succeeded, 0);
-  assert.equal(jobStatusWrites.at(-1), "failed");
+  assert.equal(jobStatusWrites.at(-1), "queued");
 }
 
 // --- completed fields persist before a slower sibling crop finishes ---
@@ -1513,29 +1723,40 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.stage_capacity_control_enabled, true);
   assert.equal(result.execution_summary_persisted, true);
   assert.equal(result.stage_global_capacity, 2);
-  assert.equal(result.per_asset_capacity, 2);
+  assert.equal(result.per_asset_capacity, 1, "an env override cannot raise the frozen per-asset OCR limit");
   assert.equal(result.requested_job_limit, 32);
   assert.equal(result.effective_claim_limit, 2);
   assert.equal(result.anchor_concurrency, 1);
-  assert.equal(result.detail_concurrency, 1);
-  assert.equal(result.execution_summary.lane_capacity, 2);
+  assert.equal(result.detail_concurrency, 0, "the hard-anchor lane owns the first one-slot wave");
+  assert.equal(result.execution_summary.lane_capacity, 1);
   assert.equal(result.execution_summary.lane_capacity_unused, 0);
   assert.equal(result.execution_summary.lane_allocation_within_global_capacity, true);
   assert.equal(result.execution_summary.claimed_asset_count, 1);
   assert.equal(result.execution_summary.max_claimed_jobs_per_asset, 2);
-  assert.equal(result.execution_summary.first_wave_job_count, 2);
+  assert.equal(result.execution_summary.first_wave_job_count, 1);
   assert.equal(result.execution_summary.first_wave_distinct_asset_count, 1);
   assert.equal(result.execution_summary.first_wave_expected_distinct_asset_count, 1);
   assert.equal(result.execution_summary.first_wave_fairness_satisfied, true);
-  assert.equal(result.peak_local_active, 2);
-  assert.equal(peakActiveOcr, 2);
+  assert.equal(result.execution_summary.followup_job_count, 1);
+  assert.equal(result.execution_summary.followup_outcome_count, 1);
+  assert.equal(result.execution_summary.zero_slot_lane_recovered_count, 1);
+  assert.equal(result.execution_summary.unaccounted_claimed_job_count, 0);
+  assert.equal(result.execution_summary.duplicate_outcome_count, 0);
+  assert.equal(result.execution_summary.all_claimed_jobs_accounted_for, true);
+  assert.equal(result.peak_local_active, 1);
+  assert.equal(peakActiveOcr, 1);
   assert.equal(activeSlots.size, 0);
   assert.equal(result.job_observability.filter((row) => row.stage_lane === "anchor").length, 1);
   assert.equal(result.job_observability.filter((row) => row.stage_lane === "detail").length, 1);
   assert.ok(result.job_observability.every((row) => row.stage_capacity_released === true));
-  assert.ok(result.job_observability.every((row) => row.asset_stage_capacity === 2));
+  assert.ok(result.job_observability.every((row) => row.asset_stage_capacity === 1));
+  assert.ok(result.job_observability.every((row) => row.stage_capacity_heartbeat_lease_count === 2));
+  assert.ok(result.job_observability.every((row) => row.stage_capacity_heartbeat_interval_ms === 30000));
+  assert.equal(result.execution_summary.capacity_heartbeat_failure_count, 0);
+  assert.equal(result.execution_summary.capacity_heartbeat_lost_ownership_count, 0);
+  assert.equal(result.execution_summary.capacity_release_retry_count, 0);
   assert.equal(bundleQualitySummary.ocr_stage_execution.global_capacity, 2);
-  assert.equal(bundleQualitySummary.ocr_stage_execution.per_asset_capacity, 2);
+  assert.equal(bundleQualitySummary.ocr_stage_execution.per_asset_capacity, 1);
   assert.equal(bundleQualitySummary.ocr_stage_execution.anchor_job_count, 1);
   assert.equal(bundleQualitySummary.ocr_stage_execution.detail_job_count, 1);
 }

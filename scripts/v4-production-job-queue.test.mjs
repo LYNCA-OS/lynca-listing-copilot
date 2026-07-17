@@ -44,12 +44,12 @@ assert.equal(
 assert.equal(
   v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "6" }),
   2,
-  "queue submission must not exceed the measured production contract"
+  "queue submission capacity must remain pinned to the measured stable contract"
 );
 assert.equal(
   v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "99" }),
   2,
-  "an unsafe environment override must remain clamped to the measured production contract"
+  "unsafe queue submission overrides must not bypass the measured contract"
 );
 
 function jsonResponse(body, init = {}) {
@@ -488,8 +488,42 @@ const releasedCapacity = await releaseV4ProviderCapacityForJob({
 });
 assert.equal(releasedCapacity.released, true);
 assert.equal(releasedCapacity.released_count, 1);
+assert.equal(releasedCapacity.release_attempts, 1);
+assert.equal(releasedCapacity.recovered_after_retry, false);
 assert.ok(capacityRpcCalls[0].url.endsWith("/rest/v1/rpc/release_v4_provider_capacity_for_job"));
 assert.ok(capacityRpcCalls[0].request.body.includes('"p_job_id":"v4job-claimed"'));
+
+const transientCapacityReleaseCalls = [];
+const recoveredCapacityRelease = await releaseV4ProviderCapacityForJob({
+  jobId: "v4job-release-retry",
+  workerId: "worker-a",
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    transientCapacityReleaseCalls.push({ url: String(url), request });
+    if (transientCapacityReleaseCalls.length === 1) {
+      return jsonResponse({ message: "temporary postgrest outage" }, { ok: false, status: 503 });
+    }
+    return jsonResponse(1);
+  }
+});
+assert.equal(recoveredCapacityRelease.released, true);
+assert.equal(recoveredCapacityRelease.release_attempts, 2);
+assert.equal(recoveredCapacityRelease.recovered_after_retry, true);
+assert.equal(transientCapacityReleaseCalls.length, 2);
+
+const permanentCapacityReleaseCalls = [];
+const rejectedCapacityRelease = await releaseV4ProviderCapacityForJob({
+  jobId: "v4job-release-rejected",
+  workerId: "worker-a",
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    permanentCapacityReleaseCalls.push({ url: String(url), request });
+    return jsonResponse({ message: "permission denied" }, { ok: false, status: 403 });
+  }
+});
+assert.equal(rejectedCapacityRelease.released, false);
+assert.equal(rejectedCapacityRelease.release_attempts, 1);
+assert.equal(permanentCapacityReleaseCalls.length, 1, "non-transient release failures must fail closed without retries");
 
 const writerReadyCapacityCalls = [];
 const writerReadyCapacity = await persistV4WriterReadyAndReleaseCapacity({
@@ -558,16 +592,24 @@ assert.deepEqual(JSON.parse(heartbeatRpcCalls[0].request.body), {
 });
 
 let heartbeatPulses = 0;
+let resolveSecondHeartbeat;
+const secondHeartbeat = new Promise((resolve) => {
+  resolveSecondHeartbeat = resolve;
+});
 const heartbeatRun = await runWithV4JobLeaseHeartbeat({
   job: { id: "v4job-long", lease_owner: "worker-long" },
   leaseSeconds: 300,
   intervalMs: 5,
   heartbeat: async () => {
     heartbeatPulses += 1;
+    if (heartbeatPulses >= 2) resolveSecondHeartbeat();
     return { extended: true, skipped: false, error: null };
   },
   task: async () => {
-    await new Promise((resolve) => setTimeout(resolve, 24));
+    await Promise.race([
+      secondHeartbeat,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("heartbeat_test_timeout")), 250))
+    ]);
     return "done";
   }
 });
@@ -762,26 +804,33 @@ const retry = await failV4RecognitionJob({
     id: "v4job-retry",
     attempt_count: 1,
     max_attempts: 2,
+    lease_owner: "worker-retry",
     error: { attempt_history: [{ attempt: 0, message: "earlier failure" }] }
   },
   error: { message: "provider timeout" },
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
+    assert.ok(String(url).includes("/rpc/fail_v4_recognition_job"));
     retryPatchBody = JSON.parse(request.body);
-    return jsonResponse([{ id: "v4job-retry", status: "RETRYING" }]);
+    return jsonResponse([{ id: "v4job-retry", status: "RETRYING", lease_owner: null }]);
   }
 });
 assert.equal(retry.saved, true);
-assert.equal(retryPatchBody.error.attempt_history.length, 2);
-assert.equal(retryPatchBody.error.attempt_history[0].message, "earlier failure");
-assert.equal(retryPatchBody.error.attempt_history[1].message, "provider timeout");
+assert.equal(retry.transition_mode, "atomic_failure_rpc");
+assert.equal(retry.capacity_release_handled, true);
+assert.equal(retryPatchBody.p_error.attempt_history.length, 2);
+assert.equal(retryPatchBody.p_error.attempt_history[0].message, "earlier failure");
+assert.equal(retryPatchBody.p_error.attempt_history[1].message, "provider timeout");
+assert.equal(retryPatchBody.p_retryable, true);
+assert.equal(retryPatchBody.p_worker_id, "worker-retry");
 
 const finalFail = await failV4RecognitionJob({
-  job: { id: "v4job-fail", attempt_count: 2, max_attempts: 2 },
+  job: { id: "v4job-fail", attempt_count: 2, max_attempts: 2, lease_owner: "worker-final" },
   error: { message: "provider timeout" },
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
-    assert.ok(request.body.includes('"status":"FAILED"'));
+    assert.ok(String(url).includes("/rpc/fail_v4_recognition_job"));
+    assert.equal(JSON.parse(request.body).p_retryable, true);
     return jsonResponse([{ id: "v4job-fail", status: "FAILED" }]);
   }
 });
@@ -802,10 +851,9 @@ await failV4RecognitionJob({
     return jsonResponse([{ id: "v4job-schema-retry", status: "RETRYING" }]);
   }
 });
-assert.equal(schemaFailureBody.status, "RETRYING", "one fresh provider response may recover a malformed structured response");
-assert.equal(schemaFailureBody.error.retryable, true);
-assert.equal(schemaFailureBody.error.http_status, 200);
-assert.equal(schemaFailureBody.completed_at, null);
+assert.equal(schemaFailureBody.p_retryable, true, "one fresh provider response may recover a malformed structured response");
+assert.equal(schemaFailureBody.p_error.retryable, true);
+assert.equal(schemaFailureBody.p_error.http_status, 200);
 
 let hiddenL1FailureBody = null;
 await failV4RecognitionJob({
@@ -818,13 +866,100 @@ await failV4RecognitionJob({
     return jsonResponse([{ id: "v4job-l1-no-retry", status: "FAILED" }]);
   }
 });
-assert.equal(hiddenL1FailureBody.status, "FAILED", "a failed hidden L1 must hand off to L2 instead of re-entering the provider queue");
-assert.equal(hiddenL1FailureBody.completed_at !== null, true);
+assert.equal(hiddenL1FailureBody.p_force_final_failure, true, "a failed hidden L1 must hand off to L2 instead of re-entering the provider queue");
+
+let fallbackFetchCount = 0;
+const compatibilityFallback = await failV4RecognitionJob({
+  job: { id: "v4job-rpc-missing", attempt_count: 1, max_attempts: 4, lease_owner: "worker-fallback" },
+  error: { code: "PROVIDER_TIMEOUT", message: "provider timeout" },
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    fallbackFetchCount += 1;
+    if (String(url).includes("/rpc/fail_v4_recognition_job")) {
+      return jsonResponse({ code: "PGRST202", message: "Could not find fail_v4_recognition_job in the schema cache" }, { ok: false, status: 404 });
+    }
+    const body = JSON.parse(request.body);
+    assert.equal(body.status, "RETRYING");
+    return jsonResponse([{ id: "v4job-rpc-missing", status: "RETRYING" }]);
+  }
+});
+assert.equal(fallbackFetchCount, 2);
+assert.equal(compatibilityFallback.saved, true);
+assert.equal(compatibilityFallback.transition_mode, "rest_compatibility_fallback");
+assert.equal(compatibilityFallback.capacity_release_handled, false);
+
+let ambiguousCommitCalls = 0;
+const ambiguousCommit = await failV4RecognitionJob({
+  job: {
+    id: "v4job-ambiguous-commit",
+    tenant_id: "tenant-runtime",
+    attempt_count: 1,
+    max_attempts: 4,
+    lease_owner: "worker-ambiguous"
+  },
+  error: { code: "PROVIDER_TIMEOUT", message: "provider timeout" },
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url) => {
+    ambiguousCommitCalls += 1;
+    if (String(url).includes("/rpc/fail_v4_recognition_job")) {
+      return jsonResponse({ message: "response lost after commit" }, { ok: false, status: 503 });
+    }
+    return jsonResponse([{
+      id: "v4job-ambiguous-commit",
+      tenant_id: "tenant-runtime",
+      status: "RETRYING",
+      lease_owner: null,
+      not_before: "2026-07-17T00:00:10.000Z"
+    }]);
+  }
+});
+assert.equal(ambiguousCommit.saved, true);
+assert.equal(ambiguousCommit.transition_mode, "atomic_failure_rpc_reconciled");
+assert.equal(ambiguousCommit.capacity_release_handled, true);
+assert.equal(ambiguousCommitCalls, 2, "an ambiguous RPC response must be reconciled before any retry");
+
+let transientTransitionCalls = 0;
+const transientTransition = await failV4RecognitionJob({
+  job: {
+    id: "v4job-transient-transition",
+    tenant_id: "tenant-runtime",
+    attempt_count: 1,
+    max_attempts: 4,
+    lease_owner: "worker-transient"
+  },
+  error: { code: "PROVIDER_TIMEOUT", message: "provider timeout" },
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    V4_JOB_FAILURE_TRANSITION_RETRY_BASE_MS: "10"
+  },
+  fetchImpl: async (url) => {
+    transientTransitionCalls += 1;
+    if (String(url).includes("/rpc/fail_v4_recognition_job")) {
+      const rpcAttempt = transientTransitionCalls === 1;
+      return rpcAttempt
+        ? jsonResponse({ message: "database temporarily unavailable" }, { ok: false, status: 503 })
+        : jsonResponse([{ id: "v4job-transient-transition", status: "RETRYING", lease_owner: null }]);
+    }
+    return jsonResponse([{
+      id: "v4job-transient-transition",
+      tenant_id: "tenant-runtime",
+      status: "RUNNING",
+      lease_owner: "worker-transient"
+    }]);
+  }
+});
+assert.equal(transientTransition.saved, true);
+assert.equal(transientTransition.transition_mode, "atomic_failure_rpc");
+assert.equal(transientTransition.transition_attempts, 2);
+assert.equal(transientTransitionCalls, 3, "one state read must separate two bounded atomic attempts");
 
 const reads = [];
 await readV4RecognitionJobs({
   batchId: "batch-read",
+  operatorId: "operator-read",
   tenantId: "tenant-read",
+  select: "id,status",
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url) => {
     reads.push(String(url));
@@ -832,7 +967,13 @@ await readV4RecognitionJobs({
   }
 });
 assert.ok(reads[0].includes("batch_id=eq.batch-read"));
-assert.ok(reads[0].includes("tenant_id=eq.tenant-read"));
+assert.equal(new URL(reads[0]).searchParams.get("operator_id"), "eq.operator-read");
+assert.equal(new URL(reads[0]).searchParams.get("tenant_id"), "eq.tenant-read");
+assert.equal(
+  new URL(reads[0]).searchParams.get("select"),
+  "tenant_id,id,status",
+  "status callers must exclude large queue payloads while retaining the tenant fence"
+);
 
 const missingReadTenant = await readV4RecognitionJobs({ batchId: "batch-read" });
 assert.equal(missingReadTenant.ok, false);

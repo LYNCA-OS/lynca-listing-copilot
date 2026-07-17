@@ -7,6 +7,7 @@ import {
   currentPreingestionEvidencePatches,
   imagesFromPreIngestionBundle,
   normalizeEvidencePatch,
+  readPreIngestionBundleByAsset,
   readPreIngestionBundle,
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
@@ -257,6 +258,35 @@ assert.equal(calls[1].body.tenant_id, tenantId);
 assert.equal(calls[1].body.asset_id, assetId);
 assert.equal(JSON.stringify(calls[1].body).includes("should-not-persist"), false);
 
+let transientWriteAttempts = 0;
+const recoveredWrite = await upsertPreIngestionBundle({
+  bundle,
+  env,
+  fetchImpl: async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname === "/rest/v1/listing_assets") {
+      return {
+        ok: true,
+        status: 200,
+        headers: null,
+        text: async () => JSON.stringify([{ tenant_id: tenantId, id: assetId }])
+      };
+    }
+    transientWriteAttempts += 1;
+    if (transientWriteAttempts === 1) {
+      return { ok: false, status: 503, headers: null, text: async () => "temporary" };
+    }
+    return {
+      ok: true,
+      status: 201,
+      headers: null,
+      text: async () => JSON.stringify([JSON.parse(init.body)])
+    };
+  }
+});
+assert.equal(recoveredWrite.saved, true);
+assert.equal(transientWriteAttempts, 2, "idempotent bundle writes should recover one transient transport failure");
+
 const read = await readPreIngestionBundle({
   bundleId: bundle.bundle_id,
   tenantId,
@@ -266,6 +296,19 @@ const read = await readPreIngestionBundle({
 assert.equal(read.found, true);
 assert.equal(calls[2].search.bundle_id, `eq.${bundle.bundle_id}`);
 assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
+
+const byAsset = await readPreIngestionBundleByAsset({
+  assetId: bundle.asset_id,
+  tenantId,
+  source: bundle.source,
+  env,
+  fetchImpl
+});
+assert.equal(byAsset.bundle_id, bundle.bundle_id);
+assert.equal(calls[3].search.asset_id, `eq.${bundle.asset_id}`);
+assert.equal(calls[3].search.tenant_id, `eq.${tenantId}`);
+assert.equal(calls[3].search.source, `eq.${bundle.source}`);
+assert.equal(calls[3].search.bundle_version, `eq.${bundle.bundle_version}`);
 
 const titlePayload = {
   tenant_id: tenantId,

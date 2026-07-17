@@ -72,6 +72,22 @@ function truthy(value, fallback = false) {
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
+function finiteNumberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function quantile(values = [], percentile = 0.5) {
+  const sorted = values
+    .map(finiteNumberOrNull)
+    .filter((value) => value !== null)
+    .sort((left, right) => left - right);
+  if (!sorted.length) return null;
+  const index = Math.max(0, Math.min(sorted.length - 1, Math.ceil(sorted.length * percentile) - 1));
+  return sorted[index];
+}
+
 function stableHash(value = "") {
   return crypto.createHash("sha256").update(String(value)).digest("hex");
 }
@@ -422,6 +438,8 @@ async function indexItem({
       identity_key: identityKey,
       signed_image_count: signedImages.length,
       embedding_count: usableFeatures.length,
+      worker_latency_ms: finiteNumberOrNull(visualFeatures.latency_ms),
+      worker_attempt_count: finiteNumberOrNull(visualFeatures.attempt_count),
       dry_run: true
     };
   }
@@ -537,6 +555,8 @@ async function indexItem({
     identity_key: identityKey,
     signed_image_count: signedImages.length,
     embedding_count: embeddingCount,
+    worker_latency_ms: finiteNumberOrNull(visualFeatures.latency_ms),
+    worker_attempt_count: finiteNumberOrNull(visualFeatures.attempt_count),
     visual_status: visualFeatures.status
   };
 }
@@ -627,6 +647,8 @@ export async function indexVisualVectorDataset({
     }
   }, concurrency);
 
+  const successfulResults = itemResults.filter((result) => result.ok);
+  const workerLatencies = successfulResults.map((result) => result.worker_latency_ms);
   const report = {
     ok: itemResults.every((result) => result.ok),
     generated_at: now.toISOString(),
@@ -644,9 +666,12 @@ export async function indexVisualVectorDataset({
       image_backed_items: imageBackedItems.length,
       offset: safeOffset,
       requested_items: items.length,
-      indexed_items: itemResults.filter((result) => result.ok).length,
+      indexed_items: successfulResults.length,
       failed_items: itemResults.filter((result) => !result.ok).length,
-      embeddings_written: itemResults.reduce((sum, result) => sum + (Number(result.embedding_count) || 0), 0)
+      embeddings_written: itemResults.reduce((sum, result) => sum + (Number(result.embedding_count) || 0), 0),
+      worker_latency_p50_ms: quantile(workerLatencies, 0.5),
+      worker_latency_p95_ms: quantile(workerLatencies, 0.95),
+      worker_retry_item_count: successfulResults.filter((result) => Number(result.worker_attempt_count || 0) > 1).length
     },
     items: itemResults
   };

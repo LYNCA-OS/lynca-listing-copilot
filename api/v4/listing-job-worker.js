@@ -9,6 +9,7 @@ import {
   heartbeatV4RecognitionJob,
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
+  tryAcquireV4QueueKick,
   v4JobLeaseHeartbeatEnabled,
   v4JobLeaseHeartbeatIntervalMs,
   v4JobLanes,
@@ -21,7 +22,7 @@ import {
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
-import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
+import { scheduleTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -209,17 +210,6 @@ export function v4JobFailureCode(response = {}) {
   return "V4_RESULT_NOT_OK";
 }
 
-function headerValue(req, name) {
-  const lower = String(name || "").toLowerCase();
-  const value = req?.headers?.[lower] ?? req?.headers?.[name];
-  if (Array.isArray(value)) return String(value[0] || "").trim();
-  return String(value || "").trim();
-}
-
-function workerSecretFromRequest(req) {
-  return headerValue(req, workerSecretHeader);
-}
-
 function workerIdFrom(req, payload = {}) {
   return String(
     payload.worker_id ||
@@ -306,7 +296,7 @@ function completionStatusForJob(job = {}) {
   return normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT ? v4JobStatuses.L1_READY : v4JobStatuses.L2_READY;
 }
 
-export function triggerV4BackgroundWorkerAfterL1Release(req, {
+export function triggerV4BackgroundWorkerAfterL1Release(_req, {
   job = {},
   pairedRelease = {},
   reason = "l1_released_paired_l2",
@@ -315,38 +305,82 @@ export function triggerV4BackgroundWorkerAfterL1Release(req, {
   defer = waitUntil
 } = {}) {
   if (pairedRelease.saved !== true) return { triggered: false, reason: "paired_l2_not_released" };
-  const origin = trustedInternalServiceOrigin(env);
-  const secret = workerSecretFromRequest(req);
-  if (!secret) return { triggered: false, reason: "wake_secret_missing" };
   const processConcurrency = positiveInteger(env.V4_L2_WAKE_BACKGROUND_CONCURRENCY, v4WorkerProcessConcurrency(env), { min: 1, max: 96 });
-  const body = {
-    lane: v4JobLanes.BACKGROUND,
-    tenant_id: job.tenant_id || job.payload?.tenant_id || null,
-    limit: processConcurrency,
-    process_concurrency: processConcurrency,
-    retry_delay_seconds: 8,
-    worker_id: `v4-l2-wake-${String(job.id || "job").slice(0, 96)}`,
-    reason
+  const tenantId = job.tenant_id || job.payload?.tenant_id || null;
+  return scheduleTrustedV4QueuePump({
+    payload: {
+      tenant_id: tenantId,
+      background_only: true,
+      limit: processConcurrency,
+      process_concurrency: processConcurrency,
+      cycles: 2,
+      max_runtime_ms: 240_000,
+      lease_seconds: 240,
+      idle_cycles_before_stop: 1,
+      background_idle_cycles: 1,
+      continuation_cycles: 2,
+      max_continuation_depth: 20
+    },
+    reason,
+    dedupScope: `l2-release:${tenantId || "global"}`,
+    dedupOwner: `l2-release-${String(job.id || "job").slice(0, 96)}`,
+    dedupLeaseMs: 1_200,
+    acquireKick: tryAcquireV4QueueKick,
+    env,
+    fetchImpl,
+    defer
+  });
+}
+
+export function triggerV4RetryWake({
+  job = {},
+  failure = {},
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil,
+  acquireKick = tryAcquireV4QueueKick,
+  sleep
+} = {}) {
+  const retryPlan = failure.retry_plan || {};
+  if (failure.saved !== true || retryPlan.shouldRetry !== true) {
+    return { triggered: false, reason: failure.saved === true ? "retry_not_planned" : "retry_state_not_saved" };
+  }
+  const retryDelaySeconds = positiveInteger(retryPlan.retryDelaySeconds, 10, { min: 1, max: 900 });
+  const processConcurrency = v4WorkerProcessConcurrency(env);
+  const lane = job.lane === v4JobLanes.INTERACTIVE ? v4JobLanes.INTERACTIVE : v4JobLanes.BACKGROUND;
+  const scheduled = scheduleTrustedV4QueuePump({
+    payload: {
+      tenant_id: null,
+      limit: processConcurrency,
+      process_concurrency: processConcurrency,
+      interactive_only: lane === v4JobLanes.INTERACTIVE,
+      background_only: lane === v4JobLanes.BACKGROUND,
+      cycles: 2,
+      max_runtime_ms: 240_000,
+      lease_seconds: 240,
+      idle_cycles_before_stop: 1,
+      background_idle_cycles: 1,
+      continuation_cycles: 2,
+      max_continuation_depth: 20,
+      retry_job_id: job.id || null
+    },
+    reason: "retry_not_before_reached",
+    delayMs: retryDelaySeconds * 1000 + 100,
+    dedupScope: `retry:${lane}`,
+    dedupOwner: `retry-${String(job.id || "job").slice(0, 96)}`,
+    dedupLeaseMs: 1_200,
+    acquireKick,
+    env,
+    fetchImpl,
+    defer,
+    ...(typeof sleep === "function" ? { sleep } : {})
+  });
+  return {
+    triggered: scheduled.triggered,
+    reason: scheduled.reason,
+    retry_delay_seconds: retryDelaySeconds,
+    completion: scheduled.completion
   };
-  const headers = {
-    "content-type": "application/json",
-    [workerSecretHeader]: secret,
-    "user-agent": "lynca-v4-l1-l2-wake",
-    "x-forwarded-for": "v4-l1-l2-wake"
-  };
-  const wakePromise = origin
-    ? fetchImpl(`${origin}/api/v4/listing-job-worker`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body)
-    }).catch(() => null)
-    : callJsonHandler(handler, {
-      method: "POST",
-      headers,
-      payload: body
-    }).catch(() => null);
-  defer(wakePromise);
-  return { triggered: true, reason };
 }
 
 export async function handlePairedV4FinalAfterL1Failure(req, {
@@ -696,7 +730,6 @@ export default async function handler(req, res) {
             error: completion.error || null
           };
         } catch (error) {
-          capacityRelease = capacityRelease || await releaseProviderCapacity(job);
           const hiddenL1Job = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT;
           console.error("[v4_job_attempt_failed]", JSON.stringify({
             job_id: job.id || null,
@@ -732,8 +765,7 @@ export default async function handler(req, res) {
                 ok: error.body.ok || false
               } : null
             },
-            forceFinalFailure: hiddenL1Job,
-            retryDelaySeconds: positiveInteger(payload.retry_delay_seconds, 15, { min: 1, max: 900 })
+            forceFinalFailure: hiddenL1Job
           });
           await recordJobProductionEvent(job, "recognition_failed", {
             ...attemptUsage,
@@ -752,6 +784,17 @@ export default async function handler(req, res) {
             sessionId: job.recognition_session_id || null,
             jobId: job.id || null
           });
+          capacityRelease = failure.capacity_release_handled === true
+            ? {
+              released: true,
+              released_count: null,
+              release_boundary: "atomic_failure_transition",
+              transition_mode: failure.transition_mode
+            }
+            : (capacityRelease || await releaseProviderCapacity(job));
+          const retryWake = hiddenL1Job
+            ? { triggered: false, reason: "hidden_l1_final_failure" }
+            : triggerV4RetryWake({ job, failure });
           const { pairedRelease, pairedWake, leaseLost } = await handlePairedV4FinalAfterL1Failure(req, {
             job,
             failure,
@@ -768,6 +811,10 @@ export default async function handler(req, res) {
             provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
             provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
             provider_capacity_released: capacityRelease.released === true,
+            retry_planned: failure.retry_plan?.shouldRetry === true,
+            retry_delay_seconds: failure.retry_plan?.retryDelaySeconds ?? null,
+            retry_wake_triggered: retryWake.triggered === true,
+            retry_wake_reason: retryWake.reason || null,
             paired_final_released: pairedRelease.saved === true,
             paired_final_wake_triggered: pairedWake.triggered === true,
             error: failure.error || safeError(error)

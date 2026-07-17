@@ -170,7 +170,9 @@ export default async function handler(req, res) {
 
   if (!enforceApiRateLimit(req, res, {
     scope: "listing_preingest",
-    limit: 180,
+    // Background preparation is one request per card and is idempotent by
+    // asset/source/version. Leave headroom for bounded retries in 100-card runs.
+    limit: 600,
     windowMs: 60_000,
     message: "Too many pre-ingestion requests. Please try again shortly."
   })) return;
