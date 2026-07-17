@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
-import { EventEmitter } from "node:events";
-import handler from "../api/listing-copilot-title.js";
+import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import { glareRoutes } from "../lib/listing/image-quality/quality-gate.mjs";
 import { evaluatePreProviderRescanGate } from "../lib/listing/image-quality/pre-provider-rescan-gate.mjs";
 
@@ -17,43 +15,10 @@ process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED = "true";
 
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
-}
-
 async function callTitleApi(payload) {
-  const req = new EventEmitter();
-  req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
-
-  const res = {
-    statusCode: 0,
-    headers: {},
-    body: "",
-    setHeader(key, value) {
-      this.headers[key] = value;
-    },
-    end(value) {
-      this.body = value;
-    }
-  };
-
-  const promise = handler(req, res);
-  queueMicrotask(() => {
-    req.emit("data", JSON.stringify(payload));
-    req.emit("end");
+  return runListingRecognitionCore({
+    payload: { ...payload, tenant_id: "tenant-rescan" }
   });
-  await promise;
-
-  return {
-    statusCode: res.statusCode,
-    body: JSON.parse(res.body)
-  };
 }
 
 function occludedQuality(region, extra = {}) {

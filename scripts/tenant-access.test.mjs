@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import {
   ACTIVE_STATUS,
   LEGACY_TENANT_ID,
@@ -184,7 +185,7 @@ assert.equal(readSignedSession(`${newToken}.extra-segment`, secret), null);
 
 const legacyToken = createSignedSessionToken({
   user: "metaverse",
-  sid: "legacy-session-id",
+  sid: crypto.randomUUID(),
   iat: Date.now(),
   exp: Date.now() + 60_000
 }, secret, { env: { METAVERSE_EMAIL: "legacy@example.test" } });

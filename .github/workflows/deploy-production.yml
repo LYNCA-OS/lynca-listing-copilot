@@ -16,6 +16,17 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+      - name: Fail closed unless this dispatch targets the current main commit
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          test "$DEFAULT_BRANCH" = "main"
+          test "$DISPATCH_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -28,6 +39,22 @@ jobs:
           npm run test:v4-spine
           npm run check:launch-benchmark
           npm run test:launch-benchmark
+          npm run check:production-engineering
+          npm run test:production-engineering
+      - name: Fail closed unless the Track C production schema is ready
+        env:
+          POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+        run: |
+          # Migrations are maintenance-window operations. Deployment is
+          # deliberately read-only with respect to the production database.
+          node scripts/check-track-c-production-schema.mjs \
+            --out /tmp/track-c-production-schema-preflight.json
+      - name: Re-confirm the exact main commit before the deploy hook
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - name: Trigger current main through the Vercel Deploy Hook
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
@@ -56,68 +83,12 @@ jobs:
           done
           test -s /tmp/v4-health-deployed.json
           node -e 'const h=require("/tmp/v4-health-deployed.json"); if(h.deployment?.git_commit_sha !== process.env.GITHUB_SHA) process.exit(1)'
-      - name: Apply and verify production schema migrations
+      - name: Re-verify the production schema after deployment
         env:
-          V4_JOB_WORKER_SECRET: ${{ secrets.V4_JOB_WORKER_SECRET }}
+          POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
         run: |
-          test -n "$V4_JOB_WORKER_SECRET"
-          set -euo pipefail
-          call_migration() {
-            local name="$1"
-            local endpoint="$2"
-            local out_file="$3"
-
-            local status
-            echo "apply: ${name}"
-            status=$(curl -sS --max-time 45 \
-              -H "x-lynca-worker-secret: $V4_JOB_WORKER_SECRET" \
-              -X POST \
-              "$endpoint" \
-              -o "$out_file" \
-              -w "%{http_code}")
-
-            if [ "$status" != "200" ]; then
-              echo "::error title=admin_migration_fail::${name} returned HTTP ${status}"
-              if [ -s "$out_file" ]; then
-                echo "${name} response body:"
-                cat "$out_file"
-              else
-                echo "${name} returned empty response body."
-              fi
-              exit 1
-            fi
-            # Keep response verification strict so partial migrations are never accepted.
-            node -e '
-              const fs = require("fs");
-              const filePath = process.argv[1];
-              const raw = fs.readFileSync(filePath, "utf8").trim();
-              const response = raw ? JSON.parse(raw) : null;
-              if (!response || response.ok !== true) {
-                console.error(JSON.stringify(response));
-                process.exit(1);
-              }
-            ' "$out_file"
-          }
-
-          MIGRATION_RESPONSE_FILE=/tmp/production-job-queue-migration.json
-          call_migration "admin-apply-v4-production-job-queue-migration" \
-            "https://listing.lyncafei.team/api/admin-apply-v4-production-job-queue-migration" \
-            "$MIGRATION_RESPONSE_FILE"
-
-          MIGRATION_RESPONSE_FILE=/tmp/writer-export-migration.json
-          call_migration "admin-apply-v4-writer-export-migration" \
-            "https://listing.lyncafei.team/api/admin-apply-v4-writer-export-migration" \
-            "$MIGRATION_RESPONSE_FILE"
-
-          MIGRATION_RESPONSE_FILE=/tmp/noncritical-persistence-migration.json
-          call_migration "admin-apply-v4-noncritical-persistence-migration" \
-            "https://listing.lyncafei.team/api/admin-apply-v4-noncritical-persistence-migration" \
-            "$MIGRATION_RESPONSE_FILE"
-
-          MIGRATION_RESPONSE_FILE=/tmp/writer-ready-capacity-migration.json
-          call_migration "admin-apply-v4-writer-ready-capacity-migration" \
-            "https://listing.lyncafei.team/api/admin-apply-v4-writer-ready-capacity-migration" \
-            "$MIGRATION_RESPONSE_FILE"
+          node scripts/check-track-c-production-schema.mjs \
+            --out /tmp/track-c-production-schema-postdeploy.json
       - name: Verify production alias and V4 runtime
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
@@ -159,7 +130,7 @@ jobs:
             vector_runtime_ready: vector.details?.runtime_ready === true && vector.details?.preload_status === 'READY',
             provider_done_capacity_handoff_enabled: status.execution_control?.provider_done_capacity_handoff_enabled === true,
             ocr_stage_capacity_enabled: ocrCapacity.capacity_control_enabled === true,
-            ocr_stage_global_capacity: ocrCapacity.global_capacity === 10,
+            ocr_stage_global_capacity: ocrCapacity.global_capacity === 8,
             ocr_per_asset_capacity: ocrCapacity.per_asset_capacity === 1,
             ocr_per_asset_batch_size: ocrCapacity.per_asset_batch_size === 3,
             ocr_anchor_concurrency: ocrCapacity.anchor_concurrency === 8,
@@ -179,12 +150,10 @@ jobs:
         with:
           name: production-release-evidence
           path: |
+            /tmp/track-c-production-schema-preflight.json
+            /tmp/track-c-production-schema-postdeploy.json
             /tmp/v4-health.json
             /tmp/v4-health-deployed.json
             /tmp/provider-status.json
             /tmp/vercel-deploy-hook.json
-            /tmp/production-job-queue-migration.json
-            /tmp/writer-export-migration.json
-            /tmp/noncritical-persistence-migration.json
-            /tmp/writer-ready-capacity-migration.json
             /tmp/writer-assisted-readiness.json

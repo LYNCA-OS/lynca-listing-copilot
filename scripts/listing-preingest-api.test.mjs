@@ -1,21 +1,25 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-preingest.js";
+import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
+import { preingestionOcrJobVersion } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
 process.env.LISTING_IMAGE_BUCKET = "listing-card-images";
 process.env.LISTING_IMAGE_SIGNED_URL_TTL_SECONDS = "600";
-
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
+const assetId = "asset_22222222-2222-4222-8222-222222222222";
+const otherAssetId = "asset_33333333-3333-4333-8333-333333333333";
 
 function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000, user: "tester" })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
+  const token = createListingSessionToken({
+    tenantId: "tenant_a",
+    userId: "user_manager",
+    email: "manager@example.test",
+    sessionVersion: 1
+  }, process.env.METAVERSE_AUTH_SECRET);
+  return `${cookieName}=${token}`;
 }
 
 function jsonResponse(payload, status = 200) {
@@ -42,7 +46,7 @@ async function callApi(payload) {
     }
   };
   const promise = handler(req, res);
-  queueMicrotask(() => {
+  setTimeout(() => {
     req.emit("data", JSON.stringify(payload));
     req.emit("end");
   });
@@ -55,11 +59,15 @@ async function callApi(payload) {
 
 const verificationRows = [
   {
-    object_path: "listing-assets/2026-07-06/asset-pre/front.jpg",
+    tenant_id: "tenant_a",
+    object_path: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/front.jpg`,
     bucket: "listing-card-images",
-    asset_id: "asset-pre",
+    asset_id: assetId,
     image_id: "front",
     storage_role: "front_original",
+    image_generation_id: assetId,
+    crop_metadata: null,
+    canonical_eligible: true,
     content_type: "image/jpeg",
     size: 1200,
     width: 900,
@@ -72,11 +80,15 @@ const verificationRows = [
     updated_at: "2026-07-06T00:00:00.000Z"
   },
   {
-    object_path: "listing-assets/2026-07-06/asset-pre/back.jpg",
+    tenant_id: "tenant_a",
+    object_path: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/back.jpg`,
     bucket: "listing-card-images",
-    asset_id: "asset-pre",
+    asset_id: assetId,
     image_id: "back",
     storage_role: "back_original",
+    image_generation_id: assetId,
+    crop_metadata: null,
+    canonical_eligible: true,
     content_type: "image/jpeg",
     size: 1300,
     width: 900,
@@ -93,6 +105,8 @@ const verificationRows = [
 const calls = [];
 let bundleWrite = null;
 let jobsWrite = null;
+let activeVerificationRows = verificationRows;
+let listingAssetVisible = true;
 globalThis.fetch = async (url, init = {}) => {
   const parsed = new URL(String(url));
   calls.push({
@@ -102,13 +116,38 @@ globalThis.fetch = async (url, init = {}) => {
     body: init.body ? JSON.parse(init.body) : null
   });
 
-  if (parsed.pathname.endsWith("/listing_image_verifications")) {
-    assert.equal(parsed.searchParams.get("asset_id"), "eq.asset-pre");
-    return jsonResponse(verificationRows);
+  if (parsed.pathname.endsWith("/tenant_members")) {
+    return new Response(JSON.stringify([{
+      tenant_id: "tenant_a",
+      user_id: "user_manager",
+      role: "MANAGER",
+      status: "ACTIVE",
+      disabled_at: null,
+      user: { id: "user_manager", email: "manager@example.test", status: "ACTIVE", session_version: 1, disabled_at: null },
+      tenant: { id: "tenant_a", name: "Tenant A", plan: "pilot", status: "ACTIVE", disabled_at: null }
+    }]), { status: 200, headers: { "content-type": "application/json" } });
   }
 
-  if (parsed.pathname.endsWith("/image_derived_assets")) {
-    return jsonResponse([]);
+  if (parsed.pathname.endsWith("/listing_image_verifications")) {
+    assert.equal(parsed.searchParams.get("asset_id"), `eq.${assetId}`);
+    assert.equal(parsed.searchParams.get("tenant_id"), "eq.tenant_a");
+    assert.equal(parsed.searchParams.get("image_generation_id"), `eq.${assetId}`);
+    assert.equal(parsed.searchParams.get("object_verified"), "eq.true");
+    assert.equal(parsed.searchParams.get("canonical_eligible"), "eq.true");
+    return jsonResponse(activeVerificationRows);
+  }
+
+  if (parsed.pathname.endsWith("/listing_assets")) {
+    assert.equal(init.method, undefined);
+    assert.equal(parsed.searchParams.get("tenant_id"), "eq.tenant_a");
+    assert.equal(parsed.searchParams.get("id"), `eq.${assetId}`);
+    return jsonResponse(listingAssetVisible ? [{
+      tenant_id: "tenant_a",
+      id: assetId,
+      image_generation_id: assetId,
+      expected_original_count: 2,
+      image_set_state: "FINALIZED"
+    }] : []);
   }
 
   if (parsed.pathname.includes("/storage/v1/object/sign/")) {
@@ -141,8 +180,36 @@ globalThis.fetch = async (url, init = {}) => {
 };
 
 const result = await callApi({
-  asset_id: "asset-pre",
+  asset_id: assetId,
+  source: "client_defined_untrusted_source",
   requested_fields: ["serial_number", "grade_label"],
+  images: [
+    {
+      asset_id: assetId,
+      image_id: "forged-front",
+      role: "back_original",
+      object_path: verificationRows[0].object_path,
+      bucket: "listing-card-images",
+      content_sha256: "f".repeat(64),
+      width: 1,
+      height: 1,
+      size: 1,
+      object_verified: true,
+      content_hash_verified: true
+    },
+    {
+      asset_id: assetId,
+      image_id: "legacy-path",
+      role: "front_original",
+      object_path: `listing-assets/2026-07-06/${assetId}/legacy.jpg`,
+      bucket: "listing-card-images",
+      content_sha256: "e".repeat(64),
+      width: 9999,
+      height: 9999,
+      object_verified: true,
+      content_hash_verified: true
+    }
+  ],
   initial_evidence: {
     print_run_candidate: {
       value: "#/3",
@@ -162,35 +229,91 @@ const result = await callApi({
   }]
 });
 
-assert.equal(result.statusCode, 200);
+assert.equal(result.statusCode, 200, JSON.stringify(result.body));
 assert.equal(result.body.ok, true);
 assert.equal(result.body.bundle_id, bundleWrite.bundle_id);
 assert.equal(result.body.saved, true);
 assert.equal(result.body.preprocessing_summary.image_count, 2);
 assert.equal(result.body.signed_read_url_count, 2);
 assert.ok(result.body.worker_jobs_enqueued >= 2);
-assert.equal(bundleWrite.asset_id, "asset-pre");
+assert.equal(bundleWrite.asset_id, assetId);
+assert.equal(bundleWrite.tenant_id, "tenant_a");
+assert.equal(bundleWrite.source, "listing_preingest_api", "untrusted source names must not create arbitrary bundle lanes");
 assert.equal(bundleWrite.images.length, 2);
-assert.equal(bundleWrite.initial_evidence.print_run_candidate.value, "#/3");
-assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
+assert.deepEqual(bundleWrite.images.map((image) => ({
+  id: image.image_id,
+  role: image.role,
+  sha256: image.content_sha256,
+  width: image.width,
+  height: image.height
+})), [
+  { id: "front", role: "front_original", sha256: "a".repeat(64), width: 900, height: 1260 },
+  { id: "back", role: "back_original", sha256: "b".repeat(64), width: 900, height: 1260 }
+], "pre-ingestion must replace, not merge, browser image identity and dimensions");
+assert.deepEqual(bundleWrite.initial_evidence, {}, "browser initial evidence must be ignored");
+assert.deepEqual(bundleWrite.evidence_patches, [], "browser evidence patches must be ignored");
 assert.equal(JSON.stringify(bundleWrite).includes("read-token"), false, "signed read URLs must not be written to Supabase");
+assert.equal(calls.some((call) => call.path.endsWith("/image_derived_assets")), false, "legacy non-generation-scoped derived rows must not enter the canonical bundle");
 assert.ok(Array.isArray(jobsWrite));
 // Consumerless job types default OFF; only OCR crop jobs are enqueued.
 assert.ok(jobsWrite.every((job) => job.job_type === "ocr_crop_verification"));
+assert.ok(jobsWrite.every((job) => job.tenant_id === "tenant_a"));
 assert.equal(new Set(jobsWrite.map((job) => job.job_key)).size, jobsWrite.length);
 
-// Re-ingestion refreshes crops and images but must retain computed OCR evidence.
+// Re-ingestion retains only evidence produced by the authenticated OCR worker.
+const trustedWorkerPatch = {
+  patch_id: "worker-patch",
+  field: "serial_number",
+  value: "2/3",
+  raw_text: "2/3",
+  source_type: "OCR",
+  source_image_id: "front",
+  crop_id: "serial-front",
+  confidence: 0.94,
+  provenance: {
+    generated_by: "preingestion_ocr_worker",
+    job_key: `ocr:${preingestionOcrJobVersion}:${bundleWrite.bundle_id}:serial-front`
+  }
+};
+bundleWrite.initial_evidence = {
+  print_run_candidate: {
+    value: "forged-legacy",
+    source_type: "PREINGESTION_DETERMINISTIC",
+    source_image_id: "front"
+  }
+};
+bundleWrite.evidence_patches = [
+  trustedWorkerPatch,
+  {
+    ...trustedWorkerPatch,
+    patch_id: "browser-forgery",
+    value: "999/999",
+    provenance: { generated_by: "browser", job_key: "forged" }
+  }
+];
 const secondResult = await callApi({
-  asset_id: "asset-pre",
-  requested_fields: ["serial_number", "grade_label"]
+  asset_id: assetId,
+  requested_fields: ["serial_number", "grade_label"],
+  initial_evidence: { print_run_candidate: { value: "still-forged" } },
+  evidence_patches: [{
+    field: "grade_label",
+    value: "PRISTINE 10",
+    source_type: "OCR",
+    source_image_id: "front",
+    provenance: {
+      generated_by: "preingestion_ocr_worker",
+      job_key: `ocr:${preingestionOcrJobVersion}:${bundleWrite.bundle_id}:client-forgery`
+    }
+  }]
 });
 assert.equal(secondResult.statusCode, 200);
+assert.deepEqual(bundleWrite.initial_evidence, {});
 assert.equal(bundleWrite.evidence_patches.length, 1);
 assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
 
 const signedCallsBeforeFastPath = calls.filter((call) => call.path.includes("/storage/v1/object/sign/")).length;
 const fastPreingestResult = await callApi({
-  asset_id: "asset-pre",
+  asset_id: assetId,
   requested_fields: ["serial_number"],
   verify_signed_read_urls: false
 });
@@ -205,5 +328,64 @@ assert.equal(
 const missing = await callApi({ asset_id: "" });
 assert.equal(missing.statusCode, 400);
 assert.equal(missing.body.ok, false);
+
+const nonDurable = await callApi({ asset_id: "asset-1" });
+assert.equal(nonDurable.statusCode, 400);
+assert.equal(nonDurable.body.code, "invalid_durable_listing_asset_id");
+
+const bundleWritesBeforeScopeFailures = calls.filter((call) => (
+  call.path.endsWith("/preingestion_bundles") && call.method === "POST"
+)).length;
+
+activeVerificationRows = [{
+  ...verificationRows[0],
+  image_generation_id: otherAssetId
+}, verificationRows[1]];
+const crossGeneration = await callApi({
+  asset_id: assetId,
+  verify_signed_read_urls: false,
+  enqueue_workers: false
+});
+assert.equal(crossGeneration.statusCode, 422);
+assert.equal(crossGeneration.body.code, "canonical_image_generation_mismatch");
+
+activeVerificationRows = [{
+  ...verificationRows[0],
+  tenant_id: "tenant_b"
+}, verificationRows[1]];
+const crossTenant = await callApi({
+  asset_id: assetId,
+  verify_signed_read_urls: false,
+  enqueue_workers: false
+});
+assert.equal(crossTenant.statusCode, 422);
+assert.equal(crossTenant.body.code, "canonical_image_tenant_mismatch");
+
+activeVerificationRows = [{
+  ...verificationRows[0],
+  asset_id: otherAssetId
+}, verificationRows[1]];
+const crossAsset = await callApi({
+  asset_id: assetId,
+  verify_signed_read_urls: false,
+  enqueue_workers: false
+});
+assert.equal(crossAsset.statusCode, 422);
+assert.equal(crossAsset.body.code, "canonical_image_asset_mismatch");
+
+activeVerificationRows = verificationRows;
+listingAssetVisible = false;
+const tenantScopedAssetMiss = await callApi({
+  asset_id: assetId,
+  verify_signed_read_urls: false,
+  enqueue_workers: false
+});
+assert.equal(tenantScopedAssetMiss.statusCode, 404);
+assert.equal(tenantScopedAssetMiss.body.code, "canonical_listing_asset_not_found");
+listingAssetVisible = true;
+
+assert.equal(calls.filter((call) => (
+  call.path.endsWith("/preingestion_bundles") && call.method === "POST"
+)).length, bundleWritesBeforeScopeFailures, "scope or generation failures must not persist a bundle");
 
 console.log("listing preingest api tests passed");

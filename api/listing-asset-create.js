@@ -82,6 +82,7 @@ export default async function handler(req, res) {
       clientAssetRef: payload.client_asset_ref || payload.clientAssetRef,
       captureProfileId: payload.capture_profile_id || payload.captureProfileId,
       category: payload.category,
+      expectedOriginalCount: payload.expected_original_count ?? payload.expectedOriginalCount,
       env: process.env,
       fetchImpl: globalThis.fetch
     });
@@ -91,10 +92,11 @@ export default async function handler(req, res) {
       ...asset
     });
   } catch (error) {
-    sendJson(res, 503, {
+    const invalidRequest = error instanceof TypeError;
+    sendJson(res, invalidRequest ? 400 : 503, {
       ok: false,
-      retryable: true,
-      code: "listing_asset_create_failed",
+      retryable: !invalidRequest,
+      code: invalidRequest ? "listing_asset_create_invalid" : "listing_asset_create_failed",
       message: String(error.message || "Unable to create listing asset.").slice(0, 240)
     });
   }

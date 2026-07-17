@@ -1,20 +1,72 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import healthHandler from "../api/health.js";
-import { createEbayDcsports87ListingsHandler } from "../api/ebay-dcsports87-listings.js";
+import { createEbayDcsports87ListingsHandler as createProductionEbayDcsports87ListingsHandler } from "../api/ebay-dcsports87-listings.js";
+import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 import {
   normalizeBaseUrl,
   optionalProtectionHeaders,
   validateListingsPayload
 } from "./smoke-deployed-ebay-api.mjs";
 
-function sign(value, secret) {
-  return crypto.createHmac("sha256", secret).update(value).digest("hex");
+const tenantId = "tenant_ebay_test";
+const userId = "user_ebay_test";
+const authEnv = {
+  SUPABASE_URL: "https://project.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "sb_secret_test_service_role"
+};
+
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async (input, init = {}) => {
+  const url = new URL(String(input));
+  assert.equal(url.pathname, "/rest/v1/tenant_members");
+  assert.equal(url.searchParams.get("tenant_id"), `eq.${tenantId}`);
+  assert.equal(url.searchParams.get("user_id"), `eq.${userId}`);
+  assert.equal(init.headers.apikey, authEnv.SUPABASE_SERVICE_ROLE_KEY);
+  return new Response(JSON.stringify([{
+    tenant_id: tenantId,
+    user_id: userId,
+    role: "OWNER",
+    status: "ACTIVE",
+    disabled_at: null,
+    user: {
+      id: userId,
+      email: "ebay-test@example.test",
+      status: "ACTIVE",
+      session_version: 1,
+      disabled_at: null,
+      auth_user_id: "auth_ebay_test"
+    },
+    tenant: {
+      id: tenantId,
+      name: "eBay test tenant",
+      plan: "pilot",
+      status: "ACTIVE",
+      disabled_at: null
+    }
+  }]), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+};
+
+function createEbayDcsports87ListingsHandler(options = {}) {
+  return createProductionEbayDcsports87ListingsHandler({
+    ...options,
+    env: {
+      ...authEnv,
+      ...(options.env || {})
+    }
+  });
 }
 
 function sessionCookie(secret) {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60_000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload, secret)}`;
+  const token = createListingSessionToken({
+    userId,
+    tenantId,
+    email: "ebay-test@example.test",
+    sessionVersion: 1
+  }, secret);
+  return `${cookieName}=${token}`;
 }
 
 function mockRes() {
@@ -435,4 +487,5 @@ assert.throws(() => validateListingsPayload({
   }]
 }), /seller/);
 
+globalThis.fetch = originalFetch;
 console.log("deployed ebay API tests passed");

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest } from "../../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import {
   createV4BatchId,
   enqueueV4RecognitionJobs,
@@ -14,9 +14,15 @@ import {
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
-import { resolveSignedPublicV4Principal } from "../../lib/listing/v4/session/trusted-session-identity.mjs";
+import {
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
 
 function clean(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -73,27 +79,18 @@ function withoutUntrustedBundleIdentity(payload = {}) {
   return sanitized;
 }
 
-function headerValue(req, name) {
-  const lower = String(name || "").toLowerCase();
-  const value = req?.headers?.[lower] ?? req?.headers?.[name];
-  if (Array.isArray(value)) return String(value[0] || "").trim();
-  return String(value || "").trim();
-}
-
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
-}
-
-function triggerPump(req, payload = {}) {
-  const secret = configuredWorkerSecret(process.env);
-  const origin = requestOrigin(req);
-  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "request_origin_missing" };
-  const stableConcurrency = v4WorkerProcessConcurrency(process.env);
+export function triggerPump(_req, {
+  tenantId = "",
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil
+} = {}) {
+  const secret = configuredWorkerSecret(env);
+  const origin = trustedInternalServiceOrigin(env);
+  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "internal_origin_missing" };
+  const stableConcurrency = v4WorkerProcessConcurrency(env);
   const body = {
-    tenant_id: payload.tenant_id || payload.tenantId || payload.batch_id || null,
+    tenant_id: tenantId,
     limit: stableConcurrency,
     process_concurrency: stableConcurrency,
     interactive_limit: stableConcurrency,
@@ -110,7 +107,7 @@ function triggerPump(req, payload = {}) {
     max_continuation_depth: 20,
     reason: "prewarm"
   };
-  waitUntil(fetch(`${origin}/api/v4/listing-job-pump`, {
+  defer(fetchImpl(`${origin}/api/v4/listing-job-pump`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -122,13 +119,18 @@ function triggerPump(req, payload = {}) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-prewarm" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  const signedSession = getSessionFromRequest(req);
-  if (!signedSession) {
-    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+    requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -152,19 +154,8 @@ export default async function handler(req, res) {
 
   const startedAt = Date.now();
   const batchId = createV4BatchId("v4prewarm");
-  let principal;
-  try {
-    principal = resolveSignedPublicV4Principal(signedSession);
-  } catch (error) {
-    sendJson(res, 403, withV4Version({
-      ok: false,
-      retryable: false,
-      error_code: String(error?.code || "V4_SIGNED_PRINCIPAL_INCOMPLETE").toUpperCase(),
-      message: "A canonical signed tenant and user identity is required."
-    }));
-    return;
-  }
-  const { operatorId, tenantId } = principal;
+  const operatorId = context.userId;
+  const tenantId = context.tenantId;
   const createL2Jobs = payload.create_l2_jobs !== false && payload.createL2Jobs !== false;
   const assets = assetsFromPayload(payload).slice(0, 200);
   const staged = [];
@@ -215,7 +206,11 @@ export default async function handler(req, res) {
   }
 
   const existing = staged.length
-    ? await readV4RecognitionJobs({ jobIds: staged.map((job) => job.id), limit: staged.length })
+    ? await readV4RecognitionJobs({
+      jobIds: staged.map((job) => job.id),
+      tenantId,
+      limit: staged.length
+    })
     : { ok: true, rows: [] };
   if (!existing.ok) {
     sendJson(res, 503, withV4Version({
@@ -287,11 +282,7 @@ export default async function handler(req, res) {
   }
 
   if (result.queued_count > 0 && payload.autokick_workers !== false && payload.autokickWorkers !== false) {
-    triggerPump(req, {
-      batch_id: batchId,
-      tenant_id: tenantId,
-      jobs: []
-    });
+    triggerPump(req, { tenantId });
   }
 
   sendJson(res, 200, withV4Version({

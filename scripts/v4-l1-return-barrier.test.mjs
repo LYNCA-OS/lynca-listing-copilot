@@ -23,7 +23,7 @@ assert.ok(fastScoutBranch.includes("writerPendingL1Response(v4Response, l1Result
 assert.ok(!apiSource.includes("writerVisibleL1Response"), "V4 must not expose an L1 writer-visible response path");
 assert.ok(!apiSource.includes("v4_return_l1_writer_safe_draft === true"), "V4 must ignore legacy L1 writer-safe draft flags");
 assert.ok(!apiSource.includes("L1_WRITER_SAFE_DRAFT"), "V4 title stages must not include a writer-visible L1 draft stage");
-assert.ok(fastScoutBranch.includes("sendJson(res, 200, writerResponse);"), "fast scout L1 must send a writer-pending response in the branch");
+assert.ok(fastScoutBranch.includes("sendJson(res, writerResponse.ok === false ? 503 : 200, writerResponse);"), "fast scout L1 must fail closed when its durable persistence barrier fails");
 assert.ok(fastScoutBranch.includes("if (queueL1Only(payload))"), "queue-backed L1 must take the explicit L1-only path");
 assert.ok(fastScoutBranch.includes("await l1PersistencePromise"), "queue-backed L1 must persist before job completion/status polling");
 assert.ok(fastScoutBranch.includes("scheduleV4Background(l1PersistencePromise"), "L1 persistence must be scheduled after response construction");

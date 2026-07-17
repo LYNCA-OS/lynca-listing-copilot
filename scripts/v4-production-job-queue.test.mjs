@@ -14,7 +14,6 @@ import {
   readV4RecognitionJobs,
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
-  retryV4RecognitionJob,
   tryAcquireV4QueueKick,
   v4JobLeaseHeartbeatEnabled,
   v4JobLeaseHeartbeatIntervalMs,
@@ -28,6 +27,10 @@ import {
   runWithV4JobLeaseHeartbeat,
   v4JobFailureCode
 } from "../api/v4/listing-job-worker.js";
+import {
+  authorizeFreshManualRetryJobs,
+  queueJobsRequireRetryPermission
+} from "../api/v4/listing-job-enqueue.js";
 import { isV4CronRequest, isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import { persistV4WriterReadyAndReleaseCapacity } from "../lib/listing/v4/session/session-store.mjs";
 
@@ -40,13 +43,13 @@ assert.equal(
 );
 assert.equal(
   v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "6" }),
-  6,
-  "queue submission capacity must be independently configurable"
+  2,
+  "queue submission must not exceed the measured production contract"
 );
 assert.equal(
   v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "99" }),
-  12,
-  "queue submission capacity must remain bounded"
+  2,
+  "an unsafe environment override must remain clamped to the measured production contract"
 );
 
 function jsonResponse(body, init = {}) {
@@ -126,6 +129,120 @@ const l2OnlyJobs = expandV4RecognitionStageJobs({
 });
 assert.equal(l2OnlyJobs.length, 1);
 assert.equal(l2OnlyJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+
+const freshRetryAssetId = "asset_11111111-1111-4111-8111-111111111111";
+assert.equal(
+  queueJobsRequireRetryPermission([{ payload: { retry_of_job_id: "v4job_failed_prior" } }]),
+  true,
+  "a nested retry reference must require the explicit RETRY_JOB permission even without a browser boolean"
+);
+assert.equal(
+  queueJobsRequireRetryPermission([{ asset_id: freshRetryAssetId, payload: {} }]),
+  false,
+  "ordinary creates must not be reclassified as retries"
+);
+await assert.rejects(() => authorizeFreshManualRetryJobs({
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId, manual_retry: true, payload: {} }],
+  readRows: async () => ({ ok: true, rows: [] })
+}), /manual_retry_reference_required/, "a browser boolean alone must never authorize interactive priority");
+
+const authorizedManualRetryJobs = await authorizeFreshManualRetryJobs({
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{
+    asset_id: freshRetryAssetId,
+    priority: 0,
+    manual_retry: true,
+    retry_of_job_id: "v4job_failed_prior",
+    force_l2_only: true,
+    queue_tags: {
+      manual_retry_requested_by_user_id: "forged-requester",
+      manual_retry_original_operator_id: "forged-original"
+    },
+    payload: { force_l2_only: true, manual_retry: true, retry_of_job_id: "v4job_failed_prior", images: [] }
+  }],
+  readRows: async ({ search }) => {
+    assert.equal(search.tenant_id, "eq.tenant-stage");
+    assert.equal("operator_id" in search, false, "a tenant retry manager must not be restricted to jobs they originally created");
+    return {
+      ok: true,
+      rows: [{
+        id: "v4job_failed_prior",
+        tenant_id: "tenant-stage",
+        operator_id: "operator-original",
+        asset_id: freshRetryAssetId,
+        status: "FAILED"
+      }]
+    };
+  }
+});
+assert.equal(authorizedManualRetryJobs[0].trusted_manual_retry, true);
+assert.equal(authorizedManualRetryJobs[0].queue_tags.manual_retry_requested_by_user_id, "operator-stage");
+assert.equal(authorizedManualRetryJobs[0].queue_tags.manual_retry_original_operator_id, "operator-original");
+const freshManualRetryJobs = expandV4RecognitionStageJobs({
+  batchId: "batch-fresh-manual-retry",
+  operatorId: "operator-stage",
+  tenantId: "tenant-stage",
+  priority: 0,
+  jobs: authorizedManualRetryJobs
+});
+assert.equal(freshManualRetryJobs.length, 1);
+assert.equal(freshManualRetryJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
+assert.equal(freshManualRetryJobs[0].lane, v4JobLanes.INTERACTIVE, "a fresh writer retry must not fall back into the background lane");
+assert.equal(freshManualRetryJobs[0].priority, 0, "priority zero must survive normalization");
+assert.equal(freshManualRetryJobs[0].queue_tags.manual_retry_queue_policy, "interactive_priority_zero");
+assert.equal(freshManualRetryJobs[0].queue_tags.manual_retry_requested_by_user_id, "operator-stage");
+assert.equal(freshManualRetryJobs[0].queue_tags.manual_retry_original_operator_id, "operator-original");
+
+await assert.rejects(() => authorizeFreshManualRetryJobs({
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: authorizedManualRetryJobs.map(({ trusted_manual_retry: _trusted, ...job }) => ({ ...job, manual_retry: true })),
+  readRows: async () => ({
+    ok: true,
+    rows: [{
+      id: "v4job_failed_prior",
+      tenant_id: "tenant-other",
+      operator_id: "operator-original",
+      asset_id: freshRetryAssetId,
+      status: "FAILED"
+    }]
+  })
+}), /manual_retry_reference_not_retryable/, "a service-role response from another tenant must fail closed even when the job id and asset match");
+
+await assert.rejects(() => authorizeFreshManualRetryJobs({
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: authorizedManualRetryJobs.map(({ trusted_manual_retry: _trusted, ...job }) => ({ ...job, manual_retry: true })),
+  readRows: async () => ({
+    ok: true,
+    rows: [{
+      id: "v4job_failed_prior",
+      tenant_id: "tenant-stage",
+      operator_id: "operator-stage",
+      asset_id: "asset_99999999-9999-4999-8999-999999999999",
+      status: "FAILED"
+    }]
+  })
+}), /manual_retry_reference_not_retryable/, "a retry reference from another asset must fail closed");
+
+await assert.rejects(() => authorizeFreshManualRetryJobs({
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: authorizedManualRetryJobs.map(({ trusted_manual_retry: _trusted, ...job }) => ({ ...job, manual_retry: true })),
+  readRows: async () => ({
+    ok: true,
+    rows: [{
+      id: "v4job_failed_prior",
+      tenant_id: "tenant-stage",
+      operator_id: "operator-original",
+      asset_id: freshRetryAssetId,
+      status: "RUNNING"
+    }]
+  })
+}), /manual_retry_reference_not_retryable/, "an active job must never be promoted as a fresh priority retry");
 
 process.env.V4_QUEUE_DEFAULT_CREATE_L1 = "true";
 const envDefaultL2Jobs = expandV4RecognitionStageJobs({
@@ -288,80 +405,6 @@ const rejectedEnqueue = await enqueueV4RecognitionJobs({
 assert.equal(rejectedEnqueue.queued_count, 0);
 assert.equal(rejectedEnqueue.persistence_mode, "atomic_rpc_rejected");
 assert.match(rejectedEnqueue.jobs[0].error, /root_listing_asset_not_found/);
-
-const failedRetryJob = {
-  ...normalizeV4JobInput({
-    batchId: "batch-manual-retry",
-    operatorId: "operator-manual-retry",
-    tenantId: "tenant-manual-retry",
-    job: { asset_id: "asset-manual-retry", payload: { images: [] } }
-  }),
-  status: v4JobStatuses.FAILED,
-  attempt_count: 2,
-  max_attempts: 2,
-  started_at: "2026-07-14T01:00:00.000Z",
-  completed_at: "2026-07-14T01:00:10.000Z",
-  queue_tags: {
-    idempotency_mode: "batch_asset_job_type",
-    provider_capacity_slot: 1,
-    provider_key_slot: 1,
-    provider_capacity_lease_owner: "old-worker",
-    provider_capacity_leased_at: "2026-07-14T01:00:00.000Z"
-  },
-  error: {
-    message: "provider_timeout",
-    attempt_history: [{ attempt: 2, message: "provider_timeout" }]
-  },
-  timing: { worker_processing_ms: 10_000 }
-};
-const retryRequests = [];
-const manualRetry = await retryV4RecognitionJob({
-  jobId: failedRetryJob.id,
-  operatorId: failedRetryJob.operator_id,
-  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
-  fetchImpl: async (url, request = {}) => {
-    retryRequests.push({ url: String(url), request });
-    if (!request.method || request.method === "GET") return jsonResponse([failedRetryJob]);
-    const patch = JSON.parse(request.body);
-    return jsonResponse([{ ...failedRetryJob, ...patch }]);
-  }
-});
-assert.equal(manualRetry.saved, true);
-assert.equal(manualRetry.already_active, false);
-assert.equal(manualRetry.row.status, v4JobStatuses.RETRYING);
-assert.equal(manualRetry.row.lane, v4JobLanes.INTERACTIVE);
-assert.equal(manualRetry.row.priority, 0);
-assert.equal(manualRetry.row.max_attempts, 4, "a writer retry should receive two fresh execution attempts");
-assert.equal(manualRetry.row.started_at, null, "retry timing must start only when provider capacity reaches the card");
-assert.equal(manualRetry.row.completed_at, null);
-assert.equal(manualRetry.row.queue_tags.provider_capacity_slot, undefined, "stale capacity leases must not survive a retry");
-assert.equal(manualRetry.row.queue_tags.provider_key_slot, undefined);
-assert.equal(manualRetry.row.queue_tags.manual_retry_queue_policy, "interactive_priority_zero");
-assert.match(retryRequests[1].url, /operator_id=eq\.operator-manual-retry/);
-assert.match(retryRequests[1].url, /status=eq\.FAILED/);
-
-let activeRetryWriteAttempted = false;
-const activeRetry = await retryV4RecognitionJob({
-  jobId: failedRetryJob.id,
-  operatorId: failedRetryJob.operator_id,
-  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
-  fetchImpl: async (_url, request = {}) => {
-    if (request.method === "PATCH") activeRetryWriteAttempted = true;
-    return jsonResponse([{ ...failedRetryJob, status: v4JobStatuses.RUNNING }]);
-  }
-});
-assert.equal(activeRetry.saved, true);
-assert.equal(activeRetry.already_active, true, "a repeated click must reconnect instead of enqueueing duplicate paid work");
-assert.equal(activeRetryWriteAttempted, false);
-
-const foreignRetry = await retryV4RecognitionJob({
-  jobId: failedRetryJob.id,
-  operatorId: "another-operator",
-  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
-  fetchImpl: async () => jsonResponse([failedRetryJob])
-});
-assert.equal(foreignRetry.saved, false);
-assert.equal(foreignRetry.error_code, "V4_JOB_RETRY_NOT_FOUND", "job ownership failures must not reveal another writer's work");
 
 const rpcCalls = [];
 const claim = await claimV4RecognitionJobs({
@@ -781,6 +824,7 @@ assert.equal(hiddenL1FailureBody.completed_at !== null, true);
 const reads = [];
 await readV4RecognitionJobs({
   batchId: "batch-read",
+  tenantId: "tenant-read",
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url) => {
     reads.push(String(url));
@@ -788,6 +832,11 @@ await readV4RecognitionJobs({
   }
 });
 assert.ok(reads[0].includes("batch_id=eq.batch-read"));
+assert.ok(reads[0].includes("tenant_id=eq.tenant-read"));
+
+const missingReadTenant = await readV4RecognitionJobs({ batchId: "batch-read" });
+assert.equal(missingReadTenant.ok, false);
+assert.equal(missingReadTenant.error, "tenant_id_required");
 
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "secret" } }, { V4_JOB_WORKER_SECRET: "secret" }), true);
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "wrong" } }, { V4_JOB_WORKER_SECRET: "secret" }), false);

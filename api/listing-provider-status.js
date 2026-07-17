@@ -1,5 +1,12 @@
-import crypto from "node:crypto";
+import { createHash } from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+import {
+  hasTenantPermission,
+  publicTenantAuthError,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../lib/tenant/index.mjs";
 import { visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
 import { openAiProviderPoolStatus } from "../lib/listing/providers/openai-key-pool.mjs";
 import { providerCatalog } from "../lib/listing/providers/provider-registry.mjs";
@@ -15,43 +22,12 @@ import {
 import { listingStageCapacityPlan } from "../lib/listing/v4/orchestration/stage-capacity.mjs";
 import { v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 
-const cookieName = "lynca_metaverse_session";
 const workflowReadinessCacheTtlMs = 60_000;
 let workflowReadinessCache = {
   key: "",
   expiresAt: 0,
   report: null
 };
-
-function parseCookies(header) {
-  return Object.fromEntries(
-    String(header || "")
-      .split(";")
-      .map((part) => {
-        const index = part.indexOf("=");
-        if (index === -1) return ["", ""];
-        return [part.slice(0, index).trim(), part.slice(index + 1).trim()];
-      })
-      .filter(([key, value]) => key && value)
-  );
-}
-
-function sign(value, secret) {
-  return crypto.createHmac("sha256", secret).update(value).digest("hex");
-}
-
-function isValidSession(cookie, secret) {
-  if (!cookie || !secret) return false;
-  const [payload, signature] = cookie.split(".");
-  if (!payload || !signature || signature !== sign(payload, secret)) return false;
-
-  try {
-    const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return Number(session.exp) > Date.now();
-  } catch {
-    return false;
-  }
-}
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -128,8 +104,7 @@ function workflowReadinessCacheKey(env = process.env) {
     "EBAY_SELLER_USERNAME",
     ...Array.from({ length: 50 }, (_, index) => `OPENAI_API_KEY_${index + 1}`)
   ];
-  return crypto
-    .createHash("sha256")
+  return createHash("sha256")
     .update(JSON.stringify(relevantKeys.map((key) => [key, env[key] || ""])))
     .digest("hex");
 }
@@ -256,17 +231,60 @@ function defaultProviderId(providers) {
   return "";
 }
 
+function writerProviderStatus(provider = {}) {
+  return {
+    id: provider.id || null,
+    role: provider.role || null,
+    roles: Array.isArray(provider.roles) ? provider.roles : [],
+    label: provider.label || "",
+    display_name: provider.display_name || "",
+    model_id: provider.model_id || null,
+    enabled: provider.enabled === true,
+    configured: provider.configured === true,
+    selectable: provider.selectable === true,
+    disabled_reason: provider.disabled_reason || null,
+    requires_explicit_retry: provider.requires_explicit_retry === true
+  };
+}
+
+function writerStorageStatus(storage = {}) {
+  return {
+    configured: storage.configured === true,
+    max_upload_bytes: Number(storage.max_upload_bytes || 0) || null,
+    max_image_dimension_pixels: Number(storage.max_image_dimension_pixels || 0) || null,
+    max_image_total_pixels: Number(storage.max_image_total_pixels || 0) || null
+  };
+}
+
+function writerWorkflowReadiness(readiness = {}) {
+  const summary = readiness.summary && typeof readiness.summary === "object" ? readiness.summary : {};
+  return {
+    ok: readiness.ok === true,
+    can_run_cloud_recognition: readiness.can_run_cloud_recognition === true,
+    low_friction_ready: readiness.low_friction_ready === true,
+    summary: {
+      component_count: Number(summary.component_count || 0),
+      ready_count: Number(summary.ready_count || 0),
+      blocked_count: Number(summary.blocked_count || 0),
+      degraded_count: Number(summary.degraded_count || 0),
+      fail_closed_count: Number(summary.fail_closed_count || 0)
+    }
+  };
+}
+
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/listing-provider-status" });
   if (req.method !== "GET") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  const cookies = parseCookies(req.headers.cookie);
-  const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
-
-  if (!authenticated) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), publicTenantAuthError(error));
     return;
   }
 
@@ -287,6 +305,18 @@ export default async function handler(req, res) {
     .map((provider) => providerStatus(provider, storage));
 
   const workflowReadiness = await loadWorkflowReadiness();
+  const canViewOperations = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_TEAM);
+  if (!canViewOperations) {
+    sendJson(res, 200, {
+      ok: true,
+      default_provider: defaultProviderId(providers),
+      fallback_available: false,
+      workflow_readiness: writerWorkflowReadiness(workflowReadiness),
+      storage: writerStorageStatus(storage),
+      providers: providers.map(writerProviderStatus)
+    });
+    return;
+  }
   const providerPool = openAiProviderPoolStatus(process.env);
   const stageCapacity = listingStageCapacityPlan(process.env);
 

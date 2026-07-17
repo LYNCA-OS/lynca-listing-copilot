@@ -27,13 +27,12 @@ const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_IMAGE = 6;
 const FIELD_MAX_CROPS_PER_ASSET = 8;
-const TITLE_API_ENDPOINT = "/api/v4/listing-copilot-title";
 const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
-const JOB_RETRY_API_ENDPOINT = "/api/v4/listing-job-retry";
 const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
 const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
+const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const EXPORT_WORKBOOK_API_ENDPOINT = "/api/v4/listing-export-workbook";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
@@ -91,7 +90,8 @@ const state = {
   processingTotal: 0,
   exportingWorkbook: false,
   backgroundPreparationRunId: 0,
-  backgroundRecognitionBatchId: ""
+  backgroundRecognitionBatchId: "",
+  assetLifecycleGeneration: 0
 };
 
 const elements = {
@@ -432,19 +432,135 @@ async function recompressAssetImage(image, maxEdge, quality) {
   };
 }
 
-function imageHasVerifiedStorageReference(image = {}) {
-  return Boolean(image.objectPath && image.storageVerified);
+function canonicalAssetId(asset = {}) {
+  const assetId = String(asset.durableAssetId || "").trim();
+  if (!/^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) {
+    throw new Error("canonical_asset_id_missing");
+  }
+  return assetId;
 }
 
-function serializableAssetImage(image, assetId = "") {
-  const useStorageReference = imageHasVerifiedStorageReference(image);
+function canonicalAssetTenantId(asset = {}) {
+  const tenantId = String(asset.durableTenantId || "").trim();
+  if (!/^tenant_[a-z0-9][a-z0-9_-]{0,62}$/i.test(tenantId)) {
+    throw new Error("canonical_asset_tenant_id_missing");
+  }
+  return tenantId;
+}
+
+function assertCurrentAssetLifecycle(asset = {}) {
+  if (
+    Number.isFinite(asset.lifecycleGeneration)
+    && asset.lifecycleGeneration !== state.assetLifecycleGeneration
+  ) {
+    throw new Error("stale_asset_lifecycle");
+  }
+  return asset;
+}
+
+function assetLifecycleMatches(asset = {}, expectedGeneration, currentGeneration = state.assetLifecycleGeneration) {
+  return expectedGeneration === currentGeneration && (
+    !Number.isFinite(asset.lifecycleGeneration)
+    || asset.lifecycleGeneration === expectedGeneration
+  );
+}
+
+async function ensureDurableAssetIdentity(asset) {
+  assertCurrentAssetLifecycle(asset);
+  if (asset.durableAssetId && asset.durableTenantId) {
+    canonicalAssetTenantId(asset);
+    return canonicalAssetId(asset);
+  }
+  if (asset.durableAssetPromise) return asset.durableAssetPromise;
+  asset.durableAssetPromise = (async () => {
+    const clientAssetRef = String(asset.clientAssetRef || asset.id || "").trim();
+    const response = await fetch(ASSET_CREATE_API_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        client_asset_ref: clientAssetRef,
+        capture_profile_id: defaultCaptureProfileId,
+        expected_original_count: Math.max(1, Math.min(2, Array.isArray(asset.images) ? asset.images.length : 1))
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    assertCurrentAssetLifecycle(asset);
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || `listing_asset_create_failed_${response.status}`);
+    }
+    if (String(payload.client_asset_ref || "") !== clientAssetRef) {
+      throw new Error("listing_asset_client_ref_mismatch");
+    }
+    asset.durableAssetId = payload.asset_id;
+    asset.durableTenantId = payload.tenant_id;
+    asset.imageGenerationId = payload.image_generation_id || payload.asset_id;
+    asset.expectedOriginalCount = Number(payload.expected_original_count || asset.images?.length || 1);
+    asset.clientAssetRef = clientAssetRef;
+    canonicalAssetTenantId(asset);
+    return canonicalAssetId(asset);
+  })();
+  try {
+    return await asset.durableAssetPromise;
+  } catch (error) {
+    asset.durableAssetPromise = null;
+    throw error;
+  }
+}
+
+function assertCanonicalImageObjectPath({ objectPath, tenantId, assetId } = {}) {
+  const path = String(objectPath || "").trim();
+  if (!path || /%2f|%5c/i.test(path) || path.includes("\\")) {
+    throw new Error("storage_upload_object_path_invalid");
+  }
+  const parts = path.split("/");
+  if (
+    parts.length !== 6
+    || parts[0] !== "tenants"
+    || parts[1] !== tenantId
+    || parts[2] !== "listing-assets"
+    || !/^\d{4}-\d{2}-\d{2}$/.test(parts[3])
+    || parts[4] !== assetId
+    || !parts[5]
+    || parts[5] === "."
+    || parts[5] === ".."
+  ) {
+    throw new Error("storage_upload_object_path_out_of_scope");
+  }
+  return path;
+}
+
+function imageHasVerifiedStorageReference(image = {}, assetId = "", tenantId = "") {
+  const expectedAssetId = String(assetId || "").trim();
+  const expectedTenantId = String(tenantId || "").trim();
+  if (
+    !expectedAssetId
+    || !expectedTenantId
+    || image.storageVerified !== true
+    || image.storageAssetId !== expectedAssetId
+    || image.storageTenantId !== expectedTenantId
+  ) return false;
+  try {
+    assertCanonicalImageObjectPath({
+      objectPath: image.objectPath,
+      tenantId: expectedTenantId,
+      assetId: expectedAssetId
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function serializableAssetImage(image, assetId = "", tenantId = "") {
+  const useStorageReference = imageHasVerifiedStorageReference(image, assetId, tenantId);
   const cropMetadata = image.cropMetadata || image.crop_metadata || null;
   const serializedCropMetadata = cropMetadata
     ? {
       ...cropMetadata,
-      asset_id: cropMetadata.asset_id || assetId || "",
-      source_object_path: cropMetadata.source_object_path || "",
-      derived_object_path: cropMetadata.derived_object_path || image.objectPath || ""
+      asset_id: assetId || "",
+      source_object_path: useStorageReference ? cropMetadata.source_object_path || "" : "",
+      derived_object_path: useStorageReference ? cropMetadata.derived_object_path || image.objectPath || "" : ""
     }
     : null;
   return {
@@ -469,11 +585,13 @@ function serializableAssetImage(image, assetId = "") {
     crop_metadata: serializedCropMetadata,
     derived: Boolean(image.derived),
     contentSha256: image.contentSha256 || "",
-    objectPath: image.objectPath || "",
-    bucket: image.bucket || "",
-    storageVerificationToken: image.storageVerificationToken || "",
-    storageVerified: Boolean(image.storageVerified),
-    storageUploaded: Boolean(image.storageUploaded)
+    objectPath: useStorageReference ? image.objectPath || "" : "",
+    bucket: useStorageReference ? image.bucket || "" : "",
+    storageVerificationToken: useStorageReference ? image.storageVerificationToken || "" : "",
+    storageVerified: useStorageReference,
+    storageUploaded: useStorageReference,
+    storageAssetId: useStorageReference ? image.storageAssetId || "" : "",
+    storageTenantId: useStorageReference ? image.storageTenantId || "" : ""
   };
 }
 
@@ -539,11 +657,15 @@ function buildAssetRequestBody(asset, options = {}) {
   const allProviderImages = asset.providerImages || asset.images || [];
   const providerImages = boundedProviderImagesForRequest(allProviderImages);
   const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
+  const assetId = canonicalAssetId(asset);
+  const tenantId = canonicalAssetTenantId(asset);
   const body = {
-    assetId: asset.id,
+    assetId,
+    asset_id: assetId,
+    client_asset_ref: asset.clientAssetRef || asset.id,
     mode: state.mode,
     maxTitleLength,
-    images: providerImages.map((image) => serializableAssetImage(image, asset.id)),
+    images: providerImages.map((image) => serializableAssetImage(image, assetId, tenantId)),
     deferredImageCount,
     deferred_image_count: deferredImageCount,
     captureProfileId: defaultCaptureProfileId,
@@ -628,7 +750,9 @@ function queuedPendingResult(asset, enqueuePayload = {}, job = {}, timing = {}) 
   const providerId = state.selectedProvider || null;
   return attachGenerationTimingToResult({
     index: asset.index,
-    asset_id: asset.id,
+    lifecycleGeneration: asset.lifecycleGeneration,
+    asset_id: canonicalAssetId(asset),
+    client_asset_ref: asset.clientAssetRef || asset.id,
     thumbnail: asset.images[0]?.dataUrl || "",
     title: "",
     final_title: "",
@@ -722,9 +846,40 @@ async function contentSha256Hex(source) {
     .join("");
 }
 
+function clearImageStorageBinding(image = {}) {
+  image.objectPath = "";
+  image.bucket = "";
+  image.storageVerificationToken = "";
+  image.storageVerified = false;
+  image.storageUploaded = false;
+  image.storageAssetId = "";
+  image.storageTenantId = "";
+  const metadata = image.cropMetadata || image.crop_metadata;
+  if (metadata) {
+    const resetMetadata = {
+      ...metadata,
+      asset_id: "",
+      source_object_path: "",
+      derived_object_path: ""
+    };
+    image.cropMetadata = resetMetadata;
+    image.crop_metadata = resetMetadata;
+    if (image.cropPlan) {
+      image.cropPlan = { ...image.cropPlan, crop_metadata: resetMetadata };
+    }
+  }
+}
+
 async function uploadAssetImage(asset, image, imageIndex) {
+  assertCurrentAssetLifecycle(asset);
+  const assetId = canonicalAssetId(asset);
+  const tenantId = canonicalAssetTenantId(asset);
+  if (imageHasVerifiedStorageReference(image, assetId, tenantId)) return false;
+  if (image.objectPath || image.storageAssetId || image.storageTenantId) {
+    clearImageStorageBinding(image);
+  }
   const source = storageSourceForImage(image);
-  if (image.objectPath || !source) return false;
+  if (!source) return false;
   const usingOriginalSource = source === image.sourceFile;
   const uploadContentType = usingOriginalSource
     ? image.originalType || source.type || "image/jpeg"
@@ -743,7 +898,8 @@ async function uploadAssetImage(asset, image, imageIndex) {
     },
     credentials: "same-origin",
     body: JSON.stringify({
-      assetId: asset.id,
+      assetId,
+      clientAssetRef: asset.clientAssetRef || asset.id,
       imageId: image.id,
       role: storageRole,
       fileName: image.name,
@@ -757,9 +913,24 @@ async function uploadAssetImage(asset, image, imageIndex) {
   });
 
   const uploadPayload = await uploadResponse.json();
+  assertCurrentAssetLifecycle(asset);
   if (!uploadResponse.ok || !uploadPayload.ok) {
     throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
   }
+  if (
+    uploadPayload.asset_id !== assetId
+    || uploadPayload.client_asset_ref !== (asset.clientAssetRef || asset.id)
+    || uploadPayload.upload?.tenant_id !== tenantId
+    || uploadPayload.upload?.image_id !== image.id
+    || uploadPayload.upload?.storage_role !== storageRole
+  ) {
+    throw new Error("Storage upload identity mismatch.");
+  }
+  const uploadObjectPath = assertCanonicalImageObjectPath({
+    objectPath: uploadPayload.upload.object_path,
+    tenantId,
+    assetId
+  });
 
   const storageResponse = await fetch(uploadPayload.upload.signed_upload_url, {
     method: "PUT",
@@ -772,6 +943,7 @@ async function uploadAssetImage(asset, image, imageIndex) {
   if (!storageResponse.ok) {
     throw new Error(`Storage upload failed: ${storageResponse.status}`);
   }
+  assertCurrentAssetLifecycle(asset);
 
   const verifyResponse = await fetch("/api/listing-image-verify-upload", {
     method: "POST",
@@ -780,35 +952,48 @@ async function uploadAssetImage(asset, image, imageIndex) {
     },
     credentials: "same-origin",
     body: JSON.stringify({
-      assetId: asset.id,
+      assetId,
       imageId: image.id,
       role: storageRole,
-      objectPath: uploadPayload.upload.object_path,
+      fileName: image.name,
+      objectPath: uploadObjectPath,
       contentType: uploadPayload.upload.content_type,
       size: source.size,
       width: dimensions.width,
       height: dimensions.height,
       signatureHex,
-      contentSha256
+      contentSha256,
+      cropMetadata: image.cropMetadata || image.crop_metadata || null
     })
   });
   const verifyPayload = await verifyResponse.json();
+  assertCurrentAssetLifecycle(asset);
   if (!verifyResponse.ok || !verifyPayload.ok) {
     throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
   }
+  if (
+    verifyPayload.verification?.tenant_id !== tenantId
+    || verifyPayload.verification?.object_path !== uploadObjectPath
+    || verifyPayload.verification_record?.saved !== true
+    || verifyPayload.verification_record?.durable !== true
+  ) {
+    throw new Error("Storage verification identity mismatch.");
+  }
 
-  image.objectPath = verifyPayload.verification.object_path;
+  image.objectPath = uploadObjectPath;
   image.bucket = verifyPayload.verification.bucket;
   image.storageVerificationToken = verifyPayload.verification.verification_token || "";
   image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
   image.storageVerified = true;
   image.storageUploaded = true;
+  image.storageAssetId = assetId;
+  image.storageTenantId = tenantId;
   if (image.cropMetadata || image.crop_metadata) {
     const metadata = {
       ...(image.cropMetadata || image.crop_metadata || {}),
       derived_object_path: image.objectPath,
       source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
-      asset_id: (image.cropMetadata || image.crop_metadata || {}).asset_id || asset.id || ""
+      asset_id: assetId
     };
     image.cropMetadata = metadata;
     image.crop_metadata = metadata;
@@ -823,15 +1008,33 @@ async function uploadAssetImage(asset, image, imageIndex) {
 }
 
 async function ensureAssetImagesUploaded(asset) {
-  if (!storageReady()) return false;
+  await ensureDurableAssetIdentity(asset);
+  assertCurrentAssetLifecycle(asset);
+  if (!storageReady()) throw new Error("listing_storage_not_ready");
   if (asset.storageUploadPromise) return asset.storageUploadPromise;
 
   asset.storageUploadPromise = (async () => {
     const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
     asset.providerImages = images;
-    const uploadResults = await mapWithConcurrency(images, STORAGE_UPLOAD_CONCURRENCY, (image, imageIndex) => {
-      return uploadAssetImage(asset, image, imageIndex);
+    const indexedImages = images.map((image, imageIndex) => ({ image, imageIndex }));
+    const uploadPhase = (entries) => mapWithConcurrency(entries, STORAGE_UPLOAD_CONCURRENCY, async ({ image, imageIndex }) => {
+      try {
+        return { ok: true, uploaded: await uploadAssetImage(asset, image, imageIndex) };
+      } catch (error) {
+        return { ok: false, error };
+      }
     });
+    // A crop verification must resolve exactly one durable original in the
+    // same asset generation. Finish every original first; never let a crop
+    // race ahead and later get paired with a cached image from another wave.
+    const originalOutcomes = await uploadPhase(indexedImages.filter(({ image }) => !imageIsDerivedForRequest(image)));
+    const failedOriginal = originalOutcomes.find((outcome) => !outcome.ok);
+    if (failedOriginal) throw failedOriginal.error;
+    const cropOutcomes = await uploadPhase(indexedImages.filter(({ image }) => imageIsDerivedForRequest(image)));
+    const uploadOutcomes = [...originalOutcomes, ...cropOutcomes];
+    assertCurrentAssetLifecycle(asset);
+    const failedUpload = uploadOutcomes.find((outcome) => !outcome.ok);
+    if (failedUpload) throw failedUpload.error;
     const imagesById = new Map(images.map((image) => [image.id, image]));
     images.forEach((image) => {
       const metadata = image.cropMetadata || image.crop_metadata;
@@ -843,7 +1046,7 @@ async function ensureAssetImagesUploaded(asset) {
         ...metadata,
         source_object_path: sourceObjectPath,
         derived_object_path: metadata.derived_object_path || image.objectPath || "",
-        asset_id: metadata.asset_id || asset.id || ""
+        asset_id: canonicalAssetId(asset)
       };
       image.cropMetadata = updatedMetadata;
       image.crop_metadata = updatedMetadata;
@@ -855,7 +1058,7 @@ async function ensureAssetImagesUploaded(asset) {
       }
     });
 
-    return uploadResults.some(Boolean);
+    return uploadOutcomes.some((outcome) => outcome.uploaded === true);
   })();
 
   try {
@@ -867,9 +1070,11 @@ async function ensureAssetImagesUploaded(asset) {
 }
 
 function preingestionImagesForAsset(asset) {
+  const assetId = canonicalAssetId(asset);
+  const tenantId = canonicalAssetTenantId(asset);
   return boundedProviderImagesForRequest(asset.providerImages || asset.images)
-    .filter(imageHasVerifiedStorageReference)
-    .map((image) => serializableAssetImage(image, asset.id));
+    .filter((image) => imageHasVerifiedStorageReference(image, assetId, tenantId))
+    .map((image) => serializableAssetImage(image, assetId, tenantId));
 }
 
 function backgroundPreparationLabel(asset = {}) {
@@ -903,8 +1108,9 @@ async function ensurePreingestionBundle(asset) {
     },
     credentials: "same-origin",
     body: JSON.stringify({
-      asset_id: asset.id,
-      assetId: asset.id,
+      asset_id: canonicalAssetId(asset),
+      assetId: canonicalAssetId(asset),
+      client_asset_ref: asset.clientAssetRef || asset.id,
       images,
       captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
       requested_fields: [
@@ -1046,10 +1252,9 @@ async function ensureSpeculativeRecognition(asset, runId) {
         credentials: "same-origin",
         body: JSON.stringify({
           batch_id: batchId,
-          tenant_id: batchId,
           priority: 100,
           jobs: [{
-            asset_id: asset.id,
+            asset_id: canonicalAssetId(asset),
             force_l2_only: true,
             create_l1_job: false,
             create_l2_job: true,
@@ -1790,9 +1995,12 @@ function imagesForProvider(assetImages) {
 }
 
 export const __listingCopilotAppTestHooks = {
+  assetLifecycleMatches,
   boundedProviderImagesForRequest,
+  clearImageStorageBinding,
   generationTimingView,
   generationSubmissionAllowed,
+  imageHasVerifiedStorageReference,
   imagesForProvider,
   queueSubmissionConcurrencyLimit,
   recognitionClockFromServerPayload,
@@ -1809,6 +2017,10 @@ function buildAssets() {
     state.files.forEach((image, index) => {
       assets.push({
         id: `asset-${index + 1}`,
+        clientAssetRef: `asset-${index + 1}`,
+        durableAssetId: "",
+        durableTenantId: "",
+        lifecycleGeneration: state.assetLifecycleGeneration,
         index: index + 1,
         images: [image],
         providerImages: imagesForProvider([image])
@@ -1819,6 +2031,10 @@ function buildAssets() {
       const images = state.files.slice(index, index + 2);
       assets.push({
         id: `asset-${Math.floor(index / 2) + 1}`,
+        clientAssetRef: `asset-${Math.floor(index / 2) + 1}`,
+        durableAssetId: "",
+        durableTenantId: "",
+        lifecycleGeneration: state.assetLifecycleGeneration,
         index: Math.floor(index / 2) + 1,
         images,
         providerImages: imagesForProvider(images)
@@ -2682,6 +2898,7 @@ async function handleFiles(fileList) {
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
+  const lifecycleGeneration = ++state.assetLifecycleGeneration;
   state.backgroundPreparationRunId += 1;
   state.backgroundRecognitionBatchId = "";
   stopAllV4AssistedDraftPolling();
@@ -2697,6 +2914,7 @@ async function handleFiles(fileList) {
       return { failure: `${file.name}: ${error.message}` };
     }
   });
+  if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
   const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
   const settledImages = [];
   prepared.forEach((item) => {
@@ -2732,130 +2950,8 @@ async function handleFiles(fileList) {
   startBackgroundPreparation("file_ready");
 }
 
-async function processAsset(asset, options = {}) {
-  const processStartedAt = performance.now();
-  setAssetProgress(asset.index, "检查云端准备", 0.05);
-  const backgroundPrepareResult = await settleBackgroundPreparation(asset);
-  setAssetProgress(
-    asset.index,
-    asset.preingestionBundleId ? "复用云端证据包" : "上传原图",
-    asset.preingestionBundleId ? 0.16 : 0.08
-  );
-  const uploadStartedAt = performance.now();
-  const uploaded = await ensureAssetImagesUploaded(asset);
-  const uploadMs = Math.round(performance.now() - uploadStartedAt);
-  setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
-
-  asset.clientTiming = {
-    client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
-    client_upload_ms: uploadMs,
-    client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
-    client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
-    client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId)
-  };
-  const requestPrepareStartedAt = performance.now();
-  setAssetProgress(asset.index, "准备识别请求", 0.3);
-  const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, options);
-  const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
-  asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
-  setAssetProgress(
-    asset.index,
-    compressedAgain ? "保留主图，缩减辅助局部图" : "请求已准备",
-    0.4
-  );
-
-  const apiStartedAt = performance.now();
-  setAssetProgress(asset.index, "云端识别中", 0.52);
-  const response = await fetch(TITLE_API_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    credentials: "same-origin",
-    body: requestBody
-  });
-  const apiRoundtripMs = Math.round(performance.now() - apiStartedAt);
-
-  if (!response.ok) {
-    let errorPayload = null;
-    try {
-      errorPayload = await response.json();
-    } catch {
-      errorPayload = null;
-    }
-    const detail = errorPayload?.message || errorPayload?.error || "";
-    if (response.status === 413) {
-      throw new Error(detail || "请求失败：413，图片请求体过大，请压缩或裁剪图片后重试。");
-    }
-
-    throw new Error(detail ? `请求失败：${response.status}，${detail}` : `请求失败：${response.status}`);
-  }
-
-  setAssetProgress(asset.index, "接收识别结果", 0.82);
-  const payload = await response.json();
-  setAssetProgress(asset.index, "生成一段式标题", 0.94);
-  const legacyResult = payload.legacy_v2_result && typeof payload.legacy_v2_result === "object"
-    ? payload.legacy_v2_result
-    : {};
-  const writerTitlePending = v4PayloadWriterTitlePending(payload);
-  const finalTitle = writerTitlePending ? "" : (payload.writer_draft?.title
-    || payload.final_title
-    || legacyResult.final_title
-    || legacyResult.rendered_title
-    || legacyResult.title
-    || payload.title
-    || "");
-  const resolvedFields = payload.resolved_fields || legacyResult.resolved_fields || legacyResult.resolved || legacyResult.fields || {};
-  const providerResult = payload.provider_result || {};
-  const writerReviewRequired = payload.writer_review_required === true
-    || payload.status === "WRITER_REVIEW"
-    || payload.assisted_draft_status === "REVIEW_REQUIRED";
-  const confidence = providerResult.confidence || legacyResult.confidence || payload.confidence || (finalTitle ? "MEDIUM" : writerReviewRequired ? "LOW" : "FAILED");
-  const clientTotalMs = Math.round(performance.now() - processStartedAt);
-  const timing = {
-    ...(legacyResult.timing || {}),
-    ...(providerResult.timing || {}),
-    ...(payload.timing || {}),
-    client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
-    client_upload_ms: uploadMs,
-    client_request_prepare_ms: requestPrepareMs,
-    client_fast_scout_prewarm_wait_ms: asset.clientTiming.client_fast_scout_prewarm_wait_ms,
-    client_fast_scout_prewarm_cache_status: asset.clientTiming.client_fast_scout_prewarm_cache_status,
-    client_api_roundtrip_ms: apiRoundtripMs,
-    client_total_ms: clientTotalMs
-  };
-
-  return {
-    index: asset.index,
-    thumbnail: asset.images[0].dataUrl,
-    ...legacyResult,
-    ...payload,
-    title: finalTitle,
-    final_title: finalTitle,
-    rendered_title: payload.final_title || legacyResult.rendered_title || finalTitle,
-    generatedTitle: finalTitle,
-    correctedTitle: finalTitle,
-    writerTitlePending,
-    writerReviewRequired,
-    reason: writerReviewRequired
-      ? payload.writer_review_reason || legacyResult.reason || payload.reason || "现有证据不足以生成安全标题，请人工输入。"
-      : legacyResult.reason || payload.reason || null,
-    confidence,
-    provider: providerResult.provider || legacyResult.provider || payload.provider || state.selectedProvider || null,
-    model_id: providerResult.model || legacyResult.model_id || payload.model_id || "",
-    resolved: resolvedFields,
-    fields: resolvedFields,
-    generated_resolved_fields: resolvedFields,
-    generated_evidence: legacyResult.evidence || legacyResult.generated_evidence || payload.internal_field_graph || {},
-    generated_modules: legacyResult.modules || payload.modules || {},
-    reviewStartedAt: Date.now(),
-    feedbackStatus: "",
-    feedbackMessage: "",
-    timing
-  };
-}
-
 async function processAssetViaQueue(asset, options = {}) {
+  assertCurrentAssetLifecycle(asset);
   const processStartedAt = performance.now();
   setAssetProgress(asset.index, "检查云端准备", 0.05);
   const backgroundPrepareResult = await settleBackgroundPreparation(asset, QUEUED_BACKGROUND_PREP_WAIT_MS);
@@ -2961,19 +3057,25 @@ async function processAssetViaQueue(asset, options = {}) {
     credentials: "same-origin",
     body: JSON.stringify({
       batch_id: batchId,
-      tenant_id: batchId,
       priority: Math.max(0, Math.min(10_000, Number(options.priority ?? 100) || 0)),
       jobs: [{
-        asset_id: asset.id,
+        asset_id: canonicalAssetId(asset),
+        manual_retry: options.manualRetry === true,
+        retry_of_job_id: options.retryOfJobId || null,
         force_l2_only: true,
         create_l1_job: false,
         create_l2_job: true,
-        payload
+        payload: {
+          ...payload,
+          manual_retry: options.manualRetry === true,
+          retry_of_job_id: options.retryOfJobId || null
+        }
       }]
     })
   });
   const enqueueRoundtripMs = Math.round(performance.now() - enqueueStartedAt);
   const enqueuePayload = await response.json().catch(() => ({}));
+  assertCurrentAssetLifecycle(asset);
   if (!response.ok || enqueuePayload.ok === false) {
     const detail = enqueuePayload.message || enqueuePayload.error || enqueuePayload.jobs?.find((entry) => entry?.error)?.error || "";
     throw new Error(detail ? `队列提交失败：${response.status}，${detail}` : `队列提交失败：${response.status}`);
@@ -3001,7 +3103,9 @@ async function processAssetViaQueue(asset, options = {}) {
 function failedResult(asset, error) {
   return attachGenerationTimingToResult({
     index: asset.index,
-    asset_id: asset.id,
+    lifecycleGeneration: asset.lifecycleGeneration,
+    asset_id: asset.durableAssetId || "",
+    client_asset_ref: asset.clientAssetRef || asset.id,
     thumbnail: asset.images[0].dataUrl,
     title: "",
     generatedTitle: "",
@@ -3034,6 +3138,7 @@ function processingProgressStatus(completedCount) {
 
 async function processTitles() {
   if (!canGenerateTitles()) return;
+  const lifecycleGeneration = state.assetLifecycleGeneration;
 
   state.results = [];
   state.processing = true;
@@ -3067,6 +3172,7 @@ async function processTitles() {
 
       try {
         const result = await processAssetViaQueue(asset, { batchId: recognitionBatchId });
+        if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
         if (!v4WriterTitlePending(result)) {
           markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });
           clearAssetProgress(asset.index);
@@ -3078,6 +3184,7 @@ async function processTitles() {
         state.results.sort((a, b) => a.index - b.index);
         startV4AssistedDraftPolling(result);
       } catch (error) {
+        if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
         markAssetFinished(asset.index, { failed: true });
         clearAssetProgress(asset.index);
         state.results.push(failedResult(asset, error));
@@ -3093,6 +3200,7 @@ async function processTitles() {
   }
 
   await Promise.all(Array.from({ length: workerCount }, worker));
+  if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
   state.processing = false;
   state.activeAssetIndexes = new Set();
   for (const assetIndex of state.assetProgress.keys()) {
@@ -3118,6 +3226,13 @@ async function retryFailedAssetInPriorityQueue(button) {
   const asset = state.assets.find((item) => item.index === assetIndex);
   const current = state.results.find((item) => item.index === assetIndex);
   if (!asset || !current || current.queueRetryStatus === "submitting") return;
+  const lifecycleGeneration = state.assetLifecycleGeneration;
+  const retryOfJobId = String(current.v4_job_id || current.job_id || "").trim();
+  if (!retryOfJobId) {
+    current.feedbackMessage = "旧任务缺少可验证的 job_id，不能提升到优先队列；请重新上传后提交。";
+    renderResults();
+    return;
+  }
 
   const writerEditedTitle = String(current.correctedTitle || "").trim();
   current.queueRetryStatus = "submitting";
@@ -3129,59 +3244,31 @@ async function retryFailedAssetInPriorityQueue(button) {
   renderResults();
 
   try {
-    let result = current;
-    if (current.v4_job_id) {
-      const response = await fetchWithTimeout(JOB_RETRY_API_ENDPOINT, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ job_id: current.v4_job_id })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok === false) {
-        throw new Error(payload.message || payload.error || `优先重试失败：${response.status}`);
-      }
-      const retriedJob = payload.job || {};
-      result.confidence = "MEDIUM";
-      result.reason = "";
-      result.writerTitlePending = !writerEditedTitle;
-      result.title_stage = "PENDING";
-      result.assisted_draft_status = "PENDING";
-      result.l2AssistedDraftStatus = "PENDING";
-      result.full_assist_continued_after_l1 = true;
-      result.v4QueuedJob = true;
-      result.v4_job_status = retriedJob.status || "RETRYING";
-      result.v4_batch_id = retriedJob.batch_id || result.v4_batch_id || "";
-      result.recognition_session_id = retriedJob.recognition_session_id || result.recognition_session_id || "";
-      result.queueRetryStatus = "";
-      result.feedbackStatus = "";
-      result.feedbackMessage = payload.already_active
-        ? "任务仍在运行，已恢复状态跟踪。"
-        : "已进入优先队列；当前正在运行的任务完成后优先处理。";
-      setAssetProgress(asset.index, payload.already_active ? "恢复任务跟踪" : "已进入优先队列", 0.54);
-    } else {
-      result = await processAssetViaQueue(asset, {
-        batchId: createClientBatchId(),
-        priority: 0,
-        skipSpeculative: true,
-        manualRetry: true
-      });
-      if (writerEditedTitle) {
-        result.correctedTitle = writerEditedTitle;
-        result.title_override = {
-          source: "writer_edit_before_retry",
-          value: writerEditedTitle
-        };
-      }
-      result.queueRetryStatus = "";
-      result.feedbackMessage = "已进入优先队列；当前正在运行的任务完成后优先处理。";
-      state.results = state.results.filter((item) => item.index !== asset.index);
-      state.results.push(result);
-      state.results.sort((a, b) => a.index - b.index);
+    stopV4AssistedDraftPolling(asset.index);
+    const result = await processAssetViaQueue(asset, {
+      batchId: createClientBatchId(),
+      priority: 0,
+      skipSpeculative: true,
+      manualRetry: true,
+      retryOfJobId
+    });
+    if (!assetLifecycleMatches(asset, lifecycleGeneration)) return;
+    if (writerEditedTitle) {
+      result.correctedTitle = writerEditedTitle;
+      result.title_override = {
+        source: "writer_edit_before_retry",
+        value: writerEditedTitle
+      };
     }
+    result.queueRetryStatus = "";
+    result.feedbackMessage = "已创建新的识别任务并进入优先队列；旧任务仅保留审计记录。";
+    state.results = state.results.filter((item) => item.index !== asset.index);
+    state.results.push(result);
+    state.results.sort((a, b) => a.index - b.index);
     startV4AssistedDraftPolling(result);
     setStatus(`卡片 ${asset.index} 已进入优先队列。`, { busy: true });
   } catch (error) {
+    if (!assetLifecycleMatches(asset, lifecycleGeneration)) return;
     markAssetFinished(asset.index, { failed: true });
     clearAssetProgress(asset.index);
     current.queueRetryStatus = "";
@@ -3600,7 +3687,16 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
   return { terminal: false, upgraded: false };
 }
 
-async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), attempt = 0) {
+async function pollV4AssistedDraft(
+  resultIndex,
+  startedAt = performance.now(),
+  attempt = 0,
+  lifecycleGeneration = state.assetLifecycleGeneration
+) {
+  if (lifecycleGeneration !== state.assetLifecycleGeneration) {
+    stopV4AssistedDraftPolling(resultIndex);
+    return;
+  }
   const result = state.results.find((item) => item.index === resultIndex);
   if (!result || !shouldPollV4AssistedDraft(result)) {
     stopV4AssistedDraftPolling(resultIndex);
@@ -3625,6 +3721,10 @@ async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), a
       credentials: "same-origin",
       cache: "no-store"
     }, STATUS_POLL_TIMEOUT_MS, "云端识别状态查询超时，系统会自动继续查询。");
+    if (lifecycleGeneration !== state.assetLifecycleGeneration) {
+      stopV4AssistedDraftPolling(resultIndex);
+      return;
+    }
     if (response.ok && payload.ok !== false && payload.session) {
       const upgraded = applyV4AssistedDraftUpdate(result, payload.session);
       const terminalStatus = v4AssistedStatus(result);
@@ -3654,7 +3754,7 @@ async function pollV4AssistedDraft(resultIndex, startedAt = performance.now(), a
   const delay = ASSISTED_DRAFT_POLL_INTERVALS_MS[Math.min(attempt, ASSISTED_DRAFT_POLL_INTERVALS_MS.length - 1)];
   const timer = setTimeout(() => {
     state.assistedDraftPollTimers.delete(resultIndex);
-    void pollV4AssistedDraft(resultIndex, startedAt, attempt + 1);
+    void pollV4AssistedDraft(resultIndex, startedAt, attempt + 1, lifecycleGeneration);
   }, delay);
   state.assistedDraftPollTimers.set(resultIndex, timer);
 }
@@ -3673,7 +3773,12 @@ function startV4AssistedDraftPolling(result = {}) {
   result.l2AssistedDraftStatus = v4AssistedStatus(result) || "PENDING";
   result.assisted_draft_status = result.l2AssistedDraftStatus;
   startGenerationTicker();
-  void pollV4AssistedDraft(result.index, performance.now(), 0);
+  void pollV4AssistedDraft(
+    result.index,
+    performance.now(),
+    0,
+    Number.isFinite(result.lifecycleGeneration) ? result.lifecycleGeneration : state.assetLifecycleGeneration
+  );
 }
 
 function feedbackActionForResult(result, generatedTitle, correctedTitle) {
@@ -3751,7 +3856,8 @@ async function saveFeedbackForResult(result, asset) {
         action: v4Action,
         writer_final_title: correctedTitle,
       } : {
-        asset_id: result.asset_id || asset?.id || `asset-${result.index}`,
+        asset_id: result.asset_id || canonicalAssetId(asset),
+        client_asset_ref: asset?.clientAssetRef || asset?.id || `asset-${result.index}`,
         analysis_run_id: result.analysis_run_id || result.provider_response_id || "",
         generated_title: generatedTitle,
         corrected_title: correctedTitle,
@@ -3885,7 +3991,8 @@ function buildWriterExportRows() {
     });
     if (!images.length) throw new Error(`资产 ${asset.index} 缺少可导出的图片。`);
     return {
-      asset_id: asset.id,
+      asset_id: canonicalAssetId(asset),
+      client_asset_ref: asset.clientAssetRef || asset.id,
       asset_index: asset.index,
       recognition_session_id: result.recognition_session_id || "",
       final_title: finalTitle,
@@ -3946,6 +4053,7 @@ async function exportWriterWorkbook() {
 }
 
 function resetTool() {
+  state.assetLifecycleGeneration += 1;
   state.backgroundPreparationRunId += 1;
   state.backgroundRecognitionBatchId = "";
   stopAllV4AssistedDraftPolling();
@@ -3975,6 +4083,7 @@ function bindEvents() {
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
     input.addEventListener("change", () => {
+      state.assetLifecycleGeneration += 1;
       state.backgroundPreparationRunId += 1;
       state.backgroundRecognitionBatchId = "";
       stopAllV4AssistedDraftPolling();

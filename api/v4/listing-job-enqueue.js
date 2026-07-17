@@ -1,7 +1,20 @@
 import { waitUntil } from "@vercel/functions";
-import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest } from "../../lib/listing-session.mjs";
+import {
+  CanonicalImageReferenceError,
+  readCanonicalListingImageReferences
+} from "../../lib/listing/storage/canonical-image-references.mjs";
+import {
+  bindProductionRequestContext,
+  instrumentProductionRequest
+} from "../../lib/observability/production-events.mjs";
+import { normalizeDurableListingAssetId } from "../../lib/tenant/assets.mjs";
+import {
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
 import {
   createV4BatchId,
   createV4DeterministicBatchId,
@@ -14,12 +27,40 @@ import {
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
-import { resolveSignedPublicV4Principal } from "../../lib/listing/v4/session/trusted-session-identity.mjs";
+import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 
 const queueControlChars = /[\u0000-\u001f\u007f]/g;
-const durableListingAssetIdPattern = /^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const clientImageIdentityKeys = [
+  "images",
+  "asset_images", "assetImages",
+  "image_references", "imageReferences",
+  "front_object_path", "frontObjectPath",
+  "back_object_path", "backObjectPath",
+  "additional_image_paths", "additionalImagePaths",
+  "front_bucket", "frontBucket",
+  "back_bucket", "backBucket",
+  "front_content_sha256", "frontContentSha256",
+  "back_content_sha256", "backContentSha256",
+  "front_image_url", "frontImageUrl",
+  "back_image_url", "backImageUrl",
+  "image_urls", "imageUrls"
+  , "image_generation_id", "imageGenerationId"
+  , "image_set_sha256", "imageSetSha256"
+  , "expected_original_count", "expectedOriginalCount"
+];
+
+class QueueSchedulingIntentError extends Error {
+  constructor(code, { statusCode = 409, retryable = false } = {}) {
+    super(code);
+    this.name = "QueueSchedulingIntentError";
+    this.code = code;
+    this.statusCode = statusCode;
+    this.retryable = retryable;
+  }
+}
 
 function isQueueSchemaDependencyFailure(error) {
   const text = String(error || "").toLowerCase();
@@ -45,18 +86,7 @@ function withSanitizedControlText(value = "", fallback = "asset") {
   return trimmed || String(fallback || "asset").slice(0, 160);
 }
 
-function deterministicQueueAssetId({
-  tenantId = "",
-  operatorId = "",
-  batchId = "",
-  assetId = "",
-  clientAssetRef = ""
-} = {}) {
-  const digest = crypto.createHash("sha256").update(`asset|${tenantId}|${operatorId}|${batchId}|${assetId}|${clientAssetRef}`).digest("hex");
-  return `asset_${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(12, 15)}-8${digest.slice(16, 19)}-${digest.slice(20, 32)}`;
-}
-
-function normalizeQueueJobIdentity(job = {}, context = {}) {
+function queueJobIdentity(job = {}) {
   const rawPayload = job.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
     ? job.payload
     : {};
@@ -64,31 +94,12 @@ function normalizeQueueJobIdentity(job = {}, context = {}) {
   const sourceClientRef = String(
     job.client_asset_ref || job.clientAssetRef || rawPayload.client_asset_ref || rawPayload.clientAssetRef || ""
   ).trim();
-  const tenantId = String(context.tenantId || "").trim();
-  const operatorId = String(context.operatorId || "").trim();
-  const batchId = String(context.batchId || "").trim();
-  const asset_id = durableListingAssetIdPattern.test(sourceAssetId)
-    ? sourceAssetId
-    : deterministicQueueAssetId({ tenantId, operatorId, batchId, assetId: sourceAssetId, clientAssetRef: sourceClientRef });
+  const asset_id = normalizeDurableListingAssetId(sourceAssetId);
   const client_asset_ref = withSanitizedControlText(
     sourceClientRef || sourceAssetId || asset_id,
-    `asset-${batchId.slice(-8) || "item"}`
+    asset_id
   );
-  const normalizedPayload = {
-    ...rawPayload,
-    asset_id,
-    assetId: asset_id,
-    client_asset_ref,
-    clientAssetRef: client_asset_ref
-  };
-  return {
-    ...job,
-    asset_id,
-    assetId: asset_id,
-    client_asset_ref,
-    clientAssetRef: client_asset_ref,
-    payload: normalizedPayload
-  };
+  return { asset_id, client_asset_ref, rawPayload };
 }
 
 function withoutClientSessionIdentity(job = {}) {
@@ -106,11 +117,14 @@ function withoutClientSessionIdentity(job = {}) {
     "operator_id", "operatorId",
     "created_by_user_id", "assigned_to_user_id",
     "lease_owner", "lease_expires_at",
-    "queue_tags", "status",
+    "queue_tags", "tags", "status",
     "preingestion_bundle_id", "preingestionBundleId", "preingestion_bundle",
     "preingestion_bundle_used", "preingestion_bundle_status",
     "preingestion_summary", "preingestion_initial_evidence",
-    "preingestion_evidence_patches"
+    "preingestion_evidence_patches",
+    "trusted_manual_retry",
+    "manual_retry_requested_by_user_id", "manualRetryRequestedByUserId",
+    "manual_retry_original_operator_id", "manualRetryOriginalOperatorId"
   ];
   const scoped = { ...job };
   for (const key of serverOwnedKeys) delete scoped[key];
@@ -121,18 +135,177 @@ function withoutClientSessionIdentity(job = {}) {
   return scoped;
 }
 
-function headerValue(req, name) {
-  const lower = String(name || "").toLowerCase();
-  const value = req?.headers?.[lower] ?? req?.headers?.[name];
-  if (Array.isArray(value)) return String(value[0] || "").trim();
-  return String(value || "").trim();
+function freshManualRetryIntent(job = {}) {
+  const payload = job?.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+    ? job.payload
+    : {};
+  const retryOfJobId = String(
+    job?.retry_of_job_id || job?.retryOfJobId || payload.retry_of_job_id || payload.retryOfJobId || ""
+  ).trim();
+  return {
+    requested: job?.manual_retry === true || payload.manual_retry === true || Boolean(retryOfJobId),
+    retryOfJobId
+  };
 }
 
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
+export function queueJobsRequireRetryPermission(jobs = []) {
+  return (Array.isArray(jobs) ? jobs : []).some((job) => freshManualRetryIntent(job).requested);
+}
+
+export async function authorizeFreshManualRetryJobs({
+  jobs = [],
+  tenantId,
+  operatorId,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  readRows = readV4Rows
+} = {}) {
+  const source = Array.isArray(jobs) ? jobs : [];
+  const claims = source.map((job, index) => {
+    const payload = job?.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+      ? job.payload
+      : {};
+    const { requested, retryOfJobId } = freshManualRetryIntent(job);
+    if (!requested) return null;
+    if (!retryOfJobId || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/.test(retryOfJobId)) {
+      throw new QueueSchedulingIntentError("manual_retry_reference_required", { statusCode: 400 });
+    }
+    return {
+      index,
+      retryOfJobId,
+      assetId: String(job?.asset_id || payload.asset_id || "").trim()
+    };
+  }).filter(Boolean);
+
+  if (!claims.length) return source;
+  const jobIds = [...new Set(claims.map((claim) => claim.retryOfJobId))];
+  const quotedIds = jobIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",");
+  const existing = await readRows({
+    table: "v4_recognition_jobs",
+    select: "id,tenant_id,operator_id,asset_id,status",
+    search: {
+      tenant_id: `eq.${tenantId}`,
+      id: `in.(${quotedIds})`,
+      limit: String(jobIds.length)
+    },
+    env,
+    fetchImpl
+  });
+  if (!existing?.ok) {
+    throw new QueueSchedulingIntentError("manual_retry_verification_unavailable", {
+      statusCode: 503,
+      retryable: true
+    });
+  }
+
+  const rowsById = new Map((existing.rows || []).map((row) => [String(row?.id || ""), row]));
+  const retryableStatuses = new Set(["FAILED", "CANCELLED"]);
+  const claimByIndex = new Map();
+  for (const claim of claims) {
+    const row = rowsById.get(claim.retryOfJobId);
+    const originalOperatorId = String(row?.operator_id || "").trim();
+    if (
+      !row
+      || String(row.tenant_id || "") !== String(tenantId || "")
+      || !originalOperatorId
+      || String(row.asset_id || "") !== claim.assetId
+      || !retryableStatuses.has(String(row.status || "").toUpperCase())
+    ) {
+      throw new QueueSchedulingIntentError("manual_retry_reference_not_retryable", { statusCode: 409 });
+    }
+    claimByIndex.set(claim.index, { ...claim, originalOperatorId });
+  }
+
+  return source.map((job, index) => {
+    const claim = claimByIndex.get(index);
+    if (!claim) return job;
+    return {
+      ...job,
+      trusted_manual_retry: true,
+      priority: 0,
+      retry_of_job_id: claim.retryOfJobId,
+      queue_tags: {
+        ...(job.queue_tags || job.tags || {}),
+        manual_retry_requested_by_user_id: operatorId,
+        manual_retry_original_operator_id: claim.originalOperatorId
+      },
+      payload: {
+        ...(job.payload || {}),
+        manual_retry: true,
+        retry_of_job_id: claim.retryOfJobId
+      }
+    };
+  });
+}
+
+function withoutClientImageIdentity(value = {}) {
+  const scoped = { ...value };
+  for (const key of clientImageIdentityKeys) delete scoped[key];
+  return scoped;
+}
+
+export async function canonicalizeQueueJobs({
+  jobs = [],
+  tenantId,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  readCanonical = readCanonicalListingImageReferences
+} = {}) {
+  const canonicalByAsset = new Map();
+  const canonicalForAsset = (assetId) => {
+    if (!canonicalByAsset.has(assetId)) {
+      canonicalByAsset.set(assetId, readCanonical({
+        tenantId,
+        assetId,
+        env,
+        fetchImpl
+      }));
+    }
+    return canonicalByAsset.get(assetId);
+  };
+
+  return Promise.all((Array.isArray(jobs) ? jobs : []).map(async (job) => {
+    const identity = queueJobIdentity(job);
+    const canonical = await canonicalForAsset(identity.asset_id);
+    const scoped = withoutClientImageIdentity(withoutClientSessionIdentity(job));
+    const scopedPayload = withoutClientImageIdentity(
+      scoped.payload && typeof scoped.payload === "object" && !Array.isArray(scoped.payload)
+        ? scoped.payload
+        : identity.rawPayload
+    );
+    const images = canonical.images.map((image) => ({ ...image }));
+    const imageReferences = canonical.image_references.map((reference) => ({ ...reference }));
+    const imagePaths = canonical.image_paths || {};
+    return {
+      ...scoped,
+      asset_id: identity.asset_id,
+      assetId: identity.asset_id,
+      client_asset_ref: identity.client_asset_ref,
+      clientAssetRef: identity.client_asset_ref,
+      payload: {
+        ...scopedPayload,
+        asset_id: identity.asset_id,
+        assetId: identity.asset_id,
+        client_asset_ref: identity.client_asset_ref,
+        clientAssetRef: identity.client_asset_ref,
+        image_generation_id: canonical.image_generation_id,
+        image_set_sha256: canonical.image_set_sha256,
+        expected_original_count: canonical.expected_original_count,
+        images,
+        image_references: imageReferences,
+        imageReferences,
+        front_bucket: imagePaths.front_bucket || null,
+        front_object_path: imagePaths.front_object_path || null,
+        front_content_sha256: imagePaths.front_content_sha256 || null,
+        back_bucket: imagePaths.back_bucket || null,
+        back_object_path: imagePaths.back_object_path || null,
+        back_content_sha256: imagePaths.back_content_sha256 || null,
+        additional_image_paths: Array.isArray(imagePaths.additional_image_paths)
+          ? imagePaths.additional_image_paths.map((reference) => ({ ...reference }))
+          : []
+      }
+    };
+  }));
 }
 
 function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
@@ -225,28 +398,33 @@ export async function runPostEnqueueQueueKick({
   return { phase: "followup", acquired: followup.acquired === true, acquisition_ok: followup.ok === true, ...invocation };
 }
 
-export function triggerV4QueuePumpAfterEnqueue(req, {
+export function triggerV4QueuePumpAfterEnqueue(_req, {
   tenantId,
   batchId,
-  queuedCount
+  queuedCount,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil,
+  acquireKick = tryAcquireV4QueueKick,
+  sleep = delay
 } = {}) {
   if (!queuedCount) return { triggered: false, reason: "no_jobs_queued" };
-  if (!envFlag(process.env, "V4_QUEUE_AUTOKICK_ENABLED", true)) return { triggered: false, reason: "autokick_disabled" };
-  const secret = configuredWorkerSecret(process.env);
+  if (!envFlag(env, "V4_QUEUE_AUTOKICK_ENABLED", true)) return { triggered: false, reason: "autokick_disabled" };
+  const secret = configuredWorkerSecret(env);
   if (!secret) return { triggered: false, reason: "worker_secret_missing" };
-  const origin = requestOrigin(req);
-  if (!origin) return { triggered: false, reason: "request_origin_missing" };
-  const stableConcurrency = v4WorkerProcessConcurrency(process.env);
-  const perWorkerLimit = positiveInteger(process.env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
-  const interactiveWorkers = positiveInteger(process.env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });
-  const backgroundWorkers = positiveInteger(process.env.V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS, 2, { min: 1, max: 32 });
-  const interactiveLimit = positiveInteger(process.env.V4_PUMP_INTERACTIVE_CONCURRENCY, interactiveWorkers * perWorkerLimit, { min: 1, max: 96 });
-  const backgroundLimit = positiveInteger(process.env.V4_PUMP_BACKGROUND_CONCURRENCY, backgroundWorkers * perWorkerLimit, { min: 1, max: 96 });
+  const origin = trustedInternalServiceOrigin(env);
+  if (!origin) return { triggered: false, reason: "internal_origin_missing" };
+  const stableConcurrency = v4WorkerProcessConcurrency(env);
+  const perWorkerLimit = positiveInteger(env.V4_QUEUE_AUTOKICK_LIMIT_PER_WORKER, 2, { min: 1, max: 10 });
+  const interactiveWorkers = positiveInteger(env.V4_QUEUE_AUTOKICK_INTERACTIVE_WORKERS, 5, { min: 1, max: 32 });
+  const backgroundWorkers = positiveInteger(env.V4_QUEUE_AUTOKICK_BACKGROUND_WORKERS, 2, { min: 1, max: 32 });
+  const interactiveLimit = positiveInteger(env.V4_PUMP_INTERACTIVE_CONCURRENCY, interactiveWorkers * perWorkerLimit, { min: 1, max: 96 });
+  const backgroundLimit = positiveInteger(env.V4_PUMP_BACKGROUND_CONCURRENCY, backgroundWorkers * perWorkerLimit, { min: 1, max: 96 });
   const interactiveConcurrency = Math.min(stableConcurrency, interactiveLimit);
   const backgroundConcurrency = Math.min(stableConcurrency, backgroundLimit);
 
   const body = {
-    tenant_id: v4QueueGlobalDrainEnabled(process.env) ? null : tenantId || batchId || null,
+    tenant_id: v4QueueGlobalDrainEnabled(env) ? null : tenantId || batchId || null,
     kick_source_tenant_id: tenantId || batchId || null,
     limit: interactiveLimit,
     process_concurrency: interactiveConcurrency,
@@ -267,13 +445,16 @@ export function triggerV4QueuePumpAfterEnqueue(req, {
     reason: "post_enqueue"
   };
   const kickOwner = `enqueue-${String(batchId || tenantId || "batch").slice(0, 72)}-${Date.now().toString(36)}`;
-  const leaseMs = v4QueueKickDedupMs(process.env);
-  waitUntil(runPostEnqueueQueueKick({
+  const leaseMs = v4QueueKickDedupMs(env);
+  defer(runPostEnqueueQueueKick({
     origin,
     secret,
     body,
     kickOwner,
-    leaseMs
+    leaseMs,
+    acquireKick,
+    fetchImpl,
+    sleep
   }).then((diagnostic) => {
     console.log(JSON.stringify({
       level: diagnostic.ok ? "info" : "warn",
@@ -295,13 +476,18 @@ export function triggerV4QueuePumpAfterEnqueue(req, {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-enqueue" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  const signedSession = getSessionFromRequest(req);
-  if (!signedSession) {
-    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+    requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -330,19 +516,8 @@ export default async function handler(req, res) {
     return;
   }
 
-  let principal;
-  try {
-    principal = resolveSignedPublicV4Principal(signedSession);
-  } catch (error) {
-    sendJson(res, 403, withV4Version({
-      ok: false,
-      retryable: false,
-      error_code: String(error?.code || "V4_SIGNED_PRINCIPAL_INCOMPLETE").toUpperCase(),
-      message: "A canonical signed tenant and user identity is required."
-    }));
-    return;
-  }
-  const { operatorId, tenantId } = principal;
+  const operatorId = context.userId;
+  const tenantId = context.tenantId;
   // Scheduling and data ownership use the signed principal. The browser's
   // batch id remains a batch id and cannot impersonate another tenant.
   const clientBatchToken = String(payload.batch_id || payload.batchId || "").trim();
@@ -360,37 +535,81 @@ export default async function handler(req, res) {
     operatorId,
     idempotencyKey: clientBatchToken
   }) || createV4BatchId("v4batch");
-  // Session IDs are ownership-bearing server identifiers. A browser may
-  // provide an idempotency key, but it cannot select an existing session.
-  const sourceJobs = jobsFromPayload(payload).map((job) => normalizeQueueJobIdentity(job, {
-    tenantId,
-    operatorId,
-    batchId
-  })).map(withoutClientSessionIdentity);
+  const rawJobs = jobsFromPayload(payload);
+  try {
+    if (queueJobsRequireRetryPermission(rawJobs)) {
+      requirePermission(context, TENANT_PERMISSIONS.RETRY_JOB);
+    }
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
+    return;
+  }
   const maxJobsPerRequest = positiveInteger(process.env.V4_QUEUE_MAX_JOBS_PER_REQUEST, 50, { min: 1, max: 250 });
-  if (sourceJobs.length > maxJobsPerRequest) {
+  if (rawJobs.length > maxJobsPerRequest) {
     sendJson(res, 413, withV4Version({
       ok: false,
       retryable: false,
       error_code: "V4_QUEUE_BATCH_TOO_LARGE",
-      message: `Queue request contains ${sourceJobs.length} jobs; split it into batches of at most ${maxJobsPerRequest}.`,
+      message: `Queue request contains ${rawJobs.length} jobs; split it into batches of at most ${maxJobsPerRequest}.`,
       max_jobs_per_request: maxJobsPerRequest
     }));
     return;
   }
+  // Session IDs are ownership-bearing server identifiers. A browser may
+  // provide an idempotency key, but it cannot select an existing session.
+  let sourceJobs;
+  try {
+    const canonicalJobs = await canonicalizeQueueJobs({
+      jobs: rawJobs,
+      tenantId,
+      env: process.env,
+      fetchImpl: globalThis.fetch
+    });
+    sourceJobs = await authorizeFreshManualRetryJobs({
+      jobs: canonicalJobs,
+      tenantId,
+      operatorId,
+      env: process.env,
+      fetchImpl: globalThis.fetch
+    });
+  } catch (error) {
+    const canonicalError = error instanceof CanonicalImageReferenceError;
+    const schedulingError = error instanceof QueueSchedulingIntentError;
+    const invalidAsset = String(error?.message || "").includes("invalid_durable_listing_asset_id");
+    const status = schedulingError ? error.statusCode : canonicalError ? error.statusCode : invalidAsset ? 400 : 503;
+    const code = schedulingError
+      ? String(error.code || "manual_retry_verification_failed").toUpperCase()
+      : canonicalError
+      ? String(error.code || "canonical_image_reference_failed").toUpperCase()
+      : invalidAsset ? "V4_QUEUE_DURABLE_ASSET_REQUIRED" : "V4_QUEUE_CANONICAL_IMAGE_REBUILD_FAILED";
+    sendJson(res, status, withV4Version({
+      ok: false,
+      retryable: schedulingError || canonicalError ? error.retryable === true : !invalidAsset,
+      error_code: code,
+      message: schedulingError
+        ? "The referenced failed job could not be authorized for a priority retry."
+        : invalidAsset
+        ? "Create a durable listing asset before uploading and enqueueing images."
+        : canonicalError
+          ? "Verified canonical images are not ready for this listing asset."
+          : "Canonical listing images could not be rebuilt."
+    }));
+    return;
+  }
+  const requestPriority = positiveInteger(payload.priority, 100, { min: 0, max: 10_000 });
   const stageJobs = expandV4RecognitionStageJobs({
     jobs: sourceJobs,
     batchId,
     operatorId,
     tenantId,
-    priority: payload.priority || 100
+    priority: requestPriority
   });
   const result = await enqueueV4RecognitionJobs({
     jobs: stageJobs,
     batchId,
     operatorId,
     tenantId,
-    priority: payload.priority || 100
+    priority: requestPriority
   });
   const pump = triggerV4QueuePumpAfterEnqueue(req, {
     tenantId,

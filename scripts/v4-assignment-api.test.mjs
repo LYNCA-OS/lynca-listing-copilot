@@ -6,11 +6,10 @@ import feedbackHandler from "../api/v4/listing-feedback.js";
 import retryHandler from "../api/v4/listing-job-retry.js";
 import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 
-const [assignmentSource, assignmentServiceSource, feedbackSource, queueSource, tenantFoundationSql] = await Promise.all([
+const [assignmentSource, assignmentServiceSource, feedbackSource, tenantFoundationSql] = await Promise.all([
   readFile(new URL("../api/v4/listing-job-assign.js", import.meta.url), "utf8"),
   readFile(new URL("../lib/listing/v4/jobs/job-assignment.mjs", import.meta.url), "utf8"),
   readFile(new URL("../api/v4/listing-feedback.js", import.meta.url), "utf8"),
-  readFile(new URL("../lib/listing/v4/jobs/production-job-queue.mjs", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/20260715065803_track_c_tenant_foundation_expand.sql", import.meta.url), "utf8")
 ]);
 
@@ -39,9 +38,6 @@ assert.doesNotMatch(assignmentRpcSql, /set\s+(?:operator_id|created_by_user_id)\
 assert.match(assignmentRpcSql, /revoke all on function public\.assign_v4_recognition_job\(text, text, text\)[\s\S]*from public, anon, authenticated/);
 assert.match(assignmentRpcSql, /grant execute on function public\.assign_v4_recognition_job\(text, text, text\)[\s\S]*to service_role/);
 assert.match(tenantFoundationSql, /coalesce\([\s\S]*sessions\.assigned_to_user_id,[\s\S]*sessions\.created_by_user_id,[\s\S]*sessions\.operator_id[\s\S]*\)\s*= p_operator_id/);
-const retryFunctionSource = queueSource.slice(queueSource.indexOf("export async function retryV4RecognitionJob"));
-assert.doesNotMatch(retryFunctionSource, /operator_id:\s*`eq\./, "team retry must not require the original operator");
-assert.match(retryFunctionSource, /tenant_id:\s*`eq\.\$\{normalizedTenantId\}`/);
 
 const originalEnv = {
   METAVERSE_AUTH_SECRET: process.env.METAVERSE_AUTH_SECRET,
@@ -208,7 +204,8 @@ function scenarioFetch({
         operator_id: "user_manager",
         created_by_user_id: "user_manager",
         assigned_to_user_id: sessionAssignee,
-        status: "WRITER_REVIEW"
+        status: "WRITER_REVIEW",
+        final_title: "2025 Example Card"
       }]);
     }
     if (url.pathname === "/rest/v1/rpc/persist_v4_writer_feedback_transaction") {
@@ -381,11 +378,9 @@ try {
       url: "/api/v4/listing-job-retry",
       payload: { job_id: "job_target" }
     });
-    assert.equal(result.statusCode, 200, `${actorRole} can retry another team member's same-tenant job`);
-    assert.equal(result.body.job.status, "RETRYING");
-    const patch = calls.find(({ url, method }) => url.pathname === "/rest/v1/v4_recognition_jobs" && method === "PATCH");
-    assert.ok(patch);
-    assert.equal(patch.url.searchParams.has("operator_id"), false);
+    assert.equal(result.statusCode, 410, `${actorRole} must use fresh canonical enqueue instead of replaying a team member's persisted payload`);
+    assert.equal(result.body.error_code, "V4_FRESH_ENQUEUE_REQUIRED");
+    assert.equal(calls.some(({ url }) => url.pathname === "/rest/v1/v4_recognition_jobs"), false);
   }
 
   {
@@ -407,4 +402,4 @@ try {
   }
 }
 
-console.log("V4 assignment, assigned feedback, and team retry API tests passed.");
+console.log("V4 assignment, assigned feedback, and fresh retry boundary tests passed.");

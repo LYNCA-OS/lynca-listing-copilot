@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
-import { EventEmitter } from "node:events";
-import handler, { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
+import { __listingCopilotTitleTestHooks, runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
@@ -39,15 +37,6 @@ assert.equal(resolveKnowledgeEntry("Explosive")?.label, "Explosive");
 assert.equal(resolveKnowledgeEntry("Green Geometric Refractor")?.label, "Green Geometric Refractor");
 assert.equal(resolveKnowledgeEntry("Keepsake Premiere Edition")?.label, "Keapsake Premiere Edition");
 assert.equal(resolveKnowledgeEntry("Super Short Print")?.label, "SSP");
-
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
-}
 
 function directPrintedCodeEvidence(value, sourceType = "CARD_BACK_PRINTED_TEXT") {
   return {
@@ -113,36 +102,19 @@ async function callApi(providerResult, options = {}) {
     text: async () => ""
   });
 
-  const req = new EventEmitter();
-  req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
-
-  const res = {
-    statusCode: 0,
-    headers: {},
-    body: "",
-    setHeader(key, value) {
-      this.headers[key] = value;
-    },
-    end(value) {
-      this.body = value;
+  const response = await runListingRecognitionCore({
+    payload: {
+      tenant_id: "tenant_legacy",
+      assetId: "asset-test",
+      mode: "single",
+      provider: "openai_legacy",
+      explicitEmergency: true,
+      images: [{ name: "card.webp", url: "https://example.test/card.webp" }],
+      resolutionMap: {},
+      maxTitleLength: options.maxTitleLength || 80
     }
-  };
-
-  const promise = handler(req, res);
-  req.emit("data", JSON.stringify({
-    assetId: "asset-test",
-    mode: "single",
-    provider: "openai_legacy",
-    explicitEmergency: true,
-    images: [{ name: "card.webp", url: "https://example.test/card.webp" }],
-    resolutionMap: {},
-    maxTitleLength: options.maxTitleLength || 80
-  }));
-  req.emit("end");
-  await promise;
-
-  return JSON.parse(res.body);
+  });
+  return response.body;
 }
 
 const serialVisibleUncertainParallel = await callApi({
