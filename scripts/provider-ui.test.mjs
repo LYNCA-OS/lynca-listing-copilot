@@ -33,6 +33,11 @@ assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "
 assert.match(js, /workflowReadinessText/, "frontend should render server workflow readiness in the provider status area");
 assert.match(js, /workflowAllowsGeneration/, "frontend should gate generation on the cloud workflow readiness preflight");
 assert.match(js, /workflow_readiness/, "frontend should read integrated workflow readiness from provider status");
+assert.match(
+  js,
+  /startBackgroundPreparation\("provider_status_ready"\)/,
+  "a file selected before provider bootstrap completes must resume cloud preparation once Storage is known ready"
+);
 assert.doesNotMatch(js, /state\.selectedProvider \|\| state\.providerStatus\?\.fallback_available/, "frontend must not allow local fallback to bypass cloud readiness");
 assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to two-image paired recognition");
 assert.match(html, /name="assetMode" value="pair" checked/, "two-image paired recognition should be the checked default control");

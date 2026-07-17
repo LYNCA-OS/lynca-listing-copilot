@@ -10,7 +10,10 @@ import {
 import { visionProviderIds } from "../lib/listing/providers/provider-contract.mjs";
 import { openAiProviderPoolStatus } from "../lib/listing/providers/openai-key-pool.mjs";
 import { providerCatalog } from "../lib/listing/providers/provider-registry.mjs";
-import { buildWorkflowReadinessAudit } from "../lib/listing/readiness/workflow-readiness-audit.mjs";
+import {
+  buildWorkflowCoreReadinessAudit,
+  buildWorkflowReadinessAudit
+} from "../lib/listing/readiness/workflow-readiness-audit.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 import {
   v4ProviderDoneCapacityHandoffEnabled,
@@ -28,6 +31,10 @@ let workflowReadinessCache = {
   expiresAt: 0,
   report: null
 };
+
+function cleanText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -165,6 +172,10 @@ function publicWorkflowReadiness(report = {}) {
     ok: Boolean(report.ok),
     can_run_cloud_recognition: Boolean(report.can_run_cloud_recognition),
     low_friction_ready: Boolean(report.low_friction_ready),
+    diagnostics_deferred: report.diagnostics_deferred === true,
+    diagnostics_reason: report.diagnostics_deferred === true
+      ? cleanText(report.diagnostics_reason || "deep_diagnostics_deferred")
+      : null,
     summary: report.summary || {},
     blockers: Array.isArray(report.blockers) ? report.blockers : [],
     fail_closed_components: Array.isArray(report.fail_closed_components) ? report.fail_closed_components : [],
@@ -184,6 +195,24 @@ function publicWorkflowReadiness(report = {}) {
   };
 }
 
+function readinessProbeTimeoutMs(env = process.env) {
+  const configured = Number(env.PROVIDER_STATUS_READINESS_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return 3000;
+  return Math.max(100, Math.min(8000, Math.trunc(configured)));
+}
+
+function fetchWithOverallSignal(fetchImpl, overallSignal) {
+  return (url, init = {}) => {
+    const signals = [overallSignal, init.signal].filter(Boolean);
+    const signal = signals.length > 1
+      && typeof AbortSignal !== "undefined"
+      && typeof AbortSignal.any === "function"
+      ? AbortSignal.any(signals)
+      : signals[0];
+    return fetchImpl(url, { ...init, ...(signal ? { signal } : {}) });
+  };
+}
+
 async function loadWorkflowReadiness() {
   const now = Date.now();
   const key = workflowReadinessCacheKey(process.env);
@@ -191,15 +220,35 @@ async function loadWorkflowReadiness() {
     return workflowReadinessCache.report;
   }
 
-  const report = publicWorkflowReadiness(await buildWorkflowReadinessAudit({
-    argv: ["--no-env-file"],
-    env: process.env,
-    cwd: process.cwd(),
-    fetchImpl: globalThis.fetch
-  }));
+  const controller = new AbortController();
+  let deadlineReached = false;
+  const timeout = setTimeout(() => {
+    deadlineReached = true;
+    controller.abort(new Error("provider_status_readiness_deadline"));
+  }, readinessProbeTimeoutMs(process.env));
+  let fullReport = null;
+  try {
+    fullReport = await buildWorkflowReadinessAudit({
+      argv: ["--no-env-file"],
+      env: process.env,
+      cwd: process.cwd(),
+      fetchImpl: fetchWithOverallSignal(globalThis.fetch, controller.signal)
+    });
+  } catch {
+    // The core snapshot below is deliberately config-only and cannot be held
+    // hostage by an optional network diagnostic.
+  } finally {
+    clearTimeout(timeout);
+  }
+  const report = publicWorkflowReadiness(deadlineReached || !fullReport
+    ? buildWorkflowCoreReadinessAudit({
+      env: process.env,
+      reason: deadlineReached ? "deep_diagnostics_timeout" : "deep_diagnostics_failed"
+    })
+    : fullReport);
   workflowReadinessCache = {
     key,
-    expiresAt: now + workflowReadinessCacheTtlMs,
+    expiresAt: now + (report.diagnostics_deferred ? 5000 : workflowReadinessCacheTtlMs),
     report
   };
   return report;

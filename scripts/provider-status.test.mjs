@@ -254,6 +254,34 @@ openai = response.body.providers.find((provider) => provider.id === "openai_lega
 assert.equal(openai.selectable, true);
 assert.equal(openai.disabled_reason, null);
 
+process.env.PROVIDER_STATUS_READINESS_TIMEOUT_MS = "100";
+process.env.VECTOR_WORKER_URL = "https://slow-vector.worker.test";
+const fastFetch = globalThis.fetch;
+globalThis.fetch = async (url, init = {}) => {
+  const parsed = new URL(String(url));
+  if (parsed.pathname.endsWith("/tenant_members")) return fastFetch(url, init);
+  return new Promise((resolve, reject) => {
+    const signal = init.signal;
+    if (signal?.aborted) {
+      reject(signal.reason || new Error("aborted"));
+      return;
+    }
+    signal?.addEventListener("abort", () => {
+      reject(signal.reason || new Error("aborted"));
+    }, { once: true });
+  });
+};
+const slowReadinessStartedAt = Date.now();
+response = await callStatus();
+assert.ok(Date.now() - slowReadinessStartedAt < 1000, "provider bootstrap must not inherit a slow deep-audit tail");
+assert.equal(response.statusCode, 200);
+assert.equal(response.body.storage.configured, true);
+assert.equal(response.body.workflow_readiness.can_run_cloud_recognition, true);
+assert.equal(response.body.workflow_readiness.diagnostics_deferred, true);
+assert.equal(response.body.workflow_readiness.diagnostics_reason, "deep_diagnostics_timeout");
+globalThis.fetch = fastFetch;
+delete process.env.PROVIDER_STATUS_READINESS_TIMEOUT_MS;
+
 Object.keys(process.env).forEach((key) => {
   if (!(key in originalEnv)) delete process.env[key];
 });

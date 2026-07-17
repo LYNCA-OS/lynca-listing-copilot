@@ -5291,6 +5291,16 @@ async function loadProviderStatus() {
   }
 
   renderProviderControl();
+  if (
+    storageReady()
+    && state.assets.some((asset) => (
+      !asset.preingestionBundleId
+      && !asset.backgroundPreparationPromise
+      && asset.backgroundPrepareStatus !== "ready"
+    ))
+  ) {
+    startBackgroundPreparation("provider_status_ready");
+  }
 }
 
 async function prewarmV4(reason = "page_load") {

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  buildWorkflowCoreReadinessAudit,
   buildWorkflowReadinessAudit,
   loadWorkflowReadinessEnv,
   main,
@@ -110,6 +111,15 @@ assert.equal(component(readyReport, "paddle_ocr").status, "READY");
 assert.equal(component(readyReport, "catalog_store").status, "READY");
 assert.equal(component(readyReport, "marketplace_reference").status, "READY");
 assert.doesNotMatch(JSON.stringify(readyReport), /test-openai-key|test-supabase-key|test-vector-token|test-ocr-token|test-ebay-secret|worker\.test|supabase\.test/);
+
+const coreReport = buildWorkflowCoreReadinessAudit({ env: configuredEnv });
+assert.equal(coreReport.can_run_cloud_recognition, true);
+assert.equal(coreReport.diagnostics_deferred, true);
+assert.deepEqual(coreReport.components.map((item) => item.id).sort(), [
+  "image_storage",
+  "production_queue",
+  "vision_provider"
+]);
 
 const missingReport = await buildWorkflowReadinessAudit({
   argv: ["--no-env-file"],
