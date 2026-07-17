@@ -1,32 +1,36 @@
-import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import {
-  getSessionFromRequest
-} from "../../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import {
   buildAuthoritativeRecognitionResult,
   createFeedbackSubmissionId,
   normalizeFeedbackSubmissionId
 } from "../../lib/listing/feedback/feedback-capture.mjs";
 import { buildV4FeedbackArtifacts } from "../../lib/listing/v4/feedback/feedback-loop.mjs";
-import { normalizeGrader } from "../../lib/listing/v4/anchors/anchor-classifier.mjs";
-import { upsertCertRegistryEntry } from "../../lib/listing/v4/anchors/cert-lookup.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
   persistV4WriterFeedbackTransaction,
   readV4SessionStatus,
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
-import { resolveSignedPublicV4Principal } from "../../lib/listing/v4/session/trusted-session-identity.mjs";
+import {
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-feedback" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  const signedSession = getSessionFromRequest(req);
-  if (!signedSession) {
-    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -50,30 +54,25 @@ export default async function handler(req, res) {
     return;
   }
 
-  let principal;
-  try {
-    principal = resolveSignedPublicV4Principal(signedSession);
-  } catch (error) {
-    sendJson(res, 403, withV4Version({
-      ok: false,
-      retryable: false,
-      message: "A canonical signed tenant and user identity is required.",
-      error_code: String(error?.code || "V4_SIGNED_PRINCIPAL_INCOMPLETE").toUpperCase()
-    }));
-    return;
-  }
-  const { operatorId, tenantId } = principal;
+  const operatorId = context.userId;
+  const tenantId = context.tenantId;
   const ownedSession = await readV4SessionStatus({ sessionId, tenantId });
   if (!ownedSession.ok) {
     sendJson(res, 503, withV4Version({ ok: false, retryable: true, message: "Unable to verify recognition session ownership." }));
     return;
   }
   if (!ownedSession.session
-      || String(ownedSession.session.tenant_id || "") !== tenantId
-      || (
-        String(ownedSession.session.user_id || ownedSession.session.operator_id || "").trim() !== operatorId
-        && String(ownedSession.session.operator_id || "").trim() !== operatorId
-      )) {
+      || String(ownedSession.session.tenant_id || "") !== tenantId) {
+    sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition session not found." }));
+    return;
+  }
+  try {
+    requirePermission(context, TENANT_PERMISSIONS.SUBMIT_FEEDBACK, {
+      assignedUserId: ownedSession.session.assigned_to_user_id
+    });
+  } catch {
+    // Assignment is persisted server-side. Keep authorization failures
+    // non-enumerating so callers cannot probe another writer's work queue.
     sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition session not found." }));
     return;
   }
@@ -126,7 +125,8 @@ export default async function handler(req, res) {
       clientOccurredAt: payload.client_occurred_at || payload.occurred_at || null,
       // Public writer feedback is commercial feedback. Field-level semantic
       // truth requires a separate reviewed admin workflow.
-      reviewedSemanticFields: false
+      reviewedSemanticFields: false,
+      sharedPromotion: false
     });
   } catch (error) {
     sendJson(res, 400, withV4Version({
@@ -138,7 +138,7 @@ export default async function handler(req, res) {
   }
   const transaction = await persistV4WriterFeedbackTransaction({
     sessionId,
-    tenantId,
+    tenantId: context.tenantId,
     operatorId,
     status: artifacts.status,
     feedbackEvent: artifacts.feedbackEvent,
@@ -173,56 +173,6 @@ export default async function handler(req, res) {
   const committed = transaction.transaction || {};
   const supersededRetry = committed.superseded_retry === true;
 
-  // Cert registry flywheel: a writer-confirmed recognition that carries a
-  // grading cert number becomes an identity record, so the next time this
-  // slab (or a relisting of it) appears, identity is a sub-second registry
-  // lookup instead of a full model pass. Identity fields only; instance
-  // fields of future copies still come from their own images.
-  const resolvedForCert = artifacts.correctedResolved
-    || payload.result_payload?.resolved_fields
-    || payload.result_payload?.resolved
-    || payload.resolved_fields
-    || {};
-  const certNumber = String(resolvedForCert.cert_number || "").trim();
-  const grader = normalizeGrader(resolvedForCert.grade_company || "");
-  const confirmedTitle = String(artifacts.feedbackEvent.writer_final_title || "").trim();
-  const reviewedPromotionEnabled = String(process.env.ENABLE_REVIEWED_WRITER_FEEDBACK_CERT_PROMOTION || "false").toLowerCase() === "true"
-    && artifacts.learningEvent.semantic_truth === true
-    && artifacts.learningEvent.training_eligible === true;
-  if (reviewedPromotionEnabled && certNumber && grader && confirmedTitle && artifacts.status !== "REJECTED") {
-    waitUntil(upsertCertRegistryEntry({
-      grader,
-      certNumber,
-      identity: {
-        category: resolvedForCert.category || resolvedForCert.sport || null,
-        year: resolvedForCert.year || null,
-        manufacturer: resolvedForCert.manufacturer || null,
-        brand: resolvedForCert.brand || null,
-        product: resolvedForCert.product || null,
-        set: resolvedForCert.set || null,
-        subset: resolvedForCert.subset || null,
-        players: resolvedForCert.players || (resolvedForCert.subject ? [resolvedForCert.subject] : null),
-        team: resolvedForCert.team || null,
-        collector_number: resolvedForCert.collector_number || resolvedForCert.card_number || null,
-        checklist_code: resolvedForCert.checklist_code || null
-      },
-      grade: resolvedForCert.card_grade || resolvedForCert.grade || "",
-      autoGrade: resolvedForCert.auto_grade || "",
-      canonicalTitle: confirmedTitle,
-      source: "writer_feedback",
-      reviewStatus: "REVIEWED_INTERNAL",
-      sessionId,
-      metadata: { feedback_event_id: artifacts.feedbackEvent.id, action: payload.action || null }
-    }).catch((error) => {
-      console.warn("[v4_writer_cert_registry_promotion_failed]", JSON.stringify({
-        recognition_session_id: sessionId,
-        feedback_event_id: artifacts.feedbackEvent.id,
-        grader,
-        error: String(error?.message || error || "cert_registry_promotion_failed").slice(0, 240)
-      }));
-    }));
-  }
-
   sendJson(res, 200, withV4Version({
     ok: true,
     recognition_session_id: sessionId,
@@ -239,7 +189,7 @@ export default async function handler(req, res) {
     dataset_disposition: artifacts.learningEvent.dataset_disposition,
     sem_extraction_status: supersededRetry ? "CURRENT_STATE_UNCHANGED" : artifacts.semExtraction.status,
     superseded_retry: supersededRetry,
-    production_promotion_eligible: reviewedPromotionEnabled,
+    production_promotion_eligible: false,
     v4_persistence: { transaction }
   }));
 }

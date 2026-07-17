@@ -9,6 +9,7 @@ const writes = [];
 const saved = await ensureTenantListingAsset({
   tenantId: "tenant_alpha",
   assetId: "asset_001",
+  expectedOriginalCount: 2,
   env: {
     SUPABASE_URL: "https://example.supabase.co",
     SUPABASE_SERVICE_ROLE_KEY: "service-role"
@@ -26,7 +27,13 @@ const saved = await ensureTenantListingAsset({
 assert.equal(saved.saved, true);
 assert.equal(writes[0].url.pathname, "/rest/v1/listing_assets");
 assert.equal(writes[0].url.searchParams.get("on_conflict"), "tenant_id,id");
-assert.deepEqual(writes[0].body, { id: "asset_001", tenant_id: "tenant_alpha" });
+assert.deepEqual(writes[0].body, {
+  id: "asset_001",
+  tenant_id: "tenant_alpha",
+  image_generation_id: "asset_001",
+  expected_original_count: 2,
+  image_set_state: "INCOMPLETE"
+});
 
 await assert.rejects(
   () => ensureTenantListingAsset({

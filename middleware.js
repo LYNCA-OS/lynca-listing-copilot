@@ -1,7 +1,28 @@
 import { next } from "@vercel/functions";
+import { isProtectedAppPath } from "./lib/listing-route-access.mjs";
+import { validListingSessionClaims } from "./lib/listing-session-claims.mjs";
 
 const cookieName = "lynca_metaverse_session";
-const protectedPaths = new Set(["/", "/index.html"]);
+
+function enabledExactly(value) {
+  return String(value ?? "").trim().toLowerCase() === "true";
+}
+
+function maintenanceResponse() {
+  return new Response(JSON.stringify({
+    ok: false,
+    retryable: true,
+    error_code: "LISTING_MAINTENANCE_MODE",
+    message: "Listing is temporarily read-only during a production maintenance window."
+  }), {
+    status: 503,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "retry-after": "60"
+    }
+  });
+}
 
 function parseCookies(header) {
   return Object.fromEntries(
@@ -42,21 +63,25 @@ async function verifySignature(value, signature, secret) {
 function decodePayload(payload) {
   const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
   const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-  return JSON.parse(atob(padded));
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 async function isValidSession(cookie) {
   const secret = process.env.METAVERSE_AUTH_SECRET;
   if (!cookie || !secret) return false;
 
-  const [payload, signature] = cookie.split(".");
+  const parts = String(cookie).split(".");
+  if (parts.length !== 2) return false;
+  const [payload, signature] = parts;
   if (!payload || !signature) return false;
 
   if (!(await verifySignature(payload, signature, secret))) return false;
 
   try {
     const session = decodePayload(payload);
-    return Number(session.exp) > Date.now();
+    return validListingSessionClaims(session);
   } catch {
     return false;
   }
@@ -65,7 +90,15 @@ async function isValidSession(cookie) {
 export default async function middleware(request) {
   const url = new URL(request.url);
 
-  if (!protectedPaths.has(url.pathname)) {
+  if (
+    enabledExactly(process.env.LISTING_MAINTENANCE_MODE)
+    && url.pathname.startsWith("/api/")
+    && !["GET", "HEAD", "OPTIONS"].includes(String(request.method || "GET").toUpperCase())
+  ) {
+    return maintenanceResponse();
+  }
+
+  if (!isProtectedAppPath(url.pathname)) {
     return next();
   }
 
@@ -82,6 +115,6 @@ export default async function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/", "/index.html"],
+  matcher: ["/", "/index", "/index.html", "/app", "/app/", "/app/index", "/app/index.html", "/api/:path*"],
   runtime: "edge"
 };

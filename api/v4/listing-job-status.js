@@ -1,11 +1,18 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { getSessionFromRequest, operatorIdFromRequest } from "../../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import { readV4RecognitionJobs, v4JobStatuses } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { buildEndToEndNodeLedger } from "../../lib/listing/v4/jobs/end-to-end-node-observability.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { buildRetrievalParticipationSummary } from "../../lib/listing/retrieval/retrieval-participation.mjs";
+import {
+  hasTenantPermission,
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
 
 function queryParam(req, name) {
   const url = new URL(req.url || "/", "https://local.test");
@@ -20,14 +27,15 @@ function splitIds(value) {
     .slice(0, 200);
 }
 
-async function readSessionsForJobs(jobs = []) {
+async function readSessionsForJobs(jobs = [], tenantId = "") {
   const sessionIds = [...new Set(jobs.map((job) => job.recognition_session_id).filter(Boolean))];
   if (!sessionIds.length) return {};
   const result = await readV4Rows({
     table: "v4_recognition_sessions",
-    select: "id,status,final_title,l1_status,l1_ready_at,l1_route,l1_timing,l2_status,l2_title,l2_ready_at,l2_route,l2_timing,provider_result_summary,candidate_control_plane_trace,resolved_fields,field_states,updated_at,failure_reason",
+    select: "id,tenant_id,operator_id,created_by_user_id,assigned_to_user_id,status,final_title,l1_status,l1_ready_at,l1_route,l1_timing,l2_status,l2_title,l2_ready_at,l2_route,l2_timing,provider_result_summary,candidate_control_plane_trace,resolved_fields,field_states,updated_at,failure_reason",
     search: {
       id: `in.(${sessionIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",")})`,
+      tenant_id: `eq.${tenantId}`,
       limit: String(sessionIds.length)
     }
   });
@@ -45,7 +53,7 @@ function jobStillActive(job = null) {
   return activeJobStatuses.has(String(job?.status || "").toUpperCase());
 }
 
-function writerSafeSessionStatus(session = null, job = null) {
+function operationalSessionStatus(session = null, job = null) {
   if (!session) return null;
   const activeRetry = jobStillActive(job);
   const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
@@ -170,6 +178,10 @@ function writerSafeSessionStatus(session = null, job = null) {
       decision_eligible_candidate_ids: Array.isArray(trace.decision_eligible_candidate_ids)
         ? trace.decision_eligible_candidate_ids
         : [],
+      field_evidence_eligible_candidate_count: Number(trace.field_evidence_eligible_candidate_count || 0),
+      field_evidence_eligible_candidate_ids: Array.isArray(trace.field_evidence_eligible_candidate_ids)
+        ? trace.field_evidence_eligible_candidate_ids
+        : [],
       shadow_only_candidate_count: Number(trace.shadow_only_candidate_count || 0),
       shadow_only_candidate_ids: Array.isArray(trace.shadow_only_candidate_ids)
         ? trace.shadow_only_candidate_ids
@@ -201,6 +213,86 @@ function writerSafeSessionStatus(session = null, job = null) {
     field_states: session.field_states && typeof session.field_states === "object" ? session.field_states : {},
     updated_at: session.updated_at || null,
     failure_reason: activeRetry && !l2Ready ? null : session.failure_reason || null
+  };
+}
+
+function writerSessionStatus(session = null, job = null) {
+  if (!session) return null;
+  const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
+    ? session.provider_result_summary
+    : {};
+  const display = displayStateForSession(session, job);
+  const finalTitle = session.l2_status === "READY" ? (session.l2_title || session.final_title || "") : "";
+  const assistedDraftStatus = display.writer_status === "ASSISTED_READY"
+    ? "READY"
+    : display.writer_status === "REVIEW_REQUIRED"
+      ? "REVIEW_REQUIRED"
+      : display.writer_status === "FAILED"
+        ? "FAILED"
+        : "PENDING";
+  return {
+    id: session.id || null,
+    status: session.status || null,
+    final_title: finalTitle,
+    l2_status: session.l2_status || "PENDING",
+    l2_title: finalTitle,
+    l2_ready_at: session.l2_ready_at || null,
+    provider_result_summary: {
+      assisted_draft_status: assistedDraftStatus,
+      writer_review_required: display.writer_status === "REVIEW_REQUIRED",
+      writer_review_reason: display.writer_status === "REVIEW_REQUIRED"
+        ? summary.writer_review_reason || null
+        : null,
+      recognition_clock_started_at: summary.recognition_clock_started_at || null,
+      recognition_clock_source: summary.recognition_clock_source || null
+    },
+    resolved_fields: session.resolved_fields && typeof session.resolved_fields === "object" ? session.resolved_fields : {},
+    field_states: session.field_states && typeof session.field_states === "object" ? session.field_states : {},
+    updated_at: session.updated_at || null,
+    failure_reason: session.failure_reason ? "Recognition failed." : null,
+    writer_status: display.writer_status,
+    writer_display_title: display.writer_display_title,
+    display_status: display.display_status,
+    title_stage: display.title_stage,
+    current_best_title: display.current_best_title,
+    is_final: display.is_final,
+    can_writer_start: display.can_writer_start
+  };
+}
+
+function writerTiming(timing = {}) {
+  return {
+    time_to_l2_ready_ms: timing.time_to_l2_ready_ms ?? null,
+    worker_queue_wait_ms: timing.worker_queue_wait_ms ?? null,
+    worker_processing_ms: timing.worker_processing_ms ?? null,
+    writer_visible_recognition_ms: timing.writer_visible_recognition_ms ?? null
+  };
+}
+
+function writerJobStatus({ job, session, display, timing }) {
+  return {
+    job_id: job.id,
+    batch_id: job.batch_id,
+    recognition_session_id: job.recognition_session_id,
+    status: job.status,
+    writer_status: display.writer_status,
+    writer_display_title: display.writer_display_title,
+    display_status: display.display_status,
+    display_title: display.display_title,
+    title_stage: display.title_stage,
+    current_best_title: display.current_best_title,
+    is_final: display.is_final,
+    can_writer_start: display.can_writer_start,
+    pending_modules: display.pending_modules,
+    background_modules: display.background_modules,
+    l2_status: session?.l2_status || "PENDING",
+    l2_title: session?.l2_status === "READY" ? (session?.l2_title || session?.final_title || "") : "",
+    l2_ready_at: session?.l2_ready_at || null,
+    timing: writerTiming(timing),
+    created_at: job.created_at || null,
+    updated_at: job.updated_at || null,
+    completed_at: job.completed_at || null,
+    session: writerSessionStatus(session, job)
   };
 }
 
@@ -303,12 +395,17 @@ function elapsedMs(startedAt, finishedAt) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-status" });
   if (req.method !== "GET") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  if (!getSessionFromRequest(req)) {
-    sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized" }));
+  let context;
+  try {
+    context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
   }
   if (!enforceApiRateLimit(req, res, {
@@ -329,7 +426,13 @@ export default async function handler(req, res) {
     }));
     return;
   }
-  const result = await readV4RecognitionJobs({ batchId, jobIds, limit: Number(queryParam(req, "limit") || 200) });
+  const result = await readV4RecognitionJobs({
+    batchId,
+    jobIds,
+    tenantId: context.tenantId,
+    limit: Number(queryParam(req, "limit") || 200)
+  });
+  const canViewOperations = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_TEAM);
   if (!result.ok) {
     // A valid status query can fail when PostgREST or its connection pool has a
     // transient read outage. Report service unavailability so every client can
@@ -338,13 +441,35 @@ export default async function handler(req, res) {
       ok: false,
       retryable: true,
       error_code: "V4_JOB_STATUS_BACKEND_UNAVAILABLE",
-      message: result.error || "Unable to read V4 jobs."
+      message: "Unable to read V4 jobs.",
+      ...(canViewOperations ? { diagnostic: result.error || null } : {})
     }));
     return;
   }
-  const operatorId = operatorIdFromRequest(req);
-  const ownedJobs = result.rows.filter((job) => String(job.operator_id || "") === operatorId);
-  const sessions = await readSessionsForJobs(ownedJobs);
+  const sessions = await readSessionsForJobs(result.rows, context.tenantId);
+  const canViewAll = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_ALL_WORK);
+  const ownedJobs = result.rows.filter((job) => {
+    if (canViewAll) return true;
+    const operatorId = String(job.operator_id || "").trim();
+    const createdByUserId = String(job.created_by_user_id || "").trim();
+    const assignedToUserId = String(job.assigned_to_user_id || "").trim();
+    if ([operatorId, createdByUserId, assignedToUserId].includes(context.userId)) return true;
+    const session = sessions[job.recognition_session_id] || null;
+    if (String(session?.operator_id || "").trim() === context.userId
+        || String(session?.created_by_user_id || "").trim() === context.userId) return true;
+    try {
+      requirePermission(context, TENANT_PERMISSIONS.VIEW_ASSIGNED_TASK, {
+        assignedUserId: session?.assigned_to_user_id
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (!ownedJobs.length) {
+    sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition jobs not found." }));
+    return;
+  }
   sendJson(res, 200, withV4Version({
     ok: true,
     batch_id: batchId || null,
@@ -374,7 +499,7 @@ export default async function handler(req, res) {
         worker_processing_ms: elapsedMs(job.started_at, job.completed_at),
         writer_visible_recognition_ms: elapsedMs(recognitionStartedAt, recognitionCompletedAt)
       };
-      return {
+      const operationalStatus = {
         job_id: job.id,
         batch_id: job.batch_id,
         tenant_id: job.tenant_id || null,
@@ -409,6 +534,11 @@ export default async function handler(req, res) {
         end_to_end_node_ledger: buildEndToEndNodeLedger({ session, job, timing, display }),
         attempt_count: job.attempt_count,
         max_attempts: job.max_attempts,
+        retry_count: Number(job.retry_count ?? Math.max(0, Number(job.attempt_count || 0) - 1)),
+        canonical_state: job.canonical_state || null,
+        last_error: job.last_error || job.error?.message || null,
+        error_type: job.error_type || job.error?.code || null,
+        next_retry_at: job.next_retry_at || (job.status === "RETRYING" ? job.not_before : null),
         priority: job.priority,
         execution_control: {
           provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
@@ -430,8 +560,11 @@ export default async function handler(req, res) {
         lease_expires_at: job.lease_expires_at,
         error: job.error,
         result: job.result,
-        session: writerSafeSessionStatus(session, job)
+        session: operationalSessionStatus(session, job)
       };
+      return canViewOperations
+        ? operationalStatus
+        : writerJobStatus({ job, session, display, timing });
     })
   }));
 }

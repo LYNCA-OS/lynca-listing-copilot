@@ -80,7 +80,8 @@ async function redirectIfAuthenticated() {
       window.location.replace(redirectPath());
     }
   } catch {
-    // Stay on the login page when the local prototype server is unavailable.
+    // A session-service outage is not proof that the browser is signed out.
+    // Keep the form available and let the user retry without forced navigation.
   }
 }
 

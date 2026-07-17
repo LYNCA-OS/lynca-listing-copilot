@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
-import { EventEmitter } from "node:events";
-import handler from "../api/listing-copilot-title.js";
+import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import {
   clearInFlightIdentityRequestsForTests,
   inFlightIdentityRequestStats
@@ -23,18 +21,14 @@ process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 
 clearInFlightIdentityRequestsForTests();
 
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
-}
+const tenantId = "tenant-inflight";
+const userId = "user-inflight";
+const assetId = "asset_33333333-3333-4333-8333-333333333333";
 
 function makeImage({ id, role, objectPath, contentSha256 }) {
   return {
     id,
+    assetId,
     storageRole: role,
     objectPath,
     bucket: "listing-card-images",
@@ -60,52 +54,28 @@ async function delay(ms) {
 }
 
 async function callTitleApi(payload) {
-  const req = new EventEmitter();
-  req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
-
-  const res = {
-    statusCode: 0,
-    headers: {},
-    body: "",
-    setHeader(key, value) {
-      this.headers[key] = value;
-    },
-    end(value) {
-      this.body = value;
-    }
-  };
-
-  const promise = handler(req, res);
-  queueMicrotask(() => {
-    req.emit("data", JSON.stringify(payload));
-    req.emit("end");
+  return runListingRecognitionCore({
+    payload: { ...payload, tenant_id: tenantId }
   });
-  await promise;
-
-  return {
-    statusCode: res.statusCode,
-    body: JSON.parse(res.body)
-  };
 }
 
 const images = [
   makeImage({
     id: "front",
     role: "front_original",
-    objectPath: "listing-assets/2026-06-23/asset-inflight/front.jpg",
+    objectPath: `tenants/${tenantId}/listing-assets/2026-06-23/${assetId}/front.jpg`,
     contentSha256: "e".repeat(64)
   }),
   makeImage({
     id: "back",
     role: "back_original",
-    objectPath: "listing-assets/2026-06-23/asset-inflight/back.jpg",
+    objectPath: `tenants/${tenantId}/listing-assets/2026-06-23/${assetId}/back.jpg`,
     contentSha256: "f".repeat(64)
   })
 ];
 
 const recognitionPayload = {
-  asset_id: "asset-inflight",
+  asset_id: assetId,
   rectification: {},
   image_quality: {},
   regions: [],
@@ -152,8 +122,10 @@ globalThis.fetch = async (url, options = {}) => {
     assert.ok(image, `unexpected verification object path ${objectPath}`);
     return jsonResponse([
       {
+        tenant_id: tenantId,
         object_path: image.objectPath,
         bucket: image.bucket,
+        asset_id: assetId,
         content_type: image.originalType,
         size: image.originalSize,
         width: image.originalWidth,
@@ -187,7 +159,7 @@ globalThis.fetch = async (url, options = {}) => {
 };
 
 const payload = {
-  assetId: "asset-inflight",
+  assetId,
   mode: "single",
   images,
   resolutionMap: {},

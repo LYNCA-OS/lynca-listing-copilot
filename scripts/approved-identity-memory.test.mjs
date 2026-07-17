@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
-import { EventEmitter } from "node:events";
-import handler from "../api/listing-copilot-title.js";
+import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import {
   approvedHistoryRecordToEvidenceDocument,
   payloadAssetFingerprint
@@ -23,14 +21,9 @@ process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
-}
+const tenantId = "tenant-approved";
+const userId = "user-approved";
+const assetId = "asset_11111111-1111-4111-8111-111111111111";
 
 function makeImage({
   id,
@@ -40,6 +33,7 @@ function makeImage({
 }) {
   return {
     id,
+    assetId,
     storageRole: role,
     objectPath,
     bucket: "listing-card-images",
@@ -61,31 +55,9 @@ function jsonResponse(payload, status = 200) {
 }
 
 async function callTitleApi(payload) {
-  const req = new EventEmitter();
-  req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
-
-  const res = {
-    statusCode: 0,
-    headers: {},
-    body: "",
-    setHeader(key, value) {
-      this.headers[key] = value;
-    },
-    end(value) {
-      this.body = value;
-    }
-  };
-
-  const promise = handler(req, res);
-  req.emit("data", JSON.stringify(payload));
-  req.emit("end");
-  await promise;
-
-  return {
-    statusCode: res.statusCode,
-    body: JSON.parse(res.body)
-  };
+  return runListingRecognitionCore({
+    payload: { ...payload, tenant_id: tenantId }
+  });
 }
 
 const frontSha = "a".repeat(64);
@@ -94,18 +66,18 @@ const images = [
   makeImage({
     id: "front",
     role: "front_original",
-    objectPath: "listing-assets/2026-06-23/asset-approved/front.jpg",
+    objectPath: `tenants/${tenantId}/listing-assets/2026-06-23/${assetId}/front.jpg`,
     contentSha256: frontSha
   }),
   makeImage({
     id: "back",
     role: "back_original",
-    objectPath: "listing-assets/2026-06-23/asset-approved/back.jpg",
+    objectPath: `tenants/${tenantId}/listing-assets/2026-06-23/${assetId}/back.jpg`,
     contentSha256: backSha
   })
 ];
 const payload = {
-  assetId: "asset-approved",
+  assetId,
   mode: "single",
   images,
   resolutionMap: {},
@@ -116,7 +88,7 @@ assert.match(assetFingerprint, /^[0-9a-f]{64}$/);
 
 const approvedRecord = {
   id: "review-approved-fast-path",
-  asset_id: "asset-approved",
+  asset_id: assetId,
   analysis_run_id: "analysis-approved",
   asset_fingerprint: assetFingerprint,
   final_title: "历史标题不应直接复用",
@@ -159,8 +131,10 @@ globalThis.fetch = async (url, options = {}) => {
     assert.ok(image, `unexpected verification object path ${objectPath}`);
     return jsonResponse([
       {
+        tenant_id: tenantId,
         object_path: image.objectPath,
         bucket: image.bucket,
+        asset_id: assetId,
         content_type: image.originalType,
         size: image.originalSize,
         width: image.originalWidth,

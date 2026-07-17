@@ -15,9 +15,13 @@
           <span>LYNCA Listing Copilot</span>
         </a>
         <div class="header-actions">
+          <span class="session-user-label" id="sessionUserLabel">正在确认会话…</span>
           <button class="ghost-button" type="button" id="resetButton">清空</button>
+          <button class="ghost-button" type="button" id="logoutButton" disabled>退出</button>
         </div>
       </header>
+
+      <p class="session-control-status" id="sessionControlStatus" role="status" aria-live="polite" aria-atomic="true"></p>
 
       <main class="workspace">
         <section class="workspace-intro">
@@ -112,6 +116,7 @@
       </section>
     </div>
 
+    <script src="/app/session-controls.js" type="module"></script>
     <script src="/app/listing-copilot.js" type="module"></script>
   </body>
 </html>

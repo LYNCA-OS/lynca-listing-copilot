@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   appendEvidencePatchesToBundle,
   bundlePatchesFromOcrResult,
   claimQueuedPreingestionOcrJobs,
+  completePreingestionOcrJob,
   fairOcrAnchorJobOrder,
   fairOcrClaimOrder,
   ocrConfidenceForFieldValue,
   ocrRequestForPreingestionJob,
   processQueuedPreingestionOcrJobs,
   readPreingestionOcrState,
+  recoverStalePreingestionOcrJobs,
+  requeuePreingestionOcrJob,
   requeueRetryableFailedPreingestionOcrJobs,
   waitForPreingestionOcrEvidence
 } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
@@ -18,6 +22,22 @@ const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-test"
 };
+
+const durableLeaseMigration = readFileSync(
+  new URL("../supabase/migrations/20260715065820_track_c_preingestion_ocr_durable_leases.sql", import.meta.url),
+  "utf8"
+);
+assert.match(durableLeaseMigration, /add column if not exists max_attempts integer not null default 3/i);
+assert.match(durableLeaseMigration, /add column if not exists lease_owner text/i);
+assert.match(durableLeaseMigration, /add column if not exists lease_expires_at timestamptz/i);
+assert.match(durableLeaseMigration, /preingestion_jobs_ocr_stale_lease_idx/i);
+assert.match(durableLeaseMigration, /status = 'running'/i);
+assert.match(durableLeaseMigration, /^\s*begin\s*;/im);
+assert.match(durableLeaseMigration, /check \(max_attempts between 1 and 20\) not valid/i);
+assert.match(durableLeaseMigration, /check \(\(lease_owner is null\) = \(lease_expires_at is null\)\) not valid/i);
+assert.match(durableLeaseMigration, /validate constraint preingestion_jobs_max_attempts_chk/i);
+assert.match(durableLeaseMigration, /validate constraint preingestion_jobs_lease_pair_chk/i);
+assert.match(durableLeaseMigration, /commit\s*;\s*$/i);
 
 function jsonResponse(payload, { ok = true, status = 200 } = {}) {
   return {
@@ -45,6 +65,7 @@ function currentOcrPatch(field, value, extra = {}) {
 }
 
 const sampleJob = {
+  tenant_id: "tenant_a",
   job_id: "job-1",
   job_key: "ocr:bundle-1:crop-1",
   asset_id: "asset-1",
@@ -196,8 +217,11 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 {
   const calls = [];
   const jobs = await claimQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     anchorOnly: true,
+    leaseOwner: "lease-owner-a",
+    leaseSeconds: 120,
     env,
     fetchImpl: async (url, init = {}) => {
       calls.push({ url: String(url), method: init.method || "GET" });
@@ -205,11 +229,21 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
         return jsonResponse([{ ...sampleJob }]);
       }
       assert.match(String(url), /status=eq\.queued/);
-      return jsonResponse([{ status: "running", attempts: 1 }]);
+      const target = new URL(String(url));
+      assert.equal(target.searchParams.get("tenant_id"), "eq.tenant_a");
+      assert.equal(target.searchParams.get("attempts"), "eq.0");
+      assert.equal(target.searchParams.get("lease_owner"), "is.null");
+      assert.equal(target.searchParams.get("lease_expires_at"), "is.null");
+      const body = JSON.parse(init.body);
+      assert.equal(body.lease_owner, "lease-owner-a");
+      assert.equal(body.max_attempts, 3);
+      assert.ok(Date.parse(body.lease_expires_at) > Date.now());
+      return jsonResponse([{ ...body, status: "running", attempts: 1 }]);
     }
   });
   assert.equal(jobs.length, 1);
   assert.equal(jobs[0].status, "running");
+  assert.equal(jobs[0].lease_owner, "lease-owner-a");
   assert.match(calls[0].url, /priority=lte\.14/, "writer-path claims must reserve the first wave for OCR anchors");
   assert.match(calls[0].url, /limit=32/, "asset-scoped claims must not overfetch global queue rows");
   assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
@@ -229,6 +263,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   ];
   let listUrl = "";
   const jobs = await claimQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-slab-window",
     limit: 2,
     env,
@@ -249,6 +284,177 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   );
 }
 
+// --- expired RUNNING leases are recovered with tenant-safe compare-and-set writes ---
+{
+  const now = new Date("2026-07-15T01:00:00.000Z");
+  const updates = [];
+  const recovery = await recoverStalePreingestionOcrJobs({
+    tenantId: "tenant_a",
+    bundleId: "bundle-1",
+    now,
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = new URL(String(url));
+      if (!init.method) {
+        assert.equal(target.searchParams.get("tenant_id"), "eq.tenant_a");
+        assert.equal(target.searchParams.get("status"), "eq.running");
+        assert.equal(target.searchParams.get("job_type"), "eq.ocr_crop_verification");
+        return jsonResponse([
+          {
+            tenant_id: "tenant_a",
+            job_id: "stale-retry",
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-1`,
+            bundle_id: "bundle-1",
+            status: "running",
+            attempts: 1,
+            max_attempts: 3,
+            lease_owner: "expired-owner-a",
+            lease_expires_at: "2026-07-15T00:30:00.000Z",
+            updated_at: "2026-07-15T00:00:00.000Z"
+          },
+          {
+            tenant_id: "tenant_a",
+            job_id: "stale-terminal",
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-2`,
+            bundle_id: "bundle-1",
+            status: "running",
+            attempts: 3,
+            max_attempts: 3,
+            lease_owner: "expired-owner-b",
+            lease_expires_at: "2026-07-15T00:40:00.000Z",
+            updated_at: "2026-07-15T00:10:00.000Z"
+          },
+          {
+            tenant_id: "tenant_a",
+            job_id: "stale-legacy",
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-3`,
+            bundle_id: "bundle-1",
+            status: "running",
+            attempts: 1,
+            max_attempts: 3,
+            lease_owner: null,
+            lease_expires_at: null,
+            updated_at: "2026-07-15T00:30:00.000Z"
+          },
+          {
+            tenant_id: "tenant_a",
+            job_id: "fresh-running",
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-4`,
+            bundle_id: "bundle-1",
+            status: "running",
+            attempts: 1,
+            max_attempts: 3,
+            lease_owner: "active-owner",
+            lease_expires_at: "2026-07-15T01:30:00.000Z",
+            updated_at: "2026-07-15T00:55:00.000Z"
+          },
+          {
+            tenant_id: "tenant_b",
+            job_id: "foreign-stale",
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-5`,
+            bundle_id: "bundle-1",
+            status: "running",
+            attempts: 1,
+            max_attempts: 3,
+            lease_owner: "foreign-owner",
+            lease_expires_at: "2026-07-15T00:30:00.000Z",
+            updated_at: "2026-07-15T00:00:00.000Z"
+          }
+        ]);
+      }
+
+      const body = JSON.parse(init.body);
+      updates.push({ target, body });
+      return jsonResponse([{
+        job_id: target.searchParams.get("job_id")?.replace(/^eq\./, ""),
+        status: body.status
+      }]);
+    }
+  });
+
+  assert.deepEqual(recovery, {
+    configured: true,
+    inspected: 5,
+    recovered: 2,
+    failed_final: 1,
+    skipped: 1
+  });
+  assert.equal(updates.length, 3, "fresh and foreign running jobs must never be reclaimed");
+  for (const { target, body } of updates) {
+    assert.equal(target.searchParams.get("tenant_id"), "eq.tenant_a");
+    assert.equal(target.searchParams.get("status"), "eq.running");
+    assert.equal(body.lease_owner, null);
+    assert.equal(body.lease_expires_at, null);
+    assert.equal(body.updated_at, now.toISOString());
+  }
+  const retryUpdate = updates.find(({ target }) => target.searchParams.get("job_id") === "eq.stale-retry");
+  assert.equal(retryUpdate.target.searchParams.get("lease_owner"), "eq.expired-owner-a");
+  assert.equal(retryUpdate.target.searchParams.get("lease_expires_at"), "eq.2026-07-15T00:30:00.000Z");
+  assert.equal(retryUpdate.body.status, "queued");
+  assert.equal(retryUpdate.body.last_error, "lease_expired_retryable");
+  const terminalUpdate = updates.find(({ target }) => target.searchParams.get("job_id") === "eq.stale-terminal");
+  assert.equal(terminalUpdate.body.status, "failed");
+  assert.equal(terminalUpdate.body.last_error, "lease_expired_after_max_attempts");
+  const legacyUpdate = updates.find(({ target }) => target.searchParams.get("job_id") === "eq.stale-legacy");
+  assert.equal(legacyUpdate.target.searchParams.get("lease_owner"), "is.null");
+  assert.equal(legacyUpdate.target.searchParams.get("lease_expires_at"), "is.null");
+  assert.equal(legacyUpdate.target.searchParams.get("updated_at"), "eq.2026-07-15T00:30:00.000Z");
+}
+
+// --- only the current lease owner may complete or requeue a RUNNING job ---
+{
+  const writes = [];
+  const ownerCasFetch = async (url, init = {}) => {
+    const target = new URL(String(url));
+    const body = JSON.parse(init.body);
+    writes.push({ target, body });
+    const owner = target.searchParams.get("lease_owner");
+    return jsonResponse(owner === "eq.current-owner" ? [{ job_id: "job-lease-cas", status: body.status }] : []);
+  };
+
+  const staleCompletion = await completePreingestionOcrJob({
+    tenantId: "tenant_a",
+    jobId: "job-lease-cas",
+    leaseOwner: "stale-owner",
+    env,
+    fetchImpl: ownerCasFetch
+  });
+  const currentCompletion = await completePreingestionOcrJob({
+    tenantId: "tenant_a",
+    jobId: "job-lease-cas",
+    leaseOwner: "current-owner",
+    env,
+    fetchImpl: ownerCasFetch
+  });
+  const staleRequeue = await requeuePreingestionOcrJob({
+    tenantId: "tenant_a",
+    jobId: "job-lease-cas",
+    leaseOwner: "stale-owner",
+    error: "retryable",
+    env,
+    fetchImpl: ownerCasFetch
+  });
+  const currentRequeue = await requeuePreingestionOcrJob({
+    tenantId: "tenant_a",
+    jobId: "job-lease-cas",
+    leaseOwner: "current-owner",
+    error: "retryable",
+    env,
+    fetchImpl: ownerCasFetch
+  });
+
+  assert.equal(staleCompletion, false);
+  assert.equal(currentCompletion, true);
+  assert.equal(staleRequeue, false);
+  assert.equal(currentRequeue, true);
+  for (const { target, body } of writes) {
+    assert.equal(target.searchParams.get("tenant_id"), "eq.tenant_a");
+    assert.equal(target.searchParams.get("status"), "eq.running");
+    assert.equal(body.lease_owner, null);
+    assert.equal(body.lease_expires_at, null);
+  }
+}
+
 // --- a provider-triggered rescue must claim the missing field, not poll an idle job ---
 {
   const listedJobs = [
@@ -262,6 +468,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     { ...sampleJob, job_id: "rescue-code", priority: 10, payload: { crop: { role: "card_code_crop" } } }
   ];
   const jobs = await claimQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-targeted-grade-rescue",
     limit: 1,
     targetFields: ["grade"],
@@ -283,16 +490,21 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 {
   const updates = [];
   const recovered = await requeueRetryableFailedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env: { ...env, PREINGESTION_OCR_MAX_ATTEMPTS: "3" },
     fetchImpl: async (url, init = {}) => {
       if (!init.method) {
         return jsonResponse([
-          { job_id: "retry-current", job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-1`, attempts: 1, last_error: "PaddleOCR worker request timed out." },
-          { job_id: "old-version", job_key: "ocr:ocr-crop-v3:bundle-1:crop-1", attempts: 1, last_error: "PaddleOCR worker request timed out." },
-          { job_id: "permanent", job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-2`, attempts: 1, last_error: "crop source_object_path missing" }
+          { tenant_id: "tenant_a", job_id: "retry-current", job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-1`, attempts: 1, last_error: "PaddleOCR worker request timed out." },
+          { tenant_id: "tenant_a", job_id: "old-version", job_key: "ocr:ocr-crop-v3:bundle-1:crop-1", attempts: 1, last_error: "PaddleOCR worker request timed out." },
+          { tenant_id: "tenant_a", job_id: "permanent", job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-2`, attempts: 1, last_error: "crop source_object_path missing" }
         ]);
       }
+      const target = new URL(String(url));
+      assert.equal(target.searchParams.get("tenant_id"), "eq.tenant_a");
+      assert.equal(target.searchParams.get("lease_owner"), "is.null");
+      assert.equal(target.searchParams.get("lease_expires_at"), "is.null");
       updates.push(String(url));
       return jsonResponse([{ job_id: "retry-current", status: "queued" }]);
     }
@@ -312,6 +524,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     text_candidates: []
   };
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url, init = {}) => {
@@ -380,6 +593,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     }
   };
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url, init = {}) => {
@@ -444,6 +658,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     }
   };
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url, init = {}) => {
@@ -524,6 +739,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     }
   };
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url, init = {}) => {
@@ -593,6 +809,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     }
   };
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url, init = {}) => {
@@ -628,6 +845,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 // --- OCR state exposes terminal counts and hard-evidence availability ---
 {
   const state = await readPreingestionOcrState({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url) => {
@@ -660,6 +878,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   let jobReads = 0;
   const observedStates = [];
   const state = await waitForPreingestionOcrEvidence({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     timeoutMs: 1_000,
     pollMs: 100,
@@ -688,6 +907,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 // --- a broken observer must not change OCR completion semantics ---
 {
   const state = await waitForPreingestionOcrEvidence({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     timeoutMs: 500,
     pollMs: 100,
@@ -719,6 +939,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 {
   let jobReads = 0;
   const state = await waitForPreingestionOcrEvidence({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     timeoutMs: 1_000,
     pollMs: 100,
@@ -776,6 +997,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 // --- non-critical card-code OCR may finish in the background ---
 {
   const state = await waitForPreingestionOcrEvidence({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     timeoutMs: 1_000,
     pollMs: 100,
@@ -822,6 +1044,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 {
   let jobReads = 0;
   const state = await waitForPreingestionOcrEvidence({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     timeoutMs: 1_000,
     pollMs: 100,
@@ -864,6 +1087,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 // --- stale OCR remains in the audit log but cannot satisfy current evidence readiness ---
 {
   const state = await readPreingestionOcrState({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url) => {
@@ -903,6 +1127,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 {
   let written = null;
   const result = await appendEvidencePatchesToBundle({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     patches: flatPatches,
     env,
@@ -926,6 +1151,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 // --- fail-closed when PaddleOCR is not configured: jobs stay queued ---
 {
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async () => {
@@ -943,6 +1169,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 {
   const supabaseWrites = [];
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url, init = {}) => {
@@ -994,6 +1221,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 {
   const jobStatusWrites = [];
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env,
     fetchImpl: async (url, init = {}) => {
@@ -1054,6 +1282,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   let processingFinished = false;
 
   const processing = processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env: { ...env, PREINGESTION_OCR_CONCURRENCY: "2" },
     fetchImpl: async (url, init = {}) => {
@@ -1127,6 +1356,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   let active = 0;
   let peakActive = 0;
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env: { ...env, PREINGESTION_OCR_CONCURRENCY: "3" },
     fetchImpl: async (url, init = {}) => {
@@ -1164,6 +1394,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
 {
   let bundleRequests = 0;
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-empty",
     env: {
       ...env,
@@ -1207,6 +1438,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   let activeOcr = 0;
   let peakActiveOcr = 0;
   const result = await processQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
     bundleId: "bundle-1",
     env: {
       ...env,

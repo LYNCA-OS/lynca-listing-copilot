@@ -1462,7 +1462,7 @@ const coordinatedWorker = await embedImagesWithVectorWorker({
     VECTOR_WORKER_URL: "https://worker.test",
     VECTOR_WORKER_TOKEN: "worker-token",
     VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED: "true",
-    VECTOR_QUERY_GLOBAL_CAPACITY: "4"
+    VECTOR_QUERY_GLOBAL_CAPACITY: "3"
   },
   fetchImpl: async (url, options = {}) => {
     const target = new URL(String(url));
@@ -1470,7 +1470,7 @@ const coordinatedWorker = await embedImagesWithVectorWorker({
     if (target.pathname.endsWith("/rpc/acquire_v4_stage_capacity")) {
       const body = JSON.parse(options.body);
       assert.equal(body.p_stage_id, "vector_embedding");
-      assert.equal(body.p_capacity, 4);
+      assert.equal(body.p_capacity, 3);
       return new Response(JSON.stringify(1), { status: 200 });
     }
     if (target.pathname.endsWith("/rpc/release_v4_stage_capacity")) {

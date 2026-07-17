@@ -62,7 +62,8 @@ assert.match(js, /const MAX_CONCURRENT_WORKERS\s*=\s*6/, "queue submission worke
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");
 assert.match(js, /results\[index\]\s*=\s*await worker\(source\[index\], index\)/, "concurrent preprocessing should preserve input order in results");
 assert.match(js, /mapWithConcurrency\(imageFiles,\s*IMAGE_PREPROCESS_CONCURRENCY/, "file preprocessing should use bounded concurrency");
-assert.match(js, /mapWithConcurrency\(images,\s*STORAGE_UPLOAD_CONCURRENCY/, "storage uploads should not run serially for every original and crop image");
+assert.match(js, /mapWithConcurrency\(entries,\s*STORAGE_UPLOAD_CONCURRENCY/, "each storage upload phase should use bounded concurrency");
+assert.match(js, /const originalOutcomes = await uploadPhase[\s\S]*const cropOutcomes = await uploadPhase/, "all canonical originals must finish before derived crops begin");
 assert.match(js, /uploadAssetImage\(asset, image, imageIndex\)/, "bounded storage upload workers should preserve image role assignment");
 assert.match(js, /state\.files = images/, "optimized images should preserve upload order in state");
 assert.match(js, /state\.files\.slice\(index, index \+ 2\)/, "two-image pairing should remain upload-order based");

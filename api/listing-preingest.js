@@ -1,7 +1,14 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { cookieName, parseCookies, readSignedSession } from "../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+import {
+  CanonicalImageReferenceError,
+  readCanonicalListingImageReferences
+} from "../lib/listing/storage/canonical-image-references.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
+import { assertTenantListingAssetObjectPath } from "../lib/listing/storage/storage-verification-store.mjs";
+import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
+import { normalizeDurableListingAssetId } from "../lib/tenant/assets.mjs";
 import { processQueuedPreingestionOcrJobs } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 import {
   buildPreingestionCropPlan,
@@ -10,16 +17,19 @@ import {
   createPreIngestionBundle,
   dedupePreingestionImages,
   enqueuePreIngestionJobs,
-  normalizeDerivedImageRecord,
   normalizePreingestionImageRecord,
+  preingestionOcrJobVersion,
   preingestionStatuses,
-  readDerivedImageAssetsByAssetId,
   readPreIngestionBundle,
   readPreIngestionBundleIdByAsset,
-  readVerifiedImageRecordsByAssetId,
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
+
+const allowedBrowserSources = new Set([
+  "listing_preingest_api",
+  "listing_copilot_background_prepare"
+]);
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -42,41 +52,87 @@ function safeString(value) {
   return String(value || "").trim();
 }
 
-function normalizePayloadImages(images = [], assetId = "") {
-  return (Array.isArray(images) ? images : [])
-    .map((image, index) => normalizePreingestionImageRecord(image, {
-      fallbackAssetId: assetId,
-      index
-    }))
-    .filter((image) => image.object_path && image.object_verified);
+function allowedBrowserSource(value) {
+  const source = safeString(value);
+  return allowedBrowserSources.has(source) ? source : "listing_preingest_api";
 }
 
-function normalizeVerificationRows(rows = [], assetId = "") {
-  return (Array.isArray(rows) ? rows : [])
-    .map((row, index) => normalizePreingestionImageRecord({
-      ...row,
+function normalizeCanonicalImages(canonical = {}, assetId = "", tenantId = "") {
+  if (safeString(canonical.tenant_id) !== tenantId) {
+    throw new CanonicalImageReferenceError("canonical_image_tenant_mismatch");
+  }
+  if (
+    safeString(canonical.asset_id) !== assetId
+    || safeString(canonical.image_generation_id) !== assetId
+  ) {
+    throw new CanonicalImageReferenceError("canonical_image_generation_mismatch");
+  }
+
+  const normalizedImages = (Array.isArray(canonical.images) ? canonical.images : []).map((image, index) => {
+    if (
+      safeString(image.asset_id || image.assetId) !== assetId
+      || safeString(image.image_generation_id || image.imageGenerationId) !== assetId
+    ) {
+      throw new CanonicalImageReferenceError("canonical_image_generation_mismatch");
+    }
+    try {
+      assertTenantListingAssetObjectPath({
+        tenantId,
+        assetId,
+        objectPath: image.object_path || image.objectPath
+      });
+    } catch (error) {
+      throw new CanonicalImageReferenceError("canonical_image_object_path_out_of_scope", { cause: error });
+    }
+    const normalized = normalizePreingestionImageRecord({
+      ...image,
+      // The canonical resolver already requires and verifies the persisted
+      // full-object digest before returning an image.
+      content_hash_verified: true,
       source_table: "listing_image_verifications"
     }, {
       fallbackAssetId: assetId,
       index
-    }))
-    .filter((image) => image.object_path && image.object_verified);
+    });
+    if (
+      !normalized.object_path
+      || !normalized.object_verified
+      || !normalized.content_hash_verified
+      || !normalized.content_sha256
+    ) {
+      throw new CanonicalImageReferenceError("canonical_image_verification_incomplete");
+    }
+    return normalized;
+  });
+  const deduped = dedupePreingestionImages(normalizedImages);
+  if (deduped.length !== normalizedImages.length) {
+    throw new CanonicalImageReferenceError("canonical_image_semantic_duplicate");
+  }
+  return deduped;
 }
 
-function normalizeDerivedRows(rows = []) {
-  return (Array.isArray(rows) ? rows : [])
-    .map((row, index) => normalizeDerivedImageRecord({
-      ...row,
-      source_table: "image_derived_assets"
-    }, { index }))
-    .filter((image) => image.object_path);
+function trustedExistingEvidencePatches(bundle = {}, images = []) {
+  const persistedBundle = bundle && typeof bundle === "object" ? bundle : {};
+  const bundleId = safeString(persistedBundle.bundle_id);
+  const sourceImageIds = new Set(images.map((image) => safeString(image.image_id)).filter(Boolean));
+  const jobPrefix = `ocr:${preingestionOcrJobVersion}:${bundleId}:`;
+  return (Array.isArray(persistedBundle.evidence_patches) ? persistedBundle.evidence_patches : []).filter((patch) => {
+    const provenance = patch?.provenance && typeof patch.provenance === "object"
+      ? patch.provenance
+      : {};
+    return safeString(patch?.source_type).toUpperCase() === "OCR"
+      && safeString(provenance.generated_by) === "preingestion_ocr_worker"
+      && safeString(provenance.job_key).startsWith(jobPrefix)
+      && sourceImageIds.has(safeString(patch?.source_image_id));
+  });
 }
 
-async function countSignedReadUrls(images, env, fetchImpl) {
+async function countSignedReadUrls(images, tenantId, env, fetchImpl) {
   const results = await Promise.all(images.map(async (image) => {
     try {
       await createListingImageSignedReadUrl({
         objectPath: image.object_path,
+        tenantId,
         bucket: image.bucket,
         env,
         fetchImpl
@@ -96,15 +152,19 @@ async function countSignedReadUrls(images, env, fetchImpl) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/listing-preingest" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  const cookies = parseCookies(req.headers.cookie);
-  const authenticated = readSignedSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
-  if (!authenticated) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
+  let context;
+  try {
+    context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    const status = isTenantAuthError(error) ? error.statusCode : 503;
+    sendJson(res, status, publicTenantAuthError(error));
     return;
   }
 
@@ -123,36 +183,44 @@ export default async function handler(req, res) {
     return;
   }
 
-  const assetId = safeString(payload.asset_id || payload.assetId);
-  if (!assetId) {
+  const rawAssetId = safeString(payload.asset_id || payload.assetId);
+  if (!rawAssetId) {
     sendJson(res, 400, { ok: false, message: "asset_id is required." });
+    return;
+  }
+  let assetId;
+  try {
+    assetId = normalizeDurableListingAssetId(rawAssetId);
+  } catch {
+    sendJson(res, 400, {
+      ok: false,
+      code: "invalid_durable_listing_asset_id",
+      message: "asset_id must be a server-created durable listing asset id."
+    });
     return;
   }
 
   try {
-    const [verificationRows, derivedRows, existingBundleId] = await Promise.all([
-      readVerifiedImageRecordsByAssetId({
+    const source = allowedBrowserSource(payload.source);
+    const [canonical, existingBundleId] = await Promise.all([
+      readCanonicalListingImageReferences({
         assetId,
-        env: process.env,
-        fetchImpl: globalThis.fetch
-      }),
-      readDerivedImageAssetsByAssetId({
-        assetId,
+        tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
       }),
       readPreIngestionBundleIdByAsset({
         assetId,
-        source: payload.source || "listing_preingest_api",
+        tenantId: context.tenantId,
+        source,
         env: process.env,
         fetchImpl: globalThis.fetch
       })
     ]);
-    const images = dedupePreingestionImages([
-      ...normalizeVerificationRows(verificationRows, assetId),
-      ...normalizePayloadImages(payload.images, assetId)
-    ]);
-    const derivedImages = normalizeDerivedRows(derivedRows);
+    // The browser is scheduling work, not defining image identity. Replace
+    // every client image claim with the current server-verified canonical set.
+    const images = normalizeCanonicalImages(canonical, assetId, context.tenantId);
+    const derivedImages = [];
 
     if (!images.length) {
       sendJson(res, 400, {
@@ -179,35 +247,29 @@ export default async function handler(req, res) {
 
     const signed = payload.verify_signed_read_urls === false
       ? { signedReadUrlCount: 0, errors: [] }
-      : await countSignedReadUrls(images, process.env, globalThis.fetch);
+      : await countSignedReadUrls(images, context.tenantId, process.env, globalThis.fetch);
 
     const existingBundle = existingBundleId
       ? await readPreIngestionBundle({
         bundleId: existingBundleId,
+        tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
-      }).then((result) => result.bundle || null).catch(() => null)
+      }).then((result) => result.bundle || null)
       : null;
-    const incomingInitialEvidence = payload.initial_evidence || payload.initialEvidence || {};
-    const incomingEvidencePatches = payload.evidence_patches || payload.evidencePatches || [];
     const bundle = createPreIngestionBundle({
+      tenantId: context.tenantId,
       assetId,
       bundleId: existingBundleId,
-      source: payload.source || "listing_preingest_api",
+      source,
       status: signed.errors.length ? preingestionStatuses.PARTIAL : preingestionStatuses.READY,
       images,
       derivedImages,
-      // Re-ingestion refreshes images/crops but must never erase already
-      // computed evidence. Old cards therefore reuse OCR instead of paying to
-      // rediscover the same serial/grade on every title request.
-      initialEvidence: {
-        ...(existingBundle?.initial_evidence || {}),
-        ...incomingInitialEvidence
-      },
-      evidencePatches: [
-        ...(Array.isArray(existingBundle?.evidence_patches) ? existingBundle.evidence_patches : []),
-        ...(Array.isArray(incomingEvidencePatches) ? incomingEvidencePatches : [])
-      ],
+      // This browser-facing endpoint never accepts evidence. Only evidence
+      // written by the authenticated OCR worker survives a re-ingestion; old
+      // client-authored initial evidence is intentionally retired.
+      initialEvidence: {},
+      evidencePatches: trustedExistingEvidencePatches(existingBundle, images),
       qualitySummary,
       cropPlan
     });
@@ -243,6 +305,7 @@ export default async function handler(req, res) {
       // worker fails closed (jobs stay queued) when PaddleOCR is unconfigured;
       // /api/v4/listing-preingest-worker re-sweeps anything left behind.
       waitUntil(processQueuedPreingestionOcrJobs({
+        tenantId: context.tenantId,
         assetId,
         bundleId: durableBundle.bundle_id,
         // Writer-critical hard text gets the first wave. Context crops are
@@ -256,6 +319,7 @@ export default async function handler(req, res) {
 
     sendJson(res, 200, {
       ok: true,
+      tenant_id: context.tenantId,
       bundle_id: durableBundle.bundle_id,
       bundle_status: durableBundle.status,
       saved: Boolean(writeResult.saved),
@@ -272,6 +336,15 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
+    if (error instanceof CanonicalImageReferenceError) {
+      sendJson(res, error.statusCode || 422, {
+        ok: false,
+        code: error.code,
+        retryable: error.retryable === true,
+        message: "The verified image set is not ready for pre-ingestion."
+      });
+      return;
+    }
     sendJson(res, 500, {
       ok: false,
       code: "preingestion_failed",

@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
-import { EventEmitter } from "node:events";
-import handler from "../api/listing-copilot-title.js";
+import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import {
   recognitionResponseToEvidenceDocument
 } from "../lib/listing/recognition/recognition-evidence-normalizer.mjs";
@@ -19,14 +17,9 @@ process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 
-function sign(value) {
-  return crypto.createHmac("sha256", process.env.METAVERSE_AUTH_SECRET).update(value).digest("hex");
-}
-
-function sessionCookie() {
-  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 60000 })).toString("base64url");
-  return `lynca_metaverse_session=${payload}.${sign(payload)}`;
-}
+const tenantId = "tenant-recognition";
+const userId = "user-recognition";
+const assetId = "asset_44444444-4444-4444-8444-444444444444";
 
 function makeImage({
   id,
@@ -36,6 +29,7 @@ function makeImage({
 }) {
   return {
     id,
+    assetId,
     storageRole: role,
     objectPath,
     bucket: "listing-card-images",
@@ -52,38 +46,15 @@ function jsonResponse(payload, status = 200) {
   return {
     ok: status >= 200 && status < 300,
     status,
-    text: async () => JSON.stringify(payload)
+    text: async () => JSON.stringify(payload),
+    json: async () => payload
   };
 }
 
 async function callTitleApi(payload) {
-  const req = new EventEmitter();
-  req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
-
-  const res = {
-    statusCode: 0,
-    headers: {},
-    body: "",
-    setHeader(key, value) {
-      this.headers[key] = value;
-    },
-    end(value) {
-      this.body = value;
-    }
-  };
-
-  const promise = handler(req, res);
-  queueMicrotask(() => {
-    req.emit("data", JSON.stringify(payload));
-    req.emit("end");
+  return runListingRecognitionCore({
+    payload: { ...payload, tenant_id: tenantId }
   });
-  await promise;
-
-  return {
-    statusCode: res.statusCode,
-    body: JSON.parse(res.body)
-  };
 }
 
 const frontSha = "c".repeat(64);
@@ -92,19 +63,19 @@ const images = [
   makeImage({
     id: "front",
     role: "front_original",
-    objectPath: "listing-assets/2026-06-23/asset-recognition/front.jpg",
+    objectPath: `tenants/${tenantId}/listing-assets/2026-06-23/${assetId}/front.jpg`,
     contentSha256: frontSha
   }),
   makeImage({
     id: "back",
     role: "back_original",
-    objectPath: "listing-assets/2026-06-23/asset-recognition/back.jpg",
+    objectPath: `tenants/${tenantId}/listing-assets/2026-06-23/${assetId}/back.jpg`,
     contentSha256: backSha
   })
 ];
 
 const recognitionPayload = {
-  asset_id: "asset-recognition",
+  asset_id: assetId,
   rectification: {},
   image_quality: {},
   regions: [],
@@ -229,8 +200,10 @@ globalThis.fetch = async (url, options = {}) => {
     assert.ok(image, `unexpected verification object path ${objectPath}`);
     return jsonResponse([
       {
+        tenant_id: tenantId,
         object_path: image.objectPath,
         bucket: image.bucket,
+        asset_id: assetId,
         content_type: image.originalType,
         size: image.originalSize,
         width: image.originalWidth,
@@ -255,7 +228,7 @@ globalThis.fetch = async (url, options = {}) => {
 
   if (requestUrl.host === "recognition.internal" && requestUrl.pathname === "/v1/analyze-card-images") {
     const body = JSON.parse(options.body);
-    assert.equal(body.asset_id, "asset-recognition");
+    assert.equal(body.asset_id, assetId);
     assert.equal(body.images.length, 2);
     assert.ok(body.images.every((image) => image.signed_url.includes("token=read")));
     assert.equal(body.options.run_ocr, true);
@@ -267,7 +240,7 @@ globalThis.fetch = async (url, options = {}) => {
 };
 
 const response = await callTitleApi({
-  assetId: "asset-recognition",
+  assetId,
   mode: "single",
   images,
   resolutionMap: {},
