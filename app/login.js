@@ -13,6 +13,61 @@ function redirectPath() {
   return safeAppRedirectPath(params.get("next"), window.location.origin);
 }
 
+function normalizeLoginError(payload, status, rawText) {
+  const text = String(rawText ?? "").toLowerCase();
+  if (text.includes("atomic_enqueue_job_identity_invalid")) {
+    return "登录后端队列身份校验异常（atomic_enqueue_job_identity_invalid），请稍后再试。";
+  }
+
+  if (text.includes("pgrst202")) {
+    return "服务端 RPC 未配置（PGRST202），请联系管理员检查接口权限。";
+  }
+
+  if (text.includes("atomic_enqueue_rpc_failed")) {
+    return "服务端队列任务提交失败（atomic_enqueue_rpc_failed），请稍后重试。";
+  }
+
+  if (typeof payload?.message === "string" && payload.message.trim()) {
+    if (payload.message.includes("Invalid request.")) return "请求参数异常，请检查输入后重试。";
+    if (payload.message.includes("Request is too large.")) return "请求参数过长，请缩短输入后重试。";
+    return payload.message;
+  }
+
+  if (typeof payload?.error === "string" && payload.error.trim()) {
+    return payload.error;
+  }
+
+  if (typeof rawText === "string" && rawText.includes("<html")) {
+    return `登录请求被拦截（HTTP ${status}）。请确认部署访问凭据后重试。`;
+  }
+
+  if (status === 401) {
+    return "账号或密码不正确。";
+  }
+
+  if (status === 404) {
+    return "登录接口暂时不可访问（404）。请确认部署配置或稍后再试。";
+  }
+
+  if (status >= 500) {
+    return "登录服务暂时不可用，请稍后再试。";
+  }
+
+  return `登录失败（HTTP ${status}）。`;
+}
+
+function parseResponsePayload(rawPayload) {
+  if (!rawPayload.trim()) {
+    return { data: {}, parseFailed: true };
+  }
+
+  try {
+    return { data: JSON.parse(rawPayload), parseFailed: false };
+  } catch {
+    return { data: {}, parseFailed: true };
+  }
+}
+
 async function redirectIfAuthenticated() {
   try {
     const response = await fetch("/api/session", {
@@ -57,10 +112,16 @@ form.addEventListener("submit", async (event) => {
         invite_token: inviteToken
       })
     });
-    const result = await response.json().catch(() => ({}));
+    const rawPayload = await response.text();
+    const parsed = parseResponsePayload(rawPayload);
+    const result = parsed.data;
 
     if (!response.ok || !result.ok) {
       const resultCode = result?.code || result?.error_code;
+      if (parsed.parseFailed && response.status === 503) {
+        error.textContent = "登录服务返回非标准响应，请稍后重试。";
+        return;
+      }
       if (resultCode === "TENANT_SELECTION_REQUIRED" && Array.isArray(result.tenants) && result.tenants.length) {
         const select = form.tenant_id;
         select.replaceChildren(...result.tenants.map((tenant) => {
@@ -75,7 +136,7 @@ form.addEventListener("submit", async (event) => {
         error.textContent = "该账号尚未在该 Workspace 下创建，请先让该用户先用账号登录一次再重新邀请。";
         return;
       }
-      error.textContent = result.message || "账号或密码不正确。";
+      error.textContent = normalizeLoginError(result, response.status, String(rawPayload));
       return;
     }
 

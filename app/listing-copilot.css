@@ -3051,6 +3051,197 @@ button:disabled,
   cursor: wait;
 }
 
+body.login-shell {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(14px, 2.2vw, 28px);
+  background:
+    radial-gradient(circle at 14% 15%, rgba(88, 199, 245, 0.2), transparent 36%),
+    radial-gradient(circle at 86% 8%, rgba(88, 199, 245, 0.09), transparent 38%),
+    linear-gradient(180deg, #090d18 0%, #080b13 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+body.login-shell .login-page,
+body.login-shell .login-stage,
+body.login-shell .login-card,
+body.login-shell .listing-login-form {
+  width: 100%;
+}
+
+body.login-shell .login-stage {
+  max-width: 620px;
+}
+
+body.login-shell .login-card {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: clamp(28px, 4vw, 40px);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.05), transparent 44%),
+    rgba(15, 20, 33, 0.92);
+  box-shadow:
+    0 30px 80px rgba(4, 9, 22, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(14px);
+}
+
+body.login-shell .login-identity {
+  gap: 12px;
+}
+
+body.login-shell .brand-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: radial-gradient(circle at 30% 30%, #9de2ff, #4aa0ff 55%, #6f73ff);
+  box-shadow:
+    0 10px 24px rgba(108, 198, 255, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  color: #071024;
+}
+
+body.login-shell .login-identity strong {
+  font-size: 28px;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+}
+
+body.login-shell .login-identity small {
+  margin-top: 4px;
+  color: #a9b2c6;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+body.login-shell .login-copy {
+  margin-top: 44px;
+}
+
+body.login-shell .login-copy h1 {
+  margin-top: 4px;
+  font-size: 34px;
+  letter-spacing: -0.02em;
+}
+
+body.login-shell .login-copy .subtitle {
+  max-width: 60ch;
+  color: #cfd6ea;
+  line-height: 1.6;
+}
+
+body.login-shell .login-copy .eyebrow {
+  color: #85dbff;
+}
+
+body.login-shell .listing-login-form {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+}
+
+body.login-shell .listing-login-form label {
+  display: grid;
+  gap: 8px;
+  color: #9da8ba;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+body.login-shell .listing-login-form input,
+body.login-shell .listing-login-form select {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+  min-height: 46px;
+  padding: 0 12px;
+  outline: none;
+}
+
+body.login-shell .listing-login-form input:focus,
+body.login-shell .listing-login-form select:focus {
+  border-color: #6cc6ff;
+  box-shadow: 0 0 0 3px rgba(108, 198, 255, 0.2);
+}
+
+body.login-shell .listing-login-form input::placeholder {
+  color: #8b95a8;
+}
+
+body.login-shell .form-error {
+  min-height: 21px;
+  margin: 0;
+  color: #ff8383;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+body.login-shell .primary-button,
+body.login-shell .primary-button[aria-busy="true"] {
+  border-radius: 10px;
+  min-height: 45px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: linear-gradient(130deg, rgba(88, 199, 245, 0.95), rgba(74, 144, 255, 0.94));
+  color: #fff;
+  font-weight: 720;
+  letter-spacing: 0.01em;
+  transition:
+    transform 140ms ease,
+    filter 140ms ease,
+    box-shadow 140ms ease;
+}
+
+body.login-shell .primary-button:hover:not(:disabled) {
+  transform: translateY(-0.5px);
+  box-shadow: 0 10px 24px rgba(74, 144, 255, 0.22);
+}
+
+body.login-shell .primary-button[aria-busy="true"] {
+  cursor: wait;
+  opacity: 0.92;
+}
+
+body.login-shell .auth-note,
+body.login-shell .register-note {
+  margin: 0;
+  color: #9aa2b4;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+body.login-shell .auth-link {
+  text-decoration: none;
+}
+
+body.login-shell .auth-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+body.login-shell .input-token {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+@media (max-width: 560px) {
+  body.login-shell .login-card {
+    padding: 22px;
+    border-radius: 14px;
+  }
+
+  body.login-shell .login-copy {
+    margin-top: 34px;
+  }
+}
+
+
 .batch-title-list,
 .batch-titles-board,
 .asset-review-group,
