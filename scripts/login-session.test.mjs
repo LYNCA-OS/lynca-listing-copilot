@@ -16,7 +16,7 @@ const membership = Object.freeze({
   disabled_at: null,
   user: Object.freeze({
     id: "user_legacy",
-    email: "admin@example.test",
+    email: null,
     status: "ACTIVE",
     session_version: 1,
     disabled_at: null,

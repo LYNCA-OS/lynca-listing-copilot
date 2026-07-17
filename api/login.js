@@ -112,7 +112,7 @@ export default async function handler(req, res) {
       email: credentials.email || credentials.username,
       authenticated
     });
-    const identity = authenticated.provider === "legacy" || inviteTenantId
+    const resolvedIdentity = authenticated.provider === "legacy" || inviteTenantId
       ? authenticated.provider === "legacy"
         ? await resolveTenantIdentityForPrincipal({
             tenantId: authenticated.tenantId,
@@ -126,6 +126,10 @@ export default async function handler(req, res) {
         authUserId: authenticated.authUserId,
         tenantId: credentials.tenant_id || credentials.tenantId
       });
+    const identity = Object.freeze({
+      ...resolvedIdentity,
+      email: resolvedIdentity.email || authenticated.email
+    });
     const token = createListingSessionToken(identity, authSecret, {
       maxAgeMs: maxAgeSeconds * 1000
     });
