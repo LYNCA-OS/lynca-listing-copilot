@@ -36,6 +36,20 @@ assert.doesNotMatch(
   /pg_get_expr\(trigger\.tgqual, trigger\.tgrelid/,
   "catalog reads must not deparse OLD+NEW trigger expressions against one relation context"
 );
+assert.match(
+  preflightSource,
+  /storage_row_level_security[\s\S]*from pg_catalog\.pg_policies policy/,
+  "the direct catalog gate must attest Storage RLS and policies"
+);
+assert.equal(
+  TRACK_C_SCHEMA_SECURITY_CONTRACT.storagePolicies.length,
+  4,
+  "signed listing uploads require the exact four service-role Storage policies"
+);
+assert.deepEqual(
+  TRACK_C_SCHEMA_SECURITY_CONTRACT.storagePolicies.map(({ command }) => command).sort(),
+  ["DELETE", "INSERT", "SELECT", "UPDATE"]
+);
 
 function validSecuritySnapshot() {
   return {

@@ -153,6 +153,41 @@ async function fetchCatalogAttestation({ fetchImpl, origin, serviceRoleKey, time
   }
 }
 
+async function fetchStorageBoundaryAttestation({ fetchImpl, origin, serviceRoleKey, timeoutMs }) {
+  const response = await fetchWithTimeout(
+    fetchImpl,
+    `${origin}/rest/v1/rpc/track_c_storage_boundary_snapshot`,
+    {
+      method: "POST",
+      headers: {
+        ...authHeaders(serviceRoleKey),
+        "content-type": "application/json"
+      },
+      body: "{}",
+      redirect: "error"
+    },
+    timeoutMs
+  );
+  if (!response?.ok) {
+    throw Object.assign(new Error(`Supabase storage boundary attestation failed with HTTP ${response?.status || 0}`), {
+      code: "STORAGE_BOUNDARY_ATTESTATION_HTTP_ERROR"
+    });
+  }
+  const text = await response.text();
+  if (Buffer.byteLength(text, "utf8") > MAX_OPENAPI_BYTES) {
+    throw Object.assign(new Error("Supabase storage boundary attestation exceeded the size limit"), {
+      code: "STORAGE_BOUNDARY_ATTESTATION_TOO_LARGE"
+    });
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw Object.assign(new Error("Supabase storage boundary attestation was not valid JSON"), {
+      code: "STORAGE_BOUNDARY_ATTESTATION_INVALID_JSON"
+    });
+  }
+}
+
 function parseSignature(signature) {
   const match = cleanText(signature).match(/^([^()]+)\((.*)\)$/);
   if (!match) return { name: "", formats: [] };
@@ -472,15 +507,25 @@ export async function checkTrackCProductionSchemaRest({
   let origin = "";
   try {
     origin = normalizeSupabaseOrigin(rawUrl);
-    const openApi = await fetchOpenApi({ fetchImpl, origin, serviceRoleKey: key, timeoutMs });
-    const catalogSnapshot = await fetchCatalogAttestation({
-      fetchImpl,
-      origin,
-      serviceRoleKey: key,
-      timeoutMs
-    });
+    const [openApi, catalogSnapshot, storageBoundary] = await Promise.all([
+      fetchOpenApi({ fetchImpl, origin, serviceRoleKey: key, timeoutMs }),
+      fetchCatalogAttestation({ fetchImpl, origin, serviceRoleKey: key, timeoutMs }),
+      fetchStorageBoundaryAttestation({ fetchImpl, origin, serviceRoleKey: key, timeoutMs })
+    ]);
+    const catalogWithStorageBoundary = {
+      ...catalogSnapshot,
+      execution_boundary: {
+        ...(catalogSnapshot?.execution_boundary || {}),
+        storage_objects: storageBoundary?.storage_objects || null,
+        storage_row_level_security: storageBoundary?.storage_row_level_security === true,
+        storage_policies: Array.isArray(storageBoundary?.storage_policies)
+          ? storageBoundary.storage_policies
+          : [],
+        storage_boundary_meta: storageBoundary?.meta || {}
+      }
+    };
     const openApiChecks = evaluateOpenApi(openApi, origin);
-    const catalogAttestation = evaluateCatalogAttestation(catalogSnapshot);
+    const catalogAttestation = evaluateCatalogAttestation(catalogWithStorageBoundary);
     const probes = activeProbes
       ? await runReadOnlyProbes({ fetchImpl, origin, serviceRoleKey: key, timeoutMs, openApi })
       : { table_probes: [], ops_snapshot: { requirement: "disabled", ok: true, status: 0 } };

@@ -51,6 +51,41 @@ const serviceOnlyFactTables = Object.freeze([
   "v4_sem_validation_events"
 ]);
 
+const serviceUpdatableFactTables = Object.freeze([
+  "v4_learning_events"
+]);
+
+const expectedStoragePolicyContracts = Object.freeze([
+  Object.freeze({
+    policy: "listing_card_images_service_role_select",
+    roles: Object.freeze(["service_role"]),
+    command: "SELECT",
+    usingExpression: "bucket_id = 'listing-card-images'",
+    withCheckExpression: null
+  }),
+  Object.freeze({
+    policy: "listing_card_images_service_role_insert",
+    roles: Object.freeze(["service_role"]),
+    command: "INSERT",
+    usingExpression: null,
+    withCheckExpression: "bucket_id = 'listing-card-images'"
+  }),
+  Object.freeze({
+    policy: "listing_card_images_service_role_update",
+    roles: Object.freeze(["service_role"]),
+    command: "UPDATE",
+    usingExpression: "bucket_id = 'listing-card-images'",
+    withCheckExpression: "bucket_id = 'listing-card-images'"
+  }),
+  Object.freeze({
+    policy: "listing_card_images_service_role_delete",
+    roles: Object.freeze(["service_role"]),
+    command: "DELETE",
+    usingExpression: "bucket_id = 'listing-card-images'",
+    withCheckExpression: null
+  })
+]);
+
 const tenantPolicyTables = Object.freeze(
   tenantScopedTables.filter((table) => !serviceOnlyFactTables.includes(table))
 );
@@ -72,6 +107,7 @@ const requiredFunctions = Object.freeze([
   "persist_v4_writer_ready_and_release_capacity(text,jsonb,text,text)",
   "track_c_ops_snapshot(text,timestamp with time zone)",
   "track_c_production_schema_catalog_snapshot()",
+  "track_c_storage_boundary_snapshot()",
   "fail_v4_recognition_job(text,text,jsonb,boolean,boolean)"
 ]);
 
@@ -85,7 +121,8 @@ const serviceOnlyFunctions = Object.freeze([
   "persist_v4_writer_feedback_transaction(text,text,text,text,jsonb,jsonb)",
   "enqueue_v4_recognition_batch_atomic(jsonb,jsonb,text,jsonb,text)",
   "fence_v4_recognition_job_execution(text,text,integer)",
-  "track_c_production_schema_catalog_snapshot()"
+  "track_c_production_schema_catalog_snapshot()",
+  "track_c_storage_boundary_snapshot()"
 ]);
 
 const browserDeniedTables = requiredTables;
@@ -465,6 +502,7 @@ export const TRACK_C_SCHEMA_SECURITY_CONTRACT = Object.freeze({
   browserDeniedTables,
   browserTablePrivileges,
   policies: expectedPolicyContracts,
+  storagePolicies: expectedStoragePolicyContracts,
   triggers: expectedTriggerContracts,
   constraints: expectedConstraintContracts
 });
@@ -485,6 +523,7 @@ export const TRACK_C_REST_SCHEMA_CONTRACT = Object.freeze({
   requiredFunctions,
   forbiddenFunctions,
   serviceOnlyFactTables,
+  serviceUpdatableFactTables,
   serviceOnlyFunctions,
   requiredIndexes,
   criticalColumns: Object.freeze([
@@ -1163,6 +1202,41 @@ async function readSchema(client) {
     `
       select
         pg_catalog.to_regclass('storage.objects')::text as storage_objects,
+        coalesce((
+          select relation.relrowsecurity
+          from pg_catalog.pg_class relation
+          join pg_catalog.pg_namespace namespace
+            on namespace.oid = relation.relnamespace
+          where namespace.nspname = 'storage'
+            and relation.relname = 'objects'
+            and relation.relkind in ('r', 'p')
+        ), false) as storage_row_level_security,
+        coalesce((
+          select pg_catalog.jsonb_agg(
+            pg_catalog.jsonb_build_object(
+              'policyname', policy.policyname,
+              'roles', policy.roles::text[],
+              'cmd', policy.cmd,
+              'qual', policy.qual,
+              'with_check', policy.with_check
+            )
+            order by policy.policyname
+          )
+          from pg_catalog.pg_policies policy
+          where policy.schemaname = 'storage'
+            and policy.tablename = 'objects'
+        ), '[]'::jsonb) as storage_policies,
+        (
+          select pg_catalog.jsonb_build_object(
+            'function_volatility', function_row.provolatile,
+            'security_definer', function_row.prosecdef,
+            'search_path', function_row.proconfig
+          )
+          from pg_catalog.pg_proc function_row
+          where function_row.oid = pg_catalog.to_regprocedure(
+            'public.track_c_storage_boundary_snapshot()'
+          )
+        ) as storage_boundary_meta,
         pg_catalog.has_schema_privilege('authenticated', 'storage', 'USAGE') as authenticated_storage_usage,
         pg_catalog.has_table_privilege('authenticated', 'storage.objects', 'SELECT') as authenticated_storage_select,
         pg_catalog.has_table_privilege('authenticated', 'storage.objects', 'INSERT') as authenticated_storage_insert,
@@ -1509,27 +1583,94 @@ export function evaluateTrackCProductionSchemaSnapshot(snapshot) {
   const executionBoundary = snapshot.executionBoundary || {};
   const heartbeatDefinition = cleanText(executionBoundary.heartbeat_definition);
   const executionFenceDefinition = cleanText(executionBoundary.execution_fence_definition);
+  const storagePolicies = Array.isArray(executionBoundary.storage_policies)
+    ? executionBoundary.storage_policies
+    : [];
+  const storagePolicyMap = new Map(
+    storagePolicies.map((row) => [cleanText(row?.policyname), row])
+  );
+  const expectedStoragePolicyNames = new Set(
+    expectedStoragePolicyContracts.map(({ policy }) => policy)
+  );
+  const storagePolicyChecks = expectedStoragePolicyContracts.map((expected) => {
+    const row = storagePolicyMap.get(expected.policy);
+    const actualRoles = sortedStrings(row?.roles);
+    const expectedRoles = sortedStrings(expected.roles);
+    const actualUsing = normalizeSqlExpression(row?.qual);
+    const expectedUsing = normalizeSqlExpression(expected.usingExpression);
+    const actualWithCheck = normalizeSqlExpression(row?.with_check);
+    const expectedWithCheck = normalizeSqlExpression(expected.withCheckExpression);
+    return {
+      policy: expected.policy,
+      ok: Boolean(
+        row
+        && sameOrderedStrings(actualRoles, expectedRoles)
+        && row.cmd === expected.command
+        && actualUsing === expectedUsing
+        && actualWithCheck === expectedWithCheck
+      ),
+      actual: row
+        ? {
+            roles: actualRoles,
+            command: row.cmd,
+            using_expression: actualUsing,
+            with_check_expression: actualWithCheck
+          }
+        : null,
+      expected: {
+        roles: expectedRoles,
+        command: expected.command,
+        using_expression: expectedUsing,
+        with_check_expression: expectedWithCheck
+      }
+    };
+  });
+  const browserStoragePolicies = storagePolicies.filter((row) => (
+    sortedStrings(row?.roles).some((role) => (
+      ["public", "anon", "authenticated"].includes(role.toLowerCase())
+    ))
+  ));
+  const unexpectedStoragePolicies = storagePolicies.filter((row) => (
+    !expectedStoragePolicyNames.has(cleanText(row?.policyname))
+  ));
+  const storageBoundaryMeta = executionBoundary.storage_boundary_meta || {};
+  const storageBoundaryEmptySearchPath = Array.isArray(storageBoundaryMeta.search_path)
+    && storageBoundaryMeta.search_path.some((setting) => (
+      /^search_path=(?:""|)$/.test(cleanText(setting))
+    ));
   const executionBoundaryChecks = [
     {
-      boundary: "browser_storage_acl",
-      requirement: "authenticated_has_no_direct_storage_objects_access",
+      boundary: "browser_storage_rls",
+      requirement: "rls_default_deny_with_exact_service_signed_url_policies",
       ok: Boolean(
         executionBoundary.storage_objects
-        && executionBoundary.authenticated_storage_usage === false
-        && executionBoundary.authenticated_storage_select === false
-        && executionBoundary.authenticated_storage_insert === false
-        && executionBoundary.authenticated_storage_update === false
-        && executionBoundary.authenticated_storage_delete === false
-        && executionBoundary.service_storage_select === true
+        && executionBoundary.storage_row_level_security === true
+        && browserStoragePolicies.length === 0
+        && unexpectedStoragePolicies.length === 0
+        && storagePolicies.length === expectedStoragePolicyContracts.length
+        && storagePolicyChecks.every(({ ok }) => ok)
+        && storageBoundaryMeta.function_volatility === "s"
+        && storageBoundaryMeta.security_definer === true
+        && storageBoundaryEmptySearchPath
       ),
       actual: {
         storage_objects: executionBoundary.storage_objects || null,
-        authenticated_schema_usage: executionBoundary.authenticated_storage_usage === true,
-        authenticated_select: executionBoundary.authenticated_storage_select === true,
-        authenticated_insert: executionBoundary.authenticated_storage_insert === true,
-        authenticated_update: executionBoundary.authenticated_storage_update === true,
-        authenticated_delete: executionBoundary.authenticated_storage_delete === true,
-        service_select: executionBoundary.service_storage_select === true
+        row_level_security: executionBoundary.storage_row_level_security === true,
+        browser_policies: browserStoragePolicies.map((row) => cleanText(row.policyname)),
+        unexpected_policies: unexpectedStoragePolicies.map((row) => cleanText(row.policyname)),
+        policy_checks: storagePolicyChecks,
+        helper: {
+          stable: storageBoundaryMeta.function_volatility === "s",
+          security_definer: storageBoundaryMeta.security_definer === true,
+          empty_search_path: storageBoundaryEmptySearchPath
+        },
+        managed_authenticated_table_privileges: {
+          schema_usage: executionBoundary.authenticated_storage_usage === true,
+          select: executionBoundary.authenticated_storage_select === true,
+          insert: executionBoundary.authenticated_storage_insert === true,
+          update: executionBoundary.authenticated_storage_update === true,
+          delete: executionBoundary.authenticated_storage_delete === true
+        }
       }
     },
     {
@@ -1573,44 +1714,49 @@ export function evaluateTrackCProductionSchemaSnapshot(snapshot) {
     }
   ];
 
-  const factAclChecks = snapshot.factAcls.map((row) => ({
-    table: row.table_name,
-    requirement: "browser_denied_service_insert_only",
-    ok: Boolean(
-      row.anon_select === false
-      && row.anon_insert === false
-      && row.anon_update === false
-      && row.anon_delete === false
-      && row.authenticated_select === false
-      && row.authenticated_insert === false
-      && row.authenticated_update === false
-      && row.authenticated_delete === false
-      && row.service_select === true
-      && row.service_insert === true
-      && row.service_update === false
-      && row.service_delete === false
-    ),
-    actual: {
-      anon: {
-        select: row.anon_select === true,
-        insert: row.anon_insert === true,
-        update: row.anon_update === true,
-        delete: row.anon_delete === true
-      },
-      authenticated: {
-        select: row.authenticated_select === true,
-        insert: row.authenticated_insert === true,
-        update: row.authenticated_update === true,
-        delete: row.authenticated_delete === true
-      },
-      service_role: {
-        select: row.service_select === true,
-        insert: row.service_insert === true,
-        update: row.service_update === true,
-        delete: row.service_delete === true
+  const factAclChecks = snapshot.factAcls.map((row) => {
+    const serviceUpdateExpected = serviceUpdatableFactTables.includes(row.table_name);
+    return {
+      table: row.table_name,
+      requirement: serviceUpdateExpected
+        ? "browser_denied_service_upsert_without_delete"
+        : "browser_denied_service_insert_only",
+      ok: Boolean(
+        row.anon_select === false
+        && row.anon_insert === false
+        && row.anon_update === false
+        && row.anon_delete === false
+        && row.authenticated_select === false
+        && row.authenticated_insert === false
+        && row.authenticated_update === false
+        && row.authenticated_delete === false
+        && row.service_select === true
+        && row.service_insert === true
+        && row.service_update === serviceUpdateExpected
+        && row.service_delete === false
+      ),
+      actual: {
+        anon: {
+          select: row.anon_select === true,
+          insert: row.anon_insert === true,
+          update: row.anon_update === true,
+          delete: row.anon_delete === true
+        },
+        authenticated: {
+          select: row.authenticated_select === true,
+          insert: row.authenticated_insert === true,
+          update: row.authenticated_update === true,
+          delete: row.authenticated_delete === true
+        },
+        service_role: {
+          select: row.service_select === true,
+          insert: row.service_insert === true,
+          update: row.service_update === true,
+          delete: row.service_delete === true
+        }
       }
-    }
-  }));
+    };
+  });
 
   const functionAclChecks = snapshot.functionAcls.map((row) => ({
     signature: row.signature,

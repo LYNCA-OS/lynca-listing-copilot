@@ -142,7 +142,8 @@ function validCatalogSnapshot() {
     authenticated_trigger: false,
     service_select: true,
     service_insert: true,
-    service_update: !TRACK_C_REST_SCHEMA_CONTRACT.serviceOnlyFactTables.includes(table),
+    service_update: !TRACK_C_REST_SCHEMA_CONTRACT.serviceOnlyFactTables.includes(table)
+      || TRACK_C_REST_SCHEMA_CONTRACT.serviceUpdatableFactTables.includes(table),
     service_delete: !TRACK_C_REST_SCHEMA_CONTRACT.serviceOnlyFactTables.includes(table)
   }));
   return {
@@ -214,17 +215,38 @@ function validCatalogSnapshot() {
     server: { transaction_read_only: "off", server_version_num: "170000" },
     execution_boundary: {
       storage_objects: "storage.objects",
-      authenticated_storage_usage: false,
-      authenticated_storage_select: false,
-      authenticated_storage_insert: false,
-      authenticated_storage_update: false,
-      authenticated_storage_delete: false,
+      authenticated_storage_usage: true,
+      authenticated_storage_select: true,
+      authenticated_storage_insert: true,
+      authenticated_storage_update: true,
+      authenticated_storage_delete: true,
       service_storage_select: true,
       authenticated_heartbeat_execute: false,
       service_heartbeat_execute: true,
       heartbeat_definition: "jobs.status = 'RUNNING' and jobs.lease_owner = p_worker_id and jobs.lease_expires_at is not null and jobs.lease_expires_at > heartbeat_at",
       execution_fence_definition: "jobs.status = 'RUNNING' and jobs.lease_owner = p_worker_id and jobs.lease_expires_at > pg_catalog.clock_timestamp() and 'tenant_id', fenced_job.tenant_id and 'recognition_session_id', fenced_job.recognition_session_id and 'asset_id', fenced_job.asset_id"
     }
+  };
+}
+
+function validStorageBoundarySnapshot() {
+  return {
+    meta: {
+      contract_version: "track_c_storage_boundary_snapshot_v1",
+      function_volatility: "s",
+      security_definer: true,
+      search_path: ['search_path=""'],
+      request_role: "service_role"
+    },
+    storage_objects: "storage.objects",
+    storage_row_level_security: true,
+    storage_policies: TRACK_C_SCHEMA_SECURITY_CONTRACT.storagePolicies.map((policy) => ({
+      policyname: policy.policy,
+      roles: [...policy.roles],
+      cmd: policy.command,
+      qual: policy.usingExpression,
+      with_check: policy.withCheckExpression
+    }))
   };
 }
 
@@ -235,7 +257,12 @@ function response(body, { status = 200, contentType = "application/json" } = {})
   });
 }
 
-function mockFetchFor(openApi, requests = [], catalogSnapshot = validCatalogSnapshot()) {
+function mockFetchFor(
+  openApi,
+  requests = [],
+  catalogSnapshot = validCatalogSnapshot(),
+  storageBoundary = validStorageBoundarySnapshot()
+) {
   return async (url, init = {}) => {
     requests.push({ url: String(url), init });
     if (String(url).endsWith("/rest/v1/")) {
@@ -243,6 +270,9 @@ function mockFetchFor(openApi, requests = [], catalogSnapshot = validCatalogSnap
     }
     if (String(url).endsWith("/rest/v1/rpc/track_c_production_schema_catalog_snapshot")) {
       return response(catalogSnapshot);
+    }
+    if (String(url).endsWith("/rest/v1/rpc/track_c_storage_boundary_snapshot")) {
+      return response(storageBoundary);
     }
     if (String(url).endsWith("/rest/v1/rpc/track_c_ops_snapshot")) {
       return response({ generated_at: "2026-07-17T00:00:00.000Z" });
@@ -266,6 +296,18 @@ assert.ok(
   ),
   "the obsolete atomic enqueue signature must not remain required"
 );
+assert.ok(
+  TRACK_C_REST_SCHEMA_CONTRACT.requiredFunctions.includes(
+    "track_c_storage_boundary_snapshot()"
+  ),
+  "the Storage RLS boundary helper must be a required RPC"
+);
+assert.ok(
+  TRACK_C_REST_SCHEMA_CONTRACT.serviceOnlyFunctions.includes(
+    "track_c_storage_boundary_snapshot()"
+  ),
+  "the Storage RLS boundary helper must remain service-role-only"
+);
 
 const requests = [];
 const passingReport = await checkTrackCProductionSchemaRest({
@@ -280,6 +322,11 @@ assert.equal(passingReport.read_only, true);
 assert.ok(requests.some(({ init }) => init.method === "HEAD"));
 assert.ok(requests.some(({ url, init }) => (
   url.endsWith("/rpc/track_c_ops_snapshot") && init.method === "POST" && init.body === "{}"
+)));
+assert.ok(requests.some(({ url, init }) => (
+  url.endsWith("/rpc/track_c_storage_boundary_snapshot")
+  && init.method === "POST"
+  && init.body === "{}"
 )));
 for (const { init } of requests) {
   assert.equal(init.headers.apikey, serviceRoleKey);
@@ -347,6 +394,83 @@ const unexpectedWhenReport = await checkTrackCProductionSchemaRest({
 });
 assert.equal(unexpectedWhenReport.ok, false);
 assert.ok(unexpectedWhenReport.checks.catalog_attestation.failed_check_count > 0);
+
+const learningWithoutUpdateCatalog = validCatalogSnapshot();
+learningWithoutUpdateCatalog.table_acls.find(({ table_name }) => (
+  table_name === "v4_learning_events"
+)).service_update = false;
+const learningWithoutUpdateReport = await checkTrackCProductionSchemaRest({
+  supabaseUrl,
+  serviceRoleKey,
+  fetchImpl: mockFetchFor(validOpenApi(), [], learningWithoutUpdateCatalog),
+  activeProbes: false
+});
+assert.equal(learningWithoutUpdateReport.ok, false);
+assert.ok(learningWithoutUpdateReport.checks.catalog_attestation.checks.service_only_fact_acls
+  .some(({ table, ok }) => table === "v4_learning_events" && !ok));
+
+const learningWithDeleteCatalog = validCatalogSnapshot();
+learningWithDeleteCatalog.table_acls.find(({ table_name }) => (
+  table_name === "v4_learning_events"
+)).service_delete = true;
+const learningWithDeleteReport = await checkTrackCProductionSchemaRest({
+  supabaseUrl,
+  serviceRoleKey,
+  fetchImpl: mockFetchFor(validOpenApi(), [], learningWithDeleteCatalog),
+  activeProbes: false
+});
+assert.equal(learningWithDeleteReport.ok, false);
+assert.ok(learningWithDeleteReport.checks.catalog_attestation.checks.service_only_fact_acls
+  .some(({ table, ok }) => table === "v4_learning_events" && !ok));
+
+const storageWithoutRls = validStorageBoundarySnapshot();
+storageWithoutRls.storage_row_level_security = false;
+const storageWithoutRlsReport = await checkTrackCProductionSchemaRest({
+  supabaseUrl,
+  serviceRoleKey,
+  fetchImpl: mockFetchFor(validOpenApi(), [], validCatalogSnapshot(), storageWithoutRls),
+  activeProbes: false
+});
+assert.equal(storageWithoutRlsReport.ok, false);
+assert.ok(storageWithoutRlsReport.checks.catalog_attestation.checks.execution_boundaries
+  .some(({ boundary, ok }) => boundary === "browser_storage_rls" && !ok));
+
+const storageWithBrowserPolicy = validStorageBoundarySnapshot();
+storageWithBrowserPolicy.storage_policies.push({
+  policyname: "accidental_authenticated_storage_read",
+  roles: ["authenticated"],
+  cmd: "SELECT",
+  qual: "true",
+  with_check: null
+});
+const storageWithBrowserPolicyReport = await checkTrackCProductionSchemaRest({
+  supabaseUrl,
+  serviceRoleKey,
+  fetchImpl: mockFetchFor(validOpenApi(), [], validCatalogSnapshot(), storageWithBrowserPolicy),
+  activeProbes: false
+});
+assert.equal(storageWithBrowserPolicyReport.ok, false);
+assert.ok(storageWithBrowserPolicyReport.checks.catalog_attestation.checks.execution_boundaries
+  .some(({ boundary, ok }) => boundary === "browser_storage_rls" && !ok));
+
+const storageWithWrongServicePolicy = validStorageBoundarySnapshot();
+storageWithWrongServicePolicy.storage_policies.find(({ policyname }) => (
+  policyname === "listing_card_images_service_role_insert"
+)).with_check = "true";
+const storageWithWrongServicePolicyReport = await checkTrackCProductionSchemaRest({
+  supabaseUrl,
+  serviceRoleKey,
+  fetchImpl: mockFetchFor(
+    validOpenApi(),
+    [],
+    validCatalogSnapshot(),
+    storageWithWrongServicePolicy
+  ),
+  activeProbes: false
+});
+assert.equal(storageWithWrongServicePolicyReport.ok, false);
+assert.ok(storageWithWrongServicePolicyReport.checks.catalog_attestation.checks.execution_boundaries
+  .some(({ boundary, ok }) => boundary === "browser_storage_rls" && !ok));
 
 const failedHttpReport = await checkTrackCProductionSchemaRest({
   supabaseUrl,

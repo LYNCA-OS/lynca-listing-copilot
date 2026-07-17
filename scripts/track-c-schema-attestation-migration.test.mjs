@@ -11,6 +11,10 @@ const followUpSource = await readFile(
   "supabase/migrations/20260717132242_fix_track_c_catalog_trigger_when_marker.sql",
   "utf8"
 );
+const boundaryConvergenceSource = await readFile(
+  "supabase/migrations/20260717133700_track_c_fact_and_storage_boundary_convergence.sql",
+  "utf8"
+);
 
 assert.doesNotMatch(source, /\bdelete\s+from\b/i, "tenant convergence must never delete business rows");
 assert.match(source, /v4_sem_validation_tenant_backfill_requires_remediation/);
@@ -56,5 +60,18 @@ assert.match(followUpSource, /case when trigger\.tgqual is null then null else '
 assert.doesNotMatch(followUpSource, /pg_get_expr\(trigger\.tgqual, trigger\.tgrelid/);
 assert.match(followUpSource, /revoke all on function public\.track_c_production_schema_catalog_snapshot\(\)[\s\S]*grant execute[\s\S]*to service_role/);
 assert.match(followUpSource, /notify pgrst, 'reload schema'/);
+
+assert.match(boundaryConvergenceSource, /drop policy if exists track_c_writer_feedback_select[\s\S]*on public\.v4_writer_feedback_events/);
+assert.match(boundaryConvergenceSource, /drop policy if exists track_c_tenant_update[\s\S]*on public\.v4_learning_events/);
+assert.match(boundaryConvergenceSource, /revoke delete on table public\.v4_learning_events from service_role;[\s\S]*grant select, insert, update on table public\.v4_learning_events to service_role/);
+assert.doesNotMatch(boundaryConvergenceSource, /revoke (?:all|update)[^;]*public\.v4_learning_events from service_role/);
+assert.match(boundaryConvergenceSource, /add constraint v4_sem_validation_events_tenant_id_fkey_restrict[\s\S]*references public\.tenants\(id\)[\s\S]*on delete restrict[\s\S]*not valid;[\s\S]*validate constraint v4_sem_validation_events_tenant_id_fkey_restrict[\s\S]*drop constraint if exists v4_sem_validation_events_tenant_id_fkey;[\s\S]*rename constraint v4_sem_validation_events_tenant_id_fkey_restrict[\s\S]*to v4_sem_validation_events_tenant_id_fkey/);
+assert.doesNotMatch(boundaryConvergenceSource, /revoke (?:usage on schema storage|all on table storage\.objects)/);
+assert.match(boundaryConvergenceSource, /create or replace function public\.track_c_storage_boundary_snapshot\(\)[\s\S]*language plpgsql[\s\S]*stable[\s\S]*security definer[\s\S]*set search_path = ''/);
+assert.match(boundaryConvergenceSource, /track_c_storage_boundary_service_role_required/);
+assert.match(boundaryConvergenceSource, /relation\.relrowsecurity[\s\S]*'roles', policy\.roles::text\[\][\s\S]*'cmd', policy\.cmd[\s\S]*'qual', policy\.qual[\s\S]*'with_check', policy\.with_check[\s\S]*from pg_catalog\.pg_policies policy/);
+assert.match(boundaryConvergenceSource, /revoke all on function public\.track_c_storage_boundary_snapshot\(\)[\s\S]*from public, anon, authenticated;[\s\S]*grant execute on function public\.track_c_storage_boundary_snapshot\(\)[\s\S]*to service_role/);
+assert.match(boundaryConvergenceSource, /notify pgrst, 'reload schema'/);
+assert.doesNotMatch(boundaryConvergenceSource, /\bdelete\s+from\b/i, "boundary convergence must never delete business rows");
 
 console.log("track-c schema attestation migration contract tests passed");
