@@ -8,6 +8,9 @@ const errorMessage = document.querySelector("#inviteError");
 const resultSection = document.querySelector("#inviteResultSection");
 const inviteUrlInput = document.querySelector("#inviteUrl");
 const copyInviteButton = document.querySelector("#copyInviteButton");
+const statusSection = document.querySelector("#inviteStatusSection");
+const statusText = document.querySelector("#inviteStatus");
+const statusTip = document.querySelector("#inviteStatusTip");
 const params = new URLSearchParams(window.location.search);
 const tokenFromInvite = params.get("invite_token") || "";
 const tokenSectionText = document.querySelector("#registerHelp");
@@ -32,10 +35,55 @@ if (tokenFromInvite) {
   if (resultSection) {
     resultSection.setAttribute("hidden", "");
   }
+  if (statusSection) {
+    statusSection.setAttribute("hidden", "");
+  }
   if (errorMessage) {
     errorMessage.textContent = "";
     errorMessage.hidden = true;
   }
+}
+
+function isExpiredInvite(expiresAt) {
+  if (!expiresAt) return false;
+  const millis = new Date(String(expiresAt)).getTime();
+  return Number.isFinite(millis) && millis <= Date.now();
+}
+
+function formatRelativeTime(expiresAt) {
+  if (!expiresAt) return "永久";
+  const millis = new Date(String(expiresAt)).getTime();
+  if (!Number.isFinite(millis)) return "格式异常";
+  return new Date(millis).toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function renderInviteStatus(invitation, wasResent) {
+  if (!statusSection || !statusText || !statusTip) return;
+  statusSection.removeAttribute("hidden");
+  const status = String(invitation?.status || "PENDING").toUpperCase();
+  const expired = status === "EXPIRED" || isExpiredInvite(invitation?.expires_at);
+  if (expired) {
+    statusText.textContent = "已过期";
+    statusTip.textContent = "该链接已失效，需重新生成并重新发送，历史邀请链路记录会被保留。";
+    return;
+  }
+
+  if (wasResent) {
+    statusText.textContent = "已重发";
+    statusTip.textContent = "本次为同一邮箱重新发起邀请；旧邀请记录会保留，历史活动与权限不会清空。";
+    return;
+  }
+
+  statusText.textContent = "历史保留";
+  statusTip.textContent = "本次邀请已生成并生效，过期时间为 "
+    + `${formatRelativeTime(invitation?.expires_at)}；未激活历史记录不会被清除。`;
+  statusSection.removeAttribute("hidden");
 }
 
 function resetButton() {
@@ -76,6 +124,7 @@ form?.addEventListener("submit", async (event) => {
   submitButton.setAttribute("aria-busy", "true");
   submitButton.textContent = "生成中…";
   resultSection?.setAttribute("hidden", "");
+  statusSection?.setAttribute("hidden", "");
   inviteUrlInput.value = "";
   resetCopyButton();
 
@@ -110,6 +159,7 @@ form?.addEventListener("submit", async (event) => {
 
     inviteUrlInput.value = inviteUrl;
     resultSection?.removeAttribute("hidden");
+    renderInviteStatus(payload.invitation, Boolean(resendInput.checked));
     if (copyInviteButton) {
       copyInviteButton.onclick = copyInviteLink;
     }
