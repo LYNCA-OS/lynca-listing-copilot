@@ -1999,7 +1999,38 @@ function friendlyErrorSummary(reason = "") {
   if (/timeout|timed out|超时/i.test(text)) {
     return "模型响应超时，请重试。";
   }
+  if (queueReadinessCodeFromError(text) === "QUEUE_RPC_NOT_READY") {
+    return "系统队列初始化异常，请稍后重试。";
+  }
   return text || "识别未返回可用标题。";
+}
+
+function queueReadinessCodeFromError(reason = "") {
+  const text = String(reason || "").trim();
+  if (!text) return "";
+  if (/\bQUEUE_RPC_NOT_READY\b/i.test(text)) return "QUEUE_RPC_NOT_READY";
+  if (/\bPGRST202\b/i.test(text) && /enqueue_v4_recognition_batch_atomic/i.test(text)) return "QUEUE_RPC_NOT_READY";
+  if (/atomic_enqueue_rpc_failed/i.test(text) && /enqueue_v4_recognition_batch_atomic/i.test(text) && /404/i.test(text)) return "QUEUE_RPC_NOT_READY";
+  return "";
+}
+
+function queueFailureDisplayLines(reason = "") {
+  if (queueReadinessCodeFromError(reason) !== "QUEUE_RPC_NOT_READY") return [];
+  return [
+    "任务提交失败",
+    "原因：系统队列初始化异常",
+    "请稍后重试",
+    "内部：QUEUE_RPC_NOT_READY"
+  ];
+}
+
+function queueFailureAdviceHtml(reason = "", skipHeadline = false) {
+  const lines = queueFailureDisplayLines(reason);
+  const visibleLines = (lines.length ? lines : [friendlyErrorSummary(reason)])
+    .slice(skipHeadline ? 1 : 0)
+    .filter(Boolean);
+  if (!visibleLines.length) return "";
+  return visibleLines.map((line) => escapeHtml(line)).join("<br>");
 }
 
 function compactDisplayValue(value) {
@@ -2268,6 +2299,7 @@ function resultBox(result, asset = null) {
 
 function TitleCardComponent(result, asset = null) {
   const confidence = normalizeConfidence(result.confidence);
+  const queueFailureLines = queueFailureDisplayLines(result.reason || "");
   const failed = confidence === "FAILED";
   const titlePending = v4WriterTitlePending(result);
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
@@ -2300,7 +2332,7 @@ function TitleCardComponent(result, asset = null) {
     : writerReviewWithoutDraft
     ? "证据不足，系统未猜测；请直接输入最终英文标题"
     : failed
-    ? `标题暂不可用：${friendlyErrorSummary(result.reason)}`
+    ? (queueFailureLines[0] || `标题暂不可用：${friendlyErrorSummary(result.reason)}`)
     : "标题暂不可用";
   const textareaValue = titlePending || writerReviewWithoutDraft || (failed && !correctedTitle) ? "" : (correctedTitle || unavailableTitle);
   const pendingProgress = titlePending ? assetProgressSnapshot(result.index) : null;
@@ -2324,7 +2356,7 @@ function TitleCardComponent(result, asset = null) {
       <textarea rows="1" maxlength="80" spellcheck="false" data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${titlePending ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
       ${omissionNotice ? `<p class="title-omission-notice">${escapeHtml(omissionNotice)}</p>` : ""}
       ${titleOverrideNotice(result)}
-      ${failed || result.reason ? `<p class="follow-up-advice">${escapeHtml(friendlyErrorSummary(result.reason || ""))}</p>` : ""}
+      ${failed || result.reason ? `<p class="follow-up-advice">${queueFailureAdviceHtml(result.reason || "", failed && Boolean(queueFailureLines[0]))}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
     </div>
   `;
