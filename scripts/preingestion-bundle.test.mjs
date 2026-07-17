@@ -332,6 +332,24 @@ assert.equal(titlePayload.images[0].storageVerified, true);
 assert.equal(titlePayload.preprocessing_summary, undefined);
 assert.equal(titlePayload.preingestion_summary.bundle_id, bundle.bundle_id);
 
+const canonicalImages = [{ id: "canonical-front", objectPath: "server-canonical-front" }];
+const canonicalPayload = {
+  tenant_id: tenantId,
+  preingestion_bundle_id: bundle.bundle_id,
+  v4_preserve_canonical_images_on_bundle_load: true,
+  images: canonicalImages
+};
+const canonicalApplied = await __listingCopilotTitleTestHooks.applyPreIngestionBundleToPayload(canonicalPayload, {
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify([bundle])
+  })
+});
+assert.equal(canonicalApplied.applied, true);
+assert.equal(canonicalPayload.preingestion_bundle_used, true);
+assert.equal(canonicalPayload.images, canonicalImages, "server-canonical queue images must remain the recognition truth");
+
 const signedImages = [{ signed_url: "https://signed.test/front", image_id: "front" }];
 const refreshPayload = {
   tenant_id: tenantId,

@@ -5948,7 +5948,8 @@ export async function runListingRecognitionCore({
     try {
       await applyPreIngestionBundleToPayload(payload, {
         timingContext,
-        fetchImpl: globalThis.fetch
+        fetchImpl: globalThis.fetch,
+        preserveExistingImages: payload.v4_preserve_canonical_images_on_bundle_load === true
       });
     } catch (error) {
       payload.preingestion_bundle_used = false;

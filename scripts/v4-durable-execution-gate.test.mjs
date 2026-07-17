@@ -77,6 +77,7 @@ const persistedSession = {
   id: persistedJob.recognition_session_id,
   tenant_id: persistedJob.tenant_id,
   operator_id: persistedJob.operator_id,
+  asset_id: persistedJob.asset_id,
   user_id: "user_writer"
 };
 
@@ -133,6 +134,41 @@ try {
       expectedSessionReads: 1
     },
     {
+      name: "session_asset_identity_mismatch",
+      fenceBody: [persistedJob],
+      sessionBody: [{
+        ...persistedSession,
+        asset_id: "asset_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      }],
+      expectedStatus: 409,
+      expectedCode: "V4_WORKER_SESSION_IDENTITY_MISMATCH",
+      expectedRetryable: false,
+      expectedSessionReads: 1
+    },
+    {
+      name: "preingestion_bundle_bind_failed",
+      fenceBody: [persistedJob],
+      preingestionBundle: {
+        tenant_id: persistedJob.tenant_id,
+        bundle_id: "bundle_durable_gate",
+        asset_id: persistedJob.asset_id,
+        source: "listing_copilot_background_prepare",
+        status: "READY",
+        images: [],
+        derived_images: [],
+        quality_summary: {},
+        initial_evidence: {},
+        evidence_patches: [],
+        crop_plan: [],
+        bundle_version: "preingestion-bundle-v1"
+      },
+      expectedStatus: 503,
+      expectedCode: "V4_PREINGESTION_SESSION_BIND_FAILED",
+      expectedRetryable: true,
+      expectedSessionReads: 1,
+      expectedMirrorWrites: 1
+    },
+    {
       name: "observing_update_unavailable",
       fenceBody: [persistedJob],
       expectedStatus: 503,
@@ -147,6 +183,7 @@ try {
     const providerCalls = [];
     let sessionReads = 0;
     let sessionWrites = 0;
+    let mirrorWrites = 0;
     let fenceCalls = 0;
     globalThis.fetch = async (input, init = {}) => {
       const url = new URL(String(input));
@@ -174,6 +211,13 @@ try {
         sessionWrites += 1;
         return jsonResponse({ message: "unexpected session write" }, 500);
       }
+      if (url.pathname === "/rest/v1/preingestion_bundles" && (!init.method || init.method === "GET")) {
+        return jsonResponse(scenario.preingestionBundle ? [scenario.preingestionBundle] : []);
+      }
+      if (url.pathname === "/rest/v1/v4_preingestion_bundles" && init.method === "POST") {
+        mirrorWrites += 1;
+        return jsonResponse({ message: "bundle mirror unavailable" }, 500);
+      }
       if (["/rest/v1/request_logs", "/rest/v1/error_logs", "/rest/v1/production_events"].includes(url.pathname)) {
         return jsonResponse([], 201);
       }
@@ -191,6 +235,7 @@ try {
     assert.equal(fenceCalls, 1, `${scenario.name} must use the atomic execution fence exactly once`);
     assert.equal(sessionReads, scenario.expectedSessionReads, `${scenario.name} session read count`);
     assert.equal(sessionWrites, scenario.expectedSessionWrites || 0, `${scenario.name} session write count`);
+    assert.equal(mirrorWrites, scenario.expectedMirrorWrites || 0, `${scenario.name} bundle mirror write count`);
     assert.deepEqual(providerCalls, [], `${scenario.name} must not call a paid provider`);
   }
 } finally {

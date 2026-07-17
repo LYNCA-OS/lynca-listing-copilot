@@ -12,6 +12,10 @@ import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/
 import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
 import { planV4RecognitionRoute } from "../../lib/listing/v4/route-planner/route-planner.mjs";
 import { applyPreIngestionBundleToPayload } from "../../lib/listing/pipeline/preingestion-evidence.mjs";
+import {
+  readLatestPreIngestionBundleByAsset,
+  summarizePreIngestionBundle
+} from "../../lib/listing/preingestion/preingestion-bundle.mjs";
 import { adaptV2ResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
 import { classifyV4ResultOutcome } from "../../lib/listing/v4/result-outcome.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
@@ -27,6 +31,7 @@ import {
   persistV4CatalogGap,
   persistV4FieldEvidence,
   persistV4NonCriticalArtifactsAtomic,
+  persistV4PreingestionBundle,
   persistV4QualityLedger,
   persistV4WriterReadyAndReleaseCapacity,
   readV4SessionStatus,
@@ -48,6 +53,113 @@ import { isGpt5ResponsesModel } from "../../lib/listing/providers/openai-respons
 import { openAiKeyPoolSize } from "../../lib/listing/providers/openai-key-pool.mjs";
 
 const durableListingAssetIdPattern = /^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const workerPreingestionIdentityKeys = [
+  "preingestion_bundle_id", "preingestionBundleId", "preingestion_bundle", "preingestionBundle",
+  "preingestion_bundle_used", "preingestionBundleUsed",
+  "preingestion_bundle_status", "preingestionBundleStatus",
+  "preingestion_summary", "preingestionSummary",
+  "preingestion_initial_evidence", "preingestionInitialEvidence",
+  "preingestion_evidence_patches", "preingestionEvidencePatches"
+];
+
+function withoutPreingestionIdentity(payload = {}) {
+  const scoped = { ...(payload || {}) };
+  for (const key of workerPreingestionIdentityKeys) delete scoped[key];
+  return scoped;
+}
+
+// Bundle identity is resolved only after the queue lease and persisted session
+// have both been verified. The queue RPC therefore remains strict (no bundle
+// fields are accepted), while execution can still reuse server-owned OCR
+// evidence without trusting or merging browser state.
+export async function resolveCanonicalWorkerPreingestion({
+  payload = {},
+  tenantId,
+  assetId,
+  sessionId,
+  sessionRequestSummary = {},
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  readLatest = readLatestPreIngestionBundleByAsset,
+  persistMirror = persistV4PreingestionBundle,
+  updateSession = updateV4RecognitionSessionWithRetry
+} = {}) {
+  const scopedPayload = withoutPreingestionIdentity(payload);
+  let bundle = null;
+  try {
+    bundle = await readLatest({ tenantId, assetId, env, fetchImpl });
+  } catch {
+    bundle = null;
+  }
+  const bundleId = String(bundle?.bundle_id || "").trim();
+  if (!bundleId) {
+    return {
+      payload: scopedPayload,
+      found: false,
+      mirror: { saved: false, skipped: true, reason: "bundle_not_found" },
+      session: { saved: false, skipped: true, reason: "bundle_not_found" }
+    };
+  }
+  if (String(bundle.tenant_id || "").trim() !== String(tenantId || "").trim()
+      || String(bundle.asset_id || "").trim() !== String(assetId || "").trim()) {
+    return {
+      payload: scopedPayload,
+      found: false,
+      mirror: { saved: false, skipped: true, reason: "bundle_scope_mismatch" },
+      session: { saved: false, skipped: true, reason: "bundle_scope_mismatch" }
+    };
+  }
+
+  const summary = summarizePreIngestionBundle(bundle);
+  let mirror;
+  try {
+    mirror = await persistMirror({
+      bundleId,
+      tenantId,
+      assetId,
+      bundle,
+      summary,
+      env,
+      fetchImpl
+    });
+  } catch (error) {
+    mirror = { saved: false, error: String(error?.message || error || "bundle_mirror_failed").slice(0, 180) };
+  }
+
+  let session = { saved: false, skipped: true, reason: "bundle_mirror_not_saved" };
+  if (mirror?.saved === true && sessionId) {
+    try {
+      session = await updateSession({
+        sessionId,
+        patch: {
+          preingestion_bundle_id: bundleId,
+          request_summary: {
+            ...(sessionRequestSummary && typeof sessionRequestSummary === "object" ? sessionRequestSummary : {}),
+            has_preingestion_bundle: true
+          }
+        },
+        env,
+        fetchImpl
+      });
+    } catch (error) {
+      session = { saved: false, error: String(error?.message || error || "bundle_session_bind_failed").slice(0, 180) };
+    }
+  }
+
+  return {
+    payload: {
+      ...scopedPayload,
+      preingestion_bundle_id: bundleId,
+      preingestionBundleId: bundleId,
+      preingestion_bundle_status: String(bundle.status || "READY").trim() || "READY",
+      preingestion_summary: summary
+    },
+    found: true,
+    bundle_id: bundleId,
+    mirror,
+    session
+  };
+}
 
 function recognitionAssetIdentity(payload = {}) {
   const snakeAssetId = String(payload.asset_id || "").trim();
@@ -1418,16 +1530,19 @@ export default async function handler(req, res) {
   let originOperatorId;
   let originTenantId;
   let originUserId;
+  let originSessionRequestSummary = {};
   try {
     const identity = await resolveV4WorkerSessionIdentity({
       sessionId,
       claimedTenantId: payload.v4_origin_tenant_id,
       claimedOperatorId: payload.v4_origin_operator_id,
+      claimedAssetId: requestAssetIdentity.assetId,
       readSession: readV4SessionStatus
     });
     originOperatorId = identity.operatorId;
     originTenantId = identity.tenantId;
     originUserId = identity.userId;
+    originSessionRequestSummary = identity.requestSummary || {};
   } catch (error) {
     const unavailable = error?.code === "v4_worker_session_identity_unavailable";
     sendJson(res, unavailable ? 503 : 409, withV4Version({
@@ -1440,6 +1555,36 @@ export default async function handler(req, res) {
     }));
     return;
   }
+  const canonicalPreingestion = await resolveCanonicalWorkerPreingestion({
+    payload,
+    tenantId: originTenantId,
+    assetId: requestAssetIdentity.assetId,
+    sessionId,
+    sessionRequestSummary: originSessionRequestSummary,
+    env: process.env,
+    fetchImpl: globalThis.fetch
+  });
+  if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
+  if (canonicalPreingestion.found === true
+      && (canonicalPreingestion.mirror?.saved !== true || canonicalPreingestion.session?.saved !== true)) {
+    sendJson(res, 503, withV4Version({
+      ok: false,
+      retryable: true,
+      message: "Canonical pre-ingestion evidence could not be durably bound to the recognition session.",
+      error_code: "V4_PREINGESTION_SESSION_BIND_FAILED"
+    }));
+    return;
+  }
+  payload = {
+    ...canonicalPreingestion.payload,
+    v4_preserve_canonical_images_on_bundle_load: true,
+    v4_canonical_preingestion_resolution: {
+      source: "SERVER_TENANT_ASSET",
+      found: canonicalPreingestion.found === true,
+      mirror_saved: canonicalPreingestion.mirror?.saved === true,
+      session_bound: canonicalPreingestion.session?.saved === true
+    }
+  };
   const handlerStartedAt = Date.now();
   let recognitionClockStartedAt = null;
   let recognitionClockSource = null;
@@ -1489,7 +1634,8 @@ export default async function handler(req, res) {
     try {
       const bundleApplication = await applyPreIngestionBundleToPayload(payload, {
         fetchImpl: globalThis.fetch,
-        signal: controller.signal
+        signal: controller.signal,
+        preserveExistingImages: payload.v4_preserve_canonical_images_on_bundle_load === true
       });
       payload.v4_pre_l2_bundle_loaded = bundleApplication?.applied === true;
     } catch (error) {

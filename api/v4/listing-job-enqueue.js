@@ -10,10 +10,6 @@ import {
 } from "../../lib/observability/production-events.mjs";
 import { normalizeDurableListingAssetId } from "../../lib/tenant/assets.mjs";
 import {
-  readLatestPreIngestionBundleByAsset,
-  summarizePreIngestionBundle
-} from "../../lib/listing/preingestion/preingestion-bundle.mjs";
-import {
   publicTenantAuthError,
   requirePermission,
   requireTenantAccess,
@@ -123,10 +119,12 @@ function withoutClientSessionIdentity(job = {}) {
     "created_by_user_id", "assigned_to_user_id",
     "lease_owner", "lease_expires_at",
     "queue_tags", "tags", "status",
-    "preingestion_bundle_id", "preingestionBundleId", "preingestion_bundle",
-    "preingestion_bundle_used", "preingestion_bundle_status",
-    "preingestion_summary", "preingestion_initial_evidence",
-    "preingestion_evidence_patches",
+    "preingestion_bundle_id", "preingestionBundleId", "preingestion_bundle", "preingestionBundle",
+    "preingestion_bundle_used", "preingestionBundleUsed",
+    "preingestion_bundle_status", "preingestionBundleStatus",
+    "preingestion_summary", "preingestionSummary",
+    "preingestion_initial_evidence", "preingestionInitialEvidence",
+    "preingestion_evidence_patches", "preingestionEvidencePatches",
     "trusted_manual_retry",
     "manual_retry_requested_by_user_id", "manualRetryRequestedByUserId",
     "manual_retry_original_operator_id", "manualRetryOriginalOperatorId"
@@ -254,11 +252,9 @@ export async function canonicalizeQueueJobs({
   tenantId,
   env = process.env,
   fetchImpl = globalThis.fetch,
-  readCanonical = readCanonicalListingImageReferences,
-  readPreingestion = readLatestPreIngestionBundleByAsset
+  readCanonical = readCanonicalListingImageReferences
 } = {}) {
   const canonicalByAsset = new Map();
-  const preingestionByAsset = new Map();
   const canonicalForAsset = (assetId) => {
     if (!canonicalByAsset.has(assetId)) {
       canonicalByAsset.set(assetId, readCanonical({
@@ -270,24 +266,9 @@ export async function canonicalizeQueueJobs({
     }
     return canonicalByAsset.get(assetId);
   };
-  const preingestionForAsset = (assetId) => {
-    if (!preingestionByAsset.has(assetId)) {
-      preingestionByAsset.set(assetId, readPreingestion({
-        tenantId,
-        assetId,
-        env,
-        fetchImpl
-      }));
-    }
-    return preingestionByAsset.get(assetId);
-  };
-
   return Promise.all((Array.isArray(jobs) ? jobs : []).map(async (job) => {
     const identity = queueJobIdentity(job);
-    const [canonical, preingestionBundle] = await Promise.all([
-      canonicalForAsset(identity.asset_id),
-      preingestionForAsset(identity.asset_id)
-    ]);
+    const canonical = await canonicalForAsset(identity.asset_id);
     const scoped = withoutClientImageIdentity(withoutClientSessionIdentity(job));
     const scopedPayload = withoutClientImageIdentity(
       scoped.payload && typeof scoped.payload === "object" && !Array.isArray(scoped.payload)
@@ -297,11 +278,6 @@ export async function canonicalizeQueueJobs({
     const images = canonical.images.map((image) => ({ ...image }));
     const imageReferences = canonical.image_references.map((reference) => ({ ...reference }));
     const imagePaths = canonical.image_paths || {};
-    const preingestionBundleId = String(preingestionBundle?.bundle_id || "").trim();
-    const preingestionStatus = String(preingestionBundle?.status || "").trim();
-    const preingestionSummary = preingestionBundleId
-      ? summarizePreIngestionBundle(preingestionBundle)
-      : null;
     return {
       ...scoped,
       asset_id: identity.asset_id,
@@ -314,10 +290,6 @@ export async function canonicalizeQueueJobs({
         assetId: identity.asset_id,
         client_asset_ref: identity.client_asset_ref,
         clientAssetRef: identity.client_asset_ref,
-        preingestion_bundle_id: preingestionBundleId || null,
-        preingestionBundleId: preingestionBundleId || null,
-        preingestion_bundle_status: preingestionStatus || null,
-        preingestion_summary: preingestionSummary,
         image_generation_id: canonical.image_generation_id,
         image_set_sha256: canonical.image_set_sha256,
         expected_original_count: canonical.expected_original_count,
