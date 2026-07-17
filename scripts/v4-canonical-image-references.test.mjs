@@ -232,6 +232,13 @@ const [canonicalJob] = await canonicalizeQueueJobs({
     payload: {
       asset_id: assetId,
       client_asset_ref: "card-1",
+      preingestion_bundle_id: "bundle_attacker",
+      preingestionBundle: { forged: true },
+      preingestionBundleUsed: true,
+      preingestionBundleStatus: "FORGED",
+      preingestionSummary: { forged: true },
+      preingestionInitialEvidence: { forged: true },
+      preingestionEvidencePatches: [{ forged: true }],
       trusted_manual_retry: true,
       manualRetryRequestedByUserId: "operator_attacker",
       manual_retry_original_operator_id: "operator_victim",
@@ -255,6 +262,20 @@ assert.equal("tags" in canonicalJob, false);
 assert.deepEqual(canonicalJob.payload.images.map((image) => image.objectPath), [originalPath, cropPath]);
 assert.deepEqual(canonicalJob.payload.image_references, canonical.image_references);
 assert.deepEqual(canonicalJob.payload.imageReferences, canonical.image_references);
+for (const key of [
+  "preingestion_bundle_id",
+  "preingestionBundleId",
+  "preingestion_bundle_status",
+  "preingestion_summary"
+  , "preingestionBundle"
+  , "preingestionBundleUsed"
+  , "preingestionBundleStatus"
+  , "preingestionSummary"
+  , "preingestionInitialEvidence"
+  , "preingestionEvidencePatches"
+]) {
+  assert.equal(key in canonicalJob.payload, false, `${key} must stay outside the atomic queue contract`);
+}
 for (const key of ["asset_images", "front_image_url"]) {
   assert.equal(key in canonicalJob.payload, false);
 }

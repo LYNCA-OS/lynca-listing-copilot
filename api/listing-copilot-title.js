@@ -223,7 +223,9 @@ const defaultMaxPayloadImages = 14;
 const hardMaxPayloadImages = 24;
 const signedUrlConcurrency = contractedConcurrency(
   "signed_url_preparation",
-  process.env.LISTING_SIGNED_URL_CONCURRENCY || 4
+  process.env.LISTING_SIGNED_URL_PREPARATION_CONCURRENCY
+    || process.env.LISTING_SIGNED_URL_CONCURRENCY,
+  { fallback: 4 }
 );
 const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
@@ -5946,7 +5948,8 @@ export async function runListingRecognitionCore({
     try {
       await applyPreIngestionBundleToPayload(payload, {
         timingContext,
-        fetchImpl: globalThis.fetch
+        fetchImpl: globalThis.fetch,
+        preserveExistingImages: payload.v4_preserve_canonical_images_on_bundle_load === true
       });
     } catch (error) {
       payload.preingestion_bundle_used = false;

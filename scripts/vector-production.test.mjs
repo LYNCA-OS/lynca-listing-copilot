@@ -1470,7 +1470,7 @@ const coordinatedWorker = await embedImagesWithVectorWorker({
     if (target.pathname.endsWith("/rpc/acquire_v4_stage_capacity")) {
       const body = JSON.parse(options.body);
       assert.equal(body.p_stage_id, "vector_embedding");
-      assert.equal(body.p_capacity, 3);
+      assert.equal(body.p_capacity, 3, "vector query capacity must stay at the measured global ceiling");
       return new Response(JSON.stringify(1), { status: 200 });
     }
     if (target.pathname.endsWith("/rpc/release_v4_stage_capacity")) {

@@ -86,7 +86,10 @@ try {
         storage_verified: true,
         storage_verification_token: tenantBToken
       }],
-      preingestion_bundle_id: "bundle_b_leaked"
+      preingestion_bundle_id: "bundle_b_leaked",
+      preingestionBundle: { tenant_id: "tenant_b" },
+      preingestionSummary: { forged: true },
+      preingestionEvidencePatches: [{ forged: true }]
     }
   });
 
@@ -100,6 +103,9 @@ try {
   assert.equal(scoped.recognition_session_id, "session_a");
   assert.equal(Object.hasOwn(scoped, "recognitionSessionId"), false);
   assert.equal(Object.hasOwn(scoped, "preingestion_bundle_id"), false);
+  assert.equal(Object.hasOwn(scoped, "preingestionBundle"), false);
+  assert.equal(Object.hasOwn(scoped, "preingestionSummary"), false);
+  assert.equal(Object.hasOwn(scoped, "preingestionEvidencePatches"), false);
 
   const externalCalls = [];
   globalThis.fetch = async (input) => {

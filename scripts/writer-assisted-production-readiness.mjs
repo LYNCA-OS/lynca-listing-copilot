@@ -38,7 +38,7 @@ function staticChecks() {
       && !/\$\{publicationGateNotice\(result\)\}/.test(app), "Writer UI exposes one editable title instead of internal control-plane panels."),
     check("duplicate_paid_enqueue_guard", /speculativeNeedsFreshEnqueue/.test(app)
       && /Number\(resultCount\) === 0/.test(app)
-      && /fetchWithTimeout\(JOB_ENQUEUE_API_ENDPOINT/.test(app), "The browser blocks duplicate submissions and bounds enqueue waits."),
+      && /fetchJsonWithRetry\(JOB_ENQUEUE_API_ENDPOINT,[\s\S]*timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS/.test(app), "The browser blocks duplicate submissions and bounds enqueue waits."),
     check("durable_queue", /enqueueV4RecognitionJobs/.test(enqueue)
       && /V4_QUEUE_MAX_JOBS_PER_REQUEST/.test(enqueue)
       && /runPostEnqueueQueueKick/.test(enqueue), "Recognition enters the durable production queue with bounded admission."),

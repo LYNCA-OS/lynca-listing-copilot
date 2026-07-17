@@ -93,7 +93,7 @@ const vercelIgnore = fs.readFileSync(new URL("../.vercelignore", import.meta.url
 const vercelConfig = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
 
 assert.match(loginHtml, /正式环境入口/);
-assert.match(loginHtml, /请输入你的账号与密码进行登录/);
+assert.match(loginHtml, /使用你的工作账号登录；租户与角色权限由服务端会话确认/);
 assert.doesNotMatch(loginHtml, /MTV 管理员预览|Track C 租户与会话权限接入后开放/, "the production entrypoint must not describe itself as a prototype");
 assert.match(loginJs, /const password = form\.password\.value;/, "passwords must preserve case and surrounding characters");
 assert.doesNotMatch(loginJs, /normalizeLegacyUsername\(form\.password\.value\)/);

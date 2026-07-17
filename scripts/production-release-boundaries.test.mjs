@@ -82,6 +82,36 @@ assert.match(workflow, /test "\$DEFAULT_BRANCH" = "main"/);
 assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
 assert.match(workflow, /git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main/);
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
+assert.equal(
+  [...workflow.matchAll(/node scripts\/check-track-c-production-schema-rest\.mjs/g)].length,
+  2,
+  "both predeploy and postdeploy schema gates must use the strict REST fallback when direct Postgres is unavailable"
+);
+assert.equal(
+  [...workflow.matchAll(/if test -n "\$POSTGRES_URL_NON_POOLING"/g)].length,
+  2,
+  "direct Postgres catalog verification must remain the preferred production gate"
+);
+assert.match(workflow, /SUPABASE_URL: \$\{\{ vars\.SUPABASE_URL \}\}/);
+assert.match(workflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
+assert.doesNotMatch(
+  workflow,
+  /echo[^\n]*(?:SUPABASE_SERVICE_ROLE_KEY|\$SUPABASE_SERVICE_ROLE_KEY)/,
+  "the release workflow must never print the service-role key"
+);
 assert.doesNotMatch(workflow, /\/api\/admin-apply-/, "code deploy must not invoke runtime migration routes");
+
+const browserPreingest = readFileSync("api/listing-preingest.js", "utf8");
+assert.doesNotMatch(
+  browserPreingest,
+  /\bwaitUntil\s*\(|\bprocessQueuedPreingestionOcrJobs\b/,
+  "browser pre-ingestion must only persist durable OCR jobs; the independent worker consumes them"
+);
+const vercelConfig = readFileSync("vercel.json", "utf8");
+assert.match(
+  vercelConfig,
+  /"path"\s*:\s*"\/api\/v4\/listing-preingest-worker"[\s\S]*?"schedule"\s*:\s*"\* \* \* \* \*"/,
+  "durable pre-ingestion jobs require an independent scheduled sweeper"
+);
 
 console.log("production release boundary tests passed");

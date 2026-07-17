@@ -77,7 +77,7 @@ export default async function handler(req, res) {
 
   if (!enforceApiRateLimit(req, res, {
     scope: "listing_image_verify",
-    limit: 120,
+    limit: 1200,
     windowMs: 60_000,
     message: "Too many image verification requests. Please try again shortly."
   })) return;
@@ -169,9 +169,17 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
-    const cleanup = await cleanupFailedUpload(payload, context.tenantId);
-    sendJson(res, 400, {
+    // A storage timeout/429/5xx says nothing about object correctness. Preserve
+    // the upload so the client can verify it again instead of paying to upload
+    // the same original and crops twice.
+    const retryable = error.retryable === true;
+    const cleanup = retryable
+      ? { attempted: false, preserved_for_retry: true }
+      : await cleanupFailedUpload(payload, context.tenantId);
+    sendJson(res, retryable ? 503 : 400, {
       ok: false,
+      code: error.code || (retryable ? "storage_verification_temporarily_unavailable" : "storage_verification_failed"),
+      retryable,
       message: String(error.message || "Unable to verify uploaded image.").slice(0, 240),
       cleanup
     });

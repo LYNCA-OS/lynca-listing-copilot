@@ -308,6 +308,19 @@ assert.deepEqual({
   user: "user_a"
 });
 
+let transientMembershipCalls = 0;
+const recoveredContext = await requireTenantAccess(tenantRequest(), {
+  permission: TENANT_PERMISSIONS.UPLOAD_ASSET,
+  env: serviceEnv,
+  fetchImpl: async () => {
+    transientMembershipCalls += 1;
+    if (transientMembershipCalls === 1) return jsonResponse({ message: "temporary" }, 503);
+    return jsonResponse([membershipRow()]);
+  }
+});
+assert.equal(transientMembershipCalls, 2, "a transient membership outage should receive one bounded retry");
+assert.equal(recoveredContext.tenantId, "tenant_a");
+
 await expectCode(() => requireTenantAccess(tenantRequest(), {
   permission: TENANT_PERMISSIONS.VIEW_ALL_WORK,
   resourceTenantId: "tenant_b",

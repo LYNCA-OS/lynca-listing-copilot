@@ -8,7 +8,8 @@ import {
 
 const env = {
   V4_JOB_WORKER_SECRET: "worker-secret",
-  V4_WRITER_READY_CAPACITY_REFILL_ENABLED: "true"
+  V4_WRITER_READY_CAPACITY_REFILL_ENABLED: "true",
+  V4_INTERNAL_BASE_URL: "https://listing.example.test"
 };
 const req = {
   headers: {
@@ -25,6 +26,10 @@ const triggered = triggerWriterReadyCapacityRefill(req, {
   },
   capacityRelease: { released: true },
   env,
+  acquireKick: async ({ scope }) => {
+    assert.equal(scope, "capacity-refill:background");
+    return { ok: true, acquired: true };
+  },
   fetchImpl: async (url, init) => {
     request = { url, init };
     return {
@@ -38,20 +43,29 @@ const triggered = triggerWriterReadyCapacityRefill(req, {
   }
 });
 assert.equal(triggered.triggered, true);
-assert.equal(request.url, "https://listing.example.test/api/v4/listing-job-worker");
+const triggeredCompletion = await scheduled;
+assert.equal(request.url, "https://listing.example.test/api/v4/listing-job-pump");
 assert.deepEqual(JSON.parse(request.init.body), {
-  lane: "background",
+  background_only: true,
+  continuation_cycles: 2,
+  cycles: 2,
+  detached: true,
+  idle_cycles_before_stop: 1,
+  background_idle_cycles: 1,
+  lease_seconds: 240,
+  limit: 2,
+  max_continuation_depth: 20,
+  max_runtime_ms: 240000,
+  process_concurrency: 2,
+  refill_source_tenant_id: null,
   tenant_id: null,
-  limit: 1,
-  process_concurrency: 1,
-  retry_delay_seconds: 8,
-  worker_id: "v4-refill-job-1",
   reason: "writer_ready_capacity_refill"
 });
 assert.equal(triggered.release_boundary, "writer_ready");
-assert.equal((await scheduled).claimed_count, 1);
+assert.equal(triggeredCompletion.pump_claimed_count, 1);
 
 let fallbackUrl = null;
+let fallbackScheduled = null;
 const providerDoneTriggered = triggerReleasedProviderCapacityRefill({ headers: {} }, {
   payload: {
     v4_queue_job_id: "job-provider-done",
@@ -63,6 +77,7 @@ const providerDoneTriggered = triggerReleasedProviderCapacityRefill({ headers: {
     ...env,
     VERCEL_PROJECT_PRODUCTION_URL: "listing.example.test"
   },
+  acquireKick: async () => ({ ok: true, acquired: true }),
   fetchImpl: async (url) => {
     fallbackUrl = url;
     return {
@@ -71,11 +86,14 @@ const providerDoneTriggered = triggerReleasedProviderCapacityRefill({ headers: {
       json: async () => ({ ok: true, claimed_count: 1, processed_count: 1 })
     };
   },
-  waitUntilImpl: () => {}
+  waitUntilImpl: (promise) => {
+    fallbackScheduled = promise;
+  }
 });
 assert.equal(providerDoneTriggered.triggered, true);
 assert.equal(providerDoneTriggered.release_boundary, "provider_done");
-assert.equal(fallbackUrl, "https://listing.example.test/api/v4/listing-job-worker");
+await fallbackScheduled;
+assert.equal(fallbackUrl, "https://listing.example.test/api/v4/listing-job-pump");
 
 assert.deepEqual(triggerWriterReadyCapacityRefill(req, {
   payload: { v4_queue_job_id: "job-2" },

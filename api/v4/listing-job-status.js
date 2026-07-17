@@ -27,20 +27,210 @@ function splitIds(value) {
     .slice(0, 200);
 }
 
-async function readSessionsForJobs(jobs = [], tenantId = "") {
-  const sessionIds = [...new Set(jobs.map((job) => job.recognition_session_id).filter(Boolean))];
-  if (!sessionIds.length) return {};
-  const result = await readV4Rows({
+export const v4WriterStatusJobSelect = [
+  "id",
+  "batch_id",
+  "tenant_id",
+  "operator_id",
+  "created_by_user_id",
+  "assigned_to_user_id",
+  "asset_id",
+  "recognition_session_id",
+  "lane",
+  "job_type",
+  "parent_job_id",
+  "paired_job_id",
+  "status",
+  "queue_tags",
+  "timing",
+  "attempt_count",
+  "max_attempts",
+  "priority",
+  "created_at",
+  "updated_at",
+  "started_at",
+  "completed_at",
+  "lease_expires_at",
+  "not_before",
+  "error",
+  "result"
+].join(",");
+
+export const v4WriterStatusSessionHeadSelect = [
+  "id",
+  "tenant_id",
+  "operator_id",
+  "created_by_user_id",
+  "assigned_to_user_id",
+  "status",
+  "final_title",
+  "l1_status",
+  "l1_ready_at",
+  "l1_route",
+  "l1_timing",
+  "l2_status",
+  "l2_title",
+  "l2_ready_at",
+  "l2_route",
+  "l2_timing",
+  "updated_at",
+  "failure_reason"
+].join(",");
+
+const v4WriterStatusSessionFullSelect = [
+  v4WriterStatusSessionHeadSelect,
+  "provider_result_summary",
+  "candidate_control_plane_trace",
+  "resolved_fields",
+  "field_states"
+].join(",");
+
+const fullDetailJobStatuses = new Set([
+  "L2_READY",
+  "FAILED",
+  "CANCELLED"
+]);
+
+export function v4WriterStatusNeedsSessionProbe(job = null) {
+  const status = String(job?.status || "").toUpperCase();
+  return status === "RUNNING" || fullDetailJobStatuses.has(status);
+}
+
+export function v4WriterStatusNeedsFullSession(job = null, session = null) {
+  const jobStatus = String(job?.status || "").toUpperCase();
+  const sessionStatus = String(session?.status || "").toUpperCase();
+  const l2Status = String(session?.l2_status || "").toUpperCase();
+  return fullDetailJobStatuses.has(jobStatus)
+    || l2Status === "READY"
+    || sessionStatus === "L2_READY"
+    || sessionStatus === "WRITER_REVIEW"
+    || sessionStatus === "FAILED"
+    || Boolean(session?.failure_reason);
+}
+
+function sessionIdSearch(sessionIds = [], tenantId = "") {
+  return {
+    id: `in.(${sessionIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",")})`,
+    tenant_id: `eq.${tenantId}`,
+    limit: String(sessionIds.length)
+  };
+}
+
+async function readSessionRows(sessionIds = [], select = v4WriterStatusSessionFullSelect, tenantId = "") {
+  if (!sessionIds.length) return { ok: true, rows: [], error: null };
+  return readV4Rows({
     table: "v4_recognition_sessions",
-    select: "id,tenant_id,operator_id,created_by_user_id,assigned_to_user_id,status,final_title,l1_status,l1_ready_at,l1_route,l1_timing,l2_status,l2_title,l2_ready_at,l2_route,l2_timing,provider_result_summary,candidate_control_plane_trace,resolved_fields,field_states,updated_at,failure_reason",
-    search: {
-      id: `in.(${sessionIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",")})`,
-      tenant_id: `eq.${tenantId}`,
-      limit: String(sessionIds.length)
-    }
+    select,
+    search: sessionIdSearch(sessionIds, tenantId)
   });
-  if (!result.ok) return {};
-  return Object.fromEntries(result.rows.map((row) => [row.id, row]));
+}
+
+async function readSessionsForJobs(jobs = [], { writerCompact = false, tenantId = "" } = {}) {
+  // Queued/retrying jobs cannot contain a writer-visible L2 result yet. Avoid
+  // rereading their session rows on every poll; only running jobs need the
+  // low-latency head probe and terminal jobs need a final full snapshot.
+  const sessionProbeJobs = writerCompact
+    ? jobs.filter(v4WriterStatusNeedsSessionProbe)
+    : jobs;
+  const sessionIds = [...new Set(sessionProbeJobs.map((job) => job.recognition_session_id).filter(Boolean))];
+  if (!sessionIds.length) {
+    return {
+      ok: true,
+      sessions: {},
+      error: null,
+      head_read_ms: 0,
+      full_read_ms: 0,
+      head_count: 0,
+      full_count: 0
+    };
+  }
+
+  if (!writerCompact) {
+    const fullStartedAt = Date.now();
+    const result = await readSessionRows(sessionIds, v4WriterStatusSessionFullSelect, tenantId);
+    return {
+      ok: result.ok,
+      sessions: result.ok ? Object.fromEntries(result.rows.map((row) => [row.id, row])) : {},
+      error: result.error || null,
+      head_read_ms: 0,
+      full_read_ms: Date.now() - fullStartedAt,
+      head_count: 0,
+      full_count: result.ok ? result.rows.length : 0
+    };
+  }
+
+  // Terminal jobs already require their full writer snapshot. Reading a head
+  // for those same sessions first doubles PostgREST work as a batch completes.
+  // Only active jobs need the lightweight head probe.
+  const directFullSessionIds = [...new Set(sessionProbeJobs
+    .filter((job) => fullDetailJobStatuses.has(String(job?.status || "").toUpperCase()))
+    .map((job) => job.recognition_session_id)
+    .filter(Boolean))];
+  const directFullSet = new Set(directFullSessionIds);
+  const headSessionIds = sessionIds.filter((sessionId) => !directFullSet.has(sessionId));
+
+  const headStartedAt = Date.now();
+  const headsResult = headSessionIds.length
+    ? await readSessionRows(headSessionIds, v4WriterStatusSessionHeadSelect, tenantId)
+    : { ok: true, rows: [], error: null };
+  const headReadMs = Date.now() - headStartedAt;
+  if (!headsResult.ok) {
+    return {
+      ok: false,
+      sessions: {},
+      error: headsResult.error || "session_head_read_failed",
+      head_read_ms: headReadMs,
+      full_read_ms: 0,
+      head_count: 0,
+      full_count: 0
+    };
+  }
+
+  const sessions = Object.fromEntries(headsResult.rows.map((row) => [row.id, row]));
+  const terminalSessionIds = [...new Set([
+    ...directFullSessionIds,
+    ...sessionProbeJobs
+    .filter((job) => !directFullSet.has(job.recognition_session_id))
+    .filter((job) => v4WriterStatusNeedsFullSession(job, sessions[job.recognition_session_id] || null))
+    .map((job) => job.recognition_session_id)
+    .filter(Boolean)
+  ])];
+  if (!terminalSessionIds.length) {
+    return {
+      ok: true,
+      sessions,
+      error: null,
+      head_read_ms: headReadMs,
+      full_read_ms: 0,
+      head_count: headsResult.rows.length,
+      full_count: 0
+    };
+  }
+
+  const fullStartedAt = Date.now();
+  const fullResult = await readSessionRows(terminalSessionIds, v4WriterStatusSessionFullSelect, tenantId);
+  const fullReadMs = Date.now() - fullStartedAt;
+  if (!fullResult.ok) {
+    return {
+      ok: false,
+      sessions: {},
+      error: fullResult.error || "terminal_session_read_failed",
+      head_read_ms: headReadMs,
+      full_read_ms: fullReadMs,
+      head_count: headsResult.rows.length,
+      full_count: 0
+    };
+  }
+  for (const row of fullResult.rows) sessions[row.id] = row;
+  return {
+    ok: true,
+    sessions,
+    error: null,
+    head_read_ms: headReadMs,
+    full_read_ms: fullReadMs,
+    head_count: headsResult.rows.length,
+    full_count: fullResult.rows.length
+  };
 }
 
 const activeJobStatuses = new Set([
@@ -417,6 +607,9 @@ export default async function handler(req, res) {
 
   const batchId = queryParam(req, "batch_id") || queryParam(req, "batchId");
   const jobIds = splitIds(queryParam(req, "job_ids") || queryParam(req, "jobIds") || queryParam(req, "job_id"));
+  const writerCompact = ["writer", "writer_compact", "writer_compact_v1"]
+    .includes(queryParam(req, "view").toLowerCase());
+  const responseProfile = writerCompact ? "writer_compact_v1" : "full_v1";
   if (!batchId && !jobIds.length) {
     sendJson(res, 400, withV4Version({
       ok: false,
@@ -426,13 +619,16 @@ export default async function handler(req, res) {
     }));
     return;
   }
+  const canViewOperations = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_TEAM);
+  const jobReadStartedAt = Date.now();
   const result = await readV4RecognitionJobs({
     batchId,
     jobIds,
     tenantId: context.tenantId,
-    limit: Number(queryParam(req, "limit") || 200)
+    limit: Number(queryParam(req, "limit") || 200),
+    select: writerCompact ? v4WriterStatusJobSelect : "*"
   });
-  const canViewOperations = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_TEAM);
+  const jobReadMs = Date.now() - jobReadStartedAt;
   if (!result.ok) {
     // A valid status query can fail when PostgREST or its connection pool has a
     // transient read outage. Report service unavailability so every client can
@@ -446,7 +642,27 @@ export default async function handler(req, res) {
     }));
     return;
   }
-  const sessions = await readSessionsForJobs(result.rows, context.tenantId);
+  const sessionRead = await readSessionsForJobs(result.rows, {
+    writerCompact,
+    tenantId: context.tenantId
+  });
+  if (!sessionRead.ok) {
+    res.setHeader("cache-control", "no-store");
+    res.setHeader("x-lynca-status-profile", responseProfile);
+    res.setHeader("server-timing", [
+      `jobs;dur=${jobReadMs}`,
+      `sessions_head;dur=${sessionRead.head_read_ms}`,
+      `sessions_full;dur=${sessionRead.full_read_ms}`
+    ].join(", "));
+    sendJson(res, 503, withV4Version({
+      ok: false,
+      retryable: true,
+      error_code: "V4_SESSION_STATUS_BACKEND_UNAVAILABLE",
+      message: sessionRead.error || "Unable to read V4 recognition sessions."
+    }));
+    return;
+  }
+  const sessions = sessionRead.sessions;
   const canViewAll = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_ALL_WORK);
   const ownedJobs = result.rows.filter((job) => {
     if (canViewAll) return true;
@@ -459,7 +675,7 @@ export default async function handler(req, res) {
         || String(session?.created_by_user_id || "").trim() === context.userId) return true;
     try {
       requirePermission(context, TENANT_PERMISSIONS.VIEW_ASSIGNED_TASK, {
-        assignedUserId: session?.assigned_to_user_id
+        assignedUserId: session?.assigned_to_user_id || job.assigned_to_user_id
       });
       return true;
     } catch {
@@ -470,8 +686,23 @@ export default async function handler(req, res) {
     sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition jobs not found." }));
     return;
   }
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("x-lynca-status-profile", responseProfile);
+  res.setHeader("server-timing", [
+    `jobs;dur=${jobReadMs}`,
+    `sessions_head;dur=${sessionRead.head_read_ms}`,
+    `sessions_full;dur=${sessionRead.full_read_ms}`
+  ].join(", "));
   sendJson(res, 200, withV4Version({
     ok: true,
+    response_profile: responseProfile,
+    status_read_metrics: {
+      jobs_ms: jobReadMs,
+      session_head_ms: sessionRead.head_read_ms,
+      terminal_session_ms: sessionRead.full_read_ms,
+      session_head_count: sessionRead.head_count,
+      terminal_session_detail_count: sessionRead.full_count
+    },
     batch_id: batchId || null,
     job_count: ownedJobs.length,
     jobs: ownedJobs.map((job) => {
@@ -531,7 +762,9 @@ export default async function handler(req, res) {
         recognition_start_source: recognitionStartSource,
         recognition_completed_at: recognitionCompletedAt,
         timing,
-        end_to_end_node_ledger: buildEndToEndNodeLedger({ session, job, timing, display }),
+        end_to_end_node_ledger: writerCompact
+          ? undefined
+          : buildEndToEndNodeLedger({ session, job, timing, display }),
         attempt_count: job.attempt_count,
         max_attempts: job.max_attempts,
         retry_count: Number(job.retry_count ?? Math.max(0, Number(job.attempt_count || 0) - 1)),
@@ -539,6 +772,15 @@ export default async function handler(req, res) {
         last_error: job.last_error || job.error?.message || null,
         error_type: job.error_type || job.error?.code || null,
         next_retry_at: job.next_retry_at || (job.status === "RETRYING" ? job.not_before : null),
+        retry: {
+          planned: String(job.status || "").toUpperCase() === "RETRYING",
+          eligible_at: String(job.status || "").toUpperCase() === "RETRYING" ? (job.not_before || null) : null,
+          retryable_error: job.error?.retryable === true,
+          category: job.error?.retry_category || null,
+          delay_seconds: job.error?.retry_delay_seconds ?? null,
+          retries_remaining: job.error?.retries_remaining ?? null,
+          wake_strategy: job.error?.retry_wake_strategy || null
+        },
         priority: job.priority,
         execution_control: {
           provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
@@ -558,8 +800,11 @@ export default async function handler(req, res) {
         started_at: job.started_at,
         completed_at: job.completed_at,
         lease_expires_at: job.lease_expires_at,
+        not_before: job.not_before || null,
         error: job.error,
-        result: job.result,
+        result: writerCompact && !["FAILED", "CANCELLED"].includes(String(job.status || "").toUpperCase())
+          ? undefined
+          : job.result,
         session: operationalSessionStatus(session, job)
       };
       return canViewOperations

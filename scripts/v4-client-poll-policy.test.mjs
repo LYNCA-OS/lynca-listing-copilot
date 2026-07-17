@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import {
   groupClientResultsByJobId,
   isClientPollTerminalStatus,
-  observeClientJobPoll
+  observeClientJobPoll,
+  queuedStatusPollDelay
 } from "../lib/listing/v4/jobs/client-poll-policy.mjs";
 
 const queued = observeClientJobPoll({
@@ -63,5 +64,11 @@ const grouped = groupClientResultsByJobId([
 assert.deepEqual(grouped.get("shared-job"), [firstResult, secondResult]);
 assert.equal(grouped.get("other-job")?.length, 1);
 assert.equal(grouped.size, 2);
+
+assert.equal(queuedStatusPollDelay(5_000, 10), 800, "small fresh batches should remain responsive");
+assert.equal(queuedStatusPollDelay(5_000, 101), 1200, "medium batches should reduce read pressure");
+assert.equal(queuedStatusPollDelay(5_000, 301), 2000, "large batches should poll less aggressively");
+assert.equal(queuedStatusPollDelay(5_000, 1001), 3000, "soak-size batches should protect database capacity");
+assert.equal(queuedStatusPollDelay(120_000, 10), 1800, "long-running small batches should back off");
 
 console.log("V4 client poll policy tests passed.");

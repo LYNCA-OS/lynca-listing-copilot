@@ -1,6 +1,7 @@
 const userLabel = document.querySelector("#sessionUserLabel");
 const status = document.querySelector("#sessionControlStatus");
 const logoutButton = document.querySelector("#logoutButton");
+const memberManagementLink = document.querySelector("#memberManagementLink");
 
 function currentAppPath() {
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -40,6 +41,9 @@ async function loadSession() {
     userLabel.title = session.user || "已登录";
     status.textContent = "";
     logoutButton.disabled = false;
+    if (memberManagementLink && session.permission_scopes?.MANAGE_MEMBERS) {
+      memberManagementLink.hidden = false;
+    }
   } catch {
     status.textContent = "暂时无法确认会话状态；当前内容不会被清空。";
     logoutButton.disabled = true;

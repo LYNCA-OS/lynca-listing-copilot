@@ -2,6 +2,7 @@
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 export {
+  buildWorkflowCoreReadinessAudit,
   buildWorkflowReadinessAudit,
   loadWorkflowReadinessEnv,
   main,

@@ -2,7 +2,10 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import pumpHandler, { runV4QueuePump } from "../api/v4/listing-job-pump.js";
+import pumpHandler, {
+  runV4QueuePump,
+  triggerV4QueuePumpContinuation
+} from "../api/v4/listing-job-pump.js";
 import { runPostEnqueueQueueKick } from "../api/v4/listing-job-enqueue.js";
 import { workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import { callJsonHandler } from "../lib/listing/v4/session/http-handler-utils.mjs";
@@ -56,6 +59,7 @@ assert.equal(pump.parallel_lanes, true);
 assert.equal(pump.cycles_run, 2);
 assert.equal(pump.claimed_count, 2);
 assert.equal(pump.processed_count, 2);
+assert.equal(pump.continuation_needed, false, "an idle observation after useful work must stop continuation churn");
 assert.deepEqual(calls.map((entry) => entry.payload.lane), ["interactive", "background", "interactive", "background"]);
 assert.equal(calls[0].payload.tenant_id, "tenant-batch-1");
 assert.equal(calls[0].payload.limit, 2);
@@ -75,6 +79,62 @@ const failedPump = await runV4QueuePump({
 assert.equal(failedPump.ok, false, "a failed worker call must make the pump fail instead of returning a false-green 200");
 assert.equal(failedPump.failed_call_count, 1);
 assert.equal(failedPump.failed_calls[0].message, "Unable to claim V4 jobs.");
+assert.equal(failedPump.worker_invocation_retry_count, 1);
+assert.equal(failedPump.worker_invocation_recovery_count, 0);
+
+let transientInvocationAttempts = 0;
+const recoveredPump = await runV4QueuePump({
+  payload: { background_only: true, cycles: 1 },
+  env: { V4_JOB_WORKER_SECRET: "secret" },
+  invokeWorker: async () => {
+    transientInvocationAttempts += 1;
+    if (transientInvocationAttempts === 1) {
+      throw new Error("temporary database connection reset");
+    }
+    return {
+      statusCode: 200,
+      body: { ok: true, claimed_count: 1, processed_count: 1 }
+    };
+  }
+});
+assert.equal(recoveredPump.ok, true);
+assert.equal(transientInvocationAttempts, 2);
+assert.equal(recoveredPump.worker_invocation_retry_count, 1);
+assert.equal(recoveredPump.worker_invocation_recovery_count, 1);
+assert.equal(recoveredPump.transient_worker_failure_count, 1);
+assert.equal(recoveredPump.calls[0].invocation_attempt_count, 2);
+assert.equal(recoveredPump.calls[0].invocation_recovered_after_retry, true);
+assert.equal(recoveredPump.continuation_needed, true);
+
+let nonRetryableInvocationAttempts = 0;
+const nonRetryablePump = await runV4QueuePump({
+  payload: { background_only: true, cycles: 1 },
+  env: { V4_JOB_WORKER_SECRET: "secret" },
+  invokeWorker: async () => {
+    nonRetryableInvocationAttempts += 1;
+    return {
+      statusCode: 400,
+      body: { ok: false, message: "invalid worker payload" }
+    };
+  }
+});
+assert.equal(nonRetryablePump.ok, false);
+assert.equal(nonRetryableInvocationAttempts, 1, "a valid business rejection must never be replayed");
+assert.equal(nonRetryablePump.worker_invocation_retry_count, 0);
+
+const saturatedPump = await runV4QueuePump({
+  payload: { background_only: true, cycles: 1 },
+  env: { V4_JOB_WORKER_SECRET: "secret" },
+  invokeWorker: async () => ({
+    statusCode: 200,
+    body: { ok: true, claimed_count: 1, processed_count: 1 }
+  })
+});
+assert.equal(saturatedPump.continuation_needed, true, "a pump that ends while still claiming work must continue");
+assert.equal(triggerV4QueuePumpContinuation(null, {}, pump, {
+  V4_JOB_WORKER_SECRET: "secret",
+  V4_INTERNAL_BASE_URL: "https://listing.example.test"
+}).triggered, false, "an idle-observed pump must not schedule a redundant invocation");
 
 const interactiveOnlyCalls = [];
 await runV4QueuePump({
@@ -207,11 +267,14 @@ const workerSource = readFileSync(new URL("../api/v4/listing-job-worker.js", imp
 assert.match(workerSource, /triggerV4BackgroundWorkerAfterL1Release/);
 assert.match(workerSource, /l1_ready_wake_l2/);
 assert.match(workerSource, /pairedRelease\.saved !== true/);
-assert.match(workerSource, /lane: v4JobLanes\.BACKGROUND/);
+assert.match(workerSource, /background_only:\s*true/);
 assert.match(workerSource, /V4_L2_WAKE_BACKGROUND_CONCURRENCY/);
 assert.match(workerSource, /const globalFallback = v4WorkerProcessConcurrency\(process\.env\)/);
 assert.match(workerSource, /positiveInteger\(process\.env\[laneKey\], globalFallback, \{ min: 1, max: 96 \}\)/);
-assert.match(workerSource, /callJsonHandler\(handler/);
+assert.match(workerSource, /v4WorkerProcessConcurrency\(env\),\s*\{\s*min:\s*1,\s*max:\s*96\s*\}/);
+assert.match(workerSource, /scheduleTrustedV4QueuePump/);
+assert.match(workerSource, /dedupScope:\s*`l2-release:/);
+assert.doesNotMatch(workerSource, /fetchImpl\(`\$\{origin\}\/api\/v4\/listing-job-worker`/);
 assert.match(workerSource, /releaseV4ProviderCapacityForJob/);
 assert.match(workerSource, /runWithV4JobLeaseHeartbeat/);
 assert.match(workerSource, /v4_job_lease_heartbeat_degraded/);
