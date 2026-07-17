@@ -7,8 +7,17 @@ import { labelForCsmField } from "../lib/listing/csm/field-labels.mjs";
 import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
 import {
   groupClientResultsByJobId,
-  observeClientJobPoll
+  observeClientJobPoll,
+  queuedStatusPollDelay
 } from "../lib/listing/v4/jobs/client-poll-policy.mjs";
+import {
+  nextWriterOutstandingIndex,
+  WRITER_EXPORT_MAX_ROWS,
+  writerExportRowsReady,
+  writerExportWithinLimit,
+  writerFeedbackPersisted
+} from "./writer-wheel-mode.mjs";
+import { fetchWithBoundedRetry } from "../lib/listing/client/bounded-fetch.mjs";
 
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
@@ -16,6 +25,13 @@ const MAX_CONCURRENT_WORKERS = 6;
 const MAX_BACKGROUND_PREP_WORKERS = 4;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
+const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750]);
+const PREINGEST_REQUEST_TIMEOUT_MS = 25000;
+const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
+const EXPORT_REQUEST_TIMEOUT_MS = 90000;
+const RESOLUTION_MAP_TIMEOUT_MS = 5000;
+const PROVIDER_STATUS_TIMEOUT_MS = 10000;
+const PREWARM_TIMEOUT_MS = 8000;
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
 const IMAGE_INITIAL_QUALITY = 0.9;
@@ -39,6 +55,7 @@ const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const ASSISTED_DRAFT_DELAY_WARNING_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_STATUS_BATCH_SIZE = 100;
+const QUEUED_STATUS_READ_CONCURRENCY = 3;
 const STATUS_POLL_TIMEOUT_MS = 15000;
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
@@ -73,6 +90,7 @@ const state = {
   assets: [],
   results: [],
   modal: null,
+  modalReturnFocus: null,
   resolutionMap: {},
   providerStatus: null,
   selectedProvider: "",
@@ -89,12 +107,30 @@ const state = {
   completedAssetCount: 0,
   processingTotal: 0,
   exportingWorkbook: false,
+  preparingFiles: false,
+  filePreparationRunId: 0,
+  priorityRetryInFlight: false,
+  workspaceMode: "standard",
+  writerActiveIndex: null,
+  writerTransition: "",
+  writerFocusPending: false,
+  writerSaveInFlight: false,
+  writerReviewComplete: false,
+  writerCompletionFocusPending: false,
+  writerCompositionActive: false,
+  writerLastWheelNavigationAt: 0,
+  fileSelectionPointerRequested: false,
+  workbenchTransitionSequence: 0,
+  activeWorkbenchTransition: null,
   backgroundPreparationRunId: 0,
   backgroundRecognitionBatchId: "",
   assetLifecycleGeneration: 0
 };
 
 const elements = {
+  workspace: document.querySelector(".workspace"),
+  workspaceModeHint: document.querySelector("#workspaceModeHint"),
+  workspaceModeButtons: [...document.querySelectorAll("button[data-workspace-mode]")],
   imageInput: document.querySelector("#imageInput"),
   dropZone: document.querySelector("#dropZone"),
   processButton: document.querySelector("#processButton"),
@@ -113,6 +149,7 @@ const elements = {
   imageModalFileName: document.querySelector("#imageModalFileName"),
   imageModalSwitcher: document.querySelector("#imageModalSwitcher"),
   statusText: document.querySelector("#statusText"),
+  assetBoardTitle: document.querySelector("#assetBoardTitle"),
   previewSummary: document.querySelector("#previewSummary"),
   assetPreviewList: document.querySelector("#assetPreviewList"),
   stats: {
@@ -155,28 +192,53 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
+function recordClientNetworkStage(asset, stage, result = {}) {
+  if (!asset || !stage) return;
+  const timing = asset.clientTiming || (asset.clientTiming = {});
+  const prefix = `client_${stage}`;
+  const elapsedMs = Math.max(0, Math.round(Number(result.elapsed_ms ?? result.elapsedMs ?? 0) || 0));
+  const attempts = Math.max(0, Math.round(Number(result.attempts || 0) || 0));
+  timing[`${prefix}_ms`] = Math.max(0, Number(timing[`${prefix}_ms`] || 0)) + elapsedMs;
+  timing[`${prefix}_attempts`] = Math.max(0, Number(timing[`${prefix}_attempts`] || 0)) + attempts;
+  timing.client_network_retry_count = Math.max(0, Number(timing.client_network_retry_count || 0))
+    + Math.max(0, attempts - 1);
+  if (result.error) {
+    timing.client_network_error_stage = stage;
+    timing.client_network_error_code = String(result.error.code || result.error.name || "CLIENT_NETWORK_ERROR").slice(0, 80);
+  }
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithTimeout(
-  url,
-  options = {},
-  timeoutMs = QUEUE_ENQUEUE_TIMEOUT_MS,
-  timeoutMessage = "云端队列提交超时，系统已停止自动重复提交，请稍后检查任务状态再重试。"
-) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || QUEUE_ENQUEUE_TIMEOUT_MS));
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new Error(timeoutMessage);
+function retryableStorageApiResponse(response, payload = {}) {
+  const status = Number(response?.status || 0);
+  const code = String(payload?.code || "").trim().toUpperCase();
+  if (code === "VERIFICATION_RECORD_WRITE_FAILED") return false;
+  if (code && !["AUTH_UNAVAILABLE", "AUTH_RATE_LIMITED"].includes(code)) return false;
+  return [429, 502, 503, 504].includes(status);
+}
+
+async function fetchStorageApiJson(url, options = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= STORAGE_API_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetch(url, options);
+      const payload = await response.json().catch(() => ({}));
+      if (
+        attempt === STORAGE_API_RETRY_DELAYS_MS.length
+        || !retryableStorageApiResponse(response, payload)
+      ) {
+        return { response, payload, retryCount: attempt };
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt === STORAGE_API_RETRY_DELAYS_MS.length) throw error;
     }
-    throw error;
-  } finally {
-    clearTimeout(timer);
+    await wait(STORAGE_API_RETRY_DELAYS_MS[attempt]);
   }
+  throw lastError || new Error("Storage API request failed.");
 }
 
 async function fetchJsonWithTimeout(
@@ -185,18 +247,60 @@ async function fetchJsonWithTimeout(
   timeoutMs = STATUS_POLL_TIMEOUT_MS,
   timeoutMessage = "云端状态查询超时，系统会自动继续查询。"
 ) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || STATUS_POLL_TIMEOUT_MS));
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
+    const request = await fetchWithBoundedRetry(url, options, {
+      timeoutMs: Math.max(1000, Number(timeoutMs) || STATUS_POLL_TIMEOUT_MS),
+      maxAttempts: 2,
+      retryNetworkErrors: true,
+      maxDelayMs: 1500
+    });
+    const response = request.response;
     const payload = await response.json().catch(() => ({}));
-    return { response, payload };
+    return { ...request, response, payload };
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error(timeoutMessage);
+    if (error?.code === "CLIENT_FETCH_TIMEOUT") {
+      const timeoutError = new Error(timeoutMessage);
+      timeoutError.code = error.code;
+      timeoutError.attempts = error.attempts;
+      timeoutError.elapsed_ms = error.elapsed_ms;
+      throw timeoutError;
+    }
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
+}
+
+async function fetchJsonWithRetry(url, options = {}, {
+  timeoutMs = QUEUE_ENQUEUE_TIMEOUT_MS,
+  maxAttempts = 3,
+  retryNetworkErrors = true,
+  asset = null,
+  stage = "queue_enqueue"
+} = {}) {
+  let request;
+  try {
+    request = await fetchWithBoundedRetry(url, options, {
+      timeoutMs,
+      maxAttempts,
+      retryNetworkErrors
+    });
+  } catch (error) {
+    recordClientNetworkStage(asset, stage, {
+      elapsed_ms: error.elapsed_ms,
+      attempts: error.attempts,
+      error
+    });
+    throw error;
+  }
+
+  const payload = await request.response.json().catch(() => ({}));
+  const requestError = request.response.ok && payload.ok !== false
+    ? null
+    : Object.assign(
+      new Error(payload.message || payload.error || `request_failed_${request.response.status}`),
+      { http_status: request.response.status }
+    );
+  recordClientNetworkStage(asset, stage, { ...request, error: requestError });
+  return { ...request, payload, error: requestError };
 }
 
 function fileExtension(name) {
@@ -259,6 +363,37 @@ function dataUrlToBlob(dataUrl) {
   }
 
   return new Blob([bytes], { type: contentType });
+}
+
+function createImagePreviewUrl(blob) {
+  if (!blob || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return "";
+  try {
+    return URL.createObjectURL(blob);
+  } catch {
+    return "";
+  }
+}
+
+function imagePreviewUrl(image = {}) {
+  return image.previewUrl || image.dataUrl || "";
+}
+
+function releaseImagePreviewUrls(images = []) {
+  const visited = new Set();
+  const release = (image) => {
+    if (!image || visited.has(image)) return;
+    visited.add(image);
+    if (
+      String(image.previewUrl || "").startsWith("blob:")
+      && typeof URL !== "undefined"
+      && typeof URL.revokeObjectURL === "function"
+    ) {
+      URL.revokeObjectURL(image.previewUrl);
+    }
+    image.previewUrl = "";
+    (image.targetedCrops || []).forEach(release);
+  };
+  images.forEach(release);
 }
 
 function stringByteLength(value) {
@@ -395,6 +530,11 @@ async function fileToAssetImage(file) {
     });
   }
 
+  const sourceBlob = dataUrlToBlob(compressed.dataUrl);
+  compressed.targetedCrops.forEach((crop) => {
+    crop.previewUrl = createImagePreviewUrl(crop.sourceBlob);
+  });
+
   return {
     id,
     name: file.name,
@@ -407,10 +547,11 @@ async function fileToAssetImage(file) {
     width: compressed.width,
     height: compressed.height,
     dataUrl: compressed.dataUrl,
+    previewUrl: createImagePreviewUrl(sourceBlob),
     captureProfileId: defaultCaptureProfileId,
     imageQuality: compressed.imageQuality,
     sourceFile: file,
-    sourceBlob: dataUrlToBlob(compressed.dataUrl),
+    sourceBlob,
     contentSha256: "",
     objectPath: "",
     targetedCrops: compressed.targetedCrops
@@ -753,7 +894,7 @@ function queuedPendingResult(asset, enqueuePayload = {}, job = {}, timing = {}) 
     lifecycleGeneration: asset.lifecycleGeneration,
     asset_id: canonicalAssetId(asset),
     client_asset_ref: asset.clientAssetRef || asset.id,
-    thumbnail: asset.images[0]?.dataUrl || "",
+    thumbnail: imagePreviewUrl(asset.images[0]),
     title: "",
     final_title: "",
     rendered_title: "",
@@ -854,6 +995,7 @@ function clearImageStorageBinding(image = {}) {
   image.storageUploaded = false;
   image.storageAssetId = "";
   image.storageTenantId = "";
+  delete image.pendingStorageVerification;
   const metadata = image.cropMetadata || image.crop_metadata;
   if (metadata) {
     const resetMetadata = {
@@ -868,6 +1010,95 @@ function clearImageStorageBinding(image = {}) {
       image.cropPlan = { ...image.cropPlan, crop_metadata: resetMetadata };
     }
   }
+}
+
+function pendingStorageVerificationMatches(pending = {}, expected = {}) {
+  return pending.assetId === expected.assetId
+    && pending.tenantId === expected.tenantId
+    && pending.imageId === expected.imageId
+    && pending.storageRole === expected.storageRole
+    && pending.size === expected.size
+    && pending.width === expected.width
+    && pending.height === expected.height
+    && pending.contentSha256 === expected.contentSha256;
+}
+
+async function verifyUploadedAssetImage({
+  asset,
+  image,
+  source,
+  storageRole,
+  dimensions,
+  signatureHex,
+  contentSha256,
+  uploadObjectPath,
+  contentType
+}) {
+  const assetId = canonicalAssetId(asset);
+  const tenantId = canonicalAssetTenantId(asset);
+  const { response: verifyResponse, payload: verifyPayload } = await fetchStorageApiJson("/api/listing-image-verify-upload", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      assetId,
+      imageId: image.id,
+      role: storageRole,
+      fileName: image.name,
+      objectPath: uploadObjectPath,
+      contentType,
+      size: source.size,
+      width: dimensions.width,
+      height: dimensions.height,
+      signatureHex,
+      contentSha256,
+      cropMetadata: image.cropMetadata || image.crop_metadata || null
+    })
+  });
+  assertCurrentAssetLifecycle(asset);
+  if (!verifyResponse.ok || !verifyPayload.ok) {
+    if (verifyPayload.cleanup?.deleted || verifyPayload.cleanup?.already_absent) {
+      delete image.pendingStorageVerification;
+    }
+    throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
+  }
+  if (
+    verifyPayload.verification?.tenant_id !== tenantId
+    || verifyPayload.verification?.object_path !== uploadObjectPath
+    || verifyPayload.verification_record?.saved !== true
+    || verifyPayload.verification_record?.durable !== true
+  ) {
+    throw new Error("Storage verification identity mismatch.");
+  }
+
+  image.objectPath = uploadObjectPath;
+  image.bucket = verifyPayload.verification.bucket;
+  image.storageVerificationToken = verifyPayload.verification.verification_token || "";
+  image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
+  image.storageVerified = true;
+  image.storageUploaded = true;
+  image.storageAssetId = assetId;
+  image.storageTenantId = tenantId;
+  delete image.pendingStorageVerification;
+  if (image.cropMetadata || image.crop_metadata) {
+    const metadata = {
+      ...(image.cropMetadata || image.crop_metadata || {}),
+      derived_object_path: image.objectPath,
+      source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
+      asset_id: assetId
+    };
+    image.cropMetadata = metadata;
+    image.crop_metadata = metadata;
+    if (image.cropPlan) {
+      image.cropPlan = {
+        ...image.cropPlan,
+        crop_metadata: metadata
+      };
+    }
+  }
+  return true;
 }
 
 async function uploadAssetImage(asset, image, imageIndex) {
@@ -891,7 +1122,32 @@ async function uploadAssetImage(asset, image, imageIndex) {
   const dimensions = storageDimensionsForImage(image, source);
   image.contentSha256 = contentSha256;
 
-  const uploadResponse = await fetch("/api/listing-image-upload-url", {
+  const expectedPending = {
+    assetId,
+    tenantId,
+    imageId: image.id,
+    storageRole,
+    size: source.size,
+    width: dimensions.width,
+    height: dimensions.height,
+    contentSha256
+  };
+  if (pendingStorageVerificationMatches(image.pendingStorageVerification, expectedPending)) {
+    return verifyUploadedAssetImage({
+      asset,
+      image,
+      source,
+      storageRole,
+      dimensions,
+      signatureHex,
+      contentSha256,
+      uploadObjectPath: image.pendingStorageVerification.objectPath,
+      contentType: image.pendingStorageVerification.contentType
+    });
+  }
+  delete image.pendingStorageVerification;
+
+  const { response: uploadResponse, payload: uploadPayload } = await fetchStorageApiJson("/api/listing-image-upload-url", {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -912,7 +1168,6 @@ async function uploadAssetImage(asset, image, imageIndex) {
     })
   });
 
-  const uploadPayload = await uploadResponse.json();
   assertCurrentAssetLifecycle(asset);
   if (!uploadResponse.ok || !uploadPayload.ok) {
     throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
@@ -944,67 +1199,22 @@ async function uploadAssetImage(asset, image, imageIndex) {
     throw new Error(`Storage upload failed: ${storageResponse.status}`);
   }
   assertCurrentAssetLifecycle(asset);
-
-  const verifyResponse = await fetch("/api/listing-image-verify-upload", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    credentials: "same-origin",
-    body: JSON.stringify({
-      assetId,
-      imageId: image.id,
-      role: storageRole,
-      fileName: image.name,
-      objectPath: uploadObjectPath,
-      contentType: uploadPayload.upload.content_type,
-      size: source.size,
-      width: dimensions.width,
-      height: dimensions.height,
-      signatureHex,
-      contentSha256,
-      cropMetadata: image.cropMetadata || image.crop_metadata || null
-    })
+  image.pendingStorageVerification = {
+    ...expectedPending,
+    objectPath: uploadObjectPath,
+    contentType: uploadPayload.upload.content_type
+  };
+  return verifyUploadedAssetImage({
+    asset,
+    image,
+    source,
+    storageRole,
+    dimensions,
+    signatureHex,
+    contentSha256,
+    uploadObjectPath,
+    contentType: uploadPayload.upload.content_type
   });
-  const verifyPayload = await verifyResponse.json();
-  assertCurrentAssetLifecycle(asset);
-  if (!verifyResponse.ok || !verifyPayload.ok) {
-    throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
-  }
-  if (
-    verifyPayload.verification?.tenant_id !== tenantId
-    || verifyPayload.verification?.object_path !== uploadObjectPath
-    || verifyPayload.verification_record?.saved !== true
-    || verifyPayload.verification_record?.durable !== true
-  ) {
-    throw new Error("Storage verification identity mismatch.");
-  }
-
-  image.objectPath = uploadObjectPath;
-  image.bucket = verifyPayload.verification.bucket;
-  image.storageVerificationToken = verifyPayload.verification.verification_token || "";
-  image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
-  image.storageVerified = true;
-  image.storageUploaded = true;
-  image.storageAssetId = assetId;
-  image.storageTenantId = tenantId;
-  if (image.cropMetadata || image.crop_metadata) {
-    const metadata = {
-      ...(image.cropMetadata || image.crop_metadata || {}),
-      derived_object_path: image.objectPath,
-      source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
-      asset_id: assetId
-    };
-    image.cropMetadata = metadata;
-    image.crop_metadata = metadata;
-    if (image.cropPlan) {
-      image.cropPlan = {
-        ...image.cropPlan,
-        crop_metadata: metadata
-      };
-    }
-  }
-  return true;
 }
 
 async function ensureAssetImagesUploaded(asset) {
@@ -1088,6 +1298,27 @@ function backgroundPreparationLabel(asset = {}) {
   }[asset.backgroundPrepareStatus] || "";
 }
 
+function syncBackgroundPreparationStatus() {
+  if (state.processing || state.results.length || !state.assets.length) return;
+  const counts = state.assets.reduce((summary, asset) => {
+    const status = String(asset.backgroundPrepareStatus || "queued");
+    summary[status] = (summary[status] || 0) + 1;
+    return summary;
+  }, {});
+  const ready = Number(counts.ready || 0);
+  const failed = Number(counts.failed || 0);
+  const total = state.assets.length;
+  if (ready === total) {
+    setStatus(`${state.files.length} 张图片已完成云端准备，可以生成标题。`);
+    return;
+  }
+  if (ready + failed === total && failed > 0) {
+    setStatus(`${state.files.length} 张图片已读取；${failed} 张卡的云端准备遇到瞬时错误，生成时会自动重试。`);
+    return;
+  }
+  setStatus(`${state.files.length} 张图片已读取；云端准备中 ${ready} / ${total}。`, { busy: true });
+}
+
 async function ensurePreingestionBundle(asset) {
   if (asset.preingestionBundleId) {
     return {
@@ -1101,7 +1332,7 @@ async function ensurePreingestionBundle(asset) {
     throw new Error("no_verified_storage_images");
   }
 
-  const response = await fetch(PREINGEST_API_ENDPOINT, {
+  const request = await fetchJsonWithRetry(PREINGEST_API_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -1134,11 +1365,17 @@ async function ensurePreingestionBundle(asset) {
       // 签名只增加 L2 起跑等待，不增加证据强度。
       verify_signed_read_urls: false
     })
+  }, {
+    timeoutMs: PREINGEST_REQUEST_TIMEOUT_MS,
+    maxAttempts: 3,
+    retryNetworkErrors: true,
+    asset,
+    stage: "preingestion_request"
   });
 
-  const payload = await response.json();
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.message || payload.code || `preingestion_failed_${response.status}`);
+  const payload = request.payload;
+  if (request.error) {
+    throw new Error(payload.message || payload.code || `preingestion_failed_${request.response.status}`);
   }
 
   asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
@@ -1164,9 +1401,11 @@ async function prepareAssetInBackground(asset, runId) {
     try {
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "uploading";
+      syncBackgroundPreparationStatus();
       await ensureAssetImagesUploaded(asset);
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
+      syncBackgroundPreparationStatus();
       const bundle = await ensurePreingestionBundle(asset);
 
       if (runId === state.backgroundPreparationRunId) {
@@ -1178,15 +1417,19 @@ async function prepareAssetInBackground(asset, runId) {
       asset.backgroundPrepareStatus = "ready";
       asset.backgroundPrepareError = "";
       asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+      syncBackgroundPreparationStatus();
       return { ok: true, ...bundle };
     } catch (error) {
       asset.backgroundPrepareStatus = "failed";
       asset.backgroundPrepareError = String(error.message || "background_prepare_failed").slice(0, 160);
       asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+      syncBackgroundPreparationStatus();
       return { ok: false, error: asset.backgroundPrepareError };
     } finally {
       if (!state.processing && runId === state.backgroundPreparationRunId) {
-        renderResults();
+        renderResultControls();
+        if (!writerModeActive()) renderAssetRowInPlace(asset);
+        syncBackgroundPreparationStatus();
       }
     }
   })();
@@ -1246,7 +1489,7 @@ async function ensureSpeculativeRecognition(asset, runId) {
       enqueueJobPayload.client_speculative = true;
 
       const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
-      const enqueuePayload = await fetchWithTimeout(JOB_ENQUEUE_API_ENDPOINT, {
+      const enqueueRequest = await fetchJsonWithRetry(JOB_ENQUEUE_API_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
@@ -1261,13 +1504,15 @@ async function ensureSpeculativeRecognition(asset, runId) {
             payload: enqueueJobPayload
           }]
         })
-      }).then(async (response) => {
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || payload.ok === false) {
-          throw new Error(payload.message || `speculative enqueue ${response.status}`);
-        }
-        return payload;
+      }, {
+        timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS,
+        maxAttempts: 3,
+        retryNetworkErrors: true,
+        asset,
+        stage: "speculative_enqueue"
       });
+      if (enqueueRequest.error) throw enqueueRequest.error;
+      const enqueuePayload = enqueueRequest.payload;
       const job = enqueuePayload
         ? ((enqueuePayload.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
           || (enqueuePayload.jobs || []).find((entry) => entry?.ok)
@@ -1521,7 +1766,7 @@ function speculativeNeedsFreshEnqueue(speculative = {}) {
 
 function syncProcessButtonState() {
   const busy = state.processing || state.results.some((result) => v4WriterTitlePending(result));
-  elements.processButton.disabled = !canGenerateTitles();
+  elements.processButton.disabled = !canGenerateTitles() || workspaceInteractionLocked();
   setProcessButtonBusy(busy);
 }
 
@@ -2045,6 +2290,242 @@ function buildAssets() {
   state.assets = assets;
 }
 
+function writerModeActive() {
+  return state.workspaceMode === "writer";
+}
+
+function workspaceInteractionLocked() {
+  return state.writerSaveInFlight
+    || state.exportingWorkbook
+    || state.preparingFiles
+    || state.priorityRetryInFlight;
+}
+
+function writerSavedAssets() {
+  return state.assets.filter((asset) => {
+    const result = resultForAsset(asset);
+    return result?.feedbackStatus === "saved" && writerFeedbackPersisted(result);
+  });
+}
+
+function writerProcessedCount() {
+  return state.assets.filter((asset) => writerFeedbackPersisted(resultForAsset(asset))).length;
+}
+
+function writerAssetReadyForInput(asset) {
+  const result = resultForAsset(asset);
+  return Boolean(result && !v4WriterTitlePending(result) && result.feedbackStatus !== "saving");
+}
+
+function writerOutstandingAssets() {
+  return state.assets.filter((asset) => !writerFeedbackPersisted(resultForAsset(asset)));
+}
+
+function syncWriterActiveIndex() {
+  if (!state.assets.length) {
+    state.writerActiveIndex = null;
+    return null;
+  }
+
+  const current = state.assets.find((asset) => asset.index === Number(state.writerActiveIndex));
+  const currentPersisted = current ? writerFeedbackPersisted(resultForAsset(current)) : false;
+  if (
+    current
+    && writerAssetReadyForInput(current)
+    && (state.writerSaveInFlight || state.writerReviewComplete || !currentPersisted)
+  ) return current;
+
+  const outstanding = writerOutstandingAssets();
+  const next = outstanding.find(writerAssetReadyForInput) || current || outstanding[0] || state.assets[0];
+  state.writerActiveIndex = next?.index ?? null;
+  return next || null;
+}
+
+function writerAdjacentAsset(index, direction) {
+  const position = state.assets.findIndex((asset) => asset.index === Number(index));
+  if (position < 0) return null;
+  return state.assets[position + direction] || null;
+}
+
+function scheduleWriterInputFocus(assetIndex = state.writerActiveIndex) {
+  if (!writerModeActive() || !Number.isFinite(Number(assetIndex))) return;
+  const focus = () => {
+    const input = elements.assetPreviewList.querySelector(`[data-title-input="${Number(assetIndex)}"]:not([disabled])`);
+    const currentCard = elements.assetPreviewList.querySelector(`[data-writer-card="${Number(assetIndex)}"]`);
+    const focusTarget = input || currentCard;
+    if (!focusTarget) return;
+    focusTarget.focus({ preventScroll: true });
+    if (input) {
+      const end = input.value.length;
+      input.setSelectionRange?.(end, end);
+    }
+    state.writerFocusPending = false;
+  };
+  if (globalThis.requestAnimationFrame) globalThis.requestAnimationFrame(focus);
+  else setTimeout(focus, 0);
+}
+
+function scheduleWriterCompletionFocus() {
+  if (!writerModeActive() || !state.writerCompletionFocusPending) return;
+  const focus = () => {
+    const action = elements.assetPreviewList.querySelector("[data-writer-export]:not([disabled]), [data-writer-go]:not([disabled])");
+    action?.focus({ preventScroll: true });
+    state.writerCompletionFocusPending = false;
+  };
+  if (globalThis.requestAnimationFrame) globalThis.requestAnimationFrame(focus);
+  else setTimeout(focus, 0);
+}
+
+function setWriterActiveIndex(index, { focus = true, animate = false, direction = "" } = {}) {
+  if (workspaceInteractionLocked()) return;
+  const asset = state.assets.find((candidate) => candidate.index === Number(index));
+  if (!asset) return;
+  state.writerActiveIndex = asset.index;
+  state.writerTransition = animate && ["forward", "backward"].includes(direction) ? direction : "";
+  state.writerFocusPending = focus;
+  state.writerReviewComplete = true;
+  state.writerCompletionFocusPending = false;
+  renderResults({ forceWriterRender: true });
+}
+
+function clearCardViewTransitionNames() {
+  elements.assetPreviewList?.querySelectorAll("[data-card-transition-index]").forEach((card) => {
+    card.style.viewTransitionName = "";
+  });
+}
+
+function setCardViewTransitionNames(indexes = []) {
+  const visibleIndexes = [...new Set(indexes.map(Number).filter(Number.isFinite))].slice(0, 4);
+  const visibleIndexSet = new Set(visibleIndexes);
+  clearCardViewTransitionNames();
+  elements.assetPreviewList?.querySelectorAll("[data-card-transition-index]").forEach((card) => {
+    const index = Number(card.dataset.cardTransitionIndex);
+    if (visibleIndexSet.has(index)) card.style.viewTransitionName = `listing-card-${index}`;
+  });
+  return visibleIndexes;
+}
+
+function writerWheelVisibleAssetIndexes(activeIndex = state.writerActiveIndex) {
+  const current = state.assets.find((asset) => asset.index === Number(activeIndex));
+  if (!current) return [];
+  const previous = writerAdjacentAsset(current.index, -1);
+  const nextDepthOne = writerAdjacentAsset(current.index, 1);
+  const nextDepthTwo = nextDepthOne ? writerAdjacentAsset(nextDepthOne.index, 1) : null;
+  return [previous, current, nextDepthOne, nextDepthTwo].filter(Boolean).map((asset) => asset.index);
+}
+
+function workbenchViewTransitionAllowed() {
+  if (typeof document.startViewTransition !== "function") return false;
+  if (document.documentElement.dataset.themeSwitching === "true") return false;
+  try {
+    return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches !== true;
+  } catch {
+    return true;
+  }
+}
+
+function runWorkbenchViewTransition({ kind, enabled = true, prepareSharedElements = null, update }) {
+  const transitionSequence = state.workbenchTransitionSequence + 1;
+  state.workbenchTransitionSequence = transitionSequence;
+  state.activeWorkbenchTransition?.skipTransition?.();
+  state.activeWorkbenchTransition = null;
+  clearCardViewTransitionNames();
+
+  const performUpdate = () => {
+    update();
+    prepareSharedElements?.();
+  };
+  if (!enabled || !workbenchViewTransitionAllowed()) {
+    delete document.documentElement.dataset.workbenchTransition;
+    performUpdate();
+    clearCardViewTransitionNames();
+    return null;
+  }
+
+  prepareSharedElements?.();
+  document.documentElement.dataset.workbenchTransition = kind;
+  try {
+    const transition = document.startViewTransition(performUpdate);
+    state.activeWorkbenchTransition = transition;
+    Promise.resolve(transition.finished).catch(() => {}).finally(() => {
+      if (state.workbenchTransitionSequence !== transitionSequence) return;
+      clearCardViewTransitionNames();
+      delete document.documentElement.dataset.workbenchTransition;
+      state.activeWorkbenchTransition = null;
+    });
+    return transition;
+  } catch {
+    performUpdate();
+    clearCardViewTransitionNames();
+    delete document.documentElement.dataset.workbenchTransition;
+    return null;
+  }
+}
+
+function updateWorkspaceModeUi() {
+  const interactionLocked = workspaceInteractionLocked();
+  const destructiveInteractionLocked = interactionLocked || state.processing;
+  elements.workspace?.setAttribute("data-workspace-mode", state.workspaceMode);
+  elements.workspace?.setAttribute("data-batch-state", state.assets.length ? "ready" : "empty");
+  elements.workspaceModeButtons.forEach((button) => {
+    const active = button.dataset.workspaceMode === state.workspaceMode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.disabled = interactionLocked;
+  });
+  elements.imageInput.disabled = destructiveInteractionLocked;
+  elements.resetButton.disabled = destructiveInteractionLocked;
+  elements.dropZone.setAttribute("aria-disabled", destructiveInteractionLocked ? "true" : "false");
+  if (elements.workspaceModeHint) {
+    elements.workspaceModeHint.textContent = writerModeActive()
+      ? "只看当前卡片；Enter 确认入库并推进到下一张。"
+      : "查看全部卡片，逐张检查和编辑。";
+  }
+  if (elements.assetBoardTitle) elements.assetBoardTitle.textContent = writerModeActive() ? "写手滚轮" : "标题";
+}
+
+function setWorkspaceMode(mode, { animate = false } = {}) {
+  if (workspaceInteractionLocked()) return;
+  const nextMode = mode === "writer" ? "writer" : "standard";
+  if (state.workspaceMode === nextMode) return;
+  let transitionIndexes = writerWheelVisibleAssetIndexes();
+  if (nextMode === "writer") {
+    state.writerActiveIndex = null;
+    const current = syncWriterActiveIndex();
+    transitionIndexes = writerWheelVisibleAssetIndexes(current?.index);
+  }
+  runWorkbenchViewTransition({
+    kind: "mode",
+    enabled: animate && transitionIndexes.length > 0,
+    prepareSharedElements: () => setCardViewTransitionNames(transitionIndexes),
+    update: () => {
+      state.workspaceMode = nextMode;
+      state.writerTransition = "";
+      state.writerFocusPending = nextMode === "writer";
+      state.writerReviewComplete = false;
+      state.writerCompletionFocusPending = false;
+      closeImageModal();
+      updateWorkspaceModeUi();
+      renderResults({ forceWriterRender: true });
+    }
+  });
+}
+
+function updatePreviewSummary() {
+  if (!state.assets.length) {
+    elements.previewSummary.textContent = "等待上传图片。";
+    return;
+  }
+  if (writerModeActive()) {
+    elements.previewSummary.textContent = `${writerProcessedCount()} / ${state.assets.length} 张已处理，${writerSavedAssets().length} 张已入库。`;
+    return;
+  }
+  const orphanNote = state.mode === "pair" && state.files.length % 2 === 1
+    ? "最后 1 张图会作为单图资产处理。"
+    : "";
+  elements.previewSummary.textContent = `${state.files.length} 张图片，${state.assets.length} 张卡。${orphanNote}`;
+}
+
 function updateStats() {
   const high = state.results.filter((result) => normalizeConfidence(result.confidence) === "HIGH").length;
   const medium = state.results.filter((result) => normalizeConfidence(result.confidence) === "MEDIUM").length;
@@ -2065,29 +2546,48 @@ function updateStats() {
 function renderPreviews() {
   buildAssets();
   updateStats();
+  updateWorkspaceModeUi();
 
   elements.processButton.disabled = !canGenerateTitles();
 
   if (!state.assets.length) {
     closeImageModal();
     elements.previewSummary.textContent = "等待上传图片。";
-    elements.assetPreviewList.innerHTML = `<div class="empty-state">选择图片后，卡片会按上传顺序出现在这里。</div>`;
+    elements.assetPreviewList.innerHTML = `<div class="empty-state">${writerModeActive()
+      ? "选择图片后，当前卡片会进入写手滚轮。"
+      : "选择图片后，卡片会按上传顺序出现在这里。"}</div>`;
     return;
   }
 
-  const orphanNote = state.mode === "pair" && state.files.length % 2 === 1
-    ? "最后 1 张图会作为单图资产处理。"
-    : "";
-
-  elements.previewSummary.textContent = `${state.files.length} 张图片，${state.assets.length} 张卡。${orphanNote}`;
+  updatePreviewSummary();
   renderAssetRows();
 }
 
-function renderResults() {
+function renderResults({ forceWriterRender = false } = {}) {
+  const preserveFocusedTitleInput = !forceWriterRender
+    && !workspaceInteractionLocked()
+    && document.activeElement?.matches?.("[data-title-input]")
+    && elements.assetPreviewList.contains(document.activeElement);
+  renderResultControls();
+  if (!preserveFocusedTitleInput) renderAssetRows();
+  if (writerModeActive() && state.writerFocusPending && !preserveFocusedTitleInput) scheduleWriterInputFocus();
+  if (writerModeActive() && state.writerCompletionFocusPending && !preserveFocusedTitleInput) scheduleWriterCompletionFocus();
+}
+
+function renderResultControls() {
   updateStats();
+  updateWorkspaceModeUi();
   renderBatchTitles();
-  renderAssetRows();
   syncProcessButtonState();
+  updatePreviewSummary();
+}
+
+function renderAssetRowInPlace(asset) {
+  if (writerModeActive()) return false;
+  const current = elements.assetPreviewList.querySelector(`[data-asset-row="${Number(asset.index)}"]`);
+  if (!current) return false;
+  current.outerHTML = assetRowHtml(asset);
+  return true;
 }
 
 function resultForAsset(asset) {
@@ -2101,8 +2601,18 @@ function generatedTitleResults() {
 }
 
 function completedExportRowsReady() {
+  if (writerModeActive()) {
+    return writerExportRowsReady({
+      assets: writerSavedAssets(),
+      results: state.results,
+      processing: state.writerSaveInFlight || state.preparingFiles || state.priorityRetryInFlight,
+      exporting: state.exportingWorkbook,
+      finalTitleForResult,
+      isTitlePending: v4WriterTitlePending
+    });
+  }
   if (!state.assets.length) return false;
-  if (state.processing || state.exportingWorkbook) return false;
+  if (state.processing || state.exportingWorkbook || state.preparingFiles) return false;
   return state.assets.every((asset) => {
     const result = resultForAsset(asset);
     return Boolean(result && finalTitleForResult(result) && !v4WriterTitlePending(result));
@@ -2112,12 +2622,27 @@ function completedExportRowsReady() {
 function setExportWorkbookStatus(message = "") {
   if (!elements.exportWorkbookStatus) return;
   elements.exportWorkbookStatus.textContent = message;
+  elements.assetPreviewList.querySelectorAll("[data-writer-export-status]").forEach((status) => {
+    status.textContent = message;
+  });
 }
 
 function updateExportWorkbookControls() {
-  if (!elements.exportWorkbookButton) return;
-  elements.exportWorkbookButton.disabled = !completedExportRowsReady();
-  elements.exportWorkbookButton.textContent = state.exportingWorkbook ? "正在导出…" : "导出 Excel";
+  const ready = completedExportRowsReady();
+  if (elements.exportWorkbookButton) {
+    elements.exportWorkbookButton.disabled = !ready;
+    elements.exportWorkbookButton.textContent = state.exportingWorkbook
+      ? "正在导出…"
+      : writerModeActive()
+        ? `导出已入库 ${writerSavedAssets().length} 张`
+        : "导出 Excel";
+  }
+  elements.assetPreviewList.querySelectorAll("[data-writer-export]").forEach((button) => {
+    button.disabled = !ready;
+    button.textContent = state.exportingWorkbook
+      ? "正在导出…"
+      : `导出已入库 ${writerSavedAssets().length} 张`;
+  });
 }
 
 function modelQuickApprovalCandidate(result) {
@@ -2159,8 +2684,130 @@ function fieldCropStrip(asset) {
   return "";
 }
 
+function writerAssetStatusLabel(asset) {
+  const result = resultForAsset(asset);
+  if (!result) return state.processing ? "识别中" : "等待生成";
+  if (result.feedbackStatus === "saved" && writerFeedbackPersisted(result)) return "已入库";
+  if (result.feedbackStatus === "skipped" && writerFeedbackPersisted(result)) return "已记录拒绝";
+  if (result.feedbackStatus === "skipped") return "未留存";
+  if (result.feedbackStatus === "saving") return "正在入库";
+  if (v4WriterTitlePending(result)) return "标题生成中";
+  return "待录入";
+}
+
+function writerPeekHtml(asset, position) {
+  if (!asset) return `<div class="writer-wheel-peek writer-wheel-peek-${position} writer-wheel-peek-empty" aria-hidden="true"></div>`;
+  const image = asset.images?.[0];
+  const status = writerAssetStatusLabel(asset);
+  const relativeLabel = position === "previous" ? "上一张" : position === "next-depth-2" ? "下两张" : "下一张";
+  return `
+    <button class="writer-wheel-peek writer-wheel-peek-${position}" type="button" data-writer-go="${asset.index}" data-writer-direction="${position === "previous" ? "backward" : "forward"}" data-card-transition-index="${asset.index}" aria-label="${relativeLabel}，卡片 ${asset.index}，${escapeHtml(status)}">
+      ${image ? `<img src="${escapeHtml(imagePreviewUrl(image))}" alt="">` : ""}
+      <span>卡片 ${asset.index}</span>
+      <small>${escapeHtml(status)}</small>
+    </button>
+  `;
+}
+
+function writerCurrentCardHtml(asset) {
+  const result = resultForAsset(asset);
+  const status = writerAssetStatusLabel(asset);
+  return `
+    <article class="writer-wheel-card" data-writer-card="${asset.index}" data-card-transition-index="${asset.index}" aria-current="true" aria-label="当前卡片 ${asset.index}，${escapeHtml(status)}" tabindex="-1">
+      <header class="writer-wheel-card-head">
+        <div><span>当前卡片</span><strong>卡片 ${asset.index}</strong></div>
+        <small>${escapeHtml(status)}</small>
+      </header>
+      <div class="asset-row-card writer-wheel-current-card" data-asset-index="${asset.index}" data-asset-row="${asset.index}">
+        <div class="asset-source">
+          <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
+            ${asset.images.map((image, imageIndex) => `
+              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开卡片图片预览">
+                <img class="thumb" src="${escapeHtml(imagePreviewUrl(image))}" alt="${escapeHtml(image.name)}" loading="lazy" decoding="async">
+              </button>
+            `).join("")}
+          </div>
+          <div class="preview-meta"><h3>卡片 ${asset.index}</h3><span>${assetCountLabel(asset.images.length)}</span></div>
+        </div>
+        ${result ? resultBox(result, asset) : pendingBox(asset)}
+      </div>
+    </article>
+  `;
+}
+
+function writerCompletionHtml() {
+  const savedCount = writerSavedAssets().length;
+  const rejectedCount = state.assets.filter((asset) => {
+    const result = resultForAsset(asset);
+    return result?.feedbackStatus === "skipped" && writerFeedbackPersisted(result);
+  }).length;
+  const detail = rejectedCount
+    ? `${savedCount} 张已入库，${rejectedCount} 张已记录拒绝。Excel 只包含已入库卡片。`
+    : `${savedCount} 张卡片已全部入库，可以直接导出。`;
+  return `
+    <section class="writer-wheel-complete" aria-live="polite">
+      <span>本轮完成</span>
+      <h3>${savedCount} 张已入库</h3>
+      <p>${escapeHtml(detail)}</p>
+      <div class="writer-wheel-complete-actions">
+        <button class="primary-button" type="button" data-writer-export ${completedExportRowsReady() ? "" : "disabled"}>导出已入库 ${savedCount} 张</button>
+        ${state.assets.length ? `<button class="copy-button" type="button" data-writer-go="${state.assets[state.assets.length - 1].index}" data-writer-direction="backward">回看上一张</button>` : ""}
+      </div>
+      <p class="writer-wheel-export-status" data-writer-export-status role="status" aria-live="polite">${escapeHtml(elements.exportWorkbookStatus?.textContent || "")}</p>
+    </section>
+  `;
+}
+
+function renderWriterWheel() {
+  const allProcessed = state.assets.length > 0 && writerProcessedCount() === state.assets.length;
+  if (allProcessed && !state.writerSaveInFlight && !state.writerReviewComplete) {
+    elements.assetPreviewList.innerHTML = writerCompletionHtml();
+    updateExportWorkbookControls();
+    return;
+  }
+
+  const current = syncWriterActiveIndex();
+  if (!current) {
+    elements.assetPreviewList.innerHTML = `<div class="empty-state">等待卡片进入写手队列。</div>`;
+    return;
+  }
+
+  const previous = writerAdjacentAsset(current.index, -1);
+  const nextDepthOne = writerAdjacentAsset(current.index, 1);
+  const nextDepthTwo = nextDepthOne ? writerAdjacentAsset(nextDepthOne.index, 1) : null;
+  const savedCount = writerSavedAssets().length;
+  const writerTransition = state.writerTransition;
+  state.writerTransition = "";
+  elements.assetPreviewList.innerHTML = `
+    <section class="writer-wheel" aria-label="写手模式单卡队列">
+      <header class="writer-wheel-head">
+        <div><span>写手队列</span><strong>${current.index} / ${state.assets.length}</strong></div>
+        <p>${savedCount} 张已入库 · Enter 保存并推进</p>
+      </header>
+      <div class="writer-wheel-viewport" data-writer-wheel>
+        <div class="writer-wheel-track ${writerTransition ? `writer-transition-${writerTransition}` : ""}">
+          ${writerCurrentCardHtml(current)}
+          ${writerPeekHtml(previous, "previous")}
+          ${writerPeekHtml(nextDepthOne, "next-depth-1")}
+          ${writerPeekHtml(nextDepthTwo, "next-depth-2")}
+        </div>
+      </div>
+      <footer class="writer-wheel-footer">
+        <span>标题保存成功后卡片才会上移；失败会停留在当前卡。</span>
+        <button class="copy-button" type="button" data-writer-export ${completedExportRowsReady() ? "" : "disabled"}>导出已入库 ${savedCount} 张</button>
+      </footer>
+      <p class="writer-wheel-export-status" data-writer-export-status role="status" aria-live="polite">${escapeHtml(elements.exportWorkbookStatus?.textContent || "")}</p>
+    </section>
+  `;
+  updateExportWorkbookControls();
+}
+
 function renderAssetRows() {
   if (!state.assets.length) return;
+  if (writerModeActive()) {
+    renderWriterWheel();
+    return;
+  }
 
   const hasAnyResult = state.results.length > 0;
   if (!hasAnyResult) {
@@ -2212,12 +2859,12 @@ function assetRowHtml(asset) {
     const result = resultForAsset(asset);
 
     return `
-      <article class="asset-row-card">
+      <article class="asset-row-card" data-asset-index="${asset.index}" data-asset-row="${asset.index}" data-card-transition-index="${asset.index}">
         <div class="asset-source">
           <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
             ${asset.images.map((image, imageIndex) => `
               <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开卡片图片预览">
-                <img class="thumb" src="${image.dataUrl}" alt="${escapeHtml(image.name)}">
+                <img class="thumb" src="${escapeHtml(imagePreviewUrl(image))}" alt="${escapeHtml(image.name)}" loading="lazy" decoding="async">
               </button>
             `).join("")}
           </div>
@@ -2539,7 +3186,7 @@ function evidenceCropStrip(asset = null) {
         const label = cropRegionLabel(image.sourceRegion || image.source_region || image.cropPlan?.role || image.storageRole || "");
         return `
           <figure>
-            <img src="${image.dataUrl}" alt="${escapeHtml(label)}">
+            <img src="${escapeHtml(imagePreviewUrl(image))}" alt="${escapeHtml(label)}" loading="lazy" decoding="async">
             <figcaption>${escapeHtml(label)}</figcaption>
           </figure>
         `;
@@ -2586,19 +3233,25 @@ function TitleCardComponent(result, asset = null) {
   const correctedTitle = result.correctedTitle ?? generatedTitle;
   const writerReviewWithoutDraft = result.writerReviewRequired === true && !String(correctedTitle || "").trim();
   const copyDisabled = titlePending || !correctedTitle;
-  const saveDisabled = titlePending || result.feedbackStatus === "saving" || result.feedbackStatus === "saved" || result.feedbackStatus === "skipped";
+  const feedbackCommitted = writerFeedbackPersisted(result);
   const retrySubmitting = result.queueRetryStatus === "submitting";
+  const interactionLocked = workspaceInteractionLocked();
+  const saveDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving" || feedbackCommitted;
+  const editorDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving";
   const retryableFailure = failed
     || ["FAILED", "TIMEOUT"].includes(v4AssistedStatus(result))
     || ["FAILED", "CANCELLED"].includes(String(result.v4_job_status || "").toUpperCase());
-  const canPriorityRetry = retryableFailure && !titlePending;
+  const canPriorityRetry = retryableFailure
+    && !titlePending
+    && !state.processing
+    && (!interactionLocked || retrySubmitting);
   const titleEdited = String(correctedTitle || "").trim() && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
     saved: "已保存",
-    skipped: "未留存",
+    skipped: feedbackCommitted ? "已记录拒绝" : "未留存",
     saving: "保存中…"
   }[result.feedbackStatus] || (titleEdited ? "保存编辑" : "接受");
-  const rejectDisabled = titlePending || result.feedbackStatus === "saving";
+  const rejectDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving" || feedbackCommitted;
   const statusLabel = failed
     ? "失败"
     : writerReviewWithoutDraft
@@ -2632,11 +3285,11 @@ function TitleCardComponent(result, asset = null) {
       ${assistedDraftNotice(result)}
       ${titlePending && pendingProgress ? progressMeter(pendingProgress.percent, pendingProgress.label || "云端生成中", result.index) : ""}
       ${titlePending && pendingProgress ? `<span class="progress-label" data-progress-label-asset="${result.index}">${escapeHtml(pendingProgress.label || "云端生成中")}</span>` : ""}
-      <textarea rows="1" maxlength="80" spellcheck="false" data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${titlePending ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
+      <textarea rows="1" maxlength="80" spellcheck="false" aria-label="卡片 ${result.index} 最终英文标题" data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${editorDisabled ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
       ${omissionNotice ? `<p class="title-omission-notice">${escapeHtml(omissionNotice)}</p>` : ""}
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${queueFailureAdviceHtml(result.reason || "", failed && Boolean(queueFailureLines[0]))}</p>` : ""}
-      ${result.feedbackMessage ? `<p class="feedback-save-status">${escapeHtml(result.feedbackMessage)}</p>` : ""}
+      ${result.feedbackMessage ? `<p class="feedback-save-status" role="status" aria-live="polite">${escapeHtml(result.feedbackMessage)}</p>` : ""}
     </div>
   `;
 }
@@ -2808,7 +3461,7 @@ function renderImageModal() {
   const modalImages = modalImagesForAsset(asset);
   const imageIndex = Math.min(state.modal.imageIndex, modalImages.length - 1);
   const image = modalImages[imageIndex];
-  elements.imageModalImage.src = image.dataUrl;
+  elements.imageModalImage.src = imagePreviewUrl(image);
   elements.imageModalImage.alt = image.name;
   elements.imageModalSide.textContent = "预览";
   elements.imageModalTitle.textContent = `资产 ${asset.index}`;
@@ -2821,8 +3474,10 @@ function renderImageModal() {
 }
 
 function openImageModal(assetIndex, imageIndex) {
+  state.modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.modal = { assetIndex, imageIndex };
   renderImageModal();
+  elements.imageModal.removeAttribute("inert");
   elements.imageModal.setAttribute("aria-hidden", "false");
   document.body.classList.add("modal-open");
   elements.imageModalClose.focus();
@@ -2830,10 +3485,14 @@ function openImageModal(assetIndex, imageIndex) {
 
 function closeImageModal() {
   if (!state.modal) return;
+  const returnFocus = state.modalReturnFocus;
   state.modal = null;
+  state.modalReturnFocus = null;
   elements.imageModal.setAttribute("aria-hidden", "true");
+  elements.imageModal.setAttribute("inert", "");
   elements.imageModalImage.removeAttribute("src");
   document.body.classList.remove("modal-open");
+  if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
 }
 
 function switchModalImage(imageIndex) {
@@ -2893,61 +3552,124 @@ function writerTitleOmissionNotice(result = {}) {
   return `已识别但因 80 字符限制省略：${visible.join(" · ")}${suffix}`;
 }
 
-async function handleFiles(fileList) {
+async function handleFiles(fileList, { animateIntake = false } = {}) {
+  if (workspaceInteractionLocked() || state.processing) {
+    setStatus(state.processing
+      ? "当前批次正在识别，请等待完成后再更换图片。"
+      : state.exportingWorkbook
+        ? "Excel 正在生成，请等待导出完成后再更换图片。"
+        : state.preparingFiles
+          ? "图片正在准备，请等待当前选择完成。"
+          : "当前卡片正在入库，请等待保存完成后再更换图片。", { busy: true });
+    return;
+  }
+
   const candidates = [...fileList];
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
 
+  const batchWasEmpty = state.assets.length === 0;
   const lifecycleGeneration = ++state.assetLifecycleGeneration;
-  state.backgroundPreparationRunId += 1;
-  state.backgroundRecognitionBatchId = "";
-  stopAllV4AssistedDraftPolling();
-  void prewarmV4("file_selected");
-  setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
-  closeImageModal();
-  const failures = [];
-  const prepareStartedAt = performance.now();
-  const prepared = await mapWithConcurrency(imageFiles, IMAGE_PREPROCESS_CONCURRENCY, async (file) => {
-    try {
-      return { image: await fileToAssetImage(file) };
-    } catch (error) {
-      return { failure: `${file.name}: ${error.message}` };
+  const filePreparationRunId = state.filePreparationRunId + 1;
+  let initialWriterForwardReady = null;
+  state.filePreparationRunId = filePreparationRunId;
+  state.preparingFiles = true;
+  renderResults({ forceWriterRender: true });
+
+  try {
+    state.backgroundPreparationRunId += 1;
+    state.backgroundRecognitionBatchId = "";
+    stopAllV4AssistedDraftPolling();
+    void prewarmV4("file_selected");
+    setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
+    closeImageModal();
+    const failures = [];
+    const prepareStartedAt = performance.now();
+    const prepared = await mapWithConcurrency(imageFiles, IMAGE_PREPROCESS_CONCURRENCY, async (file) => {
+      try {
+        return { image: await fileToAssetImage(file) };
+      } catch (error) {
+        return { failure: `${file.name}: ${error.message}` };
+      }
+    });
+    const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
+    const settledImages = [];
+    prepared.forEach((item) => {
+      if (item.image) settledImages.push(item.image);
+      if (item.failure) failures.push(item.failure);
+    });
+    if (
+      lifecycleGeneration !== state.assetLifecycleGeneration
+      || state.filePreparationRunId !== filePreparationRunId
+    ) {
+      releaseImagePreviewUrls(settledImages);
+      return;
     }
-  });
-  if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
-  const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
-  const settledImages = [];
-  prepared.forEach((item) => {
-    if (item.image) settledImages.push(item.image);
-    if (item.failure) failures.push(item.failure);
-  });
+    const ignoredFiles = candidates
+      .filter((file) => !isSupportedImageFile(file))
+      .map((file) => `${file.name}: 不支持的图片格式`);
+    const images = settledImages;
 
-  const ignoredFiles = candidates
-    .filter((file) => !isSupportedImageFile(file))
-    .map((file) => `${file.name}: 不支持的图片格式`);
-  const images = settledImages;
-  state.files = images;
-  state.results = [];
-  state.assetProgress = new Map();
-  stopProgressTicker();
-  resetGenerationTimings();
-  state.activeAssetIndexes = new Set();
-  state.completedAssetCount = 0;
-  state.processingTotal = 0;
-  state.clientImagePrepareMs = prepareElapsedMs;
+    releaseImagePreviewUrls(state.files);
+    state.files = images;
+    state.results = [];
+    if (batchWasEmpty && images.length > 0) state.workspaceMode = "writer";
+    state.writerActiveIndex = null;
+    state.writerTransition = "";
+    state.writerFocusPending = writerModeActive();
+    state.writerReviewComplete = false;
+    state.writerCompletionFocusPending = false;
+    state.writerCompositionActive = false;
+    state.assetProgress = new Map();
+    stopProgressTicker();
+    resetGenerationTimings();
+    state.activeAssetIndexes = new Set();
+    state.completedAssetCount = 0;
+    state.processingTotal = 0;
+    state.clientImagePrepareMs = prepareElapsedMs;
 
-  if (failures.length || ignoredFiles.length) {
-    setStatus(`${images.length} 张图片已准备，${failures.length + ignoredFiles.length} 张未读取：${[...failures, ...ignoredFiles].join("；")}`);
-  } else {
-    const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
-    setStatus(previewOptimizedCount
-      ? `${images.length} 张图片已准备。点击生成标题后开始识别；图片正在后台准备，本地预览已优化。`
-      : `${images.length} 张图片已准备。点击生成标题后开始识别；图片正在后台准备。`);
+    if (failures.length || ignoredFiles.length) {
+      setStatus(`${images.length} 张图片已准备，${failures.length + ignoredFiles.length} 张未读取：${[...failures, ...ignoredFiles].join("；")}`);
+    } else {
+      const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
+      setStatus(previewOptimizedCount
+        ? `${images.length} 张图片已准备。点击生成标题后开始识别；图片正在后台准备，本地预览已优化。`
+        : `${images.length} 张图片已准备。点击生成标题后开始识别；图片正在后台准备。`);
+    }
+
+    const intakeTransition = runWorkbenchViewTransition({
+      kind: "intake",
+      enabled: animateIntake && batchWasEmpty && images.length > 0,
+      update: () => {
+        renderPreviews();
+        renderResults();
+      }
+    });
+    if (intakeTransition?.finished) initialWriterForwardReady = Promise.resolve(intakeTransition.finished).catch(() => {});
+    if (intakeTransition?.updateCallbackDone) await Promise.resolve(intakeTransition.updateCallbackDone).catch(() => {});
+    if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
+    startBackgroundPreparation("file_ready");
+  } finally {
+    if (
+      lifecycleGeneration === state.assetLifecycleGeneration
+      && state.filePreparationRunId === filePreparationRunId
+    ) {
+      state.preparingFiles = false;
+      renderResults({ forceWriterRender: true });
+      if (initialWriterForwardReady) {
+        void initialWriterForwardReady.then(() => {
+          if (
+            lifecycleGeneration !== state.assetLifecycleGeneration
+            || state.filePreparationRunId !== filePreparationRunId
+            || !writerModeActive()
+          ) return;
+          state.writerTransition = "forward";
+          state.writerFocusPending = true;
+          renderResults({ forceWriterRender: true });
+        });
+      }
+    }
   }
-
-  renderPreviews();
-  renderResults();
-  startBackgroundPreparation("file_ready");
 }
 
 async function processAssetViaQueue(asset, options = {}) {
@@ -3049,7 +3771,7 @@ async function processAssetViaQueue(asset, options = {}) {
   const batchId = options.batchId || createClientBatchId();
   const enqueueStartedAt = performance.now();
   setAssetProgress(asset.index, "提交云端生产队列", 0.42);
-  const response = await fetchWithTimeout(JOB_ENQUEUE_API_ENDPOINT, {
+  const enqueueRequest = await fetchJsonWithRetry(JOB_ENQUEUE_API_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -3072,11 +3794,18 @@ async function processAssetViaQueue(asset, options = {}) {
         }
       }]
     })
+  }, {
+    timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS,
+    maxAttempts: 3,
+    retryNetworkErrors: true,
+    asset,
+    stage: "queue_enqueue"
   });
   const enqueueRoundtripMs = Math.round(performance.now() - enqueueStartedAt);
-  const enqueuePayload = await response.json().catch(() => ({}));
+  const response = enqueueRequest.response;
+  const enqueuePayload = enqueueRequest.payload;
   assertCurrentAssetLifecycle(asset);
-  if (!response.ok || enqueuePayload.ok === false) {
+  if (enqueueRequest.error) {
     const detail = enqueuePayload.message || enqueuePayload.error || enqueuePayload.jobs?.find((entry) => entry?.error)?.error || "";
     throw new Error(detail ? `队列提交失败：${response.status}，${detail}` : `队列提交失败：${response.status}`);
   }
@@ -3106,7 +3835,7 @@ function failedResult(asset, error) {
     lifecycleGeneration: asset.lifecycleGeneration,
     asset_id: asset.durableAssetId || "",
     client_asset_ref: asset.clientAssetRef || asset.id,
-    thumbnail: asset.images[0].dataUrl,
+    thumbnail: imagePreviewUrl(asset.images[0]),
     title: "",
     generatedTitle: "",
     correctedTitle: "",
@@ -3168,7 +3897,6 @@ async function processTitles() {
       const asset = queue.shift();
       state.activeAssetIndexes.add(asset.index);
       setAssetProgress(asset.index, "进入识别队列", 0.03);
-      renderResults();
 
       try {
         const result = await processAssetViaQueue(asset, { batchId: recognitionBatchId });
@@ -3194,7 +3922,8 @@ async function processTitles() {
       completedCount += 1;
       state.completedAssetCount = completedCount;
       state.results.sort((a, b) => a.index - b.index);
-      renderResults();
+      renderResultControls();
+      if (!renderAssetRowInPlace(asset)) renderResults();
       setStatus(processingProgressStatus(completedCount), { busy: completedCount < state.assets.length });
     }
   }
@@ -3222,6 +3951,7 @@ async function processTitles() {
 }
 
 async function retryFailedAssetInPriorityQueue(button) {
+  if (workspaceInteractionLocked()) return;
   const assetIndex = Number(button.dataset.priorityRetry);
   const asset = state.assets.find((item) => item.index === assetIndex);
   const current = state.results.find((item) => item.index === assetIndex);
@@ -3235,6 +3965,7 @@ async function retryFailedAssetInPriorityQueue(button) {
   }
 
   const writerEditedTitle = String(current.correctedTitle || "").trim();
+  state.priorityRetryInFlight = true;
   current.queueRetryStatus = "submitting";
   current.feedbackMessage = "正在提交优先重试…";
   setStatus(`卡片 ${asset.index} 正在插入优先队列…`, { busy: true });
@@ -3274,9 +4005,10 @@ async function retryFailedAssetInPriorityQueue(button) {
     current.queueRetryStatus = "";
     current.feedbackMessage = `优先重试提交失败：${error.message || "请再次重试"}`;
     setStatus(`卡片 ${asset.index} 优先重试提交失败。`);
+  } finally {
+    state.priorityRetryInFlight = false;
+    renderResults({ forceWriterRender: true });
   }
-
-  renderResults();
 }
 
 async function copyTitle(button) {
@@ -3301,12 +4033,22 @@ function updateCorrectedTitle(input) {
   const result = state.results.find((item) => item.index === Number(input.dataset.titleInput));
   if (!result) return;
 
+  const wasCommitted = writerFeedbackPersisted(result);
   result.correctedTitle = input.value;
   const renderedTitle = String(result.rendered_title || result.final_title || result.generatedTitle || result.title || "").trim();
   const correctedTitle = String(input.value || "").trim();
   result.title_override = correctedTitle && renderedTitle && correctedTitle !== renderedTitle ? correctedTitle : null;
+  result.explicitReviewOutcome = "";
   result.feedbackStatus = "";
+  result.persistenceStatus = "";
   result.feedbackMessage = "";
+  if (wasCommitted) {
+    const saveButton = input.closest(".title-output")?.querySelector("[data-save-title]");
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = "保存编辑";
+    }
+  }
   renderBatchTitles();
 }
 
@@ -3491,12 +4233,6 @@ function chunksOf(items = [], size = QUEUED_STATUS_BATCH_SIZE) {
   return chunks;
 }
 
-function queuedStatusPollDelay(elapsedMs = 0) {
-  if (elapsedMs < 30_000) return 800;
-  if (elapsedMs < 90_000) return 1200;
-  return 1800;
-}
-
 function syncQueuedPollObservation(result = {}, status = result.v4_job_status || "QUEUED", now = performance.now()) {
   result.v4QueuedPollStartedAt = result.v4QueuedPollStartedAt || now;
   const observation = observeClientJobPoll({
@@ -3541,22 +4277,34 @@ async function pollV4QueuedJobsBatch(generation) {
   try {
     const resultsByJobId = groupClientResultsByJobId(active);
     const batches = chunksOf([...resultsByJobId.keys()]);
-    const batchReads = await Promise.allSettled(batches.map(async (jobIds) => {
-      const params = new URLSearchParams({ job_ids: jobIds.join(","), limit: String(jobIds.length) });
-      const { response, payload } = await fetchJsonWithTimeout(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store"
-      }, STATUS_POLL_TIMEOUT_MS, "云端任务状态查询超时，系统会自动继续查询。");
-      if (!response.ok || payload.ok === false) {
-        throw new Error(payload.message || `status_poll_http_${response.status}`);
+    const batchReads = await mapWithConcurrency(
+      batches,
+      QUEUED_STATUS_READ_CONCURRENCY,
+      async (jobIds) => {
+        try {
+          const params = new URLSearchParams({
+            job_ids: jobIds.join(","),
+            limit: String(jobIds.length),
+            view: "writer"
+          });
+          const { response, payload } = await fetchJsonWithTimeout(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
+            method: "GET",
+            credentials: "same-origin",
+            cache: "no-store"
+          }, STATUS_POLL_TIMEOUT_MS, "云端任务状态查询超时，系统会自动继续查询。");
+          if (!response.ok || payload.ok === false) {
+            throw new Error(payload.message || `status_poll_http_${response.status}`);
+          }
+          return { status: "fulfilled", value: { jobIds, payload } };
+        } catch (reason) {
+          return { status: "rejected", reason };
+        }
       }
-      return { jobIds, payload };
-    }));
+    );
     if (generation !== state.queuedBatchPollGeneration) return;
 
     let terminalCount = 0;
-    let shouldRender = false;
+    const changedAssetIndexes = new Set();
     for (let batchIndex = 0; batchIndex < batchReads.length; batchIndex += 1) {
       const batchRead = batchReads[batchIndex];
       if (batchRead.status === "rejected") {
@@ -3581,12 +4329,19 @@ async function pollV4QueuedJobsBatch(generation) {
           const update = applyV4QueuedJobStatusUpdate(result, job);
           if (update.terminal) {
             terminalCount += 1;
-            shouldRender = true;
+            changedAssetIndexes.add(Number(result.index));
           }
         }
       }
     }
-    if (shouldRender) renderResults();
+    if (changedAssetIndexes.size) {
+      renderResultControls();
+      const renderedInPlace = [...changedAssetIndexes].every((assetIndex) => {
+        const asset = state.assets.find((item) => Number(item.index) === assetIndex);
+        return asset ? renderAssetRowInPlace(asset) : false;
+      });
+      if (!renderedInPlace) renderResults();
+    }
     const remaining = pendingAssistedDraftCount();
     if (terminalCount > 0) {
       setStatus(remaining
@@ -3611,7 +4366,7 @@ async function pollV4QueuedJobsBatch(generation) {
   state.queuedBatchPollTimer = setTimeout(() => {
     state.queuedBatchPollTimer = null;
     void pollV4QueuedJobsBatch(generation);
-  }, queuedStatusPollDelay(performance.now() - earliestStart));
+  }, queuedStatusPollDelay(performance.now() - earliestStart, remaining.length));
 }
 
 function startV4QueuedBatchPolling() {
@@ -3817,7 +4572,7 @@ function clearPendingV4FeedbackSubmission(result, submission = {}) {
 }
 
 async function saveFeedbackForResult(result, asset) {
-  if (!result) return;
+  if (!result) return false;
 
   const generatedTitle = String(
     result.generatedTitle
@@ -3839,11 +4594,12 @@ async function saveFeedbackForResult(result, asset) {
     : null;
 
   result.feedbackStatus = "saving";
+  result.persistenceStatus = "saving";
   result.feedbackMessage = "正在保存审核记录…";
   renderResults();
 
   try {
-    const response = await fetch(useV4Feedback ? FEEDBACK_API_ENDPOINT : LEGACY_FEEDBACK_API_ENDPOINT, {
+    const feedbackRequest = await fetchJsonWithRetry(useV4Feedback ? FEEDBACK_API_ENDPOINT : LEGACY_FEEDBACK_API_ENDPOINT, {
       method: "POST",
       headers: {
         "content-type": "application/json"
@@ -3893,14 +4649,24 @@ async function saveFeedbackForResult(result, asset) {
         field_changes: result.field_changes || [],
         images: (asset?.providerImages || asset?.images || []).map(reviewImageReference)
       })
+    }, {
+      timeoutMs: FEEDBACK_REQUEST_TIMEOUT_MS,
+      maxAttempts: useV4Feedback ? 3 : 1,
+      retryNetworkErrors: useV4Feedback,
+      asset,
+      stage: "feedback_save"
     });
 
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
+    const response = feedbackRequest.response;
+    const payload = feedbackRequest.payload;
+    if (feedbackRequest.error) {
       throw new Error(payload.message || `保存失败：${response.status}`);
     }
 
     if (useV4Feedback) {
+      if (payload.v4_persistence?.transaction?.saved !== true) {
+        throw new Error("V4 审核事务尚未确认入库，请重试。");
+      }
       clearPendingV4FeedbackSubmission(result, v4Submission);
       const canonicalWriterTitle = String(payload.writer_final_title || "").trim();
       if (canonicalWriterTitle) {
@@ -3911,21 +4677,28 @@ async function saveFeedbackForResult(result, asset) {
         result.title_override = null;
       }
       result.csmNormalization = payload.csm_normalization || null;
-      result.feedbackStatus = "saved";
+      const rejected = v4Action === "REJECT" || String(payload.status || "").toUpperCase() === "REJECTED";
+      result.feedbackStatus = rejected ? "skipped" : "saved";
+      result.persistenceStatus = "persisted";
+      result.trainingEligibility = payload.training_eligible === true ? "eligible" : "ineligible";
+      result.feedbackSubmissionId = payload.feedback_submission_id || v4Submission.id;
       result.review_id = payload.feedback_event_id || "";
       result.approved_at = "";
       result.approved_by = "";
       result.review_outcome = payload.status || "";
-      result.feedbackMessage = payload.training_eligible === false
-        ? "V4 写手反馈已保存为数据资产；当前仅积累，不进入训练。"
+      result.feedbackMessage = rejected
+        ? "V4 已记录拒绝反馈；事务已入库，不进入正样本训练。"
         : payload.csm_normalization?.applied === true
           ? `V4 已保存写手反馈，标题已按 CSM 标准顺序整理：${payload.learning_event_id || "已写入"}。`
-        : `V4 已保存写手反馈，并生成学习事件：${payload.learning_event_id || "已写入"}。`;
+          : payload.training_eligible === false
+            ? "V4 写手反馈已入库；当前处于观察期，不自动进入训练集。"
+            : `V4 已保存写手反馈，并生成学习事件：${payload.learning_event_id || "已写入"}。`;
       return true;
     }
 
     const retentionSkipped = payload.retention_skipped === true || payload.retention_enabled === false;
     result.feedbackStatus = retentionSkipped ? "skipped" : "saved";
+    result.persistenceStatus = retentionSkipped ? "not_persisted" : "persisted";
     result.review_id = retentionSkipped ? "" : payload.record?.review?.id || "";
     result.approved_at = retentionSkipped ? "" : payload.record?.review?.approved_at || "";
     result.approved_by = retentionSkipped ? "" : payload.record?.review?.operator_id || "";
@@ -3935,9 +4708,10 @@ async function saveFeedbackForResult(result, asset) {
       : payload.review_outcome
       ? `已保存审核记录：${payload.review_outcome}。`
       : "已保存审核记录。";
-    return result.feedbackStatus === "saved";
+    return result.persistenceStatus === "persisted";
   } catch (error) {
     result.feedbackStatus = "";
+    result.persistenceStatus = "failed";
     result.feedbackMessage = error.message || "记忆保存失败。";
     return false;
   } finally {
@@ -3948,17 +4722,100 @@ async function saveFeedbackForResult(result, asset) {
 async function saveTitleFeedback(button) {
   const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
-  await saveFeedbackForResult(result, asset);
+  return saveFeedbackForResult(result, asset);
+}
+
+function advanceWriterAfterPersistence(index) {
+  const nextIndex = nextWriterOutstandingIndex({
+    assets: state.assets,
+    results: state.results,
+    currentIndex: index
+  });
+  state.writerReviewComplete = false;
+  state.writerTransition = "";
+  state.writerActiveIndex = nextIndex;
+  state.writerFocusPending = Number.isFinite(Number(nextIndex));
+  state.writerCompletionFocusPending = nextIndex === null;
+}
+
+async function saveWriterTitleAndAdvance(resultIndex) {
+  if (workspaceInteractionLocked()) return false;
+  const index = Number(resultIndex);
+  const result = state.results.find((item) => item.index === index);
+  const asset = state.assets.find((item) => item.index === index);
+  if (!result || !asset || v4WriterTitlePending(result)) return false;
+  if (writerFeedbackPersisted(result)) {
+    advanceWriterAfterPersistence(index);
+    renderResults({ forceWriterRender: true });
+    return true;
+  }
+  const title = finalTitleForResult(result);
+  if (!title) {
+    result.feedbackMessage = "标题不能为空，请输入最终英文标题后再按 Enter。";
+    state.writerFocusPending = true;
+    renderResults({ forceWriterRender: true });
+    return false;
+  }
+  if (title.length > maxTitleLength) {
+    result.feedbackMessage = `标题不能超过 ${maxTitleLength} 个字符。`;
+    state.writerFocusPending = true;
+    renderResults({ forceWriterRender: true });
+    return false;
+  }
+
+  state.writerSaveInFlight = true;
+  let persisted = false;
+  try {
+    persisted = await saveFeedbackForResult(result, asset);
+    if (!persisted) return false;
+    advanceWriterAfterPersistence(index);
+    return true;
+  } finally {
+    state.writerSaveInFlight = false;
+    if (!persisted) state.writerFocusPending = true;
+    renderResults({ forceWriterRender: true });
+  }
+}
+
+async function rejectWriterTitleAndAdvance(resultIndex) {
+  if (workspaceInteractionLocked()) return false;
+  const index = Number(resultIndex);
+  const result = state.results.find((item) => item.index === index);
+  const asset = state.assets.find((item) => item.index === index);
+  if (!result || !asset || v4WriterTitlePending(result)) return false;
+  if (writerFeedbackPersisted(result)) {
+    advanceWriterAfterPersistence(index);
+    renderResults({ forceWriterRender: true });
+    return true;
+  }
+
+  state.writerSaveInFlight = true;
+  result.explicitReviewOutcome = "REJECTED";
+  result.feedbackStatus = "";
+  result.persistenceStatus = "";
+  result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
+  let persisted = false;
+  try {
+    persisted = await saveFeedbackForResult(result, asset);
+    if (!persisted) return false;
+    advanceWriterAfterPersistence(index);
+    return true;
+  } finally {
+    state.writerSaveInFlight = false;
+    if (!persisted) state.writerFocusPending = true;
+    renderResults({ forceWriterRender: true });
+  }
 }
 
 async function rejectTitleFeedback(button) {
   const result = state.results.find((item) => item.index === Number(button.dataset.rejectTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.rejectTitle));
-  if (!result) return;
+  if (!result || writerFeedbackPersisted(result) || result.feedbackStatus === "saving") return false;
   result.explicitReviewOutcome = "REJECTED";
   result.feedbackStatus = "";
+  result.persistenceStatus = "";
   result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
-  await saveFeedbackForResult(result, asset);
+  return saveFeedbackForResult(result, asset);
 }
 
 async function copyAllTitles() {
@@ -3979,11 +4836,19 @@ function primaryImagesForExport(asset = {}) {
     .slice(0, 2);
 }
 
-function buildWriterExportRows() {
-  return state.assets.map((asset) => {
+function buildWriterExportRows(
+  assets = state.assets,
+  { requireSaved = false, titleSnapshotByIndex = new Map() } = {}
+) {
+  return assets.map((asset) => {
     const result = resultForAsset(asset);
     if (!result) throw new Error(`资产 ${asset.index} 还没有生成结果。`);
-    const finalTitle = finalTitleForResult(result);
+    if (requireSaved && !(result.feedbackStatus === "saved" && writerFeedbackPersisted(result))) {
+      throw new Error(`资产 ${asset.index} 的当前标题尚未确认入库，已停止导出。`);
+    }
+    const finalTitle = titleSnapshotByIndex.has(Number(asset.index))
+      ? String(titleSnapshotByIndex.get(Number(asset.index)) || "").trim()
+      : finalTitleForResult(result);
     if (!finalTitle) throw new Error(`资产 ${asset.index} 缺少最终标题。`);
     if (v4WriterTitlePending(result)) throw new Error(`资产 ${asset.index} 的一段式标题仍在生成中。`);
     const images = primaryImagesForExport(asset).map(exportImageReference).filter((image) => {
@@ -4002,9 +4867,11 @@ function buildWriterExportRows() {
 }
 
 async function exportWriterWorkbook() {
-  if (state.exportingWorkbook) return;
+  if (workspaceInteractionLocked()) return;
   if (!completedExportRowsReady()) {
-    setExportWorkbookStatus("所有资产生成并完成写手编辑后才能导出。");
+    setExportWorkbookStatus(writerModeActive()
+      ? "至少有一张卡片成功入库后才能导出。"
+      : "所有资产生成并完成写手编辑后才能导出。");
     return;
   }
   if (!storageReady()) {
@@ -4012,25 +4879,44 @@ async function exportWriterWorkbook() {
     return;
   }
 
+  const exportingWriterRows = writerModeActive();
+  const exportAssets = exportingWriterRows ? [...writerSavedAssets()] : [...state.assets];
+  if (!writerExportWithinLimit(exportAssets.length)) {
+    setExportWorkbookStatus(`单次最多导出 ${WRITER_EXPORT_MAX_ROWS} 张卡片；请缩小本轮批次后重试。`);
+    return;
+  }
+  const titleSnapshotByIndex = new Map(exportAssets.map((asset) => {
+    return [Number(asset.index), finalTitleForResult(resultForAsset(asset))];
+  }));
+
   state.exportingWorkbook = true;
-  updateExportWorkbookControls();
+  renderResults({ forceWriterRender: true });
   setExportWorkbookStatus("正在上传图片并生成 Excel…");
 
   try {
-    await mapWithConcurrency(state.assets, 2, async (asset) => {
+    await mapWithConcurrency(exportAssets, 2, async (asset) => {
       await ensureAssetImagesUploaded(asset);
     });
-    const rows = buildWriterExportRows();
-    const response = await fetch(EXPORT_WORKBOOK_API_ENDPOINT, {
+    const rows = buildWriterExportRows(exportAssets, {
+      requireSaved: exportingWriterRows,
+      titleSnapshotByIndex
+    });
+    const exportRequest = await fetchJsonWithRetry(EXPORT_WORKBOOK_API_ENDPOINT, {
       method: "POST",
       headers: {
         "content-type": "application/json"
       },
       credentials: "same-origin",
       body: JSON.stringify({ rows })
+    }, {
+      timeoutMs: EXPORT_REQUEST_TIMEOUT_MS,
+      maxAttempts: 1,
+      retryNetworkErrors: false,
+      stage: "workbook_export"
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) {
+    const response = exportRequest.response;
+    const payload = exportRequest.payload;
+    if (exportRequest.error) {
       throw new Error(payload.message || `导出失败：${response.status}`);
     }
 
@@ -4043,20 +4929,45 @@ async function exportWriterWorkbook() {
       link.click();
       link.remove();
     }
-    setExportWorkbookStatus(`已生成 Excel，并留存批次 ${payload.batch_id || ""}。`);
+    setExportWorkbookStatus(exportingWriterRows
+      ? `已生成包含 ${rows.length} 张已入库卡片的 Excel，并留存批次 ${payload.batch_id || ""}。`
+      : `已生成 Excel，并留存批次 ${payload.batch_id || ""}。`);
   } catch (error) {
     setExportWorkbookStatus(error.message || "导出失败。");
   } finally {
     state.exportingWorkbook = false;
-    updateExportWorkbookControls();
+    renderResults({ forceWriterRender: true });
   }
 }
 
 function resetTool() {
+  if (state.processing) {
+    setStatus("当前批次正在识别，请等待完成后再清空。", { busy: true });
+    return;
+  }
+  if (workspaceInteractionLocked()) {
+    setStatus(state.exportingWorkbook
+      ? "Excel 正在生成，请等待导出完成后再清空。"
+      : state.preparingFiles
+        ? "图片正在准备，请等待完成后再清空。"
+        : state.priorityRetryInFlight
+          ? "优先重试正在提交，请等待完成后再清空。"
+          : "当前卡片正在入库，请等待保存完成后再清空。", { busy: true });
+    return;
+  }
+  const hasPendingWork = state.results.some((result) => {
+    return v4WriterTitlePending(result)
+      || (finalTitleForResult(result) && !writerFeedbackPersisted(result));
+  });
+  if (hasPendingWork && typeof globalThis.confirm === "function") {
+    const confirmed = globalThis.confirm("仍有生成中或未入库的卡片。确定清空本轮内容吗？");
+    if (!confirmed) return;
+  }
   state.assetLifecycleGeneration += 1;
   state.backgroundPreparationRunId += 1;
   state.backgroundRecognitionBatchId = "";
   stopAllV4AssistedDraftPolling();
+  releaseImagePreviewUrls(state.files);
   state.files = [];
   state.assets = [];
   state.results = [];
@@ -4065,6 +4976,16 @@ function resetTool() {
   state.assetProgress = new Map();
   resetGenerationTimings();
   state.exportingWorkbook = false;
+  state.preparingFiles = false;
+  state.filePreparationRunId += 1;
+  state.writerActiveIndex = null;
+  state.writerTransition = "";
+  state.writerFocusPending = false;
+  state.writerSaveInFlight = false;
+  state.writerReviewComplete = false;
+  state.writerCompletionFocusPending = false;
+  state.writerCompositionActive = false;
+  state.priorityRetryInFlight = false;
   setExportWorkbookStatus("");
   stopProgressTicker();
   state.completedAssetCount = 0;
@@ -4077,18 +4998,46 @@ function resetTool() {
 }
 
 function bindEvents() {
+  elements.workspaceModeButtons.forEach((button) => {
+    button.addEventListener("click", (event) => setWorkspaceMode(button.dataset.workspaceMode, {
+      animate: event.detail > 0
+    }));
+  });
+
+  document.querySelectorAll('label[for="imageInput"]').forEach((label) => {
+    label.addEventListener("pointerdown", () => {
+      state.fileSelectionPointerRequested = true;
+    });
+    label.addEventListener("keydown", () => {
+      state.fileSelectionPointerRequested = false;
+    });
+    label.addEventListener("click", (event) => {
+      if (event.target !== elements.imageInput && event.detail === 0) state.fileSelectionPointerRequested = false;
+    });
+  });
+  elements.imageInput.addEventListener("keydown", () => {
+    state.fileSelectionPointerRequested = false;
+  });
   elements.imageInput.addEventListener("change", (event) => {
-    handleFiles(event.target.files);
+    const animateIntake = state.fileSelectionPointerRequested;
+    state.fileSelectionPointerRequested = false;
+    void handleFiles(event.target.files, { animateIntake });
   });
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
     input.addEventListener("change", () => {
+      if (workspaceInteractionLocked() || state.processing) return;
       state.assetLifecycleGeneration += 1;
       state.backgroundPreparationRunId += 1;
       state.backgroundRecognitionBatchId = "";
       stopAllV4AssistedDraftPolling();
       state.mode = input.value;
       state.results = [];
+      state.writerActiveIndex = null;
+      state.writerReviewComplete = false;
+      state.writerFocusPending = writerModeActive();
+      state.writerCompletionFocusPending = false;
+      state.writerCompositionActive = false;
       resetGenerationTimings();
       closeImageModal();
       renderPreviews();
@@ -4112,7 +5061,7 @@ function bindEvents() {
   });
 
   elements.dropZone.addEventListener("drop", (event) => {
-    handleFiles(event.dataTransfer.files);
+    void handleFiles(event.dataTransfer.files, { animateIntake: true });
   });
 
   elements.processButton.addEventListener("click", processTitles);
@@ -4125,6 +5074,22 @@ function bindEvents() {
   });
 
   elements.assetPreviewList.addEventListener("click", (event) => {
+    const writerGoButton = event.target.closest("[data-writer-go]");
+    if (writerGoButton) {
+      setWriterActiveIndex(Number(writerGoButton.dataset.writerGo), {
+        focus: true,
+        animate: event.detail > 0,
+        direction: writerGoButton.dataset.writerDirection
+      });
+      return;
+    }
+
+    const writerExportButton = event.target.closest("[data-writer-export]");
+    if (writerExportButton) {
+      void exportWriterWorkbook();
+      return;
+    }
+
     const previewButton = event.target.closest("[data-preview-asset]");
     if (previewButton) {
       openImageModal(Number(previewButton.dataset.previewAsset), Number(previewButton.dataset.previewImage));
@@ -4139,13 +5104,15 @@ function bindEvents() {
 
     const saveButton = event.target.closest("[data-save-title]");
     if (saveButton) {
-      saveTitleFeedback(saveButton);
+      if (writerModeActive()) void saveWriterTitleAndAdvance(Number(saveButton.dataset.saveTitle));
+      else void saveTitleFeedback(saveButton);
       return;
     }
 
     const rejectButton = event.target.closest("[data-reject-title]");
     if (rejectButton) {
-      rejectTitleFeedback(rejectButton);
+      if (writerModeActive()) void rejectWriterTitleAndAdvance(Number(rejectButton.dataset.rejectTitle));
+      else void rejectTitleFeedback(rejectButton);
       return;
     }
 
@@ -4158,6 +5125,13 @@ function bindEvents() {
     if (input) updateCorrectedTitle(input);
   });
 
+  elements.assetPreviewList.addEventListener("focusout", (event) => {
+    if (!event.target.closest("[data-title-input]")) return;
+    setTimeout(() => {
+      if (!elements.assetPreviewList.querySelector("[data-title-input]:focus")) renderResults();
+    }, 0);
+  });
+
   elements.assetPreviewList.addEventListener("change", (event) => {
     const titleInput = event.target.closest("[data-title-input]");
     if (titleInput) {
@@ -4166,20 +5140,63 @@ function bindEvents() {
     }
   });
 
+  elements.assetPreviewList.addEventListener("compositionstart", (event) => {
+    if (event.target.closest("[data-title-input]")) state.writerCompositionActive = true;
+  });
+
+  elements.assetPreviewList.addEventListener("compositionend", (event) => {
+    if (event.target.closest("[data-title-input]")) state.writerCompositionActive = false;
+  });
+
   elements.assetPreviewList.addEventListener("keydown", (event) => {
     const titleInput = event.target.closest("[data-title-input]");
-    if (!titleInput || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    if (
+      !titleInput
+      || event.key !== "Enter"
+      || event.shiftKey
+      || event.isComposing
+      || state.writerCompositionActive
+      || event.keyCode === 229
+      || event.repeat
+    ) return;
     event.preventDefault();
-    finalizeTitleOverride(titleInput);
+    const resultIndex = Number(titleInput.dataset.titleInput);
     const saveButton = titleInput.closest(".title-output")?.querySelector("[data-save-title]");
     const inputs = [...elements.assetPreviewList.querySelectorAll("[data-title-input]:not([disabled])")];
-    const nextInput = inputs[inputs.indexOf(titleInput) + 1] || null;
+    const currentPosition = inputs.indexOf(titleInput);
+    const nextResultIndex = Number(inputs[currentPosition + 1]?.dataset.titleInput);
+    finalizeTitleOverride(titleInput);
+    if (writerModeActive()) {
+      void saveWriterTitleAndAdvance(resultIndex);
+      return;
+    }
     if (saveButton && !saveButton.disabled) {
-      void saveTitleFeedback(saveButton).then(() => nextInput?.focus());
-    } else {
-      nextInput?.focus();
+      void saveTitleFeedback(saveButton).then((saved) => {
+        if (!saved || !Number.isFinite(nextResultIndex)) return;
+        elements.assetPreviewList.querySelector(`[data-title-input="${nextResultIndex}"]:not([disabled])`)?.focus();
+      });
+    } else if (Number.isFinite(nextResultIndex)) {
+      elements.assetPreviewList.querySelector(`[data-title-input="${nextResultIndex}"]:not([disabled])`)?.focus();
     }
   });
+
+  elements.assetPreviewList.addEventListener("wheel", (event) => {
+    if (!writerModeActive() || !event.target.closest("[data-writer-wheel]")) return;
+    if (event.target.closest("[data-writer-card] textarea, [data-writer-card] input, [data-writer-card] select, [data-writer-card] button, [data-writer-card] [contenteditable='true']")) return;
+    if (workspaceInteractionLocked() || Math.abs(event.deltaY) < 8) return;
+    const now = Date.now();
+    if (now - state.writerLastWheelNavigationAt < 280) return;
+    const direction = event.deltaY > 0 ? 1 : -1;
+    const adjacent = writerAdjacentAsset(state.writerActiveIndex, direction);
+    if (!adjacent) return;
+    event.preventDefault();
+    state.writerLastWheelNavigationAt = now;
+    setWriterActiveIndex(adjacent.index, {
+      focus: true,
+      animate: true,
+      direction: direction > 0 ? "forward" : "backward"
+    });
+  }, { passive: false });
 
   elements.imageModal.addEventListener("click", (event) => {
     if (event.target.closest("[data-modal-close]")) {
@@ -4194,13 +5211,35 @@ function bindEvents() {
   elements.imageModalClose.addEventListener("click", closeImageModal);
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeImageModal();
+    if (!state.modal) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeImageModal();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...elements.imageModal.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])")]
+      .filter((element) => !element.hidden && element.getClientRects().length > 0);
+    if (!focusable.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
 
   globalThis.window?.addEventListener("beforeunload", (event) => {
+    if (globalThis.__LYNCA_CONFIRMED_NAVIGATION__ === true) return;
     const pending = state.processing || state.results.some((result) => v4WriterTitlePending(result));
     const unsaved = state.results.some((result) => {
-      return finalTitleForResult(result) && !["saved", "skipped"].includes(String(result.feedbackStatus || ""));
+      return finalTitleForResult(result) && !writerFeedbackPersisted(result);
     });
     if (!pending && !unsaved) return;
     event.preventDefault();
@@ -4210,7 +5249,17 @@ function bindEvents() {
 
 async function loadResolutionMap() {
   try {
-    const response = await fetch("/app/resolution.json");
+    const request = await fetchWithBoundedRetry("/app/resolution.json", {
+      credentials: "same-origin",
+      cache: "no-store"
+    }, {
+      timeoutMs: RESOLUTION_MAP_TIMEOUT_MS,
+      maxAttempts: 2,
+      retryNetworkErrors: true,
+      maxDelayMs: 750
+    });
+    const response = request.response;
+    if (!response.ok) throw new Error(`Resolution map failed: ${response.status}`);
     state.resolutionMap = await response.json();
   } catch {
     state.resolutionMap = {};
@@ -4219,9 +5268,15 @@ async function loadResolutionMap() {
 
 async function loadProviderStatus() {
   try {
-    const response = await fetch("/api/listing-provider-status", {
+    const request = await fetchWithBoundedRetry("/api/listing-provider-status", {
       credentials: "same-origin"
+    }, {
+      timeoutMs: PROVIDER_STATUS_TIMEOUT_MS,
+      maxAttempts: 3,
+      retryNetworkErrors: true,
+      maxDelayMs: 1500
     });
+    const response = request.response;
     if (!response.ok) throw new Error(`Provider status failed: ${response.status}`);
 
     const payload = await response.json();
@@ -4236,27 +5291,43 @@ async function loadProviderStatus() {
   }
 
   renderProviderControl();
+  if (
+    storageReady()
+    && state.assets.some((asset) => (
+      !asset.preingestionBundleId
+      && !asset.backgroundPreparationPromise
+      && asset.backgroundPrepareStatus !== "ready"
+    ))
+  ) {
+    startBackgroundPreparation("provider_status_ready");
+  }
 }
 
 async function prewarmV4(reason = "page_load") {
+  if (!state.selectedProvider) return;
   try {
     const params = new URLSearchParams({ reason });
-    await fetch(`${PREWARM_API_ENDPOINT}?${params.toString()}`, {
+    await fetchWithBoundedRetry(`${PREWARM_API_ENDPOINT}?${params.toString()}`, {
       method: "GET",
       credentials: "same-origin",
       cache: "no-store",
       keepalive: true
+    }, {
+      timeoutMs: PREWARM_TIMEOUT_MS,
+      maxAttempts: 2,
+      retryNetworkErrors: true,
+      maxDelayMs: 1000
     });
   } catch {
     // Prewarm is opportunistic. Formal recognition must remain the source of truth.
   }
 }
 
-void prewarmV4("page_load");
-await Promise.all([
-  loadResolutionMap(),
-  loadProviderStatus()
-]);
 bindEvents();
 renderPreviews();
 renderResults();
+
+void Promise.all([
+  loadResolutionMap(),
+  loadProviderStatus()
+]).then(() => prewarmV4("page_load"));

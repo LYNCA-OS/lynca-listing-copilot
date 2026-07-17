@@ -13,8 +13,7 @@ import {
   v4QueueConfigured,
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
-import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
-import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
+import { scheduleTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import {
@@ -85,9 +84,6 @@ export function triggerPump(_req, {
   fetchImpl = globalThis.fetch,
   defer = waitUntil
 } = {}) {
-  const secret = configuredWorkerSecret(env);
-  const origin = trustedInternalServiceOrigin(env);
-  if (!secret || !origin) return { triggered: false, reason: !secret ? "worker_secret_missing" : "internal_origin_missing" };
   const stableConcurrency = v4WorkerProcessConcurrency(env);
   const body = {
     tenant_id: tenantId,
@@ -99,7 +95,6 @@ export function triggerPump(_req, {
     background_process_concurrency: stableConcurrency,
     cycles: 2,
     max_runtime_ms: 240_000,
-    retry_delay_seconds: 8,
     parallel_lanes: true,
     idle_cycles_before_stop: 1,
     background_idle_cycles: 1,
@@ -107,15 +102,14 @@ export function triggerPump(_req, {
     max_continuation_depth: 20,
     reason: "prewarm"
   };
-  defer(fetchImpl(`${origin}/api/v4/listing-job-pump`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      [workerSecretHeader]: secret
-    },
-    body: JSON.stringify(body)
-  }).catch(() => null));
-  return { triggered: true, reason: "prewarm" };
+  const scheduled = scheduleTrustedV4QueuePump({
+    payload: body,
+    reason: "prewarm",
+    env,
+    fetchImpl,
+    defer
+  });
+  return { triggered: scheduled.triggered, reason: scheduled.reason };
 }
 
 export default async function handler(req, res) {

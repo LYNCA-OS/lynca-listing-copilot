@@ -26,6 +26,30 @@ assert.equal(
   4,
   "all empty catalog name arrays must retain the text[] OID"
 );
+assert.match(
+  preflightSource,
+  /case when trigger\.tgqual is null then null else 'present' end as when_expression/,
+  "trigger WHEN clauses must use a fail-closed presence marker"
+);
+assert.doesNotMatch(
+  preflightSource,
+  /pg_get_expr\(trigger\.tgqual, trigger\.tgrelid/,
+  "catalog reads must not deparse OLD+NEW trigger expressions against one relation context"
+);
+assert.match(
+  preflightSource,
+  /storage_row_level_security[\s\S]*from pg_catalog\.pg_policies policy/,
+  "the direct catalog gate must attest Storage RLS and policies"
+);
+assert.equal(
+  TRACK_C_SCHEMA_SECURITY_CONTRACT.storagePolicies.length,
+  4,
+  "signed listing uploads require the exact four service-role Storage policies"
+);
+assert.deepEqual(
+  TRACK_C_SCHEMA_SECURITY_CONTRACT.storagePolicies.map(({ command }) => command).sort(),
+  ["DELETE", "INSERT", "SELECT", "UPDATE"]
+);
 
 function validSecuritySnapshot() {
   return {
@@ -142,6 +166,9 @@ assertMutationFails("disabled trigger", (snapshot) => {
 }, "required_triggers");
 assertMutationFails("wrong trigger update columns", (snapshot) => {
   snapshot.triggers[0].update_columns = [];
+}, "required_triggers");
+assertMutationFails("unexpected trigger WHEN clause", (snapshot) => {
+  snapshot.triggers[0].when_expression = "present";
 }, "required_triggers");
 
 assertMutationFails("wrong CHECK type", (snapshot) => {

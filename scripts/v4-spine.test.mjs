@@ -734,6 +734,7 @@ const writerReadyCapacityMigrationApiSource = await readFile("api/admin-apply-v4
 const balancedProviderKeyMigrationSource = await readFile("supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql", "utf8");
 const productionDeployWorkflowSource = await readFile(".github/workflows/deploy-production.yml", "utf8");
 const trackCProductionSchemaSource = await readFile("scripts/check-track-c-production-schema.mjs", "utf8");
+const trackCProductionSchemaRestSource = await readFile("scripts/check-track-c-production-schema-rest.mjs", "utf8");
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
@@ -800,6 +801,8 @@ assert.doesNotMatch(productionDeployWorkflowSource, /\/api\/admin-apply-/, "a pr
 assert.match(productionDeployWorkflowSource, /Migrations are maintenance-window operations/, "production migration ownership must remain an explicit maintenance-window boundary.");
 assert.match(productionDeployWorkflowSource, /check-track-c-production-schema\.mjs[\s\S]*track-c-production-schema-preflight\.json/, "production deployment must fail closed on a read-only Track C schema preflight.");
 assert.match(productionDeployWorkflowSource, /track-c-production-schema-postdeploy\.json/, "the read-only production schema result must be retained after deployment.");
+assert.match(productionDeployWorkflowSource, /check-track-c-production-schema-rest\.mjs/, "production deployment must retain a strict Supabase Data API fallback when direct Postgres is unavailable.");
+assert.match(productionDeployWorkflowSource, /SUPABASE_SERVICE_ROLE_KEY:\s*\$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/, "the REST schema fallback must receive its service key only through GitHub secrets.");
 assert.match(queueMigrationApiSource, /20260713224500_v4_tenant_fair_provider_queue\.sql/, "production migration apply must include the tenant-fair scheduler.");
 assert.match(queueMigrationApiSource, /tenant_fair_scheduler/, "the migration probe must verify that tenant-first scheduling is installed.");
 assert.match(queueMigrationApiSource, /tenant_fair_claim_ok/, "the migration probe must prove that multiple batches cannot multiply one tenant's provider share.");
@@ -845,6 +848,11 @@ assert.match(writerReadyCapacityMigrationSource, /revoke all on function public\
 assert.match(writerReadyCapacityMigrationApiSource, /anon_blocked[\s\S]*authenticated_blocked[\s\S]*service_role_allowed/, "the writer-ready capacity migration probe must verify the RPC privilege boundary.");
 assert.match(trackCProductionSchemaSource, /persist_v4_noncritical_artifacts\(text,jsonb,jsonb,jsonb,jsonb\)/, "the read-only release preflight must verify atomic non-critical persistence.");
 assert.match(trackCProductionSchemaSource, /persist_v4_writer_ready_and_release_capacity\(text,jsonb,text,text\)/, "the read-only release preflight must verify atomic writer-ready capacity release.");
+assert.match(trackCProductionSchemaSource, /enqueue_v4_recognition_batch_atomic\(jsonb,jsonb,text,jsonb,text\)/, "the catalog preflight must require the canonical atomic enqueue signature.");
+assert.equal([...trackCProductionSchemaSource.matchAll(/"enqueue_v4_recognition_batch_atomic\(jsonb,jsonb,text,jsonb,text\)"/g)].length, 2, "the canonical atomic enqueue signature must be required and service-role-only.");
+assert.equal([...trackCProductionSchemaSource.matchAll(/"enqueue_v4_recognition_batch_atomic\(text,text,jsonb,jsonb,jsonb\)"/g)].length, 1, "the retired atomic enqueue signature must remain forbidden, not required.");
+assert.match(trackCProductionSchemaRestSource, /application\/openapi\+json/, "the REST fallback must validate generated database OpenAPI rather than relying on a generic health response.");
+assert.match(trackCProductionSchemaRestSource, /method:\s*"HEAD"/, "the REST fallback must actively resolve required tables with read-only requests.");
 assert.match(writerLearningSupersessionMigrationSource, /before insert on public\.v4_learning_events/, "writer learning supersession must be enforced at the database boundary.");
 assert.match(writerLearningSupersessionMigrationSource, /SUPERSEDED_BY_LATEST_WRITER_FEEDBACK/, "older writer-derived training truth must be retained for audit but excluded from training.");
 assert.match(writerLearningSupersessionMigrationSource, /events\.id <> new\.id[\s\S]*events\.training_eligible = true/, "the latest writer event must only supersede older eligible events for the same session.");

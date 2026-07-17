@@ -3289,11 +3289,9 @@ body.login-shell .input-token {
 }
 
 
-.batch-title-list,
-.batch-titles-board,
-.asset-review-group,
-.asset-preview-list {
-  will-change: transform;
+.asset-row-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 720px;
 }
 
 @media (max-width: 1180px) {

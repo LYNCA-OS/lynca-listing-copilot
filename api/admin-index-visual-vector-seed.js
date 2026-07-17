@@ -94,6 +94,7 @@ function publicIndexReport(report = {}, { authMode = "" } = {}) {
       worker_attempt_count: Number(summary.worker_attempt_count || 0),
       worker_latency_p50_ms: finiteNumberOrNull(summary.worker_latency_p50_ms),
       worker_latency_p95_ms: finiteNumberOrNull(summary.worker_latency_p95_ms),
+      worker_retry_item_count: Number(summary.worker_retry_item_count || 0),
       next_offset: Number(summary.offset || report.offset || 0) + Number(summary.requested_items || 0),
       done: Number(summary.offset || report.offset || 0) + Number(summary.requested_items || 0) >= Number(summary.image_backed_items || 0)
     },

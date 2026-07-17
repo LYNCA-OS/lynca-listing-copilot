@@ -103,6 +103,39 @@ assert.equal(healthyLedger.nodes.find((node) => node.node_id === "catalog_stage_
 assert.equal(healthyLedger.nodes.find((node) => node.node_id === "vector_stage_capacity")?.status, "SKIPPED");
 assert.equal(JSON.stringify(healthyLedger).includes("sk-secret-value"), false);
 
+const clientNetworkLedger = buildPipelineNodeLedger({
+  result: {
+    ...healthyResult,
+    preingestion_bundle_id: "bundle-client-network"
+  },
+  payload: {
+    asset_id: "asset-client-network",
+    images: [{}, {}],
+    clientTiming: {
+      client_upload_ms: 1400,
+      client_storage_sign_ms: 180,
+      client_storage_put_ms: 900,
+      client_storage_verify_ms: 320,
+      client_storage_sign_attempts: 3,
+      client_storage_put_attempts: 2,
+      client_storage_verify_attempts: 2,
+      client_storage_image_count: 2,
+      client_network_retry_count: 1,
+      client_storage_recovered_upload_count: 1,
+      client_background_prepare_ms: 1700,
+      client_preingestion_request_ms: 300,
+      client_preingestion_request_attempts: 1
+    }
+  }
+});
+const clientUploadNode = clientNetworkLedger.nodes.find((node) => node.node_id === "client_image_upload");
+const clientPreingestionNode = clientNetworkLedger.nodes.find((node) => node.node_id === "client_preingestion_build");
+assert.equal(clientUploadNode.metrics.signing_ms, 180);
+assert.equal(clientUploadNode.metrics.retry_count, 1);
+assert.equal(clientUploadNode.metrics.recovered_upload_count, 1);
+assert.equal(clientPreingestionNode.metrics.request_ms, 300);
+assert.equal(clientPreingestionNode.metrics.request_attempts, 1);
+
 const droppedAtomicGradeLedger = buildPipelineNodeLedger({
   result: {
     ...healthyResult,

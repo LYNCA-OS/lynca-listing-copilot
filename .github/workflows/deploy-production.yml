@@ -41,14 +41,25 @@ jobs:
           npm run test:launch-benchmark
           npm run check:production-engineering
           npm run test:production-engineering
+          npm run check:production-schema-rest
+          npm run test:production-schema-rest
       - name: Fail closed unless the Track C production schema is ready
         env:
           POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           # Migrations are maintenance-window operations. Deployment is
           # deliberately read-only with respect to the production database.
-          node scripts/check-track-c-production-schema.mjs \
-            --out /tmp/track-c-production-schema-preflight.json
+          if test -n "$POSTGRES_URL_NON_POOLING"; then
+            node scripts/check-track-c-production-schema.mjs \
+              --out /tmp/track-c-production-schema-preflight.json
+          else
+            test -n "$SUPABASE_URL"
+            test -n "$SUPABASE_SERVICE_ROLE_KEY"
+            node scripts/check-track-c-production-schema-rest.mjs \
+              --out /tmp/track-c-production-schema-preflight.json
+          fi
       - name: Re-confirm the exact main commit before the deploy hook
         env:
           DISPATCH_SHA: ${{ github.sha }}
@@ -86,9 +97,18 @@ jobs:
       - name: Re-verify the production schema after deployment
         env:
           POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          node scripts/check-track-c-production-schema.mjs \
-            --out /tmp/track-c-production-schema-postdeploy.json
+          if test -n "$POSTGRES_URL_NON_POOLING"; then
+            node scripts/check-track-c-production-schema.mjs \
+              --out /tmp/track-c-production-schema-postdeploy.json
+          else
+            test -n "$SUPABASE_URL"
+            test -n "$SUPABASE_SERVICE_ROLE_KEY"
+            node scripts/check-track-c-production-schema-rest.mjs \
+              --out /tmp/track-c-production-schema-postdeploy.json
+          fi
       - name: Verify production alias and V4 runtime
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}

@@ -7,6 +7,7 @@ import {
   currentPreingestionEvidencePatches,
   imagesFromPreIngestionBundle,
   normalizeEvidencePatch,
+  readPreIngestionBundleByAsset,
   readPreIngestionBundle,
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
@@ -257,6 +258,35 @@ assert.equal(calls[1].body.tenant_id, tenantId);
 assert.equal(calls[1].body.asset_id, assetId);
 assert.equal(JSON.stringify(calls[1].body).includes("should-not-persist"), false);
 
+let transientWriteAttempts = 0;
+const recoveredWrite = await upsertPreIngestionBundle({
+  bundle,
+  env,
+  fetchImpl: async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname === "/rest/v1/listing_assets") {
+      return {
+        ok: true,
+        status: 200,
+        headers: null,
+        text: async () => JSON.stringify([{ tenant_id: tenantId, id: assetId }])
+      };
+    }
+    transientWriteAttempts += 1;
+    if (transientWriteAttempts === 1) {
+      return { ok: false, status: 503, headers: null, text: async () => "temporary" };
+    }
+    return {
+      ok: true,
+      status: 201,
+      headers: null,
+      text: async () => JSON.stringify([JSON.parse(init.body)])
+    };
+  }
+});
+assert.equal(recoveredWrite.saved, true);
+assert.equal(transientWriteAttempts, 2, "idempotent bundle writes should recover one transient transport failure");
+
 const read = await readPreIngestionBundle({
   bundleId: bundle.bundle_id,
   tenantId,
@@ -266,6 +296,19 @@ const read = await readPreIngestionBundle({
 assert.equal(read.found, true);
 assert.equal(calls[2].search.bundle_id, `eq.${bundle.bundle_id}`);
 assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
+
+const byAsset = await readPreIngestionBundleByAsset({
+  assetId: bundle.asset_id,
+  tenantId,
+  source: bundle.source,
+  env,
+  fetchImpl
+});
+assert.equal(byAsset.bundle_id, bundle.bundle_id);
+assert.equal(calls[3].search.asset_id, `eq.${bundle.asset_id}`);
+assert.equal(calls[3].search.tenant_id, `eq.${tenantId}`);
+assert.equal(calls[3].search.source, `eq.${bundle.source}`);
+assert.equal(calls[3].search.bundle_version, `eq.${bundle.bundle_version}`);
 
 const titlePayload = {
   tenant_id: tenantId,
@@ -288,6 +331,24 @@ assert.equal(titlePayload.images.length, 3);
 assert.equal(titlePayload.images[0].storageVerified, true);
 assert.equal(titlePayload.preprocessing_summary, undefined);
 assert.equal(titlePayload.preingestion_summary.bundle_id, bundle.bundle_id);
+
+const canonicalImages = [{ id: "canonical-front", objectPath: "server-canonical-front" }];
+const canonicalPayload = {
+  tenant_id: tenantId,
+  preingestion_bundle_id: bundle.bundle_id,
+  v4_preserve_canonical_images_on_bundle_load: true,
+  images: canonicalImages
+};
+const canonicalApplied = await __listingCopilotTitleTestHooks.applyPreIngestionBundleToPayload(canonicalPayload, {
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify([bundle])
+  })
+});
+assert.equal(canonicalApplied.applied, true);
+assert.equal(canonicalPayload.preingestion_bundle_used, true);
+assert.equal(canonicalPayload.images, canonicalImages, "server-canonical queue images must remain the recognition truth");
 
 const signedImages = [{ signed_url: "https://signed.test/front", image_id: "front" }];
 const refreshPayload = {
