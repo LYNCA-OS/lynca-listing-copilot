@@ -198,7 +198,7 @@ async function verify(client) {
         select 1
         from information_schema.columns
         where table_schema = 'public'
-          and table_name = 'v4_recognition_jobs'
+        and table_name = 'v4_recognition_jobs'
           and column_name = 'lane'
       ) as lane_column,
       exists (
@@ -343,7 +343,8 @@ async function verifyAtomicEnqueueV4FunctionBehavior(client) {
   const jobId = `probe_job_${suffix}`;
   const batchId = `probe_batch_${suffix}`;
   const clientAssetRef = `probe_ref_${suffix}`;
-  const probeHex = `${Date.now().toString(16)}${suffix.replace(/[^a-f0-9]/g, "").toLowerCase()}`.slice(0, 32).padEnd(32, "0");
+  const probeHex = `${Date.now().toString(16)}${suffix.replace(/[^a-f0-9]/g, "").toLowerCase()}`
+    .slice(0, 32).padEnd(32, "0");
   const assetId = `asset_${probeHex.slice(0, 8)}-${probeHex.slice(8, 12)}-4${probeHex.slice(12, 15)}-8${probeHex.slice(15, 18)}-${probeHex.slice(18, 30)}`;
   const probeBatch = {
     id: batchId,
@@ -391,7 +392,7 @@ async function verifyAtomicEnqueueV4FunctionBehavior(client) {
     status: "CREATED",
     priority: 100
   };
-    await client.query("begin");
+  await client.query("begin");
   try {
     await client.query(`
       insert into public.listing_assets (id)

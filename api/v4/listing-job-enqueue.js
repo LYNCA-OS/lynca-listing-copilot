@@ -401,10 +401,10 @@ export default async function handler(req, res) {
   const failedEntries = result.jobs.filter((entry) => !entry.saved);
   const acceptedCount = Number(result.accepted_count ?? result.jobs.filter((entry) => entry.saved).length);
   const noJobsAccepted = stageJobs.length > 0 && acceptedCount === 0;
+  const queueSchemaDependencyMissing = failedEntries.some((entry) => isQueueSchemaDependencyFailure(entry.error));
   const deterministicConflict = failedEntries.some((entry) => (
     /identity_conflict|terminal_retry_required/.test(String(entry.error || ""))
   ));
-  const queueSchemaDependencyMissing = failedEntries.some((entry) => isQueueSchemaDependencyFailure(entry.error));
   const responseStatus = noJobsAccepted ? deterministicConflict ? 409 : 503 : 200;
   const failureMessage = failedEntries
     .map((entry) => String(entry.error || "queue_job_persistence_failed").trim())
