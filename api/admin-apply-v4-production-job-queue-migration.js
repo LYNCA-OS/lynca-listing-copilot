@@ -12,6 +12,7 @@ const migrationPaths = [
   "supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql",
   "supabase/migrations/20260713130000_v4_stage_capacity_control.sql",
   "supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql",
+  "supabase/migrations/20260715064500_ensure_v4_learning_events_dataset_disposition_for_queue.sql",
   "supabase/migrations/20260715065830_track_d_data_flywheel_convergence.sql",
   "supabase/migrations/20260717100000_fix_v4_queue_atomic_rpc_signature.sql"
 ].map((path) => join(process.cwd(), path));
