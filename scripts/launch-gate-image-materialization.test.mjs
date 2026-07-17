@@ -48,8 +48,8 @@ function mockRes() {
 
 assert.ok(launchGateImageSourceCount() >= 300);
 assert.equal(
-  vercelConfig.functions["api/v4/launch-gate-source-images.js"].includeFiles,
-  "data/**/*.json"
+  Object.hasOwn(vercelConfig.functions["api/v4/launch-gate-source-images.js"], "includeFiles"),
+  false
 );
 const allowlisted = resolveLaunchGateImageSources([
   reviewedItem.source_feedback_id,

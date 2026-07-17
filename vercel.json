@@ -98,8 +98,7 @@
       "maxDuration": 300
     },
     "api/v4/launch-gate-source-images.js": {
-      "maxDuration": 120,
-      "includeFiles": "data/**/*.json"
+      "maxDuration": 120
     },
     "api/admin-apply-v4-production-job-queue-migration.js": {
       "maxDuration": 300,
