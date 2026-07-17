@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   callRecognitionCoreWithGpt5EmptyRetry
 } from "../api/v4/listing-copilot-title.js";
+import { preingestionOcrScopeFromPayload } from "../api/listing-copilot-title.js";
 import { scopeV4RecognitionPayloadFromFencedJob } from "../lib/listing/v4/session/trusted-session-identity.mjs";
 import { createListingImageVerificationToken } from "../lib/listing/storage/supabase-image-storage.mjs";
 
@@ -143,6 +144,16 @@ try {
   assert.equal(workerScoped.recognition_session_id, "session_a_persisted");
   assert.equal(workerScoped.v4_origin_tenant_id, "tenant_a");
   assert.equal(workerScoped.v4_origin_operator_id, "user_creator_a");
+
+  assert.deepEqual(preingestionOcrScopeFromPayload({
+    tenant_id: workerScoped.tenant_id,
+    asset_id: workerScoped.asset_id,
+    preingestion_bundle_id: "bundle_tenant_a"
+  }), {
+    tenantId: "tenant_a",
+    assetId: tenantAAssetId,
+    bundleId: "bundle_tenant_a"
+  });
 } finally {
   globalThis.fetch = originalFetch;
   for (const [key, value] of Object.entries(originalEnv)) {

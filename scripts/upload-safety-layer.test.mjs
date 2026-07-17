@@ -62,6 +62,10 @@ assert.match(js, /const MAX_CONCURRENT_WORKERS\s*=\s*6/, "queue submission worke
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");
 assert.match(js, /results\[index\]\s*=\s*await worker\(source\[index\], index\)/, "concurrent preprocessing should preserve input order in results");
 assert.match(js, /mapWithConcurrency\(imageFiles,\s*IMAGE_PREPROCESS_CONCURRENCY/, "file preprocessing should use bounded concurrency");
+assert.match(js, /prepareFileForIntake\(file\)/, "production intake should select the storage-first path before legacy canvas preprocessing");
+assert.match(js, /storageFirstAssetImage/, "browser-native originals should have a storage-first intake path");
+assert.match(js, /targetedCrops:\s*\[\]/, "storage-first originals should leave crop planning to cloud pre-ingestion");
+assert.match(js, /await ensureImageUploadMetadata\(image\)/, "signed upload must wait for lightweight dimensions before validation");
 assert.match(js, /compressed\.targetedCrops\s*=\s*buildTargetedCropImages/, "targeted crops should be generated once after final compression");
 assert.doesNotMatch(js, /targetedCrops:\s*sourceImage\s*\?\s*buildTargetedCropImages/, "recompression attempts must not regenerate the full crop set");
 assert.match(js, /mapWithConcurrency\(entries,\s*STORAGE_UPLOAD_CONCURRENCY/, "each storage upload phase should use bounded concurrency");

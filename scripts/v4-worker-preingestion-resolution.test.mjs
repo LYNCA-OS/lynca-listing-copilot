@@ -26,6 +26,7 @@ const bundle = {
 const calls = [];
 const resolved = await resolveCanonicalWorkerPreingestion({
   payload: {
+    tenant_id: tenantId,
     asset_id: assetId,
     images: [{ id: "canonical-image" }],
     preingestion_bundle_id: "bundle_browser_attacker",
@@ -61,6 +62,7 @@ assert.equal(resolved.found, true);
 assert.equal(resolved.payload.preingestion_bundle_id, bundleId);
 assert.equal(resolved.payload.preingestionBundleId, bundleId);
 assert.equal(resolved.payload.preingestion_bundle_status, "READY");
+assert.equal(resolved.payload.tenant_id, tenantId);
 assert.equal(resolved.payload.preingestion_summary.bundle_id, bundleId);
 assert.equal("preingestion_bundle" in resolved.payload, false);
 assert.equal("preingestionBundle" in resolved.payload, false);

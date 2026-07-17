@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { fetchWithBoundedRetry } from "../lib/listing/client/bounded-fetch.mjs";
 import { fairTokenRecall, policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 import {
   assertEvaluationSampleProvenance,
@@ -133,99 +134,247 @@ function itemImages(item = {}) {
     }));
 }
 
-function verificationCacheKey(image = {}) {
-  return `${image.bucket || ""}:${image.object_path || image.objectPath || ""}`;
+function smokeUploadSources(item = {}, index = 0) {
+  return (Array.isArray(item.images) ? item.images : [])
+    .filter((image) => cleanText(image?.local_path || image?.localPath))
+    .slice(0, 2)
+    .map((image, imageIndex) => ({
+      ...image,
+      id: image.image_id || `${candidateId(item, index)}_${imageIndex + 1}`,
+      image_id: image.image_id || `${candidateId(item, index)}_${imageIndex + 1}`,
+      local_path: cleanText(image.local_path || image.localPath),
+      storage_role: `image_${imageIndex + 1}_original`,
+      capture_angle: `image_${imageIndex + 1}`
+    }));
 }
 
-async function verifyExistingImage({
+function smokeClientAssetRef(item = {}, index = 0) {
+  const sourceHash = crypto.createHash("sha256")
+    .update(candidateId(item, index))
+    .digest("hex")
+    .slice(0, 16);
+  return `v4-smoke:${sourceHash}:${crypto.randomUUID()}`;
+}
+
+function inferredImageContentType(image = {}, bytes = Buffer.alloc(0)) {
+  const explicit = cleanText(image.content_type || image.contentType).toLowerCase();
+  if (explicit) return explicit;
+  if (bytes.subarray(0, 3).toString("hex") === "ffd8ff") return "image/jpeg";
+  if (bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") return "image/png";
+  if (bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP") {
+    return "image/webp";
+  }
+  throw new Error(`smoke_image_content_type_unknown:${cleanText(image.local_path)}`);
+}
+
+async function createDurableSmokeAsset({
   baseUrl,
   cookie,
-  image,
-  assetId,
+  item,
+  index,
   requestTimeoutMs,
-  verificationCache,
   fetchImpl = globalThis.fetch
 }) {
-  const cacheKey = verificationCacheKey(image);
-  if (verificationCache?.has(cacheKey)) return verificationCache.get(cacheKey);
-  const verifyOnce = () => postJson({
+  const sources = smokeUploadSources(item, index);
+  if (!sources.length) {
+    throw new Error(`smoke_local_images_missing:${candidateId(item, index)}`);
+  }
+  const clientAssetRef = smokeClientAssetRef(item, index);
+  const response = await postJson({
     baseUrl,
-    path: "/api/listing-image-verify-existing",
+    path: "/api/listing-asset-create",
     cookie,
     payload: {
-      object_path: image.object_path,
-      bucket: image.bucket,
-      image_id: image.image_id,
-      asset_id: assetId,
-      role: image.role
+      client_asset_ref: clientAssetRef,
+      capture_profile_id: "v4_ebay_blind_smoke",
+      category: item.category || "collectible_card",
+      expected_original_count: sources.length
     },
     requestTimeoutMs,
     fetchImpl
   });
-  let response;
-  try {
-    response = await verifyOnce();
-  } catch (error) {
-    // 生产偶发的长尾挂起（如 Supabase 连接池瞬时排队）会让单发 verify 超时；
-    // 浏览器端的真实上传流程天然带重试，这里补一次以对齐。
-    await delay(2000);
-    response = await verifyOnce();
+  if (!response.ok || response.data?.ok !== true || !cleanText(response.data?.asset_id)) {
+    throw new Error(`smoke_asset_create_failed:${response.http_status}:${cleanText(response.data?.message).slice(0, 180)}`);
   }
-  const verification = response.data?.verification || {};
-  if (!response.ok || response.data?.ok !== true || !verification.verification_token) {
-    throw new Error(`image verification failed HTTP ${response.http_status}: ${cleanText(response.data?.message).slice(0, 180)}`);
+  if (cleanText(response.data?.client_asset_ref) !== clientAssetRef) {
+    throw new Error("smoke_asset_client_ref_mismatch");
   }
-  const verifiedImage = {
-    ...image,
-    objectPath: verification.object_path,
-    object_path: verification.object_path,
-    bucket: verification.bucket,
-    storageVerified: true,
-    storage_verified: true,
-    storageVerificationToken: verification.verification_token,
-    storage_verification_token: verification.verification_token,
-    contentType: verification.content_type,
-    content_type: verification.content_type,
-    originalType: verification.content_type,
-    original_type: verification.content_type,
-    size: verification.size,
-    originalSize: verification.size,
-    original_size: verification.size,
-    width: verification.width,
-    originalWidth: verification.width,
-    original_width: verification.width,
-    height: verification.height,
-    originalHeight: verification.height,
-    original_height: verification.height,
-    contentSha256: verification.content_sha256 || "",
-    content_sha256: verification.content_sha256 || ""
+  return {
+    asset_id: response.data.asset_id,
+    tenant_id: response.data.tenant_id,
+    image_generation_id: response.data.image_generation_id || response.data.asset_id,
+    client_asset_ref: clientAssetRef,
+    sources
   };
-  verificationCache?.set(cacheKey, verifiedImage);
-  return verifiedImage;
 }
 
-async function verifiedItemImages({
+async function uploadDurableSmokeImage({
+  baseUrl,
+  cookie,
+  asset,
+  image,
+  requestTimeoutMs,
+  fetchImpl = globalThis.fetch
+}) {
+  const bytes = await readFile(resolve(image.local_path));
+  const contentType = inferredImageContentType(image, bytes);
+  const contentSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  const signatureHex = bytes.subarray(0, 32).toString("hex");
+  const width = Number(image.width);
+  const height = Number(image.height);
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+    throw new Error(`smoke_image_dimensions_missing:${image.image_id}`);
+  }
+  const fileName = basename(image.local_path) || `${image.image_id}.jpg`;
+  const signed = await postJson({
+    baseUrl,
+    path: "/api/listing-image-upload-url",
+    cookie,
+    payload: {
+      assetId: asset.asset_id,
+      clientAssetRef: asset.client_asset_ref,
+      imageId: image.image_id,
+      role: image.storage_role,
+      fileName,
+      contentType,
+      size: bytes.byteLength,
+      width,
+      height,
+      signatureHex,
+      contentSha256
+    },
+    requestTimeoutMs,
+    fetchImpl
+  });
+  const upload = signed.data?.upload || {};
+  if (!signed.ok || signed.data?.ok !== true || !cleanText(upload.signed_upload_url)) {
+    throw new Error(`smoke_upload_sign_failed:${signed.http_status}:${cleanText(signed.data?.message).slice(0, 180)}`);
+  }
+  if (
+    cleanText(signed.data?.asset_id) !== asset.asset_id
+    || cleanText(signed.data?.client_asset_ref) !== asset.client_asset_ref
+    || cleanText(upload.tenant_id) !== asset.tenant_id
+    || cleanText(upload.image_id) !== image.image_id
+    || cleanText(upload.storage_role) !== image.storage_role
+  ) {
+    throw new Error("smoke_upload_identity_mismatch");
+  }
+
+  const put = await fetchWithBoundedRetry(upload.signed_upload_url, {
+    method: "PUT",
+    headers: { "content-type": upload.content_type || contentType },
+    body: bytes
+  }, {
+    fetchImpl,
+    timeoutMs: Math.min(30_000, requestTimeoutMs),
+    maxAttempts: 3,
+    retryNetworkErrors: true,
+    maxDelayMs: 1500
+  });
+
+  const verification = await postJson({
+    baseUrl,
+    path: "/api/listing-image-verify-upload",
+    cookie,
+    payload: {
+      assetId: asset.asset_id,
+      imageId: image.image_id,
+      role: image.storage_role,
+      fileName,
+      objectPath: upload.object_path,
+      contentType: upload.content_type || contentType,
+      size: bytes.byteLength,
+      width,
+      height,
+      signatureHex,
+      contentSha256
+    },
+    requestTimeoutMs,
+    fetchImpl
+  });
+  const verified = verification.data?.verification || {};
+  if (!verification.ok || verification.data?.ok !== true || !cleanText(verified.verification_token)) {
+    const putStatus = put.response?.status ?? "unknown";
+    throw new Error(`smoke_upload_verify_failed:put_${putStatus}:verify_${verification.http_status}:${cleanText(verification.data?.message).slice(0, 180)}`);
+  }
+  if (!put.response?.ok && verified.object_verified !== true) {
+    throw new Error(`smoke_storage_put_failed:${put.response?.status || "unknown"}`);
+  }
+
+  return {
+    id: image.image_id,
+    image_id: image.image_id,
+    name: fileName,
+    role: image.storage_role,
+    storageRole: image.storage_role,
+    storage_role: image.storage_role,
+    capture_angle: image.capture_angle,
+    objectPath: verified.object_path,
+    object_path: verified.object_path,
+    bucket: verified.bucket,
+    storageVerified: true,
+    storage_verified: true,
+    storageVerificationToken: verified.verification_token,
+    storage_verification_token: verified.verification_token,
+    contentType: verified.content_type,
+    content_type: verified.content_type,
+    originalType: verified.content_type,
+    original_type: verified.content_type,
+    size: verified.size,
+    originalSize: verified.size,
+    original_size: verified.size,
+    width: verified.width,
+    originalWidth: verified.width,
+    original_width: verified.width,
+    height: verified.height,
+    originalHeight: verified.height,
+    original_height: verified.height,
+    contentSha256: verified.content_sha256 || contentSha256,
+    content_sha256: verified.content_sha256 || contentSha256,
+    storageAssetId: asset.asset_id,
+    storage_asset_id: asset.asset_id,
+    storageTenantId: asset.tenant_id,
+    storage_tenant_id: asset.tenant_id
+  };
+}
+
+export async function prepareDurableSmokeItem({
   item = {},
   index = 0,
   baseUrl,
   cookie,
   requestTimeoutMs,
-  verificationCache
+  fetchImpl = globalThis.fetch
 }) {
-  const assetId = candidateId(item, index);
-  const images = itemImages(item);
-  const verified = [];
-  for (const image of images) {
-    verified.push(await verifyExistingImage({
+  const sourceAssetId = candidateId(item, index);
+  const asset = await createDurableSmokeAsset({
+    baseUrl,
+    cookie,
+    item,
+    index,
+    requestTimeoutMs,
+    fetchImpl
+  });
+  const verified = await mapWithConcurrency(asset.sources, Math.min(2, asset.sources.length), (image) => (
+    uploadDurableSmokeImage({
       baseUrl,
       cookie,
       image,
-      assetId,
+      asset,
       requestTimeoutMs,
-      verificationCache
-    }));
-  }
-  return verified;
+      fetchImpl
+    })
+  ));
+  return {
+    source_asset_id: sourceAssetId,
+    asset,
+    item: {
+      ...item,
+      asset_id: asset.asset_id,
+      source_feedback_id: item.source_feedback_id || sourceAssetId
+    },
+    images: verified
+  };
 }
 
 export function payloadForItem(item = {}, index = 0, images = itemImages(item), {
@@ -1370,23 +1519,23 @@ async function runOne({
   l2WaitMs,
   requestTimeoutMs
 }) {
-  const id = candidateId(item, index);
+  const sourceAssetId = candidateId(item, index);
   const effectiveL2WaitMs = batchPollWaitBudgetMs({
     requestedWaitMs: l2WaitMs,
     itemCount: 1,
     providerConcurrency: 1
   });
-  const verificationCache = runOne.verificationCache || new Map();
-  runOne.verificationCache = verificationCache;
-  const images = await verifiedItemImages({
+  const preparedItem = await prepareDurableSmokeItem({
     item,
     index,
     baseUrl,
     cookie,
-    requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
-    verificationCache
+    requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
   });
-  const payload = payloadForItem(item, index, images, {
+  const runtimeItem = preparedItem.item;
+  const id = preparedItem.asset.asset_id;
+  const images = preparedItem.images;
+  const payload = payloadForItem(runtimeItem, index, images, {
     forceL2Direct,
     modelOverride,
     enableL1,
@@ -1530,6 +1679,7 @@ async function runOne({
     const perceivedTitleMs = l2DoneBeforeClick ? 0 : (l2Terminal ? l2ElapsedFromClickMs : undefined);
     return compactObject({
       asset_id: id,
+      source_asset_id: sourceAssetId,
       sealed_label_key: sealedKey || null,
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: Boolean(sellerTitle),
@@ -1712,6 +1862,7 @@ async function runOne({
     const writerReady = Boolean(l2Terminal || finalTitle);
     return compactObject({
       asset_id: id,
+      source_asset_id: sourceAssetId,
       sealed_label_key: sealedKey || null,
       seller_title_visible_to_model: false,
       seller_title_used_for_local_eval_only: Boolean(sellerTitle),
@@ -2077,18 +2228,21 @@ async function enqueueSpeculativeItem({
   requestTimeoutMs,
   verificationCache
 }) {
-  const id = candidateId(item, index);
+  const sourceAssetId = candidateId(item, index);
+  let id = sourceAssetId;
   const startedAt = Date.now();
   try {
-    const images = await verifiedItemImages({
+    const preparedItem = await prepareDurableSmokeItem({
       item,
       index,
       baseUrl,
       cookie,
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
-      verificationCache
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
     });
-    const payload = payloadForItem(item, index, images, {
+    id = preparedItem.asset.asset_id;
+    const runtimeItem = preparedItem.item;
+    const images = preparedItem.images;
+    const payload = payloadForItem(runtimeItem, index, images, {
       modelOverride,
       enableL1,
       compactL2,
@@ -2179,6 +2333,7 @@ async function enqueueSpeculativeItem({
     }
     return {
       asset_id: id,
+      source_asset_id: sourceAssetId,
       index,
       item,
       batch_id: batchId,
@@ -2195,6 +2350,7 @@ async function enqueueSpeculativeItem({
   } catch (error) {
     return {
       asset_id: id,
+      source_asset_id: sourceAssetId,
       index,
       item,
       batch_id: batchId,

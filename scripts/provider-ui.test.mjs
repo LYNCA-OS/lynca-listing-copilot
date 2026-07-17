@@ -18,7 +18,7 @@ assert.match(html, /id="providerStatusText"/, "provider status text should exist
 assert.match(html, /rel="icon"[^>]+href="\/app\/favicon\.svg"/, "main app should provide a favicon to avoid browser 404 noise");
 assert.match(js, /fetchWithBoundedRetry\("\/api\/listing-provider-status"/, "frontend should load provider status with a bounded retry and wait");
 assert.match(js, /fetchWithBoundedRetry\("\/app\/resolution\.json"/, "optional display configuration must use a bounded startup read");
-assert.match(js, /bindEvents\(\);\s*renderPreviews\(\);\s*renderResults\(\);\s*void Promise\.all/s, "writer controls should become interactive before optional startup reads finish");
+assert.match(js, /bindEvents\(\);\s*renderPreviews\(\);\s*renderResults\(\);\s*providerStatusReadyPromise = loadProviderStatus\(\);\s*void Promise\.all/s, "writer controls should become interactive before optional startup reads finish");
 assert.match(js, /state\.selectedProvider/, "frontend should keep selected provider in state");
 assert.match(js, /recognitionClockFromServerPayload/, "per-card timer should use the authoritative server recognition clock");
 assert.match(js, /recognition_clock_started_at/, "frontend should read the provider-stage start timestamp");
@@ -299,6 +299,11 @@ assert.match(js, /manual_retry:\s*options\.manualRetry === true/, "the queue job
 assert.match(js, /retry_of_job_id:\s*options\.retryOfJobId \|\| null/, "priority scheduling must be bound to a verifiable failed job");
 assert.match(js, /batchId:\s*createClientBatchId\(\)/, "writer retries should create a fresh durable job identity");
 assert.match(js, /旧任务仅保留审计记录/, "writer retries should make the old-job audit boundary explicit");
+assert.doesNotMatch(
+  js,
+  /const canPriorityRetry = retryableFailure[\s\S]{0,180}&& !state\.processing/,
+  "a failed card must remain retryable while other cards in the batch are still processing"
+);
 assert.match(priorityRetrySource, /const lifecycleGeneration = state\.assetLifecycleGeneration/, "priority retry must capture the lifecycle before awaiting queue work");
 assert.equal(
   (priorityRetrySource.match(/if \(!assetLifecycleMatches\(asset, lifecycleGeneration\)\) return;/g) || []).length,
@@ -458,6 +463,30 @@ globalThis.fetch = async (url) => {
 };
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
+assert.equal(
+  __listingCopilotAppTestHooks.shouldUseStorageFirstImage(
+    { name: "card.jpg", type: "image/jpeg", size: 5_000_000 },
+    { storageConfigured: true, maxUploadBytes: 25_000_000 }
+  ),
+  true,
+  "browser-native originals within the storage limit should bypass legacy canvas preprocessing"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.shouldUseStorageFirstImage(
+    { name: "card.heic", type: "image/heic", size: 5_000_000 },
+    { storageConfigured: true, maxUploadBytes: 25_000_000 }
+  ),
+  false,
+  "HEIC should retain the compatibility conversion path"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.shouldUseStorageFirstImage(
+    { name: "oversized.jpg", type: "image/jpeg", size: 30_000_000 },
+    { storageConfigured: true, maxUploadBytes: 25_000_000 }
+  ),
+  false,
+  "oversized originals should retain adaptive compression"
+);
 const currentStorageTenantId = "tenant-current";
 const currentStorageAssetId = "asset-current";
 assert.equal(

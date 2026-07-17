@@ -5041,6 +5041,14 @@ function shouldReturnAssistShadowSingleModelDraft({
   return assistShadowOnly === true && forceRetrievalApplicationResolution !== true;
 }
 
+export function preingestionOcrScopeFromPayload(payload = {}) {
+  return {
+    tenantId: String(payload.tenant_id || payload.tenantId || "").trim(),
+    assetId: String(payload.asset_id || payload.assetId || "").trim(),
+    bundleId: String(payload.preingestion_bundle_id || payload.preingestionBundleId || "").trim()
+  };
+}
+
 async function createOpenAiTitle(payload, selection, {
   recognitionEvidenceDocument = null,
   signedImages: reusableSignedImages = null,
@@ -5048,11 +5056,12 @@ async function createOpenAiTitle(payload, selection, {
   visualFeatures = {},
   requestContext = null
 } = {}) {
-  const preingestionBundleId = payload.preingestion_bundle_id || payload.preingestionBundleId || "";
+  const preingestionOcrScope = preingestionOcrScopeFromPayload(payload);
+  const preingestionBundleId = preingestionOcrScope.bundleId;
   let latestPreingestionOcrState = null;
   const preingestionOcrRendezvousPromise = preingestionBundleId
     ? waitForPreingestionOcrEvidence({
-      assetId: payload.asset_id || payload.assetId || "",
+      ...preingestionOcrScope,
       bundleId: preingestionBundleId,
       // OCR starts during pre-ingestion and runs in parallel with the provider.
       // Do not hold a provider capacity slot for a full extra 30 seconds when
@@ -5628,7 +5637,7 @@ async function createOpenAiTitle(payload, selection, {
   }
   const targetedOcrRendezvousPromise = criticalOcrWait.target_fields.length && preingestionBundleId
     ? waitForPreingestionOcrEvidence({
-      assetId: payload.asset_id || payload.assetId || "",
+      ...preingestionOcrScope,
       bundleId: preingestionBundleId,
       timeoutMs: Math.max(500, ocrPostProviderWaitMs),
       pollMs: positiveIntegerFromEnv(process.env, "PREINGESTION_OCR_RENDEZVOUS_POLL_MS", 400),

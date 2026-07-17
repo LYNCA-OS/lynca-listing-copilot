@@ -85,6 +85,7 @@ const defaultProviderOptions = Object.freeze({
 });
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 const supportedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+const storageFirstImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const heicUnsupportedMessage = "当前浏览器暂不支持 HEIC/HEIF 预览，请先在手机相册中导出为 JPG，或使用微信/系统截图后上传。";
 
 const state = {
@@ -129,6 +130,7 @@ const state = {
   backgroundRecognitionBatchId: "",
   assetLifecycleGeneration: 0
 };
+let providerStatusReadyPromise = null;
 
 const elements = {
   workspace: document.querySelector(".workspace"),
@@ -561,6 +563,80 @@ async function fileToAssetImage(file) {
     objectPath: "",
     targetedCrops: compressed.targetedCrops
   };
+}
+
+export function shouldUseStorageFirstImage(file, {
+  storageConfigured = storageReady(),
+  maxUploadBytes = storageUploadLimitBytes()
+} = {}) {
+  const size = Number(file?.size || 0);
+  return storageConfigured === true
+    && storageFirstImageTypes.has(contentTypeForFile(file || {}))
+    && size > 0
+    && size <= Math.max(1, Number(maxUploadBytes) || 0);
+}
+
+function storageFirstAssetImage(file) {
+  const id = imageId();
+  const previewUrl = createImagePreviewUrl(file);
+  const type = contentTypeForFile(file);
+  const image = {
+    id,
+    name: file.name,
+    originalType: type,
+    type,
+    size: file.size,
+    originalSize: file.size,
+    originalWidth: 0,
+    originalHeight: 0,
+    width: 0,
+    height: 0,
+    dataUrl: "",
+    previewUrl,
+    captureProfileId: defaultCaptureProfileId,
+    imageQuality: null,
+    sourceFile: file,
+    sourceBlob: null,
+    contentSha256: "",
+    objectPath: "",
+    targetedCrops: [],
+    storageFirst: true
+  };
+
+  return image;
+}
+
+async function ensureImageUploadMetadata(image = {}) {
+  if (image.storageFirst && !image.localMetadataPromise) {
+    // Start decoding only when a bounded background-upload worker reaches this
+    // image. Large batches therefore do not decode every full-resolution file at once.
+    image.localMetadataPromise = loadImage(image.previewUrl)
+      .then((decoded) => {
+        const width = Number(decoded.naturalWidth || decoded.width || 0);
+        const height = Number(decoded.naturalHeight || decoded.height || 0);
+        if (!width || !height) throw new Error("图片尺寸读取失败");
+        image.originalWidth = width;
+        image.originalHeight = height;
+        image.width = width;
+        image.height = height;
+        return { width, height };
+      })
+      .catch((error) => {
+        throw new Error(`图片无法读取或预览：${error?.message || "浏览器解码失败"}`);
+      });
+  }
+  if (image.localMetadataPromise) await image.localMetadataPromise;
+  const width = Number(image.originalWidth || image.width || 0);
+  const height = Number(image.originalHeight || image.height || 0);
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+    throw new Error("图片尺寸读取失败");
+  }
+  return image;
+}
+
+async function prepareFileForIntake(file) {
+  if (shouldUseStorageFirstImage(file)) return storageFirstAssetImage(file);
+  return fileToAssetImage(file);
 }
 
 async function recompressAssetImage(image, maxEdge, quality) {
@@ -1110,6 +1186,8 @@ async function verifyUploadedAssetImage({
 }
 
 async function uploadAssetImage(asset, image, imageIndex) {
+  assertCurrentAssetLifecycle(asset);
+  await ensureImageUploadMetadata(image);
   assertCurrentAssetLifecycle(asset);
   const assetId = canonicalAssetId(asset);
   const tenantId = canonicalAssetTenantId(asset);
@@ -2308,6 +2386,7 @@ export const __listingCopilotAppTestHooks = {
   queueSubmissionConcurrencyLimit,
   recognitionClockFromServerPayload,
   speculativeNeedsFreshEnqueue,
+  shouldUseStorageFirstImage,
   storageDimensionsForImage,
   storageSourceForImage,
   syncAssetGenerationTimingFromServer
@@ -3301,7 +3380,6 @@ function TitleCardComponent(result, asset = null) {
     || ["FAILED", "CANCELLED"].includes(String(result.v4_job_status || "").toUpperCase());
   const canPriorityRetry = retryableFailure
     && !titlePending
-    && !state.processing
     && (!interactionLocked || retrySubmitting);
   const titleEdited = String(correctedTitle || "").trim() && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
@@ -3640,11 +3718,14 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
     stopAllV4AssistedDraftPolling();
     setStatus("正在读取本地图片；原图就绪后会自动开始内部识别…", { busy: true });
     closeImageModal();
+    if (!state.providerStatus && providerStatusReadyPromise) {
+      await Promise.race([providerStatusReadyPromise, wait(1200)]).catch(() => {});
+    }
     const failures = [];
     const prepareStartedAt = performance.now();
     const prepared = await mapWithConcurrency(imageFiles, IMAGE_PREPROCESS_CONCURRENCY, async (file) => {
       try {
-        return { image: await fileToAssetImage(file) };
+        return { image: await prepareFileForIntake(file) };
       } catch (error) {
         return { failure: `${file.name}: ${error.message}` };
       }
@@ -5367,7 +5448,8 @@ bindEvents();
 renderPreviews();
 renderResults();
 
+providerStatusReadyPromise = loadProviderStatus();
 void Promise.all([
   loadResolutionMap(),
-  loadProviderStatus()
+  providerStatusReadyPromise
 ]);
