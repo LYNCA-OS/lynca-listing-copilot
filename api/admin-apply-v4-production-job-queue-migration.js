@@ -12,7 +12,8 @@ const migrationPaths = [
   "supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql",
   "supabase/migrations/20260713130000_v4_stage_capacity_control.sql",
   "supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql",
-  "supabase/migrations/20260715065830_track_d_data_flywheel_convergence.sql"
+  "supabase/migrations/20260715065830_track_d_data_flywheel_convergence.sql",
+  "supabase/migrations/20260717100000_fix_v4_queue_atomic_rpc_signature.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `
@@ -164,12 +165,12 @@ async function verify(client) {
         select 1
         from pg_proc p
         join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'public'
-          and p.proname = 'enqueue_v4_recognition_batch_atomic'
-          and p.pronargs = 5
-          and p.prorettype = 'jsonb'::regtype
-          and pg_catalog.pg_get_function_identity_arguments(p.oid) =
-            'p_tenant_id text, p_operator_id text, p_batch jsonb, p_sessions jsonb, p_jobs jsonb'
+          where n.nspname = 'public'
+            and p.proname = 'enqueue_v4_recognition_batch_atomic'
+            and p.pronargs = 5
+            and p.prorettype = 'jsonb'::regtype
+            and pg_catalog.pg_get_function_identity_arguments(p.oid) =
+            'p_batch jsonb, p_jobs jsonb, p_operator_id text, p_sessions jsonb, p_tenant_id text'
       ) as enqueue_atomic_rpc
       ,
       exists (
