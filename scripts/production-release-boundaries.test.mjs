@@ -101,4 +101,17 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(workflow, /\/api\/admin-apply-/, "code deploy must not invoke runtime migration routes");
 
+const browserPreingest = readFileSync("api/listing-preingest.js", "utf8");
+assert.doesNotMatch(
+  browserPreingest,
+  /\bwaitUntil\s*\(|\bprocessQueuedPreingestionOcrJobs\b/,
+  "browser pre-ingestion must only persist durable OCR jobs; the independent worker consumes them"
+);
+const vercelConfig = readFileSync("vercel.json", "utf8");
+assert.match(
+  vercelConfig,
+  /"path"\s*:\s*"\/api\/v4\/listing-preingest-worker"[\s\S]*?"schedule"\s*:\s*"\* \* \* \* \*"/,
+  "durable pre-ingestion jobs require an independent scheduled sweeper"
+);
+
 console.log("production release boundary tests passed");

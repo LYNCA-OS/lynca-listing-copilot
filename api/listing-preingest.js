@@ -1,4 +1,3 @@
-import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import {
@@ -9,7 +8,6 @@ import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase
 import { assertTenantListingAssetObjectPath } from "../lib/listing/storage/storage-verification-store.mjs";
 import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { normalizeDurableListingAssetId } from "../lib/tenant/assets.mjs";
-import { processQueuedPreingestionOcrJobs } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
 import {
   buildPreingestionCropPlan,
   buildPreingestionQualitySummary,
@@ -300,24 +298,6 @@ export default async function handler(req, res) {
         fetchImpl: globalThis.fetch
       })
       : { enqueued: 0, durable: true, skipped: true };
-
-    if ((enqueueResult.enqueued || 0) > 0) {
-      // Consume the OCR jobs right after responding so evidence patches are
-      // already on the bundle by the time the title request loads it. The
-      // worker fails closed (jobs stay queued) when PaddleOCR is unconfigured;
-      // /api/v4/listing-preingest-worker re-sweeps anything left behind.
-      waitUntil(processQueuedPreingestionOcrJobs({
-        tenantId: context.tenantId,
-        assetId,
-        bundleId: durableBundle.bundle_id,
-        // Writer-critical hard text gets the first wave. Context crops are
-        // durable background work and must not occupy serial/grade capacity.
-        limit: 6,
-        anchorOnly: true,
-        env: process.env,
-        fetchImpl: globalThis.fetch
-      }).catch(() => {}));
-    }
 
     sendJson(res, 200, {
       ok: true,
