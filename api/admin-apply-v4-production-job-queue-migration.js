@@ -278,9 +278,9 @@ async function verifyExecutionControlBehavior(client) {
       insert into public.v4_recognition_sessions (
         id, schema_version, status, tenant_id, operator_id, asset_id
       ) values
-        ($8, 'migration-probe-v1', 'CREATED', $6, $11, null),
-        ($9, 'migration-probe-v1', 'CREATED', $6, $11, null),
-        ($10, 'migration-probe-v1', 'CREATED', $7, $12, null)
+        ($8::text, 'migration-probe-v1', 'CREATED', $6::text, $11::text, null),
+        ($9::text, 'migration-probe-v1', 'CREATED', $6::text, $11::text, null),
+        ($10::text, 'migration-probe-v1', 'CREATED', $7::text, $12::text, null)
     `, [
       firstBatchFirstJobId,
       firstBatchSecondJobId,
@@ -301,23 +301,23 @@ async function verifyExecutionControlBehavior(client) {
         operator_id, recognition_session_id, provider_id, status, priority, payload,
         max_attempts, created_at
       ) values
-        ($1, 'migration-probe-v1', $4, $6, null, 'FINAL_ASSISTED_TITLE',
-          $11, $8, 'migration_probe', 'QUEUED', 0,
+        ($1::text, 'migration-probe-v1', $4::text, $6::text, null, 'FINAL_ASSISTED_TITLE',
+          $11::text, $8::text, 'migration_probe', 'QUEUED', 0,
           jsonb_build_object(
-            'recognition_session_id', $8,
-            'asset_id', null
+            'recognition_session_id', $8::text,
+            'asset_id', null::text
           ), 2, clock_timestamp() - interval '2 seconds'),
-        ($2, 'migration-probe-v1', $4, $6, null, 'FINAL_ASSISTED_TITLE',
-          $11, $9, 'migration_probe', 'QUEUED', 0,
+        ($2::text, 'migration-probe-v1', $4::text, $6::text, null, 'FINAL_ASSISTED_TITLE',
+          $11::text, $9::text, 'migration_probe', 'QUEUED', 0,
           jsonb_build_object(
-            'recognition_session_id', $9,
-            'asset_id', null
+            'recognition_session_id', $9::text,
+            'asset_id', null::text
           ), 2, clock_timestamp() - interval '1 second'),
-        ($3, 'migration-probe-v1', $5, $7, null, 'FINAL_ASSISTED_TITLE',
-          $12, $10, 'migration_probe', 'QUEUED', 0,
+        ($3::text, 'migration-probe-v1', $5::text, $7::text, null, 'FINAL_ASSISTED_TITLE',
+          $12::text, $10::text, 'migration_probe', 'QUEUED', 0,
           jsonb_build_object(
-            'recognition_session_id', $10,
-            'asset_id', null
+            'recognition_session_id', $10::text,
+            'asset_id', null::text
           ), 2, clock_timestamp())
     `, [
       firstBatchFirstJobId,
