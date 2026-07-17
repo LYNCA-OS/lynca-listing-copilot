@@ -94,6 +94,10 @@ assert.match(js, /function updateAssetProgressDom/, "large batches should update
 assert.match(js, /function updateGenerationTimingDom/, "per-card timers should update in place without rebuilding every card");
 assert.match(js, /function createImagePreviewUrl/, "large local images should use short object URLs for repeated preview rendering");
 assert.match(js, /URL\.revokeObjectURL/, "local preview object URLs should be released when a batch is replaced or reset");
+const handleFilesSource = js.slice(js.indexOf("async function handleFiles"), js.indexOf("async function processAssetViaQueue"));
+assert.doesNotMatch(handleFilesSource, /providerStatusReadyPromise/, "local previews must not wait for provider readiness before rendering");
+assert.doesNotMatch(handleFilesSource, /wait\(1200\)/, "upload intake must not retain the former provider-readiness delay");
+assert.match(handleFilesSource, /startBackgroundPreparation\("file_ready"\)/, "ready local images should immediately start durable background preparation");
 assert.match(js, /state\.filePreparationRunId !== filePreparationRunId/, "stale file decoding must not overwrite a newer upload batch");
 assert.match(js, /runId !== state\.backgroundPreparationRunId/, "stale background uploads must not overwrite a newer preparation run");
 assert.match(js, /data-asset-row=/, "asset rows should expose a stable key for in-place queue updates");
@@ -109,10 +113,14 @@ assert.doesNotMatch(generationTickerSource, /renderResults\(\)/, "the one-second
 const backgroundPreparationSource = js.slice(js.indexOf("async function prepareAssetInBackground"), js.indexOf("function startBackgroundPreparation"));
 assert.doesNotMatch(backgroundPreparationSource, /renderResults\(\)/, "each background upload or OCR completion must not rebuild the entire batch DOM");
 const queuedBatchPollSource = js.slice(js.indexOf("async function pollV4QueuedJobsBatch"), js.indexOf("function startV4QueuedBatchPolling"));
+const queuedSessionRecoverySource = js.slice(js.indexOf("async function recoverQueuedResultFromSession"), js.indexOf("async function pollV4QueuedJobsBatch"));
 assert.match(queuedBatchPollSource, /const changedAssetIndexes = new Set\(\)/, "queued polling should track only cards that reached a terminal state");
+assert.match(queuedBatchPollSource, /sessionRecoveryCandidates/, "missing job rows should enter the recognition-session recovery lane");
 assert.match(queuedBatchPollSource, /renderAssetRowInPlace\(asset\)/, "terminal queue updates should replace only the changed card row");
 assert.match(queuedBatchPollSource, /if \(!renderedInPlace\) renderResults\(\)/, "a full rebuild should remain only as a DOM recovery fallback");
 assert.equal((queuedBatchPollSource.match(/renderResults\(\)/g) || []).length, 1, "non-terminal queued polling must not rebuild the whole batch");
+assert.match(queuedSessionRecoverySource, /SESSION_STATUS_API_ENDPOINT/, "status recovery must use the persisted recognition session");
+assert.match(queuedSessionRecoverySource, /shouldDeclareClientStatusOrphan/, "only dual-channel status loss may expose a fresh retry");
 const queuedStatusUpdateSource = js.slice(js.indexOf("function applyV4QueuedJobStatusUpdate"), js.indexOf("async function pollV4AssistedDraft"));
 assert.match(queuedStatusUpdateSource, /announce:\s*false/, "per-card status updates should not rewrite the global status banner N times per poll");
 assert.match(queuedStatusUpdateSource, /knownPending:\s*true/, "queued polling should avoid an O\(N\) pending lookup for every card");

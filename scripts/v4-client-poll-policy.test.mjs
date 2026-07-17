@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import {
   groupClientResultsByJobId,
   isClientPollTerminalStatus,
+  isClientStatusNotFound,
   observeClientJobPoll,
-  queuedStatusPollDelay
+  queuedStatusPollDelay,
+  shouldDeclareClientStatusOrphan
 } from "../lib/listing/v4/jobs/client-poll-policy.mjs";
 
 const queued = observeClientJobPoll({
@@ -64,6 +66,27 @@ const grouped = groupClientResultsByJobId([
 assert.deepEqual(grouped.get("shared-job"), [firstResult, secondResult]);
 assert.equal(grouped.get("other-job")?.length, 1);
 assert.equal(grouped.size, 2);
+
+assert.equal(isClientStatusNotFound({ http_status: 404 }), true);
+assert.equal(isClientStatusNotFound({ error_code: "V4_JOB_STATUS_NOT_FOUND" }), true);
+assert.equal(isClientStatusNotFound(new Error("status_poll_job_missing")), true);
+assert.equal(isClientStatusNotFound({ http_status: 503, message: "backend unavailable" }), false);
+
+assert.equal(shouldDeclareClientStatusOrphan({
+  jobNotFoundCount: 3,
+  sessionNotFoundCount: 3,
+  elapsedMs: 20_000
+}), true, "both authoritative status paths must be missing before offering a fresh retry");
+assert.equal(shouldDeclareClientStatusOrphan({
+  jobNotFoundCount: 3,
+  sessionNotFoundCount: 0,
+  elapsedMs: 60_000
+}), false, "a readable recognition session keeps the completed job recoverable");
+assert.equal(shouldDeclareClientStatusOrphan({
+  jobNotFoundCount: 3,
+  sessionNotFoundCount: 3,
+  elapsedMs: 5_000
+}), false, "short propagation windows must not manufacture failures");
 
 assert.equal(queuedStatusPollDelay(5_000, 10), 800, "small fresh batches should remain responsive");
 assert.equal(queuedStatusPollDelay(5_000, 101), 1200, "medium batches should reduce read pressure");

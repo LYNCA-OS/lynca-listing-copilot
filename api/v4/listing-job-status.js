@@ -683,7 +683,16 @@ export default async function handler(req, res) {
     }
   });
   if (!ownedJobs.length) {
-    sendJson(res, 404, withV4Version({ ok: false, retryable: false, message: "Recognition jobs not found." }));
+    // A queue insert and its session insert are atomic, but the browser may be
+    // recovering an older tab or a job row that has already been compacted.
+    // Let the client use its tenant-scoped recognition-session fallback before
+    // offering a fresh retry; a hard non-retryable 404 strands a completed title.
+    sendJson(res, 404, withV4Version({
+      ok: false,
+      retryable: true,
+      error_code: "V4_JOB_STATUS_NOT_FOUND",
+      message: "Recognition jobs not found. Recover from the recognition session before retrying."
+    }));
     return;
   }
   res.setHeader("cache-control", "no-store");

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   v4WriterStatusJobSelect,
   v4WriterStatusNeedsFullSession,
@@ -8,6 +9,10 @@ import {
 import {
   shouldPersistV4ObservingTransition
 } from "../api/v4/listing-copilot-title.js";
+
+const jobStatusSource = readFileSync(new URL("../api/v4/listing-job-status.js", import.meta.url), "utf8");
+assert.match(jobStatusSource, /error_code:\s*"V4_JOB_STATUS_NOT_FOUND"/, "missing job rows should expose a stable session-recovery code");
+assert.match(jobStatusSource, /retryable:\s*true[\s\S]*error_code:\s*"V4_JOB_STATUS_NOT_FOUND"/, "missing job rows should allow bounded client recovery instead of stranding the title");
 
 const jobColumns = new Set(v4WriterStatusJobSelect.split(","));
 assert.equal(jobColumns.has("payload"), false, "writer status polling must never reload image/request payloads");

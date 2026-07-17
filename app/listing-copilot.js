@@ -7,8 +7,10 @@ import { labelForCsmField } from "../lib/listing/csm/field-labels.mjs";
 import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
 import {
   groupClientResultsByJobId,
+  isClientStatusNotFound,
   observeClientJobPoll,
-  queuedStatusPollDelay
+  queuedStatusPollDelay,
+  shouldDeclareClientStatusOrphan
 } from "../lib/listing/v4/jobs/client-poll-policy.mjs";
 import {
   nextWriterOutstandingIndex,
@@ -60,6 +62,8 @@ const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_STATUS_BATCH_SIZE = 100;
 const QUEUED_STATUS_READ_CONCURRENCY = 3;
 const STATUS_POLL_TIMEOUT_MS = 15000;
+const STATUS_ORPHAN_MIN_FAILURES = 3;
+const STATUS_ORPHAN_MIN_ELAPSED_MS = 20000;
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
 // L1 scout 与预处理并行，缓存就绪后只启动一次 L2；L1 永不直接展示给写手。
@@ -566,7 +570,10 @@ async function fileToAssetImage(file) {
 }
 
 export function shouldUseStorageFirstImage(file, {
-  storageConfigured = storageReady(),
+  // Provider readiness loads independently from local intake. Production uses
+  // storage-first images, so an unresolved status must not force an expensive
+  // full-resolution canvas decode before the first preview appears.
+  storageConfigured = state.providerStatus ? storageReady() : true,
   maxUploadBytes = storageUploadLimitBytes()
 } = {}) {
   const size = Number(file?.size || 0);
@@ -3718,9 +3725,6 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
     stopAllV4AssistedDraftPolling();
     setStatus("正在读取本地图片；原图就绪后会自动开始内部识别…", { busy: true });
     closeImageModal();
-    if (!state.providerStatus && providerStatusReadyPromise) {
-      await Promise.race([providerStatusReadyPromise, wait(1200)]).catch(() => {});
-    }
     const failures = [];
     const prepareStartedAt = performance.now();
     const prepared = await mapWithConcurrency(imageFiles, IMAGE_PREPROCESS_CONCURRENCY, async (file) => {
@@ -4098,7 +4102,11 @@ async function retryFailedAssetInPriorityQueue(button) {
   if (!asset || !current || current.queueRetryStatus === "submitting") return;
   const lifecycleGeneration = state.assetLifecycleGeneration;
   const retryOfJobId = String(current.v4_job_id || current.job_id || "").trim();
-  const retriesFailedDurableJob = Boolean(retryOfJobId);
+  // A status-orphaned result never proved that the old durable job reached
+  // FAILED. Requiring a failed-job claim would make this retry button fail
+  // forever, so it creates a fresh priority-zero task after both status paths
+  // have exhausted their recovery window.
+  const retriesFailedDurableJob = Boolean(retryOfJobId) && current.v4StatusOrphaned !== true;
 
   const writerEditedTitle = String(current.correctedTitle || "").trim();
   state.priorityRetryInFlight = true;
@@ -4391,12 +4399,107 @@ function recordQueuedStatusPollFailure(result = {}, error = null) {
   result.v4StatusPollConsecutiveFailures = Number(result.v4StatusPollConsecutiveFailures || 0) + 1;
   result.v4StatusPollLastFailureAt = Date.now();
   result.v4StatusPollLastError = String(error?.message || error || "status_poll_failed").slice(0, 240);
+  if (isClientStatusNotFound(error)) {
+    result.v4StatusPollNotFoundCount = Number(result.v4StatusPollNotFoundCount || 0) + 1;
+  }
 }
 
 function recordQueuedStatusPollSuccess(result = {}) {
   result.v4StatusPollConsecutiveFailures = 0;
+  result.v4StatusPollNotFoundCount = 0;
   result.v4StatusPollLastSuccessAt = Date.now();
   result.v4StatusPollLastError = null;
+}
+
+function queuedStatusHttpError(response, payload = {}) {
+  const error = new Error(payload.message || `status_poll_http_${response.status}`);
+  error.http_status = Number(response.status || 0);
+  error.error_code = String(payload.error_code || "").trim();
+  error.retryable = payload.retryable === true;
+  return error;
+}
+
+function markQueuedResultStatusOrphaned(result = {}) {
+  result.v4StatusOrphaned = true;
+  result.v4_job_status = "FAILED";
+  result.confidence = "FAILED";
+  result.reason = "云端任务与识别会话的状态连续失联，系统已停止等待；可点击优先重试。";
+  result.writerTitlePending = false;
+  result.title_stage = "FAILED";
+  result.assisted_draft_status = "FAILED";
+  result.l2AssistedDraftStatus = "FAILED";
+  result.feedbackMessage = "本次识别状态未能回收，点击“优先重试”会创建新的置顶任务。";
+  markAssetFinished(result.index, { failed: true });
+  attachGenerationTimingToResult(result);
+  clearAssetProgress(result.index);
+  return { terminal: true, recovered: false, orphaned: true };
+}
+
+async function recoverQueuedResultFromSession(result = {}) {
+  const sessionId = String(result.recognition_session_id || "").trim();
+  if (!sessionId) {
+    result.v4SessionFallbackNotFoundCount = Number(result.v4SessionFallbackNotFoundCount || 0) + 1;
+    return { terminal: false, recovered: false, not_found: true };
+  }
+
+  try {
+    const params = new URLSearchParams({ recognition_session_id: sessionId });
+    const { response, payload } = await fetchJsonWithTimeout(`${SESSION_STATUS_API_ENDPOINT}?${params.toString()}`, {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    }, STATUS_POLL_TIMEOUT_MS, "识别会话状态查询超时，系统会自动继续查询。");
+
+    if (!response.ok || payload.ok === false || !payload.session) {
+      const error = queuedStatusHttpError(response, payload);
+      if (response.status === 404) {
+        result.v4SessionFallbackNotFoundCount = Number(result.v4SessionFallbackNotFoundCount || 0) + 1;
+        const elapsedMs = performance.now() - Number(result.v4QueuedPollStartedAt || performance.now());
+        if (shouldDeclareClientStatusOrphan({
+          jobNotFoundCount: result.v4StatusPollNotFoundCount,
+          sessionNotFoundCount: result.v4SessionFallbackNotFoundCount,
+          elapsedMs,
+          minimumFailures: STATUS_ORPHAN_MIN_FAILURES,
+          minimumElapsedMs: STATUS_ORPHAN_MIN_ELAPSED_MS
+        })) {
+          return markQueuedResultStatusOrphaned(result);
+        }
+        return { terminal: false, recovered: false, not_found: true, error };
+      }
+      return { terminal: false, recovered: false, not_found: false, error };
+    }
+
+    result.v4SessionFallbackNotFoundCount = 0;
+    result.v4StatusRecoveryMode = "SESSION_FALLBACK";
+    result.v4QueuedJob = false;
+    result.v4_job_status = payload.session.status || result.v4_job_status || "RUNNING";
+    result.feedbackMessage = "云端识别仍在继续，系统已自动切换备用结果通道。";
+    const upgraded = applyV4AssistedDraftUpdate(result, payload.session);
+    const terminalStatus = v4AssistedStatus(result);
+    if (upgraded) {
+      clearAssetProgress(result.index);
+      return { terminal: true, recovered: true };
+    }
+    if (["FAILED", "TIMEOUT"].includes(terminalStatus)) {
+      result.confidence = "FAILED";
+      result.reason = payload.session.failure_reason || "云端识别失败。";
+      result.writerTitlePending = false;
+      result.title_stage = "FAILED";
+      markAssetFinished(result.index, { failed: true });
+      attachGenerationTimingToResult(result);
+      clearAssetProgress(result.index);
+      return { terminal: true, recovered: true };
+    }
+
+    setAssetProgress(result.index, "正在接收云端结果", 0.76, {
+      knownPending: true,
+      announce: false
+    });
+    startV4AssistedDraftPolling(result);
+    return { terminal: false, recovered: true };
+  } catch (error) {
+    return { terminal: false, recovered: false, not_found: false, error };
+  }
 }
 
 async function pollV4QueuedJobsBatch(generation) {
@@ -4434,7 +4537,7 @@ async function pollV4QueuedJobsBatch(generation) {
             cache: "no-store"
           }, STATUS_POLL_TIMEOUT_MS, "云端任务状态查询超时，系统会自动继续查询。");
           if (!response.ok || payload.ok === false) {
-            throw new Error(payload.message || `status_poll_http_${response.status}`);
+            throw queuedStatusHttpError(response, payload);
           }
           return { status: "fulfilled", value: { jobIds, payload } };
         } catch (reason) {
@@ -4446,12 +4549,14 @@ async function pollV4QueuedJobsBatch(generation) {
 
     let terminalCount = 0;
     const changedAssetIndexes = new Set();
+    const sessionRecoveryCandidates = new Set();
     for (let batchIndex = 0; batchIndex < batchReads.length; batchIndex += 1) {
       const batchRead = batchReads[batchIndex];
       if (batchRead.status === "rejected") {
         for (const jobId of batches[batchIndex] || []) {
           for (const result of resultsByJobId.get(jobId) || []) {
             recordQueuedStatusPollFailure(result, batchRead.reason);
+            if (isClientStatusNotFound(batchRead.reason)) sessionRecoveryCandidates.add(result);
           }
         }
         continue;
@@ -4461,7 +4566,13 @@ async function pollV4QueuedJobsBatch(generation) {
       for (const jobId of jobIds) {
         for (const result of resultsByJobId.get(jobId) || []) {
           if (returnedJobIds.has(jobId)) recordQueuedStatusPollSuccess(result);
-          else recordQueuedStatusPollFailure(result, new Error("status_poll_job_missing"));
+          else {
+            const missingError = new Error("status_poll_job_missing");
+            missingError.error_code = "V4_JOB_STATUS_NOT_FOUND";
+            missingError.http_status = 404;
+            recordQueuedStatusPollFailure(result, missingError);
+            sessionRecoveryCandidates.add(result);
+          }
         }
       }
       for (const job of payload.jobs || []) {
@@ -4474,6 +4585,19 @@ async function pollV4QueuedJobsBatch(generation) {
           }
         }
       }
+    }
+    if (sessionRecoveryCandidates.size) {
+      const candidates = [...sessionRecoveryCandidates];
+      const recoveries = await mapWithConcurrency(
+        candidates,
+        Math.min(2, candidates.length),
+        recoverQueuedResultFromSession
+      );
+      candidates.forEach((result, index) => {
+        const recovery = recoveries[index] || {};
+        if (recovery.terminal) terminalCount += 1;
+        if (recovery.recovered || recovery.orphaned) changedAssetIndexes.add(Number(result.index));
+      });
     }
     if (changedAssetIndexes.size) {
       renderResultControls();
