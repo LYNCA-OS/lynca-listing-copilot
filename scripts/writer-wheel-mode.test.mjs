@@ -13,50 +13,54 @@ const html = await readFile("app/index.html", "utf8");
 const js = await readFile("app/listing-copilot.js", "utf8");
 const css = await readFile("app/listing-copilot.css", "utf8");
 
-assert.match(html, /data-workspace-mode="standard"/, "the existing card workspace must remain available");
-assert.match(html, /data-workspace-mode="writer"/, "writer mode must be an additive workspace option");
-assert.match(html, /role="tablist"[^>]*aria-label="工作模式"/, "workspace modes must expose an accessible tablist");
-assert.match(js, /async function saveWriterTitleAndAdvance/, "writer mode must own one guarded save-and-advance path");
-assert.match(js, /persisted = await saveFeedbackForResult\(result, asset\)/, "writer cards must await durable feedback before advancing");
-assert.match(js, /if \(!persisted\) return false;/, "failed persistence must keep the current card in place");
+assert.match(html, /<main class="workspace">/, "the product must expose one primary writer workspace");
+assert.match(html, /<p class="eyebrow">写手工作台<\/p>/, "the primary workspace must be writer-facing");
+assert.match(html, /<section class="asset-workbench">/, "the single workspace must retain per-card review");
+assert.match(html, /<section class="batch-titles-panel" aria-label="全部标题">/, "the single workspace must retain batch output");
+assert.doesNotMatch(html, /data-workspace-mode=|aria-label="工作模式"/, "retired workspace switching must not return to the product surface");
+
+const feedbackSource = js.slice(
+  js.indexOf("function pendingV4FeedbackSubmission"),
+  js.indexOf("async function copyAllTitles")
+);
+assert.ok(feedbackSource.length > 0, "the writer feedback workflow must remain present");
+assert.match(feedbackSource, /pendingFeedbackSubmissionId/, "feedback retries must retain a client-owned idempotency key");
+assert.match(feedbackSource, /pendingFeedbackOccurredAt/, "feedback retries must retain the original client timestamp");
+assert.match(feedbackSource, /feedback_submission_id: v4Submission\.id/, "V4 feedback must send the retained idempotency key");
+assert.match(feedbackSource, /client_occurred_at: v4Submission\.occurredAt/, "V4 feedback must send the retained client timestamp");
+assert.match(feedbackSource, /if \(!response\.ok \|\| !payload\.ok\)[\s\S]*throw new Error/, "feedback must fail closed on a rejected persistence response");
+assert.ok(
+  feedbackSource.indexOf("clearPendingV4FeedbackSubmission(result, v4Submission)")
+    > feedbackSource.indexOf("if (!response.ok || !payload.ok)"),
+  "the idempotency key must only clear after durable persistence succeeds"
+);
+assert.match(feedbackSource, /result\.feedbackStatus = "saved";/, "a successful V4 response must be the source of the saved state");
+assert.match(feedbackSource, /catch \(error\)[\s\S]*result\.feedbackStatus = "";/, "failed persistence must leave the card unsaved and retryable");
+assert.match(feedbackSource, /async function saveTitleFeedback[\s\S]*await saveFeedbackForResult\(result, asset\)/, "writer saves must await the persistence request");
+assert.match(feedbackSource, /\(!correctedTitle && !explicitReject\)[\s\S]*return false/, "an empty title must fail locally unless the writer explicitly rejects the card");
 assert.match(js, /event\.isComposing/, "Enter must not submit while an IME composition is active");
-assert.match(js, /writerCompositionActive/, "IME composition state must survive browser-specific key event ordering");
-assert.match(js, /event\.keyCode === 229/, "IME completion key events must not submit accidentally");
-assert.match(js, /event\.repeat/, "a held Enter key must not create duplicate submissions");
-assert.match(js, /标题不能为空/, "empty writer titles must fail locally and remain on the current card");
-assert.match(js, /state\.writerSaveInFlight/, "writer navigation and reset must share one in-flight submission lock");
-assert.match(js, /const editorDisabled = titlePending \|\| interactionLocked \|\| retrySubmitting \|\| result\.feedbackStatus === "saving"/, "the current title editor must lock during persistence, export, file preparation, and retry");
-assert.match(js, /preserveFocusedWriterInput/, "background polling must not replace the active writer input");
-assert.match(js, /aria-label="卡片 \$\{result\.index\} 最终英文标题"/, "the active title editor must expose an accessible name");
-assert.match(js, /payload\.v4_persistence\?\.transaction\?\.saved !== true/, "writer advance must require an explicit V4 transaction acknowledgement");
-assert.match(js, /titleSnapshotByIndex/, "writer export must freeze persisted title values before asynchronous uploads");
-assert.match(js, /requireSaved: exportingWriterRows/, "writer export must revalidate persistence before building workbook rows");
-assert.match(js, /feedback_submission_id: feedbackSubmission\.id/, "V4 feedback must carry a client-owned idempotency key");
-assert.match(js, /client_occurred_at: feedbackSubmission\.clientOccurredAt/, "V4 feedback retries must reuse the original client timestamp");
-assert.match(js, /const rejected = feedbackAction === "REJECT"/, "feedback persistence and training eligibility must remain separate states");
 assert.doesNotMatch(js, /feedbackStatus = payload\.training_eligible/, "training eligibility must never decide whether an accepted title is treated as stored");
-assert.match(js, /filePreparationRunId/, "asynchronous file preparation must own a stale-run guard");
-assert.match(js, /state\.priorityRetryInFlight/, "priority retry must share the workspace mutation lock");
-assert.match(css, /\.writer-wheel-viewport::before/, "writer wheel must provide the upper focus mask");
-assert.match(css, /\.writer-wheel-viewport::after/, "writer wheel must provide the lower focus mask");
+
+const queueSource = js.slice(
+  js.indexOf("async function processAssetViaQueue"),
+  js.indexOf("function failedResult")
+);
+assert.match(queueSource, /await ensureAssetImagesUploaded\(asset\)/, "enqueue must first establish the current asset's uploaded image set");
+assert.match(queueSource, /await ensureSafeAssetPayload\(asset,/, "enqueue must rebuild a request from the current asset state");
+assert.match(queueSource, /fetchWithTimeout\(JOB_ENQUEUE_API_ENDPOINT/, "recognition and retry must use the canonical enqueue boundary");
+assert.match(queueSource, /asset_id: canonicalAssetId\(asset\)/, "fresh enqueue must bind the durable asset identity");
+
+const priorityRetrySource = js.slice(
+  js.indexOf("async function retryFailedAssetInPriorityQueue"),
+  js.indexOf("async function copyTitle")
+);
+assert.match(priorityRetrySource, /await processAssetViaQueue\(asset, \{[\s\S]*skipSpeculative: true,[\s\S]*manualRetry: true,[\s\S]*retryOfJobId/, "priority retry must create a fresh job from the current asset images");
+assert.match(priorityRetrySource, /旧任务仅保留审计记录/, "priority retry must preserve the old job only as audit history");
+assert.match(priorityRetrySource, /assetLifecycleMatches\(asset, lifecycleGeneration\)/, "a stale retry response must not overwrite a newer upload generation");
+assert.doesNotMatch(js, /\/api\/v4\/listing-job-retry/, "the browser must not replay a persisted legacy job payload");
+
+assert.match(js, /backgroundPreparationRunId/, "asynchronous image preparation must own a stale-run guard");
 assert.match(css, /prefers-reduced-motion: reduce/, "writer transitions must respect reduced-motion preferences");
-
-const setWorkspaceModeSource = js.slice(
-  js.indexOf("function setWorkspaceMode"),
-  js.indexOf("function updatePreviewSummary")
-);
-assert.doesNotMatch(setWorkspaceModeSource, /renderPreviews\(/, "switching views must preserve asset promises and preingestion state");
-assert.match(setWorkspaceModeSource, /renderResults\(\{ forceWriterRender: true \}\)/, "mode switches must repaint even when the editor owns focus");
-
-const writerSaveSource = js.slice(
-  js.indexOf("async function saveWriterTitleAndAdvance"),
-  js.indexOf("async function rejectWriterTitleAndAdvance")
-);
-assert.match(
-  writerSaveSource,
-  /标题不能为空[\s\S]*renderResults\(\{ forceWriterRender: true \}\)/,
-  "invalid Enter submissions must render the error and restore focus"
-);
 
 const assets = [{ index: 1 }, { index: 2 }, { index: 3 }];
 const savedOne = [{ index: 1, correctedTitle: "Saved title", feedbackStatus: "saved", persistenceStatus: "persisted" }];

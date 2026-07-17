@@ -123,7 +123,7 @@ function cloudFetchRecorder({
     calls.push({ url, init });
     const path = /^https?:/i.test(url) ? new URL(url).pathname : url;
     if (path === "/api/login") {
-      return jsonResponse(200, { ok: true }, { "set-cookie": "lynca_metaverse_session=test; Path=/" });
+      return jsonResponse(200, { ok: true, tenant_id: "tenant_test" }, { "set-cookie": "lynca_metaverse_session=test; Path=/" });
     }
     if (path === "/api/listing-image-upload-url") {
       const body = JSON.parse(init.body);
@@ -136,8 +136,8 @@ function cloudFetchRecorder({
       return jsonResponse(200, {
         ok: true,
         upload: {
-          object_path: `listing-assets/test/${body.imageId}.png`,
-          bucket: "listing-feedback-images",
+          object_path: `tenants/tenant_test/listing-assets/${new Date().toISOString().slice(0, 10)}/${body.assetId}/${body.role}-${body.imageId}.png`,
+          bucket: "listing-card-images",
           content_type: body.contentType,
           signed_upload_url: `https://storage.test/upload/${body.imageId}`
         }
@@ -148,7 +148,7 @@ function cloudFetchRecorder({
       return jsonResponse(200, {
         ok: true,
         verification: {
-          bucket: "listing-feedback-images",
+          bucket: "listing-card-images",
           object_path: body.objectPath,
           verification_token: `verified-existing-${body.imageId}`,
           content_type: "image/png",
@@ -167,7 +167,7 @@ function cloudFetchRecorder({
       return jsonResponse(200, {
         ok: true,
         verification: {
-          bucket: "listing-feedback-images",
+          bucket: "listing-card-images",
           object_path: body.objectPath,
           verification_token: `verified-${body.imageId}`,
           content_type: body.contentType,
@@ -762,6 +762,10 @@ await withTempDir(async (dir) => {
   assert.equal(result.predictions[0].c_group_diagnostics.catalog_anchor_plan.version, "catalog_anchor_plan_v1");
   assert.equal(result.predictions[0].c_group_diagnostics.catalog_anchor_plan.eligibility_snapshot.prompt_candidate_count, 1);
   assert.ok(calls.some((call) => new URL(call.url).pathname === "/api/listing-copilot-title"));
+  const verificationCall = calls.find((call) => new URL(call.url).pathname === "/api/listing-image-verify-upload");
+  const verifiedObjectPath = JSON.parse(verificationCall.init.body).objectPath;
+  assert.equal(verifiedObjectPath.split("/").length, 6);
+  assert.match(verifiedObjectPath, /^tenants\/tenant_test\/listing-assets\/\d{4}-\d{2}-\d{2}\/case-a\/image_1_original-case-a_img_0\.png$/);
   const hashText = await readFile(join(dir, "predictions.sha256"), "utf8");
   assert.match(hashText, /^[a-f0-9]{64}\s+predictions\.jsonl/);
 });
