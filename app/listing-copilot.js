@@ -16,6 +16,7 @@ const MAX_CONCURRENT_WORKERS = 6;
 const MAX_BACKGROUND_PREP_WORKERS = 4;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
+const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750]);
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
 const IMAGE_INITIAL_QUALITY = 0.9;
@@ -157,6 +158,35 @@ async function mapWithConcurrency(items, limit, worker) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryableStorageApiResponse(response, payload = {}) {
+  const status = Number(response?.status || 0);
+  const code = String(payload?.code || "").trim().toUpperCase();
+  if (code === "VERIFICATION_RECORD_WRITE_FAILED") return false;
+  if (code && !["AUTH_UNAVAILABLE", "AUTH_RATE_LIMITED"].includes(code)) return false;
+  return [429, 502, 503, 504].includes(status);
+}
+
+async function fetchStorageApiJson(url, options = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= STORAGE_API_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await fetch(url, options);
+      const payload = await response.json().catch(() => ({}));
+      if (
+        attempt === STORAGE_API_RETRY_DELAYS_MS.length
+        || !retryableStorageApiResponse(response, payload)
+      ) {
+        return { response, payload, retryCount: attempt };
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt === STORAGE_API_RETRY_DELAYS_MS.length) throw error;
+    }
+    await wait(STORAGE_API_RETRY_DELAYS_MS[attempt]);
+  }
+  throw lastError || new Error("Storage API request failed.");
 }
 
 async function fetchWithTimeout(
@@ -854,6 +884,7 @@ function clearImageStorageBinding(image = {}) {
   image.storageUploaded = false;
   image.storageAssetId = "";
   image.storageTenantId = "";
+  delete image.pendingStorageVerification;
   const metadata = image.cropMetadata || image.crop_metadata;
   if (metadata) {
     const resetMetadata = {
@@ -868,6 +899,95 @@ function clearImageStorageBinding(image = {}) {
       image.cropPlan = { ...image.cropPlan, crop_metadata: resetMetadata };
     }
   }
+}
+
+function pendingStorageVerificationMatches(pending = {}, expected = {}) {
+  return pending.assetId === expected.assetId
+    && pending.tenantId === expected.tenantId
+    && pending.imageId === expected.imageId
+    && pending.storageRole === expected.storageRole
+    && pending.size === expected.size
+    && pending.width === expected.width
+    && pending.height === expected.height
+    && pending.contentSha256 === expected.contentSha256;
+}
+
+async function verifyUploadedAssetImage({
+  asset,
+  image,
+  source,
+  storageRole,
+  dimensions,
+  signatureHex,
+  contentSha256,
+  uploadObjectPath,
+  contentType
+}) {
+  const assetId = canonicalAssetId(asset);
+  const tenantId = canonicalAssetTenantId(asset);
+  const { response: verifyResponse, payload: verifyPayload } = await fetchStorageApiJson("/api/listing-image-verify-upload", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      assetId,
+      imageId: image.id,
+      role: storageRole,
+      fileName: image.name,
+      objectPath: uploadObjectPath,
+      contentType,
+      size: source.size,
+      width: dimensions.width,
+      height: dimensions.height,
+      signatureHex,
+      contentSha256,
+      cropMetadata: image.cropMetadata || image.crop_metadata || null
+    })
+  });
+  assertCurrentAssetLifecycle(asset);
+  if (!verifyResponse.ok || !verifyPayload.ok) {
+    if (verifyPayload.cleanup?.deleted || verifyPayload.cleanup?.already_absent) {
+      delete image.pendingStorageVerification;
+    }
+    throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
+  }
+  if (
+    verifyPayload.verification?.tenant_id !== tenantId
+    || verifyPayload.verification?.object_path !== uploadObjectPath
+    || verifyPayload.verification_record?.saved !== true
+    || verifyPayload.verification_record?.durable !== true
+  ) {
+    throw new Error("Storage verification identity mismatch.");
+  }
+
+  image.objectPath = uploadObjectPath;
+  image.bucket = verifyPayload.verification.bucket;
+  image.storageVerificationToken = verifyPayload.verification.verification_token || "";
+  image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
+  image.storageVerified = true;
+  image.storageUploaded = true;
+  image.storageAssetId = assetId;
+  image.storageTenantId = tenantId;
+  delete image.pendingStorageVerification;
+  if (image.cropMetadata || image.crop_metadata) {
+    const metadata = {
+      ...(image.cropMetadata || image.crop_metadata || {}),
+      derived_object_path: image.objectPath,
+      source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
+      asset_id: assetId
+    };
+    image.cropMetadata = metadata;
+    image.crop_metadata = metadata;
+    if (image.cropPlan) {
+      image.cropPlan = {
+        ...image.cropPlan,
+        crop_metadata: metadata
+      };
+    }
+  }
+  return true;
 }
 
 async function uploadAssetImage(asset, image, imageIndex) {
@@ -891,7 +1011,32 @@ async function uploadAssetImage(asset, image, imageIndex) {
   const dimensions = storageDimensionsForImage(image, source);
   image.contentSha256 = contentSha256;
 
-  const uploadResponse = await fetch("/api/listing-image-upload-url", {
+  const expectedPending = {
+    assetId,
+    tenantId,
+    imageId: image.id,
+    storageRole,
+    size: source.size,
+    width: dimensions.width,
+    height: dimensions.height,
+    contentSha256
+  };
+  if (pendingStorageVerificationMatches(image.pendingStorageVerification, expectedPending)) {
+    return verifyUploadedAssetImage({
+      asset,
+      image,
+      source,
+      storageRole,
+      dimensions,
+      signatureHex,
+      contentSha256,
+      uploadObjectPath: image.pendingStorageVerification.objectPath,
+      contentType: image.pendingStorageVerification.contentType
+    });
+  }
+  delete image.pendingStorageVerification;
+
+  const { response: uploadResponse, payload: uploadPayload } = await fetchStorageApiJson("/api/listing-image-upload-url", {
     method: "POST",
     headers: {
       "content-type": "application/json"
@@ -912,7 +1057,6 @@ async function uploadAssetImage(asset, image, imageIndex) {
     })
   });
 
-  const uploadPayload = await uploadResponse.json();
   assertCurrentAssetLifecycle(asset);
   if (!uploadResponse.ok || !uploadPayload.ok) {
     throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
@@ -944,67 +1088,22 @@ async function uploadAssetImage(asset, image, imageIndex) {
     throw new Error(`Storage upload failed: ${storageResponse.status}`);
   }
   assertCurrentAssetLifecycle(asset);
-
-  const verifyResponse = await fetch("/api/listing-image-verify-upload", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    credentials: "same-origin",
-    body: JSON.stringify({
-      assetId,
-      imageId: image.id,
-      role: storageRole,
-      fileName: image.name,
-      objectPath: uploadObjectPath,
-      contentType: uploadPayload.upload.content_type,
-      size: source.size,
-      width: dimensions.width,
-      height: dimensions.height,
-      signatureHex,
-      contentSha256,
-      cropMetadata: image.cropMetadata || image.crop_metadata || null
-    })
+  image.pendingStorageVerification = {
+    ...expectedPending,
+    objectPath: uploadObjectPath,
+    contentType: uploadPayload.upload.content_type
+  };
+  return verifyUploadedAssetImage({
+    asset,
+    image,
+    source,
+    storageRole,
+    dimensions,
+    signatureHex,
+    contentSha256,
+    uploadObjectPath,
+    contentType: uploadPayload.upload.content_type
   });
-  const verifyPayload = await verifyResponse.json();
-  assertCurrentAssetLifecycle(asset);
-  if (!verifyResponse.ok || !verifyPayload.ok) {
-    throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
-  }
-  if (
-    verifyPayload.verification?.tenant_id !== tenantId
-    || verifyPayload.verification?.object_path !== uploadObjectPath
-    || verifyPayload.verification_record?.saved !== true
-    || verifyPayload.verification_record?.durable !== true
-  ) {
-    throw new Error("Storage verification identity mismatch.");
-  }
-
-  image.objectPath = uploadObjectPath;
-  image.bucket = verifyPayload.verification.bucket;
-  image.storageVerificationToken = verifyPayload.verification.verification_token || "";
-  image.contentSha256 = verifyPayload.verification.content_sha256 || contentSha256;
-  image.storageVerified = true;
-  image.storageUploaded = true;
-  image.storageAssetId = assetId;
-  image.storageTenantId = tenantId;
-  if (image.cropMetadata || image.crop_metadata) {
-    const metadata = {
-      ...(image.cropMetadata || image.crop_metadata || {}),
-      derived_object_path: image.objectPath,
-      source_object_path: (image.cropMetadata || image.crop_metadata || {}).source_object_path || "",
-      asset_id: assetId
-    };
-    image.cropMetadata = metadata;
-    image.crop_metadata = metadata;
-    if (image.cropPlan) {
-      image.cropPlan = {
-        ...image.cropPlan,
-        crop_metadata: metadata
-      };
-    }
-  }
-  return true;
 }
 
 async function ensureAssetImagesUploaded(asset) {
@@ -1088,6 +1187,27 @@ function backgroundPreparationLabel(asset = {}) {
   }[asset.backgroundPrepareStatus] || "";
 }
 
+function syncBackgroundPreparationStatus() {
+  if (state.processing || state.results.length || !state.assets.length) return;
+  const counts = state.assets.reduce((summary, asset) => {
+    const status = String(asset.backgroundPrepareStatus || "queued");
+    summary[status] = (summary[status] || 0) + 1;
+    return summary;
+  }, {});
+  const ready = Number(counts.ready || 0);
+  const failed = Number(counts.failed || 0);
+  const total = state.assets.length;
+  if (ready === total) {
+    setStatus(`${state.files.length} 张图片已完成云端准备，可以生成标题。`);
+    return;
+  }
+  if (ready + failed === total && failed > 0) {
+    setStatus(`${state.files.length} 张图片已读取；${failed} 张卡的云端准备遇到瞬时错误，生成时会自动重试。`);
+    return;
+  }
+  setStatus(`${state.files.length} 张图片已读取；云端准备中 ${ready} / ${total}。`, { busy: true });
+}
+
 async function ensurePreingestionBundle(asset) {
   if (asset.preingestionBundleId) {
     return {
@@ -1164,9 +1284,11 @@ async function prepareAssetInBackground(asset, runId) {
     try {
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "uploading";
+      syncBackgroundPreparationStatus();
       await ensureAssetImagesUploaded(asset);
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
+      syncBackgroundPreparationStatus();
       const bundle = await ensurePreingestionBundle(asset);
 
       if (runId === state.backgroundPreparationRunId) {
@@ -1178,15 +1300,18 @@ async function prepareAssetInBackground(asset, runId) {
       asset.backgroundPrepareStatus = "ready";
       asset.backgroundPrepareError = "";
       asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+      syncBackgroundPreparationStatus();
       return { ok: true, ...bundle };
     } catch (error) {
       asset.backgroundPrepareStatus = "failed";
       asset.backgroundPrepareError = String(error.message || "background_prepare_failed").slice(0, 160);
       asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+      syncBackgroundPreparationStatus();
       return { ok: false, error: asset.backgroundPrepareError };
     } finally {
       if (!state.processing && runId === state.backgroundPreparationRunId) {
         renderResults();
+        syncBackgroundPreparationStatus();
       }
     }
   })();
