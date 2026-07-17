@@ -5,6 +5,10 @@ import {
 } from "../lib/listing/image-quality/quality-gate.mjs";
 import { labelForCsmField } from "../lib/listing/csm/field-labels.mjs";
 import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
+import {
+  groupClientResultsByJobId,
+  observeClientJobPoll
+} from "../lib/listing/v4/jobs/client-poll-policy.mjs";
 
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
@@ -32,9 +36,10 @@ const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const EXPORT_WORKBOOK_API_ENDPOINT = "/api/v4/listing-export-workbook";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
-const ASSISTED_DRAFT_MAX_POLL_MS = 120000;
+const ASSISTED_DRAFT_DELAY_WARNING_MS = 120000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_STATUS_BATCH_SIZE = 100;
+const STATUS_POLL_TIMEOUT_MS = 15000;
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
 // L1 scout 与预处理并行，缓存就绪后只启动一次 L2；L1 永不直接展示给写手。
@@ -154,15 +159,40 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = QUEUE_ENQUEUE_TIMEOUT_MS) {
+async function fetchWithTimeout(
+  url,
+  options = {},
+  timeoutMs = QUEUE_ENQUEUE_TIMEOUT_MS,
+  timeoutMessage = "云端队列提交超时，系统已停止自动重复提交，请稍后检查任务状态再重试。"
+) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || QUEUE_ENQUEUE_TIMEOUT_MS));
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error("云端队列提交超时，系统已停止自动重复提交，请稍后检查任务状态再重试。");
+      throw new Error(timeoutMessage);
     }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchJsonWithTimeout(
+  url,
+  options = {},
+  timeoutMs = STATUS_POLL_TIMEOUT_MS,
+  timeoutMessage = "云端状态查询超时，系统会自动继续查询。"
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || STATUS_POLL_TIMEOUT_MS));
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    return { response, payload };
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error(timeoutMessage);
     throw error;
   } finally {
     clearTimeout(timer);
@@ -1607,7 +1637,9 @@ function startGenerationTicker() {
       stopGenerationTicker();
       return;
     }
-    renderResults();
+    for (const assetIndex of state.assetGenerationTimings.keys()) {
+      updateGenerationTimingDom(assetIndex);
+    }
   }, 1000);
 }
 
@@ -1792,13 +1824,25 @@ function generationTimingView(assetIndex) {
 
 function generationTimingBadge(assetIndex) {
   const view = generationTimingView(assetIndex);
-  if (!view) return "";
-  const value = view.value ? ` ${escapeHtml(view.value)}` : "";
-  return `<span class="generation-time-badge generation-time-${escapeHtml(view.status)}">${escapeHtml(view.label)}${value}</span>`;
+  const value = view?.value ? ` ${escapeHtml(view.value)}` : "";
+  const status = view?.status || "idle";
+  return `<span class="generation-time-badge generation-time-${escapeHtml(status)}" data-generation-timing-asset="${Number(assetIndex)}" ${view ? "" : "hidden"}>${view ? `${escapeHtml(view.label)}${value}` : ""}</span>`;
 }
 
-function setAssetProgress(assetIndex, label, fraction) {
-  const hasPendingResult = state.results.some((result) => Number(result.index) === Number(assetIndex) && v4WriterTitlePending(result));
+function updateGenerationTimingDom(assetIndex) {
+  const view = generationTimingView(assetIndex);
+  const nodes = document.querySelectorAll(`[data-generation-timing-asset="${Number(assetIndex)}"]`);
+  for (const node of nodes) {
+    node.hidden = !view;
+    node.className = `generation-time-badge generation-time-${view?.status || "idle"}`;
+    node.textContent = view ? `${view.label}${view.value ? ` ${view.value}` : ""}` : "";
+  }
+  return nodes.length;
+}
+
+function setAssetProgress(assetIndex, label, fraction, options = {}) {
+  const hasPendingResult = options.knownPending === true
+    || state.results.some((result) => Number(result.index) === Number(assetIndex) && v4WriterTitlePending(result));
   if (!state.processing && !hasPendingResult) return;
   const current = state.assetProgress.get(assetIndex) || {};
   const targetFraction = clampNumber(fraction, 0.01, 0.98);
@@ -1813,8 +1857,10 @@ function setAssetProgress(assetIndex, label, fraction) {
     updatedAt: performance.now()
   });
   startProgressTicker();
-  renderResults();
-  setStatus(statusWithProgress(`资产 ${assetIndex}：${label}`), { busy: true });
+  if (!updateAssetProgressDom(assetIndex)) renderResults();
+  if (options.announce !== false) {
+    setStatus(statusWithProgress(`资产 ${assetIndex}：${label}`), { busy: true });
+  }
 }
 
 function clearAssetProgress(assetIndex) {
@@ -1846,7 +1892,7 @@ function startProgressTicker() {
       return;
     }
 
-    let changed = false;
+    const changedAssetIndexes = [];
     for (const [assetIndex, progress] of state.assetProgress.entries()) {
       const target = clampNumber(progress.targetFraction ?? progress.fraction, 0.01, 0.98);
       const display = clampNumber(progress.displayFraction ?? 0.005, 0.005, 0.98);
@@ -1856,11 +1902,11 @@ function startProgressTicker() {
         ...progress,
         displayFraction: nextDisplay
       });
-      changed = true;
+      changedAssetIndexes.push(assetIndex);
     }
 
-    if (changed) {
-      renderResults();
+    if (changedAssetIndexes.length) {
+      for (const assetIndex of changedAssetIndexes) updateAssetProgressDom(assetIndex);
       setStatus(statusWithProgress("识别中，系统正在逐步读取模块…"), { busy: true });
     }
   }, 520);
@@ -1886,10 +1932,27 @@ function assetProgressSnapshot(asset) {
   return { label: "", percent: 0 };
 }
 
-function progressMeter(percent, label = "") {
+function updateAssetProgressDom(assetIndex) {
+  const snapshot = assetProgressSnapshot({ index: Number(assetIndex) });
+  const meters = document.querySelectorAll(`[data-progress-asset="${Number(assetIndex)}"]`);
+  for (const meter of meters) {
+    meter.setAttribute("aria-label", snapshot.label || "识别进度");
+    meter.setAttribute("aria-valuenow", String(snapshot.percent));
+    const fill = meter.querySelector(".progress-fill");
+    const value = meter.querySelector(".progress-value");
+    if (fill) fill.style.width = `${snapshot.percent}%`;
+    if (value) value.textContent = `${snapshot.percent}%`;
+  }
+  const labels = document.querySelectorAll(`[data-progress-label-asset="${Number(assetIndex)}"]`);
+  for (const label of labels) label.textContent = snapshot.label || "识别中";
+  return meters.length + labels.length;
+}
+
+function progressMeter(percent, label = "", assetIndex = null) {
   const safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  const assetAttribute = Number.isFinite(Number(assetIndex)) ? ` data-progress-asset="${Number(assetIndex)}"` : "";
   return `
-    <div class="progress-meter" aria-label="${escapeHtml(label || "识别进度")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${safePercent}" role="progressbar">
+    <div class="progress-meter"${assetAttribute} aria-label="${escapeHtml(label || "识别进度")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${safePercent}" role="progressbar">
       <span class="progress-fill" style="width: ${safePercent}%"></span>
       <strong class="progress-value">${safePercent}%</strong>
     </div>
@@ -2191,8 +2254,8 @@ function pendingBox(asset) {
         ${isWorking ? `<span class="loading-spinner" aria-hidden="true"></span>` : `<span class="idle-dot" aria-hidden="true"></span>`}
         <strong>${escapeHtml(label)}</strong>
         <p>${escapeHtml(message)}</p>
-        ${isWorking ? progressMeter(progress.percent, progress.label || label) : ""}
-        ${isWorking ? `<span class="progress-label">${escapeHtml(progress.label || label)}</span>` : ""}
+        ${isWorking ? progressMeter(progress.percent, progress.label || label, asset.index) : ""}
+        ${isWorking ? `<span class="progress-label" data-progress-label-asset="${asset.index}">${escapeHtml(progress.label || label)}</span>` : ""}
         ${isWorking ? `<span class="pending-timing">${generationTimingBadge(asset.index)}</span>` : ""}
         ${isWorking ? `<span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>` : ""}
       </div>
@@ -2567,8 +2630,8 @@ function TitleCardComponent(result, asset = null) {
         </div>
       </div>
       ${assistedDraftNotice(result)}
-      ${titlePending && pendingProgress ? progressMeter(pendingProgress.percent, pendingProgress.label || "云端生成中") : ""}
-      ${titlePending && pendingProgress ? `<span class="progress-label">${escapeHtml(pendingProgress.label || "云端生成中")}</span>` : ""}
+      ${titlePending && pendingProgress ? progressMeter(pendingProgress.percent, pendingProgress.label || "云端生成中", result.index) : ""}
+      ${titlePending && pendingProgress ? `<span class="progress-label" data-progress-label-asset="${result.index}">${escapeHtml(pendingProgress.label || "云端生成中")}</span>` : ""}
       <textarea rows="1" maxlength="80" spellcheck="false" data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${titlePending ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
       ${omissionNotice ? `<p class="title-omission-notice">${escapeHtml(omissionNotice)}</p>` : ""}
       ${titleOverrideNotice(result)}
@@ -3434,13 +3497,29 @@ function queuedStatusPollDelay(elapsedMs = 0) {
   return 1800;
 }
 
-function timeoutQueuedResult(result = {}) {
-  result.l2AssistedDraftStatus = "TIMEOUT";
-  result.assisted_draft_status = "TIMEOUT";
-  result.feedbackMessage = result.feedbackMessage || "一段式标题暂未完成，请稍后重试或使用单模型重试。";
-  markAssetFinished(result.index, { failed: true });
-  attachGenerationTimingToResult(result);
-  clearAssetProgress(result.index);
+function syncQueuedPollObservation(result = {}, status = result.v4_job_status || "QUEUED", now = performance.now()) {
+  result.v4QueuedPollStartedAt = result.v4QueuedPollStartedAt || now;
+  const observation = observeClientJobPoll({
+    status,
+    elapsedMs: now - result.v4QueuedPollStartedAt,
+    warningAfterMs: ASSISTED_DRAFT_DELAY_WARNING_MS
+  });
+  result.v4QueuedPollDelayed = observation.delayed;
+  result.v4QueuedPollWarningCode = observation.warning_code;
+  return observation;
+}
+
+function recordQueuedStatusPollFailure(result = {}, error = null) {
+  result.v4StatusPollFailureCount = Number(result.v4StatusPollFailureCount || 0) + 1;
+  result.v4StatusPollConsecutiveFailures = Number(result.v4StatusPollConsecutiveFailures || 0) + 1;
+  result.v4StatusPollLastFailureAt = Date.now();
+  result.v4StatusPollLastError = String(error?.message || error || "status_poll_failed").slice(0, 240);
+}
+
+function recordQueuedStatusPollSuccess(result = {}) {
+  result.v4StatusPollConsecutiveFailures = 0;
+  result.v4StatusPollLastSuccessAt = Date.now();
+  result.v4StatusPollLastError = null;
 }
 
 async function pollV4QueuedJobsBatch(generation) {
@@ -3454,46 +3533,60 @@ async function pollV4QueuedJobsBatch(generation) {
   const now = performance.now();
   const active = [];
   for (const result of pending) {
-    result.v4QueuedPollStartedAt = result.v4QueuedPollStartedAt || now;
-    if (now - result.v4QueuedPollStartedAt > ASSISTED_DRAFT_MAX_POLL_MS) {
-      timeoutQueuedResult(result);
-    } else {
-      active.push(result);
-    }
-  }
-  if (!active.length) {
-    renderResults();
-    setStatus("一段式标题生成已结束，超时项可重试。");
-    state.queuedBatchPollTimer = null;
-    return;
+    syncQueuedPollObservation(result, result.v4_job_status || "QUEUED", now);
+    active.push(result);
   }
 
   state.queuedBatchPollInFlightGeneration = generation;
   try {
-    const resultByJobId = new Map(active.map((result) => [result.v4_job_id, result]));
-    const batches = chunksOf([...resultByJobId.keys()]);
-    const payloads = await Promise.all(batches.map(async (jobIds) => {
+    const resultsByJobId = groupClientResultsByJobId(active);
+    const batches = chunksOf([...resultsByJobId.keys()]);
+    const batchReads = await Promise.allSettled(batches.map(async (jobIds) => {
       const params = new URLSearchParams({ job_ids: jobIds.join(","), limit: String(jobIds.length) });
-      const response = await fetch(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
+      const { response, payload } = await fetchJsonWithTimeout(`${JOB_STATUS_API_ENDPOINT}?${params.toString()}`, {
         method: "GET",
         credentials: "same-origin",
         cache: "no-store"
-      });
-      const payload = await response.json().catch(() => ({}));
-      return response.ok && payload.ok !== false ? payload : null;
+      }, STATUS_POLL_TIMEOUT_MS, "云端任务状态查询超时，系统会自动继续查询。");
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.message || `status_poll_http_${response.status}`);
+      }
+      return { jobIds, payload };
     }));
     if (generation !== state.queuedBatchPollGeneration) return;
 
     let terminalCount = 0;
-    for (const payload of payloads.filter(Boolean)) {
+    let shouldRender = false;
+    for (let batchIndex = 0; batchIndex < batchReads.length; batchIndex += 1) {
+      const batchRead = batchReads[batchIndex];
+      if (batchRead.status === "rejected") {
+        for (const jobId of batches[batchIndex] || []) {
+          for (const result of resultsByJobId.get(jobId) || []) {
+            recordQueuedStatusPollFailure(result, batchRead.reason);
+          }
+        }
+        continue;
+      }
+      const { jobIds, payload } = batchRead.value;
+      const returnedJobIds = new Set((payload.jobs || []).map((job) => String(job?.job_id || "").trim()).filter(Boolean));
+      for (const jobId of jobIds) {
+        for (const result of resultsByJobId.get(jobId) || []) {
+          if (returnedJobIds.has(jobId)) recordQueuedStatusPollSuccess(result);
+          else recordQueuedStatusPollFailure(result, new Error("status_poll_job_missing"));
+        }
+      }
       for (const job of payload.jobs || []) {
-        const result = resultByJobId.get(job.job_id);
-        if (!result) continue;
-        const update = applyV4QueuedJobStatusUpdate(result, job);
-        if (update.terminal) terminalCount += 1;
+        const jobId = String(job?.job_id || "").trim();
+        for (const result of resultsByJobId.get(jobId) || []) {
+          const update = applyV4QueuedJobStatusUpdate(result, job);
+          if (update.terminal) {
+            terminalCount += 1;
+            shouldRender = true;
+          }
+        }
       }
     }
-    renderResults();
+    if (shouldRender) renderResults();
     const remaining = pendingAssistedDraftCount();
     if (terminalCount > 0) {
       setStatus(remaining
@@ -3540,6 +3633,7 @@ function queuedJobFailureReason(job = {}) {
 function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
   syncAssetGenerationTimingFromServer(result.index, job);
   result.v4_job_status = job.status || result.v4_job_status || "QUEUED";
+  const pollObservation = syncQueuedPollObservation(result, result.v4_job_status);
   result.v4_job_timing = job.timing || result.v4_job_timing || {};
   result.timing = {
     ...(result.timing || {}),
@@ -3551,11 +3645,20 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
 
   const jobStatus = String(job.status || "").toUpperCase();
   if (jobStatus === "QUEUED" || jobStatus === "RETRYING") {
-    setAssetProgress(result.index, "云端队列排队中", 0.56);
+    setAssetProgress(result.index, pollObservation.delayed ? "云端队列繁忙，任务仍在安全等待" : "云端队列排队中", 0.56, {
+      knownPending: true,
+      announce: false
+    });
   } else if (jobStatus === "RUNNING") {
-    setAssetProgress(result.index, "云端模型生成中", 0.68);
+    setAssetProgress(result.index, pollObservation.delayed ? "云端识别时间较长，任务仍在继续" : "云端模型生成中", 0.68, {
+      knownPending: true,
+      announce: false
+    });
   } else if (jobStatus === "L2_READY" || job.display_status === "FINAL_READY" || job.display_status === "WRITER_REVIEW") {
-    setAssetProgress(result.index, "接收最终标题", 0.94);
+    setAssetProgress(result.index, "接收最终标题", 0.94, {
+      knownPending: true,
+      announce: false
+    });
   }
 
   let upgraded = false;
@@ -3568,7 +3671,7 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
     return { terminal: true, upgraded: true };
   }
 
-  if (jobStatus === "FAILED" || job.display_status === "FAILED") {
+  if (jobStatus === "FAILED" || jobStatus === "CANCELLED" || job.display_status === "FAILED") {
     result.confidence = "FAILED";
     result.reason = queuedJobFailureReason(job);
     result.writerTitlePending = false;
@@ -3600,34 +3703,34 @@ async function pollV4AssistedDraft(
     return;
   }
 
-  if (performance.now() - startedAt > ASSISTED_DRAFT_MAX_POLL_MS) {
-    result.l2AssistedDraftStatus = "TIMEOUT";
-    result.assisted_draft_status = "TIMEOUT";
-    result.feedbackMessage = result.feedbackMessage || "一段式标题暂未完成，请稍后重试或使用单模型重试。";
-    markAssetFinished(result.index, { failed: true });
-    attachGenerationTimingToResult(result);
-    stopV4AssistedDraftPolling(resultIndex);
-    renderResults();
-    return;
+  const pollObservation = observeClientJobPoll({
+    status: result.l2AssistedDraftStatus || "PENDING",
+    elapsedMs: performance.now() - startedAt,
+    warningAfterMs: ASSISTED_DRAFT_DELAY_WARNING_MS
+  });
+  result.v4SessionPollDelayed = pollObservation.delayed;
+  result.v4SessionPollWarningCode = pollObservation.warning_code;
+  if (pollObservation.delayed) {
+    setAssetProgress(result.index, "云端识别时间较长，任务仍在继续", 0.82);
   }
 
   try {
     const params = new URLSearchParams({ recognition_session_id: result.recognition_session_id });
-    const response = await fetch(`${SESSION_STATUS_API_ENDPOINT}?${params.toString()}`, {
+    const { response, payload } = await fetchJsonWithTimeout(`${SESSION_STATUS_API_ENDPOINT}?${params.toString()}`, {
       method: "GET",
       credentials: "same-origin",
       cache: "no-store"
-    });
-    const payload = await response.json().catch(() => ({}));
+    }, STATUS_POLL_TIMEOUT_MS, "云端识别状态查询超时，系统会自动继续查询。");
     if (lifecycleGeneration !== state.assetLifecycleGeneration) {
       stopV4AssistedDraftPolling(resultIndex);
       return;
     }
     if (response.ok && payload.ok !== false && payload.session) {
       const upgraded = applyV4AssistedDraftUpdate(result, payload.session);
-      renderResults();
       const terminalStatus = v4AssistedStatus(result);
-      if (upgraded || ["READY", "FAILED", "TIMEOUT"].includes(terminalStatus)) {
+      const terminal = ["READY", "FAILED", "TIMEOUT", "REVIEW_REQUIRED"].includes(terminalStatus);
+      if (upgraded || terminal) {
+        renderResults();
         if (!upgraded && terminalStatus !== "READY") {
           markAssetFinished(result.index, { failed: true });
           attachGenerationTimingToResult(result);
@@ -3642,8 +3745,10 @@ async function pollV4AssistedDraft(
         return;
       }
     }
-  } catch {
+  } catch (error) {
     result.l2AssistedDraftStatus = result.l2AssistedDraftStatus || "PENDING";
+    result.v4SessionStatusPollFailureCount = Number(result.v4SessionStatusPollFailureCount || 0) + 1;
+    result.v4SessionStatusPollLastError = String(error?.message || error || "session_status_poll_failed").slice(0, 240);
   }
 
   const delay = ASSISTED_DRAFT_POLL_INTERVALS_MS[Math.min(attempt, ASSISTED_DRAFT_POLL_INTERVALS_MS.length - 1)];
