@@ -1,4 +1,5 @@
 import { waitUntil } from "@vercel/functions";
+import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { getSessionFromRequest } from "../../lib/listing-session.mjs";
 import {
@@ -17,10 +18,68 @@ import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { resolveSignedPublicV4Principal } from "../../lib/listing/v4/session/trusted-session-identity.mjs";
 
+const queueControlChars = /[\u0000-\u001f\u007f]/g;
+const durableListingAssetIdPattern = /^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function jobsFromPayload(payload = {}) {
   if (Array.isArray(payload.jobs)) return payload.jobs;
   if (payload.payload && typeof payload.payload === "object") return [{ payload: payload.payload }];
   return [payload];
+}
+
+function withSanitizedControlText(value = "", fallback = "asset") {
+  const trimmed = String(value || "")
+    .replace(queueControlChars, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+  return trimmed || String(fallback || "asset").slice(0, 160);
+}
+
+function deterministicQueueAssetId({
+  tenantId = "",
+  operatorId = "",
+  batchId = "",
+  assetId = "",
+  clientAssetRef = ""
+} = {}) {
+  const digest = crypto.createHash("sha256").update(`asset|${tenantId}|${operatorId}|${batchId}|${assetId}|${clientAssetRef}`).digest("hex");
+  return `asset_${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(12, 15)}-8${digest.slice(16, 19)}-${digest.slice(20, 32)}`;
+}
+
+function normalizeQueueJobIdentity(job = {}, context = {}) {
+  const rawPayload = job.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+    ? job.payload
+    : {};
+  const sourceAssetId = String(job.asset_id || job.assetId || rawPayload.asset_id || rawPayload.assetId || "").trim();
+  const sourceClientRef = String(
+    job.client_asset_ref || job.clientAssetRef || rawPayload.client_asset_ref || rawPayload.clientAssetRef || ""
+  ).trim();
+  const tenantId = String(context.tenantId || "").trim();
+  const operatorId = String(context.operatorId || "").trim();
+  const batchId = String(context.batchId || "").trim();
+  const asset_id = durableListingAssetIdPattern.test(sourceAssetId)
+    ? sourceAssetId
+    : deterministicQueueAssetId({ tenantId, operatorId, batchId, assetId: sourceAssetId, clientAssetRef: sourceClientRef });
+  const client_asset_ref = withSanitizedControlText(
+    sourceClientRef || sourceAssetId || asset_id,
+    `asset-${batchId.slice(-8) || "item"}`
+  );
+  const normalizedPayload = {
+    ...rawPayload,
+    asset_id,
+    assetId: asset_id,
+    client_asset_ref,
+    clientAssetRef: client_asset_ref
+  };
+  return {
+    ...job,
+    asset_id,
+    assetId: asset_id,
+    client_asset_ref,
+    clientAssetRef: client_asset_ref,
+    payload: normalizedPayload
+  };
 }
 
 function withoutClientSessionIdentity(job = {}) {
@@ -294,7 +353,11 @@ export default async function handler(req, res) {
   }) || createV4BatchId("v4batch");
   // Session IDs are ownership-bearing server identifiers. A browser may
   // provide an idempotency key, but it cannot select an existing session.
-  const sourceJobs = jobsFromPayload(payload).map(withoutClientSessionIdentity);
+  const sourceJobs = jobsFromPayload(payload).map((job) => normalizeQueueJobIdentity(job, {
+    tenantId,
+    operatorId,
+    batchId
+  })).map(withoutClientSessionIdentity);
   const maxJobsPerRequest = positiveInteger(process.env.V4_QUEUE_MAX_JOBS_PER_REQUEST, 50, { min: 1, max: 250 });
   if (sourceJobs.length > maxJobsPerRequest) {
     sendJson(res, 413, withV4Version({
