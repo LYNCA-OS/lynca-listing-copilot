@@ -144,6 +144,7 @@ jobs:
             v4_ready: health.ready === true,
             deployed_commit_matches: health.deployment?.git_commit_sha === process.env.GITHUB_SHA,
             queue_configured: health.production_queue?.configured === true,
+            storage_bucket_ready: status.storage?.configured === true && status.storage?.bucket === 'listing-card-images',
             cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
             model_ready: vision.details?.model_id === 'gpt-5-mini',
             vector_index_ready: vector.details?.index_ready === true,
