@@ -1,13 +1,28 @@
 import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
+import { cookieName, createSignedSessionToken } from "../lib/listing-session.mjs";
 import {
-  cookieName,
-  createSignedSessionToken,
-  timingSafeStringEqual
-} from "../lib/listing-session.mjs";
+  authenticatePassword,
+  isTenantAuthError,
+  listTenantChoicesForAuthUser,
+  publicTenantAuthError,
+  resolveTenantIdentityForAuthUser
+} from "../lib/tenant/index.mjs";
+import {
+  claimTenantInvitation,
+  isTenantInvitationServiceError
+} from "../lib/tenant/invitations.mjs";
 
 const maxAgeSeconds = 60 * 60 * 24 * 7;
 const maxLoginBodyBytes = 16 * 1024;
+
+function sendJson(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("pragma", "no-cache");
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(payload));
+}
 
 function normalizeUsername(value) {
   return String(value || "").trim().toLowerCase();
@@ -46,9 +61,7 @@ function readBody(req) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    res.statusCode = 405;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Method not allowed" }));
+    sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
@@ -59,47 +72,130 @@ export default async function handler(req, res) {
     message: "Too many login attempts. Please wait before trying again."
   })) return;
 
-  const expectedUser = process.env.METAVERSE_USERNAME;
-  const expectedPassword = process.env.METAVERSE_PASSWORD;
   const authSecret = process.env.METAVERSE_AUTH_SECRET;
-
-  if (!expectedUser || !expectedPassword || !authSecret) {
-    res.statusCode = 500;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Listing auth is not configured." }));
+  if (!authSecret) {
+    sendJson(res, 500, { ok: false, message: "Listing auth is not configured." });
     return;
   }
 
   let credentials;
   try {
     credentials = JSON.parse(await readBody(req));
-  } catch {
-    res.statusCode = 400;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "Invalid request." }));
+  } catch (error) {
+    sendJson(res, error?.code === "REQUEST_BODY_TOO_LARGE" ? 413 : 400, {
+      ok: false,
+      message: error?.code === "REQUEST_BODY_TOO_LARGE" ? "Request is too large." : "Invalid request."
+    });
     return;
   }
 
-  const username = normalizeUsername(credentials.username);
-  const password = String(credentials.password ?? "");
+  let authenticated = null;
+  try {
+    authenticated = await authenticatePassword({
+      email: credentials.email || credentials.username,
+      username: credentials.username,
+      password: credentials.password
+    });
 
-  if (username !== normalizeUsername(expectedUser) || !timingSafeStringEqual(password, expectedPassword)) {
-    res.statusCode = 401;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ ok: false, message: "账号或密码不正确。" }));
-    return;
+    const inviteTenantId = await resolveInvitationTenant({
+      inviteToken: cleanInviteToken(credentials?.invite_token),
+      email: credentials.email || credentials.username,
+      authenticated
+    });
+
+    const identity = authenticated.provider === "legacy" || inviteTenantId
+      ? authenticated.provider === "legacy"
+        ? authenticated
+        : await resolveTenantIdentityForAuthUser({
+          authUserId: authenticated.authUserId,
+          tenantId: inviteTenantId
+        })
+      : await resolveTenantIdentityForAuthUser({
+        authUserId: authenticated.authUserId,
+        tenantId: credentials.tenant_id || credentials.tenantId
+      });
+
+    const session = buildSignedSession(identity);
+    const token = createSignedSessionToken(session, authSecret);
+
+    res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
+    sendJson(res, 200, {
+      ok: true,
+      tenant_id: session.tenant_id,
+      role: session.role,
+      user_id: session.user_id
+    });
+  } catch (error) {
+    let tenantChoices = [];
+
+    if (isTenantInvitationServiceError(error)) {
+      const code = error.code;
+      sendJson(res, Number(error.statusCode || 400), {
+        ok: false,
+        code,
+        error_code: code,
+        message: error.message
+      });
+      return;
+    }
+
+    if (isTenantAuthError(error) && error.code === "TENANT_SELECTION_REQUIRED") {
+      try {
+        if (authenticated?.authUserId) {
+          tenantChoices = await listTenantChoicesForAuthUser({ authUserId: authenticated.authUserId });
+        }
+      } catch {
+        tenantChoices = [];
+      }
+    }
+
+    const statusCode = isTenantAuthError(error) ? error.statusCode : 503;
+    const payload = publicTenantAuthError(error);
+    sendJson(res, statusCode, {
+      ...payload,
+      message: error?.code === "INVALID_CREDENTIALS"
+        ? "账号或密码不正确。"
+        : error?.code === "TENANT_SELECTION_REQUIRED"
+          ? "请选择要进入的客户空间。"
+          : payload.message,
+      tenants: tenantChoices
+    });
+  }
+}
+
+function buildSignedSession(identity) {
+  const tenantId = String(identity?.tenantId || identity?.tenant_id || "").trim();
+  const userId = String(identity?.userId || identity?.user_id || identity?.authUserId || "").trim();
+  const user = normalizeUsername(identity?.user || identity?.email || userId);
+
+  if (!tenantId || !userId) {
+    throw new Error("AUTH_CONFIGURATION_ERROR");
   }
 
-  const token = createSignedSessionToken({
-    user: normalizeUsername(expectedUser),
-    tenant_id: String(process.env.METAVERSE_TENANT_ID || expectedUser).trim().toLowerCase(),
-    sid: crypto.randomUUID(),
+  return {
+    user,
+    user_id: userId,
+    tenant_id: tenantId,
+    email: String(identity?.email || "").trim().toLowerCase(),
+    role: String(identity?.role || "").trim(),
+    sid: identity?.sid || crypto.randomUUID(),
     iat: Date.now(),
-    exp: Date.now() + maxAgeSeconds * 1000
-  }, authSecret);
+    exp: Date.now() + maxAgeSeconds * 1000,
+    session_version: Number(identity?.sessionVersion || identity?.session_version || 1)
+  };
+}
 
-  res.statusCode = 200;
-  res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.end(JSON.stringify({ ok: true }));
+function cleanInviteToken(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+async function resolveInvitationTenant({ inviteToken, email, authenticated }) {
+  if (!inviteToken || !authenticated || authenticated.provider === "legacy") return "";
+  const claim = await claimTenantInvitation({
+    token: inviteToken,
+    email,
+    env: process.env,
+    fetchImpl: globalThis.fetch
+  });
+  return claim?.tenantId || "";
 }

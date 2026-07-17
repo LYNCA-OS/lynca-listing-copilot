@@ -15,7 +15,10 @@ const aliases = new Map([
   ["/", "app/index.html"],
   ["/index.html", "app/index.html"],
   ["/login", "app/login.html"],
-  ["/login.html", "app/login.html"]
+  ["/login.html", "app/login.html"],
+  ["/register", "app/register.html"],
+  ["/register.html", "app/register.html"],
+  ["/register.js", "app/register.js"]
 ]);
 
 const protectedPaths = new Set(["/", "/index.html"]);
@@ -163,6 +166,13 @@ async function handleApi(request, response, pathname) {
 
   if (pathname === "/api/listing-render-title") {
     const moduleUrl = pathToFileURL(join(root, "api/listing-render-title.js")).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
+  if (pathname === "/api/v4/tenant-invitations") {
+    const moduleUrl = pathToFileURL(join(root, "api/v4/tenant-invitations.js")).href;
     const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
     await handler(request, response);
     return true;

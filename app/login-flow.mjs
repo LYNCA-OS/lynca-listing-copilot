@@ -5,7 +5,11 @@ const allowedAppPaths = new Set([
   "/app",
   "/app/",
   "/app/index",
-  "/app/index.html"
+  "/app/index.html",
+  "/register",
+  "/register.html",
+  "/app/register",
+  "/app/register.html"
 ]);
 
 export function normalizeLegacyUsername(value) {

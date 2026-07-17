@@ -59,6 +59,7 @@ const tenantAuthRoutes = Object.freeze([
   "api/ebay-card-listings.js",
   "api/ebay-dcsports87-listings.js",
   "api/ebay-seller-listings.js",
+  "api/listing-asset-create.js",
   "api/listing-copilot-title.js",
   "api/listing-image-upload-url.js",
   "api/listing-image-verify-existing.js",
@@ -83,6 +84,7 @@ const tenantAuthRoutes = Object.freeze([
   "api/v4/listing-session-status.js",
   "api/v4/ops-snapshot.js",
   "api/v4/tenant-members.js",
+  "api/v4/tenant-invitations.js",
   "api/v4/tenant-settings.js"
 ]);
 
@@ -122,12 +124,12 @@ for (const file of internalSecretRoutes) {
     || (/\bisV4WorkerRequest\s*\(/.test(routeSource)
       ? /\bisV4WorkerRequest\s*\(/
       : file.startsWith("api/workflow-sidecar-")
-      ? /\bhandleInternalSidecar\s*\(/
-      : file.startsWith("api/admin-apply-")
-        ? /\bruntimeMigrationAuth\s*\(/
-        : file.startsWith("api/admin-")
-          ? /\b(?:platformAdminAuth|isPlatformAdminRequest)\s*\(/
-          : /\bisV4WorkerRequest\s*\(/);
+        ? /\bhandleInternalSidecar\s*\(/
+        : file.startsWith("api/admin-apply-")
+          ? /\bruntimeMigrationAuth\s*\(/
+          : file.startsWith("api/admin-")
+            ? /\b(?:platformAdminAuth|isPlatformAdminRequest)\s*\(/
+            : /\bisV4WorkerRequest\s*\(/);
   assert.match(routeSource, expected, `${file} must retain its internal credential guard`);
 }
 
@@ -152,10 +154,10 @@ for (const file of publicRoutes) {
   assert.doesNotMatch(source(file), /\brequireTenantAccess\s*\(/, `${file} is no longer public; reclassify it`);
 }
 
-assert.equal(actualApiFiles.length, 51);
+assert.equal(actualApiFiles.length, 53);
 assert.equal(publicRoutes.length, 4);
 assert.equal(internalSecretRoutes.length, 19);
-assert.equal(tenantAuthRoutes.length, 28);
+assert.equal(tenantAuthRoutes.length, 30);
 
 console.log(JSON.stringify({
   ok: true,

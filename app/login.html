@@ -3,35 +3,41 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>元宇宙 Listing Copilot 登录</title>
+    <title>LYNCA Listing Copilot 登录</title>
     <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
     <link rel="stylesheet" href="/app/listing-copilot.css">
   </head>
   <body class="login-page">
     <main class="login-stage">
-      <section class="login-card" aria-label="Metaverse Listing Copilot 登录">
+      <section class="login-card" aria-label="LYNCA Listing Copilot 管理员预览登录">
         <div class="login-identity">
           <span class="brand-mark">LYN</span>
           <span>
-            <strong>Metaverse Listing Copilot</strong>
-            <small>内部上架工作流</small>
+            <strong>LYNCA Listing Copilot</strong>
+            <small>隔离预览工作区</small>
           </span>
         </div>
         <div class="login-copy">
-          <p class="eyebrow">内部上架工具</p>
-          <h1>元宇宙卡牌标题生成助手</h1>
+          <p class="eyebrow">正式环境入口</p>
+          <h1>登录</h1>
+          <p class="subtitle" id="legacyLoginHelp">请输入你的账号与密码进行登录，或前往注册链接创建新账号。</p>
         </div>
         <form class="listing-login-form" id="listingLoginForm" autocomplete="on">
           <label>
             <span>账号</span>
-            <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+            <input id="username" name="username" type="text" autocomplete="username" aria-describedby="legacyLoginHelp loginError" required autofocus>
           </label>
           <label>
             <span>密码</span>
-            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <input id="password" name="password" type="password" autocomplete="current-password" aria-describedby="legacyLoginHelp loginError" required>
+          </label>
+          <label hidden>
+            <span>客户空间</span>
+            <select id="tenant_id" name="tenant_id"></select>
           </label>
           <p class="form-error" id="loginError" role="alert" aria-live="polite"></p>
-          <button class="primary-button" type="submit">登录</button>
+          <button class="primary-button" id="loginButton" type="submit" aria-busy="false">登录</button>
+          <p><a href="/register">没有账号？去注册</a></p>
         </form>
       </section>
     </main>

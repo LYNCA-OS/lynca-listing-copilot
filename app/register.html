@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LYNCA Listing Copilot 注册</title>
+    <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
+    <link rel="stylesheet" href="/app/listing-copilot.css">
+  </head>
+  <body class="login-page">
+    <main class="login-stage">
+      <section class="login-card" aria-label="LYNCA Listing Copilot 注册">
+        <div class="login-identity">
+          <span class="brand-mark">LYN</span>
+          <span>
+            <strong>LYNCA Listing Copilot</strong>
+            <small>数据资产工程生产前端</small>
+          </span>
+        </div>
+        <div class="login-copy">
+          <p class="eyebrow">注册入口</p>
+          <h1>邀请成员加入</h1>
+          <p class="subtitle" id="registerHelp">登录管理员账号后可在本页面为同一个 Workspace 生成邀请链接，支持设置邀请码有效期。</p>
+          <p id="inviteLoginHint" hidden>检测到邀请链接，点击下方按钮进入登录并自动绑定该 Workspace。</p>
+        </div>
+        <form class="listing-login-form" id="tenantInviteForm" autocomplete="on">
+          <label>
+            <span>受邀邮箱</span>
+            <input id="invitee_email" name="invitee_email" type="email" autocomplete="email" required>
+          </label>
+          <label>
+            <span>默认角色</span>
+            <select id="inviteRole" name="inviteRole" required>
+              <option value="WRITER">WRITER</option>
+              <option value="MANAGER">MANAGER</option>
+              <option value="OWNER">OWNER</option>
+            </select>
+          </label>
+          <label>
+            <span>链接有效期</span>
+            <select id="inviteDuration" name="inviteDuration" required>
+              <option value="1m">1个月</option>
+              <option value="3m">3个月</option>
+              <option value="6m">6个月</option>
+              <option value="1y">1年</option>
+              <option value="permanent">永久</option>
+            </select>
+          </label>
+          <label>
+            <span>
+              <input id="inviteResend" name="inviteResend" type="checkbox">
+              如该邮箱已存在未激活邀请，直接重发（不清除历史记录）
+            </span>
+          </label>
+          <p class="form-error" id="inviteError" role="alert" aria-live="polite"></p>
+          <button class="primary-button" id="inviteButton" type="submit" aria-busy="false">生成邀请链接</button>
+        </form>
+        <section id="inviteLoginSection" hidden>
+          <p><a href="#" id="inviteLoginLink" class="primary-button" style="text-decoration: none;">立即登录并启用邀请权限</a></p>
+        </section>
+        <section id="inviteResultSection" hidden>
+          <p><strong>邀请链接</strong></p>
+          <p>
+            <input id="inviteUrl" readonly style="width: 100%; box-sizing: border-box;" aria-label="邀请链接">
+          </p>
+          <p>
+            <button class="primary-button" id="copyInviteButton" type="button">复制链接</button>
+          </p>
+          <p>链接失效机制：到期后将自动失效，请按需重新发送以恢复访问权限，旧数据不会被删除。</p>
+          <p><a href="/login" class="primary-button" style="text-decoration: none;">回到登录</a></p>
+        </section>
+      </section>
+    </main>
+    <script src="/app/register.js" type="module"></script>
+  </body>
+</html>
