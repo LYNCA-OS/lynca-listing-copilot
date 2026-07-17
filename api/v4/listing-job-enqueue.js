@@ -21,6 +21,15 @@ import { resolveSignedPublicV4Principal } from "../../lib/listing/v4/session/tru
 const queueControlChars = /[\u0000-\u001f\u007f]/g;
 const durableListingAssetIdPattern = /^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function isQueueSchemaDependencyFailure(error) {
+  const text = String(error || "").toLowerCase();
+  return text.includes("atomic_enqueue_rpc_failed") && (
+    (text.includes("relation") && text.includes("does not exist"))
+    || text.includes("queue_rpc_not_ready")
+    || (text.includes("pgrst202") && text.includes("enqueue_v4_recognition_batch_atomic"))
+  );
+}
+
 function jobsFromPayload(payload = {}) {
   if (Array.isArray(payload.jobs)) return payload.jobs;
   if (payload.payload && typeof payload.payload === "object") return [{ payload: payload.payload }];
@@ -395,6 +404,7 @@ export default async function handler(req, res) {
   const deterministicConflict = failedEntries.some((entry) => (
     /identity_conflict|terminal_retry_required/.test(String(entry.error || ""))
   ));
+  const queueSchemaDependencyMissing = failedEntries.some((entry) => isQueueSchemaDependencyFailure(entry.error));
   const responseStatus = noJobsAccepted ? deterministicConflict ? 409 : 503 : 200;
   const failureMessage = failedEntries
     .map((entry) => String(entry.error || "queue_job_persistence_failed").trim())
@@ -404,13 +414,20 @@ export default async function handler(req, res) {
 
   sendJson(res, responseStatus, withV4Version({
     ok: acceptedCount > 0,
-    retryable: noJobsAccepted && !deterministicConflict,
+    retryable: noJobsAccepted && (!deterministicConflict || queueSchemaDependencyMissing),
     error_code: noJobsAccepted
-      ? deterministicConflict ? "V4_QUEUE_IDENTITY_CONFLICT" : "V4_QUEUE_PERSISTENCE_FAILED"
+      ? queueSchemaDependencyMissing
+        ? "V4_QUEUE_SCHEMA_DEPENDENCY_MISSING"
+        : deterministicConflict
+          ? "V4_QUEUE_IDENTITY_CONFLICT"
+          : "V4_QUEUE_PERSISTENCE_FAILED"
       : null,
     message: noJobsAccepted
-      ? failureMessage || "The recognition job was not persisted. Retry is safe because queue IDs are idempotent."
+      ? queueSchemaDependencyMissing
+        ? "任务提交失败。原因：系统队列尚未完成初始化，请稍后重试。内部：QUEUE_RPC_NOT_READY"
+        : failureMessage || "The recognition job was not persisted. Retry is safe because queue IDs are idempotent."
       : null,
+    internal_error_code: queueSchemaDependencyMissing ? "QUEUE_RPC_NOT_READY" : null,
     batch_id: result.batchId,
     tenant_id: tenantId,
     accepted_count: acceptedCount,

@@ -33,6 +33,9 @@ export default async function handler(req, res) {
     ? await checkV4QueueRpcReady({ env: process.env, fetchImpl: globalThis.fetch })
     : { ready: false, reason: "queue_not_configured" };
   const queueRpcReady = queueRpcReadyProbe.ready === true;
+  const queueRpcSignatureReady = queueRpcReadyProbe.signature_ready === true;
+  const queueRpcDependenciesReady = queueRpcReadyProbe.dependencies_ready === true;
+  const queueRpcLegacyPrincipalReady = queueRpcReadyProbe.legacy_principal_ready === true;
   const queueConfiguredAndWorkerReady = queueConfigured && workerSecretConfigured;
   const queueReady = queueConfiguredAndWorkerReady && queueRpcReady;
   const queueLeaseSeconds = v4WorkerLeaseSeconds(process.env);
@@ -41,6 +44,9 @@ export default async function handler(req, res) {
     ...(!allTablesOk ? ["v4_tables_not_ready"] : []),
     ...(!providerReady ? ["vision_provider_not_ready"] : []),
     ...(!queueConfiguredAndWorkerReady ? ["production_queue_not_ready"] : []),
+    ...(!queueRpcSignatureReady ? ["queue_rpc_signature_not_ready"] : []),
+    ...(!queueRpcDependenciesReady ? ["queue_rpc_dependencies_not_ready"] : []),
+    ...(!queueRpcLegacyPrincipalReady ? ["queue_legacy_principal_not_ready"] : []),
     ...(!queueRpcReady ? ["queue_rpc_not_ready"] : [])
   ];
   sendJson(res, 200, withV4Version({
@@ -72,10 +78,18 @@ export default async function handler(req, res) {
     production_queue: {
       configured: queueConfigured,
       worker_secret_configured: workerSecretConfigured,
+      queue_rpc_signature_ready: queueRpcSignatureReady,
+      queue_rpc_dependencies_ready: queueRpcDependenciesReady,
+      queue_rpc_legacy_principal_ready: queueRpcLegacyPrincipalReady,
       queue_rpc_ready: queueRpcReady,
       queue_rpc_error: queueRpcReady
         ? null
-        : queueRpcReadyProbe?.error || queueRpcReadyProbe?.reason || null,
+        : {
+          reason: queueRpcReadyProbe?.reason || null,
+          signature_error: queueRpcReadyProbe?.signature_error || null,
+          dependency_error: queueRpcReadyProbe?.dependency_error || null,
+          legacy_principal_error: queueRpcReadyProbe?.legacy_principal_error || null
+        },
       worker_claim_limit: v4WorkerClaimLimit(process.env),
       lease_seconds: queueLeaseSeconds,
       lease_heartbeat_enabled: v4JobLeaseHeartbeatEnabled(process.env),

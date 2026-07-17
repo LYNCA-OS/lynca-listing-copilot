@@ -14,6 +14,7 @@ const migrationPaths = [
   "supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql",
   "supabase/migrations/20260715064500_ensure_v4_learning_events_dataset_disposition_for_queue.sql",
   "supabase/migrations/20260715065752_track_d_feedback_capture_v1.sql",
+  "supabase/migrations/20260715065803_track_c_tenant_foundation_expand.sql",
   "supabase/migrations/20260715065830_track_d_data_flywheel_convergence.sql",
   "supabase/migrations/20260717100000_fix_v4_queue_atomic_rpc_signature.sql"
 ].map((path) => join(process.cwd(), path));
@@ -177,6 +178,24 @@ async function verify(client) {
       ,
       exists (
         select 1
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = 'tenants'
+      ) as tenants_table,
+      exists (
+        select 1
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = 'users'
+      ) as users_table,
+      exists (
+        select 1
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = 'tenant_members'
+      ) as tenant_members_table,
+      exists (
+        select 1
         from information_schema.columns
         where table_schema = 'public'
           and table_name = 'v4_recognition_jobs'
@@ -256,7 +275,213 @@ async function verify(client) {
             < position('nullif(jobs.batch_id' in pg_get_functiondef(p.oid))
       ) as tenant_fair_scheduler
   `);
-  return result.rows[0] || {};
+  const verification = result.rows?.[0] || {};
+  verification.legacy_principal_ready = false;
+  verification.legacy_tenant_ready = false;
+  verification.legacy_user_ready = false;
+  verification.legacy_membership_ready = false;
+
+  if (verification.tenants_table && verification.users_table && verification.tenant_members_table) {
+    const legacyResult = await client.query(`
+      select
+        exists (
+          select 1
+          from public.tenant_members member
+          join public.users app_user on app_user.id = member.user_id
+          join public.tenants tenant on tenant.id = member.tenant_id
+          where member.status = 'ACTIVE'
+            and member.disabled_at is null
+            and member.role in ('OWNER', 'MANAGER', 'WRITER')
+            and app_user.status = 'ACTIVE'
+            and app_user.disabled_at is null
+            and tenant.status = 'ACTIVE'
+            and tenant.disabled_at is null
+        ) as legacy_principal_ready,
+        exists (
+          select 1
+          from public.tenants tenant
+          where tenant.id = 'tenant_legacy'
+            and tenant.status = 'ACTIVE'
+            and tenant.disabled_at is null
+        ) as legacy_tenant_ready,
+        exists (
+          select 1
+          from public.users app_user
+          where app_user.id = 'user_legacy'
+            and app_user.status = 'ACTIVE'
+            and app_user.session_version >= 1
+            and app_user.disabled_at is null
+        ) as legacy_user_ready,
+        exists (
+          select 1
+          from public.tenant_members member
+          join public.tenants tenant on tenant.id = member.tenant_id
+          join public.users app_user on app_user.id = member.user_id
+          where member.tenant_id = 'tenant_legacy'
+            and member.user_id = 'user_legacy'
+            and member.role = 'OWNER'
+            and member.status = 'ACTIVE'
+            and member.disabled_at is null
+            and tenant.status = 'ACTIVE'
+            and tenant.disabled_at is null
+            and app_user.status = 'ACTIVE'
+            and app_user.disabled_at is null
+        ) as legacy_membership_ready
+    `);
+    const legacyVerification = legacyResult.rows?.[0] || {};
+    Object.assign(verification, legacyVerification);
+  }
+
+  return verification;
+}
+
+async function verifyAtomicEnqueueV4FunctionBehavior(client) {
+  const suffix = `${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+  const tenantId = "tenant_legacy";
+  const operatorId = "user_legacy";
+  const sessionId = `probe_session_${suffix}`;
+  const jobId = `probe_job_${suffix}`;
+  const batchId = `probe_batch_${suffix}`;
+  const clientAssetRef = `probe_ref_${suffix}`;
+  const probeHex = `${Date.now().toString(16)}${suffix.replace(/[^a-f0-9]/g, "").toLowerCase()}`.slice(0, 32).padEnd(32, "0");
+  const assetId = `asset_${probeHex.slice(0, 8)}-${probeHex.slice(8, 12)}-4${probeHex.slice(12, 15)}-8${probeHex.slice(15, 18)}-${probeHex.slice(18, 30)}`;
+  const probeBatch = {
+    id: batchId,
+    tenant_id: tenantId,
+    operator_id: operatorId,
+    item_count: 1,
+    metadata: {
+      schema_version: "v1",
+      source: "v4-queue-production-migration-probe",
+      enqueue_identity_sha256: "0".repeat(64)
+    }
+  };
+  const probeSession = {
+    id: sessionId,
+    tenant_id: tenantId,
+    operator_id: operatorId,
+    user_id: operatorId,
+    asset_id: assetId,
+    client_asset_ref: clientAssetRef,
+    identity_snapshot: {
+      tenant_id: tenantId,
+      operator_id: operatorId,
+      user_id: operatorId,
+      asset_id: assetId,
+      client_asset_ref: clientAssetRef,
+      asset_fingerprint: "0".repeat(64),
+      image_references: []
+    }
+  };
+  const probeJob = {
+    id: jobId,
+    tenant_id: tenantId,
+    operator_id: operatorId,
+    batch_id: batchId,
+    asset_id: assetId,
+    recognition_session_id: sessionId,
+    job_type: "FINAL_ASSISTED_TITLE",
+    payload: {
+      tenant_id: tenantId,
+      operator_id: operatorId,
+      asset_id: assetId,
+      recognition_session_id: sessionId
+    },
+    max_attempts: 2,
+    status: "CREATED",
+    priority: 100
+  };
+    await client.query("begin");
+  try {
+    await client.query(`
+      insert into public.listing_assets (id)
+      values ($1)
+      on conflict (id) do nothing
+    `, [assetId]);
+
+    const result = await client.query(`
+      select public.enqueue_v4_recognition_batch_atomic(
+        $1::jsonb,
+        $2::jsonb,
+        $3::text,
+        $4::jsonb,
+        $5::text
+      ) as probe_transaction
+    `, [probeBatch, [probeJob], operatorId, [probeSession], tenantId]);
+    const transaction = result.rows?.[0]?.probe_transaction;
+    const transactionReason = transaction && typeof transaction === "object"
+      ? String(transaction.reason || "").trim()
+      : "";
+    const transactionSaved = transaction && typeof transaction === "object"
+      ? Boolean(transaction.saved)
+      : false;
+    const acceptedCount = Number(transaction?.accepted_count || 0);
+    const sessionRowsWritten = Number(transaction?.session_rows_written || 0);
+    const jobRowsWritten = Number(transaction?.job_rows_written || 0);
+    const [batchRows, sessionRows, jobRows] = await Promise.all([
+      client.query(`
+        select 1
+        from public.v4_recognition_batches
+        where id = $1
+          and tenant_id = $2
+          and created_by_user_id = $3
+          and item_count = 1
+      `, [batchId, tenantId, operatorId]),
+      client.query(`
+        select 1
+        from public.v4_recognition_sessions
+        where id = $1
+          and tenant_id = $2
+          and operator_id = $3
+          and user_id = $3
+          and asset_id = $4
+      `, [sessionId, tenantId, operatorId, assetId]),
+      client.query(`
+        select 1
+        from public.v4_recognition_jobs
+        where id = $1
+          and tenant_id = $2
+          and operator_id = $3
+          and recognition_session_id = $4
+      `, [jobId, tenantId, operatorId, sessionId])
+    ]);
+    const batchRowsVisible = batchRows.rowCount === 1;
+    const sessionRowsVisible = sessionRows.rowCount === 1;
+    const jobRowsVisible = jobRows.rowCount === 1;
+    const canaryAssertionPassed = transactionSaved
+      && acceptedCount === 1
+      && sessionRowsWritten === 1
+      && jobRowsWritten === 1
+      && batchRowsVisible
+      && sessionRowsVisible
+      && jobRowsVisible;
+    return {
+      probe_rpc_ok: true,
+      probe_rpc_saved: transactionSaved,
+      probe_rpc_reason: transactionReason || null,
+      probe_expected_operator_not_active_member: transactionReason === "operator_not_active_member",
+      probe_expected_atomic_acceptance: canaryAssertionPassed,
+      probe_accepted_count: acceptedCount,
+      probe_session_rows_written: sessionRowsWritten,
+      probe_job_rows_written: jobRowsWritten,
+      probe_batch_rows_visible: batchRowsVisible,
+      probe_session_rows_visible: sessionRowsVisible,
+      probe_job_rows_visible: jobRowsVisible,
+      probe_canary_assertions_passed: canaryAssertionPassed,
+      probe_rpc_error_class: canaryAssertionPassed ? null : "atomic_queue_canary_assertion_mismatch",
+      probe_rpc_error_sqlstate: String(transaction?.sqlstate || "")
+    };
+  } catch (error) {
+    return {
+      probe_rpc_ok: false,
+      probe_rpc_saved: false,
+      probe_rpc_reason: String(error?.message || error || "unknown_error").slice(0, 240),
+      probe_rpc_error_class: "atomic_queue_canary_execution_error",
+      probe_rpc_error_sqlstate: String(error?.code || "unknown")
+    };
+  } finally {
+    await client.query("rollback");
+  }
 }
 
 async function verifyExecutionControlBehavior(client) {
@@ -437,9 +662,17 @@ export default async function handler(req, res) {
     await client.query(sql);
     const verification = await verify(client);
     const behavior = await verifyExecutionControlBehavior(client);
+    const atomicProbe = await verifyAtomicEnqueueV4FunctionBehavior(client);
     const ok = Boolean(
       verification.jobs_table
       && verification.claim_rpc
+      && verification.tenants_table
+      && verification.users_table
+      && verification.tenant_members_table
+      && verification.legacy_tenant_ready
+      && verification.legacy_user_ready
+      && verification.legacy_membership_ready
+      && verification.legacy_principal_ready
       && verification.lane_column
       && verification.l1_session_column
       && verification.provider_capacity_table
@@ -460,12 +693,15 @@ export default async function handler(req, res) {
       && behavior.kick_dedup_ok
       && behavior.stage_capacity_bound_ok
       && behavior.stage_capacity_release_ok
+      && atomicProbe.probe_rpc_ok
+      && atomicProbe.probe_canary_assertions_passed
     );
     sendJson(res, ok ? 200 : 500, {
       ok,
       migration: "v4_production_job_queue_all",
       verification,
-      behavior
+      behavior,
+      atomic_probe: atomicProbe
     });
   } catch (error) {
     sendJson(res, 500, {
