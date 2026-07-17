@@ -494,6 +494,10 @@ try {
   })).join("\n")}\n`);
   let healthCallCount = 0;
   let smokeCallCount = 0;
+  const imageMaterializer = async ({ dataset }) => ({
+    dataset,
+    summary: { mode: "offline_test_passthrough", item_count: dataset.items.length }
+  });
   const fetchImpl = async (url) => {
     if (url.endsWith("/api/v4/health")) {
       healthCallCount += 1;
@@ -550,6 +554,7 @@ try {
     outPath: reviewedReportPath,
     fetchImpl,
     smokeRunner,
+    imageMaterializer,
     progress: false,
     now: () => new Date("2026-07-16T02:00:00.000Z")
   });
@@ -580,6 +585,7 @@ try {
     expectedDeploymentSha: "abc123",
     outPath: belowThresholdReportPath,
     fetchImpl,
+    imageMaterializer,
     smokeRunner: async (options) => rawRunReport(Array.from({ length: 10 }, (_, index) => scoredResult({
       assetId: `reviewed-${index + 1}`,
       reviewed: true,
@@ -602,6 +608,7 @@ try {
     expectedDeploymentSha: "def456",
     outPath: join(root, "deployment-mismatch-report.json"),
     fetchImpl,
+    imageMaterializer,
     smokeRunner: async () => {
       mismatchSmokeCallCount += 1;
       return rawRunReport([]);
@@ -637,6 +644,7 @@ try {
     outPath: mixedReportPath,
     fetchImpl,
     smokeRunner: mixedSmokeRunner,
+    imageMaterializer,
     progress: false,
     now: () => new Date("2026-07-16T03:00:00.000Z")
   });

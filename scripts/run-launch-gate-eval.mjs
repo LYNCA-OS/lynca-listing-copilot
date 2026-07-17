@@ -16,6 +16,7 @@ import {
   runV4EbaySmoke,
   summarizePipelineNodeLedgers
 } from "./v4-ebay-smoke.mjs";
+import { materializeLaunchGateImages } from "./materialize-launch-gate-images.mjs";
 
 export const launchGateExecutionContract = Object.freeze({
   model: "gpt-5-mini",
@@ -659,6 +660,7 @@ export async function runLaunchGateEvaluation({
   requestTimeoutMs = 120000,
   fetchImpl = globalThis.fetch,
   smokeRunner = runV4EbaySmoke,
+  imageMaterializer = materializeLaunchGateImages,
   progress = true,
   now = () => new Date()
 } = {}) {
@@ -693,9 +695,18 @@ export async function runLaunchGateEvaluation({
   const tempRoot = await mkdtemp(join(tmpdir(), "lynca-launch-gate-"));
   const runReports = [];
   try {
+    const materialized = await imageMaterializer({
+      dataset,
+      outputDirectory: join(tempRoot, "images"),
+      baseUrl: normalizedBaseUrl,
+      cookie,
+      concurrency: launchGateExecutionContract.preparation_concurrency,
+      fetchImpl
+    });
+    datasetContract.image_materialization = materialized.summary;
     const emptyReferencesPath = join(tempRoot, "sealed-references-empty.jsonl");
     await writeFile(emptyReferencesPath, "\n");
-    const plans = await prepareRunPlans({ profile, dataset, tempRoot });
+    const plans = await prepareRunPlans({ profile, dataset: materialized.dataset, tempRoot });
     for (const plan of plans) {
       if (progress) process.stderr.write(`[launch-gate] cohort=${plan.cohort} items=${plan.itemCount}\n`);
       const report = await smokeRunner({
