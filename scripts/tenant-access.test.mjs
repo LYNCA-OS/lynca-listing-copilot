@@ -321,6 +321,24 @@ const recoveredContext = await requireTenantAccess(tenantRequest(), {
 assert.equal(transientMembershipCalls, 2, "a transient membership outage should receive one bounded retry");
 assert.equal(recoveredContext.tenantId, "tenant_a");
 
+let truncatedMembershipCalls = 0;
+const recoveredFromTruncatedBody = await requireTenantAccess(tenantRequest(), {
+  permission: TENANT_PERMISSIONS.UPLOAD_ASSET,
+  env: serviceEnv,
+  fetchImpl: async () => {
+    truncatedMembershipCalls += 1;
+    if (truncatedMembershipCalls === 1) {
+      return new Response("[", {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+    return jsonResponse([membershipRow()]);
+  }
+});
+assert.equal(truncatedMembershipCalls, 2, "a truncated successful response must retry the complete membership read");
+assert.equal(recoveredFromTruncatedBody.tenantId, "tenant_a");
+
 await expectCode(() => requireTenantAccess(tenantRequest(), {
   permission: TENANT_PERMISSIONS.VIEW_ALL_WORK,
   resourceTenantId: "tenant_b",
