@@ -291,13 +291,12 @@ and delete the flag.
 | `V4_FAST_SCOUT_CACHE_READ_TIMEOUT_MS` | lib/listing/v4/fast-scout/fast-scout-observation.mjs |
 | `V4_JOB_COMPLETION_RETRY_BASE_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_COMPLETION_WRITE_ATTEMPTS` | lib/listing/v4/jobs/production-job-queue.mjs |
+| `V4_JOB_EXECUTION_TIMEOUT_MS` | api/v4/listing-job-worker.js |
 | `V4_JOB_LEASE_HEARTBEAT_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_LEASE_HEARTBEAT_INTERVAL_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_LEASE_SECONDS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_PUMP_CRON_SECRET` | api/v4/listing-job-pump.js |
-| `V4_JOB_WORKER_DRAIN_LOOP_ENABLED` | api/v4/listing-job-worker.js |
 | `V4_JOB_WORKER_EMPTY_CLAIM_STOP` | api/v4/listing-job-worker.js |
-| `V4_JOB_WORKER_MAX_BATCHES_PER_INVOCATION` | api/v4/listing-job-worker.js |
 | `V4_JOB_WORKER_MAX_WAIT_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_JOB_WORKER_PROCESS_CONCURRENCY_MAX` | api/v4/listing-job-worker.js |
 | `V4_JOB_WORKER_SECRET` | lib/listing/v4/jobs/worker-auth.mjs |

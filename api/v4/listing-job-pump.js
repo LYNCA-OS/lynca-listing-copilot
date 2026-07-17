@@ -142,7 +142,7 @@ export async function runV4QueuePump({
 
   const started = now();
   const pumpRunId = String(payload.pump_run_id || payload.pumpRunId || crypto.randomUUID()).slice(0, 96);
-  const maxCycles = positiveInteger(payload.cycles ?? payload.max_cycles, 6, { min: 1, max: 30 });
+  const maxCycles = positiveInteger(payload.cycles ?? payload.max_cycles, 1, { min: 1, max: 30 });
   const limit = positiveInteger(payload.limit, v4WorkerProcessConcurrency(env), { min: 1, max: 96 });
   const processConcurrency = positiveInteger(
     payload.process_concurrency ?? payload.processConcurrency,
@@ -169,8 +169,8 @@ export async function runV4QueuePump({
     processConcurrency,
     { min: 1, max: 96 }
   );
-  const maxRuntimeMs = positiveInteger(payload.max_runtime_ms ?? payload.maxRuntimeMs, 250_000, { min: 5_000, max: 290_000 });
-  const leaseSeconds = positiveInteger(payload.lease_seconds ?? payload.leaseSeconds, 240, { min: 30, max: 900 });
+  const maxRuntimeMs = positiveInteger(payload.max_runtime_ms ?? payload.maxRuntimeMs, 120_000, { min: 5_000, max: 290_000 });
+  const leaseSeconds = positiveInteger(payload.lease_seconds ?? payload.leaseSeconds, 120, { min: 30, max: 900 });
   const tenantId = payload.tenant_id || payload.tenantId || null;
   const lanes = lanePlanFromPayload(payload);
   const parallelLanes = lanes.length > 1 && !falseFlag(payload.parallel_lanes ?? payload.parallelLanes);
@@ -212,6 +212,7 @@ export async function runV4QueuePump({
         limit: laneLimit,
         process_concurrency: laneProcessConcurrency,
         lease_seconds: leaseSeconds,
+        max_batches_per_invocation: 1,
         worker_id: `v4-pump-${pumpRunId}-${lane}-${cycle + 1}`.slice(0, 120)
       };
       const invocation = await invokeWorkerWithTransientRetry(
@@ -329,7 +330,7 @@ export function triggerV4QueuePumpContinuation(
     return { triggered: false, reason: "idle_observed_after_work" };
   }
   const depth = zeroBasedInteger(payload.continuation_depth ?? payload.continuationDepth, 0, { max: 100 });
-  const maxDepth = zeroBasedInteger(payload.max_continuation_depth ?? payload.maxContinuationDepth, 20, { max: 100 });
+  const maxDepth = zeroBasedInteger(payload.max_continuation_depth ?? payload.maxContinuationDepth, 100, { max: 100 });
   if (depth >= maxDepth) {
     return { triggered: false, reason: "max_continuation_depth_reached", depth, max_depth: maxDepth };
   }
@@ -338,10 +339,10 @@ export function triggerV4QueuePumpContinuation(
 
   const body = {
     ...payload,
-    cycles: positiveInteger(payload.continuation_cycles ?? payload.continuationCycles, 2, { min: 1, max: 4 }),
+    cycles: positiveInteger(payload.continuation_cycles ?? payload.continuationCycles, 1, { min: 1, max: 4 }),
     max_runtime_ms: positiveInteger(
       payload.continuation_max_runtime_ms ?? payload.continuationMaxRuntimeMs ?? payload.max_runtime_ms ?? payload.maxRuntimeMs,
-      240_000,
+      120_000,
       { min: 5_000, max: 240_000 }
     ),
     idle_delay_ms: 0,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -143,8 +143,95 @@ try {
   assert.equal(image.height, 900);
   assert.equal(image.content_type, "image/png");
   assert.equal(materialized.summary.downloaded_count, 1);
+  assert.equal(materialized.summary.invalid_local_redownload_count, 0);
   assert.equal((await readFile(image.local_path)).equals(png), true);
   assert.doesNotMatch(JSON.stringify(materialized.dataset), /signed\.test|signed_url/);
+
+  const validLocalPath = join(tempRoot, "valid-local.png");
+  await writeFile(validLocalPath, png);
+  const reused = await materializeLaunchGateImages({
+    dataset: {
+      items: [{
+        asset_id: "reused-item",
+        source_feedback_id: "reviewed-source-reused",
+        images: [{
+          image_id: "image-reused",
+          bucket: "listing-feedback-images",
+          object_path: "feedback/2026-07/test/reused.png",
+          local_path: validLocalPath
+        }]
+      }]
+    },
+    outputDirectory: join(tempRoot, "reused-images"),
+    baseUrl: "https://listing.test",
+    cookie: "session=test",
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("/api/v4/launch-gate-source-images")) {
+        return new Response(JSON.stringify({
+          ok: true,
+          sources: [{
+            source_feedback_id: "reviewed-source-reused",
+            images: [{
+              image_id: "image-reused",
+              bucket: "listing-feedback-images",
+              object_path: "feedback/2026-07/test/reused.png",
+              signed_url: "https://signed.test/reused.png"
+            }]
+          }]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      throw new Error(`valid local image must not be downloaded: ${url}`);
+    }
+  });
+  assert.equal(reused.summary.downloaded_count, 0);
+  assert.equal(reused.summary.reused_local_count, 1);
+  assert.equal(reused.dataset.items[0].images[0].size, png.length);
+  assert.equal(reused.dataset.items[0].images[0].width, 640);
+  assert.equal(reused.dataset.items[0].images[0].height, 900);
+
+  const invalidLocalPath = join(tempRoot, "invalid-local.png");
+  await writeFile(invalidLocalPath, Buffer.alloc(0));
+  const repaired = await materializeLaunchGateImages({
+    dataset: {
+      items: [{
+        asset_id: "repaired-item",
+        source_feedback_id: "reviewed-source-repaired",
+        images: [{
+          image_id: "image-repaired",
+          bucket: "listing-feedback-images",
+          object_path: "feedback/2026-07/test/repaired.png",
+          local_path: invalidLocalPath
+        }]
+      }]
+    },
+    outputDirectory: join(tempRoot, "repaired-images"),
+    baseUrl: "https://listing.test",
+    cookie: "session=test",
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("/api/v4/launch-gate-source-images")) {
+        return new Response(JSON.stringify({
+          ok: true,
+          sources: [{
+            source_feedback_id: "reviewed-source-repaired",
+            images: [{
+              image_id: "image-repaired",
+              bucket: "listing-feedback-images",
+              object_path: "feedback/2026-07/test/repaired.png",
+              signed_url: "https://signed.test/repaired.png"
+            }]
+          }]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (String(url) === "https://signed.test/repaired.png") {
+        return new Response(png, { status: 200, headers: { "content-type": "image/png" } });
+      }
+      throw new Error(`unexpected repair URL: ${url}`);
+    }
+  });
+  assert.equal(repaired.summary.downloaded_count, 1);
+  assert.equal(repaired.summary.invalid_local_redownload_count, 1);
+  assert.equal(repaired.dataset.items[0].images[0].size, png.length);
+  assert.equal((await readFile(repaired.dataset.items[0].images[0].local_path)).equals(png), true);
 } finally {
   await rm(tempRoot, { recursive: true, force: true });
 }

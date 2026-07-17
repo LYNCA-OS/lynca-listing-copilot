@@ -248,10 +248,39 @@ function laneProcessConcurrency(lane, payload = {}) {
   return Math.min(requested, hardMax, globalFallback);
 }
 
-function shouldDrainLoop(payload = {}) {
-  const raw = payload.drain_loop_enabled ?? payload.drainLoopEnabled ?? process.env.V4_JOB_WORKER_DRAIN_LOOP_ENABLED;
-  if (raw === undefined || raw === null || raw === "") return true;
-  return !["0", "false", "no", "off", "disabled"].includes(String(raw).trim().toLowerCase());
+export function v4JobExecutionTimeoutMs(env = process.env) {
+  return positiveInteger(env.V4_JOB_EXECUTION_TIMEOUT_MS, 100_000, { min: 30_000, max: 240_000 });
+}
+
+function jobExecutionAbortSignal(parentSignal = null, timeoutMs = v4JobExecutionTimeoutMs()) {
+  const controller = new AbortController();
+  const onParentAbort = () => {
+    controller.abort(parentSignal.reason || Object.assign(new Error("queue_job_aborted"), {
+      name: "AbortError",
+      code: "V4_JOB_ABORTED",
+      retryable: true
+    }));
+  };
+  if (parentSignal?.aborted) onParentAbort();
+  else parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+
+  const timer = setTimeout(() => {
+    controller.abort(Object.assign(new Error(`v4_job_execution_timeout_${timeoutMs}ms`), {
+      name: "AbortError",
+      code: "V4_JOB_EXECUTION_TIMEOUT",
+      retryable: true,
+      timeout_ms: timeoutMs
+    }));
+  }, timeoutMs);
+  timer.unref?.();
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timer);
+      parentSignal?.removeEventListener("abort", onParentAbort);
+    }
+  };
 }
 
 export function payloadForV4ProductionJob(job = {}) {
@@ -313,13 +342,13 @@ export function triggerV4BackgroundWorkerAfterL1Release(_req, {
       background_only: true,
       limit: processConcurrency,
       process_concurrency: processConcurrency,
-      cycles: 2,
-      max_runtime_ms: 240_000,
-      lease_seconds: 240,
+      cycles: 1,
+      max_runtime_ms: 120_000,
+      lease_seconds: 120,
       idle_cycles_before_stop: 1,
       background_idle_cycles: 1,
-      continuation_cycles: 2,
-      max_continuation_depth: 20
+      continuation_cycles: 1,
+      max_continuation_depth: 100
     },
     reason,
     dedupScope: `l2-release:${tenantId || "global"}`,
@@ -355,13 +384,13 @@ export function triggerV4RetryWake({
       process_concurrency: processConcurrency,
       interactive_only: lane === v4JobLanes.INTERACTIVE,
       background_only: lane === v4JobLanes.BACKGROUND,
-      cycles: 2,
-      max_runtime_ms: 240_000,
-      lease_seconds: 240,
+      cycles: 1,
+      max_runtime_ms: 120_000,
+      lease_seconds: 120,
       idle_cycles_before_stop: 1,
       background_idle_cycles: 1,
-      continuation_cycles: 2,
-      max_continuation_depth: 20,
+      continuation_cycles: 1,
+      max_continuation_depth: 100,
       retry_job_id: job.id || null
     },
     reason: "retry_not_before_reached",
@@ -526,16 +555,26 @@ export async function runWithV4JobLeaseHeartbeat({
 async function runJob(job, req, signal = null) {
   const started = Date.now();
   const payload = payloadForV4ProductionJob(job);
-  const response = await callJsonHandler(v4ListingHandler, {
-    method: "POST",
-    headers: {
-      [workerSecretHeader]: req.headers[workerSecretHeader] || req.headers[workerSecretHeader.toLowerCase()] || "",
-      "user-agent": "lynca-v4-production-worker",
-      "x-forwarded-for": "v4-production-worker"
-    },
-    payload,
-    signal
-  });
+  const execution = jobExecutionAbortSignal(signal, v4JobExecutionTimeoutMs(process.env));
+  let response;
+  try {
+    response = await callJsonHandler(v4ListingHandler, {
+      method: "POST",
+      headers: {
+        [workerSecretHeader]: req.headers[workerSecretHeader] || req.headers[workerSecretHeader.toLowerCase()] || "",
+        "user-agent": "lynca-v4-production-worker",
+        "x-forwarded-for": "v4-production-worker"
+      },
+      payload,
+      signal: execution.signal
+    });
+  } catch (error) {
+    const normalized = error instanceof Error ? error : new Error(String(error || "v4_job_aborted"));
+    normalized.latency_ms = Date.now() - started;
+    throw normalized;
+  } finally {
+    execution.cleanup();
+  }
   const latencyMs = Date.now() - started;
   if (response.statusCode < 200 || response.statusCode >= 300 || !response.body?.ok) {
     const failureReason = response.body?.message
@@ -838,9 +877,10 @@ export default async function handler(req, res) {
 
   const startedAt = Date.now();
   const maxWaitMs = positiveInteger(payload.max_wait_ms ?? payload.maxWaitMs, v4WorkerMaxWaitMs(process.env), { min: 5_000, max: 240_000 });
-  const maxBatches = shouldDrainLoop(payload)
-    ? positiveInteger(payload.max_batches_per_invocation ?? payload.maxBatchesPerInvocation ?? process.env.V4_JOB_WORKER_MAX_BATCHES_PER_INVOCATION, 3, { min: 1, max: 10 })
-    : 1;
+  // A serverless worker owns exactly one batch. Remaining durable jobs are
+  // resumed by the pump continuation, so one stalled batch cannot strand the
+  // rest of the queue for the full function lifetime.
+  const maxBatches = 1;
   const emptyClaimStop = String(payload.empty_claim_stop ?? payload.emptyClaimStop ?? process.env.V4_JOB_WORKER_EMPTY_CLAIM_STOP ?? "true").toLowerCase() !== "false";
   const batches = [];
   let processed = [];
@@ -870,6 +910,7 @@ export default async function handler(req, res) {
       processed_count: batchProcessed.length,
       process_concurrency: concurrency,
       lease_seconds: leaseSeconds,
+      job_execution_timeout_ms: v4JobExecutionTimeoutMs(process.env),
       worker_claim_latency_ms: Date.now() - claimStarted
     });
     if (!batchRows.length && emptyClaimStop) break;
@@ -886,6 +927,8 @@ export default async function handler(req, res) {
     batches_claimed: batches.filter((batch) => Number(batch.claimed_count || 0) > 0).length,
     batches_run: batches.length,
     jobs_processed_per_invocation: processed.length,
+    short_batch_continuation: true,
+    job_execution_timeout_ms: v4JobExecutionTimeoutMs(process.env),
     worker_elapsed_ms: Date.now() - startedAt,
     batches,
     jobs: processed

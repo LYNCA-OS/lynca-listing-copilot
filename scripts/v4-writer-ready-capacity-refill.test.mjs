@@ -19,6 +19,7 @@ const req = {
 };
 let request = null;
 let scheduled = null;
+let acquireKickCalled = false;
 const triggered = triggerWriterReadyCapacityRefill(req, {
   payload: {
     v4_queue_job_id: "job-1",
@@ -26,9 +27,9 @@ const triggered = triggerWriterReadyCapacityRefill(req, {
   },
   capacityRelease: { released: true },
   env,
-  acquireKick: async ({ scope }) => {
-    assert.equal(scope, "capacity-refill:background");
-    return { ok: true, acquired: true };
+  acquireKick: async () => {
+    acquireKickCalled = true;
+    return { ok: true, acquired: false };
   },
   fetchImpl: async (url, init) => {
     request = { url, init };
@@ -44,18 +45,19 @@ const triggered = triggerWriterReadyCapacityRefill(req, {
 });
 assert.equal(triggered.triggered, true);
 const triggeredCompletion = await scheduled;
+assert.equal(acquireKickCalled, false, "every real provider release must wake without short-window dedup");
 assert.equal(request.url, "https://listing.example.test/api/v4/listing-job-pump");
 assert.deepEqual(JSON.parse(request.init.body), {
   background_only: true,
-  continuation_cycles: 2,
-  cycles: 2,
+  continuation_cycles: 1,
+  cycles: 1,
   detached: true,
   idle_cycles_before_stop: 1,
   background_idle_cycles: 1,
-  lease_seconds: 240,
+  lease_seconds: 120,
   limit: 2,
-  max_continuation_depth: 20,
-  max_runtime_ms: 240000,
+  max_continuation_depth: 100,
+  max_runtime_ms: 120000,
   process_concurrency: 2,
   refill_source_tenant_id: null,
   tenant_id: null,

@@ -93,13 +93,13 @@ export function triggerPump(_req, {
     interactive_process_concurrency: stableConcurrency,
     background_limit: stableConcurrency,
     background_process_concurrency: stableConcurrency,
-    cycles: 2,
-    max_runtime_ms: 240_000,
+    cycles: 1,
+    max_runtime_ms: 120_000,
     parallel_lanes: true,
     idle_cycles_before_stop: 1,
     background_idle_cycles: 1,
-    continuation_cycles: 2,
-    max_continuation_depth: 20,
+    continuation_cycles: 1,
+    max_continuation_depth: 100,
     reason: "prewarm"
   };
   const scheduled = scheduleTrustedV4QueuePump({

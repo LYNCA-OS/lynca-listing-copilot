@@ -126,7 +126,36 @@ async function requestSignedSources({ baseUrl, cookie, sourceFeedbackIds, fetchI
 
 async function downloadSignedImage({ image, signedImage, outputDirectory, maxImageBytes, fetchImpl, position }) {
   const localPath = cleanText(image.local_path || image.localPath);
-  if (localPath && existsSync(localPath)) return { image, downloaded: false, attempts: 0 };
+  let invalidLocalReason = "";
+  if (localPath && existsSync(localPath)) {
+    try {
+      const bytes = await readFile(localPath);
+      if (!bytes.length || bytes.length > maxImageBytes) throw new Error(`launch_gate_image_size_invalid:${bytes.length}`);
+      const contentType = contentTypeForBytes(bytes, cleanText(image.content_type || image.contentType));
+      const dimensions = imageDimensions(bytes, contentType);
+      const contentSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+      const expectedSha256 = cleanText(image.content_sha256 || signedImage?.content_sha256).toLowerCase();
+      if (expectedSha256 && expectedSha256 !== contentSha256) {
+        throw new Error(`launch_gate_image_sha256_mismatch:${position}`);
+      }
+      return {
+        downloaded: false,
+        attempts: 0,
+        invalid_local_redownloaded: false,
+        image: {
+          ...image,
+          local_path: localPath,
+          content_type: contentType,
+          size: bytes.length,
+          width: dimensions.width,
+          height: dimensions.height,
+          content_sha256: contentSha256
+        }
+      };
+    } catch (error) {
+      invalidLocalReason = cleanText(error?.message || error);
+    }
+  }
   if (!cleanText(signedImage?.signed_url)) throw new Error(`launch_gate_signed_image_missing:${position}`);
   const result = await fetchWithBoundedRetry(signedImage.signed_url, { method: "GET" }, {
     fetchImpl,
@@ -158,6 +187,8 @@ async function downloadSignedImage({ image, signedImage, outputDirectory, maxIma
   return {
     downloaded: true,
     attempts: result.attempts,
+    invalid_local_redownloaded: Boolean(invalidLocalReason),
+    invalid_local_reason: invalidLocalReason || undefined,
     image: {
       ...image,
       local_path: outputPath,
@@ -222,8 +253,8 @@ export async function materializeLaunchGateImages({
       image_count: jobs.length,
       downloaded_count: downloaded.filter((entry) => entry.downloaded).length,
       reused_local_count: downloaded.filter((entry) => !entry.downloaded).length,
+      invalid_local_redownload_count: downloaded.filter((entry) => entry.invalid_local_redownloaded).length,
       max_download_attempts: Math.max(...downloaded.map((entry) => Number(entry.attempts || 0)))
     }
   };
 }
-

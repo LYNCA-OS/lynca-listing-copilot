@@ -393,6 +393,29 @@ const transientVerification = await verifyListingImageUploadedObject({
 });
 assert.equal(transientVerificationCalls, 2);
 assert.equal(transientVerification.object_verified, true);
+let eventualVisibilityCalls = 0;
+const eventualVisibilityVerification = await verifyListingImageUploadedObject({
+  tenantId,
+  objectPath: "tenants/tenant_legacy/listing-assets/2026-06-22/asset-1/front_original-front-1.png",
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  env,
+  fetchImpl: async () => {
+    eventualVisibilityCalls += 1;
+    if (eventualVisibilityCalls === 1) {
+      return { ok: false, status: 404, headers: { get: () => "" }, arrayBuffer: async () => new ArrayBuffer(0) };
+    }
+    return objectResponse(pngVerificationBytes, {
+      "content-type": "image/png",
+      "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+    });
+  }
+});
+assert.equal(eventualVisibilityCalls, 2);
+assert.equal(eventualVisibilityVerification.object_verified, true);
 assert.equal(typeof verification.verification_token, "string");
 assert.ok(verification.verification_token.length > 40);
 const verifiedTokenPayload = verifyListingImageVerificationToken({

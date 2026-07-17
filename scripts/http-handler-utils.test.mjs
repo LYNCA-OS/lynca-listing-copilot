@@ -41,4 +41,26 @@ assert.deepEqual(delayedNestedResponse.body, {
   asset_id: "asset_delayed_body"
 });
 
+const abortController = new AbortController();
+const abortReason = Object.assign(new Error("lease_ownership_lost"), {
+  name: "AbortError",
+  code: "QUEUE_LEASE_LOST",
+  retryable: false
+});
+let nestedSignal = null;
+const abortedCall = callJsonHandler(async (req) => {
+  nestedSignal = req.signal;
+  await new Promise(() => {});
+}, {
+  payload: { asset_id: "asset_abort" },
+  signal: abortController.signal
+});
+setTimeout(() => abortController.abort(abortReason), 5);
+await assert.rejects(abortedCall, (error) => {
+  assert.equal(error, abortReason);
+  assert.equal(error.code, "QUEUE_LEASE_LOST");
+  return true;
+});
+assert.equal(nestedSignal, abortController.signal, "nested handlers must receive the worker lease signal");
+
 console.log("http handler utils tests passed");
