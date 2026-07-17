@@ -55,8 +55,9 @@ async function callWorker(payload) {
 const persistedJob = {
   id: "job_durable_gate",
   tenant_id: "tenant_a",
+  operator_id: "user_manager",
   recognition_session_id: "session_durable_gate",
-  asset_id: "asset_durable_gate",
+  asset_id: "asset_33333333-3333-4333-8333-333333333333",
   status: "RUNNING",
   lane: "BACKGROUND",
   job_type: "FINAL_ASSISTED_TITLE",
@@ -66,7 +67,8 @@ const persistedJob = {
   assigned_to_user_id: "user_writer",
   payload: {
     tenant_id: "tenant_a",
-    asset_id: "asset_durable_gate",
+    asset_id: "asset_33333333-3333-4333-8333-333333333333",
+    client_asset_ref: "durable-gate-card",
     images: [{ id: "front", url: "https://images.example/card.jpg" }]
   }
 };
@@ -78,7 +80,7 @@ try {
   process.env.API_RATE_LIMIT_DISABLED = "true";
   process.env.OPENAI_API_KEY = "provider-must-not-be-called";
 
-  for (const failureMode of ["create", "observing_update"]) {
+  for (const failureMode of ["session_read", "observing_update"]) {
     const providerCalls = [];
     globalThis.fetch = async (input, init = {}) => {
       const url = new URL(String(input));
@@ -86,24 +88,26 @@ try {
         providerCalls.push(url.href);
         throw new Error(`provider called before durable session: ${url.href}`);
       }
-      if (url.pathname === "/rest/v1/v4_recognition_jobs" && (!init.method || init.method === "GET")) {
-        return jsonResponse([persistedJob]);
-      }
-      if (url.pathname === "/rest/v1/rpc/heartbeat_v4_recognition_job" && init.method === "POST") {
+      if (url.pathname === "/rest/v1/rpc/fence_v4_recognition_job_execution" && init.method === "POST") {
         assert.deepEqual(JSON.parse(init.body), {
           p_job_id: persistedJob.id,
           p_worker_id: persistedJob.lease_owner,
           p_lease_seconds: 300
         });
-        return jsonResponse(true);
+        return jsonResponse([persistedJob]);
       }
       if (["/rest/v1/request_logs", "/rest/v1/error_logs", "/rest/v1/production_events"].includes(url.pathname)) {
         return jsonResponse([], 201);
       }
-      if (url.pathname === "/rest/v1/v4_recognition_sessions" && init.method === "POST") {
-        return failureMode === "create"
-          ? jsonResponse({ message: "session insert unavailable" }, 500)
-          : jsonResponse([{ id: persistedJob.recognition_session_id, tenant_id: "tenant_a" }], 201);
+      if (url.pathname === "/rest/v1/v4_recognition_sessions" && (!init.method || init.method === "GET")) {
+        return failureMode === "session_read"
+          ? jsonResponse({ message: "session read unavailable" }, 500)
+          : jsonResponse([{
+            id: persistedJob.recognition_session_id,
+            tenant_id: persistedJob.tenant_id,
+            operator_id: persistedJob.operator_id,
+            user_id: persistedJob.operator_id
+          }]);
       }
       if (url.pathname === "/rest/v1/v4_recognition_sessions" && init.method === "PATCH") {
         return jsonResponse({ message: "session state update unavailable" }, 500);
@@ -120,7 +124,9 @@ try {
     assert.equal(response.body.retryable, true);
     assert.equal(
       response.body.error_code,
-      failureMode === "create" ? "V4_SESSION_PERSISTENCE_FAILED" : "V4_SESSION_STATE_PERSISTENCE_FAILED"
+      failureMode === "session_read"
+        ? "V4_WORKER_SESSION_IDENTITY_UNAVAILABLE"
+        : "V4_SESSION_STATE_PERSISTENCE_FAILED"
     );
     assert.deepEqual(providerCalls, [], "no provider call may start before critical session state is durable");
   }
@@ -151,15 +157,12 @@ try {
         providerCalls.push(url.href);
         throw new Error(`provider called for ${scenario.name}: ${url.href}`);
       }
-      if (url.pathname === "/rest/v1/v4_recognition_jobs" && (!init.method || init.method === "GET")) {
-        return jsonResponse([scenario.job]);
-      }
-      if (url.pathname === "/rest/v1/rpc/heartbeat_v4_recognition_job" && init.method === "POST") {
+      if (url.pathname === "/rest/v1/rpc/fence_v4_recognition_job_execution" && init.method === "POST") {
         leaseChecks += 1;
         const rpc = JSON.parse(init.body);
         assert.equal(rpc.p_job_id, persistedJob.id);
         assert.equal(rpc.p_worker_id, scenario.requestWorkerId);
-        return jsonResponse(false);
+        return jsonResponse([]);
       }
       if (["/rest/v1/request_logs", "/rest/v1/error_logs", "/rest/v1/production_events"].includes(url.pathname)) {
         return jsonResponse([], 201);
@@ -177,7 +180,7 @@ try {
       v4_queue_worker_id: scenario.requestWorkerId
     });
     assert.equal(response.statusCode, 409, `${scenario.name} must fail before execution`);
-    assert.equal(response.body.error_code, "V4_WORKER_LEASE_NOT_OWNED");
+    assert.equal(response.body.error_code, "V4_WORKER_JOB_LEASE_FENCE_FAILED");
     assert.equal(response.body.retryable, false);
     assert.equal(leaseChecks, 1, `${scenario.name} must use the atomic lease RPC`);
     assert.equal(sessionWrites, 0, `${scenario.name} must not write a recognition session`);

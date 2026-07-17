@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import {
-  callRecognitionCoreWithGpt5EmptyRetry,
-  scopeV4RecognitionPayload,
-  validateV4PreingestionBundle
+  callRecognitionCoreWithGpt5EmptyRetry
 } from "../api/v4/listing-copilot-title.js";
+import { scopeV4RecognitionPayloadFromFencedJob } from "../lib/listing/v4/session/trusted-session-identity.mjs";
 import { createListingImageVerificationToken } from "../lib/listing/storage/supabase-image-storage.mjs";
 
 const originalFetch = globalThis.fetch;
@@ -27,9 +26,11 @@ try {
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+  const tenantAAssetId = "asset_11111111-1111-4111-8111-111111111111";
+  const tenantBAssetId = "asset_22222222-2222-4222-8222-222222222222";
   const tenantBDescriptor = {
     tenantId: "tenant_b",
-    objectPath: "tenants/tenant_b/listing-assets/asset_b/front.jpg",
+    objectPath: `tenants/tenant_b/listing-assets/2026-07-17/${tenantBAssetId}/front.jpg`,
     bucket: "listing-card-images",
     contentType: "image/jpeg",
     size: 120_000,
@@ -41,7 +42,17 @@ try {
     env: process.env
   });
 
-  const scoped = scopeV4RecognitionPayload({
+  const leaseExpiresAt = new Date(Date.now() + 60_000).toISOString();
+  const scoped = scopeV4RecognitionPayloadFromFencedJob({
+    id: "job_a",
+    lease_owner: "worker_a",
+    lease_expires_at: leaseExpiresAt,
+    status: "RUNNING",
+    recognition_session_id: "session_a",
+    tenant_id: "tenant_a",
+    operator_id: "user_a",
+    asset_id: tenantAAssetId,
+    job_type: "ASSISTED_DRAFT",
     payload: {
       tenant_id: "tenant_b",
       tenantId: "tenant_b",
@@ -51,8 +62,8 @@ try {
       assigned_to_user_id: "user_b",
       recognition_session_id: "session_b",
       recognitionSessionId: "session_b_camel",
-      asset_id: "asset_a",
-      assetId: "asset_b_forged",
+      asset_id: tenantBAssetId,
+      assetId: tenantBAssetId,
       provider: "openai_legacy",
       provider_options: {
         disable_approved_identity_memory: true,
@@ -74,21 +85,21 @@ try {
         height: tenantBDescriptor.height,
         storage_verified: true,
         storage_verification_token: tenantBToken
-      }]
-    },
-    context: { tenantId: "tenant_a", userId: "user_a" },
-    workerAuthorized: false
+      }],
+      preingestion_bundle_id: "bundle_b_leaked"
+    }
   });
 
   assert.equal(scoped.tenant_id, "tenant_a");
   assert.equal(scoped.operator_id, "user_a");
   assert.equal(scoped.created_by_user_id, "user_a");
   assert.equal(scoped.assigned_to_user_id, "user_a");
-  assert.equal(scoped.asset_id, "asset_a");
+  assert.equal(scoped.asset_id, tenantAAssetId);
   assert.equal(Object.hasOwn(scoped, "tenantId"), false);
   assert.equal(Object.hasOwn(scoped, "assetId"), false);
-  assert.equal(Object.hasOwn(scoped, "recognition_session_id"), false);
+  assert.equal(scoped.recognition_session_id, "session_a");
   assert.equal(Object.hasOwn(scoped, "recognitionSessionId"), false);
+  assert.equal(Object.hasOwn(scoped, "preingestion_bundle_id"), false);
 
   const externalCalls = [];
   globalThis.fetch = async (input) => {
@@ -105,51 +116,27 @@ try {
   assert.match(response.body.reason, /different tenant|does not match image metadata/i);
   assert.deepEqual(externalCalls, [], "V4-to-core bridge must reject the foreign image before storage/provider access");
 
-  const workerScoped = scopeV4RecognitionPayload({
+  const workerScoped = scopeV4RecognitionPayloadFromFencedJob({
+    id: "job_worker",
+    lease_owner: "worker_track_c",
+    lease_expires_at: leaseExpiresAt,
+    status: "RUNNING",
+    recognition_session_id: "session_a_persisted",
+    tenant_id: "tenant_a",
+    operator_id: "user_creator_a",
+    asset_id: tenantAAssetId,
+    job_type: "ASSISTED_DRAFT",
     payload: {
       tenant_id: "tenant_b",
-      asset_id: "asset_b_forged",
+      asset_id: tenantBAssetId,
       recognition_session_id: "session_b_forged"
-    },
-    context: { tenantId: "tenant_a", userId: "worker_track_c" },
-    persistedJob: {
-      tenant_id: "tenant_a",
-      asset_id: "asset_a_persisted",
-      recognition_session_id: "session_a_persisted",
-      created_by_user_id: "user_creator_a",
-      assigned_to_user_id: "user_writer_a"
-    },
-    workerAuthorized: true
-  });
-  assert.equal(workerScoped.tenant_id, "tenant_a");
-  assert.equal(workerScoped.asset_id, "asset_a_persisted");
-  assert.equal(workerScoped.recognition_session_id, "session_a_persisted");
-  assert.equal(workerScoped.created_by_user_id, "user_creator_a");
-  assert.equal(workerScoped.assigned_to_user_id, "user_writer_a");
-
-  process.env.SUPABASE_URL = "https://supabase.test";
-  process.env.SUPABASE_SERVICE_ROLE_KEY = "track-c-service-role";
-  const bundleCalls = [];
-  const leakedBundlePayload = {
-    tenant_id: "tenant_a",
-    asset_id: "shared_asset_id",
-    preingestion_bundle_id: "bundle_b_leaked"
-  };
-  const bundleValidation = await validateV4PreingestionBundle({
-    payload: leakedBundlePayload,
-    fetchImpl: async (input) => {
-      const url = new URL(String(input));
-      bundleCalls.push(url);
-      assert.equal(url.pathname, "/rest/v1/preingestion_bundles");
-      assert.equal(url.searchParams.get("tenant_id"), "eq.tenant_a");
-      assert.equal(url.searchParams.get("bundle_id"), "eq.bundle_b_leaked");
-      return { ok: true, status: 200, text: async () => "[]" };
     }
   });
-  assert.equal(bundleValidation.ok, false);
-  assert.equal(bundleValidation.statusCode, 404);
-  assert.equal(bundleValidation.code, "PREINGESTION_BUNDLE_NOT_FOUND");
-  assert.equal(bundleCalls.length, 1);
+  assert.equal(workerScoped.tenant_id, "tenant_a");
+  assert.equal(workerScoped.asset_id, tenantAAssetId);
+  assert.equal(workerScoped.recognition_session_id, "session_a_persisted");
+  assert.equal(workerScoped.v4_origin_tenant_id, "tenant_a");
+  assert.equal(workerScoped.v4_origin_operator_id, "user_creator_a");
 } finally {
   globalThis.fetch = originalFetch;
   for (const [key, value] of Object.entries(originalEnv)) {

@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { waitUntil } from "@vercel/functions";
-import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+import { publicTenantAuthError, requireTenantAccess } from "../lib/tenant/index.mjs";
 import { analyzeCardEvidenceWithOpenAiEmergency } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { runWithProviderConcurrency } from "../lib/listing/providers/provider-concurrency.mjs";
 import {
@@ -199,7 +200,6 @@ import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate
 import { buildRetrievalApplicationLayer } from "../lib/listing/candidates/retrieval-application-layer.mjs";
 import { applyColdStartSafeDraftPolicy } from "../lib/listing/cold-start/cold-start-policy.mjs";
 import { attachWorkflowSidecarsToListingResult } from "../lib/data-loop/workflow-sidecar-dispatcher.mjs";
-import { isV4WorkerRequest } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import {
   releaseV4ProviderCapacityForJob,
   v4ProviderDoneCapacityHandoffEnabled
@@ -215,13 +215,16 @@ import {
   listingStageCapacityPlan,
   runWithListingStageCapacity
 } from "../lib/listing/v4/orchestration/stage-capacity.mjs";
+import { contractedConcurrency } from "../lib/listing/v4/orchestration/concurrency-contract.mjs";
 
-const cookieName = "lynca_metaverse_session";
 const maxFallbackTitleLength = 80;
 // Accept optional bounded derived crop images while keeping provider input capped.
 const defaultMaxPayloadImages = 14;
 const hardMaxPayloadImages = 24;
-const signedUrlConcurrency = 4;
+const signedUrlConcurrency = contractedConcurrency(
+  "signed_url_preparation",
+  process.env.LISTING_SIGNED_URL_CONCURRENCY || 4
+);
 const catalogCandidateContextCache = new Map();
 const defaultCatalogCacheTtlMs = 10 * 60 * 1000;
 const defaultCatalogCacheMaxEntries = 500;
@@ -510,36 +513,6 @@ const defaultFields = {
   suspicious_print_run: false,
   print_run_review_required: false
 };
-function parseCookies(header) {
-  return Object.fromEntries(
-    String(header || "")
-      .split(";")
-      .map((part) => {
-        const index = part.indexOf("=");
-        if (index === -1) return ["", ""];
-        return [part.slice(0, index).trim(), part.slice(index + 1).trim()];
-      })
-      .filter(([key, value]) => key && value)
-  );
-}
-
-function sign(value, secret) {
-  return crypto.createHmac("sha256", secret).update(value).digest("hex");
-}
-
-function isValidSession(cookie, secret) {
-  if (!cookie || !secret) return false;
-  const [payload, signature] = cookie.split(".");
-  if (!payload || !signature || signature !== sign(payload, secret)) return false;
-
-  try {
-    const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return Number(session.exp) > Date.now();
-  } catch {
-    return false;
-  }
-}
-
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -1806,11 +1779,12 @@ function boundedPayloadImagesFromImages(images = [], {
 async function verifyApprovedMemoryImages({ payload = {} } = {}) {
   const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
   if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
+  const tenantId = payload.tenant_id || payload.tenantId || "";
 
   for (const image of primaryImages) {
     const metadata = storageMetadataForImage(image);
     if (!metadata.objectPath) return { ok: false, reason: "verified_storage_path_required" };
-    await assertVerifiedStorageImage(image);
+    await assertVerifiedStorageImage(image, tenantId);
   }
 
   return { ok: true };
@@ -2002,7 +1976,9 @@ function primaryPayloadForProvider(payload = {}) {
 }
 
 function storageMetadataForImage(image = {}) {
+  const cropMetadata = image.cropMetadata || image.crop_metadata || {};
   return {
+    assetId: image.assetId || image.asset_id || cropMetadata.asset_id,
     objectPath: image.objectPath || image.object_path || image.storagePath || image.storage_path,
     bucket: image.bucket || image.storage_bucket,
     contentType: image.originalType || image.original_type || image.contentType || image.content_type || image.type,
@@ -2016,9 +1992,18 @@ function storageMetadataForImage(image = {}) {
   };
 }
 
-async function assertVerifiedStorageImage(image = {}) {
+async function assertVerifiedStorageImage(image = {}, tenantId = "") {
   const metadata = storageMetadataForImage(image);
-  if (!metadata.objectPath) return null;
+  const normalizedTenantId = String(tenantId || "").trim();
+  if (!metadata.objectPath) {
+    if (normalizedTenantId && normalizedTenantId !== "tenant_legacy") {
+      throw new Error("Tenant listing images must use a verified storage object path.");
+    }
+    return null;
+  }
+  if (!normalizedTenantId) {
+    throw new Error("Tenant context is required for listing image verification.");
+  }
 
   if (!(image.storageVerified === true || image.storage_verified === true)) {
     throw new Error("Listing image storage reference has not been verified.");
@@ -2028,6 +2013,7 @@ async function assertVerifiedStorageImage(image = {}) {
     try {
       verifyListingImageVerificationToken({
         token: metadata.token,
+        tenantId: normalizedTenantId,
         objectPath: metadata.objectPath,
         bucket: metadata.bucket,
         contentType: metadata.contentType,
@@ -2044,6 +2030,8 @@ async function assertVerifiedStorageImage(image = {}) {
   }
 
   const durableRecord = await readListingImageVerificationRecord({
+    tenantId: normalizedTenantId,
+    assetId: metadata.assetId || null,
     objectPath: metadata.objectPath,
     bucket: metadata.bucket,
     contentType: metadata.contentType,
@@ -2061,6 +2049,8 @@ async function assertVerifiedStorageImage(image = {}) {
 async function verifyIdentityCacheImages(payload = {}) {
   const primaryImages = explicitPrimaryImagesFromImages(payload.images || []);
   if (!primaryImages.length) return { ok: false, reason: "primary_images_missing" };
+  const tenantId = payload.tenant_id || payload.tenantId || "";
+  if (!String(tenantId).trim()) return { ok: false, reason: "tenant_context_required" };
 
   for (const image of primaryImages) {
     const metadata = storageMetadataForImage(image);
@@ -2071,6 +2061,8 @@ async function verifyIdentityCacheImages(payload = {}) {
     }
 
     const durableRecord = await readListingImageVerificationRecord({
+      tenantId,
+      assetId: metadata.assetId || null,
       objectPath: metadata.objectPath,
       bucket: metadata.bucket,
       contentType: metadata.contentType,
@@ -4824,14 +4816,15 @@ async function withEvidenceCompletionShadow(result, payload, {
   };
 }
 
-async function imagesWithSignedReadUrls(images = [], timingContext = null) {
+async function imagesWithSignedReadUrls(images = [], timingContext = null, tenantId = "") {
   return timeAsync(timingContext, "signed_url_ms", () => mapWithConcurrency(images, signedUrlConcurrency, async (image) => {
-    const metadata = await assertVerifiedStorageImage(image);
+    const metadata = await assertVerifiedStorageImage(image, tenantId);
     if (!metadata?.objectPath) return image;
 
     return {
       ...image,
       signedUrl: await createListingImageSignedReadUrl({
+        tenantId,
         objectPath: metadata.objectPath,
         bucket: metadata.bucket
       }),
@@ -4873,7 +4866,11 @@ async function createRecognitionIdentityPreflight(payload, {
   }
 
   try {
-    const signedImages = await imagesWithSignedReadUrls(payload.images || [], timingContext);
+    const signedImages = await imagesWithSignedReadUrls(
+      payload.images || [],
+      timingContext,
+      payload.tenant_id || payload.tenantId || ""
+    );
     const signedPrimaryImages = primaryImagesFromImages(signedImages);
     const response = await timeAsync(timingContext, "recognition_preflight_ms", () => analyzeCardImagesWithRecognitionWorker({
       assetId: payload.assetId || payload.asset_id || `asset_${crypto.randomUUID()}`,
@@ -5092,7 +5089,11 @@ async function createOpenAiTitle(payload, selection, {
     || crypto.randomUUID();
   const signedImagesPromise = Array.isArray(reusableSignedImages) && reusableSignedImages.length
     ? reusableSignedImages
-    : imagesWithSignedReadUrls(payload.images || [], timingContext);
+    : imagesWithSignedReadUrls(
+      payload.images || [],
+      timingContext,
+      payload.tenant_id || payload.tenantId || ""
+    );
   const catalogContextPromise = prepareCatalogCandidateContext({
     resolvedForRetrieval,
     providerOptions,
@@ -6068,35 +6069,24 @@ export async function runListingRecognitionCore({
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/listing-copilot-title" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
     return;
   }
 
-  const cookies = parseCookies(req.headers.cookie);
-  const authenticated = isValidSession(cookies[cookieName], process.env.METAVERSE_AUTH_SECRET);
-  const workerAuthorized = isV4WorkerRequest(req, process.env);
-
-  if (!authenticated && !workerAuthorized) {
-    sendJson(res, 401, { ok: false, message: "Unauthorized" });
-    return;
-  }
-
-  if (!workerAuthorized && !enforceApiRateLimit(req, res, {
-    scope: "listing_title",
-    limit: 120,
-    windowMs: 60_000,
-    message: "Too many title generation requests. Please try again shortly."
-  })) return;
-
-  let payload;
   try {
-    payload = JSON.parse(await readBody(req));
-  } catch {
-    sendJson(res, 400, { ok: false, message: "Invalid request." });
+    const context = await requireTenantAccess(req);
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    sendJson(res, Number(error?.statusCode || 503), publicTenantAuthError(error));
     return;
   }
-
-  const response = await runListingRecognitionCore({ payload, requestContext: req });
-  sendJson(res, response.statusCode, response.body);
+  // The V4 route reconstructs tenant context from current membership or a
+  // persisted, fenced queue job before it calls the core in-process.
+  sendJson(res, 410, {
+    ok: false,
+    code: "v4_tenant_route_required",
+    message: "Use /api/v4/listing-copilot-title for tenant-scoped recognition."
+  });
 }

@@ -1115,6 +1115,53 @@ h3 {
   }
 }
 
+/* Signed-session presentation. Authorization remains server-side. */
+.session-user-label {
+  max-width: min(30vw, 320px);
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-control-status {
+  width: min(1240px, calc(100% - 40px));
+  margin: 14px auto 0;
+  border: 1px solid rgba(240, 200, 117, 0.35);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(240, 200, 117, 0.08);
+  color: var(--yellow);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.session-control-status:empty {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .header-actions {
+    gap: 6px;
+  }
+
+  .session-user-label {
+    max-width: 96px;
+  }
+
+  .header-actions .ghost-button {
+    min-height: 40px;
+    padding-inline: 11px;
+  }
+
+  .session-control-status {
+    width: calc(100% - 20px);
+    margin-top: 10px;
+  }
+}
+
 .title-output {
   min-width: 0;
   border: 1px solid var(--line);

@@ -24,6 +24,7 @@ assert.match(js, /deterministic_anchor_finalize/, "frontend timer should underst
 assert.match(js, /label:\s*snapshot\.failed \? "模型未启动" : "等待识别"/, "queued cards must not display queue time as model time");
 assert.match(js, /value:\s*formatGenerationElapsed\(snapshot\.active_ms\)/, "visible elapsed time should exclude queue wait");
 const processTitlesSource = js.slice(js.indexOf("async function processTitles"), js.indexOf("async function retryFailedAssetInPriorityQueue"));
+const priorityRetrySource = js.slice(js.indexOf("async function retryFailedAssetInPriorityQueue"), js.indexOf("async function copyTitle"));
 assert.doesNotMatch(processTitlesSource, /markAssetStarted\(asset\)/, "batch workers must not start a card timer before provider capacity reaches it");
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
@@ -62,9 +63,9 @@ assert.match(js, /provider\.model_id \|\| provider\.display_name/, "provider rol
 assert.doesNotMatch(js, /GPT-4\.1 mini 生产主路径/, "provider role text must not hard-code a stale model");
 assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not expose mixed-model cascade controls");
 assert.match(js, /fetch\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs");
-assert.match(js, /const TITLE_API_ENDPOINT = "\/api\/v4\/listing-copilot-title"/, "frontend should retain the V4 one-line title endpoint for explicit retry fallback");
+assert.doesNotMatch(js, /TITLE_API_ENDPOINT|fetch\(["'`]\/api\/v4\/listing-copilot-title/, "the browser must not bypass durable enqueue with a direct recognition request");
 assert.match(js, /const JOB_ENQUEUE_API_ENDPOINT = "\/api\/v4\/listing-job-enqueue"/, "frontend should enqueue default production recognition jobs");
-assert.match(js, /const JOB_RETRY_API_ENDPOINT = "\/api\/v4\/listing-job-retry"/, "failed cards should retry through the durable production queue");
+assert.doesNotMatch(js, /JOB_RETRY_API_ENDPOINT|\/api\/v4\/listing-job-retry/, "failed cards must not replay an old payload with stale image references");
 assert.match(js, /const JOB_STATUS_API_ENDPOINT = "\/api\/v4\/listing-job-status"/, "frontend should poll production job status for writer-visible titles");
 assert.doesNotMatch(js, /FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend must not probe the discarded L1 scout cache before L2");
 assert.match(js, /const SESSION_STATUS_API_ENDPOINT = "\/api\/v4\/listing-session-status"/, "frontend should poll the V4 session status endpoint for background assisted drafts");
@@ -91,7 +92,7 @@ assert.match(js, /titleWasEditedByWriter/, "L2 assisted drafts must not overwrit
 assert.match(js, /stopAllV4AssistedDraftPolling/, "frontend should clear stale L2 polling when files or mode change");
 assert.doesNotMatch(v4JobStatusApi, /select: "[^"]*l1_title/, "writer-facing job status API must not fetch L1 internal titles");
 assert.match(v4JobStatusApi, /l1_title: ""/, "writer-facing job status API should expose an empty L1 title");
-assert.match(v4JobStatusApi, /writerSafeSessionStatus/, "job status API should return a sanitized session object");
+assert.match(v4JobStatusApi, /operationalSessionStatus/, "job status API should return a tenant-scoped operational session DTO");
 assert.match(v4JobStatusApi, /provider_token_diagnostics/, "job status API should expose provider token diagnostics for production debugging");
 assert.match(v4JobStatusApi, /provider_rate_limit_diagnostics/, "job status API should expose provider rate-limit diagnostics for production debugging");
 assert.match(v4JobStatusApi, /provider_request_diagnostics/, "job status API should expose provider request diagnostics for production debugging");
@@ -127,7 +128,7 @@ assert.match(api, /readListingImageVerificationRecord/, "title API should allow 
 assert.match(api, /Listing image storage reference has not been verified/, "title API should reject unverified storage object references");
 assert.doesNotMatch(api, /createGptCriticalVerifierRunner|createCascadeFastTitle|model_to_model/, "title API should not wire automatic mixed-model paths");
 assert.doesNotMatch(providerRegistry, /ENABLE_FAST_CASCADE_PROVIDER|cascade_fast/i, "provider registry should only expose the active GPT provider");
-assert.match(api, /const signedImages = await imagesWithSignedReadUrls\(payload\.images \|\| \[\], timingContext\)/, "OpenAI fallback should use signed storage read URLs instead of requiring Base64 JSON");
+assert.match(api, /imagesWithSignedReadUrls\([\s\S]*payload\.images \|\| \[\],[\s\S]*timingContext,[\s\S]*payload\.tenant_id \|\| payload\.tenantId/, "OpenAI fallback should use tenant-scoped signed storage read URLs instead of requiring Base64 JSON");
 assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider calls should reuse signed URLs created during recognition preflight");
 assert.doesNotMatch(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade fast path should not exist");
 assert.match(api, /if \(fastPathResult\) return finalizeProviderResult\(fastPathResult, "provider_fast_path"\)/, "provider fast path should skip slow completion while preserving open-set diagnostics and verified OCR locks");
@@ -246,6 +247,17 @@ assert.doesNotMatch(js, /dry_run: true/, "publish dry-run settings should not li
 assert.match(js, /data-priority-retry/, "failed assets should expose a writer-controlled priority retry action");
 assert.match(js, /retryFailedAssetInPriorityQueue/, "failed assets should re-enter the durable queue instead of bypassing capacity controls");
 assert.match(js, /priority:\s*0/, "writer retries without an existing job id should enter the highest interactive priority");
+assert.match(js, /manualRetry:\s*true/, "fresh writer retries must carry an explicit scheduling intent");
+assert.match(js, /manual_retry:\s*options\.manualRetry === true/, "the queue job must carry the manual retry intent to stage expansion");
+assert.match(js, /retry_of_job_id:\s*options\.retryOfJobId \|\| null/, "priority scheduling must be bound to a verifiable failed job");
+assert.match(js, /batchId:\s*createClientBatchId\(\)/, "writer retries should create a fresh durable job identity");
+assert.match(js, /旧任务仅保留审计记录/, "writer retries should make the old-job audit boundary explicit");
+assert.match(priorityRetrySource, /const lifecycleGeneration = state\.assetLifecycleGeneration/, "priority retry must capture the lifecycle before awaiting queue work");
+assert.equal(
+  (priorityRetrySource.match(/if \(!assetLifecycleMatches\(asset, lifecycleGeneration\)\) return;/g) || []).length,
+  2,
+  "both successful and failed priority retries must discard stale lifecycle completions"
+);
 assert.doesNotMatch(js, /data-emergency-retry/, "the obsolete direct long-request retry path must be removed");
 assert.match(js, /renderProviderControl/, "provider controls should be rendered from server status");
 assert.match(js, /function renderProviderControl\(\)[\s\S]*elements\.processButton\.disabled = !canGenerateTitles\(\)/, "provider status rendering should refresh the generate button state");
@@ -279,7 +291,8 @@ assert.doesNotMatch(js, /imageSideLabel|imagePreviewLabel/, "writer UI should no
 assert.doesNotMatch(js, /<span>\$\{imageSideLabel/, "thumbnail cards should show bare images without image slot badges");
 assert.doesNotMatch(js, /flushActiveModuleEditForResult/, "saving should no longer depend on hidden module edit flushing");
 assert.doesNotMatch(js, /moduleInput\.dataset\.dirty = "true"/, "title-only UI should not keep module dirty state");
-assert.match(api, /scope: "listing_title"[\s\S]*limit: 120/, "title generation API should default to a multi-tab friendly rate limit");
+assert.match(api, /requireTenantAccess\(req\)/, "retired title route must still authenticate the current tenant before responding");
+assert.match(api, /sendJson\(res, 410,[\s\S]*v4_tenant_route_required/, "direct title execution must stay retired in favor of the durable tenant-scoped V4 route");
 assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.title-output/, "title card output should keep a stable card layout");
@@ -398,6 +411,73 @@ globalThis.fetch = async (url) => {
 };
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
+const currentStorageTenantId = "tenant-current";
+const currentStorageAssetId = "asset-current";
+assert.equal(
+  __listingCopilotAppTestHooks.imageHasVerifiedStorageReference({
+    objectPath: "tenant-current/listing-assets/asset-current/front.jpg",
+    storageVerified: true,
+    storageAssetId: currentStorageAssetId,
+    storageTenantId: currentStorageTenantId
+  }, currentStorageAssetId, currentStorageTenantId),
+  false,
+  "a cached legacy four-segment path must never suppress the current original upload"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.imageHasVerifiedStorageReference({
+    objectPath: "tenants/tenant-current/listing-assets/2026-07-17/asset-previous/front.jpg",
+    storageVerified: true,
+    storageAssetId: "asset-previous",
+    storageTenantId: currentStorageTenantId
+  }, currentStorageAssetId, currentStorageTenantId),
+  false,
+  "a verified image from another asset generation must be uploaded again"
+);
+const currentStorageImage = {
+  objectPath: "tenants/tenant-current/listing-assets/2026-07-17/asset-current/front.jpg",
+  bucket: "listing-card-images",
+  storageVerificationToken: "verification-token",
+  storageVerified: true,
+  storageUploaded: true,
+  storageAssetId: currentStorageAssetId,
+  storageTenantId: currentStorageTenantId,
+  cropMetadata: {
+    asset_id: currentStorageAssetId,
+    source_object_path: "tenants/tenant-current/listing-assets/2026-07-17/asset-current/front.jpg",
+    derived_object_path: "tenants/tenant-current/listing-assets/2026-07-17/asset-current/crop.jpg"
+  },
+  cropPlan: { crop_metadata: { source_object_path: "stale-source" } }
+};
+assert.equal(
+  __listingCopilotAppTestHooks.imageHasVerifiedStorageReference(
+    currentStorageImage,
+    currentStorageAssetId,
+    currentStorageTenantId
+  ),
+  true,
+  "only a current canonical six-segment path may be reused"
+);
+__listingCopilotAppTestHooks.clearImageStorageBinding(currentStorageImage);
+assert.equal(currentStorageImage.objectPath, "");
+assert.equal(currentStorageImage.storageVerificationToken, "");
+assert.equal(currentStorageImage.cropMetadata.source_object_path, "");
+assert.equal(currentStorageImage.cropMetadata.derived_object_path, "");
+assert.equal(currentStorageImage.cropPlan.crop_metadata.source_object_path, "");
+assert.equal(
+  __listingCopilotAppTestHooks.assetLifecycleMatches({ lifecycleGeneration: 4 }, 4, 4),
+  true,
+  "a retry may update the UI only while both the asset and current batch retain its captured generation"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.assetLifecycleMatches({ lifecycleGeneration: 4 }, 4, 5),
+  false,
+  "an async retry completion from an older batch must not update the replacement batch"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.assetLifecycleMatches({ lifecycleGeneration: 3 }, 4, 4),
+  false,
+  "an asset from another lifecycle must fail closed even if the global generation matches the retry capture"
+);
 assert.equal(
   __listingCopilotAppTestHooks.generationSubmissionAllowed({
     assetCount: 10,

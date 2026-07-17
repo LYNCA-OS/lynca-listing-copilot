@@ -18,18 +18,31 @@ async function loadSession() {
       cache: "no-store"
     });
     const session = await response.json().catch(() => ({}));
-    if (!response.ok || !session.authenticated) {
+    if (response.status === 401 || (response.ok && session.authenticated === false)) {
       globalThis.__LYNCA_CONFIRMED_NAVIGATION__ = true;
       window.location.replace(loginUrl());
+      return;
+    }
+    if (!response.ok) {
+      status.textContent = "会话服务暂时不可用；当前内容不会被清空，请稍后重试。";
+      logoutButton.disabled = true;
+      return;
+    }
+    if (session.authenticated !== true) {
+      status.textContent = "会话状态无法确认；当前内容不会被清空，请稍后重试。";
+      logoutButton.disabled = true;
       return;
     }
 
     // This label is presentation only. API authorization must continue to use
     // the signed server session rather than any browser-visible identity field.
     userLabel.textContent = session.user ? `预览 · ${session.user}` : "已登录";
+    userLabel.title = session.user || "已登录";
+    status.textContent = "";
     logoutButton.disabled = false;
   } catch {
     status.textContent = "暂时无法确认会话状态；当前内容不会被清空。";
+    logoutButton.disabled = true;
   }
 }
 

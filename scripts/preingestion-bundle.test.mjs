@@ -19,14 +19,16 @@ const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role"
 };
+const tenantId = "tenant_a";
+const assetId = "asset_11111111-1111-4111-8111-111111111111";
 process.env.SUPABASE_URL = env.SUPABASE_URL;
 process.env.SUPABASE_SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
 
 const front = {
   id: "front",
-  assetId: "asset-pre",
+  assetId,
   storageRole: "front_original",
-  objectPath: "listing-assets/2026-07-06/asset-pre/front.jpg",
+  objectPath: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/front.jpg`,
   bucket: "listing-card-images",
   contentSha256: "a".repeat(64),
   originalType: "image/jpeg",
@@ -38,9 +40,9 @@ const front = {
 };
 const back = {
   id: "back",
-  assetId: "asset-pre",
+  assetId,
   storageRole: "back_original",
-  objectPath: "listing-assets/2026-07-06/asset-pre/back.jpg",
+  objectPath: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/back.jpg`,
   bucket: "listing-card-images",
   contentSha256: "b".repeat(64),
   originalType: "image/jpeg",
@@ -52,7 +54,7 @@ const back = {
 };
 
 const cropPlan = buildPreingestionCropPlan({
-  assetId: "asset-pre",
+  assetId,
   images: [front, back],
   requestedFields: ["serial_number", "grade_label"]
 });
@@ -123,15 +125,16 @@ assert.equal(quality.image_count, 3);
 assert.equal(quality.duplicate_sha256_count, 1);
 
 const bundle = createPreIngestionBundle({
-  assetId: "asset-pre",
+  tenantId,
+  assetId,
   images: [front, back, { ...front, id: "front-copy" }],
   derivedImages: [
     {
       id: "serial-crop",
-      assetId: "asset-pre",
+      assetId,
       source_image_id: "front",
       role: "serial_crop",
-      objectPath: "listing-assets/2026-07-06/asset-pre/serial.webp",
+      objectPath: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/serial.webp`,
       bucket: "listing-card-images",
       crop_box: { x: 0.1, y: 0.1, width: 0.2, height: 0.1 },
       originalWidth: 320,
@@ -221,6 +224,13 @@ const fetchImpl = async (url, init = {}) => {
     body: init.body ? JSON.parse(init.body) : null,
     headers: init.headers
   });
+  if (parsed.pathname === "/rest/v1/listing_assets" && (init.method || "GET") === "GET") {
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify([{ tenant_id: tenantId, id: assetId }])
+    };
+  }
   if ((init.method || "GET") === "POST") {
     return {
       ok: true,
@@ -237,20 +247,28 @@ const fetchImpl = async (url, init = {}) => {
 
 const saved = await upsertPreIngestionBundle({ bundle, env, fetchImpl });
 assert.equal(saved.saved, true);
-assert.equal(calls[0].path, "/rest/v1/preingestion_bundles");
-assert.equal(calls[0].search.on_conflict, "asset_id,source,bundle_version");
-assert.equal(calls[0].body.asset_id, "asset-pre");
-assert.equal(JSON.stringify(calls[0].body).includes("should-not-persist"), false);
+assert.equal(calls[0].path, "/rest/v1/listing_assets");
+assert.equal(calls[0].method, "GET");
+assert.equal(calls[0].search.tenant_id, `eq.${tenantId}`);
+assert.equal(calls[0].search.id, `eq.${assetId}`);
+assert.equal(calls[1].path, "/rest/v1/preingestion_bundles");
+assert.equal(calls[1].search.on_conflict, "tenant_id,asset_id,source,bundle_version");
+assert.equal(calls[1].body.tenant_id, tenantId);
+assert.equal(calls[1].body.asset_id, assetId);
+assert.equal(JSON.stringify(calls[1].body).includes("should-not-persist"), false);
 
 const read = await readPreIngestionBundle({
   bundleId: bundle.bundle_id,
+  tenantId,
   env,
   fetchImpl
 });
 assert.equal(read.found, true);
-assert.equal(calls[1].search.bundle_id, `eq.${bundle.bundle_id}`);
+assert.equal(calls[2].search.bundle_id, `eq.${bundle.bundle_id}`);
+assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
 
 const titlePayload = {
+  tenant_id: tenantId,
   preingestion_bundle_id: bundle.bundle_id
 };
 const applied = await __listingCopilotTitleTestHooks.applyPreIngestionBundleToPayload(titlePayload, {
@@ -273,6 +291,7 @@ assert.equal(titlePayload.preingestion_summary.bundle_id, bundle.bundle_id);
 
 const signedImages = [{ signed_url: "https://signed.test/front", image_id: "front" }];
 const refreshPayload = {
+  tenant_id: tenantId,
   preingestion_bundle_id: bundle.bundle_id,
   images: signedImages,
   preingestion_evidence_patches: []
@@ -610,6 +629,7 @@ assert.match(finalizedWithPreingestion.title, /BGS 9\.5\/10/);
 assert.doesNotMatch(finalizedWithPreingestion.title, /BGS 10\/9\.5/);
 
 const missingPayload = {
+  tenant_id: tenantId,
   preingestion_bundle_id: "00000000-0000-0000-0000-000000000000"
 };
 const missingApplied = await __listingCopilotTitleTestHooks.applyPreIngestionBundleToPayload(missingPayload, {

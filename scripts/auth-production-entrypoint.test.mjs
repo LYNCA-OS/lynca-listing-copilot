@@ -31,7 +31,11 @@ for (const path of ["/", "/index", "/index.html", "/app", "/app/", "/app/index",
 }
 assert.equal(isProtectedAppPath("/login"), false);
 assert.equal(isProtectedAppPath("/app/login"), false);
-assert.deepEqual(middlewareConfig.matcher, PROTECTED_APP_PATHS, "the static Vercel matcher must cover every protected alias");
+assert.deepEqual(
+  middlewareConfig.matcher,
+  [...PROTECTED_APP_PATHS, "/api/:path*"],
+  "the static Vercel matcher must cover protected aliases and the maintenance API gate"
+);
 
 const middlewareSource = fs.readFileSync(new URL("../middleware.js", import.meta.url), "utf8");
 for (const path of PROTECTED_APP_PATHS) {
@@ -39,6 +43,7 @@ for (const path of PROTECTED_APP_PATHS) {
 }
 
 const previousAuthSecret = process.env.METAVERSE_AUTH_SECRET;
+const previousMaintenanceMode = process.env.LISTING_MAINTENANCE_MODE;
 process.env.METAVERSE_AUTH_SECRET = "auth-entrypoint-contract-secret";
 try {
   const unauthenticated = await middleware(new Request(`${origin}/app?mode=writer`));
@@ -62,9 +67,21 @@ try {
     headers: { cookie: `${cookieName}=${token}.extra` }
   }));
   assert.equal(malformed.status, 302);
+
+  process.env.LISTING_MAINTENANCE_MODE = "true";
+  const blockedMutation = await middleware(new Request(`${origin}/api/v4/listing-job-enqueue`, {
+    method: "POST"
+  }));
+  assert.equal(blockedMutation.status, 503);
+  assert.equal((await blockedMutation.json()).error_code, "LISTING_MAINTENANCE_MODE");
+  assert.equal(blockedMutation.headers.get("retry-after"), "60");
+  const readableStatus = await middleware(new Request(`${origin}/api/v4/health`));
+  assert.equal(readableStatus.status, 200, "maintenance mode should preserve read-only health and status probes");
 } finally {
   if (previousAuthSecret === undefined) delete process.env.METAVERSE_AUTH_SECRET;
   else process.env.METAVERSE_AUTH_SECRET = previousAuthSecret;
+  if (previousMaintenanceMode === undefined) delete process.env.LISTING_MAINTENANCE_MODE;
+  else process.env.LISTING_MAINTENANCE_MODE = previousMaintenanceMode;
 }
 
 const loginHtml = fs.readFileSync(new URL("../app/login.html", import.meta.url), "utf8");
@@ -75,19 +92,30 @@ const devServer = fs.readFileSync(new URL("../scripts/dev-server.mjs", import.me
 const vercelIgnore = fs.readFileSync(new URL("../.vercelignore", import.meta.url), "utf8");
 const vercelConfig = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
 
-assert.match(loginHtml, /MTV 管理员预览/);
-assert.match(loginHtml, /不代表平台管理员权限/);
-assert.match(loginHtml, /Track C 租户与会话权限接入后开放/);
+assert.match(loginHtml, /正式环境入口/);
+assert.match(loginHtml, /请输入你的账号与密码进行登录/);
+assert.doesNotMatch(loginHtml, /MTV 管理员预览|Track C 租户与会话权限接入后开放/, "the production entrypoint must not describe itself as a prototype");
 assert.match(loginJs, /const password = form\.password\.value;/, "passwords must preserve case and surrounding characters");
 assert.doesNotMatch(loginJs, /normalizeLegacyUsername\(form\.password\.value\)/);
 assert.match(loginJs, /submitButton\.disabled = true/);
 assert.match(appHtml, /id="sessionUserLabel"/);
+assert.match(appHtml, /id="sessionControlStatus"/);
 assert.match(appHtml, /id="logoutButton"/);
+assert.match(appHtml, /src="\/app\/session-controls\.js"/);
 assert.match(sessionControls, /method: "POST"/);
 assert.match(sessionControls, /presentation only/);
+assert.match(sessionControls, /response\.status === 401 \|\| \(response\.ok && session\.authenticated === false\)/, "only confirmed authentication failures may redirect");
+assert.match(sessionControls, /if \(!response\.ok\)/, "transient session service failures must remain on the current page");
 assert.match(devServer, /import loginHandler from "\.\.\/api\/login\.js"/);
+assert.match(devServer, /import logoutHandler from "\.\.\/api\/logout\.js"/);
+assert.match(devServer, /import sessionHandler from "\.\.\/api\/session\.js"/);
+assert.match(devServer, /getSessionFromRequest\(request\)/);
 assert.match(devServer, /const protectedPaths = new Set\(PROTECTED_APP_PATHS\)/);
+for (const path of ["/app", "/app/", "/app/index", "/app/index.html"]) {
+  assert.match(devServer, new RegExp(`\\["${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}", "app/index\\.html"\\]`), `${path} must resolve to the protected app shell locally`);
+}
 assert.doesNotMatch(devServer, /normalizeValue\(credentials\.password\)/, "local verification must use the production password contract");
+assert.doesNotMatch(devServer, /createHmac|createSession\(|isValidSession\(/, "the local server must not carry a second authentication implementation");
 assert.match(vercelIgnore, /^prototypes\/\*\*$/m, "prototype assets must stay out of every Vercel deployment");
 
 const globalHeaders = vercelConfig.headers?.find((entry) => entry.source === "/(.*)")?.headers || [];

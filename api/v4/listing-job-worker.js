@@ -1,6 +1,7 @@
 import { waitUntil } from "@vercel/functions";
 import v4ListingHandler from "./listing-copilot-title.js";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest, persistErrorLog, persistProductionEvent, sanitizeOperationalText } from "../../lib/observability/production-events.mjs";
 import {
   claimV4RecognitionJobs,
   completeV4RecognitionJob,
@@ -20,6 +21,7 @@ import {
   v4WorkerProcessConcurrency
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -30,7 +32,139 @@ function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEG
 }
 
 function safeError(error) {
-  return String(error?.message || error || "unknown_error").slice(0, 500);
+  return sanitizeOperationalText(error?.message || error || "unknown_error", 500);
+}
+
+function operationalContextForJob(job = {}) {
+  return {
+    tenantId: job.tenant_id || null,
+    userId: job.created_by_user_id || job.assigned_to_user_id || job.operator_id || null
+  };
+}
+
+async function recordJobProductionEvent(job, eventType, input = {}) {
+  try {
+    return await persistProductionEvent({
+      eventType,
+      context: operationalContextForJob(job),
+      batchId: job.batch_id || null,
+      jobId: job.id || null,
+      sessionId: job.recognition_session_id || null,
+      ...input
+    });
+  } catch {
+    return { saved: false, error: "production_event_write_failed" };
+  }
+}
+
+function objectOrEmpty(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function nonNegativeNumberOrNull(value) {
+  if (value === null || value === undefined || typeof value === "boolean") return null;
+  if (typeof value === "string" && !value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function firstNumber(sources = [], keys = []) {
+  for (const source of sources) {
+    for (const key of keys) {
+      const number = nonNegativeNumberOrNull(source?.[key]);
+      if (number !== null) return number;
+    }
+  }
+  return null;
+}
+
+export function v4ResponseUsage(response = {}) {
+  const responseObject = objectOrEmpty(response);
+  const summary = {
+    ...objectOrEmpty(responseObject.provider_result_summary),
+    ...objectOrEmpty(responseObject.provider_result)
+  };
+  const legacy = objectOrEmpty(responseObject.legacy_v2_result);
+  const usageSources = [
+    objectOrEmpty(summary.usage),
+    objectOrEmpty(responseObject.usage),
+    objectOrEmpty(legacy.usage),
+    objectOrEmpty(summary.provider_usage)
+  ];
+  const tokenSources = [
+    ...usageSources,
+    objectOrEmpty(summary.provider_token_diagnostics),
+    objectOrEmpty(summary.token_diagnostics),
+    objectOrEmpty(legacy.provider_token_diagnostics),
+    summary,
+    responseObject
+  ];
+  const providerCalls = firstNumber(
+    [summary, ...usageSources, responseObject, legacy],
+    ["provider_calls", "provider_call_count"]
+  );
+  const providerCallsKnown = providerCalls !== null;
+  const provider = summary.provider || responseObject.provider || legacy.provider || null;
+  const modelVersion = summary.model || summary.model_id || responseObject.model || responseObject.model_id || legacy.model || legacy.model_id || null;
+  const inferredProviderCall = !providerCallsKnown
+    && Boolean(provider || modelVersion);
+  const resolvedProviderCalls = providerCallsKnown
+    ? Math.trunc(providerCalls)
+    : inferredProviderCall
+      ? 1
+      : 0;
+  const inputTokens = firstNumber(tokenSources, ["input_tokens", "prompt_tokens", "total_input_tokens"]);
+  const outputTokens = firstNumber(tokenSources, ["output_tokens", "completion_tokens", "total_output_tokens"]);
+  const rawEstimatedCostUsd = firstNumber(
+    [summary, ...usageSources, responseObject, legacy],
+    ["estimated_cost_usd", "cost_usd"]
+  );
+  const costConfiguredFlag = [summary, ...usageSources, responseObject, legacy]
+    .map((source) => source?.cost_configured)
+    .find((value) => typeof value === "boolean");
+  const estimatedCostUsd = costConfiguredFlag === true && rawEstimatedCostUsd !== null
+    ? rawEstimatedCostUsd
+    : costConfiguredFlag === undefined && rawEstimatedCostUsd !== null && rawEstimatedCostUsd > 0
+      ? rawEstimatedCostUsd
+      : null;
+  const costConfigured = typeof costConfiguredFlag === "boolean"
+    ? costConfiguredFlag
+    : estimatedCostUsd !== null
+      ? true
+      : null;
+  return {
+    provider,
+    modelVersion,
+    promptVersion: summary.prompt_version || responseObject.prompt_version || legacy.prompt_version || null,
+    route: responseObject.route || responseObject.route_plan?.route || summary.route || legacy.route || null,
+    providerCalls: resolvedProviderCalls,
+    providerCallsKnown,
+    providerCallsSource: providerCallsKnown ? "reported" : inferredProviderCall ? "inferred" : "none",
+    inputTokens,
+    outputTokens,
+    estimatedCostUsd,
+    costConfigured,
+    pricingCoverage: estimatedCostUsd !== null
+      ? "PRICED"
+      : resolvedProviderCalls > 0
+        ? "UNPRICED"
+        : "NO_PROVIDER_CALL",
+    observed: providerCallsKnown
+      || inferredProviderCall
+      || inputTokens !== null
+      || outputTokens !== null
+      || estimatedCostUsd !== null
+  };
+}
+
+function providerEventMetadata(usage = {}, metadata = {}) {
+  return {
+    provider: usage.provider || null,
+    provider_calls_source: usage.providerCallsSource || "none",
+    cost_configured: usage.costConfigured,
+    pricing_coverage: usage.pricingCoverage || "UNPRICED",
+    ...metadata
+  };
 }
 
 function normalizedFailureToken(value) {
@@ -80,13 +214,6 @@ function headerValue(req, name) {
   const value = req?.headers?.[lower] ?? req?.headers?.[name];
   if (Array.isArray(value)) return String(value[0] || "").trim();
   return String(value || "").trim();
-}
-
-function requestOrigin(req) {
-  const host = headerValue(req, "x-forwarded-host") || headerValue(req, "host");
-  if (!host) return "";
-  const proto = headerValue(req, "x-forwarded-proto") || "https";
-  return `${proto}://${host}`;
 }
 
 function workerSecretFromRequest(req) {
@@ -179,16 +306,19 @@ function completionStatusForJob(job = {}) {
   return normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT ? v4JobStatuses.L1_READY : v4JobStatuses.L2_READY;
 }
 
-function triggerV4BackgroundWorkerAfterL1Release(req, {
+export function triggerV4BackgroundWorkerAfterL1Release(req, {
   job = {},
   pairedRelease = {},
-  reason = "l1_released_paired_l2"
+  reason = "l1_released_paired_l2",
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  defer = waitUntil
 } = {}) {
   if (pairedRelease.saved !== true) return { triggered: false, reason: "paired_l2_not_released" };
-  const origin = requestOrigin(req);
+  const origin = trustedInternalServiceOrigin(env);
   const secret = workerSecretFromRequest(req);
   if (!secret) return { triggered: false, reason: "wake_secret_missing" };
-  const processConcurrency = positiveInteger(process.env.V4_L2_WAKE_BACKGROUND_CONCURRENCY, v4WorkerProcessConcurrency(process.env), { min: 1, max: 96 });
+  const processConcurrency = positiveInteger(env.V4_L2_WAKE_BACKGROUND_CONCURRENCY, v4WorkerProcessConcurrency(env), { min: 1, max: 96 });
   const body = {
     lane: v4JobLanes.BACKGROUND,
     tenant_id: job.tenant_id || job.payload?.tenant_id || null,
@@ -205,7 +335,7 @@ function triggerV4BackgroundWorkerAfterL1Release(req, {
     "x-forwarded-for": "v4-l1-l2-wake"
   };
   const wakePromise = origin
-    ? fetch(`${origin}/api/v4/listing-job-worker`, {
+    ? fetchImpl(`${origin}/api/v4/listing-job-worker`, {
       method: "POST",
       headers,
       body: JSON.stringify(body)
@@ -215,8 +345,37 @@ function triggerV4BackgroundWorkerAfterL1Release(req, {
       headers,
       payload: body
     }).catch(() => null);
-  waitUntil(wakePromise);
+  defer(wakePromise);
   return { triggered: true, reason };
+}
+
+export async function handlePairedV4FinalAfterL1Failure(req, {
+  job = {},
+  failure = {},
+  error = null,
+  releasePaired = releasePairedV4FinalJob,
+  wakePaired = triggerV4BackgroundWorkerAfterL1Release
+} = {}) {
+  const hiddenL1Job = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT;
+  const leaseLost = error?.code === "QUEUE_LEASE_LOST" || failure?.error === "row_not_matched";
+  if (!hiddenL1Job) {
+    return {
+      pairedRelease: { saved: false, skipped: true },
+      pairedWake: { triggered: false, reason: "not_l1_job" },
+      leaseLost
+    };
+  }
+  if (failure?.saved !== true || leaseLost) {
+    const reason = leaseLost ? "parent_lease_lost" : "parent_failure_not_saved";
+    return {
+      pairedRelease: { saved: false, skipped: true, error: reason },
+      pairedWake: { triggered: false, reason },
+      leaseLost
+    };
+  }
+  const pairedRelease = await releasePaired({ job, reason: "l1_failed_release_final" });
+  const pairedWake = wakePaired(req, { job, pairedRelease, reason: "l1_failed_wake_l2" });
+  return { pairedRelease, pairedWake, leaseLost };
 }
 
 async function mapWithConcurrency(items = [], concurrency = 1, worker) {
@@ -249,30 +408,62 @@ export async function runWithV4JobLeaseHeartbeat({
     success_count: 0,
     failure_count: 0,
     lost_ownership_count: 0,
-    last_error: null
+    last_error: null,
+    aborted: false,
+    abort_reason: null
   };
+  const taskAbort = new AbortController();
   if (!enabled || !job.id || !job.lease_owner) {
-    return { value: await task(stats), heartbeat: stats };
+    return { value: await task(stats, taskAbort.signal), heartbeat: stats };
   }
 
   let stopped = false;
   let timer = null;
   let inFlight = Promise.resolve();
+  const abortTask = (reason, cause = null) => {
+    if (taskAbort.signal.aborted) return;
+    stopped = true;
+    stats.aborted = true;
+    stats.abort_reason = reason;
+    const error = Object.assign(new Error(reason), {
+      name: "AbortError",
+      code: reason === "lease_ownership_lost"
+        ? "QUEUE_LEASE_LOST"
+        : "QUEUE_LEASE_RENEWAL_FAILED",
+      retryable: reason !== "lease_ownership_lost",
+      cause: cause || undefined
+    });
+    taskAbort.abort(error);
+  };
   const pulse = async () => {
     stats.attempts += 1;
-    const result = await heartbeat({
-      jobId: job.id,
-      workerId: job.lease_owner,
-      leaseSeconds
-    });
-    if (result.extended) {
+    let result;
+    try {
+      result = await heartbeat({
+        jobId: job.id,
+        workerId: job.lease_owner,
+        leaseSeconds
+      });
+    } catch (error) {
+      stats.failure_count += 1;
+      stats.last_error = safeError(error);
+      abortTask("lease_renewal_failed", error);
+      return;
+    }
+    if (result?.extended) {
       stats.success_count += 1;
-    } else if (!result.skipped && result.error) {
+    } else if (result?.error) {
       stats.failure_count += 1;
       stats.last_error = safeError(result.error);
-    } else if (!result.skipped) {
+      abortTask("lease_renewal_failed", result.error);
+    } else if (result?.skipped) {
+      stats.failure_count += 1;
+      stats.last_error = "lease_renewal_skipped";
+      abortTask("lease_renewal_failed");
+    } else {
       stats.lost_ownership_count += 1;
       stats.last_error = "lease_ownership_lost";
+      abortTask("lease_ownership_lost");
     }
   };
   const schedule = () => {
@@ -282,6 +473,7 @@ export async function runWithV4JobLeaseHeartbeat({
         .catch((error) => {
           stats.failure_count += 1;
           stats.last_error = safeError(error);
+          abortTask("lease_renewal_failed", error);
         })
         .finally(schedule);
     }, intervalMs);
@@ -289,7 +481,7 @@ export async function runWithV4JobLeaseHeartbeat({
   };
   schedule();
   try {
-    return { value: await task(stats), heartbeat: stats };
+    return { value: await task(stats, taskAbort.signal), heartbeat: stats };
   } finally {
     stopped = true;
     if (timer) clearTimeout(timer);
@@ -297,19 +489,18 @@ export async function runWithV4JobLeaseHeartbeat({
   }
 }
 
-async function runJob(job, req) {
+async function runJob(job, req, signal = null) {
   const started = Date.now();
   const payload = payloadForV4ProductionJob(job);
   const response = await callJsonHandler(v4ListingHandler, {
     method: "POST",
     headers: {
       [workerSecretHeader]: req.headers[workerSecretHeader] || req.headers[workerSecretHeader.toLowerCase()] || "",
-      "x-forwarded-host": headerValue(req, "x-forwarded-host") || headerValue(req, "host"),
-      "x-forwarded-proto": headerValue(req, "x-forwarded-proto") || "https",
       "user-agent": "lynca-v4-production-worker",
       "x-forwarded-for": "v4-production-worker"
     },
-    payload
+    payload,
+    signal
   });
   const latencyMs = Date.now() - started;
   if (response.statusCode < 200 || response.statusCode >= 300 || !response.body?.ok) {
@@ -347,6 +538,7 @@ async function releaseProviderCapacity(job = {}) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-worker" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
@@ -378,17 +570,34 @@ export default async function handler(req, res) {
 
   const lane = payload.lane || payload.queue_lane || payload.queueLane || null;
   const tenantId = payload.tenant_id || payload.tenantId || null;
+  if (tenantId) bindProductionRequestContext(res, { tenantId, actorType: "WORKER" });
   const workerId = workerIdFrom(req, payload);
   const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 96 });
   const processBatch = async (rows = [], concurrency = 1, leaseSeconds = 300) => mapWithConcurrency(rows, concurrency, async (job) => {
     const wrapped = await runWithV4JobLeaseHeartbeat({
       job,
       leaseSeconds,
-      task: async (leaseHeartbeat) => {
+      task: async (leaseHeartbeat, signal) => {
         let capacityRelease = null;
         let completion = null;
+        let attemptUsage = v4ResponseUsage();
+        let providerCallEventAttempted = false;
         try {
-          const result = await runJob(job, req);
+          await recordJobProductionEvent(job, "recognition_started", {
+            success: null,
+            metadata: { lane: job.lane || null, attempt: Number(job.attempt_count || 0) + 1 }
+          });
+          const result = await runJob(job, req, signal);
+          attemptUsage = v4ResponseUsage(result.response);
+          if (attemptUsage.providerCalls > 0) {
+            providerCallEventAttempted = true;
+            await recordJobProductionEvent(job, "provider_called", {
+              ...attemptUsage,
+              durationMs: result.latency_ms,
+              success: true,
+              metadata: providerEventMetadata(attemptUsage)
+            });
+          }
           const jobStatus = completionStatusForJob(job);
           const writerReadyCapacityRelease = result.response.v4_persistence?.writer_ready_provider_capacity_release || null;
           const writerReadyCapacityRefill = result.response.v4_persistence?.writer_ready_provider_capacity_refill || null;
@@ -454,6 +663,12 @@ export default async function handler(req, res) {
               latency_ms: result.latency_ms
             });
           }
+          await recordJobProductionEvent(job, "recognition_completed", {
+            ...attemptUsage,
+            durationMs: result.latency_ms,
+            success: true,
+            metadata: providerEventMetadata(attemptUsage, { completion_status: jobStatus })
+          });
           const pairedRelease = normalizedJobType(job) === v4JobTypes.FAST_SCOUT_DRAFT
             ? await releasePairedV4FinalJob({ job, reason: "l1_ready" })
             : { saved: false, skipped: true };
@@ -492,6 +707,19 @@ export default async function handler(req, res) {
             message: safeError(error),
             latency_ms: error?.latency_ms || null
           }));
+          const failureResponseUsage = v4ResponseUsage(error?.body || {});
+          if (failureResponseUsage.observed) attemptUsage = failureResponseUsage;
+          if (!providerCallEventAttempted && attemptUsage.providerCalls > 0) {
+            providerCallEventAttempted = true;
+            await recordJobProductionEvent(job, "provider_called", {
+              ...attemptUsage,
+              durationMs: error?.latency_ms || null,
+              success: false,
+              metadata: providerEventMetadata(attemptUsage, {
+                error_type: error?.code || "V4_JOB_FAILED"
+              })
+            });
+          }
           const failure = await failV4RecognitionJob({
             job,
             error: {
@@ -499,18 +727,36 @@ export default async function handler(req, res) {
               code: error?.code || null,
               http_status: error?.http_status || error?.status || null,
               retryable: error?.retryable,
-              body: error?.body ? { message: error.body.message || null, ok: error.body.ok || false } : null
+              body: error?.body ? {
+                message: error.body.message ? sanitizeOperationalText(error.body.message, 500) : null,
+                ok: error.body.ok || false
+              } : null
             },
             forceFinalFailure: hiddenL1Job,
             retryDelaySeconds: positiveInteger(payload.retry_delay_seconds, 15, { min: 1, max: 900 })
           });
-          const pairedRelease = hiddenL1Job
-            ? await releasePairedV4FinalJob({ job, reason: "l1_failed_release_final" })
-            : { saved: false, skipped: true };
-          const pairedWake = hiddenL1Job
-            ? triggerV4BackgroundWorkerAfterL1Release(req, { job, pairedRelease, reason: "l1_failed_wake_l2" })
-            : { triggered: false, reason: "not_l1_job" };
-          const leaseLost = error?.code === "QUEUE_LEASE_LOST" || failure.error === "row_not_matched";
+          await recordJobProductionEvent(job, "recognition_failed", {
+            ...attemptUsage,
+            durationMs: error?.latency_ms || null,
+            success: false,
+            metadata: providerEventMetadata(attemptUsage, {
+              error_type: error?.code || "V4_JOB_FAILED",
+              recoverable: failure.row?.status === v4JobStatuses.RETRYING
+            })
+          });
+          await persistErrorLog({
+            error,
+            errorType: error?.code || "V4_JOB_FAILED",
+            recoverable: failure.row?.status === v4JobStatuses.RETRYING,
+            context: operationalContextForJob(job),
+            sessionId: job.recognition_session_id || null,
+            jobId: job.id || null
+          });
+          const { pairedRelease, pairedWake, leaseLost } = await handlePairedV4FinalAfterL1Failure(req, {
+            job,
+            failure,
+            error
+          });
           return {
             job_id: job.id,
             lane: job.lane || null,

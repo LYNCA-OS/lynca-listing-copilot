@@ -1,12 +1,19 @@
-import crypto from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
-import { cookieName, createSignedSessionToken } from "../lib/listing-session.mjs";
+import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
+import {
+  cookieName,
+  createListingSessionToken,
+  listingSessionCookieIsSecure,
+  requestHasJsonContentType,
+  sameOriginBrowserRequest
+} from "../lib/listing-session.mjs";
 import {
   authenticatePassword,
   isTenantAuthError,
   listTenantChoicesForAuthUser,
   publicTenantAuthError,
-  resolveTenantIdentityForAuthUser
+  resolveTenantIdentityForAuthUser,
+  resolveTenantIdentityForPrincipal
 } from "../lib/tenant/index.mjs";
 import {
   claimTenantInvitation,
@@ -24,18 +31,8 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function normalizeUsername(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function isHttps(req) {
-  const host = String(req.headers.host || "");
-  return req.headers["x-forwarded-proto"] === "https" ||
-    (!host.startsWith("localhost") && !host.startsWith("127.0.0.1"));
-}
-
 function serializeCookie(name, value, req) {
-  const secure = isHttps(req) ? "; Secure" : "";
+  const secure = listingSessionCookieIsSecure(req) ? "; Secure" : "";
   return `${name}=${value}; HttpOnly; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secure}`;
 }
 
@@ -60,8 +57,20 @@ function readBody(req) {
 }
 
 export default async function handler(req, res) {
+  instrumentProductionRequest(req, res, { api: "/api/login" });
   if (req.method !== "POST") {
+    res.setHeader("allow", "POST");
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
+    return;
+  }
+
+  if (!sameOriginBrowserRequest(req, { allowMissingBrowserContext: true })) {
+    sendJson(res, 403, { ok: false, message: "Forbidden" });
+    return;
+  }
+
+  if (!requestHasJsonContentType(req)) {
+    sendJson(res, 415, { ok: false, message: "Content-Type must be application/json." });
     return;
   }
 
@@ -73,6 +82,7 @@ export default async function handler(req, res) {
   })) return;
 
   const authSecret = process.env.METAVERSE_AUTH_SECRET;
+
   if (!authSecret) {
     sendJson(res, 500, { ok: false, message: "Listing auth is not configured." });
     return;
@@ -82,9 +92,10 @@ export default async function handler(req, res) {
   try {
     credentials = JSON.parse(await readBody(req));
   } catch (error) {
-    sendJson(res, error?.code === "REQUEST_BODY_TOO_LARGE" ? 413 : 400, {
+    const tooLarge = error?.code === "REQUEST_BODY_TOO_LARGE";
+    sendJson(res, tooLarge ? 413 : 400, {
       ok: false,
-      message: error?.code === "REQUEST_BODY_TOO_LARGE" ? "Request is too large." : "Invalid request."
+      message: tooLarge ? "Request is too large." : "Invalid request."
     });
     return;
   }
@@ -96,16 +107,17 @@ export default async function handler(req, res) {
       username: credentials.username,
       password: credentials.password
     });
-
     const inviteTenantId = await resolveInvitationTenant({
       inviteToken: cleanInviteToken(credentials?.invite_token),
       email: credentials.email || credentials.username,
       authenticated
     });
-
     const identity = authenticated.provider === "legacy" || inviteTenantId
       ? authenticated.provider === "legacy"
-        ? authenticated
+        ? await resolveTenantIdentityForPrincipal({
+            tenantId: authenticated.tenantId,
+            userId: authenticated.userId
+          })
         : await resolveTenantIdentityForAuthUser({
           authUserId: authenticated.authUserId,
           tenantId: inviteTenantId
@@ -114,20 +126,19 @@ export default async function handler(req, res) {
         authUserId: authenticated.authUserId,
         tenantId: credentials.tenant_id || credentials.tenantId
       });
-
-    const session = buildSignedSession(identity);
-    const token = createSignedSessionToken(session, authSecret);
+    const token = createListingSessionToken(identity, authSecret, {
+      maxAgeMs: maxAgeSeconds * 1000
+    });
+    bindProductionRequestContext(res, identity);
 
     res.setHeader("set-cookie", serializeCookie(cookieName, token, req));
     sendJson(res, 200, {
       ok: true,
-      tenant_id: session.tenant_id,
-      role: session.role,
-      user_id: session.user_id
+      tenant_id: identity.tenantId,
+      role: identity.role
     });
   } catch (error) {
     let tenantChoices = [];
-
     if (isTenantInvitationServiceError(error)) {
       const code = error.code;
       sendJson(res, Number(error.statusCode || 400), {
@@ -138,7 +149,6 @@ export default async function handler(req, res) {
       });
       return;
     }
-
     if (isTenantAuthError(error) && error.code === "TENANT_SELECTION_REQUIRED") {
       try {
         if (authenticated?.authUserId) {
@@ -148,7 +158,6 @@ export default async function handler(req, res) {
         tenantChoices = [];
       }
     }
-
     const statusCode = isTenantAuthError(error) ? error.statusCode : 503;
     const payload = publicTenantAuthError(error);
     sendJson(res, statusCode, {
@@ -161,28 +170,6 @@ export default async function handler(req, res) {
       tenants: tenantChoices
     });
   }
-}
-
-function buildSignedSession(identity) {
-  const tenantId = String(identity?.tenantId || identity?.tenant_id || "").trim();
-  const userId = String(identity?.userId || identity?.user_id || identity?.authUserId || "").trim();
-  const user = normalizeUsername(identity?.user || identity?.email || userId);
-
-  if (!tenantId || !userId) {
-    throw new Error("AUTH_CONFIGURATION_ERROR");
-  }
-
-  return {
-    user,
-    user_id: userId,
-    tenant_id: tenantId,
-    email: String(identity?.email || "").trim().toLowerCase(),
-    role: String(identity?.role || "").trim(),
-    sid: identity?.sid || crypto.randomUUID(),
-    iat: Date.now(),
-    exp: Date.now() + maxAgeSeconds * 1000,
-    session_version: Number(identity?.sessionVersion || identity?.session_version || 1)
-  };
 }
 
 function cleanInviteToken(value) {

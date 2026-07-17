@@ -26,3 +26,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Authentication prototypes are design artifacts, never runtime assets.
+prototypes/**
