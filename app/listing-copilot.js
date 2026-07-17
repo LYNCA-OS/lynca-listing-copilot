@@ -18,6 +18,10 @@ import {
   writerFeedbackPersisted
 } from "./writer-wheel-mode.mjs";
 import { fetchWithBoundedRetry } from "../lib/listing/client/bounded-fetch.mjs";
+import {
+  startNonBlockingDerivedUpload,
+  summarizeDerivedUploadOutcomes
+} from "../lib/listing/client/upload-phases.mjs";
 
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
@@ -25,13 +29,13 @@ const MAX_CONCURRENT_WORKERS = 6;
 const MAX_BACKGROUND_PREP_WORKERS = 4;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
+const STORAGE_OBJECT_UPLOAD_TIMEOUT_MS = 30000;
 const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750]);
 const PREINGEST_REQUEST_TIMEOUT_MS = 25000;
 const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
 const EXPORT_REQUEST_TIMEOUT_MS = 90000;
 const RESOLUTION_MAP_TIMEOUT_MS = 5000;
 const PROVIDER_STATUS_TIMEOUT_MS = 10000;
-const PREWARM_TIMEOUT_MS = 8000;
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
 const IMAGE_INITIAL_QUALITY = 0.9;
@@ -45,7 +49,6 @@ const FIELD_MAX_CROPS_PER_IMAGE = 6;
 const FIELD_MAX_CROPS_PER_ASSET = 8;
 const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
 const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
-const PREWARM_API_ENDPOINT = "/api/v4/prewarm";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
 const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
@@ -468,7 +471,7 @@ function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
   });
 }
 
-async function compressImageDataUrl(originalDataUrl, maxEdge, quality, sourceImage = null) {
+async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
   const image = await loadImage(originalDataUrl);
   const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -491,7 +494,10 @@ async function compressImageDataUrl(originalDataUrl, maxEdge, quality, sourceIma
     originalWidth: image.naturalWidth,
     originalHeight: image.naturalHeight,
     imageQuality,
-    targetedCrops: sourceImage ? buildTargetedCropImages(sourceImage, canvas, imageQuality) : []
+    // Keep the final canvas only for the caller's single crop pass. Large
+    // images may be recompressed several times; generating six crops inside
+    // every attempt made local intake do the same expensive work repeatedly.
+    sourceCanvas: canvas
   };
 }
 
@@ -503,10 +509,7 @@ async function fileToAssetImage(file) {
   let compressed;
 
   try {
-    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality, {
-      id,
-      name: file.name
-    });
+    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality);
   } catch (error) {
     if (isHeicFile(file)) {
       throw new Error(heicUnsupportedMessage);
@@ -524,12 +527,14 @@ async function fileToAssetImage(file) {
       maxEdge = Math.max(IMAGE_MIN_EDGE, Math.round(maxEdge * 0.86));
     }
 
-    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality, {
-      id,
-      name: file.name
-    });
+    compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality);
   }
 
+  compressed.targetedCrops = buildTargetedCropImages({
+    id,
+    name: file.name
+  }, compressed.sourceCanvas, compressed.imageQuality);
+  delete compressed.sourceCanvas;
   const sourceBlob = dataUrlToBlob(compressed.dataUrl);
   compressed.targetedCrops.forEach((crop) => {
     crop.previewUrl = createImagePreviewUrl(crop.sourceBlob);
@@ -796,10 +801,13 @@ function boundedProviderImagesForRequest(images = [], maxImages = REQUEST_IMAGE_
 function buildAssetRequestBody(asset, options = {}) {
   const provider = options.provider || state.selectedProvider;
   const allProviderImages = asset.providerImages || asset.images || [];
-  const providerImages = boundedProviderImagesForRequest(allProviderImages);
-  const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
   const assetId = canonicalAssetId(asset);
   const tenantId = canonicalAssetTenantId(asset);
+  const providerImages = boundedProviderImagesForRequest(allProviderImages).filter((image) => {
+    return !imageIsDerivedForRequest(image)
+      || imageHasVerifiedStorageReference(image, assetId, tenantId);
+  });
+  const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
   const body = {
     assetId,
     asset_id: assetId,
@@ -1187,16 +1195,44 @@ async function uploadAssetImage(asset, image, imageIndex) {
     assetId
   });
 
-  const storageResponse = await fetch(uploadPayload.upload.signed_upload_url, {
-    method: "PUT",
-    headers: {
-      "content-type": uploadPayload.upload.content_type || uploadContentType
-    },
-    body: source
+  let storageRequest;
+  try {
+    storageRequest = await fetchWithBoundedRetry(uploadPayload.upload.signed_upload_url, {
+      method: "PUT",
+      headers: {
+        "content-type": uploadPayload.upload.content_type || uploadContentType
+      },
+      body: source
+    }, {
+      timeoutMs: STORAGE_OBJECT_UPLOAD_TIMEOUT_MS,
+      maxAttempts: 3,
+      // PUT targets one signed object path, so replaying a transport failure is
+      // idempotent. Authentication failures still fail immediately.
+      retryNetworkErrors: true,
+      maxDelayMs: 1500
+    });
+  } catch (error) {
+    recordClientNetworkStage(asset, "storage_object_upload", {
+      elapsed_ms: error.elapsed_ms,
+      attempts: error.attempts,
+      error
+    });
+    throw error;
+  }
+
+  const storageResponse = storageRequest.response;
+  const storageError = storageResponse.ok
+    ? null
+    : Object.assign(new Error(`Storage upload failed: ${storageResponse.status}`), {
+      http_status: storageResponse.status
+    });
+  recordClientNetworkStage(asset, "storage_object_upload", {
+    ...storageRequest,
+    error: storageError
   });
 
   if (!storageResponse.ok) {
-    throw new Error(`Storage upload failed: ${storageResponse.status}`);
+    throw storageError;
   }
   assertCurrentAssetLifecycle(asset);
   image.pendingStorageVerification = {
@@ -1217,13 +1253,38 @@ async function uploadAssetImage(asset, image, imageIndex) {
   });
 }
 
-async function ensureAssetImagesUploaded(asset) {
+function syncDerivedImageSourceMetadata(asset, images = []) {
+  const imagesById = new Map(images.map((image) => [image.id, image]));
+  images.forEach((image) => {
+    const metadata = image.cropMetadata || image.crop_metadata;
+    if (!metadata?.source_image_id) return;
+    const sourceImage = imagesById.get(metadata.source_image_id);
+    const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
+    if (!sourceObjectPath) return;
+    const updatedMetadata = {
+      ...metadata,
+      source_object_path: sourceObjectPath,
+      derived_object_path: metadata.derived_object_path || image.objectPath || "",
+      asset_id: canonicalAssetId(asset)
+    };
+    image.cropMetadata = updatedMetadata;
+    image.crop_metadata = updatedMetadata;
+    if (image.cropPlan) {
+      image.cropPlan = {
+        ...image.cropPlan,
+        crop_metadata: updatedMetadata
+      };
+    }
+  });
+}
+
+async function ensureAssetOriginalImagesUploaded(asset) {
   await ensureDurableAssetIdentity(asset);
   assertCurrentAssetLifecycle(asset);
   if (!storageReady()) throw new Error("listing_storage_not_ready");
-  if (asset.storageUploadPromise) return asset.storageUploadPromise;
+  if (asset.originalStorageUploadPromise) return asset.originalStorageUploadPromise;
 
-  asset.storageUploadPromise = (async () => {
+  asset.originalStorageUploadPromise = (async () => {
     const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
     asset.providerImages = images;
     const indexedImages = images.map((image, imageIndex) => ({ image, imageIndex }));
@@ -1234,47 +1295,45 @@ async function ensureAssetImagesUploaded(asset) {
         return { ok: false, error };
       }
     });
-    // A crop verification must resolve exactly one durable original in the
-    // same asset generation. Finish every original first; never let a crop
-    // race ahead and later get paired with a cached image from another wave.
-    const originalOutcomes = await uploadPhase(indexedImages.filter(({ image }) => !imageIsDerivedForRequest(image)));
-    const failedOriginal = originalOutcomes.find((outcome) => !outcome.ok);
-    if (failedOriginal) throw failedOriginal.error;
-    const cropOutcomes = await uploadPhase(indexedImages.filter(({ image }) => imageIsDerivedForRequest(image)));
-    const uploadOutcomes = [...originalOutcomes, ...cropOutcomes];
-    assertCurrentAssetLifecycle(asset);
-    const failedUpload = uploadOutcomes.find((outcome) => !outcome.ok);
-    if (failedUpload) throw failedUpload.error;
-    const imagesById = new Map(images.map((image) => [image.id, image]));
-    images.forEach((image) => {
-      const metadata = image.cropMetadata || image.crop_metadata;
-      if (!metadata?.source_image_id) return;
-      const sourceImage = imagesById.get(metadata.source_image_id);
-      const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
-      if (!sourceObjectPath) return;
-      const updatedMetadata = {
-        ...metadata,
-        source_object_path: sourceObjectPath,
-        derived_object_path: metadata.derived_object_path || image.objectPath || "",
-        asset_id: canonicalAssetId(asset)
-      };
-      image.cropMetadata = updatedMetadata;
-      image.crop_metadata = updatedMetadata;
-      if (image.cropPlan) {
-        image.cropPlan = {
-          ...image.cropPlan,
-          crop_metadata: updatedMetadata
-        };
-      }
+    const phases = await startNonBlockingDerivedUpload({
+      entries: indexedImages,
+      isDerived: ({ image }) => imageIsDerivedForRequest(image),
+      uploadPhase,
+      beforeDerived: () => syncDerivedImageSourceMetadata(asset, images)
     });
+    assertCurrentAssetLifecycle(asset);
+    asset.derivedStorageUploadStatus = phases.derived.length ? "uploading" : "not_required";
+    asset.derivedStorageUploadPromise = phases.derivedPromise
+      .then((outcomes) => {
+        const summary = summarizeDerivedUploadOutcomes(outcomes);
+        asset.derivedStorageUploadStatus = summary.status;
+        asset.derivedStorageUploadFailureCount = summary.failed;
+        asset.derivedStorageUploadError = summary.first_error
+          ? String(summary.first_error.message || summary.first_error).slice(0, 160)
+          : "";
+        syncDerivedImageSourceMetadata(asset, images);
+        return summary;
+      })
+      .catch((error) => {
+        asset.derivedStorageUploadStatus = "partial";
+        asset.derivedStorageUploadFailureCount = Math.max(1, phases.derived.length);
+        asset.derivedStorageUploadError = String(error?.message || error || "derived_upload_failed").slice(0, 160);
+        return {
+          total: phases.derived.length,
+          uploaded: 0,
+          failed: phases.derived.length,
+          status: "partial",
+          first_error: error
+        };
+      });
 
-    return uploadOutcomes.some((outcome) => outcome.uploaded === true);
+    return phases.originalOutcomes.some((outcome) => outcome.uploaded === true);
   })();
 
   try {
-    return await asset.storageUploadPromise;
+    return await asset.originalStorageUploadPromise;
   } catch (error) {
-    asset.storageUploadPromise = null;
+    asset.originalStorageUploadPromise = null;
     throw error;
   }
 }
@@ -1402,7 +1461,7 @@ async function prepareAssetInBackground(asset, runId) {
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "uploading";
       syncBackgroundPreparationStatus();
-      await ensureAssetImagesUploaded(asset);
+      await ensureAssetOriginalImagesUploaded(asset);
       if (runId !== state.backgroundPreparationRunId) return { stale: true };
       asset.backgroundPrepareStatus = "preingesting";
       syncBackgroundPreparationStatus();
@@ -1591,7 +1650,6 @@ function startBackgroundPreparation(reason = "file_ready") {
     if (runId !== state.backgroundPreparationRunId) return null;
     return prepareAssetInBackground(asset, runId);
   });
-  void prewarmV4(`background_prepare_${reason}`);
   return true;
 }
 
@@ -2889,7 +2947,7 @@ function pendingBox(asset) {
     ? "正在识别这张卡，完成后会直接显示最终标题。"
     : isQueued
       ? "已经进入队列，不需要重复点击。"
-      : "点击生成标题后开始识别。";
+      : "识别已在后台开始；点击生成标题后显示进度与最终结果。";
   return `
     <div class="title-output title-output-pending ${isWorking ? "is-working" : "is-idle"}">
       <div class="title-output-head">
@@ -3580,8 +3638,7 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
     state.backgroundPreparationRunId += 1;
     state.backgroundRecognitionBatchId = "";
     stopAllV4AssistedDraftPolling();
-    void prewarmV4("file_selected");
-    setStatus("正在读取本地图片预览，尚未开始识别…", { busy: true });
+    setStatus("正在读取本地图片；原图就绪后会自动开始内部识别…", { busy: true });
     closeImageModal();
     const failures = [];
     const prepareStartedAt = performance.now();
@@ -3633,8 +3690,8 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
     } else {
       const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
       setStatus(previewOptimizedCount
-        ? `${images.length} 张图片已准备。点击生成标题后开始识别；图片正在后台准备，本地预览已优化。`
-        : `${images.length} 张图片已准备。点击生成标题后开始识别；图片正在后台准备。`);
+        ? `${images.length} 张图片已读取，正在自动上传原图并启动内部识别；本地预览已优化。`
+        : `${images.length} 张图片已读取，正在自动上传原图并启动内部识别。`, { busy: true });
     }
 
     const intakeTransition = runWorkbenchViewTransition({
@@ -3683,7 +3740,7 @@ async function processAssetViaQueue(asset, options = {}) {
     asset.preingestionBundleId ? 0.16 : 0.08
   );
   const uploadStartedAt = performance.now();
-  const uploaded = await ensureAssetImagesUploaded(asset);
+  const uploaded = await ensureAssetOriginalImagesUploaded(asset);
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
   setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
 
@@ -3699,6 +3756,8 @@ async function processAssetViaQueue(asset, options = {}) {
     client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
     client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
     client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId),
+    client_derived_upload_status: asset.derivedStorageUploadStatus || "not_started",
+    client_derived_upload_failure_count: Math.max(0, Number(asset.derivedStorageUploadFailureCount || 0)),
     client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
     client_fast_scout_prewarm_wait_ms: Math.round(Number(fastScoutPrewarm.wait_ms || 0)),
     client_fast_scout_prewarm_cache_status: fastScoutPrewarm.cache_status || "",
@@ -3958,11 +4017,7 @@ async function retryFailedAssetInPriorityQueue(button) {
   if (!asset || !current || current.queueRetryStatus === "submitting") return;
   const lifecycleGeneration = state.assetLifecycleGeneration;
   const retryOfJobId = String(current.v4_job_id || current.job_id || "").trim();
-  if (!retryOfJobId) {
-    current.feedbackMessage = "旧任务缺少可验证的 job_id，不能提升到优先队列；请重新上传后提交。";
-    renderResults();
-    return;
-  }
+  const retriesFailedDurableJob = Boolean(retryOfJobId);
 
   const writerEditedTitle = String(current.correctedTitle || "").trim();
   state.priorityRetryInFlight = true;
@@ -3980,8 +4035,11 @@ async function retryFailedAssetInPriorityQueue(button) {
       batchId: createClientBatchId(),
       priority: 0,
       skipSpeculative: true,
-      manualRetry: true,
-      retryOfJobId
+      // A durable failed job must be authorized against its old id. A client
+      // preparation failure has no old job, so it creates a fresh priority-zero
+      // job instead of becoming permanently un-retryable.
+      manualRetry: retriesFailedDurableJob,
+      retryOfJobId: retryOfJobId || null
     });
     if (!assetLifecycleMatches(asset, lifecycleGeneration)) return;
     if (writerEditedTitle) {
@@ -3992,7 +4050,9 @@ async function retryFailedAssetInPriorityQueue(button) {
       };
     }
     result.queueRetryStatus = "";
-    result.feedbackMessage = "已创建新的识别任务并进入优先队列；旧任务仅保留审计记录。";
+    result.feedbackMessage = retriesFailedDurableJob
+      ? "已创建新的识别任务并进入优先队列；旧任务仅保留审计记录。"
+      : "图片已重新校验，并创建新的优先识别任务。";
     state.results = state.results.filter((item) => item.index !== asset.index);
     state.results.push(result);
     state.results.sort((a, b) => a.index - b.index);
@@ -4895,7 +4955,7 @@ async function exportWriterWorkbook() {
 
   try {
     await mapWithConcurrency(exportAssets, 2, async (asset) => {
-      await ensureAssetImagesUploaded(asset);
+      await ensureAssetOriginalImagesUploaded(asset);
     });
     const rows = buildWriterExportRows(exportAssets, {
       requireSaved: exportingWriterRows,
@@ -5303,26 +5363,6 @@ async function loadProviderStatus() {
   }
 }
 
-async function prewarmV4(reason = "page_load") {
-  if (!state.selectedProvider) return;
-  try {
-    const params = new URLSearchParams({ reason });
-    await fetchWithBoundedRetry(`${PREWARM_API_ENDPOINT}?${params.toString()}`, {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store",
-      keepalive: true
-    }, {
-      timeoutMs: PREWARM_TIMEOUT_MS,
-      maxAttempts: 2,
-      retryNetworkErrors: true,
-      maxDelayMs: 1000
-    });
-  } catch {
-    // Prewarm is opportunistic. Formal recognition must remain the source of truth.
-  }
-}
-
 bindEvents();
 renderPreviews();
 renderResults();
@@ -5330,4 +5370,4 @@ renderResults();
 void Promise.all([
   loadResolutionMap(),
   loadProviderStatus()
-]).then(() => prewarmV4("page_load"));
+]);

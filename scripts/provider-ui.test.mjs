@@ -293,7 +293,8 @@ assert.doesNotMatch(js, /dry_run: true/, "publish dry-run settings should not li
 assert.match(js, /data-priority-retry/, "failed assets should expose a writer-controlled priority retry action");
 assert.match(js, /retryFailedAssetInPriorityQueue/, "failed assets should re-enter the durable queue instead of bypassing capacity controls");
 assert.match(js, /priority:\s*0/, "writer retries without an existing job id should enter the highest interactive priority");
-assert.match(js, /manualRetry:\s*true/, "fresh writer retries must carry an explicit scheduling intent");
+assert.match(js, /manualRetry:\s*retriesFailedDurableJob/, "only retries of durable failed jobs should request server-side retry authorization");
+assert.match(js, /retryOfJobId:\s*retryOfJobId \|\| null/, "pre-enqueue failures should submit a fresh priority-zero job without a forged retry reference");
 assert.match(js, /manual_retry:\s*options\.manualRetry === true/, "the queue job must carry the manual retry intent to stage expansion");
 assert.match(js, /retry_of_job_id:\s*options\.retryOfJobId \|\| null/, "priority scheduling must be bound to a verifiable failed job");
 assert.match(js, /batchId:\s*createClientBatchId\(\)/, "writer retries should create a fresh durable job identity");

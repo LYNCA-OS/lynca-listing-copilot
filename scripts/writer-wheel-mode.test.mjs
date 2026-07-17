@@ -56,7 +56,7 @@ const queueSource = js.slice(
   js.indexOf("async function processAssetViaQueue"),
   js.indexOf("function failedResult")
 );
-assert.match(queueSource, /await ensureAssetImagesUploaded\(asset\)/, "enqueue must first establish the current asset's uploaded image set");
+assert.match(queueSource, /await ensureAssetOriginalImagesUploaded\(asset\)/, "enqueue must establish verified originals without waiting for optional crops");
 assert.match(queueSource, /await ensureSafeAssetPayload\(asset,/, "enqueue must rebuild a request from the current asset state");
 assert.match(queueSource, /fetchJsonWithRetry\(JOB_ENQUEUE_API_ENDPOINT/, "recognition and retry must use the canonical enqueue boundary");
 assert.match(queueSource, /asset_id: canonicalAssetId\(asset\)/, "fresh enqueue must bind the durable asset identity");
@@ -65,7 +65,9 @@ const priorityRetrySource = js.slice(
   js.indexOf("async function retryFailedAssetInPriorityQueue"),
   js.indexOf("async function copyTitle")
 );
-assert.match(priorityRetrySource, /await processAssetViaQueue\(asset, \{[\s\S]*skipSpeculative: true,[\s\S]*manualRetry: true,[\s\S]*retryOfJobId/, "priority retry must create a fresh job from the current asset images");
+assert.match(priorityRetrySource, /const retriesFailedDurableJob = Boolean\(retryOfJobId\)/, "priority retry must distinguish a durable failed job from a pre-enqueue failure");
+assert.match(priorityRetrySource, /await processAssetViaQueue\(asset, \{[\s\S]*priority: 0,[\s\S]*skipSpeculative: true,[\s\S]*manualRetry: retriesFailedDurableJob,[\s\S]*retryOfJobId: retryOfJobId \|\| null/, "priority retry must support both authorized durable retries and fresh pre-enqueue retries");
+assert.doesNotMatch(priorityRetrySource, /不能提升到优先队列；请重新上传/, "a pre-enqueue failure must remain retryable without re-uploading images");
 assert.match(priorityRetrySource, /旧任务仅保留审计记录/, "priority retry must preserve the old job only as audit history");
 assert.match(priorityRetrySource, /assetLifecycleMatches\(asset, lifecycleGeneration\)/, "a stale retry response must not overwrite a newer upload generation");
 assert.doesNotMatch(js, /\/api\/v4\/listing-job-retry/, "the browser must not replay a persisted legacy job payload");
