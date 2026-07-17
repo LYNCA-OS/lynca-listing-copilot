@@ -39,7 +39,7 @@ assert.match(feedbackSource, /pendingFeedbackSubmissionId/, "feedback retries mu
 assert.match(feedbackSource, /pendingFeedbackOccurredAt/, "feedback retries must retain the original client timestamp");
 assert.match(feedbackSource, /feedback_submission_id: v4Submission\.id/, "V4 feedback must send the retained idempotency key");
 assert.match(feedbackSource, /client_occurred_at: v4Submission\.occurredAt/, "V4 feedback must send the retained client timestamp");
-assert.match(feedbackSource, /if \(!response\.ok \|\| !payload\.ok\)[\s\S]*throw new Error/, "feedback must fail closed on a rejected persistence response");
+assert.match(feedbackSource, /if \(feedbackRequest\.error\)[\s\S]*throw new Error/, "feedback must fail closed on a rejected persistence response");
 assert.ok(
   feedbackSource.indexOf("clearPendingV4FeedbackSubmission(result, v4Submission)")
     > feedbackSource.indexOf("payload.v4_persistence?.transaction?.saved !== true"),
@@ -58,7 +58,7 @@ const queueSource = js.slice(
 );
 assert.match(queueSource, /await ensureAssetImagesUploaded\(asset\)/, "enqueue must first establish the current asset's uploaded image set");
 assert.match(queueSource, /await ensureSafeAssetPayload\(asset,/, "enqueue must rebuild a request from the current asset state");
-assert.match(queueSource, /fetchWithTimeout\(JOB_ENQUEUE_API_ENDPOINT/, "recognition and retry must use the canonical enqueue boundary");
+assert.match(queueSource, /fetchJsonWithRetry\(JOB_ENQUEUE_API_ENDPOINT/, "recognition and retry must use the canonical enqueue boundary");
 assert.match(queueSource, /asset_id: canonicalAssetId\(asset\)/, "fresh enqueue must bind the durable asset identity");
 
 const priorityRetrySource = js.slice(
