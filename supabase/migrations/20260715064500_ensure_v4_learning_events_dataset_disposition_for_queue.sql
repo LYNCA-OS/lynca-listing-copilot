@@ -9,10 +9,9 @@
 
 create table if not exists public.v4_recognition_batches (
   id text primary key,
-  tenant_id text not null default 'tenant_legacy'
-    references public.tenants(id) on delete restrict,
-  created_by_user_id text references public.users(id) on delete set null,
-  assigned_to_user_id text references public.users(id) on delete set null,
+  tenant_id text not null default 'tenant_legacy',
+  created_by_user_id text,
+  assigned_to_user_id text,
   status text not null default 'QUEUED',
   item_count integer not null default 0,
   completed_count integer not null default 0,
