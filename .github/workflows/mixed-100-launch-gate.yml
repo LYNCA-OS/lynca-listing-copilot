@@ -29,6 +29,7 @@ jobs:
       API_BASE_URL: https://listing.lyncafei.team
       METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
       METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
       DATASET_PATH: /tmp/mixed-100-manifest.json
       SEALED_LABELS_PATH: /tmp/mixed-100-sealed-labels.jsonl
       REPORT_PATH: /tmp/mixed-100-report.json
@@ -72,6 +73,8 @@ jobs:
             --selection-seed "$SEED" \
             --out "$DATASET_PATH" \
             --sealed-labels-out "$SEALED_LABELS_PATH"
+      - name: Verify scoped launch-gate credential
+        run: test -n "$LAUNCH_GATE_EVAL_SECRET"
       - name: Run locked mixed-100 launch gate
         id: launch_gate
         continue-on-error: true

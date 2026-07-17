@@ -6,7 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { Readable } from "node:stream";
-import { createLaunchGateSourceImagesHandler } from "../api/v4/launch-gate-source-images.js";
+import {
+  createLaunchGateSourceImagesHandler,
+  launchGateEvalSecretAuthorized
+} from "../api/v4/launch-gate-source-images.js";
 import {
   launchGateImageSourceCount,
   resolveLaunchGateImageSources
@@ -29,10 +32,10 @@ function assertNoReferenceTextKeys(value) {
   }
 }
 
-function mockReq(body = {}) {
+function mockReq(body = {}, headers = {}) {
   const request = Readable.from([JSON.stringify(body)]);
   request.method = "POST";
-  request.headers = {};
+  request.headers = headers;
   return request;
 }
 
@@ -63,6 +66,12 @@ assert.throws(
   () => resolveLaunchGateImageSources(["not-in-the-reviewed-source-index"]),
   /launch_gate_source_not_allowlisted/
 );
+assert.equal(launchGateEvalSecretAuthorized(mockReq({}, {
+  "x-lynca-launch-gate-secret": "scoped-test-secret"
+}), { LAUNCH_GATE_EVAL_SECRET: "scoped-test-secret" }), true);
+assert.equal(launchGateEvalSecretAuthorized(mockReq({}, {
+  "x-lynca-launch-gate-secret": "wrong-secret"
+}), { LAUNCH_GATE_EVAL_SECRET: "scoped-test-secret" }), false);
 
 const signedCalls = [];
 const handler = createLaunchGateSourceImagesHandler({
@@ -86,6 +95,26 @@ assert.equal(payload.source_count, 2);
 assert.equal(payload.image_count, signedCalls.length);
 assert.ok(payload.image_count >= 2);
 assertNoReferenceTextKeys(payload);
+
+let scopedRequireAccessCalled = false;
+const scopedHandler = createLaunchGateSourceImagesHandler({
+  evalSecretAuthorized: (request) => launchGateEvalSecretAuthorized(request, {
+    LAUNCH_GATE_EVAL_SECRET: "scoped-test-secret"
+  }),
+  requireAccess: async () => {
+    scopedRequireAccessCalled = true;
+    throw new Error("tenant access must not run for a valid scoped evaluator credential");
+  },
+  signImage: async () => "https://signed.test/scoped"
+});
+const scopedResponse = mockRes();
+await scopedHandler(mockReq({
+  source_feedback_ids: [reviewedItem.source_feedback_id]
+}, {
+  "x-lynca-launch-gate-secret": "scoped-test-secret"
+}), scopedResponse);
+assert.equal(scopedResponse.statusCode, 200);
+assert.equal(scopedRequireAccessCalled, false);
 
 const rejectedResponse = mockRes();
 await handler(mockReq({ source_feedback_ids: ["not-in-the-reviewed-source-index"] }), rejectedResponse);
@@ -113,6 +142,7 @@ try {
     if (String(url).endsWith("/api/v4/launch-gate-source-images")) {
       assert.equal(options.method, "POST");
       assert.equal(options.headers.cookie, "session=test");
+      assert.equal(options.headers["x-lynca-launch-gate-secret"], "scoped-test-secret");
       return new Response(JSON.stringify({
         ok: true,
         sources: [{
@@ -136,6 +166,7 @@ try {
     outputDirectory: join(tempRoot, "images"),
     baseUrl: "https://listing.test",
     cookie: "session=test",
+    launchGateEvalSecret: "scoped-test-secret",
     fetchImpl
   });
   const image = materialized.dataset.items[0].images[0];

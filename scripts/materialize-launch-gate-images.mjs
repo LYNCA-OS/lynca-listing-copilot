@@ -104,10 +104,17 @@ async function readJsonResponse(response) {
   try { return text ? JSON.parse(text) : {}; } catch { return {}; }
 }
 
-async function requestSignedSources({ baseUrl, cookie, sourceFeedbackIds, fetchImpl }) {
+async function requestSignedSources({ baseUrl, cookie, sourceFeedbackIds, launchGateEvalSecret, fetchImpl }) {
   const result = await fetchWithBoundedRetry(`${baseUrl}/api/v4/launch-gate-source-images`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie, connection: "close" },
+    headers: {
+      "content-type": "application/json",
+      cookie,
+      connection: "close",
+      ...(cleanText(launchGateEvalSecret)
+        ? { "x-lynca-launch-gate-secret": cleanText(launchGateEvalSecret) }
+        : {})
+    },
     body: JSON.stringify({ source_feedback_ids: sourceFeedbackIds })
   }, {
     fetchImpl,
@@ -208,13 +215,20 @@ export async function materializeLaunchGateImages({
   cookie,
   concurrency = 8,
   maxImageBytes = defaultMaxImageBytes,
+  launchGateEvalSecret = process.env.LAUNCH_GATE_EVAL_SECRET,
   fetchImpl = globalThis.fetch
 } = {}) {
   const items = loadItems(dataset);
   if (!items.length) throw new Error("launch_gate_manifest_has_no_items");
   const sourceFeedbackIds = [...new Set(items.map((item) => cleanText(item.source_feedback_id)).filter(Boolean))];
   if (sourceFeedbackIds.length !== items.length) throw new Error("launch_gate_source_ids_missing_or_duplicate");
-  const access = await requestSignedSources({ baseUrl, cookie, sourceFeedbackIds, fetchImpl });
+  const access = await requestSignedSources({
+    baseUrl,
+    cookie,
+    sourceFeedbackIds,
+    launchGateEvalSecret,
+    fetchImpl
+  });
   const sourceIndex = new Map((access.sources || []).map((source) => [cleanText(source.source_feedback_id), source]));
   if (sourceIndex.size !== sourceFeedbackIds.length) throw new Error("launch_gate_image_access_incomplete");
   const directory = resolve(outputDirectory);

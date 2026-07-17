@@ -45,14 +45,14 @@ assert.match(js, /fileSignatureHex/, "storage uploads should read first-byte fil
 assert.match(js, /signatureHex/, "signed upload requests should include file signature metadata");
 assert.match(js, /listing-image-verify-upload/, "storage uploads should be server-verified after the direct PUT");
 assert.match(js, /Storage upload verification failed/, "storage verification failures should block provider requests");
-assert.match(js, /原图就绪后会自动开始内部识别/, "status copy should explain upload-triggered recognition");
-assert.match(js, /识别已在后台开始；点击生成标题后显示进度与最终结果/, "idle cards should explain that recognition has already started");
+assert.match(js, /本地预览已显示；正在校验原图，随后自动上传并启动内部识别/, "status copy should explain immediate preview and upload-triggered recognition");
+assert.match(js, /URL\.createObjectURL/, "selected images should receive an immediate local object-URL preview");
 assert.match(js, /PREINGEST_API_ENDPOINT/, "background pre-ingestion endpoint should be wired for prepared assets");
 assert.match(js, /backgroundPreparationRunId/, "background preparation should be guarded against stale file batches");
 assert.match(js, /保留主图，缩减辅助局部图/, "oversized request fallback status should be visible without implying low-quality main-image recognition");
-assert.match(js, /正在读取本地图片；原图就绪后会自动开始内部识别…/, "local preview preparation should announce the automatic recognition handoff");
+assert.match(js, /本地预览已显示；正在校验原图，随后自动上传并启动内部识别…/, "local preview preparation should announce the automatic recognition handoff");
 assert.match(js, /0% · 图片已准备，开始识别…/, "recognition start status should include progress");
-assert.match(js, /setStatus\("正在读取本地图片；原图就绪后会自动开始内部识别…",\s*\{\s*busy:\s*true\s*\}\)/, "preview preparation should render as an active waiting state");
+assert.match(js, /setStatus\("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…",\s*\{\s*busy:\s*true\s*\}\)/, "preview preparation should render as an active waiting state");
 assert.match(js, /setStatus\("0% · 图片已准备，开始识别…",\s*\{\s*busy:\s*true\s*\}\)/, "recognition start should render as an active waiting state");
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");

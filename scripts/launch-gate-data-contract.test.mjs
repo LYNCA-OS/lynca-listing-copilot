@@ -523,9 +523,23 @@ try {
   })).join("\n")}\n`);
   let healthCallCount = 0;
   let smokeCallCount = 0;
+  const materializedImagePath = join(root, "materialized-launch-gate-image.jpg");
+  await writeFile(materializedImagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
   const imageMaterializer = async ({ dataset }) => ({
-    dataset,
-    summary: { mode: "offline_test_passthrough", item_count: dataset.items.length }
+    dataset: {
+      ...dataset,
+      items: dataset.items.map((item) => ({
+        ...item,
+        images: item.images.map((image) => ({
+          ...image,
+          local_path: materializedImagePath,
+          content_type: "image/jpeg",
+          width: 640,
+          height: 900
+        }))
+      }))
+    },
+    summary: { mode: "offline_test_materialized", item_count: dataset.items.length }
   });
   const fetchImpl = async (url) => {
     if (url.endsWith("/api/v4/health")) {
@@ -556,6 +570,12 @@ try {
     smokeCallCount += 1;
     const recognitionDataset = JSON.parse(await readFile(options.datasetPath, "utf8"));
     assert.deepEqual(prohibitedPaths(recognitionDataset), []);
+    assert.ok(recognitionDataset.items.every((item) => item.images.every((image) => (
+      image.local_path === materializedImagePath
+      && image.content_type === "image/jpeg"
+      && image.width === 640
+      && image.height === 900
+    ))), "materialized local image paths must survive cohort splitting and reach the smoke runner");
     assert.equal(options.modelOverride, "gpt-5-mini");
     assert.equal(options.ultraFastL2, false);
     assert.equal(options.ultraFastImageDetail, "high");

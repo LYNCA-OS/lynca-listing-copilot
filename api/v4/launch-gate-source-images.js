@@ -1,4 +1,5 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
+import { timingSafeStringEqual } from "../../lib/listing-session.mjs";
 import { resolveLaunchGateImageSources } from "../../lib/listing/evaluation/launch-gate-image-access.mjs";
 import { createListingImageSignedReadUrl } from "../../lib/listing/storage/supabase-image-storage.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
@@ -16,6 +17,21 @@ export const config = {
 
 function cleanText(value) {
   return String(value || "").trim();
+}
+
+function headerValue(req, name) {
+  const lower = String(name || "").toLowerCase();
+  const headers = req?.headers;
+  const value = typeof headers?.get === "function"
+    ? headers.get(lower)
+    : headers?.[lower] ?? headers?.[name];
+  return cleanText(Array.isArray(value) ? value[0] : value);
+}
+
+export function launchGateEvalSecretAuthorized(req, env = process.env) {
+  const expected = cleanText(env.LAUNCH_GATE_EVAL_SECRET);
+  const supplied = headerValue(req, "x-lynca-launch-gate-secret");
+  return Boolean(expected && supplied && timingSafeStringEqual(supplied, expected));
 }
 
 function requireLaunchGateTenantAccess(req, options) {
@@ -38,6 +54,7 @@ async function mapWithConcurrency(items, concurrency, worker) {
 
 export function createLaunchGateSourceImagesHandler({
   requireAccess = requireLaunchGateTenantAccess,
+  evalSecretAuthorized = launchGateEvalSecretAuthorized,
   resolveSources = resolveLaunchGateImageSources,
   signImage = createListingImageSignedReadUrl
 } = {}) {
@@ -47,13 +64,15 @@ export function createLaunchGateSourceImagesHandler({
       sendJson(res, 405, withV4Version({ ok: false, error: "method_not_allowed" }));
       return;
     }
-    let context;
-    try {
-      context = await requireAccess(req, { permission: TENANT_PERMISSIONS.CONFIGURE_TENANT });
-      bindProductionRequestContext(res, context);
-    } catch (error) {
-      sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
-      return;
+    if (!evalSecretAuthorized(req)) {
+      let context;
+      try {
+        context = await requireAccess(req, { permission: TENANT_PERMISSIONS.CONFIGURE_TENANT });
+        bindProductionRequestContext(res, context);
+      } catch (error) {
+        sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
+        return;
+      }
     }
     if (!enforceApiRateLimit(req, res, {
       scope: "v4_launch_gate_source_images",
