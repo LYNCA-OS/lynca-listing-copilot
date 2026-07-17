@@ -19,6 +19,7 @@ const hostileRequest = {
 const env = {
   V4_JOB_WORKER_SECRET: secret,
   V4_INTERNAL_BASE_URL: trustedOrigin,
+  VERCEL_AUTOMATION_BYPASS_SECRET: "deployment-bypass-secret",
   V4_QUEUE_GLOBAL_DRAIN_ENABLED: "false",
   V4_QUEUE_KICK_DEDUP_MS: "1",
   V4_JOB_WORKER_PROCESS_CONCURRENCY: "1"
@@ -55,6 +56,7 @@ function assertSecretStayedOnTrustedOrigin(calls, expectedPath) {
     assert.equal(url.origin, trustedOrigin);
     assert.equal(url.pathname, expectedPath);
     assert.equal(call.init.headers[workerSecretHeader], secret);
+    assert.equal(call.init.headers["x-vercel-protection-bypass"], "deployment-bypass-secret");
     assert.doesNotMatch(call.url, /attacker\.example/);
   }
 }

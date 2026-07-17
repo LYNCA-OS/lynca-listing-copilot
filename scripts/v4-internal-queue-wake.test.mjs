@@ -11,6 +11,7 @@ import { workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 const env = {
   V4_JOB_WORKER_SECRET: "worker-secret",
   V4_INTERNAL_BASE_URL: "https://listing.internal.test",
+  VERCEL_AUTOMATION_BYPASS_SECRET: "deployment-bypass-secret",
   V4_JOB_WORKER_PROCESS_CONCURRENCY: "2"
 };
 
@@ -33,7 +34,36 @@ assert.equal(direct.ok, true);
 assert.equal(direct.accepted, true);
 assert.equal(directCalls[0].url, "https://listing.internal.test/api/v4/listing-job-pump");
 assert.equal(directCalls[0].init.headers[workerSecretHeader], "worker-secret");
+assert.equal(
+  directCalls[0].init.headers["x-vercel-protection-bypass"],
+  "deployment-bypass-secret",
+  "same-deployment queue wakes must cross Vercel Deployment Protection"
+);
 assert.equal(directCalls[0].body.detached, true, "internal wakes must use fast-ack detached pumps");
+
+const unprotectedCalls = [];
+await invokeTrustedV4QueuePump({
+  payload: { reason: "unit_unprotected" },
+  env: {
+    V4_JOB_WORKER_SECRET: "worker-secret",
+    V4_INTERNAL_BASE_URL: "https://listing.internal.test"
+  },
+  fetchImpl: async (url, init = {}) => {
+    unprotectedCalls.push({ url: String(url), init });
+    return {
+      ok: true,
+      status: 202,
+      async json() {
+        return { ok: true, accepted: true };
+      }
+    };
+  }
+});
+assert.equal(
+  Object.hasOwn(unprotectedCalls[0].init.headers, "x-vercel-protection-bypass"),
+  false,
+  "an empty bypass secret must never create an authentication header"
+);
 
 let untrustedFetchCalled = false;
 const failClosed = await invokeTrustedV4QueuePump({

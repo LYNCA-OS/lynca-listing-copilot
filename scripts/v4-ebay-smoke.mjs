@@ -2331,13 +2331,16 @@ async function enqueueSpeculativeItem({
       const queueEntryError = (enqueue.data?.jobs || []).find((entry) => entry?.error)?.error || "";
       throw new Error(`queue_enqueue_failed:${enqueue.http_status}:${cleanText(enqueue.data?.message || enqueue.data?.error || queueEntryError).slice(0, 160)}`);
     }
+    const canonicalBatchId = cleanText(enqueue.data?.batch_id) || batchId;
     return {
       asset_id: id,
       source_asset_id: sourceAssetId,
       index,
       item,
-      batch_id: batchId,
-      tenant_id: tenantId || batchId,
+      batch_id: canonicalBatchId,
+      client_batch_token: batchId,
+      tenant_id: cleanText(job.tenant_id) || tenantId || batchId,
+      client_tenant_label: tenantId || batchId,
       job,
       l1_job: l1Job,
       enqueue,
@@ -2364,6 +2367,17 @@ async function enqueueSpeculativeItem({
       error: cleanText(error?.message || error || "batch_enqueue_failed").slice(0, 240)
     };
   }
+}
+
+export function canonicalBatchIdForPoll(prepared = [], fallbackBatchId = "") {
+  const canonicalIds = [...new Set((Array.isArray(prepared) ? prepared : [])
+    .filter((row) => Boolean(row?.job?.job_id))
+    .map((row) => cleanText(row?.batch_id))
+    .filter(Boolean))];
+  if (canonicalIds.length > 1) {
+    throw new Error(`smoke_batch_identity_split:${canonicalIds.join(",")}`);
+  }
+  return canonicalIds[0] || cleanText(fallbackBatchId);
 }
 
 async function pollBatchJobs({
@@ -3897,6 +3911,7 @@ export async function runV4EbaySmoke({
         return row;
       });
     }
+    sharedBatchId = canonicalBatchIdForPoll(prepared, sharedBatchId);
     batchPollMetrics = await pollBatchJobs({
       baseUrl,
       cookie,

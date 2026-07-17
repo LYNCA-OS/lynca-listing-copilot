@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { prepareDurableSmokeItem } from "./v4-ebay-smoke.mjs";
+import {
+  canonicalBatchIdForPoll,
+  prepareDurableSmokeItem
+} from "./v4-ebay-smoke.mjs";
 
 const tempDirectory = await mkdtemp(join(tmpdir(), "lynca-v4-smoke-upload-"));
 const firstPath = join(tempDirectory, "image-1.jpg");
@@ -75,6 +78,31 @@ const fetchImpl = async (input, init = {}) => {
   }
   throw new Error(`unexpected request: ${init.method || "GET"} ${url}`);
 };
+
+assert.equal(
+  canonicalBatchIdForPoll([
+    { batch_id: "v4batch_canonical", job: { job_id: "v4job_one" } },
+    { batch_id: "v4batch_canonical", job: { job_id: "v4job_two" } }
+  ], "client-token"),
+  "v4batch_canonical",
+  "status polling must use the server-issued canonical batch id"
+);
+assert.equal(
+  canonicalBatchIdForPoll([
+    { batch_id: "client-token", job: null },
+    { batch_id: "v4batch_canonical", job: { job_id: "v4job_ok" } }
+  ], "client-token"),
+  "v4batch_canonical",
+  "failed enqueue rows must not split a valid canonical polling identity"
+);
+assert.throws(
+  () => canonicalBatchIdForPoll([
+    { batch_id: "v4batch_a", job: { job_id: "v4job_a" } },
+    { batch_id: "v4batch_b", job: { job_id: "v4job_b" } }
+  ]),
+  /smoke_batch_identity_split/,
+  "a split canonical batch must fail closed instead of silently losing jobs"
+);
 
 try {
   const prepared = await prepareDurableSmokeItem({
