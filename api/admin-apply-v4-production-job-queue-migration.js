@@ -272,67 +272,44 @@ async function verifyExecutionControlBehavior(client) {
   const firstBatchFirstSessionId = `migration_probe_session_a1_${suffix}`;
   const firstBatchSecondSessionId = `migration_probe_session_a2_${suffix}`;
   const secondBatchSessionId = `migration_probe_session_b1_${suffix}`;
+  const firstBatchId = `batch_a_${suffix}`;
+  const secondBatchId = `batch_b_${suffix}`;
+  const escapeSql = (value) => `'${String(value).replace(/'/g, "''")}'`;
   await client.query("begin");
   try {
     await client.query(`
       insert into public.v4_recognition_sessions (
         id, schema_version, status, tenant_id, operator_id, asset_id
       ) values
-        ($8::text, 'migration-probe-v1', 'CREATED', $6::text, $11::text, null),
-        ($9::text, 'migration-probe-v1', 'CREATED', $6::text, $11::text, null),
-        ($10::text, 'migration-probe-v1', 'CREATED', $7::text, $12::text, null)
-    `, [
-      firstBatchFirstJobId,
-      firstBatchSecondJobId,
-      secondBatchJobId,
-      `batch_a_${suffix}`,
-      `batch_b_${suffix}`,
-      firstTenantId,
-      secondTenantId,
-      firstBatchFirstSessionId,
-      firstBatchSecondSessionId,
-      secondBatchSessionId,
-      firstOperatorId,
-      secondOperatorId
-    ]);
+        (${escapeSql(firstBatchFirstSessionId)}, 'migration-probe-v1', 'CREATED', ${escapeSql(firstTenantId)}, ${escapeSql(firstOperatorId)}, null),
+        (${escapeSql(firstBatchSecondSessionId)}, 'migration-probe-v1', 'CREATED', ${escapeSql(firstTenantId)}, ${escapeSql(firstOperatorId)}, null),
+        (${escapeSql(secondBatchSessionId)}, 'migration-probe-v1', 'CREATED', ${escapeSql(secondTenantId)}, ${escapeSql(secondOperatorId)}, null)
+    `);
     await client.query(`
       insert into public.v4_recognition_jobs(
         id, schema_version, batch_id, tenant_id, asset_id, job_type,
         operator_id, recognition_session_id, provider_id, status, priority, payload,
         max_attempts, created_at
       ) values
-        ($1::text, 'migration-probe-v1', $4::text, $6::text, null, 'FINAL_ASSISTED_TITLE',
-          $11::text, $8::text, 'migration_probe', 'QUEUED', 0,
+        (${escapeSql(firstBatchFirstJobId)}, 'migration-probe-v1', ${escapeSql(firstBatchId)}, ${escapeSql(firstTenantId)}, null, 'FINAL_ASSISTED_TITLE',
+          ${escapeSql(firstOperatorId)}, ${escapeSql(firstBatchFirstSessionId)}, 'migration_probe', 'QUEUED', 0,
           jsonb_build_object(
-            'recognition_session_id', $8::text,
-            'asset_id', null::text
+            'recognition_session_id', ${escapeSql(firstBatchFirstSessionId)},
+            'asset_id', null
           ), 2, clock_timestamp() - interval '2 seconds'),
-        ($2::text, 'migration-probe-v1', $4::text, $6::text, null, 'FINAL_ASSISTED_TITLE',
-          $11::text, $9::text, 'migration_probe', 'QUEUED', 0,
+        (${escapeSql(firstBatchSecondJobId)}, 'migration-probe-v1', ${escapeSql(firstBatchId)}, ${escapeSql(firstTenantId)}, null, 'FINAL_ASSISTED_TITLE',
+          ${escapeSql(firstOperatorId)}, ${escapeSql(firstBatchSecondSessionId)}, 'migration_probe', 'QUEUED', 0,
           jsonb_build_object(
-            'recognition_session_id', $9::text,
-            'asset_id', null::text
+            'recognition_session_id', ${escapeSql(firstBatchSecondSessionId)},
+            'asset_id', null
           ), 2, clock_timestamp() - interval '1 second'),
-        ($3::text, 'migration-probe-v1', $5::text, $7::text, null, 'FINAL_ASSISTED_TITLE',
-          $12::text, $10::text, 'migration_probe', 'QUEUED', 0,
+        (${escapeSql(secondBatchJobId)}, 'migration-probe-v1', ${escapeSql(secondBatchId)}, ${escapeSql(secondTenantId)}, null, 'FINAL_ASSISTED_TITLE',
+          ${escapeSql(secondOperatorId)}, ${escapeSql(secondBatchSessionId)}, 'migration_probe', 'QUEUED', 0,
           jsonb_build_object(
-            'recognition_session_id', $10::text,
-            'asset_id', null::text
+            'recognition_session_id', ${escapeSql(secondBatchSessionId)},
+            'asset_id', null
           ), 2, clock_timestamp())
-    `, [
-      firstBatchFirstJobId,
-      firstBatchSecondJobId,
-      secondBatchJobId,
-      `batch_a_${suffix}`,
-      `batch_b_${suffix}`,
-      firstTenantId,
-      secondTenantId,
-      firstBatchFirstSessionId,
-      firstBatchSecondSessionId,
-      secondBatchSessionId,
-      firstOperatorId,
-      secondOperatorId
-    ]);
+    `);
     const claim = await client.query(`
       select id, status, queue_tags
       from public.claim_v4_recognition_jobs_with_balanced_capacity(
