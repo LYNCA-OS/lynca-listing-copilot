@@ -737,6 +737,26 @@ h3 {
   filter: brightness(1.08);
 }
 
+.intake-preview-thumb {
+  cursor: default;
+  pointer-events: none;
+}
+
+.intake-preview-unavailable {
+  min-height: 220px;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  color: var(--subtle);
+  text-align: center;
+}
+
+.intake-preview-unavailable small {
+  max-width: 22ch;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
 .preview-meta {
   min-width: 0;
   display: grid;

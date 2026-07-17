@@ -101,6 +101,12 @@ const handleFilesSource = js.slice(js.indexOf("async function handleFiles"), js.
 assert.doesNotMatch(handleFilesSource, /providerStatusReadyPromise/, "local previews must not wait for provider readiness before rendering");
 assert.doesNotMatch(handleFilesSource, /wait\(1200\)/, "upload intake must not retain the former provider-readiness delay");
 assert.match(handleFilesSource, /startBackgroundPreparation\("file_ready"\)/, "ready local images should immediately start durable background preparation");
+assert.ok(
+  handleFilesSource.indexOf("renderInstantIntakePreviews(intakePreviewRecords)")
+    < handleFilesSource.indexOf("await mapWithConcurrency(imageFiles"),
+  "selected images must render an immediate local preview before expensive decoding or recompression"
+);
+assert.match(handleFilesSource, /releaseIntakePreviewRecords\(intakePreviewRecords\)/, "temporary intake object URLs must be released after safe images replace them");
 assert.match(js, /state\.filePreparationRunId !== filePreparationRunId/, "stale file decoding must not overwrite a newer upload batch");
 assert.match(js, /runId !== state\.backgroundPreparationRunId/, "stale background uploads must not overwrite a newer preparation run");
 assert.match(js, /data-asset-row=/, "asset rows should expose a stable key for in-place queue updates");
@@ -303,6 +309,7 @@ assert.doesNotMatch(js, /destination: "mock_b_end"/, "V4 writer UI should not ta
 assert.doesNotMatch(js, /dry_run: true/, "publish dry-run settings should not live in the title review UI");
 assert.match(js, /data-priority-retry/, "failed assets should expose a writer-controlled priority retry action");
 assert.match(js, /retryFailedAssetInPriorityQueue/, "failed assets should re-enter the durable queue instead of bypassing capacity controls");
+assert.doesNotMatch(priorityRetrySource, /workspaceInteractionLocked\(\)/, "one card's retry must not be disabled by unrelated batch preparation, save, or retry work");
 assert.match(js, /priority:\s*0/, "writer retries without an existing job id should enter the highest interactive priority");
 assert.match(js, /manualRetry:\s*retriesFailedDurableJob/, "only retries of durable failed jobs should request server-side retry authorization");
 assert.match(priorityRetrySource, /\["FAILED",\s*"CANCELLED"\]\.includes\(retryOfJobStatus\)/, "a nonterminal or orphaned job must retry as a fresh idempotent priority task");
@@ -317,6 +324,9 @@ assert.doesNotMatch(
   "a failed card must remain retryable while other cards in the batch are still processing"
 );
 assert.match(priorityRetrySource, /const lifecycleGeneration = state\.assetLifecycleGeneration/, "priority retry must capture the lifecycle before awaiting queue work");
+assert.match(priorityRetrySource, /resetAssetPreparationForRetry\(asset\)/, "priority retry must discard stale speculative and failed preparation promises");
+assert.match(priorityRetrySource, /repairPreingestion:\s*true/, "priority retry should rebuild a missing evidence bundle before the fresh L2 request when possible");
+assert.match(js, /const failed = confidence === "FAILED" \|\| retryState\.terminal_failure/, "durable queue failure must render as a failed card even when stale confidence is not FAILED");
 assert.equal(
   (priorityRetrySource.match(/if \(!assetLifecycleMatches\(asset, lifecycleGeneration\)\) return;/g) || []).length,
   2,
@@ -475,6 +485,48 @@ globalThis.fetch = async (url) => {
 };
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
+assert.deepEqual(
+  __listingCopilotAppTestHooks.retryStateForResult({
+    confidence: "MEDIUM",
+    recognition_session_id: "session-failed",
+    v4_schema_version: "v4",
+    assisted_draft_status: "PENDING",
+    v4_job_status: "FAILED",
+    title_stage: "PENDING"
+  }),
+  {
+    retryable: true,
+    submitting: false,
+    disabled: false,
+    terminal_failure: true,
+    terminal_without_title: true
+  },
+  "a failed durable job must expose retry even when stale assisted status still says pending"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.retryStateForResult({
+    confidence: "LOW",
+    recognition_session_id: "session-review",
+    v4_schema_version: "v4",
+    assisted_draft_status: "REVIEW_REQUIRED",
+    writerReviewRequired: true,
+    title_stage: "L2_ASSISTED_DRAFT"
+  }).retryable,
+  true,
+  "a terminal no-title review result should let the writer request one fresh recognition attempt"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.retryStateForResult({
+    confidence: "MEDIUM",
+    recognition_session_id: "session-running",
+    v4_schema_version: "v4",
+    assisted_draft_status: "RUNNING",
+    v4_job_status: "RUNNING",
+    title_stage: "PENDING"
+  }).retryable,
+  false,
+  "a live durable job must not expose a duplicate paid retry"
+);
 assert.equal(
   __listingCopilotAppTestHooks.shouldUseStorageFirstImage(
     { name: "card.jpg", type: "image/jpeg", size: 5_000_000 },

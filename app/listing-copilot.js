@@ -117,8 +117,9 @@ const state = {
   processingTotal: 0,
   exportingWorkbook: false,
   preparingFiles: false,
+  intakePreviewRecords: [],
   filePreparationRunId: 0,
-  priorityRetryInFlight: false,
+  priorityRetryInFlight: 0,
   workspaceMode: "standard",
   writerActiveIndex: null,
   writerTransition: "",
@@ -418,6 +419,67 @@ function releaseImagePreviewUrls(images = []) {
     (image.targetedCrops || []).forEach(release);
   };
   images.forEach(release);
+}
+
+function releaseIntakePreviewRecords(records = state.intakePreviewRecords) {
+  for (const record of Array.isArray(records) ? records : []) {
+    const previewUrl = String(record?.previewUrl || "");
+    if (
+      previewUrl.startsWith("blob:")
+      && typeof URL !== "undefined"
+      && typeof URL.revokeObjectURL === "function"
+    ) {
+      URL.revokeObjectURL(previewUrl);
+    }
+  }
+  if (records === state.intakePreviewRecords) state.intakePreviewRecords = [];
+}
+
+function createIntakePreviewRecords(files = []) {
+  return files.map((file, index) => {
+    const previewable = storageFirstImageTypes.has(contentTypeForFile(file));
+    return {
+      id: `intake-preview-${index + 1}`,
+      name: file.name,
+      previewUrl: previewable ? createImagePreviewUrl(file) : "",
+      previewable
+    };
+  });
+}
+
+function renderInstantIntakePreviews(records = []) {
+  const source = Array.isArray(records) ? records : [];
+  const groupSize = state.mode === "single" ? 1 : 2;
+  const groups = [];
+  for (let index = 0; index < source.length; index += groupSize) {
+    groups.push(source.slice(index, index + groupSize));
+  }
+
+  elements.processButton.disabled = true;
+  elements.previewSummary.textContent = `${source.length} 张图片已选择，本地预览已显示；正在后台校验原图。`;
+  elements.assetPreviewList.innerHTML = groups.map((images, index) => `
+    <article class="asset-row-card intake-preview-card" aria-busy="true">
+      <div class="asset-source">
+        <div class="preview-images ${images.length === 1 ? "single" : ""}">
+          ${images.map((image) => image.previewable
+            ? `<span class="thumb-button intake-preview-thumb"><img class="thumb" src="${escapeHtml(image.previewUrl)}" alt="${escapeHtml(image.name)}" decoding="async"></span>`
+            : `<span class="thumb-button intake-preview-thumb intake-preview-unavailable"><strong>正在转换</strong><small>${escapeHtml(image.name)}</small></span>`).join("")}
+        </div>
+        <div class="preview-meta">
+          <h3>卡片 ${index + 1}</h3>
+          <span>${assetCountLabel(images.length)}</span>
+        </div>
+      </div>
+      <div class="title-output title-output-pending is-working">
+        <div class="pending-state pending-active" role="status" aria-live="polite">
+          <span class="loading-spinner" aria-hidden="true"></span>
+          <strong>本地图片已读取</strong>
+          <p>正在校验原图；完成后自动上传并进入识别准备。</p>
+          <span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        </div>
+      </div>
+    </article>
+  `).join("");
 }
 
 function stringByteLength(value) {
@@ -2435,6 +2497,7 @@ export const __listingCopilotAppTestHooks = {
   imagesForProvider,
   queueSubmissionConcurrencyLimit,
   recognitionClockFromServerPayload,
+  retryStateForResult,
   speculativeNeedsFreshEnqueue,
   shouldUseStorageFirstImage,
   storageDimensionsForImage,
@@ -2484,8 +2547,11 @@ function writerModeActive() {
 function workspaceInteractionLocked() {
   return state.writerSaveInFlight
     || state.exportingWorkbook
-    || state.preparingFiles
-    || state.priorityRetryInFlight;
+    || state.preparingFiles;
+}
+
+function destructiveWorkspaceInteractionLocked() {
+  return workspaceInteractionLocked() || state.priorityRetryInFlight > 0;
 }
 
 function writerSavedAssets() {
@@ -2651,7 +2717,7 @@ function runWorkbenchViewTransition({ kind, enabled = true, prepareSharedElement
 
 function updateWorkspaceModeUi() {
   const interactionLocked = workspaceInteractionLocked();
-  const destructiveInteractionLocked = interactionLocked || state.processing;
+  const destructiveInteractionLocked = destructiveWorkspaceInteractionLocked() || state.processing;
   elements.workspace?.setAttribute("data-workspace-mode", state.workspaceMode);
   elements.workspace?.setAttribute("data-batch-state", state.assets.length ? "ready" : "empty");
   elements.workspaceModeButtons.forEach((button) => {
@@ -3410,10 +3476,40 @@ function resultBox(result, asset = null) {
   return TitleCardComponent(result, asset);
 }
 
+function retryStateForResult(result = {}) {
+  const assistedStatus = v4AssistedStatus(result);
+  const jobStatus = String(result.v4_job_status || "").toUpperCase();
+  const titleStage = String(result.title_stage || "").toUpperCase();
+  const confidence = normalizeConfidence(result.confidence);
+  const hasVisibleTitle = Boolean(finalTitleForResult(result));
+  const terminalFailure = confidence === "FAILED"
+    || ["FAILED", "TIMEOUT"].includes(assistedStatus)
+    || ["FAILED", "CANCELLED"].includes(jobStatus)
+    || titleStage === "FAILED"
+    || result.v4StatusOrphaned === true;
+  const terminalWithoutTitle = !hasVisibleTitle
+    && !v4WriterTitlePending(result)
+    && (
+      terminalFailure
+      || assistedStatus === "REVIEW_REQUIRED"
+      || result.writerReviewRequired === true
+      || (Array.isArray(result.unresolved) && result.unresolved.includes("request"))
+    );
+  const retryable = terminalFailure || terminalWithoutTitle;
+  const submitting = result.queueRetryStatus === "submitting";
+  const persistenceLocked = result.feedbackStatus === "saving" || writerFeedbackPersisted(result);
+  return {
+    retryable,
+    submitting,
+    disabled: !retryable || submitting || persistenceLocked,
+    terminal_failure: terminalFailure,
+    terminal_without_title: terminalWithoutTitle
+  };
+}
+
 function TitleCardComponent(result, asset = null) {
   const confidence = normalizeConfidence(result.confidence);
   const queueFailureLines = queueFailureDisplayLines(result.reason || "");
-  const failed = confidence === "FAILED";
   const titlePending = v4WriterTitlePending(result);
   const unresolved = Array.isArray(result.unresolved) ? result.unresolved : [];
   const generatedTitle = result.generatedTitle || result.final_title || result.title || "";
@@ -3421,16 +3517,14 @@ function TitleCardComponent(result, asset = null) {
   const writerReviewWithoutDraft = result.writerReviewRequired === true && !String(correctedTitle || "").trim();
   const copyDisabled = titlePending || !correctedTitle;
   const feedbackCommitted = writerFeedbackPersisted(result);
-  const retrySubmitting = result.queueRetryStatus === "submitting";
+  const retryState = retryStateForResult(result);
+  const failed = confidence === "FAILED" || retryState.terminal_failure;
+  const displayConfidence = failed ? "FAILED" : confidence;
+  const retrySubmitting = retryState.submitting;
   const interactionLocked = workspaceInteractionLocked();
   const saveDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving" || feedbackCommitted;
   const editorDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving";
-  const retryableFailure = failed
-    || ["FAILED", "TIMEOUT"].includes(v4AssistedStatus(result))
-    || ["FAILED", "CANCELLED"].includes(String(result.v4_job_status || "").toUpperCase());
-  const canPriorityRetry = retryableFailure
-    && !titlePending
-    && (!interactionLocked || retrySubmitting);
+  const canPriorityRetry = retryState.retryable;
   const titleEdited = String(correctedTitle || "").trim() && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
     saved: "已保存",
@@ -3457,12 +3551,12 @@ function TitleCardComponent(result, asset = null) {
   const omissionNotice = writerTitleOmissionNotice(result);
 
   return `
-    <div class="title-output ${confidenceClass(confidence)}">
+    <div class="title-output ${confidenceClass(displayConfidence)}">
       <div class="title-output-head">
-        <span class="confidence-badge ${confidenceClass(confidence)}">${escapeHtml(statusLabel)}</span>
+        <span class="confidence-badge ${confidenceClass(displayConfidence)}">${escapeHtml(statusLabel)}</span>
         <div class="title-actions">
           ${generationTimingBadge(result.index)}
-          ${canPriorityRetry ? `<button class="copy-button retry-priority-button" type="button" data-priority-retry="${result.index}" ${retrySubmitting ? "disabled" : ""}>${retrySubmitting ? "正在重排…" : "优先重试"}</button>` : ""}
+          ${canPriorityRetry ? `<button class="copy-button retry-priority-button" type="button" data-priority-retry="${result.index}" ${retryState.disabled ? "disabled" : ""}>${retrySubmitting ? "正在重排…" : "优先重试"}</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
@@ -3739,14 +3833,16 @@ function writerTitleOmissionNotice(result = {}) {
 }
 
 async function handleFiles(fileList, { animateIntake = false } = {}) {
-  if (workspaceInteractionLocked() || state.processing) {
+  if (destructiveWorkspaceInteractionLocked() || state.processing) {
     setStatus(state.processing
       ? "当前批次正在识别，请等待完成后再更换图片。"
       : state.exportingWorkbook
         ? "Excel 正在生成，请等待导出完成后再更换图片。"
         : state.preparingFiles
           ? "图片正在准备，请等待当前选择完成。"
-          : "当前卡片正在入库，请等待保存完成后再更换图片。", { busy: true });
+          : state.priorityRetryInFlight
+            ? "优先重试正在提交，请等待完成后再更换图片。"
+            : "当前卡片正在入库，请等待保存完成后再更换图片。", { busy: true });
     return;
   }
 
@@ -3757,16 +3853,19 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
   const batchWasEmpty = state.assets.length === 0;
   const lifecycleGeneration = ++state.assetLifecycleGeneration;
   const filePreparationRunId = state.filePreparationRunId + 1;
+  const intakePreviewRecords = createIntakePreviewRecords(imageFiles);
   let initialWriterForwardReady = null;
   state.filePreparationRunId = filePreparationRunId;
   state.preparingFiles = true;
-  renderResults({ forceWriterRender: true });
+  releaseIntakePreviewRecords();
+  state.intakePreviewRecords = intakePreviewRecords;
+  renderInstantIntakePreviews(intakePreviewRecords);
 
   try {
     state.backgroundPreparationRunId += 1;
     state.backgroundRecognitionBatchId = "";
     stopAllV4AssistedDraftPolling();
-    setStatus("正在读取本地图片；原图就绪后会自动开始内部识别…", { busy: true });
+    setStatus("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…", { busy: true });
     closeImageModal();
     const failures = [];
     const prepareStartedAt = performance.now();
@@ -3788,6 +3887,7 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
       || state.filePreparationRunId !== filePreparationRunId
     ) {
       releaseImagePreviewUrls(settledImages);
+      releaseIntakePreviewRecords(intakePreviewRecords);
       return;
     }
     const ignoredFiles = candidates
@@ -3826,6 +3926,7 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
       kind: "intake",
       enabled: animateIntake && batchWasEmpty && images.length > 0,
       update: () => {
+        releaseIntakePreviewRecords(intakePreviewRecords);
         renderPreviews();
         renderResults();
       }
@@ -3839,6 +3940,10 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
       lifecycleGeneration === state.assetLifecycleGeneration
       && state.filePreparationRunId === filePreparationRunId
     ) {
+      if (state.intakePreviewRecords === intakePreviewRecords) {
+        releaseIntakePreviewRecords(intakePreviewRecords);
+        renderPreviews();
+      }
       state.preparingFiles = false;
       renderResults({ forceWriterRender: true });
       if (initialWriterForwardReady) {
@@ -3872,6 +3977,30 @@ async function processAssetViaQueue(asset, options = {}) {
   const uploadMs = Math.round(performance.now() - uploadStartedAt);
   setAssetProgress(asset.index, uploaded ? "原图已上传云端" : "复用已上传原图", 0.2);
 
+  let queuePreingestionRetry = {
+    attempted: false,
+    recovered: Boolean(asset.preingestionBundleId),
+    elapsed_ms: 0,
+    error: ""
+  };
+  if (
+    !asset.preingestionBundleId
+    && (options.repairPreingestion === true || backgroundPrepareResult?.ok === false)
+  ) {
+    const preingestionRetryStartedAt = performance.now();
+    queuePreingestionRetry.attempted = true;
+    setAssetProgress(asset.index, "重新建立图片证据", 0.24);
+    try {
+      await ensurePreingestionBundle(asset);
+      queuePreingestionRetry.recovered = Boolean(asset.preingestionBundleId);
+    } catch (error) {
+      // The verified originals remain sufficient for the GPT lane. OCR and
+      // catalog pre-ingestion are recovery sidecars, not a second availability gate.
+      queuePreingestionRetry.error = String(error?.message || "preingestion_retry_failed").slice(0, 160);
+    }
+    queuePreingestionRetry.elapsed_ms = Math.round(performance.now() - preingestionRetryStartedAt);
+  }
+
   const fastScoutPrewarm = asset.fastScoutPrewarmResult || {
     used: Boolean(asset.fastScoutPrewarmStatus),
     wait_ms: 0,
@@ -3884,6 +4013,10 @@ async function processAssetViaQueue(asset, options = {}) {
     client_background_prepare_wait_ms: Math.round(Number(backgroundPrepareResult.wait_ms || 0)),
     client_background_prepare_ms: Math.round(Number(asset.backgroundPrepareMs || 0)),
     client_preingestion_bundle_reused: Boolean(asset.preingestionBundleId),
+    client_preingestion_retry_attempted: queuePreingestionRetry.attempted,
+    client_preingestion_retry_recovered: queuePreingestionRetry.recovered,
+    client_preingestion_retry_ms: queuePreingestionRetry.elapsed_ms,
+    client_preingestion_retry_error: queuePreingestionRetry.error,
     client_derived_upload_status: asset.derivedStorageUploadStatus || "not_started",
     client_derived_upload_failure_count: Math.max(0, Number(asset.derivedStorageUploadFailureCount || 0)),
     client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
@@ -4137,12 +4270,28 @@ async function processTitles() {
   });
 }
 
+function resetAssetPreparationForRetry(asset = {}) {
+  asset.speculativePromise = null;
+  asset.speculativeRunId = null;
+  asset.backgroundPrepareError = "";
+  if (!asset.preingestionBundleId) {
+    asset.backgroundPreparationPromise = null;
+    asset.backgroundPrepareStatus = "queued";
+  }
+
+  const assetId = String(asset.durableAssetId || "").trim();
+  const tenantId = String(asset.durableTenantId || "").trim();
+  const originalsVerified = Boolean(assetId && tenantId)
+    && (asset.images || []).every((image) => imageHasVerifiedStorageReference(image, assetId, tenantId));
+  if (!originalsVerified) asset.originalStorageUploadPromise = null;
+}
+
 async function retryFailedAssetInPriorityQueue(button) {
-  if (workspaceInteractionLocked()) return;
   const assetIndex = Number(button.dataset.priorityRetry);
   const asset = state.assets.find((item) => item.index === assetIndex);
   const current = state.results.find((item) => item.index === assetIndex);
-  if (!asset || !current || current.queueRetryStatus === "submitting") return;
+  const retryState = retryStateForResult(current || {});
+  if (!asset || !current || retryState.disabled) return;
   const lifecycleGeneration = state.assetLifecycleGeneration;
   const retryOfJobId = String(current.v4_job_id || current.job_id || "").trim();
   const retryOfJobStatus = String(current.v4_job_status || "").trim().toUpperCase();
@@ -4155,7 +4304,7 @@ async function retryFailedAssetInPriorityQueue(button) {
     && current.v4StatusOrphaned !== true;
 
   const writerEditedTitle = String(current.correctedTitle || "").trim();
-  state.priorityRetryInFlight = true;
+  state.priorityRetryInFlight += 1;
   current.queueRetryStatus = "submitting";
   current.feedbackMessage = "正在提交优先重试…";
   setStatus(`卡片 ${asset.index} 正在插入优先队列…`, { busy: true });
@@ -4166,10 +4315,12 @@ async function retryFailedAssetInPriorityQueue(button) {
 
   try {
     stopV4AssistedDraftPolling(asset.index);
+    resetAssetPreparationForRetry(asset);
     const result = await processAssetViaQueue(asset, {
       batchId: createClientBatchId(),
       priority: 0,
       skipSpeculative: true,
+      repairPreingestion: true,
       // A durable failed job must be authorized against its old id. A client
       // preparation failure has no old job, so it creates a fresh priority-zero
       // job instead of becoming permanently un-retryable.
@@ -4201,7 +4352,7 @@ async function retryFailedAssetInPriorityQueue(button) {
     current.feedbackMessage = `优先重试提交失败：${error.message || "请再次重试"}`;
     setStatus(`卡片 ${asset.index} 优先重试提交失败。`);
   } finally {
-    state.priorityRetryInFlight = false;
+    state.priorityRetryInFlight = Math.max(0, state.priorityRetryInFlight - 1);
     renderResults({ forceWriterRender: true });
   }
 }
@@ -4282,10 +4433,18 @@ function v4PayloadWriterTitlePending(payload = {}) {
 
 function v4WriterTitlePending(result = {}) {
   if (!isV4Result(result)) return false;
+  const assistedStatus = v4AssistedStatus(result);
+  const jobStatus = String(result.v4_job_status || "").toUpperCase();
+  const titleStage = String(result.title_stage || "").toUpperCase();
+  if (
+    ["FAILED", "TIMEOUT", "REVIEW_REQUIRED"].includes(assistedStatus)
+    || ["FAILED", "CANCELLED"].includes(jobStatus)
+    || titleStage === "FAILED"
+    || result.v4StatusOrphaned === true
+  ) return false;
   if (result.title_stage === "L1_INTERNAL_SCOUT") return true;
-  const status = v4AssistedStatus(result);
   const hasVisibleTitle = String(result.correctedTitle || result.generatedTitle || result.final_title || result.title || "").trim();
-  return !hasVisibleTitle && (status === "PENDING" || status === "RUNNING");
+  return !hasVisibleTitle && (assistedStatus === "PENDING" || assistedStatus === "RUNNING");
 }
 
 function v4AssistedStatus(result = {}) {
@@ -5256,7 +5415,7 @@ function resetTool() {
     setStatus("当前批次正在识别，请等待完成后再清空。", { busy: true });
     return;
   }
-  if (workspaceInteractionLocked()) {
+  if (destructiveWorkspaceInteractionLocked()) {
     setStatus(state.exportingWorkbook
       ? "Excel 正在生成，请等待导出完成后再清空。"
       : state.preparingFiles
@@ -5278,6 +5437,7 @@ function resetTool() {
   state.backgroundPreparationRunId += 1;
   state.backgroundRecognitionBatchId = "";
   stopAllV4AssistedDraftPolling();
+  releaseIntakePreviewRecords();
   releaseImagePreviewUrls(state.files);
   state.files = [];
   state.assets = [];
@@ -5296,7 +5456,7 @@ function resetTool() {
   state.writerReviewComplete = false;
   state.writerCompletionFocusPending = false;
   state.writerCompositionActive = false;
-  state.priorityRetryInFlight = false;
+  state.priorityRetryInFlight = 0;
   setExportWorkbookStatus("");
   stopProgressTicker();
   state.completedAssetCount = 0;
@@ -5337,7 +5497,7 @@ function bindEvents() {
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
     input.addEventListener("change", () => {
-      if (workspaceInteractionLocked() || state.processing) return;
+      if (destructiveWorkspaceInteractionLocked() || state.processing) return;
       state.assetLifecycleGeneration += 1;
       state.backgroundPreparationRunId += 1;
       state.backgroundRecognitionBatchId = "";
