@@ -155,10 +155,43 @@ export function queueJobsRequireRetryPermission(jobs = []) {
   return (Array.isArray(jobs) ? jobs : []).some((job) => freshManualRetryIntent(job).requested);
 }
 
+export function queueJobsRequireCreatePermission(jobs = []) {
+  const source = Array.isArray(jobs) ? jobs : [];
+  return source.length === 0 || source.some((job) => !freshManualRetryIntent(job).requested);
+}
+
+export function createQueueRequestBatchId({
+  clientBatchToken = "",
+  jobs = [],
+  tenantId = "",
+  operatorId = ""
+} = {}) {
+  const token = String(clientBatchToken || "").trim();
+  if (!token) return createV4BatchId("v4batch");
+
+  // The browser streams each ready card independently so later cards do not
+  // wait for the slowest upload. Scope the deterministic batch identity to the
+  // assets in this request: retries remain idempotent, while concurrent cards
+  // sharing one client batch token cannot race on a single immutable DB row.
+  const assetIds = [...new Set((Array.isArray(jobs) ? jobs : [])
+    .map((job) => String(job?.asset_id || job?.assetId || job?.payload?.asset_id || job?.payload?.assetId || "").trim())
+    .filter(Boolean))]
+    .sort();
+  const requestIdentity = assetIds.length
+    ? `${token}\u001e${assetIds.join("\u001f")}`
+    : token;
+  return createV4DeterministicBatchId({
+    tenantId,
+    operatorId,
+    idempotencyKey: requestIdentity
+  }) || createV4BatchId("v4batch");
+}
+
 export async function authorizeFreshManualRetryJobs({
   jobs = [],
   tenantId,
   operatorId,
+  permissionContext = null,
   env = process.env,
   fetchImpl = globalThis.fetch,
   readRows = readV4Rows
@@ -185,7 +218,7 @@ export async function authorizeFreshManualRetryJobs({
   const quotedIds = jobIds.map((id) => `"${id.replaceAll('"', '\\"')}"`).join(",");
   const existing = await readRows({
     table: "v4_recognition_jobs",
-    select: "id,tenant_id,operator_id,asset_id,status",
+    select: "id,tenant_id,operator_id,assigned_to_user_id,asset_id,status",
     search: {
       tenant_id: `eq.${tenantId}`,
       id: `in.(${quotedIds})`,
@@ -215,6 +248,13 @@ export async function authorizeFreshManualRetryJobs({
       || !retryableStatuses.has(String(row.status || "").toUpperCase())
     ) {
       throw new QueueSchedulingIntentError("manual_retry_reference_not_retryable", { statusCode: 409 });
+    }
+    try {
+      requirePermission(permissionContext, TENANT_PERMISSIONS.RETRY_JOB, {
+        assignedUserId: String(row.assigned_to_user_id || row.operator_id || "").trim()
+      });
+    } catch {
+      throw new QueueSchedulingIntentError("manual_retry_permission_denied", { statusCode: 403 });
     }
     claimByIndex.set(claim.index, { ...claim, originalOperatorId });
   }
@@ -473,7 +513,6 @@ export default async function handler(req, res) {
   try {
     context = await requireTenantAccess(req);
     bindProductionRequestContext(res, context);
-    requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
   } catch (error) {
     sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
@@ -518,16 +557,9 @@ export default async function handler(req, res) {
     }));
     return;
   }
-  const batchId = createV4DeterministicBatchId({
-    tenantId,
-    operatorId,
-    idempotencyKey: clientBatchToken
-  }) || createV4BatchId("v4batch");
   const rawJobs = jobsFromPayload(payload);
   try {
-    if (queueJobsRequireRetryPermission(rawJobs)) {
-      requirePermission(context, TENANT_PERMISSIONS.RETRY_JOB);
-    }
+    if (queueJobsRequireCreatePermission(rawJobs)) requirePermission(context, TENANT_PERMISSIONS.CREATE_JOB);
   } catch (error) {
     sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
     return;
@@ -557,6 +589,7 @@ export default async function handler(req, res) {
       jobs: canonicalJobs,
       tenantId,
       operatorId,
+      permissionContext: context,
       env: process.env,
       fetchImpl: globalThis.fetch
     });
@@ -584,6 +617,12 @@ export default async function handler(req, res) {
     }));
     return;
   }
+  const batchId = createQueueRequestBatchId({
+    clientBatchToken,
+    jobs: sourceJobs,
+    tenantId,
+    operatorId
+  });
   const requestPriority = positiveInteger(payload.priority, 100, { min: 0, max: 10_000 });
   const stageJobs = expandV4RecognitionStageJobs({
     jobs: sourceJobs,
@@ -636,6 +675,7 @@ export default async function handler(req, res) {
       : null,
     internal_error_code: queueSchemaDependencyMissing ? "QUEUE_RPC_NOT_READY" : null,
     batch_id: result.batchId,
+    client_batch_token: clientBatchToken || null,
     tenant_id: tenantId,
     accepted_count: acceptedCount,
     queued_count: result.queued_count,

@@ -144,6 +144,7 @@ for (const permission of allPermissions) {
 
 const writerAssigned = new Set([
   TENANT_PERMISSIONS.VIEW_ASSIGNED_TASK,
+  TENANT_PERMISSIONS.RETRY_JOB,
   TENANT_PERMISSIONS.EDIT_TITLE,
   TENANT_PERMISSIONS.SUBMIT_FEEDBACK
 ]);
@@ -159,6 +160,7 @@ for (const permission of allPermissions) {
   );
 }
 assert.equal(permissionScopeFor(TENANT_ROLES.WRITER, TENANT_PERMISSIONS.EDIT_TITLE), PERMISSION_SCOPES.ASSIGNED);
+assert.equal(permissionScopeFor(TENANT_ROLES.WRITER, TENANT_PERMISSIONS.RETRY_JOB), PERMISSION_SCOPES.ASSIGNED);
 assert.equal(hasTenantPermission(
   { role: TENANT_ROLES.WRITER, userId: "writer" },
   TENANT_PERMISSIONS.EDIT_TITLE,
@@ -385,6 +387,18 @@ await expectCode(() => requireTenantAccess(tenantRequest(), {
 await expectCode(() => requireTenantAccess(tenantRequest(), {
   permission: TENANT_PERMISSIONS.CREATE_JOB,
   assignedUserId: "user_a",
+  env: serviceEnv,
+  fetchImpl: writerFetch
+}), "ACCESS_DENIED");
+await requireTenantAccess(tenantRequest(), {
+  permission: TENANT_PERMISSIONS.RETRY_JOB,
+  assignedUserId: "user_a",
+  env: serviceEnv,
+  fetchImpl: writerFetch
+});
+await expectCode(() => requireTenantAccess(tenantRequest(), {
+  permission: TENANT_PERMISSIONS.RETRY_JOB,
+  assignedUserId: "user_b",
   env: serviceEnv,
   fetchImpl: writerFetch
 }), "ACCESS_DENIED");

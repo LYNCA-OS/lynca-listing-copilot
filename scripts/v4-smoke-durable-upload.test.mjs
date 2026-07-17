@@ -95,13 +95,13 @@ assert.equal(
   "v4batch_canonical",
   "failed enqueue rows must not split a valid canonical polling identity"
 );
-assert.throws(
-  () => canonicalBatchIdForPoll([
+assert.equal(
+  canonicalBatchIdForPoll([
     { batch_id: "v4batch_a", job: { job_id: "v4job_a" } },
     { batch_id: "v4batch_b", job: { job_id: "v4job_b" } }
   ]),
-  /smoke_batch_identity_split/,
-  "a split canonical batch must fail closed instead of silently losing jobs"
+  null,
+  "split streaming batches must switch the smoke harness to job-id polling"
 );
 
 try {

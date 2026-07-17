@@ -29,6 +29,8 @@ import {
 } from "../api/v4/listing-job-worker.js";
 import {
   authorizeFreshManualRetryJobs,
+  createQueueRequestBatchId,
+  queueJobsRequireCreatePermission,
   queueJobsRequireRetryPermission
 } from "../api/v4/listing-job-enqueue.js";
 import { isV4CronRequest, isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
@@ -141,9 +143,32 @@ assert.equal(
   false,
   "ordinary creates must not be reclassified as retries"
 );
+assert.equal(queueJobsRequireCreatePermission([{ asset_id: freshRetryAssetId, payload: {} }]), true);
+assert.equal(queueJobsRequireCreatePermission([{ asset_id: freshRetryAssetId, retry_of_job_id: "v4job_failed_prior" }]), false);
+const streamedBatchA = createQueueRequestBatchId({
+  clientBatchToken: "client-batch",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId }]
+});
+const streamedBatchARepeat = createQueueRequestBatchId({
+  clientBatchToken: "client-batch",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId }]
+});
+const streamedBatchB = createQueueRequestBatchId({
+  clientBatchToken: "client-batch",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: "asset_22222222-2222-4222-8222-222222222222" }]
+});
+assert.equal(streamedBatchA, streamedBatchARepeat, "the same streamed card must keep an idempotent batch id");
+assert.notEqual(streamedBatchA, streamedBatchB, "different streamed cards must not contend for one immutable batch row");
 await assert.rejects(() => authorizeFreshManualRetryJobs({
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
+  permissionContext: { role: "MANAGER", userId: "operator-stage" },
   jobs: [{ asset_id: freshRetryAssetId, manual_retry: true, payload: {} }],
   readRows: async () => ({ ok: true, rows: [] })
 }), /manual_retry_reference_required/, "a browser boolean alone must never authorize interactive priority");
@@ -151,6 +176,7 @@ await assert.rejects(() => authorizeFreshManualRetryJobs({
 const authorizedManualRetryJobs = await authorizeFreshManualRetryJobs({
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
+  permissionContext: { role: "MANAGER", userId: "operator-stage" },
   jobs: [{
     asset_id: freshRetryAssetId,
     priority: 0,
@@ -172,6 +198,7 @@ const authorizedManualRetryJobs = await authorizeFreshManualRetryJobs({
         id: "v4job_failed_prior",
         tenant_id: "tenant-stage",
         operator_id: "operator-original",
+        assigned_to_user_id: "operator-original",
         asset_id: freshRetryAssetId,
         status: "FAILED"
       }]
@@ -199,6 +226,7 @@ assert.equal(freshManualRetryJobs[0].queue_tags.manual_retry_original_operator_i
 await assert.rejects(() => authorizeFreshManualRetryJobs({
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
+  permissionContext: { role: "MANAGER", userId: "operator-stage" },
   jobs: authorizedManualRetryJobs.map(({ trusted_manual_retry: _trusted, ...job }) => ({ ...job, manual_retry: true })),
   readRows: async () => ({
     ok: true,
@@ -215,6 +243,7 @@ await assert.rejects(() => authorizeFreshManualRetryJobs({
 await assert.rejects(() => authorizeFreshManualRetryJobs({
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
+  permissionContext: { role: "MANAGER", userId: "operator-stage" },
   jobs: authorizedManualRetryJobs.map(({ trusted_manual_retry: _trusted, ...job }) => ({ ...job, manual_retry: true })),
   readRows: async () => ({
     ok: true,
@@ -231,6 +260,7 @@ await assert.rejects(() => authorizeFreshManualRetryJobs({
 await assert.rejects(() => authorizeFreshManualRetryJobs({
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
+  permissionContext: { role: "MANAGER", userId: "operator-stage" },
   jobs: authorizedManualRetryJobs.map(({ trusted_manual_retry: _trusted, ...job }) => ({ ...job, manual_retry: true })),
   readRows: async () => ({
     ok: true,
@@ -243,6 +273,52 @@ await assert.rejects(() => authorizeFreshManualRetryJobs({
     }]
   })
 }), /manual_retry_reference_not_retryable/, "an active job must never be promoted as a fresh priority retry");
+
+const writerAuthorizedRetry = await authorizeFreshManualRetryJobs({
+  tenantId: "tenant-stage",
+  operatorId: "writer-stage",
+  permissionContext: { role: "WRITER", userId: "writer-stage" },
+  jobs: [{
+    asset_id: freshRetryAssetId,
+    manual_retry: true,
+    retry_of_job_id: "v4job_writer_failed",
+    payload: { manual_retry: true, retry_of_job_id: "v4job_writer_failed" }
+  }],
+  readRows: async () => ({
+    ok: true,
+    rows: [{
+      id: "v4job_writer_failed",
+      tenant_id: "tenant-stage",
+      operator_id: "operator-original",
+      assigned_to_user_id: "writer-stage",
+      asset_id: freshRetryAssetId,
+      status: "FAILED"
+    }]
+  })
+});
+assert.equal(writerAuthorizedRetry[0].trusted_manual_retry, true, "a writer may retry their assigned failed card");
+await assert.rejects(() => authorizeFreshManualRetryJobs({
+  tenantId: "tenant-stage",
+  operatorId: "writer-other",
+  permissionContext: { role: "WRITER", userId: "writer-other" },
+  jobs: [{
+    asset_id: freshRetryAssetId,
+    manual_retry: true,
+    retry_of_job_id: "v4job_writer_failed",
+    payload: { manual_retry: true, retry_of_job_id: "v4job_writer_failed" }
+  }],
+  readRows: async () => ({
+    ok: true,
+    rows: [{
+      id: "v4job_writer_failed",
+      tenant_id: "tenant-stage",
+      operator_id: "operator-original",
+      assigned_to_user_id: "writer-stage",
+      asset_id: freshRetryAssetId,
+      status: "FAILED"
+    }]
+  })
+}), /manual_retry_permission_denied/, "a writer must not retry another writer's failed card");
 
 process.env.V4_QUEUE_DEFAULT_CREATE_L1 = "true";
 const envDefaultL2Jobs = expandV4RecognitionStageJobs({

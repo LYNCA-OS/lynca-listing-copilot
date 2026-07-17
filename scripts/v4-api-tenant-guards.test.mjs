@@ -29,8 +29,8 @@ for (const [path, source] of Object.entries(sources)) {
 }
 
 const enqueueSource = sources["api/v4/listing-job-enqueue.js"];
-assert.match(enqueueSource, /requirePermission\(context, TENANT_PERMISSIONS\.CREATE_JOB\)/);
-assert.match(enqueueSource, /queueJobsRequireRetryPermission\(rawJobs\)[\s\S]*requirePermission\(context, TENANT_PERMISSIONS\.RETRY_JOB\)/);
+assert.match(enqueueSource, /queueJobsRequireCreatePermission\(rawJobs\)[\s\S]*requirePermission\(context, TENANT_PERMISSIONS\.CREATE_JOB\)/);
+assert.match(enqueueSource, /permissionContext: context/);
 assert.match(enqueueSource, /tenantId = context\.tenantId/);
 assert.match(enqueueSource, /operatorId = context\.userId/);
 assert.match(enqueueSource, /function withoutClientSessionIdentity\(job = \{\}\)/);

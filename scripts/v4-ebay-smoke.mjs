@@ -2374,9 +2374,10 @@ export function canonicalBatchIdForPoll(prepared = [], fallbackBatchId = "") {
     .filter((row) => Boolean(row?.job?.job_id))
     .map((row) => cleanText(row?.batch_id))
     .filter(Boolean))];
-  if (canonicalIds.length > 1) {
-    throw new Error(`smoke_batch_identity_split:${canonicalIds.join(",")}`);
-  }
+  // Streaming enqueue intentionally creates one deterministic server batch per
+  // asset. A shared batch id is only available when the server received all
+  // cards atomically; otherwise the status endpoint is queried by job ids.
+  if (canonicalIds.length > 1) return null;
   return canonicalIds[0] || cleanText(fallbackBatchId);
 }
 
@@ -2405,7 +2406,9 @@ async function pollBatchJobs({
     try {
       last = await getJson({
         baseUrl,
-        path: `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`,
+        path: batchId
+          ? `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`
+          : `/api/v4/listing-job-status?job_ids=${encodeURIComponent([...expected].join(","))}&limit=200`,
         cookie,
         requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
       });
