@@ -116,6 +116,7 @@ assert.equal(response.statusCode, 200);
 assert.equal(response.body.default_provider, "openai_legacy");
 assert.equal(response.body.fallback_available, false);
 assert.equal(response.body.storage.configured, true);
+assert.equal(response.body.storage.bucket, "listing-card-images");
 assert.equal(response.body.storage.max_upload_bytes, 25 * 1024 * 1024);
 assert.equal(response.body.storage.max_image_dimension_pixels, 12000);
 assert.equal(response.body.storage.max_image_total_pixels, 50000000);
