@@ -11,7 +11,8 @@ const migrationPaths = [
   "supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql",
   "supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql",
   "supabase/migrations/20260713130000_v4_stage_capacity_control.sql",
-  "supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql"
+  "supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql",
+  "supabase/migrations/20260715065830_track_d_data_flywheel_convergence.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `
@@ -158,6 +159,18 @@ async function verify(client) {
           and p.proname = 'claim_v4_recognition_jobs'
           and p.pronargs = 5
       ) as claim_rpc
+      ,
+      exists (
+        select 1
+        from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'enqueue_v4_recognition_batch_atomic'
+          and p.pronargs = 5
+          and p.prorettype = 'jsonb'::regtype
+          and pg_catalog.pg_get_function_identity_arguments(p.oid) =
+            'p_tenant_id text, p_operator_id text, p_batch jsonb, p_sessions jsonb, p_jobs jsonb'
+      ) as enqueue_atomic_rpc
       ,
       exists (
         select 1
@@ -413,6 +426,7 @@ export default async function handler(req, res) {
       && verification.stage_capacity_acquire_rpc
       && verification.stage_capacity_release_rpc
       && verification.tenant_fair_scheduler
+      && verification.enqueue_atomic_rpc
       && behavior.claim_ok
       && behavior.balanced_key_assignment_ok
       && behavior.tenant_fair_claim_ok

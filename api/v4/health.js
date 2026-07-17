@@ -10,6 +10,7 @@ import {
   v4JobLeaseHeartbeatEnabled,
   v4JobLeaseHeartbeatIntervalMs,
   v4QueueConfigured,
+  checkV4QueueRpcReady,
   v4WorkerClaimLimit,
   v4WorkerLeaseSeconds
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
@@ -28,13 +29,19 @@ export default async function handler(req, res) {
   const queueConfigured = v4QueueConfigured(process.env);
   const workerSecretConfigured = isV4WorkerSecretConfigured(process.env);
   const providerReady = provider.enabled === true && provider.configured === true;
-  const queueReady = queueConfigured && workerSecretConfigured;
+  const queueRpcReadyProbe = queueConfigured
+    ? await checkV4QueueRpcReady({ env: process.env, fetchImpl: globalThis.fetch })
+    : { ready: false, reason: "queue_not_configured" };
+  const queueRpcReady = queueRpcReadyProbe.ready === true;
+  const queueConfiguredAndWorkerReady = queueConfigured && workerSecretConfigured;
+  const queueReady = queueConfiguredAndWorkerReady && queueRpcReady;
   const queueLeaseSeconds = v4WorkerLeaseSeconds(process.env);
   const ready = allTablesOk && providerReady && queueReady;
   const notReadyReasons = [
     ...(!allTablesOk ? ["v4_tables_not_ready"] : []),
     ...(!providerReady ? ["vision_provider_not_ready"] : []),
-    ...(!queueReady ? ["production_queue_not_ready"] : [])
+    ...(!queueConfiguredAndWorkerReady ? ["production_queue_not_ready"] : []),
+    ...(!queueRpcReady ? ["queue_rpc_not_ready"] : [])
   ];
   sendJson(res, 200, withV4Version({
     ok: true,
@@ -65,6 +72,10 @@ export default async function handler(req, res) {
     production_queue: {
       configured: queueConfigured,
       worker_secret_configured: workerSecretConfigured,
+      queue_rpc_ready: queueRpcReady,
+      queue_rpc_error: queueRpcReady
+        ? null
+        : queueRpcReadyProbe?.error || queueRpcReadyProbe?.reason || null,
       worker_claim_limit: v4WorkerClaimLimit(process.env),
       lease_seconds: queueLeaseSeconds,
       lease_heartbeat_enabled: v4JobLeaseHeartbeatEnabled(process.env),
