@@ -77,6 +77,7 @@ assert.match(js, /async function saveWriterTitleAndAdvance/, "writer mode must a
 assert.match(js, /persisted = await saveFeedbackForResult\(result, asset\)/, "writer advance must await durable persistence");
 assert.match(js, /titleSnapshotByIndex/, "writer export must freeze persisted titles before asynchronous uploads");
 assert.match(js, /state\.priorityRetryInFlight/, "priority retry must participate in the workspace mutation lock");
+assert.match(js, /function updateCorrectedTitle[\s\S]*result\.persistenceStatus = "";/, "editing a persisted title must reopen its persistence contract");
 assert.match(css, /prefers-reduced-motion: reduce/, "writer transitions must respect reduced-motion preferences");
 assert.match(css, /:root\[data-lynca-theme="deep-purple"\]/, "the commercial theme system must include the default preset");
 assert.match(css, /\.writer-wheel/, "the commercial stylesheet must ship the writer wheel");

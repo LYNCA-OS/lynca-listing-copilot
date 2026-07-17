@@ -3918,12 +3918,22 @@ function updateCorrectedTitle(input) {
   const result = state.results.find((item) => item.index === Number(input.dataset.titleInput));
   if (!result) return;
 
+  const wasCommitted = writerFeedbackPersisted(result);
   result.correctedTitle = input.value;
   const renderedTitle = String(result.rendered_title || result.final_title || result.generatedTitle || result.title || "").trim();
   const correctedTitle = String(input.value || "").trim();
   result.title_override = correctedTitle && renderedTitle && correctedTitle !== renderedTitle ? correctedTitle : null;
+  result.explicitReviewOutcome = "";
   result.feedbackStatus = "";
+  result.persistenceStatus = "";
   result.feedbackMessage = "";
+  if (wasCommitted) {
+    const saveButton = input.closest(".title-output")?.querySelector("[data-save-title]");
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = "保存编辑";
+    }
+  }
   renderBatchTitles();
 }
 
