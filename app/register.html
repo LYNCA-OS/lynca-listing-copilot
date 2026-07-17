@@ -56,18 +56,18 @@
           <button class="primary-button" id="inviteButton" type="submit" aria-busy="false">生成邀请链接</button>
         </form>
         <section id="inviteLoginSection" hidden>
-          <p><a href="#" id="inviteLoginLink" class="primary-button" style="text-decoration: none;">立即登录并启用邀请权限</a></p>
+          <p><a href="#" id="inviteLoginLink" class="primary-button auth-link">立即登录并启用邀请权限</a></p>
         </section>
         <section id="inviteResultSection" hidden>
           <p><strong>邀请链接</strong></p>
           <p>
-            <input id="inviteUrl" readonly style="width: 100%; box-sizing: border-box;" aria-label="邀请链接">
+            <input id="inviteUrl" class="input-token" readonly aria-label="邀请链接">
           </p>
           <p>
             <button class="primary-button" id="copyInviteButton" type="button">复制链接</button>
           </p>
           <p>链接失效机制：到期后将自动失效，请按需重新发送以恢复访问权限，旧数据不会被删除。</p>
-          <p><a href="/login" class="primary-button" style="text-decoration: none;">回到登录</a></p>
+          <p><a href="/login" class="primary-button auth-link">回到登录</a></p>
         </section>
         <section id="inviteStatusSection" hidden>
           <p><strong>邀请状态</strong></p>
