@@ -82,6 +82,23 @@ assert.match(workflow, /test "\$DEFAULT_BRANCH" = "main"/);
 assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
 assert.match(workflow, /git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main/);
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
+assert.equal(
+  [...workflow.matchAll(/node scripts\/check-track-c-production-schema-rest\.mjs/g)].length,
+  2,
+  "both predeploy and postdeploy schema gates must use the strict REST fallback when direct Postgres is unavailable"
+);
+assert.equal(
+  [...workflow.matchAll(/if test -n "\$POSTGRES_URL_NON_POOLING"/g)].length,
+  2,
+  "direct Postgres catalog verification must remain the preferred production gate"
+);
+assert.match(workflow, /SUPABASE_URL: \$\{\{ vars\.SUPABASE_URL \}\}/);
+assert.match(workflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
+assert.doesNotMatch(
+  workflow,
+  /echo[^\n]*(?:SUPABASE_SERVICE_ROLE_KEY|\$SUPABASE_SERVICE_ROLE_KEY)/,
+  "the release workflow must never print the service-role key"
+);
 assert.doesNotMatch(workflow, /\/api\/admin-apply-/, "code deploy must not invoke runtime migration routes");
 
 console.log("production release boundary tests passed");

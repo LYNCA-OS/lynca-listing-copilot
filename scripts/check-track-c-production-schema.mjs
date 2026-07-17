@@ -66,23 +66,26 @@ const requiredFunctions = Object.freeze([
   "acquire_v4_stage_capacity(text,text,text,integer,integer)",
   "release_v4_stage_capacity(text,text,text)",
   "persist_v4_writer_feedback_transaction(text,text,text,text,jsonb,jsonb)",
-  "enqueue_v4_recognition_batch_atomic(text,text,jsonb,jsonb,jsonb)",
+  "enqueue_v4_recognition_batch_atomic(jsonb,jsonb,text,jsonb,text)",
   "fence_v4_recognition_job_execution(text,text,integer)",
   "persist_v4_noncritical_artifacts(text,jsonb,jsonb,jsonb,jsonb)",
   "persist_v4_writer_ready_and_release_capacity(text,jsonb,text,text)",
   "track_c_ops_snapshot(text,timestamp with time zone)",
+  "track_c_production_schema_catalog_snapshot()",
   "fail_v4_recognition_job(text,text,jsonb,boolean,boolean)"
 ]);
 
 const forbiddenFunctions = Object.freeze([
-  "persist_v4_writer_feedback_transaction(text,text,text,jsonb,jsonb)"
+  "persist_v4_writer_feedback_transaction(text,text,text,jsonb,jsonb)",
+  "enqueue_v4_recognition_batch_atomic(text,text,jsonb,jsonb,jsonb)"
 ]);
 
 const serviceOnlyFunctions = Object.freeze([
   "heartbeat_v4_recognition_job(text,text,integer)",
   "persist_v4_writer_feedback_transaction(text,text,text,text,jsonb,jsonb)",
-  "enqueue_v4_recognition_batch_atomic(text,text,jsonb,jsonb,jsonb)",
-  "fence_v4_recognition_job_execution(text,text,integer)"
+  "enqueue_v4_recognition_batch_atomic(jsonb,jsonb,text,jsonb,text)",
+  "fence_v4_recognition_job_execution(text,text,integer)",
+  "track_c_production_schema_catalog_snapshot()"
 ]);
 
 const browserDeniedTables = requiredTables;
@@ -464,6 +467,98 @@ export const TRACK_C_SCHEMA_SECURITY_CONTRACT = Object.freeze({
   policies: expectedPolicyContracts,
   triggers: expectedTriggerContracts,
   constraints: expectedConstraintContracts
+});
+
+// Keep the Data API fallback on the same source-of-truth lists as the full
+// PostgreSQL catalog preflight. OpenAPI cannot expose every pg_catalog detail,
+// so the fallback additionally performs active, read-only PostgREST probes;
+// it must never silently drop a table or RPC when this contract evolves.
+export const TRACK_C_REST_SCHEMA_CONTRACT = Object.freeze({
+  catalogRequiredTables: requiredTables,
+  requiredTables: Object.freeze([
+    ...new Set([
+      ...requiredTables,
+      ...requiredIndexes.map(([table]) => table)
+    ])
+  ]),
+  tenantScopedTables,
+  requiredFunctions,
+  forbiddenFunctions,
+  serviceOnlyFactTables,
+  serviceOnlyFunctions,
+  requiredIndexes,
+  criticalColumns: Object.freeze([
+    ...tenantScopedTables.map((table) => Object.freeze({
+      table,
+      column: "tenant_id",
+      format: "text",
+      required: true,
+      default: null
+    })),
+    Object.freeze({ table: "tenants", column: "settings", format: "jsonb", required: true }),
+    ...[
+      ["canonical_state", "text"],
+      ["retry_count", "integer"],
+      ["last_error", "text"],
+      ["error_type", "text"],
+      ["next_retry_at", "timestamp with time zone"]
+    ].map(([column, format]) => Object.freeze({
+      table: "v4_recognition_jobs",
+      column,
+      format,
+      required: false
+    })),
+    Object.freeze({
+      table: "v4_recognition_jobs",
+      column: "max_attempts",
+      format: "integer",
+      required: true,
+      default: 4
+    }),
+    Object.freeze({
+      table: "preingestion_jobs",
+      column: "max_attempts",
+      format: "integer",
+      required: true,
+      default: 3
+    }),
+    Object.freeze({
+      table: "preingestion_jobs",
+      column: "lease_owner",
+      format: "text",
+      required: false
+    }),
+    Object.freeze({
+      table: "preingestion_jobs",
+      column: "lease_expires_at",
+      format: "timestamp with time zone",
+      required: false
+    }),
+    ...["v4_recognition_sessions", "v4_recognition_jobs"].flatMap((table) => (
+      ["created_by_user_id", "assigned_to_user_id"].map((column) => Object.freeze({
+        table,
+        column,
+        format: "text"
+      }))
+    ))
+  ]),
+  atomicEnqueueRpc: Object.freeze({
+    name: "enqueue_v4_recognition_batch_atomic",
+    properties: Object.freeze({
+      p_batch: "jsonb",
+      p_jobs: "jsonb",
+      p_operator_id: "text",
+      p_sessions: "jsonb",
+      p_tenant_id: "text"
+    }),
+    required: Object.freeze([
+      "p_batch",
+      "p_jobs",
+      "p_operator_id",
+      "p_sessions",
+      "p_tenant_id"
+    ])
+  })
 });
 
 function cleanText(value) {
@@ -1367,7 +1462,7 @@ export function evaluateTrackCSecurityCatalog(snapshot = {}) {
   };
 }
 
-function evaluateSchema(snapshot) {
+export function evaluateTrackCProductionSchemaSnapshot(snapshot) {
   const tableChecks = snapshot.tables.map((row) => ({
     table: row.table_name,
     ok: row.present === true && ["r", "p"].includes(row.relation_kind),
@@ -1600,7 +1695,7 @@ export async function checkTrackCProductionSchema({ connectionString, checkedAt 
     await client.query("set local lock_timeout = '2s'");
     await client.query("set local statement_timeout = '20s'");
     const snapshot = await readSchema(client);
-    const evaluation = evaluateSchema(snapshot);
+    const evaluation = evaluateTrackCProductionSchemaSnapshot(snapshot);
     await client.query("commit");
 
     const readOnly = snapshot.server?.transaction_read_only === "on";
