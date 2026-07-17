@@ -7,6 +7,10 @@ const source = await readFile(
   "supabase/migrations/20260717130819_track_c_schema_attestation_and_tenant_convergence.sql",
   "utf8"
 );
+const followUpSource = await readFile(
+  "supabase/migrations/20260717132242_fix_track_c_catalog_trigger_when_marker.sql",
+  "utf8"
+);
 
 assert.doesNotMatch(source, /\bdelete\s+from\b/i, "tenant convergence must never delete business rows");
 assert.match(source, /v4_sem_validation_tenant_backfill_requires_remediation/);
@@ -42,5 +46,15 @@ for (const section of [
   assert.match(source, new RegExp(`'${section}'`), `catalog attestation must return ${section}`);
 }
 assert.match(source, /notify pgrst, 'reload schema'/);
+assert.match(
+  source,
+  /pg_catalog\.pg_get_expr\(trigger\.tgqual, trigger\.tgrelid, true\) as when_expression/,
+  "the already-applied migration must remain immutable"
+);
+assert.match(followUpSource, /create or replace function public\.track_c_production_schema_catalog_snapshot\(\)/);
+assert.match(followUpSource, /case when trigger\.tgqual is null then null else 'present' end as when_expression/);
+assert.doesNotMatch(followUpSource, /pg_get_expr\(trigger\.tgqual, trigger\.tgrelid/);
+assert.match(followUpSource, /revoke all on function public\.track_c_production_schema_catalog_snapshot\(\)[\s\S]*grant execute[\s\S]*to service_role/);
+assert.match(followUpSource, /notify pgrst, 'reload schema'/);
 
 console.log("track-c schema attestation migration contract tests passed");

@@ -910,7 +910,7 @@ async function readSchema(client) {
         ), array[]::text[]) as update_columns,
         (trigger.tgtype & 1) <> 0 as row_level,
         trigger.tgenabled,
-        pg_catalog.pg_get_expr(trigger.tgqual, trigger.tgrelid, true) as when_expression,
+        case when trigger.tgqual is null then null else 'present' end as when_expression,
         pg_catalog.pg_get_triggerdef(trigger.oid, true) as trigger_definition
       from pg_catalog.pg_trigger trigger
       join pg_catalog.pg_class relation on relation.oid = trigger.tgrelid

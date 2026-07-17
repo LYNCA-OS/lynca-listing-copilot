@@ -337,6 +337,17 @@ const missingCompositeFkReport = await checkTrackCProductionSchemaRest({
 assert.equal(missingCompositeFkReport.ok, false);
 assert.ok(missingCompositeFkReport.checks.catalog_attestation.failed_check_count > 0);
 
+const unexpectedWhenCatalog = validCatalogSnapshot();
+unexpectedWhenCatalog.triggers[0].when_expression = "present";
+const unexpectedWhenReport = await checkTrackCProductionSchemaRest({
+  supabaseUrl,
+  serviceRoleKey,
+  fetchImpl: mockFetchFor(validOpenApi(), [], unexpectedWhenCatalog),
+  activeProbes: false
+});
+assert.equal(unexpectedWhenReport.ok, false);
+assert.ok(unexpectedWhenReport.checks.catalog_attestation.failed_check_count > 0);
+
 const failedHttpReport = await checkTrackCProductionSchemaRest({
   supabaseUrl,
   serviceRoleKey,
