@@ -97,6 +97,10 @@
     "api/v4/fast-scout-prewarm.js": {
       "maxDuration": 300
     },
+    "api/v4/launch-gate-source-images.js": {
+      "maxDuration": 120,
+      "includeFiles": "data/**/*.json"
+    },
     "api/admin-apply-v4-production-job-queue-migration.js": {
       "maxDuration": 300,
       "includeFiles": "supabase/migrations/*.sql"

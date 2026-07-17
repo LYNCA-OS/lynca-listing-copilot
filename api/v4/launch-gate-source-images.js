@@ -11,11 +11,7 @@ import {
 } from "../../lib/tenant/index.mjs";
 
 export const config = {
-  maxDuration: 120,
-  includeFiles: [
-    "data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json",
-    "data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json"
-  ]
+  maxDuration: 120
 };
 
 function cleanText(value) {
@@ -128,4 +124,3 @@ export function createLaunchGateSourceImagesHandler({
 }
 
 export default createLaunchGateSourceImagesHandler();
-

@@ -18,6 +18,7 @@ const reviewedDataset = require("../data/catalog/vector-seed/feedback-writer-gt-
 const ebayDataset = require("../data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json");
 const reviewedItem = reviewedDataset.items[0];
 const ebayItem = ebayDataset.items[0];
+const vercelConfig = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
 
 function assertNoReferenceTextKeys(value) {
   if (Array.isArray(value)) return value.forEach(assertNoReferenceTextKeys);
@@ -46,6 +47,10 @@ function mockRes() {
 }
 
 assert.ok(launchGateImageSourceCount() >= 300);
+assert.equal(
+  vercelConfig.functions["api/v4/launch-gate-source-images.js"].includeFiles,
+  "data/**/*.json"
+);
 const allowlisted = resolveLaunchGateImageSources([
   reviewedItem.source_feedback_id,
   ebayItem.source_feedback_id
