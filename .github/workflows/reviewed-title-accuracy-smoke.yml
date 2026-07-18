@@ -78,11 +78,15 @@ jobs:
           cp /tmp/reviewed-title-reused-sample/reviewed-title-sample-sha256.txt /tmp/reviewed-title-sample-sha256.txt
           sha256sum --check /tmp/reviewed-title-sample-sha256.txt
           mkdir -p /tmp/reviewed-title-reused-report
-          gh run download "$SAMPLE_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name reviewed-title-accuracy-report \
-            --dir /tmp/reviewed-title-reused-report
-          cp /tmp/reviewed-title-reused-report/reviewed-title-accuracy-report.json "$BASELINE_REPORT_PATH"
+          if gh run download "$SAMPLE_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name reviewed-title-accuracy-report \
+              --dir /tmp/reviewed-title-reused-report \
+            && test -f /tmp/reviewed-title-reused-report/reviewed-title-accuracy-report.json; then
+            cp /tmp/reviewed-title-reused-report/reviewed-title-accuracy-report.json "$BASELINE_REPORT_PATH"
+          else
+            echo "No reusable baseline report was produced by run $SAMPLE_RUN_ID; continuing with the sealed sample only."
+          fi
       - name: Prove blind input and random-sample provenance
         run: |
           node - <<'NODE'

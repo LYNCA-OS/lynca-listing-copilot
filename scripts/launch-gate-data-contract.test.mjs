@@ -756,6 +756,9 @@ try {
   assert.match(workflow, /gh run download "\$SAMPLE_RUN_ID"/);
   assert.match(workflow, /reviewed-title-blind-sample/);
   assert.match(workflow, /sha256sum --check \/tmp\/reviewed-title-sample-sha256\.txt/);
+  assert.match(workflow, /&& test -f \/tmp\/reviewed-title-reused-report\/reviewed-title-accuracy-report\.json/);
+  assert.match(workflow, /test -f \/tmp\/reviewed-title-reused-report\/reviewed-title-accuracy-report\.json; then\s+cp \/tmp\/reviewed-title-reused-report\/reviewed-title-accuracy-report\.json "\$BASELINE_REPORT_PATH"/);
+  assert.match(workflow, /continuing with the sealed sample only/);
   assert.match(workflow, /scripts\/analyze-launch-gate-report\.mjs/);
   assert.match(workflow, /if: \$\{\{ inputs\.sample_run_id == '' \}\}/);
   assert.match(workflow, /if: \$\{\{ inputs\.sample_run_id != '' \}\}/);
