@@ -21,7 +21,7 @@ import { materializeLaunchGateImages } from "./materialize-launch-gate-images.mj
 export const launchGateExecutionContract = Object.freeze({
   model: "gpt-5-mini",
   image_detail: "high",
-  provider_prompt_mode: "full_listing",
+  provider_prompt_mode: "fast_initial",
   provider_concurrency: 2,
   preparation_concurrency: 2,
   submission_concurrency: 2,
@@ -156,7 +156,7 @@ function fixedPayloadForPreflight(item, index) {
   return payloadForItem(item, index, [], {
     forceL2Direct: true,
     modelOverride: launchGateExecutionContract.model,
-    fastInitialPrompt: false,
+    fastInitialPrompt: true,
     ultraFastL2: launchGateExecutionContract.ultra_fast_l2,
     ultraFastImageDetail: launchGateExecutionContract.image_detail,
     disableIdentityCache: launchGateExecutionContract.identity_cache_disabled,
@@ -475,7 +475,7 @@ export function observedExecutionContractChecks(runReports = []) {
   const cohortPlans = runReports.filter((entry) => Object.hasOwn(entry, "cold_start_blind"));
   const checks = {
     model_override_locked: reports.length > 0 && reports.every((report) => report.model_override === launchGateExecutionContract.model),
-    full_prompt_override_locked: reports.length > 0 && reports.every((report) => report.fast_initial_prompt_override === false),
+    fast_prompt_override_locked: reports.length > 0 && reports.every((report) => report.fast_initial_prompt_override === true),
     runner_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.concurrency) === 2),
     preparation_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.preparation_concurrency) === 2),
     submission_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.submission_concurrency) === 2),
@@ -488,7 +488,7 @@ export function observedExecutionContractChecks(runReports = []) {
     image_detail_high: providerExecutionObservations.every((result) => (
       cleanText(result.provider_image_detail).toLowerCase() === "high"
     )),
-    provider_prompt_mode_full_listing: providerExecutionObservations.every((result) => (
+    provider_prompt_mode_locked: providerExecutionObservations.every((result) => (
       cleanText(result.provider_prompt_mode).toLowerCase() === launchGateExecutionContract.provider_prompt_mode
     )),
     predictions_frozen_before_scoring: reports.length > 0 && reports.every((report) => Boolean(cleanText(report.predictions_sha256))),
@@ -743,7 +743,7 @@ export async function runLaunchGateEvaluation({
         queueMode: true,
         forceL2Direct: true,
         modelOverride: launchGateExecutionContract.model,
-        fastInitialPrompt: false,
+        fastInitialPrompt: true,
         enableL1: false,
         compactL2: false,
         ultraFastL2: launchGateExecutionContract.ultra_fast_l2,

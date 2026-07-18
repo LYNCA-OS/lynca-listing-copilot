@@ -30,6 +30,20 @@ assert.equal(wemby.modules.numerical_rarity.text, "31/50");
 assert.equal(wemby.modules.search_optimization.text, "RC");
 assert.equal(wemby.modules.grading.text, "PSA 10");
 
+const sportsCollectorsDigestGrade = renderListingPresentation({
+  resolved: {
+    year: "1986",
+    product: "Star Court Kings",
+    players: ["Michael Jordan"],
+    grade_company: "Sports Collectors Digest Authentic",
+    card_grade: "8.5",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.match(sportsCollectorsDigestGrade.final_title, /\bSCD 8\.5$/);
+assert.equal(sportsCollectorsDigestGrade.modules.grading.text, "SCD 8.5");
+
 const ohtaniChrome = renderListingPresentation({
   resolved: {
     year: "2018",

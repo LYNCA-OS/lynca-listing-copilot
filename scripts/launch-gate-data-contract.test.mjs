@@ -195,7 +195,7 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
     writer_ready: true,
     final_title: finalTitle,
     provider_image_detail: "high",
-    provider_prompt_mode: "full_listing",
+    provider_prompt_mode: "fast_initial",
     identity_cache_hit: false,
     identity_cache_read_bypassed: true,
     reference_title_type: reviewed ? "REVIEWED_INTERNAL_TITLE" : "MARKETPLACE_WEAK_LABEL",
@@ -212,7 +212,7 @@ function rawRunReport(results, { coldStartBlind = false } = {}) {
     submission_concurrency: 2,
     provider_concurrency: 2,
     identity_cache_disabled: true,
-    fast_initial_prompt_override: false,
+    fast_initial_prompt_override: true,
     cold_start_blind: coldStartBlind,
     predictions_sha256: "offline-predictions-sha256",
     run_wall_ms: 1000,
@@ -337,7 +337,7 @@ try {
   assert.deepEqual(launchGateExecutionContract, {
     model: "gpt-5-mini",
     image_detail: "high",
-    provider_prompt_mode: "full_listing",
+    provider_prompt_mode: "fast_initial",
     provider_concurrency: 2,
     preparation_concurrency: 2,
     submission_concurrency: 2,
@@ -434,7 +434,7 @@ try {
   }]);
   assert.equal(preparationFailureChecks.identity_cache_read_bypassed, true);
   assert.equal(preparationFailureChecks.image_detail_high, true);
-  assert.equal(preparationFailureChecks.provider_prompt_mode_full_listing, true);
+  assert.equal(preparationFailureChecks.provider_prompt_mode_locked, true);
   const missingProviderModeChecks = observedExecutionContractChecks([{
     cohort: "INTERNAL_REVIEWED_GT",
     cold_start_blind: false,
@@ -444,7 +444,7 @@ try {
       provider_prompt_mode: null
     }])
   }]);
-  assert.equal(missingProviderModeChecks.provider_prompt_mode_full_listing, false);
+  assert.equal(missingProviderModeChecks.provider_prompt_mode_locked, false);
   const stratifiedReport = buildLaunchGateReport({
     profile: "mixed-100",
     dataset: built.manifest,
