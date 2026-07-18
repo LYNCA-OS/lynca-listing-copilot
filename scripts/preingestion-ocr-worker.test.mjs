@@ -5,6 +5,7 @@ import {
   bundlePatchesFromOcrResult,
   claimQueuedPreingestionOcrJobs,
   completePreingestionOcrJob,
+  deferPreingestionOcrJobForCapacity,
   fairOcrAnchorJobOrder,
   fairOcrClaimOrder,
   heartbeatPreingestionOcrJob,
@@ -662,6 +663,72 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     assert.equal(body.lease_owner, null);
     assert.equal(body.lease_expires_at, null);
   }
+}
+
+// --- stage-capacity deferral refunds the claim attempt under the same lease ---
+{
+  let state = {
+    tenant_id: "tenant_a",
+    job_id: "capacity-deferred-job",
+    status: "running",
+    attempts: 1,
+    max_attempts: 3,
+    lease_owner: "capacity-worker",
+    lease_expires_at: "2026-07-18T10:00:00.000Z",
+    last_error: null
+  };
+  const writes = [];
+  const fetchImpl = async (url, init = {}) => {
+    const target = new URL(String(url));
+    if (!init.method) return jsonResponse([state]);
+    const body = JSON.parse(init.body);
+    writes.push({ target, body });
+    const matches = target.searchParams.get("tenant_id") === "eq.tenant_a"
+      && target.searchParams.get("job_id") === "eq.capacity-deferred-job"
+      && target.searchParams.get("status") === `eq.${state.status}`
+      && target.searchParams.get("attempts") === `eq.${state.attempts}`
+      && target.searchParams.get("lease_owner") === `eq.${state.lease_owner}`;
+    if (!matches) return jsonResponse([]);
+    state = { ...state, ...body };
+    return jsonResponse([state]);
+  };
+
+  for (let deferral = 0; deferral < 3; deferral += 1) {
+    const saved = await deferPreingestionOcrJobForCapacity({
+      tenantId: "tenant_a",
+      jobId: "capacity-deferred-job",
+      leaseOwner: "capacity-worker",
+      expectedAttempts: 1,
+      error: "ocr_asset_capacity_busy",
+      env,
+      fetchImpl
+    });
+    assert.equal(saved, true);
+    assert.equal(state.status, "queued");
+    assert.equal(state.attempts, 0, "capacity waiting must not consume a real OCR attempt");
+    assert.equal(state.last_error, "ocr_asset_capacity_busy");
+    assert.equal(state.lease_owner, null);
+    state = {
+      ...state,
+      status: "running",
+      attempts: 1,
+      lease_owner: "capacity-worker",
+      lease_expires_at: "2026-07-18T10:00:00.000Z"
+    };
+  }
+  assert.equal(writes.length, 3);
+
+  const staleWorkerSaved = await deferPreingestionOcrJobForCapacity({
+    tenantId: "tenant_a",
+    jobId: "capacity-deferred-job",
+    leaseOwner: "stale-worker",
+    expectedAttempts: 1,
+    env,
+    fetchImpl
+  });
+  assert.equal(staleWorkerSaved, false, "a stale worker must not refund another worker's attempt");
+  assert.equal(state.status, "running");
+  assert.equal(state.attempts, 1);
 }
 
 // --- a provider-triggered rescue must claim the missing field, not poll an idle job ---
@@ -1440,7 +1507,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       }
       if (init.method === "PATCH" && target.includes("preingestion_jobs")) {
         const body = JSON.parse(init.body);
-        jobStatusWrites.push(body.status);
+        jobStatusWrites.push(body);
         return jsonResponse([{ status: body.status || "running", attempts: 1 }]);
       }
       throw new Error(`unexpected fetch: ${target}`);
@@ -1456,7 +1523,12 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.failed, 0);
   assert.equal(result.requeued, 1);
   assert.equal(result.succeeded, 0);
-  assert.equal(jobStatusWrites.at(-1), "queued");
+  assert.equal(jobStatusWrites.at(-1).status, "queued");
+  assert.equal(
+    Object.hasOwn(jobStatusWrites.at(-1), "attempts"),
+    false,
+    "a real provider failure must keep the consumed attempt instead of receiving a capacity refund"
+  );
 }
 
 // --- completed fields persist before a slower sibling crop finishes ---

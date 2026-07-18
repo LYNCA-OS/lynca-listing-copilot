@@ -44,6 +44,23 @@ assert.equal(ocrResult.normalized_fields.card_grade, undefined);
 assert.equal(ocrResult.normalized_fields.collector_number, undefined);
 assert.equal(ocrResult.latency_ms, 32);
 
+const serialCropCannotCreateGrade = normalizePaddleOcrResponse({
+  raw_text: "PLAYER DATA PSA 2 63787877",
+  confidence: 0.7901,
+  boxes: [
+    { text: "PSA", confidence: 0.989, bbox: [20, 20, 80, 45] },
+    { text: "2", confidence: 0.1118, bbox: [85, 20, 100, 45] },
+    { text: "63787877", confidence: 0.9979, bbox: [110, 20, 210, 45] }
+  ]
+}, {
+  request_id: "ocr-serial-grade-boundary",
+  image_url: "https://storage.test/full-card.jpg",
+  crop_type: "serial_crop"
+});
+assert.equal(serialCropCannotCreateGrade.normalized_fields.grade_company, undefined);
+assert.equal(serialCropCannotCreateGrade.normalized_fields.card_grade, undefined);
+assert.equal(ocrResultToEvidencePatch(serialCropCannotCreateGrade).evidence.card_grade, undefined);
+
 const seasonYearIsNotPrintRun = normalizePaddleOcrResponse({
   raw_text: "2022-23 NBA SEASON NO. 23",
   confidence: 0.94
@@ -133,6 +150,28 @@ const gradeResult = normalizePaddleOcrResponse({
 assert.equal(gradeResult.normalized_fields.grade_company, "PSA");
 assert.equal(gradeResult.normalized_fields.card_grade, "10");
 assert.equal(gradeResult.normalized_fields.cert_number, "123456789");
+
+const psaLabelWithOcrDroppedLetter = normalizePaddleOcrResponse({
+  raw_text: "2020 BOWMAN DRAFT GEM MT CHR.DP AUTO-BLACK REF 10 PA 63787877",
+  confidence: 0.9771,
+  boxes: [
+    { text: "2020 BOWMAN DRAFT", confidence: 0.9509, bbox: [0, 0, 190, 24] },
+    { text: "GEM MT", confidence: 0.9524, bbox: [0, 30, 90, 54] },
+    { text: "CHR.DP AUTO-BLACK REF", confidence: 0.9571, bbox: [100, 30, 300, 54] },
+    { text: "10", confidence: 0.9938, bbox: [305, 30, 340, 62] },
+    { text: "PA", confidence: 0.9626, bbox: [350, 30, 390, 54] },
+    { text: "63787877", confidence: 0.997, bbox: [400, 30, 500, 54] }
+  ]
+}, {
+  request_id: "ocr-grade-psa-dropped-letter",
+  image_url: "https://storage.test/grade-label.jpg",
+  crop_type: "grade_label"
+});
+assert.equal(psaLabelWithOcrDroppedLetter.normalized_fields.grade_company, "PSA");
+assert.equal(psaLabelWithOcrDroppedLetter.normalized_fields.card_grade, "10");
+assert.equal(psaLabelWithOcrDroppedLetter.normalized_fields.cert_number, "63787877");
+assert.equal(psaLabelWithOcrDroppedLetter.normalized_field_confidence.card_grade, 0.9938);
+assert.equal(ocrResultToEvidencePatch(psaLabelWithOcrDroppedLetter).evidence.card_grade.confidence, 0.9938);
 
 const bgsDualGradeResult = normalizePaddleOcrResponse({
   raw_text: "BGS 8.5 AUTOGRAPH 10 CERT 0020299654",

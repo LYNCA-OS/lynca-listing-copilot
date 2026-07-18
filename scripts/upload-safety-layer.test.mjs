@@ -57,11 +57,14 @@ assert.match(js, /setStatus\("0% · 图片已准备，开始识别…",\s*\{\s*b
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /const MAX_BACKGROUND_PREP_WORKERS\s*=\s*4/, "background preparation should use its own bounded worker pool");
-assert.match(js, /const backgroundWorkerCount\s*=\s*MAX_BACKGROUND_PREP_WORKERS/, "background preparation must remain bounded independently of provider capacity");
+assert.match(js, /backgroundPreparationActiveCount\s*<\s*MAX_BACKGROUND_PREP_WORKERS/, "background preparation must remain bounded independently of provider capacity");
+assert.match(js, /backgroundPreparationActiveCount\s*=\s*Math\.max\(0,\s*backgroundPreparationActiveCount\s*-\s*1\)/, "completed background work should release its preparation slot");
+assert.match(js, /drainBackgroundPreparationQueue\(\)/, "released preparation capacity should continue draining the bounded queue");
 assert.match(js, /const MAX_CONCURRENT_WORKERS\s*=\s*6/, "queue submission workers must have a browser-side safety cap");
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");
 assert.match(js, /results\[index\]\s*=\s*await worker\(source\[index\], index\)/, "concurrent preprocessing should preserve input order in results");
-assert.match(js, /mapWithConcurrency\(imageFiles,\s*IMAGE_PREPROCESS_CONCURRENCY/, "file preprocessing should use bounded concurrency");
+assert.match(js, /const groupPreparationConcurrency\s*=\s*state\.mode\s*===\s*"single"/, "file preprocessing should bound card-pair preparation independently of single-image mode");
+assert.match(js, /mapWithConcurrency\(fileGroups,\s*groupPreparationConcurrency/, "file-group preprocessing should use bounded concurrency");
 assert.match(js, /prepareFileForIntake\(file\)/, "production intake should select the storage-first path before legacy canvas preprocessing");
 assert.match(js, /storageFirstAssetImage/, "browser-native originals should have a storage-first intake path");
 assert.match(js, /targetedCrops:\s*\[\]/, "storage-first originals should leave crop planning to cloud pre-ingestion");
@@ -73,7 +76,8 @@ assert.match(js, /startNonBlockingDerivedUpload/, "derived crop upload must use 
 assert.match(js, /ensureAssetOriginalImagesUploaded/, "recognition should wait only for canonical originals");
 assert.doesNotMatch(js, /await asset\.derivedStorageUploadPromise/, "derived crop completion must never block recognition");
 assert.match(js, /uploadAssetImage\(asset, image, imageIndex\)/, "bounded storage upload workers should preserve image role assignment");
-assert.match(js, /state\.files = images/, "optimized images should preserve upload order in state");
-assert.match(js, /state\.files\.slice\(index, index \+ 2\)/, "two-image pairing should remain upload-order based");
+assert.match(js, /state\.assets\.sort\(\(left, right\) => left\.index - right\.index\)/, "progressively prepared assets should restore upload order before rendering");
+assert.match(js, /state\.files\s*=\s*state\.assets\.flatMap\(\(entry\) => entry\.images\)/, "optimized images should preserve upload order in state");
+assert.match(js, /const groupSize\s*=\s*state\.mode\s*===\s*"single"\s*\?\s*1\s*:\s*2/, "two-image pairing should remain upload-order based");
 
 console.log("upload safety layer tests passed");
