@@ -192,7 +192,7 @@ async function createDurableSmokeAsset({
     },
     requestTimeoutMs,
     fetchImpl,
-    maxAttempts: 3
+    maxAttempts: 5
   });
   if (!response.ok || response.data?.ok !== true || !cleanText(response.data?.asset_id)) {
     throw new Error(`smoke_asset_create_failed:${response.http_status}:${cleanText(response.data?.message).slice(0, 180)}`);
@@ -248,7 +248,7 @@ async function uploadDurableSmokeImage({
     },
     requestTimeoutMs,
     fetchImpl,
-    maxAttempts: 3
+    maxAttempts: 5
   });
   const upload = signed.data?.upload || {};
   if (!signed.ok || signed.data?.ok !== true || !cleanText(upload.signed_upload_url)) {
@@ -271,7 +271,7 @@ async function uploadDurableSmokeImage({
   }, {
     fetchImpl,
     timeoutMs: Math.min(30_000, requestTimeoutMs),
-    maxAttempts: 3,
+    maxAttempts: 5,
     retryNetworkErrors: true,
     maxDelayMs: 1500
   });
@@ -295,7 +295,7 @@ async function uploadDurableSmokeImage({
     },
     requestTimeoutMs,
     fetchImpl,
-    maxAttempts: 3
+    maxAttempts: 5
   });
   const verified = verification.data?.verification || {};
   if (!verification.ok || verification.data?.ok !== true || !cleanText(verified.verification_token)) {
@@ -594,7 +594,7 @@ async function preingestItem({
     payload,
     requestTimeoutMs,
     fetchImpl,
-    maxAttempts: 3
+    maxAttempts: 5
   });
   const bundleId = response.data?.bundle_id || response.data?.v4_preingestion_bundle_id || null;
   return {
@@ -1340,7 +1340,7 @@ async function readSettledJobDiagnostics({
   cookie,
   jobId,
   requestTimeoutMs,
-  attempts = 8
+  attempts = 45
 }) {
   let last = null;
   let lastError = null;
@@ -1699,7 +1699,7 @@ async function runOne({
         }]
       },
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
-      maxAttempts: 3
+      maxAttempts: 5
     });
     const speculativeSetupMs = Date.now() - t0;
 
@@ -1904,7 +1904,7 @@ async function runOne({
         }]
       },
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
-      maxAttempts: 3
+      maxAttempts: 5
     });
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
       || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
@@ -2387,7 +2387,7 @@ async function enqueueSpeculativeItem({
         }]
       },
       requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
-      maxAttempts: 3
+      maxAttempts: 5
     }));
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
       || (enqueue.data?.jobs || []).find((entry) => entry?.ok)
@@ -3886,7 +3886,7 @@ export async function runV4EbaySmoke({
   );
   const normalizedPreparationConcurrency = Math.max(
     1,
-    Math.min(24, Math.trunc(Number(preparationConcurrency ?? 4) || 1))
+    Math.min(24, Math.trunc(Number(preparationConcurrency ?? 2) || 1))
   );
   const dataset = await readDataset(datasetPath);
   const datasetSamplePolicy = Array.isArray(dataset) ? null : dataset.evaluation_sample_policy || null;
@@ -4271,7 +4271,7 @@ export async function main(argv = process.argv, env = process.env) {
     submissionConcurrency: argv.some((arg) => arg === "--submission-concurrency" || arg.startsWith("--submission-concurrency="))
       ? Math.max(1, Math.trunc(numberArg(argv, "--submission-concurrency", 2)))
       : null,
-    preparationConcurrency: Math.max(1, Math.trunc(numberArg(argv, "--preparation-concurrency", 4))),
+    preparationConcurrency: Math.max(1, Math.trunc(numberArg(argv, "--preparation-concurrency", 2))),
     tenantCount: Math.max(1, Math.trunc(numberArg(argv, "--tenant-count", 1))),
     tenantPrefix: cleanText(argValue(argv, "--tenant-prefix", "")),
     batchPoll: !hasFlag(argv, "--per-card-poll"),

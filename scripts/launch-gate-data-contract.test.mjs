@@ -195,6 +195,7 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
     writer_ready: true,
     final_title: finalTitle,
     provider_image_detail: "high",
+    provider_prompt_mode: "full_listing",
     identity_cache_hit: false,
     identity_cache_read_bypassed: true,
     reference_title_type: reviewed ? "REVIEWED_INTERNAL_TITLE" : "MARKETPLACE_WEAK_LABEL",
@@ -207,10 +208,11 @@ function rawRunReport(results, { coldStartBlind = false } = {}) {
   return {
     model_override: "gpt-5-mini",
     concurrency: 2,
-    preparation_concurrency: 4,
+    preparation_concurrency: 2,
     submission_concurrency: 2,
     provider_concurrency: 2,
     identity_cache_disabled: true,
+    fast_initial_prompt_override: false,
     cold_start_blind: coldStartBlind,
     predictions_sha256: "offline-predictions-sha256",
     run_wall_ms: 1000,
@@ -335,8 +337,9 @@ try {
   assert.deepEqual(launchGateExecutionContract, {
     model: "gpt-5-mini",
     image_detail: "high",
+    provider_prompt_mode: "full_listing",
     provider_concurrency: 2,
-    preparation_concurrency: 4,
+    preparation_concurrency: 2,
     submission_concurrency: 2,
     identity_cache_disabled: true,
     ultra_fast_l2: false
@@ -431,6 +434,17 @@ try {
   }]);
   assert.equal(preparationFailureChecks.identity_cache_read_bypassed, true);
   assert.equal(preparationFailureChecks.image_detail_high, true);
+  assert.equal(preparationFailureChecks.provider_prompt_mode_full_listing, true);
+  const missingProviderModeChecks = observedExecutionContractChecks([{
+    cohort: "INTERNAL_REVIEWED_GT",
+    cold_start_blind: false,
+    report: rawRunReport([{
+      ...scoredResult({ assetId: "provider-mode-missing", reviewed: true, score: 1 }),
+      provider_latency_ms: 1200,
+      provider_prompt_mode: null
+    }])
+  }]);
+  assert.equal(missingProviderModeChecks.provider_prompt_mode_full_listing, false);
   const stratifiedReport = buildLaunchGateReport({
     profile: "mixed-100",
     dataset: built.manifest,
@@ -580,7 +594,7 @@ try {
     assert.equal(options.ultraFastL2, false);
     assert.equal(options.ultraFastImageDetail, "high");
     assert.equal(options.concurrency, 2);
-    assert.equal(options.preparationConcurrency, 4);
+    assert.equal(options.preparationConcurrency, 2);
     assert.equal(options.submissionConcurrency, 2);
     assert.equal(options.disableIdentityCache, true);
     assert.equal(options.limit, 10);

@@ -201,6 +201,8 @@ assert.throws(
 const fullPromptPayload = smokePayloadForItem({}, 0, [], { fastInitialPrompt: false });
 assert.equal(fullPromptPayload.provider_options.enable_fast_initial_provider_prompt, false);
 assert.equal(fastInitialProviderPromptEnabled(fullPromptPayload, { ENABLE_FAST_INITIAL_PROVIDER_PROMPT: "true" }), false);
+assert.equal(fastInitialProviderPromptEnabled({}, {}), false, "quality path must default to the full prompt");
+assert.equal(fastInitialProviderPromptEnabled({}, { ENABLE_FAST_INITIAL_PROVIDER_PROMPT: "true" }), true);
 assert.equal(batchStatusResponseDisposition({ ok: true, http_status: 200 }), "ok");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 503, data: { retryable: true } }), "retry");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "Unable to read V4 jobs." } }), "retry");

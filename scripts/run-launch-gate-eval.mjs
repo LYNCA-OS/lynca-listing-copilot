@@ -21,8 +21,9 @@ import { materializeLaunchGateImages } from "./materialize-launch-gate-images.mj
 export const launchGateExecutionContract = Object.freeze({
   model: "gpt-5-mini",
   image_detail: "high",
+  provider_prompt_mode: "full_listing",
   provider_concurrency: 2,
-  preparation_concurrency: 4,
+  preparation_concurrency: 2,
   submission_concurrency: 2,
   identity_cache_disabled: true,
   ultra_fast_l2: false
@@ -155,6 +156,7 @@ function fixedPayloadForPreflight(item, index) {
   return payloadForItem(item, index, [], {
     forceL2Direct: true,
     modelOverride: launchGateExecutionContract.model,
+    fastInitialPrompt: false,
     ultraFastL2: launchGateExecutionContract.ultra_fast_l2,
     ultraFastImageDetail: launchGateExecutionContract.image_detail,
     disableIdentityCache: launchGateExecutionContract.identity_cache_disabled,
@@ -460,8 +462,9 @@ export function observedExecutionContractChecks(runReports = []) {
     Object.hasOwn(result, "identity_cache_read_bypassed")
     && result.identity_cache_read_bypassed !== null
   ));
-  const providerImageDetailObservations = results.filter((result) => (
-    Boolean(cleanText(result.provider_image_detail))
+  const providerExecutionObservations = results.filter((result) => (
+    Number(result.provider_latency_ms || 0) > 0
+    || Boolean(cleanText(result.provider_prompt_mode))
   ));
   const internalResults = runReports
     .filter((entry) => cleanText(entry.cohort).toUpperCase() === "INTERNAL_REVIEWED_GT")
@@ -472,8 +475,9 @@ export function observedExecutionContractChecks(runReports = []) {
   const cohortPlans = runReports.filter((entry) => Object.hasOwn(entry, "cold_start_blind"));
   const checks = {
     model_override_locked: reports.length > 0 && reports.every((report) => report.model_override === launchGateExecutionContract.model),
+    full_prompt_override_locked: reports.length > 0 && reports.every((report) => report.fast_initial_prompt_override === false),
     runner_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.concurrency) === 2),
-    preparation_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.preparation_concurrency) === 4),
+    preparation_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.preparation_concurrency) === 2),
     submission_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.submission_concurrency) === 2),
     provider_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.provider_concurrency) === 2),
     identity_cache_disabled: reports.length > 0 && reports.every((report) => report.identity_cache_disabled === true),
@@ -481,8 +485,11 @@ export function observedExecutionContractChecks(runReports = []) {
     // Preparation failures and exact-anchor finalizations never enter the
     // provider stage, so they cannot truthfully emit provider-only fields.
     identity_cache_read_bypassed: cacheBypassObservations.every((result) => result.identity_cache_read_bypassed === true),
-    image_detail_high: providerImageDetailObservations.every((result) => (
+    image_detail_high: providerExecutionObservations.every((result) => (
       cleanText(result.provider_image_detail).toLowerCase() === "high"
+    )),
+    provider_prompt_mode_full_listing: providerExecutionObservations.every((result) => (
+      cleanText(result.provider_prompt_mode).toLowerCase() === launchGateExecutionContract.provider_prompt_mode
     )),
     predictions_frozen_before_scoring: reports.length > 0 && reports.every((report) => Boolean(cleanText(report.predictions_sha256))),
     vector_self_retrieval_exclusion_enforced: vectorSelfExclusionAttempts.every((result) => (
@@ -736,6 +743,7 @@ export async function runLaunchGateEvaluation({
         queueMode: true,
         forceL2Direct: true,
         modelOverride: launchGateExecutionContract.model,
+        fastInitialPrompt: false,
         enableL1: false,
         compactL2: false,
         ultraFastL2: launchGateExecutionContract.ultra_fast_l2,

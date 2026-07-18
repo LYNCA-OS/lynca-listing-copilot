@@ -793,13 +793,46 @@ const retryableVerifyApiResponse = await callVerifyApi({
 });
 assert.equal(
   transientApiCalls.filter((call) => call.method === "GET" && call.url.includes("/storage/v1/object/")).length,
-  2,
-  "storage verification should retry once server-side"
+  4,
+  "storage verification should use the bounded server-side consistency window"
 );
 assert.equal(retryableVerifyApiResponse.statusCode, 503);
 assert.equal(retryableVerifyApiResponse.body.retryable, true);
 assert.equal(retryableVerifyApiResponse.body.cleanup.attempted, false);
 assert.equal(retryableVerifyApiResponse.body.cleanup.preserved_for_retry, true);
+
+const readIndeterminateCalls = [];
+globalThis.fetch = tenantAwareFetch(async (url, init = {}) => {
+  readIndeterminateCalls.push({ url: String(url), method: init.method || "GET" });
+  return {
+    ok: false,
+    status: 400,
+    headers: { get: () => "" },
+    arrayBuffer: async () => new ArrayBuffer(0),
+    text: async () => "object is not readable yet"
+  };
+});
+const readIndeterminateVerifyApiResponse = await callVerifyApi({
+  assetId: durableAssetId,
+  imageId: "front-api",
+  role: "front_original",
+  objectPath: `tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/front_original-front-api.png`,
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex
+});
+assert.equal(
+  readIndeterminateCalls.filter((call) => call.method === "GET" && call.url.includes("/storage/v1/object/")).length,
+  4,
+  "a validated post-PUT path returning 400 should exhaust the consistency window"
+);
+assert.equal(readIndeterminateVerifyApiResponse.statusCode, 503);
+assert.equal(readIndeterminateVerifyApiResponse.body.retryable, true);
+assert.equal(readIndeterminateVerifyApiResponse.body.code, "SUPABASE_STORAGE_OBJECT_READ_INDETERMINATE");
+assert.equal(readIndeterminateVerifyApiResponse.body.cleanup.attempted, false);
+assert.equal(readIndeterminateVerifyApiResponse.body.cleanup.preserved_for_retry, true);
 
 Object.keys(process.env).forEach((key) => {
   if (!(key in originalEnv)) delete process.env[key];

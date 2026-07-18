@@ -266,11 +266,11 @@ assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { post_observation_retrieval_critical_path_budget_ms: 20000 }), 10000);
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({}, { v4_ultra_fast_l2: true }), 250);
 assert.equal(postObservationRetrievalCriticalPathBudgetMs({ ENABLE_V4_ULTRA_FAST_L2: "true" }, {}), 250);
-assert.equal(postObservationExactAnchorCatalogBudgetMs({}, {}), 1800);
+assert.equal(postObservationExactAnchorCatalogBudgetMs({}, {}), 5000);
 assert.equal(postObservationExactAnchorCatalogBudgetMs({}, { v4_ultra_fast_l2: true }), 5000);
 assert.equal(postObservationExactAnchorCatalogBudgetMs({}, { post_observation_exact_anchor_catalog_budget_ms: 20 }), 250);
 assert.equal(postObservationExactAnchorCatalogBudgetMs({}, { post_observation_exact_anchor_catalog_budget_ms: 9000 }), 5000);
-assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, {}), 1800);
+assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, {}), 5000);
 assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { v4_ultra_fast_l2: true }), 5000);
 assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { post_observation_structured_anchor_catalog_budget_ms: 20 }), 250);
 assert.equal(postObservationStructuredAnchorCatalogBudgetMs({}, { post_observation_structured_anchor_catalog_budget_ms: 9000 }), 5000);
