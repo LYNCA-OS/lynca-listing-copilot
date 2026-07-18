@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Metaverse Listing Copilot internal title generation webtool.",
   "scripts": {
+    "deploy:production": "node scripts/deploy-production-release.mjs",
     "dev": "node scripts/dev-server.mjs",
     "start": "node scripts/dev-server.mjs",
     "check:storage-retention-api": "node --check api/listing-storage-retention-cleanup.js && node --check scripts/storage-retention-api.test.mjs",

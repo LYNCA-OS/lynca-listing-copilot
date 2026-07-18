@@ -26,6 +26,23 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.secrets/
+.secrets/**
+
+# Repository-only material must never become a public static asset. Runtime
+# functions keep their imported source through Vercel's function bundler.
+.github/
+.github/**
+docs/
+docs/**
+scripts/
+scripts/**
+animation-plans/
+animation-plans/**
+learning/
+learning/**
+artifacts/
+artifacts/**
 
 # Authentication prototypes are design artifacts, never runtime assets.
 prototypes/**

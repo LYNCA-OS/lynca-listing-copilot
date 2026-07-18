@@ -1,5 +1,8 @@
 import { next } from "@vercel/functions";
-import { isProtectedAppPath } from "./lib/listing-route-access.mjs";
+import {
+  isPrivateDeploymentPath,
+  isProtectedAppPath
+} from "./lib/listing-route-access.mjs";
 import { validListingSessionClaims } from "./lib/listing-session-claims.mjs";
 
 const cookieName = "lynca_metaverse_session";
@@ -20,6 +23,16 @@ function maintenanceResponse() {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
       "retry-after": "60"
+    }
+  });
+}
+
+function privateDeploymentPathResponse() {
+  return new Response("Not found", {
+    status: 404,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store"
     }
   });
 }
@@ -90,6 +103,10 @@ async function isValidSession(cookie) {
 export default async function middleware(request) {
   const url = new URL(request.url);
 
+  if (isPrivateDeploymentPath(url.pathname)) {
+    return privateDeploymentPathResponse();
+  }
+
   if (
     enabledExactly(process.env.LISTING_MAINTENANCE_MODE)
     && url.pathname.startsWith("/api/")
@@ -115,6 +132,44 @@ export default async function middleware(request) {
 }
 
 export const config = {
-  matcher: ["/", "/index", "/index.html", "/app", "/app/", "/app/index", "/app/index.html", "/api/:path*"],
+  // Vercel requires matcher values to be statically analyzable string literals.
+  matcher: [
+    "/",
+    "/index",
+    "/index.html",
+    "/app",
+    "/app/",
+    "/app/index",
+    "/app/index.html",
+    "/api/:path*",
+    "/.secrets",
+    "/.secrets/:path*",
+    "/.github",
+    "/.github/:path*",
+    "/.vercel",
+    "/.vercel/:path*",
+    "/docs",
+    "/docs/:path*",
+    "/scripts",
+    "/scripts/:path*",
+    "/lib",
+    "/lib/:path*",
+    "/prompts",
+    "/prompts/:path*",
+    "/services",
+    "/services/:path*",
+    "/supabase",
+    "/supabase/:path*",
+    "/data",
+    "/data/:path*",
+    "/learning",
+    "/learning/:path*",
+    "/animation-plans",
+    "/animation-plans/:path*",
+    "/artifacts",
+    "/artifacts/:path*",
+    "/prototypes",
+    "/prototypes/:path*"
+  ],
   runtime: "edge"
 };

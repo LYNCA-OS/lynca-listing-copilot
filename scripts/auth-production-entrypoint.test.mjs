@@ -7,7 +7,10 @@ import {
   safeAppRedirectPath
 } from "../app/login-flow.mjs";
 import {
+  isPrivateDeploymentPath,
   isProtectedAppPath,
+  PRIVATE_DEPLOYMENT_MATCHERS,
+  PRIVATE_DEPLOYMENT_PATH_PREFIXES,
   PROTECTED_APP_PATHS
 } from "../lib/listing-route-access.mjs";
 import {
@@ -33,19 +36,28 @@ assert.equal(isProtectedAppPath("/login"), false);
 assert.equal(isProtectedAppPath("/app/login"), false);
 assert.deepEqual(
   middlewareConfig.matcher,
-  [...PROTECTED_APP_PATHS, "/api/:path*"],
-  "the static Vercel matcher must cover protected aliases and the maintenance API gate"
+  [...PROTECTED_APP_PATHS, "/api/:path*", ...PRIVATE_DEPLOYMENT_MATCHERS],
+  "the static Vercel matcher must cover protected aliases, internal files, and the maintenance API gate"
 );
 
 const middlewareSource = fs.readFileSync(new URL("../middleware.js", import.meta.url), "utf8");
 for (const path of PROTECTED_APP_PATHS) {
   assert.match(middlewareSource, new RegExp(`"${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`), `${path} must remain in the static Vercel matcher`);
 }
+for (const prefix of PRIVATE_DEPLOYMENT_PATH_PREFIXES) {
+  assert.equal(isPrivateDeploymentPath(prefix), true);
+  assert.equal(isPrivateDeploymentPath(`${prefix}/private.txt`), true);
+}
+assert.equal(isPrivateDeploymentPath("/app/index.html"), false);
 
 const previousAuthSecret = process.env.METAVERSE_AUTH_SECRET;
 const previousMaintenanceMode = process.env.LISTING_MAINTENANCE_MODE;
 process.env.METAVERSE_AUTH_SECRET = "auth-entrypoint-contract-secret";
 try {
+  const privateFile = await middleware(new Request(`${origin}/.secrets/production.env`));
+  assert.equal(privateFile.status, 404);
+  assert.equal(privateFile.headers.get("cache-control"), "no-store");
+
   const unauthenticated = await middleware(new Request(`${origin}/app?mode=writer`));
   assert.equal(unauthenticated.status, 302);
   assert.equal(unauthenticated.headers.get("location"), `${origin}/login?next=%2Fapp%3Fmode%3Dwriter`);
@@ -117,6 +129,9 @@ for (const path of ["/app", "/app/", "/app/index", "/app/index.html"]) {
 assert.doesNotMatch(devServer, /normalizeValue\(credentials\.password\)/, "local verification must use the production password contract");
 assert.doesNotMatch(devServer, /createHmac|createSession\(|isValidSession\(/, "the local server must not carry a second authentication implementation");
 assert.match(vercelIgnore, /^prototypes\/\*\*$/m, "prototype assets must stay out of every Vercel deployment");
+assert.match(vercelIgnore, /^\.secrets\/\*\*$/m, "local secrets must stay out of every Vercel deployment");
+assert.match(vercelIgnore, /^\.github\/\*\*$/m, "repository automation must not be deployed as public static files");
+assert.match(vercelIgnore, /^scripts\/\*\*$/m, "evaluation scripts must not be deployed as public static files");
 
 const globalHeaders = vercelConfig.headers?.find((entry) => entry.source === "/(.*)")?.headers || [];
 const headerMap = new Map(globalHeaders.map((header) => [header.key.toLowerCase(), header.value]));
