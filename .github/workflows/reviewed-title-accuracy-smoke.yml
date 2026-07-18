@@ -18,6 +18,7 @@ jobs:
       API_BASE_URL: https://listing.lyncafei.team
       METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
       METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
       DATASET_PATH: /tmp/reviewed-title-blind.json
       SEALED_LABELS_PATH: /tmp/reviewed-title-sealed-labels.jsonl
       REPORT_PATH: /tmp/reviewed-title-accuracy-report.json
@@ -68,6 +69,8 @@ jobs:
           console.log(JSON.stringify(checks, null, 2));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
           NODE
+      - name: Verify scoped launch-gate credential
+        run: test -n "$LAUNCH_GATE_EVAL_SECRET"
       - name: Run locked reviewed-10 launch gate
         run: |
           node scripts/run-launch-gate-eval.mjs \

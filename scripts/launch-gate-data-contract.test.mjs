@@ -753,6 +753,8 @@ try {
   assert.match(workflow, /--limit 10/);
   assert.match(workflow, /scripts\/run-launch-gate-eval\.mjs/);
   assert.match(workflow, /--expected-deployment-sha "\$\{\{ github\.sha \}\}"/);
+  assert.match(workflow, /LAUNCH_GATE_EVAL_SECRET: \$\{\{ secrets\.LAUNCH_GATE_EVAL_SECRET \}\}/);
+  assert.match(workflow, /test -n "\$LAUNCH_GATE_EVAL_SECRET"/);
   assert.match(workflow, /measured_count_matches_cohort/);
   assert.match(workflow, /reviewed_accuracy_gate/);
   assert.doesNotMatch(workflow, /\$\{\{\s*inputs\.(?:limit|model)/);
