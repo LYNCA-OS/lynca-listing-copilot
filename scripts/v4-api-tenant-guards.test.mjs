@@ -51,8 +51,10 @@ for (const retryField of ["retry_count", "canonical_state", "last_error", "error
 
 const retrySource = sources["api/v4/listing-job-retry.js"];
 assert.match(retrySource, /TENANT_PERMISSIONS\.RETRY_JOB/);
-assert.match(retrySource, /sendJson\(res, 410,[\s\S]*V4_FRESH_ENQUEUE_REQUIRED/);
-assert.doesNotMatch(retrySource, /retryV4RecognitionJob|patchV4Row/);
+assert.match(retrySource, /readV4RecognitionJobs\(\{[\s\S]*tenantId: context\.tenantId/);
+assert.match(retrySource, /assignedUserId: job\.assigned_to_user_id \|\| job\.operator_id/);
+assert.match(retrySource, /requestV4RecognitionJobRecovery\(\{/);
+assert.doesNotMatch(retrySource, /patchV4Row|payload\.images|payload\.asset_images/);
 
 const sessionStatusSource = sources["api/v4/listing-session-status.js"];
 assert.match(sessionStatusSource, /readV4SessionStatus\(\{ sessionId, tenantId: context\.tenantId \}\)/);

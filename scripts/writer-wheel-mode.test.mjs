@@ -71,7 +71,9 @@ assert.match(priorityRetrySource, /await processAssetViaQueue\(asset, \{[\s\S]*p
 assert.doesNotMatch(priorityRetrySource, /不能提升到优先队列；请重新上传/, "a pre-enqueue failure must remain retryable without re-uploading images");
 assert.match(priorityRetrySource, /旧任务仅保留审计记录/, "priority retry must preserve the old job only as audit history");
 assert.match(priorityRetrySource, /assetLifecycleMatches\(asset, lifecycleGeneration\)/, "a stale retry response must not overwrite a newer upload generation");
-assert.doesNotMatch(js, /\/api\/v4\/listing-job-retry/, "the browser must not replay a persisted legacy job payload");
+assert.match(priorityRetrySource, /fetchJsonWithRetry\(JOB_RECOVERY_API_ENDPOINT/, "a stalled active job should use the atomic recovery boundary");
+assert.match(priorityRetrySource, /JSON\.stringify\(\{ job_id: current\.v4_job_id \|\| current\.job_id \}\)/, "active recovery may send only the durable job id, never the persisted image payload");
+assert.doesNotMatch(priorityRetrySource, /payload:\s*current|images:\s*current|asset_images:\s*current/, "the browser must not replay a persisted legacy job payload");
 
 assert.match(js, /backgroundPreparationRunId/, "asynchronous image preparation must own a stale-run guard");
 assert.match(js, /filePreparationRunId/, "file preparation must own an independent UI stale-run guard");

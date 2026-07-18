@@ -12,6 +12,7 @@ import {
   heartbeatV4RecognitionJob,
   normalizeV4JobInput,
   readV4RecognitionJobs,
+  requestV4RecognitionJobRecovery,
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
   tryAcquireV4QueueKick,
@@ -541,7 +542,8 @@ const hardFailureClaim = await claimV4RecognitionJobs({
   env: {
     SUPABASE_URL: "https://supabase.test",
     SUPABASE_SERVICE_ROLE_KEY: "service-role",
-    OPENAI_API_KEY: "key-one"
+    OPENAI_API_KEY: "key-one",
+    V4_SUPABASE_READ_ATTEMPTS: "1"
   },
   fetchImpl: async (url, request = {}) => {
     hardFailureCalls.push({ url: String(url), request });
@@ -550,7 +552,35 @@ const hardFailureClaim = await claimV4RecognitionJobs({
 });
 assert.equal(hardFailureClaim.ok, false);
 assert.equal(hardFailureClaim.rpc_mode, "balanced_capacity");
-assert.equal(hardFailureCalls.length, 1, "arbitrary database failures must fail closed instead of bypassing capacity control");
+assert.equal(hardFailureCalls.length, 2, "a failed claim should perform one durable ownership readback before failing closed");
+assert.ok(hardFailureCalls[1].url.includes("/rest/v1/v4_recognition_jobs"));
+
+const reconciledClaimCalls = [];
+const reconciledClaim = await claimV4RecognitionJobs({
+  workerId: "worker-response-lost",
+  tenantId: "tenant-response-lost",
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    OPENAI_API_KEY: "key-one"
+  },
+  fetchImpl: async (url, request = {}) => {
+    reconciledClaimCalls.push({ url: String(url), request });
+    if (String(url).includes("/rest/v1/rpc/")) {
+      return jsonResponse({ message: "upstream response lost" }, { ok: false, status: 503 });
+    }
+    return jsonResponse([{
+      id: "v4job-response-lost",
+      tenant_id: "tenant-response-lost",
+      status: "RUNNING",
+      lease_owner: "worker-response-lost"
+    }]);
+  }
+});
+assert.equal(reconciledClaim.ok, true);
+assert.equal(reconciledClaim.rpc_mode, "balanced_capacity_reconciled");
+assert.equal(reconciledClaim.rows[0].id, "v4job-response-lost");
+assert.equal(reconciledClaimCalls.length, 2, "a committed claim with a lost response must not issue a second claim");
 
 const capacityRpcCalls = [];
 const releasedCapacity = await releaseV4ProviderCapacityForJob({
@@ -721,6 +751,31 @@ assert.equal(kick.ok, true);
 assert.equal(kick.acquired, true);
 assert.ok(kickRpcCalls[0].url.endsWith("/rest/v1/rpc/try_acquire_v4_queue_kick"));
 
+const recoveryRpcCalls = [];
+const recovery = await requestV4RecognitionJobRecovery({
+  jobId: "v4job-stalled",
+  tenantId: "tenant-a",
+  requestedByUserId: "writer-a",
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url, request = {}) => {
+    recoveryRpcCalls.push({ url: String(url), request });
+    return jsonResponse({
+      action: "REQUEUED_EXPIRED_LEASE",
+      job_id: "v4job-stalled",
+      job_status: "RETRYING",
+      priority: 0
+    });
+  }
+});
+assert.equal(recovery.ok, true);
+assert.equal(recovery.action, "REQUEUED_EXPIRED_LEASE");
+assert.ok(recoveryRpcCalls[0].url.endsWith("/rest/v1/rpc/request_v4_recognition_job_recovery"));
+assert.deepEqual(JSON.parse(recoveryRpcCalls[0].request.body), {
+  p_job_id: "v4job-stalled",
+  p_tenant_id: "tenant-a",
+  p_requested_by_user_id: "writer-a"
+});
+
 const patches = [];
 await completeV4RecognitionJob({
   jobId: "v4job-done",
@@ -811,6 +866,38 @@ const completionRetryBody = JSON.parse(completionRetryPatches[1].request.body);
 assert.equal(completionRetryBody.timing.completion_write_attempts, 2);
 assert.equal(completionRetryBody.error.resolved, true);
 assert.equal(completionRetryBody.error.attempt_history[0].message, "first worker attempt failed");
+
+const completionReadbackCalls = [];
+const completionReadback = await completeV4RecognitionJob({
+  jobId: "v4job-completion-readback",
+  tenantId: "tenant-completion-readback",
+  workerId: "worker-completion-readback",
+  result: { final_title: "Committed despite a lost response" },
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    V4_JOB_COMPLETION_WRITE_ATTEMPTS: "3",
+    V4_JOB_COMPLETION_RETRY_BASE_MS: "1"
+  },
+  fetchImpl: async (url, request = {}) => {
+    completionReadbackCalls.push({ url: String(url), request });
+    if ((request.method || "GET") === "PATCH") {
+      return jsonResponse({ message: "response lost" }, { ok: false, status: 503 });
+    }
+    return jsonResponse([{
+      id: "v4job-completion-readback",
+      tenant_id: "tenant-completion-readback",
+      status: "L2_READY",
+      lease_owner: null,
+      completed_at: "2026-07-18T00:00:00.000Z",
+      result: { final_title: "Committed despite a lost response" },
+      timing: {}
+    }]);
+  }
+});
+assert.equal(completionReadback.saved, true);
+assert.equal(completionReadback.completion_mode, "durable_readback_reconciled");
+assert.equal(completionReadbackCalls.length, 2, "completion readback must prevent a duplicate terminal write");
 
 const l1Patches = [];
 await completeV4RecognitionJob({

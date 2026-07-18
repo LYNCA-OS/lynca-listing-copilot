@@ -52,6 +52,7 @@ const FIELD_MAX_CROPS_PER_IMAGE = 6;
 const FIELD_MAX_CROPS_PER_ASSET = 8;
 const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
 const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
+const JOB_RECOVERY_API_ENDPOINT = "/api/v4/listing-job-retry";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
 const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
@@ -59,6 +60,7 @@ const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const EXPORT_WORKBOOK_API_ENDPOINT = "/api/v4/listing-export-workbook";
 const LEGACY_FEEDBACK_API_ENDPOINT = "/api/listing-title-feedback";
 const ASSISTED_DRAFT_DELAY_WARNING_MS = 120000;
+const ACTIVE_JOB_RECOVERY_MIN_MS = 45000;
 const ASSISTED_DRAFT_POLL_INTERVALS_MS = [1200, 1800, 2600, 3800, 5500, 8000];
 const QUEUED_STATUS_BATCH_SIZE = 100;
 const QUEUED_STATUS_READ_CONCURRENCY = 3;
@@ -136,6 +138,8 @@ const state = {
   backgroundRecognitionBatchId: "",
   assetLifecycleGeneration: 0
 };
+let backgroundPreparationQueue = [];
+let backgroundPreparationActiveCount = 0;
 let providerStatusReadyPromise = null;
 let providerStatusRecoveryTimer = null;
 let providerStatusRecoveryAttempt = 0;
@@ -1536,6 +1540,10 @@ function syncBackgroundPreparationStatus() {
   const ready = Number(counts.ready || 0);
   const failed = Number(counts.failed || 0);
   const total = state.assets.length;
+  if (state.preparingFiles) {
+    setStatus(`已读取 ${total} 张卡；已就绪的卡正在后台上传和识别，其余图片继续读取中…`, { busy: true });
+    return;
+  }
   if (ready === total) {
     setStatus(`${state.files.length} 张图片已完成云端准备，可以生成标题。`);
     return;
@@ -1811,29 +1819,57 @@ async function settleSpeculativeRecognition(asset, maxWaitMs = SPECULATIVE_SETTL
   return { used: true, wait_ms: Math.round(performance.now() - startedAt), ...result };
 }
 
-function startBackgroundPreparation(reason = "file_ready") {
-  if (!storageReady() || !state.assets.length) return false;
+function backgroundPreparationAvailable() {
+  // Provider readiness is fetched independently. Start optimistically while it
+  // is still loading; a known unavailable storage configuration remains closed.
+  return state.providerStatus ? storageReady() : true;
+}
+
+function beginBackgroundPreparationRun() {
   const runId = ++state.backgroundPreparationRunId;
   state.backgroundRecognitionBatchId = createClientBatchId();
-  const assets = [...state.assets];
-  assets.forEach((asset) => {
-    if (!asset.preingestionBundleId && asset.backgroundPrepareStatus !== "ready") {
-      asset.backgroundPrepareStatus = "queued";
-      asset.backgroundPreparationRunId = runId;
-    }
-  });
-  if (!state.processing) {
-    renderResults();
+  backgroundPreparationQueue = [];
+  return runId;
+}
+
+function drainBackgroundPreparationQueue() {
+  while (backgroundPreparationActiveCount < MAX_BACKGROUND_PREP_WORKERS && backgroundPreparationQueue.length) {
+    const entry = backgroundPreparationQueue.shift();
+    if (!entry || entry.runId !== state.backgroundPreparationRunId) continue;
+    backgroundPreparationActiveCount += 1;
+    void Promise.resolve(prepareAssetInBackground(entry.asset, entry.runId))
+      .finally(() => {
+        backgroundPreparationActiveCount = Math.max(0, backgroundPreparationActiveCount - 1);
+        drainBackgroundPreparationQueue();
+      });
   }
-  // Image upload, pre-ingestion, and OCR run ahead of the GPT queue. Keeping
-  // this pool independent lets deterministic evidence finish while the
-  // provider remains at its measured stable concurrency.
-  const backgroundWorkerCount = MAX_BACKGROUND_PREP_WORKERS;
-  void mapWithConcurrency(assets, backgroundWorkerCount, async (asset) => {
-    if (runId !== state.backgroundPreparationRunId) return null;
-    return prepareAssetInBackground(asset, runId);
-  });
+}
+
+function scheduleAssetBackgroundPreparation(asset, runId = state.backgroundPreparationRunId) {
+  if (!asset || !runId || runId !== state.backgroundPreparationRunId) return false;
+  if (!backgroundPreparationAvailable()) return false;
+  if (asset.preingestionBundleId || asset.backgroundPrepareStatus === "ready") return true;
+  if (asset.backgroundPreparationScheduledRunId === runId) return true;
+  asset.backgroundPreparationScheduledRunId = runId;
+  asset.backgroundPrepareStatus = "queued";
+  asset.backgroundPreparationRunId = runId;
+  backgroundPreparationQueue.push({ asset, runId });
+  drainBackgroundPreparationQueue();
   return true;
+}
+
+function startBackgroundPreparation(reason = "file_ready") {
+  if (!backgroundPreparationAvailable() || !state.assets.length) return false;
+  const reuseCurrentRun = reason === "provider_status_ready"
+    && state.backgroundPreparationRunId > 0
+    && Boolean(state.backgroundRecognitionBatchId);
+  const runId = reuseCurrentRun ? state.backgroundPreparationRunId : beginBackgroundPreparationRun();
+  const scheduled = state.assets.reduce(
+    (count, asset) => count + (scheduleAssetBackgroundPreparation(asset, runId) ? 1 : 0),
+    0
+  );
+  if (!state.processing && !state.preparingFiles) renderResults();
+  return scheduled > 0;
 }
 
 function formatCost(requests) {
@@ -2505,35 +2541,30 @@ export const __listingCopilotAppTestHooks = {
   syncAssetGenerationTimingFromServer
 };
 
+function createClientAsset(images, index) {
+  return {
+    id: `asset-${index}`,
+    clientAssetRef: `asset-${index}`,
+    durableAssetId: "",
+    durableTenantId: "",
+    lifecycleGeneration: state.assetLifecycleGeneration,
+    index,
+    images,
+    providerImages: imagesForProvider(images)
+  };
+}
+
 function buildAssets() {
   const assets = [];
 
   if (state.mode === "single") {
     state.files.forEach((image, index) => {
-      assets.push({
-        id: `asset-${index + 1}`,
-        clientAssetRef: `asset-${index + 1}`,
-        durableAssetId: "",
-        durableTenantId: "",
-        lifecycleGeneration: state.assetLifecycleGeneration,
-        index: index + 1,
-        images: [image],
-        providerImages: imagesForProvider([image])
-      });
+      assets.push(createClientAsset([image], index + 1));
     });
   } else {
     for (let index = 0; index < state.files.length; index += 2) {
       const images = state.files.slice(index, index + 2);
-      assets.push({
-        id: `asset-${Math.floor(index / 2) + 1}`,
-        clientAssetRef: `asset-${Math.floor(index / 2) + 1}`,
-        durableAssetId: "",
-        durableTenantId: "",
-        lifecycleGeneration: state.assetLifecycleGeneration,
-        index: Math.floor(index / 2) + 1,
-        images,
-        providerImages: imagesForProvider(images)
-      });
+      assets.push(createClientAsset(images, Math.floor(index / 2) + 1));
     }
   }
 
@@ -2796,8 +2827,8 @@ function updateStats() {
   elements.stats.cost.textContent = formatCost(state.assets.length);
 }
 
-function renderPreviews() {
-  buildAssets();
+function renderPreviews({ rebuildAssets = true } = {}) {
+  if (rebuildAssets) buildAssets();
   updateStats();
   updateWorkspaceModeUi();
 
@@ -3495,7 +3526,18 @@ function retryStateForResult(result = {}) {
       || result.writerReviewRequired === true
       || (Array.isArray(result.unresolved) && result.unresolved.includes("request"))
     );
-  const retryable = terminalFailure || terminalWithoutTitle;
+  const activeJob = ["QUEUED", "RETRYING", "RUNNING"].includes(jobStatus)
+    && ["PENDING", "RUNNING", ""].includes(assistedStatus)
+    && !hasVisibleTitle;
+  const activeElapsedMs = result.v4QueuedPollStartedAt
+    ? Math.max(0, performance.now() - Number(result.v4QueuedPollStartedAt))
+    : 0;
+  const activeRecovery = activeJob && (
+    result.v4QueuedPollDelayed === true
+    || activeElapsedMs >= ACTIVE_JOB_RECOVERY_MIN_MS
+    || Number(result.v4StatusPollConsecutiveFailures || 0) >= 3
+  );
+  const retryable = terminalFailure || terminalWithoutTitle || activeRecovery;
   const submitting = result.queueRetryStatus === "submitting";
   const persistenceLocked = result.feedbackStatus === "saving" || writerFeedbackPersisted(result);
   return {
@@ -3503,7 +3545,9 @@ function retryStateForResult(result = {}) {
     submitting,
     disabled: !retryable || submitting || persistenceLocked,
     terminal_failure: terminalFailure,
-    terminal_without_title: terminalWithoutTitle
+    terminal_without_title: terminalWithoutTitle,
+    active_recovery: activeRecovery,
+    recovery_mode: activeRecovery ? "RECOVER_EXISTING_JOB" : "FRESH_VERIFIED_ENQUEUE"
   };
 }
 
@@ -3556,7 +3600,7 @@ function TitleCardComponent(result, asset = null) {
         <span class="confidence-badge ${confidenceClass(displayConfidence)}">${escapeHtml(statusLabel)}</span>
         <div class="title-actions">
           ${generationTimingBadge(result.index)}
-          ${canPriorityRetry ? `<button class="copy-button retry-priority-button" type="button" data-priority-retry="${result.index}" ${retryState.disabled ? "disabled" : ""}>${retrySubmitting ? "正在重排…" : "优先重试"}</button>` : ""}
+          ${canPriorityRetry ? `<button class="copy-button retry-priority-button" type="button" data-priority-retry="${result.index}" ${retryState.disabled ? "disabled" : ""}>${retrySubmitting ? "正在恢复…" : retryState.active_recovery ? "检查并恢复" : "优先重试"}</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
@@ -3862,43 +3906,14 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
   renderInstantIntakePreviews(intakePreviewRecords);
 
   try {
-    state.backgroundPreparationRunId += 1;
-    state.backgroundRecognitionBatchId = "";
     stopAllV4AssistedDraftPolling();
     setStatus("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…", { busy: true });
     closeImageModal();
-    const failures = [];
-    const prepareStartedAt = performance.now();
-    const prepared = await mapWithConcurrency(imageFiles, IMAGE_PREPROCESS_CONCURRENCY, async (file) => {
-      try {
-        return { image: await prepareFileForIntake(file) };
-      } catch (error) {
-        return { failure: `${file.name}: ${error.message}` };
-      }
-    });
-    const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
-    const settledImages = [];
-    prepared.forEach((item) => {
-      if (item.image) settledImages.push(item.image);
-      if (item.failure) failures.push(item.failure);
-    });
-    if (
-      lifecycleGeneration !== state.assetLifecycleGeneration
-      || state.filePreparationRunId !== filePreparationRunId
-    ) {
-      releaseImagePreviewUrls(settledImages);
-      releaseIntakePreviewRecords(intakePreviewRecords);
-      return;
-    }
-    const ignoredFiles = candidates
-      .filter((file) => !isSupportedImageFile(file))
-      .map((file) => `${file.name}: 不支持的图片格式`);
-    const images = settledImages;
-
     releaseImagePreviewUrls(state.files);
-    state.files = images;
+    state.files = [];
+    state.assets = [];
     state.results = [];
-    if (batchWasEmpty && images.length > 0) state.workspaceMode = "writer";
+    if (batchWasEmpty && imageFiles.length > 0) state.workspaceMode = "writer";
     state.writerActiveIndex = null;
     state.writerTransition = "";
     state.writerFocusPending = writerModeActive();
@@ -3911,6 +3926,64 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
     state.activeAssetIndexes = new Set();
     state.completedAssetCount = 0;
     state.processingTotal = 0;
+
+    const failures = [];
+    const prepareStartedAt = performance.now();
+    const groupSize = state.mode === "single" ? 1 : 2;
+    const fileGroups = [];
+    for (let index = 0; index < imageFiles.length; index += groupSize) {
+      fileGroups.push({ index: Math.floor(index / groupSize) + 1, files: imageFiles.slice(index, index + groupSize) });
+    }
+    const backgroundRunId = beginBackgroundPreparationRun();
+    const groupPreparationConcurrency = state.mode === "single"
+      ? IMAGE_PREPROCESS_CONCURRENCY
+      : Math.max(1, Math.floor(IMAGE_PREPROCESS_CONCURRENCY / 2));
+    await mapWithConcurrency(fileGroups, groupPreparationConcurrency, async (group) => {
+      const outcomes = await Promise.all(group.files.map(async (file) => {
+        try {
+          return { image: await prepareFileForIntake(file) };
+        } catch (error) {
+          return { failure: `${file.name}: ${error.message}` };
+        }
+      }));
+      const images = outcomes.flatMap((item) => item.image ? [item.image] : []);
+      outcomes.forEach((item) => {
+        if (item.failure) failures.push(item.failure);
+      });
+      if (
+        lifecycleGeneration !== state.assetLifecycleGeneration
+        || state.filePreparationRunId !== filePreparationRunId
+        || backgroundRunId !== state.backgroundPreparationRunId
+      ) {
+        releaseImagePreviewUrls(images);
+        return null;
+      }
+      if (!images.length) return null;
+
+      // A card starts upload/pre-ingestion as soon as its own image group is
+      // readable. Slow files later in the batch no longer hold earlier cards at
+      // a whole-batch barrier.
+      const asset = createClientAsset(images, group.index);
+      state.assets.push(asset);
+      state.assets.sort((left, right) => left.index - right.index);
+      state.files = state.assets.flatMap((entry) => entry.images);
+      scheduleAssetBackgroundPreparation(asset, backgroundRunId);
+      syncBackgroundPreparationStatus();
+      return asset;
+    });
+    const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
+    if (
+      lifecycleGeneration !== state.assetLifecycleGeneration
+      || state.filePreparationRunId !== filePreparationRunId
+    ) {
+      releaseImagePreviewUrls(state.files);
+      releaseIntakePreviewRecords(intakePreviewRecords);
+      return;
+    }
+    const ignoredFiles = candidates
+      .filter((file) => !isSupportedImageFile(file))
+      .map((file) => `${file.name}: 不支持的图片格式`);
+    const images = state.files;
     state.clientImagePrepareMs = prepareElapsedMs;
 
     if (failures.length || ignoredFiles.length) {
@@ -3927,25 +4000,25 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
       enabled: animateIntake && batchWasEmpty && images.length > 0,
       update: () => {
         releaseIntakePreviewRecords(intakePreviewRecords);
-        renderPreviews();
+        renderPreviews({ rebuildAssets: false });
         renderResults();
       }
     });
     if (intakeTransition?.finished) initialWriterForwardReady = Promise.resolve(intakeTransition.finished).catch(() => {});
     if (intakeTransition?.updateCallbackDone) await Promise.resolve(intakeTransition.updateCallbackDone).catch(() => {});
     if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
-    startBackgroundPreparation("file_ready");
   } finally {
     if (
       lifecycleGeneration === state.assetLifecycleGeneration
       && state.filePreparationRunId === filePreparationRunId
     ) {
+      state.preparingFiles = false;
       if (state.intakePreviewRecords === intakePreviewRecords) {
         releaseIntakePreviewRecords(intakePreviewRecords);
-        renderPreviews();
+        renderPreviews({ rebuildAssets: false });
       }
-      state.preparingFiles = false;
       renderResults({ forceWriterRender: true });
+      syncBackgroundPreparationStatus();
       if (initialWriterForwardReady) {
         void initialWriterForwardReady.then(() => {
           if (
@@ -4292,6 +4365,65 @@ async function retryFailedAssetInPriorityQueue(button) {
   const current = state.results.find((item) => item.index === assetIndex);
   const retryState = retryStateForResult(current || {});
   if (!asset || !current || retryState.disabled) return;
+
+  if (retryState.active_recovery) {
+    state.priorityRetryInFlight += 1;
+    current.queueRetryStatus = "submitting";
+    current.feedbackMessage = "正在检查原任务并恢复队列位置…";
+    setStatus(`卡片 ${asset.index} 正在检查云端任务…`, { busy: true });
+    renderResults();
+    try {
+      const recoveryRequest = await fetchJsonWithRetry(JOB_RECOVERY_API_ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ job_id: current.v4_job_id || current.job_id })
+      }, {
+        timeoutMs: STATUS_POLL_TIMEOUT_MS,
+        maxAttempts: 2,
+        retryNetworkErrors: true,
+        asset,
+        stage: "queue_recovery"
+      });
+      if (recoveryRequest.error || recoveryRequest.payload?.ok === false) {
+        throw new Error(recoveryRequest.payload?.message || recoveryRequest.error?.message || "云端任务恢复失败");
+      }
+      const recovery = recoveryRequest.payload || {};
+      current.queueRetryStatus = "";
+      current.v4_job_status = recovery.job_status || current.v4_job_status;
+      if (recovery.action === "TERMINAL_REQUIRES_FRESH_ENQUEUE") {
+        current.v4_job_status = recovery.job_status || "FAILED";
+        current.assisted_draft_status = "FAILED";
+        current.l2AssistedDraftStatus = "FAILED";
+        current.writerTitlePending = false;
+        current.title_stage = "FAILED";
+        current.confidence = "FAILED";
+        current.feedbackMessage = "原任务已结束或自动重试次数已用完；请点击“优先重试”创建新的已校验任务。";
+        markAssetFinished(asset.index, { failed: true });
+        clearAssetProgress(asset.index);
+        setStatus(`卡片 ${asset.index} 的原任务已结束，可以发起一次新的优先重试。`);
+        return;
+      }
+      current.v4QueuedPollDelayed = false;
+      current.v4StatusPollConsecutiveFailures = 0;
+      current.v4QueuedPollStartedAt = performance.now();
+      current.v4StatusOrphaned = false;
+      current.feedbackMessage = recovery.action === "ALREADY_RUNNING"
+        ? "原任务仍在运行，系统已恢复状态跟踪，没有创建重复任务。"
+        : "原任务已置顶并恢复处理，没有创建重复任务。";
+      startV4AssistedDraftPolling(current);
+      setStatus(`卡片 ${asset.index} 已恢复，继续等待云端结果。`, { busy: true });
+    } catch (error) {
+      current.queueRetryStatus = "";
+      current.feedbackMessage = `任务恢复失败：${error.message || "请再次重试"}`;
+      setStatus(`卡片 ${asset.index} 暂时无法恢复，请稍后再试。`);
+    } finally {
+      state.priorityRetryInFlight = Math.max(0, state.priorityRetryInFlight - 1);
+      renderResults({ forceWriterRender: true });
+    }
+    return;
+  }
+
   const lifecycleGeneration = state.assetLifecycleGeneration;
   const retryOfJobId = String(current.v4_job_id || current.job_id || "").trim();
   const retryOfJobStatus = String(current.v4_job_status || "").trim().toUpperCase();

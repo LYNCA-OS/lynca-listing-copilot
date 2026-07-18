@@ -693,6 +693,7 @@ export default async function handler(req, res) {
             const startedAt = Date.now();
             const completed = await completeV4RecognitionJob({
               jobId: job.id,
+              tenantId: job.tenant_id || null,
               workerId: job.lease_owner || null,
               status: jobStatus,
               result: {

@@ -162,6 +162,12 @@ function scenarioFetch({
     recognition_session_id: "session_target",
     assigned_to_user_id: "user_writer"
   },
+  recoveryResult = {
+    action: "REPRIORITIZED",
+    job_id: "job_target",
+    job_status: "QUEUED",
+    priority: 0
+  },
   calls = []
 } = {}) {
   return async (input, init = {}) => {
@@ -220,6 +226,15 @@ function scenarioFetch({
         learning_event_id: body.p_learning_event.id
       });
     }
+    if (url.pathname === "/rest/v1/rpc/request_v4_recognition_job_recovery") {
+      assert.equal(method, "POST");
+      assert.deepEqual(body, {
+        p_job_id: "job_target",
+        p_tenant_id: "tenant_a",
+        p_requested_by_user_id: actorUserId
+      });
+      return jsonResponse(recoveryResult);
+    }
     if (url.pathname === "/rest/v1/v4_recognition_jobs") {
       assert.equal(url.searchParams.get("tenant_id"), "eq.tenant_a");
       const job = {
@@ -228,9 +243,9 @@ function scenarioFetch({
         batch_id: "batch_target",
         recognition_session_id: "session_target",
         operator_id: "user_owner",
-        assigned_to_user_id: "user_writer",
+        assigned_to_user_id: sessionAssignee,
         asset_id: "asset_target",
-        status: "FAILED",
+        status: "QUEUED",
         lane: "background",
         priority: 100,
         attempt_count: 3,
@@ -378,9 +393,10 @@ try {
       url: "/api/v4/listing-job-retry",
       payload: { job_id: "job_target" }
     });
-    assert.equal(result.statusCode, 410, `${actorRole} must use fresh canonical enqueue instead of replaying a team member's persisted payload`);
-    assert.equal(result.body.error_code, "V4_FRESH_ENQUEUE_REQUIRED");
-    assert.equal(calls.some(({ url }) => url.pathname === "/rest/v1/v4_recognition_jobs"), false);
+    assert.equal(result.statusCode, 200, `${actorRole} can safely reprioritize an existing tenant job`);
+    assert.equal(result.body.action, "REPRIORITIZED");
+    assert.equal(calls.filter(({ url }) => url.pathname === "/rest/v1/rpc/request_v4_recognition_job_recovery").length, 1);
+    assert.equal(calls.some(({ method }) => method === "PATCH"), false, "recovery must remain one database transaction");
   }
 
   {
@@ -391,8 +407,25 @@ try {
       url: "/api/v4/listing-job-retry",
       payload: { job_id: "job_target" }
     });
-    assert.equal(result.statusCode, 403, "Writer cannot invoke tenant-wide manual retry");
-    assert.equal(calls.some(({ url }) => url.pathname === "/rest/v1/v4_recognition_jobs"), false);
+    assert.equal(result.statusCode, 200, "the assigned Writer can recover their own stalled task");
+    assert.equal(result.body.action, "REPRIORITIZED");
+  }
+
+  {
+    const calls = [];
+    globalThis.fetch = scenarioFetch({
+      actorUserId: "user_writer",
+      actorRole: "WRITER",
+      sessionAssignee: "another_writer",
+      calls
+    });
+    const result = await callPost(retryHandler, {
+      userId: "user_writer",
+      url: "/api/v4/listing-job-retry",
+      payload: { job_id: "job_target" }
+    });
+    assert.equal(result.statusCode, 403, "a Writer cannot recover another Writer's task");
+    assert.equal(calls.some(({ url }) => url.pathname === "/rest/v1/rpc/request_v4_recognition_job_recovery"), false);
   }
 } finally {
   globalThis.fetch = originalFetch;
@@ -402,4 +435,4 @@ try {
   }
 }
 
-console.log("V4 assignment, assigned feedback, and fresh retry boundary tests passed.");
+console.log("V4 assignment, assigned feedback, and atomic recovery boundary tests passed.");

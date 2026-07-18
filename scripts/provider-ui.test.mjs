@@ -80,7 +80,7 @@ assert.doesNotMatch(js, /TITLE_API_ENDPOINT|fetch\(["'`]\/api\/v4\/listing-copil
 assert.match(js, /fetchWithBoundedRetry\(/, "storage and queue helpers should use bounded transport retries");
 assert.doesNotMatch(js, /TITLE_API_ENDPOINT|async function processAsset\(/, "writer recognition must not retain a direct paid-provider path that bypasses the durable queue");
 assert.match(js, /const JOB_ENQUEUE_API_ENDPOINT = "\/api\/v4\/listing-job-enqueue"/, "frontend should enqueue default production recognition jobs");
-assert.doesNotMatch(js, /JOB_RETRY_API_ENDPOINT|\/api\/v4\/listing-job-retry/, "failed cards must not replay an old payload with stale image references");
+assert.match(js, /const JOB_RECOVERY_API_ENDPOINT = "\/api\/v4\/listing-job-retry"/, "stalled cards should expose the idempotent durable recovery boundary");
 assert.match(js, /const JOB_STATUS_API_ENDPOINT = "\/api\/v4\/listing-job-status"/, "frontend should poll production job status for writer-visible titles");
 assert.doesNotMatch(js, /FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend must not probe the discarded L1 scout cache before L2");
 assert.match(js, /const SESSION_STATUS_API_ENDPOINT = "\/api\/v4\/listing-session-status"/, "frontend should poll the V4 session status endpoint for background assisted drafts");
@@ -100,10 +100,11 @@ assert.match(js, /URL\.revokeObjectURL/, "local preview object URLs should be re
 const handleFilesSource = js.slice(js.indexOf("async function handleFiles"), js.indexOf("async function processAssetViaQueue"));
 assert.doesNotMatch(handleFilesSource, /providerStatusReadyPromise/, "local previews must not wait for provider readiness before rendering");
 assert.doesNotMatch(handleFilesSource, /wait\(1200\)/, "upload intake must not retain the former provider-readiness delay");
-assert.match(handleFilesSource, /startBackgroundPreparation\("file_ready"\)/, "ready local images should immediately start durable background preparation");
+assert.match(handleFilesSource, /scheduleAssetBackgroundPreparation\(asset, backgroundRunId\)/, "each readable card should immediately start durable background preparation");
+assert.doesNotMatch(handleFilesSource, /startBackgroundPreparation\("file_ready"\)/, "the final file in a batch must not remain a whole-batch upload barrier");
 assert.ok(
   handleFilesSource.indexOf("renderInstantIntakePreviews(intakePreviewRecords)")
-    < handleFilesSource.indexOf("await mapWithConcurrency(imageFiles"),
+    < handleFilesSource.indexOf("await mapWithConcurrency(fileGroups"),
   "selected images must render an immediate local preview before expensive decoding or recompression"
 );
 assert.match(handleFilesSource, /releaseIntakePreviewRecords\(intakePreviewRecords\)/, "temporary intake object URLs must be released after safe images replace them");
@@ -499,7 +500,9 @@ assert.deepEqual(
     submitting: false,
     disabled: false,
     terminal_failure: true,
-    terminal_without_title: true
+    terminal_without_title: true,
+    active_recovery: false,
+    recovery_mode: "FRESH_VERIFIED_ENQUEUE"
   },
   "a failed durable job must expose retry even when stale assisted status still says pending"
 );
@@ -526,6 +529,19 @@ assert.equal(
   }).retryable,
   false,
   "a live durable job must not expose a duplicate paid retry"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.retryStateForResult({
+    confidence: "MEDIUM",
+    recognition_session_id: "session-stalled",
+    v4_schema_version: "v4",
+    assisted_draft_status: "RUNNING",
+    v4_job_status: "RUNNING",
+    v4QueuedPollDelayed: true,
+    title_stage: "PENDING"
+  }).active_recovery,
+  true,
+  "a delayed durable job should expose status recovery without cloning the paid task"
 );
 assert.equal(
   __listingCopilotAppTestHooks.shouldUseStorageFirstImage(

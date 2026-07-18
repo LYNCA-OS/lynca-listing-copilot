@@ -729,6 +729,7 @@ const atomicNoncriticalMigrationSource = await readFile("supabase/migrations/202
 const atomicNoncriticalMigrationApiSource = await readFile("api/admin-apply-v4-noncritical-persistence-migration.js", "utf8");
 const writerReadyCapacityMigrationSource = await readFile("supabase/migrations/20260712153000_atomic_v4_writer_ready_capacity_release.sql", "utf8");
 const stageCapacityMigrationSource = await readFile("supabase/migrations/20260713130000_v4_stage_capacity_control.sql", "utf8");
+const queueHotSlotRecoveryMigrationSource = await readFile("supabase/migrations/20260718005049_v4_queue_hot_slot_and_manual_recovery.sql", "utf8");
 const tenantFairQueueMigrationSource = await readFile("supabase/migrations/20260713224500_v4_tenant_fair_provider_queue.sql", "utf8");
 const writerReadyCapacityMigrationApiSource = await readFile("api/admin-apply-v4-writer-ready-capacity-migration.js", "utf8");
 const balancedProviderKeyMigrationSource = await readFile("supabase/migrations/20260712170000_v4_balanced_provider_key_slots.sql", "utf8");
@@ -823,9 +824,15 @@ assert.match(queueStatusApiSource, /ownedJobs = result\.rows\.filter[\s\S]*opera
 assert.match(queueEnqueueApiSource, /const noJobsAccepted =[\s\S]*acceptedCount === 0/, "enqueue must identify batches where no durable job was accepted.");
 assert.match(queueEnqueueApiSource, /const responseStatus = noJobsAccepted \? \(?deterministicConflict \? 409 : 503\)? : 200/, "an HTTP 200 must never hide a batch where no durable job was persisted.");
 assert.match(queueEnqueueApiSource, /V4_QUEUE_PERSISTENCE_FAILED/, "queue persistence failures must have a stable retryable error code.");
-assert.match(queueRetryApiSource, /TENANT_PERMISSIONS\.RETRY_JOB/, "the retired retry route must remain tenant-authorized.");
-assert.match(queueRetryApiSource, /sendJson\(res, 410,[\s\S]*V4_FRESH_ENQUEUE_REQUIRED/, "persisted job payloads must not be replayed; retry must use canonical fresh enqueue.");
-assert.doesNotMatch(queueRetryApiSource, /retryV4RecognitionJob|status:\s*v4JobStatuses\.RETRYING/, "the retired retry route must not mutate or revive an old job.");
+assert.match(queueRetryApiSource, /TENANT_PERMISSIONS\.RETRY_JOB/, "the recovery route must remain tenant-authorized.");
+assert.match(queueRetryApiSource, /requestV4RecognitionJobRecovery/, "stalled work must use the atomic recovery transaction.");
+assert.match(queueRetryApiSource, /assignedUserId: job\.assigned_to_user_id \|\| job\.operator_id/, "Writer recovery must remain assigned-task scoped.");
+assert.doesNotMatch(queueRetryApiSource, /patchV4Row|payload\.images|payload\.asset_images/, "recovery must never replay stored image payloads.");
+assert.match(queueHotSlotRecoveryMigrationSource, /on conflict \(provider_id, slot_no\) do nothing/, "capacity admission must not rewrite shared slot rows on every claim.");
+assert.doesNotMatch(queueHotSlotRecoveryMigrationSource, /on conflict \(provider_id, slot_no\) do update/, "the queue hot-slot regression must remain removed.");
+assert.match(queueHotSlotRecoveryMigrationSource, /create or replace function public\.request_v4_recognition_job_recovery/);
+assert.match(queueHotSlotRecoveryMigrationSource, /'ALREADY_RUNNING'/, "live leases must not be cloned or reclaimed.");
+assert.match(queueHotSlotRecoveryMigrationSource, /'REQUEUED_EXPIRED_LEASE'/, "expired leases must be safely recoverable.");
 assert.match(sessionStatusApiSource, /requirePermission\(context, TENANT_PERMISSIONS\.VIEW_ASSIGNED_TASK,[\s\S]*assignedUserId: status\.session\.assigned_to_user_id/, "session status must enforce server-side assignment ownership.");
 assert.match(sessionStatusApiSource, /include_related_counts/, "writer polling must not block on diagnostic table counts unless explicitly requested.");
 assert.match(sessionStatusApiSource, /Promise\.all\(Object\.entries\(tables\)/, "evaluation-only related counts should load in parallel.");
