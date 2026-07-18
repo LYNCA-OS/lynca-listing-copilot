@@ -85,6 +85,10 @@ import {
   unresolvedWithSuppressedParallelReview
 } from "../lib/listing/pipeline/result-calibration.mjs";
 import {
+  visualParallelWriterSuggestion,
+  writerSuggestionEvidenceNode
+} from "../lib/listing/pipeline/writer-review-suggestions.mjs";
+import {
   moveLeadingGradeToEnd,
   normalizeTitle,
   repairOrphanAutoGradeSuffix,
@@ -1494,13 +1498,23 @@ function applyOpenSetAssistShadowPresentationGuard(result = {}, payload = {}) {
   const resolvedFields = {
     ...(result.resolved || result.resolved_fields || {})
   };
+  const rawProviderFields = {
+    ...(result.raw_provider_fields || {})
+  };
   const mergedFields = {
+    ...rawProviderFields,
     ...resolvedFields,
     ...legacyFields
   };
   const hadExactParallel = exactParallelFieldsPresent(mergedFields);
   const hadUnsupportedPresentationParallel = openSetUnsupportedParallelPresentationPresent(mergedFields);
   const preservedSurfaceColor = narrowSurfaceColorFromOpenSetParallel(mergedFields);
+  const writerSuggestion = visualParallelWriterSuggestion({
+    rawFields: rawProviderFields,
+    resolved: resolvedFields,
+    fieldEvidence: result.raw_provider_field_evidence,
+    conflicts: result.conflict_map
+  });
   if (resultHasDirectParallelSupport(result)) {
     return {
       ...result,
@@ -1514,7 +1528,7 @@ function applyOpenSetAssistShadowPresentationGuard(result = {}, payload = {}) {
   const currentTitle = result.rendered_title || result.final_title || result.title || "";
   const titleAfterOpenSetStrip = stripOpenSetUnsupportedTitleTerms(currentTitle);
   const hadUnsupportedTitleParallel = Boolean(titleAfterOpenSetStrip && titleAfterOpenSetStrip !== normalizeStringOrNull(currentTitle));
-  if (!hadExactParallel && !hadUnsupportedPresentationParallel && !hadUnsupportedTitleParallel && !preservedSurfaceColor) {
+  if (!hadExactParallel && !hadUnsupportedPresentationParallel && !hadUnsupportedTitleParallel && !preservedSurfaceColor && !writerSuggestion) {
     return {
       ...result,
       open_set_presentation_guard: {
@@ -1549,15 +1563,30 @@ function applyOpenSetAssistShadowPresentationGuard(result = {}, payload = {}) {
     parallel: null,
     variation: null
   };
+  const writerPresentationFields = writerSuggestion
+    ? {
+        ...guardedResolvedFields,
+        parallel_exact: writerSuggestion.value,
+        surface_color: preservedSurfaceColor || guardedResolvedFields.surface_color || null
+      }
+    : guardedResolvedFields;
+  const writerSuggestionEvidence = writerSuggestionEvidenceNode(writerSuggestion);
+  const writerPresentationEvidence = writerSuggestionEvidence
+    ? {
+        ...(result.evidence || result.normalized_evidence || {}),
+        parallel_exact: writerSuggestionEvidence
+      }
+    : result.evidence || result.normalized_evidence || {};
   const presentation = renderListingPresentation({
-    resolved: guardedResolvedFields,
-    evidence: result.evidence || result.normalized_evidence || {},
+    resolved: writerPresentationFields,
+    evidence: writerPresentationEvidence,
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
     serialNumeratorVerified: serialNumeratorVerificationFromPayload(payload)
   });
-  const renderedTitle = stripOpenSetUnsupportedTitleTerms(
-    presentation.rendered_title || result.rendered_title || result.final_title || result.title || ""
-  );
+  const presentationTitle = presentation.rendered_title || result.rendered_title || result.final_title || result.title || "";
+  const renderedTitle = writerSuggestion
+    ? presentationTitle
+    : stripOpenSetUnsupportedTitleTerms(presentationTitle);
   const unresolved = uniqueValues([
     ...(Array.isArray(result.unresolved) ? result.unresolved : []),
     hadExactParallel || hadUnsupportedPresentationParallel || hadUnsupportedTitleParallel ? "open-set exact parallel requires catalog or writer review" : null,
@@ -1570,7 +1599,9 @@ function applyOpenSetAssistShadowPresentationGuard(result = {}, payload = {}) {
     final_title: renderedTitle,
     rendered_title: renderedTitle,
     model_title_suggestion: renderedTitle,
-    title_render_source: "open_set_narrow_parallel_guard",
+    title_render_source: writerSuggestion
+      ? "open_set_writer_review_suggestion"
+      : "open_set_narrow_parallel_guard",
     fields: guardedLegacyFields,
     resolved: guardedResolvedFields,
     resolved_fields: guardedResolvedFields,
@@ -1582,28 +1613,42 @@ function applyOpenSetAssistShadowPresentationGuard(result = {}, payload = {}) {
       parallel: null,
       variation: null
     },
+    writer_review_suggestions: writerSuggestion
+      ? {
+          ...(result.writer_review_suggestions || {}),
+          parallel_exact: writerSuggestion
+        }
+      : result.writer_review_suggestions || {},
     unresolved,
     open_set_presentation_guard: {
       used: true,
       reason: guardReason,
-      action: "downgraded_exact_parallel_to_surface_color",
+      action: writerSuggestion
+        ? "kept_visual_parallel_in_writer_presentation_only"
+        : "downgraded_exact_parallel_to_surface_color",
       removed_fields: [
         "parallel_exact",
         "parallel_family",
         "parallel",
         "variation"
       ],
-      preserved_surface_color: preservedSurfaceColor || null
+      preserved_surface_color: preservedSurfaceColor || null,
+      writer_review_suggestion: writerSuggestion
     },
     rendered_fields: {
       ...(result.rendered_fields || {}),
       ...guardedLegacyFields,
+      ...(writerSuggestion ? { parallel_exact: writerSuggestion.value } : {}),
       title: renderedTitle,
       rendered_title: renderedTitle,
       modules: presentation.modules,
       module_order: presentation.module_order,
-      title_render_source: "open_set_narrow_parallel_guard",
-      fields: guardedLegacyFields
+      title_render_source: writerSuggestion
+        ? "open_set_writer_review_suggestion"
+        : "open_set_narrow_parallel_guard",
+      fields: writerSuggestion
+        ? { ...guardedLegacyFields, parallel_exact: writerSuggestion.value }
+        : guardedLegacyFields
     },
     modules: presentation.modules,
     module_order: presentation.module_order,
@@ -2270,7 +2315,10 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
     model_title_suggestion: evidenceDocument.model_title_suggestion,
     evidence_fields: evidenceFields,
     raw_observed_fields: normalizedEvidenceFields || providerPayload.fields || null,
-    evidence_schema_version: evidenceDocument.schema_version
+    evidence_schema_version: evidenceDocument.schema_version,
+    raw_provider_field_evidence: Array.isArray(providerPayload.field_evidence)
+      ? providerPayload.field_evidence
+      : []
   };
 }
 
@@ -5868,6 +5916,7 @@ function explicitEmergencyFromPayload(payload = {}) {
 
 export const __listingCopilotTitleTestHooks = {
   applyOpenSetAssistShadowPresentationGuard,
+  withEvidenceCompatibility,
   buildInitialProviderPrompt,
   applyPreIngestionBundleToPayload,
   confirmedPreingestionRetrievalFields,

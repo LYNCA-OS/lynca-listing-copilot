@@ -72,6 +72,38 @@ const seasonYearIsNotPrintRun = normalizePaddleOcrResponse({
 assert.equal(seasonYearIsNotPrintRun.normalized_fields.serial_number, undefined);
 assert.equal(seasonYearIsNotPrintRun.normalized_fields.print_run_denominator, undefined);
 
+for (const [requestId, rawText] of [
+  ["ocr-serial-season-slash-guard", "MASTERS AUTOGRAPH CARD FROM 2025/26 TOPPS FINEST"],
+  ["ocr-serial-prose-season-slash-guard", "PERCENTAGE IMPROVED IN 2024/25 WHILE PLAYING"]
+]) {
+  const slashSeasonYearIsNotPrintRun = normalizePaddleOcrResponse({
+    raw_text: rawText,
+    confidence: 0.97
+  }, {
+    request_id: requestId,
+    image_url: "https://storage.test/serial-season-slash.jpg",
+    crop_type: "serial_crop"
+  });
+  assert.equal(slashSeasonYearIsNotPrintRun.normalized_fields.serial_number, undefined);
+  assert.equal(slashSeasonYearIsNotPrintRun.normalized_fields.print_run_denominator, undefined);
+}
+
+const explicitSeasonSuffixCannotBypassGuard = normalizePaddleOcrResponse({
+  raw_text: "MASTERS AUTOGRAPH CARD FROM 2025/26 TOPPS FINEST",
+  normalized_fields: {
+    serial_number: "#/26",
+    serial_denominator: "26",
+    print_run_denominator: "26"
+  },
+  confidence: 0.99
+}, {
+  request_id: "ocr-explicit-season-slash-guard",
+  image_url: "https://storage.test/serial-season-explicit.jpg",
+  crop_type: "serial_crop"
+});
+assert.equal(explicitSeasonSuffixCannotBypassGuard.normalized_fields.serial_number, undefined);
+assert.equal(explicitSeasonSuffixCannotBypassGuard.normalized_fields.serial_denominator, undefined);
+
 const isolatedHyphenPrintRun = normalizePaddleOcrResponse({
   raw_text: "09-50",
   confidence: 0.95
@@ -316,6 +348,42 @@ const websiteCodeIsNotCollectorNumber = normalizePaddleOcrResponse({
 });
 assert.equal(websiteCodeIsNotCollectorNumber.normalized_fields.collector_number, undefined);
 assert.equal(websiteCodeIsNotCollectorNumber.normalized_fields.checklist_code, undefined);
+
+const ocrConfusedWebsiteCodeIsNotCollectorNumber = normalizePaddleOcrResponse({
+  raw_text: "WWW.T0PPS.C0M C0DE#CMP134780",
+  confidence: 0.98
+}, {
+  request_id: "ocr-card-number-confused-website-guard",
+  image_url: "https://storage.test/card-back-confused-code.jpg",
+  crop_type: "collector_number"
+});
+assert.equal(ocrConfusedWebsiteCodeIsNotCollectorNumber.normalized_fields.collector_number, undefined);
+assert.equal(ocrConfusedWebsiteCodeIsNotCollectorNumber.normalized_fields.checklist_code, undefined);
+
+const proseNoIsNotCollectorNumber = normalizePaddleOcrResponse({
+  raw_text: "HUSTLE IS HAVING NO REGRETS AND DOING THE WORK",
+  confidence: 0.98
+}, {
+  request_id: "ocr-card-number-prose-no-guard",
+  image_url: "https://storage.test/card-back-prose.jpg",
+  crop_type: "collector_number"
+});
+assert.equal(proseNoIsNotCollectorNumber.normalized_fields.collector_number, undefined);
+
+const explicitFalseCodesCannotBypassGuard = normalizePaddleOcrResponse({
+  raw_text: "WWW.T0PPS.C0M C0DE#CMP134780\nHUSTLE IS HAVING NO REGRETS",
+  normalized_fields: {
+    collector_number: "REGRETS",
+    checklist_code: "CMP134780"
+  },
+  confidence: 0.99
+}, {
+  request_id: "ocr-explicit-false-code-guard",
+  image_url: "https://storage.test/card-back-explicit-false-code.jpg",
+  crop_type: "collector_number"
+});
+assert.equal(explicitFalseCodesCannotBypassGuard.normalized_fields.collector_number, undefined);
+assert.equal(explicitFalseCodesCannotBypassGuard.normalized_fields.checklist_code, undefined);
 
 const alphaCollectorNumber = normalizePaddleOcrResponse({
   raw_text: "No. PAU-AED",

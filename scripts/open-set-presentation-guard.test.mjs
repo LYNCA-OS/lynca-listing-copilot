@@ -3,6 +3,7 @@ import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js"
 
 const {
   applyOpenSetAssistShadowPresentationGuard,
+  withEvidenceCompatibility,
   boundedPayloadImagesFromImages,
   catalogCandidateHasStrongAnchor,
   catalogStrongCandidateForVectorLazy,
@@ -13,6 +14,53 @@ const {
   shouldDeferVectorUntilProviderObservation,
   shouldSkipVectorForCatalogContext
 } = __listingCopilotTitleTestHooks;
+
+const compatibleVisualHypothesis = withEvidenceCompatibility({
+  title: "2025-26 Topps Finest Cooper Flagg Masters Auto Yellow Geometric #/35",
+  model_title_suggestion: "2025-26 Topps Finest Cooper Flagg Masters Auto Yellow Geometric #/35",
+  confidence: "MEDIUM",
+  reason: "visual hypothesis requires writer review",
+  fields: {
+    year: "2025/26",
+    manufacturer: "Topps",
+    product: "Topps Finest",
+    set: "Masters",
+    players: ["Cooper Flagg"],
+    surface_color: "Yellow",
+    parallel_exact: "Yellow Geometric",
+    auto: true
+  },
+  unresolved: ["parallel_exact"]
+}, {
+  title: "2025-26 Topps Finest Cooper Flagg Masters Auto Yellow Geometric #/35",
+  confidence: "MEDIUM",
+  fields: {
+    year: "2025/26",
+    manufacturer: "Topps",
+    product: "Topps Finest",
+    set: "Masters",
+    players: ["Cooper Flagg"],
+    surface_color: "Yellow",
+    parallel_exact: "Yellow Geometric",
+    auto: true
+  },
+  field_evidence: [{
+    field: "parallel_exact",
+    value: "Yellow Geometric",
+    source_type: "VISION_ONLY",
+    confidence: 0.84,
+    review_required: true,
+    directly_observed: true
+  }],
+  unresolved: ["parallel_exact"]
+}, {
+  images: [{ id: "image-1" }],
+  maxTitleLength: 80
+});
+assert.equal(compatibleVisualHypothesis.raw_provider_fields.parallel_exact, "Yellow Geometric");
+assert.equal(compatibleVisualHypothesis.raw_provider_field_evidence.length, 1);
+assert.equal(compatibleVisualHypothesis.resolved.parallel_exact, "Yellow Geometric");
+assert.equal(compatibleVisualHypothesis.resolved.year, "2025-26");
 
 assert.equal(configuredMaxPayloadImages({}), 14);
 assert.equal(configuredMaxPayloadImages({ LISTING_MAX_PAYLOAD_IMAGES: "18" }), 18);
@@ -246,6 +294,107 @@ assert.equal(goldGuarded.fields.surface_color, "Gold");
 assert.match(goldGuarded.final_title, /\bGold\b/);
 assert.doesNotMatch(goldGuarded.final_title, /\bRefractor\b/i);
 assert.ok(goldGuarded.unresolved.includes("open-set exact parallel requires catalog or writer review"));
+
+const visualHypothesisGuarded = applyOpenSetAssistShadowPresentationGuard({
+  ...shadowResult({
+    title: "2025-26 Topps Finest Cooper Flagg Masters Auto Gold #/35",
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      brand: "Topps",
+      product: "Topps Finest",
+      set: "Masters",
+      player: "Cooper Flagg",
+      players: ["Cooper Flagg"],
+      surface_color: "Yellow",
+      auto: true
+    }
+  }),
+  raw_provider_fields: {
+    year: "2025-26",
+    product: "Topps Finest",
+    set: "Masters",
+    players: ["Cooper Flagg"],
+    surface_color: "Yellow",
+    parallel_exact: "Yellow Geometric"
+  },
+  raw_provider_field_evidence: [{
+    field: "parallel_exact",
+    value: "Yellow Geometric",
+    source_type: "VISION_ONLY",
+    source_image_id: "image-1",
+    source_region: "parallel_surface",
+    visible_text: "Yellow geometric surface pattern",
+    confidence: 0.84,
+    review_required: true,
+    directly_observed: true,
+    direct_observation: true
+  }]
+}, { maxTitleLength: 80 });
+
+assert.equal(visualHypothesisGuarded.open_set_presentation_guard.used, true);
+assert.equal(visualHypothesisGuarded.open_set_presentation_guard.action, "kept_visual_parallel_in_writer_presentation_only");
+assert.equal(visualHypothesisGuarded.fields.parallel_exact, null, "visual hypotheses must not enter identity fields");
+assert.equal(visualHypothesisGuarded.resolved.parallel_exact, null, "visual hypotheses must not enter resolved identity");
+assert.equal(visualHypothesisGuarded.rendered_fields.parallel_exact, "Yellow Geometric");
+assert.equal(visualHypothesisGuarded.writer_review_suggestions.parallel_exact.value, "Yellow Geometric");
+assert.match(visualHypothesisGuarded.final_title, /\bYellow Geometric\b/i);
+assert.equal(visualHypothesisGuarded.modules.print_finish.status, "REVIEW");
+assert.equal(visualHypothesisGuarded.modules.print_finish.requires_review, true);
+
+const weakVisualHypothesisGuarded = applyOpenSetAssistShadowPresentationGuard({
+  ...shadowResult({
+    title: "2025-26 Topps Finest Cooper Flagg Yellow Geometric",
+    fields: {
+      year: "2025-26",
+      product: "Topps Finest",
+      player: "Cooper Flagg",
+      players: ["Cooper Flagg"]
+    }
+  }),
+  raw_provider_fields: {
+    year: "2025-26",
+    product: "Topps Finest",
+    players: ["Cooper Flagg"],
+    parallel_exact: "Yellow Geometric"
+  },
+  raw_provider_field_evidence: [{
+    field: "parallel_exact",
+    value: "Yellow Geometric",
+    source_type: "VISION_ONLY",
+    confidence: 0.79,
+    review_required: true,
+    directly_observed: true
+  }]
+}, { maxTitleLength: 80 });
+assert.equal(weakVisualHypothesisGuarded.writer_review_suggestions?.parallel_exact, undefined);
+assert.doesNotMatch(weakVisualHypothesisGuarded.final_title, /\bGeometric\b/i);
+
+const referenceOnlyHypothesisGuarded = applyOpenSetAssistShadowPresentationGuard({
+  ...shadowResult({
+    title: "2025-26 Topps Finest Cooper Flagg Yellow Geometric",
+    fields: {
+      year: "2025-26",
+      product: "Topps Finest",
+      player: "Cooper Flagg",
+      players: ["Cooper Flagg"]
+    }
+  }),
+  raw_provider_fields: {
+    product: "Topps Finest",
+    parallel_exact: "Yellow Geometric"
+  },
+  raw_provider_field_evidence: [{
+    field: "parallel_exact",
+    value: "Yellow Geometric",
+    source_type: "STRUCTURED_DATABASE",
+    confidence: 0.99,
+    review_required: true,
+    directly_observed: true
+  }]
+}, { maxTitleLength: 80 });
+assert.equal(referenceOnlyHypothesisGuarded.writer_review_suggestions?.parallel_exact, undefined);
+assert.doesNotMatch(referenceOnlyHypothesisGuarded.final_title, /\bGeometric\b/i, "catalog/reference evidence must not masquerade as a current-image visual suggestion");
 
 const directSupportedParallel = applyOpenSetAssistShadowPresentationGuard(shadowResult({
   title: "2024 Pokemon Darkrai Holo PSA 10",

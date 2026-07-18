@@ -542,6 +542,15 @@ const falseSeasonPrintRunDocument = __listingCopilotTitleTestHooks.preingestionE
       source_image_id: "back",
       confidence: 0.93,
       provenance: { source_region: "full_image_serial_scan" }
+    },
+    {
+      field: "print_run_denominator",
+      value: "26",
+      raw_text: "MASTERS AUTOGRAPH CARD FROM 2025/26 TOPPS FINEST",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.97,
+      provenance: { source_region: "full_image_serial_scan" }
     }
   ]
 });
@@ -644,6 +653,22 @@ const falsePrintedCodeRetrievalFields = __listingCopilotTitleTestHooks.confirmed
       source_type: "OCR",
       source_image_id: "back",
       confidence: 0.96
+    },
+    {
+      field: "collector_number",
+      value: "CMP134780",
+      raw_text: "WWW.T0PPS.C0M C0DE#CMP134780",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.98
+    },
+    {
+      field: "collector_number",
+      value: "REGRETS",
+      raw_text: "HUSTLE IS HAVING NO REGRETS AND DOING THE WORK",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.98
     }
   ]
 });

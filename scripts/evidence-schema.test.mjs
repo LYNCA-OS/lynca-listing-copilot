@@ -154,6 +154,9 @@ assert.equal(normalized.grade_type, "CARD_AND_AUTO");
 assert.equal(normalized.one_of_one, true);
 assert.equal(normalized.multi_card, true);
 assert.equal(normalized.card_count, 3);
+assert.equal(normalizeResolvedFields({ year: "2025/26" }).year, "2025-26");
+assert.equal(normalizeResolvedFields({ year: "2025-26" }).year, "2025-26");
+assert.equal(normalizeResolvedFields({ year: "2025" }).year, "2025");
 
 const multiCardResolved = legacyFieldsToResolvedFields({
   multi_card: true,
