@@ -970,7 +970,7 @@ const duplicateVariationLowConfidence = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.notEqual(duplicateVariationLowConfidence.identity_resolution_status, "ABSTAIN");
-assert.match(duplicateVariationLowConfidence.final_title, /Variation-Gold/);
+assert.match(duplicateVariationLowConfidence.final_title, /Variation Gold/);
 
 const weakVisualParallelDropsWithoutBlocking = applyIdentityResolutionGate({
   title: "2025-26 Panini Prizm FIFA Club Legends Lionel Messi Auto 029/199",

@@ -357,6 +357,16 @@ for (const code of ["PA-ANT", "83T-6", "OP01-001", "CT14-EN001", "EN001", "201/1
   assert.equal(normalizePrintedCardCodeForFields(code), code, `${code} should remain a valid compact printed code`);
 }
 assert.equal(
+  normalizePrintedCardCodeForFields("242/204 · JA-9"),
+  "242/204",
+  "a TCG checklist ratio may be recovered from compound OCR text"
+);
+assert.equal(
+  normalizePrintedCardCodeForFields("11/15 · PAU"),
+  null,
+  "a physical print-run ratio must not be promoted to a card-number anchor"
+);
+assert.equal(
   normalizePrintedCardCodeForFields("TRAEYOUNG", { players: ["Trae Young"] }),
   null,
   "a whitespace-free subject name must not become a printed card code"

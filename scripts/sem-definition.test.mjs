@@ -13,9 +13,12 @@ import {
   semCanonicalEditableFields,
   semCatalogTrustVerdict,
   semDefinition,
+  semGrammarForResolved,
   semIssueCoverage,
   semLotTitleOrder,
+  semReleaseVariantText,
   semStandardTitleOrder,
+  semTcgIpLabel,
   semTcgTitleOrder
 } from "../lib/listing/csm/sem-definition.mjs";
 
@@ -58,6 +61,13 @@ assert.deepEqual(semLotTitleOrder.slice(0, 4), [
   "manufacturer_product_set",
   "subjects_max_3"
 ]);
+
+assert.equal(semTcgIpLabel({ product: "Disney Lorcana Special PR Pack" }), "Disney Lorcana");
+assert.equal(semGrammarForResolved({ product: "Disney Lorcana Special PR Pack" }), "TCG");
+assert.equal(semGrammarForResolved({ product: "Topps Chrome Basketball" }), "STANDARD");
+assert.equal(semReleaseVariantText("Variation-Gold"), "Variation");
+assert.equal(semReleaseVariantText("Photo Variation / Horizontal"), "Photo Variation Horizontal");
+assert.equal(semReleaseVariantText("JA 9"), "");
 
 assert.deepEqual(classifySemNumberBoundary("04/10"), {
   boundary: "NUMERICAL_RARITY",

@@ -210,6 +210,71 @@ function testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin() {
   assert.equal(control.selected_candidate_decision.low_margin_candidate_id, "");
 }
 
+function testApplicableCatalogTierBeatsSupportOnlyVectorTier() {
+  const catalogCandidate = {
+    candidate_id: "catalog-tennis-applicable",
+    candidate_identity_id: "identity-tennis-catalog",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    match_score: 0.2,
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Chrome Tennis",
+      players: ["Holger Rune"]
+    }
+  };
+  const vectorCandidate = {
+    candidate_id: "vector-tennis-support-only",
+    candidate_identity_id: "identity-tennis-vector",
+    source_type: "VISUAL_VECTOR",
+    source_trust: "APPROVED_REFERENCE",
+    similarity: 0.99,
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      players: ["Holger Rune"]
+    }
+  };
+  const control = buildCandidateSelectionPass({
+    result: {
+      catalog_candidate_packet: packet([catalogCandidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: [catalogCandidate.candidate_id]
+      }),
+      vector_candidate_packet: packet([vectorCandidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: [vectorCandidate.candidate_id]
+      })
+    }
+  });
+
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, catalogCandidate.candidate_id);
+  assert.equal(control.selected_candidate_safe_field_application.status, "ready_fill_missing");
+  assert.equal(control.selected_candidate_safe_field_application.renderer_application_allowed, true);
+  assert.ok(
+    control.selected_candidate_decision.top_candidate_decision_strength
+      > control.selected_candidate_decision.second_candidate_decision_strength
+  );
+}
+
 function testCandidateOnlyPacketCannotEnterProductionDecision() {
   const candidate = {
     candidate_id: "candidate-only",
@@ -1185,6 +1250,7 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
+testApplicableCatalogTierBeatsSupportOnlyVectorTier();
 testCandidateOnlyPacketCannotEnterProductionDecision();
 testFunnelAndEvidenceTraceFailClosedOnConflict();
 testLowMarginCandidateOnlySupportsCurrentImageFields();

@@ -1273,9 +1273,9 @@ const tcgMasterBallStress = renderListingPresentation({
 });
 assert.equal(
   tcgMasterBallStress.final_title,
-  "2023 Japanese Pokemon 151 Charizard ex SAR Master Ball Reverse Holo PSA 10"
+  "2023 JP Pokemon 151 Charizard ex 201/165 SAR Master Ball Reverse Holo PSA 10"
 );
-assert.doesNotMatch(tcgMasterBallStress.final_title, /201\/165/);
+assert.match(tcgMasterBallStress.final_title, /201\/165/);
 assert.equal(tcgMasterBallStress.final_title.length <= 80, true);
 
 const tcgPikachuIllustratorStress = renderListingPresentation({
@@ -1323,9 +1323,9 @@ const tcgGhostRareStress = renderListingPresentation({
 });
 assert.equal(
   tcgGhostRareStress.final_title,
-  "2007 Yu-Gi-Oh! Tactical Evolution Rainbow Dragon Ghost Rare 1st Edition PSA 10"
+  "2007 Yu-Gi-Oh! Tactical Evolution Rainbow Dragon TAEV-EN006 1st Edition PSA 10"
 );
-assert.doesNotMatch(tcgGhostRareStress.final_title, /TAEV-EN006|English/);
+assert.doesNotMatch(tcgGhostRareStress.final_title, /Ghost Rare|English/);
 
 const bowmanLongDescriptorKeepsGrade = renderListingPresentation({
   resolved: {
@@ -1586,5 +1586,31 @@ const chromeAbbreviationExpanded = renderResolvedTitle({
 });
 assert.match(chromeAbbreviationExpanded.rendered_title, /Chrome Promo/);
 assert.doesNotMatch(chromeAbbreviationExpanded.rendered_title, /\bChr\./);
+
+const lorcanaUsesTcgGrammarAndKeepsGrade = renderResolvedTitle({
+  year: "2025",
+  manufacturer: "Disney / LORCANA",
+  brand: "Disney Lorcana",
+  product: "Disney Lorcana Special PR Pack Vol.1 - Iconic",
+  set: "Special PR Pack Vol.1 - Iconic",
+  players: ["Mickey Mouse"],
+  card_name: "Mickey Mouse",
+  language: "JA",
+  collector_number: "242/204",
+  variation: "JA 9",
+  surface_color: "Gold",
+  grade_company: "PSA",
+  card_grade: "10",
+  grade_type: "CARD_ONLY"
+}, {
+  maxLength: 80
+});
+assert.equal(lorcanaUsesTcgGrammarAndKeepsGrade.renderer, "pokemon");
+assert.match(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title, /JP Disney Lorcana/);
+assert.match(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title, /Special PR Pack Vol\.1/);
+assert.match(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title, /242\/204/);
+assert.match(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title, /PSA 10$/);
+assert.doesNotMatch(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title, /\bJA\s+9\b/);
+assert.ok(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title.length <= 80);
 
 console.log("renderer tests passed");
