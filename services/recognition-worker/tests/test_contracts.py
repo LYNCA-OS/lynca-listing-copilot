@@ -50,6 +50,14 @@ class RecognitionWorkerTests(unittest.TestCase):
         }
         self.assertEqual(validate_request(payload), [])
         self.assertTrue(validate_request({**payload, "images": []}))
+        image_order_payload = {
+            **payload,
+            "images": [
+                {**payload["images"][0], "image_id": "image_1", "role": "image_1_original"},
+                {**payload["images"][0], "image_id": "image_2", "role": "image_2_original"},
+            ],
+        }
+        self.assertEqual(validate_request(image_order_payload), [])
 
     def test_ocr_runtime_does_not_ship_visual_embedding_stack(self):
         service_root = Path(__file__).resolve().parents[1]

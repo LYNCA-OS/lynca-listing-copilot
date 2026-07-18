@@ -1,6 +1,32 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
-import { validateRecognitionRequest, validateRecognitionResponse } from "../lib/listing/recognition/recognition-contract.mjs";
+import {
+  recognitionImageRoles,
+  recognitionRequestedFields,
+  validateRecognitionRequest,
+  validateRecognitionResponse
+} from "../lib/listing/recognition/recognition-contract.mjs";
+
+function pythonSet(name) {
+  const source = fs.readFileSync(new URL("../services/recognition-worker/app/contracts.py", import.meta.url), "utf8");
+  const match = source.match(new RegExp(`${name}\\s*=\\s*\\{([\\s\\S]*?)\\n\\}`));
+  assert.ok(match, `missing Python contract set ${name}`);
+  return new Set([...match[1].matchAll(/["']([^"']+)["']/g)].map((entry) => entry[1]));
+}
+
+const workerImageRoles = pythonSet("IMAGE_ROLES");
+const workerRequestedFields = pythonSet("REQUESTED_FIELDS");
+assert.deepEqual(
+  recognitionImageRoles.filter((role) => !workerImageRoles.has(role)),
+  [],
+  "the Node client must never emit an image role rejected by the Python worker"
+);
+assert.deepEqual(
+  recognitionRequestedFields.filter((field) => !workerRequestedFields.has(field)),
+  [],
+  "the Node client must never request a field rejected by the Python worker"
+);
 
 const request = {
   asset_id: "asset_1",
@@ -21,6 +47,13 @@ const request = {
 };
 assert.deepEqual(validateRecognitionRequest(request), []);
 assert.ok(validateRecognitionRequest({ ...request, images: [] }).some((error) => error.path === "images"));
+assert.deepEqual(validateRecognitionRequest({
+  ...request,
+  images: [
+    { ...request.images[0], image_id: "image_1", role: "image_1_original" },
+    { ...request.images[0], image_id: "image_2", role: "image_2_original" }
+  ]
+}), []);
 
 const responsePayload = {
   asset_id: "asset_1",

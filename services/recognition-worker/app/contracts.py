@@ -5,6 +5,8 @@ from typing import Any
 
 
 IMAGE_ROLES = {
+    "image_1_original",
+    "image_2_original",
     "front_original",
     "back_original",
     "front_global",

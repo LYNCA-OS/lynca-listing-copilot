@@ -5140,6 +5140,7 @@ async function createOpenAiTitle(payload, selection, {
   requestContext = null
 } = {}) {
   let recognitionEvidenceDocument = initialRecognitionEvidenceDocument;
+  let recognitionPreflightError = null;
   const preingestionOcrScope = preingestionOcrScopeFromPayload(payload);
   const preingestionBundleId = preingestionOcrScope.bundleId;
   let latestPreingestionOcrState = null;
@@ -5391,12 +5392,19 @@ async function createOpenAiTitle(payload, selection, {
     const recognitionPreflight = await recognitionPreflightPromise;
     addTiming(timingContext, "recognition_preflight_join_wait_ms", nowMs() - recognitionJoinStartedAt);
     recognitionEvidenceDocument = recognitionPreflight?.evidenceDocument || recognitionEvidenceDocument;
+    recognitionPreflightError = recognitionPreflight?.error || null;
   }
   providerResultWithEvidence = withRecognitionEvidence(
     providerResultWithEvidence,
     recognitionEvidenceDocument,
     initialPayload
   );
+  if (recognitionPreflightError) {
+    providerResultWithEvidence = {
+      ...providerResultWithEvidence,
+      recognition_preflight_error: recognitionPreflightError
+    };
+  }
   let providerCapacityStageHandoffPromise = null;
   let providerCapacityHandoffOverlapStartedAt = null;
   if (canOverlapProviderCapacityHandoffAfterInitialCall({ assistShadowOnly })
