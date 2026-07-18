@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { loadEnvFiles } from "./check-feedback-workflow-context-schema.mjs";
+import { loadEnvFiles } from "../lib/listing/readiness/workflow-context-schema.mjs";
 
 const defaultBaseUrl = "https://listing.lyncafei.team";
 

@@ -114,4 +114,15 @@ assert.match(
   "durable pre-ingestion jobs require an independent scheduled sweeper"
 );
 
+for (const runtimeModule of [
+  "api/listing-provider-status.js",
+  "lib/listing/readiness/workflow-readiness-audit.mjs"
+]) {
+  assert.doesNotMatch(
+    readFileSync(runtimeModule, "utf8"),
+    /from\s+["'][^"']*scripts\//,
+    `${runtimeModule} must not depend on CLI scripts that Vercel can omit from the function bundle`
+  );
+}
+
 console.log("production release boundary tests passed");
