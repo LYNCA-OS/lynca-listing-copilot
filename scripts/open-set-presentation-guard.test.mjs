@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
+import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
 const {
   applyOpenSetAssistShadowPresentationGuard,

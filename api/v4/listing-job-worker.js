@@ -85,28 +85,25 @@ export function v4ResponseUsage(response = {}) {
     ...objectOrEmpty(responseObject.provider_result_summary),
     ...objectOrEmpty(responseObject.provider_result)
   };
-  const legacy = objectOrEmpty(responseObject.legacy_v2_result);
   const usageSources = [
     objectOrEmpty(summary.usage),
     objectOrEmpty(responseObject.usage),
-    objectOrEmpty(legacy.usage),
     objectOrEmpty(summary.provider_usage)
   ];
   const tokenSources = [
     ...usageSources,
     objectOrEmpty(summary.provider_token_diagnostics),
     objectOrEmpty(summary.token_diagnostics),
-    objectOrEmpty(legacy.provider_token_diagnostics),
     summary,
     responseObject
   ];
   const providerCalls = firstNumber(
-    [summary, ...usageSources, responseObject, legacy],
+    [summary, ...usageSources, responseObject],
     ["provider_calls", "provider_call_count"]
   );
   const providerCallsKnown = providerCalls !== null;
-  const provider = summary.provider || responseObject.provider || legacy.provider || null;
-  const modelVersion = summary.model || summary.model_id || responseObject.model || responseObject.model_id || legacy.model || legacy.model_id || null;
+  const provider = summary.provider || responseObject.provider || null;
+  const modelVersion = summary.model || summary.model_id || responseObject.model || responseObject.model_id || null;
   const inferredProviderCall = !providerCallsKnown
     && Boolean(provider || modelVersion);
   const resolvedProviderCalls = providerCallsKnown
@@ -117,10 +114,10 @@ export function v4ResponseUsage(response = {}) {
   const inputTokens = firstNumber(tokenSources, ["input_tokens", "prompt_tokens", "total_input_tokens"]);
   const outputTokens = firstNumber(tokenSources, ["output_tokens", "completion_tokens", "total_output_tokens"]);
   const rawEstimatedCostUsd = firstNumber(
-    [summary, ...usageSources, responseObject, legacy],
+    [summary, ...usageSources, responseObject],
     ["estimated_cost_usd", "cost_usd"]
   );
-  const costConfiguredFlag = [summary, ...usageSources, responseObject, legacy]
+  const costConfiguredFlag = [summary, ...usageSources, responseObject]
     .map((source) => source?.cost_configured)
     .find((value) => typeof value === "boolean");
   const estimatedCostUsd = costConfiguredFlag === true && rawEstimatedCostUsd !== null
@@ -136,8 +133,8 @@ export function v4ResponseUsage(response = {}) {
   return {
     provider,
     modelVersion,
-    promptVersion: summary.prompt_version || responseObject.prompt_version || legacy.prompt_version || null,
-    route: responseObject.route || responseObject.route_plan?.route || summary.route || legacy.route || null,
+    promptVersion: summary.prompt_version || responseObject.prompt_version || null,
+    route: responseObject.route || responseObject.route_plan?.route || summary.route || null,
     providerCalls: resolvedProviderCalls,
     providerCallsKnown,
     providerCallsSource: providerCallsKnown ? "reported" : inferredProviderCall ? "inferred" : "none",

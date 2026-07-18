@@ -14,7 +14,7 @@ import {
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 import { applyPreIngestionEvidencePatchesToPayload } from "../lib/listing/pipeline/preingestion-evidence.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
-import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
+import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
 const env = {
   SUPABASE_URL: "https://supabase.test",

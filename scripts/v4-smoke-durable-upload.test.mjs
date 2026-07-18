@@ -6,6 +6,7 @@ import {
   canonicalBatchIdForPoll,
   prepareDurableSmokeItem
 } from "./v4-ebay-smoke.mjs";
+import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
 
 const tempDirectory = await mkdtemp(join(tmpdir(), "lynca-v4-smoke-upload-"));
 const firstPath = join(tempDirectory, "image-1.jpg");
@@ -125,6 +126,7 @@ try {
   assert.equal(prepared.source_asset_id, "ebay_legacy_source");
   assert.equal(prepared.asset.asset_id, durableAssetId);
   assert.equal(prepared.item.asset_id, durableAssetId);
+  assert.equal(prepared.item.image_generation_id, durableAssetId);
   assert.equal(prepared.item.source_feedback_id, "ebay:image-only:source");
   assert.deepEqual(prepared.images.map((image) => image.storageRole), ["image_1_original", "image_2_original"]);
   assert.ok(prepared.images.every((image) => image.storageVerified === true));
@@ -133,8 +135,56 @@ try {
   assert.equal(calls.filter((call) => call.pathname.startsWith("/upload/") && call.method === "PUT").length, 2);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-upload").length, 2);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-existing").length, 0);
+
+  const canonicalImages = prepared.images.map((image) => ({ ...image }));
+  const canonicalReferences = canonicalImages.map((image, index) => ({
+    image_id: image.imageId,
+    image_role: index === 0 ? "front_original" : "back_original",
+    bucket: image.storageBucket,
+    object_path: image.objectPath,
+    content_sha256: image.contentSha256,
+    derived: false,
+    source_image_id: null,
+    source_region: null,
+    crop_metadata: null
+  }));
+  const [canonicalJob] = await canonicalizeQueueJobs({
+    tenantId: "tenant_legacy",
+    jobs: [{
+      asset_id: prepared.item.asset_id,
+      image_generation_id: prepared.item.image_generation_id,
+      payload: {
+        asset_id: prepared.item.asset_id,
+        client_asset_ref: prepared.asset.client_asset_ref,
+        preingestion_bundle_id: "browser-must-not-own-this",
+        images: [{ object_path: "listing-assets/legacy-path.jpg" }]
+      }
+    }],
+    readCanonical: async () => ({
+      asset_id: durableAssetId,
+      image_generation_id: durableAssetId,
+      expected_original_count: 2,
+      image_set_sha256: "b".repeat(64),
+      images: canonicalImages,
+      image_references: canonicalReferences,
+      image_paths: {
+        front_bucket: canonicalReferences[0].bucket,
+        front_object_path: canonicalReferences[0].object_path,
+        front_content_sha256: canonicalReferences[0].content_sha256,
+        back_bucket: canonicalReferences[1].bucket,
+        back_object_path: canonicalReferences[1].object_path,
+        back_content_sha256: canonicalReferences[1].content_sha256,
+        additional_image_paths: []
+      }
+    })
+  });
+  assert.equal(canonicalJob.asset_id, durableAssetId);
+  assert.equal(canonicalJob.payload.image_generation_id, durableAssetId);
+  assert.deepEqual(canonicalJob.payload.image_references, canonicalReferences);
+  assert.equal("preingestion_bundle_id" in canonicalJob.payload, false);
+  assert.equal(JSON.stringify(canonicalJob).includes("legacy-path.jpg"), false);
 } finally {
   await rm(tempDirectory, { recursive: true, force: true });
 }
 
-console.log("v4 smoke durable upload tests passed");
+console.log("v4 durable upload and enqueue transaction-boundary canary passed");

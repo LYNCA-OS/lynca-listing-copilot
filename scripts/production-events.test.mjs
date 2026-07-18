@@ -10,7 +10,7 @@ import {
   sanitizeOperationalStack,
   persistProductionEvents
 } from "../lib/observability/production-events.mjs";
-import { adaptV2ResultToV4 } from "../lib/listing/v4/result-adapter.mjs";
+import { adaptRecognitionResultToV4 } from "../lib/listing/v4/result-adapter.mjs";
 import { v4ResponseUsage } from "../api/v4/listing-job-worker.js";
 
 const req = {
@@ -98,7 +98,7 @@ assert.equal(writes.length, 1);
 assert.equal(writes[0].body.tenant_id, "tenant_001");
 assert.equal((await telemetry.finish()).skipped, true);
 
-const pricedV4 = adaptV2ResultToV4({
+const pricedV4 = adaptRecognitionResultToV4({
   sessionId: "session-priced",
   result: {
     title: "2024 Panini Test Card #1",
@@ -136,7 +136,7 @@ assert.equal(pricedUsage.outputTokens, 40);
 assert.equal(pricedUsage.estimatedCostUsd, 0.012345);
 assert.equal(pricedUsage.pricingCoverage, "PRICED");
 
-const failedV4 = adaptV2ResultToV4({
+const failedV4 = adaptRecognitionResultToV4({
   sessionId: "session-failed",
   result: {
     confidence: "FAILED",

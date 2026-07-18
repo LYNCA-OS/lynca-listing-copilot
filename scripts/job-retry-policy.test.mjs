@@ -11,6 +11,7 @@ import {
   v4JobRetryPolicy,
   withCanonicalV4JobState
 } from "../lib/listing/v4/jobs/job-retry-policy.mjs";
+import { assetRecoveryActions } from "../lib/listing/v4/assets/asset-lifecycle-contract.mjs";
 
 assert.deepEqual(v4JobRetryPolicy, {
   maxRetries: 3,
@@ -44,6 +45,21 @@ assert.equal(
   classifyV4JobError({ code: "INVALID_PAYLOAD", retryable: true }).retryable,
   true,
   "an explicit upstream classification must take precedence"
+);
+const staleGeneration = classifyV4JobError({
+  code: "CANONICAL_IMAGE_GENERATION_STALE",
+  retryable: true
+});
+assert.equal(staleGeneration.retryable, false, "stale immutable image state must not be replayed");
+assert.equal(staleGeneration.category, "input_rebind_required");
+assert.equal(staleGeneration.recovery_action, assetRecoveryActions.INPUT_REBIND);
+const transientProvider = classifyV4JobError({ code: "PROVIDER_TIMEOUT" });
+assert.equal(transientProvider.retryable, true);
+assert.equal(transientProvider.recovery_action, assetRecoveryActions.EXECUTION_RETRY);
+assert.equal(
+  classifyV4JobError({ code: "CANONICAL_IMAGE_GENERATION_MISSING", retryable: true }).recovery_action,
+  assetRecoveryActions.INPUT_REBIND,
+  "legacy generation failures must be rebound even when an old row marked them retryable"
 );
 
 for (const [attemptCount, retryDelaySeconds] of [[1, 10], [2, 30], [3, 120]]) {

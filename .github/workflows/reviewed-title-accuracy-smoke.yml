@@ -1,7 +1,12 @@
 name: reviewed-title-accuracy-smoke
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      sample_run_id:
+        description: "Optional prior workflow run id whose sealed sample should be reused"
+        required: false
+        type: string
 
 concurrency:
   group: reviewed-title-accuracy-smoke
@@ -21,7 +26,12 @@ jobs:
       LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
       DATASET_PATH: /tmp/reviewed-title-blind.json
       SEALED_LABELS_PATH: /tmp/reviewed-title-sealed-labels.jsonl
+      HISTORY_PATH: /tmp/reviewed-title-history.jsonl
       REPORT_PATH: /tmp/reviewed-title-accuracy-report.json
+      DIAGNOSTIC_JSON_PATH: /tmp/reviewed-title-diagnostic.json
+      DIAGNOSTIC_MARKDOWN_PATH: /tmp/reviewed-title-diagnostic.md
+      BASELINE_REPORT_PATH: /tmp/reviewed-title-baseline-report.json
+      SAMPLE_RUN_ID: ${{ inputs.sample_run_id }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -31,6 +41,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Collect prior reviewed-title evaluation history
+        if: ${{ inputs.sample_run_id == '' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -39,17 +50,39 @@ jobs:
             --artifact-names reviewed-title-accuracy-report \
             --id-fields source_feedback_id \
             --output-field source_feedback_id \
-            --out /tmp/reviewed-title-history.jsonl
+            --out "$HISTORY_PATH"
       - name: Build random sealed reviewed-title sample
+        if: ${{ inputs.sample_run_id == '' }}
         run: |
           node scripts/build-reviewed-title-blind-eval.mjs \
             --source data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json \
-            --exclude "data/recognition/review/supabase-feedback-regression-30-field-review-packet.json,/tmp/reviewed-title-history.jsonl" \
+            --exclude "data/recognition/review/supabase-feedback-regression-30-field-review-packet.json,$HISTORY_PATH" \
             --out "$DATASET_PATH" \
             --sealed-labels-out "$SEALED_LABELS_PATH" \
             --limit 10 \
             --selection-seed "reviewed-${{ github.run_id }}-${{ github.run_attempt }}" \
             --sample-mode random_blind
+      - name: Restore an existing sealed sample
+        if: ${{ inputs.sample_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/reviewed-title-reused-sample
+          gh run download "$SAMPLE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name reviewed-title-blind-sample \
+            --dir /tmp/reviewed-title-reused-sample
+          cp /tmp/reviewed-title-reused-sample/reviewed-title-blind.json "$DATASET_PATH"
+          cp /tmp/reviewed-title-reused-sample/reviewed-title-sealed-labels.jsonl "$SEALED_LABELS_PATH"
+          cp /tmp/reviewed-title-reused-sample/reviewed-title-history.jsonl "$HISTORY_PATH"
+          cp /tmp/reviewed-title-reused-sample/reviewed-title-sample-sha256.txt /tmp/reviewed-title-sample-sha256.txt
+          sha256sum --check /tmp/reviewed-title-sample-sha256.txt
+          mkdir -p /tmp/reviewed-title-reused-report
+          gh run download "$SAMPLE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name reviewed-title-accuracy-report \
+            --dir /tmp/reviewed-title-reused-report
+          cp /tmp/reviewed-title-reused-report/reviewed-title-accuracy-report.json "$BASELINE_REPORT_PATH"
       - name: Prove blind input and random-sample provenance
         run: |
           node - <<'NODE'
@@ -69,6 +102,19 @@ jobs:
           console.log(JSON.stringify(checks, null, 2));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
           NODE
+      - name: Seal sample fingerprint
+        run: sha256sum "$DATASET_PATH" "$SEALED_LABELS_PATH" "$HISTORY_PATH" > /tmp/reviewed-title-sample-sha256.txt
+      - name: Upload reusable sealed sample
+        uses: actions/upload-artifact@v6
+        with:
+          name: reviewed-title-blind-sample
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/reviewed-title-blind.json
+            /tmp/reviewed-title-sealed-labels.jsonl
+            /tmp/reviewed-title-history.jsonl
+            /tmp/reviewed-title-sample-sha256.txt
       - name: Verify scoped launch-gate credential
         run: test -n "$LAUNCH_GATE_EVAL_SECRET"
       - name: Run locked reviewed-10 launch gate
@@ -83,6 +129,20 @@ jobs:
             --l2-wait-ms 240000 \
             --request-timeout-ms 120000 \
             --out "$REPORT_PATH"
+      - name: Build launch-gate diagnostic summary
+        if: always()
+        run: |
+          if test -f "$REPORT_PATH"; then
+            baseline_args=()
+            if test -f "$BASELINE_REPORT_PATH"; then
+              baseline_args=(--baseline-report "$BASELINE_REPORT_PATH")
+            fi
+            node scripts/analyze-launch-gate-report.mjs \
+              --report "$REPORT_PATH" \
+              "${baseline_args[@]}" \
+              --out "$DIAGNOSTIC_JSON_PATH" \
+              --markdown "$DIAGNOSTIC_MARKDOWN_PATH"
+          fi
       - name: Enforce technical and evaluation integrity
         run: |
           node - <<'NODE'
@@ -137,5 +197,7 @@ jobs:
           retention-days: 30
           path: |
             /tmp/reviewed-title-accuracy-report.json
+            /tmp/reviewed-title-diagnostic.json
+            /tmp/reviewed-title-diagnostic.md
             /tmp/reviewed-title-sealed-labels.jsonl
             /tmp/reviewed-title-history.jsonl

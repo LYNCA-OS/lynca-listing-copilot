@@ -4,7 +4,7 @@ process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 
-const { __listingCopilotTitleTestHooks } = await import("../api/listing-copilot-title.js");
+const { __listingCopilotTitleTestHooks } = await import("../lib/listing/v4/pipeline/native-recognition-core.mjs");
 const {
   applySafeRetrievalTitleAssist,
   scaffoldTitleConflictsWithDirectEvidence

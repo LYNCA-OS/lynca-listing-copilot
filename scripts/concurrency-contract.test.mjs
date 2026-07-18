@@ -101,7 +101,7 @@ assert.equal(evaluateConcurrencyArm({
 
 const stageSweepSource = await readFile("scripts/run-stage-capacity-sweep.mjs", "utf8");
 const vectorIndexApiSource = await readFile("api/admin-index-visual-vector-seed.js", "utf8");
-const listingApiSource = await readFile("api/listing-copilot-title.js", "utf8");
+const listingApiSource = await readFile("lib/listing/v4/pipeline/native-recognition-core.mjs", "utf8");
 assert.match(stageSweepSource, /value !== null && value !== undefined && value !== ""/);
 assert.match(stageSweepSource, /transportAttempts: 3/);
 assert.match(stageSweepSource, /capacity_sweep: true/);

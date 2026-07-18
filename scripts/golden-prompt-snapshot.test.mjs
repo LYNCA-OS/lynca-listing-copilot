@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
-import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
+import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
 const { buildInitialProviderPrompt } = __listingCopilotTitleTestHooks;
 assert.equal(typeof buildInitialProviderPrompt, "function");

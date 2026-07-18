@@ -23,11 +23,11 @@ import {
   ultraFastServiceTier,
   vectorEmbeddingWarmupOptions
 } from "../lib/listing/pipeline/provider-options.mjs";
-import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
+import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
 const providerRegistrySource = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
 const providerContractSource = await readFile("lib/listing/providers/provider-contract.mjs", "utf8");
-const titleApiSource = await readFile("api/listing-copilot-title.js", "utf8");
+const titleApiSource = await readFile("lib/listing/v4/pipeline/native-recognition-core.mjs", "utf8");
 
 const vectorOnlyWarmup = vectorEmbeddingWarmupOptions({
   enable_catalog_assist: true,

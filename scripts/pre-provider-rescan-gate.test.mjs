@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
+import { runNativeV4Recognition } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { glareRoutes } from "../lib/listing/image-quality/quality-gate.mjs";
 import { evaluatePreProviderRescanGate } from "../lib/listing/image-quality/pre-provider-rescan-gate.mjs";
 
@@ -16,7 +16,7 @@ process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 process.env.LISTING_PRE_PROVIDER_RESCAN_GATE_ENABLED = "true";
 
 async function callTitleApi(payload) {
-  return runListingRecognitionCore({
+  return runNativeV4Recognition({
     payload: { ...payload, tenant_id: "tenant-rescan" }
   });
 }

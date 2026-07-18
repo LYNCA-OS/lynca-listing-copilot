@@ -8,7 +8,7 @@ import {
   buildRetrievalApplicationLayer,
   finalizeRetrievalApplicationOutcome
 } from "../lib/listing/candidates/retrieval-application-layer.mjs";
-import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
+import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
 function packet(candidates = [], promptCandidateIds = []) {
   return {

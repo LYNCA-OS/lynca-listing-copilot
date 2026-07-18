@@ -752,6 +752,13 @@ try {
   const workflow = await readFile(".github/workflows/reviewed-title-accuracy-smoke.yml", "utf8");
   assert.match(workflow, /--limit 10/);
   assert.match(workflow, /scripts\/run-launch-gate-eval\.mjs/);
+  assert.match(workflow, /sample_run_id:/);
+  assert.match(workflow, /gh run download "\$SAMPLE_RUN_ID"/);
+  assert.match(workflow, /reviewed-title-blind-sample/);
+  assert.match(workflow, /sha256sum --check \/tmp\/reviewed-title-sample-sha256\.txt/);
+  assert.match(workflow, /scripts\/analyze-launch-gate-report\.mjs/);
+  assert.match(workflow, /if: \$\{\{ inputs\.sample_run_id == '' \}\}/);
+  assert.match(workflow, /if: \$\{\{ inputs\.sample_run_id != '' \}\}/);
   assert.match(workflow, /--expected-deployment-sha "\$\{\{ github\.sha \}\}"/);
   assert.match(workflow, /LAUNCH_GATE_EVAL_SECRET: \$\{\{ secrets\.LAUNCH_GATE_EVAL_SECRET \}\}/);
   assert.match(workflow, /test -n "\$LAUNCH_GATE_EVAL_SECRET"/);

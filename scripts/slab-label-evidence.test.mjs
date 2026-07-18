@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
+import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { createEvidenceField, createVisionSource } from "../lib/listing/evidence/evidence-schema.mjs";
 import { extractDirectSlabLabelParallel } from "../lib/listing/preingestion/slab-label-evidence.mjs";
 

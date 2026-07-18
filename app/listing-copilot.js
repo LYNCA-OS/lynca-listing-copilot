@@ -24,6 +24,7 @@ import {
   startNonBlockingDerivedUpload,
   summarizeDerivedUploadOutcomes
 } from "../lib/listing/client/upload-phases.mjs";
+import { stripClientImageTransport } from "../lib/listing/v4/assets/asset-lifecycle-contract.mjs";
 
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
@@ -45,7 +46,6 @@ const IMAGE_INITIAL_QUALITY = 0.9;
 const IMAGE_MIN_QUALITY = 0.78;
 const IMAGE_EMERGENCY_MIN_QUALITY = 0.64;
 const TARGET_IMAGE_DATA_URL_CHARS = 2_400_000;
-const MAX_ASSET_REQUEST_BYTES = 3_400_000;
 const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_IMAGE = 6;
@@ -727,21 +727,6 @@ async function prepareFileForIntake(file) {
   return fileToAssetImage(file);
 }
 
-async function recompressAssetImage(image, maxEdge, quality) {
-  const compressed = await compressImageDataUrl(image.dataUrl, maxEdge, quality);
-
-  return {
-    ...image,
-    type: "image/jpeg",
-    size: stringByteLength(compressed.dataUrl),
-    width: compressed.width,
-    height: compressed.height,
-    dataUrl: compressed.dataUrl,
-    imageQuality: image.imageQuality || compressed.imageQuality,
-    sourceBlob: image.sourceBlob || dataUrlToBlob(compressed.dataUrl)
-  };
-}
-
 function canonicalAssetId(asset = {}) {
   const assetId = String(asset.durableAssetId || "").trim();
   if (!/^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) {
@@ -969,7 +954,7 @@ function boundedProviderImagesForRequest(images = [], maxImages = REQUEST_IMAGE_
   ];
 }
 
-function buildAssetRequestBody(asset, options = {}) {
+function buildAssetQueueIntentBody(asset, options = {}) {
   const provider = options.provider || state.selectedProvider;
   const allProviderImages = asset.providerImages || asset.images || [];
   const assetId = canonicalAssetId(asset);
@@ -979,82 +964,31 @@ function buildAssetRequestBody(asset, options = {}) {
       || imageHasVerifiedStorageReference(image, assetId, tenantId);
   });
   const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
-  const body = {
+  const intent = stripClientImageTransport({
     assetId,
     asset_id: assetId,
+    image_generation_id: asset.imageGenerationId || assetId,
     client_asset_ref: asset.clientAssetRef || asset.id,
     mode: state.mode,
     maxTitleLength,
-    images: providerImages.map((image) => serializableAssetImage(image, assetId, tenantId)),
     deferredImageCount,
     deferred_image_count: deferredImageCount,
     captureProfileId: defaultCaptureProfileId,
     captureQuality: summarizeAssetImageQuality(providerImages),
     resolutionMap: state.resolutionMap,
     clientTiming: asset.clientTiming || {},
-    preingestion_bundle_id: asset.preingestionBundleId || "",
-    preingestionBundleId: asset.preingestionBundleId || "",
-    preingestion_bundle_status: asset.preingestionBundleStatus || "",
-    preingestion_summary: asset.preingestionSummary || null,
     provider_options: {
       ...defaultProviderOptions,
       ...(options.provider_options || options.providerOptions || {})
     }
-  };
+  });
 
   if (provider) {
-    body.provider = provider;
-    body.explicitEmergency = Boolean(options.explicitEmergency || provider === "openai_legacy");
+    intent.provider = provider;
+    intent.explicitEmergency = Boolean(options.explicitEmergency || provider === "openai_legacy");
   }
 
-  return JSON.stringify(body);
-}
-
-async function ensureSafeAssetPayload(asset, options = {}) {
-  let requestBody = buildAssetRequestBody(asset, options);
-  let requestBytes = stringByteLength(requestBody);
-
-  if (requestBytes <= MAX_ASSET_REQUEST_BYTES) {
-    return { requestBody, compressedAgain: false };
-  }
-
-  const compressionSteps = [
-    { maxEdge: 1200, quality: 0.72 },
-    { maxEdge: 1050, quality: 0.66 },
-    { maxEdge: 900, quality: 0.58 }
-  ];
-
-  for (const step of compressionSteps) {
-    asset.images = await mapWithConcurrency(asset.images, IMAGE_PREPROCESS_CONCURRENCY, async (image) => {
-      const recompressed = await recompressAssetImage(image, step.maxEdge, step.quality);
-      if (Array.isArray(recompressed.targetedCrops)) {
-        recompressed.targetedCrops = await mapWithConcurrency(
-          recompressed.targetedCrops,
-          IMAGE_PREPROCESS_CONCURRENCY,
-          (crop) => recompressAssetImage(crop, step.maxEdge, step.quality)
-        );
-      }
-      return recompressed;
-    });
-    asset.providerImages = imagesForProvider(asset.images);
-    requestBody = buildAssetRequestBody(asset, options);
-    requestBytes = stringByteLength(requestBody);
-
-    if (requestBytes <= MAX_ASSET_REQUEST_BYTES) {
-      return { requestBody, compressedAgain: true };
-    }
-  }
-
-  while ((asset.providerImages || []).some(imageIsDerivedForRequest)) {
-    asset.providerImages = (asset.providerImages || []).slice(0, -1);
-    requestBody = buildAssetRequestBody(asset, options);
-    requestBytes = stringByteLength(requestBody);
-    if (requestBytes <= MAX_ASSET_REQUEST_BYTES) {
-      return { requestBody, compressedAgain: true };
-    }
-  }
-
-  throw new Error("这组原图仍然过大，系统已保留给下一批处理；请稍后重试或减少单张卡的原图数量。");
+  return JSON.stringify(intent);
 }
 
 function createClientBatchId() {
@@ -1725,7 +1659,7 @@ async function ensureSpeculativeRecognition(asset, runId) {
   asset.speculativePromise = (async () => {
     const startedAt = performance.now();
     try {
-      const { requestBody } = await ensureSafeAssetPayload(asset, {
+      const requestBody = buildAssetQueueIntentBody(asset, {
         provider_options: { ...defaultProviderOptions }
       });
       if (runId !== state.backgroundPreparationRunId) return { stale: true, run_id: runId };
@@ -1748,6 +1682,7 @@ async function ensureSpeculativeRecognition(asset, runId) {
           priority: 100,
           jobs: [{
             asset_id: canonicalAssetId(asset),
+            image_generation_id: asset.imageGenerationId,
             force_l2_only: true,
             create_l1_job: false,
             create_l2_job: true,
@@ -2533,6 +2468,7 @@ export const __listingCopilotAppTestHooks = {
   imagesForProvider,
   queueSubmissionConcurrencyLimit,
   recognitionClockFromServerPayload,
+  resetAssetPreparationForRetry,
   retryStateForResult,
   speculativeNeedsFreshEnqueue,
   shouldUseStorageFirstImage,
@@ -3540,6 +3476,13 @@ function retryStateForResult(result = {}) {
   const retryable = terminalFailure || terminalWithoutTitle || activeRecovery;
   const submitting = result.queueRetryStatus === "submitting";
   const persistenceLocked = result.feedbackStatus === "saving" || writerFeedbackPersisted(result);
+  const inputRebindRequired = String(
+    result.v4RecoveryAction
+    || result.v4_recovery_action
+    || result.retry?.recovery_action
+    || result.error?.recovery_action
+    || ""
+  ).trim().toUpperCase() === "INPUT_REBIND";
   return {
     retryable,
     submitting,
@@ -3547,7 +3490,12 @@ function retryStateForResult(result = {}) {
     terminal_failure: terminalFailure,
     terminal_without_title: terminalWithoutTitle,
     active_recovery: activeRecovery,
-    recovery_mode: activeRecovery ? "RECOVER_EXISTING_JOB" : "FRESH_VERIFIED_ENQUEUE"
+    input_rebind_required: inputRebindRequired,
+    recovery_mode: activeRecovery
+      ? "RECOVER_EXISTING_JOB"
+      : inputRebindRequired
+        ? "INPUT_REBIND"
+        : "FRESH_VERIFIED_ENQUEUE"
   };
 }
 
@@ -3569,6 +3517,13 @@ function TitleCardComponent(result, asset = null) {
   const saveDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving" || feedbackCommitted;
   const editorDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving";
   const canPriorityRetry = retryState.retryable;
+  const retryLabel = retrySubmitting
+    ? "正在恢复…"
+    : retryState.active_recovery
+      ? "检查并恢复"
+      : retryState.input_rebind_required
+        ? "重新绑定图片"
+        : "重新处理";
   const titleEdited = String(correctedTitle || "").trim() && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
     saved: "已保存",
@@ -3600,7 +3555,7 @@ function TitleCardComponent(result, asset = null) {
         <span class="confidence-badge ${confidenceClass(displayConfidence)}">${escapeHtml(statusLabel)}</span>
         <div class="title-actions">
           ${generationTimingBadge(result.index)}
-          ${canPriorityRetry ? `<button class="copy-button retry-priority-button" type="button" data-priority-retry="${result.index}" ${retryState.disabled ? "disabled" : ""}>${retrySubmitting ? "正在恢复…" : retryState.active_recovery ? "检查并恢复" : "优先重试"}</button>` : ""}
+          ${canPriorityRetry ? `<button class="copy-button retry-priority-button" type="button" data-priority-retry="${result.index}" ${retryState.disabled ? "disabled" : ""}>${retryLabel}</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
           <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
@@ -4135,7 +4090,7 @@ async function processAssetViaQueue(asset, options = {}) {
 
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备生产队列请求", 0.3);
-  const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, {
+  const requestBody = buildAssetQueueIntentBody(asset, {
     ...options,
     provider_options: {
       ...defaultProviderOptions,
@@ -4144,11 +4099,7 @@ async function processAssetViaQueue(asset, options = {}) {
   });
   const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
   asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
-  setAssetProgress(
-    asset.index,
-    compressedAgain ? "保留主图，缩减辅助局部图" : "队列请求已准备",
-    0.36
-  );
+  setAssetProgress(asset.index, "队列请求已准备", 0.36);
 
   const payload = JSON.parse(requestBody);
   payload.force_l2_only = true;
@@ -4175,6 +4126,7 @@ async function processAssetViaQueue(asset, options = {}) {
       priority: Math.max(0, Math.min(10_000, Number(options.priority ?? 100) || 0)),
       jobs: [{
         asset_id: canonicalAssetId(asset),
+        image_generation_id: asset.imageGenerationId,
         manual_retry: options.manualRetry === true,
         retry_of_job_id: options.retryOfJobId || null,
         force_l2_only: true,
@@ -4200,7 +4152,10 @@ async function processAssetViaQueue(asset, options = {}) {
   assertCurrentAssetLifecycle(asset);
   if (enqueueRequest.error) {
     const detail = enqueuePayload.message || enqueuePayload.error || enqueuePayload.jobs?.find((entry) => entry?.error)?.error || "";
-    throw new Error(detail ? `队列提交失败：${response.status}，${detail}` : `队列提交失败：${response.status}`);
+    const error = new Error(detail ? `队列提交失败：${response.status}，${detail}` : `队列提交失败：${response.status}`);
+    error.code = String(enqueuePayload.error_code || "").trim();
+    error.recovery_action = String(enqueuePayload.recovery_action || "").trim().toUpperCase();
+    throw error;
   }
 
   const job = (enqueuePayload.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
@@ -4234,6 +4189,8 @@ function failedResult(asset, error) {
     correctedTitle: "",
     confidence: "FAILED",
     reason: error.message,
+    v4RecoveryAction: String(error?.recovery_action || error?.recoveryAction || "").trim().toUpperCase(),
+    error_code: String(error?.code || error?.error_code || "").trim(),
     fields: {},
     unresolved: ["request"],
     provider: state.selectedProvider || null
@@ -4343,10 +4300,39 @@ async function processTitles() {
   });
 }
 
-function resetAssetPreparationForRetry(asset = {}) {
+function successorClientAssetRef(asset = {}) {
+  const base = String(asset.clientAssetRef || asset.id || `asset-${asset.index || 0}`)
+    .replace(/:rebind:[^:]+$/i, "")
+    .slice(0, 110);
+  const suffix = globalThis.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
+  return `${base}:rebind:${suffix}`.slice(0, 160);
+}
+
+function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {}) {
   asset.speculativePromise = null;
   asset.speculativeRunId = null;
   asset.backgroundPrepareError = "";
+
+  if (inputRebind) {
+    const previousAssetId = String(asset.durableAssetId || "").trim();
+    asset.rebindOfAssetId = previousAssetId;
+    asset.clientAssetRef = successorClientAssetRef(asset);
+    asset.durableAssetId = "";
+    asset.durableTenantId = "";
+    asset.imageGenerationId = "";
+    asset.expectedOriginalCount = null;
+    asset.durableAssetPromise = null;
+    asset.originalStorageUploadPromise = null;
+    asset.preingestionBundleId = "";
+    asset.backgroundPreparationPromise = null;
+    asset.backgroundPreparationRunId = null;
+    asset.backgroundPrepareStatus = "queued";
+    for (const image of asset.images || []) clearImageStorageBinding(image);
+    for (const image of asset.providerImages || []) clearImageStorageBinding(image);
+    return;
+  }
+
   if (!asset.preingestionBundleId) {
     asset.backgroundPreparationPromise = null;
     asset.backgroundPrepareStatus = "queued";
@@ -4391,6 +4377,9 @@ async function retryFailedAssetInPriorityQueue(button) {
       const recovery = recoveryRequest.payload || {};
       current.queueRetryStatus = "";
       current.v4_job_status = recovery.job_status || current.v4_job_status;
+      current.v4RecoveryAction = String(recovery.recovery_action || current.v4RecoveryAction || "")
+        .trim()
+        .toUpperCase();
       if (recovery.action === "TERMINAL_REQUIRES_FRESH_ENQUEUE") {
         current.v4_job_status = recovery.job_status || "FAILED";
         current.assisted_draft_status = "FAILED";
@@ -4398,7 +4387,9 @@ async function retryFailedAssetInPriorityQueue(button) {
         current.writerTitlePending = false;
         current.title_stage = "FAILED";
         current.confidence = "FAILED";
-        current.feedbackMessage = "原任务已结束或自动重试次数已用完；请点击“优先重试”创建新的已校验任务。";
+        current.feedbackMessage = recovery.requires_input_rebind === true
+          ? "原任务的图片状态已失效；请点击“重新绑定图片”创建新的已校验资产。"
+          : "原任务已结束或自动重试次数已用完；请点击“重新处理”创建新的已校验任务。";
         markAssetFinished(asset.index, { failed: true });
         clearAssetProgress(asset.index);
         setStatus(`卡片 ${asset.index} 的原任务已结束，可以发起一次新的优先重试。`);
@@ -4447,7 +4438,9 @@ async function retryFailedAssetInPriorityQueue(button) {
 
   try {
     stopV4AssistedDraftPolling(asset.index);
-    resetAssetPreparationForRetry(asset);
+    resetAssetPreparationForRetry(asset, {
+      inputRebind: retryState.input_rebind_required
+    });
     const result = await processAssetViaQueue(asset, {
       batchId: createClientBatchId(),
       priority: 0,
@@ -4456,8 +4449,8 @@ async function retryFailedAssetInPriorityQueue(button) {
       // A durable failed job must be authorized against its old id. A client
       // preparation failure has no old job, so it creates a fresh priority-zero
       // job instead of becoming permanently un-retryable.
-      manualRetry: retriesFailedDurableJob,
-      retryOfJobId: retryOfJobId || null
+      manualRetry: retriesFailedDurableJob && !retryState.input_rebind_required,
+      retryOfJobId: retryState.input_rebind_required ? null : (retryOfJobId || null)
     });
     if (!assetLifecycleMatches(asset, lifecycleGeneration)) return;
     if (writerEditedTitle) {
@@ -4468,7 +4461,9 @@ async function retryFailedAssetInPriorityQueue(button) {
       };
     }
     result.queueRetryStatus = "";
-    result.feedbackMessage = retriesFailedDurableJob
+    result.feedbackMessage = retryState.input_rebind_required
+      ? "图片已绑定到新的不可变资产，并创建新的优先识别任务。"
+      : retriesFailedDurableJob
       ? "已创建新的识别任务并进入优先队列；旧任务仅保留审计记录。"
       : "图片已重新校验，并创建新的优先识别任务。";
     state.results = state.results.filter((item) => item.index !== asset.index);
@@ -4481,6 +4476,10 @@ async function retryFailedAssetInPriorityQueue(button) {
     markAssetFinished(asset.index, { failed: true });
     clearAssetProgress(asset.index);
     current.queueRetryStatus = "";
+    current.v4RecoveryAction = String(error?.recovery_action || current.v4RecoveryAction || "")
+      .trim()
+      .toUpperCase();
+    current.error_code = String(error?.code || current.error_code || "").trim();
     current.feedbackMessage = `优先重试提交失败：${error.message || "请再次重试"}`;
     setStatus(`卡片 ${asset.index} 优先重试提交失败。`);
   } finally {
@@ -4978,7 +4977,9 @@ function startV4QueuedBatchPolling() {
 }
 
 function queuedJobFailureReason(job = {}) {
-  const error = job.error && typeof job.error === "object" ? job.error : {};
+  const error = job.failure && typeof job.failure === "object"
+    ? job.failure
+    : (job.error && typeof job.error === "object" ? job.error : {});
   return job.session?.failure_reason
     || error.message
     || error.error
@@ -4990,6 +4991,13 @@ function queuedJobFailureReason(job = {}) {
 function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
   syncAssetGenerationTimingFromServer(result.index, job);
   result.v4_job_status = job.status || result.v4_job_status || "QUEUED";
+  result.v4RecoveryAction = String(
+    job.retry?.recovery_action
+    || job.failure?.recovery_action
+    || job.error?.recovery_action
+    || result.v4RecoveryAction
+    || ""
+  ).trim().toUpperCase();
   const pollObservation = syncQueuedPollObservation(result, result.v4_job_status);
   result.v4_job_timing = job.timing || result.v4_job_timing || {};
   result.timing = {

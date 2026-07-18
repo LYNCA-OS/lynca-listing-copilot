@@ -1,6 +1,13 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import {
+  AssetLifecycleContractError,
+  assetRecoveryActions,
+  requestedImageGenerationId,
+  stripClientImageTransport
+} from "../../lib/listing/v4/assets/asset-lifecycle-contract.mjs";
+import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
+import {
   CanonicalImageReferenceError,
   readCanonicalListingImageReferences
 } from "../../lib/listing/storage/canonical-image-references.mjs";
@@ -34,25 +41,6 @@ import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 
 const queueControlChars = /[\u0000-\u001f\u007f]/g;
-const clientImageIdentityKeys = [
-  "images",
-  "asset_images", "assetImages",
-  "image_references", "imageReferences",
-  "front_object_path", "frontObjectPath",
-  "back_object_path", "backObjectPath",
-  "additional_image_paths", "additionalImagePaths",
-  "front_bucket", "frontBucket",
-  "back_bucket", "backBucket",
-  "front_content_sha256", "frontContentSha256",
-  "back_content_sha256", "backContentSha256",
-  "front_image_url", "frontImageUrl",
-  "back_image_url", "backImageUrl",
-  "image_urls", "imageUrls"
-  , "image_generation_id", "imageGenerationId"
-  , "image_set_sha256", "imageSetSha256"
-  , "expected_original_count", "expectedOriginalCount"
-];
-
 class QueueSchedulingIntentError extends Error {
   constructor(code, { statusCode = 409, retryable = false } = {}) {
     super(code);
@@ -127,7 +115,8 @@ function withoutClientSessionIdentity(job = {}) {
     "preingestion_evidence_patches", "preingestionEvidencePatches",
     "trusted_manual_retry",
     "manual_retry_requested_by_user_id", "manualRetryRequestedByUserId",
-    "manual_retry_original_operator_id", "manualRetryOriginalOperatorId"
+    "manual_retry_original_operator_id", "manualRetryOriginalOperatorId",
+    "v4_hard_invariant_snapshot"
   ];
   const scoped = { ...job };
   for (const key of serverOwnedKeys) delete scoped[key];
@@ -281,12 +270,6 @@ export async function authorizeFreshManualRetryJobs({
   });
 }
 
-function withoutClientImageIdentity(value = {}) {
-  const scoped = { ...value };
-  for (const key of clientImageIdentityKeys) delete scoped[key];
-  return scoped;
-}
-
 export async function canonicalizeQueueJobs({
   jobs = [],
   tenantId,
@@ -308,9 +291,14 @@ export async function canonicalizeQueueJobs({
   };
   return Promise.all((Array.isArray(jobs) ? jobs : []).map(async (job) => {
     const identity = queueJobIdentity(job);
+    const requestedGenerationId = requestedImageGenerationId(job);
     const canonical = await canonicalForAsset(identity.asset_id);
-    const scoped = withoutClientImageIdentity(withoutClientSessionIdentity(job));
-    const scopedPayload = withoutClientImageIdentity(
+    v4ProductionStrategy.asset_lifecycle.assert_image_generation({
+      requestedGenerationId,
+      canonicalGenerationId: canonical.image_generation_id
+    });
+    const scoped = stripClientImageTransport(withoutClientSessionIdentity(job));
+    const scopedPayload = stripClientImageTransport(
       scoped.payload && typeof scoped.payload === "object" && !Array.isArray(scoped.payload)
         ? scoped.payload
         : identity.rawPayload
@@ -595,24 +583,52 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const canonicalError = error instanceof CanonicalImageReferenceError;
+    const lifecycleError = error instanceof AssetLifecycleContractError;
     const schedulingError = error instanceof QueueSchedulingIntentError;
     const invalidAsset = String(error?.message || "").includes("invalid_durable_listing_asset_id");
-    const status = schedulingError ? error.statusCode : canonicalError ? error.statusCode : invalidAsset ? 400 : 503;
+    const status = schedulingError
+      ? error.statusCode
+      : lifecycleError
+        ? error.statusCode
+        : canonicalError
+          ? error.statusCode
+          : invalidAsset ? 400 : 503;
     const code = schedulingError
       ? String(error.code || "manual_retry_verification_failed").toUpperCase()
+      : lifecycleError
+        ? String(error.code || "asset_lifecycle_contract_failed").toUpperCase()
+        : canonicalError
+          ? String(error.code || "canonical_image_reference_failed").toUpperCase()
+          : invalidAsset ? "V4_QUEUE_DURABLE_ASSET_REQUIRED" : "V4_QUEUE_CANONICAL_IMAGE_REBUILD_FAILED";
+    const lifecycleClassification = v4ProductionStrategy.asset_lifecycle.classify_failure({
+      code,
+      message: error?.message,
+      retryable: error?.retryable
+    });
+    const recoveryAction = lifecycleError
+      ? error.recoveryAction
       : canonicalError
-      ? String(error.code || "canonical_image_reference_failed").toUpperCase()
-      : invalidAsset ? "V4_QUEUE_DURABLE_ASSET_REQUIRED" : "V4_QUEUE_CANONICAL_IMAGE_REBUILD_FAILED";
+        ? lifecycleClassification.recovery_action === assetRecoveryActions.INPUT_REBIND
+          ? assetRecoveryActions.INPUT_REBIND
+          : error.retryable === true
+            ? assetRecoveryActions.EXECUTION_RETRY
+            : assetRecoveryActions.NONE
+        : null;
     sendJson(res, status, withV4Version({
       ok: false,
-      retryable: schedulingError || canonicalError ? error.retryable === true : !invalidAsset,
+      retryable: schedulingError || lifecycleError || canonicalError ? error.retryable === true : !invalidAsset,
       error_code: code,
+      recovery_action: recoveryAction,
       message: schedulingError
         ? "The referenced failed job could not be authorized for a priority retry."
+        : lifecycleError
+        ? "The requested image generation is stale or missing; rebind the current verified images before enqueueing."
         : invalidAsset
         ? "Create a durable listing asset before uploading and enqueueing images."
         : canonicalError
-          ? "Verified canonical images are not ready for this listing asset."
+          ? recoveryAction === assetRecoveryActions.EXECUTION_RETRY
+            ? "Verified canonical images are temporarily unavailable; retry the same immutable request."
+            : "Verified canonical images are not ready for this listing asset."
           : "Canonical listing images could not be rebuilt."
     }));
     return;

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { __listingCopilotTitleTestHooks, runListingRecognitionCore } from "../api/listing-copilot-title.js";
+import { __listingCopilotTitleTestHooks, runNativeV4Recognition } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
@@ -102,7 +102,7 @@ async function callApi(providerResult, options = {}) {
     text: async () => ""
   });
 
-  const response = await runListingRecognitionCore({
+  const response = await runNativeV4Recognition({
     payload: {
       tenant_id: "tenant_legacy",
       assetId: "asset-test",

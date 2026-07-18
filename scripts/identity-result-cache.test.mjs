@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
+import { runNativeV4Recognition } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import {
   buildIdentityResultCacheKey,
   identityResultCacheRecordToListingResult,
@@ -54,7 +54,7 @@ function jsonResponse(payload, status = 200) {
 }
 
 async function callTitleApi(payload) {
-  return runListingRecognitionCore({
+  return runNativeV4Recognition({
     payload: { ...payload, tenant_id: tenantId }
   });
 }

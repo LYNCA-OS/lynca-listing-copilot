@@ -18,7 +18,7 @@ const fastScoutBranch = apiSource.slice(
   apiSource.indexOf("const progressiveProviderOptions")
 );
 
-assert.ok(fastScoutBranch.includes("addL1ReturnBarrierMetadata(adaptV2ResultToV4"), "fast scout L1 must build response directly from adapter");
+assert.ok(fastScoutBranch.includes("addL1ReturnBarrierMetadata(adaptRecognitionResultToV4"), "fast scout L1 must build response directly from adapter");
 assert.ok(fastScoutBranch.includes("writerPendingL1Response(v4Response, l1Result)"), "fast scout L1 must hide internal scout titles from the writer response");
 assert.ok(!apiSource.includes("writerVisibleL1Response"), "V4 must not expose an L1 writer-visible response path");
 assert.ok(!apiSource.includes("v4_return_l1_writer_safe_draft === true"), "V4 must ignore legacy L1 writer-safe draft flags");
@@ -37,8 +37,8 @@ assert.ok(apiSource.includes("shouldRetryGpt5EmptyResult"), "GPT-5 full-L2 empty
 assert.ok(apiSource.includes("v4_gpt5_empty_result_retry_attempted: true"), "GPT-5 empty-title retry must be marked on the retry payload");
 assert.ok(apiSource.includes("prepareV4PresentationResult({ result: retryResponse.body"), "GPT-5 retry must only replace the first response when the retry can render a title");
 assert.ok(
-  apiSource.includes("callRecognitionCoreWithGpt5EmptyRetry")
-    && apiSource.includes("const recognitionResponse = await callRecognitionCoreWithGpt5EmptyRetry"),
+  apiSource.includes("callNativeV4RecognitionWithGpt5EmptyRetry")
+    && apiSource.includes("const recognitionResponse = await callNativeV4RecognitionWithGpt5EmptyRetry"),
   "GPT-5 empty-title retry must be shared by direct and background recognition-core calls"
 );
 assert.ok(apiSource.includes("gpt5_empty_result_retry_success"), "GPT-5 retry outcome must be exposed in provider diagnostics");

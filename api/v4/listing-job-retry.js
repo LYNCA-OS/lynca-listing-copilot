@@ -1,6 +1,8 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
+import { assetRecoveryActions } from "../../lib/listing/v4/assets/asset-lifecycle-contract.mjs";
+import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
 import {
   readV4RecognitionJobs,
   requestV4RecognitionJobRecovery,
@@ -122,7 +124,7 @@ export default async function handler(req, res) {
     jobIds: [jobId],
     tenantId: context.tenantId,
     limit: 1,
-    select: "id,tenant_id,operator_id,assigned_to_user_id,status,lease_expires_at"
+    select: "id,tenant_id,operator_id,assigned_to_user_id,status,lease_expires_at,error,error_type"
   });
   const job = owned.rows?.[0] || null;
   if (!owned.ok || !job) {
@@ -163,11 +165,23 @@ export default async function handler(req, res) {
   }
 
   const action = recovery.action;
+  const storedError = job.error && typeof job.error === "object" && !Array.isArray(job.error)
+    ? job.error
+    : {};
+  const recoveryClassification = v4ProductionStrategy.job_recovery.classify_failure({
+    ...storedError,
+    code: storedError.code || storedError.error_code || job.error_type || ""
+  });
+  const recoveryAction = recoveryClassification.recovery_action === assetRecoveryActions.INPUT_REBIND
+    ? assetRecoveryActions.INPUT_REBIND
+    : assetRecoveryActions.EXECUTION_RETRY;
   const pump = triggerRecoveryPump(context, action);
   sendJson(res, 200, withV4Version({
     ok: true,
     retryable: action === "TERMINAL_REQUIRES_FRESH_ENQUEUE",
     action,
+    recovery_action: recoveryAction,
+    requires_input_rebind: recoveryAction === assetRecoveryActions.INPUT_REBIND,
     job_id: recovery.job?.job_id || jobId,
     job_status: recovery.job?.job_status || job.status,
     priority: recovery.job?.priority ?? null,
@@ -175,7 +189,9 @@ export default async function handler(req, res) {
     message: action === "ALREADY_RUNNING"
       ? "The original job is still running."
       : action === "TERMINAL_REQUIRES_FRESH_ENQUEUE"
-        ? "The original job is terminal; create a fresh verified enqueue."
+        ? recoveryAction === assetRecoveryActions.INPUT_REBIND
+          ? "The original job has invalid image state; rebind the current verified images in a successor job."
+          : "The original job is terminal; create a successor job from the same verified image snapshot."
         : "The original job was safely recovered without cloning its payload."
   }));
 }

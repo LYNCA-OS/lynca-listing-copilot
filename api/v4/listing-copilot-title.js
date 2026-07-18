@@ -1,5 +1,5 @@
 import { waitUntil } from "@vercel/functions";
-import { runListingRecognitionCore } from "../listing-copilot-title.js";
+import { runNativeV4Recognition } from "../../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { buildV4PipelineContract } from "../../lib/listing/v4/pipeline/pipeline-contract.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import {
@@ -10,13 +10,13 @@ import {
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
-import { planV4RecognitionRoute } from "../../lib/listing/v4/route-planner/route-planner.mjs";
+import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
 import { applyPreIngestionBundleToPayload } from "../../lib/listing/pipeline/preingestion-evidence.mjs";
 import {
   readLatestPreIngestionBundleByAsset,
   summarizePreIngestionBundle
 } from "../../lib/listing/preingestion/preingestion-bundle.mjs";
-import { adaptV2ResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
+import { adaptRecognitionResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
 import { classifyV4ResultOutcome } from "../../lib/listing/v4/result-outcome.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
@@ -271,19 +271,6 @@ function buildInternalScoutSummary(response = {}, result = {}) {
   };
 }
 
-function hideTitleFields(value = {}) {
-  if (!value || typeof value !== "object") return value;
-  return {
-    ...value,
-    title: "",
-    final_title: "",
-    rendered_title: "",
-    model_title_suggestion: "",
-    writer_visible: false,
-    internal_fast_scout_title: titleFromResult(value) || ""
-  };
-}
-
 function writerFinalizedL2ExactAnchorResponse(response = {}, result = {}, finalize = {}) {
   const scout = buildInternalScoutSummary(response, result);
   return withV4Version({
@@ -329,7 +316,6 @@ function writerPendingL1Response(response = {}, result = {}) {
   // can distinguish catalog/RPC transients from code regressions. The writer
   // barrier still hides all title fields below.
   const exactAnchorFinalize = result.exact_anchor_finalize || { used: false, reason: "not_attempted" };
-  const legacy = hideTitleFields(response.legacy_v2_result || result || {});
   return withV4Version({
     ...response,
     ok: true,
@@ -360,8 +346,7 @@ function writerPendingL1Response(response = {}, result = {}) {
       internal_scout_ready: Boolean(scout.title || Object.keys(scout.resolved_fields || {}).length)
     },
     exact_anchor_finalize: exactAnchorFinalize,
-    l1_internal_scout: scout,
-    legacy_v2_result: legacy
+    l1_internal_scout: scout
   });
 }
 
@@ -410,8 +395,7 @@ function writerFinalizedL1Response(response = {}, result = {}) {
       writer_visible_title_ready: true,
       internal_scout_ready: true
     },
-    l1_internal_scout: scout,
-    legacy_v2_result: hideTitleFields(response.legacy_v2_result || result || {})
+    l1_internal_scout: scout
   });
 }
 
@@ -688,7 +672,7 @@ async function persistV4NonCriticalArtifacts({
     quality_ledger: deferredArtifact("atomic_noncritical_rpc")
   };
   const atomicQualityLedger = {
-    ...adaptV2ResultToV4({
+    ...adaptRecognitionResultToV4({
       sessionId,
       result,
       payload,
@@ -762,7 +746,7 @@ async function persistV4NonCriticalArtifacts({
   };
   const ledger = await persistV4QualityLedger({
     ledger: {
-      ...adaptV2ResultToV4({
+      ...adaptRecognitionResultToV4({
         sessionId,
         result,
         payload,
@@ -982,7 +966,7 @@ async function persistPipelineResult({
       catalog_gap: catalogGap,
       quality_ledger: { saved: false, skipped: true, reason: "internal_scout_not_production_quality" }
     };
-    return adaptV2ResultToV4({
+    return adaptRecognitionResultToV4({
       sessionId,
       result,
       payload,
@@ -1181,7 +1165,7 @@ async function persistPipelineResult({
       throw error;
     });
     scheduleV4Background(backgroundPersistence, "V4 non-critical persistence");
-    return adaptV2ResultToV4({
+    return adaptRecognitionResultToV4({
       sessionId,
       result,
       payload,
@@ -1210,7 +1194,7 @@ async function persistPipelineResult({
   };
   const ledger = await persistV4QualityLedger({
     ledger: {
-      ...adaptV2ResultToV4({
+      ...adaptRecognitionResultToV4({
         sessionId,
         result,
         payload,
@@ -1244,7 +1228,7 @@ async function persistPipelineResult({
       write_attempts: terminalUpdate.write_attempts || 0
     };
   }
-  return adaptV2ResultToV4({
+  return adaptRecognitionResultToV4({
     sessionId,
     result,
     payload,
@@ -1280,7 +1264,7 @@ async function runBackgroundAssistedDraft({
     titleStageTarget: v4TitleStages.L2_ASSISTED_DRAFT
   });
   const recognitionClockStartedAt = new Date().toISOString();
-  const recognitionResponse = await callRecognitionCoreWithGpt5EmptyRetry({
+  const recognitionResponse = await callNativeV4RecognitionWithGpt5EmptyRetry({
     headers,
     payload: recognitionPayload
   });
@@ -1324,13 +1308,13 @@ async function runBackgroundAssistedDraft({
   });
 }
 
-export async function callRecognitionCoreWithGpt5EmptyRetry({
+export async function callNativeV4RecognitionWithGpt5EmptyRetry({
   headers = {},
   payload = {},
   signal = null,
-  coreRunner = runListingRecognitionCore
+  recognitionRunner = runNativeV4Recognition
 } = {}) {
-  let coreResponse = await coreRunner({
+  let coreResponse = await recognitionRunner({
     payload,
     requestContext: { headers, signal }
   });
@@ -1369,7 +1353,7 @@ export async function callRecognitionCoreWithGpt5EmptyRetry({
     retryPayload.openai_preferred_key_slot = retryKeySlot;
     retryPayload.provider_key_slot_hint = retryKeySlot;
   }
-  const retryResponse = await coreRunner({
+  const retryResponse = await recognitionRunner({
     payload: retryPayload,
     requestContext: { headers, signal }
   });
@@ -1577,6 +1561,9 @@ export default async function handler(req, res) {
   }
   payload = {
     ...canonicalPreingestion.payload,
+    ...(workerAuthorized ? {
+      v4_hard_invariant_snapshot: v4ProductionStrategy.hard_invariants.verified_queue_execution_snapshot()
+    } : {}),
     v4_preserve_canonical_images_on_bundle_load: true,
     v4_canonical_preingestion_resolution: {
       source: "SERVER_TENANT_ASSET",
@@ -1689,7 +1676,7 @@ export default async function handler(req, res) {
       payload.l1_fast_scout_resolved_hint_source = "v4_pre_l2_anchor_extraction";
     }
   }
-  const routePlan = planV4RecognitionRoute(payload, process.env);
+  const routePlan = v4ProductionStrategy.recognition_route.plan(payload, process.env);
   const createResultPromise = workerAuthorized
     ? Promise.resolve({
       sessionId,
@@ -1802,7 +1789,7 @@ export default async function handler(req, res) {
         providerOptions: providerOptionsForV4ProgressiveL1({ payload, routePlan }),
         titleStageTarget: v4TitleStages.L1_INTERNAL_SCOUT
       });
-      const v4Response = addL1ReturnBarrierMetadata(adaptV2ResultToV4({
+      const v4Response = addL1ReturnBarrierMetadata(adaptRecognitionResultToV4({
         sessionId,
         result: l1Result,
         payload: l1Payload,
@@ -2104,7 +2091,7 @@ export default async function handler(req, res) {
   startRecognitionClock("gpt_provider_request");
   if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
   const recognitionCoreStartedAt = Date.now();
-  const recognitionResponse = await callRecognitionCoreWithGpt5EmptyRetry({
+  const recognitionResponse = await callNativeV4RecognitionWithGpt5EmptyRetry({
     headers: req.headers,
     payload: recognitionPayload,
     signal: req.signal || null

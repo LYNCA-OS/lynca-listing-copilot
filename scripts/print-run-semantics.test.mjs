@@ -3,7 +3,7 @@ import {
   __listingCopilotTitleTestHooks,
   serialNumeratorVerificationFromPreingestion,
   verifiedSerialNumeratorFromPreingestion
-} from "../api/listing-copilot-title.js";
+} from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import {
   createEvidenceField,
   createVisionSource,

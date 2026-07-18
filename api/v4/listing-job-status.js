@@ -3,6 +3,7 @@ import { bindProductionRequestContext, instrumentProductionRequest } from "../..
 import { readV4RecognitionJobs, v4JobStatuses } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { buildEndToEndNodeLedger } from "../../lib/listing/v4/jobs/end-to-end-node-observability.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
+import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { buildRetrievalParticipationSummary } from "../../lib/listing/retrieval/retrieval-participation.mjs";
@@ -52,6 +53,7 @@ export const v4WriterStatusJobSelect = [
   "completed_at",
   "lease_expires_at",
   "not_before",
+  "error_type",
   "error",
   "result"
 ].join(",");
@@ -459,7 +461,28 @@ function writerTiming(timing = {}) {
   };
 }
 
+function writerJobFailure(job = {}) {
+  if (String(job.status || "").toUpperCase() !== "FAILED") return null;
+  const error = job.error && typeof job.error === "object" && !Array.isArray(job.error)
+    ? job.error
+    : {};
+  const recoveryClassification = v4ProductionStrategy.job_recovery.classify_failure({
+    ...error,
+    code: error.code || error.error_code || job.error_type || ""
+  });
+  const recoveryAction = String(recoveryClassification.recovery_action || "").slice(0, 40) || null;
+  return {
+    code: String(recoveryClassification.code || "RECOGNITION_FAILED").slice(0, 120),
+    message: recoveryAction === "INPUT_REBIND"
+      ? "图片输入已失效，请重新绑定当前图片后再试。"
+      : "识别失败，请重新处理。",
+    retryable: error.retryable === true,
+    recovery_action: recoveryAction
+  };
+}
+
 function writerJobStatus({ job, session, display, timing }) {
+  const publicFailure = writerJobFailure(job);
   return {
     job_id: job.id,
     batch_id: job.batch_id,
@@ -479,6 +502,11 @@ function writerJobStatus({ job, session, display, timing }) {
     l2_title: session?.l2_status === "READY" ? (session?.l2_title || session?.final_title || "") : "",
     l2_ready_at: session?.l2_ready_at || null,
     timing: writerTiming(timing),
+    retry: {
+      planned: String(job.status || "").toUpperCase() === "RETRYING",
+      recovery_action: publicFailure?.recovery_action || null
+    },
+    failure: publicFailure,
     created_at: job.created_at || null,
     updated_at: job.updated_at || null,
     completed_at: job.completed_at || null,
@@ -786,6 +814,7 @@ export default async function handler(req, res) {
           eligible_at: String(job.status || "").toUpperCase() === "RETRYING" ? (job.not_before || null) : null,
           retryable_error: job.error?.retryable === true,
           category: job.error?.retry_category || null,
+          recovery_action: job.error?.recovery_action || null,
           delay_seconds: job.error?.retry_delay_seconds ?? null,
           retries_remaining: job.error?.retries_remaining ?? null,
           wake_strategy: job.error?.retry_wake_strategy || null

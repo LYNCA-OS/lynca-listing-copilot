@@ -116,7 +116,7 @@ assert.match(recognitionCoreBridgeSource, /resolveV4WorkerSessionIdentity\(\{/);
 assert.match(recognitionCoreBridgeSource, /V4_DURABLE_ENQUEUE_REQUIRED/);
 assert.match(recognitionCoreBridgeSource, /V4_WORKER_JOB_LEASE_FENCE_FAILED/);
 assert.match(recognitionCoreBridgeSource, /V4_SESSION_STATE_PERSISTENCE_FAILED/);
-assert.match(recognitionCoreBridgeSource, /callRecognitionCoreWithGpt5EmptyRetry\(\{[\s\S]*signal: req\.signal/);
+assert.match(recognitionCoreBridgeSource, /callNativeV4RecognitionWithGpt5EmptyRetry\(\{[\s\S]*signal: req\.signal/);
 
 const originalEnv = {
   METAVERSE_AUTH_SECRET: process.env.METAVERSE_AUTH_SECRET,

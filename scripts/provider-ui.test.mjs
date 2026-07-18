@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 const html = await readFile("app/index.html", "utf8");
 const js = await readFile("app/listing-copilot.js", "utf8");
 const css = await readFile("app/listing-copilot.css", "utf8");
-const api = await readFile("api/listing-copilot-title.js", "utf8");
+const api = await readFile("lib/listing/v4/pipeline/native-recognition-core.mjs", "utf8");
+const retiredApi = await readFile("api/listing-copilot-title.js", "utf8");
 const providerOptionsModule = await readFile(new URL("../lib/listing/pipeline/provider-options.mjs", import.meta.url), "utf8");
 const providerPromptModule = await readFile(new URL("../lib/listing/pipeline/provider-prompt.mjs", import.meta.url), "utf8");
 const fieldNormalizationModule = await readFile(new URL("../lib/listing/pipeline/field-normalization.mjs", import.meta.url), "utf8");
@@ -50,7 +51,7 @@ assert.doesNotMatch(js, /sideDecisionForAsset/, "frontend must not compute a fro
 assert.doesNotMatch(js, /inferredSourceSide/, "frontend crop preparation must not infer front/back from filenames or upload order");
 assert.doesNotMatch(js, /sideDecisionNotice\(asset, result\)/, "result cards must not show front/back decision panels");
 assert.doesNotMatch(js, /EVIDENCE_SWAPPED/, "frontend must not swap uploaded images based on side evidence");
-assert.match(js, /body\.provider = provider/, "title requests should include the selected provider");
+assert.match(js, /intent\.provider = provider/, "queue intents should include the selected provider");
 assert.match(js, /defaultProviderOptions/, "frontend should centralize default provider options");
 assert.match(js, /single_model_fast:\s*false/, "frontend default path should not skip evidence completion");
 assert.match(js, /enable_evidence_completion:\s*true/, "frontend default path should use evidence completion");
@@ -65,7 +66,7 @@ assert.match(js, /enable_hybrid_retrieval:\s*true/, "frontend default path shoul
 assert.doesNotMatch(js, /vectorCandidateNotice/, "writer UI should not expose raw vector candidate diagnostics");
 assert.doesNotMatch(js, /vector_prompt_assist_used/, "writer UI should not surface technical prompt-assist status");
 assert.match(js, /provider_options:\s*{/, "title requests should include provider options");
-assert.match(js, /body\.explicitEmergency = Boolean/, "legacy explicit flag should remain backward-compatible");
+assert.match(js, /intent\.explicitEmergency = Boolean/, "legacy explicit flag should remain backward-compatible");
 assert.match(js, /provider === "openai_legacy"/, "OpenAI provider path should remain explicit in request payloads");
 assert.match(js, /providerCascadeText/, "frontend should render concise provider role text");
 assert.match(js, /provider\.model_id \|\| provider\.display_name/, "provider role text should use the server-reported active model");
@@ -316,7 +317,11 @@ assert.doesNotMatch(priorityRetrySource, /workspaceInteractionLocked\(\)/, "one 
 assert.match(js, /priority:\s*0/, "writer retries without an existing job id should enter the highest interactive priority");
 assert.match(js, /manualRetry:\s*retriesFailedDurableJob/, "only retries of durable failed jobs should request server-side retry authorization");
 assert.match(priorityRetrySource, /\["FAILED",\s*"CANCELLED"\]\.includes\(retryOfJobStatus\)/, "a nonterminal or orphaned job must retry as a fresh idempotent priority task");
-assert.match(js, /retryOfJobId:\s*retryOfJobId \|\| null/, "pre-enqueue failures should submit a fresh priority-zero job without a forged retry reference");
+assert.match(
+  js,
+  /retryOfJobId:\s*retryState\.input_rebind_required \? null : \(retryOfJobId \|\| null\)/,
+  "input rebind and pre-enqueue failures must not forge a retry reference to an incompatible asset"
+);
 assert.match(js, /manual_retry:\s*options\.manualRetry === true/, "the queue job must carry the manual retry intent to stage expansion");
 assert.match(js, /retry_of_job_id:\s*options\.retryOfJobId \|\| null/, "priority scheduling must be bound to a verifiable failed job");
 assert.match(js, /batchId:\s*createClientBatchId\(\)/, "writer retries should create a fresh durable job identity");
@@ -327,7 +332,7 @@ assert.doesNotMatch(
   "a failed card must remain retryable while other cards in the batch are still processing"
 );
 assert.match(priorityRetrySource, /const lifecycleGeneration = state\.assetLifecycleGeneration/, "priority retry must capture the lifecycle before awaiting queue work");
-assert.match(priorityRetrySource, /resetAssetPreparationForRetry\(asset\)/, "priority retry must discard stale speculative and failed preparation promises");
+assert.match(priorityRetrySource, /resetAssetPreparationForRetry\(asset,\s*\{/, "priority retry must discard stale speculative and failed preparation promises");
 assert.match(priorityRetrySource, /repairPreingestion:\s*true/, "priority retry should rebuild a missing evidence bundle before the fresh L2 request when possible");
 assert.match(js, /const failed = confidence === "FAILED" \|\| retryState\.terminal_failure/, "durable queue failure must render as a failed card even when stale confidence is not FAILED");
 assert.equal(
@@ -368,8 +373,8 @@ assert.doesNotMatch(js, /imageSideLabel|imagePreviewLabel/, "writer UI should no
 assert.doesNotMatch(js, /<span>\$\{imageSideLabel/, "thumbnail cards should show bare images without image slot badges");
 assert.doesNotMatch(js, /flushActiveModuleEditForResult/, "saving should no longer depend on hidden module edit flushing");
 assert.doesNotMatch(js, /moduleInput\.dataset\.dirty = "true"/, "title-only UI should not keep module dirty state");
-assert.match(api, /requireTenantAccess\(req\)/, "retired title route must still authenticate the current tenant before responding");
-assert.match(api, /sendJson\(res, 410,[\s\S]*v4_tenant_route_required/, "direct title execution must stay retired in favor of the durable tenant-scoped V4 route");
+assert.match(retiredApi, /requireTenantAccess\(req\)/, "retired title route must still authenticate the current tenant before responding");
+assert.match(retiredApi, /sendJson\(res, 410,[\s\S]*v4_tenant_route_required/, "direct title execution must stay retired in favor of the durable tenant-scoped V4 route");
 assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
 assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
 assert.match(css, /\.title-output/, "title card output should keep a stable card layout");
@@ -504,6 +509,7 @@ assert.deepEqual(
     terminal_failure: true,
     terminal_without_title: true,
     active_recovery: false,
+    input_rebind_required: false,
     recovery_mode: "FRESH_VERIFIED_ENQUEUE"
   },
   "a failed durable job must expose retry even when stale assisted status still says pending"
@@ -621,6 +627,42 @@ assert.equal(currentStorageImage.storageVerificationToken, "");
 assert.equal(currentStorageImage.cropMetadata.source_object_path, "");
 assert.equal(currentStorageImage.cropMetadata.derived_object_path, "");
 assert.equal(currentStorageImage.cropPlan.crop_metadata.source_object_path, "");
+const rebindImage = {
+  name: "card.jpg",
+  sourceBlob: { local: true },
+  objectPath: "tenants/tenant-current/listing-assets/2026-07-17/asset-current/front.jpg",
+  bucket: "listing-card-images",
+  storageVerified: true,
+  storageUploaded: true,
+  storageAssetId: currentStorageAssetId,
+  storageTenantId: currentStorageTenantId
+};
+const rebindAsset = {
+  id: "asset-1",
+  clientAssetRef: "asset-1",
+  durableAssetId: "asset_11111111-2222-4123-8abc-abcdef123456",
+  durableTenantId: "tenant-current",
+  imageGenerationId: "asset_11111111-2222-4123-8abc-abcdef123456",
+  durableAssetPromise: Promise.resolve(),
+  originalStorageUploadPromise: Promise.resolve(),
+  preingestionBundleId: "bundle-old",
+  images: [rebindImage],
+  providerImages: [rebindImage]
+};
+__listingCopilotAppTestHooks.resetAssetPreparationForRetry(rebindAsset, { inputRebind: true });
+assert.equal(rebindAsset.durableAssetId, "", "input rebind must create a successor durable asset");
+assert.equal(rebindAsset.imageGenerationId, "", "input rebind must discard the stale immutable generation");
+assert.equal(rebindAsset.preingestionBundleId, "", "input rebind must not reuse evidence from the old generation");
+assert.match(rebindAsset.clientAssetRef, /^asset-1:rebind:/);
+assert.equal(rebindImage.objectPath, "");
+assert.deepEqual(rebindImage.sourceBlob, { local: true }, "input rebind must preserve the local source image");
+const inputRebindRetryState = __listingCopilotAppTestHooks.retryStateForResult({
+  confidence: "FAILED",
+  v4_job_status: "FAILED",
+  v4RecoveryAction: "INPUT_REBIND"
+});
+assert.equal(inputRebindRetryState.input_rebind_required, true);
+assert.equal(inputRebindRetryState.recovery_mode, "INPUT_REBIND");
 assert.equal(
   __listingCopilotAppTestHooks.assetLifecycleMatches({ lifecycleGeneration: 4 }, 4, 4),
   true,

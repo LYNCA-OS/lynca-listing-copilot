@@ -222,6 +222,7 @@ const [canonicalJob] = await canonicalizeQueueJobs({
   jobs: [{
     tenant_id: "tenant_attacker",
     asset_id: assetId,
+    image_generation_id: assetId,
     trusted_manual_retry: true,
     manual_retry_requested_by_user_id: "operator_attacker",
     manualRetryOriginalOperatorId: "operator_victim",
@@ -292,5 +293,29 @@ assert.equal(JSON.stringify(canonicalJob).includes("operator_victim"), false);
 assert.equal(JSON.stringify(canonicalJob).includes(maliciousPath), false);
 assert.equal(JSON.stringify(canonicalJob).includes("attacker.invalid"), false);
 assert.equal(JSON.stringify(canonicalJob).includes("base64,attacker"), false);
+
+await assert.rejects(
+  canonicalizeQueueJobs({
+    tenantId,
+    jobs: [{ asset_id: assetId, payload: {} }],
+    readCanonical: async () => canonical
+  }),
+  (error) => error?.code === "canonical_image_generation_missing"
+    && error?.recoveryAction === "INPUT_REBIND"
+);
+
+await assert.rejects(
+  canonicalizeQueueJobs({
+    tenantId,
+    jobs: [{
+      asset_id: assetId,
+      image_generation_id: "asset_99999999-2222-4123-8abc-abcdef123456",
+      payload: {}
+    }],
+    readCanonical: async () => canonical
+  }),
+  (error) => error?.code === "canonical_image_generation_stale"
+    && error?.recoveryAction === "INPUT_REBIND"
+);
 
 console.log("v4 canonical image reference tests passed");

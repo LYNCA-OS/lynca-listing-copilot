@@ -1,8 +1,8 @@
 # V4 Convergence Architecture
 
-Status: active migration. This document defines the target ownership model and
-the measurable boundary between native V4 stages and the remaining transitional
-recognition core.
+Status: native-core convergence complete. Strategy calibration remains active.
+This document defines the production ownership model and the boundary between
+the frozen execution chain and independently calibrated decision policy.
 
 ## Decision
 
@@ -46,10 +46,13 @@ regexes, and renderer code cannot apply candidate fields.
 
 ## Current Boundary
 
-V4 no longer calls the V2 HTTP handler or simulates an internal HTTP request.
-It invokes an explicit `runListingRecognitionCore` bridge. This removes auth,
-rate-limit, body parsing, and response emulation from the inner pipeline, but it
-does not make the remaining core native V4.
+V4 owns the recognition core at
+`lib/listing/v4/pipeline/native-recognition-core.mjs` and invokes
+`runNativeV4Recognition` directly. The retired endpoint at
+`api/listing-copilot-title.js` is a `410` compatibility guard only: it neither
+imports nor exports recognition code. This reverses the former V4-to-V2
+dependency and leaves one implementation of provider observation, retrieval,
+candidate application, identity resolution, and deterministic presentation.
 
 `v4_pipeline_contract` is emitted with every V4 result. It identifies each
 stage as:
@@ -57,10 +60,10 @@ stage as:
 - `NATIVE_V4`
 - `NATIVE_V4_EXACT_ANCHOR`
 - `EXTRACTED_SHARED_MODULE`
-- `TRANSITIONAL_CORE_BRIDGE`
 - `NOT_RUN`
 
-Migration is complete only when `bridged_stage_count` is zero. The contract
+Native migration is complete when `bridged_stage_count` is zero and
+`legacy_core_dependency=false`. The contract
 fails closed on untyped exact routes, unversioned candidate heuristics, candidate
 selection/application identity mismatches, and candidate fields applied outside
 the atomic decision stage.
@@ -116,13 +119,21 @@ metrics decide release direction:
 Seller-title recall, node counts, queue time, and candidate funnels remain
 diagnostic metrics. They cannot establish accuracy by themselves.
 
-## Remaining Migration
+## Completed Native Migration
 
-1. Extract observation and retrieval from `runListingRecognitionCore`.
-2. Move identity resolution behind one typed stage interface.
-3. Remove `legacy_v2_result` after all callers use the V4 contract.
-4. Make the old HTTP endpoint a compatibility adapter over native V4.
-5. Delete the compatibility endpoint after frontend and queue callers migrate.
+1. V4 imports its native recognition core directly.
+2. Observation, retrieval, candidate decision, field resolution, renderer, and
+   persistence have one declared owner in `v4_pipeline_contract`.
+3. `legacy_v2_result`, `adaptV2ResultToV4`, and transitional bridge execution
+   modes have been removed from the runtime contract.
+4. Tests import the native core rather than using the retired HTTP endpoint as
+   an algorithm module.
+5. The compatibility endpoint remains only as an authenticated `410` guard and
+   can be removed after external legacy callers have aged out.
+
+The next phase is not another pipeline rewrite. It is theoretical-to-empirical
+policy calibration through full-information replay, fixed 10-card validation,
+and random 100-card validation while the execution chain remains stable.
 
 Every migration slice must remove an old owner, preserve the golden prompt and
 renderer contracts, pass offline suites, and pass the fixed release gate before

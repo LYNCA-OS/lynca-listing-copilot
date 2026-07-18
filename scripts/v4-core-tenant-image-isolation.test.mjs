@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import {
-  callRecognitionCoreWithGpt5EmptyRetry
+  callNativeV4RecognitionWithGpt5EmptyRetry
 } from "../api/v4/listing-copilot-title.js";
-import { preingestionOcrScopeFromPayload } from "../api/listing-copilot-title.js";
+import { preingestionOcrScopeFromPayload } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { scopeV4RecognitionPayloadFromFencedJob } from "../lib/listing/v4/session/trusted-session-identity.mjs";
 import { createListingImageVerificationToken } from "../lib/listing/storage/supabase-image-storage.mjs";
 
@@ -113,7 +113,7 @@ try {
     externalCalls.push(String(input));
     throw new Error("cross-tenant image must be rejected before any external call");
   };
-  const response = await callRecognitionCoreWithGpt5EmptyRetry({
+  const response = await callNativeV4RecognitionWithGpt5EmptyRetry({
     payload: scoped,
     headers: { "x-request-id": "req-v4-core-tenant-image" }
   });

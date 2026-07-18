@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import "./v4-asset-lifecycle-contract.test.mjs";
+import "./v4-production-strategy.test.mjs";
+import { v4ProductionStrategyProfile } from "../lib/listing/v4/policy/production-strategy.mjs";
 import {
   buildFastScoutListingResult,
   selectFastScoutImages
 } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
-import { adaptV2ResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
+import { adaptRecognitionResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
 import { buildV4FieldGraph, buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
@@ -93,7 +96,26 @@ const smokeTsv = perCardTsv([{
     bridged_stage_count: 2,
     bridged_stages: ["observation", "field_resolution"],
     violations: [],
-    migration_complete: false
+    migration_complete: false,
+    shadow_recognition_policy: {
+      schema_version: "v4-shadow-recognition-policy-audit-v1",
+      can_execute: false,
+      observation_point: "TERMINAL_PIPELINE_STATE",
+      state: {
+        invariants: { feasible: true, complete: true },
+        completed_actions: ["RUN_GPT_OBSERVATION"]
+      },
+      decision: {
+        next_action: "STOP_AND_RENDER",
+        current_stop_risk: {
+          safe_to_stop: true,
+          global_risk: 0.04,
+          critical_field_risk: 0.03,
+          direct_conflict_count: 0
+        },
+        feasible_actions: ["STOP_AND_RENDER", "ROUTE_TO_WRITER_REVIEW"]
+      }
+    }
   }
 }]).split("\n").slice(0, 2).map((line) => line.split("\t"));
 assert.equal(smokeTsv[0].length, smokeTsv[1].length, "per-card TSV columns must not silently shift");
@@ -103,6 +125,11 @@ assert.equal(smokeTsvRow.writer_visible_recognition_ms, "7500");
 assert.equal(smokeTsvRow.unexplained_resolution_drop_fields, "grade");
 assert.equal(smokeTsvRow.v4_pipeline_contract_status, "PASSED");
 assert.equal(smokeTsvRow.v4_pipeline_bridged_stage_count, "2");
+assert.equal(smokeTsvRow.shadow_policy_can_execute, "false");
+assert.equal(smokeTsvRow.shadow_hard_invariants_feasible, "true");
+assert.equal(smokeTsvRow.shadow_next_action, "STOP_AND_RENDER");
+assert.equal(smokeTsvRow.shadow_stop_safe, "true");
+assert.equal(smokeTsvRow.shadow_completed_actions, "RUN_GPT_OBSERVATION");
 
 const pipelineLedgerSummary = summarizePipelineNodeLedgers([
   {
@@ -153,7 +180,23 @@ const pipelineContractSummary = summarizeV4PipelineContracts([{
     bridged_stage_count: 2,
     bridged_stages: ["observation", "field_resolution"],
     violations: [],
-    migration_complete: false
+    migration_complete: false,
+    shadow_recognition_policy: {
+      schema_version: "v4-shadow-recognition-policy-audit-v1",
+      can_execute: false,
+      state: {
+        invariants: { feasible: true, complete: true },
+        completed_actions: ["RUN_GPT_OBSERVATION", "RUN_VECTOR_RETRIEVAL"]
+      },
+      decision: {
+        next_action: "STOP_AND_RENDER",
+        current_stop_risk: {
+          safe_to_stop: true,
+          global_risk: 0.04,
+          critical_field_risk: 0.03
+        }
+      }
+    }
   }
 }, {
   v4_pipeline_contract: {
@@ -162,7 +205,23 @@ const pipelineContractSummary = summarizeV4PipelineContracts([{
     bridged_stage_count: 1,
     bridged_stages: ["observation"],
     violations: [{ code: "EXACT_ROUTE_WITHOUT_TYPED_ANCHOR" }],
-    migration_complete: false
+    migration_complete: false,
+    shadow_recognition_policy: {
+      schema_version: "v4-shadow-recognition-policy-audit-v1",
+      can_execute: false,
+      state: {
+        invariants: { feasible: false, complete: false },
+        completed_actions: []
+      },
+      decision: {
+        next_action: "REJECT_INVALID_INPUT",
+        current_stop_risk: {
+          safe_to_stop: false,
+          global_risk: 1,
+          critical_field_risk: 1
+        }
+      }
+    }
   }
 }, {}]);
 assert.equal(pipelineContractSummary.contract_present_count, 2);
@@ -171,6 +230,19 @@ assert.equal(pipelineContractSummary.bridged_stage_count, 3);
 assert.deepEqual(pipelineContractSummary.bridged_stage_breakdown, { observation: 2, field_resolution: 1 });
 assert.equal(pipelineContractSummary.violation_count, 1);
 assert.equal(pipelineContractSummary.violation_code_breakdown.EXACT_ROUTE_WITHOUT_TYPED_ANCHOR, 1);
+assert.equal(pipelineContractSummary.shadow_policy_snapshot_count, 2);
+assert.equal(pipelineContractSummary.shadow_policy_missing_count, 0);
+assert.equal(pipelineContractSummary.shadow_policy_can_execute_count, 0);
+assert.equal(pipelineContractSummary.hard_invariant_feasible_count, 1);
+assert.equal(pipelineContractSummary.hard_invariant_incomplete_count, 1);
+assert.deepEqual(pipelineContractSummary.shadow_next_action_breakdown, {
+  STOP_AND_RENDER: 1,
+  REJECT_INVALID_INPUT: 1
+});
+assert.equal(pipelineContractSummary.current_safe_to_stop_count, 1);
+assert.equal(pipelineContractSummary.invalid_input_reject_count, 1);
+assert.equal(pipelineContractSummary.completed_action_count, 2);
+assert.equal(pipelineContractSummary.terminal_safe_after_expensive_action_count, 1);
 assert.equal(providerDoneHandoffOverride(["node", "smoke"]), null, "omitted handoff mode must inherit production configuration");
 assert.equal(providerDoneHandoffOverride(["node", "smoke", "--provider-done-handoff"]), true);
 assert.equal(providerDoneHandoffOverride(["node", "smoke", "--no-provider-done-handoff"]), false);
@@ -631,6 +703,7 @@ const nativeExactAnchorContract = buildV4PipelineContract({
   persistence: { recognition_session: { saved: true } }
 });
 assert.equal(nativeExactAnchorContract.contract_status, "PASSED");
+assert.deepEqual(nativeExactAnchorContract.strategy_profile, v4ProductionStrategyProfile);
 assert.equal(nativeExactAnchorContract.migration_complete, true);
 assert.deepEqual(nativeExactAnchorContract.bridged_stages, []);
 assert.equal(
@@ -643,7 +716,7 @@ assert.equal(
   "NATIVE_V4_EXACT_ANCHOR"
 );
 
-const transitionalL2Contract = buildV4PipelineContract({
+const nativeL2Contract = buildV4PipelineContract({
   payload: { images: [{ id: "image-1" }, { id: "image-2" }] },
   routePlan: { route: "ASSISTED_FULL" },
   result: {
@@ -665,12 +738,13 @@ const transitionalL2Contract = buildV4PipelineContract({
     title_render_source: "v4_csm_deterministic_renderer"
   }
 });
-assert.equal(transitionalL2Contract.contract_status, "PASSED");
-assert.ok(transitionalL2Contract.bridged_stages.includes(v4PipelineStages.OBSERVATION));
-assert.ok(transitionalL2Contract.bridged_stages.includes(v4PipelineStages.RETRIEVAL));
-assert.ok(transitionalL2Contract.bridged_stages.includes(v4PipelineStages.FIELD_RESOLUTION));
+assert.equal(nativeL2Contract.contract_status, "PASSED");
+assert.equal(nativeL2Contract.core_implementation, "NATIVE_V4");
+assert.equal(nativeL2Contract.legacy_core_dependency, false);
+assert.equal(nativeL2Contract.migration_complete, true);
+assert.deepEqual(nativeL2Contract.bridged_stages, []);
 assert.equal(
-  transitionalL2Contract.stages.find((stage) => stage.stage_id === v4PipelineStages.CANDIDATE_DECISION)?.execution_mode,
+  nativeL2Contract.stages.find((stage) => stage.stage_id === v4PipelineStages.CANDIDATE_DECISION)?.execution_mode,
   "EXTRACTED_SHARED_MODULE"
 );
 
@@ -759,7 +833,8 @@ const persistPipelineSource = v4TitleApiSource.slice(persistPipelineStart, persi
 assert.ok(persistPipelineStart >= 0 && persistPipelineEnd > persistPipelineStart);
 assert.doesNotMatch(v4TitleApiSource, /\bv2ListingHandler\b/, "native V4 must not invoke the V2 HTTP handler");
 assert.doesNotMatch(v4TitleApiSource, /\bcallJsonHandler\b/, "native V4 must not emulate an internal HTTP request");
-assert.match(v4TitleApiSource, /runListingRecognitionCore/, "the transitional recognition bridge must be explicit until its remaining stages are extracted");
+assert.match(v4TitleApiSource, /pipeline\/native-recognition-core\.mjs/, "V4 must import its native recognition core directly");
+assert.doesNotMatch(v4TitleApiSource, /\.\.\/listing-copilot-title\.js/, "V4 must not depend on the legacy compatibility endpoint");
 assert.doesNotMatch(persistPipelineSource, /\breq\b/, "persistence helpers must not capture an undefined request object");
 assert.match(persistPipelineSource, /requestContext/, "request context must be passed explicitly to capacity refill");
 assert.match(v4TitleApiSource, /recognition_clock_source:\s*"gpt_provider_request"/, "GPT requests must persist the per-card recognition clock source");
@@ -975,7 +1050,7 @@ const l2CustomRetrievalBudget = providerOptionsForV4BackgroundL2({
 assert.equal(l2CustomRetrievalBudget.post_observation_catalog_vector_hedge_ms, 400);
 assert.equal(l2CustomRetrievalBudget.post_observation_retrieval_critical_path_budget_ms, 800);
 
-const resolvedOcrOverridePresentation = adaptV2ResultToV4({
+const resolvedOcrOverridePresentation = adaptRecognitionResultToV4({
   sessionId: "v4sess-resolved-ocr-override",
   result: {
     confidence: "HIGH",
@@ -1011,7 +1086,7 @@ const resolvedOcrOverridePresentation = adaptV2ResultToV4({
 assert.match(resolvedOcrOverridePresentation.final_title, /03\/10/);
 assert.equal(resolvedOcrOverridePresentation.resolved_fields.print_run_number, "03/10");
 
-const verifiedOcrMustBeatDenominatorOnlyEvidence = adaptV2ResultToV4({
+const verifiedOcrMustBeatDenominatorOnlyEvidence = adaptRecognitionResultToV4({
   sessionId: "v4sess-verified-ocr-beats-denominator",
   result: {
     confidence: "HIGH",
@@ -1108,7 +1183,7 @@ const v2Result = {
   serial_numerator_verified: true
 };
 
-const v4 = adaptV2ResultToV4({
+const v4 = adaptRecognitionResultToV4({
   sessionId: "v4sess-test",
   result: v2Result,
   payload: { preingestion_bundle_id: "bundle-1" },
@@ -1139,7 +1214,7 @@ assert.equal(v4.provider_result.preingestion_ocr_rendezvous.status, "TERMINAL");
 assert.equal(v4.provider_result.preingestion_evidence_refresh.added_patch_count, 2);
 assert.equal(v4.provider_result.serial_numerator_verified, true);
 
-const reconciledSlabTitle = adaptV2ResultToV4({
+const reconciledSlabTitle = adaptRecognitionResultToV4({
   sessionId: "v4sess-slab-reconcile",
   result: {
     final_title: "2021 Panini Contenders Optic Aaron Rodgers 06/25 #8 (Green Bay Packers) PSA 10",
@@ -1238,7 +1313,7 @@ assert.deepEqual(reconciledSlabTitle.provider_result.title_reconciliation_reason
   source: "verified_slab_label"
 }]);
 
-const deterministicCsmTitle = adaptV2ResultToV4({
+const deterministicCsmTitle = adaptRecognitionResultToV4({
   sessionId: "v4sess-deterministic-csm",
   result: {
     confidence: "HIGH",
@@ -1277,10 +1352,10 @@ assert.equal(
 assert.equal(deterministicCsmTitle.resolved_fields.collector_number, "164");
 assert.equal(deterministicCsmTitle.resolved_fields.surface_color, "Silver");
 assert.equal(deterministicCsmTitle.provider_result.title_reconciled_from_v4_field_graph, true);
-assert.equal(deterministicCsmTitle.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
-assert.match(deterministicCsmTitle.legacy_v2_result.model_title_suggestion, /1st Bowman/);
+assert.equal(deterministicCsmTitle.title_render_source, "v4_csm_deterministic_renderer");
+assert.match(deterministicCsmTitle.provider_result.model_title_suggestion, /1st Bowman/);
 
-const conflictedYearNeverRenders = adaptV2ResultToV4({
+const conflictedYearNeverRenders = adaptRecognitionResultToV4({
   sessionId: "v4sess-conflicted-year",
   result: {
     confidence: "LOW",
@@ -1300,7 +1375,7 @@ assert.equal(conflictedYearNeverRenders.resolved_fields.year, null);
 assert.doesNotMatch(conflictedYearNeverRenders.final_title, /\b2013\b/);
 assert.equal(conflictedYearNeverRenders.field_states.year.display_status, "CONFLICT");
 
-const deterministicTcgCardNameTitle = adaptV2ResultToV4({
+const deterministicTcgCardNameTitle = adaptRecognitionResultToV4({
   sessionId: "v4sess-deterministic-tcg-card-name",
   result: {
     confidence: "HIGH",
@@ -1322,12 +1397,12 @@ const deterministicTcgCardNameTitle = adaptV2ResultToV4({
   payload: { maxTitleLength: 80 },
   routePlan: assistedRoute
 });
-assert.equal(deterministicTcgCardNameTitle.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
+assert.equal(deterministicTcgCardNameTitle.title_render_source, "v4_csm_deterministic_renderer");
 assert.match(deterministicTcgCardNameTitle.final_title, /Dark Magician/);
 assert.match(deterministicTcgCardNameTitle.final_title, /EN001/);
 assert.match(deterministicTcgCardNameTitle.final_title, /PSA 10/);
 
-const sparseIdentityStillUsesCsm = adaptV2ResultToV4({
+const sparseIdentityStillUsesCsm = adaptRecognitionResultToV4({
   sessionId: "v4sess-sparse-csm",
   result: {
     confidence: "LOW",
@@ -1343,12 +1418,12 @@ const sparseIdentityStillUsesCsm = adaptV2ResultToV4({
   payload: { maxTitleLength: 80 },
   routePlan: assistedRoute
 });
-assert.equal(sparseIdentityStillUsesCsm.legacy_v2_result.title_render_source, "v4_csm_deterministic_renderer");
+assert.equal(sparseIdentityStillUsesCsm.title_render_source, "v4_csm_deterministic_renderer");
 assert.equal(sparseIdentityStillUsesCsm.final_title, "2006 Fleer 20th Anniversary Rookie Reprint #23");
-assert.match(sparseIdentityStillUsesCsm.legacy_v2_result.model_title_suggestion, /Michael Jordan/);
+assert.match(sparseIdentityStillUsesCsm.provider_result.model_title_suggestion, /Michael Jordan/);
 assert.doesNotMatch(sparseIdentityStillUsesCsm.final_title, /Model prose/);
 
-const failedL2V4 = adaptV2ResultToV4({
+const failedL2V4 = adaptRecognitionResultToV4({
   sessionId: "v4sess-failed-l2",
   result: {
     confidence: "FAILED",
@@ -1364,7 +1439,7 @@ assert.equal(failedL2V4.status, "FAILED");
 assert.equal(failedL2V4.assisted_draft_status, "FAILED");
 assert.equal(failedL2V4.title_stage_readiness.writer_visible_title_ready, false);
 
-const semanticAbstainV4 = adaptV2ResultToV4({
+const semanticAbstainV4 = adaptRecognitionResultToV4({
   sessionId: "v4sess-semantic-abstain",
   result: {
     confidence: "FAILED",
@@ -1388,7 +1463,7 @@ assert.equal(semanticAbstainV4.assisted_draft_status, "REVIEW_REQUIRED");
 assert.equal(semanticAbstainV4.title_stage_readiness.writer_can_start, true);
 assert.equal(semanticAbstainV4.failure_reason, null);
 
-const recoveredFailedL2V4 = adaptV2ResultToV4({
+const recoveredFailedL2V4 = adaptRecognitionResultToV4({
   sessionId: "v4sess-recovered-l2",
   result: {
     confidence: "FAILED",
@@ -1418,9 +1493,8 @@ assert.match(recoveredFailedL2V4.final_title, /Nick Chubb/);
 assert.match(recoveredFailedL2V4.final_title, /10\/10/);
 assert.equal(recoveredFailedL2V4.provider_result.confidence, "LOW");
 assert.equal(recoveredFailedL2V4.provider_result.title_recovered_from_v4_field_graph, true);
-assert.equal(recoveredFailedL2V4.legacy_v2_result.title_recovered_from_v4_field_graph, true);
 
-const internalScoutV4 = adaptV2ResultToV4({
+const internalScoutV4 = adaptRecognitionResultToV4({
   sessionId: "v4sess-internal-scout",
   result: {
     ...v2Result,
@@ -1489,7 +1563,7 @@ assert.match(fastScoutResult.final_title, /2\/3|#\/3/);
 assert.equal(fastScoutResult.fast_scout.input_image_count, 1);
 assert.equal(fastScoutResult.evidence.print_run_number.status, "CONFIRMED");
 
-const fastScoutV4 = adaptV2ResultToV4({
+const fastScoutV4 = adaptRecognitionResultToV4({
   sessionId: "v4sess-fast-scout",
   result: fastScoutResult,
   payload: {},
@@ -1761,6 +1835,7 @@ assert.equal(feedbackTransactionCalls[0].body.p_feedback_event.schema_version, "
 assert.equal(feedbackTransactionCalls[0].body.p_learning_event.training_eligible, false);
 const health = await checkV4Tables({ env, fetchImpl: fakeFetch });
 assert.equal(health.configured, true);
+assert.equal(health.asset_lifecycle.ready, true);
 assert.ok(writes.some((write) => write.table === "v4_recognition_sessions"));
 assert.ok(writes.some((write) => write.table === "v4_field_evidence"));
 assert.ok(writes.some((write) => write.table === "v4_candidate_traces"));
@@ -1770,6 +1845,8 @@ assert.ok(writes.some((write) => write.table === "v4_learning_events"));
 assert.ok(reads.includes("v4_production_quality_ledger"));
 assert.ok(reads.includes("v4_writer_export_batches"));
 assert.ok(reads.includes("v4_writer_export_items"));
+assert.ok(reads.includes("listing_assets"));
+assert.ok(reads.includes("listing_image_verifications"));
 
 const prewarmCalls = [];
 const fakePrewarmFetch = async (url, init = {}) => {

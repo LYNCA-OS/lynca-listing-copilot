@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/Ruhan-Wang/Harness_Handbook.git",
+  "upstream_commit": "92d66cc7b762ff6c2812877c5a37b84d709a47a3",
+  "integration_mode": "PINNED_EXTERNAL_TOOL_NO_VENDORED_SOURCE",
+  "license_status": "NO_LICENSE_FILE_AT_PIN",
+  "generator_entrypoint": "handbook_generate_large/run.py",
+  "default_phase": "1",
+  "default_profile": "runtime",
+  "source_language": "typescript",
+  "requirements_file": "maintenance/harness-handbook-requirements.txt",
+  "compatibility_shim": "maintenance/harness-handbook-shims/sitecustomize.py",
+  "privacy": {
+    "default_mode": "STATIC_LOCAL_ONLY",
+    "llm_phases_require_explicit_opt_in": true
+  }
+}

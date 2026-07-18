@@ -379,6 +379,7 @@ export async function prepareDurableSmokeItem({
     item: {
       ...item,
       asset_id: asset.asset_id,
+      image_generation_id: asset.image_generation_id,
       source_feedback_id: item.source_feedback_id || sourceAssetId
     },
     images: verified,
@@ -443,6 +444,7 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   }
   return {
     asset_id: candidateId(item, index),
+    image_generation_id: cleanText(item.image_generation_id) || candidateId(item, index),
     source_feedback_id: item.source_feedback_id || item.source_record_id || null,
     physical_card_id: item.physical_card_id || candidateId(item, index),
     category: item.category || "collectible_card",
@@ -1692,6 +1694,7 @@ async function runOne({
         priority: 100,
         jobs: [{
           asset_id: id,
+          image_generation_id: payload.image_generation_id,
           force_l2_only: !enableL1,
           create_l1_job: enableL1,
           create_l2_job: true,
@@ -1897,6 +1900,7 @@ async function runOne({
         priority: 100,
         jobs: [{
           asset_id: id,
+          image_generation_id: payload.image_generation_id,
           force_l2_only: true,
           create_l1_job: false,
           create_l2_job: true,
@@ -2380,6 +2384,7 @@ async function enqueueSpeculativeItem({
         priority: 100,
         jobs: [{
           asset_id: id,
+          image_generation_id: payload.image_generation_id,
           force_l2_only: !enableL1,
           create_l1_job: enableL1,
           create_l2_job: true,
@@ -3002,6 +3007,7 @@ export function summarizeV4PipelineContracts(results = []) {
   }, {});
   const bridgedStageBreakdown = {};
   const violationCodeBreakdown = {};
+  const completedActionBreakdown = {};
   let bridgedStageCount = 0;
   let violationCount = 0;
   for (const item of rows) {
@@ -3018,7 +3024,31 @@ export function summarizeV4PipelineContracts(results = []) {
       const key = cleanText(violation?.code) || "UNKNOWN";
       violationCodeBreakdown[key] = (violationCodeBreakdown[key] || 0) + 1;
     }
+    const completedActions = Array.isArray(contract.shadow_recognition_policy?.state?.completed_actions)
+      ? contract.shadow_recognition_policy.state.completed_actions
+      : [];
+    for (const action of completedActions) {
+      const key = cleanText(action) || "UNKNOWN";
+      completedActionBreakdown[key] = (completedActionBreakdown[key] || 0) + 1;
+    }
   }
+  const shadowRows = rows.filter((item) => (
+    item.v4_pipeline_contract.shadow_recognition_policy?.schema_version
+      === "v4-shadow-recognition-policy-audit-v1"
+  ));
+  const terminalStopRows = shadowRows.filter((item) => (
+    item.v4_pipeline_contract.shadow_recognition_policy?.decision?.current_stop_risk?.safe_to_stop === true
+  ));
+  const expensiveActions = new Set([
+    "RUN_GPT_OBSERVATION",
+    "RUN_VECTOR_RETRIEVAL",
+    "RUN_FOCUSED_VERIFIER",
+    "RUN_EXTERNAL_RETRIEVAL"
+  ]);
+  const terminalSafeAfterExpensiveActionCount = terminalStopRows.filter((item) => (
+    (item.v4_pipeline_contract.shadow_recognition_policy?.state?.completed_actions || [])
+      .some((action) => expensiveActions.has(action))
+  )).length;
   return {
     schema_version: "v4-pipeline-contract-summary-v1",
     contract_present_count: rows.length,
@@ -3032,7 +3062,55 @@ export function summarizeV4PipelineContracts(results = []) {
     bridged_stage_breakdown: bridgedStageBreakdown,
     violation_card_count: rows.filter((item) => (item.v4_pipeline_contract.violations || []).length > 0).length,
     violation_count: violationCount,
-    violation_code_breakdown: violationCodeBreakdown
+    violation_code_breakdown: violationCodeBreakdown,
+    shadow_policy_snapshot_count: shadowRows.length,
+    shadow_policy_missing_count: Math.max(0, rows.length - shadowRows.length),
+    shadow_policy_can_execute_count: shadowRows.filter((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.can_execute === true
+    )).length,
+    hard_invariant_feasible_count: shadowRows.filter((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.state?.invariants?.feasible === true
+    )).length,
+    hard_invariant_incomplete_count: shadowRows.filter((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.state?.invariants?.complete !== true
+    )).length,
+    hard_invariant_failed_count: shadowRows.filter((item) => {
+      const invariants = item.v4_pipeline_contract.shadow_recognition_policy?.state?.invariants;
+      return invariants?.complete === true && invariants?.feasible !== true;
+    }).length,
+    shadow_next_action_breakdown: countValues(shadowRows.map((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.decision?.next_action
+    ))),
+    current_safe_to_stop_count: terminalStopRows.length,
+    current_deep_review_count: shadowRows.filter((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.decision?.next_action
+        === "ROUTE_TO_WRITER_REVIEW"
+    )).length,
+    specialized_verification_needed_count: shadowRows.filter((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.decision?.next_action
+        === "RUN_FOCUSED_VERIFIER"
+    )).length,
+    invalid_input_reject_count: shadowRows.filter((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.decision?.next_action
+        === "REJECT_INVALID_INPUT"
+    )).length,
+    completed_action_breakdown: completedActionBreakdown,
+    completed_action_count: Object.values(completedActionBreakdown)
+      .reduce((sum, count) => sum + count, 0),
+    terminal_safe_after_expensive_action_count: terminalSafeAfterExpensiveActionCount,
+    terminal_safe_after_expensive_action_note: "Terminal-state diagnostic only; it does not prove an earlier action was wasteful.",
+    global_risk_p50: quantile(shadowRows.map((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.decision?.current_stop_risk?.global_risk
+    )), 0.5),
+    global_risk_p95: quantile(shadowRows.map((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.decision?.current_stop_risk?.global_risk
+    )), 0.95),
+    critical_risk_p50: quantile(shadowRows.map((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.decision?.current_stop_risk?.critical_field_risk
+    )), 0.5),
+    critical_risk_p95: quantile(shadowRows.map((item) => (
+      item.v4_pipeline_contract.shadow_recognition_policy?.decision?.current_stop_risk?.critical_field_risk
+    )), 0.95)
   };
 }
 
@@ -3707,6 +3785,18 @@ export function perCardTsv(results = []) {
     "v4_pipeline_bridged_stages",
     "v4_pipeline_violation_count",
     "v4_pipeline_migration_complete",
+    "shadow_policy_present",
+    "shadow_policy_can_execute",
+    "shadow_policy_observation_point",
+    "shadow_hard_invariants_feasible",
+    "shadow_hard_invariants_complete",
+    "shadow_next_action",
+    "shadow_stop_safe",
+    "shadow_global_risk",
+    "shadow_critical_risk",
+    "shadow_direct_conflict_count",
+    "shadow_completed_actions",
+    "shadow_feasible_actions",
     "provider_response_profile",
     "provider_prompt_mode",
     "provider_prompt_chars",
@@ -3807,6 +3897,18 @@ export function perCardTsv(results = []) {
     item.v4_pipeline_contract?.bridged_stages || [],
     item.v4_pipeline_contract?.violations?.length ?? null,
     item.v4_pipeline_contract?.migration_complete ?? null,
+    Boolean(item.v4_pipeline_contract?.shadow_recognition_policy),
+    item.v4_pipeline_contract?.shadow_recognition_policy?.can_execute ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.observation_point ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.state?.invariants?.feasible ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.state?.invariants?.complete ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.decision?.next_action ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.decision?.current_stop_risk?.safe_to_stop ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.decision?.current_stop_risk?.global_risk ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.decision?.current_stop_risk?.critical_field_risk ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.decision?.current_stop_risk?.direct_conflict_count ?? null,
+    item.v4_pipeline_contract?.shadow_recognition_policy?.state?.completed_actions || [],
+    item.v4_pipeline_contract?.shadow_recognition_policy?.decision?.feasible_actions || [],
     item.provider_response_profile,
     item.provider_prompt_mode,
     item.provider_prompt_chars,

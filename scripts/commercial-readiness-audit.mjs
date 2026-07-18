@@ -567,7 +567,7 @@ async function auditIdentityResultCache(env = process.env) {
 
   try {
     const cacheModule = await readTextFile("lib/listing/cache/identity-result-cache.mjs");
-    const titleApi = await readTextFile("api/listing-copilot-title.js");
+    const titleApi = await readTextFile("lib/listing/v4/pipeline/native-recognition-core.mjs");
     const migration = await readTextFile("supabase/migrations/20260623_listing_identity_result_cache.sql");
     const envExample = await readTextFile(".env.example");
     details.checked_files = [cacheModule.path, titleApi.path, migration.path, envExample.path];

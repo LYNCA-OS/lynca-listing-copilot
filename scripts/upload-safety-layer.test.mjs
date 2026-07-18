@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 
 const html = await readFile("app/index.html", "utf8");
 const js = await readFile("app/listing-copilot.js", "utf8");
+const enqueue = await readFile("api/v4/listing-job-enqueue.js", "utf8");
+const lifecycleContract = await readFile("lib/listing/v4/assets/asset-lifecycle-contract.mjs", "utf8");
 
 [
   ".jpg",
@@ -36,8 +38,14 @@ assert.match(js, /IMAGE_INITIAL_QUALITY\s*=\s*0\.9/, "initial adaptive quality s
 assert.match(js, /IMAGE_MIN_QUALITY\s*=\s*0\.78/, "normal adaptive quality should avoid low-quality recompression");
 assert.match(js, /heicUnsupportedMessage\s*=/, "HEIC unsupported fallback message should be defined");
 assert.match(js, /当前浏览器暂不支持 HEIC\/HEIF 预览/, "HEIC fallback should be clear Chinese copy");
-assert.match(js, /MAX_ASSET_REQUEST_BYTES/, "asset request body safety threshold should exist");
-assert.match(js, /ensureSafeAssetPayload/, "oversized assets should be recompressed before API request");
+assert.match(js, /buildAssetQueueIntentBody/, "queue requests should use the asset-intent contract");
+assert.match(js, /stripClientImageTransport/, "queue intent must strip browser-owned image transport fields");
+assert.match(js, /image_generation_id:\s*asset\.imageGenerationId/, "queue intent must bind the immutable image generation");
+assert.doesNotMatch(js, /MAX_ASSET_REQUEST_BYTES|ensureSafeAssetPayload/, "queue requests must not revive the legacy Base64 JSON transport path");
+assert.match(enqueue, /canonicalizeQueueJobs/, "the server must own canonical queue input reconstruction");
+assert.match(enqueue, /readCanonicalListingImageReferences/, "the server must reconstruct canonical image input from durable storage state");
+assert.match(enqueue, /stripClientImageTransport/, "the server must fail closed against browser-owned image transport fields");
+assert.match(lifecycleContract, /clientForbiddenImageTransportKeys/, "forbidden browser image transport fields must have one contract owner");
 assert.match(js, /originalWidth/, "original source width should be preserved for storage dimension validation");
 assert.match(js, /originalHeight/, "original source height should be preserved for storage dimension validation");
 assert.match(js, /storageDimensionsForImage/, "storage uploads should include validated image dimensions");
@@ -49,7 +57,6 @@ assert.match(js, /本地预览已显示；正在校验原图，随后自动上�
 assert.match(js, /URL\.createObjectURL/, "selected images should receive an immediate local object-URL preview");
 assert.match(js, /PREINGEST_API_ENDPOINT/, "background pre-ingestion endpoint should be wired for prepared assets");
 assert.match(js, /backgroundPreparationRunId/, "background preparation should be guarded against stale file batches");
-assert.match(js, /保留主图，缩减辅助局部图/, "oversized request fallback status should be visible without implying low-quality main-image recognition");
 assert.match(js, /本地预览已显示；正在校验原图，随后自动上传并启动内部识别…/, "local preview preparation should announce the automatic recognition handoff");
 assert.match(js, /0% · 图片已准备，开始识别…/, "recognition start status should include progress");
 assert.match(js, /setStatus\("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…",\s*\{\s*busy:\s*true\s*\}\)/, "preview preparation should render as an active waiting state");

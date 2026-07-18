@@ -12,18 +12,28 @@ writer status updates.
 
 ## R1 — Retire the v2 monolith
 
-### 2026-07-14 convergence checkpoint
+### 2026-07-18 native-core completion
 
-V4 no longer imports or invokes the V2 HTTP handler. The endpoint calls an
-explicit `runListingRecognitionCore` bridge, so request parsing, authentication,
-rate limiting, and response emulation are no longer nested. Candidate selection
-and safe field application now execute through one atomic decision stage, and a
-versioned pipeline contract exposes every remaining transitional bridge.
+The production dependency has been inverted. The single recognition
+implementation now lives at
+`lib/listing/v4/pipeline/native-recognition-core.mjs` and exports
+`runNativeV4Recognition`. V4 imports it directly; the old HTTP route is an
+authenticated `410` compatibility guard and exports no algorithm code.
 
-This is not the end of R1: `api/listing-copilot-title.js` is currently 5,931
-lines and still owns bridged observation, retrieval, and resolution work. The
-next extraction must remove those owners from the core rather than add another
-wrapper. See `docs/architecture/V4-CONVERGENCE-20260714.md`.
+Runtime double-bookkeeping has also been removed: there is no
+`legacy_v2_result`, no `adaptV2ResultToV4`, and no transitional bridge stage in
+the V4 contract. Normal L2 and exact-anchor paths both report zero bridged
+stages. The remaining work is strategy calibration and optional internal file
+decomposition, not V2-to-V4 behavioral migration.
+
+### 2026-07-14 convergence checkpoint (superseded by 2026-07-18)
+
+This checkpoint described the intermediate bridge before native-core
+completion. It is retained as migration history only; the current runtime no
+longer contains `runListingRecognitionCore` or a transitional bridge.
+
+At this checkpoint, `api/listing-copilot-title.js` still owned the bridged
+recognition work. That ownership was removed by the 2026-07-18 migration above.
 
 Historically, `api/listing-copilot-title.js` (~7,300 lines) contained the entire recognition
 pipeline; `api/v4/*` reaches it only through adapters (`recognitionPayloadFor`,

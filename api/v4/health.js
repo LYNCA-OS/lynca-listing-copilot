@@ -22,7 +22,10 @@ export default async function handler(req, res) {
     return;
   }
   const tables = await checkV4Tables();
-  const allTablesOk = tables.configured && Object.values(tables.tables || {}).every((table) => table.ok);
+  const assetLifecycleTableNames = new Set(["listing_assets", "listing_image_verifications"]);
+  const coreTablesOk = tables.configured && Object.entries(tables.tables || {})
+    .filter(([table]) => !assetLifecycleTableNames.has(table))
+    .every(([, status]) => status.ok);
   const provider = providerCatalog(process.env)[visionProviderIds.OPENAI_LEGACY] || {};
   const vector = vectorRetrievalConfig(process.env);
   const indexReady = vectorIndexReady(process.env);
@@ -38,11 +41,15 @@ export default async function handler(req, res) {
   const queueRpcLegacyPrincipalReady = queueRpcReadyProbe.legacy_principal_ready === true;
   const queueConfiguredAndWorkerReady = queueConfigured && workerSecretConfigured;
   const queueReady = queueConfiguredAndWorkerReady && queueRpcReady;
+  const assetLifecycleReady = tables.asset_lifecycle?.ready === true;
   const queueLeaseSeconds = v4WorkerLeaseSeconds(process.env);
-  const ready = allTablesOk && providerReady && queueReady;
+  const infrastructureReady = coreTablesOk && providerReady;
+  const runtimeContractReady = infrastructureReady && queueReady && assetLifecycleReady;
+  const ready = runtimeContractReady;
   const notReadyReasons = [
-    ...(!allTablesOk ? ["v4_tables_not_ready"] : []),
+    ...(!coreTablesOk ? ["v4_tables_not_ready"] : []),
     ...(!providerReady ? ["vision_provider_not_ready"] : []),
+    ...(!assetLifecycleReady ? ["asset_lifecycle_not_ready"] : []),
     ...(!queueConfiguredAndWorkerReady ? ["production_queue_not_ready"] : []),
     ...(!queueRpcSignatureReady ? ["queue_rpc_signature_not_ready"] : []),
     ...(!queueRpcDependenciesReady ? ["queue_rpc_dependencies_not_ready"] : []),
@@ -101,6 +108,19 @@ export default async function handler(req, res) {
       end_to_end_ledger_schema: "pipeline-end-to-end-node-ledger-v1",
       exposed_by_job_status: true
     },
+    readiness_layers: {
+      infrastructure_ready: infrastructureReady,
+      queue_contract_ready: queueReady,
+      asset_lifecycle_ready: assetLifecycleReady,
+      runtime_contract_ready: runtimeContractReady,
+      writer_journey: {
+        ready: null,
+        status: "NOT_PROBED_BY_HEALTH",
+        proof_required: "sealed_launch_gate_artifact"
+      }
+    },
+    ready_scope: "runtime_contract_only",
+    launch_ready: false,
     ready,
     not_ready_reasons: notReadyReasons
   }));

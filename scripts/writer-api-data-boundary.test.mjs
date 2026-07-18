@@ -216,6 +216,46 @@ try {
   ]);
   assert.equal("provider_key_slot" in writerJob.session.provider_result_summary, false);
   assert.equal("candidate_control_plane_trace" in writerJob.session, false);
+  assert.equal(writerJob.failure, null, "successful writer jobs must not expose stale internal errors");
+
+  jobRow.status = "FAILED";
+  jobRow.error = {
+    message: "private upstream path and provider detail",
+    code: "STALE_IMAGE_GENERATION",
+    retryable: false,
+    recovery_action: "INPUT_REBIND"
+  };
+  sessionRow.status = "FAILED";
+  sessionRow.failure_reason = "private upstream path and provider detail";
+  const failedWriterJobs = await callGet(jobStatusHandler, "/api/v4/listing-job-status?job_id=job_writer");
+  const failedWriterJob = failedWriterJobs.body.jobs[0];
+  assert.equal(failedWriterJob.failure.code, "STALE_IMAGE_GENERATION");
+  assert.equal(failedWriterJob.failure.recovery_action, "INPUT_REBIND");
+  assert.match(failedWriterJob.failure.message, /重新绑定当前图片/);
+  assert.doesNotMatch(JSON.stringify(failedWriterJob), /private upstream path|provider detail/);
+  assert.equal("error" in failedWriterJob, false);
+
+  jobRow.error = {
+    message: "legacy row without recovery action",
+    code: "CANONICAL_IMAGE_GENERATION_MISSING",
+    retryable: true
+  };
+  const legacyFailedWriterJobs = await callGet(jobStatusHandler, "/api/v4/listing-job-status?job_id=job_writer");
+  assert.equal(legacyFailedWriterJobs.body.jobs[0].failure.recovery_action, "INPUT_REBIND");
+  assert.match(legacyFailedWriterJobs.body.jobs[0].failure.message, /重新绑定当前图片/);
+
+  jobRow.error = null;
+  jobRow.error_type = "CANONICAL_IMAGE_GENERATION_MISSING";
+  const legacyErrorTypeOnlyJobs = await callGet(jobStatusHandler, "/api/v4/listing-job-status?job_id=job_writer");
+  assert.equal(legacyErrorTypeOnlyJobs.body.jobs[0].failure.code, "CANONICAL_IMAGE_GENERATION_MISSING");
+  assert.equal(legacyErrorTypeOnlyJobs.body.jobs[0].failure.recovery_action, "INPUT_REBIND");
+  assert.match(legacyErrorTypeOnlyJobs.body.jobs[0].failure.message, /重新绑定当前图片/);
+
+  jobRow.status = "L2_READY";
+  jobRow.error_type = "INTERNAL_PROVIDER_ERROR";
+  jobRow.error = { message: "internal upstream error", code: "INTERNAL_PROVIDER_ERROR" };
+  sessionRow.status = "L2_READY";
+  sessionRow.failure_reason = null;
 
   membershipRole = "MANAGER";
   const managerSession = await callGet(sessionStatusHandler, "/api/v4/listing-session-status?session_id=session_writer");

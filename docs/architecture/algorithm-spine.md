@@ -49,10 +49,11 @@ algorithm during code review.
 - The active catalog and its import history are not slimming targets.
 - `openai_legacy` remains the wire-compatible provider ID even though the model
   is GPT-5 mini.
-- Historical result aliases remain until queued jobs and stored responses no
-  longer depend on them.
-- V4 still delegates to `runListingRecognitionCore`; removing that dependency
-  requires a measured native-V4 parity migration, not dead-code cleanup.
+- Provider input aliases may remain at the adapter boundary, but the V4 public
+  result has one canonical `resolved_fields` representation.
+- V4 calls `runNativeV4Recognition` from
+  `lib/listing/v4/pipeline/native-recognition-core.mjs`; the retired V2 HTTP
+  route owns no recognition implementation.
 
 ## Deletion rule
 

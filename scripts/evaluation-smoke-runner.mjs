@@ -77,7 +77,8 @@ console.log(`Wrote ${reportPath}`);
 
 async function loadListingHandler() {
   if (!candidatePromptPatchPath) {
-    return (await import("../api/listing-copilot-title.js")).default;
+    const module = await import("../lib/listing/v4/pipeline/native-recognition-core.mjs");
+    return nativeRecognitionHandler(module.runNativeV4Recognition);
   }
 
   const tempRoot = await fs.mkdtemp(join(os.tmpdir(), "lynca-eval-prompt-"));
@@ -90,7 +91,24 @@ async function loadListingHandler() {
   );
 
   process.chdir(tempRoot);
-  return (await import(`${pathToFileURL(resolve(repoRoot, "api/listing-copilot-title.js")).href}?run=${encodeURIComponent(runId)}`)).default;
+  const module = await import(`${pathToFileURL(resolve(repoRoot, "lib/listing/v4/pipeline/native-recognition-core.mjs")).href}?run=${encodeURIComponent(runId)}`);
+  return nativeRecognitionHandler(module.runNativeV4Recognition);
+}
+
+function nativeRecognitionHandler(runNativeV4Recognition) {
+  return async (req, res) => {
+    let body = "";
+    await new Promise((resolveBody, rejectBody) => {
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", resolveBody);
+      req.on("error", rejectBody);
+    });
+    const payload = body ? JSON.parse(body) : {};
+    const response = await runNativeV4Recognition({ payload, requestContext: { headers: req.headers || {} } });
+    res.statusCode = response.statusCode;
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    res.end(JSON.stringify(response.body || {}));
+  };
 }
 
 function loadLocalEnv() {
@@ -713,7 +731,7 @@ function renderReport({ startedAt, finishedAt, rows, results, config }) {
   lines.push(`| Run mode | \`${config.runMode}\` |`);
   lines.push(`| Started at | \`${startedAt}\` |`);
   lines.push(`| Finished at | \`${finishedAt}\` |`);
-  lines.push(`| Pipeline | \`api/listing-copilot-title.js\` |`);
+  lines.push(`| Pipeline | \`lib/listing/v4/pipeline/native-recognition-core.mjs\` |`);
   if (isCandidate) lines.push(`| Candidate prompt patch | \`${config.candidatePromptPatchPath}\` |`);
   lines.push(`| Model | \`${config.model}\` |`);
   lines.push(`| OpenAI configured | \`${config.openAiConfigured ? "yes" : "no"}\` |`);
