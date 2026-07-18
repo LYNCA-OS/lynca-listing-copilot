@@ -222,9 +222,9 @@ const certCannotOverwriteGrade = normalizePaddleOcrResponse({
   image_url: "https://storage.test/grade-cert.jpg",
   crop_type: "grade_label"
 });
-assert.equal(certCannotOverwriteGrade.normalized_fields.card_grade, null);
+assert.equal(certCannotOverwriteGrade.normalized_fields.card_grade, undefined);
 assert.equal(certCannotOverwriteGrade.normalized_fields.cert_number, "127928791");
-assert.equal(certCannotOverwriteGrade.normalized_fields.grade_type, "UNKNOWN");
+assert.equal(certCannotOverwriteGrade.normalized_fields.grade_type, undefined);
 
 const unrelatedCardTextNumberCannotBecomeGrade = normalizePaddleOcrResponse({
   raw_text: "PSA CERT 127928791\nPLAYER DATA\n4",
@@ -241,6 +241,33 @@ const unrelatedCardTextNumberCannotBecomeGrade = normalizePaddleOcrResponse({
 });
 assert.equal(unrelatedCardTextNumberCannotBecomeGrade.normalized_fields.grade_company, "PSA");
 assert.equal(unrelatedCardTextNumberCannotBecomeGrade.normalized_fields.card_grade, undefined);
+
+const lowConfidenceBackTextCannotBecomePsaGrade = normalizePaddleOcrResponse({
+  raw_text: "PSA 63787877 PSA 2 PLAYER DATA COPYRIGHT 2020 BOWMAN DRAFT",
+  confidence: 0.9896,
+  normalized_fields: {
+    grade_company: "PSA",
+    card_grade: "2",
+    grade_type: "CARD_ONLY",
+    cert_number: "63787877"
+  },
+  boxes: [
+    { text: "PSA", confidence: 0.979, bbox: [0, 0, 70, 24] },
+    { text: "63787877", confidence: 0.996, bbox: [80, 0, 190, 24] },
+    { text: "PSA", confidence: 0.981, bbox: [0, 30, 70, 54] },
+    { text: "2", confidence: 0.1118, bbox: [80, 30, 100, 54] },
+    { text: "PLAYER DATA COPYRIGHT 2020 BOWMAN DRAFT", confidence: 0.96, bbox: [0, 100, 420, 130] }
+  ]
+}, {
+  request_id: "ocr-grade-production-back-text-guard",
+  image_url: "https://storage.test/card-back.jpg",
+  crop_type: "grade_label"
+});
+assert.equal(lowConfidenceBackTextCannotBecomePsaGrade.normalized_fields.grade_company, "PSA");
+assert.equal(lowConfidenceBackTextCannotBecomePsaGrade.normalized_fields.card_grade, undefined);
+assert.equal(lowConfidenceBackTextCannotBecomePsaGrade.normalized_fields.grade_type, undefined);
+assert.equal(lowConfidenceBackTextCannotBecomePsaGrade.normalized_fields.cert_number, "63787877");
+assert.equal(ocrResultToEvidencePatch(lowConfidenceBackTextCannotBecomePsaGrade).evidence.card_grade, undefined);
 
 const detachedPsaGradeWithLocalMarker = normalizePaddleOcrResponse({
   raw_text: "PSA\nGEM MT\n10",

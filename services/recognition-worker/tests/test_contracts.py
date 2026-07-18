@@ -10,7 +10,7 @@ from PIL import Image
 from app.contracts import validate_embed_request, validate_ocr_field_request, validate_request
 from app.config import DEFAULT_VISUAL_EMBEDDING_REVISION, load_config
 from app.eval import evaluate_worker_items
-from app.main import embed_images_payload, analyze_payload, ocr_field_payload
+from app.main import _ocr_response_has_target, embed_images_payload, analyze_payload, ocr_field_payload
 from app.pipelines.card_rectification import rectify_card_from_array
 from app.pipelines.evidence_fusion import fuse_ocr_evidence
 from app.pipelines.field_parsers import parse_checklist_code, parse_collector_number, parse_grade, parse_serial
@@ -149,6 +149,22 @@ class RecognitionWorkerTests(unittest.TestCase):
         auto_grade = parse_grade("PSA AUTO 10")
         self.assertIsNone(auto_grade["card_grade"])
         self.assertEqual(auto_grade["auto_grade"], "10")
+        unrelated_number = parse_grade("PSA CERT 63787877 PLAYER DATA 2020")
+        self.assertEqual(unrelated_number["grade_company"], "PSA")
+        self.assertIsNone(unrelated_number["card_grade"])
+
+    def test_low_confidence_card_back_number_is_not_a_grade_target(self):
+        response = {
+            "raw_text": "PSA 63787877 PSA 2 PLAYER DATA COPYRIGHT 2020 BOWMAN DRAFT",
+            "text_candidates": [
+                {"text": "PSA", "confidence": 0.979},
+                {"text": "63787877", "confidence": 0.996},
+                {"text": "PSA", "confidence": 0.981},
+                {"text": "2", "confidence": 0.1118},
+                {"text": "PLAYER DATA COPYRIGHT 2020 BOWMAN DRAFT", "confidence": 0.96},
+            ],
+        }
+        self.assertFalse(_ocr_response_has_target(response, "grade_label"))
 
     def test_analyze_payload_placeholder(self):
         payload = {

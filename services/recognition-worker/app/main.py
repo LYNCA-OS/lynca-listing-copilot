@@ -17,6 +17,7 @@ from .contracts import response_for_unavailable, validate_embed_request, validat
 from .pipelines.card_rectification import rectification_unavailable, rectify_card_from_array
 from .pipelines.candidate_verification import candidate_verification_unavailable
 from .pipelines.evidence_fusion import fuse_ocr_evidence
+from .pipelines.field_parsers import parse_grade
 from .pipelines.glare_detection import detect_glare_from_array, glare_unavailable
 from .pipelines.image_loader import ImageLoadError, load_signed_image
 from .pipelines.image_quality import measure_image_quality_from_array, quality_unavailable
@@ -32,10 +33,6 @@ _VISUAL_EMBEDDING_PRELOAD_STATUS: dict[str, Any] = {"status": "NOT_RUN"}
 
 _SERIAL_TEXT_PATTERN = re.compile(r"(?:\b\d{1,5}\s*/\s*\d{1,5}\b|\b1\s*/\s*1\b)")
 _GRADE_COMPANY_PATTERN = re.compile(r"\b(?:PSA(?:\s*/\s*DNA)?|BGS|BECKETT|CGC|CSG|SGC|TAG)\b", re.IGNORECASE)
-_GRADE_VALUE_PATTERN = re.compile(
-    r"\b(?:AUTH(?:ENTIC)?|ALTERED|10(?:\.0)?|[1-9](?:\.\d)?)\b",
-    re.IGNORECASE,
-)
 
 
 def _ocr_response_text(response: dict[str, Any]) -> str:
@@ -48,13 +45,30 @@ def _ocr_response_text(response: dict[str, Any]) -> str:
     return "\n".join(value.strip() for value in values if value.strip())
 
 
+def _trusted_ocr_response_text(response: dict[str, Any], minimum_confidence: float = 0.55) -> str:
+    trusted = [
+        str(candidate.get("text") or candidate.get("value") or "").strip()
+        for candidate in response.get("text_candidates", [])
+        if isinstance(candidate, dict)
+        and float(candidate.get("confidence") or 0) >= minimum_confidence
+        and str(candidate.get("text") or candidate.get("value") or "").strip()
+    ]
+    return "\n".join(trusted) if trusted else str(response.get("raw_text") or "").strip()
+
+
+def _ocr_grade_components(response: dict[str, Any]) -> tuple[bool, bool]:
+    parsed = parse_grade(_trusted_ocr_response_text(response))
+    return bool(parsed.get("grade_company")), bool(parsed.get("card_grade") or parsed.get("auto_grade"))
+
+
 def _ocr_response_has_target(response: dict[str, Any], crop_type: str) -> bool:
     text = _ocr_response_text(response)
     normalized_crop_type = str(crop_type or "").strip().lower()
     if normalized_crop_type in {"serial_number", "serial_crop"}:
         return bool(_SERIAL_TEXT_PATTERN.search(text))
     if normalized_crop_type in {"grade_label", "grade_label_crop"}:
-        return bool(_GRADE_COMPANY_PATTERN.search(text) and _GRADE_VALUE_PATTERN.search(text))
+        has_company, has_score = _ocr_grade_components(response)
+        return has_company and has_score
     return bool(text)
 
 
@@ -506,8 +520,7 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         and primary.get("status") != "UNAVAILABLE"
         and normalized_crop_type in {"grade_label", "grade_label_crop"}
     ):
-        has_company = bool(_GRADE_COMPANY_PATTERN.search(primary_text))
-        has_score = bool(_GRADE_VALUE_PATTERN.search(primary_text))
+        has_company, has_score = _ocr_grade_components(primary)
         missing_component = "company" if has_score and not has_company else "score" if has_company and not has_score else ""
         component_box = _grade_component_crop_box(payload.get("crop_box"), missing_component)
         if component_box is not None:

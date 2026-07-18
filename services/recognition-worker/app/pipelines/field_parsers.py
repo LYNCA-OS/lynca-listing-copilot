@@ -54,12 +54,25 @@ def parse_checklist_code(value: str) -> FieldCandidate:
 
 
 def parse_grade(value: str) -> dict[str, str | None]:
-    text = normalize_text(value).upper()
+    text = normalize_text(value).upper().replace("BECKETT", "BGS").replace("CSG", "CGC")
     company_match = re.search(r"\b(PSA|BGS|CGC|SGC|TAG)\b", text)
     company = company_match.group(1) if company_match else None
-    auto_match = re.search(r"\b(?:AUTO|AUTOGRAPH)\s+(AUTH|AUTHENTIC|\d+(?:\.\d+)?)\b", text)
-    slash_match = re.search(r"\b(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)\b", text)
-    card_match = re.search(r"\b(AUTH|AUTHENTIC|ALTERED|\d+(?:\.\d+)?)\b", text)
+    bounded_grade = r"(?:AUTH|AUTHENTIC|ALTERED|10(?:\.0)?|[1-9](?:\.\d)?)"
+    auto_match = re.search(rf"\b(?:AUTO|AUTOGRAPH)\s+({bounded_grade})\b", text)
+    slash_match = re.search(
+        rf"\b(?:PSA|BGS|CGC|SGC|TAG)\s+(?:GEM\s+(?:MT|MINT)|MINT|NM-MT|NM|EX-MT|EX)?\s*"
+        rf"({bounded_grade})\s*/\s*({bounded_grade})\b",
+        text,
+    )
+    card_match = (
+        re.search(
+            rf"\b(?:PSA|BGS|CGC|SGC|TAG)\s+(?:(?:GEM\s+(?:MT|MINT)|MINT|NM-MT|NM|EX-MT|EX)\s+)?"
+            rf"({bounded_grade})\b",
+            text,
+        )
+        or re.search(rf"\b(?:CARD\s+GRADE|GRADE|GEM\s+(?:MT|MINT)|MINT|NM-MT|NM|EX-MT|EX)\s*[:=-]?\s*({bounded_grade})\b", text)
+        or re.search(rf"\b({bounded_grade})\s+(?:GEM\s+(?:MT|MINT)|MINT|NM-MT|NM|EX-MT|EX)\b", text)
+    )
 
     if slash_match:
         return {
