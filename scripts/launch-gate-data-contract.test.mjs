@@ -27,7 +27,8 @@ import {
   attachPostRecognitionScoring,
   compactCandidateTrace,
   createConcurrencyGate,
-  mapWithConcurrency
+  mapWithConcurrency,
+  resultFromBatchJob
 } from "./v4-ebay-smoke.mjs";
 
 assert.equal(launchGateNumberArg([], "--request-timeout-ms", 120_000), 120_000);
@@ -55,6 +56,48 @@ const compactRetrievalAudit = compactCandidateTrace({
 });
 assert.equal(compactRetrievalAudit.retrieval_application.field_evidence_count, 1);
 assert.equal(compactRetrievalAudit.retrieval_application.decisions[0].reason, "anchor_missing");
+
+{
+  const jobId = "job-vector-self-exclusion";
+  const result = resultFromBatchJob({
+    asset_id: "asset-vector-self-exclusion",
+    tenant_id: "tenant-vector-self-exclusion",
+    batch_id: "batch-vector-self-exclusion",
+    job: { job_id: jobId },
+    item: { images: [{ image_id: "image-1" }] },
+    enqueue: { http_status: 202, data: {} }
+  }, {
+    jobsById: new Map([[jobId, {
+      job_id: jobId,
+      tenant_id: "tenant-vector-self-exclusion",
+      status: "L2_READY",
+      display_status: "FINAL_READY",
+      session: {
+        final_title: "2026 Topps Chrome Test Player",
+        provider_result_summary: {},
+        candidate_control_plane_trace: {
+          vector_activation_funnel: {
+            self_exclusion_query_attempted: true,
+            self_exclusion_filter_active: true,
+            self_exclusion_requested_source_count: 1,
+            self_exclusion_source_ids_sha256: "source-feedback-hash",
+            self_excluded_count: 1
+          }
+        }
+      },
+      timing: { time_to_l2_ready_ms: 1000 }
+    }]]),
+    polls: 1,
+    elapsed_ms: 1000,
+    fatal_error: null,
+    last_error: null
+  });
+  assert.equal(result.vector_self_exclusion_query_attempted, true);
+  assert.equal(result.vector_self_exclusion_filter_active, true);
+  assert.equal(result.vector_self_exclusion_requested_source_count, 1);
+  assert.equal(result.vector_self_exclusion_source_ids_sha256, "source-feedback-hash");
+  assert.equal(result.vector_self_excluded_count, 1);
+}
 
 {
   let active = 0;

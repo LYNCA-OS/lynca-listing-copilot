@@ -2642,7 +2642,7 @@ async function loadExistingBatchJobs({
   throw new Error(`resume_batch_unavailable:${lastError || batchId}`);
 }
 
-function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
+export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
   if (prepared.error || !prepared.job?.job_id) {
     return {
       asset_id: prepared.asset_id,
@@ -2817,6 +2817,15 @@ function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     vector_worker_feature_count: summary.vector_worker_feature_count ?? null,
     vector_worker_latency_ms: summary.vector_worker_latency_ms ?? null,
     vector_worker_attempt_count: summary.vector_worker_attempt_count ?? null,
+    vector_query_embedding_role: summary.vector_query_embedding_role ?? null,
+    vector_role_agnostic_fallback_used: summary.vector_role_agnostic_fallback_used ?? null,
+    vector_role_agnostic_fallback_reason: summary.vector_role_agnostic_fallback_reason ?? null,
+    vector_returned_row_count: summary.vector_returned_row_count ?? null,
+    vector_self_excluded_count: summary.vector_self_excluded_count ?? null,
+    vector_self_exclusion_query_attempted: summary.vector_self_exclusion_query_attempted === true,
+    vector_self_exclusion_filter_active: summary.vector_self_exclusion_filter_active === true,
+    vector_self_exclusion_requested_source_count: summary.vector_self_exclusion_requested_source_count ?? null,
+    vector_self_exclusion_source_ids_sha256: summary.vector_self_exclusion_source_ids_sha256 ?? null,
     catalog_stage_capacity: summary.catalog_stage_capacity || null,
     vector_stage_capacity: summary.vector_stage_capacity || null,
     preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
