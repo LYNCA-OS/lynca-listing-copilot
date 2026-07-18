@@ -7,6 +7,7 @@ SERVICE_DIR="$ROOT_DIR/services/recognition-worker"
 : "${GCP_PROJECT_ID:?GCP_PROJECT_ID is required.}"
 
 GCP_REGION="${RECOGNITION_WORKER_REGION:-${GCP_REGION:-us-central1}}"
+BUILD_REGION="${RECOGNITION_WORKER_BUILD_REGION:-global}"
 SERVICE_NAME="${RECOGNITION_WORKER_SERVICE_NAME:-lynca-recognition-worker}"
 MEMORY="${RECOGNITION_WORKER_MEMORY:-4Gi}"
 CPU="${RECOGNITION_WORKER_CPU:-2}"
@@ -95,12 +96,24 @@ gcloud secrets add-iam-policy-binding "$TOKEN_SECRET_NAME" \
   --role roles/secretmanager.secretAccessor \
   --project "$GCP_PROJECT_ID" >/dev/null
 
-gcloud builds submit "$SERVICE_DIR" \
-  --project "$GCP_PROJECT_ID" \
-  --region "$GCP_REGION" \
-  --config "$SERVICE_DIR/cloudbuild-ocr.yaml" \
-  --timeout "$BUILD_TIMEOUT" \
-  --substitutions "_IMAGE_URI=${IMAGE_URI},_CACHE_IMAGE=${CACHE_IMAGE}"
+# Cloud Build capacity is independent from the Cloud Run serving region. Use
+# the global pool by default because regional E2 quotas can reject an otherwise
+# healthy rollout before a build even starts. Operators can still pin a build
+# region explicitly when a dedicated regional pool is available.
+if [ "$BUILD_REGION" = "global" ]; then
+  gcloud builds submit "$SERVICE_DIR" \
+    --project "$GCP_PROJECT_ID" \
+    --config "$SERVICE_DIR/cloudbuild-ocr.yaml" \
+    --timeout "$BUILD_TIMEOUT" \
+    --substitutions "_IMAGE_URI=${IMAGE_URI},_CACHE_IMAGE=${CACHE_IMAGE}"
+else
+  gcloud builds submit "$SERVICE_DIR" \
+    --project "$GCP_PROJECT_ID" \
+    --region "$BUILD_REGION" \
+    --config "$SERVICE_DIR/cloudbuild-ocr.yaml" \
+    --timeout "$BUILD_TIMEOUT" \
+    --substitutions "_IMAGE_URI=${IMAGE_URI},_CACHE_IMAGE=${CACHE_IMAGE}"
+fi
 
 # Deployment only starts after a complete image exists. A build/download
 # failure therefore leaves the serving revision and its traffic untouched.
