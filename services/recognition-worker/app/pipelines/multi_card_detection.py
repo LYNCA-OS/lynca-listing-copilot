@@ -9,6 +9,92 @@ import numpy as np
 CARD_ASPECT_RATIO = 3.5 / 2.5
 
 
+def _bbox_iou(left: list[int], right: list[int]) -> float:
+    left_x1, left_y1, left_x2, left_y2 = left
+    right_x1, right_y1, right_x2, right_y2 = right
+    intersection_width = max(0, min(left_x2, right_x2) - max(left_x1, right_x1) + 1)
+    intersection_height = max(0, min(left_y2, right_y2) - max(left_y1, right_y1) + 1)
+    intersection = intersection_width * intersection_height
+    if intersection <= 0:
+        return 0.0
+    left_area = max(1, (left_x2 - left_x1 + 1) * (left_y2 - left_y1 + 1))
+    right_area = max(1, (right_x2 - right_x1 + 1) * (right_y2 - right_y1 + 1))
+    return intersection / max(1, left_area + right_area - intersection)
+
+
+def _dedupe_nested_candidates(candidates: list[dict[str, Any]], limit: int = 12) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: (item["area_ratio"], item["confidence"]), reverse=True):
+        if any(_bbox_iou(candidate["bbox"], existing["bbox"]) >= 0.48 for existing in selected):
+            continue
+        selected.append(candidate)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _opencv_contour_candidates(rgb: np.ndarray) -> tuple[list[dict[str, Any]], str | None]:
+    try:
+        import cv2
+    except (ImportError, OSError) as error:
+        return [], f"opencv_unavailable:{type(error).__name__}"
+
+    height, width = rgb.shape[:2]
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 35, 120)
+    close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, close_kernel, iterations=1)
+    contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    image_area = max(1, width * height)
+    candidates: list[dict[str, Any]] = []
+
+    for contour in contours:
+        x, y, bbox_width, bbox_height = cv2.boundingRect(contour)
+        if bbox_width <= 0 or bbox_height <= 0:
+            continue
+        bbox_area = bbox_width * bbox_height
+        area_ratio = bbox_area / image_area
+        aspect = max(bbox_width, bbox_height) / max(1, min(bbox_width, bbox_height))
+        contour_area = float(cv2.contourArea(contour))
+        rectangularity = contour_area / max(1, bbox_area)
+        perimeter = float(cv2.arcLength(contour, True))
+        corner_count = len(cv2.approxPolyDP(contour, 0.02 * perimeter, True)) if perimeter > 0 else 0
+        if (
+            area_ratio < 0.018
+            or area_ratio > 0.45
+            or aspect < 1.08
+            or aspect > 1.95
+            or rectangularity < 0.55
+            or corner_count < 4
+            or corner_count > 12
+        ):
+            continue
+
+        aspect_score = max(0.0, 1.0 - abs(aspect - CARD_ASPECT_RATIO) / 0.75)
+        confidence = max(0.0, min(1.0, (rectangularity * 0.55) + (aspect_score * 0.35) + 0.1))
+        candidates.append({
+            "bbox": [int(x), int(y), int(x + bbox_width - 1), int(y + bbox_height - 1)],
+            "area_ratio": round(float(area_ratio), 4),
+            "fill_ratio": round(float(rectangularity), 4),
+            "aspect_ratio": round(float(aspect), 4),
+            "confidence": round(float(confidence), 4),
+            "corner_count": int(corner_count),
+            "detector": "opencv_contour",
+        })
+
+    return _dedupe_nested_candidates(candidates), None
+
+
+def _independent_card_pair_count(candidates: list[dict[str, Any]]) -> int:
+    independent: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: item.get("confidence", 0), reverse=True):
+        if any(_bbox_iou(candidate["bbox"], existing["bbox"]) > 0.12 for existing in independent):
+            continue
+        independent.append(candidate)
+    return len(independent)
+
+
 def _as_rgb_array(image: Any) -> np.ndarray:
     array = np.asarray(image)
     if array.ndim == 2:
@@ -132,12 +218,22 @@ def detect_multi_card_from_array(image: Any, image_id: str = "image", role: str 
     gray = _gray(rgb)
     threshold = max(24.0, min(245.0, float(gray.mean() + gray.std() * 0.22)))
     mask, scale = _downsample_mask(gray >= threshold)
-    candidates = _component_candidates(mask, scale, width, height)[:6]
-    card_count = len(candidates)
+    numpy_candidates = _component_candidates(mask, scale, width, height)[:8]
+    opencv_candidates, opencv_error = _opencv_contour_candidates(rgb)
+    numpy_count = _independent_card_pair_count(numpy_candidates)
+    opencv_count = _independent_card_pair_count(opencv_candidates)
+    card_count = max(numpy_count, opencv_count)
     multi_card = card_count > 1
+    candidates = opencv_candidates if opencv_count >= numpy_count else numpy_candidates
     confidence = max([candidate["confidence"] for candidate in candidates], default=0.0)
     if multi_card:
         confidence = min(1.0, max(confidence, 0.72 + min(0.18, (card_count - 2) * 0.06)))
+
+    # Rectangle detectors are deliberately allowed to prove plurality without
+    # pretending they know the exact lot size. Touching/overlapping cards can
+    # merge into one contour, so card_count_estimate is diagnostic until a
+    # separate text/model observation confirms the quantity.
+    card_count_confirmed = False
 
     return {
         "image_id": image_id,
@@ -145,9 +241,22 @@ def detect_multi_card_from_array(image: Any, image_id: str = "image", role: str 
         "status": "OK",
         "multi_card": multi_card,
         "card_count_estimate": card_count if card_count else None,
+        "card_count_confirmed": card_count_confirmed,
         "confidence": round(float(confidence), 4),
-        "candidates": candidates,
-        "algorithm": "numpy_component_card_count_r1",
+        "candidates": candidates[:12],
+        "detectors": {
+            "numpy_component": {
+                "candidate_count": numpy_count,
+                "candidates": numpy_candidates[:8],
+            },
+            "opencv_contour": {
+                "status": "UNAVAILABLE" if opencv_error else "OK",
+                "candidate_count": opencv_count,
+                "candidates": opencv_candidates[:12],
+                "reason": opencv_error,
+            },
+        },
+        "algorithm": "redundant_numpy_opencv_card_count_r2",
     }
 
 
@@ -169,11 +278,12 @@ def detect_multi_card_from_loaded_images(image_loads: list[Any]) -> dict[str, An
         "status": "OK",
         "multi_card": multi_card,
         "card_count_estimate": count if count else None,
+        "card_count_confirmed": any(item.get("card_count_confirmed") is True for item in per_image),
         "confidence": round(float(confidence), 4),
         "image_id": strongest.get("image_id"),
         "role": strongest.get("role"),
         "images": per_image,
-        "algorithm": "numpy_component_card_count_r1",
+        "algorithm": "redundant_numpy_opencv_card_count_r2",
     }
 
 
@@ -182,8 +292,9 @@ def multi_card_detection_unavailable(reason: str = "image_bytes_not_loaded") -> 
         "status": "UNAVAILABLE",
         "multi_card": False,
         "card_count_estimate": None,
+        "card_count_confirmed": False,
         "confidence": 0.0,
         "images": [],
-        "algorithm": "numpy_component_card_count_r1",
+        "algorithm": "redundant_numpy_opencv_card_count_r2",
         "reason": reason,
     }

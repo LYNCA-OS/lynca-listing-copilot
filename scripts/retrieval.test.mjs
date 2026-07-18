@@ -165,6 +165,52 @@ assert.equal(activeVisualResult.candidates[0].visual_similarity, 0.92);
 assert.equal(activeVisualResult.candidates[0].visual_margin_to_next, 0.21);
 assert.equal(activeVisualResult.metadata.role_agnostic_fallback_used, false);
 
+const selfExcludingVisualProvider = visualVectorProvider({
+  env: {
+    ENABLE_VISUAL_VECTOR_RETRIEVAL: "true",
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([
+    {
+      identity_id: "77777777-7777-7777-7777-777777777777",
+      identity_key: "supabase_feedback:feedback-current-card",
+      reference_image_id: "88888888-8888-8888-8888-888888888888",
+      embedding_id: "99999999-9999-9999-9999-999999999999",
+      embedding_role: "front_global",
+      model_id: "google/siglip2-base-patch16-384",
+      model_revision: "main",
+      preprocessing_version: "card-rectification-v1",
+      similarity: 0.99,
+      canonical_title: "Current card must be excluded"
+    },
+    {
+      identity_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      identity_key: "supabase_feedback:feedback-other-card",
+      reference_image_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      embedding_id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      embedding_role: "front_global",
+      model_id: "google/siglip2-base-patch16-384",
+      model_revision: "main",
+      preprocessing_version: "card-rectification-v1",
+      similarity: 0.8,
+      canonical_title: "Other reviewed card"
+    }
+  ]), { status: 200 })
+});
+const selfExcludedVisualResult = await selfExcludingVisualProvider.search({
+  query: {
+    ...visualQuery,
+    exclude_source_feedback_ids: ["feedback-current-card"]
+  },
+  resolved: { category: "basketball" }
+});
+assert.equal(selfExcludedVisualResult.metadata.returned_row_count, 2);
+assert.equal(selfExcludedVisualResult.metadata.self_excluded_count, 1);
+assert.equal(selfExcludedVisualResult.candidates.length, 1);
+assert.equal(selfExcludedVisualResult.candidates[0].candidate_identity_id, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+assert.equal(selfExcludedVisualResult.candidates[0].reference_metadata.source_feedback_id, "feedback-other-card");
+
 let visualFallbackRpcCalls = 0;
 const roleFallbackVisualProvider = visualVectorProvider({
   env: {

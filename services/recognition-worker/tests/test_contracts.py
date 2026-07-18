@@ -673,8 +673,26 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(detection["status"], "OK")
         self.assertTrue(detection["multi_card"])
         self.assertEqual(detection["card_count_estimate"], 2)
+        self.assertFalse(detection["card_count_confirmed"])
         self.assertGreaterEqual(detection["confidence"], 0.72)
         self.assertEqual(len(detection["candidates"]), 2)
+
+    def test_multi_card_detection_keeps_touching_grid_as_plural_without_claiming_exact_count(self):
+        image = np.zeros((1200, 1200, 3), dtype=np.uint8)
+        for row in range(3):
+            for column in range(3):
+                y1 = 80 + row * 340
+                x1 = 80 + column * 340
+                image[y1:y1 + 330, x1:x1 + 240] = 205
+                image[y1 + 10:y1 + 320, x1 + 10:x1 + 230] = 60 + row * 15 + column * 10
+
+        detection = detect_multi_card_from_array(image, image_id="lot", role="image_1_original")
+
+        self.assertEqual(detection["status"], "OK")
+        self.assertTrue(detection["multi_card"])
+        self.assertGreaterEqual(detection["card_count_estimate"], 2)
+        self.assertFalse(detection["card_count_confirmed"])
+        self.assertEqual(detection["algorithm"], "redundant_numpy_opencv_card_count_r2")
 
     def test_analyze_payload_can_run_tesseract_adapter_on_loaded_images(self):
         front = LoadedImage(
@@ -771,6 +789,7 @@ class RecognitionWorkerTests(unittest.TestCase):
                 )
 
         self.assertEqual(evidence["status"], "OK")
+        self.assertEqual(evidence["image_concurrency"], 1)
         self.assertGreaterEqual(run_mock.call_count, 2)
         serial_crop_items = [item for item in evidence["items"] if item["role"] == "serial_crop"]
         self.assertTrue(serial_crop_items)

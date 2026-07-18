@@ -15,6 +15,7 @@ process.env.LISTING_IDENTITY_INFLIGHT_DEDUP_ENABLED = "true";
 process.env.ENABLE_RECOGNITION_WORKER = "true";
 process.env.RECOGNITION_WORKER_URL = "https://recognition.internal";
 process.env.RECOGNITION_WORKER_TOKEN = "worker-token";
+process.env.RECOGNITION_WORKER_FAST_LANE_BUDGET_MS = "100";
 process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";

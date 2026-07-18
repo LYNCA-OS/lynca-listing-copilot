@@ -2316,6 +2316,9 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
     evidence_fields: evidenceFields,
     raw_observed_fields: normalizedEvidenceFields || providerPayload.fields || null,
     evidence_schema_version: evidenceDocument.schema_version,
+    provider_field_rejections: Array.isArray(providerPayload.provider_field_rejections)
+      ? providerPayload.provider_field_rejections
+      : [],
     raw_provider_field_evidence: Array.isArray(providerPayload.field_evidence)
       ? providerPayload.field_evidence
       : []
@@ -2489,17 +2492,30 @@ function providerSignalFastPathEligible(result = {}) {
   return true;
 }
 
-function tryProviderFastPath(result, payload, providerId) {
-  if (!envFlag(process.env, "ENABLE_LISTING_FAST_PATH", true)) return null;
+function tryProviderFastPath(result, payload, providerId, {
+  catalogContext = {},
+  vectorContext = {},
+  env = process.env
+} = {}) {
+  if (!envFlag(env, "ENABLE_LISTING_FAST_PATH", true)) return null;
   const providerOptions = providerOptionsFromPayload(payload);
-  if (evidenceCompletionEnabled(process.env, providerOptions)
+  if (evidenceCompletionEnabled(env, providerOptions)
     && (optionFlag(providerOptions, "enable_catalog_assist", false) === true
       || optionFlag(providerOptions, "enable_vector_assist", false) === true)) {
     return null;
   }
   if (!providerSignalFastPathEligible(result)) return null;
 
-  const gated = applyIdentityResolutionGate(result, {
+  const controlled = withCandidateControl(result, {
+    catalogContext,
+    vectorContext,
+    providerOptions,
+    env,
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  }, {
+    includeRetrievalApplication: true
+  });
+  const gated = applyIdentityResolutionGate(controlled, {
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
     providerId
   });
@@ -2534,12 +2550,24 @@ function tryProviderFastPath(result, payload, providerId) {
 function singleModelDraftPath(result, payload, providerId, {
   reason = "single_model_fast_path",
   allowWhenEvidenceCompletion = false,
-  assistShadowOnly = false
+  assistShadowOnly = false,
+  catalogContext = {},
+  vectorContext = {},
+  env = process.env
 } = {}) {
   const providerOptions = providerOptionsFromPayload(payload);
-  if (evidenceCompletionEnabled(process.env, providerOptions) && !allowWhenEvidenceCompletion) return null;
+  if (evidenceCompletionEnabled(env, providerOptions) && !allowWhenEvidenceCompletion) return null;
 
-  const gated = applyIdentityResolutionGate(result, {
+  const controlled = withCandidateControl(result, {
+    catalogContext,
+    vectorContext,
+    providerOptions,
+    env,
+    maxLength: payload.maxTitleLength || maxFallbackTitleLength
+  }, {
+    includeRetrievalApplication: true
+  });
+  const gated = applyIdentityResolutionGate(controlled, {
     maxLength: payload.maxTitleLength || maxFallbackTitleLength,
     providerId
   });
@@ -4752,12 +4780,17 @@ async function withEvidenceCompletionShadow(result, payload, {
   timingContext = null,
   visualFeatures = {},
   providerOptions = {},
+  catalogContext = {},
+  vectorContext = {},
   providerId = result.identity_provider_id || result.provider || result.source
 } = {}) {
   const draft = singleModelDraftPath(result, payload, providerId, {
     reason: "assist_shadow_no_prompt_safe_candidates",
     allowWhenEvidenceCompletion: true,
-    assistShadowOnly: true
+    assistShadowOnly: true,
+    catalogContext,
+    vectorContext,
+    env
   });
   if (!draft) return null;
   const guardedDraft = applyOpenSetAssistShadowPresentationGuard(draft, payload);
@@ -4885,7 +4918,8 @@ async function imagesWithSignedReadUrls(images = [], timingContext = null, tenan
 
 async function createRecognitionIdentityPreflight(payload, {
   timingContext = null,
-  providerOptions = {}
+  providerOptions = {},
+  signedImagesPromise = null
 } = {}) {
   const config = recognitionWorkerConfig();
   if (!config.enabled || !config.configured) {
@@ -4916,11 +4950,11 @@ async function createRecognitionIdentityPreflight(payload, {
   }
 
   try {
-    const signedImages = await imagesWithSignedReadUrls(
+    const signedImages = await (signedImagesPromise || imagesWithSignedReadUrls(
       payload.images || [],
       timingContext,
       payload.tenant_id || payload.tenantId || ""
-    );
+    ));
     const signedPrimaryImages = primaryImagesFromImages(signedImages);
     const response = await timeAsync(timingContext, "recognition_preflight_ms", () => analyzeCardImagesWithRecognitionWorker({
       assetId: payload.assetId || payload.asset_id || `asset_${crypto.randomUUID()}`,
@@ -5098,12 +5132,14 @@ export function preingestionOcrScopeFromPayload(payload = {}) {
 }
 
 async function createOpenAiTitle(payload, selection, {
-  recognitionEvidenceDocument = null,
+  recognitionEvidenceDocument: initialRecognitionEvidenceDocument = null,
+  recognitionPreflightPromise = null,
   signedImages: reusableSignedImages = null,
   timingContext = null,
   visualFeatures = {},
   requestContext = null
 } = {}) {
+  let recognitionEvidenceDocument = initialRecognitionEvidenceDocument;
   const preingestionOcrScope = preingestionOcrScopeFromPayload(payload);
   const preingestionBundleId = preingestionOcrScope.bundleId;
   let latestPreingestionOcrState = null;
@@ -5146,13 +5182,15 @@ async function createOpenAiTitle(payload, selection, {
     || payload.assetId
     || preingestionBundleId
     || crypto.randomUUID();
-  const signedImagesPromise = Array.isArray(reusableSignedImages) && reusableSignedImages.length
+  const signedImagesPromise = reusableSignedImages && typeof reusableSignedImages.then === "function"
     ? reusableSignedImages
-    : imagesWithSignedReadUrls(
+    : Array.isArray(reusableSignedImages) && reusableSignedImages.length
+      ? Promise.resolve(reusableSignedImages)
+      : imagesWithSignedReadUrls(
       payload.images || [],
       timingContext,
       payload.tenant_id || payload.tenantId || ""
-    );
+      );
   const catalogContextPromise = prepareCatalogCandidateContext({
     resolvedForRetrieval,
     providerOptions,
@@ -5330,7 +5368,7 @@ async function createOpenAiTitle(payload, selection, {
       titleStage: providerOptions.v4_title_stage_target || initialPayload.v4_title_stage_target || ""
     })
   }));
-  const providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => ({
+  let providerResultWithEvidence = timeSync(timingContext, "renderer_ms", () => ({
     ...withProviderMetadata(
       withEvidenceCompatibility(
         withRequestMetadata(normalizeAiResult(providerResult.parsed, maxTitleLength, visionProviderIds.OPENAI_LEGACY), initialPayload),
@@ -5348,6 +5386,17 @@ async function createOpenAiTitle(payload, selection, {
     provider_requested_service_tier: providerResult.requested_service_tier || null,
     provider_service_tier: providerResult.service_tier || null
   }));
+  if (recognitionPreflightPromise) {
+    const recognitionJoinStartedAt = nowMs();
+    const recognitionPreflight = await recognitionPreflightPromise;
+    addTiming(timingContext, "recognition_preflight_join_wait_ms", nowMs() - recognitionJoinStartedAt);
+    recognitionEvidenceDocument = recognitionPreflight?.evidenceDocument || recognitionEvidenceDocument;
+  }
+  providerResultWithEvidence = withRecognitionEvidence(
+    providerResultWithEvidence,
+    recognitionEvidenceDocument,
+    initialPayload
+  );
   let providerCapacityStageHandoffPromise = null;
   let providerCapacityHandoffOverlapStartedAt = null;
   if (canOverlapProviderCapacityHandoffAfterInitialCall({ assistShadowOnly })
@@ -5796,7 +5845,7 @@ async function createOpenAiTitle(payload, selection, {
   const mergedResult = withVisualFeatures(
     withVectorCandidateContext(
       withCatalogCandidateContext(
-        withRecognitionEvidence(providerResultWithEvidence, recognitionEvidenceDocument, initialPayload),
+        providerResultWithEvidence,
         catalogContext
       ),
       vectorContext
@@ -5863,7 +5912,16 @@ async function createOpenAiTitle(payload, selection, {
       }
     };
   };
-  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(mergedResult, initialPayload, visionProviderIds.OPENAI_LEGACY));
+  const fastPathResult = timeSync(timingContext, "resolver_ms", () => tryProviderFastPath(
+    mergedResult,
+    initialPayload,
+    visionProviderIds.OPENAI_LEGACY,
+    {
+      catalogContext,
+      vectorContext,
+      env: process.env
+    }
+  ));
   if (fastPathResult) return finalizeProviderResult(fastPathResult, "provider_fast_path");
   const forceRetrievalApplicationResolution = forceRetrievalApplicationResolutionEnabled(providerOptions);
   if (assistShadowOnly && !forceRetrievalApplicationResolution) {
@@ -5874,6 +5932,8 @@ async function createOpenAiTitle(payload, selection, {
       timingContext,
       visualFeatures: vectorContext.visualFeatures,
       providerOptions: shadowProviderOptions,
+      catalogContext,
+      vectorContext,
       providerId: visionProviderIds.OPENAI_LEGACY
     });
     return finalizeProviderResult(shadowResult, "assist_shadow");
@@ -5891,7 +5951,10 @@ async function createOpenAiTitle(payload, selection, {
         ? "assist_shadow_no_prompt_safe_candidates"
         : "single_model_fast_path",
       allowWhenEvidenceCompletion: allowAssistShadowSingleModelDraft,
-      assistShadowOnly: allowAssistShadowSingleModelDraft
+      assistShadowOnly: allowAssistShadowSingleModelDraft,
+      catalogContext,
+      vectorContext,
+      env: process.env
     }
   ));
   if (singleModelResult) return finalizeProviderResult(singleModelResult, "single_model_draft");
@@ -5934,6 +5997,8 @@ export const __listingCopilotTitleTestHooks = {
   forceRetrievalApplicationResolutionEnabled,
   retrievalApplicationAblationArm,
   shouldReturnAssistShadowSingleModelDraft,
+  singleModelDraftPath,
+  withEvidenceCompletionShadow,
   narrowSurfaceColorFromOpenSetParallel,
   openSetAssistShadowGuardReason,
   preingestionEvidenceRefreshDecision,
@@ -5962,6 +6027,7 @@ export const __listingCopilotTitleTestHooks = {
 
 async function createProviderTitle(payload, {
   recognitionEvidenceDocument = null,
+  recognitionPreflightPromise = null,
   signedImages = null,
   timingContext = null,
   visualFeatures = {},
@@ -5983,6 +6049,7 @@ async function createProviderTitle(payload, {
 
   return createOpenAiTitle(payload, selection, {
     recognitionEvidenceDocument,
+    recognitionPreflightPromise,
     signedImages,
     timingContext,
     visualFeatures,
@@ -6068,33 +6135,39 @@ export async function runListingRecognitionCore({
       cacheKey: inFlightCacheKey,
       run: async () => {
         const providerOptions = providerOptionsFromPayload(payload);
-        const recognitionPreflight = await createRecognitionIdentityPreflight(payload, {
+        const sharedSignedImagesPromise = imagesWithSignedReadUrls(
+          payload.images || [],
           timingContext,
-          providerOptions
+          payload.tenant_id || payload.tenantId || ""
+        );
+        const recognitionPreflightPromise = createRecognitionIdentityPreflight(payload, {
+          timingContext,
+          providerOptions,
+          signedImagesPromise: sharedSignedImagesPromise
         });
-        if (recognitionPreflight.result) {
-          return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(recognitionPreflight.result, payload));
+        const recognitionFastLaneRace = await waitForPromiseWithin(
+          recognitionPreflightPromise,
+          positiveIntegerFromEnv(process.env, "RECOGNITION_WORKER_FAST_LANE_BUDGET_MS", 50)
+        );
+        if (recognitionFastLaneRace.settled && recognitionFastLaneRace.value?.result) {
+          return timeAsync(timingContext, "identity_cache_write_ms", () => withIdentityCacheWrite(
+            recognitionFastLaneRace.value.result,
+            payload
+          ));
         }
-        const recognitionVisualFeatures = recognitionPreflight.response?.visual_features
-          || recognitionPreflight.evidenceDocument?.recognition?.visual_features
-          || {};
         const storedVisualFeatures = evidenceCompletionEnabled(process.env, providerOptions)
           && storedVisualFeatureLookupEnabled(process.env, providerOptions)
-          && !hasUsableVisualFeatures(recognitionVisualFeatures)
           ? await timeAsync(timingContext, "stored_visual_feature_lookup_ms", () => lookupStoredVisualFeaturesForImages({
             images: payload.images || [],
             env: process.env
           }))
           : {};
-        const visualFeatures = hasUsableVisualFeatures(recognitionVisualFeatures)
-          ? recognitionVisualFeatures
-          : storedVisualFeatures;
 
         const providerResult = await createProviderTitle(payload, {
-          recognitionEvidenceDocument: recognitionPreflight.evidenceDocument,
-          signedImages: recognitionPreflight.signedImages,
+          recognitionPreflightPromise,
+          signedImages: sharedSignedImagesPromise,
           timingContext,
-          visualFeatures,
+          visualFeatures: storedVisualFeatures,
           requestContext
         });
 

@@ -372,6 +372,7 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
             psm=config.tesseract_psm,
             timeout_seconds=config.tesseract_timeout_seconds,
             focused_fields=requested_fields,
+            image_concurrency=config.tesseract_image_concurrency,
         )
     else:
         ocr_evidence = ocr_unavailable(
@@ -408,12 +409,16 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
                 "unlimited_ocr": "not_enabled_experimental",
                 "opencv": "enabled" if config.enable_opencv_rectification else "disabled",
                 "r2_numpy_geometry": "available_for_offline_eval",
-                "multi_card_detector": "numpy_component_card_count_r1",
+                "multi_card_detector": multi_card_detection.get("algorithm", "unavailable"),
                 "visual_embeddings": (
                     config.visual_embedding_model_id
                     if config.enable_visual_embeddings
                     else "disabled"
                 ),
+            },
+            "ocr_scheduler": {
+                "image_concurrency": ocr_evidence.get("image_concurrency"),
+                "policy": "bounded_per_image",
             },
             "image_download": {
                 "status": "OK" if image_loads else "UNAVAILABLE",

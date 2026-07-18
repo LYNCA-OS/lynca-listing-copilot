@@ -3,6 +3,7 @@ import { runListingRecognitionCore } from "../api/listing-copilot-title.js";
 import {
   recognitionResponseToEvidenceDocument
 } from "../lib/listing/recognition/recognition-evidence-normalizer.mjs";
+import { withRecognitionEvidence } from "../lib/listing/pipeline/result-decoration.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
@@ -149,6 +150,7 @@ const multiCardRecognitionPayload = {
     status: "OK",
     multi_card: true,
     card_count_estimate: 2,
+    card_count_confirmed: true,
     confidence: 0.88,
     image_id: "front",
     role: "front_original",
@@ -167,7 +169,7 @@ const multiCardRecognitionPayload = {
 const multiCardEvidenceDocument = recognitionResponseToEvidenceDocument(multiCardRecognitionPayload, { images });
 assert.equal(multiCardEvidenceDocument.resolved.multi_card, true);
 assert.equal(multiCardEvidenceDocument.resolved.card_count, 2);
-assert.equal(multiCardEvidenceDocument.evidence.multi_card.candidates[0].sources[0].source_type, "VISUAL_GUESS");
+assert.equal(multiCardEvidenceDocument.evidence.multi_card.candidates[0].sources[0].source_type, "MULTI_CARD_DETECTOR");
 const multiCardGated = applyIdentityResolutionGate({
   title: "",
   final_title: "",
@@ -180,10 +182,67 @@ const multiCardGated = applyIdentityResolutionGate({
   reason: "Recognition worker detected multiple cards in the same image.",
   route: "RECOGNITION_WORKER_PREFLIGHT"
 }, { providerId: "recognition_worker" });
-assert.equal(multiCardGated.identity_resolution_status, "ABSTAIN");
-assert.equal(multiCardGated.route, "NON_STANDARD_MANUAL");
-assert.equal(multiCardGated.final_title, "");
-assert.ok(multiCardGated.unresolved.includes("multi-card lot requires single-card split or manual lot workflow"));
+assert.equal(multiCardGated.identity_resolution_status, "RESOLVED");
+assert.match(multiCardGated.final_title, /^Lot x2\b/);
+assert.equal(multiCardGated.publication_gate?.writer_review_ready, true);
+assert.equal(multiCardGated.publication_gate?.workflow_route, "DEEP_REVIEW");
+assert.ok(multiCardGated.unresolved.includes("multi-card lot requires writer review"));
+
+const unconfirmedLotCountDocument = recognitionResponseToEvidenceDocument({
+  ...recognitionPayload,
+  multi_card_detection: {
+    status: "OK",
+    multi_card: true,
+    card_count_estimate: 3,
+    card_count_confirmed: false,
+    confidence: 0.94,
+    image_id: "front",
+    role: "front_original"
+  }
+}, { images });
+assert.equal(unconfirmedLotCountDocument.resolved.multi_card, true);
+assert.equal(unconfirmedLotCountDocument.resolved.card_count, null, "detector lower bounds must not become exact lot quantities");
+
+const independentlyCorroboratedLot = withRecognitionEvidence({
+  title: "",
+  fields: {
+    players: ["Kendry Chourio", "Marek Houston", "Aiva Arquette"],
+    multi_card: false,
+    card_count: null,
+    lot_type: null
+  },
+  resolved: {
+    players: ["Kendry Chourio", "Marek Houston", "Aiva Arquette"],
+    multi_card: false,
+    card_count: null,
+    lot_type: null
+  },
+  evidence: {},
+  unresolved: ["multi_card"],
+  provider_field_rejections: [{
+    field: "multi_card",
+    reason: "separate_physical_cards_not_directly_observed",
+    value: { multi_card: true, card_count: 10, lot_type: "multi_card_lot" },
+    rejected_evidence: {
+      card_count: {
+        value: 10,
+        source_type: "VISION_ONLY",
+        source_image_id: "front",
+        source_region: "multi_card_layout",
+        evidence_kind: "PHYSICAL_CARD_COUNT",
+        visible_text: "10 separate cards",
+        directly_observed: true,
+        direct_observation: true,
+        review_required: true
+      }
+    }
+  }]
+}, unconfirmedLotCountDocument, { maxTitleLength: 80 });
+assert.equal(independentlyCorroboratedLot.resolved.multi_card, true);
+assert.equal(independentlyCorroboratedLot.resolved.card_count, 10);
+assert.equal(independentlyCorroboratedLot.evidence.card_count.status, "REVIEW");
+assert.match(independentlyCorroboratedLot.rendered_title, /^Lot x10\b/);
+assert.ok(!independentlyCorroboratedLot.unresolved.includes("multi_card"));
 
 const fetchCalls = [];
 globalThis.fetch = async (url, options = {}) => {

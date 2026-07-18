@@ -44,6 +44,32 @@ const sportsCollectorsDigestGrade = renderListingPresentation({
 assert.match(sportsCollectorsDigestGrade.final_title, /\bSCD 8\.5$/);
 assert.equal(sportsCollectorsDigestGrade.modules.grading.text, "SCD 8.5");
 
+const overlappingSetCardNameFinish = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Donruss Optic",
+    set: "Downtown Legends - Black Pandora",
+    players: ["Adrian Peterson"],
+    card_name: "Downtown",
+    surface_color: "Black",
+    serial_number: "25/25",
+    numerical_rarity: "25/25",
+    ssp: true,
+    team: "Vikings",
+    grade_company: "PSA",
+    card_grade: "10",
+    grade_type: "CARD_ONLY"
+  },
+  maxLength: 80
+});
+assert.ok(overlappingSetCardNameFinish.final_title.length <= 80);
+assert.match(overlappingSetCardNameFinish.final_title, /\bDowntown\b/i);
+assert.match(overlappingSetCardNameFinish.final_title, /\b(?:Legends|Pandora|Black)\b/i);
+assert.match(overlappingSetCardNameFinish.final_title, /25\/25/);
+assert.match(overlappingSetCardNameFinish.final_title, /PSA 10$/);
+assert.doesNotMatch(overlappingSetCardNameFinish.final_title, /\(Vikings\)/i);
+
 const ohtaniChrome = renderListingPresentation({
   resolved: {
     year: "2018",

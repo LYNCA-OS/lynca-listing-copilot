@@ -8,6 +8,7 @@ import {
   buildRetrievalApplicationLayer,
   finalizeRetrievalApplicationOutcome
 } from "../lib/listing/candidates/retrieval-application-layer.mjs";
+import { __listingCopilotTitleTestHooks } from "../api/listing-copilot-title.js";
 
 function packet(candidates = [], promptCandidateIds = []) {
   return {
@@ -235,6 +236,59 @@ function testIdentityResolutionConsumesRetrievalFieldEvidence() {
     ?.applied_fields.includes("product"));
 }
 
+function testSingleModelFastPathConsumesAlreadyRetrievedFieldEvidence() {
+  const result = resultWithCandidate();
+  const gated = __listingCopilotTitleTestHooks.singleModelDraftPath(result, {
+    maxTitleLength: 80,
+    provider_options: {
+      enable_evidence_completion: false,
+      enable_retrieval_application: true,
+      enable_catalog_assist: true
+    }
+  }, "openai");
+
+  assert.equal(gated.resolved_fields.product, "Topps Chrome");
+  assert.equal(gated.resolved_fields.card_name, "Autograph");
+  assert.equal(gated.retrieval_application?.resolver_consumed, true);
+  assert.ok(gated.retrieval_application?.actual_applied_fields.includes("product"));
+  assert.equal(gated.retrieval_application?.actual_applied_fields.includes("card_grade"), false);
+  assert.equal(gated.retrieval_application?.actual_applied_fields.includes("cert_number"), false);
+}
+
+async function testAssistShadowPathKeepsRetrievedContextForFieldApplication() {
+  const candidate = trustedCatalogCandidate();
+  const result = {
+    resolved_fields: {
+      year: "2024",
+      players: ["Test Player"],
+      collector_number: "CPA-TP"
+    }
+  };
+  const gated = await __listingCopilotTitleTestHooks.withEvidenceCompletionShadow(result, {
+    maxTitleLength: 80,
+    provider_options: {
+      enable_evidence_completion: false,
+      enable_assist_shadow_evidence_completion: false,
+      enable_retrieval_application: true,
+      enable_catalog_assist: true
+    }
+  }, {
+    catalogContext: {
+      packet: packet([candidate], [candidate.candidate_id])
+    },
+    vectorContext: {},
+    providerId: "openai"
+  });
+
+  assert.equal(gated.resolved_fields.product, "Topps Chrome");
+  assert.equal(gated.resolved_fields.card_name, "Autograph");
+  assert.equal(gated.retrieval_application?.resolver_consumed, true);
+  assert.ok(gated.retrieval_application?.actual_applied_fields.includes("product"));
+  assert.equal(gated.retrieval_application?.actual_applied_fields.includes("card_grade"), false);
+  assert.equal(gated.retrieval_application?.actual_applied_fields.includes("cert_number"), false);
+  assert.equal(gated.fast_path?.assist_shadow_only, true);
+}
+
 function testRawRetrievalEvidenceCannotBypassApplicationOwner() {
   const selected = trustedCatalogCandidate({
     fields: {
@@ -395,6 +449,8 @@ testCandidateFieldShapesMergeWithoutDroppingEvidence();
 testEveryCandidateProducesAuditableDecisionRows();
 testDisabledLayerRejectsAllCandidateFieldsAndBlocksRawBypass();
 testIdentityResolutionConsumesRetrievalFieldEvidence();
+testSingleModelFastPathConsumesAlreadyRetrievedFieldEvidence();
+await testAssistShadowPathKeepsRetrievedContextForFieldApplication();
 testRawRetrievalEvidenceCannotBypassApplicationOwner();
 testResolvedRetrievalOutcomeOwnsRenderedFieldContainer();
 testCandidateCannotOverrideContradictingCurrentImageIdentity();

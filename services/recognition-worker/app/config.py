@@ -57,6 +57,7 @@ class WorkerConfig:
     tesseract_language: str
     tesseract_psm: int
     tesseract_timeout_seconds: int
+    tesseract_image_concurrency: int = 2
     pipeline_version: str = "recognition-worker-contract-v1"
 
 
@@ -87,4 +88,5 @@ def load_config() -> WorkerConfig:
         tesseract_language=os.getenv("TESSERACT_LANGUAGE", "eng") or "eng",
         tesseract_psm=_int_env("TESSERACT_PSM", 11),
         tesseract_timeout_seconds=_int_env("TESSERACT_TIMEOUT_SECONDS", 20),
+        tesseract_image_concurrency=_bounded_int_env("TESSERACT_IMAGE_CONCURRENCY", 2, 2),
     )

@@ -9,6 +9,8 @@ assert.doesNotMatch(deploy, /gcloud run deploy[\s\S]{0,200}--source/, "OCR deplo
 assert.match(deploy, /gcloud builds submit/);
 assert.match(deploy, /--timeout "\$BUILD_TIMEOUT"/);
 assert.match(deploy, /--image "\$IMAGE_URI"/);
+assert.match(deploy, /ENABLE_TESSERACT_OCR=\$\{ENABLE_TESSERACT_OCR\}/);
+assert.match(deploy, /TESSERACT_IMAGE_CONCURRENCY=\$\{TESSERACT_IMAGE_CONCURRENCY\}/);
 assert.match(build, /timeout: 2700s/);
 assert.match(build, /--cache-from/);
 assert.match(build, /_CACHE_IMAGE/);

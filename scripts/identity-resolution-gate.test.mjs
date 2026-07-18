@@ -1289,11 +1289,12 @@ const multiCardLot = applyIdentityResolutionGate({
   },
   unresolved: []
 });
-assert.equal(multiCardLot.identity_resolution_status, "ABSTAIN");
-assert.equal(multiCardLot.route, "NON_STANDARD_MANUAL");
-assert.equal(multiCardLot.final_title, "");
-assert.ok(multiCardLot.unresolved.includes("multi-card lot requires single-card split or manual lot workflow"));
-assert.ok(multiCardLot.conflict_map.some((conflict) => conflict.conflict_type === "MULTI_CARD_LOT_REQUIRES_SINGLE_CARD_SPLIT"));
+assert.equal(multiCardLot.identity_resolution_status, "RESOLVED");
+assert.match(multiCardLot.final_title, /^Lot x2 2024 Topps Chrome Shohei Ohtani/);
+assert.equal(multiCardLot.publication_gate.workflow_route, "DEEP_REVIEW");
+assert.equal(multiCardLot.publication_gate.writer_review_ready, true);
+assert.ok(multiCardLot.unresolved.includes("multi-card lot requires writer review"));
+assert.ok(multiCardLot.conflict_map.some((conflict) => conflict.conflict_type === "MULTI_CARD_LOT_REQUIRES_WRITER_REVIEW"));
 assert.ok(multiCardLot.resolution_trace.some((entry) => entry.step === "lot_guard"));
 
 const lowConfidenceYear = applyIdentityResolutionGate({

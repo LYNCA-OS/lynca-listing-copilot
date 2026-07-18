@@ -515,6 +515,11 @@ assert.deepEqual(
   directlyObservedLot.provider_field_rejections.at(-1).rejected_evidence_fields,
   ["multi_card", "card_count", "lot_type"]
 );
+assert.equal(
+  directlyObservedLot.provider_field_rejections.at(-1).rejected_evidence.card_count.visible_text,
+  "3 separate cards",
+  "fail-closed lot evidence should remain auditable for later independent corroboration"
+);
 const directlyObservedLotDocument = providerPayloadToEvidenceDocument(directlyObservedLot);
 assert.equal(directlyObservedLotDocument.resolved.multi_card, false, "rejected lot evidence must not be reconstructed downstream");
 assert.equal(directlyObservedLotDocument.resolved.card_count, null);

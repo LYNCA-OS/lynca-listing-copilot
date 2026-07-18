@@ -193,7 +193,9 @@ assert.match(api, /Listing image storage reference has not been verified/, "titl
 assert.doesNotMatch(api, /createGptCriticalVerifierRunner|createCascadeFastTitle|model_to_model/, "title API should not wire automatic mixed-model paths");
 assert.doesNotMatch(providerRegistry, /ENABLE_FAST_CASCADE_PROVIDER|cascade_fast/i, "provider registry should only expose the active GPT provider");
 assert.match(api, /imagesWithSignedReadUrls\([\s\S]*payload\.images \|\| \[\],[\s\S]*timingContext,[\s\S]*payload\.tenant_id \|\| payload\.tenantId/, "OpenAI fallback should use tenant-scoped signed storage read URLs instead of requiring Base64 JSON");
-assert.match(api, /signedImages: recognitionPreflight\.signedImages/, "provider calls should reuse signed URLs created during recognition preflight");
+assert.match(api, /const sharedSignedImagesPromise = imagesWithSignedReadUrls/, "recognition and provider stages should share one signed-image request");
+assert.match(api, /signedImages:\s*sharedSignedImagesPromise/, "provider calls should reuse the shared signed-image promise");
+assert.match(api, /recognitionPreflightPromise,/, "provider calls should join the recognition worker without serializing the critical path");
 assert.doesNotMatch(api, /tryProviderFastPath\(\s*cascadeResult,/, "cascade fast path should not exist");
 assert.match(api, /if \(fastPathResult\) return finalizeProviderResult\(fastPathResult, "provider_fast_path"\)/, "provider fast path should skip slow completion while preserving open-set diagnostics and verified OCR locks");
 assert.match(api, /open_set_readiness/, "title API should expose known-catalog versus catalog-gap diagnostics");

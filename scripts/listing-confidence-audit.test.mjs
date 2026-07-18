@@ -1110,12 +1110,17 @@ const starSwatchCodeSuppressedSerialPreserved = await callApi({
     auto: true,
     patch: true
   },
+  field_evidence: {
+    card_number: directPrintedCodeEvidence("SR-KD")
+  },
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures Platinum 04\/10 PSA 10$/i);
+assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures 04\/10 PSA 10$/i);
 assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("year"));
+assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("parallel"));
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Panini Panini Flawless/i);
+assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Platinum/i);
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /#04\/10|#?SR-KD|Serial 04\/10|Numbered 04\/10/i);
 
 const curryRedPropulsion = await callApi({
@@ -1511,8 +1516,9 @@ const durantStarSwatch = await callApi({
 }, { maxTitleLength: 120 });
 
 assert.match(durantStarSwatch.title, /Star Swatch Signatures/i);
-assert.match(durantStarSwatch.title, /Platinum/i);
+assert.doesNotMatch(durantStarSwatch.title, /Platinum/i);
 assert.match(durantStarSwatch.title, /04\/10/);
+assert.ok(durantStarSwatch.writer_required_fields.includes("parallel"));
 assert.doesNotMatch(durantStarSwatch.title, /Patch Auto/i);
 assert.doesNotMatch(durantStarSwatch.title, /#?SR-KD/i);
 

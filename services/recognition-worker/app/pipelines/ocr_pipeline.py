@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -611,21 +612,22 @@ def ocr_evidence_from_loaded_images(
     psm: int = 11,
     timeout_seconds: int = 20,
     focused_fields: list[str] | None = None,
+    image_concurrency: int = 2,
 ) -> dict:
     if not loaded_images:
         return _ocr_unavailable("no_loaded_images", "tesseract_not_run")
     if shutil.which("tesseract") is None:
         return _ocr_unavailable("tesseract_binary_not_found", "tesseract_not_installed")
 
-    items: list[dict[str, Any]] = []
-    errors: list[dict[str, str]] = []
     focused_specs = _focused_crop_specs(focused_fields)
-    for loaded in loaded_images:
+
+    def process_loaded_image(loaded: Any) -> tuple[list[dict[str, Any]], dict[str, str] | None]:
+        image_items: list[dict[str, Any]] = []
         image_id = str(getattr(loaded, "image_id", "") or "image")
         role = str(getattr(loaded, "role", "") or "")
         array = getattr(loaded, "array")
         try:
-            items.extend(_ocr_array_with_tesseract(
+            image_items.extend(_ocr_array_with_tesseract(
                 array,
                 image_id=image_id,
                 role=role,
@@ -640,7 +642,7 @@ def ocr_evidence_from_loaded_images(
                 if cropped is None:
                     continue
                 crop_array, offset = cropped
-                items.extend(_ocr_array_with_tesseract(
+                image_items.extend(_ocr_array_with_tesseract(
                     crop_array,
                     image_id=image_id,
                     role=spec["role"],
@@ -654,16 +656,35 @@ def ocr_evidence_from_loaded_images(
                     upscale=2,
                 ))
         except Exception as error:  # noqa: BLE001 - errors are reported as unavailable OCR evidence.
-            errors.append({
+            return image_items, {
                 "image_id": image_id,
                 "role": role,
                 "reason": str(error)[:240],
-            })
+            }
+        return image_items, None
+
+    try:
+        requested_concurrency = int(image_concurrency or 1)
+    except (TypeError, ValueError):
+        requested_concurrency = 1
+    bounded_concurrency = max(1, min(2, requested_concurrency, len(loaded_images)))
+    if bounded_concurrency == 1:
+        results = [process_loaded_image(loaded) for loaded in loaded_images]
+    else:
+        # A card normally has two source images and the Cloud Run worker has two
+        # CPUs. Parallelize at image granularity so each image remains ordered
+        # and isolated without spawning an unbounded subprocess fan-out.
+        with ThreadPoolExecutor(max_workers=bounded_concurrency, thread_name_prefix="tesseract-image") as executor:
+            results = list(executor.map(process_loaded_image, loaded_images))
+
+    items = [item for image_items, _error in results for item in image_items]
+    errors = [error for _image_items, error in results if error is not None]
 
     if items:
         return {
             "status": "OK",
             "model_version": f"tesseract_cli_{language}_psm_{psm}",
+            "image_concurrency": bounded_concurrency,
             "items": [normalize_ocr_item(item, index) for index, item in enumerate(items)],
             **({"errors": errors} if errors else {}),
         }
@@ -672,6 +693,7 @@ def ocr_evidence_from_loaded_images(
         "status": "NO_TEXT" if not errors else "UNAVAILABLE",
         "reason": "tesseract_no_text" if not errors else "tesseract_failed",
         "model_version": f"tesseract_cli_{language}_psm_{psm}",
+        "image_concurrency": bounded_concurrency,
         "items": [],
         **({"errors": errors} if errors else {}),
     }
