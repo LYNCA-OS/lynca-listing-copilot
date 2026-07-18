@@ -1,0 +1,69 @@
+name: import-official-topps-catalog
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply validated rows to production Supabase"
+        type: boolean
+        default: false
+
+concurrency:
+  group: official-topps-catalog-production
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate and import official sources
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          APPLY_OFFICIAL_CATALOG: ${{ inputs.apply }}
+        run: |
+          args=(--out /tmp/official-topps-import.json)
+          if [[ "$APPLY_OFFICIAL_CATALOG" == "true" ]]; then
+            test -n "$SUPABASE_URL"
+            test -n "$SUPABASE_SERVICE_ROLE_KEY"
+            args+=(--apply)
+          fi
+          node scripts/import-official-source-manifest.mjs "${args[@]}"
+      - name: Summarize
+        run: |
+          node - <<'NODE'
+          const report = require('/tmp/official-topps-import.json');
+          console.log(JSON.stringify({
+            apply: report.apply,
+            valid: report.validation.valid,
+            sources: report.validation.validations.map(row => ({
+              source_name: row.source_name,
+              extraction_method: row.extraction_method,
+              parsed_card_count: row.parsed_card_count,
+              record_checks: row.record_checks
+            })),
+            applied_source_count: report.apply_reports.length,
+            applied: report.apply_reports.map(row => ({
+              source_type: row.source_type,
+              inserted_card_count: row.inserted_card_count,
+              verified_existing_source_count: row.verified_existing_source_count,
+              refreshed_source_count: row.refreshed_source_count,
+              recovered_partial_source_count: row.recovered_partial_source_count
+            }))
+          }, null, 2));
+          if (!report.validation.valid) process.exit(1);
+          NODE
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: official-topps-import-report
+          path: /tmp/official-topps-import.json

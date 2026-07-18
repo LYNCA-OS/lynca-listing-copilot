@@ -6,6 +6,7 @@ import {
   createOfficialCatalogSourceAdapter,
   discoverOfficialCatalogSource
 } from "../lib/listing/catalog/official-catalog-source-adapter.mjs";
+import { extractPdfText } from "../lib/listing/catalog/pdf-text-extractor.mjs";
 
 export function argValues(argv, name) {
   const values = [];
@@ -45,7 +46,7 @@ export async function runOfficialCatalogDiscovery({
   fetchImpl = globalThis.fetch
 } = {}) {
   const outPath = argValue(argv, "--out", "");
-  const adapter = createOfficialCatalogSourceAdapter({ provider, fetchImpl });
+  const adapter = createOfficialCatalogSourceAdapter({ provider, fetchImpl, pdfExtractor: extractPdfText });
   const report = await discoverOfficialCatalogSource({
     provider,
     fetchImpl,
@@ -62,10 +63,11 @@ export async function runOfficialCatalogImport({
   fetchImpl = globalThis.fetch
 } = {}) {
   const outPath = argValue(argv, "--out", "");
-  const adapter = createOfficialCatalogSourceAdapter({ provider, fetchImpl });
+  const adapter = createOfficialCatalogSourceAdapter({ provider, fetchImpl, pdfExtractor: extractPdfText });
   const report = await buildOfficialCatalogImportReport({
     provider,
     fetchImpl,
+    pdfExtractor: extractPdfText,
     indexUrl: argValue(argv, "--index-url", adapter.profile.default_index_url),
     category: argValue(argv, "--category", adapter.profile.default_category),
     sourceUrls: sourceUrlsFromArgs(argv),

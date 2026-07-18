@@ -1096,6 +1096,54 @@ const manufacturerAlreadyInProductIsNotRepeated = renderListingPresentation({
 assert.match(manufacturerAlreadyInProductIsNotRepeated.final_title, /Panini Plates & Patches/);
 assert.doesNotMatch(manufacturerAlreadyInProductIsNotRepeated.final_title, /Panini Panini/);
 
+const makerPrefixNoiseCannotDisplaceCriticalCardName = renderListingPresentation({
+  resolved: {
+    year: "2001",
+    manufacturer: "Donruss",
+    brand: "Donruss",
+    product: "Panini Donruss Elite",
+    set: "Passing The Torch",
+    players: ["Willie Mays", "Barry Bonds"],
+    card_name: "Passing The Torch-Auto",
+    surface_color: "Red",
+    numerical_rarity: "22/50",
+    auto: true,
+    grade_company: "PSA",
+    card_grade: "Auth",
+    auto_grade: "Auth",
+    grade_type: "CARD_AND_AUTO"
+  },
+  maxLength: 80
+});
+assert.ok(makerPrefixNoiseCannotDisplaceCriticalCardName.final_title.length <= 80);
+assert.match(makerPrefixNoiseCannotDisplaceCriticalCardName.final_title, /Passing The Torch/);
+assert.match(makerPrefixNoiseCannotDisplaceCriticalCardName.final_title, /\bAuto\b/);
+assert.doesNotMatch(makerPrefixNoiseCannotDisplaceCriticalCardName.final_title, /Donruss Panini Donruss/);
+
+const safeColorSurvivesCrowdedTitle = renderListingPresentation({
+  resolved: {
+    year: "2025",
+    manufacturer: "Topps",
+    brand: "Bowman",
+    product: "Bowman Chrome",
+    set: "Bowman Chrome (Base)",
+    players: ["Cooper Flagg"],
+    card_name: "Rookies",
+    insert: "Bowman Briefing",
+    parallel_family: "Refractor",
+    surface_color: "Red",
+    numerical_rarity: "1/5",
+    collector_number: "BCV-1",
+    checklist_code: "BCV-1",
+    rc: true,
+    team: "Dallas Mavericks"
+  },
+  maxLength: 80
+});
+assert.ok(safeColorSurvivesCrowdedTitle.final_title.length <= 80);
+assert.match(safeColorSurvivesCrowdedTitle.final_title, /\bRed\b/);
+assert.ok(safeColorSurvivesCrowdedTitle.title_length_policy.compacted_terms.includes("Red Refractor -> Red"));
+
 const uncertainObservationDoesNotBecomePublishedIdentity = renderListingPresentation({
   resolved: {
     year: "2015-16",

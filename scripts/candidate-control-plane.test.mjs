@@ -910,6 +910,48 @@ function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
   assert.ok(decision.field_application.applied_fields.includes("set"));
 }
 
+function testManufacturerPrefixAloneCannotOverwriteObservedProduct() {
+  const candidate = {
+    candidate_id: "catalog-maker-prefix-only",
+    candidate_identity_id: "identity-maker-prefix-only",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2001",
+      manufacturer: "Donruss",
+      product: "Panini Donruss Elite",
+      players: ["Willie Mays", "Barry Bonds"]
+    }
+  };
+  const resolvedBefore = {
+    year: "2001",
+    manufacturer: "Donruss",
+    product: "Donruss Elite",
+    players: ["Willie Mays", "Barry Bonds"]
+  };
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: resolvedBefore,
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: [candidate.candidate_id]
+      })
+    }
+  });
+  const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore });
+
+  assert.equal(decision.resolved_after.product, "Donruss Elite");
+  assert.equal(decision.field_application.applied_fields.includes("product"), false);
+}
+
 function testPacketRebindPreservesPlayersAsSubjectAnchor() {
   const candidate = {
     candidate_id: "catalog-chourio-packet-rebind",
@@ -1157,6 +1199,7 @@ testDenominatorAloneCannotOverrideConflictingYear();
 testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars();
 testEvidenceScalarOnlyFillsMissingObservedField();
 testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
+testManufacturerPrefixAloneCannotOverwriteObservedProduct();
 testPacketRebindPreservesPlayersAsSubjectAnchor();
 testNumericYearMayBeOmittedButCannotHideDifferentProductBranch();
 testDifferentProductFamiliesCannotShareAChromeAnchor();

@@ -136,8 +136,14 @@ const serialVisibleUncertainParallel = await callApi({
 
 assert.equal(serialVisibleUncertainParallel.confidence, "MEDIUM");
 assert.match(serialVisibleUncertainParallel.title, /\/175/);
-assert.doesNotMatch(serialVisibleUncertainParallel.title, /Purple|Wave/i);
+assert.doesNotMatch(serialVisibleUncertainParallel.title, /\bWave\b/i);
 assert.ok(!serialVisibleUncertainParallel.fields.parallel);
+assert.equal(
+  serialVisibleUncertainParallel.resolved?.surface_color
+    || serialVisibleUncertainParallel.resolved_fields?.surface_color
+    || serialVisibleUncertainParallel.fields?.surface_color,
+  "Purple"
+);
 assert.ok(serialVisibleUncertainParallel.unresolved.includes("parallel_exact"));
 
 const explicitCurrentImageNumericalRarityPreserved = await callApi({
@@ -647,7 +653,13 @@ const oneOfOneWithUncertainParallel = await callApi({
 assert.equal(oneOfOneWithUncertainParallel.confidence, "MEDIUM");
 assert.match(oneOfOneWithUncertainParallel.title, /1\/1/);
 assert.doesNotMatch(oneOfOneWithUncertainParallel.title, /01\/01/);
-assert.doesNotMatch(oneOfOneWithUncertainParallel.title, /Green|Geometric/i);
+assert.doesNotMatch(oneOfOneWithUncertainParallel.title, /\bGeometric\b/i);
+assert.equal(
+  oneOfOneWithUncertainParallel.resolved?.surface_color
+    || oneOfOneWithUncertainParallel.resolved_fields?.surface_color
+    || oneOfOneWithUncertainParallel.fields?.surface_color,
+  "Green"
+);
 
 const dualPairingPreserved = await callApi({
   title: "2024 Topps Chrome Charles Leclerc Lewis Hamilton Power Partnership",

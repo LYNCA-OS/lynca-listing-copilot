@@ -166,7 +166,7 @@ import {
   const sourceFile = await leaf.downloadSource({
     href: "https://leaftradingcards.com/releases/2025-leaf-metal-basketball"
   });
-  const rawText = leaf.extractRawText(sourceFile);
+  const rawText = await leaf.extractRawText(sourceFile);
   const rows = leaf.parseRows(rawText, {
     sourceName: "2025 Leaf Metal Basketball",
     sourceUrl: sourceFile.source_url

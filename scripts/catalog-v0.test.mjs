@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
 import { componentBooleansFromObservableComponents } from "../lib/listing/card-type-policy.mjs";
 import {
@@ -15,13 +16,16 @@ import {
 import {
   buildOfficialChecklistImport,
   buildToppsBasketballChecklistImport,
+  extractOfficialChecklistPayload,
   extractOfficialChecklistLinks,
   extractToppsBasketballChecklistLinks,
   extractXlsxText,
   isAllowedToppsBasketballChecklistLink,
+  officialChecklistParserVersion,
   parseOfficialChecklistText,
   parseToppsBasketballChecklistText
 } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
+import { pdfTextLinesFromItems } from "../lib/listing/catalog/pdf-text-extractor.mjs";
 import {
   createOfficialCatalogSourceAdapter,
   discoverOfficialCatalogSource,
@@ -31,6 +35,7 @@ import { renderResolvedTitle } from "../lib/listing/renderer/listing-renderer.mj
 import { catalogProvider } from "../lib/listing/retrieval/catalog-provider.mjs";
 import { planRetrievalQueries } from "../lib/listing/retrieval/query-planner.mjs";
 import { importToppsBasketballChecklists } from "./import-topps-basketball-checklists.mjs";
+import { validateOfficialSourceManifestReport } from "./import-official-source-manifest.mjs";
 import {
   retrievalProviderIds,
   retrievalQueryFamilies
@@ -213,6 +218,26 @@ const xlsxText = extractXlsxText(makeMiniXlsx());
 assert.match(xlsxText, /1 Jayson Tatum, Boston Celtics/);
 assert.match(xlsxText, /TFRA-SC Stephen Curry, Golden State Warriors/);
 
+const pdfLines = pdfTextLinesFromItems([
+  { str: "MIRRORED", transform: [1, 0, 0, 1, 53, 700] },
+  { str: "Diana Shnaider", transform: [1, 0, 0, 1, 132, 680] },
+  { str: "MR-25", transform: [1, 0, 0, 1, 53, 680] }
+]);
+assert.deepEqual(pdfLines, ["MIRRORED", "MR-25\tDiana Shnaider"]);
+const pdfLayoutRows = parseOfficialChecklistText(pdfLines.join("\n"), {
+  sourceName: "2026 Topps Graphite Tennis Checklist",
+  sourceUrl: "https://cdn.shopify.com/2026-topps-graphite-tennis.pdf",
+  provider: "topps"
+});
+assert.equal(pdfLayoutRows.length, 1);
+assert.equal(pdfLayoutRows[0].identity_fields.checklist_code, "MR-25");
+assert.deepEqual(pdfLayoutRows[0].identity_fields.players, ["Diana Shnaider"]);
+assert.equal(pdfLayoutRows[0].identity_fields.set_or_insert, "MIRRORED");
+await assert.rejects(
+  () => extractOfficialChecklistPayload(Buffer.from("not-a-pdf"), { contentType: "application/pdf" }),
+  /official_pdf_magic_invalid/
+);
+
 const rows = parseToppsBasketballChecklistText("Base Set Checklist\n1 Pascal Siakam, Indiana Pacers\n201 Cooper Flagg, Dallas Mavericks RC\nFlagship Real Ones Autographs\nTCAR-CF Cooper Flagg #136\nTFRA-SC Stephen Curry, Golden State Warriors\nBAD ROW\nNS-CF Cooper Flagg", {
   sourceName: "2025 Topps Chrome Basketball Checklist",
   sourceUrl: "https://www.topps.com/checklists/2025-topps-chrome-basketball.pdf"
@@ -305,6 +330,16 @@ assert.equal(officialImportReport.staging[0].staging.identity_fields.manufacture
 assert.equal(officialImportReport.staging[0].staging.physical_instance_fields.serial_number, undefined);
 assert.equal(officialImportReport.metrics.parsed_row_count, 1);
 assert.equal(officialImportReport.metrics.promotion_candidate_count, 1);
+const manifestValidation = validateOfficialSourceManifestReport({
+  sources: [{
+    source_name: "2024 Panini Prizm Basketball Checklist",
+    source_url: "https://www.paniniamerica.net/checklists/2024-prizm-basketball.txt",
+    minimum_card_count: 1,
+    required_records: [{ checklist_code: "DT-CC", subject: "Caitlin Clark", product: "Panini Prizm Basketball" }]
+  }]
+}, officialImportReport);
+assert.equal(manifestValidation.valid, true);
+assert.equal(manifestValidation.validations[0].record_checks[0].matched, true);
 
 assert.equal(officialCatalogSourceProfile("leaf").source_type, catalogSourceTypes.LEAF_OFFICIAL_RELEASE);
 assert.equal(isOfficialReleaseCatalogSourceType(catalogSourceTypes.LEAF_OFFICIAL_RELEASE), true);
@@ -360,6 +395,114 @@ assert.equal(officialImportDryRun.dry_run, true);
 assert.equal(officialImportDryRun.source_count, 1);
 assert.equal(officialImportDryRun.inserted_card_count, 2);
 assert.equal(officialImportDryRun.inserted_staging_count, 2);
+
+function officialApplyFetch({ payload, existingCardCount, reviewedCounts = {}, checksum = "" } = {}) {
+  const calls = [];
+  let productSequence = 0;
+  let setSequence = 0;
+  const fetchImpl = async (url, options = {}) => {
+    const href = String(url);
+    const method = options.method || "GET";
+    calls.push({ href, method });
+    if (href === "https://official.test/checklist.txt") {
+      return new Response(payload, { status: 200, headers: { "content-type": "text/plain" } });
+    }
+    if (href.includes("/rest/v1/catalog_sources?") && method === "GET") {
+      return new Response(JSON.stringify([{
+        id: "source-existing",
+        source_url: "https://official.test/checklist.txt",
+        source_status: "OFFICIAL_CHECKLIST_RAW",
+        source_metadata: {},
+        raw_checksum: checksum,
+        parser_version: officialChecklistParserVersion
+      }]), { status: 200 });
+    }
+    if (method === "HEAD") {
+      const table = href.match(/\/rest\/v1\/([^?]+)/)?.[1] || "";
+      const reviewed = href.includes("review_status=eq.REVIEWED_INTERNAL");
+      const count = reviewed ? Number(reviewedCounts[table] || 0) : Number(existingCardCount || 0);
+      return new Response(null, { status: 200, headers: { "content-range": `0-0/${count}` } });
+    }
+    if (method === "DELETE" || method === "PATCH") return new Response(null, { status: 204 });
+    if (href.includes("/rest/v1/catalog_products") && method === "POST") {
+      productSequence += 1;
+      return new Response(JSON.stringify([{ id: `product-${productSequence}` }]), { status: 201 });
+    }
+    if (href.includes("/rest/v1/catalog_sets") && method === "POST") {
+      setSequence += 1;
+      return new Response(JSON.stringify([{ id: `set-${setSequence}` }]), { status: 201 });
+    }
+    if (method === "POST") return new Response(JSON.stringify([]), { status: 201 });
+    throw new Error(`unexpected official apply request: ${method} ${href}`);
+  };
+  return { fetchImpl, calls };
+}
+
+const resumablePayload = "Base Set Checklist\n1 Jayson Tatum, Boston Celtics\n2 Jaylen Brown, Boston Celtics";
+const resumableChecksum = createHash("sha256").update(resumablePayload).digest("hex");
+const completeOfficialApply = officialApplyFetch({
+  payload: resumablePayload,
+  existingCardCount: 2,
+  checksum: resumableChecksum
+});
+const completeOfficialApplyReport = await importToppsBasketballChecklists({
+  argv: [
+    "--all-topps",
+    "--source-url", "https://official.test/checklist.txt",
+    "--source-name", "2025 Topps Basketball Checklist",
+    "--apply",
+    "--no-env-file"
+  ],
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "test-key" },
+  fetchImpl: completeOfficialApply.fetchImpl
+});
+assert.equal(completeOfficialApplyReport.verified_existing_source_count, 1);
+assert.equal(completeOfficialApplyReport.inserted_card_count, 0);
+assert.equal(completeOfficialApply.calls.some((call) => call.method === "DELETE"), false);
+
+const partialOfficialApply = officialApplyFetch({
+  payload: resumablePayload,
+  existingCardCount: 1,
+  checksum: resumableChecksum
+});
+const partialOfficialApplyReport = await importToppsBasketballChecklists({
+  argv: [
+    "--all-topps",
+    "--source-url", "https://official.test/checklist.txt",
+    "--source-name", "2025 Topps Basketball Checklist",
+    "--apply",
+    "--no-env-file"
+  ],
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "test-key" },
+  fetchImpl: partialOfficialApply.fetchImpl
+});
+assert.equal(partialOfficialApplyReport.recovered_partial_source_count, 1);
+assert.equal(partialOfficialApplyReport.refreshed_source_count, 1);
+assert.equal(partialOfficialApplyReport.inserted_card_count, 2);
+assert.equal(partialOfficialApply.calls.filter((call) => call.method === "DELETE").length, 5);
+assert.equal(partialOfficialApply.calls.filter((call) => call.method === "PATCH").length, 1);
+
+const reviewedOfficialApply = officialApplyFetch({
+  payload: resumablePayload,
+  existingCardCount: 1,
+  reviewedCounts: { catalog_cards: 1 },
+  checksum: resumableChecksum
+});
+await assert.rejects(
+  () => importToppsBasketballChecklists({
+    argv: [
+      "--all-topps",
+      "--source-url", "https://official.test/checklist.txt",
+      "--source-name", "2025 Topps Basketball Checklist",
+      "--apply",
+      "--no-env-file"
+    ],
+    env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "test-key" },
+    fetchImpl: reviewedOfficialApply.fetchImpl
+  }),
+  /official_source_refresh_blocked_reviewed_rows/
+);
+assert.equal(reviewedOfficialApply.calls.some((call) => call.method === "DELETE"), false);
 
 let catalogRpcBody = null;
 const provider = catalogProvider({

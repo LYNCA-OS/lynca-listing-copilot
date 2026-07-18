@@ -7,6 +7,7 @@ import {
   defaultOfficialChecklistIndexUrls,
   sourceTypeFromOfficialChecklistProvider
 } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
+import { extractPdfText } from "../lib/listing/catalog/pdf-text-extractor.mjs";
 
 const defaultEnvFilePath = ".env.local";
 const officialChecklistRawStatus = "OFFICIAL_CHECKLIST_RAW";
@@ -179,20 +180,93 @@ async function existingOfficialSource({ env, sourceUrl, sourceType = "TOPPS_OFFI
   if (!sourceUrl) return null;
   const rows = await supabaseRequest({
     env,
-    path: `/rest/v1/catalog_sources?select=id,source_url&source_type=eq.${encodeURIComponent(sourceType)}&source_url=eq.${encodeURIComponent(sourceUrl)}&limit=1`,
+    path: `/rest/v1/catalog_sources?select=id,source_url,source_status,source_metadata,raw_checksum,parser_version&source_type=eq.${encodeURIComponent(sourceType)}&source_url=eq.${encodeURIComponent(sourceUrl)}&limit=1`,
     fetchImpl
   });
   return Array.isArray(rows) ? rows[0] || null : null;
 }
 
-async function sourceHasCatalogCards({ env, sourceId, fetchImpl } = {}) {
-  if (!sourceId) return false;
-  const rows = await supabaseRequest({
+async function supabaseExactCount({ env, table, filters = [], fetchImpl } = {}) {
+  const config = supabaseConfig(env);
+  if (!config.url || !config.serviceRoleKey) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for --apply.");
+  }
+  const query = [`select=id`, ...filters].join("&");
+  const response = await fetchImpl(`${config.url}/rest/v1/${table}?${query}`, {
+    method: "HEAD",
+    headers: {
+      ...supabaseHeaders(config.serviceRoleKey, "count=exact"),
+      range: "0-0"
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`Supabase count failed ${table}: HTTP ${response.status}`);
+  }
+  const contentRange = response.headers?.get?.("content-range") || "";
+  const match = contentRange.match(/\/(\d+)$/);
+  if (!match) throw new Error(`Supabase count missing content-range for ${table}`);
+  return Number(match[1]);
+}
+
+async function sourceCatalogState({ env, sourceId, fetchImpl } = {}) {
+  if (!sourceId) return { card_count: 0, reviewed_row_count: 0 };
+  const sourceFilter = `source_id=eq.${encodeURIComponent(sourceId)}`;
+  const [cardCount, ...reviewedCounts] = await Promise.all([
+    supabaseExactCount({ env, table: "catalog_cards", filters: [sourceFilter], fetchImpl }),
+    ...["catalog_products", "catalog_sets", "catalog_cards", "catalog_parallels"].map((table) => (
+      supabaseExactCount({
+        env,
+        table,
+        filters: [sourceFilter, "review_status=eq.REVIEWED_INTERNAL"],
+        fetchImpl
+      })
+    ))
+  ]);
+  return {
+    card_count: cardCount,
+    reviewed_row_count: reviewedCounts.reduce((sum, count) => sum + count, 0)
+  };
+}
+
+async function clearReplaceableSourceRows({ env, sourceId, fetchImpl } = {}) {
+  if (!sourceId) return;
+  const suffix = `?source_id=eq.${encodeURIComponent(sourceId)}`;
+  for (const table of [
+    "catalog_parallels",
+    "catalog_cards",
+    "catalog_sets",
+    "catalog_products",
+    "catalog_import_staging"
+  ]) {
+    await supabaseRequest({
+      env,
+      path: `/rest/v1/${table}${suffix}`,
+      method: "DELETE",
+      prefer: "return=minimal",
+      fetchImpl
+    });
+  }
+}
+
+async function refreshOfficialSource({ env, sourceId, source, fetchImpl } = {}) {
+  return supabaseRequest({
     env,
-    path: `/rest/v1/catalog_cards?select=id&source_id=eq.${encodeURIComponent(sourceId)}&limit=1`,
+    path: `/rest/v1/catalog_sources?id=eq.${encodeURIComponent(sourceId)}`,
+    method: "PATCH",
+    body: {
+      source_status: source.source_status,
+      source_name: source.source_name,
+      source_metadata: source.source_metadata || {},
+      raw_text: source.raw_text || null,
+      raw_checksum: source.raw_checksum || null,
+      parser_version: source.parser_version || null,
+      source_trust: source.source_trust || "OFFICIAL_CHECKLIST_CANDIDATE",
+      fetched_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    },
+    prefer: "return=minimal",
     fetchImpl
   });
-  return Array.isArray(rows) && rows.length > 0;
 }
 
 function productRow(sourceId, fields = {}, { importSource = "official_checklist" } = {}) {
@@ -322,7 +396,8 @@ export async function importToppsBasketballChecklists({
     indexUrl,
     provider,
     sourceType,
-    category: category === "all" ? "" : category
+    category: category === "all" ? "" : category,
+    pdfExtractor: extractPdfText
   };
   const importReport = provider === "topps" && category === "basketball" && !allTopps
     ? await buildToppsBasketballChecklistImport(importOptions)
@@ -345,11 +420,16 @@ export async function importToppsBasketballChecklists({
     inserted_set_count: 0,
     inserted_card_count: 0,
     skipped_existing_card_source_count: 0,
+    verified_existing_source_count: 0,
+    refreshed_source_count: 0,
+    recovered_partial_source_count: 0,
     skipped_missing_product_count: 0,
     metrics: importReport.metrics
   };
 
   const sourceIdByUrl = new Map();
+  const existingSourceById = new Map();
+  const sourceById = new Map();
   for (const source of importReport.sources) {
     if (!apply) {
       summary.inserted_source_count += 1;
@@ -361,6 +441,8 @@ export async function importToppsBasketballChecklists({
     if (existing?.id) {
       summary.existing_source_count += 1;
       sourceIdByUrl.set(source.source_url, existing.id);
+      existingSourceById.set(existing.id, existing);
+      sourceById.set(existing.id, source);
       continue;
     }
 
@@ -378,6 +460,7 @@ export async function importToppsBasketballChecklists({
     if (inserted?.id) {
       summary.inserted_source_count += 1;
       sourceIdByUrl.set(source.source_url, inserted.id);
+      sourceById.set(inserted.id, source);
     }
   }
 
@@ -390,9 +473,28 @@ export async function importToppsBasketballChecklists({
   }
 
   for (const [sourceId, rows] of rowsBySource.entries()) {
-    if (apply && await sourceHasCatalogCards({ env: runtimeEnv, sourceId, fetchImpl })) {
-      summary.skipped_existing_card_source_count += rows.length;
-      continue;
+    if (apply && existingSourceById.has(sourceId)) {
+      const existing = existingSourceById.get(sourceId);
+      const incoming = sourceById.get(sourceId);
+      const state = await sourceCatalogState({ env: runtimeEnv, sourceId, fetchImpl });
+      const checksumMatches = Boolean(existing.raw_checksum)
+        && existing.raw_checksum === incoming?.raw_checksum;
+      const parserMatches = Boolean(existing.parser_version)
+        && existing.parser_version === incoming?.parser_version;
+      if (checksumMatches && parserMatches && state.card_count === rows.length) {
+        summary.verified_existing_source_count += 1;
+        summary.skipped_existing_card_source_count += rows.length;
+        continue;
+      }
+      if (existing.source_status === "REVIEWED_INTERNAL" || state.reviewed_row_count > 0) {
+        throw new Error(`official_source_refresh_blocked_reviewed_rows:${sourceId}`);
+      }
+      await clearReplaceableSourceRows({ env: runtimeEnv, sourceId, fetchImpl });
+      await refreshOfficialSource({ env: runtimeEnv, sourceId, source: incoming, fetchImpl });
+      summary.refreshed_source_count += 1;
+      if (state.card_count > 0 && state.card_count !== rows.length) {
+        summary.recovered_partial_source_count += 1;
+      }
     }
 
     if (!apply) {

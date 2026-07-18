@@ -2204,6 +2204,10 @@ function withEvidenceCompatibility(result, providerPayload, payload) {
         evidenceFields[field] = null;
       }
     });
+    if (valuePresent(publicResult.fields.surface_color)
+      && !valuePresent(evidenceFields.surface_color)) {
+      evidenceFields.surface_color = publicResult.fields.surface_color;
+    }
   }
   const payloadForEvidence = {
     ...providerPayload,

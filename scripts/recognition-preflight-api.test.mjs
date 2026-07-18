@@ -200,8 +200,17 @@ const unconfirmedLotCountDocument = recognitionResponseToEvidenceDocument({
     role: "front_original"
   }
 }, { images });
-assert.equal(unconfirmedLotCountDocument.resolved.multi_card, true);
+assert.equal(unconfirmedLotCountDocument.resolved.multi_card, false, "unconfirmed rectangle detections must not become identity evidence");
 assert.equal(unconfirmedLotCountDocument.resolved.card_count, null, "detector lower bounds must not become exact lot quantities");
+assert.equal(unconfirmedLotCountDocument.resolved.lot_type, null);
+assert.equal(unconfirmedLotCountDocument.evidence.multi_card, undefined);
+assert.equal(unconfirmedLotCountDocument.recognition.multi_card_detection.detected, true);
+assert.equal(unconfirmedLotCountDocument.recognition.multi_card_detection.card_count_confirmed, false);
+assert.equal(unconfirmedLotCountDocument.recognition.multi_card_detection.admitted_as_identity_evidence, false);
+assert.equal(
+  unconfirmedLotCountDocument.resolution_trace[0].output.multi_card_evidence_admitted,
+  false
+);
 
 const independentlyCorroboratedLot = withRecognitionEvidence({
   title: "",
@@ -238,11 +247,11 @@ const independentlyCorroboratedLot = withRecognitionEvidence({
     }
   }]
 }, unconfirmedLotCountDocument, { maxTitleLength: 80 });
-assert.equal(independentlyCorroboratedLot.resolved.multi_card, true);
-assert.equal(independentlyCorroboratedLot.resolved.card_count, 10);
-assert.equal(independentlyCorroboratedLot.evidence.card_count.status, "REVIEW");
-assert.match(independentlyCorroboratedLot.rendered_title, /^Lot x10\b/);
-assert.ok(!independentlyCorroboratedLot.unresolved.includes("multi_card"));
+assert.notEqual(independentlyCorroboratedLot.resolved.multi_card, true);
+assert.equal(independentlyCorroboratedLot.resolved.card_count ?? null, null);
+assert.equal(independentlyCorroboratedLot.evidence.card_count, undefined);
+assert.doesNotMatch(independentlyCorroboratedLot.rendered_title, /^Lot\b/);
+assert.ok(independentlyCorroboratedLot.unresolved.includes("multi_card"));
 
 const fetchCalls = [];
 globalThis.fetch = async (url, options = {}) => {
