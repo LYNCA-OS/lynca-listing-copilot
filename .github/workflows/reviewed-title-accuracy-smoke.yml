@@ -39,7 +39,7 @@ jobs:
             --id-fields source_feedback_id \
             --output-field source_feedback_id \
             --out /tmp/reviewed-title-history.jsonl
-      - name: Build fresh sealed reviewed-title sample
+      - name: Build random sealed reviewed-title sample
         run: |
           node scripts/build-reviewed-title-blind-eval.mjs \
             --source data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json \
@@ -48,8 +48,8 @@ jobs:
             --sealed-labels-out "$SEALED_LABELS_PATH" \
             --limit 10 \
             --selection-seed "reviewed-${{ github.run_id }}-${{ github.run_attempt }}" \
-            --sample-mode fresh_generalization
-      - name: Prove blind input and fresh-sample provenance
+            --sample-mode random_blind
+      - name: Prove blind input and random-sample provenance
         run: |
           node - <<'NODE'
           const fs = require('fs');
@@ -58,7 +58,9 @@ jobs:
           const datasetText = fs.readFileSync(process.env.DATASET_PATH, 'utf8');
           const checks = {
             exact_count: dataset.item_count === 10 && labels.length === 10,
-            fresh_sample_provenance: dataset.evaluation_sample_policy?.mode === 'FRESH_GENERALIZATION' && dataset.evaluation_sample_policy?.novelty_verified === true,
+            random_sample_provenance: dataset.evaluation_sample_policy?.mode === 'RANDOM_BLIND'
+              && dataset.evaluation_sample_policy?.randomized_selection === true
+              && dataset.evaluation_sample_policy?.randomization_verified === true,
             reviewed_titles_absent: labels.every((label) => !datasetText.includes(String(label.reviewed_title || ''))),
             image_only: dataset.intake_policy?.image_only === true && dataset.items.every((item) => item.images?.length > 0),
             self_retrieval_exclusion: dataset.items.every((item) => item.source_feedback_id && item.source_record?.self_retrieval_exclusion_required === true)

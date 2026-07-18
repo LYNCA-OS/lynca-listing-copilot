@@ -181,6 +181,8 @@ export async function buildReviewedTitleBlindEval({
     excludedItemIds: [...excludedIds],
     selectedItemIds: selected.map((item) => item.source_feedback_id),
     exclusionSourceCount: excludePaths.length,
+    sampleSeed: selectionSeed,
+    selectionStrategy: "deterministic_hash_shuffle",
     reuseReason: reuseReason || (allItems ? "Exhaustive replay of every image-backed reviewed card currently in the internal library." : ""),
     reuseScopeId: reuseScopeId || (allItems ? "supabase-reviewed-image-inventory" : "")
   });

@@ -55,6 +55,20 @@ try {
   assert.equal(labels[0].reviewed_title, "2025 Topps Chrome New Player Gold PSA 10");
   assert.equal(labels[0].policy.model_prompt_visible, false);
 
+  const randomBlind = await buildReviewedTitleBlindEval({
+    sourcePath,
+    excludePaths: [exclusionPath],
+    outPath: join(root, "random.json"),
+    labelsOutPath: join(root, "random-labels.jsonl"),
+    limit: 1,
+    selectionSeed: "random-test-seed",
+    evaluationSampleMode: "RANDOM_BLIND"
+  });
+  assert.equal(randomBlind.dataset.evaluation_sample_policy.mode, "RANDOM_BLIND");
+  assert.equal(randomBlind.dataset.evaluation_sample_policy.randomized_selection, true);
+  assert.equal(randomBlind.dataset.evaluation_sample_policy.randomization_verified, true);
+  assert.match(randomBlind.dataset.evaluation_sample_policy.sample_seed_sha256, /^[a-f0-9]{64}$/);
+
   const datasetText = await readFile(outPath, "utf8");
   assert.doesNotMatch(datasetText, /New Player Gold/);
   assert.doesNotMatch(datasetText, /Old Player/);
