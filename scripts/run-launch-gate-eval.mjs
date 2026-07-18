@@ -469,7 +469,8 @@ export function observedExecutionContractChecks(runReports = []) {
   const internalResults = runReports
     .filter((entry) => cleanText(entry.cohort).toUpperCase() === "INTERNAL_REVIEWED_GT")
     .flatMap((entry) => (entry.report || entry).results || []);
-  const vectorSelfExclusionAttempts = internalResults.filter((result) => (
+  const successfulInternalResults = internalResults.filter((result) => result.ok === true);
+  const vectorSelfExclusionAttempts = successfulInternalResults.filter((result) => (
     result.vector_self_exclusion_query_attempted === true
   ));
   const cohortPlans = runReports.filter((entry) => Object.hasOwn(entry, "cold_start_blind"));
@@ -492,11 +493,13 @@ export function observedExecutionContractChecks(runReports = []) {
       cleanText(result.provider_prompt_mode).toLowerCase() === launchGateExecutionContract.provider_prompt_mode
     )),
     predictions_frozen_before_scoring: reports.length > 0 && reports.every((report) => Boolean(cleanText(report.predictions_sha256))),
-    vector_self_retrieval_exclusion_enforced: vectorSelfExclusionAttempts.every((result) => (
-      result.vector_self_exclusion_filter_active === true
-      && Number(result.vector_self_exclusion_requested_source_count) >= 1
-      && Boolean(cleanText(result.vector_self_exclusion_source_ids_sha256))
-    )),
+    vector_self_retrieval_exclusion_enforced: successfulInternalResults.length > 0
+      && vectorSelfExclusionAttempts.length > 0
+      && successfulInternalResults.every((result) => (
+        result.vector_self_exclusion_filter_active === true
+        && Number(result.vector_self_exclusion_requested_source_count) >= 1
+        && Boolean(cleanText(result.vector_self_exclusion_source_ids_sha256))
+      )),
     cohort_cold_start_policy_observed: cohortPlans.length === 0 || cohortPlans.every((entry) => (
       entry.report?.cold_start_blind === entry.cold_start_blind
     ))

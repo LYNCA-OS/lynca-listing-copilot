@@ -815,7 +815,24 @@ function vectorRuntimeFromSummary(...sources) {
       providerMetadata.role_agnostic_fallback_reason
     ),
     vector_returned_row_count: firstPresent(flattened.vector_returned_row_count, flattened.returned_row_count, vectorContext.returned_row_count, providerMetadata.returned_row_count),
-    vector_self_excluded_count: firstPresent(flattened.vector_self_excluded_count, flattened.self_excluded_count, vectorContext.self_excluded_count, providerMetadata.self_excluded_count)
+    vector_self_excluded_count: firstPresent(flattened.vector_self_excluded_count, flattened.self_excluded_count, vectorContext.self_excluded_count, providerMetadata.self_excluded_count),
+    vector_self_exclusion_query_attempted: flattened.vector_self_exclusion_query_attempted === true
+      || flattened.self_exclusion_query_attempted === true
+      || vectorContext.self_exclusion_query_attempted === true,
+    vector_self_exclusion_filter_active: flattened.vector_self_exclusion_filter_active === true
+      || flattened.self_exclusion_filter_active === true
+      || vectorContext.self_exclusion_filter_active === true,
+    vector_self_exclusion_requested_source_count: firstPresent(
+      flattened.vector_self_exclusion_requested_source_count,
+      flattened.self_exclusion_requested_source_count,
+      vectorContext.self_exclusion_requested_source_count,
+      providerMetadata.source_feedback_exclusion_count
+    ),
+    vector_self_exclusion_source_ids_sha256: firstNonEmptyString(
+      flattened.vector_self_exclusion_source_ids_sha256,
+      flattened.self_exclusion_source_ids_sha256,
+      vectorContext.self_exclusion_source_ids_sha256
+    ) || null
   };
 }
 
@@ -1052,12 +1069,18 @@ function persistenceTerminalForJob(job = {}) {
   return ["COMPLETED", "PARTIAL", "FAILED"].includes(status);
 }
 
-function compactCandidateTrace(trace = {}) {
+export function compactCandidateTrace(trace = {}) {
   const rows = Array.isArray(trace.candidate_application_trace)
     ? trace.candidate_application_trace
     : Array.isArray(trace.candidate_application_trace_rows)
       ? trace.candidate_application_trace_rows
       : [];
+  const retrievalApplication = trace.retrieval_application && typeof trace.retrieval_application === "object"
+    ? trace.retrieval_application
+    : {};
+  const retrievalDecisions = Array.isArray(retrievalApplication.decisions)
+    ? retrievalApplication.decisions
+    : [];
   return {
     schema_version: trace.schema_version || null,
     candidate_observation_snapshot: trace.candidate_observation_snapshot || {},
@@ -1082,6 +1105,41 @@ function compactCandidateTrace(trace = {}) {
     blocked_fields: Array.isArray(trace.blocked_fields) ? trace.blocked_fields : [],
     catalog_activation_funnel: trace.catalog_activation_funnel || {},
     vector_activation_funnel: trace.vector_activation_funnel || {},
+    retrieval_application: {
+      schema_version: retrievalApplication.schema_version || null,
+      enabled: retrievalApplication.enabled === true,
+      owner: retrievalApplication.owner || null,
+      selected_candidate_id: retrievalApplication.selected_candidate_id || "",
+      low_margin_candidate_id: retrievalApplication.low_margin_candidate_id || "",
+      candidate_count: Number(retrievalApplication.candidate_count || 0),
+      field_evidence_count: Number(retrievalApplication.field_evidence_count || 0),
+      identity_evidence_count: Number(retrievalApplication.identity_evidence_count || 0),
+      decision_counts: retrievalApplication.decision_counts || {},
+      resolver_consumed: retrievalApplication.resolver_consumed === true,
+      resolved_change_count: Number(retrievalApplication.resolved_change_count || 0),
+      title_changed: retrievalApplication.title_changed === true,
+      decisions: retrievalDecisions.slice(0, 120).map((row) => ({
+        candidate_id: row.candidate_id || "",
+        candidate_identity_id: row.candidate_identity_id || "",
+        candidate_lane: row.candidate_lane || "",
+        field: row.field || row.resolver_field || "",
+        resolver_field: row.resolver_field || row.field || "",
+        old_value: row.old_value ?? null,
+        candidate_value: row.candidate_value ?? null,
+        resolver_value: row.resolver_value ?? null,
+        final_value: row.final_value ?? null,
+        confidence: Number(row.confidence || 0),
+        source: row.source || row.source_type || "",
+        source_type: row.source_type || "",
+        source_trust: row.source_trust || "",
+        permission: row.permission || null,
+        decision: row.decision || "",
+        reason: row.reason || "",
+        applied_to_final: row.applied_to_final === true,
+        supported_final: row.supported_final === true,
+        outcome: row.outcome || ""
+      }))
+    },
     candidate_application_trace: rows.map((row) => ({
       candidate_id: row.candidate_id || "",
       candidate_identity_id: row.candidate_identity_id || "",
@@ -2012,6 +2070,10 @@ async function runOne({
       vector_role_agnostic_fallback_reason: l2.summary?.vector_role_agnostic_fallback_reason ?? null,
       vector_returned_row_count: l2.summary?.vector_returned_row_count ?? null,
       vector_self_excluded_count: l2.summary?.vector_self_excluded_count ?? null,
+      vector_self_exclusion_query_attempted: l2.summary?.vector_self_exclusion_query_attempted === true,
+      vector_self_exclusion_filter_active: l2.summary?.vector_self_exclusion_filter_active === true,
+      vector_self_exclusion_requested_source_count: l2.summary?.vector_self_exclusion_requested_source_count ?? null,
+      vector_self_exclusion_source_ids_sha256: l2.summary?.vector_self_exclusion_source_ids_sha256 ?? null,
       provider_diagnostics: finalProviderDiagnostics,
       v4_l2_timing: l2.summary?.v4_l2_timing || null,
       v4_pipeline_contract: l2.summary?.v4_pipeline_contract || null,
@@ -2236,6 +2298,10 @@ async function runOne({
     vector_role_agnostic_fallback_reason: l2.summary?.vector_role_agnostic_fallback_reason ?? null,
     vector_returned_row_count: l2.summary?.vector_returned_row_count ?? null,
     vector_self_excluded_count: l2.summary?.vector_self_excluded_count ?? null,
+    vector_self_exclusion_query_attempted: l2.summary?.vector_self_exclusion_query_attempted === true,
+    vector_self_exclusion_filter_active: l2.summary?.vector_self_exclusion_filter_active === true,
+    vector_self_exclusion_requested_source_count: l2.summary?.vector_self_exclusion_requested_source_count ?? null,
+    vector_self_exclusion_source_ids_sha256: l2.summary?.vector_self_exclusion_source_ids_sha256 ?? null,
     preingestion_ocr_rendezvous: l2.summary?.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: l2.summary?.preingestion_evidence_refresh || null,
     serial_numerator_verified: l2.summary?.serial_numerator_verified ?? null,
@@ -3772,6 +3838,10 @@ export function perCardTsv(results = []) {
     "vector_role_fallback_reason",
     "vector_returned_rows",
     "vector_self_excluded",
+    "vector_self_exclusion_query_attempted",
+    "vector_self_exclusion_filter_active",
+    "vector_self_exclusion_requested_source_count",
+    "vector_self_exclusion_source_ids_sha256",
     "node_ledger_present",
     "node_anomaly_count",
     "node_error_count",
@@ -3884,6 +3954,10 @@ export function perCardTsv(results = []) {
     item.vector_role_agnostic_fallback_reason,
     item.vector_returned_row_count,
     item.vector_self_excluded_count,
+    item.vector_self_exclusion_query_attempted,
+    item.vector_self_exclusion_filter_active,
+    item.vector_self_exclusion_requested_source_count,
+    item.vector_self_exclusion_source_ids_sha256,
     Boolean(item.pipeline_node_ledger),
     item.pipeline_node_ledger?.reconciliation?.anomaly_count ?? null,
     item.pipeline_node_ledger?.reconciliation?.error_count ?? null,

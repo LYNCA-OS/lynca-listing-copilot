@@ -259,6 +259,7 @@ const visualCompletion = await completeEvidence({
     players: createEvidenceField({ value: ["Cooper Flagg"], status: "REVIEW", confidence: 0.7 })
   },
   unresolved: ["product identity missing"],
+  excludeSourceFeedbackIds: ["feedback-current-card"],
   visualEmbeddings: {
     status: "OK",
     features: [
@@ -314,6 +315,7 @@ assert.ok(visualCompletionRetrievalArgs.allowedFamilies.includes(retrievalQueryF
 assert.ok(visualCompletionRetrievalArgs.allowedFamilies.includes(retrievalQueryFamilies.VISUAL_VECTOR));
 assert.equal(visualCompletionRetrievalArgs.maxQueries, 2);
 assert.equal(visualCompletionRetrievalArgs.visualEmbeddings.features[0].embedding.length, 768);
+assert.deepEqual(visualCompletionRetrievalArgs.excludeSourceFeedbackIds, ["feedback-current-card"]);
 assert.equal(visualCompletion.budget.used.external_queries, 0);
 
 let hybridVisualRetrievalArgs = null;

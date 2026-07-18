@@ -7,8 +7,18 @@ process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 const { __listingCopilotTitleTestHooks } = await import("../lib/listing/v4/pipeline/native-recognition-core.mjs");
 const {
   applySafeRetrievalTitleAssist,
-  scaffoldTitleConflictsWithDirectEvidence
+  scaffoldTitleConflictsWithDirectEvidence,
+  vectorSelfExclusionDiagnostics
 } = __listingCopilotTitleTestHooks;
+
+const selfExclusionDiagnostics = vectorSelfExclusionDiagnostics({
+  sourceFeedbackId: "feedback-current-card",
+  source_feedback_id: "feedback-current-card"
+}, { queryAttempted: true });
+assert.equal(selfExclusionDiagnostics.self_exclusion_query_attempted, true);
+assert.equal(selfExclusionDiagnostics.self_exclusion_filter_active, true);
+assert.equal(selfExclusionDiagnostics.self_exclusion_requested_source_count, 1);
+assert.match(selfExclusionDiagnostics.self_exclusion_source_ids_sha256, /^[a-f0-9]{64}$/);
 
 // --- scaffoldTitleConflictsWithDirectEvidence unit behavior ---
 

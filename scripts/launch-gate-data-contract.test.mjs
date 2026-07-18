@@ -23,12 +23,38 @@ import {
   runLaunchGateEvaluation,
   runtimeSnapshot
 } from "./run-launch-gate-eval.mjs";
-import { attachPostRecognitionScoring, createConcurrencyGate, mapWithConcurrency } from "./v4-ebay-smoke.mjs";
+import {
+  attachPostRecognitionScoring,
+  compactCandidateTrace,
+  createConcurrencyGate,
+  mapWithConcurrency
+} from "./v4-ebay-smoke.mjs";
 
 assert.equal(launchGateNumberArg([], "--request-timeout-ms", 120_000), 120_000);
 assert.equal(launchGateNumberArg(["--request-timeout-ms", ""], "--request-timeout-ms", 120_000), 120_000);
 assert.equal(launchGateNumberArg(["--think-ms", "0"], "--think-ms", 6_000), 0);
 assert.equal(launchGateNumberArg(["--l2-wait-ms", "240000"], "--l2-wait-ms", 18_000), 240_000);
+
+const compactRetrievalAudit = compactCandidateTrace({
+  retrieval_application: {
+    schema_version: "retrieval-application-v1",
+    enabled: true,
+    candidate_count: 1,
+    field_evidence_count: 1,
+    decision_counts: { BLOCK: 1 },
+    decisions: [{
+      candidate_id: "candidate-1",
+      candidate_lane: "catalog",
+      field: "product",
+      old_value: "",
+      candidate_value: "Topps Chrome",
+      decision: "BLOCK",
+      reason: "anchor_missing"
+    }]
+  }
+});
+assert.equal(compactRetrievalAudit.retrieval_application.field_evidence_count, 1);
+assert.equal(compactRetrievalAudit.retrieval_application.decisions[0].reason, "anchor_missing");
 
 {
   let active = 0;
@@ -198,6 +224,10 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
     provider_prompt_mode: "fast_initial",
     identity_cache_hit: false,
     identity_cache_read_bypassed: true,
+    vector_self_exclusion_query_attempted: true,
+    vector_self_exclusion_filter_active: true,
+    vector_self_exclusion_requested_source_count: 1,
+    vector_self_exclusion_source_ids_sha256: "offline-source-feedback-hash",
     reference_title_type: reviewed ? "REVIEWED_INTERNAL_TITLE" : "MARKETPLACE_WEAK_LABEL",
     reference_title_is_reviewed_ground_truth: reviewed,
     final_scoring: { policy_fair_token_recall: score }
@@ -419,6 +449,15 @@ try {
     }
   ];
   const observedChecks = assertObservedExecutionContract(mixedRunReports);
+  const vacuousVectorExclusionChecks = observedExecutionContractChecks([{
+    cohort: "INTERNAL_REVIEWED_GT",
+    cold_start_blind: false,
+    report: rawRunReport([{
+      ...scoredResult({ assetId: "vector-exclusion-not-attempted", reviewed: true, score: 1 }),
+      vector_self_exclusion_query_attempted: false
+    }])
+  }]);
+  assert.equal(vacuousVectorExclusionChecks.vector_self_retrieval_exclusion_enforced, false);
   const preparationFailureChecks = observedExecutionContractChecks([{
     cohort: "INTERNAL_REVIEWED_GT",
     cold_start_blind: false,

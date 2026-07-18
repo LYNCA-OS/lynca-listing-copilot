@@ -30,6 +30,7 @@ import {
 } from "../api/v4/listing-job-worker.js";
 import {
   authorizeFreshManualRetryJobs,
+  canonicalizeQueueJobs,
   createQueueRequestBatchId,
   queueJobsRequireCreatePermission,
   queueJobsRequireRetryPermission
@@ -96,6 +97,40 @@ assert.equal(repeatedRow.id, row.id, "same batch, asset and stage must reuse one
 assert.equal(repeatedRow.recognition_session_id, row.recognition_session_id);
 assert.notEqual(createV4DeterministicJobId({ batchId: "other-batch", assetId: "asset-1" }), row.id);
 assert.notEqual(createV4DeterministicSessionId({ batchId: "other-batch", assetId: "asset-1" }), row.recognition_session_id);
+
+const selfExclusionFeedbackId = "feedback-current-card";
+const selfExclusionAssetId = "asset_33333333-3333-4333-8333-333333333333";
+const selfExclusionGenerationId = "asset_44444444-4444-4444-8444-444444444444";
+const canonicalizedSelfExclusionJob = await canonicalizeQueueJobs({
+  tenantId: "tenant-stage",
+  jobs: [{
+    asset_id: selfExclusionAssetId,
+    image_generation_id: selfExclusionGenerationId,
+    payload: {
+      asset_id: selfExclusionAssetId,
+      image_generation_id: selfExclusionGenerationId,
+      source_feedback_id: selfExclusionFeedbackId,
+      images: [{ url: "data:image/jpeg;base64,client-transport-must-be-replaced" }]
+    }
+  }],
+  readCanonical: async () => ({
+    image_generation_id: selfExclusionGenerationId,
+    image_set_sha256: "canonical-image-set-sha",
+    expected_original_count: 2,
+    images: [
+      { image_id: "front", bucket: "listing-feedback-images", object_path: "feedback/current/front.jpg" },
+      { image_id: "back", bucket: "listing-feedback-images", object_path: "feedback/current/back.jpg" }
+    ],
+    image_references: [],
+    image_paths: {}
+  })
+});
+assert.equal(
+  canonicalizedSelfExclusionJob[0].payload.source_feedback_id,
+  selfExclusionFeedbackId,
+  "canonical image rebinding must preserve the blind-eval self-exclusion identity"
+);
+assert.equal(canonicalizedSelfExclusionJob[0].payload.images.length, 2);
 
 const stageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-staged",

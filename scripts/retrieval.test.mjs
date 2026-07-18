@@ -67,7 +67,8 @@ const visualPlanned = planRetrievalQueries({
       embedding: testEmbedding
     }
   ],
-  includeExternal: false
+  includeExternal: false,
+  excludeSourceFeedbackIds: ["feedback-current-card"]
 });
 const visualQuery = visualPlanned.find((query) => query.family === retrievalQueryFamilies.VISUAL_VECTOR);
 assert.ok(visualQuery, "visual embedding should plan a visual vector retrieval query");
@@ -75,6 +76,7 @@ assert.equal(visualQuery.provider_id, retrievalProviderIds.VISUAL_VECTOR);
 assert.equal(visualQuery.cacheable, false);
 assert.equal(visualQuery.embedding.length, 768);
 assert.equal(visualQuery.embedding_role, "front_global");
+assert.deepEqual(visualQuery.exclude_source_feedback_ids, ["feedback-current-card"]);
 assert.equal(visualPlanned.some((query) => query.provider_id === retrievalProviderIds.BRAVE_SEARCH), false);
 
 const disabledVisualProvider = await visualVectorProvider({
@@ -207,6 +209,8 @@ const selfExcludedVisualResult = await selfExcludingVisualProvider.search({
 });
 assert.equal(selfExcludedVisualResult.metadata.returned_row_count, 2);
 assert.equal(selfExcludedVisualResult.metadata.self_excluded_count, 1);
+assert.equal(selfExcludedVisualResult.metadata.source_feedback_exclusion_filter_active, true);
+assert.equal(selfExcludedVisualResult.metadata.source_feedback_exclusion_count, 1);
 assert.equal(selfExcludedVisualResult.candidates.length, 1);
 assert.equal(selfExcludedVisualResult.candidates[0].candidate_identity_id, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 assert.equal(selfExcludedVisualResult.candidates[0].reference_metadata.source_feedback_id, "feedback-other-card");
