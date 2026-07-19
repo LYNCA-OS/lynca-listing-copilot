@@ -150,6 +150,15 @@ const rejected = buildV4FeedbackArtifacts({
   submissionId: "submission-reject-0001",
   recognitionResult
 });
+const adminTest = buildV4FeedbackArtifacts({
+  sessionId: "session-1",
+  action: "EDIT",
+  writerTitle,
+  operatorId: "owner-1",
+  submissionId: "submission-admin-test-0001",
+  recognitionResult,
+  datasetDisposition: "ADMIN_TEST_ONLY"
+});
 assert.equal(first.feedbackEvent.id, retry.feedbackEvent.id);
 assert.equal(first.payloadSha256, retry.payloadSha256);
 assert.notEqual(first.feedbackEvent.id, laterEdit.feedbackEvent.id);
@@ -160,6 +169,26 @@ assert.equal(first.feedbackEvent.asset_id, identity.asset_id);
 assert.equal(first.feedbackEvent.dataset_disposition, "OBSERVE_ONLY");
 assert.equal(first.learningEvent.training_eligible, false);
 assert.equal(first.learningEvent.semantic_truth, false);
+assert.equal(adminTest.feedbackEvent.dataset_disposition, "OBSERVE_ONLY");
+assert.equal(adminTest.feedbackEvent.writer_feedback.dataset_disposition, "ADMIN_TEST_ONLY");
+assert.equal(adminTest.learningEvent.dataset_disposition, "OBSERVE_ONLY");
+assert.equal(adminTest.learningEvent.feedback_training_event.dataset_disposition, "ADMIN_TEST_ONLY");
+assert.equal(adminTest.learningEvent.training_eligible, false);
+assert.equal(buildGoldenTitleCandidate({
+  feedbackEvent: adminTest.feedbackEvent,
+  semExtraction: adminTest.semExtraction,
+  images: [{
+    bucket: "cards",
+    object_path: "feedback/admin-test.jpg",
+    content_sha256: "d".repeat(64),
+    object_verified: true,
+    content_hash_verified: true,
+    verified_at: "2026-07-15T11:00:00.000Z",
+    storage_verification_source: "listing_image_verifications",
+    storage_verification_record_key: "pilot-tenant\u001fcards\u001ffeedback/admin-test.jpg",
+    storage_verification_record_sha256: "e".repeat(64)
+  }]
+}), null, "admin test feedback is rejected at the GT candidate constructor too");
 assert.deepEqual(first.feedbackEvent.title_diff.added, ["Lionel", "Refractor", "/50", "PSA10"]);
 const rejectedDaily = buildDailyLearningExport({
   feedback_events: [rejected.feedbackEvent],
@@ -168,6 +197,13 @@ const rejectedDaily = buildDailyLearningExport({
 assert.equal(rejectedDaily.manifest.counts.feedback, 1);
 assert.equal(rejectedDaily.manifest.counts.semantic, 0, "REJECT has no writer title and must not masquerade as title truth");
 assert.equal(rejectedDaily.manifest.counts.errors, 1);
+const adminTestDaily = buildDailyLearningExport({
+  feedback_events: [adminTest.feedbackEvent],
+  learning_events: [adminTest.learningEvent]
+}, { date: "2026-07-15", generatedAt: "2026-07-15T23:59:59.000Z" });
+assert.equal(adminTestDaily.manifest.counts.feedback, 1, "admin test feedback remains available for diagnostics");
+assert.equal(adminTestDaily.manifest.counts.semantic, 0, "admin test titles cannot become semantic candidates");
+assert.equal(adminTestDaily.manifest.counts.golden, 0, "admin test titles cannot enter any GT dataset");
 
 const goldenTitle = buildGoldenTitleCandidate({
   feedbackEvent: first.feedbackEvent,

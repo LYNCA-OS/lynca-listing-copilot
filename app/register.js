@@ -17,8 +17,60 @@ const tokenSectionText = document.querySelector("#registerHelp");
 const inviteLoginSection = document.querySelector("#inviteLoginSection");
 const inviteLoginHint = document.querySelector("#inviteLoginHint");
 const inviteLoginLink = document.querySelector("#inviteLoginLink");
+const accessGate = document.querySelector("#inviteAccessGate");
+const accessTitle = document.querySelector("#inviteAccessTitle");
+const accessDetail = document.querySelector("#inviteAccessDetail");
+
+function showAccessState({ title, detail, denied = false }) {
+  if (accessTitle) accessTitle.textContent = title;
+  if (accessDetail) accessDetail.textContent = detail;
+  accessGate?.classList.toggle("is-denied", denied);
+  accessGate?.removeAttribute("hidden");
+}
+
+async function authorizeMemberManagement() {
+  if (!form || tokenFromInvite) return;
+  form.hidden = true;
+  try {
+    const response = await fetch("/api/session", {
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+    const session = await response.json().catch(() => ({}));
+    if (response.ok && session.authenticated === false) {
+      window.location.replace("/login?next=%2Fregister");
+      return;
+    }
+    if (!response.ok || session.authenticated !== true) {
+      showAccessState({
+        title: "暂时无法确认管理员权限",
+        detail: "邀请表单保持锁定，请稍后刷新页面重试。",
+        denied: true
+      });
+      return;
+    }
+    if (!session.permission_scopes?.MANAGE_MEMBERS) {
+      showAccessState({
+        title: "当前账号没有成员管理权限",
+        detail: "只有当前工作区 Owner 可以邀请成员。请返回工作台或联系 Owner。",
+        denied: true
+      });
+      return;
+    }
+
+    accessGate?.setAttribute("hidden", "");
+    form.hidden = false;
+  } catch {
+    showAccessState({
+      title: "暂时无法确认管理员权限",
+      detail: "邀请表单保持锁定，请检查网络后重试。",
+      denied: true
+    });
+  }
+}
 
 if (tokenFromInvite) {
+  accessGate?.setAttribute("hidden", "");
   if (tokenSectionText) {
     tokenSectionText.textContent = "检测到邀请链接参数。请先使用受邀账号登录以完成权限绑定。";
   }
@@ -43,6 +95,8 @@ if (tokenFromInvite) {
     errorMessage.hidden = true;
   }
 }
+
+void authorizeMemberManagement();
 
 function isExpiredInvite(expiresAt) {
   if (!expiresAt) return false;

@@ -68,6 +68,7 @@ assert.match(feedbackSource, /readV4SessionStatus\(\{ sessionId, tenantId \}\)/)
 assert.match(feedbackSource, /reviewedSemanticFields: false/);
 assert.match(feedbackSource, /sharedPromotion: false/);
 assert.match(feedbackSource, /training_eligible: false/);
+assert.match(feedbackSource, /context\.role === TENANT_ROLES\.OWNER[\s\S]*ADMIN_TEST_DATASET_DISPOSITION/);
 assert.doesNotMatch(feedbackSource, /upsertCertRegistryEntry|waitUntil\(/, "public tenant feedback must never promote shared registry truth");
 
 const exportSource = sources["api/v4/listing-export-workbook.js"];
@@ -321,6 +322,32 @@ try {
   assert.deepEqual(validFeedback.body.title_diff.removed, ["Tenant-safe"]);
   assert.equal(validPersistenceCalls.length, 1, "valid feedback must retain its single atomic persistence call");
   assert.equal(validPersistenceCalls[0].p_feedback_event.writer_final_title, "Writer safe title");
+
+  const ownerPersistenceCalls = [];
+  globalThis.fetch = mockTenantFetch({
+    role: "OWNER",
+    userId: "user_owner",
+    assignedUserId: "user_writer",
+    observedPersistenceCalls: ownerPersistenceCalls
+  });
+  const ownerTestFeedback = await callPost(feedbackHandler, {
+    headers: { cookie: sessionCookie({ userId: "user_owner" }), "x-request-id": "req-owner-test-feedback" },
+    payload: {
+      recognition_session_id: "session_target",
+      feedback_submission_id: "submission-owner-test-0001",
+      action: "EDIT",
+      writer_final_title: "Owner test-only title"
+    }
+  });
+  assert.equal(ownerTestFeedback.statusCode, 200);
+  assert.equal(ownerTestFeedback.body.dataset_disposition, "OBSERVE_ONLY");
+  assert.equal(ownerTestFeedback.body.feedback_data_use, "ADMIN_TEST_ONLY");
+  assert.equal(ownerTestFeedback.body.training_eligible, false);
+  assert.equal(ownerPersistenceCalls[0].p_feedback_event.dataset_disposition, "OBSERVE_ONLY");
+  assert.equal(ownerPersistenceCalls[0].p_feedback_event.writer_feedback.dataset_disposition, "ADMIN_TEST_ONLY");
+  assert.equal(ownerPersistenceCalls[0].p_learning_event.dataset_disposition, "OBSERVE_ONLY");
+  assert.equal(ownerPersistenceCalls[0].p_learning_event.feedback_training_event.dataset_disposition, "ADMIN_TEST_ONLY");
+  assert.equal(ownerPersistenceCalls[0].p_learning_event.training_eligible, false);
 
   globalThis.fetch = mockTenantFetch({
     role: "WRITER",

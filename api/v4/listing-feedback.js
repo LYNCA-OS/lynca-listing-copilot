@@ -1,8 +1,10 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import {
+  ADMIN_TEST_DATASET_DISPOSITION,
   buildAuthoritativeRecognitionResult,
   createFeedbackSubmissionId,
+  FEEDBACK_DATASET_DISPOSITION,
   normalizeFeedbackSubmissionId
 } from "../../lib/listing/feedback/feedback-capture.mjs";
 import { buildV4FeedbackArtifacts } from "../../lib/listing/v4/feedback/feedback-loop.mjs";
@@ -16,7 +18,8 @@ import {
   publicTenantAuthError,
   requirePermission,
   requireTenantAccess,
-  TENANT_PERMISSIONS
+  TENANT_PERMISSIONS,
+  TENANT_ROLES
 } from "../../lib/tenant/index.mjs";
 
 export default async function handler(req, res) {
@@ -126,7 +129,10 @@ export default async function handler(req, res) {
       // Public writer feedback is commercial feedback. Field-level semantic
       // truth requires a separate reviewed admin workflow.
       reviewedSemanticFields: false,
-      sharedPromotion: false
+      sharedPromotion: false,
+      datasetDisposition: context.role === TENANT_ROLES.OWNER
+        ? ADMIN_TEST_DATASET_DISPOSITION
+        : FEEDBACK_DATASET_DISPOSITION
     });
   } catch (error) {
     sendJson(res, 400, withV4Version({
@@ -186,7 +192,8 @@ export default async function handler(req, res) {
     csm_normalization: supersededRetry ? null : artifacts.csmNormalization,
     title_diff: supersededRetry ? null : artifacts.feedbackEvent.title_diff,
     training_eligible: false,
-    dataset_disposition: artifacts.learningEvent.dataset_disposition,
+    dataset_disposition: committed.dataset_disposition || FEEDBACK_DATASET_DISPOSITION,
+    feedback_data_use: artifacts.feedbackDataUse,
     sem_extraction_status: supersededRetry ? "CURRENT_STATE_UNCHANGED" : artifacts.semExtraction.status,
     superseded_retry: supersededRetry,
     production_promotion_eligible: false,
