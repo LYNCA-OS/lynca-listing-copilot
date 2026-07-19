@@ -25,7 +25,7 @@ import {
 export const launchGateExecutionContract = Object.freeze({
   model: "gpt-5-mini",
   image_detail: "high",
-  provider_prompt_mode: "fast_initial",
+  provider_prompt_mode: "v4_compact_l2",
   provider_concurrency: 2,
   preparation_concurrency: 2,
   submission_concurrency: 2,
@@ -49,6 +49,7 @@ const lockedCliOptions = [
   "--preparation-concurrency",
   "--submission-concurrency",
   "--ultra-image-detail",
+  "--compact-l2",
   "--ultra-fast-l2",
   "--disable-identity-cache",
   "--enable-identity-cache"
@@ -160,7 +161,8 @@ function fixedPayloadForPreflight(item, index) {
   return payloadForItem(item, index, [], {
     forceL2Direct: true,
     modelOverride: launchGateExecutionContract.model,
-    fastInitialPrompt: true,
+    fastInitialPrompt: false,
+    compactL2: true,
     ultraFastL2: launchGateExecutionContract.ultra_fast_l2,
     ultraFastImageDetail: launchGateExecutionContract.image_detail,
     disableIdentityCache: launchGateExecutionContract.identity_cache_disabled,
@@ -491,7 +493,8 @@ export function observedExecutionContractChecks(runReports = []) {
   const cohortPlans = runReports.filter((entry) => Object.hasOwn(entry, "cold_start_blind"));
   const checks = {
     model_override_locked: reports.length > 0 && reports.every((report) => report.model_override === launchGateExecutionContract.model),
-    fast_prompt_override_locked: reports.length > 0 && reports.every((report) => report.fast_initial_prompt_override === true),
+    fast_prompt_override_locked: reports.length > 0 && reports.every((report) => report.fast_initial_prompt_override === false),
+    compact_prompt_override_locked: reports.length > 0 && reports.every((report) => report.compact_l2_enabled === true),
     runner_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.concurrency) === 2),
     preparation_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.preparation_concurrency) === 2),
     submission_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.submission_concurrency) === 2),
@@ -762,9 +765,9 @@ export async function runLaunchGateEvaluation({
         queueMode: true,
         forceL2Direct: true,
         modelOverride: launchGateExecutionContract.model,
-        fastInitialPrompt: true,
+        fastInitialPrompt: false,
         enableL1: false,
-        compactL2: false,
+        compactL2: true,
         ultraFastL2: launchGateExecutionContract.ultra_fast_l2,
         ultraFastImageDetail: launchGateExecutionContract.image_detail,
         disableIdentityCache: launchGateExecutionContract.identity_cache_disabled,

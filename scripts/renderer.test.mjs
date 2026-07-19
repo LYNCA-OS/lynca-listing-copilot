@@ -1519,6 +1519,27 @@ assert.equal(
 assert.ok(standardLotGrammar.rendered_title.length <= 80);
 assert.doesNotMatch(standardLotGrammar.rendered_title, /LeBron James/);
 
+const baseColorSurvivesGenericAutoCompression = renderResolvedTitle({
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Chrome Platinum Baseball",
+  players: ["Spencer Schwellenbach"],
+  card_name: "Certified Autograph Issue",
+  surface_color: "Blue",
+  print_run_number: "03/99",
+  rc: true,
+  auto: true,
+  team: "Atlanta Braves"
+}, {
+  maxLength: 80
+});
+assert.equal(
+  baseColorSurvivesGenericAutoCompression.rendered_title,
+  "2025 Topps Chrome Platinum Spencer Schwellenbach Auto Blue 03/99 RC"
+);
+assert.doesNotMatch(baseColorSurvivesGenericAutoCompression.title_length_policy.removed_terms.join(" "), /Blue/);
+assert.doesNotMatch(baseColorSurvivesGenericAutoCompression.rendered_title, /Certified Auto Issue/);
+
 const subjectPrefixRemovedFromCardName = renderResolvedTitle({
   year: "2024",
   manufacturer: "Topps",

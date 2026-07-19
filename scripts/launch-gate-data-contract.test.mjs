@@ -264,7 +264,7 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
     writer_ready: true,
     final_title: finalTitle,
     provider_image_detail: "high",
-    provider_prompt_mode: "fast_initial",
+    provider_prompt_mode: "v4_compact_l2",
     identity_cache_hit: false,
     identity_cache_read_bypassed: true,
     vector_self_exclusion_query_attempted: true,
@@ -290,7 +290,8 @@ function rawRunReport(results, { coldStartBlind = false } = {}) {
     submission_concurrency: 2,
     provider_concurrency: 2,
     identity_cache_disabled: true,
-    fast_initial_prompt_override: true,
+    fast_initial_prompt_override: false,
+    compact_l2_enabled: true,
     cold_start_blind: coldStartBlind,
     predictions_sha256: "offline-predictions-sha256",
     run_wall_ms: 1000,
@@ -415,7 +416,7 @@ try {
   assert.deepEqual(launchGateExecutionContract, {
     model: "gpt-5-mini",
     image_detail: "high",
-    provider_prompt_mode: "fast_initial",
+    provider_prompt_mode: "v4_compact_l2",
     provider_concurrency: 2,
     preparation_concurrency: 2,
     submission_concurrency: 2,
@@ -726,6 +727,8 @@ try {
     ))), "materialized local image paths must survive cohort splitting and reach the smoke runner");
     assert.equal(options.modelOverride, "gpt-5-mini");
     assert.equal(options.ultraFastL2, false);
+    assert.equal(options.compactL2, true);
+    assert.equal(options.fastInitialPrompt, false);
     assert.equal(options.ultraFastImageDetail, "high");
     assert.equal(options.concurrency, 2);
     assert.equal(options.preparationConcurrency, 2);
