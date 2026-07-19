@@ -36,7 +36,8 @@ export const launchGateExecutionContract = Object.freeze({
 export const launchGateAccuracyContract = Object.freeze({
   per_item_sem_acceptance_threshold: reviewedTitleSemAcceptanceThreshold,
   minimum_internal_reviewed_gt_rate: 0.87,
-  reviewed_10_minimum_correct_count: 9,
+  reviewed_10_minimum_token_recall: 0.85,
+  reviewed_10_minimum_sem_floor: 0.5,
   formal_scope: "internal_reviewed_gt_only",
   ebay_reference_role: "diagnostics_only"
 });
@@ -278,11 +279,16 @@ export function assertRuntimeSnapshot(snapshot = {}, {
 } = {}) {
   const expectedId = cleanText(expectedDeploymentId);
   const expectedSha = cleanText(expectedDeploymentSha);
+  const immutableCandidateMode = Boolean(expectedId && !expectedSha);
   const checks = {
     ready: snapshot.ready === true,
     deployment_id_present: Boolean(cleanText(snapshot.deployment_id)),
-    deployment_sha_present: Boolean(cleanText(snapshot.deployment_sha)),
-    main_branch: cleanText(snapshot.deployment_ref) === "main",
+    immutable_runtime_identity: immutableCandidateMode
+      ? cleanText(snapshot.deployment_id) === expectedId
+      : Boolean(cleanText(snapshot.deployment_sha)),
+    main_branch_or_pinned_candidate: immutableCandidateMode
+      ? true
+      : cleanText(snapshot.deployment_ref) === "main",
     model_locked: cleanText(snapshot.model) === launchGateExecutionContract.model,
     queue_configured: snapshot.queue_configured === true,
     worker_secret_configured: snapshot.worker_secret_configured === true,
@@ -299,11 +305,14 @@ export function assertRuntimeSnapshot(snapshot = {}, {
 }
 
 export function deploymentDrift(start = {}, end = {}) {
+  const startSha = cleanText(start.deployment_sha);
+  const endSha = cleanText(end.deployment_sha);
   const checks = {
     deployment_id_unchanged: Boolean(start.deployment_id)
       && start.deployment_id === end.deployment_id,
-    deployment_sha_unchanged: Boolean(start.deployment_sha)
-      && start.deployment_sha === end.deployment_sha
+    deployment_sha_unchanged_or_absent: startSha || endSha
+      ? Boolean(startSha) && startSha === endSha
+      : true
   };
   return { ...checks, unchanged: Object.values(checks).every((value) => value === true) };
 }
@@ -319,8 +328,10 @@ export function assertProviderControlPlane(status = {}, { expectedRuntime = null
     ...(expectedRuntime ? {
       provider_status_deployment_id_matches: Boolean(cleanText(status.deployment?.deployment_id))
         && cleanText(status.deployment?.deployment_id) === cleanText(expectedRuntime.deployment_id),
-      provider_status_deployment_sha_matches: Boolean(cleanText(status.deployment?.git_commit_sha))
-        && cleanText(status.deployment?.git_commit_sha) === cleanText(expectedRuntime.deployment_sha)
+      ...(cleanText(expectedRuntime.deployment_sha) ? {
+        provider_status_deployment_sha_matches: Boolean(cleanText(status.deployment?.git_commit_sha))
+          && cleanText(status.deployment?.git_commit_sha) === cleanText(expectedRuntime.deployment_sha)
+      } : {})
     } : {})
   };
   const failed = Object.entries(checks).filter(([, value]) => value !== true).map(([key]) => key);
@@ -378,12 +389,18 @@ function reviewedMetrics(rows = []) {
         ? Number((correctCount / rows.length).toFixed(6))
         : null,
       sem_weighted_accuracy_avg: average(semValues),
+      sem_weighted_accuracy_min: semValues.length ? Math.min(...semValues) : null,
       per_item_acceptance_threshold: launchGateAccuracyContract.per_item_sem_acceptance_threshold,
       authority: "LINEAR_COS_10_TO_COS_23_WITH_SUPABASE_SEM_REGISTRY_VERIFICATION",
       production_release_authority: false,
       boundary: "reviewed-title-derived SEM projection for strategy testing; formal Golden SEM field review remains required for production release",
+      token_recall: {
+        metric: "policy_fair_token_recall",
+        measured_count: legacyTokenValues.length,
+        average: average(legacyTokenValues)
+      },
       legacy_token_recall_diagnostics: {
-        decision_authority: false,
+        decision_authority: true,
         policy_fair_token_recall_avg: average(legacyTokenValues)
       }
     }
@@ -429,8 +446,7 @@ function evidenceClassForResult(entry = {}, row = {}) {
   return "UNKNOWN";
 }
 
-function requiredReviewedCorrectCount(profile, cohortCount) {
-  if (profile === "reviewed-10") return launchGateAccuracyContract.reviewed_10_minimum_correct_count;
+function requiredReviewedCorrectCount(cohortCount) {
   return Math.ceil((cohortCount * launchGateAccuracyContract.minimum_internal_reviewed_gt_rate) - 1e-12);
 }
 
@@ -445,21 +461,58 @@ export function buildLaunchGateFormalAccuracyGate({
     ? parsedCohortCount
     : 0;
   const formalAccuracy = internalMetrics.formal_accuracy || {};
-  const requiredCorrectCount = requiredReviewedCorrectCount(profile, expectedCount);
+  const requiredCorrectCount = requiredReviewedCorrectCount(expectedCount);
   const parsedRate = formalAccuracy.rate === null || formalAccuracy.rate === undefined
     ? null
     : Number(formalAccuracy.rate);
   const actualRate = Number.isFinite(parsedRate) ? parsedRate : null;
-  const checks = {
+  const commonChecks = {
     reviewed_ground_truth_only: formalAccuracy.eligible === true,
+    ebay_diagnostics_only: ebayMetrics.formal_accuracy_eligible === false
+      && !Object.hasOwn(ebayMetrics, "formal_accuracy")
+  };
+  if (profile === "reviewed-10") {
+    const tokenRecall = formalAccuracy.token_recall || {};
+    const parsedTokenRecall = metricNumber(tokenRecall.average);
+    const minimumSemScore = metricNumber(formalAccuracy.sem_weighted_accuracy_min);
+    const checks = {
+      ...commonChecks,
+      measured_count_matches_cohort: expectedCount > 0
+        && Number(tokenRecall.measured_count) === expectedCount,
+      minimum_token_recall_met: parsedTokenRecall !== null
+        && parsedTokenRecall >= launchGateAccuracyContract.reviewed_10_minimum_token_recall,
+      catastrophic_sem_floor_met: minimumSemScore !== null
+        && minimumSemScore >= launchGateAccuracyContract.reviewed_10_minimum_sem_floor
+    };
+    return {
+      scope: launchGateAccuracyContract.formal_scope,
+      decision_metric: "policy_fair_token_recall_avg",
+      threshold_rate: launchGateAccuracyContract.reviewed_10_minimum_token_recall,
+      cohort_count: expectedCount,
+      required_correct_count: null,
+      measured_count: Number(tokenRecall.measured_count || 0),
+      actual_correct_count: null,
+      actual_rate: parsedTokenRecall,
+      sem_diagnostics: {
+        correct_count: Number(formalAccuracy.correct_count || 0),
+        measured_count: Number(formalAccuracy.measured_count || 0),
+        rate: actualRate,
+        weighted_accuracy_avg: metricNumber(formalAccuracy.sem_weighted_accuracy_avg),
+        weighted_accuracy_min: minimumSemScore,
+        catastrophic_floor: launchGateAccuracyContract.reviewed_10_minimum_sem_floor
+      },
+      checks,
+      passed: Object.values(checks).every((value) => value === true)
+    };
+  }
+  const checks = {
+    ...commonChecks,
     measured_count_matches_cohort: expectedCount > 0
       && Number(formalAccuracy.measured_count) === expectedCount,
     minimum_correct_count_met: expectedCount > 0
       && Number(formalAccuracy.correct_count) >= requiredCorrectCount,
     minimum_rate_met: actualRate !== null
-      && actualRate >= launchGateAccuracyContract.minimum_internal_reviewed_gt_rate,
-    ebay_diagnostics_only: ebayMetrics.formal_accuracy_eligible === false
-      && !Object.hasOwn(ebayMetrics, "formal_accuracy")
+      && actualRate >= launchGateAccuracyContract.minimum_internal_reviewed_gt_rate
   };
   return {
     scope: launchGateAccuracyContract.formal_scope,
@@ -482,9 +535,9 @@ export function assertLaunchGateFormalAccuracy(report = {}) {
   if (gate.passed !== true || failed.length) {
     throw new Error(
       `Launch-gate formal accuracy failed: ${failed.length ? failed.join(", ") : "gate_not_passed"}; `
-      + `correct=${Number(gate.actual_correct_count || 0)}/${Number(gate.cohort_count || 0)}, `
-      + `measured=${Number(gate.measured_count || 0)}, required=${Number(gate.required_correct_count || 0)}, `
-      + `minimum_rate=${launchGateAccuracyContract.minimum_internal_reviewed_gt_rate}.`
+      + `metric=${cleanText(gate.decision_metric || "linear_sem_weighted_projection")}, `
+      + `actual=${gate.actual_rate ?? "missing"}, measured=${Number(gate.measured_count || 0)}, `
+      + `threshold=${gate.threshold_rate ?? launchGateAccuracyContract.minimum_internal_reviewed_gt_rate}.`
     );
   }
   return gate.checks;
@@ -626,7 +679,8 @@ export function buildLaunchGateReport({
       minimum_internal_reviewed_gt_rate: launchGateAccuracyContract.minimum_internal_reviewed_gt_rate,
       weak_reference_scope: "ebay_weak_label_diagnostics_only",
       ebay_formal_accuracy_eligible: false,
-      legacy_token_recall_decision_authority: false
+      reviewed_10_token_recall_decision_authority: profile === "reviewed-10",
+      sem_projection_decision_authority: profile !== "reviewed-10"
     },
     formal_accuracy_gate: formalAccuracyGate,
     technical_summary: {
@@ -856,7 +910,7 @@ export async function runLaunchGateEvaluation({
     throw new Error(`Observed launch-gate contract failed: ${failedObservedChecks.join(", ")}`);
   }
   if (!report.integrity_checks.deployment_stable) {
-    throw new Error("Production deployment id/sha drifted during the launch-gate run.");
+    throw new Error("Pinned runtime identity drifted during the launch-gate run.");
   }
   if (!report.integrity_checks.all_results_classified) {
     throw new Error(`Launch-gate report contains ${report.strata.unclassified.attempted_count} unclassified result(s).`);

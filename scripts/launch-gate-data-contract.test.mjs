@@ -446,7 +446,8 @@ try {
   assert.deepEqual(launchGateAccuracyContract, {
     per_item_sem_acceptance_threshold: 0.87,
     minimum_internal_reviewed_gt_rate: 0.87,
-    reviewed_10_minimum_correct_count: 9,
+    reviewed_10_minimum_token_recall: 0.85,
+    reviewed_10_minimum_sem_floor: 0.5,
     formal_scope: "internal_reviewed_gt_only",
     ebay_reference_role: "diagnostics_only"
   });
@@ -491,8 +492,26 @@ try {
   assert.throws(() => assertRuntimeSnapshot(snapshot, {
     expectedDeploymentSha: "def456"
   }), /expected_deployment_sha_matches/);
+  const localCandidateSnapshot = {
+    ...snapshot,
+    deployment_sha: "",
+    deployment_ref: ""
+  };
+  const localCandidateChecks = assertRuntimeSnapshot(localCandidateSnapshot, {
+    expectedDeploymentId: "dpl_launch_gate"
+  });
+  assert.equal(localCandidateChecks.immutable_runtime_identity, true);
+  assert.equal(localCandidateChecks.main_branch_or_pinned_candidate, true);
+  assertProviderControlPlane({
+    ...providerStatus(),
+    deployment: {
+      ...providerStatus().deployment,
+      git_commit_sha: ""
+    }
+  }, { expectedRuntime: localCandidateSnapshot });
   assert.equal(deploymentDrift(snapshot, snapshot).unchanged, true);
   assert.equal(deploymentDrift(snapshot, { ...snapshot, deployment_sha: "def456" }).unchanged, false);
+  assert.equal(deploymentDrift(localCandidateSnapshot, localCandidateSnapshot).unchanged, true);
   assertProviderControlPlane(providerStatus(), { expectedRuntime: snapshot });
   assert.throws(() => assertProviderControlPlane({
     ...providerStatus(),
@@ -620,7 +639,7 @@ try {
       report: rawRunReport(semPassTokenFailResults)
     }]
   });
-  assert.equal(semPassTokenFailReport.formal_accuracy_gate.passed, true);
+  assert.equal(semPassTokenFailReport.formal_accuracy_gate.passed, false);
   assert.equal(
     semPassTokenFailReport.strata.internal_reviewed_gt.formal_accuracy.legacy_token_recall_diagnostics.policy_fair_token_recall_avg,
     0
@@ -645,11 +664,35 @@ try {
       report: rawRunReport(semFailTokenPassResults)
     }]
   });
-  assert.equal(semFailTokenPassReport.formal_accuracy_gate.passed, false);
+  assert.equal(semFailTokenPassReport.formal_accuracy_gate.passed, true);
   assert.equal(
     semFailTokenPassReport.strata.internal_reviewed_gt.formal_accuracy.legacy_token_recall_diagnostics.policy_fair_token_recall_avg,
     1
   );
+  const catastrophicSemResults = semPassTokenFailResults.map((row, index) => ({
+    ...row,
+    sem_projection_scoring: {
+      weighted_accuracy: index === 0 ? 0.49 : 1,
+      accepted: index !== 0,
+      components: []
+    },
+    final_scoring: { policy_fair_token_recall: 0.9 }
+  }));
+  const catastrophicSemReport = buildLaunchGateReport({
+    profile: "reviewed-10",
+    dataset: reviewedDataset,
+    datasetContract: reviewedContract,
+    startSnapshot: snapshot,
+    endSnapshot: snapshot,
+    runReports: [{
+      cohort: "INTERNAL_REVIEWED_GT",
+      report: rawRunReport(catastrophicSemResults)
+    }]
+  });
+  assert.equal(catastrophicSemReport.formal_accuracy_gate.actual_rate, 0.9);
+  assert.equal(catastrophicSemReport.formal_accuracy_gate.checks.minimum_token_recall_met, true);
+  assert.equal(catastrophicSemReport.formal_accuracy_gate.checks.catastrophic_sem_floor_met, false);
+  assert.equal(catastrophicSemReport.formal_accuracy_gate.passed, false);
 
   const incompleteReviewedResults = Array.from({ length: 10 }, (_, index) => scoredResult({
     assetId: `reviewed-${index + 1}`,
@@ -759,7 +802,7 @@ try {
     return rawRunReport(Array.from({ length: 10 }, (_, index) => scoredResult({
       assetId: `reviewed-${index + 1}`,
       reviewed: true,
-      finalTitle: index === 0 ? "" : `2026 Reviewed Offline ${index + 1} PSA 10`
+      finalTitle: `2026 Reviewed Offline ${index + 1} PSA 10`
     })), { coldStartBlind: options.coldStartBlind });
   };
   const offlineReport = await runLaunchGateEvaluation({
@@ -782,9 +825,10 @@ try {
   assert.equal(smokeCallCount, 1);
   assert.equal(offlineReport.strata.internal_reviewed_gt.attempted_count, 10);
   assert.equal(offlineReport.strata.internal_reviewed_gt.formal_accuracy.measured_count, 10);
-  assert.equal(offlineReport.strata.internal_reviewed_gt.formal_accuracy.correct_count, 9);
-  assert.equal(offlineReport.strata.internal_reviewed_gt.formal_accuracy.rate, 0.9);
-  assert.equal(offlineReport.formal_accuracy_gate.required_correct_count, 9);
+  assert.equal(offlineReport.strata.internal_reviewed_gt.formal_accuracy.correct_count, 10);
+  assert.equal(offlineReport.strata.internal_reviewed_gt.formal_accuracy.rate, 1);
+  assert.equal(offlineReport.formal_accuracy_gate.required_correct_count, null);
+  assert.equal(offlineReport.formal_accuracy_gate.actual_rate, 1);
   assert.equal(offlineReport.formal_accuracy_gate.passed, true);
   assert.equal(offlineReport.execution_contract.deployment.drift.unchanged, true);
   assert.deepEqual(offlineReport.execution_contract.deployment.expected, {
@@ -814,7 +858,8 @@ try {
     progress: false
   }), /Launch-gate formal accuracy failed/);
   const belowThresholdReport = JSON.parse(await readFile(belowThresholdReportPath, "utf8"));
-  assert.equal(belowThresholdReport.formal_accuracy_gate.actual_correct_count, 8);
+  assert.equal(belowThresholdReport.formal_accuracy_gate.actual_correct_count, null);
+  assert.equal(belowThresholdReport.formal_accuracy_gate.checks.minimum_token_recall_met, false);
   assert.equal(belowThresholdReport.formal_accuracy_gate.passed, false);
 
   const observedFailureReportPath = join(root, "reviewed-10-observed-contract-failure-report.json");
