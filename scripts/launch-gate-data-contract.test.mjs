@@ -14,6 +14,7 @@ import {
   assertRuntimeSnapshot,
   buildLaunchGateFormalAccuracyGate,
   buildLaunchGateReport,
+  deploymentProtectedFetch,
   deploymentDrift,
   launchGateAccuracyContract,
   launchGateExecutionContract,
@@ -35,6 +36,25 @@ assert.equal(launchGateNumberArg([], "--request-timeout-ms", 120_000), 120_000);
 assert.equal(launchGateNumberArg(["--request-timeout-ms", ""], "--request-timeout-ms", 120_000), 120_000);
 assert.equal(launchGateNumberArg(["--think-ms", "0"], "--think-ms", 6_000), 0);
 assert.equal(launchGateNumberArg(["--l2-wait-ms", "240000"], "--l2-wait-ms", 18_000), 240_000);
+
+{
+  const calls = [];
+  const fetchImpl = async (input, init = {}) => {
+    calls.push({ input: String(input), headers: Object.fromEntries(new Headers(init.headers || {}).entries()) });
+    return new Response("{}", { status: 200 });
+  };
+  const protectedFetch = deploymentProtectedFetch(fetchImpl, {
+    baseUrl: "https://candidate.example.test",
+    bypassSecret: "test-bypass-secret"
+  });
+  await protectedFetch("https://candidate.example.test/api/v4/health", {
+    headers: { accept: "application/json" }
+  });
+  await protectedFetch("https://signed-storage.example.test/image.jpg");
+  assert.equal(calls[0].headers["x-vercel-protection-bypass"], "test-bypass-secret");
+  assert.equal(calls[0].headers.accept, "application/json");
+  assert.equal(calls[1].headers["x-vercel-protection-bypass"], undefined, "bypass credentials must not leak to signed storage origins");
+}
 
 const compactRetrievalAudit = compactCandidateTrace({
   retrieval_application: {

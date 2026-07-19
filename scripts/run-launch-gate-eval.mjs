@@ -71,6 +71,24 @@ export function numberArg(argv, name, fallback) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+export function deploymentProtectedFetch(fetchImpl = globalThis.fetch, {
+  baseUrl = "",
+  bypassSecret = ""
+} = {}) {
+  const secret = cleanText(bypassSecret);
+  const targetOrigin = normalizeBaseUrl(baseUrl);
+  if (!secret || !targetOrigin) return fetchImpl;
+  const targetHost = new URL(targetOrigin).host;
+  return async (input, init = {}) => {
+    const requestUrl = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+    if (requestUrl.host !== targetHost) return fetchImpl(input, init);
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    new Headers(init.headers || {}).forEach((value, key) => headers.set(key, value));
+    headers.set("x-vercel-protection-bypass", secret);
+    return fetchImpl(input, { ...init, headers });
+  };
+}
+
 function normalizeBaseUrl(value = "") {
   return cleanText(value).replace(/\/+$/, "");
 }
@@ -849,11 +867,20 @@ export async function runLaunchGateEvaluation({
 
 export async function main(argv = process.argv.slice(2), env = process.env) {
   assertNoLockedCliOverrides(argv);
-  const report = await runLaunchGateEvaluation({
+  const baseUrl = argValue(argv, "--base-url", env.API_BASE_URL || "");
+  const originalFetch = globalThis.fetch;
+  const fetchImpl = deploymentProtectedFetch(originalFetch, {
+    baseUrl,
+    bypassSecret: env.VERCEL_AUTOMATION_BYPASS_SECRET || ""
+  });
+  globalThis.fetch = fetchImpl;
+  let report;
+  try {
+    report = await runLaunchGateEvaluation({
     profile: argValue(argv, "--profile", env.LAUNCH_GATE_PROFILE || "reviewed-10"),
     datasetPath: argValue(argv, "--dataset", env.DATASET_PATH || ""),
     sealedLabelsPath: argValue(argv, "--sealed-labels", env.SEALED_LABELS_PATH || ""),
-    baseUrl: argValue(argv, "--base-url", env.API_BASE_URL || ""),
+    baseUrl,
     username: argValue(argv, "--username", env.METAVERSE_USERNAME || ""),
     password: argValue(argv, "--password", env.METAVERSE_PASSWORD || ""),
     expectedDeploymentId: argValue(
@@ -870,8 +897,12 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     thinkMs: numberArg(argv, "--think-ms", 0),
     l2WaitMs: numberArg(argv, "--l2-wait-ms", 240000),
     requestTimeoutMs: numberArg(argv, "--request-timeout-ms", 120000),
-    progress: !argv.includes("--no-progress")
-  });
+      progress: !argv.includes("--no-progress"),
+      fetchImpl
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
   process.stdout.write(`${JSON.stringify({
     ok: true,
     profile: report.profile,
