@@ -100,6 +100,18 @@ assert.doesNotMatch(
   "the release workflow must never print the service-role key"
 );
 assert.doesNotMatch(workflow, /\/api\/admin-apply-/, "code deploy must not invoke runtime migration routes");
+assert.match(workflow, /listingConcurrencyContract as concurrency/, "production deploy must read the machine-owned frozen concurrency contract");
+for (const check of [
+  "worker_claim_limit_frozen",
+  "provider_global_concurrency_frozen",
+  "queue_submission_concurrency_frozen",
+  "catalog_global_capacity_frozen",
+  "catalog_query_concurrency_frozen",
+  "vector_global_capacity_frozen",
+  "vector_index_concurrency_frozen"
+]) {
+  assert.match(workflow, new RegExp(`${check}:`), `production deploy must enforce ${check}`);
+}
 
 const browserPreingest = readFileSync("api/listing-preingest.js", "utf8");
 assert.doesNotMatch(
