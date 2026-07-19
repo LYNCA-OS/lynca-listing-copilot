@@ -834,7 +834,10 @@ try {
   const workflow = await readFile(".github/workflows/reviewed-title-accuracy-smoke.yml", "utf8");
   assert.match(workflow, /--limit 10/);
   assert.match(workflow, /Initialize repeat-eligible history artifact/);
-  assert.match(workflow, /repeat_eligible_random_sampling/);
+  assert.match(workflow, /const restoringSealedSample = Boolean\(process\.env\.SAMPLE_RUN_ID\)/);
+  assert.match(workflow, /sampling_policy_matches_run_mode: restoringSealedSample/);
+  assert.match(workflow, /restoringSealedSample\s+\? dataset\.evaluation_sample_policy\?\.randomized_selection === true/);
+  assert.match(workflow, /: dataset\.evaluation_sample_policy\?\.cross_wave_overlap_permitted === true\s+&& dataset\.evaluation_sample_policy\?\.prior_history_exclusion_present === false\s+&& dataset\.evaluation_sample_policy\?\.excluded_item_count === 0/);
   assert.doesNotMatch(workflow, /collect-ebay-evaluation-history/);
   assert.doesNotMatch(workflow, /--exclude/);
   assert.match(workflow, /scripts\/run-launch-gate-eval\.mjs/);
