@@ -1,17 +1,20 @@
 import {
   analyzeImageQualityFromImageData,
   defaultCaptureProfileId,
-  summarizeAssetImageQuality
-} from "../lib/listing/image-quality/quality-gate.mjs";
-import { labelForCsmField } from "../lib/listing/csm/field-labels.mjs";
-import { planTargetedCrops } from "../lib/listing/image-quality/crop-planner.mjs";
-import {
+  defaultRecognitionProfileId,
+  fetchWithBoundedRetry,
   groupClientResultsByJobId,
   isClientStatusNotFound,
+  labelForCsmField,
   observeClientJobPoll,
+  planTargetedCrops,
   queuedStatusPollDelay,
-  shouldDeclareClientStatusOrphan
-} from "../lib/listing/v4/jobs/client-poll-policy.mjs";
+  shouldDeclareClientStatusOrphan,
+  startNonBlockingDerivedUpload,
+  summarizeAssetImageQuality,
+  summarizeDerivedUploadOutcomes,
+  withRecognitionRequestIntent
+} from "../lib/listing/client/listing-copilot-sdk.mjs";
 import {
   nextWriterOutstandingIndex,
   WRITER_EXPORT_MAX_ROWS,
@@ -19,11 +22,6 @@ import {
   writerExportWithinLimit,
   writerFeedbackPersisted
 } from "./writer-wheel-mode.mjs";
-import { fetchWithBoundedRetry } from "../lib/listing/client/bounded-fetch.mjs";
-import {
-  startNonBlockingDerivedUpload,
-  summarizeDerivedUploadOutcomes
-} from "../lib/listing/client/upload-phases.mjs";
 
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
@@ -74,22 +72,6 @@ const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 const ENABLE_SPECULATIVE_RECOGNITION = true;
 const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
 const QUEUE_ENQUEUE_TIMEOUT_MS = 25000;
-const defaultProviderOptions = Object.freeze({
-  single_model_fast: false,
-  enable_evidence_completion: true,
-  enable_catalog_assist: true,
-  enable_vector_assist: true,
-  enable_stored_visual_features: true,
-  enable_query_visual_embeddings: true,
-  enable_vector_retrieval: true,
-  vector_retrieval_mode: "assist",
-  vector_query_timeout_ms: 8000,
-  enable_advanced_retrieval: true,
-  enable_hybrid_retrieval: true,
-  enable_gpt_failure_fallback: false,
-  enable_gpt_provider_failure_fallback: false,
-  enable_gpt_critical_verifier: false
-});
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 const supportedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const storageFirstImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -970,7 +952,6 @@ function boundedProviderImagesForRequest(images = [], maxImages = REQUEST_IMAGE_
 }
 
 function buildAssetRequestBody(asset, options = {}) {
-  const provider = options.provider || state.selectedProvider;
   const allProviderImages = asset.providerImages || asset.images || [];
   const assetId = canonicalAssetId(asset);
   const tenantId = canonicalAssetTenantId(asset);
@@ -979,7 +960,7 @@ function buildAssetRequestBody(asset, options = {}) {
       || imageHasVerifiedStorageReference(image, assetId, tenantId);
   });
   const deferredImageCount = Math.max(0, allProviderImages.length - providerImages.length);
-  const body = {
+  const body = withRecognitionRequestIntent({
     assetId,
     asset_id: assetId,
     client_asset_ref: asset.clientAssetRef || asset.id,
@@ -995,17 +976,10 @@ function buildAssetRequestBody(asset, options = {}) {
     preingestion_bundle_id: asset.preingestionBundleId || "",
     preingestionBundleId: asset.preingestionBundleId || "",
     preingestion_bundle_status: asset.preingestionBundleStatus || "",
-    preingestion_summary: asset.preingestionSummary || null,
-    provider_options: {
-      ...defaultProviderOptions,
-      ...(options.provider_options || options.providerOptions || {})
-    }
-  };
-
-  if (provider) {
-    body.provider = provider;
-    body.explicitEmergency = Boolean(options.explicitEmergency || provider === "openai_legacy");
-  }
+    preingestion_summary: asset.preingestionSummary || null
+  }, {
+    profileId: options.recognitionProfile || defaultRecognitionProfileId
+  });
 
   return JSON.stringify(body);
 }
@@ -1725,17 +1699,10 @@ async function ensureSpeculativeRecognition(asset, runId) {
   asset.speculativePromise = (async () => {
     const startedAt = performance.now();
     try {
-      const { requestBody } = await ensureSafeAssetPayload(asset, {
-        provider_options: { ...defaultProviderOptions }
-      });
+      const { requestBody } = await ensureSafeAssetPayload(asset);
       if (runId !== state.backgroundPreparationRunId) return { stale: true, run_id: runId };
 
       const enqueueJobPayload = JSON.parse(requestBody);
-      enqueueJobPayload.force_l2_only = true;
-      enqueueJobPayload.create_l1_job = false;
-      enqueueJobPayload.create_l2_job = true;
-      enqueueJobPayload.disable_fast_scout_l1 = true;
-      enqueueJobPayload.v4_force_l2_direct = true;
       enqueueJobPayload.client_speculative = true;
 
       const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
@@ -1748,9 +1715,6 @@ async function ensureSpeculativeRecognition(asset, runId) {
           priority: 100,
           jobs: [{
             asset_id: canonicalAssetId(asset),
-            force_l2_only: true,
-            create_l1_job: false,
-            create_l2_job: true,
             payload: enqueueJobPayload
           }]
         })
@@ -4135,13 +4099,7 @@ async function processAssetViaQueue(asset, options = {}) {
 
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备生产队列请求", 0.3);
-  const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, {
-    ...options,
-    provider_options: {
-      ...defaultProviderOptions,
-      ...(options.provider_options || options.providerOptions || {})
-    }
-  });
+  const { requestBody, compressedAgain } = await ensureSafeAssetPayload(asset, options);
   const requestPrepareMs = Math.round(performance.now() - requestPrepareStartedAt);
   asset.clientTiming.client_request_prepare_ms = requestPrepareMs;
   setAssetProgress(
@@ -4151,11 +4109,6 @@ async function processAssetViaQueue(asset, options = {}) {
   );
 
   const payload = JSON.parse(requestBody);
-  payload.force_l2_only = true;
-  payload.create_l1_job = false;
-  payload.create_l2_job = true;
-  payload.disable_fast_scout_l1 = true;
-  payload.v4_force_l2_direct = true;
   payload.clientTiming = {
     ...(payload.clientTiming || {}),
     ...asset.clientTiming
@@ -4177,9 +4130,6 @@ async function processAssetViaQueue(asset, options = {}) {
         asset_id: canonicalAssetId(asset),
         manual_retry: options.manualRetry === true,
         retry_of_job_id: options.retryOfJobId || null,
-        force_l2_only: true,
-        create_l1_job: false,
-        create_l2_job: true,
         payload: {
           ...payload,
           manual_retry: options.manualRetry === true,
@@ -4977,9 +4927,39 @@ function startV4QueuedBatchPolling() {
   void pollV4QueuedJobsBatch(generation);
 }
 
+function writerViewModelForJob(job = {}) {
+  const view = job.writer_view_model;
+  return view && typeof view === "object" && !Array.isArray(view)
+    ? view
+    : null;
+}
+
+function sessionFromWriterViewModel(view = null) {
+  if (!view) return null;
+  const title = String(view.title?.value || "").trim();
+  const status = String(view.status || "PENDING").toUpperCase();
+  const ready = Boolean(title) && ["FINAL_READY", "WRITER_REVIEW", "READY"].includes(status);
+  return {
+    id: view.session?.id || null,
+    status: view.session?.status || status,
+    final_title: ready ? title : "",
+    l2_status: ready ? "READY" : status === "FAILED" ? "FAILED" : "PENDING",
+    l2_title: ready ? title : "",
+    provider_result_summary: {
+      assisted_draft_status: status === "WRITER_REVIEW"
+        ? "REVIEW_REQUIRED"
+        : ready ? "READY" : status
+    },
+    writer_review_required: status === "WRITER_REVIEW",
+    failure_reason: view.failure?.message || null
+  };
+}
+
 function queuedJobFailureReason(job = {}) {
+  const view = writerViewModelForJob(job);
   const error = job.error && typeof job.error === "object" ? job.error : {};
-  return job.session?.failure_reason
+  return view?.failure?.message
+    || job.session?.failure_reason
     || error.message
     || error.error
     || error.provider_error_type
@@ -4988,10 +4968,20 @@ function queuedJobFailureReason(job = {}) {
 }
 
 function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
+  const writerView = writerViewModelForJob(job);
+  const publicJobStatus = writerView?.job?.status || job.status;
+  const publicDisplayStatus = writerView?.status || job.display_status;
   syncAssetGenerationTimingFromServer(result.index, job);
-  result.v4_job_status = job.status || result.v4_job_status || "QUEUED";
+  result.v4_job_status = publicJobStatus || result.v4_job_status || "QUEUED";
   const pollObservation = syncQueuedPollObservation(result, result.v4_job_status);
-  result.v4_job_timing = job.timing || result.v4_job_timing || {};
+  const publicTiming = writerView?.timing
+    ? {
+      time_to_l2_ready_ms: writerView.timing.time_to_ready_ms ?? null,
+      worker_queue_wait_ms: writerView.timing.queue_wait_ms ?? null,
+      worker_processing_ms: writerView.timing.processing_ms ?? null
+    }
+    : null;
+  result.v4_job_timing = publicTiming || job.timing || result.v4_job_timing || {};
   result.timing = {
     ...(result.timing || {}),
     v4_queue: result.v4_job_timing,
@@ -5000,7 +4990,7 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
     time_to_l2_ready_ms: job.timing?.time_to_l2_ready_ms ?? result.timing?.time_to_l2_ready_ms
   };
 
-  const jobStatus = String(job.status || "").toUpperCase();
+  const jobStatus = String(publicJobStatus || "").toUpperCase();
   if (jobStatus === "QUEUED" || jobStatus === "RETRYING") {
     setAssetProgress(result.index, pollObservation.delayed ? "云端队列繁忙，任务仍在安全等待" : "云端队列排队中", 0.56, {
       knownPending: true,
@@ -5011,7 +5001,7 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
       knownPending: true,
       announce: false
     });
-  } else if (jobStatus === "L2_READY" || job.display_status === "FINAL_READY" || job.display_status === "WRITER_REVIEW") {
+  } else if (jobStatus === "L2_READY" || publicDisplayStatus === "FINAL_READY" || publicDisplayStatus === "WRITER_REVIEW") {
     setAssetProgress(result.index, "接收最终标题", 0.94, {
       knownPending: true,
       announce: false
@@ -5019,8 +5009,9 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
   }
 
   let upgraded = false;
-  if (job.session) {
-    upgraded = applyV4AssistedDraftUpdate(result, job.session);
+  const publicSession = sessionFromWriterViewModel(writerView) || job.session;
+  if (publicSession) {
+    upgraded = applyV4AssistedDraftUpdate(result, publicSession);
   }
 
   if (upgraded) {
@@ -5028,7 +5019,7 @@ function applyV4QueuedJobStatusUpdate(result = {}, job = {}) {
     return { terminal: true, upgraded: true };
   }
 
-  if (jobStatus === "FAILED" || jobStatus === "CANCELLED" || job.display_status === "FAILED") {
+  if (jobStatus === "FAILED" || jobStatus === "CANCELLED" || publicDisplayStatus === "FAILED") {
     result.confidence = "FAILED";
     result.reason = queuedJobFailureReason(job);
     result.writerTitlePending = false;

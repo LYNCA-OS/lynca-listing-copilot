@@ -1,5 +1,11 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
+import { bindRecognitionProfileToPayload } from "../../lib/listing/v4/application/recognition-profile-adapter.mjs";
+import {
+  RecognitionRequestContractError,
+  recognitionProfileIdFromPayload,
+  stripClientAlgorithmControls
+} from "../../lib/listing/v4/contracts/recognition-request.mjs";
 import {
   CanonicalImageReferenceError,
   readCanonicalListingImageReferences
@@ -308,24 +314,35 @@ export async function canonicalizeQueueJobs({
   };
   return Promise.all((Array.isArray(jobs) ? jobs : []).map(async (job) => {
     const identity = queueJobIdentity(job);
-    const canonical = await canonicalForAsset(identity.asset_id);
     const scoped = withoutClientImageIdentity(withoutClientSessionIdentity(job));
     const scopedPayload = withoutClientImageIdentity(
       scoped.payload && typeof scoped.payload === "object" && !Array.isArray(scoped.payload)
         ? scoped.payload
         : identity.rawPayload
     );
+    const requestedProfileId = recognitionProfileIdFromPayload(scopedPayload)
+      || recognitionProfileIdFromPayload(scoped);
+    const profiledJob = requestedProfileId
+      ? stripClientAlgorithmControls(scoped)
+      : scoped;
+    const applicationPayload = requestedProfileId
+      ? bindRecognitionProfileToPayload(scopedPayload, {
+        profileId: requestedProfileId,
+        env
+      })
+      : scopedPayload;
+    const canonical = await canonicalForAsset(identity.asset_id);
     const images = canonical.images.map((image) => ({ ...image }));
     const imageReferences = canonical.image_references.map((reference) => ({ ...reference }));
     const imagePaths = canonical.image_paths || {};
     return {
-      ...scoped,
+      ...profiledJob,
       asset_id: identity.asset_id,
       assetId: identity.asset_id,
       client_asset_ref: identity.client_asset_ref,
       clientAssetRef: identity.client_asset_ref,
       payload: {
-        ...scopedPayload,
+        ...applicationPayload,
         asset_id: identity.asset_id,
         assetId: identity.asset_id,
         client_asset_ref: identity.client_asset_ref,
@@ -594,20 +611,29 @@ export default async function handler(req, res) {
       fetchImpl: globalThis.fetch
     });
   } catch (error) {
+    const recognitionProfileError = error instanceof RecognitionRequestContractError;
     const canonicalError = error instanceof CanonicalImageReferenceError;
     const schedulingError = error instanceof QueueSchedulingIntentError;
     const invalidAsset = String(error?.message || "").includes("invalid_durable_listing_asset_id");
-    const status = schedulingError ? error.statusCode : canonicalError ? error.statusCode : invalidAsset ? 400 : 503;
+    const status = recognitionProfileError
+      ? error.statusCode
+      : schedulingError ? error.statusCode : canonicalError ? error.statusCode : invalidAsset ? 400 : 503;
     const code = schedulingError
       ? String(error.code || "manual_retry_verification_failed").toUpperCase()
+      : recognitionProfileError
+      ? String(error.code || "recognition_profile_invalid").toUpperCase()
       : canonicalError
       ? String(error.code || "canonical_image_reference_failed").toUpperCase()
       : invalidAsset ? "V4_QUEUE_DURABLE_ASSET_REQUIRED" : "V4_QUEUE_CANONICAL_IMAGE_REBUILD_FAILED";
     sendJson(res, status, withV4Version({
       ok: false,
-      retryable: schedulingError || canonicalError ? error.retryable === true : !invalidAsset,
+      retryable: recognitionProfileError
+        ? false
+        : schedulingError || canonicalError ? error.retryable === true : !invalidAsset,
       error_code: code,
-      message: schedulingError
+      message: recognitionProfileError
+        ? "The requested recognition profile is not supported."
+        : schedulingError
         ? "The referenced failed job could not be authorized for a priority retry."
         : invalidAsset
         ? "Create a durable listing asset before uploading and enqueueing images."
