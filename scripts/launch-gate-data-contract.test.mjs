@@ -833,6 +833,10 @@ try {
 
   const workflow = await readFile(".github/workflows/reviewed-title-accuracy-smoke.yml", "utf8");
   assert.match(workflow, /--limit 10/);
+  assert.match(workflow, /Initialize repeat-eligible history artifact/);
+  assert.match(workflow, /repeat_eligible_random_sampling/);
+  assert.doesNotMatch(workflow, /collect-ebay-evaluation-history/);
+  assert.doesNotMatch(workflow, /--exclude/);
   assert.match(workflow, /scripts\/run-launch-gate-eval\.mjs/);
   assert.match(workflow, /sample_run_id:/);
   assert.match(workflow, /gh run download "\$SAMPLE_RUN_ID"/);
