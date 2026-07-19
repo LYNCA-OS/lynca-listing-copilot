@@ -466,6 +466,50 @@ assert.ok(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.writer_requir
 assert.ok(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.writer_required_fields.includes("surface_color"));
 assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.publication_gate.auto_publish_allowed, false);
 
+const rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft = applyIdentityResolutionGate({
+  title: "",
+  confidence: "MEDIUM",
+  reason: "The provider read the current image, while retrieval supplied a nearby catalog year.",
+  provider: "openai_legacy",
+  raw_provider_fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    surface_color: "Red",
+    serial_number: "9/10",
+    grade_company: "PSA",
+    card_grade: "10"
+  },
+  resolved: normalizeResolvedFields({
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"]
+  }),
+  evidence: {
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"])
+  },
+  unresolved: []
+}, {
+  providerId: "openai_legacy",
+  retrievalCandidates: [{
+    candidate_id: "nearby_2024_catalog_card",
+    source_type: "OFFICIAL_CHECKLIST",
+    confidence: 0.95,
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Shohei Ohtani"]
+    }
+  }]
+});
+assert.match(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.final_title, /^2025 Topps Chrome Shohei Ohtani Red$/);
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.resolved_fields.year, "2025");
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.draft_gate.by_field.year.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.publication_gate.auto_publish_allowed, false);
+assert.doesNotMatch(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.final_title, /9\/10|PSA|\b10\b/);
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.draft_gate.by_field.serial_number?.draft_source_override, undefined);
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.draft_gate.by_field.card_grade?.draft_source_override, undefined);
+
 const fastVisionExactParallelWithoutCatalog = primaryFastVisionResult({
   resolved: {
     year: "2024",
@@ -805,6 +849,40 @@ assert.deepEqual(
 assert.match(observedMultiSubjectWriterDraft.final_title, /Hank Aaron/);
 assert.match(observedMultiSubjectWriterDraft.final_title, /Ken Griffey Jr/);
 assert.match(observedMultiSubjectWriterDraft.final_title, /Mike Trout/);
+
+const observedMultiSubjectWriterDraftFromEmptyResolution = applyIdentityResolutionGate({
+  title: "",
+  model_title_suggestion: "",
+  confidence: "HIGH",
+  reason: "The current image observation retained all lot subjects after the resolver dropped the field.",
+  provider: "openai_legacy",
+  raw_provider_fields: {
+    year: "2025",
+    product: "Bowman Chrome",
+    players: ["Sam Petersen", "Luis Cova", "David Davalillo"]
+  },
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    product: "Bowman Chrome"
+  }),
+  evidence: {
+    year: groundedEvidence("2025"),
+    product: groundedEvidence("Bowman Chrome")
+  },
+  unresolved: []
+}, {
+  maxLength: 140,
+  providerId: "openai_legacy"
+});
+assert.deepEqual(observedMultiSubjectWriterDraftFromEmptyResolution.resolved.players, [
+  "Sam Petersen",
+  "Luis Cova",
+  "David Davalillo"
+]);
+assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /Sam Petersen/);
+assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /Luis Cova/);
+assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /David Davalillo/);
+assert.equal(observedMultiSubjectWriterDraftFromEmptyResolution.publication_gate.auto_publish_allowed, false);
 
 const compatibleProductConflictDraft = applyIdentityResolutionGate({
   title: "",
