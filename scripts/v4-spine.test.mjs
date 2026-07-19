@@ -51,6 +51,7 @@ import {
   fastInitialPromptOverride,
   perCardTsv,
   providerDoneHandoffOverride,
+  resultFromBatchJob,
   ultraFastL2Override,
   summarize as summarizeSmoke,
   summarizePipelineNodeLedgers,
@@ -351,6 +352,10 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
           bridged_stage_count: 3,
           migration_complete: false,
           violations: []
+        },
+        strategy_replay_trace: {
+          schema_version: "provider-terminal-strategy-replay-trace-v1",
+          observed_terminal_path: "evidence_completion"
         }
       }
     }
@@ -375,11 +380,41 @@ assert.equal(hydratedDiagnostic.provider_key_slot, 1);
 assert.equal(hydratedDiagnostic.provider_key_assignment, "balanced_round_robin_v1");
 assert.equal(hydratedDiagnostic.v4_pipeline_contract.contract_status, "PASSED");
 assert.equal(hydratedDiagnostic.v4_pipeline_contract.bridged_stage_count, 3);
+assert.equal(hydratedDiagnostic.strategy_replay_trace.schema_version, "provider-terminal-strategy-replay-trace-v1");
+assert.equal(hydratedDiagnostic.strategy_replay_trace.observed_terminal_path, "evidence_completion");
 assert.equal(hydratedDiagnostic.ok, true);
 assert.equal(hydratedDiagnostic.writer_ready, true);
 assert.equal(hydratedDiagnostic.l2_ready, true);
 assert.equal(hydratedDiagnostic.final_title, "Hydrated title");
 assert.equal(hydratedDiagnostic.error, null);
+
+const batchStrategyTrace = {
+  schema_version: "provider-terminal-strategy-replay-trace-v1",
+  observed_terminal_path: "provider_terminal_return"
+};
+const batchTraceResult = resultFromBatchJob({
+  asset_id: "asset-batch-trace",
+  batch_id: "batch-trace",
+  tenant_id: "tenant-trace",
+  item: {},
+  job: { job_id: "job-batch-trace", recognition_session_id: "session-batch-trace" }
+}, {
+  polls: 1,
+  elapsed_ms: 100,
+  jobsById: new Map([["job-batch-trace", {
+    job_id: "job-batch-trace",
+    tenant_id: "tenant-trace",
+    status: "L2_READY",
+    session: {
+      status: "DRAFT_READY",
+      l2_status: "READY",
+      final_title: "Batch traced title",
+      provider_result_summary: { strategy_replay_trace: batchStrategyTrace }
+    }
+  }]])
+});
+assert.deepEqual(batchTraceResult.strategy_replay_trace, batchStrategyTrace);
+assert.deepEqual(batchTraceResult.l2_status.strategy_replay_trace, batchStrategyTrace);
 
 const speedSmokeSummary = summarizeSmoke([{
   ok: true,
