@@ -59,14 +59,18 @@ const assetId = "asset_11111111-2222-4123-8abc-abcdef123456";
 const [canonicalJob] = await canonicalizeQueueJobs({
   jobs: [{
     asset_id: assetId,
+    image_generation_id: assetId,
     provider: "untrusted-provider",
     force_l2_only: false,
     payload: {
       asset_id: assetId,
+      image_generation_id: assetId,
       client_asset_ref: "card-1",
       recognition_profile: defaultRecognitionProfileId,
       provider_options: { enable_catalog_assist: false },
-      force_l2_only: false
+      force_l2_only: false,
+      images: [{ object_path: "legacy/four/segment/path.jpg" }],
+      image_references: [{ object_path: "legacy/four/segment/path.jpg" }]
     }
   }],
   tenantId: "tenant_a",
@@ -75,8 +79,14 @@ const [canonicalJob] = await canonicalizeQueueJobs({
     image_generation_id: assetId,
     image_set_sha256: "a".repeat(64),
     expected_original_count: 2,
-    images: [],
-    image_references: [],
+    images: [{
+      image_role: "front_original",
+      object_path: `tenants/tenant_a/listing-assets/2026-07-19/${assetId}/front.jpg`
+    }],
+    image_references: [{
+      image_role: "front_original",
+      object_path: `tenants/tenant_a/listing-assets/2026-07-19/${assetId}/front.jpg`
+    }],
     image_paths: {}
   })
 });
@@ -88,6 +98,8 @@ assert.equal(canonicalJob.payload.create_l1_job, false);
 assert.equal(canonicalJob.payload.create_l2_job, true);
 assert.equal(canonicalJob.payload.provider_options.enable_catalog_assist, true);
 assert.equal(canonicalJob.payload.provider_options.enable_vector_assist, true);
+assert.equal(canonicalJob.payload.image_references.length, 1);
+assert.equal(canonicalJob.payload.image_references[0].object_path.includes("legacy/four/segment"), false);
 
 const frontend = readFileSync(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
 assert.match(frontend, /withRecognitionRequestIntent/);

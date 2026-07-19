@@ -13,6 +13,7 @@ const apiWithOptions = api + providerOptionsModule + providerPromptModule + fiel
 const v4JobStatusApi = await readFile("api/v4/listing-job-status.js", "utf8");
 const providerRegistry = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
 const csmFieldLabels = await readFile("lib/listing/csm/field-labels.mjs", "utf8");
+const recognitionProfileAdapter = await readFile("lib/listing/v4/application/recognition-profile-adapter.mjs", "utf8");
 
 assert.match(html, /id="providerControl"/, "provider segmented control should exist");
 assert.match(html, /id="providerStatusText"/, "provider status text should exist");
@@ -127,8 +128,9 @@ const queuedStatusUpdateSource = js.slice(js.indexOf("function applyV4QueuedJobS
 assert.match(queuedStatusUpdateSource, /announce:\s*false/, "per-card status updates should not rewrite the global status banner N times per poll");
 assert.match(queuedStatusUpdateSource, /knownPending:\s*true/, "queued polling should avoid an O\(N\) pending lookup for every card");
 assert.match(js, /processAssetViaQueue\(asset, \{ batchId: recognitionBatchId \}\)/, "batch generation should use one shared production batch identity");
-assert.match(js, /create_l1_job:\s*false/, "frontend production jobs should skip hidden L1 after it showed no stable L2 or writer benefit");
-assert.match(js, /create_l2_job:\s*true/, "frontend production jobs should always enqueue the writer-visible final L2");
+assert.doesNotMatch(js, /create_l1_job|create_l2_job/, "frontend must not own recognition stage selection");
+assert.match(recognitionProfileAdapter, /create_l1_job:\s*false/, "server profile should skip hidden L1 after it showed no stable L2 or writer benefit");
+assert.match(recognitionProfileAdapter, /create_l2_job:\s*true/, "server profile should always enqueue the writer-visible final L2");
 assert.match(js, /const bundle = await ensurePreingestionBundle\(asset\)/, "production should enqueue L2 as soon as the durable evidence bundle exists");
 assert.doesNotMatch(js, /const \[bundle\] = await Promise\.all/, "a cache-only scout miss must not delay the speculative L2 enqueue");
 assert.doesNotMatch(js, /ensureFastScoutPrewarm|settleFastScoutPrewarm/, "discarded L1 helpers must not remain wired into the writer path");
