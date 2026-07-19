@@ -184,6 +184,46 @@ assert.equal(
   "production assist-shadow behavior stays unchanged without the ablation force flag"
 );
 assert.equal(
+  __listingCopilotTitleTestHooks.effectiveAssistShadowOnly({
+    assistEnabled: true,
+    catalogContext: {
+      promptPacket: true,
+      catalog_assist_eligibility: {
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["approved-candidate"]
+      }
+    },
+    vectorContext: { promptPacket: false }
+  }),
+  false,
+  "prompt-safe candidates discovered after provider observation must enter evidence completion"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.effectiveAssistShadowOnly({
+    assistEnabled: true,
+    catalogContext: { promptPacket: false },
+    vectorContext: { promptPacket: false }
+  }),
+  true,
+  "assist remains fail-closed when no pre- or post-observation prompt-safe candidate exists"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.effectiveAssistShadowOnly({
+    assistEnabled: true,
+    catalogContext: {
+      promptPacket: true,
+      catalog_assist_eligibility: {
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: [],
+        field_support_count: 1
+      }
+    },
+    vectorContext: { promptPacket: false }
+  }),
+  true,
+  "field-support content alone must not bypass the open-set presentation guard"
+);
+assert.equal(
   __listingCopilotTitleTestHooks.retrievalApplicationAblationArm({
     evaluation_profile: "retrieval_application_ablation_v1",
     force_retrieval_application_resolution: true
