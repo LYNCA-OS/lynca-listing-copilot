@@ -19,18 +19,21 @@ const payload = {
 const legacyPrompt = fastInitialRecognitionPrompt(payload, 80);
 const factPrompt = compactV4L2RecognitionPrompt(payload, 80);
 
-assert.ok(factPrompt.length < legacyPrompt.length * 0.4, "fact prompt must remove at least 60% of the legacy prompt");
+assert.ok(factPrompt.length < legacyPrompt.length * 0.45, "fact prompt must remove at least 55% of the legacy prompt");
 assert.match(factPrompt, /literal card-fact reader/);
 assert.match(factPrompt, /Do not compose, imitate, or optimize a marketplace title/);
 assert.match(factPrompt, /title wording and word order are never instructions/);
 assert.match(factPrompt, /Main subject is mandatory whenever a name is readable/);
 assert.match(factPrompt, /Limited numbering is mandatory high-value evidence/);
+assert.match(factPrompt, /An uncertain optional finish, code or rarity must never erase readable core facts/);
+assert.match(factPrompt, /never default a reflective card to Silver/);
 assert.match(factPrompt, /Base color is required when visible/);
 assert.match(factPrompt, /Do not turn sparkle, shine, crystal/);
-assert.match(factPrompt, /Lot: multiple separate physical cards/);
+assert.match(factPrompt, /Lot: two or more separate physical card\/slab rectangles/);
 assert.doesNotMatch(factPrompt, /Linear SEM|SEM fields|Runtime title limit downstream/);
 assert.doesNotMatch(factPrompt, /L2 job: confirm, correct, and complete L1/);
 assert.doesNotMatch(factPrompt, /This is mandatory for GPT-5-mini/);
+assert.ok(factPrompt.length < 9000, "fact prompt must remain materially smaller than the legacy prompt");
 
 console.log(JSON.stringify({
   legacy_chars: legacyPrompt.length,
