@@ -1519,6 +1519,22 @@ assert.equal(
 assert.ok(standardLotGrammar.rendered_title.length <= 80);
 assert.doesNotMatch(standardLotGrammar.rendered_title, /LeBron James/);
 
+const lotSubjectsBeatOptionalDescriptor = renderResolvedTitle({
+  multi_card: true,
+  card_count: 3,
+  year: "2026",
+  manufacturer: "Topps",
+  brand: "Bowman Chrome",
+  players: ["Sam Petersen", "Luis Cova", "David Davalillo"],
+  insert: "Bowman Briefing"
+}, {
+  maxLength: 80
+});
+assert.equal(
+  lotSubjectsBeatOptionalDescriptor.rendered_title,
+  "Lot x3 2026 Topps Bowman Chrome Sam Petersen / Luis Cova / David Davalillo"
+);
+
 const baseColorSurvivesGenericAutoCompression = renderResolvedTitle({
   year: "2025",
   manufacturer: "Topps",
