@@ -46,7 +46,12 @@
           <p id="inviteLoginHint" hidden>检测到邀请链接，请先使用受邀账号登录完成权限绑定。</p>
         </div>
 
-        <form class="auth-form listing-login-form" id="tenantInviteForm" autocomplete="on">
+        <section class="invite-access-gate" id="inviteAccessGate" role="status" aria-live="polite">
+          <span class="auth-human-indicator" aria-hidden="true"></span>
+          <div><strong id="inviteAccessTitle">正在确认管理员权限</strong><p id="inviteAccessDetail">只有当前工作区 Owner 可以查看并使用成员邀请。</p></div>
+        </section>
+
+        <form class="auth-form listing-login-form" id="tenantInviteForm" autocomplete="on" hidden>
           <label for="invitee_email">受邀邮箱</label>
           <input class="auth-input" id="invitee_email" name="invitee_email" type="email" autocomplete="email" placeholder="writer@company.com" required>
           <div class="invite-form-grid">
