@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { loadEnvFiles } from "../lib/listing/readiness/workflow-context-schema.mjs";
+import { listingConcurrencyContract } from "../lib/listing/v4/orchestration/concurrency-contract.mjs";
 
 const defaultBaseUrl = "https://listing.lyncafei.team";
 
@@ -69,13 +70,14 @@ function cookieFrom(response) {
 export function cloudModelCapacityReady(health = {}) {
   const keyPoolSize = Number(health.openai_pool?.key_pool_size || 0);
   const perKeyStableConcurrency = Number(health.openai_pool?.per_key_stable_concurrency || 0);
+  const globalConcurrency = Number(health.openai_pool?.global_concurrency || 0);
   const workerClaimLimit = Number(health.production_queue?.worker_claim_limit || 0);
-  const configuredCapacity = keyPoolSize * perKeyStableConcurrency;
+  const frozenProviderConcurrency = listingConcurrencyContract.gpt_provider.concurrency;
   return health.default_model === "gpt-5-mini"
     && keyPoolSize >= 1
-    && perKeyStableConcurrency >= 1
-    && workerClaimLimit >= 1
-    && workerClaimLimit <= configuredCapacity;
+    && perKeyStableConcurrency === frozenProviderConcurrency
+    && globalConcurrency === frozenProviderConcurrency
+    && workerClaimLimit === frozenProviderConcurrency;
 }
 
 async function cloudChecks({ baseUrl, username, password }) {
