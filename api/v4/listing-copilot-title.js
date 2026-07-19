@@ -537,6 +537,7 @@ function providerRuntimeSummary(result = {}) {
     serial_numerator_verified: result.serial_numerator_verified ?? null,
     pipeline_node_ledger: result.pipeline_node_ledger || null,
     v4_pipeline_contract: result.v4_pipeline_contract || null,
+    strategy_replay_trace: result.strategy_replay_trace || null,
     title_length_policy: result.title_length_policy || null,
     title_render_source: result.title_render_source || null,
     model_title_suggestion: result.model_title_suggestion || null,
