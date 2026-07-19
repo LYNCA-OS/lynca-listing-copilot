@@ -24,6 +24,7 @@ import {
   normalizeFields,
   normalizePrintedCardCodeForFields
 } from "../lib/listing/pipeline/field-normalization.mjs";
+import { renderSportsTitle } from "../lib/listing/renderer/sports-title-renderer.mjs";
 import {
   buildV4TitleStageState,
   providerOptionsForV4BackgroundL2,
@@ -512,6 +513,23 @@ assert.equal(nonSportSubjectAlias.player, "Wolverine");
 
 const subjectArrayAlias = normalizeFields({ subjects: ["Wolverine", "Deadpool"] });
 assert.deepEqual(subjectArrayAlias.players, ["Wolverine", "Deadpool"]);
+
+const catalogCanonicalAliases = normalizeFields({
+  product: "Topps 3 Basketball",
+  set: "Rain Drops Signatures"
+});
+assert.equal(catalogCanonicalAliases.product, "Topps Three");
+assert.equal(catalogCanonicalAliases.set, "Raindrops Signatures");
+assert.match(
+  renderSportsTitle({
+    year: "2025-26",
+    product: "Topps 3 Basketball",
+    players: ["Victor Wembanyama"],
+    set: "Rain Drops Signatures",
+    auto: true
+  }).title,
+  /^2025-26 Topps Three Raindrops Signatures Victor Wembanyama Auto$/
+);
 
 const v4CodeSanitizedFields = buildV4ResolvedFields({
   resolved_fields: {
