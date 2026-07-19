@@ -700,7 +700,20 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertTrue(detection["multi_card"])
         self.assertGreaterEqual(detection["card_count_estimate"], 2)
         self.assertFalse(detection["card_count_confirmed"])
-        self.assertEqual(detection["algorithm"], "redundant_numpy_opencv_card_count_r2")
+        self.assertEqual(detection["algorithm"], "redundant_numpy_opencv_card_count_r3")
+
+    def test_multi_card_detection_confirms_three_large_independent_cards(self):
+        image = np.zeros((1200, 1200, 3), dtype=np.uint8)
+        image[80:530, 100:430] = 210
+        image[80:530, 760:1090] = 215
+        image[670:1120, 435:765] = 205
+
+        detection = detect_multi_card_from_array(image, image_id="lot", role="image_1_original")
+
+        self.assertTrue(detection["multi_card"])
+        self.assertEqual(detection["card_count_estimate"], 3)
+        self.assertTrue(detection["card_count_confirmed"])
+        self.assertEqual(detection["algorithm"], "redundant_numpy_opencv_card_count_r3")
 
     def test_analyze_payload_can_run_tesseract_adapter_on_loaded_images(self):
         front = LoadedImage(

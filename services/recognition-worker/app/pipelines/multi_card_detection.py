@@ -7,6 +7,9 @@ import numpy as np
 
 
 CARD_ASPECT_RATIO = 3.5 / 2.5
+EXACT_COUNT_MIN_CARDS = 3
+EXACT_COUNT_MIN_AREA_RATIO = 0.10
+EXACT_COUNT_MIN_CONFIDENCE = 0.70
 
 
 def _bbox_iou(left: list[int], right: list[int]) -> float:
@@ -93,6 +96,16 @@ def _independent_card_pair_count(candidates: list[dict[str, Any]]) -> int:
             continue
         independent.append(candidate)
     return len(independent)
+
+
+def _large_independent_card_count(candidates: list[dict[str, Any]]) -> int:
+    large_candidates = [
+        candidate
+        for candidate in candidates
+        if float(candidate.get("area_ratio") or 0) >= EXACT_COUNT_MIN_AREA_RATIO
+        and float(candidate.get("confidence") or 0) >= EXACT_COUNT_MIN_CONFIDENCE
+    ]
+    return _independent_card_pair_count(large_candidates)
 
 
 def _as_rgb_array(image: Any) -> np.ndarray:
@@ -222,18 +235,19 @@ def detect_multi_card_from_array(image: Any, image_id: str = "image", role: str 
     opencv_candidates, opencv_error = _opencv_contour_candidates(rgb)
     numpy_count = _independent_card_pair_count(numpy_candidates)
     opencv_count = _independent_card_pair_count(opencv_candidates)
-    card_count = max(numpy_count, opencv_count)
+    exact_card_count = _large_independent_card_count(opencv_candidates)
+    card_count_confirmed = exact_card_count >= EXACT_COUNT_MIN_CARDS
+    card_count = exact_card_count if card_count_confirmed else max(numpy_count, opencv_count)
     multi_card = card_count > 1
     candidates = opencv_candidates if opencv_count >= numpy_count else numpy_candidates
     confidence = max([candidate["confidence"] for candidate in candidates], default=0.0)
     if multi_card:
         confidence = min(1.0, max(confidence, 0.72 + min(0.18, (card_count - 2) * 0.06)))
 
-    # Rectangle detectors are deliberately allowed to prove plurality without
-    # pretending they know the exact lot size. Touching/overlapping cards can
-    # merge into one contour, so card_count_estimate is diagnostic until a
-    # separate text/model observation confirms the quantity.
-    card_count_confirmed = False
+    # A second contour on a single card is commonly a slab label or inner card
+    # frame. Exact count is admitted only when OpenCV finds at least three
+    # independent, card-sized rectangles. Smaller/touching detections remain a
+    # routing signal because they cannot safely prove the lot quantity.
 
     return {
         "image_id": image_id,
@@ -256,7 +270,7 @@ def detect_multi_card_from_array(image: Any, image_id: str = "image", role: str 
                 "reason": opencv_error,
             },
         },
-        "algorithm": "redundant_numpy_opencv_card_count_r2",
+        "algorithm": "redundant_numpy_opencv_card_count_r3",
     }
 
 
@@ -283,7 +297,7 @@ def detect_multi_card_from_loaded_images(image_loads: list[Any]) -> dict[str, An
         "image_id": strongest.get("image_id"),
         "role": strongest.get("role"),
         "images": per_image,
-        "algorithm": "redundant_numpy_opencv_card_count_r2",
+        "algorithm": "redundant_numpy_opencv_card_count_r3",
     }
 
 
@@ -295,6 +309,6 @@ def multi_card_detection_unavailable(reason: str = "image_bytes_not_loaded") -> 
         "card_count_confirmed": False,
         "confidence": 0.0,
         "images": [],
-        "algorithm": "redundant_numpy_opencv_card_count_r2",
+        "algorithm": "redundant_numpy_opencv_card_count_r3",
         "reason": reason,
     }

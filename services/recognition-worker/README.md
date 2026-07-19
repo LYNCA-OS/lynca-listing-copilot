@@ -11,7 +11,7 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 - The HTTP endpoint can download signed image bytes when `ENABLE_IMAGE_DOWNLOAD=true`; otherwise geometry and quality return explicit `UNAVAILABLE`.
 - OCR model execution still returns explicit `UNAVAILABLE` until a backend is enabled. A local Tesseract CLI adapter can be enabled with `ENABLE_TESSERACT_OCR=true`; OCR text fusion parses real OCR line items into field candidates, resolved fields, conflicts, and trace metadata.
 - When Tesseract is enabled, the worker also runs deterministic upscaled focused crops for requested serial, collector number, checklist code, and grade-label fields. These crops improve small printed-text evidence; they do not infer visual color or parallel.
-- Multi-card detection emits `multi_card_detection` as a routing risk signal. It is used to abstain or split lot workflows, not to auto-generate a single-card identity from a lot photo.
+- Multi-card detection emits `multi_card_detection` as a routing risk signal. Two-card/small-contour results remain unconfirmed; an exact count is admitted only when at least three independent, card-sized rectangles are visible in one image.
 - Visual embeddings use a real SigLIP2 backend when `ENABLE_VISUAL_EMBEDDINGS=true`.
   The worker emits versioned, L2-normalized 768-dimensional image vectors for
   Supabase pgvector candidate recall. If the model backend cannot load, it
