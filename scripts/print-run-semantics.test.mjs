@@ -64,6 +64,30 @@ const directAwaitingOcrVerification = renderListingPresentation({
 assert.match(directAwaitingOcrVerification.final_title, /#\/50/);
 assert.doesNotMatch(directAwaitingOcrVerification.final_title, /31\/50/);
 
+const providerResolvedWithoutPersistedEvidence = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Prizm",
+    players: ["Test Player"],
+    print_run_number: "31/50",
+    serial_number: "31/50"
+  },
+  evidence: {
+    year: createEvidenceField({
+      value: "2024",
+      status: "CONFIRMED",
+      confidence: 0.9,
+      sources: [createVisionSource({ sourceType: "CARD_FRONT", observedText: "2024", region: "year" })]
+    })
+  },
+  serialNumeratorVerified: false,
+  trustResolvedPrintRunWithoutEvidence: false,
+  maxLength: 80
+});
+assert.match(providerResolvedWithoutPersistedEvidence.final_title, /#\/50/);
+assert.doesNotMatch(providerResolvedWithoutPersistedEvidence.final_title, /31\/50/);
+
 const unverifiedOneOfOne = renderListingPresentation({
   resolved: {
     year: "2024",

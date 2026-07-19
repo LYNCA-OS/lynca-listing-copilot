@@ -471,11 +471,11 @@ const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   verificationFields: ["serial_number"]
 });
 assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
-assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani #/50");
 assert.equal(fastVisionSerialWithoutFocusedVerification.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(fastVisionSerialWithoutFocusedVerification.writer_required_fields, ["year", "serial_number"]);
 assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
-assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /\/50/);
+assert.match(fastVisionSerialWithoutFocusedVerification.final_title, /#\/50/);
 assert.equal(fastVisionSerialWithoutFocusedVerification.draft_gate.by_field.serial_number.display_policy, "INCLUDE_HIGHLIGHTED");
 assert.equal(fastVisionSerialWithoutFocusedVerification.draft_gate.by_field.serial_number.selected_value, "/50");
 
@@ -1104,11 +1104,11 @@ const serialFocusedFailure = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialFocusedFailure.identity_resolution_status, "ABSTAIN");
-assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialFocusedFailure.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialFocusedFailure.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialFocusedFailure.final_title, /196\/299/);
-assert.doesNotMatch(serialFocusedFailure.final_title, /\/299/);
+assert.match(serialFocusedFailure.final_title, /#\/299/);
 assert.equal(serialFocusedFailure.draft_gate.by_field.serial_number.selected_value, "/299");
 assert.ok(serialFocusedFailure.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_FOCUSED_VERIFICATION_FAILED"));
 assert.ok(serialFocusedFailure.resolution_trace.some((entry) => entry.step === "high_risk_verification_guard"));
@@ -1139,11 +1139,11 @@ const serialSingleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialSingleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialSingleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialSingleFrontSource.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialSingleFrontSource.final_title, /196\/299/);
-assert.doesNotMatch(serialSingleFrontSource.final_title, /\/299/);
+assert.match(serialSingleFrontSource.final_title, /#\/299/);
 assert.ok(serialSingleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const serialDoubleFrontSource = applyIdentityResolutionGate({
@@ -1180,11 +1180,11 @@ const serialDoubleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialDoubleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialDoubleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialDoubleFrontSource.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialDoubleFrontSource.final_title, /196\/299/);
-assert.doesNotMatch(serialDoubleFrontSource.final_title, /\/299/);
+assert.match(serialDoubleFrontSource.final_title, /#\/299/);
 assert.ok(serialDoubleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
