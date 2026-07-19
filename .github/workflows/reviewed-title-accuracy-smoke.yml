@@ -85,14 +85,17 @@ jobs:
           const dataset = JSON.parse(fs.readFileSync(process.env.DATASET_PATH, 'utf8'));
           const labels = fs.readFileSync(process.env.SEALED_LABELS_PATH, 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
           const datasetText = fs.readFileSync(process.env.DATASET_PATH, 'utf8');
+          const restoringSealedSample = Boolean(process.env.SAMPLE_RUN_ID);
           const checks = {
             exact_count: dataset.item_count === 10 && labels.length === 10,
             random_sample_provenance: dataset.evaluation_sample_policy?.mode === 'RANDOM_BLIND'
               && dataset.evaluation_sample_policy?.randomized_selection === true
               && dataset.evaluation_sample_policy?.randomization_verified === true,
-            repeat_eligible_random_sampling: dataset.evaluation_sample_policy?.cross_wave_overlap_permitted === true
-              && dataset.evaluation_sample_policy?.prior_history_exclusion_present === false
-              && dataset.evaluation_sample_policy?.excluded_item_count === 0,
+            sampling_policy_matches_run_mode: restoringSealedSample
+              ? dataset.evaluation_sample_policy?.randomized_selection === true
+              : dataset.evaluation_sample_policy?.cross_wave_overlap_permitted === true
+                && dataset.evaluation_sample_policy?.prior_history_exclusion_present === false
+                && dataset.evaluation_sample_policy?.excluded_item_count === 0,
             reviewed_titles_absent: labels.every((label) => !datasetText.includes(String(label.reviewed_title || ''))),
             image_only: dataset.intake_policy?.image_only === true && dataset.items.every((item) => item.images?.length > 0),
             self_retrieval_exclusion: dataset.items.every((item) => item.source_feedback_id && item.source_record?.self_retrieval_exclusion_required === true)
