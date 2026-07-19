@@ -4,6 +4,7 @@ import { readV4RecognitionJobs, v4JobStatuses } from "../../lib/listing/v4/jobs/
 import { buildEndToEndNodeLedger } from "../../lib/listing/v4/jobs/end-to-end-node-observability.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
+import { buildWriterViewModel } from "../../lib/listing/v4/presentation/writer-view-model.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { buildRetrievalParticipationSummary } from "../../lib/listing/retrieval/retrieval-participation.mjs";
@@ -485,6 +486,7 @@ function writerJobFailure(job = {}) {
 function writerJobStatus({ job, session, display, timing }) {
   const publicFailure = writerJobFailure(job);
   return {
+    writer_view_model: buildWriterViewModel({ job, session, display, timing, failure: publicFailure }),
     job_id: job.id,
     batch_id: job.batch_id,
     recognition_session_id: job.recognition_session_id,
@@ -768,7 +770,9 @@ export default async function handler(req, res) {
         worker_processing_ms: elapsedMs(job.started_at, job.completed_at),
         writer_visible_recognition_ms: elapsedMs(recognitionStartedAt, recognitionCompletedAt)
       };
+      const publicFailure = writerJobFailure(job);
       const operationalStatus = {
+        writer_view_model: buildWriterViewModel({ job, session, display, timing, failure: publicFailure }),
         job_id: job.id,
         batch_id: job.batch_id,
         tenant_id: job.tenant_id || null,

@@ -191,6 +191,9 @@ try {
   const writerJob = writerJobs.body.jobs[0];
   assert.equal(writerJob.job_id, "job_writer");
   assert.equal(writerJob.l2_title, sessionRow.final_title);
+  assert.equal(writerJob.writer_view_model.schema_version, "writer-job-view-v1");
+  assert.equal(writerJob.writer_view_model.title.value, sessionRow.final_title);
+  assert.deepEqual(writerJob.writer_view_model.actions, ["ACCEPT", "EDIT", "REJECT"]);
   for (const hiddenField of [
     "tenant_id",
     "asset_id",
@@ -266,6 +269,7 @@ try {
   const managerJobs = await callGet(jobStatusHandler, "/api/v4/listing-job-status?job_id=job_writer");
   assert.equal(managerJobs.statusCode, 200);
   const managerJob = managerJobs.body.jobs[0];
+  assert.equal(managerJob.writer_view_model.schema_version, "writer-job-view-v1");
   assert.equal(managerJob.tenant_id, "tenant_a");
   assert.equal(managerJob.retry_count, 1);
   assert.equal(managerJob.execution_control.provider_key_slot, 7);
