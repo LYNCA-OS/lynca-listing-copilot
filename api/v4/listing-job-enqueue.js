@@ -1,5 +1,11 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
+import { bindRecognitionProfileToPayload } from "../../lib/listing/v4/application/recognition-profile-adapter.mjs";
+import {
+  RecognitionRequestContractError,
+  recognitionProfileIdFromPayload,
+  stripClientAlgorithmControls
+} from "../../lib/listing/v4/contracts/recognition-request.mjs";
 import {
   AssetLifecycleContractError,
   assetRecoveryActions,
@@ -303,17 +309,28 @@ export async function canonicalizeQueueJobs({
         ? scoped.payload
         : identity.rawPayload
     );
+    const requestedProfileId = recognitionProfileIdFromPayload(scopedPayload)
+      || recognitionProfileIdFromPayload(scoped);
+    const profiledJob = requestedProfileId
+      ? stripClientAlgorithmControls(scoped)
+      : scoped;
+    const applicationPayload = requestedProfileId
+      ? bindRecognitionProfileToPayload(scopedPayload, {
+        profileId: requestedProfileId,
+        env
+      })
+      : scopedPayload;
     const images = canonical.images.map((image) => ({ ...image }));
     const imageReferences = canonical.image_references.map((reference) => ({ ...reference }));
     const imagePaths = canonical.image_paths || {};
     return {
-      ...scoped,
+      ...profiledJob,
       asset_id: identity.asset_id,
       assetId: identity.asset_id,
       client_asset_ref: identity.client_asset_ref,
       clientAssetRef: identity.client_asset_ref,
       payload: {
-        ...scopedPayload,
+        ...applicationPayload,
         asset_id: identity.asset_id,
         assetId: identity.asset_id,
         client_asset_ref: identity.client_asset_ref,
@@ -582,19 +599,24 @@ export default async function handler(req, res) {
       fetchImpl: globalThis.fetch
     });
   } catch (error) {
+    const recognitionProfileError = error instanceof RecognitionRequestContractError;
     const canonicalError = error instanceof CanonicalImageReferenceError;
     const lifecycleError = error instanceof AssetLifecycleContractError;
     const schedulingError = error instanceof QueueSchedulingIntentError;
     const invalidAsset = String(error?.message || "").includes("invalid_durable_listing_asset_id");
-    const status = schedulingError
+    const status = recognitionProfileError
       ? error.statusCode
-      : lifecycleError
+      : schedulingError
         ? error.statusCode
-        : canonicalError
+        : lifecycleError
           ? error.statusCode
-          : invalidAsset ? 400 : 503;
+          : canonicalError
+            ? error.statusCode
+            : invalidAsset ? 400 : 503;
     const code = schedulingError
       ? String(error.code || "manual_retry_verification_failed").toUpperCase()
+      : recognitionProfileError
+        ? String(error.code || "recognition_profile_invalid").toUpperCase()
       : lifecycleError
         ? String(error.code || "asset_lifecycle_contract_failed").toUpperCase()
         : canonicalError
@@ -616,11 +638,15 @@ export default async function handler(req, res) {
         : null;
     sendJson(res, status, withV4Version({
       ok: false,
-      retryable: schedulingError || lifecycleError || canonicalError ? error.retryable === true : !invalidAsset,
+      retryable: recognitionProfileError
+        ? false
+        : schedulingError || lifecycleError || canonicalError ? error.retryable === true : !invalidAsset,
       error_code: code,
       recovery_action: recoveryAction,
-      message: schedulingError
-        ? "The referenced failed job could not be authorized for a priority retry."
+      message: recognitionProfileError
+        ? "The requested recognition profile is not supported."
+        : schedulingError
+          ? "The referenced failed job could not be authorized for a priority retry."
         : lifecycleError
         ? "The requested image generation is stale or missing; rebind the current verified images before enqueueing."
         : invalidAsset

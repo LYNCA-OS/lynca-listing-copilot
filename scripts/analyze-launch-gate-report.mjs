@@ -154,7 +154,7 @@ function buildMarkdown(diagnostic) {
   ];
   if (!diagnostic.failed_cards.length) lines.push("None.");
   for (const card of diagnostic.failed_cards) {
-    lines.push(`- ${card.asset_id}: score=${card.policy_fair_token_recall ?? "n/a"}; title=${card.final_title || "<missing>"}; reference=${card.reference_title || "<missing>"}`);
+    lines.push(`- ${card.asset_id}: SEM=${card.sem_weighted_accuracy ?? "n/a"}; title=${card.final_title || "<missing>"}; reference=${card.reference_title || "<missing>"}`);
   }
   lines.push("", "## Integrity", "");
   lines.push(`- OCR partial cards: ${diagnostic.pipeline.ocr_partial_card_count}`);
@@ -198,13 +198,16 @@ export function analyzeLaunchGateReport(report, { baselineReport = null } = {}) 
   const correctCount = finiteNumber(formal?.correct_count) ?? 0;
   const failedCards = results
     .filter((item) => {
-      const score = finiteNumber(item?.final_scoring?.policy_fair_token_recall);
-      return item?.ok !== true || score === null || score < 0.72;
+      const score = finiteNumber(item?.sem_projection_scoring?.weighted_accuracy);
+      return item?.ok !== true || score === null || item?.sem_projection_scoring?.accepted !== true;
     })
     .map((item) => ({
       asset_id: cleanText(item?.asset_id),
       ok: item?.ok === true,
       error: cleanText(item?.error),
+      sem_weighted_accuracy: round(item?.sem_projection_scoring?.weighted_accuracy),
+      sem_accepted: item?.sem_projection_scoring?.accepted === true,
+      sem_components: item?.sem_projection_scoring?.components || [],
       policy_fair_token_recall: round(item?.final_scoring?.policy_fair_token_recall),
       fair_token_recall: round(item?.final_scoring?.fair_token_recall),
       final_title: cleanText(item?.final_title),
@@ -233,7 +236,8 @@ export function analyzeLaunchGateReport(report, { baselineReport = null } = {}) 
       correct_count: correctCount,
       measured_count: measuredCount,
       rate: measuredCount > 0 ? round(correctCount / measuredCount) : null,
-      policy_fair_token_recall_avg: round(formal?.policy_fair_token_recall_avg),
+      sem_weighted_accuracy_avg: round(formal?.sem_weighted_accuracy_avg),
+      legacy_token_recall_decision_authority: false,
       threshold_rate: threshold,
       gate_passed: report?.formal_accuracy_gate?.passed === true
     },
