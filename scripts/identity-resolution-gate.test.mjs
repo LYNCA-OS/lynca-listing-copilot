@@ -424,6 +424,48 @@ assert.equal(fastVisionSurfaceColorWithoutCatalog.publication_gate.field_publica
 assert.ok(!fastVisionSurfaceColorWithoutCatalog.writer_required_fields.includes("surface_color"));
 assert.ok(fastVisionSurfaceColorWithoutCatalog.writer_required_fields.includes("year"));
 
+const fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft = applyIdentityResolutionGate({
+  title: "",
+  confidence: "MEDIUM",
+  reason: "GPT primary fast vision read the current card.",
+  provider: "openai_legacy",
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    surface_color: "Red"
+  }),
+  evidence: {
+    year: createEvidenceField({ value: "2025", status: "CONFIRMED", confidence: 0.5, sources: [createVisionSource({ observedText: "2025" })] }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "CONFIRMED", confidence: 0.5, sources: [createVisionSource({ observedText: "Topps Chrome" })] }),
+    players: createEvidenceField({ value: ["Shohei Ohtani"], status: "CONFIRMED", confidence: 0.5, sources: [createVisionSource({ observedText: "Shohei Ohtani" })] }),
+    surface_color: createEvidenceField({ value: "Red", status: "CONFIRMED", confidence: 0.5, sources: [createVisionSource({ observedText: "Red" })] })
+  },
+  unresolved: []
+}, {
+  providerId: "openai_legacy",
+  retrievalCandidates: [{
+    candidate_id: "nearby_wrong_variant",
+    source_type: "OFFICIAL_CHECKLIST",
+    confidence: 0.9,
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Shohei Ohtani"],
+      surface_color: "Blue"
+    }
+  }]
+});
+assert.match(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.final_title, /^2025 Topps Chrome Shohei Ohtani Red$/);
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.resolved_fields.year, "2025");
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.resolved_fields.surface_color, "Red");
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.draft_gate.by_field.year.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.draft_gate.by_field.surface_color.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
+assert.ok(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.writer_required_fields.includes("year"));
+assert.ok(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.writer_required_fields.includes("surface_color"));
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.publication_gate.auto_publish_allowed, false);
+
 const fastVisionExactParallelWithoutCatalog = primaryFastVisionResult({
   resolved: {
     year: "2024",

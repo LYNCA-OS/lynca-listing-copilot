@@ -520,6 +520,9 @@ const catalogCanonicalAliases = normalizeFields({
 });
 assert.equal(catalogCanonicalAliases.product, "Topps Three");
 assert.equal(catalogCanonicalAliases.set, "Raindrops Signatures");
+assert.equal(normalizeFields({ set: "Topps Chrome (back printed text)" }).set, "Topps Chrome");
+assert.equal(normalizeFields({ set: "BCP-122 / BCP-38 / BCP-42 (visible on backs)" }).set, null);
+assert.equal(normalizeFields({ card_name: "(unsigned facsimile) signature printed on front" }).card_name, null);
 assert.match(
   renderSportsTitle({
     year: "2025-26",
