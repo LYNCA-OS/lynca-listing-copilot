@@ -17,6 +17,10 @@ import {
   summarizePipelineNodeLedgers
 } from "./v4-ebay-smoke.mjs";
 import { materializeLaunchGateImages } from "./materialize-launch-gate-images.mjs";
+import {
+  attachReviewedTitleSemProjection,
+  reviewedTitleSemAcceptanceThreshold
+} from "../lib/listing/evaluation/reviewed-title-sem-projection.mjs";
 
 export const launchGateExecutionContract = Object.freeze({
   model: "gpt-5-mini",
@@ -30,7 +34,7 @@ export const launchGateExecutionContract = Object.freeze({
 });
 
 export const launchGateAccuracyContract = Object.freeze({
-  per_item_policy_acceptance_threshold: 0.72,
+  per_item_sem_acceptance_threshold: reviewedTitleSemAcceptanceThreshold,
   minimum_internal_reviewed_gt_rate: 0.87,
   reviewed_10_minimum_correct_count: 9,
   formal_scope: "internal_reviewed_gt_only",
@@ -337,45 +341,56 @@ function technicalMetrics(rows = []) {
 }
 
 function reviewedMetrics(rows = []) {
-  const policyValues = numericValues(rows, (row) => row.final_scoring?.policy_fair_token_recall);
-  const correctCount = policyValues.filter((value) => (
-    value >= launchGateAccuracyContract.per_item_policy_acceptance_threshold
-  )).length;
+  const semValues = numericValues(rows, (row) => row.sem_projection_scoring?.weighted_accuracy);
+  const legacyTokenValues = numericValues(rows, (row) => row.final_scoring?.policy_fair_token_recall);
+  const correctCount = rows.filter((row) => row.sem_projection_scoring?.accepted === true).length;
   return {
     evidence_class: "INTERNAL_REVIEWED_GT",
     ...technicalMetrics(rows),
     formal_accuracy: {
-      eligible: rows.length > 0 && rows.every((row) => row.reference_title_is_reviewed_ground_truth === true),
-      metric: "reviewed_title_policy_acceptance_at_0.72",
+      eligible: rows.length > 0
+        && rows.every((row) => row.reference_title_is_reviewed_ground_truth === true)
+        && semValues.length === rows.length,
+      metric: "linear_sem_weighted_projection_at_0.87",
       correct_count: correctCount,
-      measured_count: policyValues.length,
-      rate: rows.length > 0 && policyValues.length === rows.length
+      measured_count: semValues.length,
+      rate: rows.length > 0 && semValues.length === rows.length
         ? Number((correctCount / rows.length).toFixed(6))
         : null,
-      policy_fair_token_recall_avg: average(policyValues),
-      boundary: "reviewed title-level ground truth only; not field-level card exact"
+      sem_weighted_accuracy_avg: average(semValues),
+      per_item_acceptance_threshold: launchGateAccuracyContract.per_item_sem_acceptance_threshold,
+      authority: "LINEAR_COS_10_TO_COS_23_WITH_SUPABASE_SEM_REGISTRY_VERIFICATION",
+      production_release_authority: false,
+      boundary: "reviewed-title-derived SEM projection for strategy testing; formal Golden SEM field review remains required for production release",
+      legacy_token_recall_diagnostics: {
+        decision_authority: false,
+        policy_fair_token_recall_avg: average(legacyTokenValues)
+      }
     }
   };
 }
 
 function weakReferenceMetrics(rows = []) {
-  const policyValues = numericValues(rows, (row) => row.final_scoring?.policy_fair_token_recall);
-  const agreementCount = policyValues.filter((value) => (
-    value >= launchGateAccuracyContract.per_item_policy_acceptance_threshold
-  )).length;
+  const semValues = numericValues(rows, (row) => row.sem_projection_scoring?.weighted_accuracy);
+  const legacyTokenValues = numericValues(rows, (row) => row.final_scoring?.policy_fair_token_recall);
+  const agreementCount = rows.filter((row) => row.sem_projection_scoring?.accepted === true).length;
   return {
     evidence_class: "EBAY_WEAK_LABEL",
     ...technicalMetrics(rows),
     formal_accuracy_eligible: false,
     weak_label_agreement: {
-      metric: "seller_title_policy_agreement_at_0.72",
+      metric: "seller_title_sem_projection_agreement_at_0.87",
       agreement_count: agreementCount,
-      measured_count: policyValues.length,
-      agreement_rate: rows.length > 0 && policyValues.length === rows.length
+      measured_count: semValues.length,
+      agreement_rate: rows.length > 0 && semValues.length === rows.length
         ? Number((agreementCount / rows.length).toFixed(6))
         : null,
-      policy_fair_token_recall_avg: average(policyValues),
-      boundary: "marketplace seller text is a weak label and cannot support formal accuracy"
+      sem_weighted_accuracy_avg: average(semValues),
+      legacy_token_recall_diagnostics: {
+        decision_authority: false,
+        policy_fair_token_recall_avg: average(legacyTokenValues)
+      },
+      boundary: "marketplace seller text is a weak label; SEM projection remains diagnostics only"
     }
   };
 }
@@ -589,7 +604,8 @@ export function buildLaunchGateReport({
       formal_scope: launchGateAccuracyContract.formal_scope,
       minimum_internal_reviewed_gt_rate: launchGateAccuracyContract.minimum_internal_reviewed_gt_rate,
       weak_reference_scope: "ebay_weak_label_diagnostics_only",
-      ebay_formal_accuracy_eligible: false
+      ebay_formal_accuracy_eligible: false,
+      legacy_token_recall_decision_authority: false
     },
     formal_accuracy_gate: formalAccuracyGate,
     technical_summary: {
@@ -774,11 +790,11 @@ export async function runLaunchGateEvaluation({
     }
     const sealedReferences = await readSealedReferenceMap(sealedLabelsPath);
     for (const entry of runReports) {
-      entry.report.results = attachPostRecognitionScoring(
+      entry.report.results = attachReviewedTitleSemProjection(attachPostRecognitionScoring(
         entry.report.results || [],
         entry.scoring_items,
         sealedReferences
-      );
+      ));
     }
     datasetContract.sealed_reference_handling = {
       loaded_after_all_predictions_frozen: true,

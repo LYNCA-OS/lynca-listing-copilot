@@ -27,10 +27,10 @@ const report = {
   strata: {
     internal_reviewed_gt: {
       formal_accuracy: {
-        metric: "reviewed_title_policy_acceptance_at_0.72",
+        metric: "linear_sem_weighted_projection_at_0.87",
         correct_count: 1,
         measured_count: 2,
-        policy_fair_token_recall_avg: 0.75
+        sem_weighted_accuracy_avg: 0.75
       }
     }
   },
@@ -40,6 +40,7 @@ const report = {
       ok: true,
       final_title: "Pass",
       reference_title: "Pass",
+      sem_projection_scoring: { weighted_accuracy: 1, accepted: true, components: [] },
       final_scoring: { policy_fair_token_recall: 1, fair_token_recall: 1 },
       input_tokens: 10,
       output_tokens: 5,
@@ -67,6 +68,7 @@ const report = {
       ok: true,
       final_title: "Wrong",
       reference_title: "Reviewed",
+      sem_projection_scoring: { weighted_accuracy: 0.5, accepted: false, components: [] },
       final_scoring: { policy_fair_token_recall: 0.5, fair_token_recall: 0.5 },
       input_tokens: null,
       output_tokens: null,

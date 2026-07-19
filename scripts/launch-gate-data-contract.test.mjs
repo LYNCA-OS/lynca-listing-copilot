@@ -273,6 +273,11 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
     vector_self_exclusion_source_ids_sha256: "offline-source-feedback-hash",
     reference_title_type: reviewed ? "REVIEWED_INTERNAL_TITLE" : "MARKETPLACE_WEAK_LABEL",
     reference_title_is_reviewed_ground_truth: reviewed,
+    sem_projection_scoring: {
+      weighted_accuracy: score,
+      accepted: score >= 0.87,
+      components: []
+    },
     final_scoring: { policy_fair_token_recall: score }
   };
 }
@@ -418,7 +423,7 @@ try {
     ultra_fast_l2: false
   });
   assert.deepEqual(launchGateAccuracyContract, {
-    per_item_policy_acceptance_threshold: 0.72,
+    per_item_sem_acceptance_threshold: 0.87,
     minimum_internal_reviewed_gt_rate: 0.87,
     reviewed_10_minimum_correct_count: 9,
     formal_scope: "internal_reviewed_gt_only",
@@ -579,6 +584,52 @@ try {
   assert.equal(spoofedEbayReport.strata.ebay_weak_label.weak_label_agreement.measured_count, 1);
   assert.equal(spoofedEbayReport.strata.unclassified.attempted_count, 1);
 
+  const semPassTokenFailResults = Array.from({ length: 10 }, (_, index) => ({
+    ...scoredResult({ assetId: `sem-pass-token-fail-${index + 1}`, reviewed: true, score: 1 }),
+    final_scoring: { policy_fair_token_recall: 0 }
+  }));
+  const semPassTokenFailReport = buildLaunchGateReport({
+    profile: "reviewed-10",
+    dataset: reviewedDataset,
+    datasetContract: reviewedContract,
+    startSnapshot: snapshot,
+    endSnapshot: snapshot,
+    runReports: [{
+      cohort: "INTERNAL_REVIEWED_GT",
+      report: rawRunReport(semPassTokenFailResults)
+    }]
+  });
+  assert.equal(semPassTokenFailReport.formal_accuracy_gate.passed, true);
+  assert.equal(
+    semPassTokenFailReport.strata.internal_reviewed_gt.formal_accuracy.legacy_token_recall_diagnostics.policy_fair_token_recall_avg,
+    0
+  );
+
+  const semFailTokenPassResults = semPassTokenFailResults.map((row, index) => index < 2 ? {
+    ...row,
+    sem_projection_scoring: { weighted_accuracy: 0.86, accepted: false, components: [] },
+    final_scoring: { policy_fair_token_recall: 1 }
+  } : {
+    ...row,
+    final_scoring: { policy_fair_token_recall: 1 }
+  });
+  const semFailTokenPassReport = buildLaunchGateReport({
+    profile: "reviewed-10",
+    dataset: reviewedDataset,
+    datasetContract: reviewedContract,
+    startSnapshot: snapshot,
+    endSnapshot: snapshot,
+    runReports: [{
+      cohort: "INTERNAL_REVIEWED_GT",
+      report: rawRunReport(semFailTokenPassResults)
+    }]
+  });
+  assert.equal(semFailTokenPassReport.formal_accuracy_gate.passed, false);
+  assert.equal(
+    semFailTokenPassReport.strata.internal_reviewed_gt.formal_accuracy.legacy_token_recall_diagnostics.policy_fair_token_recall_avg,
+    1
+  );
+
   const incompleteReviewedResults = Array.from({ length: 10 }, (_, index) => scoredResult({
     assetId: `reviewed-${index + 1}`,
     reviewed: true,
@@ -586,6 +637,7 @@ try {
   }));
   incompleteReviewedResults[0] = {
     ...incompleteReviewedResults[0],
+    sem_projection_scoring: { weighted_accuracy: null, accepted: false, components: [] },
     final_scoring: { policy_fair_token_recall: null }
   };
   const incompleteReviewedReport = buildLaunchGateReport({
