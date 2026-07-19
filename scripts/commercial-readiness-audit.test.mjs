@@ -186,6 +186,8 @@ assert.equal(byId.provider_default_policy.details.mixed_model_cascade, "removed"
 assert.equal(byId.provider_default_policy.details.gpt_implicit_default, "production_primary");
 assert.equal(byId.provider_default_policy.details.standalone_gpt_default, "server_default");
 assert.equal(byId.provider_default_policy.details.gpt_visible_button, true);
+assert.equal(byId.provider_default_policy.details.recognition_profile_server_owned, true);
+assert.equal(byId.provider_default_policy.details.client_algorithm_controls_absent, true);
 assert.equal(byId.publishing_approval_gate.status, "passed");
 assert.equal(byId.publishing_destination.status, "blocked");
 assert.equal(byId.external_retrieval_live_smoke.status, "blocked");

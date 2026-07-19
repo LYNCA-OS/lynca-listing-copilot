@@ -137,6 +137,7 @@ async function auditProviderPolicy() {
   const registry = await readTextFile("lib/listing/providers/provider-registry.mjs");
   const statusApi = await readTextFile("api/listing-provider-status.js");
   const appJs = await readTextFile("app/listing-copilot.js");
+  const profileAdapter = await readTextFile("lib/listing/v4/application/recognition-profile-adapter.mjs");
   const failures = [];
 
   if (/allowLegacyDefault/.test(registry.text)) {
@@ -160,8 +161,14 @@ async function auditProviderPolicy() {
   if (/state\.selectedProvider\s*=\s*["']openai_legacy["']/.test(appJs.text)) {
     failures.push("frontend hard-codes GPT instead of using the server default provider");
   }
-  if (!/provider === "openai_legacy"/.test(appJs.text) || !/data-priority-retry/.test(appJs.text)) {
-    failures.push("frontend does not preserve durable GPT retry controls");
+  if (!/defaultProviderOptionsFromEnv/.test(profileAdapter.text) || !/writerAssistedProviderOverrides/.test(profileAdapter.text)) {
+    failures.push("server recognition profile does not own production provider defaults");
+  }
+  if (!/withRecognitionRequestIntent/.test(appJs.text) || !/data-priority-retry/.test(appJs.text)) {
+    failures.push("frontend does not preserve stable recognition intent and durable retry controls");
+  }
+  if (/provider_options\s*:|provider === "openai_legacy"/.test(appJs.text)) {
+    failures.push("frontend still owns provider selection or algorithm options");
   }
 
   const details = {
@@ -172,9 +179,11 @@ async function auditProviderPolicy() {
     mixed_model_cascade: /cascade_fast|secondary_provider_id/i.test(registry.text) ? "present" : "removed",
     gpt_implicit_default: failures.length === 0 ? "production_primary" : "unknown",
     standalone_gpt_default: failures.length === 0 ? "server_default" : "unknown",
-    gpt_visible_button: /provider === "openai_legacy"/.test(appJs.text),
+    gpt_visible_button: /providerControl/.test(appJs.text),
     gpt_emergency_retry_action: /data-priority-retry/.test(appJs.text),
-    checked_files: [registry.path, statusApi.path, appJs.path],
+    recognition_profile_server_owned: /defaultProviderOptionsFromEnv/.test(profileAdapter.text),
+    client_algorithm_controls_absent: !/provider_options\s*:|provider === "openai_legacy"/.test(appJs.text),
+    checked_files: [registry.path, statusApi.path, appJs.path, profileAdapter.path],
     failures
   };
 
