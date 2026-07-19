@@ -57,7 +57,7 @@ try {
 
   const randomBlind = await buildReviewedTitleBlindEval({
     sourcePath,
-    excludePaths: [exclusionPath],
+    excludePaths: [],
     outPath: join(root, "random.json"),
     labelsOutPath: join(root, "random-labels.jsonl"),
     limit: 1,
@@ -67,6 +67,9 @@ try {
   assert.equal(randomBlind.dataset.evaluation_sample_policy.mode, "RANDOM_BLIND");
   assert.equal(randomBlind.dataset.evaluation_sample_policy.randomized_selection, true);
   assert.equal(randomBlind.dataset.evaluation_sample_policy.randomization_verified, true);
+  assert.equal(randomBlind.dataset.evaluation_sample_policy.cross_wave_overlap_permitted, true);
+  assert.equal(randomBlind.dataset.evaluation_sample_policy.prior_history_exclusion_present, false);
+  assert.equal(randomBlind.dataset.evaluation_sample_policy.excluded_item_count, 0);
   assert.match(randomBlind.dataset.evaluation_sample_policy.sample_seed_sha256, /^[a-f0-9]{64}$/);
 
   const datasetText = await readFile(outPath, "utf8");

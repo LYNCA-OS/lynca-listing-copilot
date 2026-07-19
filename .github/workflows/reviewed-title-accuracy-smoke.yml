@@ -40,23 +40,14 @@ jobs:
           package-manager-cache: false
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Collect prior reviewed-title evaluation history
+      - name: Initialize repeat-eligible history artifact
         if: ${{ inputs.sample_run_id == '' }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          node scripts/collect-ebay-evaluation-history.mjs \
-            --github \
-            --artifact-names reviewed-title-accuracy-report \
-            --id-fields source_feedback_id \
-            --output-field source_feedback_id \
-            --out "$HISTORY_PATH"
+        run: touch "$HISTORY_PATH"
       - name: Build random sealed reviewed-title sample
         if: ${{ inputs.sample_run_id == '' }}
         run: |
           node scripts/build-reviewed-title-blind-eval.mjs \
             --source data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json \
-            --exclude "data/recognition/review/supabase-feedback-regression-30-field-review-packet.json,$HISTORY_PATH" \
             --out "$DATASET_PATH" \
             --sealed-labels-out "$SEALED_LABELS_PATH" \
             --limit 10 \
@@ -99,6 +90,9 @@ jobs:
             random_sample_provenance: dataset.evaluation_sample_policy?.mode === 'RANDOM_BLIND'
               && dataset.evaluation_sample_policy?.randomized_selection === true
               && dataset.evaluation_sample_policy?.randomization_verified === true,
+            repeat_eligible_random_sampling: dataset.evaluation_sample_policy?.cross_wave_overlap_permitted === true
+              && dataset.evaluation_sample_policy?.prior_history_exclusion_present === false
+              && dataset.evaluation_sample_policy?.excluded_item_count === 0,
             reviewed_titles_absent: labels.every((label) => !datasetText.includes(String(label.reviewed_title || ''))),
             image_only: dataset.intake_policy?.image_only === true && dataset.items.every((item) => item.images?.length > 0),
             self_retrieval_exclusion: dataset.items.every((item) => item.source_feedback_id && item.source_record?.self_retrieval_exclusion_required === true)
