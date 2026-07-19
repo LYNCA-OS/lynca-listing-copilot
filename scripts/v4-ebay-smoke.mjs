@@ -904,6 +904,7 @@ function sessionL2Summary(statusPayload = {}) {
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
     v4_l2_timing: summary.v4_l2_timing || null,
     v4_pipeline_contract: summary.v4_pipeline_contract || null,
+    strategy_replay_trace: summary.strategy_replay_trace || null,
     input_tokens: providerDiagnostics.input_tokens,
     output_tokens: providerDiagnostics.output_tokens,
     total_tokens: providerDiagnostics.total_tokens,

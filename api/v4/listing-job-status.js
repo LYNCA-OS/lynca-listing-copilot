@@ -360,7 +360,8 @@ function operationalSessionStatus(session = null, job = null) {
       recognition_clock_started_at: summary.recognition_clock_started_at || null,
       recognition_clock_source: summary.recognition_clock_source || null,
       v4_l2_timing: summary.v4_l2_timing || null,
-      v4_pipeline_contract: summary.v4_pipeline_contract || null
+      v4_pipeline_contract: summary.v4_pipeline_contract || null,
+      strategy_replay_trace: summary.strategy_replay_trace || null
     },
     candidate_control_plane_trace: {
       schema_version: trace.schema_version || null,

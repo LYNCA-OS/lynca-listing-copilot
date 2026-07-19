@@ -12,12 +12,14 @@ const assetId = "asset_11111111-2222-4123-8abc-abcdef123456";
 assert.equal(Object.isFrozen(v4ProductionStrategy), true);
 assert.equal(Object.isFrozen(v4ProductionStrategy.asset_lifecycle), true);
 assert.equal(Object.isFrozen(v4ProductionStrategy.candidate_control), true);
+assert.equal(Object.isFrozen(v4ProductionStrategy.provider_terminal), true);
 assert.equal(Object.isFrozen(v4ProductionStrategy.shadow_recognition_policy), true);
 assert.equal(Object.isFrozen(v4ProductionStrategy.profile.job_retry), true);
 assert.equal(v4ProductionStrategy.profile, v4ProductionStrategyProfile);
 assert.equal(v4ProductionStrategy.profile.job_retry.max_attempts, 4);
 assert.equal(v4ProductionStrategy.profile.shadow_recognition_policy_enabled, true);
 assert.equal(v4ProductionStrategy.profile.shadow_recognition_policy_can_execute, false);
+assert.equal(v4ProductionStrategy.profile.provider_terminal_path_policy_id, "provider-terminal-path-policy");
 assert.equal(v4ProductionStrategy.shadow_recognition_policy.constraints.shadow_only, true);
 assert.equal(
   v4ProductionStrategy.asset_lifecycle.assert_image_generation({
