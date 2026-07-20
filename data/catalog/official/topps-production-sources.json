@@ -48,6 +48,67 @@
           "product": "Topps Series 2 Baseball"
         }
       ]
+    },
+    {
+      "source_name": "2025 Topps Tribute Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2505-2025ToppsTributeBBChecklist.pdf?v=1742822258",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball",
+      "minimum_card_count": 300,
+      "required_records": [
+        {
+          "checklist_code": "MRB-AP",
+          "subject": "Albert Pujols",
+          "product": "Topps Tribute Baseball",
+          "set_or_insert": "MILESTONE RELICS"
+        }
+      ]
+    },
+    {
+      "source_name": "2026 Topps Chrome Disney Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/26DNYC_Checklist.pdf?v=1779205893",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment",
+      "minimum_card_count": 150,
+      "required_records": [
+        {
+          "card_number": "168",
+          "subject": "Elsa",
+          "product": "Topps Chrome Disney"
+        }
+      ]
+    },
+    {
+      "source_name": "2025-26 Topps Finest Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2025-2026_Topps_Finest_Basketball_Checklist.pdf?v=1771360733",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball",
+      "minimum_card_count": 200,
+      "required_records": [
+        {
+          "card_number": "28",
+          "subject": "Josh Hart",
+          "product": "Topps Finest Basketball"
+        }
+      ]
+    },
+    {
+      "source_name": "2025 Topps Star Wars Smugglers Outpost Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2025_Star_Wars_Smugglers_Outpost_Checklist.pdf?v=1770909931",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment",
+      "minimum_card_count": 200,
+      "required_records": [
+        {
+          "checklist_code": "CB-PK",
+          "subject": "Paul Kasey",
+          "product": "Topps Star Wars Smugglers Outpost"
+        }
+      ]
     }
   ]
 }
