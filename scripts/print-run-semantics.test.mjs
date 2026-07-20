@@ -146,12 +146,17 @@ const ocrSerialPatch = (value, confidence) => ({
     source_region: "serial_region"
   }
 });
+// Below-threshold OCR readings do not VERIFY the numerator, but they are not
+// a rejection either: the signal stays null (unknown) and the renderer's
+// provenance gate (CONFIRMED + direct current-image source) decides. `false`
+// is reserved for conflicting OCR observations — treating "no confident read"
+// as a rejection stripped correct provider-read serials at production scale.
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.93)]
-}, { job_count: 1 }), false, "one direct crop below the hard confidence threshold cannot lock a numerator");
+}, { job_count: 1 }), null, "one direct crop below the hard confidence threshold cannot lock a numerator");
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.72)]
-}, { job_count: 1 }), false);
+}, { job_count: 1 }), null);
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [{
     ...ocrSerialPatch("31/50", 0.72),

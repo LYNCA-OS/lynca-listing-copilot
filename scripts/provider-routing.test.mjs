@@ -514,10 +514,14 @@ const mergedCatalogConflict = __listingCopilotTitleTestHooks.rebindCatalogCandid
   }
 );
 assert.equal(mergedCatalogConflict.catalog_assist_eligibility.prompt_candidate_count, 0, "merged candidates must still fail closed against current evidence");
+// Deferred OCR is absence of evidence, not a veto: the signal stays null and
+// the renderer's provenance gate still blocks any numerator that lacks
+// CONFIRMED direct current-image sourcing. Only a conflicting OCR observation
+// returns false.
 assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({}, {
   status: "DEFERRED_AFTER_PROVIDER",
   job_count: null
-}), false, "deferred OCR must not make an unverified serial numerator publishable");
+}), null, "deferred OCR leaves numerator verification unknown; the provenance gate still blocks unsourced numerators");
 assert.equal(__listingCopilotTitleTestHooks.serialNumeratorVerificationFromPreingestion({
   images: [{ id: "front" }],
   preingestion_evidence_patches: [{

@@ -51,3 +51,35 @@ assert.equal(tcgCardNumber.total_weight, 4);
 assert.equal(semScoringWeights.numerical_rarity, 4);
 
 console.log("SEM scoring policy tests passed");
+
+// Contract: extraComponents participate in weighting, and any incorrect
+// required_for_acceptance component must surface in
+// required_acceptance_failures (hard acceptance, independent of score).
+{
+  const scored = scoreRequiredSemProjection({
+    expectedSem: { year: "2024", player: "Test Player" },
+    actualSem: { year: "2024", player: "Test Player" },
+    fieldStatuses: { year: "CONFIRMED", player: "CONFIRMED" },
+    extraComponents: [{
+      field: "lot_quantity",
+      component: "lot_workflow_quantity",
+      weight: 2,
+      required_for_acceptance: true,
+      correct: false
+    }]
+  });
+  assert.ok(Array.isArray(scored.required_acceptance_failures), "required_acceptance_failures must always be an array");
+  assert.equal(scored.required_acceptance_failures.length, 1);
+  assert.equal(scored.required_acceptance_failures[0].field, "lot_quantity");
+  assert.ok(scored.components.some((c) => c.component === "lot_workflow_quantity"));
+  assert.ok(scored.weighted_accuracy < 1, "incorrect extra component must lower the weighted score");
+}
+{
+  const scored = scoreRequiredSemProjection({
+    expectedSem: { year: "2024" },
+    actualSem: { year: "2024" },
+    fieldStatuses: { year: "CONFIRMED" }
+  });
+  assert.deepEqual(scored.required_acceptance_failures, [], "no extras means no acceptance failures");
+}
+console.log("sem scoring extra-component contract tests passed");

@@ -84,6 +84,23 @@ function replayResolvedFields(result = {}) {
     ...resolved,
     ...renderedFields
   };
+  // rendered_fields snapshot the POST-render state: when the old renderer
+  // stripped an unverified numerator, these keys were persisted already
+  // nulled. Replaying a numerator-policy change requires the resolver-stage
+  // values, so print-run lineage keys always come from resolved_fields.
+  for (const field of [
+    "print_run_number",
+    "print_run_numerator",
+    "print_run_denominator",
+    "serial_number",
+    "serial_denominator",
+    "numerical_rarity",
+    "numbered_to",
+    "expected_serial_denominator"
+  ]) {
+    const value = resolved[field];
+    if (value !== null && value !== undefined && value !== "") merged[field] = value;
+  }
   if (!normalizeText(merged.surface_color)) {
     const safeColor = replaySafeSurfaceColor(result);
     if (safeColor) merged.surface_color = safeColor;
@@ -235,6 +252,12 @@ export async function replayRenderFromEval({
     // replay preserves them so the harness only measures renderer changes.
     const preserveRecorded = titleRenderSource === "safe_retrieval_title_assist";
     const decisionReplay = preserveRecorded ? null : await replayCurrentSourceCatalogDecision(result, maxLength);
+    // Mirror the runtime's serial-numerator contract: OCR verification is
+    // tri-state, and absence of an OCR reading is null (unknown), never a
+    // veto. Recorded `false` values predate that contract and came from
+    // no-read runs, so they replay as null; the renderer's provenance gate
+    // still governs what actually prints.
+    const replaySerialNumeratorVerified = result.serial_numerator_verified === true ? true : null;
     const replayed = preserveRecorded
       ? recorded
       : normalizeText(renderListingPresentation({
@@ -243,6 +266,7 @@ export async function replayRenderFromEval({
           ...(decisionReplay?.overlay || {})
         },
         evidence: result.normalized_evidence || result.evidence || {},
+        serialNumeratorVerified: replaySerialNumeratorVerified,
         maxLength
       }).final_title || "");
     if (preserveRecorded) assistPreserved += 1;
