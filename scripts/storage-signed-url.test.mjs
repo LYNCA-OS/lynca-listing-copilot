@@ -673,6 +673,90 @@ assert.equal(verifyApiResponse.body.verification.content_hash_verified, true);
 assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), /test-service-role/);
 assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), new RegExp(pngSignatureHex));
 
+let exactRecordStorageReadCount = 0;
+const exactRecord = {
+  tenant_id: tenantId,
+  object_path: `tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/front_original-front-api.png`,
+  bucket: "listing-card-images",
+  asset_id: durableAssetId,
+  image_id: "front-api",
+  storage_role: "front_original",
+  image_generation_id: durableAssetId,
+  crop_metadata: null,
+  canonical_eligible: true,
+  content_type: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  content_sha256: pngVerificationSha256,
+  object_verified: true,
+  content_hash_verified: true,
+  dimension_source: "object_bytes",
+  verified_at: "2026-06-22T08:00:00.000Z",
+  updated_at: "2026-06-22T08:00:00.000Z"
+};
+globalThis.fetch = tenantAwareFetch(async () => {
+  exactRecordStorageReadCount += 1;
+  return objectResponse(pngVerificationBytes, {
+    "content-type": "image/png",
+    "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+  });
+}, {
+  verificationFetch: async (_input, init = {}) => {
+    assert.equal(init.method || "GET", "GET");
+    return new Response(JSON.stringify([exactRecord]), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }
+});
+const exactRecordReuseResponse = await callVerifyApi({
+  assetId: durableAssetId,
+  imageId: "front-api",
+  role: "front_original",
+  objectPath: exactRecord.object_path,
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  contentSha256: pngVerificationSha256
+});
+assert.equal(exactRecordReuseResponse.statusCode, 200);
+assert.equal(exactRecordReuseResponse.body.verification_record.reason, "exact_record_reused");
+assert.equal(exactRecordReuseResponse.body.verification_timing.exact_record_reused, true);
+assert.equal(exactRecordReuseResponse.body.verification.content_sha256, pngVerificationSha256);
+assert.equal(exactRecordStorageReadCount, 0, "an exact persisted record should skip the full storage object download");
+
+let mismatchedHashStorageReadCount = 0;
+globalThis.fetch = tenantAwareFetch(async () => {
+  mismatchedHashStorageReadCount += 1;
+  return objectResponse(pngVerificationBytes, {
+    "content-type": "image/png",
+    "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+  });
+}, {
+  verificationFetch: async () => new Response(JSON.stringify([exactRecord]), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  })
+});
+const mismatchedHashReuseResponse = await callVerifyApi({
+  assetId: durableAssetId,
+  imageId: "front-api",
+  role: "front_original",
+  objectPath: exactRecord.object_path,
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  contentSha256: "b".repeat(64)
+});
+assert.equal(mismatchedHashReuseResponse.statusCode, 400);
+assert.match(mismatchedHashReuseResponse.body.message, /SHA-256 hash does not match/);
+assert.ok(mismatchedHashStorageReadCount >= 1, "a hash mismatch must fall through to full-byte verification");
+
 const crossAssetStorageCalls = [];
 globalThis.fetch = tenantAwareFetch(async (url, init = {}) => {
   crossAssetStorageCalls.push({ url: String(url), method: init.method || "GET" });
@@ -793,8 +877,8 @@ const retryableVerifyApiResponse = await callVerifyApi({
 });
 assert.equal(
   transientApiCalls.filter((call) => call.method === "GET" && call.url.includes("/storage/v1/object/")).length,
-  4,
-  "storage verification should use the bounded server-side consistency window"
+  2,
+  "storage verification should stop after the bounded server-side retry budget"
 );
 assert.equal(retryableVerifyApiResponse.statusCode, 503);
 assert.equal(retryableVerifyApiResponse.body.retryable, true);
@@ -825,7 +909,7 @@ const readIndeterminateVerifyApiResponse = await callVerifyApi({
 });
 assert.equal(
   readIndeterminateCalls.filter((call) => call.method === "GET" && call.url.includes("/storage/v1/object/")).length,
-  4,
+  2,
   "a validated post-PUT path returning 400 should exhaust the consistency window"
 );
 assert.equal(readIndeterminateVerifyApiResponse.statusCode, 503);

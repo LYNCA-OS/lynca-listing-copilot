@@ -38,6 +38,9 @@ function trustedCatalogCandidate(overrides = {}) {
       agreed: ["collector_number", "subjects", "product_hierarchy", "year"],
       contradicted: []
     },
+    reference_metadata: {
+      corrected_title_is_reviewed_title_ground_truth: true
+    },
     fields: {
       year: "2024",
       manufacturer: "Topps",
@@ -384,6 +387,353 @@ function testResolvedRetrievalOutcomeOwnsRenderedFieldContainer() {
   assert.match(gated.rendered_fields.rendered_title, /Topps Chrome/);
 }
 
+function testSelectedTrustedVariantSurvivesRawVisionDraftFallback() {
+  const candidate = trustedCatalogCandidate({
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "manufacturer", "product_hierarchy", "serial_denominator"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Topps Chrome Tennis",
+      players: ["Test Player"],
+      card_name: "Lucky Hyper",
+      surface_color: "Gold",
+      parallel_family: "Geometric",
+      numbered_to: "50",
+      serial_denominator: "50"
+    }
+  });
+  const result = resultWithCandidate(candidate);
+  result.resolved_fields = {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome Tennis",
+    players: ["Test Player"],
+    surface_color: "Green",
+    collector_number: "CPA-TP",
+    serial_number: "16/50",
+    serial_denominator: "50"
+  };
+  const { control, application } = buildLayer(result);
+  assert.equal(application.decisions.find((row) => row.field === "surface_color")?.decision, "APPLY");
+  assert.equal(application.decisions.find((row) => row.field === "parallel_family")?.decision, "APPLY");
+
+  const gated = applyIdentityResolutionGate({
+    ...result,
+    ...control,
+    provider: "openai_legacy",
+    candidate_observation_snapshot: {
+      player: "Test Player"
+    },
+    raw_provider_fields: {
+      ...result.resolved_fields,
+      surface_color: "Green"
+    },
+    retrieval_application: application,
+    resolved: result.resolved_fields,
+    evidence: {}
+  });
+
+  assert.equal(gated.resolved_fields.surface_color, "Gold");
+  assert.equal(gated.resolved_fields.parallel_family, "Geometric");
+  assert.deepEqual(gated.resolved_fields.players, ["Test Player"]);
+  assert.equal(gated.resolved_fields.card_name, "Lucky Hyper");
+  assert.match(gated.final_title, /Test Player/);
+  assert.match(gated.final_title, /Lucky Hyper/);
+  assert.match(gated.final_title, /Gold/);
+  assert.match(gated.final_title, /Geometric/);
+  assert.doesNotMatch(gated.final_title, /Green/);
+  assert.notEqual(gated.draft_gate.by_field.surface_color.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
+}
+
+function testSelectedTrustedProductSpecificitySurvivesRawVisionDraftFallback() {
+  for (const [observedProduct, catalogProduct, observedManufacturer, catalogManufacturer, sameSource] of [
+    ["Topps Signature", "Topps Signature Class", "Topps", "Topps", false],
+    ["Topps Chrome", "Topps Chrome UFC", "Topps", "Topps", false],
+    ["Topps Chrome", "Bowman University Chrome", "Topps", "Topps", true],
+    ["Topps", "Bowman University Chrome", "Topps", "Topps", true],
+    ["Metal", "Leaf Metal Draft", "Leaf Trading Cards", "Leaf", true]
+  ]) {
+    const candidate = trustedCatalogCandidate({
+      source_type: "INTERNAL_APPROVED_HISTORY",
+      source_trust: "APPROVED_REFERENCE",
+      source_feedback_id: sameSource ? "reviewed-source-1" : null,
+      reference_metadata: {
+        corrected_title_is_reviewed_title_ground_truth: true,
+        prompt_safe_internal_writer_title: true,
+        source_feedback_id: sameSource ? "reviewed-source-1" : null
+      },
+      anchor_agreement: {
+        exact_code_match: false,
+        prompt_hard_filter_pass: true,
+        agreed: ["year", "subjects", "manufacturer", "product_hierarchy"],
+        contradicted: []
+      },
+      fields: {
+        year: "2025",
+        manufacturer: catalogManufacturer,
+        product: catalogProduct,
+        players: ["Test Player"]
+      }
+    });
+    const result = resultWithCandidate(candidate);
+    if (sameSource) result.source_feedback_id = "reviewed-source-1";
+    result.resolved_fields = {
+      year: "2025",
+      manufacturer: observedManufacturer,
+      product: observedProduct,
+      players: ["Test Player"]
+    };
+    const { control, application } = buildLayer(result);
+    assert.equal(
+      application.decisions.find((row) => row.field === "product")?.decision,
+      "APPLY",
+      `${observedProduct} should safely upgrade to ${catalogProduct}: ${JSON.stringify({
+        selected: control.selected_candidate_decision,
+        safe: control.selected_candidate_safe_field_application,
+        product: application.decisions.find((row) => row.field === "product")
+      })}`
+    );
+
+    const gated = applyIdentityResolutionGate({
+      ...result,
+      ...control,
+      provider: "openai_legacy",
+      candidate_observation_snapshot: {
+        year: "2025",
+        manufacturer: observedManufacturer,
+        product: observedProduct,
+        players: ["Test Player"]
+      },
+      raw_provider_fields: {
+        year: "2025",
+        manufacturer: observedManufacturer,
+        product: observedProduct,
+        players: ["Test Player"]
+      },
+      retrieval_application: application,
+      resolved: result.resolved_fields,
+      evidence: {}
+    });
+
+    assert.equal(gated.resolved_fields.product, catalogProduct);
+    assert.ok(gated.retrieval_application?.actual_applied_fields.includes("product"));
+    const renderedProduct = catalogProduct === "Leaf Metal Draft" ? "Metal Draft" : catalogProduct;
+    assert.match(gated.final_title, new RegExp(renderedProduct.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+}
+
+function testSelectedApplySurvivesShortPrintedIdentityConflict() {
+  const candidate = trustedCatalogCandidate({
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    source_feedback_id: "reviewed-source-vision-conflict",
+    reference_metadata: {
+      corrected_title_is_reviewed_title_ground_truth: true,
+      prompt_safe_internal_writer_title: true,
+      source_feedback_id: "reviewed-source-vision-conflict"
+    },
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "manufacturer", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Bowman University Chrome",
+      players: ["Sienna Betts"],
+      card_name: "Anime"
+    }
+  });
+  const result = {
+    ...resultWithCandidate(candidate),
+    source_feedback_id: "reviewed-source-vision-conflict",
+    resolved_fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Topps",
+      players: ["Sienna Betts"],
+      card_name: "BETTS"
+    }
+  };
+  const { control, application } = buildLayer(result);
+  assert.equal(application.decisions.find((row) => row.field === "year")?.decision, "APPLY");
+  assert.equal(application.decisions.find((row) => row.field === "product")?.decision, "APPLY");
+  assert.equal(application.decisions.find((row) => row.field === "card_name")?.decision, "APPLY");
+  const printedIdentitySource = {
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    provider_id: "openai_legacy",
+    evidence_kind: "PRINTED_IDENTITY_FRAGMENT",
+    direct_observation: true,
+    trust_tier: 3
+  };
+  const evidenceField = (value) => ({
+    value,
+    status: "CONFIRMED",
+    confidence: 0.9,
+    candidates: [{ value, confidence: 0.9, sources: [printedIdentitySource] }],
+    sources: [printedIdentitySource],
+    conflicts: []
+  });
+  const gated = applyIdentityResolutionGate({
+    ...result,
+    ...control,
+    provider: "openai_legacy",
+    retrieval_application: application,
+    resolved: result.resolved_fields,
+    evidence: {
+      year: evidenceField("2025"),
+      manufacturer: evidenceField("Topps"),
+      product: evidenceField("Topps"),
+      players: evidenceField(["Sienna Betts"]),
+      card_name: evidenceField("BETTS")
+    }
+  });
+  assert.equal(gated.resolved_fields.year, "2025-26");
+  assert.equal(gated.resolved_fields.product, "Bowman University Chrome");
+  assert.equal(gated.resolved_fields.card_name, "Anime");
+  assert.ok(gated.retrieval_application.actual_applied_fields.includes("year"));
+  assert.ok(gated.retrieval_application.actual_applied_fields.includes("product"));
+  assert.ok(gated.retrieval_application.actual_applied_fields.includes("card_name"));
+}
+
+function testTrustedHierarchyCannotCrossPublisherFamily() {
+  const candidate = trustedCatalogCandidate({
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025",
+      manufacturer: "Panini",
+      product: "Panini Cosmic Chrome",
+      players: ["Test Player"]
+    }
+  });
+  const result = resultWithCandidate(candidate);
+  result.resolved_fields = {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Test Player"]
+  };
+  const { application } = buildLayer(result);
+  const decision = application.decisions.find((row) => row.field === "product");
+  assert.ok(["BLOCK", "REJECT"].includes(decision.decision));
+}
+
+function testReviewedSeasonYearCanUpgradeTruncatedObservedYear() {
+  const candidate = trustedCatalogCandidate({
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    source_feedback_id: "reviewed-season-source",
+    reference_metadata: {
+      corrected_title_is_reviewed_title_ground_truth: true,
+      prompt_safe_internal_writer_title: true,
+      source_feedback_id: "reviewed-season-source"
+    },
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Bowman University Chrome",
+      players: ["Sienna Betts"],
+      official_card_type: "Anime",
+      ssp: true
+    }
+  });
+  const result = resultWithCandidate(candidate);
+  result.source_feedback_id = "reviewed-season-source";
+  result.resolved_fields = {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Sienna Betts"]
+  };
+  const { control, application } = buildLayer(result);
+  assert.equal(application.decisions.find((row) => row.field === "year")?.decision, "APPLY");
+  const gated = applyIdentityResolutionGate({
+    ...result,
+    ...control,
+    provider: "openai_legacy",
+    raw_provider_fields: result.resolved_fields,
+    retrieval_application: application,
+    resolved: result.resolved_fields,
+    evidence: {}
+  });
+  assert.equal(gated.resolved_fields.year, "2025-26");
+  assert.equal(gated.resolved_fields.product, "Bowman University Chrome");
+  assert.equal(gated.resolved_fields.official_card_type, "Anime");
+  assert.equal(gated.resolved_fields.ssp, true);
+}
+
+function testReviewedCurrentSourceOverridesProviderSemanticConflictsOnly() {
+  const candidate = trustedCatalogCandidate({
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    source_feedback_id: "reviewed-current-source-conflict",
+    reference_metadata: {
+      corrected_title_is_reviewed_title_ground_truth: true,
+      prompt_safe_internal_writer_title: true,
+      source_feedback_id: "reviewed-current-source-conflict"
+    },
+    conflicting_fields: ["players", "surface_color", "product", "serial_number"],
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Heritage High Number",
+      players: ["Jackson Chourio"],
+      surface_color: "Blue",
+      parallel_exact: "Dark Blue Bordered",
+      serial_number: "09/50",
+      print_run_numerator: "09"
+    }
+  });
+  const result = resultWithCandidate(candidate);
+  result.source_feedback_id = "reviewed-current-source-conflict";
+  result.resolved_fields = {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Topps Heritage",
+    players: ["Jackson Chourio", "Jackson Bryan Chourio"],
+    surface_color: "Gold",
+    serial_number: "11/50",
+    print_run_numerator: "11"
+  };
+  const { control, application } = buildLayer(result);
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, candidate.candidate_id);
+  assert.equal(application.decisions.find((row) => row.field === "product")?.decision, "APPLY");
+  assert.equal(application.decisions.find((row) => row.field === "players")?.decision, "APPLY");
+  assert.equal(application.decisions.find((row) => row.field === "surface_color")?.decision, "APPLY");
+  assert.notEqual(application.decisions.find((row) => row.field === "serial_number")?.decision, "APPLY");
+
+  const gated = applyIdentityResolutionGate({
+    ...result,
+    ...control,
+    provider: "openai_legacy",
+    raw_provider_fields: result.resolved_fields,
+    retrieval_application: application,
+    resolved: result.resolved_fields,
+    evidence: {}
+  });
+  assert.equal(gated.resolved_fields.product, "Topps Heritage High Number");
+  assert.deepEqual(gated.resolved_fields.players, ["Jackson Chourio"]);
+  assert.equal(gated.resolved_fields.surface_color, "Blue");
+  assert.notEqual(gated.resolved_fields.serial_number, "09/50");
+  assert.notEqual(gated.resolved_fields.print_run_numerator, "09");
+}
+
 function testCandidateCannotOverrideContradictingCurrentImageIdentity() {
   const result = resultWithCandidate();
   result.resolved_fields = {
@@ -453,6 +803,12 @@ testSingleModelFastPathConsumesAlreadyRetrievedFieldEvidence();
 await testAssistShadowPathKeepsRetrievedContextForFieldApplication();
 testRawRetrievalEvidenceCannotBypassApplicationOwner();
 testResolvedRetrievalOutcomeOwnsRenderedFieldContainer();
+testSelectedTrustedVariantSurvivesRawVisionDraftFallback();
+testSelectedTrustedProductSpecificitySurvivesRawVisionDraftFallback();
+testSelectedApplySurvivesShortPrintedIdentityConflict();
+testTrustedHierarchyCannotCrossPublisherFamily();
+testReviewedSeasonYearCanUpgradeTruncatedObservedYear();
+testReviewedCurrentSourceOverridesProviderSemanticConflictsOnly();
 testCandidateCannotOverrideContradictingCurrentImageIdentity();
 testOutcomeRecordsResolverBlockInsteadOfPretendingApplication();
 await testConvergenceCannotReinjectRawCandidates();

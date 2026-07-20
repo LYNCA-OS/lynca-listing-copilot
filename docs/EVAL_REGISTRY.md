@@ -196,6 +196,12 @@ only and cannot be attributed causally to concurrency. Re-run the capacity sweep
 after a provider/model, OCR rendezvous, queue architecture or rate-limit change;
 do not raise concurrency from key count alone.
 
+2026-07-20 failed candidate note: the provider limit remains frozen at 2. A
+worker-4 chain canary completed 10/10 but fell to 3.141 cards/min, with one
+73.974s job-start gap and scheduler p95 120.596s while provider p50 remained
+12.56s. Worker 4 is rejected; worker/provider remain 2. The next chain change
+must repair missing-consumer wake redundancy instead of raising concurrency.
+
 ## Provider-stage capacity handoff (2026-07-13)
 
 | Run | Mode | Cards | Cards/min | Writer p50 / p95 | Queue p95 | Provider release/refill | Tokens | Weak recovery / regression |

@@ -697,3 +697,88 @@ def ocr_evidence_from_loaded_images(
         "items": [],
         **({"errors": errors} if errors else {}),
     }
+
+
+def copyright_year_evidence_from_confirmed_grid(
+    loaded_images: list[Any],
+    multi_card_detection: dict[str, Any],
+    *,
+    language: str = "eng",
+    timeout_seconds: int = 20,
+) -> dict[str, Any] | None:
+    """Confirm an issue year from repeated publisher copyright lines in a 2x2 lot.
+
+    Statistics years are common and unsafe. This extractor only admits a year
+    when the geometry detector has confirmed four physical cards and the same
+    four-digit year appears beside TOPPS on at least two independent card backs.
+    """
+    if (
+        multi_card_detection.get("status") != "OK"
+        or multi_card_detection.get("card_count_confirmed") is not True
+        or int(multi_card_detection.get("card_count_estimate") or 0) != 4
+    ):
+        return None
+    image_id = str(multi_card_detection.get("image_id") or "")
+    loaded = next((item for item in loaded_images if "back" in str(getattr(item, "role", "")).lower()), None)
+    if loaded is None:
+        loaded = next((item for item in loaded_images if str(getattr(item, "image_id", "")) == image_id), None)
+    if loaded is None:
+        return None
+    image_id = str(getattr(loaded, "image_id", "") or image_id)
+    array = np.asarray(getattr(loaded, "array"))
+    height, width = array.shape[:2]
+    year_cells: dict[str, set[int]] = {}
+    observed_lines: dict[str, list[str]] = {}
+    for cell_index, (x1, y1, x2, y2) in enumerate([
+        (0, 0, width // 2, height // 2),
+        (width // 2, 0, width, height // 2),
+        (0, height // 2, width // 2, height),
+        (width // 2, height // 2, width, height),
+    ]):
+        legal_top = y1 + int((y2 - y1) * 0.76)
+        legal_crop = array[legal_top:y2, x1:x2]
+        if legal_crop.size == 0:
+            continue
+        try:
+            lines = _ocr_array_with_tesseract(
+                legal_crop,
+                image_id=image_id,
+                role="card_back_copyright",
+                source_type="CARD_BACK_PRINTED_TEXT",
+                language=language,
+                psm=6,
+                timeout_seconds=timeout_seconds,
+                item_prefix=f"copyright_cell_{cell_index + 1}",
+                bbox_offset=(x1, legal_top),
+                coordinate_scale=4.0,
+                upscale=4,
+            )
+        except Exception:  # noqa: BLE001 - optional corroboration must fail closed.
+            continue
+        for line in lines:
+            text = str(line.get("observed_text") or line.get("text") or "")
+            if "TOPPS" not in text.upper():
+                continue
+            for year in re.findall(r"\b(?:19|20)\d{2}\b", text):
+                year_cells.setdefault(year, set()).add(cell_index)
+                observed_lines.setdefault(year, []).append(text)
+    confirmed = [year for year, cells in year_cells.items() if len(cells) >= 2]
+    if len(confirmed) != 1:
+        return None
+    year = confirmed[0]
+    return {
+        "item_id": f"copyright_year_consensus_{image_id}",
+        "image_id": image_id,
+        "role": "card_back_copyright",
+        "field": "year",
+        "value": year,
+        "text": f"copyright year {year} repeated on {len(year_cells[year])} card backs",
+        "observed_text": " | ".join(observed_lines[year][:2]),
+        "confidence": 0.92,
+        "source_type": "CARD_BACK_PRINTED_TEXT",
+        "directly_observed": True,
+        "region": {
+            "algorithm": "confirmed_2x2_grid_copyright_consensus_v1",
+            "independent_card_count": len(year_cells[year]),
+        },
+    }

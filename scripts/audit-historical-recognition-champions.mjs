@@ -88,24 +88,24 @@ export function auditHistoricalRecognitionRuns(runsInput = [], {
     : normalizeHistoricalRecognitionRun(row));
   const eligible = runs.filter((run) => run.sample_count >= minimumSampleCount);
   const complete = eligible.filter((run) => run.technical_success_rate >= minimumCompleteRunRate);
-  const accuracyChampion = [...complete]
+  const accuracyProxyLeader = [...complete]
     .filter((run) => run.policy_fair_title_proxy_avg !== null)
     .sort((left, right) => compareNullableDescending(left, right, "policy_fair_title_proxy_avg")
       || compareNullableDescending(left, right, "policy_fair_pass_at_0_72_rate")
       || compareNullableAscending(left, right, "writer_ready_p95_ms"))[0] || null;
-  const speedChampion = [...complete]
+  const speedProxyLeader = [...complete]
     .filter((run) => run.writer_ready_p50_ms !== null)
     .sort((left, right) => compareNullableAscending(left, right, "writer_ready_p50_ms")
       || compareNullableAscending(left, right, "writer_ready_p95_ms")
       || compareNullableDescending(left, right, "policy_fair_title_proxy_avg"))[0] || null;
-  const stabilityChampion = [...eligible]
+  const stabilityProxyLeader = [...eligible]
     .sort((left, right) => compareNullableDescending(left, right, "technical_success_wilson_lower_95")
       || compareNullableDescending(left, right, "sample_count")
       || compareNullableAscending(left, right, "writer_ready_p95_ms")
       || compareNullableAscending(left, right, "writer_ready_p50_ms"))[0] || null;
   const excludedSmallRuns = runs.filter((run) => run.sample_count < minimumSampleCount);
   return {
-    schema_version: "v4-historical-recognition-champions-v1",
+    schema_version: "v4-historical-recognition-proxy-leaders-v1",
     generated_at: new Date().toISOString(),
     metric_contract: {
       accuracy_metric: "policy_fair_title_proxy_avg",
@@ -118,10 +118,11 @@ export function auditHistoricalRecognitionRuns(runsInput = [], {
     audited_run_count: runs.length,
     eligible_run_count: eligible.length,
     excluded_small_run_count: excludedSmallRuns.length,
-    champions: {
-      accuracy: accuracyChampion,
-      speed: speedChampion,
-      stability: stabilityChampion
+    canonical_champions_are_external_user_locked_contract: true,
+    proxy_leaders: {
+      accuracy: accuracyProxyLeader,
+      speed: speedProxyLeader,
+      stability: stabilityProxyLeader
     },
     excluded_small_runs: excludedSmallRuns.map((run) => ({
       run_id: run.run_id,
@@ -169,15 +170,15 @@ function percentage(value) {
 
 export function renderHistoricalChampionReport(audit) {
   const lines = [
-    "# Historical Recognition Champions Audit",
+    "# Historical Recognition Proxy Leaders Audit",
     "",
     `Eligible runs: ${audit.eligible_run_count}/${audit.audited_run_count}; minimum sample: ${audit.metric_contract.minimum_sample_count}`,
     "",
-    "> Accuracy below is the historical policy-fair title proxy, not reviewed SEM accuracy.",
+    "> These dynamic results are exploratory proxy leaders, not the user-locked historical champions and not reviewed SEM accuracy.",
     ""
   ];
   for (const role of ["accuracy", "speed", "stability"]) {
-    const run = audit.champions[role];
+    const run = audit.proxy_leaders[role];
     lines.push(`## ${role[0].toUpperCase()}${role.slice(1)}`, "");
     if (!run) {
       lines.push("No eligible run.", "");
@@ -229,17 +230,17 @@ async function main() {
     return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
   };
   const inputDir = resolve(value("--input-dir", "data/eval/workflow-sidecar-smoke"));
-  const outputDir = resolve(value("--output-dir", "data/eval/optimal-policy/historical-champions"));
+  const outputDir = resolve(value("--output-dir", "data/eval/optimal-policy/historical-proxy-leaders"));
   const audit = await auditHistoricalRecognitionDirectory({
     inputDir,
-    jsonOut: resolve(outputDir, "historical-three-champions.json"),
-    markdownOut: resolve(outputDir, "historical-three-champions.md"),
+    jsonOut: resolve(outputDir, "historical-proxy-leaders.json"),
+    markdownOut: resolve(outputDir, "historical-proxy-leaders.md"),
     minimumSampleCount: finiteNumber(value("--minimum-sample-count", "10"), 10)
   });
   console.log(JSON.stringify({
     audited_run_count: audit.audited_run_count,
     eligible_run_count: audit.eligible_run_count,
-    champions: Object.fromEntries(Object.entries(audit.champions).map(([role, run]) => [role, run?.run_id || null])),
+    proxy_leaders: Object.fromEntries(Object.entries(audit.proxy_leaders).map(([role, run]) => [role, run?.run_id || null])),
     output_dir: outputDir
   }, null, 2));
 }

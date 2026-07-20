@@ -27,6 +27,44 @@ function participationUsed(value) {
   return Boolean(level) && !level.includes("LEVEL_0") && level !== "NOT_USED";
 }
 
+function isInternalReviewedGroundTruth(result = {}) {
+  return result?.reference_title_is_reviewed_ground_truth === true
+    && cleanText(result?.reference_title_type).toUpperCase() === "REVIEWED_INTERNAL_TITLE";
+}
+
+function policyTokenRecall(result = {}) {
+  return finiteNumber(result?.final_scoring?.policy_fair_token_recall);
+}
+
+function semWeightedAccuracy(result = {}) {
+  return finiteNumber(result?.sem_projection_scoring?.weighted_accuracy);
+}
+
+function aggregateSemFailureClusters(results = []) {
+  const clusters = new Map();
+  for (const result of results) {
+    for (const component of result?.sem_projection_scoring?.components || []) {
+      if (component?.correct === true) continue;
+      const field = cleanText(component?.field) || "unknown";
+      const key = `${field}:${cleanText(component?.component) || "unknown"}`;
+      const current = clusters.get(key) || {
+        field,
+        component: cleanText(component?.component) || "unknown",
+        affected_card_count: 0,
+        failed_weight: 0
+      };
+      current.affected_card_count += 1;
+      current.failed_weight += finiteNumber(component?.weight) ?? 0;
+      clusters.set(key, current);
+    }
+  }
+  return [...clusters.values()]
+    .map((item) => ({ ...item, failed_weight: round(item.failed_weight) }))
+    .sort((left, right) => right.failed_weight - left.failed_weight
+      || right.affected_card_count - left.affected_card_count
+      || left.field.localeCompare(right.field));
+}
+
 function resultAnomalies(result) {
   return (result?.pipeline_node_ledger?.reconciliation?.anomalies || []).map((item) => ({
     check_id: cleanText(item?.check_id),
@@ -129,7 +167,8 @@ function buildMarkdown(diagnostic) {
   const lines = [
     "# Launch Gate Diagnostic",
     "",
-    `- Accuracy: ${accuracy.correct_count}/${accuracy.measured_count} (${accuracy.rate ?? "n/a"}), gate=${accuracy.gate_passed ? "PASS" : "FAIL"}`,
+    `- Policy token recall: avg=${accuracy.policy_token_recall_avg ?? "n/a"}, measured=${accuracy.measured_count}, threshold=${accuracy.threshold_rate}, gate=${accuracy.gate_passed ? "PASS" : "FAIL"}`,
+    `- SEM disaster guard: min=${accuracy.sem_weighted_accuracy_min ?? "n/a"}, floor=${accuracy.sem_catastrophic_floor}, catastrophic cards=${accuracy.catastrophic_card_count}`,
     `- Technical success: ${technical.completed_count}/${technical.attempted_count} (${technical.success_rate ?? "n/a"})`,
     `- Throughput: ${technical.cards_per_minute ?? "n/a"} cards/min, wall=${technical.run_wall_ms ?? "n/a"}ms`,
     `- Tokens (observed): input=${diagnostic.provider.input_tokens}, output=${diagnostic.provider.output_tokens}, total=${diagnostic.provider.total_tokens}; complete=${diagnostic.provider.token_totals_complete}`,
@@ -149,12 +188,18 @@ function buildMarkdown(diagnostic) {
     `| Catalog | ${retrieval.catalog.available_card_count} | ${retrieval.catalog.prompt_card_count} | ${retrieval.catalog.applied_card_count} | ${retrieval.catalog.applied_field_count} | ${retrieval.catalog.title_changed_card_count} |`,
     `| Vector | ${retrieval.vector.available_card_count} | ${retrieval.vector.prompt_card_count} | ${retrieval.vector.applied_card_count} | ${retrieval.vector.applied_field_count} | ${retrieval.vector.title_changed_card_count} |`,
     "",
-    "## Failed Cards",
+    "## Accuracy Failure Clusters",
+    "",
+    "| Field | Component | Cards | Failed weight |",
+    "| --- | --- | ---: | ---: |",
+    ...accuracy.sem_failure_clusters.slice(0, 12).map((item) => `| ${item.field} | ${item.component} | ${item.affected_card_count} | ${item.failed_weight} |`),
+    "",
+    "## Diagnostic Cards",
     ""
   ];
   if (!diagnostic.failed_cards.length) lines.push("None.");
   for (const card of diagnostic.failed_cards) {
-    lines.push(`- ${card.asset_id}: SEM=${card.sem_weighted_accuracy ?? "n/a"}; title=${card.final_title || "<missing>"}; reference=${card.reference_title || "<missing>"}`);
+    lines.push(`- ${card.asset_id}: token=${card.policy_fair_token_recall ?? "n/a"}; SEM=${card.sem_weighted_accuracy ?? "n/a"}; reasons=${card.diagnostic_reasons.join(",") || "none"}; title=${card.final_title || "<missing>"}; reference=${card.reference_title || "<missing>"}`);
   }
   lines.push("", "## Integrity", "");
   lines.push(`- OCR partial cards: ${diagnostic.pipeline.ocr_partial_card_count}`);
@@ -175,11 +220,13 @@ function buildMarkdown(diagnostic) {
 
 export function analyzeLaunchGateReport(report, { baselineReport = null } = {}) {
   const results = Array.isArray(report?.results) ? report.results : [];
+  const internalResults = results.filter(isInternalReviewedGroundTruth);
   const technical = report?.technical_summary || {};
   const observability = technical?.pipeline_node_observability || {};
   const internal = report?.strata?.internal_reviewed_gt || {};
   const formal = internal?.formal_accuracy || {};
   const threshold = finiteNumber(report?.formal_accuracy_gate?.threshold_rate) ?? 0.87;
+  const semCatastrophicFloor = finiteNumber(report?.formal_accuracy_gate?.sem_diagnostics?.catastrophic_floor) ?? 0.5;
   const nodeMetrics = Array.isArray(observability?.node_metrics) ? observability.node_metrics : [];
   const slowestNodes = nodeMetrics
     .map((node) => ({
@@ -194,13 +241,27 @@ export function analyzeLaunchGateReport(report, { baselineReport = null } = {}) 
   const attempted = finiteNumber(technical?.attempted_count) ?? results.length;
   const completed = finiteNumber(technical?.completed_count) ?? countWhere(results, (item) => item?.ok === true);
   const runWallMs = finiteNumber(technical?.run_wall_ms);
-  const measuredCount = finiteNumber(formal?.measured_count) ?? 0;
-  const correctCount = finiteNumber(formal?.correct_count) ?? 0;
-  const failedCards = results
-    .filter((item) => {
-      const score = finiteNumber(item?.sem_projection_scoring?.weighted_accuracy);
-      return item?.ok !== true || score === null || item?.sem_projection_scoring?.accepted !== true;
-    })
+  const policyTokenValues = internalResults.map(policyTokenRecall).filter((value) => value !== null);
+  const semValues = internalResults.map(semWeightedAccuracy).filter((value) => value !== null);
+  const policyTokenRecallAvg = policyTokenValues.length
+    ? round(sum(policyTokenValues) / policyTokenValues.length)
+    : null;
+  const semWeightedAccuracyAvg = semValues.length
+    ? round(sum(semValues) / semValues.length)
+    : null;
+  const semWeightedAccuracyMin = semValues.length ? Math.min(...semValues) : null;
+  const accuracyGatePassed = internalResults.length > 0
+    && policyTokenValues.length === internalResults.length
+    && semValues.length === internalResults.length
+    && policyTokenRecallAvg >= threshold
+    && semWeightedAccuracyMin >= semCatastrophicFloor;
+  const semFailureClusters = aggregateSemFailureClusters(internalResults);
+  const failedCards = internalResults
+    .filter((item) => item?.ok !== true
+      || policyTokenRecall(item) === null
+      || policyTokenRecall(item) < threshold
+      || semWeightedAccuracy(item) === null
+      || semWeightedAccuracy(item) < semCatastrophicFloor)
     .map((item) => ({
       asset_id: cleanText(item?.asset_id),
       ok: item?.ok === true,
@@ -214,8 +275,16 @@ export function analyzeLaunchGateReport(report, { baselineReport = null } = {}) 
       reference_title: cleanText(item?.reference_title),
       catalog_participation_level: cleanText(item?.l2_catalog_participation_level),
       vector_participation_level: cleanText(item?.l2_vector_participation_level),
+      diagnostic_reasons: [
+        item?.ok !== true ? "technical_failure" : "",
+        policyTokenRecall(item) === null ? "missing_token_recall" : "",
+        policyTokenRecall(item) !== null && policyTokenRecall(item) < threshold ? "token_below_threshold" : "",
+        semWeightedAccuracy(item) === null ? "missing_sem" : "",
+        semWeightedAccuracy(item) !== null && semWeightedAccuracy(item) < semCatastrophicFloor ? "sem_catastrophic" : ""
+      ].filter(Boolean),
       anomalies: resultAnomalies(item)
-    }));
+    }))
+    .sort((left, right) => (left.policy_fair_token_recall ?? -1) - (right.policy_fair_token_recall ?? -1));
   const providerInput = results.map((item) => item?.input_tokens ?? item?.provider_diagnostics?.input_tokens);
   const providerOutput = results.map((item) => item?.output_tokens ?? item?.provider_diagnostics?.output_tokens);
   const providerTotal = results.map((item) => item?.total_tokens ?? item?.provider_diagnostics?.total_tokens);
@@ -227,19 +296,28 @@ export function analyzeLaunchGateReport(report, { baselineReport = null } = {}) 
   }).length;
   const providerLatencies = results.map((item) => finiteNumber(item?.provider_latency_ms ?? item?.provider_diagnostics?.provider_latency_ms)).filter((value) => value !== null);
   const diagnostic = {
-    schema_version: "launch-gate-diagnostic-v1",
+    schema_version: "launch-gate-diagnostic-v2",
     generated_at: new Date().toISOString(),
     source_report_schema_version: cleanText(report?.schema_version),
     profile: cleanText(report?.profile),
     accuracy: {
-      metric: cleanText(formal?.metric),
-      correct_count: correctCount,
-      measured_count: measuredCount,
-      rate: measuredCount > 0 ? round(correctCount / measuredCount) : null,
-      sem_weighted_accuracy_avg: round(formal?.sem_weighted_accuracy_avg),
-      legacy_token_recall_decision_authority: false,
+      metric: "policy_fair_token_recall_avg_with_sem_catastrophic_guard",
+      decision_authority: "policy_fair_token_recall_avg",
+      measured_count: policyTokenValues.length,
+      policy_token_recall_avg: policyTokenRecallAvg,
+      rate: policyTokenRecallAvg,
+      below_threshold_card_count: countWhere(policyTokenValues, (value) => value < threshold),
+      sem_role: "catastrophic_guard_only",
+      sem_measured_count: semValues.length,
+      sem_weighted_accuracy_avg: semWeightedAccuracyAvg,
+      sem_weighted_accuracy_min: semWeightedAccuracyMin,
+      sem_catastrophic_floor: semCatastrophicFloor,
+      catastrophic_card_count: countWhere(semValues, (value) => value < semCatastrophicFloor),
+      sem_failure_clusters: semFailureClusters,
       threshold_rate: threshold,
-      gate_passed: report?.formal_accuracy_gate?.passed === true
+      gate_passed: accuracyGatePassed,
+      source_report_gate_passed: report?.formal_accuracy_gate?.passed === true,
+      source_report_gate_metric: cleanText(report?.formal_accuracy_gate?.decision_metric || formal?.metric)
     },
     technical: {
       attempted_count: attempted,
@@ -300,7 +378,10 @@ export async function runCli(argv = process.argv.slice(2)) {
   const reportPath = resolve(argumentValue(argv, "--report"));
   const baselinePath = argumentValue(argv, "--baseline-report");
   const outPath = resolve(argumentValue(argv, "--out", "launch-gate-diagnostic.json"));
-  const markdownPath = resolve(argumentValue(argv, "--markdown", "launch-gate-diagnostic.md"));
+  const defaultMarkdownPath = outPath.toLowerCase().endsWith(".json")
+    ? `${outPath.slice(0, -5)}.md`
+    : `${outPath}.md`;
+  const markdownPath = resolve(argumentValue(argv, "--markdown", defaultMarkdownPath));
   if (!argumentValue(argv, "--report")) throw new Error("--report is required");
   const report = JSON.parse(await readFile(reportPath, "utf8"));
   const baselineReport = baselinePath

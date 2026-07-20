@@ -28,6 +28,18 @@ const catalogCacheKeyWithNormalizedSubject = __listingCopilotTitleTestHooks.cata
 });
 assert.match(catalogCacheKeyWithSingleSubject, /^[a-f0-9]{64}$/);
 assert.equal(catalogCacheKeyWithSingleSubject, catalogCacheKeyWithNormalizedSubject);
+assert.equal(
+  catalogCacheKeyWithSingleSubject,
+  __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
+    resolvedForRetrieval: {
+      year: "2025-26",
+      product: "Topps Finest",
+      subject: "Josh Hart"
+    },
+    excludeSourceFeedbackIds: ["another-seen-card"]
+  }),
+  "catalog cache identity must not fragment by source exclusion because reviewed directory memory is reusable"
+);
 
 assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");
 assert.equal(resolveKnowledgeEntry("2010/11 Season"), null);
@@ -1128,7 +1140,7 @@ const starSwatchCodeSuppressedSerialPreserved = await callApi({
   unresolved: []
 }, { maxTitleLength: 120 });
 
-assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures 04\/10 PSA 10$/i);
+assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures 04\/10 Auto PSA 10$/i);
 assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("year"));
 assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("parallel"));
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Panini Panini Flawless/i);

@@ -6,13 +6,16 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   assertEvaluationSampleProvenance,
-  evaluationItemSetSha256
+  evaluationItemSetSha256,
+  normalizeEvaluationSampleMode
 } from "../lib/listing/evaluation/sample-policy.mjs";
 import { assertRecognitionManifestBlind } from "./build-launch-gate-mixed-manifest.mjs";
 import {
   attachPostRecognitionScoring,
+  durableSourceFingerprint,
   login,
   payloadForItem,
+  readVerifiedAssetCache,
   runV4EbaySmoke,
   summarizePipelineNodeLedgers
 } from "./v4-ebay-smoke.mjs";
@@ -27,23 +30,52 @@ export const launchGateExecutionContract = Object.freeze({
   image_detail: "high",
   provider_prompt_mode: "v4_compact_l2",
   provider_concurrency: 2,
-  preparation_concurrency: 2,
+  // Three preparation lanes match the browser upload bulkhead and provide one
+  // spare lane over the two-provider critical path. This is chain capacity,
+  // not an algorithm/model concurrency change.
+  preparation_concurrency: 3,
   submission_concurrency: 2,
   identity_cache_disabled: true,
   ultra_fast_l2: false
 });
 
 export const launchGateAccuracyContract = Object.freeze({
+  contract_version: "listing-evaluation-gate-v4-2026-07-19",
+  frozen_at: "2026-07-19",
+  primary_metric: "policy_fair_token_recall_avg",
+  sem_role: "catastrophic_single_card_guard_only",
+  deprecated_primary_metric: "per_item_sem_acceptance_rate_at_0.87",
   per_item_sem_acceptance_threshold: reviewedTitleSemAcceptanceThreshold,
-  minimum_internal_reviewed_gt_rate: 0.87,
   reviewed_10_minimum_token_recall: 0.85,
   reviewed_10_minimum_sem_floor: 0.5,
+  reviewed_50_minimum_token_recall: 0.87,
+  reviewed_50_minimum_sem_floor: 0.5,
+  mixed_100_minimum_token_recall: 0.87,
+  mixed_100_minimum_sem_floor: 0.5,
   formal_scope: "internal_reviewed_gt_only",
-  ebay_reference_role: "diagnostics_only"
+  ebay_reference_role: "diagnostics_only",
+  historical_exposure_exclusion: false,
+  required_sequence: ["reviewed-50", "ebay-50", "mixed-100"]
 });
 
-const supportedProfiles = new Set(["reviewed-10", "mixed-100"]);
+export const launchGateSpeedContract = Object.freeze({
+  minimum_writer_perceived_cards_per_minute: 6,
+  required_profiles: ["reviewed-10", "reviewed-50", "ebay-50", "mixed-100"],
+  clock_start: "first_writer_upload_started",
+  clock_stop: "all_complete_recognition_results_available",
+  excluded_setup: ["candidate_protection", "dataset_download", "image_materialization", "prewarm"]
+});
+
+export const launchGateIterationContract = Object.freeze({
+  formal_mode: "formal-cold-chain",
+  strategy_replay_mode: "strategy-replay",
+  default_verified_asset_cache_path: ".local/launch-gate/verified-assets-v1.json"
+});
+
+const supportedProfiles = new Set(["reviewed-10", "reviewed-50", "ebay-50", "mixed-100"]);
 const lockedCliOptions = [
+  "--username",
+  "--password",
   "--model",
   "--limit",
   "--concurrency",
@@ -60,6 +92,83 @@ function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function launchGateItemId(item = {}) {
+  return cleanText(item.asset_id || item.candidate_id || item.id || item.physical_card_id);
+}
+
+function structurallyReusableAssetEntry(entry = {}, fingerprint = "", sourceAssetId = "") {
+  return Boolean(entry
+    && cleanText(entry.fingerprint) === cleanText(fingerprint)
+    && cleanText(sourceAssetId)
+    && cleanText(entry.asset_id)
+    && cleanText(entry.tenant_id)
+    && cleanText(entry.image_generation_id)
+    && Number(entry.image_count) > 0);
+}
+
+async function materializeStrategyReplayMisses({
+  dataset,
+  verifiedAssetCachePath,
+  outputDirectory,
+  baseUrl,
+  cookie,
+  concurrency,
+  fetchImpl,
+  imageMaterializer,
+  assetCacheReader,
+  sourceFingerprint
+} = {}) {
+  const items = loadItems(dataset);
+  const cache = await assetCacheReader(verifiedAssetCachePath);
+  const coverage = await Promise.all(items.map(async (item, index) => {
+    const fingerprint = await sourceFingerprint(item, index);
+    return {
+      item,
+      fingerprint,
+      hit: structurallyReusableAssetEntry(cache.get(fingerprint), fingerprint, launchGateItemId(item))
+    };
+  }));
+  const misses = coverage.filter((entry) => !entry.hit).map((entry) => entry.item);
+  if (!misses.length) {
+    return {
+      dataset,
+      summary: {
+        mode: "skipped_verified_asset_reuse",
+        item_count: items.length,
+        image_count: items.reduce((sum, item) => sum + (item.images || []).length, 0),
+        cache_hit_count: items.length,
+        cache_miss_count: 0,
+        downloaded_count: 0,
+        reused_local_count: 0
+      }
+    };
+  }
+  const missDataset = Array.isArray(dataset) ? misses : { ...dataset, items: misses };
+  const materializedMisses = await imageMaterializer({
+    dataset: missDataset,
+    outputDirectory,
+    baseUrl,
+    cookie,
+    concurrency,
+    fetchImpl
+  });
+  const materializedById = new Map(loadItems(materializedMisses.dataset)
+    .map((item) => [launchGateItemId(item), item]));
+  const mergedItems = items.map((item) => materializedById.get(launchGateItemId(item)) || item);
+  return {
+    dataset: Array.isArray(dataset) ? mergedItems : { ...dataset, items: mergedItems },
+    summary: {
+      ...materializedMisses.summary,
+      mode: "verified_asset_reuse_with_bounded_miss_materialization",
+      item_count: items.length,
+      image_count: items.reduce((sum, item) => sum + (item.images || []).length, 0),
+      cache_hit_count: items.length - misses.length,
+      cache_miss_count: misses.length,
+      materialized_miss_count: misses.length
+    }
+  };
+}
+
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
   return index >= 0 ? argv[index + 1] || fallback : fallback;
@@ -74,18 +183,29 @@ export function numberArg(argv, name, fallback) {
 
 export function deploymentProtectedFetch(fetchImpl = globalThis.fetch, {
   baseUrl = "",
-  bypassSecret = ""
+  bypassSecret = "",
+  bypassCookie = ""
 } = {}) {
   const secret = cleanText(bypassSecret);
+  const deploymentCookie = cleanText(bypassCookie);
   const targetOrigin = normalizeBaseUrl(baseUrl);
-  if (!secret || !targetOrigin) return fetchImpl;
+  if ((!secret && !deploymentCookie) || !targetOrigin) return fetchImpl;
   const targetHost = new URL(targetOrigin).host;
   return async (input, init = {}) => {
     const requestUrl = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
     if (requestUrl.host !== targetHost) return fetchImpl(input, init);
     const headers = new Headers(input instanceof Request ? input.headers : undefined);
     new Headers(init.headers || {}).forEach((value, key) => headers.set(key, value));
-    headers.set("x-vercel-protection-bypass", secret);
+    if (secret) headers.set("x-vercel-protection-bypass", secret);
+    if (deploymentCookie) {
+      const requestCookie = cleanText(headers.get("cookie"));
+      const deploymentCookieName = deploymentCookie.split("=", 1)[0];
+      const withoutStaleDeploymentCookie = requestCookie.split(";")
+        .map((value) => cleanText(value))
+        .filter(Boolean)
+        .filter((value) => value.split("=", 1)[0] !== deploymentCookieName);
+      headers.set("cookie", [...withoutStaleDeploymentCookie, deploymentCookie].join("; "));
+    }
     return fetchImpl(input, { ...init, headers });
   };
 }
@@ -111,6 +231,40 @@ async function writeJson(path, value) {
   const output = resolve(path);
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function launchGateCheckpointFingerprint({ profile = "", evaluationMode = "formal-cold-chain", dataset = {}, expectedDeployment = {} } = {}) {
+  return evaluationItemSetSha256([
+    `profile:${cleanText(profile)}`,
+    `evaluation_mode:${cleanText(evaluationMode)}`,
+    `deployment:${cleanText(expectedDeployment.deployment_id)}`,
+    `sha:${cleanText(expectedDeployment.deployment_sha)}`,
+    `seed:${cleanText(dataset.selection_seed || dataset.evaluation_sample_policy?.sample_seed_sha256)}`,
+    ...loadItems(dataset).map((item) => cleanText(item.source_feedback_id || item.asset_id || item.physical_card_id))
+  ]);
+}
+
+async function readLaunchGateCheckpoint(path, fingerprint) {
+  try {
+    const checkpoint = JSON.parse(await readFile(resolve(path), "utf8"));
+    if (checkpoint.schema_version !== "launch-gate-checkpoint-v1") {
+      throw new Error("unsupported checkpoint schema");
+    }
+    if (checkpoint.fingerprint !== fingerprint) {
+      throw new Error("checkpoint fingerprint does not match this sample and deployment");
+    }
+    return checkpoint;
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function writeLaunchGateCheckpoint(path, checkpoint) {
+  await writeJson(path, {
+    ...checkpoint,
+    updated_at: new Date().toISOString()
+  });
 }
 
 async function readSealedReferenceMap(path) {
@@ -198,13 +352,36 @@ export function assertLaunchGateDatasetContract(dataset = {}, { profile = "revie
     counts[cohort] = (counts[cohort] || 0) + 1;
     return counts;
   }, {});
-  if (profile === "reviewed-10") {
-    if (items.length !== 10) throw new Error(`reviewed-10 requires exactly 10 items; received ${items.length}.`);
-    if (Number(cohortCounts.INTERNAL_REVIEWED_GT || 0) !== 10) {
-      throw new Error("reviewed-10 requires 10 internal reviewed GT items.");
+  if (["reviewed-10", "reviewed-50"].includes(profile)) {
+    const expectedCount = profile === "reviewed-50" ? 50 : 10;
+    if (items.length !== expectedCount) {
+      throw new Error(`${profile} requires exactly ${expectedCount} items; received ${items.length}.`);
+    }
+    if (Number(cohortCounts.INTERNAL_REVIEWED_GT || 0) !== expectedCount) {
+      throw new Error(`${profile} requires ${expectedCount} internal reviewed GT items.`);
+    }
+    const sampleMode = normalizeEvaluationSampleMode(dataset.evaluation_sample_policy?.mode || "UNSPECIFIED");
+    if (!["RANDOM_BLIND", "FIXED_REGRESSION"].includes(sampleMode)) {
+      throw new Error(`${profile} requires RANDOM_BLIND or FIXED_REGRESSION provenance; received ${sampleMode}.`);
     }
     assertEvaluationSampleProvenance({
-      requestedMode: "RANDOM_BLIND",
+      requestedMode: sampleMode,
+      datasetPolicy: dataset.evaluation_sample_policy
+    });
+  } else if (profile === "ebay-50") {
+    assertRecognitionManifestBlind(dataset, []);
+    if (items.length !== 50 || Number(cohortCounts.EBAY_COLD_START || 0) !== 50) {
+      throw new Error(`ebay-50 requires exactly 50 eBay cold-start items; received items=${items.length}, ebay=${Number(cohortCounts.EBAY_COLD_START || 0)}.`);
+    }
+    if (Number(cohortCounts.INTERNAL_REVIEWED_GT || 0) > 0 || Number(cohortCounts.UNKNOWN || 0) > 0) {
+      throw new Error("ebay-50 cannot contain internal reviewed or unknown cohort items.");
+    }
+    const sampleMode = normalizeEvaluationSampleMode(dataset.evaluation_sample_policy?.mode || "UNSPECIFIED");
+    if (sampleMode !== "RANDOM_BLIND") {
+      throw new Error(`ebay-50 requires RANDOM_BLIND provenance; received ${sampleMode}.`);
+    }
+    assertEvaluationSampleProvenance({
+      requestedMode: sampleMode,
       datasetPolicy: dataset.evaluation_sample_policy
     });
   } else {
@@ -319,12 +496,18 @@ export function deploymentDrift(start = {}, end = {}) {
 
 export function assertProviderControlPlane(status = {}, { expectedRuntime = null } = {}) {
   const execution = status.execution_control || {};
+  const recognitionWorker = execution.recognition_worker || {};
+  const paddleOcrVerifier = execution.paddle_ocr_verifier || {};
   const selectableModels = (status.providers || []).filter((provider) => provider?.selectable === true)
     .map((provider) => cleanText(provider.model_id));
   const checks = {
     model_available: selectableModels.includes(launchGateExecutionContract.model),
     provider_global_concurrency_locked: Number(execution.global_provider_concurrency) === launchGateExecutionContract.provider_concurrency,
     provider_key_pool_available: Number(execution.provider_key_pool_size || 0) >= 1,
+    recognition_worker_enabled: recognitionWorker.enabled === true,
+    recognition_worker_configured: recognitionWorker.configured === true,
+    paddle_ocr_verifier_enabled: paddleOcrVerifier.enabled === true,
+    paddle_ocr_verifier_configured: paddleOcrVerifier.configured === true,
     ...(expectedRuntime ? {
       provider_status_deployment_id_matches: Boolean(cleanText(status.deployment?.deployment_id))
         && cleanText(status.deployment?.deployment_id) === cleanText(expectedRuntime.deployment_id),
@@ -342,7 +525,11 @@ export function assertProviderControlPlane(status = {}, { expectedRuntime = null
       provider_key_pool_size: execution.provider_key_pool_size ?? null,
       per_key_stable_concurrency: execution.per_key_stable_concurrency ?? null,
       global_provider_concurrency: execution.global_provider_concurrency ?? null,
-      queue_submission_concurrency: execution.queue_submission_concurrency ?? null
+      queue_submission_concurrency: execution.queue_submission_concurrency ?? null,
+      recognition_worker_enabled: recognitionWorker.enabled === true,
+      recognition_worker_configured: recognitionWorker.configured === true,
+      paddle_ocr_verifier_enabled: paddleOcrVerifier.enabled === true,
+      paddle_ocr_verifier_configured: paddleOcrVerifier.configured === true
     }
   };
 }
@@ -446,10 +633,6 @@ function evidenceClassForResult(entry = {}, row = {}) {
   return "UNKNOWN";
 }
 
-function requiredReviewedCorrectCount(cohortCount) {
-  return Math.ceil((cohortCount * launchGateAccuracyContract.minimum_internal_reviewed_gt_rate) - 1e-12);
-}
-
 export function buildLaunchGateFormalAccuracyGate({
   profile = "reviewed-10",
   cohortCount = 0,
@@ -461,7 +644,6 @@ export function buildLaunchGateFormalAccuracyGate({
     ? parsedCohortCount
     : 0;
   const formalAccuracy = internalMetrics.formal_accuracy || {};
-  const requiredCorrectCount = requiredReviewedCorrectCount(expectedCount);
   const parsedRate = formalAccuracy.rate === null || formalAccuracy.rate === undefined
     ? null
     : Number(formalAccuracy.rate);
@@ -471,6 +653,28 @@ export function buildLaunchGateFormalAccuracyGate({
     ebay_diagnostics_only: ebayMetrics.formal_accuracy_eligible === false
       && !Object.hasOwn(ebayMetrics, "formal_accuracy")
   };
+  if (profile === "ebay-50") {
+    const checks = {
+      ebay_diagnostics_only: commonChecks.ebay_diagnostics_only,
+      formal_accuracy_not_applicable: formalAccuracy.eligible !== true
+        && !Object.hasOwn(internalMetrics, "formal_accuracy"),
+      weak_label_count_matches_cohort: expectedCount > 0
+        && Number(ebayMetrics.attempted_count || 0) === expectedCount
+    };
+    return {
+      scope: "ebay_external_distribution_diagnostics_only",
+      decision_metric: null,
+      threshold_rate: null,
+      cohort_count: expectedCount,
+      required_correct_count: null,
+      measured_count: Number(ebayMetrics.attempted_count || 0),
+      actual_correct_count: null,
+      actual_rate: null,
+      sem_diagnostics: null,
+      checks,
+      passed: Object.values(checks).every((value) => value === true)
+    };
+  }
   if (profile === "reviewed-10") {
     const tokenRecall = formalAccuracy.token_recall || {};
     const parsedTokenRecall = metricNumber(tokenRecall.average);
@@ -505,23 +709,41 @@ export function buildLaunchGateFormalAccuracyGate({
       passed: Object.values(checks).every((value) => value === true)
     };
   }
+  const tokenRecall = formalAccuracy.token_recall || {};
+  const tokenThreshold = profile === "reviewed-50"
+    ? launchGateAccuracyContract.reviewed_50_minimum_token_recall
+    : launchGateAccuracyContract.mixed_100_minimum_token_recall;
+  const semFloor = profile === "reviewed-50"
+    ? launchGateAccuracyContract.reviewed_50_minimum_sem_floor
+    : launchGateAccuracyContract.mixed_100_minimum_sem_floor;
+  const parsedTokenRecall = metricNumber(tokenRecall.average);
+  const minimumSemScore = metricNumber(formalAccuracy.sem_weighted_accuracy_min);
   const checks = {
     ...commonChecks,
     measured_count_matches_cohort: expectedCount > 0
-      && Number(formalAccuracy.measured_count) === expectedCount,
-    minimum_correct_count_met: expectedCount > 0
-      && Number(formalAccuracy.correct_count) >= requiredCorrectCount,
-    minimum_rate_met: actualRate !== null
-      && actualRate >= launchGateAccuracyContract.minimum_internal_reviewed_gt_rate
+      && Number(tokenRecall.measured_count) === expectedCount,
+    minimum_token_recall_met: parsedTokenRecall !== null
+      && parsedTokenRecall >= tokenThreshold,
+    catastrophic_sem_floor_met: minimumSemScore !== null
+      && minimumSemScore >= semFloor
   };
   return {
     scope: launchGateAccuracyContract.formal_scope,
-    threshold_rate: launchGateAccuracyContract.minimum_internal_reviewed_gt_rate,
+    decision_metric: "policy_fair_token_recall_avg",
+    threshold_rate: tokenThreshold,
     cohort_count: expectedCount,
-    required_correct_count: requiredCorrectCount,
-    measured_count: Number(formalAccuracy.measured_count || 0),
-    actual_correct_count: Number(formalAccuracy.correct_count || 0),
-    actual_rate: actualRate,
+    required_correct_count: null,
+    measured_count: Number(tokenRecall.measured_count || 0),
+    actual_correct_count: null,
+    actual_rate: parsedTokenRecall,
+    sem_diagnostics: {
+      correct_count: Number(formalAccuracy.correct_count || 0),
+      measured_count: Number(formalAccuracy.measured_count || 0),
+      rate: actualRate,
+      weighted_accuracy_avg: metricNumber(formalAccuracy.sem_weighted_accuracy_avg),
+      weighted_accuracy_min: minimumSemScore,
+      catastrophic_floor: semFloor
+    },
     checks,
     passed: Object.values(checks).every((value) => value === true)
   };
@@ -537,7 +759,67 @@ export function assertLaunchGateFormalAccuracy(report = {}) {
       `Launch-gate formal accuracy failed: ${failed.length ? failed.join(", ") : "gate_not_passed"}; `
       + `metric=${cleanText(gate.decision_metric || "linear_sem_weighted_projection")}, `
       + `actual=${gate.actual_rate ?? "missing"}, measured=${Number(gate.measured_count || 0)}, `
-      + `threshold=${gate.threshold_rate ?? launchGateAccuracyContract.minimum_internal_reviewed_gt_rate}.`
+      + `threshold=${gate.threshold_rate ?? launchGateAccuracyContract.mixed_100_minimum_token_recall}.`
+    );
+  }
+  return gate.checks;
+}
+
+export function buildWriterPerceivedSpeedGate({
+  profile = "reviewed-10",
+  evaluationMode = launchGateIterationContract.formal_mode,
+  runReports = []
+} = {}) {
+  const reports = runReports.map((entry) => entry.report || entry);
+  const results = reports.flatMap((report) => report.results || []);
+  const elapsedMs = reports.reduce((sum, report) => sum + Number(report.run_wall_ms || 0), 0);
+  const completedCount = results.filter((result) => result?.ok === true && result?.l2_ready === true).length;
+  const expectedCount = results.length;
+  const rawRate = elapsedMs > 0 ? completedCount * 60_000 / elapsedMs : null;
+  const rate = rawRate === null ? null : Number(rawRate.toFixed(3));
+  const formalColdChain = cleanText(evaluationMode) === launchGateIterationContract.formal_mode;
+  const cacheHitCount = reports.reduce((sum, report) => (
+    sum + Number(report.verified_asset_cache?.hit_count || 0)
+  ), 0);
+  const required = formalColdChain && launchGateSpeedContract.required_profiles.includes(cleanText(profile));
+  const checks = {
+    cold_chain_measurement: formalColdChain && cacheHitCount === 0,
+    writer_clock_measured: elapsedMs > 0,
+    all_cards_complete: expectedCount > 0 && completedCount === expectedCount,
+    minimum_rate_met: rawRate !== null
+      && rawRate >= launchGateSpeedContract.minimum_writer_perceived_cards_per_minute
+  };
+  return {
+    required,
+    evaluation_mode: cleanText(evaluationMode),
+    formal_cold_chain: formalColdChain,
+    verified_asset_cache_hit_count: cacheHitCount,
+    formal_chain_proof_eligible: formalColdChain && cacheHitCount === 0,
+    scope: "writer_perceived_upload_to_complete_recognition",
+    clock_start: launchGateSpeedContract.clock_start,
+    clock_stop: launchGateSpeedContract.clock_stop,
+    excluded_setup: launchGateSpeedContract.excluded_setup,
+    minimum_cards_per_minute: launchGateSpeedContract.minimum_writer_perceived_cards_per_minute,
+    expected_count: expectedCount,
+    completed_count: completedCount,
+    elapsed_ms: elapsedMs,
+    actual_cards_per_minute: rate,
+    checks,
+    passed: !required || Object.values(checks).every((value) => value === true)
+  };
+}
+
+export function assertWriterPerceivedSpeed(report = {}) {
+  const gate = report.writer_perceived_speed_gate || {};
+  if (gate.required !== true) return gate.checks || {};
+  const failed = Object.entries(gate.checks || {})
+    .filter(([, value]) => value !== true)
+    .map(([key]) => key);
+  if (gate.passed !== true || failed.length) {
+    throw new Error(
+      `Launch-gate writer speed failed: ${failed.length ? failed.join(", ") : "gate_not_passed"}; `
+      + `actual=${gate.actual_cards_per_minute ?? "missing"}, completed=${Number(gate.completed_count || 0)}/${Number(gate.expected_count || 0)}, `
+      + `threshold=${gate.minimum_cards_per_minute ?? launchGateSpeedContract.minimum_writer_perceived_cards_per_minute}.`
     );
   }
   return gate.checks;
@@ -567,7 +849,9 @@ export function observedExecutionContractChecks(runReports = []) {
     fast_prompt_override_locked: reports.length > 0 && reports.every((report) => report.fast_initial_prompt_override === false),
     compact_prompt_override_locked: reports.length > 0 && reports.every((report) => report.compact_l2_enabled === true),
     runner_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.concurrency) === 2),
-    preparation_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.preparation_concurrency) === 2),
+    preparation_concurrency_locked: reports.length > 0 && reports.every((report) => (
+      Number(report.preparation_concurrency) === launchGateExecutionContract.preparation_concurrency
+    )),
     submission_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.submission_concurrency) === 2),
     provider_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.provider_concurrency) === 2),
     identity_cache_disabled: reports.length > 0 && reports.every((report) => report.identity_cache_disabled === true),
@@ -582,13 +866,13 @@ export function observedExecutionContractChecks(runReports = []) {
       cleanText(result.provider_prompt_mode).toLowerCase() === launchGateExecutionContract.provider_prompt_mode
     )),
     predictions_frozen_before_scoring: reports.length > 0 && reports.every((report) => Boolean(cleanText(report.predictions_sha256))),
-    vector_self_retrieval_exclusion_enforced: successfulInternalResults.length > 0
-      && vectorSelfExclusionAttempts.length > 0
-      && successfulInternalResults.every((result) => (
-        result.vector_self_exclusion_filter_active === true
-        && Number(result.vector_self_exclusion_requested_source_count) >= 1
-        && Boolean(cleanText(result.vector_self_exclusion_source_ids_sha256))
-      )),
+    vector_self_retrieval_exclusion_enforced: successfulInternalResults.length === 0
+      || (vectorSelfExclusionAttempts.length > 0
+        && successfulInternalResults.every((result) => (
+          result.vector_self_exclusion_filter_active === true
+          && Number(result.vector_self_exclusion_requested_source_count) >= 1
+          && Boolean(cleanText(result.vector_self_exclusion_source_ids_sha256))
+        ))),
     cohort_cold_start_policy_observed: cohortPlans.length === 0 || cohortPlans.every((entry) => (
       entry.report?.cold_start_blind === entry.cold_start_blind
     ))
@@ -605,6 +889,7 @@ export function assertObservedExecutionContract(runReports = []) {
 
 export function buildLaunchGateReport({
   profile = "reviewed-10",
+  evaluationMode = launchGateIterationContract.formal_mode,
   dataset = {},
   datasetContract = {},
   startSnapshot = {},
@@ -643,10 +928,13 @@ export function buildLaunchGateReport({
     internalMetrics,
     ebayMetrics
   });
+  const writerPerceivedSpeedGate = buildWriterPerceivedSpeedGate({ profile, evaluationMode, runReports });
   const report = {
     schema_version: "launch-gate-evaluation-report-v1",
     generated_at: now.toISOString(),
     profile,
+    evaluation_mode: evaluationMode,
+    formal_chain_proof: evaluationMode === launchGateIterationContract.formal_mode,
     execution_contract: {
       required: launchGateExecutionContract,
       observed_checks: observedChecks,
@@ -673,29 +961,38 @@ export function buildLaunchGateReport({
       }
     },
     accuracy_reporting_policy: {
+      contract_version: launchGateAccuracyContract.contract_version,
+      frozen_at: launchGateAccuracyContract.frozen_at,
       combined_formal_accuracy_prohibited: true,
       combined_formal_accuracy: null,
       formal_scope: launchGateAccuracyContract.formal_scope,
-      minimum_internal_reviewed_gt_rate: launchGateAccuracyContract.minimum_internal_reviewed_gt_rate,
+      minimum_mixed_100_policy_token_recall: launchGateAccuracyContract.mixed_100_minimum_token_recall,
       weak_reference_scope: "ebay_weak_label_diagnostics_only",
       ebay_formal_accuracy_eligible: false,
-      reviewed_10_token_recall_decision_authority: profile === "reviewed-10",
-      sem_projection_decision_authority: profile !== "reviewed-10"
+      token_recall_decision_authority: true,
+      sem_projection_catastrophic_guard_only: true,
+      deprecated_sem_acceptance_rate_decision_authority: false,
+      historical_exposure_exclusion: launchGateAccuracyContract.historical_exposure_exclusion
     },
     formal_accuracy_gate: formalAccuracyGate,
+    writer_perceived_speed_gate: writerPerceivedSpeedGate,
     technical_summary: {
       ...technicalMetrics(results),
       run_count: runReports.length,
-      run_wall_ms: runReports.reduce((sum, entry) => sum + Number((entry.report || entry).run_wall_ms || 0), 0),
+      run_wall_ms: writerPerceivedSpeedGate.elapsed_ms,
+      writer_perceived_cards_per_minute: writerPerceivedSpeedGate.actual_cards_per_minute,
       pipeline_node_observability: summarizePipelineNodeLedgers(results)
     },
     integrity_checks: {
       deployment_stable: drift.unchanged,
       all_results_classified: unknownRows.length === 0,
       combined_formal_accuracy_absent: true,
-      internal_reviewed_gt_measurement_complete: formalAccuracyGate.checks.measured_count_matches_cohort,
+      internal_reviewed_gt_measurement_complete: profile === "ebay-50"
+        ? true
+        : formalAccuracyGate.checks.measured_count_matches_cohort,
       ebay_diagnostics_only: formalAccuracyGate.checks.ebay_diagnostics_only,
-      formal_accuracy_gate_passed: formalAccuracyGate.passed
+      formal_accuracy_gate_passed: formalAccuracyGate.passed,
+      writer_perceived_speed_gate_passed: writerPerceivedSpeedGate.passed
     },
     strata: {
       internal_reviewed_gt: internalMetrics,
@@ -717,7 +1014,7 @@ function assertNoLockedCliOverrides(argv = []) {
 
 async function prepareRunPlans({ profile, dataset, tempRoot }) {
   const items = loadItems(dataset);
-  if (profile === "reviewed-10") {
+  if (["reviewed-10", "reviewed-50"].includes(profile)) {
     const recognitionDataset = recognitionSafeValue(dataset);
     const recognitionItems = loadItems(recognitionDataset);
     const recognitionPath = join(tempRoot, "internal_reviewed_gt.json");
@@ -726,6 +1023,21 @@ async function prepareRunPlans({ profile, dataset, tempRoot }) {
     return [{
       cohort: "INTERNAL_REVIEWED_GT",
       coldStartBlind: false,
+      datasetPath: recognitionPath,
+      itemCount: recognitionItems.length,
+      recognitionItems,
+      scoringItems: items
+    }];
+  }
+  if (profile === "ebay-50") {
+    const recognitionDataset = recognitionSafeValue(dataset);
+    const recognitionItems = loadItems(recognitionDataset);
+    const recognitionPath = join(tempRoot, "ebay_cold_start.json");
+    assertRecognitionManifestBlind(recognitionDataset, []);
+    await writeFile(recognitionPath, `${JSON.stringify(recognitionDataset, null, 2)}\n`);
+    return [{
+      cohort: "EBAY_COLD_START",
+      coldStartBlind: true,
       datasetPath: recognitionPath,
       itemCount: recognitionItems.length,
       recognitionItems,
@@ -762,8 +1074,32 @@ async function prepareRunPlans({ profile, dataset, tempRoot }) {
   return plans;
 }
 
+export function datasetForLaunchGateProfile(dataset = {}, profile = "reviewed-10") {
+  if (!["reviewed-10", "reviewed-50", "ebay-50"].includes(profile)) return dataset;
+  const targetCohort = profile === "ebay-50" ? "EBAY_COLD_START" : "INTERNAL_REVIEWED_GT";
+  const profileLimit = profile === "reviewed-10" ? 10 : 50;
+  const items = loadItems(dataset)
+    .filter((item) => cohortForItem(item) === targetCohort)
+    .slice(0, profileLimit);
+  const selectedIds = items.map((item) => cleanText(item.source_feedback_id || item.asset_id));
+  return {
+    ...dataset,
+    items,
+    item_count: items.length,
+    allocation: undefined,
+    evaluation_sample_policy: dataset.evaluation_sample_policy
+      ? {
+        ...dataset.evaluation_sample_policy,
+        selected_item_count: items.length,
+        selected_item_ids_sha256: evaluationItemSetSha256(selectedIds)
+      }
+      : null
+  };
+}
+
 export async function runLaunchGateEvaluation({
   profile = "reviewed-10",
+  evaluationMode = launchGateIterationContract.formal_mode,
   datasetPath,
   sealedLabelsPath,
   baseUrl,
@@ -772,12 +1108,17 @@ export async function runLaunchGateEvaluation({
   expectedDeploymentId = "",
   expectedDeploymentSha = "",
   outPath,
+  checkpointPath = "",
+  verifiedAssetCachePath = launchGateIterationContract.default_verified_asset_cache_path,
+  resumeBatchIds = {},
   thinkMs = 0,
   l2WaitMs = 240000,
   requestTimeoutMs = 120000,
   fetchImpl = globalThis.fetch,
   smokeRunner = runV4EbaySmoke,
   imageMaterializer = materializeLaunchGateImages,
+  assetCacheReader = readVerifiedAssetCache,
+  sourceFingerprint = durableSourceFingerprint,
   progress = true,
   now = () => new Date()
 } = {}) {
@@ -787,11 +1128,32 @@ export async function runLaunchGateEvaluation({
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
   if (!normalizedBaseUrl) throw new Error("--base-url is required");
   if (!username || !password) throw new Error("runtime credentials are required");
-  const dataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
+  const normalizedEvaluationMode = cleanText(evaluationMode) || launchGateIterationContract.formal_mode;
+  if (![launchGateIterationContract.formal_mode, launchGateIterationContract.strategy_replay_mode].includes(normalizedEvaluationMode)) {
+    throw new Error(`unsupported evaluation mode: ${normalizedEvaluationMode}`);
+  }
+  const sourceDataset = JSON.parse(await readFile(resolve(datasetPath), "utf8"));
+  const dataset = datasetForLaunchGateProfile(sourceDataset, profile);
   const datasetContract = assertLaunchGateDatasetContract(dataset, { profile });
   const expectedDeployment = {
     deployment_id: cleanText(expectedDeploymentId),
     deployment_sha: cleanText(expectedDeploymentSha)
+  };
+  const resolvedCheckpointPath = resolve(checkpointPath || `${outPath}.checkpoint.json`);
+  const checkpointFingerprint = launchGateCheckpointFingerprint({
+    profile,
+    evaluationMode: normalizedEvaluationMode,
+    dataset,
+    expectedDeployment
+  });
+  const checkpoint = await readLaunchGateCheckpoint(resolvedCheckpointPath, checkpointFingerprint) || {
+    schema_version: "launch-gate-checkpoint-v1",
+    fingerprint: checkpointFingerprint,
+    profile,
+    evaluation_mode: normalizedEvaluationMode,
+    expected_deployment: expectedDeployment,
+    active_batches: {},
+    completed_cohorts: {}
   };
 
   const startHealth = await fetchJson({ baseUrl: normalizedBaseUrl, path: "/api/v4/health", fetchImpl });
@@ -812,20 +1174,54 @@ export async function runLaunchGateEvaluation({
   const tempRoot = await mkdtemp(join(tmpdir(), "lynca-launch-gate-"));
   const runReports = [];
   try {
-    const materialized = await imageMaterializer({
-      dataset,
-      outputDirectory: join(tempRoot, "images"),
-      baseUrl: normalizedBaseUrl,
-      cookie,
-      concurrency: launchGateExecutionContract.preparation_concurrency,
-      fetchImpl
-    });
+    const strategyReplay = normalizedEvaluationMode === launchGateIterationContract.strategy_replay_mode;
+    const materialized = strategyReplay
+      ? await materializeStrategyReplayMisses({
+        dataset,
+        verifiedAssetCachePath,
+        outputDirectory: join(tempRoot, "images"),
+        baseUrl: normalizedBaseUrl,
+        cookie,
+        concurrency: launchGateExecutionContract.preparation_concurrency,
+        fetchImpl,
+        imageMaterializer,
+        assetCacheReader,
+        sourceFingerprint
+      })
+      : await imageMaterializer({
+        dataset,
+        outputDirectory: join(tempRoot, "images"),
+        baseUrl: normalizedBaseUrl,
+        cookie,
+        concurrency: launchGateExecutionContract.preparation_concurrency,
+        fetchImpl
+      });
     datasetContract.image_materialization = materialized.summary;
     const emptyReferencesPath = join(tempRoot, "sealed-references-empty.jsonl");
     await writeFile(emptyReferencesPath, "\n");
     const plans = await prepareRunPlans({ profile, dataset: materialized.dataset, tempRoot });
     for (const plan of plans) {
+      const completed = checkpoint.completed_cohorts?.[plan.cohort];
+      if (completed?.report) {
+        if (progress) process.stderr.write(`[launch-gate] cohort=${plan.cohort} restored_from_checkpoint=true\n`);
+        runReports.push({
+          cohort: plan.cohort,
+          cold_start_blind: plan.coldStartBlind,
+          scoring_items: plan.scoringItems,
+          report: completed.report
+        });
+        continue;
+      }
       if (progress) process.stderr.write(`[launch-gate] cohort=${plan.cohort} items=${plan.itemCount}\n`);
+      const explicitResumeBatchId = cleanText(resumeBatchIds?.[plan.cohort]);
+      const checkpointBatchId = cleanText(checkpoint.active_batches?.[plan.cohort]);
+      const resumeBatchId = explicitResumeBatchId || checkpointBatchId;
+      const assignedBatchId = resumeBatchId || `smoke-v4-batch-${Date.now()}-${plan.cohort.toLowerCase()}`;
+      checkpoint.active_batches = {
+        ...(checkpoint.active_batches || {}),
+        [plan.cohort]: assignedBatchId
+      };
+      await writeLaunchGateCheckpoint(resolvedCheckpointPath, checkpoint);
       const report = await smokeRunner({
         datasetPath: plan.datasetPath,
         sealedLabelsPath: emptyReferencesPath,
@@ -852,7 +1248,11 @@ export async function runLaunchGateEvaluation({
         concurrency: launchGateExecutionContract.provider_concurrency,
         preparationConcurrency: launchGateExecutionContract.preparation_concurrency,
         submissionConcurrency: launchGateExecutionContract.submission_concurrency,
+        batchId: assignedBatchId,
+        resumeBatchId,
         evaluationSampleMode: dataset.evaluation_sample_policy?.mode || "UNSPECIFIED",
+        verifiedAssetCachePath,
+        verifiedAssetCacheMode: strategyReplay ? "reuse" : "refresh",
         outPath: "",
         progress
       });
@@ -862,6 +1262,16 @@ export async function runLaunchGateEvaluation({
         scoring_items: plan.scoringItems,
         report
       });
+      checkpoint.completed_cohorts = {
+        ...(checkpoint.completed_cohorts || {}),
+        [plan.cohort]: {
+          cohort: plan.cohort,
+          cold_start_blind: plan.coldStartBlind,
+          report
+        }
+      };
+      delete checkpoint.active_batches[plan.cohort];
+      await writeLaunchGateCheckpoint(resolvedCheckpointPath, checkpoint);
     }
     const sealedReferences = await readSealedReferenceMap(sealedLabelsPath);
     for (const entry of runReports) {
@@ -890,6 +1300,7 @@ export async function runLaunchGateEvaluation({
   const observedChecks = observedExecutionContractChecks(runReports);
   const report = buildLaunchGateReport({
     profile,
+    evaluationMode: normalizedEvaluationMode,
     dataset,
     datasetContract,
     startSnapshot,
@@ -916,6 +1327,7 @@ export async function runLaunchGateEvaluation({
     throw new Error(`Launch-gate report contains ${report.strata.unclassified.attempted_count} unclassified result(s).`);
   }
   assertLaunchGateFormalAccuracy(report);
+  assertWriterPerceivedSpeed(report);
   return report;
 }
 
@@ -925,18 +1337,22 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   const originalFetch = globalThis.fetch;
   const fetchImpl = deploymentProtectedFetch(originalFetch, {
     baseUrl,
-    bypassSecret: env.VERCEL_AUTOMATION_BYPASS_SECRET || ""
+    bypassSecret: env.VERCEL_AUTOMATION_BYPASS_SECRET || "",
+    bypassCookie: env.VERCEL_AUTOMATION_BYPASS_COOKIE || ""
   });
   globalThis.fetch = fetchImpl;
   let report;
   try {
     report = await runLaunchGateEvaluation({
     profile: argValue(argv, "--profile", env.LAUNCH_GATE_PROFILE || "reviewed-10"),
+    evaluationMode: argv.includes("--strategy-replay")
+      ? launchGateIterationContract.strategy_replay_mode
+      : launchGateIterationContract.formal_mode,
     datasetPath: argValue(argv, "--dataset", env.DATASET_PATH || ""),
     sealedLabelsPath: argValue(argv, "--sealed-labels", env.SEALED_LABELS_PATH || ""),
     baseUrl,
-    username: argValue(argv, "--username", env.METAVERSE_USERNAME || ""),
-    password: argValue(argv, "--password", env.METAVERSE_PASSWORD || ""),
+    username: env.METAVERSE_USERNAME || "",
+    password: env.METAVERSE_PASSWORD || "",
     expectedDeploymentId: argValue(
       argv,
       "--expected-deployment-id",
@@ -948,6 +1364,16 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       env.LAUNCH_GATE_EXPECTED_DEPLOYMENT_SHA || env.EXPECTED_DEPLOYMENT_SHA || ""
     ),
     outPath: argValue(argv, "--out", env.REPORT_PATH || ""),
+    checkpointPath: argValue(argv, "--checkpoint", env.LAUNCH_GATE_CHECKPOINT_PATH || ""),
+    verifiedAssetCachePath: argValue(
+      argv,
+      "--verified-asset-cache",
+      env.LAUNCH_GATE_VERIFIED_ASSET_CACHE_PATH || launchGateIterationContract.default_verified_asset_cache_path
+    ),
+    resumeBatchIds: {
+      INTERNAL_REVIEWED_GT: argValue(argv, "--resume-internal-batch-id", env.LAUNCH_GATE_RESUME_INTERNAL_BATCH_ID || ""),
+      EBAY_COLD_START: argValue(argv, "--resume-ebay-batch-id", env.LAUNCH_GATE_RESUME_EBAY_BATCH_ID || "")
+    },
     thinkMs: numberArg(argv, "--think-ms", 0),
     l2WaitMs: numberArg(argv, "--l2-wait-ms", 240000),
     requestTimeoutMs: numberArg(argv, "--request-timeout-ms", 120000),

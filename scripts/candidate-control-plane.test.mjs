@@ -91,6 +91,9 @@ function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
       product: "Bowman Chrome",
       players: ["Jesus Made"],
       card_name: "Spotlights",
+      rc: true,
+      ssp: true,
+      auto: true,
       collector_number: "BS-4",
       parallel_exact: "Red Refractor",
       serial_number: "12/50",
@@ -183,13 +186,18 @@ function testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin() {
     source_trust: "APPROVED_REFERENCE",
     similarity: 0.99
   };
+  const duplicateCatalogCandidate = {
+    ...catalogCandidate,
+    candidate_id: "catalog-semantic-duplicate",
+    candidate_identity_id: "identity-separate-database-row"
+  };
   const control = buildCandidateSelectionPass({
     result: {
-      catalog_candidate_packet: packet([catalogCandidate], {
-        raw_candidate_count: 1,
-        approved_candidate_count: 1,
-        prompt_candidate_count: 1,
-        prompt_candidate_ids: ["identity-shared"]
+      catalog_candidate_packet: packet([catalogCandidate, duplicateCatalogCandidate], {
+        raw_candidate_count: 2,
+        approved_candidate_count: 2,
+        prompt_candidate_count: 2,
+        prompt_candidate_ids: ["catalog-same-identity", "catalog-semantic-duplicate"]
       }),
       vector_candidate_packet: packet([vectorCandidate], {
         raw_candidate_count: 1,
@@ -200,12 +208,12 @@ function testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin() {
     }
   });
 
-  assert.equal(control.decision_eligible_candidate_count, 2);
+  assert.equal(control.decision_eligible_candidate_count, 3);
   assert.equal(control.selected_candidate_decision.viable_identity_group_count, 1);
   assert.equal(control.selected_candidate_decision.selected_candidate_id, "catalog-same-identity");
   assert.deepEqual(
     new Set(control.selected_candidate_decision.selected_candidate_group_ids),
-    new Set(["catalog-same-identity", "vector-same-identity"])
+    new Set(["catalog-same-identity", "catalog-semantic-duplicate", "vector-same-identity"])
   );
   assert.equal(control.selected_candidate_decision.low_margin_candidate_id, "");
 }
@@ -311,6 +319,51 @@ function testCandidateOnlyPacketCannotEnterProductionDecision() {
   assert.equal(control.selected_candidate_decision.selected_candidate_id, "");
   assert.equal(control.candidate_field_evidence.length, 0);
   assert.equal(control.candidate_application_trace[0].participation_level, "LEVEL_0_SHADOW");
+}
+
+function testTrustedPostObservationCatalogCanEnterDeterministicDecision() {
+  const candidate = {
+    candidate_id: "official-post-observation",
+    candidate_identity_id: "identity-official-post-observation",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "APPROVED_REFERENCE",
+    match_score: 0.98,
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "manufacturer", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Topps Three",
+      players: ["Victor Wembanyama"],
+      collector_number: "RS-VW"
+    }
+  };
+  const control = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: {
+        year: "2025-26",
+        manufacturer: "Topps",
+        product: "Topps Three",
+        players: ["Victor Wembanyama"]
+      },
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 0,
+        prompt_candidate_ids: []
+      })
+    }
+  });
+
+  assert.equal(control.candidate_application_trace[0].provider_prompt_eligible, false);
+  assert.equal(control.candidate_application_trace[0].decision_eligible, true);
+  assert.equal(control.decision_eligible_candidate_count, 1);
+  assert.equal(control.selected_candidate_decision.selected_candidate_id, candidate.candidate_id);
+  assert.ok(control.candidate_field_evidence.length > 0);
 }
 
 function testFunnelAndEvidenceTraceFailClosedOnConflict() {
@@ -492,6 +545,9 @@ function testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData() 
       product: "Bowman Chrome",
       players: ["Jesus Made"],
       card_name: "Spotlights",
+      rc: true,
+      ssp: true,
+      auto: true,
       collector_number: "BS-4",
       serial_number: "12/50",
       grade_company: "PSA",
@@ -523,9 +579,15 @@ function testAtomicCandidateDecisionAppliesIdentityWithoutCopyingInstanceData() 
   assert.ok(decision.field_application.applied_fields.includes("manufacturer"));
   assert.ok(decision.field_application.applied_fields.includes("product"));
   assert.ok(decision.field_application.applied_fields.includes("card_name"));
+  assert.ok(decision.field_application.applied_fields.includes("rc"));
+  assert.ok(decision.field_application.applied_fields.includes("ssp"));
+  assert.ok(decision.field_application.applied_fields.includes("auto"));
   assert.equal(decision.resolved_after.manufacturer, "Bowman");
   assert.equal(decision.resolved_after.product, "Bowman Chrome");
   assert.equal(decision.resolved_after.card_name, "Spotlights");
+  assert.equal(decision.resolved_after.rc, true);
+  assert.equal(decision.resolved_after.ssp, true);
+  assert.equal(decision.resolved_after.auto, true);
   assert.ok(decision.resolved_after.print_run_numerator == null);
   assert.ok(decision.resolved_after.grade_company == null);
   assert.ok(decision.resolved_after.card_grade == null);
@@ -975,6 +1037,61 @@ function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
   assert.ok(decision.field_application.applied_fields.includes("set"));
 }
 
+function testCompatibleCatalogHierarchyDoesNotManufactureLowMarginConflict() {
+  const observed = {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"]
+  };
+  const specific = {
+    candidate_id: "reviewed-ohtani-platinum",
+    candidate_identity_id: "reviewed-ohtani-platinum-identity",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    match_score: 0.07,
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Topps Chrome Platinum",
+      players: ["Shohei Ohtani"]
+    }
+  };
+  const generic = {
+    ...specific,
+    candidate_id: "catalog-ohtani-chrome",
+    candidate_identity_id: "catalog-ohtani-chrome-identity",
+    source_type: "STRUCTURED_DATABASE",
+    match_score: 0,
+    fields: {
+      ...specific.fields,
+      product: "Topps Chrome"
+    }
+  };
+  const result = {
+    resolved_fields: observed,
+    catalog_candidate_packet: packet([specific, generic], {
+      raw_candidate_count: 2,
+      approved_candidate_count: 2,
+      prompt_candidate_count: 2,
+      prompt_candidate_ids: [specific.candidate_id, generic.candidate_id]
+    })
+  };
+  const selection = buildCandidateSelectionPass({ result });
+  const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: observed });
+
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, specific.candidate_id);
+  assert.equal(selection.selected_candidate_decision.low_margin_waived_reason, "compatible_product_hierarchy_consensus");
+  assert.ok(selection.selected_candidate_decision.selection_margin < 0.08);
+  assert.equal(decision.resolved_after.product, "Topps Chrome Platinum");
+}
+
 function testManufacturerPrefixAloneCannotOverwriteObservedProduct() {
   const candidate = {
     candidate_id: "catalog-maker-prefix-only",
@@ -1200,7 +1317,6 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
     product: "Topps Chrome",
     players: ["Victor Wembanyama"],
     surface_color: "Green",
-    serial_number: "17/50",
     serial_denominator: "50"
   };
   const candidate = {
@@ -1220,13 +1336,20 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
       surface_color: "Gold",
       parallel_family: "Refractor",
       serial_number: "31/50",
+      print_run_denominator: "50",
       serial_denominator: "50",
+      expected_serial_denominator: "50",
       grade_company: "PSA",
       card_grade: "10",
       cert_number: "12345678"
     }
   };
-  const catalogPacket = buildVectorCandidatePacket({ sources: [candidate] }, {
+  const semanticDuplicate = {
+    ...candidate,
+    candidate_id: "reviewed-wemby-gold-duplicate-row",
+    candidate_identity_id: "reviewed-wemby-gold-duplicate-identity"
+  };
+  const catalogPacket = buildVectorCandidatePacket({ sources: [candidate, semanticDuplicate] }, {
     limit: 5,
     queryFields: observed
   });
@@ -1242,7 +1365,17 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
 
   assert.equal(decision.resolved_after.surface_color, "Gold");
   assert.equal(decision.resolved_after.parallel_family, "Refractor");
-  assert.equal(decision.resolved_after.serial_number, "17/50");
+  assert.equal(decision.resolved_after.serial_number, "#/50");
+  assert.notEqual(decision.resolved_after.serial_number, "31/50");
+  assert.equal(decision.resolved_after.print_run_denominator, "50");
+  assert.equal(decision.resolved_after.expected_serial_denominator, "50");
+  assert.equal(selection.selected_candidate_decision.viable_identity_group_count, 1);
+  assert.deepEqual(
+    new Set(selection.selected_candidate_decision.selected_candidate_group_ids),
+    new Set(["reviewed-wemby-gold", "reviewed-wemby-gold-duplicate-row"])
+  );
+  assert.ok(selection.selected_candidate_safe_field_application.eligible_fields.includes("print_run_denominator"));
+  assert.equal(decision.field_application.applied_fields.includes("serial_number"), false);
   assert.equal(decision.resolved_after.grade_company ?? null, null);
   assert.equal(decision.resolved_after.cert_number ?? null, null);
 }
@@ -1252,6 +1385,7 @@ testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
 testApplicableCatalogTierBeatsSupportOnlyVectorTier();
 testCandidateOnlyPacketCannotEnterProductionDecision();
+testTrustedPostObservationCatalogCanEnterDeterministicDecision();
 testFunnelAndEvidenceTraceFailClosedOnConflict();
 testLowMarginCandidateOnlySupportsCurrentImageFields();
 testTrustBlockedCountPropagatesToActivationFunnel();
@@ -1265,6 +1399,7 @@ testDenominatorAloneCannotOverrideConflictingYear();
 testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars();
 testEvidenceScalarOnlyFillsMissingObservedField();
 testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
+testCompatibleCatalogHierarchyDoesNotManufactureLowMarginConflict();
 testManufacturerPrefixAloneCannotOverwriteObservedProduct();
 testPacketRebindPreservesPlayersAsSubjectAnchor();
 testNumericYearMayBeOmittedButCannotHideDifferentProductBranch();

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { evaluateCloudListingApi, fairTokenRecall, policyFairTokenRecall, validateProtectionBypassSecret } from "./evaluate-cloud-listing-api.mjs";
 import { compareCloudEvalAblation } from "./compare-cloud-eval-ablation.mjs";
+import { semFieldEquivalent } from "../lib/listing/v4/policy/sem-scoring-policy.mjs";
 
 function jsonResponse(status, body, headers = {}) {
   return {
@@ -1239,6 +1240,7 @@ assert.equal(policyFairTokenRecall("2018-19 Panini Threads Trae Young Rookies Pr
 assert.equal(policyFairTokenRecall("2022 Mosaic Patrick Mahomes II Choice Nebula #1/1 Chiefs PSA 10", "2022 Mosaic Patrick Mahomes Choice Nebula 1/1 PSA 10"), 1);
 assert.equal(policyFairTokenRecall("2024 Topps Chrome Red Refractor", "2024 Topps Chrome Refractor") < 1, true); // Red is a finish/color, not a removable team token.
 assert.equal(policyFairTokenRecall("2024 Bowman Chrome New Breed Auto", "2024 Bowman Chrome Auto") < 1, true); // New Breed is a card name, not New York.
+assert.equal(semFieldEquivalent("print_finish", "Mojo Refractor", "Mega Chrome"), true);
 assert.equal(policyFairTokenRecall("2024 Topps Red Sox Auto", "2024 Topps Auto"), 1);
 assert.equal(policyFairTokenRecall("2024 New York Yankees Auto", "2024 Auto"), 1);
 assert.equal(policyFairTokenRecall("2021 Bowman Draft Tyler Black Chrome Auto RC Red Refractor 1st #/5 PSA 10 9", "2021 Bowman Chrome Tyler Black Chrome Draft Pick Auto Red Ref. 4/5 #CDA PSA 10/9") >= 0.72, true);

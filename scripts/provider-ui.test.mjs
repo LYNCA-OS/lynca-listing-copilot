@@ -66,7 +66,10 @@ assert.doesNotMatch(js, /GPT-4\.1 mini 生产主路径/, "provider role text mus
 assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not expose mixed-model cascade controls");
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs with bounded transient recovery");
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-verify-upload"/, "uploaded objects should retry transient verification in place");
+assert.match(js, /const STORAGE_VERIFY_TIMEOUT_MS = 20000/, "verification should have a stage-specific tail cap");
+assert.match(js, /const STORAGE_VERIFY_RETRY_DELAYS_MS = Object\.freeze\(\[250, 1000\]\)/, "verification redundancy must stay bounded and avoid retry storms");
 assert.match(js, /pendingStorageVerification/, "an uploaded object must retain its verification descriptor until persistence succeeds");
+assert.match(js, /throw failedOriginal\.error/, "a failed original verification must release the cached upload promise for compensation retry");
 assert.match(js, /AUTH_UNAVAILABLE/, "storage API retries should recognize transient tenant authentication failures");
 assert.match(js, /生成时会自动重试/, "background image preparation should expose a recoverable writer-facing status");
 assert.doesNotMatch(js, /TITLE_API_ENDPOINT|fetch\(["'`]\/api\/v4\/listing-copilot-title/, "the browser must not bypass durable enqueue with a direct recognition request");

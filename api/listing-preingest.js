@@ -23,6 +23,7 @@ import {
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
+import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
 
 const allowedBrowserSources = new Set([
   "listing_preingest_api",
@@ -280,10 +281,20 @@ export default async function handler(req, res) {
     });
     const durableBundle = writeResult.bundle || bundle;
     const enqueueWorkers = payload.enqueue_workers !== false;
+    const paddleOcr = paddleOcrConfig(process.env);
+    // Never create durable OCR work that the current runtime cannot consume.
+    // A disabled verifier used to leave six queued rows per two-image card,
+    // which looked like a long-tail backlog even though no worker could claim
+    // a single row. Launch-gate preflight separately fails closed when OCR is
+    // required, so this guard cannot silently turn a broken evaluator green.
+    const enqueueOcr = payload.enqueue_ocr !== false
+      && paddleOcr.enabled === true
+      && paddleOcr.configured === true
+      && Boolean(paddleOcr.token);
     const jobs = enqueueWorkers
       ? buildPreingestionWorkerJobs({
         bundle: durableBundle,
-        enableOcr: payload.enqueue_ocr !== false,
+        enableOcr: enqueueOcr,
         enableOcrDetail: payload.enqueue_ocr_detail === true
           || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true",
         enableEmbeddings: payload.enqueue_embeddings === true,
@@ -314,7 +325,10 @@ export default async function handler(req, res) {
         signed_read_url_count: signed.signedReadUrlCount,
         signed_read_url_error_count: signed.errors.length,
         worker_jobs_enqueued: enqueueResult.enqueued || 0,
-        worker_jobs_attempted: enqueueResult.attempted || jobs.length
+        worker_jobs_attempted: enqueueResult.attempted || jobs.length,
+        ocr_verifier_enabled: paddleOcr.enabled === true,
+        ocr_verifier_configured: paddleOcr.configured === true && Boolean(paddleOcr.token),
+        ocr_jobs_suppressed_unavailable: payload.enqueue_ocr !== false && !enqueueOcr
       }
     });
   } catch (error) {

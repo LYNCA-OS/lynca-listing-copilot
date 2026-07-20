@@ -9,6 +9,9 @@ process.env.SUPABASE_URL = "https://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
 process.env.LISTING_IMAGE_BUCKET = "listing-card-images";
 process.env.LISTING_IMAGE_SIGNED_URL_TTL_SECONDS = "600";
+process.env.ENABLE_PADDLE_OCR_FIELD_VERIFIER = "true";
+process.env.PADDLE_OCR_WORKER_URL = "https://ocr.test";
+process.env.PADDLE_OCR_WORKER_TOKEN = "test-ocr-token";
 const assetId = "asset_22222222-2222-4222-8222-222222222222";
 const otherAssetId = "asset_33333333-3333-4333-8333-333333333333";
 

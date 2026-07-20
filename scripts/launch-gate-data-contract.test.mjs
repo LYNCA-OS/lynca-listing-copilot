@@ -12,12 +12,16 @@ import {
   assertObservedExecutionContract,
   assertProviderControlPlane,
   assertRuntimeSnapshot,
+  assertWriterPerceivedSpeed,
   buildLaunchGateFormalAccuracyGate,
   buildLaunchGateReport,
+  buildWriterPerceivedSpeedGate,
+  datasetForLaunchGateProfile,
   deploymentProtectedFetch,
   deploymentDrift,
   launchGateAccuracyContract,
   launchGateExecutionContract,
+  launchGateSpeedContract,
   main as runLaunchGateMain,
   numberArg as launchGateNumberArg,
   observedExecutionContractChecks,
@@ -54,6 +58,26 @@ assert.equal(launchGateNumberArg(["--l2-wait-ms", "240000"], "--l2-wait-ms", 18_
   assert.equal(calls[0].headers["x-vercel-protection-bypass"], "test-bypass-secret");
   assert.equal(calls[0].headers.accept, "application/json");
   assert.equal(calls[1].headers["x-vercel-protection-bypass"], undefined, "bypass credentials must not leak to signed storage origins");
+}
+
+{
+  const calls = [];
+  const fetchImpl = async (input, init = {}) => {
+    calls.push({ input: String(input), headers: Object.fromEntries(new Headers(init.headers || {}).entries()) });
+    return new Response("{}", { status: 200 });
+  };
+  const protectedFetch = deploymentProtectedFetch(fetchImpl, {
+    baseUrl: "https://candidate.example.test",
+    bypassCookie: "_vercel_jwt=short-lived-test-cookie"
+  });
+  await protectedFetch("https://candidate.example.test/api/jobs", {
+    headers: { cookie: "lynca_session=application-session" }
+  });
+  await protectedFetch("https://signed-storage.example.test/image.jpg", {
+    headers: { cookie: "storage_cookie=keep" }
+  });
+  assert.equal(calls[0].headers.cookie, "lynca_session=application-session; _vercel_jwt=short-lived-test-cookie");
+  assert.equal(calls[1].headers.cookie, "storage_cookie=keep", "deployment cookie must not leak to signed storage origins");
 }
 
 const compactRetrievalAudit = compactCandidateTrace({
@@ -210,19 +234,19 @@ function prohibitedPaths(value, path = "$", output = []) {
   return output;
 }
 
-function reviewedTenDataset() {
+function makeReviewedDataset(count = 10) {
   return {
     schema_version: "reviewed-title-blind-eval-v1",
-    item_count: 10,
+    item_count: count,
     evaluation_sample_policy: {
       mode: "RANDOM_BLIND",
       randomized_selection: true,
       randomization_verified: true,
       selection_strategy: "seeded_sha256_source_feedback_id",
       sample_seed_sha256: "reviewed-ten-seed-sha256",
-      selected_item_ids_sha256: "reviewed-ten-items-sha256"
+      selected_item_ids_sha256: `reviewed-${count}-items-sha256`
     },
-    items: Array.from({ length: 10 }, (_, index) => ({
+    items: Array.from({ length: count }, (_, index) => ({
       asset_id: `reviewed-${index + 1}`,
       physical_card_id: `reviewed-${index + 1}`,
       source_feedback_id: `feedback-${index + 1}`,
@@ -243,6 +267,10 @@ function reviewedTenDataset() {
       }]
     }))
   };
+}
+
+function reviewedTenDataset() {
+  return makeReviewedDataset(10);
 }
 
 function runtimeHealth() {
@@ -269,6 +297,8 @@ function providerStatus() {
     },
     providers: [{ selectable: true, model_id: "gpt-5-mini" }],
     execution_control: {
+      recognition_worker: { enabled: true, configured: true },
+      paddle_ocr_verifier: { enabled: true, configured: true },
       provider_key_pool_size: 1,
       per_key_stable_concurrency: 2,
       global_provider_concurrency: 2,
@@ -281,6 +311,7 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
   return {
     asset_id: assetId,
     ok: true,
+    l2_ready: true,
     writer_ready: true,
     final_title: finalTitle,
     provider_image_detail: "high",
@@ -306,7 +337,7 @@ function rawRunReport(results, { coldStartBlind = false } = {}) {
   return {
     model_override: "gpt-5-mini",
     concurrency: 2,
-    preparation_concurrency: 2,
+    preparation_concurrency: 3,
     submission_concurrency: 2,
     provider_concurrency: 2,
     identity_cache_disabled: true,
@@ -423,6 +454,32 @@ try {
   const reviewedContract = assertLaunchGateDatasetContract(reviewedDataset, { profile: "reviewed-10" });
   assert.equal(reviewedContract.item_count, 10);
   assert.equal(reviewedContract.self_retrieval_exclusion.payload_verified_count, 10);
+  const reviewedRegressionDataset = {
+    ...reviewedDataset,
+    evaluation_sample_policy: {
+      ...reviewedDataset.evaluation_sample_policy,
+      mode: "FIXED_REGRESSION",
+      sample_reuse_permitted: true,
+      reuse_reason: "previous_failed10_replay",
+      reuse_scope_id: "failed10-v1",
+      reuse_policy_complete: true,
+      generalization_claim_permitted: false,
+      randomized_selection: false,
+      selection_strategy: null,
+      sample_seed_sha256: null
+    }
+  };
+  assert.equal(
+    assertLaunchGateDatasetContract(reviewedRegressionDataset, { profile: "reviewed-10" }).item_count,
+    10
+  );
+  assert.throws(() => assertLaunchGateDatasetContract({
+    ...reviewedRegressionDataset,
+    evaluation_sample_policy: {
+      ...reviewedRegressionDataset.evaluation_sample_policy,
+      reuse_reason: null
+    }
+  }, { profile: "reviewed-10" }), /reuse requires reuse_reason/);
   assert.throws(() => assertLaunchGateDatasetContract({ ...reviewedDataset, items: reviewedDataset.items.slice(0, 9) }, {
     profile: "reviewed-10"
   }), /exactly 10/);
@@ -432,25 +489,118 @@ try {
   }, { profile: "reviewed-10" }), /source_feedback_id_missing/);
   const mixedContract = assertLaunchGateDatasetContract(built.manifest, { profile: "mixed-100" });
   assert.deepEqual(mixedContract.cohort_counts, { internal_reviewed_gt: 2, ebay_cold_start: 2, unknown: 0 });
+  const ebayTemplate = built.manifest.items.find((item) => item.evaluation_cohort === "EBAY_COLD_START");
+  const ebayFiftySource = {
+    ...built.manifest,
+    item_count: 50,
+    allocation: undefined,
+    evaluation_sample_policy: {
+      ...built.manifest.evaluation_sample_policy,
+      selected_item_count: 50,
+      selected_item_ids_sha256: "ebay-fifty-items-sha256"
+    },
+    items: Array.from({ length: 50 }, (_, index) => ({
+      ...structuredClone(ebayTemplate),
+      asset_id: `ebay-random-${index + 1}`,
+      physical_card_id: `ebay-random-${index + 1}`,
+      source_feedback_id: `ebay:random:${index + 1}`,
+      images: ebayTemplate.images.map((image) => ({
+        ...image,
+        image_id: `ebay-random-image-${index + 1}`,
+        object_path: `ebay/random/${index + 1}.jpg`
+      }))
+    }))
+  };
+  const ebayFifty = datasetForLaunchGateProfile(ebayFiftySource, "ebay-50");
+  const ebayFiftyContract = assertLaunchGateDatasetContract(ebayFifty, { profile: "ebay-50" });
+  assert.deepEqual(ebayFiftyContract.cohort_counts, { internal_reviewed_gt: 0, ebay_cold_start: 50, unknown: 0 });
+  assert.equal(ebayFiftyContract.self_retrieval_exclusion.required_count, 0);
 
   assert.deepEqual(launchGateExecutionContract, {
     model: "gpt-5-mini",
     image_detail: "high",
     provider_prompt_mode: "v4_compact_l2",
     provider_concurrency: 2,
-    preparation_concurrency: 2,
+    preparation_concurrency: 3,
     submission_concurrency: 2,
     identity_cache_disabled: true,
     ultra_fast_l2: false
   });
   assert.deepEqual(launchGateAccuracyContract, {
+    contract_version: "listing-evaluation-gate-v4-2026-07-19",
+    frozen_at: "2026-07-19",
+    primary_metric: "policy_fair_token_recall_avg",
+    sem_role: "catastrophic_single_card_guard_only",
+    deprecated_primary_metric: "per_item_sem_acceptance_rate_at_0.87",
     per_item_sem_acceptance_threshold: 0.87,
-    minimum_internal_reviewed_gt_rate: 0.87,
     reviewed_10_minimum_token_recall: 0.85,
     reviewed_10_minimum_sem_floor: 0.5,
+    reviewed_50_minimum_token_recall: 0.87,
+    reviewed_50_minimum_sem_floor: 0.5,
+    mixed_100_minimum_token_recall: 0.87,
+    mixed_100_minimum_sem_floor: 0.5,
     formal_scope: "internal_reviewed_gt_only",
-    ebay_reference_role: "diagnostics_only"
+    ebay_reference_role: "diagnostics_only",
+    historical_exposure_exclusion: false,
+    required_sequence: ["reviewed-50", "ebay-50", "mixed-100"]
   });
+  assert.deepEqual(launchGateSpeedContract, {
+    minimum_writer_perceived_cards_per_minute: 6,
+    required_profiles: ["reviewed-10", "reviewed-50", "ebay-50", "mixed-100"],
+    clock_start: "first_writer_upload_started",
+    clock_stop: "all_complete_recognition_results_available",
+    excluded_setup: ["candidate_protection", "dataset_download", "image_materialization", "prewarm"]
+  });
+  const reviewedFifty = datasetForLaunchGateProfile(makeReviewedDataset(50), "reviewed-50");
+  assert.equal(reviewedFifty.items.length, 50);
+  assert.equal(assertLaunchGateDatasetContract(reviewedFifty, { profile: "reviewed-50" }).cohort_counts.internal_reviewed_gt, 50);
+  const reviewedTenFromFifty = datasetForLaunchGateProfile(makeReviewedDataset(50), "reviewed-10");
+  assert.equal(reviewedTenFromFifty.items.length, 10);
+  assert.equal(
+    assertLaunchGateDatasetContract(reviewedTenFromFifty, { profile: "reviewed-10" }).cohort_counts.internal_reviewed_gt,
+    10
+  );
+  assert.equal(reviewedTenFromFifty.evaluation_sample_policy.selected_item_count, 10);
+  const writerSpeedPass = buildWriterPerceivedSpeedGate({
+    profile: "mixed-100",
+    runReports: [{
+      run_wall_ms: 20_000,
+      results: [
+        { ok: true, l2_ready: true },
+        { ok: true, l2_ready: true }
+      ]
+    }]
+  });
+  assert.equal(writerSpeedPass.actual_cards_per_minute, 6);
+  assert.equal(writerSpeedPass.passed, true);
+  assertWriterPerceivedSpeed({ writer_perceived_speed_gate: writerSpeedPass });
+  const writerSpeedFail = buildWriterPerceivedSpeedGate({
+    profile: "mixed-100",
+    runReports: [{
+      run_wall_ms: 20_001,
+      results: [
+        { ok: true, l2_ready: true },
+        { ok: true, l2_ready: true }
+      ]
+    }]
+  });
+  assert.equal(writerSpeedFail.passed, false);
+  assert.throws(
+    () => assertWriterPerceivedSpeed({ writer_perceived_speed_gate: writerSpeedFail }),
+    /minimum_rate_met/
+  );
+  const strategyReplaySpeed = buildWriterPerceivedSpeedGate({
+    profile: "reviewed-10",
+    evaluationMode: "strategy-replay",
+    runReports: [{
+      run_wall_ms: 60_000,
+      verified_asset_cache: { hit_count: 10 },
+      results: Array.from({ length: 10 }, () => ({ ok: true, l2_ready: true }))
+    }]
+  });
+  assert.equal(strategyReplaySpeed.required, false);
+  assert.equal(strategyReplaySpeed.formal_chain_proof_eligible, false);
+  assert.equal(strategyReplaySpeed.passed, true);
   const mixedFiftyGate = buildLaunchGateFormalAccuracyGate({
     profile: "mixed-100",
     cohortCount: 50,
@@ -459,13 +609,42 @@ try {
         eligible: true,
         measured_count: 50,
         correct_count: 44,
-        rate: 0.88
+        rate: 0.88,
+        sem_weighted_accuracy_min: 0.6,
+        token_recall: { measured_count: 50, average: 0.88 }
       }
     },
     ebayMetrics: { formal_accuracy_eligible: false }
   });
-  assert.equal(mixedFiftyGate.required_correct_count, 44);
+  assert.equal(mixedFiftyGate.required_correct_count, null);
   assert.equal(mixedFiftyGate.passed, true);
+  const reviewedFiftyAccuracyGate = buildLaunchGateFormalAccuracyGate({
+    profile: "reviewed-50",
+    cohortCount: 50,
+    internalMetrics: {
+      formal_accuracy: {
+        eligible: true,
+        measured_count: 50,
+        correct_count: 1,
+        rate: 0.02,
+        sem_weighted_accuracy_min: 0.5,
+        token_recall: { measured_count: 50, average: 0.87 }
+      }
+    },
+    ebayMetrics: { formal_accuracy_eligible: false }
+  });
+  assert.equal(reviewedFiftyAccuracyGate.threshold_rate, 0.87);
+  assert.equal(reviewedFiftyAccuracyGate.sem_diagnostics.catastrophic_floor, 0.5);
+  assert.equal(reviewedFiftyAccuracyGate.passed, true);
+  const ebayFiftyDiagnosticGate = buildLaunchGateFormalAccuracyGate({
+    profile: "ebay-50",
+    cohortCount: 50,
+    internalMetrics: { formal_accuracy_eligible: false },
+    ebayMetrics: { formal_accuracy_eligible: false, attempted_count: 50 }
+  });
+  assert.equal(ebayFiftyDiagnosticGate.scope, "ebay_external_distribution_diagnostics_only");
+  assert.equal(ebayFiftyDiagnosticGate.decision_metric, null);
+  assert.equal(ebayFiftyDiagnosticGate.passed, true);
   assert.equal(buildLaunchGateFormalAccuracyGate({
     profile: "mixed-100",
     cohortCount: 50,
@@ -474,12 +653,15 @@ try {
         eligible: true,
         measured_count: 50,
         correct_count: 43,
-        rate: 0.86
+        rate: 0.86,
+        sem_weighted_accuracy_min: 0.6,
+        token_recall: { measured_count: 50, average: 0.86 }
       }
     },
     ebayMetrics: { formal_accuracy_eligible: false }
   }).passed, false);
   await assert.rejects(() => runLaunchGateMain(["--model", "gpt-5"], {}), /execution options are locked/);
+  await assert.rejects(() => runLaunchGateMain(["--password", "unsafe"], {}), /execution options are locked/);
   const snapshot = runtimeSnapshot(runtimeHealth());
   assertRuntimeSnapshot(snapshot);
   assertRuntimeSnapshot(snapshot, {
@@ -517,6 +699,20 @@ try {
     ...providerStatus(),
     execution_control: { ...providerStatus().execution_control, global_provider_concurrency: 3 }
   }), /provider_global_concurrency_locked/);
+  assert.throws(() => assertProviderControlPlane({
+    ...providerStatus(),
+    execution_control: {
+      ...providerStatus().execution_control,
+      recognition_worker: { enabled: false, configured: false }
+    }
+  }), /recognition_worker_enabled, recognition_worker_configured/);
+  assert.throws(() => assertProviderControlPlane({
+    ...providerStatus(),
+    execution_control: {
+      ...providerStatus().execution_control,
+      paddle_ocr_verifier: { enabled: false, configured: false }
+    }
+  }), /paddle_ocr_verifier_enabled, paddle_ocr_verifier_configured/);
 
   const mixedResults = [
     scoredResult({ assetId: "internal-1", reviewed: true, score: 0.9 }),
@@ -589,9 +785,9 @@ try {
   assert.equal(Object.hasOwn(stratifiedReport.strata.ebay_weak_label, "formal_accuracy"), false);
   assert.equal(stratifiedReport.strata.ebay_weak_label.weak_label_agreement.agreement_rate, 0.5);
   assert.equal(stratifiedReport.formal_accuracy_gate.cohort_count, 2);
-  assert.equal(stratifiedReport.formal_accuracy_gate.required_correct_count, 2);
+  assert.equal(stratifiedReport.formal_accuracy_gate.required_correct_count, null);
   assert.equal(stratifiedReport.formal_accuracy_gate.passed, false);
-  assert.throws(() => assertLaunchGateFormalAccuracy(stratifiedReport), /minimum_correct_count_met/);
+  assert.throws(() => assertLaunchGateFormalAccuracy(stratifiedReport), /minimum_token_recall_met/);
   assert.equal(stratifiedReport.accuracy_reporting_policy.combined_formal_accuracy_prohibited, true);
   assert.equal(stratifiedReport.accuracy_reporting_policy.combined_formal_accuracy, null);
   assert.equal(stratifiedReport.formal_accuracy, undefined);
@@ -794,7 +990,7 @@ try {
     assert.equal(options.fastInitialPrompt, false);
     assert.equal(options.ultraFastImageDetail, "high");
     assert.equal(options.concurrency, 2);
-    assert.equal(options.preparationConcurrency, 2);
+    assert.equal(options.preparationConcurrency, 3);
     assert.equal(options.submissionConcurrency, 2);
     assert.equal(options.disableIdentityCache, true);
     assert.equal(options.limit, 10);
@@ -838,6 +1034,55 @@ try {
   assert.equal(offlineReport.data_contract.sealed_reference_handling.loaded_after_all_predictions_frozen, true);
   assert.equal(JSON.parse(await readFile(reviewedReportPath, "utf8")).technical_summary.completed_count, 10);
 
+  const strategyReplayReport = await runLaunchGateEvaluation({
+    profile: "reviewed-10",
+    evaluationMode: "strategy-replay",
+    datasetPath: reviewedDatasetPath,
+    sealedLabelsPath: reviewedSealedPath,
+    baseUrl: "https://offline.invalid",
+    username: "offline-user",
+    password: "offline-password",
+    expectedDeploymentId: "dpl_launch_gate",
+    expectedDeploymentSha: "abc123",
+    outPath: join(root, "reviewed-10-strategy-replay.json"),
+    checkpointPath: join(root, "reviewed-10-strategy-replay.checkpoint.json"),
+    verifiedAssetCachePath: join(root, "verified-assets.json"),
+    sourceFingerprint: async (item) => item.asset_id,
+    assetCacheReader: async () => new Map(Array.from({ length: 10 }, (_, index) => {
+      const assetId = `reviewed-${index + 1}`;
+      return [assetId, {
+        fingerprint: assetId,
+        source_asset_id: assetId,
+        asset_id: `cached-${assetId}`,
+        tenant_id: "tenant-cache",
+        image_generation_id: `cached-${assetId}`,
+        image_count: 1
+      }];
+    })),
+    fetchImpl,
+    imageMaterializer: async () => {
+      throw new Error("strategy replay must not materialize source images");
+    },
+    smokeRunner: async (options) => {
+      assert.equal(options.verifiedAssetCacheMode, "reuse");
+      assert.equal(options.verifiedAssetCachePath, join(root, "verified-assets.json"));
+      return {
+        ...rawRunReport(Array.from({ length: 10 }, (_, index) => scoredResult({
+          assetId: `reviewed-${index + 1}`,
+          reviewed: true,
+          finalTitle: `2026 Reviewed Offline ${index + 1} PSA 10`
+        })), { coldStartBlind: options.coldStartBlind }),
+        verified_asset_cache: { mode: "reuse", hit_count: 10 }
+      };
+    },
+    progress: false
+  });
+  assert.equal(strategyReplayReport.evaluation_mode, "strategy-replay");
+  assert.equal(strategyReplayReport.formal_chain_proof, false);
+  assert.equal(strategyReplayReport.data_contract.image_materialization.mode, "skipped_verified_asset_reuse");
+  assert.equal(strategyReplayReport.writer_perceived_speed_gate.required, false);
+  assert.equal(strategyReplayReport.writer_perceived_speed_gate.formal_chain_proof_eligible, false);
+
   const belowThresholdReportPath = join(root, "reviewed-10-below-threshold-report.json");
   await assert.rejects(() => runLaunchGateEvaluation({
     profile: "reviewed-10",
@@ -880,7 +1125,7 @@ try {
         reviewed: true,
         finalTitle: `2026 Reviewed Offline ${index + 1} PSA 10`
       })), { coldStartBlind: options.coldStartBlind }),
-      preparation_concurrency: 3
+      preparation_concurrency: 2
     }),
     progress: false
   }), /Observed launch-gate contract failed: preparation_concurrency_locked/);
@@ -920,7 +1165,7 @@ try {
       assetId: item.asset_id,
       reviewed: item.evaluation_cohort === "INTERNAL_REVIEWED_GT",
       finalTitle: item.evaluation_cohort === "INTERNAL_REVIEWED_GT"
-        ? `2026 Reviewed Secret Player ${item.asset_id.replace(/^reviewed-source-/, "")} PSA 10`
+        ? "2026 Reviewed Secret Player 1 2 3 PSA 10"
         : `2026 eBay Weak Secret Player ${item.asset_id.replace(/^ebay_image_only_case-/, "")} BGS 9.5`
     })), { coldStartBlind: options.coldStartBlind });
   };
@@ -947,9 +1192,94 @@ try {
   assert.equal(mixedOfflineReport.strata.internal_reviewed_gt.formal_accuracy.measured_count, 2);
   assert.equal(mixedOfflineReport.strata.ebay_weak_label.attempted_count, 2);
   assert.equal(mixedOfflineReport.formal_accuracy_gate.threshold_rate, 0.87);
-  assert.equal(mixedOfflineReport.formal_accuracy_gate.required_correct_count, 2);
+  assert.equal(mixedOfflineReport.formal_accuracy_gate.required_correct_count, null);
   assert.equal(mixedOfflineReport.formal_accuracy_gate.passed, true);
   assert.equal(mixedOfflineReport.data_contract.sample_provenance.verified, true);
+  const mixedCheckpointPath = `${mixedReportPath}.checkpoint.json`;
+  const mixedCheckpoint = JSON.parse(await readFile(mixedCheckpointPath, "utf8"));
+  assert.deepEqual(Object.keys(mixedCheckpoint.completed_cohorts).sort(), ["EBAY_COLD_START", "INTERNAL_REVIEWED_GT"]);
+  assert.equal(Object.hasOwn(mixedCheckpoint.completed_cohorts.INTERNAL_REVIEWED_GT, "scoring_items"), false);
+  let checkpointReplaySmokeCalls = 0;
+  const checkpointReplayReport = await runLaunchGateEvaluation({
+    profile: "mixed-100",
+    datasetPath: manifestPath,
+    sealedLabelsPath: sealedPath,
+    baseUrl: "https://offline.invalid",
+    username: "offline-user",
+    password: "offline-password",
+    expectedDeploymentSha: "abc123",
+    outPath: mixedReportPath,
+    fetchImpl,
+    smokeRunner: async () => {
+      checkpointReplaySmokeCalls += 1;
+      throw new Error("completed cohorts must not rerun");
+    },
+    imageMaterializer,
+    progress: false
+  });
+  assert.equal(checkpointReplaySmokeCalls, 0);
+  assert.equal(checkpointReplayReport.formal_accuracy_gate.passed, true);
+
+  const interruptedReportPath = join(root, "mixed-interrupted-report.json");
+  let interruptedEbayBatchId = "";
+  let interruptedCallCount = 0;
+  await assert.rejects(() => runLaunchGateEvaluation({
+    profile: "mixed-100",
+    datasetPath: manifestPath,
+    sealedLabelsPath: sealedPath,
+    baseUrl: "https://offline.invalid",
+    username: "offline-user",
+    password: "offline-password",
+    expectedDeploymentSha: "abc123",
+    outPath: interruptedReportPath,
+    fetchImpl,
+    imageMaterializer,
+    smokeRunner: async (options) => {
+      interruptedCallCount += 1;
+      const splitDataset = JSON.parse(await readFile(options.datasetPath, "utf8"));
+      if (!options.coldStartBlind) {
+        return rawRunReport(splitDataset.items.map((item) => scoredResult({
+          assetId: item.asset_id,
+          reviewed: true,
+          finalTitle: "2026 Reviewed Secret Player 1 2 3 PSA 10"
+        })), { coldStartBlind: false });
+      }
+      interruptedEbayBatchId = options.batchId;
+      assert.equal(options.resumeBatchId, "");
+      throw new Error("simulated task interruption");
+    },
+    progress: false
+  }), /simulated task interruption/);
+  assert.equal(interruptedCallCount, 2);
+  assert.ok(interruptedEbayBatchId);
+  let resumedCallCount = 0;
+  const resumedReport = await runLaunchGateEvaluation({
+    profile: "mixed-100",
+    datasetPath: manifestPath,
+    sealedLabelsPath: sealedPath,
+    baseUrl: "https://offline.invalid",
+    username: "offline-user",
+    password: "offline-password",
+    expectedDeploymentSha: "abc123",
+    outPath: interruptedReportPath,
+    fetchImpl,
+    imageMaterializer,
+    smokeRunner: async (options) => {
+      resumedCallCount += 1;
+      assert.equal(options.coldStartBlind, true);
+      assert.equal(options.resumeBatchId, interruptedEbayBatchId);
+      const splitDataset = JSON.parse(await readFile(options.datasetPath, "utf8"));
+      return rawRunReport(splitDataset.items.map((item) => scoredResult({
+        assetId: item.asset_id,
+        reviewed: false,
+        finalTitle: `2026 eBay Weak Secret Player ${item.asset_id.replace(/^ebay_image_only_case-/, "")} BGS 9.5`
+      })), { coldStartBlind: true });
+    },
+    imageMaterializer,
+    progress: false
+  });
+  assert.equal(resumedCallCount, 1);
+  assert.equal(resumedReport.formal_accuracy_gate.passed, true);
 
   const workflow = await readFile(".github/workflows/reviewed-title-accuracy-smoke.yml", "utf8");
   assert.match(workflow, /--limit 10/);

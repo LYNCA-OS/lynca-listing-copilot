@@ -70,6 +70,56 @@ assert.equal(parsedCatalog.staging.physical_instance_fields.grade_company, "PSA"
 assert.equal(parsedCatalog.staging.identity_fields.grade_company, undefined);
 assert.ok(parsedCatalog.staging.identity_fields.observable_components.includes("auto"));
 assert.ok(parsedCatalog.staging.identity_fields.observable_components.includes("rc"));
+assert.equal(parsedCatalog.staging.identity_fields.auto, true);
+assert.equal(parsedCatalog.staging.identity_fields.rc, true);
+
+const toppsNbaHoops = parseReviewedTitleFields("2025-26 Topps NBA Hoops Kevin Durant Hoopers Pixel Burst Red 1/5 SSP");
+assert.equal(toppsNbaHoops.manufacturer, "Topps");
+assert.equal(toppsNbaHoops.product, "Topps NBA Hoops");
+assert.deepEqual(toppsNbaHoops.players, ["Kevin Durant"]);
+assert.equal(toppsNbaHoops.official_card_type, "Hoopers Pixel Burst");
+assert.equal(toppsNbaHoops.ssp, true);
+assert.equal(toppsNbaHoops.rarity, "SSP");
+
+const bowmanUniversity = parseReviewedTitleFields("2025 Topps Bowman University Chrome Sienna Betts UCLA Anime SSP");
+assert.equal(bowmanUniversity.manufacturer, "Topps");
+assert.equal(bowmanUniversity.brand, "Bowman");
+assert.equal(bowmanUniversity.product, "Bowman University Chrome");
+assert.equal(bowmanUniversity.team, "UCLA");
+assert.deepEqual(bowmanUniversity.players, ["Sienna Betts"]);
+assert.equal(bowmanUniversity.official_card_type, "Anime");
+assert.equal(bowmanUniversity.ssp, true);
+
+const signatureClass = parseReviewedTitleFields("2025 Topps Signature Class George Kittle Round 5 Pick 2 Auto");
+assert.equal(signatureClass.product, "Topps Signature Class");
+assert.deepEqual(signatureClass.players, ["George Kittle"]);
+assert.equal(signatureClass.official_card_type, "Round 5 Pick 2");
+
+const leafSuperGold = parseReviewedTitleFields("2023 Leaf Metal Draft Xavier Hutchinson Portrait Auto Super Gold RC 1/1");
+assert.equal(leafSuperGold.product, "Leaf Metal Draft");
+assert.deepEqual(leafSuperGold.players, ["Xavier Hutchinson"]);
+assert.equal(leafSuperGold.official_card_type, "Portrait Auto");
+assert.equal(leafSuperGold.surface_color, "Gold");
+assert.equal(leafSuperGold.parallel_family, null);
+assert.equal(leafSuperGold.parallel_exact, "Super Gold");
+assert.equal(leafSuperGold.rc, true);
+assert.equal(leafSuperGold.auto, true);
+
+const ufcRedBlue = parseReviewedTitleFields("2025 Topps Chrome UFC Reinier de Ridder RC Red & Blue Refractor Rookie");
+assert.equal(ufcRedBlue.product, "Topps Chrome UFC");
+assert.deepEqual(ufcRedBlue.players, ["Reinier De Ridder"]);
+assert.equal(ufcRedBlue.surface_color, "Red");
+assert.equal(ufcRedBlue.parallel_family, "Refractor");
+assert.equal(ufcRedBlue.parallel_exact, "Red & Blue Refractor");
+assert.equal(ufcRedBlue.rc, true);
+
+const leafSuperGoldCatalog = correctedTitleRecordToCatalogStaging({
+  id: "feedback-leaf-super-gold",
+  corrected_title: "2023 Leaf Metal Draft Xavier Hutchinson Portrait Auto Super Gold RC 1/1"
+});
+assert.equal(leafSuperGoldCatalog.staging.identity_fields.parallel_exact, "Super Gold");
+assert.equal(leafSuperGoldCatalog.staging.identity_fields.parallel, "Super Gold");
+assert.equal(leafSuperGoldCatalog.staging.physical_instance_fields.serial_numerator, "1");
 
 const messiCatalog = correctedTitleRecordToCatalogStaging({
   id: "feedback-soccer-1",
@@ -536,6 +586,7 @@ const provider = catalogProvider({
         supporting_fields: ["collector_number", "players", "year", "product"],
         raw_score: 0.84,
         normalized_score: 0.84,
+        source_feedback_id: "feedback-other-card",
         expected_serial_denominator: "50"
       },
       {
@@ -580,6 +631,8 @@ assert.equal(catalogRpcBody.exact_card_number, "136");
 assert.equal(catalogRpcBody.exact_serial_denominator, "50");
 assert.equal(providerResult.candidates.length, 1);
 assert.equal(providerResult.candidates[0].provider_id, retrievalProviderIds.CATALOG);
+assert.equal(providerResult.candidates[0].source_feedback_id, "feedback-other-card");
+assert.equal(providerResult.candidates[0].reference_metadata.source_feedback_id, "feedback-other-card");
 assert.equal(providerResult.candidates[0].fields.serial_number, "#/50");
 assert.equal(providerResult.candidates[0].reference_metadata.expected_serial_denominator, "50");
 
@@ -709,8 +762,13 @@ assert.ok(visualIndex > firstCatalogIndex);
 assert.equal(planned.some((query) => /paniniamerica\.net/i.test(query.query)), false);
 assert.ok(
   planned.filter((query) => query.provider_id === retrievalProviderIds.CATALOG)
+    .every((query) => !query.exclude_source_feedback_ids?.length),
+  "official and writer-reviewed catalog memory must remain reusable for previously seen cards"
+);
+assert.ok(
+  planned.filter((query) => query.provider_id === retrievalProviderIds.VISUAL_VECTOR)
     .every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card"),
-  "catalog queries must carry current-record self-exclusion"
+  "visual-vector retrieval must still exclude the current source image"
 );
 
 console.log("catalog v0 tests passed");

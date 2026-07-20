@@ -8,6 +8,7 @@ import {
   validateEvidenceField,
   validateResolvedFields
 } from "../lib/listing/evidence/evidence-schema.mjs";
+import { canonicalSubjectComparable } from "../lib/listing/pipeline/subject-identity.mjs";
 import {
   legacyFieldsToResolvedFields,
   providerPayloadToEvidenceDocument,
@@ -116,6 +117,11 @@ assert.deepEqual(
   "generational suffixes must remain distinct subjects"
 );
 assert.deepEqual(
+  normalizeResolvedFields({ players: ["Luka Dončić", "Luka Donči"] }).players,
+  ["Luka Dončić"],
+  "a one-token OCR truncation must not create a second subject"
+);
+assert.deepEqual(
   normalizeResolvedFields({ players: ["Michael Jordan", "LeBron James"] }).players,
   ["Michael Jordan", "LeBron James"],
   "real multi-subject cards must remain multi-subject"
@@ -129,6 +135,25 @@ const descriptorResolved = legacyFieldsToResolvedFields({
   variation: "Red Refractor"
 });
 assert.equal(descriptorResolved.manufacturer, "Topps");
+
+const narratedProductResolved = normalizeResolvedFields({
+  manufacturer: "Topps",
+  product: "Topps",
+  set: "(front/back indicate Topps Chrome product)"
+});
+assert.equal(narratedProductResolved.product, "Topps Chrome");
+assert.equal(narratedProductResolved.set, null);
+const nonCardDisplayTextResolved = normalizeResolvedFields({
+  set: "Metaverse Cards",
+  card_name: "J/BOWMAN BRIEFING/",
+  rarity: "SSP",
+  subset: "1st Bowman"
+});
+assert.equal(nonCardDisplayTextResolved.set, null);
+assert.equal(nonCardDisplayTextResolved.card_name, null);
+assert.equal(nonCardDisplayTextResolved.ssp, true);
+assert.equal(nonCardDisplayTextResolved.first_bowman, true);
+assert.equal(canonicalSubjectComparable("Luka Dončić"), "luka doncic");
 assert.equal(descriptorResolved.brand, "Topps");
 assert.equal(descriptorResolved.card_type, "Insert");
 assert.equal(descriptorResolved.variation, "Red Refractor");

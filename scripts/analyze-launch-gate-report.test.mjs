@@ -4,7 +4,12 @@ import { analyzeLaunchGateReport } from "./analyze-launch-gate-report.mjs";
 const report = {
   schema_version: "launch-gate-evaluation-report-v1",
   profile: "reviewed-10",
-  formal_accuracy_gate: { threshold_rate: 0.87, passed: false },
+  formal_accuracy_gate: {
+    decision_metric: "policy_fair_token_recall_avg",
+    threshold_rate: 0.87,
+    sem_diagnostics: { catastrophic_floor: 0.5 },
+    passed: false
+  },
   technical_summary: {
     attempted_count: 2,
     completed_count: 2,
@@ -37,6 +42,8 @@ const report = {
   results: [
     {
       asset_id: "pass",
+      reference_title_is_reviewed_ground_truth: true,
+      reference_title_type: "REVIEWED_INTERNAL_TITLE",
       ok: true,
       final_title: "Pass",
       reference_title: "Pass",
@@ -65,10 +72,16 @@ const report = {
     },
     {
       asset_id: "fail",
+      reference_title_is_reviewed_ground_truth: true,
+      reference_title_type: "REVIEWED_INTERNAL_TITLE",
       ok: true,
       final_title: "Wrong",
       reference_title: "Reviewed",
-      sem_projection_scoring: { weighted_accuracy: 0.5, accepted: false, components: [] },
+      sem_projection_scoring: {
+        weighted_accuracy: 0.4,
+        accepted: false,
+        components: [{ field: "product", component: "required_field", weight: 3, correct: false }]
+      },
       final_scoring: { policy_fair_token_recall: 0.5, fair_token_recall: 0.5 },
       input_tokens: null,
       output_tokens: null,
@@ -95,7 +108,12 @@ const report = {
 };
 
 const diagnostic = analyzeLaunchGateReport(report);
-assert.equal(diagnostic.accuracy.rate, 0.5);
+assert.equal(diagnostic.accuracy.rate, 0.75);
+assert.equal(diagnostic.accuracy.policy_token_recall_avg, 0.75);
+assert.equal(diagnostic.accuracy.sem_weighted_accuracy_min, 0.4);
+assert.equal(diagnostic.accuracy.catastrophic_card_count, 1);
+assert.equal(diagnostic.accuracy.sem_failure_clusters[0].field, "product");
+assert.equal(diagnostic.accuracy.gate_passed, false);
 assert.equal(diagnostic.technical.cards_per_minute, 4);
 assert.equal(diagnostic.provider.input_tokens, 10);
 assert.equal(diagnostic.provider.output_tokens, 5);
@@ -120,13 +138,13 @@ baseline.data_contract = {
     runs: [{ evaluated_item_ids_sha256: "same-sealed-sample" }]
   }
 };
-baseline.strata.internal_reviewed_gt.formal_accuracy.correct_count = 0;
+baseline.results[1].final_scoring.policy_fair_token_recall = 0;
 baseline.technical_summary.run_wall_ms = 60000;
 const current = structuredClone(report);
 current.data_contract = structuredClone(baseline.data_contract);
 const compared = analyzeLaunchGateReport(current, { baselineReport: baseline });
 assert.equal(compared.comparison.direct_causal_comparison, true);
-assert.equal(compared.comparison.delta.accuracy_rate, 0.5);
+assert.equal(compared.comparison.delta.accuracy_rate, 0.25);
 assert.equal(compared.comparison.delta.cards_per_minute, 2);
 assert.equal(compared.comparison.delta.run_wall_ms, -30000);
 assert.match(compared.markdown, /Baseline Comparison/);

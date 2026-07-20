@@ -30,6 +30,17 @@ assert.equal(wemby.modules.numerical_rarity.text, "31/50");
 assert.equal(wemby.modules.search_optimization.text, "RC");
 assert.equal(wemby.modules.grading.text, "PSA 10");
 
+const unsignedObservationIsNotACommercialCardName = renderListingPresentation({
+  resolved: {
+    year: "2025",
+    product: "Topps Chrome Platinum",
+    players: ["Shohei Ohtani"],
+    card_name: "(unsigned)"
+  },
+  maxLength: 80
+});
+assert.equal(unsignedObservationIsNotACommercialCardName.final_title.includes("unsigned"), false);
+
 const sportsCollectorsDigestGrade = renderListingPresentation({
   resolved: {
     year: "1986",
@@ -43,6 +54,35 @@ const sportsCollectorsDigestGrade = renderListingPresentation({
 });
 assert.match(sportsCollectorsDigestGrade.final_title, /\bSCD 8\.5$/);
 assert.equal(sportsCollectorsDigestGrade.modules.grading.text, "SCD 8.5");
+
+const graderCannotConsumePublisherBudget = renderListingPresentation({
+  resolved: {
+    year: "2022",
+    manufacturer: "Beckett Grading Services",
+    brand: "Beckett Grading Services",
+    product: "Game of Thrones",
+    set: "The Complete Series Volume 2",
+    players: ["Kit Harington"],
+    card_name: "Autographed Costume",
+    grade_company: "BGS",
+    card_grade: "9.5"
+  },
+  maxLength: 80
+});
+assert.doesNotMatch(graderCannotConsumePublisherBudget.final_title, /Beckett Grading Services/);
+assert.match(graderCannotConsumePublisherBudget.final_title, /Kit Harington/);
+
+const productDefeatsTeamPublisherInPresentation = renderListingPresentation({
+  resolved: {
+    year: "2026",
+    manufacturer: "Arizona Diamondbacks",
+    brand: "Arizona Diamondbacks",
+    product: "Topps Series Two",
+    players: ["Jordan Lawlar"]
+  },
+  maxLength: 80
+});
+assert.match(productDefeatsTeamPublisherInPresentation.final_title, /^2026 Topps Series Two Jordan Lawlar$/);
 
 const overlappingSetCardNameFinish = renderListingPresentation({
   resolved: {
@@ -1144,6 +1184,18 @@ assert.ok(safeColorSurvivesCrowdedTitle.final_title.length <= 80);
 assert.match(safeColorSurvivesCrowdedTitle.final_title, /\bRed\b/);
 assert.ok(safeColorSurvivesCrowdedTitle.title_length_policy.compacted_terms.includes("Red Refractor -> Red"));
 
+const exactFinishKeepsMissingFamilySuffix = renderListingPresentation({
+  resolved: {
+    year: "2026",
+    product: "Bowman Chrome",
+    players: ["Handelfry Encarnacion"],
+    parallel_exact: "Green Lava",
+    parallel_family: "Lava Refractor",
+    auto: true
+  }
+});
+assert.match(exactFinishKeepsMissingFamilySuffix.final_title, /Green Lava Refractor/);
+
 const uncertainObservationDoesNotBecomePublishedIdentity = renderListingPresentation({
   resolved: {
     year: "2015-16",
@@ -1535,6 +1587,44 @@ assert.equal(
   "Lot x3 2026 Topps Bowman Chrome Sam Petersen / Luis Cova / David Davalillo"
 );
 
+const lotSubjectsBeatBloatedResolvedSet = renderResolvedTitle({
+  multi_card: true,
+  card_count: 3,
+  year: "2026",
+  manufacturer: "Bowman Chrome",
+  brand: "Bowman Chrome",
+  product: "Bowman Chrome",
+  set: "1st Bowman / Bowman Briefing",
+  players: ["David Davalillo", "Sam Petersen", "Luis Cova"],
+  card_name: "Base"
+}, {
+  maxLength: 80
+});
+assert.equal(
+  lotSubjectsBeatBloatedResolvedSet.rendered_title,
+  "Lot x3 2026 Bowman Chrome David Davalillo / Sam Petersen / Luis Cova"
+);
+assert.doesNotMatch(lotSubjectsBeatBloatedResolvedSet.rendered_title, /Bowman Briefing|\bBase\b/);
+
+const reviewRoutedMultiSubjectDraftKeepsFullNames = renderResolvedTitle({
+  multi_card: false,
+  lot_type: "MULTI_SUBJECT_REVIEW",
+  year: "2026",
+  product: "Bowman Chrome",
+  set: "Bowman Briefing",
+  players: ["Sam Petersen", "Luis Cova", "David Davalillo"],
+  card_name: "1st Bowman",
+  surface_color: "Green",
+  print_run_number: "034/499"
+}, {
+  maxLength: 80
+});
+assert.equal(
+  reviewRoutedMultiSubjectDraftKeepsFullNames.rendered_title,
+  "2026 Bowman Chrome Sam Petersen / Luis Cova / David Davalillo 1st Bowman Green"
+);
+assert.doesNotMatch(reviewRoutedMultiSubjectDraftKeepsFullNames.rendered_title, /\bLot\b/);
+
 const baseColorSurvivesGenericAutoCompression = renderResolvedTitle({
   year: "2025",
   manufacturer: "Topps",
@@ -1555,6 +1645,39 @@ assert.equal(
 );
 assert.doesNotMatch(baseColorSurvivesGenericAutoCompression.title_length_policy.removed_terms.join(" "), /Blue/);
 assert.doesNotMatch(baseColorSurvivesGenericAutoCompression.rendered_title, /Certified Auto Issue/);
+
+const officialSignatureNameImpliesAuto = renderResolvedTitle({
+  year: "2025-26",
+  manufacturer: "Topps",
+  product: "Topps Three",
+  players: ["Victor Wembanyama"],
+  card_name: "Raindrops Signatures",
+  surface_color: "Red",
+  auto: false
+});
+assert.match(officialSignatureNameImpliesAuto.rendered_title, /Auto/);
+
+const decorativeSignedStyleDoesNotImplyAuto = renderResolvedTitle({
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Chrome Platinum",
+  players: ["Shohei Ohtani"],
+  card_name: "Signed",
+  surface_color: "Red",
+  auto: true,
+  observable_components: []
+});
+assert.doesNotMatch(decorativeSignedStyleDoesNotImplyAuto.rendered_title, /Signed|Auto/i);
+
+const baseColorCanBeReducedFromPrintedDescriptor = renderResolvedTitle({
+  year: "2023",
+  manufacturer: "Panini",
+  product: "Panini Donruss Optic",
+  players: ["Joe Montana"],
+  card_name: "Downtown",
+  set: "Downtown Black Pandora"
+});
+assert.match(baseColorCanBeReducedFromPrintedDescriptor.rendered_title, /Black/);
 
 const subjectPrefixRemovedFromCardName = renderResolvedTitle({
   year: "2024",
@@ -1649,5 +1772,20 @@ assert.match(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title, /242\/204/);
 assert.match(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title, /PSA 10$/);
 assert.doesNotMatch(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title, /\bJA\s+9\b/);
 assert.ok(lorcanaUsesTcgGrammarAndKeepsGrade.rendered_title.length <= 80);
+
+const multiSubjectSeparatorCompactionPreservesNames = renderResolvedTitle({
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Cosmic Chrome",
+  players: ["Elly De La Cruz", "Johnny Bench", "Barry Larkin"],
+  card_name: "Star Clusters"
+}, {
+  maxLength: 80
+});
+assert.equal(
+  multiSubjectSeparatorCompactionPreservesNames.rendered_title,
+  "2025 Topps Cosmic Chrome Elly De La Cruz Johnny Bench Barry Larkin Star Clusters"
+);
+assert.ok(multiSubjectSeparatorCompactionPreservesNames.rendered_title.length <= 80);
 
 console.log("renderer tests passed");

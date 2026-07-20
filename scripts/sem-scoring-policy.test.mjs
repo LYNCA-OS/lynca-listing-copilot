@@ -16,6 +16,25 @@ assert.equal(semFieldEquivalent("product", "Topps Three", "Topps 3 Basketball"),
 assert.equal(semFieldEquivalent("card_name", "Raindrops Signatures", "Rain Drops Signatures"), true);
 
 assert.equal(
+  semFieldEquivalent(
+    "subject",
+    ["Harry Ford Drew Gilbert Samuel Basallo"],
+    ["Samuel Basallo", "Harry Ford", "Drew Gilbert"]
+  ),
+  true,
+  "multi-subject identity must not depend on title grouping or order"
+);
+assert.equal(
+  semFieldEquivalent(
+    "subject",
+    ["Hank Aaron Ken Griffey Jr. Mike Trout"],
+    ["Aaron", "Griffey Jr.", "Trout"]
+  ),
+  false,
+  "surname-only output must not receive full-subject credit"
+);
+
+assert.equal(
   semFieldEquivalent("print_finish", "Orange Refractor", "Orange"),
   true,
   "safe color dimensionality reduction must ignore an unproven optical family"

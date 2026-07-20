@@ -22,7 +22,13 @@ from .pipelines.glare_detection import detect_glare_from_array, glare_unavailabl
 from .pipelines.image_loader import ImageLoadError, load_signed_image
 from .pipelines.image_quality import measure_image_quality_from_array, quality_unavailable
 from .pipelines.multi_card_detection import detect_multi_card_from_loaded_images, multi_card_detection_unavailable
-from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_field_from_loaded_image, ocr_unavailable, preload_paddleocr_engine
+from .pipelines.ocr_pipeline import (
+    copyright_year_evidence_from_confirmed_grid,
+    ocr_evidence_from_loaded_images,
+    ocr_field_from_loaded_image,
+    ocr_unavailable,
+    preload_paddleocr_engine,
+)
 from .pipelines.region_proposal import propose_regions_for_rectified_card
 from .pipelines.visual_embeddings import extract_visual_embeddings, preload_visual_embedding_backend
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
@@ -388,6 +394,23 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
             else ("image_download_disabled" if not config.enable_image_download else "image_bytes_not_loaded")
         )
     )
+    # The narrow grid copyright pass is independent from broad OCR. It only
+    # invokes Tesseract after geometry has confirmed an exact four-card grid,
+    # so ordinary cards keep the fast no-OCR path while repeated publisher
+    # copyright lines can still correct an unsafe statistics-year guess.
+    if image_loads:
+        copyright_year = copyright_year_evidence_from_confirmed_grid(
+            image_loads,
+            multi_card_detection,
+            language=config.tesseract_language,
+            timeout_seconds=config.tesseract_timeout_seconds,
+        )
+        if copyright_year is not None:
+            ocr_evidence = {
+                **ocr_evidence,
+                "status": "OK",
+                "items": [*(ocr_evidence.get("items") or []), copyright_year],
+            }
     evidence_fusion = fuse_ocr_evidence(ocr_evidence, requested_fields)
 
     return {

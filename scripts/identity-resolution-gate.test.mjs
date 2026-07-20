@@ -480,6 +480,12 @@ const rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft = applyIdentit
     grade_company: "PSA",
     card_grade: "10"
   },
+  raw_observed_fields: {
+    year: null,
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    surface_color: null
+  },
   resolved: normalizeResolvedFields({
     product: "Topps Chrome",
     players: ["Shohei Ohtani"]
@@ -882,6 +888,43 @@ assert.deepEqual(observedMultiSubjectWriterDraftFromEmptyResolution.resolved.pla
 assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /Sam Petersen/);
 assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /Luis Cova/);
 assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /David Davalillo/);
+
+const observedSingleSubjectSurvivesResolverDrop = applyIdentityResolutionGate({
+  title: "",
+  model_title_suggestion: "",
+  confidence: "HIGH",
+  reason: "The retrieval resolver retained a variant but dropped the observed subject.",
+  provider: "openai_legacy",
+  candidate_observation_snapshot: {
+    player: "Buddy Hield",
+    year: "2023-24"
+  },
+  raw_observed_fields: {
+    year: null
+  },
+  raw_provider_fields: {
+    year: null,
+    player: "Buddy Hield"
+  },
+  resolved: normalizeResolvedFields({
+    product: "Panini Donruss Optic",
+    card_name: "Lucky Hyper"
+  }),
+  evidence: {
+    year: groundedEvidence("2023-24"),
+    product: groundedEvidence("Panini Donruss Optic"),
+    card_name: groundedEvidence("Lucky Hyper")
+  },
+  unresolved: []
+}, {
+  maxLength: 80,
+  providerId: "openai_legacy"
+});
+assert.deepEqual(observedSingleSubjectSurvivesResolverDrop.resolved.players, ["Buddy Hield"]);
+assert.equal(observedSingleSubjectSurvivesResolverDrop.resolved.year, "2023-24");
+assert.match(observedSingleSubjectSurvivesResolverDrop.final_title, /Buddy Hield/);
+assert.match(observedSingleSubjectSurvivesResolverDrop.final_title, /2023-24/);
+assert.match(observedSingleSubjectSurvivesResolverDrop.final_title, /Lucky Hyper/);
 assert.equal(observedMultiSubjectWriterDraftFromEmptyResolution.publication_gate.auto_publish_allowed, false);
 
 const compatibleProductConflictDraft = applyIdentityResolutionGate({
@@ -1515,6 +1558,31 @@ assert.equal(weakOcrOnlyChecklistDropped.identity_resolution_status, "RESOLVED")
 assert.equal(weakOcrOnlyChecklistDropped.resolved.checklist_code, null);
 assert.ok(weakOcrOnlyChecklistDropped.final_title);
 assert.ok(weakOcrOnlyChecklistDropped.conflict_map.some((conflict) => conflict.conflict_type === "WEAK_OCR_ONLY_OPTIONAL_CODE_DROPPED"));
+
+const surnameOnlyDuplicateRemoved = applyIdentityResolutionGate({
+  provider: "openai_legacy",
+  raw_provider_fields: {
+    year: "2025-26",
+    product: "Bowman University Chrome",
+    players: ["Sienna Betts", "Betts"]
+  },
+  resolved: normalizeResolvedFields({
+    year: "2025-26",
+    product: "Bowman University Chrome",
+    players: ["Sienna Betts", "Betts"]
+  }),
+  evidence: {
+    year: groundedEvidence("2025-26"),
+    product: groundedEvidence("Bowman University Chrome"),
+    players: groundedEvidence(["Sienna Betts", "Betts"])
+  },
+  unresolved: []
+}, {
+  maxLength: 80,
+  providerId: "openai_legacy"
+});
+assert.deepEqual(surnameOnlyDuplicateRemoved.resolved.players, ["Sienna Betts"]);
+assert.doesNotMatch(surnameOnlyDuplicateRemoved.final_title, /Sienna Betts\s*\/\s*Betts/i);
 
 let convergenceGateRetrievalCalls = 0;
 const convergedGate = await applyIdentityResolutionGateWithConvergence({

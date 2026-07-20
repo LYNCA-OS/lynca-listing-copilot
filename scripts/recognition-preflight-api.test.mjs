@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { runNativeV4Recognition } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
+import {
+  __listingCopilotTitleTestHooks,
+  runNativeV4Recognition
+} from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import {
   recognitionResponseToEvidenceDocument
 } from "../lib/listing/recognition/recognition-evidence-normalizer.mjs";
@@ -187,6 +190,193 @@ assert.match(multiCardGated.final_title, /^Lot x2\b/);
 assert.equal(multiCardGated.publication_gate?.writer_review_ready, true);
 assert.equal(multiCardGated.publication_gate?.workflow_route, "DEEP_REVIEW");
 assert.ok(multiCardGated.unresolved.includes("multi-card lot requires writer review"));
+
+const confirmedGridCopyrightPayload = {
+  ...multiCardRecognitionPayload,
+  multi_card_detection: {
+    ...multiCardRecognitionPayload.multi_card_detection,
+    card_count_estimate: 4,
+    algorithm: "redundant_numpy_opencv_grid_card_count_r4"
+  },
+  ocr_evidence: {
+    status: "OK",
+    items: [{
+      field: "year",
+      value: "2026",
+      confidence: 0.92,
+      image_id: "back",
+      role: "card_back_copyright",
+      source_type: "CARD_BACK_PRINTED_TEXT",
+      observed_text: "© 2026 THE TOPPS COMPANY | © 2026 THE TOPPS COMPANY",
+      region: {
+        algorithm: "confirmed_2x2_grid_copyright_consensus_v1",
+        independent_card_count: 2
+      }
+    }]
+  },
+  evidence_fusion: {
+    status: "OK",
+    items: [],
+    resolved_fields: {},
+    field_candidates: {},
+    conflicts: []
+  }
+};
+const confirmedGridCopyrightDocument = recognitionResponseToEvidenceDocument(confirmedGridCopyrightPayload, { images });
+const copyrightCorrectedLot = withRecognitionEvidence({
+  rendered_title: "Lot x4 2025 Bowman Chrome Xavier Neyens",
+  fields: { players: ["Xavier Neyens"], multi_card: true, card_count: 4 },
+  resolved: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Bowman Chrome",
+    players: ["Xavier Neyens"],
+    multi_card: true,
+    card_count: 4,
+    lot_type: "multi_card_lot"
+  },
+  resolved_fields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Bowman Chrome",
+    players: ["Xavier Neyens"],
+    multi_card: true,
+    card_count: 4,
+    lot_type: "multi_card_lot"
+  },
+  rendered_fields: {
+    year: "2025",
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Bowman Chrome",
+      players: ["Xavier Neyens"],
+      multi_card: true,
+      card_count: 4,
+      lot_type: "multi_card_lot"
+    }
+  },
+  evidence: {
+    year: {
+      value: "2025",
+      normalized_value: "2025",
+      status: "CONFIRMED",
+      confidence: 0.98,
+      candidates: [{ value: "2025", confidence: 0.98, sources: [] }],
+      sources: [],
+      conflicts: []
+    }
+  },
+  unresolved: [],
+  resolution_trace: []
+}, confirmedGridCopyrightDocument, { maxTitleLength: 80 });
+assert.equal(copyrightCorrectedLot.resolved.year, "2026");
+assert.equal(copyrightCorrectedLot.fields.year, "2026");
+assert.equal(copyrightCorrectedLot.resolved_fields.year, "2026");
+assert.equal(copyrightCorrectedLot.rendered_fields.year, "2026");
+assert.equal(copyrightCorrectedLot.rendered_fields.fields.year, "2026");
+assert.equal(copyrightCorrectedLot.evidence.year.value, "2026");
+assert.match(copyrightCorrectedLot.rendered_title, /^Lot x4 2026 Bowman Chrome Xavier Neyens/);
+const finalizedCopyrightLot = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation(
+  copyrightCorrectedLot,
+  { maxTitleLength: 80 }
+);
+assert.match(finalizedCopyrightLot.final_title, /^Lot x4 2026 Bowman Chrome Xavier Neyens/);
+assert.equal(
+  copyrightCorrectedLot.resolution_trace.some((item) => item.step === "prefer_confirmed_grid_copyright_year"),
+  true
+);
+
+const independentlySupportedSingleCardDocument = recognitionResponseToEvidenceDocument({
+  ...recognitionPayload,
+  ocr_evidence: { status: "NO_TEXT", items: [] },
+  evidence_fusion: {
+    status: "NO_TEXT",
+    items: [],
+    resolved_fields: {},
+    field_candidates: {},
+    conflicts: []
+  },
+  multi_card_detection: {
+    status: "OK",
+    multi_card: false,
+    card_count_estimate: 1,
+    card_count_confirmed: false,
+    confidence: 0.98,
+    image_id: "back",
+    role: "back_original",
+    algorithm: "redundant_numpy_opencv_grid_card_count_r4",
+    images: [{
+      image_id: "front",
+      role: "front_original",
+      status: "OK",
+      multi_card: false,
+      card_count_estimate: 1,
+      confidence: 0.53,
+      candidates: [{ bbox: [10, 10, 300, 500], confidence: 0.53 }],
+      detectors: { central_two_by_two_grid: { status: "NOT_CONFIRMED" } }
+    }, {
+      image_id: "back",
+      role: "back_original",
+      status: "OK",
+      multi_card: false,
+      card_count_estimate: 1,
+      confidence: 0.98,
+      candidates: [{ bbox: [20, 20, 600, 900], confidence: 0.98 }],
+      detectors: { central_two_by_two_grid: { status: "NOT_CONFIRMED" } }
+    }]
+  }
+}, { images });
+assert.equal(
+  independentlySupportedSingleCardDocument.recognition.multi_card_detection.single_card_independently_supported,
+  true
+);
+const falseLotRejected = withRecognitionEvidence({
+  fields: { year: "2026", product: "Bowman Chrome", players: ["Kendry Chourio"], multi_card: true, card_count: null, lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW" },
+  resolved: { year: "2026", product: "Bowman Chrome", players: ["Kendry Chourio"], multi_card: true, card_count: null, lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW" },
+  resolved_fields: { year: "2026", product: "Bowman Chrome", players: ["Kendry Chourio"], multi_card: true, card_count: null, lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW" },
+  rendered_fields: { fields: { year: "2026", product: "Bowman Chrome", players: ["Kendry Chourio"], multi_card: true, card_count: null, lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW" } },
+  evidence: {},
+  unresolved: ["multi_card", "multi-card lot requires writer review"],
+  resolution_trace: []
+}, independentlySupportedSingleCardDocument, { maxTitleLength: 80 });
+assert.equal(falseLotRejected.resolved.multi_card, false);
+assert.equal(falseLotRejected.resolved_fields.multi_card, false);
+assert.equal(falseLotRejected.rendered_fields.fields.multi_card, false);
+assert.doesNotMatch(falseLotRejected.rendered_title, /^Lot\b/);
+assert.equal(falseLotRejected.unresolved.includes("multi_card"), false);
+assert.equal(
+  falseLotRejected.resolution_trace.some((item) => item.step === "reject_provider_lot_from_independent_single_card_geometry"),
+  true
+);
+const downstreamReintroducedFalseLot = {
+  ...falseLotRejected,
+  fields: { ...falseLotRejected.fields, multi_card: true, lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW" },
+  resolved: { ...falseLotRejected.resolved, multi_card: true, lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW" },
+  resolved_fields: { ...falseLotRejected.resolved_fields, multi_card: true, lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW" },
+  final_title: "Lot 2026 Bowman Chrome Kendry Chourio"
+};
+const terminalFalseLotRejected = __listingCopilotTitleTestHooks.finalizeTerminalRecognitionEvidence(
+  downstreamReintroducedFalseLot,
+  independentlySupportedSingleCardDocument,
+  { maxTitleLength: 80 }
+);
+assert.equal(terminalFalseLotRejected.resolved_fields.multi_card, false);
+assert.doesNotMatch(terminalFalseLotRejected.final_title, /^Lot\b/);
+
+const terminalDirectoryTaxonomy = __listingCopilotTitleTestHooks.finalizeTerminalRecognitionEvidence({
+  fields: { year: "2026", manufacturer: "Topps", brand: "Bowman", product: "Mega Futures", set: "Mega Futures", players: ["Roman Anthony"] },
+  resolved: { year: "2026", manufacturer: "Topps", brand: "Bowman", product: "Mega Futures", set: "Mega Futures", players: ["Roman Anthony"] },
+  resolved_fields: { year: "2026", manufacturer: "Topps", brand: "Bowman", product: "Mega Futures", set: "Mega Futures", players: ["Roman Anthony"] },
+  rendered_fields: { fields: { year: "2026", manufacturer: "Topps", brand: "Bowman", product: "Mega Futures", set: "Mega Futures", players: ["Roman Anthony"] } },
+  evidence: {},
+  resolution_trace: []
+}, null, { maxTitleLength: 80 });
+assert.equal(terminalDirectoryTaxonomy.resolved_fields.product, "Bowman Mega Box");
+assert.equal(terminalDirectoryTaxonomy.resolved_fields.insert, "Mega Futures");
+assert.equal(terminalDirectoryTaxonomy.resolved_fields.parallel_exact, "Mega Chrome");
+assert.equal(terminalDirectoryTaxonomy.resolved_fields.collector_number, "MF-21");
+assert.match(terminalDirectoryTaxonomy.final_title, /Mojo Refractor/);
 
 const unconfirmedLotCountDocument = recognitionResponseToEvidenceDocument({
   ...recognitionPayload,

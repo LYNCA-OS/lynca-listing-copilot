@@ -48,10 +48,11 @@ const rows = [
 const audit = auditHistoricalRecognitionRuns(rows);
 assert.equal(audit.eligible_run_count, 3);
 assert.equal(audit.excluded_small_run_count, 1);
-assert.equal(audit.champions.accuracy.run_id, "accuracy.json");
-assert.equal(audit.champions.speed.run_id, "speed-stability.json");
-assert.equal(audit.champions.stability.run_id, "speed-stability.json");
-assert.equal(audit.champions.accuracy.commercial_accuracy_claim_eligible, false);
-assert.match(renderHistoricalChampionReport(audit), /not reviewed SEM accuracy/);
+assert.equal(audit.canonical_champions_are_external_user_locked_contract, true);
+assert.equal(audit.proxy_leaders.accuracy.run_id, "accuracy.json");
+assert.equal(audit.proxy_leaders.speed.run_id, "speed-stability.json");
+assert.equal(audit.proxy_leaders.stability.run_id, "speed-stability.json");
+assert.equal(audit.proxy_leaders.accuracy.commercial_accuracy_claim_eligible, false);
+assert.match(renderHistoricalChampionReport(audit), /not the user-locked historical champions/);
 
 console.log("Historical recognition champion audit tests passed");

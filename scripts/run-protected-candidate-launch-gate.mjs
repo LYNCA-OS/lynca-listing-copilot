@@ -3,12 +3,13 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { main as runLaunchGate } from "./run-launch-gate-eval.mjs";
 
 const execFile = promisify(execFileCallback);
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const PINNED_VERCEL_CLI_VERSION = "54.14.5";
 
@@ -44,8 +45,16 @@ export function assertProtectedCandidateConfig(argv = []) {
   return { baseUrl: baseUrl.replace(/\/+$/, ""), expectedDeploymentId };
 }
 
+export function assertCredentialEnvironment(env = {}) {
+  if (!cleanText(env.METAVERSE_USERNAME) || !cleanText(env.METAVERSE_PASSWORD)) {
+    throw new Error("METAVERSE_USERNAME and METAVERSE_PASSWORD must be injected through the process environment.");
+  }
+  return true;
+}
+
 async function assertPinnedVercelCli(vercelBin, execFileImpl) {
   const { stdout = "", stderr = "" } = await execFileImpl(vercelBin, ["--version"], {
+    cwd: projectRoot,
     encoding: "utf8",
     maxBuffer: 1024 * 1024
   });
@@ -53,6 +62,16 @@ async function assertPinnedVercelCli(vercelBin, execFileImpl) {
   if (observed !== PINNED_VERCEL_CLI_VERSION) {
     throw new Error(`Vercel CLI drift: expected ${PINNED_VERCEL_CLI_VERSION}, observed ${observed || "unknown"}. Run npm ci.`);
   }
+}
+
+function protectionBypassRetryable(error) {
+  if (error?.killed === true || error?.signal === "SIGTERM") return true;
+  const text = String(error?.stderr || error?.stdout || error?.message || error || "");
+  return /(?:connection reset|recv failure|curl:\s*\((?:6|7|18|28|35|52|56)\)|econnreset|etimedout|socket hang up|http[_ ]5\d\d)/i.test(text);
+}
+
+async function wait(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function acquireProtectionBypass({
@@ -65,22 +84,33 @@ export async function acquireProtectionBypass({
   const tracePath = join(tempRoot, "trace");
   const bodyPath = join(tempRoot, "health.json");
   try {
-    await execFileImpl(vercelBin, [
-      "curl",
-      "/api/v4/health",
-      "--deployment",
-      baseUrl,
-      "--trace-ascii",
-      tracePath,
-      "--output",
-      bodyPath,
-      "--silent",
-      "--show-error",
-      "--fail-with-body"
-    ], {
-      encoding: "utf8",
-      maxBuffer: 4 * 1024 * 1024
-    });
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await execFileImpl(vercelBin, [
+          "curl",
+          "/api/v4/health",
+          "--deployment",
+          baseUrl,
+          "--trace-ascii",
+          tracePath,
+          "--output",
+          bodyPath,
+          "--silent",
+          "--show-error",
+          "--fail-with-body",
+          "--yes"
+        ], {
+          cwd: projectRoot,
+          encoding: "utf8",
+          timeout: 30_000,
+          maxBuffer: 4 * 1024 * 1024
+        });
+        break;
+      } catch (error) {
+        if (attempt >= 3 || !protectionBypassRetryable(error)) throw error;
+        await wait(attempt * 750);
+      }
+    }
     const bypassSecret = extractProtectionBypass(await readFile(tracePath, "utf8"));
     JSON.parse(await readFile(bodyPath, "utf8"));
     return bypassSecret;
@@ -91,6 +121,7 @@ export async function acquireProtectionBypass({
 
 export async function main(argv = process.argv.slice(2), env = process.env, dependencies = {}) {
   const { baseUrl } = assertProtectedCandidateConfig(argv);
+  assertCredentialEnvironment(env);
   const bypassSecret = await acquireProtectionBypass({
     baseUrl,
     vercelBin: dependencies.vercelBin,
