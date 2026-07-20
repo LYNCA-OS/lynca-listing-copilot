@@ -1074,7 +1074,12 @@ assert.deepEqual(releaseVariantTokens.map((token) => token.text), []);
 assert.deepEqual(printFinishTokens.map((token) => token.text), ["Gold", "Sparkle"]);
 assert.equal(printFinishTokens.find((token) => token.text === "Gold").requires_review, false);
 assert.equal(printFinishTokens.find((token) => token.text === "Sparkle").requires_review, true);
-assert.doesNotMatch(colorWithReviewDescriptor.final_title, /17\/50|#\/50/);
+// A CONFIRMED vision-read full serial is a current-image observation and
+// renders in full. Two sealed reviewed-50 runs showed every CONFIRMED vision
+// numerator matched ground truth while the old vision-excluded gate stripped
+// 17 of 19 correct serials; suppression now requires an actual OCR conflict
+// (serialNumeratorVerified === false), not mere absence of OCR.
+assert.match(colorWithReviewDescriptor.final_title, /17\/50/);
 
 const compoundSurfaceColorPreserved = renderListingPresentation({
   resolved: {
