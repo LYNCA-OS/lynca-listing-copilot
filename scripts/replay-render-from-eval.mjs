@@ -7,6 +7,7 @@ import { buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence
 import { scoreReviewedTitleSemProjection } from "../lib/listing/evaluation/reviewed-title-sem-projection.mjs";
 import { buildRetrievalApplicationReplay } from "../lib/listing/evaluation/retrieval-application-replay.mjs";
 import { normalizeFields } from "../lib/listing/pipeline/field-normalization.mjs";
+import { extractParallelFamily } from "../lib/listing/parallel-policy.mjs";
 import { fairTokenRecall, policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 
 // Offline replay harness: re-render every card of a recorded cloud eval
@@ -104,6 +105,19 @@ function replayResolvedFields(result = {}) {
   if (!normalizeText(merged.surface_color)) {
     const safeColor = replaySafeSurfaceColor(result);
     if (safeColor) merged.surface_color = safeColor;
+  }
+  // The field-flow ledger persists the provider's RAW surface/parallel phrase
+  // ("Blue Sparkle Refractor") even when normalization narrowed it to a bare
+  // color. Recover the curated optical finish half exactly like the runtime
+  // normalizer does, so renderer/normalizer changes to finish handling are
+  // measurable offline.
+  if (!normalizeText(merged.parallel_family)) {
+    const rawFinishPhrases = [
+      ...fieldFlowRawValues(result, "surface_color"),
+      ...fieldFlowRawValues(result, "parallel_exact")
+    ];
+    const family = extractParallelFamily(...rawFinishPhrases);
+    if (family) merged.parallel_family = family;
   }
   const observation = result.candidate_observation_snapshot
     || result.l2_candidate_debug?.candidate_observation_snapshot
