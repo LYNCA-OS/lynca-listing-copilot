@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { evaluateGoldenSemAccuracy } from "../lib/listing/evaluation/golden-sem-accuracy.mjs";
+import {
+  evaluateGoldenSemAccuracy,
+  normalizeGoldenSemValue
+} from "../lib/listing/evaluation/golden-sem-accuracy.mjs";
 import { buildReviewedTitleSemProxy } from "./build-reviewed-title-sem-proxy.mjs";
 
 const proxy = buildReviewedTitleSemProxy({
@@ -25,6 +28,8 @@ assert.equal(proxy.evaluation_truth_policy.launch_gate_eligible, false);
 assert.equal(proxy.items[0].reviewed_ground_truth.field_statuses.year, "CONFIRMED");
 assert.equal(proxy.items[0].reviewed_ground_truth.field_statuses.language, "UNKNOWN");
 assert.equal(proxy.items[0].recognition_input.corrected_title, undefined);
+assert.equal(normalizeGoldenSemValue("numerical_rarity", "03/10"), "#/10");
+assert.equal(normalizeGoldenSemValue("numerical_rarity", "#/10"), "#/10");
 
 const accuracy = evaluateGoldenSemAccuracy({
   dataset: proxy,

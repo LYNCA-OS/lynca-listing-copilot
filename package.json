@@ -157,6 +157,8 @@
     "check:candidate-control-plane": "for f in lib/listing/candidates/*.mjs; do node --check \"$f\"; done && node --check lib/listing/retrieval/retrieval-participation.mjs && node --check scripts/analyze-candidate-activation-funnel.mjs && node --check scripts/retrieval-decision-audit.mjs && node --check scripts/retrieval-decision-audit.test.mjs && node --check scripts/evaluate-retrieval-application-ablation.mjs && node --check scripts/retrieval-application-layer.test.mjs && node --check scripts/retrieval-application-ablation.test.mjs && node --check scripts/candidate-control-plane.test.mjs",
     "test:candidate-control-plane": "node scripts/candidate-control-plane.test.mjs && node scripts/retrieval-decision-audit.test.mjs && node scripts/retrieval-application-layer.test.mjs && node scripts/retrieval-application-ablation.test.mjs",
     "audit:retrieval-decision": "node scripts/retrieval-decision-audit.mjs",
+    "check:offline-source-and-sem-policy": "node --check lib/listing/v4/policy/catalog-source-authority-policy.mjs && node --check lib/listing/v4/policy/sem-scoring-policy.mjs && node --check scripts/catalog-source-authority-policy.test.mjs && node --check scripts/sem-scoring-policy.test.mjs",
+    "test:offline-source-and-sem-policy": "node scripts/catalog-source-authority-policy.test.mjs && node scripts/sem-scoring-policy.test.mjs",
     "eval:retrieval-application-ablation": "node scripts/evaluate-retrieval-application-ablation.mjs",
     "eval:retrieval-off": "node scripts/evaluate-cloud-listing-api.mjs --provider retrieval_off --no-corrected-title-as-temporary-gt",
     "eval:retrieval-on": "node scripts/evaluate-cloud-listing-api.mjs --provider retrieval_on --no-corrected-title-as-temporary-gt",

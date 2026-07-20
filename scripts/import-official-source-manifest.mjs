@@ -38,6 +38,9 @@ export function validateOfficialSourceManifestReport(manifest = {}, report = {})
       .filter((entry) => entry.source?.source_url === source.source_url)
       .map((entry) => entry.staging);
     const extractedSource = (report.sources || []).find((entry) => entry.source_url === source.source_url);
+    const expectedSourceType = String(source.source_type || "").trim().toUpperCase();
+    const actualSourceType = String(extractedSource?.source_type || "").trim().toUpperCase();
+    const sourceTypeMatches = !expectedSourceType || expectedSourceType === actualSourceType;
     const recordChecks = (source.required_records || []).map((required) => ({
       required,
       matched: sourceRows.some((row) => rowMatchesRequiredRecord(row, required))
@@ -46,10 +49,14 @@ export function validateOfficialSourceManifestReport(manifest = {}, report = {})
       source_name: source.source_name,
       source_url: source.source_url,
       extraction_method: extractedSource?.source_metadata?.extraction_method || null,
+      expected_source_type: expectedSourceType || null,
+      actual_source_type: actualSourceType || null,
+      source_type_matches: sourceTypeMatches,
       parsed_card_count: sourceRows.length,
       minimum_card_count: Number(source.minimum_card_count || 1),
       record_checks: recordChecks,
       valid: Boolean(extractedSource)
+        && sourceTypeMatches
         && sourceRows.length >= Number(source.minimum_card_count || 1)
         && recordChecks.every((check) => check.matched)
     };

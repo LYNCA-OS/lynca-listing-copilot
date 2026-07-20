@@ -15,15 +15,16 @@ CONCURRENCY="${RECOGNITION_WORKER_CONCURRENCY:-1}"
 TIMEOUT="${RECOGNITION_WORKER_TIMEOUT_SECONDS:-300}"
 MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-8}"
 MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-10}"
-ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-5}"
+ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-2}"
 STARTUP_PROBE_TIMEOUT_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_TIMEOUT_SECONDS:-240}"
 STARTUP_PROBE_PERIOD_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_PERIOD_SECONDS:-240}"
 STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRESHOLD:-2}"
 # Paddle predictors are serialized inside each process. Cloud Run concurrency
-# therefore stays at one while replicas provide parallelism. Deploy with five
-# warm replicas first so the old and new revisions fit the 20-vCPU regional
-# quota during a zero-downtime rollout. Once traffic has moved and the old
-# revision releases capacity, raise the service-level floor to eight. The
+# therefore stays at one while replicas provide parallelism. With two vCPUs per
+# instance and eight warm instances serving the old revision, a rollout floor
+# of two is the largest zero-downtime overlap that fits the 20-vCPU regional
+# quota: (8 + 2) * 2 = 20. Once traffic has moved and the old revision releases
+# capacity, raise the service-level floor to eight. The
 # revision-level minimum is removed so it cannot deadlock a rollout; the
 # revision-level maximum remains aligned with the service cap because Cloud Run
 # may otherwise restore a lower platform default.
@@ -117,6 +118,20 @@ fi
 
 # Deployment only starts after a complete image exists. A build/download
 # failure therefore leaves the serving revision and its traffic untouched.
+# Service-level warm capacity must be reduced before creating the overlapping
+# revision. Setting only the new revision floor does not override an existing
+# service minScale=8 and can exceed the regional 20-vCPU quota during rollout.
+if gcloud run services describe "$SERVICE_NAME" \
+  --project "$GCP_PROJECT_ID" \
+  --region "$GCP_REGION" >/dev/null 2>&1; then
+  gcloud run services update "$SERVICE_NAME" \
+    --project "$GCP_PROJECT_ID" \
+    --region "$GCP_REGION" \
+    --min "$ROLLOUT_MIN_INSTANCES" \
+    --max "$MAX_INSTANCES" \
+    --format='none'
+fi
+
 DEPLOYED_URL="$(gcloud run deploy "$SERVICE_NAME" \
   --image "$IMAGE_URI" \
   --project "$GCP_PROJECT_ID" \

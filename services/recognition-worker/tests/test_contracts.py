@@ -18,6 +18,7 @@ from app.pipelines.glare_detection import detect_glare_from_array
 from app.pipelines.image_loader import ImageLoadError, LoadedImage, load_signed_image
 from app.pipelines.image_quality import measure_image_quality_from_array
 from app.pipelines.multi_card_detection import detect_multi_card_from_array
+from app.pipelines import ocr_pipeline
 from app.pipelines.ocr_pipeline import copyright_year_evidence_from_confirmed_grid
 from app.pipelines.ocr_pipeline import ocr_evidence_from_items, ocr_evidence_from_loaded_images
 from app.pipelines.region_proposal import propose_regions_for_rectified_card
@@ -74,7 +75,13 @@ class RecognitionWorkerTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[3]
         deploy_script = (repo_root / "scripts" / "deploy-recognition-worker-cloud-run.sh").read_text(encoding="utf-8")
 
-        self.assertIn('ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-5}"', deploy_script)
+        self.assertIn('ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-2}"', deploy_script)
+        self.assertIn('gcloud run services describe "$SERVICE_NAME"', deploy_script)
+        self.assertGreaterEqual(
+            deploy_script.count('--min "$ROLLOUT_MIN_INSTANCES"'),
+            2,
+            "service minScale must be lowered before the overlapping revision is created",
+        )
         self.assertIn('--min "$ROLLOUT_MIN_INSTANCES"', deploy_script)
         self.assertIn('--min-instances default', deploy_script)
         self.assertIn('--max-instances "$MAX_INSTANCES"', deploy_script)
@@ -238,7 +245,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["raw_text"], "31/50")
         self.assertNotIn("token=secret", str(result))
 
-    def test_ocr_field_payload_reuses_loaded_image_for_inline_serial_fallback(self):
+    def test_ocr_field_payload_does_not_expand_serial_crop_to_full_image(self):
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
         os.environ["ENABLE_PADDLEOCR"] = "true"
         loaded = LoadedImage(
@@ -273,34 +280,31 @@ class RecognitionWorkerTests(unittest.TestCase):
             "model_id": "paddleocr",
             "model_revision": "",
         }
-        fallback = {
-            "request_id": "ocr_inline:full-image",
-            "crop_type": "serial_number",
-            "status": "OK",
-            "raw_text": "31/50",
-            "text_candidates": [{"text": "31/50", "confidence": 0.94}],
-            "boxes": [],
-            "confidence": 0.94,
-            "latency_ms": 13,
-            "model_id": "paddleocr",
-            "model_revision": "",
-        }
-
         with patch("app.main.load_signed_image", return_value=loaded) as load_mock:
-            with patch("app.main.ocr_field_from_loaded_image", side_effect=[primary, fallback]) as ocr_mock:
+            with patch("app.main.ocr_field_from_loaded_image", return_value=primary) as ocr_mock:
                 result = ocr_field_payload(payload, authorization="Bearer test-token")
 
         load_mock.assert_called_once()
-        self.assertEqual(ocr_mock.call_count, 2)
+        self.assertEqual(ocr_mock.call_count, 1)
         self.assertEqual(ocr_mock.call_args_list[0].kwargs["crop_box"], payload["crop_box"])
-        self.assertIsNone(ocr_mock.call_args_list[1].kwargs["crop_box"])
-        self.assertEqual(result["raw_text"], "31/50")
-        self.assertTrue(result["inline_full_image_fallback_evaluated"])
-        self.assertTrue(result["inline_full_image_fallback_used"])
-        self.assertTrue(result["inline_full_image_fallback_target_found"])
+        self.assertEqual(result["raw_text"], "")
+        self.assertFalse(result["inline_full_image_fallback_evaluated"])
+        self.assertFalse(result["inline_full_image_fallback_used"])
+        self.assertFalse(result["inline_full_image_fallback_target_found"])
         self.assertEqual(result["primary_ocr_latency_ms"], 8)
-        self.assertEqual(result["fallback_ocr_latency_ms"], 13)
         self.assertNotIn("token=secret", str(result))
+
+    def test_tight_serial_crop_uses_recognition_when_detector_misses_foil_text(self):
+        array = np.zeros((100, 320, 3), dtype=np.uint8)
+        with patch("app.pipelines.ocr_pipeline._run_paddleocr", return_value=[]):
+            with patch(
+                "app.pipelines.ocr_pipeline._run_serial_line_recognition",
+                return_value=[{"text": "004/101", "confidence": 0.93, "box": None}],
+            ) as recognition_mock:
+                candidates = ocr_pipeline._run_serial_paddleocr(array)
+
+        recognition_mock.assert_called_once()
+        self.assertEqual(candidates[0]["text"], "004/101")
 
     def test_ocr_field_payload_focuses_missing_grade_company_before_full_image(self):
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"

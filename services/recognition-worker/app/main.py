@@ -584,13 +584,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         and payload.get("crop_box") is not None
         and primary.get("status") != "UNAVAILABLE"
         and not _ocr_response_has_target(primary, crop_type)
-        and (
-            normalized_crop_type in {"serial_number", "serial_crop"}
-            or (
-                normalized_crop_type in {"grade_label", "grade_label_crop"}
-                and grade_context
-            )
-        )
+        and normalized_crop_type in {"grade_label", "grade_label_crop"}
+        and grade_context
     )
     if not should_fallback:
         return {

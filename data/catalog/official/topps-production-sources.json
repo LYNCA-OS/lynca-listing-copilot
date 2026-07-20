@@ -3,6 +3,22 @@
   "provider": "topps",
   "sources": [
     {
+      "source_name": "2026 Bowman Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2026_Bowman_Baseball_Checklist.pdf?v=1775743176",
+      "official_page_url": "https://www.topps.com/pages/bowman-baseball",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball",
+      "minimum_card_count": 1000,
+      "required_records": [
+        {
+          "checklist_code": "BWC-19",
+          "subject": "Shohei Ohtani",
+          "product": "Bowman Baseball",
+          "set_or_insert": "CRYSTALLIZED"
+        }
+      ]
+    },
+    {
       "source_name": "2026 Topps Graphite Tennis Checklist",
       "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2026_Topps_Graphite_Tennis_Checklist_v2.pdf?v=1773948520",
       "official_page_url": "https://uk.topps.com/pages/topps-graphite-tennis",
