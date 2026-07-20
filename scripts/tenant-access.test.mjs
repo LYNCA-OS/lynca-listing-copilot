@@ -34,7 +34,11 @@ const serviceEnv = Object.freeze({
   METAVERSE_AUTH_SECRET: secret,
   SUPABASE_URL: "https://project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "sb_secret_server_only",
-  V4_JOB_WORKER_SECRET: "worker-secret"
+  V4_JOB_WORKER_SECRET: "worker-secret",
+  // The suite below exercises the network read path (retries, truncation,
+  // outages) with per-case fetch mocks; the membership cache would serve the
+  // previous case's rows. Cache behavior has dedicated cases at the end.
+  TENANT_MEMBERSHIP_CACHE_TTL_MS: "0"
 });
 
 function jsonResponse(value, status = 200) {
@@ -518,5 +522,77 @@ assert.throws(() => requireWorkerContext({
   env: serviceEnv,
   job: { tenant_id: "" }
 }), (error) => error instanceof TenantAuthError && error.code === "ACCESS_DENIED");
+
+
+// ---- membership cache (positive-only, TTL, fail-closed) --------------------
+{
+  const { __clearTenantMembershipCacheForTests } = await import("../lib/tenant/access.mjs");
+  const cacheEnv = Object.freeze({
+    ...serviceEnv,
+    TENANT_MEMBERSHIP_CACHE_TTL_MS: "45000"
+  });
+
+  // A hit skips the network read entirely.
+  __clearTenantMembershipCacheForTests();
+  let cachedFetchCalls = 0;
+  const countingFetch = async () => {
+    cachedFetchCalls += 1;
+    return jsonResponse([membershipRow()]);
+  };
+  const first = await requireTenantAccess(tenantRequest(), {
+    permission: TENANT_PERMISSIONS.UPLOAD_ASSET,
+    env: cacheEnv,
+    fetchImpl: countingFetch
+  });
+  const second = await requireTenantAccess(tenantRequest(), {
+    permission: TENANT_PERMISSIONS.UPLOAD_ASSET,
+    env: cacheEnv,
+    fetchImpl: countingFetch
+  });
+  assert.equal(cachedFetchCalls, 1, "a fresh cache entry must serve the second request without a network read");
+  assert.equal(first.tenantId, "tenant_a");
+  assert.equal(second.tenantId, "tenant_a");
+
+  // A cache hit is NOT an authentication bypass: session_version is still
+  // validated per request, so a rotated session is rejected from cache.
+  await expectCode(() => requireTenantAccess(tenantRequest({ sessionVersion: LISTING_SESSION_VERSION + 1 }), {
+    permission: TENANT_PERMISSIONS.UPLOAD_ASSET,
+    env: cacheEnv,
+    fetchImpl: async () => {
+      throw new Error("cache hit must not reach the network");
+    }
+  }), "ACCESS_DENIED");
+
+  // Negative results are never cached: a revoked membership is re-read.
+  __clearTenantMembershipCacheForTests();
+  let deniedFetchCalls = 0;
+  const deniedFetch = async () => {
+    deniedFetchCalls += 1;
+    return jsonResponse([]);
+  };
+  await expectCode(() => requireTenantAccess(tenantRequest(), {
+    permission: TENANT_PERMISSIONS.UPLOAD_ASSET,
+    env: cacheEnv,
+    fetchImpl: deniedFetch
+  }), "ACCESS_DENIED");
+  await expectCode(() => requireTenantAccess(tenantRequest(), {
+    permission: TENANT_PERMISSIONS.UPLOAD_ASSET,
+    env: cacheEnv,
+    fetchImpl: deniedFetch
+  }), "ACCESS_DENIED");
+  assert.equal(deniedFetchCalls, 2, "denied lookups must never be served from cache");
+
+  // TTL 0 disables the cache entirely (this suite's default).
+  __clearTenantMembershipCacheForTests();
+  let disabledFetchCalls = 0;
+  const disabledFetch = async () => {
+    disabledFetchCalls += 1;
+    return jsonResponse([membershipRow()]);
+  };
+  await requireTenantAccess(tenantRequest(), { env: serviceEnv, fetchImpl: disabledFetch });
+  await requireTenantAccess(tenantRequest(), { env: serviceEnv, fetchImpl: disabledFetch });
+  assert.equal(disabledFetchCalls, 2, "TTL 0 must disable membership caching");
+  __clearTenantMembershipCacheForTests();
+}
 
 console.log("tenant access tests passed");
