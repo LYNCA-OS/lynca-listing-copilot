@@ -747,3 +747,49 @@ assert.equal(missingApplied.applied, false);
 assert.equal(missingPayload.preingestion_bundle_used, false);
 
 console.log("preingestion bundle tests passed");
+
+// ---- printed season-range year evidence ------------------------------------
+// Only a PRINTED season range read off the card is decisive for season
+// products; a bare copyright year (©2025 fits both 2024-25 and 2025-26) must
+// never become year evidence.
+{
+  const seasonDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+    preingestion_evidence_patches: [
+      {
+        field: "year_product",
+        value: "2025/26",
+        raw_text: "2025/26 TOPPS CHROME BASKETBALL",
+        source_type: "OCR",
+        source_image_id: "back",
+        crop_id: "year-product",
+        confidence: 0.94,
+        provenance: { crop_type: "year_product_crop" }
+      },
+      {
+        field: "copyright_year",
+        value: "2025",
+        raw_text: "© 2025 THE TOPPS COMPANY",
+        source_type: "OCR",
+        source_image_id: "back",
+        confidence: 0.97
+      }
+    ]
+  });
+  assert.equal(seasonDocument.evidence.year.value, "2025-26", "printed season range is admitted and canonicalized to dash form");
+  assert.equal(seasonDocument.resolved.year, "2025-26");
+  assert.equal(seasonDocument.evidence.year.candidates.length, 1, "the bare copyright year must be rejected, not merged as a candidate");
+
+  const copyrightOnly = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+    preingestion_evidence_patches: [{
+      field: "copyright_year",
+      value: "2025",
+      raw_text: "© 2025 THE TOPPS COMPANY",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.97
+    }]
+  });
+  assert.equal(copyrightOnly, null, "a bare copyright year alone yields no evidence document");
+}
+
+console.log("pre-ingestion bundle tests passed");
