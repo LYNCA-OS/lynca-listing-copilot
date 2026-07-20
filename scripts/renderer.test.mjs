@@ -1571,7 +1571,7 @@ const standardLotGrammar = renderResolvedTitle({
 });
 assert.equal(
   standardLotGrammar.rendered_title,
-  "Lot x12 2024 Panini Prizm Anthony Edwards / Victor Wembanyama / Stephen Curry RC"
+  "Lotx12 2024 Panini Prizm Anthony Edwards / Victor Wembanyama / Stephen Curry RC"
 );
 assert.ok(standardLotGrammar.rendered_title.length <= 80);
 assert.doesNotMatch(standardLotGrammar.rendered_title, /LeBron James/);
@@ -1589,7 +1589,7 @@ const lotSubjectsBeatOptionalDescriptor = renderResolvedTitle({
 });
 assert.equal(
   lotSubjectsBeatOptionalDescriptor.rendered_title,
-  "Lot x3 2026 Topps Bowman Chrome Sam Petersen / Luis Cova / David Davalillo"
+  "Lotx3 2026 Topps Bowman Chrome Sam Petersen / Luis Cova / David Davalillo"
 );
 
 const lotSubjectsBeatBloatedResolvedSet = renderResolvedTitle({
@@ -1607,7 +1607,7 @@ const lotSubjectsBeatBloatedResolvedSet = renderResolvedTitle({
 });
 assert.equal(
   lotSubjectsBeatBloatedResolvedSet.rendered_title,
-  "Lot x3 2026 Bowman Chrome David Davalillo / Sam Petersen / Luis Cova"
+  "Lotx3 2026 Bowman Chrome David Davalillo / Sam Petersen / Luis Cova"
 );
 assert.doesNotMatch(lotSubjectsBeatBloatedResolvedSet.rendered_title, /Bowman Briefing|\bBase\b/);
 

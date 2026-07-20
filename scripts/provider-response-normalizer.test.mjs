@@ -558,7 +558,7 @@ const pairedViewsAreNotALot = validateProviderEvidencePayload("openai_legacy", {
   }],
   unresolved: []
 });
-assert.equal(pairedViewsAreNotALot.fields.multi_card, false, "two uploaded views of one card must not become Lot x2");
+assert.equal(pairedViewsAreNotALot.fields.multi_card, false, "two uploaded views of one card must not become Lotx2");
 assert.equal(pairedViewsAreNotALot.fields.card_count, null);
 assert.ok(pairedViewsAreNotALot.unresolved.includes("multi_card"));
 

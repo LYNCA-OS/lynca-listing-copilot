@@ -109,6 +109,15 @@
           "product": "Topps Star Wars Smugglers Outpost"
         }
       ]
+    },
+    {
+      "source_name": "2025-26 Topps Chrome UEFA Club Competitions Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/26TUCC_ChromeChecklist_FINAL.pdf?v=1775059905",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer",
+      "minimum_card_count": 200,
+      "required_records": []
     }
   ]
 }

@@ -1453,7 +1453,7 @@ const multiCardLot = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(multiCardLot.identity_resolution_status, "RESOLVED");
-assert.match(multiCardLot.final_title, /^Lot x2 2024 Topps Chrome Shohei Ohtani/);
+assert.match(multiCardLot.final_title, /^Lotx2 2024 Topps Chrome Shohei Ohtani/);
 assert.equal(multiCardLot.publication_gate.workflow_route, "DEEP_REVIEW");
 assert.equal(multiCardLot.publication_gate.writer_review_ready, true);
 assert.ok(multiCardLot.unresolved.includes("multi-card lot requires writer review"));
