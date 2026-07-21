@@ -492,7 +492,7 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
     # OCR_BACKEND applies. Only a pure single-backend run whose sole engine is
     # unavailable short-circuits; hybrid proceeds if either lane can answer.
     requested_backend = str(payload.get("ocr_backend") or config.ocr_backend or "paddle").strip().lower()
-    if requested_backend not in {"paddle", "deepseek", "hybrid"}:
+    if requested_backend not in {"paddle", "deepseek", "google_vision", "hybrid"}:
         requested_backend = "paddle"
     deepseek_available = bool(config.deepseek_ocr_endpoint)
     if requested_backend == "paddle" and not config.enable_paddleocr:
@@ -523,6 +523,21 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
             "latency_ms": int((time.time() - started) * 1000),
             "model_id": config.deepseek_ocr_model,
             "model_revision": "",
+            "ocr_backend": requested_backend,
+        }
+    if requested_backend == "google_vision" and not config.vision_api_key:
+        return {
+            "request_id": request_id,
+            "crop_type": crop_type,
+            "status": "UNAVAILABLE",
+            "reason": "vision_api_key_not_configured",
+            "raw_text": "",
+            "text_candidates": [],
+            "boxes": [],
+            "confidence": 0,
+            "latency_ms": int((time.time() - started) * 1000),
+            "model_id": "google-vision",
+            "model_revision": config.vision_feature_type,
             "ocr_backend": requested_backend,
         }
 

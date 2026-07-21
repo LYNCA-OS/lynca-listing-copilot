@@ -42,7 +42,7 @@ def _float_env(name: str, fallback: float) -> float:
         return fallback
 
 
-_OCR_BACKENDS = {"paddle", "deepseek", "hybrid"}
+_OCR_BACKENDS = {"paddle", "deepseek", "google_vision", "hybrid"}
 
 
 def _ocr_backend_env() -> str:
@@ -92,6 +92,14 @@ class WorkerConfig:
     # GPU wall-cost per second for the self-hosted endpoint; multiplies the
     # measured request latency into a per-call cost estimate for the A/B report.
     deepseek_ocr_gpu_cost_per_second: float = 0.0
+    # Google Cloud Vision OCR backend. Reads printed hard keys (serial/card
+    # code/year) that PaddleOCR misses on foil/dense small print. API key only;
+    # no GPU. hybrid runs paddle + any configured VLM/vision lane.
+    vision_api_key: str = ""
+    vision_endpoint: str = ""
+    vision_feature_type: str = "DOCUMENT_TEXT_DETECTION"
+    vision_timeout_seconds: int = 30
+    vision_cost_per_image: float = 0.0015
 
 
 def load_config() -> WorkerConfig:
@@ -129,4 +137,9 @@ def load_config() -> WorkerConfig:
         deepseek_ocr_timeout_seconds=_int_env("DEEPSEEK_OCR_TIMEOUT_SECONDS", 30),
         deepseek_ocr_max_tokens=_int_env("DEEPSEEK_OCR_MAX_TOKENS", 512),
         deepseek_ocr_gpu_cost_per_second=_float_env("DEEPSEEK_OCR_GPU_COST_PER_SECOND", 0.0),
+        vision_api_key=os.getenv("VISION_API_KEY", "").strip(),
+        vision_endpoint=os.getenv("VISION_ENDPOINT", "").strip(),
+        vision_feature_type=os.getenv("VISION_FEATURE_TYPE", "DOCUMENT_TEXT_DETECTION") or "DOCUMENT_TEXT_DETECTION",
+        vision_timeout_seconds=_int_env("VISION_TIMEOUT_SECONDS", 30),
+        vision_cost_per_image=_float_env("VISION_COST_PER_IMAGE", 0.0015),
     )

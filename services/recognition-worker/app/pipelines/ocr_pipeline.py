@@ -693,7 +693,7 @@ def ocr_field_from_loaded_image(
     crop_array, offset = _crop_array_by_box(array, crop_box)
     normalized_crop_type = str(crop_type or "").strip().lower()
     backend = str(ocr_backend or "paddle").strip().lower()
-    if backend not in {"paddle", "deepseek", "hybrid"}:
+    if backend not in {"paddle", "deepseek", "google_vision", "hybrid"}:
         backend = "paddle"
 
     candidates: list[dict[str, Any]] = []
@@ -732,11 +732,25 @@ def ocr_field_from_loaded_image(
         if deepseek_result.get("usage"):
             backend_telemetry["deepseek_usage"] = deepseek_result.get("usage")
 
+    # Google Cloud Vision lane (API, no GPU). Reads hard keys PaddleOCR misses.
+    if backend in {"google_vision", "hybrid"}:
+        from .google_vision_ocr import run_google_vision_ocr
+
+        vision_result = run_google_vision_ocr(crop_array, crop_type=crop_type, config=config)
+        vision_candidates = vision_result.get("candidates", []) or []
+        candidates.extend(vision_candidates)
+        backend_telemetry["vision_status"] = vision_result.get("status")
+        backend_telemetry["vision_candidate_count"] = len(vision_candidates)
+        backend_telemetry["vision_latency_ms"] = vision_result.get("latency_ms")
+        backend_telemetry["vision_cost_estimate"] = vision_result.get("cost_estimate")
+        if vision_result.get("reason"):
+            backend_telemetry["vision_reason"] = vision_result.get("reason")
+
     # A hard PaddleOCR fault with no candidates from any lane is still an
     # UNAVAILABLE, matching prior behavior; otherwise OK/NO_TEXT by candidates.
     if candidates:
         status = "OK"
-    elif paddle_hard_error and backend != "deepseek":
+    elif paddle_hard_error and backend not in {"deepseek", "google_vision"}:
         status = "UNAVAILABLE"
     else:
         status = "NO_TEXT"
