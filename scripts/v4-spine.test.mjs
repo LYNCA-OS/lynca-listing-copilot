@@ -114,10 +114,11 @@ assert.deepEqual(
   [
     retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
     retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.CATALOG_SUBJECT_ANCHOR,
     retrievalQueryFamilies.CATALOG_SET_SUBJECT,
     retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR
   ],
-  "an informative set and a denominator must use complementary identity and variant catalog queries"
+  "an informative set and a denominator must add the product-independent subject anchor alongside the identity and variant catalog queries"
 );
 assert.deepEqual(
   catalogRetrievalFamiliesForFields({
@@ -131,6 +132,7 @@ assert.deepEqual(
   [
     retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
     retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.CATALOG_SUBJECT_ANCHOR,
     retrievalQueryFamilies.CATALOG_SET_SUBJECT,
     retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR
   ],
@@ -148,6 +150,7 @@ assert.deepEqual(
   [
     retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
     retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.CATALOG_SUBJECT_ANCHOR,
     retrievalQueryFamilies.CATALOG_YEAR_PRODUCT_SUBJECT,
     retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR
   ],
