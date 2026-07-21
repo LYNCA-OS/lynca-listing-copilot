@@ -23,7 +23,7 @@ from app.pipelines.deepseek_ocr import (
 def _config(**overrides):
     base = dict(
         deepseek_ocr_endpoint="http://ocr-gpu:8000",
-        deepseek_ocr_model="deepseek-ai/DeepSeek-OCR2",
+        deepseek_ocr_model="deepseek-ai/DeepSeek-OCR-2",
         deepseek_ocr_api_key="",
         deepseek_ocr_timeout_seconds=30,
         deepseek_ocr_max_tokens=512,
@@ -101,7 +101,7 @@ class DeepSeekOcrUnitTests(unittest.TestCase):
         self.assertEqual(result["usage"], {"total_tokens": 42})
         # request shaping: vLLM chat completions with image_url + model + timeout
         self.assertEqual(captured["url"], "http://ocr-gpu:8000/v1/chat/completions")
-        self.assertEqual(captured["body"]["model"], "deepseek-ai/DeepSeek-OCR2")
+        self.assertEqual(captured["body"]["model"], "deepseek-ai/DeepSeek-OCR-2")
         self.assertEqual(captured["body"]["messages"][0]["content"][0]["type"], "image_url")
         self.assertEqual(captured["timeout"], 30)
 

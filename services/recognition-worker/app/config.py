@@ -85,7 +85,7 @@ class WorkerConfig:
     # DeepSeek OCR 2 (second generation). The exact identifier is the vLLM
     # served-model-name of your self-hosted deployment; override via
     # DEEPSEEK_OCR_MODEL so it matches your endpoint exactly.
-    deepseek_ocr_model: str = "deepseek-ai/DeepSeek-OCR2"
+    deepseek_ocr_model: str = "deepseek-ai/DeepSeek-OCR-2"
     deepseek_ocr_api_key: str = ""
     deepseek_ocr_timeout_seconds: int = 30
     deepseek_ocr_max_tokens: int = 512
@@ -124,7 +124,7 @@ def load_config() -> WorkerConfig:
         tesseract_image_concurrency=_bounded_int_env("TESSERACT_IMAGE_CONCURRENCY", 2, 2),
         ocr_backend=_ocr_backend_env(),
         deepseek_ocr_endpoint=os.getenv("DEEPSEEK_OCR_ENDPOINT", "").strip(),
-        deepseek_ocr_model=os.getenv("DEEPSEEK_OCR_MODEL", "deepseek-ai/DeepSeek-OCR2") or "deepseek-ai/DeepSeek-OCR2",
+        deepseek_ocr_model=os.getenv("DEEPSEEK_OCR_MODEL", "deepseek-ai/DeepSeek-OCR-2") or "deepseek-ai/DeepSeek-OCR-2",
         deepseek_ocr_api_key=os.getenv("DEEPSEEK_OCR_API_KEY", "").strip(),
         deepseek_ocr_timeout_seconds=_int_env("DEEPSEEK_OCR_TIMEOUT_SECONDS", 30),
         deepseek_ocr_max_tokens=_int_env("DEEPSEEK_OCR_MAX_TOKENS", 512),
