@@ -1824,7 +1824,7 @@ const sparseIdentityStillUsesCsm = adaptRecognitionResultToV4({
   routePlan: assistedRoute
 });
 assert.equal(sparseIdentityStillUsesCsm.title_render_source, "v4_csm_deterministic_renderer");
-assert.equal(sparseIdentityStillUsesCsm.final_title, "2006 Fleer 20th Anniversary Rookie Reprint #23");
+assert.equal(sparseIdentityStillUsesCsm.final_title, "2006 Fleer 20th Anniversary Rookie Reprint");
 assert.match(sparseIdentityStillUsesCsm.provider_result.model_title_suggestion, /Michael Jordan/);
 assert.doesNotMatch(sparseIdentityStillUsesCsm.final_title, /Model prose/);
 

@@ -429,7 +429,7 @@ const toppsCosmicHierarchy = renderResolvedTitle({
 }, {
   maxLength: 85
 });
-assert.equal(toppsCosmicHierarchy.rendered_title, "2025 Topps Cosmic Chrome Test Player #22");
+assert.equal(toppsCosmicHierarchy.rendered_title, "2025 Topps Cosmic Chrome Test Player");
 assert.doesNotMatch(toppsCosmicHierarchy.rendered_title, /Topps\s+Topps/i);
 
 const paniniPrizmBlackHierarchy = renderResolvedTitle({
@@ -442,7 +442,7 @@ const paniniPrizmBlackHierarchy = renderResolvedTitle({
 }, {
   maxLength: 85
 });
-assert.equal(paniniPrizmBlackHierarchy.rendered_title, "2025 Panini Prizm Black Test Player #22");
+assert.equal(paniniPrizmBlackHierarchy.rendered_title, "2025 Panini Prizm Black Test Player");
 
 const cardNumberRemovedBeforeSecondaryFields = renderResolvedTitle({
   year: "2025-26",

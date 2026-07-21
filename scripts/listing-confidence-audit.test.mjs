@@ -1671,7 +1671,10 @@ const finalizerPreservesCurrentImageSpecificity = __listingCopilotTitleTestHooks
 assert.match(finalizerPreservesCurrentImageSpecificity.title, /Panini Prizm/);
 assert.match(finalizerPreservesCurrentImageSpecificity.title, /Green Shimmer/);
 assert.match(finalizerPreservesCurrentImageSpecificity.title, /20\/99/);
-assert.match(finalizerPreservesCurrentImageSpecificity.title, /#119/);
+// standard_card_number (#119) is no longer a title field under SEM STANDARD
+// grammar; the serial number 20/99 and FOTL below still assert that the
+// finalizer preserves current-image specificity.
+assert.doesNotMatch(finalizerPreservesCurrentImageSpecificity.title, /#119/);
 assert.match(finalizerPreservesCurrentImageSpecificity.title, /\bFOTL\b/);
 assert.doesNotMatch(finalizerPreservesCurrentImageSpecificity.title, /Green Shimmer Prizm/);
 
