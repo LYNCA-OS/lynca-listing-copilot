@@ -487,7 +487,15 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
             "model_id": config.paddleocr_model_id,
             "model_revision": config.paddleocr_model_revision,
         }
-    if not config.enable_paddleocr:
+    # Backend can be overridden per request (payload.ocr_backend) so the
+    # accuracy/cost A/B/A+B runs need no redeploy; otherwise the configured
+    # OCR_BACKEND applies. Only a pure single-backend run whose sole engine is
+    # unavailable short-circuits; hybrid proceeds if either lane can answer.
+    requested_backend = str(payload.get("ocr_backend") or config.ocr_backend or "paddle").strip().lower()
+    if requested_backend not in {"paddle", "deepseek", "hybrid"}:
+        requested_backend = "paddle"
+    deepseek_available = bool(config.deepseek_ocr_endpoint)
+    if requested_backend == "paddle" and not config.enable_paddleocr:
         return {
             "request_id": request_id,
             "crop_type": crop_type,
@@ -500,6 +508,22 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
             "latency_ms": int((time.time() - started) * 1000),
             "model_id": config.paddleocr_model_id,
             "model_revision": config.paddleocr_model_revision,
+            "ocr_backend": requested_backend,
+        }
+    if requested_backend == "deepseek" and not deepseek_available:
+        return {
+            "request_id": request_id,
+            "crop_type": crop_type,
+            "status": "UNAVAILABLE",
+            "reason": "deepseek_ocr_endpoint_not_configured",
+            "raw_text": "",
+            "text_candidates": [],
+            "boxes": [],
+            "confidence": 0,
+            "latency_ms": int((time.time() - started) * 1000),
+            "model_id": config.deepseek_ocr_model,
+            "model_revision": "",
+            "ocr_backend": requested_backend,
         }
 
     try:
@@ -536,6 +560,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         request_id=request_id,
         model_id=config.paddleocr_model_id,
         model_revision=config.paddleocr_model_revision,
+        ocr_backend=requested_backend,
+        config=config,
     )
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     normalized_crop_type = str(crop_type).lower()
@@ -559,6 +585,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
                 request_id=f"{request_id}:grade-{missing_component}",
                 model_id=config.paddleocr_model_id,
                 model_revision=config.paddleocr_model_revision,
+                ocr_backend=requested_backend,
+                config=config,
             )
             primary = _merge_inline_ocr_results(
                 primary,
@@ -605,6 +633,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         request_id=f"{request_id}:full-image",
         model_id=config.paddleocr_model_id,
         model_revision=config.paddleocr_model_revision,
+        ocr_backend=requested_backend,
+        config=config,
     )
     merged = _merge_inline_ocr_results(
         primary,

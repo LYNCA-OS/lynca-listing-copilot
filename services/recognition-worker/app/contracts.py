@@ -214,6 +214,10 @@ def validate_ocr_field_request(payload: dict[str, Any]) -> list[dict[str, str]]:
     if metadata is not None and not isinstance(metadata, dict):
         errors.append({"path": "metadata", "message": "metadata must be an object"})
 
+    ocr_backend = payload.get("ocr_backend")
+    if ocr_backend is not None and str(ocr_backend).strip().lower() not in {"paddle", "deepseek", "hybrid"}:
+        errors.append({"path": "ocr_backend", "message": "ocr_backend must be paddle, deepseek, or hybrid"})
+
     return errors
 
 

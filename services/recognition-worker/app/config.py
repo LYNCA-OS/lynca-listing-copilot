@@ -33,6 +33,23 @@ def _csv_env(name: str, fallback: list[str]) -> list[str]:
     return [part.strip().lower() for part in value.split(",") if part.strip()]
 
 
+def _float_env(name: str, fallback: float) -> float:
+    value = os.getenv(name, "")
+    try:
+        parsed = float(value)
+        return parsed if parsed >= 0 else fallback
+    except ValueError:
+        return fallback
+
+
+_OCR_BACKENDS = {"paddle", "deepseek", "hybrid"}
+
+
+def _ocr_backend_env() -> str:
+    value = os.getenv("OCR_BACKEND", "paddle").strip().lower()
+    return value if value in _OCR_BACKENDS else "paddle"
+
+
 @dataclass(frozen=True)
 class WorkerConfig:
     token: str
@@ -59,6 +76,22 @@ class WorkerConfig:
     tesseract_timeout_seconds: int
     tesseract_image_concurrency: int = 2
     pipeline_version: str = "recognition-worker-contract-v1"
+    # OCR backend selection. "paddle" preserves the existing behavior;
+    # "deepseek" routes crops to a self-hosted DeepSeek-OCR vLLM endpoint;
+    # "hybrid" runs both and fuses the readings. The three modes exist so the
+    # accuracy/cost trade-off can be measured A/B/A+B on the sealed eval.
+    ocr_backend: str = "paddle"
+    deepseek_ocr_endpoint: str = ""
+    # DeepSeek OCR 2 (second generation). The exact identifier is the vLLM
+    # served-model-name of your self-hosted deployment; override via
+    # DEEPSEEK_OCR_MODEL so it matches your endpoint exactly.
+    deepseek_ocr_model: str = "deepseek-ai/DeepSeek-OCR2"
+    deepseek_ocr_api_key: str = ""
+    deepseek_ocr_timeout_seconds: int = 30
+    deepseek_ocr_max_tokens: int = 512
+    # GPU wall-cost per second for the self-hosted endpoint; multiplies the
+    # measured request latency into a per-call cost estimate for the A/B report.
+    deepseek_ocr_gpu_cost_per_second: float = 0.0
 
 
 def load_config() -> WorkerConfig:
@@ -89,4 +122,11 @@ def load_config() -> WorkerConfig:
         tesseract_psm=_int_env("TESSERACT_PSM", 11),
         tesseract_timeout_seconds=_int_env("TESSERACT_TIMEOUT_SECONDS", 20),
         tesseract_image_concurrency=_bounded_int_env("TESSERACT_IMAGE_CONCURRENCY", 2, 2),
+        ocr_backend=_ocr_backend_env(),
+        deepseek_ocr_endpoint=os.getenv("DEEPSEEK_OCR_ENDPOINT", "").strip(),
+        deepseek_ocr_model=os.getenv("DEEPSEEK_OCR_MODEL", "deepseek-ai/DeepSeek-OCR2") or "deepseek-ai/DeepSeek-OCR2",
+        deepseek_ocr_api_key=os.getenv("DEEPSEEK_OCR_API_KEY", "").strip(),
+        deepseek_ocr_timeout_seconds=_int_env("DEEPSEEK_OCR_TIMEOUT_SECONDS", 30),
+        deepseek_ocr_max_tokens=_int_env("DEEPSEEK_OCR_MAX_TOKENS", 512),
+        deepseek_ocr_gpu_cost_per_second=_float_env("DEEPSEEK_OCR_GPU_COST_PER_SECOND", 0.0),
     )

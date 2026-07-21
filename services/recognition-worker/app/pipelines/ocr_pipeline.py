@@ -669,6 +669,8 @@ def ocr_field_from_loaded_image(
     request_id: str = "",
     model_id: str = "paddleocr",
     model_revision: str = "",
+    ocr_backend: str = "paddle",
+    config: Any = None,
 ) -> dict[str, Any]:
     started = time.time()
     image_id = str(getattr(loaded_image, "image_id", "") or "image")
@@ -689,33 +691,61 @@ def ocr_field_from_loaded_image(
             "model_revision": model_revision,
         }
     crop_array, offset = _crop_array_by_box(array, crop_box)
-    try:
-        normalized_crop_type = str(crop_type or "").strip().lower()
-        candidates = _run_serial_paddleocr(crop_array, offset=offset) \
-            if normalized_crop_type in {"serial_number", "serial_crop"} \
-            else _run_paddleocr(crop_array, offset=offset)
-    except Exception as error:  # noqa: BLE001
-        return {
-            "request_id": request_id,
-            "crop_type": crop_type,
-            "status": "UNAVAILABLE",
-            "reason": str(error)[:240],
-            "raw_text": "",
-            "text_candidates": [],
-            "boxes": [],
-            "confidence": 0,
-            "latency_ms": int((time.time() - started) * 1000),
-            "model_id": model_id,
-            "model_revision": model_revision,
-            "image_id": image_id,
-            "image_role": role,
-        }
+    normalized_crop_type = str(crop_type or "").strip().lower()
+    backend = str(ocr_backend or "paddle").strip().lower()
+    if backend not in {"paddle", "deepseek", "hybrid"}:
+        backend = "paddle"
+
+    candidates: list[dict[str, Any]] = []
+    backend_telemetry: dict[str, Any] = {}
+    paddle_hard_error: str | None = None
+
+    # PaddleOCR lane (skipped for a pure deepseek run, or when Paddle is
+    # disabled in a hybrid run so the deepseek lane still answers).
+    paddle_enabled = config is None or bool(getattr(config, "enable_paddleocr", True))
+    if backend in {"paddle", "hybrid"} and paddle_enabled:
+        try:
+            paddle_candidates = _run_serial_paddleocr(crop_array, offset=offset) \
+                if normalized_crop_type in {"serial_number", "serial_crop"} \
+                else _run_paddleocr(crop_array, offset=offset)
+        except Exception as error:  # noqa: BLE001
+            paddle_candidates = []
+            paddle_hard_error = str(error)[:240]
+            backend_telemetry["paddle_error"] = paddle_hard_error
+        candidates.extend(paddle_candidates)
+        backend_telemetry["paddle_candidate_count"] = len(paddle_candidates)
+
+    # DeepSeek-OCR lane (self-hosted vLLM). Never let a backend fault abort the
+    # request when the other lane produced text.
+    if backend in {"deepseek", "hybrid"}:
+        from .deepseek_ocr import run_deepseek_ocr
+
+        deepseek_result = run_deepseek_ocr(crop_array, crop_type=crop_type, config=config)
+        deepseek_candidates = deepseek_result.get("candidates", []) or []
+        candidates.extend(deepseek_candidates)
+        backend_telemetry["deepseek_status"] = deepseek_result.get("status")
+        backend_telemetry["deepseek_candidate_count"] = len(deepseek_candidates)
+        backend_telemetry["deepseek_latency_ms"] = deepseek_result.get("latency_ms")
+        backend_telemetry["deepseek_cost_estimate"] = deepseek_result.get("cost_estimate")
+        if deepseek_result.get("reason"):
+            backend_telemetry["deepseek_reason"] = deepseek_result.get("reason")
+        if deepseek_result.get("usage"):
+            backend_telemetry["deepseek_usage"] = deepseek_result.get("usage")
+
+    # A hard PaddleOCR fault with no candidates from any lane is still an
+    # UNAVAILABLE, matching prior behavior; otherwise OK/NO_TEXT by candidates.
+    if candidates:
+        status = "OK"
+    elif paddle_hard_error and backend != "deepseek":
+        status = "UNAVAILABLE"
+    else:
+        status = "NO_TEXT"
 
     raw_text, confidence = _normalize_field_candidates(candidates)
-    return {
+    result = {
         "request_id": request_id,
         "crop_type": crop_type,
-        "status": "OK" if candidates else "NO_TEXT",
+        "status": status,
         "raw_text": raw_text,
         "text_candidates": candidates,
         "boxes": [
@@ -733,7 +763,12 @@ def ocr_field_from_loaded_image(
         "model_revision": model_revision,
         "image_id": image_id,
         "image_role": role,
+        "ocr_backend": backend,
+        "backend_telemetry": backend_telemetry,
     }
+    if status == "UNAVAILABLE" and paddle_hard_error:
+        result["reason"] = paddle_hard_error
+    return result
 
 
 def _ocr_array_with_tesseract(
