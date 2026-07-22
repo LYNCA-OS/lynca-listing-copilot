@@ -507,6 +507,8 @@ export default async function handler(req, res) {
       bundle_id: durableBundle.bundle_id,
       bundle_status: durableBundle.status,
       saved: Boolean(writeResult.saved),
+      preingestion_cache_hit: false,
+      preingestion_cache_reason: reuse.reason,
       worker_jobs_enqueued: enqueueResult.enqueued || 0,
       worker_jobs_attempted: enqueueResult.attempted || jobs.length,
       ocr_dispatch_started: ocrDispatchStarted,
@@ -529,6 +531,8 @@ export default async function handler(req, res) {
         worker_jobs_enqueued: enqueueResult.enqueued || 0,
         worker_jobs_attempted: enqueueResult.attempted || jobs.length,
         ocr_dispatch_started: ocrDispatchStarted,
+        preingestion_cache_hit: false,
+        preingestion_cache_reason: reuse.reason,
         ocr_verifier_enabled: paddleOcr.enabled === true,
         ocr_verifier_configured: paddleOcr.configured === true && Boolean(paddleOcr.token),
         ocr_jobs_suppressed_unavailable: payload.enqueue_ocr !== false && !enqueueOcr

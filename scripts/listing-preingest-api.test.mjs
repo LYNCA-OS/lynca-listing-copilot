@@ -245,6 +245,8 @@ const result = await callApi({
 
 assert.equal(result.statusCode, 200, JSON.stringify(result.body));
 assert.equal(result.body.ok, true);
+assert.equal(result.body.preingestion_cache_hit, false);
+assert.equal(result.body.preingestion_cache_reason, "missing_bundle");
 assert.equal(result.body.bundle_id, bundleWrite.bundle_id);
 assert.equal(result.body.saved, true);
 assert.equal(result.body.preprocessing_summary.image_count, 2);
