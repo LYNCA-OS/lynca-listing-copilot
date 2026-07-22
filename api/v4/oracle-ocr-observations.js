@@ -55,9 +55,9 @@ async function jobsForAsset(assetId, tenantId, env = process.env) {
   return [...latestByRole.values()];
 }
 
-function observation(result = {}, job = {}) {
+function observation(result = {}, job = {}, requestedBackend = "") {
   const rawText = cleanText(result.raw_text || (result.text_candidates || []).map((row) => row.text).filter(Boolean).join(" "));
-  const backend = cleanText(result.ocr_backend).toLowerCase();
+  const backend = cleanText(result.ocr_backend || requestedBackend).toLowerCase();
   return {
     source: backend.includes("google") || cleanText(result.model_id).toUpperCase().includes("GOOGLE")
       ? "GOOGLE_VISION_OCR"
@@ -103,7 +103,12 @@ export default async function handler(req, res) {
       const observations = await mapWithConcurrency(jobs, 2, async (job) => {
         const objectPath = cleanText(job.payload?.crop?.crop_metadata?.source_object_path);
         const signedUrl = await createListingImageSignedReadUrl({ objectPath, tenantId: context.tenantId });
-        return observation(await client.verifyCrop(ocrRequestForPreingestionJob(job, { imageUrl: signedUrl })), job);
+        const requestedBackend = "google_vision";
+        const request = {
+          ...ocrRequestForPreingestionJob(job, { imageUrl: signedUrl }),
+          ocr_backend: requestedBackend
+        };
+        return observation(await client.verifyCrop(request), job, requestedBackend);
       });
       return { query_card_id: cleanText(card.query_card_id), observations };
     });
