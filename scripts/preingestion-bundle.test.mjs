@@ -7,6 +7,7 @@ import {
   currentPreingestionEvidencePatches,
   imagesFromPreIngestionBundle,
   normalizeEvidencePatch,
+  readCurrentPreingestionOcrJobsByAsset,
   readPreIngestionBundleByAsset,
   readPreIngestionBundle,
   summarizePreIngestionBundle,
@@ -322,6 +323,34 @@ const byAsset = await readPreIngestionBundleByAsset({
   env,
   fetchImpl
 });
+
+const currentOcrJobs = await readCurrentPreingestionOcrJobsByAsset({
+  assetId,
+  tenantId,
+  env,
+  fetchImpl: async (url) => {
+    const parsed = new URL(String(url));
+    assert.equal(parsed.searchParams.get("tenant_id"), `eq.${tenantId}`);
+    assert.equal(parsed.searchParams.get("asset_id"), `eq.${assetId}`);
+    assert.equal(parsed.searchParams.get("job_type"), "eq.ocr_crop_verification");
+    assert.equal(parsed.searchParams.get("job_key"), "like.ocr:ocr-crop-v11:*");
+    return new Response(JSON.stringify([{
+      tenant_id: tenantId,
+      asset_id: assetId,
+      bundle_id: bundle.bundle_id,
+      job_key: `ocr:ocr-crop-v11:${bundle.bundle_id}:serial`,
+      status: "succeeded"
+    }, {
+      tenant_id: tenantId,
+      asset_id: assetId,
+      bundle_id: bundle.bundle_id,
+      job_key: `ocr:ocr-crop-v10:${bundle.bundle_id}:stale`,
+      status: "succeeded"
+    }]), { status: 200 });
+  }
+});
+assert.equal(currentOcrJobs.length, 1);
+assert.ok(currentOcrJobs[0].job_key.startsWith("ocr:ocr-crop-v11:"));
 assert.equal(byAsset.bundle_id, bundle.bundle_id);
 assert.equal(calls[3].search.asset_id, `eq.${bundle.asset_id}`);
 assert.equal(calls[3].search.tenant_id, `eq.${tenantId}`);

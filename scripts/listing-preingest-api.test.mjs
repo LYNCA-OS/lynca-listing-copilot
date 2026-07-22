@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import handler from "../api/listing-preingest.js";
+import handler, { reusablePreingestionBundle } from "../api/listing-preingest.js";
 import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 import { preingestionOcrJobVersion } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 
@@ -173,6 +173,9 @@ globalThis.fetch = async (url, init = {}) => {
   }
 
   if (parsed.pathname.endsWith("/preingestion_jobs")) {
+    if (!init.method) {
+      return jsonResponse(Array.isArray(jobsWrite) ? jobsWrite : []);
+    }
     jobsWrite = JSON.parse(init.body);
     return {
       ok: true,
@@ -249,8 +252,10 @@ assert.equal(result.body.signed_read_url_count, 2);
 assert.ok(result.body.worker_jobs_enqueued >= 2);
 for (const phase of [
   "canonical_bundle_lookup_ms",
+  "canonical_image_read_ms",
   "signed_read_url_check_ms",
   "existing_bundle_read_ms",
+  "current_ocr_jobs_read_ms",
   "bundle_write_ms",
   "worker_job_enqueue_ms",
   "total_ms"
@@ -338,7 +343,7 @@ assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
 const signedCallsBeforeFastPath = calls.filter((call) => call.path.includes("/storage/v1/object/sign/")).length;
 const fastPreingestResult = await callApi({
   asset_id: assetId,
-  requested_fields: ["serial_number"],
+  requested_fields: ["serial_number", "grade_label"],
   verify_signed_read_urls: false
 });
 assert.equal(fastPreingestResult.statusCode, 200);
@@ -348,6 +353,69 @@ assert.equal(
   signedCallsBeforeFastPath,
   "verified uploads must be able to skip redundant pre-ingestion signing"
 );
+
+const expectedOcrJobCount = jobsWrite.length;
+bundleWrite.quality_summary.ocr_stage_execution = {
+  claimed: expectedOcrJobCount,
+  succeeded: expectedOcrJobCount,
+  failed: 0,
+  requeued: 0,
+  deferred: 0,
+  lease_lost: 0,
+  unaccounted_claimed_job_count: 0,
+  duplicate_outcome_count: 0,
+  all_claimed_jobs_accounted_for: true
+};
+jobsWrite = jobsWrite.map((job) => ({ ...job, status: "succeeded" }));
+const writesBeforeCacheHit = calls.filter((call) => (
+  (call.path.endsWith("/preingestion_bundles") || call.path.endsWith("/preingestion_jobs"))
+  && call.method === "POST"
+)).length;
+const signedCallsBeforeCacheHit = calls.filter((call) => call.path.includes("/storage/v1/object/sign/")).length;
+const cacheHitResult = await callApi({
+  asset_id: assetId,
+  requested_fields: ["serial_number", "grade_label"]
+});
+assert.equal(cacheHitResult.statusCode, 200);
+assert.equal(cacheHitResult.body.preingestion_cache_hit, true);
+assert.equal(cacheHitResult.body.preingestion_cache_reason, "immutable_bundle_current_ocr_complete");
+assert.equal(cacheHitResult.body.worker_jobs_enqueued, 0);
+assert.equal(cacheHitResult.body.signed_read_url_check_skipped, true);
+assert.equal(
+  calls.filter((call) => (
+    (call.path.endsWith("/preingestion_bundles") || call.path.endsWith("/preingestion_jobs"))
+    && call.method === "POST"
+  )).length,
+  writesBeforeCacheHit,
+  "a fully completed immutable OCR contract must not be written or enqueued again"
+);
+assert.equal(
+  calls.filter((call) => call.path.includes("/storage/v1/object/sign/")).length,
+  signedCallsBeforeCacheHit,
+  "an immutable cache hit must not repeat signed URL checks"
+);
+const unsafePartialJobs = reusablePreingestionBundle({
+  existingBundle: {
+    ...bundleWrite,
+    quality_summary: {
+      ...bundleWrite.quality_summary,
+      ocr_stage_execution: {
+        ...bundleWrite.quality_summary.ocr_stage_execution,
+        claimed: expectedOcrJobCount - 1,
+        succeeded: expectedOcrJobCount - 1
+      }
+    }
+  },
+  tenantId: "tenant_a",
+  assetId,
+  source: "listing_preingest_api",
+  images: verificationRows,
+  cropPlan: bundleWrite.crop_plan,
+  currentOcrJobs: jobsWrite.slice(0, -1),
+  enqueueWorkers: true,
+  enqueueOcr: true
+});
+assert.equal(unsafePartialJobs.reusable, false, "partial OCR completion must fail closed");
 
 const missing = await callApi({ asset_id: "" });
 assert.equal(missing.statusCode, 400);

@@ -16,10 +16,11 @@ import {
   dedupePreingestionImages,
   enqueuePreIngestionJobs,
   normalizePreingestionImageRecord,
+  preingestionBundleVersion,
   preingestionOcrJobVersion,
   preingestionStatuses,
-  readPreIngestionBundle,
-  readPreIngestionBundleIdByAsset,
+  readCurrentPreingestionOcrJobsByAsset,
+  readPreIngestionBundleByAsset,
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
@@ -127,6 +128,100 @@ function trustedExistingEvidencePatches(bundle = {}, images = []) {
   });
 }
 
+function stableImageIdentity(image = {}) {
+  return [
+    safeString(image.image_id || image.imageId || image.id),
+    safeString(image.object_path || image.objectPath),
+    safeString(image.content_sha256 || image.contentSha256 || image.sha256)
+  ].join("\u0000");
+}
+
+function exactImageIdentityMatch(existingImages = [], canonicalImages = []) {
+  if (!Array.isArray(existingImages) || existingImages.length !== canonicalImages.length) return false;
+  const persisted = existingImages.map(stableImageIdentity).sort();
+  const canonical = canonicalImages.map(stableImageIdentity).sort();
+  return persisted.every((identity, index) => identity && identity === canonical[index]);
+}
+
+function stableCropContract(crop = {}) {
+  const box = crop.crop_box || crop.cropBox || {};
+  const metadata = crop.crop_metadata || crop.cropMetadata || {};
+  return JSON.stringify({
+    crop_id: safeString(crop.crop_id || crop.cropId || crop.id),
+    source_image_id: safeString(crop.source_image_id || crop.sourceImageId),
+    source_object_path: safeString(crop.source_object_path || crop.sourceObjectPath),
+    role: safeString(crop.role),
+    box: [box.x, box.y, box.width, box.height].map((value) => Number(value)),
+    source_side: safeString(metadata.source_side || metadata.sourceSide),
+    source_width: Number(metadata.source_width || metadata.sourceWidth || 0),
+    source_height: Number(metadata.source_height || metadata.sourceHeight || 0)
+  });
+}
+
+function exactCropContractMatch(existingCropPlan = [], requestedCropPlan = []) {
+  if (!Array.isArray(existingCropPlan) || existingCropPlan.length !== requestedCropPlan.length) return false;
+  const persisted = existingCropPlan.map(stableCropContract).sort();
+  const requested = requestedCropPlan.map(stableCropContract).sort();
+  return persisted.every((contract, index) => contract === requested[index]);
+}
+
+export function reusablePreingestionBundle({
+  existingBundle,
+  tenantId,
+  assetId,
+  source,
+  images = [],
+  cropPlan = [],
+  currentOcrJobs = null,
+  enqueueWorkers = true,
+  enqueueOcr = false,
+  enableOcrDetail = false,
+  additionalWorkersRequested = false
+} = {}) {
+  const bundle = existingBundle && typeof existingBundle === "object" ? existingBundle : null;
+  if (!bundle) return { reusable: false, reason: "missing_bundle" };
+  if (
+    safeString(bundle.bundle_version) !== preingestionBundleVersion
+    || safeString(bundle.tenant_id) !== safeString(tenantId)
+    || safeString(bundle.asset_id) !== safeString(assetId)
+    || safeString(bundle.source) !== safeString(source)
+  ) return { reusable: false, reason: "bundle_scope_or_version_mismatch" };
+  if (safeString(bundle.status) !== preingestionStatuses.READY) {
+    return { reusable: false, reason: "bundle_not_ready" };
+  }
+  if (!exactImageIdentityMatch(bundle.images, images)) {
+    return { reusable: false, reason: "canonical_image_identity_changed" };
+  }
+  if (!exactCropContractMatch(bundle.crop_plan, cropPlan)) {
+    return { reusable: false, reason: "crop_contract_changed" };
+  }
+  if (additionalWorkersRequested) {
+    return { reusable: false, reason: "additional_worker_contract_requested" };
+  }
+  if (!enqueueWorkers || !enqueueOcr) {
+    return { reusable: true, reason: "immutable_bundle_no_ocr_requested", expected_ocr_job_count: 0 };
+  }
+
+  const expectedJobs = buildPreingestionWorkerJobs({
+    bundle,
+    enableOcr: true,
+    enableOcrDetail
+  });
+  const expectedCount = expectedJobs.length;
+  const expectedKeys = new Set(expectedJobs.map((job) => safeString(job.job_key)).filter(Boolean));
+  const completedKeys = new Set((Array.isArray(currentOcrJobs) ? currentOcrJobs : [])
+    .filter((job) => (
+      safeString(job.bundle_id) === safeString(bundle.bundle_id)
+      && safeString(job.status).toLowerCase() === "succeeded"
+    ))
+    .map((job) => safeString(job.job_key))
+    .filter((jobKey) => expectedKeys.has(jobKey)));
+  const successful = expectedCount > 0 && completedKeys.size === expectedKeys.size;
+  return successful
+    ? { reusable: true, reason: "immutable_bundle_current_ocr_complete", expected_ocr_job_count: expectedCount }
+    : { reusable: false, reason: "current_ocr_contract_not_complete", expected_ocr_job_count: expectedCount };
+}
+
 async function countSignedReadUrls(images, tenantId, env, fetchImpl) {
   const results = await Promise.all(images.map(async (image) => {
     try {
@@ -206,20 +301,37 @@ export default async function handler(req, res) {
   try {
     const source = allowedBrowserSource(payload.source);
     const canonicalLookupStartedAt = Date.now();
-    const [canonical, existingBundleId] = await Promise.all([
-      readCanonicalListingImageReferences({
+    let canonicalReadMs = 0;
+    let existingBundleReadMs = 0;
+    let currentOcrJobsReadMs = 0;
+    const measured = async (operation, recordElapsed) => {
+      const startedAt = Date.now();
+      try {
+        return await operation();
+      } finally {
+        recordElapsed(Date.now() - startedAt);
+      }
+    };
+    const [canonical, existingBundle, currentOcrJobs] = await Promise.all([
+      measured(() => readCanonicalListingImageReferences({
         assetId,
         tenantId: context.tenantId,
         env: process.env,
         fetchImpl: globalThis.fetch
-      }),
-      readPreIngestionBundleIdByAsset({
+      }), (elapsed) => { canonicalReadMs = elapsed; }),
+      measured(() => readPreIngestionBundleByAsset({
         assetId,
         tenantId: context.tenantId,
         source,
         env: process.env,
         fetchImpl: globalThis.fetch
-      })
+      }), (elapsed) => { existingBundleReadMs = elapsed; }),
+      measured(() => readCurrentPreingestionOcrJobsByAsset({
+        assetId,
+        tenantId: context.tenantId,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      }), (elapsed) => { currentOcrJobsReadMs = elapsed; })
     ]);
     const canonicalLookupMs = Date.now() - canonicalLookupStartedAt;
     // The browser is scheduling work, not defining image identity. Replace
@@ -250,26 +362,85 @@ export default async function handler(req, res) {
       cropPlan
     });
 
+    const enqueueWorkers = payload.enqueue_workers !== false;
+    const paddleOcr = paddleOcrConfig(process.env);
+    // Never create durable OCR work that the current runtime cannot consume.
+    const enqueueOcr = payload.enqueue_ocr !== false
+      && paddleOcr.enabled === true
+      && paddleOcr.configured === true
+      && Boolean(paddleOcr.token);
+    const enableOcrDetail = payload.enqueue_ocr_detail === true
+      || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true";
+    const reuse = reusablePreingestionBundle({
+      existingBundle,
+      tenantId: context.tenantId,
+      assetId,
+      source,
+      images,
+      cropPlan,
+      currentOcrJobs,
+      enqueueWorkers,
+      enqueueOcr,
+      enableOcrDetail,
+      additionalWorkersRequested: payload.enqueue_embeddings === true
+        || payload.enqueue_surface === true
+        || payload.enqueue_quality === true
+    });
+    if (reuse.reusable) {
+      const summary = summarizePreIngestionBundle(existingBundle);
+      sendJson(res, 200, {
+        ok: true,
+        tenant_id: context.tenantId,
+        bundle_id: existingBundle.bundle_id,
+        bundle_status: existingBundle.status,
+        saved: false,
+        preingestion_cache_hit: true,
+        preingestion_cache_reason: reuse.reason,
+        worker_jobs_enqueued: 0,
+        worker_jobs_attempted: 0,
+        ocr_dispatch_started: false,
+        signed_read_url_count: 0,
+        signed_read_url_error_count: 0,
+        signed_read_url_check_skipped: true,
+        preingestion_timing: {
+          canonical_bundle_lookup_ms: canonicalLookupMs,
+          canonical_image_read_ms: canonicalReadMs,
+          signed_read_url_check_ms: 0,
+          existing_bundle_read_ms: existingBundleReadMs,
+          current_ocr_jobs_read_ms: currentOcrJobsReadMs,
+          bundle_write_ms: 0,
+          worker_job_enqueue_ms: 0,
+          total_ms: Date.now() - requestStartedAt
+        },
+        preprocessing_summary: {
+          ...summary,
+          signed_read_url_count: 0,
+          signed_read_url_error_count: 0,
+          signed_read_url_check_skipped: true,
+          worker_jobs_enqueued: 0,
+          worker_jobs_attempted: 0,
+          ocr_dispatch_started: false,
+          ocr_verifier_enabled: paddleOcr.enabled === true,
+          ocr_verifier_configured: paddleOcr.configured === true && Boolean(paddleOcr.token),
+          ocr_jobs_suppressed_unavailable: payload.enqueue_ocr !== false && !enqueueOcr,
+          preingestion_cache_hit: true,
+          preingestion_cache_reason: reuse.reason,
+          expected_ocr_job_count: reuse.expected_ocr_job_count
+        }
+      });
+      return;
+    }
+
     const signedReadStartedAt = Date.now();
     const signed = payload.verify_signed_read_urls === false
       ? { signedReadUrlCount: 0, errors: [] }
       : await countSignedReadUrls(images, context.tenantId, process.env, globalThis.fetch);
     const signedReadMs = Date.now() - signedReadStartedAt;
 
-    const existingBundleReadStartedAt = Date.now();
-    const existingBundle = existingBundleId
-      ? await readPreIngestionBundle({
-        bundleId: existingBundleId,
-        tenantId: context.tenantId,
-        env: process.env,
-        fetchImpl: globalThis.fetch
-      }).then((result) => result.bundle || null)
-      : null;
-    const existingBundleReadMs = Date.now() - existingBundleReadStartedAt;
     const bundle = createPreIngestionBundle({
       tenantId: context.tenantId,
       assetId,
-      bundleId: existingBundleId,
+      bundleId: existingBundle?.bundle_id || null,
       source,
       status: signed.errors.length ? preingestionStatuses.PARTIAL : preingestionStatuses.READY,
       images,
@@ -290,23 +461,16 @@ export default async function handler(req, res) {
     });
     const bundleWriteMs = Date.now() - bundleWriteStartedAt;
     const durableBundle = writeResult.bundle || bundle;
-    const enqueueWorkers = payload.enqueue_workers !== false;
-    const paddleOcr = paddleOcrConfig(process.env);
     // Never create durable OCR work that the current runtime cannot consume.
     // A disabled verifier used to leave six queued rows per two-image card,
     // which looked like a long-tail backlog even though no worker could claim
     // a single row. Launch-gate preflight separately fails closed when OCR is
     // required, so this guard cannot silently turn a broken evaluator green.
-    const enqueueOcr = payload.enqueue_ocr !== false
-      && paddleOcr.enabled === true
-      && paddleOcr.configured === true
-      && Boolean(paddleOcr.token);
     const jobs = enqueueWorkers
       ? buildPreingestionWorkerJobs({
         bundle: durableBundle,
         enableOcr: enqueueOcr,
-        enableOcrDetail: payload.enqueue_ocr_detail === true
-          || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true",
+        enableOcrDetail,
         enableEmbeddings: payload.enqueue_embeddings === true,
         enableSurface: payload.enqueue_surface === true,
         enableQuality: payload.enqueue_quality === true
@@ -350,8 +514,10 @@ export default async function handler(req, res) {
       signed_read_url_error_count: signed.errors.length,
       preingestion_timing: {
         canonical_bundle_lookup_ms: canonicalLookupMs,
+        canonical_image_read_ms: canonicalReadMs,
         signed_read_url_check_ms: signedReadMs,
         existing_bundle_read_ms: existingBundleReadMs,
+        current_ocr_jobs_read_ms: currentOcrJobsReadMs,
         bundle_write_ms: bundleWriteMs,
         worker_job_enqueue_ms: workerEnqueueMs,
         total_ms: Date.now() - requestStartedAt
