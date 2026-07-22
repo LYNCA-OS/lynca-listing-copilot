@@ -796,6 +796,31 @@ assert.equal(currentImageBasicColorSurvivesCatalogConflict.surface_color, "Gold"
 assert.equal(currentImageBasicColorSurvivesCatalogConflict.parallel_exact ?? null, null);
 assert.equal(currentImageBasicColorSurvivesCatalogConflict.parallel_family ?? null, null);
 
+const reviewedCurrentSourceColorCorrectionSurvivesTerminalFloor = buildV4ResolvedFields({
+  resolved_fields: {
+    players: ["Carson Benge"],
+    surface_color: "Yellow"
+  },
+  raw_provider_fields: {
+    players: ["Carson Benge"],
+    surface_color: "Gold"
+  },
+  selected_candidate_safe_field_application: {
+    status: "ready_fill_missing",
+    renderer_application_allowed: true,
+    candidate_id: "writer-current-source",
+    eligible_fields: ["surface_color"]
+  },
+  candidate_application_trace: [{
+    candidate_id: "writer-current-source",
+    decision_eligible: true,
+    anchor_agreement: {
+      authoritative_overrides: ["reviewed_current_source_identity_match"]
+    }
+  }]
+});
+assert.equal(reviewedCurrentSourceColorCorrectionSurvivesTerminalFloor.surface_color, "Yellow");
+
 const impossibleSingleCardLot = normalizeFields({
   players: ["Kendry Chourio", "Kendry Chourio Raywave"],
   multi_card: true,
