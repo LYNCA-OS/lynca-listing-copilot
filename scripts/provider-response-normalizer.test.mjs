@@ -111,7 +111,7 @@ assert.equal(expandedUltraCompactPayload.field_evidence[0].source_region, "print
 assert.equal(expandedUltraCompactPayload.field_evidence[0].directly_observed, true);
 assert.equal(expandedUltraCompactPayload.field_evidence[0].review_required, false);
 assert.equal(expandedUltraCompactPayload.vector_candidate_decision.decision, "NOT_AVAILABLE");
-assert.throws(() => expandOpenAiCompactProviderPayload({
+const conflictingDuplicatePayload = expandOpenAiCompactProviderPayload({
   recognition_status: "CONFIRMED",
   field_values: {
     strings: [{ field: "year", value: "2024" }, { field: "year", value: "2025" }],
@@ -128,7 +128,46 @@ assert.throws(() => expandOpenAiCompactProviderPayload({
     rejected_fields: [],
     conflicts: []
   }
-}), /invalid or duplicate year/i);
+});
+assert.equal(conflictingDuplicatePayload.fields.year, undefined);
+assert.equal(conflictingDuplicatePayload.unresolved.includes("year"), true);
+assert.deepEqual(conflictingDuplicatePayload.provider_transport_repairs.conflicting_duplicate_fields, ["year"]);
+assert.equal(conflictingDuplicatePayload.provider_field_rejections[0].reason, "conflicting_duplicate_provider_field_dropped");
+
+const identicalDuplicatePayload = expandOpenAiCompactProviderPayload({
+  recognition_status: "CONFIRMED",
+  field_values: {
+    strings: [{ field: "card_name", value: "Rookie Auto" }, { field: "card_name", value: " rookie  auto " }],
+    booleans: [],
+    numbers: [],
+    lists: []
+  },
+  field_evidence: [],
+  unresolved: [],
+  vector_candidate_decision: {
+    selected_candidate_id: null,
+    decision: "NOT_AVAILABLE",
+    supported_fields: [],
+    rejected_fields: [],
+    conflicts: []
+  }
+});
+assert.equal(identicalDuplicatePayload.fields.card_name, "Rookie Auto");
+assert.equal(identicalDuplicatePayload.provider_transport_repairs.identical_duplicate_count, 1);
+
+assert.throws(() => expandOpenAiCompactProviderPayload({
+  recognition_status: "CONFIRMED",
+  field_values: { strings: [{ field: "not_a_field", value: "x" }], booleans: [], numbers: [], lists: [] },
+  field_evidence: [],
+  unresolved: [],
+  vector_candidate_decision: {
+    selected_candidate_id: null,
+    decision: "NOT_AVAILABLE",
+    supported_fields: [],
+    rejected_fields: [],
+    conflicts: []
+  }
+}), /invalid not_a_field/i);
 
 const legacyPayload = validateProviderEvidencePayload("openai_legacy", {
   title: "2024 Topps Chrome Tester",
