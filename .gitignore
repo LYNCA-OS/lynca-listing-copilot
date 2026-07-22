@@ -58,3 +58,8 @@ data/catalog/writer-title-seed/*.jsonl
 data/catalog/writer-title-seed/audit-*.json
 .vercel
 .secrets/
+
+# google-github-actions/auth creates this short-lived OIDC credential file in
+# the checkout. It must never be committed or make the exact-main release
+# worktree appear dirty.
+gha-creds-*.json
