@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import base64
 import io
+import json
 import time
 from typing import TYPE_CHECKING, Any, Callable
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 if TYPE_CHECKING:
     import numpy as np
 
 MAX_SYNC_IMAGES = 16
+_DEFAULT_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate"
 
 
 def google_vision_configured(config: Any) -> bool:
-    return bool(getattr(config, "vision_use_adc", True))
+    return bool(str(getattr(config, "vision_api_key", "") or "").strip())
 
 
 def vision_unavailable(reason: str, *, latency_ms: int = 0) -> dict[str, Any]:
@@ -120,6 +126,35 @@ def _default_client(config: Any) -> Any:
     return vision.ImageAnnotatorClient(client_options=options)
 
 
+def _rest_batch_request(
+    arrays: list["np.ndarray"],
+    *,
+    config: Any,
+    urlopen_impl: Callable[[Request, int], Any] | None = None,
+) -> dict[str, Any]:
+    feature_type = str(getattr(config, "vision_feature_type", "DOCUMENT_TEXT_DETECTION") or "DOCUMENT_TEXT_DETECTION")
+    requests = [
+        {
+            "image": {"content": base64.b64encode(_array_to_png_bytes(array)).decode("ascii")},
+            "features": [{"type": feature_type}],
+            "imageContext": {"languageHints": ["en"]},
+        }
+        for array in arrays
+    ]
+    endpoint = str(getattr(config, "vision_endpoint", "") or _DEFAULT_ENDPOINT).strip() or _DEFAULT_ENDPOINT
+    query = urlencode({"key": str(getattr(config, "vision_api_key", "") or "")})
+    request = Request(
+        f"{endpoint}?{query}",
+        data=json.dumps({"requests": requests}).encode("utf-8"),
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    opener = urlopen_impl or (lambda req, timeout: urlopen(req, timeout=timeout))
+    response = opener(request, int(getattr(config, "vision_timeout_seconds", 30)))
+    raw = response.read()
+    return json.loads(raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw)
+
+
 def _parsed_result(response: dict[str, Any], *, latency_ms: int, config: Any) -> dict[str, Any]:
     if response.get("error"):
         message = str((response.get("error") or {}).get("message") or "")[:120]
@@ -153,34 +188,47 @@ def run_google_vision_ocr_batch(
     config: Any,
     client: Any | None = None,
     client_factory: Callable[[Any], Any] | None = None,
+    urlopen_impl: Callable[[Request, int], Any] | None = None,
 ) -> dict[str, Any]:
     started = time.time()
     if not google_vision_configured(config):
-        return {"status": "UNAVAILABLE", "reason": "vision_adc_disabled", "results": [], "vision_unit_count": 0}
+        return {"status": "UNAVAILABLE", "reason": "vision_api_key_not_configured", "results": [], "vision_unit_count": 0}
     if not arrays or len(arrays) != len(crop_types):
         return {"status": "UNAVAILABLE", "reason": "invalid_vision_batch", "results": [], "vision_unit_count": 0}
     if len(arrays) > MAX_SYNC_IMAGES:
         return {"status": "UNAVAILABLE", "reason": "vision_batch_limit_exceeded", "results": [], "vision_unit_count": 0}
 
     try:
-        requests = [
-            {
-                "image": {"content": _array_to_png_bytes(array)},
-                # The protobuf constructor accepts ``type_`` as a Python
-                # keyword, but dict-to-protobuf request coercion expects the
-                # public JSON/proto field name ``type``.  Sending ``type_``
-                # silently produced an empty feature and therefore NO_TEXT.
-                "features": [{"type": str(getattr(config, "vision_feature_type", "DOCUMENT_TEXT_DETECTION"))}],
-                "image_context": {"language_hints": ["en"]},
-            }
-            for array in arrays
-        ]
-        active_client = client or (client_factory or _default_client)(config)
-        response = active_client.batch_annotate_images(
-            request={"requests": requests},
-            timeout=int(getattr(config, "vision_timeout_seconds", 30)),
-        )
-        payload = _payload_from_response(response)
+        if client is not None or client_factory is not None:
+            requests = [
+                {
+                    "image": {"content": _array_to_png_bytes(array)},
+                    "features": [{"type_": str(getattr(config, "vision_feature_type", "DOCUMENT_TEXT_DETECTION"))}],
+                    "image_context": {"language_hints": ["en"]},
+                }
+                for array in arrays
+            ]
+            active_client = client or client_factory(config)
+            response = active_client.batch_annotate_images(
+                request={"requests": requests},
+                timeout=int(getattr(config, "vision_timeout_seconds", 30)),
+            )
+            payload = _payload_from_response(response)
+        else:
+            # Keep the production lane on the API-key REST transport that is
+            # already proven by the serving Google Vision revision. The SDK
+            # adapter remains injectable for unit tests and future ADC trials.
+            payload = _rest_batch_request(arrays, config=config, urlopen_impl=urlopen_impl)
+    except HTTPError as error:
+        error = RuntimeError(f"http_{error.code}")
+        latency_ms = int((time.time() - started) * 1000)
+        return {
+            "status": "UNAVAILABLE",
+            "reason": f"request_failed:{str(error)[:120]}",
+            "results": [vision_unavailable("batch_request_failed", latency_ms=latency_ms) for _ in arrays],
+            "latency_ms": latency_ms,
+            "vision_unit_count": 0,
+        }
     except Exception as error:  # noqa: BLE001
         latency_ms = int((time.time() - started) * 1000)
         return {
@@ -218,6 +266,7 @@ def run_google_vision_ocr(
     config: Any,
     client: Any | None = None,
     client_factory: Callable[[Any], Any] | None = None,
+    urlopen_impl: Callable[[Request, int], Any] | None = None,
 ) -> dict[str, Any]:
     batch = run_google_vision_ocr_batch(
         [array],
@@ -225,6 +274,7 @@ def run_google_vision_ocr(
         config=config,
         client=client,
         client_factory=client_factory,
+        urlopen_impl=urlopen_impl,
     )
     if batch.get("results"):
         return batch["results"][0]
