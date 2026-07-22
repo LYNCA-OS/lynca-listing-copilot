@@ -734,6 +734,48 @@ assert.equal(reviewedMultiSubjectSingleCard.multi_card ?? false, false);
 assert.ok(reviewedMultiSubjectSingleCard.card_count == null);
 assert.equal(reviewedMultiSubjectSingleCard.lot_type, "MULTI_SUBJECT_REVIEW");
 
+const catalogExpandedSingleSubjectIsNotMultiSubject = buildV4ResolvedFields({
+  resolved_fields: {
+    players: ["Example Player"],
+    product: "Example Product"
+  },
+  raw_provider_fields: {
+    players: ["Example Player"]
+  },
+  candidate_observation_snapshot: {
+    players: ["Example Player Extended Card Name"]
+  },
+  pipeline_node_ledger: {
+    field_flow: {
+      fields: [{
+        field_group: "subject",
+        raw_provider_present: true,
+        raw_values: ["Example Player", "Example Player Extended Card Name"],
+        resolved_present: true,
+        rendered_present: true
+      }]
+    }
+  }
+});
+assert.deepEqual(catalogExpandedSingleSubjectIsNotMultiSubject.players, ["Example Player"]);
+assert.equal(catalogExpandedSingleSubjectIsNotMultiSubject.lot_type ?? null, null);
+assert.equal(catalogExpandedSingleSubjectIsNotMultiSubject.multi_card ?? false, false);
+
+const currentImageBasicColorSurvivesCatalogConflict = buildV4ResolvedFields({
+  resolved_fields: {
+    players: ["Example Player"],
+    surface_color: "Red"
+  },
+  raw_provider_fields: {
+    players: ["Example Player"],
+    parallel: "Sparkling Gold Refractor"
+  },
+  conflict_map: [{ field: "surface_color", status: "UNRESOLVED" }]
+});
+assert.equal(currentImageBasicColorSurvivesCatalogConflict.surface_color, "Gold");
+assert.equal(currentImageBasicColorSurvivesCatalogConflict.parallel_exact ?? null, null);
+assert.equal(currentImageBasicColorSurvivesCatalogConflict.parallel_family ?? null, null);
+
 const impossibleSingleCardLot = normalizeFields({
   players: ["Kendry Chourio", "Kendry Chourio Raywave"],
   multi_card: true,
