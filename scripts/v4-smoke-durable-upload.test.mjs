@@ -8,7 +8,8 @@ import {
   durableSourceFingerprint,
   durableUploadResilienceContract,
   payloadForItem,
-  prepareDurableSmokeItem
+  prepareDurableSmokeItem,
+  sourceFingerprintsForCacheMode
 } from "./v4-ebay-smoke.mjs";
 import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
 
@@ -30,6 +31,11 @@ assert.throws(
   () => assertVerifiedAssetCacheExecutionMode({ mode: "refresh", queueMode: true }),
   /otherwise uploads would be repeated despite the cache flag/,
   "the smoke runner must fail loudly when a cache flag would be ignored"
+);
+assert.deepEqual(
+  await sourceFingerprintsForCacheMode([{ images: [{ local_path: "/definitely/not/read.jpg" }] }], "refresh"),
+  [""],
+  "refresh mode must not put the entire cold batch behind a fingerprint barrier"
 );
 
 const storedSource = {

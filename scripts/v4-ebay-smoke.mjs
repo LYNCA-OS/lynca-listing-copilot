@@ -117,6 +117,12 @@ export function assertVerifiedAssetCacheExecutionMode({
   return normalized;
 }
 
+export async function sourceFingerprintsForCacheMode(items = [], mode = "disabled", offset = 0) {
+  return mode === "reuse"
+    ? Promise.all(items.map((item, localIndex) => durableSourceFingerprint(item, offset + localIndex)))
+    : new Array(items.length).fill("");
+}
+
 export async function readVerifiedAssetCache(path = "") {
   if (!cleanText(path)) return new Map();
   try {
@@ -4435,9 +4441,16 @@ export async function runV4EbaySmoke({
     } else {
       const verificationCache = new Map();
       const enqueueGate = createConcurrencyGate(normalizedSubmissionConcurrency);
-      const sourceFingerprints = await Promise.all(items.map((item, localIndex) => (
-        durableSourceFingerprint(item, offset + localIndex)
-      )));
+      // Reuse needs a fingerprint before preparation so it can address the
+      // cache. Refresh does not: forcing every image in the batch through one
+      // global hashing barrier delayed the first upload and understated the
+      // streaming browser pipeline. Let each preparation worker hash its own
+      // card and overlap that work with the other cards instead.
+      const sourceFingerprints = await sourceFingerprintsForCacheMode(
+        items,
+        normalizedVerifiedAssetCacheMode,
+        offset
+      );
       const prepareOne = async (item, localIndex, { recovery = false } = {}) => {
         const index = offset + localIndex;
         const sourceFingerprint = sourceFingerprints[localIndex];
