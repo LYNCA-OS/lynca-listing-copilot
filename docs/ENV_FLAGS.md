@@ -50,6 +50,7 @@ and delete the flag.
 | `CATALOG_EVAL_CORRECTED_TITLE_AS_GT` | lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/v4/pipeline/native-recognition-core.mjs |
 | `CATALOG_LIVE_CURATED_ALWAYS` | lib/listing/retrieval/catalog-provider.mjs |
 | `CATALOG_LIVE_CURATED_MAX_PROVIDERS` | lib/listing/retrieval/catalog-provider.mjs |
+| `CATALOG_LIVE_CURATED_TIMEOUT_MS` | lib/listing/retrieval/catalog-provider.mjs |
 | `CATALOG_LIVE_CURATED_TOP_N` | lib/listing/retrieval/catalog-provider.mjs |
 | `CATALOG_LOOKUP_CACHE_REVISION` | lib/listing/v4/pipeline/native-recognition-core.mjs |
 | `CATALOG_RETRIEVAL_TIMEOUT_MS` | lib/listing/retrieval/catalog-provider.mjs |

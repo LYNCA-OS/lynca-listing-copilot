@@ -166,4 +166,109 @@ function supabaseAndLiveFetch(url, options = {}) {
   assert.equal(retrieval.sources.some((candidate) => candidate.fields?.card_name === "Chopper - Metal Menace"), true);
 }
 
+{
+  const startedUrls = [];
+  let releaseProviders;
+  const allProvidersStarted = new Promise((resolve) => {
+    releaseProviders = resolve;
+  });
+  const concurrentFetch = async (url) => {
+    startedUrls.push(String(url));
+    if (startedUrls.length === 3) releaseProviders();
+    await allProvidersStarted;
+    return new Response("[]", {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  const provider = catalogProvider({
+    env: {
+      ENABLE_CATALOG_RETRIEVAL: "true",
+      ENABLE_LIVE_CURATED_CATALOG_FALLBACK: "true",
+      CATALOG_LIVE_CURATED_MAX_PROVIDERS: "3",
+      CATALOG_LIVE_CURATED_TIMEOUT_MS: "500"
+    },
+    fetchImpl: concurrentFetch
+  });
+  const result = await provider.search({
+    query: { search_text: "Pokemon Magic Yugioh", exact_product: "TCG" },
+    resolved: { category: "tcg", product: "Pokemon Magic Yugioh" }
+  });
+  assert.equal(result.unavailable, true);
+  assert.equal(startedUrls.length, 3, "live catalog providers must fan out concurrently instead of forming a serial latency chain");
+}
+
+{
+  const neverFetch = (_url, options = {}) => new Promise((resolve, reject) => {
+    options.signal?.addEventListener("abort", () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      reject(error);
+    }, { once: true });
+  });
+  const provider = catalogProvider({
+    env: {
+      ENABLE_CATALOG_RETRIEVAL: "true",
+      ENABLE_LIVE_CURATED_CATALOG_FALLBACK: "true",
+      CATALOG_LIVE_CURATED_TIMEOUT_MS: "50"
+    },
+    fetchImpl: neverFetch
+  });
+  const startedAt = Date.now();
+  const result = await provider.search({
+    query: { exact_product: "Pokemon", exact_subject: "Pikachu" },
+    resolved: { category: "tcg", product: "Pokemon", players: ["Pikachu"] }
+  });
+  assert.equal(result.unavailable, true);
+  assert.equal(Date.now() - startedAt < 500, true, "a stalled live catalog must fail closed inside its bounded deadline");
+}
+
+{
+  const isolatedFetch = (url, options = {}) => {
+    if (/api\.pokemontcg\.io/i.test(String(url))) {
+      return new Promise((resolve, reject) => {
+        options.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        }, { once: true });
+      });
+    }
+    if (/api\.scryfall\.com/i.test(String(url))) {
+      return Promise.resolve(new Response(JSON.stringify({
+        data: [{
+          id: "mtg-black-lotus",
+          oracle_id: "oracle-black-lotus",
+          name: "Black Lotus",
+          set_name: "Limited Edition Alpha",
+          collector_number: "232",
+          rarity: "rare",
+          type_line: "Artifact"
+        }]
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+    }
+    return Promise.resolve(new Response("[]", { status: 200, headers: { "content-type": "application/json" } }));
+  };
+  const provider = catalogProvider({
+    env: {
+      ENABLE_CATALOG_RETRIEVAL: "true",
+      ENABLE_LIVE_CURATED_CATALOG_FALLBACK: "true",
+      CATALOG_LIVE_CURATED_TIMEOUT_MS: "50"
+    },
+    fetchImpl: isolatedFetch
+  });
+  const startedAt = Date.now();
+  const result = await provider.search({
+    query: {
+      search_text: "Pokemon Magic Black Lotus",
+      exact_subject: "Black Lotus",
+      exact_product: "Magic"
+    },
+    resolved: { category: "tcg", product: "Magic", players: ["Black Lotus"] }
+  });
+  assert.equal(result.candidates.some((candidate) => candidate.fields?.card_name === "Black Lotus"), true,
+    "a healthy catalog must survive an adjacent provider timeout");
+  assert.equal(Date.now() - startedAt < 500, true, "provider isolation must preserve the shared catalog deadline");
+}
+
 console.log("catalog live curated fallback tests passed");
