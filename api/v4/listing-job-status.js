@@ -349,6 +349,7 @@ function operationalSessionStatus(session = null, job = null) {
       preingestion_retrieval_anchor_fields: Array.isArray(summary.preingestion_retrieval_anchor_fields)
         ? summary.preingestion_retrieval_anchor_fields
         : [],
+      pre_provider_rescue_shadow: summary.pre_provider_rescue_shadow || null,
       serial_numerator_verified: summary.serial_numerator_verified ?? null,
       pipeline_node_ledger: summary.pipeline_node_ledger || null,
       title_length_policy: summary.title_length_policy || null,

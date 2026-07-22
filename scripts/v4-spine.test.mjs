@@ -1289,6 +1289,7 @@ assert.match(tenantFairQueueMigrationSource, /claim_v4_recognition_jobs_with_cap
 assert.match(queueStatusApiSource, /paired_l1_wait_ms/, "queue metrics must separate intentional L1 dependency time from scheduler delay.");
 assert.match(queueStatusApiSource, /scheduler_queue_wait_ms/, "queue metrics must expose actual scheduler delay after a paired L2 becomes runnable.");
 assert.match(queueStatusApiSource, /preingestion_ocr_rendezvous/, "queue status must expose OCR rendezvous diagnostics used by production smoke.");
+assert.match(queueStatusApiSource, /pre_provider_rescue_shadow/, "queue status must expose the value-free pre-provider rescue shadow diagnostic.");
 assert.match(queueStatusApiSource, /serial_numerator_verified/, "queue status must expose the final serial numerator verification decision.");
 assert.match(queueStatusApiSource, /V4_JOB_STATUS_QUERY_REQUIRED/, "missing status query identifiers must remain a non-retryable client error.");
 assert.match(queueStatusApiSource, /sendJson\(res, 503,[\s\S]*retryable: true[\s\S]*V4_JOB_STATUS_BACKEND_UNAVAILABLE/, "transient queue-store reads must be reported as retryable service failures.");
@@ -1565,6 +1566,17 @@ const v2Result = {
   },
   preingestion_ocr_rendezvous: { status: "TERMINAL", job_count: 2, patch_count: 3 },
   preingestion_evidence_refresh: { refreshed: true, added_patch_count: 2 },
+  pre_provider_rescue_shadow: {
+    schema_version: "pre-provider-rescue-shadow-v1",
+    enabled: true,
+    mode: "SHADOW_ONLY",
+    strategy_mutation_allowed: false,
+    critical_path_budget_ms: 0,
+    rescue_recommended: true,
+    risk_score: 0.8,
+    reasons: ["NUMBERED_WITHOUT_PARALLEL_IDENTITY"],
+    recommended_lanes: ["FOCUSED_FINISH_CROP"]
+  },
   serial_numerator_verified: true
 };
 
@@ -1597,6 +1609,8 @@ assert.equal(v4.provider_result.rate_limit_diagnostics["x-ratelimit-remaining-to
 assert.equal(v4.provider_result.request_diagnostics.provider_latency_ms, 12345);
 assert.equal(v4.provider_result.preingestion_ocr_rendezvous.status, "TERMINAL");
 assert.equal(v4.provider_result.preingestion_evidence_refresh.added_patch_count, 2);
+assert.equal(v4.pre_provider_rescue_shadow.mode, "SHADOW_ONLY");
+assert.equal(v4.provider_result.pre_provider_rescue_shadow.strategy_mutation_allowed, false);
 assert.equal(v4.provider_result.serial_numerator_verified, true);
 
 const reconciledSlabTitle = adaptRecognitionResultToV4({

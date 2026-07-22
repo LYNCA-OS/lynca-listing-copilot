@@ -534,6 +534,7 @@ function providerRuntimeSummary(result = {}) {
     preingestion_retrieval_anchor_fields: Array.isArray(result.preingestion_retrieval_anchor_fields)
       ? result.preingestion_retrieval_anchor_fields
       : [],
+    pre_provider_rescue_shadow: result.pre_provider_rescue_shadow || null,
     serial_numerator_verified: result.serial_numerator_verified ?? null,
     pipeline_node_ledger: result.pipeline_node_ledger || null,
     v4_pipeline_contract: result.v4_pipeline_contract || null,

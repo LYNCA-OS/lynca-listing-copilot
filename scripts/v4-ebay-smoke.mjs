@@ -1072,6 +1072,7 @@ function sessionL2Summary(statusPayload = {}) {
     preingestion_retrieval_anchor_fields: Array.isArray(summary.preingestion_retrieval_anchor_fields)
       ? summary.preingestion_retrieval_anchor_fields
       : [],
+    pre_provider_rescue_shadow: summary.pre_provider_rescue_shadow || null,
     serial_numerator_verified: summary.serial_numerator_verified ?? null,
     pipeline_node_ledger: statusPayload.end_to_end_node_ledger || summary.pipeline_node_ledger || null,
     noncritical_persistence_status: summary.noncritical_persistence_status || null,
@@ -1194,6 +1195,7 @@ function jobL2Summary(statusPayload = {}) {
     preingestion_retrieval_anchor_fields: Array.isArray(summary.preingestion_retrieval_anchor_fields)
       ? summary.preingestion_retrieval_anchor_fields
       : [],
+    pre_provider_rescue_shadow: summary.pre_provider_rescue_shadow || null,
     serial_numerator_verified: summary.serial_numerator_verified ?? null,
     pipeline_node_ledger: job.end_to_end_node_ledger || summary.pipeline_node_ledger || null,
     noncritical_persistence_status: summary.noncritical_persistence_status || null,
@@ -2101,6 +2103,7 @@ async function runOne({
       preingestion_evidence_refresh: l2.summary?.preingestion_evidence_refresh || null,
       preingestion_retrieval_refresh: l2.summary?.preingestion_retrieval_refresh || null,
       preingestion_retrieval_anchor_fields: l2.summary?.preingestion_retrieval_anchor_fields || [],
+      pre_provider_rescue_shadow: l2.summary?.pre_provider_rescue_shadow || null,
       serial_numerator_verified: l2.summary?.serial_numerator_verified ?? null,
       pipeline_node_ledger: l2.summary?.pipeline_node_ledger || null,
       noncritical_persistence_status: l2.summary?.noncritical_persistence_status || null,
@@ -3053,6 +3056,7 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
     preingestion_retrieval_refresh: summary.preingestion_retrieval_refresh || null,
     preingestion_retrieval_anchor_fields: summary.preingestion_retrieval_anchor_fields || [],
+    pre_provider_rescue_shadow: summary.pre_provider_rescue_shadow || null,
     serial_numerator_verified: summary.serial_numerator_verified ?? null,
     pipeline_node_ledger: summary.pipeline_node_ledger || null,
     noncritical_persistence_status: summary.noncritical_persistence_status || null,
