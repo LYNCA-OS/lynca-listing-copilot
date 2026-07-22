@@ -1216,6 +1216,47 @@ function testYearReplacementRequiresCurrentSourceAuthority() {
   assert.equal(currentSource.field_application.applied_fields.includes("year"), true);
 }
 
+function testCardDomainRerankerOwnsOracleSelectionOnly() {
+  const candidates = [{
+    candidate_id: "catalog-domain-a",
+    candidate_identity_id: "identity-domain-a",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    fields: { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"] }
+  }, {
+    candidate_id: "catalog-domain-b",
+    candidate_identity_id: "identity-domain-b",
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    fields: { year: "2024", manufacturer: "Panini", product: "Panini Prizm", players: ["Other Player"] }
+  }];
+  const packetValue = packet(candidates, {
+    raw_candidate_count: 2,
+    approved_candidate_count: 2,
+    prompt_candidate_count: 2,
+    prompt_candidate_ids: candidates.map((candidate) => candidate.candidate_id)
+  });
+  const observed = { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"] };
+  const oracle = buildCandidateSelectionPass({
+    result: {
+      evaluation_profile: "v4_accuracy_ceiling_oracle_v1",
+      resolved_fields: observed,
+      catalog_candidate_packet: packetValue
+    },
+    diagnosticCandidateLimit: 20
+  });
+  assert.equal(oracle.selected_candidate_decision.selected_candidate_id, "catalog-domain-a");
+  assert.equal(oracle.selected_candidate_decision.selection_owner, "card_domain_reranker_oracle_v1");
+  assert.ok(oracle.selected_candidate_decision.selected_reason_codes.includes("card_domain_reranker_oracle_v1"));
+
+  const writer = buildCandidateSelectionPass({
+    result: { resolved_fields: observed, catalog_candidate_packet: packetValue }
+  });
+  assert.notEqual(writer.selected_candidate_decision.selection_owner, "card_domain_reranker_oracle_v1");
+}
+
 function testNumericYearMayBeOmittedButCannotHideDifferentProductBranch() {
   const baseCandidate = {
     candidate_id: "bowman-base",
@@ -1421,6 +1462,7 @@ testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
 testYearReplacementRequiresCurrentSourceAuthority();
+testCardDomainRerankerOwnsOracleSelectionOnly();
 testApplicableCatalogTierBeatsSupportOnlyVectorTier();
 testCandidateOnlyPacketCannotEnterProductionDecision();
 testTrustedPostObservationCatalogCanEnterDeterministicDecision();
