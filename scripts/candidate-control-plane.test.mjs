@@ -1092,6 +1092,65 @@ function testCompatibleCatalogHierarchyDoesNotManufactureLowMarginConflict() {
   assert.equal(decision.resolved_after.product, "Topps Chrome Platinum");
 }
 
+function testReviewedCurrentSourceIdentityWaivesDuplicateCatalogMargin() {
+  const observed = {
+    year: "2023-24",
+    manufacturer: "Panini",
+    product: "Panini Donruss Optic",
+    players: ["Buddy Hield"]
+  };
+  const currentSource = {
+    candidate_id: "reviewed-buddy-current-source",
+    candidate_identity_id: "reviewed-buddy-current-source-identity",
+    source_feedback_id: "buddy-source",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    match_score: 0.0175,
+    reference_metadata: {
+      source_feedback_id: "buddy-source",
+      prompt_safe_internal_writer_title: true,
+      corrected_title_is_reviewed_title_ground_truth: true
+    },
+    fields: {
+      ...observed,
+      parallel_family: "Lucky Hyper",
+      serial_denominator: "8"
+    }
+  };
+  const duplicate = {
+    ...currentSource,
+    candidate_id: "reviewed-buddy-near-duplicate",
+    candidate_identity_id: "reviewed-buddy-near-duplicate-identity",
+    source_feedback_id: "different-source",
+    match_score: 0.013,
+    reference_metadata: {
+      ...currentSource.reference_metadata,
+      source_feedback_id: "different-source"
+    },
+    fields: {
+      ...observed,
+      parallel_family: "Blue Hyper",
+      serial_denominator: "8"
+    }
+  };
+  const catalogPacket = packet([currentSource, duplicate], {
+    raw_candidate_count: 2,
+    approved_candidate_count: 2,
+    prompt_candidate_count: 2,
+    prompt_candidate_ids: [currentSource.candidate_id, duplicate.candidate_id]
+  });
+  const selection = buildCandidateSelectionPass({
+    result: {
+      source_feedback_id: "buddy-source",
+      resolved_fields: observed,
+      catalog_candidate_packet: catalogPacket
+    }
+  });
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, currentSource.candidate_id);
+  assert.equal(selection.selected_candidate_decision.low_margin_waived_reason, "reviewed_current_source_identity_match");
+  assert.ok(selection.selected_candidate_decision.selection_margin < 0.08);
+}
+
 function testManufacturerPrefixAloneCannotOverwriteObservedProduct() {
   const candidate = {
     candidate_id: "catalog-maker-prefix-only",
@@ -1480,6 +1539,7 @@ testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars();
 testEvidenceScalarOnlyFillsMissingObservedField();
 testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
 testCompatibleCatalogHierarchyDoesNotManufactureLowMarginConflict();
+testReviewedCurrentSourceIdentityWaivesDuplicateCatalogMargin();
 testManufacturerPrefixAloneCannotOverwriteObservedProduct();
 testPacketRebindPreservesPlayersAsSubjectAnchor();
 testNumericYearMayBeOmittedButCannotHideDifferentProductBranch();
