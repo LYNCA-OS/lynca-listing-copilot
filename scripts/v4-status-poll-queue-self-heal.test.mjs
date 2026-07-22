@@ -19,6 +19,16 @@ assert.equal(statusPollQueueSelfHealPlan([staleQueued, { status: "RUNNING" }, { 
   nowMs,
   processConcurrency: 2
 }).reason, "worker_capacity_full");
+const expiredRunning = {
+  ...staleQueued,
+  id: "job-expired-running",
+  status: "RUNNING",
+  lease_expires_at: "2026-07-20T00:00:20Z"
+};
+const expiredPlan = statusPollQueueSelfHealPlan([expiredRunning], { nowMs, processConcurrency: 2 });
+assert.equal(expiredPlan.trigger, true, "an expired RUNNING lease must be reclaimed instead of faking full capacity");
+assert.equal(expiredPlan.running_count, 0);
+assert.equal(expiredPlan.stale_running_count, 1);
 assert.equal(statusPollQueueSelfHealPlan([{ ...staleQueued, created_at: "2026-07-20T00:00:25Z" }], {
   nowMs,
   processConcurrency: 2
@@ -41,5 +51,6 @@ await scheduled;
 assert.equal(request.url, "https://listing.example.test/api/v4/listing-job-pump");
 assert.equal(request.body.process_concurrency, 2);
 assert.equal(request.body.background_only, true);
-assert.equal(request.body.cycles, 1);
+assert.equal(request.body.cycles, 30);
+assert.equal(request.body.max_continuation_depth, 0);
 console.log("v4 status poll queue self-heal tests passed");

@@ -664,7 +664,16 @@ export default async function handler(req, res) {
             success: null,
             metadata: { lane: job.lane || null, attempt: Number(job.attempt_count || 0) + 1 }
           });
-          const result = await runJob(job, req, signal);
+          const executionJob = payload.pump_managed_drain === true
+            ? {
+                ...job,
+                payload: {
+                  ...(job.payload && typeof job.payload === "object" ? job.payload : {}),
+                  v4_pump_managed_drain: true
+                }
+              }
+            : job;
+          const result = await runJob(executionJob, req, signal);
           attemptUsage = v4ResponseUsage(result.response);
           if (attemptUsage.providerCalls > 0) {
             providerCallEventAttempted = true;

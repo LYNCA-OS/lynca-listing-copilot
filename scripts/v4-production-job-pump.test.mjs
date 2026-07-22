@@ -66,6 +66,8 @@ assert.equal(calls[0].payload.limit, 2);
 assert.equal(calls[0].payload.process_concurrency, 2);
 assert.equal(calls[1].payload.limit, 4);
 assert.equal(calls[1].payload.process_concurrency, 4);
+assert.equal(calls[0].payload.pump_managed_drain, true);
+assert.equal(calls[1].payload.pump_managed_drain, true);
 assert.equal(calls[0].workerSecret, "secret");
 
 const failedPump = await runV4QueuePump({

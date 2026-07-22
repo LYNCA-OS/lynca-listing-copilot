@@ -209,6 +209,10 @@ export async function runV4QueuePump({
       const workerPayload = {
         lane,
         tenant_id: tenantId,
+        // The pump owns the bounded drain loop. A worker invoked from this
+        // loop must not create another HTTP wake back into the same function
+        // graph; the outer loop (plus the independent cron) is the redundancy.
+        pump_managed_drain: true,
         limit: laneLimit,
         process_concurrency: laneProcessConcurrency,
         lease_seconds: leaseSeconds,
