@@ -508,7 +508,6 @@ function providerRuntimeSummary(result = {}) {
     vector_worker_latency_ms: vectorContext.worker_latency_ms ?? null,
     vector_worker_attempt_count: vectorContext.worker_attempt_count ?? null,
     catalog_stage_capacity: result.catalog_stage_capacity || null,
-    prepared_retrieval_reuse: result.prepared_retrieval_reuse || null,
     vector_stage_capacity: result.vector_worker?.stage_capacity
       || vectorContext.stage_capacity
       || null,
