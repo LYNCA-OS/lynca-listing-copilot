@@ -969,6 +969,22 @@ const emptyQualityRow = normalizeV4QualityLedgerRow({ recognition_session_id: "s
 assert.equal(emptyQualityRow.latency_ms, null);
 assert.equal(emptyQualityRow.input_tokens, null);
 
+const oracleEvidenceLedger = buildPipelineNodeLedger({
+  result: { raw_provider_fields: { year: "2024" } },
+  payload: {
+    provider_options: { evaluation_profile: "v4_accuracy_ceiling_oracle_v1" },
+    preingestion_evidence_patches: [{
+      field: "serial_number",
+      value: "2/25",
+      provenance: { model_id: "google-vision-document-text-v1" }
+    }]
+  }
+});
+assert.equal(oracleEvidenceLedger.sensor_evidence.length, 2);
+assert.equal(oracleEvidenceLedger.sensor_evidence[0].fields.year, "2024");
+assert.equal(oracleEvidenceLedger.sensor_evidence[1].source, "GOOGLE_VISION_OCR");
+assert.equal(Object.hasOwn(buildPipelineNodeLedger({ result: {}, payload: {} }), "sensor_evidence"), false);
+
 let persistedBody = null;
 const persistenceResult = await persistV4QualityLedger({
   ledger: {

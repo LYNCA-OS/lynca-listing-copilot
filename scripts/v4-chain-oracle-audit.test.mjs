@@ -55,6 +55,13 @@ const proxy = evaluateV4ChainOracleAudit({
 assert.equal(proxy.status, "PROXY_ONLY");
 assert.equal(proxy.truth_policy.formal_oracle_eligible, false);
 
+const trustedPromotion = evaluateV4ChainOracleAudit({
+  dataset: { ...dataset, evaluation_truth_policy: { field_ground_truth_class: "TRUSTED_CATALOG_PROMOTED_FIELD_GROUND_TRUTH" } },
+  trace
+});
+assert.equal(trustedPromotion.status, "COMPLETED");
+assert.equal(trustedPromotion.truth_policy.formal_oracle_eligible, true);
+
 const missingTrace = evaluateV4ChainOracleAudit({ dataset, trace: { cards: [] } });
 assert.equal(missingTrace.metrics.evidence_oracle_recall.rate, null);
 assert.equal(missingTrace.metrics.retrieval_recall_at_20.rate, null);

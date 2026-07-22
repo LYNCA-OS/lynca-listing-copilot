@@ -71,7 +71,9 @@ export async function main(argv = process.argv.slice(2)) {
     generated_at: new Date().toISOString(),
     truth_policy: {
       corrected_title_visible_to_model: false,
-      field_ground_truth_class: "TRUSTED_CATALOG_PROMOTED_GOLDEN_SEM"
+      field_ground_truth_class: partitions.find((partition) => partition.evaluation_truth_policy?.field_ground_truth_class)
+        ?.evaluation_truth_policy?.field_ground_truth_class
+        || "TRUSTED_CATALOG_PROMOTED_FIELD_GROUND_TRUTH"
     },
     item_count: items.length,
     items

@@ -52,6 +52,8 @@ const promoted = promoteGoldenSemWithTrustedCatalog(packet, { cards: [catalogCar
   now: () => new Date("2026-07-22T00:00:00.000Z")
 });
 assert.equal(promoted.report.approved_item_count, 1);
+assert.equal(promoted.audit_packet.evaluation_truth_policy.formal_oracle_eligible, true);
+assert.equal(promoted.audit_packet.evaluation_truth_policy.field_ground_truth_class, "TRUSTED_CATALOG_PROMOTED_FIELD_GROUND_TRUTH");
 assert.equal(promoted.packet.items[0].reviewed_ground_truth.fields.product.reviewed_status, "CONFIRMED");
 assert.equal(promoted.packet.items[0].reviewed_ground_truth.fields.numerical_rarity.reviewed_status, "CONFIRMED");
 assert.equal(promoted.packet.items[0].reviewed_ground_truth.fields.grading_info.reviewed_status, "CONFIRMED");

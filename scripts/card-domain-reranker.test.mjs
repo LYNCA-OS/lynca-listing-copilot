@@ -254,5 +254,18 @@ assert.equal(v4Trace.shadow_reranker, null, "the domain shadow must not overwrit
 assert.equal(v4Trace.card_domain_reranker.model_id, cardDomainRerankerContract.embedding);
 assert.equal(v4Trace.card_domain_reranker.selected_candidate_id, "baseline-catalog");
 assert.equal(v4Trace.card_domain_reranker.production_decision_affected, false);
+assert.equal(selection.candidate_application_trace[0].retrieval_rank, 1);
+
+const oracleSelection = buildCandidateSelectionPass({
+  result: {
+    resolved_fields: observed,
+    vector_candidate_packet: packet(Array.from({ length: 8 }, (_, index) => ({
+      ...candidates[0],
+      candidate_id: `oracle-${index + 1}`
+    })), Array.from({ length: 8 }, (_, index) => `oracle-${index + 1}`))
+  },
+  diagnosticCandidateLimit: 20
+});
+assert.equal(oracleSelection.card_domain_reranker_shadow.ranked_candidates.length, 8);
 
 console.log("card domain reranker tests passed");
