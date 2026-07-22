@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import re
 import shutil
 import subprocess
@@ -381,31 +382,23 @@ def _get_paddleocr_engine() -> Any:
             raise RuntimeError(f"paddleocr_import_failed: {error}") from error
 
         last_error: Exception | None = None
-        # Prefer the mobile PP-OCRv5 det/rec models with oneDNN (mkldnn) disabled.
-        # The default server models take the FusedConv2DKernel<OneDNNContext>
-        # inference path, which raised a SIGFPE ("Erroneous arithmetic
-        # operation") and crashed the uvicorn worker process on every field OCR
-        # call on this Cloud Run CPU. The mobile models are smaller, faster, and
-        # accurate enough for the short printed field crops we verify (serials,
-        # card codes, grades); disabling mkldnn keeps inference off the crashing
-        # kernel. Each entry falls back to the next if a kwarg is unsupported by
-        # the installed PaddleOCR build.
+        detection_model = os.getenv("PADDLEOCR_DETECTION_MODEL_NAME", "PP-OCRv6_medium_det")
+        recognition_model = os.getenv("PADDLEOCR_RECOGNITION_MODEL_NAME", "PP-OCRv6_medium_rec")
+        enable_hpi = os.getenv("PADDLEOCR_ENABLE_HPI", "false").lower() == "true"
+        cpu_threads = max(1, min(8, int(os.getenv("PADDLEOCR_CPU_THREADS", "2") or "2")))
         base_flags = {
             "use_doc_orientation_classify": False,
             "use_doc_unwarping": False,
             "use_textline_orientation": False,
-        }
-        mobile_models = {
-            "text_detection_model_name": "PP-OCRv5_mobile_det",
-            "text_recognition_model_name": "PP-OCRv5_mobile_rec",
+            "device": "cpu",
+            "enable_hpi": enable_hpi,
+            "cpu_threads": cpu_threads,
+            "text_detection_model_name": detection_model,
+            "text_recognition_model_name": recognition_model,
         }
         constructor_kwargs = [
-            {"lang": "en", "enable_mkldnn": False, **mobile_models, **base_flags},
-            {"lang": "en", "enable_mkldnn": False, **base_flags},
-            {"lang": "en", **mobile_models, **base_flags},
             {"lang": "en", **base_flags},
-            {"lang": "en"},
-            {},
+            base_flags,
         ]
         for kwargs in constructor_kwargs:
             try:
@@ -427,21 +420,15 @@ def _get_paddleocr_recognition_engine() -> Any:
             raise RuntimeError(f"paddleocr_recognition_import_failed: {error}") from error
 
         last_error: Exception | None = None
-        constructor_kwargs = [
-            {
-                "model_name": "PP-OCRv5_mobile_rec",
-                "device": "cpu",
-                "enable_mkldnn": False,
-                "cpu_threads": 2,
-            },
-            {
-                "model_name": "PP-OCRv5_mobile_rec",
-                "device": "cpu",
-                "enable_mkldnn": False,
-            },
-            {"model_name": "PP-OCRv5_mobile_rec", "device": "cpu"},
-            {"model_name": "PP-OCRv5_mobile_rec"},
-        ]
+        recognition_model = os.getenv("PADDLEOCR_RECOGNITION_MODEL_NAME", "PP-OCRv6_medium_rec")
+        enable_hpi = os.getenv("PADDLEOCR_ENABLE_HPI", "false").lower() == "true"
+        cpu_threads = max(1, min(8, int(os.getenv("PADDLEOCR_CPU_THREADS", "2") or "2")))
+        constructor_kwargs = [{
+            "model_name": recognition_model,
+            "device": "cpu",
+            "enable_hpi": enable_hpi,
+            "cpu_threads": cpu_threads,
+        }]
         for kwargs in constructor_kwargs:
             try:
                 _PADDLEOCR_RECOGNITION_ENGINE = TextRecognition(**kwargs)

@@ -20,6 +20,7 @@ const request = {
   request_id: "ocr-serial-1",
   image_url: "https://storage.test/serial-crop.jpg?token=secret",
   crop_type: "serial_crop",
+  ocr_backend: "paddle",
   expected_pattern: "serial_number",
   metadata: {
     image_id: "front",
@@ -472,6 +473,7 @@ const clientResult = await client.verifyCrop(request);
 assert.equal(captured.url, "https://ocr.internal/v1/ocr-field");
 assert.equal(captured.headers.authorization, "Bearer secret-token");
 assert.equal(captured.body.image_url.includes("token=secret"), true);
+assert.equal(captured.body.ocr_backend, "paddle", "paired A/B requests must preserve the explicit shadow backend");
 assert.equal(clientResult.evidence_patch.evidence.serial_number.value, "31/50");
 assert.equal(clientResult.worker_attempt_count, 1);
 assert.equal(clientResult.inline_full_image_fallback_evaluated, true);
