@@ -80,6 +80,14 @@ assert.equal(toppsNbaHoops.product, "Topps NBA Hoops");
 assert.deepEqual(toppsNbaHoops.players, ["Kevin Durant"]);
 assert.equal(toppsNbaHoops.official_card_type, "Hoopers Pixel Burst");
 assert.equal(toppsNbaHoops.ssp, true);
+
+const bowmanChromeSapphire = parseReviewedTitleFields(
+  "2026 Bowman Chrome Sapphire Carson Benge New York Mets Yellow Sapphire 50/75"
+);
+assert.equal(bowmanChromeSapphire.product, "Bowman Chrome Sapphire");
+assert.equal(bowmanChromeSapphire.surface_color, "Yellow");
+assert.equal(bowmanChromeSapphire.team, "New York Mets");
+assert.equal(bowmanChromeSapphire.serial_number, "50/75");
 assert.equal(toppsNbaHoops.rarity, "SSP");
 
 const bowmanUniversity = parseReviewedTitleFields("2025 Topps Bowman University Chrome Sienna Betts UCLA Anime SSP");
