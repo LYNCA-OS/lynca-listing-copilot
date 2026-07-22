@@ -61,6 +61,10 @@ retry_command gcloud secrets add-iam-policy-binding "$TOKEN_SECRET_NAME" \
   --member "serviceAccount:${RUNTIME_ACCOUNT}" \
   --role roles/secretmanager.secretAccessor \
   --project "$GCP_PROJECT_ID" >/dev/null
+retry_command gcloud secrets add-iam-policy-binding "$TOKEN_SECRET_NAME" \
+  --member "serviceAccount:${DEPLOY_ACCOUNT}" \
+  --role roles/secretmanager.viewer \
+  --project "$GCP_PROJECT_ID" >/dev/null
 
 for role in roles/run.admin roles/cloudbuild.builds.editor roles/serviceusage.serviceUsageConsumer; do
   retry_command gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
