@@ -37,6 +37,11 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 
 Optional:
 
+- `OCR_BACKEND=paddle|deepseek|google_vision|hybrid` (production defaults to the measured Google Vision winner)
+- `VISION_API_KEY=` (production deploy stores this in Secret Manager; it is never written as a literal Cloud Run variable)
+- `VISION_API_KEY_SECRET_NAME=lynca-google-vision-api-key`
+- `VISION_FEATURE_TYPE=DOCUMENT_TEXT_DETECTION`
+- `VISION_TIMEOUT_SECONDS=30`
 - `ENABLE_PADDLEOCR=false`
 - `PADDLEOCR_PRELOAD=false`
 - `PADDLEOCR_WORKER_PROCESSES=1`
@@ -96,6 +101,9 @@ That keeps Paddle predictors isolated while still letting the orchestrator
 round-robin field verification requests.
 
 Production OCR deploys use `scripts/deploy-recognition-worker-cloud-run.sh`.
+The deploy contract fails closed when Google Vision is selected without a
+configured Secret Manager key. Existing keys are reused by secret name, so a
+new rollout cannot silently fall back to Paddle or erase the Vision setting.
 The script builds an immutable image through `cloudbuild-ocr.yaml` before it
 touches Cloud Run traffic. PP-OCRv5 mobile weights are baked into the image,
 the prior image is used as a Docker layer cache, and the explicit build budget
