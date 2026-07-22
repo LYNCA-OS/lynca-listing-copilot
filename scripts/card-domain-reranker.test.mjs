@@ -141,6 +141,65 @@ const authoritativeIdentity = rankCardDomainCandidates([
 ], { year: "2024", product: "Topps Chrome", players: ["Test Player"] });
 assert.equal(authoritativeIdentity.top_decision_eligible_candidate_id, "reviewed-current-source", "reviewed current-source identity must outrank a soft similarity lead");
 
+const authoritativeObservationCorrection = rankCardDomainCandidates([
+  {
+    candidate_id: "reviewed-corrects-observation",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    __decision_eligible: true,
+    anchor_agreement: {
+      agreed: ["subjects", "manufacturer", "product_hierarchy", "serial_denominator", "year"],
+      contradicted: [],
+      authoritative_overrides: ["reviewed_current_source_identity_match"]
+    },
+    fields: {
+      year: "2024-25",
+      product: "Topps Chrome",
+      players: ["Victor Wembanyama"],
+      serial_denominator: "50",
+      parallel_exact: "Gold Refractor"
+    }
+  },
+  {
+    candidate_id: "soft-observation-match",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    __decision_eligible: true,
+    anchor_agreement: {
+      agreed: ["year", "subjects", "manufacturer", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: { year: "2025", product: "Topps Chrome", players: ["Victor Wembanyama"], collector_number: "RS-2" }
+  }
+], {
+  year: "2025-26",
+  product: "Topps Chrome",
+  players: ["Victor Wembanyama"],
+  serial_denominator: "50",
+  parallel_exact: "Gold Refractor"
+});
+assert.equal(
+  authoritativeObservationCorrection.top_decision_eligible_candidate_id,
+  "reviewed-corrects-observation",
+  "reviewed current-source identity may correct a conflicting raw observation when no direct evidence conflict exists"
+);
+assert.equal(authoritativeObservationCorrection.ranked_candidates[0].authoritative_observation_correction, true);
+
+const authoritativeDirectConflict = rankCardDomainCandidates([{
+  candidate_id: "reviewed-with-direct-conflict",
+  source_type: "INTERNAL_APPROVED_HISTORY",
+  source_trust: "APPROVED_REFERENCE",
+  __decision_eligible: true,
+  conflicting_fields: ["serial_denominator"],
+  anchor_agreement: {
+    agreed: ["subjects", "manufacturer", "product_hierarchy"],
+    contradicted: ["serial_denominator"],
+    authoritative_overrides: ["reviewed_current_source_identity_match"]
+  },
+  fields: { year: "2024", product: "Topps Chrome", players: ["Test Player"], serial_denominator: "25" }
+}], { year: "2025", product: "Topps Chrome", players: ["Test Player"], serial_denominator: "50" });
+assert.equal(authoritativeDirectConflict.top_decision_eligible_candidate_id, "", "direct evidence conflicts must not be waived by authority");
+
 const marketplace = rankCardDomainCandidates([
   {
     candidate_id: "marketplace",
