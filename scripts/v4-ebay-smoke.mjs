@@ -16,7 +16,9 @@ function cleanText(value) {
 }
 
 export const durableUploadResilienceContract = Object.freeze({
-  verification_timeout_ms: 20_000,
+  verification_timeout_ms: 8_000,
+  preingestion_timeout_ms: 8_000,
+  enqueue_timeout_ms: 8_000,
   verification_max_attempts: 3,
   preparation_recovery_rounds: 1,
   preparation_recovery_concurrency: 1
@@ -97,6 +99,22 @@ function normalizeVerifiedAssetCacheMode(value = "disabled") {
     throw new Error(`unsupported verified asset cache mode: ${mode}`);
   }
   return mode;
+}
+
+export function assertVerifiedAssetCacheExecutionMode({
+  mode = "disabled",
+  queueMode = false,
+  speculative = false,
+  batchPoll = true
+} = {}) {
+  const normalized = normalizeVerifiedAssetCacheMode(mode);
+  if (normalized !== "disabled" && !(queueMode && speculative && batchPoll)) {
+    throw new Error(
+      "verified asset cache requires --queue --speculative with batch polling; "
+      + "otherwise uploads would be repeated despite the cache flag"
+    );
+  }
+  return normalized;
 }
 
 export async function readVerifiedAssetCache(path = "") {
@@ -1894,7 +1912,7 @@ async function runOne({
         assetId: id,
         images,
         source: preingestionSource,
-        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+        requestTimeoutMs: Math.min(requestTimeoutMs, durableUploadResilienceContract.preingestion_timeout_ms)
       });
       if (preingestionResult.ok && preingestionResult.bundle_id) {
         payload.preingestion_bundle_id = preingestionResult.bundle_id;
@@ -1955,7 +1973,7 @@ async function runOne({
           payload: queuedPayload
         }]
       },
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
+      requestTimeoutMs: Math.min(requestTimeoutMs, durableUploadResilienceContract.enqueue_timeout_ms),
       maxAttempts: 5
     });
     const speculativeSetupMs = Date.now() - t0;
@@ -2010,6 +2028,7 @@ async function runOne({
       preingestion_bundle_id: preingestionResult?.bundle_id || null,
       preingestion_bundle_status: preingestionResult?.bundle_status || null,
       preingestion_worker_jobs_enqueued: preingestionResult?.worker_jobs_enqueued ?? null,
+      preingestion_timing: preingestionResult?.timing || null,
       preingestion_error: preingestionResult?.error ? JSON.stringify(preingestionResult.error).slice(0, 500) : null,
       queue_mode: true,
       speculative_mode: true,
@@ -2023,6 +2042,10 @@ async function runOne({
       error: enqueue.ok ? null : enqueue.data,
       l1_wall_latency_ms: prewarmResult?.latency_ms ?? null,
       speculative_setup_ms: speculativeSetupMs,
+      enqueue_latency_ms: enqueue.latency_ms ?? null,
+      enqueue_attempts: Number(enqueue.attempts || 1),
+      enqueue_recovered_by_retry: enqueue.retried === true,
+      enqueue_timing: enqueue.data?.enqueue_timing || null,
       speculative_l1_http_status: prewarmResult?.http_status ?? null,
       speculative_l1_title: "",
       speculative_l1_title_render_source: null,
@@ -2163,7 +2186,7 @@ async function runOne({
           payload: queuedPayload
         }]
       },
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
+      requestTimeoutMs: Math.min(requestTimeoutMs, durableUploadResilienceContract.enqueue_timeout_ms),
       maxAttempts: 5
     });
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
@@ -2197,6 +2220,7 @@ async function runOne({
       preingestion_bundle_id: preingestionResult?.bundle_id || null,
       preingestion_bundle_status: preingestionResult?.bundle_status || null,
       preingestion_worker_jobs_enqueued: preingestionResult?.worker_jobs_enqueued ?? null,
+      preingestion_timing: preingestionResult?.timing || null,
       preingestion_signed_read_url_count: preingestionResult?.signed_read_url_count ?? null,
       preingestion_signed_read_url_error_count: preingestionResult?.signed_read_url_error_count ?? null,
       preingestion_error: preingestionResult?.error ? JSON.stringify(preingestionResult.error).slice(0, 500) : null,
@@ -2209,6 +2233,10 @@ async function runOne({
       writer_review_required: l2.review_required === true,
       error: enqueue.ok ? null : enqueue.data,
       l1_wall_latency_ms: enqueue.latency_ms,
+      enqueue_latency_ms: enqueue.latency_ms ?? null,
+      enqueue_attempts: Number(enqueue.attempts || 1),
+      enqueue_recovered_by_retry: enqueue.retried === true,
+      enqueue_timing: enqueue.data?.enqueue_timing || null,
       l1_internal_scout_ms: null,
       l1_time_to_safe_draft_ms: null,
       route: l2.summary?.route || null,
@@ -2619,7 +2647,7 @@ async function enqueueSpeculativeItem({
           assetId: id,
           images,
           source: preingestionSource,
-          requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+          requestTimeoutMs: Math.min(requestTimeoutMs, durableUploadResilienceContract.preingestion_timeout_ms)
         });
         if (preingestionResult.ok && preingestionResult.bundle_id) {
           payload.preingestion_bundle_id = preingestionResult.bundle_id;
@@ -2663,7 +2691,7 @@ async function enqueueSpeculativeItem({
           payload: queuedPayload
         }]
       },
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
+      requestTimeoutMs: Math.min(requestTimeoutMs, durableUploadResilienceContract.enqueue_timeout_ms),
       maxAttempts: 5
     }));
     const job = (enqueue.data?.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
@@ -4307,7 +4335,12 @@ export async function runV4EbaySmoke({
     1,
     Math.min(24, Math.trunc(Number(preparationConcurrency ?? 3) || 1))
   );
-  const normalizedVerifiedAssetCacheMode = normalizeVerifiedAssetCacheMode(verifiedAssetCacheMode);
+  const normalizedVerifiedAssetCacheMode = assertVerifiedAssetCacheExecutionMode({
+    mode: verifiedAssetCacheMode,
+    queueMode,
+    speculative,
+    batchPoll
+  });
   if (normalizedVerifiedAssetCacheMode !== "disabled" && !cleanText(verifiedAssetCachePath)) {
     throw new Error("verifiedAssetCachePath is required when verified asset cache is enabled");
   }

@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  assertVerifiedAssetCacheExecutionMode,
   canonicalBatchIdForPoll,
   durableSourceFingerprint,
   durableUploadResilienceContract,
@@ -19,6 +20,17 @@ await Promise.all([writeFile(firstPath, jpegBytes), writeFile(secondPath, jpegBy
 
 const smokeIntent = payloadForItem({}, 0, [], { recognitionProfile: "accuracy-ceiling-oracle-v1" });
 assert.equal(smokeIntent.recognition_profile, "accuracy-ceiling-oracle-v1");
+assert.equal(assertVerifiedAssetCacheExecutionMode({
+  mode: "reuse",
+  queueMode: true,
+  speculative: true,
+  batchPoll: true
+}), "reuse");
+assert.throws(
+  () => assertVerifiedAssetCacheExecutionMode({ mode: "refresh", queueMode: true }),
+  /otherwise uploads would be repeated despite the cache flag/,
+  "the smoke runner must fail loudly when a cache flag would be ignored"
+);
 
 const storedSource = {
   asset_id: "stable-source",
@@ -199,7 +211,9 @@ try {
   assert.equal(reused.preparation_diagnostics.upload_skipped_due_to_verified_asset_cache, true);
   assert.equal(reuseCalls.length, 0);
   assert.deepEqual(durableUploadResilienceContract, {
-    verification_timeout_ms: 20_000,
+    verification_timeout_ms: 8_000,
+    preingestion_timeout_ms: 8_000,
+    enqueue_timeout_ms: 8_000,
     verification_max_attempts: 3,
     preparation_recovery_rounds: 1,
     preparation_recovery_concurrency: 1

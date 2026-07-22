@@ -32,10 +32,15 @@ const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
 const STORAGE_OBJECT_UPLOAD_TIMEOUT_MS = 30000;
 const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750, 1500]);
-const STORAGE_VERIFY_TIMEOUT_MS = 20000;
+// These three mutations are server-idempotent. Production traces show their
+// successful server work finishes well below 5s; a longer client timeout only
+// turns a lost/stalled edge response into writer-visible tail latency. Keep a
+// generous 8s attempt budget, then replay the same immutable request.
+const IDEMPOTENT_PREPARATION_ATTEMPT_TIMEOUT_MS = 8000;
+const STORAGE_VERIFY_TIMEOUT_MS = IDEMPOTENT_PREPARATION_ATTEMPT_TIMEOUT_MS;
 const STORAGE_VERIFY_RETRY_DELAYS_MS = Object.freeze([250, 1000]);
 const PROVIDER_STATUS_RECOVERY_DELAYS_MS = Object.freeze([2000, 5000, 10000, 30000]);
-const PREINGEST_REQUEST_TIMEOUT_MS = 25000;
+const PREINGEST_REQUEST_TIMEOUT_MS = IDEMPOTENT_PREPARATION_ATTEMPT_TIMEOUT_MS;
 const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
 const EXPORT_REQUEST_TIMEOUT_MS = 90000;
 const RESOLUTION_MAP_TIMEOUT_MS = 5000;
@@ -73,7 +78,7 @@ const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 点击“开始生成”变成“展示已就绪的结果”，而不是“从零启动识别”。
 const ENABLE_SPECULATIVE_RECOGNITION = true;
 const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
-const QUEUE_ENQUEUE_TIMEOUT_MS = 25000;
+const QUEUE_ENQUEUE_TIMEOUT_MS = IDEMPOTENT_PREPARATION_ATTEMPT_TIMEOUT_MS;
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 const supportedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const storageFirstImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
