@@ -96,6 +96,51 @@ const missingQueryFields = rankCardDomainCandidates([{
 }], { year: "2024" });
 assert.deepEqual(missingQueryFields.ranked_candidates[0].conflicting_fields, [], "missing query fields must not manufacture conflicts");
 
+const lowCoverageAnchorConsensus = rankCardDomainCandidates([{
+  candidate_id: "trusted-low-coverage",
+  source_type: "INTERNAL_APPROVED_HISTORY",
+  source_trust: "APPROVED_REFERENCE",
+  __decision_eligible: true,
+  anchor_agreement: {
+    agreed: ["year", "subjects", "manufacturer", "product_hierarchy"],
+    contradicted: []
+  },
+  fields: { year: "2024", product: "Topps", players: ["Test Player"] }
+}], {
+  year: "2024",
+  product: "Topps Chrome Sapphire Update",
+  set: "Rookie Autographs",
+  players: ["Test Player"],
+  manufacturer: "Topps",
+  surface_color: "Orange"
+});
+assert.equal(lowCoverageAnchorConsensus.top_decision_eligible_candidate_id, "trusted-low-coverage", "four trusted agreeing anchors must waive sparse query coverage");
+
+const authoritativeIdentity = rankCardDomainCandidates([
+  {
+    candidate_id: "higher-soft-score",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    __decision_eligible: true,
+    similarity: 0.99,
+    anchor_agreement: { agreed: ["year", "subjects", "manufacturer", "product_hierarchy"], contradicted: [] },
+    fields: { year: "2024", product: "Topps Chrome", players: ["Test Player"] }
+  },
+  {
+    candidate_id: "reviewed-current-source",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    __decision_eligible: true,
+    anchor_agreement: {
+      agreed: ["year", "subjects", "manufacturer", "product_hierarchy"],
+      contradicted: [],
+      authoritative_overrides: ["reviewed_current_source_identity_match"]
+    },
+    fields: { year: "2024", product: "Topps", players: ["Test Player"] }
+  }
+], { year: "2024", product: "Topps Chrome", players: ["Test Player"] });
+assert.equal(authoritativeIdentity.top_decision_eligible_candidate_id, "reviewed-current-source", "reviewed current-source identity must outrank a soft similarity lead");
+
 const marketplace = rankCardDomainCandidates([
   {
     candidate_id: "marketplace",
