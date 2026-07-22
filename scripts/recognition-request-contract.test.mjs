@@ -6,6 +6,7 @@ import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
 import {
   RecognitionRequestContractError,
   defaultRecognitionProfileId,
+  recognitionProfileIds,
   withRecognitionRequestIntent
 } from "../lib/listing/v4/contracts/recognition-request.mjs";
 import {
@@ -42,6 +43,16 @@ assert.equal(profile.provider_options.v4_compact_l2_prompt, true);
 assert.equal(profile.provider_options.v4_ultra_fast_l2, false);
 assert.equal(profile.provider_options.v4_ultra_sparse_transport, false);
 assert.equal(profile.provider_options.enable_fast_initial_provider_prompt, false);
+
+const oracleProfile = resolveRecognitionProfile(recognitionProfileIds.ACCURACY_CEILING_ORACLE, env);
+assert.equal(oracleProfile.provider_options.evaluation_profile, "v4_accuracy_ceiling_oracle_v1");
+assert.equal(oracleProfile.provider_options.enable_vector_lazy_mode, false);
+assert.equal(oracleProfile.provider_options.force_vector_assist, true);
+assert.equal(oracleProfile.provider_options.vector_index_ready, true);
+assert.equal(oracleProfile.provider_options.vector_retrieval_internal_top_n, 20);
+assert.equal(oracleProfile.provider_options.disable_identity_result_cache, true);
+assert.equal(oracleProfile.provider_options.disable_approved_identity_memory, true);
+assert.equal(oracleProfile.provider_options.force_retrieval_application_resolution, undefined);
 
 const bound = bindRecognitionProfileToPayload({
   recognition_profile: defaultRecognitionProfileId,

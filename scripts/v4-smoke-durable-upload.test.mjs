@@ -6,6 +6,7 @@ import {
   canonicalBatchIdForPoll,
   durableSourceFingerprint,
   durableUploadResilienceContract,
+  payloadForItem,
   prepareDurableSmokeItem
 } from "./v4-ebay-smoke.mjs";
 import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
@@ -15,6 +16,9 @@ const firstPath = join(tempDirectory, "image-1.jpg");
 const secondPath = join(tempDirectory, "image-2.jpg");
 const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
 await Promise.all([writeFile(firstPath, jpegBytes), writeFile(secondPath, jpegBytes)]);
+
+const smokeIntent = payloadForItem({}, 0, [], { recognitionProfile: "accuracy-ceiling-oracle-v1" });
+assert.equal(smokeIntent.recognition_profile, "accuracy-ceiling-oracle-v1");
 
 const storedSource = {
   asset_id: "stable-source",

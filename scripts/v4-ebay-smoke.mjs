@@ -580,7 +580,8 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
-  coldStartBlind = false
+  coldStartBlind = false,
+  recognitionProfile = "writer-assisted-v1"
 } = {}) {
   const providerOptions = {
     enable_catalog_assist: true,
@@ -625,6 +626,7 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
     category: item.category || "collectible_card",
     maxTitleLength: 80,
     captureProfileId: "v4_ebay_blind_smoke",
+    recognition_profile: recognitionProfile,
     provider: "openai_legacy",
     provider_id: "openai_legacy",
     vision_provider: "openai_legacy",
@@ -1819,6 +1821,7 @@ async function runOne({
   ultraFastServiceTier = "",
   disableIdentityCache = false,
   coldStartBlind = false,
+  recognitionProfile = "writer-assisted-v1",
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
@@ -1854,7 +1857,8 @@ async function runOne({
     ultraFastImageDetail,
     ultraFastServiceTier,
     disableIdentityCache,
-    coldStartBlind
+    coldStartBlind,
+    recognitionProfile
   });
   const prewarmPromise = prewarm
     ? postJson({
@@ -2546,6 +2550,7 @@ async function enqueueSpeculativeItem({
   ultraFastServiceTier,
   disableIdentityCache,
   coldStartBlind,
+  recognitionProfile,
   usePreingestion,
   preingestionSource,
   requestTimeoutMs,
@@ -2582,7 +2587,8 @@ async function enqueueSpeculativeItem({
       ultraFastImageDetail,
       ultraFastServiceTier,
       disableIdentityCache,
-      coldStartBlind
+      coldStartBlind,
+      recognitionProfile
     });
     const prewarmPromise = prewarm
       ? postJson({
@@ -4273,6 +4279,7 @@ export async function runV4EbaySmoke({
   resumeBatchId = "",
   evaluationSampleMode = "UNSPECIFIED",
   coldStartBlind = false,
+  recognitionProfile = "writer-assisted-v1",
   verifiedAssetCachePath = "",
   verifiedAssetCacheMode = "disabled",
   outPath = "",
@@ -4421,6 +4428,7 @@ export async function runV4EbaySmoke({
           ultraFastServiceTier,
           disableIdentityCache,
           coldStartBlind,
+          recognitionProfile,
           usePreingestion,
           preingestionSource,
           requestTimeoutMs,
@@ -4499,6 +4507,7 @@ export async function runV4EbaySmoke({
           ultraFastServiceTier,
           disableIdentityCache,
           coldStartBlind,
+          recognitionProfile,
           usePreingestion,
           preingestionSource,
           speculative,
@@ -4620,6 +4629,7 @@ export async function runV4EbaySmoke({
     preingestion_source: usePreingestion ? preingestionSource : null,
     model_override: modelOverride || null,
     cold_start_blind: coldStartBlind === true,
+    recognition_profile: recognitionProfile,
     predictions_sha256: predictionsSha256,
     evaluation_sample_policy: {
       mode: normalizedSampleMode,
@@ -4736,6 +4746,9 @@ export async function main(argv = process.argv, env = process.env) {
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
     coldStartBlind: hasFlag(argv, "--cold-start-blind"),
+    recognitionProfile: hasFlag(argv, "--full-information-oracle")
+      ? "accuracy-ceiling-oracle-v1"
+      : "writer-assisted-v1",
     // CLI smoke runs are iterative by design. Persist verified generations by
     // immutable source fingerprint so rerunning a seen card does not repeat
     // asset creation, signed upload, PUT, or verification. Programmatic callers
