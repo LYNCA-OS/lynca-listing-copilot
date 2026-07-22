@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import {
   callNativeV4RecognitionWithGpt5EmptyRetry
 } from "../api/v4/listing-copilot-title.js";
-import { preingestionOcrScopeFromPayload } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
+import {
+  preingestionOcrScopeFromPayload,
+  recognitionIdentityPreflightDecision
+} from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { scopeV4RecognitionPayloadFromFencedJob } from "../lib/listing/v4/session/trusted-session-identity.mjs";
 import { createListingImageVerificationToken } from "../lib/listing/storage/supabase-image-storage.mjs";
 
@@ -153,6 +156,33 @@ try {
     tenantId: "tenant_a",
     assetId: tenantAAssetId,
     bundleId: "bundle_tenant_a"
+  });
+
+  assert.deepEqual(recognitionIdentityPreflightDecision({
+    preingestion_bundle_id: "bundle_tenant_a",
+    preingestion_bundle_used: true,
+    preingestion_bundle_status: "READY"
+  }, {}), {
+    run: false,
+    reason: "preingestion_bundle_is_authoritative"
+  });
+  assert.deepEqual(recognitionIdentityPreflightDecision({
+    preingestion_bundle_id: "bundle_tenant_a",
+    preingestion_bundle_used: true,
+    preingestion_bundle_status: "READY"
+  }, {
+    ENABLE_RECOGNITION_PREFLIGHT_WITH_PREINGESTION: "true"
+  }), {
+    run: true,
+    reason: "redundant_preflight_explicitly_enabled"
+  });
+  assert.deepEqual(recognitionIdentityPreflightDecision({
+    preingestion_bundle_id: "bundle_tenant_a",
+    preingestion_bundle_used: false,
+    preingestion_bundle_status: "READY"
+  }, {}), {
+    run: true,
+    reason: "preingestion_bundle_not_authoritative"
   });
 } finally {
   globalThis.fetch = originalFetch;
