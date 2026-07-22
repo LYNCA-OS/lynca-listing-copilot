@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import handler from "../api/listing-provider-status.js";
 import { createListingSessionToken } from "../lib/listing-session.mjs";
+import { __clearTenantMembershipCacheForTests } from "../lib/tenant/access.mjs";
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
@@ -175,6 +176,7 @@ assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-open
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-vector-token|vector\.worker\.test/);
 
 membershipRole = "WRITER";
+__clearTenantMembershipCacheForTests();
 response = await callStatus();
 assert.equal(response.statusCode, 200);
 assert.equal(response.body.default_provider, "openai_legacy");
@@ -191,10 +193,12 @@ assert.equal("key_pool_size" in response.body.providers[0], false);
 assert.equal("recommended_concurrency" in response.body.providers[0], false);
 
 membershipRole = "MANAGER";
+__clearTenantMembershipCacheForTests();
 response = await callStatus();
 assert.equal(response.statusCode, 200);
 assert.equal(response.body.execution_control.provider_key_pool_size, 2, "Manager may view tenant operations diagnostics");
 membershipRole = "OWNER";
+__clearTenantMembershipCacheForTests();
 
 delete process.env.V4_INTERNAL_BASE_URL;
 response = await callStatus();

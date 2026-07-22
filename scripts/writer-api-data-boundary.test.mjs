@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createListingSessionToken, cookieName } from "../lib/listing-session.mjs";
 import jobStatusHandler from "../api/v4/listing-job-status.js";
 import sessionStatusHandler from "../api/v4/listing-session-status.js";
+import { __clearTenantMembershipCacheForTests } from "../lib/tenant/access.mjs";
 
 const originalEnv = {
   METAVERSE_AUTH_SECRET: process.env.METAVERSE_AUTH_SECRET,
@@ -261,6 +262,7 @@ try {
   sessionRow.failure_reason = null;
 
   membershipRole = "MANAGER";
+  __clearTenantMembershipCacheForTests();
   const managerSession = await callGet(sessionStatusHandler, "/api/v4/listing-session-status?session_id=session_writer");
   assert.equal(managerSession.statusCode, 200);
   assert.equal(managerSession.body.session.tenant_id, "tenant_a");
