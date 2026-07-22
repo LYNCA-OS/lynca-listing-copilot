@@ -42,19 +42,23 @@ export async function captureV4OracleOcrObservations({ report, baseUrl, username
     query_card_id: cleanText(row.source_feedback_id || row.source_asset_id || row.asset_id),
     asset_id: cleanText(row.asset_id)
   }));
-  const response = await fetch(`${cleanText(baseUrl).replace(/\/+$/, "")}/api/v4/oracle-ocr-observations`, {
-    method: "POST",
-    headers: { "content-type": "application/json", cookie, ...deploymentProtectionHeaders() },
-    body: JSON.stringify({ cards })
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.ok !== true) {
-    throw new Error(`oracle OCR capture failed: ${response.status}:${cleanText(payload.error)}`);
+  const capturedCards = [];
+  for (let offset = 0; offset < cards.length; offset += 20) {
+    const response = await fetch(`${cleanText(baseUrl).replace(/\/+$/, "")}/api/v4/oracle-ocr-observations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie, ...deploymentProtectionHeaders() },
+      body: JSON.stringify({ cards: cards.slice(offset, offset + 20) })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok !== true) {
+      throw new Error(`oracle OCR capture failed: ${response.status}:${cleanText(payload.error)}`);
+    }
+    capturedCards.push(...(payload.cards || []));
   }
   return {
     schema_version: "v4-oracle-ocr-observations-v1",
     generated_at: new Date().toISOString(),
-    cards: payload.cards || []
+    cards: capturedCards
   };
 }
 

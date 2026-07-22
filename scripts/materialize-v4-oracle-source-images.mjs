@@ -4,8 +4,8 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loginSessionToCloud } from "../lib/listing/evaluation/blind-eval.mjs";
 import { materializeLaunchGateImages } from "./materialize-launch-gate-images.mjs";
+import { login } from "./v4-ebay-smoke.mjs";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -32,18 +32,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     return;
   }
   const baseUrl = cleanText(argValue(argv, "--base-url", env.API_BASE_URL || "https://listing.lyncafei.team")).replace(/\/+$/, "");
-  const login = await loginSessionToCloud({
+  const sessionCookie = await login({
     baseUrl,
     username: cleanText(env.METAVERSE_USERNAME),
-    password: cleanText(env.METAVERSE_PASSWORD),
-    bypassSecret: cleanText(env.VERCEL_AUTOMATION_BYPASS_SECRET)
+    password: cleanText(env.METAVERSE_PASSWORD)
   });
   const dataset = JSON.parse(await readFile(inputPath, "utf8"));
   const result = await materializeLaunchGateImages({
     dataset,
     outputDirectory,
     baseUrl,
-    cookie: login.cookie,
+    cookie: sessionCookie,
     concurrency: 8,
     launchGateEvalSecret: cleanText(env.LAUNCH_GATE_EVAL_SECRET)
   });

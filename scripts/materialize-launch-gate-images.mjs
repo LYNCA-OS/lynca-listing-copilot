@@ -104,7 +104,7 @@ async function readJsonResponse(response) {
   try { return text ? JSON.parse(text) : {}; } catch { return {}; }
 }
 
-async function requestSignedSources({ baseUrl, cookie, sourceFeedbackIds, launchGateEvalSecret, fetchImpl }) {
+async function requestSignedSources({ baseUrl, cookie, sourceFeedbackIds, launchGateEvalSecret, vercelBypassSecret, fetchImpl }) {
   const result = await fetchWithBoundedRetry(`${baseUrl}/api/v4/launch-gate-source-images`, {
     method: "POST",
     headers: {
@@ -113,6 +113,9 @@ async function requestSignedSources({ baseUrl, cookie, sourceFeedbackIds, launch
       connection: "close",
       ...(cleanText(launchGateEvalSecret)
         ? { "x-lynca-launch-gate-secret": cleanText(launchGateEvalSecret) }
+        : {}),
+      ...(cleanText(vercelBypassSecret)
+        ? { "x-vercel-protection-bypass": cleanText(vercelBypassSecret) }
         : {})
     },
     body: JSON.stringify({ source_feedback_ids: sourceFeedbackIds })
@@ -216,6 +219,7 @@ export async function materializeLaunchGateImages({
   concurrency = 8,
   maxImageBytes = defaultMaxImageBytes,
   launchGateEvalSecret = process.env.LAUNCH_GATE_EVAL_SECRET,
+  vercelBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
   fetchImpl = globalThis.fetch
 } = {}) {
   const items = loadItems(dataset);
@@ -227,6 +231,7 @@ export async function materializeLaunchGateImages({
     cookie,
     sourceFeedbackIds,
     launchGateEvalSecret,
+    vercelBypassSecret,
     fetchImpl
   });
   const sourceIndex = new Map((access.sources || []).map((source) => [cleanText(source.source_feedback_id), source]));
