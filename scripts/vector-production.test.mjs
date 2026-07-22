@@ -767,6 +767,11 @@ assert.deepEqual(buildVectorCandidateAssistPacket(catalogLowMarginPromptPacket).
   "catalog-low-margin-a",
   "catalog-low-margin-b"
 ]);
+assert.deepEqual(
+  buildVectorCandidateAssistPacket(catalogLowMarginPromptPacket, { limit: 1 }).vector_retrieval.candidates.map((candidate) => candidate.candidate_id),
+  ["catalog-low-margin-a"],
+  "decision packets may retain a wider candidate set without expanding the provider prompt"
+);
 
 const catalogLowMarginProductYearPromptPacket = buildVectorCandidatePacket({
   open_set_decision: "LOW_MARGIN_MATCH",

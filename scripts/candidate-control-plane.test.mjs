@@ -1179,6 +1179,43 @@ function testPacketRebindPreservesPlayersAsSubjectAnchor() {
   assert.equal(selection.candidate_application_trace[0].prompt_eligible, true);
 }
 
+function testYearReplacementRequiresCurrentSourceAuthority() {
+  const base = {
+    selected_candidate_safe_field_application: {
+      status: "ready_fill_missing",
+      candidate_id: "catalog-reviewed-neighbour",
+      eligible_fields: ["year"],
+      field_reasons: { year: "trusted_reviewed_identity_year_fill" },
+      renderer_application_allowed: true
+    },
+    candidate_field_evidence: [{
+      candidate_id: "catalog-reviewed-neighbour",
+      field_name: "year",
+      value: "2025",
+      permission: "can_apply"
+    }]
+  };
+  const blocked = applyCandidateDecisionStage({
+    result: base,
+    resolvedBefore: { year: "2024-25" }
+  });
+  assert.equal(blocked.resolved_after.year, "2024-25");
+  assert.equal(blocked.field_application.applied_fields.includes("year"), false);
+
+  const currentSource = applyCandidateDecisionStage({
+    result: {
+      ...base,
+      selected_candidate_safe_field_application: {
+        ...base.selected_candidate_safe_field_application,
+        field_reasons: { year: "trusted_reviewed_current_source_semantic_fill" }
+      }
+    },
+    resolvedBefore: { year: "2024-25" }
+  });
+  assert.equal(currentSource.resolved_after.year, "2025");
+  assert.equal(currentSource.field_application.applied_fields.includes("year"), true);
+}
+
 function testNumericYearMayBeOmittedButCannotHideDifferentProductBranch() {
   const baseCandidate = {
     candidate_id: "bowman-base",
@@ -1383,6 +1420,7 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
+testYearReplacementRequiresCurrentSourceAuthority();
 testApplicableCatalogTierBeatsSupportOnlyVectorTier();
 testCandidateOnlyPacketCannotEnterProductionDecision();
 testTrustedPostObservationCatalogCanEnterDeterministicDecision();

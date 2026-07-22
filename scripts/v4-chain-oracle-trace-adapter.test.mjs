@@ -12,6 +12,13 @@ const trace = buildV4ChainOracleTraceFromSmoke([{ results: [{
   },
   l2_candidate_debug: {
     selected_candidate_id: "candidate-a",
+    selected_candidate_safe_field_application: {
+      field_reasons: { year: "trusted_reviewed_current_source_semantic_fill" }
+    },
+    selected_candidate_decision: {
+      selected_candidate_id: "candidate-a",
+      selected_candidate_group_ids: ["candidate-a", "candidate-a-sibling"]
+    },
     candidate_application_trace: [
       { candidate_id: "candidate-a", candidate_identity_id: "identity-a", candidate_lane: "catalog", retrieval_rank: 1 },
       { candidate_id: "candidate-b", candidate_identity_id: "identity-b", candidate_lane: "vector", retrieval_rank: 1 }
@@ -22,6 +29,8 @@ const trace = buildV4ChainOracleTraceFromSmoke([{ results: [{
       resolver_field: "year",
       candidate_value: "2024",
       resolver_value: "2024",
+      old_value: null,
+      final_value: "2024",
       decision: "APPLY",
       applied_to_final: true
     }] }
@@ -39,6 +48,11 @@ assert.equal(trace.cards[0].evidence_observations[1].source, "GOOGLE_VISION_OCR"
 assert.equal(trace.cards[0].retrieval_candidates.length, 2);
 assert.equal(trace.cards[0].retrieval_candidates[0].rank, 1);
 assert.equal(trace.cards[0].application_decisions[0].applied, true);
+assert.equal(trace.cards[0].application_decisions[0].old_value, null);
+assert.equal(trace.cards[0].application_decisions[0].final_value, "2024");
+assert.equal(trace.cards[0].application_decisions[0].source_field, "year");
+assert.equal(trace.cards[0].application_decisions[0].application_plan_reason, "trusted_reviewed_current_source_semantic_fill");
+assert.deepEqual(trace.cards[0].selected_candidate_group_ids, ["candidate-a", "candidate-a-sibling"]);
 assert.equal(trace.cards[0].renderer_fields.year, "2024");
 assert.equal(trace.cards[0].instrumentation.sensor_evidence_instrumented, true);
 

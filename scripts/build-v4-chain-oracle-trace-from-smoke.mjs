@@ -77,13 +77,21 @@ function retrievalCandidates(debug = {}) {
 }
 
 function applicationDecisions(debug = {}) {
+  const selectedFieldReasons = debug.selected_candidate_safe_field_application?.field_reasons || {};
   return (debug.retrieval_application?.decisions || []).map((row) => ({
     candidate_id: cleanText(row.candidate_id),
     field: cleanText(row.resolver_field || row.field),
+    source_field: cleanText(row.field),
     value: row.resolver_value ?? row.candidate_value,
-    applied: row.applied_to_final === true || cleanText(row.decision).toUpperCase() === "APPLY",
+    old_value: row.old_value ?? null,
+    final_value: row.final_value ?? null,
+    applied: row.applied_to_final === true,
+    applied_to_final: row.applied_to_final === true,
+    supported_final: row.supported_final === true,
     decision: cleanText(row.decision),
-    reason: cleanText(row.reason) || null
+    reason: cleanText(row.reason) || null,
+    application_plan_reason: cleanText(selectedFieldReasons[row.field]) || null,
+    outcome: cleanText(row.outcome) || null
   })).filter((row) => row.field);
 }
 
@@ -102,6 +110,15 @@ export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations =
       ],
       retrieval_candidates: retrievalCandidates(debug),
       selected_candidate_id: cleanText(debug.selected_candidate_id || debug.selected_candidate_decision?.selected_candidate_id),
+      selected_candidate_group_ids: [
+        ...new Set([
+          debug.selected_candidate_id,
+          debug.selected_candidate_decision?.selected_candidate_id,
+          ...(Array.isArray(debug.selected_candidate_decision?.selected_candidate_group_ids)
+            ? debug.selected_candidate_decision.selected_candidate_group_ids
+            : [])
+        ].map(cleanText).filter(Boolean))
+      ],
       application_decisions: applicationDecisions(debug),
       resolver_fields: result.resolved_fields || {},
       renderer_fields: renderedFields(ledger),
@@ -126,8 +143,11 @@ export async function main(argv = process.argv.slice(2)) {
   if (!inputs.length) throw new Error("at least one --input smoke report is required");
   const output = resolve(argValue(argv, "--out", "data/eval/v4-chain-oracle/chain-trace.json"));
   const reports = await Promise.all(inputs.map(async (path) => JSON.parse(await readFile(resolve(path), "utf8"))));
-  const ocrPath = argValue(argv, "--ocr-observations");
-  const ocrObservations = ocrPath ? JSON.parse(await readFile(resolve(ocrPath), "utf8")) : {};
+  const ocrPaths = argValues(argv, "--ocr-observations");
+  const ocrReports = await Promise.all(ocrPaths.map(async (path) => JSON.parse(await readFile(resolve(path), "utf8"))));
+  const ocrObservations = ocrReports.length
+    ? { cards: ocrReports.flatMap(rows) }
+    : {};
   const trace = buildV4ChainOracleTraceFromSmoke(reports, ocrObservations);
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, `${JSON.stringify(trace, null, 2)}\n`);

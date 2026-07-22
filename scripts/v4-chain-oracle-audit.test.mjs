@@ -48,6 +48,77 @@ assert.equal(report.metrics.safe_application_precision.rate, 0.666667);
 assert.equal(report.metrics.resolver_fidelity.rate, 1);
 assert.equal(report.metrics.renderer_fidelity.rate, 0.5);
 
+const plannedButResolverBlocked = evaluateV4ChainOracleAudit({
+  dataset,
+  trace: {
+    ...trace,
+    cards: [{
+      ...trace.cards[0],
+      application_decisions: [
+        { field: "year", value: "2024", old_value: null, decision: "APPLY", applied_to_final: false },
+        { field: "subject", value: ["Test Player"], old_value: ["Test Player"], decision: "SUPPORT", supported_final: true },
+        { field: "print_finish", value: "Gold", old_value: null, decision: "BLOCK", applied_to_final: false }
+      ]
+    }]
+  }
+});
+assert.equal(plannedButResolverBlocked.metrics.safe_application_recall.denominator, 2);
+assert.equal(plannedButResolverBlocked.metrics.safe_application_recall.numerator, 0);
+assert.equal(plannedButResolverBlocked.metrics.safe_application_precision.denominator, 0);
+assert.equal(plannedButResolverBlocked.cards[0].fields.subject.application_opportunity, false);
+assert.equal(plannedButResolverBlocked.cards[0].fields.year.application_planned, true);
+
+const semAliasApplication = evaluateV4ChainOracleAudit({
+  dataset,
+  trace: {
+    ...trace,
+    cards: [{
+      ...trace.cards[0],
+      application_decisions: [
+        { field: "parallel_exact", value: "Gold", old_value: null, applied_to_final: true }
+      ]
+    }]
+  }
+});
+assert.equal(semAliasApplication.metrics.per_field.print_finish.safe_application_recall.numerator, 1);
+assert.equal(semAliasApplication.metrics.per_field.print_finish.safe_application_precision.numerator, 1);
+
+const denominatorAlreadyPresent = evaluateV4ChainOracleAudit({
+  dataset: {
+    ...dataset,
+    items: [{
+      ...dataset.items[0],
+      reviewed_ground_truth: {
+        field_statuses: { numerical_rarity: "CONFIRMED" },
+        fields: { numerical_rarity: "11/25" }
+      }
+    }]
+  },
+  trace: {
+    cards: [{
+      query_card_id: "card-1",
+      retrieval_candidates: [{
+        candidate_id: "right",
+        identity_id: "identity-1",
+        rank: 1,
+        fields: { numerical_rarity: "#/25" }
+      }],
+      selected_candidate_id: "right",
+      application_decisions: [{
+        candidate_id: "right",
+        field: "numerical_rarity",
+        value: "#/25",
+        old_value: "25",
+        decision: "BLOCK",
+        applied_to_final: false
+      }],
+      resolver_fields: { numerical_rarity: "25" },
+      renderer_fields: { numerical_rarity: "#/25" }
+    }]
+  }
+});
+assert.equal(denominatorAlreadyPresent.metrics.safe_application_recall.denominator, 0);
+
 const proxy = evaluateV4ChainOracleAudit({
   dataset: { ...dataset, evaluation_truth_policy: { field_ground_truth_class: "REVIEWED_TITLE_DERIVED_SEM_PROXY" } },
   trace
