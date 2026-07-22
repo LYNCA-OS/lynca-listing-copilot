@@ -962,6 +962,25 @@ assert.deepEqual(
 assert.equal(observedLotSubjectsSurviveReviewRouting.multi_card, true);
 assert.equal(observedLotSubjectsSurviveReviewRouting.card_count, 3);
 
+const uncountedMultiCardSignalCannotSwitchTitleGrammar = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2026",
+    product: "Bowman Chrome Sapphire",
+    players: ["Carson Benge"],
+    multi_card: true,
+    card_count: null,
+    lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW"
+  },
+  raw_provider_fields: {
+    players: ["Carson Benge"],
+    multi_card: true,
+    card_count: null
+  }
+});
+assert.equal(uncountedMultiCardSignalCannotSwitchTitleGrammar.multi_card, false);
+assert.equal(uncountedMultiCardSignalCannotSwitchTitleGrammar.card_count, null);
+assert.equal(uncountedMultiCardSignalCannotSwitchTitleGrammar.lot_type, null);
+
 const resolvedConflictRetainsCanonicalValue = buildV4ResolvedFields({
   resolved_fields: {
     year: "2025",
