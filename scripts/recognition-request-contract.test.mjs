@@ -43,6 +43,8 @@ assert.equal(profile.provider_options.v4_compact_l2_prompt, true);
 assert.equal(profile.provider_options.v4_ultra_fast_l2, false);
 assert.equal(profile.provider_options.v4_ultra_sparse_transport, false);
 assert.equal(profile.provider_options.enable_pre_provider_rescue_shadow, true);
+assert.equal(profile.provider_options.v4_provider_service_tier, "priority");
+assert.equal(profile.provider_options.v4_provider_done_capacity_handoff, true);
 assert.equal(profile.provider_options.enable_fast_initial_provider_prompt, false);
 
 const fastV5Profile = resolveRecognitionProfile(recognitionProfileIds.WRITER_ASSISTED_FAST_V5, env);

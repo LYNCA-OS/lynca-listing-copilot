@@ -18,6 +18,7 @@ import {
   postObservationStructuredAnchorCatalogBudgetMs,
   postObservationRetrievalCriticalPathBudgetMs,
   postObservationRetrievalDeadlineEnabled,
+  providerServiceTier,
   ultraFastImageDetail,
   ultraFastTextVerbosity,
   ultraFastServiceTier,
@@ -260,6 +261,8 @@ assert.equal(ultraFastEnvOptions.v4_ultra_sparse_transport, true);
 assert.equal(ultraFastImageDetail(ultraFastEnvOptions), "high");
 assert.equal(ultraFastTextVerbosity(ultraFastEnvOptions), "medium");
 assert.equal(ultraFastServiceTier(ultraFastEnvOptions), "priority");
+assert.equal(providerServiceTier({ v4_provider_service_tier: "priority" }), "priority");
+assert.equal(providerServiceTier({ v4_provider_service_tier: "unsupported" }), null);
 assert.equal(__listingCopilotTitleTestHooks.providerDoneCapacityHandoffEnabled({}, {}), true);
 assert.equal(__listingCopilotTitleTestHooks.providerDoneCapacityHandoffEnabled({
   provider_options: { v4_provider_done_capacity_handoff: false }
