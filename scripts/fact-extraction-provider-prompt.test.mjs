@@ -3,6 +3,7 @@ import {
   compactV4L2RecognitionPrompt,
   fastInitialRecognitionPrompt
 } from "../lib/listing/pipeline/provider-prompt.mjs";
+import { basicSurfaceColorVocabulary } from "../lib/listing/parallel-policy.mjs";
 
 const payload = {
   assetId: "fact_prompt_test",
@@ -29,6 +30,10 @@ assert.match(factPrompt, /Limited numbering is mandatory high-value evidence/);
 assert.match(factPrompt, /An uncertain optional finish, code or rarity must never erase readable core facts/);
 assert.match(factPrompt, /never default a reflective card to Silver/);
 assert.match(factPrompt, /Base color is required when visible/);
+for (const color of basicSurfaceColorVocabulary) {
+  assert.match(factPrompt, new RegExp(`\\b${color}\\b`));
+  assert.match(legacyPrompt, new RegExp(`\\b${color}\\b`));
+}
 assert.match(factPrompt, /manufacturer\/brand means the card publisher/);
 assert.match(factPrompt, /Final omission audit/);
 assert.match(factPrompt, /never explanations such as 'not visible'/);
