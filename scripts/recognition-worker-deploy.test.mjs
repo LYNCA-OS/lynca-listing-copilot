@@ -33,6 +33,7 @@ assert.match(dockerfile, /paddleocr install_hpi_deps cpu/);
 assert.match(dockerfile, /PADDLEOCR_ENABLE_HPI=true/);
 assert.match(dockerfile, /PP-OCRv6_medium_det/);
 assert.match(dockerfile, /PP-OCRv6_medium_rec/);
+assert.doesNotMatch(dockerfile, /langchain/, "PP-OCRv6 must not retain the obsolete PaddleOCR 3.0 LangChain shim");
 
 assert.match(visionDeploy, /git -C "\$ROOT_DIR" rev-parse HEAD/);
 assert.match(visionDeploy, /git -C "\$ROOT_DIR" rev-parse origin\/main/);
