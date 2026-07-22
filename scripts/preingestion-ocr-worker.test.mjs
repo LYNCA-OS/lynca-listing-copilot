@@ -5,6 +5,7 @@ import {
   bundlePatchesFromOcrResult,
   claimQueuedPreingestionOcrJobs,
   completePreingestionOcrJob,
+  createOcrBatchingClient,
   deferPreingestionOcrJobForCapacity,
   fairOcrAnchorJobOrder,
   fairOcrClaimOrder,
@@ -26,6 +27,27 @@ const env = {
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-test"
 };
+
+{
+  const batches = [];
+  const batchingClient = createOcrBatchingClient({
+    configured: true,
+    verifyCrop: async () => {
+      throw new Error("single OCR transport must not run when batch transport is available");
+    },
+    verifyCrops: async (inputs) => {
+      batches.push(inputs.map((input) => input.request_id));
+      return inputs.map((input) => ({ request_id: input.request_id }));
+    }
+  }, { windowMs: 1, maxBatch: 3 });
+  const results = await Promise.all([
+    batchingClient.verifyCrop({ request_id: "batch-a" }),
+    batchingClient.verifyCrop({ request_id: "batch-b" }),
+    batchingClient.verifyCrop({ request_id: "batch-c" })
+  ]);
+  assert.deepEqual(batches, [["batch-a", "batch-b", "batch-c"]]);
+  assert.deepEqual(results.map((result) => result.request_id), ["batch-a", "batch-b", "batch-c"]);
+}
 
 const durableLeaseMigration = readFileSync(
   new URL("../supabase/migrations/20260715065820_track_c_preingestion_ocr_durable_leases.sql", import.meta.url),
@@ -53,6 +75,8 @@ function jsonResponse(payload, { ok = true, status = 200 } = {}) {
 }
 
 function currentOcrPatch(field, value, extra = {}) {
+  const serialField = ["print_run_number", "serial_number", "numerical_rarity"].includes(field);
+  const jobKey = extra.provenance?.job_key || `ocr:${preingestionOcrJobVersion}:bundle-1:${field}`;
   return {
     field,
     value,
@@ -61,9 +85,11 @@ function currentOcrPatch(field, value, extra = {}) {
     ...extra,
     provenance: {
       ...(extra.provenance || {}),
-      job_key: extra.provenance?.job_key || `ocr:${preingestionOcrJobVersion}:bundle-1:${field}`,
-      crop_type: extra.provenance?.crop_type || (["print_run_number", "serial_number", "numerical_rarity"].includes(field) ? "serial_number" : null),
-      source_region: extra.provenance?.source_region || (["print_run_number", "serial_number", "numerical_rarity"].includes(field) ? "serial_region" : null)
+      job_key: jobKey,
+      crop_type: extra.provenance?.crop_type || (serialField ? "serial_number" : null),
+      source_region: extra.provenance?.source_region || (serialField ? "serial_region" : null),
+      serial_consensus_verified: extra.provenance?.serial_consensus_verified
+        ?? (serialField && jobKey.includes(`ocr:${preingestionOcrJobVersion}:`))
     }
   };
 }

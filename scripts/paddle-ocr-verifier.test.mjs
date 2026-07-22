@@ -484,6 +484,82 @@ assert.equal(clientResult.inline_grade_component_fallback_latency_ms, 5);
 assert.equal(clientResult.primary_ocr_latency_ms, 8);
 assert.equal(clientResult.fallback_ocr_latency_ms, 13);
 
+let capturedBatch = null;
+const batchClient = createPaddleOcrClient({
+  env: {
+    ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+    PADDLE_OCR_WORKER_URL: "https://vision-ocr.internal",
+    PADDLE_OCR_WORKER_TOKEN: "batch-secret"
+  },
+  fetchImpl: async (url, init) => {
+    capturedBatch = { url, headers: init.headers, body: JSON.parse(init.body) };
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        results: [
+          {
+            request_id: "ocr-serial-1",
+            crop_type: "serial_crop",
+            raw_text: "24/25",
+            confidence: 0.97,
+            vision_unit_count: 2,
+            vision_cost_estimate: 0.003,
+            serial_consensus: { verified: true, chosen: "24/25" }
+          },
+          {
+            request_id: "ocr-card-code-1",
+            crop_type: "collector_number",
+            raw_text: "381",
+            confidence: 0.95,
+            vision_unit_count: 1,
+            vision_cost_estimate: 0.0015
+          }
+        ]
+      })
+    };
+  }
+});
+const batchRequests = [
+  request,
+  {
+    request_id: "ocr-card-code-1",
+    image_url: "https://storage.test/card-code.jpg?token=secret",
+    crop_type: "collector_number"
+  }
+];
+const batchResults = await batchClient.verifyCrops(batchRequests);
+assert.equal(capturedBatch.url, "https://vision-ocr.internal/v1/ocr-fields-batch");
+assert.equal(capturedBatch.headers.authorization, "Bearer batch-secret");
+assert.equal(capturedBatch.body.requests.length, 2);
+assert.equal(batchResults.length, 2);
+assert.equal(batchResults[0].normalized_fields.serial_number, "24/25");
+assert.equal(batchResults[0].vision_unit_count, 2);
+assert.equal(batchResults[0].serial_consensus.verified, true);
+assert.equal(batchResults[1].normalized_fields.collector_number, "381");
+
+let compatibilityCalls = 0;
+const compatibilityClient = createPaddleOcrClient({
+  env: {
+    ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+    PADDLE_OCR_WORKER_URL: "https://old-ocr.internal"
+  },
+  fetchImpl: async (url) => {
+    compatibilityCalls += 1;
+    if (url.endsWith("/v1/ocr-fields-batch")) {
+      return { ok: false, status: 404, text: async () => "not found" };
+    }
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ raw_text: "31/50", confidence: 0.94 })
+    };
+  }
+});
+const compatibilityResults = await compatibilityClient.verifyCrops([request, request]);
+assert.equal(compatibilityResults.length, 2);
+assert.equal(compatibilityCalls, 3, "one unsupported batch call must fall back to two compatible single calls");
+
 const missingLatencyClient = createPaddleOcrClient({
   env: {
     ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",

@@ -1,25 +1,18 @@
-"""Google Vision OCR adapter unit tests — stdlib only (no numpy/PIL/network).
-
-_array_to_base64_png is patched so these run in a bare Python environment and
-validate request shaping, fullTextAnnotation parsing, cost accounting, and
-fail-safe paths.
-"""
-
-import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-from urllib.error import HTTPError
 
 from app.pipelines.google_vision_ocr import (
     google_vision_configured,
     run_google_vision_ocr,
+    run_google_vision_ocr_batch,
 )
+from app.vision_main import _serial_consensus
 
 
 def _config(**overrides):
     base = dict(
-        vision_api_key="test-key",
+        vision_use_adc=True,
         vision_endpoint="",
         vision_feature_type="DOCUMENT_TEXT_DETECTION",
         vision_timeout_seconds=30,
@@ -29,122 +22,101 @@ def _config(**overrides):
     return SimpleNamespace(**base)
 
 
-class _FakeResponse:
-    def __init__(self, payload):
-        self._body = json.dumps(payload).encode("utf-8")
+class _FakeClient:
+    def __init__(self, payload=None, error=None):
+        self.payload = payload or {"responses": []}
+        self.error = error
+        self.calls = []
 
-    def read(self):
-        return self._body
+    def batch_annotate_images(self, *, request, timeout):
+        self.calls.append({"request": request, "timeout": timeout})
+        if self.error:
+            raise self.error
+        return self.payload
+
+
+def _word(text, confidence, end_line=False):
+    symbols = [{"text": char} for char in text]
+    if end_line and symbols:
+        symbols[-1]["property"] = {"detectedBreak": {"type": "LINE_BREAK"}}
+    return {"symbols": symbols, "confidence": confidence}
 
 
 class GoogleVisionOcrUnitTests(unittest.TestCase):
-    def test_configured(self):
+    def test_adc_is_the_only_production_configuration(self):
         self.assertTrue(google_vision_configured(_config()))
-        self.assertFalse(google_vision_configured(_config(vision_api_key="")))
+        self.assertFalse(google_vision_configured(_config(vision_use_adc=False)))
 
-    def test_unavailable_when_unconfigured(self):
-        result = run_google_vision_ocr(object(), crop_type="serial_crop", config=_config(vision_api_key=""))
+    def test_unavailable_when_adc_is_disabled(self):
+        result = run_google_vision_ocr("ARRAY", crop_type="serial_crop", config=_config(vision_use_adc=False))
         self.assertEqual(result["status"], "UNAVAILABLE")
-        self.assertEqual(result["reason"], "vision_api_key_not_configured")
+        self.assertEqual(result["reason"], "vision_adc_disabled")
 
-    def test_unavailable_when_array_missing(self):
-        result = run_google_vision_ocr(None, crop_type="serial_crop", config=_config())
-        self.assertEqual(result["status"], "UNAVAILABLE")
-        self.assertEqual(result["reason"], "image_bytes_not_loaded")
-
-    def test_reads_serial_and_shapes_candidate(self):
-        payload = {"responses": [{"fullTextAnnotation": {"text": "CPA-VG 7/10", "pages": [{"confidence": 0.94}]}}]}
-        captured = {}
-
-        def fake_open(request, timeout):
-            captured["url"] = request.full_url
-            captured["body"] = json.loads(request.data.decode("utf-8"))
-            return _FakeResponse(payload)
-
-        with patch("app.pipelines.google_vision_ocr._array_to_base64_png", return_value="ZmFrZQ=="):
-            result = run_google_vision_ocr("ARRAY", crop_type="serial_crop", config=_config(), urlopen_impl=fake_open)
-
-        self.assertEqual(result["status"], "OK")
-        self.assertEqual(result["raw_text"], "CPA-VG 7/10")
-        self.assertEqual(result["candidates"][0]["text"], "CPA-VG 7/10")
-        self.assertEqual(result["candidates"][0]["confidence"], 0.94)
-        self.assertEqual(result["backend"], "google_vision")
-        self.assertGreaterEqual(result["cost_estimate"], 0.0)
-        # request shaping: images:annotate with key + DOCUMENT_TEXT_DETECTION
-        self.assertIn("key=test-key", captured["url"])
-        self.assertEqual(captured["body"]["requests"][0]["features"][0]["type"], "DOCUMENT_TEXT_DETECTION")
-
-    def test_text_annotations_fallback(self):
-        payload = {"responses": [{"textAnnotations": [{"description": "25/99"}]}]}
-        with patch("app.pipelines.google_vision_ocr._array_to_base64_png", return_value="ZmFrZQ=="):
-            result = run_google_vision_ocr(
-                "ARRAY", crop_type="serial_crop", config=_config(),
-                urlopen_impl=lambda request, timeout: _FakeResponse(payload),
+    def test_official_client_shapes_batch_and_counts_units(self):
+        client = _FakeClient({"responses": [
+            {"textAnnotations": [{"description": "7/10"}]},
+            {"textAnnotations": [{"description": "PSA 10"}]},
+        ]})
+        with patch("app.pipelines.google_vision_ocr._array_to_png_bytes", return_value=b"png"):
+            result = run_google_vision_ocr_batch(
+                ["A", "B"],
+                crop_types=["serial_crop", "grade_label_crop"],
+                config=_config(),
+                client=client,
             )
         self.assertEqual(result["status"], "OK")
-        self.assertEqual(result["raw_text"], "25/99")
-
-    def test_vision_error_is_fail_safe(self):
-        payload = {"responses": [{"error": {"message": "bad image"}}]}
-        with patch("app.pipelines.google_vision_ocr._array_to_base64_png", return_value="ZmFrZQ=="):
-            result = run_google_vision_ocr(
-                "ARRAY", crop_type="serial_crop", config=_config(),
-                urlopen_impl=lambda request, timeout: _FakeResponse(payload),
-            )
-        self.assertEqual(result["status"], "UNAVAILABLE")
-        self.assertTrue(result["reason"].startswith("vision_error"))
-
-    def test_http_error_is_fail_safe(self):
-        def fake_open(request, timeout):
-            raise HTTPError("u", 429, "rate", {}, None)
-
-        with patch("app.pipelines.google_vision_ocr._array_to_base64_png", return_value="ZmFrZQ=="):
-            result = run_google_vision_ocr("ARRAY", crop_type="serial_crop", config=_config(), urlopen_impl=fake_open)
-        self.assertEqual(result["status"], "UNAVAILABLE")
-        self.assertTrue(result["reason"].startswith("http_429"))
-
-    def test_no_text_status(self):
-        payload = {"responses": [{"fullTextAnnotation": {"text": ""}}]}
-        with patch("app.pipelines.google_vision_ocr._array_to_base64_png", return_value="ZmFrZQ=="):
-            result = run_google_vision_ocr(
-                "ARRAY", crop_type="serial_crop", config=_config(),
-                urlopen_impl=lambda request, timeout: _FakeResponse(payload),
-            )
-        self.assertEqual(result["status"], "NO_TEXT")
-        self.assertEqual(result["candidates"], [])
+        self.assertEqual(result["vision_unit_count"], 2)
+        self.assertEqual(result["cost_estimate"], 0.003)
+        self.assertEqual(len(client.calls), 1)
+        requests = client.calls[0]["request"]["requests"]
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0]["features"][0]["type_"], "DOCUMENT_TEXT_DETECTION")
 
     def test_word_confidence_survives_low_page_average(self):
-        # A busy card back: low page-average confidence (0.85) but the serial
-        # word "05/10" is read at 0.99. The serial must surface as its own
-        # candidate at word confidence, not be diluted to the page mean.
-        def word(text, conf, end_line=False):
-            symbols = [{"text": ch} for ch in text]
-            if end_line and symbols:
-                symbols[-1]["property"] = {"detectedBreak": {"type": "LINE_BREAK"}}
-            return {"symbols": symbols, "confidence": conf}
-
         payload = {"responses": [{"fullTextAnnotation": {
             "text": "SP 05/10",
             "pages": [{
                 "confidence": 0.85,
                 "blocks": [{"paragraphs": [{"words": [
-                    word("SP", 0.80),
-                    word("05/10", 0.99, end_line=True),
+                    _word("SP", 0.80),
+                    _word("05/10", 0.99, end_line=True),
                 ]}]}],
             }],
         }}]}
-        with patch("app.pipelines.google_vision_ocr._array_to_base64_png", return_value="ZmFrZQ=="):
-            result = run_google_vision_ocr(
-                "ARRAY", crop_type="serial_crop", config=_config(),
-                urlopen_impl=lambda request, timeout: _FakeResponse(payload),
-            )
-        self.assertEqual(result["status"], "OK")
-        serial = next((c for c in result["candidates"] if c["text"] == "05/10"), None)
-        self.assertIsNotNone(serial, "serial word must be its own candidate")
+        with patch("app.pipelines.google_vision_ocr._array_to_png_bytes", return_value=b"png"):
+            result = run_google_vision_ocr("ARRAY", crop_type="serial_crop", config=_config(), client=_FakeClient(payload))
+        serial = next((candidate for candidate in result["candidates"] if candidate["text"] == "05/10"), None)
+        self.assertIsNotNone(serial)
         self.assertAlmostEqual(serial["confidence"], 0.99, places=4)
-        # A per-line candidate preserves the phrase for multi-word fields.
-        self.assertTrue(any(c["text"] == "SP 05/10" for c in result["candidates"]))
-        self.assertEqual(result["raw_text"], "SP 05/10")
+        self.assertEqual(result["vision_unit_count"], 1)
+
+    def test_client_error_is_fail_safe_and_bills_zero_units(self):
+        with patch("app.pipelines.google_vision_ocr._array_to_png_bytes", return_value=b"png"):
+            result = run_google_vision_ocr_batch(
+                ["A"], crop_types=["serial_crop"], config=_config(), client=_FakeClient(error=TimeoutError("late"))
+            )
+        self.assertEqual(result["status"], "UNAVAILABLE")
+        self.assertEqual(result["vision_unit_count"], 0)
+        self.assertTrue(result["reason"].startswith("request_failed"))
+
+    def test_serial_requires_exact_and_expanded_crop_agreement(self):
+        wrong_primary = {"candidates": [{"text": "4/25", "confidence": 0.99}]}
+        correct_expanded = {"candidates": [{"text": "24/25", "confidence": 0.96}]}
+        conflict = _serial_consensus(wrong_primary, correct_expanded)
+        self.assertFalse(conflict["serial_consensus"]["verified"])
+        self.assertEqual(conflict["raw_text"], "#/25")
+        self.assertEqual(conflict["candidates"][0]["text"], "#/25")
+
+        agreed = _serial_consensus(correct_expanded, {"candidates": [{"text": "24 / 25", "confidence": 0.94}]})
+        self.assertTrue(agreed["serial_consensus"]["verified"])
+        self.assertEqual(agreed["raw_text"], "24/25")
+        self.assertEqual(agreed["confidence"], 0.94)
+
+        billed = _serial_consensus(
+            {**correct_expanded, "cost_estimate": 0.0015},
+            {"candidates": [{"text": "24/25", "confidence": 0.94}], "cost_estimate": 0.0015},
+        )
+        self.assertEqual(billed["cost_estimate"], 0.003)
 
 
 if __name__ == "__main__":

@@ -7,9 +7,8 @@ import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-han
 import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../../lib/tenant/index.mjs";
 
 // Sweep endpoint for queued `ocr_crop_verification` preingestion jobs.
-// The primary consumer is the in-process waitUntil dispatch inside
-// api/listing-preingest.js; this endpoint exists to re-sweep jobs that
-// survived a cold start or a failed dispatch.
+// Browser pre-ingestion persists jobs and sends an authenticated wake here;
+// this independent endpoint owns leases, execution and scheduled recovery.
 export default async function handler(req, res) {
   instrumentProductionRequest(req, res, { api: "/api/v4/listing-preingest-worker" });
   if (req.method !== "POST" && req.method !== "GET") {

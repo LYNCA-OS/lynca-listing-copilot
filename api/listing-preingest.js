@@ -24,6 +24,7 @@ import {
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
+import { scheduleTrustedPreingestionOcrWake } from "../lib/listing/preingestion/internal-ocr-wake.mjs";
 
 const allowedBrowserSources = new Set([
   "listing_preingest_api",
@@ -310,6 +311,21 @@ export default async function handler(req, res) {
       })
       : { enqueued: 0, durable: true, skipped: true };
 
+    // Wake the independent OCR consumer as soon as durable enqueue finishes.
+    // This endpoint still only persists/schedules work: leases, retries and OCR
+    // execution remain behind the authenticated worker boundary.
+    const ocrDispatchStarted = enqueueOcr && Number(enqueueResult.enqueued || 0) > 0;
+    if (ocrDispatchStarted) {
+      scheduleTrustedPreingestionOcrWake({
+        tenantId: context.tenantId,
+        assetId,
+        bundleId: durableBundle.bundle_id,
+        limit: 3,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      });
+    }
+
     sendJson(res, 200, {
       ok: true,
       tenant_id: context.tenantId,
@@ -318,6 +334,7 @@ export default async function handler(req, res) {
       saved: Boolean(writeResult.saved),
       worker_jobs_enqueued: enqueueResult.enqueued || 0,
       worker_jobs_attempted: enqueueResult.attempted || jobs.length,
+      ocr_dispatch_started: ocrDispatchStarted,
       signed_read_url_count: signed.signedReadUrlCount,
       signed_read_url_error_count: signed.errors.length,
       preprocessing_summary: {
@@ -326,6 +343,7 @@ export default async function handler(req, res) {
         signed_read_url_error_count: signed.errors.length,
         worker_jobs_enqueued: enqueueResult.enqueued || 0,
         worker_jobs_attempted: enqueueResult.attempted || jobs.length,
+        ocr_dispatch_started: ocrDispatchStarted,
         ocr_verifier_enabled: paddleOcr.enabled === true,
         ocr_verifier_configured: paddleOcr.configured === true && Boolean(paddleOcr.token),
         ocr_jobs_suppressed_unavailable: payload.enqueue_ocr !== false && !enqueueOcr

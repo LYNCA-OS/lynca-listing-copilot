@@ -100,6 +100,7 @@ class WorkerConfig:
     vision_feature_type: str = "DOCUMENT_TEXT_DETECTION"
     vision_timeout_seconds: int = 30
     vision_cost_per_image: float = 0.0015
+    vision_use_adc: bool = True
 
 
 def load_config() -> WorkerConfig:
@@ -142,4 +143,5 @@ def load_config() -> WorkerConfig:
         vision_feature_type=os.getenv("VISION_FEATURE_TYPE", "DOCUMENT_TEXT_DETECTION") or "DOCUMENT_TEXT_DETECTION",
         vision_timeout_seconds=_int_env("VISION_TIMEOUT_SECONDS", 30),
         vision_cost_per_image=_float_env("VISION_COST_PER_IMAGE", 0.0015),
+        vision_use_adc=os.getenv("VISION_USE_ADC", "true").lower() == "true",
     )
