@@ -80,6 +80,9 @@ fi
 retry_command gcloud storage buckets add-iam-policy-binding "gs://${GCP_PROJECT_ID}_cloudbuild" \
   --member "serviceAccount:${DEPLOY_ACCOUNT}" \
   --role roles/storage.objectAdmin >/dev/null
+retry_command gcloud storage buckets add-iam-policy-binding "gs://${GCP_PROJECT_ID}_cloudbuild" \
+  --member "serviceAccount:${DEPLOY_ACCOUNT}" \
+  --role roles/storage.legacyBucketReader >/dev/null
 retry_command gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_ACCOUNT" \
   --member "serviceAccount:${DEPLOY_ACCOUNT}" \
   --role roles/iam.serviceAccountUser \
