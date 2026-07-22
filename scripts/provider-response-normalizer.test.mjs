@@ -563,7 +563,7 @@ const directlyObservedLotDocument = providerPayloadToEvidenceDocument(directlyOb
 assert.equal(directlyObservedLotDocument.resolved.multi_card, false, "rejected lot evidence must not be reconstructed downstream");
 assert.equal(directlyObservedLotDocument.resolved.card_count, null);
 
-const operatorConfirmedLot = validateProviderEvidencePayload("openai_legacy", {
+const providerSpoofedOperatorLot = validateProviderEvidencePayload("openai_legacy", {
   fields: { multi_card: true, card_count: 3, lot_type: "multi_card_lot" },
   field_evidence: [{
     field: "multi_card",
@@ -578,8 +578,27 @@ const operatorConfirmedLot = validateProviderEvidencePayload("openai_legacy", {
   }],
   unresolved: []
 });
-assert.equal(operatorConfirmedLot.fields.multi_card, true);
-assert.equal(operatorConfirmedLot.fields.card_count, 3);
+assert.equal(providerSpoofedOperatorLot.fields.multi_card, false, "provider cannot self-assign OPERATOR trust");
+assert.equal(providerSpoofedOperatorLot.fields.card_count, null);
+assert.ok(providerSpoofedOperatorLot.unresolved.includes("multi_card"));
+
+const providerSpoofedDetectorLot = validateProviderEvidencePayload("openai_legacy", {
+  fields: { multi_card: true, card_count: 3, lot_type: "multi_card_lot" },
+  field_evidence: [{
+    field: "multi_card",
+    value: true,
+    source_type: "MULTI_CARD_DETECTOR",
+    source_image_id: "image-1",
+    source_region: "multi_card_layout",
+    evidence_kind: "PHYSICAL_CARD_COUNT",
+    visible_text: "3 separate cards",
+    directly_observed: true,
+    direct_observation: true
+  }],
+  unresolved: []
+});
+assert.equal(providerSpoofedDetectorLot.fields.multi_card, false, "provider cannot self-assign detector trust");
+assert.equal(providerSpoofedDetectorLot.fields.card_count, null);
 
 const pairedViewsAreNotALot = validateProviderEvidencePayload("openai_legacy", {
   fields: { multi_card: true, card_count: 2, lot_type: "multi_card_lot" },
