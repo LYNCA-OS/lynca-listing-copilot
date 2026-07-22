@@ -9,7 +9,12 @@ import {
 } from "../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { runV4Prewarm, v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 import { adaptRecognitionResultToV4, buildV4PersistenceRows } from "../lib/listing/v4/result-adapter.mjs";
-import { buildV4FieldGraph, buildV4FieldStates, buildV4ResolvedFields } from "../lib/listing/v4/evidence/field-evidence.mjs";
+import {
+  applySafeCurrentImageMultiCardInference,
+  buildV4FieldGraph,
+  buildV4FieldStates,
+  buildV4ResolvedFields
+} from "../lib/listing/v4/evidence/field-evidence.mjs";
 import { buildV4FeedbackArtifacts } from "../lib/listing/v4/feedback/feedback-loop.mjs";
 import { planV4RecognitionRoute } from "../lib/listing/v4/route-planner/route-planner.mjs";
 import { buildV4QualityLedger } from "../lib/listing/v4/quality-ledger/quality-ledger.mjs";
@@ -19,11 +24,15 @@ import {
   v4PipelineStages
 } from "../lib/listing/v4/pipeline/pipeline-contract.mjs";
 import { candidateSelectionHeuristicVersion } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import { catalogRetrievalFamiliesForFields } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
+import { retrievalQueryFamilies } from "../lib/listing/retrieval/retrieval-contract.mjs";
 import {
   explicitlyUncertainIdentityFields,
   normalizeFields,
   normalizePrintedCardCodeForFields
 } from "../lib/listing/pipeline/field-normalization.mjs";
+import { renderSportsTitle } from "../lib/listing/renderer/sports-title-renderer.mjs";
+import { renderListingPresentation, renderResolvedTitle } from "../lib/listing/renderer/listing-renderer.mjs";
 import {
   buildV4TitleStageState,
   providerOptionsForV4BackgroundL2,
@@ -77,6 +86,73 @@ assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 10, pro
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 300_000, itemCount: 10, providerConcurrency: 2 }), 300_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 0, providerConcurrency: 2 }), 18_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 1, providerConcurrency: 1 }), 75_000);
+
+assert.deepEqual(
+  catalogRetrievalFamiliesForFields({
+    year: "2024",
+    product: "Topps Chrome Tennis",
+    players: ["Grigor Dimitrov"],
+    collector_number: "TCA-GDV",
+    serial_number: "03/25"
+  }, { stagePhase: "post_provider" }),
+  [
+    retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+    retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.CATALOG_EXACT_CODE
+  ],
+  "an exact printed code must collapse overlapping post-provider catalog queries to the strongest RPC"
+);
+assert.deepEqual(
+  catalogRetrievalFamiliesForFields({
+    year: "2025",
+    product: "Topps Chrome Tennis",
+    players: ["Flavio Cobolli"],
+    set: "Chrome Autograph Card",
+    card_name: "Chrome Autograph Card",
+    serial_number: "16/50"
+  }, { stagePhase: "post_provider" }),
+  [
+    retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+    retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.CATALOG_SET_SUBJECT,
+    retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR
+  ],
+  "an informative set and a denominator must use complementary identity and variant catalog queries"
+);
+assert.deepEqual(
+  catalogRetrievalFamiliesForFields({
+    year: "2025-26",
+    product: "Topps 3",
+    players: ["Victor Wembanyama"],
+    set: "Rain Drops Signatures",
+    card_name: "Signatures",
+    print_run_denominator: "5"
+  }, { stagePhase: "post_provider" }),
+  [
+    retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+    retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.CATALOG_SET_SUBJECT,
+    retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR
+  ],
+  "a named insert must not be discarded merely because a serial denominator is available"
+);
+assert.deepEqual(
+  catalogRetrievalFamiliesForFields({
+    year: "2023-24",
+    product: "Panini Donruss Optic",
+    players: ["Buddy Hield"],
+    set: "Prizm",
+    card_name: "Lucky Hyper",
+    expected_serial_denominator: "8"
+  }, { stagePhase: "post_provider" }),
+  [
+    retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY,
+    retrievalQueryFamilies.INTERNAL_REGISTRY,
+    retrievalQueryFamilies.CATALOG_YEAR_PRODUCT_SUBJECT,
+    retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_DENOMINATOR
+  ],
+  "an uncorroborated set label must not displace the safer year-product identity lane"
+);
 
 const smokeTsv = perCardTsv([{
   asset_id: "asset-timing",
@@ -478,6 +554,11 @@ assert.equal(
   null,
   "a whitespace-free subject name must not become a printed card code"
 );
+assert.equal(
+  normalizePrintedCardCodeForFields("25YANKEES"),
+  null,
+  "a statistics-year and team OCR concatenation must not block safer catalog retrieval"
+);
 for (const text of [
   "2026PANINI-PRIZMFIFAW0RLDCUP2026TMS0",
   "2026 Panini Prizm FIFA World Cup",
@@ -512,6 +593,157 @@ assert.equal(nonSportSubjectAlias.player, "Wolverine");
 
 const subjectArrayAlias = normalizeFields({ subjects: ["Wolverine", "Deadpool"] });
 assert.deepEqual(subjectArrayAlias.players, ["Wolverine", "Deadpool"]);
+assert.deepEqual(
+  normalizeFields({ players: ["Jackson Chourio", "Jackson Bryan Chourio"] }).players,
+  ["Jackson Bryan Chourio"],
+  "middle-name variants must collapse to one subject"
+);
+assert.deepEqual(
+  normalizeFields({ players: ["Ken Griffey Jr.", "Vladimir Guerrero Jr."] }).players,
+  ["Ken Griffey Jr", "Vladimir Guerrero Jr"],
+  "different people sharing a suffix must remain separate"
+);
+
+const catalogCanonicalAliases = normalizeFields({
+  product: "Topps 3 Basketball",
+  set: "Rain Drops Signatures"
+});
+
+const megaFuturesCatalogTaxonomy = normalizeFields({
+  manufacturer: "Topps",
+  product: "Mega Futures",
+  set: "Mega Futures"
+});
+assert.equal(megaFuturesCatalogTaxonomy.manufacturer, "Topps");
+assert.equal(megaFuturesCatalogTaxonomy.brand, "Bowman");
+assert.equal(megaFuturesCatalogTaxonomy.product, "Bowman Mega Box");
+assert.equal(megaFuturesCatalogTaxonomy.set, null);
+assert.equal(megaFuturesCatalogTaxonomy.insert, "Mega Futures");
+assert.equal(megaFuturesCatalogTaxonomy.parallel_exact, "Mega Chrome");
+assert.equal(megaFuturesCatalogTaxonomy.rc, false);
+assert.equal(megaFuturesCatalogTaxonomy.collector_number, null);
+const romanAnthonyMegaFutures = normalizeFields({
+  year: "2026",
+  manufacturer: "Topps",
+  product: "Mega Futures",
+  set: "Mega Futures",
+  players: ["Roman Anthony"]
+});
+assert.equal(romanAnthonyMegaFutures.product, "Bowman Mega Box");
+assert.equal(romanAnthonyMegaFutures.parallel_exact, "Mega Chrome");
+assert.equal(romanAnthonyMegaFutures.rc, true);
+assert.equal(romanAnthonyMegaFutures.collector_number, "MF-21");
+assert.match(
+  renderListingPresentation({ resolved: romanAnthonyMegaFutures, maxLength: 80 }).final_title,
+  /Mojo Refractor/
+);
+assert.equal(normalizeFields({ product: "Mega Future Stars" }).product, "Mega Future Stars");
+
+assert.equal(catalogCanonicalAliases.product, "Topps Three");
+assert.equal(catalogCanonicalAliases.set, "Raindrops Signatures");
+assert.equal(normalizeFields({ set: "Topps Chrome (back printed text)" }).set, "Topps Chrome");
+const narratedProductSet = normalizeFields({
+  manufacturer: "Topps",
+  product: "Topps",
+  set: "(front/back indicate Topps Chrome product)"
+});
+assert.equal(narratedProductSet.product, "Topps Chrome");
+assert.equal(narratedProductSet.set, null);
+assert.equal(normalizeFields({ set: "Topps Chrome (retro style)" }).set, "Topps Chrome");
+assert.equal(normalizeFields({ set: "BCP-122 / BCP-38 / BCP-42 (visible on backs)" }).set, null);
+assert.equal(normalizeFields({ card_name: "(unsigned facsimile) signature printed on front" }).card_name, null);
+assert.equal(
+  buildV4ResolvedFields({ resolved_fields: { card_name: "(retro front with signature facsimile)" } }).card_name,
+  null
+);
+assert.match(
+  renderSportsTitle({
+    year: "2025-26",
+    product: "Topps 3 Basketball",
+    players: ["Victor Wembanyama"],
+    set: "Rain Drops Signatures",
+    auto: true
+  }).title,
+  /^2025-26 Topps Three Raindrops Signatures Victor Wembanyama Auto$/
+);
+
+const threeSubjectsAreNotLotProof = applySafeCurrentImageMultiCardInference({
+  players: ["David Davalillo", "Sam Petersen", "Luis Cova"],
+  card_name: "Base",
+  multi_card: false
+});
+assert.equal(threeSubjectsAreNotLotProof.multi_card, false);
+assert.ok(threeSubjectsAreNotLotProof.card_count == null);
+assert.ok(threeSubjectsAreNotLotProof.lot_type == null);
+assert.equal(applySafeCurrentImageMultiCardInference({
+  players: ["David Davalillo", "Sam Petersen", "Luis Cova"],
+  card_name: "Base",
+  auto: true
+}).multi_card ?? false, false, "three subjects on an autograph card must not be recast as a lot");
+
+const punctuationDuplicateSubject = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "1989",
+    product: "Upper Deck",
+    players: ["Ken Griffey Jr."],
+    card_name: "Star Rookie"
+  },
+  raw_provider_fields: {
+    players: ["Ken Griffey Jr.", "Ken Griffey Jr"]
+  },
+  candidate_observation_snapshot: {
+    players: ["Ken Griffey Jr"]
+  },
+  pipeline_node_ledger: {
+    field_flow: {
+      fields: [{
+        field_group: "subject",
+        raw_provider_present: true,
+        raw_values: ["Ken Griffey Jr.", "Ken Griffey Jr"],
+        pipeline_disposition: "INTENTIONALLY_ROUTED_TO_REVIEW",
+        resolved_present: false
+      }]
+    }
+  }
+});
+assert.deepEqual(punctuationDuplicateSubject.players, ["Ken Griffey Jr."]);
+assert.equal(punctuationDuplicateSubject.multi_card ?? false, false);
+assert.ok(punctuationDuplicateSubject.card_count == null);
+
+const reviewedMultiSubjectSingleCard = buildV4ResolvedFields({
+  resolved_fields: {
+    players: ["Barry Bonds"]
+  },
+  raw_provider_fields: {
+    players: ["Barry Bonds", "Willie Mays"]
+  },
+  pipeline_node_ledger: {
+    field_flow: {
+      fields: [{
+        field_group: "subject",
+        raw_provider_present: true,
+        raw_values: ["Barry Bonds", "Willie Mays"],
+        pipeline_disposition: "INTENTIONALLY_ROUTED_TO_REVIEW",
+        resolved_present: false
+      }]
+    }
+  }
+});
+assert.deepEqual(reviewedMultiSubjectSingleCard.players, ["Barry Bonds", "Willie Mays"]);
+assert.equal(reviewedMultiSubjectSingleCard.multi_card ?? false, false);
+assert.ok(reviewedMultiSubjectSingleCard.card_count == null);
+assert.equal(reviewedMultiSubjectSingleCard.lot_type, "MULTI_SUBJECT_REVIEW");
+
+const impossibleSingleCardLot = normalizeFields({
+  players: ["Kendry Chourio", "Kendry Chourio Raywave"],
+  multi_card: true,
+  card_count: 1,
+  lot_type: "CURRENT_IMAGE_MULTI_CARD_REVIEW"
+});
+assert.deepEqual(impossibleSingleCardLot.players, ["Kendry Chourio"]);
+assert.equal(impossibleSingleCardLot.multi_card, false);
+assert.equal(impossibleSingleCardLot.card_count, 1);
+assert.equal(impossibleSingleCardLot.lot_type, null);
 
 const v4CodeSanitizedFields = buildV4ResolvedFields({
   resolved_fields: {
@@ -568,6 +800,105 @@ const conflictSuppressedFields = buildV4ResolvedFields({
 });
 assert.equal(conflictSuppressedFields.year, null, "a conflicted year must remain internal evidence, never a rendered fact");
 assert.equal(conflictSuppressedFields.product, "Leaf Optichrome");
+
+const providerAbsencePlaceholderIsNotCardIdentity = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    card_name: "(no named insert visible)"
+  }
+});
+assert.equal(providerAbsencePlaceholderIsNotCardIdentity.card_name, null);
+
+const observedSubjectSurvivesCatalogConflictAtV4Boundary = buildV4ResolvedFields({
+  resolved_fields: {
+    year: null,
+    product: null,
+    players: null,
+    card_name: "Lucky Hyper"
+  },
+  candidate_observation_snapshot: {
+    year: "2023-24",
+    product: "Panini Donruss Optic",
+    player: "Buddy Hield",
+    players: ["Buddy Hield"]
+  },
+  raw_provider_fields: {
+    players: ["Buddy Hield"]
+  },
+  conflict_map: [{ field: "players", severity: "HIGH" }]
+});
+assert.deepEqual(
+  observedSubjectSurvivesCatalogConflictAtV4Boundary.players,
+  ["Buddy Hield"],
+  "catalog ambiguity may highlight the current-image subject but must not erase it from the writer draft"
+);
+assert.equal(observedSubjectSurvivesCatalogConflictAtV4Boundary.year, "2023-24");
+assert.equal(observedSubjectSurvivesCatalogConflictAtV4Boundary.product, "Panini Donruss Optic");
+assert.equal(
+  buildV4FieldStates({
+    resolved_fields: observedSubjectSurvivesCatalogConflictAtV4Boundary,
+    conflict_map: [{ field: "players", severity: "HIGH" }]
+  }).player.display_status,
+  "CONFLICT",
+  "preserved current-image subjects remain visibly review-gated"
+);
+
+const conflictedYearStillFailsClosedWithObservationSnapshot = buildV4ResolvedFields({
+  resolved_fields: { year: "2013", product: "Leaf Optichrome" },
+  candidate_observation_snapshot: { year: "2013", player: "Test Player" },
+  conflict_map: [{ field: "year", severity: "HIGH" }]
+});
+assert.equal(
+  conflictedYearStillFailsClosedWithObservationSnapshot.year,
+  "2013",
+  "a current-image year remains visible in the writer draft while its conflict stays review-gated"
+);
+assert.equal(
+  buildV4FieldStates({
+    resolved_fields: conflictedYearStillFailsClosedWithObservationSnapshot,
+    conflict_map: [{ field: "year", severity: "HIGH" }]
+  }).year.display_status,
+  "CONFLICT"
+);
+
+const observedLotSubjectsSurviveReviewRouting = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2026",
+    product: "Bowman Chrome",
+    players: null,
+    multi_card: true,
+    card_count: 3
+  },
+  raw_provider_fields: {
+    players: ["Sam Petersen", "Luis Cova", "David Davalillo"],
+    multi_card: true,
+    card_count: 3
+  },
+  candidate_observation_snapshot: {
+    players: ["David Davalillo"]
+  },
+  conflict_map: [{ field: "players", severity: "HIGH" }],
+  pipeline_node_ledger: {
+    field_flow: {
+      fields: [{
+        field_group: "subject",
+        raw_provider_present: true,
+        raw_values: ["Sam Petersen", "Luis Cova", "David Davalillo"],
+        resolved_present: false,
+        disposition: "INTENTIONALLY_ROUTED_TO_REVIEW"
+      }]
+    }
+  }
+});
+assert.deepEqual(
+  observedLotSubjectsSurviveReviewRouting.players,
+  ["Sam Petersen", "Luis Cova", "David Davalillo"],
+  "review routing must retain every subject directly observed on the current multi-card image"
+);
+assert.equal(observedLotSubjectsSurviveReviewRouting.multi_card, true);
+assert.equal(observedLotSubjectsSurviveReviewRouting.card_count, 3);
 
 const resolvedConflictRetainsCanonicalValue = buildV4ResolvedFields({
   resolved_fields: {
@@ -859,6 +1190,7 @@ const trackCProductionSchemaSource = await readFile("scripts/check-track-c-produ
 const trackCProductionSchemaRestSource = await readFile("scripts/check-track-c-production-schema-rest.mjs", "utf8");
 const writerLearningSupersessionMigrationSource = await readFile("supabase/migrations/20260712040453_supersede_stale_writer_learning_events.sql", "utf8");
 const queueWorkerApiSource = await readFile("api/v4/listing-job-worker.js", "utf8");
+const nativeRecognitionCoreSource = await readFile("lib/listing/v4/pipeline/native-recognition-core.mjs", "utf8");
 const v4SmokeSource = await readFile("scripts/v4-ebay-smoke.mjs", "utf8");
 const freshEbaySmokeWorkflowSource = await readFile(".github/workflows/fresh-ebay-smoke.yml", "utf8");
 const vercelConfigSource = await readFile("vercel.json", "utf8");
@@ -882,6 +1214,22 @@ assert.match(v4TitleApiSource, /async function persistV4NonCriticalArtifacts\([\
 assert.match(v4TitleApiSource, /scheduleV4Background\(backgroundPersistence/, "non-critical persistence and its self-observation must not block writer-ready L2 by default.");
 assert.match(v4TitleApiSource, /persistV4WriterReadyAndReleaseCapacity/, "writer-ready persistence must be able to release scarce provider capacity in the same transaction.");
 assert.match(v4TitleApiSource, /writer_ready_provider_capacity_release/, "the release boundary must remain observable in the V4 response.");
+const openAiTitleStart = nativeRecognitionCoreSource.indexOf("async function createOpenAiTitle");
+const initialProviderCall = nativeRecognitionCoreSource.indexOf("const providerResult = await runTimedProviderCall", openAiTitleStart);
+const providerDoneHandoff = nativeRecognitionCoreSource.indexOf(
+  "providerCapacityStageHandoffPromise = handoffProviderCapacityAfterStage",
+  initialProviderCall
+);
+const recognitionPreflightJoin = nativeRecognitionCoreSource.indexOf(
+  "const recognitionPreflight = await recognitionPreflightPromise",
+  initialProviderCall
+);
+assert.ok(initialProviderCall > openAiTitleStart, "the initial GPT provider call must remain visible in the native recognition core.");
+assert.ok(providerDoneHandoff > initialProviderCall, "provider capacity must not be released before the GPT call completes.");
+assert.ok(
+  providerDoneHandoff < recognitionPreflightJoin,
+  "provider capacity must be released before waiting for non-provider recognition preflight evidence."
+);
 assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSummary/, "background persistence must report its terminal artifact-level outcome.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
 assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish its cache probe before final telemetry is assembled.");
@@ -1382,13 +1730,35 @@ const deterministicCsmTitle = adaptRecognitionResultToV4({
 });
 assert.equal(
   deterministicCsmTitle.final_title,
-  "2020 Bowman Chrome Bobby Witt Jr. Auto Atomic Refractor 43/100 PSA 9"
+  "2020 Bowman Chrome Bobby Witt Jr Auto Atomic Refractor 43/100 PSA 9"
 );
 assert.equal(deterministicCsmTitle.resolved_fields.collector_number, "164");
 assert.equal(deterministicCsmTitle.resolved_fields.surface_color, "Silver");
 assert.equal(deterministicCsmTitle.provider_result.title_reconciled_from_v4_field_graph, true);
 assert.equal(deterministicCsmTitle.title_render_source, "v4_csm_deterministic_renderer");
 assert.match(deterministicCsmTitle.provider_result.model_title_suggestion, /1st Bowman/);
+
+const normalizedDirectoryTaxonomyAtAdapter = adaptRecognitionResultToV4({
+  sessionId: "v4sess-directory-taxonomy-adapter",
+  result: {
+    confidence: "HIGH",
+    final_title: "Bowman Mega Futures Roman Anthony",
+    resolved_fields: {
+      year: "2026",
+      manufacturer: "Topps",
+      brand: "Bowman",
+      product: "Mega Futures",
+      set: "Mega Futures",
+      players: ["Roman Anthony"]
+    },
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.equal(normalizedDirectoryTaxonomyAtAdapter.resolved_fields.product, "Bowman Mega Box");
+assert.equal(normalizedDirectoryTaxonomyAtAdapter.resolved_fields.parallel_exact, "Mega Chrome");
+assert.match(normalizedDirectoryTaxonomyAtAdapter.final_title, /Mojo Refractor/);
 
 const conflictedYearNeverRenders = adaptRecognitionResultToV4({
   sessionId: "v4sess-conflicted-year",
@@ -1454,7 +1824,7 @@ const sparseIdentityStillUsesCsm = adaptRecognitionResultToV4({
   routePlan: assistedRoute
 });
 assert.equal(sparseIdentityStillUsesCsm.title_render_source, "v4_csm_deterministic_renderer");
-assert.equal(sparseIdentityStillUsesCsm.final_title, "2006 Fleer 20th Anniversary Rookie Reprint #23");
+assert.equal(sparseIdentityStillUsesCsm.final_title, "2006 Fleer 20th Anniversary Rookie Reprint");
 assert.match(sparseIdentityStillUsesCsm.provider_result.model_title_suggestion, /Michael Jordan/);
 assert.doesNotMatch(sparseIdentityStillUsesCsm.final_title, /Model prose/);
 

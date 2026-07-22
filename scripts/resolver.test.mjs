@@ -182,7 +182,9 @@ const targetedSerialAndGradeWait = criticalOcrRendezvousDecision({
   criticalWaitMs: 2500
 });
 assert.deepEqual(targetedSerialAndGradeWait.target_fields, ["serial_number", "grade"]);
-assert.equal(targetedSerialAndGradeWait.wait_budget_ms, 2500);
+// Waiting on the serial numerator raises the budget to the dedicated serial
+// value (8s) even when a grade target is also present.
+assert.equal(targetedSerialAndGradeWait.wait_budget_ms, 8000);
 assert.equal(targetedSerialAndGradeWait.should_wait, true);
 
 const entirelyMissingGradeWait = criticalOcrRendezvousDecision({
@@ -265,6 +267,37 @@ const ocrPartialSerialWait = criticalOcrRendezvousDecision({
 });
 assert.equal(ocrPartialSerialWait.should_wait, true, "direct OCR numbering should wait for active serial verification");
 assert.deepEqual(ocrPartialSerialWait.target_fields, ["serial_number"]);
+// A serial target gets its own longer budget, not the shared 2.5s critical
+// budget, so a slow foil serial crop can settle before the title is rendered.
+assert.equal(ocrPartialSerialWait.wait_budget_ms, 8000, "serial target must use the dedicated serial budget");
+
+const serialWaitRespectsOverride = criticalOcrRendezvousDecision({
+  currentFields: {},
+  latestOcrState: {
+    configured: true,
+    serial_active_count: 1,
+    evidence_patches: [{ field: "numerical_rarity", value: "2/3" }]
+  },
+  criticalWaitMs: 2500,
+  serialWaitMs: 11000
+});
+assert.equal(serialWaitRespectsOverride.wait_budget_ms, 11000, "serialWaitMs override raises the serial wait budget");
+
+// A grade-only target keeps the shared critical budget; the serial budget only
+// applies when the serial numerator is actually the field being waited on.
+const gradeOnlyKeepsCriticalBudget = criticalOcrRendezvousDecision({
+  currentFields: { card_grade: "10" },
+  unresolved: ["grade_company"],
+  latestOcrState: {
+    configured: true,
+    grade_label_active_count: 1,
+    evidence_patches: [{ field: "card_grade", value: "10" }]
+  },
+  criticalWaitMs: 2500,
+  serialWaitMs: 8000
+});
+assert.ok(!gradeOnlyKeepsCriticalBudget.target_fields.includes("serial_number"));
+assert.equal(gradeOnlyKeepsCriticalBudget.wait_budget_ms, 2500, "a grade-only wait must not inherit the serial budget");
 
 const unrelatedOcrPatchDoesNotWait = criticalOcrRendezvousDecision({
   currentFields: {},

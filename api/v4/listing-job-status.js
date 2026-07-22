@@ -2,6 +2,7 @@ import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import { readV4RecognitionJobs, v4JobStatuses } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { buildEndToEndNodeLedger } from "../../lib/listing/v4/jobs/end-to-end-node-observability.mjs";
+import { triggerStatusPollQueueSelfHeal } from "../../lib/listing/v4/jobs/status-poll-queue-self-heal.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
 import { buildWriterViewModel } from "../../lib/listing/v4/presentation/writer-view-model.mjs";
@@ -726,6 +727,7 @@ export default async function handler(req, res) {
     }));
     return;
   }
+  triggerStatusPollQueueSelfHeal(ownedJobs);
   res.setHeader("cache-control", "no-store");
   res.setHeader("x-lynca-status-profile", responseProfile);
   res.setHeader("server-timing", [

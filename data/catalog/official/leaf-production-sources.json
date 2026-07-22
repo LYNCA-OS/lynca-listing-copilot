@@ -1,0 +1,22 @@
+{
+  "schema_version": "official-catalog-source-manifest-v1",
+  "provider": "leaf",
+  "sources": [
+    {
+      "source_name": "2024 Leaf Eclectic Football Checklist",
+      "source_url": "https://cdn.prod.website-files.com/6185749e80385c9daf8ddaf3/67db09d26ac7e27410243a14_2024_Leaf_Eclectic_Football_CL_F.xlsx",
+      "official_page_url": "https://www.leaftradingcards.com/products/2024-leaf-eclectic-football",
+      "source_type": "LEAF_OFFICIAL_CHECKLIST",
+      "category": "football",
+      "minimum_card_count": 1000,
+      "required_records": [
+        {
+          "checklist_code": "E-OG1",
+          "subject": "Ollie Gordon II",
+          "product": "Leaf Eclectic Football",
+          "set_or_insert": "Exotic"
+        }
+      ]
+    }
+  ]
+}

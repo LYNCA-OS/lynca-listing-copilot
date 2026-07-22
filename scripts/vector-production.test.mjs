@@ -236,7 +236,7 @@ const catalogHierarchySoftConflictPacket = buildVectorCandidatePacket({
   }
 });
 assert.deepEqual(catalogHierarchySoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields, []);
-assert.deepEqual(catalogHierarchySoftConflictPacket.vector_retrieval.candidates[1].conflicting_fields, []);
+assert.equal(catalogHierarchySoftConflictPacket.vector_retrieval.candidates.length, 1, "identical rows from overlapping catalog query families should be deduplicated before the decision limit");
 assert.equal(vectorCandidatePacketAssistEligibility(catalogHierarchySoftConflictPacket).prompt_candidate_count, 1, "duplicate same identity should count as one prompt candidate");
 assert.equal(buildVectorCandidateAssistPacket(catalogHierarchySoftConflictPacket).vector_retrieval.candidates.length, 1);
 
@@ -527,6 +527,122 @@ const catalogParentChildProductPacket = buildVectorCandidatePacket({
 assert.deepEqual(catalogParentChildProductPacket.vector_retrieval.candidates[0].conflicting_fields, []);
 assert.equal(catalogParentChildProductPacket.vector_retrieval.candidates[0].anchor_agreement.prompt_hard_filter_pass, true);
 assert.equal(vectorCandidatePacketAssistEligibility(catalogParentChildProductPacket).prompt_candidate_count, 1);
+
+// A known product OCR correction plus an exact product token is tolerated, and
+// a manufacturer-only product placeholder yields to a specific set.
+const catalogProductOcrTypoPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-product-ocr-typo",
+    candidate_identity_id: "identity-product-ocr-typo",
+    provider_id: "catalog",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Bowman Chrome",
+      players: ["Sienna Betts"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps",
+    set: "Rowman Chrome",
+    players: ["Sienna Betts"]
+  }
+});
+assert.deepEqual(catalogProductOcrTypoPacket.vector_retrieval.candidates[0].conflicting_fields, []);
+assert.ok(catalogProductOcrTypoPacket.vector_retrieval.candidates[0].anchor_agreement.agreed.includes("product_hierarchy"));
+assert.equal(vectorCandidatePacketAssistEligibility(catalogProductOcrTypoPacket).prompt_candidate_count, 1);
+
+const catalogDifferentProductBranchPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-different-product-branch",
+    candidate_identity_id: "identity-different-product-branch",
+    provider_id: "catalog",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Bowman Chrome",
+      players: ["Sienna Betts"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps",
+    set: "Bowman Choice",
+    players: ["Sienna Betts"]
+  }
+});
+assert.ok(catalogDifferentProductBranchPacket.vector_retrieval.candidates[0].conflicting_fields.includes("product"));
+assert.equal(vectorCandidatePacketAssistEligibility(catalogDifferentProductBranchPacket).prompt_candidate_count, 0);
+
+const catalogInternallyIncoherentProductPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-incoherent-product",
+    candidate_identity_id: "identity-incoherent-product",
+    provider_id: "catalog",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    reference_metadata: { retrieval_status: "approved", source_type: "INTERNAL_CORRECTED_TITLE" },
+    fields: {
+      year: "2025-26",
+      manufacturer: "Topps",
+      product: "Panini Hoops",
+      players: ["Kevin Durant"]
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    year: "2025-26",
+    manufacturer: "Topps",
+    brand: "NBA Hoops",
+    product: "Hoopers",
+    players: ["Kevin Durant"]
+  }
+});
+assert.ok(catalogInternallyIncoherentProductPacket.vector_retrieval.candidates[0].conflicting_fields.includes("product"));
+assert.equal(vectorCandidatePacketAssistEligibility(catalogInternallyIncoherentProductPacket).prompt_candidate_count, 0);
+
+const catalogLicensedIpProductPacket = buildVectorCandidatePacket({
+  sources: [{
+    candidate_id: "catalog-bandai-one-piece",
+    candidate_identity_id: "identity-bandai-one-piece",
+    provider_id: "catalog",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      manufacturer: "Bandai",
+      product: "One Piece Romance Dawn",
+      players: ["Monkey D. Luffy"],
+      collector_number: "OP01-001"
+    }
+  }]
+}, {
+  limit: 5,
+  queryFields: {
+    category: "tcg",
+    product: "Romance Dawn",
+    players: ["Monkey D. Luffy"],
+    collector_number: "OP01-001"
+  }
+});
+assert.equal(
+  vectorCandidatePacketAssistEligibility(catalogLicensedIpProductPacket).prompt_candidate_count,
+  1,
+  "licensed IP names must not be treated as conflicting publisher families"
+);
 
 // Anchor hard filter: a similar card from the same product line (subject
 // agrees, year and serial denominator contradict) must stay shadow-only.

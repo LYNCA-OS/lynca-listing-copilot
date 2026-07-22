@@ -1,49 +1,85 @@
 import assert from "node:assert/strict";
 import {
+  numericalRarityComponents,
   scoreRequiredSemProjection,
-  semFieldEquivalent,
   semScoringWeights
 } from "../lib/listing/v4/policy/sem-scoring-policy.mjs";
 
-assert.equal(
-  semFieldEquivalent("numerical_rarity", "5/50", "#/50"),
-  true,
-  "Numerical Rarity compares production quantity, not the current-copy numerator"
-);
-assert.equal(semFieldEquivalent("numerical_rarity", "5/50", "#/99"), false);
+assert.deepEqual(numericalRarityComponents("31/50"), { denominator: "50", numerator: "31" });
+assert.deepEqual(numericalRarityComponents("#/50"), { denominator: "50", numerator: null });
 
-assert.equal(semFieldEquivalent("product", "Topps Three", "Topps 3 Basketball"), true);
-assert.equal(semFieldEquivalent("card_name", "Raindrops Signatures", "Rain Drops Signatures"), true);
+const denominatorCorrectNumeratorMissing = scoreRequiredSemProjection({
+  expectedSem: { numerical_rarity: "31/50" },
+  actualSem: { numerical_rarity: "#/50" },
+  fieldStatuses: { numerical_rarity: "CONFIRMED" }
+});
+assert.equal(denominatorCorrectNumeratorMissing.total_weight, 4);
+assert.equal(denominatorCorrectNumeratorMissing.correct_weight, 4);
+assert.equal(denominatorCorrectNumeratorMissing.weighted_accuracy, 1);
+assert.equal(denominatorCorrectNumeratorMissing.components.some((row) => row.component === "serial_numerator"), false);
 
-assert.equal(
-  semFieldEquivalent("print_finish", "Orange Refractor", "Orange"),
-  true,
-  "safe color dimensionality reduction must ignore an unproven optical family"
-);
-assert.equal(semFieldEquivalent("print_finish", "Green Prizm", "Green"), true);
-assert.equal(semFieldEquivalent("print_finish", "Gold Shimmer", "Silver"), false);
-assert.equal(semFieldEquivalent("print_finish", "Red Wave", ""), false);
+const semDoesNotRequireNumerator = scoreRequiredSemProjection({
+  expectedSem: { numerical_rarity: "#/50" },
+  actualSem: { numerical_rarity: "31/50" },
+  fieldStatuses: { numerical_rarity: "CONFIRMED" }
+});
+assert.equal(semDoesNotRequireNumerator.weighted_accuracy, 1);
+assert.equal(semDoesNotRequireNumerator.components.some((row) => row.component === "serial_numerator"), false);
 
-const standardNumber = scoreRequiredSemProjection({
-  expectedSem: { card_number: "42" },
+const optionalAnswerFieldExcluded = scoreRequiredSemProjection({
+  expectedSem: { numerical_rarity: "31/50", special_stamp: ["RC"] },
+  actualSem: { numerical_rarity: "#/50", special_stamp: [] },
+  fieldStatuses: { numerical_rarity: "CONFIRMED", special_stamp: "NOT_APPLICABLE" }
+});
+assert.equal(optionalAnswerFieldExcluded.weighted_accuracy, 1);
+assert.equal(optionalAnswerFieldExcluded.runtime_chain_effect, "NONE");
+
+const standardCardNumber = scoreRequiredSemProjection({
+  expectedSem: { card_number: "SWS-LBJ" },
   actualSem: { card_number: "" },
-  requiredFields: ["card_number"],
+  fieldStatuses: { card_number: "CONFIRMED" },
   grammar: "STANDARD"
 });
-const tcgNumber = scoreRequiredSemProjection({
-  expectedSem: { card_number: "139/205" },
+const tcgCardNumber = scoreRequiredSemProjection({
+  expectedSem: { card_number: "OP01-120" },
   actualSem: { card_number: "" },
-  requiredFields: ["card_number"],
+  fieldStatuses: { card_number: "CONFIRMED" },
   grammar: "TCG"
 });
-assert.equal(standardNumber.total_weight, semScoringWeights.standard_card_number);
-assert.equal(tcgNumber.total_weight, semScoringWeights.tcg_card_number);
-
-const missingBaseColor = scoreRequiredSemProjection({
-  expectedSem: { year: "2025", product: "Topps Chrome", print_finish: "Red Refractor" },
-  actualSem: { year: "2025", product: "Topps Chrome", print_finish: "" },
-  requiredFields: ["year", "product", "print_finish"]
-});
-assert.deepEqual(missingBaseColor.required_acceptance_failures, ["print_finish"]);
+assert.equal(standardCardNumber.total_weight, 1);
+assert.equal(tcgCardNumber.total_weight, 4);
+assert.equal(semScoringWeights.numerical_rarity, 4);
 
 console.log("SEM scoring policy tests passed");
+
+// Contract: extraComponents participate in weighting, and any incorrect
+// required_for_acceptance component must surface in
+// required_acceptance_failures (hard acceptance, independent of score).
+{
+  const scored = scoreRequiredSemProjection({
+    expectedSem: { year: "2024", player: "Test Player" },
+    actualSem: { year: "2024", player: "Test Player" },
+    fieldStatuses: { year: "CONFIRMED", player: "CONFIRMED" },
+    extraComponents: [{
+      field: "lot_quantity",
+      component: "lot_workflow_quantity",
+      weight: 2,
+      required_for_acceptance: true,
+      correct: false
+    }]
+  });
+  assert.ok(Array.isArray(scored.required_acceptance_failures), "required_acceptance_failures must always be an array");
+  assert.equal(scored.required_acceptance_failures.length, 1);
+  assert.equal(scored.required_acceptance_failures[0].field, "lot_quantity");
+  assert.ok(scored.components.some((c) => c.component === "lot_workflow_quantity"));
+  assert.ok(scored.weighted_accuracy < 1, "incorrect extra component must lower the weighted score");
+}
+{
+  const scored = scoreRequiredSemProjection({
+    expectedSem: { year: "2024" },
+    actualSem: { year: "2024" },
+    fieldStatuses: { year: "CONFIRMED" }
+  });
+  assert.deepEqual(scored.required_acceptance_failures, [], "no extras means no acceptance failures");
+}
+console.log("sem scoring extra-component contract tests passed");

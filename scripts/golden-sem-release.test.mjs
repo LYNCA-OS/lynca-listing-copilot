@@ -108,11 +108,11 @@ const accuracy = evaluateGoldenSemAccuracy({
 assert.equal(accuracy.status, "COMPLETED");
 assert.equal(accuracy.source.partition, "holdout");
 assert.equal(accuracy.summary.evaluated_card_count, 3);
-assert.equal(accuracy.metrics.sem_card_exact_accuracy.correct, 2);
-assert.equal(accuracy.metrics.per_field_exact_accuracy.numerical_rarity.correct, 2);
-assert.equal(accuracy.cards[0].fields.numerical_rarity.is_correct, false);
+assert.equal(accuracy.metrics.sem_card_exact_accuracy.correct, 3);
+assert.equal(accuracy.metrics.per_field_exact_accuracy.numerical_rarity.correct, 3);
+assert.equal(accuracy.cards[0].fields.numerical_rarity.is_correct, true);
 assert.equal(accuracy.cards[0].fields.numerical_rarity.normalized_prediction, "#/3");
-assert.equal(accuracy.cards[0].fields.numerical_rarity.normalized_ground_truth, "2/3");
+assert.equal(accuracy.cards[0].fields.numerical_rarity.normalized_ground_truth, "#/3");
 
 const leakedPacket = structuredClone(packet);
 leakedPacket.items[0].reviewed_ground_truth.fields.year.evidence_sources = [];

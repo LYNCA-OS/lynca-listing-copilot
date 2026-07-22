@@ -21,6 +21,7 @@ import {
   v4JobLanes,
   v4JobTypes,
   v4JobStatuses,
+  v4QueueDeploymentAffinity,
   v4QueueSubmissionConcurrency
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
 import {
@@ -45,6 +46,9 @@ assert.equal(
   2,
   "queue submission should default to the measured stable provider capacity"
 );
+assert.equal(v4QueueDeploymentAffinity({ VERCEL_ENV: "production", VERCEL_DEPLOYMENT_ID: "dpl_prod" }), null);
+assert.equal(v4QueueDeploymentAffinity({ VERCEL_ENV: "preview", VERCEL_DEPLOYMENT_ID: "missing-prefix" }), null);
+assert.equal(v4QueueDeploymentAffinity({ VERCEL_ENV: "preview", VERCEL_DEPLOYMENT_ID: "dpl_Preview123" }), "dpl_Preview123");
 assert.equal(
   v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "6" }),
   2,
@@ -453,6 +457,31 @@ assert.equal(atomicBody.p_sessions.length, 2);
 assert.equal(atomicBody.p_jobs.length, 2);
 assert.equal(atomicBody.p_jobs[0].payload.client_asset_ref, "asset-a");
 
+const affinityWrites = [];
+await enqueueV4RecognitionJobs({
+  batchId: "batch-affinity",
+  operatorId: "operator-affinity",
+  tenantId: "tenant-affinity",
+  jobs: [{
+    asset_id: "asset_eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    payload: { client_asset_ref: "asset-affinity", images: [] }
+  }],
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    VERCEL_ENV: "preview",
+    VERCEL_DEPLOYMENT_ID: "dpl_Preview123"
+  },
+  fetchImpl: async (url, request = {}) => {
+    affinityWrites.push({ url: String(url), request });
+    return jsonResponse(atomicEnqueueResponse(request));
+  }
+});
+assert.equal(
+  JSON.parse(affinityWrites[0].request.body).p_jobs[0].queue_tags.deployment_affinity,
+  "dpl_Preview123"
+);
+
 const existingQueuedJob = normalizeV4JobInput({
   batchId: "batch-dedup",
   operatorId: "operator-dedup",
@@ -543,6 +572,24 @@ assert.ok(rpcCalls[0].request.body.includes('"p_lane":"interactive"'));
 assert.ok(rpcCalls[0].request.body.includes('"p_provider_capacity":2'));
 assert.ok(rpcCalls[0].request.body.includes('"p_per_key_concurrency":2'));
 assert.ok(rpcCalls[0].request.body.includes('"p_provider_key_count":2'));
+
+const affinityClaimCalls = [];
+const affinityClaim = await claimV4RecognitionJobs({
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    OPENAI_API_KEY: "key-one",
+    VERCEL_ENV: "preview",
+    VERCEL_DEPLOYMENT_ID: "dpl_Preview123"
+  },
+  fetchImpl: async (url, request = {}) => {
+    affinityClaimCalls.push({ url: String(url), request });
+    return jsonResponse([{ id: "v4job-affinity", status: "RUNNING" }]);
+  }
+});
+assert.equal(affinityClaim.ok, true);
+assert.ok(affinityClaimCalls[0].url.endsWith("/claim_v4_recognition_jobs_with_balanced_capacity_for_deployment"));
+assert.equal(JSON.parse(affinityClaimCalls[0].request.body).p_deployment_affinity, "dpl_Preview123");
 
 const schemaFallbackCalls = [];
 const schemaFallbackClaim = await claimV4RecognitionJobs({

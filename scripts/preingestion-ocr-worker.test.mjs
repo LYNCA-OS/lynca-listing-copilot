@@ -177,7 +177,7 @@ assert.equal(request.image_url, "https://signed.test/front.jpg");
 assert.deepEqual(request.crop_box, { x: 1200, y: 1600, width: 700, height: 300 });
 assert.equal(request.metadata.crop_id, "crop-1");
 assert.equal(request.metadata.image_id, "img-front");
-assert.equal(request.metadata.inline_full_image_fallback, true);
+assert.equal(request.metadata.inline_full_image_fallback, false);
 assert.equal(request.metadata.grade_source_looks_like_slab, false);
 
 // --- bundlePatchesFromOcrResult flattens the rich OCR patch to flat patches ---
@@ -790,7 +790,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.match(updates[0], /retry-current/);
 }
 
-// --- serial crop falls back to full-image OCR only when the fixed crop has no numbering ---
+// --- serial evidence remains crop-bound when the focused region has no numbering ---
 {
   const calls = [];
   const noSerialResult = {
@@ -821,16 +821,15 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       configured: true,
       verifyCrop: async (input) => {
         calls.push(input);
-        return calls.length === 1 ? noSerialResult : ocrResult;
+        return noSerialResult;
       }
     },
     signedReadUrlFor: async () => "https://signed.test/front.jpg"
   });
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].crop_box, sampleJob.payload.crop.crop_metadata.pixel_bounds);
-  assert.equal(calls[1].crop_box, null);
-  assert.match(calls[1].request_id, /full-image$/);
-  assert.equal(result.patches_appended, 2);
+  assert.equal(calls[0].metadata.inline_full_image_fallback, false);
+  assert.equal(result.patches_appended, 0);
   assert.equal(result.succeeded, 1);
 }
 

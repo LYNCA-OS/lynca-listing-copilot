@@ -7,6 +7,7 @@ import {
   listingSessionCookieIsSecure,
   readSignedSession
 } from "../lib/listing-session.mjs";
+import { __clearTenantMembershipCacheForTests } from "../lib/tenant/access.mjs";
 
 const membership = Object.freeze({
   tenant_id: "tenant_legacy",
@@ -205,6 +206,7 @@ try {
   assert.deepEqual(unauthenticated.payload, { authenticated: false });
 
   membershipAvailable = false;
+  __clearTenantMembershipCacheForTests();
   const unavailable = await readSession(first.cookie);
   assert.equal(unavailable.res.statusCode, 503, "a membership-store outage must not masquerade as a signed-out session");
   assert.equal(unavailable.payload.authenticated, false);

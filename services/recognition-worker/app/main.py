@@ -22,7 +22,13 @@ from .pipelines.glare_detection import detect_glare_from_array, glare_unavailabl
 from .pipelines.image_loader import ImageLoadError, load_signed_image
 from .pipelines.image_quality import measure_image_quality_from_array, quality_unavailable
 from .pipelines.multi_card_detection import detect_multi_card_from_loaded_images, multi_card_detection_unavailable
-from .pipelines.ocr_pipeline import ocr_evidence_from_loaded_images, ocr_field_from_loaded_image, ocr_unavailable, preload_paddleocr_engine
+from .pipelines.ocr_pipeline import (
+    copyright_year_evidence_from_confirmed_grid,
+    ocr_evidence_from_loaded_images,
+    ocr_field_from_loaded_image,
+    ocr_unavailable,
+    preload_paddleocr_engine,
+)
 from .pipelines.region_proposal import propose_regions_for_rectified_card
 from .pipelines.visual_embeddings import extract_visual_embeddings, preload_visual_embedding_backend
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
@@ -388,6 +394,23 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
             else ("image_download_disabled" if not config.enable_image_download else "image_bytes_not_loaded")
         )
     )
+    # The narrow grid copyright pass is independent from broad OCR. It only
+    # invokes Tesseract after geometry has confirmed an exact four-card grid,
+    # so ordinary cards keep the fast no-OCR path while repeated publisher
+    # copyright lines can still correct an unsafe statistics-year guess.
+    if image_loads:
+        copyright_year = copyright_year_evidence_from_confirmed_grid(
+            image_loads,
+            multi_card_detection,
+            language=config.tesseract_language,
+            timeout_seconds=config.tesseract_timeout_seconds,
+        )
+        if copyright_year is not None:
+            ocr_evidence = {
+                **ocr_evidence,
+                "status": "OK",
+                "items": [*(ocr_evidence.get("items") or []), copyright_year],
+            }
     evidence_fusion = fuse_ocr_evidence(ocr_evidence, requested_fields)
 
     return {
@@ -464,7 +487,15 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
             "model_id": config.paddleocr_model_id,
             "model_revision": config.paddleocr_model_revision,
         }
-    if not config.enable_paddleocr:
+    # Backend can be overridden per request (payload.ocr_backend) so the
+    # accuracy/cost A/B/A+B runs need no redeploy; otherwise the configured
+    # OCR_BACKEND applies. Only a pure single-backend run whose sole engine is
+    # unavailable short-circuits; hybrid proceeds if either lane can answer.
+    requested_backend = str(payload.get("ocr_backend") or config.ocr_backend or "paddle").strip().lower()
+    if requested_backend not in {"paddle", "deepseek", "google_vision", "hybrid"}:
+        requested_backend = "paddle"
+    deepseek_available = bool(config.deepseek_ocr_endpoint)
+    if requested_backend == "paddle" and not config.enable_paddleocr:
         return {
             "request_id": request_id,
             "crop_type": crop_type,
@@ -477,6 +508,37 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
             "latency_ms": int((time.time() - started) * 1000),
             "model_id": config.paddleocr_model_id,
             "model_revision": config.paddleocr_model_revision,
+            "ocr_backend": requested_backend,
+        }
+    if requested_backend == "deepseek" and not deepseek_available:
+        return {
+            "request_id": request_id,
+            "crop_type": crop_type,
+            "status": "UNAVAILABLE",
+            "reason": "deepseek_ocr_endpoint_not_configured",
+            "raw_text": "",
+            "text_candidates": [],
+            "boxes": [],
+            "confidence": 0,
+            "latency_ms": int((time.time() - started) * 1000),
+            "model_id": config.deepseek_ocr_model,
+            "model_revision": "",
+            "ocr_backend": requested_backend,
+        }
+    if requested_backend == "google_vision" and not config.vision_api_key:
+        return {
+            "request_id": request_id,
+            "crop_type": crop_type,
+            "status": "UNAVAILABLE",
+            "reason": "vision_api_key_not_configured",
+            "raw_text": "",
+            "text_candidates": [],
+            "boxes": [],
+            "confidence": 0,
+            "latency_ms": int((time.time() - started) * 1000),
+            "model_id": "google-vision",
+            "model_revision": config.vision_feature_type,
+            "ocr_backend": requested_backend,
         }
 
     try:
@@ -513,6 +575,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         request_id=request_id,
         model_id=config.paddleocr_model_id,
         model_revision=config.paddleocr_model_revision,
+        ocr_backend=requested_backend,
+        config=config,
     )
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     normalized_crop_type = str(crop_type).lower()
@@ -536,6 +600,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
                 request_id=f"{request_id}:grade-{missing_component}",
                 model_id=config.paddleocr_model_id,
                 model_revision=config.paddleocr_model_revision,
+                ocr_backend=requested_backend,
+                config=config,
             )
             primary = _merge_inline_ocr_results(
                 primary,
@@ -561,13 +627,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         and payload.get("crop_box") is not None
         and primary.get("status") != "UNAVAILABLE"
         and not _ocr_response_has_target(primary, crop_type)
-        and (
-            normalized_crop_type in {"serial_number", "serial_crop"}
-            or (
-                normalized_crop_type in {"grade_label", "grade_label_crop"}
-                and grade_context
-            )
-        )
+        and normalized_crop_type in {"grade_label", "grade_label_crop"}
+        and grade_context
     )
     if not should_fallback:
         return {
@@ -587,6 +648,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         request_id=f"{request_id}:full-image",
         model_id=config.paddleocr_model_id,
         model_revision=config.paddleocr_model_revision,
+        ocr_backend=requested_backend,
+        config=config,
     )
     merged = _merge_inline_ocr_results(
         primary,

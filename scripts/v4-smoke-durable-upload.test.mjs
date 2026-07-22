@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   canonicalBatchIdForPoll,
+  durableSourceFingerprint,
+  durableUploadResilienceContract,
   prepareDurableSmokeItem
 } from "./v4-ebay-smoke.mjs";
 import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
@@ -13,6 +15,34 @@ const firstPath = join(tempDirectory, "image-1.jpg");
 const secondPath = join(tempDirectory, "image-2.jpg");
 const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
 await Promise.all([writeFile(firstPath, jpegBytes), writeFile(secondPath, jpegBytes)]);
+
+const storedSource = {
+  asset_id: "stable-source",
+  source_feedback_id: "feedback-stable",
+  images: [{
+    image_id: "front",
+    role: "front_original",
+    bucket: "listing-feedback-images",
+    object_path: "feedback/stable/front.jpg"
+  }]
+};
+assert.equal(
+  await durableSourceFingerprint(storedSource, 0),
+  await durableSourceFingerprint({
+    ...storedSource,
+    images: [{ ...storedSource.images[0], local_path: firstPath }]
+  }, 0),
+  "verified asset identity must not drift when a stable stored image is locally materialized"
+);
+assert.equal(
+  await durableSourceFingerprint(storedSource, 0),
+  await durableSourceFingerprint({
+    ...storedSource,
+    asset_id: "random-manifest-derived-asset-id",
+    images: [{ ...storedSource.images[0], local_path: firstPath }]
+  }, 99),
+  "verified asset identity must not drift when a random manifest derives a new asset id"
+);
 
 const durableAssetId = "asset_11111111-2222-4333-8444-555555555555";
 const calls = [];
@@ -130,11 +160,83 @@ try {
   assert.equal(prepared.item.source_feedback_id, "ebay:image-only:source");
   assert.deepEqual(prepared.images.map((image) => image.storageRole), ["image_1_original", "image_2_original"]);
   assert.ok(prepared.images.every((image) => image.storageVerified === true));
+  assert.equal(prepared.preparation_diagnostics.storage_put_attempts, 2);
+  assert.equal(prepared.preparation_diagnostics.upload_verify_attempts, 2);
+  assert.ok(Number.isFinite(prepared.preparation_diagnostics.upload_verify_max_latency_ms));
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-asset-create").length, 1);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-upload-url").length, 2);
   assert.equal(calls.filter((call) => call.pathname.startsWith("/upload/") && call.method === "PUT").length, 2);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-upload").length, 2);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-existing").length, 0);
+  const reuseCalls = [];
+  const reused = await prepareDurableSmokeItem({
+    item: {
+      asset_id: "ebay_legacy_source",
+      source_feedback_id: "ebay:image-only:source",
+      category: "collectible_card",
+      images: [
+        { image_id: "source-one", local_path: firstPath, content_type: "image/jpeg", width: 520, height: 800 },
+        { image_id: "source-two", local_path: secondPath, content_type: "image/jpeg", width: 520, height: 800 }
+      ]
+    },
+    index: 0,
+    baseUrl: "https://listing.example",
+    cookie: "session=test",
+    requestTimeoutMs: 5000,
+    cachedAssetEntry: prepared.asset_cache_entry,
+    fetchImpl: async (...args) => {
+      reuseCalls.push(args);
+      throw new Error("verified asset reuse must not call signing, PUT, or verification endpoints");
+    }
+  });
+  assert.equal(reused.asset.asset_id, durableAssetId);
+  assert.deepEqual(reused.images, []);
+  assert.equal(reused.preparation_diagnostics.asset_cache_hit, true);
+  assert.equal(reused.preparation_diagnostics.upload_skipped_due_to_verified_asset_cache, true);
+  assert.equal(reuseCalls.length, 0);
+  assert.deepEqual(durableUploadResilienceContract, {
+    verification_timeout_ms: 20_000,
+    verification_max_attempts: 3,
+    preparation_recovery_rounds: 1,
+    preparation_recovery_concurrency: 1
+  });
+
+  const verifyAttemptsByImage = new Map();
+  const transientVerifyFetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/api/listing-image-verify-upload") {
+      const body = JSON.parse(String(init.body || "{}"));
+      const attempts = (verifyAttemptsByImage.get(body.imageId) || 0) + 1;
+      verifyAttemptsByImage.set(body.imageId, attempts);
+      if (attempts < durableUploadResilienceContract.verification_max_attempts) {
+        return jsonResponse({
+          ok: false,
+          retryable: true,
+          code: "storage_verification_temporarily_unavailable"
+        }, 503);
+      }
+    }
+    return fetchImpl(input, init);
+  };
+  const recovered = await prepareDurableSmokeItem({
+    item: {
+      asset_id: "retryable-source",
+      source_feedback_id: "retryable-source",
+      category: "collectible_card",
+      images: [
+        { image_id: "retryable-image", local_path: firstPath, content_type: "image/jpeg", width: 520, height: 800 }
+      ]
+    },
+    index: 1,
+    baseUrl: "https://listing.example",
+    cookie: "session=test",
+    requestTimeoutMs: 5000,
+    fetchImpl: transientVerifyFetch
+  });
+  assert.equal(verifyAttemptsByImage.get("retryable-image"), 3);
+  assert.equal(recovered.images[0].smoke_upload_verify_attempts, 3);
+  assert.equal(recovered.images[0].smoke_upload_recovered_by_retry, true);
+  assert.equal(recovered.preparation_diagnostics.upload_verify_attempts, 3);
 
   const canonicalImages = prepared.images.map((image) => ({ ...image }));
   const canonicalReferences = canonicalImages.map((image, index) => ({

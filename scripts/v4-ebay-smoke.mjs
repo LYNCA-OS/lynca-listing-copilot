@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,23 @@ import {
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+export const durableUploadResilienceContract = Object.freeze({
+  verification_timeout_ms: 20_000,
+  verification_max_attempts: 3,
+  preparation_recovery_rounds: 1,
+  preparation_recovery_concurrency: 1
+});
+
+export const verifiedAssetCacheContract = Object.freeze({
+  schema_version: "listing-verified-asset-cache-v1",
+  modes: ["disabled", "reuse", "refresh"]
+});
+
+function deploymentProtectionHeaders(env = process.env) {
+  const bypassSecret = cleanText(env.VERCEL_AUTOMATION_BYPASS_SECRET);
+  return bypassSecret ? { "x-vercel-protection-bypass": bypassSecret } : {};
 }
 
 function argValue(argv, name, fallback = "") {
@@ -72,6 +89,41 @@ async function writeJson(path, value) {
   const resolved = resolve(path);
   if (!existsSync(dirname(resolved))) await mkdir(dirname(resolved), { recursive: true });
   await writeFile(resolved, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function normalizeVerifiedAssetCacheMode(value = "disabled") {
+  const mode = cleanText(value).toLowerCase() || "disabled";
+  if (!verifiedAssetCacheContract.modes.includes(mode)) {
+    throw new Error(`unsupported verified asset cache mode: ${mode}`);
+  }
+  return mode;
+}
+
+export async function readVerifiedAssetCache(path = "") {
+  if (!cleanText(path)) return new Map();
+  try {
+    const payload = JSON.parse(await readFile(resolve(path), "utf8"));
+    if (payload.schema_version !== verifiedAssetCacheContract.schema_version) {
+      throw new Error("unsupported verified asset cache schema");
+    }
+    return new Map(Object.entries(payload.entries || {}));
+  } catch (error) {
+    if (error?.code === "ENOENT") return new Map();
+    throw error;
+  }
+}
+
+export async function writeVerifiedAssetCache(path = "", entries = new Map()) {
+  if (!cleanText(path)) return;
+  const output = resolve(path);
+  await mkdir(dirname(output), { recursive: true });
+  const temporary = `${output}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  await writeFile(temporary, `${JSON.stringify({
+    schema_version: verifiedAssetCacheContract.schema_version,
+    updated_at: new Date().toISOString(),
+    entries: Object.fromEntries([...entries.entries()].sort(([left], [right]) => left.localeCompare(right)))
+  }, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, output);
 }
 
 async function writeText(path, value) {
@@ -146,6 +198,63 @@ function smokeUploadSources(item = {}, index = 0) {
       storage_role: `image_${imageIndex + 1}_original`,
       capture_angle: `image_${imageIndex + 1}`
     }));
+}
+
+export async function durableSourceFingerprint(item = {}, index = 0) {
+  const sources = (Array.isArray(item.images) ? item.images : []).slice(0, 2);
+  if (!sources.length) {
+    throw new Error(`smoke_images_missing:${candidateId(item, index)}`);
+  }
+  const images = [];
+  for (const image of sources) {
+    const immutableSourceLocator = `${cleanText(image.bucket)}:${cleanText(image.object_path || image.objectPath)}`;
+    const hasImmutableSourceLocator = immutableSourceLocator !== ":";
+    const declaredSha256 = cleanText(image.content_sha256 || image.contentSha256).toLowerCase();
+    const contentSha256 = hasImmutableSourceLocator
+      ? null
+      : /^[a-f0-9]{64}$/.test(declaredSha256)
+        ? declaredSha256
+        : cleanText(image.local_path || image.localPath)
+          ? crypto.createHash("sha256").update(await readFile(resolve(image.local_path || image.localPath))).digest("hex")
+          : null;
+    if (!contentSha256 && !hasImmutableSourceLocator) {
+      throw new Error(`smoke_image_fingerprint_missing:${cleanText(image.image_id) || candidateId(item, index)}`);
+    }
+    images.push({
+      image_id: cleanText(image.image_id),
+      role: cleanText(image.storage_role || image.role),
+      content_sha256: contentSha256,
+      immutable_source_locator: hasImmutableSourceLocator ? immutableSourceLocator : null,
+      width: Number(image.width) || null,
+      height: Number(image.height) || null
+    });
+  }
+  const stableSourceId = cleanText(
+    item.source_feedback_id
+    || item.source_record_id
+    || item.physical_card_id
+    || item.source_asset_id
+    || candidateId(item, index)
+  );
+  return crypto.createHash("sha256").update(JSON.stringify({
+    stable_source_id: stableSourceId,
+    images
+  })).digest("hex");
+}
+
+function reusableAssetEntry(entry = {}, { fingerprint = "", sourceAssetId = "" } = {}) {
+  if (!entry || typeof entry !== "object") return null;
+  if (
+    cleanText(entry.fingerprint) !== cleanText(fingerprint)
+    || !cleanText(entry.asset_id)
+    || !cleanText(entry.tenant_id)
+    || !cleanText(entry.image_generation_id)
+  ) return null;
+  // A manifest-local asset id is allowed to change between random draws. The
+  // fingerprint already binds the stable source identity and immutable image
+  // locators/content, so source_asset_id is diagnostic rather than identity.
+  if (!cleanText(sourceAssetId)) return null;
+  return entry;
 }
 
 function smokeClientAssetRef(item = {}, index = 0) {
@@ -293,9 +402,12 @@ async function uploadDurableSmokeImage({
       signatureHex,
       contentSha256
     },
-    requestTimeoutMs,
+    requestTimeoutMs: Math.min(
+      requestTimeoutMs,
+      durableUploadResilienceContract.verification_timeout_ms
+    ),
     fetchImpl,
-    maxAttempts: 5
+    maxAttempts: durableUploadResilienceContract.verification_max_attempts
   });
   const verified = verification.data?.verification || {};
   if (!verification.ok || verification.data?.ok !== true || !cleanText(verified.verification_token)) {
@@ -341,7 +453,12 @@ async function uploadDurableSmokeImage({
     storageTenantId: asset.tenant_id,
     storage_tenant_id: asset.tenant_id,
     smoke_upload_sign_attempts: signed.attempts,
+    smoke_upload_sign_latency_ms: signed.latency_ms,
+    smoke_storage_put_attempts: put.attempts,
+    smoke_storage_put_latency_ms: put.elapsed_ms,
     smoke_upload_verify_attempts: verification.attempts,
+    smoke_upload_verify_latency_ms: verification.latency_ms,
+    smoke_upload_verify_server_timing: verification.data?.verification_timing || null,
     smoke_upload_recovered_by_retry: signed.retried === true || verification.retried === true
   };
 }
@@ -352,9 +469,49 @@ export async function prepareDurableSmokeItem({
   baseUrl,
   cookie,
   requestTimeoutMs,
+  sourceFingerprint = "",
+  cachedAssetEntry = null,
   fetchImpl = globalThis.fetch
 }) {
   const sourceAssetId = candidateId(item, index);
+  const fingerprint = cleanText(sourceFingerprint) || await durableSourceFingerprint(item, index);
+  const cached = reusableAssetEntry(cachedAssetEntry, { fingerprint, sourceAssetId });
+  if (cached) {
+    return {
+      source_asset_id: sourceAssetId,
+      asset: {
+        asset_id: cached.asset_id,
+        tenant_id: cached.tenant_id,
+        image_generation_id: cached.image_generation_id,
+        client_asset_ref: null,
+        sources: []
+      },
+      item: {
+        ...item,
+        asset_id: cached.asset_id,
+        image_generation_id: cached.image_generation_id,
+        source_feedback_id: item.source_feedback_id || sourceAssetId
+      },
+      // Pre-ingest and enqueue reconstruct canonical references server-side
+      // from this already verified asset generation.
+      images: [],
+      asset_cache_entry: cached,
+      preparation_diagnostics: {
+        asset_cache_hit: true,
+        upload_skipped_due_to_verified_asset_cache: true,
+        source_fingerprint: fingerprint,
+        asset_create_attempts: 0,
+        upload_sign_attempts: 0,
+        upload_sign_max_latency_ms: 0,
+        storage_put_attempts: 0,
+        storage_put_max_latency_ms: 0,
+        upload_verify_attempts: 0,
+        upload_verify_max_latency_ms: 0,
+        upload_verify_server_timings: [],
+        recovered_by_retry: false
+      }
+    };
+  }
   const asset = await createDurableSmokeAsset({
     baseUrl,
     cookie,
@@ -383,10 +540,28 @@ export async function prepareDurableSmokeItem({
       source_feedback_id: item.source_feedback_id || sourceAssetId
     },
     images: verified,
+    asset_cache_entry: {
+      fingerprint,
+      source_asset_id: sourceAssetId,
+      source_feedback_id: cleanText(item.source_feedback_id || item.source_record_id) || null,
+      asset_id: asset.asset_id,
+      tenant_id: asset.tenant_id,
+      image_generation_id: asset.image_generation_id,
+      image_count: verified.length,
+      verified_at: new Date().toISOString()
+    },
     preparation_diagnostics: {
+      asset_cache_hit: false,
+      upload_skipped_due_to_verified_asset_cache: false,
+      source_fingerprint: fingerprint,
       asset_create_attempts: Number(asset.smoke_asset_create_attempts || 1),
       upload_sign_attempts: verified.reduce((sum, image) => sum + Number(image.smoke_upload_sign_attempts || 1), 0),
+      upload_sign_max_latency_ms: Math.max(...verified.map((image) => Number(image.smoke_upload_sign_latency_ms || 0))),
+      storage_put_attempts: verified.reduce((sum, image) => sum + Number(image.smoke_storage_put_attempts || 1), 0),
+      storage_put_max_latency_ms: Math.max(...verified.map((image) => Number(image.smoke_storage_put_latency_ms || 0))),
       upload_verify_attempts: verified.reduce((sum, image) => sum + Number(image.smoke_upload_verify_attempts || 1), 0),
+      upload_verify_max_latency_ms: Math.max(...verified.map((image) => Number(image.smoke_upload_verify_latency_ms || 0))),
+      upload_verify_server_timings: verified.map((image) => image.smoke_upload_verify_server_timing).filter(Boolean),
       recovered_by_retry: asset.smoke_asset_create_recovered_by_retry === true
         || verified.some((image) => image.smoke_upload_recovered_by_retry === true)
     }
@@ -479,7 +654,10 @@ async function readJsonResponse(response) {
 export async function login({ baseUrl, username, password, fetchImpl = globalThis.fetch }) {
   const response = await fetchImpl(`${baseUrl}/api/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...deploymentProtectionHeaders()
+    },
     body: JSON.stringify({ username, password })
   });
   const payload = await readJsonResponse(response);
@@ -506,6 +684,7 @@ async function postJson({
       method: "POST",
       headers: {
         "content-type": "application/json",
+        ...deploymentProtectionHeaders(),
         // undici 的 keep-alive 套接字一旦僵死会级联拖垮后续同源请求
         //（表现为成串的 45s request_timeout）；烟测逐请求关闭连接复用。
         connection: "close",
@@ -544,7 +723,11 @@ async function getJson({ baseUrl, path, cookie, requestTimeoutMs, fetchImpl = gl
   try {
     const response = await fetchImpl(`${baseUrl}${path}`, {
       method: "GET",
-      headers: { connection: "close", cookie },
+      headers: {
+        connection: "close",
+        cookie,
+        ...deploymentProtectionHeaders()
+      },
       signal: controller.signal
     });
     const data = await readJsonResponse(response);
@@ -2365,18 +2548,23 @@ async function enqueueSpeculativeItem({
   preingestionSource,
   requestTimeoutMs,
   verificationCache,
+  sourceFingerprint = "",
+  cachedAssetEntry = null,
   enqueueGate = async (task) => task()
 }) {
   const sourceAssetId = candidateId(item, index);
   let id = sourceAssetId;
+  let preparedItem = null;
   const startedAt = Date.now();
   try {
-    const preparedItem = await prepareDurableSmokeItem({
+    preparedItem = await prepareDurableSmokeItem({
       item,
       index,
       baseUrl,
       cookie,
-      requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      requestTimeoutMs: Math.min(requestTimeoutMs, 45000),
+      sourceFingerprint,
+      cachedAssetEntry
     });
     id = preparedItem.asset.asset_id;
     const runtimeItem = preparedItem.item;
@@ -2477,6 +2665,7 @@ async function enqueueSpeculativeItem({
     return {
       asset_id: id,
       source_asset_id: sourceAssetId,
+      source_feedback_id: runtimeItem.source_feedback_id || null,
       index,
       item,
       batch_id: canonicalBatchId,
@@ -2489,6 +2678,7 @@ async function enqueueSpeculativeItem({
       enqueue_latency_ms: Date.now() - enqueueStartedAt,
       preparation_latency_ms: Date.now() - startedAt,
       preparation_diagnostics: preparedItem.preparation_diagnostics || null,
+      asset_cache_entry: preparedItem.asset_cache_entry || null,
       enqueue_attempts: Number(enqueue.attempts || 1),
       enqueue_recovered_by_retry: enqueue.retried === true,
       preingestion: preingestionResult,
@@ -2499,6 +2689,7 @@ async function enqueueSpeculativeItem({
     return {
       asset_id: id,
       source_asset_id: sourceAssetId,
+      source_feedback_id: item.source_feedback_id || item.source_record_id || null,
       index,
       item,
       batch_id: batchId,
@@ -2507,7 +2698,8 @@ async function enqueueSpeculativeItem({
       enqueue: null,
       enqueue_latency_ms: null,
       preparation_latency_ms: Date.now() - startedAt,
-      preparation_diagnostics: null,
+      preparation_diagnostics: preparedItem?.preparation_diagnostics || null,
+      asset_cache_entry: preparedItem?.asset_cache_entry || null,
       enqueue_attempts: null,
       enqueue_recovered_by_retry: false,
       preingestion: null,
@@ -2535,7 +2727,8 @@ async function pollBatchJobs({
   batchId,
   expectedJobIds = [],
   waitMs,
-  requestTimeoutMs
+  requestTimeoutMs,
+  progress = false
 }) {
   const expected = new Set(expectedJobIds.filter(Boolean));
   const jobsById = new Map();
@@ -2589,10 +2782,16 @@ async function pollBatchJobs({
     for (const job of last.data?.jobs || []) {
       if (job?.job_id) jobsById.set(job.job_id, job);
     }
-    const writerReadyComplete = [...expected].every((jobId) => {
+    const completedCount = [...expected].filter((jobId) => {
       const job = jobsById.get(jobId);
       return job && (job.status === "L2_READY" || terminalJobStatus(job.status) || job.display_status === "FINAL_READY");
-    });
+    }).length;
+    const writerReadyComplete = completedCount === expected.size;
+    if (progress && (polls === 1 || polls % 20 === 0 || writerReadyComplete)) {
+      process.stderr.write(
+        `v4 ebay smoke batch poll ready=${completedCount}/${expected.size} polls=${polls} elapsed=${Date.now() - startedAt}ms\n`
+      );
+    }
     if (writerReadyComplete && writerReadyAt === null) writerReadyAt = Date.now();
     const persistenceComplete = writerReadyComplete && [...expected].every((jobId) => persistenceTerminalForJob(jobsById.get(jobId)));
     if (persistenceComplete || (writerReadyAt !== null && Date.now() - writerReadyAt >= 8_000)) break;
@@ -2651,6 +2850,8 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
   if (prepared.error || !prepared.job?.job_id) {
     return {
       asset_id: prepared.asset_id,
+      source_asset_id: prepared.source_asset_id || null,
+      source_feedback_id: prepared.source_feedback_id || prepared.item?.source_feedback_id || null,
       expected_tenant_id: prepared.tenant_id || null,
       observed_tenant_id: null,
       tenant_isolation_measured: false,
@@ -2666,6 +2867,8 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
       preparation_latency_ms: prepared.preparation_latency_ms ?? null,
       enqueue_latency_ms: prepared.enqueue_latency_ms ?? null,
       preparation_diagnostics: prepared.preparation_diagnostics || null,
+      preparation_cache_hit: prepared.preparation_diagnostics?.asset_cache_hit === true,
+      upload_skipped_due_to_verified_asset_cache: prepared.preparation_diagnostics?.upload_skipped_due_to_verified_asset_cache === true,
       enqueue_attempts: prepared.enqueue_attempts ?? null,
       enqueue_recovered_by_retry: prepared.enqueue_recovered_by_retry === true
     };
@@ -2696,6 +2899,8 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
   const prewarm = prepared.prewarm || {};
   return compactObject({
     asset_id: prepared.asset_id,
+    source_asset_id: prepared.source_asset_id || null,
+    source_feedback_id: prepared.source_feedback_id || prepared.item?.source_feedback_id || null,
     sealed_label_key: prepared.item?.sealed_eval_label_ref?.key || null,
     seller_title_visible_to_model: false,
     seller_title_used_for_local_eval_only: false,
@@ -2736,6 +2941,8 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     preparation_latency_ms: prepared.preparation_latency_ms ?? null,
     enqueue_latency_ms: prepared.enqueue_latency_ms ?? null,
     preparation_diagnostics: prepared.preparation_diagnostics || null,
+    preparation_cache_hit: prepared.preparation_diagnostics?.asset_cache_hit === true,
+    upload_skipped_due_to_verified_asset_cache: prepared.preparation_diagnostics?.upload_skipped_due_to_verified_asset_cache === true,
     preparation_recovered_by_retry: prepared.preparation_diagnostics?.recovered_by_retry === true,
     enqueue_attempts: prepared.enqueue_attempts ?? null,
     enqueue_recovered_by_retry: prepared.enqueue_recovered_by_retry === true,
@@ -4060,9 +4267,12 @@ export async function runV4EbaySmoke({
   tenantCount = 1,
   tenantPrefix = "",
   batchPoll = true,
+  batchId = "",
   resumeBatchId = "",
   evaluationSampleMode = "UNSPECIFIED",
   coldStartBlind = false,
+  verifiedAssetCachePath = "",
+  verifiedAssetCacheMode = "disabled",
   outPath = "",
   progress = true
 } = {}) {
@@ -4077,8 +4287,12 @@ export async function runV4EbaySmoke({
   );
   const normalizedPreparationConcurrency = Math.max(
     1,
-    Math.min(24, Math.trunc(Number(preparationConcurrency ?? 2) || 1))
+    Math.min(24, Math.trunc(Number(preparationConcurrency ?? 3) || 1))
   );
+  const normalizedVerifiedAssetCacheMode = normalizeVerifiedAssetCacheMode(verifiedAssetCacheMode);
+  if (normalizedVerifiedAssetCacheMode !== "disabled" && !cleanText(verifiedAssetCachePath)) {
+    throw new Error("verifiedAssetCachePath is required when verified asset cache is enabled");
+  }
   const dataset = await readDataset(datasetPath);
   const datasetSamplePolicy = Array.isArray(dataset) ? null : dataset.evaluation_sample_policy || null;
   const sampleProvenance = assertEvaluationSampleProvenance({
@@ -4087,6 +4301,9 @@ export async function runV4EbaySmoke({
   });
   const items = loadDatasetItems(dataset).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
   if (!items.length) throw new Error("dataset slice has no items");
+  const assetCacheEntries = normalizedVerifiedAssetCacheMode === "disabled"
+    ? new Map()
+    : await readVerifiedAssetCache(verifiedAssetCachePath);
   const cookie = await login({ baseUrl, username, password });
   let executionControlSnapshot = null;
   let executionControlError = null;
@@ -4126,7 +4343,7 @@ export async function runV4EbaySmoke({
     providerConcurrency: batchPollProviderConcurrency
   });
   if (queueMode && speculative && batchPoll) {
-    sharedBatchId = cleanText(resumeBatchId) || `smoke-v4-batch-${Date.now()}`;
+    sharedBatchId = cleanText(resumeBatchId) || cleanText(batchId) || `smoke-v4-batch-${Date.now()}`;
     let prepared;
     if (resumeBatchId) {
       const existingJobs = await loadExistingBatchJobs({
@@ -4167,9 +4384,16 @@ export async function runV4EbaySmoke({
     } else {
       const verificationCache = new Map();
       const enqueueGate = createConcurrencyGate(normalizedSubmissionConcurrency);
-      prepared = await mapWithConcurrency(items, normalizedPreparationConcurrency, async (item, localIndex) => {
+      const sourceFingerprints = await Promise.all(items.map((item, localIndex) => (
+        durableSourceFingerprint(item, offset + localIndex)
+      )));
+      const prepareOne = async (item, localIndex, { recovery = false } = {}) => {
         const index = offset + localIndex;
-        if (progress) process.stderr.write(`v4 ebay smoke enqueue ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
+        const sourceFingerprint = sourceFingerprints[localIndex];
+        const cachedAssetEntry = !recovery && normalizedVerifiedAssetCacheMode === "reuse"
+          ? assetCacheEntries.get(sourceFingerprint) || null
+          : null;
+        if (progress) process.stderr.write(`v4 ebay smoke ${recovery ? "recover" : "enqueue"} ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
         const row = await enqueueSpeculativeItem({
           item,
           index,
@@ -4199,11 +4423,43 @@ export async function runV4EbaySmoke({
           preingestionSource,
           requestTimeoutMs,
           verificationCache,
+          sourceFingerprint,
+          cachedAssetEntry,
           enqueueGate
         });
+        row.preparation_recovery_attempted = recovery;
         if (progress) process.stderr.write(`  enqueued=${Boolean(row.job?.job_id)} prepare=${row.preparation_latency_ms}ms error=${row.error || "none"}\n`);
         return row;
-      });
+      };
+      prepared = await mapWithConcurrency(items, normalizedPreparationConcurrency, (item, localIndex) => (
+        prepareOne(item, localIndex)
+      ));
+      const failedIndexes = prepared
+        .map((row, localIndex) => row?.job?.job_id ? null : localIndex)
+        .filter((localIndex) => localIndex !== null);
+      if (failedIndexes.length && durableUploadResilienceContract.preparation_recovery_rounds > 0) {
+        for (const localIndex of failedIndexes) {
+          if (prepared[localIndex]?.preparation_diagnostics?.asset_cache_hit === true) {
+            assetCacheEntries.delete(sourceFingerprints[localIndex]);
+          }
+        }
+        if (progress) process.stderr.write(`v4 ebay smoke bounded recovery missing=${failedIndexes.length}/${items.length}\n`);
+        const recoveredRows = await mapWithConcurrency(
+          failedIndexes,
+          durableUploadResilienceContract.preparation_recovery_concurrency,
+          (localIndex) => prepareOne(items[localIndex], localIndex, { recovery: true })
+        );
+        failedIndexes.forEach((localIndex, recoveryIndex) => {
+          prepared[localIndex] = recoveredRows[recoveryIndex];
+        });
+      }
+      if (normalizedVerifiedAssetCacheMode !== "disabled") {
+        for (const row of prepared) {
+          const entry = row?.asset_cache_entry;
+          if (entry?.fingerprint && entry?.asset_id) assetCacheEntries.set(entry.fingerprint, entry);
+        }
+        await writeVerifiedAssetCache(verifiedAssetCachePath, assetCacheEntries);
+      }
     }
     sharedBatchId = canonicalBatchIdForPoll(prepared, sharedBatchId);
     batchPollMetrics = await pollBatchJobs({
@@ -4212,7 +4468,8 @@ export async function runV4EbaySmoke({
       batchId: sharedBatchId,
       expectedJobIds: prepared.map((row) => row.job?.job_id).filter(Boolean),
       waitMs: effectiveBatchPollWaitMs,
-      requestTimeoutMs
+      requestTimeoutMs,
+      progress
     });
     recognitionResults = prepared.map((row) => resultFromBatchJob(row, batchPollMetrics, thinkMs));
   } else {
@@ -4298,6 +4555,14 @@ export async function runV4EbaySmoke({
     concurrency,
     submission_concurrency: normalizedSubmissionConcurrency,
     preparation_concurrency: normalizedPreparationConcurrency,
+    verified_asset_cache: {
+      mode: normalizedVerifiedAssetCacheMode,
+      path: cleanText(verifiedAssetCachePath) ? resolve(verifiedAssetCachePath) : null,
+      hit_count: results.filter((item) => item.preparation_cache_hit === true).length,
+      miss_count: results.filter((item) => item.preparation_cache_hit !== true).length,
+      upload_skipped_count: results.filter((item) => item.upload_skipped_due_to_verified_asset_cache === true).length
+    },
+    durable_upload_resilience_contract: durableUploadResilienceContract,
     provider_concurrency: numberOrNull(executionControlSnapshot?.global_provider_concurrency),
     execution_control_snapshot: executionControlSnapshot,
     execution_control_error: executionControlError,
@@ -4469,6 +4734,8 @@ export async function main(argv = process.argv, env = process.env) {
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
     coldStartBlind: hasFlag(argv, "--cold-start-blind"),
+    verifiedAssetCachePath: cleanText(argValue(argv, "--verified-asset-cache", "")),
+    verifiedAssetCacheMode: cleanText(argValue(argv, "--verified-asset-cache-mode", "disabled")),
     outPath,
     progress: !hasFlag(argv, "--quiet")
   });

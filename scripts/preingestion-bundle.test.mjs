@@ -86,7 +86,7 @@ const currentPatchSet = currentPreingestionEvidencePatches([
     field: "serial_number",
     value: "242/250",
     source_type: "OCR",
-    provenance: { job_key: "ocr:ocr-crop-v7:bundle:serial" }
+    provenance: { job_key: "ocr:ocr-crop-v8:bundle:serial" }
   },
   {
     field: "serial_number",
@@ -195,8 +195,12 @@ assert.deepEqual(summaryWithOcrExecution.ocr_stage_execution, {
 // enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
-assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v7:")));
-assert.ok(jobs.every((job) => ["serial_crop", "card_code_crop", "grade_label_crop"].includes(job.payload.crop.role)));
+assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v8:")));
+assert.deepEqual(
+  jobs.map((job) => `${job.payload.crop.crop_metadata.source_side}:${job.payload.crop.role}`).sort(),
+  ["back:card_code_crop", "front:serial_crop"],
+  "raw front/back cards must enqueue only the highest-value crop for each hard-text field"
+);
 assert.ok(!jobs.some((job) => ["year_product_crop", "subject_crop"].includes(job.payload.crop.role)));
 assert.equal(
   new Set(jobs.map((job) => `${job.payload.crop.source_image_id}:${job.payload.crop.role}`)).size,
@@ -206,6 +210,20 @@ assert.equal(
 assert.ok(jobs.filter((job) => job.payload.crop.role === "card_code_crop").every((job) => job.priority === 10));
 assert.ok(jobs.filter((job) => job.payload.crop.role === "serial_crop").every((job) => job.priority === 12));
 assert.ok(jobs.filter((job) => job.payload.crop.role === "grade_label_crop").every((job) => job.priority === 14));
+const slabJobs = buildPreingestionWorkerJobs({
+  bundle: {
+    ...bundle,
+    crop_plan: bundle.crop_plan.map((crop) => ({
+      ...crop,
+      crop_metadata: {
+        ...crop.crop_metadata,
+        source_width: 800,
+        source_height: 1400
+      }
+    }))
+  }
+});
+assert.equal(slabJobs.filter((job) => job.payload.crop.role === "grade_label_crop").length, 1);
 const detailJobs = buildPreingestionWorkerJobs({ bundle, enableOcrDetail: true });
 assert.ok(detailJobs.some((job) => job.payload.crop.role === "year_product_crop" && job.priority === 30));
 assert.ok(detailJobs.some((job) => job.payload.crop.role === "subject_crop" && job.priority === 35));
@@ -729,3 +747,49 @@ assert.equal(missingApplied.applied, false);
 assert.equal(missingPayload.preingestion_bundle_used, false);
 
 console.log("preingestion bundle tests passed");
+
+// ---- printed season-range year evidence ------------------------------------
+// Only a PRINTED season range read off the card is decisive for season
+// products; a bare copyright year (©2025 fits both 2024-25 and 2025-26) must
+// never become year evidence.
+{
+  const seasonDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+    preingestion_evidence_patches: [
+      {
+        field: "year_product",
+        value: "2025/26",
+        raw_text: "2025/26 TOPPS CHROME BASKETBALL",
+        source_type: "OCR",
+        source_image_id: "back",
+        crop_id: "year-product",
+        confidence: 0.94,
+        provenance: { crop_type: "year_product_crop" }
+      },
+      {
+        field: "copyright_year",
+        value: "2025",
+        raw_text: "© 2025 THE TOPPS COMPANY",
+        source_type: "OCR",
+        source_image_id: "back",
+        confidence: 0.97
+      }
+    ]
+  });
+  assert.equal(seasonDocument.evidence.year.value, "2025-26", "printed season range is admitted and canonicalized to dash form");
+  assert.equal(seasonDocument.resolved.year, "2025-26");
+  assert.equal(seasonDocument.evidence.year.candidates.length, 1, "the bare copyright year must be rejected, not merged as a candidate");
+
+  const copyrightOnly = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
+    preingestion_evidence_patches: [{
+      field: "copyright_year",
+      value: "2025",
+      raw_text: "© 2025 THE TOPPS COMPANY",
+      source_type: "OCR",
+      source_image_id: "back",
+      confidence: 0.97
+    }]
+  });
+  assert.equal(copyrightOnly, null, "a bare copyright year alone yields no evidence document");
+}
+
+console.log("pre-ingestion bundle tests passed");

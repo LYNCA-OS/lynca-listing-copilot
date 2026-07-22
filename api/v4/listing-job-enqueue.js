@@ -41,6 +41,7 @@ import {
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { invokeTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
+import { v4DurableQueueDrainContract } from "../../lib/listing/v4/jobs/queue-drain-contract.mjs";
 import { configuredWorkerSecret } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
@@ -465,15 +466,8 @@ export function triggerV4QueuePumpAfterEnqueue(_req, {
     interactive_process_concurrency: interactiveConcurrency,
     background_limit: backgroundLimit,
     background_process_concurrency: backgroundConcurrency,
-    cycles: 1,
-    max_runtime_ms: 120_000,
-    lease_seconds: 120,
+    ...v4DurableQueueDrainContract(),
     parallel_lanes: true,
-    idle_delay_ms: 0,
-    idle_cycles_before_stop: 1,
-    background_idle_cycles: 1,
-    continuation_cycles: 1,
-    max_continuation_depth: 100,
     reason: "post_enqueue"
   };
   const kickOwner = `enqueue-${String(batchId || tenantId || "batch").slice(0, 72)}-${Date.now().toString(36)}`;

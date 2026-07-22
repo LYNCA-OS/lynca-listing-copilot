@@ -18,6 +18,8 @@ from app.pipelines.glare_detection import detect_glare_from_array
 from app.pipelines.image_loader import ImageLoadError, LoadedImage, load_signed_image
 from app.pipelines.image_quality import measure_image_quality_from_array
 from app.pipelines.multi_card_detection import detect_multi_card_from_array
+from app.pipelines import ocr_pipeline
+from app.pipelines.ocr_pipeline import copyright_year_evidence_from_confirmed_grid
 from app.pipelines.ocr_pipeline import ocr_evidence_from_items, ocr_evidence_from_loaded_images
 from app.pipelines.region_proposal import propose_regions_for_rectified_card
 from app.pipelines.visual_embeddings import (
@@ -73,7 +75,13 @@ class RecognitionWorkerTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[3]
         deploy_script = (repo_root / "scripts" / "deploy-recognition-worker-cloud-run.sh").read_text(encoding="utf-8")
 
-        self.assertIn('ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-5}"', deploy_script)
+        self.assertIn('ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-2}"', deploy_script)
+        self.assertIn('gcloud run services describe "$SERVICE_NAME"', deploy_script)
+        self.assertGreaterEqual(
+            deploy_script.count('--min "$ROLLOUT_MIN_INSTANCES"'),
+            2,
+            "service minScale must be lowered before the overlapping revision is created",
+        )
         self.assertIn('--min "$ROLLOUT_MIN_INSTANCES"', deploy_script)
         self.assertIn('--min-instances default', deploy_script)
         self.assertIn('--max-instances "$MAX_INSTANCES"', deploy_script)
@@ -237,7 +245,7 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["raw_text"], "31/50")
         self.assertNotIn("token=secret", str(result))
 
-    def test_ocr_field_payload_reuses_loaded_image_for_inline_serial_fallback(self):
+    def test_ocr_field_payload_does_not_expand_serial_crop_to_full_image(self):
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
         os.environ["ENABLE_PADDLEOCR"] = "true"
         loaded = LoadedImage(
@@ -272,34 +280,31 @@ class RecognitionWorkerTests(unittest.TestCase):
             "model_id": "paddleocr",
             "model_revision": "",
         }
-        fallback = {
-            "request_id": "ocr_inline:full-image",
-            "crop_type": "serial_number",
-            "status": "OK",
-            "raw_text": "31/50",
-            "text_candidates": [{"text": "31/50", "confidence": 0.94}],
-            "boxes": [],
-            "confidence": 0.94,
-            "latency_ms": 13,
-            "model_id": "paddleocr",
-            "model_revision": "",
-        }
-
         with patch("app.main.load_signed_image", return_value=loaded) as load_mock:
-            with patch("app.main.ocr_field_from_loaded_image", side_effect=[primary, fallback]) as ocr_mock:
+            with patch("app.main.ocr_field_from_loaded_image", return_value=primary) as ocr_mock:
                 result = ocr_field_payload(payload, authorization="Bearer test-token")
 
         load_mock.assert_called_once()
-        self.assertEqual(ocr_mock.call_count, 2)
+        self.assertEqual(ocr_mock.call_count, 1)
         self.assertEqual(ocr_mock.call_args_list[0].kwargs["crop_box"], payload["crop_box"])
-        self.assertIsNone(ocr_mock.call_args_list[1].kwargs["crop_box"])
-        self.assertEqual(result["raw_text"], "31/50")
-        self.assertTrue(result["inline_full_image_fallback_evaluated"])
-        self.assertTrue(result["inline_full_image_fallback_used"])
-        self.assertTrue(result["inline_full_image_fallback_target_found"])
+        self.assertEqual(result["raw_text"], "")
+        self.assertFalse(result["inline_full_image_fallback_evaluated"])
+        self.assertFalse(result["inline_full_image_fallback_used"])
+        self.assertFalse(result["inline_full_image_fallback_target_found"])
         self.assertEqual(result["primary_ocr_latency_ms"], 8)
-        self.assertEqual(result["fallback_ocr_latency_ms"], 13)
         self.assertNotIn("token=secret", str(result))
+
+    def test_tight_serial_crop_uses_recognition_when_detector_misses_foil_text(self):
+        array = np.zeros((100, 320, 3), dtype=np.uint8)
+        with patch("app.pipelines.ocr_pipeline._run_paddleocr", return_value=[]):
+            with patch(
+                "app.pipelines.ocr_pipeline._run_serial_line_recognition",
+                return_value=[{"text": "004/101", "confidence": 0.93, "box": None}],
+            ) as recognition_mock:
+                candidates = ocr_pipeline._run_serial_paddleocr(array)
+
+        recognition_mock.assert_called_once()
+        self.assertEqual(candidates[0]["text"], "004/101")
 
     def test_ocr_field_payload_focuses_missing_grade_company_before_full_image(self):
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
@@ -700,7 +705,90 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertTrue(detection["multi_card"])
         self.assertGreaterEqual(detection["card_count_estimate"], 2)
         self.assertFalse(detection["card_count_confirmed"])
-        self.assertEqual(detection["algorithm"], "redundant_numpy_opencv_card_count_r2")
+        self.assertEqual(detection["algorithm"], "redundant_numpy_opencv_grid_card_count_r4")
+
+    def test_multi_card_detection_confirms_three_large_independent_cards(self):
+        image = np.zeros((1200, 1200, 3), dtype=np.uint8)
+        image[80:530, 100:430] = 210
+        image[80:530, 760:1090] = 215
+        image[670:1120, 435:765] = 205
+
+        detection = detect_multi_card_from_array(image, image_id="lot", role="image_1_original")
+
+        self.assertTrue(detection["multi_card"])
+        self.assertEqual(detection["card_count_estimate"], 3)
+        self.assertTrue(detection["card_count_confirmed"])
+        self.assertEqual(detection["algorithm"], "redundant_numpy_opencv_grid_card_count_r4")
+
+    def test_multi_card_detection_recovers_tight_two_by_two_grid_from_three_contours(self):
+        image = np.zeros((1400, 1050, 3), dtype=np.uint8)
+        # Four touching card cells share a strong central cross. One cell lacks
+        # its outer border, so contour detection alone supplies only a lower
+        # bound while the independent seam detector confirms the 2x2 layout.
+        cells = [(70, 70), (525, 70), (70, 700), (525, 700)]
+        for index, (x1, y1) in enumerate(cells):
+            x2, y2 = x1 + 455, y1 + 630
+            image[y1:y2, x1:x2] = 55 + index * 20
+            if index != 3:
+                image[y1:y1 + 8, x1:x2] = 235
+                image[y2 - 8:y2, x1:x2] = 235
+                image[y1:y2, x1:x1 + 8] = 235
+                image[y1:y2, x2 - 8:x2] = 235
+        image[70:1330, 521:529] = 245
+        image[696:704, 70:980] = 245
+
+        detection = detect_multi_card_from_array(image, image_id="lot", role="front_original")
+
+        self.assertTrue(detection["multi_card"])
+        self.assertEqual(detection["card_count_estimate"], 4)
+        self.assertTrue(detection["card_count_confirmed"])
+        self.assertEqual(
+            detection["detectors"]["central_two_by_two_grid"]["status"],
+            "CONFIRMED",
+        )
+
+    def test_grid_copyright_year_requires_repeated_topps_lines_on_confirmed_four_card_lot(self):
+        loaded = LoadedImage(
+            image_id="back",
+            role="back_original",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/back.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=1000,
+            height=1400,
+            array=np.zeros((1400, 1000, 3), dtype=np.uint8),
+        )
+        detection = {
+            "status": "OK",
+            "multi_card": True,
+            "card_count_estimate": 4,
+            "card_count_confirmed": True,
+            "image_id": "back",
+        }
+        copyright_line = [{
+            "text": "© 2026 THE TOPPS COMPANY, INC.",
+            "observed_text": "© 2026 THE TOPPS COMPANY, INC.",
+        }]
+
+        with patch(
+            "app.pipelines.ocr_pipeline._ocr_array_with_tesseract",
+            return_value=copyright_line,
+        ) as ocr_mock:
+            evidence = copyright_year_evidence_from_confirmed_grid([loaded], detection)
+
+        self.assertEqual(ocr_mock.call_count, 4)
+        self.assertEqual(evidence["field"], "year")
+        self.assertEqual(evidence["value"], "2026")
+        self.assertEqual(evidence["region"]["independent_card_count"], 4)
+        self.assertEqual(
+            evidence["region"]["algorithm"],
+            "confirmed_2x2_grid_copyright_consensus_v1",
+        )
+
+        unconfirmed = {**detection, "card_count_confirmed": False}
+        with patch("app.pipelines.ocr_pipeline._ocr_array_with_tesseract") as blocked_ocr:
+            self.assertIsNone(copyright_year_evidence_from_confirmed_grid([loaded], unconfirmed))
+        blocked_ocr.assert_not_called()
 
     def test_analyze_payload_can_run_tesseract_adapter_on_loaded_images(self):
         front = LoadedImage(
@@ -769,6 +857,42 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertEqual(result["evidence_fusion"]["resolved_fields"]["serial_number"], "5/50")
         self.assertEqual(result["evidence_fusion"]["resolved_fields"]["grade_company"], "PSA")
         self.assertEqual(result["evidence_fusion"]["resolved_fields"]["card_grade"], "9")
+
+    def test_disabled_broad_ocr_does_not_block_narrow_grid_copyright_pass(self):
+        loaded = LoadedImage(
+            image_id="front",
+            role="front_original",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+        os.environ["ENABLE_IMAGE_DOWNLOAD"] = "true"
+        os.environ["ENABLE_TESSERACT_OCR"] = "false"
+        payload = {
+            "asset_id": "asset_1",
+            "images": [{
+                "image_id": "front",
+                "role": "front_original",
+                "signed_url": "https://example.supabase.co/storage/v1/object/sign/cards/front.jpg?token=secret",
+            }],
+            "requested_fields": ["serial_number"],
+            "options": {"run_ocr": True},
+        }
+
+        with patch("app.main.load_signed_image", return_value=loaded):
+            with patch("app.main.ocr_evidence_from_loaded_images") as broad_ocr:
+                with patch(
+                    "app.main.copyright_year_evidence_from_confirmed_grid",
+                    return_value=None,
+                ) as grid_copyright_ocr:
+                    result = analyze_payload(payload, authorization="Bearer test-token")
+
+        broad_ocr.assert_not_called()
+        grid_copyright_ocr.assert_called_once()
+        self.assertEqual(result["ocr_evidence"]["reason"], "tesseract_disabled")
 
     def test_tesseract_adapter_runs_focused_serial_crop(self):
         loaded = LoadedImage(

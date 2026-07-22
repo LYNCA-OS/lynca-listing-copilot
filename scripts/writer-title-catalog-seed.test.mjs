@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { applyCatalogSeed, buildWriterTitleCatalogSeed } from "./import-writer-title-catalog-seed.mjs";
 import { correctedTitleRecordToCatalogStaging } from "../lib/listing/catalog/internal-corrected-title-catalog.mjs";
 import { parseReviewedTitleFields } from "../lib/listing/memory/title-field-parser.mjs";
+import { renderResolvedTitle } from "../lib/listing/renderer/listing-renderer.mjs";
 import { catalogProvider } from "../lib/listing/retrieval/catalog-provider.mjs";
 import { planRetrievalQueries } from "../lib/listing/retrieval/query-planner.mjs";
 import { retrievalProviderIds } from "../lib/listing/retrieval/retrieval-contract.mjs";
@@ -121,6 +122,55 @@ assert.equal(parsedKakawow.product, "Kakawow Disney Cosmos");
 assert.deepEqual(parsedKakawow.players, ["Prince Charming"]);
 assert.equal(parsedKakawow.official_card_type, "Die-cut");
 
+const parsedPokemonFraction = parseReviewedTitleFields("2025 Pokemon JP Mega Absol Ex Mega Brave 089/063 Special Art Rare - Holo SAR CGC 10");
+assert.equal(parsedPokemonFraction.product, "Pokemon");
+assert.equal(parsedPokemonFraction.set, "Mega Brave");
+assert.equal(parsedPokemonFraction.character, "Mega Absol Ex");
+assert.equal(parsedPokemonFraction.card_name, "Mega Absol Ex");
+assert.deepEqual(parsedPokemonFraction.players, ["Mega Absol Ex"]);
+assert.equal(parsedPokemonFraction.tcg_card_number, "089/063");
+assert.equal(parsedPokemonFraction.print_run_number, null, "Pokemon collector fractions must not become limited print runs");
+assert.equal(parsedPokemonFraction.rarity, "Special Art Rare / SAR");
+assert.equal(parsedPokemonFraction.parallel_family, "Holo");
+assert.equal(parsedPokemonFraction.grade_company, "CGC");
+assert.equal(parsedPokemonFraction.card_grade, "10");
+const renderedPokemonFraction = renderResolvedTitle(parsedPokemonFraction, { maxLength: 80 }).rendered_title;
+assert.match(renderedPokemonFraction, /Mega Brave/i);
+assert.match(renderedPokemonFraction, /Mega Absol Ex/i);
+assert.match(renderedPokemonFraction, /089\/063/);
+assert.match(renderedPokemonFraction, /CGC 10/);
+
+const parsedMultiSubject = parseReviewedTitleFields("2025 Topps Cosmic Chrome Elly De La Cruz Johnny Bench Larkin Star Clusters");
+assert.deepEqual(parsedMultiSubject.players, ["Elly De La Cruz Johnny Bench Larkin"]);
+assert.equal(parsedMultiSubject.official_card_type, "Star Clusters");
+
+const parsedStarCourtKings = parseReviewedTitleFields("1986-87 Star Court Kings Michael Jordan Rookie RC SCD 8.5");
+assert.equal(parsedStarCourtKings.product, "Star Court Kings");
+assert.equal(parsedStarCourtKings.manufacturer, "Star");
+assert.equal(parsedStarCourtKings.team, null, "product words must not be inferred as a team");
+assert.deepEqual(parsedStarCourtKings.players, ["Michael Jordan"]);
+assert.equal(parsedStarCourtKings.grade_company, "SCD");
+assert.equal(parsedStarCourtKings.card_grade, "8.5");
+
+const parsedDonrussRoad = parseReviewedTitleFields("2025-26 Donruss Road to FIFA World Cup 26' Lionel Messi Future Stars");
+assert.equal(parsedDonrussRoad.product, "Panini Donruss Road to FIFA World Cup");
+assert.equal(parsedDonrussRoad.official_card_type, "Future Stars");
+assert.deepEqual(parsedDonrussRoad.players, ["Lionel Messi"]);
+
+const parsedDesignVariation = parseReviewedTitleFields("2024 Topps Chrome Shohei Ohtani Design Variation");
+assert.equal(parsedDesignVariation.variation, "Design Variation");
+
+const parsedDynasticData = parseReviewedTitleFields("2025 Topps Dynasty Dynastic Data Yoshinobu Yamamoto A Dirty Dozen Blue Auto");
+assert.deepEqual(parsedDynasticData.players, ["Yoshinobu Yamamoto"]);
+
+const parsedContendersOptic = parseReviewedTitleFields("2021-22 Contenders Optic Jaylen Brown Numbers Game Blue Cracked Ice 02/75");
+assert.equal(parsedContendersOptic.product, "Panini Contenders Optic");
+assert.deepEqual(parsedContendersOptic.players, ["Jaylen Brown"]);
+
+const parsedSellerBrandLeak = parseReviewedTitleFields("2025 Topps Chrome Metaverse Cards Jung Hoo Lee Auto");
+assert.deepEqual(parsedSellerBrandLeak.players, ["Jung Hoo Lee"]);
+assert.deepEqual(parsedDesignVariation.players, ["Shohei Ohtani"]);
+
 const mtgCatalog = correctedTitleRecordToCatalogStaging({
   id: "writer-row-1",
   corrected_title: mtgTitle
@@ -212,6 +262,43 @@ assert.equal(providerResult.candidates[0].source_trust, "APPROVED_REFERENCE");
 assert.equal(providerResult.candidates[0].reference_metadata.corrected_title_as_temporary_gt, false);
 assert.equal(providerResult.candidates[0].reference_metadata.prompt_safe_internal_writer_title, true);
 assert.equal(providerResult.candidates[0].field_derivation.title_derived_fields_are_ground_truth, false);
+
+const staleParsedWriterProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([{
+    identity_id: "33333333-3333-3333-3333-333333333334",
+    source_feedback_id: "reviewed-ufc-source",
+    canonical_title: "2025 Topps Chrome UFC Reinier de Ridder RC Red & Blue Refractor Rookie SSP",
+    identity_key: "sports:2025:topps:chrome-ufc:ridder",
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Topps Chrome",
+      players: ["Reinier De Ridder"],
+      rc: false,
+      ssp: false,
+      parallel_family: "Refractor"
+    },
+    retrieval_status: "reviewed",
+    source_type: "INTERNAL_CORRECTED_TITLE",
+    source_status: "VERIFIED_CANONICAL_TITLE",
+    supporting_fields: ["year", "players", "product"],
+    raw_score: 0.9,
+    normalized_score: 0.9
+  }]), { status: 200 })
+});
+const staleParsedWriterResult = await staleParsedWriterProvider.search({
+  query: { exact_subject: "Reinier De Ridder", exact_product: "Topps Chrome" }
+});
+assert.equal(staleParsedWriterResult.candidates[0].fields.product, "Topps Chrome UFC");
+assert.equal(staleParsedWriterResult.candidates[0].fields.parallel_exact, "Red & Blue Refractor");
+assert.equal(staleParsedWriterResult.candidates[0].fields.parallel, "Red & Blue Refractor");
+assert.equal(staleParsedWriterResult.candidates[0].fields.rc, true);
+assert.equal(staleParsedWriterResult.candidates[0].fields.ssp, true);
 
 const legacyGenericProductProvider = catalogProvider({
   env: {

@@ -122,13 +122,23 @@ import {
     category: "basketball",
     fetchImpl: async () => new Response(`
       <script>window.endpoint="/api/checklists?Sport=Basketball&Program=Prizm"</script>
+      <script>window.image="data:image/svg+xml;base64,PRODUCTCHECKLIST"</script>
+      <script>window.script="javascript:openChecklist('/api/products')"</script>
+      <script>window.fragment="&lt;div&gt;/api/products&lt;/div&gt;"</script>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Montserrat">
+      <script>window.userApi="/api/User/Load"</script>
       <a href="/checklists/2024-panini-prizm-basketball.txt">2024 Panini Prizm Basketball Checklist</a>
+      <a href="data:text/plain,checklist">Basketball Checklist Data Asset</a>
+      <a href="javascript:openChecklist()">Basketball Checklist Script</a>
     `, { status: 200 })
   });
   assert.equal(discovery.provider, "panini");
   assert.equal(discovery.source_type, catalogSourceTypes.PANINI_OFFICIAL_CHECKLIST);
   assert.equal(discovery.discovered_source_count, 1);
   assert.ok(discovery.network_endpoint_hints.some((hint) => /api\/checklists/i.test(hint)));
+  assert.ok(discovery.network_endpoint_hints.every((hint) => /^https?:\/\//i.test(hint)));
+  assert.ok(discovery.network_endpoint_hints.every((hint) => !/[<>]/.test(hint)));
+  assert.ok(discovery.network_endpoint_hints.every((hint) => !/googleapis|\/api\/User\/Load/i.test(hint)));
   assert.equal(discovery.policy.staging_only, true);
   assert.equal(discovery.policy.reviewed_internal_auto_promotion, false);
   assert.ok(discovery.manual_csv_fallback.columns.includes("players"));

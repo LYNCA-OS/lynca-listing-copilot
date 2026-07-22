@@ -424,6 +424,98 @@ assert.equal(fastVisionSurfaceColorWithoutCatalog.publication_gate.field_publica
 assert.ok(!fastVisionSurfaceColorWithoutCatalog.writer_required_fields.includes("surface_color"));
 assert.ok(fastVisionSurfaceColorWithoutCatalog.writer_required_fields.includes("year"));
 
+const fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft = applyIdentityResolutionGate({
+  title: "",
+  confidence: "MEDIUM",
+  reason: "GPT primary fast vision read the current card.",
+  provider: "openai_legacy",
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    surface_color: "Red"
+  }),
+  evidence: {
+    year: createEvidenceField({ value: "2025", status: "CONFIRMED", confidence: 0.5, sources: [createVisionSource({ observedText: "2025" })] }),
+    product: createEvidenceField({ value: "Topps Chrome", status: "CONFIRMED", confidence: 0.5, sources: [createVisionSource({ observedText: "Topps Chrome" })] }),
+    players: createEvidenceField({ value: ["Shohei Ohtani"], status: "CONFIRMED", confidence: 0.5, sources: [createVisionSource({ observedText: "Shohei Ohtani" })] }),
+    surface_color: createEvidenceField({ value: "Red", status: "CONFIRMED", confidence: 0.5, sources: [createVisionSource({ observedText: "Red" })] })
+  },
+  unresolved: []
+}, {
+  providerId: "openai_legacy",
+  retrievalCandidates: [{
+    candidate_id: "nearby_wrong_variant",
+    source_type: "OFFICIAL_CHECKLIST",
+    confidence: 0.9,
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Shohei Ohtani"],
+      surface_color: "Blue"
+    }
+  }]
+});
+assert.match(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.final_title, /^2025 Topps Chrome Shohei Ohtani Red$/);
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.resolved_fields.year, "2025");
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.resolved_fields.surface_color, "Red");
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.draft_gate.by_field.year.display_policy, "INCLUDE_HIGHLIGHTED");
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.draft_gate.by_field.year.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.draft_gate.by_field.surface_color.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
+assert.ok(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.writer_required_fields.includes("year"));
+assert.ok(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.writer_required_fields.includes("surface_color"));
+assert.equal(fastVisionCoreFactsBeatConflictingRetrievalInWriterDraft.publication_gate.auto_publish_allowed, false);
+
+const rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft = applyIdentityResolutionGate({
+  title: "",
+  confidence: "MEDIUM",
+  reason: "The provider read the current image, while retrieval supplied a nearby catalog year.",
+  provider: "openai_legacy",
+  raw_provider_fields: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    surface_color: "Red",
+    serial_number: "9/10",
+    grade_company: "PSA",
+    card_grade: "10"
+  },
+  raw_observed_fields: {
+    year: null,
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    surface_color: null
+  },
+  resolved: normalizeResolvedFields({
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"]
+  }),
+  evidence: {
+    product: groundedEvidence("Topps Chrome"),
+    players: groundedEvidence(["Shohei Ohtani"])
+  },
+  unresolved: []
+}, {
+  providerId: "openai_legacy",
+  retrievalCandidates: [{
+    candidate_id: "nearby_2024_catalog_card",
+    source_type: "OFFICIAL_CHECKLIST",
+    confidence: 0.95,
+    fields: {
+      year: "2024",
+      product: "Topps Chrome",
+      players: ["Shohei Ohtani"]
+    }
+  }]
+});
+assert.match(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.final_title, /^2025 Topps Chrome Shohei Ohtani Red$/);
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.resolved_fields.year, "2025");
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.draft_gate.by_field.year.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.publication_gate.auto_publish_allowed, false);
+assert.doesNotMatch(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.final_title, /9\/10|PSA|\b10\b/);
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.draft_gate.by_field.serial_number?.draft_source_override, undefined);
+assert.equal(rawCurrentImageFactsBeatSilentCatalogSelectionInWriterDraft.draft_gate.by_field.card_grade?.draft_source_override, undefined);
+
 const fastVisionExactParallelWithoutCatalog = primaryFastVisionResult({
   resolved: {
     year: "2024",
@@ -471,11 +563,11 @@ const fastVisionSerialWithoutFocusedVerification = primaryFastVisionResult({
   verificationFields: ["serial_number"]
 });
 assert.equal(fastVisionSerialWithoutFocusedVerification.identity_resolution_status, "ABSTAIN");
-assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani");
+assert.equal(fastVisionSerialWithoutFocusedVerification.final_title, "2024 Topps Chrome Shohei Ohtani #/50");
 assert.equal(fastVisionSerialWithoutFocusedVerification.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(fastVisionSerialWithoutFocusedVerification.writer_required_fields, ["year", "serial_number"]);
 assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /31\/50/);
-assert.doesNotMatch(fastVisionSerialWithoutFocusedVerification.final_title, /\/50/);
+assert.match(fastVisionSerialWithoutFocusedVerification.final_title, /#\/50/);
 assert.equal(fastVisionSerialWithoutFocusedVerification.draft_gate.by_field.serial_number.display_policy, "INCLUDE_HIGHLIGHTED");
 assert.equal(fastVisionSerialWithoutFocusedVerification.draft_gate.by_field.serial_number.selected_value, "/50");
 
@@ -763,6 +855,77 @@ assert.deepEqual(
 assert.match(observedMultiSubjectWriterDraft.final_title, /Hank Aaron/);
 assert.match(observedMultiSubjectWriterDraft.final_title, /Ken Griffey Jr/);
 assert.match(observedMultiSubjectWriterDraft.final_title, /Mike Trout/);
+
+const observedMultiSubjectWriterDraftFromEmptyResolution = applyIdentityResolutionGate({
+  title: "",
+  model_title_suggestion: "",
+  confidence: "HIGH",
+  reason: "The current image observation retained all lot subjects after the resolver dropped the field.",
+  provider: "openai_legacy",
+  raw_provider_fields: {
+    year: "2025",
+    product: "Bowman Chrome",
+    players: ["Sam Petersen", "Luis Cova", "David Davalillo"]
+  },
+  resolved: normalizeResolvedFields({
+    year: "2025",
+    product: "Bowman Chrome"
+  }),
+  evidence: {
+    year: groundedEvidence("2025"),
+    product: groundedEvidence("Bowman Chrome")
+  },
+  unresolved: []
+}, {
+  maxLength: 140,
+  providerId: "openai_legacy"
+});
+assert.deepEqual(observedMultiSubjectWriterDraftFromEmptyResolution.resolved.players, [
+  "Sam Petersen",
+  "Luis Cova",
+  "David Davalillo"
+]);
+assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /Sam Petersen/);
+assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /Luis Cova/);
+assert.match(observedMultiSubjectWriterDraftFromEmptyResolution.final_title, /David Davalillo/);
+
+const observedSingleSubjectSurvivesResolverDrop = applyIdentityResolutionGate({
+  title: "",
+  model_title_suggestion: "",
+  confidence: "HIGH",
+  reason: "The retrieval resolver retained a variant but dropped the observed subject.",
+  provider: "openai_legacy",
+  candidate_observation_snapshot: {
+    player: "Buddy Hield",
+    year: "2023-24"
+  },
+  raw_observed_fields: {
+    year: null
+  },
+  raw_provider_fields: {
+    year: null,
+    player: "Buddy Hield"
+  },
+  resolved: normalizeResolvedFields({
+    product: "Panini Donruss Optic",
+    card_name: "Lucky Hyper"
+  }),
+  evidence: {
+    year: groundedEvidence("2023-24"),
+    product: groundedEvidence("Panini Donruss Optic"),
+    card_name: groundedEvidence("Lucky Hyper")
+  },
+  unresolved: []
+}, {
+  maxLength: 80,
+  providerId: "openai_legacy"
+});
+assert.deepEqual(observedSingleSubjectSurvivesResolverDrop.resolved.players, ["Buddy Hield"]);
+assert.equal(observedSingleSubjectSurvivesResolverDrop.resolved.year, "2023-24");
+assert.match(observedSingleSubjectSurvivesResolverDrop.final_title, /Buddy Hield/);
+assert.match(observedSingleSubjectSurvivesResolverDrop.final_title, /2023-24/);
+assert.match(observedSingleSubjectSurvivesResolverDrop.final_title, /Lucky Hyper/);
+assert.equal(observedMultiSubjectWriterDraftFromEmptyResolution.publication_gate.auto_publish_allowed, false);
 
 const compatibleProductConflictDraft = applyIdentityResolutionGate({
   title: "",
@@ -1104,11 +1267,11 @@ const serialFocusedFailure = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialFocusedFailure.identity_resolution_status, "ABSTAIN");
-assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialFocusedFailure.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialFocusedFailure.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialFocusedFailure.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialFocusedFailure.final_title, /196\/299/);
-assert.doesNotMatch(serialFocusedFailure.final_title, /\/299/);
+assert.match(serialFocusedFailure.final_title, /#\/299/);
 assert.equal(serialFocusedFailure.draft_gate.by_field.serial_number.selected_value, "/299");
 assert.ok(serialFocusedFailure.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_FOCUSED_VERIFICATION_FAILED"));
 assert.ok(serialFocusedFailure.resolution_trace.some((entry) => entry.step === "high_risk_verification_guard"));
@@ -1139,11 +1302,11 @@ const serialSingleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialSingleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialSingleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialSingleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialSingleFrontSource.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialSingleFrontSource.final_title, /196\/299/);
-assert.doesNotMatch(serialSingleFrontSource.final_title, /\/299/);
+assert.match(serialSingleFrontSource.final_title, /#\/299/);
 assert.ok(serialSingleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const serialDoubleFrontSource = applyIdentityResolutionGate({
@@ -1180,11 +1343,11 @@ const serialDoubleFrontSource = applyIdentityResolutionGate({
   ]
 });
 assert.equal(serialDoubleFrontSource.identity_resolution_status, "ABSTAIN");
-assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow");
+assert.equal(serialDoubleFrontSource.final_title, "2022 Gold Standard Hunter Renfrow #/299");
 assert.equal(serialDoubleFrontSource.title_render_source, "identity_resolution_partial_writer_draft");
 assert.deepEqual(serialDoubleFrontSource.writer_required_fields, ["serial_number"]);
 assert.doesNotMatch(serialDoubleFrontSource.final_title, /196\/299/);
-assert.doesNotMatch(serialDoubleFrontSource.final_title, /\/299/);
+assert.match(serialDoubleFrontSource.final_title, /#\/299/);
 assert.ok(serialDoubleFrontSource.conflict_map.some((conflict) => conflict.conflict_type === "SERIAL_REQUIRES_STRONG_CONFIRMATION"));
 
 const serialFocusedVisionConfirmed = applyIdentityResolutionGate({
@@ -1290,7 +1453,7 @@ const multiCardLot = applyIdentityResolutionGate({
   unresolved: []
 });
 assert.equal(multiCardLot.identity_resolution_status, "RESOLVED");
-assert.match(multiCardLot.final_title, /^Lot x2 2024 Topps Chrome Shohei Ohtani/);
+assert.match(multiCardLot.final_title, /^Lotx2 2024 Topps Chrome Shohei Ohtani/);
 assert.equal(multiCardLot.publication_gate.workflow_route, "DEEP_REVIEW");
 assert.equal(multiCardLot.publication_gate.writer_review_ready, true);
 assert.ok(multiCardLot.unresolved.includes("multi-card lot requires writer review"));
@@ -1395,6 +1558,31 @@ assert.equal(weakOcrOnlyChecklistDropped.identity_resolution_status, "RESOLVED")
 assert.equal(weakOcrOnlyChecklistDropped.resolved.checklist_code, null);
 assert.ok(weakOcrOnlyChecklistDropped.final_title);
 assert.ok(weakOcrOnlyChecklistDropped.conflict_map.some((conflict) => conflict.conflict_type === "WEAK_OCR_ONLY_OPTIONAL_CODE_DROPPED"));
+
+const surnameOnlyDuplicateRemoved = applyIdentityResolutionGate({
+  provider: "openai_legacy",
+  raw_provider_fields: {
+    year: "2025-26",
+    product: "Bowman University Chrome",
+    players: ["Sienna Betts", "Betts"]
+  },
+  resolved: normalizeResolvedFields({
+    year: "2025-26",
+    product: "Bowman University Chrome",
+    players: ["Sienna Betts", "Betts"]
+  }),
+  evidence: {
+    year: groundedEvidence("2025-26"),
+    product: groundedEvidence("Bowman University Chrome"),
+    players: groundedEvidence(["Sienna Betts", "Betts"])
+  },
+  unresolved: []
+}, {
+  maxLength: 80,
+  providerId: "openai_legacy"
+});
+assert.deepEqual(surnameOnlyDuplicateRemoved.resolved.players, ["Sienna Betts"]);
+assert.doesNotMatch(surnameOnlyDuplicateRemoved.final_title, /Sienna Betts\s*\/\s*Betts/i);
 
 let convergenceGateRetrievalCalls = 0;
 const convergedGate = await applyIdentityResolutionGateWithConvergence({

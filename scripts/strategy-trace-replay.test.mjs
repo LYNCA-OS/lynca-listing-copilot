@@ -116,6 +116,28 @@ assert.equal(labelLeakObserved, false, "strategy must not receive sealed evaluat
 assert.equal(currentGate.promotion_eligible, true);
 assert.equal(currentGate.replay.unrecorded_external_effect_count, 0);
 assert.equal(currentGate.replay.regressed_count, 0);
+assert.equal(currentGate.gate_mode, "regression");
+assert.equal(currentGate.token_launch_gate_pass, null);
+
+const belowLaunchGate = await evaluateStrategyTraceReplay({
+  packet,
+  replayStrategyDecision: replayCurrentProductionStrategy,
+  passThreshold: 0.87,
+  gateMode: "launch"
+});
+assert.equal(belowLaunchGate.promotion_eligible, false);
+assert.equal(belowLaunchGate.regression_safe, true);
+assert.equal(belowLaunchGate.token_launch_gate_pass, false);
+assert.ok(belowLaunchGate.blockers.includes("AVERAGE_BELOW_LAUNCH_THRESHOLD"));
+
+const mixedReport = structuredClone(report);
+mixedReport.results[0].reference_title_is_reviewed_ground_truth = true;
+mixedReport.results[0].reference_title_type = "REVIEWED_INTERNAL_TITLE";
+mixedReport.results[1].reference_title_is_reviewed_ground_truth = false;
+mixedReport.results[1].reference_title_type = "MARKETPLACE_WEAK_LABEL";
+const reviewedOnlyPacket = buildStrategyReplayPacket(mixedReport, { scope: "internal-reviewed" });
+assert.equal(reviewedOnlyPacket.card_count, 1);
+assert.equal(reviewedOnlyPacket.scope, "internal-reviewed");
 
 const previousBugGate = await evaluateStrategyTraceReplay({
   packet,

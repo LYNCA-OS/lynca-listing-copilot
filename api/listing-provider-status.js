@@ -15,6 +15,8 @@ import {
   buildWorkflowReadinessAudit
 } from "../lib/listing/readiness/workflow-readiness-audit.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
+import { recognitionWorkerConfig } from "../lib/listing/recognition/recognition-feature-flags.mjs";
+import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
 import {
   v4ProviderDoneCapacityHandoffEnabled,
   v4ProviderCapacityControlEnabled,
@@ -72,6 +74,7 @@ function workflowReadinessCacheKey(env = process.env) {
     "VECTOR_INDEX_READY",
     "VECTOR_WORKER_URL",
     "RECOGNITION_WORKER_URL",
+    "ENABLE_RECOGNITION_WORKER",
     "VECTOR_WORKER_TOKEN",
     "RECOGNITION_WORKER_TOKEN",
     "ENABLE_PADDLE_OCR_FIELD_VERIFIER",
@@ -383,6 +386,8 @@ export default async function handler(req, res) {
   }
   const providerPool = openAiProviderPoolStatus(process.env);
   const stageCapacity = listingStageCapacityPlan(process.env);
+  const recognitionWorker = recognitionWorkerConfig(process.env);
+  const paddleOcr = paddleOcrConfig(process.env);
 
   sendJson(res, 200, {
     ok: true,
@@ -391,6 +396,14 @@ export default async function handler(req, res) {
     fallback_available: false,
     workflow_readiness: workflowReadiness,
     execution_control: {
+      recognition_worker: {
+        enabled: recognitionWorker.enabled === true,
+        configured: recognitionWorker.configured === true
+      },
+      paddle_ocr_verifier: {
+        enabled: paddleOcr.enabled === true,
+        configured: paddleOcr.configured === true && Boolean(paddleOcr.token)
+      },
       distributed_provider_capacity_enabled: v4ProviderCapacityControlEnabled(process.env),
       provider_done_capacity_handoff_enabled: v4ProviderDoneCapacityHandoffEnabled(process.env),
       global_fair_drain_enabled: v4QueueGlobalDrainEnabled(process.env),

@@ -64,6 +64,30 @@ const directAwaitingOcrVerification = renderListingPresentation({
 assert.match(directAwaitingOcrVerification.final_title, /#\/50/);
 assert.doesNotMatch(directAwaitingOcrVerification.final_title, /31\/50/);
 
+const providerResolvedWithoutPersistedEvidence = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Prizm",
+    players: ["Test Player"],
+    print_run_number: "31/50",
+    serial_number: "31/50"
+  },
+  evidence: {
+    year: createEvidenceField({
+      value: "2024",
+      status: "CONFIRMED",
+      confidence: 0.9,
+      sources: [createVisionSource({ sourceType: "CARD_FRONT", observedText: "2024", region: "year" })]
+    })
+  },
+  serialNumeratorVerified: false,
+  trustResolvedPrintRunWithoutEvidence: false,
+  maxLength: 80
+});
+assert.match(providerResolvedWithoutPersistedEvidence.final_title, /#\/50/);
+assert.doesNotMatch(providerResolvedWithoutPersistedEvidence.final_title, /31\/50/);
+
 const unverifiedOneOfOne = renderListingPresentation({
   resolved: {
     year: "2024",
@@ -122,12 +146,17 @@ const ocrSerialPatch = (value, confidence) => ({
     source_region: "serial_region"
   }
 });
+// Below-threshold OCR readings do not VERIFY the numerator, but they are not
+// a rejection either: the signal stays null (unknown) and the renderer's
+// provenance gate (CONFIRMED + direct current-image source) decides. `false`
+// is reserved for conflicting OCR observations — treating "no confident read"
+// as a rejection stripped correct provider-read serials at production scale.
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.93)]
-}, { job_count: 1 }), false, "one direct crop below the hard confidence threshold cannot lock a numerator");
+}, { job_count: 1 }), null, "one direct crop below the hard confidence threshold cannot lock a numerator");
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.72)]
-}, { job_count: 1 }), false);
+}, { job_count: 1 }), null);
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [{
     ...ocrSerialPatch("31/50", 0.72),

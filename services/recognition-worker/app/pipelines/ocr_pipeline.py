@@ -16,8 +16,11 @@ import numpy as np
 from PIL import Image
 
 _PADDLEOCR_ENGINE: Any | None = None
+_PADDLEOCR_RECOGNITION_ENGINE: Any | None = None
 _PADDLEOCR_LOCK = threading.Lock()
 PADDLEOCR_FIELD_MAX_SIDE = 960
+
+_SERIAL_TARGET_PATTERN = re.compile(r"(?:\b\d{1,5}\s*/\s*\d{1,5}\b|\b1\s*/\s*1\b)")
 
 
 FOCUSED_CROP_TEMPLATES = {
@@ -201,6 +204,80 @@ def _resize_array_for_paddleocr(array: np.ndarray, max_side: int = PADDLEOCR_FIE
     return np.asarray(image.resize((next_width, next_height), Image.Resampling.LANCZOS), dtype=np.uint8)
 
 
+def _serial_contrast_variant(array: np.ndarray) -> np.ndarray | None:
+    """Make low-contrast foil digits readable without inventing glyphs."""
+    try:
+        import cv2
+
+        gray = cv2.cvtColor(array, cv2.COLOR_RGB2GRAY)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(6, 6)).apply(gray)
+        blurred = cv2.GaussianBlur(clahe, (0, 0), 1.0)
+        sharpened = cv2.addWeighted(clahe, 1.7, blurred, -0.7, 0)
+        height, width = sharpened.shape[:2]
+        longest = max(height, width)
+        if longest < PADDLEOCR_FIELD_MAX_SIDE:
+            scale = min(3.0, PADDLEOCR_FIELD_MAX_SIDE / max(1.0, float(longest)))
+            sharpened = cv2.resize(
+                sharpened,
+                (max(1, int(round(width * scale))), max(1, int(round(height * scale)))),
+                interpolation=cv2.INTER_CUBIC,
+            )
+        return cv2.cvtColor(sharpened, cv2.COLOR_GRAY2RGB)
+    except Exception:  # pragma: no cover - plain OCR remains available.
+        return None
+
+
+def _contains_serial_target(candidates: list[dict[str, Any]]) -> bool:
+    return any(
+        _SERIAL_TARGET_PATTERN.search(str(candidate.get("text") or ""))
+        for candidate in candidates
+        if isinstance(candidate, dict)
+    )
+
+
+def _dedupe_ocr_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        key = (
+            str(candidate.get("text") or "").strip().upper(),
+            repr(candidate.get("box") or candidate.get("bbox") or ""),
+        )
+        if not key[0] or key in seen:
+            continue
+        seen.add(key)
+        output.append(candidate)
+    return output
+
+
+def _run_serial_paddleocr(array: np.ndarray, *, offset: tuple[int, int] = (0, 0)) -> list[dict[str, Any]]:
+    candidates = _run_paddleocr(array, offset=offset)
+    if _contains_serial_target(candidates):
+        return candidates
+    height, width = array.shape[:2]
+    # A caller-provided serial crop can already be a tight text line. Running
+    # the detector again on low-contrast foil often drops the line entirely;
+    # recognition-only preserves that explicit region without scanning or
+    # guessing elsewhere in the image.
+    if width >= max(1, height) * 2:
+        try:
+            line_candidates = _run_serial_line_recognition(array, offset=offset)
+        except Exception:  # noqa: BLE001 - detector evidence remains valid.
+            line_candidates = []
+        candidates = _dedupe_ocr_candidates([*candidates, *line_candidates])
+        if _contains_serial_target(candidates):
+            return candidates
+    enhanced = _serial_contrast_variant(array)
+    if enhanced is None:
+        return candidates
+    return _dedupe_ocr_candidates([
+        *candidates,
+        *_run_paddleocr(enhanced, offset=offset),
+    ])
+
+
 def _run_tesseract(image_path: Path, *, language: str, psm: int, timeout_seconds: int) -> str:
     command = [
         "tesseract",
@@ -339,10 +416,46 @@ def _get_paddleocr_engine() -> Any:
         raise RuntimeError(f"paddleocr_init_failed: {last_error}") from last_error
 
 
+def _get_paddleocr_recognition_engine() -> Any:
+    global _PADDLEOCR_RECOGNITION_ENGINE
+    with _PADDLEOCR_LOCK:
+        if _PADDLEOCR_RECOGNITION_ENGINE is not None:
+            return _PADDLEOCR_RECOGNITION_ENGINE
+        try:
+            from paddleocr import TextRecognition
+        except Exception as error:  # noqa: BLE001 - surfaced as worker unavailability.
+            raise RuntimeError(f"paddleocr_recognition_import_failed: {error}") from error
+
+        last_error: Exception | None = None
+        constructor_kwargs = [
+            {
+                "model_name": "PP-OCRv5_mobile_rec",
+                "device": "cpu",
+                "enable_mkldnn": False,
+                "cpu_threads": 2,
+            },
+            {
+                "model_name": "PP-OCRv5_mobile_rec",
+                "device": "cpu",
+                "enable_mkldnn": False,
+            },
+            {"model_name": "PP-OCRv5_mobile_rec", "device": "cpu"},
+            {"model_name": "PP-OCRv5_mobile_rec"},
+        ]
+        for kwargs in constructor_kwargs:
+            try:
+                _PADDLEOCR_RECOGNITION_ENGINE = TextRecognition(**kwargs)
+                return _PADDLEOCR_RECOGNITION_ENGINE
+            except Exception as error:  # noqa: BLE001 - try API-compatible variants.
+                last_error = error
+        raise RuntimeError(f"paddleocr_recognition_init_failed: {last_error}") from last_error
+
+
 def preload_paddleocr_engine(*, model_id: str = "paddleocr", model_revision: str = "") -> dict[str, Any]:
     started = time.time()
     try:
         _get_paddleocr_engine()
+        _get_paddleocr_recognition_engine()
         return {
             "status": "OK",
             "latency_ms": int((time.time() - started) * 1000),
@@ -416,6 +529,17 @@ def _collect_paddle_candidates(value: Any, *, offset: tuple[int, int] = (0, 0)) 
     if isinstance(value, np.ndarray):
         value = value.tolist()
     if isinstance(value, dict):
+        if isinstance(value.get("res"), dict):
+            nested_result = value["res"]
+            direct_text = nested_result.get("rec_text")
+            if isinstance(direct_text, str):
+                item = _candidate(
+                    direct_text,
+                    nested_result.get("rec_score", 0.5),
+                    nested_result.get("box"),
+                    offset,
+                )
+                return [item] if item else []
         texts = value.get("rec_texts") or value.get("texts") or value.get("text")
         scores = value.get("rec_scores") or value.get("scores") or value.get("confidence")
         boxes = value.get("rec_polys") or value.get("dt_polys") or value.get("boxes") or value.get("points")
@@ -489,6 +613,47 @@ def _run_paddleocr(array: np.ndarray, *, offset: tuple[int, int] = (0, 0)) -> li
     raise RuntimeError(f"paddleocr_run_failed: {last_error}") from last_error
 
 
+def _run_paddle_text_recognition(
+    array: np.ndarray,
+    *,
+    offset: tuple[int, int] = (0, 0),
+) -> list[dict[str, Any]]:
+    engine = _get_paddleocr_recognition_engine()
+    array = _resize_array_for_paddleocr(array)
+    try:
+        with _PADDLEOCR_LOCK:
+            raw = engine.predict(input=array, batch_size=1)
+        candidates: list[dict[str, Any]] = []
+        for result in raw or []:
+            payload = getattr(result, "json", result)
+            candidates.extend(_collect_paddle_candidates(payload, offset=offset))
+        height, width = array.shape[:2]
+        for candidate in candidates:
+            if candidate.get("box") is None:
+                candidate["box"] = [offset[0], offset[1], width, height]
+            candidate["recognition_mode"] = "text_recognition_only"
+        return candidates
+    except Exception as error:  # noqa: BLE001 - caller retains detector fallback.
+        raise RuntimeError(f"paddleocr_recognition_run_failed: {error}") from error
+
+
+def _run_serial_line_recognition(
+    array: np.ndarray,
+    *,
+    offset: tuple[int, int] = (0, 0),
+) -> list[dict[str, Any]]:
+    candidates = _run_paddle_text_recognition(array, offset=offset)
+    if _contains_serial_target(candidates):
+        return candidates
+    enhanced = _serial_contrast_variant(array)
+    if enhanced is None:
+        return candidates
+    return _dedupe_ocr_candidates([
+        *candidates,
+        *_run_paddle_text_recognition(enhanced, offset=offset),
+    ])
+
+
 def _normalize_field_candidates(candidates: list[dict[str, Any]]) -> tuple[str, float]:
     raw_text = " ".join(candidate["text"] for candidate in candidates if candidate.get("text")).strip()
     confidence_values = [float(candidate.get("confidence", 0.0)) for candidate in candidates if candidate.get("text")]
@@ -504,6 +669,8 @@ def ocr_field_from_loaded_image(
     request_id: str = "",
     model_id: str = "paddleocr",
     model_revision: str = "",
+    ocr_backend: str = "paddle",
+    config: Any = None,
 ) -> dict[str, Any]:
     started = time.time()
     image_id = str(getattr(loaded_image, "image_id", "") or "image")
@@ -524,30 +691,75 @@ def ocr_field_from_loaded_image(
             "model_revision": model_revision,
         }
     crop_array, offset = _crop_array_by_box(array, crop_box)
-    try:
-        candidates = _run_paddleocr(crop_array, offset=offset)
-    except Exception as error:  # noqa: BLE001
-        return {
-            "request_id": request_id,
-            "crop_type": crop_type,
-            "status": "UNAVAILABLE",
-            "reason": str(error)[:240],
-            "raw_text": "",
-            "text_candidates": [],
-            "boxes": [],
-            "confidence": 0,
-            "latency_ms": int((time.time() - started) * 1000),
-            "model_id": model_id,
-            "model_revision": model_revision,
-            "image_id": image_id,
-            "image_role": role,
-        }
+    normalized_crop_type = str(crop_type or "").strip().lower()
+    backend = str(ocr_backend or "paddle").strip().lower()
+    if backend not in {"paddle", "deepseek", "google_vision", "hybrid"}:
+        backend = "paddle"
+
+    candidates: list[dict[str, Any]] = []
+    backend_telemetry: dict[str, Any] = {}
+    paddle_hard_error: str | None = None
+
+    # PaddleOCR lane (skipped for a pure deepseek run, or when Paddle is
+    # disabled in a hybrid run so the deepseek lane still answers).
+    paddle_enabled = config is None or bool(getattr(config, "enable_paddleocr", True))
+    if backend in {"paddle", "hybrid"} and paddle_enabled:
+        try:
+            paddle_candidates = _run_serial_paddleocr(crop_array, offset=offset) \
+                if normalized_crop_type in {"serial_number", "serial_crop"} \
+                else _run_paddleocr(crop_array, offset=offset)
+        except Exception as error:  # noqa: BLE001
+            paddle_candidates = []
+            paddle_hard_error = str(error)[:240]
+            backend_telemetry["paddle_error"] = paddle_hard_error
+        candidates.extend(paddle_candidates)
+        backend_telemetry["paddle_candidate_count"] = len(paddle_candidates)
+
+    # DeepSeek-OCR lane (self-hosted vLLM). Never let a backend fault abort the
+    # request when the other lane produced text.
+    if backend in {"deepseek", "hybrid"}:
+        from .deepseek_ocr import run_deepseek_ocr
+
+        deepseek_result = run_deepseek_ocr(crop_array, crop_type=crop_type, config=config)
+        deepseek_candidates = deepseek_result.get("candidates", []) or []
+        candidates.extend(deepseek_candidates)
+        backend_telemetry["deepseek_status"] = deepseek_result.get("status")
+        backend_telemetry["deepseek_candidate_count"] = len(deepseek_candidates)
+        backend_telemetry["deepseek_latency_ms"] = deepseek_result.get("latency_ms")
+        backend_telemetry["deepseek_cost_estimate"] = deepseek_result.get("cost_estimate")
+        if deepseek_result.get("reason"):
+            backend_telemetry["deepseek_reason"] = deepseek_result.get("reason")
+        if deepseek_result.get("usage"):
+            backend_telemetry["deepseek_usage"] = deepseek_result.get("usage")
+
+    # Google Cloud Vision lane (API, no GPU). Reads hard keys PaddleOCR misses.
+    if backend in {"google_vision", "hybrid"}:
+        from .google_vision_ocr import run_google_vision_ocr
+
+        vision_result = run_google_vision_ocr(crop_array, crop_type=crop_type, config=config)
+        vision_candidates = vision_result.get("candidates", []) or []
+        candidates.extend(vision_candidates)
+        backend_telemetry["vision_status"] = vision_result.get("status")
+        backend_telemetry["vision_candidate_count"] = len(vision_candidates)
+        backend_telemetry["vision_latency_ms"] = vision_result.get("latency_ms")
+        backend_telemetry["vision_cost_estimate"] = vision_result.get("cost_estimate")
+        if vision_result.get("reason"):
+            backend_telemetry["vision_reason"] = vision_result.get("reason")
+
+    # A hard PaddleOCR fault with no candidates from any lane is still an
+    # UNAVAILABLE, matching prior behavior; otherwise OK/NO_TEXT by candidates.
+    if candidates:
+        status = "OK"
+    elif paddle_hard_error and backend not in {"deepseek", "google_vision"}:
+        status = "UNAVAILABLE"
+    else:
+        status = "NO_TEXT"
 
     raw_text, confidence = _normalize_field_candidates(candidates)
-    return {
+    result = {
         "request_id": request_id,
         "crop_type": crop_type,
-        "status": "OK" if candidates else "NO_TEXT",
+        "status": status,
         "raw_text": raw_text,
         "text_candidates": candidates,
         "boxes": [
@@ -565,7 +777,12 @@ def ocr_field_from_loaded_image(
         "model_revision": model_revision,
         "image_id": image_id,
         "image_role": role,
+        "ocr_backend": backend,
+        "backend_telemetry": backend_telemetry,
     }
+    if status == "UNAVAILABLE" and paddle_hard_error:
+        result["reason"] = paddle_hard_error
+    return result
 
 
 def _ocr_array_with_tesseract(
@@ -696,4 +913,89 @@ def ocr_evidence_from_loaded_images(
         "image_concurrency": bounded_concurrency,
         "items": [],
         **({"errors": errors} if errors else {}),
+    }
+
+
+def copyright_year_evidence_from_confirmed_grid(
+    loaded_images: list[Any],
+    multi_card_detection: dict[str, Any],
+    *,
+    language: str = "eng",
+    timeout_seconds: int = 20,
+) -> dict[str, Any] | None:
+    """Confirm an issue year from repeated publisher copyright lines in a 2x2 lot.
+
+    Statistics years are common and unsafe. This extractor only admits a year
+    when the geometry detector has confirmed four physical cards and the same
+    four-digit year appears beside TOPPS on at least two independent card backs.
+    """
+    if (
+        multi_card_detection.get("status") != "OK"
+        or multi_card_detection.get("card_count_confirmed") is not True
+        or int(multi_card_detection.get("card_count_estimate") or 0) != 4
+    ):
+        return None
+    image_id = str(multi_card_detection.get("image_id") or "")
+    loaded = next((item for item in loaded_images if "back" in str(getattr(item, "role", "")).lower()), None)
+    if loaded is None:
+        loaded = next((item for item in loaded_images if str(getattr(item, "image_id", "")) == image_id), None)
+    if loaded is None:
+        return None
+    image_id = str(getattr(loaded, "image_id", "") or image_id)
+    array = np.asarray(getattr(loaded, "array"))
+    height, width = array.shape[:2]
+    year_cells: dict[str, set[int]] = {}
+    observed_lines: dict[str, list[str]] = {}
+    for cell_index, (x1, y1, x2, y2) in enumerate([
+        (0, 0, width // 2, height // 2),
+        (width // 2, 0, width, height // 2),
+        (0, height // 2, width // 2, height),
+        (width // 2, height // 2, width, height),
+    ]):
+        legal_top = y1 + int((y2 - y1) * 0.76)
+        legal_crop = array[legal_top:y2, x1:x2]
+        if legal_crop.size == 0:
+            continue
+        try:
+            lines = _ocr_array_with_tesseract(
+                legal_crop,
+                image_id=image_id,
+                role="card_back_copyright",
+                source_type="CARD_BACK_PRINTED_TEXT",
+                language=language,
+                psm=6,
+                timeout_seconds=timeout_seconds,
+                item_prefix=f"copyright_cell_{cell_index + 1}",
+                bbox_offset=(x1, legal_top),
+                coordinate_scale=4.0,
+                upscale=4,
+            )
+        except Exception:  # noqa: BLE001 - optional corroboration must fail closed.
+            continue
+        for line in lines:
+            text = str(line.get("observed_text") or line.get("text") or "")
+            if "TOPPS" not in text.upper():
+                continue
+            for year in re.findall(r"\b(?:19|20)\d{2}\b", text):
+                year_cells.setdefault(year, set()).add(cell_index)
+                observed_lines.setdefault(year, []).append(text)
+    confirmed = [year for year, cells in year_cells.items() if len(cells) >= 2]
+    if len(confirmed) != 1:
+        return None
+    year = confirmed[0]
+    return {
+        "item_id": f"copyright_year_consensus_{image_id}",
+        "image_id": image_id,
+        "role": "card_back_copyright",
+        "field": "year",
+        "value": year,
+        "text": f"copyright year {year} repeated on {len(year_cells[year])} card backs",
+        "observed_text": " | ".join(observed_lines[year][:2]),
+        "confidence": 0.92,
+        "source_type": "CARD_BACK_PRINTED_TEXT",
+        "directly_observed": True,
+        "region": {
+            "algorithm": "confirmed_2x2_grid_copyright_consensus_v1",
+            "independent_card_count": len(year_cells[year]),
+        },
     }

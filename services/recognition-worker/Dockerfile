@@ -41,7 +41,7 @@ COPY app /app/app
 # PP-OCRv5, mkldnn disabled); the follow-up predict pulls the fonts. Everything
 # lands in PADDLE_PDX_CACHE_HOME and is committed to the image.
 ENV PADDLE_PDX_CACHE_HOME=/opt/paddlex
-RUN python -c "import numpy as np; from app.pipelines.ocr_pipeline import preload_paddleocr_engine, _get_paddleocr_engine; status = preload_paddleocr_engine(); print('preload:', status); _get_paddleocr_engine().predict(np.zeros((64, 256, 3), dtype='uint8')); print('bake predict ok')"
+RUN python -c "import numpy as np; from app.pipelines.ocr_pipeline import preload_paddleocr_engine, _get_paddleocr_engine, _get_paddleocr_recognition_engine; blank = np.zeros((64, 256, 3), dtype='uint8'); status = preload_paddleocr_engine(); print('preload:', status); _get_paddleocr_engine().predict(blank); _get_paddleocr_recognition_engine().predict(input=blank, batch_size=1); print('bake predict ok')"
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

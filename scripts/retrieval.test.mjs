@@ -52,6 +52,29 @@ assert.equal(isKnownRetrievalProviderId("not_real_search"), false);
 assert.equal(openAiWebSearchModelConfig("gpt-4.1-mini").allowed, true);
 assert.equal(openAiWebSearchModelConfig("gpt-5").allowed, false);
 
+const exactCodeYearRecoveryQuery = planRetrievalQueries({
+  resolved: {
+    year: "2018",
+    product: "Panini Contenders Optic",
+    players: ["Luka Doncic"],
+    collector_number: "128"
+  },
+  includeExternal: false
+}).find((query) => query.family === retrievalQueryFamilies.CATALOG_EXACT_CODE);
+assert.equal(exactCodeYearRecoveryQuery.ignore_observed_year, true);
+
+const setSubjectProductRecoveryQuery = planRetrievalQueries({
+  resolved: {
+    year: "2026",
+    manufacturer: "Topps",
+    product: "Mega Futures",
+    set: "Mega Futures",
+    players: ["Roman Anthony"]
+  },
+  includeExternal: false
+}).find((query) => query.family === retrievalQueryFamilies.CATALOG_SET_SUBJECT);
+assert.equal(setSubjectProductRecoveryQuery.ignore_observed_product, true);
+
 const testEmbedding = Array.from({ length: 768 }, (_, index) => Number((index / 1000).toFixed(3)));
 const visualPlanned = planRetrievalQueries({
   resolved,
@@ -753,6 +776,22 @@ const scored = scoreRetrievalCandidate({
 assert.ok(scored.match_score > 0.7);
 assert.ok(scored.matched_fields.includes("checklist_code"));
 assert.ok(scored.matched_fields.includes("players"));
+
+const diacriticSubjectScore = scoreRetrievalCandidate({
+  title: "2018-19 Panini Contenders Optic Luka Doncic Rookie Ticket Auto",
+  fields: {
+    year: "2018-19",
+    players: ["Luka Doncic"],
+    product: "Panini Contenders Optic"
+  },
+  trust_tier: 2
+}, {
+  year: "2018-19",
+  players: ["Luka Dončić"],
+  product: "Panini Contenders Optic"
+});
+assert.ok(diacriticSubjectScore.matched_fields.includes("players"));
+assert.ok(!diacriticSubjectScore.conflicting_fields.includes("players"));
 
 const lowMarginRanked = rankRetrievalCandidates([
   {

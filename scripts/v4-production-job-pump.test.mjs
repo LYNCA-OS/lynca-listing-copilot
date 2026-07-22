@@ -255,10 +255,8 @@ assert.match(enqueueSource, /interactiveWorkers \* perWorkerLimit/);
 assert.match(enqueueSource, /backgroundWorkers \* perWorkerLimit/);
 assert.match(enqueueSource, /const interactiveConcurrency = Math\.min\(stableConcurrency, interactiveLimit\)/);
 assert.match(enqueueSource, /const backgroundConcurrency = Math\.min\(stableConcurrency, backgroundLimit\)/);
-assert.match(enqueueSource, /cycles:\s*1/);
-assert.match(enqueueSource, /lease_seconds:\s*120/);
-assert.match(enqueueSource, /continuation_cycles:\s*1/);
-assert.match(enqueueSource, /max_continuation_depth:\s*100/);
+assert.match(enqueueSource, /v4DurableQueueDrainContract/);
+assert.doesNotMatch(enqueueSource, /cycles:\s*1/);
 assert.match(enqueueSource, /background_limit: backgroundLimit/);
 assert.match(enqueueSource, /interactive_limit: interactiveLimit/);
 assert.match(enqueueSource, /interactive_process_concurrency: interactiveConcurrency/);
@@ -326,6 +324,13 @@ assert.match(tenantFairQueueMigration, /notify pgrst, 'reload schema'/);
 
 const queueSchemaRefreshMigration = readFileSync(new URL("../supabase/migrations/20260712183000_refresh_v4_queue_rpc_schema.sql", import.meta.url), "utf8");
 assert.match(queueSchemaRefreshMigration, /notify pgrst, 'reload schema'/);
+
+const deploymentAffinityMigration = readFileSync(new URL("../supabase/migrations/20260719205025_v4_queue_deployment_affinity.sql", import.meta.url), "utf8");
+assert.match(deploymentAffinityMigration, /current_setting\(''lynca\.deployment_affinity''/);
+assert.match(deploymentAffinityMigration, /claim_v4_recognition_jobs_with_balanced_capacity_for_deployment/);
+assert.match(deploymentAffinityMigration, /nullif\(jobs\.queue_tags ->> ''deployment_affinity''/);
+assert.match(deploymentAffinityMigration, /grant execute[\s\S]*to service_role/);
+assert.match(deploymentAffinityMigration, /notify pgrst, 'reload schema'/);
 
 const heartbeatSecurityMigration = readFileSync(new URL("../supabase/migrations/20260711194540_harden_public_function_security_and_queue_heartbeat.sql", import.meta.url), "utf8");
 assert.match(heartbeatSecurityMigration, /create or replace function public\.heartbeat_v4_recognition_job/);

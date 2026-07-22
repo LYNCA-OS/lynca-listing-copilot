@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import handler from "../api/listing-provider-status.js";
 import { createListingSessionToken } from "../lib/listing-session.mjs";
+import { __clearTenantMembershipCacheForTests } from "../lib/tenant/access.mjs";
 
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
@@ -25,6 +26,12 @@ process.env.ENABLE_VECTOR_RETRIEVAL = "false";
 process.env.VECTOR_RETRIEVAL_MODE = "off";
 process.env.VECTOR_WORKER_URL = "https://vector.worker.test";
 process.env.VECTOR_WORKER_TOKEN = "test-vector-token";
+process.env.ENABLE_RECOGNITION_WORKER = "true";
+process.env.RECOGNITION_WORKER_URL = "https://recognition.worker.test";
+process.env.RECOGNITION_WORKER_TOKEN = "test-recognition-token";
+process.env.ENABLE_PADDLE_OCR_FIELD_VERIFIER = "true";
+process.env.PADDLE_OCR_WORKER_URL = "https://recognition.worker.test";
+process.env.PADDLE_OCR_WORKER_TOKEN = "test-recognition-token";
 process.env.PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED = "true";
 process.env.RETRIEVAL_CATALOG_STAGE_CAPACITY_CONTROL_ENABLED = "true";
 process.env.VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED = "true";
@@ -150,6 +157,8 @@ assert.equal(response.body.execution_control.queue_kick_dedup_ms, 1200);
 assert.equal(response.body.execution_control.provider_key_pool_size, 2);
 assert.equal(response.body.execution_control.per_key_stable_concurrency, 2);
 assert.equal(response.body.execution_control.global_provider_concurrency, 2, "multiple keys must not silently exceed the measured production knee");
+assert.deepEqual(response.body.execution_control.recognition_worker, { enabled: true, configured: true });
+assert.deepEqual(response.body.execution_control.paddle_ocr_verifier, { enabled: true, configured: true });
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.capacity_control_enabled, true);
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.global_capacity, 8);
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.per_asset_capacity, 1);
@@ -167,6 +176,7 @@ assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-open
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-vector-token|vector\.worker\.test/);
 
 membershipRole = "WRITER";
+__clearTenantMembershipCacheForTests();
 response = await callStatus();
 assert.equal(response.statusCode, 200);
 assert.equal(response.body.default_provider, "openai_legacy");
@@ -183,10 +193,12 @@ assert.equal("key_pool_size" in response.body.providers[0], false);
 assert.equal("recommended_concurrency" in response.body.providers[0], false);
 
 membershipRole = "MANAGER";
+__clearTenantMembershipCacheForTests();
 response = await callStatus();
 assert.equal(response.statusCode, 200);
 assert.equal(response.body.execution_control.provider_key_pool_size, 2, "Manager may view tenant operations diagnostics");
 membershipRole = "OWNER";
+__clearTenantMembershipCacheForTests();
 
 delete process.env.V4_INTERNAL_BASE_URL;
 response = await callStatus();

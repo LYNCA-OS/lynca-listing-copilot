@@ -270,6 +270,49 @@ assert.equal(packet.vector_retrieval.candidates[0].fields.serial_number, undefin
 assert.equal(packet.vector_retrieval.candidates[0].fields.grade_company, undefined);
 assert.doesNotMatch(JSON.stringify(packet), /31\/50|PSA|12345678|corrected_title/i);
 
+const dedupedCatalogPacket = buildVectorCandidatePacket({
+  sources: [
+    {
+      candidate_id: "catalog-shared-first",
+      candidate_identity_id: "catalog-shared",
+      provider_id: "catalog",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "APPROVED_REFERENCE",
+      normalized_score: 0.95,
+      title: "2024 Topps Chrome Test Player Red",
+      fields: { year: "2024", product: "Topps Chrome", players: ["Test Player"], surface_color: "Red" }
+    },
+    {
+      candidate_id: "catalog-shared-duplicate",
+      candidate_identity_id: "catalog-shared",
+      provider_id: "catalog",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "APPROVED_REFERENCE",
+      normalized_score: 0.94,
+      title: "2024 Topps Chrome Test Player Red",
+      fields: { year: "2024", product: "Topps Chrome", players: ["Test Player"], surface_color: "Red" }
+    },
+    {
+      candidate_id: "catalog-distinct",
+      candidate_identity_id: "catalog-distinct",
+      provider_id: "catalog",
+      source_type: "STRUCTURED_DATABASE",
+      source_trust: "APPROVED_REFERENCE",
+      normalized_score: 0.9,
+      title: "2024 Topps Chrome Test Player Blue",
+      fields: { year: "2024", product: "Topps Chrome", players: ["Test Player"], surface_color: "Blue" }
+    }
+  ]
+}, {
+  limit: 2,
+  queryFields: { year: "2024", product: "Topps Chrome", players: ["Test Player"] }
+});
+assert.deepEqual(
+  dedupedCatalogPacket.vector_retrieval.candidates.map((candidate) => candidate.candidate_identity_id),
+  ["catalog-shared", "catalog-distinct"],
+  "repeated rows from overlapping catalog query families must not crowd a distinct identity out of the decision set"
+);
+
 const expanded = extractQueryExpansionFields({
   resolved: {
     year: "2024",

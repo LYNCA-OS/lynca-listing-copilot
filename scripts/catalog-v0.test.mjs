@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { componentBooleansFromObservableComponents } from "../lib/listing/card-type-policy.mjs";
 import {
@@ -70,6 +71,56 @@ assert.equal(parsedCatalog.staging.physical_instance_fields.grade_company, "PSA"
 assert.equal(parsedCatalog.staging.identity_fields.grade_company, undefined);
 assert.ok(parsedCatalog.staging.identity_fields.observable_components.includes("auto"));
 assert.ok(parsedCatalog.staging.identity_fields.observable_components.includes("rc"));
+assert.equal(parsedCatalog.staging.identity_fields.auto, true);
+assert.equal(parsedCatalog.staging.identity_fields.rc, true);
+
+const toppsNbaHoops = parseReviewedTitleFields("2025-26 Topps NBA Hoops Kevin Durant Hoopers Pixel Burst Red 1/5 SSP");
+assert.equal(toppsNbaHoops.manufacturer, "Topps");
+assert.equal(toppsNbaHoops.product, "Topps NBA Hoops");
+assert.deepEqual(toppsNbaHoops.players, ["Kevin Durant"]);
+assert.equal(toppsNbaHoops.official_card_type, "Hoopers Pixel Burst");
+assert.equal(toppsNbaHoops.ssp, true);
+assert.equal(toppsNbaHoops.rarity, "SSP");
+
+const bowmanUniversity = parseReviewedTitleFields("2025 Topps Bowman University Chrome Sienna Betts UCLA Anime SSP");
+assert.equal(bowmanUniversity.manufacturer, "Topps");
+assert.equal(bowmanUniversity.brand, "Bowman");
+assert.equal(bowmanUniversity.product, "Bowman University Chrome");
+assert.equal(bowmanUniversity.team, "UCLA");
+assert.deepEqual(bowmanUniversity.players, ["Sienna Betts"]);
+assert.equal(bowmanUniversity.official_card_type, "Anime");
+assert.equal(bowmanUniversity.ssp, true);
+
+const signatureClass = parseReviewedTitleFields("2025 Topps Signature Class George Kittle Round 5 Pick 2 Auto");
+assert.equal(signatureClass.product, "Topps Signature Class");
+assert.deepEqual(signatureClass.players, ["George Kittle"]);
+assert.equal(signatureClass.official_card_type, "Round 5 Pick 2");
+
+const leafSuperGold = parseReviewedTitleFields("2023 Leaf Metal Draft Xavier Hutchinson Portrait Auto Super Gold RC 1/1");
+assert.equal(leafSuperGold.product, "Leaf Metal Draft");
+assert.deepEqual(leafSuperGold.players, ["Xavier Hutchinson"]);
+assert.equal(leafSuperGold.official_card_type, "Portrait Auto");
+assert.equal(leafSuperGold.surface_color, "Gold");
+assert.equal(leafSuperGold.parallel_family, null);
+assert.equal(leafSuperGold.parallel_exact, "Super Gold");
+assert.equal(leafSuperGold.rc, true);
+assert.equal(leafSuperGold.auto, true);
+
+const ufcRedBlue = parseReviewedTitleFields("2025 Topps Chrome UFC Reinier de Ridder RC Red & Blue Refractor Rookie");
+assert.equal(ufcRedBlue.product, "Topps Chrome UFC");
+assert.deepEqual(ufcRedBlue.players, ["Reinier De Ridder"]);
+assert.equal(ufcRedBlue.surface_color, "Red");
+assert.equal(ufcRedBlue.parallel_family, "Refractor");
+assert.equal(ufcRedBlue.parallel_exact, "Red & Blue Refractor");
+assert.equal(ufcRedBlue.rc, true);
+
+const leafSuperGoldCatalog = correctedTitleRecordToCatalogStaging({
+  id: "feedback-leaf-super-gold",
+  corrected_title: "2023 Leaf Metal Draft Xavier Hutchinson Portrait Auto Super Gold RC 1/1"
+});
+assert.equal(leafSuperGoldCatalog.staging.identity_fields.parallel_exact, "Super Gold");
+assert.equal(leafSuperGoldCatalog.staging.identity_fields.parallel, "Super Gold");
+assert.equal(leafSuperGoldCatalog.staging.physical_instance_fields.serial_numerator, "1");
 
 const messiCatalog = correctedTitleRecordToCatalogStaging({
   id: "feedback-soccer-1",
@@ -218,6 +269,26 @@ const xlsxText = extractXlsxText(makeMiniXlsx());
 assert.match(xlsxText, /1 Jayson Tatum, Boston Celtics/);
 assert.match(xlsxText, /TFRA-SC Stephen Curry, Golden State Warriors/);
 
+const leafRows = parseOfficialChecklistText([
+  "Set\tSubset\tName\tChecklist\tFoil\tSilver\tRed\tBlue\tPink\tPurple\tGreen\tZebra\tTiger\tOil Spill\tGold\tClown Fish\tCity",
+  "2024 Leaf Eclectic Football\tExotic\tOllie Gordon II\tE-OG1\t4-Kaleidoscope\t4\t3\t10\t9\t8\t7\t6\t5\t2\t1\t\tStillwater"
+].join("\n"), {
+  sourceName: "2024 Leaf Eclectic Football Checklist",
+  sourceUrl: "https://leaf.example/2024-leaf-eclectic-football.xlsx",
+  provider: "leaf",
+  sourceType: catalogSourceTypes.LEAF_OFFICIAL_CHECKLIST,
+  category: "football"
+});
+assert.equal(leafRows.length, 1);
+assert.equal(leafRows[0].identity_fields.product, "Leaf Eclectic Football");
+assert.equal(leafRows[0].identity_fields.set_or_insert, "Exotic");
+assert.deepEqual(leafRows[0].identity_fields.players, ["Ollie Gordon II"]);
+assert.equal(leafRows[0].identity_fields.checklist_code, "E-OG1");
+assert.equal(leafRows[0].identity_fields.parallel_name, "Kaleidoscope");
+assert.equal(leafRows[0].identity_fields.parallel_exact, null);
+assert.equal(leafRows[0].identity_fields.serial_denominator, null);
+assert.equal(leafRows[0].physical_instance_fields.serial_number, undefined);
+
 const pdfLines = pdfTextLinesFromItems([
   { str: "MIRRORED", transform: [1, 0, 0, 1, 53, 700] },
   { str: "Diana Shnaider", transform: [1, 0, 0, 1, 132, 680] },
@@ -321,6 +392,8 @@ const officialImportReport = await buildOfficialChecklistImport({
   })
 });
 assert.equal(officialImportReport.metrics.official_source_type, "PANINI_OFFICIAL_CHECKLIST");
+assert.deepEqual(officialImportReport.metrics.official_source_types, ["PANINI_OFFICIAL_CHECKLIST"]);
+assert.deepEqual(officialImportReport.metrics.official_source_type_counts, { PANINI_OFFICIAL_CHECKLIST: 1 });
 assert.equal(officialImportReport.sources[0].source_type, "PANINI_OFFICIAL_CHECKLIST");
 assert.equal(officialImportReport.sources[0].source_status, "OFFICIAL_CHECKLIST_RAW");
 assert.equal(officialImportReport.sources[0].source_trust, "OFFICIAL_CHECKLIST_CANDIDATE");
@@ -340,6 +413,86 @@ const manifestValidation = validateOfficialSourceManifestReport({
 }, officialImportReport);
 assert.equal(manifestValidation.valid, true);
 assert.equal(manifestValidation.validations[0].record_checks[0].matched, true);
+
+const leafChecklistReport = await buildOfficialChecklistImport({
+  provider: "leaf",
+  sourceUrls: [{
+    href: "https://leaf.example/2024-leaf-eclectic-football.txt",
+    text: "2024 Leaf Eclectic Football Checklist",
+    source_type: catalogSourceTypes.LEAF_OFFICIAL_CHECKLIST,
+    category: "football"
+  }],
+  fetchImpl: async () => new Response([
+    "Set\tSubset\tName\tChecklist\tFoil",
+    "2024 Leaf Eclectic Football\tExotic\tOllie Gordon II\tE-OG1\t4-Kaleidoscope"
+  ].join("\n"), {
+    status: 200,
+    headers: { "content-type": "text/plain" }
+  })
+});
+assert.equal(leafChecklistReport.metrics.official_source_type, catalogSourceTypes.LEAF_OFFICIAL_CHECKLIST);
+assert.deepEqual(leafChecklistReport.metrics.official_source_types, [catalogSourceTypes.LEAF_OFFICIAL_CHECKLIST]);
+const leafManifestValidation = validateOfficialSourceManifestReport({
+  sources: [{
+    source_name: "2024 Leaf Eclectic Football Checklist",
+    source_url: "https://leaf.example/2024-leaf-eclectic-football.txt",
+    source_type: catalogSourceTypes.LEAF_OFFICIAL_CHECKLIST,
+    minimum_card_count: 1,
+    required_records: [{
+      checklist_code: "E-OG1",
+      subject: "Ollie Gordon II",
+      product: "Leaf Eclectic Football",
+      set_or_insert: "Exotic"
+    }]
+  }]
+}, leafChecklistReport);
+assert.equal(leafManifestValidation.valid, true);
+assert.equal(leafManifestValidation.validations[0].source_type_matches, true);
+assert.equal(leafManifestValidation.validations[0].actual_source_type, catalogSourceTypes.LEAF_OFFICIAL_CHECKLIST);
+
+const leafTypeMismatchValidation = validateOfficialSourceManifestReport({
+  sources: [{
+    source_name: "2024 Leaf Eclectic Football Checklist",
+    source_url: "https://leaf.example/2024-leaf-eclectic-football.txt",
+    source_type: catalogSourceTypes.LEAF_OFFICIAL_RELEASE,
+    minimum_card_count: 1
+  }]
+}, leafChecklistReport);
+assert.equal(leafTypeMismatchValidation.valid, false);
+assert.equal(leafTypeMismatchValidation.validations[0].source_type_matches, false);
+
+const productionToppsManifest = JSON.parse(await readFile(new URL(
+  "../data/catalog/official/topps-production-sources.json",
+  import.meta.url
+), "utf8"));
+const bowman2026Source = productionToppsManifest.sources.find((source) => (
+  source.source_name === "2026 Bowman Baseball Checklist"
+));
+assert.ok(bowman2026Source, "production official-source manifest must include 2026 Bowman");
+assert.ok(bowman2026Source.minimum_card_count >= 1000);
+assert.deepEqual(bowman2026Source.required_records[0], {
+  checklist_code: "BWC-19",
+  subject: "Shohei Ohtani",
+  product: "Bowman Baseball",
+  set_or_insert: "CRYSTALLIZED"
+});
+
+const productionLeafManifest = JSON.parse(await readFile(new URL(
+  "../data/catalog/official/leaf-production-sources.json",
+  import.meta.url
+), "utf8"));
+const eclectic2024Source = productionLeafManifest.sources.find((source) => (
+  source.source_name === "2024 Leaf Eclectic Football Checklist"
+));
+assert.ok(eclectic2024Source, "production official-source manifest must include 2024 Leaf Eclectic Football");
+assert.equal(eclectic2024Source.source_type, catalogSourceTypes.LEAF_OFFICIAL_CHECKLIST);
+assert.ok(eclectic2024Source.minimum_card_count >= 1000);
+assert.deepEqual(eclectic2024Source.required_records[0], {
+  checklist_code: "E-OG1",
+  subject: "Ollie Gordon II",
+  product: "Leaf Eclectic Football",
+  set_or_insert: "Exotic"
+});
 
 assert.equal(officialCatalogSourceProfile("leaf").source_type, catalogSourceTypes.LEAF_OFFICIAL_RELEASE);
 assert.equal(isOfficialReleaseCatalogSourceType(catalogSourceTypes.LEAF_OFFICIAL_RELEASE), true);
@@ -536,6 +689,7 @@ const provider = catalogProvider({
         supporting_fields: ["collector_number", "players", "year", "product"],
         raw_score: 0.84,
         normalized_score: 0.84,
+        source_feedback_id: "feedback-other-card",
         expected_serial_denominator: "50"
       },
       {
@@ -580,8 +734,40 @@ assert.equal(catalogRpcBody.exact_card_number, "136");
 assert.equal(catalogRpcBody.exact_serial_denominator, "50");
 assert.equal(providerResult.candidates.length, 1);
 assert.equal(providerResult.candidates[0].provider_id, retrievalProviderIds.CATALOG);
+assert.equal(providerResult.candidates[0].source_feedback_id, "feedback-other-card");
+assert.equal(providerResult.candidates[0].reference_metadata.source_feedback_id, "feedback-other-card");
 assert.equal(providerResult.candidates[0].fields.serial_number, "#/50");
 assert.equal(providerResult.candidates[0].reference_metadata.expected_serial_denominator, "50");
+
+const subjectPreservationProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_BASKETBALL_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([{
+    identity_id: "44444444-4444-4444-4444-444444444444",
+    canonical_title: "2026 Bowman Shohei Ohtani Electric Sluggers Refractor",
+    fields: {
+      year: "2026",
+      product: "Bowman",
+      players: ["Shohei Ohtani"]
+    },
+    retrieval_status: "reviewed",
+    source_type: "INTERNAL_CORRECTED_TITLE",
+    source_status: "REVIEWED_INTERNAL",
+    raw_score: 1,
+    normalized_score: 1
+  }]), { status: 200 })
+});
+const subjectPreservationResult = await subjectPreservationProvider.search({
+  query: { exact_subject: "Shohei Ohtani", exact_year: "2026" }
+});
+assert.deepEqual(
+  subjectPreservationResult.candidates[0].fields.players,
+  ["Shohei Ohtani"],
+  "reviewed structured subjects must not absorb title-only insert/card-name suffixes"
+);
 
 const fallbackUrls = [];
 const preMigrationProvider = catalogProvider({
@@ -709,8 +895,13 @@ assert.ok(visualIndex > firstCatalogIndex);
 assert.equal(planned.some((query) => /paniniamerica\.net/i.test(query.query)), false);
 assert.ok(
   planned.filter((query) => query.provider_id === retrievalProviderIds.CATALOG)
+    .every((query) => !query.exclude_source_feedback_ids?.length),
+  "official and writer-reviewed catalog memory must remain reusable for previously seen cards"
+);
+assert.ok(
+  planned.filter((query) => query.provider_id === retrievalProviderIds.VISUAL_VECTOR)
     .every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card"),
-  "catalog queries must carry current-record self-exclusion"
+  "visual-vector retrieval must still exclude the current source image"
 );
 
 console.log("catalog v0 tests passed");

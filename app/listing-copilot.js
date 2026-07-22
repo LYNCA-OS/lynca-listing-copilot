@@ -32,6 +32,8 @@ const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
 const STORAGE_OBJECT_UPLOAD_TIMEOUT_MS = 30000;
 const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750, 1500]);
+const STORAGE_VERIFY_TIMEOUT_MS = 20000;
+const STORAGE_VERIFY_RETRY_DELAYS_MS = Object.freeze([250, 1000]);
 const PROVIDER_STATUS_RECOVERY_DELAYS_MS = Object.freeze([2000, 5000, 10000, 30000]);
 const PREINGEST_REQUEST_TIMEOUT_MS = 25000;
 const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
@@ -220,19 +222,22 @@ function retryableStorageApiResponse(response, payload = {}) {
   return [408, 425, 429, 500, 502, 503, 504].includes(status);
 }
 
-async function fetchStorageApiJson(url, options = {}) {
+async function fetchStorageApiJson(url, options = {}, {
+  timeoutMs = STORAGE_OBJECT_UPLOAD_TIMEOUT_MS,
+  retryDelaysMs = STORAGE_API_RETRY_DELAYS_MS
+} = {}) {
   let lastError = null;
-  for (let attempt = 0; attempt <= STORAGE_API_RETRY_DELAYS_MS.length; attempt += 1) {
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
     try {
       const request = await fetchWithBoundedRetry(url, options, {
-        timeoutMs: STORAGE_OBJECT_UPLOAD_TIMEOUT_MS,
+        timeoutMs,
         maxAttempts: 1,
         retryNetworkErrors: true
       });
       const response = request.response;
       const payload = await response.json().catch(() => ({}));
       if (
-        attempt === STORAGE_API_RETRY_DELAYS_MS.length
+        attempt === retryDelaysMs.length
         || !retryableStorageApiResponse(response, payload)
       ) {
         return {
@@ -245,9 +250,9 @@ async function fetchStorageApiJson(url, options = {}) {
       }
     } catch (error) {
       lastError = error;
-      if (attempt === STORAGE_API_RETRY_DELAYS_MS.length) throw error;
+      if (attempt === retryDelaysMs.length) throw error;
     }
-    await wait(STORAGE_API_RETRY_DELAYS_MS[attempt]);
+    await wait(retryDelaysMs[attempt]);
   }
   throw lastError || new Error("Storage API request failed.");
 }
@@ -1143,6 +1148,12 @@ async function verifyUploadedAssetImage({
       contentSha256,
       cropMetadata: image.cropMetadata || image.crop_metadata || null
     })
+  }, {
+    // Verification is idempotent and the uploaded object is preserved on
+    // transient errors. Bound this stage separately so one dead storage read
+    // cannot pin a writer card for minutes.
+    timeoutMs: STORAGE_VERIFY_TIMEOUT_MS,
+    retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS
   });
   assertCurrentAssetLifecycle(asset);
   if (!verifyResponse.ok || !verifyPayload.ok) {
@@ -1407,7 +1418,20 @@ async function ensureAssetOriginalImagesUploaded(asset) {
           first_error: error
         };
       });
-
+    const failedOriginal = phases.originalOutcomes.find((outcome) => outcome.ok !== true);
+    if (failedOriginal) {
+      // Throw so the outer guard clears originalStorageUploadPromise. The
+      // background preparation loop can then retry only the pending
+      // verification; the successful signed PUT is preserved and is not paid
+      // for a second time.
+      throw failedOriginal.error || new Error("listing_original_upload_failed");
+    }
+    const originalsReady = indexedImages
+      .filter(({ image }) => !imageIsDerivedForRequest(image))
+      .every(({ image }) => imageHasVerifiedStorageReference(image, canonicalAssetId(asset), canonicalAssetTenantId(asset)));
+    if (!originalsReady) {
+      throw new Error("listing_original_verification_incomplete");
+    }
     return phases.originalOutcomes.some((outcome) => outcome.uploaded === true);
   })();
 

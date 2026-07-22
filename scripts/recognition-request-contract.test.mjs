@@ -37,6 +37,11 @@ assert.equal(profile.execution.create_l2_job, true);
 assert.equal(profile.provider_options.enable_catalog_assist, true);
 assert.equal(profile.provider_options.enable_vector_assist, true);
 assert.equal(profile.provider_options.vector_query_timeout_ms, 8000);
+assert.equal(profile.provider_options.v4_title_stage_target, "L2_ASSISTED_DRAFT");
+assert.equal(profile.provider_options.v4_compact_l2_prompt, true);
+assert.equal(profile.provider_options.v4_ultra_fast_l2, false);
+assert.equal(profile.provider_options.v4_ultra_sparse_transport, false);
+assert.equal(profile.provider_options.enable_fast_initial_provider_prompt, false);
 
 const bound = bindRecognitionProfileToPayload({
   recognition_profile: defaultRecognitionProfileId,
@@ -47,6 +52,7 @@ const bound = bindRecognitionProfileToPayload({
 }, { env });
 assert.equal(bound.provider, undefined);
 assert.equal(bound.provider_options.enable_vector_assist, true);
+assert.equal(bound.provider_options.v4_compact_l2_prompt, true);
 assert.equal(bound.v4_force_l2_direct, true);
 assert.equal(bound.client_speculative, true);
 

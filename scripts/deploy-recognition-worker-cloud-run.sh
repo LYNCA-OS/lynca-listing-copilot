@@ -15,15 +15,16 @@ CONCURRENCY="${RECOGNITION_WORKER_CONCURRENCY:-1}"
 TIMEOUT="${RECOGNITION_WORKER_TIMEOUT_SECONDS:-300}"
 MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-8}"
 MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-10}"
-ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-5}"
+ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-2}"
 STARTUP_PROBE_TIMEOUT_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_TIMEOUT_SECONDS:-240}"
 STARTUP_PROBE_PERIOD_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_PERIOD_SECONDS:-240}"
 STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRESHOLD:-2}"
 # Paddle predictors are serialized inside each process. Cloud Run concurrency
-# therefore stays at one while replicas provide parallelism. Deploy with five
-# warm replicas first so the old and new revisions fit the 20-vCPU regional
-# quota during a zero-downtime rollout. Once traffic has moved and the old
-# revision releases capacity, raise the service-level floor to eight. The
+# therefore stays at one while replicas provide parallelism. With two vCPUs per
+# instance and eight warm instances serving the old revision, a rollout floor
+# of two is the largest zero-downtime overlap that fits the 20-vCPU regional
+# quota: (8 + 2) * 2 = 20. Once traffic has moved and the old revision releases
+# capacity, raise the service-level floor to eight. The
 # revision-level minimum is removed so it cannot deadlock a rollout; the
 # revision-level maximum remains aligned with the service cap because Cloud Run
 # may otherwise restore a lower platform default.
@@ -33,6 +34,10 @@ STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRE
 # revision-level scaling: a stale service cap silently overrides a larger cap.
 ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:-osrrujmpxxiefppjfgpd.supabase.co}"
 TOKEN_SECRET_NAME="${RECOGNITION_WORKER_TOKEN_SECRET_NAME:-lynca-recognition-worker-token}"
+VISION_SECRET_NAME="${VISION_API_KEY_SECRET_NAME:-lynca-google-vision-api-key}"
+OCR_BACKEND="${OCR_BACKEND:-google_vision}"
+VISION_FEATURE_TYPE="${VISION_FEATURE_TYPE:-DOCUMENT_TEXT_DETECTION}"
+VISION_TIMEOUT_SECONDS="${VISION_TIMEOUT_SECONDS:-30}"
 ENABLE_PADDLEOCR="${ENABLE_PADDLEOCR:-true}"
 ENABLE_TESSERACT_OCR="${ENABLE_TESSERACT_OCR:-true}"
 TESSERACT_IMAGE_CONCURRENCY="${TESSERACT_IMAGE_CONCURRENCY:-2}"
@@ -60,6 +65,14 @@ if [ "$ROLLOUT_MIN_INSTANCES" -gt "$MIN_INSTANCES" ]; then
   echo "RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES cannot exceed RECOGNITION_WORKER_MIN_INSTANCES." >&2
   exit 1
 fi
+
+case "$OCR_BACKEND" in
+  paddle|deepseek|google_vision|hybrid) ;;
+  *)
+    echo "OCR_BACKEND must be paddle, deepseek, google_vision, or hybrid." >&2
+    exit 1
+    ;;
+esac
 
 gcloud config set project "$GCP_PROJECT_ID" >/dev/null
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com --project "$GCP_PROJECT_ID" >/dev/null
@@ -89,12 +102,36 @@ else
   exit 1
 fi
 
+if [ -n "${VISION_API_KEY:-}" ]; then
+  if gcloud secrets describe "$VISION_SECRET_NAME" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+    printf "%s" "$VISION_API_KEY" \
+      | gcloud secrets versions add "$VISION_SECRET_NAME" --data-file=- --project "$GCP_PROJECT_ID" >/dev/null
+  else
+    printf "%s" "$VISION_API_KEY" \
+      | gcloud secrets create "$VISION_SECRET_NAME" --data-file=- --replication-policy=automatic --project "$GCP_PROJECT_ID" >/dev/null
+  fi
+elif gcloud secrets describe "$VISION_SECRET_NAME" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+  echo "Reusing existing Secret Manager secret: ${VISION_SECRET_NAME}" >&2
+elif [ "$OCR_BACKEND" = "google_vision" ] || [ "$OCR_BACKEND" = "hybrid" ]; then
+  echo "VISION_API_KEY is required because Secret Manager secret ${VISION_SECRET_NAME} does not exist." >&2
+  exit 1
+fi
+
 PROJECT_NUMBER="$(gcloud projects describe "$GCP_PROJECT_ID" --format='value(projectNumber)')"
 COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 gcloud secrets add-iam-policy-binding "$TOKEN_SECRET_NAME" \
   --member "serviceAccount:${COMPUTE_SA}" \
   --role roles/secretmanager.secretAccessor \
   --project "$GCP_PROJECT_ID" >/dev/null
+
+VISION_SECRET_BINDING=""
+if gcloud secrets describe "$VISION_SECRET_NAME" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
+  gcloud secrets add-iam-policy-binding "$VISION_SECRET_NAME" \
+    --member "serviceAccount:${COMPUTE_SA}" \
+    --role roles/secretmanager.secretAccessor \
+    --project "$GCP_PROJECT_ID" >/dev/null
+  VISION_SECRET_BINDING=",VISION_API_KEY=${VISION_SECRET_NAME}:latest"
+fi
 
 # Cloud Build capacity is independent from the Cloud Run serving region. Use
 # the global pool by default because regional E2 quotas can reject an otherwise
@@ -117,6 +154,20 @@ fi
 
 # Deployment only starts after a complete image exists. A build/download
 # failure therefore leaves the serving revision and its traffic untouched.
+# Service-level warm capacity must be reduced before creating the overlapping
+# revision. Setting only the new revision floor does not override an existing
+# service minScale=8 and can exceed the regional 20-vCPU quota during rollout.
+if gcloud run services describe "$SERVICE_NAME" \
+  --project "$GCP_PROJECT_ID" \
+  --region "$GCP_REGION" >/dev/null 2>&1; then
+  gcloud run services update "$SERVICE_NAME" \
+    --project "$GCP_PROJECT_ID" \
+    --region "$GCP_REGION" \
+    --min "$ROLLOUT_MIN_INSTANCES" \
+    --max "$MAX_INSTANCES" \
+    --format='none'
+fi
+
 DEPLOYED_URL="$(gcloud run deploy "$SERVICE_NAME" \
   --image "$IMAGE_URI" \
   --project "$GCP_PROJECT_ID" \
@@ -133,8 +184,8 @@ DEPLOYED_URL="$(gcloud run deploy "$SERVICE_NAME" \
   --max "$MAX_INSTANCES" \
   --min-instances default \
   --max-instances "$MAX_INSTANCES" \
-  --set-secrets "RECOGNITION_WORKER_TOKEN=${TOKEN_SECRET_NAME}:latest" \
-  --set-env-vars "RECOGNITION_ALLOWED_IMAGE_HOSTS=${ALLOWED_HOSTS},RECOGNITION_MAX_IMAGE_BYTES=26214400,RECOGNITION_MAX_TOTAL_PIXELS=50000000,ENABLE_IMAGE_DOWNLOAD=true,ENABLE_TESSERACT_OCR=${ENABLE_TESSERACT_OCR},TESSERACT_IMAGE_CONCURRENCY=${TESSERACT_IMAGE_CONCURRENCY},ENABLE_OPENCV_RECTIFICATION=true,ENABLE_VISUAL_EMBEDDINGS=false,VISUAL_EMBEDDING_PRELOAD=false,VISUAL_EMBEDDING_MODEL_ID=google/siglip2-base-patch16-384,VISUAL_EMBEDDING_MODEL_REVISION=f775b65a79762255128c981547af89addcfe0f88,VISUAL_EMBEDDING_PREPROCESSING_VERSION=card-rectification-v1,VISUAL_EMBEDDING_DIMENSIONS=768,ENABLE_CANDIDATE_VERIFICATION=false,ENABLE_PADDLEOCR=${ENABLE_PADDLEOCR},PADDLEOCR_PRELOAD=${PADDLEOCR_PRELOAD},PADDLEOCR_WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},PADDLEOCR_MODEL_ID=${PADDLEOCR_MODEL_ID},PADDLEOCR_MODEL_REVISION=${PADDLEOCR_MODEL_REVISION},RECOGNITION_REQUEST_TIMEOUT_SECONDS=${TIMEOUT}" \
+  --set-secrets "RECOGNITION_WORKER_TOKEN=${TOKEN_SECRET_NAME}:latest${VISION_SECRET_BINDING}" \
+  --set-env-vars "RECOGNITION_ALLOWED_IMAGE_HOSTS=${ALLOWED_HOSTS},RECOGNITION_MAX_IMAGE_BYTES=26214400,RECOGNITION_MAX_TOTAL_PIXELS=50000000,ENABLE_IMAGE_DOWNLOAD=true,ENABLE_TESSERACT_OCR=${ENABLE_TESSERACT_OCR},TESSERACT_IMAGE_CONCURRENCY=${TESSERACT_IMAGE_CONCURRENCY},ENABLE_OPENCV_RECTIFICATION=true,ENABLE_VISUAL_EMBEDDINGS=false,VISUAL_EMBEDDING_PRELOAD=false,VISUAL_EMBEDDING_MODEL_ID=google/siglip2-base-patch16-384,VISUAL_EMBEDDING_MODEL_REVISION=f775b65a79762255128c981547af89addcfe0f88,VISUAL_EMBEDDING_PREPROCESSING_VERSION=card-rectification-v1,VISUAL_EMBEDDING_DIMENSIONS=768,ENABLE_CANDIDATE_VERIFICATION=false,ENABLE_PADDLEOCR=${ENABLE_PADDLEOCR},PADDLEOCR_PRELOAD=${PADDLEOCR_PRELOAD},PADDLEOCR_WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},PADDLEOCR_MODEL_ID=${PADDLEOCR_MODEL_ID},PADDLEOCR_MODEL_REVISION=${PADDLEOCR_MODEL_REVISION},OCR_BACKEND=${OCR_BACKEND},VISION_FEATURE_TYPE=${VISION_FEATURE_TYPE},VISION_TIMEOUT_SECONDS=${VISION_TIMEOUT_SECONDS},RECOGNITION_REQUEST_TIMEOUT_SECONDS=${TIMEOUT}" \
   --format='value(status.url)')"
 
 gcloud run services update "$SERVICE_NAME" \

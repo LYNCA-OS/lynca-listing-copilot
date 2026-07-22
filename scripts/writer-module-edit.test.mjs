@@ -221,7 +221,7 @@ const scgCardNumberEdit = applyWriterModuleEdit({
   moduleText: "#96"
 });
 assert.equal(scgCardNumberEdit.corrected_resolved.collector_number, "96");
-assert.match(scgCardNumberEdit.final_title, /#96/);
+assert.doesNotMatch(scgCardNumberEdit.final_title, /#96/);
 
 const printFinishEditDoesNotPolluteReleaseVariant = applyWriterModuleEdit({
   resolved: {

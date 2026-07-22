@@ -11,7 +11,7 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 - The HTTP endpoint can download signed image bytes when `ENABLE_IMAGE_DOWNLOAD=true`; otherwise geometry and quality return explicit `UNAVAILABLE`.
 - OCR model execution still returns explicit `UNAVAILABLE` until a backend is enabled. A local Tesseract CLI adapter can be enabled with `ENABLE_TESSERACT_OCR=true`; OCR text fusion parses real OCR line items into field candidates, resolved fields, conflicts, and trace metadata.
 - When Tesseract is enabled, the worker also runs deterministic upscaled focused crops for requested serial, collector number, checklist code, and grade-label fields. These crops improve small printed-text evidence; they do not infer visual color or parallel.
-- Multi-card detection emits `multi_card_detection` as a routing risk signal. It is used to abstain or split lot workflows, not to auto-generate a single-card identity from a lot photo.
+- Multi-card detection emits `multi_card_detection` as a routing risk signal. Two-card/small-contour results remain unconfirmed; an exact count is admitted only when at least three independent, card-sized rectangles are visible in one image.
 - Visual embeddings use a real SigLIP2 backend when `ENABLE_VISUAL_EMBEDDINGS=true`.
   The worker emits versioned, L2-normalized 768-dimensional image vectors for
   Supabase pgvector candidate recall. If the model backend cannot load, it
@@ -37,6 +37,11 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 
 Optional:
 
+- `OCR_BACKEND=paddle|deepseek|google_vision|hybrid` (production defaults to the measured Google Vision winner)
+- `VISION_API_KEY=` (production deploy stores this in Secret Manager; it is never written as a literal Cloud Run variable)
+- `VISION_API_KEY_SECRET_NAME=lynca-google-vision-api-key`
+- `VISION_FEATURE_TYPE=DOCUMENT_TEXT_DETECTION`
+- `VISION_TIMEOUT_SECONDS=30`
 - `ENABLE_PADDLEOCR=false`
 - `PADDLEOCR_PRELOAD=false`
 - `PADDLEOCR_WORKER_PROCESSES=1`
@@ -96,6 +101,9 @@ That keeps Paddle predictors isolated while still letting the orchestrator
 round-robin field verification requests.
 
 Production OCR deploys use `scripts/deploy-recognition-worker-cloud-run.sh`.
+The deploy contract fails closed when Google Vision is selected without a
+configured Secret Manager key. Existing keys are reused by secret name, so a
+new rollout cannot silently fall back to Paddle or erase the Vision setting.
 The script builds an immutable image through `cloudbuild-ocr.yaml` before it
 touches Cloud Run traffic. PP-OCRv5 mobile weights are baked into the image,
 the prior image is used as a Docker layer cache, and the explicit build budget

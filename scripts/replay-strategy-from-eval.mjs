@@ -43,18 +43,21 @@ export async function replayStrategyFromEval({
   outputPath = "",
   packetOutputPath = "",
   passThreshold = 0.72,
-  requiredPassCaseIds = []
+  requiredPassCaseIds = [],
+  scope = "all",
+  gateMode = "regression"
 } = {}) {
   if (!inputPath) throw new Error("inputPath is required");
   const resolvedInput = resolve(inputPath);
   const report = JSON.parse(await readFile(resolvedInput, "utf8"));
-  const packet = buildStrategyReplayPacket(report, { source: resolvedInput });
+  const packet = buildStrategyReplayPacket(report, { source: resolvedInput, scope });
   const replayStrategyDecision = await strategyFromModule(strategyModulePath);
   const gate = await evaluateStrategyTraceReplay({
     packet,
     replayStrategyDecision,
     passThreshold,
-    requiredPassCaseIds
+    requiredPassCaseIds,
+    gateMode
   });
   if (packetOutputPath) await writeJson(packetOutputPath, packet);
   if (outputPath) await writeJson(outputPath, gate);
@@ -63,8 +66,8 @@ export async function replayStrategyFromEval({
 
 function renderSummary(gate) {
   const lines = [
-    `strategy replay gate: ${gate.promotion_eligible ? "PASS" : "BLOCK"}`,
-    `sample: ${gate.sample.card_count}/${gate.sample.expected_card_count} fingerprint=${gate.sample.fingerprint_sha256}`,
+    `strategy replay ${gate.gate_mode} gate: ${gate.promotion_eligible ? "PASS" : "BLOCK"}`,
+    `sample: ${gate.sample.card_count}/${gate.sample.expected_card_count} scope=${gate.sample.scope} fingerprint=${gate.sample.fingerprint_sha256}`,
     `baseline: avg=${gate.baseline.policy_fair_average} pass=${gate.baseline.pass_count}`,
     `replay: avg=${gate.replay.policy_fair_average} pass=${gate.replay.pass_count} up=${gate.replay.improved_count} down=${gate.replay.regressed_count}`,
     `unrecorded external effects: ${gate.replay.unrecorded_external_effect_count}`,
@@ -82,7 +85,7 @@ export async function main(argv = process.argv.slice(2)) {
   const inputPath = argValue(argv, "--input");
   if (!inputPath) {
     process.stderr.write(
-      "Usage: node scripts/replay-strategy-from-eval.mjs --input <report.json> [--strategy-module <module.mjs>] [--require-pass <case-id>] [--out <gate.json>]\n"
+      "Usage: node scripts/replay-strategy-from-eval.mjs --input <report.json> [--scope all|internal-reviewed] [--gate-mode regression|launch] [--strategy-module <module.mjs>] [--require-pass <case-id>] [--out <gate.json>]\n"
     );
     return 2;
   }
@@ -90,13 +93,20 @@ export async function main(argv = process.argv.slice(2)) {
   if (!Number.isFinite(passThreshold) || passThreshold < 0 || passThreshold > 1) {
     throw new Error("--threshold must be a number between 0 and 1");
   }
+  const gateMode = argValue(argv, "--gate-mode", "regression");
+  const scope = argValue(argv, "--scope", "all");
+  if (gateMode === "launch" && scope !== "internal-reviewed") {
+    throw new Error("--gate-mode launch requires --scope internal-reviewed; marketplace weak labels cannot own launch accuracy");
+  }
   const { gate } = await replayStrategyFromEval({
     inputPath,
     strategyModulePath: argValue(argv, "--strategy-module"),
     outputPath: argValue(argv, "--out"),
     packetOutputPath: argValue(argv, "--packet-out"),
     passThreshold,
-    requiredPassCaseIds: argValues(argv, "--require-pass")
+    requiredPassCaseIds: argValues(argv, "--require-pass"),
+    scope,
+    gateMode
   });
   process.stdout.write(renderSummary(gate));
   return gate.promotion_eligible ? 0 : 1;

@@ -23,6 +23,7 @@ import {
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { scheduleTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
+import { v4EventRefillContract } from "../../lib/listing/v4/jobs/queue-drain-contract.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -339,13 +340,7 @@ export function triggerV4BackgroundWorkerAfterL1Release(_req, {
       background_only: true,
       limit: processConcurrency,
       process_concurrency: processConcurrency,
-      cycles: 1,
-      max_runtime_ms: 120_000,
-      lease_seconds: 120,
-      idle_cycles_before_stop: 1,
-      background_idle_cycles: 1,
-      continuation_cycles: 1,
-      max_continuation_depth: 100
+      ...v4EventRefillContract()
     },
     reason,
     dedupScope: `l2-release:${tenantId || "global"}`,

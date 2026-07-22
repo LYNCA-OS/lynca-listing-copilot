@@ -7,6 +7,11 @@ import numpy as np
 
 
 CARD_ASPECT_RATIO = 3.5 / 2.5
+EXACT_COUNT_MIN_CARDS = 3
+EXACT_COUNT_MIN_AREA_RATIO = 0.10
+EXACT_COUNT_MIN_CONFIDENCE = 0.70
+GRID_CENTER_MIN_VERTICAL_EDGE_RATIO = 0.35
+GRID_CENTER_MIN_HORIZONTAL_EDGE_RATIO = 0.45
 
 
 def _bbox_iou(left: list[int], right: list[int]) -> float:
@@ -93,6 +98,79 @@ def _independent_card_pair_count(candidates: list[dict[str, Any]]) -> int:
             continue
         independent.append(candidate)
     return len(independent)
+
+
+def _large_independent_card_count(candidates: list[dict[str, Any]]) -> int:
+    large_candidates = [
+        candidate
+        for candidate in candidates
+        if float(candidate.get("area_ratio") or 0) >= EXACT_COUNT_MIN_AREA_RATIO
+        and float(candidate.get("confidence") or 0) >= EXACT_COUNT_MIN_CONFIDENCE
+    ]
+    return _independent_card_pair_count(large_candidates)
+
+
+def _central_two_by_two_grid_count(
+    rgb: np.ndarray,
+    contour_candidates: list[dict[str, Any]],
+) -> tuple[int, dict[str, Any]]:
+    """Recover a tight 2x2 card grid whose touching edges hide one contour.
+
+    This is deliberately a corroborating detector, not a general grid guess:
+    OpenCV must already have found three or four independent card-like regions,
+    and both full-height/full-width center seams must be unusually strong.
+    """
+    contour_count = _independent_card_pair_count(contour_candidates)
+    diagnostics: dict[str, Any] = {
+        "status": "NOT_CONFIRMED",
+        "card_count": None,
+        "contour_count": contour_count,
+    }
+    if contour_count not in (3, 4):
+        diagnostics["reason"] = "contour_lower_bound_not_three_or_four"
+        return 0, diagnostics
+    try:
+        import cv2
+    except (ImportError, OSError) as error:
+        diagnostics["reason"] = f"opencv_unavailable:{type(error).__name__}"
+        return 0, diagnostics
+
+    height, width = rgb.shape[:2]
+    occupied_quadrants = {
+        (int((candidate["bbox"][0] + candidate["bbox"][2]) / 2 >= width / 2),
+         int((candidate["bbox"][1] + candidate["bbox"][3]) / 2 >= height / 2))
+        for candidate in contour_candidates
+    }
+    diagnostics["occupied_quadrant_count"] = len(occupied_quadrants)
+    if len(occupied_quadrants) < 3:
+        diagnostics["reason"] = "insufficient_independent_quadrant_coverage"
+        return 0, diagnostics
+    outer_aspect = max(height, width) / max(1, min(height, width))
+    if outer_aspect < 1.05 or outer_aspect > 1.75:
+        diagnostics["reason"] = "outer_grid_aspect_out_of_range"
+        return 0, diagnostics
+
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(cv2.GaussianBlur(gray, (5, 5), 0), 35, 120)
+    vertical_projection = edges[int(height * 0.08):int(height * 0.92)].mean(axis=0) / 255.0
+    horizontal_projection = edges[:, int(width * 0.08):int(width * 0.92)].mean(axis=1) / 255.0
+    vertical_center = vertical_projection[int(width * 0.35):int(width * 0.65)]
+    horizontal_center = horizontal_projection[int(height * 0.35):int(height * 0.65)]
+    vertical_peak = float(vertical_center.max()) if vertical_center.size else 0.0
+    horizontal_peak = float(horizontal_center.max()) if horizontal_center.size else 0.0
+    diagnostics.update({
+        "vertical_center_edge_ratio": round(vertical_peak, 4),
+        "horizontal_center_edge_ratio": round(horizontal_peak, 4),
+    })
+    if (
+        vertical_peak < GRID_CENTER_MIN_VERTICAL_EDGE_RATIO
+        or horizontal_peak < GRID_CENTER_MIN_HORIZONTAL_EDGE_RATIO
+    ):
+        diagnostics["reason"] = "center_seams_below_confirmation_floor"
+        return 0, diagnostics
+
+    diagnostics.update({"status": "CONFIRMED", "card_count": 4, "reason": None})
+    return 4, diagnostics
 
 
 def _as_rgb_array(image: Any) -> np.ndarray:
@@ -222,18 +300,21 @@ def detect_multi_card_from_array(image: Any, image_id: str = "image", role: str 
     opencv_candidates, opencv_error = _opencv_contour_candidates(rgb)
     numpy_count = _independent_card_pair_count(numpy_candidates)
     opencv_count = _independent_card_pair_count(opencv_candidates)
-    card_count = max(numpy_count, opencv_count)
+    exact_card_count = _large_independent_card_count(opencv_candidates)
+    grid_card_count, grid_diagnostics = _central_two_by_two_grid_count(rgb, opencv_candidates)
+    exact_card_count = max(exact_card_count, grid_card_count)
+    card_count_confirmed = exact_card_count >= EXACT_COUNT_MIN_CARDS
+    card_count = exact_card_count if card_count_confirmed else max(numpy_count, opencv_count)
     multi_card = card_count > 1
     candidates = opencv_candidates if opencv_count >= numpy_count else numpy_candidates
     confidence = max([candidate["confidence"] for candidate in candidates], default=0.0)
     if multi_card:
         confidence = min(1.0, max(confidence, 0.72 + min(0.18, (card_count - 2) * 0.06)))
 
-    # Rectangle detectors are deliberately allowed to prove plurality without
-    # pretending they know the exact lot size. Touching/overlapping cards can
-    # merge into one contour, so card_count_estimate is diagnostic until a
-    # separate text/model observation confirms the quantity.
-    card_count_confirmed = False
+    # A second contour on a single card is commonly a slab label or inner card
+    # frame. Exact count is admitted only when OpenCV finds at least three
+    # independent, card-sized rectangles. Smaller/touching detections remain a
+    # routing signal because they cannot safely prove the lot quantity.
 
     return {
         "image_id": image_id,
@@ -255,8 +336,9 @@ def detect_multi_card_from_array(image: Any, image_id: str = "image", role: str 
                 "candidates": opencv_candidates[:12],
                 "reason": opencv_error,
             },
+            "central_two_by_two_grid": grid_diagnostics,
         },
-        "algorithm": "redundant_numpy_opencv_card_count_r2",
+        "algorithm": "redundant_numpy_opencv_grid_card_count_r4",
     }
 
 
@@ -283,7 +365,7 @@ def detect_multi_card_from_loaded_images(image_loads: list[Any]) -> dict[str, An
         "image_id": strongest.get("image_id"),
         "role": strongest.get("role"),
         "images": per_image,
-        "algorithm": "redundant_numpy_opencv_card_count_r2",
+        "algorithm": "redundant_numpy_opencv_grid_card_count_r4",
     }
 
 
@@ -295,6 +377,6 @@ def multi_card_detection_unavailable(reason: str = "image_bytes_not_loaded") -> 
         "card_count_confirmed": False,
         "confidence": 0.0,
         "images": [],
-        "algorithm": "redundant_numpy_opencv_card_count_r2",
+        "algorithm": "redundant_numpy_opencv_grid_card_count_r4",
         "reason": reason,
     }

@@ -54,6 +54,7 @@ assert.deepEqual(JSON.parse(request.init.body), {
   detached: true,
   idle_cycles_before_stop: 1,
   background_idle_cycles: 1,
+  idle_delay_ms: 0,
   lease_seconds: 120,
   limit: 2,
   max_continuation_depth: 100,
