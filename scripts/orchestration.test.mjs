@@ -232,6 +232,25 @@ const budgetStopped = await completeEvidence({
 assert.equal(budgetStopped.state.resolution_state, "BUDGET_EXHAUSTED");
 assert.equal(budgetStopped.route, "NON_STANDARD_MANUAL");
 
+const initialRetrievalDeadlineStartedAt = Date.now();
+const initialRetrievalDeadline = await completeEvidence({
+  resolved: {
+    year: "2025",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {},
+  unresolved: ["product identity missing"],
+  budgetOverrides: {
+    maxRounds: 1,
+    maxResolutionTimeMs: 5
+  },
+  runRetrievalImpl: async () => new Promise(() => {})
+});
+assert.ok(Date.now() - initialRetrievalDeadlineStartedAt < 2500, "initial retrieval must obey the same hard deadline as later completion actions");
+assert.equal(initialRetrievalDeadline.resolution_trace[0].action, completionActions.SEARCH_INTERNAL_APPROVED_HISTORY);
+assert.equal(initialRetrievalDeadline.resolution_trace[0].status, "deadline_exceeded");
+assert.equal(initialRetrievalDeadline.state.resolution_state, "BUDGET_EXHAUSTED");
+
 const internalRunsWithoutExternalBudget = await completeEvidence({
   resolved: {
     year: "2025",
