@@ -21,11 +21,16 @@ test "$(git -C "$ROOT_DIR" rev-parse HEAD)" = "$(git -C "$ROOT_DIR" rev-parse or
 gcloud iam service-accounts describe "$SERVICE_ACCOUNT" --project "$GCP_PROJECT_ID" >/dev/null
 gcloud secrets describe "$TOKEN_SECRET_NAME" --project "$GCP_PROJECT_ID" >/dev/null
 
-gcloud builds submit "$SERVICE_DIR" \
-  --project "$GCP_PROJECT_ID" \
-  --config "$SERVICE_DIR/cloudbuild-vision.yaml" \
-  --timeout 1200s \
-  --substitutions "_IMAGE_URI=${IMAGE_URI},_CACHE_IMAGE=${CACHE_IMAGE}"
+gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+docker pull "$CACHE_IMAGE" || true
+docker build \
+  --cache-from "$CACHE_IMAGE" \
+  --tag "$IMAGE_URI" \
+  --tag "$CACHE_IMAGE" \
+  --file "$SERVICE_DIR/Dockerfile.vision" \
+  "$SERVICE_DIR"
+docker push "$IMAGE_URI"
+docker push "$CACHE_IMAGE"
 
 gcloud run deploy "$SERVICE_NAME" \
   --image "$IMAGE_URI" \

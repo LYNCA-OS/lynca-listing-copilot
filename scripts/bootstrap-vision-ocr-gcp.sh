@@ -30,7 +30,6 @@ retry_command() {
 
 gcloud services enable \
   run.googleapis.com \
-  cloudbuild.googleapis.com \
   artifactregistry.googleapis.com \
   iamcredentials.googleapis.com \
   secretmanager.googleapis.com \
@@ -66,23 +65,17 @@ retry_command gcloud secrets add-iam-policy-binding "$TOKEN_SECRET_NAME" \
   --role roles/secretmanager.viewer \
   --project "$GCP_PROJECT_ID" >/dev/null
 
-for role in roles/run.admin roles/cloudbuild.builds.editor roles/serviceusage.serviceUsageConsumer; do
+for role in roles/run.admin roles/serviceusage.serviceUsageConsumer; do
   retry_command gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
     --member "serviceAccount:${DEPLOY_ACCOUNT}" \
     --role "$role" \
     --condition=None >/dev/null
 done
-if ! gcloud storage buckets describe "gs://${GCP_PROJECT_ID}_cloudbuild" --project "$GCP_PROJECT_ID" >/dev/null 2>&1; then
-  gcloud storage buckets create "gs://${GCP_PROJECT_ID}_cloudbuild" \
-    --location US \
-    --project "$GCP_PROJECT_ID" >/dev/null
-fi
-retry_command gcloud storage buckets add-iam-policy-binding "gs://${GCP_PROJECT_ID}_cloudbuild" \
+retry_command gcloud artifacts repositories add-iam-policy-binding "$ARTIFACT_REPOSITORY" \
+  --location "$GCP_REGION" \
+  --project "$GCP_PROJECT_ID" \
   --member "serviceAccount:${DEPLOY_ACCOUNT}" \
-  --role roles/storage.objectAdmin >/dev/null
-retry_command gcloud storage buckets add-iam-policy-binding "gs://${GCP_PROJECT_ID}_cloudbuild" \
-  --member "serviceAccount:${DEPLOY_ACCOUNT}" \
-  --role roles/storage.legacyBucketReader >/dev/null
+  --role roles/artifactregistry.writer >/dev/null
 retry_command gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_ACCOUNT" \
   --member "serviceAccount:${DEPLOY_ACCOUNT}" \
   --role roles/iam.serviceAccountUser \
