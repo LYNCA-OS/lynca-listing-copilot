@@ -850,6 +850,43 @@ const stronglyAnchoredReviewedColorCorrectionSurvivesTerminalFloor = buildV4Reso
 });
 assert.equal(stronglyAnchoredReviewedColorCorrectionSurvivesTerminalFloor.surface_color, "Yellow");
 
+const stronglyAnchoredReviewedColorIsRestoredAfterLateProviderOverwrite = buildV4ResolvedFields({
+  resolved_fields: {
+    players: ["Carson Benge"],
+    surface_color: "Red"
+  },
+  raw_provider_fields: {
+    players: ["Carson Benge"],
+    surface_color: "Red"
+  },
+  selected_candidate_safe_field_application: {
+    status: "ready_fill_missing",
+    renderer_application_allowed: true,
+    candidate_id: "writer-reviewed-same-identity",
+    eligible_fields: ["surface_color"]
+  },
+  candidate_application_trace: [{
+    candidate_id: "writer-reviewed-same-identity",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    decision_eligible: true,
+    anchor_agreement: {
+      agreed: ["year", "subjects", "product_hierarchy", "serial_denominator"],
+      contradicted: [],
+      authoritative_overrides: []
+    }
+  }],
+  retrieval_application: {
+    decisions: [{
+      candidate_id: "writer-reviewed-same-identity",
+      field: "surface_color",
+      candidate_value: "Yellow",
+      decision: "SUPPORT"
+    }]
+  }
+});
+assert.equal(stronglyAnchoredReviewedColorIsRestoredAfterLateProviderOverwrite.surface_color, "Yellow");
+
 const weaklyAnchoredReviewedColorCannotOverrideCurrentImage = buildV4ResolvedFields({
   resolved_fields: {
     players: ["Carson Benge"],
