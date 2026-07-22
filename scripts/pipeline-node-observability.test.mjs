@@ -663,6 +663,30 @@ assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "scheduler_que
 assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "writer_ready")?.status, "COMPLETED");
 assert.equal(endToEndLedger.nodes.find((node) => node.node_id === "csm_title_serialization")?.status, "COMPLETED");
 assert.equal(endToEndLedger.reconciliation.error_count, 0);
+const sensorPreservingLedger = buildEndToEndNodeLedger({
+  session: {
+    l2_status: "READY",
+    l2_title: "2024 Topps Chrome Test Player Autograph",
+    l2_ready_at: "2026-07-11T00:00:02.900Z",
+    provider_result_summary: {
+      pipeline_node_ledger: {
+        ...healthyLedger,
+        sensor_evidence: [{ source: "GPT_5_MINI_OBSERVATION", fields: { year: "2024" } }]
+      },
+      title_render_source: "v4_csm_deterministic_renderer",
+      noncritical_persistence_status: "COMPLETED"
+    }
+  },
+  job: {
+    id: "job-observability-sensor",
+    status: "SUCCEEDED",
+    created_at: "2026-07-11T00:00:00.000Z",
+    started_at: "2026-07-11T00:00:00.500Z",
+    completed_at: "2026-07-11T00:00:03.000Z"
+  },
+  display: { can_writer_start: true }
+});
+assert.equal(sensorPreservingLedger.sensor_evidence[0].fields.year, "2024");
 
 const finalizerLedger = buildEndToEndNodeLedger({
   session: {
