@@ -983,6 +983,15 @@ const oracleEvidenceLedger = buildPipelineNodeLedger({
 assert.equal(oracleEvidenceLedger.sensor_evidence.length, 2);
 assert.equal(oracleEvidenceLedger.sensor_evidence[0].fields.year, "2024");
 assert.equal(oracleEvidenceLedger.sensor_evidence[1].source, "GOOGLE_VISION_OCR");
+const oracleEvidenceFromResultProfile = buildPipelineNodeLedger({
+  result: {
+    evaluation_profile: "v4_accuracy_ceiling_oracle_v1",
+    raw_provider_fields: { year: "2024" }
+  },
+  payload: {}
+});
+assert.equal(oracleEvidenceFromResultProfile.request_context.evaluation_profile, "v4_accuracy_ceiling_oracle_v1");
+assert.equal(oracleEvidenceFromResultProfile.sensor_evidence[0].fields.year, "2024");
 assert.equal(Object.hasOwn(buildPipelineNodeLedger({ result: {}, payload: {} }), "sensor_evidence"), false);
 
 let persistedBody = null;

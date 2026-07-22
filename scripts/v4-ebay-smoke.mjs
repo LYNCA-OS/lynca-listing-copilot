@@ -1333,6 +1333,7 @@ export function compactCandidateTrace(trace = {}) {
       candidate_id: row.candidate_id || "",
       candidate_identity_id: row.candidate_identity_id || "",
       candidate_lane: row.candidate_lane || "",
+      retrieval_rank: Number(row.retrieval_rank || 0) || null,
       provider_id: row.provider_id || "",
       source_type: row.source_type || "",
       source_trust: row.source_trust || "",
