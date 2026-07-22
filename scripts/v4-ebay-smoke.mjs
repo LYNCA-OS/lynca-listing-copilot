@@ -1090,6 +1090,7 @@ function sessionL2Summary(statusPayload = {}) {
     vector_post_observation_query_attempted: vectorFunnel.post_observation_query_attempted ?? null,
     ...vectorRuntime,
     catalog_stage_capacity: summary.catalog_stage_capacity || null,
+    prepared_retrieval_reuse: summary.prepared_retrieval_reuse || null,
     vector_stage_capacity: summary.vector_stage_capacity || null,
     preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,
@@ -1585,6 +1586,7 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     preingestion_retrieval_anchor_fields: summary.preingestion_retrieval_anchor_fields?.length
       ? summary.preingestion_retrieval_anchor_fields
       : row.preingestion_retrieval_anchor_fields,
+    prepared_retrieval_reuse: summary.prepared_retrieval_reuse || row.prepared_retrieval_reuse || null,
     serial_numerator_verified: summary.serial_numerator_verified ?? row.serial_numerator_verified ?? null,
     pipeline_node_ledger: summary.pipeline_node_ledger || row.pipeline_node_ledger || null,
     noncritical_persistence_status: summary.noncritical_persistence_status || row.noncritical_persistence_status || null,
@@ -3089,6 +3091,7 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     vector_self_exclusion_requested_source_count: summary.vector_self_exclusion_requested_source_count ?? null,
     vector_self_exclusion_source_ids_sha256: summary.vector_self_exclusion_source_ids_sha256 ?? null,
     catalog_stage_capacity: summary.catalog_stage_capacity || null,
+    prepared_retrieval_reuse: summary.prepared_retrieval_reuse || null,
     vector_stage_capacity: summary.vector_stage_capacity || null,
     preingestion_ocr_rendezvous: summary.preingestion_ocr_rendezvous || null,
     preingestion_evidence_refresh: summary.preingestion_evidence_refresh || null,

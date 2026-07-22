@@ -1996,6 +1996,56 @@ assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergen
 assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.after.resolution_state, "EVIDENCE_CLOSED");
 assert.equal(completionWithTrustedRetrieval.resolution_trace[0].output.convergence.converged, true);
 
+let preparedRetrievalDuplicateCalls = 0;
+const completionWithPreparedRetrieval = await completeEvidence({
+  resolved: {
+    year: "2025",
+    players: ["Cooper Flagg"]
+  },
+  evidence: {
+    year: createEvidenceField({ value: "2025", confidence: 0.9 }),
+    players: createEvidenceField({ value: ["Cooper Flagg"], confidence: 0.9 })
+  },
+  unresolved: ["product identity missing"],
+  budgetOverrides: {
+    maxRounds: 1
+  },
+  initialRetrievalSummaries: [{
+    mode: "INTERNAL_ONLY",
+    providers_used: [retrievalProviderIds.INTERNAL_MEMORY],
+    queries: [{
+      query_id: "prepared_writer_catalog_query",
+      provider_id: retrievalProviderIds.INTERNAL_MEMORY,
+      family: retrievalQueryFamilies.INTERNAL_APPROVED_HISTORY
+    }],
+    sources: [officialCandidate],
+    selected_candidate: officialCandidate,
+    candidate_margin: 0.91,
+    conflicts: [],
+    unavailable: [],
+    trace: []
+  }],
+  runRetrievalImpl: async () => {
+    preparedRetrievalDuplicateCalls += 1;
+    throw new Error("prepared retrieval family must not run twice");
+  }
+});
+assert.equal(preparedRetrievalDuplicateCalls, 0);
+assert.equal(completionWithPreparedRetrieval.resolved.product, "Topps Chrome");
+assert.equal(completionWithPreparedRetrieval.evidence.product.status, "CONFIRMED");
+assert.equal(completionWithPreparedRetrieval.resolution_trace[0].action, "REUSE_PREPARED_RETRIEVAL");
+assert.deepEqual(completionWithPreparedRetrieval.prepared_retrieval_reuse, {
+  summary_count: 1,
+  query_count: 1,
+  candidate_count: 1,
+  selected_candidate_present: true,
+  reused_query_families: [completionActions.SEARCH_INTERNAL_APPROVED_HISTORY]
+});
+assert.ok(completionWithPreparedRetrieval.state.attempted_actions.some((attempt) => (
+  attempt.action === completionActions.SEARCH_INTERNAL_APPROVED_HISTORY
+  && attempt.status === "reused_prepared_retrieval"
+)));
+
 const completion = await completeEvidence({
   resolved: {
     year: "2025",
