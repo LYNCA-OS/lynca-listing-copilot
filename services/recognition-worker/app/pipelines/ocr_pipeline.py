@@ -52,6 +52,21 @@ FOCUSED_CROP_TEMPLATES = {
 }
 
 
+def _paddle_hpi_runtime_options() -> dict[str, Any]:
+    enable_hpi = os.getenv("PADDLEOCR_ENABLE_HPI", "false").lower() == "true"
+    try:
+        requested_threads = int(os.getenv("PADDLEOCR_CPU_THREADS", "2") or "2")
+    except ValueError:
+        requested_threads = 2
+    cpu_threads = max(1, min(8, requested_threads))
+    return {
+        "device": "cpu",
+        "enable_hpi": enable_hpi,
+        "cpu_threads": cpu_threads,
+        "engine_config": {"cpu_num_threads": cpu_threads},
+    }
+
+
 def normalize_ocr_item(item: dict, index: int = 0) -> dict:
     text = str(item.get("text") or item.get("observed_text") or item.get("raw_text") or "").strip()
     return {
@@ -384,15 +399,11 @@ def _get_paddleocr_engine() -> Any:
         last_error: Exception | None = None
         detection_model = os.getenv("PADDLEOCR_DETECTION_MODEL_NAME", "PP-OCRv6_medium_det")
         recognition_model = os.getenv("PADDLEOCR_RECOGNITION_MODEL_NAME", "PP-OCRv6_medium_rec")
-        enable_hpi = os.getenv("PADDLEOCR_ENABLE_HPI", "false").lower() == "true"
-        cpu_threads = max(1, min(8, int(os.getenv("PADDLEOCR_CPU_THREADS", "2") or "2")))
         base_flags = {
             "use_doc_orientation_classify": False,
             "use_doc_unwarping": False,
             "use_textline_orientation": False,
-            "device": "cpu",
-            "enable_hpi": enable_hpi,
-            "cpu_threads": cpu_threads,
+            **_paddle_hpi_runtime_options(),
             "text_detection_model_name": detection_model,
             "text_recognition_model_name": recognition_model,
         }
@@ -421,13 +432,9 @@ def _get_paddleocr_recognition_engine() -> Any:
 
         last_error: Exception | None = None
         recognition_model = os.getenv("PADDLEOCR_RECOGNITION_MODEL_NAME", "PP-OCRv6_medium_rec")
-        enable_hpi = os.getenv("PADDLEOCR_ENABLE_HPI", "false").lower() == "true"
-        cpu_threads = max(1, min(8, int(os.getenv("PADDLEOCR_CPU_THREADS", "2") or "2")))
         constructor_kwargs = [{
             "model_name": recognition_model,
-            "device": "cpu",
-            "enable_hpi": enable_hpi,
-            "cpu_threads": cpu_threads,
+            **_paddle_hpi_runtime_options(),
         }]
         for kwargs in constructor_kwargs:
             try:

@@ -37,6 +37,13 @@ class RecognitionWorkerTests(unittest.TestCase):
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "false"
         os.environ["ENABLE_TESSERACT_OCR"] = "false"
 
+    def test_ppocr_hpi_cpu_threads_are_pinned_to_cloud_run_capacity(self):
+        with patch.dict(os.environ, {"PADDLEOCR_ENABLE_HPI": "true", "PADDLEOCR_CPU_THREADS": "2"}, clear=False):
+            options = ocr_pipeline._paddle_hpi_runtime_options()
+        self.assertTrue(options["enable_hpi"])
+        self.assertEqual(options["cpu_threads"], 2)
+        self.assertEqual(options["engine_config"], {"cpu_num_threads": 2})
+
     def test_contract_validation(self):
         payload = {
             "asset_id": "asset_1",
