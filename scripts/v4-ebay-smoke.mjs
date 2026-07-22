@@ -1282,6 +1282,8 @@ export function compactCandidateTrace(trace = {}) {
     selection_margin: trace.selected_candidate_decision?.selection_margin ?? null,
     selected_reason_codes: trace.selected_candidate_decision?.selected_reason_codes || [],
     rejected_candidate_reasons: trace.selected_candidate_decision?.rejected_candidate_reasons || [],
+    shadow_reranker: trace.shadow_reranker || null,
+    card_domain_reranker: trace.card_domain_reranker || null,
     selected_candidate_safe_field_application: trace.selected_candidate_safe_field_application || null,
     low_margin_safe_field_application: trace.low_margin_safe_field_application || null,
     applied_field_count: Number(trace.applied_field_count || 0),

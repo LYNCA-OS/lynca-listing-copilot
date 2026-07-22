@@ -382,6 +382,8 @@ function operationalSessionStatus(session = null, job = null) {
         ? trace.shadow_only_candidate_ids
         : [],
       selected_candidate_decision: trace.selected_candidate_decision || null,
+      shadow_reranker: trace.shadow_reranker || null,
+      card_domain_reranker: trace.card_domain_reranker || null,
       candidate_decision_stage: trace.candidate_decision_stage || null,
       retrieval_application: trace.retrieval_application
         ? {
