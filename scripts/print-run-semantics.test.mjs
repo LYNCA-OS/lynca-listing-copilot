@@ -244,6 +244,23 @@ assert.equal(lockedOcrTitle.conflict_map.at(-1).conflict_type, "OCR_CURRENT_IMAG
 assert.equal(serialNumeratorVerificationFromPreingestion({
   preingestion_evidence_patches: [ocrSerialPatch("31/50", 0.93), ocrSerialPatch("37/50", 0.94)]
 }, { job_count: 1 }), false);
+// A dedicated high-confidence serial crop outranks spurious full-image noise
+// (copyright years, cert numbers, component codes) instead of being vetoed by
+// it. Two conflicting serial crops (above) still fail; a single crop against
+// full-image noise (below) resolves to the crop.
+assert.equal(serialNumeratorVerificationFromPreingestion({
+  preingestion_evidence_patches: [
+    ocrSerialPatch("08/25", 0.97),
+    {
+      ...ocrSerialPatch("13/10", 0.99),
+      provenance: {
+        job_key: "ocr:full-image:13/10",
+        crop_type: "full_image",
+        source_region: "full_image_scan"
+      }
+    }
+  ]
+}, { job_count: 1 }), true, "a dedicated high-confidence serial crop outranks full-image noise");
 
 const denominatorOnly = renderListingPresentation({
   resolved: {
