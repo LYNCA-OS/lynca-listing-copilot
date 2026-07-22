@@ -60,4 +60,34 @@ assert.equal(diagnostics[0].output_tokens, null);
 assert.ok(diagnostics[0].provider_latency_ms >= 0);
 assert.equal(diagnostics[1].response_status, "network_error");
 
+let retryCalls = 0;
+await assert.rejects(analyzeCardEvidenceWithOpenAiEmergency({
+  images: [{ signedUrl: "https://images.example/card.jpg" }],
+  prompt: "Return grounded card evidence.",
+  env: {
+    ...baseEnv,
+    OPENAI_LISTING_TIMEOUT_MS: "100",
+    OPENAI_LISTING_ATTEMPT_TIMEOUT_MS: "10",
+    OPENAI_LISTING_TRANSIENT_RETRIES: "1",
+    OPENAI_LISTING_TRANSIENT_RETRY_DELAY_MS: "0"
+  },
+  fetchImpl: async (_url, init = {}) => {
+    retryCalls += 1;
+    return await new Promise((resolve, reject) => {
+      const abort = () => {
+        const error = new Error("attempt deadline");
+        error.name = "AbortError";
+        reject(error);
+      };
+      if (init.signal?.aborted) abort();
+      else init.signal?.addEventListener("abort", abort, { once: true });
+      void resolve;
+    });
+  }
+}), (error) => {
+  assert.equal(error.code, "PROVIDER_TIMEOUT");
+  return true;
+});
+assert.equal(retryCalls, 2, "a soft provider tail must get one immediate bounded retry");
+
 console.log("OpenAI provider timeout tests passed");
