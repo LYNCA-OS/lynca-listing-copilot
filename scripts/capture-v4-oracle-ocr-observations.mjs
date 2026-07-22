@@ -19,10 +19,15 @@ function rows(value = {}) {
   return [];
 }
 
+function deploymentProtectionHeaders(env = process.env) {
+  const secret = cleanText(env.VERCEL_AUTOMATION_BYPASS_SECRET);
+  return secret ? { "x-vercel-protection-bypass": secret } : {};
+}
+
 async function login(baseUrl, username, password) {
   const response = await fetch(`${baseUrl}/api/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...deploymentProtectionHeaders() },
     body: JSON.stringify({ username, password })
   });
   if (!response.ok) throw new Error(`oracle OCR login failed: ${response.status}`);
@@ -39,7 +44,7 @@ export async function captureV4OracleOcrObservations({ report, baseUrl, username
   }));
   const response = await fetch(`${cleanText(baseUrl).replace(/\/+$/, "")}/api/v4/oracle-ocr-observations`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie },
+    headers: { "content-type": "application/json", cookie, ...deploymentProtectionHeaders() },
     body: JSON.stringify({ cards })
   });
   const payload = await response.json().catch(() => ({}));

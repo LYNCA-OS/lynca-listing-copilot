@@ -454,6 +454,7 @@ const client = createPaddleOcrClient({
       text: async () => JSON.stringify({
         raw_text: "31/50",
         confidence: 0.94,
+        ocr_backend: "google_vision",
         model_id: "paddleocr",
         model_revision: "ppocr-v5",
         inline_full_image_fallback_evaluated: true,
@@ -475,6 +476,7 @@ assert.equal(captured.headers.authorization, "Bearer secret-token");
 assert.equal(captured.body.image_url.includes("token=secret"), true);
 assert.equal(captured.body.ocr_backend, "paddle", "paired A/B requests must preserve the explicit shadow backend");
 assert.equal(clientResult.evidence_patch.evidence.serial_number.value, "31/50");
+assert.equal(clientResult.ocr_backend, "google_vision");
 assert.equal(clientResult.worker_attempt_count, 1);
 assert.equal(clientResult.inline_full_image_fallback_evaluated, true);
 assert.equal(clientResult.inline_full_image_fallback_used, true);
@@ -505,6 +507,7 @@ const batchClient = createPaddleOcrClient({
             crop_type: "serial_crop",
             raw_text: "24/25",
             confidence: 0.97,
+            ocr_backend: "google_vision",
             vision_unit_count: 2,
             vision_cost_estimate: 0.003,
             serial_consensus: { verified: true, chosen: "24/25" }
@@ -537,6 +540,7 @@ assert.equal(capturedBatch.body.requests.length, 2);
 assert.equal(batchResults.length, 2);
 assert.equal(batchResults[0].normalized_fields.serial_number, "24/25");
 assert.equal(batchResults[0].vision_unit_count, 2);
+assert.equal(batchResults[0].ocr_backend, "google_vision");
 assert.equal(batchResults[0].serial_consensus.verified, true);
 assert.equal(batchResults[1].normalized_fields.collector_number, "381");
 

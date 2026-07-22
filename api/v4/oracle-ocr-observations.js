@@ -57,8 +57,13 @@ async function jobsForAsset(assetId, tenantId, env = process.env) {
 
 function observation(result = {}, job = {}) {
   const rawText = cleanText(result.raw_text || (result.text_candidates || []).map((row) => row.text).filter(Boolean).join(" "));
+  const backend = cleanText(result.ocr_backend).toLowerCase();
   return {
-    source: cleanText(result.model_id).toUpperCase().includes("GOOGLE") ? "GOOGLE_VISION_OCR" : "OCR_WORKER",
+    source: backend.includes("google") || cleanText(result.model_id).toUpperCase().includes("GOOGLE")
+      ? "GOOGLE_VISION_OCR"
+      : "OCR_WORKER",
+    ocr_backend: backend || null,
+    model_id: cleanText(result.model_id) || null,
     crop_role: cleanText(job.payload?.crop?.role || job.payload?.crop?.crop_metadata?.crop_role),
     raw_text: rawText,
     fields: result.normalized_fields || {},
