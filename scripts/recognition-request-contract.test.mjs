@@ -46,6 +46,7 @@ assert.equal(profile.provider_options.enable_pre_provider_rescue_shadow, true);
 assert.equal(profile.provider_options.v4_provider_service_tier, "priority");
 assert.equal(profile.provider_options.v4_provider_done_capacity_handoff, true);
 assert.equal(profile.provider_options.enable_fast_initial_provider_prompt, false);
+assert.equal(profile.provider_options.exclude_current_source_feedback, false);
 
 const fastV5Profile = resolveRecognitionProfile(recognitionProfileIds.WRITER_ASSISTED_FAST_V5, env);
 assert.equal(fastV5Profile.provider_options.v4_ultra_fast_l2, true);
@@ -63,6 +64,7 @@ assert.equal(evaluationProfile.provider_options.disable_identity_result_cache, t
 assert.equal(evaluationProfile.provider_options.disable_approved_identity_memory, true);
 assert.equal(evaluationProfile.provider_options.enable_vector_lazy_mode, profile.provider_options.enable_vector_lazy_mode);
 assert.equal(evaluationProfile.provider_options.force_vector_assist, profile.provider_options.force_vector_assist);
+assert.equal(evaluationProfile.provider_options.exclude_current_source_feedback, false);
 assert.deepEqual(evaluationProfile.execution, profile.execution);
 
 const oracleProfile = resolveRecognitionProfile(recognitionProfileIds.ACCURACY_CEILING_ORACLE, env);
@@ -75,6 +77,7 @@ assert.equal(oracleProfile.provider_options.disable_identity_result_cache, true)
 assert.equal(oracleProfile.provider_options.disable_approved_identity_memory, true);
 assert.equal(oracleProfile.provider_options.force_retrieval_application_resolution, undefined);
 assert.equal(oracleProfile.provider_options.v4_ultra_fast_l2, false);
+assert.equal(oracleProfile.provider_options.exclude_current_source_feedback, true);
 
 const bound = bindRecognitionProfileToPayload({
   recognition_profile: defaultRecognitionProfileId,
