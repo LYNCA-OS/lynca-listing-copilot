@@ -1240,6 +1240,8 @@ assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "p
 assert.match(queueStatusApiSource, /provider_capacity_stage_handoff: summary\.provider_capacity_stage_handoff \|\| null/, "job status must preserve provider-stage handoff telemetry for production capacity audits.");
 assert.match(queueStatusApiSource, /v4_pipeline_contract: summary\.v4_pipeline_contract \|\| null/, "job status must expose the V4 convergence contract to production audits.");
 assert.match(queueStatusApiSource, /selected_candidate_decision: trace\.selected_candidate_decision \|\| null/, "job status must expose the production candidate decision instead of only aggregate funnels.");
+assert.match(queueStatusApiSource, /card_domain_reranker: trace\.card_domain_reranker \|\| null/, "job status must expose the isolated card-domain shadow result.");
+assert.match(nativeRecognitionCoreSource, /card_domain_reranker_shadow: candidateControl\.card_domain_reranker_shadow/, "native recognition must carry card-domain shadow output into the final control-plane trace.");
 assert.match(queueStatusApiSource, /candidate_observation_snapshot: trace\.candidate_observation_snapshot \|\| \{\}/, "job status must expose the exact current-image fields used by candidate decisions.");
 assert.match(queueStatusApiSource, /candidate_application_trace_rows:[\s\S]*slice\(0, 20\)/, "job status must expose bounded per-candidate application traces for field-level audits.");
 assert.match(queueStatusApiSource, /buildRetrievalParticipationSummary/, "job status must derive retrieval contribution from the actual candidate funnels.");
