@@ -49,16 +49,16 @@ assert.equal(acquireKickCalled, false, "every real provider release must wake wi
 assert.equal(request.url, "https://listing.example.test/api/v4/listing-job-pump");
 assert.deepEqual(JSON.parse(request.init.body), {
   background_only: true,
-  continuation_cycles: 1,
-  cycles: 1,
+  continuation_cycles: 0,
+  cycles: 30,
   detached: true,
-  idle_cycles_before_stop: 1,
-  background_idle_cycles: 1,
-  idle_delay_ms: 0,
+  idle_cycles_before_stop: 2,
+  background_idle_cycles: 2,
+  idle_delay_ms: 250,
   lease_seconds: 120,
   limit: 2,
-  max_continuation_depth: 100,
-  max_runtime_ms: 120000,
+  max_continuation_depth: 0,
+  max_runtime_ms: 240000,
   process_concurrency: 2,
   refill_source_tenant_id: null,
   tenant_id: null,
@@ -97,6 +97,17 @@ assert.equal(providerDoneTriggered.triggered, true);
 assert.equal(providerDoneTriggered.release_boundary, "provider_done");
 await fallbackScheduled;
 assert.equal(fallbackUrl, "https://listing.example.test/api/v4/listing-job-pump");
+
+assert.deepEqual(triggerReleasedProviderCapacityRefill(req, {
+  payload: {
+    v4_queue_job_id: "job-pump-managed",
+    v4_queue_lane: "background",
+    v4_pump_managed_drain: true
+  },
+  capacityRelease: { released: true },
+  releaseBoundary: "provider_done",
+  env
+}), { triggered: false, reason: "pump_managed_drain" });
 
 assert.deepEqual(triggerWriterReadyCapacityRefill(req, {
   payload: { v4_queue_job_id: "job-2" },
