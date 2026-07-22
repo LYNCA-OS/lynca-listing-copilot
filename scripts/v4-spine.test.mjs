@@ -652,6 +652,15 @@ assert.equal(narratedProductSet.set, null);
 assert.equal(normalizeFields({ set: "Topps Chrome (retro style)" }).set, "Topps Chrome");
 assert.equal(normalizeFields({ set: "BCP-122 / BCP-38 / BCP-42 (visible on backs)" }).set, null);
 assert.equal(normalizeFields({ card_name: "(unsigned facsimile) signature printed on front" }).card_name, null);
+for (const narration of [
+  "(no separate printed card title)",
+  "no printed card title",
+  "without a distinct card name",
+  "card title is not visible"
+]) {
+  assert.equal(normalizeFields({ card_name: narration }).card_name, null, `${narration} is not a card identity`);
+}
+assert.equal(normalizeFields({ card_name: "No. 1 Draft Pick" }).card_name, "No. 1 Draft Pick");
 assert.equal(
   buildV4ResolvedFields({ resolved_fields: { card_name: "(retro front with signature facsimile)" } }).card_name,
   null
