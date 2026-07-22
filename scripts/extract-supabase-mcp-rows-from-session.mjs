@@ -1,4 +1,6 @@
+import { createReadStream } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
+import { createInterface } from "node:readline";
 
 function argValue(args, name, fallback = "") {
   const index = args.indexOf(name);
@@ -185,6 +187,41 @@ export function extractSupabaseMcpRowsJsonArraysFromSessionText(sessionText) {
   return arrays;
 }
 
+function collectSessionLine(line, { chunkPrefix, chunks, rowsJsonArrays }) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed) return;
+  const mightContainChunk = trimmed.includes(chunkPrefix);
+  const mightContainRows = trimmed.includes("rows_json") || trimmed.includes("front_image_url");
+  if (!mightContainChunk && !mightContainRows) return;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (mightContainChunk) collectChunkRecords(parsed, chunkPrefix, chunks);
+    if (mightContainRows) collectRowsJsonArrays(parsed, rowsJsonArrays);
+  } catch {
+    if (mightContainChunk) collectChunkRecords(trimmed, chunkPrefix, chunks);
+    if (mightContainRows) collectRowsJsonArrays(trimmed, rowsJsonArrays);
+  }
+}
+
+export async function extractSupabaseMcpPayloadsFromSessionLines(lines, {
+  chunkPrefix = "LYNCA_SUPABASE_FEEDBACK_EXPORT_"
+} = {}) {
+  const chunks = new Map();
+  const rowsJsonArrays = [];
+  for await (const line of lines) {
+    collectSessionLine(line, { chunkPrefix, chunks, rowsJsonArrays });
+  }
+  return {
+    chunks: [...chunks.values()].sort((a, b) => String(a.chunk_id).localeCompare(String(b.chunk_id))),
+    rowsJsonArrays
+  };
+}
+
+async function streamSessionLines(session) {
+  const input = createReadStream(session, { encoding: "utf8" });
+  return createInterface({ input, crlfDelay: Infinity });
+}
+
 export function mergeSupabaseFeedbackRows(rowArrays = []) {
   const rowsById = new Map();
   for (const rows of rowArrays) {
@@ -262,7 +299,8 @@ async function writeJson(writeFileImpl, filePath, payload) {
 export async function runExtractSupabaseMcpRowsFromSession({
   argv = process.argv.slice(2),
   readFileImpl = readFile,
-  writeFileImpl = writeFile
+  writeFileImpl = writeFile,
+  sessionLinesImpl = null
 } = {}) {
   const session = argValue(argv, "--session") || argValue(argv, "-s");
   const output = argValue(argv, "--output") || argValue(argv, "-o") || "data/recognition/reports/supabase-feedback-rows-mcp.json";
@@ -275,13 +313,18 @@ export async function runExtractSupabaseMcpRowsFromSession({
     throw new Error("Missing --session Codex JSONL file.");
   }
 
-  const sessionText = await readFileImpl(session, "utf8");
-  const chunks = extractSupabaseMcpExportChunksFromSessionText(sessionText, { chunkPrefix });
+  const lines = sessionLinesImpl
+    ? await sessionLinesImpl(session)
+    : readFileImpl === readFile
+      ? await streamSessionLines(session)
+      : String(await readFileImpl(session, "utf8")).split(/\n/);
+  const extracted = await extractSupabaseMcpPayloadsFromSessionLines(lines, { chunkPrefix });
+  const chunks = extracted.chunks;
   if (expectedChunks && chunks.length !== expectedChunks) {
     throw new Error(`Expected ${expectedChunks} chunks for ${chunkPrefix}, found ${chunks.length}.`);
   }
 
-  const rowsJsonArrays = chunks.length ? [] : extractSupabaseMcpRowsJsonArraysFromSessionText(sessionText);
+  const rowsJsonArrays = chunks.length ? [] : extracted.rowsJsonArrays;
   if (!chunks.length && !rowsJsonArrays.length) {
     throw new Error(`No Supabase MCP export chunks found for prefix ${chunkPrefix}, and no rows_json payloads were found.`);
   }

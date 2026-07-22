@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import {
   buildGoldenSemReviewPacket,
+  buildGoldenSemReviewWorklist,
   freezeGoldenSemReleaseSets,
   goldenSemLaunchFields,
+  planGoldenSemReviewSplits,
   validateGoldenSemReviewPacket
 } from "../lib/listing/evaluation/golden-sem-release.mjs";
 import { evaluateGoldenSemAccuracy } from "../lib/listing/evaluation/golden-sem-accuracy.mjs";
@@ -37,6 +39,12 @@ assert.equal(packet.items[0].sealed_reference.title_visible_to_recognition, fals
 assert.equal(packet.items[0].recognition_input.corrected_title, undefined);
 assert.equal(validateGoldenSemReviewPacket(packet).ok, true);
 assert.equal(validateGoldenSemReviewPacket(packet, { requireApproved: true }).ok, false);
+const worklist = buildGoldenSemReviewWorklist(packet);
+assert.equal(worklist.summary.item_count, 20);
+assert.equal(worklist.items[0].fields.some((field) => field.field === "year"), true);
+const splitPlan = planGoldenSemReviewSplits(packet, { minimumHoldout: 0, seed: "test-seed" });
+assert.equal(Object.values(splitPlan.actual_counts).reduce((sum, count) => sum + count, 0), 20);
+assert.equal(splitPlan.status, "SEALED_ASSIGNMENT_PENDING_FIELD_REVIEW");
 
 for (const [index, item] of packet.items.entries()) {
   item.reviewed_ground_truth.review_status = "APPROVED";
@@ -70,6 +78,7 @@ assert.equal(ready.ok, true, ready.errors.join("; "));
 const bundle = freezeGoldenSemReleaseSets(packet, {
   version: "v1",
   seed: "test-seed",
+  minimumHoldout: 0,
   now: () => new Date("2026-07-14T02:00:00.000Z")
 });
 assert.deepEqual(bundle.split_policy.actual_counts, {

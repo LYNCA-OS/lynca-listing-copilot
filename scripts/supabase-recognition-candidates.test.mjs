@@ -8,6 +8,7 @@ import {
 } from "./export-supabase-recognition-candidates-from-rows.mjs";
 import {
   extractSupabaseMcpExportChunksFromSessionText,
+  extractSupabaseMcpPayloadsFromSessionLines,
   extractSupabaseMcpRowsJsonArraysFromSessionText,
   mergeRowsFromSupabaseMcpChunks,
   runExtractSupabaseMcpRowsFromSession
@@ -212,6 +213,14 @@ const merged = mergeRowsFromSupabaseMcpChunks(chunks);
 assert.equal(merged.rows.length, 2);
 assert.equal(merged.rows[0].id, "fb6");
 assert.equal(merged.chunk_summaries[0].decoded_row_count, 1);
+
+const streamedPayloads = await extractSupabaseMcpPayloadsFromSessionLines(
+  (async function* sessionLines() {
+    for (const line of mcpSessionLines.split("\n")) yield line;
+  }()),
+  { chunkPrefix }
+);
+assert.equal(streamedPayloads.chunks.length, 2);
 
 const extractedFiles = new Map();
 const extractSummary = await runExtractSupabaseMcpRowsFromSession({
