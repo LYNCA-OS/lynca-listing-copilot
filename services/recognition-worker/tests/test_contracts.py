@@ -42,7 +42,10 @@ class RecognitionWorkerTests(unittest.TestCase):
             options = ocr_pipeline._paddle_hpi_runtime_options()
         self.assertTrue(options["enable_hpi"])
         self.assertEqual(options["cpu_threads"], 2)
-        self.assertEqual(options["engine_config"], {"cpu_num_threads": 2})
+        self.assertEqual(options["engine_config"], {
+            "backend": "openvino",
+            "backend_config": {"cpu_num_threads": 2},
+        })
 
     def test_contract_validation(self):
         payload = {
