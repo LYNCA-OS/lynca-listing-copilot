@@ -335,6 +335,7 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
 
 function rawRunReport(results, { coldStartBlind = false } = {}) {
   return {
+    recognition_profile: "writer-assisted-evaluation-v1",
     model_override: "gpt-5-mini",
     concurrency: 2,
     preparation_concurrency: 3,
@@ -517,6 +518,7 @@ try {
   assert.equal(ebayFiftyContract.self_retrieval_exclusion.required_count, 0);
 
   assert.deepEqual(launchGateExecutionContract, {
+    recognition_profile: "writer-assisted-evaluation-v1",
     model: "gpt-5-mini",
     image_detail: "high",
     provider_prompt_mode: "v4_compact_l2",

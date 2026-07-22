@@ -57,6 +57,14 @@ assert.equal(fastV5Profile.provider_options.enable_catalog_assist, true);
 assert.equal(fastV5Profile.provider_options.enable_vector_assist, true);
 assert.deepEqual(fastV5Profile.execution, profile.execution);
 
+const evaluationProfile = resolveRecognitionProfile(recognitionProfileIds.WRITER_ASSISTED_EVALUATION, env);
+assert.equal(evaluationProfile.provider_options.evaluation_profile, "v4_writer_assisted_evaluation_v1");
+assert.equal(evaluationProfile.provider_options.disable_identity_result_cache, true);
+assert.equal(evaluationProfile.provider_options.disable_approved_identity_memory, true);
+assert.equal(evaluationProfile.provider_options.enable_vector_lazy_mode, profile.provider_options.enable_vector_lazy_mode);
+assert.equal(evaluationProfile.provider_options.force_vector_assist, profile.provider_options.force_vector_assist);
+assert.deepEqual(evaluationProfile.execution, profile.execution);
+
 const oracleProfile = resolveRecognitionProfile(recognitionProfileIds.ACCURACY_CEILING_ORACLE, env);
 assert.equal(oracleProfile.provider_options.evaluation_profile, "v4_accuracy_ceiling_oracle_v1");
 assert.equal(oracleProfile.provider_options.enable_vector_lazy_mode, false);

@@ -26,6 +26,7 @@ import {
 } from "../lib/listing/evaluation/reviewed-title-sem-projection.mjs";
 
 export const launchGateExecutionContract = Object.freeze({
+  recognition_profile: "writer-assisted-evaluation-v1",
   model: "gpt-5-mini",
   image_detail: "high",
   provider_prompt_mode: "v4_compact_l2",
@@ -854,6 +855,9 @@ export function observedExecutionContractChecks(runReports = []) {
     )),
     submission_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.submission_concurrency) === 2),
     provider_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.provider_concurrency) === 2),
+    recognition_profile_locked: reports.length > 0 && reports.every((report) => (
+      cleanText(report.recognition_profile) === launchGateExecutionContract.recognition_profile
+    )),
     identity_cache_disabled: reports.length > 0 && reports.every((report) => report.identity_cache_disabled === true),
     identity_cache_never_hit: results.length > 0 && results.every((result) => result.identity_cache_hit !== true),
     // Preparation failures and exact-anchor finalizations never enter the
@@ -1248,6 +1252,7 @@ export async function runLaunchGateEvaluation({
         concurrency: launchGateExecutionContract.provider_concurrency,
         preparationConcurrency: launchGateExecutionContract.preparation_concurrency,
         submissionConcurrency: launchGateExecutionContract.submission_concurrency,
+        recognitionProfile: launchGateExecutionContract.recognition_profile,
         batchId: assignedBatchId,
         resumeBatchId,
         evaluationSampleMode: dataset.evaluation_sample_policy?.mode || "UNSPECIFIED",
