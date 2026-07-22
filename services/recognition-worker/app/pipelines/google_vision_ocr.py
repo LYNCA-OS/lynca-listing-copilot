@@ -166,7 +166,11 @@ def run_google_vision_ocr_batch(
         requests = [
             {
                 "image": {"content": _array_to_png_bytes(array)},
-                "features": [{"type_": str(getattr(config, "vision_feature_type", "DOCUMENT_TEXT_DETECTION"))}],
+                # The protobuf constructor accepts ``type_`` as a Python
+                # keyword, but dict-to-protobuf request coercion expects the
+                # public JSON/proto field name ``type``.  Sending ``type_``
+                # silently produced an empty feature and therefore NO_TEXT.
+                "features": [{"type": str(getattr(config, "vision_feature_type", "DOCUMENT_TEXT_DETECTION"))}],
                 "image_context": {"language_hints": ["en"]},
             }
             for array in arrays

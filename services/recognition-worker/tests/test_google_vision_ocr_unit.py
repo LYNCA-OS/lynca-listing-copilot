@@ -70,7 +70,8 @@ class GoogleVisionOcrUnitTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 1)
         requests = client.calls[0]["request"]["requests"]
         self.assertEqual(len(requests), 2)
-        self.assertEqual(requests[0]["features"][0]["type_"], "DOCUMENT_TEXT_DETECTION")
+        self.assertEqual(requests[0]["features"][0]["type"], "DOCUMENT_TEXT_DETECTION")
+        self.assertNotIn("type_", requests[0]["features"][0])
 
     def test_word_confidence_survives_low_page_average(self):
         payload = {"responses": [{"fullTextAnnotation": {
