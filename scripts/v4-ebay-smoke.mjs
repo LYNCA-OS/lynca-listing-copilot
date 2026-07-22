@@ -4747,9 +4747,11 @@ export async function main(argv = process.argv, env = process.env) {
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
     coldStartBlind: hasFlag(argv, "--cold-start-blind"),
-    recognitionProfile: hasFlag(argv, "--full-information-oracle")
-      ? "accuracy-ceiling-oracle-v1"
-      : "writer-assisted-v1",
+    recognitionProfile: cleanText(argValue(argv, "--recognition-profile", "")) || (
+      hasFlag(argv, "--full-information-oracle")
+        ? "accuracy-ceiling-oracle-v1"
+        : "writer-assisted-v1"
+    ),
     // CLI smoke runs are iterative by design. Persist verified generations by
     // immutable source fingerprint so rerunning a seen card does not repeat
     // asset creation, signed upload, PUT, or verification. Programmatic callers

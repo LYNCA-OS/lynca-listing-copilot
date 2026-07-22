@@ -44,6 +44,16 @@ assert.equal(profile.provider_options.v4_ultra_fast_l2, false);
 assert.equal(profile.provider_options.v4_ultra_sparse_transport, false);
 assert.equal(profile.provider_options.enable_fast_initial_provider_prompt, false);
 
+const fastV5Profile = resolveRecognitionProfile(recognitionProfileIds.WRITER_ASSISTED_FAST_V5, env);
+assert.equal(fastV5Profile.provider_options.v4_ultra_fast_l2, true);
+assert.equal(fastV5Profile.provider_options.v4_ultra_fast_image_detail, "auto");
+assert.equal(fastV5Profile.provider_options.v4_ultra_fast_text_verbosity, "medium");
+assert.equal(fastV5Profile.provider_options.v4_ultra_fast_service_tier, "priority");
+assert.equal(fastV5Profile.provider_options.v4_provider_done_capacity_handoff, true);
+assert.equal(fastV5Profile.provider_options.enable_catalog_assist, true);
+assert.equal(fastV5Profile.provider_options.enable_vector_assist, true);
+assert.deepEqual(fastV5Profile.execution, profile.execution);
+
 const oracleProfile = resolveRecognitionProfile(recognitionProfileIds.ACCURACY_CEILING_ORACLE, env);
 assert.equal(oracleProfile.provider_options.evaluation_profile, "v4_accuracy_ceiling_oracle_v1");
 assert.equal(oracleProfile.provider_options.enable_vector_lazy_mode, false);
@@ -53,6 +63,7 @@ assert.equal(oracleProfile.provider_options.vector_retrieval_internal_top_n, 20)
 assert.equal(oracleProfile.provider_options.disable_identity_result_cache, true);
 assert.equal(oracleProfile.provider_options.disable_approved_identity_memory, true);
 assert.equal(oracleProfile.provider_options.force_retrieval_application_resolution, undefined);
+assert.equal(oracleProfile.provider_options.v4_ultra_fast_l2, false);
 
 const bound = bindRecognitionProfileToPayload({
   recognition_profile: defaultRecognitionProfileId,
