@@ -6,7 +6,6 @@ const build = await readFile("services/recognition-worker/cloudbuild-ocr.yaml", 
 const dockerfile = await readFile("services/recognition-worker/Dockerfile", "utf8");
 const visionDeploy = await readFile("scripts/deploy-vision-ocr-worker-cloud-run.sh", "utf8");
 const visionBootstrap = await readFile("scripts/bootstrap-vision-ocr-gcp.sh", "utf8");
-const visionBuild = await readFile("services/recognition-worker/cloudbuild-vision.yaml", "utf8");
 const visionDockerfile = await readFile("services/recognition-worker/Dockerfile.vision", "utf8");
 const visionRequirements = await readFile("services/recognition-worker/requirements-vision.txt", "utf8");
 
@@ -36,7 +35,10 @@ assert.doesNotMatch(visionDeploy, /services enable|add-iam-policy-binding|servic
 assert.match(visionBootstrap, /workload-identity-pools providers create-oidc/);
 assert.match(visionBootstrap, /assertion\.repository/);
 assert.match(visionBootstrap, /roles\/iam\.workloadIdentityUser/);
-assert.match(visionBuild, /Dockerfile\.vision/);
+assert.match(visionDeploy, /gcloud auth configure-docker/);
+assert.match(visionDeploy, /docker build/);
+assert.match(visionDeploy, /docker push "\$IMAGE_URI"/);
+assert.doesNotMatch(visionDeploy, /gcloud builds submit|cloudbuild-vision/);
 assert.match(visionDockerfile, /app\.vision_main:app/);
 assert.match(visionDockerfile, /requirements-vision\.txt/);
 assert.doesNotMatch(visionDockerfile, /paddle|tesseract|opencv/i);
