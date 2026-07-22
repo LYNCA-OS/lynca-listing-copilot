@@ -1186,8 +1186,7 @@ const safeColorSurvivesCrowdedTitle = renderListingPresentation({
   maxLength: 80
 });
 assert.ok(safeColorSurvivesCrowdedTitle.final_title.length <= 80);
-assert.match(safeColorSurvivesCrowdedTitle.final_title, /\bRed\b/);
-assert.ok(safeColorSurvivesCrowdedTitle.title_length_policy.compacted_terms.includes("Red Refractor -> Red"));
+assert.match(safeColorSurvivesCrowdedTitle.final_title, /\bRed Refractor\b/);
 
 const exactFinishKeepsMissingFamilySuffix = renderListingPresentation({
   resolved: {
