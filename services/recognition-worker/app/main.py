@@ -30,8 +30,10 @@ from .pipelines.ocr_pipeline import (
     preload_paddleocr_engine,
 )
 from .pipelines.region_proposal import propose_regions_for_rectified_card
+from .pipelines.serial_region_ocr import run_google_vision_serial_regions
 from .pipelines.visual_embeddings import extract_visual_embeddings, preload_visual_embedding_backend
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
+from .vision_main import ocr_fields_batch_payload as vision_ocr_fields_batch_payload
 
 _EMBEDDING_CACHE: dict[str, list[float]] = {}
 _PADDLEOCR_PRELOAD_STATUS: dict[str, Any] = {"status": "NOT_RUN"}
@@ -568,18 +570,54 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
             "model_revision": config.paddleocr_model_revision,
         }
 
-    primary = ocr_field_from_loaded_image(
-        loaded,
-        crop_type=crop_type,
-        crop_box=payload.get("crop_box"),
-        request_id=request_id,
-        model_id=config.paddleocr_model_id,
-        model_revision=config.paddleocr_model_revision,
-        ocr_backend=requested_backend,
-        config=config,
-    )
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     normalized_crop_type = str(crop_type).lower()
+    if requested_backend == "google_vision" and normalized_crop_type in {"serial_number", "serial_crop"}:
+        serial_result = run_google_vision_serial_regions(
+            loaded.array,
+            payload.get("crop_box"),
+            config=config,
+        )
+        serial_candidates = list(serial_result.get("candidates") or [])
+        primary = {
+            "request_id": request_id,
+            "crop_type": crop_type,
+            "status": serial_result.get("status") or "UNAVAILABLE",
+            "raw_text": serial_result.get("raw_text") or "",
+            "text_candidates": serial_candidates,
+            "boxes": [
+                {"text": item.get("text"), "confidence": item.get("confidence"), "box": item.get("box")}
+                for item in serial_candidates if item.get("box") is not None
+            ],
+            "confidence": float(serial_result.get("confidence") or 0),
+            "latency_ms": int(serial_result.get("latency_ms") or 0),
+            "model_id": "google-cloud-vision",
+            "model_revision": config.vision_feature_type,
+            "image_id": str(getattr(loaded, "image_id", "") or "image"),
+            "image_role": str(getattr(loaded, "role", "") or ""),
+            "ocr_backend": requested_backend,
+            "vision_unit_count": int(serial_result.get("vision_unit_count") or 0),
+            "vision_cost_estimate": float(serial_result.get("cost_estimate") or 0),
+            "serial_consensus": serial_result.get("serial_consensus"),
+            "backend_telemetry": {
+                "vision_status": serial_result.get("status"),
+                "vision_candidate_count": len(serial_candidates),
+                "vision_latency_ms": int(serial_result.get("latency_ms") or 0),
+                "vision_cost_estimate": float(serial_result.get("cost_estimate") or 0),
+            },
+            **({"reason": serial_result.get("reason")} if serial_result.get("reason") else {}),
+        }
+    else:
+        primary = ocr_field_from_loaded_image(
+            loaded,
+            crop_type=crop_type,
+            crop_box=payload.get("crop_box"),
+            request_id=request_id,
+            model_id=config.paddleocr_model_id,
+            model_revision=config.paddleocr_model_revision,
+            ocr_backend=requested_backend,
+            config=config,
+        )
     inline_fallback_requested = metadata.get("inline_full_image_fallback") is True
     primary_text = _ocr_response_text(primary)
     grade_component_fallback: dict[str, Any] | None = None
@@ -736,6 +774,16 @@ if FastAPI is not None:
             raise HTTPException(status_code=403, detail=str(error))
         except ValueError as error:
             raise HTTPException(status_code=422, detail=error.args[0])
+
+    @app.post("/v1/ocr-fields-batch")
+    def ocr_fields_batch(payload: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        try:
+            return vision_ocr_fields_batch_payload(payload, authorization=authorization)
+        except SecurityError as error:
+            raise HTTPException(status_code=403, detail=str(error))
+        except (ImageLoadError, ValueError) as error:
+            detail = error.args[0] if isinstance(error, ValueError) and error.args else str(error)
+            raise HTTPException(status_code=422, detail=detail)
 else:
     app = None
 

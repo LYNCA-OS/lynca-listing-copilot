@@ -421,6 +421,13 @@ const disabledConfig = paddleOcrConfig({
 });
 assert.equal(disabledConfig.enabled, false);
 
+const canonicalWorkerConfig = paddleOcrConfig({
+  ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+  RECOGNITION_WORKER_URL: "https://recognition-canonical.internal",
+  PADDLE_OCR_WORKER_URL: "https://legacy-shadow.internal"
+});
+assert.equal(canonicalWorkerConfig.url, "https://recognition-canonical.internal");
+
 const disabledClient = createPaddleOcrClient({
   env: {
     ENABLE_PADDLE_OCR_FIELD_VERIFIER: "false"

@@ -8,7 +8,7 @@ from app.pipelines.google_vision_ocr import (
     run_google_vision_ocr,
     run_google_vision_ocr_batch,
 )
-from app.vision_main import _serial_consensus
+from app.vision_main import _merge_serial_region_consensus, _serial_consensus, ocr_fields_batch_payload
 
 
 def _config(**overrides):
@@ -141,6 +141,86 @@ class GoogleVisionOcrUnitTests(unittest.TestCase):
             {"candidates": [{"text": "24/25", "confidence": 0.94}], "cost_estimate": 0.0015},
         )
         self.assertEqual(billed["cost_estimate"], 0.003)
+
+    def test_serial_regions_accept_one_verified_value_and_reject_verified_conflicts(self):
+        verified = _serial_consensus(
+            {"candidates": [{"text": "01/35", "confidence": 0.98}], "cost_estimate": 0.0015},
+            {"candidates": [{"text": "1 / 35", "confidence": 0.96}], "cost_estimate": 0.0015},
+        )
+        empty = _serial_consensus(
+            {"candidates": [], "cost_estimate": 0.0015},
+            {"candidates": [], "cost_estimate": 0.0015},
+        )
+        merged = _merge_serial_region_consensus(empty, verified)
+        self.assertTrue(merged["serial_consensus"]["verified"])
+        self.assertEqual(merged["raw_text"], "1/35")
+        self.assertEqual(merged["cost_estimate"], 0.006)
+
+        conflicting = _serial_consensus(
+            {"candidates": [{"text": "02/35", "confidence": 0.98}]},
+            {"candidates": [{"text": "2/35", "confidence": 0.96}]},
+        )
+        rejected = _merge_serial_region_consensus(verified, conflicting)
+        self.assertFalse(rejected["serial_consensus"]["verified"])
+        self.assertTrue(rejected["serial_consensus"]["conflict"])
+        self.assertEqual(rejected["candidates"], [])
+
+    def test_serial_request_keeps_one_download_and_one_four_unit_vision_batch(self):
+        config = SimpleNamespace(
+            token="worker-token",
+            allowed_image_hosts=("example.test",),
+            max_image_bytes=1024,
+            max_total_pixels=1024,
+            request_timeout_seconds=5,
+        )
+        raw_results = [
+            {"status": "NO_TEXT", "candidates": [], "cost_estimate": 0.0015},
+            {"status": "NO_TEXT", "candidates": [], "cost_estimate": 0.0015},
+            {"status": "OK", "candidates": [{"text": "01/35", "confidence": 0.98}], "cost_estimate": 0.0015},
+            {"status": "OK", "candidates": [{"text": "1/35", "confidence": 0.96}], "cost_estimate": 0.0015},
+        ]
+        captured = {}
+
+        def fake_batch(arrays, *, crop_types, config, client):
+            captured["array_count"] = len(arrays)
+            captured["crop_types"] = crop_types
+            return {
+                "status": "OK",
+                "results": raw_results,
+                "vision_unit_count": 4,
+                "cost_estimate": 0.006,
+                "latency_ms": 123,
+            }
+
+        payload = {"requests": [{
+            "request_id": "serial-1",
+            "image_url": "https://example.test/card.jpg",
+            "crop_type": "serial_number",
+            "crop_box": {"x": 0.58, "y": 0.70, "width": 0.34, "height": 0.22},
+            "metadata": {"image_id": "front-1"},
+        }]}
+        with (
+            patch("app.vision_main.load_config", return_value=config),
+            patch("app.vision_main.verify_bearer_token"),
+            patch("app.vision_main.validate_image_url"),
+            patch("app.vision_main.load_signed_image", return_value=SimpleNamespace(array="IMAGE")) as loader,
+            patch("app.vision_main._crop", side_effect=lambda array, box: ("crop", tuple(sorted(box.items())))),
+            patch("app.vision_main._expanded_crop", side_effect=lambda array, box: ("expanded", tuple(sorted(box.items())))),
+            patch("app.vision_main.run_google_vision_ocr_batch", side_effect=fake_batch),
+        ):
+            result = ocr_fields_batch_payload(payload, "Bearer worker-token", vision_client="client")
+
+        self.assertEqual(loader.call_count, 1)
+        self.assertEqual(captured["array_count"], 4)
+        self.assertEqual(captured["crop_types"], [
+            "serial_number",
+            "serial_number_planned_expanded",
+            "serial_number_top_right",
+            "serial_number_top_right_expanded",
+        ])
+        self.assertEqual(result["vision_unit_count"], 4)
+        self.assertEqual(result["results"][0]["vision_unit_count"], 4)
+        self.assertEqual(result["results"][0]["raw_text"], "1/35")
 
 
 if __name__ == "__main__":

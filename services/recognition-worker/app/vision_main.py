@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import time
 from typing import Any
 
@@ -15,103 +14,16 @@ from .config import load_config
 from .contracts import validate_ocr_field_request
 from .pipelines.google_vision_ocr import MAX_SYNC_IMAGES, run_google_vision_ocr_batch
 from .pipelines.image_loader import ImageLoadError, load_signed_image
+from .pipelines.serial_region_ocr import (
+    TOP_RIGHT_SERIAL_BOX as _TOP_RIGHT_SERIAL_BOX,
+    crop_array as _crop,
+    expanded_crop as _expanded_crop,
+    merge_serial_region_consensus as _merge_serial_region_consensus,
+    serial_consensus as _serial_consensus,
+)
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
 
-_SERIAL_PATTERN = re.compile(r"(?<![A-Z0-9])#?0*(\d{1,6})\s*[/|-]\s*0*(\d{1,6})\b", re.IGNORECASE)
 _MAX_FIELD_REQUESTS = 8
-
-
-def _crop(array: Any, box: dict[str, Any] | None) -> Any:
-    if not box:
-        return array
-    height, width = array.shape[:2]
-    x = float(box.get("x", box.get("left", 0)))
-    y = float(box.get("y", box.get("top", 0)))
-    crop_width = float(box.get("width", box.get("w", 0)))
-    crop_height = float(box.get("height", box.get("h", 0)))
-    # Normalized boxes remain supported for older persisted crop plans.
-    if 0 <= x <= 1 and 0 <= y <= 1 and 0 < crop_width <= 1 and 0 < crop_height <= 1:
-        x, y, crop_width, crop_height = x * width, y * height, crop_width * width, crop_height * height
-    x1 = max(0, min(width - 1, int(round(x))))
-    y1 = max(0, min(height - 1, int(round(y))))
-    x2 = max(x1 + 1, min(width, int(round(x + crop_width))))
-    y2 = max(y1 + 1, min(height, int(round(y + crop_height))))
-    return array[y1:y2, x1:x2]
-
-
-def _expanded_crop(array: Any, box: dict[str, Any] | None, padding: float = 0.18) -> Any:
-    if not box:
-        return array
-    height, width = array.shape[:2]
-    x = float(box.get("x", box.get("left", 0)))
-    y = float(box.get("y", box.get("top", 0)))
-    crop_width = float(box.get("width", box.get("w", 0)))
-    crop_height = float(box.get("height", box.get("h", 0)))
-    if 0 <= x <= 1 and 0 <= y <= 1 and 0 < crop_width <= 1 and 0 < crop_height <= 1:
-        x, y, crop_width, crop_height = x * width, y * height, crop_width * width, crop_height * height
-    return _crop(array, {
-        "x": max(0, x - crop_width * padding),
-        "y": max(0, y - crop_height * padding),
-        "width": min(width, crop_width * (1 + 2 * padding)),
-        "height": min(height, crop_height * (1 + 2 * padding)),
-    })
-
-
-def _serial_readings(result: dict[str, Any]) -> dict[str, float]:
-    readings: dict[str, float] = {}
-    candidates = list(result.get("candidates") or [])
-    if result.get("raw_text"):
-        candidates.append({"text": result["raw_text"], "confidence": result.get("confidence") or 0})
-    for candidate in candidates:
-        confidence = float(candidate.get("confidence") or 0)
-        for match in _SERIAL_PATTERN.finditer(str(candidate.get("text") or "")):
-            numerator, denominator = int(match.group(1)), int(match.group(2))
-            if numerator < 1 or denominator < 1 or numerator > denominator:
-                continue
-            value = f"{match.group(1)}/{denominator}"
-            readings[value] = max(readings.get(value, 0), confidence)
-    return readings
-
-
-def _serial_consensus(primary: dict[str, Any], expanded: dict[str, Any]) -> dict[str, Any]:
-    primary_values = _serial_readings(primary)
-    expanded_values = _serial_readings(expanded)
-    agreed = sorted(set(primary_values).intersection(expanded_values))
-    chosen = agreed[0] if len(agreed) == 1 else ""
-    primary_denominators = {value.split("/", 1)[1] for value in primary_values}
-    expanded_denominators = {value.split("/", 1)[1] for value in expanded_values}
-    denominator_agreement = sorted(primary_denominators.intersection(expanded_denominators))
-    denominator = denominator_agreement[0] if len(denominator_agreement) == 1 else ""
-    if chosen:
-        confidence = min(primary_values[chosen], expanded_values[chosen])
-        candidates = [{"text": chosen, "confidence": round(confidence, 4), "box": None}]
-        raw_text = chosen
-    elif denominator:
-        candidates = [{"text": f"#/{denominator}", "confidence": 0.75, "box": None}]
-        raw_text = f"#/{denominator}"
-        confidence = 0.75
-    else:
-        candidates = []
-        raw_text = ""
-        confidence = 0.0
-    return {
-        "status": "OK" if candidates else "NO_TEXT",
-        "candidates": candidates,
-        "raw_text": raw_text,
-        "confidence": confidence,
-        "cost_estimate": round(
-            float(primary.get("cost_estimate") or 0) + float(expanded.get("cost_estimate") or 0),
-            6,
-        ),
-        "serial_consensus": {
-            "verified": bool(chosen),
-            "chosen": chosen or None,
-            "denominator_only": denominator if not chosen else None,
-            "primary_readings": sorted(primary_values),
-            "expanded_readings": sorted(expanded_values),
-            "conflict": bool(primary_values and expanded_values and not chosen),
-        },
-    }
 
 
 def _public_result(request: dict[str, Any], result: dict[str, Any], *, batch_latency_ms: int, unit_count: int) -> dict[str, Any]:
@@ -168,31 +80,46 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
 
     arrays = []
     crop_types = []
-    result_slots: list[tuple[int, int | None]] = []
+    result_slots: list[tuple[int, int | None, int | None, int | None]] = []
     for request in requests:
         loaded = loaded_by_url[str(request.get("image_url") or "")]
         exact_index = len(arrays)
         arrays.append(_crop(loaded.array, request.get("crop_box")))
         crop_types.append(str(request.get("crop_type") or ""))
         expanded_index = None
+        top_right_index = None
+        top_right_expanded_index = None
         if str(request.get("crop_type") or "").lower() in {"serial_number", "serial_crop"}:
             expanded_index = len(arrays)
             arrays.append(_expanded_crop(loaded.array, request.get("crop_box")))
-            crop_types.append("serial_number_consensus")
-        result_slots.append((exact_index, expanded_index))
+            crop_types.append("serial_number_planned_expanded")
+            # Serial placement varies by manufacturer. Keep the persisted crop
+            # and add a fixed upper-right pair in the same Vision batch, where
+            # modern numbered cards commonly print the current-card serial.
+            top_right_index = len(arrays)
+            arrays.append(_crop(loaded.array, _TOP_RIGHT_SERIAL_BOX))
+            crop_types.append("serial_number_top_right")
+            top_right_expanded_index = len(arrays)
+            arrays.append(_expanded_crop(loaded.array, _TOP_RIGHT_SERIAL_BOX))
+            crop_types.append("serial_number_top_right_expanded")
+        result_slots.append((exact_index, expanded_index, top_right_index, top_right_expanded_index))
     if len(arrays) > MAX_SYNC_IMAGES:
         raise ValueError({"errors": [{"path": "requests", "message": "expanded Vision batch exceeds 16 image units"}]})
 
     batch = run_google_vision_ocr_batch(arrays, crop_types=crop_types, config=config, client=vision_client)
     raw_results = batch.get("results") or []
     output = []
-    for request, (exact_index, expanded_index) in zip(requests, result_slots, strict=False):
+    for request, (exact_index, expanded_index, top_right_index, top_right_expanded_index) in zip(requests, result_slots, strict=False):
         primary = raw_results[exact_index] if exact_index < len(raw_results) else {"status": "UNAVAILABLE", "reason": batch.get("reason")}
         unit_count = 1
         if expanded_index is not None:
             expanded = raw_results[expanded_index] if expanded_index < len(raw_results) else {"status": "UNAVAILABLE"}
-            primary = {**primary, **_serial_consensus(primary, expanded)}
-            unit_count = 2
+            planned_consensus = _serial_consensus(primary, expanded)
+            top_right_primary = raw_results[top_right_index] if top_right_index is not None and top_right_index < len(raw_results) else {"status": "UNAVAILABLE"}
+            top_right_expanded = raw_results[top_right_expanded_index] if top_right_expanded_index is not None and top_right_expanded_index < len(raw_results) else {"status": "UNAVAILABLE"}
+            top_right_consensus = _serial_consensus(top_right_primary, top_right_expanded)
+            primary = {**primary, **_merge_serial_region_consensus(planned_consensus, top_right_consensus)}
+            unit_count = 4
         output.append(_public_result(request, primary, batch_latency_ms=int(batch.get("latency_ms") or 0), unit_count=unit_count))
     return {
         "status": "OK" if any(item.get("status") == "OK" for item in output) else batch.get("status", "UNAVAILABLE"),

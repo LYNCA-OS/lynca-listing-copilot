@@ -10,7 +10,7 @@ from PIL import Image
 from app.contracts import validate_embed_request, validate_ocr_field_request, validate_request
 from app.config import DEFAULT_VISUAL_EMBEDDING_REVISION, load_config
 from app.eval import evaluate_worker_items
-from app.main import _ocr_response_has_target, embed_images_payload, analyze_payload, ocr_field_payload
+from app.main import _ocr_response_has_target, app, embed_images_payload, analyze_payload, ocr_field_payload
 from app.pipelines.card_rectification import rectify_card_from_array
 from app.pipelines.evidence_fusion import fuse_ocr_evidence
 from app.pipelines.field_parsers import parse_checklist_code, parse_collector_number, parse_grade, parse_serial
@@ -36,6 +36,9 @@ class RecognitionWorkerTests(unittest.TestCase):
         os.environ["RECOGNITION_ALLOWED_IMAGE_HOSTS"] = "example.supabase.co"
         os.environ["ENABLE_IMAGE_DOWNLOAD"] = "false"
         os.environ["ENABLE_TESSERACT_OCR"] = "false"
+
+    def test_unified_worker_exposes_google_vision_batch_endpoint(self):
+        self.assertIn("/v1/ocr-fields-batch", {route.path for route in app.routes})
 
     def test_ppocr_hpi_cpu_threads_are_pinned_to_cloud_run_capacity(self):
         with patch.dict(os.environ, {"PADDLEOCR_ENABLE_HPI": "true", "PADDLEOCR_CPU_THREADS": "2"}, clear=False):
@@ -303,6 +306,52 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertFalse(result["inline_full_image_fallback_target_found"])
         self.assertEqual(result["primary_ocr_latency_ms"], 8)
         self.assertNotIn("token=secret", str(result))
+
+    def test_google_vision_serial_uses_shared_four_region_batch_on_production_entrypoint(self):
+        loaded = LoadedImage(
+            image_id="serial",
+            role="serial_number",
+            url="https://example.supabase.co/storage/v1/object/sign/cards/serial.jpg?token=secret",
+            content_type="image/jpeg",
+            size_bytes=12345,
+            width=800,
+            height=1000,
+            array=np.zeros((1000, 800, 3), dtype=np.uint8),
+        )
+        payload = {
+            "request_id": "ocr_serial_regions",
+            "image_url": loaded.url,
+            "crop_type": "serial_number",
+            "crop_box": {"x": 0.58, "y": 0.70, "width": 0.34, "height": 0.22},
+            "metadata": {"image_id": "serial"},
+        }
+        serial_result = {
+            "status": "OK",
+            "raw_text": "1/35",
+            "candidates": [{"text": "1/35", "confidence": 0.96, "box": None}],
+            "confidence": 0.96,
+            "latency_ms": 123,
+            "cost_estimate": 0.006,
+            "vision_unit_count": 4,
+            "serial_consensus": {"verified": True, "chosen": "1/35", "conflict": False},
+        }
+        with patch.dict(os.environ, {
+            "ENABLE_IMAGE_DOWNLOAD": "true",
+            "OCR_BACKEND": "google_vision",
+            "VISION_API_KEY": "test-key",
+        }, clear=False):
+            with patch("app.main.load_signed_image", return_value=loaded) as load_mock:
+                with patch("app.main.run_google_vision_serial_regions", return_value=serial_result) as serial_mock:
+                    with patch("app.main.ocr_field_from_loaded_image") as generic_mock:
+                        result = ocr_field_payload(payload, authorization="Bearer test-token")
+
+        load_mock.assert_called_once()
+        serial_mock.assert_called_once()
+        generic_mock.assert_not_called()
+        self.assertEqual(result["raw_text"], "1/35")
+        self.assertEqual(result["vision_unit_count"], 4)
+        self.assertTrue(result["serial_consensus"]["verified"])
+        self.assertEqual(result["model_id"], "google-cloud-vision")
 
     def test_tight_serial_crop_uses_recognition_when_detector_misses_foil_text(self):
         array = np.zeros((100, 320, 3), dtype=np.uint8)
