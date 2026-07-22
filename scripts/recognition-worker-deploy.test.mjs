@@ -19,12 +19,20 @@ assert.match(deploy, /VISION_SECRET_NAME="\$\{VISION_API_KEY_SECRET_NAME:-lynca-
 assert.match(deploy, /OCR_BACKEND="\$\{OCR_BACKEND:-google_vision\}"/);
 assert.match(deploy, /VISION_API_KEY=\$\{VISION_SECRET_NAME\}:latest/);
 assert.match(deploy, /OCR_BACKEND=\$\{OCR_BACKEND\}/);
+assert.match(deploy, /PADDLEOCR_ROLE="\$\{PADDLEOCR_ROLE:-shadow\}"/);
+assert.match(deploy, /PADDLEOCR_ENABLE_HPI="\$\{PADDLEOCR_ENABLE_HPI:-true\}"/);
+assert.match(deploy, /PP-OCRv6_medium_det/);
+assert.match(deploy, /PP-OCRv6_medium_rec/);
 assert.match(build, /timeout: 2700s/);
 assert.match(build, /--cache-from/);
 assert.match(build, /_CACHE_IMAGE/);
 assert.match(dockerfile, /PADDLE_PDX_CACHE_HOME=\/opt\/paddlex/);
 assert.match(dockerfile, /preload_paddleocr_engine/);
 assert.match(dockerfile, /_get_paddleocr_engine\(\)\.predict/);
+assert.match(dockerfile, /paddleocr install_hpi_deps cpu/);
+assert.match(dockerfile, /PADDLEOCR_ENABLE_HPI=true/);
+assert.match(dockerfile, /PP-OCRv6_medium_det/);
+assert.match(dockerfile, /PP-OCRv6_medium_rec/);
 
 assert.match(visionDeploy, /git -C "\$ROOT_DIR" rev-parse HEAD/);
 assert.match(visionDeploy, /git -C "\$ROOT_DIR" rev-parse origin\/main/);

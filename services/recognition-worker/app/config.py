@@ -62,6 +62,11 @@ class WorkerConfig:
     paddleocr_preload: bool
     paddleocr_model_id: str
     paddleocr_model_revision: str
+    paddleocr_role: str
+    paddleocr_enable_hpi: bool
+    paddleocr_detection_model_name: str
+    paddleocr_recognition_model_name: str
+    paddleocr_cpu_threads: int
     enable_tesseract_ocr: bool
     enable_opencv_rectification: bool
     enable_visual_embeddings: bool
@@ -115,6 +120,11 @@ def load_config() -> WorkerConfig:
         paddleocr_preload=os.getenv("PADDLEOCR_PRELOAD", "false").lower() == "true",
         paddleocr_model_id=os.getenv("PADDLEOCR_MODEL_ID", os.getenv("PADDLE_OCR_MODEL_ID", "paddleocr")) or "paddleocr",
         paddleocr_model_revision=os.getenv("PADDLEOCR_MODEL_REVISION", os.getenv("PADDLE_OCR_MODEL_REVISION", "")) or "",
+        paddleocr_role=os.getenv("PADDLEOCR_ROLE", "shadow").strip().lower() or "shadow",
+        paddleocr_enable_hpi=os.getenv("PADDLEOCR_ENABLE_HPI", "false").lower() == "true",
+        paddleocr_detection_model_name=os.getenv("PADDLEOCR_DETECTION_MODEL_NAME", "PP-OCRv6_medium_det") or "PP-OCRv6_medium_det",
+        paddleocr_recognition_model_name=os.getenv("PADDLEOCR_RECOGNITION_MODEL_NAME", "PP-OCRv6_medium_rec") or "PP-OCRv6_medium_rec",
+        paddleocr_cpu_threads=_bounded_int_env("PADDLEOCR_CPU_THREADS", 2, 8),
         enable_tesseract_ocr=os.getenv("ENABLE_TESSERACT_OCR", "false").lower() == "true",
         enable_opencv_rectification=os.getenv("ENABLE_OPENCV_RECTIFICATION", "false").lower() == "true",
         enable_visual_embeddings=os.getenv("ENABLE_VISUAL_EMBEDDINGS", "false").lower() == "true",
