@@ -807,6 +807,35 @@ const pulsesAfterCompletion = heartbeatPulses;
 await new Promise((resolve) => setTimeout(resolve, 12));
 assert.equal(heartbeatPulses, pulsesAfterCompletion, "heartbeat timer must stop when the job finishes");
 
+let transientHeartbeatCalls = 0;
+let resolveRecoveredHeartbeat;
+const recoveredHeartbeat = new Promise((resolve) => {
+  resolveRecoveredHeartbeat = resolve;
+});
+const transientHeartbeatRun = await runWithV4JobLeaseHeartbeat({
+  job: { id: "v4job-transient-heartbeat", lease_owner: "worker-transient" },
+  leaseSeconds: 300,
+  intervalMs: 5,
+  heartbeatRetryBaseMs: 1,
+  heartbeat: async () => {
+    transientHeartbeatCalls += 1;
+    if (transientHeartbeatCalls === 1) throw new Error("temporary heartbeat transport failure");
+    resolveRecoveredHeartbeat();
+    return { extended: true, skipped: false, error: null };
+  },
+  task: async () => {
+    await Promise.race([
+      recoveredHeartbeat,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("transient_heartbeat_test_timeout")), 250))
+    ]);
+    return "recovered";
+  }
+});
+assert.equal(transientHeartbeatRun.value, "recovered");
+assert.equal(transientHeartbeatRun.heartbeat.retry_count, 1);
+assert.equal(transientHeartbeatRun.heartbeat.recovered_after_retry_count, 1);
+assert.equal(transientHeartbeatRun.heartbeat.failure_count, 0, "one transient RPC failure must not replay the whole card");
+
 assert.equal(v4JobFailureCode({
   statusCode: 200,
   body: { ok: false, message: "Provider response schema validation failed: unknown field" }

@@ -453,13 +453,17 @@ export async function runWithV4JobLeaseHeartbeat({
   task,
   heartbeat = heartbeatV4RecognitionJob,
   intervalMs = v4JobLeaseHeartbeatIntervalMs({ leaseSeconds, env: process.env }),
-  enabled = v4JobLeaseHeartbeatEnabled(process.env)
+  enabled = v4JobLeaseHeartbeatEnabled(process.env),
+  heartbeatMaxAttempts = 3,
+  heartbeatRetryBaseMs = 150
 } = {}) {
   if (typeof task !== "function") throw new TypeError("task must be a function");
   const stats = {
     enabled: Boolean(enabled),
     interval_ms: enabled ? intervalMs : null,
     attempts: 0,
+    retry_count: 0,
+    recovered_after_retry_count: 0,
     success_count: 0,
     failure_count: 0,
     lost_ownership_count: 0,
@@ -491,35 +495,43 @@ export async function runWithV4JobLeaseHeartbeat({
     taskAbort.abort(error);
   };
   const pulse = async () => {
-    stats.attempts += 1;
-    let result;
-    try {
-      result = await heartbeat({
-        jobId: job.id,
-        workerId: job.lease_owner,
-        leaseSeconds
-      });
-    } catch (error) {
-      stats.failure_count += 1;
-      stats.last_error = safeError(error);
-      abortTask("lease_renewal_failed", error);
-      return;
+    const maxAttempts = Math.max(1, Math.min(5, Number(heartbeatMaxAttempts) || 3));
+    const retryBaseMs = Math.max(1, Math.min(2_000, Number(heartbeatRetryBaseMs) || 150));
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      stats.attempts += 1;
+      let result;
+      try {
+        result = await heartbeat({
+          jobId: job.id,
+          workerId: job.lease_owner,
+          leaseSeconds
+        });
+      } catch (error) {
+        lastError = error;
+      }
+      if (result?.extended) {
+        stats.success_count += 1;
+        if (attempt > 1) stats.recovered_after_retry_count += 1;
+        return;
+      }
+      // A clean negative response proves another worker owns the row. Retrying
+      // it would only extend the stale invocation, so fence immediately.
+      if (result && !result.error && !result.skipped) {
+        stats.lost_ownership_count += 1;
+        stats.last_error = "lease_ownership_lost";
+        abortTask("lease_ownership_lost");
+        return;
+      }
+      lastError = lastError || result?.error || (result?.skipped ? "lease_renewal_skipped" : "lease_renewal_failed");
+      if (attempt < maxAttempts) {
+        stats.retry_count += 1;
+        await new Promise((resolve) => setTimeout(resolve, retryBaseMs * (2 ** (attempt - 1))));
+      }
     }
-    if (result?.extended) {
-      stats.success_count += 1;
-    } else if (result?.error) {
-      stats.failure_count += 1;
-      stats.last_error = safeError(result.error);
-      abortTask("lease_renewal_failed", result.error);
-    } else if (result?.skipped) {
-      stats.failure_count += 1;
-      stats.last_error = "lease_renewal_skipped";
-      abortTask("lease_renewal_failed");
-    } else {
-      stats.lost_ownership_count += 1;
-      stats.last_error = "lease_ownership_lost";
-      abortTask("lease_ownership_lost");
-    }
+    stats.failure_count += 1;
+    stats.last_error = safeError(lastError);
+    abortTask("lease_renewal_failed", lastError instanceof Error ? lastError : null);
   };
   const schedule = () => {
     if (stopped) return;

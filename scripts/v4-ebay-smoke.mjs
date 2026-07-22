@@ -4734,8 +4734,20 @@ export async function main(argv = process.argv, env = process.env) {
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
     coldStartBlind: hasFlag(argv, "--cold-start-blind"),
-    verifiedAssetCachePath: cleanText(argValue(argv, "--verified-asset-cache", "")),
-    verifiedAssetCacheMode: cleanText(argValue(argv, "--verified-asset-cache-mode", "disabled")),
+    // CLI smoke runs are iterative by design. Persist verified generations by
+    // immutable source fingerprint so rerunning a seen card does not repeat
+    // asset creation, signed upload, PUT, or verification. Programmatic callers
+    // retain the explicit disabled default above for isolation tests.
+    verifiedAssetCachePath: cleanText(argValue(
+      argv,
+      "--verified-asset-cache",
+      env.V4_EBAY_SMOKE_VERIFIED_ASSET_CACHE || "data/eval/workflow-sidecar-smoke/verified-asset-cache.json"
+    )),
+    verifiedAssetCacheMode: cleanText(argValue(
+      argv,
+      "--verified-asset-cache-mode",
+      env.V4_EBAY_SMOKE_VERIFIED_ASSET_CACHE_MODE || "reuse"
+    )),
     outPath,
     progress: !hasFlag(argv, "--quiet")
   });
