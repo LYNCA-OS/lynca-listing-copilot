@@ -503,6 +503,7 @@ export function triggerV4QueuePumpAfterEnqueue(_req, {
 }
 
 export default async function handler(req, res) {
+  const requestStartedAt = Date.now();
   instrumentProductionRequest(req, res, { api: "/api/v4/listing-job-enqueue" });
   if (req.method !== "POST") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
@@ -577,13 +578,18 @@ export default async function handler(req, res) {
   // Session IDs are ownership-bearing server identifiers. A browser may
   // provide an idempotency key, but it cannot select an existing session.
   let sourceJobs;
+  let canonicalizeMs = 0;
+  let retryAuthorizationMs = 0;
   try {
+    const canonicalizeStartedAt = Date.now();
     const canonicalJobs = await canonicalizeQueueJobs({
       jobs: rawJobs,
       tenantId,
       env: process.env,
       fetchImpl: globalThis.fetch
     });
+    canonicalizeMs = Date.now() - canonicalizeStartedAt;
+    const retryAuthorizationStartedAt = Date.now();
     sourceJobs = await authorizeFreshManualRetryJobs({
       jobs: canonicalJobs,
       tenantId,
@@ -592,6 +598,7 @@ export default async function handler(req, res) {
       env: process.env,
       fetchImpl: globalThis.fetch
     });
+    retryAuthorizationMs = Date.now() - retryAuthorizationStartedAt;
   } catch (error) {
     const recognitionProfileError = error instanceof RecognitionRequestContractError;
     const canonicalError = error instanceof CanonicalImageReferenceError;
@@ -667,6 +674,7 @@ export default async function handler(req, res) {
     tenantId,
     priority: requestPriority
   });
+  const queuePersistenceStartedAt = Date.now();
   const result = await enqueueV4RecognitionJobs({
     jobs: stageJobs,
     batchId,
@@ -674,6 +682,7 @@ export default async function handler(req, res) {
     tenantId,
     priority: requestPriority
   });
+  const queuePersistenceMs = Date.now() - queuePersistenceStartedAt;
   const pump = triggerV4QueuePumpAfterEnqueue(req, {
     tenantId,
     batchId: result.batchId,
@@ -723,6 +732,12 @@ export default async function handler(req, res) {
     pump_triggered: pump.triggered,
     pump_reason: pump.reason,
     pump_global_drain: pump.global_drain === true,
+    enqueue_timing: {
+      canonicalize_ms: canonicalizeMs,
+      retry_authorization_ms: retryAuthorizationMs,
+      queue_persistence_ms: queuePersistenceMs,
+      total_ms: Date.now() - requestStartedAt
+    },
     jobs: result.jobs.map((entry) => ({
       ok: entry.saved,
       job_id: entry.row?.id || null,

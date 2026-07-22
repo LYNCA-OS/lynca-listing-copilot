@@ -247,6 +247,16 @@ assert.equal(result.body.saved, true);
 assert.equal(result.body.preprocessing_summary.image_count, 2);
 assert.equal(result.body.signed_read_url_count, 2);
 assert.ok(result.body.worker_jobs_enqueued >= 2);
+for (const phase of [
+  "canonical_bundle_lookup_ms",
+  "signed_read_url_check_ms",
+  "existing_bundle_read_ms",
+  "bundle_write_ms",
+  "worker_job_enqueue_ms",
+  "total_ms"
+]) {
+  assert.equal(Number.isFinite(result.body.preingestion_timing?.[phase]), true, `${phase} must be observable`);
+}
 assert.equal(result.body.ocr_dispatch_started, true);
 await new Promise((resolve) => setTimeout(resolve, 0));
 assert.ok(calls.some((call) => call.path.endsWith("/api/v4/listing-preingest-worker")));

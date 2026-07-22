@@ -152,6 +152,7 @@ async function countSignedReadUrls(images, tenantId, env, fetchImpl) {
 }
 
 export default async function handler(req, res) {
+  const requestStartedAt = Date.now();
   instrumentProductionRequest(req, res, { api: "/api/listing-preingest" });
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, message: "Method not allowed" });
@@ -204,6 +205,7 @@ export default async function handler(req, res) {
 
   try {
     const source = allowedBrowserSource(payload.source);
+    const canonicalLookupStartedAt = Date.now();
     const [canonical, existingBundleId] = await Promise.all([
       readCanonicalListingImageReferences({
         assetId,
@@ -219,6 +221,7 @@ export default async function handler(req, res) {
         fetchImpl: globalThis.fetch
       })
     ]);
+    const canonicalLookupMs = Date.now() - canonicalLookupStartedAt;
     // The browser is scheduling work, not defining image identity. Replace
     // every client image claim with the current server-verified canonical set.
     const images = normalizeCanonicalImages(canonical, assetId, context.tenantId);
@@ -247,10 +250,13 @@ export default async function handler(req, res) {
       cropPlan
     });
 
+    const signedReadStartedAt = Date.now();
     const signed = payload.verify_signed_read_urls === false
       ? { signedReadUrlCount: 0, errors: [] }
       : await countSignedReadUrls(images, context.tenantId, process.env, globalThis.fetch);
+    const signedReadMs = Date.now() - signedReadStartedAt;
 
+    const existingBundleReadStartedAt = Date.now();
     const existingBundle = existingBundleId
       ? await readPreIngestionBundle({
         bundleId: existingBundleId,
@@ -259,6 +265,7 @@ export default async function handler(req, res) {
         fetchImpl: globalThis.fetch
       }).then((result) => result.bundle || null)
       : null;
+    const existingBundleReadMs = Date.now() - existingBundleReadStartedAt;
     const bundle = createPreIngestionBundle({
       tenantId: context.tenantId,
       assetId,
@@ -275,11 +282,13 @@ export default async function handler(req, res) {
       qualitySummary,
       cropPlan
     });
+    const bundleWriteStartedAt = Date.now();
     const writeResult = await upsertPreIngestionBundle({
       bundle,
       env: process.env,
       fetchImpl: globalThis.fetch
     });
+    const bundleWriteMs = Date.now() - bundleWriteStartedAt;
     const durableBundle = writeResult.bundle || bundle;
     const enqueueWorkers = payload.enqueue_workers !== false;
     const paddleOcr = paddleOcrConfig(process.env);
@@ -303,6 +312,7 @@ export default async function handler(req, res) {
         enableQuality: payload.enqueue_quality === true
       })
       : [];
+    const workerEnqueueStartedAt = Date.now();
     const enqueueResult = enqueueWorkers
       ? await enqueuePreIngestionJobs({
         jobs,
@@ -310,6 +320,7 @@ export default async function handler(req, res) {
         fetchImpl: globalThis.fetch
       })
       : { enqueued: 0, durable: true, skipped: true };
+    const workerEnqueueMs = Date.now() - workerEnqueueStartedAt;
 
     // Wake the independent OCR consumer as soon as durable enqueue finishes.
     // This endpoint still only persists/schedules work: leases, retries and OCR
@@ -337,6 +348,14 @@ export default async function handler(req, res) {
       ocr_dispatch_started: ocrDispatchStarted,
       signed_read_url_count: signed.signedReadUrlCount,
       signed_read_url_error_count: signed.errors.length,
+      preingestion_timing: {
+        canonical_bundle_lookup_ms: canonicalLookupMs,
+        signed_read_url_check_ms: signedReadMs,
+        existing_bundle_read_ms: existingBundleReadMs,
+        bundle_write_ms: bundleWriteMs,
+        worker_job_enqueue_ms: workerEnqueueMs,
+        total_ms: Date.now() - requestStartedAt
+      },
       preprocessing_summary: {
         ...summarizePreIngestionBundle(durableBundle),
         signed_read_url_count: signed.signedReadUrlCount,

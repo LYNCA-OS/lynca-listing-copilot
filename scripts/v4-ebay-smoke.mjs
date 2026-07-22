@@ -793,6 +793,7 @@ async function preingestItem({
     worker_jobs_enqueued: response.data?.worker_jobs_enqueued ?? null,
     signed_read_url_count: response.data?.signed_read_url_count ?? null,
     signed_read_url_error_count: response.data?.signed_read_url_error_count ?? null,
+    timing: response.data?.preingestion_timing || null,
     preprocessing_summary: response.data?.preprocessing_summary || null,
     error: response.ok && response.data?.ok !== false ? null : response.data
   };
@@ -2693,6 +2694,7 @@ async function enqueueSpeculativeItem({
       asset_cache_entry: preparedItem.asset_cache_entry || null,
       enqueue_attempts: Number(enqueue.attempts || 1),
       enqueue_recovered_by_retry: enqueue.retried === true,
+      enqueue_timing: enqueue.data?.enqueue_timing || null,
       preingestion: preingestionResult,
       prewarm: prewarmResult,
       error: null
@@ -2925,6 +2927,7 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     preingestion_bundle_id: preingestion.bundle_id || null,
     preingestion_bundle_status: preingestion.bundle_status || null,
     preingestion_worker_jobs_enqueued: preingestion.worker_jobs_enqueued ?? null,
+    preingestion_timing: preingestion.timing || null,
     preingestion_error: preingestion.error ? JSON.stringify(preingestion.error).slice(0, 500) : null,
     queue_mode: true,
     speculative_mode: true,
@@ -2958,6 +2961,7 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     preparation_recovered_by_retry: prepared.preparation_diagnostics?.recovered_by_retry === true,
     enqueue_attempts: prepared.enqueue_attempts ?? null,
     enqueue_recovered_by_retry: prepared.enqueue_recovered_by_retry === true,
+    enqueue_timing: prepared.enqueue_timing || prepared.enqueue?.data?.enqueue_timing || null,
     enqueue_persistence_mode: prepared.enqueue?.data?.persistence_mode || null,
     l1_wall_latency_ms: prewarm.latency_ms ?? null,
     l2_ready: ready,
