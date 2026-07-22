@@ -113,6 +113,39 @@ class GoogleVisionOcrUnitTests(unittest.TestCase):
         self.assertEqual(result["status"], "NO_TEXT")
         self.assertEqual(result["candidates"], [])
 
+    def test_word_confidence_survives_low_page_average(self):
+        # A busy card back: low page-average confidence (0.85) but the serial
+        # word "05/10" is read at 0.99. The serial must surface as its own
+        # candidate at word confidence, not be diluted to the page mean.
+        def word(text, conf, end_line=False):
+            symbols = [{"text": ch} for ch in text]
+            if end_line and symbols:
+                symbols[-1]["property"] = {"detectedBreak": {"type": "LINE_BREAK"}}
+            return {"symbols": symbols, "confidence": conf}
+
+        payload = {"responses": [{"fullTextAnnotation": {
+            "text": "SP 05/10",
+            "pages": [{
+                "confidence": 0.85,
+                "blocks": [{"paragraphs": [{"words": [
+                    word("SP", 0.80),
+                    word("05/10", 0.99, end_line=True),
+                ]}]}],
+            }],
+        }}]}
+        with patch("app.pipelines.google_vision_ocr._array_to_base64_png", return_value="ZmFrZQ=="):
+            result = run_google_vision_ocr(
+                "ARRAY", crop_type="serial_crop", config=_config(),
+                urlopen_impl=lambda request, timeout: _FakeResponse(payload),
+            )
+        self.assertEqual(result["status"], "OK")
+        serial = next((c for c in result["candidates"] if c["text"] == "05/10"), None)
+        self.assertIsNotNone(serial, "serial word must be its own candidate")
+        self.assertAlmostEqual(serial["confidence"], 0.99, places=4)
+        # A per-line candidate preserves the phrase for multi-word fields.
+        self.assertTrue(any(c["text"] == "SP 05/10" for c in result["candidates"]))
+        self.assertEqual(result["raw_text"], "SP 05/10")
+
 
 if __name__ == "__main__":
     unittest.main()

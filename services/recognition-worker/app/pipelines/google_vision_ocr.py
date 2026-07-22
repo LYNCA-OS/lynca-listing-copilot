@@ -74,6 +74,65 @@ def _page_confidence(full_text: dict[str, Any]) -> float:
     return 0.9
 
 
+def _word_text(word: dict[str, Any]) -> str:
+    return "".join(str(symbol.get("text", "")) for symbol in (word.get("symbols") or []))
+
+
+def _word_ends_line(word: dict[str, Any]) -> bool:
+    symbols = word.get("symbols") or []
+    if not symbols:
+        return False
+    break_type = (((symbols[-1].get("property") or {}).get("detectedBreak") or {}).get("type") or "")
+    return break_type in {"LINE_BREAK", "EOL_SURE_SPACE"}
+
+
+def _vision_candidates(full_text: dict[str, Any]) -> list[dict[str, Any]]:
+    """Emit per-word and per-line candidates carrying their own confidence.
+
+    Vision reports confidence per word. The former page-average badly diluted a
+    high-confidence hard key (a serial "05/10"@0.99) into a busy card back's
+    ~0.85 page mean, which then failed the downstream serial-verification gate
+    (needs >=0.94). Surfacing each word at its true confidence lets the exact
+    serial/code token verify, while per-line candidates preserve multi-word
+    phrases (product/subject names) the same way PaddleOCR line regions do.
+    """
+    pages = full_text.get("pages") if isinstance(full_text, dict) else None
+    if not isinstance(pages, list):
+        return []
+    words: list[dict[str, Any]] = []
+    lines: list[dict[str, Any]] = []
+    line_words: list[str] = []
+    line_confs: list[float] = []
+
+    def flush_line() -> None:
+        nonlocal line_words, line_confs
+        text = " ".join(line_words).strip()
+        if text and line_confs:
+            lines.append({"text": text, "confidence": round(min(line_confs), 4), "box": None})
+        line_words = []
+        line_confs = []
+
+    for page in pages:
+        for block in (page.get("blocks") or []) if isinstance(page, dict) else []:
+            for para in (block.get("paragraphs") or []) if isinstance(block, dict) else []:
+                for word in (para.get("words") or []) if isinstance(para, dict) else []:
+                    text = _word_text(word).strip()
+                    if not text:
+                        continue
+                    conf = word.get("confidence")
+                    conf = float(conf) if conf is not None else None
+                    if conf is not None:
+                        words.append({"text": text, "confidence": round(conf, 4), "box": word.get("boundingBox")})
+                        line_confs.append(conf)
+                    line_words.append(text)
+                    if _word_ends_line(word):
+                        flush_line()
+                flush_line()
+    # Lines first (phrases), then individual words (hard keys) so a serial token
+    # is present as its own exact-value candidate at its own confidence.
+    return lines + words
+
+
 def run_google_vision_ocr(
     array: "np.ndarray",
     *,
@@ -135,11 +194,20 @@ def run_google_vision_ocr(
         if isinstance(annotations, list) and annotations:
             text = str(annotations[0].get("description", "")).strip()
 
-    confidence = _page_confidence(full_text or {}) if text else 0
+    page_confidence = _page_confidence(full_text or {}) if text else 0
     # Vision bills per image "unit"; DOCUMENT_TEXT_DETECTION is one unit/image.
     cost_estimate = round(float(getattr(config, "vision_cost_per_image", 0.0)), 6)
 
-    candidates = [{"text": text, "confidence": confidence, "box": None}] if text else []
+    # Prefer per-word/line candidates so a confident hard key keeps its own
+    # confidence; fall back to the whole-text blob when Vision returned no word
+    # structure (e.g. the textAnnotations-only path).
+    token_candidates = _vision_candidates(full_text or {}) if text else []
+    if token_candidates:
+        candidates = token_candidates
+        confidence = max(candidate["confidence"] for candidate in token_candidates)
+    else:
+        confidence = page_confidence
+        candidates = [{"text": text, "confidence": confidence, "box": None}] if text else []
     return {
         "status": "OK" if candidates else "NO_TEXT",
         "candidates": candidates,
