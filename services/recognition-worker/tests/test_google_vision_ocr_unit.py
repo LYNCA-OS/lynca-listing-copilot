@@ -1,4 +1,5 @@
 import unittest
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from app.vision_main import _serial_consensus
 def _config(**overrides):
     base = dict(
         vision_use_adc=True,
+        vision_api_key="test-key",
         vision_endpoint="",
         vision_feature_type="DOCUMENT_TEXT_DETECTION",
         vision_timeout_seconds=30,
@@ -43,14 +45,14 @@ def _word(text, confidence, end_line=False):
 
 
 class GoogleVisionOcrUnitTests(unittest.TestCase):
-    def test_adc_is_the_only_production_configuration(self):
+    def test_api_key_is_the_production_configuration(self):
         self.assertTrue(google_vision_configured(_config()))
-        self.assertFalse(google_vision_configured(_config(vision_use_adc=False)))
+        self.assertFalse(google_vision_configured(_config(vision_api_key="")))
 
-    def test_unavailable_when_adc_is_disabled(self):
-        result = run_google_vision_ocr("ARRAY", crop_type="serial_crop", config=_config(vision_use_adc=False))
+    def test_unavailable_when_api_key_is_missing(self):
+        result = run_google_vision_ocr("ARRAY", crop_type="serial_crop", config=_config(vision_api_key=""))
         self.assertEqual(result["status"], "UNAVAILABLE")
-        self.assertEqual(result["reason"], "vision_adc_disabled")
+        self.assertEqual(result["reason"], "vision_api_key_not_configured")
 
     def test_official_client_shapes_batch_and_counts_units(self):
         client = _FakeClient({"responses": [
@@ -70,8 +72,29 @@ class GoogleVisionOcrUnitTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 1)
         requests = client.calls[0]["request"]["requests"]
         self.assertEqual(len(requests), 2)
-        self.assertEqual(requests[0]["features"][0]["type"], "DOCUMENT_TEXT_DETECTION")
-        self.assertNotIn("type_", requests[0]["features"][0])
+        self.assertEqual(requests[0]["features"][0]["type_"], "DOCUMENT_TEXT_DETECTION")
+
+    def test_production_rest_batch_uses_public_feature_field(self):
+        captured = {}
+
+        class Response:
+            def read(self):
+                return json.dumps({"responses": [{"textAnnotations": [{"description": "7/10"}]}]}).encode()
+
+        def opener(request, timeout):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return Response()
+
+        with patch("app.pipelines.google_vision_ocr._array_to_png_bytes", return_value=b"png"):
+            result = run_google_vision_ocr_batch(
+                ["A"], crop_types=["serial_crop"], config=_config(), urlopen_impl=opener
+            )
+        body = json.loads(captured["request"].data)
+        self.assertEqual(body["requests"][0]["features"], [{"type": "DOCUMENT_TEXT_DETECTION"}])
+        self.assertNotIn("test-key", captured["request"].full_url.split("?", 1)[0])
+        self.assertEqual(result["status"], "OK")
+        self.assertEqual(result["vision_unit_count"], 1)
 
     def test_word_confidence_survives_low_page_average(self):
         payload = {"responses": [{"fullTextAnnotation": {
