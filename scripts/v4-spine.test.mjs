@@ -732,7 +732,18 @@ const reviewedMultiSubjectSingleCard = buildV4ResolvedFields({
 assert.deepEqual(reviewedMultiSubjectSingleCard.players, ["Barry Bonds", "Willie Mays"]);
 assert.equal(reviewedMultiSubjectSingleCard.multi_card ?? false, false);
 assert.ok(reviewedMultiSubjectSingleCard.card_count == null);
-assert.equal(reviewedMultiSubjectSingleCard.lot_type, "MULTI_SUBJECT_REVIEW");
+assert.ok(reviewedMultiSubjectSingleCard.lot_type == null);
+
+const explicitMultiSubjectReviewIsPreserved = buildV4ResolvedFields({
+  resolved_fields: {
+    players: ["Barry Bonds", "Willie Mays"],
+    lot_type: "MULTI_SUBJECT_REVIEW"
+  },
+  raw_provider_fields: {
+    players: ["Barry Bonds", "Willie Mays"]
+  }
+});
+assert.equal(explicitMultiSubjectReviewIsPreserved.lot_type, "MULTI_SUBJECT_REVIEW");
 
 const catalogExpandedSingleSubjectIsNotMultiSubject = buildV4ResolvedFields({
   resolved_fields: {
