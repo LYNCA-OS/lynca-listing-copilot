@@ -4,6 +4,11 @@ import { readFile } from "node:fs/promises";
 const deploy = await readFile("scripts/deploy-recognition-worker-cloud-run.sh", "utf8");
 const build = await readFile("services/recognition-worker/cloudbuild-ocr.yaml", "utf8");
 const dockerfile = await readFile("services/recognition-worker/Dockerfile", "utf8");
+const visionDeploy = await readFile("scripts/deploy-vision-ocr-worker-cloud-run.sh", "utf8");
+const visionBootstrap = await readFile("scripts/bootstrap-vision-ocr-gcp.sh", "utf8");
+const visionBuild = await readFile("services/recognition-worker/cloudbuild-vision.yaml", "utf8");
+const visionDockerfile = await readFile("services/recognition-worker/Dockerfile.vision", "utf8");
+const visionRequirements = await readFile("services/recognition-worker/requirements-vision.txt", "utf8");
 
 assert.doesNotMatch(deploy, /gcloud run deploy[\s\S]{0,200}--source/, "OCR deploys must not hide model builds inside Cloud Run source deploys");
 assert.match(deploy, /gcloud builds submit/);
@@ -21,5 +26,21 @@ assert.match(build, /_CACHE_IMAGE/);
 assert.match(dockerfile, /PADDLE_PDX_CACHE_HOME=\/opt\/paddlex/);
 assert.match(dockerfile, /preload_paddleocr_engine/);
 assert.match(dockerfile, /_get_paddleocr_engine\(\)\.predict/);
+
+assert.match(visionDeploy, /git -C "\$ROOT_DIR" rev-parse HEAD/);
+assert.match(visionDeploy, /git -C "\$ROOT_DIR" rev-parse origin\/main/);
+assert.match(visionDeploy, /--service-account "\$SERVICE_ACCOUNT"/);
+assert.match(visionDeploy, /VISION_USE_ADC=true/);
+assert.doesNotMatch(visionDeploy, /VISION_API_KEY/);
+assert.doesNotMatch(visionDeploy, /services enable|add-iam-policy-binding|service-accounts create/, "release deploys must not mutate bootstrap IAM");
+assert.match(visionBootstrap, /workload-identity-pools providers create-oidc/);
+assert.match(visionBootstrap, /assertion\.repository/);
+assert.match(visionBootstrap, /roles\/iam\.workloadIdentityUser/);
+assert.match(visionBuild, /Dockerfile\.vision/);
+assert.match(visionDockerfile, /app\.vision_main:app/);
+assert.match(visionDockerfile, /requirements-vision\.txt/);
+assert.doesNotMatch(visionDockerfile, /paddle|tesseract|opencv/i);
+assert.match(visionRequirements, /google-cloud-vision==3\.15\.0/);
+assert.doesNotMatch(visionRequirements, /paddle|tesseract|opencv/i);
 
 console.log("recognition worker deploy tests passed");

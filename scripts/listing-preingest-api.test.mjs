@@ -12,6 +12,8 @@ process.env.LISTING_IMAGE_SIGNED_URL_TTL_SECONDS = "600";
 process.env.ENABLE_PADDLE_OCR_FIELD_VERIFIER = "true";
 process.env.PADDLE_OCR_WORKER_URL = "https://ocr.test";
 process.env.PADDLE_OCR_WORKER_TOKEN = "test-ocr-token";
+process.env.V4_INTERNAL_BASE_URL = "https://internal.test";
+process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
 const assetId = "asset_22222222-2222-4222-8222-222222222222";
 const otherAssetId = "asset_33333333-3333-4333-8333-333333333333";
 
@@ -179,6 +181,12 @@ globalThis.fetch = async (url, init = {}) => {
     };
   }
 
+  if (parsed.pathname.endsWith("/api/v4/listing-preingest-worker")) {
+    assert.equal(init.headers["x-lynca-worker-secret"], "test-worker-secret");
+    assert.equal(JSON.parse(init.body).anchor_only, true);
+    return jsonResponse({ ok: true, claimed: 1, succeeded: 1 });
+  }
+
   throw new Error(`Unexpected fetch ${parsed.href}`);
 };
 
@@ -239,6 +247,9 @@ assert.equal(result.body.saved, true);
 assert.equal(result.body.preprocessing_summary.image_count, 2);
 assert.equal(result.body.signed_read_url_count, 2);
 assert.ok(result.body.worker_jobs_enqueued >= 2);
+assert.equal(result.body.ocr_dispatch_started, true);
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.ok(calls.some((call) => call.path.endsWith("/api/v4/listing-preingest-worker")));
 assert.equal(bundleWrite.asset_id, assetId);
 assert.equal(bundleWrite.tenant_id, "tenant_a");
 assert.equal(bundleWrite.source, "listing_preingest_api", "untrusted source names must not create arbitrary bundle lanes");

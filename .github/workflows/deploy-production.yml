@@ -14,6 +14,7 @@ jobs:
     environment: production
     permissions:
       contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v5
       - name: Fail closed unless this dispatch targets the current main commit
@@ -66,6 +67,23 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
+      - name: Authenticate the exact main release to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
+      - name: Deploy lean Google Vision OCR service from exact main
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          test -n "$GCP_PROJECT_ID"
+          scripts/deploy-vision-ocr-worker-cloud-run.sh
+          test -s /tmp/vision-ocr-service-url.txt
+          curl -fsS --max-time 30 "$(cat /tmp/vision-ocr-service-url.txt)/readyz" \
+            -o /tmp/vision-ocr-ready.json
+          node -e 'const r=require("/tmp/vision-ocr-ready.json"); if(r.status!=="ready"||r.auth_mode!=="adc"||r.paddle_loaded!==false) process.exit(1)'
       - name: Trigger current main through the Vercel Deploy Hook
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
@@ -190,4 +208,6 @@ jobs:
             /tmp/v4-health-deployed.json
             /tmp/provider-status.json
             /tmp/vercel-deploy-hook.json
+            /tmp/vision-ocr-ready.json
+            /tmp/vision-ocr-service-url.txt
             /tmp/writer-assisted-readiness.json
