@@ -12,6 +12,7 @@ import {
   withCanonicalV4JobState
 } from "../lib/listing/v4/jobs/job-retry-policy.mjs";
 import { assetRecoveryActions } from "../lib/listing/v4/assets/asset-lifecycle-contract.mjs";
+import { providerHttpError } from "../lib/listing/providers/provider-errors.mjs";
 
 assert.deepEqual(v4JobRetryPolicy, {
   maxRetries: 3,
@@ -41,6 +42,17 @@ assert.equal(classifyV4JobError({ http_status: 503 }).retryable, true);
 assert.equal(classifyV4JobError({ code: "INVALID_PAYLOAD" }).retryable, false);
 assert.equal(classifyV4JobError({ http_status: 422 }).retryable, false);
 assert.equal(classifyV4JobError({ message: "provider timed out" }).retryable, true);
+const quotaError = providerHttpError("openai_legacy", 429, "You exceeded your current quota; check billing details.");
+assert.equal(quotaError.code, "quota_exhausted");
+assert.equal(quotaError.retryable, false);
+assert.equal(classifyV4JobError(quotaError).retryable, false);
+assert.equal(classifyV4JobError(quotaError).category, "explicit");
+assert.equal(planV4JobRetry({ attemptCount: 1, error: quotaError }).shouldRetry, false);
+assert.equal(
+  providerHttpError("openai_legacy", 429, "rate limit reached").retryable,
+  true,
+  "ordinary burst rate limits remain retryable and eligible for key rotation"
+);
 assert.equal(
   classifyV4JobError({ code: "INVALID_PAYLOAD", retryable: true }).retryable,
   true,
