@@ -20,7 +20,7 @@ const trace = {
     query_card_id: "card-1",
     evidence_observations: [
       { source: "GPT_5_MINI", fields: { year: "2024", players: ["Test Player"] } },
-      { source: "GOOGLE_VISION", fields: { parallel: "Gold" } }
+      { source: "GOOGLE_VISION", fields: {}, raw_text: "CARD FINISH GOLD" }
     ],
     retrieval_candidates: [
       { candidate_id: "wrong", identity_id: "identity-x", rank: 1, fields: { year: "2024" } },

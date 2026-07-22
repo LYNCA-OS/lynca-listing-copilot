@@ -87,7 +87,8 @@ function applicationDecisions(debug = {}) {
   })).filter((row) => row.field);
 }
 
-export function buildV4ChainOracleTraceFromSmoke(reports = []) {
+export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations = {}) {
+  const ocrById = new Map(rows(ocrObservations).map((row) => [cleanText(row.query_card_id).toLowerCase(), row]));
   const cards = reports.flatMap(rows).map((result) => {
     const ledger = result.pipeline_node_ledger || {};
     const debug = result.l2_candidate_debug || {};
@@ -95,7 +96,10 @@ export function buildV4ChainOracleTraceFromSmoke(reports = []) {
       query_card_id: cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id),
       recognition_ok: result.ok === true,
       recognition_error: result.ok === true ? null : cleanText(result.error).slice(0, 240),
-      evidence_observations: Array.isArray(ledger.sensor_evidence) ? ledger.sensor_evidence : [],
+      evidence_observations: [
+        ...(Array.isArray(ledger.sensor_evidence) ? ledger.sensor_evidence : []),
+        ...(ocrById.get(cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id).toLowerCase())?.observations || [])
+      ],
       retrieval_candidates: retrievalCandidates(debug),
       selected_candidate_id: cleanText(debug.selected_candidate_id || debug.selected_candidate_decision?.selected_candidate_id),
       application_decisions: applicationDecisions(debug),
@@ -122,7 +126,9 @@ export async function main(argv = process.argv.slice(2)) {
   if (!inputs.length) throw new Error("at least one --input smoke report is required");
   const output = resolve(argValue(argv, "--out", "data/eval/v4-chain-oracle/chain-trace.json"));
   const reports = await Promise.all(inputs.map(async (path) => JSON.parse(await readFile(resolve(path), "utf8"))));
-  const trace = buildV4ChainOracleTraceFromSmoke(reports);
+  const ocrPath = argValue(argv, "--ocr-observations");
+  const ocrObservations = ocrPath ? JSON.parse(await readFile(resolve(ocrPath), "utf8")) : {};
+  const trace = buildV4ChainOracleTraceFromSmoke(reports, ocrObservations);
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, `${JSON.stringify(trace, null, 2)}\n`);
   console.log(JSON.stringify({ output, card_count: trace.cards.length }, null, 2));

@@ -26,10 +26,16 @@ const trace = buildV4ChainOracleTraceFromSmoke([{ results: [{
       applied_to_final: true
     }] }
   }
-}] }]);
+}] }], {
+  cards: [{
+    query_card_id: "card-1",
+    observations: [{ source: "GOOGLE_VISION_OCR", raw_text: "2024 TEST PLAYER" }]
+  }]
+});
 
 assert.equal(trace.cards.length, 1);
 assert.equal(trace.cards[0].evidence_observations[0].fields.year, "2024");
+assert.equal(trace.cards[0].evidence_observations[1].source, "GOOGLE_VISION_OCR");
 assert.equal(trace.cards[0].retrieval_candidates.length, 2);
 assert.equal(trace.cards[0].retrieval_candidates[0].rank, 1);
 assert.equal(trace.cards[0].application_decisions[0].applied, true);
