@@ -63,7 +63,10 @@ def _paddle_hpi_runtime_options() -> dict[str, Any]:
         "device": "cpu",
         "enable_hpi": enable_hpi,
         "cpu_threads": cpu_threads,
-        "engine_config": {"cpu_num_threads": cpu_threads},
+        "engine_config": {
+            "backend": "openvino",
+            "backend_config": {"cpu_num_threads": cpu_threads},
+        },
     }
 
 
