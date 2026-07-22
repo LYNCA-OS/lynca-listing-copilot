@@ -1309,6 +1309,23 @@ const smartComposedCardVariantFinish = renderListingPresentation({
 assert.match(smartComposedCardVariantFinish.final_title, /Gold Refractor Auto Variation/);
 assert.equal((smartComposedCardVariantFinish.final_title.match(/\bGold\b/g) || []).length, 1);
 
+const namedParallelCardNameSupersedesGenericObservedFinish = renderListingPresentation({
+  resolved: {
+    year: "2023-24",
+    manufacturer: "Panini",
+    product: "Panini Donruss Optic",
+    set: "Prizm",
+    players: ["Buddy Hield"],
+    card_name: "Lucky Hyper",
+    surface_color: "Blue",
+    parallel_family: "Hyper",
+    print_run_denominator: "8"
+  }
+});
+assert.match(namedParallelCardNameSupersedesGenericObservedFinish.final_title, /Buddy Hield Lucky Hyper/);
+assert.doesNotMatch(namedParallelCardNameSupersedesGenericObservedFinish.final_title, /Blue Hyper/);
+assert.equal((namedParallelCardNameSupersedesGenericObservedFinish.final_title.match(/\bHyper\b/g) || []).length, 1);
+
 const tcgMasterBallStress = renderListingPresentation({
   resolved: {
     year: "2023",
