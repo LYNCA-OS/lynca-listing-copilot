@@ -463,6 +463,20 @@ const facsimileSignedImage = validateProviderEvidencePayload("openai_legacy", {
 });
 assert.equal(facsimileSignedImage.fields.auto, false);
 assert.equal(facsimileSignedImage.fields.card_name, null);
+assert.equal(facsimileSignedImage.field_evidence.auto.value, false);
+
+const parenthesizedFacsimileSignedImage = validateProviderEvidencePayload("openai_legacy", {
+  fields: { auto: true, card_name: "(signed image)", observable_components: ["auto"] },
+  field_evidence: [{
+    field: "auto",
+    value: true,
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    visible_text: "signature",
+    directly_observed: true
+  }],
+  unresolved: []
+});
+assert.equal(parenthesizedFacsimileSignedImage.fields.card_name, null);
 
 const unsupportedVisualParallel = validateProviderEvidencePayload("openai_legacy", {
   fields: { surface_color: "Red", parallel_family: "Refractor" },
@@ -478,6 +492,7 @@ const unsupportedVisualParallel = validateProviderEvidencePayload("openai_legacy
 });
 assert.equal(unsupportedVisualParallel.fields.surface_color, "Red");
 assert.equal(unsupportedVisualParallel.fields.parallel_family, null);
+assert.equal(unsupportedVisualParallel.field_evidence.parallel_family.value, null);
 assert.ok(unsupportedVisualParallel.unresolved.includes("parallel_family"));
 
 const printedParallel = validateProviderEvidencePayload("openai_legacy", {
