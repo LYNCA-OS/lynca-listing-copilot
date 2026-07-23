@@ -801,6 +801,25 @@ assert.deepEqual(catalogExpandedSingleSubjectIsNotMultiSubject.players, ["Exampl
 assert.equal(catalogExpandedSingleSubjectIsNotMultiSubject.lot_type ?? null, null);
 assert.equal(catalogExpandedSingleSubjectIsNotMultiSubject.multi_card ?? false, false);
 
+const catalogConsensusProductReachesCanonicalV4Fields = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Graphite Signatures",
+    players: ["Anna Kalinskaya"],
+    surface_color: "Green"
+  },
+  consensus_product_hierarchy_application: {
+    status: "ready_safe_refinement",
+    field: "product",
+    value: "Topps Graphite Tennis",
+    renderer_application_allowed: true,
+    supporting_identity_ids: ["catalog-a", "catalog-b"]
+  }
+});
+assert.equal(catalogConsensusProductReachesCanonicalV4Fields.product, "Topps Graphite Tennis");
+assert.equal(catalogConsensusProductReachesCanonicalV4Fields.surface_color, "Green");
+
 const currentImageBasicColorSurvivesCatalogConflict = buildV4ResolvedFields({
   resolved_fields: {
     players: ["Example Player"],
