@@ -463,7 +463,7 @@ const numericalRarityRecovered = await callApi({
   unresolved: []
 });
 
-assert.equal(numericalRarityRecovered.confidence, "HIGH");
+assert.equal(numericalRarityRecovered.confidence, "MEDIUM");
 assert.match(numericalRarityRecovered.title, /137\/199/);
 assert.doesNotMatch(numericalRarityRecovered.unresolved.join(" "), /title missing serial/);
 
@@ -653,8 +653,9 @@ const clearDarkraiPsaLabel = await callApi({
   unresolved: []
 });
 
-assert.equal(clearDarkraiPsaLabel.confidence, "HIGH");
-assert.equal(clearDarkraiPsaLabel.title, "2024 Pokemon Darkrai Holo PSA 10");
+assert.equal(clearDarkraiPsaLabel.confidence, "MEDIUM");
+assert.equal(clearDarkraiPsaLabel.title, "2024 Pokemon Darkrai PSA 10");
+assert.ok(clearDarkraiPsaLabel.unresolved.includes("parallel_exact"));
 
 const oneOfOneWithUncertainParallel = await callApi({
   title: "2024 Topps Chrome Michael Jackson Green Refractor 01/01",
@@ -1153,7 +1154,7 @@ const starSwatchCodeSuppressedSerialPreserved = await callApi({
 
 assert.match(starSwatchCodeSuppressedSerialPreserved.title, /^2015-16 Panini Flawless Kevin Durant Star Swatch Signatures 04\/10 Auto PSA 10$/i);
 assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("year"));
-assert.ok(starSwatchCodeSuppressedSerialPreserved.writer_required_fields.includes("parallel"));
+assert.ok(starSwatchCodeSuppressedSerialPreserved.unresolved.includes("parallel_exact"));
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Panini Panini Flawless/i);
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /Platinum/i);
 assert.doesNotMatch(starSwatchCodeSuppressedSerialPreserved.title, /#04\/10|#?SR-KD|Serial 04\/10|Numbered 04\/10/i);
@@ -1553,7 +1554,7 @@ const durantStarSwatch = await callApi({
 assert.match(durantStarSwatch.title, /Star Swatch Signatures/i);
 assert.doesNotMatch(durantStarSwatch.title, /Platinum/i);
 assert.match(durantStarSwatch.title, /04\/10/);
-assert.ok(durantStarSwatch.writer_required_fields.includes("parallel"));
+assert.ok(durantStarSwatch.unresolved.includes("parallel_exact"));
 assert.doesNotMatch(durantStarSwatch.title, /Patch Auto/i);
 assert.doesNotMatch(durantStarSwatch.title, /#?SR-KD/i);
 
@@ -1590,6 +1591,24 @@ const structuredProviderFieldsPreserved = await callApi({
     serial_number: "31/50",
     numerical_rarity: "31/50",
     auto: true
+  },
+  field_evidence: {
+    parallel_family: {
+      field: "parallel_family",
+      value: "Refractor",
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      visible_text: "Purple Refractor",
+      directly_observed: true,
+      review_required: false
+    },
+    parallel_exact: {
+      field: "parallel_exact",
+      value: "Purple Refractor",
+      source_type: "CARD_FRONT_PRINTED_TEXT",
+      visible_text: "Purple Refractor",
+      directly_observed: true,
+      review_required: false
+    }
   },
   unresolved: []
 }, { maxTitleLength: 120 });

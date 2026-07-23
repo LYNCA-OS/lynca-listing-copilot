@@ -499,6 +499,21 @@ assert.equal(unsupportedVisualParallel.fields.parallel_family, null);
 assert.equal(unsupportedVisualParallel.field_evidence.parallel_family.value, null);
 assert.ok(unsupportedVisualParallel.unresolved.includes("parallel_family"));
 
+const unsupportedCompoundParallelKeepsOnlyBasicColor = validateProviderEvidencePayload("openai_legacy", {
+  fields: { parallel: "Purple Wave Refractor" },
+  unresolved: ["exact parallel requires operator review"]
+});
+assert.equal(unsupportedCompoundParallelKeepsOnlyBasicColor.fields.parallel, null);
+assert.equal(unsupportedCompoundParallelKeepsOnlyBasicColor.fields.surface_color, "Purple");
+assert.ok(unsupportedCompoundParallelKeepsOnlyBasicColor.unresolved.includes("parallel_exact"));
+
+const legacyParallelInsertMigratesBeforeParallelRejection = validateProviderEvidencePayload("openai_legacy", {
+  fields: { parallel: "Kaboom!" },
+  unresolved: []
+});
+assert.equal(legacyParallelInsertMigratesBeforeParallelRejection.fields.parallel, null);
+assert.equal(legacyParallelInsertMigratesBeforeParallelRejection.fields.insert, "Kaboom");
+
 const printedParallel = validateProviderEvidencePayload("openai_legacy", {
   fields: { parallel_family: "Refractor" },
   field_evidence: [{
