@@ -570,4 +570,84 @@ import {
   assert.deepEqual(report.raw.staging[0].staging.identity_fields.players, ["Lionel Messi"]);
 }
 
+{
+  const gathererPage = ({ pageIndex, totalItems = 3, items = [] }) => {
+    const cards = {
+      kind: "CardData",
+      totalItems,
+      pageIndex,
+      itemsPerPage: 2,
+      items
+    };
+    const flight = `0:{"cards":${JSON.stringify(cards)}}`;
+    return `<html><head><meta data-request-id="page-${pageIndex}"></head><body><script>self.__next_f.push(${JSON.stringify([1, flight])})</script></body></html>`;
+  };
+  const card = ({ id, name, number, rarity = "Mythic Rare", type = "Legendary Creature" }) => ({
+    id,
+    resourceId: id,
+    cardNumber: number,
+    cardNumberVariant: number,
+    instanceName: name,
+    oracleName: name,
+    rarityName: rarity,
+    setCode: "FIN",
+    setName: "Magic: The Gathering—FINAL FANTASY",
+    setReleaseDate: "2025-06-13T00:00:00Z",
+    languageCode: "en",
+    instanceTypeLine: type,
+    imageUrls: {
+      default: `https://gatherer-static.wizards.com/Cards/medium/${id}.png`,
+      medium: `https://gatherer-static.wizards.com/Cards/medium/${id}.webp`
+    }
+  });
+  let fetchCount = 0;
+  const gatherer = createOfficialCatalogSourceAdapter({
+    provider: "wotc_gatherer",
+    fetchImpl: async (url) => {
+      fetchCount += 1;
+      const page = Number(new URL(url).searchParams.get("page") || 1);
+      const items = page === 1
+        ? [
+          card({ id: "front-115", name: "Sephiroth, Fabled SOLDIER", number: "115" }),
+          card({ id: "back-115", name: "Sephiroth, One-Winged Angel", number: "115" })
+        ]
+        : [card({ id: "card-585", name: "Laughing Mad", number: "585", rarity: "Rare", type: "Sorcery" })];
+      return new Response(gathererPage({ pageIndex: page, items }), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" }
+      });
+    }
+  });
+  assert.equal(gatherer.profile.kind, "wotc_gatherer_set");
+  const report = await gatherer.buildImportReport({
+    sourceUrls: [{
+      href: "https://gatherer.wizards.com/sets/FIN",
+      text: "Magic: The Gathering—FINAL FANTASY (FIN)"
+    }]
+  });
+  assert.equal(fetchCount, 2);
+  assert.equal(report.source_type, catalogSourceTypes.WOTC_GATHERER_OFFICIAL_DATABASE);
+  assert.equal(report.metrics.card_count, 3);
+  assert.equal(report.metrics.product_count, 1);
+  assert.equal(report.metrics.review_required_count, 0);
+  const faceRows = report.raw.staging
+    .map((entry) => entry.staging)
+    .filter((row) => row.identity_fields.card_number === "0115");
+  assert.equal(faceRows.length, 2);
+  assert.deepEqual(faceRows.map((row) => row.identity_fields.external_id), ["front-115", "back-115"]);
+  assert.deepEqual(faceRows.map((row) => row.identity_fields.card_name), [
+    "Sephiroth, Fabled SOLDIER",
+    "Sephiroth, One-Winged Angel"
+  ]);
+  assert.ok(faceRows.every((row) => row.identity_fields.checklist_code === "FIN-0115"));
+  assert.ok(faceRows.every((row) => row.identity_fields.parallel_exact === undefined));
+  assert.ok(faceRows.every((row) => row.physical_instance_fields && Object.keys(row.physical_instance_fields).length === 0));
+  assert.equal(report.raw.staging[2].staging.identity_fields.card_number, "0585");
+  assert.equal(report.raw.sources[0].source_metadata.fingerprint_kind, "DECISION_FACTS");
+  await assert.rejects(
+    gatherer.downloadSource({ href: "https://example.com/sets/FIN" }),
+    /wotc_gatherer_set_url_required/
+  );
+}
+
 console.log("official catalog source adapter tests passed");

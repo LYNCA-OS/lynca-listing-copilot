@@ -1,0 +1,43 @@
+{
+  "schema_version": "official-source-manifest-v1",
+  "provider": "wotc_gatherer",
+  "sources": [
+    {
+      "source_name": "Magic: The Gathering—FINAL FANTASY (FIN)",
+      "source_url": "https://gatherer.wizards.com/sets/FIN",
+      "source_type": "WOTC_GATHERER_OFFICIAL_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 681,
+      "minimum_promotion_candidate_count": 681,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "0001",
+          "checklist_code": "FIN-0001",
+          "card_name": "Summon: Bahamut",
+          "product": "Magic: The Gathering—FINAL FANTASY",
+          "external_id": "F5905A59A763D0AF143331FE4ADF757AAE8BA4C5AFED39CEEBFDCDF6379350F3",
+          "rarity": "Mythic Rare",
+          "official_card_type": "Enchantment Creature – Saga Dragon",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "0115",
+          "checklist_code": "FIN-0115",
+          "card_name": "Sephiroth, Fabled SOLDIER",
+          "external_id": "ECB268E96A32B1E20C67F990CC29F74677BD5FA7E5C76AE7E1122EC2721879EC",
+          "rarity": "Mythic Rare",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "0115",
+          "checklist_code": "FIN-0115",
+          "card_name": "Sephiroth, One-Winged Angel",
+          "external_id": "FA42C0A6AC8FEEF7AAE6A1C704A8DA9B46ECB2BB12C8DC6F055449BEFD7B7145",
+          "rarity": "Mythic Rare",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    }
+  ]
+}
