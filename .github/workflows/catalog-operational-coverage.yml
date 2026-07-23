@@ -41,6 +41,7 @@ jobs:
             })),
             unregistered_source_types: report.unregistered_source_types
           }, null, 2));
+          if (report.summary.unattributed_catalog_entity_count > 0) process.exit(1);
           if (report.summary.broken_source_reference_count > 0) process.exit(1);
           if (report.summary.unregistered_source_type_count > 0) process.exit(1);
           NODE

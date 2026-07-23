@@ -924,6 +924,31 @@ assert.equal(
   "catalog rows without source provenance must never enter candidate selection"
 );
 
+const marketplaceProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([{
+    identity_id: "66666666-6666-6666-6666-666666666666",
+    canonical_title: "2025 marketplace seller title",
+    fields: { year: "2025", players: ["Cooper Flagg"] },
+    source_type: "MARKETPLACE_REFERENCE",
+    source_status: "REVIEW_REQUIRED",
+    raw_score: 1,
+    normalized_score: 1
+  }]), { status: 200 })
+});
+const marketplaceResult = await marketplaceProvider.search({
+  query: { exact_subject: "Cooper Flagg", exact_year: "2025" }
+});
+assert.equal(
+  marketplaceResult.candidates.length,
+  0,
+  "marketplace diagnostics must never enter catalog candidate selection"
+);
+
 const subjectPreservationProvider = catalogProvider({
   env: {
     SUPABASE_URL: "https://supabase.test/",
