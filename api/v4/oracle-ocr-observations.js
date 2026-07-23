@@ -38,7 +38,7 @@ function supabaseConfig(env = process.env) {
 async function jobsForAsset(assetId, tenantId, env = process.env) {
   const { url, key } = supabaseConfig(env);
   const endpoint = new URL(`${url}/rest/v1/preingestion_jobs`);
-  endpoint.searchParams.set("select", "job_id,job_key,asset_id,bundle_id,tenant_id,status,payload,updated_at");
+  endpoint.searchParams.set("select", "job_id,job_key,asset_id,bundle_id,tenant_id,status,payload,result,updated_at");
   endpoint.searchParams.set("asset_id", `eq.${assetId}`);
   endpoint.searchParams.set("tenant_id", `eq.${tenantId}`);
   endpoint.searchParams.set("job_type", "eq.ocr_crop_verification");
@@ -69,6 +69,17 @@ function observation(result = {}, job = {}, requestedBackend = "") {
     fields: result.normalized_fields || {},
     confidence: result.confidence ?? null,
     text_candidate_count: Array.isArray(result.text_candidates) ? result.text_candidates.length : 0,
+    // Oracle diagnostics must inspect what the chain actually consumed. Keep
+    // the sample bounded and strip URLs/metadata; text, confidence, pass and
+    // geometry are sufficient to diagnose evidence extraction loss.
+    text_candidates: (Array.isArray(result.text_candidates) ? result.text_candidates : [])
+      .slice(0, 40)
+      .map((candidate) => ({
+        text: cleanText(candidate?.text).slice(0, 160),
+        confidence: candidate?.confidence ?? null,
+        ocr_pass: cleanText(candidate?.ocr_pass || candidate?.ocrPass) || null,
+        box: candidate?.box || null
+      })),
     vision_unit_count: Number(result.vision_unit_count || 0),
     vision_cost_estimate: Number(result.vision_cost_estimate || 0)
   };
@@ -101,14 +112,16 @@ export default async function handler(req, res) {
     const output = await mapWithConcurrency(cards, 2, async (card) => {
       const jobs = await jobsForAsset(cleanText(card.asset_id), context.tenantId);
       const observations = await mapWithConcurrency(jobs, 2, async (job) => {
+        const requestedBackend = "google_vision";
+        if (job.result && typeof job.result === "object") {
+          return observation(job.result, job, requestedBackend);
+        }
         const objectPath = cleanText(job.payload?.crop?.crop_metadata?.source_object_path);
         const signedUrl = await createListingImageSignedReadUrl({ objectPath, tenantId: context.tenantId });
-        const requestedBackend = "google_vision";
-        const request = {
+        return observation(await client.verifyCrop({
           ...ocrRequestForPreingestionJob(job, { imageUrl: signedUrl }),
           ocr_backend: requestedBackend
-        };
-        return observation(await client.verifyCrop(request), job, requestedBackend);
+        }), job, requestedBackend);
       });
       return { query_card_id: cleanText(card.query_card_id), observations };
     });
