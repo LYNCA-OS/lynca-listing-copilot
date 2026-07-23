@@ -1509,6 +1509,29 @@ assert.ok(catalogSurvivesVectorFailureContract.violations.some(
   (violation) => violation.code === "RETRIEVAL_SOURCE_DEGRADED" && violation.source === "vector"
 ));
 
+const catalogTimeoutReasonContract = buildV4PipelineContract({
+  routePlan: { route: "ASSISTED_FULL" },
+  result: {
+    provider: "openai",
+    catalog_activation_funnel: { query_attempted: true, raw_candidate_count: 0 },
+    catalog_candidate_packet: {
+      vector_retrieval: {
+        status: "TIMEOUT",
+        status_code: "VECTOR_RETRIEVAL_TIMEOUT",
+        unavailable: [{ provider_id: "catalog", reason: "catalog_retrieval_timeout" }],
+        candidates: []
+      }
+    },
+    resolved_fields: { product: "Topps Chrome" },
+    final_title: "Topps Chrome"
+  }
+});
+assert.deepEqual(
+  catalogTimeoutReasonContract.retrieval_source_contract.sources.catalog.unavailable_reasons,
+  ["catalog_retrieval_timeout"],
+  "the generic packet schema must not misattribute a catalog failure to the vector lane"
+);
+
 const catalogFunnelBypassContract = buildV4PipelineContract({
   routePlan: { route: "ASSISTED_FULL" },
   result: {
