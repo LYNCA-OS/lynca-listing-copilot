@@ -635,6 +635,26 @@ assert.equal(apiResponse.body.upload.content_sha256, jpegUploadSha256);
 assert.doesNotMatch(JSON.stringify(apiResponse.body), /test-service-role/);
 assert.doesNotMatch(JSON.stringify(apiResponse.body), new RegExp(jpegSignatureHex));
 
+const batchUploadResponse = await callUploadApi({
+  assetId: durableAssetId,
+  clientAssetRef: "batch-card",
+  images: ["front", "back"].map((side) => ({
+    imageId: `${side}-batch`,
+    role: `${side}_original`,
+    fileName: `${side}.jpg`,
+    contentType: "image/jpeg",
+    size: 2000,
+    width: 1200,
+    height: 900,
+    signatureHex: jpegSignatureHex,
+    contentSha256: jpegUploadSha256
+  }))
+});
+assert.equal(batchUploadResponse.statusCode, 200);
+assert.equal(batchUploadResponse.body.ok, true);
+assert.equal(batchUploadResponse.body.uploads.length, 2);
+assert.deepEqual(batchUploadResponse.body.uploads.map((row) => row.image_id), ["front-batch", "back-batch"]);
+
 const rejectedApiResponse = await callUploadApi({
   assetId: durableAssetId,
   imageId: "front-api",
@@ -672,6 +692,26 @@ assert.equal(verifyApiResponse.body.verification.content_sha256, pngVerification
 assert.equal(verifyApiResponse.body.verification.content_hash_verified, true);
 assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), /test-service-role/);
 assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), new RegExp(pngSignatureHex));
+
+const batchVerifyResponse = await callVerifyApi({
+  assetId: durableAssetId,
+  images: ["front", "back"].map((side) => ({
+    imageId: `${side}-batch`,
+    role: `${side}_original`,
+    fileName: `${side}.png`,
+    objectPath: `tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/${side}_original-${side}-batch.png`,
+    contentType: "image/png",
+    size: pngVerificationBytes.length,
+    width: 1200,
+    height: 900,
+    signatureHex: pngSignatureHex,
+    contentSha256: pngVerificationSha256
+  }))
+});
+assert.equal(batchVerifyResponse.statusCode, 200);
+assert.equal(batchVerifyResponse.body.ok, true);
+assert.equal(batchVerifyResponse.body.verifications.length, 2);
+assert.ok(batchVerifyResponse.body.verifications.every((row) => row.verification_record.durable === true));
 
 let exactRecordStorageReadCount = 0;
 const exactRecord = {
