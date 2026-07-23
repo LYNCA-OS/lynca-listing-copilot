@@ -244,6 +244,38 @@ assert.equal(codeRequest.metadata.inline_full_image_fallback, true);
 assert.equal(codeRequest.metadata.source_width, 2000);
 assert.equal(codeRequest.metadata.source_height, 2800);
 
+const legacyBackRequest = ocrRequestForPreingestionJob({
+  ...sampleJob,
+  payload: {
+    crop: {
+      ...sampleJob.payload.crop,
+      source_image_id: "back",
+      role: "card_code_crop",
+      crop_metadata: {
+        ...sampleJob.payload.crop.crop_metadata,
+        source_side: null
+      }
+    }
+  }
+}, { imageUrl: "https://signed.test/back.jpg" });
+assert.equal(legacyBackRequest.metadata.source_side, "back");
+
+const opaqueImageRequest = ocrRequestForPreingestionJob({
+  ...sampleJob,
+  payload: {
+    crop: {
+      ...sampleJob.payload.crop,
+      source_image_id: "image-17",
+      role: "card_code_crop",
+      crop_metadata: {
+        ...sampleJob.payload.crop.crop_metadata,
+        source_side: null
+      }
+    }
+  }
+}, { imageUrl: "https://signed.test/opaque.jpg" });
+assert.equal(opaqueImageRequest.metadata.source_side, null, "opaque image IDs must not be guessed as front/back");
+
 // --- bundlePatchesFromOcrResult flattens the rich OCR patch to flat patches ---
 const ocrResult = {
   raw_text: "09/50",
