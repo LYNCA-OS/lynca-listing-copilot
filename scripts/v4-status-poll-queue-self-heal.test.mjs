@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   statusPollQueueSelfHealPlan,
+  triggerStatusBackendRecovery,
   triggerStatusPollQueueSelfHeal
 } from "../lib/listing/v4/jobs/status-poll-queue-self-heal.mjs";
 
@@ -51,6 +52,27 @@ await scheduled;
 assert.equal(request.url, "https://listing.example.test/api/v4/listing-job-pump");
 assert.equal(request.body.process_concurrency, 2);
 assert.equal(request.body.background_only, true);
+assert.equal(request.body.cycles, 30);
+assert.equal(request.body.max_continuation_depth, 0);
+
+scheduled = null;
+request = null;
+const backendRecovery = triggerStatusBackendRecovery({
+  tenantId: "tenant-a",
+  nowMs,
+  env: { V4_JOB_WORKER_SECRET: "secret", V4_INTERNAL_BASE_URL: "https://listing.example.test" },
+  acquireKick: async () => ({ ok: false, error: "v4_supabase_timeout" }),
+  fetchImpl: async (url, init) => {
+    request = { url, body: JSON.parse(init.body) };
+    return { ok: true, status: 202, json: async () => ({ ok: true, accepted: true }) };
+  },
+  defer: (promise) => { scheduled = promise; }
+});
+assert.equal(backendRecovery.triggered, true);
+await scheduled;
+assert.equal(request.url, "https://listing.example.test/api/v4/listing-job-pump");
+assert.equal(request.body.self_heal_source_tenant_id, "tenant-a");
+assert.equal(request.body.parallel_lanes, false);
 assert.equal(request.body.cycles, 30);
 assert.equal(request.body.max_continuation_depth, 0);
 console.log("v4 status poll queue self-heal tests passed");

@@ -4,7 +4,11 @@ import { basename, dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { fetchWithBoundedRetry } from "../lib/listing/client/bounded-fetch.mjs";
-import { fairTokenRecall, policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
+import {
+  fairTokenRecall,
+  policyFairTokenRecall,
+  vercelCurlFetchForDeployment
+} from "./evaluate-cloud-listing-api.mjs";
 import {
   assertEvaluationSampleProvenance,
   evaluationItemSetSha256,
@@ -4774,10 +4778,18 @@ export async function hydrateV4SmokeReport({
 export async function main(argv = process.argv, env = process.env) {
   const stamp = nowStamp();
   const outPath = argValue(argv, "--out", `data/eval/workflow-sidecar-smoke/v4-ebay-smoke-${stamp}.json`);
+  const baseUrl = cleanText(argValue(
+    argv,
+    "--base-url",
+    env.V4_EBAY_SMOKE_BASE_URL || env.API_BASE_URL || "https://listing.lyncafei.team"
+  )).replace(/\/+$/, "");
+  if (hasFlag(argv, "--vercel-curl")) {
+    globalThis.fetch = vercelCurlFetchForDeployment(baseUrl);
+  }
   const report = await runV4EbaySmoke({
     datasetPath: argValue(argv, "--dataset", env.V4_EBAY_SMOKE_DATASET || "data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json"),
     sealedLabelsPath: argValue(argv, "--sealed-labels", env.V4_EBAY_SMOKE_SEALED_LABELS || "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl"),
-    baseUrl: cleanText(argValue(argv, "--base-url", env.V4_EBAY_SMOKE_BASE_URL || env.API_BASE_URL || "https://listing.lyncafei.team")).replace(/\/+$/, ""),
+    baseUrl,
     username: cleanText(argValue(argv, "--username", env.METAVERSE_USERNAME || "")),
     password: cleanText(argValue(argv, "--password", env.METAVERSE_PASSWORD || "")),
     limit: Math.max(1, Math.trunc(numberArg(argv, "--limit", 10))),

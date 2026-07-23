@@ -162,7 +162,7 @@ function curlFetchForConnectToIp(connectToIp = "") {
   };
 }
 
-function vercelCurlFetchForDeployment(deploymentUrl = "") {
+export function vercelCurlFetchForDeployment(deploymentUrl = "") {
   const deployment = normalizeText(deploymentUrl).replace(/\/+$/, "");
   if (!deployment) return null;
   return async function vercelCurlFetch(url, init = {}) {
@@ -177,7 +177,9 @@ function vercelCurlFetchForDeployment(deploymentUrl = "") {
       "curl",
       path,
       "--deployment",
-      deployment,
+      deployment
+    ];
+    args.push(
       "--",
       "--silent",
       "--show-error",
@@ -191,7 +193,7 @@ function vercelCurlFetchForDeployment(deploymentUrl = "") {
       String(Math.max(1, Math.ceil(Number(process.env.CLOUD_LISTING_API_CURL_CONNECT_TIMEOUT_MS || 30000) / 1000))),
       "--request",
       method
-    ];
+    );
     for (const [key, value] of headerEntries(init.headers)) {
       if (value === undefined || value === null) continue;
       args.push("--header", `${key}: ${value}`);
