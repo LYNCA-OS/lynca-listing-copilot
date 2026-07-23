@@ -2,10 +2,12 @@ import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import {
   assertListingImageUploadObjectIdentity,
+  createListingImageVerificationToken,
   verifyExistingListingImageObject
 } from "../lib/listing/storage/supabase-image-storage.mjs";
 import {
   assertTenantListingAssetObjectPath,
+  readCanonicalListingImageVerificationByIdentity,
   saveListingImageVerificationRecord
 } from "../lib/listing/storage/storage-verification-store.mjs";
 import { normalizeDurableListingAssetId } from "../lib/tenant/assets.mjs";
@@ -89,6 +91,43 @@ export default async function handler(req, res) {
   }
 
   try {
+    const existing = await readCanonicalListingImageVerificationByIdentity({
+      tenantId: context.tenantId,
+      assetId,
+      imageId: uploadIdentity.image_id,
+      role: uploadIdentity.storage_role,
+      objectPath
+    });
+    if (existing.verified && existing.durable) {
+      const record = existing.record;
+      sendJson(res, 200, {
+        ok: true,
+        verification: {
+          tenant_id: record.tenant_id,
+          object_path: record.object_path,
+          bucket: record.bucket,
+          content_type: record.content_type,
+          size: record.size,
+          width: record.width,
+          height: record.height,
+          content_sha256: record.content_sha256,
+          verification_token: createListingImageVerificationToken({
+            tenantId: record.tenant_id,
+            objectPath: record.object_path,
+            bucket: record.bucket,
+            contentType: record.content_type,
+            size: record.size,
+            width: record.width,
+            height: record.height
+          }),
+          object_verified: true,
+          content_hash_verified: true,
+          dimension_source: record.dimension_source
+        },
+        verification_record: { saved: true, durable: true, reused: true }
+      });
+      return;
+    }
     const verification = await verifyExistingListingImageObject({
       tenantId: context.tenantId,
       objectPath,

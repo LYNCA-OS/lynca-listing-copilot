@@ -28,6 +28,7 @@ function jsonResponse(status, body = []) {
 const payload = {
   analysis_run_id: "analysis-sidecar-test",
   candidate_id: "card-sidecar-test",
+  tenant_id: "tenant_sidecar_test",
   images: [{
     image_id: "front",
     role: "front_original",
@@ -297,6 +298,7 @@ const nestedGapSidecars = await dispatchWorkflowSidecars({
 });
 assert.equal(nestedGapSidecars.catalog_gap_queue.status, workflowSidecarStatuses.DISPATCHED);
 assert.equal(nestedGapSidecars.catalog_gap_queue.gap_id, "gap-nested");
+assert.equal(nestedGapWrites[0][0].tenant_id, payload.tenant_id);
 assert.equal(nestedGapWrites[0][0].asset_id, payload.candidate_id);
 assert.equal(nestedGapWrites[0][0].gap_reason, "EVIDENCE_BACKED_NO_CATALOG");
 assert.equal(nestedGapWrites[0][0].internal_candidates[0].candidate_identity_id, "identity-blocked-1");

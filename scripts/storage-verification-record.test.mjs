@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   listingImageVerificationRecordFromResult,
+  readCanonicalListingImageVerificationByIdentity,
   readListingImageVerificationRecord,
   saveListingImageVerificationRecord
 } from "../lib/listing/storage/storage-verification-store.mjs";
@@ -187,6 +188,18 @@ assert.equal(readCall.search.object_path, `eq.${verification.object_path}`);
 assert.equal(readCall.search.tenant_id, `eq.${tenantId}`);
 assert.equal(readCall.search.asset_id, "eq.asset-1");
 assert.equal(readCall.search.limit, "1");
+
+const canonicalIdentityResult = await readCanonicalListingImageVerificationByIdentity({
+  tenantId,
+  assetId: "asset-1",
+  imageId: "front",
+  role: "front_original",
+  objectPath: verification.object_path,
+  env,
+  fetchImpl
+});
+assert.equal(canonicalIdentityResult.verified, true);
+assert.equal(canonicalIdentityResult.record.content_sha256, verification.content_sha256);
 
 const mismatch = await readListingImageVerificationRecord({
   tenantId,

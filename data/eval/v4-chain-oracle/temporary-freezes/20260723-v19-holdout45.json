@@ -4,9 +4,10 @@
   "freeze_kind": "TEMPORARY_EXPERIMENT_SNAPSHOT",
   "frozen_at": "2026-07-23T05:25:32Z",
   "lifecycle": {
-    "state": "ACTIVE_FOR_ONE_SEALED_HOLDOUT_RUN",
+    "state": "COMPLETED_AND_UNFROZEN",
     "permanent": false,
     "code_enforced": false,
+    "unfrozen_at": "2026-07-23T06:30:25Z",
     "unfreeze_condition": "The sealed holdout-45 smoke, trace, and six-layer Oracle audit have all been generated.",
     "post_run_policy": "Resume normal iteration from the recorded code commit; do not treat this manifest as a production strategy lock."
   },
@@ -92,5 +93,31 @@
       "Two of three safe-application opportunities stayed blocked; both were conservative replacement or print-finish cases, not resolver/renderer corruption.",
       "Full-information OCR detail scheduling is intentionally outside the writer-latency acceptance target and showed long-tail head-of-line blocking."
     ]
+  },
+  "holdout_oracle_result": {
+    "status": "COMPLETED",
+    "dataset_card_count": 45,
+    "matched_trace_count": 45,
+    "reviewed_field_count": 261,
+    "evidence_oracle_recall": 0.609195,
+    "retrieval_recall_at_1": 0.111111,
+    "retrieval_recall_at_5": 0.288889,
+    "retrieval_recall_at_20": 0.288889,
+    "selection_accuracy_given_retrieved_at_20": 0.230769,
+    "safe_application_recall": 0.0,
+    "safe_application_precision": null,
+    "resolver_fidelity": null,
+    "renderer_fidelity": null,
+    "trace_sha256": "020c770560b9c3c5dac6bd5eb6d72c4c2dc54c7d87df9dc4090d44275e4ef385",
+    "audit_sha256": "204d6832eea42a2c18d455549c1a5dee16d3f592140bbd6c7bd03769b5570c3b",
+    "report_sha256": "1e33a3bd46591dcb64f5757e05770656b0e8c52bd2a0ff9b83d8e9bd3926c32f",
+    "recovery": {
+      "initial_successful_cards": 40,
+      "recovered_cards": 5,
+      "recovery_runtime_commit": "d5b119d47893f87cffcb678b9b5911eed8bd77ed",
+      "recovery_preview_deployment_id": "dpl_G4U1hJgRFTEHyzD5KwyDgC47GvPa",
+      "algorithm_policy_changed": false,
+      "note": "Five preparation failures were recovered with the same frozen recognition strategy after idempotent asset-harness fixes; the primary 40-card smoke artifact remains immutable."
+    }
   }
 }

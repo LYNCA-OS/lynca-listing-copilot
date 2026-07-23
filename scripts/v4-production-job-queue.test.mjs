@@ -12,6 +12,7 @@ import {
   heartbeatV4RecognitionJob,
   normalizeV4JobInput,
   readV4RecognitionJobs,
+  recoverV4AtomicEnqueueIdentityConflict,
   requestV4RecognitionJobRecovery,
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
@@ -158,6 +159,26 @@ assert.notEqual(
 );
 assert.notEqual(createV4DeterministicJobId({ batchId: "other-batch", assetId: "asset-1" }), row.id);
 assert.notEqual(createV4DeterministicSessionId({ batchId: "other-batch", assetId: "asset-1" }), row.recognition_session_id);
+
+const recoveredAtomicConflict = await recoverV4AtomicEnqueueIdentityConflict({
+  prepared: [rotatedVerificationTokenRow],
+  batchId: rotatedVerificationTokenRow.batch_id,
+  readRows: async () => ({ ok: true, rows: [{ ...originalVerificationTokenRow, status: v4JobStatuses.QUEUED }] })
+});
+assert.equal(recoveredAtomicConflict.accepted_count, 1);
+assert.equal(recoveredAtomicConflict.deduplicated_count, 1);
+assert.equal(recoveredAtomicConflict.persistence_mode, "atomic_rpc_identity_conflict_recovered");
+assert.equal(recoveredAtomicConflict.jobs[0].recovered_after_atomic_identity_conflict, true);
+
+const rejectedAtomicConflict = await recoverV4AtomicEnqueueIdentityConflict({
+  prepared: [{
+    ...rotatedVerificationTokenRow,
+    payload: { ...rotatedVerificationTokenRow.payload, images: [{ object_path: "tenant/asset/different.jpg" }] }
+  }],
+  batchId: rotatedVerificationTokenRow.batch_id,
+  readRows: async () => ({ ok: true, rows: [{ ...originalVerificationTokenRow, status: v4JobStatuses.QUEUED }] })
+});
+assert.equal(rejectedAtomicConflict, null, "a real canonical image identity conflict must remain fail-closed");
 
 const selfExclusionFeedbackId = "feedback-current-card";
 const selfExclusionAssetId = "asset_33333333-3333-4333-8333-333333333333";
