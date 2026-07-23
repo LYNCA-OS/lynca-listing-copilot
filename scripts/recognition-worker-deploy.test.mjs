@@ -9,6 +9,10 @@ const visionBootstrap = await readFile("scripts/bootstrap-vision-ocr-gcp.sh", "u
 const visionDockerfile = await readFile("services/recognition-worker/Dockerfile.vision", "utf8");
 const visionRequirements = await readFile("services/recognition-worker/requirements-vision.txt", "utf8");
 
+assert.match(deploy, /MIN_INSTANCES="\$\{RECOGNITION_WORKER_MIN_INSTANCES:-1\}"/);
+assert.match(deploy, /MAX_INSTANCES="\$\{RECOGNITION_WORKER_MAX_INSTANCES:-8\}"/);
+assert.match(deploy, /ROLLOUT_MIN_INSTANCES="\$\{RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-1\}"/);
+
 assert.doesNotMatch(deploy, /gcloud run deploy[\s\S]{0,200}--source/, "OCR deploys must not hide model builds inside Cloud Run source deploys");
 assert.match(deploy, /gcloud builds submit/);
 assert.match(deploy, /--timeout "\$BUILD_TIMEOUT"/);

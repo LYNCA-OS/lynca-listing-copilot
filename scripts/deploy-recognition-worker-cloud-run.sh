@@ -13,19 +13,18 @@ MEMORY="${RECOGNITION_WORKER_MEMORY:-4Gi}"
 CPU="${RECOGNITION_WORKER_CPU:-2}"
 CONCURRENCY="${RECOGNITION_WORKER_CONCURRENCY:-1}"
 TIMEOUT="${RECOGNITION_WORKER_TIMEOUT_SECONDS:-300}"
-MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-8}"
-MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-10}"
-ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-2}"
+MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-1}"
+MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-8}"
+ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-1}"
 STARTUP_PROBE_TIMEOUT_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_TIMEOUT_SECONDS:-240}"
 STARTUP_PROBE_PERIOD_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_PERIOD_SECONDS:-240}"
 STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRESHOLD:-2}"
-# Paddle predictors are serialized inside each process. Cloud Run concurrency
-# therefore stays at one while replicas provide parallelism. With two vCPUs per
-# instance and eight warm instances serving the old revision, a rollout floor
-# of two is the largest zero-downtime overlap that fits the 20-vCPU regional
-# quota: (8 + 2) * 2 = 20. Once traffic has moved and the old revision releases
-# capacity, raise the service-level floor to eight. The
-# revision-level minimum is removed so it cannot deadlock a rollout; the
+# Paddle predictors are serialized inside each process, so container
+# concurrency stays at one. The writer-critical OCR route is the independent
+# lean Google Vision service; this combined worker remains a warm standby and
+# isolated PP-OCR shadow. One warm replica preserves a recoverable fallback
+# without reclaiming the regional capacity reserved by the primary service.
+# The revision-level minimum is removed so it cannot deadlock a rollout; the
 # revision-level maximum remains aligned with the service cap because Cloud Run
 # may otherwise restore a lower platform default.
 # Model preload can
