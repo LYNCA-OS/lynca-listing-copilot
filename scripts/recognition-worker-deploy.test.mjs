@@ -21,6 +21,11 @@ assert.match(deploy, /OCR_BACKEND="\$\{OCR_BACKEND:-google_vision\}"/);
 assert.match(deploy, /VISION_API_KEY=\$\{VISION_SECRET_NAME\}:latest/);
 assert.match(deploy, /OCR_BACKEND=\$\{OCR_BACKEND\}/);
 assert.match(deploy, /PADDLEOCR_ROLE="\$\{PADDLEOCR_ROLE:-shadow\}"/);
+assert.match(
+  deploy,
+  /gcloud run services update-traffic "\$SERVICE_NAME"[\s\S]*--to-latest[\s\S]*gcloud run services update "\$SERVICE_NAME"/,
+  "production OCR deploys must move real traffic before restoring the warm floor"
+);
 assert.match(deploy, /PADDLEOCR_ENABLE_HPI="\$\{PADDLEOCR_ENABLE_HPI:-true\}"/);
 assert.match(deploy, /PP-OCRv6_medium_det/);
 assert.match(deploy, /PP-OCRv6_medium_rec/);
