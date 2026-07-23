@@ -142,9 +142,9 @@ const approvedPacket = buildVectorCandidatePacket({
   }]
 }, { limit: 5 });
 assert.equal(approvedPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
-assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(approvedPacket), true);
-assert.equal(vectorCandidatePacketAssistEligibility(approvedPacket).reason, "approved_identity_candidate_available");
-assert.deepEqual(buildVectorCandidateAssistPacket(approvedPacket).vector_retrieval.candidates.map((candidate) => candidate.candidate_identity_id), ["identity-approved"]);
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(approvedPacket), false);
+assert.equal(vectorCandidatePacketAssistEligibility(approvedPacket).prompt_candidate_count, 0);
+assert.deepEqual(buildVectorCandidateAssistPacket(approvedPacket).vector_retrieval.candidates, []);
 
 const catalogApprovedPacket = buildVectorCandidatePacket({
   sources: [{
@@ -1193,6 +1193,7 @@ const compatibleSeasonPacket = buildVectorCandidatePacket({
       year: "2025-26",
       product: "Panini Noir Road to FIFA World Cup",
       players: ["Bukayo Saka"],
+      collector_number: "RTWC-BS",
       serial_number: "08/25"
     }
   }]
@@ -1202,6 +1203,7 @@ const compatibleSeasonPacket = buildVectorCandidatePacket({
     year: "2026",
     product: "Panini Noir Road to FIFA World Cup 26",
     players: ["Bukayo Saka"],
+    collector_number: "RTWC-BS",
     serial_number: "08/25"
   }
 });
@@ -1395,20 +1397,19 @@ const mixedAssistPacket = buildVectorCandidatePacket({
 const mixedEligibility = vectorCandidatePacketAssistEligibility(mixedAssistPacket);
 assert.equal(mixedAssistPacket.vector_retrieval.candidates.length, 3, "raw packet should preserve every candidate for telemetry");
 assert.deepEqual(eligibilityStableShape(mixedEligibility), {
-  eligible: true,
-  reason: "approved_identity_candidate_available",
+  eligible: false,
+  reason: "approved_identity_candidate_missing_identity_anchor",
   raw_candidate_count: 3,
   approved_candidate_count: 2,
   trust_blocked_count: 1,
   conflict_blocked_count: 1,
-  prompt_candidate_count: 1,
-  prompt_candidate_ids: ["identity-approved-clean"],
-  eligible_candidate_count: 1,
-  blocked_candidate_count: 1
+  prompt_candidate_count: 0,
+  prompt_candidate_ids: [],
+  eligible_candidate_count: 0,
+  blocked_candidate_count: 2
 });
 const promptMixedPacket = buildVectorCandidateAssistPacket(mixedAssistPacket);
-assert.equal(promptMixedPacket.vector_retrieval.candidates.length, 1);
-assert.equal(promptMixedPacket.vector_retrieval.candidates[0].candidate_identity_id, "identity-approved-clean");
+assert.equal(promptMixedPacket.vector_retrieval.candidates.length, 0);
 assert.doesNotMatch(JSON.stringify(promptMixedPacket), /identity-candidate-only|identity-approved-conflict-rich/);
 
 const candidateOnlyPacket = buildVectorCandidatePacket({
@@ -1780,8 +1781,8 @@ assert.equal(correctedTitleGtRetrieval.candidates[0].field_derivation.title_deri
 const correctedTitleGtPacket = buildVectorCandidatePacket({ sources: correctedTitleGtRetrieval.candidates }, { limit: 5 });
 assert.equal(correctedTitleGtPacket.vector_retrieval.candidates[0].source_trust, "APPROVED_REFERENCE");
 assert.equal(correctedTitleGtPacket.vector_retrieval.candidates[0].reference_title, "2025 Topps Chrome Corrected Player Gold #136");
-assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(correctedTitleGtPacket), true);
-assert.equal(vectorCandidatePacketAssistEligibility(correctedTitleGtPacket).prompt_candidate_count, 1);
+assert.equal(vectorCandidatePacketHasAssistEligibleCandidates(correctedTitleGtPacket), false);
+assert.equal(vectorCandidatePacketAssistEligibility(correctedTitleGtPacket).prompt_candidate_count, 0);
 
 const rejectedCorrectedTitleProvider = visualVectorProvider({
   env: {
