@@ -28,6 +28,8 @@ assert.match(factPrompt, /Main subject is mandatory whenever a name is readable/
 assert.match(factPrompt, /Ignore seller mats, table backgrounds, sleeves, stands, watermarks/);
 assert.match(factPrompt, /Limited numbering is mandatory high-value evidence/);
 assert.match(factPrompt, /An uncertain optional finish, code or rarity must never erase readable core facts/);
+assert.match(factPrompt, /never a retro design year/i);
+assert.match(factPrompt, /season N plus copyright N\+1 means issue year N\+1/i);
 assert.match(factPrompt, /never default a reflective card to Silver/);
 assert.match(factPrompt, /Base color is required when visible/);
 for (const color of basicSurfaceColorVocabulary) {
