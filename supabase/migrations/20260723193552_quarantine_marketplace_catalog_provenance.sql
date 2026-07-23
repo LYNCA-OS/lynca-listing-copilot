@@ -1,3 +1,4 @@
+-- Applied migration registry version: 20260723193552.
 -- Catalog provenance is an invariant, not optional metadata.
 --
 -- Fifteen legacy cards and their eleven products were written by the retired
