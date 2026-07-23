@@ -3,6 +3,21 @@
   "provider": "topps",
   "sources": [
     {
+      "source_name": "2025 Topps Chrome Formula 1 Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2025_Topps_Chrome_F1_Checklist.pdf?v=1762447472",
+      "official_page_url": "https://www.topps.com/pages/topps-chrome-formula-1",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "racing",
+      "minimum_card_count": 600,
+      "required_records": [
+        {
+          "card_number": "1",
+          "subject": "Max Verstappen",
+          "product": "Topps Chrome Formula 1"
+        }
+      ]
+    },
+    {
       "source_name": "2026 Bowman Baseball Checklist",
       "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2026_Bowman_Baseball_Checklist.pdf?v=1775743176",
       "official_page_url": "https://www.topps.com/pages/bowman-baseball",

@@ -398,6 +398,20 @@ assert.deepEqual(baseballOfficialRows[0].identity_fields.players, ["Shohei Ohtan
 assert.equal(baseballOfficialRows[0].physical_instance_fields.serial_number, undefined);
 assert.equal(baseballOfficialRows[0].physical_instance_fields.card_grade, undefined);
 
+const f1OfficialRows = parseOfficialChecklistText([
+  "2025 Topps Chrome F1",
+  "BASE CARDS",
+  "1 Max Verstappen Oracle Red Bull Racing"
+].join("\n"), {
+  sourceName: "2025 Topps Chrome Formula 1 Checklist",
+  provider: "topps",
+  category: "racing"
+});
+assert.equal(f1OfficialRows.length, 1);
+assert.equal(f1OfficialRows[0].identity_fields.card_number, "1");
+assert.deepEqual(f1OfficialRows[0].identity_fields.players, ["Max Verstappen Oracle Red Bull Racing"]);
+assert.equal(f1OfficialRows.some((row) => row.identity_fields.card_number === "2025"), false);
+
 const paniniOfficialRows = parseOfficialChecklistText("Downtown\nDT-CC Caitlin Clark, Indiana Fever", {
   sourceName: "2024 Panini Prizm Basketball Checklist",
   provider: "panini"
