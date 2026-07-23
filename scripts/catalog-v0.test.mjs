@@ -24,6 +24,7 @@ import {
   isAllowedToppsBasketballChecklistLink,
   officialChecklistParserVersion,
   parseOfficialChecklistText,
+  parseUpperDeckEpackChecklistJson,
   parseToppsBasketballChecklistText
 } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
 import { pdfTextLinesFromItems } from "../lib/listing/catalog/pdf-text-extractor.mjs";
@@ -388,6 +389,52 @@ const upperDeckOfficialRows = parseOfficialChecklistText("Base Set Checklist\n1\
 assert.equal(upperDeckOfficialRows[0].identity_fields.sport, "hockey");
 assert.equal(upperDeckOfficialRows[0].identity_fields.manufacturer, "Upper Deck");
 assert.deepEqual(upperDeckOfficialRows[0].identity_fields.players, ["Connor Bedard"]);
+
+const upperDeckJson = JSON.stringify({
+  "2024-25 Allure Hockey Base Set": [{
+    CardTemplateID: "c2ce0f4e-efd9-4e55-85cb-7496cde7d9d6",
+    PlayerName: "Aleksander Barkov",
+    CardNumber: "1",
+    InsertName: "2024-25 Allure Hockey Base Set",
+    EpackProductName: "2024-25 Allure Hockey",
+    Owned: 9
+  }],
+  "2024-25 Allure Hockey Red Rainbow Auto Parallel - Rookies": [{
+    CardTemplateID: "upper-deck-json-rookie",
+    PlayerName: "Logan Stankoven",
+    CardNumber: "101",
+    InsertName: "2024-25 Allure Hockey Red Rainbow Auto Parallel - Rookies",
+    EpackProductName: "2024-25 Allure Hockey",
+    Owned: 4
+  }]
+});
+const upperDeckJsonRows = parseUpperDeckEpackChecklistJson(upperDeckJson, {
+  sourceName: "2024-25 Allure Hockey",
+  sourceUrl: "https://www.upperdeckepack.com/api/Checklist/GetChecklist?productId=10bb91171c"
+});
+assert.equal(upperDeckJsonRows.length, 2);
+assert.equal(upperDeckJsonRows[0].identity_fields.product, "Upper Deck Allure Hockey");
+assert.equal(upperDeckJsonRows[0].identity_fields.set_or_insert, "Base Set");
+assert.equal(upperDeckJsonRows[0].identity_fields.card_number, "1");
+assert.equal(upperDeckJsonRows[0].physical_instance_fields.Owned, undefined);
+assert.equal(upperDeckJsonRows[1].identity_fields.parallel_exact, "Red Rainbow");
+assert.deepEqual(upperDeckJsonRows[1].identity_fields.observable_components.sort(), ["auto", "rc"]);
+
+const upperDeckJsonReport = await buildOfficialChecklistImport({
+  provider: "upper_deck",
+  category: "hockey",
+  sourceUrls: [{
+    href: "https://www.upperdeckepack.com/api/Checklist/GetChecklist?productId=10bb91171c",
+    text: "2024-25 Allure Hockey"
+  }],
+  fetchImpl: async () => new Response(upperDeckJson, {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  })
+});
+assert.equal(upperDeckJsonReport.sources[0].source_metadata.extraction_method, "json");
+assert.equal(upperDeckJsonReport.metrics.parsed_row_count, 2);
+assert.equal(upperDeckJsonReport.metrics.review_required_count, 0);
 
 const importReport = await buildToppsBasketballChecklistImport({
   indexUrl: "https://www.topps.com/pages/checklists",

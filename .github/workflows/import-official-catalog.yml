@@ -10,6 +10,7 @@ on:
           - topps
           - leaf
           - panini
+          - upper_deck
         default: topps
       apply:
         description: "Apply validated rows to production Supabase"
