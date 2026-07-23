@@ -1120,6 +1120,38 @@ function pendingStorageVerificationMatches(pending = {}, expected = {}) {
     && pending.contentSha256 === expected.contentSha256;
 }
 
+function rebindAssetImageIdentity(asset, image, canonicalImageId) {
+  const previousImageId = String(image.id || "");
+  const nextImageId = String(canonicalImageId || "").trim();
+  if (!previousImageId || !nextImageId || previousImageId === nextImageId) return;
+  for (const candidate of new Set([...(asset.images || []), ...(asset.providerImages || [])])) {
+    if (candidate === image || candidate.id === previousImageId) candidate.id = nextImageId;
+    if (candidate.sourceImageId === previousImageId) candidate.sourceImageId = nextImageId;
+    const metadata = candidate.cropMetadata || candidate.crop_metadata;
+    if (metadata?.source_image_id === previousImageId) {
+      const rebound = { ...metadata, source_image_id: nextImageId };
+      candidate.cropMetadata = rebound;
+      candidate.crop_metadata = rebound;
+      if (candidate.cropPlan) candidate.cropPlan = { ...candidate.cropPlan, crop_metadata: rebound };
+    }
+  }
+}
+
+function adoptReusableStorageVerification(asset, image, payload = {}) {
+  const verification = payload.verification || {};
+  rebindAssetImageIdentity(asset, image, verification.image_id);
+  image.objectPath = verification.object_path || "";
+  image.bucket = verification.bucket || "";
+  image.storageVerificationToken = verification.verification_token || "";
+  image.contentSha256 = verification.content_sha256 || image.contentSha256 || "";
+  image.storageRole = verification.storage_role || image.storageRole || "";
+  image.storageVerified = true;
+  image.storageUploaded = true;
+  image.storageAssetId = canonicalAssetId(asset);
+  image.storageTenantId = canonicalAssetTenantId(asset);
+  delete image.pendingStorageVerification;
+}
+
 async function verifyUploadedAssetImage({
   asset,
   image,
@@ -1276,6 +1308,18 @@ async function uploadAssetImage(asset, image, imageIndex) {
   assertCurrentAssetLifecycle(asset);
   if (!uploadResponse.ok || !uploadPayload.ok) {
     throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
+  }
+  if (uploadPayload.reused_existing === true) {
+    if (
+      uploadPayload.asset_id !== assetId
+      || uploadPayload.verification?.tenant_id !== tenantId
+      || uploadPayload.verification_record?.saved !== true
+      || uploadPayload.verification_record?.durable !== true
+    ) {
+      throw new Error("Reusable storage verification identity mismatch.");
+    }
+    adoptReusableStorageVerification(asset, image, uploadPayload);
+    return false;
   }
   if (
     uploadPayload.asset_id !== assetId
@@ -2452,6 +2496,7 @@ function imagesForProvider(assetImages) {
 }
 
 export const __listingCopilotAppTestHooks = {
+  adoptReusableStorageVerification,
   assetLifecycleMatches,
   boundedProviderImagesForRequest,
   clearImageStorageBinding,
@@ -2462,6 +2507,7 @@ export const __listingCopilotAppTestHooks = {
   queueSubmissionConcurrencyLimit,
   recognitionClockFromServerPayload,
   resetAssetPreparationForRetry,
+  rebindAssetImageIdentity,
   retryStateForResult,
   speculativeNeedsFreshEnqueue,
   shouldUseStorageFirstImage,

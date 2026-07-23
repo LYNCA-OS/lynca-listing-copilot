@@ -4,7 +4,11 @@ import {
   instrumentProductionRequest,
   persistProductionEvent
 } from "../lib/observability/production-events.mjs";
-import { createListingImageSignedUpload } from "../lib/listing/storage/supabase-image-storage.mjs";
+import {
+  createListingImageSignedUpload,
+  createListingImageVerificationToken
+} from "../lib/listing/storage/supabase-image-storage.mjs";
+import { readCanonicalListingImageVerificationBySlotContent } from "../lib/listing/storage/storage-verification-store.mjs";
 import { requireTenantListingAsset } from "../lib/tenant/assets.mjs";
 import {
   isTenantAuthError,
@@ -74,6 +78,56 @@ export default async function handler(req, res) {
       env: process.env,
       fetchImpl: globalThis.fetch
     });
+    let reusable = null;
+    try {
+      reusable = await readCanonicalListingImageVerificationBySlotContent({
+        tenantId: context.tenantId,
+        assetId,
+        role: payload.role,
+        bucket: process.env.LISTING_IMAGE_BUCKET || "listing-card-images",
+        contentType: payload.contentType,
+        size: payload.size,
+        width: payload.width || payload.imageWidth,
+        height: payload.height || payload.imageHeight,
+        contentSha256: payload.contentSha256 || payload.content_sha256 || payload.sha256
+      });
+    } catch {
+      // Reuse is an optimization. A read outage must not block a fresh signed upload.
+      reusable = null;
+    }
+    if (reusable?.verified && reusable.durable) {
+      const record = reusable.record;
+      sendJson(res, 200, {
+        ok: true,
+        request_id: context.requestId,
+        asset_id: assetId,
+        client_asset_ref: clientAssetRef || null,
+        reused_existing: true,
+        verification: {
+          tenant_id: record.tenant_id,
+          image_id: record.image_id,
+          storage_role: record.storage_role,
+          object_path: record.object_path,
+          bucket: record.bucket,
+          content_type: record.content_type,
+          size: record.size,
+          width: record.width,
+          height: record.height,
+          content_sha256: record.content_sha256,
+          verification_token: createListingImageVerificationToken({
+            tenantId: record.tenant_id,
+            objectPath: record.object_path,
+            bucket: record.bucket,
+            contentType: record.content_type,
+            size: record.size,
+            width: record.width,
+            height: record.height
+          })
+        },
+        verification_record: { saved: true, durable: true, reused: true }
+      });
+      return;
+    }
     const upload = await createListingImageSignedUpload({
       tenantId: context.tenantId,
       assetId,

@@ -695,6 +695,34 @@ const exactRecord = {
   verified_at: "2026-06-22T08:00:00.000Z",
   updated_at: "2026-06-22T08:00:00.000Z"
 };
+let reusableUploadStorageCallCount = 0;
+globalThis.fetch = tenantAwareFetch(async () => {
+  reusableUploadStorageCallCount += 1;
+  throw new Error("reusable upload must not call Storage");
+}, {
+  verificationFetch: async () => new Response(JSON.stringify([exactRecord]), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  })
+});
+const reusableUploadResponse = await callUploadApi({
+  assetId: durableAssetId,
+  imageId: "new-random-browser-id",
+  role: "front_original",
+  fileName: "front.png",
+  contentType: "image/png",
+  size: pngVerificationBytes.length,
+  width: 1200,
+  height: 900,
+  signatureHex: pngSignatureHex,
+  contentSha256: pngVerificationSha256
+});
+assert.equal(reusableUploadResponse.statusCode, 200);
+assert.equal(reusableUploadResponse.body.reused_existing, true);
+assert.equal(reusableUploadResponse.body.verification.image_id, "front-api");
+assert.equal(reusableUploadResponse.body.verification.object_path, exactRecord.object_path);
+assert.equal(reusableUploadStorageCallCount, 0);
+
 globalThis.fetch = tenantAwareFetch(async () => {
   exactRecordStorageReadCount += 1;
   return objectResponse(pngVerificationBytes, {

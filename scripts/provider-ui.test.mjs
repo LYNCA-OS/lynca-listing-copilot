@@ -774,6 +774,36 @@ assert.equal(
   oversizedOriginal,
   "original image bytes should be preserved whenever they fit the production upload boundary"
 );
+const reusableOriginal = { id: "random-front", storageRole: "image_1_original", contentSha256: "a".repeat(64) };
+const reusableCrop = {
+  id: "front-crop",
+  sourceImageId: "random-front",
+  cropMetadata: { source_image_id: "random-front", source_region: "serial_number" },
+  crop_metadata: { source_image_id: "random-front", source_region: "serial_number" },
+  cropPlan: { crop_metadata: { source_image_id: "random-front", source_region: "serial_number" } }
+};
+const reusableAsset = {
+  durableAssetId: "asset_11111111-2222-4333-8444-555555555555",
+  durableTenantId: "tenant_legacy",
+  images: [reusableOriginal],
+  providerImages: [reusableOriginal, reusableCrop]
+};
+__listingCopilotAppTestHooks.adoptReusableStorageVerification(reusableAsset, reusableOriginal, {
+  verification: {
+    tenant_id: "tenant_legacy",
+    image_id: "persisted-front",
+    storage_role: "image_1_original",
+    object_path: "tenants/tenant_legacy/listing-assets/2026-07-23/asset_11111111-2222-4333-8444-555555555555/image_1_original-persisted-front.jpg",
+    bucket: "listing-card-images",
+    content_sha256: "a".repeat(64),
+    verification_token: "verified-existing"
+  }
+});
+assert.equal(reusableOriginal.id, "persisted-front");
+assert.equal(reusableOriginal.storageVerified, true);
+assert.equal(reusableCrop.sourceImageId, "persisted-front");
+assert.equal(reusableCrop.cropMetadata.source_image_id, "persisted-front");
+assert.equal(reusableCrop.cropPlan.crop_metadata.source_image_id, "persisted-front");
 const frontImage = {
   id: "front",
   targetedCrops: Array.from({ length: 6 }, (_, index) => ({

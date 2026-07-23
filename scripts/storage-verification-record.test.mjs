@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   listingImageVerificationRecordFromResult,
   readCanonicalListingImageVerificationByIdentity,
+  readCanonicalListingImageVerificationBySlotContent,
   readListingImageVerificationRecord,
   saveListingImageVerificationRecord
 } from "../lib/listing/storage/storage-verification-store.mjs";
@@ -188,6 +189,25 @@ assert.equal(readCall.search.object_path, `eq.${verification.object_path}`);
 assert.equal(readCall.search.tenant_id, `eq.${tenantId}`);
 assert.equal(readCall.search.asset_id, "eq.asset-1");
 assert.equal(readCall.search.limit, "1");
+
+const slotReuse = await readCanonicalListingImageVerificationBySlotContent({
+  tenantId,
+  assetId: "asset-1",
+  role: "front_original",
+  bucket: verification.bucket,
+  contentType: verification.content_type,
+  size: verification.size,
+  width: verification.width,
+  height: verification.height,
+  contentSha256: verification.content_sha256,
+  env,
+  fetchImpl
+});
+assert.equal(slotReuse.verified, true);
+assert.equal(slotReuse.record.image_id, "front");
+const slotReuseCall = [...calls].reverse().find((call) => call.path === "/rest/v1/listing_image_verifications" && call.method === "GET");
+assert.equal(slotReuseCall.search.storage_role, "eq.front_original");
+assert.equal(slotReuseCall.search.content_sha256, `eq.${verification.content_sha256}`);
 
 const canonicalIdentityResult = await readCanonicalListingImageVerificationByIdentity({
   tenantId,
