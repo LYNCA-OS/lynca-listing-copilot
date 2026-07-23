@@ -350,6 +350,37 @@ assert.equal(paniniOfficialRows[0].identity_fields.manufacturer, "Panini");
 assert.equal(paniniOfficialRows[0].identity_fields.checklist_code, "DT-CC");
 assert.deepEqual(paniniOfficialRows[0].identity_fields.players, ["Caitlin Clark"]);
 
+const paniniStructuredCsvReport = await buildOfficialChecklistImport({
+  indexUrl: "https://www.paniniamerica.net/checklist.html",
+  provider: "panini",
+  category: "football",
+  sourceUrls: [{
+    href: "https://blog.paniniamerica.net/checklists/2022-impeccable.csv",
+    text: "2022 Panini Impeccable Football Public Checklist"
+  }],
+  fetchImpl: async () => new Response([
+    "SPORT,YEAR,BRAND,PROGRAM,CARD SET,ATHLETE,TEAM,POSITION,CARD NUMBER,SEQUENCE",
+    "Football,2022,Panini,Impeccable,Base,Joe Burrow,Cincinnati Bengals,QB,18,75",
+    "Football,2022,Panini,Impeccable,Rookie Patch Autos,\"Ahmad \"\"Sauce\"\" Gardner\",New York Jets,CB,3,99"
+  ].join("\r\n"), {
+    status: 200,
+    headers: { "content-type": "text/csv" }
+  })
+});
+assert.equal(paniniStructuredCsvReport.sources[0].source_metadata.extraction_method, "csv");
+assert.equal(paniniStructuredCsvReport.metrics.parsed_row_count, 2);
+assert.equal(paniniStructuredCsvReport.metrics.review_required_count, 0);
+const paniniBurrowBase = paniniStructuredCsvReport.staging[0].staging;
+assert.equal(paniniBurrowBase.identity_fields.product, "Panini Impeccable");
+assert.equal(paniniBurrowBase.identity_fields.set_or_insert, "Base");
+assert.equal(paniniBurrowBase.identity_fields.card_number, "18");
+assert.equal(paniniBurrowBase.identity_fields.serial_denominator, "75");
+assert.equal(paniniBurrowBase.physical_instance_fields.serial_number, undefined);
+const paniniSauceRpa = paniniStructuredCsvReport.staging[1].staging;
+assert.deepEqual(paniniSauceRpa.identity_fields.players, ['Ahmad "Sauce" Gardner']);
+assert.deepEqual(paniniSauceRpa.identity_fields.observable_components.sort(), ["auto", "patch", "rc", "relic"]);
+assert.equal(paniniSauceRpa.identity_fields.serial_denominator, "99");
+
 const upperDeckOfficialRows = parseOfficialChecklistText("Base Set Checklist\n1\tConnor Bedard\tChicago Blackhawks", {
   sourceName: "2024-25 Upper Deck Hockey Series One Checklist",
   provider: "upper_deck"

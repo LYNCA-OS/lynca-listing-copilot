@@ -1,0 +1,28 @@
+{
+  "schema_version": "official-catalog-source-manifest-v1",
+  "provider": "panini",
+  "sources": [
+    {
+      "source_name": "2022 Panini Impeccable Football Public Checklist",
+      "source_url": "https://blog.paniniamerica.net/wp-content/uploads/2023/01/2022-Panini-Impeccable-Football-Public-Checklist.csv",
+      "official_page_url": "https://blog.paniniamerica.net/available-wednesday-1-18-2022-impeccable-football-hobby/",
+      "source_type": "PANINI_OFFICIAL_CHECKLIST",
+      "category": "football",
+      "minimum_card_count": 1800,
+      "required_records": [
+        {
+          "card_number": "18",
+          "subject": "Joe Burrow",
+          "product": "Panini Impeccable",
+          "set_or_insert": "Base"
+        },
+        {
+          "card_number": "3",
+          "subject": "Ahmad \"Sauce\" Gardner",
+          "product": "Panini Impeccable",
+          "set_or_insert": "Rookie Patch Autos"
+        }
+      ]
+    }
+  ]
+}

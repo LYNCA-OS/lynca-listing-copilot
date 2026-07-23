@@ -1,15 +1,23 @@
-name: import-official-topps-catalog
+name: import-official-catalog
 
 on:
   workflow_dispatch:
     inputs:
+      provider:
+        description: "Validated official source manifest"
+        type: choice
+        options:
+          - topps
+          - leaf
+          - panini
+        default: topps
       apply:
         description: "Apply validated rows to production Supabase"
         type: boolean
         default: false
 
 concurrency:
-  group: official-topps-catalog-production
+  group: official-catalog-production-${{ inputs.provider }}
   cancel-in-progress: false
 
 jobs:
@@ -28,9 +36,12 @@ jobs:
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OFFICIAL_CATALOG_PROVIDER: ${{ inputs.provider }}
           APPLY_OFFICIAL_CATALOG: ${{ inputs.apply }}
         run: |
-          args=(--out /tmp/official-topps-import.json)
+          manifest="data/catalog/official/${OFFICIAL_CATALOG_PROVIDER}-production-sources.json"
+          test -f "$manifest"
+          args=(--manifest "$manifest" --out /tmp/official-catalog-import.json)
           if [[ "$APPLY_OFFICIAL_CATALOG" == "true" ]]; then
             test -n "$SUPABASE_URL"
             test -n "$SUPABASE_SERVICE_ROLE_KEY"
@@ -40,12 +51,14 @@ jobs:
       - name: Summarize
         run: |
           node - <<'NODE'
-          const report = require('/tmp/official-topps-import.json');
+          const report = require('/tmp/official-catalog-import.json');
           console.log(JSON.stringify({
+            manifest_path: report.manifest_path,
             apply: report.apply,
             valid: report.validation.valid,
             sources: report.validation.validations.map(row => ({
               source_name: row.source_name,
+              source_type: row.actual_source_type,
               extraction_method: row.extraction_method,
               parsed_card_count: row.parsed_card_count,
               record_checks: row.record_checks
@@ -65,5 +78,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: official-topps-import-report
-          path: /tmp/official-topps-import.json
+          name: official-catalog-import-report-${{ inputs.provider }}
+          path: /tmp/official-catalog-import.json
