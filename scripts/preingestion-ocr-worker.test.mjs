@@ -114,6 +114,31 @@ function currentOcrPatch(field, value, extra = {}) {
   };
 }
 
+{
+  const state = await readPreingestionOcrState({
+    tenantId: "tenant_a",
+    bundleId: "bundle-1",
+    env,
+    fetchImpl: async (url) => String(url).includes("preingestion_jobs")
+      ? jsonResponse([{ job_id: "raw", status: "succeeded", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:raw` }])
+      : jsonResponse([{
+        bundle_id: "bundle-1",
+        evidence_patches: [currentOcrPatch("ocr_raw_observation", "CARD TEXT", {
+          source_type: "OCR_AUDIT",
+          raw_text: "CARD TEXT",
+          provenance: {
+            model_id: "google-cloud-vision",
+            model_revision: "DOCUMENT_TEXT_DETECTION",
+            vision_unit_count: 1
+          }
+        })]
+      }])
+  });
+  assert.equal(state.raw_ocr_observations[0].model_id, "google-cloud-vision");
+  assert.equal(state.raw_ocr_observations[0].model_revision, "DOCUMENT_TEXT_DETECTION");
+  assert.equal(state.raw_ocr_observations[0].vision_unit_count, 1);
+}
+
 // Unknown technical failures get one of the bounded retry slots, while
 // proven bad inputs fail immediately instead of occupying OCR capacity.
 assert.equal(retryableOcrFailure(new Error("worker runtime exited unexpectedly")), true);
