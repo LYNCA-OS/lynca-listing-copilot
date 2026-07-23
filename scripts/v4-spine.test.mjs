@@ -1532,6 +1532,34 @@ assert.deepEqual(
   "the generic packet schema must not misattribute a catalog failure to the vector lane"
 );
 
+const plannedVectorSkipContract = buildV4PipelineContract({
+  routePlan: { route: "ASSISTED_FULL" },
+  result: {
+    provider: "openai",
+    catalog_activation_funnel: { query_attempted: true, raw_candidate_count: 1 },
+    vector_activation_funnel: {
+      query_attempted: true,
+      raw_candidate_count: 0,
+      vector_lazy_skip: true,
+      vector_lazy_skip_reason: "vector_lazy_provider_catalog_anchor"
+    },
+    vector_candidate_packet: {
+      vector_retrieval: {
+        status: "UNAVAILABLE",
+        status_code: "VECTOR_RETRIEVAL_UNAVAILABLE",
+        unavailable: [{ provider_id: "visual_vector", reason: "vector_lazy_provider_catalog_anchor" }],
+        candidates: []
+      }
+    },
+    resolved_fields: { product: "Topps Chrome" },
+    final_title: "Topps Chrome"
+  }
+});
+assert.equal(plannedVectorSkipContract.retrieval_source_contract.sources.vector.status, "SKIPPED");
+assert.equal(plannedVectorSkipContract.retrieval_source_contract.sources.vector.skipped, true);
+assert.equal(plannedVectorSkipContract.retrieval_source_contract.sources.vector.degraded, false);
+assert.equal(plannedVectorSkipContract.retrieval_source_contract.violations.length, 0);
+
 const catalogFunnelBypassContract = buildV4PipelineContract({
   routePlan: { route: "ASSISTED_FULL" },
   result: {
