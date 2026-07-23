@@ -166,6 +166,15 @@ function publicWorkflowReadiness(report = {}) {
         preprocessing_version: details.preprocessing_version || null
       };
     }
+    if (item.id === "paddle_ocr") {
+      return {
+        runtime_ready: details.runtime_ready === true,
+        runtime_profile: details.runtime_profile || "UNKNOWN",
+        backend: details.backend || "unknown",
+        auth_mode: details.auth_mode || "unknown",
+        paddle_loaded: typeof details.paddle_loaded === "boolean" ? details.paddle_loaded : null
+      };
+    }
     return undefined;
   }
 
