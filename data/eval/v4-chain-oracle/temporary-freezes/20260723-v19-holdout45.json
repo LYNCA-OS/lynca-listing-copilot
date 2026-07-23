@@ -1,0 +1,96 @@
+{
+  "schema_version": "v4-oracle-temporary-freeze-v1",
+  "freeze_id": "v4-oracle-v19-holdout45-20260723",
+  "freeze_kind": "TEMPORARY_EXPERIMENT_SNAPSHOT",
+  "frozen_at": "2026-07-23T05:25:32Z",
+  "lifecycle": {
+    "state": "ACTIVE_FOR_ONE_SEALED_HOLDOUT_RUN",
+    "permanent": false,
+    "code_enforced": false,
+    "unfreeze_condition": "The sealed holdout-45 smoke, trace, and six-layer Oracle audit have all been generated.",
+    "post_run_policy": "Resume normal iteration from the recorded code commit; do not treat this manifest as a production strategy lock."
+  },
+  "isolation_boundaries": {
+    "production_unchanged": true,
+    "strategy_changed": false,
+    "chain_candidate_only": true,
+    "current_ground_truth_visible_to_recognition": false,
+    "catalog_writes_during_run": false
+  },
+  "code": {
+    "branch": "codex/v4-accuracy-ceiling-oracle-20260722",
+    "runtime_commit": "37824b64b3e86d2500a86c481c91654172c0316a",
+    "audit_tool_commit": "3942a99a8cba838f9f6bb9f653edcf944c4e30b2"
+  },
+  "recognition_profile": {
+    "id": "accuracy-ceiling-oracle-v1",
+    "evaluation_profile": "v4_accuracy_ceiling_oracle_v1",
+    "model": "gpt-5-mini",
+    "provider_concurrency": 2,
+    "submission_concurrency": 2,
+    "preparation_concurrency": 2,
+    "title_max_chars": 80,
+    "require_terminal_preingestion_ocr": true,
+    "ocr_job_version": "ocr-crop-v19"
+  },
+  "preview": {
+    "deployment_id": "dpl_7s7KFQrYX9GLRecDrtYL7aj4uY7R",
+    "url": "https://lynca-listing-copilot-2zkvbmn2v-lyncafei-s-projects.vercel.app",
+    "ready_state": "READY",
+    "production": false
+  },
+  "recognition_worker": {
+    "service": "lynca-recognition-worker-oracle-candidate",
+    "region": "us-central1",
+    "revision": "lynca-recognition-worker-oracle-candidate-00001-n8j",
+    "image": "us-central1-docker.pkg.dev/gen-lang-client-0465339486/cloud-run-source-deploy/lynca-recognition-worker-oracle-candidate:4d7861e",
+    "image_digest": "sha256:ad745e3c1fc776a145d2225149c64ad38b08367bb95f4b8990f8abb2dea083eb",
+    "container_concurrency": 1,
+    "cpu": 2,
+    "memory": "4Gi",
+    "ocr_primary": "google-cloud-vision",
+    "pp_ocr_v6_mode": "shadow"
+  },
+  "sealed_data": {
+    "release_bundle": {
+      "path": "data/eval/v4-chain-oracle/frozen-auto-promoted-55/release-bundle.json",
+      "sha256": "93a0f2b577e1ada1cb8045ba6ef191b797198947fed1ab22e5155fc07f2a03b1"
+    },
+    "holdout": {
+      "path": "data/eval/v4-chain-oracle/frozen-auto-promoted-55/cloud-holdout-45.json",
+      "card_count": 45,
+      "item_set_sha256": "3932e5ec2fc8f5b483a648bc8ade580cb2b692ca5aef47ba3cf8927ffba0e22e",
+      "file_sha256": "1970180b85d5f058961e9d52db93f157f5ea391b29e16363fb20efd57dd39a7e"
+    },
+    "catalog_reference": {
+      "path": "data/eval/v4-chain-oracle/trusted-catalog-snapshot.json",
+      "generated_at": "2026-07-22T13:56:54.410Z",
+      "card_count": 26584,
+      "official_count": 12155,
+      "independent_writer_count": 14056,
+      "reviewed_feedback_count": 358,
+      "sha256": "f8cd6969dc586ea616df481d2cc45b8d4f889aab811f0754543a1e2e8090669f"
+    }
+  },
+  "development_validation_gate": {
+    "report_path": ".local/oracle/20260723-pre-freeze-candidate/devval-10-v19.json",
+    "report_sha256": "08fc22a2562830484d780b0a32af63c5d0332d3143481a05c3a7f1e8c72c85ee",
+    "predictions_sha256": "f14ef95f1a3da3be6be6ed8f421efc2148e62420ea6a2452facde648434863d3",
+    "attempted": 10,
+    "successful": 10,
+    "evidence_oracle_recall": 0.732143,
+    "retrieval_recall_at_1": 0.3,
+    "retrieval_recall_at_5": 0.4,
+    "retrieval_recall_at_20": 0.4,
+    "selection_accuracy_given_retrieved_at_20": 0.75,
+    "safe_application_recall": 0.333333,
+    "safe_application_precision": 1.0,
+    "resolver_fidelity": 1.0,
+    "renderer_fidelity": 1.0,
+    "known_ceiling_limits": [
+      "Six of ten sealed correct identities did not enter retrieval Top-20.",
+      "Two of three safe-application opportunities stayed blocked; both were conservative replacement or print-finish cases, not resolver/renderer corruption.",
+      "Full-information OCR detail scheduling is intentionally outside the writer-latency acceptance target and showed long-tail head-of-line blocking."
+    ]
+  }
+}
