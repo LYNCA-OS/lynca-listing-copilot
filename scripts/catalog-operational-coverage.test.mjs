@@ -26,13 +26,16 @@ const report = buildCatalogOperationalCoverage({
   cards: [
     { id: "card-1", source_id: "internal-1", source_status: "REVIEWED_INTERNAL" },
     { id: "card-2", source_id: "panini-1", source_status: "OFFICIAL_CHECKLIST_RAW" },
-    { id: "card-3", source_id: "missing-source", source_status: "REVIEW_REQUIRED" }
+    { id: "card-3", source_id: "missing-source", source_status: "REVIEW_REQUIRED" },
+    { id: "card-4", source_id: null, source_status: "REVIEW_REQUIRED" }
   ]
 });
 
 assert.equal(report.schema_version, "catalog-operational-coverage-v1");
 assert.deepEqual(report.summary.stage_breakdown, { DECISION_ACTIVE: 2, REGISTERED_ONLY: 1 });
-assert.equal(report.summary.orphan_catalog_card_count, 1);
+assert.equal(report.summary.orphan_catalog_card_count, 2);
+assert.equal(report.summary.unattributed_catalog_card_count, 1);
+assert.equal(report.summary.broken_source_reference_count, 1);
 assert.deepEqual(report.unregistered_source_types, ["UNREGISTERED_TEST_SOURCE"]);
 assert.equal(report.sources.find((row) => row.provider === "panini").decision_active_card_count, 1);
 assert.equal(report.sources.find((row) => row.provider === "upper_deck").operational_stage, "REGISTERED_ONLY");
