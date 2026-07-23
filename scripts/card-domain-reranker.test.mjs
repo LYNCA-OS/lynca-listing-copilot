@@ -256,6 +256,29 @@ assert.equal(v4Trace.card_domain_reranker.selected_candidate_id, "baseline-catal
 assert.equal(v4Trace.card_domain_reranker.production_decision_affected, false);
 assert.equal(selection.candidate_application_trace[0].retrieval_rank, 1);
 
+const oracleControlPlaneTrace = buildV4CandidateControlPlaneTrace({
+  selected_candidate_decision: {
+    selected_candidate_id: "domain-correct",
+    heuristic_version: "candidate-heuristic+card-domain-oracle"
+  },
+  card_domain_reranker_shadow: {
+    mode: "shadow_only",
+    embedding: "sparse-card-domain-identity-v1",
+    schema_version: "card-identity-fusion-v1",
+    baseline_selected_candidate_id: "heuristic-wrong",
+    top_decision_eligible_candidate_id: "domain-correct",
+    would_change_decision: true,
+    ranked_candidates: [{ candidate_id: "domain-correct", score: 0.8 }]
+  }
+});
+assert.equal(
+  oracleControlPlaneTrace.heuristic_baseline.selected_candidate_id,
+  "heuristic-wrong",
+  "Oracle telemetry must retain the pre-reranker heuristic baseline"
+);
+assert.equal(oracleControlPlaneTrace.card_domain_reranker.selected_candidate_id, "domain-correct");
+assert.equal(oracleControlPlaneTrace.card_domain_reranker.would_change_candidate, true);
+
 const oracleSelection = buildCandidateSelectionPass({
   result: {
     resolved_fields: observed,
