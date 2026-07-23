@@ -114,6 +114,18 @@ for (const file of tenantAuthRoutes) {
   assert.match(source(delegatedAccessSource[file] || file), /\brequireTenantAccess\s*\(/, `${file} must call requireTenantAccess()`);
 }
 
+const oracleOcrSource = source("api/v4/oracle-ocr-observations.js");
+assert.match(
+  oracleOcrSource,
+  /currentPreingestionEvidencePatches\(patches\)/,
+  "Oracle OCR capture must exclude stale OCR contract versions"
+);
+assert.match(
+  oracleOcrSource,
+  /job_key[\s\S]*preingestionOcrJobVersion/,
+  "Oracle OCR fallback must read jobs from the current OCR contract only"
+);
+
 const internalGuardPatterns = Object.freeze({
   "api/listing-storage-retention-cleanup.js": /\bauthorizedCronRequest\s*\(/,
   "api/v4/listing-job-pump.js": /\b(?:isV4WorkerRequest|isV4CronRequest)\s*\(/,

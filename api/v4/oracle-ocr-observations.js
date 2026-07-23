@@ -1,6 +1,10 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { createPaddleOcrClient } from "../../lib/listing/ocr/paddle-ocr-client.mjs";
 import { ocrRequestForPreingestionJob } from "../../lib/listing/preingestion/preingestion-ocr-worker.mjs";
+import {
+  currentPreingestionEvidencePatches,
+  preingestionOcrJobVersion
+} from "../../lib/listing/preingestion/preingestion-bundle.mjs";
 import { createListingImageSignedReadUrl } from "../../lib/listing/storage/supabase-image-storage.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import { supabaseServiceHeaders } from "../../lib/supabase-service-headers.mjs";
@@ -42,6 +46,7 @@ async function jobsForAsset(assetId, tenantId, env = process.env) {
   endpoint.searchParams.set("asset_id", `eq.${assetId}`);
   endpoint.searchParams.set("tenant_id", `eq.${tenantId}`);
   endpoint.searchParams.set("job_type", "eq.ocr_crop_verification");
+  endpoint.searchParams.set("job_key", `like.ocr:${preingestionOcrJobVersion}:*`);
   endpoint.searchParams.set("status", "eq.succeeded");
   endpoint.searchParams.set("order", "updated_at.desc");
   const response = await fetch(endpoint, { headers: supabaseServiceHeaders(key) });
@@ -67,7 +72,7 @@ async function persistedAuditPatchesForAsset(assetId, tenantId, env = process.en
   if (!response.ok) throw new Error(`oracle_ocr_bundle_read_${response.status}`);
   const rows = await response.json();
   const patches = Array.isArray(rows?.[0]?.evidence_patches) ? rows[0].evidence_patches : [];
-  return patches;
+  return currentPreingestionEvidencePatches(patches);
 }
 
 function persistedStructuredPatch(patch = {}) {
@@ -152,7 +157,7 @@ export default async function handler(req, res) {
   } catch (error) {
     return sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
   }
-  if (!enforceApiRateLimit(req, res, { scope: "v4_oracle_ocr_observations", limit: 3, windowMs: 60_000 })) return;
+  if (!enforceApiRateLimit(req, res, { scope: "v4_oracle_ocr_observations", limit: 15, windowMs: 60_000 })) return;
   let payload;
   try {
     payload = await readJsonPayload(req, { maxBytes: 32 * 1024 });

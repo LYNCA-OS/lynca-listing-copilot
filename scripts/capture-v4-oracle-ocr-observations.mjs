@@ -3,6 +3,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { vercelCurlFetchForDeployment } from "./evaluate-cloud-listing-api.mjs";
 
 function cleanText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -69,6 +70,9 @@ export async function main(argv = process.argv.slice(2)) {
   const username = argValue(argv, "--username", process.env.METAVERSE_USERNAME);
   const password = argValue(argv, "--password", process.env.METAVERSE_PASSWORD);
   if (!input || !baseUrl || !username || !password) throw new Error("--input, --base-url, username, and password are required");
+  if (argv.includes("--vercel-curl")) {
+    globalThis.fetch = vercelCurlFetchForDeployment(baseUrl);
+  }
   const report = JSON.parse(await readFile(input, "utf8"));
   const captured = await captureV4OracleOcrObservations({ report, baseUrl, username, password });
   await mkdir(dirname(output), { recursive: true });
