@@ -134,15 +134,15 @@ assert.equal(calls[0].method, "GET");
 assert.equal(calls[0].search.tenant_id, `eq.${tenantId}`);
 assert.equal(calls[0].search.id, "eq.asset-1");
 assert.equal(calls[0].search.limit, "2");
-assert.equal(calls[1].path, "/rest/v1/listing_image_verifications");
-assert.equal(calls[1].search.on_conflict, "tenant_id,object_path");
-assert.equal(calls[1].headers.apikey, "test-service-role");
-assert.equal(calls[1].headers.authorization, undefined);
-assert.equal(calls[1].body.object_path, verification.object_path);
-assert.equal(calls[1].body.image_generation_id, "asset-1");
-assert.equal(calls[1].body.canonical_eligible, true);
-assert.equal(calls[1].body.crop_metadata, null);
-assert.match(calls[1].headers.prefer, /resolution=ignore-duplicates/);
+const saveWriteCall = calls.find((call) => call.path === "/rest/v1/listing_image_verifications" && call.method === "POST");
+assert.equal(saveWriteCall.search.on_conflict, "tenant_id,object_path");
+assert.equal(saveWriteCall.headers.apikey, "test-service-role");
+assert.equal(saveWriteCall.headers.authorization, undefined);
+assert.equal(saveWriteCall.body.object_path, verification.object_path);
+assert.equal(saveWriteCall.body.image_generation_id, "asset-1");
+assert.equal(saveWriteCall.body.canonical_eligible, true);
+assert.equal(saveWriteCall.body.crop_metadata, null);
+assert.match(saveWriteCall.headers.prefer, /resolution=ignore-duplicates/);
 
 const duplicateCalls = [];
 const duplicateSave = await saveListingImageVerificationRecord({
@@ -158,10 +158,6 @@ const duplicateSave = await saveListingImageVerificationRecord({
     if (parsed.pathname === "/rest/v1/listing_assets") {
       return { ok: true, status: 200, text: async () => JSON.stringify([{ tenant_id: tenantId, id: "asset-1" }]) };
     }
-    if (method === "POST") {
-      assert.match(init.headers.prefer, /resolution=ignore-duplicates/);
-      return { ok: true, status: 201, text: async () => "[]" };
-    }
     return { ok: true, status: 200, text: async () => JSON.stringify([storedRow]) };
   },
   now: new Date("2026-06-22T12:02:00.000Z")
@@ -170,6 +166,7 @@ assert.equal(duplicateSave.saved, true);
 assert.equal(duplicateSave.durable, true);
 assert.equal(duplicateSave.reused, true);
 assert.equal(duplicateCalls.filter((call) => call.parsed.pathname === "/rest/v1/listing_image_verifications" && call.method === "GET").length, 1);
+assert.equal(duplicateCalls.some((call) => call.method === "POST"), false);
 
 const readResult = await readListingImageVerificationRecord({
   tenantId,
@@ -185,10 +182,11 @@ const readResult = await readListingImageVerificationRecord({
 });
 assert.equal(readResult.verified, true);
 assert.equal(readResult.durable, true);
-assert.equal(calls[2].search.object_path, `eq.${verification.object_path}`);
-assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
-assert.equal(calls[2].search.asset_id, "eq.asset-1");
-assert.equal(calls[2].search.limit, "1");
+const readCall = [...calls].reverse().find((call) => call.path === "/rest/v1/listing_image_verifications" && call.method === "GET");
+assert.equal(readCall.search.object_path, `eq.${verification.object_path}`);
+assert.equal(readCall.search.tenant_id, `eq.${tenantId}`);
+assert.equal(readCall.search.asset_id, "eq.asset-1");
+assert.equal(readCall.search.limit, "1");
 
 const mismatch = await readListingImageVerificationRecord({
   tenantId,
