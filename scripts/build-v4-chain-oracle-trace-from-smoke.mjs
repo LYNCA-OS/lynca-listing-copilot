@@ -142,7 +142,24 @@ function applicationDecisions(debug = {}) {
 
 export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations = {}) {
   const ocrById = new Map(rows(ocrObservations).map((row) => [cleanText(row.query_card_id).toLowerCase(), row]));
-  const cards = reports.flatMap(rows).map((result) => {
+  const resultByCardId = new Map();
+  for (const result of reports.flatMap(rows)) {
+    const cardId = cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id).toLowerCase();
+    if (!cardId) continue;
+    const incumbent = resultByCardId.get(cardId);
+    const resultScore = (result.ok === true ? 1_000_000 : 0)
+      + (result.pipeline_node_ledger ? 10_000 : 0)
+      + (result.l2_candidate_debug ? 1_000 : 0)
+      + Number(result.l2_candidate_debug?.candidate_application_trace?.length || 0);
+    const incumbentScore = incumbent
+      ? (incumbent.ok === true ? 1_000_000 : 0)
+        + (incumbent.pipeline_node_ledger ? 10_000 : 0)
+        + (incumbent.l2_candidate_debug ? 1_000 : 0)
+        + Number(incumbent.l2_candidate_debug?.candidate_application_trace?.length || 0)
+      : -1;
+    if (!incumbent || resultScore > incumbentScore) resultByCardId.set(cardId, result);
+  }
+  const cards = [...resultByCardId.values()].map((result) => {
     const ledger = result.pipeline_node_ledger || {};
     const debug = result.l2_candidate_debug || {};
     const nativeSensorEvidence = Array.isArray(ledger.sensor_evidence) ? ledger.sensor_evidence : [];

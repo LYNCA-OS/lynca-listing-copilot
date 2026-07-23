@@ -280,6 +280,51 @@ try {
   assert.equal(recovered.images[0].smoke_upload_recovered_by_retry, true);
   assert.equal(recovered.preparation_diagnostics.upload_verify_attempts, 3);
 
+  const existingCalls = [];
+  const existingObjectFetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    existingCalls.push({ pathname: url.pathname, method: init.method || "GET", body: init.body });
+    if (url.pathname === "/api/listing-image-upload-url") {
+      return jsonResponse({ ok: false, message: "Supabase signed upload URL failed: 400 The resource already exists" }, 400);
+    }
+    if (url.pathname === "/api/listing-image-verify-existing") {
+      return jsonResponse({
+        ok: true,
+        verification: {
+          tenant_id: "tenant_legacy",
+          object_path: JSON.parse(String(init.body || "{}")).objectPath,
+          bucket: "listing-images",
+          content_type: "image/jpeg",
+          size: jpegBytes.length,
+          width: 520,
+          height: 800,
+          content_sha256: "a".repeat(64),
+          verification_token: "verified-existing",
+          object_verified: true
+        },
+        verification_record: { saved: true, durable: true }
+      });
+    }
+    return fetchImpl(input, init);
+  };
+  const existingRecovered = await prepareDurableSmokeItem({
+    item: {
+      asset_id: "existing-source",
+      source_feedback_id: "existing-source",
+      category: "collectible_card",
+      images: [{ image_id: "existing-image", local_path: firstPath, content_type: "image/jpeg", width: 520, height: 800 }]
+    },
+    index: 2,
+    baseUrl: "https://listing.example",
+    cookie: "session=test",
+    requestTimeoutMs: 5000,
+    fetchImpl: existingObjectFetch
+  });
+  assert.equal(existingRecovered.images[0].smoke_upload_recovered_existing_object, true);
+  assert.equal(existingRecovered.images[0].smoke_storage_put_attempts, 0);
+  assert.equal(existingCalls.filter((call) => call.pathname === "/api/listing-image-verify-existing").length, 1);
+  assert.equal(existingCalls.some((call) => new URL("https://listing.example" + call.pathname).hostname === "storage.example"), false);
+
   const canonicalImages = prepared.images.map((image) => ({ ...image }));
   const canonicalReferences = canonicalImages.map((image, index) => ({
     image_id: image.imageId,

@@ -142,6 +142,34 @@ assert.equal(calls[1].body.object_path, verification.object_path);
 assert.equal(calls[1].body.image_generation_id, "asset-1");
 assert.equal(calls[1].body.canonical_eligible, true);
 assert.equal(calls[1].body.crop_metadata, null);
+assert.match(calls[1].headers.prefer, /resolution=ignore-duplicates/);
+
+const duplicateCalls = [];
+const duplicateSave = await saveListingImageVerificationRecord({
+  verification,
+  assetId: "asset-1",
+  imageId: "front",
+  role: "front_original",
+  env,
+  fetchImpl: async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    const method = init.method || "GET";
+    duplicateCalls.push({ parsed, method });
+    if (parsed.pathname === "/rest/v1/listing_assets") {
+      return { ok: true, status: 200, text: async () => JSON.stringify([{ tenant_id: tenantId, id: "asset-1" }]) };
+    }
+    if (method === "POST") {
+      assert.match(init.headers.prefer, /resolution=ignore-duplicates/);
+      return { ok: true, status: 201, text: async () => "[]" };
+    }
+    return { ok: true, status: 200, text: async () => JSON.stringify([storedRow]) };
+  },
+  now: new Date("2026-06-22T12:02:00.000Z")
+});
+assert.equal(duplicateSave.saved, true);
+assert.equal(duplicateSave.durable, true);
+assert.equal(duplicateSave.reused, true);
+assert.equal(duplicateCalls.filter((call) => call.parsed.pathname === "/rest/v1/listing_image_verifications" && call.method === "GET").length, 1);
 
 const readResult = await readListingImageVerificationRecord({
   tenantId,

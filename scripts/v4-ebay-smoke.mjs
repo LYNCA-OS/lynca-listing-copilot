@@ -14,6 +14,7 @@ import {
   evaluationItemSetSha256,
   normalizeEvaluationSampleMode
 } from "../lib/listing/evaluation/sample-policy.mjs";
+import { buildListingImageObjectPath } from "../lib/listing/storage/supabase-image-storage.mjs";
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -395,6 +396,85 @@ async function uploadDurableSmokeImage({
     fetchImpl,
     maxAttempts: 5
   });
+  const uploadAlreadyExists = !signed.ok
+    && /resource already exists/i.test(cleanText(signed.data?.message || signed.data?.error));
+  if (uploadAlreadyExists) {
+    const objectPath = buildListingImageObjectPath({
+      tenantId: asset.tenant_id,
+      assetId: asset.asset_id,
+      imageId: image.image_id,
+      role: image.storage_role,
+      fileName,
+      contentType
+    });
+    const existing = await postJson({
+      baseUrl,
+      path: "/api/listing-image-verify-existing",
+      cookie,
+      payload: {
+        assetId: asset.asset_id,
+        imageId: image.image_id,
+        role: image.storage_role,
+        fileName,
+        objectPath,
+        contentType
+      },
+      requestTimeoutMs: Math.min(
+        requestTimeoutMs,
+        durableUploadResilienceContract.verification_timeout_ms
+      ),
+      fetchImpl,
+      maxAttempts: durableUploadResilienceContract.verification_max_attempts
+    });
+    const verified = existing.data?.verification || {};
+    if (!existing.ok || existing.data?.ok !== true || !cleanText(verified.verification_token)) {
+      throw new Error(`smoke_existing_upload_verify_failed:${existing.http_status}:${cleanText(existing.data?.message).slice(0, 180)}`);
+    }
+    return {
+      id: image.image_id,
+      image_id: image.image_id,
+      name: fileName,
+      role: image.storage_role,
+      storageRole: image.storage_role,
+      storage_role: image.storage_role,
+      capture_angle: image.capture_angle,
+      objectPath: verified.object_path,
+      object_path: verified.object_path,
+      bucket: verified.bucket,
+      storageVerified: true,
+      storage_verified: true,
+      storageVerificationToken: verified.verification_token,
+      storage_verification_token: verified.verification_token,
+      contentType: verified.content_type,
+      content_type: verified.content_type,
+      originalType: verified.content_type,
+      original_type: verified.content_type,
+      size: verified.size,
+      originalSize: verified.size,
+      original_size: verified.size,
+      width: verified.width,
+      originalWidth: verified.width,
+      original_width: verified.width,
+      height: verified.height,
+      originalHeight: verified.height,
+      original_height: verified.height,
+      contentSha256: verified.content_sha256 || contentSha256,
+      content_sha256: verified.content_sha256 || contentSha256,
+      storageAssetId: asset.asset_id,
+      storage_asset_id: asset.asset_id,
+      storageTenantId: asset.tenant_id,
+      storage_tenant_id: asset.tenant_id,
+      smoke_upload_sign_attempts: signed.attempts,
+      smoke_upload_sign_latency_ms: signed.latency_ms,
+      smoke_storage_put_attempts: 0,
+      smoke_storage_put_latency_ms: 0,
+      smoke_upload_verify_attempts: existing.attempts,
+      smoke_upload_verify_latency_ms: existing.latency_ms,
+      smoke_upload_verify_server_timing: existing.data?.verification_timing || null,
+      smoke_upload_recovered_by_retry: true,
+      smoke_upload_recovered_existing_object: true
+    };
+  }
   const upload = signed.data?.upload || {};
   if (!signed.ok || signed.data?.ok !== true || !cleanText(upload.signed_upload_url)) {
     throw new Error(`smoke_upload_sign_failed:${signed.http_status}:${cleanText(signed.data?.message).slice(0, 180)}`);
@@ -4540,7 +4620,14 @@ export async function runV4EbaySmoke({
           (localIndex) => prepareOne(items[localIndex], localIndex, { recovery: true })
         );
         failedIndexes.forEach((localIndex, recoveryIndex) => {
-          prepared[localIndex] = recoveredRows[recoveryIndex];
+          const original = prepared[localIndex] || {};
+          const recovered = recoveredRows[recoveryIndex] || {};
+          prepared[localIndex] = {
+            ...original,
+            ...recovered,
+            asset_cache_entry: recovered.asset_cache_entry || original.asset_cache_entry || null,
+            preparation_diagnostics: recovered.preparation_diagnostics || original.preparation_diagnostics || null
+          };
         });
       }
       if (normalizedVerifiedAssetCacheMode !== "disabled") {

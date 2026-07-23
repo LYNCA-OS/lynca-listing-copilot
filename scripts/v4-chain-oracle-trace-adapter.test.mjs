@@ -81,4 +81,17 @@ assert.equal(fieldFlowFallback.cards[0].evidence_observations[0].source, "GPT_5_
 assert.deepEqual(fieldFlowFallback.cards[0].evidence_observations[0].fields.players, ["Test Player"]);
 assert.equal(fieldFlowFallback.cards[0].instrumentation.sensor_evidence_mode, "provider_field_flow_fallback");
 
+const recoveredDuplicate = buildV4ChainOracleTraceFromSmoke([
+  { results: [{ source_feedback_id: "card-recovered", ok: false, error: "first attempt failed" }] },
+  { results: [{
+    source_feedback_id: "card-recovered",
+    ok: true,
+    resolved_fields: { year: "2025" },
+    pipeline_node_ledger: { sensor_evidence: [{ fields: { year: "2025" } }] }
+  }] }
+]);
+assert.equal(recoveredDuplicate.cards.length, 1);
+assert.equal(recoveredDuplicate.cards[0].recognition_ok, true);
+assert.equal(recoveredDuplicate.cards[0].resolver_fields.year, "2025");
+
 console.log("v4 chain oracle trace adapter tests passed");
