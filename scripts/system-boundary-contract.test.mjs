@@ -7,12 +7,13 @@ const frontend = await readFile("app/listing-copilot.js", "utf8");
 const enqueueApi = await readFile("api/v4/listing-job-enqueue.js", "utf8");
 const statusApi = await readFile("api/v4/listing-job-status.js", "utf8");
 const clientSdk = await readFile("lib/listing/client/listing-copilot-sdk.mjs", "utf8");
+const browserSdk = await readFile("app/listing-copilot-sdk.mjs", "utf8");
 
 const localImports = [...frontend.matchAll(/from\s+["']([^"']+)["']/g)]
   .map((match) => match[1])
   .filter((specifier) => specifier.startsWith("."));
 assert.deepEqual(localImports.sort(), [
-  "../lib/listing/client/listing-copilot-sdk.mjs",
+  "./listing-copilot-sdk.mjs",
   "./writer-wheel-mode.mjs"
 ]);
 
@@ -29,6 +30,7 @@ for (const forbidden of [
 }
 
 assert.match(clientSdk, /recognition-request\.mjs/);
+assert.doesNotMatch(browserSdk, /(?:from\s+|import\s*\()["']\/?lib\//);
 assert.match(enqueueApi, /bindRecognitionProfileToPayload/);
 assert.match(statusApi, /buildWriterViewModel/);
 assert.match(statusApi, /writer_view_model:/);

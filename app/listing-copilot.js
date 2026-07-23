@@ -15,7 +15,7 @@ import {
   summarizeAssetImageQuality,
   summarizeDerivedUploadOutcomes,
   withRecognitionRequestIntent
-} from "../lib/listing/client/listing-copilot-sdk.mjs";
+} from "./listing-copilot-sdk.mjs";
 import {
   nextWriterOutstandingIndex,
   WRITER_EXPORT_MAX_ROWS,

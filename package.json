@@ -10,6 +10,8 @@
     "maintenance:handbook:bootstrap": "node scripts/maintenance-harness-handbook.mjs bootstrap",
     "maintenance:handbook:phase1": "node scripts/maintenance-harness-handbook.mjs run --phase 1 --profile runtime",
     "maintenance:handbook:full": "node scripts/maintenance-harness-handbook.mjs run --phase all --profile runtime --allow-llm",
+    "build:browser-sdk": "node scripts/build-browser-client-sdk.mjs",
+    "check:browser-sdk": "node scripts/build-browser-client-sdk.mjs --check",
     "deploy:production": "node scripts/deploy-production-release.mjs",
     "dev": "node scripts/dev-server.mjs",
     "start": "node scripts/dev-server.mjs",
@@ -193,6 +195,7 @@
     "uuid": "11.1.1"
   },
   "devDependencies": {
+    "esbuild": "^0.25.10",
     "pdfjs-dist": "^5.4.296"
   }
 }
