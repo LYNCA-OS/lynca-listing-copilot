@@ -9,6 +9,7 @@ import {
   ExternalCatalogAdapter,
   officialCatalogSourceProfile
 } from "../lib/listing/catalog/official-catalog-source-adapter.mjs";
+import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-spirits-official-adapter.mjs";
 
 {
   [
@@ -399,6 +400,78 @@ import {
   assert.equal(report.source_type, catalogSourceTypes.BANDAI_UNION_ARENA_OFFICIAL_CARDLIST);
   assert.equal(report.raw.staging[0].staging.identity_fields.game, "Union Arena");
   assert.equal(report.raw.staging[0].staging.physical_instance_fields.cert_number, undefined);
+}
+
+{
+  const detailHtml = ({ number, rarity, name, type, color = "Red", traits = "Star Dragon" }) => `
+    <dl class="modalInfoCol" id="card_${number}">
+      <dt><div class="infoCol"><span>${number}</span> | <span>${rarity}</span></div><div class="cardName">${name}</div></dt>
+      <dd><div class="cardImage"><img src="../images/cards/card/${number}.png" alt="CARD"></div>
+      <div class="cardData"><div><h3>Color</h3><p>${color}</p></div><div><h3>Card Type</h3><p>${type}</p></div>
+      <div><h3>Type</h3><p>${traits}</p></div></div></dd>
+      <dd class="dataProducts"><div class="dataProductsInner"><p>[BSS01] DAWN OF HISTORY</p></div></dd>
+    </dl>`;
+  const listingHtml = `
+    <a data-src="detail.php?card_no=BSS01-001"><img src="../images/cards/card/BSS01-001.png"></a>
+    <a data-src="detail.php?card_no=BSS01-136"><img src="../images/cards/card/BSS01-136.png"></a>
+    <a data-src="https://catalog.example/cards/detail.php?card_no=BSS01-999">untrusted</a>`;
+  const fetched = [];
+  const battleSpirits = createOfficialCatalogSourceAdapter({
+    provider: "battle_spirits",
+    fetchImpl: async (input) => {
+      const href = String(input);
+      fetched.push(href);
+      if (href.includes("card_no=BSS01-001")) return new Response(detailHtml({
+        number: "BSS01-001",
+        rarity: "X",
+        name: "Supernova Dragon Siegwurm Nova",
+        type: "Spirit"
+      }), { status: 200, headers: { "content-type": "text/html" } });
+      if (href.includes("card_no=BSS01-136")) return new Response(detailHtml({
+        number: "BSS01-136",
+        rarity: "C",
+        name: "Exhaust Nexus",
+        type: "Magic",
+        color: "Green",
+        traits: "-"
+      }), { status: 200, headers: { "content-type": "text/html" } });
+      return new Response(listingHtml, { status: 200, headers: { "content-type": "text/html" } });
+    }
+  });
+  const report = await battleSpirits.buildImportReport({
+    sourceUrls: [{
+      href: "https://www.battlespirits-saga.com/cards/?category=575001&search=true",
+      text: "Battle Spirits Saga BSS01 Dawn of History"
+    }]
+  });
+  assert.equal(fetched.length, 3);
+  assert.equal(fetched.some((href) => href.includes("catalog.example/cards/detail.php")), false);
+  assert.equal(report.metrics.card_count, 2);
+  assert.equal(report.metrics.promotion_candidate_count, 2);
+  assert.equal(report.metrics.review_required_count, 0);
+  assert.match(report.raw.sources[0].parser_version, /battle-spirits-detail-v1$/);
+  const first = report.raw.staging[0].staging;
+  assert.equal(first.identity_fields.product, "[BSS01] DAWN OF HISTORY");
+  assert.equal(first.identity_fields.card_name, "Supernova Dragon Siegwurm Nova");
+  assert.equal(first.identity_fields.official_card_type, "Spirit");
+  assert.equal(first.identity_fields.rarity, "X");
+  assert.equal(first.identity_fields.image_url, "https://www.battlespirits-saga.com/images/cards/card/BSS01-001.png");
+  assert.deepEqual(first.identity_fields.observable_components, ["Color:Red", "Type:Star Dragon"]);
+  assert.deepEqual(report.raw.staging[1].staging.identity_fields.observable_components, ["Color:Green"]);
+  assert.deepEqual(parseBattleSpiritsDetailBundle("not-json"), []);
+  assert.throws(() => parseBattleSpiritsDetailBundle(JSON.stringify({
+    schema_version: "battle-spirits-detail-bundle-v1",
+    detail_pages: [{
+      href: "https://www.battlespirits-saga.com/cards/detail.php?card_no=BSS01-001",
+      html: detailHtml({ number: "BSS01-001", rarity: "", name: "Incomplete", type: "Spirit" })
+    }]
+  })), /battle_spirits_detail_contract_incomplete:BSS01-001/);
+  await assert.rejects(() => battleSpirits.downloadSource({
+    href: "https://www.battlespirits-saga.com/cards/?search=true"
+  }), /battle_spirits_bounded_category_url_required/);
+  await assert.rejects(() => battleSpirits.downloadSource({
+    href: "https://catalog.example/cards/?category=575001&search=true"
+  }), /battle_spirits_official_source_url_required/);
 }
 
 {

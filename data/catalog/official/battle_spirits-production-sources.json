@@ -1,0 +1,47 @@
+{
+  "schema_version": "official-source-manifest-v1",
+  "provider": "battle_spirits",
+  "sources": [
+    {
+      "source_name": "Battle Spirits Saga BSS01 Dawn of History",
+      "source_url": "https://www.battlespirits-saga.com/cards/?category=575001&search=true",
+      "official_page_url": "https://www.battlespirits-saga.com/cards/",
+      "source_type": "BANDAI_BATTLE_SPIRITS_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 136,
+      "minimum_promotion_candidate_count": 136,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "BSS01-001",
+          "subject": "Supernova Dragon Siegwurm Nova",
+          "card_name": "Supernova Dragon Siegwurm Nova",
+          "product": "[BSS01] DAWN OF HISTORY",
+          "set_or_insert": "[BSS01] DAWN OF HISTORY",
+          "external_id": "BSS01-001",
+          "rarity": "X",
+          "official_card_type": "Spirit",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "BSS01-074",
+          "subject": "Armored Beast Gullin Bursti",
+          "product": "[BSS01] DAWN OF HISTORY",
+          "external_id": "BSS01-074",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "BSS01-136",
+          "subject": "Exhaust Nexus",
+          "card_name": "Exhaust Nexus",
+          "product": "[BSS01] DAWN OF HISTORY",
+          "set_or_insert": "[BSS01] DAWN OF HISTORY",
+          "external_id": "BSS01-136",
+          "rarity": "C",
+          "official_card_type": "Magic",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    }
+  ]
+}
