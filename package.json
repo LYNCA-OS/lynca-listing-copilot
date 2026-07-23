@@ -38,6 +38,7 @@
     "check:smoke-provider": "node --check scripts/smoke-provider.mjs && node --check scripts/smoke-provider.test.mjs",
     "test:smoke-provider": "node scripts/smoke-provider.test.mjs",
     "test:smoke-waves": "node scripts/run-v4-ebay-smoke-waves.test.mjs",
+    "test:npm-audit-gate": "node scripts/npm-audit-gate.test.mjs",
     "check:provider-response": "node --check scripts/provider-response-normalizer.test.mjs",
     "test:provider-response": "node scripts/provider-response-normalizer.test.mjs",
     "check:commercial-heldout": "node --check lib/listing/evaluation/commercial-heldout-builder.mjs && node --check scripts/build-held-out-commercial.mjs && node --check scripts/commercial-heldout-builder.test.mjs",

@@ -35,7 +35,8 @@ jobs:
       - name: Install and verify release artifact
         run: |
           npm ci --no-audit --no-fund
-          npm audit --omit=dev --audit-level=moderate
+          npm ls --omit=dev --all
+          node scripts/npm-audit-gate.mjs
           npm run check:v4-spine
           npm run test:v4-spine
           npm run check:launch-benchmark
