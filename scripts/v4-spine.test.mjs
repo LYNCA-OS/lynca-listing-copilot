@@ -820,6 +820,55 @@ const catalogConsensusProductReachesCanonicalV4Fields = buildV4ResolvedFields({
 assert.equal(catalogConsensusProductReachesCanonicalV4Fields.product, "Topps Graphite Tennis");
 assert.equal(catalogConsensusProductReachesCanonicalV4Fields.surface_color, "Green");
 
+const persistedCatalogDecisionsRecoverProductConsensus = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Topps Graphite",
+    players: ["Anna Kalinskaya"]
+  },
+  candidate_application_trace: ["catalog-a", "catalog-b"].map((candidateId) => ({
+    candidate_id: candidateId,
+    anchor_agreement: { agreed: ["subjects", "manufacturer"] }
+  })),
+  retrieval_application: {
+    decisions: ["catalog-a", "catalog-b"].map((candidateId) => ({
+      candidate_id: candidateId,
+      candidate_identity_id: `${candidateId}-identity`,
+      candidate_lane: "catalog",
+      field: "product",
+      candidate_value: "Topps Graphite Tennis",
+      source_trust: "APPROVED_REFERENCE",
+      decision: "REJECT"
+    }))
+  }
+});
+assert.equal(persistedCatalogDecisionsRecoverProductConsensus.product, "Topps Graphite Tennis");
+
+const persistedLeagueSiblingConsensusStaysBlocked = buildV4ResolvedFields({
+  resolved_fields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Lionel Messi"]
+  },
+  candidate_application_trace: ["uefa-a", "uefa-b"].map((candidateId) => ({
+    candidate_id: candidateId,
+    anchor_agreement: { agreed: ["subjects", "manufacturer"] }
+  })),
+  retrieval_application: {
+    decisions: ["uefa-a", "uefa-b"].map((candidateId) => ({
+      candidate_id: candidateId,
+      candidate_identity_id: `${candidateId}-identity`,
+      candidate_lane: "catalog",
+      field: "product",
+      candidate_value: "Topps Chrome UEFA Club Competitions",
+      source_trust: "APPROVED_REFERENCE"
+    }))
+  }
+});
+assert.equal(persistedLeagueSiblingConsensusStaysBlocked.product, "Topps Chrome");
+
 const currentImageBasicColorSurvivesCatalogConflict = buildV4ResolvedFields({
   resolved_fields: {
     players: ["Example Player"],
