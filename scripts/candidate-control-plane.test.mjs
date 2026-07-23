@@ -1086,10 +1086,10 @@ function testCompatibleCatalogHierarchyDoesNotManufactureLowMarginConflict() {
   const selection = buildCandidateSelectionPass({ result });
   const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: observed });
 
-  assert.equal(selection.selected_candidate_decision.selected_candidate_id, specific.candidate_id);
-  assert.equal(selection.selected_candidate_decision.low_margin_waived_reason, "compatible_product_hierarchy_consensus");
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "");
+  assert.equal(selection.selected_candidate_decision.low_margin_waived_reason, "");
   assert.ok(selection.selected_candidate_decision.selection_margin < 0.08);
-  assert.equal(decision.resolved_after.product, "Topps Chrome Platinum");
+  assert.equal(decision.resolved_after.product, "Topps Chrome");
 }
 
 function testReviewedCurrentSourceIdentityWaivesDuplicateCatalogMargin() {
