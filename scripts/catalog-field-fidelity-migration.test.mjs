@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const migration = await readFile(new URL(
-  "../supabase/migrations/20260723200038_catalog_retrieval_preserve_structured_fields.sql",
+  "../supabase/migrations/20260723200346_catalog_retrieval_preserve_structured_fields.sql",
   import.meta.url
 ), "utf8");
 
