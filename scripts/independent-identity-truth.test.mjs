@@ -3,6 +3,8 @@ import {
   applyIndependentIdentityLabels,
   auditIndependentIdentityReviewPacket,
   buildIndependentIdentityReviewPacket,
+  canonicalIdentityId,
+  promoteSealedWriterIdentityTruth,
   validateIndependentIdentityLabel
 } from "../lib/listing/evaluation/independent-identity-truth.mjs";
 
@@ -54,4 +56,37 @@ const invalidSelf = validateIndependentIdentityLabel({
 }, { item, catalogById: new Map([["self-1", self]]) });
 assert.equal(invalidSelf.valid, false);
 assert(invalidSelf.errors.includes("SAME_FEEDBACK_SELF_CORROBORATION"));
+
+const writerItem = {
+  item_id: "writer-item",
+  source_feedback_id: "writer-item",
+  sealed_reference: {
+    writer_reviewed_title: "2025 Topps Chrome Jane Doe Gold 16/50",
+    title_is_reviewed_ground_truth: true,
+    title_visible_to_recognition: false
+  },
+  reviewed_ground_truth: {
+    fields: {
+      year: { reviewed_status: "CONFIRMED", reviewed_value: "2025" },
+      manufacturer: { reviewed_status: "CONFIRMED", reviewed_value: "Topps" },
+      product: { reviewed_status: "CONFIRMED", reviewed_value: "Topps Chrome" },
+      subject: { reviewed_status: "CONFIRMED", reviewed_value: ["Jane Doe"] },
+      print_finish: { reviewed_status: "CONFIRMED", reviewed_value: "Gold" }
+    }
+  }
+};
+const writerReview = promoteSealedWriterIdentityTruth({ items: [{
+  item_id: "writer-item",
+  partition: "validation",
+  observed_identity_fields: {}
+}] }, { items: [writerItem] }, { generatedAt: "2026-07-23T00:00:00.000Z" });
+assert.equal(writerReview.items[0].label.status, "CONFIRMED");
+assert.equal(writerReview.items[0].label.fields.serial_denominator, "50");
+assert.equal(writerReview.items[0].label.source_candidate_id, null);
+assert.equal(writerReview.items[0].label.canonical_identity_id, canonicalIdentityId(writerReview.items[0].label.fields));
+const writerAudit = auditIndependentIdentityReviewPacket(writerReview, { cards: [] });
+assert.equal(writerAudit.counts.validation.valid, 1);
+const writerLabeled = applyIndependentIdentityLabels({ items: [writerItem] }, writerReview, { cards: [] });
+assert.deepEqual(writerLabeled.items[0].retrieval_ground_truth.accepted_candidate_ids, []);
+assert.equal(writerLabeled.items[0].retrieval_ground_truth.identity_fields.serial_denominator, "50");
 console.log("independent identity truth tests passed");

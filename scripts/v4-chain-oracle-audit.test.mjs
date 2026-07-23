@@ -165,6 +165,47 @@ assert.equal(sealedSelfContamination.metrics.selection_accuracy_given_retrieved_
 assert.equal(sealedSelfContamination.metrics.safe_application_precision.denominator, 0);
 assert.equal(sealedSelfContamination.cards[0].sealed_source_candidate_selected, true);
 
+const semanticIndependentTruth = evaluateV4ChainOracleAudit({
+  dataset: {
+    ...dataset,
+    items: [{
+      ...dataset.items[0],
+      card_identity_id: null,
+      retrieval_ground_truth: {
+        accepted_candidate_ids: [],
+        accepted_identity_ids: ["card_identity:sealed-truth"],
+        identity_fields: {
+          year: "2024",
+          product: "Topps Chrome",
+          subject: ["Test Player"],
+          card_number: "17",
+          serial_denominator: "50"
+        },
+        retrieval_evaluable: true
+      }
+    }]
+  },
+  trace: {
+    cards: [{
+      ...trace.cards[0],
+      retrieval_candidates: [{
+        candidate_id: "semantic-match",
+        rank: 1,
+        fields: {
+          year: "2024",
+          product: "Topps Chrome",
+          players: ["Test Player"],
+          card_number: "17",
+          numerical_rarity: "16/50"
+        }
+      }],
+      selected_candidate_id: "semantic-match"
+    }]
+  }
+});
+assert.equal(semanticIndependentTruth.metrics.retrieval_recall_at_1.rate, 1);
+assert.equal(semanticIndependentTruth.metrics.selection_accuracy_given_retrieved_at_20.rate, 1);
+
 const missingTrace = evaluateV4ChainOracleAudit({ dataset, trace: { cards: [] } });
 assert.equal(missingTrace.metrics.evidence_oracle_recall.rate, null);
 assert.equal(missingTrace.metrics.retrieval_recall_at_20.rate, null);

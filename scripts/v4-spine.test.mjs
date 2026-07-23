@@ -25,6 +25,7 @@ import {
 } from "../lib/listing/v4/pipeline/pipeline-contract.mjs";
 import {
   candidateSelectionHeuristicVersion,
+  oracleCandidateSelectionHeuristicVersion,
   trustedCatalogCandidateSelectionHeuristicVersion
 } from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import { catalogRetrievalFamiliesForFields } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
@@ -1431,6 +1432,34 @@ const trustedCatalogRerankerContract = buildV4PipelineContract({
   }
 });
 assert.equal(trustedCatalogRerankerContract.contract_status, "PASSED");
+
+const oracleRerankerContract = buildV4PipelineContract({
+  payload: { images: [{ id: "image-1" }, { id: "image-2" }] },
+  routePlan: { route: "ASSISTED_FULL" },
+  result: {
+    evaluation_profile: "v4_accuracy_ceiling_oracle_v1",
+    provider: "openai",
+    model: "gpt-5-mini",
+    selected_candidate_decision: {
+      selected_candidate_id: "catalog-card-1",
+      heuristic_version: oracleCandidateSelectionHeuristicVersion
+    },
+    candidate_decision_stage: {
+      schema_version: "candidate-decision-stage-v1",
+      heuristic_version: oracleCandidateSelectionHeuristicVersion,
+      selected_candidate_id: "catalog-card-1",
+      field_application: { applied_fields: [], blocked_fields: [] }
+    },
+    catalog_activation_funnel: { raw_candidate_count: 1 },
+    resolved_fields: { year: "2024", product: "Topps Chrome" },
+    final_title: "2024 Topps Chrome",
+    title_render_source: "v4_csm_deterministic_renderer"
+  }
+});
+assert.equal(oracleRerankerContract.contract_status, "PASSED");
+assert.equal(oracleRerankerContract.violations.some(
+  (violation) => violation.code === "UNVERSIONED_OR_MUTATED_CANDIDATE_HEURISTIC"
+), false);
 
 const untypedExactRouteContract = buildV4PipelineContract({
   payload: { images: [{ id: "image-1" }] },
