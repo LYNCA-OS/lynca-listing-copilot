@@ -334,6 +334,13 @@ assert.match(deploymentAffinityMigration, /nullif\(jobs\.queue_tags ->> ''deploy
 assert.match(deploymentAffinityMigration, /grant execute[\s\S]*to service_role/);
 assert.match(deploymentAffinityMigration, /notify pgrst, 'reload schema'/);
 
+const assetLeasePruningMigration = readFileSync(new URL("../supabase/migrations/20260723022000_prune_asset_scoped_capacity_leases.sql", import.meta.url), "utf8");
+assert.match(assetLeasePruningMigration, /v4_provider_capacity_active_job_idx[\s\S]*where job_id is not null/);
+assert.match(assetLeasePruningMigration, /preingestion_jobs_status_type_priority_idx/);
+assert.match(assetLeasePruningMigration, /create or replace function public\.release_v4_provider_capacity_for_job/);
+assert.match(assetLeasePruningMigration, /stage:paddle_ocr:asset:/);
+assert.match(assetLeasePruningMigration, /and leases\.job_id is null[\s\S]*and leases\.lease_owner is null[\s\S]*and leases\.lease_expires_at is null/);
+
 const heartbeatSecurityMigration = readFileSync(new URL("../supabase/migrations/20260711194540_harden_public_function_security_and_queue_heartbeat.sql", import.meta.url), "utf8");
 assert.match(heartbeatSecurityMigration, /create or replace function public\.heartbeat_v4_recognition_job/);
 assert.match(heartbeatSecurityMigration, /jobs\.status = 'RUNNING'/);
