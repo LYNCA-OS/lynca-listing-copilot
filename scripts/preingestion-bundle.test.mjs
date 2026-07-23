@@ -10,6 +10,7 @@ import {
   readCurrentPreingestionOcrJobsByAsset,
   readPreIngestionBundleByAsset,
   readPreIngestionBundle,
+  preingestionOcrJobVersion,
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
@@ -87,7 +88,7 @@ const currentPatchSet = currentPreingestionEvidencePatches([
     field: "serial_number",
     value: "242/250",
     source_type: "OCR",
-    provenance: { job_key: "ocr:ocr-crop-v11:bundle:serial" }
+    provenance: { job_key: `ocr:${preingestionOcrJobVersion}:bundle:serial` }
   },
   {
     field: "serial_number",
@@ -196,7 +197,7 @@ assert.deepEqual(summaryWithOcrExecution.ocr_stage_execution, {
 // enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
-assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v11:")));
+assert.ok(jobs.every((job) => job.job_key.startsWith(`ocr:${preingestionOcrJobVersion}:`)));
 assert.deepEqual(
   jobs.map((job) => `${job.payload.crop.crop_metadata.source_side}:${job.payload.crop.role}`).sort(),
   ["back:card_code_crop", "front:serial_crop"],
@@ -333,12 +334,12 @@ const currentOcrJobs = await readCurrentPreingestionOcrJobsByAsset({
     assert.equal(parsed.searchParams.get("tenant_id"), `eq.${tenantId}`);
     assert.equal(parsed.searchParams.get("asset_id"), `eq.${assetId}`);
     assert.equal(parsed.searchParams.get("job_type"), "eq.ocr_crop_verification");
-    assert.equal(parsed.searchParams.get("job_key"), "like.ocr:ocr-crop-v11:*");
+    assert.equal(parsed.searchParams.get("job_key"), `like.ocr:${preingestionOcrJobVersion}:*`);
     return new Response(JSON.stringify([{
       tenant_id: tenantId,
       asset_id: assetId,
       bundle_id: bundle.bundle_id,
-      job_key: `ocr:ocr-crop-v11:${bundle.bundle_id}:serial`,
+      job_key: `ocr:${preingestionOcrJobVersion}:${bundle.bundle_id}:serial`,
       status: "succeeded"
     }, {
       tenant_id: tenantId,
@@ -350,7 +351,7 @@ const currentOcrJobs = await readCurrentPreingestionOcrJobsByAsset({
   }
 });
 assert.equal(currentOcrJobs.length, 1);
-assert.ok(currentOcrJobs[0].job_key.startsWith("ocr:ocr-crop-v11:"));
+assert.ok(currentOcrJobs[0].job_key.startsWith(`ocr:${preingestionOcrJobVersion}:`));
 assert.equal(byAsset.bundle_id, bundle.bundle_id);
 assert.equal(calls[3].search.asset_id, `eq.${bundle.asset_id}`);
 assert.equal(calls[3].search.tenant_id, `eq.${tenantId}`);

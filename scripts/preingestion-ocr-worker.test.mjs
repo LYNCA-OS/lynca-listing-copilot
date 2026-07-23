@@ -49,6 +49,26 @@ const env = {
   assert.deepEqual(results.map((result) => result.request_id), ["batch-a", "batch-b", "batch-c"]);
 }
 
+{
+  const batches = [];
+  const batchingClient = createOcrBatchingClient({
+    configured: true,
+    verifyCrop: async () => {},
+    verifyCrops: async (inputs) => {
+      batches.push(inputs.map((input) => input.request_id));
+      return inputs.map((input) => ({ request_id: input.request_id }));
+    }
+  }, { windowMs: 1, maxBatch: 8 });
+  await Promise.all([
+    ...Array.from({ length: 4 }, (_, index) => batchingClient.verifyCrop({
+      request_id: `serial-${index}`,
+      crop_type: "serial_crop"
+    })),
+    batchingClient.verifyCrop({ request_id: "code", crop_type: "card_code_crop" })
+  ]);
+  assert.deepEqual(batches, [["serial-0", "serial-1", "serial-2", "serial-3"], ["code"]]);
+}
+
 const durableLeaseMigration = readFileSync(
   new URL("../supabase/migrations/20260715065820_track_c_preingestion_ocr_durable_leases.sql", import.meta.url),
   "utf8"
@@ -206,6 +226,24 @@ assert.equal(request.metadata.image_id, "img-front");
 assert.equal(request.metadata.inline_full_image_fallback, false);
 assert.equal(request.metadata.grade_source_looks_like_slab, false);
 
+const codeRequest = ocrRequestForPreingestionJob({
+  ...sampleJob,
+  payload: {
+    crop: {
+      ...sampleJob.payload.crop,
+      role: "card_code_crop",
+      crop_metadata: {
+        ...sampleJob.payload.crop.crop_metadata,
+        source_width: 2000,
+        source_height: 2800
+      }
+    }
+  }
+}, { imageUrl: "https://signed.test/back.jpg" });
+assert.equal(codeRequest.metadata.inline_full_image_fallback, true);
+assert.equal(codeRequest.metadata.source_width, 2000);
+assert.equal(codeRequest.metadata.source_height, 2800);
+
 // --- bundlePatchesFromOcrResult flattens the rich OCR patch to flat patches ---
 const ocrResult = {
   raw_text: "09/50",
@@ -291,7 +329,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(jobs[0].status, "running");
   assert.equal(jobs[0].lease_owner, "lease-owner-a");
   assert.match(calls[0].url, /priority=lte\.14/, "writer-path claims must reserve the first wave for OCR anchors");
-  assert.match(calls[0].url, /job_key=like\.ocr%3Aocr-crop-v11%3A\*/, "claims must be scoped to the current OCR contract");
+  assert.ok(calls[0].url.includes(`job_key=like.ocr%3A${encodeURIComponent(preingestionOcrJobVersion)}%3A*`), "claims must be scoped to the current OCR contract");
   assert.match(calls[0].url, /limit=32/, "asset-scoped claims must not overfetch global queue rows");
   assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
   assert.equal(claimBody.lease_owner, "lease-owner-a");

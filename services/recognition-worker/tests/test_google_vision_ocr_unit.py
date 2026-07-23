@@ -222,6 +222,48 @@ class GoogleVisionOcrUnitTests(unittest.TestCase):
         self.assertEqual(result["results"][0]["vision_unit_count"], 4)
         self.assertEqual(result["results"][0]["raw_text"], "1/35")
 
+    def test_card_code_request_adds_one_full_image_unit_and_tags_candidates(self):
+        config = SimpleNamespace(
+            token="worker-token",
+            allowed_image_hosts=("example.test",),
+            max_image_bytes=1024,
+            max_total_pixels=1024,
+            request_timeout_seconds=5,
+        )
+        raw_results = [
+            {"status": "OK", "raw_text": "OHTANI", "candidates": [{"text": "OHTANI", "confidence": 0.95}], "confidence": 0.95, "cost_estimate": 0.0015},
+            {"status": "OK", "raw_text": "17", "candidates": [{"text": "17", "confidence": 0.98, "box": {"vertices": [{"x": 1, "y": 1}]} }], "confidence": 0.98, "cost_estimate": 0.0015},
+        ]
+        captured = {}
+
+        def fake_batch(arrays, *, crop_types, config, client):
+            captured["arrays"] = arrays
+            captured["crop_types"] = crop_types
+            return {"status": "OK", "results": raw_results, "vision_unit_count": 2, "cost_estimate": 0.003, "latency_ms": 20}
+
+        payload = {"requests": [{
+            "request_id": "code-1",
+            "image_url": "https://example.test/card.jpg",
+            "crop_type": "collector_number",
+            "crop_box": {"x": 0, "y": 0.7, "width": 0.4, "height": 0.3},
+            "metadata": {"image_id": "back-1"},
+        }]}
+        with (
+            patch("app.vision_main.load_config", return_value=config),
+            patch("app.vision_main.verify_bearer_token"),
+            patch("app.vision_main.validate_image_url"),
+            patch("app.vision_main.load_signed_image", return_value=SimpleNamespace(array="IMAGE")),
+            patch("app.vision_main._crop", return_value="CROP"),
+            patch("app.vision_main.run_google_vision_ocr_batch", side_effect=fake_batch),
+        ):
+            result = ocr_fields_batch_payload(payload, "Bearer worker-token", vision_client="client")
+
+        self.assertEqual(captured["arrays"], ["CROP", "IMAGE"])
+        self.assertEqual(captured["crop_types"], ["collector_number", "card_code_full_image"])
+        self.assertEqual(result["results"][0]["vision_unit_count"], 2)
+        self.assertTrue(result["results"][0]["inline_full_image_fallback_evaluated"])
+        self.assertEqual(result["results"][0]["text_candidates"][1]["ocr_pass"], "full_image_fallback")
+
 
 if __name__ == "__main__":
     unittest.main()

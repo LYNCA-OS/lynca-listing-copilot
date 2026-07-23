@@ -786,6 +786,7 @@ async function preingestItem({
   assetId,
   images,
   source = "v4_ebay_smoke_preingestion",
+  enqueueOcrDetail = false,
   requestTimeoutMs,
   fetchImpl = globalThis.fetch
 }) {
@@ -805,6 +806,7 @@ async function preingestItem({
     ],
     enqueue_workers: true,
     enqueue_ocr: true,
+    enqueue_ocr_detail: enqueueOcrDetail === true,
     enqueue_embeddings: false,
     enqueue_surface: false,
     enqueue_quality: false,
@@ -1932,6 +1934,7 @@ async function runOne({
         assetId: id,
         images,
         source: preingestionSource,
+        enqueueOcrDetail: recognitionProfile === "accuracy-ceiling-oracle-v1",
         requestTimeoutMs: Math.min(requestTimeoutMs, durableUploadResilienceContract.preingestion_timeout_ms)
       });
       if (preingestionResult.ok && preingestionResult.bundle_id) {
@@ -2673,6 +2676,7 @@ async function enqueueSpeculativeItem({
           assetId: id,
           images,
           source: preingestionSource,
+          enqueueOcrDetail: recognitionProfile === "accuracy-ceiling-oracle-v1",
           requestTimeoutMs: Math.min(requestTimeoutMs, durableUploadResilienceContract.preingestion_timeout_ms)
         });
         if (preingestionResult.ok && preingestionResult.bundle_id) {

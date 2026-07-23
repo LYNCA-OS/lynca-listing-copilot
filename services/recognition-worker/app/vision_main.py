@@ -47,7 +47,14 @@ def _public_result(request: dict[str, Any], result: dict[str, Any], *, batch_lat
         "vision_cost_estimate": result.get("cost_estimate"),
         **({"reason": result.get("reason")} if result.get("reason") else {}),
         **({"serial_consensus": result.get("serial_consensus")} if result.get("serial_consensus") else {}),
+        **({"inline_full_image_fallback_evaluated": True} if result.get("inline_full_image_fallback_evaluated") else {}),
+        **({"inline_full_image_fallback_used": True} if result.get("inline_full_image_fallback_used") else {}),
+        **({"inline_full_image_fallback_target_found": True} if result.get("inline_full_image_fallback_target_found") else {}),
     }
+
+
+def _tag_candidates(result: dict[str, Any], ocr_pass: str) -> list[dict[str, Any]]:
+    return [{**candidate, "ocr_pass": ocr_pass} for candidate in list(result.get("candidates") or [])]
 
 
 def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None = None, *, vision_client: Any | None = None) -> dict[str, Any]:
@@ -80,7 +87,7 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
 
     arrays = []
     crop_types = []
-    result_slots: list[tuple[int, int | None, int | None, int | None]] = []
+    result_slots: list[tuple[int, int | None, int | None, int | None, int | None]] = []
     for request in requests:
         loaded = loaded_by_url[str(request.get("image_url") or "")]
         exact_index = len(arrays)
@@ -89,6 +96,7 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
         expanded_index = None
         top_right_index = None
         top_right_expanded_index = None
+        full_image_index = None
         if str(request.get("crop_type") or "").lower() in {"serial_number", "serial_crop"}:
             expanded_index = len(arrays)
             arrays.append(_expanded_crop(loaded.array, request.get("crop_box")))
@@ -102,14 +110,18 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
             top_right_expanded_index = len(arrays)
             arrays.append(_expanded_crop(loaded.array, _TOP_RIGHT_SERIAL_BOX))
             crop_types.append("serial_number_top_right_expanded")
-        result_slots.append((exact_index, expanded_index, top_right_index, top_right_expanded_index))
+        elif str(request.get("crop_type") or "").lower() in {"collector_number", "card_code_crop", "collector_number_crop"}:
+            full_image_index = len(arrays)
+            arrays.append(loaded.array)
+            crop_types.append("card_code_full_image")
+        result_slots.append((exact_index, expanded_index, top_right_index, top_right_expanded_index, full_image_index))
     if len(arrays) > MAX_SYNC_IMAGES:
         raise ValueError({"errors": [{"path": "requests", "message": "expanded Vision batch exceeds 16 image units"}]})
 
     batch = run_google_vision_ocr_batch(arrays, crop_types=crop_types, config=config, client=vision_client)
     raw_results = batch.get("results") or []
     output = []
-    for request, (exact_index, expanded_index, top_right_index, top_right_expanded_index) in zip(requests, result_slots, strict=False):
+    for request, (exact_index, expanded_index, top_right_index, top_right_expanded_index, full_image_index) in zip(requests, result_slots, strict=False):
         primary = raw_results[exact_index] if exact_index < len(raw_results) else {"status": "UNAVAILABLE", "reason": batch.get("reason")}
         unit_count = 1
         if expanded_index is not None:
@@ -120,6 +132,21 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
             top_right_consensus = _serial_consensus(top_right_primary, top_right_expanded)
             primary = {**primary, **_merge_serial_region_consensus(planned_consensus, top_right_consensus)}
             unit_count = 4
+        elif full_image_index is not None:
+            full_image = raw_results[full_image_index] if full_image_index < len(raw_results) else {"status": "UNAVAILABLE"}
+            primary_candidates = _tag_candidates(primary, "planned_crop")
+            fallback_candidates = _tag_candidates(full_image, "full_image_fallback")
+            primary = {
+                **primary,
+                "candidates": primary_candidates + fallback_candidates,
+                "raw_text": "\n".join(filter(None, [primary.get("raw_text"), full_image.get("raw_text")])),
+                "confidence": max(float(primary.get("confidence") or 0), float(full_image.get("confidence") or 0)),
+                "cost_estimate": round(float(primary.get("cost_estimate") or 0) + float(full_image.get("cost_estimate") or 0), 6),
+                "inline_full_image_fallback_evaluated": True,
+                "inline_full_image_fallback_used": bool(fallback_candidates),
+                "inline_full_image_fallback_target_found": bool(fallback_candidates),
+            }
+            unit_count = 2
         output.append(_public_result(request, primary, batch_latency_ms=int(batch.get("latency_ms") or 0), unit_count=unit_count))
     return {
         "status": "OK" if any(item.get("status") == "OK" for item in output) else batch.get("status", "UNAVAILABLE"),

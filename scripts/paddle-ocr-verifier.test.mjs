@@ -31,6 +31,35 @@ const request = {
 assert.deepEqual(validateOcrRequest(request), []);
 assert.ok(validateOcrRequest({ ...request, image_url: "" }).some((error) => error.path === "image_url"));
 
+const landscapeCardCode = normalizePaddleOcrResponse({
+  raw_text: "SHOHEI OHTANI\n17\n© 2025",
+  confidence: 0.98,
+  text_candidates: [
+    { text: "SHOHEI", confidence: 0.98, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 700, y: 120 }, { x: 1050, y: 120 }, { x: 1050, y: 190 }, { x: 700, y: 190 }] } },
+    { text: "17", confidence: 0.97, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 45, y: 80 }, { x: 145, y: 80 }, { x: 145, y: 180 }, { x: 45, y: 180 }] } },
+    { text: "2025", confidence: 0.99, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 1200, y: 900 }, { x: 1400, y: 900 }, { x: 1400, y: 950 }, { x: 1200, y: 950 }] } }
+  ]
+}, {
+  request_id: "ocr-card-code-landscape",
+  image_url: "https://storage.test/back.jpg?token=secret",
+  crop_type: "card_code_crop",
+  metadata: { image_id: "back", crop_id: "card-code", source_width: 1600, source_height: 1000 }
+});
+assert.equal(landscapeCardCode.normalized_fields.collector_number, "17");
+assert.equal(landscapeCardCode.text_candidates.find((candidate) => candidate.text === "17").ocr_pass, "full_image_fallback");
+
+const lowerStatNumber = normalizePaddleOcrResponse({
+  raw_text: "SHOHEI OHTANI\n210",
+  confidence: 0.98,
+  text_candidates: [{ text: "210", confidence: 0.99, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 800, y: 700 }, { x: 900, y: 700 }, { x: 900, y: 760 }, { x: 800, y: 760 }] } }]
+}, {
+  request_id: "ocr-card-code-stat",
+  image_url: "https://storage.test/back.jpg?token=secret",
+  crop_type: "card_code_crop",
+  metadata: { source_width: 1600, source_height: 1000 }
+});
+assert.equal(lowerStatNumber.normalized_fields.collector_number, undefined);
+
 const ocrResult = normalizePaddleOcrResponse({
   raw_text: "Serial 31 / 50",
   confidence: 0.93,
