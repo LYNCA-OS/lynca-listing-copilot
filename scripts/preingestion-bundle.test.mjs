@@ -7,6 +7,7 @@ import {
   currentPreingestionEvidencePatches,
   imagesFromPreIngestionBundle,
   normalizeEvidencePatch,
+  preingestionOcrJobVersion,
   readPreIngestionBundleByAsset,
   readPreIngestionBundle,
   summarizePreIngestionBundle,
@@ -86,7 +87,7 @@ const currentPatchSet = currentPreingestionEvidencePatches([
     field: "serial_number",
     value: "242/250",
     source_type: "OCR",
-    provenance: { job_key: "ocr:ocr-crop-v8:bundle:serial" }
+    provenance: { job_key: `ocr:${preingestionOcrJobVersion}:bundle:serial` }
   },
   {
     field: "serial_number",
@@ -195,7 +196,7 @@ assert.deepEqual(summaryWithOcrExecution.ocr_stage_execution, {
 // enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
-assert.ok(jobs.every((job) => job.job_key.startsWith("ocr:ocr-crop-v8:")));
+assert.ok(jobs.every((job) => job.job_key.startsWith(`ocr:${preingestionOcrJobVersion}:`)));
 assert.deepEqual(
   jobs.map((job) => `${job.payload.crop.crop_metadata.source_side}:${job.payload.crop.role}`).sort(),
   ["back:card_code_crop", "front:serial_crop"],

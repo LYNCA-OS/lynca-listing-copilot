@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   appendEvidencePatchesToBundle,
+  assertAvailablePreingestionOcrResult,
   bundlePatchesFromOcrResult,
   claimQueuedPreingestionOcrJobs,
   completePreingestionOcrJob,
@@ -101,6 +102,11 @@ assert.equal(retryableOcrFailure(new Error("worker http 503")), true);
 assert.equal(retryableOcrFailure(new Error("crop source_object_path missing")), false);
 assert.equal(retryableOcrFailure(new Error("worker http 400 invalid payload")), false);
 assert.equal(retryableOcrFailure({ message: "temporary", retryable: false }), false);
+assert.equal(assertAvailablePreingestionOcrResult({ worker_status: "NO_TEXT" }).worker_status, "NO_TEXT");
+assert.throws(
+  () => assertAvailablePreingestionOcrResult({ worker_status: "UNAVAILABLE", worker_reason: "vision quota" }),
+  (error) => error.code === "OCR_WORKER_UNAVAILABLE" && error.retryable === true && /vision quota/.test(error.message)
+);
 
 const sampleJob = {
   tenant_id: "tenant_a",

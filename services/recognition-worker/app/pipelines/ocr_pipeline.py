@@ -696,6 +696,10 @@ def ocr_field_from_loaded_image(
     candidates: list[dict[str, Any]] = []
     backend_telemetry: dict[str, Any] = {}
     paddle_hard_error: str | None = None
+    vision_unit_count = 0
+    vision_cost_estimate = 0.0
+    vision_status = ""
+    vision_reason = ""
 
     # PaddleOCR lane (skipped for a pure deepseek run, or when Paddle is
     # disabled in a hybrid run so the deepseek lane still answers).
@@ -734,12 +738,16 @@ def ocr_field_from_loaded_image(
         from .google_vision_ocr import run_google_vision_ocr
 
         vision_result = run_google_vision_ocr(crop_array, crop_type=crop_type, config=config)
+        vision_status = str(vision_result.get("status") or "").strip().upper()
+        vision_reason = str(vision_result.get("reason") or "").strip()
         vision_candidates = vision_result.get("candidates", []) or []
         candidates.extend(vision_candidates)
         backend_telemetry["vision_status"] = vision_result.get("status")
         backend_telemetry["vision_candidate_count"] = len(vision_candidates)
         backend_telemetry["vision_latency_ms"] = vision_result.get("latency_ms")
         backend_telemetry["vision_cost_estimate"] = vision_result.get("cost_estimate")
+        vision_unit_count += max(0, int(vision_result.get("vision_unit_count") or 0))
+        vision_cost_estimate += max(0.0, float(vision_result.get("cost_estimate") or 0.0))
         if vision_result.get("reason"):
             backend_telemetry["vision_reason"] = vision_result.get("reason")
 
@@ -747,12 +755,28 @@ def ocr_field_from_loaded_image(
     # UNAVAILABLE, matching prior behavior; otherwise OK/NO_TEXT by candidates.
     if candidates:
         status = "OK"
+    elif backend == "google_vision" and vision_status == "UNAVAILABLE":
+        status = "UNAVAILABLE"
     elif paddle_hard_error and backend not in {"deepseek", "google_vision"}:
         status = "UNAVAILABLE"
     else:
         status = "NO_TEXT"
 
     raw_text, confidence = _normalize_field_candidates(candidates)
+    effective_model_id = model_id
+    effective_model_revision = model_revision
+    if backend == "google_vision":
+        effective_model_id = "google-cloud-vision"
+        effective_model_revision = str(
+            getattr(config, "vision_feature_type", "DOCUMENT_TEXT_DETECTION")
+            or "DOCUMENT_TEXT_DETECTION"
+        )
+    elif backend == "hybrid":
+        effective_model_id = "hybrid-ocr"
+        effective_model_revision = "+".join(filter(None, [
+            str(model_revision or "paddle"),
+            str(getattr(config, "vision_feature_type", "DOCUMENT_TEXT_DETECTION") or "DOCUMENT_TEXT_DETECTION"),
+        ]))
     result = {
         "request_id": request_id,
         "crop_type": crop_type,
@@ -770,15 +794,19 @@ def ocr_field_from_loaded_image(
         ],
         "confidence": confidence,
         "latency_ms": int((time.time() - started) * 1000),
-        "model_id": model_id,
-        "model_revision": model_revision,
+        "model_id": effective_model_id,
+        "model_revision": effective_model_revision,
         "image_id": image_id,
         "image_role": role,
         "ocr_backend": backend,
         "backend_telemetry": backend_telemetry,
+        "vision_unit_count": vision_unit_count,
+        "vision_cost_estimate": round(vision_cost_estimate, 6),
     }
     if status == "UNAVAILABLE" and paddle_hard_error:
         result["reason"] = paddle_hard_error
+    elif status == "UNAVAILABLE" and vision_reason:
+        result["reason"] = vision_reason
     return result
 
 
