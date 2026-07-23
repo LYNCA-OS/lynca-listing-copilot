@@ -664,6 +664,14 @@ for (const narration of [
   assert.equal(normalizeFields({ card_name: narration }).card_name, null, `${narration} is not a card identity`);
 }
 assert.equal(normalizeFields({ card_name: "No. 1 Draft Pick" }).card_name, "No. 1 Draft Pick");
+const recoveredCardNameCode = normalizeFields({
+  players: ["Lionel Messi"],
+  product: "Topps Chrome MLS",
+  card_name: "NF-23"
+});
+assert.equal(recoveredCardNameCode.card_name, null, "an uppercase hyphenated printed code is not a card name");
+assert.equal(recoveredCardNameCode.collector_number, "NF-23", "card-name code recovery must unlock exact catalog lookup");
+assert.equal(normalizeFields({ card_name: "No. 1 Draft Pick" }).collector_number, null, "human card names must not become codes");
 assert.equal(
   buildV4ResolvedFields({ resolved_fields: { card_name: "(retro front with signature facsimile)" } }).card_name,
   null
