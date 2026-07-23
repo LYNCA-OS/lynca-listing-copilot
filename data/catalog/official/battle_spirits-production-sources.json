@@ -42,6 +42,156 @@
           "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
         }
       ]
+    },
+    {
+      "source_name": "Battle Spirits Saga BSS02 False Gods",
+      "source_url": "https://www.battlespirits-saga.com/cards/?category=575002&search=true",
+      "official_page_url": "https://www.battlespirits-saga.com/cards/",
+      "source_type": "BANDAI_BATTLE_SPIRITS_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 136,
+      "minimum_promotion_candidate_count": 136,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "BSS02-001",
+          "subject": "Dragno King",
+          "product": "[BSS02] FALSE GODS",
+          "external_id": "BSS02-001",
+          "rarity": "X",
+          "official_card_type": "Spirit",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "BSS02-136",
+          "subject": "Insect Aura",
+          "product": "[BSS02] FALSE GODS",
+          "external_id": "BSS02-136",
+          "rarity": "C",
+          "official_card_type": "Magic",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    },
+    {
+      "source_name": "Battle Spirits Saga BSS03 Aquatic Invaders",
+      "source_url": "https://www.battlespirits-saga.com/cards/?category=575003&search=true",
+      "official_page_url": "https://www.battlespirits-saga.com/cards/",
+      "source_type": "BANDAI_BATTLE_SPIRITS_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 138,
+      "minimum_promotion_candidate_count": 138,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "BSS03-001",
+          "subject": "Ancient Guardian Trident Dragon",
+          "product": "[BSS03] AQUATIC INVADERS",
+          "external_id": "BSS03-001",
+          "rarity": "X",
+          "official_card_type": "Spirit",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "BSS03-138",
+          "subject": "Muscle Charge",
+          "product": "[BSS03] AQUATIC INVADERS",
+          "external_id": "BSS03-138",
+          "rarity": "C",
+          "official_card_type": "Magic",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    },
+    {
+      "source_name": "Battle Spirits Saga BSS04 Savior of Chaos",
+      "source_url": "https://www.battlespirits-saga.com/cards/?category=575004&search=true",
+      "official_page_url": "https://www.battlespirits-saga.com/cards/",
+      "source_type": "BANDAI_BATTLE_SPIRITS_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 139,
+      "minimum_promotion_candidate_count": 139,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "BSS04-001",
+          "subject": "Rage Star Dragon Siegwurm Ira",
+          "product": "[BSS04] SAVIOR OF CHAOS",
+          "external_id": "BSS04-001",
+          "rarity": "X",
+          "official_card_type": "Spirit",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "BSS04-139",
+          "subject": "Finishing Blow",
+          "product": "[BSS04] SAVIOR OF CHAOS",
+          "external_id": "BSS04-139",
+          "rarity": "C",
+          "official_card_type": "Magic",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    },
+    {
+      "source_name": "Battle Spirits Saga BSS05 Strangers in the Sky",
+      "source_url": "https://www.battlespirits-saga.com/cards/?category=575005&search=true",
+      "official_page_url": "https://www.battlespirits-saga.com/cards/",
+      "source_type": "BANDAI_BATTLE_SPIRITS_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 139,
+      "minimum_promotion_candidate_count": 139,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "BSS05-001",
+          "subject": "Skybinder Knight Zmeitza",
+          "product": "[BSS05] STRANGERS IN THE SKY",
+          "external_id": "BSS05-001",
+          "rarity": "X",
+          "official_card_type": "Spirit",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "BSS05-139",
+          "subject": "Poseidon Crush",
+          "product": "[BSS05] STRANGERS IN THE SKY",
+          "external_id": "BSS05-139",
+          "rarity": "C",
+          "official_card_type": "Magic",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    },
+    {
+      "source_name": "Battle Spirits Saga BSS06 Generational Link",
+      "source_url": "https://www.battlespirits-saga.com/cards/?category=575006&search=true",
+      "official_page_url": "https://www.battlespirits-saga.com/cards/",
+      "source_type": "BANDAI_BATTLE_SPIRITS_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 116,
+      "minimum_promotion_candidate_count": 116,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "BSS06-001",
+          "subject": "Absolute Divinity Amaterasu Dragon",
+          "product": "[BSS06] GENERATIONAL LINK",
+          "external_id": "BSS06-001",
+          "rarity": "X",
+          "official_card_type": "Spirit",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "BSS06-116",
+          "subject": "Cooking! Fish Fillet",
+          "product": "[BSS06] GENERATIONAL LINK",
+          "external_id": "BSS06-116",
+          "rarity": "C",
+          "official_card_type": "Magic",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
     }
   ]
 }
