@@ -1,3 +1,4 @@
+-- Matches applied migration registry version 20260723193552.
 alter table public.catalog_parallels
   drop constraint if exists catalog_parallels_source_id_fkey;
 alter table public.catalog_parallels
