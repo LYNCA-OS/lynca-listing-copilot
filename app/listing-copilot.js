@@ -980,6 +980,17 @@ function createClientBatchId() {
   return `web-v4-${random}`;
 }
 
+function clientBatchIdForAsset(asset, runId = state.backgroundPreparationRunId) {
+  if (asset.recognitionBatchRunId === runId && asset.recognitionBatchId) {
+    return asset.recognitionBatchId;
+  }
+  const parent = state.backgroundRecognitionBatchId || createClientBatchId();
+  const suffix = Math.max(1, Number(asset.index || 0)).toString(36);
+  asset.recognitionBatchRunId = runId;
+  asset.recognitionBatchId = `${parent}-${suffix}`.slice(0, 120);
+  return asset.recognitionBatchId;
+}
+
 function v4SchemaVersionFromPayload(payload = {}) {
   return payload.v4_schema_version || payload.schema_version || payload.version || "v4";
 }
@@ -1712,7 +1723,10 @@ async function ensureSpeculativeRecognition(asset, runId) {
       const enqueueJobPayload = JSON.parse(requestBody);
       enqueueJobPayload.client_speculative = true;
 
-      const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
+      // The atomic queue contract makes one batch payload immutable. Streaming
+      // speculative requests contain one asset each, so they need sibling batch
+      // identities rather than reusing the parent UI selection id.
+      const batchId = clientBatchIdForAsset(asset, runId);
       const enqueueRequest = await fetchJsonWithRetry(JOB_ENQUEUE_API_ENDPOINT, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2500,6 +2514,7 @@ export const __listingCopilotAppTestHooks = {
   assetLifecycleMatches,
   boundedProviderImagesForRequest,
   clearImageStorageBinding,
+  clientBatchIdForAsset,
   generationTimingView,
   generationSubmissionAllowed,
   imageHasVerifiedStorageReference,
@@ -4260,8 +4275,7 @@ async function processTitles() {
   setStatus("0% · 图片已准备，开始识别…", { busy: true });
 
   const queue = [...state.assets];
-  const recognitionBatchId = state.backgroundRecognitionBatchId || createClientBatchId();
-  state.backgroundRecognitionBatchId = recognitionBatchId;
+  state.backgroundRecognitionBatchId = state.backgroundRecognitionBatchId || createClientBatchId();
   // This pool only prepares and enqueues durable jobs. Provider concurrency is
   // enforced independently by the server-side capacity lease.
   const workerCount = Math.min(queueSubmissionConcurrencyLimit(), queue.length);
@@ -4274,7 +4288,9 @@ async function processTitles() {
       setAssetProgress(asset.index, "进入识别队列", 0.03);
 
       try {
-        const result = await processAssetViaQueue(asset, { batchId: recognitionBatchId });
+        const result = await processAssetViaQueue(asset, {
+          batchId: clientBatchIdForAsset(asset, state.backgroundPreparationRunId)
+        });
         if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
         if (!v4WriterTitlePending(result)) {
           markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });

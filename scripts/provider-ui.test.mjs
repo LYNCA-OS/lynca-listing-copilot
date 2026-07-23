@@ -133,7 +133,8 @@ assert.match(queuedSessionRecoverySource, /shouldDeclareClientStatusOrphan/, "on
 const queuedStatusUpdateSource = js.slice(js.indexOf("function applyV4QueuedJobStatusUpdate"), js.indexOf("async function pollV4AssistedDraft"));
 assert.match(queuedStatusUpdateSource, /announce:\s*false/, "per-card status updates should not rewrite the global status banner N times per poll");
 assert.match(queuedStatusUpdateSource, /knownPending:\s*true/, "queued polling should avoid an O\(N\) pending lookup for every card");
-assert.match(js, /processAssetViaQueue\(asset, \{ batchId: recognitionBatchId \}\)/, "batch generation should use one shared production batch identity");
+assert.match(js, /batchId:\s*clientBatchIdForAsset\(asset, state\.backgroundPreparationRunId\)/, "streaming one-card payloads should use stable sibling batch identities");
+assert.match(js, /job_ids:\s*jobIds\.join\(","\)/, "sibling queue batches should still share one job-id status aggregator");
 assert.doesNotMatch(js, /create_l1_job|create_l2_job/, "frontend must not own recognition stage selection");
 assert.match(recognitionProfileAdapter, /create_l1_job:\s*false/, "server profile should skip hidden L1 after it showed no stable L2 or writer benefit");
 assert.match(recognitionProfileAdapter, /create_l2_job:\s*true/, "server profile should always enqueue the writer-visible final L2");
@@ -748,6 +749,15 @@ assert.equal(
   }),
   6,
   "browser submission workers must stay locally bounded"
+);
+const firstStreamBatch = __listingCopilotAppTestHooks.clientBatchIdForAsset({ index: 1 }, 77);
+const secondStreamBatch = __listingCopilotAppTestHooks.clientBatchIdForAsset({ index: 2 }, 77);
+assert.notEqual(firstStreamBatch, secondStreamBatch, "one-asset speculative queue payloads must not share an immutable batch identity");
+const stableStreamAsset = { index: 3 };
+assert.equal(
+  __listingCopilotAppTestHooks.clientBatchIdForAsset(stableStreamAsset, 77),
+  __listingCopilotAppTestHooks.clientBatchIdForAsset(stableStreamAsset, 77),
+  "the same asset retry within one intake run must preserve its idempotent batch identity"
 );
 const oversizedOriginal = new Blob([new Uint8Array(30)], { type: "image/png" });
 const compressedFallback = new Blob([new Uint8Array(10)], { type: "image/jpeg" });
