@@ -1607,7 +1607,7 @@ function testCandidateStagePreservesConfirmedCurrentImageSerialWithoutOcrVerdict
   const resolved = {
     year: "2024",
     manufacturer: "Topps",
-    product: "Topps Graphite",
+    product: "Graphite Signatures",
     players: ["Anna Kalinskaya"],
     serial_number: "20/25",
     print_run_number: "20/25"
@@ -1682,6 +1682,43 @@ function testCatalogConsensusSafelyRefinesProductWithoutSelectingSiblingVariant(
   );
 }
 
+function testCatalogConsensusCannotInjectLeagueSpecificSiblingProduct() {
+  const observed = {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Lionel Messi"]
+  };
+  const sources = ["uefa-a", "uefa-b"].map((suffix) => ({
+    candidate_id: `catalog-messi-${suffix}`,
+    candidate_identity_id: `identity-messi-${suffix}`,
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Topps Chrome UEFA Club Competitions",
+      players: ["Lionel Messi"]
+    }
+  }));
+  const catalogPacket = buildVectorCandidatePacket({ sources }, {
+    limit: 5,
+    queryFields: observed
+  });
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: observed,
+      catalog_candidate_packet: catalogPacket,
+      catalog_assist_eligibility: vectorCandidatePacketAssistEligibility(catalogPacket)
+    }
+  });
+  const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: observed });
+
+  assert.notEqual(selection.consensus_product_hierarchy_application.status, "ready_safe_refinement");
+  assert.equal(decision.resolved_after.product, "Topps Chrome");
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -1715,5 +1752,6 @@ testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate();
 testReviewedCompositeIdentityCannotCorrectVariantWithoutExactCode();
 testCandidateStagePreservesConfirmedCurrentImageSerialWithoutOcrVerdict();
 testCatalogConsensusSafelyRefinesProductWithoutSelectingSiblingVariant();
+testCatalogConsensusCannotInjectLeagueSpecificSiblingProduct();
 
 console.log("candidate-control-plane tests passed");
