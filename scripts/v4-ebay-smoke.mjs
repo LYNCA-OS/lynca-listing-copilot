@@ -5140,6 +5140,7 @@ export async function main(argv = process.argv, env = process.env) {
     tenantCount: Math.max(1, Math.trunc(numberArg(argv, "--tenant-count", 1))),
     tenantPrefix: cleanText(argValue(argv, "--tenant-prefix", "")),
     batchPoll: !hasFlag(argv, "--per-card-poll"),
+    batchId: cleanText(argValue(argv, "--batch-id", "")),
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
     coldStartBlind: hasFlag(argv, "--cold-start-blind"),
