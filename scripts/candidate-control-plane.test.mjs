@@ -1223,7 +1223,7 @@ function testPacketRebindPreservesPlayersAsSubjectAnchor() {
   });
   const catalogEligibility = vectorCandidatePacketAssistEligibility(catalogPacket);
 
-  assert.equal(catalogEligibility.prompt_candidate_count, 1, "the approved candidate should enter the provider-safe packet");
+  assert.equal(catalogEligibility.prompt_candidate_count, 0, "a non-exact catalog identity must stay out of the provider-safe packet");
   const selection = buildCandidateSelectionPass({
     result: {
       resolved_fields: observed,
@@ -1235,7 +1235,7 @@ function testPacketRebindPreservesPlayersAsSubjectAnchor() {
   assert.equal(selection.selected_candidate_decision.selected_candidate_id, "catalog-chourio-packet-rebind");
   assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("subjects"));
   assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("product_hierarchy"));
-  assert.equal(selection.candidate_application_trace[0].prompt_eligible, true);
+  assert.equal(selection.candidate_application_trace[0].prompt_eligible, false);
 }
 
 function testReviewedSiblingCannotBecomeCardIdentityWithoutExactCode() {
@@ -1338,7 +1338,7 @@ function testCardDomainRerankerOwnsOracleSelectionOnly() {
     provider_id: "catalog",
     source_type: "STRUCTURED_DATABASE",
     source_trust: "APPROVED_REFERENCE",
-    fields: { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"] }
+    fields: { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"], collector_number: "TC-1" }
   }, {
     candidate_id: "catalog-domain-b",
     candidate_identity_id: "identity-domain-b",
@@ -1353,7 +1353,7 @@ function testCardDomainRerankerOwnsOracleSelectionOnly() {
     prompt_candidate_count: 2,
     prompt_candidate_ids: candidates.map((candidate) => candidate.candidate_id)
   });
-  const observed = { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"] };
+  const observed = { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"], collector_number: "TC-1" };
   const oracle = buildCandidateSelectionPass({
     result: {
       evaluation_profile: "v4_accuracy_ceiling_oracle_v1",

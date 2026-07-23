@@ -237,8 +237,8 @@ const catalogHierarchySoftConflictPacket = buildVectorCandidatePacket({
 });
 assert.deepEqual(catalogHierarchySoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields, []);
 assert.equal(catalogHierarchySoftConflictPacket.vector_retrieval.candidates.length, 1, "identical rows from overlapping catalog query families should be deduplicated before the decision limit");
-assert.equal(vectorCandidatePacketAssistEligibility(catalogHierarchySoftConflictPacket).prompt_candidate_count, 1, "duplicate same identity should count as one prompt candidate");
-assert.equal(buildVectorCandidateAssistPacket(catalogHierarchySoftConflictPacket).vector_retrieval.candidates.length, 1);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogHierarchySoftConflictPacket).prompt_candidate_count, 0, "a duplicate set-level identity still lacks an exact card anchor");
+assert.equal(buildVectorCandidateAssistPacket(catalogHierarchySoftConflictPacket).vector_retrieval.candidates.length, 0);
 
 const catalogDenominatorCannotSoftenYearPacket = buildVectorCandidatePacket({
   sources: [{
@@ -526,7 +526,7 @@ const catalogParentChildProductPacket = buildVectorCandidatePacket({
 });
 assert.deepEqual(catalogParentChildProductPacket.vector_retrieval.candidates[0].conflicting_fields, []);
 assert.equal(catalogParentChildProductPacket.vector_retrieval.candidates[0].anchor_agreement.prompt_hard_filter_pass, true);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogParentChildProductPacket).prompt_candidate_count, 1);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogParentChildProductPacket).prompt_candidate_count, 0);
 
 // A known product OCR correction plus an exact product token is tolerated, and
 // a manufacturer-only product placeholder yields to a specific set.
@@ -557,7 +557,7 @@ const catalogProductOcrTypoPacket = buildVectorCandidatePacket({
 });
 assert.deepEqual(catalogProductOcrTypoPacket.vector_retrieval.candidates[0].conflicting_fields, []);
 assert.ok(catalogProductOcrTypoPacket.vector_retrieval.candidates[0].anchor_agreement.agreed.includes("product_hierarchy"));
-assert.equal(vectorCandidatePacketAssistEligibility(catalogProductOcrTypoPacket).prompt_candidate_count, 1);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogProductOcrTypoPacket).prompt_candidate_count, 0);
 
 const catalogDifferentProductBranchPacket = buildVectorCandidatePacket({
   sources: [{
@@ -802,8 +802,8 @@ const catalogLowMarginProductYearPromptPacket = buildVectorCandidatePacket({
 });
 assert.equal(
   vectorCandidatePacketAssistEligibility(catalogLowMarginProductYearPromptPacket).prompt_candidate_count,
-  1,
-  "low-margin product-level candidates should enter prompt when product hierarchy plus year are anchored"
+  0,
+  "product-level candidates stay outside the visual prompt without exact card identity"
 );
 
 const tcgPartialCodePacket = buildVectorCandidatePacket({
@@ -864,12 +864,8 @@ const catalogManufacturerBrandSoftConflictPacket = buildVectorCandidatePacket({
 });
 assert.equal(catalogManufacturerBrandSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
 assert.deepEqual(catalogManufacturerBrandSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["manufacturer"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogManufacturerBrandSoftConflictPacket).prompt_candidate_count, 1);
-assert.deepEqual(
-  buildVectorCandidateAssistPacket(catalogManufacturerBrandSoftConflictPacket).vector_retrieval.candidates[0].soft_conflicting_fields,
-  ["manufacturer"],
-  "soft conflicts should warn the prompt without blocking the approved candidate"
-);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogManufacturerBrandSoftConflictPacket).prompt_candidate_count, 0);
+assert.equal(buildVectorCandidateAssistPacket(catalogManufacturerBrandSoftConflictPacket).vector_retrieval.candidates.length, 0);
 
 const catalogSerialNumeratorSoftConflictPacket = buildVectorCandidatePacket({
   sources: [{
@@ -900,11 +896,8 @@ const catalogSerialNumeratorSoftConflictPacket = buildVectorCandidatePacket({
 });
 assert.equal(catalogSerialNumeratorSoftConflictPacket.vector_retrieval.candidates[0].conflicting_fields.length, 0);
 assert.deepEqual(catalogSerialNumeratorSoftConflictPacket.vector_retrieval.candidates[0].soft_conflicting_fields, ["serial_number"]);
-assert.equal(vectorCandidatePacketAssistEligibility(catalogSerialNumeratorSoftConflictPacket).prompt_candidate_count, 1);
-const serialSoftPromptCandidate = buildVectorCandidateAssistPacket(catalogSerialNumeratorSoftConflictPacket).vector_retrieval.candidates[0];
-assert.equal(serialSoftPromptCandidate.fields.serial_number, undefined, "reference serial numerator must not enter prompt candidates");
-assert.equal(serialSoftPromptCandidate.fields.expected_serial_denominator, "50");
-assert.deepEqual(serialSoftPromptCandidate.soft_conflicting_fields, ["serial_number"]);
+assert.equal(vectorCandidatePacketAssistEligibility(catalogSerialNumeratorSoftConflictPacket).prompt_candidate_count, 0);
+assert.equal(buildVectorCandidateAssistPacket(catalogSerialNumeratorSoftConflictPacket).vector_retrieval.candidates.length, 0);
 
 const marketplaceWeakPacket = buildVectorCandidatePacket({
   sources: [{
