@@ -12,6 +12,7 @@ on:
           - panini
           - upper_deck
           - one_piece
+          - digimon
         default: topps
       apply:
         description: "Apply validated rows to production Supabase"

@@ -1,0 +1,44 @@
+{
+  "schema_version": "official-source-manifest-v1",
+  "provider": "digimon",
+  "sources": [
+    {
+      "source_name": "Digimon Starter Deck Parallel World Tactician ST-10",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522110",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 16,
+      "minimum_promotion_candidate_count": 16,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "ST10-01",
+          "card_name": "Nyaromon",
+          "product": "Digimon Starter Deck Parallel World Tactician ST-10",
+          "set_or_insert": "Digimon Starter Deck Parallel World Tactician ST-10",
+          "external_id": "ST10-01",
+          "rarity": "U",
+          "official_card_type": "Digi-Egg",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "ST10-15",
+          "card_name": "Darkness Wave",
+          "external_id": "ST10-15",
+          "rarity": "U",
+          "official_card_type": "Option",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "BT2-108",
+          "card_name": "Night Raid",
+          "parallel_exact": "Alternative Art",
+          "external_id": "BT2-108_P1",
+          "rarity": "C",
+          "official_card_type": "Option",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    }
+  ]
+}
