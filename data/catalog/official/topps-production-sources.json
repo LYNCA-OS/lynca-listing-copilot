@@ -3,6 +3,33 @@
   "provider": "topps",
   "sources": [
     {
+      "source_name": "2025-26 Topps Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0586/3119/2678/files/2025-26-Topps-Basketball-Checklist.xlsx?v=1760239903",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball",
+      "minimum_card_count": 2100,
+      "required_records": [
+        {
+          "card_number": "201",
+          "subject": "Cooper Flagg",
+          "product": "Topps Basketball"
+        },
+        {
+          "checklist_code": "RPD-AB",
+          "subject": "Ace Bailey",
+          "product": "Topps Basketball",
+          "set_or_insert": "Rookie Photo Shoot Dual Autographs"
+        },
+        {
+          "checklist_code": "RPD-AB",
+          "subject": "Cooper Flagg",
+          "product": "Topps Basketball",
+          "set_or_insert": "Rookie Photo Shoot Dual Autographs"
+        }
+      ]
+    },
+    {
       "source_name": "2025 Topps Chrome Formula 1 Checklist",
       "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2025_Topps_Chrome_F1_Checklist.pdf?v=1762447472",
       "official_page_url": "https://www.topps.com/pages/topps-chrome-formula-1",
