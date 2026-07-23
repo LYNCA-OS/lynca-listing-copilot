@@ -309,7 +309,7 @@ function testRawRetrievalEvidenceCannotBypassApplicationOwner() {
     players: ["Shohei Ohtani"]
   };
   const { control, application } = buildLayer(result);
-  assert.equal(application.decisions.find((row) => row.field === "product")?.decision, "APPLY");
+  assert.equal(application.decisions.find((row) => row.field === "product")?.decision, "BLOCK");
 
   const directSource = {
     source_type: "SLAB_LABEL",
@@ -354,10 +354,10 @@ function testRawRetrievalEvidenceCannotBypassApplicationOwner() {
   });
 
   assert.notEqual(gated.identity_resolution?.identity?.product, "Topps Chrome Platinum");
-  assert.equal(gated.identity_resolution?.identity?.product, "Topps Chrome Sapphire");
+  assert.equal(gated.identity_resolution?.identity?.product, "Topps Sapphire");
   assert.equal(gated.retrieval_evidence_isolation?.enabled, true);
   assert.ok(gated.retrieval_evidence_isolation?.blocked_raw_candidate_evidence_count >= 1);
-  assert.ok(gated.retrieval_application?.actual_applied_fields.includes("product"));
+  assert.equal(gated.retrieval_application?.actual_applied_fields.includes("product"), false);
 }
 
 function testResolvedRetrievalOutcomeOwnsRenderedFieldContainer() {
@@ -387,7 +387,7 @@ function testResolvedRetrievalOutcomeOwnsRenderedFieldContainer() {
   assert.match(gated.rendered_fields.rendered_title, /Topps Chrome/);
 }
 
-function testSelectedTrustedVariantSurvivesRawVisionDraftFallback() {
+function testSelectedTrustedVariantRequiresExactCardIdentity() {
   const candidate = trustedCatalogCandidate({
     source_type: "INTERNAL_APPROVED_HISTORY",
     source_trust: "APPROVED_REFERENCE",
@@ -421,8 +421,8 @@ function testSelectedTrustedVariantSurvivesRawVisionDraftFallback() {
     serial_denominator: "50"
   };
   const { control, application } = buildLayer(result);
-  assert.equal(application.decisions.find((row) => row.field === "surface_color")?.decision, "APPLY");
-  assert.equal(application.decisions.find((row) => row.field === "parallel_family")?.decision, "APPLY");
+  assert.notEqual(application.decisions.find((row) => row.field === "surface_color")?.decision, "APPLY");
+  assert.notEqual(application.decisions.find((row) => row.field === "parallel_family")?.decision, "APPLY");
 
   const gated = applyIdentityResolutionGate({
     ...result,
@@ -440,16 +440,14 @@ function testSelectedTrustedVariantSurvivesRawVisionDraftFallback() {
     evidence: {}
   });
 
-  assert.equal(gated.resolved_fields.surface_color, "Gold");
-  assert.equal(gated.resolved_fields.parallel_family, "Geometric");
+  assert.equal(gated.resolved_fields.surface_color, "Green");
+  assert.equal(gated.resolved_fields.parallel_family ?? null, null);
   assert.deepEqual(gated.resolved_fields.players, ["Test Player"]);
-  assert.equal(gated.resolved_fields.card_name, "Lucky Hyper");
+  assert.equal(gated.resolved_fields.card_name ?? null, null);
   assert.match(gated.final_title, /Test Player/);
-  assert.match(gated.final_title, /Lucky Hyper/);
-  assert.match(gated.final_title, /Gold/);
-  assert.match(gated.final_title, /Geometric/);
-  assert.doesNotMatch(gated.final_title, /Green/);
-  assert.notEqual(gated.draft_gate.by_field.surface_color.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
+  assert.doesNotMatch(gated.final_title, /Lucky Hyper|Gold|Geometric/);
+  assert.match(gated.final_title, /Green/);
+  assert.equal(gated.draft_gate.by_field.surface_color.draft_source_override, "PRIMARY_FAST_VISION_CONFLICT_REVIEW");
 }
 
 function testSelectedTrustedProductSpecificitySurvivesRawVisionDraftFallback() {
@@ -491,14 +489,11 @@ function testSelectedTrustedProductSpecificitySurvivesRawVisionDraftFallback() {
       players: ["Test Player"]
     };
     const { control, application } = buildLayer(result);
+    const expectedProduct = sameSource ? catalogProduct : observedProduct;
     assert.equal(
       application.decisions.find((row) => row.field === "product")?.decision,
-      "APPLY",
-      `${observedProduct} should safely upgrade to ${catalogProduct}: ${JSON.stringify({
-        selected: control.selected_candidate_decision,
-        safe: control.selected_candidate_safe_field_application,
-        product: application.decisions.find((row) => row.field === "product")
-      })}`
+      sameSource ? "APPLY" : "BLOCK",
+      `${observedProduct} may only upgrade to ${catalogProduct} for the exact reviewed source`
     );
 
     const gated = applyIdentityResolutionGate({
@@ -522,9 +517,9 @@ function testSelectedTrustedProductSpecificitySurvivesRawVisionDraftFallback() {
       evidence: {}
     });
 
-    assert.equal(gated.resolved_fields.product, catalogProduct);
-    assert.ok(gated.retrieval_application?.actual_applied_fields.includes("product"));
-    const renderedProduct = catalogProduct === "Leaf Metal Draft" ? "Metal Draft" : catalogProduct;
+    assert.equal(gated.resolved_fields.product, expectedProduct);
+    assert.equal(gated.retrieval_application?.actual_applied_fields.includes("product"), sameSource);
+    const renderedProduct = expectedProduct === "Leaf Metal Draft" ? "Metal Draft" : expectedProduct;
     assert.match(gated.final_title, new RegExp(renderedProduct.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 }
@@ -803,7 +798,7 @@ testSingleModelFastPathConsumesAlreadyRetrievedFieldEvidence();
 await testAssistShadowPathKeepsRetrievedContextForFieldApplication();
 testRawRetrievalEvidenceCannotBypassApplicationOwner();
 testResolvedRetrievalOutcomeOwnsRenderedFieldContainer();
-testSelectedTrustedVariantSurvivesRawVisionDraftFallback();
+testSelectedTrustedVariantRequiresExactCardIdentity();
 testSelectedTrustedProductSpecificitySurvivesRawVisionDraftFallback();
 testSelectedApplySurvivesShortPrintedIdentityConflict();
 testTrustedHierarchyCannotCrossPublisherFamily();

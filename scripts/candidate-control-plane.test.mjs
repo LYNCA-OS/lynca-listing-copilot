@@ -653,7 +653,7 @@ function testSanitizedReferenceInstanceDoesNotRejectCleanIdentityCandidate() {
   assert.deepEqual(trace.reference_instance_fields_sanitized, ["serial_number", "print_run_numerator"]);
   assert.ok(trace.blocked_fields.includes("serial_number"));
   assert.ok(trace.blocked_fields.includes("print_run_numerator"));
-  assert.equal(decision.resolved_after.product, "Topps Finest Basketball");
+  assert.equal(decision.resolved_after.product, "Finest", "sanitizing instance data does not prove exact card identity");
   assert.ok(decision.resolved_after.serial_number == null);
   assert.ok(decision.resolved_after.print_run_numerator == null);
   assert.ok(decision.resolved_after.grade_company == null);
@@ -997,7 +997,7 @@ function testEvidenceScalarOnlyFillsMissingObservedField() {
   assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("year"));
 }
 
-function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
+function testProductHierarchyCandidateCanOnlyFillMissingHierarchy() {
   const candidate = {
     candidate_id: "catalog-product-specificity",
     candidate_identity_id: "identity-product-specificity",
@@ -1030,11 +1030,11 @@ function testProductHierarchyCandidateCanOnlyUpgradeSpecificity() {
   };
   const selection = buildCandidateSelectionPass({ result });
   const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: result.resolved_fields });
-  assert.equal(decision.resolved_after.product, "Topps Heritage High Number");
-  assert.equal(decision.resolved_after.set, "Topps Heritage High Number");
+  assert.equal(decision.resolved_after.product, "Heritage");
+  assert.equal(decision.resolved_after.set, "Topps Heritage");
   assert.equal(decision.resolved_after.card_name, "Base Card", "card name needs exact code or direct image evidence");
-  assert.ok(decision.field_application.applied_fields.includes("product"));
-  assert.ok(decision.field_application.applied_fields.includes("set"));
+  assert.equal(decision.field_application.applied_fields.includes("product"), false);
+  assert.equal(decision.field_application.applied_fields.includes("set"), false);
 }
 
 function testCompatibleCatalogHierarchyDoesNotManufactureLowMarginConflict() {
@@ -1236,6 +1236,62 @@ function testPacketRebindPreservesPlayersAsSubjectAnchor() {
   assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("subjects"));
   assert.ok(selection.candidate_application_trace[0].anchor_agreement.agreed.includes("product_hierarchy"));
   assert.equal(selection.candidate_application_trace[0].prompt_eligible, true);
+}
+
+function testReviewedSiblingCannotBecomeCardIdentityWithoutExactCode() {
+  const candidate = {
+    candidate_id: "reviewed-messi-sibling",
+    candidate_identity_id: "reviewed-messi-sibling-identity",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE",
+    normalized_score: 0.99,
+    reference_metadata: {
+      corrected_title_is_reviewed_title_ground_truth: true,
+      prompt_safe_internal_writer_title: true
+    },
+    anchor_agreement: {
+      exact_code_match: false,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "subjects", "manufacturer", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: {
+      year: "2025",
+      manufacturer: "Topps",
+      product: "Topps Chrome UEFA Club Competitions",
+      players: ["Lionel Messi"],
+      card_name: "Shadow Etch",
+      surface_color: "Pink",
+      parallel_family: "Refractor",
+      ssp: true
+    }
+  };
+  const observed = {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Lionel Messi"]
+  };
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: observed,
+      catalog_candidate_packet: packet([candidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: [candidate.candidate_id]
+      })
+    }
+  });
+  const application = selection.selected_candidate_safe_field_application;
+  const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: observed });
+
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, candidate.candidate_id);
+  for (const field of ["card_name", "surface_color", "parallel_family", "ssp"]) {
+    assert.equal(application.eligible_fields.includes(field), false, `${field} requires exact card identity`);
+    assert.equal(decision.field_application.applied_fields.includes(field), false);
+  }
+  assert.equal(decision.resolved_after.product, "Topps Chrome", "a sibling catalog row cannot replace observed product hierarchy");
 }
 
 function testYearReplacementRequiresCurrentSourceAuthority() {
@@ -1476,7 +1532,7 @@ function testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate() {
   assert.equal(eligibility.prompt_candidate_count, 1);
 }
 
-function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData() {
+function testReviewedCompositeIdentityCannotCorrectVariantWithoutExactCode() {
   const observed = {
     year: "2025-26",
     manufacturer: "Topps",
@@ -1529,10 +1585,11 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
   });
   const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: observed });
 
-  assert.equal(decision.resolved_after.surface_color, "Gold");
-  assert.equal(decision.resolved_after.parallel_family, "Refractor");
+  assert.equal(decision.resolved_after.surface_color, "Green");
+  assert.equal(decision.resolved_after.parallel_family, "Refractor", "support-only evidence may fill a missing observable finish");
   assert.equal(decision.resolved_after.serial_number, "#/50");
   assert.notEqual(decision.resolved_after.serial_number, "31/50");
+  assert.equal(decision.resolved_after.serial_denominator, "50");
   assert.equal(decision.resolved_after.print_run_denominator, "50");
   assert.equal(decision.resolved_after.expected_serial_denominator, "50");
   assert.equal(selection.selected_candidate_decision.viable_identity_group_count, 1);
@@ -1540,7 +1597,7 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
     new Set(selection.selected_candidate_decision.selected_candidate_group_ids),
     new Set(["reviewed-wemby-gold", "reviewed-wemby-gold-duplicate-row"])
   );
-  assert.ok(selection.selected_candidate_safe_field_application.eligible_fields.includes("print_run_denominator"));
+  assert.equal(selection.selected_candidate_safe_field_application.eligible_fields.includes("print_run_denominator"), false);
   assert.equal(decision.field_application.applied_fields.includes("serial_number"), false);
   assert.equal(decision.resolved_after.grade_company ?? null, null);
   assert.equal(decision.resolved_after.cert_number ?? null, null);
@@ -1549,6 +1606,7 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
+testReviewedSiblingCannotBecomeCardIdentityWithoutExactCode();
 testYearReplacementRequiresCurrentSourceAuthority();
 testCardDomainRerankerOwnsOracleSelectionOnly();
 testApplicableCatalogTierBeatsSupportOnlyVectorTier();
@@ -1566,7 +1624,7 @@ testFinalObservationRebindsStaleEarlyAnchorAndCorrectsYear();
 testDenominatorAloneCannotOverrideConflictingYear();
 testEvidenceFieldObjectsCannotOverwriteFinalObservedScalars();
 testEvidenceScalarOnlyFillsMissingObservedField();
-testProductHierarchyCandidateCanOnlyUpgradeSpecificity();
+testProductHierarchyCandidateCanOnlyFillMissingHierarchy();
 testCompatibleCatalogHierarchyDoesNotManufactureLowMarginConflict();
 testReviewedCurrentSourceIdentityWaivesDuplicateCatalogMargin();
 testManufacturerPrefixAloneCannotOverwriteObservedProduct();
@@ -1575,6 +1633,6 @@ testNumericYearMayBeOmittedButCannotHideDifferentProductBranch();
 testDifferentProductFamiliesCannotShareAChromeAnchor();
 testObservedSubjectBlocksSubjectlessSameProductCandidate();
 testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate();
-testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData();
+testReviewedCompositeIdentityCannotCorrectVariantWithoutExactCode();
 
 console.log("candidate-control-plane tests passed");
