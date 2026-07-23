@@ -387,6 +387,8 @@ const legacyUfcRows = parseOfficialChecklistText([
   "SP-1\tAmanda Nunes\t\t",
   "SP-1\tKayla Harrison\t\t",
   "AUTOGRAPH",
+  "BASE CARDS AUTOGRAPH VARIATIONS",
+  "BAV-AN\tAndreas Gustafsson\t\tRookie",
   "VANQUISHER INK",
   "VI-JS\tJean Silva\t\t"
 ].join("\n"), {
@@ -401,7 +403,9 @@ assert.deepEqual(legacyUfcRows.find((row) => row.identity_fields.card_number ===
 assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "4")?.identity_fields.team, null);
 assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "4")?.identity_fields.observable_components.includes("rc"), true);
 assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "VI-JS")?.identity_fields.observable_components.includes("auto"), true);
-assert.equal(legacyXlsChecklistParserVersion.endsWith(":legacy-xls-v1"), true);
+assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "BAV-AN")?.identity_fields.official_card_type, "Autograph");
+assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "BAV-AN")?.identity_fields.set_type, "autograph_set");
+assert.equal(legacyXlsChecklistParserVersion.endsWith(":legacy-xls-v2"), true);
 await assert.rejects(
   () => extractOfficialChecklistPayload(Buffer.from("not-an-xls"), {
     sourceUrl: "https://official.example/invalid.xls",
